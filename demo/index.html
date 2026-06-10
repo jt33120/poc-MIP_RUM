@@ -12,13 +12,17 @@
   </style>
   <script src="/mip-rum.js"></script>
   <script>
+    // ?requireConsent=1 -> consent mode (validation A1 : 0 requête sans consent(true))
     MIPRum.init({
       endpoint: "http://localhost:4318/v1/traces",
       appId: "demo-app",
       clientId: "mip-demo",
       env: "dev",
+      apiKey: "demo-key-local",
       sampleRate: 1.0,
       flushIntervalMs: 2000,
+      slowResourceMs: 300,
+      requireConsent: new URLSearchParams(location.search).has("requireConsent"),
     });
   </script>
 </head>
@@ -31,6 +35,9 @@
     <button id="btn-rejection">Promesse rejetée</button>
     <button id="btn-nav-list">→ /partners</button>
     <button id="btn-nav-detail">→ /partners/42</button>
+    <button id="btn-slow-res">Ressource lente</button>
+    <button id="btn-longtask">Long task</button>
+    <button id="btn-track">Événement métier</button>
   </div>
 
   <div id="view">Accueil</div>
@@ -61,6 +68,23 @@
     document.getElementById("btn-nav-detail").addEventListener("click", () => {
       history.pushState({}, "", "/partners/42");
       render("/partners/42");
+    });
+    // v0.2 — ressource lente (servie par serve.mjs avec un sleep 800 ms)
+    document.getElementById("btn-slow-res").addEventListener("click", () => {
+      fetch("/slow")
+        .then((r) => r.json())
+        .then((j) => render("ressource lente chargée (" + j.delayMs + " ms)"));
+    });
+    // v0.2 — long task : boucle bloquante ~300 ms sur le main thread
+    document.getElementById("btn-longtask").addEventListener("click", () => {
+      const t0 = performance.now();
+      while (performance.now() - t0 < 300) { /* blocage volontaire */ }
+      render("long task ~300 ms exécutée");
+    });
+    // v0.2 — événement métier persisté (rum_event) + breadcrumb custom
+    document.getElementById("btn-track").addEventListener("click", () => {
+      MIPRum.track("partner_search", { results: 12 });
+      render("événement partner_search envoyé");
     });
   </script>
 </body>

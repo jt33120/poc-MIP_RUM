@@ -1,5 +1,8 @@
 // Edge function Supabase (Deno) — POST /v1/traces (OTLP/HTTP JSON) -> Postgres.
-// Même parser que le dev-server local (_shared/otlp.mjs). Déployée à S6 (cf. DEPLOY.md).
+// Même parser que le dev-server local (_shared/otlp.mjs ; copie déployée en sibling ./otlp.mjs).
+// v0.2 : nouvelles tables (resource/longtask/breadcrumb/event), vérif clé d'API
+// (REQUIRE_API_KEY via Deno.env, défaut false), rate limit 600 req/min par app_id
+// (mémoire d'isolat : best effort, suffisant contre le flood accidentel).
 // @ts-nocheck deno runtime
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { flattenOtlp } from "../_shared/otlp.mjs";
@@ -9,6 +12,9 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8080",
   "http://localhost:3000",
 ];
+
+const REQUIRE_API_KEY = (Deno.env.get("REQUIRE_API_KEY") ?? "false") === "true";
+const RATE_LIMIT_PER_MIN = Number(Deno.env.get("RATE_LIMIT_PER_MIN") ?? "600");
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -25,6 +31,51 @@ function corsHeaders(origin: string): Record<string, string> {
   };
 }
 
+// --- Registre d'apps : cache 60 s (refresh paresseux, isolat éphémère) -------
+let appRegistry = new Map<string, { api_key_hash: string | null; active: boolean }>();
+let registryLoadedAt = 0;
+
+async function getAppRegistry() {
+  if (Date.now() - registryLoadedAt < 60_000 && appRegistry.size) return appRegistry;
+  const { data, error } = await supabase
+    .from("app_registry")
+    .select("app_id, api_key_hash, active");
+  if (!error && data) {
+    appRegistry = new Map(data.map((r) => [r.app_id, r]));
+    registryLoadedAt = Date.now();
+  }
+  return appRegistry;
+}
+
+async function sha256(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** null si accepté, sinon raison du 403. api_key_hash null = legacy, pas de vérif. */
+async function checkApiKey(appId: string, apiKey: string | null): Promise<string | null> {
+  if (!REQUIRE_API_KEY) return null;
+  const app = (await getAppRegistry()).get(appId);
+  if (!app || !app.active) return `unknown or inactive app: ${appId}`;
+  if (app.api_key_hash == null) return null; // continuité G-IT : app sans clé
+  if (!apiKey || (await sha256(apiKey)) !== app.api_key_hash)
+    return `invalid api key for app: ${appId}`;
+  return null;
+}
+
+// --- Rate limit : fenêtre glissante 60 s par app_id (compteur mémoire) -------
+const rateHits = new Map<string, number[]>();
+
+function rateLimited(appId: string): boolean {
+  const now = Date.now();
+  const hits = rateHits.get(appId) ?? [];
+  while (hits.length && hits[0] <= now - 60_000) hits.shift();
+  if (hits.length >= RATE_LIMIT_PER_MIN) return true;
+  hits.push(now);
+  rateHits.set(appId, hits);
+  return false;
+}
+
 Deno.serve(async (req) => {
   const cors = corsHeaders(req.headers.get("origin") ?? "");
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
@@ -32,7 +83,30 @@ Deno.serve(async (req) => {
 
   try {
     const payload = await req.json();
-    const { sessions, pageviews, metrics, errors } = flattenOtlp(payload);
+    const rows = flattenOtlp(payload);
+    const { sessions, pageviews, metrics, errors, resources, longtasks, breadcrumbs, events } = rows;
+
+    // vérif clé d'API (403) — clé portée par l'attribut resource mip.api_key
+    for (const { app_id, api_key } of rows.apiKeys) {
+      const reason = await checkApiKey(app_id, api_key);
+      if (reason) {
+        console.warn(`[v1-traces] 403 ${reason}`);
+        return new Response(JSON.stringify({ error: reason }), {
+          status: 403,
+          headers: { "content-type": "application/json", ...cors },
+        });
+      }
+    }
+    // rate limit (429) — une fois par app et par requête
+    for (const appId of new Set(rows.apiKeys.map((k) => k.app_id))) {
+      if (rateLimited(appId)) {
+        console.warn(`[v1-traces] 429 rate limit exceeded for app: ${appId}`);
+        return new Response(JSON.stringify({ error: `rate limit exceeded for app: ${appId}` }), {
+          status: 429,
+          headers: { "content-type": "application/json", "retry-after": "60", ...cors },
+        });
+      }
+    }
 
     // géo approximative sans stocker l'IP (PLAN §14) — header CDN si présent
     const country = req.headers.get("cf-ipcountry") ?? req.headers.get("x-vercel-ip-country");
@@ -62,6 +136,10 @@ Deno.serve(async (req) => {
     await ins("rum_pageview", pageviews.map(({ ts, ...p }) => ({ ...p, started_at: ts })));
     await ins("rum_metric", metrics);
     await ins("rum_error", errors);
+    await ins("rum_resource", resources);
+    await ins("rum_longtask", longtasks);
+    await ins("rum_breadcrumb", breadcrumbs);
+    await ins("rum_event", events);
 
     return new Response(JSON.stringify({ partialSuccess: {} }), {
       status: 200,

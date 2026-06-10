@@ -1,28 +1,20 @@
-import { fmtVital } from "@/lib/format";
-import { q } from "@/lib/db";
+import Link from "next/link";
+import { RobotVsRealChart } from "@/components/features/RobotVsRealChart";
+import { fmtDate, fmtVital } from "@/lib/format";
+import {
+  blindSpots,
+  correlationCards,
+  correlationRoutes,
+  correlationSeries,
+  filtersToQuery,
+  parseFilters,
+  periodLabel,
+  type CorrCardRow,
+  type SearchParams,
+} from "@/lib/queries-v2";
 import { RATING_CLASS, rating2026 } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
-
-interface CorrRow {
-  app_id: string;
-  route: string | null;
-  rum_lcp_p75: number | null;
-  rum_inp_p75: number | null;
-  rum_sessions: number | null;
-  syn_latency_avg: number | null;
-  syn_score_avg: number | null;
-  syn_state: string | null;
-  syn_measures: string | null;
-}
-
-interface BucketRow {
-  route: string;
-  bucket: Date;
-  rum_lcp_p75: number | null;
-  syn_latency_avg: number | null;
-  syn_state: string | null;
-}
 
 const STATE_CLASS: Record<string, string> = {
   ok: "bg-emerald-100 text-emerald-800",
@@ -30,90 +22,129 @@ const STATE_CLASS: Record<string, string> = {
   incident: "bg-red-100 text-red-800",
 };
 
-export default async function Correlation() {
-  // agrégats 24 h par app/route, robot et réel calculés chacun de leur côté
-  const rows = await q<CorrRow>(
-    `with rum as (
-       select app_id, route,
-              percentile_cont(0.75) within group (order by value) filter (where name = 'LCP') as rum_lcp_p75,
-              percentile_cont(0.75) within group (order by value) filter (where name = 'INP') as rum_inp_p75,
-              count(distinct session_id)::int as rum_sessions
-       from rum_metric where ts > now() - interval '24 hours'
-       group by 1, 2
-     ),
-     syn as (
-       select app_id, route_hint as route,
-              avg(latency_ms) as syn_latency_avg,
-              avg(score) as syn_score_avg,
-              case max(case state when 'incident' then 3 when 'warn' then 2 when 'ok' then 1 else 0 end)
-                when 3 then 'incident' when 2 then 'warn' when 1 then 'ok' end as syn_state,
-              string_agg(distinct measure_name, ', ') as syn_measures
-       from syn_snapshot where captured_at > now() - interval '24 hours'
-       group by 1, 2
-     )
-     select coalesce(r.app_id, s.app_id) as app_id, coalesce(r.route, s.route) as route,
-            r.rum_lcp_p75, r.rum_inp_p75, r.rum_sessions,
-            s.syn_latency_avg, s.syn_score_avg, s.syn_state, s.syn_measures
-     from rum r full outer join syn s using (app_id, route)
-     order by (r.rum_lcp_p75 is not null and s.syn_latency_avg is not null) desc, app_id, route`,
-  );
-  const buckets = await q<BucketRow>(
-    `select route, bucket, rum_lcp_p75, syn_latency_avg, syn_state
-     from v_correlation
-     where rum_lcp_p75 is not null and syn_latency_avg is not null
-     order by bucket desc, route limit 24`,
-  );
+export default async function Correlation({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
+  const sp = (await searchParams) ?? {};
+  const f = parseFilters(sp);
+  const [rows, routes, spots] = await Promise.all([
+    correlationCards(f),
+    correlationRoutes(f),
+    blindSpots(f),
+  ]);
+  const requested = Array.isArray(sp.route) ? sp.route[0] : sp.route;
+  const selectedRoute = requested && routes.includes(requested) ? requested : routes[0] ?? null;
+  const series = selectedRoute ? await correlationSeries(selectedRoute, f) : [];
 
   return (
     <div>
       <h1 className="mb-1 text-2xl font-bold">Corrélation synthétique ↔ RUM</h1>
       <p className="mb-6 text-sm text-slate-500">
-        Ce que le robot MIP voit (DEM synthétique) face à ce que les utilisateurs réels subissent (RUM) · fenêtre 24 h
+        Ce que le robot MIP voit (DEM synthétique) face à ce que les utilisateurs réels subissent (RUM) · fenêtre {periodLabel(f)}
       </p>
 
       <div className="flex flex-col gap-4">
         {rows.map((r) => (
           <RouteCard key={`${r.app_id}|${r.route}`} row={r} />
         ))}
-        {!rows.length && <p className="py-8 text-center text-slate-400">Aucune donnée — lance le job sync-synthetic et la démo.</p>}
+        {!rows.length && (
+          <p className="py-8 text-center text-slate-400">Aucune donnée — lance le job sync-synthetic et la démo.</p>
+        )}
       </div>
 
-      {buckets.length > 0 && (
-        <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-500">
-            Détail horaire (vue SQL v_correlation)
+      {/* ----- Série historisée robot vs réel ----- */}
+      <div className="mt-8 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold text-slate-500">
+            Robot vs réel dans le temps (buckets horaires, vue v_correlation)
+          </h2>
+          <div className="ml-auto flex flex-wrap gap-1">
+            {routes.map((route) => (
+              <Link
+                key={route}
+                href={`/correlation${filtersToQuery(f, { route })}`}
+                className={`rounded-full px-3 py-1 font-mono text-xs ${
+                  route === selectedRoute
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {route}
+              </Link>
+            ))}
           </div>
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-              <tr>
-                <th className="px-4 py-2">Heure</th>
-                <th className="px-4 py-2">Route</th>
-                <th className="px-4 py-2">Robot (latence moy.)</th>
-                <th className="px-4 py-2">Réel (LCP p75)</th>
-                <th className="px-4 py-2">État synthétique</th>
-              </tr>
-            </thead>
-            <tbody>
-              {buckets.map((b, i) => (
-                <tr key={i} className="border-t border-slate-100">
-                  <td className="px-4 py-2 text-xs">{new Date(b.bucket).toLocaleString("fr-FR", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}</td>
-                  <td className="px-4 py-2 font-mono text-xs">{b.route}</td>
-                  <td className="px-4 py-2">{fmtVital("LCP", Number(b.syn_latency_avg))}</td>
-                  <td className="px-4 py-2">{fmtVital("LCP", Number(b.rum_lcp_p75))}</td>
-                  <td className="px-4 py-2">
-                    {b.syn_state && <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${STATE_CLASS[b.syn_state] ?? ""}`}>{b.syn_state}</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
-      )}
+        {selectedRoute && series.length ? (
+          <RobotVsRealChart
+            data={series.map((s) => ({
+              bucket: new Date(s.bucket).toISOString(),
+              robot: s.syn_latency_avg != null ? Number(s.syn_latency_avg) : null,
+              reel: s.rum_lcp_p75 != null ? Number(s.rum_lcp_p75) : null,
+            }))}
+          />
+        ) : (
+          <p className="py-10 text-center text-sm text-slate-400">
+            Pas encore de route avec données robot ET réel sur la période.
+          </p>
+        )}
+      </div>
+
+      {/* ----- Angles morts ----- */}
+      <div className="mt-8 overflow-hidden rounded-lg border border-red-200 bg-white shadow-sm">
+        <div className="border-b border-red-100 bg-red-50 px-4 py-3">
+          <h2 className="text-sm font-bold text-red-800">
+            ⚠ Angles morts — le robot ne le voit pas
+          </h2>
+          <p className="mt-0.5 text-xs text-red-700">
+            Routes où le robot dit « ok » alors que les utilisateurs réels sont en « poor » (LCP p75 &gt; 2,5 s) · vue v_blind_spot
+          </p>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+            <tr>
+              <th className="px-4 py-2">Route</th>
+              <th className="px-4 py-2">Heure</th>
+              <th className="px-4 py-2">Robot (latence moy.)</th>
+              <th className="px-4 py-2">Réel (LCP p75)</th>
+              <th className="px-4 py-2">Écart</th>
+            </tr>
+          </thead>
+          <tbody>
+            {spots.map((s, i) => (
+              <tr key={i} className="border-t border-slate-100" data-testid={`blind-spot-${s.route}`}>
+                <td className="px-4 py-2 font-mono text-xs">{s.route ?? "—"}</td>
+                <td className="px-4 py-2 text-xs">{fmtDate(s.bucket)}</td>
+                <td className="px-4 py-2">
+                  {fmtVital("LCP", Number(s.syn_latency_avg))}
+                  <span className={`ml-2 rounded px-1.5 py-0.5 text-xs font-medium ${STATE_CLASS[s.syn_state] ?? ""}`}>
+                    {s.syn_state}
+                  </span>
+                </td>
+                <td className="px-4 py-2 font-bold text-red-700">{fmtVital("LCP", Number(s.rum_lcp_p75))}</td>
+                <td className="px-4 py-2">
+                  <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-800">
+                    +{s.gap_ms} ms — le robot ne le voit pas
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {!spots.length && (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-center text-slate-400">
+                  Aucun angle mort détecté sur la période 👍
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-function RouteCard({ row: r }: { row: CorrRow }) {
+function RouteCard({ row: r }: { row: CorrCardRow }) {
   const rum = r.rum_lcp_p75 != null ? Number(r.rum_lcp_p75) : null;
   const syn = r.syn_latency_avg != null ? Number(r.syn_latency_avg) : null;
   const gapPct = rum != null && syn != null && syn > 0 ? ((rum - syn) / syn) * 100 : null;

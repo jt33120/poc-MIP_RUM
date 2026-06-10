@@ -1,5 +1,9 @@
 // Dev OTLP receiver — POST /v1/traces (OTLP/HTTP JSON) -> Postgres local.
 // Équivalent local de l'edge function Deno (même parser _shared/otlp.mjs).
+// v0.2 : nouvelles tables (resource/longtask/breadcrumb/event), inserts batch
+// multi-lignes (une requête par table), vérif clé d'API (REQUIRE_API_KEY),
+// rate limit 600 req/min par app_id.
+import { createHash } from "node:crypto";
 import http from "node:http";
 import pg from "pg";
 import { flattenOtlp } from "./supabase/functions/_shared/otlp.mjs";
@@ -8,6 +12,8 @@ const PORT = process.env.INGEST_PORT || 4318;
 const DATABASE_URL =
   process.env.DATABASE_URL ||
   "postgres://postgres:postgres@localhost:5433/mip_rum";
+const REQUIRE_API_KEY = process.env.REQUIRE_API_KEY === "true";
+const RATE_LIMIT_PER_MIN = Number(process.env.RATE_LIMIT_PER_MIN || 600);
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 5 });
 
@@ -31,42 +37,139 @@ function corsHeaders(origin) {
   };
 }
 
-async function writeRows({ sessions, pageviews, metrics, errors }) {
+// --- Registre d'apps : chargé au boot, rafraîchi toutes les 60 s -------------
+let appRegistry = new Map(); // app_id -> { api_key_hash, active }
+
+async function loadAppRegistry() {
+  try {
+    const { rows } = await pool.query(
+      "select app_id, api_key_hash, active from app_registry",
+    );
+    appRegistry = new Map(rows.map((r) => [r.app_id, r]));
+  } catch (err) {
+    console.error("[ingest] app_registry load failed:", err.message);
+  }
+}
+
+const sha256 = (s) => createHash("sha256").update(s).digest("hex");
+
+/** null si accepté, sinon raison du 403. api_key_hash null = legacy, pas de vérif. */
+function checkApiKey(appId, apiKey) {
+  if (!REQUIRE_API_KEY) return null;
+  const app = appRegistry.get(appId);
+  if (!app || !app.active) return `unknown or inactive app: ${appId}`;
+  if (app.api_key_hash == null) return null; // continuité G-IT : app sans clé
+  if (!apiKey || sha256(apiKey) !== app.api_key_hash)
+    return `invalid api key for app: ${appId}`;
+  return null;
+}
+
+// --- Rate limit : fenêtre glissante 60 s par app_id (compteur mémoire) -------
+const rateHits = new Map(); // app_id -> timestamps ms
+
+function rateLimited(appId) {
+  const now = Date.now();
+  const hits = rateHits.get(appId) ?? [];
+  while (hits.length && hits[0] <= now - 60_000) hits.shift();
+  if (hits.length >= RATE_LIMIT_PER_MIN) return true;
+  hits.push(now);
+  rateHits.set(appId, hits);
+  return false;
+}
+
+// --- Écriture : un insert multi-lignes par table ------------------------------
+function batchInsert(client, table, cols, rows, conflictClause) {
+  if (!rows.length) return Promise.resolve();
+  const params = [];
+  const tuples = rows
+    .map(
+      (row) =>
+        `(${cols
+          .map((c) => {
+            params.push(row[c]);
+            return `$${params.length}`;
+          })
+          .join(",")})`,
+    )
+    .join(",");
+  return client.query(
+    `insert into ${table} (${cols.join(",")}) values ${tuples} ${conflictClause}`,
+    params,
+  );
+}
+
+async function writeRows({
+  sessions,
+  pageviews,
+  metrics,
+  errors,
+  resources,
+  longtasks,
+  breadcrumbs,
+  events,
+}) {
   const client = await pool.connect();
   try {
     await client.query("begin");
-    for (const s of sessions) {
-      await client.query(
-        `insert into rum_session (session_id, app_id, client_id, user_hash, user_agent, device_type, started_at, last_seen_at, page_count)
-         values ($1,$2,$3,$4,$5,$6,$7,$7,$8)
-         on conflict (session_id) do update
-           set last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at),
-               page_count   = rum_session.page_count + excluded.page_count,
-               user_agent   = coalesce(rum_session.user_agent, excluded.user_agent)`,
-        [s.session_id, s.app_id, s.client_id, s.user_hash, s.user_agent, s.device_type, s.last_seen_at, s.page_count_inc],
-      );
-    }
-    for (const p of pageviews) {
-      await client.query(
-        `insert into rum_pageview (span_id, session_id, app_id, route, url, referrer, nav_type, started_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8) on conflict (span_id) do nothing`,
-        [p.span_id, p.session_id, p.app_id, p.route, p.url, p.referrer, p.nav_type, p.ts],
-      );
-    }
-    for (const m of metrics) {
-      await client.query(
-        `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, attribution, ts)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict (span_id) do nothing`,
-        [m.span_id, m.session_id, m.app_id, m.route, m.name, m.value, m.rating, m.attribution ? JSON.stringify(m.attribution) : null, m.ts],
-      );
-    }
-    for (const e of errors) {
-      await client.query(
-        `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type, stack, source, lineno, colno, ts)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) on conflict (span_id) do nothing`,
-        [e.span_id, e.session_id, e.app_id, e.route, e.kind, e.message, e.error_type, e.stack, e.source, e.lineno, e.colno, e.ts],
-      );
-    }
+    await batchInsert(
+      client,
+      "rum_session",
+      ["session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type", "started_at", "last_seen_at", "page_count"],
+      sessions.map((s) => ({ ...s, started_at: s.last_seen_at, page_count: s.page_count_inc })),
+      `on conflict (session_id) do update
+         set last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at),
+             page_count   = rum_session.page_count + excluded.page_count,
+             user_agent   = coalesce(rum_session.user_agent, excluded.user_agent)`,
+    );
+    await batchInsert(
+      client,
+      "rum_pageview",
+      ["span_id", "session_id", "app_id", "route", "url", "referrer", "nav_type", "started_at"],
+      pageviews.map((p) => ({ ...p, started_at: p.ts })),
+      "on conflict (span_id) do nothing",
+    );
+    await batchInsert(
+      client,
+      "rum_metric",
+      ["span_id", "session_id", "app_id", "route", "name", "value", "rating", "attribution", "ts"],
+      metrics.map((m) => ({ ...m, attribution: m.attribution ? JSON.stringify(m.attribution) : null })),
+      "on conflict (span_id) do nothing",
+    );
+    await batchInsert(
+      client,
+      "rum_error",
+      ["span_id", "session_id", "app_id", "route", "kind", "message", "error_type", "stack", "source", "lineno", "colno", "fingerprint", "ts"],
+      errors,
+      "on conflict (span_id) do nothing",
+    );
+    await batchInsert(
+      client,
+      "rum_resource",
+      ["span_id", "session_id", "app_id", "route", "url", "type", "duration_ms", "transfer_size", "render_blocking", "ts"],
+      resources,
+      "on conflict (span_id) do nothing",
+    );
+    await batchInsert(
+      client,
+      "rum_longtask",
+      ["span_id", "session_id", "app_id", "route", "duration_ms", "ts"],
+      longtasks,
+      "on conflict (span_id) do nothing",
+    );
+    await batchInsert(
+      client,
+      "rum_breadcrumb",
+      ["span_id", "session_id", "app_id", "type", "label", "seq", "ts"],
+      breadcrumbs,
+      "on conflict (span_id) do nothing",
+    );
+    await batchInsert(
+      client,
+      "rum_event",
+      ["span_id", "session_id", "app_id", "route", "name", "props", "ts"],
+      events.map((e) => ({ ...e, props: e.props ? JSON.stringify(e.props) : null })),
+      "on conflict (span_id) do nothing",
+    );
     await client.query("commit");
   } catch (err) {
     await client.query("rollback");
@@ -100,9 +203,28 @@ const server = http.createServer(async (req, res) => {
     recent.push(payload);
     if (recent.length > RING_SIZE) recent.shift();
     const rows = flattenOtlp(payload);
+
+    // vérif clé d'API (403) — clé portée par l'attribut resource mip.api_key
+    for (const { app_id, api_key } of rows.apiKeys) {
+      const reason = checkApiKey(app_id, api_key);
+      if (reason) {
+        console.warn(`[ingest] 403 ${reason}`);
+        res.writeHead(403, { "content-type": "application/json", ...cors });
+        return res.end(JSON.stringify({ error: reason }));
+      }
+    }
+    // rate limit (429) — une fois par app et par requête
+    for (const appId of new Set(rows.apiKeys.map((k) => k.app_id))) {
+      if (rateLimited(appId)) {
+        console.warn(`[ingest] 429 rate limit exceeded for app: ${appId}`);
+        res.writeHead(429, { "content-type": "application/json", "retry-after": "60", ...cors });
+        return res.end(JSON.stringify({ error: `rate limit exceeded for app: ${appId}` }));
+      }
+    }
+
     await writeRows(rows);
     console.log(
-      `[ingest] ${new Date().toISOString()} ← ${origin || "(no origin)"} | sessions:${rows.sessions.length} pageviews:${rows.pageviews.length} metrics:${rows.metrics.length} errors:${rows.errors.length} rejected:${rows.rejected}`,
+      `[ingest] ${new Date().toISOString()} ← ${origin || "(no origin)"} | sessions:${rows.sessions.length} pageviews:${rows.pageviews.length} metrics:${rows.metrics.length} errors:${rows.errors.length} resources:${rows.resources.length} longtasks:${rows.longtasks.length} breadcrumbs:${rows.breadcrumbs.length} events:${rows.events.length} rejected:${rows.rejected}`,
     );
     res.writeHead(200, { "content-type": "application/json", ...cors });
     res.end(JSON.stringify({ partialSuccess: {} }));
@@ -113,6 +235,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+await loadAppRegistry();
+setInterval(loadAppRegistry, 60_000).unref();
+
 server.listen(PORT, () =>
-  console.log(`[ingest] OTLP dev receiver on http://localhost:${PORT}/v1/traces → ${DATABASE_URL.replace(/:[^:@/]+@/, ":***@")}`),
+  console.log(
+    `[ingest] OTLP dev receiver on http://localhost:${PORT}/v1/traces → ${DATABASE_URL.replace(/:[^:@/]+@/, ":***@")} | REQUIRE_API_KEY=${REQUIRE_API_KEY} rate=${RATE_LIMIT_PER_MIN}/min`,
+  ),
 );

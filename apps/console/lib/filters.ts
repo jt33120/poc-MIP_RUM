@@ -1,0 +1,36 @@
+// Filtres globaux v0.3 (app / période / device) portés par les searchParams.
+// Les intervalles SQL viennent EXCLUSIVEMENT de PERIODS (pas d'injection possible).
+
+export type PeriodKey = "1h" | "24h" | "7d";
+
+export interface Filters {
+  app: string | null; // null = toutes les apps
+  period: PeriodKey;
+  device: "desktop" | "mobile" | null; // null = tous
+}
+
+export const PERIODS: Record<
+  PeriodKey,
+  { label: string; interval: string; bucket: string; bucketLabel: string }
+> = {
+  "1h": { label: "1 h", interval: "1 hour", bucket: "5 minutes", bucketLabel: "5 min" },
+  "24h": { label: "24 h", interval: "24 hours", bucket: "1 hour", bucketLabel: "1 h" },
+  "7d": { label: "7 j", interval: "7 days", bucket: "6 hours", bucketLabel: "6 h" },
+};
+
+export type SearchParams = Record<string, string | string[] | undefined>;
+
+function first(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+export function parseFilters(sp: SearchParams): Filters {
+  const period = first(sp.period);
+  const device = first(sp.device);
+  const app = first(sp.app);
+  return {
+    app: app && app !== "all" ? app : null,
+    period: period === "1h" || period === "7d" ? period : "24h",
+    device: device === "desktop" || device === "mobile" ? device : null,
+  };
+}

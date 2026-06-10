@@ -6,15 +6,17 @@ import {
   StackContextManager,
   WebTracerProvider,
 } from "@opentelemetry/sdk-trace-web";
+import { RetryExporter } from "./retry";
 import type { MIPRumConfig } from "./types";
 
 const SDK_NAME = "@mip/rum-sdk";
-const SDK_VERSION = "0.1.0";
+const SDK_VERSION = "0.2.0";
 
 let provider: WebTracerProvider | null = null;
 
 export function initOtel(cfg: MIPRumConfig): Tracer {
-  const exporter = new OTLPTraceExporter({ url: cfg.endpoint });
+  // décorateur retry : export raté -> file localStorage, rejouée au prochain init
+  const exporter = new RetryExporter(new OTLPTraceExporter({ url: cfg.endpoint }));
   provider = new WebTracerProvider({
     resource: resourceFromAttributes({
       "service.name": "mip-rum-web",
@@ -23,6 +25,8 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
       "mip.client_id": cfg.clientId ?? "",
       "mip.user_agent": navigator.userAgent,
       "deployment.environment.name": cfg.env ?? "dev",
+      // sendBeacon ne porte pas de headers : la clé voyage en attribut resource
+      ...(cfg.apiKey ? { "mip.api_key": cfg.apiKey } : {}),
     }),
     spanProcessors: [
       new BatchSpanProcessor(exporter, {

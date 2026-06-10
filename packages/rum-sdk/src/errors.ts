@@ -1,6 +1,8 @@
 import { scrubUrl } from "./context";
 
-export type Emit = (name: string, attrs: Record<string, string | number>) => void;
+export type AttrValue = string | number | boolean;
+/** ts optionnel : timestamp d'origine (epoch ms) pour les rejeux consent/retry. */
+export type Emit = (name: string, attrs: Record<string, AttrValue>, ts?: number) => void;
 
 export function initErrors(emit: Emit): void {
   addEventListener("error", (e: ErrorEvent) => {

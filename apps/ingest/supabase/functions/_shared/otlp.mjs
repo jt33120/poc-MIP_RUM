@@ -46,8 +46,8 @@ function scrubUrl(url) {
   return url.split("?")[0].split("#")[0];
 }
 
-/** L'attribution web-vitals voyage en attribut string JSON -> objet pour le jsonb. */
-function parseAttribution(raw) {
+/** Attributs string JSON (webvital.attribution, mip.props) -> objet pour le jsonb. */
+function parseJsonAttr(raw) {
   if (typeof raw !== "string" || !raw) return null;
   try {
     return JSON.parse(raw);
@@ -56,16 +56,68 @@ function parseAttribution(raw) {
   }
 }
 
+/** Hash FNV-1a 32 bits -> hex sur 8 caractères. */
+export function fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+const RE_URL = /https?:\/\/[^\s"')]+/gi;
+const RE_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/** Message normalisé : urls, uuids puis chiffres remplacés par '#' (l'ordre compte). */
+function normalizeMessage(message) {
+  return String(message ?? "")
+    .replace(RE_URL, "#")
+    .replace(RE_UUID, "#")
+    .replace(/\d+/g, "#")
+    .trim();
+}
+
+/** Premier frame de la stack (ligne `at …` ou style `fn@url`), sans line:col. */
+function firstStackFrame(stack) {
+  const lines = String(stack ?? "").split("\n");
+  for (const line of lines) {
+    const l = line.trim();
+    if (/^at\s/.test(l) || /\S@\S/.test(l)) return l.replace(/:\d+:\d+/g, "");
+  }
+  return "";
+}
+
+/**
+ * Fingerprint de regroupement d'erreurs (ROADMAP v0.2 §Contrat) :
+ * fnv1a(error_type + message normalisé + 1er frame de stack sans line:col).
+ * Stable pour une même famille (ids numériques / uuids / urls / line:col variables).
+ */
+export function errorFingerprint(errorType, message, stack) {
+  return fnv1a(
+    [errorType ?? "", normalizeMessage(message), firstStackFrame(stack)].join("|"),
+  );
+}
+
 /**
  * Aplatit un payload OTLP/HTTP JSON en lignes SQL.
  * Rejette (compte) les resourceSpans sans mip.app_id (PLAN §7.2).
- * @returns {{sessions: object[], pageviews: object[], metrics: object[], errors: object[], rejected: number}}
+ * v0.2 : resources/longtasks/breadcrumbs/events (track.*), fingerprint d'erreur,
+ * apiKeys = clé `mip.api_key` lue sur la resource, un élément par resourceSpan accepté.
+ * @returns {{sessions: object[], pageviews: object[], metrics: object[], errors: object[],
+ *            resources: object[], longtasks: object[], breadcrumbs: object[], events: object[],
+ *            apiKeys: {app_id: string, api_key: string|null}[], rejected: number}}
  */
 export function flattenOtlp(payload) {
   const sessions = new Map();
   const pageviews = [];
   const metrics = [];
   const errors = [];
+  const resources = [];
+  const longtasks = [];
+  const breadcrumbs = [];
+  const events = [];
+  const apiKeys = [];
   let rejected = 0;
 
   for (const rs of payload?.resourceSpans ?? []) {
@@ -75,6 +127,7 @@ export function flattenOtlp(payload) {
       rejected++;
       continue;
     }
+    apiKeys.push({ app_id: appId, api_key: res["mip.api_key"] ?? null });
     for (const ss of rs.scopeSpans ?? []) {
       for (const span of ss.spans ?? []) {
         const a = attrsToObj(span.attributes);
@@ -114,22 +167,26 @@ export function flattenOtlp(payload) {
             name,
             value,
             rating: rating2026(name, value),
-            attribution: parseAttribution(a["webvital.attribution"]),
+            attribution: parseJsonAttr(a["webvital.attribution"]),
             ts,
           });
         } else if (span.name === "exception") {
+          const errorType = a["exception.type"] ?? null;
+          const message = String(a["exception.message"] ?? "").slice(0, 1000);
+          const stack = String(a["exception.stacktrace"] ?? "").slice(0, 4000);
           errors.push({
             span_id: span.spanId,
             session_id: sessionId,
             app_id: appId,
             route,
             kind: a["mip.error_kind"] ?? "error",
-            message: String(a["exception.message"] ?? "").slice(0, 1000),
-            error_type: a["exception.type"] ?? null,
-            stack: String(a["exception.stacktrace"] ?? "").slice(0, 4000),
+            message,
+            error_type: errorType,
+            stack,
             source: scrubUrl(a["mip.error_source"]),
             lineno: a["mip.error_lineno"] ?? null,
             colno: a["mip.error_colno"] ?? null,
+            fingerprint: errorFingerprint(errorType, message, stack),
             ts,
           });
         } else if (span.name === "pageview") {
@@ -144,10 +201,68 @@ export function flattenOtlp(payload) {
             nav_type: a["mip.nav_type"] ?? null,
             ts,
           });
+        } else if (span.name === "resource") {
+          resources.push({
+            span_id: span.spanId,
+            session_id: sessionId,
+            app_id: appId,
+            route,
+            url: scrubUrl(a["resource.url"]),
+            type: a["resource.type"] ?? null,
+            duration_ms: a["resource.duration_ms"] ?? null,
+            transfer_size: a["resource.transfer_size"] ?? null,
+            render_blocking: a["resource.render_blocking"] ?? null,
+            ts,
+          });
+        } else if (span.name === "longtask") {
+          const durationMs = a["longtask.duration_ms"];
+          if (typeof durationMs !== "number") {
+            rejected++;
+            continue;
+          }
+          longtasks.push({
+            span_id: span.spanId,
+            session_id: sessionId,
+            app_id: appId,
+            route,
+            duration_ms: durationMs,
+            ts,
+          });
+        } else if (span.name === "breadcrumb") {
+          breadcrumbs.push({
+            span_id: span.spanId,
+            session_id: sessionId,
+            app_id: appId,
+            type: a["breadcrumb.type"] ?? "custom",
+            label: a["breadcrumb.label"] ?? null,
+            seq: a["breadcrumb.seq"] ?? null,
+            ts,
+          });
+        } else if (span.name.startsWith("track.")) {
+          events.push({
+            span_id: span.spanId,
+            session_id: sessionId,
+            app_id: appId,
+            route,
+            name: span.name.slice("track.".length),
+            props: parseJsonAttr(a["mip.props"]),
+            ts,
+          });
         }
         // autres spans (futures instrumentations) : ignorés silencieusement
       }
     }
   }
-  return { sessions: [...sessions.values()], pageviews, metrics, errors, rejected };
+  return {
+    sessions: [...sessions.values()],
+    pageviews,
+    metrics,
+    errors,
+    resources,
+    longtasks,
+    breadcrumbs,
+    events,
+    apiKeys,
+    rejected,
+  };
 }

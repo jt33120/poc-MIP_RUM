@@ -1,39 +1,75 @@
-# MIP RUM — POC
+# MIP RUM
 
-POC **RUM (Real User Monitoring) OpenTelemetry-native** pour MIP : SDK Web léger → OTLP/HTTP JSON → ingestion serverless → Postgres → console RUM Live, avec **corrélation synthétique↔RUM** (différenciateur MIP).
+[![CI](https://github.com/jt33120/mip-rum/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/jt33120/mip-rum/actions/workflows/ci.yml)
 
-Source de vérité : [PLAN.md](PLAN.md). Journal de build : [BUILD_LOG.md](BUILD_LOG.md).
+**Real User Monitoring OpenTelemetry-native et souverain**, avec corrélation **synthétique ↔ réel** — le créneau MIP : croiser ce que voient les robots (monitoring synthétique DEM) avec ce que vivent les vrais utilisateurs.
 
-## Architecture (hybride assumée)
+Démontré en production le 10/06/2026 sur `plateforme.groupement-it.com` : sur `/login`, le robot mesure **1,14 s (état « ok »)** pendant que le LCP p75 réel est à **4,04 s (« poor »)** — un écart de **+254 %** invisible au synthétique seul. C'est exactement le problème que ce produit rend visible.
+
+## Pourquoi celui-là
+
+- **OTel-native, vérifiable sur le fil** : le SDK émet de l'OTLP/HTTP JSON standard (`POST /v1/traces`). Aucun format propriétaire — le backend est remplaçable par un Collector OTel + ClickHouse sans toucher au SDK (chemin documenté dans `infra/`).
+- **Souverain** : données hébergées en UE (Supabase eu-west-3, Paris) et architecture on-prem-ready. Pas de dépendance à un SaaS US d'observabilité.
+- **Corrélation synthétique↔RUM** : le différenciateur MIP. Vue côte à côte robot vs réel par route, écarts surlignés, détection d'« angles morts » (robot ok / utilisateurs en souffrance).
+
+## Architecture
 
 ```
-[App web] -> [MIP RUM SDK] --OTLP/HTTP JSON--> [Ingestion /v1/traces] --> [Postgres]
-                                                                             ^    |
-[Synthétique DEM (mippoc ou seed)] --> [sync-synthetic] -------------------/     v
-                                                                  [Console RUM Live (Next.js)]
+[App web cliente] -> [MIP RUM SDK ~22 KB gzip] --OTLP/HTTP JSON--> [Ingestion /v1/traces] --> [Postgres]
+                                                                                                 ^    |
+[Synthétique DEM (mippoc ou seed)] --> [sync-synthetic] ---------------------------------------/     v
+                                                                          [Console RUM Live (Next.js)]
 ```
 
-- **Fidèle OTel sur le fil** : le SDK émet de l'OTLP/HTTP JSON standard (`POST /v1/traces`) — portable vers un Collector + ClickHouse sans toucher au SDK.
-- **Backend simplifié** : Postgres (Supabase en cloud, docker-compose en local). ClickHouse = cible prod, hors POC (cf. `infra/clickhouse.notes.md`).
+- SDK Web lean (OTel sdk-trace-web + web-vitals, sans instrumentation contrib) : Core Web Vitals (seuils 2026), erreurs JS, routes SPA normalisées, sessions anonymisées. v0.2 : resource timings, long tasks, breadcrumbs, consent mode RGPD, file de retry, clé d'API.
+- Ingestion : parser OTLP partagé (`_shared/otlp.mjs`) entre l'edge function Deno (prod Supabase) et le dev-server Node (local/CI). Scrub PII à l'ingestion, idempotence par `span_id`.
+- Backend simplifié Postgres pour le POC ; ClickHouse = cible prod (cf. `infra/clickhouse.notes.md`).
 
 ## Démarrage local (100 % local, aucun secret)
 
 ```bash
 pnpm install
-docker compose -f apps/ingest/docker-compose.yml up -d   # Postgres + schéma
-pnpm --filter @mip/rum-sdk build                         # SDK -> dist/mip-rum.js
-node apps/ingest/dev-server.mjs                          # ingestion locale :4318
-pnpm --filter console dev                                # console :3000
-# ouvrir demo/index.html servi par: node demo/serve.mjs  (:8080)
+docker compose -f apps/ingest/docker-compose.yml up -d     # Postgres :5433 + schéma
+docker exec -i mip-rum-db psql -U postgres -d mip_rum \
+  < apps/ingest/sql/migration-v02.sql                      # migration v0.2 (idempotente)
+pnpm --filter @mip/rum-sdk build                           # SDK -> dist/mip-rum.js
+node apps/ingest/dev-server.mjs                            # ingestion locale :4318
+node demo/serve.mjs                                        # mini-site de démo :8080
+pnpm --filter console dev                                  # console :3000
+node apps/sync-synthetic/src/sync.mjs seed                 # runs robot pour /correlation
 ```
+
+## Tests
+
+```bash
+pnpm test:unit          # vitest (parser OTLP, routes, sessions, ratings)
+pnpm test:e2e           # playwright — lance lui-même ingest/démo/console (Postgres requis)
+```
+
+La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) rejoue tout ça sur un Postgres de service : build SDK + unitaires, puis E2E Chromium avec schéma + migration appliqués au démarrage.
 
 ## Workspaces
 
 | Workspace | Rôle |
 |---|---|
-| `packages/rum-sdk` | SDK Web (OTel lean + web-vitals 5.2) |
-| `apps/ingest` | Receiver OTLP `/v1/traces` (Deno edge function + dev server Node) + schéma SQL |
-| `apps/sync-synthetic` | Job de synchro synthétique (mippoc ou seed) → `syn_snapshot` |
-| `apps/console` | Console RUM Live (Next.js 15) |
+| `packages/rum-sdk` | SDK Web (OTel lean + web-vitals), build esbuild IIFE `mip-rum.js` |
+| `apps/ingest` | Receiver OTLP `/v1/traces` (edge function Deno + dev-server Node) + SQL (schéma, migration v0.2) |
+| `apps/sync-synthetic` | Synchro synthétique → `syn_snapshot` (interface `SyntheticSource` : seed ou export mippoc) |
+| `apps/console` | Console RUM Live (Next.js 15) : Overview, Pages, Erreurs, Sessions, Corrélation |
 
-Déploiement cloud : voir [DEPLOY.md](DEPLOY.md).
+## Documentation
+
+| Document | Contenu |
+|---|---|
+| [docs/INTEGRATION.md](docs/INTEGRATION.md) | Guide d'intégration client : snippet, options, consent mode, CSP, RGPD, dépannage |
+| [ROADMAP_V02.md](ROADMAP_V02.md) | Plan v0.2 (sprint nuit 10→11/06) + contrat de données verrouillé |
+| [docs/LIMITES.md](docs/LIMITES.md) | Limites explicites du produit, et ce que la v0.2 traite |
+| [DEPLOY.md](DEPLOY.md) | Déploiement cloud (Supabase + Vercel) + snippet prod + recette |
+| [BUILD_LOG.md](BUILD_LOG.md) | Journal factuel du build (valeurs réelles mesurées, pièges, décisions) |
+| [CHANGELOG.md](CHANGELOG.md) | Historique des versions |
+| [PLAN.md](PLAN.md) | Plan directeur du POC v0.1 |
+
+## Statut
+
+- **v0.1** : POC terminé et **déployé en production** (ingestion Supabase Paris, console Vercel, snippet live sur la plateforme G-IT). DoD 1-4 vérifiés en live, tests 36 unitaires + 5 E2E verts.
+- **v0.2** : en cours (sprint nuit du 10→11/06/2026) — voir [ROADMAP_V02.md](ROADMAP_V02.md) et [CHANGELOG.md](CHANGELOG.md).

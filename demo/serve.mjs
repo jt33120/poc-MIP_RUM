@@ -17,6 +17,12 @@ const ROUTES = {
 const server = http.createServer(async (req, res) => {
   const path = req.url.split("?")[0];
   try {
+    // ressource volontairement lente (démo resource timings v0.2)
+    if (path === "/slow") {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ ok: true, delayMs: 800 }));
+    }
     if (ROUTES[path]) {
       const body = await readFile(ROUTES[path].file);
       res.writeHead(200, { "content-type": ROUTES[path].type });

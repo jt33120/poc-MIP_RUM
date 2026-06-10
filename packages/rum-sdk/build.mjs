@@ -24,6 +24,7 @@ const gz = gzipSync(raw).length;
 console.log(
   `dist/mip-rum.js  ${(raw.length / 1024).toFixed(1)} KB raw  |  ${(gz / 1024).toFixed(1)} KB gzip`,
 );
-if (gz > 30 * 1024) {
-  console.warn("⚠️  bundle gzip > 30 KB (cible PLAN §6.4)");
+if (gz > 35 * 1024) {
+  console.warn("⚠️  bundle gzip > 35 KB (cible ROADMAP_V02 A1)");
+  process.exitCode = 1;
 }

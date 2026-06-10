@@ -1,0 +1,105 @@
+# CI MIP RUM — build SDK + tests unitaires, puis E2E Playwright sur Postgres de service.
+# Reproduit le flux local : schema.sql + migration-v02.sql -> seed synthétique ->
+# playwright (qui lance lui-même dev-server :4318, démo :8080, console :3000 via webServer).
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Build SDK + tests unitaires
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # version pnpm lue depuis "packageManager" (pnpm@9.15.9) du package.json racine
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install (lockfile gelé)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build SDK (esbuild -> dist/mip-rum.js + budget taille)
+        run: pnpm --filter @mip/rum-sdk build
+
+      - name: Tests unitaires (vitest)
+        run: pnpm test:unit
+
+  e2e:
+    name: E2E Playwright (Postgres service)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # même URL que les défauts locaux (dev-server, tests, console) : host 5433 -> conteneur 5432
+      DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mip_rum
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mip_rum"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install (lockfile gelé)
+        run: pnpm install --frozen-lockfile
+
+      # psql (client) est préinstallé sur ubuntu-latest ; ON_ERROR_STOP pour fail fast
+      - name: Schéma v0.1 puis migration v0.2
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/schema.sql
+          psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/migration-v02.sql
+
+      - name: Build SDK (servi par demo/serve.mjs et la console)
+        run: pnpm --filter @mip/rum-sdk build
+
+      # le test corrélation attend des runs robot en face des données RUM générées par le test
+      - name: Seed synthétique (app demo-app, 24 h de runs)
+        run: node apps/sync-synthetic/src/sync.mjs seed
+
+      - name: Installer Chromium (+ dépendances système)
+        run: pnpm exec playwright install chromium --with-deps
+
+      # playwright.config.ts lance/attend les 3 serveurs (ingest :4318, démo :8080, console :3000)
+      - name: Tests E2E
+        run: pnpm exec playwright test
+
+      - name: Artefacts de débogage (traces/screenshots)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
