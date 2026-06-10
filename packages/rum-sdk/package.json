@@ -15,6 +15,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "0.218.0",
     "@opentelemetry/resources": "2.7.1",
     "@opentelemetry/sdk-trace-web": "2.7.1",
+    "rrweb": "2.0.1",
     "web-vitals": "5.3.0"
   },
   "devDependencies": {

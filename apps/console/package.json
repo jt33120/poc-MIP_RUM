@@ -9,11 +9,14 @@
     "start": "next start"
   },
   "dependencies": {
+    "bcryptjs": "3.0.3",
+    "jose": "6.2.3",
     "next": "15.5.19",
     "pg": "8.21.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "recharts": "2.15.4"
+    "recharts": "2.15.4",
+    "rrweb-player": "2.0.1"
   },
   "devDependencies": {
     "@types/node": "^22",
