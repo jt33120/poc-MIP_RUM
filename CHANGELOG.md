@@ -2,7 +2,7 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
-## v0.2 — EN COURS (sprint nuit 10→11/06/2026)
+## v0.2 — 2026-06-11 (sprint nuit, livré)
 
 Périmètre : [ROADMAP_V02.md](ROADMAP_V02.md). Contrat de données verrouillé avant build (`apps/ingest/sql/migration-v02.sql`). Traite les limites n° 1-4, 7-11, 14-18, 23, 24-25 de [docs/LIMITES.md](docs/LIMITES.md). Statut par chantier dans le rapport du matin (`RAPPORT_NUIT.md`).
 

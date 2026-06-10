@@ -10,3 +10,4 @@ playwright-report/
 .vercel/
 supabase/.temp/
 .env.production
+.secrets-v02.local.md

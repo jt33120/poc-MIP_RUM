@@ -134,3 +134,17 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
 | 5 | On-prem-ready (narratif) | ✅ (infra/ : Collector + ClickHouse) |
 
 **Seule étape en attente** : S6 — déploiement cloud (secrets) + snippet collé sur `plateforme.groupement-it.com` par Julian (runbook : DEPLOY.md).
+
+## v0.2 — Sprint nuit 10→11/06/2026 (« une semaine boostée IA »)
+
+- **Méthode** : 5 agents en parallèle sur des périmètres de fichiers disjoints (SDK / ingestion / console cœur / console features / CI-docs), contrat de données verrouillé AVANT le build (migration-v02.sql committée), puis intégration → CI → déploiement cloud → recette vraie plateforme par l'orchestrateur. Durée build parallèle : ~19 min ; nuit complète : ~1 h 45 de bout en bout.
+- **Ce qui a marché** (valeurs réelles) :
+  - SDK 0.2.0 : **23,8 KB gzip** (71,5 KB raw, +1,5 KB pour 6 features — budget 35 KB large). Consent prouvé headless (0 requête avant consent(true)). Caps 20 resources / 30 longtasks / 50 breadcrumbs par page.
+  - Ingestion : fingerprint stable par famille d'erreurs (`bacb7359` pour la fixture) ; rate limit prouvé sur 605 requêtes → 600×200 puis 429 ; 403 sur mauvaise clé quand REQUIRE_API_KEY=true ; inserts batch (1 requête/table).
+  - Console : 9 routes, middleware basic auth 32,3 kB (/mip-rum.js exclu), timeline session 6 types d'événements fusionnés, alerte test déclenchée à 737,6 ms (p75 LCP), angles morts détectés (+1 771 ms robot ok vs réel poor).
+  - CI GitHub Actions verte du premier coup (run 27305991349, 1 m 44 s) — actionlint avait été passé en local avant push.
+  - Cloud : migration v02 + RLS/grants console_ro (écriture limitée à l'alerting) + 2 jobs pg_cron (check_alerts */5, purge 30 j à 3 h 15) ; edge function v2 ; console redéployée avec BASIC_AUTH + dogfooding.
+  - **Vrai site : données v0.2 immédiates sans toucher au snippet** — 5 spans resource (img/link/script) + 6 breadcrumbs (click/nav) sur la session de recette.
+- **Ce qui n'a pas marché / restes** : webhook d'alerte non câblé (événements in-app seulement — pg_net à brancher, ~1 h) ; rate limit edge par isolat (best effort) ; retry offline best-effort documenté (doublons rares possibles) ; geo_country toujours null ; 0 longtask observée du vrai site cette nuit (pas de blocage >50 ms pendant la recette).
+- **Pièges notés** : deux instances Next partageant .next (dev + start) → EvalError middleware (artefact, pas un bug produit) ; schema.sql monté dans docker périmé après modification du fichier (inode remplacé) → `docker compose down -v && up` pour resynchroniser ; bouton React name+formAction → name écrasé.
+- **Sécurité** : clés d'API générées (hash seuls en base ; gip-plateforme volontairement sans clé pour continuité du snippet prod ; plaintext dans .secrets-v02.local.md gitignoré) ; console derrière basic auth ; secrets jamais en argv.
