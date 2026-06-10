@@ -1,8 +1,8 @@
 # POC MIP RUM — Rapport client (BROUILLON, trame PLAN §15)
 
-> Brouillon rempli avec les faits du build (cf. BUILD_LOG.md). À finaliser après le test
-> sur la plateforme réelle (S6, en attente) — les sections 5/6 sont déjà alimentées
-> par les résultats locaux. Captures dans `docs/captures/`.
+> Brouillon rempli avec les faits du build (cf. BUILD_LOG.md), **actualisé le 11/06/2026**
+> après déploiement cloud et mise en production du snippet sur la plateforme réelle
+> (DoD §2.2 1-4 vérifiés en live). Captures dans `docs/captures/`.
 
 ## 1. Résumé exécutif
 
@@ -15,6 +15,15 @@ stockée et restituée dans une **console RUM Live** (p75, seuils 2026) ; (4) la
 les utilisateurs subissent, écart chiffré — le différenciateur MIP que ni Datadog ni
 IP Label/Ekara ne proposent sous cette forme souveraine ; (5) la même chaîne se déploie
 **on-premise** (Collector + ClickHouse) sans toucher au SDK — argument CSPN.
+
+**Et la preuve terrain est faite** : le POC est déployé (ingestion Supabase **région
+Paris**, console Vercel) et instrumenté **en production** sur une vraie plateforme
+(`plateforme.groupement-it.com`). Dès la première session réelle, la corrélation a
+révélé ce que le synthétique seul ne voyait pas : sur la route `/login`, le robot
+mesure **1,14 s** (état « ok », score 96) pendant que l'utilisateur réel subit
+**4,04 s de LCP** (rating « poor », seuils 2026) — **écart +254 %**. C'est l'argument
+commercial du RUM MIP, démontré avec du vrai trafic en une phrase : *le robot dit que
+tout va bien, vos utilisateurs vivent autre chose.*
 
 ## 2. Rappel du besoin
 
@@ -43,8 +52,17 @@ le synthétique rejoignant la même base par le job de synchro.
 Captures (`docs/captures/`) : 01 Overview (p75 + ratings 2026), 02 Pages lentes,
 03 Erreurs JS, 04 Sessions (parcours), **05 Corrélation** (robot vs réel, écart
 surligné, données mippoc réelles), 06 mini-site de démo.
-Démo live : ouvrir la démo → vitals/erreurs/session visibles en console en < 10 s ;
-onglet réseau = payloads OTLP JSON lisibles (preuve « pas de format propriétaire »).
+
+**Démo live (environnement de prod, accessible pendant la présentation)** :
+- Console RUM Live : `https://mip-rum-console.vercel.app` — alimentée par le trafic
+  réel de `plateforme.groupement-it.com` (snippet en prod depuis le 10/06/2026).
+- `/correlation` : carte `/login` avec le badge **« écart +254 % — les utilisateurs
+  subissent plus que le robot ne voit »** (robot 1,14 s vs réel 4,04 s LCP p75).
+- Preuve OTel sur le fil : ouvrir la plateforme, onglet réseau → POST OTLP/HTTP JSON
+  lisibles vers `…supabase.co/functions/v1/v1-traces` (3 POST / 10,7 Ko mesurés sur
+  une session type ; preuve « pas de format propriétaire »).
+- Scénario de secours hors-ligne : mini-site de démo local (`demo/`) → vitals/erreurs/
+  session visibles en console en < 10 s.
 
 ## 5. Ce qui a fonctionné
 
@@ -60,6 +78,19 @@ onglet réseau = payloads OTLP JSON lisibles (preuve « pas de format propriéta
   5 E2E verts (dont CORS préflight).
 - **Sondage mippoc concluant** : schéma réel constaté (`get_measure_execution_info` →
   `first_load_time`, `completion_time`, états), parser construit sur l'observé.
+- **Test en production réelle (DoD §2.2 vérifiée en live le 10/06/2026)** : snippet posé
+  dans le `<head>` de `plateforme.groupement-it.com` (1 commit de 11 lignes, réversible) ;
+  en une session de navigation réelle : **3 POST OTLP** (10,7 Ko) émis depuis le domaine
+  de prod, **5 vitals + 4 pageviews en base cloud en quelques secondes**, routes SPA
+  réelles captées et normalisées (`/`, `/login`, `/dashboard`, `/forgot-password`),
+  CORS et sendBeacon validés en conditions réelles.
+- **Le POC a trouvé un vrai problème** : LCP réel **4 036 ms (poor)** et TTFB 1 624 ms
+  sur `/login`, là où le robot synthétique voit 1,14 s et un état « ok ». La vue
+  corrélation le rend en un badge : **écart +254 %**. Valeur immédiate pour l'exploitant :
+  prioriser l'optimisation du premier rendu de la page de login.
+- **Déploiement cloud sans friction** : Supabase (région **Paris** — cohérent avec le
+  narratif souveraineté) + Vercel, coût 0 € (free tiers) ; accès console en lecture
+  seule (rôle dédié, RLS) ; TLS vérifié par CA épinglée.
 
 ## 6. Ce qui n'a pas / partiellement fonctionné
 
@@ -70,13 +101,19 @@ onglet réseau = payloads OTLP JSON lisibles (preuve « pas de format propriéta
   ne correspondent pas aux routes de l'app cible ; le POC corrèle via `route_hint`
   (seed + 1 mesure réelle au niveau app). À cadrer avec MIP : nommage/annotation des
   mesures pour le mapping automatique. C'est LE chantier produit de la Phase 1.
-- **Déploiement cloud non exécuté** (S6 en attente) : secrets absents de l'environnement
-  de build ; DEPLOY.md fournit le runbook complet (~15 min) + snippet + bookmarklet.
-  Le test « vrai site » reste à dérouler (DoD §2.2 1-4 validés en local uniquement).
+- **Déploiement cloud retardé d'un cran** (résolu) : la création des ressources cloud a
+  d'abord été bloquée par la couche de permissions de l'environnement de build (garde-fou
+  voulu : pas de ressource créée sans accord explicite du propriétaire des comptes) ;
+  déployé ensuite en ~1 h sur autorisation. Enseignement process : prévoir l'autorisation
+  cloud en amont du sprint de déploiement.
+- **Géolocalisation non renseignée** : `geo_country` reste vide — l'edge runtime Supabase
+  n'expose pas les en-têtes géo CDN attendus. Sans impact sur la preuve ; en prod, la géo
+  viendra du Collector/CDN frontal (et l'IP reste de toute façon non stockée, cf. RGPD).
 - **Maturité OTel-web** : l'instrumentation navigateur reste *experimental* upstream
-  (packages 0.x, conventions RUM non figées) — d'où versions épinglées + wrapper MIP fin ;
-  l'edge function Deno n'a pas pu être testée localement (pas de runtime), seul le
-  parser partagé l'est.
+  (packages 0.x, conventions RUM non figées) — d'où versions épinglées + wrapper MIP fin.
+  L'edge function Deno, non testable en local (pas de runtime), a finalement été validée
+  directement en prod — acceptable pour un POC, pas pour l'industrialisation (prévoir
+  `supabase functions serve` en CI).
 - Subtilité terrain : INP/CLS ne sont émis qu'au masquage/déchargement de page — le
   flush beacon au `pagehide` est indispensable (perte de données sinon) ; constaté
   et corrigé au build.
@@ -93,8 +130,10 @@ onglet réseau = payloads OTLP JSON lisibles (preuve « pas de format propriéta
 
 ## 8. Recommandation & next steps
 
-1. **Dérouler S6** (déploiement + snippet sur plateforme G-IT, runbook DEPLOY.md) pour
-   obtenir des chiffres réels et les captures de prod.
+1. **Laisser tourner la collecte réelle** sur la plateforme G-IT (snippet en prod depuis
+   le 10/06) pour passer de 1 session à des p75 multi-sessions robustes ; bilan J+1
+   automatisé (`BILAN_J1.md`). Côté G-IT : investiguer le LCP 4 s de `/login` que le
+   POC vient de révéler — première valeur opérationnelle livrée par le RUM.
 2. **Lancer la Phase 1 réelle** : durcir le SDK (échantillonnage adaptatif, consentement),
    Collector + ClickHouse on-prem, intégration console Angular 20.
 3. **Cadrer le mapping mesure↔route** avec l'équipe DEM (convention de nommage ou champ
@@ -109,3 +148,10 @@ onglet réseau = payloads OTLP JSON lisibles (preuve « pas de format propriéta
 - Journal de build complet : `BUILD_LOG.md`. Plan d'origine : `PLAN.md`.
 - Captures : `docs/captures/01..06`. Exemple de payload OTLP : `tests/fixtures/otlp-sample.json`.
 - Données synthétiques réelles sondées : `apps/sync-synthetic/data/mippoc-sample.json`.
+- **Environnement de prod (POC)** : console + SDK `https://mip-rum-console.vercel.app`
+  (`/mip-rum.js`), ingestion `https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces`
+  (Supabase eu-west-3 Paris), site instrumenté `https://plateforme.groupement-it.com`
+  (PR `uti-platform#36`). Runbook : `DEPLOY.md`. Recette automatisée : `scripts/validate-dod.mjs`.
+- Chiffres réels J0 (10/06/2026, 1 session de recette) : LCP `/login` 4 036 ms (poor),
+  FCP 4 036 ms, TTFB 1 624 ms (needs-improvement), INP 16 ms / CLS 0 (good) ;
+  robot `/login` 1 142 ms, score 96, état ok → écart +254 %. Bilan multi-sessions : `BILAN_J1.md` (généré le 11/06 à 12 h).
