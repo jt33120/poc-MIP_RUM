@@ -1,5 +1,12 @@
-import type { Tracer } from "@opentelemetry/api";
-import { onLCP, type MetricWithAttribution } from "web-vitals/attribution";
+import {
+  onCLS,
+  onFCP,
+  onINP,
+  onLCP,
+  onTTFB,
+  type MetricWithAttribution,
+} from "web-vitals/attribution";
+import type { Emit } from "./errors";
 import type { VitalName } from "./types";
 
 // 2026 thresholds (PLAN annexe B): [good, needs-improvement] upper bounds
@@ -16,21 +23,32 @@ export function rating2026(name: VitalName, value: number): string {
   return value <= good ? "good" : value <= ni ? "needs-improvement" : "poor";
 }
 
-export type AttrProvider = () => Record<string, string | number>;
+/** Attribution compacte : on ne garde que les champs primitifs (debug lisible, payload léger). */
+function compactAttribution(attribution: object): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.entries(attribution).filter(
+        ([, v]) => typeof v === "string" || typeof v === "number",
+      ),
+    ),
+  );
+}
 
-export function initVitals(tracer: Tracer, baseAttrs: AttrProvider): void {
+export function initVitals(emit: Emit): void {
   const report = (metric: MetricWithAttribution) => {
     const name = metric.name as VitalName;
-    const span = tracer.startSpan(`webvital.${name}`);
-    span.setAttributes({
-      ...baseAttrs(),
+    emit(`webvital.${name}`, {
       "webvital.name": name,
       "webvital.value": metric.value,
       "webvital.rating": rating2026(name, metric.value),
       "webvital.id": metric.id,
       "webvital.navigation_type": metric.navigationType,
+      "webvital.attribution": compactAttribution(metric.attribution),
     });
-    span.end();
   };
   onLCP(report);
+  onINP(report);
+  onCLS(report);
+  onFCP(report);
+  onTTFB(report);
 }

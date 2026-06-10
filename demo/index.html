@@ -36,6 +36,14 @@
   <div id="view">Accueil</div>
 
   <script>
+    // layout shift volontaire (~600 ms après le load, hors interaction) -> CLS réel mesurable
+    setTimeout(() => {
+      const banner = document.createElement("div");
+      banner.textContent = "⚠️ Bandeau injecté tardivement (layout shift volontaire pour la démo CLS)";
+      banner.style.cssText = "padding:1.5rem;background:#fde68a;margin-bottom:1rem;";
+      document.body.prepend(banner);
+    }, 600);
+
     // simulated SPA: History API navigation, content swap
     function render(route) {
       document.getElementById("view").textContent = "Vue : " + route;

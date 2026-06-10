@@ -34,3 +34,17 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
   - **Rating calculé à l'ingestion** (seuils 2026) = source de vérité unique en base ; le rating envoyé par le SDK n'est pas utilisé (défense en profondeur, vérifiable).
   - Scrub PII à l'ingestion : query strings retirées des URLs/sources, messages tronqués à 1000 c., stacks à 4000 c. (PLAN §14).
 - **Écarts** : l'edge function Deno est écrite mais **non testée localement** (pas de runtime deno sur la machine) — le parser, lui, est testé via le dev-server Node qui partage le même module. Risque résiduel limité au câblage supabase-js, à vérifier à S6.
+
+## S3 — SDK complet
+
+- **Ce qui a marché** (validation verte du premier coup, scénario headless complet) :
+  - Les **5 Core Web Vitals** (LCP/INP/CLS/FCP/TTFB, build attribution) arrivent en base avec rating seuils 2026 ; CLS réel obtenu via un layout shift volontaire dans la démo.
+  - **Erreurs JS** : `error` (message/type/stack/source/ligne/colonne) et `unhandledrejection` captées et persistées.
+  - **Session stable** après reload (même `session_id`, 1 seule ligne, `page_count` incrémenté à 4), TTL inactivité 30 min via localStorage.
+  - **Routes SPA normalisées** : patch History API → pageviews `/`, `/partners`, `/partners/:id` (ids numériques/uuid/hex → `:id`), `nav_type` navigate/spa/reload corrects.
+- **Valeur réelle** : bundle complet = **22,3 KB gzip** (67,6 KB raw) — cible ≤ 30 KB tenue. Confirme l'analyse du PLAN : la cible « <10 KB » du rapport v1 était irréaliste pour un SDK OTel-natif ; 22 KB est le coût du « vrai OTLP sur le fil ».
+- **Décisions / subtilités** :
+  - Les INP/CLS finals sont émis par web-vitals **pendant** le passage en hidden → le SDK force un flush immédiat quand un span est créé page cachée (sinon le batch serait perdu à l'unload). Vérifié : le beacon part bien depuis l'onglet masqué.
+  - Émission centralisée (`emit`) : attributs communs + hook `beforeSend` (filtrage PII custom) appliqué à tout span ; URLs scrubées (query/fragment retirés) côté SDK **et** côté ingestion.
+  - Attribution web-vitals réduite aux champs primitifs (payload léger, debug lisible) → colonne `jsonb`.
+  - `MIPRum.track()` émet des spans `track.*` ignorés par l'ingestion POC (extensibilité du fil OTLP démontrée sans toucher au backend).

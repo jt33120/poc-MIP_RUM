@@ -46,6 +46,16 @@ function scrubUrl(url) {
   return url.split("?")[0].split("#")[0];
 }
 
+/** L'attribution web-vitals voyage en attribut string JSON -> objet pour le jsonb. */
+function parseAttribution(raw) {
+  if (typeof raw !== "string" || !raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Aplatit un payload OTLP/HTTP JSON en lignes SQL.
  * Rejette (compte) les resourceSpans sans mip.app_id (PLAN §7.2).
@@ -104,7 +114,7 @@ export function flattenOtlp(payload) {
             name,
             value,
             rating: rating2026(name, value),
-            attribution: a["webvital.attribution"] ?? null,
+            attribution: parseAttribution(a["webvital.attribution"]),
             ts,
           });
         } else if (span.name === "exception") {

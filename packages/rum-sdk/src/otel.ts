@@ -21,6 +21,7 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
       "service.version": SDK_VERSION,
       "mip.app_id": cfg.appId,
       "mip.client_id": cfg.clientId ?? "",
+      "mip.user_agent": navigator.userAgent,
       "deployment.environment.name": cfg.env ?? "dev",
     }),
     spanProcessors: [
