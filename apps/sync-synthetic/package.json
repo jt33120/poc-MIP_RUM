@@ -1,0 +1,13 @@
+{
+  "name": "sync-synthetic",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Synchro synthétique DEM (mippoc ou seed) -> syn_snapshot",
+  "type": "module",
+  "scripts": {
+    "sync": "node src/sync.mjs"
+  },
+  "dependencies": {
+    "pg": "8.21.0"
+  }
+}

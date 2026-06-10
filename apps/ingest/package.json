@@ -1,0 +1,13 @@
+{
+  "name": "ingest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Receiver OTLP /v1/traces — edge function Deno (prod) + dev server Node (local) + schéma Postgres",
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.mjs"
+  },
+  "dependencies": {
+    "pg": "8.21.0"
+  }
+}

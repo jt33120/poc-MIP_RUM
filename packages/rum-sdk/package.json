@@ -1,0 +1,24 @@
+{
+  "name": "@mip/rum-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MIP RUM Web SDK — OTel-Web lean + web-vitals, OTLP/HTTP JSON",
+  "type": "module",
+  "main": "dist/index.mjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "size-check": "node build.mjs --size-only"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/core": "2.7.1",
+    "@opentelemetry/exporter-trace-otlp-http": "0.218.0",
+    "@opentelemetry/resources": "2.7.1",
+    "@opentelemetry/sdk-trace-web": "2.7.1",
+    "web-vitals": "5.3.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.0",
+    "typescript": "5.9.3"
+  }
+}

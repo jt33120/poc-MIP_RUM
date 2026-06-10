@@ -1,0 +1,12 @@
+{
+  "name": "mip-rum",
+  "version": "0.1.0",
+  "private": true,
+  "description": "POC MIP RUM — Real User Monitoring OpenTelemetry-native (hybride : OTLP/HTTP JSON + Postgres)",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test:unit": "vitest run tests/unit",
+    "test:e2e": "playwright test"
+  },
+  "packageManager": "pnpm@9.15.9"
+}
