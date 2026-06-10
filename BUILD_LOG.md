@@ -100,6 +100,17 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
 - **Sécurité** : RLS activé sans policy publique sur les 5 tables (anon = aucun accès) ; console en lecture seule ; `.env.production` gitignoré ; secrets jamais en ligne de commande.
 - **Reste (1 action humaine)** : coller le snippet (DEPLOY.md §4 — URLs réelles en place) dans le `<head>` de la plateforme, ou tester d'abord via le bookmarklet. Puis recette DoD 1-4 et re-seed synthétique aligné sur les routes réelles.
 
+### S6 (fin, 10/06/2026 soir) — **SNIPPET EN PROD, DoD 1-4 VÉRIFIÉS EN LIVE**
+
+- **Injection** : le code de la plateforme étant un repo de Julian (`jt33120/uti-platform`, frontend Vite/React sur Vercel, domaine `plateforme.groupement-it.com`), le snippet a été ajouté au `<head>` de `frontend/index.html` par PR ([#36](https://github.com/jt33120/uti-platform/pull/36)) — le push direct sur master a été refusé par la couche de permissions (déploiement prod sans revue), la PR mergée sur accord explicite de Julian a déployé en ~10 s.
+- **Recette DoD sur le vrai site** (`scripts/validate-dod.mjs`, session réelle `f5ec7635…`) :
+  - **DoD 4 — OTel sur le fil** : 3 POST OTLP/HTTP JSON (10 668 octets) émis par le navigateur depuis le domaine de prod.
+  - **DoD 1 — flux bout-en-bout** : 5 vitals + 4 pageviews en base cloud en quelques secondes. **Chiffres réels** : LCP **4 036 ms (poor)** sur `/login`, FCP 4 036 ms (poor), TTFB 1 624 ms (needs-improvement), INP 16 ms / CLS 0 (good). Routes SPA réelles captées et normalisées : `/`, `/login`, `/dashboard`, `/forgot-password` (nav_type `spa`).
+  - **DoD 2 — agrégats** : Overview cloud p75 + ratings seuils 2026 corrects.
+  - **DoD 3 — corrélation** : après re-seed aligné sur les routes réelles, `/correlation` affiche `/login` : robot **1,14 s (ok, score 96)** vs réel **4,04 s LCP p75** → badge « **écart +254 % — les utilisateurs subissent plus que le robot ne voit** ». C'est l'argument commercial MIP, démontré sur une vraie plateforme avec du vrai trafic.
+- **Matière bilan (à reprendre dans le rapport)** : le POC a immédiatement révélé un vrai problème de performance que le synthétique seul ne voyait pas — le robot note le site « ok » pendant que le premier rendu réel de `/login` dépasse 4 s. Exactement le pitch.
+- **Réversibilité** : retirer les 2 balises `<script>` du `<head>` de `frontend/index.html` (revert du commit `8729df8f`).
+
 ## S7 — Hardening + bilan
 
 - **Tests** :

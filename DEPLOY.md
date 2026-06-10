@@ -1,6 +1,6 @@
 # DEPLOY — Mise en production POC (Supabase + Vercel + snippet G-IT)
 
-Statut S6 : **DÉPLOYÉ le 10/06/2026** (via MCP Supabase + CLI Vercel, autorisé par Julian). Reste : **coller le snippet (§4)**.
+Statut S6 : **TERMINÉ le 10/06/2026** — infra déployée (MCP Supabase + CLI Vercel) **et snippet EN PROD** sur `plateforme.groupement-it.com` (PR [uti-platform#36](https://github.com/jt33120/uti-platform/pull/36), mergée avec l'accord de Julian). **DoD 1-4 vérifiés en live** : `node scripts/validate-dod.mjs`.
 
 | Ressource | URL |
 |---|---|
