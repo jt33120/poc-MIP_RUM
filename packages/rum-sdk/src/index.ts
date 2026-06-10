@@ -4,6 +4,7 @@ import { currentRoute, initNavigation, scrubUrl } from "./context";
 import { initErrors, type Emit } from "./errors";
 import { initLongTasks } from "./longtasks";
 import { forceFlush, initOtel } from "./otel";
+import { isReplaySampled, startReplay } from "./replay";
 import { DEFAULT_SLOW_RESOURCE_MS, initResources } from "./resources";
 import { replayRetryQueue } from "./retry";
 import { getOrCreateSession, touchSession, type Session } from "./session";
@@ -17,6 +18,7 @@ let trail: BreadcrumbTrail | null = null;
 let gate: ConsentGate | null = null;
 let deliver: Emit | null = null; // émission réelle (post-consent)
 let replayRetry: (() => void) | null = null;
+let replayArm: (() => void) | null = null; // replay échantillonné, en attente de consent
 
 export function init(cfg: MIPRumConfig): void {
   if (initialized) return;
@@ -29,6 +31,8 @@ export function init(cfg: MIPRumConfig): void {
 
   session = getOrCreateSession();
   const tracer = initOtel(cfg);
+  // fuseau horaire (B1 : mapping tz -> geo_country à l'ingestion, zéro IP stockée)
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   // émission réelle : crée le span OTel (ts optionnel = rejeu consent/retry)
   const realEmit: Emit = (name, attrs, ts) => {
@@ -37,6 +41,7 @@ export function init(cfg: MIPRumConfig): void {
       "mip.session_id": session!.sessionId,
       "mip.user_hash": session!.userHash,
       "mip.route": currentRoute(),
+      "mip.tz": tz,
       "mip.device_type": /mobile|tablet/i.test(navigator.userAgent)
         ? "mobile"
         : "desktop",
@@ -99,7 +104,17 @@ export function init(cfg: MIPRumConfig): void {
       span.end(endMs);
     });
   };
-  if (gate.granted) replayRetry();
+
+  // session replay (B2) : échantillonné une fois à l'init, démarré seulement
+  // quand le consent est acquis (lazy-load du bundle séparé mip-rum-replay.js)
+  replayArm = isReplaySampled(cfg.replay)
+    ? () => startReplay(cfg, session!.sessionId)
+    : null;
+
+  if (gate.granted) {
+    replayRetry();
+    replayArm?.();
+  }
 }
 
 /**
@@ -109,7 +124,10 @@ export function init(cfg: MIPRumConfig): void {
 export function consent(granted: boolean): void {
   if (!gate || !deliver) return; // init() non appelé ou session non échantillonnée
   gate.set(granted, deliver);
-  if (granted) replayRetry?.();
+  if (granted) {
+    replayRetry?.();
+    replayArm?.(); // replay en attente de consent : démarre maintenant
+  }
 }
 
 /**

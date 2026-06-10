@@ -3,6 +3,9 @@
 // v0.2 : nouvelles tables (resource/longtask/breadcrumb/event), inserts batch
 // multi-lignes (une requête par table), vérif clé d'API (REQUIRE_API_KEY),
 // rate limit 600 req/min par app_id.
+// v0.3 : geo_country (mip.tz -> pays, mapping _shared/tz-country.mjs) dans
+// l'upsert session ; rate limit durable via rate_check() SQL (compteur mémoire
+// conservé en pré-filtre rapide + fallback si SQL indisponible).
 import { createHash } from "node:crypto";
 import http from "node:http";
 import pg from "pg";
@@ -77,6 +80,23 @@ function rateLimited(appId) {
   return false;
 }
 
+// v0.3 : compteur durable rate_check() (table rate_counter, partagé entre
+// process). Pré-filtre mémoire d'abord (rapide, épargne le SQL en cas de
+// flood), puis SQL ; si le SQL échoue -> fallback sur le verdict mémoire.
+async function rateLimitedDurable(appId) {
+  if (rateLimited(appId)) return true;
+  try {
+    const { rows } = await pool.query("select rate_check($1, $2) as ok", [
+      appId,
+      RATE_LIMIT_PER_MIN,
+    ]);
+    return rows[0].ok === false;
+  } catch (err) {
+    console.error("[ingest] rate_check sql failed (fallback mémoire):", err.message);
+    return false; // le compteur mémoire a déjà accepté
+  }
+}
+
 // --- Écriture : un insert multi-lignes par table ------------------------------
 function batchInsert(client, table, cols, rows, conflictClause) {
   if (!rows.length) return Promise.resolve();
@@ -114,12 +134,13 @@ async function writeRows({
     await batchInsert(
       client,
       "rum_session",
-      ["session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type", "started_at", "last_seen_at", "page_count"],
+      ["session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type", "geo_country", "started_at", "last_seen_at", "page_count"],
       sessions.map((s) => ({ ...s, started_at: s.last_seen_at, page_count: s.page_count_inc })),
       `on conflict (session_id) do update
          set last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at),
              page_count   = rum_session.page_count + excluded.page_count,
-             user_agent   = coalesce(rum_session.user_agent, excluded.user_agent)`,
+             user_agent   = coalesce(rum_session.user_agent, excluded.user_agent),
+             geo_country  = coalesce(rum_session.geo_country, excluded.geo_country)`,
     );
     await batchInsert(
       client,
@@ -213,9 +234,9 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ error: reason }));
       }
     }
-    // rate limit (429) — une fois par app et par requête
+    // rate limit (429) — une fois par app et par requête (durable : rate_check SQL)
     for (const appId of new Set(rows.apiKeys.map((k) => k.app_id))) {
-      if (rateLimited(appId)) {
+      if (await rateLimitedDurable(appId)) {
         console.warn(`[ingest] 429 rate limit exceeded for app: ${appId}`);
         res.writeHead(429, { "content-type": "application/json", "retry-after": "60", ...cors });
         return res.end(JSON.stringify({ error: `rate limit exceeded for app: ${appId}` }));

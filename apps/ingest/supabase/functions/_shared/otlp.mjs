@@ -1,5 +1,7 @@
 // Parser OTLP/HTTP JSON -> lignes SQL. JS pur, sans dépendance :
 // importé tel quel par le dev-server Node (local) et l'edge function Deno (prod).
+// v0.3 : geo timezone->pays (attribut span mip.tz -> sessions[].geo_country).
+import { tzToCountry } from "./tz-country.mjs";
 
 // Seuils 2026 (PLAN annexe B) — bornes [good, needs-improvement]
 const THRESHOLDS = {
@@ -146,10 +148,13 @@ export function flattenOtlp(payload) {
           user_hash: a["mip.user_hash"] ?? null,
           user_agent: res["mip.user_agent"] ?? null,
           device_type: a["mip.device_type"] ?? null,
+          geo_country: null,
           last_seen_at: ts,
           page_count_inc: 0,
         };
         if (ts > s.last_seen_at) s.last_seen_at = ts;
+        // geo RGPD-friendly : timezone (attrs communs SDK v0.3) -> pays, null si inconnue
+        if (s.geo_country == null && a["mip.tz"]) s.geo_country = tzToCountry(a["mip.tz"]);
         sessions.set(sessionId, s);
 
         if (span.name.startsWith("webvital.")) {

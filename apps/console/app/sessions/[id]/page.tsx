@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import ReplayPlayer from "@/components/replay/ReplayPlayer";
 import { browserFromUA, fmtDate, fmtVital } from "@/lib/format";
 import { sessionMeta, sessionTimeline, type TimelineItem, type TimelineKind } from "@/lib/queries";
 import { RATING_CLASS, type Rating } from "@/lib/rating";
@@ -55,9 +56,24 @@ export default async function SessionDetail({
   const [meta, timeline] = await Promise.all([sessionMeta(id), sessionTimeline(id)]);
   if (!meta) notFound();
 
+  // scoping viewer : une session d'une app hors périmètre est invisible (404)
+  const { getUser } = await import("@/lib/auth");
+  const user = await getUser();
+  if (user?.apps && !user.apps.includes(meta.app_id)) notFound();
+
+  // filtres globaux conservés dans les liens, onglet exclu (propre au détail)
   const qs = new URLSearchParams(
-    Object.entries(sp).flatMap(([k, v]) => (typeof v === "string" ? [[k, v] as [string, string]] : [])),
+    Object.entries(sp).flatMap(([k, v]) =>
+      typeof v === "string" && k !== "tab" ? [[k, v] as [string, string]] : [],
+    ),
   ).toString();
+  const tab: "timeline" | "replay" = sp.tab === "replay" ? "replay" : "timeline";
+  const tabHref = (t: "timeline" | "replay") => {
+    const p = new URLSearchParams(qs);
+    if (t === "replay") p.set("tab", "replay");
+    const s = p.toString();
+    return `/sessions/${meta.session_id}${s ? `?${s}` : ""}`;
+  };
   const t0 = new Date(meta.started_at).getTime();
   const durationMs = new Date(meta.last_seen_at).getTime() - t0;
   const counts = timeline.reduce<Partial<Record<TimelineKind, number>>>((acc, it) => {
@@ -101,18 +117,47 @@ export default async function SessionDetail({
           ))}
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        {timeline.length ? (
-          <ol className="relative ml-2 border-l-2 border-slate-200" data-testid="timeline">
-            {timeline.map((it, i) => (
-              <TimelineRow key={i} item={it} t0={t0} />
-            ))}
-          </ol>
-        ) : (
-          <p className="py-8 text-center text-sm text-slate-400">Aucun événement enregistré pour cette session</p>
-        )}
+      {/* v0.3 — onglets Timeline | Replay (B2) */}
+      <div className="mb-4 flex gap-1 border-b border-slate-200" data-testid="session-tabs">
+        <TabLink href={tabHref("timeline")} active={tab === "timeline"}>
+          Timeline
+        </TabLink>
+        <TabLink href={tabHref("replay")} active={tab === "replay"}>
+          Replay
+        </TabLink>
       </div>
+
+      {tab === "replay" ? (
+        <ReplayPlayer sessionId={meta.session_id} />
+      ) : (
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          {timeline.length ? (
+            <ol className="relative ml-2 border-l-2 border-slate-200" data-testid="timeline">
+              {timeline.map((it, i) => (
+                <TimelineRow key={i} item={it} t0={t0} />
+              ))}
+            </ol>
+          ) : (
+            <p className="py-8 text-center text-sm text-slate-400">Aucun événement enregistré pour cette session</p>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function TabLink({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+        active
+          ? "border-blue-600 text-blue-700"
+          : "border-transparent text-slate-500 hover:text-slate-700"
+      }`}
+    >
+      {children}
+    </Link>
   );
 }
 

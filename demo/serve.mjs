@@ -12,6 +12,11 @@ const ROUTES = {
     file: join(__dirname, "../packages/rum-sdk/dist/mip-rum.js"),
     type: "application/javascript",
   },
+  // v0.3 — bundle replay séparé, lazy-loadé par le cœur (même origine)
+  "/mip-rum-replay.js": {
+    file: join(__dirname, "../packages/rum-sdk/dist/mip-rum-replay.js"),
+    type: "application/javascript",
+  },
 };
 
 const server = http.createServer(async (req, res) => {

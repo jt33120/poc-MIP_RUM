@@ -2,6 +2,31 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
+## v0.3 — sprint nuit 2 (en intégration, phases C/D)
+
+Périmètre : [ROADMAP_V03.md](ROADMAP_V03.md). Contrat de données verrouillé avant build (`apps/ingest/sql/migration-v03.sql` : `replay_chunk`, `console_user`, `audit_log`, `alert_delivery`, `rate_counter` + `rate_check()`, vue `v_anomaly`, `check_alerts()` v2 avec garde pg_net). Dépendances épinglées : rrweb 2.0.1, rrweb-player 2.0.1, bcryptjs 3.0.3, jose 6.2.3.
+
+### Alerting sortant, géo, rate limit durable (B1)
+- Webhooks d'alerte : `net.http_post` (pg_net, cloud) + dispatcher node local, payload JSON générique compatible Slack, traçabilité par ligne `alert_delivery`.
+- Géolocalisation **par timezone** : attribut `mip.tz` côté SDK → mapping tz→pays à l'ingestion → `rum_session.geo_country`. Granularité pays, zéro adresse IP stockée.
+- Rate limit durable : compteur SQL partagé entre isolats edge (`rate_check()`), fallback mémoire.
+
+### Session replay (B2)
+- Module SDK **séparé lazy-chargé** `mip-rum-replay.js` (rrweb) : opt-in par app (`replay_sample_rate`), masquage des saisies par défaut, respect du consent, chunks gzip (CompressionStream) vers `POST /v1/replay`, caps 2 min / 1 Mo par session. Le bundle cœur reste inchangé (23,8 KB gzip ≤ budget 35 KB).
+- Console : player rrweb dans la vue session (onglet Replay), chunks servis par une route API authentifiée.
+
+### RBAC console (B3)
+- Login email + mot de passe (bcryptjs, JWT cookie httpOnly signé) en remplacement du basic auth ; rôles **admin** / **viewer** (scopé à une liste d'apps) ; gestion des utilisateurs (admin) ; `audit_log` des actions sensibles. `/mip-rum*.js` et `/v1/*` restent publics.
+
+### ClickHouse (B4)
+- Chemin prod prouvé en local : docker-compose officiel, schéma MergeTree, writer dans le dev-server derrière `STORE=clickhouse|both`, bench 100 k events avec comparaison des p75 PG vs CH — chiffres dans `infra/clickhouse.notes.md`.
+
+### Produit & vente (B5)
+- **Health score** par app en Overview, formule documentée 0-100 (`apps/console/lib/health.ts`) : 40 % vitals (part de mesures « good », LCP pondéré x2), 30 % erreurs (1 − erreurs/pages vues, plancher 0), 20 % stabilité (sessions sans erreur), 10 % anomalies (−2,5 pts par ligne `v_anomaly` 24 h). Libellés Excellent ≥ 90 / Bon ≥ 75 / Dégradé ≥ 50 / Critique < 50 ; composante sans donnée exclue avec renormalisation. Vérifié à la main sur l'échantillon local : 136/152 mesures good pondérées + 23 err/67 pv + 9/29 sessions saines + 0 anomalie → 35,8 + 19,7 + 6,2 + 10 = 71,7 → **72 « Dégradé »**, identique au rendu console.
+- Badge « N anomalie(s) détectée(s) » + tableau des anomalies LCP 24 h (z-score, ancre `#anomalies`) ; respecte les filtres app/période (anomalies = 24 h fixes).
+- Docs vente : [docs/OFFRE.md](docs/OFFRE.md) (comparatif marché honnête — le différenciateur est le créneau OTel/souverain/corrélation, pas la parité fonctionnelle ; pricing 3 paliers indicatif à valider MIP) et [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) (démo 10 min, plan B hors-ligne, objections/réponses).
+- [docs/LIMITES.md](docs/LIMITES.md) : section v0.3 — résolu cette nuit vs vraies barrières enterprise restantes (mobile natif, mapping auto route↔mesure, ML, multi-région, certifications, support 24/7).
+
 ## v0.2 — 2026-06-11 (sprint nuit, livré)
 
 Périmètre : [ROADMAP_V02.md](ROADMAP_V02.md). Contrat de données verrouillé avant build (`apps/ingest/sql/migration-v02.sql`). Traite les limites n° 1-4, 7-11, 14-18, 23, 24-25 de [docs/LIMITES.md](docs/LIMITES.md). Statut par chantier dans le rapport du matin (`RAPPORT_NUIT.md`).

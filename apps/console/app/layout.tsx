@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { GlobalFilters } from "@/components/GlobalFilters";
 import { Nav } from "@/components/Nav";
+import { getUser } from "@/lib/auth";
 import { listApps } from "@/lib/queries";
+import { logoutAction } from "./logout/actions";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,7 +21,24 @@ const RUM_INIT = RUM_ENDPOINT
   : null;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const apps = await listApps();
+  const user = await getUser();
+
+  // non connecté : seule /login passe le middleware -> coquille nue, sans sidebar
+  if (!user) {
+    return (
+      <html lang="fr">
+        <body className="min-h-screen bg-slate-100 text-slate-900 antialiased">{children}</body>
+      </html>
+    );
+  }
+
+  // RBAC : le sélecteur d'app ne propose que les apps autorisées (viewer scopé)
+  const allApps = await listApps();
+  const apps =
+    user.role === "admin" || !user.apps?.length
+      ? allApps
+      : allApps.filter((a) => user.apps!.includes(a.app_id));
+
   return (
     <html lang="fr">
       <body className="min-h-screen bg-slate-100 text-slate-900 antialiased">
@@ -35,9 +55,42 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Suspense>
               <Nav />
             </Suspense>
-            <footer className="mt-auto px-2 pt-6 text-[11px] text-slate-500">
-              POC v0.2 — OTel-native
-            </footer>
+            {user.role === "admin" && (
+              <div className="mt-4 border-t border-slate-800 pt-3">
+                <div className="px-3 pb-1 text-[11px] uppercase tracking-wide text-slate-500">
+                  Administration
+                </div>
+                <nav className="flex flex-col gap-1">
+                  <Link
+                    href="/admin/users"
+                    className="rounded px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                  >
+                    Utilisateurs
+                  </Link>
+                  <Link
+                    href="/admin/audit"
+                    className="rounded px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                  >
+                    Audit
+                  </Link>
+                </nav>
+              </div>
+            )}
+            <div className="mt-auto px-2 pt-6">
+              <div className="mb-2 truncate text-[11px] text-slate-400" title={user.email}>
+                {user.email} · {user.role}
+              </div>
+              <form action={logoutAction}>
+                <button
+                  type="submit"
+                  data-testid="logout"
+                  className="w-full rounded bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700"
+                >
+                  Se déconnecter
+                </button>
+              </form>
+              <footer className="pt-3 text-[11px] text-slate-500">POC v0.2 — OTel-native</footer>
+            </div>
           </aside>
           <div className="flex min-w-0 flex-1 flex-col">
             <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-8 py-3 backdrop-blur">

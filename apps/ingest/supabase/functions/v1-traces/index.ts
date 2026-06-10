@@ -3,6 +3,9 @@
 // v0.2 : nouvelles tables (resource/longtask/breadcrumb/event), vérif clé d'API
 // (REQUIRE_API_KEY via Deno.env, défaut false), rate limit 600 req/min par app_id
 // (mémoire d'isolat : best effort, suffisant contre le flood accidentel).
+// v0.3 : rate limit durable rate_check() partagé entre isolats (mémoire gardée
+// en pré-filtre + fallback) ; geo_country priorité mip.tz (mapping tz->pays),
+// fallback header CDN cf-ipcountry.
 // @ts-nocheck deno runtime
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { flattenOtlp } from "../_shared/otlp.mjs";
@@ -76,6 +79,24 @@ function rateLimited(appId: string): boolean {
   return false;
 }
 
+// v0.3 : compteur durable rate_check() (table rate_counter, partagé entre
+// isolats). Pré-filtre mémoire d'abord (zéro round-trip en cas de flood local),
+// puis RPC ; si l'RPC échoue -> fallback sur le verdict mémoire (best of both).
+async function rateLimitedDurable(appId: string): Promise<boolean> {
+  if (rateLimited(appId)) return true;
+  try {
+    const { data, error } = await supabase.rpc("rate_check", {
+      p_app_id: appId,
+      p_limit: RATE_LIMIT_PER_MIN,
+    });
+    if (error) throw error;
+    return data === false;
+  } catch (err) {
+    console.warn("[v1-traces] rate_check rpc failed (fallback mémoire):", err);
+    return false; // le compteur mémoire a déjà accepté
+  }
+}
+
 Deno.serve(async (req) => {
   const cors = corsHeaders(req.headers.get("origin") ?? "");
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
@@ -97,9 +118,9 @@ Deno.serve(async (req) => {
         });
       }
     }
-    // rate limit (429) — une fois par app et par requête
+    // rate limit (429) — une fois par app et par requête (durable : rate_check RPC)
     for (const appId of new Set(rows.apiKeys.map((k) => k.app_id))) {
-      if (rateLimited(appId)) {
+      if (await rateLimitedDurable(appId)) {
         console.warn(`[v1-traces] 429 rate limit exceeded for app: ${appId}`);
         return new Response(JSON.stringify({ error: `rate limit exceeded for app: ${appId}` }), {
           status: 429,
@@ -108,7 +129,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // géo approximative sans stocker l'IP (PLAN §14) — header CDN si présent
+    // géo sans stocker l'IP (PLAN §14) — priorité mip.tz (mapping tz->pays,
+    // renseigné par flattenOtlp), fallback header CDN si présent
     const country = req.headers.get("cf-ipcountry") ?? req.headers.get("x-vercel-ip-country");
 
     for (const s of sessions) {
@@ -119,7 +141,7 @@ Deno.serve(async (req) => {
         p_user_hash: s.user_hash,
         p_user_agent: s.user_agent,
         p_device_type: s.device_type,
-        p_geo_country: country,
+        p_geo_country: s.geo_country ?? country,
         p_last_seen_at: s.last_seen_at,
         p_page_count_inc: s.page_count_inc,
       });

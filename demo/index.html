@@ -23,6 +23,9 @@
       flushIntervalMs: 2000,
       slowResourceMs: 300,
       requireConsent: new URLSearchParams(location.search).has("requireConsent"),
+      // v0.3 — session replay (bundle séparé lazy-loadé ; receveur local :4319)
+      replay: true,
+      replayEndpoint: "http://localhost:4319/v1/replay",
     });
   </script>
 </head>
@@ -41,6 +44,17 @@
   </div>
 
   <div id="view">Accueil</div>
+
+  <!-- v0.3 — démo masquage replay : la saisie apparaît en *** dans le player
+       (maskAllInputs), le bloc .mip-rum-block n'est pas enregistré du tout -->
+  <p style="margin-top:1rem">
+    <label>Champ masqué dans le replay :
+      <input id="input-masked" type="text" placeholder="tapez un secret…" />
+    </label>
+  </p>
+  <p class="mip-rum-block" style="background:#fee2e2;padding:0.5rem">
+    Bloc exclu du replay (classe <code>mip-rum-block</code>) — ex. données patient/IBAN.
+  </p>
 
   <script>
     // layout shift volontaire (~600 ms après le load, hors interaction) -> CLS réel mesurable

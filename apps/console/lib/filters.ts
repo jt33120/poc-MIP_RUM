@@ -24,12 +24,16 @@ function first(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
-export function parseFilters(sp: SearchParams): Filters {
+export function parseFilters(sp: SearchParams, allowedApps?: string[] | null): Filters {
   const period = first(sp.period);
   const device = first(sp.device);
-  const app = first(sp.app);
+  const raw = first(sp.app);
+  let app = raw && raw !== "all" ? raw : null;
+  // RBAC v0.3 : liste blanche optionnelle (viewer scopé) — app hors scope ou
+  // « toutes » -> fallback 1re app autorisée. Sans liste : comportement v0.2.
+  if (allowedApps?.length && (!app || !allowedApps.includes(app))) app = allowedApps[0];
   return {
-    app: app && app !== "all" ? app : null,
+    app,
     period: period === "1h" || period === "7d" ? period : "24h",
     device: device === "desktop" || device === "mobile" ? device : null,
   };

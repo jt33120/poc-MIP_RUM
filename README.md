@@ -62,8 +62,11 @@ La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) re
 | Document | Contenu |
 |---|---|
 | [docs/INTEGRATION.md](docs/INTEGRATION.md) | Guide d'intégration client : snippet, options, consent mode, CSP, RGPD, dépannage |
+| [docs/OFFRE.md](docs/OFFRE.md) | Positionnement commercial : comparatif marché honnête, arguments grands comptes FR, pricing indicatif |
+| [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) | Déroulé de démo 10 min (DSI grand compte) : checklist, plan B hors-ligne, objections/réponses |
 | [ROADMAP_V02.md](ROADMAP_V02.md) | Plan v0.2 (sprint nuit 10→11/06) + contrat de données verrouillé |
-| [docs/LIMITES.md](docs/LIMITES.md) | Limites explicites du produit, et ce que la v0.2 traite |
+| [ROADMAP_V03.md](ROADMAP_V03.md) | Plan v0.3 (sprint nuit 2) + contrat de données verrouillé (`migration-v03.sql`) |
+| [docs/LIMITES.md](docs/LIMITES.md) | Limites explicites du produit, ce que v0.2/v0.3 traitent, ce qui reste |
 | [DEPLOY.md](DEPLOY.md) | Déploiement cloud (Supabase + Vercel) + snippet prod + recette |
 | [BUILD_LOG.md](BUILD_LOG.md) | Journal factuel du build (valeurs réelles mesurées, pièges, décisions) |
 | [CHANGELOG.md](CHANGELOG.md) | Historique des versions |
@@ -72,4 +75,5 @@ La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) re
 ## Statut
 
 - **v0.1** : POC terminé et **déployé en production** (ingestion Supabase Paris, console Vercel, snippet live sur la plateforme G-IT). DoD 1-4 vérifiés en live, tests 36 unitaires + 5 E2E verts.
-- **v0.2** : en cours (sprint nuit du 10→11/06/2026) — voir [ROADMAP_V02.md](ROADMAP_V02.md) et [CHANGELOG.md](CHANGELOG.md).
+- **v0.2** : livrée (sprint nuit du 10→11/06/2026) — resource timings, breadcrumbs, consent RGPD, clés d'API, filtres globaux, sessions détaillées, erreurs groupées, alerting, CI. Voir [ROADMAP_V02.md](ROADMAP_V02.md) et [CHANGELOG.md](CHANGELOG.md).
+- **v0.3** : sprint nuit 2 — session replay (rrweb, module séparé), RBAC console (rôles admin/viewer), webhooks d'alerte sortants, géo par timezone (zéro IP), rate limit durable, détection d'anomalies (z-score) + **health score** en Overview, chemin ClickHouse bench-é en local. Voir [ROADMAP_V03.md](ROADMAP_V03.md).

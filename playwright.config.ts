@@ -19,6 +19,11 @@ export default defineConfig({
       reuseExistingServer: true,
     },
     {
+      command: "node apps/ingest/replay-dev-server.mjs",
+      url: "http://localhost:4319/__health",
+      reuseExistingServer: true,
+    },
+    {
       command: "pnpm --filter console dev",
       url: "http://localhost:3000",
       reuseExistingServer: true,

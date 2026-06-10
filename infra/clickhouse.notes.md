@@ -1,60 +1,113 @@
-# ClickHouse — cible de stockage prod (notes de migration)
+# ClickHouse — chemin prod prouvé en local (B4, v0.3)
 
-> POC = Postgres (Supabase). Prod = ClickHouse (décision rapport v1, option E).
-> Le POC étant **OTLP-natif sur le fil**, la migration ne touche ni le SDK ni le site :
-> on remplace le receiver (fonction serverless → OTel Collector) et le store (Postgres → ClickHouse).
+> POC/v0.2 = Postgres (Supabase). Prod grand compte = ClickHouse (décision rapport v1, option E).
+> v0.3 : le chemin est **prouvé en local** — schéma MergeTree appliqué, 100 000 metrics réalistes
+> insérées dans les deux stores, mêmes p75 au millième près, chiffres ci-dessous mesurés pour de vrai.
 
-## Pourquoi ClickHouse (rappel)
+## Bench réel (11/06/2026, local)
 
-- Store de facto de l'observabilité moderne : SigNoz, Uptrace, ClickStack/HyperDX (racheté par ClickHouse Inc.), Highlight.io. Licence Apache-2.0, déployable **on-prem** (argument CSPN/souveraineté MIP).
-- Colonne + compression : des milliards d'events RUM, agrégats p75/p95 en ms via `quantileTDigest`.
-- Postgres tient très bien l'échelle POC (mesuré au build : ~4 000 events/s ingérés via le dev-server local, 1 000 events en 0,3 s) mais ne tiendra pas des dizaines de Mevents/jour multi-clients avec des percentiles à la volée.
+- **Setup** : ClickHouse 26.3.12.3 LTS (`clickhouse/clickhouse-server:26.3-alpine`, HTTP :8123, volume tmpfs)
+  vs Postgres 15.18 (conteneur `mip-rum-db` :5433, table unlogged + 2 indexes alignés prod). Même machine (Mac, Docker).
+- **Dataset** : 100 000 `rum_metric` déterministes (seed fixe) — 4 routes pondérées (dont `/login` lente ×1,4,
+  cf. POC G-IT), 5 vitals (LCP/INP/CLS/FCP/TTFB), valeurs log-normales, 6 674 sessions, 20 000 pageviews
+  répartis sur 7 jours. Reproductible : `node infra/clickhouse/bench.mjs`.
+- **Protocole** : 1 warm-up + 3 runs par requête, **médiane** retenue. Égalité des résultats vérifiée
+  ligne à ligne (tolérance 1 ms sur les p75, stricte sur les comptages).
 
-## Schéma cible (équivalent des tables POC)
+| Requête (console)             | Lignes | PG médian | CH médian | CH/PG     | Égalité p75      |
+| ----------------------------- | ------ | --------- | --------- | --------- | ---------------- |
+| p75 LCP par route (24 h)      | 4      | 2,1 ms    | 6,8 ms    | ×3,2      | **Δ = 0** (exact) |
+| Série horaire p75 LCP (7 j)   | 168    | 30,7 ms   | 13,9 ms   | **×0,45** | **Δ = 0** (exact) |
+| Top routes par sessions (7 j) | 4      | 138,3 ms  | 11,4 ms   | **×0,08** | strict OK        |
+
+- **Insert** (100 k lignes, 1 connexion) : PG 993 ms (batchs 1 000) | CH 1 139 ms (JSONEachRow, batchs 10 000)
+  → ~88 000 lignes/s côté CH sans le moindre tuning.
+- **Disque** : PG **17,8 MB** (table + indexes) | CH **1,2 MB** compressé (3,7 MB bruts, compression ×3,1)
+  → **×15** plus compact à données identiques.
+- 2ᵉ run de contrôle : mêmes ratios (2,3/7,4 — 31,8/14,2 — 138,0/11,8 ms), variance < 10 %.
+
+### Lecture honnête des chiffres
+
+- Sur la **petite requête point** (p75 24 h, ~14 k lignes scannées), PG gagne : l'aller-retour HTTP de CH
+  (~5 ms incompressibles) domine. À cette volumétrie, n'importe quel store convient.
+- Dès que la requête **scanne large** (série horaire 7 j : ×2,2 ; `count(distinct session_id)` : **×12**),
+  CH l'emporte nettement — et c'est exactement le profil des requêtes console. L'écart croît avec le volume :
+  les percentiles PG (`percentile_cont`) trient en mémoire, CH streame en colonnes.
+- **L'égalité p75 est exacte (Δ = 0)**, pas seulement « dans la tolérance » : `quantileExactInclusive`
+  implémente la même interpolation que `percentile_cont`. La console peut migrer sans renuméroter ses graphes.
+
+## Schéma appliqué (infra/clickhouse/schema.sql)
+
+Sous-ensemble des colonnes Postgres suffisant pour tous les agrégats console :
 
 ```sql
-CREATE TABLE rum_metric (
-  app_id        LowCardinality(String),
-  client_id     LowCardinality(String),
-  session_id    String,
-  route         LowCardinality(String),
-  name          LowCardinality(String),   -- LCP|INP|CLS|FCP|TTFB
-  value         Float64,
-  rating        LowCardinality(String),
-  device_type   LowCardinality(String),
-  geo_country   LowCardinality(String),
-  attribution   String,                    -- JSON
-  ts            DateTime64(3)
+CREATE TABLE rum_metric_ch (
+  app_id      LowCardinality(String),
+  route       LowCardinality(String),
+  name        LowCardinality(String),   -- LCP|INP|CLS|FCP|TTFB
+  value       Float64,
+  rating      LowCardinality(String),   -- good|needs-improvement|poor
+  session_id  String,
+  ts          DateTime64(3, 'UTC')
 ) ENGINE = MergeTree
-ORDER BY (app_id, route, name, ts)
-TTL toDateTime(ts) + INTERVAL 30 DAY;      -- rétention RGPD
-
--- p75 horaire pré-agrégé (la requête qui fait vivre la console)
-CREATE MATERIALIZED VIEW rum_metric_hourly
-ENGINE = AggregatingMergeTree
-ORDER BY (app_id, route, name, bucket) AS
-SELECT app_id, route, name,
-       toStartOfHour(ts)                  AS bucket,
-       quantileTDigestState(0.75)(value)  AS p75_state,
-       count()                            AS n
-FROM rum_metric
-GROUP BY app_id, route, name, bucket;
--- lecture : quantileTDigestMerge(0.75)(p75_state)
+PARTITION BY toDate(ts)
+ORDER BY (app_id, name, route, ts);
+-- + rum_pageview_ch (url, nav_type), rum_error_ch (kind, message, error_type, fingerprint)
+-- En prod : ajouter TTL toDateTime(ts) + INTERVAL 30 DAY (rétention RGPD)
+-- et une MV AggregatingMergeTree quantileTDigestState(0.75) par heure pour le multi-milliards.
 ```
 
-Idem `rum_error`, `rum_pageview`, `rum_session` (ReplacingMergeTree sur session_id),
-`syn_snapshot` ; `v_correlation` devient une requête de jointure sur les agrégats horaires.
+Écriture : `infra/clickhouse/writer.mjs` — interface HTTP native (`fetch` node 26, JSONEachRow,
+batchs 10 000), **zéro dépendance**. Prêt à brancher derrière `STORE=clickhouse|both` dans le dev-server.
 
-## Étapes de migration (1 cran à la fois)
+## Chemin de migration (1 cran à la fois, rien ne change côté client)
 
-1. Déployer Collector + ClickHouse (cf. `otel-collector.example.yaml`) — on-prem ou cloud souverain.
-2. Pointer le snippet sur le Collector (`endpoint:` dans `MIPRum.init`) — seul changement côté client.
-3. Rejouer le parser : la logique `flattenOtlp` (attributs `mip.*`/`webvital.*` → colonnes) se transpose dans le pipeline Collector (processor) ou en vues ClickHouse sur `otel_traces`.
-4. Brancher la console sur ClickHouse (driver HTTP, mêmes requêtes p75 via quantiles).
-5. Décommissionner la fonction serverless.
+1. Déployer **OTel Collector + ClickHouse** (cf. `infra/otel-collector.example.yaml`) — on-prem ou cloud
+   souverain (argument CSPN/souveraineté MIP ; CH est Apache-2.0, auto-hébergeable).
+2. Pointer le snippet sur le Collector (`endpoint:` dans `MIPRum.init`) — **seul** changement côté client.
+3. Transposer le parser : la logique `flattenOtlp` (attributs `mip.*`/`webvital.*` → colonnes) vit dans un
+   processor Collector ou en vues CH sur `otel_traces`. Le fingerprint d'erreurs garde le même algo.
+4. Brancher la console sur CH (HTTP + `FORMAT JSON`, pattern de `writer.mjs`) — voir dialecte ci-dessous.
+5. Décommissionner la fonction serverless. Le SDK et la sémantique `mip.*` ne bougent pas (« OTLP fidèle sur le fil »).
 
-## Ce qui ne change PAS
+## Volumétrie grand compte (1 M pages vues/jour)
 
-- Le SDK (`mip-rum.js`) et son API `MIPRum.init` — c'est tout l'intérêt du choix « OTLP fidèle sur le fil ».
-- Le snippet sur les sites clients (hors URL d'endpoint).
-- La sémantique des attributs `mip.*` / `webvital.*` (conventions internes documentées, l'OTel n'ayant pas encore figé les conventions RUM upstream).
+| Table        | Ratio/pageview     | Lignes/jour | Disque/jour (mesuré : ~12 B/ligne compressé) |
+| ------------ | ------------------ | ----------- | -------------------------------------------- |
+| rum_metric   | ×5 vitals (max)    | 5,0 M       | ~60 MB                                       |
+| rum_pageview | ×1                 | 1,0 M       | ~15 MB (URL plus longue)                     |
+| rum_session  | ~1 / 3 pageviews   | 0,33 M      | ~5 MB                                        |
+| rum_error    | ~2 % des pageviews | 0,02 M      | <1 MB                                        |
+| **Total**    |                    | **~6,4 M events/jour** | **~80 MB/jour → ~2,4 GB / 30 j de rétention** |
+
+- Débit moyen ~74 events/s, pics ×10 ≈ 750/s : couvert **×100** par les 88 k lignes/s mesurées sur une
+  seule connexion HTTP non tunée. Un nœud CH modeste absorbe plusieurs clients de cette taille.
+- Le même volume en PG (178 B/ligne mesurés avec indexes) ≈ 34 GB/30 j **par client**, avec des
+  `percentile_cont` qui passent de 138 ms (100 k lignes) à plusieurs secondes au milliard — c'est la
+  requête sessions/routes qui casse en premier.
+- Le replay (chunks rrweb gzip) reste hors CH : object storage ou PG bytea, volumétrie indépendante.
+
+## Ce que ça change pour la console
+
+Mêmes requêtes logiques, dialecte à adapter (équivalences prouvées par le bench, Δ = 0) :
+
+| Postgres                                            | ClickHouse                          |
+| --------------------------------------------------- | ----------------------------------- |
+| `percentile_cont(0.75) within group (order by v)`   | `quantileExactInclusive(0.75)(v)` (exact) ou `quantileTDigest(0.75)(v)` (approx, multi-milliards) |
+| `date_trunc('hour', ts)`                            | `toStartOfHour(ts)`                 |
+| `count(distinct session_id)`                        | `uniqExact(session_id)` (ou `uniq` approx) |
+| driver `pg` / Supabase client                       | HTTP `fetch` + `FORMAT JSON` (zéro dépendance, cf. `writer.mjs`) |
+
+Pas de changement de modèle : mêmes noms de colonnes, mêmes fenêtres temporelles, mêmes filtres app/route.
+Une couche « dialecte » de ~50 lignes dans la console suffit pour basculer store par store.
+
+## Reproduire le bench
+
+```bash
+docker compose -f infra/clickhouse/docker-compose.clickhouse.yml up -d   # CH :8123, volume éphémère
+node infra/clickhouse/bench.mjs                                          # exit 0 = égalité vérifiée
+docker compose -f infra/clickhouse/docker-compose.clickhouse.yml down    # rien ne persiste (tmpfs)
+```
+
+Piège rencontré : dans le conteneur alpine, `localhost` résout en `::1` alors que CH écoute en IPv4 →
+healthcheck sur `http://127.0.0.1:8123/ping` explicitement.

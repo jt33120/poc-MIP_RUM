@@ -18,6 +18,10 @@ export interface MIPRumConfig {
   requireConsent?: boolean;
   /** Last-chance PII filter applied to every span's attributes; return null to drop */
   beforeSend?: (attributes: Record<string, unknown>) => Record<string, unknown> | null;
+  /** Session replay (v0.3) : false (défaut) | true (toutes les sessions) | taux 0..1 */
+  replay?: boolean | number;
+  /** Replay endpoint override; default = endpoint with /v1/traces replaced by /v1/replay */
+  replayEndpoint?: string;
 }
 
 export type VitalName = "LCP" | "INP" | "CLS" | "FCP" | "TTFB";

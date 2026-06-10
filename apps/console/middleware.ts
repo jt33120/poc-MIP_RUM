@@ -1,21 +1,33 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { SESSION_COOKIE, verifyJwt } from "@/lib/auth";
 
-// Basic auth optionnelle : env BASIC_AUTH="user:pass" (limite n°18).
-// Sans env -> pas d'auth (dev local). Le SDK /mip-rum.js reste TOUJOURS public
-// (snippet chargé par les sites clients), assets Next et favicon aussi.
-export function middleware(req: NextRequest) {
-  const expected = process.env.BASIC_AUTH;
-  if (!expected) return NextResponse.next();
+// Auth v0.3 (B3) : JWT cookie httpOnly signé AUTH_SECRET — remplace le basic auth v0.2.
+// PUBLICS sans auth (matcher) : /login, /mip-rum.js, /mip-rum-replay.js, /_next/*, /favicon*.
+// Le SDK reste TOUJOURS public (snippet chargé par les sites clients).
+export async function middleware(req: NextRequest) {
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
+  const user = token ? await verifyJwt(token) : null;
+  if (!user) return NextResponse.redirect(new URL("/login", req.url), 302);
 
-  const got = req.headers.get("authorization");
-  if (got === `Basic ${btoa(expected)}`) return NextResponse.next();
-
-  return new NextResponse("Authentification requise.", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="MIP RUM", charset="UTF-8"' },
-  });
+  // Scoping viewer au niveau requête : app demandée hors scope (ou « toutes »)
+  // -> fallback 1re app autorisée. GET pages uniquement (pas de redirect sur les
+  // POST de server actions ni sur les routes API, gérées côté données).
+  if (
+    req.method === "GET" &&
+    !req.nextUrl.pathname.startsWith("/api/") &&
+    user.role === "viewer" &&
+    user.apps?.length
+  ) {
+    const requested = req.nextUrl.searchParams.get("app");
+    if (!requested || !user.apps.includes(requested)) {
+      const url = req.nextUrl.clone();
+      url.searchParams.set("app", user.apps[0]);
+      return NextResponse.redirect(url, 302);
+    }
+  }
+  return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!mip-rum\\.js|_next/|favicon).*)"],
+  matcher: ["/((?!login|mip-rum|_next/|favicon).*)"],
 };
