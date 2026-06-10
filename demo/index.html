@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Démo MIP RUM — mini-site</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 720px; }
+    h1 { font-size: 2.6rem; }
+    button { margin: 0.3rem; padding: 0.6rem 1rem; cursor: pointer; }
+    #view { padding: 1rem; border: 1px solid #ccc; border-radius: 8px; min-height: 80px; }
+  </style>
+  <script src="/mip-rum.js"></script>
+  <script>
+    MIPRum.init({
+      endpoint: "http://localhost:4318/v1/traces",
+      appId: "demo-app",
+      clientId: "mip-demo",
+      env: "dev",
+      sampleRate: 1.0,
+      flushIntervalMs: 2000,
+    });
+  </script>
+</head>
+<body>
+  <h1>G-IT — Plateforme Partenaires (démo MIP RUM)</h1>
+  <p>Mini-site de test du SDK RUM : Web Vitals, erreurs JS et navigation SPA.</p>
+
+  <div>
+    <button id="btn-error">Provoquer une erreur JS</button>
+    <button id="btn-rejection">Promesse rejetée</button>
+    <button id="btn-nav-list">→ /partners</button>
+    <button id="btn-nav-detail">→ /partners/42</button>
+  </div>
+
+  <div id="view">Accueil</div>
+
+  <script>
+    // simulated SPA: History API navigation, content swap
+    function render(route) {
+      document.getElementById("view").textContent = "Vue : " + route;
+    }
+    document.getElementById("btn-error").addEventListener("click", () => {
+      throw new Error("Erreur de démo MIP RUM");
+    });
+    document.getElementById("btn-rejection").addEventListener("click", () => {
+      Promise.reject(new Error("Rejet de promesse de démo"));
+    });
+    document.getElementById("btn-nav-list").addEventListener("click", () => {
+      history.pushState({}, "", "/partners");
+      render("/partners");
+    });
+    document.getElementById("btn-nav-detail").addEventListener("click", () => {
+      history.pushState({}, "", "/partners/42");
+      render("/partners/42");
+    });
+  </script>
+</body>
+</html>

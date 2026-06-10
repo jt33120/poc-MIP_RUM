@@ -8,5 +8,8 @@
     "test:unit": "vitest run tests/unit",
     "test:e2e": "playwright test"
   },
-  "packageManager": "pnpm@9.15.9"
+  "packageManager": "pnpm@9.15.9",
+  "devDependencies": {
+    "@playwright/test": "1.60.0"
+  }
 }
