@@ -23,3 +23,14 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
   - Setup lean : `StackContextManager`, **aucune instrumentation contrib** (document-load/fetch/user-interaction) — les vitals/erreurs/pageviews sont des spans dédiés fabriqués à la main ; rien d'autre n'est persisté en base de toute façon. Gain de bundle significatif vs ~60 KB du full auto-instrumentation.
   - Rating calculé côté SDK avec les **seuils 2026** (LCP<2,0s / INP<200ms / CLS<0,1) — web-vitals embarque encore les anciens seuils (LCP good <2,5s), on ne s'en sert pas.
 - **Piège constaté** (utile pour S2) : l'exporter OTLP JSON encode `webvital.value` en `intValue` quand la valeur est entière, `doubleValue` sinon → le parser d'ingestion doit déstructurer les deux (confirme l'avertissement PLAN §7.2).
+
+## S2 — Ingestion + stockage
+
+- **Ce qui a marché** : Postgres 15 (docker-compose, port 5433) avec schéma auto-appliqué par migration ; dev-server Node parse l'OTLP JSON et écrit en base (transaction, idempotence par `span_id` unique) ; flux complet démo headless → `rum_metric` (LCP 112 ms, rating good) + `rum_session` upsertée. Préflight CORS : `OPTIONS → 204` + `Access-Control-Allow-Origin`/`-Headers` corrects, origine G-IT déjà whitelistée.
+- **Ce qui n'a pas marché** : 1er `docker pull postgres:15` interrompu (coupure réseau, « unexpected EOF ») — résolu au retry. Pas de `supabase start` : stack locale Docker jugée trop lourde (~10 images) vs un simple postgres:15.
+- **Décisions** :
+  - **Parser OTLP partagé** en JS pur (`apps/ingest/supabase/functions/_shared/otlp.mjs`) : importé tel quel par le dev-server Node (local) et l'edge function Deno (prod, S6). Une seule source de vérité, zéro build, unit-testable.
+  - Schéma PLAN §5 **complété** : `app_id`/`route` dénormalisés sur `rum_metric`/`rum_error` (référencés par la vue corrélation mais absents de l'extrait du plan), `span_id unique` partout (idempotence §7.2), RPC `upsert_rum_session` (incrément `page_count` côté SQL, utilisable par supabase-js).
+  - **Rating calculé à l'ingestion** (seuils 2026) = source de vérité unique en base ; le rating envoyé par le SDK n'est pas utilisé (défense en profondeur, vérifiable).
+  - Scrub PII à l'ingestion : query strings retirées des URLs/sources, messages tronqués à 1000 c., stacks à 4000 c. (PLAN §14).
+- **Écarts** : l'edge function Deno est écrite mais **non testée localement** (pas de runtime deno sur la machine) — le parser, lui, est testé via le dev-server Node qui partage le même module. Risque résiduel limité au câblage supabase-js, à vérifier à S6.

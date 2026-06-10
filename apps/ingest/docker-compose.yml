@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:15
+    container_name: mip-rum-db
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mip_rum
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mip_rum"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
