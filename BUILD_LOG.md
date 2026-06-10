@@ -48,3 +48,13 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
   - Émission centralisée (`emit`) : attributs communs + hook `beforeSend` (filtrage PII custom) appliqué à tout span ; URLs scrubées (query/fragment retirés) côté SDK **et** côté ingestion.
   - Attribution web-vitals réduite aux champs primitifs (payload léger, debug lisible) → colonne `jsonb`.
   - `MIPRum.track()` émet des spans `track.*` ignorés par l'ingestion POC (extensibilité du fil OTLP démontrée sans toucher au backend).
+
+## S4 — Console RUM Live
+
+- **Ce qui a marché** : 4 vues (Overview, Pages lentes, Erreurs JS, Sessions) sur Next.js 15 + Recharts + Tailwind, alimentées par les vraies données de la démo (8 sessions générées en headless). Validation 11/11 : les **p75 affichés correspondent au recalcul indépendant** fait en JS depuis les valeurs brutes (protection contre un bug d'agrégation silencieux, PLAN §11.3), ratings seuils 2026 corrects, breadcrumbs de parcours par session OK.
+- **Ce qui n'a pas marché** :
+  - **`bringToFront` en headless ne masque pas l'onglet** → INP/CLS (émis par web-vitals au passage en hidden) n'étaient jamais reportés par le générateur de trafic. Corrigé : fin de session = vraie navigation (`pagehide`), comme un utilisateur réel. Enseignement utile pour les futurs tests RUM headless.
+- **Décisions / écarts** :
+  - Lecture DB via `pg` en server components (`DATABASE_URL`) **au lieu du client REST Supabase** (PLAN §9.2) : fonctionne 100 % local sans stack Supabase, et pointera tel quel vers le pooler Postgres de Supabase en cloud. Écart assumé, sans impact sur la preuve.
+  - p75 calculé en SQL (`percentile_cont(0.75)`), rating au rendu ; « live » par poll 5 s (`router.refresh()`), Realtime non nécessaire pour la démo.
+- **Valeurs réelles (démo locale, 8 sessions)** : LCP p75 = 81 ms, INP p75 = 56 ms, CLS p75 = 0,026 — tout « good » en local, les chiffres intéressants viendront du vrai site (S6).
