@@ -1,0 +1,15 @@
+{
+  "comment": "Exécutions RÉELLES sondées sur le MCP mippoc le 2026-06-10 (get_measure_execution_info, mesure TVMonaco_Loadpage, fenêtre 10:00-14:00 UTC). Sert d'entrée à l'adapter mippoc-json et de référence du schéma réel.",
+  "measure_name": "TVMonaco_Loadpage",
+  "executions": [
+    { "id": 483, "type": "ASA_DESKTOP", "details": { "time": "2026-06-10T14:12:49Z", "state": "OK", "metrics": { "completion_time": "10015", "first_load_time": "281", "dns_time": "32", "nb_requests": "115", "nb_requests_ko": "6", "http_status": "200 - OK" } } },
+    { "id": 483, "type": "ASA_DESKTOP", "details": { "time": "2026-06-10T13:45:48Z", "state": "OK", "metrics": { "completion_time": "10008", "first_load_time": "258", "dns_time": "19", "nb_requests": "112", "nb_requests_ko": "4", "http_status": "200 - OK" } } },
+    { "id": 483, "type": "ASA_DESKTOP", "details": { "time": "2026-06-10T13:13:02Z", "state": "OK", "metrics": { "completion_time": "10011", "first_load_time": "340", "dns_time": "54", "nb_requests": "112", "nb_requests_ko": "5", "http_status": "200 - OK" } } },
+    { "id": 483, "type": "ASA_DESKTOP", "details": { "time": "2026-06-10T12:45:51Z", "state": "OK", "metrics": { "completion_time": "10003", "first_load_time": "294", "dns_time": "42", "nb_requests": "112", "nb_requests_ko": "6", "http_status": "200 - OK" } } },
+    { "id": 483, "type": "ASA_DESKTOP", "details": { "time": "2026-06-10T12:13:09Z", "state": "OK", "metrics": { "completion_time": "10001", "first_load_time": "254", "dns_time": "19", "nb_requests": "113", "nb_requests_ko": "4", "http_status": "200 - OK" } } },
+    { "id": 483, "type": "ASA_DESKTOP", "details": { "time": "2026-06-10T11:46:06Z", "state": "OK", "metrics": { "completion_time": "10004", "first_load_time": "336", "dns_time": "39", "nb_requests": "113", "nb_requests_ko": "5", "http_status": "200 - OK" } } },
+    { "id": 483, "type": "ASA_DESKTOP", "details": { "time": "2026-06-10T11:12:43Z", "state": "OK", "metrics": { "completion_time": "10006", "first_load_time": "307", "dns_time": "30", "nb_requests": "111", "nb_requests_ko": "6", "http_status": "200 - OK" } } },
+    { "id": 483, "type": "ASA_DESKTOP", "details": { "time": "2026-06-10T10:47:55Z", "state": "OK", "metrics": { "completion_time": "10015", "first_load_time": "333", "dns_time": "38", "nb_requests": "110", "nb_requests_ko": "4", "http_status": "200 - OK" } } },
+    { "id": 483, "type": "ASA_DESKTOP", "details": { "time": "2026-06-10T10:12:48Z", "state": "OK", "metrics": { "completion_time": "10010", "first_load_time": "307", "dns_time": "38", "nb_requests": "114", "nb_requests_ko": "5", "http_status": "200 - OK" } } }
+  ]
+}

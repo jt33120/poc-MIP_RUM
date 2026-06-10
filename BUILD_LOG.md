@@ -58,3 +58,17 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
   - Lecture DB via `pg` en server components (`DATABASE_URL`) **au lieu du client REST Supabase** (PLAN §9.2) : fonctionne 100 % local sans stack Supabase, et pointera tel quel vers le pooler Postgres de Supabase en cloud. Écart assumé, sans impact sur la preuve.
   - p75 calculé en SQL (`percentile_cont(0.75)`), rating au rendu ; « live » par poll 5 s (`router.refresh()`), Realtime non nécessaire pour la démo.
 - **Valeurs réelles (démo locale, 8 sessions)** : LCP p75 = 81 ms, INP p75 = 56 ms, CLS p75 = 0,026 — tout « good » en local, les chiffres intéressants viendront du vrai site (S6).
+
+## S5 — Corrélation synthétique↔RUM
+
+- **Sondage mippoc (PLAN §8.1, fait sur le vrai MCP)** :
+  - `list_applications_by_state` → applications réelles (`Stream_Monaco`, `TVMonaco_Loadpage`) avec état riche (durations, maintenance, incident).
+  - `get_measure_score` → `id`, `displayName`, `type` (ASA_DESKTOP), `stats.okPercentage`.
+  - `get_measure_execution_info` → exécutions horodatées : `completion_time` (~10 s, durée du scénario robot), **`first_load_time`** (~250-340 ms), `dns_time`, `nb_requests(_ko)`, `http_status`. ⚠️ L'outil renvoie une erreur 500 si la fenêtre demandée est dans le futur (constaté, corrigé en passant une fenêtre valide).
+  - 9 exécutions réelles dumpées dans `apps/sync-synthetic/data/mippoc-sample.json` (référence du schéma réel).
+- **Constat clé** : les mesures réelles (TVMonaco…) **ne mappent pas** vers les routes de l'app RUM du POC → cas prévu PLAN §8.4. Le mapping `route ↔ mesure` reste LE point à cadrer avec MIP pour la prod (le champ `route_hint` est prêt).
+- **Ce qui a marché** :
+  - Interface **`SyntheticSource`** (adapter) avec 2 implémentations : `mippoc-json` (parse le format réel constaté ; `latency_ms = first_load_time`, le plus comparable à un vécu de chargement — `completion_time` étant la durée du scénario complet) et `seed` (runs réalistes 24 h / 15 min pour les routes de la démo, PRNG déterministe, fenêtre dégradée simulée avec warn/incident). La vraie source API mippoc se branche en implémentant `fetchSnapshots()` — zéro refactor.
+  - Vue `v_correlation` **corrigée vs PLAN §5** : agrégation RUM et synthétique chacune de leur côté AVANT le full outer join (le join brut du plan produisait un produit croisé faussant les moyennes). Validation : 2 routes corrélées (`/`, `/partners`) robot vs réel dans le même bucket horaire.
+  - Page `/correlation` : côte à côte 🤖 robot / 👤 réel par route, **écart surligné** (badge ±%), détail horaire issu de la vue SQL. Les données réelles mippoc (tvmonaco) y figurent aussi.
+- **Limite assumée** : le MCP n'est pas appelable depuis un script Node → l'adapter « réel » consomme un export JSON du format mippoc. En prod, même interface branchée sur l'API DEM directement.

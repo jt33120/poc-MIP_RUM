@@ -90,6 +90,36 @@ create or replace function upsert_rum_session(
         geo_country  = coalesce(rum_session.geo_country, excluded.geo_country);
 $$;
 
+-- Vue de corrélation : robot (synthétique) vs réel (RUM), par app/route/heure.
+-- Écart vs PLAN §5 : agrégation de chaque côté AVANT le full outer join
+-- (le join direct des lignes brutes produisait un produit croisé qui faussait avg/p75).
+create or replace view v_correlation as
+with rum as (
+  select app_id, route, date_trunc('hour', ts) as bucket,
+         percentile_cont(0.75) within group (order by value) filter (where name = 'LCP') as rum_lcp_p75,
+         percentile_cont(0.75) within group (order by value) filter (where name = 'INP') as rum_inp_p75,
+         count(distinct session_id)::int as rum_sessions
+  from rum_metric
+  group by 1, 2, 3
+),
+syn as (
+  select app_id, route_hint as route, date_trunc('hour', captured_at) as bucket,
+         avg(latency_ms) as syn_latency_avg,
+         avg(score) as syn_score_avg,
+         case max(case state when 'incident' then 3 when 'warn' then 2 when 'ok' then 1 else 0 end)
+           when 3 then 'incident' when 2 then 'warn' when 1 then 'ok' end as syn_state,
+         count(*)::int as syn_runs
+  from syn_snapshot
+  group by 1, 2, 3
+)
+select coalesce(r.app_id, s.app_id) as app_id,
+       coalesce(r.route, s.route)   as route,
+       coalesce(r.bucket, s.bucket) as bucket,
+       r.rum_lcp_p75, r.rum_inp_p75, r.rum_sessions,
+       s.syn_latency_avg, s.syn_score_avg, s.syn_state, s.syn_runs
+from rum r
+full outer join syn s using (app_id, route, bucket);
+
 create index if not exists idx_metric_app_route on rum_metric (app_id, route);
 create index if not exists idx_metric_name_ts   on rum_metric (name, ts);
 create index if not exists idx_metric_session   on rum_metric (session_id);
