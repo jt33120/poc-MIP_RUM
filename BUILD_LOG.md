@@ -72,3 +72,14 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
   - Vue `v_correlation` **corrigée vs PLAN §5** : agrégation RUM et synthétique chacune de leur côté AVANT le full outer join (le join brut du plan produisait un produit croisé faussant les moyennes). Validation : 2 routes corrélées (`/`, `/partners`) robot vs réel dans le même bucket horaire.
   - Page `/correlation` : côte à côte 🤖 robot / 👤 réel par route, **écart surligné** (badge ±%), détail horaire issu de la vue SQL. Les données réelles mippoc (tvmonaco) y figurent aussi.
 - **Limite assumée** : le MCP n'est pas appelable depuis un script Node → l'adapter « réel » consomme un export JSON du format mippoc. En prod, même interface branchée sur l'API DEM directement.
+
+## S6 — Test sur la plateforme réelle — **EN ATTENTE : secrets cloud + Julian colle le snippet**
+
+- **Ce qui a été tenté** : les MCP Supabase et Vercel étant connectés et authentifiés (orga « DEV », coût projet vérifié = 0 $/mois, région eu-west-3 Paris choisie pour le narratif souveraineté), le déploiement via MCP (voie prévue PLAN §11.1) a été lancé… et **refusé par la couche de permissions** de l'environnement de build : la règle de mission conditionnait le déploiement à la présence de `SUPABASE_ACCESS_TOKEN`/`VERCEL_TOKEN` (absents). Pas de contournement tenté — bascule sur le fallback prévu.
+- **Ce qui est prêt (fallback complet)** :
+  - **DEPLOY.md** : commandes exactes supabase CLI (projet, schéma, edge function `--no-verify-jwt` — indispensable, les beacons n'ont pas de header Authorization) + vercel CLI (console, `DATABASE_URL` pooler) + recette finale DoD §2.2 + tableau de dépannage.
+  - **Snippet `<script>`** prêt à coller dans le `<head>` (2 URLs à remplacer après déploiement) + **bookmarklet** de test non-intrusif (PLAN §6.5).
+  - **CORS** : `https://plateforme.groupement-it.com` déjà whitelisté dans l'edge function ET le dev-server.
+  - SDK buildé servi par la console (`apps/console/public/mip-rum.js`, committé — à regénérer via `pnpm --filter @mip/rum-sdk build`).
+  - Fixture OTLP réaliste (`tests/fixtures/otlp-sample.json`) pour tester l'endpoint déployé au curl sans navigateur.
+- **Reste à faire (action humaine)** : exporter les 2 tokens → dérouler DEPLOY.md (~15 min) → coller le snippet → recette DoD 1-4.

@@ -1,0 +1,118 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "mip-rum-web" } },
+          { "key": "service.version", "value": { "stringValue": "0.1.0" } },
+          { "key": "mip.app_id", "value": { "stringValue": "gip-plateforme" } },
+          { "key": "mip.client_id", "value": { "stringValue": "groupement-it" } },
+          { "key": "mip.user_agent", "value": { "stringValue": "Mozilla/5.0 (test fixture)" } },
+          { "key": "deployment.environment.name", "value": { "stringValue": "prod" } }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": { "name": "@mip/rum-sdk", "version": "0.1.0" },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000001",
+              "spanId": "0000000000000001",
+              "name": "pageview",
+              "kind": 1,
+              "startTimeUnixNano": "1781100000000000000",
+              "endTimeUnixNano": "1781100000000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-session-1" } },
+                { "key": "mip.user_hash", "value": { "stringValue": "deadbeef" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/:id" } },
+                { "key": "mip.device_type", "value": { "stringValue": "desktop" } },
+                { "key": "mip.url", "value": { "stringValue": "https://plateforme.groupement-it.com/partners/42" } },
+                { "key": "mip.nav_type", "value": { "stringValue": "navigate" } }
+              ]
+            },
+            {
+              "traceId": "00000000000000000000000000000001",
+              "spanId": "0000000000000002",
+              "name": "webvital.LCP",
+              "kind": 1,
+              "startTimeUnixNano": "1781100001000000000",
+              "endTimeUnixNano": "1781100001000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-session-1" } },
+                { "key": "mip.user_hash", "value": { "stringValue": "deadbeef" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/:id" } },
+                { "key": "mip.device_type", "value": { "stringValue": "desktop" } },
+                { "key": "webvital.name", "value": { "stringValue": "LCP" } },
+                { "key": "webvital.value", "value": { "doubleValue": 2340.5 } },
+                { "key": "webvital.rating", "value": { "stringValue": "needs-improvement" } },
+                { "key": "webvital.id", "value": { "stringValue": "v5-fixture-lcp" } },
+                { "key": "webvital.attribution", "value": { "stringValue": "{\"element\":\"#hero\",\"timeToFirstByte\":120}" } }
+              ]
+            },
+            {
+              "traceId": "00000000000000000000000000000001",
+              "spanId": "0000000000000003",
+              "name": "webvital.INP",
+              "kind": 1,
+              "startTimeUnixNano": "1781100002000000000",
+              "endTimeUnixNano": "1781100002000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-session-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/:id" } },
+                { "key": "webvital.name", "value": { "stringValue": "INP" } },
+                { "key": "webvital.value", "value": { "intValue": 250 } },
+                { "key": "webvital.id", "value": { "stringValue": "v5-fixture-inp" } }
+              ]
+            },
+            {
+              "traceId": "00000000000000000000000000000001",
+              "spanId": "0000000000000004",
+              "name": "exception",
+              "kind": 1,
+              "startTimeUnixNano": "1781100003000000000",
+              "endTimeUnixNano": "1781100003000400000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "fixture-session-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/partners/:id" } },
+                { "key": "mip.error_kind", "value": { "stringValue": "error" } },
+                { "key": "exception.message", "value": { "stringValue": "Fixture error" } },
+                { "key": "exception.type", "value": { "stringValue": "TypeError" } },
+                { "key": "exception.stacktrace", "value": { "stringValue": "TypeError: Fixture error\n  at fixture.js:1:1" } },
+                { "key": "mip.error_source", "value": { "stringValue": "https://plateforme.groupement-it.com/app.js?v=123" } },
+                { "key": "mip.error_lineno", "value": { "intValue": 10 } },
+                { "key": "mip.error_colno", "value": { "intValue": 5 } }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "rogue-sender-without-app-id" } }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": { "name": "rogue" },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000002",
+              "spanId": "0000000000000005",
+              "name": "webvital.LCP",
+              "kind": 1,
+              "startTimeUnixNano": "1781100004000000000",
+              "endTimeUnixNano": "1781100004000400000",
+              "attributes": [
+                { "key": "webvital.name", "value": { "stringValue": "LCP" } },
+                { "key": "webvital.value", "value": { "doubleValue": 1.0 } }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
