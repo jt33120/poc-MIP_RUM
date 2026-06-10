@@ -83,3 +83,27 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
   - SDK buildé servi par la console (`apps/console/public/mip-rum.js`, committé — à regénérer via `pnpm --filter @mip/rum-sdk build`).
   - Fixture OTLP réaliste (`tests/fixtures/otlp-sample.json`) pour tester l'endpoint déployé au curl sans navigateur.
 - **Reste à faire (action humaine)** : exporter les 2 tokens → dérouler DEPLOY.md (~15 min) → coller le snippet → recette DoD 1-4.
+
+## S7 — Hardening + bilan
+
+- **Tests** :
+  - **Vitest : 36/36 verts** — parser OTLP (types KeyValue dont le piège `intValue` string, rejets sans `mip.app_id`, scrub PII, attribution jsonb, timestamps nanos), normalisation des routes, rating seuils 2026 (bornes incluses), génération/persistance de session (TTL 30 min, user_hash déterministe). 1 faux rouge corrigé : l'attendu du test (conversion de timestamp erronée), pas le code.
+  - **Playwright : 5/5 verts** — flux bout-en-bout (démo → erreur → flush → base → console, assertions par session_id sans purge), corrélation, CORS (préflight 204 + headers pour l'origine G-IT, non-reflet d'une origine inconnue, POST OTLP 200).
+- **Charge légère (PLAN §12)** : 1 000 events OTLP scriptés (10 POST concurrents par vague) → **1 000/1 000 insérés en 0,3 s (~3 975 events/s)** sur le dev-server Node + Postgres local. Sanity OK, large pour la démo.
+- **Chemin de migration prod livré** : `infra/otel-collector.example.yaml` (receiver OTLP/HTTP + CORS → exporter ClickHouse ; remplace l'ingestion serverless sans toucher au SDK) et `infra/clickhouse.notes.md` (schéma MergeTree cible, vues p75 `quantileTDigest`, étapes de migration, ce qui ne change pas).
+- **Matière rapport** : captures des 5 vues console + démo (`docs/captures/`), brouillon du rapport client rempli (`docs/RAPPORT_CLIENT.md`, trame PLAN §15).
+- **Décision** : Vitest 4.x au lieu de ^1.x du PLAN (tooling de test uniquement, aucune incidence produit ; 1.x daté de 2024 ne gère pas node 26 proprement).
+
+---
+
+# Synthèse finale — DoD (PLAN §2.2)
+
+| # | Critère | État |
+|---|---|---|
+| 1 | Flux bout-en-bout (navigateur → console en quelques secondes) | ✅ démontré en local (E2E vert) ; à rejouer sur G-IT après S6 |
+| 2 | Agrégats p75 corrects, seuils 2026 | ✅ vérifié par recalcul indépendant |
+| 3 | Corrélation synthétique↔RUM côte à côte avec écart | ✅ (seed + données mippoc réelles) |
+| 4 | OTLP/HTTP vérifiable sur le fil | ✅ (payloads JSON spec-compliant, tests + fixture) |
+| 5 | On-prem-ready (narratif) | ✅ (infra/ : Collector + ClickHouse) |
+
+**Seule étape en attente** : S6 — déploiement cloud (secrets) + snippet collé sur `plateforme.groupement-it.com` par Julian (runbook : DEPLOY.md).

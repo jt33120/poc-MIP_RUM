@@ -11,6 +11,7 @@
   "packageManager": "pnpm@9.15.9",
   "devDependencies": {
     "@playwright/test": "1.60.0",
-    "pg": "8.21.0"
+    "pg": "8.21.0",
+    "vitest": "4.1.8"
   }
 }

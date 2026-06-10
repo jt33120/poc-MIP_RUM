@@ -1,0 +1,53 @@
+# OTel Collector — chemin de migration prod (PLAN §3.3, DoD §2.2.4).
+# Le SDK émet déjà de l'OTLP/HTTP JSON standard : pour passer en prod on-prem,
+# ce Collector REMPLACE la fonction serverless d'ingestion — zéro changement
+# côté SDK ni côté site instrumenté (il suffit de changer l'URL `endpoint`).
+#
+# Déploiement type chez le client (narratif CSPN/souveraineté) :
+#   [navigateurs] --OTLP/HTTP JSON--> [Collector on-prem] --> [ClickHouse on-prem]
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318           # POST /v1/traces (chemin OTLP standard)
+        cors:
+          allowed_origins:
+            - "https://plateforme.groupement-it.com"
+          allowed_headers: ["content-type"]
+          max_age: 86400
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+  # défense en profondeur PII (le SDK scrube déjà à la collecte)
+  attributes/scrub:
+    actions:
+      - key: mip.url
+        action: update
+        # tronque toute query string résiduelle
+        from_attribute: mip.url
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+
+exporters:
+  clickhouse:
+    endpoint: tcp://clickhouse:9000?dial_timeout=10s
+    database: mip_rum
+    traces_table_name: otel_traces
+    ttl: 720h                            # rétention 30 j (RGPD POC, PLAN §14)
+    timeout: 10s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, batch]
+      exporters: [clickhouse, debug]
