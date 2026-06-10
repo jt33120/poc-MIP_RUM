@@ -1,9 +1,18 @@
 # DEPLOY — Mise en production POC (Supabase + Vercel + snippet G-IT)
 
-Statut S6 : **en attente — secrets cloud + injection du snippet par Julian**.
-Tout est prêt : commandes exactes ci-dessous, CORS déjà whitelisté pour `https://plateforme.groupement-it.com`, snippet prêt à coller.
+Statut S6 : **DÉPLOYÉ le 10/06/2026** (via MCP Supabase + CLI Vercel, autorisé par Julian). Reste : **coller le snippet (§4)**.
 
-> Prérequis : `SUPABASE_ACCESS_TOKEN` et `VERCEL_TOKEN` exportés dans l'env (ou `supabase login` / `vercel login` interactifs). CLI déjà installées sur la machine de build (supabase 2.67.1, vercel 41.4.1).
+| Ressource | URL |
+|---|---|
+| Ingestion OTLP | `https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces` |
+| Console RUM Live | `https://mip-rum-console.vercel.app` |
+| SDK hébergé | `https://mip-rum-console.vercel.app/mip-rum.js` |
+| Projet Supabase | `mip-rum-poc` (`nupxrdpsliqptqnjkmgw`, eu-west-3 Paris, free tier) |
+| Projet Vercel | `julian-talous-projects/mip-rum-console` |
+
+Vérifié en live : préflight CORS origine G-IT → 204 ✅ · POST fixture → 200 + lignes en base ✅ · navigateur réel → cloud (5 vitals, CORS, beacon) ✅ · console branchée sur la base cloud (rôle lecture seule `console_ro`, TLS vérifié CA Supabase épinglée) ✅ · `/correlation` robot vs réel ✅.
+
+> Les sections 1-3 ci-dessous documentent la procédure CLI équivalente (re-déploiement, autre environnement). Prérequis dans ce cas : `SUPABASE_ACCESS_TOKEN`/`VERCEL_TOKEN` ou login interactif. ⚠️ deux CLI vercel coexistent sur la machine : utiliser `~/.local/bin/vercel` (54.x), le brew (41.x) est trop vieux pour déployer.
 
 ## 1. Supabase — base + ingestion
 
@@ -15,30 +24,30 @@ supabase projects create mip-rum-poc --org-id <ORG_ID> --region eu-west-3 --db-p
 # Récupérer le PROJECT_REF affiché (ex: abcdefghijklmnop)
 
 # 1.2 Appliquer le schéma (tables + RPC + vue v_correlation)
-supabase link --project-ref <PROJECT_REF>
+supabase link --project-ref nupxrdpsliqptqnjkmgw
 psql "$(supabase status 2>/dev/null | grep -o 'postgresql://.*')" -f apps/ingest/sql/schema.sql \
-  || psql "postgresql://postgres:<PWD_FORT>@db.<PROJECT_REF>.supabase.co:5432/postgres" -f apps/ingest/sql/schema.sql
+  || psql "postgresql://postgres:<PWD_FORT>@db.nupxrdpsliqptqnjkmgw.supabase.co:5432/postgres" -f apps/ingest/sql/schema.sql
 
 # 1.3 Déployer l'edge function OTLP
 #     ⚠️ --no-verify-jwt OBLIGATOIRE : les beacons navigateur n'ont pas de header Authorization
 cd apps/ingest
-supabase functions deploy v1-traces --project-ref <PROJECT_REF> --no-verify-jwt
+supabase functions deploy v1-traces --project-ref nupxrdpsliqptqnjkmgw --no-verify-jwt
 # (SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont injectées automatiquement dans la function)
 ```
 
-Endpoint d'ingestion résultant : `https://<PROJECT_REF>.supabase.co/functions/v1/v1-traces`
+Endpoint d'ingestion résultant : `https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces`
 (Supabase impose le chemin `/functions/v1/<nom>` ; l'OTLP/HTTP accepte une URL d'endpoint arbitraire, le SDK la prend en config.)
 
 ### Vérifications immédiates (avant de toucher au site)
 
 ```bash
 # CORS préflight depuis l'origine G-IT -> attendu: 204 + Access-Control-Allow-Origin
-curl -si -X OPTIONS "https://<PROJECT_REF>.supabase.co/functions/v1/v1-traces" \
+curl -si -X OPTIONS "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces" \
   -H "Origin: https://plateforme.groupement-it.com" \
   -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type" | head -6
 
 # POST d'un payload OTLP d'exemple -> attendu: {"partialSuccess":{}} puis 1 ligne en base
-curl -s "https://<PROJECT_REF>.supabase.co/functions/v1/v1-traces" \
+curl -s "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces" \
   -H "content-type: application/json" -H "Origin: https://plateforme.groupement-it.com" \
   -d @tests/fixtures/otlp-sample.json
 ```
@@ -48,9 +57,9 @@ curl -s "https://<PROJECT_REF>.supabase.co/functions/v1/v1-traces" \
 ```bash
 cd apps/console
 # DATABASE_URL = pooler Supabase (Settings > Database > Connection string, mode transaction, port 6543)
-vercel env add DATABASE_URL production   # coller: postgres://postgres.<PROJECT_REF>:<PWD>@aws-0-eu-west-3.pooler.supabase.com:6543/postgres
+vercel env add DATABASE_URL production   # coller: postgres://console_ro.nupxrdpsliqptqnjkmgw:<PWD_console_ro>@aws-0-eu-west-3.pooler.supabase.com:6543/postgres
 vercel --prod
-# Noter l'URL: https://<console>.vercel.app  (sert aussi le SDK: /mip-rum.js)
+# Noter l'URL: https://mip-rum-console.vercel.app  (sert aussi le SDK: /mip-rum.js)
 ```
 
 > `apps/console/public/mip-rum.js` est le build IIFE du SDK (committé pour le POC).
@@ -60,7 +69,7 @@ vercel --prod
 
 ```bash
 # seed aligné sur l'app du vrai site (routes clés G-IT) — ou brancher l'API mippoc via l'adapter
-DATABASE_URL="postgres://postgres.<PROJECT_REF>:<PWD>@aws-0-eu-west-3.pooler.supabase.com:6543/postgres" \
+DATABASE_URL="postgres://console_ro.nupxrdpsliqptqnjkmgw:<PWD_console_ro>@aws-0-eu-west-3.pooler.supabase.com:6543/postgres" \
   node apps/sync-synthetic/src/sync.mjs seed gip-plateforme
 ```
 
@@ -68,14 +77,14 @@ DATABASE_URL="postgres://postgres.<PROJECT_REF>:<PWD>@aws-0-eu-west-3.pooler.sup
 
 ## 4. Snippet à coller dans le `<head>` de plateforme.groupement-it.com
 
-**Action humaine (Julian)** — remplacer les 2 URLs puis coller :
+**Action humaine (Julian)** — URLs réelles déjà en place, coller tel quel :
 
 ```html
 <!-- MIP RUM — POC (retirer après la démo) -->
-<script src="https://<console>.vercel.app/mip-rum.js"></script>
+<script src="https://mip-rum-console.vercel.app/mip-rum.js"></script>
 <script>
   MIPRum.init({
-    endpoint: "https://<PROJECT_REF>.supabase.co/functions/v1/v1-traces",
+    endpoint: "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces",
     appId: "gip-plateforme",
     clientId: "groupement-it",
     env: "prod",
@@ -89,7 +98,7 @@ DATABASE_URL="postgres://postgres.<PROJECT_REF>:<PWD>@aws-0-eu-west-3.pooler.sup
 Créer un favori avec cette URL, l'ouvrir sur la plateforme :
 
 ```
-javascript:(()=>{const s=document.createElement('script');s.src='https://<console>.vercel.app/mip-rum.js';s.onload=()=>MIPRum.init({endpoint:'https://<PROJECT_REF>.supabase.co/functions/v1/v1-traces',appId:'gip-plateforme',clientId:'groupement-it',env:'prod',sampleRate:1.0});document.head.appendChild(s)})()
+javascript:(()=>{const s=document.createElement('script');s.src='https://mip-rum-console.vercel.app/mip-rum.js';s.onload=()=>MIPRum.init({endpoint:'https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces',appId:'gip-plateforme',clientId:'groupement-it',env:'prod',sampleRate:1.0});document.head.appendChild(s)})()
 ```
 
 ## 5. Recette finale (DoD PLAN §2.2)

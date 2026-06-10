@@ -84,6 +84,22 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
   - Fixture OTLP réaliste (`tests/fixtures/otlp-sample.json`) pour tester l'endpoint déployé au curl sans navigateur.
 - **Reste à faire (action humaine)** : exporter les 2 tokens → dérouler DEPLOY.md (~15 min) → coller le snippet → recette DoD 1-4.
 
+### S6 (suite, 10/06/2026) — **DÉPLOYÉ** (MCP Supabase + CLI Vercel, sur autorisation explicite de Julian)
+
+- **Ce qui a marché** :
+  - **Supabase** (MCP) : projet `mip-rum-poc` (`nupxrdpsliqptqnjkmgw`, eu-west-3 Paris, 0 €/mois), migration schéma + vue `v_correlation`, edge function `v1-traces` v1 (verify_jwt off). Préflight CORS origine G-IT → **204 + bons headers** ; POST fixture → **200** et lignes en base (ratings 2026 corrects).
+  - **Vercel** (CLI — déjà loggué `jt33120`, aucun token nécessaire finalement) : projet `mip-rum-console`, `DATABASE_URL` en env var (jamais en argv), build Next OK, **https://mip-rum-console.vercel.app** public (l'URL de déploiement team reste protégée par Vercel Authentication — c'est l'alias produit qui compte). SDK servi : `/mip-rum.js`.
+  - **Preuve navigateur réel → cloud** (`scripts/validate-cloud.mjs`) : page locale (origine whitelistée) → 5 vitals via CORS réel + beacon → edge function → Postgres cloud, session `gip-plateforme` complète. Équivalent du test vrai-site au domaine près.
+  - **Corrélation cloud** : seed 24 runs robot (6 h × 4 routes) via MCP ; `/correlation` affiche robot vs réel avec écart sur `/` (bucket commun avec la session de validation).
+- **Ce qui n'a pas marché / pièges (matière bilan)** :
+  - Le « POST 400 » initial sur l'endpoint déployé était… un `curl -d @fichier` lancé du mauvais dossier (corps vide). Leçon : toujours vérifier le payload avant d'accuser la fonction.
+  - Changement du mot de passe postgres refusé par la couche de permissions → mieux : **rôle dédié `console_ro`** lecture seule (policies RLS explicites), moindre privilège, rotatable.
+  - Pooler Supavisor : cert signé par la **CA propre Supabase** → `sslmode=no-verify` refusé (à juste titre) → **CA publique épinglée** (embarquée dans `lib/supabase-ca.ts`, vérification TLS complète).
+  - Deux CLI vercel en PATH (brew 41.x masque npm 54.x) : l'API de déploiement exige ≥ 47.2.2 → utiliser `~/.local/bin/vercel`.
+  - `geo_country` reste null : les headers géo (`cf-ipcountry`/`x-vercel-ip-country`) ne sont pas exposés par l'edge runtime Supabase — limitation POC notée, la géo viendrait d'un vrai CDN/Collector en prod.
+- **Sécurité** : RLS activé sans policy publique sur les 5 tables (anon = aucun accès) ; console en lecture seule ; `.env.production` gitignoré ; secrets jamais en ligne de commande.
+- **Reste (1 action humaine)** : coller le snippet (DEPLOY.md §4 — URLs réelles en place) dans le `<head>` de la plateforme, ou tester d'abord via le bookmarklet. Puis recette DoD 1-4 et re-seed synthétique aligné sur les routes réelles.
+
 ## S7 — Hardening + bilan
 
 - **Tests** :
