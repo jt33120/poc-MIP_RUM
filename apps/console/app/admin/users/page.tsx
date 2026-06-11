@@ -35,6 +35,8 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
   const pwe = typeof sp.pwe === "string" ? sp.pwe : null;
   const oneTime = pwt ? popSecret(pwt) : null;
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : null;
+  // arrivée depuis le wizard client : préremplit un viewer scopé sur l'app
+  const prefillApp = typeof sp.app === "string" ? sp.app : null;
 
   return (
     <div className="animate-fade-up">
@@ -105,6 +107,7 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
             <input
               name="apps"
               type="text"
+              defaultValue={prefillApp ?? undefined}
               placeholder="vide = toutes · ex : demo-app, gip-plateforme"
               className="field mt-1 block w-72"
             />

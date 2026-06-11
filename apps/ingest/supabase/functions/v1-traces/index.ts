@@ -10,6 +10,8 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { flattenOtlp } from "../_shared/otlp.mjs";
 
+// Socle statique (toujours accepté) ; les origines des clients ajoutés via la
+// console vivent en base (app_registry.allowed_origins, v0.5) et s'y unissent.
 const ALLOWED_ORIGINS = [
   "https://plateforme.groupement-it.com",
   "http://localhost:8080",
@@ -24,10 +26,19 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-function corsHeaders(origin: string): Record<string, string> {
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+async function corsHeaders(origin: string): Promise<Record<string, string>> {
+  let allowed = ALLOWED_ORIGINS.includes(origin) ? origin : null;
+  if (!allowed && origin) {
+    // origine d'un client enregistré en base (apps actives uniquement)
+    for (const app of (await getAppRegistry()).values()) {
+      if (app.active && app.allowed_origins?.includes(origin)) {
+        allowed = origin;
+        break;
+      }
+    }
+  }
   return {
-    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Origin": allowed ?? ALLOWED_ORIGINS[0],
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "content-type",
     "Access-Control-Max-Age": "86400",
@@ -35,14 +46,17 @@ function corsHeaders(origin: string): Record<string, string> {
 }
 
 // --- Registre d'apps : cache 60 s (refresh paresseux, isolat éphémère) -------
-let appRegistry = new Map<string, { api_key_hash: string | null; active: boolean }>();
+let appRegistry = new Map<
+  string,
+  { api_key_hash: string | null; active: boolean; allowed_origins: string[] | null }
+>();
 let registryLoadedAt = 0;
 
 async function getAppRegistry() {
   if (Date.now() - registryLoadedAt < 60_000 && appRegistry.size) return appRegistry;
   const { data, error } = await supabase
     .from("app_registry")
-    .select("app_id, api_key_hash, active");
+    .select("app_id, api_key_hash, active, allowed_origins");
   if (!error && data) {
     appRegistry = new Map(data.map((r) => [r.app_id, r]));
     registryLoadedAt = Date.now();
@@ -98,7 +112,7 @@ async function rateLimitedDurable(appId: string): Promise<boolean> {
 }
 
 Deno.serve(async (req) => {
-  const cors = corsHeaders(req.headers.get("origin") ?? "");
+  const cors = await corsHeaders(req.headers.get("origin") ?? "");
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (req.method !== "POST") return new Response("method not allowed", { status: 405, headers: cors });
 
