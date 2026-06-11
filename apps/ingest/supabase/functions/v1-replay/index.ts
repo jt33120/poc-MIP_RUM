@@ -5,6 +5,8 @@
 // @ts-nocheck deno runtime
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
+// Socle statique ; les origines des clients ajoutés via la console vivent en
+// base (app_registry.allowed_origins, v0.5) et s'y unissent (cache 60 s).
 const ALLOWED_ORIGINS = [
   "https://plateforme.groupement-it.com",
   "http://localhost:8080",
@@ -17,8 +19,28 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-function corsHeaders(origin: string): Record<string, string> {
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+let dbOrigins: Set<string> = new Set();
+let dbOriginsLoadedAt = 0;
+
+async function getDbOrigins(): Promise<Set<string>> {
+  if (Date.now() - dbOriginsLoadedAt < 60_000 && dbOrigins.size) return dbOrigins;
+  const { data, error } = await supabase
+    .from("app_registry")
+    .select("allowed_origins, active");
+  if (!error && data) {
+    dbOrigins = new Set(
+      data.filter((r) => r.active).flatMap((r) => r.allowed_origins ?? []),
+    );
+    dbOriginsLoadedAt = Date.now();
+  }
+  return dbOrigins;
+}
+
+async function corsHeaders(origin: string): Promise<Record<string, string>> {
+  const allowed =
+    ALLOWED_ORIGINS.includes(origin) || (origin && (await getDbOrigins()).has(origin))
+      ? origin
+      : ALLOWED_ORIGINS[0];
   return {
     "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -36,7 +58,7 @@ const toHex = (bytes: Uint8Array) =>
   Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 
 Deno.serve(async (req) => {
-  const cors = corsHeaders(req.headers.get("origin") ?? "");
+  const cors = await corsHeaders(req.headers.get("origin") ?? "");
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (req.method !== "POST")
     return new Response("method not allowed", { status: 405, headers: cors });

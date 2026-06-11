@@ -2,6 +2,10 @@
 
 Comment instrumenter une application web cliente avec le SDK MIP RUM : snippet, options, consentement RGPD, CSP, et dépannage. Public visé : équipe technique du client (ou intégrateur MIP).
 
+## 0. Par la console (recommandé, v0.5)
+
+Le chemin nominal n'est plus ce document : **Console → Clients → Ajouter un client**. La création génère la clé d'API (affichée une seule fois), autorise les domaines (CORS dynamique, effectif ≤ 60 s, sans redéploiement) et ouvre un wizard qui fournit le snippet prérempli, les middlewares backend téléchargeables (FastAPI, Express), une checklist de vérification **live** et un assistant IA pour les stacks non couvertes. Ce document reste la référence détaillée des options.
+
 ## 1. En bref
 
 Deux balises `<script>` dans le `<head>`, rien d'autre à modifier :

@@ -62,6 +62,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </div>
                 <nav className="flex flex-col gap-1">
                   <Link
+                    href="/admin/customers"
+                    className="rounded px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                  >
+                    Clients
+                  </Link>
+                  <Link
                     href="/admin/users"
                     className="rounded px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
                   >

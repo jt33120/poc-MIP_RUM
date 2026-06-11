@@ -20,6 +20,7 @@ const RATE_LIMIT_PER_MIN = Number(process.env.RATE_LIMIT_PER_MIN || 600);
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 5 });
 
+// Socle statique ; uni aux origines des clients en base (v0.5, cache 60 s du registre)
 const ALLOWED_ORIGINS = [
   "http://localhost:8080",
   "http://127.0.0.1:8080",
@@ -31,7 +32,10 @@ const recent = []; // ring buffer pour les assertions de test
 const RING_SIZE = 50;
 
 function corsHeaders(origin) {
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const fromDb =
+    origin &&
+    [...appRegistry.values()].some((a) => a.active && a.allowed_origins?.includes(origin));
+  const allowed = ALLOWED_ORIGINS.includes(origin) || fromDb ? origin : ALLOWED_ORIGINS[0];
   return {
     "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -41,12 +45,12 @@ function corsHeaders(origin) {
 }
 
 // --- Registre d'apps : chargé au boot, rafraîchi toutes les 60 s -------------
-let appRegistry = new Map(); // app_id -> { api_key_hash, active }
+let appRegistry = new Map(); // app_id -> { api_key_hash, active, allowed_origins }
 
 async function loadAppRegistry() {
   try {
     const { rows } = await pool.query(
-      "select app_id, api_key_hash, active from app_registry",
+      "select app_id, api_key_hash, active, allowed_origins from app_registry",
     );
     appRegistry = new Map(rows.map((r) => [r.app_id, r]));
   } catch (err) {
