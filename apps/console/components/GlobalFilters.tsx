@@ -35,12 +35,12 @@ export function GlobalFilters({ apps }: { apps: { app_id: string; name: string }
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-2">
       <select
         value={current.app}
         onChange={(e) => set("app", e.target.value)}
         data-testid="filter-app"
-        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 shadow-sm focus:border-blue-500 focus:outline-none"
+        className="field max-w-48 py-1 pr-7"
       >
         <option value="all">Toutes les apps</option>
         {apps.map((a) => (
@@ -77,13 +77,15 @@ function Segmented({
   testid: string;
 }) {
   return (
-    <div className="flex overflow-hidden rounded-md border border-slate-300 shadow-sm" data-testid={testid}>
-      {items.map((it, i) => (
+    <div className="flex gap-0.5 rounded-lg border border-line bg-panel2 p-0.5" data-testid={testid}>
+      {items.map((it) => (
         <button
           key={it.key}
           onClick={() => onChange(it.key)}
-          className={`px-3 py-1.5 text-sm font-medium ${i > 0 ? "border-l border-slate-300" : ""} ${
-            value === it.key ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+          className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+            value === it.key
+              ? "bg-panel text-ink shadow-sm ring-1 ring-line"
+              : "text-ink-faint hover:text-ink-soft"
           }`}
         >
           {it.label}

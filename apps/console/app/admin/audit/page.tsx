@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/PageHeader";
 import { requireAdmin } from "@/lib/auth";
 import { q } from "@/lib/db";
 import { fmtDate } from "@/lib/format";
@@ -20,37 +21,37 @@ export default async function AdminAudit() {
   );
 
   return (
-    <div>
-      <h1 className="mb-1 text-2xl font-bold">Audit</h1>
-      <p className="mb-6 text-sm text-slate-500">
-        100 dernières actions sensibles (logins, gestion des utilisateurs, seed)
-      </p>
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="animate-fade-up">
+      <PageHeader
+        title="Audit"
+        sub="100 dernières actions sensibles (logins, gestion des utilisateurs, seed)"
+      />
+      <div className="card overflow-hidden">
         <table className="w-full text-sm" data-testid="audit-table">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-panel2">
             <tr>
-              <th className="px-4 py-2">Quand</th>
-              <th className="px-4 py-2">Utilisateur</th>
-              <th className="px-4 py-2">Action</th>
-              <th className="px-4 py-2">Détail</th>
+              <th className="th">Quand</th>
+              <th className="th">Utilisateur</th>
+              <th className="th">Action</th>
+              <th className="th">Détail</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-line/60">
             {rows.map((r) => (
-              <tr key={r.id}>
-                <td className="whitespace-nowrap px-4 py-2 text-xs text-slate-500">{fmtDate(r.ts)}</td>
+              <tr key={r.id} className="transition hover:bg-panel2/60">
+                <td className="whitespace-nowrap px-4 py-2 text-xs tabular-nums text-ink-soft">{fmtDate(r.ts)}</td>
                 <td className="px-4 py-2 font-mono text-xs">{r.user_email ?? "—"}</td>
                 <td className="px-4 py-2">
-                  <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                  <span className="rounded bg-panel2 px-2 py-0.5 text-xs font-medium text-ink-soft">
                     {r.action}
                   </span>
                 </td>
-                <td className="px-4 py-2 text-xs text-slate-600">{r.detail ?? ""}</td>
+                <td className="px-4 py-2 text-xs text-ink-soft">{r.detail ?? ""}</td>
               </tr>
             ))}
             {!rows.length && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={4} className="px-4 py-8 text-center text-ink-faint">
                   Aucune action enregistrée
                 </td>
               </tr>

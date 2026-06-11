@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/PageHeader";
 import { fmtDate } from "@/lib/format";
 import {
   ALERT_COMPARATORS,
@@ -21,8 +22,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const INPUT_CLASS =
-  "rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none";
+const INPUT_CLASS = "field py-1";
 
 export default async function Alerts({
   searchParams,
@@ -41,40 +41,43 @@ export default async function Alerts({
   const fired = firedRaw != null && /^\d+$/.test(firedRaw) ? Number(firedRaw) : null;
 
   return (
-    <div>
-      <div className="mb-1 flex items-center gap-3">
-        <h1 className="text-2xl font-bold">Alertes</h1>
-        {unacked > 0 && (
-          <span
-            data-testid="unacked-badge"
-            className="rounded-full bg-red-600 px-2.5 py-0.5 text-xs font-bold text-white"
-          >
-            {unacked} non acquittée(s)
+    <div className="animate-fade-up">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-3">
+            Alertes
+            {unacked > 0 && (
+              <span
+                data-testid="unacked-badge"
+                className="rounded-full bg-red-600 px-2.5 py-0.5 text-xs font-bold text-white"
+              >
+                {unacked} non acquittée(s)
+              </span>
+            )}
           </span>
-        )}
-        <form action={evaluateNowAction} className="ml-auto">
+        }
+        sub={
+          <>
+            Règles évaluées sur fenêtre glissante (p75 des vitals, taux d&apos;erreur) — check_alerts(),
+            planifiée par pg_cron en cloud · webhook optionnel
+          </>
+        }
+      >
+        <form action={evaluateNowAction}>
           <input type="hidden" name="qs" value={filtersToQuery(f)} />
-          <button
-            type="submit"
-            data-testid="evaluate-now"
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-          >
+          <button type="submit" data-testid="evaluate-now" className="btn-accent">
             Évaluer maintenant
           </button>
         </form>
-      </div>
-      <p className="mb-4 text-sm text-slate-500">
-        Règles évaluées sur fenêtre glissante (p75 des vitals, taux d&apos;erreur) — check_alerts(),
-        planifiée par pg_cron en cloud · webhook optionnel
-      </p>
+      </PageHeader>
 
       {fired != null && (
         <div
           data-testid="fired-banner"
-          className={`mb-6 rounded-lg border px-4 py-3 text-sm font-medium ${
+          className={`mb-6 rounded-xl border px-4 py-3 text-sm font-medium ${
             fired > 0
-              ? "border-red-300 bg-red-50 text-red-800"
-              : "border-emerald-300 bg-emerald-50 text-emerald-800"
+              ? "border-red-300 bg-red-50 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300"
+              : "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300"
           }`}
         >
           check_alerts() exécutée : {fired} alerte(s) déclenchée(s).
@@ -82,17 +85,13 @@ export default async function Alerts({
       )}
 
       {/* ----- Création ----- */}
-      <details className="mb-6 rounded-lg border border-slate-200 bg-white shadow-sm" open={!rules.length}>
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">
+      <details className="card mb-6" open={!rules.length}>
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-soft transition hover:text-ink">
           + Nouvelle règle
         </summary>
-        <form action={createRuleAction} className="flex flex-wrap items-end gap-3 border-t border-slate-100 p-4">
+        <form action={createRuleAction} className="flex flex-wrap items-end gap-3 border-t border-line p-4">
           <RuleFields apps={apps} defaultApp={f.app !== "all" ? f.app : undefined} />
-          <button
-            type="submit"
-            data-testid="create-rule"
-            className="rounded bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
-          >
+          <button type="submit" data-testid="create-rule" className="btn-accent">
             Créer
           </button>
         </form>
@@ -104,21 +103,23 @@ export default async function Alerts({
           <RuleRow key={r.id} rule={r} apps={apps} />
         ))}
         {!rules.length && (
-          <p className="py-4 text-center text-sm text-slate-400">
+          <p className="py-4 text-center text-sm text-ink-faint">
             Aucune règle — crée la première ci-dessus.
           </p>
         )}
       </div>
 
       {/* ----- Flux d'événements ----- */}
-      <h2 className="mb-3 text-lg font-bold">Événements déclenchés</h2>
+      <h2 className="mb-3 text-base font-bold tracking-tight">Événements déclenchés</h2>
       <div className="flex flex-col gap-2">
         {events.map((e) => (
           <div
             key={e.id}
             data-testid={`alert-event-${e.id}`}
-            className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm shadow-sm ${
-              e.acknowledged ? "border-slate-200 bg-white" : "border-red-300 bg-red-50"
+            className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 text-sm shadow-card ${
+              e.acknowledged
+                ? "border-line bg-panel"
+                : "border-red-300 bg-red-50 dark:border-red-400/30 dark:bg-red-400/10"
             }`}
           >
             {!e.acknowledged && (
@@ -126,19 +127,15 @@ export default async function Alerts({
                 non acquittée
               </span>
             )}
-            <span className="font-mono text-xs text-slate-400">#{e.id}</span>
+            <span className="font-mono text-xs text-ink-faint">#{e.id}</span>
             <span className="font-medium">{e.message ?? `${e.metric} (règle ${e.rule_id})`}</span>
-            <span className="ml-auto text-xs text-slate-500">{fmtDate(e.fired_at)}</span>
+            <span className="ml-auto text-xs tabular-nums text-ink-soft">{fmtDate(e.fired_at)}</span>
             {e.acknowledged ? (
-              <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">acquittée</span>
+              <span className="rounded bg-panel2 px-2 py-0.5 text-xs text-ink-faint">acquittée</span>
             ) : (
               <form action={ackEventAction}>
                 <input type="hidden" name="id" value={e.id} />
-                <button
-                  type="submit"
-                  data-testid={`ack-${e.id}`}
-                  className="rounded border border-slate-300 bg-white px-3 py-1 text-xs font-medium hover:bg-slate-100"
-                >
+                <button type="submit" data-testid={`ack-${e.id}`} className="btn-ghost">
                   Acquitter
                 </button>
               </form>
@@ -146,7 +143,7 @@ export default async function Alerts({
           </div>
         ))}
         {!events.length && (
-          <p className="py-4 text-center text-sm text-slate-400">
+          <p className="py-4 text-center text-sm text-ink-faint">
             Aucun événement — crée une règle puis « Évaluer maintenant ».
           </p>
         )}
@@ -240,37 +237,34 @@ function RuleRow({ rule, apps }: { rule: AlertRuleRow; apps: { app_id: string; n
     <form
       action={updateRuleAction}
       data-testid={`rule-${rule.id}`}
-      className={`flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4 shadow-sm ${
-        rule.active ? "border-slate-200" : "border-slate-200 opacity-60"
-      }`}
+      className={`card flex flex-wrap items-end gap-3 p-4 ${rule.active ? "" : "opacity-60"}`}
     >
       <input type="hidden" name="id" value={rule.id} />
-      <span className="self-center font-mono text-xs text-slate-400">#{rule.id}</span>
+      <span className="self-center font-mono text-xs text-ink-faint">#{rule.id}</span>
       <RuleFields apps={apps} rule={rule} />
       {rule.unacked > 0 && (
-        <span className="self-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-800">
+        <span className="self-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-800 dark:bg-red-400/10 dark:text-red-300">
           {rule.unacked} alerte(s) en cours
         </span>
       )}
       <span
         className={`self-center rounded px-2 py-0.5 text-xs font-medium ${
-          rule.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500"
+          rule.active
+            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
+            : "bg-panel2 text-ink-faint"
         }`}
       >
         {rule.active ? "active" : "désactivée"}
       </span>
       <div className="ml-auto flex gap-2">
-        <button
-          type="submit"
-          className="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium hover:bg-slate-100"
-        >
+        <button type="submit" className="btn-ghost">
           Enregistrer
         </button>
         <button
           type="submit"
           formAction={toggleRuleAction}
           data-testid={`toggle-${rule.id}`}
-          className={`rounded px-3 py-1.5 text-xs font-medium text-white ${
+          className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition ${
             rule.active ? "bg-slate-500 hover:bg-slate-600" : "bg-emerald-600 hover:bg-emerald-700"
           }`}
         >
@@ -283,7 +277,7 @@ function RuleRow({ rule, apps }: { rule: AlertRuleRow; apps: { app_id: string; n
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex flex-col gap-1 text-xs font-medium text-slate-500">
+    <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
       {label}
       {children}
     </label>

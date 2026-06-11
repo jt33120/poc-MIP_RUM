@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/PageHeader";
 import { popSecret, requireAdmin } from "@/lib/auth";
 import { q } from "@/lib/db";
 import type { SearchParams } from "@/lib/filters";
@@ -36,15 +37,19 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : null;
 
   return (
-    <div>
-      <h1 className="mb-1 text-2xl font-bold">Utilisateurs</h1>
-      <p className="mb-6 text-sm text-slate-500">
-        Comptes console · rôle admin (tout) ou viewer (lecture, scopé à une liste d&apos;apps) ·
-        toutes les actions sont tracées dans l&apos;audit
-      </p>
+    <div className="animate-fade-up">
+      <PageHeader
+        title="Utilisateurs"
+        sub={
+          <>
+            Comptes console · rôle admin (tout) ou viewer (lecture, scopé à une liste d&apos;apps) ·
+            toutes les actions sont tracées dans l&apos;audit
+          </>
+        }
+      />
 
       {error && (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
           {error}
         </div>
       )}
@@ -52,13 +57,16 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
       {pwe && (
         <div
           data-testid="one-time-password"
-          className="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
         >
           {oneTime ? (
             <>
               Mot de passe de <strong>{decodeURIComponent(pwe)}</strong> (affiché une seule fois,
               note-le maintenant) :{" "}
-              <code data-testid="generated-password" className="rounded bg-white px-2 py-0.5 font-mono">
+              <code
+                data-testid="generated-password"
+                className="rounded bg-panel px-2 py-0.5 font-mono text-ink"
+              >
                 {oneTime}
               </code>
             </>
@@ -68,108 +76,100 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
         </div>
       )}
 
-      <div className="mb-8 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="mb-3 text-sm font-semibold text-slate-700">Créer un utilisateur</h2>
+      <div className="card mb-8 p-4">
+        <h2 className="mb-3 text-sm font-semibold text-ink-soft">Créer un utilisateur</h2>
         <form
           action={createUserAction}
           data-testid="create-user-form"
           className="flex flex-wrap items-end gap-3"
         >
-          <label className="text-xs font-medium text-slate-600">
+          <label className="text-xs font-medium text-ink-soft">
             Email
             <input
               name="email"
               type="email"
               required
               placeholder="prenom@client.fr"
-              className="mt-1 block w-56 rounded-md border border-slate-300 px-2 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none"
+              className="field mt-1 block w-56"
             />
           </label>
-          <label className="text-xs font-medium text-slate-600">
+          <label className="text-xs font-medium text-ink-soft">
             Rôle
-            <select
-              name="role"
-              className="mt-1 block rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none"
-            >
+            <select name="role" className="field mt-1 block">
               <option value="viewer">viewer</option>
               <option value="admin">admin</option>
             </select>
           </label>
-          <label className="text-xs font-medium text-slate-600">
+          <label className="text-xs font-medium text-ink-soft">
             Apps autorisées
             <input
               name="apps"
               type="text"
               placeholder="vide = toutes · ex : demo-app, gip-plateforme"
-              className="mt-1 block w-72 rounded-md border border-slate-300 px-2 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none"
+              className="field mt-1 block w-72"
             />
           </label>
-          <button
-            type="submit"
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-          >
+          <button type="submit" className="btn-accent">
             Créer (mot de passe généré)
           </button>
         </form>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-panel2">
             <tr>
-              <th className="px-4 py-2">Email</th>
-              <th className="px-4 py-2">Rôle</th>
-              <th className="px-4 py-2">Apps</th>
-              <th className="px-4 py-2">Statut</th>
-              <th className="px-4 py-2">Dernier login</th>
-              <th className="px-4 py-2">Actions</th>
+              <th className="th">Email</th>
+              <th className="th">Rôle</th>
+              <th className="th">Apps</th>
+              <th className="th">Statut</th>
+              <th className="th">Dernier login</th>
+              <th className="th">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-line/60">
             {users.map((u) => (
-              <tr key={u.email}>
+              <tr key={u.email} className="transition hover:bg-panel2/60">
                 <td className="px-4 py-2 font-mono text-xs">{u.email}</td>
                 <td className="px-4 py-2">
                   <span
                     className={`rounded px-2 py-0.5 text-xs font-medium ${
-                      u.role === "admin" ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-600"
+                      u.role === "admin"
+                        ? "bg-accent/15 text-accent-deep dark:text-accent-soft"
+                        : "bg-panel2 text-ink-soft"
                     }`}
                   >
                     {u.role}
                   </span>
                 </td>
-                <td className="px-4 py-2 text-xs text-slate-600">
+                <td className="px-4 py-2 text-xs text-ink-soft">
                   {u.apps?.length ? u.apps.join(", ") : "toutes"}
                 </td>
                 <td className="px-4 py-2">
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      u.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                      u.active
+                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
+                        : "bg-red-100 text-red-800 dark:bg-red-400/10 dark:text-red-300"
                     }`}
                   >
                     {u.active ? "actif" : "désactivé"}
                   </span>
                 </td>
-                <td className="px-4 py-2 text-xs text-slate-500">
+                <td className="px-4 py-2 text-xs tabular-nums text-ink-soft">
                   {u.last_login_at ? fmtDate(u.last_login_at) : "jamais"}
                 </td>
                 <td className="px-4 py-2">
                   <div className="flex gap-2">
                     <form action={toggleUserAction} data-testid={`toggle-${u.email}`}>
                       <input type="hidden" name="email" value={u.email} />
-                      <button
-                        type="submit"
-                        className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-                      >
+                      <button type="submit" className="btn-ghost px-2 py-1">
                         {u.active ? "Désactiver" : "Activer"}
                       </button>
                     </form>
                     <form action={resetPasswordAction} data-testid={`reset-${u.email}`}>
                       <input type="hidden" name="email" value={u.email} />
-                      <button
-                        type="submit"
-                        className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-                      >
+                      <button type="submit" className="btn-ghost px-2 py-1">
                         Reset mdp
                       </button>
                     </form>
@@ -179,7 +179,7 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
             ))}
             {!users.length && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-ink-faint">
                   Aucun utilisateur — lance scripts/seed-admin.mjs
                 </td>
               </tr>

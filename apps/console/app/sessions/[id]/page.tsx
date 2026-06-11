@@ -9,13 +9,46 @@ export const dynamic = "force-dynamic";
 
 // styles + pictos par type d'événement de la timeline
 const KIND_STYLE: Record<TimelineKind, { label: string; dot: string; badge: string }> = {
-  pageview: { label: "Page vue", dot: "bg-blue-500", badge: "bg-blue-100 text-blue-800 border-blue-300" },
-  vital: { label: "Vital", dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-800 border-emerald-300" },
-  error: { label: "Erreur JS", dot: "bg-red-500", badge: "bg-red-100 text-red-800 border-red-300" },
-  breadcrumb: { label: "Breadcrumb", dot: "bg-violet-500", badge: "bg-violet-100 text-violet-800 border-violet-300" },
-  longtask: { label: "Long task", dot: "bg-orange-500", badge: "bg-orange-100 text-orange-800 border-orange-300" },
-  event: { label: "Event métier", dot: "bg-cyan-600", badge: "bg-cyan-100 text-cyan-800 border-cyan-300" },
-  api: { label: "Appel API", dot: "bg-sky-600", badge: "bg-sky-100 text-sky-800 border-sky-300" },
+  pageview: {
+    label: "Page vue",
+    dot: "bg-blue-500",
+    badge:
+      "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-400/10 dark:text-blue-300 dark:border-blue-400/30",
+  },
+  vital: {
+    label: "Vital",
+    dot: "bg-emerald-500",
+    badge:
+      "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-400/10 dark:text-emerald-300 dark:border-emerald-400/30",
+  },
+  error: {
+    label: "Erreur JS",
+    dot: "bg-red-500",
+    badge: "bg-red-100 text-red-800 border-red-300 dark:bg-red-400/10 dark:text-red-300 dark:border-red-400/30",
+  },
+  breadcrumb: {
+    label: "Breadcrumb",
+    dot: "bg-violet-500",
+    badge:
+      "bg-violet-100 text-violet-800 border-violet-300 dark:bg-violet-400/10 dark:text-violet-300 dark:border-violet-400/30",
+  },
+  longtask: {
+    label: "Long task",
+    dot: "bg-orange-500",
+    badge:
+      "bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-400/10 dark:text-orange-300 dark:border-orange-400/30",
+  },
+  event: {
+    label: "Event métier",
+    dot: "bg-cyan-600",
+    badge:
+      "bg-cyan-100 text-cyan-800 border-cyan-300 dark:bg-cyan-400/10 dark:text-cyan-300 dark:border-cyan-400/30",
+  },
+  api: {
+    label: "Appel API",
+    dot: "bg-sky-600",
+    badge: "bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-400/10 dark:text-sky-300 dark:border-sky-400/30",
+  },
 };
 
 const KIND_ICON: Record<TimelineKind, React.ReactNode> = {
@@ -84,18 +117,18 @@ export default async function SessionDetail({
   }, {});
 
   return (
-    <div>
-      <Link href={`/sessions${qs ? `?${qs}` : ""}`} className="text-sm text-blue-600 hover:underline">
+    <div className="animate-fade-up">
+      <Link href={`/sessions${qs ? `?${qs}` : ""}`} className="text-sm text-brand hover:underline">
         ← Sessions
       </Link>
-      <h1 className="mb-1 mt-2 text-2xl font-bold">
-        Session <span className="font-mono text-xl text-slate-600">{meta.session_id.slice(0, 8)}…</span>
+      <h1 className="mb-1 mt-2 text-xl font-bold tracking-tight">
+        Session <span className="font-mono text-lg text-ink-soft">{meta.session_id.slice(0, 8)}…</span>
       </h1>
-      <p className="mb-6 text-sm text-slate-500">
+      <p className="mb-6 text-sm text-ink-soft">
         Timeline fusionnée : pages vues, vitals, erreurs, breadcrumbs, long tasks et events métier
       </p>
 
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
         <Meta label="App" value={meta.app_id} />
         <Meta label="Device" value={meta.device_type ?? "—"} />
         <Meta label="Navigateur" value={browserFromUA(meta.user_agent)} />
@@ -105,11 +138,11 @@ export default async function SessionDetail({
         <Meta label="Pages" value={String(meta.page_count)} />
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-        <span>
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+        <span className="tabular-nums">
           {fmtDate(meta.started_at)} → {fmtDate(meta.last_seen_at)}
         </span>
-        <span className="text-slate-300">·</span>
+        <span className="text-ink-faint/50">·</span>
         {(Object.keys(KIND_STYLE) as TimelineKind[])
           .filter((k) => counts[k])
           .map((k) => (
@@ -120,7 +153,7 @@ export default async function SessionDetail({
       </div>
 
       {/* v0.3 — onglets Timeline | Replay (B2) */}
-      <div className="mb-4 flex gap-1 border-b border-slate-200" data-testid="session-tabs">
+      <div className="mb-4 flex gap-1 border-b border-line" data-testid="session-tabs">
         <TabLink href={tabHref("timeline")} active={tab === "timeline"}>
           Timeline
         </TabLink>
@@ -132,15 +165,17 @@ export default async function SessionDetail({
       {tab === "replay" ? (
         <ReplayPlayer sessionId={meta.session_id} />
       ) : (
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="card p-6">
           {timeline.length ? (
-            <ol className="relative ml-2 border-l-2 border-slate-200" data-testid="timeline">
+            <ol className="relative ml-2 border-l-2 border-line" data-testid="timeline">
               {timeline.map((it, i) => (
                 <TimelineRow key={i} item={it} t0={t0} />
               ))}
             </ol>
           ) : (
-            <p className="py-8 text-center text-sm text-slate-400">Aucun événement enregistré pour cette session</p>
+            <p className="py-8 text-center text-sm text-ink-faint">
+              Aucun événement enregistré pour cette session
+            </p>
           )}
         </div>
       )}
@@ -152,10 +187,8 @@ function TabLink({ href, active, children }: { href: string; active: boolean; ch
   return (
     <Link
       href={href}
-      className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
-        active
-          ? "border-blue-600 text-blue-700"
-          : "border-transparent text-slate-500 hover:text-slate-700"
+      className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition ${
+        active ? "border-accent text-ink" : "border-transparent text-ink-faint hover:text-ink-soft"
       }`}
     >
       {children}
@@ -174,7 +207,7 @@ function TimelineRow({ item, t0 }: { item: TimelineItem; t0: number }) {
         {KIND_ICON[item.kind]}
       </span>
       <div className="flex flex-wrap items-baseline gap-2 text-sm">
-        <span className="w-20 shrink-0 font-mono text-xs text-slate-400" title={fmtDate(item.ts)}>
+        <span className="w-20 shrink-0 font-mono text-xs tabular-nums text-ink-faint" title={fmtDate(item.ts)}>
           {fmtOffset(Math.max(0, offset))}
         </span>
         <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${st.badge}`}>{st.label}</span>
@@ -189,8 +222,8 @@ function ItemBody({ item }: { item: TimelineItem }) {
     case "pageview":
       return (
         <>
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">{item.title}</span>
-          {item.detail && <span className="text-xs text-slate-400">{item.detail}</span>}
+          <span className="chip-mono">{item.title}</span>
+          {item.detail && <span className="text-xs text-ink-faint">{item.detail}</span>}
         </>
       );
     case "vital": {
@@ -198,18 +231,18 @@ function ItemBody({ item }: { item: TimelineItem }) {
       return (
         <>
           <span className="font-semibold">{item.title}</span>
-          <span className={`rounded border px-1.5 py-0.5 text-xs font-medium ${cls}`}>
+          <span className={`rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums ${cls}`}>
             {fmtVital(item.title ?? "", item.value != null ? Number(item.value) : null)}
           </span>
-          {item.detail && <span className="font-mono text-xs text-slate-400">{item.detail}</span>}
+          {item.detail && <span className="font-mono text-xs text-ink-faint">{item.detail}</span>}
         </>
       );
     }
     case "error":
       return (
         <>
-          <span className="font-semibold text-red-700">{item.title}</span>
-          <span className="max-w-xl truncate text-xs text-slate-600" title={item.detail ?? ""}>
+          <span className="font-semibold text-red-700 dark:text-red-400">{item.title}</span>
+          <span className="max-w-xl truncate text-xs text-ink-soft" title={item.detail ?? ""}>
             {item.detail}
           </span>
         </>
@@ -217,9 +250,11 @@ function ItemBody({ item }: { item: TimelineItem }) {
     case "breadcrumb":
       return (
         <>
-          <span className="rounded bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-700">{item.title}</span>
+          <span className="rounded bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-400/10 dark:text-violet-300">
+            {item.title}
+          </span>
           {item.detail && (
-            <span className="max-w-xl truncate text-xs text-slate-600" title={item.detail}>
+            <span className="max-w-xl truncate text-xs text-ink-soft" title={item.detail}>
               {item.detail}
             </span>
           )}
@@ -228,18 +263,18 @@ function ItemBody({ item }: { item: TimelineItem }) {
     case "longtask":
       return (
         <>
-          <span className="font-semibold text-orange-700">
+          <span className="font-semibold tabular-nums text-orange-700 dark:text-orange-400">
             {item.value != null ? `${Math.round(Number(item.value))} ms` : "—"}
           </span>
-          {item.detail && <span className="font-mono text-xs text-slate-400">{item.detail}</span>}
+          {item.detail && <span className="font-mono text-xs text-ink-faint">{item.detail}</span>}
         </>
       );
     case "event":
       return (
         <>
-          <span className="font-semibold text-cyan-700">{item.title}</span>
+          <span className="font-semibold text-cyan-700 dark:text-cyan-400">{item.title}</span>
           {item.detail && item.detail !== "null" && (
-            <span className="max-w-xl truncate font-mono text-xs text-slate-500" title={item.detail}>
+            <span className="max-w-xl truncate font-mono text-xs text-ink-faint" title={item.detail}>
               {item.detail}
             </span>
           )}
@@ -249,11 +284,15 @@ function ItemBody({ item }: { item: TimelineItem }) {
       // title = 'GET /api/aos', detail = '200 · serveur 211 ms', value = ms total
       return (
         <>
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">{item.title}</span>
-          <span className={`font-semibold ${item.rating === "poor" ? "text-red-700" : "text-sky-700"}`}>
+          <span className="chip-mono">{item.title}</span>
+          <span
+            className={`font-semibold tabular-nums ${
+              item.rating === "poor" ? "text-red-700 dark:text-red-400" : "text-sky-700 dark:text-sky-400"
+            }`}
+          >
             {item.value != null ? `${Math.round(Number(item.value))} ms` : "—"}
           </span>
-          {item.detail && <span className="text-xs text-slate-500">{item.detail}</span>}
+          {item.detail && <span className="text-xs text-ink-soft">{item.detail}</span>}
         </>
       );
   }
@@ -261,8 +300,8 @@ function ItemBody({ item }: { item: TimelineItem }) {
 
 function Meta({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="text-xs text-slate-500">{label}</div>
+    <div className="card p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
       <div className={`mt-0.5 truncate text-sm font-semibold ${mono ? "font-mono" : ""}`} title={value}>
         {value}
       </div>

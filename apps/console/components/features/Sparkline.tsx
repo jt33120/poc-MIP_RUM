@@ -1,4 +1,5 @@
 // Mini-histogramme SVG inline (occurrences/h sur 24 h) — rendu serveur, zéro lib.
+// Couleurs via currentColor/var() pour suivre le thème clair/sombre.
 export function Sparkline({
   values,
   width = 96,
@@ -17,6 +18,7 @@ export function Sparkline({
       height={height}
       role="img"
       aria-label={`${total} occurrence(s) sur 24 h`}
+      className="text-red-500 dark:text-red-400"
     >
       <title>{`${total} occurrence(s) sur 24 h`}</title>
       {values.map((v, i) =>
@@ -27,7 +29,7 @@ export function Sparkline({
             y={(height - (v / max) * (height - 2)).toFixed(1)}
             width={Math.max(barW - 1, 1).toFixed(1)}
             height={((v / max) * (height - 2)).toFixed(1)}
-            fill="#dc2626"
+            fill="currentColor"
             rx="1"
           />
         ) : (
@@ -37,7 +39,7 @@ export function Sparkline({
             y={height - 1.5}
             width={Math.max(barW - 1, 1).toFixed(1)}
             height="1.5"
-            fill="#e2e8f0"
+            fill="rgb(var(--c-line))"
           />
         ),
       )}
