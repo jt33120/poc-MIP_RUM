@@ -180,3 +180,20 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
   - Transpileur Playwright vs createRequire/import.meta → hash bcrypt généré en sous-processus `node -e` (CJS).
   - Course seed-admin entre spec files parallèles (le mdp régénéré invalide celui de l'autre spec) → utilisateur e2e dédié par spec.
 - **Restes** : middleware non déployé sur le VPS OVH au moment du commit (SSH par mot de passe — clé en cours d'autorisation par Julian) ; alerting email toujours absent ; PR mip-rum#1 à merger (classifieur : pas de push master direct).
+
+## v0.5 — Sprint jour 2 (11/06/2026) : onboarding clients self-service
+
+- **Méthode** : recon console (RBAC/stash/audit réutilisés tels quels) → contrat SQL (migration-v05) → CORS dynamique (edge + dev-server) → actions/UI/wizard → assistant IA → tests → deploy. Demande Julian : « page add customer, guidée, assistée IA au max ».
+- **Ce qui a marché** (valeurs réelles) :
+  - Création client 2 min : clé `mip_<32hex>` hashée sha256, affichée une fois (stash v0.3 réutilisé), audit complet, origines CORS **en base** (`app_registry.allowed_origins`) unies au socle statique par les edge functions (cache 60 s) → ajouter un client = zéro redéploiement, prouvé en recette (préflight ACAO sur origine fraîche en ~10 s).
+  - Wizard 5 étapes avec checklist **live** (AutoRefresh 5 s existant) : vitals/sessions/spans front/back. Templates : mip_rum_middleware.py (copie conforme prod G-IT) + **mip-rum-express.js nouveau** (connect-style, zéro dépendance, testé contre flattenOtlp : route template, traceparent, session tracestate).
+  - Assistant IA : `/api/assist` fetch direct (zéro dép. npm), **Mistral prioritaire** (souverain — choix Julian avec clé fournie) sinon Anthropic, sinon 501 + encart désactivé. Admin only + rate limit 10/min. Recette prod : réponse Mistral réelle.
+  - Tests 115 unit + 10 E2E verts ; recette cloud **9/9**.
+  - Vercel désormais **branché GitHub** (master → prod auto). PR #3 (v0.5) et #4 (Mistral) mergées par Julian/agent ; déploiement du merge = build vert.
+- **Ce qui n'a pas marché / pièges** :
+  - **Incident prod ~3 min (401 ingestion)** : redéploiement edge CLI SANS `--no-verify-jwt` → Supabase exige un JWT que les SDK navigateur n'ont pas. Leçon : ce flag fait partie de la commande canonique, toujours.
+  - **Grant ≠ droit d'écrire** : RLS activé sur app_registry avec politique SELECT seule → `grant insert/update` inerte, insert silencieusement converti en « exists » par mon action (catch trop large, à affiner). Fix : politiques `cro_ins/upd_app_registry` (motif v0.3). Leçon : sur Supabase, **grant + policy** vont toujours par paire.
+  - Projet Vercel parasite « mip-rum » (racine du repo) : échoue à chaque push master (« no public dir ») → croix rouge sur les commits. Lien local `.vercel/` racine supprimé ; le projet côté Vercel est à supprimer (décision Julian).
+  - Commit Mistral poussé 11 s APRÈS le merge de PR #3 → resté hors master, rattrapé par PR #4. Leçon : vérifier l'état du remote avant de pousser un « dernier » commit.
+  - Refonte design (PR #2, session parallèle de Julian) mergée entre v0.4 et v0.5 : merge git propre, pages customers fonctionnelles sur la charte.
+- **Restes** : projet Vercel « mip-rum » à supprimer (1 clic dashboard) ; rotation de la clé Mistral (collée en clair dans la conversation — POC assumé) ; alerting email ; 1er tir webhook réel.
