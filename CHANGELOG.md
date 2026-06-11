@@ -2,7 +2,7 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
-## v0.3 — sprint nuit 2 (en intégration, phases C/D)
+## v0.3 — 2026-06-11 (sprint nuit 2, livré et déployé)
 
 Périmètre : [ROADMAP_V03.md](ROADMAP_V03.md). Contrat de données verrouillé avant build (`apps/ingest/sql/migration-v03.sql` : `replay_chunk`, `console_user`, `audit_log`, `alert_delivery`, `rate_counter` + `rate_check()`, vue `v_anomaly`, `check_alerts()` v2 avec garde pg_net). Dépendances épinglées : rrweb 2.0.1, rrweb-player 2.0.1, bcryptjs 3.0.3, jose 6.2.3.
 
