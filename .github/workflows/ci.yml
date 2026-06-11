@@ -40,6 +40,10 @@ jobs:
       - name: Tests unitaires (vitest)
         run: pnpm test:unit
 
+      # v0.4 — middleware FastAPI de tracing (stdlib pur : aucun pip install requis)
+      - name: Tests middleware Python (unittest)
+        run: python3 -m unittest discover -s integrations/fastapi -v
+
   e2e:
     name: E2E Playwright (Postgres service)
     runs-on: ubuntu-latest
@@ -81,6 +85,7 @@ jobs:
           psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/schema.sql
           psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/migration-v02.sql
           psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/migration-v03.sql
+          psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/migration-v04.sql
 
       - name: Build SDK (servi par demo/serve.mjs et la console)
         run: pnpm --filter @mip/rum-sdk build
@@ -88,6 +93,10 @@ jobs:
       # le test corrélation attend des runs robot en face des données RUM générées par le test
       - name: Seed synthétique (app demo-app, 24 h de runs)
         run: node apps/sync-synthetic/src/sync.mjs seed
+
+      # v0.4 — backend FastAPI de démo (cible du tracing distribué, spawné par l'E2E)
+      - name: Dépendances Python du backend démo
+        run: pip3 install fastapi uvicorn
 
       - name: Installer Chromium (+ dépendances système)
         run: pnpm exec playwright install chromium --with-deps

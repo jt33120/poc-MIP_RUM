@@ -22,6 +22,12 @@ export interface MIPRumConfig {
   replay?: boolean | number;
   /** Replay endpoint override; default = endpoint with /v1/traces replaced by /v1/replay */
   replayEndpoint?: string;
+  /**
+   * Tracing distribué (v0.4) : false = off ; true (défaut) = propagation
+   * traceparent sur les appels same-origin ; string[] = origins SUPPLÉMENTAIRES
+   * (ex. 'https://api.exemple.fr') en plus du same-origin.
+   */
+  trace?: boolean | string[];
 }
 
 export type VitalName = "LCP" | "INP" | "CLS" | "FCP" | "TTFB";

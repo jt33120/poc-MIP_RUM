@@ -11,3 +11,7 @@ playwright-report/
 supabase/.temp/
 .env.production
 .secrets-v02.local.md
+
+# v0.4 demo backend
+demo/.venv/
+__pycache__/

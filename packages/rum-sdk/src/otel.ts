@@ -10,7 +10,7 @@ import { RetryExporter } from "./retry";
 import type { MIPRumConfig } from "./types";
 
 const SDK_NAME = "@mip/rum-sdk";
-const SDK_VERSION = "0.2.0";
+const SDK_VERSION = "0.4.0";
 
 let provider: WebTracerProvider | null = null;
 
