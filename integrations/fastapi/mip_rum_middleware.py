@@ -135,8 +135,8 @@ class MIPRumMiddleware:
     # --- collecte ---------------------------------------------------------------
     def _record(self, scope, status_code: int, t0: float, start_ns: int) -> None:
         path = scope.get("path", "/")
-        if path in self.ignore:
-            return
+        if path in self.ignore or scope.get("method") == "OPTIONS":
+            return  # préflights CORS : jamais de span
         duration_ms = round((time.perf_counter() - t0) * 1000, 1)
 
         headers = {}
