@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
   try {
     const payload = await req.json();
     const rows = flattenOtlp(payload);
-    const { sessions, pageviews, metrics, errors, resources, longtasks, breadcrumbs, events } = rows;
+    const { sessions, pageviews, metrics, errors, resources, longtasks, breadcrumbs, events, spans } = rows;
 
     // vérif clé d'API (403) — clé portée par l'attribut resource mip.api_key
     for (const { app_id, api_key } of rows.apiKeys) {
@@ -162,6 +162,7 @@ Deno.serve(async (req) => {
     await ins("rum_longtask", longtasks);
     await ins("rum_breadcrumb", breadcrumbs);
     await ins("rum_event", events);
+    await ins("rum_span", spans); // v0.4 tracing distribué (front + back)
 
     return new Response(JSON.stringify({ partialSuccess: {} }), {
       status: 200,

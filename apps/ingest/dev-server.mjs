@@ -127,6 +127,7 @@ async function writeRows({
   longtasks,
   breadcrumbs,
   events,
+  spans,
 }) {
   const client = await pool.connect();
   try {
@@ -191,6 +192,13 @@ async function writeRows({
       events.map((e) => ({ ...e, props: e.props ? JSON.stringify(e.props) : null })),
       "on conflict (span_id) do nothing",
     );
+    await batchInsert(
+      client,
+      "rum_span",
+      ["span_id", "trace_id", "parent_span_id", "tier", "session_id", "app_id", "route", "url", "method", "status_code", "duration_ms", "ts"],
+      spans ?? [],
+      "on conflict (span_id) do nothing",
+    );
     await client.query("commit");
   } catch (err) {
     await client.query("rollback");
@@ -245,7 +253,7 @@ const server = http.createServer(async (req, res) => {
 
     await writeRows(rows);
     console.log(
-      `[ingest] ${new Date().toISOString()} ← ${origin || "(no origin)"} | sessions:${rows.sessions.length} pageviews:${rows.pageviews.length} metrics:${rows.metrics.length} errors:${rows.errors.length} resources:${rows.resources.length} longtasks:${rows.longtasks.length} breadcrumbs:${rows.breadcrumbs.length} events:${rows.events.length} rejected:${rows.rejected}`,
+      `[ingest] ${new Date().toISOString()} ← ${origin || "(no origin)"} | sessions:${rows.sessions.length} pageviews:${rows.pageviews.length} metrics:${rows.metrics.length} errors:${rows.errors.length} resources:${rows.resources.length} longtasks:${rows.longtasks.length} breadcrumbs:${rows.breadcrumbs.length} events:${rows.events.length} spans:${rows.spans.length} rejected:${rows.rejected}`,
     );
     res.writeHead(200, { "content-type": "application/json", ...cors });
     res.end(JSON.stringify({ partialSuccess: {} }));

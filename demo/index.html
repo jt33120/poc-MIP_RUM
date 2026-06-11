@@ -26,6 +26,9 @@
       // v0.3 — session replay (bundle séparé lazy-loadé ; receveur local :4319)
       replay: true,
       replayEndpoint: "http://localhost:4319/v1/replay",
+      // v0.4 — tracing distribué : propage traceparent vers le backend de démo
+      // (:8001, cross-origin) en plus du same-origin par défaut
+      trace: ["http://localhost:8001"],
     });
   </script>
 </head>
@@ -41,6 +44,8 @@
     <button id="btn-slow-res">Ressource lente</button>
     <button id="btn-longtask">Long task</button>
     <button id="btn-track">Événement métier</button>
+    <button id="btn-api-fetch">Appel API (fetch)</button>
+    <button id="btn-api-xhr">Appel API (XHR/axios)</button>
   </div>
 
   <div id="view">Accueil</div>
@@ -99,6 +104,19 @@
     document.getElementById("btn-track").addEventListener("click", () => {
       MIPRum.track("partner_search", { results: 12 });
       render("événement partner_search envoyé");
+    });
+    // v0.4 — tracing distribué : fetch instrumenté (traceparent -> backend :8001)
+    document.getElementById("btn-api-fetch").addEventListener("click", () => {
+      fetch("http://localhost:8001/api/demo/items/42")
+        .then((r) => r.json())
+        .then((j) => render("API fetch : " + j.name));
+    });
+    // v0.4 — même chose via XMLHttpRequest (chemin axios, comme sur G-IT)
+    document.getElementById("btn-api-xhr").addEventListener("click", () => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", "http://localhost:8001/api/demo/items/7");
+      xhr.onload = () => render("API XHR : " + JSON.parse(xhr.responseText).name);
+      xhr.send();
     });
   </script>
 </body>

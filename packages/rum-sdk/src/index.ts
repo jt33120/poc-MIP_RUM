@@ -1,3 +1,4 @@
+import { initApiSpans } from "./apispans";
 import { createBreadcrumbTrail, initClickBreadcrumbs, type BreadcrumbTrail } from "./breadcrumbs";
 import { ConsentGate } from "./consent";
 import { currentRoute, initNavigation, scrubUrl } from "./context";
@@ -77,6 +78,30 @@ export function init(cfg: MIPRumConfig): void {
   initClickBreadcrumbs(trail);
   initVitals(emit);
 
+  // tracing distribué (v0.4) : fetch/XHR -> traceparent + span 'http.client'.
+  // Les endpoints d'ingestion MIP sont exclus (pas de boucle SDK -> SDK).
+  let apiCap: ReturnType<typeof initApiSpans> | null = null;
+  if (cfg.trace !== false) {
+    const denyOrigins: string[] = [];
+    for (const u of [
+      cfg.endpoint,
+      cfg.replayEndpoint ?? cfg.endpoint.replace("/v1/traces", "/v1/replay"),
+    ]) {
+      try {
+        denyOrigins.push(new URL(u, location.href).origin);
+      } catch {
+        /* endpoint relatif invalide : ignoré */
+      }
+    }
+    apiCap = initApiSpans(emit, {
+      extraOrigins: Array.isArray(cfg.trace)
+        ? cfg.trace.map((o) => o.replace(/\/+$/, ""))
+        : [],
+      denyOrigins,
+      sessionId: session.sessionId,
+    });
+  }
+
   // chaque erreur laisse aussi un breadcrumb (parcours menant à l'erreur)
   initErrors((name, attrs) => {
     emit(name, attrs);
@@ -87,6 +112,7 @@ export function init(cfg: MIPRumConfig): void {
     // caps par page : remis à zéro à chaque pageview (initiale et SPA)
     resourceCap.reset();
     longtaskCap.reset();
+    apiCap?.reset();
     trail!.cap.reset();
     emit("pageview", {
       "mip.url": scrubUrl(location.href),

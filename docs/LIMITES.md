@@ -2,6 +2,13 @@
 
 Liste honnête, demandée par Julian. Colonne « v0.2 » = traité dans le sprint nuit du 10→11/06 (cf. ROADMAP_V02.md) ; « v0.3 » = sprint nuit 2 (cf. ROADMAP_V03.md et la section ci-dessous) ; « Phase 1+ » = nécessite un vrai chantier produit MIP.
 
+## Mise à jour v0.4 (11/06/2026 — tracing distribué)
+
+| Limite d'origine | Ce qui est livré en v0.4 |
+|---|---|
+| **Tracing distribué front→back** (#6, annoncé Phase 2) | Livré pour le web→FastAPI : SDK propage `traceparent` (fetch + XHR/axios), middleware backend 1 fichier stdlib (posé sur uti-platform, inactif sans env vars), corrélation par trace_id en console (/tracing + timeline session). Limites assumées : un seul framework backend (FastAPI/Starlette), un seul saut (pas de propagation backend→backend ni DB span) |
+| Backend ClickHouse (#13) | **Décision : reporté volontairement** (zéro budget MVP). Le chemin reste prouvé en local (bench Δ=0) ; bascule possible dès qu'un hébergement est financé |
+
 ## Mise à jour v0.3 (sprint nuit 2)
 
 ### Résolu en v0.3

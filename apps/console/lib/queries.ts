@@ -230,7 +230,14 @@ export async function sessionMeta(id: string): Promise<SessionMeta | null> {
   return row ?? null;
 }
 
-export type TimelineKind = "pageview" | "vital" | "error" | "breadcrumb" | "longtask" | "event";
+export type TimelineKind =
+  | "pageview"
+  | "vital"
+  | "error"
+  | "breadcrumb"
+  | "longtask"
+  | "event"
+  | "api";
 
 export interface TimelineItem {
   kind: TimelineKind;
@@ -263,6 +270,18 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
        union all
        select 'event', ts, name, props::text, null, null
        from rum_event where session_id = $1
+       union all
+       -- v0.4 appels API : titre = méthode + chemin, détail = statut + temps serveur corrélé
+       select 'api', f.ts,
+              f.method || ' ' || regexp_replace(coalesce(f.url, ''), '^https?://[^/]+', ''),
+              coalesce(f.status_code::text, '—')
+                || coalesce(' · serveur ' || round(b.duration_ms::numeric) || ' ms', ''),
+              f.duration_ms,
+              case when coalesce(f.status_code, 0) >= 400 or coalesce(f.status_code, 0) = 0
+                   then 'poor' end
+       from rum_span f
+       left join rum_span b on b.trace_id = f.trace_id and b.tier = 'back'
+       where f.session_id = $1 and f.tier = 'front'
      ) t
      order by ts asc, kind
      limit 500`,

@@ -15,6 +15,7 @@ const KIND_STYLE: Record<TimelineKind, { label: string; dot: string; badge: stri
   breadcrumb: { label: "Breadcrumb", dot: "bg-violet-500", badge: "bg-violet-100 text-violet-800 border-violet-300" },
   longtask: { label: "Long task", dot: "bg-orange-500", badge: "bg-orange-100 text-orange-800 border-orange-300" },
   event: { label: "Event métier", dot: "bg-cyan-600", badge: "bg-cyan-100 text-cyan-800 border-cyan-300" },
+  api: { label: "Appel API", dot: "bg-sky-600", badge: "bg-sky-100 text-sky-800 border-sky-300" },
 };
 
 const KIND_ICON: Record<TimelineKind, React.ReactNode> = {
@@ -24,6 +25,7 @@ const KIND_ICON: Record<TimelineKind, React.ReactNode> = {
   breadcrumb: <Icon d="M4 3l9 5-4 1.5L7.5 14 4 3Z" />,
   longtask: <Icon d="M9 4.5V9l3 2M9 16A7 7 0 1 0 9 2a7 7 0 0 0 0 14Z" />,
   event: <Icon d="M3 3h6l6 6-6 6-6-6V3Zm3 3h.5" />,
+  api: <Icon d="M2 9h5m4 0h5M7 9l2-3m0 6 2-3" />,
 };
 
 function Icon({ d }: { d: string }) {
@@ -241,6 +243,17 @@ function ItemBody({ item }: { item: TimelineItem }) {
               {item.detail}
             </span>
           )}
+        </>
+      );
+    case "api":
+      // title = 'GET /api/aos', detail = '200 · serveur 211 ms', value = ms total
+      return (
+        <>
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">{item.title}</span>
+          <span className={`font-semibold ${item.rating === "poor" ? "text-red-700" : "text-sky-700"}`}>
+            {item.value != null ? `${Math.round(Number(item.value))} ms` : "—"}
+          </span>
+          {item.detail && <span className="text-xs text-slate-500">{item.detail}</span>}
         </>
       );
   }

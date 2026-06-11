@@ -106,9 +106,12 @@ export function errorFingerprint(errorType, message, stack) {
  * Rejette (compte) les resourceSpans sans mip.app_id (PLAN §7.2).
  * v0.2 : resources/longtasks/breadcrumbs/events (track.*), fingerprint d'erreur,
  * apiKeys = clé `mip.api_key` lue sur la resource, un élément par resourceSpan accepté.
+ * v0.4 : spans de tracing distribué — 'http.client' (SDK web, session requise)
+ * et 'http.server' (middleware backend, session optionnelle via tracestate) ->
+ * table rum_span, corrélés par mip.trace_id.
  * @returns {{sessions: object[], pageviews: object[], metrics: object[], errors: object[],
  *            resources: object[], longtasks: object[], breadcrumbs: object[], events: object[],
- *            apiKeys: {app_id: string, api_key: string|null}[], rejected: number}}
+ *            spans: object[], apiKeys: {app_id: string, api_key: string|null}[], rejected: number}}
  */
 export function flattenOtlp(payload) {
   const sessions = new Map();
@@ -119,8 +122,31 @@ export function flattenOtlp(payload) {
   const longtasks = [];
   const breadcrumbs = [];
   const events = [];
+  const spans = [];
   const apiKeys = [];
   let rejected = 0;
+
+  /** Ligne rum_span commune front/back ; null si trace_id/span_id absents. */
+  const spanRow = (tier, a, appId, ts) => {
+    const traceId = a["mip.trace_id"];
+    const spanId = a["mip.span_id"];
+    const durationMs = a["http.duration_ms"];
+    if (!traceId || !spanId || typeof durationMs !== "number") return null;
+    return {
+      span_id: spanId,
+      trace_id: traceId,
+      parent_span_id: a["mip.parent_span_id"] ?? null,
+      tier,
+      session_id: a["mip.session_id"] ?? null,
+      app_id: appId,
+      route: a["mip.route"] ?? null,
+      url: scrubUrl(a["http.url"]),
+      method: a["http.method"] ?? null,
+      status_code: a["http.status_code"] ?? null,
+      duration_ms: durationMs,
+      ts,
+    };
+  };
 
   for (const rs of payload?.resourceSpans ?? []) {
     const res = attrsToObj(rs.resource?.attributes);
@@ -133,6 +159,16 @@ export function flattenOtlp(payload) {
     for (const ss of rs.scopeSpans ?? []) {
       for (const span of ss.spans ?? []) {
         const a = attrsToObj(span.attributes);
+
+        // span backend (middleware serveur) : pas de session requise, pas
+        // d'upsert rum_session (le front est seul maître de la session)
+        if (span.name === "http.server") {
+          const row = spanRow("back", a, appId, nanosToDate(span.startTimeUnixNano));
+          if (row) spans.push(row);
+          else rejected++;
+          continue;
+        }
+
         const sessionId = a["mip.session_id"];
         if (!sessionId) {
           rejected++;
@@ -243,6 +279,10 @@ export function flattenOtlp(payload) {
             seq: a["breadcrumb.seq"] ?? null,
             ts,
           });
+        } else if (span.name === "http.client") {
+          const row = spanRow("front", a, appId, ts);
+          if (row) spans.push(row);
+          else rejected++;
         } else if (span.name.startsWith("track.")) {
           events.push({
             span_id: span.spanId,
@@ -267,6 +307,7 @@ export function flattenOtlp(payload) {
     longtasks,
     breadcrumbs,
     events,
+    spans,
     apiKeys,
     rejected,
   };

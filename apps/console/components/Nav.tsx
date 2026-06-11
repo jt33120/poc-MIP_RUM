@@ -7,6 +7,7 @@ const ITEMS = [
   { href: "/pages", label: "Pages lentes" },
   { href: "/errors", label: "Erreurs JS" },
   { href: "/sessions", label: "Sessions" },
+  { href: "/tracing", label: "Tracing" },
   { href: "/alerts", label: "Alertes" },
   { href: "/correlation", label: "Corrélation" },
 ];
