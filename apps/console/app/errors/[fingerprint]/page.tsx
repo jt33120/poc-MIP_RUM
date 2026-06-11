@@ -30,19 +30,22 @@ export default async function ErrorGroup({
   const { group, last, occurrences } = detail;
 
   return (
-    <div>
-      <Link href={`/errors${filtersToQuery(f)}`} className="mb-4 inline-block text-sm text-blue-600 hover:underline">
+    <div className="animate-fade-up">
+      <Link
+        href={`/errors${filtersToQuery(f)}`}
+        className="mb-4 inline-block text-sm text-brand hover:underline"
+      >
         ← Tous les groupes
       </Link>
-      <h1 className="mb-1 flex items-center gap-3 text-2xl font-bold">
-        <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-base">
+      <h1 className="mb-1 flex items-center gap-3 text-xl font-bold tracking-tight">
+        <span className="rounded border border-red-300 bg-red-100 px-2 py-0.5 font-mono text-base text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
           {group.error_type ?? "Error"}
         </span>
         <span className="truncate" title={group.sample_message ?? ""}>
           {group.sample_message ?? "(sans message)"}
         </span>
       </h1>
-      <p className="mb-6 font-mono text-xs text-slate-400">
+      <p className="mb-6 font-mono text-xs text-ink-faint">
         fingerprint {group.fingerprint} · app {group.app_id}
       </p>
 
@@ -53,54 +56,55 @@ export default async function ErrorGroup({
         <Stat label="Dernière vue" value={fmtDate(group.last_seen)} />
       </div>
 
-      <div className="mb-6 rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-500">
+      <div className="card mb-6 overflow-hidden">
+        <div className="border-b border-line px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
           Stack du dernier exemplaire ({last ? fmtDate(last.ts) : "—"})
           {last?.source && (
-            <span className="ml-2 font-mono text-xs font-normal text-slate-400">
+            <span className="ml-2 font-mono text-xs font-normal normal-case tracking-normal text-ink-faint">
               {last.source}
               {last.lineno != null && `:${last.lineno}`}
               {last.colno != null && `:${last.colno}`}
             </span>
           )}
         </div>
-        <pre className="overflow-x-auto bg-slate-900 p-4 text-xs leading-relaxed text-slate-100">
+        {/* terminal navy permanent : lisible dans les deux thèmes */}
+        <pre className="overflow-x-auto bg-navy-950 p-4 text-xs leading-relaxed text-slate-200">
           {last?.stack ?? last?.message ?? "(pas de stack capturée)"}
         </pre>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-500">
+      <div className="card overflow-hidden">
+        <div className="border-b border-line px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
           Occurrences ({occurrences.length} affichées)
         </div>
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+          <thead className="bg-panel2">
             <tr>
-              <th className="px-4 py-2">Quand</th>
-              <th className="px-4 py-2">Route</th>
-              <th className="px-4 py-2">Kind</th>
-              <th className="px-4 py-2">Message</th>
-              <th className="px-4 py-2">Device</th>
-              <th className="px-4 py-2">Session</th>
+              <th className="th">Quand</th>
+              <th className="th">Route</th>
+              <th className="th">Kind</th>
+              <th className="th">Message</th>
+              <th className="th">Device</th>
+              <th className="th">Session</th>
             </tr>
           </thead>
           <tbody>
             {occurrences.map((o) => (
-              <tr key={o.id} className="border-t border-slate-100">
-                <td className="px-4 py-2 text-xs">{fmtDate(o.ts)}</td>
-                <td className="px-4 py-2 font-mono text-xs">{o.route ?? "—"}</td>
+              <tr key={o.id} className="border-t border-line/60 transition hover:bg-panel2/60">
+                <td className="px-4 py-2 text-xs text-ink-soft">{fmtDate(o.ts)}</td>
+                <td className="px-4 py-2"><span className="chip-mono">{o.route ?? "—"}</span></td>
                 <td className="px-4 py-2">
-                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{o.kind ?? "—"}</span>
+                  <span className="chip-mono font-sans">{o.kind ?? "—"}</span>
                 </td>
-                <td className="max-w-sm truncate px-4 py-2 text-xs" title={o.message ?? ""}>
+                <td className="max-w-sm truncate px-4 py-2 text-xs text-ink-soft" title={o.message ?? ""}>
                   {o.message ?? "—"}
                 </td>
-                <td className="px-4 py-2 text-xs">{o.device_type ?? "—"}</td>
+                <td className="px-4 py-2 text-xs text-ink-soft">{o.device_type ?? "—"}</td>
                 <td className="px-4 py-2">
                   {o.session_id ? (
                     <Link
                       href={`/sessions/${encodeURIComponent(o.session_id)}${filtersToQuery(f)}`}
-                      className="font-mono text-xs text-blue-600 hover:underline"
+                      className="font-mono text-xs text-brand hover:underline"
                     >
                       {o.session_id.slice(0, 8)}… →
                     </Link>
@@ -112,7 +116,7 @@ export default async function ErrorGroup({
             ))}
             {!occurrences.length && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={6} className="px-4 py-6 text-center text-ink-faint">
                   Aucune occurrence avec ces filtres (device ?)
                 </td>
               </tr>
@@ -126,9 +130,11 @@ export default async function ErrorGroup({
 
 function Stat({ label, value, testid }: { label: string; value: string; testid?: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-sm text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-bold" data-testid={testid}>{value}</div>
+    <div className="card p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
+      <div className="mt-1.5 text-xl font-bold tabular-nums" data-testid={testid}>
+        {value}
+      </div>
     </div>
   );
 }

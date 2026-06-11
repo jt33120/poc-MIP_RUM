@@ -55,30 +55,30 @@ export default function ReplayPlayer({ sessionId }: { sessionId: string }) {
 
   return (
     <div
-      className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+      className="card p-6"
       data-testid="replay-player"
       data-state={state}
       data-events={eventCount}
     >
       {state === "loading" && (
-        <p className="py-8 text-center text-sm text-slate-400">Chargement du replay…</p>
+        <p className="py-8 text-center text-sm text-ink-faint">Chargement du replay…</p>
       )}
       {state === "empty" && (
-        <p className="py-8 text-center text-sm text-slate-400">
+        <p className="py-8 text-center text-sm text-ink-faint">
           Pas de replay pour cette session — enregistrement non activé (option{" "}
-          <code className="rounded bg-slate-100 px-1">replay</code> du SDK) ou session
+          <code className="rounded bg-panel2 px-1">replay</code> du SDK) ou session
           non échantillonnée.
         </p>
       )}
       {state === "error" && (
-        <p className="py-8 text-center text-sm text-red-500">
+        <p className="py-8 text-center text-sm text-red-500 dark:text-red-400">
           Replay indisponible (erreur de chargement des chunks).
         </p>
       )}
       {state === "ready" && (
-        <p className="mb-3 text-xs text-slate-500">
+        <p className="mb-3 text-xs text-ink-soft">
           {eventCount} événements rrweb — saisies masquées à l&apos;enregistrement
-          (maskAllInputs), blocs <code className="rounded bg-slate-100 px-1">mip-rum-block</code>{" "}
+          (maskAllInputs), blocs <code className="rounded bg-panel2 px-1">mip-rum-block</code>{" "}
           exclus.
         </p>
       )}

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ICON_PATHS, Icon } from "@/components/icons";
 import { getUser } from "@/lib/auth";
 import type { SearchParams } from "@/lib/filters";
 import { loginAction } from "./actions";
@@ -12,49 +13,71 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
   const error = sp.error != null;
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
-        <div className="mb-6">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-500" />
-            <span className="text-lg font-bold tracking-tight">MIP RUM</span>
+    // écran de marque : navy MIP permanent, halo orange, texture grille
+    <main className="grid-texture relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-navy-900 to-navy-950 p-6">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-0 h-80 w-[42rem] -translate-x-1/2 rounded-full bg-accent/15 blur-3xl"
+      />
+      <div className="w-full max-w-sm">
+        <div className="animate-fade-up overflow-hidden rounded-2xl border border-white/10 bg-panel shadow-pop">
+          <div className="h-1 bg-gradient-to-r from-accent-deep via-accent to-accent-soft" />
+          <div className="p-8">
+            <div className="mb-6">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-deep shadow-glow">
+                  <Icon paths={ICON_PATHS.activity} className="h-5 w-5 text-white" strokeWidth={2.4} />
+                </span>
+                <span className="leading-tight">
+                  <span className="block text-base font-bold tracking-tight text-ink">
+                    MIP <span className="text-accent">RUM</span>
+                  </span>
+                  <span className="block text-[10px] uppercase tracking-[0.18em] text-ink-faint">
+                    Real User Monitoring
+                  </span>
+                </span>
+              </div>
+              <p className="mt-3 text-sm text-ink-soft">Connexion à la console</p>
+            </div>
+            <form action={loginAction} className="flex flex-col gap-4" data-testid="login-form">
+              <label className="text-sm font-medium text-ink-soft">
+                Email
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  autoComplete="username"
+                  autoFocus
+                  className="field mt-1 w-full"
+                />
+              </label>
+              <label className="text-sm font-medium text-ink-soft">
+                Mot de passe
+                <input
+                  name="password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  className="field mt-1 w-full"
+                />
+              </label>
+              {error && (
+                <p
+                  data-testid="login-error"
+                  className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300"
+                >
+                  Identifiants invalides.
+                </p>
+              )}
+              <button type="submit" className="btn-accent py-2 text-center">
+                Se connecter
+              </button>
+            </form>
           </div>
-          <p className="mt-1 text-sm text-slate-500">Connexion à la console</p>
         </div>
-        <form action={loginAction} className="flex flex-col gap-4" data-testid="login-form">
-          <label className="text-sm font-medium text-slate-700">
-            Email
-            <input
-              name="email"
-              type="email"
-              required
-              autoComplete="username"
-              autoFocus
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="text-sm font-medium text-slate-700">
-            Mot de passe
-            <input
-              name="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          {error && (
-            <p data-testid="login-error" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
-              Identifiants invalides.
-            </p>
-          )}
-          <button
-            type="submit"
-            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Se connecter
-          </button>
-        </form>
+        <p className="mt-4 text-center text-[11px] tracking-wide text-slate-500">
+          Monitoring OTel-native · données hébergées en UE 🇪🇺
+        </p>
       </div>
     </main>
   );

@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/PageHeader";
 import { fmtVital } from "@/lib/format";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import { slowResourcesByRoute, slowRoutes, type SlowResource } from "@/lib/queries";
@@ -11,43 +12,47 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
   const [rows, resources] = await Promise.all([slowRoutes(f), slowResourcesByRoute(f)]);
 
   return (
-    <div>
-      <h1 className="mb-1 text-2xl font-bold">Pages lentes</h1>
-      <p className="mb-6 text-sm text-slate-500">
-        Top routes par LCP p75 · fenêtre {period.label} · ressources lentes dominantes et long tasks par route
-      </p>
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="animate-fade-up">
+      <PageHeader
+        title="Pages lentes"
+        sub={
+          <>
+            Top routes par LCP p75 · fenêtre {period.label} · ressources lentes dominantes et long tasks par route
+          </>
+        }
+      />
+      <div className="card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+          <thead className="bg-panel2">
             <tr>
-              <th className="px-4 py-3">Route</th>
-              <th className="px-4 py-3">Vues</th>
-              <th className="px-4 py-3">LCP p75</th>
-              <th className="px-4 py-3">INP p75</th>
-              <th className="px-4 py-3">CLS p75</th>
-              <th className="px-4 py-3">Long tasks</th>
+              <th className="th">Route</th>
+              <th className="th">Vues</th>
+              <th className="th">LCP p75</th>
+              <th className="th">INP p75</th>
+              <th className="th">CLS p75</th>
+              <th className="th">Long tasks</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => {
               const res = resources.get(r.route) ?? [];
               return (
-                <tr key={r.route} className="border-t border-slate-100 align-top">
-                  <td className="px-4 py-3 font-mono text-xs">
+                <tr key={r.route} className="border-t border-line/60 align-top transition hover:bg-panel2/60">
+                  <td className="px-4 py-3 font-mono text-xs text-ink">
                     {r.route}
                     {res.length > 0 && <SlowResources items={res} />}
                   </td>
-                  <td className="px-4 py-3">{r.views}</td>
+                  <td className="px-4 py-3 tabular-nums">{r.views}</td>
                   <td className="px-4 py-3"><Cell name="LCP" v={r.lcp_p75} /></td>
                   <td className="px-4 py-3"><Cell name="INP" v={r.inp_p75} /></td>
                   <td className="px-4 py-3"><Cell name="CLS" v={r.cls_p75} /></td>
                   <td className="px-4 py-3">
                     {r.longtasks > 0 ? (
-                      <span className="rounded border border-orange-300 bg-orange-100 px-1.5 py-0.5 text-xs font-medium text-orange-800">
+                      <span className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-xs font-medium tabular-nums text-accent-deep dark:text-accent-soft">
                         {r.longtasks}
                       </span>
                     ) : (
-                      <span className="text-slate-300">0</span>
+                      <span className="text-ink-faint/60">0</span>
                     )}
                   </td>
                 </tr>
@@ -55,7 +60,7 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
             })}
             {!rows.length && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-ink-faint">
                   Aucune donnée sur {period.label}
                 </td>
               </tr>
@@ -71,22 +76,20 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
 function SlowResources({ items }: { items: SlowResource[] }) {
   return (
     <details className="mt-1.5">
-      <summary className="cursor-pointer select-none font-sans text-xs font-medium text-blue-600 hover:underline">
+      <summary className="cursor-pointer select-none font-sans text-xs font-medium text-brand hover:underline">
         {items.length} ressource(s) lente(s)
       </summary>
       <ul className="mt-1.5 flex flex-col gap-1">
         {items.map((it) => (
-          <li key={it.url} className="flex items-center gap-2 font-sans text-xs text-slate-600">
-            <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500">
-              {it.type ?? "?"}
-            </span>
+          <li key={it.url} className="flex items-center gap-2 font-sans text-xs text-ink-soft">
+            <span className="chip-mono text-[11px]">{it.type ?? "?"}</span>
             <span className="max-w-md truncate font-mono text-[11px]" title={it.url}>
               {it.url}
             </span>
-            <span className="font-semibold text-slate-800">{fmtVital("dur", Number(it.avg_ms))}</span>
-            <span className="text-slate-400">× {it.n}</span>
+            <span className="font-semibold tabular-nums text-ink">{fmtVital("dur", Number(it.avg_ms))}</span>
+            <span className="text-ink-faint">× {it.n}</span>
             {it.render_blocking && (
-              <span className="rounded border border-red-300 bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800">
+              <span className="rounded border border-red-300 bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
                 bloquant
               </span>
             )}
@@ -98,10 +101,12 @@ function SlowResources({ items }: { items: SlowResource[] }) {
 }
 
 function Cell({ name, v }: { name: string; v: number | null }) {
-  if (v == null) return <span className="text-slate-300">—</span>;
+  if (v == null) return <span className="text-ink-faint/60">—</span>;
   const rating = rating2026(name, Number(v));
   return (
-    <span className={`rounded border px-1.5 py-0.5 text-xs font-medium ${rating ? RATING_CLASS[rating] : ""}`}>
+    <span
+      className={`rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums ${rating ? RATING_CLASS[rating] : ""}`}
+    >
       {fmtVital(name, Number(v))}
     </span>
   );
