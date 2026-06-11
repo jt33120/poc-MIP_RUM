@@ -18,7 +18,7 @@ Maintenant (v0.5) : **Console → Clients → Ajouter un client** (2 minutes) :
 
 Encart dans le wizard : « backend Django 4 derrière nginx » ou « le snippet est posé mais rien n'arrive » → l'assistant génère le middleware adapté ou le diagnostic. Il connaît le protocole exact et les pièges **vécus** (pydantic-settings qui n'exporte pas os.environ, proxys qui avalent les headers, CSP, snippet hors `<head>`).
 
-- Admin only, rate-limité, activé par la variable d'env `ANTHROPIC_API_KEY` (modèle par défaut `claude-sonnet-4-6`, surchargeable via `ASSIST_MODEL`).
+- Admin only, rate-limité, activé par `MISTRAL_API_KEY` (souverain 🇫🇷, prioritaire — défaut `mistral-large-latest`) ou `ANTHROPIC_API_KEY` (`claude-sonnet-4-6`) ; modèle surchargeable via `ASSIST_MODEL`.
 - **Sans clé : l'encart s'affiche désactivé et tout le reste fonctionne** — le wizard déterministe est le chemin nominal, l'IA est le bonus pour le delta contextuel.
 
 C'est la réponse à « peut-on automatiser l'intégration ? » : le déterministe (création, clé, CORS, snippet, templates) est fait par la console ; le contextuel (stack exotique, debug) par l'IA ; il ne reste à l'humain que coller deux blocs de code chez le client.

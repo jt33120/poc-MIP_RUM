@@ -1,11 +1,11 @@
-// Assistant IA d'intégration (v0.5) — admin only, activé par ANTHROPIC_API_KEY.
-// Sans clé : 501, l'UI affiche un encart « désactivé » et le wizard déterministe
-// reste le chemin nominal. Appel direct de l'API Anthropic (fetch, zéro dépendance).
+// Assistant IA d'intégration (v0.5) — admin only, activé par MISTRAL_API_KEY
+// (souverain 🇫🇷, prioritaire) ou ANTHROPIC_API_KEY. Sans clé : 501, l'UI affiche
+// un encart « désactivé » et le wizard déterministe reste le chemin nominal.
+// Appels API directs en fetch, zéro dépendance npm.
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifyJwt } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-const MODEL = process.env.ASSIST_MODEL ?? "claude-sonnet-4-6";
 
 // garde-fou : 10 requêtes/min par process (l'assistant n'est pas un chat public)
 let hits: number[] = [];
@@ -41,10 +41,11 @@ export async function POST(req: NextRequest) {
   if (!user || user.role !== "admin")
     return NextResponse.json({ error: "admin requis" }, { status: 403 });
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey)
+  const mistralKey = process.env.MISTRAL_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (!mistralKey && !anthropicKey)
     return NextResponse.json(
-      { disabled: true, error: "Assistant désactivé (ANTHROPIC_API_KEY absente)" },
+      { disabled: true, error: "Assistant désactivé (MISTRAL_API_KEY ou ANTHROPIC_API_KEY absente)" },
       { status: 501 },
     );
   if (rateLimited())
@@ -58,36 +59,57 @@ export async function POST(req: NextRequest) {
   }
   const question = (body.question ?? "").trim().slice(0, 4000);
   if (!question) return NextResponse.json({ error: "question vide" }, { status: 400 });
+  const userContent = `App concernée : ${body.appId ?? "?"}\n\n${question}`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1500,
-      system: SYSTEM,
-      messages: [
-        {
-          role: "user",
-          content: `App concernée : ${body.appId ?? "?"}\n\n${question}`,
-        },
-      ],
-    }),
-  });
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    console.error("[assist] anthropic error", res.status, detail.slice(0, 300));
-    return NextResponse.json({ error: `API Anthropic : ${res.status}` }, { status: 502 });
+  let answer: string;
+  if (mistralKey) {
+    // Mistral (souverain) — API chat completions
+    const model = process.env.ASSIST_MODEL ?? "mistral-large-latest";
+    const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${mistralKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1500,
+        messages: [
+          { role: "system", content: SYSTEM },
+          { role: "user", content: userContent },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.error("[assist] mistral error", res.status, detail.slice(0, 300));
+      return NextResponse.json({ error: `API Mistral : ${res.status}` }, { status: 502 });
+    }
+    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    answer = data.choices?.[0]?.message?.content ?? "";
+  } else {
+    const model = process.env.ASSIST_MODEL ?? "claude-sonnet-4-6";
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": anthropicKey!,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1500,
+        system: SYSTEM,
+        messages: [{ role: "user", content: userContent }],
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.error("[assist] anthropic error", res.status, detail.slice(0, 300));
+      return NextResponse.json({ error: `API Anthropic : ${res.status}` }, { status: 502 });
+    }
+    const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+    answer = (data.content ?? [])
+      .filter((b) => b.type === "text" && b.text)
+      .map((b) => b.text)
+      .join("\n");
   }
-  const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
-  const answer = (data.content ?? [])
-    .filter((b) => b.type === "text" && b.text)
-    .map((b) => b.text)
-    .join("\n");
   return NextResponse.json({ answer });
 }
