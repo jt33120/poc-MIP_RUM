@@ -15,3 +15,4 @@ supabase/.temp/
 # v0.4 demo backend
 demo/.venv/
 __pycache__/
+.vercel
