@@ -2,6 +2,20 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
+## v0.4 — 2026-06-11 (sprint jour, tracing distribué)
+
+Périmètre : tracing front→back (décision Julian : ClickHouse prod abandonné — zéro budget, PG suffit au MVP). Contrat : `apps/ingest/sql/migration-v04.sql` (`rum_span`, vue `v_trace`, purge 30 j étendue).
+
+### Tracing distribué (front→back par trace_id)
+- SDK 0.4.0 : fetch **et** XMLHttpRequest instrumentés (axios = XHR) — `traceparent` W3C + `tracestate: mip=s:<session>` sur les appels same-origin (+ allowlist `trace`), span `http.client` (méthode, url scrubbée, statut, durée). Endpoints d'ingestion exclus, cap 100/page, cœur 25,5 KB gzip (+0,8).
+- Middleware FastAPI `integrations/fastapi/mip_rum_middleware.py` : **1 fichier stdlib, zéro dépendance**, passthrough sans env vars, span `http.server` (route template, statut, durée serveur), batch 5 s / 20 spans best effort. Posé sur uti-platform (PR #37 mergée).
+- Ingestion : spans `http.client`/`http.server` → `rum_span` (tier front/back, session nullable côté back), corrélation par `trace_id` (vue `v_trace`, `network_ms` = total − serveur).
+- Console : page **/tracing** (couverture de corrélation, appels API navigateur avec part serveur, routes backend p75/p95/5xx, traces les plus lentes → session) + appels API dans la timeline session (`200 · serveur 211 ms`).
+- Tests : 103 unitaires (+12) + 8 E2E (+2, dont bout-en-bout réel fetch/XHR→FastAPI→base→console) + 6 unittest python (CI : job dédié).
+
+### En prod
+- Edge function v1-traces **v4**, migration appliquée, console déployée, SDK v0.4 servi à G-IT. Span front réel constaté depuis plateforme.groupement-it.com (`POST /api/auth/login`, 272 ms, trace propagée à travers le proxy Vercel). Incident : 3 min d'ingestion down au 1er déploiement edge (placeholder), réparé via CLI — détail BUILD_LOG.
+
 ## v0.3 — 2026-06-11 (sprint nuit 2, livré et déployé)
 
 Périmètre : [ROADMAP_V03.md](ROADMAP_V03.md). Contrat de données verrouillé avant build (`apps/ingest/sql/migration-v03.sql` : `replay_chunk`, `console_user`, `audit_log`, `alert_delivery`, `rate_counter` + `rate_check()`, vue `v_anomaly`, `check_alerts()` v2 avec garde pg_net). Dépendances épinglées : rrweb 2.0.1, rrweb-player 2.0.1, bcryptjs 3.0.3, jose 6.2.3.

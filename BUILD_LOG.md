@@ -162,3 +162,21 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
   - Course condition E2E corrigée : waitForURL("…/**") matchait déjà /login → attendre la SORTIE de /login ; flush replay au pagehide non fiable (gzip async interrompu par l'unload) → le test passe par le flush périodique 10 s.
 - **Ce qui n'a pas marché / restes** : webhook cloud jamais tiré en réel (classifieur a refusé l'auto-test en prod — sain ; mécanique prouvée en local, pg_net déployé) ; replay OFF sur G-IT (décision RGPD à prendre, pas technique) ; barrières enterprise de fond inchangées (mobile, certifs, 24/7, multi-région).
 - **Sécurité** : scoping viewer renforcé à l'intégration (sessions/[id] + /api/replay refusent les apps hors périmètre) ; admin cloud seedé par hash bcrypt uniquement ; AUTH_SECRET généré, BASIC_AUTH retiré de Vercel ; replay masque les saisies par défaut.
+
+## v0.4 — Sprint jour (11/06/2026) : tracing distribué front→back
+
+- **Méthode** : build séquentiel mono-agent (recon Explore → SDK → ingestion → middleware → console → E2E → cloud → PR client), contrat SQL verrouillé d'abord (migration-v04.sql). Décision produit : ClickHouse prod **abandonné volontairement** (zéro budget — PG tient le MVP), périmètre = tracing seul.
+- **Ce qui a marché** (valeurs réelles) :
+  - SDK 0.4.0 : fetch ET XMLHttpRequest patchés (G-IT utilise axios ⇒ XHR ; fetch seul aurait donné zéro span). Cœur **25,5 KB gzip** (+0,8). Propagation same-origin par défaut + allowlist `trace: [origins]`, deny des endpoints d'ingestion (anti-boucle), cap 100 appels/page, traceparent W3C + `tracestate: mip=s:<sid>`.
+  - Middleware FastAPI : 232 lignes stdlib pur (urllib en executor — httpx non requis), passthrough total sans env vars, route template FastAPI (`/aos/{ao_id}`), jamais d'exception remontée, OPTIONS/health ignorés. 6 unittest verts en 0,27 s.
+  - E2E : sleep serveur simulé 150 ms → back span mesuré **152,8 ms** (overhead < 3 ms). 103 unit + 8 E2E verts.
+  - Cloud : migration rum_span + v_trace + purge 30 j, grants console_ro, edge v4, console déployée (recette 6/6), SDK v0.4 servi à G-IT.
+  - **Recette prod front réelle** : visite navigateur sur plateforme.groupement-it.com → span `POST /api/auth/login 422, 272 ms` en base cloud, trace_id propagé à travers le proxy Vercel — sans toucher au snippet.
+  - PR client : uti-platform#37 mergée (middleware inactif par défaut = merge sans risque).
+- **Ce qui n'a pas marché / pièges** :
+  - **Incident prod 3 min** : 1er déploiement edge v4 via MCP avec un placeholder `__KEEP_EXISTING__` au lieu du contenu de tz-country.mjs → BOOT_ERROR sur toute l'ingestion. Réparé via `supabase functions deploy` (CLI, fichiers du repo). Leçon : JAMAIS de placeholder dans un payload de déploiement ; le CLI qui lit les fichiers du repo est plus sûr que le copier-coller MCP.
+  - dev-server :4318 zombie de la veille (imports Node cachés = ancien parser) → 0 span silencieux. Leçon : redémarrer les serveurs après toute modif du parser partagé.
+  - venv python homebrew 3.14 cassé (ensurepip/pyexpat dyld) → venv système 3.9 + `from __future__ import annotations` dans le middleware.
+  - Transpileur Playwright vs createRequire/import.meta → hash bcrypt généré en sous-processus `node -e` (CJS).
+  - Course seed-admin entre spec files parallèles (le mdp régénéré invalide celui de l'autre spec) → utilisateur e2e dédié par spec.
+- **Restes** : middleware non déployé sur le VPS OVH au moment du commit (SSH par mot de passe — clé en cours d'autorisation par Julian) ; alerting email toujours absent ; PR mip-rum#1 à merger (classifieur : pas de push master direct).
