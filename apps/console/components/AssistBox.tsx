@@ -48,9 +48,9 @@ export function AssistBox({ appId }: { appId: string }) {
       </p>
       {state === "disabled" ? (
         <p className="rounded border border-violet-200 bg-white px-3 py-2 text-xs text-slate-500">
-          Assistant désactivé — ajouter <code>ANTHROPIC_API_KEY</code> aux variables
-          d&apos;environnement de la console pour l&apos;activer. Le guide ci-dessus couvre déjà
-          FastAPI, Express et le protocole générique.
+          Assistant désactivé — ajouter <code>MISTRAL_API_KEY</code> (ou{" "}
+          <code>ANTHROPIC_API_KEY</code>) aux variables d&apos;environnement de la console pour
+          l&apos;activer. Le guide ci-dessus couvre déjà FastAPI, Express et le protocole générique.
         </p>
       ) : (
         <>
