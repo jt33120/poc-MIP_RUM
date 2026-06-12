@@ -140,3 +140,42 @@ curl -s "https://<ingestion>/v1/traces" -H "content-type: application/json" \
   -d @tests/fixtures/otlp-sample.json
 # attendu : {"partialSuccess":{}}
 ```
+
+## 8. Déploiement zéro-touch — injection front (v0.6)
+
+Quand le client ne peut pas (COTS, legacy, équipe tierce) ou ne veut pas modifier son code source, le snippet est **injecté depuis l'infrastructure**. La console génère les trois configurations préremplies (page du client → étape 2 → « Injection zéro-touch »). Aucune n'embarque la clé d'API (clé front optionnelle, enforcement off) : elles ne font que poser les deux balises `<script>`.
+
+| Point d'injection | Quand | Couvre la CSP ? | Remarque |
+|---|---|---|---|
+| **Cloudflare Worker** (HTMLRewriter) | site derrière Cloudflare, ou CF qu'on met devant | **Oui** (réécrit `script-src` + `connect-src`) | recommandé — le plus robuste, le seul qui corrige la CSP |
+| **nginx** (`ngx_http_sub_module`) | le HTML passe par un nginx qu'on opère | manuel (`add_header`) | `sub_filter '</head>' '<balises></head>'` + `proxy_set_header Accept-Encoding ""` (sinon le HTML gzip n'est pas réécrit) |
+| **Google Tag Manager** | le client a déjà GTM | **Non** (la CSP du site doit déjà autoriser le SDK + l'ingestion) | self-service ; chargement async → premières métriques (TTFB/FCP) parfois partielles |
+
+Cas **SPA statique** (Vercel/Netlify/S3, ex. plateforme.groupement-it.com) : il n'y a pas de proxy HTML dans la chaîne pour faire du `sub_filter`. Options : mettre un Cloudflare devant le domaine (Worker ci-dessus), injecter au build (post-build sur `dist/index.html`), ou — le plus simple quand on a le repo — poser le snippet en dur. L'injection externe coûte alors **plus** que deux balises.
+
+Dans tous les cas : ajouter l'origine du site aux **domaines autorisés** de l'app dans la console (CORS dynamique, effectif ≤ 60 s).
+
+## 9. Backend sans code — auto-instrumentation OpenTelemetry (v0.6)
+
+Le tracing front→back (la décomposition navigateur / réseau / serveur) n'exige pas forcément le middleware MIP. Tout backend instrumentable par un **agent d'auto-instrumentation OpenTelemetry** (Python, Java, .NET, Go, Node, Ruby, PHP…) peut alimenter l'ingestion **sans une ligne de code applicatif** — l'ingestion accepte nativement les spans serveur OpenTelemetry standard (attributs semconv `http.route` / `http.request.method` / `http.response.status_code`, `kind=SERVER`, trace/span/parent au niveau du span, session propagée via `tracestate: mip=s:<id>`).
+
+Architecture : `app sous agent OTel → Collector → ingestion MIP`.
+
+1. **Lancer l'app sous son agent** (zéro code). Exemple Python :
+   ```bash
+   pip install opentelemetry-distro opentelemetry-exporter-otlp
+   opentelemetry-bootstrap -a install
+   OTEL_SERVICE_NAME=<app_id> \
+   OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318" \
+   opentelemetry-instrument uvicorn main:app --host 0.0.0.0 --port 8000
+   ```
+2. **Le Collector** (`otel-collector.yaml`, téléchargeable sur la page du client) absorbe le format de l'agent et réémet vers MIP : il ne garde que les spans `SERVER` (un par requête), injecte `mip.app_id` + `mip.api_key` (l'app n'a rien de spécifique à régler), et exporte en `otlphttp encoding: json` vers l'endpoint d'ingestion.
+
+| Choix | Middleware MIP (`§3`) | Auto-instrumentation OTel + Collector |
+|---|---|---|
+| Modification du code | 1 fichier + 3 lignes de wiring | aucune |
+| Composant à exploiter | aucun | 1 Collector (conteneur) |
+| Stacks | FastAPI/Express prouvés, autres via protocole | toute stack avec un agent OTel |
+| Recommandé quand | on a accès au code du backend | backend non modifiable / multi-langages |
+
+Note Node : les agents JavaScript exportent déjà de l'OTLP/HTTP JSON ; le Collector y est optionnel (l'app peut viser directement l'endpoint), mais il reste utile pour filtrer les spans serveur et injecter l'identité MIP.

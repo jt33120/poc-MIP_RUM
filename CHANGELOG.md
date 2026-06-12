@@ -2,6 +2,21 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
+## v0.6 — 2026-06-12 (déploiement zéro-touch : injection front + backend codeless)
+
+Périmètre : poser le RUM **sans modifier le code du client** — pour les sites COTS / legacy / gérés par un tiers, et les backends multi-langages. Aucune migration SQL (purement additif : générateurs côté console + parser d'ingestion). Détail : [docs/INTEGRATION.md](docs/INTEGRATION.md) §8-9.
+
+### Injection front zéro-touch (console)
+- **Trois configurations d'injection générées et préremplies** dans le wizard client (étape 2) : **Cloudflare Worker** (HTMLRewriter — injecte les 2 balises dans le `<head>` **et réécrit la CSP** : `script-src` du SDK + `connect-src` de l'ingestion, le seul des trois à corriger la CSP), **nginx** (`ngx_http_sub_module` : `sub_filter` avant `</head>` + neutralisation de la compression amont), **Google Tag Manager** (tag HTML All Pages, self-service ; async + ne corrige pas la CSP). Aucune n'embarque la clé d'API (clé front optionnelle).
+- Fusion CSP pure et testée (`mergeCsp` dans `lib/onboarding.ts`) : ajoute les origines en respectant le fallback `default-src`, sans dupliquer ni élargir un `*` existant — répliquée en JS dans le Worker généré.
+- Note explicite pour le cas **SPA statique** (Vercel/Netlify/S3) : pas de proxy HTML dans la chaîne → Cloudflare devant ou snippet en dur (cas plateforme.groupement-it.com).
+
+### Backend codeless (ingestion)
+- **L'ingestion accepte les spans serveur OpenTelemetry standard** (semconv `http.route` / `http.request.method` / `http.response.status_code`, `kind=SERVER`, trace/span/parent au niveau du span, session via `tracestate: mip=s:<id>`, template `{id}`→`:id`) **en plus** du middleware MIP `http.server`. Changement purement additif au parser partagé (`_shared/otlp.mjs`, edge + dev-server) : un client lance son app sous un agent d'auto-instrumentation OTel (Python/Java/.NET/Go/Node…) → spans back corrélés, **zéro ligne de code applicatif**.
+- **Adaptateur Collector téléchargeable** (`otel-collector.yaml`) : filtre les spans serveur (1 par requête), injecte `mip.app_id` + `mip.api_key`, exporte en `otlphttp encoding: json` vers l'ingestion.
+- Assistant IA enrichi du contrat d'injection (3 points front + CSP) et du backend codeless (agent OTel + Collector).
+- Tests : +17 unitaires (`injection-v06` : fusion CSP, génération Worker/nginx/GTM dont **validation syntaxique du Worker généré**, ingestion des spans serveur OTel standard, corrélation front↔back). Suite : **131 unitaires** verts, aucune régression (parser additif).
+
 ## v0.5 — 2026-06-11 (sprint jour 2, onboarding clients self-service)
 
 Périmètre : page « Clients » dans la console — un agent MIP ajoute un client sans SQL ni redéploiement. Contrat : `apps/ingest/sql/migration-v05.sql` (`app_registry.allowed_origins/created_by/notes`).
