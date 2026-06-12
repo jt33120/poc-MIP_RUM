@@ -101,6 +101,50 @@ export function errorFingerprint(errorType, message, stack) {
   );
 }
 
+// --- v0.6 : auto-instrumentation OpenTelemetry standard (backend codeless) ------
+// Un client qui lance son app sous un agent OTel (opentelemetry-instrument, agent
+// Java/.NET/Node…) émet des spans SERVER au format semconv, PAS notre forme mip.*.
+// On les accepte aussi -> span back, corrélés par trace_id comme notre middleware.
+
+/** Span SERVER ? OTLP/JSON encode l'enum kind en entier (2) OU en chaîne. */
+function isServerKind(kind) {
+  return kind === 2 || kind === "SPAN_KIND_SERVER";
+}
+
+/** Durée ms entre deux timestamps OTLP (nanos string|number) ; null si absent/invalide. */
+function durationMsBetween(startNanos, endNanos) {
+  if (!startNanos || !endNanos) return null;
+  try {
+    return Number(BigInt(endNanos) - BigInt(startNanos)) / 1e6;
+  } catch {
+    return null;
+  }
+}
+
+/** Session MIP éventuellement propagée dans le tracestate W3C : "mip=s:<sid>". */
+function sessionFromTraceState(traceState) {
+  if (typeof traceState !== "string" || !traceState) return null;
+  for (const part of traceState.split(",")) {
+    const eq = part.indexOf("=");
+    if (eq < 0 || part.slice(0, eq).trim() !== "mip") continue;
+    const val = part.slice(eq + 1).trim();
+    if (val.startsWith("s:")) return val.slice(2) || null;
+  }
+  return null;
+}
+
+/** Template de route homogène avec le front : {id} -> :id. */
+function normalizeRouteTemplate(route) {
+  return typeof route === "string" ? route.replace(/\{([^/}]+)\}/g, ":$1") : null;
+}
+
+/** Nom de span OTel ("GET /aos/{id}" ou "/aos/{id}") -> route, sinon null. */
+function routeFromOtelName(name) {
+  if (typeof name !== "string") return null;
+  const stripped = name.replace(/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/i, "").trim();
+  return stripped.startsWith("/") ? stripped : null;
+}
+
 /**
  * Aplatit un payload OTLP/HTTP JSON en lignes SQL.
  * Rejette (compte) les resourceSpans sans mip.app_id (PLAN §7.2).
@@ -166,6 +210,41 @@ export function flattenOtlp(payload) {
           const row = spanRow("back", a, appId, nanosToDate(span.startTimeUnixNano));
           if (row) spans.push(row);
           else rejected++;
+          continue;
+        }
+
+        // span SERVER d'auto-instrumentation OpenTelemetry standard (codeless,
+        // toute stack via agent + Collector) : trace/span/parent au niveau du
+        // span, attributs semconv http.*, session éventuelle via tracestate.
+        // -> span back (1 par requête, comme notre middleware). Notre propre
+        // http.server (ci-dessus) et http.client (kind interne) ne passent pas ici.
+        const otelMethod = a["http.request.method"] ?? a["http.method"];
+        if (
+          isServerKind(span.kind) &&
+          (otelMethod != null || a["http.route"] != null || a["url.path"] != null)
+        ) {
+          const durationMs = durationMsBetween(span.startTimeUnixNano, span.endTimeUnixNano);
+          if (!span.traceId || !span.spanId || typeof durationMs !== "number") {
+            rejected++;
+            continue;
+          }
+          spans.push({
+            span_id: span.spanId,
+            trace_id: span.traceId,
+            parent_span_id: span.parentSpanId || null,
+            tier: "back",
+            session_id: sessionFromTraceState(span.traceState) ?? a["mip.session_id"] ?? null,
+            app_id: appId,
+            route:
+              normalizeRouteTemplate(a["http.route"]) ??
+              normalizeRouteTemplate(routeFromOtelName(span.name)) ??
+              (a["url.path"] ?? null),
+            url: scrubUrl(a["url.full"] ?? a["http.url"]),
+            method: otelMethod ?? null,
+            status_code: a["http.response.status_code"] ?? a["http.status_code"] ?? null,
+            duration_ms: durationMs,
+            ts: nanosToDate(span.startTimeUnixNano),
+          });
           continue;
         }
 

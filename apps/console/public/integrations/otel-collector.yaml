@@ -1,0 +1,63 @@
+# otel-collector.yaml — Adaptateur « codeless » MIP RUM.
+#
+# Reçoit l'OTLP de n'importe quel agent d'auto-instrumentation OpenTelemetry
+# (Python, Java, .NET, Go, Node, Ruby, PHP…) et le réémet vers l'ingestion MIP
+# en OTLP/HTTP JSON. AUCUNE ligne de code applicatif : on lance l'app du client
+# sous son agent OTel (ex. `opentelemetry-instrument uvicorn main:app`) en la
+# pointant vers ce Collector (http://127.0.0.1:4318).
+#
+# 1. Remplacer les trois <…> ci-dessous :
+#    <APP_ID>   : l'app_id du client (identique à la console)
+#    <API_KEY>  : la clé d'API affichée à la création du client
+#    <ENDPOINT> : l'endpoint d'ingestion de la console (…/v1/v1-traces)
+# 2. Lancer le Collector :
+#    docker run -p 4318:4318 -p 4317:4317 \
+#      -v $(pwd)/otel-collector.yaml:/etc/otelcol-contrib/config.yaml \
+#      otel/opentelemetry-collector-contrib:latest
+#
+# Note Node : les agents JavaScript exportent déjà de l'OTLP/HTTP JSON — le
+# Collector y est optionnel (export direct possible), il reste utile pour
+# injecter l'identité MIP et filtrer les spans serveur.
+
+receivers:
+  otlp:
+    protocols:
+      http: {}
+      grpc: {}
+
+processors:
+  # Ne garder qu'un span par requête entrante : le span SERVER. Les spans
+  # client/interne du backend (requêtes DB, appels sortants) ne sont pas ingérés
+  # — on reste sur le même modèle que le middleware (1 span back par requête).
+  filter/server_only:
+    error_mode: ignore
+    traces:
+      span:
+        - 'kind != SPAN_KIND_SERVER'
+
+  # Identité MIP injectée côté Collector : l'équipe du client n'a rien de
+  # spécifique à configurer dans son application.
+  resource:
+    attributes:
+      - key: mip.app_id
+        value: "<APP_ID>"
+        action: upsert
+      - key: mip.api_key
+        value: "<API_KEY>"
+        action: upsert
+
+  batch: {}
+
+exporters:
+  otlphttp/mip:
+    # endpoint exact (pas de /v1/traces ajouté automatiquement) + encodage JSON,
+    # le format lu par l'ingestion MIP.
+    traces_endpoint: "<ENDPOINT>"
+    encoding: json
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [filter/server_only, resource, batch]
+      exporters: [otlphttp/mip]

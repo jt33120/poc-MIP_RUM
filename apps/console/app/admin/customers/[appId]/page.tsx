@@ -5,7 +5,12 @@ import { AssistBox } from "@/components/AssistBox";
 import { CopyBlock } from "@/components/CopyBlock";
 import { popSecret, requireAdmin } from "@/lib/auth";
 import type { SearchParams } from "@/lib/filters";
-import { buildSnippet, deriveStatus, type StepState } from "@/lib/onboarding";
+import {
+  buildInjectionArtifacts,
+  buildSnippet,
+  deriveStatus,
+  type StepState,
+} from "@/lib/onboarding";
 import { getCustomer, probeOnboarding } from "@/lib/queries-customers";
 import { fmtDate } from "@/lib/format";
 import { rotateKeyAction, updateOriginsAction } from "../actions";
@@ -87,6 +92,26 @@ export default async function CustomerWizard({
     clientId: customer.client_id,
     withConsent: true,
   });
+  // v0.6 : configs d'injection zéro-touch (le client ne modifie pas son code)
+  const injection = buildInjectionArtifacts({
+    sdkUrl,
+    endpoint,
+    appId,
+    clientId: customer.client_id,
+  });
+
+  const otelRecipe = `# Backend codeless — aucune modification du code (exemple Python : FastAPI/Django/Flask) :
+pip install opentelemetry-distro opentelemetry-exporter-otlp
+opentelemetry-bootstrap -a install
+
+# Lancer l'app sous l'agent OTel, en pointant vers le Collector local (otel-collector.yaml) :
+OTEL_SERVICE_NAME=${appId} \\
+OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318" \\
+opentelemetry-instrument uvicorn main:app --host 0.0.0.0 --port 8000
+
+# Le Collector ne garde que les spans serveur, injecte mip.app_id + la clé, et
+# réémet en OTLP/HTTP JSON vers ${endpoint}. L'ingestion MIP accepte nativement
+# les spans serveur OpenTelemetry standard (Java/.NET/Go/Node/Ruby/PHP de même).`;
 
   const fastapiWiring = `# 1. Pose mip_rum_middleware.py à côté de main.py (télécharge-le ci-dessous)
 # 2. Dans config.py (pydantic-settings) — ATTENTION : le .env chargé par
@@ -247,6 +272,55 @@ Les deux fichiers fournis (FastAPI, Express) sont la référence d'implémentati
               </p>
               <CopyBlock code={snippetConsent} />
             </details>
+            <details className="rounded border border-blue-200 bg-blue-50/40 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-blue-800">
+                🚀 Injection zéro-touch — le client ne peut (ou ne veut) pas modifier son code
+              </summary>
+              <p className="mb-2 mt-2 text-xs leading-relaxed text-slate-600">
+                Sites COTS, legacy ou gérés par un tiers : on pose le snippet depuis
+                l&apos;infrastructure, sans toucher au code source. Choisis le point d&apos;injection
+                selon l&apos;hébergement du client.
+              </p>
+              <div className="grid gap-3">
+                <div>
+                  <p className="mb-1 text-xs font-semibold text-slate-700">
+                    Cloudflare Worker{" "}
+                    <span className="font-normal text-slate-500">
+                      — recommandé : injecte <em>et</em> relâche la CSP automatiquement
+                    </span>
+                  </p>
+                  <CopyBlock code={injection.worker} />
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-semibold text-slate-700">
+                    nginx{" "}
+                    <span className="font-normal text-slate-500">
+                      — si le HTML passe par un nginx que tu opères (ngx_http_sub_module)
+                    </span>
+                  </p>
+                  <CopyBlock code={injection.nginx} />
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-semibold text-slate-700">
+                    Google Tag Manager{" "}
+                    <span className="font-normal text-slate-500">
+                      — si le client a déjà GTM (self-service ; ne corrige pas la CSP)
+                    </span>
+                  </p>
+                  <CopyBlock code={injection.gtm} />
+                </div>
+                <p className="text-xs leading-relaxed text-slate-500">
+                  <strong>SPA statique (Vercel/Netlify/S3)</strong> : pas de proxy HTML dans la
+                  chaîne → mettre un Cloudflare devant le domaine (Worker ci-dessus) ou injecter au
+                  build. C&apos;est le cas de plateforme.groupement-it.com, où le snippet en dur
+                  reste le plus simple.
+                  <br />
+                  CSP à autoriser si tu l&apos;ajoutes à la main :{" "}
+                  <code>script-src {injection.scriptOrigin}</code> ·{" "}
+                  <code>connect-src {injection.connectOrigin}</code>.
+                </p>
+              </div>
+            </details>
           </div>
         </Step>
 
@@ -297,6 +371,27 @@ Les deux fichiers fournis (FastAPI, Express) sont la référence d'implémentati
                   L&apos;assistant IA en bas de page peut générer le middleware pour la stack
                   exacte du client.
                 </p>
+              </div>
+            </details>
+            <details className="rounded border border-blue-200 bg-blue-50/40 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-blue-800">
+                🚀 Sans toucher au code backend — auto-instrumentation OpenTelemetry (toute stack)
+              </summary>
+              <p className="mb-2 mt-2 text-xs leading-relaxed text-slate-600">
+                Si le backend ne peut pas recevoir le middleware : on lance l&apos;app sous l&apos;agent
+                d&apos;auto-instrumentation OTel de son langage (Python, Java, .NET, Go, Node…) et un
+                petit Collector réémet vers l&apos;ingestion MIP. Zéro ligne de code applicatif —
+                l&apos;ingestion accepte nativement les spans serveur OpenTelemetry standard.
+              </p>
+              <div className="grid gap-2">
+                <a
+                  href="/integrations/otel-collector.yaml"
+                  download
+                  className="w-fit rounded bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
+                >
+                  ⬇ otel-collector.yaml (adaptateur — app_id, clé et endpoint à compléter)
+                </a>
+                <CopyBlock code={otelRecipe} />
               </div>
             </details>
           </div>
