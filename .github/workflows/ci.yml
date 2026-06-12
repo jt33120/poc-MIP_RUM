@@ -78,14 +78,19 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # psql (client) est préinstallé sur ubuntu-latest ; ON_ERROR_STOP pour fail fast
-      - name: Schéma v0.1 puis migrations v0.2 + v0.3
+      # schéma de base puis TOUTES les migrations dans l'ordre (le glob shell est
+      # trié : v02, v03, v04, v05, … — ajouter une migration n'exige plus de
+      # toucher ce workflow). console_ro (cloud) absent en CI -> blocs grant/RLS
+      # sautés par leur garde `if exists (pg_roles)`.
+      - name: Schéma v0.1 puis toutes les migrations
         env:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/schema.sql
-          psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/migration-v02.sql
-          psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/migration-v03.sql
-          psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/migration-v04.sql
+          for f in apps/ingest/sql/migration-v*.sql; do
+            echo "-- applying $f"
+            psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f "$f"
+          done
 
       - name: Build SDK (servi par demo/serve.mjs et la console)
         run: pnpm --filter @mip/rum-sdk build
