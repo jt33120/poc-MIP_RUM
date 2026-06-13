@@ -5,6 +5,9 @@
 // statut sent/failed + code http dans `response`.
 // Usage : node apps/ingest/dispatch-alerts.mjs [--once|--loop]  (--loop : poll 30 s)
 import pg from "pg";
+import { createLogger } from "./supabase/functions/_shared/log.mjs";
+
+const log = createLogger("dispatch-alerts");
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -70,7 +73,7 @@ export async function dispatchOnce(pool) {
     );
     if (status === "sent") sent++;
     else failed++;
-    console.log(`[dispatch-alerts] #${d.id} ${d.target} -> ${status} (${response})`);
+    log[status === "sent" ? "info" : "warn"]("delivery", { id: d.id, target: d.target, status, response });
   }
   return { sent, failed };
 }
@@ -79,10 +82,18 @@ export async function dispatchOnce(pool) {
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop())) {
   const loop = process.argv.includes("--loop");
   const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 2 });
+  let running = true;
+  // arrêt propre du --loop : on termine la passe courante puis on ferme le pool
+  for (const sig of ["SIGTERM", "SIGINT"]) {
+    process.on(sig, () => {
+      log.info("stopping", { signal: sig });
+      running = false;
+    });
+  }
   do {
     const { sent, failed } = await dispatchOnce(pool);
-    console.log(`[dispatch-alerts] pass: sent=${sent} failed=${failed}`);
-    if (loop) await new Promise((r) => setTimeout(r, POLL_MS));
-  } while (loop);
+    log.info("pass", { sent, failed });
+    if (loop && running) await new Promise((r) => setTimeout(r, POLL_MS));
+  } while (loop && running);
   await pool.end();
 }

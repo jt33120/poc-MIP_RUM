@@ -6,6 +6,7 @@ import { GlobalFilters } from "@/components/GlobalFilters";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { Nav } from "@/components/Nav";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { TourGuide } from "@/components/TourGuide";
 import { getUser } from "@/lib/auth";
 import { listApps } from "@/lib/queries";
 import { logoutAction } from "./logout/actions";
@@ -157,6 +158,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-emerald-500" />
                   LIVE · 5 s
                 </span>
+                <TourGuide />
                 <ThemeToggle />
               </div>
             </header>

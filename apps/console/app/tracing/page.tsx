@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { GlossaryTip } from "@/components/GlossaryTip";
 import { PageHeader } from "@/components/PageHeader";
+import type { GlossaryId } from "@/lib/glossary";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import {
   apiCalls,
@@ -29,6 +31,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
     <div className="animate-fade-up">
       <PageHeader
         title="Tracing front → back"
+        help="tracing"
         sub={
           <>
             Chaque appel API du navigateur est corrélé à son exécution serveur par trace_id (W3C
@@ -43,6 +46,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
           label="Corrélés au backend"
           value={covPct == null ? "—" : `${covPct} %`}
           sub={`${cov.correlated} / ${cov.total}`}
+          help="coverage"
           testid="trace-coverage"
         />
         <Stat label="p75 vu du navigateur" value={fmtMs(cov.front_p75)} />
@@ -224,10 +228,25 @@ function Section({ title, sub, children }: { title: string; sub: string; childre
   );
 }
 
-function Stat({ label, value, sub, testid }: { label: string; value: string; sub?: string; testid?: string }) {
+function Stat({
+  label,
+  value,
+  sub,
+  help,
+  testid,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  help?: GlossaryId;
+  testid?: string;
+}) {
   return (
     <div className="card p-4" data-testid={testid}>
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
+      <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+        {label}
+        {help && <GlossaryTip id={help} />}
+      </div>
       <div className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight">{value}</div>
       {sub && <div className="text-xs tabular-nums text-ink-faint">{sub}</div>}
     </div>

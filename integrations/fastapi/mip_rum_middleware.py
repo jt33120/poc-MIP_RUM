@@ -109,6 +109,9 @@ class MIPRumMiddleware:
         self.enabled = bool(self.endpoint and self.app_id)
         self._buf: list[dict] = []
         self._task: asyncio.Task | None = None
+        # compteur observable : spans perdus faute de place (file saturée). Reste
+        # à 0 en régime nominal ; non nul = l'ingestion ne suit pas le débit.
+        self._dropped = 0
 
     # --- ASGI -----------------------------------------------------------------
     async def __call__(self, scope, receive, send):
@@ -184,7 +187,9 @@ class MIPRumMiddleware:
             span["parentSpanId"] = parent_span_id
 
         if len(self._buf) >= self.queue_max:
-            del self._buf[: len(self._buf) - self.queue_max + 1]
+            overflow = len(self._buf) - self.queue_max + 1
+            del self._buf[:overflow]  # on jette les plus anciens (FIFO borné)
+            self._dropped += overflow
         self._buf.append(span)
 
         loop = asyncio.get_running_loop()

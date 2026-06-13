@@ -153,11 +153,17 @@ function routeFromOtelName(name) {
  * v0.4 : spans de tracing distribué — 'http.client' (SDK web, session requise)
  * et 'http.server' (middleware backend, session optionnelle via tracestate) ->
  * table rum_span, corrélés par mip.trace_id.
+ * @param {object} payload  enveloppe OTLP/HTTP JSON.
+ * @param {{maxSpans?: number}} [opts]  garde-fou anti-charge : au-delà de
+ *        `maxSpans` spans dans une même requête, les suivants sont comptés
+ *        `rejected` plutôt que traités (défaut 20 000).
  * @returns {{sessions: object[], pageviews: object[], metrics: object[], errors: object[],
  *            resources: object[], longtasks: object[], breadcrumbs: object[], events: object[],
  *            spans: object[], apiKeys: {app_id: string, api_key: string|null}[], rejected: number}}
  */
-export function flattenOtlp(payload) {
+export function flattenOtlp(payload, opts = {}) {
+  const maxSpans = opts.maxSpans ?? 20_000;
+  let seen = 0; // total de spans rencontrés (cap anti-charge)
   const sessions = new Map();
   const pageviews = [];
   const metrics = [];
@@ -202,6 +208,11 @@ export function flattenOtlp(payload) {
     apiKeys.push({ app_id: appId, api_key: res["mip.api_key"] ?? null });
     for (const ss of rs.scopeSpans ?? []) {
       for (const span of ss.spans ?? []) {
+        // garde-fou : au-delà du plafond, on compte sans traiter (mémoire/CPU bornés)
+        if (++seen > maxSpans) {
+          rejected++;
+          continue;
+        }
         const a = attrsToObj(span.attributes);
 
         // span backend (middleware serveur) : pas de session requise, pas

@@ -1,0 +1,186 @@
+// Glossaire central — source unique des explications affichées au survol (InfoTip).
+//
+// Chaque entrée porte trois niveaux de lecture pour un POC à la fois navigable
+// par un commercial et crédible devant une équipe technique :
+//   - term     : le nom technique exact (vocabulaire métier RUM/OTel)
+//   - stack    : la brique technique qui produit/calcule la donnée
+//   - business : la même chose expliquée à un non-technicien (valeur, décision)
+//
+// Ajouter une clé ici suffit à enrichir n'importe quel <GlossaryTip id="…" />.
+
+export interface GlossaryEntry {
+  /** Titre lisible affiché en tête de la bulle. */
+  label: string;
+  /** Nom technique exact (terme OTel / Web Vitals / SQL). */
+  term: string;
+  /** Stack technique : d'où vient la mesure, comment elle est calculée. */
+  stack: string;
+  /** Lecture commerciale : ce que ça veut dire, pourquoi ça compte. */
+  business: string;
+}
+
+export const GLOSSARY = {
+  // --- Core Web Vitals -------------------------------------------------------
+  LCP: {
+    label: "LCP — Largest Contentful Paint",
+    term: "Largest Contentful Paint (Core Web Vital, seuil 2026 : bon < 2,0 s, à améliorer < 2,5 s).",
+    stack:
+      "Mesuré dans le navigateur réel par l'API PerformanceObserver (entry type 'largest-contentful-paint'), émis en span OTLP 'webvital.LCP' par le SDK.",
+    business:
+      "Le temps avant que le plus gros élément visible (image, titre) s'affiche. C'est la perception de « la page a chargé ». Au-delà de 2,5 s, l'internaute a l'impression d'attendre.",
+  },
+  INP: {
+    label: "INP — Interaction to Next Paint",
+    term: "Interaction to Next Paint (Core Web Vital, remplace FID ; bon < 200 ms, à améliorer < 500 ms).",
+    stack:
+      "Latence entre une interaction (clic, frappe) et le prochain rendu, captée via PerformanceObserver ('event'/'first-input') et agrégée au p75.",
+    business:
+      "La réactivité ressentie : quand on clique, le site répond-il tout de suite ? Un INP élevé = interface qui « rame », première cause d'agacement et d'abandon.",
+  },
+  CLS: {
+    label: "CLS — Cumulative Layout Shift",
+    term: "Cumulative Layout Shift (Core Web Vital sans unité ; bon < 0,1, à améliorer < 0,25).",
+    stack:
+      "Somme des décalages visuels inattendus (layout-shift) mesurés en continu par PerformanceObserver pendant la vie de la page.",
+    business:
+      "La stabilité visuelle : est-ce que le contenu « saute » pendant le chargement (un bouton se déplace au moment où on clique) ? Un CLS élevé crée des erreurs de clic et une impression de site bâclé.",
+  },
+  FCP: {
+    label: "FCP — First Contentful Paint",
+    term: "First Contentful Paint (bon < 1,8 s, à améliorer < 3,0 s).",
+    stack:
+      "Premier pixel de contenu peint, fourni par l'API Paint Timing du navigateur, émis en span 'webvital.FCP'.",
+    business:
+      "Le moment où la page n'est plus blanche : le premier signe visible que « ça charge ». Rassure l'internaute pendant l'attente.",
+  },
+  TTFB: {
+    label: "TTFB — Time To First Byte",
+    term: "Time To First Byte (bon < 800 ms, à améliorer < 1,8 s).",
+    stack:
+      "Délai jusqu'au premier octet de la réponse serveur, lu dans l'entrée Navigation Timing (responseStart − requestStart).",
+    business:
+      "Le temps de réaction du serveur avant même l'affichage. S'il est élevé, le problème est côté infrastructure/backend, pas côté navigateur.",
+  },
+
+  // --- Agrégats & santé ------------------------------------------------------
+  p75: {
+    label: "p75 — 75ᵉ percentile",
+    term: "75ᵉ percentile : valeur sous laquelle se situent 75 % des mesures (percentile_cont(0.75) en SQL).",
+    stack:
+      "Calculé en base Postgres sur la fenêtre choisie ; standard Google pour les Web Vitals (résiste aux valeurs extrêmes, contrairement à la moyenne).",
+    business:
+      "On regarde l'expérience des 75 % « normaux », pas la moyenne (faussée par quelques cas extrêmes). Dit autrement : « 3 utilisateurs sur 4 vivent au moins cette qualité-là ».",
+  },
+  health: {
+    label: "Score de santé",
+    term: "Score composite 0–100 : 40 % vitals (LCP ×2), 30 % erreurs, 20 % stabilité, 10 % anomalies 24 h.",
+    stack:
+      "Pondération calculée côté console à partir des p75, du taux d'erreur et de la détection d'anomalies (vue SQL v_anomaly).",
+    business:
+      "Une note unique pour piloter en un coup d'œil, comme un bulletin de santé du site. Idéal pour un comité de direction : vert = tout va bien, rouge = il faut agir.",
+  },
+  anomaly: {
+    label: "Anomalie (z-score)",
+    term: "Écart statistique |z| > 3 du p75 LCP horaire vs moyenne 7 jours glissants.",
+    stack:
+      "Détection en SQL (vue v_anomaly) par z-score = (valeur − moyenne) / écart-type, sans modèle externe.",
+    business:
+      "Une alerte automatique quand le site se dégrade nettement par rapport à son comportement habituel — sans avoir à fixer de seuil à la main. Repère les incidents avant les clients.",
+  },
+
+  // --- Tracing distribué -----------------------------------------------------
+  tracing: {
+    label: "Tracing front → back",
+    term: "Corrélation d'un appel API navigateur (span 'http.client') à son exécution serveur (span 'http.server') par trace_id.",
+    stack:
+      "Propagation W3C 'traceparent' injectée par le SDK (fetch/XHR), relue par le middleware backend (FastAPI/OTel) qui émet le span serveur.",
+    business:
+      "On suit un clic depuis le navigateur jusqu'au serveur et retour. Permet de répondre à « c'est lent : ça vient du réseau, du serveur ou du code ? » sans deviner.",
+  },
+  traceparent: {
+    label: "W3C traceparent",
+    term: "En-tête HTTP standard '00-<trace_id 32 hex>-<span_id 16 hex>-01' (W3C Trace Context).",
+    stack:
+      "Norme inter-éditeurs : le même identifiant voyage du front au back, ce qui rend la corrélation indépendante de la stack serveur.",
+    business:
+      "Le « fil rouge » standardisé qui relie chaque étape d'une requête. Étant un standard ouvert, il fonctionne avec n'importe quel outil — pas de dépendance à un fournisseur.",
+  },
+  span: {
+    label: "Span",
+    term: "Unité de travail tracée (début, durée, statut, attributs) — brique de base d'OpenTelemetry.",
+    stack:
+      "Stocké en table rum_span avec son tier (front/back), corrélé par trace_id ; durée en ms, route templatisée.",
+    business:
+      "Un segment chronométré d'une requête (« l'appel a pris 320 ms, dont 210 ms serveur »). En empilant les spans, on décompose précisément où part le temps.",
+  },
+  coverage: {
+    label: "Taux de corrélation",
+    term: "Part des appels navigateur disposant d'un span backend apparié (correlated / total).",
+    stack:
+      "Jointure SQL des spans front et back sur trace_id ; dépend du déploiement du middleware sur les services serveur.",
+    business:
+      "À quel point on voit la chaîne complète. 100 % = chaque appel est tracé de bout en bout ; un taux bas signale des services serveur pas encore instrumentés.",
+  },
+
+  // --- Erreurs, sessions, replay --------------------------------------------
+  errorFingerprint: {
+    label: "Regroupement d'erreurs (fingerprint)",
+    term: "Hash FNV-1a de (type + message normalisé + 1er frame de stack) pour dédupliquer les erreurs.",
+    stack:
+      "Calculé à l'ingestion : URLs, UUID et nombres sont remplacés par '#' afin que les variantes d'une même erreur partagent une empreinte.",
+    business:
+      "Au lieu de 5 000 erreurs en vrac, on voit « 12 problèmes distincts », triés par impact. On corrige les vraies causes, pas le bruit.",
+  },
+  session: {
+    label: "Session utilisateur",
+    term: "Suite de pages vues d'un même visiteur (session_id), avec device, pays (timezone) et durée.",
+    stack:
+      "Upsert en table rum_session ; aucune IP stockée — le pays est déduit de la timezone (RGPD-friendly).",
+    business:
+      "Le parcours réel d'un visiteur. Permet de rejouer ce qu'il a vécu et de comprendre un abandon, sans collecter de données personnelles identifiantes.",
+  },
+  replay: {
+    label: "Session replay",
+    term: "Reconstruction visuelle de la session via instantanés DOM (pas de capture vidéo).",
+    stack:
+      "Librairie rrweb : enregistre les mutations du DOM côté navigateur, rejouées dans la console (rrweb-player).",
+    business:
+      "Comme « regarder par-dessus l'épaule » de l'utilisateur pour voir exactement où il a buté — sans caméra ni espionnage, juste la structure de la page.",
+  },
+  alert: {
+    label: "Alerte",
+    term: "Règle seuil (métrique/route/fenêtre/comparateur) déclenchant un webhook quand elle est franchie.",
+    stack:
+      "Évaluée en base (check_alerts), livrée via pg_net (cloud) ou le dispatcher Node ; payload compatible Slack.",
+    business:
+      "Être prévenu automatiquement (Slack, Teams…) quand un indicateur dérape, sans surveiller l'écran. On passe du curatif au préventif.",
+  },
+
+  // --- Corrélation & socle ---------------------------------------------------
+  robotVsReal: {
+    label: "Robot vs Réel",
+    term: "Comparaison du synthétique (sondes programmées) au RUM (utilisateurs réels) pour une même route.",
+    stack:
+      "Vue SQL v_correlation : écart p75 robot ↔ réel ; surligne les routes où le monitoring synthétique ment.",
+    business:
+      "Vos tests automatiques disent « tout va bien » mais les vrais utilisateurs souffrent ? Cet écart le révèle — la mesure terrain prime sur le labo.",
+  },
+  otlp: {
+    label: "OTLP — OpenTelemetry Protocol",
+    term: "Protocole standard d'export de télémétrie (ici OTLP/HTTP JSON) reçu par l'ingestion /v1/traces.",
+    stack:
+      "Le SDK et les middlewares émettent du OTLP standard ; l'ingestion (edge function Deno / dev-server Node) l'aplatit vers Postgres.",
+    business:
+      "Tout repose sur un standard ouvert, pas un format maison. Conséquence directe : pas d'enfermement fournisseur, et compatibilité avec l'écosystème observabilité existant.",
+  },
+  rum: {
+    label: "RUM — Real User Monitoring",
+    term: "Mesure de la performance et des erreurs vécues par les utilisateurs réels, en production.",
+    stack:
+      "SDK navigateur (Web Vitals, erreurs, traces) → OTLP → Postgres → console Next.js. Souverain UE, OTel-native.",
+    business:
+      "On mesure le vrai ressenti des clients sur le site live, pas une simulation. C'est la donnée qui compte pour le chiffre d'affaires : un site rapide convertit mieux.",
+  },
+} as const satisfies Record<string, GlossaryEntry>;
+
+export type GlossaryId = keyof typeof GLOSSARY;
