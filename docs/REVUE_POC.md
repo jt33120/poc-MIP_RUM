@@ -45,18 +45,43 @@ pour la prod ».
 
 ---
 
-## 3. Défauts / risques restants (non corrigés — à arbitrer)
+## 3. Défauts / risques restants (à arbitrer)
+
+> **R1 et R2 sont désormais corrigés** (v0.7, second passage) — détails en §3bis.
 
 | # | Observation | Pourquoi ça compte | Reco |
 |---|---|---|---|
-| R1 | **`upsert_rum_session` incrémente `page_count`** alors que l'ingestion est *at-least-once* (le client peut rejouer après un 500). | Un rejeu après succès partiel **double-compte** les pages vues d'une session. Les autres tables sont idempotentes (`on conflict do nothing`), pas celle-ci. | Dédupliquer par identifiant de requête, **ou** dériver `page_count` d'un `count(*)` sur `rum_pageview` (source de vérité) plutôt que d'incrémenter. |
-| R2 | **Écritures de l'edge function non transactionnelles** (le dev-server, lui, est transactionnel). | Un échec à mi-parcours laisse un état partiel ; conjugué au rejeu, ça amplifie R1. | Regrouper les écritures dans **une RPC Postgres transactionnelle** (un aller-retour, atomique). Bonus : moins de latence. |
 | R3 | **Rate limit durable = fail-open** : si `rate_check` échoue, on accepte. | Choix d'availability assumé (le pré-filtre mémoire protège encore), mais une panne DB prolongée lève toute limite. | OK pour le POC ; documenter, et envisager un fail-closed au-delà de N échecs consécutifs. |
 | R4 | **Premier chargement du registre d'apps en échec** (edge) ⇒ map vide ⇒ avec `REQUIRE_API_KEY`, toutes les apps deviennent « inconnues » (403). | Dépendance dure au premier `select` ; un hoquet DB au démarrage bloque l'ingestion. | Conserver le dernier registre connu (déjà le cas entre rafraîchissements) ; au boot, **fail-open sur la vérif clé** si le registre n'a jamais pu être chargé, en le journalisant. |
 | R5 | **Livraisons d'alerte `failed` non rejouées** (`dispatch-alerts`). | Un webhook momentanément down = alerte définitivement perdue. | Ajouter `attempts` + backoff et re-sélectionner les `failed` récents sous un plafond d'essais. |
 | R6 | **Edge function non testée automatiquement** (pas de runtime Deno en CI). | Le dev-server est le miroir testé, mais l'edge peut diverger (CORS, statuts, env). | Ajouter un job **`deno test`** sur un test de contrat (mêmes fixtures que le dev-server), ou extraire le handler en module testable. |
 | R7 | **CORS : origine refusée ⇒ on renvoie `ALLOWED_ORIGINS[0]`** comme `Access-Control-Allow-Origin`. | Comportement volontairement permissif ; sans cookies/credentials c'est sans risque, mais c'est surprenant. | Documenter explicitement, ou renvoyer l'absence d'en-tête ACAO pour une origine non listée. |
 | R8 | **Pas de purge/TTL vérifiée en continu** (limite #10 d'origine). | La base croît ; le free tier Supabase a un plafond. | Job de rétention (`delete … where ts < now() - interval '30 days'`) planifié + métrique de volumétrie. |
+
+### 3bis. R1 + R2 — idempotence des écritures (corrigé en v0.7)
+
+**Problème.** `upsert_rum_session` **incrémentait** `page_count`, alors que
+l'ingestion est *at-least-once* : un beacon/middleware peut rejouer un lot après
+un `500`. Un rejeu **double-comptait** donc les pages vues. Les écritures de
+l'edge function n'étant pas transactionnelles, un échec à mi-parcours amplifiait
+le problème.
+
+**Correctif (`migration-v07.sql`).** `page_count` est désormais **dérivé** du
+nombre de lignes `rum_pageview` de la session — table déjà dédupliquée par
+`span_id` (`on conflict do nothing`). Le compte est donc exact **quel que soit le
+nombre de rejeux**, et chaque étape d'écriture devient idempotente :
+
+- `upsert_rum_session` ne touche plus `page_count` (métadonnées seulement,
+  signature inchangée → appelants compatibles) ;
+- `set_session_page_count(session_id)` recalcule depuis `rum_pageview` (appelée
+  par l'edge function après l'insertion des pageviews) ;
+- le dev-server fait l'équivalent **dans sa transaction** (un `update … set
+  page_count = count(*)`) ;
+- backfill des sessions existantes.
+
+**Vérifié sur Postgres réel** : un même lot de 2 pageviews **rejoué deux fois**
+donne `page_count = 2` (et non 4) ; la RPC et la migration sont **ré-exécutables**
+sans effet de bord. L'E2E CI (assertion `page_count ≥ 2`) reste satisfaite.
 
 ---
 
@@ -78,7 +103,9 @@ manques d'expérience** étaient criants pour un POC commercial — **traités i
 ## 5. Suggestions priorisées (au-delà du POC)
 
 **P0 — avant un vrai trafic client**
-1. Transformer les écritures en **une RPC transactionnelle** (résout R1 + R2).
+1. ✅ **Idempotence des écritures** (R1+R2) faite en v0.7. Reste optionnel :
+   regrouper l'écriture edge dans **une seule RPC transactionnelle** (atomicité
+   stricte + moins de latence réseau).
 2. **Test de charge cloud** réel (limite #27) pour calibrer rate limit, taille de
    lot et le free tier Supabase.
 3. **Rétention/TTL** planifiée + alerte de volumétrie (R8).
@@ -104,6 +131,8 @@ manques d'expérience** étaient criants pour un POC commercial — **traités i
   `_shared/retry.mjs`, `_shared/limits.mjs`.
 - `v1-traces` (edge) et `dev-server.mjs` : 400/500, 413, retries, logs
   structurés, health/ready, arrêt propre, plafond de spans.
+- **`migration-v07.sql`** : `page_count` idempotent (dérivé de `rum_pageview`),
+  fonction `set_session_page_count`, backfill (R1+R2).
 - `dispatch-alerts.mjs` : logs structurés + arrêt propre du `--loop`.
 - Middleware FastAPI : compteur de spans perdus.
 - Tests : `tests/unit/backend-hardening.test.ts` (15) + 1 test Python.

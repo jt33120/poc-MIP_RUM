@@ -222,6 +222,17 @@ Deno.serve(async (req) => {
     await ins("rum_event", events);
     await ins("rum_span", spans); // v0.4 tracing distribué (front + back)
 
+    // page_count DÉRIVÉ du compte réel de pageviews (idempotent au rejeu, cf.
+    // migration-v07) — recalcul APRÈS l'insertion, pour les sessions qui ont
+    // reçu ≥1 pageview dans ce lot (les autres ne changent pas de compte)
+    for (const s of sessions) {
+      if (!s.page_count_inc) continue;
+      await withRetry(async () => {
+        const { error } = await supabase.rpc("set_session_page_count", { p_session_id: s.session_id });
+        if (error) throw error;
+      }, { onRetry });
+    }
+
     if (rows.rejected) log.info("partial accept", { rejected: rows.rejected });
 
     return new Response(JSON.stringify({ partialSuccess: {} }), {

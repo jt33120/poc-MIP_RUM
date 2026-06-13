@@ -145,10 +145,9 @@ async function writeRows({
       client,
       "rum_session",
       ["session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type", "geo_country", "started_at", "last_seen_at", "page_count"],
-      sessions.map((s) => ({ ...s, started_at: s.last_seen_at, page_count: s.page_count_inc })),
+      sessions.map((s) => ({ ...s, started_at: s.last_seen_at, page_count: 0 })),
       `on conflict (session_id) do update
          set last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at),
-             page_count   = rum_session.page_count + excluded.page_count,
              user_agent   = coalesce(rum_session.user_agent, excluded.user_agent),
              geo_country  = coalesce(rum_session.geo_country, excluded.geo_country)`,
     );
@@ -208,6 +207,18 @@ async function writeRows({
       spans ?? [],
       "on conflict (span_id) do nothing",
     );
+    // page_count DÉRIVÉ du compte réel de pageviews (idempotent au rejeu, cf.
+    // migration-v07) plutôt qu'incrémenté — recalcul pour les sessions du lot
+    if (sessions.length) {
+      await client.query(
+        `update rum_session s
+           set page_count = sub.c
+          from (select session_id, count(*) c from rum_pageview
+                 where session_id = any($1) group by session_id) sub
+         where s.session_id = sub.session_id`,
+        [sessions.map((s) => s.session_id)],
+      );
+    }
     await client.query("commit");
   } catch (err) {
     await client.query("rollback");
