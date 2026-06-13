@@ -13,6 +13,7 @@ import { flattenOtlp } from "./supabase/functions/_shared/otlp.mjs";
 import { createLogger } from "./supabase/functions/_shared/log.mjs";
 import { withRetry } from "./supabase/functions/_shared/retry.mjs";
 import { MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "./supabase/functions/_shared/limits.mjs";
+import { corsHeaders as buildCors, originsFromRegistry } from "./supabase/functions/_shared/cors.mjs";
 
 const log = createLogger("ingest");
 
@@ -25,28 +26,12 @@ const RATE_LIMIT_PER_MIN = Number(process.env.RATE_LIMIT_PER_MIN || 600);
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 5 });
 
-// Socle statique ; uni aux origines des clients en base (v0.5, cache 60 s du registre)
-const ALLOWED_ORIGINS = [
-  "http://localhost:8080",
-  "http://127.0.0.1:8080",
-  "http://localhost:3000",
-  "https://plateforme.groupement-it.com",
-];
-
 const recent = []; // ring buffer pour les assertions de test
 const RING_SIZE = 50;
 
+// En-têtes CORS (règles partagées _shared/cors.mjs, identiques à l'edge function)
 function corsHeaders(origin) {
-  const fromDb =
-    origin &&
-    [...appRegistry.values()].some((a) => a.active && a.allowed_origins?.includes(origin));
-  const allowed = ALLOWED_ORIGINS.includes(origin) || fromDb ? origin : ALLOWED_ORIGINS[0];
-  return {
-    "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type",
-    "Access-Control-Max-Age": "86400",
-  };
+  return buildCors(origin, originsFromRegistry(appRegistry.values()));
 }
 
 // --- Registre d'apps : chargé au boot, rafraîchi toutes les 60 s -------------

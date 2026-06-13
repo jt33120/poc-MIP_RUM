@@ -47,14 +47,12 @@ pour la prod ».
 
 ## 3. Défauts / risques restants (à arbitrer)
 
-> **R1, R2, R4 et R5 sont désormais corrigés** (v0.7) — détails en §3bis et §3ter.
+> **R1, R2, R4, R5, R6, R7 et R8 sont désormais corrigés** (v0.7) — détails
+> §3bis → §3quinquies. Il ne reste que R3 (choix d'availability assumé).
 
 | # | Observation | Pourquoi ça compte | Reco |
 |---|---|---|---|
-| R3 | **Rate limit durable = fail-open** : si `rate_check` échoue, on accepte. | Choix d'availability assumé (le pré-filtre mémoire protège encore), mais une panne DB prolongée lève toute limite. | OK pour le POC ; documenter, et envisager un fail-closed au-delà de N échecs consécutifs. |
-| R6 | **Edge function non testée automatiquement** (pas de runtime Deno en CI). | Le dev-server est le miroir testé, mais l'edge peut diverger (CORS, statuts, env). | Ajouter un job **`deno test`** sur un test de contrat (mêmes fixtures que le dev-server), ou extraire le handler en module testable. |
-| R7 | **CORS : origine refusée ⇒ on renvoie `ALLOWED_ORIGINS[0]`** comme `Access-Control-Allow-Origin`. | Comportement volontairement permissif ; sans cookies/credentials c'est sans risque, mais c'est surprenant. | Documenter explicitement, ou renvoyer l'absence d'en-tête ACAO pour une origine non listée. |
-| R8 | **Pas de purge/TTL vérifiée en continu** (limite #10 d'origine). | La base croît ; le free tier Supabase a un plafond. | Job de rétention (`delete … where ts < now() - interval '30 days'`) planifié + métrique de volumétrie. |
+| R3 | **Rate limit durable = fail-open** : si `rate_check` échoue, on accepte. | Choix d'availability assumé (le pré-filtre mémoire protège encore), mais une panne DB prolongée lève toute limite. | OK pour le POC ; documenté. À envisager : fail-closed au-delà de N échecs consécutifs. |
 
 ### 3bis. R1 + R2 — idempotence des écritures (corrigé en v0.7)
 
@@ -101,6 +99,37 @@ atteint. Logique de décision extraite en `decideStatus()` (testée en unitaire)
 → `sent` ; à `attempts=4` un échec → `dead` ; une `failed` trop récente est
 **ignorée** (backoff actif).
 
+### 3quater. R6 + R7 — CORS unifié et strict (corrigé en v0.7)
+
+**R6 — divergence edge/dev-server.** La logique CORS était **dupliquée** entre
+l'edge function (Deno) et le dev-server (Node), avec des socles d'origines déjà
+différents — exactement le type de divergence que R6 pointe. Plutôt qu'ajouter un
+runtime Deno en CI, on **supprime la divergence à la source** : extraction dans
+`_shared/cors.mjs`, **importé par les deux** (même patron que `otlp.mjs`) et
+**testé en vitest**. C'est l'option « extraire en module testable » de la reco,
+à la bonne granularité.
+
+**R7 — origine refusée.** L'ancienne logique renvoyait `ALLOWED_ORIGINS[0]` comme
+`Access-Control-Allow-Origin` pour une origine non listée. Désormais : **aucun
+en-tête ACAO** si l'origine n'est pas autorisée (le navigateur bloque, c'est le
+comportement voulu) ; les en-têtes de préflight restent présents.
+*Vérifié sur dev-server réel* : origine G-IT → `ACAO = origine` ; origine tierce →
+`204` **sans** ACAO. L'E2E CORS existante reste verte.
+
+### 3quinquies. R8 — rétention / TTL (corrigé en v0.7)
+
+**Problème.** Aucune purge → la base croît indéfiniment (plafond du free tier).
+**Correctif (`migration-v09.sql`).** Fonction `purge_rum(retention_days)`
+**ordonnée enfants→parents** (FK respectées), qui renvoie le **détail des
+suppressions** (jsonb observable). Planification : **pg_cron** en cloud si
+l'extension est présente (bloc gardé, sauté en CI/local comme pg_net/RLS),
+sinon le CLI **`apps/ingest/purge.mjs`** (même patron que `dispatch-alerts.mjs` :
+logs structurés, `--loop`, arrêt propre). `audit_log`/`console_user` **exclus**
+(conformité/comptes).
+*Vérifié sur Postgres réel* : seules les lignes entièrement anciennes sont
+purgées ; une **vieille pageview avec une métrique récente survit** (FK protégée),
+de même que sa session — exactement le comportement sûr attendu.
+
 ---
 
 ## 4. Manques produit (rappel + nouveautés de cette itération)
@@ -126,7 +155,8 @@ manques d'expérience** étaient criants pour un POC commercial — **traités i
    stricte + moins de latence réseau).
 2. **Test de charge cloud** réel (limite #27) pour calibrer rate limit, taille de
    lot et le free tier Supabase.
-3. **Rétention/TTL** planifiée + alerte de volumétrie (R8).
+3. ✅ **Rétention/TTL** faite en v0.7 (`purge_rum` + pg_cron/`purge.mjs`, R8).
+   Reste optionnel : exposer une **métrique de volumétrie**.
 
 **P1 — industrialisation**
 4. **Métriques de l'ingestion** (taux 4xx/5xx, `rejected`, p95 d'écriture,
@@ -154,9 +184,12 @@ manques d'expérience** étaient criants pour un POC commercial — **traités i
 - **R4** : fail-open des clés d'API si le registre n'a jamais chargé (edge + dev-server).
 - **`migration-v08.sql`** + `dispatch-alerts` : rejeu borné des alertes `failed`
   (`attempts`, backoff, état `dead`, `decideStatus` testé) (R5).
+- **`_shared/cors.mjs`** : règles CORS partagées edge/dev-server + ACAO strict (R6+R7).
+- **`migration-v09.sql`** + `purge.mjs` : rétention `purge_rum` (pg_cron/CLI), FK-safe (R8).
 - `dispatch-alerts.mjs` : logs structurés + arrêt propre du `--loop`.
 - Middleware FastAPI : compteur de spans perdus.
-- Tests : `tests/unit/backend-hardening.test.ts` (15) + 1 test Python.
+- Tests : `tests/unit/backend-hardening.test.ts` (19) + dispatcher (`decideStatus`)
+  + 1 test Python.
 
 **Frontend (`apps/console`)**
 - `lib/glossary.ts`, `components/InfoTip.tsx`, `components/GlossaryTip.tsx`,

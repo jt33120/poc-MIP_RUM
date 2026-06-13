@@ -16,19 +16,12 @@ import { flattenOtlp } from "../_shared/otlp.mjs";
 import { createLogger } from "../_shared/log.mjs";
 import { withRetry } from "../_shared/retry.mjs";
 import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "../_shared/limits.mjs";
+import { corsHeaders as buildCors, originsFromRegistry } from "../_shared/cors.mjs";
 
 const log = createLogger("v1-traces");
 
 /** Erreur de validation (4xx) : la requête est fautive, inutile de la rejouer. */
 class BadRequestError extends Error {}
-
-// Socle statique (toujours accepté) ; les origines des clients ajoutés via la
-// console vivent en base (app_registry.allowed_origins, v0.5) et s'y unissent.
-const ALLOWED_ORIGINS = [
-  "https://plateforme.groupement-it.com",
-  "http://localhost:8080",
-  "http://localhost:3000",
-];
 
 const REQUIRE_API_KEY = (Deno.env.get("REQUIRE_API_KEY") ?? "false") === "true";
 const RATE_LIMIT_PER_MIN = Number(Deno.env.get("RATE_LIMIT_PER_MIN") ?? "600");
@@ -38,23 +31,11 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+// En-têtes CORS (règles partagées _shared/cors.mjs) — l'origine n'est reflétée
+// que si elle est autorisée (socle statique ∪ origines des apps actives).
 async function corsHeaders(origin: string): Promise<Record<string, string>> {
-  let allowed = ALLOWED_ORIGINS.includes(origin) ? origin : null;
-  if (!allowed && origin) {
-    // origine d'un client enregistré en base (apps actives uniquement)
-    for (const app of (await getAppRegistry()).values()) {
-      if (app.active && app.allowed_origins?.includes(origin)) {
-        allowed = origin;
-        break;
-      }
-    }
-  }
-  return {
-    "Access-Control-Allow-Origin": allowed ?? ALLOWED_ORIGINS[0],
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type",
-    "Access-Control-Max-Age": "86400",
-  };
+  const extra = originsFromRegistry((await getAppRegistry()).values());
+  return buildCors(origin, extra);
 }
 
 // --- Registre d'apps : cache 60 s (refresh paresseux, isolat éphémère) -------

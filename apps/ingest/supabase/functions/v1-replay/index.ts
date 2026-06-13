@@ -4,14 +4,8 @@
 // bytea via PostgREST : la colonne attend l'encodage hex '\x…'.
 // @ts-nocheck deno runtime
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { corsHeaders as buildCors, REPLAY_ALLOW_HEADERS } from "../_shared/cors.mjs";
 
-// Socle statique ; les origines des clients ajoutés via la console vivent en
-// base (app_registry.allowed_origins, v0.5) et s'y unissent (cache 60 s).
-const ALLOWED_ORIGINS = [
-  "https://plateforme.groupement-it.com",
-  "http://localhost:8080",
-  "http://localhost:3000",
-];
 const MAX_BODY_BYTES = 2 * 1024 * 1024; // garde-fou > cap SDK (1 Mo gzip/session)
 
 const supabase = createClient(
@@ -36,17 +30,9 @@ async function getDbOrigins(): Promise<Set<string>> {
   return dbOrigins;
 }
 
+// En-têtes CORS (règles partagées _shared/cors.mjs) + en-têtes replay x-mip-*
 async function corsHeaders(origin: string): Promise<Record<string, string>> {
-  const allowed =
-    ALLOWED_ORIGINS.includes(origin) || (origin && (await getDbOrigins()).has(origin))
-      ? origin
-      : ALLOWED_ORIGINS[0];
-  return {
-    "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type,x-mip-session,x-mip-app,x-mip-seq",
-    "Access-Control-Max-Age": "86400",
-  };
+  return buildCors(origin, [...(await getDbOrigins())], { allowHeaders: REPLAY_ALLOW_HEADERS });
 }
 
 async function gunzipText(bytes: Uint8Array): Promise<string> {

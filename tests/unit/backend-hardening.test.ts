@@ -6,6 +6,12 @@ import { createLogger } from "../../apps/ingest/supabase/functions/_shared/log.m
 import { isTransient, withRetry } from "../../apps/ingest/supabase/functions/_shared/retry.mjs";
 import { bodyTooLarge, MAX_BODY_BYTES } from "../../apps/ingest/supabase/functions/_shared/limits.mjs";
 import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import {
+  corsHeaders,
+  isAllowedOrigin,
+  originsFromRegistry,
+  STATIC_ALLOWED_ORIGINS,
+} from "../../apps/ingest/supabase/functions/_shared/cors.mjs";
 
 // --- log.mjs ----------------------------------------------------------------
 describe("createLogger — logs structurés JSON", () => {
@@ -155,5 +161,45 @@ describe("flattenOtlp — plafond de spans (maxSpans)", () => {
     const rows = flattenOtlp(payload(50));
     expect(rows.pageviews).toHaveLength(50);
     expect(rows.rejected).toBe(0);
+  });
+});
+
+// --- cors.mjs : règles partagées edge/dev-server (R6) + ACAO strict (R7) ------
+describe("corsHeaders — origine autorisée reflétée, sinon AUCUN ACAO", () => {
+  const GIT = "https://plateforme.groupement-it.com";
+
+  it("origine du socle statique -> ACAO = origine", () => {
+    expect(corsHeaders(GIT)["Access-Control-Allow-Origin"]).toBe(GIT);
+    expect(STATIC_ALLOWED_ORIGINS).toContain(GIT);
+  });
+
+  it("origine d'une app active (extra) -> ACAO = origine", () => {
+    const extra = originsFromRegistry([
+      { active: true, allowed_origins: ["https://client.example.com"] },
+      { active: false, allowed_origins: ["https://inactive.example.com"] },
+    ]);
+    expect(corsHeaders("https://client.example.com", extra)["Access-Control-Allow-Origin"]).toBe(
+      "https://client.example.com",
+    );
+    // l'app inactive n'ouvre PAS son origine
+    expect(isAllowedOrigin("https://inactive.example.com", extra)).toBe(false);
+  });
+
+  it("origine non autorisée -> PAS d'en-tête ACAO (R7), préflight conservé", () => {
+    const h = corsHeaders("https://evil.example.com");
+    expect(h["Access-Control-Allow-Origin"]).toBeUndefined();
+    expect(h["Access-Control-Allow-Methods"]).toContain("POST");
+  });
+
+  it("origine absente (appel serveur-à-serveur) -> pas d'ACAO, sans planter", () => {
+    expect(corsHeaders("")["Access-Control-Allow-Origin"]).toBeUndefined();
+    expect(isAllowedOrigin("")).toBe(false);
+  });
+
+  it("allowHeaders surchargeable (ingestion replay : en-têtes x-mip-*)", () => {
+    const h = corsHeaders(GIT, [], { allowHeaders: "content-type,x-mip-session" });
+    expect(h["Access-Control-Allow-Headers"]).toBe("content-type,x-mip-session");
+    // défaut inchangé pour les autres appelants
+    expect(corsHeaders(GIT)["Access-Control-Allow-Headers"]).toBe("content-type");
   });
 });
