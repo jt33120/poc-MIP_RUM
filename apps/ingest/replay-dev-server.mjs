@@ -5,6 +5,7 @@
 import http from "node:http";
 import { gunzipSync } from "node:zlib";
 import pg from "pg";
+import { corsHeaders as buildCors, REPLAY_ALLOW_HEADERS } from "./supabase/functions/_shared/cors.mjs";
 
 const PORT = process.env.REPLAY_PORT || 4319;
 const DATABASE_URL =
@@ -14,22 +15,9 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024; // garde-fou > cap SDK (1 Mo gzip/sessio
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 3 });
 
-// CORS identique au dev-server OTLP (+ en-têtes replay x-mip-*)
-const ALLOWED_ORIGINS = [
-  "http://localhost:8080",
-  "http://127.0.0.1:8080",
-  "http://localhost:3000",
-  "https://plateforme.groupement-it.com",
-];
-
+// CORS partagé (règles _shared/cors.mjs, identiques à l'edge) + en-têtes replay x-mip-*
 function corsHeaders(origin) {
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  return {
-    "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type,x-mip-session,x-mip-app,x-mip-seq",
-    "Access-Control-Max-Age": "86400",
-  };
+  return buildCors(origin, [], { allowHeaders: REPLAY_ALLOW_HEADERS });
 }
 
 /** Header normalisé (node renvoie string | string[]). */

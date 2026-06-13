@@ -2,7 +2,7 @@
 // geo_country dans flattenOtlp, payload webhook du dispatcher (pendant pg_net).
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module ESM hors rootDir ts
-import { buildPayload } from "../../apps/ingest/dispatch-alerts.mjs";
+import { buildPayload, decideStatus } from "../../apps/ingest/dispatch-alerts.mjs";
 import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
 import { tzToCountry } from "../../apps/ingest/supabase/functions/_shared/tz-country.mjs";
 
@@ -129,5 +129,20 @@ describe("buildPayload — webhook identique à check_alerts v2 (pg_net)", () =>
     const p = buildPayload({ ...delivery, route: null });
     expect(p.route).toBeNull();
     expect(p.text).toBe("[MIP RUM] LCP > 3204.9 (seuil 2500) — app gip-plateforme");
+  });
+});
+
+describe("decideStatus — rejeu borné des livraisons (R5)", () => {
+  it("succès -> 'sent' quel que soit le nombre de tentatives", () => {
+    expect(decideStatus(true, 0, 5)).toBe("sent");
+    expect(decideStatus(true, 4, 5)).toBe("sent");
+  });
+  it("échec sous le plafond -> 'failed' (sera rejoué)", () => {
+    expect(decideStatus(false, 0, 5)).toBe("failed");
+    expect(decideStatus(false, 3, 5)).toBe("failed");
+  });
+  it("échec à la dernière tentative -> 'dead' (état terminal)", () => {
+    expect(decideStatus(false, 4, 5)).toBe("dead"); // 4+1 = 5 = plafond
+    expect(decideStatus(false, 9, 5)).toBe("dead");
   });
 });

@@ -1,4 +1,5 @@
 import { VitalsTimeseries } from "@/components/charts/VitalsTimeseries";
+import { GlossaryTip } from "@/components/GlossaryTip";
 import { PageHeader } from "@/components/PageHeader";
 import { VitalCard } from "@/components/VitalCard";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
@@ -37,6 +38,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     <div className="animate-fade-up">
       <PageHeader
         title="Overview"
+        help="rum"
         sub={
           <>
             Core Web Vitals réels au p75 · seuils 2026 (LCP &lt; 2,0 s · INP &lt; 200 ms · CLS &lt; 0,1) ·
@@ -195,8 +197,9 @@ function HealthBanner({ health, periodLabel }: { health: Health; periodLabel: st
       <div className="flex items-center gap-5">
         <HealthRing score={health.score} label={health.label} />
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+          <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
             Santé ({periodLabel})
+            <GlossaryTip id="health" />
           </div>
           <span
             className={`mt-1.5 inline-block rounded-full border px-3 py-1 text-sm font-semibold ${HEALTH_CLASS[health.label]}`}
@@ -241,8 +244,9 @@ function AnomalyTable({ health }: { health: Health }) {
   if (!health.anomalies.length) return null;
   return (
     <div id="anomalies" className="card mt-6 overflow-hidden">
-      <h2 className="border-b border-line px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+      <h2 className="flex items-center gap-1.5 border-b border-line px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
         Anomalies LCP (24 h) — p75 horaire vs moyenne 7 j glissants, |z| &gt; 3
+        <GlossaryTip id="anomaly" />
       </h2>
       <table className="w-full text-sm">
         <thead className="bg-panel2">

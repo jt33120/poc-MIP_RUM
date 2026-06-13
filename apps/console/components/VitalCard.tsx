@@ -1,5 +1,7 @@
 import { fmtVital } from "@/lib/format";
+import { GLOSSARY, type GlossaryId } from "@/lib/glossary";
 import { RATING_BAR, RATING_CLASS, RATING_LABEL, THRESHOLDS, rating2026 } from "@/lib/rating";
+import { GlossaryTip } from "./GlossaryTip";
 
 /** Tendance vs période précédente : pour un vital, monter = se dégrader. */
 function Trend({ p75, prev }: { p75: number; prev: number | null }) {
@@ -65,7 +67,10 @@ export function VitalCard({
   return (
     <div className="card p-4 transition hover:shadow-pop">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{name}</span>
+        <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+          {name}
+          {name in GLOSSARY && <GlossaryTip id={name as GlossaryId} />}
+        </span>
         {rating && (
           <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${RATING_CLASS[rating]}`}>
             {RATING_LABEL[rating]}

@@ -10,6 +10,12 @@ import { createHash } from "node:crypto";
 import http from "node:http";
 import pg from "pg";
 import { flattenOtlp } from "./supabase/functions/_shared/otlp.mjs";
+import { createLogger } from "./supabase/functions/_shared/log.mjs";
+import { withRetry } from "./supabase/functions/_shared/retry.mjs";
+import { MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "./supabase/functions/_shared/limits.mjs";
+import { corsHeaders as buildCors, originsFromRegistry } from "./supabase/functions/_shared/cors.mjs";
+
+const log = createLogger("ingest");
 
 const PORT = process.env.INGEST_PORT || 4318;
 const DATABASE_URL =
@@ -20,32 +26,17 @@ const RATE_LIMIT_PER_MIN = Number(process.env.RATE_LIMIT_PER_MIN || 600);
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 5 });
 
-// Socle statique ; uni aux origines des clients en base (v0.5, cache 60 s du registre)
-const ALLOWED_ORIGINS = [
-  "http://localhost:8080",
-  "http://127.0.0.1:8080",
-  "http://localhost:3000",
-  "https://plateforme.groupement-it.com",
-];
-
 const recent = []; // ring buffer pour les assertions de test
 const RING_SIZE = 50;
 
+// En-têtes CORS (règles partagées _shared/cors.mjs, identiques à l'edge function)
 function corsHeaders(origin) {
-  const fromDb =
-    origin &&
-    [...appRegistry.values()].some((a) => a.active && a.allowed_origins?.includes(origin));
-  const allowed = ALLOWED_ORIGINS.includes(origin) || fromDb ? origin : ALLOWED_ORIGINS[0];
-  return {
-    "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type",
-    "Access-Control-Max-Age": "86400",
-  };
+  return buildCors(origin, originsFromRegistry(appRegistry.values()));
 }
 
 // --- Registre d'apps : chargé au boot, rafraîchi toutes les 60 s -------------
 let appRegistry = new Map(); // app_id -> { api_key_hash, active, allowed_origins }
+let registryEverLoaded = false; // R4 : a-t-on déjà réussi un chargement ?
 
 async function loadAppRegistry() {
   try {
@@ -53,8 +44,9 @@ async function loadAppRegistry() {
       "select app_id, api_key_hash, active, allowed_origins from app_registry",
     );
     appRegistry = new Map(rows.map((r) => [r.app_id, r]));
+    registryEverLoaded = true;
   } catch (err) {
-    console.error("[ingest] app_registry load failed:", err.message);
+    log.error("app_registry load failed", { err });
   }
 }
 
@@ -63,6 +55,12 @@ const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 /** null si accepté, sinon raison du 403. api_key_hash null = legacy, pas de vérif. */
 function checkApiKey(appId, apiKey) {
   if (!REQUIRE_API_KEY) return null;
+  // R4 : registre jamais chargé (panne DB au boot) -> fail-open plutôt que de
+  // rejeter tout le trafic en 403 (cohérent avec le fail-open du rate limit).
+  if (!registryEverLoaded) {
+    log.warn("api key check fail-open (registry never loaded)", { app_id: appId });
+    return null;
+  }
   const app = appRegistry.get(appId);
   if (!app || !app.active) return `unknown or inactive app: ${appId}`;
   if (app.api_key_hash == null) return null; // continuité G-IT : app sans clé
@@ -96,7 +94,7 @@ async function rateLimitedDurable(appId) {
     ]);
     return rows[0].ok === false;
   } catch (err) {
-    console.error("[ingest] rate_check sql failed (fallback mémoire):", err.message);
+    log.warn("rate_check sql failed (fallback mémoire)", { err });
     return false; // le compteur mémoire a déjà accepté
   }
 }
@@ -140,10 +138,9 @@ async function writeRows({
       client,
       "rum_session",
       ["session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type", "geo_country", "started_at", "last_seen_at", "page_count"],
-      sessions.map((s) => ({ ...s, started_at: s.last_seen_at, page_count: s.page_count_inc })),
+      sessions.map((s) => ({ ...s, started_at: s.last_seen_at, page_count: 0 })),
       `on conflict (session_id) do update
          set last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at),
-             page_count   = rum_session.page_count + excluded.page_count,
              user_agent   = coalesce(rum_session.user_agent, excluded.user_agent),
              geo_country  = coalesce(rum_session.geo_country, excluded.geo_country)`,
     );
@@ -203,6 +200,18 @@ async function writeRows({
       spans ?? [],
       "on conflict (span_id) do nothing",
     );
+    // page_count DÉRIVÉ du compte réel de pageviews (idempotent au rejeu, cf.
+    // migration-v07) plutôt qu'incrémenté — recalcul pour les sessions du lot
+    if (sessions.length) {
+      await client.query(
+        `update rum_session s
+           set page_count = sub.c
+          from (select session_id, count(*) c from rum_pageview
+                 where session_id = any($1) group by session_id) sub
+         where s.session_id = sub.session_id`,
+        [sessions.map((s) => s.session_id)],
+      );
+    }
     await client.query("commit");
   } catch (err) {
     await client.query("rollback");
@@ -220,6 +229,23 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204, cors);
     return res.end();
   }
+  // liveness : le process répond (pas de dépendance externe)
+  if (req.method === "GET" && req.url === "/health") {
+    res.writeHead(200, { "content-type": "application/json", ...cors });
+    return res.end(JSON.stringify({ status: "ok", service: "ingest" }));
+  }
+  // readiness : la base répond (sonde orchestrateur avant de router du trafic)
+  if (req.method === "GET" && req.url === "/ready") {
+    try {
+      await pool.query("select 1");
+      res.writeHead(200, { "content-type": "application/json", ...cors });
+      return res.end(JSON.stringify({ status: "ready" }));
+    } catch (err) {
+      log.error("readiness check failed", { err });
+      res.writeHead(503, { "content-type": "application/json", ...cors });
+      return res.end(JSON.stringify({ status: "unready" }));
+    }
+  }
   if (req.method === "GET" && req.url === "/__recent") {
     res.writeHead(200, { "content-type": "application/json", ...cors });
     return res.end(JSON.stringify(recent));
@@ -229,19 +255,33 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
+  // garde-fou de charge : on coupe la connexion dès que le corps dépasse la
+  // limite, sans accumuler tout le payload en mémoire (413)
   let body = "";
-  for await (const chunk of req) body += chunk;
+  let tooLarge = false;
+  for await (const chunk of req) {
+    body += chunk;
+    if (body.length > MAX_BODY_BYTES) {
+      tooLarge = true;
+      break;
+    }
+  }
+  if (tooLarge) {
+    log.warn("payload too large", { bytes: body.length, max: MAX_BODY_BYTES });
+    res.writeHead(413, { "content-type": "application/json", ...cors });
+    return res.end(JSON.stringify({ error: "payload too large" }));
+  }
   try {
     const payload = JSON.parse(body);
     recent.push(payload);
     if (recent.length > RING_SIZE) recent.shift();
-    const rows = flattenOtlp(payload);
+    const rows = flattenOtlp(payload, { maxSpans: MAX_SPANS_PER_REQUEST });
 
     // vérif clé d'API (403) — clé portée par l'attribut resource mip.api_key
     for (const { app_id, api_key } of rows.apiKeys) {
       const reason = checkApiKey(app_id, api_key);
       if (reason) {
-        console.warn(`[ingest] 403 ${reason}`);
+        log.warn("rejected: api key", { app_id, reason });
         res.writeHead(403, { "content-type": "application/json", ...cors });
         return res.end(JSON.stringify({ error: reason }));
       }
@@ -249,30 +289,72 @@ const server = http.createServer(async (req, res) => {
     // rate limit (429) — une fois par app et par requête (durable : rate_check SQL)
     for (const appId of new Set(rows.apiKeys.map((k) => k.app_id))) {
       if (await rateLimitedDurable(appId)) {
-        console.warn(`[ingest] 429 rate limit exceeded for app: ${appId}`);
+        log.warn("rate limited", { app_id: appId, limit: RATE_LIMIT_PER_MIN });
         res.writeHead(429, { "content-type": "application/json", "retry-after": "60", ...cors });
         return res.end(JSON.stringify({ error: `rate limit exceeded for app: ${appId}` }));
       }
     }
 
-    await writeRows(rows);
-    console.log(
-      `[ingest] ${new Date().toISOString()} ← ${origin || "(no origin)"} | sessions:${rows.sessions.length} pageviews:${rows.pageviews.length} metrics:${rows.metrics.length} errors:${rows.errors.length} resources:${rows.resources.length} longtasks:${rows.longtasks.length} breadcrumbs:${rows.breadcrumbs.length} events:${rows.events.length} spans:${rows.spans.length} rejected:${rows.rejected}`,
-    );
+    // écriture rejouée sur erreur Postgres transitoire (la transaction entière
+    // est idempotente : on conflict do nothing/greatest)
+    await withRetry(() => writeRows(rows), {
+      onRetry: (e, attempt) => log.warn("db retry", { attempt, code: e?.code }),
+    });
+    log.info("ingested", {
+      origin: origin || null,
+      sessions: rows.sessions.length,
+      pageviews: rows.pageviews.length,
+      metrics: rows.metrics.length,
+      errors: rows.errors.length,
+      resources: rows.resources.length,
+      longtasks: rows.longtasks.length,
+      breadcrumbs: rows.breadcrumbs.length,
+      events: rows.events.length,
+      spans: rows.spans.length,
+      rejected: rows.rejected,
+    });
     res.writeHead(200, { "content-type": "application/json", ...cors });
     res.end(JSON.stringify({ partialSuccess: {} }));
   } catch (err) {
-    console.error("[ingest] error:", err.message);
-    res.writeHead(err instanceof SyntaxError ? 400 : 500, cors);
-    res.end();
+    // SyntaxError = JSON invalide (400, non rejouable) ; sinon incident (500)
+    const status = err instanceof SyntaxError ? 400 : 500;
+    log[status === 400 ? "warn" : "error"]("request failed", { status, err });
+    res.writeHead(status, { "content-type": "application/json", ...cors });
+    res.end(JSON.stringify({ error: status === 400 ? "invalid json body" : "internal error" }));
   }
 });
 
 await loadAppRegistry();
-setInterval(loadAppRegistry, 60_000).unref();
+const registryTimer = setInterval(loadAppRegistry, 60_000);
+registryTimer.unref();
 
 server.listen(PORT, () =>
-  console.log(
-    `[ingest] OTLP dev receiver on http://localhost:${PORT}/v1/traces → ${DATABASE_URL.replace(/:[^:@/]+@/, ":***@")} | REQUIRE_API_KEY=${REQUIRE_API_KEY} rate=${RATE_LIMIT_PER_MIN}/min`,
-  ),
+  log.info("listening", {
+    url: `http://localhost:${PORT}/v1/traces`,
+    db: DATABASE_URL.replace(/:[^:@/]+@/, ":***@"),
+    require_api_key: REQUIRE_API_KEY,
+    rate_per_min: RATE_LIMIT_PER_MIN,
+  }),
 );
+
+// Arrêt propre : on cesse d'accepter, on draine les requêtes en vol, puis on
+// ferme le pool — évite les connexions Postgres orphelines au redéploiement.
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  log.info("shutting down", { signal });
+  clearInterval(registryTimer);
+  server.close(async () => {
+    try {
+      await pool.end();
+    } catch (err) {
+      log.error("pool drain failed", { err });
+    }
+    process.exit(0);
+  });
+  // filet de sécurité : on n'attend pas indéfiniment les connexions persistantes
+  setTimeout(() => process.exit(0), 10_000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

@@ -108,6 +108,28 @@ javascript:(()=>{const s=document.createElement('script');s.src='https://mip-rum
 3. Console Vercel : Overview p75 + Pages + Erreurs + Sessions alimentées.
 4. `/correlation` : robot vs réel pour ≥1 route, écart surligné.
 
+## 6. Rétention des données (TTL)
+
+La purge de la télémétrie ancienne est portée par la fonction SQL
+`purge_rum(retention_days int default 30)` (migration-v09), qui supprime dans
+l'ordre des FK et renvoie le détail des suppressions. Deux modes :
+
+```bash
+# Cloud : planifié automatiquement par migration-v09 SI l'extension pg_cron est
+# présente (job 'mip-purge-daily', 03:17 UTC). Pour l'activer :
+#   create extension if not exists pg_cron;  puis ré-appliquer migration-v09.sql
+
+# Local / hébergement sans pg_cron : le CLI Node (boucle quotidienne)
+RETENTION_DAYS=30 node apps/ingest/purge.mjs --loop
+# ou une passe unique (cron système) :
+RETENTION_DAYS=30 node apps/ingest/purge.mjs --once
+
+# Inspection manuelle (renvoie {table: lignes supprimées}) :
+psql "$DATABASE_URL" -c "select purge_rum(30)"
+```
+
+`audit_log` et `console_user` ne sont **pas** purgés (conformité / comptes).
+
 ## Dépannage
 
 | Symptôme | Cause probable | Fix |

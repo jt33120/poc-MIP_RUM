@@ -142,6 +142,26 @@ class MiddlewareTest(unittest.TestCase):
         # le span est tout de même bufferisé (status 0) — flush pas encore parti
         self.assertEqual(len(mw._buf) + len(self.posts), 1)
 
+    def test_file_saturee_compte_les_pertes(self):
+        # batch_size élevé => pas de flush ; queue_max=2 => au 3e span on perd 1
+        mw = mrm.MIPRumMiddleware(
+            FakeApp(),
+            endpoint="http://x/v1/traces",
+            app_id="demo-app",
+            batch_size=1000,
+            queue_max=2,
+        )
+        scope = {"type": "http", "method": "GET", "path": "/x", "headers": []}
+
+        async def main():
+            t0 = mrm.time.perf_counter()
+            for _ in range(5):
+                mw._record(scope, 200, t0, mrm.time.time_ns())
+
+        asyncio.run(main())
+        self.assertEqual(len(mw._buf), 2)  # file bornée
+        self.assertEqual(mw._dropped, 3)  # 3 spans perdus, comptés
+
 
 if __name__ == "__main__":
     unittest.main()
