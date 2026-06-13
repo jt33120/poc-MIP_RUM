@@ -63,6 +63,7 @@ let appRegistry = new Map<
   { api_key_hash: string | null; active: boolean; allowed_origins: string[] | null }
 >();
 let registryLoadedAt = 0;
+let registryEverLoaded = false; // R4 : a-t-on déjà réussi un chargement ?
 
 async function getAppRegistry() {
   if (Date.now() - registryLoadedAt < 60_000 && appRegistry.size) return appRegistry;
@@ -72,6 +73,9 @@ async function getAppRegistry() {
   if (!error && data) {
     appRegistry = new Map(data.map((r) => [r.app_id, r]));
     registryLoadedAt = Date.now();
+    registryEverLoaded = true;
+  } else if (error) {
+    log.error("app_registry load failed", { err: error });
   }
   return appRegistry;
 }
@@ -84,7 +88,15 @@ async function sha256(s: string): Promise<string> {
 /** null si accepté, sinon raison du 403. api_key_hash null = legacy, pas de vérif. */
 async function checkApiKey(appId: string, apiKey: string | null): Promise<string | null> {
   if (!REQUIRE_API_KEY) return null;
-  const app = (await getAppRegistry()).get(appId);
+  const registry = await getAppRegistry();
+  // R4 : si le registre n'a JAMAIS pu être chargé (panne DB au démarrage),
+  // fail-open plutôt que de rejeter 100 % du trafic en 403 — cohérent avec le
+  // choix d'availability du rate limit (R3). Journalisé pour rester visible.
+  if (!registryEverLoaded) {
+    log.warn("api key check fail-open (registry never loaded)", { app_id: appId });
+    return null;
+  }
+  const app = registry.get(appId);
   if (!app || !app.active) return `unknown or inactive app: ${appId}`;
   if (app.api_key_hash == null) return null; // continuité G-IT : app sans clé
   if (!apiKey || (await sha256(apiKey)) !== app.api_key_hash)

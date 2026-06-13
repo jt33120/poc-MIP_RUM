@@ -51,6 +51,7 @@ function corsHeaders(origin) {
 
 // --- Registre d'apps : chargé au boot, rafraîchi toutes les 60 s -------------
 let appRegistry = new Map(); // app_id -> { api_key_hash, active, allowed_origins }
+let registryEverLoaded = false; // R4 : a-t-on déjà réussi un chargement ?
 
 async function loadAppRegistry() {
   try {
@@ -58,6 +59,7 @@ async function loadAppRegistry() {
       "select app_id, api_key_hash, active, allowed_origins from app_registry",
     );
     appRegistry = new Map(rows.map((r) => [r.app_id, r]));
+    registryEverLoaded = true;
   } catch (err) {
     log.error("app_registry load failed", { err });
   }
@@ -68,6 +70,12 @@ const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 /** null si accepté, sinon raison du 403. api_key_hash null = legacy, pas de vérif. */
 function checkApiKey(appId, apiKey) {
   if (!REQUIRE_API_KEY) return null;
+  // R4 : registre jamais chargé (panne DB au boot) -> fail-open plutôt que de
+  // rejeter tout le trafic en 403 (cohérent avec le fail-open du rate limit).
+  if (!registryEverLoaded) {
+    log.warn("api key check fail-open (registry never loaded)", { app_id: appId });
+    return null;
+  }
   const app = appRegistry.get(appId);
   if (!app || !app.active) return `unknown or inactive app: ${appId}`;
   if (app.api_key_hash == null) return null; // continuité G-IT : app sans clé
