@@ -1,15 +1,14 @@
 // Page d'accueil « Présentation » — explique ce qu'est l'outil (RUM), sa stack
-// en quelques mots, son fonctionnement, et les statistiques restituées. Sert de
-// porte d'entrée pour un visiteur (commercial, prospect, nouvel utilisateur)
-// avant le poste de pilotage (Overview). Rendu 100 % serveur, sans accès base :
-// la page s'affiche toujours, même sans données. La heatmap est ici alimentée
-// par un échantillon illustratif — sa version « live » vit sur l'Overview.
+// en quelques mots, son fonctionnement, comment brancher un nouveau client
+// (carrousel pas-à-pas), et les statistiques restituées. Sert de porte d'entrée
+// pour un visiteur (commercial, prospect, nouvel utilisateur) avant le poste de
+// pilotage (Overview). Rendu serveur ; seul `isAdmin` conditionne le CTA admin.
 import Link from "next/link";
-import { HealthHeatmap, type HeatCell, lastNDayKeys } from "@/components/charts/HealthHeatmap";
+import { AddClientCarousel } from "@/components/AddClientCarousel";
 import { GlossaryTip } from "@/components/GlossaryTip";
 import { ICON_PATHS, Icon, type IconName } from "@/components/icons";
 import { PageHeader } from "@/components/PageHeader";
-import { GRID_DAYS } from "@/lib/queries-grid";
+import { getUser } from "@/lib/auth";
 import type { GlossaryId } from "@/lib/glossary";
 
 export const dynamic = "force-dynamic";
@@ -103,27 +102,6 @@ const STATS: { id: GlossaryId; href: string; icon: IconName; label: string; desc
   },
 ];
 
-/** Échantillon illustratif (déterministe) pour montrer le style de plot. */
-function sampleHeatmap(dayKeys: string[]): Map<string, HeatCell> {
-  const m = new Map<string, HeatCell>();
-  dayKeys.forEach((key, i) => {
-    const recent = i >= dayKeys.length - 2; // 2 derniers jours : incident l'après-midi
-    for (let h = 0; h < 24; h++) {
-      // nuit creuse : peu/pas de trafic -> quelques cases « aucune donnée »
-      if (h < 6 && (i + h) % 3 === 0) {
-        m.set(`${key}|${h}`, { good_w: 0, total_w: 0 });
-        continue;
-      }
-      let ratio = 0.96;
-      if (h >= 8 && h <= 10 && i % 4 === 0) ratio = 0.65; // pic matinal récurrent
-      if (recent && h >= 13 && h <= 19) ratio = 0.35; // incident après-midi
-      const total = 12;
-      m.set(`${key}|${h}`, { good_w: Math.round(total * ratio), total_w: total });
-    }
-  });
-  return m;
-}
-
 function PipelineStep({ step, last }: { step: (typeof PIPELINE)[number]; last: boolean }) {
   return (
     <div className="relative flex-1">
@@ -144,9 +122,9 @@ function PipelineStep({ step, last }: { step: (typeof PIPELINE)[number]; last: b
   );
 }
 
-export default function Presentation() {
-  const dayKeys = lastNDayKeys(GRID_DAYS);
-  const sample = sampleHeatmap(dayKeys);
+export default async function Presentation() {
+  const user = await getUser();
+  const isAdmin = user?.role === "admin";
 
   return (
     <div className="animate-fade-up">
@@ -214,6 +192,18 @@ export default function Presentation() {
         </div>
       </section>
 
+      {/* Ajouter un client — tutoriel pas-à-pas (carrousel) ----------------- */}
+      <section className="mb-6">
+        <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+          Ajouter un client en 6 étapes
+        </h2>
+        <p className="mb-3 max-w-3xl text-sm text-ink-soft">
+          De la création de l'app au premier graphe : ce qu'il faut faire, concrètement, pour brancher
+          un nouveau site et le rendre monitorable.
+        </p>
+        <AddClientCarousel isAdmin={isAdmin} />
+      </section>
+
       {/* Les statistiques montrées ----------------------------------------- */}
       <section className="mb-6">
         <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
@@ -242,24 +232,6 @@ export default function Presentation() {
             </Link>
           ))}
         </div>
-      </section>
-
-      {/* Lire la performance dans la durée (heatmap exemple) ---------------- */}
-      <section className="card p-5">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-          Lire la performance dans la durée
-          <GlossaryTip id="healthGrid" />
-        </h2>
-        <p className="mb-4 mt-1 max-w-3xl text-xs leading-relaxed text-ink-soft">
-          Une case = une heure d'une journée, sa couleur = la santé du créneau. On repère d'un coup d'œil les
-          dérapages récurrents (ici un pic matinal et un incident l'après-midi des deux derniers jours).
-          Exemple illustratif — la version alimentée par vos données vit sur{" "}
-          <Link href="/" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
-            l'Overview
-          </Link>
-          .
-        </p>
-        <HealthHeatmap dayKeys={dayKeys} byKey={sample} />
       </section>
     </div>
   );
