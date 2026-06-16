@@ -1,3 +1,5 @@
+import { HealthHeatmap, type HeatCell, dayKey, lastNDayKeys } from "@/components/charts/HealthHeatmap";
+import { TrafficTimeseries } from "@/components/charts/TrafficTimeseries";
 import { VitalsTimeseries } from "@/components/charts/VitalsTimeseries";
 import { GlossaryTip } from "@/components/GlossaryTip";
 import { PageHeader } from "@/components/PageHeader";
@@ -12,6 +14,7 @@ import {
   healthScore,
 } from "@/lib/health";
 import { overviewStats, vitalSeries, vitalsP75 } from "@/lib/queries";
+import { dailyLcpSeries, dailyTraffic, GRID_DAYS, healthGrid } from "@/lib/queries-grid";
 import { THRESHOLDS } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
@@ -20,19 +23,30 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const f = parseFilters(await searchParams);
   const period = PERIODS[f.period];
 
-  const [vitals, vitalsPrev, stats, statsPrev, series, health] = await Promise.all([
-    vitalsP75(f),
-    vitalsP75(f, true),
-    overviewStats(f),
-    overviewStats(f, true),
-    vitalSeries(f, "LCP"),
-    healthScore(f),
-  ]);
+  const [vitals, vitalsPrev, stats, statsPrev, series, health, grid, traffic, dailyLcp] =
+    await Promise.all([
+      vitalsP75(f),
+      vitalsP75(f, true),
+      overviewStats(f),
+      overviewStats(f, true),
+      vitalSeries(f, "LCP"),
+      healthScore(f),
+      healthGrid(f),
+      dailyTraffic(f),
+      dailyLcpSeries(f),
+    ]);
 
   const byName = Object.fromEntries(vitals.map((v) => [v.name, v]));
   const prevByName = Object.fromEntries(vitalsPrev.map((v) => [v.name, v]));
   const errorRate = stats.pageviews ? ((stats.errors / stats.pageviews) * 100).toFixed(1) : "0";
   const prevErrorRate = statsPrev.pageviews ? (statsPrev.errors / statsPrev.pageviews) * 100 : null;
+
+  // heatmap 14 j : axe des jours + index `${jour}|${heure}` des créneaux
+  const gridDays = lastNDayKeys(GRID_DAYS);
+  const gridByKey = new Map<string, HeatCell>(
+    grid.map((c) => [`${dayKey(c.day)}|${c.hour}`, { good_w: c.good_w, total_w: c.total_w }]),
+  );
+  const gridHasData = grid.length > 0;
 
   return (
     <div className="animate-fade-up">
@@ -102,6 +116,53 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </p>
         )}
       </div>
+
+      {/* Historique de santé 14 j (fenêtre fixe, comme les anomalies) :
+          heatmap jour × heure + courbes de volume et de p75 LCP associées. */}
+      <section className="card mt-6 p-4">
+        <h2 className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+          Historique de santé — {GRID_DAYS} derniers jours
+          <GlossaryTip id="healthGrid" />
+        </h2>
+        <p className="mb-4 text-xs text-ink-faint">
+          Fenêtre fixe (indépendante du filtre période) · une case = une heure, sa couleur = la part de
+          mesures « good » du créneau.
+        </p>
+        {gridHasData ? (
+          <HealthHeatmap dayKeys={gridDays} byKey={gridByKey} />
+        ) : (
+          <p className="py-10 text-center text-sm text-ink-faint">
+            Pas assez de données sur 14 jours — la heatmap se remplit au fil des mesures.
+          </p>
+        )}
+
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div>
+            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+              Volume & fiabilité par jour
+            </h3>
+            {traffic.length ? (
+              <TrafficTimeseries data={traffic.map((t) => ({ ...t, day: String(t.day) }))} />
+            ) : (
+              <p className="py-12 text-center text-sm text-ink-faint">Pas de données.</p>
+            )}
+          </div>
+          <div>
+            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+              p75 LCP par jour
+            </h3>
+            {dailyLcp.length ? (
+              <VitalsTimeseries
+                data={dailyLcp.map((s) => ({ bucket: String(s.bucket), p75: Number(s.p75) }))}
+                thresholds={THRESHOLDS.LCP}
+                xAxis="day"
+              />
+            ) : (
+              <p className="py-12 text-center text-sm text-ink-faint">Pas de données.</p>
+            )}
+          </div>
+        </div>
+      </section>
 
       <AnomalyTable health={health} />
     </div>
