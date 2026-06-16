@@ -45,41 +45,53 @@ function rowLabel(key: string): string {
 }
 
 const HOURS = Array.from({ length: 24 }, (_v, h) => h);
-// Colonnes : étiquette de jour (auto) + 24 heures de largeur égale.
-const GRID_COLS = "minmax(4.5rem, auto) repeat(24, minmax(0, 1fr))";
+// Heures ouvrées : 8h → 19h inclus (créneaux 08:00–19:59).
+const BUSINESS_HOURS = Array.from({ length: 12 }, (_v, i) => i + 8);
+const isWeekday = (key: string): boolean => {
+  const d = new Date(key).getUTCDay(); // 0 = dimanche, 6 = samedi
+  return d >= 1 && d <= 5;
+};
 
 export function HealthHeatmap({
   dayKeys,
   byKey,
+  businessOnly = false,
 }: {
   /** Axe vertical : clés de jour (cf. dayKey), du plus ancien au plus récent. */
   dayKeys: string[];
   /** Cases agrégées indexées par `${dayKey}|${hour}`. */
   byKey: Map<string, HeatCell>;
+  /** Heures ouvrées : ne montre que Lun–Ven, 8h–19h (créneaux où l'on attend du trafic). */
+  businessOnly?: boolean;
 }) {
+  const hours = businessOnly ? BUSINESS_HOURS : HOURS;
+  const rows = businessOnly ? dayKeys.filter(isWeekday) : dayKeys;
+  // Colonnes : étiquette de jour (auto) + N heures de largeur égale.
+  const gridCols = `minmax(4.5rem, auto) repeat(${hours.length}, minmax(0, 1fr))`;
+
   return (
     <div className="overflow-x-auto">
       <div className="min-w-[640px]">
         {/* en-tête : repères horaires tous les 3 h */}
-        <div className="grid items-end gap-[3px] pb-1" style={{ gridTemplateColumns: GRID_COLS }}>
+        <div className="grid items-end gap-[3px] pb-1" style={{ gridTemplateColumns: gridCols }}>
           <span />
-          {HOURS.map((h) => (
+          {hours.map((h) => (
             <span key={h} className="text-center text-[9px] tabular-nums text-ink-faint">
               {h % 3 === 0 ? `${h}h` : ""}
             </span>
           ))}
         </div>
 
-        {dayKeys.map((key) => (
+        {rows.map((key) => (
           <div
             key={key}
             className="grid items-center gap-[3px] py-[1.5px]"
-            style={{ gridTemplateColumns: GRID_COLS }}
+            style={{ gridTemplateColumns: gridCols }}
           >
             <span className="pr-2 text-right text-[10px] capitalize tabular-nums text-ink-faint">
               {rowLabel(key)}
             </span>
-            {HOURS.map((h) => {
+            {hours.map((h) => {
               const cell = byKey.get(`${key}|${h}`);
               const st = statusOf(cell);
               const pct =
@@ -107,7 +119,9 @@ export function HealthHeatmap({
               {STATUS_LABEL[s]}
             </span>
           ))}
-          <span className="ml-auto">part de mesures « good » par créneau horaire · LCP pondéré ×2</span>
+          <span className="ml-auto">
+            case vide = aucune page vue ce créneau · part de mesures « good », LCP pondéré ×2
+          </span>
         </div>
       </div>
     </div>
