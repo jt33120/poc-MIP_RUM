@@ -22,14 +22,20 @@ export function VitalsTimeseries({
   data,
   unit = "ms",
   thresholds,
+  xAxis = "time",
 }: {
   data: SeriesPoint[];
   unit?: string;
   thresholds?: [number, number];
+  /** "time" : buckets infra-journaliers (HH:mm) · "day" : buckets journaliers (JJ/MM). */
+  xAxis?: "time" | "day";
 }) {
   const points = data.map((d) => ({
     ...d,
-    label: new Date(d.bucket).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+    label:
+      xAxis === "day"
+        ? new Date(d.bucket).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })
+        : new Date(d.bucket).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
   }));
   return (
     <ResponsiveContainer width="100%" height={260}>

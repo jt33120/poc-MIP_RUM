@@ -34,15 +34,28 @@ const STEPS: Step[] = [
     ),
   },
   {
+    icon: "book",
+    title: "Présentation — la page d'accueil",
+    href: "/presentation",
+    body: (
+      <p>
+        Le point d'entrée qui explique <strong>ce qu'est l'outil</strong> : le RUM, la stack technique en
+        quelques mots, le fonctionnement (du navigateur à la décision) et les statistiques restituées. Idéal
+        pour une démo ou un nouvel arrivant.
+      </p>
+    ),
+  },
+  {
     icon: "gauge",
     title: "Overview — le poste de pilotage",
     href: "/",
     body: (
       <>
         <p>
-          La page d'accueil donne un <strong>score de santé /100</strong> (un bulletin unique), les{" "}
-          <strong>Core Web Vitals au p75</strong> (LCP, INP, CLS…) et les <strong>anomalies</strong> détectées
-          automatiquement.
+          L'Overview donne un <strong>score de santé /100</strong> (un bulletin unique), les{" "}
+          <strong>Core Web Vitals au p75</strong> (LCP, INP, CLS…), les <strong>anomalies</strong> détectées
+          automatiquement et une <strong>heatmap de santé sur 14 jours</strong> (un carré par heure) pour lire
+          la tenue dans la durée.
         </p>
         <p className="mt-2 text-ink-faint">
           Astuce : chaque indicateur porte un « ? » — survolez-le pour l'explication technique <em>et</em>{" "}

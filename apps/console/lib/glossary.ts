@@ -173,6 +173,14 @@ export const GLOSSARY = {
     business:
       "Tout repose sur un standard ouvert, pas un format maison. Conséquence directe : pas d'enfermement fournisseur, et compatibilité avec l'écosystème observabilité existant.",
   },
+  healthGrid: {
+    label: "Heatmap de santé (jour × heure)",
+    term: "Grille calendaire : une ligne par jour, une colonne par heure ; couleur = part de mesures « good » du créneau (LCP pondéré ×2), vert ≥ 90 %, orange ≥ 50 %, rouge sinon.",
+    stack:
+      "Agrégat SQL par date_trunc('day') × extract(hour) sur 14 jours glissants, mêmes filtres app/appareil ; rendu serveur en CSS grid (zéro JS client).",
+    business:
+      "La performance « vue de loin » : on repère en un clin d'œil les créneaux récurrents qui dérapent (tous les matins 9 h, les soirs de pic…) plutôt que de fixer une seule valeur instantanée. Idéal pour montrer la tenue dans la durée à un client.",
+  },
   rum: {
     label: "RUM — Real User Monitoring",
     term: "Mesure de la performance et des erreurs vécues par les utilisateurs réels, en production.",

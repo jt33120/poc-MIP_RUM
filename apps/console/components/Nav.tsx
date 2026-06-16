@@ -4,6 +4,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { ICON_PATHS, Icon, type IconName } from "./icons";
 
 const ITEMS: { href: string; label: string; icon: IconName }[] = [
+  { href: "/presentation", label: "Présentation", icon: "book" },
   { href: "/", label: "Overview", icon: "gauge" },
   { href: "/pages", label: "Pages lentes", icon: "timer" },
   { href: "/errors", label: "Erreurs JS", icon: "alert" },
