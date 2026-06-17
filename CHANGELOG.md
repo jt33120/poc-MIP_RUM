@@ -20,6 +20,10 @@ Périmètre : durcissement sécurité suite à l'alerte Supabase, et défense en
 - Appliqué dans le parser partagé `_shared/otlp.mjs` (donc **parité dev-server Node ↔ edge Deno**) aux champs libres : `message`/`stack` d'erreur (scrub **avant** troncature), `url`/`referrer`/`source`, et `props` d'événements (`track.*`). Front **et** back. On ne se fie plus au seul `beforeSend` client.
 - Tests : +16 unitaires (`scrub` : motifs + bout-en-bout via `flattenOtlp` prouvant 0 PII connue en sortie ; non-régression de l'agrégat d'identifiants pointés de stack). Suite : **171 unitaires** verts.
 
+### Contrat OTLP verrouillé + durcissement du parser (A5 — ingestion)
+- **Test snapshot** (`tests/unit/otlp-snapshot.test.ts` + `tests/fixtures/otlp-snapshot.json`) : fige la sortie de `flattenOtlp` pour un payload représentatif (tous les types de spans — pageview, vital, exception, resource, longtask, breadcrumb, `track.*`, `http.client`, `http.server`, span SERVER OTel standard — scrub PII inclus). Toute évolution du parser devient visible en revue.
+- **Durcissement OTel** : le parser ne jette plus jamais sur un payload malformé/hostile (resourceSpans/scopeSpans/spans/attributes non-array, éléments null/scalaires, span sans nom ou nom non-string, `AnyValue` déformé, `startTimeUnixNano` non numérique → `ts` = maintenant). Tout ce qui n'est pas exploitable est compté `rejected`. +15 tests (snapshot + batterie d'entrées hostiles). Suite : **194 unitaires** verts.
+
 ## v0.6 — 2026-06-12 (déploiement zéro-touch : injection front + backend codeless)
 
 Périmètre : poser le RUM **sans modifier le code du client** — pour les sites COTS / legacy / gérés par un tiers, et les backends multi-langages. Aucune migration SQL (purement additif : générateurs côté console + parser d'ingestion). Détail : [docs/INTEGRATION.md](docs/INTEGRATION.md) §8-9.

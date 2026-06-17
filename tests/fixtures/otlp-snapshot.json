@@ -1,0 +1,168 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "mip.app_id", "value": { "stringValue": "demo" } },
+          { "key": "mip.client_id", "value": { "stringValue": "acme" } },
+          { "key": "mip.api_key", "value": { "stringValue": "mip_secretkey1234" } },
+          { "key": "mip.user_agent", "value": { "stringValue": "Mozilla/5.0 Test" } }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "spanId": "p1",
+              "name": "pageview",
+              "startTimeUnixNano": "1760000000000000000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "sess-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/home" } },
+                { "key": "mip.url", "value": { "stringValue": "https://app.demo.fr/home?token=abc" } },
+                { "key": "mip.referrer", "value": { "stringValue": "https://google.com/" } },
+                { "key": "mip.nav_type", "value": { "stringValue": "navigate" } },
+                { "key": "mip.tz", "value": { "stringValue": "Europe/Paris" } },
+                { "key": "mip.device_type", "value": { "stringValue": "desktop" } }
+              ]
+            },
+            {
+              "spanId": "m1",
+              "name": "webvital.LCP",
+              "startTimeUnixNano": "1760000001000000000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "sess-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/home" } },
+                { "key": "webvital.name", "value": { "stringValue": "LCP" } },
+                { "key": "webvital.value", "value": { "doubleValue": 2340.5 } },
+                { "key": "webvital.attribution", "value": { "stringValue": "{\"element\":\"#hero\"}" } }
+              ]
+            },
+            {
+              "spanId": "e1",
+              "name": "exception",
+              "startTimeUnixNano": "1760000002000000000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "sess-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/home" } },
+                { "key": "exception.type", "value": { "stringValue": "TypeError" } },
+                { "key": "exception.message", "value": { "stringValue": "login failed for jean@client.fr password=hunter2" } },
+                { "key": "exception.stacktrace", "value": { "stringValue": "TypeError at /home (app.js)" } },
+                { "key": "mip.error_source", "value": { "stringValue": "https://app.demo.fr/app.js?token=zzz" } },
+                { "key": "mip.error_lineno", "value": { "intValue": "42" } },
+                { "key": "mip.error_colno", "value": { "intValue": "7" } }
+              ]
+            },
+            {
+              "spanId": "r1",
+              "name": "resource",
+              "startTimeUnixNano": "1760000003000000000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "sess-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/home" } },
+                { "key": "resource.url", "value": { "stringValue": "https://cdn.demo.fr/app.js" } },
+                { "key": "resource.type", "value": { "stringValue": "script" } },
+                { "key": "resource.duration_ms", "value": { "doubleValue": 320.4 } },
+                { "key": "resource.transfer_size", "value": { "intValue": "12000" } },
+                { "key": "resource.render_blocking", "value": { "boolValue": true } }
+              ]
+            },
+            {
+              "spanId": "lt1",
+              "name": "longtask",
+              "startTimeUnixNano": "1760000004000000000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "sess-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/home" } },
+                { "key": "longtask.duration_ms", "value": { "doubleValue": 88 } }
+              ]
+            },
+            {
+              "spanId": "bc1",
+              "name": "breadcrumb",
+              "startTimeUnixNano": "1760000005000000000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "sess-1" } },
+                { "key": "breadcrumb.type", "value": { "stringValue": "click" } },
+                { "key": "breadcrumb.label", "value": { "stringValue": "#submit" } },
+                { "key": "breadcrumb.seq", "value": { "intValue": "3" } }
+              ]
+            },
+            {
+              "spanId": "tk1",
+              "name": "track.signup",
+              "startTimeUnixNano": "1760000006000000000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "sess-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/home" } },
+                { "key": "mip.props", "value": { "stringValue": "{\"email\":\"a@b.fr\",\"plan\":\"pro\"}" } }
+              ]
+            },
+            {
+              "spanId": "hc1",
+              "name": "http.client",
+              "startTimeUnixNano": "1760000007000000000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "sess-1" } },
+                { "key": "mip.trace_id", "value": { "stringValue": "trace-aaa" } },
+                { "key": "mip.span_id", "value": { "stringValue": "span-fff" } },
+                { "key": "mip.route", "value": { "stringValue": "/api/partners/:id" } },
+                { "key": "http.url", "value": { "stringValue": "https://api.demo.fr/partners/42?q=x" } },
+                { "key": "http.method", "value": { "stringValue": "GET" } },
+                { "key": "http.status_code", "value": { "intValue": "200" } },
+                { "key": "http.duration_ms", "value": { "doubleValue": 123.4 } }
+              ]
+            },
+            {
+              "spanId": "hs1",
+              "name": "http.server",
+              "startTimeUnixNano": "1760000007000000000",
+              "attributes": [
+                { "key": "mip.trace_id", "value": { "stringValue": "trace-aaa" } },
+                { "key": "mip.span_id", "value": { "stringValue": "span-eee" } },
+                { "key": "mip.parent_span_id", "value": { "stringValue": "span-fff" } },
+                { "key": "mip.session_id", "value": { "stringValue": "sess-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/api/partners/:id" } },
+                { "key": "http.url", "value": { "stringValue": "https://api.demo.fr/partners/42" } },
+                { "key": "http.method", "value": { "stringValue": "GET" } },
+                { "key": "http.status_code", "value": { "intValue": "200" } },
+                { "key": "http.duration_ms", "value": { "doubleValue": 95.2 } }
+              ]
+            },
+            {
+              "spanId": "otel-srv-1",
+              "traceId": "trace-bbb",
+              "parentSpanId": "span-parent",
+              "kind": 2,
+              "name": "GET /aos/{id}",
+              "startTimeUnixNano": "1760000008000000000",
+              "endTimeUnixNano": "1760000008050000000",
+              "traceState": "mip=s:sess-2",
+              "attributes": [
+                { "key": "http.request.method", "value": { "stringValue": "GET" } },
+                { "key": "http.route", "value": { "stringValue": "/aos/{id}" } },
+                { "key": "http.response.status_code", "value": { "intValue": "200" } },
+                { "key": "url.full", "value": { "stringValue": "https://api.demo.fr/aos/7?x=1" } }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": { "attributes": [{ "key": "service.name", "value": { "stringValue": "no-app-id" } }] },
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "spanId": "z1",
+              "name": "pageview",
+              "startTimeUnixNano": "1760000009000000000",
+              "attributes": [{ "key": "mip.session_id", "value": { "stringValue": "sess-x" } }]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

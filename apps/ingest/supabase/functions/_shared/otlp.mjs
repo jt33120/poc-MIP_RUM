@@ -28,20 +28,27 @@ export function anyValue(v) {
   if ("doubleValue" in v) return Number(v.doubleValue);
   if ("intValue" in v) return Number(v.intValue); // arrive en string ou number selon l'émetteur
   if ("boolValue" in v) return v.boolValue;
-  if ("arrayValue" in v) return (v.arrayValue.values ?? []).map(anyValue);
+  if ("arrayValue" in v)
+    return (Array.isArray(v.arrayValue?.values) ? v.arrayValue.values : []).map(anyValue);
   return null;
 }
 
-/** KeyValue[] OTLP -> objet JS plat. */
+/** KeyValue[] OTLP -> objet JS plat. Tolère un payload malformé (A5 : durcissement). */
 export function attrsToObj(attrs) {
   const out = {};
-  for (const kv of attrs ?? []) out[kv.key] = anyValue(kv.value);
+  for (const kv of Array.isArray(attrs) ? attrs : []) {
+    if (kv && typeof kv.key === "string") out[kv.key] = anyValue(kv.value);
+  }
   return out;
 }
 
 function nanosToDate(nanos) {
   if (!nanos) return new Date();
-  return new Date(Number(BigInt(nanos) / 1000000n));
+  try {
+    return new Date(Number(BigInt(nanos) / 1000000n));
+  } catch {
+    return new Date(); // nanos non numérique (payload hostile) : ts = maintenant
+  }
 }
 
 /** Attributs string JSON (webvital.attribution, mip.props) -> objet pour le jsonb. */
@@ -194,7 +201,11 @@ export function flattenOtlp(payload, opts = {}) {
     };
   };
 
-  for (const rs of payload?.resourceSpans ?? []) {
+  for (const rs of Array.isArray(payload?.resourceSpans) ? payload.resourceSpans : []) {
+    if (!rs || typeof rs !== "object") {
+      rejected++;
+      continue;
+    }
     const res = attrsToObj(rs.resource?.attributes);
     const appId = res["mip.app_id"];
     if (!appId) {
@@ -202,10 +213,15 @@ export function flattenOtlp(payload, opts = {}) {
       continue;
     }
     apiKeys.push({ app_id: appId, api_key: res["mip.api_key"] ?? null });
-    for (const ss of rs.scopeSpans ?? []) {
-      for (const span of ss.spans ?? []) {
+    for (const ss of Array.isArray(rs.scopeSpans) ? rs.scopeSpans : []) {
+      for (const span of Array.isArray(ss?.spans) ? ss.spans : []) {
         // garde-fou : au-delà du plafond, on compte sans traiter (mémoire/CPU bornés)
         if (++seen > maxSpans) {
+          rejected++;
+          continue;
+        }
+        // durcissement A5 : un span sans nom (string) ne peut être routé -> rejet
+        if (!span || typeof span.name !== "string") {
           rejected++;
           continue;
         }
