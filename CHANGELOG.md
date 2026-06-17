@@ -2,6 +2,19 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
+## v0.8 — 2026-06-17 (sécurité base + scrub PII serveur)
+
+Périmètre : durcissement sécurité suite à l'alerte Supabase, et défense en profondeur sur les données personnelles. Contrats : `apps/ingest/sql/migration-v10.sql`, `migration-v11.sql` (RLS + fonctions) ; parser partagé `_shared/otlp.mjs` + nouveau `_shared/scrub.mjs`.
+
+### Sécurité base de données (migrations v10/v11, appliquées en prod)
+- **RLS activé sur toutes les tables du schéma `public`** (sans policy ⇒ API PostgREST `anon`/`authenticated` fermée). Corrige `rls_disabled_in_public` et `sensitive_columns_exposed` (`console_user.password_hash`). L'ingestion (`service_role`, BYPASSRLS) et la console (connexion Postgres directe sous le rôle propriétaire) ne sont pas impactées car personne ne passe par l'API publique.
+- Vues retirées de l'accès API ; fonctions **`SECURITY DEFINER`** fermées à l'API (dont la purge destructrice) avec `EXECUTE` conservé pour `service_role` ; **`search_path` figé** sur toutes les fonctions (anti-injection). Advisors sécurité : 14 → 3 (restants non bloquants : `rls_enabled_no_policy` INFO = état voulu, `pg_net in public` = défaut Supabase). Migrations **idempotentes** et gardées par `if exists (pg_roles)` (CI/local sans les rôles Supabase).
+
+### Scrub PII serveur (A2 — défense en profondeur)
+- Nouveau module **`_shared/scrub.mjs`** (runtime-agnostic, sans dépendance) : `scrubText` / `scrubUrl` / `scrubProps`. Masque emails, schémas d'autorisation (Bearer/Basic), JWT (ancré `eyJ`), clés à préfixe (`sk-`, `mip_`), affectations sensibles (`password=…`, `api_key:…`), IPv4 et longues suites de chiffres (cartes/téléphones), en gardant le texte de diagnostic lisible.
+- Appliqué dans le parser partagé `_shared/otlp.mjs` (donc **parité dev-server Node ↔ edge Deno**) aux champs libres : `message`/`stack` d'erreur (scrub **avant** troncature), `url`/`referrer`/`source`, et `props` d'événements (`track.*`). Front **et** back. On ne se fie plus au seul `beforeSend` client.
+- Tests : +16 unitaires (`scrub` : motifs + bout-en-bout via `flattenOtlp` prouvant 0 PII connue en sortie ; non-régression de l'agrégat d'identifiants pointés de stack). Suite : **171 unitaires** verts.
+
 ## v0.6 — 2026-06-12 (déploiement zéro-touch : injection front + backend codeless)
 
 Périmètre : poser le RUM **sans modifier le code du client** — pour les sites COTS / legacy / gérés par un tiers, et les backends multi-langages. Aucune migration SQL (purement additif : générateurs côté console + parser d'ingestion). Détail : [docs/INTEGRATION.md](docs/INTEGRATION.md) §8-9.

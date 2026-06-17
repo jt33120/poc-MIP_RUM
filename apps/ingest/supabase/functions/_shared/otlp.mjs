@@ -2,6 +2,8 @@
 // importé tel quel par le dev-server Node (local) et l'edge function Deno (prod).
 // v0.3 : geo timezone->pays (attribut span mip.tz -> sessions[].geo_country).
 import { tzToCountry } from "./tz-country.mjs";
+// Scrub PII serveur (A2) : défense en profondeur, ne dépend pas du beforeSend client.
+import { scrubProps, scrubText, scrubUrl } from "./scrub.mjs";
 
 // Seuils 2026 (PLAN annexe B) — bornes [good, needs-improvement]
 const THRESHOLDS = {
@@ -40,12 +42,6 @@ export function attrsToObj(attrs) {
 function nanosToDate(nanos) {
   if (!nanos) return new Date();
   return new Date(Number(BigInt(nanos) / 1000000n));
-}
-
-/** Tronque les stacks/messages, retire les query strings (PII, PLAN §14). */
-function scrubUrl(url) {
-  if (typeof url !== "string") return null;
-  return url.split("?")[0].split("#")[0];
 }
 
 /** Attributs string JSON (webvital.attribution, mip.props) -> objet pour le jsonb. */
@@ -303,8 +299,9 @@ export function flattenOtlp(payload, opts = {}) {
           });
         } else if (span.name === "exception") {
           const errorType = a["exception.type"] ?? null;
-          const message = String(a["exception.message"] ?? "").slice(0, 1000);
-          const stack = String(a["exception.stacktrace"] ?? "").slice(0, 4000);
+          // scrub PII AVANT troncature (un secret ne doit pas survivre coupé en deux)
+          const message = (scrubText(a["exception.message"]) ?? "").slice(0, 1000);
+          const stack = (scrubText(a["exception.stacktrace"]) ?? "").slice(0, 4000);
           errors.push({
             span_id: span.spanId,
             session_id: sessionId,
@@ -380,7 +377,7 @@ export function flattenOtlp(payload, opts = {}) {
             app_id: appId,
             route,
             name: span.name.slice("track.".length),
-            props: parseJsonAttr(a["mip.props"]),
+            props: scrubProps(parseJsonAttr(a["mip.props"])),
             ts,
           });
         }
