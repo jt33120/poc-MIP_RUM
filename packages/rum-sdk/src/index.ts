@@ -8,6 +8,7 @@ import { forceFlush, initOtel } from "./otel";
 import { isReplaySampled, startReplay } from "./replay";
 import { DEFAULT_SLOW_RESOURCE_MS, initResources } from "./resources";
 import { replayRetryQueue } from "./retry";
+import { createSampler, decideMode, loadMode, storeMode } from "./sampling";
 import { getOrCreateSession, touchSession, type Session } from "./session";
 import type { MIPRumConfig } from "./types";
 import { initVitals } from "./vitals";
@@ -27,10 +28,19 @@ export function init(cfg: MIPRumConfig): void {
     console.warn("[MIPRum] init: endpoint and appId are required");
     return;
   }
-  if (Math.random() >= (cfg.sampleRate ?? 1.0)) return; // session not sampled
-  initialized = true;
-
+  // Échantillonnage intelligent (A1) : décision par session, persistée pour
+  // rester stable au fil des pageviews/reloads. "off" => on ne collecte rien.
   session = getOrCreateSession();
+  const mode0 = loadMode(session.sessionId) ?? decideMode(cfg);
+  storeMode(session.sessionId, mode0);
+  if (mode0 === "off") {
+    session = null;
+    return;
+  }
+  initialized = true;
+  // promotion "error-biased" -> "full" persistée (la session reste "full" après reload)
+  const sampler = createSampler(mode0, () => storeMode(session!.sessionId, "full"));
+
   const tracer = initOtel(cfg);
   // fuseau horaire (B1 : mapping tz -> geo_country à l'ingestion, zéro IP stockée)
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -66,7 +76,13 @@ export function init(cfg: MIPRumConfig): void {
 
   // consent mode : tout passe par la gate (0 span créé => 0 requête réseau)
   gate = new ConsentGate(cfg.requireConsent ?? false);
-  const emit: Emit = (name, attrs, ts) => gate!.submit(name, attrs, realEmit, ts);
+  // échantillonnage : en "error-biased", seules les erreurs passent ; la 1re
+  // erreur promeut la session en "full" (le reste de la session est alors capté).
+  const emit: Emit = (name, attrs, ts) => {
+    if (name === "exception") sampler.notifyError();
+    if (!sampler.passes(name)) return;
+    gate!.submit(name, attrs, realEmit, ts);
+  };
   emitter = emit;
 
   trail = createBreadcrumbTrail(emit);

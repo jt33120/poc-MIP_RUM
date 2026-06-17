@@ -38,7 +38,9 @@ Prérequis côté MIP (à faire une fois par application) :
 | `appId` | `string` | **requis** | Identifiant de l'application (doit exister dans `app_registry`) |
 | `clientId` | `string` | — | Identifiant du client (groupement, organisation) |
 | `env` | `string` | — | Environnement (`prod`, `staging`, `dev`) |
-| `sampleRate` | `number` 0..1 | `1.0` | Fraction de sessions instrumentées (tirage à l'init ; une session non échantillonnée n'émet rien) |
+| `sampleRate` | `number` 0..1 | `1.0` | Fraction de sessions **entièrement** collectées (tirage à l'init, persisté par session) |
+| `keepOnError` | `boolean` | `true` | Échantillonnage biaisé-erreurs : les sessions hors `sampleRate` ne sont pas jetées mais passent en mode « error-biased » (télémétrie de routine supprimée, **erreurs conservées**, la 1ʳᵉ erreur promeut la session en collecte complète pour la suite). `false` = ancien comportement (session non échantillonnée → rien) |
+| `errorSampleRate` | `number` 0..1 | `1.0` | Fraction des sessions hors `sampleRate` gardées sur erreur (n'a d'effet que si `keepOnError`) |
 | `flushIntervalMs` | `number` | `3000` | Intervalle de flush du batch OTLP (un flush immédiat est forcé quand la page passe en arrière-plan) |
 | `apiKey` | `string` | — | Clé d'API de l'application, transmise en attribut resource `mip.api_key` (sendBeacon ne porte pas de header). Vérifiée côté ingestion contre le hash sha256 de `app_registry` ; rejet 403 seulement si l'ingestion tourne avec `REQUIRE_API_KEY=true` |
 | `requireConsent` | `boolean` | `false` | Mode consentement RGPD : tant que `MIPRum.consent(true)` n'a pas été appelé, **aucune requête réseau ne part** (cf. §3) |
@@ -93,7 +95,7 @@ Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe
 - C'est le coût d'un SDK **OTel-natif** (vrai OTLP sur le fil, backend remplaçable) — comparable aux RUM du marché, au-dessus d'un simple script analytics.
 - Émission par batch (flush toutes les `flushIntervalMs`), `sendBeacon`/flush forcé au passage en arrière-plan : pas de requête bloquante pendant la navigation.
 - Caps par page pour borner le volume : 20 ressources lentes, 30 long tasks, 50 breadcrumbs.
-- `sampleRate` permet de réduire la volumétrie sur les sites à fort trafic.
+- `sampleRate` permet de réduire la volumétrie sur les sites à fort trafic. Par défaut (`keepOnError`), l'échantillonnage est **biaisé-erreurs** : on garde 100 % des sessions à incident (via `errorSampleRate`) tout en n'échantillonnant que le trafic nominal — on ne perd jamais une session d'erreur en abaissant `sampleRate`.
 
 ## 6. RGPD — ce qui est collecté, ce qui est anonymisé
 
@@ -129,7 +131,7 @@ Garanties :
 | `401` sur les POST | edge function déployée **sans** `--no-verify-jwt` | redéployer avec `--no-verify-jwt` (les beacons n'ont pas de header Authorization) |
 | POST `200` mais **rien en base** | `appId` manquant ou inconnu (payload sans `mip.app_id` rejeté silencieusement) | vérifier `appId` dans `MIPRum.init` et l'enregistrement dans `app_registry` |
 | `429` sur les POST | rate limit dépassé (600 req/min/app) | vérifier qu'il n'y a pas de boucle d'émission ; augmenter `flushIntervalMs` ; réduire `sampleRate` |
-| Aucune requête réseau du tout | `requireConsent: true` sans appel `MIPRum.consent(true)` ; ou session non échantillonnée (`sampleRate < 1`) ; ou bloqueur de pub | vérifier la CMP ; tester avec `sampleRate: 1` ; servir le SDK et l'ingestion en first-party |
+| Aucune requête réseau du tout | `requireConsent: true` sans appel `MIPRum.consent(true)` ; ou session en mode « error-biased » sans erreur (collecte de routine supprimée) ou « off » (`keepOnError: false` + hors `sampleRate`) ; ou bloqueur de pub | vérifier la CMP ; tester avec `sampleRate: 1` ; servir le SDK et l'ingestion en first-party |
 | Données partielles (INP/CLS absents) | l'onglet n'est jamais passé en arrière-plan (ces vitals sont finalisés au `visibilitychange`) | comportement normal ; ils arrivent quand l'utilisateur quitte/masque la page |
 | Le SDK ne se charge pas | CSP `script-src` bloquante | cf. §4 |
 

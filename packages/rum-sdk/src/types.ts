@@ -6,8 +6,18 @@ export interface MIPRumConfig {
   /** Client identifier, ex: 'groupement-it' */
   clientId?: string;
   env?: string;
-  /** 0..1, fraction of sessions instrumented (default 1.0) */
+  /** 0..1, fraction of sessions fully sampled (default 1.0) */
   sampleRate?: number;
+  /**
+   * Échantillonnage biaisé-erreurs (A1) : si true (défaut), les sessions hors
+   * fraction `sampleRate` ne sont pas jetées mais passent en mode « error-biased »
+   * — la télémétrie de routine est supprimée, mais toute erreur est conservée et
+   * promeut la session en collecte complète pour la suite. Mettre false pour
+   * l'ancien comportement (session non échantillonnée = rien n'est collecté).
+   */
+  keepOnError?: boolean;
+  /** 0..1, fraction des sessions hors `sampleRate` gardées sur erreur (default 1.0) */
+  errorSampleRate?: number;
   /** Batch flush interval in ms (default 3000) */
   flushIntervalMs?: number;
   /** Per-app API key, sent as OTLP resource attribute mip.api_key (sendBeacon carries no headers) */
