@@ -5,6 +5,11 @@ import { SESSION_COOKIE, verifyJwt } from "@/lib/auth";
 // PUBLICS sans auth (matcher) : /login, /mip-rum.js, /mip-rum-replay.js, /_next/*, /favicon*.
 // Le SDK reste TOUJOURS public (snippet chargé par les sites clients).
 export async function middleware(req: NextRequest) {
+  // API publique v1 (LOT C option B) : authentifiée par jeton (Authorization: Bearer)
+  // OU cookie, DANS le handler — le middleware ne doit pas la rediriger vers /login
+  // (le front Angular MIP appelle sans cookie de session).
+  if (req.nextUrl.pathname.startsWith("/api/v1")) return NextResponse.next();
+
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const user = token ? await verifyJwt(token) : null;
   if (!user) return NextResponse.redirect(new URL("/login", req.url), 302);
