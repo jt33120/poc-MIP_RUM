@@ -111,3 +111,37 @@ docker compose -f infra/clickhouse/docker-compose.clickhouse.yml down    # rien 
 
 Piège rencontré : dans le conteneur alpine, `localhost` résout en `::1` alors que CH écoute en IPv4 →
 healthcheck sur `http://127.0.0.1:8123/ping` explicitement.
+
+## Bench de charge / preuve de capacité (B2) — `scripts/load-bench.mjs`
+
+Outil opérateur (pas de run automatique, pas de chiffres ici tant qu'il n'a pas
+tourné contre une vraie base **type-prod, PAS le free tier**). Étend
+`scripts/load-light.mjs` (sanity ~1 000 events) en bench paramétrable :
+
+1. **Charge** : POST OTLP à concurrence cible jusqu'à `TARGET_EVENTS` →
+   **débit soutenu (events/s)** + latences POST **p50/p95/p99**.
+2. **Requêtes** : à volume, chronométre les requêtes console lourdes
+   (`vitals_p75_24h`, `top_routes_sessions_7d`, `hourly_health_grid_14d`,
+   `daily_lcp_p75_14d`) → **p50/p95** par requête.
+
+Le générateur produit des sessions réalistes (pageview + 5 vitals + ressource +
+longtask + ~`ERROR_RATE` erreur), routes pondérées dont une lente (`/login`
+×1,4) — **même profil que le bench ClickHouse ci-dessus**, donc chiffres
+comparables. Le générateur est testé contre le vrai parser d'ingestion
+(`flattenOtlp`, `tests/unit/load-bench.test.ts`) : 0 rejet.
+
+```bash
+# auto-test du générateur (aucun réseau/base, aucun chiffre) :
+node scripts/load-bench.mjs --dry-run
+
+# bench réel contre une base dédiée type-prod :
+ENDPOINT=https://<ingest>/v1/traces \
+DATABASE_URL=postgres://user:pwd@host:5432/db \
+TARGET_EVENTS=1000000 CONCURRENCY=32 \
+node scripts/load-bench.mjs        # KEEP=1 pour conserver les données injectées
+```
+
+**Validation B2** (à remplir après un run type-prod) : reporter ici le débit
+soutenu (events/s), les p95 d'ingestion et de requêtes console, et la
+volumétrie — à comparer aux ~88 k lignes/s ClickHouse et au profil
+`1 M pages vues/jour` ci-dessus. Ne PAS valider sur le free tier (throttling).
