@@ -3,6 +3,7 @@ import { createBreadcrumbTrail, initClickBreadcrumbs, type BreadcrumbTrail } fro
 import { ConsentGate } from "./consent";
 import { currentRoute, initNavigation, scrubUrl } from "./context";
 import { initErrors, type Emit } from "./errors";
+import { initFrustration } from "./frustration";
 import { initLongTasks } from "./longtasks";
 import { forceFlush, initOtel } from "./otel";
 import { isReplaySampled, startReplay } from "./replay";
@@ -92,6 +93,8 @@ export function init(cfg: MIPRumConfig): void {
   });
   const longtaskCap = initLongTasks(emit);
   initClickBreadcrumbs(trail);
+  // signaux de frustration (P1) : rage/dead clicks ; opt-out via cfg.frustration=false
+  const frustrationCap = initFrustration(emit, { enabled: cfg.frustration !== false });
   initVitals(emit);
 
   // tracing distribué (v0.4) : fetch/XHR -> traceparent + span 'http.client'.
@@ -129,6 +132,7 @@ export function init(cfg: MIPRumConfig): void {
     resourceCap.reset();
     longtaskCap.reset();
     apiCap?.reset();
+    frustrationCap.reset();
     trail!.cap.reset();
     emit("pageview", {
       "mip.url": scrubUrl(location.href),

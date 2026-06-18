@@ -100,6 +100,18 @@
               ]
             },
             {
+              "spanId": "fr1",
+              "name": "frustration",
+              "startTimeUnixNano": "1760000006500000000",
+              "attributes": [
+                { "key": "mip.session_id", "value": { "stringValue": "sess-1" } },
+                { "key": "mip.route", "value": { "stringValue": "/home" } },
+                { "key": "frustration.kind", "value": { "stringValue": "rage" } },
+                { "key": "frustration.target", "value": { "stringValue": "button \"Payer\"" } },
+                { "key": "frustration.count", "value": { "intValue": "4" } }
+              ]
+            },
+            {
               "spanId": "hc1",
               "name": "http.client",
               "startTimeUnixNano": "1760000007000000000",

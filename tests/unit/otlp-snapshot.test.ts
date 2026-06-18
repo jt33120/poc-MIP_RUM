@@ -23,13 +23,16 @@ describe("flattenOtlp — snapshot du contrat de sortie", () => {
     expect(rows.resources).toHaveLength(1);
     expect(rows.longtasks).toHaveLength(1);
     expect(rows.breadcrumbs).toHaveLength(1);
-    expect(rows.events).toHaveLength(1);
+    expect(rows.events).toHaveLength(2); // track.signup + frustration (P1)
     expect(rows.spans).toHaveLength(3); // http.client + http.server + OTel server
     expect(rows.rejected).toBe(1); // le 2e resourceSpans (sans mip.app_id)
     // garde-fous de contrat : scrub PII appliqué, clé d'API extraite
     expect(rows.errors[0].message).toBe("login failed for [email] password=[redacted]");
     expect(rows.errors[0].release).toBe("1.4.2"); // mip.release (resource) -> dé-minification
     expect(rows.events[0].props).toEqual({ email: "[redacted]", plan: "pro" });
+    // P1 : signal de frustration -> rum_event sous nom réservé 'frustration.<kind>'
+    expect(rows.events[1].name).toBe("frustration.rage");
+    expect(rows.events[1].props).toEqual({ target: 'button "Payer"', count: 4 });
     expect(rows.apiKeys[0]).toEqual({ app_id: "demo", api_key: "mip_secretkey1234" });
   });
 

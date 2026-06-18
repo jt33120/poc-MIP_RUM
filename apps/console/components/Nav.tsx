@@ -9,6 +9,7 @@ const ITEMS: { href: string; label: string; icon: IconName }[] = [
   { href: "/pages", label: "Pages lentes", icon: "timer" },
   { href: "/errors", label: "Erreurs JS", icon: "alert" },
   { href: "/sessions", label: "Sessions", icon: "users" },
+  { href: "/ux", label: "Frustration", icon: "frown" },
   { href: "/tracing", label: "Tracing", icon: "trace" },
   { href: "/alerts", label: "Alertes", icon: "bell" },
   { href: "/correlation", label: "Corrélation", icon: "compare" },

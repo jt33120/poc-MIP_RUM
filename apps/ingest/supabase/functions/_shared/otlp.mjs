@@ -398,6 +398,27 @@ export function flattenOtlp(payload, opts = {}) {
             props: scrubProps(parseJsonAttr(a["mip.props"])),
             ts,
           });
+        } else if (span.name === "frustration") {
+          // Signaux de frustration (P1) : rage/dead clicks. Stockés dans rum_event
+          // sous le nom réservé 'frustration.<kind>' (hérite RLS/purge/erase/métering
+          // de rum_event ; target scrubbé comme tout texte libre).
+          const kind = a["frustration.kind"];
+          if (kind !== "rage" && kind !== "dead") {
+            rejected++;
+            continue;
+          }
+          events.push({
+            span_id: span.spanId,
+            session_id: sessionId,
+            app_id: appId,
+            route,
+            name: `frustration.${kind}`,
+            props: scrubProps({
+              target: a["frustration.target"] ?? null,
+              count: typeof a["frustration.count"] === "number" ? a["frustration.count"] : 1,
+            }),
+            ts,
+          });
         }
         // autres spans (futures instrumentations) : ignorés silencieusement
       }

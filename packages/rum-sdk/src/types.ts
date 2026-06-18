@@ -41,6 +41,8 @@ export interface MIPRumConfig {
    * (ex. 'https://api.exemple.fr') en plus du same-origin.
    */
   trace?: boolean | string[];
+  /** Signaux de frustration (P1) : rage clicks & dead clicks. true (défaut) | false pour désactiver. */
+  frustration?: boolean;
 }
 
 export type VitalName = "LCP" | "INP" | "CLS" | "FCP" | "TTFB";
