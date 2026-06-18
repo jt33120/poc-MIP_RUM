@@ -25,6 +25,8 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
       "mip.client_id": cfg.clientId ?? "",
       "mip.user_agent": navigator.userAgent,
       "deployment.environment.name": cfg.env ?? "dev",
+      // release pour la dé-minification des stacks (association à la source map)
+      ...(cfg.release ? { "mip.release": cfg.release } : {}),
       // sendBeacon ne porte pas de headers : la clé voyage en attribut resource
       ...(cfg.apiKey ? { "mip.api_key": cfg.apiKey } : {}),
     }),

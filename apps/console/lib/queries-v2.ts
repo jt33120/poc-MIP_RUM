@@ -134,6 +134,7 @@ export interface ErrorSample {
   colno: number | null;
   route: string | null;
   session_id: string | null;
+  release: string | null;
   ts: Date;
 }
 
@@ -168,7 +169,7 @@ export async function errorGroupDetail(
   );
   if (!group) return null;
   const [last] = await q<ErrorSample>(
-    `select message, error_type, kind, stack, source, lineno, colno, route, session_id, ts
+    `select message, error_type, kind, stack, source, lineno, colno, route, session_id, release, ts
      from rum_error
      where fingerprint = $1 and ($2 = 'all' or app_id = $2)
      order by ts desc limit 1`,

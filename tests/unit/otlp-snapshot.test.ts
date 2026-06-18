@@ -28,6 +28,7 @@ describe("flattenOtlp — snapshot du contrat de sortie", () => {
     expect(rows.rejected).toBe(1); // le 2e resourceSpans (sans mip.app_id)
     // garde-fous de contrat : scrub PII appliqué, clé d'API extraite
     expect(rows.errors[0].message).toBe("login failed for [email] password=[redacted]");
+    expect(rows.errors[0].release).toBe("1.4.2"); // mip.release (resource) -> dé-minification
     expect(rows.events[0].props).toEqual({ email: "[redacted]", plan: "pro" });
     expect(rows.apiKeys[0]).toEqual({ app_id: "demo", api_key: "mip_secretkey1234" });
   });

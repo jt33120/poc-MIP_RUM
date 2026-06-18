@@ -213,6 +213,7 @@ export function flattenOtlp(payload, opts = {}) {
       continue;
     }
     apiKeys.push({ app_id: appId, api_key: res["mip.api_key"] ?? null });
+    const release = res["mip.release"] ?? null; // version de l'app (dé-minification)
     for (const ss of Array.isArray(rs.scopeSpans) ? rs.scopeSpans : []) {
       for (const span of Array.isArray(ss?.spans) ? ss.spans : []) {
         // garde-fou : au-delà du plafond, on compte sans traiter (mémoire/CPU bornés)
@@ -330,6 +331,7 @@ export function flattenOtlp(payload, opts = {}) {
             source: scrubUrl(a["mip.error_source"]),
             lineno: a["mip.error_lineno"] ?? null,
             colno: a["mip.error_colno"] ?? null,
+            release,
             fingerprint: errorFingerprint(errorType, message, stack),
             ts,
           });

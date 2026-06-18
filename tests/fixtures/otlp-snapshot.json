@@ -6,6 +6,7 @@
           { "key": "mip.app_id", "value": { "stringValue": "demo" } },
           { "key": "mip.client_id", "value": { "stringValue": "acme" } },
           { "key": "mip.api_key", "value": { "stringValue": "mip_secretkey1234" } },
+          { "key": "mip.release", "value": { "stringValue": "1.4.2" } },
           { "key": "mip.user_agent", "value": { "stringValue": "Mozilla/5.0 Test" } }
         ]
       },

@@ -6,6 +6,9 @@ export interface MIPRumConfig {
   /** Client identifier, ex: 'groupement-it' */
   clientId?: string;
   env?: string;
+  /** Version/release de l'app (ex. git SHA, "1.4.2") — envoyé en attribut resource
+   *  mip.release. Sert à associer les erreurs à la bonne source map (dé-minification). */
+  release?: string;
   /** 0..1, fraction of sessions fully sampled (default 1.0) */
   sampleRate?: number;
   /**
