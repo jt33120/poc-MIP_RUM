@@ -7,6 +7,8 @@ import {
   parseFilters,
   type SearchParams,
 } from "@/lib/queries-v2";
+import { getSourceMaps } from "@/lib/queries-sourcemap";
+import { symbolicateStack } from "@/lib/sourcemap";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,21 @@ export default async function ErrorGroup({
   const detail = await errorGroupDetail(fingerprint, f);
   if (!detail) notFound();
   const { group, last, occurrences } = detail;
+
+  // Dé-minification (P0 #3) : si une source map existe pour la release de l'erreur,
+  // on réécrit la stack en positions source. Sinon on garde la stack brute.
+  let displayStack = last?.stack ?? null;
+  let deminified = false;
+  if (last?.stack && last.release) {
+    const maps = await getSourceMaps(group.app_id, last.release);
+    if (Object.keys(maps).length) {
+      const r = symbolicateStack(last.stack, maps);
+      if (r.resolved > 0) {
+        displayStack = r.stack;
+        deminified = true;
+      }
+    }
+  }
 
   return (
     <div className="animate-fade-up">
@@ -57,10 +74,23 @@ export default async function ErrorGroup({
       </div>
 
       <div className="card mb-6 overflow-hidden">
-        <div className="border-b border-line px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
           Stack du dernier exemplaire ({last ? fmtDate(last.ts) : "—"})
+          {deminified && (
+            <span
+              data-testid="stack-deminified"
+              className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold normal-case tracking-normal text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"
+            >
+              dé-minifié{last?.release ? ` · ${last.release}` : ""}
+            </span>
+          )}
+          {!deminified && last?.release && (
+            <span className="font-mono text-xs font-normal normal-case tracking-normal text-ink-faint">
+              release {last.release}
+            </span>
+          )}
           {last?.source && (
-            <span className="ml-2 font-mono text-xs font-normal normal-case tracking-normal text-ink-faint">
+            <span className="ml-auto font-mono text-xs font-normal normal-case tracking-normal text-ink-faint">
               {last.source}
               {last.lineno != null && `:${last.lineno}`}
               {last.colno != null && `:${last.colno}`}
@@ -69,7 +99,7 @@ export default async function ErrorGroup({
         </div>
         {/* terminal navy permanent : lisible dans les deux thèmes */}
         <pre className="overflow-x-auto bg-navy-950 p-4 text-xs leading-relaxed text-slate-200">
-          {last?.stack ?? last?.message ?? "(pas de stack capturée)"}
+          {displayStack ?? last?.message ?? "(pas de stack capturée)"}
         </pre>
       </div>
 

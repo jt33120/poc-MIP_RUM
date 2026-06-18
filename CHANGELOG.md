@@ -37,6 +37,11 @@ Périmètre : durcissement sécurité suite à l'alerte Supabase, et défense en
 - La console lit le rollup pour les vues 14 j scan-lourdes (**heatmap santé** + **trafic quotidien**) derrière le flag **`RUM_USE_ROLLUPS`** (défaut **off** → comportement inchangé tant que les rollups ne sont pas peuplés). Les p75 (non mergeables) restent sur les lignes brutes + BRIN.
 - **Égalité rollup == brut prouvée Δ=0** sur Postgres réel (6 cas, filtres app/device) via **`scripts/verify-rollups.mjs`** (même esprit que le bench ClickHouse). Suite : **205 unitaires** verts ; `tsc` + `next build` OK.
 
+### Dé-minification des erreurs — source maps (P0 #3)
+- En prod les stacks sont minifiées (`at a (main.abc.js:1:4567)`) : pilier « erreurs » cosmétique. Ajout d'un **moteur de symbolication source map v3 ZÉRO-DÉPENDANCE** (`apps/console/lib/sourcemap.ts` : décodage VLQ, parsing `mappings`, recherche dichotomique, parsing de stack Chrome/Firefox) — pas de wasm, importable côté serveur Next. Dé-minification **à l'affichage** (lazy), jamais à l'ingestion.
+- **Association par version** : le SDK envoie `release` (option → attribut resource `mip.release`), stockée sur `rum_error` (`migration-v13`). Source maps stockées par `(app_id, release, filename)` (table `sourcemap`), **uploadées via `POST /api/sourcemaps`** (admin). La page d'un groupe d'erreurs affiche la stack **dé-minifiée** (badge + release) quand une map existe, sinon la stack brute (repli).
+- Validation : **+11 tests unitaires** (`tests/unit/sourcemap.test.ts` : round-trip décodage VLQ via un encodeur **indépendant**, résolution de position, réécriture de stack). Extraction `mip.release` prouvée dans le snapshot OTLP (release `1.4.2`). `migration-v13` appliquée sur Postgres 16 éphémère (colonne + table). SDK **25,8 Ko gzip** (≤ 35). Suite : **216 unitaires** verts ; `tsc` + `next build` OK. Doc : `docs/SOURCEMAPS.md`. *(Upload par jeton CI + rétention = suivi.)*
+
 ## v0.6 — 2026-06-12 (déploiement zéro-touch : injection front + backend codeless)
 
 Périmètre : poser le RUM **sans modifier le code du client** — pour les sites COTS / legacy / gérés par un tiers, et les backends multi-langages. Aucune migration SQL (purement additif : générateurs côté console + parser d'ingestion). Détail : [docs/INTEGRATION.md](docs/INTEGRATION.md) §8-9.

@@ -161,7 +161,7 @@ async function writeRows({
     await batchInsert(
       client,
       "rum_error",
-      ["span_id", "session_id", "app_id", "route", "kind", "message", "error_type", "stack", "source", "lineno", "colno", "fingerprint", "ts"],
+      ["span_id", "session_id", "app_id", "route", "kind", "message", "error_type", "stack", "source", "lineno", "colno", "release", "fingerprint", "ts"],
       errors,
       "on conflict (span_id) do nothing",
     );
