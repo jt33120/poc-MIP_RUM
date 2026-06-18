@@ -2,6 +2,18 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
+## v0.13 — 2026-06-18 (P1 — tableaux de bord configurables + export)
+
+> (v0.12 = alerting mature, PR parallèle #27.)
+
+Périmètre : laisser chaque équipe composer ses vues et les exporter (CSV / PDF). Contrat SQL `apps/ingest/sql/migration-v18.sql` ; console `/dashboards`. Détail : [docs/DASHBOARDS.md](docs/DASHBOARDS.md).
+
+- **Modèle** : table `dashboard(name, app_id, layout jsonb, …)` — un dashboard = une liste de **widgets** sérialisée ; aucune nouvelle table de données (les widgets réutilisent les requêtes existantes). Widgets v1 : `vital_p75`, `traffic`, `slow_routes`, `top_errors`, `frustration` (scopés app + période/device globaux ; route-scoping = suivi).
+- **Helpers purs** `lib/dashboards.ts` : `normalizeLayout` (types connus, métrique valide requise pour `vital_p75`, borné `MAX_WIDGETS`=24, fail-soft) appliqué en lecture **et** écriture. `lib/widget-data.ts` : `resolveWidget` → forme uniforme value|table (réutilise vitalsP75/dailyTraffic/slowRoutes/errorGroups/topFrustrations) ; `widgetToCsv` (RFC 4180).
+- **Console** : `/dashboards` (liste + création), `/dashboards/[id]` (rendu des widgets, ajout/retrait/réordonnancement, renommage, suppression), **export CSV** `GET /api/dashboards/[id]/export` (auth `getUser`), **PDF** via impression navigateur. CRUD via server actions.
+- **Conformité** : RLS + accès `console_ro` (v18, motif #1) ; `erase_app_data` redéfini pour purger les dashboards **scopés** (RGPD), les non scopés préservés.
+- Preuves : `scripts/verify-dashboards.mjs` **7/7** sur PG réel (CRUD, RLS + R/W `console_ro`, effacement RGPD) ; **+6** tests (`normalizeLayout`) → **260** verts ; idempotence 2 passes ; `tsc` + `next build` OK (routes `/dashboards`, `/dashboards/[id]`, `/api/dashboards/[id]/export`).
+
 ## v0.11 — 2026-06-18 (parité `console_ro` repo↔live + fix Tracing)
 
 Périmètre : codifier dans le repo le modèle d'accès `console_ro` qui n'existait qu'en prod (appliqué à la main en v0.3) — suite du finding #1. **`apps/ingest/sql/migration-v16.sql`** (idempotente, gardée par l'existence du rôle).
