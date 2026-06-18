@@ -2,6 +2,26 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
+## v0.10 — 2026-06-18 (P1 — signaux de frustration & attribution INP)
+
+Périmètre : combler un écart concurrentiel face à FullStory/Dynatrace DEM — mesurer la **frustration utilisateur** (pas seulement la lenteur navigateur). Console : nouvelle page **/ux**. Détail dans [docs/FRUSTRATION.md](docs/FRUSTRATION.md).
+
+### SDK — détection rage & dead clicks (`packages/rum-sdk/src/frustration.ts`)
+- **Rage click** : ≥ 3 clics sur la même cible en < 1 s (émis **une fois par rafale**). **Dead click** : clic sur un élément d'aspect actionnable (`button`/`a`/`role=button`/… ou `cursor:pointer`) sans **aucune réaction** (mutation DOM, navigation, scroll) sous 1,5 s. Logique **pure & testée** (`RageDetector`, `isDeadClick`) ; câblage via un `MutationObserver` partagé + écouteurs nav/scroll. Cap 20/page (réinitialisé par navigation), cible lisible ≤ 80 c, **opt-out** `frustration:false`. Conservateur (sous-reporte plutôt que faux positifs ; aucune coordonnée ni saisie capturée).
+- Bundle cœur : **26,3 Ko gzip** (≤ 35 ; +0,5 Ko).
+
+### Ingestion — span `frustration` → `rum_event` (nom réservé `frustration.<kind>`)
+- Choix volontaire (leçon des findings #1/#4) : **réutiliser `rum_event`** plutôt qu'une nouvelle table → hérite de toute la plomberie (policy `console_ro`, purge par rétention, effacement RGPD, métering, index `(app_id, name, ts)`). `target` **scrubbé** (PII) ; `kind` hors {rage,dead} **rejeté**.
+
+### Console — page `/ux` (`lib/queries-frustration.ts`)
+- **Signaux de frustration** (top rage/dead par route × cible) + **interactions lentes** : éléments responsables classés par **INP p75** via l'attribution `webvital.attribution` (déjà captée en P0, désormais exploitée). Filtres app/device/période standards, fail-soft.
+
+### Preuves
+- +14 unitaires (`frustration` : détecteurs ; `otlp` : mapping rage/dead, défaut `count`, kind invalide, scrub cible) ; snapshot OTLP étendu au span `frustration`. Suite : **254** verts.
+- `scripts/verify-frustration.mjs` : agrégats + attribution INP **sur Postgres réel**. `tsc` + `next build` OK (route `/ux`).
+
+> **Finding repo↔live relevé en passant (hors périmètre, à arbitrer)** : les policies/grants `console_ro` des **tables de base** (rum_event/metric/error/session…) ne sont **pas** dans les migrations du repo (appliquées à la main en v0.3). La prod fonctionne, mais un **déploiement propre** depuis le repo donnerait une console aveugle. Même famille que le finding #1.
+
 ## v0.9 — 2026-06-18 (recette adversariale P0 — correctifs)
 
 Périmètre : correctifs issus de la recette QA/sécurité adversariale des 5 P0 (PR #18→#23). Aucune régression ; preuves rejouées sur **Postgres 16 réel** (`pg_virtualenv`).

@@ -50,6 +50,18 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
       "span_id": "tk1",
       "ts": 2025-10-09T08:53:26.000Z,
     },
+    {
+      "app_id": "demo",
+      "name": "frustration.rage",
+      "props": {
+        "count": 4,
+        "target": "button "Payer"",
+      },
+      "route": "/home",
+      "session_id": "sess-1",
+      "span_id": "fr1",
+      "ts": 2025-10-09T08:53:26.500Z,
+    },
   ],
   "longtasks": [
     {

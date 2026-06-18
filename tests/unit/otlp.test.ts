@@ -84,3 +84,77 @@ describe("flattenOtlp — aplatissement du payload fixture", () => {
     expect(rows.metrics[0].ts.toISOString()).toBe("2026-06-10T14:00:01.000Z");
   });
 });
+
+describe("flattenOtlp — signaux de frustration (P1)", () => {
+  const sv = (s) => ({ stringValue: s });
+  const frustrationPayload = (attrs) => ({
+    resourceSpans: [
+      {
+        resource: { attributes: [{ key: "mip.app_id", value: sv("demo") }] },
+        scopeSpans: [
+          {
+            spans: [
+              {
+                spanId: "fr",
+                name: "frustration",
+                startTimeUnixNano: "1760000000000000000",
+                attributes: [
+                  { key: "mip.session_id", value: sv("sess-1") },
+                  { key: "mip.route", value: sv("/checkout") },
+                  ...attrs,
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  it("rage -> rum_event 'frustration.rage' avec target/count", () => {
+    const rows = flattenOtlp(
+      frustrationPayload([
+        { key: "frustration.kind", value: sv("rage") },
+        { key: "frustration.target", value: sv('button "Payer"') },
+        { key: "frustration.count", value: { intValue: "4" } },
+      ]),
+    );
+    expect(rows.events).toHaveLength(1);
+    expect(rows.events[0]).toMatchObject({
+      name: "frustration.rage",
+      route: "/checkout",
+      session_id: "sess-1",
+      app_id: "demo",
+      props: { target: 'button "Payer"', count: 4 },
+    });
+  });
+
+  it("dead -> count par défaut 1 si absent", () => {
+    const rows = flattenOtlp(
+      frustrationPayload([
+        { key: "frustration.kind", value: sv("dead") },
+        { key: "frustration.target", value: sv("a \"Aide\"") },
+      ]),
+    );
+    expect(rows.events[0].name).toBe("frustration.dead");
+    expect(rows.events[0].props).toEqual({ target: 'a "Aide"', count: 1 });
+  });
+
+  it("kind invalide -> rejeté (jamais inséré)", () => {
+    const rows = flattenOtlp(
+      frustrationPayload([{ key: "frustration.kind", value: sv("meh") }]),
+    );
+    expect(rows.events).toHaveLength(0);
+    expect(rows.rejected).toBe(1);
+  });
+
+  it("scrub PII : un email dans la cible est masqué", () => {
+    const rows = flattenOtlp(
+      frustrationPayload([
+        { key: "frustration.kind", value: sv("rage") },
+        { key: "frustration.target", value: sv("lien jean@client.fr") },
+      ]),
+    );
+    expect(rows.events[0].props.target).toBe("lien [email]");
+  });
+});
