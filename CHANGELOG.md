@@ -53,6 +53,11 @@ Périmètre : durcissement sécurité suite à l'alerte Supabase, et défense en
 - **Prouvé sur Postgres 16 réel** (`scripts/verify-conformite.mjs`, 8 assertions) : rétention par tenant honorée (app 7 j vs 60 j vs défaut 30 j), effacement app/session complet, registre préservé.
 - **Dossier de conformité** `docs/CONFORMITE.md` (résidence UE, inventaire & classification des données, RGPD by design, rétention, droits des personnes, sécurité, sous-traitants, **trajectoire ISO 27001 / SecNumCloud / HDS** avec gap analysis) + **modèle de DPA** `docs/DPA.md` (art. 28). Aucune nouvelle dépendance ; suite unitaire inchangée (**230** verte). *(Aucune certification acquise — trajectoire documentée, décision direction.)*
 
+### Isolation multi-tenant — métering & quotas (P0 #5)
+- Comble le manque « mesure de consommation (facturation) + quotas » (**`migration-v15`**) : **`tenant_usage_daily`** (agrégat **durable**, survit à la purge → historique de facturation conservé) alimenté par **`meter_tenant_usage(day)`** (idempotent, events = total des lignes ingérées/jour, planifié 3 h 05 avant la purge) ; vue **`v_tenant_usage_month`** ; **quota mensuel par client** (`app_registry.monthly_quota`) + **`tenant_quota_status(app_id)`** (used/quota/over, **fail-open**).
+- **Console** : page admin **`/admin/usage`** (consommation du mois par client + barre de quota + dépassements) + lien nav. Helper pur `lib/usage.ts` (vue quota).
+- **Prouvé sur Postgres 16 réel** (`scripts/verify-tenant.mjs`, 7 assertions : métering events/sessions/erreurs, quota over/illimité, usage mensuel, idempotence). **+5 tests unitaires** (`quotaView`). Suite : **235 unitaires** verts ; `tsc` + `next build` OK. Doc : `docs/MULTITENANT.md` (modèle d'isolation + métering/quotas + hook d'enforcement + roadmap RLS-par-tenant). *(Enforcement dur des quotas + RLS-par-tenant = suivi.)*
+
 ## v0.6 — 2026-06-12 (déploiement zéro-touch : injection front + backend codeless)
 
 Périmètre : poser le RUM **sans modifier le code du client** — pour les sites COTS / legacy / gérés par un tiers, et les backends multi-langages. Aucune migration SQL (purement additif : générateurs côté console + parser d'ingestion). Détail : [docs/INTEGRATION.md](docs/INTEGRATION.md) §8-9.
