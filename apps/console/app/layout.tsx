@@ -112,6 +112,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <Icon paths={ICON_PATHS.list} className="h-4 w-4 text-slate-400" />
                     Audit
                   </Link>
+                  <Link
+                    href="/admin/usage"
+                    className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-300/90 transition hover:bg-white/[0.05] hover:text-white"
+                  >
+                    <Icon paths={ICON_PATHS.gauge} className="h-4 w-4 text-slate-400" />
+                    Consommation
+                  </Link>
                 </nav>
               </div>
             )}
