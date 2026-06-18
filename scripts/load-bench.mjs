@@ -27,8 +27,12 @@
 //   ERROR_RATE      [0.02]      proba d'erreur JS par session
 //   QUERY_ITERS     [20]        répétitions de chaque requête console chronométrée
 //   KEEP            [0]         1 = ne pas nettoyer les données de charge en fin de run
+//   STORE           [postgres]  postgres | clickhouse — backend de la phase requêtes
+//   CLICKHOUSE_URL  [http://localhost:8123]   (si STORE=clickhouse)
+//   CLICKHOUSE_DB   [mip_rum]                 (si STORE=clickhouse)
 import pg from "pg";
 import { pathToFileURL } from "node:url";
+import { createChWriter } from "../infra/clickhouse/writer.mjs";
 
 // --- config ----------------------------------------------------------------
 const num = (k, d) => Number(process.env[k] ?? d);
@@ -42,6 +46,7 @@ export const CONFIG = {
   errorRate: num("ERROR_RATE", 0.02),
   queryIters: num("QUERY_ITERS", 20),
   keep: str("KEEP", "0") === "1",
+  store: str("STORE", "postgres"),
 };
 
 // --- générateur réaliste (déterministe via index) ---------------------------
@@ -154,8 +159,12 @@ export function percentile(values, p) {
 
 // --- requêtes console lourdes (à chronométrer sous charge) -------------------
 // Copiées de apps/console/lib (queries / health / queries-grid) pour rester
-// autonome du build Next. $1 = app_id.
-const HEAVY_QUERIES = {
+// autonome du build Next. Deux dialectes, MÊMES requêtes logiques :
+//   • postgres : percentile_cont / date_trunc / count(distinct), param $1 = app_id.
+//   • clickhouse : quantileTDigest (approx, multi-milliards) / toStartOfHour /
+//     uniqExact, binding serveur {app:String} (cf. infra/clickhouse.notes.md, Δ=0
+//     prouvé sur les idiomes). Tables suffixées _ch (schema.prod.sql).
+const HEAVY_QUERIES_PG = {
   vitals_p75_24h:
     `select name, percentile_cont(0.75) within group (order by value) as p75, count(*)::int n
      from rum_metric where ts > now() - interval '24 hours' and app_id = $1 group by name`,
@@ -172,6 +181,29 @@ const HEAVY_QUERIES = {
      from rum_metric where name = 'LCP' and ts > now() - interval '14 days' and app_id = $1
      group by 1 order by 1`,
 };
+
+const HEAVY_QUERIES_CH = {
+  vitals_p75_24h:
+    `SELECT name, quantileTDigest(0.75)(value) AS p75, count() AS n
+     FROM rum_metric_ch WHERE ts > now() - INTERVAL 24 HOUR AND app_id = {app:String} GROUP BY name`,
+  top_routes_sessions_7d:
+    `SELECT route, uniqExact(session_id) AS sessions
+     FROM rum_pageview_ch WHERE ts > now() - INTERVAL 7 DAY AND app_id = {app:String}
+     GROUP BY route ORDER BY sessions DESC LIMIT 10`,
+  hourly_health_grid_14d:
+    `SELECT toDate(ts) AS d, toHour(ts) AS h,
+            sumIf(1, rating = 'good') AS good, count() AS tot
+     FROM rum_metric_ch WHERE ts > now() - INTERVAL 14 DAY AND app_id = {app:String} GROUP BY d, h`,
+  daily_lcp_p75_14d:
+    `SELECT toDate(ts) AS d, quantileTDigest(0.75)(value) AS p75
+     FROM rum_metric_ch WHERE name = 'LCP' AND ts > now() - INTERVAL 14 DAY AND app_id = {app:String}
+     GROUP BY d ORDER BY d`,
+};
+
+/** Jeu de requêtes lourdes pour le store demandé (export pour les tests). */
+export function heavyQueries(store) {
+  return store === "clickhouse" ? HEAVY_QUERIES_CH : HEAVY_QUERIES_PG;
+}
 
 // --- phases -----------------------------------------------------------------
 
@@ -219,14 +251,17 @@ async function loadPhase() {
   };
 }
 
-/** Phase requêtes : chronométre chaque requête lourde QUERY_ITERS fois. */
-async function queryPhase(pool) {
+/**
+ * Phase requêtes : chronométre chaque requête lourde QUERY_ITERS fois. `run(sql)`
+ * exécute une requête sur le store courant (PG ou CH) avec app_id = CONFIG.app.
+ */
+async function queryPhase(run) {
   const out = {};
-  for (const [name, sql] of Object.entries(HEAVY_QUERIES)) {
+  for (const [name, sql] of Object.entries(heavyQueries(CONFIG.store))) {
     const lat = [];
     for (let k = 0; k < CONFIG.queryIters; k++) {
       const t = performance.now();
-      await pool.query(sql, [CONFIG.app]);
+      await run(sql);
       lat.push(performance.now() - t);
     }
     out[name] = { p50: round1(percentile(lat, 50)), p95: round1(percentile(lat, 95)) };
@@ -253,26 +288,50 @@ async function main() {
     return;
   }
 
-  console.error(`[load-bench] cible ${CONFIG.targetEvents} events -> ${CONFIG.endpoint} (concurrence ${CONFIG.concurrency})`);
+  console.error(`[load-bench] cible ${CONFIG.targetEvents} events -> ${CONFIG.endpoint} (concurrence ${CONFIG.concurrency}, store=${CONFIG.store})`);
   const load = await loadPhase();
 
+  const inserted = CONFIG.store === "clickhouse"
+    ? await dbPhaseClickhouse()
+    : await dbPhasePostgres();
+
+  console.log(JSON.stringify({ load, store: CONFIG.store, ...inserted }, null, 2));
+}
+
+/** Phase requêtes + comptage + nettoyage sur Postgres. */
+async function dbPhasePostgres() {
   const pool = new pg.Pool({ connectionString: CONFIG.databaseUrl, max: 4 });
-  let inserted = null, queries = null;
   try {
     const { rows: [{ n }] } = await pool.query(
       "select count(*)::int n from rum_metric where app_id = $1", [CONFIG.app]);
-    inserted = n;
-    queries = await queryPhase(pool);
+    const consoleQueriesMs = await queryPhase((sql) => pool.query(sql, [CONFIG.app]));
     if (!CONFIG.keep) {
       for (const t of ["rum_metric", "rum_pageview", "rum_error", "rum_resource", "rum_longtask", "rum_session"])
         await pool.query(`delete from ${t} where app_id = $1`, [CONFIG.app]);
       console.error("[load-bench] données de charge nettoyées (KEEP=1 pour les garder)");
     }
+    return { insertedMetrics: n, consoleQueriesMs };
   } finally {
     await pool.end();
   }
+}
 
-  console.log(JSON.stringify({ load, insertedMetrics: inserted, consoleQueriesMs: queries }, null, 2));
+/** Phase requêtes + comptage + nettoyage sur ClickHouse (dialecte CH). */
+async function dbPhaseClickhouse() {
+  const ch = createChWriter();
+  if (!(await ch.ping()))
+    throw new Error(`ClickHouse injoignable (CLICKHOUSE_URL=${process.env.CLICKHOUSE_URL || "http://localhost:8123"})`);
+  const [{ n }] = await ch.query(
+    "select count() as n from rum_metric_ch where app_id = {app:String}", { app: CONFIG.app });
+  const consoleQueriesMs = await queryPhase((sql) => ch.query(sql, { app: CONFIG.app }));
+  if (!CONFIG.keep) {
+    // ALTER … DELETE = mutation ASYNCHRONE côté CH (ne libère pas le disque immédiatement).
+    // Pour des runs répétés, préférer une base/partition dédiée. On le déclenche quand même.
+    for (const t of ["rum_metric_ch", "rum_pageview_ch", "rum_error_ch", "rum_resource_ch", "rum_longtask_ch", "rum_session_ch"])
+      await ch.exec(`ALTER TABLE ${t} DELETE WHERE app_id = {app:String}`, { app: CONFIG.app }).catch(() => {});
+    console.error("[load-bench] mutations de nettoyage CH déclenchées (asynchrones ; KEEP=1 pour les éviter)");
+  }
+  return { insertedMetrics: Number(n), consoleQueriesMs };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
