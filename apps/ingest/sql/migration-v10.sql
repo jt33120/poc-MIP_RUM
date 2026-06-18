@@ -3,14 +3,18 @@
 --   - rls_disabled_in_public      : tables lisibles/modifiables via l'API publique
 --   - sensitive_columns_exposed   : console_user (password_hash) exposé via l'API
 --
--- Modèle d'accès du POC (rappel) :
+-- Modèle d'accès (rappel) :
 --   - Ingestion : edge functions Deno via la clé SERVICE_ROLE -> BYPASSRLS.
 --   - Console    : connexion Postgres DIRECTE (lib/db.ts, driver pg) sous le rôle
---                  propriétaire `postgres` -> les propriétaires de table
---                  contournent RLS (pas de FORCE).
+--                  RESTREINT `console_ro` (cf. DEPLOY.md). Ce rôle n'a PAS BYPASSRLS :
+--                  son accès passe par des policies permissives dédiées (cro_* /
+--                  console_read_*, posées par chaque migration qui crée une table lue
+--                  par la console — v0.3, v05, v12, v13, v15). En local/CI (rôle absent),
+--                  la console se connecte en propriétaire et contourne RLS.
+--   - pg_cron (purge/métering/refresh) : rôle propriétaire `postgres` (BYPASSRLS).
 --   - PERSONNE ne passe par l'API PostgREST (rôles anon / authenticated).
--- Conséquence : activer RLS SANS policy ferme entièrement l'API publique tout en
--- laissant ingestion et console fonctionner. Idempotent (re-jouable).
+-- Conséquence : activer RLS ferme l'API publique ; les policies console_ro laissent
+-- la console fonctionner. Idempotent (re-jouable).
 --
 -- Gardes de rôles : sur un Postgres local/CI (docker), les rôles d'API Supabase
 -- (anon/authenticated) n'existent pas -> les blocs qui les visent sont sautés

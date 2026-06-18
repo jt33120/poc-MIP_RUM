@@ -37,7 +37,7 @@ export async function healthGrid(f: Filters): Promise<HealthGridCell[]> {
         `select date_trunc('day', hour) as day, extract(hour from hour)::int as hour,
                 sum(good_w)::float as good_w, sum(total_w)::float as total_w
          from rum_rollup_hourly
-         where hour > now() - interval '${GRID_DAYS} days'
+         where hour >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
            and ($1::text is null or app_id = $1)
            and ($2::text is null or device_type = $2)
          group by 1, 2 having sum(total_w) > 0`,
@@ -51,7 +51,7 @@ export async function healthGrid(f: Filters): Promise<HealthGridCell[]> {
               sum(case when m.name = 'LCP' then 2 else 1 end)::float as total_w
        from rum_metric m
        left join rum_session s using (session_id)
-       where m.ts > now() - interval '${GRID_DAYS} days'
+       where m.ts >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
          and ($1::text is null or m.app_id = $1)
          and ($2::text is null or s.device_type = $2)
        group by 1, 2`,
@@ -83,14 +83,14 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
          left join (
            select date_trunc('day', hour) d, sum(pageviews)::int n
            from rum_rollup_hourly
-           where hour > now() - interval '${GRID_DAYS} days'
+           where hour >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
              and ($1::text is null or app_id = $1) and ($2::text is null or device_type = $2)
            group by 1
          ) pv on pv.d = gs.day
          left join (
            select date_trunc('day', hour) d, sum(errors)::int n
            from rum_rollup_hourly
-           where hour > now() - interval '${GRID_DAYS} days'
+           where hour >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
              and ($1::text is null or app_id = $1) and ($2::text is null or device_type = $2)
            group by 1
          ) er on er.d = gs.day
@@ -109,7 +109,7 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
          select date_trunc('day', p.started_at) d, count(*)::int n
          from rum_pageview p
          left join rum_session s using (session_id)
-         where p.started_at > now() - interval '${GRID_DAYS} days'
+         where p.started_at >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
            and ($1::text is null or p.app_id = $1)
            and ($2::text is null or s.device_type = $2)
          group by 1
@@ -118,7 +118,7 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
          select date_trunc('day', e.ts) d, count(*)::int n
          from rum_error e
          left join rum_session s using (session_id)
-         where e.ts > now() - interval '${GRID_DAYS} days'
+         where e.ts >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
            and ($1::text is null or e.app_id = $1)
            and ($2::text is null or s.device_type = $2)
          group by 1

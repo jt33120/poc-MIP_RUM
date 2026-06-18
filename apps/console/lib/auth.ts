@@ -13,16 +13,34 @@ export interface SessionUser {
   apps: string[] | null; // null = toutes les apps
 }
 
+const DEV_SECRET = "dev-secret-mip-rum";
 let warned = false;
-function secret(): Uint8Array {
-  const s = process.env.AUTH_SECRET;
-  if (!s && !warned) {
-    warned = true;
-    console.warn(
-      "[mip-rum] AUTH_SECRET absent — secret de dev 'dev-secret-mip-rum' utilisé (à NE PAS faire en prod)",
+
+/**
+ * Résout le secret de signature JWT. En production AUTH_SECRET est OBLIGATOIRE
+ * (fail-closed) : sans lui, le cookie de session serait signé avec le secret de dev
+ * versionné dans le repo → un attaquant pourrait forger un cookie admin. Hors prod,
+ * fallback toléré (avertissement unique). Pur/testable (env injectable).
+ */
+export function resolveAuthSecret(env: NodeJS.ProcessEnv = process.env): string {
+  const s = env.AUTH_SECRET;
+  if (s) return s;
+  if (env.NODE_ENV === "production") {
+    throw new Error(
+      "[mip-rum] AUTH_SECRET obligatoire en production : refus de signer une session avec le secret de dev.",
     );
   }
-  return new TextEncoder().encode(s || "dev-secret-mip-rum");
+  if (!warned) {
+    warned = true;
+    console.warn(
+      "[mip-rum] AUTH_SECRET absent — secret de dev utilisé (à NE PAS faire en prod)",
+    );
+  }
+  return DEV_SECRET;
+}
+
+function secret(): Uint8Array {
+  return new TextEncoder().encode(resolveAuthSecret());
 }
 
 export async function signJwt(user: SessionUser): Promise<string> {

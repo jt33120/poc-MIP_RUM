@@ -19,6 +19,21 @@ create table if not exists tenant_usage_daily (
   primary key (app_id, day)
 );
 
+-- Accès console : RLS + lecture pour console_ro (/admin/usage, cf. DEPLOY.md). Le
+-- métering tourne en pg_cron (propriétaire) → pas de grant d'écriture. Sans ce bloc,
+-- /admin/usage afficherait "aucune donnée" (RLS active, aucune policy). Local/CI :
+-- rôle absent ⇒ sauté (connexion propriétaire, bypass RLS).
+alter table tenant_usage_daily enable row level security;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'console_ro') then
+    grant select on tenant_usage_daily to console_ro;
+    if not exists (select 1 from pg_policies where tablename = 'tenant_usage_daily' and policyname = 'cro_sel_usage') then
+      create policy cro_sel_usage on tenant_usage_daily for select to console_ro using (true);
+    end if;
+  end if;
+end $$;
+
 -- Calcule la consommation d'un jour (par défaut hier = jour clos) et l'upserte.
 -- Idempotent (recalcul possible). À planifier AVANT la purge (sinon sous-compte).
 create or replace function meter_tenant_usage(p_day date default (current_date - 1))

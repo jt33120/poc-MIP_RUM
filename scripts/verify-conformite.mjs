@@ -33,6 +33,7 @@ async function seedApp(c, app, ages) {
 
 const metrics = async (c, app) => Number((await c.query("select count(*)::int n from rum_metric where app_id=$1", [app])).rows[0].n);
 const sessions = async (c, app) => Number((await c.query("select count(*)::int n from rum_session where app_id=$1", [app])).rows[0].n);
+const rollups = async (c, app) => Number((await c.query("select count(*)::int n from rum_rollup_hourly where app_id=$1", [app])).rows[0].n);
 
 function assert(label, cond) {
   console.log(`${cond ? "✓" : "✗"} ${label}`);
@@ -50,17 +51,24 @@ async function main() {
   await seedApp(c, "app-b", [10, 40, 90]);
   await seedApp(c, "app-c", [10, 40]);
 
+  // peuple les rollups (1 bucket/heure ⇒ 1 ligne par metric daté) AVANT la purge
+  await c.query("select refresh_rum_rollups(24 * 100)");
+
   await c.query("select purge_rum_tenants(30)");
 
   assert("app-a (7 j) : ne garde que 5 j  → 1 metric", (await metrics(c, "app-a")) === 1);
   assert("app-a : sessions purgées (10/40 j) → 1 session", (await sessions(c, "app-a")) === 1);
   assert("app-b (60 j) : garde 10 + 40 j, purge 90 j → 2 metrics", (await metrics(c, "app-b")) === 2);
   assert("app-c (défaut 30 j) : garde 10 j, purge 40 j → 1 metric", (await metrics(c, "app-c")) === 1);
+  // #4 : la purge applique la rétention AUSSI aux rollups dérivés
+  assert("app-a : rollups purgés selon la rétention (7 j) → 1 rollup", (await rollups(c, "app-a")) === 1);
+  assert("app-b : rollups → 2 (90 j purgé)", (await rollups(c, "app-b")) === 2);
 
   // droit à l'effacement : tout app-b
   await c.query("select erase_app_data('app-b')");
   assert("erase_app_data(app-b) → 0 metric", (await metrics(c, "app-b")) === 0);
   assert("erase_app_data(app-b) → 0 session", (await sessions(c, "app-b")) === 0);
+  assert("erase_app_data(app-b) → 0 rollup (agrégats dérivés effacés)", (await rollups(c, "app-b")) === 0);
 
   // effacement d'une personne concernée : la session restante d'app-c
   await c.query("select erase_session('app-c-10d')");

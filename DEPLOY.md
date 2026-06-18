@@ -35,6 +35,11 @@ supabase functions deploy v1-traces --project-ref nupxrdpsliqptqnjkmgw --no-veri
 # (SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont injectées automatiquement dans la function)
 ```
 
+> **Clé d'API d'ingestion (`REQUIRE_API_KEY`).** Par défaut l'ingestion est *fail-open*
+> (continuité POC G-IT : une app sans `api_key_hash` est acceptée). Une fois toutes les
+> apps porteuses d'une clé, passer `REQUIRE_API_KEY=true` pour rejeter (403) tout `app_id`
+> inconnu/sans clé — sinon un tiers peut injecter sous l'`app_id` d'une app sans clé.
+
 Endpoint d'ingestion résultant : `https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces`
 (Supabase impose le chemin `/functions/v1/<nom>` ; l'OTLP/HTTP accepte une URL d'endpoint arbitraire, le SDK la prend en config.)
 
@@ -58,9 +63,19 @@ curl -s "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces" \
 cd apps/console
 # DATABASE_URL = pooler Supabase (Settings > Database > Connection string, mode transaction, port 6543)
 vercel env add DATABASE_URL production   # coller: postgres://console_ro.nupxrdpsliqptqnjkmgw:<PWD_console_ro>@aws-0-eu-west-3.pooler.supabase.com:6543/postgres
+# AUTH_SECRET = secret de signature des sessions JWT — OBLIGATOIRE en prod (sinon la
+# console refuse de démarrer : fail-closed, jamais le secret de dev versionné).
+vercel env add AUTH_SECRET production    # coller: openssl rand -hex 32
 vercel --prod
 # Noter l'URL: https://mip-rum-console.vercel.app  (sert aussi le SDK: /mip-rum.js)
 ```
+
+> **Rôle de connexion.** La console se connecte sous le rôle restreint **`console_ro`**
+> (pas `postgres`) : RLS reste actif et l'accès passe par des policies dédiées `cro_*`,
+> posées par chaque migration qui crée une table lue/écrite par la console (v0.3, v05,
+> v12, v13, v15). Si une nouvelle table console reste vide en prod alors que les données
+> existent, vérifier la présence de sa policy `console_ro` :
+> `psql "$DATABASE_URL" -c "select tablename, policyname from pg_policies where 'console_ro'=any(roles)"`.
 
 > `apps/console/public/mip-rum.js` est le build IIFE du SDK (committé pour le POC).
 > Pour le regénérer : `pnpm --filter @mip/rum-sdk build && cp packages/rum-sdk/dist/mip-rum.js apps/console/public/`.

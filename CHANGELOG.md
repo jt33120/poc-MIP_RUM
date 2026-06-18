@@ -2,6 +2,29 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
+## v0.9 — 2026-06-18 (recette adversariale P0 — correctifs)
+
+Périmètre : correctifs issus de la recette QA/sécurité adversariale des 5 P0 (PR #18→#23). Aucune régression ; preuves rejouées sur **Postgres 16 réel** (`pg_virtualenv`).
+
+### 🔴 #1 — accès `console_ro` aux tables v0.8 (piège « CI vert ≠ prod OK »)
+- **Vérifié en live** : la console se connecte sous le rôle **restreint `console_ro`** (sans `BYPASSRLS`), pas sous le propriétaire — son accès passe par des **policies `cro_*`** (19 en prod). Le commentaire de `migration-v10.sql` affirmait l'inverse (« connexion propriétaire ») : **corrigé** (DEPLOY.md faisait foi).
+- **Bug latent corrigé** : les 3 tables v0.8 (`rum_rollup_hourly` v12, `sourcemap` v13, `tenant_usage_daily` v15) n'avaient **pas** le bloc `console_ro` (RLS + grant + policy) que portent toutes les autres tables console. Au déploiement, `/admin/usage` aurait été vide, l'upload de source map aurait échoué (*permission denied*) et les rollups auraient été illisibles — **alors que CI/local (connexion propriétaire) restaient verts**. Bloc gardé ajouté à v12/v13/v15 (motif `cro_*` de v0.3/v05).
+- Preuve : **`scripts/verify-console-ro.mjs`** (NEW) rejoue le déploiement complet *avec* `console_ro` et prouve lecture + upsert sous RLS, plus l'isolement (un rôle sans policy voit 0).
+
+### 🟠 #2 — `AUTH_SECRET` fail-closed en production
+- `lib/auth.ts` signait le JWT de session avec un **secret de dev versionné** si `AUTH_SECRET` était absent (cookie admin forgeable). Désormais `resolveAuthSecret()` **lève en production** si la variable manque (fallback dev toléré hors prod). Variable **documentée** dans DEPLOY.md. +5 tests unitaires (`auth`).
+
+### 🟡 #3 — égalité rollup == brut au **bord** de la fenêtre 14 j
+- Le brut filtrait `ts > now()-14d`, le rollup `hour > now()-14d` : une métrique dans l'heure-frontière divergeait. Filtres **alignés** sur `>= date_trunc('hour', now()) - 14d` des deux côtés (BRIN-friendly, équivalence exacte). `verify-rollups.mjs` gagne un **cas-bord** dédié (toujours Δ=0).
+
+### 🟡 #4 — `rum_rollup_hourly` purgé & effacé (RGPD)
+- `purge_rum_app` applique désormais la rétention **aussi aux rollups** (croissance bornée) ; `erase_app_data` **efface les agrégats dérivés** d'un client (art. 17). `tenant_usage_daily` reste volontairement préservé (facturation durable, comptage sans PII). +3 assertions dans `verify-conformite.mjs`.
+
+### 🟡 #5 — note d'exploitation (clé d'API)
+- DEPLOY.md documente le passage en **`REQUIRE_API_KEY=true`** une fois toutes les apps porteuses d'une clé (sinon injection cross-tenant possible sous un `app_id` sans clé). Comportement *fail-open* inchangé (continuité POC).
+
+Recette : **240 unitaires** verts (+5) ; `verify-rollups` / `verify-console-ro` / `verify-conformite` / `verify-tenant` / `verify-oidc-jit` verts sur PG16 ; migrations idempotentes (2 passes, `console_ro` présent) ; `tsc` + `next build` OK.
+
 ## v0.8 — 2026-06-17 (sécurité base + scrub PII serveur)
 
 Périmètre : durcissement sécurité suite à l'alerte Supabase, et défense en profondeur sur les données personnelles. Contrats : `apps/ingest/sql/migration-v10.sql`, `migration-v11.sql` (RLS + fonctions) ; parser partagé `_shared/otlp.mjs` + nouveau `_shared/scrub.mjs`.
