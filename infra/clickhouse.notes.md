@@ -53,9 +53,13 @@ CREATE TABLE rum_metric_ch (
 PARTITION BY toDate(ts)
 ORDER BY (app_id, name, route, ts);
 -- + rum_pageview_ch (url, nav_type), rum_error_ch (kind, message, error_type, fingerprint)
--- En prod : ajouter TTL toDateTime(ts) + INTERVAL 30 DAY (rétention RGPD)
--- et une MV AggregatingMergeTree quantileTDigestState(0.75) par heure pour le multi-milliards.
 ```
+
+> **Schéma PRODUCTION** : `infra/clickhouse/schema.prod.sql` (jeu de tables complet,
+> `device_type` dénormalisé, **TTL 30 j** RGPD, codecs colonne, **MV AggregatingMergeTree
+> `quantileTDigestState` horaire** pour le multi-milliards). `schema.sql` ci-dessus reste
+> le schéma **minimal du bench** (repro Δ=0). Runbook de bascule complet (topologie,
+> dialecte console, conformité, hébergement) : `infra/clickhouse/DEPLOY.md`.
 
 Écriture : `infra/clickhouse/writer.mjs` — interface HTTP native (`fetch` node 26, JSONEachRow,
 batchs 10 000), **zéro dépendance**. Prêt à brancher derrière `STORE=clickhouse|both` dans le dev-server.
@@ -139,6 +143,12 @@ ENDPOINT=https://<ingest>/v1/traces \
 DATABASE_URL=postgres://user:pwd@host:5432/db \
 TARGET_EVENTS=1000000 CONCURRENCY=32 \
 node scripts/load-bench.mjs        # KEEP=1 pour conserver les données injectées
+
+# phase requêtes ciblant ClickHouse (dialecte CH : quantileTDigest/toStartOfHour/uniqExact) :
+ENDPOINT=https://<collector>/v1/traces \
+STORE=clickhouse CLICKHOUSE_URL=https://<ch-host>:8123 CLICKHOUSE_DB=mip_rum \
+TARGET_EVENTS=1000000 CONCURRENCY=32 \
+node scripts/load-bench.mjs
 ```
 
 **Validation B2** (à remplir après un run type-prod) : reporter ici le débit
