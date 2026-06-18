@@ -66,6 +66,9 @@ vercel env add DATABASE_URL production   # coller: postgres://console_ro.nupxrdp
 # AUTH_SECRET = secret de signature des sessions JWT — OBLIGATOIRE en prod (sinon la
 # console refuse de démarrer : fail-closed, jamais le secret de dev versionné).
 vercel env add AUTH_SECRET production    # coller: openssl rand -hex 32
+# METRICS_TOKEN = (optionnel) active GET /api/metrics (Prometheus, santé interne).
+# Non défini ⇒ endpoint désactivé (404, fail-closed). Scrape : Authorization: Bearer <token>.
+vercel env add METRICS_TOKEN production  # coller: openssl rand -hex 32
 vercel --prod
 # Noter l'URL: https://mip-rum-console.vercel.app  (sert aussi le SDK: /mip-rum.js)
 ```

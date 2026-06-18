@@ -119,6 +119,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <Icon paths={ICON_PATHS.gauge} className="h-4 w-4 text-slate-400" />
                     Consommation
                   </Link>
+                  <Link
+                    href="/admin/health"
+                    className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-300/90 transition hover:bg-white/[0.05] hover:text-white"
+                  >
+                    <Icon paths={ICON_PATHS.activity} className="h-4 w-4 text-slate-400" />
+                    Santé interne
+                  </Link>
                 </nav>
               </div>
             )}
