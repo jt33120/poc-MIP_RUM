@@ -24,6 +24,7 @@ begin
   delete from rum_event      where app_id = p_app_id and ts < p_cutoff;          get diagnostics n = row_count; result := result || jsonb_build_object('rum_event', n);
   delete from rum_span       where app_id = p_app_id and ts < p_cutoff;          get diagnostics n = row_count; result := result || jsonb_build_object('rum_span', n);
   delete from replay_chunk   where app_id = p_app_id and created_at < p_cutoff;  get diagnostics n = row_count; result := result || jsonb_build_object('replay_chunk', n);
+  delete from rum_rollup_hourly where app_id = p_app_id and hour < p_cutoff;     get diagnostics n = row_count; result := result || jsonb_build_object('rum_rollup_hourly', n);
 
   delete from rum_pageview p
    where p.app_id = p_app_id and p.started_at < p_cutoff
@@ -70,8 +71,10 @@ begin
   return result;
 end $$;
 
--- Effacement RGPD : toutes les données d'un client (offboarding / art. 17). Garde
--- app_registry (offboarding du compte = geste séparé), audit_log, console_user.
+-- Effacement RGPD : toutes les données d'un client (offboarding / art. 17), y compris
+-- les agrégats dérivés (rum_rollup_hourly). Garde app_registry (offboarding du compte =
+-- geste séparé), audit_log, console_user, et tenant_usage_daily (historique de
+-- facturation durable — agrégat de comptage sans PII, base légale distincte).
 create or replace function erase_app_data(p_app_id text)
 returns jsonb language plpgsql as $$
 declare result jsonb := jsonb_build_object('app_id', p_app_id); n bigint;
@@ -86,6 +89,7 @@ begin
   delete from replay_chunk   where app_id = p_app_id; get diagnostics n = row_count; result := result || jsonb_build_object('replay_chunk', n);
   delete from rum_pageview   where app_id = p_app_id; get diagnostics n = row_count; result := result || jsonb_build_object('rum_pageview', n);
   delete from rum_session    where app_id = p_app_id; get diagnostics n = row_count; result := result || jsonb_build_object('rum_session', n);
+  delete from rum_rollup_hourly where app_id = p_app_id; get diagnostics n = row_count; result := result || jsonb_build_object('rum_rollup_hourly', n);
   delete from sourcemap      where app_id = p_app_id; get diagnostics n = row_count; result := result || jsonb_build_object('sourcemap', n);
   delete from syn_snapshot   where app_id = p_app_id; get diagnostics n = row_count; result := result || jsonb_build_object('syn_snapshot', n);
   delete from alert_event    where rule_id in (select id from alert_rule where app_id = p_app_id);

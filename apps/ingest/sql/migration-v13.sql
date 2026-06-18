@@ -21,3 +21,18 @@ create table if not exists sourcemap (
 
 comment on table sourcemap is
   'Source maps v3 par app/release/fichier — dé-minification des stacks (P0 #3). Uploadées via /api/sourcemaps.';
+
+-- Accès console : RLS + CRUD pour console_ro (l'admin uploade/upserte via la console,
+-- cf. DEPLOY.md ; motif cro_all_user de v0.3). Sans ce bloc, l'upload de source map
+-- échouerait en "permission denied" et la lecture (dé-minification) renverrait 0 ligne.
+-- Local/CI : rôle absent ⇒ sauté (connexion propriétaire, bypass RLS).
+alter table sourcemap enable row level security;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'console_ro') then
+    grant select, insert, update, delete on sourcemap to console_ro;
+    if not exists (select 1 from pg_policies where tablename = 'sourcemap' and policyname = 'cro_all_sourcemap') then
+      create policy cro_all_sourcemap on sourcemap for all to console_ro using (true) with check (true);
+    end if;
+  end if;
+end $$;

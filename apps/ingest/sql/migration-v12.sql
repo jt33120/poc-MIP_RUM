@@ -29,6 +29,22 @@ create table if not exists rum_rollup_hourly (
 );
 create index if not exists idx_rollup_hour on rum_rollup_hourly (hour);
 
+-- Accès console : RLS + lecture pour le rôle console_ro (motif v0.3/v05). Sans ce
+-- bloc, la console (qui se connecte en console_ro, cf. DEPLOY.md) lirait 0 ligne
+-- une fois RUM_USE_ROLLUPS activé (RLS active, aucune policy). Le refresh tourne en
+-- pg_cron (propriétaire) → pas de grant d'écriture pour console_ro. Local/CI : rôle
+-- absent ⇒ grant/policy sautés (connexion propriétaire, bypass RLS).
+alter table rum_rollup_hourly enable row level security;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'console_ro') then
+    grant select on rum_rollup_hourly to console_ro;
+    if not exists (select 1 from pg_policies where tablename = 'rum_rollup_hourly' and policyname = 'cro_sel_rollup') then
+      create policy cro_sel_rollup on rum_rollup_hourly for select to console_ro using (true);
+    end if;
+  end if;
+end $$;
+
 -- 3) Refresh idempotent : recalcule EXACTEMENT les p_hours dernières heures depuis
 --    les lignes brutes (upsert). Rejouable sans effet de bord. Retourne le nb de
 --    cellules écrites.
