@@ -74,6 +74,14 @@ export const ICON_PATHS = {
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </>
   ),
+  // cible concentrique — SLO / objectifs
+  target: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
+    </>
+  ),
   // flèches croisées — Corrélation robot/réel
   compare: (
     <>

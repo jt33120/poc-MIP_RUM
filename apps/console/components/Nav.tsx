@@ -12,6 +12,7 @@ const ITEMS: { href: string; label: string; icon: IconName }[] = [
   { href: "/ux", label: "Frustration", icon: "frown" },
   { href: "/tracing", label: "Tracing", icon: "trace" },
   { href: "/alerts", label: "Alertes", icon: "bell" },
+  { href: "/slo", label: "SLO", icon: "target" },
   { href: "/correlation", label: "Corrélation", icon: "compare" },
 ];
 
