@@ -12,6 +12,13 @@ import type { SeriesRow } from "./queries";
 /** Profondeur de l'historique affiché par la heatmap et les courbes. */
 export const GRID_DAYS = 14;
 
+// Bascule lecture rollups (migration-v12 : pré-agrégat horaire mergeable). Activée
+// par RUM_USE_ROLLUPS=1 une fois les rollups peuplés (pg_cron / Supabase). Défaut :
+// lignes brutes (comportement inchangé). Équivalence rollup == brut prouvée Δ=0
+// (scripts/verify-rollups.mjs). Ne concerne que les agrégats EXACTEMENT mergeables
+// (comptages : heatmap good/total, trafic) ; les p75 restent sur les lignes brutes.
+const useRollups = () => process.env.RUM_USE_ROLLUPS === "1";
+
 export interface HealthGridCell {
   day: string; // début de journée (timestamptz)
   hour: number; // 0–23
@@ -25,6 +32,17 @@ export interface HealthGridCell {
  */
 export async function healthGrid(f: Filters): Promise<HealthGridCell[]> {
   try {
+    if (useRollups())
+      return await q<HealthGridCell>(
+        `select date_trunc('day', hour) as day, extract(hour from hour)::int as hour,
+                sum(good_w)::float as good_w, sum(total_w)::float as total_w
+         from rum_rollup_hourly
+         where hour > now() - interval '${GRID_DAYS} days'
+           and ($1::text is null or app_id = $1)
+           and ($2::text is null or device_type = $2)
+         group by 1, 2 having sum(total_w) > 0`,
+        [f.app, f.device],
+      );
     return await q<HealthGridCell>(
       `select date_trunc('day', m.ts) as day,
               extract(hour from m.ts)::int as hour,
@@ -53,6 +71,32 @@ export interface DailyTraffic {
 /** Volume quotidien (pages vues / erreurs JS) sur 14 j, jours vides à zéro. */
 export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
   try {
+    if (useRollups())
+      return await q<DailyTraffic>(
+        `select gs.day::date as day,
+                coalesce(pv.n, 0)::int as pageviews,
+                coalesce(er.n, 0)::int as errors
+         from generate_series(
+                date_trunc('day', now()) - interval '${GRID_DAYS - 1} days',
+                date_trunc('day', now()),
+                interval '1 day') gs(day)
+         left join (
+           select date_trunc('day', hour) d, sum(pageviews)::int n
+           from rum_rollup_hourly
+           where hour > now() - interval '${GRID_DAYS} days'
+             and ($1::text is null or app_id = $1) and ($2::text is null or device_type = $2)
+           group by 1
+         ) pv on pv.d = gs.day
+         left join (
+           select date_trunc('day', hour) d, sum(errors)::int n
+           from rum_rollup_hourly
+           where hour > now() - interval '${GRID_DAYS} days'
+             and ($1::text is null or app_id = $1) and ($2::text is null or device_type = $2)
+           group by 1
+         ) er on er.d = gs.day
+         order by 1`,
+        [f.app, f.device],
+      );
     return await q<DailyTraffic>(
       `select gs.day::date as day,
               coalesce(pv.n, 0)::int as pageviews,
