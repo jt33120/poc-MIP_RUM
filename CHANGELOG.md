@@ -37,6 +37,12 @@ Périmètre : durcissement sécurité suite à l'alerte Supabase, et défense en
 - La console lit le rollup pour les vues 14 j scan-lourdes (**heatmap santé** + **trafic quotidien**) derrière le flag **`RUM_USE_ROLLUPS`** (défaut **off** → comportement inchangé tant que les rollups ne sont pas peuplés). Les p75 (non mergeables) restent sur les lignes brutes + BRIN.
 - **Égalité rollup == brut prouvée Δ=0** sur Postgres réel (6 cas, filtres app/device) via **`scripts/verify-rollups.mjs`** (même esprit que le bench ClickHouse). Suite : **205 unitaires** verts ; `tsc` + `next build` OK.
 
+### SSO enterprise — OpenID Connect (P0)
+- **Connexion SSO** de la console via **OIDC (Authorization Code + PKCE)** — un grand compte branche son IdP (Azure AD/Entra, Okta, Keycloak, Google…). Implémentation **standard** (tout IdP conforme), login email/mot de passe gardé en repli. Cœur pur testable (`apps/console/lib/oidc.ts` : config, PKCE S256, URL d'autorisation, **mapping claims → rôle/apps**) + partie réseau isolée (`oidc-remote.ts` : discovery, échange de code, validation ID token via JWKS).
+- **Flux** : `/api/auth/oidc/login` (PKCE + state anti-CSRF + nonce anti-rejeu en cookies httpOnly courts) → IdP → `/api/auth/oidc/callback` (validation signature/`iss`/`aud`/`nonce`, mapping, session). Middleware : `/api/auth/*` exclu de la garde (auth dans le handler).
+- **RBAC piloté par l'IdP** : `OIDC_ROLE_CLAIM` + `OIDC_ADMIN_VALUES` → admin/viewer ; `OIDC_APPS_CLAIM` → viewer scopé. Sans claim de rôle, le rôle géré dans la console est **préservé**. **Provisioning JIT** : `console_user` créé/maj à la connexion (`password_hash` sentinelle `sso:oidc` → mot de passe impossible).
+- Validation : **+14 tests unitaires** (`tests/unit/oidc.test.ts` : PKCE, URL, mapping, config). **Provisioning JIT prouvé sur Postgres réel** (`scripts/verify-oidc-jit.mjs` : création viewer, override IdP, préservation du rôle console). Suite : **219 unitaires** verts ; `tsc` + `next build` OK. Doc : `docs/SSO.md` (env, mapping, exemple Keycloak, suivi SCIM/logout). *(Échange de code/JWKS validé contre l'IdP réel, pas en CI.)*
+
 ## v0.6 — 2026-06-12 (déploiement zéro-touch : injection front + backend codeless)
 
 Périmètre : poser le RUM **sans modifier le code du client** — pour les sites COTS / legacy / gérés par un tiers, et les backends multi-langages. Aucune migration SQL (purement additif : générateurs côté console + parser d'ingestion). Détail : [docs/INTEGRATION.md](docs/INTEGRATION.md) §8-9.
