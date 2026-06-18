@@ -2,6 +2,14 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
+## v0.11 — 2026-06-18 (parité `console_ro` repo↔live + fix Tracing)
+
+Périmètre : codifier dans le repo le modèle d'accès `console_ro` qui n'existait qu'en prod (appliqué à la main en v0.3) — suite du finding #1. **`apps/ingest/sql/migration-v16.sql`** (idempotente, gardée par l'existence du rôle).
+
+- **Drift corrigé** : les policies/grants `console_ro` des **tables de base** (`rum_metric`, `rum_error`, `rum_event`, `rum_pageview`, `rum_session`, `rum_resource`, `rum_longtask`, `rum_breadcrumb`, `syn_snapshot`, `replay_chunk`) + écriture (`console_user`, `audit_log`, `alert_rule`, `alert_event`) + vues (`v_*`) n'étaient **pas** versionnés. Un **déploiement propre / reprise (DR)** depuis le repo aurait donné une **console aveugle** (RLS active, aucune policy → 0 ligne), CI/local (connexion propriétaire) restant verts. Noms de policies **identiques au live** ⇒ réexécution sur la prod = **no-op exact**.
+- **Bug latent EN PROD corrigé** : `rum_span` (lu en direct par `/tracing`, `queries-customers`, `queries.ts`) et `rate_counter` avaient un **GRANT SELECT mais aucune policy** `console_ro` → 0 ligne. **La page Tracing était vide sous `console_ro`.** Policy `cro_sel_span` / `cro_sel_rate` ajoutée.
+- Preuve : **`scripts/verify-console-ro.mjs`** étendu (lecture `console_ro` des tables de base dont `rum_span`, == propriétaire) ; idempotence 2 passes **sans doublon de policy**. Suite unitaire inchangée (**254**).
+
 ## v0.10 — 2026-06-18 (P1 — signaux de frustration & attribution INP)
 
 Périmètre : combler un écart concurrentiel face à FullStory/Dynatrace DEM — mesurer la **frustration utilisateur** (pas seulement la lenteur navigateur). Console : nouvelle page **/ux**. Détail dans [docs/FRUSTRATION.md](docs/FRUSTRATION.md).

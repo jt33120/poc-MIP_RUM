@@ -71,10 +71,12 @@ vercel --prod
 ```
 
 > **Rôle de connexion.** La console se connecte sous le rôle restreint **`console_ro`**
-> (pas `postgres`) : RLS reste actif et l'accès passe par des policies dédiées `cro_*`,
-> posées par chaque migration qui crée une table lue/écrite par la console (v0.3, v05,
-> v12, v13, v15). Si une nouvelle table console reste vide en prod alors que les données
-> existent, vérifier la présence de sa policy `console_ro` :
+> (pas `postgres`) : RLS reste actif et l'accès passe par des policies dédiées `cro_*`.
+> Le modèle COMPLET est codifié dans les migrations — tables de base + écriture + vues en
+> **`migration-v16.sql`** (parité repo↔live), tables ultérieures dans leur migration (v12,
+> v13, v15). Un déploiement propre reproduit donc l'accès console sans geste manuel.
+> Si une table console reste vide en prod alors que les données existent, vérifier sa
+> policy `console_ro` :
 > `psql "$DATABASE_URL" -c "select tablename, policyname from pg_policies where 'console_ro'=any(roles)"`.
 
 > `apps/console/public/mip-rum.js` est le build IIFE du SDK (committé pour le POC).
