@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { getUser } from "@/lib/auth";
 import type { SearchParams } from "@/lib/filters";
+import { isOidcEnabled } from "@/lib/oidc";
 import { loginAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
   if (await getUser()) redirect("/");
   const sp = await searchParams;
   const error = sp.error != null;
+  const ssoEnabled = isOidcEnabled();
 
   return (
     // écran de marque : navy MIP permanent, halo orange, texture grille
@@ -73,6 +75,23 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
                 Se connecter
               </button>
             </form>
+            {ssoEnabled && (
+              <>
+                <div className="my-5 flex items-center gap-3 text-[11px] uppercase tracking-wider text-ink-faint">
+                  <span className="h-px flex-1 bg-white/10" />
+                  ou
+                  <span className="h-px flex-1 bg-white/10" />
+                </div>
+                <a
+                  href="/api/auth/oidc/login"
+                  data-testid="sso-login"
+                  className="flex items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/5 py-2 text-sm font-medium text-ink-soft transition hover:bg-white/10"
+                >
+                  <Icon paths={ICON_PATHS.user} className="h-4 w-4" strokeWidth={2.2} />
+                  Connexion SSO (entreprise)
+                </a>
+              </>
+            )}
           </div>
         </div>
         <p className="mt-4 text-center text-[11px] tracking-wide text-slate-500">
