@@ -6,6 +6,7 @@ import { ICON_PATHS, Icon, type IconName } from "./icons";
 const ITEMS: { href: string; label: string; icon: IconName }[] = [
   { href: "/presentation", label: "Présentation", icon: "book" },
   { href: "/", label: "Overview", icon: "gauge" },
+  { href: "/dashboards", label: "Dashboards", icon: "grid" },
   { href: "/pages", label: "Pages lentes", icon: "timer" },
   { href: "/errors", label: "Erreurs JS", icon: "alert" },
   { href: "/sessions", label: "Sessions", icon: "users" },
