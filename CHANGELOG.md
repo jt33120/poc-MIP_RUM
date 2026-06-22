@@ -2,6 +2,16 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
+## v0.14 — 2026-06-18 (P1 — auto-observabilité : /metrics + santé interne)
+
+Périmètre : opérer MIP RUM comme un produit **supervisé**. **Lecture seule**, aucune migration de données. Endpoint `GET /api/metrics` + page admin `/admin/health`. Détail : [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
+
+- **`/api/metrics`** : exposition **Prometheus** (ingestion 5 min par type, sessions, apps actives, alertes non acquittées, livraisons par statut, **retard de métering** = détection cron mort). **Auth par token** `METRICS_TOKEN` (header Bearer) ; **fail-closed** (404 si le token n'est pas défini) ; bypass middleware de session (scrape sans cookie) ; aucune PII.
+- **`/admin/health`** (admin) : même snapshot en cartes, seuils de couleur sur le retard de métering.
+- **Architecture** : `lib/queries-health.ts` (`internalHealth`, un aller-retour, **fail-soft** → `/metrics` ne 500 jamais) ; `lib/metrics-format.ts` (**pur, testé** : `healthToMetrics` + `toPrometheus`, HELP/TYPE unique, labels échappés, null omis).
+- **Parité corrigée en passant — `migration-v19`** : `console_ro` n'avait **pas** de `SELECT` sur `app_registry` dans le repo (v05 = INSERT/UPDATE seulement ; le SELECT + `cro_sel_app_registry` n'existaient qu'en prod). Sans ça, le **sélecteur d'app de toute la console** + `/metrics` renverraient 0 sous `console_ro` sur un déploiement propre. Codifié (idempotent, nom identique au live → no-op prod). Même famille que finding #1 / v16.
+- Preuves : `scripts/verify-health.mjs` (PG réel : comptages + retard métering + exécution `console_ro`) ; **+4** tests (`toPrometheus`) → **258** verts ; idempotence 2 passes ; `tsc` + `next build` OK (routes `/api/metrics`, `/admin/health`).
+
 ## v0.13 — 2026-06-18 (P1 — tableaux de bord configurables + export)
 
 Périmètre : laisser chaque équipe composer ses vues et les exporter (CSV / PDF). Contrat SQL `apps/ingest/sql/migration-v18.sql` ; console `/dashboards`. Détail : [docs/DASHBOARDS.md](docs/DASHBOARDS.md).

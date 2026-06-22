@@ -9,6 +9,10 @@ export async function middleware(req: NextRequest) {
   // redirection /login en boucle). L'auth se fait dans le handler de callback.
   if (req.nextUrl.pathname.startsWith("/api/auth/")) return NextResponse.next();
 
+  // /api/metrics : scrape Prometheus (sans cookie de session) — auth par token dans
+  // le handler. Bypass de la redirection /login (sinon 302 au lieu des métriques).
+  if (req.nextUrl.pathname === "/api/metrics") return NextResponse.next();
+
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const user = token ? await verifyJwt(token) : null;
   if (!user) return NextResponse.redirect(new URL("/login", req.url), 302);
