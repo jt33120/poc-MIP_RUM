@@ -2,6 +2,16 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
+## v0.12 — 2026-06-18 (P1 — alerting mature : baselines, SLO, routing)
+
+Périmètre : faire passer l'alerting du **seuil statique** au niveau **grand compte**. Contrat SQL `apps/ingest/sql/migration-v17.sql` ; console `/alerts` (règles + canaux) et nouvelle page `/slo`. Détail : [docs/ALERTING.md](docs/ALERTING.md).
+
+- **Baselines dynamiques** : `alert_rule.mode='baseline'` → alerte sur l'écart au **normal saisonnier** (médiane/MAD au même jour-de-semaine + heure, `metric_baseline()`), au lieu d'un seuil fixe. Garde-fou ≥ 4 échantillons & MAD > 0 (pas de fausse alarme sur historique mince). Réduit le bruit (#1 reproche des seuils fixes).
+- **SLO & error-budget** : table `slo`, `slo_status()` (atteinte / budget / **burn-rate 14,4×**), `check_slo_burn()` (pg_cron 5 min) → `alert_event` **critical** rattaché au SLO. Flux d'événements **unifié** (`alert_event.rule_id` OU `slo_id`). Page `/slo` (barre d'atteinte, statut ok/à-risque/manqué, badge « burn rapide »).
+- **Routing multi-canal + sévérité** : `alert_rule.severity` (info/warning/critical) ; table `notify_channel` + `route_alert()` notifie **N canaux** filtrés par sévérité (webhook/Slack via `pg_net`), **en plus** du webhook historique. **E-mail/SMS** = canal tracé `skipped`, **non livré** (service payant — décision commerciale, hook prêt).
+- Accès `console_ro` des nouvelles tables (`slo`, `notify_channel`) + idempotence sur `alert_rule`/`alert_event` (motif du finding #1).
+- Preuves : `scripts/verify-alerting.mjs` **11/11** sur PG réel (threshold rétro-compat, baseline déclenche sur l'anomalie **mais pas sur le normal**, SLO + burn, routing par sévérité, lecture `console_ro`) ; idempotence 2 passes ; `lib/alerting.ts` pur + **8** tests (`sloView`, `severityRank`). Suite : **262** verts ; `tsc` + `next build` OK (routes `/alerts`, `/slo`).
+
 ## v0.11 — 2026-06-18 (parité `console_ro` repo↔live + fix Tracing)
 
 Périmètre : codifier dans le repo le modèle d'accès `console_ro` qui n'existait qu'en prod (appliqué à la main en v0.3) — suite du finding #1. **`apps/ingest/sql/migration-v16.sql`** (idempotente, gardée par l'existence du rôle).

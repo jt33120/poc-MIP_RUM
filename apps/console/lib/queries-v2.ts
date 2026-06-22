@@ -207,6 +207,10 @@ export interface AlertRuleRow {
   webhook_url: string | null;
   active: boolean;
   created_at: Date;
+  mode: string;
+  severity: string;
+  sensitivity: number;
+  baseline_weeks: number;
   unacked: number;
 }
 
@@ -214,6 +218,7 @@ export async function alertRules(f: Filters): Promise<AlertRuleRow[]> {
   return q<AlertRuleRow>(
     `select r.id::int as id, r.app_id, r.metric, r.route, r.comparator, r.threshold,
             r.window_minutes, r.webhook_url, r.active, r.created_at,
+            r.mode, r.severity, r.sensitivity, r.baseline_weeks,
             (select count(*)::int from alert_event ae
               where ae.rule_id = r.id and not ae.acknowledged) as unacked
      from alert_rule r
@@ -225,23 +230,29 @@ export async function alertRules(f: Filters): Promise<AlertRuleRow[]> {
 
 export interface AlertEventRow {
   id: number;
-  rule_id: number;
+  rule_id: number | null;
   fired_at: Date;
   value: number | null;
   message: string | null;
   acknowledged: boolean;
+  severity: string;
   metric: string;
   app_id: string;
   route: string | null;
 }
 
+/** Un événement vient d'une règle OU d'un SLO : left joins + coalesce des champs. */
 export async function alertEvents(f: Filters): Promise<AlertEventRow[]> {
   return q<AlertEventRow>(
     `select ae.id::int as id, ae.rule_id::int as rule_id, ae.fired_at, ae.value,
-            ae.message, ae.acknowledged, r.metric, r.app_id, r.route
+            ae.message, ae.acknowledged, ae.severity,
+            coalesce(r.metric, s.metric) as metric,
+            coalesce(r.app_id, s.app_id) as app_id,
+            coalesce(r.route, s.route) as route
      from alert_event ae
-     join alert_rule r on r.id = ae.rule_id
-     where ($1 = 'all' or r.app_id = $1)
+     left join alert_rule r on r.id = ae.rule_id
+     left join slo s on s.id = ae.slo_id
+     where ($1 = 'all' or coalesce(r.app_id, s.app_id) = $1)
      order by ae.fired_at desc
      limit 100`,
     [f.app],
@@ -252,8 +263,9 @@ export async function unackedAlertCount(f: Filters): Promise<number> {
   const [r] = await q<{ n: number }>(
     `select count(*)::int as n
      from alert_event ae
-     join alert_rule r on r.id = ae.rule_id
-     where not ae.acknowledged and ($1 = 'all' or r.app_id = $1)`,
+     left join alert_rule r on r.id = ae.rule_id
+     left join slo s on s.id = ae.slo_id
+     where not ae.acknowledged and ($1 = 'all' or coalesce(r.app_id, s.app_id) = $1)`,
     [f.app],
   );
   return r?.n ?? 0;
@@ -273,13 +285,19 @@ export interface RuleInput {
   threshold: number;
   window_minutes: number;
   webhook_url: string | null;
+  mode: string;
+  severity: string;
+  sensitivity: number;
+  baseline_weeks: number;
 }
 
 export async function insertAlertRule(r: RuleInput): Promise<void> {
   await q(
-    `insert into alert_rule (app_id, metric, route, comparator, threshold, window_minutes, webhook_url)
-     values ($1, $2, $3, $4, $5, $6, $7)`,
-    [r.app_id, r.metric, r.route, r.comparator, r.threshold, r.window_minutes, r.webhook_url],
+    `insert into alert_rule (app_id, metric, route, comparator, threshold, window_minutes,
+                             webhook_url, mode, severity, sensitivity, baseline_weeks)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [r.app_id, r.metric, r.route, r.comparator, r.threshold, r.window_minutes,
+     r.webhook_url, r.mode, r.severity, r.sensitivity, r.baseline_weeks],
   );
 }
 
@@ -287,9 +305,11 @@ export async function updateAlertRule(id: number, r: RuleInput): Promise<void> {
   await q(
     `update alert_rule
      set app_id = $2, metric = $3, route = $4, comparator = $5,
-         threshold = $6, window_minutes = $7, webhook_url = $8
+         threshold = $6, window_minutes = $7, webhook_url = $8,
+         mode = $9, severity = $10, sensitivity = $11, baseline_weeks = $12
      where id = $1`,
-    [id, r.app_id, r.metric, r.route, r.comparator, r.threshold, r.window_minutes, r.webhook_url],
+    [id, r.app_id, r.metric, r.route, r.comparator, r.threshold, r.window_minutes,
+     r.webhook_url, r.mode, r.severity, r.sensitivity, r.baseline_weeks],
   );
 }
 
@@ -305,6 +325,12 @@ export async function acknowledgeAlertEvent(id: number): Promise<void> {
 /** Évaluation immédiate des règles (même fonction SQL que pg_cron en cloud). */
 export async function runCheckAlerts(): Promise<number> {
   const [r] = await q<{ fired: number }>(`select check_alerts() as fired`);
+  return r?.fired ?? 0;
+}
+
+/** Évaluation immédiate du burn-rate des SLO (même fonction SQL que pg_cron en cloud). */
+export async function runCheckSloBurn(): Promise<number> {
+  const [r] = await q<{ fired: number }>(`select check_slo_burn() as fired`);
   return r?.fired ?? 0;
 }
 
