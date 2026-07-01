@@ -181,7 +181,7 @@ Périmètre : tracing front→back (décision Julian : ClickHouse prod abandonn�
 
 ## v0.3 — 2026-06-11 (sprint nuit 2, livré et déployé)
 
-Périmètre : [ROADMAP_V03.md](ROADMAP_V03.md). Contrat de données verrouillé avant build (`apps/ingest/sql/migration-v03.sql` : `replay_chunk`, `console_user`, `audit_log`, `alert_delivery`, `rate_counter` + `rate_check()`, vue `v_anomaly`, `check_alerts()` v2 avec garde pg_net). Dépendances épinglées : rrweb 2.0.1, rrweb-player 2.0.1, bcryptjs 3.0.3, jose 6.2.3.
+Périmètre : [ROADMAP_V03.md](docs/archive/ROADMAP_V03.md). Contrat de données verrouillé avant build (`apps/ingest/sql/migration-v03.sql` : `replay_chunk`, `console_user`, `audit_log`, `alert_delivery`, `rate_counter` + `rate_check()`, vue `v_anomaly`, `check_alerts()` v2 avec garde pg_net). Dépendances épinglées : rrweb 2.0.1, rrweb-player 2.0.1, bcryptjs 3.0.3, jose 6.2.3.
 
 ### Alerting sortant, géo, rate limit durable (B1)
 - Webhooks d'alerte : `net.http_post` (pg_net, cloud) + dispatcher node local, payload JSON générique compatible Slack, traçabilité par ligne `alert_delivery`.
@@ -206,7 +206,7 @@ Périmètre : [ROADMAP_V03.md](ROADMAP_V03.md). Contrat de données verrouillé 
 
 ## v0.2 — 2026-06-11 (sprint nuit, livré)
 
-Périmètre : [ROADMAP_V02.md](ROADMAP_V02.md). Contrat de données verrouillé avant build (`apps/ingest/sql/migration-v02.sql`). Traite les limites n° 1-4, 7-11, 14-18, 23, 24-25 de [docs/LIMITES.md](docs/LIMITES.md). Statut par chantier dans le rapport du matin (`RAPPORT_NUIT.md`).
+Périmètre : [ROADMAP_V02.md](docs/archive/ROADMAP_V02.md). Contrat de données verrouillé avant build (`apps/ingest/sql/migration-v02.sql`). Traite les limites n° 1-4, 7-11, 14-18, 23, 24-25 de [docs/LIMITES.md](docs/LIMITES.md). Statut par chantier dans le rapport du matin (`docs/archive/RAPPORT_NUIT.md`).
 
 ### SDK (A1)
 - Resource timings (ressources lentes, seuil `slowResourceMs` 300 ms, cap 20/page), long tasks (cap 30/page), breadcrumbs clics/navigations/erreurs (cap 50/page).
