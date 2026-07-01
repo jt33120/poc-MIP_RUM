@@ -8,11 +8,11 @@ import {
   alertRules,
   filtersToQuery,
   parseFilters,
-  registeredApps,
   unackedAlertCount,
   type AlertRuleRow,
   type SearchParams,
 } from "@/lib/queries-v2";
+import { registeredApps } from "@/lib/queries";
 import { listChannels } from "@/lib/queries-alerting";
 import {
   ackEventAction,

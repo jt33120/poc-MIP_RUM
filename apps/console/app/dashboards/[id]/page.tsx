@@ -9,7 +9,7 @@ import {
 } from "@/lib/dashboards";
 import { parseFilters, type Filters, type SearchParams } from "@/lib/filters";
 import { getDashboard } from "@/lib/queries-dashboards";
-import { registeredApps } from "@/lib/queries-v2";
+import { registeredApps } from "@/lib/queries";
 import { resolveWidget, type WidgetData } from "@/lib/widget-data";
 import {
   addWidgetAction,

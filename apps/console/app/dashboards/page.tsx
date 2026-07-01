@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { fmtDate } from "@/lib/format";
 import { parseFilters, type Filters, type SearchParams } from "@/lib/filters";
 import { listDashboards } from "@/lib/queries-dashboards";
-import { registeredApps } from "@/lib/queries-v2";
+import { registeredApps } from "@/lib/queries";
 import { createDashboardAction } from "./actions";
 
 export const dynamic = "force-dynamic";

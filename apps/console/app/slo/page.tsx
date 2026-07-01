@@ -1,11 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { sloView } from "@/lib/alerting";
-import {
-  ALERT_METRICS,
-  parseFilters,
-  registeredApps,
-  type SearchParams,
-} from "@/lib/queries-v2";
+import { ALERT_METRICS, parseFilters, type SearchParams } from "@/lib/queries-v2";
+import { registeredApps } from "@/lib/queries";
 import { listSlo, sloStatus, type SloRaw, type SloStatusRow } from "@/lib/queries-alerting";
 import { createSloAction, deleteSloAction, toggleSloAction } from "../alerts/actions";
 
