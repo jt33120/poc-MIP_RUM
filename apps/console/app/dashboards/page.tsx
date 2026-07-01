@@ -3,12 +3,11 @@ import { PageHeader } from "@/components/PageHeader";
 import { fmtDate } from "@/lib/format";
 import { parseFilters, type Filters, type SearchParams } from "@/lib/filters";
 import { listDashboards } from "@/lib/queries-dashboards";
-import { registeredApps } from "@/lib/queries-v2";
+import { registeredApps } from "@/lib/queries";
+import { INPUT_CLASS } from "@/components/forms/Field";
 import { createDashboardAction } from "./actions";
 
 export const dynamic = "force-dynamic";
-
-const INPUT_CLASS = "field py-1";
 
 /** Querystring des filtres globaux (préservation des liens internes). */
 function filterQs(f: Filters): string {

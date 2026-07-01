@@ -145,7 +145,7 @@ surligné, données mippoc réelles), 06 mini-site de démo.
 
 - Stack épinglée : OTel JS api 1.9.1 / sdk-trace-web 2.7.1 / exporter-otlp-http 0.218.0,
   web-vitals 5.3.0, Next.js 15.5.19, Postgres 15. Détail : `package.json` + lockfile.
-- Journal de build complet : `BUILD_LOG.md`. Plan d'origine : `PLAN.md`.
+- Journal de build complet : `BUILD_LOG.md`. Plan d’origine : `archive/PLAN.md`.
 - Captures : `docs/captures/01..06`. Exemple de payload OTLP : `tests/fixtures/otlp-sample.json`.
 - Données synthétiques réelles sondées : `apps/sync-synthetic/data/mippoc-sample.json`.
 - **Environnement de prod (POC)** : console + SDK `https://mip-rum-console.vercel.app`

@@ -1,0 +1,133 @@
+// Section canaux de notification : liste + création (webhook/slack/email) par sévérité.
+import { ALERT_SEVERITIES, CHANNEL_KINDS } from "@/lib/alerting";
+import { Field, INPUT_CLASS } from "@/components/forms/Field";
+import { createChannelAction, deleteChannelAction, toggleChannelAction } from "@/app/alerts/actions";
+import { SeverityBadge } from "./SeverityBadge";
+
+/** Section routing : liste des canaux + création (webhook/slack/email), filtrés par sévérité. */
+export function ChannelsSection({
+  channels,
+  apps,
+  defaultApp,
+}: {
+  channels: { id: number; app_id: string | null; kind: string; target: string; severity_min: string; active: boolean }[];
+  apps: { app_id: string; name: string }[];
+  defaultApp?: string;
+}) {
+  return (
+    <div className="mt-10">
+      <h2 className="mb-1 text-base font-bold tracking-tight">Canaux de notification</h2>
+      <p className="mb-3 text-sm text-ink-soft">
+        Routent les alertes (en plus du webhook de la règle) vers N destinations, filtrées par
+        sévérité minimale. App vide = global (tous les tenants). E-mail réservé (non livré).
+      </p>
+
+      <details className="card mb-6" open={!channels.length}>
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-soft transition hover:text-ink">
+          + Nouveau canal
+        </summary>
+        <form
+          action={createChannelAction}
+          className="flex flex-wrap items-end gap-3 border-t border-line p-4"
+        >
+          <Field label="App (optionnel)">
+            <select name="app_id" defaultValue={defaultApp ?? ""} className={INPUT_CLASS}>
+              <option value="">tous (global)</option>
+              {apps.map((a) => (
+                <option key={a.app_id} value={a.app_id}>
+                  {a.app_id}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Type">
+            <select name="kind" defaultValue="webhook" className={INPUT_CLASS}>
+              {CHANNEL_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Cible">
+            <input
+              name="target"
+              required
+              placeholder="https://hooks.slack.com/…"
+              className={`${INPUT_CLASS} w-72 font-mono`}
+            />
+          </Field>
+          <Field label="Sévérité min">
+            <select name="severity_min" defaultValue="warning" className={INPUT_CLASS}>
+              {ALERT_SEVERITIES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <button type="submit" data-testid="create-channel" className="btn-accent">
+            Créer
+          </button>
+        </form>
+      </details>
+
+      <div className="flex flex-col gap-3">
+        {channels.map((c) => (
+          <div
+            key={c.id}
+            data-testid={`channel-${c.id}`}
+            className={`card flex flex-wrap items-center gap-3 p-4 ${c.active ? "" : "opacity-60"}`}
+          >
+            <span className="font-mono text-xs text-ink-faint">#{c.id}</span>
+            <span className="rounded bg-panel2 px-2 py-0.5 text-xs font-medium text-ink-soft">
+              {c.kind}
+            </span>
+            <span className="truncate font-mono text-sm">{c.target}</span>
+            <span className="text-xs text-ink-faint">
+              {c.app_id ?? "global"} · ≥ <SeverityBadge severity={c.severity_min} />
+            </span>
+            <span
+              className={`rounded px-2 py-0.5 text-xs font-medium ${
+                c.active
+                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
+                  : "bg-panel2 text-ink-faint"
+              }`}
+            >
+              {c.active ? "actif" : "désactivé"}
+            </span>
+            <div className="ml-auto flex gap-2">
+              <form action={toggleChannelAction}>
+                <input type="hidden" name="id" value={c.id} />
+                <button
+                  type="submit"
+                  data-testid={`toggle-channel-${c.id}`}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition ${
+                    c.active ? "bg-slate-500 hover:bg-slate-600" : "bg-emerald-600 hover:bg-emerald-700"
+                  }`}
+                >
+                  {c.active ? "Désactiver" : "Activer"}
+                </button>
+              </form>
+              <form action={deleteChannelAction}>
+                <input type="hidden" name="id" value={c.id} />
+                <button
+                  type="submit"
+                  data-testid={`delete-channel-${c.id}`}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700"
+                >
+                  Supprimer
+                </button>
+              </form>
+            </div>
+          </div>
+        ))}
+        {!channels.length && (
+          <p className="py-4 text-center text-sm text-ink-faint">
+            Aucun canal — ajoute-en un ci-dessus pour router les alertes.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}

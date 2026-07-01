@@ -24,6 +24,11 @@ export async function listApps(): Promise<AppItem[]> {
   }
 }
 
+/** Apps enregistrées et actives uniquement (registre), pour les sélecteurs de scope. */
+export async function registeredApps(): Promise<AppItem[]> {
+  return q<AppItem>(`select app_id, name from app_registry where active order by app_id`);
+}
+
 export interface VitalAgg {
   name: string;
   p75: number;

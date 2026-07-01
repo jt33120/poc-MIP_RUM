@@ -1,6 +1,6 @@
 # Limites explicites du produit actuel (v0.1 — POC, état au 10/06/2026)
 
-Liste honnête, demandée par Julian. Colonne « v0.2 » = traité dans le sprint nuit du 10→11/06 (cf. ROADMAP_V02.md) ; « v0.3 » = sprint nuit 2 (cf. ROADMAP_V03.md et la section ci-dessous) ; « Phase 1+ » = nécessite un vrai chantier produit MIP.
+Liste honnête, demandée par Julian. Colonne « v0.2 » = traité dans le sprint nuit du 10→11/06 (cf. archive/ROADMAP_V02.md) ; « v0.3 » = sprint nuit 2 (cf. archive/ROADMAP_V03.md et la section ci-dessous) ; « Phase 1+ » = nécessite un vrai chantier produit MIP.
 
 ## Mise à jour v0.8 (17/06/2026 — sécurité base + scrub PII serveur)
 

@@ -6,121 +6,13 @@
 import Link from "next/link";
 import { AddClientCarousel } from "@/components/AddClientCarousel";
 import { GlossaryTip } from "@/components/GlossaryTip";
-import { ICON_PATHS, Icon, type IconName } from "@/components/icons";
+import { ICON_PATHS, Icon } from "@/components/icons";
 import { PageHeader } from "@/components/PageHeader";
+import { PipelineStep } from "@/components/presentation/PipelineStep";
 import { getUser } from "@/lib/auth";
-import type { GlossaryId } from "@/lib/glossary";
+import { PIPELINE, STATS } from "@/lib/presentation-content";
 
 export const dynamic = "force-dynamic";
-
-/** Étapes du pipeline (navigateur → console), rendues en frise. */
-const PIPELINE: { icon: IconName; title: string; body: string }[] = [
-  {
-    icon: "activity",
-    title: "1 · Mesure navigateur",
-    body: "Un SDK léger (~5 ko) lit les Core Web Vitals, les erreurs JS et les interactions chez le vrai visiteur, via les API standard du navigateur (PerformanceObserver).",
-  },
-  {
-    icon: "trace",
-    title: "2 · Export OTLP",
-    body: "Les mesures partent en OpenTelemetry (OTLP/HTTP JSON) — un standard ouvert, pas un format maison : aucun enfermement fournisseur.",
-  },
-  {
-    icon: "gauge",
-    title: "3 · Ingestion",
-    body: "Une fonction serverless (Deno) ou un service Node aplatit le flux OTLP et l'écrit en base, avec garde-fous de charge et idempotence.",
-  },
-  {
-    icon: "list",
-    title: "4 · Stockage",
-    body: "PostgreSQL pour le POC ; chemin ClickHouse prouvé pour le grand compte (mêmes p75, ×15 plus compact). Rétention RGPD (TTL 30 j).",
-  },
-  {
-    icon: "compass",
-    title: "5 · Console",
-    body: "Cette interface Next.js 15 / React 19 calcule les agrégats (p75, score de santé, anomalies) et les rend lisibles — du commercial à l'ingénieur.",
-  },
-];
-
-/** Les indicateurs restitués, avec renvoi vers l'écran et bulle de glossaire. */
-const STATS: { id: GlossaryId; href: string; icon: IconName; label: string; desc: string }[] = [
-  {
-    id: "health",
-    href: "/",
-    icon: "gauge",
-    label: "Score de santé /100",
-    desc: "Une note unique (vitals, erreurs, stabilité, anomalies) pour piloter en un coup d'œil.",
-  },
-  {
-    id: "LCP",
-    href: "/",
-    icon: "activity",
-    label: "Core Web Vitals (p75)",
-    desc: "LCP, INP, CLS, FCP, TTFB au 75ᵉ percentile — la qualité vécue par 3 visiteurs sur 4.",
-  },
-  {
-    id: "anomaly",
-    href: "/",
-    icon: "alert",
-    label: "Anomalies (z-score)",
-    desc: "Détection automatique des dérapages vs comportement habituel, sans seuil à régler.",
-  },
-  {
-    id: "healthGrid",
-    href: "/",
-    icon: "grid",
-    label: "Heatmap de santé",
-    desc: "La tenue jour par jour, heure par heure — pour lire la performance dans la durée.",
-  },
-  {
-    id: "errorFingerprint",
-    href: "/errors",
-    icon: "alert",
-    label: "Erreurs regroupées",
-    desc: "Les erreurs JS dédupliquées par cause (fingerprint), triées par impact réel.",
-  },
-  {
-    id: "session",
-    href: "/sessions",
-    icon: "users",
-    label: "Sessions & replay",
-    desc: "Le parcours réel d'un visiteur, rejouable visuellement (rrweb) — sans donnée identifiante.",
-  },
-  {
-    id: "tracing",
-    href: "/tracing",
-    icon: "trace",
-    label: "Tracing front → back",
-    desc: "Chaque appel API relié à son exécution serveur (W3C traceparent) : réseau, serveur ou code ?",
-  },
-  {
-    id: "robotVsReal",
-    href: "/correlation",
-    icon: "compare",
-    label: "Robot vs Réel",
-    desc: "L'écart entre le monitoring synthétique et les vrais utilisateurs — le terrain prime sur le labo.",
-  },
-];
-
-function PipelineStep({ step, last }: { step: (typeof PIPELINE)[number]; last: boolean }) {
-  return (
-    <div className="relative flex-1">
-      <div className="card h-full p-4">
-        <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-deep text-white shadow-glow">
-          <Icon paths={ICON_PATHS[step.icon]} className="h-5 w-5" strokeWidth={2.1} />
-        </span>
-        <div className="text-sm font-semibold text-ink">{step.title}</div>
-        <p className="mt-1 text-xs leading-relaxed text-ink-soft">{step.body}</p>
-      </div>
-      {!last && (
-        <Icon
-          paths={ICON_PATHS.chevronRight}
-          className="absolute -right-3 top-1/2 hidden h-5 w-5 -translate-y-1/2 text-ink-faint xl:block"
-        />
-      )}
-    </div>
-  );
-}
 
 export default async function Presentation() {
   const user = await getUser();

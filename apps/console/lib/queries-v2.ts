@@ -1,9 +1,24 @@
 // Requêtes SQL v0.3 (chantier A4) : groupes d'erreurs, alerting, corrélation v2.
-// Lit les filtres globaux (app/period/device) de façon défensive — défauts app=all, period=24h.
+// Lit les filtres globaux (app/period/device) de façon défensive — défauts app='all', period=24h.
 import { q } from "./db";
 
 // ---------------------------------------------------------------------------
-// Filtres globaux partagés (searchParams app / period / device)
+// Filtres globaux — MODÈLE HISTORIQUE « v2 » (app/period/device)
+//
+// ⚠️ DETTE CONNUE : il existe DEUX modèles de filtres dans le repo, aux
+// sémantiques différentes, tous deux vivants :
+//   • ./filters.ts    → app: string | null  (null = toutes), device union stricte.
+//                        Utilisé par : home, sessions, pages, tracing, ux,
+//                        dashboards, admin/* et les lib queries*.ts (sauf ici).
+//   • ce fichier      → app: string ('all' = toutes), device: string (+ 'tablet').
+//                        Utilisé par : errors, correlation, alerts, slo.
+//
+// Le SQL d'ici compare littéralement `= 'all'` (cf. clauses ci-dessous), alors
+// que ./filters.ts s'appuie sur `is null`. Unifier les deux (sur le modèle
+// null de filters.ts) est un SUIVI volontairement différé : il réécrit la
+// sémantique WHERE de ~6 pages et touche le filtrage en prod — à faire dans
+// un chantier dédié, vérifié page par page. En attendant, ne PAS mélanger les
+// deux `Filters` : chaque page importe celui qui correspond à ses requêtes.
 // ---------------------------------------------------------------------------
 
 export type SearchParams = Record<string, string | string[] | undefined>;
@@ -271,11 +286,6 @@ export async function unackedAlertCount(f: Filters): Promise<number> {
   return r?.n ?? 0;
 }
 
-export async function registeredApps(): Promise<{ app_id: string; name: string }[]> {
-  return q<{ app_id: string; name: string }>(
-    `select app_id, name from app_registry where active order by app_id`,
-  );
-}
 
 export interface RuleInput {
   app_id: string;

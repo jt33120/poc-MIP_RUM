@@ -9,29 +9,19 @@ import {
 } from "@/lib/dashboards";
 import { parseFilters, type Filters, type SearchParams } from "@/lib/filters";
 import { getDashboard } from "@/lib/queries-dashboards";
-import { registeredApps } from "@/lib/queries-v2";
-import { resolveWidget, type WidgetData } from "@/lib/widget-data";
+import { registeredApps } from "@/lib/queries";
+import { resolveWidget } from "@/lib/widget-data";
 import {
   addWidgetAction,
   deleteDashboardAction,
-  moveWidgetAction,
-  removeWidgetAction,
   renameDashboardAction,
 } from "../actions";
 import { PrintButton } from "./PrintButton";
+import { INPUT_CLASS } from "@/components/forms/Field";
+import { WidgetCard } from "@/components/dashboards/WidgetCard";
+import { filterQs } from "@/components/dashboards/filterQs";
 
 export const dynamic = "force-dynamic";
-
-const INPUT_CLASS = "field py-1";
-
-/** Querystring des filtres globaux (préservation des liens internes + export). */
-function filterQs(f: Filters): string {
-  const p = new URLSearchParams();
-  if (f.app) p.set("app", f.app);
-  if (f.period !== "24h") p.set("period", f.period);
-  if (f.device) p.set("device", f.device);
-  return p.toString();
-}
 
 export default async function D({
   params,
@@ -169,116 +159,6 @@ export default async function D({
           </form>
         </div>
       </details>
-    </div>
-  );
-}
-
-function WidgetCard({
-  id,
-  index,
-  count,
-  title,
-  data,
-}: {
-  id: number;
-  index: number;
-  count: number;
-  title: string;
-  data: WidgetData;
-}) {
-  return (
-    <div className="card flex flex-col gap-3 p-4" data-testid={`widget-${index}`}>
-      <div className="flex items-start gap-2">
-        <h3 className="min-w-0 flex-1 truncate text-sm font-bold tracking-tight">{title}</h3>
-        <div className="flex shrink-0 items-center gap-1">
-          <form action={moveWidgetAction}>
-            <input type="hidden" name="id" value={id} />
-            <input type="hidden" name="index" value={index} />
-            <input type="hidden" name="dir" value="up" />
-            <button
-              type="submit"
-              disabled={index === 0}
-              aria-label="Monter"
-              className="btn-ghost px-2 py-1 disabled:opacity-30"
-            >
-              ↑
-            </button>
-          </form>
-          <form action={moveWidgetAction}>
-            <input type="hidden" name="id" value={id} />
-            <input type="hidden" name="index" value={index} />
-            <input type="hidden" name="dir" value="down" />
-            <button
-              type="submit"
-              disabled={index === count - 1}
-              aria-label="Descendre"
-              className="btn-ghost px-2 py-1 disabled:opacity-30"
-            >
-              ↓
-            </button>
-          </form>
-          <form action={removeWidgetAction}>
-            <input type="hidden" name="id" value={id} />
-            <input type="hidden" name="index" value={index} />
-            <button
-              type="submit"
-              aria-label="Retirer"
-              className="btn-ghost px-2 py-1 text-red-600"
-            >
-              ✕
-            </button>
-          </form>
-        </div>
-      </div>
-      <WidgetBody data={data} />
-    </div>
-  );
-}
-
-function WidgetBody({ data }: { data: WidgetData }) {
-  const empty = !data.rows?.length && !data.value;
-  if (empty) {
-    return <p className="py-6 text-center text-sm text-ink-faint">aucune donnée</p>;
-  }
-
-  if (data.kind === "value") {
-    return (
-      <div className="py-2">
-        <div className="text-3xl font-bold tabular-nums text-ink">{data.value ?? "—"}</div>
-        {data.sub && <div className="mt-1 text-xs text-ink-soft">{data.sub}</div>}
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {data.value && <div className="mb-2 text-sm font-medium text-ink-soft">{data.value}</div>}
-      {data.columns?.length ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                {data.columns.map((c) => (
-                  <th key={c} className="th text-left">
-                    {c}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(data.rows ?? []).map((row, ri) => (
-                <tr key={ri} className="border-t border-line/60">
-                  {row.map((cell, ci) => (
-                    <td key={ci} className="px-3 py-1.5 tabular-nums">
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
     </div>
   );
 }
