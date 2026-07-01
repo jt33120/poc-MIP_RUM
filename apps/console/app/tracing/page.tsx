@@ -1,20 +1,14 @@
-import Link from "next/link";
-import { GlossaryTip } from "@/components/GlossaryTip";
 import { PageHeader } from "@/components/PageHeader";
-import type { GlossaryId } from "@/lib/glossary";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
-import {
-  apiCalls,
-  backRoutes,
-  slowTraces,
-  traceCoverage,
-  type SlowTrace,
-} from "@/lib/queries-tracing";
+import { apiCalls, backRoutes, slowTraces, traceCoverage } from "@/lib/queries-tracing";
+import { Stat } from "@/components/tracing/Stat";
+import { Section } from "@/components/tracing/Section";
+import { Empty } from "@/components/tracing/Empty";
+import { ShareBar } from "@/components/tracing/ShareBar";
+import { SlowRow } from "@/components/tracing/SlowRow";
+import { fmtMs } from "@/components/tracing/format";
 
 export const dynamic = "force-dynamic";
-
-const fmtMs = (v: number | null | undefined) =>
-  v == null ? "—" : `${Math.round(Number(v))} ms`;
 
 export default async function Tracing({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const f = parseFilters(await searchParams);
@@ -169,96 +163,5 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
         </table>
       </Section>
     </div>
-  );
-}
-
-function SlowRow({ t }: { t: SlowTrace }) {
-  const bad = (t.front_status ?? 0) >= 400 || (t.front_status ?? 0) === 0;
-  return (
-    <tr className="border-t border-line/60 transition hover:bg-panel2/60">
-      <td className="px-4 py-3 font-mono text-xs">
-        <span className="mr-1.5 rounded bg-panel2 px-1.5 py-0.5 font-semibold text-ink-soft">{t.method}</span>
-        {t.url}
-      </td>
-      <td className="px-4 py-3">
-        <span
-          className={`rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums ${
-            bad
-              ? "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300"
-              : "border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300"
-          }`}
-        >
-          {t.front_status || "réseau"}
-        </span>
-      </td>
-      <td className="px-4 py-3 font-semibold tabular-nums">{fmtMs(t.front_ms)}</td>
-      <td className="px-4 py-3 tabular-nums">{fmtMs(t.back_ms)}</td>
-      <td className="px-4 py-3 tabular-nums">{fmtMs(t.network_ms)}</td>
-      <td className="px-4 py-3">
-        {t.session_id ? (
-          <Link href={`/sessions/${t.session_id}`} className="font-mono text-xs text-brand hover:underline">
-            {t.session_id.slice(0, 8)}…
-          </Link>
-        ) : (
-          <span className="text-ink-faint/60">—</span>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-function ShareBar({ share }: { share: number }) {
-  return (
-    <span className="flex items-center gap-2">
-      <span className="h-2 w-24 overflow-hidden rounded-full bg-panel2" title={`${share}% serveur`}>
-        <span className="block h-full rounded-full bg-gradient-to-r from-accent-deep to-accent" style={{ width: `${share}%` }} />
-      </span>
-      <span className="text-xs tabular-nums text-ink-soft">{share}% serveur</span>
-    </span>
-  );
-}
-
-function Section({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-8">
-      <h2 className="mb-1 text-base font-semibold tracking-tight">{title}</h2>
-      <p className="mb-3 text-xs text-ink-soft">{sub}</p>
-      <div className="card overflow-hidden">{children}</div>
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  sub,
-  help,
-  testid,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  help?: GlossaryId;
-  testid?: string;
-}) {
-  return (
-    <div className="card p-4" data-testid={testid}>
-      <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-        {label}
-        {help && <GlossaryTip id={help} />}
-      </div>
-      <div className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight">{value}</div>
-      {sub && <div className="text-xs tabular-nums text-ink-faint">{sub}</div>}
-    </div>
-  );
-}
-
-function Empty({ cols, msg }: { cols: number; msg: string }) {
-  return (
-    <tr>
-      <td colSpan={cols} className="px-4 py-8 text-center text-sm text-ink-faint">
-        {msg}
-      </td>
-    </tr>
   );
 }
