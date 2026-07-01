@@ -19,10 +19,9 @@ import {
   renameDashboardAction,
 } from "../actions";
 import { PrintButton } from "./PrintButton";
+import { INPUT_CLASS } from "@/components/forms/Field";
 
 export const dynamic = "force-dynamic";
-
-const INPUT_CLASS = "field py-1";
 
 /** Querystring des filtres globaux (préservation des liens internes + export). */
 function filterQs(f: Filters): string {

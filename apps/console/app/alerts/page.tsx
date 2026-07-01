@@ -14,6 +14,7 @@ import {
 } from "@/lib/queries-v2";
 import { registeredApps } from "@/lib/queries";
 import { listChannels } from "@/lib/queries-alerting";
+import { Field, INPUT_CLASS } from "@/components/forms/Field";
 import {
   ackEventAction,
   createChannelAction,
@@ -43,8 +44,6 @@ function SeverityBadge({ severity }: { severity: string }) {
 }
 
 export const dynamic = "force-dynamic";
-
-const INPUT_CLASS = "field py-1";
 
 export default async function Alerts({
   searchParams,
@@ -470,14 +469,5 @@ function RuleRow({ rule, apps }: { rule: AlertRuleRow; apps: { app_id: string; n
         </button>
       </div>
     </form>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-      {label}
-      {children}
-    </label>
   );
 }

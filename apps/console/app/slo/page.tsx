@@ -4,10 +4,9 @@ import { ALERT_METRICS, parseFilters, type SearchParams } from "@/lib/queries-v2
 import { registeredApps } from "@/lib/queries";
 import { listSlo, sloStatus, type SloRaw, type SloStatusRow } from "@/lib/queries-alerting";
 import { createSloAction, deleteSloAction, toggleSloAction } from "../alerts/actions";
+import { Field, INPUT_CLASS } from "@/components/forms/Field";
 
 export const dynamic = "force-dynamic";
-
-const INPUT_CLASS = "field py-1";
 
 /** Classes Tailwind de la barre/statut d'error-budget (ok/at_risk/breached). */
 const STATUS_STYLE: Record<string, { bar: string; badge: string; label: string }> = {
@@ -213,14 +212,5 @@ function SloRow({ raw, status }: { raw: SloRaw; status?: SloStatusRow }) {
         </div>
       </td>
     </tr>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-      {label}
-      {children}
-    </label>
   );
 }
