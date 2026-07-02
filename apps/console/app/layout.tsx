@@ -6,6 +6,7 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { GlobalFilters } from "@/components/GlobalFilters";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { Nav } from "@/components/Nav";
+import { SubNav } from "@/components/SubNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TourGuide } from "@/components/TourGuide";
 import { getUser } from "@/lib/auth";
@@ -23,8 +24,12 @@ export const metadata: Metadata = {
 // premier paint. Inline dans <head>, donc exécuté avant l'hydratation.
 const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("mip-theme");var d=t?t==="dark":matchMedia("(prefers-color-scheme: dark)").matches;var e=document.documentElement;e.classList.toggle("dark",d);e.style.colorScheme=d?"dark":"light";}catch(_){}})();`;
 
-// dogfooding : la console s'auto-instrumente avec son propre SDK (limite n°25)
-const RUM_ENDPOINT = process.env.NEXT_PUBLIC_RUM_ENDPOINT;
+// dogfooding : la console s'auto-instrumente avec son propre SDK (limite n°25).
+// Défaut = ingestion prod (edge function v1-traces, verify_jwt off) pour que la
+// console reste auditable même sans NEXT_PUBLIC_RUM_ENDPOINT défini sur Vercel.
+const RUM_ENDPOINT =
+  process.env.NEXT_PUBLIC_RUM_ENDPOINT ??
+  "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
 const RUM_INIT = RUM_ENDPOINT
   ? `window.MIPRum && MIPRum.init({endpoint:${JSON.stringify(RUM_ENDPOINT)},appId:"mip-rum-console",clientId:"mip",env:"prod"});`
   : null;
@@ -207,6 +212,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <ThemeToggle />
               </div>
             </header>
+            <Suspense>
+              <SubNav />
+            </Suspense>
             <main className="flex-1 p-6 lg:p-8">{children}</main>
           </div>
         </div>

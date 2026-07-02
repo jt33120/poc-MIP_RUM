@@ -61,7 +61,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   return (
     <div className="animate-fade-up">
       <PageHeader
-        title="Overview"
+        title="Vue d'ensemble"
         help="rum"
         sub={
           <>
