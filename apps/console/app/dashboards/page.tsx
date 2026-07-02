@@ -32,7 +32,7 @@ export default async function Dashboards({
     <div className="animate-fade-up">
       <PageHeader
         title="Tableaux de bord"
-        sub="Tableaux de bord configurables — assemble des widgets (vitals, trafic, routes lentes, erreurs, frustration) puis exporte en CSV / PDF."
+        sub="Assemble tes propres vues à partir de widgets (vitals, trafic, routes lentes, erreurs, frustration), puis exporte en CSV / PDF."
       />
 
       {/* ----- Création ----- */}

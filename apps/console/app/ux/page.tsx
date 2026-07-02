@@ -18,11 +18,11 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
   return (
     <div className="animate-fade-up">
       <PageHeader
-        title="Frustration UX"
+        title="Frustration"
         sub={
           <>
-            Rage clicks &amp; dead clicks · élément responsable des interactions lentes (attribution INP) · fenêtre{" "}
-            {period.label}
+            Signaux d&apos;agacement : rage clicks, dead clicks et l&apos;élément responsable des interactions
+            lentes (attribution INP) · fenêtre {period.label}
           </>
         }
       />

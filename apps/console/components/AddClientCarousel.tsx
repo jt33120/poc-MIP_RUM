@@ -116,8 +116,8 @@ const STEPS: Step[] = [
           d'ouvrir le site du client dans un onglet et de la regarder se remplir.
         </p>
         <p className="mt-2">
-          Les données apparaissent ensuite dans <strong>Overview</strong>, <strong>Sessions</strong> et{" "}
-          <strong>Tracing</strong> en filtrant sur l'app.
+          Les données apparaissent ensuite dans <strong>Vue d'ensemble</strong>, <strong>Sessions</strong>{" "}
+          et <strong>Tracing</strong> une fois le projet sélectionné.
         </p>
       </>
     ),
