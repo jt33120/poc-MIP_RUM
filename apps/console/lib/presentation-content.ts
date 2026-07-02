@@ -91,4 +91,11 @@ export const STATS: { id: GlossaryId; href: string; icon: IconName; label: strin
     label: "Robot vs Réel",
     desc: "L'écart entre le monitoring synthétique et les vrais utilisateurs — le terrain prime sur le labo.",
   },
+  {
+    id: "ai",
+    href: "/ai",
+    icon: "ai",
+    label: "Performance IA",
+    desc: "Usage & performance des appels LLM (tokens, coût, latence, erreurs) — corrélé au parcours utilisateur.",
+  },
 ];
