@@ -4,15 +4,18 @@
 // app/correlation/page.tsx.
 import { AiBar } from "@/components/ai/AiBar";
 import { AiCallRow } from "@/components/ai/AiCallRow";
+import { AiGovernanceRow } from "@/components/ai/AiGovernanceRow";
 import { fmtCost, fmtLatency, fmtPct, fmtTokens } from "@/components/ai/format";
 import { AiKpi } from "@/components/ai/AiKpi";
 import { AiModelRow } from "@/components/ai/AiModelRow";
 import { AiRouteRow } from "@/components/ai/AiRouteRow";
 import { PageHeader } from "@/components/PageHeader";
+import { catalogFor, isPiiRisk } from "@/lib/ai-catalog";
 import {
   aiByModel,
   aiByRoute,
   aiDaily,
+  aiGovernance,
   aiOverview,
   recentAiCalls,
 } from "@/lib/queries-ai";
@@ -26,16 +29,21 @@ export default async function PerformanceIA({
   searchParams?: Promise<SearchParams>;
 }) {
   const f = parseFilters(await searchParams);
-  const [overview, byModel, byRoute, daily, recent] = await Promise.all([
+  const [overview, byModel, byRoute, daily, recent, governance] = await Promise.all([
     aiOverview(f),
     aiByModel(f),
     aiByRoute(f),
     aiDaily(f),
     recentAiCalls(f),
+    aiGovernance(f),
   ]);
 
   const empty = overview.calls === 0;
   const maxCost = daily.reduce((m, d) => Math.max(m, d.cost_usd), 0);
+  // Appels exposant de la donnée personnelle non (ou mal) pseudonymisée.
+  const piiRiskCalls = governance
+    .filter((g) => isPiiRisk(catalogFor(g.route)))
+    .reduce((n, g) => n + g.calls, 0);
 
   return (
     <div className="animate-fade-up">
@@ -68,6 +76,43 @@ export default async function PerformanceIA({
               tone={overview.error_rate > 0 ? "danger" : "ink"}
               hint="appels en erreur"
             />
+          </div>
+
+          {/* ----- Gouvernance des données ----- */}
+          <div className="card mt-8 overflow-hidden">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-panel2 px-4 py-3">
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                Gouvernance des données
+              </h2>
+              {piiRiskCalls > 0 && (
+                <span className="rounded-full bg-bad/10 px-2 py-0.5 text-[11px] font-semibold text-bad">
+                  {piiRiskCalls} appel(s) avec PII envoyée en clair
+                </span>
+              )}
+              <p className="w-full text-xs text-ink-faint">
+                Nature de la donnée envoyée au fournisseur externe et traitement PII appliqué avant l'appel —
+                <span className="text-bad"> « Brut envoyé »</span> sur donnée personnelle = à corriger côté backend.
+              </p>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-panel2">
+                <tr>
+                  <th className="th text-left">Usage</th>
+                  <th className="th text-left">Donnée</th>
+                  <th className="th text-left">Pseudonymisation</th>
+                  <th className="th text-right">Appels</th>
+                  <th className="th text-right">Coût</th>
+                  <th className="th text-right">Latence p75</th>
+                  <th className="th text-right">% erreur</th>
+                  <th className="th text-right">Reliés session</th>
+                </tr>
+              </thead>
+              <tbody>
+                {governance.map((r, i) => (
+                  <AiGovernanceRow key={`${r.route}|${i}`} row={r} />
+                ))}
+              </tbody>
+            </table>
           </div>
 
           {/* ----- Par modèle ----- */}
