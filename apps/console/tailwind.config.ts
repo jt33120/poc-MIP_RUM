@@ -27,7 +27,16 @@ export default {
           soft: "#fbbc64",
           deep: "#d97b00",
         },
-        // navy MIP fixe (sidebar, login) — identique dans les deux modes
+        // ---- Couleurs sémantiques (sens CONSTANT dans toute l'app) ----------
+        // Domaine « Performance utilisateur » (RUM). Bleu.
+        perf: { DEFAULT: "#2563eb", soft: "#dbeafe", ink: "#1d4ed8" },
+        // Domaine « Intelligence artificielle » (usage LLM). Violet.
+        ai: { DEFAULT: "#7c3aed", soft: "#ede9fe", ink: "#6d28d9" },
+        // État d'une mesure : bon / à surveiller / mauvais.
+        good: { DEFAULT: "#059669", soft: "#d1fae5" },
+        warn: { DEFAULT: "#d97706", soft: "#fef3c7" },
+        bad: { DEFAULT: "#dc2626", soft: "#fee2e2" },
+        // navy MIP fixe (texte sur boutons orange) — identique dans les deux modes
         navy: {
           700: "#16275c",
           800: "#0e1b45",

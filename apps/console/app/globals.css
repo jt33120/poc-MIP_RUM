@@ -3,33 +3,39 @@
 @tailwind utilities;
 
 /* ------------------------------------------------------------------ */
-/* Design tokens MIP RUM — charte MIP (insight-performance.com) :      */
-/* navy #003399 · orange #f89101 · aciers #6a85a6/#9db5d4 · #ecf5fe.   */
-/* Triplets RGB pour permettre l'alpha Tailwind (rgb(var(--x) / a)).   */
+/* Design tokens MIP RUM — parti pris : neutre, clair, épuré.          */
+/* La couleur n'est JAMAIS décorative ; chaque teinte porte un sens     */
+/* constant dans toute l'app (voir tailwind.config.ts) :                */
+/*   accent  orange  → action primaire / marque MIP (rare, un CTA)      */
+/*   perf    bleu    → domaine « Performance utilisateur » (RUM)        */
+/*   ai      violet  → domaine « Intelligence artificielle » (LLM)      */
+/*   good    vert · warn ambre · bad rouge → état d'une mesure          */
+/* Les surfaces sont neutres (gris ardoise), pas bleutées : le fond ne  */
+/* concurrence plus le contenu. Triplets RGB pour l'alpha Tailwind.     */
 /* ------------------------------------------------------------------ */
 :root {
-  --c-app: 238 242 248; /* fond de page bleuté clair (écho #ecf5fe) */
+  --c-app: 249 250 251; /* fond de page — ardoise quasi-blanc, neutre */
   --c-panel: 255 255 255; /* surfaces / cartes */
-  --c-panel2: 243 246 251; /* surfaces incrustées (thead, chips) */
-  --c-line: 221 228 240; /* bordures */
-  --c-ink: 15 25 55; /* texte principal (navy-noir) */
-  --c-ink-soft: 73 86 120; /* texte secondaire */
-  --c-ink-faint: 134 145 175; /* texte tertiaire */
-  --c-brand: 0 51 153; /* #003399 — navy MIP */
-  --c-brand-strong: 2 38 110;
+  --c-panel2: 246 248 250; /* surfaces incrustées (thead, chips) */
+  --c-line: 228 232 238; /* bordures discrètes */
+  --c-ink: 17 24 39; /* texte principal (slate-900 neutre) */
+  --c-ink-soft: 82 95 117; /* texte secondaire */
+  --c-ink-faint: 143 154 172; /* texte tertiaire */
+  --c-brand: 37 99 235; /* bleu perf — liens & accents de domaine */
+  --c-brand-strong: 29 78 216;
   color-scheme: light;
 }
 
 .dark {
-  --c-app: 6 11 26; /* nuit navy, pas de noir pur */
-  --c-panel: 12 20 41;
-  --c-panel2: 18 28 55;
-  --c-line: 32 44 80;
-  --c-ink: 230 236 250;
-  --c-ink-soft: 154 168 204;
-  --c-ink-faint: 95 108 146;
-  --c-brand: 122 156 255; /* navy éclairci pour rester lisible sur fond nuit */
-  --c-brand-strong: 158 183 255;
+  --c-app: 10 14 23; /* nuit ardoise, pas de noir pur ni de navy lourd */
+  --c-panel: 17 23 35;
+  --c-panel2: 24 31 46;
+  --c-line: 38 47 64;
+  --c-ink: 229 234 242;
+  --c-ink-soft: 156 167 185;
+  --c-ink-faint: 104 116 136;
+  --c-brand: 96 165 250; /* bleu éclairci pour rester lisible la nuit */
+  --c-brand-strong: 147 197 253;
   color-scheme: dark;
 }
 

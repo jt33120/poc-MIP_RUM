@@ -41,10 +41,11 @@ export default async function PerformanceIA({
     <div className="animate-fade-up">
       <PageHeader
         title="Performance IA"
+        domain="ai"
         sub={
           <>
-            Usage &amp; performance des appels LLM — tokens, coût, latence — corrélés au parcours
-            utilisateur (RUM) · fenêtre {periodLabel(f)}
+            Chaque appel LLM du backend, rattaché à la session RUM qui l'a déclenché · fenêtre{" "}
+            {periodLabel(f)}
           </>
         }
       />

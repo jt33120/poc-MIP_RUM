@@ -15,14 +15,14 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
   const ssoEnabled = isOidcEnabled();
 
   return (
-    // écran de marque : navy MIP permanent, halo orange, texture grille
-    <main className="grid-texture relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-navy-900 to-navy-950 p-6">
+    // écran clair, épuré : léger halo accent, la carte porte toute l'attention
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-app p-6">
       <div
         aria-hidden
-        className="pointer-events-none absolute left-1/2 top-0 h-80 w-[42rem] -translate-x-1/2 rounded-full bg-accent/15 blur-3xl"
+        className="pointer-events-none absolute left-1/2 top-0 h-80 w-[42rem] -translate-x-1/2 rounded-full bg-accent/10 blur-3xl"
       />
       <div className="w-full max-w-sm">
-        <div className="animate-fade-up overflow-hidden rounded-2xl border border-white/10 bg-panel shadow-pop">
+        <div className="animate-fade-up overflow-hidden rounded-2xl border border-line bg-panel shadow-pop">
           <div className="h-1 bg-gradient-to-r from-accent-deep via-accent to-accent-soft" />
           <div className="p-8">
             <div className="mb-6">
@@ -78,14 +78,14 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
             {ssoEnabled && (
               <>
                 <div className="my-5 flex items-center gap-3 text-[11px] uppercase tracking-wider text-ink-faint">
-                  <span className="h-px flex-1 bg-white/10" />
+                  <span className="h-px flex-1 bg-line" />
                   ou
-                  <span className="h-px flex-1 bg-white/10" />
+                  <span className="h-px flex-1 bg-line" />
                 </div>
                 <a
                   href="/api/auth/oidc/login"
                   data-testid="sso-login"
-                  className="flex items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/5 py-2 text-sm font-medium text-ink-soft transition hover:bg-white/10"
+                  className="flex items-center justify-center gap-2 rounded-lg border border-line bg-panel2 py-2 text-sm font-medium text-ink-soft transition hover:bg-app"
                 >
                   <Icon paths={ICON_PATHS.user} className="h-4 w-4" strokeWidth={2.2} />
                   Connexion SSO (entreprise)
@@ -94,7 +94,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
             )}
           </div>
         </div>
-        <p className="mt-4 text-center text-[11px] tracking-wide text-slate-500">
+        <p className="mt-4 text-center text-[11px] tracking-wide text-ink-faint">
           Monitoring OTel-native · données hébergées en UE 🇪🇺
         </p>
       </div>
