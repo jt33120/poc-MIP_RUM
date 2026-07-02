@@ -27,12 +27,12 @@ async function loginConsole(page: Page) {
   await page.click('button[type="submit"]');
   // attendre la SORTIE de /login (la Server Action pose le cookie puis redirige)
   await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
-  // v0.x : porte « projet courant ». Sans cookie de projet, on atterrit sur /select
-  // -> choisir le premier projet (pose le cookie ?app pour toute la session).
-  if (new URL(page.url()).pathname === "/select") {
-    await page.getByTestId("project-card").first().click();
-    await page.waitForURL((u) => u.pathname !== "/select", { timeout: 15_000 });
-  }
+  // Porte « projet courant » (/select) : on fixe le projet de façon DÉTERMINISTE
+  // sur l'app de la démo e2e (demo-app), pour scoper les vues console à SES données
+  // — sinon toute navigation sans ?app est redirigée vers le picker /select.
+  await page.context().addCookies([
+    { name: "mip-project", value: "demo-app", url: "http://localhost:3000" },
+  ]);
 }
 
 async function pollRows(sql: string, params: unknown[], minCount: number, timeoutMs = 20_000) {
