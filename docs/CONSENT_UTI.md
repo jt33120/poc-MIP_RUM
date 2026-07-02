@@ -1,12 +1,13 @@
-# Prompt à coller — session Claude sur `uti-platform` (consentement RGPD, prod-grade)
+# Prompt — consentement RGPD (à utiliser UNIQUEMENT quand le replay sera activé)
 
-> **UN SEUL document à donner** pour la mise en conformité. Copie le bloc **PROMPT** dans ta
-> session Claude ouverte sur **uti-platform**. Objectif : rendre le RUM **conforme RGPD** (pas
-> une démo) — vrai consentement avant toute collecte, cohérent avec la bannière cookies.
+> ⚠️ **Pas nécessaire aujourd'hui.** Le déploiement actuel a **retiré le replay** : la collecte
+> RUM est **anonyme, exemptée de consentement** (pas d'IP, pseudonyme, usage interne) → **aucune
+> bannière requise** (voir `docs/ROADMAP_REPLAY.md`). Il suffit d'une phrase « mesure d'audience
+> anonyme » dans la politique de confidentialité, `replay:0` dans le snippet.
 >
-> Contexte : le snippet MIP RUM est déjà en prod (`frontend/index.html`, Vite/React) avec
-> `replay:0.1`. La bannière actuelle dit « aucun traçage » — ce qui est **faux** dès qu'on
-> mesure/rejoue des sessions. Il faut donc gater la collecte derrière un consentement explicite.
+> **Ce document ne sert QUE le jour où on (ré)active le session replay** — car le replay, lui,
+> impose un consentement explicite. Dans ce cas, copie le bloc **PROMPT** ci-dessous dans la
+> session Claude d'`uti-platform`.
 
 ## Comment fonctionne le consent du SDK MIP RUM (à respecter)
 
