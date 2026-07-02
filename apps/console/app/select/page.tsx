@@ -1,6 +1,7 @@
 // Étape préliminaire : choix du projet à superviser. Rendue AVANT les menus —
 // RUM et analyse IA sont propres à un projet, il n'existe pas de vue « toutes
 // les apps ». Plein écran, sans sidebar (le layout masque sa coquille sur /select).
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { getUser } from "@/lib/auth";
@@ -75,6 +76,20 @@ export default async function SelectProject() {
               </form>
             );
           })}
+
+          {user!.role === "admin" && (
+            <Link
+              href="/select/new"
+              data-testid="add-site"
+              className="group flex min-h-[9.5rem] flex-col items-center justify-center rounded-xl border border-dashed border-line bg-panel/40 p-5 text-center transition hover:border-accent/50 hover:bg-panel"
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10 text-2xl font-light text-accent-deep transition group-hover:bg-accent/20 dark:text-accent">
+                +
+              </span>
+              <span className="mt-2 text-sm font-semibold text-ink">Ajouter un site</span>
+              <span className="mt-0.5 text-xs text-ink-faint">Injection JS ou bookmarklet — en 1 minute</span>
+            </Link>
+          )}
         </div>
       </div>
     </main>

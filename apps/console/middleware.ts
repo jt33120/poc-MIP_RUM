@@ -42,7 +42,8 @@ export async function middleware(req: NextRequest) {
     req.method === "GET" &&
     !pathname.startsWith("/api/") &&
     !pathname.startsWith("/admin") &&
-    pathname !== "/select";
+    pathname !== "/select" &&
+    !pathname.startsWith("/select/");
   if (gated) {
     const requested = req.nextUrl.searchParams.get("app");
     const cookieApp = req.cookies.get("mip-project")?.value ?? null; // cf. lib/project.ts
