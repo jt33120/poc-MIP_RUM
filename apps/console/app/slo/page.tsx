@@ -22,8 +22,8 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
         title="SLO & error-budget"
         sub={
           <>
-            Objectifs de service (part conforme sur la fenêtre) · budget consommé et burn-rate —
-            un burn rapide déclenche une alerte critique (flux unifié).
+            Part des mesures conformes à l&apos;objectif, budget d&apos;erreur restant et vitesse de
+            consommation (burn-rate) — un burn trop rapide lève une alerte critique.
           </>
         }
       />

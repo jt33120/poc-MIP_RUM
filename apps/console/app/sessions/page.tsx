@@ -20,8 +20,8 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
         title="Sessions"
         sub={
           <>
-            Sessions sur {PERIODS[f.period].label} · anonymisées (user_hash, pas de PII) · clique une session
-            pour sa timeline détaillée
+            Parcours utilisateurs réels sur {PERIODS[f.period].label}, anonymisés (user_hash, aucune PII) —
+            ouvre une session pour sa timeline pas à pas
           </>
         }
       />

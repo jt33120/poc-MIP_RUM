@@ -17,7 +17,8 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
         title="Pages lentes"
         sub={
           <>
-            Top routes par LCP p75 · fenêtre {period.label} · ressources lentes dominantes et long tasks par route
+            Les routes au chargement perçu le plus lent (LCP p75) et ce qui le cause — ressources et
+            tâches JS longues · fenêtre {period.label}
           </>
         }
       />

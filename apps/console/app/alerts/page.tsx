@@ -57,8 +57,8 @@ export default async function Alerts({
         }
         sub={
           <>
-            Règles évaluées sur fenêtre glissante (p75 des vitals, taux d&apos;erreur) — check_alerts(),
-            planifiée par pg_cron en cloud · webhook optionnel
+            Se déclenchent quand un vital (p75) ou le taux d&apos;erreur franchit son seuil sur la fenêtre —
+            évaluation automatique côté base, notification par webhook
           </>
         }
       >

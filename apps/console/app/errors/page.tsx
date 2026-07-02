@@ -32,7 +32,8 @@ export default async function Errors({
         title="Erreurs JS"
         sub={
           <>
-            Groupes d&apos;erreurs par fingerprint (type + message normalisé + frame) · fenêtre {periodLabel(f)}
+            Erreurs JavaScript regroupées par signature (type + message + frame) — une ligne = une cause
+            récurrente · fenêtre {periodLabel(f)}
           </>
         }
       />
