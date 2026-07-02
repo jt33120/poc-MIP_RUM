@@ -87,7 +87,12 @@ export interface ErrorGroupRow {
   last_seen: Date;
 }
 
-export async function errorGroups(f: Filters): Promise<ErrorGroupRow[]> {
+export async function errorGroups(
+  f: Filters,
+  page?: { limit?: number; offset?: number },
+): Promise<ErrorGroupRow[]> {
+  const limit = page?.limit ?? 100;
+  const offset = page?.offset ?? 0;
   return q<ErrorGroupRow>(
     `select app_id, fingerprint, error_type, sample_message,
             occurrences::int as occurrences, sessions::int as sessions,
@@ -96,8 +101,8 @@ export async function errorGroups(f: Filters): Promise<ErrorGroupRow[]> {
      where ($1 = 'all' or app_id = $1)
        and last_seen > now() - $2::interval
      order by occurrences desc, last_seen desc
-     limit 100`,
-    [f.app, periodInterval(f)],
+     limit $3 offset $4`,
+    [f.app, periodInterval(f), limit, offset],
   );
 }
 

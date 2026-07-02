@@ -1,12 +1,16 @@
-// Wrapper des route handlers v1 : auth -> parsing des filtres -> exécution -> enveloppe.
-// Factorise l'auth (401), le scoping RBAC, la gestion d'erreur (500) et les en-têtes
+// Wrapper des route handlers v1 : auth -> rate-limit -> parsing des filtres -> exécution
+// -> enveloppe { meta, data } avec ETag/304 + Cache-Control + en-têtes RateLimit-*.
+// Factorise l'auth (401), le RBAC, le throttling (429), la gestion d'erreur (500) et le
 // CORS pour que chaque route ne décrive que sa donnée. Importe next/server (non testé
-// unitairement ; couvert par le build + les helpers purs sous-jacents).
-import { type NextRequest } from "next/server";
+// unitairement ; les briques pures — auth/params/cors/ratelimit/etag — le sont).
+import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE } from "../auth";
 import { type ApiPrincipal, authenticateApi } from "./auth";
+import { weakEtag } from "./etag";
 import { type ApiFilters, parseApiFilters } from "./params";
-import { ApiHttpError, apiError, apiJson } from "./respond";
+import { type RateResult, rateLimit } from "./ratelimit";
+import { ApiHttpError, apiError } from "./respond";
+import { corsHeaders } from "./cors";
 
 export interface ApiContext {
   req: NextRequest;
@@ -16,14 +20,19 @@ export interface ApiContext {
   params: Record<string, string>; // segments dynamiques de route ([id], [fingerprint]…)
 }
 
-// Forme du contexte de route attendue par Next 15 (params dynamiques résolus en
-// Promise). On la garde large pour satisfaire le validateur de route, et on aplatit
-// vers Record<string,string> pour les handlers.
 type RouteCtx = { params: Promise<Record<string, string | string[] | undefined>> };
 
+// Throttling : CONSOLE_API_RATE_LIMIT requêtes / minute par principal (0 = désactivé).
+const RL_WINDOW_MS = 60_000;
+function rlLimit(): number {
+  const n = Number(process.env.CONSOLE_API_RATE_LIMIT ?? 120);
+  return Number.isFinite(n) && n >= 0 ? n : 120;
+}
+
 /**
- * Construit un handler GET : authentifie, parse les filtres (avec RBAC), appelle `fn`
- * et renvoie `{ meta, data }`. Toute exception est journalisée et masquée en 500.
+ * Construit un handler GET : authentifie, applique le rate-limit, parse les filtres (RBAC),
+ * appelle `fn` et renvoie `{ meta, data }` avec ETag (304 si If-None-Match) + cache court.
+ * Toute exception est journalisée et masquée en 500.
  */
 export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
   return async (req: NextRequest, route: RouteCtx) => {
@@ -38,6 +47,19 @@ export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
         "authentification requise (cookie de session ou en-tête Authorization: Bearer <token>)",
       );
 
+    // Rate limiting (best-effort, par instance).
+    const limit = rlLimit();
+    let rl: RateResult | null = null;
+    if (limit > 0) {
+      rl = rateLimit(`${principal.kind}:${principal.subject}`, limit, RL_WINDOW_MS, Date.now());
+      if (!rl.ok) {
+        const res = apiError(req, 429, "trop de requêtes — réessaie dans un instant");
+        applyRate(res.headers, rl);
+        res.headers.set("Retry-After", String(Math.ceil(rl.resetMs / 1000)));
+        return res;
+      }
+    }
+
     const searchParams = new URL(req.url).searchParams;
     const filters = parseApiFilters(searchParams, principal);
     const raw = await route.params;
@@ -49,7 +71,7 @@ export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
 
     try {
       const data = await fn({ req, principal, filters, searchParams, params });
-      return apiJson(req, {
+      const body = JSON.stringify({
         meta: {
           app: filters.app ?? "all",
           period: filters.period,
@@ -58,10 +80,25 @@ export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
         },
         data,
       });
+      const etag = weakEtag(body);
+      const headers = new Headers(corsHeaders(req.headers.get("origin")));
+      headers.set("ETag", etag);
+      headers.set("Cache-Control", "private, max-age=15");
+      if (rl) applyRate(headers, rl);
+      if (req.headers.get("if-none-match") === etag)
+        return new NextResponse(null, { status: 304, headers });
+      headers.set("Content-Type", "application/json");
+      return new NextResponse(body, { status: 200, headers });
     } catch (e) {
       if (e instanceof ApiHttpError) return apiError(req, e.status, e.message);
       console.error("[api/v1]", req.nextUrl.pathname, e);
       return apiError(req, 500, "erreur interne");
     }
   };
+}
+
+function applyRate(headers: Headers, rl: RateResult) {
+  headers.set("RateLimit-Limit", String(rl.limit));
+  headers.set("RateLimit-Remaining", String(rl.remaining));
+  headers.set("RateLimit-Reset", String(Math.ceil(rl.resetMs / 1000)));
 }
