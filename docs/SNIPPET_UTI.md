@@ -1,105 +1,68 @@
-# Prompt à coller — session Claude dédiée à `uti-platform`
+# Prompt à coller — session Claude sur `uti-platform` (mise à niveau RUM)
 
-> Copie tout le bloc ci-dessous dans une session Claude Code ouverte sur le repo
-> **jt33120/uti-platform** (la plateforme déployée sur `https://plateforme.groupement-it.com`).
-> Il installe / met à niveau le snippet RUM MIP. Le back OTel de la plateforme
-> reste inchangé — on ne touche qu'au front.
+> **UN SEUL document à donner.** Copie tout le bloc **PROMPT** ci-dessous dans ta session
+> Claude Code ouverte sur le repo **jt33120/uti-platform** (prod `https://plateforme.groupement-it.com`).
+>
+> Le snippet RUM est **déjà présent** (`frontend/index.html`, Vite/React) et les données
+> remontent déjà — la démo fonctionne **sans rien faire**. Cette mise à niveau est **optionnelle** :
+> ne la lance que si tu veux le **session-replay** dans la démo et/ou activer la **sécurité par
+> clé API**. C'est **front-only** pour le snippet ; le backend ne reçoit qu'une variable d'env.
 
 ---
 
 ## PROMPT
 
-Tu travailles sur le repo **uti-platform** (déployé sur `https://plateforme.groupement-it.com`).
-On le monitore avec notre outil RUM « MIP RUM ». Objectif : **garantir que le snippet
-RUM front est présent, correctement configuré et actif sur toutes les pages**. Il se
-peut qu'un ancien snippet existe déjà (des données front arrivent encore) — dans ce
-cas, **mets-le à niveau** avec la config ci-dessous ; sinon, **ajoute-le**.
+Tu travailles sur le repo **uti-platform** (front Vite/React `frontend/`, backend FastAPI `backend/`,
+prod `plateforme.groupement-it.com`). Un snippet RUM « MIP RUM » existe déjà dans
+`frontend/index.html` (`<head>`, `MIPRum.init(...)`). Objectif : le **mettre à niveau** — ajouter la
+clé API et le session-replay — et poser la même clé côté backend. **Ne touche ni à la logique
+métier ni au middleware `backend/mip_rum_middleware.py`** (déjà propre).
 
-### 1. Détecte la stack et l'emplacement du `<head>` global
+### 1. FRONT — `frontend/index.html`
 
-Cherche d'abord un snippet existant : `grep -rniE "miprum|mip-rum|v1-traces|groupement-it" --include=*.{ts,tsx,js,jsx,html,vue,svelte} .`
-Puis identifie le point d'injection global selon la stack :
+Dans l'appel `MIPRum.init({...})` existant, ajoute `apiKey` et `replay` (garde le reste) :
 
-- **Next.js App Router** → `app/layout.tsx` (composant `<Script>` de `next/script`).
-- **Next.js Pages Router** → `pages/_document.tsx` (`<Head>`), ou `_app.tsx`.
-- **Angular** → `src/index.html` (`<head>`).
-- **Vue/Nuxt** → `nuxt.config` (`app.head.script`) ou `index.html`.
-- **HTML statique / autre** → le `<head>` du template de layout partagé (pas une seule page).
-
-Le snippet doit se charger sur **toutes** les pages, le plus tôt possible dans le `<head>`.
-
-### 2. Le snippet à installer (valeurs de prod, prêtes)
-
-```html
-<!-- MIP RUM — Real User Monitoring (front) -->
-<script src="https://mip-rum-console.vercel.app/mip-rum.js"></script>
-<script>
-  MIPRum.init({
-    endpoint: "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces",
-    appId: "gip-plateforme",
-    clientId: "groupement-it",
-    apiKey: "mip_live_gip_59ca708ce596d20a52d58ea976dc512c516b442a",
-    env: "production",
-    // release: "<git-sha-du-build>",   // optionnel mais recommandé : associe les erreurs aux source maps
-    sampleRate: 1.0,     // 100% des sessions (POC)
-    trace: true,         // tracing distribué : relie le front aux spans back déjà collectés
-    replay: 0.1,         // 10% des sessions en session-replay (rrweb, maskAllInputs activé)
-    frustration: true    // rage clicks / dead clicks
-  });
-</script>
+```js
+MIPRum.init({
+  endpoint: "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces",
+  appId: "gip-plateforme",
+  clientId: "groupement-it",
+  apiKey: "mip_live_gip_59ca708ce596d20a52d58ea976dc512c516b442a",
+  env: "prod",
+  sampleRate: 1.0,
+  replay: 0.1        // 10% des sessions en session-replay (rrweb, maskAllInputs actif)
+});
 ```
 
-**Adaptations par stack** (garde la même config d'`init`) :
+Retire le commentaire « POC à retirer ». (Version propre optionnelle : sortir
+`endpoint`/`appId`/`apiKey` en variables d'env Vite — soit via la syntaxe HTML `%VITE_MIP_API_KEY%`
+dans `index.html`, soit en déplaçant l'init dans `src/main.jsx` avec `import.meta.env.VITE_MIP_*`
+— `index.html` statique n'a PAS accès à `import.meta`. Ajoute alors un `.env` avec `VITE_MIP_*`.)
 
-- **Next.js** : n'utilise PAS deux `<script>` bruts. Mets le loader en `beforeInteractive`
-  et l'init juste après :
-  ```tsx
-  import Script from "next/script";
-  // dans <body> de app/layout.tsx (ou <Head>) :
-  <Script src="https://mip-rum-console.vercel.app/mip-rum.js" strategy="beforeInteractive" />
-  <Script id="mip-rum-init" strategy="beforeInteractive">{`
-    MIPRum.init({ endpoint:"https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces",
-      appId:"gip-plateforme", clientId:"groupement-it",
-      apiKey:"mip_live_gip_59ca708ce596d20a52d58ea976dc512c516b442a",
-      env:"production", sampleRate:1.0, trace:true, replay:0.1, frustration:true });
-  `}</Script>
-  ```
-  Idéalement, mets la clé dans `NEXT_PUBLIC_MIP_API_KEY` (elle est de toute façon
-  exposée côté navigateur — c'est un identifiant anti-usurpation, pas un secret fort).
+### 2. BACKEND — variable d'env (pas de code)
 
-- **Angular** : les deux `<script>` dans `src/index.html` `<head>` suffisent.
+Sur le serveur OVH, dans `~/app/backend/.env` :
 
-### 3. RGPD / consentement (important)
+```
+MIP_RUM_API_KEY=mip_live_gip_59ca708ce596d20a52d58ea976dc512c516b442a
+```
 
-La collecte est **anonymisée** (empreinte `user_hash`, pas d'IP stockée, `maskAllInputs`
-activé sur le replay). La prod actuelle tourne **sans gate de consentement** — garde ce
-comportement (pas de `requireConsent`) pour ne pas couper le flux existant. **Si** la
-plateforme a une bannière cookies, ajoute `requireConsent: true` à l'`init` puis appelle
-`MIPRum.consent(true)` quand l'utilisateur accepte (et `MIPRum.consent(false)` s'il refuse).
+puis `restart uti-backend`. (Le middleware l'enverra en `mip.api_key` ; **requis avant** que
+l'équipe RUM active l'enforcement `REQUIRE_API_KEY`, sinon les spans backend passeraient en 403.)
 
-### 4. Ne touche PAS au backend
+### 3. Vérifie
 
-Le back de la plateforme envoie déjà ~192k spans OTel (tracing serveur). **Ne modifie
-aucune instrumentation backend** ni variable OTel serveur. Ce chantier est **front only**.
+- Build/lance le front. DevTools → **Network** → filtre `v1-traces` : en naviguant, des `POST`
+  répondent **200**. `window.MIPRum` est défini.
+- Pour le replay : après ~1–2 min de navigation, des `POST` partent aussi vers `.../v1/replay`.
 
-### 5. Vérifie
+### 4. Livrable
 
-1. Build + lance la plateforme (ou ouvre la preview).
-2. Ouvre les DevTools → onglet **Network**, filtre `v1-traces`. Navigue sur 2-3 pages :
-   tu dois voir des `POST` vers
-   `…supabase.co/functions/v1/v1-traces` répondant **200**.
-3. En console navigateur, `window.MIPRum` doit être défini (fonctions `init`, `track`, `consent`).
-4. Optionnel : `MIPRum.track("smoke_test", { ok: true })` doit partir dans un beacon.
-
-Quand c'est déployé, **préviens** : côté RUM on vérifiera l'arrivée des données (nouvelles
-lignes `rum_pageview` / `rum_metric` avec la clé) puis on activera l'enforcement de la clé API.
-
-### 6. Livrable
-
-Ouvre une PR (draft) qui ajoute/mets à niveau le snippet, avec en description : le fichier
-modifié, la stack détectée, et une capture (ou description) des beacons `v1-traces` 200 observés.
+Ouvre une **PR draft** décrivant : fichier(s) modifié(s), et les beacons `v1-traces` 200 observés.
+Ne modifie rien d'autre.
 
 ---
 
-*(La clé `mip_live_gip_…` ci-dessus est propre à `gip-plateforme`. Elle identifie l'app à
-l'ingestion. L'enforcement `REQUIRE_API_KEY` sera activé côté RUM une fois ce snippet en prod.)*
+*Notes valeurs de prod : projet Supabase `nupxrdpsliqptqnjkmgw` · appId `gip-plateforme` ·
+la clé `mip_live_gip_…` identifie l'app à l'ingestion (exposée côté navigateur = normal, ce n'est
+pas un secret fort). L'enforcement `REQUIRE_API_KEY` s'active côté RUM une fois front + backend à jour.*
