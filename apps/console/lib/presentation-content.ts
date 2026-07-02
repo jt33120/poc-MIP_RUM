@@ -96,6 +96,6 @@ export const STATS: { id: GlossaryId; href: string; icon: IconName; label: strin
     href: "/ai",
     icon: "ai",
     label: "Performance IA",
-    desc: "Usage & performance des appels LLM (tokens, coût, latence, erreurs) — corrélé au parcours utilisateur.",
+    desc: "Appels LLM (tokens, coût, latence, erreurs) + gouvernance des données : ce qui expose de la PII, pseudonymisé ou non.",
   },
 ];

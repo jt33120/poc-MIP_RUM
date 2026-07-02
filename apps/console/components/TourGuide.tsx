@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ICON_PATHS, Icon, type IconName } from "./icons";
 
-const SEEN_KEY = "mip-tour-seen-v1";
+const SEEN_KEY = "mip-tour-seen-v2";
 
 interface Step {
   icon: IconName;
@@ -29,6 +29,23 @@ const STEPS: Step[] = [
         <p className="mt-2">
           Socle <strong>OpenTelemetry-natif</strong> et <strong>souverain UE</strong> : navigateur → OTLP →
           Postgres → cette console. Ce guide fait le tour des écrans en 1 minute.
+        </p>
+      </>
+    ),
+  },
+  {
+    icon: "grid",
+    title: "D'abord : choisir un projet",
+    body: (
+      <>
+        <p>
+          MIP RUM peut superviser <strong>plusieurs projets</strong>. On choisit d'abord <em>lequel</em> : le
+          RUM et l'analyse IA sont <strong>propres à un projet</strong> — il n'y a pas de vue « toutes les
+          apps ».
+        </p>
+        <p className="mt-2 text-ink-faint">
+          Le projet courant s'affiche en haut du <strong>bandeau de gauche</strong> ; cliquez-le pour en
+          changer à tout moment.
         </p>
       </>
     ),
@@ -132,14 +149,37 @@ const STEPS: Step[] = [
     ),
   },
   {
-    icon: "info",
-    title: "Repères de l'en-tête",
+    icon: "ai",
+    title: "Performance IA",
+    href: "/ai",
     body: (
       <>
         <p>
-          En haut : les <strong>filtres globaux</strong> (application, appareil, période) s'appliquent à tous
-          les écrans, le badge <strong>LIVE · 5 s</strong> rafraîchit les données en continu, et le bouton
-          thème bascule clair/sombre.
+          Le suivi des <strong>appels LLM du backend</strong> : volume, tokens, <strong>coût</strong> et
+          latence par modèle et par route, corrélés au parcours utilisateur.
+        </p>
+        <p className="mt-2">
+          La section <strong>Gouvernance des données</strong> indique, pour chaque usage, la nature de la
+          donnée (personnelle / business) et si elle est <strong>pseudonymisée avant l'appel</strong> — pour
+          repérer d'un coup d'œil ce qui expose de la donnée personnelle.
+        </p>
+      </>
+    ),
+  },
+  {
+    icon: "compass",
+    title: "Se repérer",
+    body: (
+      <>
+        <p>
+          À gauche : le <strong>projet courant</strong> (cliquable pour en changer) et le menu <strong>par
+          catégories</strong> (Performance, Sessions &amp; traces, Objectifs &amp; alertes, Performance IA).
+          En entrant dans une catégorie, ses pages s'ouvrent en <strong>sous-onglets</strong> sous l'en-tête.
+        </p>
+        <p className="mt-2">
+          En haut : les filtres <strong>appareil</strong> et <strong>période</strong> s'appliquent à tous les
+          écrans, le badge <strong>LIVE · 5 s</strong> rafraîchit en continu, et le bouton bascule le thème
+          clair/sombre.
         </p>
         <p className="mt-2 text-ink-faint">
           Rouvrez ce guide quand vous voulez via le bouton <strong>Guide</strong>.
