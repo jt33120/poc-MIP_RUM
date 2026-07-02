@@ -195,8 +195,13 @@ export interface SessionRow {
   err_count: number;
 }
 
-export async function listSessions(f: Filters): Promise<SessionRow[]> {
+export async function listSessions(
+  f: Filters,
+  page?: { limit?: number; offset?: number },
+): Promise<SessionRow[]> {
   const itv = PERIODS[f.period].interval;
+  const limit = page?.limit ?? 50;
+  const offset = page?.offset ?? 0;
   return q<SessionRow>(
     `select s.*, p.routes, coalesce(e.err_count, 0)::int as err_count
      from rum_session s
@@ -212,8 +217,8 @@ export async function listSessions(f: Filters): Promise<SessionRow[]> {
        and ($1::text is null or s.app_id = $1)
        and ($2::text is null or s.device_type = $2)
      order by s.last_seen_at desc
-     limit 50`,
-    [f.app, f.device],
+     limit $3 offset $4`,
+    [f.app, f.device, limit, offset],
   );
 }
 

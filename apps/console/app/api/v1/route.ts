@@ -1,6 +1,6 @@
 // GET /api/v1 — descripteur de l'API (version + endpoints), pour l'auto-découverte
 // par l'équipe Angular MIP. Authentifié comme le reste (évite d'exposer la carte
-// des routes à un anonyme).
+// des routes à un anonyme). La spec machine est sur /api/v1/openapi (publique).
 import { handle } from "@/lib/api/handle";
 import { preflight } from "@/lib/api/respond";
 
@@ -16,7 +16,11 @@ export const GET = handle(async () => ({
     period: "1h | 24h (défaut) | 7d",
     device: "mobile | desktop | tablet | all (défaut)",
   },
+  pagination: "les listes (/errors, /sessions) acceptent limit (1..200) & offset ; page renvoyée dans data.page",
+  spec: "/api/v1/openapi (OpenAPI 3.0, sans auth)",
   endpoints: [
+    { method: "GET", path: "/api/v1/health", desc: "liveness (sans auth)" },
+    { method: "GET", path: "/api/v1/openapi", desc: "spec OpenAPI 3.0 (sans auth)" },
     { method: "GET", path: "/api/v1/apps", desc: "catalogue des apps monitorées" },
     { method: "GET", path: "/api/v1/overview", desc: "health score + vitals p75 + stats (avec période précédente)" },
     { method: "GET", path: "/api/v1/vitals", desc: "p75 par vital + séries temporelles (?series=LCP,INP)" },
