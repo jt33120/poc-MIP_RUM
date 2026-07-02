@@ -91,6 +91,18 @@ export const ICON_PATHS = {
       <path d="M20 17H4" />
     </>
   ),
+  // étincelles — Performance IA (usage LLM)
+  ai: (
+    <>
+      <path d="M12 3v4" />
+      <path d="M12 17v4" />
+      <path d="m5 5 2 2" />
+      <path d="m17 17 2 2" />
+      <path d="M9 12H3" />
+      <path d="M21 12h-6" />
+      <path d="M12 9a3 3 0 0 0 0 6 3 3 0 0 0 0-6z" />
+    </>
+  ),
   // user — Admin utilisateurs
   user: (
     <>

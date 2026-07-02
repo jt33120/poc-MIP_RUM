@@ -15,6 +15,7 @@ const ITEMS: { href: string; label: string; icon: IconName }[] = [
   { href: "/alerts", label: "Alertes", icon: "bell" },
   { href: "/slo", label: "SLO", icon: "target" },
   { href: "/correlation", label: "Corrélation", icon: "compare" },
+  { href: "/ai", label: "Performance IA", icon: "ai" },
 ];
 
 export function Nav() {

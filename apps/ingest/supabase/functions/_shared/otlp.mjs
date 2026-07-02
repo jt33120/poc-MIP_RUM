@@ -4,6 +4,8 @@
 import { tzToCountry } from "./tz-country.mjs";
 // Scrub PII serveur (A2) : défense en profondeur, ne dépend pas du beforeSend client.
 import { scrubProps, scrubText, scrubUrl } from "./scrub.mjs";
+// v0.8 : coût LLM estimé à l'ingestion (usage & performance IA -> rum_ai).
+import { aiCostUsd } from "./ai-pricing.mjs";
 
 // Seuils 2026 (PLAN annexe B) — bornes [good, needs-improvement]
 const THRESHOLDS = {
@@ -176,6 +178,7 @@ export function flattenOtlp(payload, opts = {}) {
   const breadcrumbs = [];
   const events = [];
   const spans = [];
+  const ai = []; // v0.8 : appels LLM (usage & performance IA) -> rum_ai
   const apiKeys = [];
   let rejected = 0;
 
@@ -267,6 +270,57 @@ export function flattenOtlp(payload, opts = {}) {
             method: otelMethod ?? null,
             status_code: a["http.response.status_code"] ?? a["http.status_code"] ?? null,
             duration_ms: durationMs,
+            ts: nanosToDate(span.startTimeUnixNano),
+          });
+          continue;
+        }
+
+        // v0.8 : appel LLM (conventions OTel GenAI `gen_ai.*`, émis par le back —
+        // session optionnelle via tracestate/mip.session_id). Coût estimé à
+        // l'ingestion (le coût réel `gen_ai.usage.cost` prime s'il est fourni). -> rum_ai.
+        const isGenAi =
+          span.name === "gen_ai" ||
+          span.name.startsWith("gen_ai.") ||
+          a["gen_ai.request.model"] != null ||
+          a["gen_ai.system"] != null;
+        if (isGenAi) {
+          const aiSpanId = span.spanId ?? a["mip.span_id"] ?? null;
+          const provider = a["gen_ai.system"] ?? a["mip.ai.provider"] ?? null;
+          const model =
+            a["gen_ai.request.model"] ?? a["gen_ai.response.model"] ?? a["mip.ai.model"] ?? null;
+          if (!aiSpanId || (!provider && !model)) {
+            rejected++;
+            continue;
+          }
+          const num = (v) => (typeof v === "number" ? v : null);
+          const promptTokens = num(a["gen_ai.usage.input_tokens"] ?? a["gen_ai.usage.prompt_tokens"]);
+          const completionTokens = num(
+            a["gen_ai.usage.output_tokens"] ?? a["gen_ai.usage.completion_tokens"],
+          );
+          const totalTokens =
+            num(a["gen_ai.usage.total_tokens"]) ??
+            (promptTokens != null && completionTokens != null ? promptTokens + completionTokens : null);
+          const billed = num(a["gen_ai.usage.cost"]); // coût réel provider s'il est fourni
+          const errType = a["error.type"] ?? a["gen_ai.error.type"] ?? null;
+          ai.push({
+            span_id: aiSpanId,
+            trace_id: span.traceId ?? a["mip.trace_id"] ?? null,
+            session_id: sessionFromTraceState(span.traceState) ?? a["mip.session_id"] ?? null,
+            app_id: appId,
+            route: normalizeRouteTemplate(a["gen_ai.route"] ?? a["mip.route"]) ?? a["mip.route"] ?? null,
+            provider,
+            model,
+            operation: a["gen_ai.operation.name"] ?? null,
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: totalTokens,
+            cost_usd: billed != null ? billed : aiCostUsd(provider, model, promptTokens, completionTokens),
+            latency_ms:
+              durationMsBetween(span.startTimeUnixNano, span.endTimeUnixNano) ??
+              num(a["gen_ai.latency_ms"]),
+            ttft_ms: num(a["gen_ai.server.time_to_first_token"] ?? a["gen_ai.ttft_ms"]),
+            status: errType ? "error" : "ok",
+            error_type: errType,
             ts: nanosToDate(span.startTimeUnixNano),
           });
           continue;
@@ -434,6 +488,7 @@ export function flattenOtlp(payload, opts = {}) {
     breadcrumbs,
     events,
     spans,
+    ai,
     apiKeys,
     rejected,
   };
