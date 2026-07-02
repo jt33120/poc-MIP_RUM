@@ -140,6 +140,41 @@ export async function aiByRoute(f: Filters): Promise<AiRouteRow[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Gouvernance — agrégat par route + part reliée à une session RUM
+// ---------------------------------------------------------------------------
+
+export interface AiGovRow {
+  route: string | null;
+  calls: number;
+  cost_usd: number;
+  latency_p75: number | null;
+  error_rate: number;
+  with_session: number; // appels reliés à une session RUM
+}
+
+/** Agrégat par route pour la vue Gouvernance : coût/latence/erreurs + nombre
+ * d'appels corrélés à une session (pour lire la traçabilité au parcours). */
+export async function aiGovernance(f: Filters): Promise<AiGovRow[]> {
+  return q<AiGovRow>(
+    `select
+       route,
+       count(*)::int as calls,
+       coalesce(sum(cost_usd), 0)::float8 as cost_usd,
+       percentile_cont(0.75) within group (order by latency_ms)::float8 as latency_p75,
+       (count(*) filter (where status = 'error')::float8
+         / nullif(count(*), 0))::float8 as error_rate,
+       count(*) filter (where session_id is not null)::int as with_session
+     from rum_ai
+     where ($1 = 'all' or app_id = $1)
+       and ts > now() - $2::interval
+     group by route
+     order by count(*) desc
+     limit 50`,
+    [f.app, intervalOf(f)],
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Coût par jour (série pour la barre horizontale)
 // ---------------------------------------------------------------------------
 
