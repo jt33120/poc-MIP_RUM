@@ -13,20 +13,21 @@ const DEVICE_ITEMS = [
   { key: "mobile", label: "Mobile" },
 ];
 
-/** Filtres globaux app/période/device — état porté par les searchParams (partage d'URL). */
-export function GlobalFilters({ apps }: { apps: { app_id: string; name: string }[] }) {
+/** Filtres globaux période/appareil — état porté par les searchParams (partage
+ * d'URL). Le projet (?app) n'est plus un filtre : il se choisit en amont (/select)
+ * et se change via le bandeau latéral ; on se contente de le préserver dans l'URL. */
+export function GlobalFilters() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
 
   const current = {
-    app: sp.get("app") ?? "all",
     period: sp.get("period") ?? "24h",
     device: sp.get("device") ?? "all",
   };
 
   function set(key: string, value: string) {
-    const next = new URLSearchParams(sp.toString());
+    const next = new URLSearchParams(sp.toString()); // conserve ?app
     // défauts non sérialisés -> URLs propres
     if (value === "all" || (key === "period" && value === "24h")) next.delete(key);
     else next.set(key, value);
@@ -36,19 +37,6 @@ export function GlobalFilters({ apps }: { apps: { app_id: string; name: string }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <select
-        value={current.app}
-        onChange={(e) => set("app", e.target.value)}
-        data-testid="filter-app"
-        className="field max-w-48 py-1 pr-7"
-      >
-        <option value="all">Toutes les apps</option>
-        {apps.map((a) => (
-          <option key={a.app_id} value={a.app_id}>
-            {a.name}
-          </option>
-        ))}
-      </select>
       <Segmented
         items={PERIOD_ITEMS}
         value={current.period}

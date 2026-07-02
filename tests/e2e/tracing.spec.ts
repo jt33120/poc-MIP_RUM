@@ -94,6 +94,11 @@ async function loginConsole(page: Page) {
   await page.fill('input[name="password"]', E2E_PASSWORD);
   await page.click('button[type="submit"]');
   await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
+  // porte « projet courant » : choisir le premier projet si le picker s'affiche
+  if (new URL(page.url()).pathname === "/select") {
+    await page.getByTestId("project-card").first().click();
+    await page.waitForURL((u) => u.pathname !== "/select", { timeout: 15_000 });
+  }
 }
 
 async function pollRows(sql: string, params: unknown[], minCount: number, timeoutMs = 25_000) {
