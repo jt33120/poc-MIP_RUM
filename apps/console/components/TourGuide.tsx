@@ -47,12 +47,12 @@ const STEPS: Step[] = [
   },
   {
     icon: "gauge",
-    title: "Overview — le poste de pilotage",
+    title: "Vue d'ensemble — le poste de pilotage",
     href: "/",
     body: (
       <>
         <p>
-          L'Overview donne un <strong>score de santé /100</strong> (un bulletin unique), les{" "}
+          La vue d'ensemble donne un <strong>score de santé /100</strong> (un bulletin unique), les{" "}
           <strong>Core Web Vitals au p75</strong> (LCP, INP, CLS…), les <strong>anomalies</strong> détectées
           automatiquement et une <strong>heatmap de santé sur 14 jours</strong> (un carré par heure) pour lire
           la tenue dans la durée.
