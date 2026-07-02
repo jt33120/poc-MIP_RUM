@@ -26,7 +26,7 @@ export default async function Presentation() {
         sub={
           <>
             Monitoring de l'expérience réelle, OpenTelemetry-natif et souverain UE. Cette page présente
-            l'outil ; le poste de pilotage est sur <Link href="/" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">l'Overview</Link>.
+            l'outil ; le poste de pilotage est sur <Link href="/" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">la Vue d'ensemble</Link>.
           </>
         }
       />

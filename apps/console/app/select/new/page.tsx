@@ -1,0 +1,273 @@
+// Ajout self-service d'un site à monitorer (le « + » de /select). Plein écran,
+// sans coquille (comme /select). Deux temps : (1) formulaire minimal nom+URL ;
+// (2) après création, l'intégration en 2 méthodes — injection JS (site qu'on
+// contrôle) OU bookmarklet (n'importe quel site, pour simuler un parcours) —
+// + un guide de simulation et la checklist live. Création réservée aux admins.
+import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import Link from "next/link";
+import { CopyBlock } from "@/components/CopyBlock";
+import { ICON_PATHS, Icon } from "@/components/icons";
+import { Bookmarklet } from "@/components/onboarding/Bookmarklet";
+import { WizardBadge } from "@/components/wizard/WizardStep";
+import { getUser, popSecret } from "@/lib/auth";
+import { fmtDate } from "@/lib/format";
+import { buildSnippet, deriveStatus } from "@/lib/onboarding";
+import { getCustomer, probeOnboarding } from "@/lib/queries-customers";
+import type { SearchParams } from "@/lib/filters";
+import { selectProjectAction } from "../actions";
+import { createSiteAction } from "./actions";
+
+export const dynamic = "force-dynamic";
+
+const ERRORS: Record<string, string> = {
+  name: "Donnez un nom au site.",
+  app_id: "Identifiant invalide (minuscules, chiffres et tirets, 3–40 caractères).",
+  url: "URL du site invalide — attendez une adresse http(s) complète (ex. https://mon-site.fr).",
+  exists: "Cet identifiant est déjà pris — choisissez-en un autre.",
+};
+
+export default async function AddSite({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const user = await getUser();
+  if (!user) redirect("/login");
+  if (user.role !== "admin") redirect("/select"); // création réservée aux admins
+
+  const sp = await searchParams;
+  const appId = typeof sp.app === "string" ? sp.app : null;
+
+  return (
+    <main className="min-h-screen bg-app px-6 py-14">
+      <div className="mx-auto w-full max-w-3xl">
+        <header className="mb-8 flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-deep shadow-glow">
+            <Icon paths={ICON_PATHS.activity} className="h-5 w-5 text-white" strokeWidth={2.4} />
+          </span>
+          <div className="leading-tight">
+            <div className="text-base font-bold tracking-tight text-ink">
+              MIP <span className="text-accent">RUM</span>
+            </div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-ink-faint">Ajouter un site</div>
+          </div>
+          <Link href="/select" className="btn-ghost ml-auto">
+            ← Projets
+          </Link>
+        </header>
+
+        {appId ? <Integration appId={appId} ktToken={typeof sp.kt === "string" ? sp.kt : null} /> : (
+          <CreateForm error={typeof sp.error === "string" ? sp.error : null} />
+        )}
+      </div>
+    </main>
+  );
+}
+
+/** Étape 1 — formulaire minimal. */
+function CreateForm({ error }: { error: string | null }) {
+  return (
+    <>
+      <h1 className="text-2xl font-bold tracking-tight text-ink">Brancher un nouveau site</h1>
+      <p className="mt-1.5 text-sm text-ink-soft">
+        Donnez un nom et l&apos;adresse du site. On crée le projet et sa clé, puis on vous montre comment
+        remonter les données — en une ligne de code, ou sans toucher au code du tout.
+      </p>
+
+      {error && (
+        <div className="mt-6 rounded-lg border border-bad/30 bg-bad/10 px-4 py-2.5 text-sm text-bad">
+          {ERRORS[error] ?? "Vérifiez les champs."}
+        </div>
+      )}
+
+      <form action={createSiteAction} className="mt-6 grid gap-4">
+        <label className="text-sm font-medium text-ink-soft">
+          Nom du site
+          <input name="name" required autoFocus placeholder="Ma boutique" className="field mt-1 w-full" />
+        </label>
+        <label className="text-sm font-medium text-ink-soft">
+          URL du site
+          <input
+            name="url"
+            type="url"
+            required
+            placeholder="https://ma-boutique.fr"
+            className="field mt-1 w-full"
+          />
+          <span className="mt-1 block text-xs text-ink-faint">
+            Sert d&apos;origine autorisée (CORS). Ajoutez d&apos;autres domaines plus tard si besoin.
+          </span>
+        </label>
+        <details className="text-sm">
+          <summary className="cursor-pointer text-xs font-medium text-ink-soft">Identifiant personnalisé (optionnel)</summary>
+          <input
+            name="app_id"
+            placeholder="ma-boutique"
+            className="field mt-2 w-full font-mono"
+          />
+          <span className="mt-1 block text-xs text-ink-faint">
+            Par défaut dérivé du nom. Il apparaît dans chaque mesure — court et stable.
+          </span>
+        </details>
+        <button type="submit" className="btn-accent mt-1 w-fit px-4 py-2">
+          Créer le projet →
+        </button>
+      </form>
+    </>
+  );
+}
+
+/** Étape 2 — intégration (2 méthodes) + simulation + checklist live. */
+async function Integration({ appId, ktToken }: { appId: string; ktToken: string | null }) {
+  const customer = await getCustomer(appId);
+  if (!customer) redirect("/select/new");
+  const probe = await probeOnboarding(appId);
+  const status = deriveStatus(probe);
+  const oneTimeKey = ktToken ? popSecret(ktToken) : null;
+
+  const host = (await headers()).get("host") ?? "localhost:3000";
+  const proto = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
+  const sdkUrl = `${proto}://${host}/mip-rum.js`;
+  const endpoint =
+    process.env.NEXT_PUBLIC_RUM_ENDPOINT ??
+    "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
+
+  const snippet = buildSnippet({ sdkUrl, endpoint, appId, clientId: null, withConsent: false });
+  // Bookmarklet : injecte le SDK sur la page courante puis démarre la mesure —
+  // pour monitorer/simuler un parcours sur un site qu'on ne contrôle pas. La clé
+  // est embarquée (l'enforcement l'exige) : la vraie si on l'a encore sous la
+  // main (juste après création), sinon un placeholder à remplacer.
+  const bmKey = oneTimeKey ?? "COLLE_ICI_LA_CLE_API";
+  const bookmarklet =
+    `javascript:(function(){var s=document.createElement('script');s.src=${JSON.stringify(sdkUrl)};` +
+    `s.onload=function(){window.MIPRum&&MIPRum.init({endpoint:${JSON.stringify(endpoint)},` +
+    `appId:${JSON.stringify(appId)},clientId:'mip',env:'prod',apiKey:${JSON.stringify(bmKey)}});};` +
+    `document.head.appendChild(s);})();`;
+
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-good/15 text-good">✓</span>
+        <h1 className="text-2xl font-bold tracking-tight text-ink">{customer.name} est créé</h1>
+      </div>
+      <p className="mt-1.5 text-sm text-ink-soft">
+        Projet <code className="chip-mono">{appId}</code>. Choisissez une méthode pour faire remonter les
+        données, puis simulez un parcours.
+      </p>
+
+      {ktToken && (
+        <div className="mt-5 rounded-lg border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-ink">
+          {oneTimeKey ? (
+            <>
+              <strong>Clé d&apos;API</strong> (affichée une seule fois) :{" "}
+              <code className="rounded bg-panel px-2 py-0.5 font-mono text-ink">{oneTimeKey}</code>
+              <span className="mt-1 block text-xs text-ink-soft">
+                Déjà incluse dans le snippet ci-dessous. Notez-la pour instrumenter un backend plus tard.
+              </span>
+            </>
+          ) : (
+            <>Clé déjà affichée. Régénérez-la depuis l&apos;administration si elle est perdue.</>
+          )}
+        </div>
+      )}
+
+      {/* Méthode 1 — injection JS */}
+      <section className="card mt-6 p-5">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-perf/10 text-xs font-bold text-perf">1</span>
+          Injection JS — vous contrôlez le code du site
+        </h2>
+        <p className="mt-2 text-xs text-ink-soft">
+          Collez ces deux balises dans le <code>&lt;head&gt;</code>, avant tout autre script. Web Vitals,
+          erreurs, sessions et tracing des appels API sont ensuite automatiques.
+        </p>
+        <div className="mt-3">
+          <CopyBlock code={snippet} />
+        </div>
+      </section>
+
+      {/* Méthode 2 — bookmarklet */}
+      <section className="card mt-5 p-5">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ai/10 text-xs font-bold text-ai">2</span>
+          Bookmarklet — n&apos;importe quel site, sans toucher au code
+        </h2>
+        <p className="mt-2 text-xs text-ink-soft">
+          Idéal pour une démo ou pour <strong>simuler un parcours client</strong> sur un site que vous ne
+          contrôlez pas : glissez le bouton dans votre barre de favoris, ouvrez le site cible, cliquez le
+          favori — le SDK s&apos;injecte et la mesure démarre pour <code className="chip-mono">{appId}</code>.
+        </p>
+        <div className="mt-3">
+          <Bookmarklet code={bookmarklet} label={`Monitorer ${appId}`} />
+        </div>
+        <details className="mt-3 text-xs">
+          <summary className="cursor-pointer font-medium text-ink-soft">Voir le code / limites</summary>
+          <div className="mt-2 grid gap-2 text-ink-soft">
+            <CopyBlock code={bookmarklet} />
+            <p className="text-ink-faint">
+              Créez un favori manuellement et collez ce code comme URL si le glisser-déposer n&apos;est pas
+              possible. {!oneTimeKey && <>Remplacez <code>COLLE_ICI_LA_CLE_API</code> par la clé du projet. </>}
+              Un site à <strong>CSP stricte</strong> peut bloquer l&apos;injection : dans ce cas, utilisez la
+              méthode 1. C&apos;est une mesure <strong>temporaire</strong> (le temps de l&apos;onglet), parfaite
+              pour tester ; l&apos;injection JS est le mode permanent.
+            </p>
+          </div>
+        </details>
+      </section>
+
+      {/* Simuler un parcours */}
+      <section className="card mt-5 p-5">
+        <h2 className="text-sm font-semibold text-ink">Simuler un parcours client</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-ink-soft">
+          <li>Ouvrez le site (avec le snippet posé, ou après avoir cliqué le bookmarklet).</li>
+          <li>Naviguez comme un vrai visiteur : changez de page, cliquez, remplissez un champ, provoquez une erreur.</li>
+          <li>Laissez ~5 s : les mesures partent en continu (et au départ de l&apos;onglet).</li>
+          <li>Revenez ici — la checklist ci-dessous passe au vert, puis les données s&apos;affichent dans la console.</li>
+        </ol>
+      </section>
+
+      {/* Checklist live */}
+      <section className="card mt-5 p-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink">Les données arrivent-elles ?</h2>
+          <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${status.live ? "bg-good/15 text-good" : "bg-warn/15 text-warn"}`}>
+            {status.live ? "● live" : "en attente"}
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-ink-faint">Rafraîchissement automatique — gardez cet onglet ouvert.</p>
+        <div className="mt-3 grid gap-2">
+          <CheckRow label="Premières Web Vitals reçues" state={status.snippet}>
+            {probe.first_metric_at ? fmtDate(probe.first_metric_at) : "en attente"}
+          </CheckRow>
+          <CheckRow label="Session sur les dernières 24 h" state={status.traffic}>
+            {probe.sessions_24h || "aucune"}
+          </CheckRow>
+          <CheckRow label="Appels API tracés (spans front)" state={status.tracingFront}>
+            {probe.first_front_span_at ? fmtDate(probe.first_front_span_at) : "en attente"}
+          </CheckRow>
+        </div>
+      </section>
+
+      <form action={selectProjectAction} className="mt-6">
+        <input type="hidden" name="app" value={appId} />
+        <button type="submit" className="btn-accent px-4 py-2" data-testid="supervise-project">
+          Superviser ce projet →
+        </button>
+      </form>
+    </>
+  );
+}
+
+function CheckRow({
+  label,
+  state,
+  children,
+}: {
+  label: string;
+  state: "done" | "waiting";
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-line bg-panel2 px-3 py-2">
+      <span className="text-sm text-ink">{label}</span>
+      <WizardBadge state={state}>{children}</WizardBadge>
+    </div>
+  );
+}

@@ -96,7 +96,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // /select : étape de choix du projet -> rendu plein écran, sans la coquille
   // (sidebar/header) qui suppose un projet déjà sélectionné.
   const pathname = (await headers()).get("x-pathname") ?? "";
-  if (pathname === "/select") {
+  if (pathname === "/select" || pathname.startsWith("/select/")) {
     return (
       <html lang="fr" suppressHydrationWarning>
         <head>
