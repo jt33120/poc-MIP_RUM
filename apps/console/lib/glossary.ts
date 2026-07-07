@@ -197,6 +197,22 @@ export const GLOSSARY = {
     business:
       "On mesure le vrai ressenti des clients sur le site live, pas une simulation. C'est la donnée qui compte pour le chiffre d'affaires : un site rapide convertit mieux.",
   },
+  experience: {
+    label: "Score d'expérience",
+    term: "Note /100 combinant la qualité perçue (Core Web Vitals), les signaux de frustration et la satisfaction déclarée (CSAT).",
+    stack:
+      "Calculé côté console : rating des vitals (p75) × pénalité frustration (rage/dead clicks) × CSAT issu des feedbacks (rum_event name='feedback'). Fonction pure, testée.",
+    business:
+      "Une seule note qui marie le mesuré (vitesse, bugs) et le ressenti (ce que l'utilisateur dit). Le chaînon qui manque à un RUM classique : le pont entre chiffres et satisfaction.",
+  },
+  csat: {
+    label: "CSAT — satisfaction déclarée",
+    term: "Part de retours positifs (note ≥ 4/5, ou 👍) sur l'ensemble des feedbacks collectés sur la période.",
+    stack:
+      "Feedbacks émis par le widget via MIPRum.track('feedback', {score, comment}), ingérés en rum_event (commentaire scrubbé PII), agrégés côté console.",
+    business:
+      "Ce que les utilisateurs pensent vraiment, en direct, relié à leur parcours et à la performance qu'ils ont subie. On voit si une lenteur se paie en insatisfaction.",
+  },
 } as const satisfies Record<string, GlossaryEntry>;
 
 export type GlossaryId = keyof typeof GLOSSARY;

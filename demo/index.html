@@ -44,6 +44,7 @@
     <button id="btn-slow-res">Ressource lente</button>
     <button id="btn-longtask">Long task</button>
     <button id="btn-track">Événement métier</button>
+    <button id="btn-feedback">Donner un avis (feedback)</button>
     <button id="btn-api-fetch">Appel API (fetch)</button>
     <button id="btn-api-xhr">Appel API (XHR/axios)</button>
   </div>
@@ -104,6 +105,12 @@
     document.getElementById("btn-track").addEventListener("click", () => {
       MIPRum.track("partner_search", { results: 12 });
       render("événement partner_search envoyé");
+    });
+    // Expérience utilisateur (agent DEM web) : feedback via le canal track ->
+    // rum_event(name='feedback'). Même chose que le widget mip-rum-feedback.js.
+    document.getElementById("btn-feedback").addEventListener("click", () => {
+      MIPRum.track("feedback", { score: 4, comment: "Rapide mais le menu prête à confusion", route: location.pathname });
+      render("feedback envoyé (4/5)");
     });
     // v0.4 — tracing distribué : fetch instrumenté (traceparent -> backend :8001)
     document.getElementById("btn-api-fetch").addEventListener("click", () => {
