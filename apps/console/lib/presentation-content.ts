@@ -98,4 +98,18 @@ export const STATS: { id: GlossaryId; href: string; icon: IconName; label: strin
     label: "Performance IA",
     desc: "Appels LLM (tokens, coût, latence, erreurs) + gouvernance des données : ce qui expose de la PII, pseudonymisé ou non.",
   },
+  {
+    id: "experience",
+    href: "/experience",
+    icon: "users",
+    label: "Expérience utilisateur",
+    desc: "Le ressenti (feedbacks + CSAT) marié à la perf mesurée : un score d'expérience, le pont chiffres ↔ satisfaction.",
+  },
+  {
+    id: "experienceMap",
+    href: "/map",
+    icon: "trace",
+    label: "Carte d'expérience",
+    desc: "Le graphe pages → API → backend, coloré par santé et pondéré par le volume : cartographie, flux et anticipation.",
+  },
 ];
