@@ -213,6 +213,14 @@ export const GLOSSARY = {
     business:
       "Ce que les utilisateurs pensent vraiment, en direct, relié à leur parcours et à la performance qu'ils ont subie. On voit si une lenteur se paie en insatisfaction.",
   },
+  forecast: {
+    label: "Prévisions (AIOps)",
+    term: "Projection linéaire (moindres carrés) des indicateurs sur 14 jours ; ETA au franchissement de seuil (LCP 2,5 s, taux d'erreur 2 %).",
+    stack:
+      "lib/forecast (pur) sur les séries journalières (rum_metric/rum_pageview/rum_error). Régression transparente — aucune boîte noire ; complète les anomalies z-score (réactives) par de l'anticipation.",
+    business:
+      "On ne se contente plus de réagir : on voit ce qui dérive et QUAND ça franchira le seuil. Le passage du curatif au prédictif — arbitrer avant que l'utilisateur ne subisse.",
+  },
   experienceMap: {
     label: "Carte d'expérience",
     term: "Graphe de service front→back : pages → API appelées → routes backend, arêtes pondérées par le volume, nœuds colorés par santé et annotés d'une tendance.",

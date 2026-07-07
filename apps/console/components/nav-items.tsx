@@ -48,6 +48,7 @@ export const CATEGORIES: NavCategory[] = [
     children: [
       { href: "/slo", label: "SLO" },
       { href: "/alerts", label: "Alertes" },
+      { href: "/forecast", label: "Prévisions" },
       { href: "/dashboards", label: "Tableaux de bord" },
     ],
   },
