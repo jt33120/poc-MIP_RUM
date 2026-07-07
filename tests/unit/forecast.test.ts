@@ -1,6 +1,12 @@
 // AIOps — prévision (régression linéaire). Logique pure.
 import { describe, expect, it } from "vitest";
-import { etaToThreshold, forecastNext, linfit, trendDir } from "../../apps/console/lib/forecast";
+import {
+  buildForecastNarrative,
+  etaToThreshold,
+  forecastNext,
+  linfit,
+  trendDir,
+} from "../../apps/console/lib/forecast";
 
 describe("linfit", () => {
   it("ajuste une droite parfaite y = 2x + 1", () => {
@@ -47,5 +53,23 @@ describe("trendDir", () => {
     expect(trendDir(linfit([1, 3, 5])!, 3)).toBe("up");
     expect(trendDir(linfit([5, 3, 1])!, 3)).toBe("down");
     expect(trendDir(linfit([5, 5, 5])!, 5)).toBe("flat");
+  });
+});
+
+describe("buildForecastNarrative", () => {
+  it("risk si un seuil est déjà dépassé", () => {
+    const n = buildForecastNarrative([{ label: "LCP p75", thresholdLabel: "2,5 s", eta: 0 }]);
+    expect(n.status).toBe("risk");
+    expect(n.lines[0]).toContain("dépasse déjà");
+  });
+  it("watch si franchissement à venir sous 7 j", () => {
+    const n = buildForecastNarrative([{ label: "Taux d'erreur", thresholdLabel: "2 %", eta: 2.3 }]);
+    expect(n.status).toBe("watch");
+    expect(n.lines[0]).toContain("J+3");
+  });
+  it("ok si rien à l'horizon", () => {
+    const n = buildForecastNarrative([{ label: "LCP p75", thresholdLabel: "2,5 s", eta: null }]);
+    expect(n.status).toBe("ok");
+    expect(n.lines[0]).toContain("Aucun indicateur");
   });
 });

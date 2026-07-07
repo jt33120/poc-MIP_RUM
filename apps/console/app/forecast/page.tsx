@@ -6,6 +6,7 @@ import { fmtLatency } from "@/components/ai/format";
 import { PageHeader } from "@/components/PageHeader";
 import { parseFilters, type SearchParams } from "@/lib/filters";
 import {
+  buildForecastNarrative,
   etaToThreshold,
   forecastNext,
   linfit,
@@ -76,6 +77,24 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
 
   const hasData = traffic.some((t) => t.pageviews > 0) || lcp.length > 0;
 
+  // Synthèse déterministe : ETA au seuil des métriques bornées.
+  const narrative = buildForecastNarrative(
+    metrics
+      .filter((m) => m.threshold != null)
+      .map((m) => {
+        const fit = linfit(m.values);
+        const current = [...m.values].reverse().find((v) => v != null) ?? null;
+        const eta = fit && current != null ? etaToThreshold(fit, current, m.threshold!, m.higherIsWorse) : null;
+        return { label: m.label, thresholdLabel: m.thresholdLabel, eta };
+      }),
+  );
+  const NARR_STYLE = {
+    risk: "border-bad/30 bg-bad/10",
+    watch: "border-warn/30 bg-warn/10",
+    ok: "border-good/30 bg-good/10",
+  } as const;
+  const NARR_DOT = { risk: "bg-bad", watch: "bg-warn", ok: "bg-good" } as const;
+
   return (
     <div className="animate-fade-up">
       <PageHeader
@@ -94,11 +113,26 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
           Pas assez d&apos;historique sur 14 jours — les prévisions apparaissent au fil des mesures.
         </div>
       ) : (
+        <>
+        {/* Synthèse (narration déterministe) */}
+        <div className={`mb-6 rounded-xl border px-4 py-3 ${NARR_STYLE[narrative.status]}`}>
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+            <span className={`h-1.5 w-1.5 rounded-full ${NARR_DOT[narrative.status]}`} />
+            Synthèse — {narrative.status === "risk" ? "action requise" : narrative.status === "watch" ? "à surveiller" : "stable"}
+          </div>
+          <ul className="mt-1.5 space-y-0.5 text-sm text-ink">
+            {narrative.lines.map((l, i) => (
+              <li key={i}>{l}</li>
+            ))}
+          </ul>
+        </div>
+
         <div className="grid gap-4 lg:grid-cols-3">
           {metrics.map((m) => (
             <MetricCard key={m.key} m={m} />
           ))}
         </div>
+        </>
       )}
 
       {hasData && (

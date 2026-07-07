@@ -58,6 +58,31 @@ export function etaToThreshold(
   return Number.isFinite(steps) && steps > 0 ? steps : null;
 }
 
+// --- Narration AIOps (déterministe, sans LLM) --------------------------------
+
+export interface NarrativeInput {
+  label: string;
+  thresholdLabel: string;
+  /** Sortie d'etaToThreshold : 0 = déjà dépassé, >0 = pas avant franchissement, null = ok. */
+  eta: number | null;
+}
+export interface Narrative {
+  status: "risk" | "watch" | "ok";
+  lines: string[];
+}
+
+/** Résume en clair quels indicateurs vont franchir leur seuil et quand. Purement
+ * dérivé des projections — explicable, jamais une boîte noire. */
+export function buildForecastNarrative(items: NarrativeInput[]): Narrative {
+  const breached = items.filter((i) => i.eta === 0);
+  const soon = items.filter((i) => i.eta != null && i.eta > 0 && i.eta <= 7);
+  const lines: string[] = [];
+  for (const i of breached) lines.push(`${i.label} dépasse déjà son seuil (${i.thresholdLabel}).`);
+  for (const i of soon) lines.push(`${i.label} devrait franchir ${i.thresholdLabel} vers J+${Math.ceil(i.eta as number)}.`);
+  if (!lines.length) lines.push("Aucun indicateur ne devrait franchir son seuil sur l'horizon de 3 jours.");
+  return { status: breached.length ? "risk" : soon.length ? "watch" : "ok", lines };
+}
+
 export type TrendDir = "up" | "down" | "flat";
 
 /** Sens de la tendance, relatif à l'échelle de la mesure (pente/magnitude). */
