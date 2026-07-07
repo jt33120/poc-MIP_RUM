@@ -112,4 +112,11 @@ export const STATS: { id: GlossaryId; href: string; icon: IconName; label: strin
     label: "Carte d'expérience",
     desc: "Le graphe pages → API → backend, coloré par santé et pondéré par le volume : cartographie, flux et anticipation.",
   },
+  {
+    id: "forecast",
+    href: "/forecast",
+    icon: "target",
+    label: "Prévisions (AIOps)",
+    desc: "Projette la dérive des indicateurs sur 14 j et l'ETA au franchissement de seuil : du réactif au prédictif.",
+  },
 ];
