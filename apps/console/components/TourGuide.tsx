@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ICON_PATHS, Icon, type IconName } from "./icons";
 
-const SEEN_KEY = "mip-tour-seen-v2";
+const SEEN_KEY = "mip-tour-seen-v3";
 
 interface Step {
   icon: IconName;
@@ -164,6 +164,30 @@ const STEPS: Step[] = [
           repérer d'un coup d'œil ce qui expose de la donnée personnelle.
         </p>
       </>
+    ),
+  },
+  {
+    icon: "users",
+    title: "Expérience utilisateur",
+    href: "/experience",
+    body: (
+      <p>
+        Le <strong>ressenti</strong> des visiteurs (feedbacks + CSAT) marié à la performance qu&apos;ils ont
+        subie, en un <strong>score d&apos;expérience</strong>. C&apos;est le pont chiffres ↔ satisfaction —
+        ce qu&apos;un RUM classique ne montre pas.
+      </p>
+    ),
+  },
+  {
+    icon: "trace",
+    title: "Carte d'expérience",
+    href: "/map",
+    body: (
+      <p>
+        Le <strong>graphe de service</strong> vu du navigateur : pages → API → backend, <strong>coloré par
+        santé</strong> et <strong>pondéré par le volume</strong>, avec les routes qui montent en charge. La
+        version « expérience » d&apos;une weather map réseau : cartographie, flux et anticipation.
+      </p>
     ),
   },
   {

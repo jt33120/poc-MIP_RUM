@@ -213,6 +213,14 @@ export const GLOSSARY = {
     business:
       "Ce que les utilisateurs pensent vraiment, en direct, relié à leur parcours et à la performance qu'ils ont subie. On voit si une lenteur se paie en insatisfaction.",
   },
+  experienceMap: {
+    label: "Carte d'expérience",
+    term: "Graphe de service front→back : pages → API appelées → routes backend, arêtes pondérées par le volume, nœuds colorés par santé et annotés d'une tendance.",
+    stack:
+      "Construite depuis rum_span (spans front/back corrélés par trace_id) et rum_metric ; santé = latence p75 + taux d'erreur, tendance = moitié récente vs ancienne de la fenêtre. Rendu SVG maison, aucune dépendance graphe.",
+    business:
+      "La version « expérience » d'une weather map réseau : on voit d'un coup d'œil quelles briques du parcours sont sollicitées, lesquelles souffrent, et lesquelles montent en charge — cartographie, flux et anticipation réunis.",
+  },
 } as const satisfies Record<string, GlossaryEntry>;
 
 export type GlossaryId = keyof typeof GLOSSARY;
