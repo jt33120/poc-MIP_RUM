@@ -222,6 +222,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <>
             <script src="/mip-rum.js" />
             <script dangerouslySetInnerHTML={{ __html: RUM_INIT }} />
+            {/* dogfooding : la console collecte son propre ressenti (widget feedback
+                -> track 'feedback' -> rum_event, app mip-rum-console) pour peupler
+                sa page Expérience. Chargé après l'init RUM. */}
+            <script src="/mip-rum-feedback.js" defer />
           </>
         )}
       </body>
