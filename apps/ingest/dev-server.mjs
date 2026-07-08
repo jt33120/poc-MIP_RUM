@@ -137,7 +137,7 @@ async function writeRows({
     await batchInsert(
       client,
       "rum_session",
-      ["session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type", "geo_country", "started_at", "last_seen_at", "page_count"],
+      ["session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type", "geo_country", "is_bot", "started_at", "last_seen_at", "page_count"],
       sessions.map((s) => ({ ...s, started_at: s.last_seen_at, page_count: 0 })),
       `on conflict (session_id) do update
          set last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at),

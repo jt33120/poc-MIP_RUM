@@ -122,6 +122,7 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
       "client_id": "acme",
       "device_type": "desktop",
       "geo_country": "FR",
+      "is_bot": false,
       "last_seen_at": 2025-10-09T08:53:27.000Z,
       "page_count_inc": 1,
       "session_id": "sess-1",

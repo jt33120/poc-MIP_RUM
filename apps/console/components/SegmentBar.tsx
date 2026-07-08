@@ -47,6 +47,7 @@ export function SegmentBar() {
   const pathname = usePathname();
   const sp = useSearchParams();
   const conds = parseSegment(sp.get("seg"));
+  const includeBots = sp.get("bots") === "1";
 
   const [adding, setAdding] = useState(false);
   const [dim, setDim] = useState(DIMS[0].key);
@@ -85,6 +86,14 @@ export function SegmentBar() {
     } catch {
       /* quota/privé : on garde l'état en mémoire */
     }
+  }
+
+  function toggleBots() {
+    const params = new URLSearchParams(sp.toString());
+    if (includeBots) params.delete("bots");
+    else params.set("bots", "1");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
   }
 
   function saveCurrent() {
@@ -189,6 +198,22 @@ export function SegmentBar() {
       )}
 
       <div className="ml-auto flex items-center gap-1.5">
+        <button
+          onClick={toggleBots}
+          className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition ${
+            includeBots
+              ? "border-warn/40 bg-warn/10 text-warn"
+              : "border-line text-ink-faint hover:text-ink-soft"
+          }`}
+          title={
+            includeBots
+              ? "Le trafic non humain (headless, moniteurs, crawlers) est inclus"
+              : "Le trafic non humain est exclu des mesures (Real User)"
+          }
+          data-testid="segment-bots-toggle"
+        >
+          {includeBots ? "🤖 Bots inclus" : "🤖 Bots exclus"}
+        </button>
         {conds.length > 0 && (
           <>
             <button
