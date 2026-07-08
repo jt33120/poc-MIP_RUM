@@ -27,7 +27,8 @@ function segmentApplies(pathname: string): boolean {
     pathname === "/" ||
     pathname.startsWith("/pages") ||
     pathname.startsWith("/sessions") ||
-    pathname.startsWith("/paths")
+    pathname.startsWith("/paths") ||
+    pathname.startsWith("/forms")
   );
 }
 
