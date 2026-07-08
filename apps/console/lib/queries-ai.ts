@@ -244,3 +244,60 @@ export async function recentAiCalls(f: Filters, limit = 50): Promise<AiCallRow[]
     [f.app, intervalOf(f), limit],
   );
 }
+
+// ---------------------------------------------------------------------------
+// Coût par utilisateur (UTI-B) — join rum_ai.session_id -> rum_session.user_hash
+// ---------------------------------------------------------------------------
+
+export interface AiUserCostRow {
+  user_hash: string;
+  calls: number;
+  cost_usd: number;
+  total_tokens: number;
+  error_rate: number;
+  last_ts: string;
+}
+
+/** Coût IA agrégé par utilisateur (user_hash anonymisé), trié par coût décroissant. */
+export async function aiCostByUser(f: Filters, limit = 100): Promise<AiUserCostRow[]> {
+  return q<AiUserCostRow>(
+    `select
+       s.user_hash,
+       count(*)::int as calls,
+       coalesce(sum(a.cost_usd), 0)::float8 as cost_usd,
+       coalesce(sum(a.total_tokens), 0)::int as total_tokens,
+       (count(*) filter (where a.status = 'error')::float8
+         / nullif(count(*), 0))::float8 as error_rate,
+       max(a.ts) as last_ts
+     from rum_ai a
+     join rum_session s on s.session_id = a.session_id
+     where ($1 = 'all' or a.app_id = $1)
+       and a.ts > now() - $2::interval
+       and s.user_hash is not null
+     group by s.user_hash
+     order by coalesce(sum(a.cost_usd), 0) desc
+     limit $3`,
+    [f.app, intervalOf(f), limit],
+  );
+}
+
+export interface AiUnattributedCost {
+  calls: number;
+  cost_usd: number;
+}
+
+/** Coût IA non rattachable (appel sans session, ou session sans user_hash). */
+export async function aiCostUnattributed(f: Filters): Promise<AiUnattributedCost> {
+  const [r] = await q<AiUnattributedCost>(
+    `select
+       count(*)::int as calls,
+       coalesce(sum(a.cost_usd), 0)::float8 as cost_usd
+     from rum_ai a
+     left join rum_session s on s.session_id = a.session_id
+     where ($1 = 'all' or a.app_id = $1)
+       and a.ts > now() - $2::interval
+       and (a.session_id is null or s.user_hash is null)`,
+    [f.app, intervalOf(f)],
+  );
+  return { calls: r?.calls ?? 0, cost_usd: r?.cost_usd ?? 0 };
+}

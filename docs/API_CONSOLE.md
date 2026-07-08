@@ -134,6 +134,13 @@ par route, en série journalière, plus les **derniers appels** (dont les **éch
 d'appareil : seuls `app` et `period` s'appliquent (`device` ignoré). `?recent=N` borne les
 derniers appels (0..200, défaut 50 ; `0` = aucun). Sources : `lib/queries-ai.ts`.
 
+### `GET /api/v1/ai/costs` — coût IA par dimension
+`data = { group_by, rows, unattributed? }`. `?group_by=user` (défaut) agrège le coût **par
+utilisateur** (`user_hash` anonymisé, join `rum_ai.session_id → rum_session.user_hash`) et
+ajoute `unattributed` (appels sans session ou sans `user_hash`) ; `?group_by=model|route`
+réutilise les agrégats correspondants. `?limit=1..500` (défaut 100) pour `group_by=user`.
+La dimension est validée par allowlist (`lib/ai-costs.ts`) — anti-injection.
+
 ---
 
 ## Exemple de client (Angular / fetch)
