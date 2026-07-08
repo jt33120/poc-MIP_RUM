@@ -2,14 +2,17 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { browserFromUA, fmtDate } from "@/lib/format";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
-import { listSessions } from "@/lib/queries";
+import { listSessions, visitStats } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
 export default async function Sessions({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const f = parseFilters(sp);
-  const rows = await listSessions(f);
+  const [rows, vs] = await Promise.all([listSessions(f), visitStats(f)]);
+  const reprises = Math.max(vs.visits - vs.sessions, 0);
+  const identified = vs.new_count + vs.returning_count;
+  const returningPct = identified ? Math.round((vs.returning_count / identified) * 100) : 0;
   const qs = new URLSearchParams(
     Object.entries(sp).flatMap(([k, v]) => (typeof v === "string" ? [[k, v] as [string, string]] : [])),
   ).toString();
@@ -25,6 +28,24 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
           </>
         }
       />
+
+      {/* Lot 4 : visites (découpage sur inactivité 30 min) + récurrence, dérivées
+          au requêtage — corrige les métriques par session. */}
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Kpi label="Sessions actives" value={vs.sessions.toLocaleString("fr-FR")} hint="≥ 1 page vue" />
+        <Kpi
+          label="Visites"
+          value={vs.visits.toLocaleString("fr-FR")}
+          hint={reprises > 0 ? `dont ${reprises.toLocaleString("fr-FR")} reprise(s) après 30 min` : "aucune reprise"}
+        />
+        <Kpi label="Nouveaux" value={vs.new_count.toLocaleString("fr-FR")} hint="1re activité observée" />
+        <Kpi
+          label="Revenants"
+          value={vs.returning_count.toLocaleString("fr-FR")}
+          hint={identified ? `${returningPct} % des utilisateurs identifiés` : "—"}
+        />
+      </div>
+
       <div className="flex flex-col gap-3">
         {rows.map((s) => (
           <div key={s.session_id} className="card p-4 transition hover:shadow-pop">
@@ -75,5 +96,15 @@ function Badge({ children }: { children: React.ReactNode }) {
     <span className="rounded-full border border-line bg-panel2 px-2 py-0.5 text-xs text-ink-soft">
       {children}
     </span>
+  );
+}
+
+function Kpi({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="card p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
+      <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-ink">{value}</div>
+      <div className="mt-0.5 text-[11px] text-ink-faint">{hint}</div>
+    </div>
   );
 }
