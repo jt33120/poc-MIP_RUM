@@ -192,6 +192,7 @@ Deno.serve(async (req) => {
           p_geo_country: s.geo_country ?? country,
           p_last_seen_at: s.last_seen_at,
           p_page_count_inc: s.page_count_inc,
+          p_is_bot: s.is_bot ?? false,
         });
         if (error) throw error;
       }, { onRetry });

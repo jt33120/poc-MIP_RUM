@@ -12,6 +12,7 @@ create table if not exists rum_session (
   user_agent    text,
   device_type   text,                   -- mobile/desktop/tablet
   geo_country   text,
+  is_bot        boolean not null default false, -- Lot 2 : trafic non humain (exclu par défaut côté console)
   started_at    timestamptz not null default now(),
   last_seen_at  timestamptz not null default now(),
   page_count    int not null default 0
@@ -76,18 +77,21 @@ create table if not exists syn_snapshot (
 
 -- Upsert session avec incrément de page_count (utilisé par l'edge function via RPC ;
 -- le dev-server local fait l'équivalent en SQL direct)
+-- NB : page_count est ensuite DÉRIVÉ (migration-v07) et le paramètre p_is_bot
+-- ajouté (migration-v23) ; ce baseline reste cohérent, les migrations affinent.
 create or replace function upsert_rum_session(
   p_session_id text, p_app_id text, p_client_id text, p_user_hash text,
   p_user_agent text, p_device_type text, p_geo_country text,
-  p_last_seen_at timestamptz, p_page_count_inc int
+  p_last_seen_at timestamptz, p_page_count_inc int, p_is_bot boolean default false
 ) returns void language sql as $$
-  insert into rum_session (session_id, app_id, client_id, user_hash, user_agent, device_type, geo_country, started_at, last_seen_at, page_count)
-  values (p_session_id, p_app_id, p_client_id, p_user_hash, p_user_agent, p_device_type, p_geo_country, p_last_seen_at, p_last_seen_at, p_page_count_inc)
+  insert into rum_session (session_id, app_id, client_id, user_hash, user_agent, device_type, geo_country, is_bot, started_at, last_seen_at, page_count)
+  values (p_session_id, p_app_id, p_client_id, p_user_hash, p_user_agent, p_device_type, p_geo_country, p_is_bot, p_last_seen_at, p_last_seen_at, p_page_count_inc)
   on conflict (session_id) do update
     set last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at),
         page_count   = rum_session.page_count + p_page_count_inc,
         user_agent   = coalesce(rum_session.user_agent, excluded.user_agent),
-        geo_country  = coalesce(rum_session.geo_country, excluded.geo_country);
+        geo_country  = coalesce(rum_session.geo_country, excluded.geo_country),
+        is_bot       = rum_session.is_bot or excluded.is_bot;
 $$;
 
 -- Vue de corrélation : robot (synthétique) vs réel (RUM), par app/route/heure.

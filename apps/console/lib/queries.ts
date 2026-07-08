@@ -5,6 +5,12 @@ import { q } from "./db";
 import { type Filters, PERIODS } from "./filters";
 import { buildSegment } from "./segments";
 
+// Lot 2 : exclut le trafic non humain (rum_session.is_bot) par défaut. `alias`
+// est constant côté code (jamais une entrée utilisateur). `includeBots` lève le
+// filtre. Composé avec le segment sur les mêmes alias (s / ps / ls).
+const botClause = (f: Filters, alias: string): string =>
+  f.includeBots ? "" : ` and not coalesce(${alias}.is_bot, false)`;
+
 export interface AppItem {
   app_id: string;
   name: string;
@@ -51,7 +57,7 @@ export async function vitalsP75(f: Filters, shift = false): Promise<VitalAgg[]> 
      left join rum_session s using (session_id)
      where ${window}
        and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
      group by m.name`,
     [f.app, f.device, ...seg.params],
   );
@@ -75,17 +81,17 @@ export async function overviewStats(f: Filters, shift = false): Promise<Overview
        (select count(*)::int from rum_session s
          where ${win("s.last_seen_at")}
            and ($1::text is null or s.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${seg.where("s")}) as sessions,
+           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}) as sessions,
        (select count(*)::int from rum_error e
          left join rum_session s using (session_id)
          where ${win("e.ts")}
            and ($1::text is null or e.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${seg.where("s")}) as errors,
+           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}) as errors,
        (select count(*)::int from rum_pageview p
          left join rum_session s using (session_id)
          where ${win("p.started_at")}
            and ($1::text is null or p.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${seg.where("s")}) as pageviews`,
+           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}) as pageviews`,
     [f.app, f.device, ...seg.params],
   );
   return row;
@@ -107,7 +113,7 @@ export async function vitalSeries(f: Filters, name: string): Promise<SeriesRow[]
      left join rum_session s using (session_id)
      where m.name = $3 and m.ts > now() - interval '${interval}'
        and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
      group by 1 order by 1`,
     [f.app, f.device, name, ...seg.params],
   );
@@ -131,7 +137,7 @@ export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
               left join rum_session ps using (session_id)
               where p.route = m.route and p.started_at > now() - interval '${itv}'
                 and ($1::text is null or p.app_id = $1)
-                and ($2::text is null or ps.device_type = $2)${seg.where("ps")}) as views,
+                and ($2::text is null or ps.device_type = $2)${seg.where("ps")}${botClause(f, "ps")}) as views,
             percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'LCP') as lcp_p75,
             percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'INP') as inp_p75,
             percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'CLS') as cls_p75,
@@ -139,12 +145,12 @@ export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
               left join rum_session ls using (session_id)
               where l.route = m.route and l.ts > now() - interval '${itv}'
                 and ($1::text is null or l.app_id = $1)
-                and ($2::text is null or ls.device_type = $2)${seg.where("ls")}) as longtasks
+                and ($2::text is null or ls.device_type = $2)${seg.where("ls")}${botClause(f, "ls")}) as longtasks
      from rum_metric m
      left join rum_session s using (session_id)
      where m.ts > now() - interval '${itv}' and m.route is not null
        and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
      group by m.route
      order by lcp_p75 desc nulls last`,
     [f.app, f.device, ...seg.params],
@@ -221,7 +227,7 @@ export async function listSessions(
      ) e on true
      where s.last_seen_at > now() - interval '${itv}'
        and ($1::text is null or s.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
      order by s.last_seen_at desc
      limit $3 offset $4`,
     [f.app, f.device, limit, offset, ...seg.params],

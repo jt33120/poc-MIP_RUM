@@ -6,6 +6,9 @@ import { tzToCountry } from "./tz-country.mjs";
 import { scrubProps, scrubText, scrubUrl } from "./scrub.mjs";
 // v0.8 : coût LLM estimé à l'ingestion (usage & performance IA -> rum_ai).
 import { aiCostUsd } from "./ai-pricing.mjs";
+// Lot 2 : détection de trafic non humain (headless/monitoring/crawlers JS) ->
+// sessions[].is_bot, exclu par défaut des agrégats console.
+import { isBot } from "./bots.mjs";
 
 // Seuils 2026 (PLAN annexe B) — bornes [good, needs-improvement]
 const THRESHOLDS = {
@@ -342,6 +345,10 @@ export function flattenOtlp(payload, opts = {}) {
           user_agent: res["mip.user_agent"] ?? null,
           device_type: a["mip.device_type"] ?? null,
           geo_country: null,
+          // Lot 2 : classifié à la 1re vue de la session (UA + éventuel signal
+          // webdriver du SDK). Flag, pas drop : la donnée reste, mais exclue par
+          // défaut des agrégats console.
+          is_bot: isBot(res["mip.user_agent"], res["mip.webdriver"] ?? a["mip.webdriver"]),
           last_seen_at: ts,
           page_count_inc: 0,
         };
