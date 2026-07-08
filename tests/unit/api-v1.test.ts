@@ -93,7 +93,7 @@ describe("parseApiFilters — normalisation + scoping RBAC", () => {
     const f = parseApiFilters(sp(""), ADMIN);
     expect(f.app).toBeNull();
     expect(f.period).toBe("24h");
-    expect(f.legacy).toEqual({ app: null, period: "24h", device: null });
+    expect(f.legacy).toEqual({ app: null, period: "24h", device: null, segment: [] });
     expect(f.v2).toEqual({ app: "all", period: "24h", device: "all" });
   });
 
