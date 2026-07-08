@@ -17,20 +17,50 @@ export interface ApiPrincipal {
   subject: string; // identité (email connecté ou "api-token")
 }
 
-function configuredTokens(): string[] {
-  return (process.env.CONSOLE_API_TOKENS ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+/** Un jeton machine + son périmètre d'apps (null = toutes). */
+export interface TokenConfig {
+  token: string;
+  apps: string[] | null;
 }
 
-/** Comparaison à temps constant (évite les attaques par chronométrage sur le secret). */
-function tokenMatches(provided: string): boolean {
+/**
+ * Parse CONSOLE_API_TOKENS. Entrées séparées par des virgules. Deux formes :
+ *   - `token`            -> accès toutes apps (rétro-compatible) ;
+ *   - `token@app1;app2`  -> accès SCOPÉ à ces apps (comme un viewer scopé).
+ * Un partenaire (ex. UTI) reçoit ainsi un jeton qui ne voit que son app.
+ * Fonction PURE (testée, réutilisée par l'auth).
+ */
+export function parseTokenConfig(raw: string | undefined): TokenConfig[] {
+  return (raw ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const at = entry.indexOf("@");
+      if (at === -1) return { token: entry, apps: null };
+      const token = entry.slice(0, at).trim();
+      const apps = entry
+        .slice(at + 1)
+        .split(";")
+        .map((a) => a.trim())
+        .filter(Boolean);
+      return { token, apps: apps.length ? apps : null };
+    })
+    .filter((c) => c.token);
+}
+
+/**
+ * Jeton correspondant (comparaison à temps constant sur la partie secrète), ou null.
+ * On parcourt TOUTES les entrées pour ne pas fuiter par chronométrage laquelle a matché.
+ */
+function matchToken(provided: string): TokenConfig | null {
   const pb = Buffer.from(provided);
-  return configuredTokens().some((t) => {
-    const tb = Buffer.from(t);
-    return tb.length === pb.length && timingSafeEqual(tb, pb);
-  });
+  let match: TokenConfig | null = null;
+  for (const c of parseTokenConfig(process.env.CONSOLE_API_TOKENS)) {
+    const tb = Buffer.from(c.token);
+    if (tb.length === pb.length && timingSafeEqual(tb, pb)) match = c;
+  }
+  return match;
 }
 
 /**
@@ -45,8 +75,14 @@ export async function authenticateApi(
   const bearer = authorization?.match(/^Bearer\s+(.+)$/i);
   if (bearer) {
     const tok = bearer[1].trim();
-    if (tok && tokenMatches(tok))
-      return { kind: "token", role: "viewer", apps: null, subject: "api-token" };
+    const cfg = tok ? matchToken(tok) : null;
+    if (cfg)
+      return {
+        kind: "token",
+        role: "viewer",
+        apps: cfg.apps,
+        subject: cfg.apps ? `api-token:${cfg.apps.join("|")}` : "api-token",
+      };
     return null;
   }
   if (cookieToken) {

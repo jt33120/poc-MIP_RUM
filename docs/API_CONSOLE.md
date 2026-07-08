@@ -19,8 +19,12 @@ Deux modes (le handler tranche, le middleware ne redirige pas `/api/v1`) :
 
 1. **Jeton machine** — en-tête `Authorization: Bearer <token>`. Le jeton doit figurer
    dans la variable d'environnement **`CONSOLE_API_TOKENS`** (liste séparée par des
-   virgules, comparaison à temps constant). Accès **lecture seule, toutes apps**.
+   virgules, comparaison à temps constant). Accès **lecture seule**.
    👉 mode recommandé pour le **back Angular MIP** (appel serveur-à-serveur).
+   - `token` → **toutes apps** (réservé à MIP).
+   - `token@app1;app2` → jeton **scopé** à ces apps (comme un viewer scopé) : un
+     partenaire (ex. UTI) reçoit `<jeton>@uti` et ne voit **que** son app. Voir
+     `docs/HANDOVER_UTI.md`.
 2. **Cookie de session** — le cookie JWT `mip_session` de la console. Respecte le
    **RBAC** existant : un `viewer` scopé ne voit que ses apps. Pratique pour un appel
    depuis le navigateur d'un utilisateur déjà connecté à la console.
