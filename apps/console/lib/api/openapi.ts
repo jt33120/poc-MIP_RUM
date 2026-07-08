@@ -197,6 +197,31 @@ export function buildOpenApi(): Record<string, unknown> {
           },
         ),
       },
+      "/ai/costs": {
+        get: get(
+          "Coût IA agrégé par dimension (user_hash par défaut, ou model/route)",
+          "rum",
+          ref("AiCosts"),
+          {
+            params: [
+              { $ref: "#/components/parameters/app" },
+              { $ref: "#/components/parameters/period" },
+              {
+                name: "group_by",
+                in: "query",
+                schema: { type: "string", enum: ["user", "model", "route"] },
+                description: "dimension d'agrégation (défaut : user = par user_hash anonymisé)",
+              },
+              {
+                name: "limit",
+                in: "query",
+                schema: { type: "integer", minimum: 1, maximum: 500 },
+                description: "taille de page pour group_by=user (1..500, défaut 100)",
+              },
+            ],
+          },
+        ),
+      },
     },
     components: {
       securitySchemes: {
@@ -299,6 +324,21 @@ export function buildOpenApi(): Record<string, unknown> {
         AiPerformance: o(
           { overview: ref("AiOverview"), byModel: arr(ref("AiModelRow")), byRoute: arr(ref("AiRouteRow")), daily: arr(ref("AiDailyRow")), recent: arr(ref("AiCallRow")) },
           ["overview", "byModel", "byRoute", "daily", "recent"],
+        ),
+        AiUserCostRow: o(
+          { user_hash: str, calls: int, cost_usd: num, total_tokens: int, error_rate: num, last_ts: dateTime },
+          ["user_hash", "calls", "cost_usd"],
+        ),
+        AiUnattributedCost: o({ calls: int, cost_usd: num }, ["calls", "cost_usd"]),
+        // rows dépend de group_by : AiUserCostRow (user, défaut) | AiModelRow (model) | AiRouteRow (route).
+        // unattributed n'est présent que pour group_by=user.
+        AiCosts: o(
+          {
+            group_by: { type: "string", enum: ["user", "model", "route"] },
+            rows: arr({ oneOf: [ref("AiUserCostRow"), ref("AiModelRow"), ref("AiRouteRow")] }),
+            unattributed: nul(ref("AiUnattributedCost")),
+          },
+          ["group_by", "rows"],
         ),
       },
     },

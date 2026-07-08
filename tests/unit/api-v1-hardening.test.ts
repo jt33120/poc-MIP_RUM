@@ -72,7 +72,7 @@ describe("buildOpenApi — spec valide et complète", () => {
     for (const p of [
       "/health", "/openapi", "/", "/apps", "/overview", "/vitals", "/pages",
       "/errors", "/errors/{fingerprint}", "/sessions", "/sessions/{id}",
-      "/tracing", "/correlation", "/health-grid", "/ai",
+      "/tracing", "/correlation", "/health-grid", "/ai", "/ai/costs",
     ])
       expect(paths, `manque ${p}`).toContain(p);
   });
