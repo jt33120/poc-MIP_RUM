@@ -222,6 +222,9 @@ export function buildOpenApi(): Record<string, unknown> {
           },
         ),
       },
+      "/ai/credits": {
+        get: get("Dernier solde OpenRouter + statut (warning crédit bas)", "rum", ref("AiCredits")),
+      },
     },
     components: {
       securitySchemes: {
@@ -340,6 +343,17 @@ export function buildOpenApi(): Record<string, unknown> {
           },
           ["group_by", "rows"],
         ),
+        // status/balance null tant qu'aucun relevé n'a été fait (cron pas encore passé).
+        AiCredits: o({
+          status: nul({ type: "string", enum: ["ok", "low"] }),
+          balance: nul(num),
+          total_credits: nul(num),
+          total_usage: nul(num),
+          threshold: nul(num),
+          currency: nul(str),
+          checked_at: nul(dateTime),
+          note: str,
+        }),
       },
     },
   };

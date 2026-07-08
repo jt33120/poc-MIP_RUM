@@ -45,6 +45,12 @@ Une origine listée reçoit `Access-Control-Allow-Origin` + `Access-Control-Allo
 | `CONSOLE_API_ALLOWED_ORIGINS` | origines CORS autorisées (CSV, ou `*`). Vide = same-origin. |
 | `AUTH_SECRET` | secret JWT (déjà utilisé par la console) — pour le mode cookie. |
 | `DATABASE_URL` | base Postgres lue par les agrégats (déjà utilisé). |
+| `CRON_SECRET` | secret du cron Vercel (en-tête `Authorization: Bearer` sur `/api/cron/*`). |
+| `OPENROUTER_API_KEY` | clé (lecture) du compte OpenRouter à surveiller — poll du solde. Absent = poll ignoré. |
+| `OPENROUTER_LOW_BALANCE` | seuil « bas » du solde (défaut `5`, unité native = USD). |
+| `OPENROUTER_CURRENCY` | libellé de devise affiché (défaut `USD`). |
+| `OPENROUTER_ALERT_COOLDOWN_HOURS` | anti-spam : re-rappel de l'alerte tant que bas (défaut `24`). |
+| `OPENROUTER_ACCOUNT_APP` | app à cibler pour le routage de l'alerte (défaut : canaux globaux). |
 
 ---
 
@@ -140,6 +146,15 @@ utilisateur** (`user_hash` anonymisé, join `rum_ai.session_id → rum_session.u
 ajoute `unattributed` (appels sans session ou sans `user_hash`) ; `?group_by=model|route`
 réutilise les agrégats correspondants. `?limit=1..500` (défaut 100) pour `group_by=user`.
 La dimension est validée par allowlist (`lib/ai-costs.ts`) — anti-injection.
+
+### `GET /api/v1/ai/credits` — solde OpenRouter
+`data = { status, balance, total_credits, total_usage, threshold, currency, checked_at }`
+(ou `{ status: null, note }` tant qu'aucun relevé). `status` vaut `ok` ou `low` — le front
+affiche le **warning rouge** quand `low` (solde < seuil, défaut 5, `OPENROUTER_LOW_BALANCE`).
+Le relevé est produit par le cron **`/api/cron/openrouter-balance`** (Vercel Cron, clé
+`OPENROUTER_API_KEY` en env) ; l'alerte « solde bas » émet un `alert_event` routé vers
+webhook/slack (e-mail = stub existant, cf. `docs/ALERTING.md`). Compte OpenRouter global :
+`app`/`period` sans effet. Sources : `lib/openrouter.ts`, `lib/queries-openrouter.ts`.
 
 ---
 

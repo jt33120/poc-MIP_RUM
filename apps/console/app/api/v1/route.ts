@@ -34,5 +34,6 @@ export const GET = handle(async () => ({
     { method: "GET", path: "/api/v1/health-grid", desc: "heatmap santé (jour×heure) + trafic quotidien" },
     { method: "GET", path: "/api/v1/ai", desc: "performance IA : coût/tokens/latence/erreurs (global + par modèle/route + série jour + derniers appels ?recent=0..200)" },
     { method: "GET", path: "/api/v1/ai/costs", desc: "coût IA agrégé ?group_by=user (défaut) | model | route ; user = par user_hash + bucket non attribué" },
+    { method: "GET", path: "/api/v1/ai/credits", desc: "dernier solde OpenRouter + statut (ok/low) pour le warning de crédit bas" },
   ],
 }));
