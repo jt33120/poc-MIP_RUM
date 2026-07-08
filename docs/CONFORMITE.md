@@ -29,6 +29,7 @@ dev-server/edge) → on ne dépend pas du seul client. Source maps **privées** 
 ## 3. RGPD *by design*
 - **Consentement** : `requireConsent` met le SDK en tampon mémoire jusqu'à `MIPRum.consent(true)`.
 - **Opt-out navigateur honoré** : `honorDNT` (défaut `true`) respecte **Do Not Track** et **Global Privacy Control** — signal présent → aucune collecte (0 session, 0 requête).
+- **DSAR** (`/admin/privacy`, admin only) : droit d'**accès/portabilité** (export JSON par `user_hash`, une clé par table) et droit à l'**effacement** (suppression transactionnelle, enfants avant l'ancre `rum_session`). Chaque effacement est tracé dans `audit_log` (`dsar_erase`).
 - **Minimisation** : pas d'IP, géo au pays, hash utilisateur anonyme, scrub systématique.
 - **Sécurité du transport** : TLS de bout en bout (CA Supabase épinglée côté console).
 
