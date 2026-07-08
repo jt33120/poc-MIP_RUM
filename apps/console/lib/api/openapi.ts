@@ -177,6 +177,26 @@ export function buildOpenApi(): Record<string, unknown> {
           { params: commonFilters },
         ),
       },
+      "/ai": {
+        get: get(
+          "Performance IA : coût/tokens/latence/erreurs (global + par modèle/route + série jour + derniers appels)",
+          "rum",
+          ref("AiPerformance"),
+          {
+            // rum_ai n'a pas de notion d'appareil : seuls app + period s'appliquent.
+            params: [
+              { $ref: "#/components/parameters/app" },
+              { $ref: "#/components/parameters/period" },
+              {
+                name: "recent",
+                in: "query",
+                schema: { type: "integer", minimum: 0, maximum: 200 },
+                description: "nombre de derniers appels IA à renvoyer (0..200, défaut 50 ; 0 = aucun)",
+              },
+            ],
+          },
+        ),
+      },
     },
     components: {
       securitySchemes: {
@@ -264,6 +284,22 @@ export function buildOpenApi(): Record<string, unknown> {
 
         HealthGridCell: o({ day: str, hour: int, good_w: num, total_w: num }, ["day", "hour"]),
         DailyTraffic: o({ day: str, pageviews: num, errors: num }, ["day"]),
+
+        AiOverview: o(
+          { calls: int, prompt_tokens: int, completion_tokens: int, total_tokens: int, cost_usd: num, latency_p75: nul(num), error_rate: num },
+          ["calls", "cost_usd", "error_rate"],
+        ),
+        AiModelRow: o({ provider: nul(str), model: nul(str), calls: int, total_tokens: int, cost_usd: num, latency_p75: nul(num), error_rate: num }, ["calls", "cost_usd"]),
+        AiRouteRow: o({ route: nul(str), calls: int, total_tokens: int, cost_usd: num, latency_p75: nul(num), error_rate: num }, ["calls", "cost_usd"]),
+        AiDailyRow: o({ day: str, calls: int, cost_usd: num, total_tokens: int }, ["day"]),
+        AiCallRow: o(
+          { id: int, ts: dateTime, provider: nul(str), model: nul(str), route: nul(str), total_tokens: nul(int), cost_usd: nul(num), latency_ms: nul(num), status: str, error_type: nul(str), session_id: nul(str) },
+          ["id", "ts", "status"],
+        ),
+        AiPerformance: o(
+          { overview: ref("AiOverview"), byModel: arr(ref("AiModelRow")), byRoute: arr(ref("AiRouteRow")), daily: arr(ref("AiDailyRow")), recent: arr(ref("AiCallRow")) },
+          ["overview", "byModel", "byRoute", "daily", "recent"],
+        ),
       },
     },
   };

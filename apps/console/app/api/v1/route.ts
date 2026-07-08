@@ -32,5 +32,6 @@ export const GET = handle(async () => ({
     { method: "GET", path: "/api/v1/tracing", desc: "couverture tracing + appels API + routes back" },
     { method: "GET", path: "/api/v1/correlation", desc: "corrélation front/back + angles morts" },
     { method: "GET", path: "/api/v1/health-grid", desc: "heatmap santé (jour×heure) + trafic quotidien" },
+    { method: "GET", path: "/api/v1/ai", desc: "performance IA : coût/tokens/latence/erreurs (global + par modèle/route + série jour + derniers appels ?recent=0..200)" },
   ],
 }));
