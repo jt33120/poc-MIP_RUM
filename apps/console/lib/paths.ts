@@ -1,0 +1,85 @@
+// Analyse de parcours — logique PURE et testee (Lot 6, inspire du « Users Flow »
+// de Matomo/GA). A partir des sequences de routes par session (pageviews
+// ordonnes dans le temps), on derive :
+//   - les TRANSITIONS route->route (aretes du graphe de navigation) ;
+//   - les pages d'ENTREE (1re route) et de SORTIE (derniere route).
+//
+// C'est la DEFINITION DE REFERENCE ; le SQL (queries-paths.ts) la reflete pour
+// passer a l'echelle. Les recharges/re-rendus SPA sur la meme route normalisee
+// sont replies par defaut (dropSelfLoops) — une transition A->A n'est pas un parcours.
+
+export interface Transition {
+  from: string;
+  to: string;
+  count: number;
+}
+
+export interface RouteCount {
+  route: string;
+  count: number;
+}
+
+/** Compresse les repetitions consecutives d'une meme route (A,A,B,B,A -> A,B,A). */
+export function collapseRepeats(routes: string[]): string[] {
+  const out: string[] = [];
+  for (const r of routes) {
+    if (out[out.length - 1] !== r) out.push(r);
+  }
+  return out;
+}
+
+/**
+ * Transitions consecutives route->route agregees sur toutes les sessions, triees
+ * par frequence decroissante (departage stable par from puis to). Par defaut les
+ * boucles A->A sont retirees (dropSelfLoops). Agregation via Map imbriquee
+ * (from -> to -> count) : aucun delimiteur, robuste a n'importe quel contenu de route.
+ */
+export function countTransitions(
+  sessions: string[][],
+  opts: { dropSelfLoops?: boolean } = {},
+): Transition[] {
+  const dropSelf = opts.dropSelfLoops ?? true;
+  const acc = new Map<string, Map<string, number>>();
+  for (const seq of sessions) {
+    const s = dropSelf ? collapseRepeats(seq) : seq;
+    for (let i = 1; i < s.length; i++) {
+      const from = s[i - 1];
+      const to = s[i];
+      if (dropSelf && from === to) continue;
+      let tos = acc.get(from);
+      if (!tos) acc.set(from, (tos = new Map()));
+      tos.set(to, (tos.get(to) ?? 0) + 1);
+    }
+  }
+  const out: Transition[] = [];
+  for (const [from, tos] of acc) {
+    for (const [to, count] of tos) out.push({ from, to, count });
+  }
+  return out.sort((a, b) => b.count - a.count || cmp(a.from, b.from) || cmp(a.to, b.to));
+}
+
+/** Pages d'entree (1re route de chaque session non vide), triees par frequence. */
+export function countEntries(sessions: string[][]): RouteCount[] {
+  return tally(sessions.map((s) => s[0]).filter((r): r is string => r != null));
+}
+
+/** Pages de sortie (derniere route de chaque session non vide), triees par frequence. */
+export function countExits(sessions: string[][]): RouteCount[] {
+  return tally(
+    sessions.map((s) => s[s.length - 1]).filter((r): r is string => r != null),
+  );
+}
+
+// --- helpers -----------------------------------------------------------------
+
+function cmp(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function tally(routes: string[]): RouteCount[] {
+  const acc = new Map<string, number>();
+  for (const r of routes) acc.set(r, (acc.get(r) ?? 0) + 1);
+  return [...acc.entries()]
+    .map(([route, count]) => ({ route, count }))
+    .sort((a, b) => b.count - a.count || cmp(a.route, b.route));
+}

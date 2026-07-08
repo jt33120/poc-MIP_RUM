@@ -23,7 +23,12 @@ const SAVED_KEY = "mip-saved-segments";
 
 /** Routes dont les requêtes appliquent réellement le segment (cf. lib/queries.ts). */
 function segmentApplies(pathname: string): boolean {
-  return pathname === "/" || pathname.startsWith("/pages") || pathname.startsWith("/sessions");
+  return (
+    pathname === "/" ||
+    pathname.startsWith("/pages") ||
+    pathname.startsWith("/sessions") ||
+    pathname.startsWith("/paths")
+  );
 }
 
 interface Saved {
