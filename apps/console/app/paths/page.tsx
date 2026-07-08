@@ -1,17 +1,26 @@
+import { FunnelChart, StepPicker } from "@/components/Funnel";
 import { PageHeader } from "@/components/PageHeader";
 import { Sankey } from "@/components/Sankey";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
+import { availableEvents, funnelReport } from "@/lib/queries-funnel";
 import { entryExitRoutes, routeTransitions } from "@/lib/queries-paths";
 import { buildSankey } from "@/lib/sankey";
 
 export const dynamic = "force-dynamic";
 
 export default async function Paths({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const f = parseFilters(await searchParams);
+  const sp = await searchParams;
+  const f = parseFilters(sp);
   const period = PERIODS[f.period];
-  const [transitions, { entries, exits }] = await Promise.all([
+  // Lot 6c : étapes du funnel depuis s1..s4 (form GET), ordonnées, vides ignorées.
+  const steps = [1, 2, 3, 4]
+    .map((i) => (typeof sp[`s${i}`] === "string" ? (sp[`s${i}`] as string) : ""))
+    .filter(Boolean);
+  const [transitions, { entries, exits }, events, funnel] = await Promise.all([
     routeTransitions(f),
     entryExitRoutes(f),
+    availableEvents(f),
+    steps.length >= 2 ? funnelReport(f, steps) : Promise.resolve([]),
   ]);
   const maxT = transitions[0]?.n ?? 0;
   // Lot 6b : flux Sankey (source -> cible) construit sur les mêmes transitions.
@@ -97,6 +106,31 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
           </tbody>
         </table>
       </div>
+
+      {/* Entonnoir de conversion (Lot 6c) sur événements custom (rum_event). */}
+      <section className="mt-8">
+        <h2 className="mb-1 text-sm font-semibold text-ink">Entonnoir de conversion</h2>
+        <p className="mb-3 text-xs text-ink-faint">
+          Choisis 2 à 4 événements custom dans l&apos;ordre : conversion et abandon à chaque étape,
+          par session (ordre temporel respecté).
+        </p>
+        <div className="card p-4">
+          {events.length ? (
+            <StepPicker events={events} selected={steps} sp={sp} />
+          ) : (
+            <p className="text-sm text-ink-faint">
+              Aucun événement custom sur {period.label}. Émets-en via{" "}
+              <code className="chip-mono">MIPRum.track(&quot;nom&quot;)</code> pour construire un entonnoir.
+            </p>
+          )}
+          {funnel.length > 0 && <FunnelChart steps={funnel} />}
+          {steps.length >= 2 && funnel.length > 0 && funnel[0].reached === 0 && (
+            <p className="mt-3 text-xs text-ink-faint">
+              Aucune session n&apos;a réalisé l&apos;étape 1 sur {period.label}.
+            </p>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
