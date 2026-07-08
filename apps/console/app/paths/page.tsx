@@ -1,6 +1,8 @@
 import { PageHeader } from "@/components/PageHeader";
+import { Sankey } from "@/components/Sankey";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import { entryExitRoutes, routeTransitions } from "@/lib/queries-paths";
+import { buildSankey } from "@/lib/sankey";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +14,10 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
     entryExitRoutes(f),
   ]);
   const maxT = transitions[0]?.n ?? 0;
+  // Lot 6b : flux Sankey (source -> cible) construit sur les mêmes transitions.
+  const sankey = buildSankey(
+    transitions.map((t) => ({ from: t.from_route, to: t.to_route, count: t.n })),
+  );
 
   return (
     <div className="animate-fade-up">
@@ -30,6 +36,21 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
         <BoundaryCard title="Pages d'entrée" hint="1re route de la session" rows={entries} />
         <BoundaryCard title="Pages de sortie" hint="dernière route de la session" rows={exits} />
       </div>
+
+      {/* Flux de navigation (Sankey) : où va le trafic, source -> cible. */}
+      <section className="mb-6">
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold text-ink">Flux de navigation</h2>
+          {sankey.totalFlow > sankey.shownFlow && (
+            <span className="text-[11px] text-ink-faint">
+              top routes · {sankey.shownFlow} / {sankey.totalFlow} transitions affichées
+            </span>
+          )}
+        </div>
+        <div className="card p-4">
+          <Sankey model={sankey} />
+        </div>
+      </section>
 
       {/* Transitions route → route (arêtes du graphe de navigation). */}
       <h2 className="mb-2 text-sm font-semibold text-ink">Transitions les plus fréquentes</h2>
