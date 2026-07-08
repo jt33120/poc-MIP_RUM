@@ -63,6 +63,56 @@ export async function vitalsP75(f: Filters, shift = false): Promise<VitalAgg[]> 
   );
 }
 
+export interface VitalPercentiles {
+  name: string;
+  pcts: number[]; // [p50, p75, p90, p95, p99] (percentile_cont array, ordre PCTS)
+  n: number;
+}
+
+/** p50/p75/p90/p95/p99 par vital — la distribution que le seul p75 masque. */
+export async function vitalPercentiles(f: Filters): Promise<VitalPercentiles[]> {
+  const itv = PERIODS[f.period].interval;
+  const seg = buildSegment(f.segment, 3);
+  return q<VitalPercentiles>(
+    `select m.name,
+            percentile_cont(array[0.5,0.75,0.9,0.95,0.99]) within group (order by m.value) as pcts,
+            count(*)::int as n
+     from rum_metric m
+     left join rum_session s using (session_id)
+     where m.ts > now() - interval '${itv}'
+       and ($1::text is null or m.app_id = $1)
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+     group by m.name`,
+    [f.app, f.device, ...seg.params],
+  );
+}
+
+export interface HistoRow {
+  bucket: number;
+  count: number;
+}
+
+/** Histogramme d'un vital sur [0, cap] en `nbuckets` tranches (width_bucket). */
+export async function vitalHistogram(
+  f: Filters,
+  name: string,
+  cap: number,
+  nbuckets: number,
+): Promise<HistoRow[]> {
+  const itv = PERIODS[f.period].interval;
+  const seg = buildSegment(f.segment, 6);
+  return q<HistoRow>(
+    `select width_bucket(m.value, 0, $4::float, $5::int) as bucket, count(*)::int as count
+     from rum_metric m
+     left join rum_session s using (session_id)
+     where m.name = $3 and m.ts > now() - interval '${itv}'
+       and ($1::text is null or m.app_id = $1)
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+     group by 1 order by 1`,
+    [f.app, f.device, name, cap, nbuckets, ...seg.params],
+  );
+}
+
 export interface OverviewStats {
   sessions: number;
   errors: number;

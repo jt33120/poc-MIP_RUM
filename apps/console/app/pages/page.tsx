@@ -1,7 +1,15 @@
+import { Histogram, PercentileTable } from "@/components/Distribution";
 import { PageHeader } from "@/components/PageHeader";
+import { HISTO_BUCKETS, VITAL_CAP } from "@/lib/distribution";
 import { fmtVital } from "@/lib/format";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
-import { slowResourcesByRoute, slowRoutes, type SlowResource } from "@/lib/queries";
+import {
+  slowResourcesByRoute,
+  slowRoutes,
+  vitalHistogram,
+  vitalPercentiles,
+  type SlowResource,
+} from "@/lib/queries";
 import { RATING_CLASS, rating2026 } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +17,14 @@ export const dynamic = "force-dynamic";
 export default async function SlowPages({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const f = parseFilters(await searchParams);
   const period = PERIODS[f.period];
-  const [rows, resources] = await Promise.all([slowRoutes(f), slowResourcesByRoute(f)]);
+  const [rows, resources, pcts, lcpH, inpH, clsH] = await Promise.all([
+    slowRoutes(f),
+    slowResourcesByRoute(f),
+    vitalPercentiles(f),
+    vitalHistogram(f, "LCP", VITAL_CAP.LCP, HISTO_BUCKETS),
+    vitalHistogram(f, "INP", VITAL_CAP.INP, HISTO_BUCKETS),
+    vitalHistogram(f, "CLS", VITAL_CAP.CLS, HISTO_BUCKETS),
+  ]);
 
   return (
     <div className="animate-fade-up">
@@ -22,6 +37,19 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
           </>
         }
       />
+
+      {/* Distribution & percentiles (Lot 3) : ce que le p75 seul masque —
+          longue traîne (p90/p95/p99) et forme de la distribution. */}
+      <section className="mb-6 space-y-4">
+        <PercentileTable rows={pcts} />
+        <div className="grid gap-4 md:grid-cols-3">
+          <Histogram name="LCP" rows={lcpH} cap={VITAL_CAP.LCP} />
+          <Histogram name="INP" rows={inpH} cap={VITAL_CAP.INP} />
+          <Histogram name="CLS" rows={clsH} cap={VITAL_CAP.CLS} />
+        </div>
+      </section>
+
+      <h2 className="mb-2 text-sm font-semibold text-ink">Par route</h2>
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-panel2">
