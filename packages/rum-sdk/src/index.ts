@@ -3,6 +3,7 @@ import { createBreadcrumbTrail, initClickBreadcrumbs, type BreadcrumbTrail } fro
 import { ConsentGate } from "./consent";
 import { currentRoute, initNavigation, scrubUrl } from "./context";
 import { initErrors, type Emit } from "./errors";
+import { initForms } from "./forms";
 import { initFrustration } from "./frustration";
 import { initLongTasks } from "./longtasks";
 import { forceFlush, initOtel } from "./otel";
@@ -113,6 +114,8 @@ export function init(cfg: MIPRumConfig): void {
   // signaux de frustration (P1) : rage/dead clicks ; opt-out via cfg.frustration=false
   const frustrationCap = initFrustration(emit, { enabled: cfg.frustration !== false });
   initVitals(emit);
+  // form analytics (Lot 7) : instrumentation champ par champ ; opt-out via cfg.forms=false
+  if (cfg.forms !== false) initForms(emit);
 
   // tracing distribué (v0.4) : fetch/XHR -> traceparent + span 'http.client'.
   // Les endpoints d'ingestion MIP sont exclus (pas de boucle SDK -> SDK).

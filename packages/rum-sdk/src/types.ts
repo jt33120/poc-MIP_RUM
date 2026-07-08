@@ -51,6 +51,13 @@ export interface MIPRumConfig {
   trace?: boolean | string[];
   /** Signaux de frustration (P1) : rage clicks & dead clicks. true (défaut) | false pour désactiver. */
   frustration?: boolean;
+  /**
+   * Form analytics (Lot 7) : instrumentation des formulaires au niveau du champ
+   * (ordre, temps par champ, abandon). true (défaut) | false pour désactiver.
+   * Ne capte JAMAIS les valeurs saisies (identifiants + durées seulement ;
+   * champs password réduits à "[password]").
+   */
+  forms?: boolean;
 }
 
 export type VitalName = "LCP" | "INP" | "CLS" | "FCP" | "TTFB";
