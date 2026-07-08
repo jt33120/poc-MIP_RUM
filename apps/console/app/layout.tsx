@@ -6,6 +6,7 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { GlobalFilters } from "@/components/GlobalFilters";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { Nav } from "@/components/Nav";
+import { SegmentBar } from "@/components/SegmentBar";
 import { SubNav } from "@/components/SubNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TourGuide } from "@/components/TourGuide";
@@ -214,6 +215,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </header>
             <Suspense>
               <SubNav />
+            </Suspense>
+            <Suspense>
+              <SegmentBar />
             </Suspense>
             <main className="flex-1 p-6 lg:p-8">{children}</main>
           </div>

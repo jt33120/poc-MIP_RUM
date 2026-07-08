@@ -1,5 +1,6 @@
 // Filtres globaux v0.3 (app / période / device) portés par les searchParams.
 // Les intervalles SQL viennent EXCLUSIVEMENT de PERIODS (pas d'injection possible).
+import { parseSegment, type SegCond } from "./segments";
 
 export type PeriodKey = "1h" | "24h" | "7d";
 
@@ -7,6 +8,7 @@ export interface Filters {
   app: string | null; // null = toutes les apps
   period: PeriodKey;
   device: "desktop" | "mobile" | null; // null = tous
+  segment: SegCond[]; // v1 : conditions arbitraires (dim<op>val) sur rum_session
 }
 
 export const PERIODS: Record<
@@ -36,5 +38,6 @@ export function parseFilters(sp: SearchParams, allowedApps?: string[] | null): F
     app,
     period: period === "1h" || period === "7d" ? period : "24h",
     device: device === "desktop" || device === "mobile" ? device : null,
+    segment: parseSegment(first(sp.seg)),
   };
 }

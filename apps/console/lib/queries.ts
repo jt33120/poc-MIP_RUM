@@ -3,6 +3,7 @@
 // de PERIODS (constantes), jamais d'une entrée utilisateur.
 import { q } from "./db";
 import { type Filters, PERIODS } from "./filters";
+import { buildSegment } from "./segments";
 
 export interface AppItem {
   app_id: string;
@@ -41,6 +42,7 @@ export async function vitalsP75(f: Filters, shift = false): Promise<VitalAgg[]> 
   const window = shift
     ? `m.ts > now() - interval '${itv}' * 2 and m.ts <= now() - interval '${itv}'`
     : `m.ts > now() - interval '${itv}'`;
+  const seg = buildSegment(f.segment, 3);
   return q<VitalAgg>(
     `select m.name,
             percentile_cont(0.75) within group (order by m.value) as p75,
@@ -49,9 +51,9 @@ export async function vitalsP75(f: Filters, shift = false): Promise<VitalAgg[]> 
      left join rum_session s using (session_id)
      where ${window}
        and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}
      group by m.name`,
-    [f.app, f.device],
+    [f.app, f.device, ...seg.params],
   );
 }
 
@@ -67,23 +69,24 @@ export async function overviewStats(f: Filters, shift = false): Promise<Overview
     shift
       ? `${col} > now() - interval '${itv}' * 2 and ${col} <= now() - interval '${itv}'`
       : `${col} > now() - interval '${itv}'`;
+  const seg = buildSegment(f.segment, 3);
   const [row] = await q<OverviewStats>(
     `select
        (select count(*)::int from rum_session s
          where ${win("s.last_seen_at")}
            and ($1::text is null or s.app_id = $1)
-           and ($2::text is null or s.device_type = $2)) as sessions,
+           and ($2::text is null or s.device_type = $2)${seg.where("s")}) as sessions,
        (select count(*)::int from rum_error e
          left join rum_session s using (session_id)
          where ${win("e.ts")}
            and ($1::text is null or e.app_id = $1)
-           and ($2::text is null or s.device_type = $2)) as errors,
+           and ($2::text is null or s.device_type = $2)${seg.where("s")}) as errors,
        (select count(*)::int from rum_pageview p
          left join rum_session s using (session_id)
          where ${win("p.started_at")}
            and ($1::text is null or p.app_id = $1)
-           and ($2::text is null or s.device_type = $2)) as pageviews`,
-    [f.app, f.device],
+           and ($2::text is null or s.device_type = $2)${seg.where("s")}) as pageviews`,
+    [f.app, f.device, ...seg.params],
   );
   return row;
 }
@@ -96,6 +99,7 @@ export interface SeriesRow {
 /** Série temporelle p75 d'un vital, taille de bucket adaptée à la période. */
 export async function vitalSeries(f: Filters, name: string): Promise<SeriesRow[]> {
   const { interval, bucket } = PERIODS[f.period];
+  const seg = buildSegment(f.segment, 4);
   return q<SeriesRow>(
     `select date_bin('${bucket}', m.ts, timestamptz '2000-01-01') as bucket,
             percentile_cont(0.75) within group (order by m.value) as p75
@@ -103,9 +107,9 @@ export async function vitalSeries(f: Filters, name: string): Promise<SeriesRow[]
      left join rum_session s using (session_id)
      where m.name = $3 and m.ts > now() - interval '${interval}'
        and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}
      group by 1 order by 1`,
-    [f.app, f.device, name],
+    [f.app, f.device, name, ...seg.params],
   );
 }
 
@@ -120,13 +124,14 @@ export interface RouteRow {
 
 export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
   const itv = PERIODS[f.period].interval;
+  const seg = buildSegment(f.segment, 3);
   return q<RouteRow>(
     `select m.route,
             (select count(*)::int from rum_pageview p
               left join rum_session ps using (session_id)
               where p.route = m.route and p.started_at > now() - interval '${itv}'
                 and ($1::text is null or p.app_id = $1)
-                and ($2::text is null or ps.device_type = $2)) as views,
+                and ($2::text is null or ps.device_type = $2)${seg.where("ps")}) as views,
             percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'LCP') as lcp_p75,
             percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'INP') as inp_p75,
             percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'CLS') as cls_p75,
@@ -134,15 +139,15 @@ export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
               left join rum_session ls using (session_id)
               where l.route = m.route and l.ts > now() - interval '${itv}'
                 and ($1::text is null or l.app_id = $1)
-                and ($2::text is null or ls.device_type = $2)) as longtasks
+                and ($2::text is null or ls.device_type = $2)${seg.where("ls")}) as longtasks
      from rum_metric m
      left join rum_session s using (session_id)
      where m.ts > now() - interval '${itv}' and m.route is not null
        and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}
      group by m.route
      order by lcp_p75 desc nulls last`,
-    [f.app, f.device],
+    [f.app, f.device, ...seg.params],
   );
 }
 
@@ -202,6 +207,7 @@ export async function listSessions(
   const itv = PERIODS[f.period].interval;
   const limit = page?.limit ?? 50;
   const offset = page?.offset ?? 0;
+  const seg = buildSegment(f.segment, 5);
   return q<SessionRow>(
     `select s.*, p.routes, coalesce(e.err_count, 0)::int as err_count
      from rum_session s
@@ -215,10 +221,10 @@ export async function listSessions(
      ) e on true
      where s.last_seen_at > now() - interval '${itv}'
        and ($1::text is null or s.app_id = $1)
-       and ($2::text is null or s.device_type = $2)
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}
      order by s.last_seen_at desc
      limit $3 offset $4`,
-    [f.app, f.device, limit, offset],
+    [f.app, f.device, limit, offset, ...seg.params],
   );
 }
 

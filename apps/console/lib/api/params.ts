@@ -9,6 +9,7 @@
 // Helper PUR : prend URLSearchParams + principal, aucun import next/*.
 import type { Filters as LegacyFilters } from "../filters";
 import type { Filters as V2Filters } from "../queries-v2";
+import { parseSegment } from "../segments";
 import type { ApiPrincipal } from "./auth";
 
 const PERIOD_KEYS = ["1h", "24h", "7d"] as const;
@@ -43,7 +44,7 @@ export function parseApiFilters(sp: URLSearchParams, principal: ApiPrincipal): A
   const v2Device = ["mobile", "desktop", "tablet"].includes(dev) ? dev : "all";
 
   return {
-    legacy: { app, period, device: legacyDevice },
+    legacy: { app, period, device: legacyDevice, segment: parseSegment(sp.get("seg")) },
     v2: { app: app ?? "all", period, device: v2Device },
     app,
     period,
