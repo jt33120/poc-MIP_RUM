@@ -126,6 +126,14 @@ hors-scope (un `viewer` ne lit que ses apps).
 `data = { grid: HealthGridCell[], dailyTraffic: DailyTraffic[] }`
 (cellule = une heure, jour×heure ; + trafic quotidien).
 
+### `GET /api/v1/ai` — performance IA
+`data = { overview: AiOverview, byModel: AiModelRow[], byRoute: AiRouteRow[], daily: AiDailyRow[], recent: AiCallRow[] }`.
+Coût (`cost_usd`), tokens, latence p75 et **taux d'erreur** — en global, par modèle/fournisseur,
+par route, en série journalière, plus les **derniers appels** (dont les **échecs** :
+`status='error'`, `error_type` — ex. OpenRouter en échec). `rum_ai` n'a pas de notion
+d'appareil : seuls `app` et `period` s'appliquent (`device` ignoré). `?recent=N` borne les
+derniers appels (0..200, défaut 50 ; `0` = aucun). Sources : `lib/queries-ai.ts`.
+
 ---
 
 ## Exemple de client (Angular / fetch)
