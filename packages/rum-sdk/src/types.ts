@@ -29,6 +29,14 @@ export interface MIPRumConfig {
   slowResourceMs?: number;
   /** RGPD: if true, buffer everything in memory until MIPRum.consent(true) (default false) */
   requireConsent?: boolean;
+  /**
+   * Souveraineté / RGPD (Lot 5) : honorer les signaux navigateur d'opt-out
+   * Do Not Track (DNT) et Global Privacy Control (GPC). true (défaut) = si le
+   * navigateur signale un refus, aucune collecte n'a lieu (0 session, 0 requête).
+   * false = ignore le signal — à réserver aux apps qui recueillent elles-mêmes un
+   * consentement affirmatif et pilotent la collecte via MIPRum.consent().
+   */
+  honorDNT?: boolean;
   /** Last-chance PII filter applied to every span's attributes; return null to drop */
   beforeSend?: (attributes: Record<string, unknown>) => Record<string, unknown> | null;
   /** Session replay (v0.3) : false (défaut) | true (toutes les sessions) | taux 0..1 */
