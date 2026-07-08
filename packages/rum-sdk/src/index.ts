@@ -10,6 +10,7 @@ import { isReplaySampled, startReplay } from "./replay";
 import { DEFAULT_SLOW_RESOURCE_MS, initResources } from "./resources";
 import { replayRetryQueue } from "./retry";
 import { createSampler, decideMode, loadMode, storeMode } from "./sampling";
+import { readPrivacySignals, signalsOptOut } from "./privacy";
 import { getOrCreateSession, touchSession, type Session } from "./session";
 import type { MIPRumConfig } from "./types";
 import { initVitals } from "./vitals";
@@ -27,6 +28,22 @@ export function init(cfg: MIPRumConfig): void {
   if (initialized) return;
   if (!cfg || !cfg.endpoint || !cfg.appId) {
     console.warn("[MIPRum] init: endpoint and appId are required");
+    return;
+  }
+  // Souveraineté / RGPD (Lot 5) : on honore les signaux navigateur d'opt-out
+  // (DNT/GPC). Si un refus est signalé, on ne collecte RIEN — aucune session
+  // n'est créée, aucun listener posé, aucune requête émise. Désactivable via
+  // honorDNT:false pour les apps qui pilotent un consentement affirmatif
+  // (MIPRum.consent()) susceptible de primer le signal.
+  if (
+    cfg.honorDNT !== false &&
+    signalsOptOut(
+      readPrivacySignals(
+        typeof navigator !== "undefined" ? navigator : undefined,
+        typeof window !== "undefined" ? window : undefined,
+      ),
+    )
+  ) {
     return;
   }
   // Échantillonnage intelligent (A1) : décision par session, persistée pour

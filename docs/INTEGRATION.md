@@ -44,6 +44,7 @@ Prérequis côté MIP (à faire une fois par application) :
 | `flushIntervalMs` | `number` | `3000` | Intervalle de flush du batch OTLP (un flush immédiat est forcé quand la page passe en arrière-plan) |
 | `apiKey` | `string` | — | Clé d'API de l'application, transmise en attribut resource `mip.api_key` (sendBeacon ne porte pas de header). Vérifiée côté ingestion contre le hash sha256 de `app_registry` ; rejet 403 seulement si l'ingestion tourne avec `REQUIRE_API_KEY=true` |
 | `requireConsent` | `boolean` | `false` | Mode consentement RGPD : tant que `MIPRum.consent(true)` n'a pas été appelé, **aucune requête réseau ne part** (cf. §3) |
+| `honorDNT` | `boolean` | `true` | Souveraineté/RGPD : honore les signaux navigateur d'opt-out **Do Not Track** et **Global Privacy Control**. Si un refus est signalé, **aucune collecte** (0 session, 0 requête). Mettre `false` seulement si l'app recueille elle-même un consentement affirmatif via `MIPRum.consent()` (cf. §3) |
 | `slowResourceMs` | `number` | `300` | Seuil au-delà duquel une ressource (script, image, fetch…) est reportée comme lente (cap 20 ressources/page) |
 | `beforeSend` | `(attrs) => attrs \| null` | — | Filtre de dernière chance appliqué aux attributs de chaque span avant émission ; retourner `null` supprime le span. C'est le point d'extension PII côté client |
 
@@ -71,6 +72,17 @@ Comportement :
 - `requireConsent: true` sans consentement → **zéro requête réseau** (vérifié par test automatisé).
 - `MIPRum.consent(true)` → la collecte démarre/reprend.
 - `MIPRum.consent(false)` → la collecte s'arrête.
+
+### Signaux navigateur d'opt-out (DNT / GPC)
+
+Indépendamment de la CMP, le SDK **honore par défaut** (`honorDNT: true`) les signaux navigateur de refus de suivi :
+
+- **Do Not Track** (`navigator.doNotTrack === "1"`, ou `window.doNotTrack === "yes"` sur d'anciens Firefox) ;
+- **Global Privacy Control** (`navigator.globalPrivacyControl === true`) — standard actuel, à valeur légale sous CCPA/CPRA et reconnu comme signal de refus RGPD.
+
+Si l'un de ces signaux est présent à l'`init`, **rien n'est collecté** : aucune session n'est créée, aucun listener posé, aucune requête émise. Aucune donnée, même bufferisée.
+
+`honorDNT: false` désactive cette prise en compte automatique — à réserver aux apps qui recueillent un **consentement affirmatif explicite** (susceptible de primer un signal général) et pilotent alors la collecte via `MIPRum.consent()`.
 
 ## 4. CSP — Content Security Policy à prévoir
 
