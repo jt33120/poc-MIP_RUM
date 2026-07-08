@@ -360,3 +360,62 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
     [id],
   );
 }
+
+export interface VisitStats {
+  sessions: number; // sessions actives (≥ 1 page vue) sur la fenêtre
+  visits: number; // visites après découpage sur inactivité 30 min
+  returning_count: number; // sessions dont l'utilisateur a une activité antérieure
+  new_count: number; // sessions d'un utilisateur jamais vu avant
+}
+
+/**
+ * Lot 4 : dérive les VISITES (découpage 30 min) et new/returning au requêtage —
+ * corrige les métriques par session (une session peut s'étaler des heures). Le
+ * découpage reflète lib/sessions.splitVisits ; new/returning s'appuie sur le
+ * user_hash anonymisé.
+ */
+export async function visitStats(f: Filters): Promise<VisitStats> {
+  const itv = PERIODS[f.period].interval;
+  const seg = buildSegment(f.segment, 3);
+  const [row] = await q<VisitStats>(
+    `with ev as (
+       select p.session_id, p.started_at as ts
+       from rum_pageview p
+       left join rum_session s using (session_id)
+       where p.started_at > now() - interval '${itv}'
+         and ($1::text is null or p.app_id = $1)
+         and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+     ),
+     flagged as (
+       select session_id,
+         case when lag(ts) over (partition by session_id order by ts) is null
+                   or ts - lag(ts) over (partition by session_id order by ts) > interval '30 minutes'
+              then 1 else 0 end as new_visit
+       from ev
+     ),
+     vis as (
+       select count(distinct session_id)::int as sessions,
+              coalesce(sum(new_visit), 0)::int as visits
+       from flagged
+     ),
+     nr as (
+       select
+         count(*) filter (where is_returning)::int as returning_count,
+         count(*) filter (where not is_returning)::int as new_count
+       from (
+         select exists(
+                  select 1 from rum_session s2
+                  where s2.user_hash = s.user_hash and s2.started_at < s.started_at
+                ) as is_returning
+         from rum_session s
+         where s.last_seen_at > now() - interval '${itv}'
+           and ($1::text is null or s.app_id = $1)
+           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+           and s.user_hash is not null
+       ) t
+     )
+     select vis.sessions, vis.visits, nr.returning_count, nr.new_count from vis, nr`,
+    [f.app, f.device, ...seg.params],
+  );
+  return row ?? { sessions: 0, visits: 0, returning_count: 0, new_count: 0 };
+}
