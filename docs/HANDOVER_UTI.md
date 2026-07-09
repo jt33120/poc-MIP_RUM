@@ -2,9 +2,18 @@
 
 > Objectif : la plateforme **UTI** affiche, dans son onglet **Administration**, un
 > **miroir** de l'analyse MIP RUM — perfs IA, coût par utilisateur, solde OpenRouter,
-> logs d'erreurs — en consommant l'**API MIP** (`/api/v1`). MIP reste la **source de
-> vérité** et la maîtrise (ingestion, calculs, rétention, alertes) ; UTI ne fait
-> qu'**afficher**. Aucune donnée n'est dupliquée côté UTI.
+> logs d'erreurs — en consommant l'**API MIP**. MIP reste la **source de vérité** et la
+> maîtrise (ingestion, calculs, rétention, alertes) ; UTI ne fait qu'**afficher**. Aucune
+> donnée n'est dupliquée côté UTI.
+>
+> **Deux façons de brancher, une seule recommandée** :
+> - **`GET /api/rum/summary`** (jeton `read_tokens`, cf. `docs/RUM_READ_API.md`) — **un
+>   seul jeton, un seul appel**, couvre activité RUM (sessions, vitals, erreurs) **et**
+>   usage/coûts IA (`ai_calls`, `ai_cost_usd`, `ai_by_model`, `ai_top_users`). C'est le
+>   chemin le plus simple, **recommandé pour reproduire l'onglet Supervision d'UTI**.
+> - **`/api/v1/*`** (jeton `CONSOLE_API_TOKENS`, détaillé ci-dessous) — pour un besoin
+>   plus fin non couvert par `/rum/summary` (répartition par route, série journalière,
+>   flux brut des derniers appels IA, pages/parcours RUM détaillés).
 
 ## 1. Principe
 

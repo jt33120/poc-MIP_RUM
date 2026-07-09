@@ -59,6 +59,17 @@ curl -s -H "Authorization: Bearer $MIP_RUM_READ_TOKEN" \
   ],
   "top_errors": [               // top 10 par fréquence (message scrubbé, tronqué 200)
     { "message": "TypeError: ...", "count": 12, "last_seen": "2026-07-08T12:00:00.000Z" }
+  ],
+  "ai_calls": 279,              // appels LLM backend rattachés à cette app
+  "ai_tokens": 342300,          // tokens prompt + complétion, cumulés
+  "ai_cost_usd": 0.5243,        // coût réel (facturation fournisseur), cumulé sur la fenêtre
+  "ai_p75_latency_ms": 4820,    // latence p75 des appels IA, null si aucun appel
+  "ai_error_rate": 0,           // part d'appels IA en erreur, null si aucun appel
+  "ai_by_model": [               // top 10 par coût décroissant
+    { "provider": "openrouter", "model": "gpt-4o-mini", "calls": 134, "tokens": 210000, "cost_usd": 0.29 }
+  ],
+  "ai_top_users": [               // top 10 par coût décroissant (user_hash anonymisé)
+    { "user_hash": "a1b2c3...", "calls": 12, "cost_usd": 0.08 }
   ]
 }
 ```
@@ -70,8 +81,14 @@ Une métrique indisponible vaut **`null`** (la clé n'est jamais omise).
 - **avg_load_ms** = moyenne du **First Contentful Paint** (perception de « la page
   s'affiche »). `p75_lcp_ms` / `p75_inp_ms` = percentiles des Core Web Vitals LCP / INP.
 - **error_rate** = part des sessions ayant au moins une erreur front.
+- **ai_*** = agrégats des appels LLM backend (table `rum_ai`), même fenêtre/scope que le
+  reste de la réponse. `ai_cost_usd` est le coût **réel** renvoyé par le fournisseur
+  (pas une estimation). `ai_top_users` référence `user_hash` (anonymisé), jamais d'email
+  ni d'IP.
 - Tout est **scopé à l'app du token**, borné à la fenêtre, **bots exclus**, et les
-  messages d'erreur sont **scrubbés côté serveur** (aucune PII).
+  messages d'erreur sont **scrubbés côté serveur** (aucune PII). Un seul token/endpoint
+  couvre désormais activité RUM **et** usage/coûts IA — plus besoin d'un second jeton
+  `CONSOLE_API_TOKENS` pour un tableau de bord partenaire complet.
 
 ## Gestion des tokens (console admin)
 

@@ -23,6 +23,18 @@ export interface SummaryError {
   count: number;
   last_seen: string;
 }
+export interface SummaryAiModel {
+  provider: string | null;
+  model: string | null;
+  calls: number;
+  tokens: number;
+  cost_usd: number;
+}
+export interface SummaryAiUser {
+  user_hash: string;
+  calls: number;
+  cost_usd: number;
+}
 export interface RumSummary {
   app: string;
   window: SummaryWindow;
@@ -38,6 +50,13 @@ export interface RumSummary {
   series: SummarySeriesPoint[];
   top_routes: SummaryRoute[];
   top_errors: SummaryError[];
+  ai_calls: number;
+  ai_tokens: number;
+  ai_cost_usd: number;
+  ai_p75_latency_ms: number | null;
+  ai_error_rate: number | null;
+  ai_by_model: SummaryAiModel[];
+  ai_top_users: SummaryAiUser[];
 }
 
 const iso = (v: unknown): string => (v instanceof Date ? v.toISOString() : new Date(String(v)).toISOString());
@@ -52,7 +71,7 @@ export async function rumSummary(
 ): Promise<RumSummary> {
   const p = [app, interval];
 
-  const [kpis, series, routes, errors] = await Promise.all([
+  const [kpis, series, routes, errors, aiKpis, aiByModel, aiTopUsers] = await Promise.all([
     q<{
       sessions: number;
       users: number;
@@ -132,6 +151,34 @@ export async function rumSummary(
        order by count(*) desc limit 10`,
       p,
     ),
+    q<{ calls: number; tokens: number; cost_usd: number; latency_p75: number | null; error_rate: number | null }>(
+      `select
+         count(*)::int as calls,
+         coalesce(sum(total_tokens), 0)::int as tokens,
+         coalesce(sum(cost_usd), 0)::float8 as cost_usd,
+         percentile_cont(0.75) within group (order by latency_ms)::float8 as latency_p75,
+         (count(*) filter (where status = 'error')::float8 / nullif(count(*), 0))::float8 as error_rate
+       from rum_ai
+       where app_id = $1 and ts > now() - $2::interval`,
+      p,
+    ),
+    q<SummaryAiModel>(
+      `select provider, model, count(*)::int as calls, coalesce(sum(total_tokens), 0)::int as tokens,
+              coalesce(sum(cost_usd), 0)::float8 as cost_usd
+       from rum_ai
+       where app_id = $1 and ts > now() - $2::interval
+       group by provider, model
+       order by coalesce(sum(cost_usd), 0) desc limit 10`,
+      p,
+    ),
+    q<SummaryAiUser>(
+      `select s.user_hash, count(*)::int as calls, coalesce(sum(a.cost_usd), 0)::float8 as cost_usd
+       from rum_ai a join rum_session s on s.session_id = a.session_id
+       where a.app_id = $1 and a.ts > now() - $2::interval and s.user_hash is not null
+       group by s.user_hash
+       order by coalesce(sum(a.cost_usd), 0) desc limit 10`,
+      p,
+    ),
   ]);
 
   const k = kpis[0];
@@ -153,5 +200,12 @@ export async function rumSummary(
     series: series.map((s) => ({ ...s, avg_load_ms: n(s.avg_load_ms) })),
     top_routes: routes.map((r) => ({ ...r, avg_ms: n(r.avg_ms) })),
     top_errors: errors.map((e) => ({ message: e.message, count: e.count, last_seen: iso(e.last_seen) })),
+    ai_calls: aiKpis[0]?.calls ?? 0,
+    ai_tokens: aiKpis[0]?.tokens ?? 0,
+    ai_cost_usd: aiKpis[0]?.cost_usd ?? 0,
+    ai_p75_latency_ms: n(aiKpis[0]?.latency_p75),
+    ai_error_rate: aiKpis[0]?.error_rate == null ? null : Math.round(aiKpis[0].error_rate * 10000) / 10000,
+    ai_by_model: aiByModel,
+    ai_top_users: aiTopUsers,
   };
 }
