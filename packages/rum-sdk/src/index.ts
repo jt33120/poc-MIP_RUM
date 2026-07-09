@@ -75,6 +75,9 @@ export function init(cfg: MIPRumConfig): void {
       "mip.device_type": /mobile|tablet/i.test(navigator.userAgent)
         ? "mobile"
         : "desktop",
+      // Ext-A : étiquette du capteur ('sdk' par défaut ; 'extension' quand le SDK
+      // est injecté par l'extension navigateur). Persisté sur rum_session.
+      "mip.collection_source": cfg.collectionSource === "extension" ? "extension" : "sdk",
       ...attrs,
     };
     if (cfg.beforeSend) {

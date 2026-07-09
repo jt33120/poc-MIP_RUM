@@ -58,6 +58,14 @@ export interface MIPRumConfig {
    * champs password réduits à "[password]").
    */
   forms?: boolean;
+  /**
+   * Mode de collecte (Ext-A) : 'sdk' (défaut) quand le script est posé dans le
+   * code de l'app par le développeur ; 'extension' quand le SDK est injecté par
+   * l'extension navigateur MIP RUM. Porté en attribut mip.collection_source et
+   * persisté sur rum_session.collection_source — permet de segmenter/comparer les
+   * deux capteurs dans la console. N'affecte PAS la collecte, juste son étiquette.
+   */
+  collectionSource?: "sdk" | "extension";
 }
 
 export type VitalName = "LCP" | "INP" | "CLS" | "FCP" | "TTFB";

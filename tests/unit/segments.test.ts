@@ -71,6 +71,14 @@ describe("buildSegment", () => {
     expect(seg.where("s")).toBe(" and s.geo_country = $1");
     expect(seg.params).toEqual(["FR' or '1'='1"]);
   });
+  it("Ext-A : la dimension source cible rum_session.collection_source", () => {
+    const seg = buildSegment(parseSegment("source==extension"), 1);
+    expect(seg.where("s")).toBe(" and s.collection_source = $1");
+    expect(seg.params).toEqual(["extension"]);
+    expect(describeCond({ dim: "source", op: "==", value: "extension" })).toBe(
+      "Source = extension",
+    );
+  });
 });
 
 describe("describeCond", () => {
