@@ -120,6 +120,7 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
     {
       "app_id": "demo",
       "client_id": "acme",
+      "collection_source": "sdk",
       "device_type": "desktop",
       "geo_country": "FR",
       "is_bot": false,

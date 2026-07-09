@@ -193,6 +193,7 @@ Deno.serve(async (req) => {
           p_last_seen_at: s.last_seen_at,
           p_page_count_inc: s.page_count_inc,
           p_is_bot: s.is_bot ?? false,
+          p_collection_source: s.collection_source ?? "sdk",
         });
         if (error) throw error;
       }, { onRetry });

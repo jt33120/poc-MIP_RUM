@@ -349,6 +349,9 @@ export function flattenOtlp(payload, opts = {}) {
           // webdriver du SDK). Flag, pas drop : la donnée reste, mais exclue par
           // défaut des agrégats console.
           is_bot: isBot(res["mip.user_agent"], res["mip.webdriver"] ?? a["mip.webdriver"]),
+          // Ext-A : mode de collecte — 'sdk' (script posé par le dev, défaut) ou
+          // 'extension' (SDK injecté par l'extension navigateur). Figé à la 1re vue.
+          collection_source: a["mip.collection_source"] === "extension" ? "extension" : "sdk",
           last_seen_at: ts,
           page_count_inc: 0,
         };

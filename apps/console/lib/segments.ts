@@ -28,6 +28,9 @@ export const SEG_DIMENSIONS: Record<string, { col: string; label: string }> = {
   geo: { col: "geo_country", label: "Pays" },
   device: { col: "device_type", label: "Appareil" },
   client: { col: "client_id", label: "Client" },
+  // Ext-A : capteur d'origine ('sdk' | 'extension') — segmente/compare les deux
+  // modes RUM dans n'importe quelle page (colonne rum_session.collection_source).
+  source: { col: "collection_source", label: "Source" },
 };
 
 const VALUE_MAX = 120;
