@@ -35,6 +35,7 @@ export const CATEGORIES: NavCategory[] = [
     domain: "perf",
     children: [
       { href: "/sessions", label: "Sessions" },
+      { href: "/acquisition", label: "Acquisition" },
       { href: "/paths", label: "Parcours" },
       { href: "/forms", label: "Formulaires" },
       { href: "/tracing", label: "Tracing" },
