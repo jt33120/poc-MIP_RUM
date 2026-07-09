@@ -22,12 +22,33 @@ Dans les variables d'environnement de la console MIP (Vercel) :
 
 | Variable | Valeur |
 |---|---|
-| `CONSOLE_API_TOKENS` | ajouter un jeton **scopé à l'app UTI** : `openssl rand -hex 32` puis `<jeton>@uti` |
+| `CONSOLE_API_TOKENS` | ajouter un jeton **scopé à l'app UTI** : `openssl rand -hex 32` puis `<jeton>@gip-plateforme` |
 | `CONSOLE_API_ALLOWED_ORIGINS` | ajouter l'origine du front UTI (ex. `https://app.uti.fr`) pour le CORS |
 
-> **Scoping** : le suffixe `@uti` limite le jeton à l'app `uti` — il **ne peut pas** lire
-> les données d'un autre client. Plusieurs jetons cohabitent (séparés par des virgules ;
-> rotation sans coupure). Un jeton **sans** `@app` voit toutes les apps (réservé à MIP).
+> ⚠️ **Le suffixe `@...` doit être l'`app_id` EXACT** tel qu'envoyé par le SDK RUM
+> (`appId` dans `MIPRum.init(...)`) — pour la plateforme UTI c'est **`gip-plateforme`**,
+> **pas** `uti`. Vérifiable à tout moment via `GET /api/v1/apps` (jeton non scopé). Un
+> mauvais `app_id` de scope ne produit **aucune erreur** (le jeton est valide, la requête
+> répond `200`) : il filtre juste sur une app qui n'a aucune donnée → **tout s'affiche à
+> zéro** côté UTI sans qu'aucun log n'alerte. C'est la cause la plus fréquente d'un
+> tableau de bord UTI vide alors que la console MIP montre des chiffres réels.
+>
+> Plusieurs jetons cohabitent (séparés par des virgules ; rotation sans coupure). Un
+> jeton **sans** `@app` voit toutes les apps (réservé à MIP).
+
+### Checklist si le tableau de bord UTI affiche des zéros
+
+1. `GET /api/v1/apps` avec un jeton **non scopé** (ou depuis la console) → confirme que
+   `gip-plateforme` a bien des sessions/appels IA sur la période demandée.
+2. Vérifier la valeur réelle de `CONSOLE_API_TOKENS` sur Vercel (projet
+   `mip-rum-console`) : le suffixe après `@` doit être `gip-plateforme`, à l'octet près
+   (pas d'espace, pas de tiret différent).
+3. Un changement de variable d'environnement Vercel **nécessite un redeploy** pour
+   s'appliquer — vérifier que le déploiement courant postdate le changement.
+4. Confirmer côté UTI que l'appel se fait **depuis leur back** (le jeton ne doit jamais
+   apparaître dans le bundle JS envoyé au navigateur — sinon fuite du jeton en plus du
+   bug d'affichage).
+5. Tester en direct : `curl -H "Authorization: Bearer <jeton>" https://<console-mip>/api/v1/ai/costs?group_by=user` doit renvoyer des lignes non vides pour `gip-plateforme`.
 
 ## 3. Appels (côté back UTI)
 
