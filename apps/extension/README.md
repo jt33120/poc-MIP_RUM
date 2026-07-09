@@ -1,22 +1,27 @@
-# MIP RUM — extension navigateur (Ext-B, squelette)
+# MIP RUM — extension navigateur (Ext-B + Ext-C)
 
 2ᵉ capteur RUM du catalogue MIP. Cf. `docs/CADRAGE_EXTENSION.md` pour le cadrage complet.
 
-## Ce que fait ce squelette (Ext-B)
+## Ce que fait l'extension
 
 Sur chaque navigation top-level, le service worker (`src/background.ts`) résout le
 domaine visité via `GET /api/extension/resolve` (registre `extension_scope`, géré
-côté console). Si le domaine est enregistré, la permission déjà accordée, et que le
-site n'a pas déjà son propre SDK (`window.MIPRum`), le SDK RUM (`vendor/mip-rum.js` —
-**le même bundle** que le script classique, copié depuis `packages/rum-sdk/dist`)
-est injecté en `world: "MAIN"`, avec `collectionSource: "extension"`.
+côté console à `/admin/extension-scope`). Si le domaine est enregistré, la permission
+déjà accordée, et que le site n'a pas déjà son propre SDK (`window.MIPRum`), le SDK RUM
+(`vendor/mip-rum.js` — **le même bundle** que le script classique, copié depuis
+`packages/rum-sdk/dist`) est injecté en `world: "MAIN"`, avec
+`collectionSource: "extension"`.
 
-**Ce squelette n'a pas d'UI.** L'octroi de permission (`chrome.permissions.request`,
-qui exige un geste utilisateur) et la transparence ("MIP RUM observe : `<domaine>`")
-sont le périmètre d'**Ext-C** (popup). Pour tester ce squelette avant Ext-C, accorder
-manuellement l'accès au site depuis `chrome://extensions` → détails de l'extension →
-"Accès aux sites" (ou tester via une policy d'entreprise `ExtensionSettings` qui
-pré-accorde `host_permissions`).
+**Le popup (`popup.html` / `src/popup.ts`, Ext-C)** est le SEUL endroit où l'extension
+passe d'un domaine "reconnu" à "observé" : `chrome.permissions.request()` exige un
+geste utilisateur, satisfait par le clic sur l'icône qui ouvre le popup. Le popup
+affiche toujours l'état courant (transparence) :
+- domaine non enregistré → message neutre, rien d'autre ;
+- domaine reconnu mais permission pas encore accordée → bouton "Activer sur ce
+  domaine" ;
+- site déjà instrumenté par son propre SDK, ou déjà observé → bouton "Retirer
+  l'autorisation pour ce domaine" (effective à la prochaine navigation — on ne
+  prétend pas arrêter à chaud un SDK déjà initialisé sur la page courante).
 
 ## Build
 
@@ -24,18 +29,19 @@ pré-accorde `host_permissions`).
 pnpm --filter extension build
 ```
 
-Régénère `vendor/background.js` (bundle du service worker) et `vendor/mip-rum.js`
-(copie du SDK — à relancer après tout changement dans `packages/rum-sdk`).
+Régénère `vendor/background.js`, `vendor/popup.js` et `vendor/mip-rum.js` (copie du
+SDK — à relancer après tout changement dans `packages/rum-sdk`).
 
 ## Charger en local (sideload, mode développeur)
 
 1. `pnpm --filter extension build`
 2. `chrome://extensions` (ou `edge://extensions`) → activer le "mode développeur"
 3. "Charger l'extension non empaquetée" → sélectionner ce dossier (`apps/extension/`)
+4. Épingler l'icône de l'extension pour accéder au popup
 
 ## Enregistrer un domaine à observer
 
-Actuellement via SQL direct sur `extension_scope` (l'admin console dédiée est Ext-C) :
+Via `/admin/extension-scope` dans la console (admin only), ou en SQL direct :
 
 ```sql
 insert into extension_scope (domain, app_id) values ('app.client.fr', 'gip-plateforme');

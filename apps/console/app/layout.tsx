@@ -152,6 +152,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     { href: "/admin/users", label: "Utilisateurs", icon: "user" as const },
                     { href: "/admin/privacy", label: "Vie privée · DSAR", icon: "shield" as const },
                     { href: "/admin/read-tokens", label: "Tokens de lecture", icon: "trace" as const },
+                    { href: "/admin/extension-scope", label: "Extension navigateur", icon: "compass" as const },
                     { href: "/admin/audit", label: "Audit", icon: "list" as const },
                     { href: "/admin/usage", label: "Consommation", icon: "gauge" as const },
                     { href: "/admin/health", label: "Santé interne", icon: "activity" as const },

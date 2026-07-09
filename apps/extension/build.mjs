@@ -15,8 +15,19 @@ await build({
   logLevel: "warning",
 });
 
+// Popup (Ext-C) : transparence + octroi de permission (chrome.permissions.request,
+// geste utilisateur satisfait par le clic sur l'icône qui ouvre ce popup).
+await build({
+  entryPoints: ["src/popup.ts"],
+  bundle: true,
+  format: "esm",
+  target: ["chrome111"],
+  outfile: "vendor/popup.js",
+  logLevel: "warning",
+});
+
 // Le capteur navigateur réutilise LE MÊME bundle SDK que le script classique —
 // aucune divergence de logique de collecte entre les deux modes RUM.
 copyFileSync("../../packages/rum-sdk/dist/mip-rum.js", "vendor/mip-rum.js");
 
-console.log("vendor/background.js + vendor/mip-rum.js (copié depuis packages/rum-sdk/dist) prêts.");
+console.log("vendor/background.js + vendor/popup.js + vendor/mip-rum.js (copié depuis packages/rum-sdk/dist) prêts.");
