@@ -23,7 +23,12 @@ Deux modes (le handler tranche, le middleware ne redirige pas `/api/v1`) :
    👉 mode recommandé pour le **back Angular MIP** (appel serveur-à-serveur).
    - `token` → **toutes apps** (réservé à MIP).
    - `token@app1;app2` → jeton **scopé** à ces apps (comme un viewer scopé) : un
-     partenaire (ex. UTI) reçoit `<jeton>@uti` et ne voit **que** son app. Voir
+     partenaire (ex. UTI) reçoit `<jeton>@<app_id exact>` et ne voit **que** son app.
+     ⚠️ `<app_id>` doit être l'identifiant **exact** tel qu'envoyé par le SDK
+     (`appId` dans `MIPRum.init(...)`), pas le nom de la plateforme partenaire — pour
+     UTI c'est `gip-plateforme` (vérifiable via `GET /api/v1/apps`), **pas** `uti`.
+     Un mauvais `app_id` de scope ne provoque **aucune erreur** : le jeton fonctionne
+     mais filtre sur une app vide → tout s'affiche à zéro côté partenaire. Voir
      `docs/HANDOVER_UTI.md`.
 2. **Cookie de session** — le cookie JWT `mip_session` de la console. Respecte le
    **RBAC** existant : un `viewer` scopé ne voit que ses apps. Pratique pour un appel
