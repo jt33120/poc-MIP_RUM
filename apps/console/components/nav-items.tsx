@@ -36,6 +36,7 @@ export const CATEGORIES: NavCategory[] = [
     children: [
       { href: "/sessions", label: "Sessions" },
       { href: "/paths", label: "Parcours" },
+      { href: "/forms", label: "Formulaires" },
       { href: "/tracing", label: "Tracing" },
       { href: "/map", label: "Carte" },
       { href: "/correlation", label: "Corrélation" },
