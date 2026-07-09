@@ -30,7 +30,8 @@ function segmentApplies(pathname: string): boolean {
     pathname.startsWith("/paths") ||
     pathname.startsWith("/forms") ||
     pathname.startsWith("/acquisition") ||
-    pathname.startsWith("/goals")
+    pathname.startsWith("/goals") ||
+    pathname.startsWith("/retention")
   );
 }
 
