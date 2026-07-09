@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { ICON_PATHS, Icon } from "@/components/icons";
+import { LoginSubmitButton } from "@/components/LoginSubmitButton";
 import { getUser } from "@/lib/auth";
 import type { SearchParams } from "@/lib/filters";
 import { isOidcEnabled } from "@/lib/oidc";
@@ -71,9 +72,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
                   Identifiants invalides.
                 </p>
               )}
-              <button type="submit" className="btn-accent py-2 text-center">
-                Se connecter
-              </button>
+              <LoginSubmitButton />
             </form>
             {ssoEnabled && (
               <>
