@@ -16,6 +16,9 @@ export async function middleware(req: NextRequest) {
   // OU cookie, DANS le handler — le middleware ne doit pas la rediriger vers /login
   // (le front Angular MIP appelle sans cookie de session).
   if (req.nextUrl.pathname.startsWith("/api/v1")) return NextResponse.next();
+  // API de lecture propriétaire (livrable UTI) : auth par token en base dans le
+  // handler (Authorization: Bearer) — appel serveur-à-serveur sans cookie.
+  if (req.nextUrl.pathname.startsWith("/api/rum")) return NextResponse.next();
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const user = token ? await verifyJwt(token) : null;
