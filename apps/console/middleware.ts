@@ -19,6 +19,9 @@ export async function middleware(req: NextRequest) {
   // API de lecture propriétaire (livrable UTI) : auth par token en base dans le
   // handler (Authorization: Bearer) — appel serveur-à-serveur sans cookie.
   if (req.nextUrl.pathname.startsWith("/api/rum")) return NextResponse.next();
+  // Résolution domaine -> app_id pour l'extension navigateur (Ext-B) : appelée par
+  // le service worker de l'extension (sans cookie), lecture seule, sans PII.
+  if (req.nextUrl.pathname.startsWith("/api/extension")) return NextResponse.next();
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const user = token ? await verifyJwt(token) : null;
