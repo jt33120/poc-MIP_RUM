@@ -49,6 +49,7 @@ export const CATEGORIES: NavCategory[] = [
     icon: "target",
     domain: "perf",
     children: [
+      { href: "/goals", label: "Objectifs" },
       { href: "/slo", label: "SLO" },
       { href: "/alerts", label: "Alertes" },
       { href: "/forecast", label: "Prévisions" },
