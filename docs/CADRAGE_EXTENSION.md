@@ -231,14 +231,14 @@ options, à trancher en Ext-B :
 
 ## 8. Découpage en lots (1 lot = 1 PR draft, rythme habituel)
 
-| Lot | Contenu | Cœur pur + testé | Ordre de grandeur |
-|---|---|---|---|
-| **Ext-A** | Migration `extension_scope` (v27) + colonne `collection_source` sur `rum_session` + câblage edge function `v1-traces` + `collection_source` dans le segment engine (allowlist) + `collectionSource` dans le SDK (`types.ts` + `realEmit`, rebuild + `cmp`) | `lib/segments.ts` (test), résolution registre pure | **2–3 j·h** |
-| **Ext-B** | Squelette extension MV3 : `manifest.json`, service worker (résolution domaine→app_id, préséance), content script MAIN world qui charge le SDK + endpoint `GET /api/extension/resolve` | logique de résolution pure + testée | **3–4 j·h** |
-| **Ext-C** | Popup transparence (domaine suivi / toggle local) + page admin `/admin/extension-scope` (clone `read-tokens`) | Server Actions + audit_log | **2–3 j·h** |
-| **Ext-D** | Packaging POC (sideload + policy `ExtensionInstallForcelist` self-hébergée exemple) + doc de déploiement IT + smoke-test prod | — | **1–2 j·h** |
+| Lot | Contenu | Cœur pur + testé | Ordre de grandeur | Statut |
+|---|---|---|---|---|
+| **Ext-A** | Migration `extension_scope` (v27) + colonne `collection_source` sur `rum_session` + câblage edge function `v1-traces` + `collection_source` dans le segment engine (allowlist) + `collectionSource` dans le SDK (`types.ts` + `realEmit`, rebuild + `cmp`) | `lib/segments.ts` (test), résolution registre pure | **2–3 j·h** | ✅ livré |
+| **Ext-B** | Squelette extension MV3 : `manifest.json`, service worker (résolution domaine→app_id, préséance), content script MAIN world qui charge le SDK + endpoint `GET /api/extension/resolve` | logique de résolution pure + testée | **3–4 j·h** | ✅ livré |
+| **Ext-C** | Popup transparence (domaine suivi / toggle local) + page admin `/admin/extension-scope` (clone `read-tokens`) | Server Actions + audit_log | **2–3 j·h** | ✅ livré |
+| **Ext-D** | Packaging POC (clé de signature stable, ID d'extension figé, doc de déploiement `docs/DEPLOY_EXTENSION.md` : sideload + policy d'entreprise self-hébergée) | — | **1–2 j·h** | ✅ livré |
 
-**Total POC ≈ 8–12 j·h.** (Phase 2 non chiffrée ici.)
+**Total POC ≈ 8–12 j·h — POC complet.** (Phase 2 — publication store, grand public — non chiffrée ici, cf. §7.)
 
 ### Dépendances / séquencement
 - Ext-A **d'abord** (le schéma et le tag conditionnent tout le reste).

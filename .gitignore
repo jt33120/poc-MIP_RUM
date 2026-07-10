@@ -20,3 +20,10 @@ supabase/.temp/
 demo/.venv/
 __pycache__/
 .vercel
+
+# Ext-D : clé privée de signature de l'extension — NE JAMAIS committer (l'ID
+# d'extension stable dérive de la clé PUBLIQUE, déjà dans manifest.json "key" ;
+# la clé privée sert uniquement à empaqueter un .crx signé, conservée hors repo)
+apps/extension/*.pem
+apps/extension/*-key*.der
+apps/extension/*-key*.b64
