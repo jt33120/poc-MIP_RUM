@@ -3,10 +3,14 @@
   "name": "MIP RUM — capteur navigateur",
   "version": "0.1.0",
   "description": "Deuxième capteur RUM MIP : observe UNIQUEMENT les domaines enregistrés côté MIP (aucune collecte hors périmètre). POC interne, non publié.",
-  "permissions": ["scripting", "webNavigation", "storage"],
+  "permissions": ["scripting", "webNavigation", "storage", "activeTab"],
   "optional_host_permissions": ["*://*/*"],
   "background": {
     "service_worker": "vendor/background.js",
     "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "MIP RUM"
   }
 }

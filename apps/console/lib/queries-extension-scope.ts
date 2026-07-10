@@ -29,3 +29,17 @@ export async function listExtensionScopes(): Promise<ExtensionScopeRow[]> {
      from extension_scope order by created_at desc`,
   );
 }
+
+/** Enregistre un domaine (upsert par hostname exact) — active par défaut. */
+export async function createExtensionScope(domain: string, appId: string): Promise<void> {
+  await q(
+    `insert into extension_scope (domain, app_id) values ($1, $2)
+     on conflict (domain) do update set app_id = excluded.app_id, active = true`,
+    [domain, appId],
+  );
+}
+
+/** Bascule active/inactive (kill-switch sans supprimer la ligne). */
+export async function toggleExtensionScope(id: number, active: boolean): Promise<void> {
+  await q(`update extension_scope set active = $2 where id = $1`, [id, active]);
+}

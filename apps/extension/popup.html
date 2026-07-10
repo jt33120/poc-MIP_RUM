@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>MIP RUM</title>
+    <style>
+      body {
+        font: 13px/1.4 -apple-system, system-ui, sans-serif;
+        width: 260px;
+        margin: 0;
+        padding: 12px;
+        color: #1a1a1a;
+      }
+      .domain {
+        font-weight: 600;
+        margin: 0 0 4px;
+        word-break: break-all;
+      }
+      .status {
+        margin: 0 0 10px;
+        color: #555;
+      }
+      .status-ok {
+        color: #0a7a3d;
+      }
+      .status-permission-required {
+        color: #b45309;
+      }
+      button {
+        width: 100%;
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+        background: #fff;
+        cursor: pointer;
+        font: inherit;
+      }
+      button:hover {
+        background: #f5f5f5;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      footer {
+        margin-top: 10px;
+        font-size: 11px;
+        color: #999;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">Chargement…</div>
+    <footer>MIP RUM · capteur navigateur (POC)</footer>
+    <script src="vendor/popup.js" type="module"></script>
+  </body>
+</html>
