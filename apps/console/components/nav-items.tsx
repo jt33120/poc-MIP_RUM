@@ -58,6 +58,7 @@ export const CATEGORIES: NavCategory[] = [
     ],
   },
   { href: "/ai", label: "Performance IA", icon: "ai", domain: "ai" },
+  { href: "/api-docs", label: "API", icon: "grid", domain: "neutral" },
 ];
 
 /** Un href de nav correspond-il au chemin courant ? ("/" exige l'égalité stricte). */
