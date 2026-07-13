@@ -1,0 +1,15 @@
+# Contexte de build Docker = racine du repo (cf. infra/docker/docker-compose.yml).
+# On exclut tout ce qui alourdit le contexte sans être copié par un Dockerfile.
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/.turbo
+.git
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+**/playwright-report
+**/test-results
+scratchpad
