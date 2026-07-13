@@ -1,8 +1,10 @@
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { ScatterPlot } from "@/components/charts/ScatterPlot";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import { fmtVital } from "@/lib/format";
 import { inpOffenders, topFrustrations } from "@/lib/queries-frustration";
-import { RATING_CLASS, rating2026 } from "@/lib/rating";
+import { RATING_CLASS, RATING_HEX, rating2026 } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +29,55 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
         }
       />
 
-      <div className="mb-5 grid grid-cols-2 gap-4 sm:max-w-md">
-        <Stat label="Rage clicks" value={rage} tone="text-red-600 dark:text-red-400" />
-        <Stat label="Dead clicks" value={dead} tone="text-amber-600 dark:text-amber-400" />
-      </div>
+      {(() => {
+        // Hero : nuage « fréquence × lenteur » des éléments à l'INP. Un point en
+        // haut à droite = interagi souvent ET lent = priorité de correction.
+        const pts = inp
+          .filter((o) => o.p75 != null)
+          .map((o) => {
+            const rating = rating2026("INP", Number(o.p75));
+            return {
+              x: o.n,
+              y: Number(o.p75),
+              z: o.worst != null ? Number(o.worst) : undefined,
+              label: o.target,
+              color: rating ? RATING_HEX[rating] : "#94a3b8",
+            };
+          });
+        const worstEl = [...inp].filter((o) => o.p75 != null).sort((a, b) => Number(b.p75) - Number(a.p75))[0];
+        return (
+          <SupervisionHero
+            chartTitle="Éléments lents à l'INP — fréquence × latence"
+            chart={
+              pts.length ? (
+                <ScatterPlot
+                  points={pts}
+                  xLabel="Interactions"
+                  yLabel="INP p75"
+                  yUnit=" ms"
+                  yFormat={(v) => `${Math.round(v)}`}
+                />
+              ) : (
+                <p className="py-12 text-center text-sm text-ink-faint">Aucune interaction lente sur {period.label}.</p>
+              )
+            }
+          >
+            <HeroStat label="Rage clicks" value={rage.toLocaleString("fr-FR")} tone={rage > 0 ? "poor" : "good"} />
+            <HeroStat label="Dead clicks" value={dead.toLocaleString("fr-FR")} tone={dead > 0 ? "warn" : "good"} />
+            <HeroStat
+              label="Élément le plus lent"
+              value={worstEl ? fmtVital("INP", Number(worstEl.p75)) : "—"}
+              hint={worstEl?.target}
+              tone="warn"
+            />
+            <HeroReading>
+              Chaque point = un élément interactif : X = nombre d&apos;interactions, Y = INP p75, taille = pire
+              cas, couleur = état 2026. Ceux en haut à droite sont à la fois fréquents et lents — à corriger en
+              priorité. Signaux rage/dead et détail par élément ci-dessous.
+            </HeroReading>
+          </SupervisionHero>
+        );
+      })()}
 
       <h2 className="mb-2 text-sm font-semibold text-ink">Signaux de frustration</h2>
       <div className="card mb-8 overflow-hidden">
@@ -87,15 +134,6 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function Stat({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return (
-    <div className="card px-4 py-3">
-      <div className="text-[11px] uppercase tracking-wide text-ink-faint">{label}</div>
-      <div className={`mt-0.5 text-2xl font-bold tabular-nums ${tone}`}>{value.toLocaleString("fr-FR")}</div>
     </div>
   );
 }

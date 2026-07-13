@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Sparkline } from "@/components/features/Sparkline";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import { fmtDate } from "@/lib/format";
 import {
   errorGroups,
@@ -37,6 +39,74 @@ export default async function Errors({
           </>
         }
       />
+
+      {(() => {
+        // Hero : volume d'erreurs par heure sur 24 h, empilé par groupe dominant
+        // (repère les pics et quel groupe les cause). errorSparklines : index 0 =
+        // il y a 23 h, index 23 = heure courante.
+        const PALETTE = ["#ef4444", "#f89101", "#d97706", "#7c3aed", "#2563eb"];
+        const TOP_N = 5;
+        const top = groups.slice(0, TOP_N);
+        const now = Date.now();
+        const stackData = Array.from({ length: 24 }, (_v, i) => {
+          const t = new Date(now - (23 - i) * 3_600_000);
+          const row: Record<string, number | string> = {
+            h: t.toLocaleTimeString("fr-FR", { hour: "2-digit" }),
+          };
+          top.forEach((g, gi) => {
+            row[`g${gi}`] = (sparklines.get(g.fingerprint) ?? [])[i] ?? 0;
+          });
+          row.autres = groups
+            .slice(TOP_N)
+            .reduce((s, g) => s + ((sparklines.get(g.fingerprint) ?? [])[i] ?? 0), 0);
+          return row;
+        });
+        const series: StackSeries[] = top.map((g, gi) => ({
+          key: `g${gi}`,
+          name: (g.error_type ?? "Error").slice(0, 22),
+          color: PALETTE[gi],
+        }));
+        if (groups.length > TOP_N) series.push({ key: "autres", name: "autres", color: "#94a3b8" });
+        const total24 = stackData.reduce(
+          (s, r) => s + series.reduce((a, se) => a + (Number(r[se.key]) || 0), 0),
+          0,
+        );
+        const peak = stackData.reduce(
+          (mx, r) => Math.max(mx, series.reduce((a, se) => a + (Number(r[se.key]) || 0), 0)),
+          0,
+        );
+        const totalOcc = groups.reduce((s, g) => s + g.occurrences, 0);
+        return (
+          <SupervisionHero
+            chartTitle="Volume d'erreurs par heure (24 h) — par groupe"
+            chart={
+              groups.length ? (
+                <StackedBars data={stackData} xKey="h" series={series} yUnit="" />
+              ) : (
+                <p className="py-12 text-center text-sm text-ink-faint">Aucune erreur sur la période 🎉</p>
+              )
+            }
+          >
+            <HeroStat
+              label={`Occurrences · ${periodLabel(f)}`}
+              value={totalOcc.toLocaleString("fr-FR")}
+              tone={totalOcc > 0 ? "warn" : "good"}
+            />
+            <HeroStat label="Groupes distincts" value={groups.length.toLocaleString("fr-FR")} />
+            <HeroStat
+              label="Pic horaire (24 h)"
+              value={peak.toLocaleString("fr-FR")}
+              hint={`${total24.toLocaleString("fr-FR")} erreurs sur les dernières 24 h`}
+            />
+            <HeroReading>
+              Chaque colonne = une heure, empilée par groupe d&apos;erreur dominant (les autres regroupés en
+              gris). Une barre haute isolée = un pic à investiguer. Détail par signature, sessions touchées et
+              tendance dans le tableau ci-dessous.
+            </HeroReading>
+          </SupervisionHero>
+        );
+      })()}
+
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-panel2">

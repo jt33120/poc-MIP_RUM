@@ -4,6 +4,7 @@ import { TrafficTimeseries } from "@/components/charts/TrafficTimeseries";
 import { VitalsTimeseries } from "@/components/charts/VitalsTimeseries";
 import { GlossaryTip } from "@/components/GlossaryTip";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { VitalCard } from "@/components/VitalCard";
 import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
@@ -50,6 +51,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const prevByName = Object.fromEntries(vitalsPrev.map((v) => [v.name, v]));
   const errorRate = stats.pageviews ? ((stats.errors / stats.pageviews) * 100).toFixed(1) : "0";
   const prevErrorRate = statsPrev.pageviews ? (statsPrev.errors / statsPrev.pageviews) * 100 : null;
+  const pctOf = (cur: number, prev: number | null | undefined) =>
+    prev != null && prev !== 0 ? { pct: ((cur - prev) / prev) * 100 } : null;
 
   // heatmap 14 j : axe des jours + index `${jour}|${heure}` des créneaux
   const gridDays = lastNDayKeys(GRID_DAYS);
@@ -86,46 +89,43 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         ))}
       </div>
 
-      <div className="mb-6 grid grid-cols-3 gap-4">
-        <Stat
-          label={`Sessions (${period.label})`}
-          value={String(stats.sessions)}
-          prev={statsPrev.sessions}
-          current={stats.sessions}
-          testid="stat-sessions"
+      <SupervisionHero
+        chartTitle={`LCP p75 dans le temps (buckets ${period.bucketLabel})`}
+        chart={
+          series.length ? (
+            <VitalsTimeseries
+              data={series.map((s) => ({ ...s, bucket: String(s.bucket), p75: Number(s.p75) }))}
+              thresholds={THRESHOLDS.LCP}
+            />
+          ) : (
+            <p className="py-12 text-center text-sm text-ink-faint">
+              Pas de données sur la fenêtre — élargis la période ou ouvre la démo.
+            </p>
+          )
+        }
+      >
+        <HeroStat
+          label={`Sessions · ${period.label}`}
+          value={stats.sessions.toLocaleString("fr-FR")}
+          delta={pctOf(stats.sessions, statsPrev.sessions)}
         />
-        <Stat
-          label={`Pages vues (${period.label})`}
-          value={String(stats.pageviews)}
-          prev={statsPrev.pageviews}
-          current={stats.pageviews}
-          testid="stat-pageviews"
+        <HeroStat
+          label="Pages vues"
+          value={stats.pageviews.toLocaleString("fr-FR")}
+          delta={pctOf(stats.pageviews, statsPrev.pageviews)}
         />
-        <Stat
+        <HeroStat
           label="Taux d'erreur JS / page vue"
           value={`${errorRate} %`}
-          prev={prevErrorRate}
-          current={Number(errorRate)}
-          lowerIsBetter
-          testid="stat-errors"
+          delta={prevErrorRate != null ? { pct: (Number(errorRate) - prevErrorRate) / (prevErrorRate || 1) * 100, lowerIsBetter: true } : null}
+          tone={Number(errorRate) > 2 ? "poor" : Number(errorRate) > 1 ? "warn" : "good"}
         />
-      </div>
-
-      <div className="card p-4">
-        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-          LCP p75 dans le temps (buckets {period.bucketLabel})
-        </h2>
-        {series.length ? (
-          <VitalsTimeseries
-            data={series.map((s) => ({ ...s, bucket: String(s.bucket), p75: Number(s.p75) }))}
-            thresholds={THRESHOLDS.LCP}
-          />
-        ) : (
-          <p className="py-12 text-center text-sm text-ink-faint">
-            Pas de données sur la fenêtre — élargis la période ou ouvre la démo.
-          </p>
-        )}
-      </div>
+        <HeroReading>
+          Courbe = LCP p75 dans le temps face aux seuils 2026 (bande verte «&nbsp;bon&nbsp;» sous 2,0&nbsp;s,
+          rouge «&nbsp;mauvais&nbsp;» au-delà). Les tuiles comparent le volume et la fiabilité à la période
+          précédente. Détail vital par vital ci-dessous, historique 14&nbsp;jours plus bas.
+        </HeroReading>
+      </SupervisionHero>
 
       {/* Historique de santé 14 j (fenêtre fixe, comme les anomalies) :
           heatmap jour × heure + courbes de volume et de p75 LCP associées. */}
@@ -201,51 +201,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       </section>
 
       <AnomalyTable health={health} />
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  prev,
-  current,
-  lowerIsBetter = false,
-  testid,
-}: {
-  label: string;
-  value: string;
-  prev: number | null;
-  current: number;
-  lowerIsBetter?: boolean;
-  testid: string;
-}) {
-  let trend: React.ReactNode = null;
-  if (prev != null && prev !== 0) {
-    const delta = ((current - prev) / prev) * 100;
-    const flat = Math.abs(delta) < 2;
-    const worse = lowerIsBetter ? delta > 0 : delta < 0;
-    const cls = flat
-      ? "text-ink-faint"
-      : worse
-        ? "text-red-600 dark:text-red-400"
-        : "text-emerald-600 dark:text-emerald-400";
-    trend = (
-      <span className={`text-xs font-semibold tabular-nums ${cls}`} title="vs période précédente">
-        {flat ? "→" : delta > 0 ? "↑" : "↓"} {delta > 0 ? "+" : ""}
-        {delta.toFixed(0)} %
-      </span>
-    );
-  }
-  return (
-    <div className="card p-4 transition hover:shadow-pop">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
-      <div className="mt-1.5 flex items-baseline gap-2">
-        <span className="text-2xl font-bold tabular-nums tracking-tight" data-testid={testid}>
-          {value}
-        </span>
-        {trend}
-      </div>
     </div>
   );
 }
