@@ -76,6 +76,36 @@ curl -s -H "Authorization: Bearer $MIP_RUM_READ_TOKEN" \
 
 Une métrique indisponible vaut **`null`** (la clé n'est jamais omise).
 
+## Reproduire les graphes avec `/rum/summary`
+
+> Un **seul appel** suffit à alimenter un tableau de bord partenaire complet. Correspondance
+> champ → graphe (tous les champs sont à la racine de la réponse) :
+
+| Graphe | Type conseillé | Champs (x → y) |
+|---|---|---|
+| Trafic & charge par jour | aire / ligne | `series[].date` → `sessions`, `page_views`, `errors`, `avg_load_ms` |
+| Tuiles Core Web Vitals + fiabilité | KPI / jauges | `p75_lcp_ms`, `p75_inp_ms`, `avg_load_ms`, `error_rate`, `frustration_signals` |
+| Pages les plus consultées / lentes | barres classées | `top_routes[].route` → `views` ou `avg_ms` ; `errors` en libellé |
+| Top erreurs | barres | `top_errors[].message` → `count` (`last_seen` en infobulle) |
+| Coût IA par modèle | donut / barres | `ai_by_model[].{provider,model,cost_usd,calls,tokens}` |
+| Coût IA par utilisateur | barres classées | `ai_top_users[].{user_hash,cost_usd,calls}` |
+| Tuiles IA | KPI | `ai_calls`, `ai_tokens`, `ai_cost_usd`, `ai_p75_latency_ms`, `ai_error_rate` |
+
+### Ce que `/rum/summary` ne couvre pas
+
+`/rum/summary` expose des **scalaires + une série journalière trafic**. Pour ces visuels,
+passer par `/api/v1/*` (jeton `CONSOLE_API_TOKENS@gip-plateforme`, cf. `docs/API_CONSOLE.md`) :
+
+- **LCP p75 _dans le temps_** (courbe vs seuils) → `GET /api/v1/vitals?series=LCP`
+- **Heatmap de santé jour × heure** → `GET /api/v1/health-grid`
+- **INP / CLS p75 par route**, détail des routes lentes → `GET /api/v1/pages`
+- **Décomposition de latence front/back** → `GET /api/v1/tracing`
+- **Coût IA _par jour_** (série) et par route → `GET /api/v1/ai`
+
+Les graphes Frustration, Expérience, Acquisition, Rétention, Parcours, Formulaires,
+Objectifs, SLO, Alertes et Carte ne sont **exposés par aucune API** à ce jour (cf. la
+section « Non exposé » de `docs/API_CONSOLE.md`) — nous les ouvrons sur demande.
+
 ## Notes techniques
 
 - **avg_load_ms** = moyenne du **First Contentful Paint** (perception de « la page

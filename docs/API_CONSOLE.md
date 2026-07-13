@@ -167,6 +167,51 @@ webhook/slack (e-mail = stub existant, cf. `docs/ALERTING.md`). Compte OpenRoute
 
 ---
 
+## Reproduire les graphes de supervision
+
+> Correspondance **graphe de la console → endpoint → champs à tracer**, pour rejouer
+> les visuels côté client (ex. plateforme UTI). Tous les champs ci-dessous sont dans
+> l'objet `data` de l'enveloppe. Les seuils Core Web Vitals 2026 : LCP bon < 2000 ms /
+> mauvais > 4000 ms · INP < 200 / > 500 · CLS < 0,1 / > 0,25.
+
+| Graphe (page console) | Type conseillé | Endpoint | Champs (x → y) |
+|---|---|---|---|
+| Courbe LCP p75 vs seuils (`/`, `/forecast`) | aire ou ligne + lignes de seuil | `GET /vitals?series=LCP` | `series.LCP[].bucket` → `series.LCP[].p75` |
+| Tuiles Core Web Vitals + tendance (`/`) | KPI / jauges | `GET /overview` | `vitals.current[].{name,p75}` vs `vitals.previous[]` ; `stats.current.{sessions,pageviews,errors}` vs `stats.previous` |
+| Heatmap de santé jour × heure (`/`) | heatmap | `GET /health-grid` | `grid[].{day,hour,good_w,total_w}` → couleur = `good_w/total_w` |
+| Trafic & fiabilité par jour (`/`, `/forecast`) | aire + ligne | `GET /health-grid` | `dailyTraffic[].day` → `pageviews` (aire) & `errors` (ligne) |
+| Routes les plus lentes (`/pages`) | barres classées | `GET /pages` | `routes[].route` → `lcp_p75` (couleur = rating) ; `views` en libellé |
+| Décomposition latence serveur vs réseau (`/tracing`) | barres empilées | `GET /tracing` | `apiCalls[]` : segment serveur = `back_p75`, réseau = `front_p75 − back_p75` |
+| Routes backend p75/p95 (`/tracing`) | barres | `GET /tracing` | `backRoutes[].{route,p75,p95,err}` |
+| Coût LLM par jour (`/ai`) | ligne + volume | `GET /ai` | `daily[].day` → `cost_usd` (ligne) & `calls` (barres) |
+| Coût / usage par modèle (`/ai`) | donut ou barres | `GET /ai` | `byModel[].{provider,model,cost_usd,calls,total_tokens}` |
+| Scatter corrélation robot ↔ réel (`/correlation`) | nuage de points | `GET /correlation` | `cards[]` : x = `syn_latency_avg` (robot), y = `rum_lcp_p75` (réel), taille = `rum_sessions` |
+| Angles morts (`/correlation`) | table / barres | `GET /correlation` | `blindSpots[].{route,bucket,rum_lcp_p75,syn_latency_avg,gap_ms}` |
+| Groupes d'erreurs (top) (`/errors`) | barres | `GET /errors` | `groups[].{error_type,sample_message,occurrences,sessions}` |
+
+### Non exposé par l'API (visuels console uniquement)
+
+Ces graphes s'appuient sur des agrégats **non publiés** par `/api/v1` — les reproduire
+demanderait un **nouvel endpoint** (petit ajout : la couche `lib/queries*.ts` existe déjà,
+il ne reste qu'à l'exposer). À nous signaler si UTI en a besoin :
+
+- **Erreurs par heure empilées (24 h)** — `/errors` ne renvoie que les compteurs agrégés,
+  pas la série horaire par signature.
+- **Robot vs réel _dans le temps_** — `/correlation` renvoie les cartes + angles morts
+  (scalaires), pas la série horaire `v_correlation`.
+- **Frustration** (scatter INP), **Expérience** (radar + tendance CSAT), **Sessions**
+  (nouveaux/revenants), **Acquisition** (canaux), **Rétention** (cohortes), **Parcours**
+  (Sankey/transitions), **Formulaires** (friction par champ), **Objectifs**, **SLO**
+  (jauges de budget), **Alertes** (timeline), **Carte** (graphe de service) — aucun
+  endpoint `/api/v1` dédié à ce jour.
+
+> Pour un **tableau de bord partenaire en un seul appel** (sans gérer 10 endpoints), voir
+> l'API `GET /rum/summary` (`docs/RUM_READ_API.md`) : elle agrège trafic, CWV, top routes,
+> top erreurs et coûts IA dans une seule réponse — c'est le point d'entrée recommandé pour
+> UTI. Utiliser `/api/v1/*` seulement pour le détail (série LCP, heatmap, tracing, etc.).
+
+---
+
 ## Exemple de client (Angular / fetch)
 
 ```ts
