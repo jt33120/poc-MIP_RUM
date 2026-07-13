@@ -14,6 +14,7 @@ import { getUser, popSecret } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
 import { buildSnippet, deriveStatus } from "@/lib/onboarding";
 import { getCustomer, probeOnboarding } from "@/lib/queries-customers";
+import { resolveExtensionScope } from "@/lib/queries-extension-scope";
 import type { SearchParams } from "@/lib/filters";
 import { selectProjectAction } from "../actions";
 import { createSiteAction } from "./actions";
@@ -21,11 +22,33 @@ import { createSiteAction } from "./actions";
 export const dynamic = "force-dynamic";
 
 const ERRORS: Record<string, string> = {
-  name: "Donnez un nom au site.",
+  name: "Donnez un nom à l'application.",
   app_id: "Identifiant invalide (minuscules, chiffres et tirets, 3–40 caractères).",
-  url: "URL du site invalide — attendez une adresse http(s) complète (ex. https://mon-site.fr).",
+  url: "Adresse invalide — attendez une URL http(s) complète (ex. https://mon-app.fr).",
   exists: "Cet identifiant est déjà pris — choisissez-en un autre.",
 };
+
+// Modes de collecte proposés à l'étape 1 (récap avantages / inconvénients).
+const MODES = [
+  {
+    value: "sdk",
+    badge: "1 ligne de code",
+    title: "Injection JS",
+    desc: "Un snippet dans le <head> de l'application. Web Vitals, erreurs, sessions et tracing automatiques.",
+    pros: ["Couvre tous vos visiteurs réels", "Données les plus complètes (replay, tracing)", "Permanent"],
+    cons: ["Nécessite d'accéder au code de l'application"],
+    when: "Vous contrôlez le code et voulez mesurer l'expérience de tous vos utilisateurs.",
+  },
+  {
+    value: "extension",
+    badge: "sans toucher au code",
+    title: "Extension navigateur",
+    desc: "Une extension installée sur les postes ; elle injecte le capteur sur le domaine enregistré, sans modifier l'application.",
+    pros: ["Zéro code sur l'application", "Déployable par politique d'entreprise sur un parc"],
+    cons: ["Ne couvre que les postes équipés (pas le grand public)", "Le domaine doit être enregistré"],
+    when: "Vous ne contrôlez pas le code, ou vous suivez l'expérience d'un parc interne (employés).",
+  },
+] as const;
 
 export default async function AddSite({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const user = await getUser();
@@ -46,14 +69,20 @@ export default async function AddSite({ searchParams }: { searchParams: Promise<
             <div className="text-base font-bold tracking-tight text-ink">
               MIP <span className="text-accent">RUM</span>
             </div>
-            <div className="text-[11px] uppercase tracking-[0.18em] text-ink-faint">Ajouter un site</div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-ink-faint">Ajouter une application</div>
           </div>
           <Link href="/select" className="btn-ghost ml-auto">
             ← Projets
           </Link>
         </header>
 
-        {appId ? <Integration appId={appId} ktToken={typeof sp.kt === "string" ? sp.kt : null} /> : (
+        {appId ? (
+          <Integration
+            appId={appId}
+            ktToken={typeof sp.kt === "string" ? sp.kt : null}
+            mode={sp.mode === "extension" ? "extension" : "sdk"}
+          />
+        ) : (
           <CreateForm error={typeof sp.error === "string" ? sp.error : null} />
         )}
       </div>
@@ -61,14 +90,15 @@ export default async function AddSite({ searchParams }: { searchParams: Promise<
   );
 }
 
-/** Étape 1 — formulaire minimal. */
+/** Étape 1 — nom, adresse, et choix du mode de collecte. */
 function CreateForm({ error }: { error: string | null }) {
   return (
     <>
-      <h1 className="text-2xl font-bold tracking-tight text-ink">Brancher un nouveau site</h1>
+      <h1 className="text-2xl font-bold tracking-tight text-ink">Brancher une nouvelle application</h1>
       <p className="mt-1.5 text-sm text-ink-soft">
-        Donnez un nom et l&apos;adresse du site. On crée le projet et sa clé, puis on vous montre comment
-        remonter les données — en une ligne de code, ou sans toucher au code du tout.
+        Un site web, une web app, une plateforme… Donnez-lui un nom et son adresse, choisissez comment
+        collecter les données, et on vous montre la configuration — en une ligne de code, ou sans toucher au
+        code du tout.
       </p>
 
       {error && (
@@ -79,11 +109,11 @@ function CreateForm({ error }: { error: string | null }) {
 
       <form action={createSiteAction} className="mt-6 grid gap-4">
         <label className="text-sm font-medium text-ink-soft">
-          Nom du site
+          Nom de l&apos;application
           <input name="name" required autoFocus placeholder="Ma boutique" className="field mt-1 w-full" />
         </label>
         <label className="text-sm font-medium text-ink-soft">
-          URL du site
+          Adresse (URL)
           <input
             name="url"
             type="url"
@@ -92,9 +122,55 @@ function CreateForm({ error }: { error: string | null }) {
             className="field mt-1 w-full"
           />
           <span className="mt-1 block text-xs text-ink-faint">
-            Sert d&apos;origine autorisée (CORS). Ajoutez d&apos;autres domaines plus tard si besoin.
+            Sert d&apos;origine autorisée (CORS) pour l&apos;injection JS, et de domaine observé pour
+            l&apos;extension. Ajoutez d&apos;autres domaines plus tard si besoin.
           </span>
         </label>
+
+        {/* Mode de collecte : 2 cartes radio (sélection sans JS via peer-checked). */}
+        <fieldset className="mt-1">
+          <legend className="mb-2 text-sm font-medium text-ink-soft">Mode d&apos;installation</legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {MODES.map((m, i) => (
+              <label key={m.value} className="relative block cursor-pointer">
+                <input
+                  type="radio"
+                  name="mode"
+                  value={m.value}
+                  defaultChecked={i === 0}
+                  className="peer sr-only"
+                />
+                <div className="h-full rounded-xl border border-line bg-panel p-4 transition peer-checked:border-accent peer-checked:bg-accent/[0.04] peer-checked:ring-2 peer-checked:ring-accent/20 hover:border-ink-faint/40">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-ink">{m.title}</span>
+                    <span className="rounded-full bg-panel2 px-2 py-0.5 text-[10px] font-medium text-ink-faint">
+                      {m.badge}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">{m.desc}</p>
+                  <ul className="mt-2.5 space-y-1 text-[11px]">
+                    {m.pros.map((p) => (
+                      <li key={p} className="flex gap-1.5 text-ink-soft">
+                        <span className="text-good">✓</span>
+                        {p}
+                      </li>
+                    ))}
+                    {m.cons.map((c) => (
+                      <li key={c} className="flex gap-1.5 text-ink-faint">
+                        <span className="text-warn">–</span>
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2.5 border-t border-line pt-2 text-[11px] leading-relaxed text-ink-faint">
+                    <strong className="font-semibold text-ink-soft">Quand :</strong> {m.when}
+                  </p>
+                </div>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
         <details className="text-sm">
           <summary className="cursor-pointer text-xs font-medium text-ink-soft">Identifiant personnalisé (optionnel)</summary>
           <input
@@ -114,13 +190,35 @@ function CreateForm({ error }: { error: string | null }) {
   );
 }
 
-/** Étape 2 — intégration (2 méthodes) + simulation + checklist live. */
-async function Integration({ appId, ktToken }: { appId: string; ktToken: string | null }) {
+/** Étape 2 — configuration selon le mode + simulation + checklist live. */
+async function Integration({
+  appId,
+  ktToken,
+  mode,
+}: {
+  appId: string;
+  ktToken: string | null;
+  mode: "sdk" | "extension";
+}) {
   const customer = await getCustomer(appId);
   if (!customer) redirect("/select/new");
   const probe = await probeOnboarding(appId);
   const status = deriveStatus(probe);
   const oneTimeKey = ktToken ? popSecret(ktToken) : null;
+  // Domaines observés par l'extension (dérivés des origines CORS de l'app), avec
+  // leur statut réel dans le registre extension_scope (enregistré à cet app_id ?).
+  const hosts = Array.from(
+    new Set(customer.allowed_origins.map(originHost).filter((h): h is string => !!h)),
+  );
+  const extensionDomains =
+    mode === "extension"
+      ? await Promise.all(
+          hosts.map(async (host) => {
+            const s = await resolveExtensionScope(host);
+            return { host, registered: !!s && s.app_id === appId && s.active };
+          }),
+        )
+      : [];
 
   const host = (await headers()).get("host") ?? "localhost:3000";
   const proto = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
@@ -148,8 +246,14 @@ async function Integration({ appId, ktToken }: { appId: string; ktToken: string 
         <h1 className="text-2xl font-bold tracking-tight text-ink">{customer.name} est créé</h1>
       </div>
       <p className="mt-1.5 text-sm text-ink-soft">
-        Projet <code className="chip-mono">{appId}</code>. Choisissez une méthode pour faire remonter les
-        données, puis simulez un parcours.
+        Projet <code className="chip-mono">{appId}</code> · mode{" "}
+        <strong>{mode === "extension" ? "extension navigateur" : "injection JS"}</strong>.{" "}
+        {mode === "extension"
+          ? "Le domaine est enregistré : installez l'extension puis testez."
+          : "Posez le capteur, puis simulez un parcours."}{" "}
+        <Link href={`/select/new?app=${encodeURIComponent(appId)}&mode=${mode === "extension" ? "sdk" : "extension"}`} className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+          Voir l&apos;autre mode
+        </Link>
       </p>
 
       {ktToken && (
@@ -168,60 +272,67 @@ async function Integration({ appId, ktToken }: { appId: string; ktToken: string 
         </div>
       )}
 
-      {/* Méthode 1 — injection JS */}
-      <section className="card mt-6 p-5">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-perf/10 text-xs font-bold text-perf">1</span>
-          Injection JS — vous contrôlez le code du site
-        </h2>
-        <p className="mt-2 text-xs text-ink-soft">
-          Collez ces deux balises dans le <code>&lt;head&gt;</code>, avant tout autre script. Web Vitals,
-          erreurs, sessions et tracing des appels API sont ensuite automatiques.
-        </p>
-        <div className="mt-3">
-          <CopyBlock code={snippet} />
-        </div>
-      </section>
-
-      {/* Méthode 2 — bookmarklet */}
-      <section className="card mt-5 p-5">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ai/10 text-xs font-bold text-ai">2</span>
-          Bookmarklet — n&apos;importe quel site, sans toucher au code
-        </h2>
-        <p className="mt-2 text-xs text-ink-soft">
-          Idéal pour une démo ou pour <strong>simuler un parcours client</strong> sur un site que vous ne
-          contrôlez pas : glissez le bouton dans votre barre de favoris, ouvrez le site cible, cliquez le
-          favori — le SDK s&apos;injecte et la mesure démarre pour <code className="chip-mono">{appId}</code>.
-        </p>
-        <div className="mt-3">
-          <Bookmarklet code={bookmarklet} label={`Monitorer ${appId}`} />
-        </div>
-        <details className="mt-3 text-xs">
-          <summary className="cursor-pointer font-medium text-ink-soft">Voir le code / limites</summary>
-          <div className="mt-2 grid gap-2 text-ink-soft">
-            <CopyBlock code={bookmarklet} />
-            <p className="text-ink-faint">
-              Créez un favori manuellement et collez ce code comme URL si le glisser-déposer n&apos;est pas
-              possible. {!oneTimeKey && <>Remplacez <code>COLLE_ICI_LA_CLE_API</code> par la clé du projet. </>}
-              Un site à <strong>CSP stricte</strong> peut bloquer l&apos;injection : dans ce cas, utilisez la
-              méthode 1. C&apos;est une mesure <strong>temporaire</strong> (le temps de l&apos;onglet), parfaite
-              pour tester ; l&apos;injection JS est le mode permanent.
+      {mode === "extension" ? (
+        <ExtensionConfig appId={appId} domains={extensionDomains} />
+      ) : (
+        <>
+          {/* Méthode 1 — injection JS */}
+          <section className="card mt-6 p-5">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-perf/10 text-xs font-bold text-perf">1</span>
+              Injection JS — vous contrôlez le code de l&apos;application
+            </h2>
+            <p className="mt-2 text-xs text-ink-soft">
+              Collez ces deux balises dans le <code>&lt;head&gt;</code>, avant tout autre script. Web Vitals,
+              erreurs, sessions et tracing des appels API sont ensuite automatiques.
             </p>
-          </div>
-        </details>
-      </section>
+            <div className="mt-3">
+              <CopyBlock code={snippet} />
+            </div>
+          </section>
 
-      {/* Simuler un parcours */}
-      <section className="card mt-5 p-5">
-        <h2 className="text-sm font-semibold text-ink">Simuler un parcours client</h2>
-        <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-ink-soft">
-          <li>Ouvrez le site (avec le snippet posé, ou après avoir cliqué le bookmarklet).</li>
-          <li>Naviguez comme un vrai visiteur : changez de page, cliquez, remplissez un champ, provoquez une erreur.</li>
-          <li>Laissez ~5 s : les mesures partent en continu (et au départ de l&apos;onglet).</li>
-          <li>Revenez ici — la checklist ci-dessous passe au vert, puis les données s&apos;affichent dans la console.</li>
-        </ol>
-      </section>
+          {/* Méthode 2 — bookmarklet */}
+          <section className="card mt-5 p-5">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ai/10 text-xs font-bold text-ai">2</span>
+              Bookmarklet — n&apos;importe quelle page, sans toucher au code
+            </h2>
+            <p className="mt-2 text-xs text-ink-soft">
+              Idéal pour une démo ou pour <strong>simuler un parcours client</strong> sur une application que
+              vous ne contrôlez pas : glissez le bouton dans votre barre de favoris, ouvrez la page cible,
+              cliquez le favori — le SDK s&apos;injecte et la mesure démarre pour{" "}
+              <code className="chip-mono">{appId}</code>.
+            </p>
+            <div className="mt-3">
+              <Bookmarklet code={bookmarklet} label={`Monitorer ${appId}`} />
+            </div>
+            <details className="mt-3 text-xs">
+              <summary className="cursor-pointer font-medium text-ink-soft">Voir le code / limites</summary>
+              <div className="mt-2 grid gap-2 text-ink-soft">
+                <CopyBlock code={bookmarklet} />
+                <p className="text-ink-faint">
+                  Créez un favori manuellement et collez ce code comme URL si le glisser-déposer n&apos;est pas
+                  possible. {!oneTimeKey && <>Remplacez <code>COLLE_ICI_LA_CLE_API</code> par la clé du projet. </>}
+                  Une application à <strong>CSP stricte</strong> peut bloquer l&apos;injection : dans ce cas,
+                  utilisez la méthode 1 (ou le mode extension). C&apos;est une mesure <strong>temporaire</strong>{" "}
+                  (le temps de l&apos;onglet), parfaite pour tester ; l&apos;injection JS est le mode permanent.
+                </p>
+              </div>
+            </details>
+          </section>
+
+          {/* Simuler un parcours */}
+          <section className="card mt-5 p-5">
+            <h2 className="text-sm font-semibold text-ink">Simuler un parcours client</h2>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-ink-soft">
+              <li>Ouvrez l&apos;application (avec le snippet posé, ou après avoir cliqué le bookmarklet).</li>
+              <li>Naviguez comme un vrai visiteur : changez de page, cliquez, remplissez un champ, provoquez une erreur.</li>
+              <li>Laissez ~5 s : les mesures partent en continu (et au départ de l&apos;onglet).</li>
+              <li>Revenez ici — la checklist ci-dessous passe au vert, puis les données s&apos;affichent dans la console.</li>
+            </ol>
+          </section>
+        </>
+      )}
 
       {/* Checklist live */}
       <section className="card mt-5 p-5">
@@ -251,6 +362,109 @@ async function Integration({ appId, ktToken }: { appId: string; ktToken: string 
           Superviser ce projet →
         </button>
       </form>
+    </>
+  );
+}
+
+/** Hostname d'une origine CORS ("https://ma-boutique.fr" -> "ma-boutique.fr"). */
+function originHost(origin: string): string | null {
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/** Étape 2 — mode extension : domaine enregistré + installation + gestion. */
+function ExtensionConfig({
+  appId,
+  domains,
+}: {
+  appId: string;
+  domains: { host: string; registered: boolean }[];
+}) {
+  const GH = "https://github.com/jt33120/mip-rum/blob/master/docs/DEPLOY_EXTENSION.md";
+  const allRegistered = domains.length > 0 && domains.every((d) => d.registered);
+  return (
+    <>
+      <section className="card mt-6 p-5">
+        <div className="flex items-center gap-2">
+          <span
+            className={`flex h-6 w-6 items-center justify-center rounded-full ${allRegistered ? "bg-good/15 text-good" : "bg-warn/15 text-warn"}`}
+          >
+            {allRegistered ? "✓" : "!"}
+          </span>
+          <h2 className="text-sm font-semibold text-ink">
+            {allRegistered ? "Domaine enregistré" : "Domaine à enregistrer"}
+          </h2>
+        </div>
+        {domains.length ? (
+          <>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {domains.map((d) => (
+                <li
+                  key={d.host}
+                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${
+                    d.registered
+                      ? "border-good/30 bg-good/10 text-ink"
+                      : "border-warn/30 bg-warn/10 text-ink"
+                  }`}
+                >
+                  <span className={d.registered ? "text-good" : "text-warn"}>{d.registered ? "✓" : "•"}</span>
+                  <code className="font-mono">{d.host}</code>
+                  <span className="text-ink-faint">{d.registered ? "observé" : "non enregistré"}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-ink-soft">
+              Mapping domaine → <code className="chip-mono">{appId}</code>. En dehors des domaines enregistrés,
+              l&apos;extension n&apos;observe <strong>rien</strong>.
+            </p>
+          </>
+        ) : (
+          <p className="mt-2 text-xs text-ink-soft">
+            Aucun domaine détecté depuis l&apos;URL — ajoutez-le dans la gestion des domaines ci-dessous.
+          </p>
+        )}
+        <Link href="/admin/extension-scope" className="mt-3 inline-block text-xs font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+          Gérer les domaines observés →
+        </Link>
+      </section>
+
+      <section className="card mt-5 p-5">
+        <h2 className="text-sm font-semibold text-ink">Installer l&apos;extension</h2>
+        <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed text-ink-soft">
+          <li>
+            <strong>En test</strong> : charger l&apos;extension « non empaquetée » (mode développeur du
+            navigateur) sur votre poste.
+          </li>
+          <li>
+            <strong>Sur un parc</strong> : déployer par <strong>politique d&apos;entreprise</strong>{" "}
+            (ExtensionSettings) qui pré-accorde l&apos;accès aux domaines enregistrés — aucun geste
+            utilisateur.
+          </li>
+          <li>
+            Naviguer sur le domaine avec l&apos;extension active : le capteur s&apos;injecte automatiquement,
+            les mesures remontent avec <code className="chip-mono">source = extension</code>.
+          </li>
+        </ol>
+        <a href={GH} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-xs font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+          Procédure de déploiement complète (DEPLOY_EXTENSION.md) →
+        </a>
+      </section>
+
+      <section className="card mt-5 p-5">
+        <h2 className="text-sm font-semibold text-ink">Tester la remontée</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-ink-soft">
+          <li>Extension installée et accès accordé au domaine (popup de l&apos;extension, ou policy).</li>
+          <li>Ouvrez le domaine enregistré et naviguez comme un vrai visiteur.</li>
+          <li>Revenez ici — la checklist ci-dessous passe au vert.</li>
+        </ol>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+          Même pipeline que l&apos;injection JS : comparez les deux capteurs via le filtre{" "}
+          <strong>source</strong> (sdk / extension) dans n&apos;importe quelle page de la console.
+        </p>
+      </section>
     </>
   );
 }

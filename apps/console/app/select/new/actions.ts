@@ -9,6 +9,16 @@ import { redirect } from "next/navigation";
 import { requireAdmin, stashSecret } from "@/lib/auth";
 import { q } from "@/lib/db";
 import { formatApiKey, parseOrigins, validateAppId } from "@/lib/onboarding";
+import { createExtensionScope } from "@/lib/queries-extension-scope";
+
+/** Hostname d'une origine (ex. "https://ma-boutique.fr" -> "ma-boutique.fr"). */
+function hostnameOf(origin: string): string | null {
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -28,6 +38,8 @@ export async function createSiteAction(fd: FormData): Promise<void> {
   const name = String(fd.get("name") ?? "").trim();
   const url = String(fd.get("url") ?? "").trim();
   const rawId = String(fd.get("app_id") ?? "").trim();
+  // Mode de collecte choisi à l'étape 1 : 'sdk' (injection JS) | 'extension'.
+  const mode = String(fd.get("mode") ?? "sdk") === "extension" ? "extension" : "sdk";
 
   if (!name) redirect("/select/new?error=name");
   const appId = validateAppId(rawId || slugify(name));
@@ -48,9 +60,22 @@ export async function createSiteAction(fd: FormData): Promise<void> {
   }
   if (!inserted) redirect("/select/new?error=exists");
 
+  // Mode extension : on enregistre d'emblée le domaine dans extension_scope pour
+  // que l'extension navigateur observe ce domaine (mapping domaine -> app_id).
+  if (mode === "extension") {
+    const host = hostnameOf(origins[0]);
+    if (host) {
+      await createExtensionScope(host, appId);
+      await q(`insert into audit_log (user_email, action, detail) values ($1, 'extension_scope_create', $2)`, [
+        admin.email,
+        `${host} -> ${appId} (via /select, mode extension)`,
+      ]);
+    }
+  }
+
   await q(`insert into audit_log (user_email, action, detail) values ($1, 'app_create', $2)`, [
     admin.email,
-    `${appId} (${name}) via /select`,
+    `${appId} (${name}) via /select · mode ${mode}`,
   ]);
-  redirect(`/select/new?app=${encodeURIComponent(appId)}&kt=${stashSecret(apiKey)}`);
+  redirect(`/select/new?app=${encodeURIComponent(appId)}&kt=${stashSecret(apiKey)}&mode=${mode}`);
 }
