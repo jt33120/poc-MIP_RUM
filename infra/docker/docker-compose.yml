@@ -1,0 +1,70 @@
+# Backend MIP RUM self-host (souverain) — alternative CONTENEURISÉE au serverless
+# de prod (Supabase Edge Functions + Postgres managé). But : maîtriser l'infra,
+# tourner hors Cloud Act, et disposer de LOGS DE CONTENEUR (le serveur émet déjà
+# des JSON lines sur stdout — cf. _shared/log.mjs — collectés ici par le driver
+# json-file : `docker compose logs -f ingest`).
+#
+#   navigateur / SDK ──(OTLP /v1/traces)──▶ ingest (Node) ──▶ db (Postgres)
+#
+# Versions ÉPINGLÉES. NON exécuté en CI (pas de Docker dans l'env de dev) : la
+# structure/les configs sont revues, pas un `up` réel. Cf. README.md.
+name: mip-rum-backend
+
+x-logging: &jsonlog
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-mip_rum}
+      # Mot de passe du rôle restreint de la console (moindre-privilège). Vide =>
+      # rôle non créé (cf. initdb.sh).
+      CONSOLE_RO_PASSWORD: ${CONSOLE_RO_PASSWORD:-console_ro}
+    volumes:
+      # schema.sql + migrations montés en lecture seule, appliqués par initdb.sh.
+      - ../../apps/ingest/sql:/sql:ro
+      - ./db/initdb.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    healthcheck:
+      # -h localhost force le TCP : pendant l'initdb (schema + migrations) Postgres
+      # n'écoute que sur le socket -> healthy SEULEMENT une fois les migrations
+      # appliquées, donc ingest ne démarre pas sur une base sans tables.
+      test: ["CMD-SHELL", "pg_isready -h localhost -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    logging: *jsonlog
+
+  ingest:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.ingest
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-mip_rum}
+      INGEST_PORT: "4318"
+      # true = rejeter (403) tout app_id inconnu/sans clé. false (défaut POC) =
+      # fail-open. À passer true une fois toutes les apps porteuses d'une clé.
+      REQUIRE_API_KEY: ${REQUIRE_API_KEY:-false}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-600}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${INGEST_PORT:-4318}:4318"
+    healthcheck:
+      # /ready sonde la base (503 tant que la DB ne répond pas).
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4318/ready || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging: *jsonlog
+
+volumes:
+  db-data:
