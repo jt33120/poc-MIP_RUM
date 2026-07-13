@@ -5,6 +5,7 @@ import { VitalsTimeseries } from "@/components/charts/VitalsTimeseries";
 import { GlossaryTip } from "@/components/GlossaryTip";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { BriefingCard } from "@/components/BriefingCard";
 import { VitalCard } from "@/components/VitalCard";
 import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
@@ -73,6 +74,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </>
         }
       />
+
+      {f.app && <BriefingCard app={f.app} />}
 
       <HealthBanner health={health} periodLabel={period.label} />
 
