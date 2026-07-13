@@ -276,10 +276,10 @@ export function TourGuide() {
           onClick={close}
         >
           <div
-            className="w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-panel shadow-pop"
+            className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-panel shadow-pop"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3 border-b border-line bg-panel2/60 px-5 py-3.5">
+            <div className="flex shrink-0 items-center gap-3 border-b border-line bg-panel2/60 px-5 py-3.5">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-deep text-white shadow-glow">
                 <Icon paths={ICON_PATHS[step.icon]} className="h-5 w-5" strokeWidth={2.2} />
               </span>
@@ -299,7 +299,7 @@ export function TourGuide() {
               </button>
             </div>
 
-            <div className="px-5 py-4 text-sm leading-relaxed text-ink-soft">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-sm leading-relaxed text-ink-soft">
               {step.body}
               {step.href && (
                 <Link
@@ -313,7 +313,7 @@ export function TourGuide() {
             </div>
 
             {/* progression */}
-            <div className="flex items-center gap-1.5 px-5">
+            <div className="flex shrink-0 items-center gap-1.5 px-5 pt-4">
               {STEPS.map((_s, idx) => (
                 <button
                   key={idx}
@@ -327,7 +327,7 @@ export function TourGuide() {
               ))}
             </div>
 
-            <div className="flex items-center justify-between gap-2 px-5 py-4">
+            <div className="flex shrink-0 items-center justify-between gap-2 px-5 py-4">
               <button
                 type="button"
                 onClick={close}
