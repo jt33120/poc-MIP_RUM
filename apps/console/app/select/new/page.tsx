@@ -273,7 +273,12 @@ async function Integration({
       )}
 
       {mode === "extension" ? (
-        <ExtensionConfig appId={appId} domains={extensionDomains} />
+        <ExtensionConfig
+          appId={appId}
+          domains={extensionDomains}
+          storeUrl={process.env.CHROME_STORE_URL ?? null}
+          updateUrl={process.env.EXTENSION_UPDATE_URL ?? null}
+        />
       ) : (
         <>
           {/* Méthode 1 — injection JS */}
@@ -375,18 +380,50 @@ function originHost(origin: string): string | null {
   }
 }
 
-/** Étape 2 — mode extension : domaine enregistré + installation + gestion. */
+// ID stable de l'extension (dérivé de la clé publique du manifest — cf.
+// docs/DEPLOY_EXTENSION.md). Référencé tel quel par la policy d'entreprise.
+const EXT_ID = "gglpcalhlkfhgipfmemfiedjomifefba";
+const EXT_ZIP = "/downloads/mip-rum-extension.zip";
+const GH_DOC = "https://github.com/jt33120/mip-rum/blob/master/docs/DEPLOY_EXTENSION.md";
+
+/**
+ * Étape 2 — mode extension. Deux VOIES d'installation, tout dans la console
+ * (plus de renvoi vers un doc GitHub comme chemin principal) :
+ *   A. Poste individuel — « Ajouter à Chrome » (Store, dès qu'il est publié) ou
+ *      téléchargement du .zip + chargement « non empaqueté » (utilisable tout de suite).
+ *   B. Parc entreprise — policy ExtensionSettings pré-remplie (ID + domaines réels),
+ *      copiable, à coller dans GPO / Intune / Google Admin (zéro geste utilisateur).
+ */
 function ExtensionConfig({
   appId,
   domains,
+  storeUrl,
+  updateUrl,
 }: {
   appId: string;
   domains: { host: string; registered: boolean }[];
+  storeUrl: string | null;
+  updateUrl: string | null;
 }) {
-  const GH = "https://github.com/jt33120/mip-rum/blob/master/docs/DEPLOY_EXTENSION.md";
   const allRegistered = domains.length > 0 && domains.every((d) => d.registered);
+  // Policy ExtensionSettings pré-remplie : l'ID de l'extension + les domaines
+  // réellement enregistrés (runtime_allowed_hosts). L'IT n'a qu'à coller.
+  const allowedHosts = domains.length ? domains.map((d) => `*://${d.host}`) : ["*://app.client.fr"];
+  const policy = JSON.stringify(
+    {
+      [EXT_ID]: {
+        installation_mode: "force_installed",
+        update_url: updateUrl ?? "https://<votre-hebergement>/update.xml",
+        runtime_allowed_hosts: allowedHosts,
+      },
+    },
+    null,
+    2,
+  );
+
   return (
     <>
+      {/* Domaine(s) enregistrés — hors périmètre, l'extension n'observe rien. */}
       <section className="card mt-6 p-5">
         <div className="flex items-center gap-2">
           <span
@@ -431,28 +468,80 @@ function ExtensionConfig({
         </Link>
       </section>
 
+      {/* Voie A — poste individuel : Store (1 clic) ou .zip (dès maintenant). */}
       <section className="card mt-5 p-5">
-        <h2 className="text-sm font-semibold text-ink">Installer l&apos;extension</h2>
-        <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed text-ink-soft">
-          <li>
-            <strong>En test</strong> : charger l&apos;extension « non empaquetée » (mode développeur du
-            navigateur) sur votre poste.
-          </li>
-          <li>
-            <strong>Sur un parc</strong> : déployer par <strong>politique d&apos;entreprise</strong>{" "}
-            (ExtensionSettings) qui pré-accorde l&apos;accès aux domaines enregistrés — aucun geste
-            utilisateur.
-          </li>
-          <li>
-            Naviguer sur le domaine avec l&apos;extension active : le capteur s&apos;injecte automatiquement,
-            les mesures remontent avec <code className="chip-mono">source = extension</code>.
-          </li>
-        </ol>
-        <a href={GH} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-xs font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
-          Procédure de déploiement complète (DEPLOY_EXTENSION.md) →
-        </a>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-perf/10 text-xs font-bold text-perf">A</span>
+            Installer sur un poste
+          </h2>
+          <span className="rounded-full bg-panel2 px-2 py-0.5 text-[10px] font-medium text-ink-faint">1 poste · test / démo</span>
+        </div>
+
+        {storeUrl ? (
+          <>
+            <p className="mt-2 text-xs text-ink-soft">
+              L&apos;extension est publiée : installation en un clic, mises à jour automatiques.
+            </p>
+            <a href={storeUrl} target="_blank" rel="noopener noreferrer" className="btn-accent mt-3 inline-flex w-fit items-center gap-1.5 px-4 py-2">
+              Ajouter à Chrome →
+            </a>
+            <details className="mt-3 text-xs">
+              <summary className="cursor-pointer font-medium text-ink-soft">Sans le Store (poste hors ligne, autre navigateur)</summary>
+              <ZipInstall />
+            </details>
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-xs text-ink-soft">
+              Publication Chrome Web Store à venir (installation « Ajouter à Chrome » en un clic). En
+              attendant, l&apos;extension est <strong>utilisable dès maintenant</strong> par téléchargement :
+            </p>
+            <a href={EXT_ZIP} download className="btn-accent mt-3 inline-flex w-fit items-center gap-1.5 px-4 py-2">
+              <Icon paths={ICON_PATHS.download} className="h-4 w-4" strokeWidth={2.2} />
+              Télécharger l&apos;extension (.zip)
+            </a>
+            <ZipInstall />
+          </>
+        )}
       </section>
 
+      {/* Voie B — parc entreprise : policy pré-remplie, zéro geste utilisateur. */}
+      <section className="card mt-5 p-5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ai/10 text-xs font-bold text-ai">B</span>
+            Déployer sur un parc (IT)
+          </h2>
+          <span className="rounded-full bg-panel2 px-2 py-0.5 text-[10px] font-medium text-ink-faint">parc géré · sans geste utilisateur</span>
+        </div>
+        <p className="mt-2 text-xs text-ink-soft">
+          Collez cette policy <code className="chip-mono">ExtensionSettings</code> dans votre console
+          d&apos;administration (GPO Windows, Microsoft Intune ou Google Admin). Elle force l&apos;installation
+          et pré-accorde l&apos;accès aux domaines enregistrés — l&apos;employé n&apos;a <strong>rien</strong> à
+          faire. Déjà pré-remplie avec l&apos;ID de l&apos;extension et vos domaines :
+        </p>
+        <div className="mt-3">
+          <CopyBlock code={policy} />
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+          {updateUrl ? (
+            <>
+              <code className="chip-mono">update_url</code> pointe vers votre hébergement du <code>.crx</code>.
+            </>
+          ) : (
+            <>
+              Remplacez <code className="chip-mono">update_url</code> par l&apos;URL où vous hébergez le{" "}
+              <code>.crx</code> + <code>update.xml</code> (packaging à faire une fois).
+            </>
+          )}{" "}
+          <a href={GH_DOC} target="_blank" rel="noopener noreferrer" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+            Packaging avancé (.crx, update.xml) →
+          </a>
+        </p>
+      </section>
+
+      {/* Vérifier la remontée. */}
       <section className="card mt-5 p-5">
         <h2 className="text-sm font-semibold text-ink">Tester la remontée</h2>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-ink-soft">
@@ -466,6 +555,26 @@ function ExtensionConfig({
         </p>
       </section>
     </>
+  );
+}
+
+/** Étapes de chargement « non empaqueté » du .zip (voie A sans le Store). */
+function ZipInstall() {
+  return (
+    <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed text-ink-soft">
+      <li>Dézippez le fichier téléchargé dans un dossier stable (ne le supprimez pas ensuite).</li>
+      <li>
+        Ouvrez <code className="chip-mono">chrome://extensions</code> (ou{" "}
+        <code className="chip-mono">edge://extensions</code>) et activez le <strong>mode développeur</strong>.
+      </li>
+      <li>
+        Cliquez <strong>« Charger l&apos;extension non empaquetée »</strong> et sélectionnez le dossier dézippé.
+      </li>
+      <li>
+        Cliquez l&apos;icône MIP RUM, puis <strong>« Activer sur ce domaine »</strong> dans le popup (accorde
+        la permission navigateur pour le domaine enregistré).
+      </li>
+    </ol>
   );
 }
 

@@ -4,7 +4,8 @@
   "private": true,
   "description": "MIP RUM — extension navigateur (2e capteur RUM, POC Ext-B)",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "pack": "node build.mjs && node pack.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.280",
