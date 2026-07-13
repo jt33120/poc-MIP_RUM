@@ -1,4 +1,6 @@
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { Donut } from "@/components/charts/Donut";
 import type { Channel } from "@/lib/acquisition";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import { acquisition } from "@/lib/queries-acquisition";
@@ -18,6 +20,13 @@ const DOT: Record<Channel, string> = {
   social: "bg-fuchsia-500",
   referral: "bg-emerald-500",
   internal: "bg-amber-500",
+};
+const HEX: Record<Channel, string> = {
+  direct: "#94a3b8",
+  search: "#3b82f6",
+  social: "#d946ef",
+  referral: "#10b981",
+  internal: "#f59e0b",
 };
 
 export default async function Acquisition({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -42,29 +51,39 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
         <div className="card p-8 text-center text-ink-faint">Aucune session sur {period.label}</div>
       ) : (
         <>
-          <h2 className="mb-2 text-sm font-semibold text-ink">Par canal</h2>
-          <div className="card mb-8 p-4">
-            <div className="flex flex-col gap-2">
-              {rep.channels.map((c) => {
-                const w = total ? (c.sessions / total) * 100 : 0;
-                return (
-                  <div key={c.channel} className="flex items-center gap-3 text-sm">
-                    <span className="flex w-24 shrink-0 items-center gap-2">
-                      <span className={`h-2.5 w-2.5 rounded-full ${DOT[c.channel]}`} />
-                      {LABEL[c.channel]}
-                    </span>
-                    <div className="h-3 flex-1 overflow-hidden rounded-full bg-panel2">
-                      <div className={`h-full rounded-full ${DOT[c.channel]}`} style={{ width: `${w}%` }} />
-                    </div>
-                    <span className="w-12 text-right tabular-nums text-ink-soft">{Math.round(w)}%</span>
-                    <span className="w-16 text-right tabular-nums text-ink-faint">
-                      {c.sessions.toLocaleString("fr-FR")}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          {(() => {
+            const sorted = [...rep.channels].filter((c) => c.sessions > 0).sort((a, b) => b.sessions - a.sessions);
+            const top = sorted[0];
+            return (
+              <SupervisionHero
+                chartTitle="Répartition par canal d'entrée"
+                chart={
+                  <Donut
+                    slices={sorted.map((c) => ({
+                      label: LABEL[c.channel],
+                      value: c.sessions,
+                      color: HEX[c.channel],
+                    }))}
+                    centerValue={total.toLocaleString("fr-FR")}
+                    centerLabel="sessions"
+                  />
+                }
+              >
+                <HeroStat label={`Sessions · ${period.label}`} value={total.toLocaleString("fr-FR")} />
+                <HeroStat
+                  label="Canal dominant"
+                  value={top ? LABEL[top.channel] : "—"}
+                  hint={top ? `${Math.round((top.sessions / total) * 100)} % du trafic` : undefined}
+                />
+                <HeroStat label="Sites référents" value={rep.referrers.length.toLocaleString("fr-FR")} hint="hôtes externes distincts" />
+                <HeroReading>
+                  L&apos;anneau montre la part de chaque canal d&apos;entrée. Un trafic très «&nbsp;direct&nbsp;»
+                  peut masquer des référents mal détectés (pas d&apos;UTM capté). Détail des sites référents
+                  ci-dessous.
+                </HeroReading>
+              </SupervisionHero>
+            );
+          })()}
 
           <h2 className="mb-2 text-sm font-semibold text-ink">Sites référents</h2>
           <div className="card overflow-hidden">

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { Donut } from "@/components/charts/Donut";
 import { browserFromUA, fmtDate } from "@/lib/format";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import { listSessions, visitStats } from "@/lib/queries";
@@ -29,22 +31,44 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
         }
       />
 
-      {/* Lot 4 : visites (découpage sur inactivité 30 min) + récurrence, dérivées
-          au requêtage — corrige les métriques par session. */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Sessions actives" value={vs.sessions.toLocaleString("fr-FR")} hint="≥ 1 page vue" />
-        <Kpi
+      {/* Hero : répartition nouveaux vs revenants (visitStats, exact sur la
+          fenêtre — contrairement à la liste des 50 sessions ci-dessous). */}
+      <SupervisionHero
+        chartTitle="Nouveaux vs revenants"
+        chart={
+          identified > 0 ? (
+            <Donut
+              slices={[
+                { label: "Nouveaux", value: vs.new_count, color: "#f89101" },
+                { label: "Revenants", value: vs.returning_count, color: "#2563eb" },
+              ]}
+              centerValue={identified.toLocaleString("fr-FR")}
+              centerLabel="identifiés"
+            />
+          ) : (
+            <p className="py-12 text-center text-sm text-ink-faint">
+              Pas encore d&apos;utilisateurs identifiés sur {PERIODS[f.period].label}.
+            </p>
+          )
+        }
+      >
+        <HeroStat label="Sessions actives" value={vs.sessions.toLocaleString("fr-FR")} hint="≥ 1 page vue" />
+        <HeroStat
           label="Visites"
           value={vs.visits.toLocaleString("fr-FR")}
           hint={reprises > 0 ? `dont ${reprises.toLocaleString("fr-FR")} reprise(s) après 30 min` : "aucune reprise"}
         />
-        <Kpi label="Nouveaux" value={vs.new_count.toLocaleString("fr-FR")} hint="1re activité observée" />
-        <Kpi
-          label="Revenants"
-          value={vs.returning_count.toLocaleString("fr-FR")}
-          hint={identified ? `${returningPct} % des utilisateurs identifiés` : "—"}
+        <HeroStat
+          label="Part de revenants"
+          value={identified ? `${returningPct} %` : "—"}
+          hint={`${vs.returning_count.toLocaleString("fr-FR")} revenants · ${vs.new_count.toLocaleString("fr-FR")} nouveaux`}
         />
-      </div>
+        <HeroReading>
+          L&apos;anneau distingue les utilisateurs vus pour la première fois de ceux qui reviennent (fidélité).
+          Une session = un parcours ; une visite = un passage (reprise après 30 min d&apos;inactivité = nouvelle
+          visite). Détail des parcours ci-dessous.
+        </HeroReading>
+      </SupervisionHero>
 
       <div className="flex flex-col gap-3">
         {rows.map((s) => (
@@ -99,12 +123,3 @@ function Badge({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Kpi({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <div className="card p-4">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
-      <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-ink">{value}</div>
-      <div className="mt-0.5 text-[11px] text-ink-faint">{hint}</div>
-    </div>
-  );
-}

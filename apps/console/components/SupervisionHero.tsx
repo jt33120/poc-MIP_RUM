@@ -14,6 +14,7 @@ export function SupervisionHero({
   chartMeta,
   chart,
   children,
+  layout = "split",
 }: {
   /** Titre du graphe principal (au-dessus de la zone graphe). */
   chartTitle: ReactNode;
@@ -23,22 +24,42 @@ export function SupervisionHero({
   chartMeta?: ReactNode;
   /** Le graphe principal (n'importe quelle représentation : SVG, recharts…). */
   chart: ReactNode;
-  /** Colonne de contexte à gauche : tuiles HeroStat + une phrase de lecture. */
+  /** Colonne de contexte : tuiles HeroStat + une phrase de lecture. */
   children: ReactNode;
+  /**
+   * "split" (défaut) : contexte à gauche, graphe dominant à droite.
+   * "wide" : tuiles de contexte en rangée au-dessus, graphe pleine largeur —
+   * pour les graphes larges (Sankey, carte node-link, heatmap calendaire).
+   */
+  layout?: "split" | "wide";
 }) {
+  const title = (
+    <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+      <h2 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+        {chartTitle}
+        {chartHelp && <GlossaryTip id={chartHelp} />}
+      </h2>
+      {chartMeta && <div className="ml-auto flex items-center gap-2">{chartMeta}</div>}
+    </div>
+  );
+
+  if (layout === "wide") {
+    return (
+      <section className="card mb-6 p-5">
+        <div className="mb-4 flex flex-wrap items-start gap-x-8 gap-y-3">{children}</div>
+        {title}
+        <div className="min-w-0">{chart}</div>
+      </section>
+    );
+  }
+
   return (
     <section className="card mb-6 overflow-hidden">
       {/* filet de séparation via gap-px sur fond `line` : deux panneaux jointifs */}
       <div className="grid gap-px bg-line lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
         <div className="flex flex-col gap-4 bg-panel p-5">{children}</div>
         <div className="flex min-w-0 flex-col bg-panel p-5">
-          <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h2 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              {chartTitle}
-              {chartHelp && <GlossaryTip id={chartHelp} />}
-            </h2>
-            {chartMeta && <div className="ml-auto flex items-center gap-2">{chartMeta}</div>}
-          </div>
+          {title}
           <div className="min-w-0 flex-1">{chart}</div>
         </div>
       </div>
@@ -103,9 +124,12 @@ export function DeltaBadge({ pct, lowerIsBetter = false }: { pct: number; lowerI
   );
 }
 
-/** Phrase de « lecture » du hero : ce qu'il faut retenir, en clair. */
+/** Phrase de « lecture » du hero : ce qu'il faut retenir, en clair. `basis-full`
+ * -> ligne pleine dans la rangée du layout "wide", bas de colonne en "split". */
 export function HeroReading({ children }: { children: ReactNode }) {
   return (
-    <p className="mt-auto border-t border-line pt-3 text-xs leading-relaxed text-ink-soft">{children}</p>
+    <p className="mt-auto basis-full border-t border-line pt-3 text-xs leading-relaxed text-ink-soft">
+      {children}
+    </p>
   );
 }
