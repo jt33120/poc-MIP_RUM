@@ -80,5 +80,7 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|mip-rum|_next/|favicon).*)"],
+  // `vendor` = assets tiers auto-hébergés (Swagger UI) servis depuis public/ —
+  // exclus de la porte d'auth, comme _next et le SDK public.
+  matcher: ["/((?!login|mip-rum|_next/|favicon|vendor).*)"],
 };

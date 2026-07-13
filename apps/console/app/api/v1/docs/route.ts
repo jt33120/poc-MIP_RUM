@@ -1,13 +1,12 @@
 // GET /api/v1/docs — Swagger UI (HTML) rendant la spec publique /api/v1/openapi.
-// Auto-hébergé : le HTML est servi par la console, seuls les assets Swagger UI
-// viennent d'un CDN épinglé. Public comme la spec (le contrat n'est pas secret) —
-// /api/v1/* est bypassé par le middleware d'auth.
+// 100 % auto-hébergé : le HTML ET les assets Swagger UI sont servis par la console
+// (public/vendor/swagger/, vendorisés depuis swagger-ui-dist — cf.
+// scripts/vendor-swagger.mjs). Aucun CDN tiers : la console est souveraine UE.
+// Public comme la spec (le contrat n'est pas secret) — /api/v1/* est bypassé par
+// le middleware d'auth.
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
-
-// Version épinglée (évite toute dérive du CDN).
-const SWAGGER_VERSION = "5.17.14";
 
 const HTML = `<!doctype html>
 <html lang="fr">
@@ -15,7 +14,7 @@ const HTML = `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MIP RUM — API v1 · Swagger UI</title>
-    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@${SWAGGER_VERSION}/swagger-ui.css" />
+    <link rel="stylesheet" href="/vendor/swagger/swagger-ui.css" />
     <style>
       body { margin: 0; background: #fafafa; }
       .topbar { display: none; }
@@ -23,7 +22,7 @@ const HTML = `<!doctype html>
   </head>
   <body>
     <div id="swagger-ui"></div>
-    <script src="https://unpkg.com/swagger-ui-dist@${SWAGGER_VERSION}/swagger-ui-bundle.js" crossorigin></script>
+    <script src="/vendor/swagger/swagger-ui-bundle.js"></script>
     <script>
       window.addEventListener("load", function () {
         window.ui = SwaggerUIBundle({
