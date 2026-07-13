@@ -1,5 +1,6 @@
 import { FunnelChart, StepPicker } from "@/components/Funnel";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Sankey } from "@/components/Sankey";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import { availableEvents, funnelReport } from "@/lib/queries-funnel";
@@ -40,26 +41,42 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
         }
       />
 
+      {/* Hero : le flux de navigation (Sankey) est le graphe signature de la page. */}
+      <SupervisionHero
+        layout="wide"
+        chartTitle="Flux de navigation — route → route"
+        chartMeta={
+          sankey.totalFlow > sankey.shownFlow ? (
+            <span className="text-[11px] text-ink-faint">
+              top routes · {sankey.shownFlow} / {sankey.totalFlow} transitions affichées
+            </span>
+          ) : undefined
+        }
+        chart={
+          transitions.length ? (
+            <Sankey model={sankey} />
+          ) : (
+            <p className="py-12 text-center text-sm text-ink-faint">
+              Aucune transition sur {period.label} (il faut ≥ 2 pages vues par session).
+            </p>
+          )
+        }
+      >
+        <HeroStat label="Page d'entrée n°1" value={entries[0]?.route ?? "—"} hint={entries[0] ? `${entries[0].n} sessions y démarrent` : undefined} />
+        <HeroStat label="Page de sortie n°1" value={exits[0]?.route ?? "—"} hint={exits[0] ? `${exits[0].n} sessions s'y terminent` : undefined} />
+        <HeroStat label="Transitions distinctes" value={transitions.length.toLocaleString("fr-FR")} hint="paires route → route (recharges exclues)" />
+        <HeroReading>
+          Chaque ruban relie une route source à une route cible, son épaisseur = le volume de passages. Les
+          chemins épais = les autoroutes du produit ; un ruban inattendu = un contournement à comprendre.
+          Entrées/sorties détaillées et transitions exactes ci-dessous.
+        </HeroReading>
+      </SupervisionHero>
+
       {/* Entrées / sorties : où commencent et se terminent les sessions. */}
       <div className="mb-6 grid gap-4 md:grid-cols-2">
         <BoundaryCard title="Pages d'entrée" hint="1re route de la session" rows={entries} />
         <BoundaryCard title="Pages de sortie" hint="dernière route de la session" rows={exits} />
       </div>
-
-      {/* Flux de navigation (Sankey) : où va le trafic, source -> cible. */}
-      <section className="mb-6">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold text-ink">Flux de navigation</h2>
-          {sankey.totalFlow > sankey.shownFlow && (
-            <span className="text-[11px] text-ink-faint">
-              top routes · {sankey.shownFlow} / {sankey.totalFlow} transitions affichées
-            </span>
-          )}
-        </div>
-        <div className="card p-4">
-          <Sankey model={sankey} />
-        </div>
-      </section>
 
       {/* Transitions route → route (arêtes du graphe de navigation). */}
       <h2 className="mb-2 text-sm font-semibold text-ink">Transitions les plus fréquentes</h2>

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { LineTrend } from "@/components/charts/LineTrend";
 import { parseFilters, type SearchParams } from "@/lib/filters";
 import { retentionCohorts, weekIndexToDate } from "@/lib/queries-cohorts";
 
@@ -56,7 +58,55 @@ export default async function Retention({ searchParams }: { searchParams: Promis
           Aucune activité utilisateur identifiée (user_hash) sur la fenêtre.
         </div>
       ) : (
-        <div className="card overflow-x-auto p-4">
+        <>
+          {(() => {
+            // Courbe de rétention moyenne : à chaque offset S+o, part retenue
+            // pondérée par la taille des cohortes ayant atteint cet offset.
+            const curve = Array.from({ length: cols }, (_v, o) => {
+              let ret = 0;
+              let size = 0;
+              for (const c of cohorts) {
+                const cell = c.cells[o];
+                if (cell) {
+                  ret += cell.retained;
+                  size += c.size;
+                }
+              }
+              return { label: `S+${o}`, value: size ? Math.round((ret / size) * 100) : 0 };
+            });
+            const totalUsers = cohorts.reduce((s, c) => s + c.size, 0);
+            const s1 = curve[1]?.value;
+            const s4 = curve[4]?.value;
+            return (
+              <SupervisionHero
+                chartTitle="Courbe de rétention moyenne"
+                chart={
+                  cols > 1 ? (
+                    <LineTrend data={curve} valueName="Rétention" valueUnit="%" color="#059669" domain={[0, 100]} />
+                  ) : (
+                    <p className="py-12 text-center text-sm text-ink-faint">
+                      Pas encore assez de recul (une seule semaine observée).
+                    </p>
+                  )
+                }
+              >
+                <HeroStat label="Cohortes suivies" value={cohorts.length.toLocaleString("fr-FR")} hint={`${totalUsers.toLocaleString("fr-FR")} utilisateurs`} />
+                <HeroStat
+                  label="Rétention S+1"
+                  value={s1 != null ? `${s1} %` : "—"}
+                  tone={s1 != null ? (s1 >= 40 ? "good" : s1 >= 20 ? "warn" : "poor") : "neutral"}
+                  hint="reviennent la semaine suivante"
+                />
+                <HeroStat label="Rétention S+4" value={s4 != null ? `${s4} %` : "—"} hint="4 semaines après" />
+                <HeroReading>
+                  La courbe montre la vitesse de décrochage : chute forte entre S+0 et S+1 = problème
+                  d&apos;activation ; plateau = cœur d&apos;utilisateurs fidèles. Le détail cohorte par cohorte
+                  est dans la matrice ci-dessous.
+                </HeroReading>
+              </SupervisionHero>
+            );
+          })()}
+          <div className="card overflow-x-auto p-4">
           <table className="text-sm">
             <thead>
               <tr className="text-ink-faint">
@@ -99,7 +149,8 @@ export default async function Retention({ searchParams }: { searchParams: Promis
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
       <p className="mt-3 text-[11px] text-ink-faint">
         S+0 = semaine de la cohorte (100 %). Les cases vides correspondent à des semaines encore à venir

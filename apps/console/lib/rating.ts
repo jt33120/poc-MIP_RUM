@@ -35,3 +35,10 @@ export const RATING_BAR: Record<Rating, string> = {
   "needs-improvement": "bg-amber-500",
   poor: "bg-red-500",
 };
+
+/** Couleurs hex par rating — pour les barres/SVG (fills inline hors classes Tailwind). */
+export const RATING_HEX: Record<Rating, string> = {
+  good: "#059669",
+  "needs-improvement": "#d97706",
+  poor: "#dc2626",
+};

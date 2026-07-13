@@ -1,5 +1,7 @@
 import { Histogram, PercentileTable } from "@/components/Distribution";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { RankBar } from "@/components/charts/RankBar";
 import { HISTO_BUCKETS, VITAL_CAP } from "@/lib/distribution";
 import { fmtVital } from "@/lib/format";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
@@ -10,7 +12,7 @@ import {
   vitalPercentiles,
   type SlowResource,
 } from "@/lib/queries";
-import { RATING_CLASS, rating2026 } from "@/lib/rating";
+import { RATING_CLASS, RATING_HEX, rating2026 } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +39,59 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
           </>
         }
       />
+
+      {(() => {
+        // Hero : classement des routes par LCP p75 (le message central de la page).
+        const ranked = [...rows]
+          .filter((r) => r.lcp_p75 != null)
+          .sort((a, b) => Number(b.lcp_p75) - Number(a.lcp_p75))
+          .slice(0, 8);
+        const worst = ranked[0];
+        const poorCount = rows.filter(
+          (r) => r.lcp_p75 != null && rating2026("LCP", Number(r.lcp_p75)) === "poor",
+        ).length;
+        const totalLongtasks = rows.reduce((s, r) => s + (r.longtasks ?? 0), 0);
+        return (
+          <SupervisionHero
+            chartTitle="Routes les plus lentes — LCP p75"
+            chart={
+              <RankBar
+                data={ranked.map((r) => {
+                  const rating = rating2026("LCP", Number(r.lcp_p75));
+                  return {
+                    label: r.route,
+                    value: Number(r.lcp_p75),
+                    display: fmtVital("LCP", Number(r.lcp_p75)),
+                    color: rating ? RATING_HEX[rating] : "#94a3b8",
+                    sub: `${r.views.toLocaleString("fr-FR")} vues${r.longtasks ? ` · ${r.longtasks} long tasks` : ""}`,
+                    title: `${r.route} — LCP p75 ${fmtVital("LCP", Number(r.lcp_p75))}`,
+                  };
+                })}
+                labelWidth="13rem"
+              />
+            }
+          >
+            <HeroStat label={`Routes suivies · ${period.label}`} value={rows.length.toLocaleString("fr-FR")} />
+            <HeroStat
+              label="Routes « mauvais » LCP"
+              value={poorCount.toLocaleString("fr-FR")}
+              tone={poorCount > 0 ? "poor" : "good"}
+              hint="LCP p75 > 4,0 s (seuil 2026)"
+            />
+            <HeroStat
+              label="Route la plus lente"
+              value={worst ? fmtVital("LCP", Number(worst.lcp_p75)) : "—"}
+              hint={worst?.route}
+              tone="warn"
+            />
+            <HeroReading>
+              Chaque barre = une route, longueur et couleur = son LCP p75 (vert «&nbsp;bon&nbsp;» → rouge
+              «&nbsp;mauvais&nbsp;»). {totalLongtasks > 0 ? `${totalLongtasks} tâches JS longues au total sur la fenêtre. ` : ""}
+              Distribution complète et détail ressource par route ci-dessous.
+            </HeroReading>
+          </SupervisionHero>
+        );
+      })()}
 
       {/* Distribution & percentiles (Lot 3) : ce que le p75 seul masque —
           longue traîne (p90/p95/p99) et forme de la distribution. */}

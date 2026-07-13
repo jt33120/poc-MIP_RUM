@@ -2,14 +2,14 @@
 // latence, erreurs) corrélés au RUM. Rendu 100 % serveur, filtres app/période
 // via le modèle « v2 » (comme errors/correlation). Calquée sur la structure de
 // app/correlation/page.tsx.
-import { AiBar } from "@/components/ai/AiBar";
 import { AiCallRow } from "@/components/ai/AiCallRow";
 import { AiGovernanceRow } from "@/components/ai/AiGovernanceRow";
 import { fmtCost, fmtLatency, fmtPct, fmtTokens } from "@/components/ai/format";
-import { AiKpi } from "@/components/ai/AiKpi";
 import { AiModelRow } from "@/components/ai/AiModelRow";
 import { AiRouteRow } from "@/components/ai/AiRouteRow";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { LineTrend } from "@/components/charts/LineTrend";
 import { catalogFor, isPiiRisk } from "@/lib/ai-catalog";
 import {
   aiByModel,
@@ -39,7 +39,6 @@ export default async function PerformanceIA({
   ]);
 
   const empty = overview.calls === 0;
-  const maxCost = daily.reduce((m, d) => Math.max(m, d.cost_usd), 0);
   // Appels exposant de la donnée personnelle non (ou mal) pseudonymisée.
   const piiRiskCalls = governance
     .filter((g) => isPiiRisk(catalogFor(g.route)))
@@ -64,19 +63,52 @@ export default async function PerformanceIA({
         </div>
       ) : (
         <>
-          {/* ----- Rangée KPI ----- */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-            <AiKpi label="Appels" value={overview.calls} testId="ai-calls" hint={`fenêtre ${periodLabel(f)}`} />
-            <AiKpi label="Tokens (total)" value={fmtTokens(overview.total_tokens)} hint="prompt + complétion" />
-            <AiKpi label="Coût (USD)" value={fmtCost(overview.cost_usd)} testId="ai-cost" hint="cumulé sur la période" />
-            <AiKpi label="Latence p75" value={fmtLatency(overview.latency_p75)} testId="ai-latency" hint="75ᵉ percentile" />
-            <AiKpi
+          {/* Hero : coût LLM dans le temps (ligne) + volume d'appels (barres). */}
+          <SupervisionHero
+            chartTitle="Coût & volume d'appels LLM par jour"
+            chart={
+              daily.length ? (
+                <LineTrend
+                  data={daily.map((d) => ({
+                    label: new Date(d.day).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
+                    value: Number(d.cost_usd.toFixed(4)),
+                    volume: d.calls,
+                  }))}
+                  valueName="Coût (USD)"
+                  volumeName="appels"
+                  color="#7c3aed"
+                />
+              ) : (
+                <p className="py-12 text-center text-sm text-ink-faint">Pas de données journalières sur la période.</p>
+              )
+            }
+          >
+            <HeroStat
+              label="Coût cumulé (USD)"
+              value={<span data-testid="ai-cost">{fmtCost(overview.cost_usd)}</span>}
+              hint={`${fmtTokens(overview.total_tokens)} tokens`}
+            />
+            <HeroStat
+              label="Appels"
+              value={<span data-testid="ai-calls">{overview.calls.toLocaleString("fr-FR")}</span>}
+              hint={`fenêtre ${periodLabel(f)}`}
+            />
+            <HeroStat
+              label="Latence p75"
+              value={<span data-testid="ai-latency">{fmtLatency(overview.latency_p75)}</span>}
+            />
+            <HeroStat
               label="Taux d'erreur"
               value={fmtPct(overview.error_rate)}
-              tone={overview.error_rate > 0 ? "danger" : "ink"}
+              tone={overview.error_rate > 0 ? "poor" : "good"}
               hint="appels en erreur"
             />
-          </div>
+            <HeroReading>
+              La ligne violette = le coût quotidien des appels LLM, les barres = le nombre d&apos;appels. Un
+              décrochage coût/appels révèle des requêtes plus chères (modèle ou tokens). Répartition par modèle
+              et par route dans les tables ci-dessous.
+            </HeroReading>
+          </SupervisionHero>
 
           {/* ----- Gouvernance des données ----- */}
           <div className="card mt-8 overflow-hidden">
@@ -162,22 +194,6 @@ export default async function PerformanceIA({
                 ))}
               </tbody>
             </table>
-          </div>
-
-          {/* ----- Coût par jour ----- */}
-          <div className="card mt-8 p-4">
-            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              Coût par jour
-            </h2>
-            {daily.length ? (
-              <div className="flex flex-col">
-                {daily.map((d) => (
-                  <AiBar key={d.day} row={d} maxCost={maxCost} />
-                ))}
-              </div>
-            ) : (
-              <p className="py-6 text-center text-sm text-ink-faint">Pas de données journalières sur la période.</p>
-            )}
           </div>
 
           {/* ----- Derniers appels ----- */}

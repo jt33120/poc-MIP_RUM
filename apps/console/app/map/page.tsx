@@ -4,6 +4,7 @@
 import { fmtLatency, fmtPct } from "@/components/ai/format";
 import { ExperienceMap } from "@/components/map/ExperienceMap";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import {
   apiHealth,
   atRisk,
@@ -80,27 +81,55 @@ export default async function ExperienceMapPage({
             </div>
           )}
 
-          {/* Graphe */}
-          <section className="card overflow-hidden">
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line bg-panel2 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              <span>Navigateur — API appelées</span>
-              <span>Serveur — routes backend</span>
-              <span className="ml-auto flex items-center gap-3 normal-case tracking-normal">
+          {/* Hero : le graphe de service (node-link) est le visuel signature. */}
+          <SupervisionHero
+            layout="wide"
+            chartTitle="Graphe de service — pages → API → backend"
+            chartMeta={
+              <span className="flex items-center gap-3 text-[11px] normal-case tracking-normal">
                 <Legend tone="good" label="sain" />
                 <Legend tone="warn" label="à surveiller" />
                 <Legend tone="bad" label="dégradé" />
-                <span className="text-ink-faint">▲ volume en hausse</span>
+                <span className="text-ink-faint">▲ en hausse</span>
               </span>
-            </div>
-            <div className="p-4">
-              <ExperienceMap layout={layout} />
-              {hidden > 0 && (
-                <p className="mt-2 text-xs text-ink-faint">
-                  +{hidden} route(s) moins actives masquées (top {CAP} par colonne affichés).
-                </p>
-              )}
-            </div>
-          </section>
+            }
+            chart={
+              <div>
+                <div className="mb-2 flex gap-x-6 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                  <span>Navigateur — API appelées</span>
+                  <span>Serveur — routes backend</span>
+                </div>
+                <ExperienceMap layout={layout} />
+                {hidden > 0 && (
+                  <p className="mt-2 text-xs text-ink-faint">
+                    +{hidden} route(s) moins actives masquées (top {CAP} par colonne affichés).
+                  </p>
+                )}
+              </div>
+            }
+          >
+            <HeroStat
+              label="Routes cartographiées"
+              value={(frontAll.length + backAll.length).toLocaleString("fr-FR")}
+              hint={hidden > 0 ? `${hidden} moins actives masquées` : "toutes affichées"}
+            />
+            <HeroStat
+              label="Routes à risque"
+              value={riskNodes.length.toLocaleString("fr-FR")}
+              tone={riskNodes.length > 0 ? "warn" : "good"}
+              hint="volume en hausse + santé dégradée"
+            />
+            <HeroStat
+              label="Route la plus active"
+              value={talkers[0]?.route ?? "—"}
+              hint={talkers[0] ? `${talkers[0].calls.toLocaleString("fr-FR")} appels` : undefined}
+            />
+            <HeroReading>
+              Colonne gauche = les API vues du navigateur, colonne droite = les routes serveur ; un ruban relie
+              une API à son exécution backend, épaisseur = volume, couleur des nœuds = santé. Suivez un ruban
+              épais rouge pour remonter une dégradation. Détail par route ci-dessous.
+            </HeroReading>
+          </SupervisionHero>
 
           {/* Top talkers (flux) */}
           <section className="card mt-8 overflow-hidden">

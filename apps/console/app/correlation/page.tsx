@@ -3,6 +3,7 @@ import { BlindSpotRow } from "@/components/correlation/BlindSpotRow";
 import { RouteCard } from "@/components/correlation/RouteCard";
 import { RobotVsRealChart } from "@/components/features/RobotVsRealChart";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import {
   blindSpots,
   correlationCards,
@@ -44,6 +45,60 @@ export default async function Correlation({
         }
       />
 
+      {/* Hero : la série robot vs réel (le graphe qui « raconte » la corrélation). */}
+      <SupervisionHero
+        chartTitle="Robot vs réel dans le temps (buckets horaires)"
+        chartMeta={
+          routes.length ? (
+            <div className="flex max-w-full flex-wrap justify-end gap-1">
+              {routes.slice(0, 6).map((route) => (
+                <Link
+                  key={route}
+                  href={`/correlation${filtersToQuery(f, { route })}`}
+                  className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] transition ${
+                    route === selectedRoute
+                      ? "bg-accent font-semibold text-navy-950 shadow-sm"
+                      : "bg-panel2 text-ink-soft hover:bg-line/60"
+                  }`}
+                >
+                  {route}
+                </Link>
+              ))}
+            </div>
+          ) : undefined
+        }
+        chart={
+          selectedRoute && series.length ? (
+            <RobotVsRealChart
+              data={series.map((s) => ({
+                bucket: new Date(s.bucket).toISOString(),
+                robot: s.syn_latency_avg != null ? Number(s.syn_latency_avg) : null,
+                reel: s.rum_lcp_p75 != null ? Number(s.rum_lcp_p75) : null,
+              }))}
+            />
+          ) : (
+            <p className="py-10 text-center text-sm text-ink-faint">
+              Pas encore de route avec données robot ET réel sur la période.
+            </p>
+          )
+        }
+      >
+        <HeroStat label="Routes corrélées" value={routes.length.toLocaleString("fr-FR")} hint="robot ET réel disponibles" />
+        <HeroStat
+          label="Angles morts"
+          value={spots.length.toLocaleString("fr-FR")}
+          tone={spots.length > 0 ? "poor" : "good"}
+          hint="robot « ok » mais réel « poor »"
+        />
+        <HeroStat label="Route affichée" value={selectedRoute ?? "—"} hint="clique une puce pour changer" />
+        <HeroReading>
+          Deux courbes : le robot synthétique (ce que MIP mesure en labo) et le réel (LCP p75 subi). Quand
+          elles divergent — réel qui grimpe alors que le robot reste plat — c&apos;est un angle mort. Le détail
+          par route et les angles morts sont listés ci-dessous.
+        </HeroReading>
+      </SupervisionHero>
+
+      <div className="mb-2 mt-8 text-sm font-semibold text-ink">Par route — robot vs réel</div>
       <div className="flex flex-col gap-4">
         {rows.map((r) => (
           <RouteCard key={`${r.app_id}|${r.route}`} row={r} />
@@ -51,43 +106,6 @@ export default async function Correlation({
         {!rows.length && (
           <p className="py-8 text-center text-ink-faint">
             Aucune donnée — lance le job sync-synthetic et la démo.
-          </p>
-        )}
-      </div>
-
-      {/* ----- Série historisée robot vs réel ----- */}
-      <div className="card mt-8 p-4">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Robot vs réel dans le temps (buckets horaires, vue v_correlation)
-          </h2>
-          <div className="ml-auto flex flex-wrap gap-1">
-            {routes.map((route) => (
-              <Link
-                key={route}
-                href={`/correlation${filtersToQuery(f, { route })}`}
-                className={`rounded-full px-3 py-1 font-mono text-xs transition ${
-                  route === selectedRoute
-                    ? "bg-accent font-semibold text-navy-950 shadow-sm"
-                    : "bg-panel2 text-ink-soft hover:bg-line/60"
-                }`}
-              >
-                {route}
-              </Link>
-            ))}
-          </div>
-        </div>
-        {selectedRoute && series.length ? (
-          <RobotVsRealChart
-            data={series.map((s) => ({
-              bucket: new Date(s.bucket).toISOString(),
-              robot: s.syn_latency_avg != null ? Number(s.syn_latency_avg) : null,
-              reel: s.rum_lcp_p75 != null ? Number(s.rum_lcp_p75) : null,
-            }))}
-          />
-        ) : (
-          <p className="py-10 text-center text-sm text-ink-faint">
-            Pas encore de route avec données robot ET réel sur la période.
           </p>
         )}
       </div>

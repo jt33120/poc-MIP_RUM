@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { RankBar } from "@/components/charts/RankBar";
 import { fieldReport, formReport } from "@/lib/form-analytics";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import { formEvents } from "@/lib/queries-form-analytics";
@@ -50,15 +52,49 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
         </div>
       ) : (
         <>
-          <div className="mb-6 grid gap-3 sm:grid-cols-3">
-            <Kpi label="Formulaires entamés" value={totalStarters.toLocaleString("fr-FR")} hint="submits + abandons" />
-            <Kpi label="Soumissions" value={totalSubmits.toLocaleString("fr-FR")} hint="formulaires envoyés" />
-            <Kpi
-              label="Conversion globale"
-              value={totalStarters ? pctFmt(totalSubmits / totalStarters) : "—"}
-              hint="soumis / entamés"
-            />
-          </div>
+          {(() => {
+            // Hero : le champ qui fait fuir. dropoff = nb de fois où ce champ est
+            // le dernier touché avant abandon (friction directe).
+            const friction = [...fields].filter((c) => c.dropoff > 0).sort((a, b) => b.dropoff - a.dropoff).slice(0, 8);
+            const worstField = friction[0];
+            return (
+              <SupervisionHero
+                chartTitle={<>Friction par champ — <span className="font-mono normal-case text-ink">{selected}</span></>}
+                chart={
+                  friction.length ? (
+                    <RankBar
+                      data={friction.map((c) => ({
+                        label: c.name,
+                        value: c.dropoff,
+                        color: "#dc2626",
+                        sub: `${pctFmt(c.changedRate)} saisi · ${secs(c.avgTimeMs)}`,
+                        title: `${c.name} — ${c.dropoff} abandon(s) sur ce champ`,
+                      }))}
+                      labelWidth="10rem"
+                    />
+                  ) : (
+                    <p className="py-12 text-center text-sm text-ink-faint">
+                      Aucun abandon localisé sur un champ pour «&nbsp;{selected}&nbsp;» — parcours fluide 🎉
+                    </p>
+                  )
+                }
+              >
+                <HeroStat label="Formulaires entamés" value={totalStarters.toLocaleString("fr-FR")} hint="submits + abandons" />
+                <HeroStat label="Soumissions" value={totalSubmits.toLocaleString("fr-FR")} tone="good" hint="formulaires envoyés" />
+                <HeroStat
+                  label="Conversion globale"
+                  value={totalStarters ? pctFmt(totalSubmits / totalStarters) : "—"}
+                  tone={totalStarters ? (totalSubmits / totalStarters >= 0.6 ? "good" : totalSubmits / totalStarters >= 0.3 ? "warn" : "poor") : "neutral"}
+                  hint="soumis / entamés"
+                />
+                <HeroReading>
+                  Chaque barre = un champ, longueur = le nombre d&apos;abandons survenus juste après lui. La
+                  barre la plus longue{worstField ? ` (« ${worstField.name} »)` : ""} est le point de friction
+                  n°1 à simplifier. Choisis un autre formulaire dans le tableau pour changer de vue.
+                </HeroReading>
+              </SupervisionHero>
+            );
+          })()}
 
           <h2 className="mb-2 text-sm font-semibold text-ink">Par formulaire</h2>
           <div className="card mb-8 overflow-hidden">
@@ -147,12 +183,3 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
   );
 }
 
-function Kpi({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <div className="card p-4">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
-      <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-ink">{value}</div>
-      <div className="mt-0.5 text-[11px] text-ink-faint">{hint}</div>
-    </div>
-  );
-}

@@ -2,8 +2,10 @@
 // mesurée. Un score d'expérience /100, le CSAT, la tendance, les verbatims et le
 // CSAT par route. Rendu 100 % serveur, filtres app/période (modèle « v2 »).
 import Link from "next/link";
-import { AiKpi } from "@/components/ai/AiKpi";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { RadarScore } from "@/components/charts/RadarScore";
+import { LineTrend } from "@/components/charts/LineTrend";
 import { experienceScore, frustrationPenalty, scoreTone } from "@/lib/experience";
 import { parseFilters, periodLabel, type SearchParams } from "@/lib/queries-v2";
 import {
@@ -49,7 +51,6 @@ export default async function Experience({
     csat: csatVal,
   });
   const tone = scoreTone(score);
-  const maxTrend = trend.reduce((m, t) => Math.max(m, t.count), 0);
 
   return (
     <div className="animate-fade-up">
@@ -64,33 +65,62 @@ export default async function Experience({
         }
       />
 
-      {/* Score + KPIs */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-        <div className="card p-4 transition hover:shadow-pop">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Score d&apos;expérience
-          </div>
-          <div className={`mt-2 text-3xl font-bold tabular-nums tracking-tight ${TONE_TEXT[tone]}`} data-testid="xp-score">
-            {score}
-            <span className="text-lg text-ink-faint">/100</span>
-          </div>
-          <div className="mt-2 text-xs text-ink-faint">perf perçue × frustration × CSAT</div>
-        </div>
-        <AiKpi
-          label="CSAT"
-          value={csatVal == null ? "—" : `${Math.round(csatVal * 100)} %`}
-          tone={csatVal != null && csatVal < 0.5 ? "danger" : "ink"}
-          hint="retours ≥ 4/5"
-        />
-        <AiKpi label="Réponses" value={stats.count} testId="xp-count" hint={`fenêtre ${periodLabel(f)}`} />
-        <AiKpi label="Note moyenne" value={stats.avg == null ? "—" : stats.avg.toFixed(1)} hint="sur 5" />
-        <AiKpi
-          label="Détracteurs"
-          value={stats.detractors}
-          tone={stats.detractors > 0 ? "danger" : "ink"}
-          hint="notes 1–2"
-        />
-      </div>
+      {(() => {
+        // Hero : radar des 3 sous-scores du composite (perf perçue × sérénité ×
+        // satisfaction). L'axe satisfaction n'existe que s'il y a des feedbacks —
+        // sinon on montre le score seul (perf perçue).
+        const perfSub = vitalsScore(ctx.lcp_p75);
+        const serenity = Math.round(100 - frustrationPenalty(ratePer1k));
+        const satisfaction = csatVal != null ? Math.round(csatVal * 100) : null;
+        const heroTone = tone === "bad" ? "poor" : tone;
+        const radarData = [
+          { axis: "Perf perçue", value: perfSub },
+          { axis: "Sérénité", value: serenity },
+          ...(satisfaction != null ? [{ axis: "Satisfaction", value: satisfaction }] : []),
+        ];
+        return (
+          <SupervisionHero
+            chartTitle={satisfaction != null ? "Profil d'expérience — sous-scores /100" : "Score d'expérience"}
+            chartHelp="experience"
+            chart={
+              satisfaction != null ? (
+                <RadarScore data={radarData} />
+              ) : (
+                <div className="flex h-[260px] flex-col items-center justify-center gap-2">
+                  <div className={`text-6xl font-bold tabular-nums tracking-tight ${TONE_TEXT[tone]}`}>
+                    {score}
+                    <span className="text-2xl text-ink-faint">/100</span>
+                  </div>
+                  <p className="text-xs text-ink-faint">perf perçue seule — aucun feedback sur la fenêtre</p>
+                </div>
+              )
+            }
+          >
+            <HeroStat
+              label="Score d'expérience"
+              value={<span data-testid="xp-score">{score}<span className="text-base text-ink-faint">/100</span></span>}
+              tone={heroTone}
+              hint="perf perçue × frustration × CSAT"
+            />
+            <HeroStat
+              label="CSAT"
+              value={csatVal == null ? "—" : `${Math.round(csatVal * 100)} %`}
+              tone={csatVal != null && csatVal < 0.5 ? "poor" : "neutral"}
+              hint="retours ≥ 4/5"
+            />
+            <HeroStat
+              label="Réponses"
+              value={<span data-testid="xp-count">{stats.count}</span>}
+              hint={`note moy. ${stats.avg == null ? "—" : stats.avg.toFixed(1)}/5 · ${stats.detractors} détracteur(s)`}
+            />
+            <HeroReading>
+              {satisfaction != null
+                ? "Le radar croise les trois piliers du ressenti : ce que l'utilisateur perçoit (perf), ce qui l'agace (sérénité) et ce qu'il déclare (satisfaction). Un axe creusé = le levier prioritaire."
+                : "Sans feedback, le score repose sur la seule performance perçue. Ajoutez le widget de feedback (voir ci-dessous) pour activer les axes satisfaction."}
+            </HeroReading>
+          </SupervisionHero>
+        );
+      })()}
 
       {stats.count === 0 && (
         <div className="card mt-6 p-6 text-sm text-ink-soft">
@@ -108,29 +138,24 @@ export default async function Experience({
         </div>
       )}
 
-      {/* Tendance CSAT */}
+      {/* Tendance CSAT — courbe % de satisfaction + volume d'avis */}
       {trend.length > 0 && (
         <div className="card mt-8 p-4">
           <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
             Satisfaction dans le temps
           </h2>
-          <div className="flex flex-col gap-1.5">
-            {trend.map((t) => {
-              const pct = t.count ? Math.round((t.positives / t.count) * 100) : 0;
-              return (
-                <div key={t.bucket} className="flex items-center gap-3 text-xs">
-                  <span className="w-24 shrink-0 tabular-nums text-ink-faint">{t.bucket.slice(0, 10)}</span>
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-panel2">
-                    <div className="h-full rounded-full bg-good" style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="w-24 shrink-0 text-right tabular-nums text-ink-soft">
-                    {pct}% · {t.count} avis
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <p className="sr-only">Volume max : {maxTrend}</p>
+          <LineTrend
+            data={trend.map((t) => ({
+              label: new Date(t.bucket).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
+              value: t.count ? Math.round((t.positives / t.count) * 100) : 0,
+              volume: t.count,
+            }))}
+            valueName="CSAT"
+            valueUnit="%"
+            volumeName="avis"
+            color="#059669"
+            domain={[0, 100]}
+          />
         </div>
       )}
 
