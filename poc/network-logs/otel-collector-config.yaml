@@ -1,0 +1,74 @@
+# OpenTelemetry Collector (contrib) — passerelle souveraine d'ingestion de logs
+# réseau. Reçoit du SYSLOG (équipements) et de l'OTLP (plateformes cloud / apps),
+# et FAN-OUT les MÊMES logs vers ClickHouse ET OpenSearch pour les comparer
+# (coût disque, compression, latence de requête) sur des volumes identiques.
+#
+# Version-sensible : les deux exporters (clickhouse, opensearch) sont la partie qui
+# peut bouger d'une release de collecteur à l'autre — cf. README si bump d'image.
+
+receivers:
+  # Équipements réseau : la plupart parlent syslog. RFC5424 en UDP ici (le loadgen
+  # en envoie) ; ajoute un bloc `tcp:` pour du syslog fiable/streamé si besoin.
+  syslog:
+    udp:
+      listen_address: "0.0.0.0:54526"
+    protocol: rfc5424
+
+  # Plateformes cloud / apps déjà instrumentées OpenTelemetry.
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+  # Borne mémoire pour ne pas OOM sous fort débit (test de sizing).
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: 400
+    spike_limit_mib: 100
+
+exporters:
+  # --- Store A : ClickHouse (colonnaire, compression forte, cheap au To) ---
+  clickhouse:
+    endpoint: "tcp://clickhouse:9000?dial_timeout=10s"
+    database: otel
+    username: default
+    password: ""
+    logs_table_name: otel_logs
+    create_schema: true       # crée la base + la table au 1er démarrage
+    ttl: 72h                  # rétention chaude (tiering possible en prod)
+    timeout: 10s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_elapsed_time: 300s
+
+  # --- Store B : OpenSearch (déjà présent OVH/interne) ---
+  # Schéma SS4O par défaut -> index `ss4o_logs-default-namespace`.
+  opensearch:
+    http:
+      endpoint: "http://opensearch:9200"
+      tls:
+        insecure: true
+    timeout: 10s
+    retry_on_failure:
+      enabled: true
+
+  # Miroir console (troubleshooting) — passe verbosity à detailed pour voir les logs.
+  debug:
+    verbosity: basic
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    logs:
+      receivers: [syslog, otlp]
+      processors: [memory_limiter, batch]
+      exporters: [clickhouse, opensearch, debug]

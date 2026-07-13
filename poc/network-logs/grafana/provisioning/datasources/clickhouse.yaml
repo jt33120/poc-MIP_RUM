@@ -1,0 +1,18 @@
+# Datasource ClickHouse auto-provisionnée (plugin grafana-clickhouse-datasource).
+# La branche OpenSearch se visualise dans OpenSearch Dashboards (:5601), plus
+# fiable que le plugin OS de Grafana — la comparaison de COÛT se fait en CLI (README).
+apiVersion: 1
+datasources:
+  - name: ClickHouse
+    uid: clickhouse-poc
+    type: grafana-clickhouse-datasource
+    access: proxy
+    isDefault: true
+    jsonData:
+      host: clickhouse
+      port: 9000
+      protocol: native
+      username: default
+      defaultDatabase: otel
+    secureJsonData:
+      password: ""
