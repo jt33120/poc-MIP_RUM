@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { LoginSubmitButton } from "@/components/LoginSubmitButton";
 import { getUser } from "@/lib/auth";
@@ -41,6 +42,12 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
                 </span>
               </div>
               <p className="mt-3 text-sm text-ink-soft">Connexion à la console</p>
+              <Link
+                href="/presentation"
+                className="mt-1 inline-block text-xs font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent"
+              >
+                ← Découvrir MIP RUM
+              </Link>
             </div>
             <form action={loginAction} className="flex flex-col gap-4" data-testid="login-form">
               <label className="text-sm font-medium text-ink-soft">

@@ -24,12 +24,29 @@ export default async function Presentation() {
         title="MIP RUM — Real User Monitoring"
         help="rum"
         sub={
-          <>
-            Monitoring de l'expérience réelle, OpenTelemetry-natif et souverain UE. Cette page présente
-            l'outil ; le poste de pilotage est sur <Link href="/" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">la Vue d'ensemble</Link>.
-          </>
+          user ? (
+            <>
+              Monitoring de l'expérience réelle, OpenTelemetry-natif et souverain UE. Cette page présente
+              l'outil ; le poste de pilotage est sur <Link href="/" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">la Vue d'ensemble</Link>.
+            </>
+          ) : (
+            <>
+              Monitoring de l'expérience réelle, OpenTelemetry-natif et souverain UE. Découvrez l'outil,
+              puis connectez-vous pour accéder à votre console.
+            </>
+          )
         }
-      />
+      >
+        {user ? (
+          <Link href="/" className="btn-accent px-4 py-2">
+            Ouvrir la console →
+          </Link>
+        ) : (
+          <Link href="/login" className="btn-accent px-4 py-2" data-testid="presentation-login">
+            Se connecter →
+          </Link>
+        )}
+      </PageHeader>
 
       {/* Qu'est-ce que le RUM ------------------------------------------------ */}
       <section className="card mb-6 p-5">
