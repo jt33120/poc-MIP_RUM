@@ -1,4 +1,6 @@
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { Gauge, type GaugeTone } from "@/components/charts/Gauge";
 import { ALERT_METRICS, parseFilters, type SearchParams } from "@/lib/queries-v2";
 import { registeredApps } from "@/lib/queries";
 import { listSlo, sloStatus } from "@/lib/queries-alerting";
@@ -27,6 +29,54 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
           </>
         }
       />
+
+      {statuses.length > 0 && (() => {
+        const sloTone = (b: number | null, fast: boolean): GaugeTone => {
+          if (fast || (b != null && b >= 100)) return "poor";
+          if (b != null && b >= 75) return "warn";
+          return "good";
+        };
+        const breached = statuses.filter((s) => s.burned_pct != null && s.burned_pct >= 100).length;
+        const fastBurn = statuses.filter((s) => s.fast_burn).length;
+        return (
+          <SupervisionHero
+            layout="wide"
+            chartTitle="Budget d'erreur consommé — par SLO"
+            chart={
+              <div className="flex flex-wrap gap-x-6 gap-y-4">
+                {statuses.slice(0, 10).map((s) => (
+                  <Gauge
+                    key={s.slo_id}
+                    value={s.burned_pct ?? 0}
+                    tone={sloTone(s.burned_pct, s.fast_burn)}
+                    label={s.name}
+                    sub={`${s.metric} · ${s.window_days} j`}
+                  />
+                ))}
+              </div>
+            }
+          >
+            <HeroStat label="SLO actifs" value={statuses.length.toLocaleString("fr-FR")} />
+            <HeroStat
+              label="En dépassement"
+              value={breached.toLocaleString("fr-FR")}
+              tone={breached > 0 ? "poor" : "good"}
+              hint="budget d'erreur épuisé"
+            />
+            <HeroStat
+              label="Burn rapide"
+              value={fastBurn.toLocaleString("fr-FR")}
+              tone={fastBurn > 0 ? "warn" : "good"}
+              hint="consommation anormalement vite"
+            />
+            <HeroReading>
+              Chaque jauge = la part du budget d&apos;erreur déjà dépensée sur la fenêtre du SLO (0 % = intact,
+              100 % = objectif tenu tout juste, au-delà = dépassé). Rouge = à traiter. Le détail atteinte /
+              burn-rate est dans le tableau ci-dessous.
+            </HeroReading>
+          </SupervisionHero>
+        );
+      })()}
 
       {/* ----- Création ----- */}
       <details className="card mb-6" open={!slos.length}>

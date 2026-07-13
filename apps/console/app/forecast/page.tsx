@@ -4,6 +4,8 @@
 // (lib/forecast), réutilise les séries journalières existantes (queries-grid).
 import { fmtLatency } from "@/components/ai/format";
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { ForecastChart, type ForecastPoint } from "@/components/charts/ForecastChart";
 import { parseFilters, type SearchParams } from "@/lib/filters";
 import {
   buildForecastNarrative,
@@ -114,6 +116,65 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
         </div>
       ) : (
         <>
+        {(() => {
+          // Hero : prévision de la métrique phare (LCP p75) — réel + projection + seuil.
+          const m = metrics[0];
+          const fit = linfit(m.values);
+          const proj = fit ? Array.from({ length: HORIZON }, (_v, i) => forecastNext(fit, i + 1)) : [];
+          const current = [...m.values].reverse().find((v) => v != null) ?? null;
+          const projected = fit ? forecastNext(fit, HORIZON) : null;
+          const eta =
+            fit && current != null && m.threshold != null
+              ? etaToThreshold(fit, current, m.threshold, m.higherIsWorse)
+              : null;
+          const fmtDay = (d: string) => {
+            const [, mo, da] = d.split("-");
+            return `${da}/${mo}`;
+          };
+          const chartData: ForecastPoint[] = days.map((d, i) => ({ label: fmtDay(d), real: m.values[i], proj: null }));
+          if (fit && chartData.length) chartData[chartData.length - 1].proj = forecastNext(fit, 0);
+          proj.forEach((v, i) => chartData.push({ label: `J+${i + 1}`, real: null, proj: v }));
+          const overThreshold = current != null && m.threshold != null && current > m.threshold;
+          return (
+            <SupervisionHero
+              chartTitle="LCP p75 — réel + projection à J+3"
+              chartHelp="forecast"
+              chart={
+                <ForecastChart
+                  data={chartData}
+                  threshold={m.threshold}
+                  thresholdLabel={m.thresholdLabel}
+                  format={(v) => fmtLatency(v)}
+                />
+              }
+            >
+              <HeroStat
+                label="Tendance générale"
+                value={narrative.status === "risk" ? "Action requise" : narrative.status === "watch" ? "À surveiller" : "Stable"}
+                tone={narrative.status === "risk" ? "poor" : narrative.status === "watch" ? "warn" : "good"}
+              />
+              <HeroStat
+                label="LCP p75 actuel"
+                value={m.fmt(current)}
+                tone={overThreshold ? "poor" : "good"}
+                hint={`projeté J+${HORIZON} : ${m.fmt(projected)}`}
+              />
+              <HeroStat
+                label="Seuil 2,5 s"
+                value={eta === 0 ? "dépassé" : eta != null && eta <= 7 ? `~J+${Math.ceil(eta)}` : "hors horizon"}
+                tone={eta === 0 ? "poor" : eta != null && eta <= 7 ? "warn" : "good"}
+                hint="échéance estimée de dépassement"
+              />
+              <HeroReading>
+                La ligne pleine (bleue) = les 14 jours réels, prolongée en pointillé (orange) par la projection
+                linéaire ; la ligne rouge = le seuil « à améliorer ». Si le pointillé croise le rouge sur
+                l&apos;horizon, c&apos;est le moment d&apos;agir. Les deux autres métriques sont détaillées
+                ci-dessous.
+              </HeroReading>
+            </SupervisionHero>
+          );
+        })()}
+
         {/* Synthèse (narration déterministe) */}
         <div className={`mb-6 rounded-xl border px-4 py-3 ${NARR_STYLE[narrative.status]}`}>
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">

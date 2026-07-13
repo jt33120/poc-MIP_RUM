@@ -1,4 +1,6 @@
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { RankBar } from "@/components/charts/RankBar";
 import { getUser } from "@/lib/auth";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import { listApps } from "@/lib/queries";
@@ -38,6 +40,46 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
           Champs invalides — objectif non créé.
         </div>
       )}
+
+      {rows.length > 0 && (() => {
+        const byRate = [...rows].sort((a, b) => b.rate - a.rate);
+        const best = byRate[0];
+        const topConv = [...rows].sort((a, b) => b.conversions - a.conversions)[0];
+        return (
+          <SupervisionHero
+            chartTitle="Taux de conversion par objectif"
+            chart={
+              <RankBar
+                data={byRate.slice(0, 8).map((g) => ({
+                  label: g.name,
+                  value: g.rate * 100,
+                  display: pctFmt(g.rate),
+                  color: "#059669",
+                  sub: `${g.conversions.toLocaleString("fr-FR")} conversions`,
+                  title: `${g.name} — ${pctFmt(g.rate)} (${g.conversions} conversions)`,
+                }))}
+                max={100}
+                labelWidth="12rem"
+              />
+            }
+          >
+            <HeroStat label={`Sessions · ${period.label}`} value={total.toLocaleString("fr-FR")} />
+            <HeroStat label="Objectifs suivis" value={rows.length.toLocaleString("fr-FR")} />
+            <HeroStat
+              label="Meilleur taux"
+              value={best ? pctFmt(best.rate) : "—"}
+              tone="good"
+              hint={best?.name}
+            />
+            <HeroReading>
+              Chaque barre = un objectif, longueur = sa part de sessions qui l&apos;atteignent (échelle
+              absolue 0–100 %). {topConv ? `« ${topConv.name} » concentre le plus de conversions en volume. ` : ""}
+              Les objectifs sont indépendants (pas des étapes d&apos;un même entonnoir). Détail et gestion
+              ci-dessous.
+            </HeroReading>
+          </SupervisionHero>
+        );
+      })()}
 
       <div className="card mb-8 overflow-hidden">
         <table className="w-full text-sm">

@@ -1,4 +1,6 @@
 import { PageHeader } from "@/components/PageHeader";
+import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import { fmtDate } from "@/lib/format";
 import {
   alertEvents,
@@ -82,6 +84,58 @@ export default async function Alerts({
           check_alerts() exécutée : {fired} alerte(s) déclenchée(s).
         </div>
       )}
+
+      {events.length > 0 && (() => {
+        // Hero : rafales d'alertes dans le temps, empilées par sévérité.
+        const SEV_COLOR: Record<string, string> = {
+          critical: "#dc2626",
+          page: "#dc2626",
+          error: "#dc2626",
+          warning: "#d97706",
+          warn: "#d97706",
+          info: "#2563eb",
+        };
+        const sevs = [...new Set(events.map((e) => e.severity))];
+        const byDay = new Map<string, Record<string, number | string>>();
+        const order: string[] = [];
+        for (const e of [...events].reverse()) {
+          const key = new Date(e.fired_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+          if (!byDay.has(key)) {
+            const row: Record<string, number | string> = { d: key };
+            for (const s of sevs) row[s] = 0;
+            byDay.set(key, row);
+            order.push(key);
+          }
+          const row = byDay.get(key)!;
+          row[e.severity] = (Number(row[e.severity]) || 0) + 1;
+        }
+        const data = order.map((k) => byDay.get(k)!);
+        const series: StackSeries[] = sevs.map((s) => ({ key: s, name: s, color: SEV_COLOR[s] ?? "#94a3b8" }));
+        const critical = events.filter((e) => ["critical", "page", "error"].includes(e.severity)).length;
+        return (
+          <SupervisionHero
+            chartTitle="Événements d'alerte dans le temps — par sévérité"
+            chart={<StackedBars data={data} xKey="d" series={series} />}
+          >
+            <HeroStat label="Événements" value={events.length.toLocaleString("fr-FR")} hint="100 plus récents" />
+            <HeroStat
+              label="Non acquittées"
+              value={unacked.toLocaleString("fr-FR")}
+              tone={unacked > 0 ? "poor" : "good"}
+            />
+            <HeroStat
+              label="Critiques"
+              value={critical.toLocaleString("fr-FR")}
+              tone={critical > 0 ? "warn" : "good"}
+            />
+            <HeroReading>
+              Chaque colonne = un jour, empilée par sévérité (rouge = critique). Une colonne haute = une rafale
+              d&apos;alertes à investiguer — souvent le symptôme d&apos;un incident. Les règles et le flux
+              détaillé sont ci-dessous.
+            </HeroReading>
+          </SupervisionHero>
+        );
+      })()}
 
       {/* ----- Création ----- */}
       <details className="card mb-6" open={!rules.length}>
