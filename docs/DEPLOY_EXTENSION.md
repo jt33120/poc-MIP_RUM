@@ -1,8 +1,19 @@
 # Déploiement de l'extension navigateur (Ext-D)
 
+> **Le chemin principal est désormais dans la console** : à la création d'une app en
+> mode extension (`/select/new`), l'écran propose les deux voies directement —
+> **(A)** « Ajouter à Chrome » (dès la publication au Store) ou téléchargement du `.zip`
+> + chargement « non empaqueté », et **(B)** une policy `ExtensionSettings` **pré-remplie**
+> (ID + domaines réels) à copier-coller dans GPO/Intune/Google Admin. Ce document reste
+> la **référence packaging avancé** (empaquetage `.crx` signé, `update.xml` Omaha) pour la
+> voie B.
+>
 > POC interne, **non publié** sur le Chrome Web Store (cf. `docs/CADRAGE_EXTENSION.md`
 > §0 — le grand public est hors périmètre de ce POC, réservé à la Phase 2). Deux modes
 > de déploiement : sideload manuel (dev/QA) et policy d'entreprise (poste géré du client).
+>
+> **Régénérer le `.zip`** servi par la console (après un changement d'extension) :
+> `pnpm --filter extension pack` (build + empaquetage → `apps/console/public/downloads/`).
 
 ## Identité de l'extension
 

@@ -88,7 +88,9 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // `vendor` = assets tiers auto-hébergés (Swagger UI) servis depuis public/ —
-  // exclus de la porte d'auth, comme _next et le SDK public.
-  matcher: ["/((?!login|mip-rum|_next/|favicon|vendor).*)"],
+  // `vendor` = assets tiers auto-hébergés (Swagger UI) ; `downloads` = artefacts
+  // téléchargeables (le .zip de l'extension). Servis depuis public/, exclus de la
+  // porte d'auth comme _next et le SDK public (sinon un GET de fichier statique
+  // serait traité comme une page et redirigé vers /select).
+  matcher: ["/((?!login|mip-rum|_next/|favicon|vendor|downloads).*)"],
 };
