@@ -25,7 +25,15 @@ export async function middleware(req: NextRequest) {
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const user = token ? await verifyJwt(token) : null;
-  if (!user) return NextResponse.redirect(new URL("/login", req.url), 302);
+  if (!user) {
+    // /presentation = vitrine PUBLIQUE (avant login) : un visiteur comprend l'outil
+    // avant de se connecter. La racine "/" sert de porte d'entrée -> présentation ;
+    // tout autre lien profond -> login (bookmarks des utilisateurs connus).
+    const p = req.nextUrl.pathname;
+    if (p === "/presentation") return NextResponse.next();
+    if (p === "/") return NextResponse.redirect(new URL("/presentation", req.url), 302);
+    return NextResponse.redirect(new URL("/login", req.url), 302);
+  }
 
   // Porte « projet courant » : RUM et IA sont propres à UNE app, il n'y a pas de
   // vue « toutes les apps ». On réconcilie cookie de projet et paramètre ?app sur

@@ -14,7 +14,9 @@ export type NavCategory = {
 };
 
 export const CATEGORIES: NavCategory[] = [
-  { href: "/presentation", label: "Présentation", icon: "book", domain: "neutral" },
+  // NB : /presentation n'est PLUS dans la nav — c'est la vitrine PUBLIQUE (avant
+  // login). Post-login son intérêt est faible ; elle reste joignable directement
+  // (/presentation) et depuis le login (« Découvrir MIP RUM »).
   {
     href: "/",
     label: "Performance",
