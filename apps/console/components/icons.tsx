@@ -27,6 +27,15 @@ export function Icon({
 export const ICON_PATHS = {
   // pouls RUM — marque produit
   activity: <path d="M22 12h-4l-3 9L9 3l-3 9H2" />,
+  // lignes de journal — Logs
+  logs: (
+    <>
+      <path d="M4 5h16" />
+      <path d="M4 10h16" />
+      <path d="M4 15h10" />
+      <path d="M4 20h7" />
+    </>
+  ),
   // flèche vers bac — téléchargement
   download: (
     <>

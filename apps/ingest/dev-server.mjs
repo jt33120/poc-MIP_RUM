@@ -9,7 +9,7 @@
 import { createHash } from "node:crypto";
 import http from "node:http";
 import pg from "pg";
-import { flattenOtlp } from "./supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp, flattenOtlpLogs } from "./supabase/functions/_shared/otlp.mjs";
 import { createLogger } from "./supabase/functions/_shared/log.mjs";
 import { withRetry } from "./supabase/functions/_shared/retry.mjs";
 import { MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "./supabase/functions/_shared/limits.mjs";
@@ -221,6 +221,23 @@ async function writeRows({
   }
 }
 
+// --- Écriture des logs (signal LOGS OTel) -> rum_log --------------------------
+async function writeLogs(logs) {
+  if (!logs.length) return;
+  const client = await pool.connect();
+  try {
+    await batchInsert(
+      client,
+      "rum_log",
+      ["app_id", "ts", "severity_num", "severity_text", "body", "source", "trace_id", "span_id", "session_id", "route", "attributes"],
+      logs.map((l) => ({ ...l, attributes: l.attributes ? JSON.stringify(l.attributes) : null })),
+      "", // pas de contrainte d'idempotence (bigserial) : insert simple
+    );
+  } finally {
+    client.release();
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const origin = req.headers.origin ?? "";
   const cors = corsHeaders(origin);
@@ -250,7 +267,9 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { "content-type": "application/json", ...cors });
     return res.end(JSON.stringify(recent));
   }
-  if (req.method !== "POST" || !req.url.startsWith("/v1/traces")) {
+  const isLogs = req.url.startsWith("/v1/logs");
+  const isTraces = req.url.startsWith("/v1/traces");
+  if (req.method !== "POST" || (!isTraces && !isLogs)) {
     res.writeHead(404, cors);
     return res.end();
   }
@@ -275,6 +294,34 @@ const server = http.createServer(async (req, res) => {
     const payload = JSON.parse(body);
     recent.push(payload);
     if (recent.length > RING_SIZE) recent.shift();
+
+    // Signal LOGS (3e signal OTel) : resourceLogs -> rum_log. Mêmes gardes que
+    // les traces (clé d'API 403, rate limit 429), écriture idempotente-libre.
+    if (isLogs) {
+      const parsed = flattenOtlpLogs(payload, { maxLogs: MAX_SPANS_PER_REQUEST });
+      for (const { app_id, api_key } of parsed.apiKeys) {
+        const reason = checkApiKey(app_id, api_key);
+        if (reason) {
+          log.warn("rejected: api key", { app_id, reason });
+          res.writeHead(403, { "content-type": "application/json", ...cors });
+          return res.end(JSON.stringify({ error: reason }));
+        }
+      }
+      for (const appId of new Set(parsed.apiKeys.map((k) => k.app_id))) {
+        if (await rateLimitedDurable(appId)) {
+          log.warn("rate limited", { app_id: appId, limit: RATE_LIMIT_PER_MIN });
+          res.writeHead(429, { "content-type": "application/json", "retry-after": "60", ...cors });
+          return res.end(JSON.stringify({ error: `rate limit exceeded for app: ${appId}` }));
+        }
+      }
+      await withRetry(() => writeLogs(parsed.logs), {
+        onRetry: (e, attempt) => log.warn("db retry (logs)", { attempt, code: e?.code }),
+      });
+      log.info("ingested logs", { logs: parsed.logs.length, rejected: parsed.rejected });
+      res.writeHead(200, { "content-type": "application/json", ...cors });
+      return res.end(JSON.stringify({ partialSuccess: {} }));
+    }
+
     const rows = flattenOtlp(payload, { maxSpans: MAX_SPANS_PER_REQUEST });
 
     // vérif clé d'API (403) — clé portée par l'attribut resource mip.api_key

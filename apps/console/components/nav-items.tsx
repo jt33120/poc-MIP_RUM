@@ -60,6 +60,7 @@ export const CATEGORIES: NavCategory[] = [
     ],
   },
   { href: "/ai", label: "Performance IA", icon: "ai", domain: "ai" },
+  { href: "/logs", label: "Logs", icon: "logs", domain: "neutral" },
   { href: "/api-docs", label: "API", icon: "grid", domain: "neutral" },
 ];
 
