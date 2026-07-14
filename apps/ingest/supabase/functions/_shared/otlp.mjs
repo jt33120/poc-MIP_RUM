@@ -503,3 +503,84 @@ export function flattenOtlp(payload, opts = {}) {
     rejected,
   };
 }
+
+/** severityNumber OTLP (1..24) -> libellé, quand severityText est absent. */
+function severityText(n) {
+  if (n == null) return null;
+  if (n >= 21) return "FATAL";
+  if (n >= 17) return "ERROR";
+  if (n >= 13) return "WARN";
+  if (n >= 9) return "INFO";
+  if (n >= 5) return "DEBUG";
+  return "TRACE";
+}
+
+/**
+ * Aplatit un payload OTLP/HTTP JSON du signal LOGS (resourceLogs) en lignes rum_log
+ * — miroir de flattenOtlp() pour les traces. Rejette (compte) les resourceLogs sans
+ * mip.app_id. Corrélation aux spans via traceId/spanId. PII scrubbée (body + attrs).
+ * @param {object} payload  enveloppe OTLP/HTTP JSON (resourceLogs[]).
+ * @param {{maxLogs?: number}} [opts]  garde-fou anti-charge (défaut 20 000).
+ * @returns {{logs: object[], apiKeys: {app_id: string, api_key: string|null}[], rejected: number}}
+ */
+export function flattenOtlpLogs(payload, opts = {}) {
+  const maxLogs = opts.maxLogs ?? 20_000;
+  let seen = 0;
+  const logs = [];
+  const apiKeys = [];
+  let rejected = 0;
+
+  for (const rl of Array.isArray(payload?.resourceLogs) ? payload.resourceLogs : []) {
+    if (!rl || typeof rl !== "object") {
+      rejected++;
+      continue;
+    }
+    const res = attrsToObj(rl.resource?.attributes);
+    const appId = res["mip.app_id"];
+    if (!appId) {
+      rejected++;
+      continue;
+    }
+    apiKeys.push({ app_id: appId, api_key: res["mip.api_key"] ?? null });
+    // source par défaut au niveau resource (surchargée par log si présent)
+    const resSource = res["mip.source"] ?? res["mip.collection_source"] ?? null;
+
+    for (const sl of Array.isArray(rl.scopeLogs) ? rl.scopeLogs : []) {
+      for (const rec of Array.isArray(sl?.logRecords) ? sl.logRecords : []) {
+        if (++seen > maxLogs) {
+          rejected++;
+          continue;
+        }
+        if (!rec || typeof rec !== "object") {
+          rejected++;
+          continue;
+        }
+        const a = attrsToObj(rec.attributes);
+        const bodyVal = anyValue(rec.body);
+        const bodyStr = typeof bodyVal === "string" ? bodyVal : bodyVal == null ? "" : JSON.stringify(bodyVal);
+        // scrub PII AVANT troncature (un secret ne doit pas survivre coupé en deux)
+        const body = (scrubText(bodyStr) ?? "").slice(0, 4000);
+        const sevNum =
+          typeof rec.severityNumber === "number"
+            ? rec.severityNumber
+            : typeof rec.severityNumber === "string"
+              ? Number(rec.severityNumber) || null
+              : null;
+        logs.push({
+          app_id: appId,
+          ts: nanosToDate(rec.timeUnixNano ?? rec.observedTimeUnixNano),
+          severity_num: sevNum,
+          severity_text: rec.severityText ?? severityText(sevNum),
+          body,
+          source: a["mip.source"] ?? resSource ?? "sdk",
+          trace_id: rec.traceId ?? a["mip.trace_id"] ?? null,
+          span_id: rec.spanId ?? a["mip.span_id"] ?? null,
+          session_id: a["mip.session_id"] ?? null,
+          route: a["mip.route"] ?? null,
+          attributes: scrubProps(a),
+        });
+      }
+    }
+  }
+  return { logs, apiKeys, rejected };
+}

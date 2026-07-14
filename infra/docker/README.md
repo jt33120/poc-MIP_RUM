@@ -15,10 +15,17 @@ C'est **le même code** que l'edge function Deno de prod : `apps/ingest/dev-serv
 est un vrai serveur HTTP (OTLP → Postgres) avec `/health`, `/ready`, rate-limit,
 vérif de clé d'API et arrêt propre. On l'empaquette juste pour tourner en conteneur.
 
-> ⚠️ **Non exécuté en CI** (pas de Docker dans l'environnement de dev). Structure,
-> configs et ordre d'application des migrations sont **revus**, pas validés par un
-> `docker compose up` réel. Versions **épinglées** (`postgres:15`, `node:22-alpine`,
-> `pg` 8.21.0). Signale-moi toute erreur au premier `up` — surtout sur une migration.
+> ✅ **Substance validée sur Postgres réel** (Postgres 16 local, hors Docker) : la
+> séquence `schema.sql` + les 28 migrations s'applique proprement (`ON_ERROR_STOP=1`,
+> 36 tables, blocs cloud auto-sautés) ; le rôle `console_ro` obtient bien SELECT sur
+> 34 tables + 28 policies (parité v16) ; le serveur ingère un payload OTLP réel
+> (`200 {"partialSuccess":{}}`, lignes en base, lecture OK sous `console_ro`) et émet
+> ses logs JSON sans warn/error. C'est **exactement ce que le conteneur exécute**.
+>
+> ⚠️ **Seul l'emballage Docker reste à confirmer** (build de l'image + orchestration
+> compose : healthchecks, `depends_on`, volumes) — **non exécuté** ici car le daemon
+> Docker est indisponible dans l'environnement de dev. Versions **épinglées**
+> (`postgres:15`, `node:22-alpine`, `pg` 8.21.0). Signale-moi toute erreur au premier `up`.
 
 ---
 
