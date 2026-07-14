@@ -5,8 +5,10 @@
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { SESSION_COOKIE, SESSION_HOURS, signJwt, type SessionUser } from "@/lib/auth";
 import { q } from "@/lib/db";
+import { forwardLog } from "@/lib/log-forward";
 
 const DUMMY_HASH = bcrypt.hashSync("mip-rum-dummy", 10);
 
@@ -51,5 +53,7 @@ export async function loginAction(fd: FormData): Promise<void> {
   }
   await q(`update console_user set last_login_at = now() where email = $1`, [u.email]);
   await q(`insert into audit_log (user_email, action, detail) values ($1, 'login', null)`, [u.email]);
+  // Dogfooding : trace la connexion dans la page /logs (après la réponse, best-effort).
+  after(() => forwardLog("info", `connexion console (${u.role})`, { user: u.email }));
   redirect("/");
 }
