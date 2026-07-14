@@ -3,8 +3,9 @@
 // Factorise l'auth (401), le RBAC, le throttling (429), la gestion d'erreur (500) et le
 // CORS pour que chaque route ne décrive que sa donnée. Importe next/server (non testé
 // unitairement ; les briques pures — auth/params/cors/ratelimit/etag — le sont).
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest, after } from "next/server";
 import { SESSION_COOKIE } from "../auth";
+import { forwardLog } from "../log-forward";
 import { type ApiPrincipal, authenticateApi } from "./auth";
 import { weakEtag } from "./etag";
 import { type ApiFilters, parseApiFilters } from "./params";
@@ -92,6 +93,12 @@ export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
     } catch (e) {
       if (e instanceof ApiHttpError) return apiError(req, e.status, e.message);
       console.error("[api/v1]", req.nextUrl.pathname, e);
+      // Dogfooding : remonte l'incident dans la page /logs (après la réponse, best-effort).
+      after(() =>
+        forwardLog("error", `[api/v1] ${req.nextUrl.pathname}: ${e instanceof Error ? e.message : String(e)}`, {
+          route: req.nextUrl.pathname,
+        }),
+      );
       return apiError(req, 500, "erreur interne");
     }
   };
