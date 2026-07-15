@@ -3,14 +3,39 @@
 // Message d'erreur générique et comparaison systématique (hash factice si email
 // inconnu) : pas d'énumération d'utilisateurs, ni par le message ni par le timing.
 import bcrypt from "bcryptjs";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { SESSION_COOKIE, SESSION_HOURS, signJwt, type SessionUser } from "@/lib/auth";
+import { rateLimit } from "@/lib/api/ratelimit";
 import { q } from "@/lib/db";
 import { forwardLog } from "@/lib/log-forward";
 
 const DUMMY_HASH = bcrypt.hashSync("mip-rum-dummy", 10);
+
+// Anti-brute-force : fenêtre glissante en mémoire par (IP + email). Best-effort
+// par isolat (serverless) — première barrière ; un store partagé (Redis/PG)
+// serait nécessaire pour une garantie stricte multi-instance.
+const LOGIN_MAX = 8;
+const LOGIN_WINDOW_MS = 10 * 60_000;
+
+/** IP client depuis les en-têtes proxy (Vercel/CDN). */
+async function clientIp(): Promise<string> {
+  const h = await headers();
+  return (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "unknown").trim();
+}
+
+async function auditFail(email: string, action: string, detail: string | null): Promise<void> {
+  try {
+    await q(`insert into audit_log (user_email, action, detail) values ($1, $2, $3)`, [
+      email.slice(0, 200),
+      action,
+      detail,
+    ]);
+  } catch {
+    /* best-effort : la journalisation ne doit pas bloquer le login */
+  }
+}
 
 interface UserRow {
   email: string;
@@ -24,12 +49,24 @@ interface UserRow {
 export async function loginAction(fd: FormData): Promise<void> {
   const email = String(fd.get("email") ?? "").trim().toLowerCase();
   const password = String(fd.get("password") ?? "");
+
+  // 1) borne le débit AVANT le bcrypt (coûteux) : par IP+email, réponse générique
+  const ip = await clientIp();
+  const rl = rateLimit(`login:${ip}:${email}`, LOGIN_MAX, LOGIN_WINDOW_MS, Date.now());
+  if (!rl.ok) {
+    after(() => auditFail(email, "login_blocked", JSON.stringify({ ip })));
+    redirect("/login?error=1");
+  }
+
   const [u] = await q<UserRow>(
     `select email, password_hash, role, apps, active, last_login_at from console_user where email = $1`,
     [email],
   );
   const ok = (await bcrypt.compare(password, u?.password_hash ?? DUMMY_HASH)) && u?.active === true;
-  if (!ok) redirect("/login?error=1");
+  if (!ok) {
+    after(() => auditFail(email, "login_failed", null));
+    redirect("/login?error=1");
+  }
 
   const user: SessionUser = { email: u.email, role: u.role, apps: u.apps };
   const jar = await cookies();

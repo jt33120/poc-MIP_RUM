@@ -49,6 +49,20 @@ export function parseTokenConfig(raw: string | undefined): TokenConfig[] {
     .filter((c) => c.token);
 }
 
+/** Comparaison de secrets à temps constant (longueurs différentes -> false). */
+export function secretEquals(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/** `Authorization: Bearer <secret>` comparé à `secret` en temps constant. */
+export function bearerMatches(authHeader: string | null, secret: string): boolean {
+  const m = authHeader?.match(/^Bearer\s+(.+)$/i);
+  return m ? secretEquals(m[1].trim(), secret) : false;
+}
+
 /**
  * Jeton correspondant (comparaison à temps constant sur la partie secrète), ou null.
  * On parcourt TOUTES les entrées pour ne pas fuiter par chronométrage laquelle a matché.

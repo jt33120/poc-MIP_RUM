@@ -12,6 +12,10 @@ export async function middleware(req: NextRequest) {
   // /api/metrics : scrape Prometheus (sans cookie de session) — auth par token dans
   // le handler. Bypass de la redirection /login (sinon 302 au lieu des métriques).
   if (req.nextUrl.pathname === "/api/metrics") return NextResponse.next();
+  // /api/cron/* : déclenché par un scheduler (Vercel Cron) avec Authorization:
+  // Bearer $CRON_SECRET, sans cookie — auth dans le handler. Sans ce bypass, le
+  // middleware redirige vers /login (302) et le cron échoue silencieusement.
+  if (req.nextUrl.pathname.startsWith("/api/cron")) return NextResponse.next();
   // API publique v1 (LOT C option B) : authentifiée par jeton (Authorization: Bearer)
   // OU cookie, DANS le handler — le middleware ne doit pas la rediriger vers /login
   // (le front Angular MIP appelle sans cookie de session).

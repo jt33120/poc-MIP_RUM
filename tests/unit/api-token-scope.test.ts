@@ -1,6 +1,21 @@
 // Scoping des jetons machine (UTI-D) : parsing du format + périmètre du principal.
 import { afterEach, describe, expect, it } from "vitest";
-import { authenticateApi, parseTokenConfig } from "../../apps/console/lib/api/auth";
+import { authenticateApi, bearerMatches, parseTokenConfig, secretEquals } from "../../apps/console/lib/api/auth";
+
+describe("secretEquals / bearerMatches (comparaison timing-safe)", () => {
+  it("secretEquals : vrai seulement si identique", () => {
+    expect(secretEquals("s3cr3t", "s3cr3t")).toBe(true);
+    expect(secretEquals("s3cr3t", "s3cr3T")).toBe(false);
+    expect(secretEquals("court", "beaucoup-plus-long")).toBe(false); // longueurs != -> false
+  });
+  it("bearerMatches : extrait le token du header et compare", () => {
+    expect(bearerMatches("Bearer s3cr3t", "s3cr3t")).toBe(true);
+    expect(bearerMatches("bearer s3cr3t", "s3cr3t")).toBe(true); // insensible à la casse du schéma
+    expect(bearerMatches("Bearer mauvais", "s3cr3t")).toBe(false);
+    expect(bearerMatches("s3cr3t", "s3cr3t")).toBe(false); // pas de préfixe Bearer
+    expect(bearerMatches(null, "s3cr3t")).toBe(false);
+  });
+});
 
 afterEach(() => {
   delete process.env.CONSOLE_API_TOKENS;

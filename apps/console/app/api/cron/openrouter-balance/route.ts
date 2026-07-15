@@ -3,6 +3,7 @@
 // solde via l'API OpenRouter (clé OPENROUTER_API_KEY en env), enregistre un relevé,
 // et émet une alerte « solde bas » au franchissement / après cooldown. Ne renvoie
 // jamais 500 sur un hoquet réseau (le prochain tick réessaiera).
+import { bearerMatches } from "@/lib/api/auth";
 import { balanceStatus, crossedIntoLow, DEFAULT_LOW_BALANCE, OPENROUTER_CREDITS_URL, parseCredits } from "@/lib/openrouter";
 import { insertBalance, latestBalance, lowAlertWithin, recordLowBalanceAlert } from "@/lib/queries-openrouter";
 
@@ -17,7 +18,7 @@ async function poll(req: Request): Promise<Response> {
   // Auth : Vercel Cron ajoute Authorization: Bearer $CRON_SECRET.
   const secret = process.env.CRON_SECRET;
   if (!secret) return json({ error: "CRON_SECRET non configuré" }, 503);
-  if (req.headers.get("authorization") !== `Bearer ${secret}`)
+  if (!bearerMatches(req.headers.get("authorization"), secret))
     return json({ error: "non autorisé" }, 401);
 
   const apiKey = process.env.OPENROUTER_API_KEY;
