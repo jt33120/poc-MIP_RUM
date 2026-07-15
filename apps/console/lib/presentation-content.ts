@@ -24,7 +24,7 @@ export const PIPELINE: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "list",
     title: "4 · Stockage",
-    body: "PostgreSQL pour le POC ; chemin ClickHouse prouvé pour le grand compte (mêmes p75, ×15 plus compact). Rétention RGPD (TTL 30 j).",
+    body: "PostgreSQL par défaut ; chemin ClickHouse prouvé pour le grand compte (mêmes p75, ×15 plus compact). Rétention RGPD (TTL 30 j).",
   },
   {
     icon: "compass",

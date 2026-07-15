@@ -15,7 +15,7 @@ Démontré en production le 10/06/2026 sur `plateforme.groupement-it.com` : sur 
 ## Architecture
 
 ```
-[App web cliente] -> [MIP RUM SDK ~22 KB gzip] --OTLP/HTTP JSON--> [Ingestion /v1/traces] --> [Postgres]
+[App web cliente] -> [MIP RUM SDK ~12 KB gzip] --OTLP/HTTP JSON--> [Ingestion /v1/traces] --> [Postgres]
                                                                                                  ^    |
 [Synthétique DEM (mippoc ou seed)] --> [sync-synthetic] ---------------------------------------/     v
                                                                           [Console RUM Live (Next.js)]
@@ -23,7 +23,7 @@ Démontré en production le 10/06/2026 sur `plateforme.groupement-it.com` : sur 
 
 - SDK Web lean (OTel sdk-trace-web + web-vitals, sans instrumentation contrib) : Core Web Vitals (seuils 2026), erreurs JS, routes SPA normalisées, sessions anonymisées. v0.2 : resource timings, long tasks, breadcrumbs, consent mode RGPD, file de retry, clé d'API.
 - Ingestion : parser OTLP partagé (`_shared/otlp.mjs`) entre l'edge function Deno (prod Supabase) et le dev-server Node (local/CI). Scrub PII à l'ingestion, idempotence par `span_id`.
-- Backend simplifié Postgres pour le POC ; ClickHouse = cible prod (cf. `infra/clickhouse.notes.md`).
+- Backend Postgres par défaut ; ClickHouse = cible grand volume (cf. `infra/clickhouse.notes.md`).
 
 ## Démarrage local (100 % local, aucun secret)
 

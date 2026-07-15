@@ -403,7 +403,7 @@ export function Landing() {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 sm:flex-row">
           <BrandMark />
           <p className="text-xs text-ink-faint">
-            POC v0.2 — OpenTelemetry-natif · souverain UE
+v0.3 — OpenTelemetry-natif · souverain UE
           </p>
           <Link
             href="/login"

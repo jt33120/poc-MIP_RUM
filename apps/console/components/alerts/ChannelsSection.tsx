@@ -2,7 +2,11 @@
 import { ALERT_SEVERITIES, CHANNEL_KINDS } from "@/lib/alerting";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
 import { createChannelAction, deleteChannelAction, toggleChannelAction } from "@/app/alerts/actions";
+import { LockedBadge } from "@/components/LockedBadge";
 import { SeverityBadge } from "./SeverityBadge";
+
+const EMAIL_TITLE =
+  "Canal e-mail inactif : aucune alerte n'est envoyée par e-mail tant qu'un provider (Scaleway TEM, Brevo ou SES) n'est pas configuré. Webhook et Slack fonctionnent.";
 
 /** Section routing : liste des canaux + création (webhook/slack/email), filtrés par sévérité. */
 export function ChannelsSection({
@@ -19,7 +23,10 @@ export function ChannelsSection({
       <h2 className="mb-1 text-base font-bold tracking-tight">Canaux de notification</h2>
       <p className="mb-3 text-sm text-ink-soft">
         Routent les alertes (en plus du webhook de la règle) vers N destinations, filtrées par
-        sévérité minimale. App vide = global (tous les tenants). E-mail réservé (non livré).
+        sévérité minimale. App vide = global (tous les tenants). <strong>Webhook et Slack</strong> sont
+        livrés&nbsp;; <strong>l&apos;e-mail est inactif</strong> tant qu&apos;un provider n&apos;est pas
+        configuré (rien n&apos;est envoyé par e-mail — aucune alerte silencieusement perdue en croyant
+        qu&apos;elle part).
       </p>
 
       <details className="card mb-6" open={!channels.length}>
@@ -44,7 +51,7 @@ export function ChannelsSection({
             <select name="kind" defaultValue="webhook" className={INPUT_CLASS}>
               {CHANNEL_KINDS.map((k) => (
                 <option key={k} value={k}>
-                  {k}
+                  {k === "email" ? "email (inactif — provider requis)" : k}
                 </option>
               ))}
             </select>
@@ -87,15 +94,19 @@ export function ChannelsSection({
             <span className="text-xs text-ink-faint">
               {c.app_id ?? "global"} · ≥ <SeverityBadge severity={c.severity_min} />
             </span>
-            <span
-              className={`rounded px-2 py-0.5 text-xs font-medium ${
-                c.active
-                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
-                  : "bg-panel2 text-ink-faint"
-              }`}
-            >
-              {c.active ? "actif" : "désactivé"}
-            </span>
+            {c.kind === "email" ? (
+              <LockedBadge label="Non livré — provider requis" title={EMAIL_TITLE} />
+            ) : (
+              <span
+                className={`rounded px-2 py-0.5 text-xs font-medium ${
+                  c.active
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
+                    : "bg-panel2 text-ink-faint"
+                }`}
+              >
+                {c.active ? "actif" : "désactivé"}
+              </span>
+            )}
             <div className="ml-auto flex gap-2">
               <form action={toggleChannelAction}>
                 <input type="hidden" name="id" value={c.id} />
