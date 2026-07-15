@@ -3,6 +3,7 @@ import { SupervisionHero, HeroStat, HeroReading } from "@/components/Supervision
 import { RankBar } from "@/components/charts/RankBar";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import { apiCalls, backRoutes, slowTraces, traceCoverage } from "@/lib/queries-tracing";
+import { DeployPanel } from "@/components/tracing/DeployPanel";
 import { Section } from "@/components/tracing/Section";
 import { Empty } from "@/components/tracing/Empty";
 import { ShareBar } from "@/components/tracing/ShareBar";
@@ -95,6 +96,9 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
           </SupervisionHero>
         );
       })()}
+
+      {/* Déploiements & régression (Voie A inc.3) — visible dès qu'un déploiement est enregistré */}
+      <DeployPanel f={f} />
 
       <Section
         title="Appels API vus du navigateur"
