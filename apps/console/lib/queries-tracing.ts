@@ -107,6 +107,39 @@ export interface SlowTrace {
   ts: Date;
 }
 
+export interface TraceSpanRow {
+  span_id: string;
+  parent_span_id: string | null;
+  tier: "front" | "back" | "detail";
+  name: string | null;
+  kind: string | null;
+  route: string | null;
+  url: string | null;
+  method: string | null;
+  status_code: number | null;
+  duration_ms: number;
+  ts: Date;
+  app_id: string;
+  session_id: string | null;
+}
+
+/**
+ * Tous les spans d'une trace (front + back + detail), ordonnés par début — la
+ * matière du waterfall « douleur utilisateur → cause backend ». `ts` porte le
+ * début de span (nanosToDate à l'ingestion), donc les offsets se calculent par
+ * différence côté rendu.
+ */
+export async function traceSpans(traceId: string): Promise<TraceSpanRow[]> {
+  return q<TraceSpanRow>(
+    `select span_id, parent_span_id, tier, name, kind, route, url, method,
+            status_code, duration_ms, ts, app_id, session_id
+       from rum_span
+      where trace_id = $1
+      order by ts asc, case tier when 'front' then 0 when 'back' then 1 else 2 end`,
+    [traceId],
+  );
+}
+
 /** Les appels les plus lents de la fenêtre, décomposés front / serveur / réseau. */
 export async function slowTraces(f: Filters): Promise<SlowTrace[]> {
   const itv = PERIODS[f.period].interval;

@@ -203,6 +203,11 @@ export function flattenOtlp(payload, opts = {}) {
       method: a["http.method"] ?? null,
       status_code: a["http.status_code"] ?? null,
       duration_ms: durationMs,
+      // libellé + nature pour le waterfall de trace (migration-v31)
+      name:
+        `${a["http.method"] ?? ""} ${a["mip.route"] ?? scrubUrl(a["http.url"]) ?? ""}`.trim() ||
+        (tier === "front" ? "http.client" : "http.server"),
+      kind: tier === "front" ? "client" : "server",
       ts,
     };
   };
@@ -273,6 +278,11 @@ export function flattenOtlp(payload, opts = {}) {
             method: otelMethod ?? null,
             status_code: a["http.response.status_code"] ?? a["http.status_code"] ?? null,
             duration_ms: durationMs,
+            name:
+              normalizeRouteTemplate(a["http.route"]) ??
+              routeFromOtelName(span.name) ??
+              span.name,
+            kind: "server",
             ts: nanosToDate(span.startTimeUnixNano),
           });
           continue;
@@ -326,6 +336,45 @@ export function flattenOtlp(payload, opts = {}) {
             error_type: errType,
             ts: nanosToDate(span.startTimeUnixNano),
           });
+          continue;
+        }
+
+        // Span INTERNE d'une trace (auto-instrumentation OTel standard : requête
+        // DB, sous-appel serveur). Émis côté backend -> jamais de mip.session_id
+        // (le front est seul porteur de la session). On les stocke tier='detail'
+        // pour reconstituer un waterfall complet « front → serveur → cause ».
+        // Placé APRÈS http.server / SERVER OTel / gen_ai (déjà routés) et AVANT
+        // l'exigence de session : les spans navigateur portent tous mip.session_id
+        // et sont donc exclus ici.
+        if (span.traceId && span.spanId && a["mip.session_id"] == null && !isServerKind(span.kind)) {
+          const durationMs = durationMsBetween(span.startTimeUnixNano, span.endTimeUnixNano);
+          if (typeof durationMs === "number") {
+            const stmt = a["db.statement"] ?? a["db.query.text"];
+            const label =
+              (typeof stmt === "string" ? scrubText(stmt) : null) ??
+              a["db.operation"] ??
+              a["rpc.method"] ??
+              span.name;
+            const isDb = a["db.system"] != null || a["db.system.name"] != null || stmt != null;
+            spans.push({
+              span_id: span.spanId,
+              trace_id: span.traceId,
+              parent_span_id: span.parentSpanId || null,
+              tier: "detail",
+              session_id: sessionFromTraceState(span.traceState) ?? null,
+              app_id: appId,
+              route: a["db.system"] ?? a["db.system.name"] ?? a["rpc.service"] ?? null,
+              url: null,
+              method: a["db.operation"] ?? a["rpc.method"] ?? null,
+              status_code: null,
+              duration_ms: durationMs,
+              name: typeof label === "string" ? label.slice(0, 200) : span.name,
+              kind: isDb ? "db" : "internal",
+              ts: nanosToDate(span.startTimeUnixNano),
+            });
+          } else {
+            rejected++;
+          }
           continue;
         }
 
