@@ -74,8 +74,8 @@ export const STATS: { id: GlossaryId; href: string; icon: IconName; label: strin
     id: "session",
     href: "/sessions",
     icon: "users",
-    label: "Sessions (replay à venir)",
-    desc: "Le parcours réel d'un visiteur (pages, vitals, erreurs), sans donnée identifiante. Rejeu visuel (rrweb) à venir, activé derrière consentement.",
+    label: "Sessions & rejeu visuel",
+    desc: "Le parcours réel d'un visiteur (pages, vitals, erreurs), sans donnée identifiante — avec rejeu visuel (rrweb) des sessions, saisies masquées et TTL 30 j.",
   },
   {
     id: "tracing",

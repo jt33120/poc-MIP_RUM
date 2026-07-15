@@ -64,46 +64,20 @@ export default function ReplayPlayer({ sessionId }: { sessionId: string }) {
         <p className="py-8 text-center text-sm text-ink-faint">Chargement du replay…</p>
       )}
       {state === "empty" && (
-        <div className="py-2" data-testid="replay-coming-soon">
-          <div className="flex items-center gap-2">
-            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300">
-              À venir
-            </span>
-            <h3 className="text-sm font-bold tracking-tight">Session Replay</h3>
-          </div>
+        <div className="py-2" data-testid="replay-empty">
+          <h3 className="text-sm font-bold tracking-tight">Aucun rejeu pour cette session</h3>
           <p className="mt-2 max-w-2xl text-sm text-ink-soft">
-            Le rejeu visuel des sessions n&apos;est pas activé sur ce déploiement : la collecte RUM
-            reste <strong>anonyme et sans consentement</strong> (mesure d&apos;audience exemptée, pas
-            d&apos;IP ni de cookie de traçage). Le replay, plus intrusif, sera activé{" "}
-            <strong>derrière un consentement explicite</strong>.
+            Le session replay est <strong>activé</strong>, mais aucun enregistrement n&apos;a été
+            capturé pour cette session — le plus souvent une session trop courte, un signal{" "}
+            <strong>DNT/GPC</strong> ou un consentement refusé, ou un navigateur sans{" "}
+            <code className="rounded bg-panel2 px-1">CompressionStream</code>.
           </p>
-          <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Approche technique prévue
+          <p className="mt-3 max-w-2xl text-sm text-ink-soft">
+            Quand un rejeu existe, les saisies sont <strong>masquées à l&apos;enregistrement</strong>{" "}
+            (<code className="rounded bg-panel2 px-1">maskAllInputs</code>) et les blocs{" "}
+            <code className="rounded bg-panel2 px-1">mip-rum-block</code> exclus ; chunks gzip stockés
+            avec TTL 30 j (RGPD).
           </p>
-          <ul className="mt-1 max-w-2xl list-disc space-y-1 pl-5 text-sm text-ink-soft">
-            <li>
-              Capture DOM via <strong>rrweb</strong> (bundle chargé à la demande),{" "}
-              <code className="rounded bg-panel2 px-1">maskAllInputs</code> + blocs{" "}
-              <code className="rounded bg-panel2 px-1">mip-rum-block</code> exclus.
-            </li>
-            <li>
-              Gate <strong>consentement</strong> (SDK <code className="rounded bg-panel2 px-1">requireConsent</code>) :
-              rien n&apos;est enregistré avant accord de l&apos;utilisateur.
-            </li>
-            <li>
-              Chunks <strong>gzip</strong> envoyés à l&apos;edge function{" "}
-              <code className="rounded bg-panel2 px-1">/v1/replay</code> (déjà déployée).
-            </li>
-            <li>
-              Stockage <code className="rounded bg-panel2 px-1">bytea</code> (POC) →{" "}
-              <strong>object storage</strong> (S3/R2) en cible, TTL 30 j (RGPD).
-            </li>
-            <li>
-              Reconstruction par <code className="rounded bg-panel2 px-1">/api/replay/[sessionId]</code>{" "}
-              (gunzip + concat) puis rejeu ici (rrweb-player). Détails :{" "}
-              <code className="rounded bg-panel2 px-1">docs/ROADMAP_REPLAY.md</code>.
-            </li>
-          </ul>
         </div>
       )}
       {state === "error" && (
