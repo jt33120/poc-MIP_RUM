@@ -6,6 +6,7 @@
   "scripts": {
     "build": "node build.mjs",
     "pack": "node build.mjs && node pack.mjs",
+    "pack:store": "node build.mjs && node pack.mjs --store",
     "gen:icons": "node icons/generate.mjs",
     "check:sync": "node scripts/check-sync.mjs",
     "smoke": "node scripts/smoke.mjs"

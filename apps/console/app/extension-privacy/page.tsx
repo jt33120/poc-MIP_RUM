@@ -1,0 +1,125 @@
+// Politique de confidentialité PUBLIQUE de l'extension navigateur MIP RUM.
+// URL exigée par le Chrome Web Store pour toute extension qui traite des données.
+// Publique (cf. middleware) : ni login, ni scope projet. Contenu factuel, aligné
+// sur la réalité de l'ingestion (scrub PII, résidence UE, TTL 30 j, DSAR).
+export const dynamic = "force-static";
+
+export const metadata = {
+  title: "MIP RUM — Confidentialité de l'extension navigateur",
+  description:
+    "Ce que le capteur navigateur MIP RUM mesure, comment, et vos droits. Données anonymes, hébergées en UE.",
+};
+
+const UPDATED = "15 juillet 2026";
+
+export default function ExtensionPrivacy() {
+  return (
+    <main className="mx-auto max-w-3xl px-6 py-12 text-ink">
+      <h1 className="text-2xl font-bold">Politique de confidentialité — Extension navigateur MIP RUM</h1>
+      <p className="mt-2 text-sm text-ink-faint">Dernière mise à jour : {UPDATED}</p>
+
+      <section className="mt-8 space-y-3 text-sm leading-relaxed">
+        <p>
+          L&apos;extension « MIP RUM — capteur navigateur » mesure la <strong>performance perçue</strong> et la
+          <strong> fiabilité technique</strong> des pages web, pour les <em>domaines explicitement enregistrés</em>{" "}
+          par MIP et <em>uniquement après votre autorisation</em>. Elle ne s&apos;active jamais sur d&apos;autres
+          sites.
+        </p>
+      </section>
+
+      <h2 className="mt-8 text-lg font-semibold">Données collectées</h2>
+      <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
+        <li>
+          <strong>Métriques de performance</strong> (Core Web Vitals : LCP, INP, CLS, FCP, TTFB) et temps de
+          chargement des ressources.
+        </li>
+        <li>
+          <strong>Erreurs techniques JavaScript</strong> (message, type, pile d&apos;appel, fichier source) — la
+          chaîne de requête des URL est retirée avant stockage.
+        </li>
+        <li>
+          <strong>Contexte de page</strong> : URL/route normalisée, référent d&apos;origine, type d&apos;appareil
+          (desktop/mobile), user-agent du navigateur.
+        </li>
+        <li>
+          <strong>Identifiant de session anonyme</strong> : un jeton aléatoire (haché), non rattaché à votre
+          identité, permettant de relier les pages d&apos;une même visite.
+        </li>
+        <li>
+          <strong>Pays approximatif</strong> déduit du <em>fuseau horaire</em> du navigateur — <strong>aucune
+          adresse IP n&apos;est stockée</strong>.
+        </li>
+      </ul>
+
+      <h2 className="mt-8 text-lg font-semibold">Ce qui n&apos;est PAS collecté</h2>
+      <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
+        <li>Aucune donnée personnelle identifiante, aucun profil publicitaire.</li>
+        <li>Aucune frappe clavier, aucun contenu de formulaire, aucun mot de passe.</li>
+        <li>Aucun historique de navigation hors des domaines enregistrés et autorisés.</li>
+        <li>Aucune revente de données, aucun usage à des fins étrangères à la mesure de performance.</li>
+      </ul>
+
+      <h2 className="mt-8 text-lg font-semibold">Finalité et base</h2>
+      <p className="mt-3 text-sm leading-relaxed">
+        Les données servent <strong>exclusivement</strong> à mesurer et améliorer la performance et la fiabilité
+        des sites concernés (Real User Monitoring). Elles ne sont ni vendues, ni transférées à des tiers, ni
+        utilisées pour du ciblage.
+      </p>
+
+      <h2 className="mt-8 text-lg font-semibold">Hébergement, conservation, droits</h2>
+      <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
+        <li>
+          <strong>Résidence UE</strong> : données hébergées en Union européenne (infrastructure à Paris).
+        </li>
+        <li>
+          <strong>Conservation</strong> : purge automatique après <strong>30 jours</strong> (TTL).
+        </li>
+        <li>
+          <strong>Droits RGPD</strong> (accès, effacement) : exerçables via MIP. Les données étant anonymisées,
+          l&apos;identification directe d&apos;une personne n&apos;est pas possible.
+        </li>
+        <li>
+          <strong>Contrôle</strong> : vous activez et retirez l&apos;autorisation par domaine à tout moment depuis
+          le popup de l&apos;extension.
+        </li>
+      </ul>
+
+      <h2 className="mt-8 text-lg font-semibold">Permissions de l&apos;extension</h2>
+      <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
+        <li>
+          <code>scripting</code> — injecter le capteur de mesure sur les pages des domaines autorisés.
+        </li>
+        <li>
+          <code>webNavigation</code> — détecter les changements de page pour savoir quand mesurer.
+        </li>
+        <li>
+          <code>storage</code> — mémoriser l&apos;état (domaines autorisés, cache de configuration).
+        </li>
+        <li>
+          <code>activeTab</code> — connaître le domaine de l&apos;onglet courant lors de l&apos;ouverture du popup.
+        </li>
+        <li>
+          Accès aux hôtes — <strong>accordé par vous, domaine par domaine</strong> ; jamais sur
+          <code> &lt;all_urls&gt;</code> de façon implicite.
+        </li>
+      </ul>
+
+      <h2 className="mt-8 text-lg font-semibold">Contact</h2>
+      <p className="mt-3 text-sm leading-relaxed">
+        Pour toute question relative à cette politique ou à l&apos;exercice de vos droits : contactez MIP.
+      </p>
+
+      <hr className="my-10 border-line" />
+
+      <h2 className="text-base font-semibold">English summary</h2>
+      <p className="mt-3 text-sm leading-relaxed text-ink-soft">
+        The « MIP RUM » browser extension measures web performance (Core Web Vitals) and technical JavaScript
+        errors, only on domains explicitly registered by MIP and only after you grant permission per domain. It
+        collects anonymous performance data and an anonymous session token — <strong>no personal data, no
+        keystrokes, no form content, no IP address stored</strong>. Data is hosted in the EU, deleted after 30
+        days, and never sold or used for advertising. You can revoke permission per domain at any time from the
+        extension popup.
+      </p>
+    </main>
+  );
+}
