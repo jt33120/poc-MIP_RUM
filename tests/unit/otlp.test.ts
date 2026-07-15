@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   anyValue,
+  deviceFromUa,
   flattenOtlp,
   rating2026,
 } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
@@ -39,6 +40,70 @@ describe("rating2026 — seuils mars 2026", () => {
     expect(rating2026(name, value)).toBe(expected);
   });
   it("métrique inconnue -> null", () => expect(rating2026("FID", 50)).toBeNull());
+});
+
+describe("deviceFromUa — repli device_type depuis le user-agent (v33)", () => {
+  it.each([
+    ["Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", "mobile"],
+    ["Mozilla/5.0 (Linux; Android 14; Pixel 8)", "mobile"],
+    ["Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)", "mobile"],
+    ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0.0.0", "desktop"],
+    ["Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605", "desktop"],
+  ])("%s -> %s", (ua, expected) => expect(deviceFromUa(ua)).toBe(expected));
+  it("null/undefined -> null", () => {
+    expect(deviceFromUa(null)).toBeNull();
+    expect(deviceFromUa(undefined)).toBeNull();
+  });
+});
+
+describe("flattenOtlp — device_type dérivé de l'UA quand le SDK ne l'envoie pas (v33)", () => {
+  const sv = (s) => ({ stringValue: s });
+  const payload = (resAttrs, spanAttrs) => ({
+    resourceSpans: [
+      {
+        resource: { attributes: [{ key: "mip.app_id", value: sv("demo") }, ...resAttrs] },
+        scopeSpans: [
+          {
+            spans: [
+              {
+                spanId: "s1",
+                name: "webvital.LCP",
+                startTimeUnixNano: "1760000000000000000",
+                attributes: [
+                  { key: "mip.session_id", value: sv("sess-x") },
+                  { key: "webvital.name", value: sv("LCP") },
+                  { key: "webvital.value", value: { doubleValue: 2100 } },
+                  ...spanAttrs,
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  it("span sans mip.device_type + UA mobile -> session.device_type = mobile", () => {
+    const rows = flattenOtlp(
+      payload([{ key: "mip.user_agent", value: sv("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)") }], []),
+    );
+    expect(rows.sessions[0].device_type).toBe("mobile");
+  });
+
+  it("mip.device_type explicite du SDK prime sur le repli UA", () => {
+    const rows = flattenOtlp(
+      payload(
+        [{ key: "mip.user_agent", value: sv("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)") }],
+        [{ key: "mip.device_type", value: sv("desktop") }],
+      ),
+    );
+    expect(rows.sessions[0].device_type).toBe("desktop");
+  });
+
+  it("ni device_type ni UA -> null (pas d'invention)", () => {
+    const rows = flattenOtlp(payload([], []));
+    expect(rows.sessions[0].device_type).toBeNull();
+  });
 });
 
 describe("flattenOtlp — aplatissement du payload fixture", () => {

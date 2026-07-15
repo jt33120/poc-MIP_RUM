@@ -100,6 +100,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             key={name}
             name={name}
             p75={byName[name]?.p75 ?? null}
+            median={byName[name]?.p50 ?? null}
             n={byName[name]?.n ?? 0}
             prev={prevByName[name]?.p75 ?? null}
             periodLabel={period.label}

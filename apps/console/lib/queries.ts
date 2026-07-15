@@ -11,6 +11,15 @@ import { buildSegment } from "./segments";
 const botClause = (f: Filters, alias: string): string =>
   f.includeBots ? "" : ` and not coalesce(${alias}.is_bot, false)`;
 
+// Exclut les apps internes (dogfooding : la console qui se mesure elle-même) de la
+// vue « toutes apps ». Quand une app précise est sélectionnée, AUCUNE exclusion —
+// l'app interne reste consultable. N'ajoute aucun paramètre (sous-requête pure),
+// donc composable dans toutes les requêtes sans décaler l'indexation $n.
+export const internalClause = (f: Filters, appCol: string): string =>
+  f.app || f.includeInternal
+    ? ""
+    : ` and ${appCol} not in (select app_id from app_registry where internal)`;
+
 export interface AppItem {
   app_id: string;
   name: string;
@@ -39,6 +48,7 @@ export async function registeredApps(): Promise<AppItem[]> {
 export interface VitalAgg {
   name: string;
   p75: number;
+  p50: number; // médiane — plus robuste que le p75 sur petit échantillon
   n: number;
 }
 
@@ -52,12 +62,13 @@ export async function vitalsP75(f: Filters, shift = false): Promise<VitalAgg[]> 
   return q<VitalAgg>(
     `select m.name,
             percentile_cont(0.75) within group (order by m.value) as p75,
+            percentile_cont(0.5) within group (order by m.value) as p50,
             count(*)::int as n
      from rum_metric m
      left join rum_session s using (session_id)
      where ${window}
        and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "m.app_id")}
      group by m.name`,
     [f.app, f.device, ...seg.params],
   );
@@ -131,17 +142,17 @@ export async function overviewStats(f: Filters, shift = false): Promise<Overview
        (select count(*)::int from rum_session s
          where ${win("s.last_seen_at")}
            and ($1::text is null or s.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}) as sessions,
+           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "s.app_id")}) as sessions,
        (select count(*)::int from rum_error e
          left join rum_session s using (session_id)
          where ${win("e.ts")}
            and ($1::text is null or e.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}) as errors,
+           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "e.app_id")}) as errors,
        (select count(*)::int from rum_pageview p
          left join rum_session s using (session_id)
          where ${win("p.started_at")}
            and ($1::text is null or p.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}) as pageviews`,
+           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "p.app_id")}) as pageviews`,
     [f.app, f.device, ...seg.params],
   );
   return row;
@@ -163,7 +174,7 @@ export async function vitalSeries(f: Filters, name: string): Promise<SeriesRow[]
      left join rum_session s using (session_id)
      where m.name = $3 and m.ts > now() - interval '${interval}'
        and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "m.app_id")}
      group by 1 order by 1`,
     [f.app, f.device, name, ...seg.params],
   );
@@ -200,7 +211,7 @@ export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
      left join rum_session s using (session_id)
      where m.ts > now() - interval '${itv}' and m.route is not null
        and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "m.app_id")}
      group by m.route
      order by lcp_p75 desc nulls last`,
     [f.app, f.device, ...seg.params],

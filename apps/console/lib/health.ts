@@ -10,6 +10,7 @@
 // Libellés : Excellent >= 90 / Bon >= 75 / Dégradé >= 50 / Critique < 50.
 import { q } from "./db";
 import { type Filters, PERIODS } from "./filters";
+import { internalClause } from "./queries";
 
 export type HealthLabel = "Excellent" | "Bon" | "Dégradé" | "Critique";
 
@@ -74,7 +75,7 @@ export async function healthScore(f: Filters): Promise<Health> {
        left join rum_session s using (session_id)
        where m.ts > now() - interval '${itv}'
          and ($1::text is null or m.app_id = $1)
-         and ($2::text is null or s.device_type = $2)
+         and ($2::text is null or s.device_type = $2)${internalClause(f, "m.app_id")}
      ) x`,
     [f.app, f.device],
   );
@@ -86,20 +87,20 @@ export async function healthScore(f: Filters): Promise<Health> {
          left join rum_session s using (session_id)
          where p.started_at > now() - interval '${itv}'
            and ($1::text is null or p.app_id = $1)
-           and ($2::text is null or s.device_type = $2)) as pageviews,
+           and ($2::text is null or s.device_type = $2)${internalClause(f, "p.app_id")}) as pageviews,
        (select count(*)::int from rum_error e
          left join rum_session s using (session_id)
          where e.ts > now() - interval '${itv}'
            and ($1::text is null or e.app_id = $1)
-           and ($2::text is null or s.device_type = $2)) as errors,
+           and ($2::text is null or s.device_type = $2)${internalClause(f, "e.app_id")}) as errors,
        (select count(*)::int from rum_session s
          where s.last_seen_at > now() - interval '${itv}'
            and ($1::text is null or s.app_id = $1)
-           and ($2::text is null or s.device_type = $2)) as sessions,
+           and ($2::text is null or s.device_type = $2)${internalClause(f, "s.app_id")}) as sessions,
        (select count(*)::int from rum_session s
          where s.last_seen_at > now() - interval '${itv}'
            and ($1::text is null or s.app_id = $1)
-           and ($2::text is null or s.device_type = $2)
+           and ($2::text is null or s.device_type = $2)${internalClause(f, "s.app_id")}
            and not exists (select 1 from rum_error e
                             where e.session_id = s.session_id
                               and e.ts > now() - interval '${itv}')) as clean_sessions`,
@@ -114,7 +115,7 @@ export async function healthScore(f: Filters): Promise<Health> {
       `select app_id, route, bucket, p75::float as p75, mean_7d::float as mean_7d, z_score::float as z_score
        from v_anomaly
        where bucket > now() - interval '24 hours'
-         and ($1::text is null or app_id = $1)
+         and ($1::text is null or app_id = $1)${internalClause(f, "app_id")}
        order by abs(z_score) desc, bucket desc
        limit 20`,
       [f.app],
