@@ -200,7 +200,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </form>
               </div>
               <footer className="px-1 pt-3 text-[10px] tracking-wide text-ink-faint">
-                POC v0.2 — OTel-native · souverain UE
+                v0.3 — OTel-native · souverain UE
               </footer>
             </div>
           </aside>

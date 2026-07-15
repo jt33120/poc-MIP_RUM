@@ -10,10 +10,10 @@ import { CopyBlock } from "./CopyBlock";
 import { ICON_PATHS, Icon, type IconName } from "./icons";
 
 const EXAMPLE_SNIPPET = `<!-- MIP RUM -->
-<script src="https://rum.mip.eu/mip-rum.js"></script>
+<script src="https://<console>/mip-rum.js"></script>
 <script>
   MIPRum.init({
-    endpoint: "https://rum.mip.eu/v1/traces",
+    endpoint: "https://<ingest>/v1/traces",
     appId: "plateforme-client",
     clientId: "groupement-it",
     env: "prod",
@@ -54,7 +54,7 @@ const STEPS: Step[] = [
       <>
         <p>
           La fiche du client ouvre un guide qui génère <strong>deux balises</strong>{" "}
-          <code className="chip-mono">&lt;script&gt;</code> pré-remplies : le SDK (~5 ko) et l'appel{" "}
+          <code className="chip-mono">&lt;script&gt;</code> pré-remplies : le SDK (~12 ko gzip) et l'appel{" "}
           <code className="chip-mono">MIPRum.init</code> (endpoint, <code className="chip-mono">app_id</code>,
           clé). Exemple :
         </p>
