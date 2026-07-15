@@ -7,11 +7,29 @@
 // Limite connue : un envoi sendBeacon « accepté » par le navigateur mais perdu
 // ensuite n'est pas détectable — seuls les échecs remontés par l'exporter
 // (réseau down, 4xx/5xx en XHR/fetch) alimentent la file.
-import { ExportResultCode, type ExportResult } from "@opentelemetry/core";
-import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-web";
-
-// ré-export pour les tests unitaires (résolution depuis la racine du workspace)
-export { ExportResultCode };
+// Types d'export locaux (ex-@opentelemetry/core + sdk-trace-web) : le SDK OTel a
+// été retiré (Chantier A, allègement du bundle) — on ne garde que le contrat
+// minimal réellement utilisé par le décorateur et l'émetteur maison (otel.ts).
+export enum ExportResultCode {
+  SUCCESS = 0,
+  FAILED = 1,
+}
+export interface ExportResult {
+  code: ExportResultCode;
+  error?: Error;
+}
+/** Span lisible minimal consommé par serializeSpan (name + attrs + timestamps). */
+export interface ReadableSpan {
+  name: string;
+  attributes: Record<string, unknown>;
+  startTime: HrTime;
+  endTime: HrTime;
+}
+export interface SpanExporter {
+  export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void;
+  shutdown(): Promise<void>;
+  forceFlush?(): Promise<void>;
+}
 
 export const RETRY_KEY = "mip_rum_retry";
 export const RETRY_MAX_SPANS = 100;

@@ -39,7 +39,7 @@ const INDICATORS: { icon: IconName; label: string; desc: string }[] = [
 
 const STEPS: { title: string; body: string }[] = [
   { title: "Créez votre application", body: "En un clic, obtenez un identifiant d'app et sa clé d'ingestion." },
-  { title: "Collez le snippet", body: "Une balise script légère (~5 ko), et le SDK démarre tout seul." },
+  { title: "Collez le snippet", body: "Une balise script légère (~12 ko gzip), et le SDK démarre tout seul." },
   { title: "Regardez les données affluer", body: "Vitals, erreurs et parcours remontent en temps réel, rafraîchis toutes les 5 s." },
 ];
 
@@ -241,7 +241,7 @@ export function Landing() {
               </a>
             </div>
             <p className="mt-5 text-xs text-ink-faint">
-              SDK ~5 ko · aucune donnée identifiante · rétention RGPD (TTL 30 j)
+              SDK ~12 ko gzip · aucune donnée identifiante · rétention RGPD (TTL 30 j)
             </p>
           </div>
           <div className="animate-fade-up lg:pl-6">

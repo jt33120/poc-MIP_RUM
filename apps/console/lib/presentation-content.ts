@@ -9,7 +9,7 @@ export const PIPELINE: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "activity",
     title: "1 · Mesure navigateur",
-    body: "Un SDK léger (~5 ko) lit les Core Web Vitals, les erreurs JS et les interactions chez le vrai visiteur, via les API standard du navigateur (PerformanceObserver).",
+    body: "Un SDK léger (~12 ko gzip) lit les Core Web Vitals, les erreurs JS et les interactions chez le vrai visiteur, via les API standard du navigateur (PerformanceObserver).",
   },
   {
     icon: "trace",
