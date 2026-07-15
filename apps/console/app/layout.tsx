@@ -31,8 +31,15 @@ const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("mip-theme");va
 const RUM_ENDPOINT =
   process.env.NEXT_PUBLIC_RUM_ENDPOINT ??
   "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
+// dogfooding : session replay activé sur la console elle-même (edge fn v1-replay,
+// déjà déployée). RGPD : saisies masquées à l'enregistrement (maskAllInputs),
+// blocs `mip-rum-block` exclus, capture coupée si DNT/GPC signalé, TTL 30 j.
+// Taux configurable via NEXT_PUBLIC_RUM_REPLAY (défaut 1 = toutes les sessions
+// internes, pour que le rejeu soit toujours peuplé en démo).
+const RUM_REPLAY = Number(process.env.NEXT_PUBLIC_RUM_REPLAY ?? "1");
+const RUM_REPLAY_RATE = Number.isFinite(RUM_REPLAY) ? RUM_REPLAY : 0;
 const RUM_INIT = RUM_ENDPOINT
-  ? `window.MIPRum && MIPRum.init({endpoint:${JSON.stringify(RUM_ENDPOINT)},appId:"mip-rum-console",clientId:"mip",env:"prod"});`
+  ? `window.MIPRum && MIPRum.init({endpoint:${JSON.stringify(RUM_ENDPOINT)},appId:"mip-rum-console",clientId:"mip",env:"prod",replay:${JSON.stringify(RUM_REPLAY_RATE)}});`
   : null;
 
 /** Marque produit : pictogramme pouls sur carré orange MIP + wordmark. */
