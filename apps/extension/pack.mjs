@@ -18,6 +18,10 @@ const FILES = [
   { zip: "vendor/background.js", src: "vendor/background.js" },
   { zip: "vendor/popup.js", src: "vendor/popup.js" },
   { zip: "vendor/mip-rum.js", src: "vendor/mip-rum.js" },
+  { zip: "icons/icon-16.png", src: "icons/icon-16.png" },
+  { zip: "icons/icon-32.png", src: "icons/icon-32.png" },
+  { zip: "icons/icon-48.png", src: "icons/icon-48.png" },
+  { zip: "icons/icon-128.png", src: "icons/icon-128.png" },
 ];
 const OUT = "../console/public/downloads/mip-rum-extension.zip";
 

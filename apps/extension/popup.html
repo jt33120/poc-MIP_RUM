@@ -4,12 +4,47 @@
     <meta charset="utf-8" />
     <title>MIP RUM</title>
     <style>
+      :root {
+        --accent: #f89101;
+        --ink: #1a1a1a;
+        --ink-soft: #555;
+        --ink-faint: #8a8a8a;
+        --line: #e6e6e6;
+      }
       body {
-        font: 13px/1.4 -apple-system, system-ui, sans-serif;
-        width: 260px;
+        font: 13px/1.45 -apple-system, system-ui, sans-serif;
+        width: 288px;
         margin: 0;
-        padding: 12px;
-        color: #1a1a1a;
+        padding: 0;
+        color: var(--ink);
+        background: #fff;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+      header img {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+      }
+      header .name {
+        font-weight: 700;
+        letter-spacing: 0.2px;
+      }
+      header .tag {
+        margin-left: auto;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        color: var(--ink-faint);
+      }
+      main {
+        padding: 12px 14px;
       }
       .domain {
         font-weight: 600;
@@ -18,7 +53,7 @@
       }
       .status {
         margin: 0 0 10px;
-        color: #555;
+        color: var(--ink-soft);
       }
       .status-ok {
         color: #0a7a3d;
@@ -28,30 +63,69 @@
       }
       button {
         width: 100%;
-        padding: 6px 10px;
+        padding: 7px 10px;
         border-radius: 6px;
-        border: 1px solid #ccc;
+        border: 1px solid var(--line);
         background: #fff;
         cursor: pointer;
         font: inherit;
       }
       button:hover {
-        background: #f5f5f5;
+        background: #faf6ef;
+        border-color: var(--accent);
       }
       button:disabled {
         opacity: 0.6;
         cursor: default;
       }
+      .disclosure {
+        margin: 12px 14px 0;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fafafa;
+        font-size: 11.5px;
+        color: var(--ink-soft);
+      }
+      .disclosure strong {
+        color: var(--ink);
+      }
       footer {
-        margin-top: 10px;
+        padding: 10px 14px 12px;
         font-size: 11px;
-        color: #999;
+        color: var(--ink-faint);
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      footer a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      footer a:hover {
+        text-decoration: underline;
       }
     </style>
   </head>
   <body>
-    <div id="root">Chargement…</div>
-    <footer>MIP RUM · capteur navigateur (POC)</footer>
+    <header>
+      <img src="icons/icon-48.png" alt="" />
+      <span class="name">MIP RUM</span>
+      <span class="tag">capteur navigateur</span>
+    </header>
+    <main id="root">Chargement…</main>
+    <div class="disclosure">
+      Ce capteur mesure la <strong>performance perçue</strong> (Core Web Vitals) et les
+      <strong>erreurs techniques</strong> des pages, de façon <strong>anonyme</strong> — aucune donnée
+      personnelle, aucune frappe clavier, aucun contenu de formulaire. Uniquement sur les domaines
+      explicitement enregistrés par MIP, et seulement après votre autorisation.
+    </div>
+    <footer>
+      <span>MIP RUM · souverain (UE)</span>
+      <a href="https://mip-rum-console.vercel.app/presentation" target="_blank" rel="noreferrer noopener"
+        >En savoir plus ↗</a
+      >
+    </footer>
     <script src="vendor/popup.js" type="module"></script>
   </body>
 </html>
