@@ -34,7 +34,9 @@ export async function middleware(req: NextRequest) {
     // avant de se connecter. La racine "/" sert de porte d'entrée -> présentation ;
     // tout autre lien profond -> login (bookmarks des utilisateurs connus).
     const p = req.nextUrl.pathname;
-    if (p === "/presentation") return NextResponse.next();
+    // /presentation = vitrine ; /extension-privacy = politique de confidentialité
+    // PUBLIQUE de l'extension navigateur (URL exigée par le Chrome Web Store).
+    if (p === "/presentation" || p === "/extension-privacy") return NextResponse.next();
     if (p === "/") return NextResponse.redirect(new URL("/presentation", req.url), 302);
     return NextResponse.redirect(new URL("/login", req.url), 302);
   }

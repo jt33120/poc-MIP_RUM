@@ -23,7 +23,14 @@ const FILES = [
   { zip: "icons/icon-48.png", src: "icons/icon-48.png" },
   { zip: "icons/icon-128.png", src: "icons/icon-128.png" },
 ];
-const OUT = "../console/public/downloads/mip-rum-extension.zip";
+// Mode « store » (node pack.mjs --store) : produit un paquet destiné au Chrome Web
+// Store. Le champ `key` du manifest est RETIRÉ (le store gère la signature et
+// l'ID ; on ne pousse pas la clé de dev). Sortie séparée pour ne pas écraser le
+// zip de sideload (qui, lui, garde `key` pour un ID stable en policy entreprise).
+const STORE = process.argv.includes("--store");
+const OUT = STORE
+  ? "../console/public/downloads/mip-rum-extension-store.zip"
+  : "../console/public/downloads/mip-rum-extension.zip";
 
 // CRC32 (table standard IEEE 802.3, polynôme 0xEDB88320).
 const CRC_TABLE = (() => {
@@ -51,7 +58,13 @@ const central = [];
 let offset = 0;
 
 for (const f of FILES) {
-  const data = readFileSync(new URL(f.src, import.meta.url));
+  let data = readFileSync(new URL(f.src, import.meta.url));
+  // En mode store, on réécrit manifest.json sans le champ `key`.
+  if (STORE && f.zip === "manifest.json") {
+    const m = JSON.parse(data.toString("utf8"));
+    delete m.key;
+    data = Buffer.from(JSON.stringify(m, null, 2) + "\n", "utf8");
+  }
   const name = Buffer.from(f.zip, "utf8");
   const crc = crc32(data);
 
