@@ -10,6 +10,7 @@ export interface Filters {
   device: "desktop" | "mobile" | null; // null = tous
   segment: SegCond[]; // v1 : conditions arbitraires (dim<op>val) sur rum_session
   includeBots?: boolean; // Lot 2 : inclure le trafic non humain (défaut : exclu)
+  includeInternal?: boolean; // v33 : inclure les apps internes (dogfooding) dans « Tous » (défaut : exclu)
 }
 
 export const PERIODS: Record<
@@ -41,5 +42,6 @@ export function parseFilters(sp: SearchParams, allowedApps?: string[] | null): F
     device: device === "desktop" || device === "mobile" ? device : null,
     segment: parseSegment(first(sp.seg)),
     includeBots: first(sp.bots) === "1",
+    includeInternal: first(sp.internal) === "1",
   };
 }

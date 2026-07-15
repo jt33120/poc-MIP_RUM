@@ -57,6 +57,10 @@ export function SegmentBar() {
   const sp = useSearchParams();
   const conds = parseSegment(sp.get("seg"));
   const includeBots = sp.get("bots") === "1";
+  const includeInternal = sp.get("internal") === "1";
+  // apps internes (dogfooding) : toggle pertinent seulement en vue « toutes apps »
+  const appParam = sp.get("app");
+  const isAllApps = !appParam || appParam === "all";
 
   const [adding, setAdding] = useState(false);
   const [dim, setDim] = useState(DIMS[0].key);
@@ -101,6 +105,14 @@ export function SegmentBar() {
     const params = new URLSearchParams(sp.toString());
     if (includeBots) params.delete("bots");
     else params.set("bots", "1");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
+  }
+
+  function toggleInternal() {
+    const params = new URLSearchParams(sp.toString());
+    if (includeInternal) params.delete("internal");
+    else params.set("internal", "1");
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname);
   }
@@ -207,6 +219,24 @@ export function SegmentBar() {
       )}
 
       <div className="ml-auto flex items-center gap-1.5">
+        {isAllApps && (
+          <button
+            onClick={toggleInternal}
+            className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition ${
+              includeInternal
+                ? "border-perf/40 bg-perf/10 text-perf"
+                : "border-line text-ink-faint hover:text-ink-soft"
+            }`}
+            title={
+              includeInternal
+                ? "Les apps internes (dogfooding : la console qui se mesure elle-même) sont incluses dans « Tous »"
+                : "Les apps internes (dogfooding) sont exclues de « Tous » — clients réels uniquement"
+            }
+            data-testid="segment-internal-toggle"
+          >
+            {includeInternal ? "🏠 Interne inclus" : "🏠 Interne exclu"}
+          </button>
+        )}
         <button
           onClick={toggleBots}
           className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition ${

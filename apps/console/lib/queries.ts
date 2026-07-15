@@ -16,7 +16,9 @@ const botClause = (f: Filters, alias: string): string =>
 // l'app interne reste consultable. N'ajoute aucun paramètre (sous-requête pure),
 // donc composable dans toutes les requêtes sans décaler l'indexation $n.
 export const internalClause = (f: Filters, appCol: string): string =>
-  f.app ? "" : ` and ${appCol} not in (select app_id from app_registry where internal)`;
+  f.app || f.includeInternal
+    ? ""
+    : ` and ${appCol} not in (select app_id from app_registry where internal)`;
 
 export interface AppItem {
   app_id: string;
