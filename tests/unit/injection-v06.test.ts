@@ -184,10 +184,14 @@ describe("flattenOtlp — spans serveur OpenTelemetry standard (v0.6)", () => {
     expect(s.route).toBe("/login");
   });
 
-  it("span client/interne (kind != SERVER) -> jamais un span back", () => {
+  it("span client/interne (kind != SERVER) -> capturé en 'detail', jamais 'back'", () => {
+    // v31 : un span CLIENT (appel sortant backend) alimente le waterfall en
+    // 'detail' — mais ne doit JAMAIS être confondu avec un span serveur 'back'.
     const client = { ...otelServer, kind: 3, name: "GET /downstream" };
     const rows = flattenOtlp(payload([client]));
-    expect(rows.spans).toHaveLength(0);
+    expect(rows.spans).toHaveLength(1);
+    expect(rows.spans[0].tier).toBe("detail");
+    expect(rows.spans.some((s: { tier: string }) => s.tier === "back")).toBe(false);
   });
 
   it("sans timestamps -> rejeté (durée incalculable)", () => {

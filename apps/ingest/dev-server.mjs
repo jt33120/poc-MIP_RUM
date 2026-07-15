@@ -196,7 +196,7 @@ async function writeRows({
     await batchInsert(
       client,
       "rum_span",
-      ["span_id", "trace_id", "parent_span_id", "tier", "session_id", "app_id", "route", "url", "method", "status_code", "duration_ms", "ts"],
+      ["span_id", "trace_id", "parent_span_id", "tier", "session_id", "app_id", "route", "url", "method", "status_code", "duration_ms", "name", "kind", "ts"],
       spans ?? [],
       "on conflict (span_id) do nothing",
     );

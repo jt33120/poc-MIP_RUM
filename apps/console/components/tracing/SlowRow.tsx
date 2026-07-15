@@ -10,8 +10,15 @@ export function SlowRow({ t }: { t: SlowTrace }) {
   return (
     <tr className="border-t border-line/60 transition hover:bg-panel2/60">
       <td className="px-4 py-3 font-mono text-xs">
-        <span className="mr-1.5 rounded bg-panel2 px-1.5 py-0.5 font-semibold text-ink-soft">{t.method}</span>
-        {t.url}
+        <Link
+          href={`/tracing/${encodeURIComponent(t.trace_id)}`}
+          className="group inline-flex items-center gap-1.5 hover:text-brand"
+          title="Voir le détail de la trace (waterfall)"
+        >
+          <span className="rounded bg-panel2 px-1.5 py-0.5 font-semibold text-ink-soft">{t.method}</span>
+          <span className="group-hover:underline">{t.url}</span>
+          <span className="text-ink-faint opacity-0 transition group-hover:opacity-100">→</span>
+        </Link>
       </td>
       <td className="px-4 py-3">
         <span

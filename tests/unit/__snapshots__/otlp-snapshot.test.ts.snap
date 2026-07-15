@@ -135,7 +135,9 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
     {
       "app_id": "demo",
       "duration_ms": 123.4,
+      "kind": "client",
       "method": "GET",
+      "name": "GET /api/partners/:id",
       "parent_span_id": null,
       "route": "/api/partners/:id",
       "session_id": "sess-1",
@@ -149,7 +151,9 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
     {
       "app_id": "demo",
       "duration_ms": 95.2,
+      "kind": "server",
       "method": "GET",
+      "name": "GET /api/partners/:id",
       "parent_span_id": "span-fff",
       "route": "/api/partners/:id",
       "session_id": "sess-1",
@@ -163,7 +167,9 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
     {
       "app_id": "demo",
       "duration_ms": 50,
+      "kind": "server",
       "method": "GET",
+      "name": "/aos/:id",
       "parent_span_id": "span-parent",
       "route": "/aos/:id",
       "session_id": "sess-2",
