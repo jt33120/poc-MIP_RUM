@@ -1,70 +1,48 @@
-// Page d'accueil « Présentation » — explique ce qu'est l'outil (RUM), sa stack
-// en quelques mots, son fonctionnement, comment brancher un nouveau client
-// (carrousel pas-à-pas), et les statistiques restituées. Sert de porte d'entrée
-// pour un visiteur (commercial, prospect, nouvel utilisateur) avant le poste de
-// pilotage (Overview). Rendu serveur ; seul `isAdmin` conditionne le CTA admin.
+// Page « Présentation ». Deux visages selon l'authentification :
+//   - visiteur NON connecté  -> site de présentation public (composant Landing),
+//     une vraie page d'accueil produit qui scrolle, avec connexion en haut à droite.
+//   - utilisateur connecté    -> rappel de l'outil DANS la coquille console
+//     (sidebar + main déjà rembourré), porte d'entrée avant le poste de pilotage.
 import Link from "next/link";
 import { AddClientCarousel } from "@/components/AddClientCarousel";
 import { GlossaryTip } from "@/components/GlossaryTip";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { PageHeader } from "@/components/PageHeader";
 import { PipelineStep } from "@/components/presentation/PipelineStep";
+import { Landing } from "@/components/presentation/Landing";
 import { getUser } from "@/lib/auth";
 import { PIPELINE, STATS } from "@/lib/presentation-content";
 
 export const dynamic = "force-dynamic";
 
-/** Marque MIP RUM pour la barre d'accueil publique (visiteur non connecté). */
-function BrandMark() {
-  return (
-    <Link href="/presentation" className="flex items-center gap-2.5">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-deep shadow-glow">
-        <Icon paths={ICON_PATHS.activity} className="h-5 w-5 text-white" strokeWidth={2.4} />
-      </span>
-      <span className="leading-tight">
-        <span className="block text-base font-bold tracking-tight text-ink">
-          MIP <span className="text-accent">RUM</span>
-        </span>
-        <span className="block text-[10px] uppercase tracking-[0.18em] text-ink-faint">
-          Real User Monitoring
-        </span>
-      </span>
-    </Link>
-  );
-}
-
 export default async function Presentation() {
   const user = await getUser();
-  const isAdmin = user?.role === "admin";
 
-  const content = (
+  // Vitrine PUBLIQUE : le layout rend le visiteur non connecté dans une coquille
+  // nue — on habille donc nous-mêmes une page d'accueil complète.
+  if (!user) return <Landing />;
+
+  const isAdmin = user.role === "admin";
+
+  return (
     <div className="animate-fade-up">
       <PageHeader
         title="MIP RUM — Real User Monitoring"
         help="rum"
         sub={
-          user ? (
-            <>
-              Monitoring de l'expérience réelle, OpenTelemetry-natif et souverain UE. Cette page présente
-              l'outil ; le poste de pilotage est sur <Link href="/" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">la Vue d'ensemble</Link>.
-            </>
-          ) : (
-            <>
-              Monitoring de l'expérience réelle, OpenTelemetry-natif et souverain UE. Découvrez l'outil,
-              puis connectez-vous pour accéder à votre console.
-            </>
-          )
+          <>
+            Monitoring de l'expérience réelle, OpenTelemetry-natif et souverain UE. Cette page présente
+            l'outil ; le poste de pilotage est sur{" "}
+            <Link href="/" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+              la Vue d'ensemble
+            </Link>
+            .
+          </>
         }
       >
-        {user ? (
-          <Link href="/" className="btn-accent px-4 py-2">
-            Ouvrir la console →
-          </Link>
-        ) : (
-          <Link href="/login" className="btn-accent px-4 py-2" data-testid="presentation-login">
-            Se connecter →
-          </Link>
-        )}
+        <Link href="/" className="btn-accent px-4 py-2">
+          Ouvrir la console →
+        </Link>
       </PageHeader>
 
       {/* Qu'est-ce que le RUM ------------------------------------------------ */}
@@ -161,30 +139,6 @@ export default async function Presentation() {
           ))}
         </div>
       </section>
-    </div>
-  );
-
-  // Connecté : rendu dans la coquille applicative (sidebar + main déjà rembourré).
-  if (user) return content;
-
-  // Public (non connecté) : le layout renvoie une coquille nue, sans marge ni
-  // largeur max. On habille donc la vitrine nous-mêmes — barre de marque sticky
-  // + colonne centrée rembourrée — pour une vraie page d'accueil.
-  return (
-    <div className="min-h-screen bg-app">
-      <header className="sticky top-0 z-20 border-b border-line bg-panel/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-6 py-3">
-          <BrandMark />
-          <Link
-            href="/login"
-            className="btn-accent ml-auto px-4 py-2"
-            data-testid="presentation-login-top"
-          >
-            Se connecter →
-          </Link>
-        </div>
-      </header>
-      <main className="mx-auto max-w-6xl px-6 py-8 lg:py-10">{content}</main>
     </div>
   );
 }
