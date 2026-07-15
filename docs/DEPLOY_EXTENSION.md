@@ -49,8 +49,11 @@ chrome --pack-extension=apps/extension --pack-extension-key=<chemin-vers-la-clé
 #    gglpcalhlkfhgipfmemfiedjomifefba)
 ```
 
-> ⚠️ Non exécuté dans cet environnement (pas de binaire Chrome/Chromium disponible ici)
-> — à valider par l'équipe lors du premier empaquetage réel.
+> ✅ Chargement + injection validés dans un vrai Chromium via
+> `pnpm --filter extension smoke` (service worker MV3 exécuté, manifest + icônes
+> parsés, bundle injecté en MAIN world → `window.MIPRum` initialisé et OTLP émis).
+> Reste à exécuter par l'équipe **avec la clé privée** : l'empaquetage `.crx` lui-même
+> (signature) et le déploiement par policy entreprise.
 
 ### b. Héberger le `.crx` + un manifeste de mise à jour (protocole Omaha)
 

@@ -1,6 +1,8 @@
-# MIP RUM — extension navigateur (Ext-B + Ext-C)
+# MIP RUM — extension navigateur
 
-2ᵉ capteur RUM du catalogue MIP. Cf. `docs/CADRAGE_EXTENSION.md` pour le cadrage complet.
+2ᵉ capteur RUM du catalogue MIP : instrumente un site **sans toucher à son code**, en
+injectant le SDK par domaine explicitement enregistré côté MIP. Cf.
+`docs/CADRAGE_EXTENSION.md` (cadrage) et `docs/DEPLOY_EXTENSION.md` (déploiement).
 
 ## Ce que fait l'extension
 
@@ -12,45 +14,79 @@ déjà accordée, et que le site n'a pas déjà son propre SDK (`window.MIPRum`)
 `packages/rum-sdk/dist`) est injecté en `world: "MAIN"`, avec
 `collectionSource: "extension"`.
 
-**Le popup (`popup.html` / `src/popup.ts`, Ext-C)** est le SEUL endroit où l'extension
-passe d'un domaine "reconnu" à "observé" : `chrome.permissions.request()` exige un
-geste utilisateur, satisfait par le clic sur l'icône qui ouvre le popup. Le popup
-affiche toujours l'état courant (transparence) :
-- domaine non enregistré → message neutre, rien d'autre ;
-- domaine reconnu mais permission pas encore accordée → bouton "Activer sur ce
-  domaine" ;
-- site déjà instrumenté par son propre SDK, ou déjà observé → bouton "Retirer
-  l'autorisation pour ce domaine" (effective à la prochaine navigation — on ne
-  prétend pas arrêter à chaud un SDK déjà initialisé sur la page courante).
+**Le popup (`popup.html` / `src/popup.ts`)** est le SEUL endroit où l'extension passe
+d'un domaine « reconnu » à « observé » : `chrome.permissions.request()` exige un geste
+utilisateur (le clic sur l'icône). Le popup affiche toujours l'état courant et une
+**note de transparence** (ce qui est mesuré : Core Web Vitals + erreurs, anonyme, aucune
+PII/frappe/formulaire).
 
-## Build
+## Périmètre — ce que le mode extension couvre (et pas)
+
+L'extension n'instrumente **que les navigateurs où elle est installée** : c'est l'outil
+d'un **pilote** (poste géré, panel, équipe) ou d'un site dont on n'a pas le code — pas
+une couverture 100 % des visiteurs. Pour du RUM exhaustif, c'est le **snippet** dans le
+HTML du site (`docs/INTEGRATION.md`). Les deux écrivent dans les mêmes tables ;
+`collection_source` distingue `extension` de `sdk`.
+
+## Build & synchro
 
 ```bash
-pnpm --filter extension build
+pnpm --filter @mip/rum-sdk build   # d'abord : (re)génère le bundle SDK
+pnpm --filter extension build      # vendor/{background,popup}.js + copie vendor/mip-rum.js
+pnpm --filter extension gen:icons  # (re)génère icons/icon-{16,32,48,128}.png (déterministe)
+pnpm --filter extension check:sync # garde : vendor == SDK buildé ET version == SDK (rejoué en CI)
 ```
 
-Régénère `vendor/background.js`, `vendor/popup.js` et `vendor/mip-rum.js` (copie du
-SDK — à relancer après tout changement dans `packages/rum-sdk`).
+La version du `manifest.json` **suit celle du SDK** (`check:sync` échoue sinon). Le
+bundle `vendor/mip-rum.js` doit être identique au SDK fraîchement buildé — la CI le
+vérifie pour empêcher d'expédier un SDK périmé.
 
-## Charger en local (sideload, mode développeur)
+## Validation navigateur réelle (smoke-test)
+
+```bash
+PW_CHROME=/chemin/vers/chrome xvfb-run -a pnpm --filter extension smoke
+```
+
+Charge l'extension dans un **vrai Chromium** (Playwright, headed) et vérifie : service
+worker MV3 exécuté, manifest + icônes parsés, et le bundle expédié injecté en MAIN world
+expose `window.MIPRum`, s'initialise **sans erreur** et **émet réellement de l'OTLP** vers
+l'endpoint. Sans binaire Chromium complet : SKIP (c'est un outil local, pas une garde CI).
+Le chemin permission/popup (geste utilisateur) reste couvert par les tests unitaires de
+`decideInjection` + la checklist de `docs/DEPLOY_EXTENSION.md`.
+
+## Charger en local (sideload)
 
 1. `pnpm --filter extension build`
-2. `chrome://extensions` (ou `edge://extensions`) → activer le "mode développeur"
-3. "Charger l'extension non empaquetée" → sélectionner ce dossier (`apps/extension/`)
-4. Épingler l'icône de l'extension pour accéder au popup
+2. `chrome://extensions` (ou `edge://extensions`) → « mode développeur »
+3. « Charger l'extension non empaquetée » → sélectionner `apps/extension/`
+4. Épingler l'icône pour accéder au popup
+
+Un `.zip` prêt à charger est aussi produit par `pnpm --filter extension pack`
+(`apps/console/public/downloads/mip-rum-extension.zip`).
+
+## Configurer l'endpoint (staging / test)
+
+Défauts prod codés dans `src/background.ts`. Surchargeables sans rebuild via
+`chrome.storage.local` : clés `mip_resolve_url` et `mip_default_endpoint` (utilisé par le
+smoke-test et pour pointer une pré-prod).
 
 ## Enregistrer un domaine à observer
 
-Via `/admin/extension-scope` dans la console (admin only), ou en SQL direct :
+Via `/admin/extension-scope` dans la console (admin), ou en SQL :
 
 ```sql
-insert into extension_scope (domain, app_id) values ('app.client.fr', 'gip-plateforme');
+-- l'app doit exister dans app_registry (créez-la d'abord si besoin)
+insert into extension_scope (domain, app_id) values ('www.exemple.fr', 'mon-app');
 ```
 
-## ⚠️ À vérifier manuellement (pas testable dans cet environnement)
+Désactiver = `update extension_scope set active=false where domain=...` : l'injection
+cesse sous ~60 s (TTL du cache de résolution).
 
-- Le comportement réel de `chrome.scripting.executeScript({world:"MAIN", files:[...]})`
-  n'a pas été validé dans un vrai navigateur ici (pas d'accès Chrome/Edge dans cet
-  environnement d'exécution). À valider en premier lors du chargement unpacked.
-- Version Chrome/Edge minimale pour l'injection `world:"MAIN"` (≥111) — à confirmer
-  sur le parc cible avant tout déploiement au-delà du poste de dev.
+## Publication (Chrome Web Store) — 🔑 compte externe requis
+
+Le déploiement large passe soit par le **Chrome Web Store** (compte développeur payant,
+non fourni), soit par **sideload/`.crx` + policy entreprise** (cf.
+`docs/DEPLOY_EXTENSION.md`). L'extension est **prête à publier** (manifest complet,
+icônes, packaging) ; il ne manque que le compte Store et la clé de signature côté
+organisation. Tant que ce n'est pas fourni, on reste en sideload/policy — sans faire
+croire à une publication.

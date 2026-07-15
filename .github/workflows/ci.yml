@@ -37,6 +37,11 @@ jobs:
       - name: Build SDK (esbuild -> dist/mip-rum.js + budget taille)
         run: pnpm --filter @mip/rum-sdk build
 
+      # Empêche l'extension d'expédier un SDK périmé (vendor/mip-rum.js) ou une
+      # version de manifest qui dérive du SDK. Nécessite le build SDK ci-dessus.
+      - name: Extension — synchro bundle & version
+        run: node apps/extension/scripts/check-sync.mjs
+
       - name: Tests unitaires (vitest)
         run: pnpm test:unit
 

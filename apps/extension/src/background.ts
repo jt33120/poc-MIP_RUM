@@ -7,22 +7,48 @@
 /// <reference types="chrome" />
 import { decideInjection, isFresh, normalizeHost, type CacheEntry, type ScopeEntry } from "../lib/scope";
 
-const RESOLVE_URL = "https://mip-rum-console.vercel.app/api/extension/resolve";
-const DEFAULT_ENDPOINT = "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// Défauts prod. Surchargeable via chrome.storage.local (clés `mip_resolve_url` /
+// `mip_default_endpoint`) pour pointer un environnement de staging ou de test sans
+// rebuild — utile en pré-prod et pour l'E2E qui charge l'extension dans Chromium.
+const DEFAULTS = {
+  resolveUrl: "https://mip-rum-console.vercel.app/api/extension/resolve",
+  defaultEndpoint: "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces",
+};
+// Kill-switch : un domaine désactivé (active=false) cesse d'être injecté sous ce
+// délai. 60 s (aligné sur le cache-control de /api/extension/resolve).
+const CACHE_TTL_MS = 60 * 1000;
+const LOG = "[MIP RUM]";
 
 const cache = new Map<string, CacheEntry>();
+
+async function getConfig(): Promise<{ resolveUrl: string; defaultEndpoint: string }> {
+  try {
+    const o = await chrome.storage.local.get(["mip_resolve_url", "mip_default_endpoint"]);
+    return {
+      resolveUrl: typeof o.mip_resolve_url === "string" ? o.mip_resolve_url : DEFAULTS.resolveUrl,
+      defaultEndpoint:
+        typeof o.mip_default_endpoint === "string" ? o.mip_default_endpoint : DEFAULTS.defaultEndpoint,
+    };
+  } catch {
+    return DEFAULTS;
+  }
+}
 
 async function resolveDomain(host: string): Promise<ScopeEntry | null> {
   const cached = cache.get(host);
   if (isFresh(cached, Date.now(), CACHE_TTL_MS)) return cached!.scope;
   try {
-    const res = await fetch(`${RESOLVE_URL}?domain=${encodeURIComponent(host)}`);
+    const { resolveUrl } = await getConfig();
+    const res = await fetch(`${resolveUrl}?domain=${encodeURIComponent(host)}`);
+    if (res.status !== 200 && res.status !== 404) {
+      console.warn(`${LOG} résolution ${host} : HTTP ${res.status}`);
+    }
     const scope: ScopeEntry | null = res.status === 200 ? await res.json() : null;
     cache.set(host, { scope, at: Date.now() });
     return scope;
-  } catch {
+  } catch (e) {
     // panne réseau : reste sur le dernier verdict connu (sinon rien -> pas d'injection)
+    console.warn(`${LOG} résolution ${host} indisponible, repli sur le dernier verdict`, e);
     return cached?.scope ?? null;
   }
 }
@@ -42,15 +68,21 @@ async function probeSdkPresent(tabId: number): Promise<boolean> {
 }
 
 async function inject(tabId: number, appId: string, endpoint: string | null): Promise<void> {
-  await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", files: ["vendor/mip-rum.js"] });
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    world: "MAIN",
-    func: (cfg: { endpoint: string; appId: string; collectionSource: "extension" }) => {
-      (window as unknown as { MIPRum?: { init: (c: unknown) => void } }).MIPRum?.init(cfg);
-    },
-    args: [{ endpoint: endpoint ?? DEFAULT_ENDPOINT, appId, collectionSource: "extension" }],
-  });
+  try {
+    const { defaultEndpoint } = await getConfig();
+    await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", files: ["vendor/mip-rum.js"] });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: (cfg: { endpoint: string; appId: string; collectionSource: "extension" }) => {
+        (window as unknown as { MIPRum?: { init: (c: unknown) => void } }).MIPRum?.init(cfg);
+      },
+      args: [{ endpoint: endpoint ?? defaultEndpoint, appId, collectionSource: "extension" }],
+    });
+  } catch (e) {
+    // page devenue non injectable entre la décision et l'injection (navigation, fermeture)
+    console.warn(`${LOG} injection tab ${tabId} échouée`, e);
+  }
 }
 
 async function maybeInject(tabId: number, url: string): Promise<void> {

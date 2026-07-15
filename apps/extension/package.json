@@ -1,11 +1,14 @@
 {
   "name": "extension",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "MIP RUM — extension navigateur (2e capteur RUM, POC Ext-B)",
+  "description": "MIP RUM — extension navigateur (2e capteur RUM : injection du SDK par domaine enregistré)",
   "scripts": {
     "build": "node build.mjs",
-    "pack": "node build.mjs && node pack.mjs"
+    "pack": "node build.mjs && node pack.mjs",
+    "gen:icons": "node icons/generate.mjs",
+    "check:sync": "node scripts/check-sync.mjs",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.280",
