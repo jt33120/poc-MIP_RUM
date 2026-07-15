@@ -7,17 +7,25 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { SESSION_COOKIE, SESSION_HOURS, signJwt, type SessionUser } from "@/lib/auth";
-import { rateLimit } from "@/lib/api/ratelimit";
 import { q } from "@/lib/db";
 import { forwardLog } from "@/lib/log-forward";
 
 const DUMMY_HASH = bcrypt.hashSync("mip-rum-dummy", 10);
 
-// Anti-brute-force : fenêtre glissante en mémoire par (IP + email). Best-effort
-// par isolat (serverless) — première barrière ; un store partagé (Redis/PG)
-// serait nécessaire pour une garantie stricte multi-instance.
-const LOGIN_MAX = 8;
+// Anti-brute-force : on ne compte QUE les ÉCHECS par (IP + email) sur une fenêtre
+// glissante. Un utilisateur (ou l'E2E) qui se connecte correctement n'est jamais
+// throttlé ; seul le bourrage de mots de passe l'est. Best-effort par isolat
+// (serverless) — première barrière ; un store partagé (Redis/PG) serait requis
+// pour une garantie stricte multi-instance.
+const LOGIN_MAX_FAILS = 8;
 const LOGIN_WINDOW_MS = 10 * 60_000;
+const loginFails = new Map<string, number[]>();
+
+function recentFails(key: string, now: number): number[] {
+  const hits = (loginFails.get(key) ?? []).filter((t) => t > now - LOGIN_WINDOW_MS);
+  loginFails.set(key, hits);
+  return hits;
+}
 
 /** IP client depuis les en-têtes proxy (Vercel/CDN). */
 async function clientIp(): Promise<string> {
@@ -50,10 +58,11 @@ export async function loginAction(fd: FormData): Promise<void> {
   const email = String(fd.get("email") ?? "").trim().toLowerCase();
   const password = String(fd.get("password") ?? "");
 
-  // 1) borne le débit AVANT le bcrypt (coûteux) : par IP+email, réponse générique
+  // 1) trop d'ÉCHECS récents pour cette IP+email -> blocage AVANT le bcrypt (coûteux),
+  // réponse générique (pas d'énumération). Les connexions réussies ne comptent pas.
   const ip = await clientIp();
-  const rl = rateLimit(`login:${ip}:${email}`, LOGIN_MAX, LOGIN_WINDOW_MS, Date.now());
-  if (!rl.ok) {
+  const key = `login:${ip}:${email}`;
+  if (recentFails(key, Date.now()).length >= LOGIN_MAX_FAILS) {
     after(() => auditFail(email, "login_blocked", JSON.stringify({ ip })));
     redirect("/login?error=1");
   }
@@ -64,9 +73,11 @@ export async function loginAction(fd: FormData): Promise<void> {
   );
   const ok = (await bcrypt.compare(password, u?.password_hash ?? DUMMY_HASH)) && u?.active === true;
   if (!ok) {
+    recentFails(key, Date.now()).push(Date.now()); // enregistre l'échec
     after(() => auditFail(email, "login_failed", null));
     redirect("/login?error=1");
   }
+  loginFails.delete(key); // succès : on repart de zéro pour cette clé
 
   const user: SessionUser = { email: u.email, role: u.role, apps: u.apps };
   const jar = await cookies();
