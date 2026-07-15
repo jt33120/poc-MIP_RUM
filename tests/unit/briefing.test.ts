@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  assessReliability,
   briefingUserPrompt,
   deriveStatus,
   deterministicBriefing,
   parseBriefing,
+  RELIABILITY_MIN_MEASURES,
+  RELIABILITY_MIN_SESSIONS,
   type BriefingSignals,
 } from "../../apps/console/lib/briefing";
 
@@ -63,6 +66,39 @@ describe("deterministicBriefing", () => {
   it("watch : nouvelles erreurs -> focus Erreurs JS", () => {
     const b = deterministicBriefing({ ...base, newErrorGroups: 2, topErrors: [{ type: "Error", message: "y", count: 4 }] });
     expect(b.focus).toBe("Erreurs JS");
+  });
+});
+
+describe("fiabilité (échantillon faible)", () => {
+  it("assessReliability : seuils sessions ET mesures", () => {
+    expect(assessReliability(RELIABILITY_MIN_SESSIONS, RELIABILITY_MIN_MEASURES)).toBe(true);
+    expect(assessReliability(RELIABILITY_MIN_SESSIONS - 1, RELIABILITY_MIN_MEASURES)).toBe(false);
+    expect(assessReliability(RELIABILITY_MIN_SESSIONS, RELIABILITY_MIN_MEASURES - 1)).toBe(false);
+    expect(assessReliability(2, 9)).toBe(false);
+  });
+
+  it("deriveStatus : un p75 dégradé sur échantillon faible ne déclenche PAS d'alarme", () => {
+    // santé basse mais peu de trafic -> pas de conclusion perf -> ok
+    expect(deriveStatus({ ...base, reliable: false, healthScore: 40, sessions: 3, measures: 8 })).toBe("ok");
+    // mais une alerte critique reste un fait dur, quel que soit le volume
+    expect(deriveStatus({ ...base, reliable: false, criticalAlerts: 1, measures: 8 })).toBe("critical");
+    // une nouvelle erreur aussi
+    expect(deriveStatus({ ...base, reliable: false, newErrorGroups: 1, measures: 8 })).toBe("watch");
+  });
+
+  it("deterministicBriefing : annonce le trafic insuffisant et ne clame pas 'tout est au vert'", () => {
+    const b = deterministicBriefing({ ...base, reliable: false, sessions: 4, measures: 9, healthScore: 45 });
+    expect(b.status).toBe("ok");
+    expect(b.headline).toContain("Trop peu de trafic");
+    expect(b.bullets.join(" ")).toContain("Trafic insuffisant");
+    // ne cite pas le score de santé (non fiable)
+    expect(b.bullets.join(" ")).not.toContain("Score de santé");
+  });
+
+  it("briefingUserPrompt : signale explicitement l'échantillon FAIBLE au LLM", () => {
+    const p = briefingUserPrompt({ ...base, reliable: false, measures: 12 });
+    expect(p).toContain("FAIBLE");
+    expect(p).toContain("12 mesure");
   });
 });
 

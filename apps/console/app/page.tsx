@@ -92,6 +92,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
       {f.app && stats.sessions > 0 && <BriefingCard app={f.app} />}
 
+      {/* Vue « Tous » : synthèse LLM d'état du PORTAIL (toutes apps), depuis la
+          dernière connexion. Affichée même sans trafic — c'est là qu'elle dit
+          honnêtement « pas assez de données pour conclure ». */}
+      {!f.app && <BriefingCard />}
+
       <HealthBanner health={health} periodLabel={period.label} />
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
