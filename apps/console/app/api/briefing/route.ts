@@ -12,7 +12,13 @@ import {
   parseBriefing,
   type BriefingResult,
 } from "@/lib/briefing";
-import { gatherBriefingSignals, getCachedBriefing, putCachedBriefing } from "@/lib/queries-briefing";
+import {
+  gatherBriefingSignals,
+  gatherPortalSignals,
+  getCachedBriefing,
+  putCachedBriefing,
+  PORTAL_APP,
+} from "@/lib/queries-briefing";
 
 export const dynamic = "force-dynamic";
 
@@ -89,11 +95,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "JSON invalide" }, { status: 400 });
   }
   const app = (body.app ?? "").trim();
-  if (!app) return NextResponse.json({ error: "app requise" }, { status: 400 });
-  // RBAC : un viewer scopé ne peut demander que ses apps.
-  if (user.apps && !user.apps.includes(app)) {
+  // app vide => briefing PORTAIL (toutes les apps). Réservé aux comptes non scopés :
+  // un viewer restreint à certaines apps n'a pas de vue transverse.
+  const portal = app === "";
+  if (portal) {
+    if (user.apps && user.apps.length) {
+      return NextResponse.json({ error: "portail indisponible pour un compte scopé" }, { status: 403 });
+    }
+  } else if (user.apps && !user.apps.includes(app)) {
+    // RBAC : un viewer scopé ne peut demander que ses apps.
     return NextResponse.json({ error: "hors périmètre" }, { status: 403 });
   }
+  const cacheKey = portal ? PORTAL_APP : app;
 
   // Fenêtre : cookie de connexion précédente (posé au login), sinon début de journée.
   const prev = req.cookies.get("mip-prev-login")?.value;
@@ -102,12 +115,15 @@ export async function POST(req: NextRequest) {
   const windowStart = fromLogin ? prevDate! : startOfToday();
 
   // Cache : réutilise tant que la fenêtre (login) n'a pas changé.
-  const cached = await getCachedBriefing(app, user.email);
+  const cached = await getCachedBriefing(cacheKey, user.email);
   if (cached && new Date(cached.window_start).getTime() === windowStart.getTime()) {
     return NextResponse.json({ briefing: cached.payload, cached: true });
   }
 
-  const signals = await gatherBriefingSignals(app, windowStart, windowLabel(windowStart, fromLogin));
+  const label = windowLabel(windowStart, fromLogin);
+  const signals = portal
+    ? await gatherPortalSignals(windowStart, label)
+    : await gatherBriefingSignals(app, windowStart, label);
   let result: BriefingResult = deterministicBriefing(signals);
 
   // Enrichissement LLM (best effort) : ne remplace le repli QUE si le parse réussit.
@@ -117,6 +133,6 @@ export async function POST(req: NextRequest) {
     if (ai) result = ai;
   }
 
-  await putCachedBriefing(app, user.email, windowStart, result);
+  await putCachedBriefing(cacheKey, user.email, windowStart, result);
   return NextResponse.json({ briefing: result, cached: false });
 }

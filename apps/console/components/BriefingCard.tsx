@@ -27,10 +27,11 @@ const FOCUS_HREF: Record<string, string> = {
   "Vue d'ensemble": "/",
 };
 
-export function BriefingCard({ app }: { app: string }) {
+// app absente => briefing PORTAIL (vue « Tous », toutes les apps).
+export function BriefingCard({ app }: { app?: string }) {
   const [state, setState] = useState<"loading" | "done" | "hidden">("loading");
   const [r, setR] = useState<Result | null>(null);
-  const dismissKey = `mip-briefing-dismissed:${app}`;
+  const dismissKey = `mip-briefing-dismissed:${app ?? "__portal__"}`;
 
   useEffect(() => {
     if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(dismissKey)) {
@@ -41,7 +42,7 @@ export function BriefingCard({ app }: { app: string }) {
     fetch("/api/briefing", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ app }),
+      body: JSON.stringify(app ? { app } : {}),
     })
       .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
       .then((d) => {
@@ -80,7 +81,7 @@ export function BriefingCard({ app }: { app: string }) {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <h2 className={`text-sm font-semibold ${tone.label}`}>{r.headline}</h2>
             <span className="rounded-full bg-panel2 px-2 py-0.5 text-[10px] font-medium text-ink-faint">
-              {r.source === "ai" ? "résumé IA · depuis votre dernière connexion" : "résumé · depuis votre dernière connexion"}
+              {r.source === "ai" ? "résumé IA" : "résumé"} · {app ? "cette app" : "portail"} · depuis votre dernière connexion
             </span>
           </div>
           <ul className="mt-2 space-y-1 text-sm text-ink-soft">
@@ -95,7 +96,7 @@ export function BriefingCard({ app }: { app: string }) {
             <div className="mt-2.5 text-xs">
               <span className="text-ink-faint">À regarder en priorité : </span>
               {focusHref ? (
-                <Link href={`${focusHref}?app=${encodeURIComponent(app)}`} className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+                <Link href={app ? `${focusHref}?app=${encodeURIComponent(app)}` : focusHref} className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
                   {r.focus} →
                 </Link>
               ) : (
