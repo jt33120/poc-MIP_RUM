@@ -104,8 +104,9 @@ Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe
 
 ## 5. Poids et impact performance
 
-- Bundle v0.1 mesuré : **22,3 KB gzip** (67,6 KB raw). Bundle v0.2 mesuré : **23,8 KB gzip** (71,5 KB raw) — resource timings + long tasks + breadcrumbs + consent + retry inclus.
-- C'est le coût d'un SDK **OTel-natif** (vrai OTLP sur le fil, backend remplaçable) — comparable aux RUM du marché, au-dessus d'un simple script analytics.
+- Bundle cœur mesuré : **11,7 KB gzip** (30,9 KB raw) — toutes les instrumentations incluses (vitals, erreurs, ressources, long tasks, breadcrumbs, tracing front→back, consent, retry). Le replay (rrweb) est un bundle séparé chargé à la demande.
+- Historique : v0.1 **22,3 KB**, v0.2 **23,8 KB**, puis **27,4 KB** avant l'allègement. Le SDK OpenTelemetry a été remplacé par un émetteur OTLP/HTTP JSON maison (même format sur le fil), d'où la chute à ~12 KB.
+- C'est un SDK **OTLP-natif** (vrai OTLP sur le fil, backend remplaçable) — désormais plus léger que les RUM du marché (Sentry ~20 KB, Datadog ~25 KB).
 - Émission par batch (flush toutes les `flushIntervalMs`), `sendBeacon`/flush forcé au passage en arrière-plan : pas de requête bloquante pendant la navigation.
 - Caps par page pour borner le volume : 20 ressources lentes, 30 long tasks, 50 breadcrumbs.
 - `sampleRate` permet de réduire la volumétrie sur les sites à fort trafic. Par défaut (`keepOnError`), l'échantillonnage est **biaisé-erreurs** : on garde 100 % des sessions à incident (via `errorSampleRate`) tout en n'échantillonnant que le trafic nominal — on ne perd jamais une session d'erreur en abaissant `sampleRate`.
