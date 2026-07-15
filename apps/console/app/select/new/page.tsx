@@ -9,6 +9,7 @@ import Link from "next/link";
 import { CopyBlock } from "@/components/CopyBlock";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { Bookmarklet } from "@/components/onboarding/Bookmarklet";
+import { OnboardingPoll } from "@/components/OnboardingPoll";
 import { WizardBadge } from "@/components/wizard/WizardStep";
 import { getUser, popSecret } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
@@ -238,6 +239,13 @@ async function Integration({
     `s.onload=function(){window.MIPRum&&MIPRum.init({endpoint:${JSON.stringify(endpoint)},` +
     `appId:${JSON.stringify(appId)},clientId:'mip',env:'prod',apiKey:${JSON.stringify(bmKey)}});};` +
     `document.head.appendChild(s);})();`;
+  // Backend (optionnel) : l'agent Node zéro-config instrumente le serveur SANS
+  // changement de code -> spans http.server corrélés au front (waterfall « cause
+  // backend »). C'est la « démo qui vend », désormais accessible dès le self-service.
+  const agentCmd =
+    `MIP_RUM_ENDPOINT=${JSON.stringify(endpoint)} MIP_RUM_APP_ID=${JSON.stringify(appId)} ` +
+    `MIP_RUM_API_KEY=${JSON.stringify(oneTimeKey ?? "COLLE_ICI_LA_CLE_API")} \\\n  ` +
+    `node -r @mip/agent-node/register app.js`;
 
   return (
     <>
@@ -339,15 +347,43 @@ async function Integration({
         </>
       )}
 
+      {/* Brancher le backend (optionnel) — le waterfall « cause backend » */}
+      <section className="card mt-5 p-5">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+          Brancher le backend <span className="rounded-full bg-panel2 px-2 py-0.5 text-[11px] font-medium text-ink-faint">optionnel</span>
+        </h2>
+        <p className="mt-2 text-xs text-ink-soft">
+          Pour relier chaque appel du navigateur à son <strong>exécution serveur</strong> (le waterfall
+          « cause backend »). Le plus simple sur Node : l&apos;<strong>agent zéro-config</strong>, aucun
+          changement de code —
+        </p>
+        <div className="mt-3">
+          <CopyBlock code={agentCmd} />
+        </div>
+        <p className="mt-2 text-xs text-ink-faint">
+          Autres stacks (FastAPI, Express, agent OpenTelemetry standard) : voir{" "}
+          <code className="chip-mono">docs/INTEGRATION.md</code> ou la fiche{" "}
+          <Link href={`/admin/customers/${encodeURIComponent(appId)}`} className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+            Administration → Clients
+          </Link>{" "}
+          (recettes middleware + injection zéro-touch). App mobile : <code className="chip-mono">@mip/rum-mobile</code> (React Native).
+        </p>
+      </section>
+
       {/* Checklist live */}
       <section className="card mt-5 p-5">
+        <OnboardingPoll live={status.live} />
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink">Les données arrivent-elles ?</h2>
           <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${status.live ? "bg-good/15 text-good" : "bg-warn/15 text-warn"}`}>
             {status.live ? "● live" : "en attente"}
           </span>
         </div>
-        <p className="mt-1 text-xs text-ink-faint">Rafraîchissement automatique — gardez cet onglet ouvert.</p>
+        <p className="mt-1 text-xs text-ink-faint">
+          {status.live
+            ? "À jour."
+            : "Rafraîchissement automatique toutes les 5 s — gardez cet onglet ouvert."}
+        </p>
         <div className="mt-3 grid gap-2">
           <CheckRow label="Premières Web Vitals reçues" state={status.snippet}>
             {probe.first_metric_at ? fmtDate(probe.first_metric_at) : "en attente"}

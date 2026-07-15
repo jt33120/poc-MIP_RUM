@@ -75,7 +75,22 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         }
       />
 
-      {f.app && <BriefingCard app={f.app} />}
+      {f.app && stats.sessions === 0 && (
+        <div
+          data-testid="onboarding-nudge"
+          className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm"
+        >
+          <span className="text-ink">
+            <strong>Cette application n&apos;a pas encore reçu de données.</strong> Posez le capteur RUM
+            sur votre site, puis simulez un parcours — les mesures apparaîtront ici.
+          </span>
+          <Link href={`/select/new?app=${encodeURIComponent(f.app)}`} className="btn-accent ml-auto shrink-0 px-3 py-1.5">
+            Guide d&apos;intégration →
+          </Link>
+        </div>
+      )}
+
+      {f.app && stats.sessions > 0 && <BriefingCard app={f.app} />}
 
       <HealthBanner health={health} periodLabel={period.label} />
 

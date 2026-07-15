@@ -52,16 +52,24 @@ La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) re
 
 | Workspace | Rôle |
 |---|---|
-| `packages/rum-sdk` | SDK Web (OTel lean + web-vitals), build esbuild IIFE `mip-rum.js` |
-| `apps/ingest` | Receiver OTLP `/v1/traces` (edge function Deno + dev-server Node) + SQL (schéma, migration v0.2) |
+| `packages/rum-sdk` | SDK Web (émetteur OTLP maison + web-vitals, ~12 Ko gzip), build esbuild IIFE `mip-rum.js` |
+| `packages/agent-node` | Agent backend **zéro-config** Node.js (`node -r @mip/agent-node/register`) : span `http.server` sans changement de code |
+| `packages/rum-mobile` | SDK **React Native** : crashes, écrans, réseau (traceparent), événements → mêmes tables (`device_type=mobile`) |
+| `apps/ingest` | Receiver OTLP `/v1/traces`, `/v1/logs`, `/v1/replay` (edge functions Deno + dev-server Node) + SQL (schéma, migrations) |
 | `apps/sync-synthetic` | Synchro synthétique → `syn_snapshot` (interface `SyntheticSource` : seed ou export mippoc) |
-| `apps/console` | Console RUM Live (Next.js 15) : Overview, Pages, Erreurs, Sessions, Corrélation |
+| `apps/extension` | Extension navigateur MV3 (injection du SDK par domaine enregistré) |
+| `apps/console` | Console RUM Live (Next.js 15) : Overview, Pages, Erreurs, Sessions, Tracing (waterfall), Corrélation, Logs, IA… |
 
 ## Documentation
 
 | Document | Contenu |
 |---|---|
 | [docs/INTEGRATION.md](docs/INTEGRATION.md) | Guide d'intégration client : snippet, options, consent mode, CSP, RGPD, dépannage |
+| [packages/agent-node/README.md](packages/agent-node/README.md) | Agent backend Node.js zéro-config (`node -r @mip/agent-node/register`) |
+| [packages/rum-mobile/README.md](packages/rum-mobile/README.md) | SDK React Native (crashes, écrans, réseau, événements) |
+| [docs/API_CONSOLE.md](docs/API_CONSOLE.md) · [docs/RUM_READ_API.md](docs/RUM_READ_API.md) | API de lecture v1 (ITSM/CI-CD) + résumé partenaire |
+| [docs/MULTITENANT.md](docs/MULTITENANT.md) · [docs/ALERTING.md](docs/ALERTING.md) | Multi-tenant / RBAC · alerting (webhook/Slack ; e-mail à brancher) |
+| [docs/CONFORMITE.md](docs/CONFORMITE.md) · [docs/DPA.md](docs/DPA.md) | Conformité RGPD (résidence UE, DSAR, scrub PII) · modèle de DPA (art. 28) |
 | [docs/OFFRE.md](docs/OFFRE.md) | Positionnement commercial : comparatif marché honnête, arguments grands comptes FR, pricing indicatif |
 | [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) | Déroulé de démo 10 min (DSI grand compte) : checklist, plan B hors-ligne, objections/réponses |
 | [docs/LIMITES.md](docs/LIMITES.md) | Limites explicites du produit, ce que v0.2/v0.3 traitent, ce qui reste |
