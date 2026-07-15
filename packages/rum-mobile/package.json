@@ -1,0 +1,17 @@
+{
+  "name": "@mip/rum-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SDK MIP RUM pour React Native — crashes, écrans, réseau (traceparent) et événements en OTLP. Réutilise la pipeline web (mêmes tables, device_type mobile). Sans dépendance.",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "react-native": "dist/index.js",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.0",
+    "typescript": "5.9.3"
+  }
+}
