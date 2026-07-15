@@ -50,20 +50,27 @@ function ThresholdMeter({ name, p75 }: { name: string; p75: number }) {
   );
 }
 
+// En-dessous de ce nombre de mesures, un p75 est statistiquement instable (il tombe
+// dans la queue de distribution) : on le signale et on montre la médiane, plus robuste.
+const LOW_SAMPLE = 100;
+
 export function VitalCard({
   name,
   p75,
+  median = null,
   n,
   prev = null,
   periodLabel = "24 h",
 }: {
   name: string;
   p75: number | null;
+  median?: number | null;
   n: number;
   prev?: number | null;
   periodLabel?: string;
 }) {
   const rating = p75 != null ? rating2026(name, p75) : null;
+  const lowSample = n > 0 && n < LOW_SAMPLE;
   return (
     <div className="card p-4 transition hover:shadow-pop">
       <div className="flex items-center justify-between gap-2">
@@ -87,6 +94,14 @@ export function VitalCard({
       <div className="mt-2 text-xs text-ink-faint">
         p75 · {n} mesures · {periodLabel}
       </div>
+      {lowSample && (
+        <div
+          className="mt-1 text-[11px] text-amber-600 dark:text-amber-400"
+          title="Sur peu de mesures, le p75 est instable (il tombe dans la queue de distribution). La médiane est plus robuste."
+        >
+          échantillon faible{median != null && <> · médiane {fmtVital(name, median)}</>}
+        </div>
+      )}
     </div>
   );
 }

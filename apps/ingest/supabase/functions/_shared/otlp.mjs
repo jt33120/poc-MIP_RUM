@@ -26,6 +26,13 @@ export function rating2026(name, value) {
   return value <= t[0] ? "good" : value <= t[1] ? "needs-improvement" : "poor";
 }
 
+/** device_type déduit du user-agent — repli quand le SDK n'a pas mis
+ *  mip.device_type sur la span (parité avec le helper SQL mip_device_from_ua). */
+export function deviceFromUa(ua) {
+  if (!ua) return null;
+  return /mobile|tablet|iphone|ipad|android|silk|kindle/i.test(ua) ? "mobile" : "desktop";
+}
+
 /** Déstructure un AnyValue OTLP ({stringValue|intValue|doubleValue|boolValue}). */
 export function anyValue(v) {
   if (v == null) return null;
@@ -392,7 +399,7 @@ export function flattenOtlp(payload, opts = {}) {
           client_id: res["mip.client_id"] || null,
           user_hash: a["mip.user_hash"] ?? null,
           user_agent: res["mip.user_agent"] ?? null,
-          device_type: a["mip.device_type"] ?? null,
+          device_type: a["mip.device_type"] ?? deviceFromUa(res["mip.user_agent"]),
           geo_country: null,
           // Lot 2 : classifié à la 1re vue de la session (UA + éventuel signal
           // webdriver du SDK). Flag, pas drop : la donnée reste, mais exclue par
@@ -407,6 +414,10 @@ export function flattenOtlp(payload, opts = {}) {
         if (ts > s.last_seen_at) s.last_seen_at = ts;
         // geo RGPD-friendly : timezone (attrs communs SDK v0.3) -> pays, null si inconnue
         if (s.geo_country == null && a["mip.tz"]) s.geo_country = tzToCountry(a["mip.tz"]);
+        // back-fill device_type si une span ultérieure le porte (ou repli UA), la 1re
+        // span ayant pu créer la session sans l'attribut.
+        if (s.device_type == null)
+          s.device_type = a["mip.device_type"] ?? deviceFromUa(res["mip.user_agent"]);
         sessions.set(sessionId, s);
 
         if (span.name.startsWith("webvital.")) {

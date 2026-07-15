@@ -142,7 +142,8 @@ async function writeRows({
       `on conflict (session_id) do update
          set last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at),
              user_agent   = coalesce(rum_session.user_agent, excluded.user_agent),
-             geo_country  = coalesce(rum_session.geo_country, excluded.geo_country)`,
+             geo_country  = coalesce(rum_session.geo_country, excluded.geo_country),
+             device_type  = coalesce(rum_session.device_type, excluded.device_type)`,
     );
     await batchInsert(
       client,

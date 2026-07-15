@@ -7,7 +7,7 @@
 // elle dégrade en vide plutôt que de casser l'Overview).
 import { q } from "./db";
 import type { Filters } from "./filters";
-import type { SeriesRow } from "./queries";
+import { internalClause, type SeriesRow } from "./queries";
 
 /** Profondeur de l'historique affiché par la heatmap et les courbes. */
 export const GRID_DAYS = 14;
@@ -39,7 +39,7 @@ export async function healthGrid(f: Filters): Promise<HealthGridCell[]> {
          from rum_rollup_hourly
          where hour >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
            and ($1::text is null or app_id = $1)
-           and ($2::text is null or device_type = $2)
+           and ($2::text is null or device_type = $2)${internalClause(f, "app_id")}
          group by 1, 2 having sum(total_w) > 0`,
         [f.app, f.device],
       );
@@ -53,7 +53,7 @@ export async function healthGrid(f: Filters): Promise<HealthGridCell[]> {
        left join rum_session s using (session_id)
        where m.ts >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
          and ($1::text is null or m.app_id = $1)
-         and ($2::text is null or s.device_type = $2)
+         and ($2::text is null or s.device_type = $2)${internalClause(f, "m.app_id")}
        group by 1, 2`,
       [f.app, f.device],
     );
@@ -84,14 +84,14 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
            select date_trunc('day', hour) d, sum(pageviews)::int n
            from rum_rollup_hourly
            where hour >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
-             and ($1::text is null or app_id = $1) and ($2::text is null or device_type = $2)
+             and ($1::text is null or app_id = $1) and ($2::text is null or device_type = $2)${internalClause(f, "app_id")}
            group by 1
          ) pv on pv.d = gs.day
          left join (
            select date_trunc('day', hour) d, sum(errors)::int n
            from rum_rollup_hourly
            where hour >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
-             and ($1::text is null or app_id = $1) and ($2::text is null or device_type = $2)
+             and ($1::text is null or app_id = $1) and ($2::text is null or device_type = $2)${internalClause(f, "app_id")}
            group by 1
          ) er on er.d = gs.day
          order by 1`,
@@ -111,7 +111,7 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
          left join rum_session s using (session_id)
          where p.started_at >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
            and ($1::text is null or p.app_id = $1)
-           and ($2::text is null or s.device_type = $2)
+           and ($2::text is null or s.device_type = $2)${internalClause(f, "p.app_id")}
          group by 1
        ) pv on pv.d = gs.day
        left join (
@@ -120,7 +120,7 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
          left join rum_session s using (session_id)
          where e.ts >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
            and ($1::text is null or e.app_id = $1)
-           and ($2::text is null or s.device_type = $2)
+           and ($2::text is null or s.device_type = $2)${internalClause(f, "e.app_id")}
          group by 1
        ) er on er.d = gs.day
        order by 1`,
@@ -141,7 +141,7 @@ export async function dailyLcpSeries(f: Filters): Promise<SeriesRow[]> {
        left join rum_session s using (session_id)
        where m.name = 'LCP' and m.ts > now() - interval '${GRID_DAYS} days'
          and ($1::text is null or m.app_id = $1)
-         and ($2::text is null or s.device_type = $2)
+         and ($2::text is null or s.device_type = $2)${internalClause(f, "m.app_id")}
        group by 1 order by 1`,
       [f.app, f.device],
     );
