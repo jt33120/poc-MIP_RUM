@@ -1,4 +1,5 @@
 import { Pool, type PoolClient } from "pg";
+import { recordDbSpan } from "./server-trace-core";
 import { SUPABASE_CA } from "./supabase-ca";
 
 // pool unique survivant au hot-reload de next dev
@@ -24,8 +25,15 @@ export async function q<T = Record<string, unknown>>(
   text: string,
   params?: unknown[],
 ): Promise<T[]> {
-  const { rows } = await pool.query(text, params);
-  return rows as T[];
+  // dogfood : si une trace serveur est active (route enveloppée par
+  // withServerTrace), on chronomètre la requête -> span DB. No-op sinon.
+  const start = Date.now();
+  try {
+    const { rows } = await pool.query(text, params);
+    return rows as T[];
+  } finally {
+    recordDbSpan(text, start, Date.now() - start);
+  }
 }
 
 /**

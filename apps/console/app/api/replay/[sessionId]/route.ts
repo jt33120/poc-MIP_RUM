@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { gunzipSync } from "node:zlib";
 import { q } from "@/lib/db";
+import { withServerTrace } from "@/lib/server-trace";
 
 export const dynamic = "force-dynamic";
 
@@ -14,38 +15,42 @@ interface ChunkRow {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
   const { sessionId } = await params;
 
-  // scoping viewer : refuse les sessions d'apps hors périmètre
-  const { getUser } = await import("@/lib/auth");
-  const user = await getUser();
-  if (user?.apps) {
-    const owner = await q<{ app_id: string }>(
-      `select app_id from rum_session where session_id = $1`,
+  // dogfood (Voie A inc.2) : cette route est appelée par le navigateur (lecteur
+  // replay) avec le traceparent du SDK -> on trace le handler + ses requêtes DB.
+  return withServerTrace(req, { route: "/api/replay/:sessionId", method: "GET" }, async () => {
+    // scoping viewer : refuse les sessions d'apps hors périmètre
+    const { getUser } = await import("@/lib/auth");
+    const user = await getUser();
+    if (user?.apps) {
+      const owner = await q<{ app_id: string }>(
+        `select app_id from rum_session where session_id = $1`,
+        [sessionId],
+      );
+      if (!owner[0] || !user.apps.includes(owner[0].app_id)) {
+        return NextResponse.json({ error: "not found" }, { status: 404 });
+      }
+    }
+
+    const chunks = await q<ChunkRow>(
+      `select seq, events_count, body from replay_chunk
+       where session_id = $1 order by seq`,
       [sessionId],
     );
-    if (!owner[0] || !user.apps.includes(owner[0].app_id)) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
-    }
-  }
 
-  const chunks = await q<ChunkRow>(
-    `select seq, events_count, body from replay_chunk
-     where session_id = $1 order by seq`,
-    [sessionId],
-  );
-
-  const events: unknown[] = [];
-  for (const c of chunks) {
-    try {
-      const parsed: unknown = JSON.parse(gunzipSync(c.body).toString("utf8"));
-      if (Array.isArray(parsed)) events.push(...parsed);
-    } catch {
-      /* chunk corrompu : ignoré, le reste du replay reste lisible */
+    const events: unknown[] = [];
+    for (const c of chunks) {
+      try {
+        const parsed: unknown = JSON.parse(gunzipSync(c.body).toString("utf8"));
+        if (Array.isArray(parsed)) events.push(...parsed);
+      } catch {
+        /* chunk corrompu : ignoré, le reste du replay reste lisible */
+      }
     }
-  }
-  return NextResponse.json({ sessionId, chunks: chunks.length, events });
+    return NextResponse.json({ sessionId, chunks: chunks.length, events });
+  });
 }
