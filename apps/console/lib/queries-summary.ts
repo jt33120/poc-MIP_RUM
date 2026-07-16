@@ -47,6 +47,11 @@ export interface SummaryAiOperation {
   p75_latency_ms: number | null;
   ttft_p75_ms: number | null;
   error_rate: number | null;
+  /** true si le coût 24 h de cette fonction dévie fortement (z > 3) de sa
+   *  baseline journalière (vue v_ai_op_anomaly). Détection auto, sans seuil. */
+  anomaly: boolean;
+  /** z-score du coût (null si pas en anomalie). */
+  anomaly_score: number | null;
 }
 /** Point de série journalière IA (pour superposer latence/erreurs au volume). */
 export interface SummaryAiSeriesPoint {
@@ -96,7 +101,7 @@ export async function rumSummary(
 ): Promise<RumSummary> {
   const p = [app, interval];
 
-  const [kpis, series, routes, errors, aiKpis, aiByModel, aiTopUsers, aiByOperation, aiSeries] =
+  const [kpis, series, routes, errors, aiKpis, aiByModel, aiTopUsers, aiByOperation, aiSeries, aiOpAnomalies] =
     await Promise.all([
     q<{
       sessions: number;
@@ -260,7 +265,26 @@ export async function rumSummary(
        order by d`,
       p,
     ),
+    // Anomalies de coût par fonction (z-score 24 h vs baseline) — self-catching :
+    // la vue v_ai_op_anomaly peut être absente en CI/local, on dégrade à [] sans
+    // casser le reste du résumé (même esprit que logAnomalies).
+    (async (): Promise<{ operation: string | null; route: string | null; z_score: number | null }[]> => {
+      try {
+        return await q(
+          `select operation, route, z_score::float8 as z_score
+             from v_ai_op_anomaly where app_id = $1`,
+          [app],
+        );
+      } catch {
+        return [];
+      }
+    })(),
   ]);
+
+  // Index des anomalies par clé fonction (operation|route, null -> "") pour fusion.
+  const anomalyByOp = new Map<string, number | null>(
+    aiOpAnomalies.map((r) => [`${r.operation ?? ""}|${r.route ?? ""}`, r.z_score]),
+  );
 
   const k = kpis[0];
   const sessions = k?.sessions ?? 0;
@@ -288,16 +312,22 @@ export async function rumSummary(
     ai_error_rate: aiKpis[0]?.error_rate == null ? null : Math.round(aiKpis[0].error_rate * 10000) / 10000,
     ai_by_model: aiByModel,
     ai_top_users: aiTopUsers,
-    ai_by_operation: aiByOperation.map((o) => ({
-      operation: o.operation,
-      route: o.route,
-      calls: o.calls,
-      cost_usd: o.cost_usd,
-      tokens: o.tokens,
-      p75_latency_ms: n(o.p75_latency_ms),
-      ttft_p75_ms: n(o.ttft_p75_ms),
-      error_rate: o.error_rate == null ? null : Math.round(o.error_rate * 10000) / 10000,
-    })),
+    ai_by_operation: aiByOperation.map((o) => {
+      const key = `${o.operation ?? ""}|${o.route ?? ""}`;
+      const z = anomalyByOp.has(key) ? anomalyByOp.get(key)! : null;
+      return {
+        operation: o.operation,
+        route: o.route,
+        calls: o.calls,
+        cost_usd: o.cost_usd,
+        tokens: o.tokens,
+        p75_latency_ms: n(o.p75_latency_ms),
+        ttft_p75_ms: n(o.ttft_p75_ms),
+        error_rate: o.error_rate == null ? null : Math.round(o.error_rate * 10000) / 10000,
+        anomaly: anomalyByOp.has(key),
+        anomaly_score: n(z),
+      };
+    }),
     ai_series: aiSeries.map((s) => ({
       date: s.date,
       calls: s.calls,
