@@ -32,12 +32,7 @@ export default async function Errors({
     <div className="animate-fade-up">
       <PageHeader
         title="Erreurs JS"
-        sub={
-          <>
-            Erreurs JavaScript regroupées par signature (type + message + frame) — une ligne = une cause
-            récurrente · fenêtre {periodLabel(f)}
-          </>
-        }
+        sub="Erreurs JavaScript regroupées par signature (type + message + frame) — une ligne = une cause récurrente."
       />
 
       {(() => {

@@ -16,7 +16,7 @@ import {
   type Health,
 } from "@/lib/map";
 import { mapEdges, mapNodes, mapPages } from "@/lib/queries-map";
-import { parseFilters, periodLabel, type SearchParams } from "@/lib/queries-v2";
+import { parseFilters, type SearchParams } from "@/lib/queries-v2";
 
 export const dynamic = "force-dynamic";
 
@@ -58,12 +58,7 @@ export default async function ExperienceMapPage({
       <PageHeader
         title="Carte d'expérience"
         help="experienceMap"
-        sub={
-          <>
-            Le graphe de service vu du navigateur : pages → API → backend, coloré par santé et pondéré
-            par le volume · fenêtre {periodLabel(f)}
-          </>
-        }
+        sub="Le graphe de service vu du navigateur : pages → API → backend, coloré par santé et pondéré par le volume."
       />
 
       {empty ? (

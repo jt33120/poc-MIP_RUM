@@ -23,12 +23,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     <div className="animate-fade-up">
       <PageHeader
         title="Sessions"
-        sub={
-          <>
-            Parcours utilisateurs réels sur {PERIODS[f.period].label}, anonymisés (user_hash, aucune PII) —
-            ouvre une session pour sa timeline pas à pas
-          </>
-        }
+        sub="Parcours utilisateurs réels, anonymisés (user_hash, aucune PII) — ouvre une session pour sa timeline pas à pas."
       />
 
       {/* Hero : répartition nouveaux vs revenants (visitStats, exact sur la

@@ -11,7 +11,6 @@ import {
   correlationSeries,
   filtersToQuery,
   parseFilters,
-  periodLabel,
   type SearchParams,
 } from "@/lib/queries-v2";
 
@@ -37,12 +36,7 @@ export default async function Correlation({
     <div className="animate-fade-up">
       <PageHeader
         title="Corrélation synthétique ↔ RUM"
-        sub={
-          <>
-            Ce que le robot MIP voit (DEM synthétique) face à ce que les utilisateurs réels subissent (RUM) ·
-            fenêtre {periodLabel(f)}
-          </>
-        }
+        sub="Ce que le robot MIP voit (DEM synthétique) face à ce que les utilisateurs réels subissent (RUM)."
       />
 
       {/* Hero : la série robot vs réel (le graphe qui « raconte » la corrélation). */}

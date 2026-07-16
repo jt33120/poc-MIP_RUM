@@ -7,7 +7,7 @@ import { SupervisionHero, HeroStat, HeroReading } from "@/components/Supervision
 import { RadarScore } from "@/components/charts/RadarScore";
 import { LineTrend } from "@/components/charts/LineTrend";
 import { experienceScore, frustrationPenalty, scoreTone } from "@/lib/experience";
-import { parseFilters, periodLabel, type SearchParams } from "@/lib/queries-v2";
+import { parseFilters, type SearchParams } from "@/lib/queries-v2";
 import {
   experienceContext,
   feedbackByRoute,
@@ -57,12 +57,7 @@ export default async function Experience({
       <PageHeader
         title="Expérience"
         help="experience"
-        sub={
-          <>
-            Le ressenti des utilisateurs (feedbacks) relié à la performance qu&apos;ils ont subie · fenêtre{" "}
-            {periodLabel(f)}
-          </>
-        }
+        sub="Le ressenti des utilisateurs (feedbacks) relié à la performance qu'ils ont subie."
       />
 
       {(() => {
@@ -81,7 +76,6 @@ export default async function Experience({
         return (
           <SupervisionHero
             chartTitle={satisfaction != null ? "Profil d'expérience — sous-scores /100" : "Score d'expérience"}
-            chartHelp="experience"
             chart={
               satisfaction != null ? (
                 <RadarScore data={radarData} />

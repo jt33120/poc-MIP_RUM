@@ -32,12 +32,7 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
     <div className="animate-fade-up">
       <PageHeader
         title="Pages lentes"
-        sub={
-          <>
-            Les routes au chargement perçu le plus lent (LCP p75) et ce qui le cause — ressources et
-            tâches JS longues · fenêtre {period.label}
-          </>
-        }
+        sub="Les routes au chargement perçu le plus lent (LCP p75) et ce qui le cause — ressources et tâches JS longues."
       />
 
       {(() => {

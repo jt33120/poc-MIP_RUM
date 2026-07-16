@@ -3,7 +3,7 @@
 // DONNÉES de l'app ou l'ARCHITECTURE du produit ; la réponse rend chaque citation
 // [n] en EXPOSANT CLIQUABLE vers la page source (donnée live ou ancre d'archi) —
 // la preuve visible que l'IA n'hallucine pas. Client léger : fetch /api/ask.
-import { Fragment, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 interface ClientSource {
   n: number;
@@ -14,44 +14,87 @@ interface ClientSource {
 type Turn = { q: string; answer: string; sources: ClientSource[] };
 type State = "idle" | "loading" | "disabled" | "error";
 
-const CITATION_RE = /\[(\d+)\]/g;
+// Tokenise l'intérieur d'un bloc de texte : **gras**, `code`, et marqueurs de
+// citation [n] (rendus en exposant cliquable). Le reste du Markdown renvoyé par
+// le modèle (titres, italique) n'est volontairement pas géré — hors du contrat
+// de prompt, donc jamais attendu en pratique.
+const INLINE_RE = /\*\*(.+?)\*\*|`([^`]+?)`|\[(\d+)\]/g;
 
-/** Rend une réponse en remplaçant les marqueurs [n] par des exposants cliquables. */
+function renderInline(text: string, keyPrefix: string, byN: Map<number, ClientSource>): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let i = 0;
+  INLINE_RE.lastIndex = 0;
+  while ((m = INLINE_RE.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index));
+    if (m[1] !== undefined) {
+      nodes.push(
+        <strong key={`${keyPrefix}-b-${i}`} className="font-semibold text-ink">
+          {m[1]}
+        </strong>,
+      );
+    } else if (m[2] !== undefined) {
+      nodes.push(
+        <code key={`${keyPrefix}-c-${i}`} className="rounded bg-panel px-1 py-0.5 text-[12px] text-accent">
+          {m[2]}
+        </code>,
+      );
+    } else if (m[3] !== undefined) {
+      const src = byN.get(Number(m[3]));
+      if (src) {
+        nodes.push(
+          <a
+            key={`${keyPrefix}-n-${i}`}
+            href={src.url}
+            target="_blank"
+            rel="noreferrer"
+            title={`Source : ${src.title}`}
+            className="ml-0.5 inline-flex align-super text-[10px] font-bold text-accent hover:underline"
+          >
+            [{src.n}]
+          </a>,
+        );
+      }
+      // marqueur inconnu : le serveur les efface déjà (sanitizeCitations), on ne
+      // le rend donc jamais — filet de sécurité, pas le chemin attendu.
+    }
+    last = m.index + m[0].length;
+    i++;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
+/** Rend une réponse Markdown-lite : **gras**, `code`, listes num./à puces, et
+ *  citations [n] en exposant cliquable — jamais un "*" littéral à l'écran. */
 function AnswerText({ answer, sources }: { answer: string; sources: ClientSource[] }) {
   const byN = new Map(sources.map((s) => [s.n, s]));
   return (
     <>
-      {answer.split(/\n+/).map((para, pi) => {
-        if (!para.trim()) return null;
-        const nodes: React.ReactNode[] = [];
-        let last = 0;
-        let m: RegExpExecArray | null;
-        CITATION_RE.lastIndex = 0;
-        while ((m = CITATION_RE.exec(para)) !== null) {
-          const src = byN.get(Number(m[1]));
-          if (m.index > last) nodes.push(para.slice(last, m.index));
-          if (src) {
-            nodes.push(
-              <a
-                key={`${pi}-${m.index}`}
-                href={src.url}
-                target="_blank"
-                rel="noreferrer"
-                title={`Source : ${src.title}`}
-                className="ml-0.5 inline-flex align-super text-[10px] font-bold text-accent hover:underline"
-              >
-                [{src.n}]
-              </a>,
-            );
-          }
-          last = m.index + m[0].length;
+      {answer.split(/\n+/).map((block, pi) => {
+        if (!block.trim()) return null;
+        const ol = block.match(/^(\d+)\.\s+([\s\S]*)$/);
+        const ul = !ol && block.match(/^[-*]\s+([\s\S]*)$/);
+        if (ol) {
+          return (
+            <div key={pi} className="mb-1.5 flex gap-2 last:mb-0">
+              <span className="shrink-0 font-semibold text-ink-faint">{ol[1]}.</span>
+              <span>{renderInline(ol[2], String(pi), byN)}</span>
+            </div>
+          );
         }
-        if (last < para.length) nodes.push(para.slice(last));
+        if (ul) {
+          return (
+            <div key={pi} className="mb-1.5 flex gap-2 last:mb-0">
+              <span className="shrink-0 text-ink-faint">•</span>
+              <span>{renderInline(ul[1], String(pi), byN)}</span>
+            </div>
+          );
+        }
         return (
           <p key={pi} className="mb-2 last:mb-0">
-            {nodes.map((nd, i) => (
-              <Fragment key={i}>{nd}</Fragment>
-            ))}
+            {renderInline(block, String(pi), byN)}
           </p>
         );
       })}

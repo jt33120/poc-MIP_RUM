@@ -64,16 +64,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
   return (
     <div className="animate-fade-up">
-      <PageHeader
-        title="Vue d'ensemble"
-        help="rum"
-        sub={
-          <>
-            Core Web Vitals réels au p75 · seuils 2026 (LCP &lt; 2,0 s · INP &lt; 200 ms · CLS &lt; 0,1) ·
-            fenêtre {period.label} · tendance vs période précédente
-          </>
-        }
-      />
+      <PageHeader title="Vue d'ensemble" help="rum" />
 
       {f.app && stats.sessions === 0 && (
         <div
