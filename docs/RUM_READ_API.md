@@ -77,7 +77,9 @@ curl -s -H "Authorization: Bearer $MIP_RUM_READ_TOKEN" \
     {
       "operation": "extraction", "route": "matching/extract",
       "calls": 194, "cost_usd": 0.8975, "tokens": 317089,
-      "p75_latency_ms": 4018.7, "ttft_p75_ms": null, "error_rate": 0
+      "p75_latency_ms": 4018.7, "ttft_p75_ms": null, "error_rate": 0,
+      "anomaly": false,          // true si coût 24 h anormal (z > 3) vs baseline journalière
+      "anomaly_score": null      // z-score du coût (null hors anomalie). Détection auto, sans seuil.
     }
   ],
   "ai_series": [                  // un point par JOUR de la fenêtre (jours creux : calls 0, latence null)
