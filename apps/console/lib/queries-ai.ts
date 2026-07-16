@@ -281,6 +281,72 @@ export async function aiCostByUser(f: Filters, limit = 100): Promise<AiUserCostR
   );
 }
 
+// ---------------------------------------------------------------------------
+// Qualité IA ↔ satisfaction (chantier B) — relie le coût/la fiabilité de l'IA
+// au ressenti RÉEL des utilisateurs. Le chaînon que ne fait pas un observability
+// classique : « nos appels LLM dégradent-ils (ou non) la satisfaction ? ».
+// ---------------------------------------------------------------------------
+
+// Seuil CSAT « positif » (note ≥ 4/5) — aligné sur lib/experience.ts.
+const CSAT_POSITIVE = 4;
+
+export interface AiSatisfactionRow {
+  used_ai: boolean;
+  /** Sessions AVEC feedback dans ce segment (n de la comparaison). */
+  sessions: number;
+  avg_score: number | null;
+  positives: number;
+}
+
+/** CSAT des sessions qui ont déclenché ≥ 1 appel IA vs celles sans IA, sur la
+ *  période. Jointure au grain SESSION (rum_ai.session_id ↔ rum_event feedback) :
+ *  une session peut avoir plusieurs appels IA mais on la compte une fois. Zéro
+ *  PII (agrégat de scores anonymes). Renvoie 0..2 lignes (segments présents). */
+export async function aiSatisfaction(f: Filters): Promise<AiSatisfactionRow[]> {
+  return q<AiSatisfactionRow>(
+    `with fb as (
+       select session_id, avg((nullif(props->>'score',''))::numeric) as score
+         from rum_event
+        where ($1 = 'all' or app_id = $1) and name = 'feedback'
+          and ts > now() - $2::interval and session_id is not null
+          and nullif(props->>'score','') is not null
+        group by session_id
+     ), ai_s as (
+       select distinct session_id from rum_ai
+        where ($1 = 'all' or app_id = $1) and ts > now() - $2::interval and session_id is not null
+     )
+     select (a.session_id is not null) as used_ai,
+            count(*)::int as sessions,
+            round(avg(fb.score), 2)::float8 as avg_score,
+            count(*) filter (where fb.score >= ${CSAT_POSITIVE})::int as positives
+       from fb left join ai_s a using (session_id)
+      group by 1`,
+    [f.app, intervalOf(f)],
+  );
+}
+
+export interface AiErrorRow {
+  error_type: string;
+  calls: number;
+}
+
+/** Répartition des appels IA en échec par type d'erreur (fiabilité : QUOI casse
+ *  — timeout, refus/guardrail, quota…). status='error' posé à l'ingestion. */
+export async function aiErrorBreakdown(f: Filters): Promise<AiErrorRow[]> {
+  return q<AiErrorRow>(
+    `select coalesce(nullif(error_type, ''), 'inconnu') as error_type,
+            count(*)::int as calls
+       from rum_ai
+      where ($1 = 'all' or app_id = $1)
+        and ts > now() - $2::interval
+        and status = 'error'
+      group by 1
+      order by calls desc
+      limit 10`,
+    [f.app, intervalOf(f)],
+  );
+}
+
 export interface AiUnattributedCost {
   calls: number;
   cost_usd: number;
