@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assessReliability,
   briefingUserPrompt,
+  buildChecklist,
   deriveStatus,
   deterministicBriefing,
   parseBriefing,
@@ -108,6 +109,77 @@ describe("briefingUserPrompt", () => {
     expect(p).toContain("gip-plateforme");
     expect(p).toContain("Alertes déclenchées : 1");
     expect(p).toContain("Score de santé : 95");
+  });
+});
+
+describe("buildChecklist", () => {
+  it("vide quand tout va bien (aucun lien à proposer)", () => {
+    expect(buildChecklist(base, base.app)).toEqual([]);
+  });
+
+  it("alertes critiques -> lien /alerts scopé à l'app", () => {
+    const items = buildChecklist({ ...base, criticalAlerts: 2 }, "gip-plateforme");
+    expect(items).toEqual([{ label: "2 alerte(s) critique(s)", href: "/alerts?app=gip-plateforme" }]);
+  });
+
+  it("SLO en dépassement -> lien /slo", () => {
+    const items = buildChecklist({ ...base, sloBreached: 1 }, "acme");
+    expect(items).toContainEqual({ label: "1 SLO en dépassement de budget", href: "/slo?app=acme" });
+  });
+
+  it("erreur avec fingerprint -> lien direct /errors/[fingerprint]", () => {
+    const items = buildChecklist(
+      { ...base, topErrors: [{ type: "TypeError", message: "", count: 8, fingerprint: "abc123" }] },
+      "acme",
+    );
+    expect(items).toContainEqual({ label: "TypeError (8×)", href: "/errors/abc123?app=acme" });
+  });
+
+  it("erreur SANS fingerprint (legacy) -> aucun lien halluciné", () => {
+    const items = buildChecklist({ ...base, topErrors: [{ type: "Error", message: "", count: 3 }] }, "acme");
+    expect(items).toEqual([]);
+  });
+
+  it("routes lentes -> une entrée par route, SEULEMENT si santé dégradée et échantillon fiable", () => {
+    const degraded = {
+      ...base,
+      healthScore: 60,
+      topSlowRoutes: [{ route: "/checkout", lcp_p75: 3200 }, { route: "/panier", lcp_p75: 2900 }],
+    };
+    const items = buildChecklist(degraded, "acme");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toEqual({ label: "/checkout — LCP p75 3 200 ms", href: "/pages?app=acme" });
+    expect(items[1]).toEqual({ label: "/panier — LCP p75 2 900 ms", href: "/pages?app=acme" });
+    // santé bonne -> pas de routes proposées même si topSlowRoutes est rempli
+    expect(buildChecklist({ ...base, healthScore: 95, topSlowRoutes: degraded.topSlowRoutes }, "acme")).toEqual([]);
+    // échantillon non fiable -> pas de conclusion perf, donc pas de routes
+    expect(buildChecklist({ ...degraded, reliable: false }, "acme")).toEqual([]);
+  });
+
+  it("portail (app=null) : chaque erreur utilise SON appId propre, pas un lien global", () => {
+    const items = buildChecklist(
+      {
+        ...base,
+        topErrors: [{ type: "TypeError", message: "", count: 5, fingerprint: "xyz", appId: "gip-plateforme" }],
+      },
+      null,
+    );
+    expect(items).toEqual([{ label: "TypeError (5×)", href: "/errors/xyz?app=gip-plateforme" }]);
+  });
+
+  it("plafonne à 5 entrées", () => {
+    const many = {
+      ...base,
+      criticalAlerts: 1,
+      sloBreached: 1,
+      topErrors: [
+        { type: "A", message: "", count: 1, fingerprint: "f1" },
+        { type: "B", message: "", count: 1, fingerprint: "f2" },
+        { type: "C", message: "", count: 1, fingerprint: "f3" },
+        { type: "D", message: "", count: 1, fingerprint: "f4" },
+      ],
+    };
+    expect(buildChecklist(many, "acme")).toHaveLength(5);
   });
 });
 

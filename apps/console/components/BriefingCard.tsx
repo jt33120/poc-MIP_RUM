@@ -6,11 +6,16 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+interface ChecklistItem {
+  label: string;
+  href: string;
+}
 interface Result {
   status: "ok" | "watch" | "critical";
   headline: string;
   bullets: string[];
   focus: string | null;
+  checklist: ChecklistItem[];
   source: "ai" | "deterministic";
 }
 
@@ -18,13 +23,6 @@ const TONE: Record<Result["status"], { wrap: string; dot: string; label: string 
   ok: { wrap: "border-good/30 bg-good/5", dot: "bg-good", label: "text-good" },
   watch: { wrap: "border-warn/30 bg-warn/5", dot: "bg-warn", label: "text-warn" },
   critical: { wrap: "border-bad/30 bg-bad/5", dot: "bg-bad", label: "text-bad" },
-};
-
-const FOCUS_HREF: Record<string, string> = {
-  Alertes: "/alerts",
-  "Erreurs JS": "/errors",
-  SLO: "/slo",
-  "Vue d'ensemble": "/",
 };
 
 // app absente => briefing PORTAIL (vue « Tous », toutes les apps).
@@ -71,7 +69,6 @@ export function BriefingCard({ app }: { app?: string }) {
 
   if (!r) return null;
   const tone = TONE[r.status];
-  const focusHref = r.focus ? FOCUS_HREF[r.focus] : null;
 
   return (
     <section className={`mb-6 rounded-xl border p-4 ${tone.wrap}`} aria-label="Briefing d'accueil">
@@ -95,14 +92,22 @@ export function BriefingCard({ app }: { app?: string }) {
           {r.focus && (
             <div className="mt-2.5 text-xs">
               <span className="text-ink-faint">À regarder en priorité : </span>
-              {focusHref ? (
-                <Link href={app ? `${focusHref}?app=${encodeURIComponent(app)}` : focusHref} className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
-                  {r.focus} →
-                </Link>
-              ) : (
-                <span className="font-medium text-ink">{r.focus}</span>
-              )}
+              <span className="font-medium text-ink">{r.focus}</span>
             </div>
+          )}
+          {r.checklist.length > 0 && (
+            <ul className="mt-2 flex flex-wrap gap-1.5">
+              {r.checklist.map((c, i) => (
+                <li key={i}>
+                  <Link
+                    href={c.href}
+                    className="inline-flex items-center gap-1 rounded-full border border-line bg-panel2 px-2.5 py-1 text-[11px] font-medium text-ink-soft transition hover:border-accent-deep/50 hover:text-accent-deep dark:hover:text-accent"
+                  >
+                    {c.label} →
+                  </Link>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
         <button

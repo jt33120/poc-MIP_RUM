@@ -8,6 +8,7 @@ import { SESSION_COOKIE, verifyJwt } from "@/lib/auth";
 import {
   BRIEFING_SYSTEM,
   briefingUserPrompt,
+  buildChecklist,
   deterministicBriefing,
   parseBriefing,
   type BriefingResult,
@@ -132,6 +133,11 @@ export async function POST(req: NextRequest) {
     const ai = parseBriefing(raw);
     if (ai) result = ai;
   }
+
+  // checklist « à checker » : TOUJOURS recalculée depuis les signaux mesurés,
+  // que la prose ci-dessus vienne du LLM ou du repli déterministe — les liens
+  // ne sont jamais du texte généré (cf. lib/briefing.ts).
+  result = { ...result, checklist: buildChecklist(signals, portal ? null : app) };
 
   await putCachedBriefing(cacheKey, user.email, windowStart, result);
   return NextResponse.json({ briefing: result, cached: false });

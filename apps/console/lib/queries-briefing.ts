@@ -69,11 +69,29 @@ export async function gatherBriefingSignals(
     [app, iso],
   );
 
-  const topErrors = await q<{ type: string; count: number }>(
-    `select coalesce(error_type, 'Error') as type, count(*)::int as count
+  // Groupé par fingerprint (comme /errors), pas juste par type : permet un lien
+  // direct vers /errors/[fingerprint] au lieu d'un renvoi générique vers /errors.
+  const topErrors = await q<{ type: string; fingerprint: string | null; count: number }>(
+    `select coalesce(error_type, 'Error') as type, fingerprint, count(*)::int as count
        from rum_error
-      where app_id = $1 and ts > $2
-      group by 1 order by count desc limit 3`,
+      where app_id = $1 and ts > $2 and fingerprint is not null
+      group by fingerprint, error_type
+      order by count desc limit 3`,
+    [app, iso],
+  );
+
+  // Routes les plus lentes (LCP p75) sur la fenêtre — pour le checklist « pages
+  // à checker » quand la santé est dégradée. having : évite le bruit d'une route
+  // avec 1-2 mesures.
+  const topSlowRoutes = await q<{ route: string; lcp_p75: number }>(
+    `select m.route, percentile_cont(0.75) within group (order by m.value) as lcp_p75
+       from rum_metric m join rum_session s using (session_id)
+      where m.app_id = $1 and m.name = 'LCP' and m.ts > $2
+        and not coalesce(s.is_bot, false) and m.route is not null
+      group by m.route
+      having count(*) >= 5
+      order by lcp_p75 desc
+      limit 3`,
     [app, iso],
   );
 
@@ -102,12 +120,13 @@ export async function gatherBriefingSignals(
     pageviews: counts?.pageviews ?? 0,
     errors: counts?.errors ?? 0,
     newErrorGroups: counts?.new_groups ?? 0,
-    topErrors: topErrors.map((e) => ({ type: e.type, message: "", count: e.count })),
+    topErrors: topErrors.map((e) => ({ type: e.type, message: "", count: e.count, fingerprint: e.fingerprint })),
     alerts: alerts?.total ?? 0,
     criticalAlerts: alerts?.critical ?? 0,
     sloBreached,
     healthScore: snap.healthScore,
     worstVital: snap.worstVital,
+    topSlowRoutes: topSlowRoutes.map((r) => ({ route: r.route, lcp_p75: Number(r.lcp_p75) })),
     measures,
     reliable: assessReliability(sessions, measures),
   };
@@ -140,11 +159,14 @@ export async function gatherPortalSignals(windowStart: Date, windowLabel: string
     [iso],
   );
 
-  const topErrors = await q<{ type: string; count: number }>(
-    `select coalesce(error_type, 'Error') as type, count(*)::int as count
+  // groupé par (fingerprint, app_id) : le portail agrège plusieurs apps, donc
+  // le lien /errors/[fingerprint] doit être scopé à l'app propriétaire du groupe.
+  const topErrors = await q<{ type: string; fingerprint: string | null; app_id: string; count: number }>(
+    `select coalesce(error_type, 'Error') as type, fingerprint, app_id, count(*)::int as count
        from rum_error
-      where app_id ${notInternal} and ts > $1
-      group by 1 order by count desc limit 3`,
+      where app_id ${notInternal} and ts > $1 and fingerprint is not null
+      group by fingerprint, error_type, app_id
+      order by count desc limit 3`,
     [iso],
   );
 
@@ -171,7 +193,7 @@ export async function gatherPortalSignals(windowStart: Date, windowLabel: string
     pageviews: counts?.pageviews ?? 0,
     errors: counts?.errors ?? 0,
     newErrorGroups: counts?.new_groups ?? 0,
-    topErrors: topErrors.map((e) => ({ type: e.type, message: "", count: e.count })),
+    topErrors: topErrors.map((e) => ({ type: e.type, message: "", count: e.count, fingerprint: e.fingerprint, appId: e.app_id })),
     alerts: alerts?.total ?? 0,
     criticalAlerts: alerts?.critical ?? 0,
     sloBreached: 0, // les SLO sont par app ; le portail se concentre sur santé/erreurs/alertes agrégées
