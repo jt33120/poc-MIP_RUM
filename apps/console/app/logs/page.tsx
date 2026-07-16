@@ -8,8 +8,10 @@ import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import { fmtDate } from "@/lib/format";
 import { parseFilters, periodLabel, filtersToQuery, type SearchParams } from "@/lib/queries-v2";
 import {
+  logAnomalies,
   logEntries,
   logSeverityCounts,
+  logsByRoute,
   logVolumeByHour,
   parseLevel,
   severityBucket,
@@ -38,10 +40,12 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
   const f = parseFilters(sp);
   const level = parseLevel(sp?.level);
 
-  const [rows, counts, volume] = await Promise.all([
+  const [rows, counts, volume, anomalies, byRoute] = await Promise.all([
     logEntries(f, level),
     logSeverityCounts(f),
     logVolumeByHour(f),
+    logAnomalies(f),
+    logsByRoute(f),
   ]);
 
   const total = counts.error + counts.warn + counts.info + counts.debug;
@@ -100,6 +104,33 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
           sa trace ou sa session.
         </HeroReading>
       </SupervisionHero>
+
+      {/* Anomalies de volume d'erreurs (z-score horaire vs 7 j) — détection auto
+          d'un pic anormal, sans seuil manuel. Masqué si aucune anomalie. */}
+      {anomalies.length > 0 && (
+        <div className="mb-6 rounded-xl border border-red-300 bg-red-50/70 p-4 dark:border-red-400/30 dark:bg-red-400/5">
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-red-700 dark:text-red-300">
+            <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-red-500" />
+            Pics d&apos;erreurs anormaux (24 h) · z-score horaire vs moyenne 7 j
+          </div>
+          <ul className="flex flex-col gap-1.5 text-sm">
+            {anomalies.slice(0, 4).map((a, i) => (
+              <li key={i} className="flex flex-wrap items-baseline gap-x-2 text-ink-soft">
+                <span className="font-semibold text-red-700 dark:text-red-300">
+                  {a.errors.toLocaleString("fr-FR")} logs error
+                </span>
+                <span className="text-ink-faint">
+                  à {new Date(a.bucket).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+                <span className="text-ink-faint">
+                  · normal ≈ {a.mean_7d.toLocaleString("fr-FR")} · <strong className="text-red-600 dark:text-red-400">z {a.z_score > 0 ? "+" : ""}{a.z_score}</strong>
+                </span>
+                {f.app === "all" && <span className="font-mono text-[11px] text-ink-faint">{a.app_id}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Filtres de niveau (préservent app/période via filtersToQuery). */}
       <div className="mb-4 flex flex-wrap gap-2">
@@ -166,9 +197,13 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
                         session
                       </Link>
                     ) : r.trace_id ? (
-                      <span className="font-mono text-ink-faint" title={r.trace_id}>
-                        {r.trace_id.slice(0, 8)}…
-                      </span>
+                      <Link
+                        href={`/tracing/${encodeURIComponent(r.trace_id)}`}
+                        className="font-mono text-brand hover:underline"
+                        title="Voir la trace (waterfall front → back)"
+                      >
+                        trace {r.trace_id.slice(0, 8)}…
+                      </Link>
                     ) : (
                       <span className="text-ink-faint">—</span>
                     )}
@@ -187,6 +222,43 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
           </tbody>
         </table>
       </div>
+
+      {/* Routes les plus bruyantes — métrique dérivée des logs (d'où vient le bruit). */}
+      {byRoute.length > 0 && (
+        <div className="mt-6">
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+            Routes les plus bruyantes · {periodLabel(f)}
+          </h2>
+          <div className="card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-panel2">
+                <tr>
+                  <th className="th">Route</th>
+                  <th className="th text-right">Erreurs</th>
+                  <th className="th text-right">Warnings</th>
+                  <th className="th text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byRoute.map((r, i) => (
+                  <tr key={i} className="border-t border-line/60 transition hover:bg-panel2/60">
+                    <td className="px-4 py-2 font-mono text-xs text-ink">{r.route}</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-red-600 dark:text-red-400">
+                      {r.errors.toLocaleString("fr-FR")}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-amber-600 dark:text-amber-400">
+                      {r.warns.toLocaleString("fr-FR")}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-ink-soft">
+                      {r.total.toLocaleString("fr-FR")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
