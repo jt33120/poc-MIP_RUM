@@ -17,6 +17,7 @@ import { createLogger } from "../_shared/log.mjs";
 import { withRetry } from "../_shared/retry.mjs";
 import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "../_shared/limits.mjs";
 import { corsHeaders as buildCors, originsFromRegistry } from "../_shared/cors.mjs";
+import { createAuth } from "../_shared/auth.mjs";
 
 const log = createLogger("v1-traces");
 
@@ -31,89 +32,20 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+// Auth d'ingestion partagée avec v1-replay (_shared/auth.mjs) : registre d'apps
+// (cache 60 s), vérif clé d'API (keyless toléré), rate limit durable.
+const auth = createAuth(supabase, {
+  requireApiKey: REQUIRE_API_KEY,
+  rateLimitPerMin: RATE_LIMIT_PER_MIN,
+  log,
+});
+const { getAppRegistry, checkApiKey, rateLimitedDurable } = auth;
+
 // En-têtes CORS (règles partagées _shared/cors.mjs) — l'origine n'est reflétée
 // que si elle est autorisée (socle statique ∪ origines des apps actives).
 async function corsHeaders(origin: string): Promise<Record<string, string>> {
   const extra = originsFromRegistry((await getAppRegistry()).values());
   return buildCors(origin, extra);
-}
-
-// --- Registre d'apps : cache 60 s (refresh paresseux, isolat éphémère) -------
-let appRegistry = new Map<
-  string,
-  { api_key_hash: string | null; active: boolean; allowed_origins: string[] | null }
->();
-let registryLoadedAt = 0;
-let registryEverLoaded = false; // R4 : a-t-on déjà réussi un chargement ?
-
-async function getAppRegistry() {
-  if (Date.now() - registryLoadedAt < 60_000 && appRegistry.size) return appRegistry;
-  const { data, error } = await supabase
-    .from("app_registry")
-    .select("app_id, api_key_hash, active, allowed_origins");
-  if (!error && data) {
-    appRegistry = new Map(data.map((r) => [r.app_id, r]));
-    registryLoadedAt = Date.now();
-    registryEverLoaded = true;
-  } else if (error) {
-    log.error("app_registry load failed", { err: error });
-  }
-  return appRegistry;
-}
-
-async function sha256(s: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/** null si accepté, sinon raison du 403. api_key_hash null = legacy, pas de vérif. */
-async function checkApiKey(appId: string, apiKey: string | null): Promise<string | null> {
-  if (!REQUIRE_API_KEY) return null;
-  const registry = await getAppRegistry();
-  // R4 : si le registre n'a JAMAIS pu être chargé (panne DB au démarrage),
-  // fail-open plutôt que de rejeter 100 % du trafic en 403 — cohérent avec le
-  // choix d'availability du rate limit (R3). Journalisé pour rester visible.
-  if (!registryEverLoaded) {
-    log.warn("api key check fail-open (registry never loaded)", { app_id: appId });
-    return null;
-  }
-  const app = registry.get(appId);
-  if (!app || !app.active) return `unknown or inactive app: ${appId}`;
-  if (app.api_key_hash == null) return null; // continuité G-IT : app sans clé
-  if (!apiKey || (await sha256(apiKey)) !== app.api_key_hash)
-    return `invalid api key for app: ${appId}`;
-  return null;
-}
-
-// --- Rate limit : fenêtre glissante 60 s par app_id (compteur mémoire) -------
-const rateHits = new Map<string, number[]>();
-
-function rateLimited(appId: string): boolean {
-  const now = Date.now();
-  const hits = rateHits.get(appId) ?? [];
-  while (hits.length && hits[0] <= now - 60_000) hits.shift();
-  if (hits.length >= RATE_LIMIT_PER_MIN) return true;
-  hits.push(now);
-  rateHits.set(appId, hits);
-  return false;
-}
-
-// v0.3 : compteur durable rate_check() (table rate_counter, partagé entre
-// isolats). Pré-filtre mémoire d'abord (zéro round-trip en cas de flood local),
-// puis RPC ; si l'RPC échoue -> fallback sur le verdict mémoire (best of both).
-async function rateLimitedDurable(appId: string): Promise<boolean> {
-  if (rateLimited(appId)) return true;
-  try {
-    const { data, error } = await supabase.rpc("rate_check", {
-      p_app_id: appId,
-      p_limit: RATE_LIMIT_PER_MIN,
-    });
-    if (error) throw error;
-    return data === false;
-  } catch (err) {
-    console.warn("[v1-traces] rate_check rpc failed (fallback mémoire):", err);
-    return false; // le compteur mémoire a déjà accepté
-  }
 }
 
 Deno.serve(async (req) => {
