@@ -95,7 +95,7 @@ export function BriefingCard({ app }: { app?: string }) {
               <span className="font-medium text-ink">{r.focus}</span>
             </div>
           )}
-          {r.checklist.length > 0 && (
+          {(r.checklist ?? []).length > 0 && (
             <ul className="mt-2 flex flex-wrap gap-1.5">
               {r.checklist.map((c, i) => (
                 <li key={i}>

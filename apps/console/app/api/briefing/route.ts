@@ -115,10 +115,14 @@ export async function POST(req: NextRequest) {
   const fromLogin = !!prevDate && !Number.isNaN(prevDate.getTime());
   const windowStart = fromLogin ? prevDate! : startOfToday();
 
-  // Cache : réutilise tant que la fenêtre (login) n'a pas changé.
+  // Cache : réutilise tant que la fenêtre (login) n'a pas changé. `checklist`
+  // (ajouté après coup) peut être absent d'une entrée mise en cache par une
+  // version antérieure du code -> défaut [] pour honorer le contrat BriefingResult
+  // (le client ne doit JAMAIS recevoir un objet qui ne respecte pas le type).
   const cached = await getCachedBriefing(cacheKey, user.email);
   if (cached && new Date(cached.window_start).getTime() === windowStart.getTime()) {
-    return NextResponse.json({ briefing: cached.payload, cached: true });
+    const payload: BriefingResult = { ...cached.payload, checklist: cached.payload.checklist ?? [] };
+    return NextResponse.json({ briefing: payload, cached: true });
   }
 
   const label = windowLabel(windowStart, fromLogin);
