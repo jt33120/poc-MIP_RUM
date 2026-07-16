@@ -9,6 +9,7 @@ import {
   BRIEFING_SYSTEM,
   briefingUserPrompt,
   buildChecklist,
+  buildStats,
   deterministicBriefing,
   parseBriefing,
   type BriefingResult,
@@ -115,13 +116,17 @@ export async function POST(req: NextRequest) {
   const fromLogin = !!prevDate && !Number.isNaN(prevDate.getTime());
   const windowStart = fromLogin ? prevDate! : startOfToday();
 
-  // Cache : réutilise tant que la fenêtre (login) n'a pas changé. `checklist`
-  // (ajouté après coup) peut être absent d'une entrée mise en cache par une
-  // version antérieure du code -> défaut [] pour honorer le contrat BriefingResult
-  // (le client ne doit JAMAIS recevoir un objet qui ne respecte pas le type).
+  // Cache : réutilise tant que la fenêtre (login) n'a pas changé. `checklist`/
+  // `stats` (ajoutés après coup) peuvent être absents d'une entrée mise en cache
+  // par une version antérieure du code -> défauts pour honorer le contrat
+  // BriefingResult (le client ne doit JAMAIS recevoir un objet hors-contrat).
   const cached = await getCachedBriefing(cacheKey, user.email);
   if (cached && new Date(cached.window_start).getTime() === windowStart.getTime()) {
-    const payload: BriefingResult = { ...cached.payload, checklist: cached.payload.checklist ?? [] };
+    const payload: BriefingResult = {
+      ...cached.payload,
+      checklist: cached.payload.checklist ?? [],
+      stats: cached.payload.stats ?? { sessions: 0, errors: 0, healthScore: null, worstVital: null },
+    };
     return NextResponse.json({ briefing: payload, cached: true });
   }
 
@@ -138,10 +143,11 @@ export async function POST(req: NextRequest) {
     if (ai) result = ai;
   }
 
-  // checklist « à checker » : TOUJOURS recalculée depuis les signaux mesurés,
-  // que la prose ci-dessus vienne du LLM ou du repli déterministe — les liens
-  // ne sont jamais du texte généré (cf. lib/briefing.ts).
-  result = { ...result, checklist: buildChecklist(signals, portal ? null : app) };
+  // checklist « à checker » + tuiles chiffrées : TOUJOURS recalculées depuis les
+  // signaux mesurés, que la prose ci-dessus vienne du LLM ou du repli
+  // déterministe — les liens et les chiffres ne sont jamais du texte généré
+  // (cf. lib/briefing.ts).
+  result = { ...result, checklist: buildChecklist(signals, portal ? null : app), stats: buildStats(signals) };
 
   await putCachedBriefing(cacheKey, user.email, windowStart, result);
   return NextResponse.json({ briefing: result, cached: false });

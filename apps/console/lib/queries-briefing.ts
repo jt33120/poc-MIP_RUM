@@ -80,21 +80,6 @@ export async function gatherBriefingSignals(
     [app, iso],
   );
 
-  // Routes les plus lentes (LCP p75) sur la fenêtre — pour le checklist « pages
-  // à checker » quand la santé est dégradée. having : évite le bruit d'une route
-  // avec 1-2 mesures.
-  const topSlowRoutes = await q<{ route: string; lcp_p75: number }>(
-    `select m.route, percentile_cont(0.75) within group (order by m.value) as lcp_p75
-       from rum_metric m join rum_session s using (session_id)
-      where m.app_id = $1 and m.name = 'LCP' and m.ts > $2
-        and not coalesce(s.is_bot, false) and m.route is not null
-      group by m.route
-      having count(*) >= 5
-      order by lcp_p75 desc
-      limit 3`,
-    [app, iso],
-  );
-
   // alert_event n'a pas d'app_id : il se scope via la règle (alert_rule) ou le SLO.
   const [alerts] = await q<{ total: number; critical: number }>(
     `select count(*)::int as total,
@@ -113,6 +98,23 @@ export async function gatherBriefingSignals(
   const measures = counts?.measures ?? 0;
   const snap = await perfSnapshot(app);
 
+  // Routes les plus lentes SUR LE VITAL RÉELLEMENT DÉGRADÉ (snap.worstVital),
+  // pas LCP en dur : un site peut souffrir sur FCP/INP/CLS sans que LCP bouge —
+  // classer par un vital qui va bien ne montrerait rien d'utile. having : évite
+  // le bruit d'une route avec 1-2 mesures.
+  const worstVitalName = snap.worstVital?.name ?? "LCP";
+  const topSlowRoutes = await q<{ route: string; p75: number }>(
+    `select m.route, percentile_cont(0.75) within group (order by m.value) as p75
+       from rum_metric m join rum_session s using (session_id)
+      where m.app_id = $1 and m.name = $3 and m.ts > $2
+        and not coalesce(s.is_bot, false) and m.route is not null
+      group by m.route
+      having count(*) >= 5
+      order by p75 desc
+      limit 3`,
+    [app, iso, worstVitalName],
+  );
+
   return {
     app,
     windowLabel,
@@ -126,7 +128,7 @@ export async function gatherBriefingSignals(
     sloBreached,
     healthScore: snap.healthScore,
     worstVital: snap.worstVital,
-    topSlowRoutes: topSlowRoutes.map((r) => ({ route: r.route, lcp_p75: Number(r.lcp_p75) })),
+    topSlowRoutes: topSlowRoutes.map((r) => ({ route: r.route, p75: Number(r.p75) })),
     measures,
     reliable: assessReliability(sessions, measures),
   };
