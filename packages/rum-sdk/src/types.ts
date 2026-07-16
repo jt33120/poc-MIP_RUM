@@ -66,6 +66,14 @@ export interface MIPRumConfig {
    * deux capteurs dans la console. N'affecte PAS la collecte, juste son étiquette.
    */
   collectionSource?: "sdk" | "extension";
+  /**
+   * Widget d'avis (CSAT) : false (défaut) = rien. true = charge en lazy le
+   * bouton flottant « Votre avis ? » (script mip-rum-feedback.js, même origine
+   * que ce SDK) ; l'utilisateur note 1–5 → MIPRum.track('feedback', {score}).
+   * Objet = mêmes options que window.MIPRumFeedback ({ label, accent }).
+   * Aucun script séparé à poser côté site : une ligne de config suffit.
+   */
+  feedback?: boolean | { label?: string; accent?: string };
 }
 
 export type VitalName = "LCP" | "INP" | "CLS" | "FCP" | "TTFB";
