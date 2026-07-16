@@ -1,6 +1,6 @@
 // Champs partagés création/édition d'une règle d'alerte — formulaires HTML purs.
 import { ALERT_MODES, ALERT_SEVERITIES } from "@/lib/alerting";
-import { ALERT_COMPARATORS, ALERT_METRICS, type AlertRuleRow } from "@/lib/queries-v2";
+import { ALERT_COMPARATORS, ALERT_METRICS, metricLabel, type AlertRuleRow } from "@/lib/queries-v2";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
 
 /** Champs partagés création/édition (composant serveur, formulaires HTML purs). */
@@ -28,7 +28,7 @@ export function RuleFields({
         <select name="metric" defaultValue={rule?.metric ?? "LCP"} className={INPUT_CLASS}>
           {ALERT_METRICS.map((m) => (
             <option key={m} value={m}>
-              {m}
+              {metricLabel(m)}
             </option>
           ))}
         </select>
@@ -118,7 +118,9 @@ export function RuleFields({
         />
       </Field>
       <p className="w-full text-xs text-ink-faint">
-        (seuil = mode &laquo;&nbsp;threshold&nbsp;&raquo; ; sensibilité = mode &laquo;&nbsp;baseline&nbsp;&raquo;)
+        (seuil = mode &laquo;&nbsp;threshold&nbsp;&raquo; ; sensibilité = mode &laquo;&nbsp;baseline&nbsp;&raquo;).{" "}
+        <strong>Coût IA cumulé</strong> et <strong>Logs ERROR</strong> se cumulent sur la fenêtre —
+        p.&nbsp;ex. budget IA journalier = seuil en $ avec une fenêtre de 1440&nbsp;min.
       </p>
     </>
   );

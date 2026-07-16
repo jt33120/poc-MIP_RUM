@@ -10,6 +10,7 @@ import {
   insertAlertRule,
   runCheckAlerts,
   runCheckSloBurn,
+  SLO_METRICS,
   toggleAlertRuleActive,
   updateAlertRule,
   type RuleInput,
@@ -112,8 +113,8 @@ function sloFromForm(fd: FormData): SloInput {
   const name = String(fd.get("name") ?? "").trim();
   if (!name) throw new Error("nom requis");
   const metric = String(fd.get("metric") ?? "");
-  if (!(ALERT_METRICS as readonly string[]).includes(metric)) {
-    throw new Error(`metric invalide : ${metric}`);
+  if (!(SLO_METRICS as readonly string[]).includes(metric)) {
+    throw new Error(`metric invalide pour un SLO : ${metric}`);
   }
   // Le formulaire saisit l'objectif EN % (ex. 99) → converti en fraction ]0,1[.
   const objectivePct = Number(fd.get("objective"));
