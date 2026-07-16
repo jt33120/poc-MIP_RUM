@@ -412,6 +412,13 @@ v0.3 — OpenTelemetry-natif · souverain UE
             Accéder à la console →
           </Link>
         </div>
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-line px-6 py-4 text-xs text-ink-faint">
+          <Link href="/legal/mentions" className="hover:text-ink">Mentions légales</Link>
+          <Link href="/legal/cgu" className="hover:text-ink">CGU</Link>
+          <Link href="/legal/cgv" className="hover:text-ink">CGV</Link>
+          <Link href="/legal/confidentialite" className="hover:text-ink">Confidentialité</Link>
+          <Link href="/legal/dpa" className="hover:text-ink">DPA</Link>
+        </div>
       </footer>
     </div>
   );

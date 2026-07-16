@@ -35,8 +35,11 @@ export async function middleware(req: NextRequest) {
     // tout autre lien profond -> login (bookmarks des utilisateurs connus).
     const p = req.nextUrl.pathname;
     // /presentation = vitrine ; /extension-privacy = politique de confidentialité
-    // PUBLIQUE de l'extension navigateur (URL exigée par le Chrome Web Store).
-    if (p === "/presentation" || p === "/extension-privacy") return NextResponse.next();
+    // PUBLIQUE de l'extension (URL exigée par le Chrome Web Store) ; /legal/* =
+    // documents légaux publics (mentions, CGU, CGV, confidentialité, DPA).
+    if (p === "/presentation" || p === "/extension-privacy" || p.startsWith("/legal")) {
+      return NextResponse.next();
+    }
     if (p === "/") return NextResponse.redirect(new URL("/presentation", req.url), 302);
     return NextResponse.redirect(new URL("/login", req.url), 302);
   }
