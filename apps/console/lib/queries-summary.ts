@@ -35,6 +35,27 @@ export interface SummaryAiUser {
   calls: number;
   cost_usd: number;
 }
+/** Ventilation IA par fonction (rum_ai.operation) × route. `operation` renvoyé
+ *  BRUT (valeurs métier du client, ex. extraction/scoring/draft/…) — jamais
+ *  renommé. Permet à UTI d'afficher la PERF par fonction à côté du coût. */
+export interface SummaryAiOperation {
+  operation: string | null;
+  route: string | null;
+  calls: number;
+  cost_usd: number;
+  tokens: number;
+  p75_latency_ms: number | null;
+  ttft_p75_ms: number | null;
+  error_rate: number | null;
+}
+/** Point de série journalière IA (pour superposer latence/erreurs au volume). */
+export interface SummaryAiSeriesPoint {
+  date: string; // YYYY-MM-DD
+  calls: number;
+  cost_usd: number;
+  p75_latency_ms: number | null;
+  error_rate: number | null;
+}
 export interface RumSummary {
   app: string;
   window: SummaryWindow;
@@ -57,6 +78,10 @@ export interface RumSummary {
   ai_error_rate: number | null;
   ai_by_model: SummaryAiModel[];
   ai_top_users: SummaryAiUser[];
+  /** Ventilation IA par fonction × route (perf à côté du coût). Additif. */
+  ai_by_operation: SummaryAiOperation[];
+  /** Série journalière IA (calls/coût/latence p75/taux d'erreur). Additif. */
+  ai_series: SummaryAiSeriesPoint[];
 }
 
 const iso = (v: unknown): string => (v instanceof Date ? v.toISOString() : new Date(String(v)).toISOString());
@@ -71,7 +96,8 @@ export async function rumSummary(
 ): Promise<RumSummary> {
   const p = [app, interval];
 
-  const [kpis, series, routes, errors, aiKpis, aiByModel, aiTopUsers] = await Promise.all([
+  const [kpis, series, routes, errors, aiKpis, aiByModel, aiTopUsers, aiByOperation, aiSeries] =
+    await Promise.all([
     q<{
       sessions: number;
       users: number;
@@ -179,6 +205,61 @@ export async function rumSummary(
        order by coalesce(sum(a.cost_usd), 0) desc limit 10`,
       p,
     ),
+    // Ventilation par fonction (operation) × route : perf par fonction (ce que la
+    // facturation OpenRouter n'a pas). operation gardé BRUT (valeurs métier client).
+    q<{
+      operation: string | null;
+      route: string | null;
+      calls: number;
+      cost_usd: number;
+      tokens: number;
+      p75_latency_ms: number | null;
+      ttft_p75_ms: number | null;
+      error_rate: number | null;
+    }>(
+      `select
+         operation, route,
+         count(*)::int as calls,
+         coalesce(sum(cost_usd), 0)::float8 as cost_usd,
+         coalesce(sum(total_tokens), 0)::int as tokens,
+         percentile_cont(0.75) within group (order by latency_ms)::float8 as p75_latency_ms,
+         percentile_cont(0.75) within group (order by ttft_ms) filter (where ttft_ms is not null)::float8 as ttft_p75_ms,
+         (count(*) filter (where status = 'error')::float8 / nullif(count(*), 0))::float8 as error_rate
+       from rum_ai
+       where app_id = $1 and ts > now() - $2::interval
+       group by operation, route
+       order by coalesce(sum(cost_usd), 0) desc
+       limit 100`,
+      p,
+    ),
+    // Série journalière IA : un point par jour de la fenêtre (jours creux à 0 /
+    // latence null) pour superposer latence/erreurs au volume côté UTI.
+    q<{
+      date: string;
+      calls: number;
+      cost_usd: number;
+      p75_latency_ms: number | null;
+      error_rate: number | null;
+    }>(
+      `select to_char(d::date,'YYYY-MM-DD') as date,
+              coalesce(a.calls,0)::int as calls,
+              coalesce(a.cost_usd,0)::float8 as cost_usd,
+              a.p75_latency_ms,
+              a.error_rate
+       from generate_series((now()-$2::interval)::date, now()::date, interval '1 day') d
+       left join (
+         select date_trunc('day', ts)::date dd,
+                count(*)::int calls,
+                coalesce(sum(cost_usd),0)::float8 cost_usd,
+                percentile_cont(0.75) within group (order by latency_ms)::float8 p75_latency_ms,
+                (count(*) filter (where status='error')::float8 / nullif(count(*),0))::float8 error_rate
+         from rum_ai
+         where app_id=$1 and ts>now()-$2::interval
+         group by 1
+       ) a on a.dd = d::date
+       order by d`,
+      p,
+    ),
   ]);
 
   const k = kpis[0];
@@ -207,5 +288,22 @@ export async function rumSummary(
     ai_error_rate: aiKpis[0]?.error_rate == null ? null : Math.round(aiKpis[0].error_rate * 10000) / 10000,
     ai_by_model: aiByModel,
     ai_top_users: aiTopUsers,
+    ai_by_operation: aiByOperation.map((o) => ({
+      operation: o.operation,
+      route: o.route,
+      calls: o.calls,
+      cost_usd: o.cost_usd,
+      tokens: o.tokens,
+      p75_latency_ms: n(o.p75_latency_ms),
+      ttft_p75_ms: n(o.ttft_p75_ms),
+      error_rate: o.error_rate == null ? null : Math.round(o.error_rate * 10000) / 10000,
+    })),
+    ai_series: aiSeries.map((s) => ({
+      date: s.date,
+      calls: s.calls,
+      cost_usd: s.cost_usd,
+      p75_latency_ms: n(s.p75_latency_ms),
+      error_rate: s.error_rate == null ? null : Math.round(s.error_rate * 10000) / 10000,
+    })),
   };
 }

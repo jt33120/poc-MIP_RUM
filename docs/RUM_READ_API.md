@@ -70,6 +70,18 @@ curl -s -H "Authorization: Bearer $MIP_RUM_READ_TOKEN" \
   ],
   "ai_top_users": [               // top 10 par coût décroissant (user_hash anonymisé)
     { "user_hash": "a1b2c3...", "calls": 12, "cost_usd": 0.08 }
+  ],
+  "ai_by_operation": [            // ventilation par fonction IA × route (top 100 par coût).
+                                  // `operation` renvoyé BRUT (valeurs métier du client, jamais renommé) ;
+                                  // `operation`/`route` peuvent être null (appels non catégorisés).
+    {
+      "operation": "extraction", "route": "matching/extract",
+      "calls": 194, "cost_usd": 0.8975, "tokens": 317089,
+      "p75_latency_ms": 4018.7, "ttft_p75_ms": null, "error_rate": 0
+    }
+  ],
+  "ai_series": [                  // un point par JOUR de la fenêtre (jours creux : calls 0, latence null)
+    { "date": "2026-07-14", "calls": 238, "cost_usd": 1.3675, "p75_latency_ms": 8775.6, "error_rate": 0 }
   ]
 }
 ```
@@ -90,6 +102,8 @@ Une métrique indisponible vaut **`null`** (la clé n'est jamais omise).
 | Coût IA par modèle | donut / barres | `ai_by_model[].{provider,model,cost_usd,calls,tokens}` |
 | Coût IA par utilisateur | barres classées | `ai_top_users[].{user_hash,cost_usd,calls}` |
 | Tuiles IA | KPI | `ai_calls`, `ai_tokens`, `ai_cost_usd`, `ai_p75_latency_ms`, `ai_error_rate` |
+| **Perf IA par fonction** | barres / tableau | `ai_by_operation[].{operation,route,calls,cost_usd,tokens,p75_latency_ms,ttft_p75_ms,error_rate}` |
+| **Série IA journalière** (latence sur volume) | ligne + barres | `ai_series[].date` → `calls`, `cost_usd`, `p75_latency_ms`, `error_rate` |
 
 ### Ce que `/rum/summary` ne couvre pas
 
