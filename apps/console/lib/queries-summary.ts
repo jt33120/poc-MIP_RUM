@@ -52,6 +52,20 @@ export interface SummaryAiOperation {
   anomaly: boolean;
   /** z-score du coût (null si pas en anomalie). */
   anomaly_score: number | null;
+  // --- Qualité par fonction : « cette fonction coûte cher ET déçoit » ---------
+  /** Part d'appels refusés par le modèle (status='error' + error_type de type
+   *  refus/guardrail/safety/moderation). 0..1 ; null si 0 appel. */
+  refusal_rate: number | null;
+  /** Part de régénérations : events rum_event name='ai_regenerate'
+   *  {operation, route} / appels de la fonction. 0..1 ; 0 tant qu'UTI n'émet
+   *  pas l'event (voir contrat plus bas). */
+  regen_rate: number | null;
+  /** Part de 👎 : events name='ai_feedback' {operation, route, thumb} —
+   *  down / (up+down). 0..1 ; null si aucun pouce sur la fonction. */
+  thumbs_down_rate: number | null;
+  /** CSAT des sessions ayant utilisé cette fonction (part de notes ≥ 4/5 des
+   *  feedbacks liés). 0..1 ; null si aucun feedback lié. Grain session. */
+  csat: number | null;
 }
 /** Point de série journalière IA (pour superposer latence/erreurs au volume). */
 export interface SummaryAiSeriesPoint {
@@ -101,8 +115,10 @@ export async function rumSummary(
 ): Promise<RumSummary> {
   const p = [app, interval];
 
-  const [kpis, series, routes, errors, aiKpis, aiByModel, aiTopUsers, aiByOperation, aiSeries, aiOpAnomalies] =
-    await Promise.all([
+  const [
+    kpis, series, routes, errors, aiKpis, aiByModel, aiTopUsers,
+    aiByOperation, aiSeries, aiOpAnomalies, aiRegenThumbs, aiCsatByOp,
+  ] = await Promise.all([
     q<{
       sessions: number;
       users: number;
@@ -221,6 +237,7 @@ export async function rumSummary(
       p75_latency_ms: number | null;
       ttft_p75_ms: number | null;
       error_rate: number | null;
+      refusal_rate: number | null;
     }>(
       `select
          operation, route,
@@ -229,7 +246,11 @@ export async function rumSummary(
          coalesce(sum(total_tokens), 0)::int as tokens,
          percentile_cont(0.75) within group (order by latency_ms)::float8 as p75_latency_ms,
          percentile_cont(0.75) within group (order by ttft_ms) filter (where ttft_ms is not null)::float8 as ttft_p75_ms,
-         (count(*) filter (where status = 'error')::float8 / nullif(count(*), 0))::float8 as error_rate
+         (count(*) filter (where status = 'error')::float8 / nullif(count(*), 0))::float8 as error_rate,
+         -- refus modèle : erreurs de type refus/guardrail/safety/moderation
+         (count(*) filter (where status = 'error'
+            and coalesce(error_type,'') ~* 'refus|content.?filter|guardrail|safety|moderation')::float8
+          / nullif(count(*), 0))::float8 as refusal_rate
        from rum_ai
        where app_id = $1 and ts > now() - $2::interval
        group by operation, route
@@ -279,11 +300,52 @@ export async function rumSummary(
         return [];
       }
     })(),
+    // Régénérations & pouces par fonction : events custom émis par le client
+    // (rum_event name='ai_regenerate' / 'ai_feedback', props {operation, route, thumb}).
+    // Vide tant qu'UTI ne les émet pas -> regen_rate 0 / thumbs_down_rate null.
+    q<{ operation: string | null; route: string | null; regen: number; thumb_up: number; thumb_down: number }>(
+      `select props->>'operation' as operation, props->>'route' as route,
+              count(*) filter (where name='ai_regenerate')::int as regen,
+              count(*) filter (where name='ai_feedback' and props->>'thumb'='up')::int as thumb_up,
+              count(*) filter (where name='ai_feedback' and props->>'thumb'='down')::int as thumb_down
+         from rum_event
+        where app_id=$1 and ts>now()-$2::interval and name in ('ai_regenerate','ai_feedback')
+        group by 1, 2`,
+      p,
+    ),
+    // CSAT par fonction (grain session) : sessions ayant utilisé la fonction ⋈
+    // feedback de la session. Zéro PII (scores anonymes agrégés).
+    q<{ operation: string | null; route: string | null; with_fb: number; positives: number }>(
+      `with fn_sessions as (
+         select distinct operation, route, session_id from rum_ai
+          where app_id=$1 and ts>now()-$2::interval and session_id is not null
+       ), fb as (
+         select session_id, avg((nullif(props->>'score',''))::numeric) as score
+           from rum_event
+          where app_id=$1 and name='feedback' and ts>now()-$2::interval
+            and session_id is not null and nullif(props->>'score','') is not null
+          group by session_id
+       )
+       select f.operation, f.route,
+              count(fb.session_id)::int as with_fb,
+              count(*) filter (where fb.score >= 4)::int as positives
+         from fn_sessions f join fb using (session_id)
+        group by f.operation, f.route`,
+      p,
+    ),
   ]);
 
   // Index des anomalies par clé fonction (operation|route, null -> "") pour fusion.
   const anomalyByOp = new Map<string, number | null>(
     aiOpAnomalies.map((r) => [`${r.operation ?? ""}|${r.route ?? ""}`, r.z_score]),
+  );
+  // Régénérations / pouces par fonction.
+  const rtByOp = new Map<string, { regen: number; up: number; down: number }>(
+    aiRegenThumbs.map((r) => [`${r.operation ?? ""}|${r.route ?? ""}`, { regen: r.regen, up: r.thumb_up, down: r.thumb_down }]),
+  );
+  // CSAT par fonction.
+  const csatByOp = new Map<string, { with_fb: number; positives: number }>(
+    aiCsatByOp.map((r) => [`${r.operation ?? ""}|${r.route ?? ""}`, { with_fb: r.with_fb, positives: r.positives }]),
   );
 
   const k = kpis[0];
@@ -315,6 +377,16 @@ export async function rumSummary(
     ai_by_operation: aiByOperation.map((o) => {
       const key = `${o.operation ?? ""}|${o.route ?? ""}`;
       const z = anomalyByOp.has(key) ? anomalyByOp.get(key)! : null;
+      const rt = rtByOp.get(key);
+      const cs = csatByOp.get(key);
+      const round4 = (v: number | null | undefined) => (v == null ? null : Math.round(v * 10000) / 10000);
+      // regen_rate : régénérations / appels (0 tant qu'UTI n'émet pas l'event).
+      const regenRate = o.calls > 0 ? (rt?.regen ?? 0) / o.calls : null;
+      // thumbs_down_rate : down / (up+down) ; null si aucun pouce.
+      const thumbs = (rt?.up ?? 0) + (rt?.down ?? 0);
+      const thumbsDownRate = thumbs > 0 ? (rt?.down ?? 0) / thumbs : null;
+      // csat : positives / feedbacks liés ; null si aucun feedback lié.
+      const csat = cs && cs.with_fb > 0 ? cs.positives / cs.with_fb : null;
       return {
         operation: o.operation,
         route: o.route,
@@ -323,9 +395,13 @@ export async function rumSummary(
         tokens: o.tokens,
         p75_latency_ms: n(o.p75_latency_ms),
         ttft_p75_ms: n(o.ttft_p75_ms),
-        error_rate: o.error_rate == null ? null : Math.round(o.error_rate * 10000) / 10000,
+        error_rate: round4(o.error_rate),
         anomaly: anomalyByOp.has(key),
         anomaly_score: n(z),
+        refusal_rate: round4(o.refusal_rate),
+        regen_rate: round4(regenRate),
+        thumbs_down_rate: round4(thumbsDownRate),
+        csat: round4(csat),
       };
     }),
     ai_series: aiSeries.map((s) => ({
