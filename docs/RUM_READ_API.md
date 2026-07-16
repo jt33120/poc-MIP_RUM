@@ -79,7 +79,12 @@ curl -s -H "Authorization: Bearer $MIP_RUM_READ_TOKEN" \
       "calls": 194, "cost_usd": 0.8975, "tokens": 317089,
       "p75_latency_ms": 4018.7, "ttft_p75_ms": null, "error_rate": 0,
       "anomaly": false,          // true si coût 24 h anormal (z > 3) vs baseline journalière
-      "anomaly_score": null      // z-score du coût (null hors anomalie). Détection auto, sans seuil.
+      "anomaly_score": null,     // z-score du coût (null hors anomalie). Détection auto, sans seuil.
+      // --- qualité par fonction (« coûte cher ET déçoit ») : 0..1, null si non mesurable ---
+      "refusal_rate": 0,         // part d'appels refusés par le modèle (error_type refus/guardrail/safety)
+      "regen_rate": 0,           // régénérations / appels — 0 tant qu'UTI n'émet pas l'event (cf. § Signaux qualité)
+      "thumbs_down_rate": null,  // 👎 / (👍+👎) — null si aucun pouce
+      "csat": null               // CSAT des sessions ayant utilisé la fonction (notes ≥ 4/5), null si aucun feedback
     }
   ],
   "ai_series": [                  // un point par JOUR de la fenêtre (jours creux : calls 0, latence null)
@@ -105,7 +110,31 @@ Une métrique indisponible vaut **`null`** (la clé n'est jamais omise).
 | Coût IA par utilisateur | barres classées | `ai_top_users[].{user_hash,cost_usd,calls}` |
 | Tuiles IA | KPI | `ai_calls`, `ai_tokens`, `ai_cost_usd`, `ai_p75_latency_ms`, `ai_error_rate` |
 | **Perf IA par fonction** | barres / tableau | `ai_by_operation[].{operation,route,calls,cost_usd,tokens,p75_latency_ms,ttft_p75_ms,error_rate}` |
+| **Anomalie coût par fonction** | badge / tri | `ai_by_operation[].{anomaly,anomaly_score}` (z-score du coût 24 h vs baseline) |
+| **Qualité par fonction** (« coûte cher ET déçoit ») | tableau croisé coût×qualité | `ai_by_operation[].{refusal_rate,regen_rate,thumbs_down_rate,csat}` |
 | **Série IA journalière** (latence sur volume) | ligne + barres | `ai_series[].date` → `calls`, `cost_usd`, `p75_latency_ms`, `error_rate` |
+
+### Signaux qualité IA — ce que le client doit émettre pour peupler `regen_rate` / `thumbs_down_rate`
+
+`refusal_rate` et `csat` se calculent **sans instrumentation supplémentaire** (à partir des
+`error_type` des appels et des feedbacks `MIPRum.track('feedback', {score})` déjà en place).
+En revanche `regen_rate` et `thumbs_down_rate` restent à **0 / null** tant que le client
+n'émet pas ces deux events custom (ils atterrissent en `rum_event`, corrélés à la fonction
+par `operation` + `route` dans les `props`) :
+
+```js
+// à l'appui sur « régénérer » d'une réponse IA
+MIPRum.track('ai_regenerate', { operation: 'draft', route: 'ao/draft' });
+
+// à un pouce 👍 / 👎 sur une réponse IA
+MIPRum.track('ai_feedback', { operation: 'draft', route: 'ao/draft', thumb: 'down' }); // 'up' | 'down'
+```
+
+- `operation`/`route` **doivent matcher** ceux des appels LLM (mêmes valeurs que `rum_ai`),
+  sinon l'attribution par fonction ne se fait pas.
+- `refusal_rate` = part d'appels dont `error_type` matche `refus|content_filter|guardrail|safety|moderation`
+  (insensible à la casse) — émettre l'`error_type` en conséquence pour qu'il compte.
+- Toutes les valeurs qualité sont des **fractions 0..1** (comme `error_rate`), `null` si non mesurable.
 
 ### Ce que `/rum/summary` ne couvre pas
 
