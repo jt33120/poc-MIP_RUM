@@ -213,8 +213,33 @@ export async function errorGroupDetail(
 // Alerting (alert_rule / alert_event / check_alerts)
 // ---------------------------------------------------------------------------
 
-export const ALERT_METRICS = ["LCP", "INP", "CLS", "FCP", "TTFB", "error_rate"] as const;
+// Métriques éligibles comme CIBLE DE SLO : uniquement celles qui ont un sens
+// « % de mesures conformes » (vitals + taux d'erreur). Un coût/compte absolu
+// n'entre pas dans ce modèle -> exclu des SLO.
+export const SLO_METRICS = ["LCP", "INP", "CLS", "FCP", "TTFB", "error_rate"] as const;
+
+// Métriques éligibles comme RÈGLE D'ALERTE : les métriques SLO + deux métriques
+// opérationnelles absolues (budget IA, pics d'erreurs applicatives) évaluées par
+// check_alerts (migration-v38).
+export const ALERT_METRICS = [...SLO_METRICS, "ai_cost", "log_errors"] as const;
 export const ALERT_COMPARATORS = [">", "<"] as const;
+
+/** Libellé lisible + unité d'une métrique d'alerte/SLO (dropdowns, feed d'événements). */
+export const METRIC_LABELS: Record<string, string> = {
+  LCP: "LCP (ms)",
+  INP: "INP (ms)",
+  CLS: "CLS",
+  FCP: "FCP (ms)",
+  TTFB: "TTFB (ms)",
+  error_rate: "Taux d'erreur JS",
+  ai_cost: "Coût IA cumulé ($)",
+  log_errors: "Logs ERROR (nombre)",
+};
+
+/** Libellé d'une métrique (repli : la clé brute si inconnue). */
+export function metricLabel(metric: string): string {
+  return METRIC_LABELS[metric] ?? metric;
+}
 
 export interface AlertRuleRow {
   id: number;

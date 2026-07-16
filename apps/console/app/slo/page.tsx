@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Gauge, type GaugeTone } from "@/components/charts/Gauge";
-import { ALERT_METRICS, parseFilters, type SearchParams } from "@/lib/queries-v2";
+import { metricLabel, parseFilters, SLO_METRICS, type SearchParams } from "@/lib/queries-v2";
 import { registeredApps } from "@/lib/queries";
 import { listSlo, sloStatus } from "@/lib/queries-alerting";
 import { createSloAction } from "../alerts/actions";
@@ -102,9 +102,9 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
           </Field>
           <Field label="Métrique">
             <select name="metric" defaultValue="LCP" className={INPUT_CLASS}>
-              {ALERT_METRICS.map((m) => (
+              {SLO_METRICS.map((m) => (
                 <option key={m} value={m}>
-                  {m}
+                  {metricLabel(m)}
                 </option>
               ))}
             </select>
