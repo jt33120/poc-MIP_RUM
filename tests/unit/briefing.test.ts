@@ -3,6 +3,7 @@ import {
   assessReliability,
   briefingUserPrompt,
   buildChecklist,
+  buildStats,
   deriveStatus,
   deterministicBriefing,
   parseBriefing,
@@ -112,66 +113,89 @@ describe("briefingUserPrompt", () => {
   });
 });
 
+describe("buildStats", () => {
+  it("extrait les chiffres bruts des signaux (aucune derivation)", () => {
+    const s = buildStats({ ...base, sessions: 247, errors: 12, healthScore: 77, worstVital: { name: "FCP", p75: 5010 } });
+    expect(s).toEqual({ sessions: 247, errors: 12, healthScore: 77, worstVital: { name: "FCP", p75: 5010 } });
+  });
+});
+
 describe("buildChecklist", () => {
-  it("vide quand tout va bien (aucun lien à proposer)", () => {
+  it("vide quand tout va bien (aucun lien a proposer)", () => {
     expect(buildChecklist(base, base.app)).toEqual([]);
   });
 
-  it("alertes critiques -> lien /alerts scopé à l'app", () => {
+  it("alertes critiques -> lien /alerts scope a l'app", () => {
     const items = buildChecklist({ ...base, criticalAlerts: 2 }, "gip-plateforme");
-    expect(items).toEqual([{ label: "2 alerte(s) critique(s)", href: "/alerts?app=gip-plateforme" }]);
+    expect(items).toEqual([{ label: "2 alerte(s) critique(s)", href: "/alerts?app=gip-plateforme", kind: "alert" }]);
   });
 
-  it("SLO en dépassement -> lien /slo", () => {
+  it("SLO en depassement -> lien /slo", () => {
     const items = buildChecklist({ ...base, sloBreached: 1 }, "acme");
-    expect(items).toContainEqual({ label: "1 SLO en dépassement de budget", href: "/slo?app=acme" });
+    expect(items).toContainEqual({ label: "1 SLO en dépassement de budget", href: "/slo?app=acme", kind: "slo" });
   });
 
   it("erreur avec fingerprint -> lien direct /errors/[fingerprint]", () => {
     const items = buildChecklist(
-      { ...base, topErrors: [{ type: "TypeError", message: "", count: 8, fingerprint: "abc123" }] },
+      { ...base, errors: 8, topErrors: [{ type: "TypeError", message: "", count: 8, fingerprint: "abc123" }] },
       "acme",
     );
-    expect(items).toContainEqual({ label: "TypeError (8×)", href: "/errors/abc123?app=acme" });
+    expect(items).toContainEqual({ label: "TypeError (8×)", href: "/errors/abc123?app=acme", kind: "error" });
   });
 
-  it("erreur SANS fingerprint (legacy) -> aucun lien halluciné", () => {
-    const items = buildChecklist({ ...base, topErrors: [{ type: "Error", message: "", count: 3 }] }, "acme");
-    expect(items).toEqual([]);
+  it("erreur SANS fingerprint mais erreurs presentes -> repli lien generique /errors", () => {
+    const items = buildChecklist(
+      { ...base, errors: 3, topErrors: [{ type: "Error", message: "", count: 3 }] },
+      "acme",
+    );
+    expect(items).toEqual([{ label: "3 erreur(s)", href: "/errors?app=acme", kind: "error" }]);
   });
 
-  it("routes lentes -> une entrée par route, SEULEMENT si santé dégradée et échantillon fiable", () => {
+  it("aucune erreur du tout -> pas de lien erreur", () => {
+    expect(buildChecklist({ ...base, errors: 0, topErrors: [] }, "acme")).toEqual([]);
+  });
+
+  it("routes lentes -> classees sur le VITAL DEGRADE (worstVital), pas LCP en dur", () => {
     const degraded = {
       ...base,
       healthScore: 60,
-      topSlowRoutes: [{ route: "/checkout", lcp_p75: 3200 }, { route: "/panier", lcp_p75: 2900 }],
+      worstVital: { name: "FCP", p75: 5010 },
+      topSlowRoutes: [{ route: "/checkout", p75: 3200 }, { route: "/panier", p75: 2900 }],
     };
     const items = buildChecklist(degraded, "acme");
     expect(items).toHaveLength(2);
-    expect(items[0]).toEqual({ label: "/checkout — LCP p75 3 200 ms", href: "/pages?app=acme" });
-    expect(items[1]).toEqual({ label: "/panier — LCP p75 2 900 ms", href: "/pages?app=acme" });
-    // santé bonne -> pas de routes proposées même si topSlowRoutes est rempli
+    expect(items[0]).toEqual({ label: "/checkout — FCP p75 3 200 ms", href: "/pages?app=acme", kind: "perf" });
+    expect(items[1]).toEqual({ label: "/panier — FCP p75 2 900 ms", href: "/pages?app=acme", kind: "perf" });
     expect(buildChecklist({ ...base, healthScore: 95, topSlowRoutes: degraded.topSlowRoutes }, "acme")).toEqual([]);
-    // échantillon non fiable -> pas de conclusion perf, donc pas de routes
     expect(buildChecklist({ ...degraded, reliable: false }, "acme")).toEqual([]);
   });
 
-  it("portail (app=null) : chaque erreur utilise SON appId propre, pas un lien global", () => {
+  it("sante degradee SANS route au-dessus du seuil -> repli lien sante generique (jamais vide)", () => {
+    const items = buildChecklist(
+      { ...base, healthScore: 60, worstVital: { name: "LCP", p75: 3100 }, topSlowRoutes: [] },
+      "acme",
+    );
+    expect(items).toEqual([{ label: "Score de santé 60/100 (LCP dégradé)", href: "/pages?app=acme", kind: "perf" }]);
+  });
+
+  it("portail (app=null) : chaque erreur utilise SON appId propre", () => {
     const items = buildChecklist(
       {
         ...base,
+        errors: 5,
         topErrors: [{ type: "TypeError", message: "", count: 5, fingerprint: "xyz", appId: "gip-plateforme" }],
       },
       null,
     );
-    expect(items).toEqual([{ label: "TypeError (5×)", href: "/errors/xyz?app=gip-plateforme" }]);
+    expect(items).toEqual([{ label: "TypeError (5×)", href: "/errors/xyz?app=gip-plateforme", kind: "error" }]);
   });
 
-  it("plafonne à 5 entrées", () => {
+  it("plafonne a 5 entrees", () => {
     const many = {
       ...base,
       criticalAlerts: 1,
       sloBreached: 1,
+      errors: 4,
       topErrors: [
         { type: "A", message: "", count: 1, fingerprint: "f1" },
         { type: "B", message: "", count: 1, fingerprint: "f2" },
