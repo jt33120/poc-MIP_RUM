@@ -15,8 +15,10 @@ import {
   aiByModel,
   aiByRoute,
   aiDaily,
+  aiErrorBreakdown,
   aiGovernance,
   aiOverview,
+  aiSatisfaction,
   recentAiCalls,
 } from "@/lib/queries-ai";
 import { parseFilters, periodLabel, type SearchParams } from "@/lib/queries-v2";
@@ -29,20 +31,34 @@ export default async function PerformanceIA({
   searchParams?: Promise<SearchParams>;
 }) {
   const f = parseFilters(await searchParams);
-  const [overview, byModel, byRoute, daily, recent, governance] = await Promise.all([
-    aiOverview(f),
-    aiByModel(f),
-    aiByRoute(f),
-    aiDaily(f),
-    recentAiCalls(f),
-    aiGovernance(f),
-  ]);
+  const [overview, byModel, byRoute, daily, recent, governance, satisfaction, aiErrors] =
+    await Promise.all([
+      aiOverview(f),
+      aiByModel(f),
+      aiByRoute(f),
+      aiDaily(f),
+      recentAiCalls(f),
+      aiGovernance(f),
+      aiSatisfaction(f),
+      aiErrorBreakdown(f),
+    ]);
 
   const empty = overview.calls === 0;
   // Appels exposant de la donnée personnelle non (ou mal) pseudonymisée.
   const piiRiskCalls = governance
     .filter((g) => isPiiRisk(catalogFor(g.route)))
     .reduce((n, g) => n + g.calls, 0);
+
+  // Qualité IA ↔ satisfaction : CSAT (part de notes ≥ 4) des sessions AVEC IA
+  // vs SANS IA. Le différenciateur — relier la dépense/fiabilité LLM au ressenti.
+  const segAi = satisfaction.find((s) => s.used_ai);
+  const segNoAi = satisfaction.find((s) => !s.used_ai);
+  const csatOf = (s?: { sessions: number; positives: number }) =>
+    s && s.sessions > 0 ? s.positives / s.sessions : null;
+  const csatAi = csatOf(segAi);
+  const csatNoAi = csatOf(segNoAi);
+  const csatDelta = csatAi != null && csatNoAi != null ? csatAi - csatNoAi : null;
+  const hasFeedback = (segAi?.sessions ?? 0) + (segNoAi?.sessions ?? 0) > 0;
 
   return (
     <div className="animate-fade-up">
@@ -104,6 +120,88 @@ export default async function PerformanceIA({
               et par route dans les tables ci-dessous.
             </HeroReading>
           </SupervisionHero>
+
+          {/* ----- Qualité perçue (IA ↔ satisfaction) & fiabilité ----- */}
+          <section className="mt-8 grid gap-4 lg:grid-cols-2">
+            {/* Satisfaction : CSAT des sessions AVEC IA vs SANS IA */}
+            <div className="card p-5">
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                Satisfaction ↔ IA
+              </h2>
+              <p className="mt-1 text-xs text-ink-faint">
+                Part de retours positifs (note ≥ 4/5) des sessions qui ont déclenché l&apos;IA, comparée
+                aux sessions sans IA. Le pont coût/fiabilité → ressenti réel.
+              </p>
+              {hasFeedback ? (
+                <>
+                  <div className="mt-4 grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-ai">
+                        Avec IA
+                      </div>
+                      <div className="mt-0.5 text-2xl font-bold tabular-nums text-ink">
+                        {csatAi != null ? fmtPct(csatAi) : "—"}
+                      </div>
+                      <div className="text-[11px] text-ink-faint">{segAi?.sessions ?? 0} session(s)</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+                        Sans IA
+                      </div>
+                      <div className="mt-0.5 text-2xl font-bold tabular-nums text-ink">
+                        {csatNoAi != null ? fmtPct(csatNoAi) : "—"}
+                      </div>
+                      <div className="text-[11px] text-ink-faint">{segNoAi?.sessions ?? 0} session(s)</div>
+                    </div>
+                  </div>
+                  {csatDelta != null && (
+                    <p
+                      className={`mt-3 border-t border-line pt-3 text-xs ${
+                        csatDelta <= -0.02 ? "text-bad" : csatDelta >= 0.02 ? "text-good" : "text-ink-soft"
+                      }`}
+                    >
+                      {csatDelta <= -0.02
+                        ? `Les sessions avec IA sont ${Math.abs(Math.round(csatDelta * 100))} pt(s) MOINS satisfaites — à investiguer (latence, erreurs, pertinence).`
+                        : csatDelta >= 0.02
+                          ? `Les sessions avec IA sont ${Math.round(csatDelta * 100)} pt(s) plus satisfaites.`
+                          : "Pas d'écart de satisfaction notable entre sessions avec et sans IA."}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="mt-4 rounded-lg border border-line bg-panel2 px-3 py-2 text-xs text-ink-soft">
+                  Pas encore de feedback sur la période — la corrélation apparaît dès que le widget d&apos;avis
+                  (<code className="chip-mono">MIPRum.track(&apos;feedback&apos;)</code>) collecte des retours.
+                </p>
+              )}
+            </div>
+
+            {/* Fiabilité : répartition des échecs par type (timeout, refus, quota…) */}
+            <div className="card p-5">
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                Fiabilité — échecs par type
+              </h2>
+              <p className="mt-1 text-xs text-ink-faint">
+                Ce qui casse concrètement sur les appels LLM (au-delà du seul taux d&apos;erreur).
+              </p>
+              {aiErrors.length ? (
+                <ul className="mt-4 flex flex-col gap-2">
+                  {aiErrors.map((e, i) => (
+                    <li key={i} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="font-mono text-xs text-ink">{e.error_type}</span>
+                      <span className="tabular-nums font-semibold text-bad">
+                        {e.calls.toLocaleString("fr-FR")}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-4 rounded-lg border border-good/30 bg-good/5 px-3 py-2 text-xs text-good">
+                  Aucun appel LLM en erreur sur la période.
+                </p>
+              )}
+            </div>
+          </section>
 
           {/* ----- Gouvernance des données ----- */}
           <div className="card mt-8 overflow-hidden">
