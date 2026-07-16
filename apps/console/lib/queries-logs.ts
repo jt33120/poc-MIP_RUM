@@ -75,6 +75,58 @@ export async function logSeverityCounts(f: Filters): Promise<Record<string, numb
   return out;
 }
 
+/** Anomalie de volume de logs ERROR (z-score horaire vs 7 j) sur les dernières
+ *  24 h. Lit la vue v_log_anomaly (migration-v37). Dégrade proprement à [] si la
+ *  vue est absente (local/CI) — même pattern fail-soft que health.ts/v_anomaly. */
+export interface LogAnomalyRow {
+  app_id: string;
+  bucket: Date;
+  errors: number;
+  mean_7d: number;
+  z_score: number;
+}
+export async function logAnomalies(f: Filters): Promise<LogAnomalyRow[]> {
+  try {
+    return await q<LogAnomalyRow>(
+      `select app_id, bucket, errors::int as errors, mean_7d::float as mean_7d, z_score::float as z_score
+         from v_log_anomaly
+        where bucket > now() - interval '24 hours'
+          and ($1 = 'all' or app_id = $1)
+        order by z_score desc, bucket desc
+        limit 20`,
+      [f.app],
+    );
+  } catch {
+    return []; // vue absente (env local/CI) -> pas d'anomalies plutôt qu'une erreur
+  }
+}
+
+/** Routes les plus « bruyantes » (par volume d'erreurs/warnings) sur la fenêtre —
+ *  métrique dérivée des logs pour repérer d'où vient le bruit applicatif. */
+export interface LogRouteRow {
+  route: string;
+  errors: number;
+  warns: number;
+  total: number;
+}
+export async function logsByRoute(f: Filters): Promise<LogRouteRow[]> {
+  return q<LogRouteRow>(
+    `select coalesce(nullif(route, ''), '(sans route)') as route,
+            count(*) filter (where severity_num >= 17)::int as errors,
+            count(*) filter (where severity_num >= 13 and severity_num < 17)::int as warns,
+            count(*)::int as total
+       from rum_log
+      where ($1 = 'all' or app_id = $1)
+        and ts > now() - $2::interval
+        and route is not null
+      group by 1
+      having count(*) filter (where severity_num >= 13) > 0  -- au moins un warn/error
+      order by errors desc, total desc
+      limit 10`,
+    [f.app, periodInterval(f)],
+  );
+}
+
 /** Volume horaire sur 24 h, empilé error/warn/autres -> 3 tableaux de 24 buckets. */
 export async function logVolumeByHour(
   f: Filters,
