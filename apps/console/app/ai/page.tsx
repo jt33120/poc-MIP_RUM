@@ -49,12 +49,7 @@ export default async function PerformanceIA({
       <PageHeader
         title="Performance IA"
         domain="ai"
-        sub={
-          <>
-            Chaque appel LLM du backend, rattaché à la session RUM qui l'a déclenché · fenêtre{" "}
-            {periodLabel(f)}
-          </>
-        }
+        sub="Chaque appel LLM du backend, rattaché à la session RUM qui l'a déclenché."
       />
 
       {empty ? (

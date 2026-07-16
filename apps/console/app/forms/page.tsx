@@ -36,12 +36,7 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
     <div className="animate-fade-up">
       <PageHeader
         title="Formulaires"
-        sub={
-          <>
-            Analyse des formulaires au niveau du champ — conversion, abandon et temps par champ ·
-            fenêtre {period.label}. Aucune valeur saisie n&apos;est collectée.
-          </>
-        }
+        sub="Analyse des formulaires au niveau du champ — conversion, abandon et temps par champ. Aucune valeur saisie n'est collectée."
       />
 
       {!forms.length ? (

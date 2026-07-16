@@ -66,12 +66,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
     <div className="animate-fade-up">
       <PageHeader
         title="Logs"
-        sub={
-          <>
-            Logs applicatifs (3ᵉ signal OpenTelemetry) — SDK, extension, backend, syslog — corrélés aux
-            traces · fenêtre {periodLabel(f)}
-          </>
-        }
+        sub="Logs applicatifs (3ᵉ signal OpenTelemetry) — SDK, extension, backend, syslog — corrélés aux traces."
       />
 
       <SupervisionHero

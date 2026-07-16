@@ -33,12 +33,7 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
     <div className="animate-fade-up">
       <PageHeader
         title="Parcours"
-        sub={
-          <>
-            Comment les visiteurs circulent entre les routes — pages d&apos;entrée et de sortie,
-            transitions les plus fréquentes (recharges exclues) · fenêtre {period.label}
-          </>
-        }
+        sub="Comment les visiteurs circulent entre les routes — pages d'entrée et de sortie, transitions les plus fréquentes (recharges exclues)."
       />
 
       {/* Hero : le flux de navigation (Sankey) est le graphe signature de la page. */}

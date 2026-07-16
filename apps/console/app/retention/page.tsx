@@ -30,12 +30,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
     <div className="animate-fade-up">
       <PageHeader
         title="Rétention"
-        sub={
-          <>
-            Part des utilisateurs (user_hash anonymisé) qui reviennent, par cohorte de première
-            activité hebdomadaire · {weeks} dernières semaines
-          </>
-        }
+        sub="Part des utilisateurs (user_hash anonymisé) qui reviennent, par cohorte de première activité hebdomadaire."
       />
 
       <div className="mb-4 flex items-center gap-2 text-xs">

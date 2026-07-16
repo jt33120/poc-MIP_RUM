@@ -30,7 +30,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
         sub={
           <>
             Taux de conversion par objectif (page vue ou événement atteint au moins une fois par
-            session) · {total.toLocaleString("fr-FR")} session(s) sur {period.label}
+            session) · {total.toLocaleString("fr-FR")} session(s)
           </>
         }
       />

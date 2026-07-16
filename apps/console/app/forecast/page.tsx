@@ -104,8 +104,8 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
         help="forecast"
         sub={
           <>
-            Projection linéaire des indicateurs clés sur 14 jours — anticiper la dérive <em>avant</em>{" "}
-            l&apos;incident, en complément des anomalies (réactives) et du burn-rate SLO
+            Anticiper la dérive <em>avant</em> l&apos;incident, en complément des anomalies (réactives) et
+            du burn-rate SLO
           </>
         }
       />
@@ -138,7 +138,6 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
           return (
             <SupervisionHero
               chartTitle="LCP p75 — réel + projection à J+3"
-              chartHelp="forecast"
               chart={
                 <ForecastChart
                   data={chartData}

@@ -25,16 +25,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
 
   return (
     <div className="animate-fade-up">
-      <PageHeader
-        title="Tracing front → back"
-        help="tracing"
-        sub={
-          <>
-            Chaque appel API du navigateur est corrélé à son exécution serveur par trace_id (W3C
-            traceparent) · fenêtre {period.label}
-          </>
-        }
-      />
+      <PageHeader title="Tracing front → back" help="tracing" />
 
       {(() => {
         // Hero : décomposition de la latence perçue par appel — part serveur

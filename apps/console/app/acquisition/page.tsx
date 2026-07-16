@@ -39,12 +39,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
     <div className="animate-fade-up">
       <PageHeader
         title="Acquisition"
-        sub={
-          <>
-            D&apos;où viennent les visiteurs — canal d&apos;entrée (direct, recherche, social, référent)
-            et sites référents · fenêtre {period.label}
-          </>
-        }
+        sub="D'où viennent les visiteurs — canal d'entrée (direct, recherche, social, référent) et sites référents."
       />
 
       {!total ? (
