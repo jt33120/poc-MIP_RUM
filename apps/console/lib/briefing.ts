@@ -16,7 +16,17 @@ export interface BriefingSignals {
   errors: number;
   /** Groupes d'erreurs apparus DANS la fenêtre (régressions). */
   newErrorGroups: number;
-  topErrors: { type: string; message: string; count: number }[];
+  topErrors: {
+    type: string;
+    message: string;
+    count: number;
+    /** Empreinte du groupe (rum_error.fingerprint) — permet un lien direct vers
+     *  /errors/[fingerprint]. Absente pour les erreurs pré-fingerprint (v0.1). */
+    fingerprint?: string | null;
+    /** App propriétaire de ce groupe — seulement rempli en vue PORTAIL (toutes
+     *  apps confondues) ; en vue par-app, l'app appelante fait foi. */
+    appId?: string | null;
+  }[];
   /** Alertes déclenchées dans la fenêtre. */
   alerts: number;
   criticalAlerts: number;
@@ -25,6 +35,9 @@ export interface BriefingSignals {
   /** Score de santé 0..100 (null si pas de mesure). */
   healthScore: number | null;
   worstVital: { name: string; p75: number } | null;
+  /** Routes les plus lentes (LCP p75) sur la fenêtre — vue par-app uniquement
+   *  (une route n'a de sens qu'au sein d'une même app). */
+  topSlowRoutes?: { route: string; lcp_p75: number }[];
   /** Nombre de mesures (rum_metric) sur la fenêtre — sert à juger la fiabilité. */
   measures?: number;
   /** Échantillon suffisant pour des conclusions de performance fiables ?
@@ -48,12 +61,57 @@ function isReliable(s: BriefingSignals): boolean {
   return s.reliable !== false;
 }
 
+export interface ChecklistItem {
+  /** Libellé lisible (ex. « /checkout — LCP p75 3 200 ms », « TypeError (8×) »). */
+  label: string;
+  /** Page console où vérifier concrètement le point signalé. */
+  href: string;
+}
+
 export interface BriefingResult {
   status: BriefingStatus;
   headline: string;
   bullets: string[];
   focus: string | null;
+  /** Liens cliquables « à checker », TOUJOURS calculés depuis les signaux
+   *  mesurés (jamais depuis le texte du LLM) — même principe anti-hallucination
+   *  que l'assistant IA (lib/assistant.ts) : le texte explique, les liens
+   *  pointent vers de vraies pages construites par nous. */
+  checklist: ChecklistItem[];
   source: "ai" | "deterministic";
+}
+
+/** Construit la liste cliquable « à regarder en priorité », déterministe :
+ *  alertes/SLO en premier (faits durs), puis les groupes d'erreurs identifiés
+ *  (fingerprint), puis les routes les plus lentes SI la santé est dégradée sur
+ *  un échantillon fiable. Plafonnée pour rester lisible dans la carte. */
+export function buildChecklist(s: BriefingSignals, app: string | null): ChecklistItem[] {
+  const qs = (a?: string | null) => {
+    const eff = a ?? app;
+    return eff ? `?app=${encodeURIComponent(eff)}` : "";
+  };
+  const items: ChecklistItem[] = [];
+
+  if (s.criticalAlerts > 0 || s.alerts > 0) {
+    items.push({
+      label: s.criticalAlerts > 0 ? `${s.criticalAlerts} alerte(s) critique(s)` : `${s.alerts} alerte(s) déclenchée(s)`,
+      href: `/alerts${qs()}`,
+    });
+  }
+  if (s.sloBreached > 0) {
+    items.push({ label: `${s.sloBreached} SLO en dépassement de budget`, href: `/slo${qs()}` });
+  }
+  for (const e of s.topErrors) {
+    if (e.fingerprint) {
+      items.push({ label: `${e.type} (${e.count}×)`, href: `/errors/${encodeURIComponent(e.fingerprint)}${qs(e.appId)}` });
+    }
+  }
+  if (isReliable(s) && s.healthScore != null && s.healthScore < 80) {
+    for (const r of s.topSlowRoutes ?? []) {
+      items.push({ label: `${r.route} — LCP p75 ${Math.round(r.lcp_p75).toLocaleString("fr-FR")} ms`, href: `/pages${qs()}` });
+    }
+  }
+  return items.slice(0, 5);
 }
 
 /** Statut global déduit des signaux (règles explicites, sans LLM).
@@ -126,7 +184,10 @@ export function deterministicBriefing(s: BriefingSignals): BriefingResult {
 
   // Sur trafic insuffisant sans incident dur, ne pas clamer « Tout est au vert ».
   const headline = !rel && status === "ok" ? "Trop peu de trafic pour conclure" : HEADLINE[status];
-  return { status, headline, bullets, focus, source: "deterministic" };
+  // checklist : placeholder ici (pas d'accès à `app` dans cette fonction pure) —
+  // /api/briefing l'écrase TOUJOURS via buildChecklist(signals, app), que la
+  // source finale soit déterministe ou IA. Seule source de vérité pour les liens.
+  return { status, headline, bullets, focus, checklist: [], source: "deterministic" };
 }
 
 export const BRIEFING_SYSTEM = `Tu es l'assistant de supervision de MIP RUM (Real User Monitoring souverain UE).
@@ -180,5 +241,6 @@ export function parseBriefing(raw: string): BriefingResult | null {
   if (!bullets.length) return null;
   const headline = typeof o.headline === "string" && o.headline.trim() ? o.headline.trim() : HEADLINE[status];
   const focus = typeof o.focus === "string" && o.focus.trim() ? o.focus.trim() : null;
-  return { status, headline, bullets, focus, source: "ai" };
+  // checklist : idem deterministicBriefing, toujours recalculée par l'appelant.
+  return { status, headline, bullets, focus, checklist: [], source: "ai" };
 }
