@@ -2,37 +2,43 @@
 // Même contrat que apps/ingest/replay-dev-server.mjs (en-têtes x-mip-*) :
 // corps stocké COMPRESSÉ, gunzip de contrôle pour events_count.
 // bytea via PostgREST : la colonne attend l'encodage hex '\x…'.
+//
+// Sécurité (parité v1-traces) : cet endpoint appliquait AUCUNE auth — n'importe
+// qui pouvait POSTer des chunks ET créer des sessions pour n'importe quel app_id.
+// Il partage désormais l'auth de v1-traces (_shared/auth.mjs) : app inconnue/inactive
+// rejetée, clé exigée pour les apps qui en ont une (keyless toléré, continuité),
+// rate limit par app. La clé arrive dans l'en-tête x-mip-key (replay = fetch, qui
+// porte des en-têtes — contrairement au beacon OTLP qui passe par un attribut).
 // @ts-nocheck deno runtime
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders as buildCors, REPLAY_ALLOW_HEADERS } from "../_shared/cors.mjs";
+import { createAuth } from "../_shared/auth.mjs";
+import { createLogger } from "../_shared/log.mjs";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024; // garde-fou > cap SDK (1 Mo gzip/session)
+const REQUIRE_API_KEY = (Deno.env.get("REQUIRE_API_KEY") ?? "false") === "true";
+const RATE_LIMIT_PER_MIN = Number(Deno.env.get("RATE_LIMIT_PER_MIN") ?? "600");
 
+const log = createLogger("v1-replay");
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
+const auth = createAuth(supabase, {
+  requireApiKey: REQUIRE_API_KEY,
+  rateLimitPerMin: RATE_LIMIT_PER_MIN,
+  log,
+});
 
-let dbOrigins: Set<string> = new Set();
-let dbOriginsLoadedAt = 0;
-
-async function getDbOrigins(): Promise<Set<string>> {
-  if (Date.now() - dbOriginsLoadedAt < 60_000 && dbOrigins.size) return dbOrigins;
-  const { data, error } = await supabase
-    .from("app_registry")
-    .select("allowed_origins, active");
-  if (!error && data) {
-    dbOrigins = new Set(
-      data.filter((r) => r.active).flatMap((r) => r.allowed_origins ?? []),
-    );
-    dbOriginsLoadedAt = Date.now();
-  }
-  return dbOrigins;
-}
-
-// En-têtes CORS (règles partagées _shared/cors.mjs) + en-têtes replay x-mip-*
+// Origines CORS = origines des apps actives (registre partagé avec l'auth, un seul
+// chargement/cache). x-mip-* ajoutés aux en-têtes autorisés (POST fetch du SDK).
 async function corsHeaders(origin: string): Promise<Record<string, string>> {
-  return buildCors(origin, [...(await getDbOrigins())], { allowHeaders: REPLAY_ALLOW_HEADERS });
+  const registry = await auth.getAppRegistry();
+  const origins: string[] = [];
+  for (const app of registry.values()) {
+    if (app?.active && Array.isArray(app.allowed_origins)) origins.push(...app.allowed_origins);
+  }
+  return buildCors(origin, origins, { allowHeaders: REPLAY_ALLOW_HEADERS });
 }
 
 async function gunzipText(bytes: Uint8Array): Promise<string> {
@@ -57,6 +63,24 @@ Deno.serve(async (req) => {
       JSON.stringify({ error: "missing x-mip-session/x-mip-app/x-mip-seq" }),
       { status: 400, headers: { "content-type": "application/json", ...cors } },
     );
+
+  // auth (parité v1-traces) : app inconnue/inactive -> 403 ; clé exigée si l'app
+  // en a une (keyless toléré) ; clé portée par x-mip-key (le SDK l'ajoute au POST).
+  const reason = await auth.checkApiKey(appId, req.headers.get("x-mip-key"));
+  if (reason) {
+    log.warn("rejected: api key", { app_id: appId, reason });
+    return new Response(JSON.stringify({ error: reason }), {
+      status: 403,
+      headers: { "content-type": "application/json", ...cors },
+    });
+  }
+  if (await auth.rateLimitedDurable(appId)) {
+    log.warn("rate limited", { app_id: appId, limit: RATE_LIMIT_PER_MIN });
+    return new Response(JSON.stringify({ error: `rate limit exceeded for app: ${appId}` }), {
+      status: 429,
+      headers: { "content-type": "application/json", "retry-after": "60", ...cors },
+    });
+  }
 
   try {
     const body = new Uint8Array(await req.arrayBuffer());

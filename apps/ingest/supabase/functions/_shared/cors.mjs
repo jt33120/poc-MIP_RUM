@@ -41,8 +41,10 @@ export function corsHeaders(origin, extraOrigins = [], opts = {}) {
     : { ...preflight };
 }
 
-/** En-têtes autorisés pour l'ingestion replay (corps binaire + métadonnées x-mip-*). */
-export const REPLAY_ALLOW_HEADERS = "content-type,x-mip-session,x-mip-app,x-mip-seq";
+/** En-têtes autorisés pour l'ingestion replay (corps binaire + métadonnées x-mip-*).
+ *  x-mip-key : clé d'API optionnelle (apps qui en exigent une) — DOIT figurer ici,
+ *  sinon le préflight CORS bloque le POST replay cross-origin des clients à clé. */
+export const REPLAY_ALLOW_HEADERS = "content-type,x-mip-session,x-mip-app,x-mip-seq,x-mip-key";
 
 /** Aplati les origines des apps actives d'un registre (Map ou itérable de valeurs). */
 export function originsFromRegistry(registryValues) {

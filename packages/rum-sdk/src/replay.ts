@@ -164,6 +164,10 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string): void {
             "x-mip-session": sessionId,
             "x-mip-app": cfg.appId,
             "x-mip-seq": String(chunk.seq),
+            // clé d'API pour les apps qui en exigent une (l'ingestion replay
+            // partage l'auth de /v1/traces). fetch porte des en-têtes, contrairement
+            // au beacon OTLP qui passe la clé en attribut resource mip.api_key.
+            ...(cfg.apiKey ? { "x-mip-key": cfg.apiKey } : {}),
           },
           body: bytes,
           // keepalive (limite ~64 Ko) : le dernier chunk survit au pagehide

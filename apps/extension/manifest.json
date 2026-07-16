@@ -1,11 +1,18 @@
 {
   "manifest_version": 3,
   "name": "MIP RUM — capteur navigateur",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Capteur RUM MIP. Observe UNIQUEMENT les domaines enregistrés côté MIP (aucune collecte hors périmètre, jamais sur <all_urls>). Mesure Core Web Vitals et erreurs des vrais utilisateurs.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs/QtUmJ4psxLYtlsUOr8ZkDQxEwxiW0ODs9j+0N5L3kSpDP0blRkXtA4+lV38piIA4yeMlwDzolAT7Y9M42S4lxTGERZRcnzw6Ajl6Ll4MVkxg57jBCXpiRALebV90OxLuv3JdNeDjHwfa88+4evXhHNGlDrBv4AwHLxdU4u+F83nMD3hf2AfR5m/HEmKsclCApf2lpviXsdXmUgcAPEapzrUztAyuiUTr9VLj0ft5xDV9hMRpkquAs87TQ47vTqruAdddhlx669ef4Hlo7cypD383QXRcrOIF5K87Ckgkj/zJkOJzKtRrZ7bYRiSbm6wpY6IJbpiKIPH/zQFoU3awIDAQAB",
-  "permissions": ["scripting", "webNavigation", "storage", "activeTab"],
-  "optional_host_permissions": ["*://*/*"],
+  "permissions": [
+    "scripting",
+    "webNavigation",
+    "storage",
+    "activeTab"
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
+  ],
   "background": {
     "service_worker": "vendor/background.js",
     "type": "module"
