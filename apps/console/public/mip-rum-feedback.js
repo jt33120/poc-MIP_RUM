@@ -7,7 +7,13 @@
  * commentaire scrubbé PII côté serveur.
  *
  * Config optionnelle avant le chargement :
- *   window.MIPRumFeedback = { label: "Votre avis ?", accent: "#f89101" };
+ *   window.MIPRumFeedback = {
+ *     label: "Votre avis ?", accent: "#f89101",
+ *     onlyPaths: ["/app", "/dashboard"]  // n'affiche le widget QUE sur ces préfixes
+ *                                         // de chemin (ex. pages authentifiées) ;
+ *                                         // ré-évalué à la navigation (SPA comprise).
+ *   };
+ * (via le SDK : MIPRum.init({ feedback: { onlyPaths: [...] } }).)
  *
  * Zéro dépendance, styles inline scellés (n'impacte pas la CSS du site hôte).
  */
@@ -19,7 +25,18 @@
   var cfg = window.MIPRumFeedback || {};
   var ACCENT = cfg.accent || "#f89101";
   var LABEL = cfg.label || "Votre avis ?";
+  var ONLY = Array.isArray(cfg.onlyPaths) ? cfg.onlyPaths : null; // null = partout
   var Z = 2147483000;
+
+  /** Le chemin courant est-il autorisé ? (préfixe de onlyPaths ; true si non borné). */
+  function pathAllowed() {
+    if (!ONLY || !ONLY.length) return true;
+    var p = location.pathname;
+    for (var i = 0; i < ONLY.length; i++) {
+      if (typeof ONLY[i] === "string" && p.indexOf(ONLY[i]) === 0) return true;
+    }
+    return false;
+  }
 
   function send(score, comment) {
     try {
@@ -150,13 +167,43 @@
     thanks();
   };
 
+  // Visibilité selon le chemin autorisé — rétablit le bouton si autorisé (et le
+  // panneau n'est pas ouvert), masque tout sinon. Appelée au montage et à chaque
+  // navigation.
+  function refreshGate() {
+    if (!pathAllowed()) {
+      btn.style.display = "none";
+      panel.style.display = "none";
+    } else if (panel.style.display !== "block") {
+      btn.style.display = "flex";
+    }
+  }
+
   function mount() {
     document.body.appendChild(btn);
     document.body.appendChild(panel);
+    refreshGate();
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", mount);
   } else {
     mount();
+  }
+
+  // SPA : ré-évaluer le garde à chaque changement de route (popstate + patch des
+  // méthodes history). Sans onlyPaths, on ne touche à rien (widget partout).
+  if (ONLY && ONLY.length) {
+    var fire = function () { setTimeout(refreshGate, 0); };
+    window.addEventListener("popstate", fire);
+    ["pushState", "replaceState"].forEach(function (m) {
+      var orig = history[m];
+      if (typeof orig === "function") {
+        history[m] = function () {
+          var r = orig.apply(this, arguments);
+          fire();
+          return r;
+        };
+      }
+    });
   }
 })();
