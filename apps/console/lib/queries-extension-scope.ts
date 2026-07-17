@@ -39,6 +39,28 @@ export async function createExtensionScope(domain: string, appId: string): Promi
   );
 }
 
+/**
+ * Autorise l'origine HTTPS d'un domaine à poster vers l'ingestion (CORS).
+ * Sans cette entrée dans `app_registry.allowed_origins`, le préflight OPTIONS
+ * renvoie 204 SANS `Access-Control-Allow-Origin` et le POST OTLP de l'extension
+ * est bloqué par le navigateur (cause racine du « domaine enregistré mais tableau
+ * vide »). Idempotent : n'ajoute l'origine que si elle est absente. Ne retire
+ * jamais (une origine peut aussi servir au SDK embarqué de l'app). No-op si
+ * l'app n'existe pas dans `app_registry`.
+ */
+export async function allowOriginForApp(domain: string, appId: string): Promise<void> {
+  const origin = `https://${domain}`;
+  await q(
+    `update app_registry
+        set allowed_origins =
+          case when $2 = any(coalesce(allowed_origins, '{}'::text[]))
+               then allowed_origins
+               else coalesce(allowed_origins, '{}'::text[]) || $2 end
+      where app_id = $1`,
+    [appId, origin],
+  );
+}
+
 /** Bascule active/inactive (kill-switch sans supprimer la ligne). */
 export async function toggleExtensionScope(id: number, active: boolean): Promise<void> {
   await q(`update extension_scope set active = $2 where id = $1`, [id, active]);
