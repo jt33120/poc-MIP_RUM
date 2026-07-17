@@ -1,3 +1,4 @@
+import { ExtensionActivationGuide } from "@/components/ExtensionActivationGuide";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAdmin } from "@/lib/auth";
 import type { SearchParams } from "@/lib/filters";
@@ -33,6 +34,8 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
           Domaine et app requis.
         </div>
       )}
+
+      <ExtensionActivationGuide />
 
       <div className="card mb-8 p-4">
         <h2 className="mb-3 text-sm font-semibold text-ink-soft">Enregistrer un domaine</h2>
