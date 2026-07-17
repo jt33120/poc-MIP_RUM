@@ -45,6 +45,8 @@ export function ExtensionActivationGuide() {
           Ajoute le domaine du site (ex. <code className="chip-mono">insight-performance.com</code>{" "}
           et sa variante <code className="chip-mono">www.</code>) dans le registre ci-dessous, et
           rattache-le à la bonne app. Statut <span className="font-medium text-emerald-600 dark:text-emerald-400">actif</span> requis.
+          L&apos;enregistrement <strong>autorise aussi automatiquement l&apos;origine à envoyer
+          ses mesures</strong> (CORS) — plus de seconde étape manuelle.
         </Step>
         <Step n={2} title="Installer l'extension (durablement)">
           Épingle l&apos;extension MIP RUM dans le navigateur qui doit surveiller le site.{" "}

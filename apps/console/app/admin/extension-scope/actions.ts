@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { q } from "@/lib/db";
-import { createExtensionScope, toggleExtensionScope } from "@/lib/queries-extension-scope";
+import { allowOriginForApp, createExtensionScope, toggleExtensionScope } from "@/lib/queries-extension-scope";
 
 async function audit(email: string, action: string, detail: string): Promise<void> {
   await q(`insert into audit_log (user_email, action, detail) values ($1, $2, $3)`, [email, action, detail]);
@@ -25,7 +25,11 @@ export async function createExtensionScopeAction(fd: FormData): Promise<void> {
   const app = String(fd.get("app") ?? "").trim();
   if (!domain || !app) redirect("/admin/extension-scope?error=1");
   await createExtensionScope(domain, app);
-  await audit(admin.email, "extension_scope_create", `${domain} -> ${app}`);
+  // Onboarding en une étape : autorise aussi l'origine HTTPS du domaine à poster
+  // vers l'ingestion (CORS). Sans ça, le préflight bloque le POST OTLP de
+  // l'extension — le domaine est « reconnu » mais aucune donnée n'arrive.
+  await allowOriginForApp(domain, app);
+  await audit(admin.email, "extension_scope_create", `${domain} -> ${app} (+origine CORS)`);
   revalidatePath("/admin/extension-scope");
   redirect("/admin/extension-scope");
 }
