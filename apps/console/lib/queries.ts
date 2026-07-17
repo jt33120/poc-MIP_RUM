@@ -265,6 +265,7 @@ export interface SessionRow {
   page_count: number;
   routes: string[] | null;
   err_count: number;
+  collection_source: string | null; // 'sdk' (défaut) | 'extension'
 }
 
 export async function listSessions(
@@ -306,6 +307,7 @@ export interface SessionMeta {
   started_at: Date;
   last_seen_at: Date;
   page_count: number;
+  collection_source: string | null; // 'sdk' (défaut) | 'extension'
 }
 
 export async function sessionMeta(id: string): Promise<SessionMeta | null> {
