@@ -62,11 +62,16 @@ export default async function SessionDetail({
         Timeline fusionnée : pages vues, vitals, erreurs, breadcrumbs, long tasks et events métier
       </p>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
         <Meta label="App" value={meta.app_id} />
         <Meta label="Device" value={meta.device_type ?? "—"} />
         <Meta label="Navigateur" value={browserFromUA(meta.user_agent)} />
         <Meta label="Pays" value={meta.geo_country ?? "—"} />
+        <Meta
+          label="Source"
+          value={meta.collection_source === "extension" ? "Extension" : "SDK"}
+          tone={meta.collection_source === "extension" ? "extension" : undefined}
+        />
         <Meta label="Utilisateur (hash)" value={meta.user_hash ? `${meta.user_hash.slice(0, 10)}…` : "—"} mono />
         <Meta label="Durée" value={fmtDuration(durationMs)} />
         <Meta label="Pages" value={String(meta.page_count)} />
@@ -117,11 +122,23 @@ export default async function SessionDetail({
   );
 }
 
-function Meta({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+function Meta({
+  label,
+  value,
+  mono = false,
+  tone,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  /** met la valeur en avant — 'extension' colore en accent (capteur navigateur). */
+  tone?: "extension";
+}) {
+  const toneCls = tone === "extension" ? "text-accent" : "";
   return (
     <div className="card p-3">
       <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
-      <div className={`mt-0.5 truncate text-sm font-semibold ${mono ? "font-mono" : ""}`} title={value}>
+      <div className={`mt-0.5 truncate text-sm font-semibold ${mono ? "font-mono" : ""} ${toneCls}`} title={value}>
         {value}
       </div>
     </div>

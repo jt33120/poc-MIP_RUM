@@ -79,6 +79,11 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
               <Badge>{s.device_type ?? "?"}</Badge>
               <Badge>{browserFromUA(s.user_agent)}</Badge>
               {s.geo_country && <Badge>{s.geo_country}</Badge>}
+              {s.collection_source === "extension" && (
+                <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent-deep dark:text-accent">
+                  extension
+                </span>
+              )}
               <span className="text-ink-soft">{s.page_count} page(s)</span>
               {s.err_count > 0 && (
                 <span className="rounded-full border border-red-300 bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
