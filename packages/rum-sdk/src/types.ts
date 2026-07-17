@@ -71,9 +71,11 @@ export interface MIPRumConfig {
    * bouton flottant « Votre avis ? » (script mip-rum-feedback.js, même origine
    * que ce SDK) ; l'utilisateur note 1–5 → MIPRum.track('feedback', {score}).
    * Objet = mêmes options que window.MIPRumFeedback ({ label, accent }).
+   * `onlyPaths` restreint l'affichage à des préfixes de chemin (ex. pages
+   * authentifiées) — ré-évalué à la navigation, SPA comprise ; absent = partout.
    * Aucun script séparé à poser côté site : une ligne de config suffit.
    */
-  feedback?: boolean | { label?: string; accent?: string };
+  feedback?: boolean | { label?: string; accent?: string; onlyPaths?: string[] };
 }
 
 export type VitalName = "LCP" | "INP" | "CLS" | "FCP" | "TTFB";
