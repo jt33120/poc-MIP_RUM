@@ -1,6 +1,6 @@
 {
   "name": "@mip/rum-sdk",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "MIP RUM Web SDK — OTel-Web lean + web-vitals, OTLP/HTTP JSON",
   "type": "module",

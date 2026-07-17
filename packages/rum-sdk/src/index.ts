@@ -25,6 +25,28 @@ let deliver: Emit | null = null; // émission réelle (post-consent)
 let replayRetry: (() => void) | null = null;
 let replayArm: (() => void) | null = null; // replay échantillonné, en attente de consent
 
+// src du script SDK, capturé au CHARGEMENT du module (document.currentScript est
+// nul une fois le script exécuté) — sert à résoudre mip-rum-feedback.js à la même
+// origine/dossier que le SDK, comme le bundle replay.
+const sdkScriptSrc =
+  typeof document !== "undefined"
+    ? ((document.currentScript as HTMLScriptElement | null)?.src ?? null)
+    : null;
+
+/** Charge en lazy le widget d'avis (mip-rum-feedback.js) depuis l'origine du SDK.
+ *  Idempotent : le widget se garde lui-même via window.__mipRumFeedbackMounted. */
+function loadFeedbackWidget(opt: boolean | { label?: string; accent?: string }): void {
+  if (typeof document === "undefined") return;
+  const w = window as unknown as { __mipRumFeedbackMounted?: boolean; MIPRumFeedback?: unknown };
+  if (w.__mipRumFeedbackMounted) return;
+  if (opt && typeof opt === "object") w.MIPRumFeedback = opt; // { label, accent } avant chargement
+  const url = sdkScriptSrc ? new URL("mip-rum-feedback.js", sdkScriptSrc).href : "/mip-rum-feedback.js";
+  const s = document.createElement("script");
+  s.src = url;
+  s.defer = true;
+  document.head.appendChild(s);
+}
+
 export function init(cfg: MIPRumConfig): void {
   if (initialized) return;
   if (!cfg || !cfg.endpoint || !cfg.appId) {
@@ -184,6 +206,10 @@ export function init(cfg: MIPRumConfig): void {
     replayRetry();
     replayArm?.();
   }
+
+  // widget d'avis (opt-in) : chargé en lazy à la même origine que le SDK. Le
+  // retour part par MIPRum.track('feedback') -> passe donc par le gate de consent.
+  if (cfg.feedback) loadFeedbackWidget(cfg.feedback);
 }
 
 /**

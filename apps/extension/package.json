@@ -1,6 +1,6 @@
 {
   "name": "extension",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "MIP RUM — extension navigateur (2e capteur RUM : injection du SDK par domaine enregistré)",
   "scripts": {
