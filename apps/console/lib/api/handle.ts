@@ -63,7 +63,9 @@ export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
 
     const searchParams = new URL(req.url).searchParams;
     const filters = parseApiFilters(searchParams, principal);
-    const raw = await route.params;
+    // Routes SANS segment dynamique (/api/v1/apps, /api/v1/overview…) : `params`
+    // peut être absent -> défaut objet vide (sinon Object.entries(undefined) throw).
+    const raw = (await route?.params) ?? {};
     const params: Record<string, string> = {};
     for (const [k, v] of Object.entries(raw)) {
       if (typeof v === "string") params[k] = v;
