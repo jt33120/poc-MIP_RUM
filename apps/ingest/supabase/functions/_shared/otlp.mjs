@@ -54,13 +54,30 @@ export function attrsToObj(attrs) {
   return out;
 }
 
-function nanosToDate(nanos) {
-  if (!nanos) return new Date();
+// Fenêtre anti-dérive d'horloge : 5 min dans le futur, 7 j dans le passé.
+const SKEW_FUTURE_MS = 5 * 60 * 1000;
+const SKEW_PAST_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * nanos OTLP -> Date, avec GARDE ANTI-DÉRIVE D'HORLOGE (clock skew). Les
+ * timestamps viennent du NAVIGATEUR (horloge cliente, parfois fausse de plusieurs
+ * heures/années). Un ts dans le futur est toujours erroné ; un ts très ancien
+ * aussi (la file retry ne rejoue qu'au plus quelques heures/jours). Hors de la
+ * fenêtre [now-7j, now+5min], on retombe sur l'heure de RÉCEPTION serveur
+ * (`nowMs` ≈ maintenant) — sinon la mesure atterrit dans le mauvais bucket
+ * temporel et fausse les séries. `nowMs` injectable pour les tests.
+ */
+export function nanosToDate(nanos, nowMs = Date.now()) {
+  if (!nanos) return new Date(nowMs);
+  let ms;
   try {
-    return new Date(Number(BigInt(nanos) / 1000000n));
+    ms = Number(BigInt(nanos) / 1000000n);
   } catch {
-    return new Date(); // nanos non numérique (payload hostile) : ts = maintenant
+    return new Date(nowMs); // nanos non numérique (payload hostile) : ts = maintenant
   }
+  if (ms > nowMs + SKEW_FUTURE_MS) return new Date(nowMs); // horloge cliente en avance
+  if (ms < nowMs - SKEW_PAST_MS) return new Date(nowMs); // horloge fausse / retry trop ancien
+  return new Date(ms);
 }
 
 /** Attributs string JSON (webvital.attribution, mip.props) -> objet pour le jsonb. */
@@ -178,6 +195,8 @@ function routeFromOtelName(name) {
  */
 export function flattenOtlp(payload, opts = {}) {
   const maxSpans = opts.maxSpans ?? 20_000;
+  // référence temps serveur pour la garde anti-dérive (injectable pour les tests)
+  const now = opts.now ?? Date.now();
   let seen = 0; // total de spans rencontrés (cap anti-charge)
   const sessions = new Map();
   const pageviews = [];
@@ -249,7 +268,7 @@ export function flattenOtlp(payload, opts = {}) {
         // span backend (middleware serveur) : pas de session requise, pas
         // d'upsert rum_session (le front est seul maître de la session)
         if (span.name === "http.server") {
-          const row = spanRow("back", a, appId, nanosToDate(span.startTimeUnixNano));
+          const row = spanRow("back", a, appId, nanosToDate(span.startTimeUnixNano, now));
           if (row) spans.push(row);
           else rejected++;
           continue;
@@ -290,7 +309,7 @@ export function flattenOtlp(payload, opts = {}) {
               routeFromOtelName(span.name) ??
               span.name,
             kind: "server",
-            ts: nanosToDate(span.startTimeUnixNano),
+            ts: nanosToDate(span.startTimeUnixNano, now),
           });
           continue;
         }
@@ -341,7 +360,7 @@ export function flattenOtlp(payload, opts = {}) {
             ttft_ms: num(a["gen_ai.server.time_to_first_token"] ?? a["gen_ai.ttft_ms"]),
             status: errType ? "error" : "ok",
             error_type: errType,
-            ts: nanosToDate(span.startTimeUnixNano),
+            ts: nanosToDate(span.startTimeUnixNano, now),
           });
           continue;
         }
@@ -377,7 +396,7 @@ export function flattenOtlp(payload, opts = {}) {
               duration_ms: durationMs,
               name: typeof label === "string" ? label.slice(0, 200) : span.name,
               kind: isDb ? "db" : "internal",
-              ts: nanosToDate(span.startTimeUnixNano),
+              ts: nanosToDate(span.startTimeUnixNano, now),
             });
           } else {
             rejected++;
@@ -390,7 +409,7 @@ export function flattenOtlp(payload, opts = {}) {
           rejected++;
           continue;
         }
-        const ts = nanosToDate(span.startTimeUnixNano);
+        const ts = nanosToDate(span.startTimeUnixNano, now);
         const route = a["mip.route"] ?? null;
 
         const s = sessions.get(sessionId) ?? {
@@ -585,6 +604,7 @@ function severityText(n) {
  */
 export function flattenOtlpLogs(payload, opts = {}) {
   const maxLogs = opts.maxLogs ?? 20_000;
+  const now = opts.now ?? Date.now();
   let seen = 0;
   const logs = [];
   const apiKeys = [];
@@ -628,7 +648,7 @@ export function flattenOtlpLogs(payload, opts = {}) {
               : null;
         logs.push({
           app_id: appId,
-          ts: nanosToDate(rec.timeUnixNano ?? rec.observedTimeUnixNano),
+          ts: nanosToDate(rec.timeUnixNano ?? rec.observedTimeUnixNano, now),
           severity_num: sevNum,
           severity_text: rec.severityText ?? severityText(sevNum),
           body,
