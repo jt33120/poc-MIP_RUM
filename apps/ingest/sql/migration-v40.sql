@@ -11,6 +11,9 @@
 --    jointure 1:1 rum_session, donc pas de fan-out sur occurrences/sessions).
 -- La régression est dérivée à la LECTURE (status='resolved' AND last_seen >
 -- resolved_at) — aucun write de fond, aucun cron.
+--
+-- NB : les grants/policies/revokes référençant console_ro/anon/authenticated sont
+-- gardés par `if exists (pg_roles)` — ces rôles cloud sont absents de la base CI.
 
 create table if not exists error_status (
   app_id       text        not null,
@@ -27,11 +30,18 @@ alter table error_status enable row level security;
 
 do $$ begin
   -- écriture réservée au rôle applicatif console (jamais anon/authenticated)
-  grant select, insert, update, delete on error_status to console_ro;
-  if not exists (select 1 from pg_policies where tablename = 'error_status' and policyname = 'cro_all_error_status') then
-    create policy cro_all_error_status on error_status for all to console_ro using (true) with check (true);
+  if exists (select 1 from pg_roles where rolname = 'console_ro') then
+    grant select, insert, update, delete on error_status to console_ro;
+    if not exists (select 1 from pg_policies where tablename = 'error_status' and policyname = 'cro_all_error_status') then
+      create policy cro_all_error_status on error_status for all to console_ro using (true) with check (true);
+    end if;
   end if;
-  revoke all on error_status from anon, authenticated;
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke all on error_status from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke all on error_status from authenticated;
+  end if;
 end $$;
 
 -- Vue étendue : occurrences + sessions + UTILISATEURS distincts touchés.
@@ -53,6 +63,13 @@ create or replace view v_error_group_ext as
    group by e.app_id, e.fingerprint;
 
 do $$ begin
-  grant select on v_error_group_ext to console_ro;
-  revoke all on v_error_group_ext from anon, authenticated;
+  if exists (select 1 from pg_roles where rolname = 'console_ro') then
+    grant select on v_error_group_ext to console_ro;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke all on v_error_group_ext from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke all on v_error_group_ext from authenticated;
+  end if;
 end $$;
