@@ -13,7 +13,9 @@ const fixture = JSON.parse(
 );
 
 describe("flattenOtlp — snapshot du contrat de sortie", () => {
-  const rows = flattenOtlp(fixture);
+  // `now` figé à l'ère de la fixture (oct. 2025) pour que la garde anti-dérive
+  // ne clampe pas ses timestamps -> snapshot déterministe.
+  const rows = flattenOtlp(fixture, { now: Date.parse("2025-10-09T09:00:00Z") });
 
   it("couvre tous les types de lignes (repères avant le snapshot)", () => {
     expect(rows.sessions).toHaveLength(1);

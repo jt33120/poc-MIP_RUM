@@ -107,7 +107,9 @@ describe("flattenOtlp — device_type dérivé de l'UA quand le SDK ne l'envoie 
 });
 
 describe("flattenOtlp — aplatissement du payload fixture", () => {
-  const rows = flattenOtlp(fixture);
+  // `now` figé à l'ère de la fixture (juin 2026) : la garde anti-dérive ne doit
+  // pas clamper ses timestamps (testée séparément dans otlp-clock-skew.test.ts).
+  const rows = flattenOtlp(fixture, { now: Date.parse("2026-06-10T15:00:00Z") });
 
   it("extrait 2 métriques, 1 erreur, 1 pageview, 1 session", () => {
     expect(rows.metrics).toHaveLength(2);
