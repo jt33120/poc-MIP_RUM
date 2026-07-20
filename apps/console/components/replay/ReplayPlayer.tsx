@@ -92,7 +92,12 @@ export default function ReplayPlayer({ sessionId }: { sessionId: string }) {
           exclus.
         </p>
       )}
-      <div ref={host} className={state === "ready" ? "flex justify-center" : "hidden"} />
+      {/* Le conteneur doit rester VISIBLE en permanence : rrweb-player mesure ses
+          dimensions (iframe) au montage, or le player est instancié dans l'effet
+          pendant que state vaut encore "loading". Le masquer via `hidden`
+          (display:none) le montait en 0×0 → lecteur vide, contrôleur écrasé.
+          Vide tant que le player n'est pas monté (hauteur nulle, invisible). */}
+      <div ref={host} className="flex justify-center" />
     </div>
   );
 }
