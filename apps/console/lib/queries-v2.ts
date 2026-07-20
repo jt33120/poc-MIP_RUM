@@ -76,6 +76,10 @@ export function filtersToQuery(f: Filters, extra?: Record<string, string>): stri
 // Erreurs groupées par fingerprint (vue v_error_group)
 // ---------------------------------------------------------------------------
 
+/** Statuts de triage d'un groupe d'erreurs — allow-list TS (pas de CHECK en base). */
+export const ERROR_STATUSES = ["open", "resolved", "ignored"] as const;
+export type ErrorStatus = (typeof ERROR_STATUSES)[number];
+
 export interface ErrorGroupRow {
   app_id: string;
   fingerprint: string;
@@ -83,9 +87,35 @@ export interface ErrorGroupRow {
   sample_message: string | null;
   occurrences: number;
   sessions: number;
+  users_affected: number;
   first_seen: Date;
   last_seen: Date;
+  status: ErrorStatus;
+  resolved_at: Date | null;
+  /** true si une erreur marquée « résolue » réapparaît (last_seen > resolved_at). */
+  regressed: boolean;
 }
+
+// SELECT commun (liste + détail) : v_error_group_ext (occurrences/sessions/users)
+// ⟕ error_status ; statut par défaut 'open', régression dérivée à la lecture.
+const ERROR_GROUP_SELECT = `
+  select g.app_id, g.fingerprint, g.error_type, g.sample_message,
+         g.occurrences::int as occurrences, g.sessions::int as sessions,
+         g.users_affected::int as users_affected, g.first_seen, g.last_seen,
+         coalesce(st.status, 'open') as status,
+         st.resolved_at,
+         (st.status = 'resolved' and g.last_seen > st.resolved_at) as regressed
+  from v_error_group_ext g
+  left join error_status st on st.app_id = g.app_id and st.fingerprint = g.fingerprint`;
+
+// Tri triage : régressions d'abord, puis ouvertes, puis résolues, puis ignorées.
+const ERROR_GROUP_ORDER = `
+  order by (case
+    when (st.status = 'resolved' and g.last_seen > st.resolved_at) then 0
+    when coalesce(st.status, 'open') = 'open' then 1
+    when coalesce(st.status, 'open') = 'ignored' then 3
+    else 2 end),
+    g.occurrences desc, g.last_seen desc`;
 
 export async function errorGroups(
   f: Filters,
@@ -94,15 +124,32 @@ export async function errorGroups(
   const limit = page?.limit ?? 100;
   const offset = page?.offset ?? 0;
   return q<ErrorGroupRow>(
-    `select app_id, fingerprint, error_type, sample_message,
-            occurrences::int as occurrences, sessions::int as sessions,
-            first_seen, last_seen
-     from v_error_group
-     where ($1 = 'all' or app_id = $1)
-       and last_seen > now() - $2::interval
-     order by occurrences desc, last_seen desc
+    `${ERROR_GROUP_SELECT}
+     where ($1 = 'all' or g.app_id = $1)
+       and g.last_seen > now() - $2::interval
+     ${ERROR_GROUP_ORDER}
      limit $3 offset $4`,
     [f.app, periodInterval(f), limit, offset],
+  );
+}
+
+/** Écrit le statut de triage d'un groupe (upsert). status='resolved' → tamponne
+ *  resolved_at (référence de régression) ; toute autre valeur l'efface. */
+export async function setErrorStatus(
+  appId: string,
+  fingerprint: string,
+  status: ErrorStatus,
+  operator: string,
+): Promise<void> {
+  await q(
+    `insert into error_status (app_id, fingerprint, status, resolved_at, resolved_by, updated_at)
+     values ($1, $2, $3, case when $3 = 'resolved' then now() else null end, $4, now())
+     on conflict (app_id, fingerprint) do update
+       set status = excluded.status,
+           resolved_at = case when excluded.status = 'resolved' then now() else null end,
+           resolved_by = excluded.resolved_by,
+           updated_at = now()`,
+    [appId, fingerprint, status, operator],
   );
 }
 
@@ -179,11 +226,8 @@ export async function errorGroupDetail(
   f: Filters,
 ): Promise<ErrorGroupDetail | null> {
   const [group] = await q<ErrorGroupRow>(
-    `select app_id, fingerprint, error_type, sample_message,
-            occurrences::int as occurrences, sessions::int as sessions,
-            first_seen, last_seen
-     from v_error_group
-     where fingerprint = $1 and ($2 = 'all' or app_id = $2)
+    `${ERROR_GROUP_SELECT}
+     where g.fingerprint = $1 and ($2 = 'all' or g.app_id = $2)
      limit 1`,
     [fingerprint, f.app],
   );

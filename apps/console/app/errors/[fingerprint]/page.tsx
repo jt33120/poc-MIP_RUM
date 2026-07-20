@@ -9,6 +9,7 @@ import {
 } from "@/lib/queries-v2";
 import { getSourceMaps } from "@/lib/queries-sourcemap";
 import { symbolicateStack } from "@/lib/sourcemap";
+import { ErrorTriage } from "@/components/errors/ErrorTriage";
 
 export const dynamic = "force-dynamic";
 
@@ -66,9 +67,17 @@ export default async function ErrorGroup({
         fingerprint {group.fingerprint} · app {group.app_id}
       </p>
 
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <ErrorTriage
+        appId={group.app_id}
+        fingerprint={group.fingerprint}
+        status={group.status}
+        regressed={group.regressed}
+      />
+
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
         <Stat label="Occurrences" value={String(group.occurrences)} testid="detail-occurrences" />
         <Stat label="Sessions touchées" value={String(group.sessions)} testid="detail-sessions" />
+        <Stat label="Utilisateurs touchés" value={String(group.users_affected)} testid="detail-users" />
         <Stat label="Première vue" value={fmtDate(group.first_seen)} />
         <Stat label="Dernière vue" value={fmtDate(group.last_seen)} />
       </div>

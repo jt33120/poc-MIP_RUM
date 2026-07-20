@@ -109,6 +109,7 @@ export default async function Errors({
               <th className="th">Groupe</th>
               <th className="th">Occurrences</th>
               <th className="th">Sessions</th>
+              <th className="th">Utilisateurs</th>
               <th className="th">24 h</th>
               <th className="th">Première vue</th>
               <th className="th">Dernière vue</th>
@@ -118,10 +119,11 @@ export default async function Errors({
           <tbody>
             {groups.map((g) => {
               const href = `/errors/${encodeURIComponent(g.fingerprint)}${filtersToQuery(f)}`;
+              const dim = g.status !== "open" && !g.regressed;
               return (
                 <tr
                   key={`${g.app_id}|${g.fingerprint}`}
-                  className="border-t border-line/60 transition hover:bg-panel2/60"
+                  className={`border-t border-line/60 transition hover:bg-panel2/60 ${dim ? "opacity-60" : ""}`}
                   data-testid={`error-group-${g.fingerprint}`}
                 >
                   <td className="max-w-md px-4 py-3">
@@ -129,6 +131,21 @@ export default async function Errors({
                       <span className="mr-2 rounded border border-red-300 bg-red-100 px-1.5 py-0.5 font-mono text-xs text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
                         {g.error_type ?? "Error"}
                       </span>
+                      {g.regressed && (
+                        <span className="mr-2 rounded-full border border-amber-400/50 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-400/10 dark:text-amber-300">
+                          ⚠ régression
+                        </span>
+                      )}
+                      {g.status === "resolved" && !g.regressed && (
+                        <span className="mr-2 rounded-full border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300">
+                          résolue
+                        </span>
+                      )}
+                      {g.status === "ignored" && (
+                        <span className="mr-2 rounded-full border border-line bg-panel2 px-1.5 py-0.5 text-[10px] font-semibold text-ink-soft">
+                          ignorée
+                        </span>
+                      )}
                       <span className="font-medium text-ink" title={g.sample_message ?? ""}>
                         {(g.sample_message ?? "(sans message)").slice(0, 120)}
                       </span>
@@ -141,6 +158,7 @@ export default async function Errors({
                     {g.occurrences}
                   </td>
                   <td className="px-4 py-3 tabular-nums">{g.sessions}</td>
+                  <td className="px-4 py-3 tabular-nums">{g.users_affected}</td>
                   <td className="px-4 py-3">
                     <Sparkline values={sparklines.get(g.fingerprint) ?? new Array(24).fill(0)} />
                   </td>
@@ -156,7 +174,7 @@ export default async function Errors({
             })}
             {!groups.length && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-ink-faint">
+                <td colSpan={8} className="px-4 py-8 text-center text-ink-faint">
                   Aucun groupe d&apos;erreur sur la période 🎉
                 </td>
               </tr>
