@@ -2,8 +2,13 @@
 // PII : ni IP, ni contenu DOM, ni email). Scopé app + fenêtre, trafic bot exclu.
 // Produit exactement le contrat /api/rum/summary. Tous les numériques sont castés
 // (::int) pour revenir en nombres (pas de string bigint/numeric), null si absent.
+//
+// IA (ADR-0001 xSOM, sens 2) : le calcul IA est délégué à xSOM AI Guard quand il
+// est configuré (XSOM_AI_URL), sinon calculé localement sur rum_ai. La moitié RUM
+// (sessions/vitals/erreurs/routes) est inchangée.
 import { q } from "./db";
 import type { SummaryWindow } from "./read-tokens";
+import { fetchAiSummary, type XsomAiFields } from "./xsom-ai";
 
 export interface SummarySeriesPoint {
   date: string;
@@ -106,7 +111,8 @@ export interface RumSummary {
 const iso = (v: unknown): string => (v instanceof Date ? v.toISOString() : new Date(String(v)).toISOString());
 const n = (v: unknown): number | null => (v == null ? null : Number(v));
 
-/** Construit le résumé pour un app + une fenêtre (intervalle Postgres). */
+/** Construit le résumé pour un app + une fenêtre (intervalle Postgres). La moitié
+ *  IA vient de xSOM si configuré, sinon du calcul local (voir resolveAi). */
 export async function rumSummary(
   app: string,
   windowKey: SummaryWindow,
@@ -115,10 +121,7 @@ export async function rumSummary(
 ): Promise<RumSummary> {
   const p = [app, interval];
 
-  const [
-    kpis, series, routes, errors, aiKpis, aiByModel, aiTopUsers,
-    aiByOperation, aiSeries, aiOpAnomalies, aiRegenThumbs, aiCsatByOp,
-  ] = await Promise.all([
+  const [kpis, series, routes, errors, ai] = await Promise.all([
     q<{
       sessions: number;
       users: number;
@@ -198,155 +201,8 @@ export async function rumSummary(
        order by count(*) desc limit 10`,
       p,
     ),
-    q<{ calls: number; tokens: number; cost_usd: number; latency_p75: number | null; error_rate: number | null }>(
-      `select
-         count(*)::int as calls,
-         coalesce(sum(total_tokens), 0)::int as tokens,
-         coalesce(sum(cost_usd), 0)::float8 as cost_usd,
-         percentile_cont(0.75) within group (order by latency_ms)::float8 as latency_p75,
-         (count(*) filter (where status = 'error')::float8 / nullif(count(*), 0))::float8 as error_rate
-       from rum_ai
-       where app_id = $1 and ts > now() - $2::interval`,
-      p,
-    ),
-    q<SummaryAiModel>(
-      `select provider, model, count(*)::int as calls, coalesce(sum(total_tokens), 0)::int as tokens,
-              coalesce(sum(cost_usd), 0)::float8 as cost_usd
-       from rum_ai
-       where app_id = $1 and ts > now() - $2::interval
-       group by provider, model
-       order by coalesce(sum(cost_usd), 0) desc limit 10`,
-      p,
-    ),
-    q<SummaryAiUser>(
-      `select s.user_hash, count(*)::int as calls, coalesce(sum(a.cost_usd), 0)::float8 as cost_usd
-       from rum_ai a join rum_session s on s.session_id = a.session_id
-       where a.app_id = $1 and a.ts > now() - $2::interval and s.user_hash is not null
-       group by s.user_hash
-       order by coalesce(sum(a.cost_usd), 0) desc limit 10`,
-      p,
-    ),
-    // Ventilation par fonction (operation) × route : perf par fonction (ce que la
-    // facturation OpenRouter n'a pas). operation gardé BRUT (valeurs métier client).
-    q<{
-      operation: string | null;
-      route: string | null;
-      calls: number;
-      cost_usd: number;
-      tokens: number;
-      p75_latency_ms: number | null;
-      ttft_p75_ms: number | null;
-      error_rate: number | null;
-      refusal_rate: number | null;
-    }>(
-      `select
-         operation, route,
-         count(*)::int as calls,
-         coalesce(sum(cost_usd), 0)::float8 as cost_usd,
-         coalesce(sum(total_tokens), 0)::int as tokens,
-         percentile_cont(0.75) within group (order by latency_ms)::float8 as p75_latency_ms,
-         percentile_cont(0.75) within group (order by ttft_ms) filter (where ttft_ms is not null)::float8 as ttft_p75_ms,
-         (count(*) filter (where status = 'error')::float8 / nullif(count(*), 0))::float8 as error_rate,
-         -- refus modèle : erreurs de type refus/guardrail/safety/moderation
-         (count(*) filter (where status = 'error'
-            and coalesce(error_type,'') ~* 'refus|content.?filter|guardrail|safety|moderation')::float8
-          / nullif(count(*), 0))::float8 as refusal_rate
-       from rum_ai
-       where app_id = $1 and ts > now() - $2::interval
-       group by operation, route
-       order by coalesce(sum(cost_usd), 0) desc
-       limit 100`,
-      p,
-    ),
-    // Série journalière IA : un point par jour de la fenêtre (jours creux à 0 /
-    // latence null) pour superposer latence/erreurs au volume côté UTI.
-    q<{
-      date: string;
-      calls: number;
-      cost_usd: number;
-      p75_latency_ms: number | null;
-      error_rate: number | null;
-    }>(
-      `select to_char(d::date,'YYYY-MM-DD') as date,
-              coalesce(a.calls,0)::int as calls,
-              coalesce(a.cost_usd,0)::float8 as cost_usd,
-              a.p75_latency_ms,
-              a.error_rate
-       from generate_series((now()-$2::interval)::date, now()::date, interval '1 day') d
-       left join (
-         select date_trunc('day', ts)::date dd,
-                count(*)::int calls,
-                coalesce(sum(cost_usd),0)::float8 cost_usd,
-                percentile_cont(0.75) within group (order by latency_ms)::float8 p75_latency_ms,
-                (count(*) filter (where status='error')::float8 / nullif(count(*),0))::float8 error_rate
-         from rum_ai
-         where app_id=$1 and ts>now()-$2::interval
-         group by 1
-       ) a on a.dd = d::date
-       order by d`,
-      p,
-    ),
-    // Anomalies de coût par fonction (z-score 24 h vs baseline) — self-catching :
-    // la vue v_ai_op_anomaly peut être absente en CI/local, on dégrade à [] sans
-    // casser le reste du résumé (même esprit que logAnomalies).
-    (async (): Promise<{ operation: string | null; route: string | null; z_score: number | null }[]> => {
-      try {
-        return await q(
-          `select operation, route, z_score::float8 as z_score
-             from v_ai_op_anomaly where app_id = $1`,
-          [app],
-        );
-      } catch {
-        return [];
-      }
-    })(),
-    // Régénérations & pouces par fonction : events custom émis par le client
-    // (rum_event name='ai_regenerate' / 'ai_feedback', props {operation, route, thumb}).
-    // Vide tant qu'UTI ne les émet pas -> regen_rate 0 / thumbs_down_rate null.
-    q<{ operation: string | null; route: string | null; regen: number; thumb_up: number; thumb_down: number }>(
-      `select props->>'operation' as operation, props->>'route' as route,
-              count(*) filter (where name='ai_regenerate')::int as regen,
-              count(*) filter (where name='ai_feedback' and props->>'thumb'='up')::int as thumb_up,
-              count(*) filter (where name='ai_feedback' and props->>'thumb'='down')::int as thumb_down
-         from rum_event
-        where app_id=$1 and ts>now()-$2::interval and name in ('ai_regenerate','ai_feedback')
-        group by 1, 2`,
-      p,
-    ),
-    // CSAT par fonction (grain session) : sessions ayant utilisé la fonction ⋈
-    // feedback de la session. Zéro PII (scores anonymes agrégés).
-    q<{ operation: string | null; route: string | null; with_fb: number; positives: number }>(
-      `with fn_sessions as (
-         select distinct operation, route, session_id from rum_ai
-          where app_id=$1 and ts>now()-$2::interval and session_id is not null
-       ), fb as (
-         select session_id, avg((nullif(props->>'score',''))::numeric) as score
-           from rum_event
-          where app_id=$1 and name='feedback' and ts>now()-$2::interval
-            and session_id is not null and nullif(props->>'score','') is not null
-          group by session_id
-       )
-       select f.operation, f.route,
-              count(fb.session_id)::int as with_fb,
-              count(*) filter (where fb.score >= 4)::int as positives
-         from fn_sessions f join fb using (session_id)
-        group by f.operation, f.route`,
-      p,
-    ),
+    resolveAi(app, windowKey, interval),
   ]);
-
-  // Index des anomalies par clé fonction (operation|route, null -> "") pour fusion.
-  const anomalyByOp = new Map<string, number | null>(
-    aiOpAnomalies.map((r) => [`${r.operation ?? ""}|${r.route ?? ""}`, r.z_score]),
-  );
-  // Régénérations / pouces par fonction.
-  const rtByOp = new Map<string, { regen: number; up: number; down: number }>(
-    aiRegenThumbs.map((r) => [`${r.operation ?? ""}|${r.route ?? ""}`, { regen: r.regen, up: r.thumb_up, down: r.thumb_down }]),
-  );
-  // CSAT par fonction.
-  const csatByOp = new Map<string, { with_fb: number; positives: number }>(
-    aiCsatByOp.map((r) => [`${r.operation ?? ""}|${r.route ?? ""}`, { with_fb: r.with_fb, positives: r.positives }]),
-  );
 
   const k = kpis[0];
   const sessions = k?.sessions ?? 0;
@@ -367,6 +223,180 @@ export async function rumSummary(
     series: series.map((s) => ({ ...s, avg_load_ms: n(s.avg_load_ms) })),
     top_routes: routes.map((r) => ({ ...r, avg_ms: n(r.avg_ms) })),
     top_errors: errors.map((e) => ({ message: e.message, count: e.count, last_seen: iso(e.last_seen) })),
+    ...ai,
+  };
+}
+
+/** IA : xSOM d'abord (si XSOM_AI_URL configuré et joignable), sinon calcul local
+ *  sur rum_ai. Dégradation douce — le local reste la source de vérité tant que la
+ *  bascule xSOM n'est pas prouvée en prod. */
+async function resolveAi(
+  app: string,
+  windowKey: SummaryWindow,
+  interval: string,
+): Promise<XsomAiFields> {
+  const fromXsom = await fetchAiSummary(app, windowKey);
+  return fromXsom ?? computeAiLocal(app, interval);
+}
+
+/** Calcul IA local (fallback) — agrégats sur rum_ai + qualité via rum_event.
+ *  Produit exactement les champs `ai_*` du RumSummary. */
+async function computeAiLocal(app: string, interval: string): Promise<XsomAiFields> {
+  const p = [app, interval];
+
+  const [aiKpis, aiByModel, aiTopUsers, aiByOperation, aiSeries, aiOpAnomalies, aiRegenThumbs, aiCsatByOp] =
+    await Promise.all([
+      q<{ calls: number; tokens: number; cost_usd: number; latency_p75: number | null; error_rate: number | null }>(
+        `select
+           count(*)::int as calls,
+           coalesce(sum(total_tokens), 0)::int as tokens,
+           coalesce(sum(cost_usd), 0)::float8 as cost_usd,
+           percentile_cont(0.75) within group (order by latency_ms)::float8 as latency_p75,
+           (count(*) filter (where status = 'error')::float8 / nullif(count(*), 0))::float8 as error_rate
+         from rum_ai
+         where app_id = $1 and ts > now() - $2::interval`,
+        p,
+      ),
+      q<SummaryAiModel>(
+        `select provider, model, count(*)::int as calls, coalesce(sum(total_tokens), 0)::int as tokens,
+                coalesce(sum(cost_usd), 0)::float8 as cost_usd
+         from rum_ai
+         where app_id = $1 and ts > now() - $2::interval
+         group by provider, model
+         order by coalesce(sum(cost_usd), 0) desc limit 10`,
+        p,
+      ),
+      q<SummaryAiUser>(
+        `select s.user_hash, count(*)::int as calls, coalesce(sum(a.cost_usd), 0)::float8 as cost_usd
+         from rum_ai a join rum_session s on s.session_id = a.session_id
+         where a.app_id = $1 and a.ts > now() - $2::interval and s.user_hash is not null
+         group by s.user_hash
+         order by coalesce(sum(a.cost_usd), 0) desc limit 10`,
+        p,
+      ),
+      // Ventilation par fonction (operation) × route : perf par fonction (ce que la
+      // facturation OpenRouter n'a pas). operation gardé BRUT (valeurs métier client).
+      q<{
+        operation: string | null;
+        route: string | null;
+        calls: number;
+        cost_usd: number;
+        tokens: number;
+        p75_latency_ms: number | null;
+        ttft_p75_ms: number | null;
+        error_rate: number | null;
+        refusal_rate: number | null;
+      }>(
+        `select
+           operation, route,
+           count(*)::int as calls,
+           coalesce(sum(cost_usd), 0)::float8 as cost_usd,
+           coalesce(sum(total_tokens), 0)::int as tokens,
+           percentile_cont(0.75) within group (order by latency_ms)::float8 as p75_latency_ms,
+           percentile_cont(0.75) within group (order by ttft_ms) filter (where ttft_ms is not null)::float8 as ttft_p75_ms,
+           (count(*) filter (where status = 'error')::float8 / nullif(count(*), 0))::float8 as error_rate,
+           -- refus modèle : erreurs de type refus/guardrail/safety/moderation
+           (count(*) filter (where status = 'error'
+              and coalesce(error_type,'') ~* 'refus|content.?filter|guardrail|safety|moderation')::float8
+            / nullif(count(*), 0))::float8 as refusal_rate
+         from rum_ai
+         where app_id = $1 and ts > now() - $2::interval
+         group by operation, route
+         order by coalesce(sum(cost_usd), 0) desc
+         limit 100`,
+        p,
+      ),
+      // Série journalière IA : un point par jour de la fenêtre (jours creux à 0 /
+      // latence null) pour superposer latence/erreurs au volume côté UTI.
+      q<{
+        date: string;
+        calls: number;
+        cost_usd: number;
+        p75_latency_ms: number | null;
+        error_rate: number | null;
+      }>(
+        `select to_char(d::date,'YYYY-MM-DD') as date,
+                coalesce(a.calls,0)::int as calls,
+                coalesce(a.cost_usd,0)::float8 as cost_usd,
+                a.p75_latency_ms,
+                a.error_rate
+         from generate_series((now()-$2::interval)::date, now()::date, interval '1 day') d
+         left join (
+           select date_trunc('day', ts)::date dd,
+                  count(*)::int calls,
+                  coalesce(sum(cost_usd),0)::float8 cost_usd,
+                  percentile_cont(0.75) within group (order by latency_ms)::float8 p75_latency_ms,
+                  (count(*) filter (where status='error')::float8 / nullif(count(*),0))::float8 error_rate
+           from rum_ai
+           where app_id=$1 and ts>now()-$2::interval
+           group by 1
+         ) a on a.dd = d::date
+         order by d`,
+        p,
+      ),
+      // Anomalies de coût par fonction (z-score 24 h vs baseline) — self-catching :
+      // la vue v_ai_op_anomaly peut être absente en CI/local, on dégrade à [] sans
+      // casser le reste du résumé (même esprit que logAnomalies).
+      (async (): Promise<{ operation: string | null; route: string | null; z_score: number | null }[]> => {
+        try {
+          return await q(
+            `select operation, route, z_score::float8 as z_score
+               from v_ai_op_anomaly where app_id = $1`,
+            [app],
+          );
+        } catch {
+          return [];
+        }
+      })(),
+      // Régénérations & pouces par fonction : events custom émis par le client
+      // (rum_event name='ai_regenerate' / 'ai_feedback', props {operation, route, thumb}).
+      // Vide tant qu'UTI ne les émet pas -> regen_rate 0 / thumbs_down_rate null.
+      q<{ operation: string | null; route: string | null; regen: number; thumb_up: number; thumb_down: number }>(
+        `select props->>'operation' as operation, props->>'route' as route,
+                count(*) filter (where name='ai_regenerate')::int as regen,
+                count(*) filter (where name='ai_feedback' and props->>'thumb'='up')::int as thumb_up,
+                count(*) filter (where name='ai_feedback' and props->>'thumb'='down')::int as thumb_down
+           from rum_event
+          where app_id=$1 and ts>now()-$2::interval and name in ('ai_regenerate','ai_feedback')
+          group by 1, 2`,
+        p,
+      ),
+      // CSAT par fonction (grain session) : sessions ayant utilisé la fonction ⋈
+      // feedback de la session. Zéro PII (scores anonymes agrégés).
+      q<{ operation: string | null; route: string | null; with_fb: number; positives: number }>(
+        `with fn_sessions as (
+           select distinct operation, route, session_id from rum_ai
+            where app_id=$1 and ts>now()-$2::interval and session_id is not null
+         ), fb as (
+           select session_id, avg((nullif(props->>'score',''))::numeric) as score
+             from rum_event
+            where app_id=$1 and name='feedback' and ts>now()-$2::interval
+              and session_id is not null and nullif(props->>'score','') is not null
+            group by session_id
+         )
+         select f.operation, f.route,
+                count(fb.session_id)::int as with_fb,
+                count(*) filter (where fb.score >= 4)::int as positives
+           from fn_sessions f join fb using (session_id)
+          group by f.operation, f.route`,
+        p,
+      ),
+    ]);
+
+  // Index des anomalies par clé fonction (operation|route, null -> "") pour fusion.
+  const anomalyByOp = new Map<string, number | null>(
+    aiOpAnomalies.map((r) => [`${r.operation ?? ""}|${r.route ?? ""}`, r.z_score]),
+  );
+  // Régénérations / pouces par fonction.
+  const rtByOp = new Map<string, { regen: number; up: number; down: number }>(
+    aiRegenThumbs.map((r) => [`${r.operation ?? ""}|${r.route ?? ""}`, { regen: r.regen, up: r.thumb_up, down: r.thumb_down }]),
+  );
+  // CSAT par fonction.
+  const csatByOp = new Map<string, { with_fb: number; positives: number }>(
+    aiCsatByOp.map((r) => [`${r.operation ?? ""}|${r.route ?? ""}`, { with_fb: r.with_fb, positives: r.positives }]),
+  );
+
+  return {
     ai_calls: aiKpis[0]?.calls ?? 0,
     ai_tokens: aiKpis[0]?.tokens ?? 0,
     ai_cost_usd: aiKpis[0]?.cost_usd ?? 0,
