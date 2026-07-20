@@ -97,7 +97,7 @@ export async function listChannels(app: string | null): Promise<NotifyChannelRow
   return q<NotifyChannelRow>(
     `select id::int as id, app_id, kind, target, severity_min, active
      from notify_channel
-     where $1 is null or app_id is null or app_id = $1
+     where $1::text is null or app_id is null or app_id = $1
      order by id desc`,
     [app && app !== "all" ? app : null],
   );

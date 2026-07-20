@@ -50,7 +50,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
                   xLabel="Interactions"
                   yLabel="INP p75"
                   yUnit=" ms"
-                  yFormat={(v) => `${Math.round(v)}`}
+                  yFormat="int"
                 />
               ) : (
                 <p className="py-12 text-center text-sm text-ink-faint">Aucune interaction lente sur {period.label}.</p>

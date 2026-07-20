@@ -27,6 +27,14 @@ export interface ScatterPoint {
 
 const ACCENT = "#f89101";
 
+/** Format d'axe sérialisable (compatible frontière RSC) : entier arrondi ou locale. */
+export type NumFmt = "int" | "locale";
+function numFmt(kind: NumFmt): (v: number) => string {
+  return kind === "int"
+    ? (v: number) => `${Math.round(v)}`
+    : (v: number) => v.toLocaleString("fr-FR");
+}
+
 export function ScatterPlot({
   points,
   xLabel,
@@ -34,8 +42,8 @@ export function ScatterPlot({
   xUnit = "",
   yUnit = "",
   height = 300,
-  xFormat,
-  yFormat,
+  xFormat = "locale",
+  yFormat = "locale",
 }: {
   points: ScatterPoint[];
   xLabel: string;
@@ -43,11 +51,14 @@ export function ScatterPlot({
   xUnit?: string;
   yUnit?: string;
   height?: number;
-  xFormat?: (v: number) => string;
-  yFormat?: (v: number) => string;
+  // Token SÉRIALISABLE (pas une fonction) : ScatterPlot est un composant client,
+  // une fonction passée en prop depuis un server component casse la sérialisation
+  // RSC (« Functions cannot be passed to Client Components »).
+  xFormat?: NumFmt;
+  yFormat?: NumFmt;
 }) {
-  const fx = xFormat ?? ((v: number) => v.toLocaleString("fr-FR"));
-  const fy = yFormat ?? ((v: number) => v.toLocaleString("fr-FR"));
+  const fx = numFmt(xFormat);
+  const fy = numFmt(yFormat);
   const hasZ = points.some((p) => p.z != null);
 
   return (
