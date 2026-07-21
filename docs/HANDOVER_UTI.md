@@ -57,7 +57,7 @@ Dans les variables d'environnement de la console MIP (Vercel) :
 4. Confirmer côté UTI que l'appel se fait **depuis leur back** (le jeton ne doit jamais
    apparaître dans le bundle JS envoyé au navigateur — sinon fuite du jeton en plus du
    bug d'affichage).
-5. Tester en direct : `curl -H "Authorization: Bearer <jeton>" https://<console-mip>/api/v1/ai/costs?group_by=user` doit renvoyer des lignes non vides pour `gip-plateforme`.
+5. Tester en direct : `curl -H "Authorization: Bearer <jeton>" https://<console-mip>/api/v1/overview` doit renvoyer des données non vides pour `gip-plateforme`. (La supervision **IA** ne passe plus par mip-rum — voir la note xSOM au § 4.)
 
 ## 3. Appels (côté back UTI)
 
@@ -82,23 +82,23 @@ async function rum(path, params = {}) {
 
 | Bloc voulu par Sullyvan | Endpoint | `data` |
 |---|---|---|
-| **Perfs IA** (coût, tokens, latence, taux d'erreur) | `GET /ai?period=7d&recent=50` | `overview`, `byModel`, `byRoute`, `daily`, `recent` |
-| **Argent utilisé par utilisateur** (CV) | `GET /ai/costs?group_by=user` | `rows:[{user_hash, cost_usd, calls, …}]` + `unattributed` |
-| **Solde OpenRouter + warning rouge < seuil** | `GET /ai/credits` | `{ status:"ok"\|"low", balance, threshold, currency, checked_at }` |
-| **Journal d'erreurs backend** (échecs IA) | `GET /ai?recent=100` (appels `status:"error"`) **+** `GET /errors` | derniers appels en échec + groupes d'erreurs |
+| **Supervision IA** (coût, tokens, latence, qualité, solde crédits) | **xSOM AI Guard** — `GET /v1/ai/summary?app=gip-plateforme&window=7d` (token `xsr_`) + console xSOM | la supervision IA a quitté mip-rum (**ADR-0001**) ; `/api/v1/ai*` n'existe plus |
+| **Journal d'erreurs backend** (front) | `GET /errors` | groupes d'erreurs front |
 | Web-vitals / pages lentes / sessions / parcours | `GET /overview` `/pages` `/sessions` `/paths` | agrégats RUM |
 
 Découverte complète : `GET /api/v1` (liste des endpoints) · spec machine : `GET /api/v1/openapi`.
 
-### Exemple — warning solde bas
-```ts
-const c = await rum("/ai/credits");
-if (c.status === "low") showRedBanner(`Solde OpenRouter : ${c.balance} ${c.currency}`);
-```
+> **Supervision IA** (coût, tokens, latence, qualité, solde crédits OpenRouter) est
+> désormais servie par **xSOM AI Guard** (`GET /v1/ai/summary`, token `xsr_`), plus par
+> mip-rum. Voir `docs/ADR-0001-supervision-ia-xsom.md`.
 
-## 5. Solde OpenRouter (côté MIP)
+## 5. Solde OpenRouter (côté MIP) — DÉPRÉCIÉ (→ xSOM)
 
-Le relevé est produit par un **cron** MIP (`/api/cron/openrouter-balance`). Pour l'activer,
+> **Déprécié (ADR-0001).** Le suivi du solde/crédits IA est repris par **xSOM AI Guard**.
+> Le cron `/api/cron/openrouter-balance` et les endpoints `/api/v1/ai*` ont été retirés de
+> mip-rum. Section conservée pour mémoire ; ne plus configurer ces variables côté mip-rum.
+
+Le relevé était produit par un **cron** MIP (`/api/cron/openrouter-balance`). Historiquement,
 côté env de la console MIP :
 
 | Variable | Rôle |
