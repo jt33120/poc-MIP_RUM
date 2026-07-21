@@ -149,24 +149,6 @@ const STEPS: Step[] = [
     ),
   },
   {
-    icon: "ai",
-    title: "Performance IA",
-    href: "/ai",
-    body: (
-      <>
-        <p>
-          Le suivi des <strong>appels LLM du backend</strong> : volume, tokens, <strong>coût</strong> et
-          latence par modèle et par route, corrélés au parcours utilisateur.
-        </p>
-        <p className="mt-2">
-          La section <strong>Gouvernance des données</strong> indique, pour chaque usage, la nature de la
-          donnée (personnelle / business) et si elle est <strong>pseudonymisée avant l'appel</strong> — pour
-          repérer d'un coup d'œil ce qui expose de la donnée personnelle.
-        </p>
-      </>
-    ),
-  },
-  {
     icon: "users",
     title: "Expérience utilisateur",
     href: "/experience",

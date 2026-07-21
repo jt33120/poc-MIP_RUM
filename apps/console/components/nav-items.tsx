@@ -9,7 +9,7 @@ export type NavCategory = {
   href: string; // page d'atterrissage de la catégorie (1er onglet)
   label: string;
   icon: IconName;
-  domain: "perf" | "ai" | "neutral";
+  domain: "perf" | "neutral";
   children?: NavLink[]; // sous-onglets ; absent = catégorie mono-page
 };
 
@@ -59,7 +59,6 @@ export const CATEGORIES: NavCategory[] = [
       { href: "/dashboards", label: "Tableaux de bord" },
     ],
   },
-  { href: "/ai", label: "Performance IA", icon: "ai", domain: "ai" },
   { href: "/logs", label: "Logs", icon: "logs", domain: "neutral" },
   { href: "/api-docs", label: "API", icon: "grid", domain: "neutral" },
 ];

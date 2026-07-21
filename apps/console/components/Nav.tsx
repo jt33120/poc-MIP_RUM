@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { CATEGORIES, activeCategory } from "./nav-items";
 import { ICON_PATHS, Icon } from "./icons";
 
-const DOMAIN_DOT = { perf: "text-perf", ai: "text-ai", neutral: "text-ink-faint" } as const;
+const DOMAIN_DOT = { perf: "text-perf", neutral: "text-ink-faint" } as const;
 
 /** Sidebar : une entrée par catégorie (les pages sœurs s'ouvrent en sous-onglets). */
 export function Nav() {

@@ -181,14 +181,6 @@ export const GLOSSARY = {
     business:
       "La performance « vue de loin » : on repère en un clin d'œil les créneaux récurrents qui dérapent (tous les matins 9 h, les soirs de pic…) plutôt que de fixer une seule valeur instantanée. Idéal pour montrer la tenue dans la durée à un client.",
   },
-  ai: {
-    label: "Performance IA",
-    term: "Usage & performance des appels LLM : tokens (prompt/complétion), coût USD, latence (dont TTFB/TTFT) et taux d'erreur, par modèle et par route.",
-    stack:
-      "Chaque appel LLM émet un span OTLP (provider, model, tokens, cost_usd, latency_ms, status) stocké en table rum_ai ; agrégats calculés côté console (percentile_cont pour la latence p75).",
-    business:
-      "Combien coûte l'IA, sur quels parcours, et à quelle vitesse ? On relie la dépense et la lenteur des modèles à l'expérience réelle des utilisateurs — pour arbitrer coût/qualité sans deviner.",
-  },
   rum: {
     label: "RUM — Real User Monitoring",
     term: "Mesure de la performance et des erreurs vécues par les utilisateurs réels, en production.",
