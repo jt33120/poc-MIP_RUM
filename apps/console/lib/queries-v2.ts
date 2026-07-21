@@ -265,7 +265,7 @@ export const SLO_METRICS = ["LCP", "INP", "CLS", "FCP", "TTFB", "error_rate"] as
 // Métriques éligibles comme RÈGLE D'ALERTE : les métriques SLO + deux métriques
 // opérationnelles absolues (budget IA, pics d'erreurs applicatives) évaluées par
 // check_alerts (migration-v38).
-export const ALERT_METRICS = [...SLO_METRICS, "ai_cost", "log_errors"] as const;
+export const ALERT_METRICS = [...SLO_METRICS, "log_errors"] as const;
 export const ALERT_COMPARATORS = [">", "<"] as const;
 
 /** Libellé lisible + unité d'une métrique d'alerte/SLO (dropdowns, feed d'événements). */
@@ -276,7 +276,6 @@ export const METRIC_LABELS: Record<string, string> = {
   FCP: "FCP (ms)",
   TTFB: "TTFB (ms)",
   error_rate: "Taux d'erreur JS",
-  ai_cost: "Coût IA cumulé ($)",
   log_errors: "Logs ERROR (nombre)",
 };
 

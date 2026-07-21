@@ -119,8 +119,8 @@ export function RuleFields({
       </Field>
       <p className="w-full text-xs text-ink-faint">
         (seuil = mode &laquo;&nbsp;threshold&nbsp;&raquo; ; sensibilité = mode &laquo;&nbsp;baseline&nbsp;&raquo;).{" "}
-        <strong>Coût IA cumulé</strong> et <strong>Logs ERROR</strong> se cumulent sur la fenêtre —
-        p.&nbsp;ex. budget IA journalier = seuil en $ avec une fenêtre de 1440&nbsp;min.
+        <strong>Logs ERROR</strong> se cumule sur la fenêtre — p.&nbsp;ex. un seuil sur une fenêtre de
+        1440&nbsp;min.
       </p>
     </>
   );
