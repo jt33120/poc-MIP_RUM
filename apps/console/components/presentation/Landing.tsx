@@ -34,7 +34,6 @@ const INDICATORS: { icon: IconName; label: string; desc: string }[] = [
   { icon: "alert", label: "Anomalies détectées", desc: "Les dérapages vs le comportement habituel, repérés sans seuil à régler." },
   { icon: "trace", label: "Tracing front → back", desc: "Chaque appel API relié à son exécution serveur : réseau, serveur ou code ?" },
   { icon: "users", label: "Parcours & sessions", desc: "Le cheminement réel d'un visiteur, pages, vitals et erreurs, sans donnée identifiante." },
-  { icon: "ai", label: "Performance IA", desc: "Appels LLM (tokens, coût, latence) et gouvernance des données exposées." },
 ];
 
 const STEPS: { title: string; body: string }[] = [

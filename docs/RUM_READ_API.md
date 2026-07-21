@@ -60,7 +60,10 @@ curl -s -H "Authorization: Bearer $MIP_RUM_READ_TOKEN" \
   "top_errors": [               // top 10 par fréquence (message scrubbé, tronqué 200)
     { "message": "TypeError: ...", "count": 12, "last_seen": "2026-07-08T12:00:00.000Z" }
   ],
-  "ai_calls": 279,              // appels LLM backend rattachés à cette app
+  // --- Section IA : servie EXCLUSIVEMENT par xSOM AI Guard (façade). Si xSOM est
+  //     injoignable, ai_status="unavailable" et tous les ai_* valent null / [] -----
+  "ai_status": "ok",            // "ok" | "unavailable"
+  "ai_calls": 279,              // appels LLM backend (null si ai_status="unavailable")
   "ai_tokens": 342300,          // tokens prompt + complétion, cumulés
   "ai_cost_usd": 0.5243,        // coût réel (facturation fournisseur), cumulé sur la fenêtre
   "ai_p75_latency_ms": 4820,    // latence p75 des appels IA, null si aucun appel
@@ -93,7 +96,10 @@ curl -s -H "Authorization: Bearer $MIP_RUM_READ_TOKEN" \
 }
 ```
 
-Une métrique indisponible vaut **`null`** (la clé n'est jamais omise).
+Une métrique indisponible vaut **`null`** (la clé n'est jamais omise). La **section IA**
+est servie par **xSOM AI Guard** via façade : si xSOM est injoignable, `ai_status` vaut
+`"unavailable"` et tous les `ai_*` sont `null` (scalaires) ou `[]` (listes) — **jamais de
+faux « 0 »** (le consommateur doit afficher « indisponible »). Sinon `ai_status="ok"`.
 
 ## Reproduire les graphes avec `/rum/summary`
 
@@ -145,7 +151,8 @@ passer par `/api/v1/*` (jeton `CONSOLE_API_TOKENS@gip-plateforme`, cf. `docs/API
 - **Heatmap de santé jour × heure** → `GET /api/v1/health-grid`
 - **INP / CLS p75 par route**, détail des routes lentes → `GET /api/v1/pages`
 - **Décomposition de latence front/back** → `GET /api/v1/tracing`
-- **Coût IA _par jour_** (série) et par route → `GET /api/v1/ai`
+- **Détail IA** (coût par jour/route, appels récents, gouvernance) → **console xSOM AI
+  Guard** : la supervision IA a quitté mip-rum (ADR-0001) ; `/api/v1/ai*` n'existe plus.
 
 Les graphes Frustration, Expérience, Acquisition, Rétention, Parcours, Formulaires,
 Objectifs, SLO, Alertes et Carte ne sont **exposés par aucune API** à ce jour (cf. la
@@ -156,14 +163,14 @@ section « Non exposé » de `docs/API_CONSOLE.md`) — nous les ouvrons sur dem
 - **avg_load_ms** = moyenne du **First Contentful Paint** (perception de « la page
   s'affiche »). `p75_lcp_ms` / `p75_inp_ms` = percentiles des Core Web Vitals LCP / INP.
 - **error_rate** = part des sessions ayant au moins une erreur front.
-- **ai_*** = agrégats des appels LLM backend (table `rum_ai`), même fenêtre/scope que le
-  reste de la réponse. `ai_cost_usd` est le coût **réel** renvoyé par le fournisseur
-  (pas une estimation). `ai_top_users` référence `user_hash` (anonymisé), jamais d'email
-  ni d'IP.
+- **ai_*** = agrégats des appels LLM backend, **servis par xSOM AI Guard** (source de
+  vérité unique ; mip-rum n'ingère ni ne calcule plus l'IA — ADR-0001). `/rum/summary`
+  agit en **façade** : `ai_status="ok"` + valeurs xSOM, ou `ai_status="unavailable"` +
+  `ai_*` null/[] si xSOM est injoignable (jamais de recalcul local). `ai_top_users`
+  référence `user_hash` (anonymisé), jamais d'email ni d'IP.
 - Tout est **scopé à l'app du token**, borné à la fenêtre, **bots exclus**, et les
   messages d'erreur sont **scrubbés côté serveur** (aucune PII). Un seul token/endpoint
-  couvre désormais activité RUM **et** usage/coûts IA — plus besoin d'un second jeton
-  `CONSOLE_API_TOKENS` pour un tableau de bord partenaire complet.
+  couvre l'activité RUM **et** (via la façade xSOM) l'usage/coûts IA.
 
 ## Gestion des tokens (console admin)
 

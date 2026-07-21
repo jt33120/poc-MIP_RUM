@@ -92,13 +92,6 @@ export const STATS: { id: GlossaryId; href: string; icon: IconName; label: strin
     desc: "L'écart entre le monitoring synthétique et les vrais utilisateurs — le terrain prime sur le labo.",
   },
   {
-    id: "ai",
-    href: "/ai",
-    icon: "ai",
-    label: "Performance IA",
-    desc: "Appels LLM (tokens, coût, latence, erreurs) + gouvernance des données : ce qui expose de la PII, pseudonymisé ou non.",
-  },
-  {
     id: "experience",
     href: "/experience",
     icon: "users",

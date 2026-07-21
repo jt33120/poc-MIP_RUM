@@ -72,9 +72,12 @@ describe("buildOpenApi — spec valide et complète", () => {
     for (const p of [
       "/health", "/openapi", "/", "/apps", "/overview", "/vitals", "/pages",
       "/errors", "/errors/{fingerprint}", "/sessions", "/sessions/{id}",
-      "/tracing", "/correlation", "/health-grid", "/ai", "/ai/costs", "/ai/credits",
+      "/tracing", "/correlation", "/health-grid",
     ])
       expect(paths, `manque ${p}`).toContain(p);
+    // La supervision IA (/ai*) a quitté mip-rum pour xSOM AI Guard.
+    for (const p of ["/ai", "/ai/costs", "/ai/credits"])
+      expect(paths, `${p} ne doit plus être exposé`).not.toContain(p);
   });
 
   it("schémas de sécurité Bearer + cookie déclarés", () => {

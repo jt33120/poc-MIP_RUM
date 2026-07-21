@@ -177,54 +177,6 @@ export function buildOpenApi(): Record<string, unknown> {
           { params: commonFilters },
         ),
       },
-      "/ai": {
-        get: get(
-          "Performance IA : coût/tokens/latence/erreurs (global + par modèle/route + série jour + derniers appels)",
-          "rum",
-          ref("AiPerformance"),
-          {
-            // rum_ai n'a pas de notion d'appareil : seuls app + period s'appliquent.
-            params: [
-              { $ref: "#/components/parameters/app" },
-              { $ref: "#/components/parameters/period" },
-              {
-                name: "recent",
-                in: "query",
-                schema: { type: "integer", minimum: 0, maximum: 200 },
-                description: "nombre de derniers appels IA à renvoyer (0..200, défaut 50 ; 0 = aucun)",
-              },
-            ],
-          },
-        ),
-      },
-      "/ai/costs": {
-        get: get(
-          "Coût IA agrégé par dimension (user_hash par défaut, ou model/route)",
-          "rum",
-          ref("AiCosts"),
-          {
-            params: [
-              { $ref: "#/components/parameters/app" },
-              { $ref: "#/components/parameters/period" },
-              {
-                name: "group_by",
-                in: "query",
-                schema: { type: "string", enum: ["user", "model", "route"] },
-                description: "dimension d'agrégation (défaut : user = par user_hash anonymisé)",
-              },
-              {
-                name: "limit",
-                in: "query",
-                schema: { type: "integer", minimum: 1, maximum: 500 },
-                description: "taille de page pour group_by=user (1..500, défaut 100)",
-              },
-            ],
-          },
-        ),
-      },
-      "/ai/credits": {
-        get: get("Dernier solde OpenRouter + statut (warning crédit bas)", "rum", ref("AiCredits")),
-      },
     },
     components: {
       securitySchemes: {
@@ -312,48 +264,6 @@ export function buildOpenApi(): Record<string, unknown> {
 
         HealthGridCell: o({ day: str, hour: int, good_w: num, total_w: num }, ["day", "hour"]),
         DailyTraffic: o({ day: str, pageviews: num, errors: num }, ["day"]),
-
-        AiOverview: o(
-          { calls: int, prompt_tokens: int, completion_tokens: int, total_tokens: int, cost_usd: num, latency_p75: nul(num), error_rate: num },
-          ["calls", "cost_usd", "error_rate"],
-        ),
-        AiModelRow: o({ provider: nul(str), model: nul(str), calls: int, total_tokens: int, cost_usd: num, latency_p75: nul(num), error_rate: num }, ["calls", "cost_usd"]),
-        AiRouteRow: o({ route: nul(str), calls: int, total_tokens: int, cost_usd: num, latency_p75: nul(num), error_rate: num }, ["calls", "cost_usd"]),
-        AiDailyRow: o({ day: str, calls: int, cost_usd: num, total_tokens: int }, ["day"]),
-        AiCallRow: o(
-          { id: int, ts: dateTime, provider: nul(str), model: nul(str), route: nul(str), total_tokens: nul(int), cost_usd: nul(num), latency_ms: nul(num), status: str, error_type: nul(str), session_id: nul(str) },
-          ["id", "ts", "status"],
-        ),
-        AiPerformance: o(
-          { overview: ref("AiOverview"), byModel: arr(ref("AiModelRow")), byRoute: arr(ref("AiRouteRow")), daily: arr(ref("AiDailyRow")), recent: arr(ref("AiCallRow")) },
-          ["overview", "byModel", "byRoute", "daily", "recent"],
-        ),
-        AiUserCostRow: o(
-          { user_hash: str, calls: int, cost_usd: num, total_tokens: int, error_rate: num, last_ts: dateTime },
-          ["user_hash", "calls", "cost_usd"],
-        ),
-        AiUnattributedCost: o({ calls: int, cost_usd: num }, ["calls", "cost_usd"]),
-        // rows dépend de group_by : AiUserCostRow (user, défaut) | AiModelRow (model) | AiRouteRow (route).
-        // unattributed n'est présent que pour group_by=user.
-        AiCosts: o(
-          {
-            group_by: { type: "string", enum: ["user", "model", "route"] },
-            rows: arr({ oneOf: [ref("AiUserCostRow"), ref("AiModelRow"), ref("AiRouteRow")] }),
-            unattributed: nul(ref("AiUnattributedCost")),
-          },
-          ["group_by", "rows"],
-        ),
-        // status/balance null tant qu'aucun relevé n'a été fait (cron pas encore passé).
-        AiCredits: o({
-          status: nul({ type: "string", enum: ["ok", "low"] }),
-          balance: nul(num),
-          total_credits: nul(num),
-          total_usage: nul(num),
-          threshold: nul(num),
-          currency: nul(str),
-          checked_at: nul(dateTime),
-          note: str,
-        }),
       },
     },
   };

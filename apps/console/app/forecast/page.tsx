@@ -2,7 +2,7 @@
 // 14 derniers jours pour anticiper AVANT l'incident — complément prédictif des
 // anomalies z-score (réactives) et du burn-rate SLO. Régression linéaire pure
 // (lib/forecast), réutilise les séries journalières existantes (queries-grid).
-import { fmtLatency } from "@/components/ai/format";
+import { fmtLatency } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { ForecastChart, type ForecastPoint } from "@/components/charts/ForecastChart";

@@ -1,7 +1,7 @@
 // Page « Carte d'expérience » : le graphe de service front→back (cartographie),
 // pondéré par le volume (analyse de flux) et annoté d'une tendance (capacity).
 // 100 % lecture sur rum_span/rum_metric — aucune ingestion spécifique.
-import { fmtLatency, fmtPct } from "@/components/ai/format";
+import { fmtLatency, fmtPct } from "@/lib/format";
 import { ExperienceMap } from "@/components/map/ExperienceMap";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";

@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
       throw new BadRequestError("invalid json body");
     }
     const rows = flattenOtlp(payload, { maxSpans: MAX_SPANS_PER_REQUEST });
-    const { sessions, pageviews, metrics, errors, resources, longtasks, breadcrumbs, events, spans, ai } = rows;
+    const { sessions, pageviews, metrics, errors, resources, longtasks, breadcrumbs, events, spans } = rows;
 
     // vérif clé d'API (403) — clé portée par l'attribut resource mip.api_key
     for (const { app_id, api_key } of rows.apiKeys) {
@@ -148,7 +148,6 @@ Deno.serve(async (req) => {
     await ins("rum_breadcrumb", breadcrumbs);
     await ins("rum_event", events);
     await ins("rum_span", spans); // v0.4 tracing distribué (front + back)
-    await ins("rum_ai", ai); // v0.8 appels LLM (usage & performance IA)
 
     // page_count DÉRIVÉ du compte réel de pageviews (idempotent au rejeu, cf.
     // migration-v07) — recalcul APRÈS l'insertion, pour les sessions qui ont
