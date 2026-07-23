@@ -60,6 +60,9 @@ export const CATEGORIES: NavCategory[] = [
     ],
   },
   { href: "/logs", label: "Logs", icon: "logs", domain: "neutral" },
+  // Espace PARTENAIRE (sponsorisé xSOM) — supervision IA lue depuis xSOM AI Guard,
+  // distincte du RUM MIP (cf. ADR-0001). Le libellé « · xSOM » signale le partenaire.
+  { href: "/ai", label: "IA · xSOM", icon: "ai", domain: "neutral" },
   { href: "/api-docs", label: "API", icon: "grid", domain: "neutral" },
 ];
 
