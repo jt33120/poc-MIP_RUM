@@ -1,7 +1,7 @@
 // Espace PARTENAIRE « Supervision IA — propulsée par xSOM AI Guard ». Lit
 // EXCLUSIVEMENT l'API xSOM (via la façade fetchAiSummary) : aucune donnée ni
-// calcul IA côté MIP RUM (cf. ADR-0001). Clairement badgé « sponsorisé xSOM » —
-// c'est un placement partenaire, visuellement distinct du produit RUM natif.
+// calcul IA côté MIP RUM (cf. ADR-0001). Clairement badgé « partenaire · propulsé
+// par xSOM » — un placement partenaire, visuellement distinct du produit RUM natif.
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { LineTrend, type LineTrendPoint } from "@/components/charts/LineTrend";
 import { fmtLatency, fmtPct } from "@/lib/format";
@@ -17,11 +17,11 @@ export function XsomSponsorBanner({ href }: { href: string }) {
     <a
       href={href}
       target="_blank"
-      rel="noopener noreferrer sponsored"
+      rel="noopener noreferrer"
       className="mb-6 flex flex-wrap items-center gap-4 rounded-xl border border-ai/30 bg-ai/5 p-4 transition hover:border-ai/50 hover:bg-ai/10"
     >
       <span className="rounded-full border border-ai/40 bg-ai/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-ai">
-        Sponsorisé
+        Partenaire
       </span>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-ink">Supervision IA propulsée par xSOM AI Guard</div>

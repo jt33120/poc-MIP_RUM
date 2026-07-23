@@ -48,7 +48,7 @@ export default async function AiPartner({ searchParams }: { searchParams?: Promi
           <a
             href={XSOM_CONSOLE_URL}
             target="_blank"
-            rel="noopener noreferrer sponsored"
+            rel="noopener noreferrer"
             className="mt-4 inline-block rounded-lg border border-ai/40 px-4 py-2 text-sm font-semibold text-ai transition hover:bg-ai/10"
           >
             Ouvrir xSOM AI Guard →
