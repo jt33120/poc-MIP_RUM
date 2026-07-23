@@ -120,6 +120,60 @@ export function buildHttpServerSpan(i: HttpSpanInput): Record<string, unknown> {
   };
 }
 
+// --- profondeur DB (#20) : spans de requêtes base de données ------------------
+// Enfants du span http.server courant : reconstituent le waterfall front ->
+// serveur -> requête DB. Côté ingestion, ils tombent dans la branche « detail »
+// (tier=detail, kind=db) — donc PAS de mip.session_id, kind non-serveur.
+
+/** Normalise une requête SQL : littéraux (chaînes, nombres) -> `?`. Borne la
+ *  cardinalité ET évite d'exfiltrer des valeurs (PII) dans db.statement. */
+export function normalizeSql(sql: string): string {
+  return String(sql ?? "")
+    .replace(/'(?:[^']|'')*'/g, "?") // littéraux chaîne (quotes doublées incluses)
+    .replace(/\b\d+\b/g, "?") // littéraux numériques
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
+/** Verbe SQL en tête (SELECT/INSERT/…) -> db.operation. null si non reconnu. */
+export function sqlOperation(sql: string): string | null {
+  const m = /^\s*(select|insert|update|delete|with|create|drop|alter|truncate|begin|commit|rollback)\b/i.exec(
+    String(sql ?? ""),
+  );
+  return m ? m[1].toUpperCase() : null;
+}
+
+export interface DbSpanInput {
+  traceId: string;
+  spanId: string;
+  parentSpanId: string | null;
+  system: string; // ex. "postgresql"
+  statement: string; // déjà normalisé (sans littéraux)
+  operation: string | null; // SELECT/INSERT/…
+  startMs: number;
+  durationMs: number;
+}
+
+/** Span OTLP d'une requête DB — enfant du span http.server (parentSpanId). */
+export function buildDbSpan(i: DbSpanInput): Record<string, unknown> {
+  const span: Record<string, unknown> = {
+    traceId: i.traceId,
+    spanId: i.spanId,
+    kind: 3, // CLIENT — surtout PAS serveur (la branche « detail » exige !isServerKind)
+    name: i.statement.slice(0, 120) || i.system,
+    startTimeUnixNano: nanos(i.startMs),
+    endTimeUnixNano: nanos(i.startMs + i.durationMs),
+    attributes: encodeAttrs({
+      "db.system": i.system,
+      "db.statement": i.statement,
+      "db.operation": i.operation,
+    }),
+  };
+  if (i.parentSpanId) span.parentSpanId = i.parentSpanId;
+  return span;
+}
+
 /** Enveloppe OTLP/HTTP JSON pour un lot de spans. */
 export function buildPayload(cfg: AgentConfig, spans: Record<string, unknown>[]): unknown {
   return {
