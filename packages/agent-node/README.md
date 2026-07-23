@@ -38,9 +38,16 @@ patch, aucun surcoût).
 
 - **`http.server`** : méthode, route templatée (`/users/:id`), statut, durée,
   propagation `traceparent` (corrélation front → back) et session via `tracestate`.
+- **Requêtes DB `pg`** (node-postgres) : un span **enfant** par requête SQL,
+  rattaché au `http.server` de la requête courante (contexte `AsyncLocalStorage`)
+  — pour un waterfall **front → serveur → requête DB**. `db.statement` est
+  **normalisé** (littéraux chaîne/nombres → `?`) : cardinalité bornée et **aucune
+  valeur (PII) exfiltrée**. Couvre aussi `Pool` (qui délègue à un `Client`).
 
-Aucune donnée de corps, ni query string, ni en-tête n'est collectée. Prochaine
-étape : spans DB (`pg`, `mysql`) pour la profondeur du waterfall.
+L'instrumentation `pg` se branche via un hook `require` (agent **sans dépendance** :
+il n'importe jamais `pg`). Aucune donnée de corps, ni query string, ni en-tête, ni
+valeur SQL n'est collectée. Prochaine étape : `mysql`/`mysql2`, puis `http.client`
+sortant.
 
 ## Garanties
 

@@ -4,10 +4,13 @@
 import { describe, expect, it } from "vitest";
 import {
   buildConfig,
+  buildDbSpan,
   buildHttpServerSpan,
   buildPayload,
   normalizeRoute,
+  normalizeSql,
   parseTraceparent,
+  sqlOperation,
 } from "../../packages/agent-node/src/core";
 import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
 
@@ -66,5 +69,61 @@ describe("agent-node — round-trip OTLP -> flattenOtlp (span back)", () => {
     expect(s.session_id).toBe("sess-9");
     expect(rows.rejected).toBe(0);
     expect(rows.apiKeys[0]).toEqual({ app_id: "demo", api_key: "mip_key_123" });
+  });
+});
+
+describe("agent-node — normalizeSql / sqlOperation (profondeur DB #20)", () => {
+  it("remplace littéraux chaîne et nombres par ? (cardinalité + anti-PII)", () => {
+    expect(normalizeSql("SELECT * FROM users WHERE email = 'a@b.co' AND id = 42")).toBe(
+      "SELECT * FROM users WHERE email = ? AND id = ?",
+    );
+  });
+  it("extrait le verbe SQL en tête", () => {
+    expect(sqlOperation("  select 1")).toBe("SELECT");
+    expect(sqlOperation("INSERT INTO t values (1)")).toBe("INSERT");
+    expect(sqlOperation("vacuum analyze")).toBeNull();
+  });
+});
+
+describe("agent-node — round-trip DB span (tier detail/db) enfant du http.server", () => {
+  const cfg = buildConfig({ MIP_RUM_ENDPOINT: "https://i/v1/traces", MIP_RUM_APP_ID: "demo" });
+  const traceId = "0af7651916cd43dd8448eb211c80319c";
+  const httpSpanId = "00aa11bb22cc33dd";
+  const http = buildHttpServerSpan({
+    traceId,
+    spanId: httpSpanId,
+    parentSpanId: null,
+    method: "GET",
+    route: "/api/x",
+    url: null,
+    status: 200,
+    sessionId: null,
+    startMs: 1_760_000_000_000,
+    durationMs: 50,
+  });
+  const db = buildDbSpan({
+    traceId,
+    spanId: "dddd1111eeee2222",
+    parentSpanId: httpSpanId,
+    system: "postgresql",
+    statement: "SELECT * FROM users WHERE id = ?",
+    operation: "SELECT",
+    startMs: 1_760_000_000_010,
+    durationMs: 7,
+  });
+  const rows = flattenOtlp(buildPayload(cfg, [http, db]));
+
+  it("produit un span detail/db corrélé au http.server parent", () => {
+    expect(rows.rejected).toBe(0);
+    const dbRow = rows.spans.find((s: { tier: string }) => s.tier === "detail");
+    expect(dbRow).toBeTruthy();
+    expect(dbRow.kind).toBe("db");
+    expect(dbRow.trace_id).toBe(traceId);
+    expect(dbRow.parent_span_id).toBe(httpSpanId); // enfant du http.server
+    expect(dbRow.method).toBe("SELECT");
+    expect(dbRow.route).toBe("postgresql");
+    expect(dbRow.name).toContain("SELECT * FROM users");
+    expect(dbRow.duration_ms).toBe(7);
+    expect(dbRow.session_id).toBeNull(); // spans back "detail" ne portent pas de session
   });
 });
