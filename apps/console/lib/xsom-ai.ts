@@ -1,7 +1,7 @@
-// Facade xSOM AI Guard — délègue le calcul des métriques IA à xSOM quand il est
-// configuré (XSOM_AI_URL + XSOM_AI_TOKEN). Renvoie le sous-objet IA du RumSummary,
-// ou `null` si non configuré / erreur / timeout — l'appelant retombe alors sur le
-// calcul local (rum_ai). Dégradation douce : xSOM ne peut jamais casser le résumé.
+// Facade xSOM AI Guard — SOURCE des métriques IA (XSOM_AI_URL + XSOM_AI_TOKEN).
+// Renvoie le sous-objet IA du RumSummary, ou `null` si non configuré / erreur /
+// timeout — l'appelant marque alors la section IA « unavailable » (AUCUN recalcul
+// local ; rum_ai n'est plus la source, cf. ADR-0001). Ne lève jamais.
 import type {
   SummaryAiModel,
   SummaryAiOperation,
@@ -34,7 +34,7 @@ export async function fetchAiSummary(
 ): Promise<XsomAiFields | null> {
   const base = process.env.XSOM_AI_URL;
   const token = process.env.XSOM_AI_TOKEN;
-  if (!base || !token) return null; // non configuré → calcul local
+  if (!base || !token) return null; // non configuré → section IA « unavailable »
 
   const url =
     `${base.replace(/\/+$/, "")}/ai/summary` +
