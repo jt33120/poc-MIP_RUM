@@ -1,0 +1,66 @@
+# E2-S1 (revue BMAD) — PROUVER le conteneur d'ingestion self-host.
+# Build l'image `Dockerfile.ingest` + `docker compose up` (Postgres + ingest, avec
+# schema.sql + toutes les migrations appliquées par initdb.sh), puis smoke-test :
+#   /health -> 200, POST /v1/traces {"resourceSpans":[]} -> 200 partialSuccess.
+# Rend le « backend dockerisé/intégrable » VÉRIFIÉ à chaque PR (les runners GitHub
+# fournissent Docker ; l'env de dev n'a pas de démon). Isolé de ci.yml.
+name: Docker smoke (ingest self-host)
+
+on:
+  pull_request:
+    paths:
+      - "infra/docker/**"
+      - "apps/ingest/**"
+      - ".github/workflows/docker-smoke.yml"
+  push:
+    branches: [master]
+    paths:
+      - "infra/docker/**"
+      - "apps/ingest/**"
+  workflow_dispatch:
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infra/docker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & up (ingest + db)
+        run: docker compose up -d --build
+
+      - name: Attendre l'ingestion (healthy)
+        run: |
+          for i in $(seq 1 40); do
+            if curl -fsS http://localhost:4318/health >/dev/null 2>&1; then
+              echo "ingest up"; exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::ingest n'est jamais devenu healthy"; exit 1
+
+      - name: Smoke /health
+        run: |
+          body=$(curl -fsS http://localhost:4318/health)
+          echo "GET /health -> $body"
+          echo "$body" | grep -q '"status"'
+
+      - name: Smoke POST /v1/traces (payload vide -> 200 partialSuccess)
+        run: |
+          code=$(curl -s -o /tmp/out -w '%{http_code}' -X POST \
+            -H 'content-type: application/json' \
+            -d '{"resourceSpans":[]}' \
+            http://localhost:4318/v1/traces)
+          echo "POST /v1/traces -> $code ($(cat /tmp/out))"
+          test "$code" = "200"
+
+      - name: Logs conteneurs (si échec)
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v
