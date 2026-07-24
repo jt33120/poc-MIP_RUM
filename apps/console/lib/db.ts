@@ -13,7 +13,11 @@ const pool =
   globalForPg.pgPool ??
   new Pool({
     connectionString,
-    max: 5,
+    // Pool par instance (serverless). Réglable via PGPOOL_MAX ; défaut 10 (un
+    // /rum/summary prend jusqu'à 4 connexions en parallèle — 5 saturait sous
+    // multi-onglets / auto-refresh). Derrière le pooler Supabase (mode
+    // transaction), monter ce plafond est sûr.
+    max: Number(process.env.PGPOOL_MAX ?? 10),
     // base cloud : TLS vérifié contre la CA Supabase épinglée
     ssl: connectionString.includes("supabase.com")
       ? { ca: SUPABASE_CA }
