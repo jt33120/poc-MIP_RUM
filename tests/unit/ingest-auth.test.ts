@@ -54,12 +54,14 @@ describe("createAuth.checkApiKey", () => {
     expect(await auth.checkApiKey("a", null)).toMatch(/unknown or inactive/);
   });
 
-  it("app keyless (api_key_hash null) -> acceptée sans clé (continuité)", async () => {
+  it("app keyless (api_key_hash null) sous REQUIRE_API_KEY -> REJETÉE (E1-S1 durcissement)", async () => {
     const auth = createAuth(fakeSupabase([{ app_id: "a", api_key_hash: null, active: true }]) as never, {
       requireApiKey: true,
     });
-    expect(await auth.checkApiKey("a", null)).toBeNull();
-    expect(await auth.checkApiKey("a", "clé-quelconque")).toBeNull();
+    // Fin du « keyless toléré » : une app active sans clé ne peut plus ingérer
+    // quand l'enforcement est activé (anti data-poisoning).
+    expect(await auth.checkApiKey("a", null)).toMatch(/requires an API key/);
+    expect(await auth.checkApiKey("a", "clé-quelconque")).toMatch(/requires an API key/);
   });
 
   it("app à clé : clé correcte acceptée, absente ou fausse rejetée", async () => {

@@ -65,7 +65,11 @@ export function createAuth(supabase, opts = {}) {
     }
     const app = registry.get(appId);
     if (!app || !app.active) return `unknown or inactive app: ${appId}`;
-    if (app.api_key_hash == null) return null; // keyless : continuité
+    // Durcissement (E1-S1) : sous REQUIRE_API_KEY, une app SANS clé est REJETÉE
+    // (fin du « keyless toléré » — vecteur de data-poisoning). Rollout : donner
+    // une clé à CHAQUE app active AVANT de passer REQUIRE_API_KEY=true, sinon 403.
+    // Sans le flag (défaut), aucun effet : cette fonction retourne null d'entrée.
+    if (app.api_key_hash == null) return `app requires an API key: ${appId}`;
     if (!apiKey || (await sha256(apiKey)) !== app.api_key_hash)
       return `invalid api key for app: ${appId}`;
     return null;
