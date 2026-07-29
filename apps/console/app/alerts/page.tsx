@@ -164,6 +164,20 @@ export default async function Alerts({
 
       {/* ----- Flux d'événements ----- */}
       <h2 className="mb-3 text-base font-bold tracking-tight">Événements déclenchés</h2>
+      {/* Une alerte qui se déclenche sans atteindre personne est un faux sentiment
+          de sécurité. Tant qu'aucun canal actif n'existe, on le dit ici — au-dessus
+          du flux — et pas seulement dans la section « Canaux » plus bas. */}
+      {!channels.some((c) => c.active) && events.length > 0 && (
+        <div
+          data-testid="no-channel-warning"
+          className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+        >
+          <strong>Aucun canal de notification actif.</strong> Ces {events.length} alertes se sont
+          déclenchées <strong>sans être envoyées à personne</strong> — la supervision voit, elle ne
+          prévient pas. Ajoute un canal webhook ou Slack dans la section ci-dessous pour fermer la
+          boucle.
+        </div>
+      )}
       <div className="flex flex-col gap-2">
         {events.map((e) => (
           <div
@@ -185,7 +199,21 @@ export default async function Alerts({
             <span className="font-medium">
               {e.message ?? `${e.metric} (${e.rule_id != null ? `règle ${e.rule_id}` : "SLO"})`}
             </span>
-            <span className="ml-auto text-xs tabular-nums text-ink-soft">{fmtDate(e.fired_at)}</span>
+            <span
+              title={
+                e.delivered > 0
+                  ? `${e.delivered} notification(s) effectivement envoyée(s)`
+                  : "Aucune notification n'est partie pour cette alerte"
+              }
+              className={`ml-auto rounded px-2 py-0.5 text-xs ${
+                e.delivered > 0
+                  ? "bg-panel2 text-ink-faint"
+                  : "border border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300"
+              }`}
+            >
+              {e.delivered > 0 ? `livrée ×${e.delivered}` : "non livrée"}
+            </span>
+            <span className="text-xs tabular-nums text-ink-soft">{fmtDate(e.fired_at)}</span>
             {e.acknowledged ? (
               <span className="rounded bg-panel2 px-2 py-0.5 text-xs text-ink-faint">acquittée</span>
             ) : (

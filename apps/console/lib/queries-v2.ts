@@ -327,13 +327,20 @@ export interface AlertEventRow {
   metric: string;
   app_id: string;
   route: string | null;
+  /** Notifications réellement parties (alert_delivery.status='sent'). 0 = l'alerte
+   *  s'est déclenchée sans que personne n'en soit averti. */
+  delivered: number;
 }
 
-/** Un événement vient d'une règle OU d'un SLO : left joins + coalesce des champs. */
+/** Un événement vient d'une règle OU d'un SLO : left joins + coalesce des champs.
+ *  `delivered` compte les livraisons effectives — sans lui, l'interface affichait
+ *  une alerte « déclenchée » sans dire qu'elle n'avait atteint personne. */
 export async function alertEvents(f: Filters): Promise<AlertEventRow[]> {
   return q<AlertEventRow>(
     `select ae.id::int as id, ae.rule_id::int as rule_id, ae.fired_at, ae.value,
             ae.message, ae.acknowledged, ae.severity,
+            (select count(*) from alert_delivery d
+              where d.alert_event_id = ae.id and d.status = 'sent')::int as delivered,
             coalesce(r.metric, s.metric) as metric,
             coalesce(r.app_id, s.app_id) as app_id,
             coalesce(r.route, s.route) as route
