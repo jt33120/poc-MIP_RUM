@@ -74,7 +74,8 @@ describe("flattenOtlp v0.2 — fixture otlp-sample-v2", () => {
 
   it("les 5 vitals sont présents et notés", () => {
     expect(rows.metrics.map((m) => m.name).sort()).toEqual(["CLS", "FCP", "INP", "LCP", "TTFB"]);
-    expect(rows.metrics.find((m) => m.name === "LCP").rating).toBe("poor");
+    // 2650,5 ms : « à améliorer » avec les bornes web.dev [2500, 4000] (E0)
+    expect(rows.metrics.find((m) => m.name === "LCP").rating).toBe("needs-improvement");
     expect(rows.metrics.find((m) => m.name === "INP").rating).toBe("good");
   });
 

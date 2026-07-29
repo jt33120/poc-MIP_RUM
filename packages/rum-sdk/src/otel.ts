@@ -36,7 +36,33 @@ let pending: Promise<void> = Promise.resolve();
 function hexId(bytes: number): string {
   const a = new Uint8Array(bytes);
   crypto.getRandomValues(a);
+  if (a.every((x) => x === 0)) a[0] = 1; // tout-zéro interdit par la spec W3C
   return Array.from(a, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// --- Contexte de trace W3C (E0) ---------------------------------------------
+// AVANT : chaque span portait un traceId ET un spanId tirés au hasard. Résultat,
+// aucun span n'était rattachable à un autre : un backend OTel recevant notre
+// OTLP voyait autant de traces que de spans, et la promesse « OTel-native, donc
+// corrélable » était fausse dans les champs natifs (seuls les attributs
+// propriétaires mip.trace_id portaient la corrélation front↔back).
+//
+// MAINTENANT : un traceId par PAGE VUE (chargement initial + chaque navigation
+// SPA), partagé par tous les spans de cette page. Les spans d'appel API portent
+// en plus leur propre spanId, celui-là même propagé dans l'en-tête `traceparent`
+// — le span serveur devient donc leur enfant, dans la MÊME trace que la page.
+// Rotation par page vue (et non par session) : une trace doit rester bornée.
+let pageTraceId = hexId(16);
+
+/** traceId de la page vue courante — injecté dans `traceparent` par apispans. */
+export function currentTraceId(): string {
+  return pageTraceId;
+}
+
+/** Ouvre une nouvelle trace : appelé à chaque pageview (initiale et SPA). */
+export function newPageTrace(): string {
+  pageTraceId = hexId(16);
+  return pageTraceId;
 }
 
 /** Exporter HTTP OTLP/JSON : POST keepalive ; échec réseau/HTTP -> FAILED. */
@@ -106,7 +132,7 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
       const startMs = opts?.startTime ?? Date.now();
       const span: EmitSpan = {
         name,
-        traceId: hexId(16),
+        traceId: pageTraceId, // tous les spans de la page vue partagent la trace
         spanId: hexId(8),
         startTime: msToHr(startMs),
         endTime: msToHr(startMs),
@@ -120,6 +146,13 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
         end(epochMs) {
           if (ended) return; // end() idempotent
           ended = true;
+          // Les spans d'appel API (http.client) ont déjà un contexte W3C : c'est
+          // celui qui part dans `traceparent`, donc celui que le serveur voit.
+          // On le recopie dans les champs NATIFS pour que les deux vues (attributs
+          // propriétaires et OTLP standard) désignent le même span.
+          const a = span.attributes as Record<string, unknown>;
+          if (typeof a["mip.trace_id"] === "string") span.traceId = a["mip.trace_id"];
+          if (typeof a["mip.span_id"] === "string") span.spanId = a["mip.span_id"];
           span.endTime = msToHr(epochMs ?? Date.now());
           buffer.push(span);
           if (buffer.length >= MAX_BATCH) void flushBatch();
