@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 
 const SQL = (f) => new URL(`../apps/ingest/sql/${f}`, import.meta.url);
-const MIGR = ["schema.sql", ...["02","03","04","05","07","08","09","10","11","12","13","14","15","16","17"].map((n) => `migration-v${n}.sql`)];
+const MIGR = ["schema.sql", ...["02","03","04","05","07","08","09","10","11","12","13","14","15","16","17","45","46"].map((n) => `migration-v${n}.sql`)];
 
 async function applyAll(c) {
   for (const f of MIGR) {
@@ -74,6 +74,28 @@ async function main() {
   assert("check_slo_burn : déclenche un alert_event SLO", Number(burned.rows[0].n) >= 1);
   assert("alert_event SLO rattaché au slo_id (rule_id null)",
     Number((await c.query("select count(*)::int n from alert_event where slo_id is not null and rule_id is null")).rows[0].n) >= 1);
+
+  // ── Pilier 2 bis : l'objectif est une FRACTION, et fast_burn le prouve ─────
+  // Régression migration-v46. `objective` en pourcent (99 au lieu de 0,99) rendait
+  // le budget négatif, donc `(1 - atteinte) >= 14,4 × budget` toujours vrai : le
+  // SLO se déclarait « en burn » en permanence (627 fausses alertes en prod).
+  const rejected = await c.query(
+    `insert into slo (app_id,name,metric,objective,window_days) values ('app-a','pourcent','LCP',99,28)`,
+  ).then(() => null, (e) => e);
+  assert("slo : un objectif en pourcent (99) est REFUSÉ à l'écriture",
+    rejected !== null && /slo_objective_is_ratio/.test(String(rejected.message)));
+
+  // Défense en profondeur : même contrainte retirée, un budget non positif ne
+  // doit plus produire un burn permanent.
+  await c.query("alter table slo drop constraint slo_objective_is_ratio");
+  const badId = (await c.query(
+    `insert into slo (app_id,name,metric,objective,window_days)
+     values ('app-a','pourcent','LCP',99,28) returning id`)).rows[0].id;
+  const bad = (await c.query("select * from slo_status('app-a') where slo_id=$1", [badId])).rows[0];
+  assert("slo_status : budget non positif -> fast_burn false (anti-tautologie)", bad?.fast_burn === false);
+  assert("slo_status : budget non positif -> burned_pct null", bad?.burned_pct === null);
+  await c.query("delete from slo where id=$1", [badId]);
+  await c.query("alter table slo add constraint slo_objective_is_ratio check (objective > 0 and objective < 1)");
 
   // ── Pilier 3 : routing par sévérité ────────────────────────────────────────
   await c.query(`insert into notify_channel (app_id, kind, target, severity_min) values

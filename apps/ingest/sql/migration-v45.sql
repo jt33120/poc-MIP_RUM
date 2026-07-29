@@ -8,6 +8,14 @@
 --   • sur UN SEUL SLO, soit environ 23 par jour ;
 --   • 0 acquittée, 0 livrée.
 --
+-- ⚠ CORRECTION (migration-v46) : le diagnostic ci-dessous est INCOMPLET. La
+-- cadence n'était que le symptôme. La cause racine est un `slo.objective` stocké
+-- en pourcent (99 au lieu de 0,99) qui rendait `fast_burn` TOUJOURS vrai — les
+-- 624 alertes ne détectaient rien. Appliquée seule, cette migration aurait fait
+-- passer 23 FAUSSES alertes par jour à ~3 FAUSSES alertes par jour. v45 reste
+-- utile (elle borne la répétition d'une dégradation réelle), mais c'est v46 qui
+-- corrige le défaut.
+--
 -- Le coupable n'est pas un bug mais une règle trop simple : check_slo_burn()
 -- ré-alertait dès qu'aucun événement NON ACQUITTÉ n'existait dans la dernière
 -- heure. Personne n'acquittant jamais, la garde se réduisait à « une alerte par

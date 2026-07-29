@@ -25,14 +25,26 @@ baseline répond à « est-ce anormal **pour ce moment** ? » — la base du mot
 
 Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
 
+> **L'objectif se stocke en fraction, jamais en pourcent** — 99 % s'écrit `0.99`.
+> La contrainte `slo_objective_is_ratio` (migration-v46) l'impose désormais au
+> stockage. Ce n'est pas cosmétique : avec `objective = 99`, le budget devient
+> négatif (`1 − 99 = −98`) et la condition de burn `(1 − atteinte) ≥ 14,4 × budget`
+> est satisfaite **par construction**. La production a ainsi émis 627 alertes
+> « critical » en 27 jours sans jamais rien détecter — y compris sur un SLO à
+> 100 % d'atteinte. `slo_status()` retourne en outre `fast_burn = false` si le
+> budget n'est pas strictement positif (défense en profondeur).
+
 - **`slo_status(app?)`** calcule, par SLO actif : **atteinte** (part conforme sur la
   fenêtre — vitals « good » ou `1 − taux d'erreur`), **budget** (`1 − objectif`),
   **% de budget consommé**, et **`fast_burn`**.
 - **Burn-rate** : `fast_burn` = le taux non conforme de la **dernière heure** dépasse
   **14,4×** le budget (convention SRE multi-fenêtres — épuiserait un budget 30 j en ~2 j).
 - **`check_slo_burn()`** (pg_cron toutes les 5 min) crée un `alert_event` **critical**
-  rattaché au SLO (`slo_id`) sur burn rapide, avec dédup horaire. Flux d'événements
-  **unifié** avec les règles (`alert_event.rule_id` OU `slo_id`).
+  rattaché au SLO (`slo_id`) sur burn rapide. Flux d'événements **unifié** avec les
+  règles (`alert_event.rule_id` OU `slo_id`). **Cadence dégressive** (migration-v45)
+  : 1 h, 2 h, 4 h, 8 h puis 16 h de plafond selon le nombre d'alertes déjà émises
+  sur 24 h glissantes — une dégradation durable reste visible sans devenir du bruit,
+  et la cadence se réinitialise seule après 24 h sans alerte.
 - Console **`/slo`** : barre d'atteinte, statut (ok / at_risk ≥ 75 % / breached), badge
   « burn rapide ». Helper pur testé : `lib/alerting.ts` → `sloView()`.
 
