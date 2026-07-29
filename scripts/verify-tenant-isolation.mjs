@@ -117,6 +117,57 @@ async function main() {
 
   await c.query("reset role");
 
+  // ── L'API publique (PostgREST) ne doit RIEN voir, quelle que soit la GUC ────
+  // anon/authenticated portent des droits DML sur une partie des tables ; s'ils
+  // ne lisent rien, c'est parce qu'AUCUNE policy ne les vise. Une policy sans
+  // clause `TO` s'appliquerait à PUBLIC et remplacerait ce « jamais autorisé »
+  // par un « autorisé si la GUC est posée ». On vérifie donc le cas hostile :
+  // portée tenant POSÉE, et pourtant zéro ligne.
+  for (const role of ["anon", "authenticated"]) {
+    await c.query(
+      `do $$ begin if not exists (select 1 from pg_roles where rolname='${role}') then create role ${role} nologin; end if; end $$;`);
+    await c.query(`grant usage on schema public to ${role}`);
+    await c.query(`grant select on all tables in schema public to ${role}`);
+    await c.query(`set role ${role}`);
+    await c.query("select set_config('app.current_app_id','app-a',false)");
+    const vus = await seen(c, "rum_metric");
+    await c.query("reset role");
+    assert(`API publique : ${role} ne lit RIEN même avec une portée posée`, vus === 0);
+  }
+
+  // ── console_ro n'écrit que là où la console écrit vraiment (v48) ────────────
+  await c.query("set role console_ro");
+  let refus = false;
+  try {
+    await c.query("insert into rum_metric (session_id,app_id,route,name,value,ts) values ('x','app-a','/x','LCP',1,now())");
+  } catch { refus = true; }
+  await c.query("rollback").catch(() => {});
+  await c.query("reset role");
+  assert("console_ro : écriture REFUSÉE sur la télémétrie (rum_metric)", refus);
+
+  // Le refus ci-dessus passerait AUSSI sans v48 : la policy tenant_scope n'a pas
+  // de clause WITH CHECK, donc RLS bloque déjà l'insertion. On teste donc le
+  // privilège lui-même, qui est la propriété que v48 installe.
+  const priv = (await c.query(
+    `select has_table_privilege('console_ro','rum_metric','INSERT') as tele_insert,
+            has_table_privilege('console_ro','rum_metric','SELECT') as tele_select,
+            has_table_privilege('console_ro','slo','UPDATE')        as conf_update,
+            has_table_privilege('console_ro','rum_span','INSERT')   as dogfood_insert`)).rows[0];
+  assert("v48 : PRIVILÈGE d'insertion retiré sur rum_metric", priv.tele_insert === false);
+  assert("v48 : lecture PRÉSERVÉE sur rum_metric", priv.tele_select === true);
+  assert("v48 : écriture préservée sur la configuration (slo)", priv.conf_update === true);
+  assert("v48 : écriture préservée sur rum_span (dogfooding console)", priv.dogfood_insert === true);
+
+  await c.query("set role console_ro");
+  await c.query("select set_config('app.current_app_id','app-a',false)");
+  let ecritConfig = true;
+  try {
+    await c.query("update slo set name = name where app_id = 'app-a'");
+  } catch { ecritConfig = false; }
+  await c.query("rollback").catch(() => {});
+  await c.query("reset role");
+  assert("console_ro : écriture AUTORISÉE sur la configuration (slo)", ecritConfig);
+
   // ── L'exploitation reste inter-tenant après RLS ────────────────────────────
   // Une fonction security definer (propriétaire) doit continuer à voir les deux
   // tenants : c'est ce que FORCE ROW LEVEL SECURITY aurait cassé.

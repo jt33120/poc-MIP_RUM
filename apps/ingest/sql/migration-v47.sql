@@ -33,6 +33,16 @@
 -- idempotente). Toute nouvelle table tenant part donc SANS filtrage tant que sa
 -- propre migration ne s'en charge pas — c'est un défaut ouvert, pas une couverture.
 --
+-- POURQUOI LES POLICIES VISENT `TO console_ro` ET NON PUBLIC. Les 38 policies
+-- héritées ne visaient que `console_ro`. Or `anon` et `authenticated` — les rôles
+-- de l'API PostgREST, exposée publiquement — détiennent des droits DML sur 18
+-- tables ; s'ils ne lisent rien aujourd'hui, c'est précisément parce qu'AUCUNE
+-- policy ne les vise (RLS actif + aucune policy applicable = zéro ligne). Une
+-- policy sans clause `TO` s'applique à PUBLIC : elle aurait remplacé un « jamais
+-- autorisé » par un « autorisé si la GUC est posée ». Le résultat serait resté
+-- fermé (GUC vide -> aucune ligne), mais la surface se serait élargie sans raison.
+-- On conserve donc exactement la portée d'origine.
+--
 -- POURQUOI PAS `FORCE ROW LEVEL SECURITY`. Le seul effet de FORCE est de soumettre
 -- le PROPRIÉTAIRE des tables à RLS — or le propriétaire est précisément l'identité
 -- d'exploitation qui a besoin d'un accès inter-tenant : les 10 fonctions
@@ -59,6 +69,18 @@
 -- Idempotente (rejouable : les policies sont recréées à l'identique). Retour
 -- arrière : `drop policy tenant_scope on …` puis réappliquer les policies
 -- `using (true)` de migration-v10/v34.
+
+-- ── 0. Le rôle applicatif doit exister pour être visé par les policies ───────
+-- En cloud, `console_ro` préexiste. En CI et en self-host, non — et une policy
+-- `to console_ro` échouerait à la création. On le crée donc si absent : un rôle
+-- `nologin` sans aucun privilège est inoffensif, et cela rend la migration
+-- identique dans tous les environnements plutôt que conditionnelle.
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'console_ro') then
+    create role console_ro nologin;
+  end if;
+end $$;
 
 -- ── 1. Portée du tenant, lue dans la GUC ─────────────────────────────────────
 -- Renvoie un tableau vide (et non NULL) quand la GUC est absente ou vide : un
@@ -125,14 +147,14 @@ begin
                       and a.attnum > 0 and not a.attisdropped)
   loop
     execute format(
-      'create policy tenant_scope on public.%I for all using (app_id = any(current_app_ids()))', t);
+      'create policy tenant_scope on public.%I for all to console_ro using (app_id = any(current_app_ids()))', t);
   end loop;
 end $$;
 
 -- ── 4. Policies scopées : tables filles, via leur parent ─────────────────────
 -- alert_event porte rule_id OU slo_id (jamais les deux) ; on remonte à l'app_id
 -- par le parent correspondant.
-create policy tenant_scope on alert_event for all using (
+create policy tenant_scope on alert_event for all to console_ro using (
   exists (select 1 from alert_rule r where r.id = alert_event.rule_id
             and r.app_id = any(current_app_ids()))
   or
@@ -142,11 +164,11 @@ create policy tenant_scope on alert_event for all using (
 
 -- Pas de remontée explicite à app_id : la sous-requête sur alert_event est
 -- elle-même soumise à RLS pour le rôle appelant, donc la portée se compose.
-create policy tenant_scope on alert_delivery for all using (
+create policy tenant_scope on alert_delivery for all to console_ro using (
   exists (select 1 from alert_event e where e.id = alert_delivery.alert_event_id)
 );
 
-create policy tenant_scope on uptime_result for all using (
+create policy tenant_scope on uptime_result for all to console_ro using (
   exists (select 1 from uptime_check u where u.id = uptime_result.check_id
             and u.app_id = any(current_app_ids()))
 );
