@@ -62,15 +62,17 @@ export interface SummaryAiOperation {
   /** Part d'appels refusés par le modèle (status='error' + error_type de type
    *  refus/guardrail/safety/moderation). 0..1 ; null si 0 appel. */
   refusal_rate: number | null;
-  /** Part de régénérations : events rum_event name='ai_regenerate'
-   *  {operation, route} / appels de la fonction. 0..1 ; 0 tant qu'UTI n'émet
-   *  pas l'event (voir contrat plus bas). */
+  // ⚠️ Les TROIS champs suivants ne sont PAS alimentés aujourd'hui, et ne
+  // peuvent pas l'être en l'état : ils se calculent depuis `rum_event`, côté
+  // mip-rum, alors que c'est xSOM qui sert cette section depuis l'ADR-0001 —
+  // xSOM n'a aucun moyen d'observer ces événements. Ils restent présents et
+  // nullables (contrat non cassé, cf. docs/RUM_READ_API.md § Signaux qualité),
+  // mais un consommateur doit les traiter comme ABSENTS, pas comme « 0 ».
+  /** Part de régénérations (event `ai_regenerate`). NON ALIMENTÉ — donnée côté MIP. */
   regen_rate: number | null;
-  /** Part de 👎 : events name='ai_feedback' {operation, route, thumb} —
-   *  down / (up+down). 0..1 ; null si aucun pouce sur la fonction. */
+  /** Part de 👎 (event `ai_feedback`). NON ALIMENTÉ — donnée côté MIP. */
   thumbs_down_rate: number | null;
-  /** CSAT des sessions ayant utilisé cette fonction (part de notes ≥ 4/5 des
-   *  feedbacks liés). 0..1 ; null si aucun feedback lié. Grain session. */
+  /** CSAT des sessions ayant utilisé la fonction. NON ALIMENTÉ — donnée côté MIP. */
   csat: number | null;
 }
 /** Point de série journalière IA (pour superposer latence/erreurs au volume). */
