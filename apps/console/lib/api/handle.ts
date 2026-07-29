@@ -6,6 +6,7 @@
 import { NextResponse, type NextRequest, after } from "next/server";
 import { SESSION_COOKIE } from "../auth";
 import { forwardLog } from "../log-forward";
+import { traceFields } from "../server-trace-core";
 import { type ApiPrincipal, authenticateApi } from "./auth";
 import { weakEtag } from "./etag";
 import { type ApiFilters, parseApiFilters } from "./params";
@@ -96,8 +97,12 @@ export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
       if (e instanceof ApiHttpError) return apiError(req, e.status, e.message);
       console.error("[api/v1]", req.nextUrl.pathname, e);
       // Dogfooding : remonte l'incident dans la page /logs (après la réponse, best-effort).
+      // La corrélation est capturée MAINTENANT, pas dans le callback : le contexte
+      // ALS de la trace n'est pas garanti à l'intérieur de after().
+      const corr = traceFields();
       after(() =>
         forwardLog("error", `[api/v1] ${req.nextUrl.pathname}: ${e instanceof Error ? e.message : String(e)}`, {
+          ...corr,
           route: req.nextUrl.pathname,
         }),
       );
