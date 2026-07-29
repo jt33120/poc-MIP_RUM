@@ -110,10 +110,26 @@ d'anomalie et l'interface existants.
 
 ---
 
-## 4. Recommandation
+## 4. Décision prise — et ce qu'elle change
 
-**Ne pas ouvrir ce chantier maintenant.** Le classer comme *adjacence identifiée*,
-et le garder en réserve pour deux usages :
+> **29 juillet 2026 : le périmètre COMPLET est retenu**, couches 1 et 2 comprises.
+> Le cadrage produit correspondant est dans
+> [produit-svi-cadrage.md](./produit-svi-cadrage.md).
+
+L'analyse ci-dessus reste valable et n'est pas révisée : la couche qualité de la
+voix exige bien une compétence télécom absente du dépôt. La décision ne l'annule
+pas — **elle la transforme en préalable explicite** (recrutement, mission courte
+ou partenariat), tranché dans le cadrage avant l'épic concerné.
+
+Un fait établi depuis a par ailleurs réduit l'effort estimé : **un appel est
+structurellement une trace distribuée**, donc l'essentiel de la plateforme
+(stockage, cascade, anomalies, SLO, alertes, rétention, DSAR, multi-locataire)
+se réutilise sans réécriture. Voir le §1 du cadrage.
+
+### La recommandation initiale, conservée pour mémoire
+
+*Elle était : ne pas ouvrir le chantier maintenant, le classer comme adjacence
+identifiée, et le garder en réserve pour deux usages :*
 
 - **Argument de positionnement** — il renforce la thèse « nous mesurons l'expérience
   vécue, quel que soit le canal », qui est un meilleur récit que « nous faisons du
@@ -122,10 +138,11 @@ et le garder en réserve pour deux usages :
   relation client le demande, le chemin étroit du §3 est un adaptateur, et il
   s'appuie sur une plateforme déjà construite.
 
-Ce classement n'est pas un refus : c'est une mise en file d'attente derrière des
-chantiers dont le rapport valeur/effort est aujourd'hui bien supérieur — au premier
-rang desquels fermer la boucle d'alerte
-([README §4](./README.md#4-le-constat-transversal-et-il-est-unique)).
+*Cette mise en file d'attente était conditionnée aux chantiers d'amélioration des
+produits existants, désormais livrés — dont la fermeture de la boucle d'alerte
+([README §4](./README.md#4-le-constat-transversal-et-il-est-unique)). Le premier
+argument reste d'actualité et se renforce : la thèse « nous mesurons l'expérience
+vécue, quel que soit le canal » devient un récit tenable plutôt qu'un slogan.*
 
 ---
 
