@@ -32,10 +32,28 @@ export default defineConfig({
       reuseExistingServer: true,
     },
     {
-      command: "pnpm --filter console dev",
+      // BUILD DE PRODUCTION, pas `next dev` — délibérément.
+      //
+      // Avec `next dev`, les routes se compilent à la demande, à la première
+      // visite. Deux workers Playwright frappant en parallèle une console de
+      // 47 pages sérialisent donc des compilations coûteuses derrière un timeout
+      // de 90 s : la suite passait ou échouait selon la charge de la machine, et
+      // a fini par échouer plus souvent qu'elle ne passait (reproduit en local :
+      // verte à 1 worker, rouge à 2). Ce n'était pas un défaut du produit mais
+      // du harnais.
+      //
+      // `next build` puis `next start` supprime la variable : tout est compilé
+      // avant le premier test. Bonus de fidélité — on teste désormais le binaire
+      // que Vercel déploie, pas le serveur de développement.
+      //
+      // AUTH_SECRET est OBLIGATOIRE ici : en NODE_ENV=production, resolveAuthSecret
+      // refuse (fail-closed) de signer une session avec le secret de dev. Valeur
+      // de test, locale et jetable — jamais un secret réel.
+      command: "pnpm --filter console build && pnpm --filter console start",
       url: "http://localhost:3000",
       reuseExistingServer: true,
-      timeout: 120_000,
+      timeout: 300_000, // le build est inclus dans cette fenêtre
+      env: { AUTH_SECRET: "e2e-secret-local-jetable-non-production" },
     },
   ],
 });

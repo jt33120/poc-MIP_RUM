@@ -155,7 +155,7 @@ test("console : /tracing affiche la corrélation et la timeline montre l'appel A
 }) => {
   await loginConsole(page);
 
-  await page.goto("http://localhost:3000/tracing", { waitUntil: "networkidle" });
+  await page.goto("http://localhost:3000/tracing", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("back-routes")).toContainText("/api/demo/items/{item_id}");
   await expect(page.getByTestId("api-calls")).toContainText("/api/demo/items/");
   await expect(page.getByTestId("trace-coverage")).not.toContainText("— %");
@@ -166,7 +166,7 @@ test("console : /tracing affiche la corrélation et la timeline montre l'appel A
      order by ts desc limit 1`,
   ).then((r) => r.rows);
   await page.goto(`http://localhost:3000/sessions/${row.session_id}`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
   });
   await expect(page.locator("body")).toContainText("Appel API");
   await expect(page.locator("body")).toContainText("serveur");
