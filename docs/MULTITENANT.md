@@ -27,6 +27,13 @@ allumé et configuré pour ne rien filtrer. S'y ajoutaient deux court-circuits :
 29 portant `app_id`, plus `alert_event` / `alert_delivery` / `uptime_result` via leur
 parent). GUC absente ⇒ tableau vide ⇒ **aucune ligne** : fail-closed, jamais fail-open.
 
+> **Une nouvelle table tenant ne s'auto-protège pas.** La boucle de v47 s'exécute
+> **une fois**, à l'application : elle découvre les tables portant `app_id` à cet
+> instant, il n'y a pas d'event trigger. Toute table créée par une migration
+> ultérieure part **sans filtrage** tant qu'elle ne pose pas son propre
+> `tenant_scope` (ou qu'on ne rejoue pas v47, ce qui est sûr — elle est idempotente).
+> À traiter dans la migration qui crée la table, pas après.
+
 > **Piège vérifié en développant v47.** Les policies permissives se combinent en **OU** :
 > laisser une seule policy `using (true)` à côté d'une policy scopée annule le filtrage
 > sans que rien ne le signale. v47 supprime donc les policies héritées **par prédicat**,

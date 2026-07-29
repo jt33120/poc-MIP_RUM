@@ -21,10 +21,17 @@
 --      `app.current_app_id`. Non renseignée -> tableau vide -> AUCUNE ligne
 --      visible (fail-closed, jamais fail-open).
 --   2. Remplace les policies `USING (true)` par un prédicat réellement scopé, sur
---      toute table portant `app_id` (boucle : les tables futures sont couvertes
---      sans édition de cette migration).
+--      toute table portant `app_id` au moment de l'application.
 --   3. Les tables filles sans `app_id` (alert_event, alert_delivery,
 --      uptime_result) sont scopées via leur parent.
+--
+-- ⚠ PORTÉE DE LA BOUCLE, à ne pas se raconter d'histoire. Le bloc `do $$ … loop`
+-- s'exécute UNE FOIS, à l'application de cette migration. Il découvre les tables
+-- portant `app_id` à cet instant — il n'y a PAS d'event trigger. Une table créée
+-- par une migration ULTÉRIEURE n'hérite d'aucune policy : elle doit poser son
+-- `tenant_scope` elle-même (ou v47 doit être rejouée, ce qui est sûr : elle est
+-- idempotente). Toute nouvelle table tenant part donc SANS filtrage tant que sa
+-- propre migration ne s'en charge pas — c'est un défaut ouvert, pas une couverture.
 --
 -- POURQUOI PAS `FORCE ROW LEVEL SECURITY`. Le seul effet de FORCE est de soumettre
 -- le PROPRIÉTAIRE des tables à RLS — or le propriétaire est précisément l'identité
