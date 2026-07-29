@@ -80,7 +80,7 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
         "element": "#hero",
       },
       "name": "LCP",
-      "rating": "needs-improvement",
+      "rating": "good",
       "route": "/home",
       "session_id": "sess-1",
       "span_id": "m1",

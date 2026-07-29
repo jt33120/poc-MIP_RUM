@@ -1,9 +1,9 @@
-// Seuils 2026 (PLAN annexe B) — miroir de apps/ingest/.../_shared/otlp.mjs,
-// utilisé pour noter les agrégats p75 au rendu.
+// Seuils Core Web Vitals alignés sur la référence web.dev (E0) — miroir de
+// apps/ingest/.../_shared/otlp.mjs, utilisé pour noter les agrégats p75 au rendu.
 export type Rating = "good" | "needs-improvement" | "poor";
 
 export const THRESHOLDS: Record<string, [number, number]> = {
-  LCP: [2000, 2500],
+  LCP: [2500, 4000],
   INP: [200, 500],
   CLS: [0.1, 0.25],
   FCP: [1800, 3000],

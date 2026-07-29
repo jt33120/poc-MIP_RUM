@@ -120,27 +120,49 @@ faux « 0 »** (le consommateur doit afficher « indisponible »). Sinon `ai_sta
 | **Qualité par fonction** (« coûte cher ET déçoit ») | tableau croisé coût×qualité | `ai_by_operation[].{refusal_rate,regen_rate,thumbs_down_rate,csat}` |
 | **Série IA journalière** (latence sur volume) | ligne + barres | `ai_series[].date` → `calls`, `cost_usd`, `p75_latency_ms`, `error_rate` |
 
-### Signaux qualité IA — ce que le client doit émettre pour peupler `regen_rate` / `thumbs_down_rate`
+### Signaux qualité IA — état réel du contrat
 
-`refusal_rate` et `csat` se calculent **sans instrumentation supplémentaire** (à partir des
-`error_type` des appels et des feedbacks `MIPRum.track('feedback', {score})` déjà en place).
-En revanche `regen_rate` et `thumbs_down_rate` restent à **0 / null** tant que le client
-n'émet pas ces deux events custom (ils atterrissent en `rum_event`, corrélés à la fonction
-par `operation` + `route` dans les `props`) :
+> ⚠️ **Trois des quatre signaux qualité ne sont pas alimentés aujourd'hui, et ne
+> peuvent pas l'être en l'état.** Un consommateur doit les traiter comme
+> **absents**, jamais comme « 0 = parfait ».
 
-```js
-// à l'appui sur « régénérer » d'une réponse IA
-MIPRum.track('ai_regenerate', { operation: 'draft', route: 'ao/draft' });
+Depuis la scission de la supervision IA (cf. [ADR-0001](./ADR-0001-supervision-ia-xsom.md)),
+c'est **xSOM AI Guard** qui sert toute la section `ai_*`. Or trois de ces signaux se
+calculent à partir d'événements **du produit RUM**, stockés dans `rum_event` côté
+`mip-rum` — que xSOM n'a aucun moyen d'observer.
 
-// à un pouce 👍 / 👎 sur une réponse IA
-MIPRum.track('ai_feedback', { operation: 'draft', route: 'ao/draft', thumb: 'down' }); // 'up' | 'down'
-```
+| Champ | Source de calcul | Servi par xSOM ? |
+|---|---|---|
+| `refusal_rate` | `error_type` de l'appel LLM | ✅ oui |
+| `regen_rate` | événement RUM `ai_regenerate` | ❌ donnée côté MIP |
+| `thumbs_down_rate` | événement RUM `ai_feedback` | ❌ donnée côté MIP |
+| `csat` | événement RUM `feedback` (grain session) | ❌ donnée côté MIP |
 
-- `operation`/`route` **doivent matcher** ceux des appels LLM (mêmes valeurs que `rum_ai`),
-  sinon l'attribution par fonction ne se fait pas.
-- `refusal_rate` = part d'appels dont `error_type` matche `refus|content_filter|guardrail|safety|moderation`
-  (insensible à la casse) — émettre l'`error_type` en conséquence pour qu'il compte.
-- Toutes les valeurs qualité sont des **fractions 0..1** (comme `error_rate`), `null` si non mesurable.
+Émettre les événements côté client **ne suffit donc pas** : ils atterrissent en
+`rum_event` chez `mip-rum`, pas chez xSOM. Le chemin de retour MIP → xSOM
+n'existe pas encore. En production au 29 juillet 2026, `rum_event` ne contient
+d'ailleurs aucun `ai_regenerate` ni `ai_feedback` — ces champs sont vides depuis
+leur création.
+
+**Ce que cela implique pour un intégrateur :** ne construisez aucun visuel, seuil
+ou alerte sur `regen_rate`, `thumbs_down_rate` ou `csat`. `refusal_rate` reste
+exploitable. Les quatre champs demeurent **présents et nullables** dans la réponse
+— ils ne disparaîtront pas sans préavis.
+
+**Trois issues possibles**, à trancher avec l'équipe xSOM :
+
+1. la façade MIP complète la réponse de xSOM avec les trois champs calculés
+   localement — simple, mais réintroduit du calcul IA côté MIP, ce que l'ADR-0001
+   proscrit ;
+2. MIP pousse les événements d'expérience vers un endpoint xSOM dédié — respecte
+   la frontière, demande un développement côté xSOM (**cible recommandée**) ;
+3. retirer les trois champs du contrat et assumer que la qualité perçue relève du
+   RUM, hors du résumé IA.
+
+`refusal_rate` = part d'appels dont `error_type` matche
+`refus|content_filter|guardrail|safety|moderation` (insensible à la casse) —
+émettre l'`error_type` en conséquence pour qu'il compte. Toutes les valeurs
+qualité sont des **fractions 0..1** (comme `error_rate`), `null` si non mesurable.
 
 ### Ce que `/rum/summary` ne couvre pas
 

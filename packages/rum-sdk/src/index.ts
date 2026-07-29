@@ -6,7 +6,7 @@ import { initErrors, type Emit } from "./errors";
 import { initForms } from "./forms";
 import { initFrustration } from "./frustration";
 import { initLongTasks } from "./longtasks";
-import { forceFlush, initOtel } from "./otel";
+import { currentTraceId, forceFlush, initOtel, newPageTrace } from "./otel";
 import { isReplaySampled, startReplay } from "./replay";
 import { DEFAULT_SLOW_RESOURCE_MS, initResources } from "./resources";
 import { replayRetryQueue } from "./retry";
@@ -163,6 +163,7 @@ export function init(cfg: MIPRumConfig): void {
         : [],
       denyOrigins,
       sessionId: session.sessionId,
+      traceId: currentTraceId, // même trace que la page vue (E0)
     });
   }
 
@@ -173,6 +174,9 @@ export function init(cfg: MIPRumConfig): void {
   });
 
   initNavigation((navType) => {
+    // nouvelle page vue = nouvelle trace W3C (E0) : ouverte AVANT le span
+    // pageview pour qu'il en soit le premier span. Borne la taille des traces.
+    newPageTrace();
     // caps par page : remis à zéro à chaque pageview (initiale et SPA)
     resourceCap.reset();
     longtaskCap.reset();

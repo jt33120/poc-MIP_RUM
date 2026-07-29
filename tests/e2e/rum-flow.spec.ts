@@ -85,17 +85,23 @@ test("flux RUM bout-en-bout : vitals + erreur arrivent en base puis en console",
   expect(sessions).toHaveLength(1);
   expect(Number(sessions[0].page_count)).toBeGreaterThanOrEqual(2);
 
-  // la console restitue ces données réelles (login RBAC d'abord)
+  // la console restitue ces données réelles (login RBAC d'abord).
+  //
+  // NB : surtout pas `waitUntil: "networkidle"` sur les pages de la console —
+  // elle s'auto-instrumente avec le SDK RUM, qui envoie un lot de télémétrie
+  // toutes les 3 s. Le réseau n'est donc JAMAIS au repos et l'attente expire.
+  // Les `expect` ci-dessous réessaient d'eux-mêmes : c'est eux, la vraie
+  // synchronisation.
   await loginConsole(page);
-  await page.goto("http://localhost:3000/", { waitUntil: "networkidle" });
+  await page.goto("http://localhost:3000/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("p75-LCP")).not.toHaveText("—");
-  await page.goto("http://localhost:3000/errors", { waitUntil: "networkidle" });
+  await page.goto("http://localhost:3000/errors", { waitUntil: "domcontentloaded" });
   await expect(page.locator("body")).toContainText("Erreur de démo MIP RUM");
 });
 
 test("corrélation : robot vs réel côte à côte avec écart", async ({ page }) => {
   await loginConsole(page);
-  await page.goto("http://localhost:3000/correlation", { waitUntil: "networkidle" });
+  await page.goto("http://localhost:3000/correlation", { waitUntil: "domcontentloaded" });
   await expect(page.locator("body")).toContainText("Robot — synthétique DEM");
   await expect(page.locator("body")).toContainText("Réel — utilisateurs (RUM)");
   expect(await page.getByTestId("gap").count()).toBeGreaterThanOrEqual(1);
@@ -130,7 +136,7 @@ test("replay : session enregistrée sur la démo puis rejouée dans la console",
   const body = await res.json();
   expect(body.events.length).toBeGreaterThan(0);
   await page.goto(`http://localhost:3000/sessions/${sid}?tab=replay`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
   });
   await expect(page.getByTestId("replay-player")).toBeVisible();
   await expect(page.locator(".rr-player")).toBeVisible({ timeout: 15_000 });

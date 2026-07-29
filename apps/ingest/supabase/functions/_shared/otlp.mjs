@@ -8,9 +8,12 @@ import { scrubProps, scrubText, scrubUrl } from "./scrub.mjs";
 // sessions[].is_bot, exclu par défaut des agrégats console.
 import { isBot } from "./bots.mjs";
 
-// Seuils 2026 (PLAN annexe B) — bornes [good, needs-improvement]
+// Seuils Core Web Vitals — bornes [good, needs-improvement], alignés sur la
+// référence web.dev (E0). SOURCE DE VÉRITÉ du rating : il est recalculé ici à
+// l'ingestion, quoi qu'envoie le SDK. Miroir de rum-sdk/src/vitals.ts et
+// console/lib/rating.ts — les trois doivent rester identiques.
 const THRESHOLDS = {
-  LCP: [2000, 2500],
+  LCP: [2500, 4000],
   INP: [200, 500],
   CLS: [0.1, 0.25],
   FCP: [1800, 3000],

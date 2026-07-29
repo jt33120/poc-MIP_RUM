@@ -18,6 +18,13 @@ export interface ApiSpanOptions {
   /** Origins à ne JAMAIS instrumenter (endpoints d'ingestion MIP : boucle interdite). */
   denyOrigins: string[];
   sessionId: string;
+  /**
+   * traceId de la page vue courante (E0). Rattache l'appel API à la trace de la
+   * page plutôt que d'ouvrir une trace par requête : le span serveur rejoint
+   * alors la même trace que le pageview et les autres appels de la page.
+   * Omis (tests unitaires) -> une trace par appel, comportement historique.
+   */
+  traceId?: () => string;
 }
 
 function randHex(nBytes: number): string {
@@ -88,7 +95,7 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
         const method = (
           init?.method ?? (input instanceof Request ? input.method : "GET")
         ).toUpperCase();
-        const traceId = randHex(16);
+        const traceId = opts.traceId?.() ?? randHex(16);
         const spanId = randHex(8);
         const headers = new Headers(
           init?.headers ?? (input instanceof Request ? input.headers : undefined),
@@ -132,7 +139,7 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
         const meta = this.__mip;
         const target = meta ? resolveTarget(meta.url, opts) : null;
         if (meta && target && cap.take()) {
-          const traceId = randHex(16);
+          const traceId = opts.traceId?.() ?? randHex(16);
           const spanId = randHex(8);
           this.setRequestHeader("traceparent", traceparent(traceId, spanId));
           this.setRequestHeader("tracestate", `mip=s:${opts.sessionId}`);

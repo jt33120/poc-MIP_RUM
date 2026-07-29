@@ -26,10 +26,11 @@ describe("anyValue — déstructuration des types OTLP", () => {
 
 describe("rating2026 — seuils mars 2026", () => {
   it.each([
-    ["LCP", 1999, "good"],
-    ["LCP", 2000, "good"],
-    ["LCP", 2300, "needs-improvement"],
-    ["LCP", 2600, "poor"],
+    // LCP : bornes web.dev — 2500 « bon », 4000 « à améliorer » (E0)
+    ["LCP", 2499, "good"],
+    ["LCP", 2500, "good"],
+    ["LCP", 2600, "needs-improvement"],
+    ["LCP", 4001, "poor"],
     ["INP", 200, "good"],
     ["INP", 350, "needs-improvement"],
     ["INP", 501, "poor"],
@@ -125,7 +126,7 @@ describe("flattenOtlp — aplatissement du payload fixture", () => {
   it("recalcule le rating à l'ingestion (source de vérité)", () => {
     const lcp = rows.metrics.find((m) => m.name === "LCP");
     expect(lcp.value).toBe(2340.5);
-    expect(lcp.rating).toBe("needs-improvement");
+    expect(lcp.rating).toBe("good"); // 2340,5 ms < 2500 -> « bon » (bornes web.dev)
     const inp = rows.metrics.find((m) => m.name === "INP");
     expect(inp.value).toBe(250); // intValue parsé
     expect(inp.rating).toBe("needs-improvement");

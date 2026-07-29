@@ -64,6 +64,7 @@ La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) re
 
 | Document | Contenu |
 |---|---|
+| [docs/context/](docs/context/) | **Contexte produit** : maturité par service (RUM, supervision IA, Logs), grille d'évaluation, écarts et critères de sortie |
 | [docs/INTEGRATION.md](docs/INTEGRATION.md) | Guide d'intégration client : snippet, options, consent mode, CSP, RGPD, dépannage |
 | [packages/agent-node/README.md](packages/agent-node/README.md) | Agent backend Node.js zéro-config (`node -r @mip/agent-node/register`) |
 | [packages/rum-mobile/README.md](packages/rum-mobile/README.md) | SDK React Native (crashes, écrans, réseau, événements) |
