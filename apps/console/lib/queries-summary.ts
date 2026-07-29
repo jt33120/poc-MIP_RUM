@@ -41,7 +41,7 @@ export interface SummaryAiUser {
   calls: number;
   cost_usd: number;
 }
-/** Ventilation IA par fonction (rum_ai.operation) × route. `operation` renvoyé
+/** Ventilation IA par fonction × route, servie par xSOM. `operation` renvoyé
  *  BRUT (valeurs métier du client, ex. extraction/scoring/draft/…) — jamais
  *  renommé. Permet à UTI d'afficher la PERF par fonction à côté du coût. */
 export interface SummaryAiOperation {
@@ -54,7 +54,7 @@ export interface SummaryAiOperation {
   ttft_p75_ms: number | null;
   error_rate: number | null;
   /** true si le coût 24 h de cette fonction dévie fortement (z > 3) de sa
-   *  baseline journalière (vue v_ai_op_anomaly). Détection auto, sans seuil. */
+   *  baseline journalière. Détection auto, sans seuil — calculée par xSOM. */
   anomaly: boolean;
   /** z-score du coût (null si pas en anomalie). */
   anomaly_score: number | null;

@@ -27,7 +27,8 @@ export interface XsomAiFields {
 const TIMEOUT_MS = Number(process.env.XSOM_AI_TIMEOUT_MS ?? 4000);
 
 /** Interroge xSOM `/ai/summary?app=&window=` avec un read token (Bearer). Renvoie
- *  les champs IA, ou null pour retomber sur le local. Jamais d'exception propagée. */
+ *  les champs IA, ou null → section IA « unavailable » (aucun repli local, cf.
+ *  ADR-0001). Jamais d'exception propagée. */
 export async function fetchAiSummary(
   app: string,
   windowKey: SummaryWindow,
@@ -49,7 +50,7 @@ export async function fetchAiSummary(
     });
     if (!res.ok) return null;
     const d = (await res.json()) as Partial<XsomAiFields>;
-    // Garde de forme minimale : un payload inattendu → on retombe sur le local.
+    // Garde de forme minimale : un payload inattendu → section « unavailable ».
     if (typeof d.ai_calls !== "number" || !Array.isArray(d.ai_by_operation)) return null;
     return {
       ai_calls: d.ai_calls,
