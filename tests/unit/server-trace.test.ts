@@ -7,6 +7,8 @@ import {
   parseTraceparent,
   sessionFromTracestate,
   sqlLabel,
+  traceFields,
+  als,
   type TraceCtx,
 } from "../../apps/console/lib/server-trace-core";
 
@@ -80,5 +82,49 @@ describe("buildServerSpanRows", () => {
     expect(rows[0].status_code).toBe(200);
     expect(rows[0].session_id).toBe("sess-1");
     expect(rows[1].name).toContain("rum_session");
+  });
+});
+
+// Corrélation log -> trace. En production, rum_log portait 654 lignes et ZÉRO
+// trace_id : forwardLog exigeait que l'appelant transporte l'identifiant à la
+// main, ce qu'aucun des deux sites d'appel ne faisait. traceFields() lit la
+// trace active pour que la corrélation soit automatique.
+describe("traceFields", () => {
+  it("hors trace : objet vide (aucun champ inventé)", () => {
+    expect(traceFields()).toEqual({});
+  });
+
+  it("sous trace : expose trace_id, et session_id seulement s'il existe", () => {
+    const base: TraceCtx = {
+      traceId: "0af7651916cd43dd8448eb211c80319c",
+      parentSpanId: "b7ad6b7169203331",
+      sessionId: null,
+      startMs: 0,
+      db: [],
+    };
+    als.run(base, () => {
+      // sessionId null -> la clé session_id est absente, pas présente à null.
+      expect(traceFields()).toEqual({ trace_id: base.traceId });
+    });
+    als.run({ ...base, sessionId: "s-42" }, () => {
+      expect(traceFields()).toEqual({ trace_id: base.traceId, session_id: "s-42" });
+    });
+  });
+
+  it("la capture est synchrone : différer PERD le contexte", () => {
+    // C'est la raison pour laquelle les appelants qui passent par after()
+    // capturent traceFields() avant de différer, et non dans le callback.
+    let differe: ReturnType<typeof traceFields> | null = null;
+    const capture = () => {
+      differe = traceFields();
+    };
+    als.run(
+      { traceId: "a".repeat(32), parentSpanId: null, sessionId: null, startMs: 0, db: [] },
+      () => {
+        expect(traceFields().trace_id).toBe("a".repeat(32));
+      },
+    );
+    capture();
+    expect(differe).toEqual({});
   });
 });

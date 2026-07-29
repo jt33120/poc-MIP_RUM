@@ -97,6 +97,21 @@ jobs:
             psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f "$f"
           done
 
+      # E1-S3 — une isolation non testée n'est pas une isolation. Le script rejoue
+      # le schéma sur une base DÉDIÉE (ne perturbe ni le seed ni l'E2E), se met dans
+      # la peau du rôle applicatif console_ro et vérifie qu'un tenant ne lit jamais
+      # l'autre SANS aucun `WHERE app_id =` dans les requêtes. Placé après les
+      # migrations de mip_rum pour que la création du rôle console_ro ne modifie pas
+      # le comportement des blocs `if exists (pg_roles)` de la base principale.
+      - name: Isolation multi-tenant (RLS, base dédiée)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'create database mip_rum_rls'
+          DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum_rls \
+            pnpm test:isolation
+
       - name: Build SDK (servi par demo/serve.mjs et la console)
         run: pnpm --filter @mip/rum-sdk build
 

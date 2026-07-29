@@ -41,6 +41,46 @@ export async function q<T = Record<string, unknown>>(
 }
 
 /**
+ * Exécute `fn` avec la portée tenant posée en base, de sorte que les policies
+ * RLS `tenant_scope` (migration-v47) filtrent les lignes même si une requête
+ * oublie son `WHERE app_id = …`.
+ *
+ * Pourquoi une transaction. La GUC est posée avec `set_local`, dont la portée est
+ * la transaction courante. C'est une exigence de correction, pas un détail : le
+ * pool `pg` réutilise les connexions entre requêtes HTTP concurrentes, donc un
+ * `set` non-local fuirait la portée d'un tenant vers la requête suivante — le
+ * défaut d'isolation exact que ce mécanisme est censé fermer.
+ *
+ * Passer par `client.query` et non par `q()` : le client doit être celui de la
+ * transaction qui porte la GUC.
+ *
+ * Sans effet tant que la console se connecte avec un rôle `BYPASSRLS` : la GUC
+ * est posée, mais les policies ne s'appliquent pas. Cf. l'en-tête de v47.
+ */
+export async function withTenant<T>(
+  appIds: string | string[],
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const scope = (Array.isArray(appIds) ? appIds : [appIds]).filter(Boolean);
+  if (scope.length === 0) {
+    // Une portée vide rendrait toute la session aveugle : c'est presque toujours
+    // un bug d'appelant, et le dire tôt vaut mieux qu'un écran vide inexpliqué.
+    throw new Error("withTenant: portée tenant vide");
+  }
+  // La virgule sépare les app_id côté SQL (string_to_array) : un app_id qui en
+  // contiendrait une casserait le découpage et élargirait la portée.
+  const bad = scope.find((id) => id.includes(","));
+  if (bad) throw new Error(`withTenant: app_id invalide (virgule) : ${bad}`);
+
+  return tx(async (client) => {
+    await client.query("select set_config('app.current_app_id', $1, true)", [
+      scope.join(","),
+    ]);
+    return fn(client);
+  });
+}
+
+/**
  * Transaction atomique : begin → fn(client) → commit ; rollback sur erreur.
  * Le client est toujours rendu au pool. Utile pour les opérations multi-tables
  * qui doivent être tout-ou-rien (ex. effacement DSAR ordonné par les FK).

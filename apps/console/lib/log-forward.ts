@@ -6,6 +6,8 @@
 // doit pas casser une requête), timeout court, à planifier via after() pour ne pas
 // retarder la réponse. Serveur uniquement (utilise fetch + env, importé côté serveur).
 
+import { traceFields } from "./server-trace-core";
+
 const DEFAULT_TRACES = "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
 
 /** Endpoint logs : explicite (CONSOLE_LOGS_ENDPOINT) sinon dérivé du endpoint traces. */
@@ -38,13 +40,16 @@ function kv(key: string, value: string) {
  */
 export async function forwardLog(level: LogLevel, body: string, fields?: Fields): Promise<void> {
   try {
+    // Corrélation par défaut depuis la trace active : l'appelant n'a plus à
+    // transporter trace_id à la main. Ce qu'il fournit explicitement gagne.
+    const merged: Fields = { ...traceFields(), ...(fields ?? {}) };
     const attrs: { key: string; value: { stringValue: string } }[] = [];
     const map: Record<string, string> = {
       route: "mip.route",
       trace_id: "mip.trace_id",
       session_id: "mip.session_id",
     };
-    for (const [k, v] of Object.entries(fields ?? {})) {
+    for (const [k, v] of Object.entries(merged)) {
       if (v == null) continue;
       attrs.push(kv(map[k] ?? k, String(v)));
     }
@@ -60,6 +65,9 @@ export async function forwardLog(level: LogLevel, body: string, fields?: Fields)
                   severityNumber: SEV_NUM[level],
                   severityText: level.toUpperCase(),
                   body: { stringValue: body.slice(0, 4000) },
+                  // Champ NATIF OTLP en plus de l'attribut mip.* : c'est la forme
+                  // canonique, celle que le parser lit en premier (otlp.mjs:604).
+                  ...(merged.trace_id ? { traceId: merged.trace_id } : {}),
                   attributes: attrs,
                 },
               ],

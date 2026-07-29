@@ -120,6 +120,41 @@ le bruit du SLO fait passer le RUM de N2 à N3 pour un effort très inférieur �
 n'importe quelle nouvelle fonctionnalité de collecte. C'est le meilleur rapport
 effort/valeur du portefeuille, tous produits confondus.
 
+### Mise à jour du 29 juillet (re-mesure en production)
+
+Le tableau ci-dessus reste la photographie du 29 juillet **au matin**. Trois
+mesures ont changé dans la journée, une quatrième s'est révélée mal formulée.
+
+| | Revue initiale | Re-mesuré | |
+|---|---|---|---|
+| Bruit du SLO | ~23 alertes/jour | **0 sur les 2 h 30 suivant le correctif** | v45 + v46 appliquées |
+| Cause du bruit | « cadence trop bavarde » | **`objective` stocké en pourcent → `fast_burn` tautologique** | le diagnostic initial était faux |
+| Canaux configurés | 0 | **0** (inchangé) | seul verrou restant pour N3 |
+| Logs — corrélation | « sans un seul `trace_id` » | **654 lignes, toujours 0 `trace_id`** | cause identifiée ci-dessous |
+
+**Le RUM n'est pas passé N3.** Le correctif a rendu l'alerte *vraie* — l'atteinte
+réelle du SLO LCP est de **81,58 %** pour un objectif de 99 %, donc le produit
+signale enfin une dégradation qui existe — mais `notify_channel` est toujours
+vide : l'alerte n'atteint personne. Le critère N3 n'est pas satisfait.
+
+**Les Logs ne sont pas passés N2, et la raison est structurelle**, pas un oubli de
+câblage. Le pipeline est correct de bout en bout (l'émetteur `agent-node` pose le
+`traceId` natif, `otlp.mjs:604` le lit). Ce qui manque, c'est l'ÉMISSION :
+`forwardLog` n'a que **deux** appelants dans toute la console —
+
+1. la connexion (`app/login/actions.ts`), une action serveur que `withServerTrace`
+   n'enveloppe pas (il n'ouvre un contexte que sur présence d'un `traceparent`
+   entrant, `server-trace.ts:24`) : structurellement non corrélable ;
+2. le chemin d'erreur d'API (`lib/api/handle.ts`), tracé lui, mais **jamais
+   déclenché** — zéro erreur d'API sur la période.
+
+D'où 654 lignes toutes `INFO`, une seule source, zéro corrélation. Le défaut de
+corrélation latent est corrigé (`traceFields()` alimente désormais `forwardLog`
+automatiquement), mais **cela ne suffira pas** : tant qu'aucun produit réel
+n'émet de logs, le signal reste du dogfooding de connexion. Faire passer les Logs
+en N2 suppose d'instrumenter une application qui journalise vraiment — c'est un
+travail d'adoption, pas de plomberie.
+
 ---
 
 ## 5. Autres constats transversaux

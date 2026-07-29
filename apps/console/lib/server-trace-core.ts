@@ -58,6 +58,27 @@ export function hexId(bytes: number): string {
   return randomBytes(bytes).toString("hex");
 }
 
+/**
+ * Contexte de corrélation de la trace active, sous la forme attendue par les
+ * champs `mip.*` du parser d'ingestion. Objet vide si aucune trace n'est active.
+ *
+ * Sert à corréler un log à sa trace SANS que l'appelant ait à transporter
+ * l'identifiant à la main — c'est l'oubli de ce transport qui laissait
+ * `rum_log.trace_id` vide sur la totalité des lignes en production.
+ *
+ * À capturer de façon SYNCHRONE : un appelant qui diffère l'envoi via `after()`
+ * doit appeler cette fonction AVANT de différer, le contexte ALS n'étant pas
+ * garanti à l'intérieur du callback.
+ */
+export function traceFields(): { trace_id?: string; session_id?: string } {
+  const ctx = als.getStore();
+  if (!ctx) return {};
+  return {
+    trace_id: ctx.traceId,
+    ...(ctx.sessionId ? { session_id: ctx.sessionId } : {}),
+  };
+}
+
 /** Enregistre un span DB si une trace serveur est active (no-op sinon). */
 export function recordDbSpan(sql: string, startMs: number, durationMs: number): void {
   const ctx = als.getStore();
