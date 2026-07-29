@@ -30,6 +30,9 @@ serveur bâti sur `http`/`https` — l'agent patche `http.Server`, pas le framew
 | `MIP_RUM_SERVICE` | — | `backend` | `service.name` |
 | `MIP_RUM_FLUSH_MS` | — | `3000` | intervalle d'envoi par lot |
 | `MIP_RUM_DEBUG` | — | — | log si l'agent est désactivé (config absente) |
+| `MIP_RUM_LOGS` | — | `true` | pont de journalisation ; `false` pour le couper |
+| `MIP_RUM_LOG_LEVEL` | — | `warn` | plancher émis : `trace`/`debug`/`info`/`warn`/`error`/`fatal` |
+| `MIP_RUM_LOGS_ENDPOINT` | — | dérivé | forcer l'endpoint logs (sinon `v1-traces` → `v1-logs`) |
 
 Sans `MIP_RUM_ENDPOINT` **et** `MIP_RUM_APP_ID`, l'agent est **inactif** (aucun
 patch, aucun surcoût).
@@ -44,10 +47,37 @@ patch, aucun surcoût).
   **normalisé** (littéraux chaîne/nombres → `?`) : cardinalité bornée et **aucune
   valeur (PII) exfiltrée**. Couvre aussi `Pool` (qui délègue à un `Client`).
 
+- **Journaux applicatifs** (signal LOGS) : `console.*` est capté et exporté en
+  OTLP vers `/v1/logs`, **avec le contexte de la requête courante injecté** —
+  `trace_id`, `span_id`, session et route. C'est là tout l'intérêt de faire le
+  pont dans l'agent : ce contexte est déjà dans l'`AsyncLocalStorage`, donc la
+  corrélation **log → trace → session** est automatique et l'application ne
+  change pas une ligne.
+
 L'instrumentation `pg` se branche via un hook `require` (agent **sans dépendance** :
 il n'importe jamais `pg`). Aucune donnée de corps, ni query string, ni en-tête, ni
 valeur SQL n'est collectée. Prochaine étape : `mysql`/`mysql2`, puis `http.client`
 sortant.
+
+### Le pont de journalisation en pratique
+
+```
+GET /api/checkout  ──►  span http.server  ─┬─►  span DB (pg)
+                                            └─►  console.error("paiement refusé")
+                                                 └─► rum_log, MÊME trace_id
+```
+
+Depuis une session ralentie dans la console, on descend donc jusqu'à la ligne de
+journal exacte de la requête fautive — sans chercher dans un agrégateur tiers.
+
+**Plancher `warn` par défaut**, délibérément : un agent de supervision ne doit pas
+doubler le volume de journaux d'une application sans qu'on l'ait demandé. Passer à
+`MIP_RUM_LOG_LEVEL=info` élargit ; `MIP_RUM_LOGS=false` coupe net.
+
+Trois garanties de non-régression : la `console` d'origine est **toujours appelée
+en premier** (si le pont casse, les logs sortent quand même) ; une garde de
+ré-entrance empêche nos propres écritures de s'auto-alimenter ; l'envoi est
+asynchrone et par lots, hors chemin critique.
 
 ## Garanties
 

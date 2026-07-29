@@ -14,10 +14,16 @@ import {
   buildConfig,
   buildDbSpan,
   buildHttpServerSpan,
+  buildLogPayload,
+  buildLogRecord,
   buildPayload,
+  type LogLevel,
+  logsEndpoint,
   normalizeRoute,
   normalizeSql,
   parseTraceparent,
+  passesLevel,
+  resolveLogLevel,
   sessionFromTracestate,
   sqlOperation,
 } from "./core";
@@ -34,6 +40,7 @@ interface ReqCtx {
   traceId: string;
   spanId: string;
   sessionId: string | null;
+  route: string | null;
 }
 const als = new AsyncLocalStorage<ReqCtx>();
 
@@ -69,6 +76,7 @@ function onRequest(req: any, res: any): ReqCtx {
   const parentSpanId = tp?.spanId ?? null;
   const spanId = hex(8); // identité du span http.server (parent des spans DB)
   const sessionId = sessionFromTracestate(header(req?.headers?.tracestate));
+  const route = normalizeRoute(String(req?.url ?? "/"));
   res?.on?.("finish", () => {
     try {
       enqueue(
@@ -77,7 +85,7 @@ function onRequest(req: any, res: any): ReqCtx {
           spanId,
           parentSpanId,
           method: String(req?.method ?? "GET"),
-          route: normalizeRoute(String(req?.url ?? "/")),
+          route,
           url: null,
           status: Number(res?.statusCode ?? 0),
           sessionId,
@@ -89,7 +97,7 @@ function onRequest(req: any, res: any): ReqCtx {
       /* ignore */
     }
   });
-  return { traceId, spanId, sessionId };
+  return { traceId, spanId, sessionId, route };
 }
 
 function patch(mod: any): void {
@@ -111,6 +119,103 @@ function patch(mod: any): void {
     return origEmit.call(this, event, ...args);
   };
   proto.__mipPatched = true;
+}
+
+// --- pont de journalisation (signal LOGS) ------------------------------------
+// Capture console.* et l'exporte en OTLP vers /v1/logs, en injectant le contexte
+// de la requête courante. C'est là tout l'intérêt de le faire dans l'agent : le
+// trace_id, le span_id, la session et la route sont déjà dans l'ALS, donc chaque
+// log part corrélé à sa trace SANS que l'application change une ligne.
+//
+// Choix de conception :
+//   • plancher `warn` par défaut (MIP_RUM_LOG_LEVEL) — un agent de supervision
+//     ne doit pas doubler par défaut le volume de journaux de l'application ;
+//   • console.* d'origine TOUJOURS appelée en premier : si le pont casse, les
+//     logs de l'app sortent quand même ;
+//   • garde de ré-entrance : nos propres écritures ne se ré-alimentent pas ;
+//   • désactivable d'un cran : MIP_RUM_LOGS=false.
+const LOGS_ENABLED = (process.env.MIP_RUM_LOGS ?? "true") !== "false";
+const LOG_FLOOR = resolveLogLevel(process.env.MIP_RUM_LOG_LEVEL);
+const LOG_ENDPOINT = logsEndpoint(cfg.endpoint, process.env.MIP_RUM_LOGS_ENDPOINT);
+const MAX_LOG_BATCH = 128;
+const logBuffer: Record<string, unknown>[] = [];
+let inBridge = false; // garde de ré-entrance
+
+async function flushLogs(): Promise<void> {
+  if (!logBuffer.length) return;
+  const batch = logBuffer.splice(0, logBuffer.length);
+  try {
+    await fetch(LOG_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(buildLogPayload(cfg, batch)),
+    });
+  } catch {
+    /* best-effort : un lot de logs perdu n'impacte jamais l'app instrumentée */
+  }
+}
+
+/** Arguments console -> une ligne de texte (les objets sont sérialisés). */
+function formatArgs(args: unknown[]): string {
+  return args
+    .map((a) => {
+      if (typeof a === "string") return a;
+      if (a instanceof Error) return `${a.name}: ${a.message}`;
+      try {
+        return JSON.stringify(a);
+      } catch {
+        return String(a);
+      }
+    })
+    .join(" ");
+}
+
+function captureLog(level: LogLevel, args: unknown[]): void {
+  if (inBridge || !passesLevel(level, LOG_FLOOR)) return;
+  inBridge = true;
+  try {
+    const ctx = als.getStore();
+    const body = formatArgs(args);
+    if (!body) return;
+    logBuffer.push(
+      buildLogRecord({
+        level,
+        body,
+        tsMs: Date.now(),
+        traceId: ctx?.traceId ?? null,
+        spanId: ctx?.spanId ?? null,
+        sessionId: ctx?.sessionId ?? null,
+        route: ctx?.route ?? null,
+      }),
+    );
+    if (logBuffer.length >= MAX_LOG_BATCH) void flushLogs();
+  } catch {
+    /* ignore */
+  } finally {
+    inBridge = false;
+  }
+}
+
+function patchConsole(): void {
+  const c = console as unknown as Record<string, unknown> & { __mipLogPatched?: boolean };
+  if (c.__mipLogPatched) return;
+  const map: Array<[string, LogLevel]> = [
+    ["debug", "debug"],
+    ["log", "info"],
+    ["info", "info"],
+    ["warn", "warn"],
+    ["error", "error"],
+  ];
+  for (const [method, level] of map) {
+    const orig = c[method];
+    if (typeof orig !== "function") continue;
+    c[method] = function (this: unknown, ...args: unknown[]) {
+      const out = (orig as (...a: unknown[]) => unknown).apply(this, args);
+      captureLog(level, args); // après l'écriture réelle : jamais bloquant
+      return out;
+    };
+  }
+  c.__mipLogPatched = true;
 }
 
 // --- instrumentation pg (node-postgres) --------------------------------------
@@ -203,9 +308,22 @@ if (!cfg.enabled) {
   patch(httpMod);
   patch(httpsMod);
   hookRequire();
-  const timer = setInterval(() => void flush(), FLUSH_MS);
+  const timer = setInterval(() => {
+    void flush();
+    if (LOGS_ENABLED) void flushLogs();
+  }, FLUSH_MS);
   if (typeof timer.unref === "function") timer.unref(); // ne retient pas le process
-  process.on("beforeExit", () => void flush());
-  process.on("SIGTERM", () => void flush());
-  console.log(`[mip-agent] actif -> ${cfg.endpoint} (app ${cfg.appId}, env ${cfg.env})`);
+  const flushAll = () => {
+    void flush();
+    if (LOGS_ENABLED) void flushLogs();
+  };
+  process.on("beforeExit", flushAll);
+  process.on("SIGTERM", flushAll);
+  // La bannière est écrite AVANT le patch console : elle ne se capture pas
+  // elle-même, et l'exploitant voit tout de suite si le pont logs est actif.
+  console.log(
+    `[mip-agent] actif -> ${cfg.endpoint} (app ${cfg.appId}, env ${cfg.env})` +
+      (LOGS_ENABLED ? ` · logs >= ${LOG_FLOOR} -> ${LOG_ENDPOINT}` : " · logs désactivés"),
+  );
+  if (LOGS_ENABLED) patchConsole();
 }

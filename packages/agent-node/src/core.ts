@@ -192,3 +192,105 @@ export function buildPayload(cfg: AgentConfig, spans: Record<string, unknown>[])
     ],
   };
 }
+
+// --- signal LOGS : pont de journalisation ------------------------------------
+// Le 3e signal OTel n'était émis par AUCUN SDK : la table rum_log ne contenait
+// que le dogfooding de la console, sans un seul trace_id. Le pont ci-dessous
+// change cela — et le fait ici plutôt qu'ailleurs parce que l'agent tient déjà
+// le contexte de requête (AsyncLocalStorage) : la corrélation log -> trace est
+// donc gratuite, alors qu'elle coûterait cher dans n'importe quel autre SDK.
+
+/** severityNumber OTLP par niveau (spec logs, stable depuis 1.0). */
+export const SEVERITY: Record<string, number> = {
+  trace: 1,
+  debug: 5,
+  info: 9,
+  warn: 13,
+  error: 17,
+  fatal: 21,
+};
+
+/** Ordre des niveaux, du plus verbeux au plus grave (filtre de plancher). */
+export const LEVELS = ["trace", "debug", "info", "warn", "error", "fatal"] as const;
+export type LogLevel = (typeof LEVELS)[number];
+
+/**
+ * Niveau plancher retenu : seuls les logs de gravité >= plancher sont émis.
+ * Défaut `warn` — un agent de supervision ne doit pas doubler le volume de
+ * journaux d'une application par défaut ; l'exploitant élargit s'il le veut.
+ */
+export function resolveLogLevel(raw: string | undefined): LogLevel {
+  const v = String(raw ?? "").trim().toLowerCase();
+  return (LEVELS as readonly string[]).includes(v) ? (v as LogLevel) : "warn";
+}
+
+/** true si `level` doit être émis compte tenu du plancher configuré. */
+export function passesLevel(level: LogLevel, floor: LogLevel): boolean {
+  return SEVERITY[level] >= SEVERITY[floor];
+}
+
+/** Endpoint LOGS dérivé de l'endpoint TRACES (même déploiement d'ingestion). */
+export function logsEndpoint(tracesEndpoint: string, override?: string): string {
+  const explicit = (override ?? "").trim();
+  if (explicit) return explicit;
+  return tracesEndpoint.replace(/v1-traces|\/v1\/traces/, (m) =>
+    m === "v1-traces" ? "v1-logs" : "/v1/logs",
+  );
+}
+
+export interface LogRecordInput {
+  level: LogLevel;
+  body: string;
+  tsMs: number;
+  /** Contexte de la requête courante — c'est lui qui rend le log corrélable. */
+  traceId: string | null;
+  spanId: string | null;
+  sessionId: string | null;
+  route: string | null;
+}
+
+/**
+ * Enregistrement OTLP LOGS. traceId/spanId vont dans les champs NATIFS (que
+ * l'ingestion lit en priorité) ; session et route passent par les attributs
+ * mip.* comme pour les spans.
+ */
+export function buildLogRecord(i: LogRecordInput): Record<string, unknown> {
+  const rec: Record<string, unknown> = {
+    timeUnixNano: nanos(i.tsMs),
+    observedTimeUnixNano: nanos(i.tsMs),
+    severityNumber: SEVERITY[i.level],
+    severityText: i.level.toUpperCase(),
+    body: { stringValue: i.body.slice(0, 4000) },
+    attributes: encodeAttrs({
+      "mip.source": "backend",
+      "mip.session_id": i.sessionId,
+      "mip.route": i.route,
+    }),
+  };
+  if (i.traceId) rec.traceId = i.traceId;
+  if (i.spanId) rec.spanId = i.spanId;
+  return rec;
+}
+
+/** Enveloppe OTLP/HTTP JSON pour un lot de logs (miroir de buildPayload). */
+export function buildLogPayload(
+  cfg: AgentConfig,
+  records: Record<string, unknown>[],
+): unknown {
+  return {
+    resourceLogs: [
+      {
+        resource: {
+          attributes: encodeAttrs({
+            "service.name": cfg.service,
+            "mip.app_id": cfg.appId,
+            "deployment.environment.name": cfg.env,
+            "mip.api_key": cfg.apiKey,
+            "mip.source": "backend",
+          }),
+        },
+        scopeLogs: [{ scope: { name: "@mip/agent-node", version: "0.1.0" }, logRecords: records }],
+      },
+    ],
+  };
+}
