@@ -180,5 +180,8 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
       "url": "https://api.demo.fr/aos/7",
     },
   ],
+  "sviCalls": [],
+  "sviLegs": [],
+  "sviSteps": [],
 }
 `;

@@ -130,6 +130,9 @@ async function writeRows({
   breadcrumbs,
   events,
   spans,
+  sviCalls,
+  sviSteps,
+  sviLegs,
 }) {
   const client = await pool.connect();
   try {
@@ -200,6 +203,34 @@ async function writeRows({
       ["span_id", "trace_id", "parent_span_id", "tier", "session_id", "app_id", "route", "url", "method", "status_code", "duration_ms", "name", "kind", "ts"],
       spans ?? [],
       "on conflict (span_id) do nothing",
+    );
+
+    // SVI (migration-v51). L'appel passe par la MÊME fonction qu'en cloud
+    // (upsert_svi_call) : la fusion des lots est non triviale, et deux
+    // implémentations divergeraient — c'est la raison d'être de _shared/.
+    for (const call of sviCalls ?? []) {
+      await client.query("select upsert_svi_call($1::jsonb)", [JSON.stringify(call)]);
+    }
+    await batchInsert(
+      client,
+      "svi_step",
+      ["step_id", "parent_step_id", "app_id", "call_id", "seq", "kind", "node_id", "node_label",
+       "menu_path", "depth", "branch", "input_class", "input_len", "input_sensitive",
+       "no_match", "no_input", "reprompt_index", "asr_confidence", "rejected",
+       "milestone", "flow_outcome", "started_at", "duration_ms", "exit_reason"],
+      sviSteps ?? [],
+      "on conflict (step_id) do nothing",
+    );
+    await batchInsert(
+      client,
+      "svi_leg",
+      ["app_id", "call_id", "leg_ref", "role", "dir", "codec", "ptime_ms", "sample_rate",
+       "carrier", "mos_method", "mos_avg", "mos_min", "r_factor_avg", "r_factor_min",
+       "jitter_avg_ms", "jitter_max_ms", "loss_avg_pct", "loss_max_pct", "rtt_avg_ms",
+       "rtt_max_ms", "packets_sent", "packets_lost", "e_model_params", "started_at", "ended_at"],
+      (sviLegs ?? []).map((l) => ({ ...l,
+        e_model_params: l.e_model_params ? JSON.stringify(l.e_model_params) : null })),
+      "on conflict (app_id, call_id, leg_ref, dir) do nothing",
     );
     // page_count DÉRIVÉ du compte réel de pageviews (idempotent au rejeu, cf.
     // migration-v07) plutôt qu'incrémenté — recalcul pour les sessions du lot
