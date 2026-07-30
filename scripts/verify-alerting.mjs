@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 
 const SQL = (f) => new URL(`../apps/ingest/sql/${f}`, import.meta.url);
-const MIGR = ["schema.sql", ...["02","03","04","05","07","08","09","10","11","12","13","14","15","16","17","45","46","49"].map((n) => `migration-v${n}.sql`)];
+const MIGR = ["schema.sql", ...["02","03","04","05","07","08","09","10","11","12","13","14","15","16","17","45","46","49","50"].map((n) => `migration-v${n}.sql`)];
 
 async function applyAll(c) {
   for (const f of MIGR) {
@@ -131,7 +131,11 @@ async function main() {
     "select status, response from alert_delivery where alert_event_id=$1 and target='ops@example.com'",
     [ev2])).rows[0];
   assert("e-mail sans relais : statut 'skipped', pas un faux succès", mail?.status === "skipped");
-  assert("e-mail sans relais : la raison est explicite", /relais e-mail/i.test(mail?.response ?? ""));
+  // La raison doit nommer LES DEUX voies possibles, sinon on renvoie l'exploitant
+  // chercher une configuration dont il ignore l'existence.
+  const raison = mail?.response ?? "";
+  assert("e-mail non configuré : la raison nomme le coffre ET le relais",
+    /alert_email_api_key/.test(raison) && /email_relay_url/.test(raison));
 
   // Réconciliation : une livraison 'sent' sans réponse depuis plus d'une heure
   // est un ÉCHEC, pas un suspens. C'est le cœur du correctif : « sent » ne peut
