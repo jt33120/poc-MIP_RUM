@@ -327,9 +327,13 @@ export interface AlertEventRow {
   metric: string;
   app_id: string;
   route: string | null;
-  /** Notifications réellement parties (alert_delivery.status='sent'). 0 = l'alerte
-   *  s'est déclenchée sans que personne n'en soit averti. */
+  /** Livraisons CONFIRMÉES (2xx observé). 0 = l'alerte s'est déclenchée sans que
+   *  personne n'en soit averti. Ne compte pas 'sent' : depuis migration-v49, ce
+   *  statut signifie seulement que pg_net a accepté la requête — le code HTTP
+   *  n'est pas encore connu, et un 404 s'y cachait indistinctement. */
   delivered: number;
+  /** Livraisons transmises dont le résultat n'est pas encore réconcilié. */
+  pending: number;
 }
 
 /** Un événement vient d'une règle OU d'un SLO : left joins + coalesce des champs.
@@ -340,7 +344,9 @@ export async function alertEvents(f: Filters): Promise<AlertEventRow[]> {
     `select ae.id::int as id, ae.rule_id::int as rule_id, ae.fired_at, ae.value,
             ae.message, ae.acknowledged, ae.severity,
             (select count(*) from alert_delivery d
-              where d.alert_event_id = ae.id and d.status = 'sent')::int as delivered,
+              where d.alert_event_id = ae.id and d.status = 'delivered')::int as delivered,
+            (select count(*) from alert_delivery d
+              where d.alert_event_id = ae.id and d.status = 'sent')::int as pending,
             coalesce(r.metric, s.metric) as metric,
             coalesce(r.app_id, s.app_id) as app_id,
             coalesce(r.route, s.route) as route

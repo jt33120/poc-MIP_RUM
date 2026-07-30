@@ -134,8 +134,8 @@ describe("buildPayload — webhook identique à check_alerts v2 (pg_net)", () =>
 
 describe("decideStatus — rejeu borné des livraisons (R5)", () => {
   it("succès -> 'sent' quel que soit le nombre de tentatives", () => {
-    expect(decideStatus(true, 0, 5)).toBe("sent");
-    expect(decideStatus(true, 4, 5)).toBe("sent");
+    expect(decideStatus(true, 0, 5)).toBe("delivered");
+    expect(decideStatus(true, 4, 5)).toBe("delivered");
   });
   it("échec sous le plafond -> 'failed' (sera rejoué)", () => {
     expect(decideStatus(false, 0, 5)).toBe("failed");

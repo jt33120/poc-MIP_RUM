@@ -199,19 +199,30 @@ export default async function Alerts({
             <span className="font-medium">
               {e.message ?? `${e.metric} (${e.rule_id != null ? `règle ${e.rule_id}` : "SLO"})`}
             </span>
+            {/* Trois états, pas deux : une notification transmise dont le code HTTP
+                n'est pas encore connu n'est PAS une notification livrée. La
+                confondre avec un succès était le défaut corrigé par v49. */}
             <span
               title={
                 e.delivered > 0
-                  ? `${e.delivered} notification(s) effectivement envoyée(s)`
-                  : "Aucune notification n'est partie pour cette alerte"
+                  ? `${e.delivered} notification(s) livrée(s) — code 2xx confirmé`
+                  : e.pending > 0
+                    ? `${e.pending} notification(s) transmise(s), résultat pas encore confirmé`
+                    : "Aucune notification n'est partie pour cette alerte"
               }
               className={`ml-auto rounded px-2 py-0.5 text-xs ${
                 e.delivered > 0
                   ? "bg-panel2 text-ink-faint"
-                  : "border border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300"
+                  : e.pending > 0
+                    ? "border border-sky-300 bg-sky-100 text-sky-800 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-300"
+                    : "border border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300"
               }`}
             >
-              {e.delivered > 0 ? `livrée ×${e.delivered}` : "non livrée"}
+              {e.delivered > 0
+                ? `livrée ×${e.delivered}`
+                : e.pending > 0
+                  ? `en attente ×${e.pending}`
+                  : "non livrée"}
             </span>
             <span className="text-xs tabular-nums text-ink-soft">{fmtDate(e.fired_at)}</span>
             {e.acknowledged ? (
