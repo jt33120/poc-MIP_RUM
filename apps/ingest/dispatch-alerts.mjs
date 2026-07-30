@@ -51,7 +51,11 @@ const MAX_ATTEMPTS = Number(process.env.DISPATCH_MAX_ATTEMPTS || 5);
  * @returns {"sent"|"failed"|"dead"} 'dead' = plafond atteint, on abandonne
  */
 export function decideStatus(ok, attemptsBefore, maxAttempts = MAX_ATTEMPTS) {
-  if (ok) return "sent";
+  // 'delivered' et non 'sent' : ici l'appel est SYNCHRONE, `ok` est un vrai 2xx.
+  // Depuis migration-v49, 'sent' est réservé au cas pg_net (asynchrone), où le
+  // résultat n'est pas encore connu. Confondre les deux redonnerait à la console
+  // un compteur « livrées » qui ne prouve rien.
+  if (ok) return "delivered";
   return attemptsBefore + 1 >= maxAttempts ? "dead" : "failed";
 }
 
@@ -99,7 +103,7 @@ export async function dispatchOnce(pool) {
       "update alert_delivery set status = $1, response = $2, attempts = attempts + 1, attempted_at = now() where id = $3",
       [status, response, d.id],
     );
-    if (status === "sent") sent++;
+    if (status === "delivered") sent++;
     else if (status === "dead") dead++;
     else failed++;
     log[ok ? "info" : "warn"]("delivery", {

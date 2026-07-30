@@ -60,6 +60,9 @@ export const CATEGORIES: NavCategory[] = [
     ],
   },
   { href: "/logs", label: "Logs", icon: "logs", domain: "neutral" },
+  // Supervision SVI (serveur vocal) — incrément I0 : liste d'appels et déroulé.
+  // Produit distinct du RUM web : un appel n'est pas une visite, cf. migration-v51.
+  { href: "/svi/appels", label: "Appels SVI", icon: "activity", domain: "neutral" },
   // Espace PARTENAIRE (sponsorisé xSOM) — supervision IA lue depuis xSOM AI Guard,
   // distincte du RUM MIP (cf. ADR-0001). Le libellé « · xSOM » signale le partenaire.
   { href: "/ai", label: "IA · xSOM", icon: "ai", domain: "neutral" },

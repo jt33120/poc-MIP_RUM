@@ -7,7 +7,8 @@
     "build": "pnpm -r build",
     "test:unit": "vitest run tests/unit",
     "test:e2e": "playwright test",
-    "test:isolation": "node scripts/verify-tenant-isolation.mjs"
+    "test:isolation": "node scripts/verify-tenant-isolation.mjs",
+    "test:svi": "node scripts/verify-svi-modele.mjs"
   },
   "packageManager": "pnpm@9.15.9",
   "devDependencies": {

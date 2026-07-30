@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 
 const SQL = (f) => new URL(`../apps/ingest/sql/${f}`, import.meta.url);
-const MIGR = ["schema.sql", ...["02","03","04","05","07","08","09","10","11","12","13","14","15","16","17","45","46"].map((n) => `migration-v${n}.sql`)];
+const MIGR = ["schema.sql", ...["02","03","04","05","07","08","09","10","11","12","13","14","15","16","17","45","46","49","50"].map((n) => `migration-v${n}.sql`)];
 
 async function applyAll(c) {
   for (const f of MIGR) {
@@ -109,6 +109,48 @@ async function main() {
   assert("routing : canal 'warning' notifié", targets.includes("http://hook.local/warn"));
   assert("routing : canal 'critical' PAS notifié pour un warning", !targets.includes("http://hook.local/crit"));
 
+  // ── Pilier 4 : la boucle se ferme réellement (migration-v49) ───────────────
+  // Sans pg_net (cas local/CI), une ligne routée doit RESTER `queued` : c'est le
+  // contrat avec dispatch-alerts.mjs, qui traite `queued` immédiatement mais
+  // `failed` seulement après un délai de reprise. Marquer `failed` ce qui n'a
+  // jamais été tenté retarderait la livraison locale.
+  const statutsWeb = (await c.query(
+    "select distinct status from alert_delivery where alert_event_id=$1", [ev])).rows.map((r) => r.status);
+  assert("sans pg_net : la livraison reste 'queued' (contrat du dispatcher local)",
+    statutsWeb.length === 1 && statutsWeb[0] === "queued");
+
+  // E-mail sans relais configuré : `skipped` explicite. Surtout PAS un statut
+  // qui laisserait croire à un envoi.
+  await c.query("update alert_config set email_relay_url = null where singleton");
+  await c.query(`insert into notify_channel (app_id, kind, target, severity_min)
+                 values ('app-a','email','ops@example.com','warning')`);
+  const ev2 = (await c.query(`insert into alert_event (rule_id, value, message, severity)
+                              values (null, 1, 'test email', 'warning') returning id`)).rows[0].id;
+  await c.query("select route_alert($1,'app-a','warning','[t] test mail', '{}'::jsonb)", [ev2]);
+  const mail = (await c.query(
+    "select status, response from alert_delivery where alert_event_id=$1 and target='ops@example.com'",
+    [ev2])).rows[0];
+  assert("e-mail sans relais : statut 'skipped', pas un faux succès", mail?.status === "skipped");
+  // La raison doit nommer LES DEUX voies possibles, sinon on renvoie l'exploitant
+  // chercher une configuration dont il ignore l'existence.
+  const raison = mail?.response ?? "";
+  assert("e-mail non configuré : la raison nomme le coffre ET le relais",
+    /alert_email_api_key/.test(raison) && /email_relay_url/.test(raison));
+
+  // Réconciliation : une livraison 'sent' sans réponse depuis plus d'une heure
+  // est un ÉCHEC, pas un suspens. C'est le cœur du correctif : « sent » ne peut
+  // pas rester un statut terminal.
+  const ev3 = (await c.query(`insert into alert_event (rule_id, value, message, severity)
+                              values (null, 1, 'test recon', 'warning') returning id`)).rows[0].id;
+  await c.query(`insert into alert_delivery (alert_event_id, target, status, request_id, attempted_at)
+                 values ($1,'http://hook.local/old','sent', 999999, now() - interval '2 hours')`, [ev3]);
+  const recon = Number((await c.query("select reconcile_alert_deliveries() n")).rows[0].n);
+  const vieille = (await c.query(
+    "select status, response from alert_delivery where alert_event_id=$1", [ev3])).rows[0];
+  assert("réconciliation : 'sent' sans réponse après 1 h devient 'failed'", vieille?.status === "failed");
+  assert("réconciliation : la raison est explicite", /aucune réponse HTTP/i.test(vieille?.response ?? ""));
+  assert("réconciliation : sans pg_net, ne casse pas (retourne un entier)", Number.isInteger(recon));
+
   // ── console_ro lit les nouvelles tables (parité) ───────────────────────────
   await c.query("set role console_ro");
   const cro = {
@@ -119,7 +161,7 @@ async function main() {
   };
   await c.query("reset role");
   assert("console_ro LIT slo / notify_channel / alert_rule / alert_event",
-    cro.slo > 0 && cro.ch === 2 && cro.rule >= 2 && cro.ev >= 1);
+    cro.slo > 0 && cro.ch === 3 && cro.rule >= 2 && cro.ev >= 1); // 3 canaux : warn, crit, email
 
   await c.end();
   console.log(process.exitCode ? "\n[verify-alerting] ÉCHEC." : "\n[verify-alerting] alerting mature (3 piliers) VÉRIFIÉ.");

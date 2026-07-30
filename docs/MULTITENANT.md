@@ -57,8 +57,25 @@ une défense en profondeur, pas un remplacement du `WHERE app_id =`. Boucler exi
 3. rejouer la non-régression complète de la console (certaines vues admin sont
    volontairement inter-tenant et devront passer par le rôle d'exploitation).
 
+**Les policies visent `TO console_ro`, pas PUBLIC.** `anon` et `authenticated` — les
+rôles de l'API PostgREST, exposée publiquement — portent des droits DML sur 18
+tables ; s'ils ne lisent rien, c'est parce qu'**aucune policy ne les vise** (RLS actif
++ aucune policy applicable = zéro ligne). Une policy sans clause `TO` s'applique à
+PUBLIC et aurait remplacé ce « jamais autorisé » par un « autorisé si la GUC est
+posée ». Le test vérifie le cas hostile : portée **posée**, et pourtant zéro ligne.
+
+**`console_ro` n'écrit plus partout (migration-v48).** Le rôle s'appelle « read only »
+et détenait `INSERT/UPDATE/DELETE` sur les 45 tables. Sans effet tant que la console
+se connecte en propriétaire — mais à la bascule, elle aurait hérité d'un droit
+d'écriture sur toute la télémétrie de tous les tenants. v48 retire l'écriture sur
+tout le schéma puis la rend sur les **18 tables où la console écrit réellement** :
+la configuration qu'elle administre, plus `rum_session`/`rum_span` qu'elle écrit
+pour son propre dogfooding. `SELECT` n'est jamais touché. Ajouter une écriture
+console sur une nouvelle table impose de l'ajouter à cette liste ; le symptôme
+sinon est un `permission denied` explicite, pas une corruption silencieuse.
+
 **Preuve** : `pnpm test:isolation` (`scripts/verify-tenant-isolation.mjs`, joué en CI sur
-une base dédiée) — 19 assertions, toutes les requêtes écrites **sans** `WHERE app_id =`,
+une base dédiée) — 27 assertions, toutes les requêtes de lecture écrites **sans** `WHERE app_id =`,
 dont la symétrie A↔B, le fail-closed sans GUC, et le maintien de la portée inter-tenant
 des fonctions `security definer`.
 

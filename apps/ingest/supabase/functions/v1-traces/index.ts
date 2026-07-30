@@ -78,7 +78,8 @@ Deno.serve(async (req) => {
       throw new BadRequestError("invalid json body");
     }
     const rows = flattenOtlp(payload, { maxSpans: MAX_SPANS_PER_REQUEST });
-    const { sessions, pageviews, metrics, errors, resources, longtasks, breadcrumbs, events, spans } = rows;
+    const { sessions, pageviews, metrics, errors, resources, longtasks, breadcrumbs, events, spans,
+            sviCalls, sviSteps, sviLegs } = rows;
 
     // vérif clé d'API (403) — clé portée par l'attribut resource mip.api_key
     for (const { app_id, api_key } of rows.apiKeys) {
@@ -140,6 +141,17 @@ Deno.serve(async (req) => {
         if (error) throw error;
       }, { onRetry });
     };
+
+    // `ins` code en dur onConflict:"span_id" et ignoreDuplicates — inutilisable
+    // pour le SVI, dont les clés diffèrent et dont les lignes doivent être MISES
+    // À JOUR (un appel se complète en plusieurs lots) et non ignorées.
+    const insOn = async (table: string, batch: unknown[], conflict: string) => {
+      if (!batch.length) return;
+      await withRetry(async () => {
+        const { error } = await supabase.from(table).upsert(batch, { onConflict: conflict });
+        if (error) throw error;
+      }, { onRetry });
+    };
     await ins("rum_pageview", pageviews.map(({ ts, ...p }) => ({ ...p, started_at: ts })));
     await ins("rum_metric", metrics);
     await ins("rum_error", errors);
@@ -148,6 +160,20 @@ Deno.serve(async (req) => {
     await ins("rum_breadcrumb", breadcrumbs);
     await ins("rum_event", events);
     await ins("rum_span", spans); // v0.4 tracing distribué (front + back)
+
+    // SVI (migration-v51). L'appel passe par la RPC upsert_svi_call et non par un
+    // upsert direct : la fusion des lots est non triviale (ne jamais régresser un
+    // champ vers NULL, retenir le début le plus tôt et la fin la plus tard, ne
+    // jamais rouvrir un appel clos) et doit vivre en base, au même endroit pour
+    // l'ingestion cloud et le dev-server local.
+    for (const call of sviCalls) {
+      await withRetry(async () => {
+        const { error } = await supabase.rpc("upsert_svi_call", { p: call });
+        if (error) throw error;
+      }, { onRetry });
+    }
+    await insOn("svi_step", sviSteps, "step_id");
+    await insOn("svi_leg", sviLegs, "app_id,call_id,leg_ref,dir");
 
     // page_count DÉRIVÉ du compte réel de pageviews (idempotent au rejeu, cf.
     // migration-v07) — recalcul APRÈS l'insertion, pour les sessions qui ont
