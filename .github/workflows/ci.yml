@@ -112,6 +112,19 @@ jobs:
           DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum_rls \
             pnpm test:isolation
 
+      # SVI I0 — le modèle d'appel porte les propriétés dont dépendent tous les
+      # taux affichés (containment, abandon, transfert) : écriture désordonnée,
+      # rejeu idempotent, issue non inventable, saisie sensible sans longueur.
+      # Base dédiée, comme le test d'isolation.
+      - name: Modèle d'appel SVI (base dédiée)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'create database mip_rum_svi'
+          DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum_svi \
+            pnpm test:svi
+
       - name: Build SDK (servi par demo/serve.mjs et la console)
         run: pnpm --filter @mip/rum-sdk build
 
