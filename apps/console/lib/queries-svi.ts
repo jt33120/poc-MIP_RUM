@@ -128,6 +128,71 @@ export async function sviCallDetail(
   return { call: { ...call[0], steps: steps.length }, steps };
 }
 
+export interface ContainmentRow {
+  closed: number;
+  contained: number;
+  recalled: number;
+  unevaluable: number;
+}
+
+/**
+ * Comptes nécessaires au containment NET (cf. lib/svi-recall.ts).
+ *
+ * Un « rappel » est un appel ULTÉRIEUR du même appelant sous 7 jours. La fenêtre
+ * regarde APRÈS l'appel résolu, y compris au-delà de la période affichée : sinon
+ * un appel résolu en fin de fenêtre paraîtrait toujours net, et le taux
+ * s'améliorerait artificiellement à chaque rafraîchissement.
+ *
+ * L'appariement se fait sur (caller_hash, caller_key_id) : l'empreinte est un
+ * HMAC, deux clés différentes produisent des empreintes différentes pour le même
+ * appelant. Un rappel enjambant une rotation de clé est donc invisible — biais
+ * documenté, dans le sens flatteur, signalé à l'écran.
+ */
+export async function sviContainment(f: Filters): Promise<ContainmentRow> {
+  const rows = await q<ContainmentRow>(
+    `with clos as (
+       select * from svi_call
+        where app_id = $1 and started_at > now() - $2::interval
+          and merged_into is null and status = 'closed'
+     )
+     select count(*)::int as closed,
+            count(*) filter (where outcome = 'contained')::int as contained,
+            count(*) filter (
+              where outcome = 'contained' and caller_hash is not null
+                and exists (
+                  select 1 from svi_call r
+                   where r.app_id = clos.app_id
+                     and r.caller_hash = clos.caller_hash
+                     and r.caller_key_id is not distinct from clos.caller_key_id
+                     and r.call_id <> clos.call_id
+                     and r.started_at > clos.started_at
+                     and r.started_at <= clos.started_at + interval '7 days')
+            )::int as recalled,
+            count(*) filter (where outcome = 'contained' and caller_hash is null)::int as unevaluable
+       from clos`,
+    [f.app, periodInterval(f)],
+  );
+  return rows[0] ?? { closed: 0, contained: 0, recalled: 0, unevaluable: 0 };
+}
+
+/** Motifs de sortie du SVI : où les appels quittent le parcours, et comment. */
+export async function sviExitNodes(
+  f: Filters,
+  limit = 8,
+): Promise<{ exit_node: string; total: number; abandoned: number; transferred: number }[]> {
+  return q(
+    `select coalesce(exit_node, '(non instrumenté)') as exit_node,
+            count(*)::int as total,
+            count(*) filter (where outcome = 'abandoned')::int as abandoned,
+            count(*) filter (where outcome = 'transferred')::int as transferred
+       from svi_call
+      where app_id = $1 and started_at > now() - $2::interval
+        and merged_into is null and status = 'closed'
+      group by 1 order by total desc limit $3`,
+    [f.app, periodInterval(f), limit],
+  );
+}
+
 /** Répartition horaire des issues, pour l'histogramme empilé. */
 export async function sviOutcomesByHour(
   f: Filters,

@@ -130,6 +130,64 @@ async function main() {
   assert("greffe : la métrique SVI porte bien son call_id",
     (await n(c, "select count(*)::int n from rum_metric where call_id is not null")) === 1);
 
+  // ── 6 bis. Containment NET : la requête, pas seulement la fonction pure ───
+  // Scénario de référence du plan : 100 appels résolus dont 30 suivis d'un rappel
+  // du même appelant sous 7 jours -> brut 100 %, net 70 %. Le test unitaire
+  // couvre l'arithmétique ; celui-ci couvre le SQL, où se cachent les vraies
+  // erreurs (fenêtre, appariement, exclusion de l'appel lui-même).
+  await c.query("delete from svi_call where app_id = 'app-net'");
+  await c.query("insert into app_registry (app_id, name) values ('app-net','net') on conflict do nothing");
+  for (let i = 0; i < 100; i++) {
+    // Appel résolu, il y a 3 jours.
+    await call({
+      app_id: "app-net", call_id: `net-${i}`, platform: "test", adapter_version: "0",
+      started_at: new Date(Date.now() - 3 * 86400_000).toISOString(),
+      ended_at: new Date(Date.now() - 3 * 86400_000 + 60_000).toISOString(),
+      status: "closed", outcome: "contained",
+      caller_hash: `h-${i}`, caller_key_id: "k1",
+    });
+    // Pour 30 d'entre eux : rappel 1 jour plus tard (donc dans la fenêtre 7 j).
+    if (i < 30) {
+      await call({
+        app_id: "app-net", call_id: `net-rappel-${i}`, platform: "test", adapter_version: "0",
+        started_at: new Date(Date.now() - 2 * 86400_000).toISOString(),
+        ended_at: new Date(Date.now() - 2 * 86400_000 + 60_000).toISOString(),
+        status: "closed", outcome: "transferred",
+        caller_hash: `h-${i}`, caller_key_id: "k1",
+      });
+    }
+  }
+  const net = await one(c,
+    `with clos as (
+       select * from svi_call where app_id = 'app-net' and status = 'closed' and merged_into is null
+     )
+     select count(*) filter (where outcome='contained')::int as contained,
+            count(*) filter (
+              where outcome='contained' and caller_hash is not null
+                and exists (select 1 from svi_call r
+                             where r.app_id = clos.app_id and r.caller_hash = clos.caller_hash
+                               and r.caller_key_id is not distinct from clos.caller_key_id
+                               and r.call_id <> clos.call_id
+                               and r.started_at > clos.started_at
+                               and r.started_at <= clos.started_at + interval '7 days')
+            )::int as recalled
+       from clos`);
+  assert("containment : 100 appels résolus détectés", net.contained === 100);
+  assert("containment : 30 rappels sous 7 jours détectés -> net 70 %", net.recalled === 30);
+
+  // Un appel ne doit JAMAIS se compter lui-même comme son propre rappel.
+  const seul = await one(c,
+    `select count(*) filter (
+       where exists (select 1 from svi_call r
+                      where r.app_id = s.app_id and r.caller_hash = s.caller_hash
+                        and r.call_id <> s.call_id
+                        and r.started_at > s.started_at
+                        and r.started_at <= s.started_at + interval '7 days')
+     )::int as n
+     from svi_call s where s.app_id='app-net' and s.call_id = 'net-99'`);
+  assert("containment : un appel isolé n'est pas son propre rappel", seul.n === 0);
+  await c.query("delete from svi_call where app_id = 'app-net'");
+
   // ── 7. Isolation tenant sur les tables SVI (v47 ne les couvre pas) ─────────
   await call({ app_id: "app-b", call_id: "c-b", platform: "asterisk", adapter_version: "0.1.0",
                started_at: "2026-07-30T09:00:00Z" });

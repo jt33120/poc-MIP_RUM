@@ -221,6 +221,51 @@ export const GLOSSARY = {
     business:
       "La version « expérience » d'une weather map réseau : on voit d'un coup d'œil quelles briques du parcours sont sollicitées, lesquelles souffrent, et lesquelles montent en charge — cartographie, flux et anticipation réunis.",
   },
+
+  // --- Supervision SVI -------------------------------------------------------
+  containment: {
+    label: "Containment (apparent)",
+    term:
+      "Part des appels clos que le serveur vocal a terminés sans transfert vers un conseiller. Dit « apparent » ici parce qu'il ignore les rappels.",
+    stack:
+      "Compté sur svi_call.outcome = 'contained', rapporté aux appels de statut 'closed' sur la période. Les appels encore ouverts sont exclus du dénominateur : ils n'ont pas d'issue.",
+    business:
+      "L'indicateur roi du secteur — et le plus facile à embellir. Un appel « contenu » dont l'appelant rappelle le lendemain n'était pas résolu, il était différé. À ne jamais lire sans le containment net.",
+  },
+  containment_net: {
+    label: "Containment net",
+    term:
+      "Part des appels clos résolus par le serveur vocal SANS rappel du même appelant dans les 7 jours.",
+    stack:
+      "Même base que le containment apparent, moins les appels dont l'empreinte d'appelant (HMAC) réapparaît dans les 7 jours suivants. Les appels sans empreinte ne sont pas vérifiables et sont comptés comme non rappelés : le taux net est donc une BORNE SUPÉRIEURE. Un rappel qui enjambe une rotation de clé HMAC est invisible, même sens de biais.",
+    business:
+      "Le seul taux de résolution défendable devant un acheteur du domaine. L'écart avec le taux apparent mesure exactement ce que le serveur vocal reporte au lieu de résoudre.",
+  },
+  abandon_svi: {
+    label: "Abandon",
+    term: "Part des appels clos où l'appelant a raccroché avant d'obtenir une résolution ou un conseiller.",
+    stack: "svi_call.outcome = 'abandoned', rapporté aux appels clos.",
+    business:
+      "Le signal le plus coûteux : l'appelant est parti sans réponse. Croisé avec le nœud de sortie, il désigne l'endroit précis du menu qui décourage.",
+  },
+  rappel_7j: {
+    label: "Rappel sous 7 jours",
+    term:
+      "Nouvel appel du même appelant dans les 7 jours suivant un appel résolu, quel qu'en soit le motif.",
+    stack:
+      "Appariement sur (caller_hash, caller_key_id). L'empreinte est posée par l'adaptateur chez le client : MIP ne détient jamais la clé, donc ne peut pas ré-identifier l'appelant.",
+    business:
+      "Approximation volontairement large de la non-résolution : on ne sait pas si le rappel porte sur le même sujet. Elle penche donc du côté sévère, ce qui est le bon sens pour un indicateur de qualité.",
+  },
+  couverture_parcours: {
+    label: "Couverture du parcours",
+    term:
+      "Part des appels pour lesquels le détail nœud par nœud est disponible (niveau de provenance « journey »).",
+    stack:
+      "svi_call.provenance contient 'journey'. Ce niveau exige que le flow du serveur vocal soit instrumenté chez le client, flow par flow — les CDR seuls ne le fournissent pas.",
+    business:
+      "Dit sur quelle fraction du trafic l'entonnoir de menu est réellement calculé. Un entonnoir portant sur 34 % des appels ne doit jamais être présenté comme s'il en couvrait la totalité.",
+  },
 } as const satisfies Record<string, GlossaryEntry>;
 
 export type GlossaryId = keyof typeof GLOSSARY;
