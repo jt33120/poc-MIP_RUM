@@ -61,6 +61,7 @@ export function periodLabel(f: Filters): string {
   return PERIODS[f.period].label;
 }
 
+
 /** Query string préservant les filtres actifs pour les liens internes. */
 export function filtersToQuery(f: Filters, extra?: Record<string, string>): string {
   const p = new URLSearchParams();
