@@ -1,10 +1,15 @@
 // Vue d'ensemble SVI — incrément I2. Le chiffre dominant est le containment NET,
 // jamais le brut.
 //
-// Règle d'affichage tenue par cette page et vérifiée en E2E : le taux apparent
-// n'apparaît JAMAIS sans le net à côté, et il est libellé « apparent ». Un
-// containment brut affiché seul est un chiffre de complaisance — l'appelant qui
-// rappelle le lendemain n'avait pas son problème résolu, il l'avait différé.
+// Règle d'affichage tenue par cette page : le taux apparent n'apparaît JAMAIS
+// sans le net à côté, et il est libellé « apparent ». Un containment brut affiché
+// seul est un chiffre de complaisance — l'appelant qui rappelle le lendemain
+// n'avait pas son problème résolu, il l'avait différé.
+//
+// La garde est un test de SOURCE (tests/unit/svi-recall.test.ts), pas un test de
+// DOM : elle vérifie que ce fichier n'affiche pas `c.brut` sans `c.net` ni sans
+// le mot « apparent ». Elle attrape la régression probable — une refonte qui
+// simplifie en ne gardant que le gros chiffre — mais elle ne prouve pas le rendu.
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
