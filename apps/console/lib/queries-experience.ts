@@ -120,8 +120,11 @@ export interface RouteCsatRow {
 /** CSAT par route — pour relier satisfaction et parcours (top 20 par volume). */
 export async function feedbackByRoute(f: Filters): Promise<RouteCsatRow[]> {
   return q<RouteCsatRow>(
+    // `count` ne compte que les avis NOTÉS, comme feedbackStats. Un avis peut
+    // n'avoir qu'un commentaire (score null, cf. mip-rum-feedback.js) : le
+    // compter ici diluerait le ratio positives/count d'une route.
     `select route,
-            count(*)::int as count,
+            count(*) filter (where (nullif(props->>'score',''))::int is not null)::int as count,
             count(*) filter (where (nullif(props->>'score',''))::int >= 4)::int as positives,
             avg((nullif(props->>'score',''))::int)::float8 as avg
      from rum_event
