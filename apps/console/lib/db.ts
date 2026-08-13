@@ -1,6 +1,5 @@
 import { Pool, type PoolClient } from "pg";
 import { recordDbSpan } from "./server-trace-core";
-import { SUPABASE_CA } from "./supabase-ca";
 
 // pool unique survivant au hot-reload de next dev
 const globalForPg = globalThis as unknown as { pgPool?: Pool };
@@ -9,19 +8,22 @@ const connectionString =
   process.env.DATABASE_URL ??
   "postgres://postgres:postgres@localhost:5433/mip_rum";
 
+// local Postgres (docker-compose) n'a pas de TLS ; toute base distante (Neon,
+// et avant elle Supabase) en exige un vérifié contre le magasin CA système —
+// le certificat Neon chaîne à une autorité publique, plus besoin d'épingler
+// de CA propriétaire comme avec le pooler Supabase.
+const isLocal = /:\/\/[^/]*(localhost|127\.0\.0\.1)([:/]|$)/.test(connectionString);
+
 const pool =
   globalForPg.pgPool ??
   new Pool({
     connectionString,
     // Pool par instance (serverless). Réglable via PGPOOL_MAX ; défaut 10 (un
     // /rum/summary prend jusqu'à 4 connexions en parallèle — 5 saturait sous
-    // multi-onglets / auto-refresh). Derrière le pooler Supabase (mode
-    // transaction), monter ce plafond est sûr.
+    // multi-onglets / auto-refresh). Sûr de monter ce plafond derrière un pooler
+    // en mode transaction (Neon comme Supabase).
     max: Number(process.env.PGPOOL_MAX ?? 10),
-    // base cloud : TLS vérifié contre la CA Supabase épinglée
-    ssl: connectionString.includes("supabase.com")
-      ? { ca: SUPABASE_CA }
-      : undefined,
+    ssl: isLocal ? undefined : { rejectUnauthorized: true },
   });
 globalForPg.pgPool = pool;
 
