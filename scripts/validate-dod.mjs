@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import pg from "pg";
 
 const SITE = "https://plateforme.groupement-it.com";
-const ENDPOINT = "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
+const ENDPOINT = "https://mip-rum-console.vercel.app/api/ingest/v1/traces";
 const CA = readFileSync(new URL("../apps/console/certs/supabase-ca.crt", import.meta.url), "utf8");
 const env = readFileSync(new URL("../apps/console/.env.production", import.meta.url), "utf8");
 const dbUrl = new URL(env.match(/^DATABASE_URL=(.+)$/m)[1]);

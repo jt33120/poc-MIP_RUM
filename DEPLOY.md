@@ -1,70 +1,70 @@
-# DEPLOY — Mise en production POC (Supabase→Neon + Vercel + snippet G-IT)
+# DEPLOY — Mise en production (Neon + Vercel + snippet G-IT)
 
-Statut S6 : **TERMINÉ le 10/06/2026** — infra déployée (MCP Supabase + CLI Vercel) **et snippet EN PROD** sur `plateforme.groupement-it.com` (PR [uti-platform#36](https://github.com/jt33120/uti-platform/pull/36), mergée avec l'accord de Julian). **DoD 1-4 vérifiés en live** : `node scripts/validate-dod.mjs`.
-
-> **⚠ Migration base de données Supabase → Neon (13/08/2026).** Le schéma complet
-> (schema.sql + 49 migrations) et les 36 tables (~251k lignes, intégrité vérifiée
-> ligne à ligne) ont été répliqués sur Neon — voir `docs/NEON_MIGRATION.md` pour
-> le détail et **le point non résolu à trancher avant de supprimer le projet
-> Supabase** : les 4 Edge Functions d'ingestion (`v1-traces`, `v1-logs`,
-> `v1-replay`, `uptime`) tournent sur le compute Supabase (Deno) et utilisent
-> `supabase-js`, indépendamment de la base — les supprimer coupe l'ingestion
-> live de `plateforme.groupement-it.com`. La section 1 ci-dessous reste donc
-> documentée telle quelle (ingestion toujours sur Supabase) ; seule la base a
-> changé de fournisseur (section 2, `DATABASE_URL`).
+> **⚠ Le projet Supabase `mip-rum-poc` n'existe plus** (constaté le 14/08/2026 :
+> plus aucun enregistrement DNS, API de gestion `"Resource has been removed"`).
+> Toute la pile a été déplacée : la **base** sur Neon (région UE), et
+> l'**ingestion** — qui tournait sur le compute Supabase — dans la console
+> Next.js sur Vercel. Le détail, les vérifications et ce qui reste à faire sont
+> dans **`docs/NEON_MIGRATION.md`**.
+>
+> **L'ingestion ne redémarrera pas tant que le snippet du client pointe vers
+> l'ancienne URL Supabase** (§4 ci-dessous).
 
 | Ressource | URL |
 |---|---|
-| Ingestion OTLP | `https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces` (Supabase Edge Functions — inchangé, cf. avertissement ci-dessus) |
+| Ingestion OTLP | `https://mip-rum-console.vercel.app/api/ingest/v1/traces` |
+| Ingestion logs | `https://mip-rum-console.vercel.app/api/ingest/v1/logs` |
+| Ingestion replay | `https://mip-rum-console.vercel.app/api/ingest/v1/replay` |
 | Console RUM Live | `https://mip-rum-console.vercel.app` |
 | SDK hébergé | `https://mip-rum-console.vercel.app/mip-rum.js` |
-| Base de données | Neon `neondb` (`ep-restless-hill-axx69y8n`, **us-east-2 Ohio** — cf. avertissement résidence UE dans `docs/NEON_MIGRATION.md`) |
-| Projet Supabase (legacy, ingestion only) | `mip-rum-poc` (`nupxrdpsliqptqnjkmgw`, eu-west-3 Paris, free tier) |
+| Base de données | Neon `mip-rum-poc-eu` (`rough-firefly-49250892`, **aws-eu-central-1**, base `neondb`) |
 | Projet Vercel | `julian-talous-projects/mip-rum-console` |
 
-Vérifié en live : préflight CORS origine G-IT → 204 ✅ · POST fixture → 200 + lignes en base ✅ · navigateur réel → cloud (5 vitals, CORS, beacon) ✅ · console branchée sur la base cloud (rôle lecture seule `console_ro`, TLS vérifié CA Supabase épinglée) ✅ · `/correlation` robot vs réel ✅.
+## 1. Neon — base de données
 
-> Les sections 1-3 ci-dessous documentent la procédure CLI équivalente (re-déploiement, autre environnement). Prérequis dans ce cas : `SUPABASE_ACCESS_TOKEN`/`VERCEL_TOKEN` ou login interactif. ⚠️ deux CLI vercel coexistent sur la machine : utiliser `~/.local/bin/vercel` (54.x), le brew (41.x) est trop vieux pour déployer.
-
-## 1. Supabase — base + ingestion
+La base est déjà en place (schéma v51 + données migrées et vérifiées, cf.
+`docs/NEON_MIGRATION.md`). Pour repartir de zéro sur un nouveau projet Neon :
 
 ```bash
-cd mip-rum
+# 1.1 Créer le projet — RÉGION UE obligatoire (résidence des données annoncée
+#     dans le README, docs/CONFORMITE.md et docs/DPA.md).
+NEON_API_KEY=<clé> npx neonctl@latest projects create \
+  --name mip-rum-poc-eu --region-id aws-eu-central-1 --pg-version 17
 
-# 1.1 Créer le projet (région Paris, narratif souveraineté) — ou via le dashboard
-supabase projects create mip-rum-poc --org-id <ORG_ID> --region eu-west-3 --db-password '<PWD_FORT>'
-# Récupérer le PROJECT_REF affiché (ex: abcdefghijklmnop)
+# 1.2 Appliquer le schéma puis TOUTES les migrations, dans l'ordre (identique
+#     à ce que rejoue la CI contre un Postgres vierge).
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/ingest/sql/schema.sql
+for f in apps/ingest/sql/migration-v*.sql; do
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+done
 
-# 1.2 Appliquer le schéma (tables + RPC + vue v_correlation)
-supabase link --project-ref nupxrdpsliqptqnjkmgw
-psql "$(supabase status 2>/dev/null | grep -o 'postgresql://.*')" -f apps/ingest/sql/schema.sql \
-  || psql "postgresql://postgres:<PWD_FORT>@db.nupxrdpsliqptqnjkmgw.supabase.co:5432/postgres" -f apps/ingest/sql/schema.sql
-
-# 1.3 Déployer l'edge function OTLP
-#     ⚠️ --no-verify-jwt OBLIGATOIRE : les beacons navigateur n'ont pas de header Authorization
-cd apps/ingest
-supabase functions deploy v1-traces --project-ref nupxrdpsliqptqnjkmgw --no-verify-jwt
-# (SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont injectées automatiquement dans la function)
+# 1.3 Rôle de connexion restreint de la console (créé NOLOGIN par migration-v47 ;
+#     lui donner un mot de passe pour qu'il puisse se connecter).
+psql "$DATABASE_URL" -c "alter role console_ro login password '<PWD_FORT>'"
 ```
 
-> **Clé d'API d'ingestion (`REQUIRE_API_KEY`).** Par défaut l'ingestion est *fail-open*
-> (continuité POC G-IT : une app sans `api_key_hash` est acceptée). Une fois toutes les
-> apps porteuses d'une clé, passer `REQUIRE_API_KEY=true` pour rejeter (403) tout `app_id`
-> inconnu/sans clé — sinon un tiers peut injecter sous l'`app_id` d'une app sans clé.
+> **Extensions.** Ni `pg_net` ni `pg_cron` ne sont utilisables sur Neon
+> (`pg_net` absent de la liste autorisée ; `pg_cron` refusé à la création, y
+> compris dans la base `postgres` du projet). Les blocs `cron.schedule(...)` /
+> `net.http_post(...)` des migrations sont donc sautés silencieusement — ils sont
+> tous gardés par `if exists (pg_extension …)`. Leur remplacement est en §6.
 
-Endpoint d'ingestion résultant : `https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces`
-(Supabase impose le chemin `/functions/v1/<nom>` ; l'OTLP/HTTP accepte une URL d'endpoint arbitraire, le SDK la prend en config.)
+> **Clé d'API d'ingestion (`REQUIRE_API_KEY`).** Par défaut l'ingestion est
+> *fail-open*. Une fois toutes les apps porteuses d'une clé, passer
+> `REQUIRE_API_KEY=true` pour rejeter (403) tout `app_id` inconnu **ou sans clé**
+> (durcissement E1-S1) — sinon un tiers peut injecter sous l'`app_id` d'une app
+> sans clé.
 
-### Vérifications immédiates (avant de toucher au site)
+### Vérifications immédiates (après déploiement Vercel, avant de toucher au site)
 
 ```bash
 # CORS préflight depuis l'origine G-IT -> attendu: 204 + Access-Control-Allow-Origin
-curl -si -X OPTIONS "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces" \
+curl -si -X OPTIONS "https://mip-rum-console.vercel.app/api/ingest/v1/traces" \
   -H "Origin: https://plateforme.groupement-it.com" \
   -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type" | head -6
 
 # POST d'un payload OTLP d'exemple -> attendu: {"partialSuccess":{}} puis 1 ligne en base
-curl -s "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces" \
+curl -s "https://mip-rum-console.vercel.app/api/ingest/v1/traces" \
   -H "content-type: application/json" -H "Origin: https://plateforme.groupement-it.com" \
   -d @tests/fixtures/otlp-sample.json
 ```
@@ -106,8 +106,7 @@ vercel --prod
 
 ```bash
 # seed aligné sur l'app du vrai site (routes clés G-IT) — ou brancher l'API mippoc via l'adapter
-DATABASE_URL="postgres://console_ro.nupxrdpsliqptqnjkmgw:<PWD_console_ro>@aws-0-eu-west-3.pooler.supabase.com:6543/postgres" \
-  node apps/sync-synthetic/src/sync.mjs seed gip-plateforme
+DATABASE_URL="$DATABASE_URL" node apps/sync-synthetic/src/sync.mjs seed gip-plateforme
 ```
 
 (Adapter les routes de `SEED_MEASURES` dans `apps/sync-synthetic/src/sync.mjs` aux routes réelles de la plateforme si besoin. La source réelle mippoc se branche en implémentant `fetchSnapshots()` — interface `SyntheticSource`, cf. BUILD_LOG S5.)
@@ -121,7 +120,7 @@ DATABASE_URL="postgres://console_ro.nupxrdpsliqptqnjkmgw:<PWD_console_ro>@aws-0-
 <script src="https://mip-rum-console.vercel.app/mip-rum.js"></script>
 <script>
   MIPRum.init({
-    endpoint: "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces",
+    endpoint: "https://mip-rum-console.vercel.app/api/ingest/v1/traces",
     appId: "gip-plateforme",
     clientId: "groupement-it",
     env: "prod",
@@ -135,55 +134,75 @@ DATABASE_URL="postgres://console_ro.nupxrdpsliqptqnjkmgw:<PWD_console_ro>@aws-0-
 Créer un favori avec cette URL, l'ouvrir sur la plateforme :
 
 ```
-javascript:(()=>{const s=document.createElement('script');s.src='https://mip-rum-console.vercel.app/mip-rum.js';s.onload=()=>MIPRum.init({endpoint:'https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces',appId:'gip-plateforme',clientId:'groupement-it',env:'prod',sampleRate:1.0});document.head.appendChild(s)})()
+javascript:(()=>{const s=document.createElement('script');s.src='https://mip-rum-console.vercel.app/mip-rum.js';s.onload=()=>MIPRum.init({endpoint:'https://mip-rum-console.vercel.app/api/ingest/v1/traces',appId:'gip-plateforme',clientId:'groupement-it',env:'prod',sampleRate:1.0});document.head.appendChild(s)})()
 ```
 
 ## 5. Recette finale (DoD PLAN §2.2)
 
 1. Naviguer sur la plateforme (2-3 pages, fermer l'onglet) → onglet Réseau : POST OTLP JSON visibles (preuve « OTel sur le fil »).
-2. `select * from rum_metric order by id desc limit 10;` (SQL editor Supabase) → vitals avec `app_id='gip-plateforme'`.
+2. `select * from rum_metric order by id desc limit 10;` (SQL editor Neon) → vitals avec `app_id='gip-plateforme'`.
 3. Console Vercel : Overview p75 + Pages + Erreurs + Sessions alimentées.
 4. `/correlation` : robot vs réel pour ≥1 route, écart surligné.
 
-## 6. Rétention des données (TTL)
+## 6. Tâches planifiées (rétention, rollups, metering, alertes)
 
-La purge de la télémétrie ancienne est portée par la fonction SQL
-`purge_rum(retention_days int default 30)` (migration-v09), qui supprime dans
-l'ordre des FK et renvoie le détail des suppressions. Deux modes :
+`pg_cron` et `pg_net` ne sont pas utilisables sur Neon (cf.
+`docs/NEON_MIGRATION.md` §3.3-3.4). La planification passe par **Vercel Cron**,
+déclaré dans `apps/console/vercel.json`, vers trois routes :
+
+| Route | Planification | Déclencheur | Contenu |
+|---|---|---|---|
+| `/api/cron/tick` | `*/5 * * * *` | GitHub Actions | `check_alerts`, `check_slo_burn`, sonde uptime, livraison des webhooks, réconciliation |
+| `/api/cron/hourly` | `5 * * * *` | GitHub Actions | `refresh_rum_rollups(26)`, `check_new_errors`, `check_ai_op_anomalies` |
+| `/api/cron/daily` | `17 3 * * *` | Vercel Cron | `purge_rum_tenants(30)`, `meter_tenant_usage()` |
+
+⚠️ Le plan Vercel **Hobby n'accepte que des crons quotidiens** (un `*/5` dans
+`vercel.json` fait échouer tout le déploiement). D'où le partage : le quotidien
+sur Vercel, les deux autres via `.github/workflows/cron.yml`. En passant Vercel
+en **Pro**, on peut tout remettre dans `vercel.json` et supprimer le workflow.
 
 ```bash
-# Cloud (Supabase) : planifié automatiquement par migration-v09 SI l'extension
-# pg_cron est présente (job 'mip-purge-daily', 03:17 UTC).
-#
-# Sur Neon : pg_cron existe (v1.6) mais NE PEUT être créé que dans la base
-# `postgres` du projet, jamais dans `neondb` directement (confirmé lors de la
-# migration du 13/08/2026 — `create extension pg_cron` échoue avec "can only
-# create extension in database postgres"). Toutes les migrations testent
-# `if exists (pg_extension where extname='pg_cron')` AVANT de programmer un job
-# -> sur `neondb`, ce test est faux et les blocs cron.schedule(...) sont
-# silencieusement sautés, exactement comme en local/CI. Pour l'activer malgré
-# tout il faut se connecter à la base `postgres` du même projet Neon et utiliser
-# `cron.schedule_in_database('mip-purge-daily', '17 3 * * *', 'select purge_rum(30)',
-# database := 'neondb')` (API cross-database propre à Neon, cf. leur doc pg_cron)
-# — non fait à ce stade, cf. docs/NEON_MIGRATION.md.
+# OBLIGATOIRE : sans CRON_SECRET, les routes refusent (503, fail-closed) et
+# RIEN ne tourne — ni purge, ni rollups, ni alertes.
+vercel env add CRON_SECRET production     # coller: openssl rand -hex 32
 
-# Local / hébergement sans pg_cron (et donc Neon tant que ce qui précède n'est
-# pas fait) : le CLI Node (boucle quotidienne)
-RETENTION_DAYS=30 node apps/ingest/purge.mjs --loop
-# ou une passe unique (cron système / Vercel Cron pointant vers une route qui l'appelle) :
-RETENTION_DAYS=30 node apps/ingest/purge.mjs --once
-
-# Inspection manuelle (renvoie {table: lignes supprimées}) :
-psql "$DATABASE_URL" -c "select purge_rum(30)"
+# La MÊME valeur doit être posée en secret GitHub Actions (sinon les ticks
+# fréquents reçoivent 401) :
+#   Settings > Secrets and variables > Actions > New repository secret
+#   nom: CRON_SECRET
 ```
 
-`audit_log` et `console_user` ne sont **pas** purgés (conformité / comptes).
+Déclenchement manuel (debug) :
+
+```bash
+curl -sS -H "Authorization: Bearer $CRON_SECRET" \
+  https://mip-rum-console.vercel.app/api/cron/tick
+# -> 200 si toutes les étapes passent, 207 en échec partiel (détail par étape)
+```
+
+Les fonctions SQL sous-jacentes n'ont pas changé et restent appelables à la
+main :
+
+```bash
+psql "$DATABASE_URL" -c "select purge_rum_tenants(30)"   # {app: lignes supprimées}
+psql "$DATABASE_URL" -c "select check_alerts()"
+```
+
+Hors Vercel (self-host), les runners Node historiques restent valables :
+
+```bash
+RETENTION_DAYS=30 node apps/ingest/purge.mjs --loop
+node apps/ingest/dispatch-alerts.mjs --loop
+```
 
 ## Dépannage
 
 | Symptôme | Cause probable | Fix |
 |---|---|---|
-| Erreur CORS dans la console navigateur | origine absente de la whitelist | `ALLOWED_ORIGINS` dans `apps/ingest/supabase/functions/v1-traces/index.ts`, redéployer |
-| 401 sur le POST | function déployée avec verify_jwt | redéployer avec `--no-verify-jwt` |
+| Erreur CORS dans la console navigateur | origine absente de la whitelist | socle statique dans `apps/ingest/supabase/functions/_shared/cors.mjs`, ou `app_registry.allowed_origins` de l'app (pris en compte sans redéploiement, cache 60 s) |
+| **302 vers `/login` sur le POST d'ingestion** | `/api/ingest/*` ne contourne plus le middleware d'auth | vérifier le bypass en tête de `apps/console/middleware.ts` — sans lui, TOUTE l'ingestion tombe en silence |
+| 403 sur le POST | `REQUIRE_API_KEY=true` et l'app n'a pas de clé (ou clé fausse) | donner une clé à l'app (`app_registry.api_key_hash`) **avant** d'activer le flag, ou repasser à `false` |
 | Rien en base mais POST 200 | `mip.app_id` manquant (payload rejeté) | vérifier `appId` dans `MIPRum.init` |
 | Console vide | `DATABASE_URL` manquant/faux sur Vercel | `vercel env ls` / re-add + redeploy |
+| Purge/rollups/alertes ne tournent pas | `CRON_SECRET` non défini ⇒ routes cron en 503 (fail-closed) | `vercel env add CRON_SECRET production` puis redeploy (cf. §6) |
+| Alertes jamais livrées | `pg_net` n'existe pas sur Neon : la livraison passe par `/api/cron/tick` | vérifier que le cron tourne et que `alert_delivery.status` sort de `queued` |

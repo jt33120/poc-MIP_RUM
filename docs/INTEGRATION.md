@@ -24,7 +24,7 @@ Deux balises `<script>` dans le `<head>`, rien d'autre à modifier :
 </script>
 ```
 
-URLs réelles du POC : SDK `https://mip-rum-console.vercel.app/mip-rum.js`, ingestion `https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces` (cf. [DEPLOY.md](../DEPLOY.md)). Le SDK peut aussi être auto-hébergé : c'est un fichier IIFE statique unique (`packages/rum-sdk/dist/mip-rum.js`), à servir depuis le domaine du client (recommandé : évite les bloqueurs et simplifie la CSP).
+URLs réelles du POC : SDK `https://mip-rum-console.vercel.app/mip-rum.js`, ingestion `https://mip-rum-console.vercel.app/api/ingest/v1/traces` (cf. [DEPLOY.md](../DEPLOY.md)). Le SDK peut aussi être auto-hébergé : c'est un fichier IIFE statique unique (`packages/rum-sdk/dist/mip-rum.js`), à servir depuis le domaine du client (recommandé : évite les bloqueurs et simplifie la CSP).
 
 Prérequis côté MIP (à faire une fois par application) :
 1. Enregistrer l'application dans `app_registry` (`app_id`, `name`, `client_id`, hash sha256 de la clé d'API, `active = true`).
@@ -97,7 +97,7 @@ Si le site applique une CSP, deux directives sont concernées :
 Exemple (SDK auto-hébergé, ingestion POC) :
 
 ```
-Content-Security-Policy: script-src 'self'; connect-src 'self' https://nupxrdpsliqptqnjkmgw.supabase.co;
+Content-Security-Policy: script-src 'self' https://mip-rum-console.vercel.app; connect-src 'self' https://mip-rum-console.vercel.app;
 ```
 
 Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe-inline'`, un nonce, ou déplacer l'init dans un fichier JS du site).

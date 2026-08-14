@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 
 const BASE = "https://mip-rum-console.vercel.app";
-const INGEST = "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
+const INGEST = "https://mip-rum-console.vercel.app/api/ingest/v1/traces";
 const APP_ID = "client-demo-onbo";
 const ORIGIN = "https://demo-onboarding.mip-rum.example";
 

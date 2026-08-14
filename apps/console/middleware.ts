@@ -26,6 +26,13 @@ export async function middleware(req: NextRequest) {
   // Résolution domaine -> app_id pour l'extension navigateur (Ext-B) : appelée par
   // le service worker de l'extension (sans cookie), lecture seule, sans PII.
   if (req.nextUrl.pathname.startsWith("/api/extension")) return NextResponse.next();
+  // /api/ingest/* : beacons OTLP des sites clients (navigateurs anonymes, aucun
+  // cookie de session — par construction, ce sont des visiteurs du site du
+  // client, pas des utilisateurs de la console). L'auth d'ingestion est la clé
+  // d'API vérifiée DANS le handler (REQUIRE_API_KEY), plus le rate limit et la
+  // whitelist CORS. Sans ce bypass, chaque beacon reçoit un 302 vers /login et
+  // TOUTE l'ingestion tombe en silence — le SDK ne suit pas les redirections.
+  if (req.nextUrl.pathname.startsWith("/api/ingest")) return NextResponse.next();
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const user = token ? await verifyJwt(token) : null;

@@ -14,6 +14,9 @@ import { createLogger } from "./supabase/functions/_shared/log.mjs";
 import { withRetry } from "./supabase/functions/_shared/retry.mjs";
 import { MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "./supabase/functions/_shared/limits.mjs";
 import { corsHeaders as buildCors, originsFromRegistry } from "./supabase/functions/_shared/cors.mjs";
+// Écriture partagée avec les routes Next.js de prod (lib/pg-ingest.mjs) : une
+// seule implémentation des inserts, plus une copie par runtime.
+import { writeRows, writeLogs } from "./lib/pg-ingest.mjs";
 
 const log = createLogger("ingest");
 
@@ -99,176 +102,11 @@ async function rateLimitedDurable(appId) {
   }
 }
 
-// --- Écriture : un insert multi-lignes par table ------------------------------
-function batchInsert(client, table, cols, rows, conflictClause) {
-  if (!rows.length) return Promise.resolve();
-  const params = [];
-  const tuples = rows
-    .map(
-      (row) =>
-        `(${cols
-          .map((c) => {
-            params.push(row[c]);
-            return `$${params.length}`;
-          })
-          .join(",")})`,
-    )
-    .join(",");
-  return client.query(
-    `insert into ${table} (${cols.join(",")}) values ${tuples} ${conflictClause}`,
-    params,
-  );
-}
-
-async function writeRows({
-  sessions,
-  pageviews,
-  metrics,
-  errors,
-  resources,
-  longtasks,
-  breadcrumbs,
-  events,
-  spans,
-  sviCalls,
-  sviSteps,
-  sviLegs,
-}) {
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
-    await batchInsert(
-      client,
-      "rum_session",
-      ["session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type", "geo_country", "is_bot", "started_at", "last_seen_at", "page_count"],
-      sessions.map((s) => ({ ...s, started_at: s.last_seen_at, page_count: 0 })),
-      `on conflict (session_id) do update
-         set last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at),
-             user_agent   = coalesce(rum_session.user_agent, excluded.user_agent),
-             geo_country  = coalesce(rum_session.geo_country, excluded.geo_country),
-             device_type  = coalesce(rum_session.device_type, excluded.device_type)`,
-    );
-    await batchInsert(
-      client,
-      "rum_pageview",
-      ["span_id", "session_id", "app_id", "route", "url", "referrer", "nav_type", "started_at"],
-      pageviews.map((p) => ({ ...p, started_at: p.ts })),
-      "on conflict (span_id) do nothing",
-    );
-    await batchInsert(
-      client,
-      "rum_metric",
-      ["span_id", "session_id", "app_id", "route", "name", "value", "rating", "attribution", "ts"],
-      metrics.map((m) => ({ ...m, attribution: m.attribution ? JSON.stringify(m.attribution) : null })),
-      "on conflict (span_id) do nothing",
-    );
-    await batchInsert(
-      client,
-      "rum_error",
-      ["span_id", "session_id", "app_id", "route", "kind", "message", "error_type", "stack", "source", "lineno", "colno", "release", "fingerprint", "ts"],
-      errors,
-      "on conflict (span_id) do nothing",
-    );
-    await batchInsert(
-      client,
-      "rum_resource",
-      ["span_id", "session_id", "app_id", "route", "url", "type", "duration_ms", "transfer_size", "render_blocking", "ts"],
-      resources,
-      "on conflict (span_id) do nothing",
-    );
-    await batchInsert(
-      client,
-      "rum_longtask",
-      ["span_id", "session_id", "app_id", "route", "duration_ms", "ts"],
-      longtasks,
-      "on conflict (span_id) do nothing",
-    );
-    await batchInsert(
-      client,
-      "rum_breadcrumb",
-      ["span_id", "session_id", "app_id", "type", "label", "seq", "ts"],
-      breadcrumbs,
-      "on conflict (span_id) do nothing",
-    );
-    await batchInsert(
-      client,
-      "rum_event",
-      ["span_id", "session_id", "app_id", "route", "name", "props", "ts"],
-      events.map((e) => ({ ...e, props: e.props ? JSON.stringify(e.props) : null })),
-      "on conflict (span_id) do nothing",
-    );
-    await batchInsert(
-      client,
-      "rum_span",
-      ["span_id", "trace_id", "parent_span_id", "tier", "session_id", "app_id", "route", "url", "method", "status_code", "duration_ms", "name", "kind", "ts"],
-      spans ?? [],
-      "on conflict (span_id) do nothing",
-    );
-
-    // SVI (migration-v51). L'appel passe par la MÊME fonction qu'en cloud
-    // (upsert_svi_call) : la fusion des lots est non triviale, et deux
-    // implémentations divergeraient — c'est la raison d'être de _shared/.
-    for (const call of sviCalls ?? []) {
-      await client.query("select upsert_svi_call($1::jsonb)", [JSON.stringify(call)]);
-    }
-    await batchInsert(
-      client,
-      "svi_step",
-      ["step_id", "parent_step_id", "app_id", "call_id", "seq", "kind", "node_id", "node_label",
-       "menu_path", "depth", "branch", "input_class", "input_len", "input_sensitive",
-       "no_match", "no_input", "reprompt_index", "asr_confidence", "rejected",
-       "milestone", "flow_outcome", "started_at", "duration_ms", "exit_reason"],
-      sviSteps ?? [],
-      "on conflict (step_id) do nothing",
-    );
-    await batchInsert(
-      client,
-      "svi_leg",
-      ["app_id", "call_id", "leg_ref", "role", "dir", "codec", "ptime_ms", "sample_rate",
-       "carrier", "mos_method", "mos_avg", "mos_min", "r_factor_avg", "r_factor_min",
-       "jitter_avg_ms", "jitter_max_ms", "loss_avg_pct", "loss_max_pct", "rtt_avg_ms",
-       "rtt_max_ms", "packets_sent", "packets_lost", "e_model_params", "started_at", "ended_at"],
-      (sviLegs ?? []).map((l) => ({ ...l,
-        e_model_params: l.e_model_params ? JSON.stringify(l.e_model_params) : null })),
-      "on conflict (app_id, call_id, leg_ref, dir) do nothing",
-    );
-    // page_count DÉRIVÉ du compte réel de pageviews (idempotent au rejeu, cf.
-    // migration-v07) plutôt qu'incrémenté — recalcul pour les sessions du lot
-    if (sessions.length) {
-      await client.query(
-        `update rum_session s
-           set page_count = sub.c
-          from (select session_id, count(*) c from rum_pageview
-                 where session_id = any($1) group by session_id) sub
-         where s.session_id = sub.session_id`,
-        [sessions.map((s) => s.session_id)],
-      );
-    }
-    await client.query("commit");
-  } catch (err) {
-    await client.query("rollback");
-    throw err;
-  } finally {
-    client.release();
-  }
-}
-
-// --- Écriture des logs (signal LOGS OTel) -> rum_log --------------------------
-async function writeLogs(logs) {
-  if (!logs.length) return;
-  const client = await pool.connect();
-  try {
-    await batchInsert(
-      client,
-      "rum_log",
-      ["app_id", "ts", "severity_num", "severity_text", "body", "source", "trace_id", "span_id", "session_id", "route", "attributes"],
-      logs.map((l) => ({ ...l, attributes: l.attributes ? JSON.stringify(l.attributes) : null })),
-      "", // pas de contrainte d'idempotence (bigserial) : insert simple
-    );
-  } finally {
-    client.release();
-  }
-}
+// --- Écriture -------------------------------------------------------------
+// batchInsert / writeRows / writeLogs vivent dans ./lib/pg-ingest.mjs, partagés
+// avec les routes Next.js de prod (apps/console/app/api/ingest/v1/*). Les deux
+// chemins écrivent donc EXACTEMENT les mêmes lignes — c'est la raison d'être du
+// module, au même titre que _shared/otlp.mjs pour le parsing.
 
 const server = http.createServer(async (req, res) => {
   const origin = req.headers.origin ?? "";
@@ -346,7 +184,7 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: `rate limit exceeded for app: ${appId}` }));
         }
       }
-      await withRetry(() => writeLogs(parsed.logs), {
+      await withRetry(() => writeLogs(pool, parsed.logs), {
         onRetry: (e, attempt) => log.warn("db retry (logs)", { attempt, code: e?.code }),
       });
       log.info("ingested logs", { logs: parsed.logs.length, rejected: parsed.rejected });
@@ -376,7 +214,7 @@ const server = http.createServer(async (req, res) => {
 
     // écriture rejouée sur erreur Postgres transitoire (la transaction entière
     // est idempotente : on conflict do nothing/greatest)
-    await withRetry(() => writeRows(rows), {
+    await withRetry(() => writeRows(pool, rows), {
       onRetry: (e, attempt) => log.warn("db retry", { attempt, code: e?.code }),
     });
     log.info("ingested", {

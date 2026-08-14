@@ -8,7 +8,7 @@
 
 import { traceFields } from "./server-trace-core";
 
-const DEFAULT_TRACES = "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
+const DEFAULT_TRACES = "https://mip-rum-console.vercel.app/api/ingest/v1/traces";
 
 /** Endpoint logs : explicite (CONSOLE_LOGS_ENDPOINT) sinon dérivé du endpoint traces. */
 function logsEndpoint(): string {

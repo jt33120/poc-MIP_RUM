@@ -24,7 +24,7 @@ Dans l'appel `MIPRum.init({...})` existant, ajoute `apiKey` et `replay` (garde l
 
 ```js
 MIPRum.init({
-  endpoint: "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces",
+  endpoint: "https://mip-rum-console.vercel.app/api/ingest/v1/traces",
   appId: "gip-plateforme",
   clientId: "groupement-it",
   apiKey: "mip_live_gip_59ca708ce596d20a52d58ea976dc512c516b442a",
@@ -63,6 +63,6 @@ Ne modifie rien d'autre.
 
 ---
 
-*Notes valeurs de prod : projet Supabase `nupxrdpsliqptqnjkmgw` · appId `gip-plateforme` ·
+*Notes valeurs de prod : ingestion hébergée par la console Vercel `mip-rum-console` · appId `gip-plateforme` ·
 la clé `mip_live_gip_…` identifie l'app à l'ingestion (exposée côté navigateur = normal, ce n'est
 pas un secret fort). L'enforcement `REQUIRE_API_KEY` s'active côté RUM une fois front + backend à jour.*

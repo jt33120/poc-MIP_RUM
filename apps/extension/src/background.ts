@@ -12,7 +12,7 @@ import { decideInjection, isFresh, normalizeHost, type CacheEntry, type ScopeEnt
 // rebuild — utile en pré-prod et pour l'E2E qui charge l'extension dans Chromium.
 const DEFAULTS = {
   resolveUrl: "https://mip-rum-console.vercel.app/api/extension/resolve",
-  defaultEndpoint: "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces",
+  defaultEndpoint: "https://mip-rum-console.vercel.app/api/ingest/v1/traces",
 };
 // Kill-switch : un domaine désactivé (active=false) cesse d'être injecté sous ce
 // délai. 60 s (aligné sur le cache-control de /api/extension/resolve).

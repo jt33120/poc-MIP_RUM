@@ -2,8 +2,13 @@
   "name": "ingest",
   "version": "0.1.0",
   "private": true,
-  "description": "Receiver OTLP /v1/traces — edge function Deno (prod) + dev server Node (local) + schéma Postgres",
+  "description": "Receiver OTLP /v1/traces — routes Next.js (prod) + dev server Node (local) + schéma Postgres",
   "type": "module",
+  "exports": {
+    "./lib/pg-ingest.mjs": "./lib/pg-ingest.mjs",
+    "./dispatch-alerts.mjs": "./dispatch-alerts.mjs",
+    "./shared/*": "./supabase/functions/_shared/*"
+  },
   "scripts": {
     "dev": "node dev-server.mjs"
   },
