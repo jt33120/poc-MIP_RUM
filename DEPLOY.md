@@ -73,13 +73,11 @@ curl -s "https://mip-rum-console.vercel.app/api/ingest/v1/traces" \
 
 ```bash
 cd apps/console
-# DATABASE_URL = rôle console_ro sur Neon (mot de passe généré lors de la migration
-# du 13/08/2026, transmis hors-repo à Julian ; pour le régénérer :
-# Neon console > Roles > console_ro > Reset password, ou
-# ALTER ROLE console_ro LOGIN PASSWORD '…' via le SQL editor Neon). Utiliser l'endpoint POOLER
-# (ajouter -pooler au nom d'hôte, cf. Neon console > Connection Details) plutôt que
+# DATABASE_URL = rôle PROPRIÉTAIRE `neondb_owner` (⚠ PAS console_ro — voir l'encadré
+# ci-dessous, ce serait une console vide). Utiliser l'endpoint POOLER (ajouter
+# -pooler au nom d'hôte, cf. Neon console > Connection Details) plutôt que
 # l'endpoint direct : la console ouvre plusieurs connexions par instance serverless.
-vercel env add DATABASE_URL production   # coller: postgres://console_ro:<PWD_console_ro>@<endpoint>-pooler.<region>.aws.neon.tech/neondb?sslmode=require
+vercel env add DATABASE_URL production   # coller: postgres://neondb_owner:<PWD>@<endpoint>-pooler.<region>.aws.neon.tech/neondb?sslmode=require
 # AUTH_SECRET = secret de signature des sessions JWT — OBLIGATOIRE en prod (sinon la
 # console refuse de démarrer : fail-closed, jamais le secret de dev versionné).
 vercel env add AUTH_SECRET production    # coller: openssl rand -hex 32
@@ -90,14 +88,36 @@ vercel --prod
 # Noter l'URL: https://mip-rum-console.vercel.app  (sert aussi le SDK: /mip-rum.js)
 ```
 
-> **Rôle de connexion.** La console se connecte sous le rôle restreint **`console_ro`**
-> (pas `postgres`) : RLS reste actif et l'accès passe par des policies dédiées `cro_*`.
-> Le modèle COMPLET est codifié dans les migrations — tables de base + écriture + vues en
-> **`migration-v16.sql`** (parité repo↔live), tables ultérieures dans leur migration (v12,
-> v13, v15). Un déploiement propre reproduit donc l'accès console sans geste manuel.
-> Si une table console reste vide en prod alors que les données existent, vérifier sa
-> policy `console_ro` :
-> `psql "$DATABASE_URL" -c "select tablename, policyname from pg_policies where 'console_ro'=any(roles)"`.
+> **⚠ Rôle de connexion : `neondb_owner`, PAS `console_ro`.** C'est un changement
+> par rapport à l'ère Supabase, et il est mesuré, pas théorique. La base Neon porte
+> TOUTES les migrations, dont **v47**, qui remplace les anciennes policies
+> permissives `using (true)` par un vrai filtrage `app_id = any(current_app_ids())`
+> visant `console_ro`. Or `current_app_ids()` lit la GUC `app.current_app_id`, que
+> seule `withTenant()` pose — et la console utilise ~53 requêtes `q()` directes
+> contre **une seule** via `withTenant()`.
+>
+> Compté sur la base de prod Neon :
+>
+> | Rôle | Lignes visibles dans `rum_session` |
+> |---|---|
+> | `neondb_owner` (propriétaire) | **407** |
+> | `console_ro` tel que la console interroge aujourd'hui | **0** → console entièrement vide |
+> | `console_ro` + GUC posée | 23 (le tenant demandé) |
+>
+> Le propriétaire n'est pas soumis au RLS tant que `FORCE ROW LEVEL SECURITY` n'est
+> pas posé — et v47 explique pourquoi il ne l'est délibérément pas (les fonctions
+> `security definer` d'alerting/purge/metering verraient zéro ligne).
+>
+> **Sur Supabase, `console_ro` fonctionnait parce que v47 n'y avait jamais été
+> appliquée** : les policies permissives d'origine laissaient tout passer. Le
+> filtrage était donc décoratif là-bas — ce n'est pas une protection qu'on perd ici.
+>
+> **Durcissement (travail à part, non fait) :** repasser à `console_ro` suppose de
+> faire passer les requêtes de la console par `withTenant()` (cf. `apps/console/lib/db.ts`),
+> puis de re-tester chaque page. Tant que ce n'est pas fait, `console_ro` = console vide.
+> Les grants du rôle sont en place sur Neon (il a fallu rejouer les migrations APRÈS
+> la création du rôle : les blocs `grant` sont gardés par `if exists (pg_roles …)` et
+> `console_ro` n'est créé qu'en v47, donc au premier passage ils étaient tous sautés).
 
 > `apps/console/public/mip-rum.js` est le build IIFE du SDK (committé pour le POC).
 > Pour le regénérer : `pnpm --filter @mip/rum-sdk build && cp packages/rum-sdk/dist/mip-rum.js apps/console/public/`.

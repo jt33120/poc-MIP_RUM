@@ -36,7 +36,11 @@ Postgres 17, base `neondb`.
   vérifié par **md5 agrégé sur les 527 lignes** (`md5(string_agg(md5(body)…))`),
   identique des deux côtés — vérification exhaustive, pas un échantillon.
 - **Rôle `console_ro`** : recréé avec `LOGIN` + mot de passe généré (transmis
-  hors-repo), `rolbypassrls=false` — identique à la posture du rôle Supabase.
+  hors-repo), `rolbypassrls=false`. ⚠ **Ce n'est PAS le rôle à mettre dans
+  `DATABASE_URL`** — voir §3.2 : la console serait vide. Ses grants ont dû être
+  posés en rejouant les migrations APRÈS création du rôle (les blocs `grant` sont
+  gardés par `if exists (pg_roles …)`, et `console_ro` n'est créé qu'en v47 : au
+  premier passage ils étaient tous sautés).
 - **Séquences** (`bigserial` / `identity`) réalignées sur le `max(id)` chargé,
   pour qu'un insert applicatif ne percute pas un id repris.
 
@@ -116,8 +120,29 @@ l'ancienne URL n'existe plus. Dans le `<head>` du site (repo `uti-platform`) :
 
 ### 3.2 Variables d'environnement Vercel
 
-- `DATABASE_URL` → Neon UE, rôle `console_ro`, **endpoint pooler**
-  (cf. `DEPLOY.md` §2). C'est ce qui bascule réellement la prod sur Neon.
+- `DATABASE_URL` → Neon UE, rôle **`neondb_owner`** (⚠ **pas** `console_ro`),
+  **endpoint pooler**. C'est ce qui bascule réellement la prod sur Neon.
+
+  **Pourquoi pas `console_ro`, contrairement à l'ère Supabase.** La base Neon
+  porte toutes les migrations, dont **v47**, qui remplace les policies permissives
+  `using (true)` par un filtrage réel `app_id = any(current_app_ids())` visant
+  `console_ro`. Cette fonction lit la GUC `app.current_app_id`, posée uniquement
+  par `withTenant()` — or la console fait ~53 requêtes `q()` directes contre
+  **une seule** via `withTenant()`. Mesuré sur la base de prod :
+
+  | Rôle | Lignes visibles dans `rum_session` |
+  |---|---|
+  | `neondb_owner` | **407** |
+  | `console_ro` (requêtes actuelles) | **0** → console vide |
+  | `console_ro` + GUC | 23 |
+
+  Sur Supabase, `console_ro` marchait parce que **v47 n'y avait jamais été
+  appliquée** : le filtrage y était décoratif. On ne perd donc aucune protection
+  réelle. Le durcissement (repasser à `console_ro`) est un chantier à part :
+  faire passer les requêtes par `withTenant()` puis re-tester chaque page.
+
+- `CRON_SECRET` → sinon les routes planifiées répondent 503 (fail-closed) et rien
+  ne tourne. **La même valeur** doit être posée en secret GitHub Actions.
 - `REQUIRE_API_KEY` : laisser à `false` tant que **toutes** les apps actives
   n'ont pas de clé — sinon 403 immédiat (durcissement E1-S1).
 
