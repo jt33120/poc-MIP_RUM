@@ -93,6 +93,9 @@ CORS.
 
 ## 3. Ce qui reste à faire — action humaine requise
 
+> Les points 3.3 (planification) et 3.4 (webhooks) sont **traités dans le
+> code** ; il reste à définir `CRON_SECRET` sur Vercel pour qu'ils tournent.
+
 ### 3.1 Mettre à jour le snippet chez le client (SEUL geste qui rétablit l'ingestion)
 
 Tant que ce n'est pas fait, `plateforme.groupement-it.com` poste dans le vide :
@@ -118,26 +121,51 @@ l'ancienne URL n'existe plus. Dans le `<head>` du site (repo `uti-platform`) :
 - `REQUIRE_API_KEY` : laisser à `false` tant que **toutes** les apps actives
   n'ont pas de clé — sinon 403 immédiat (durcissement E1-S1).
 
-### 3.3 `pg_cron` — absent de `neondb`
+### 3.3 Planification — passée de `pg_cron` à Vercel Cron (fait)
 
 `pg_cron` existe sur Neon (v1.6) mais ne s'installe QUE dans la base `postgres`
 du projet, jamais dans `neondb` (`create extension pg_cron` y échoue :
-*"can only create extension in database postgres"*, vérifié). Toutes les
-migrations gardent leurs `cron.schedule(...)` derrière
+*"can only create extension in database postgres"*, vérifié). Tous les blocs
+`cron.schedule(...)` des migrations sont gardés par
 `if exists (pg_extension where extname='pg_cron')` : sur `neondb` le test est
-faux, les blocs sont sautés, **et tous les jobs planifiés sont donc inactifs**
-(purge de rétention, rollups horaires, metering, SLO burn, anomalies, nouvelles
-erreurs, sonde uptime, réconciliation des livraisons d'alerte). Rien ne casse —
-tout est fail-soft — mais rien ne tourne. Deux voies : `cron.schedule_in_database(…,
-database := 'neondb')` depuis la base `postgres` du projet, ou Vercel Cron
-appelant des routes dédiées.
+faux, ils sont sautés, et **aucun job planifié ne tournait**.
 
-### 3.4 `pg_net` — indisponible sur Neon
+Les fonctions SQL sont inchangées — seul le DÉCLENCHEUR bouge. Trois routes
+(`apps/console/app/api/cron/*`), planifiées dans `apps/console/vercel.json` :
 
-`create extension pg_net` est refusé (*"not in the allowed extensions list"*).
-Les alertes webhook qui postaient via `net.http_post` **ne peuvent pas
-fonctionner** sur Neon. Le seul chemin est le dispatcher Node déjà écrit pour ce
-cas (`apps/ingest/dispatch-alerts.mjs`), qui a besoin d'un hôte.
+| Route | Planification | Remplace |
+|---|---|---|
+| `/api/cron/tick` | `*/5 * * * *` | `mip-slo-burn`, `mip-uptime`, `reconcile-alert-deliveries`, + `check_alerts()` et la livraison des webhooks |
+| `/api/cron/hourly` | `5 * * * *` | `refresh_rum_rollups`, `mip-new-errors`, `mip-ai-op-anomaly` |
+| `/api/cron/daily` | `17 3 * * *` | `mip-purge-daily` (`purge_rum_tenants`), `mip-meter-daily` |
+
+**Auth** : `Authorization: Bearer $CRON_SECRET`, vérifié dans le handler
+(le middleware laisse passer `/api/cron/*`, un scheduler n'ayant pas de cookie).
+**Fail-closed** : sans `CRON_SECRET` défini, les routes refusent (503) plutôt
+que de s'ouvrir — elles purgent des données et postent des webhooks.
+⚠ **`CRON_SECRET` doit donc être défini sur Vercel**, sinon rien ne tourne.
+
+Un échec n'annule pas les étapes suivantes : chaque étape est rapportée
+individuellement (200 si tout passe, 207 en échec partiel, visible dans les
+logs Vercel).
+
+⚠ **Deux fréquences sont RÉDUITES** : `check_new_errors` passe de 15 min à
+1 h, `check_ai_op_anomalies` de 30 min à 1 h — pour tenir dans le nombre de
+jobs Vercel Cron. Une nouvelle erreur peut donc mettre jusqu'à 1 h à lever une
+alerte. Si c'est trop, les sortir dans leur propre route planifiée.
+
+### 3.4 Webhooks d'alerte — `pg_net` remplacé par le dispatcher Node (fait)
+
+`create extension pg_net` est refusé sur Neon (*"not in the allowed extensions
+list"*) : les alertes qui postaient via `net.http_post` **ne pouvaient plus
+partir**. La livraison passe désormais par `dispatchOnce()`
+(`apps/ingest/dispatch-alerts.mjs`, déjà écrit pour le cas local), appelé à
+chaque tick de 5 min. Le rejeu borné avec backoff exponentiel et le passage en
+`dead` au plafond sont conservés tels quels.
+
+Vérifié bout en bout : une livraison `queued` est réellement POSTée (payload
+Slack-compatible identique à celui de `check_alerts`), et la ligne passe à
+`delivered / http 200`.
 
 ### 3.5 Sécurité — signalé, pas corrigé
 

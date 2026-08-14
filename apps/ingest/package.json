@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     "./lib/pg-ingest.mjs": "./lib/pg-ingest.mjs",
+    "./dispatch-alerts.mjs": "./dispatch-alerts.mjs",
     "./shared/*": "./supabase/functions/_shared/*"
   },
   "scripts": {

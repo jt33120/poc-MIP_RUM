@@ -133,3 +133,19 @@ declare module "ingest/shared/retry.mjs" {
     },
   ): Promise<T>;
 }
+
+declare module "ingest/dispatch-alerts.mjs" {
+  import type { Pool } from "pg";
+
+  /** Statut résultant d'une tentative de livraison (logique pure). */
+  export function decideStatus(
+    ok: boolean,
+    attemptsBefore: number,
+    maxAttempts?: number,
+  ): "delivered" | "failed" | "dead";
+
+  /** Poste les livraisons 'queued' + les 'failed' rééligibles ; met à jour leur statut. */
+  export function dispatchOnce(
+    pool: Pool,
+  ): Promise<{ sent: number; failed: number; dead: number }>;
+}

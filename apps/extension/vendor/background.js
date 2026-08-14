@@ -22,7 +22,7 @@ function isFresh(entry, nowMs, ttlMs) {
 // src/background.ts
 var DEFAULTS = {
   resolveUrl: "https://mip-rum-console.vercel.app/api/extension/resolve",
-  defaultEndpoint: "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces"
+  defaultEndpoint: "https://mip-rum-console.vercel.app/api/ingest/v1/traces"
 };
 var CACHE_TTL_MS = 60 * 1e3;
 var LOG = "[MIP RUM]";

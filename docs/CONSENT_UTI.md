@@ -31,7 +31,7 @@ Ajoute `requireConsent: true` à l'`init` (garde `apiKey`, `replay: 0.1`, etc.) 
 
 ```js
 MIPRum.init({
-  endpoint: "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces",
+  endpoint: "https://mip-rum-console.vercel.app/api/ingest/v1/traces",
   appId: "gip-plateforme",
   clientId: "groupement-it",
   apiKey: "mip_live_gip_59ca708ce596d20a52d58ea976dc512c516b442a",

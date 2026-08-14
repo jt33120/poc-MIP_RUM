@@ -6,7 +6,7 @@ import http from "node:http";
 import { readFileSync } from "node:fs";
 import pg from "pg";
 
-const ENDPOINT = "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
+const ENDPOINT = "https://mip-rum-console.vercel.app/api/ingest/v1/traces";
 const SDK = readFileSync(new URL("../packages/rum-sdk/dist/mip-rum.js", import.meta.url));
 const CA = readFileSync(new URL("../apps/console/certs/supabase-ca.crt", import.meta.url), "utf8");
 const env = readFileSync(new URL("../apps/console/.env.production", import.meta.url), "utf8");
