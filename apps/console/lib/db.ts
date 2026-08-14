@@ -14,6 +14,31 @@ const connectionString =
 // de CA propriétaire comme avec le pooler Supabase.
 const isLocal = /:\/\/[^/]*(localhost|127\.0\.0\.1)([:/]|$)/.test(connectionString);
 
+/**
+ * Cible de connexion, SANS le mot de passe — pour les logs.
+ *
+ * Pourquoi ça existe : une erreur TLS du pilote pg (« self-signed certificate
+ * in certificate chain ») ne dit pas VERS QUEL HÔTE la connexion a échoué. Pendant
+ * la bascule Supabase → Neon, ce message seul ne permettait pas de distinguer
+ * « DATABASE_URL pointe encore l'ancien pooler » de « le certificat de la
+ * nouvelle base n'est pas approuvé » — deux causes, deux corrections opposées.
+ * Le host résout l'ambiguïté immédiatement.
+ */
+function describeTarget(cs: string): Record<string, string> {
+  try {
+    const u = new URL(cs);
+    return {
+      host: u.host, // hostname:port — jamais de mot de passe
+      database: u.pathname.replace(/^\//, "") || "(défaut)",
+      user: u.username || "(défaut)",
+    };
+  } catch {
+    // chaîne non parsable : on ne bloque pas le démarrage pour un log, et on ne
+    // renvoie SURTOUT pas la chaîne brute (elle contient le mot de passe).
+    return { host: "(chaîne de connexion non parsable)" };
+  }
+}
+
 export const pool =
   globalForPg.pgPool ??
   new Pool({
@@ -25,6 +50,33 @@ export const pool =
     max: Number(process.env.PGPOOL_MAX ?? 10),
     ssl: isLocal ? undefined : { rejectUnauthorized: true },
   });
+
+if (!globalForPg.pgPool) {
+  // Une seule ligne par instance (le pool est mémoïsé) : de quoi lire dans les
+  // logs SUR QUOI la console est réellement branchée, sans avoir à deviner.
+  console.log(
+    JSON.stringify({
+      level: "info",
+      service: "db",
+      msg: "pool configuré",
+      ...describeTarget(connectionString),
+      tls: isLocal ? "désactivé (local)" : "vérifié (magasin CA système)",
+    }),
+  );
+  // Une erreur de connexion survenant hors requête (client inactif coupé par le
+  // pooler, bascule réseau) est autrement silencieuse et fait tomber le process.
+  pool.on("error", (err) => {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        service: "db",
+        msg: "erreur de pool (client inactif)",
+        ...describeTarget(connectionString),
+        err: String(err),
+      }),
+    );
+  });
+}
 globalForPg.pgPool = pool;
 
 export async function q<T = Record<string, unknown>>(
