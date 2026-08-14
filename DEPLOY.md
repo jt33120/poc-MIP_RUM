@@ -1,13 +1,25 @@
-# DEPLOY — Mise en production POC (Supabase + Vercel + snippet G-IT)
+# DEPLOY — Mise en production POC (Supabase→Neon + Vercel + snippet G-IT)
 
 Statut S6 : **TERMINÉ le 10/06/2026** — infra déployée (MCP Supabase + CLI Vercel) **et snippet EN PROD** sur `plateforme.groupement-it.com` (PR [uti-platform#36](https://github.com/jt33120/uti-platform/pull/36), mergée avec l'accord de Julian). **DoD 1-4 vérifiés en live** : `node scripts/validate-dod.mjs`.
 
+> **⚠ Migration base de données Supabase → Neon (13/08/2026).** Le schéma complet
+> (schema.sql + 49 migrations) et les 36 tables (~251k lignes, intégrité vérifiée
+> ligne à ligne) ont été répliqués sur Neon — voir `docs/NEON_MIGRATION.md` pour
+> le détail et **le point non résolu à trancher avant de supprimer le projet
+> Supabase** : les 4 Edge Functions d'ingestion (`v1-traces`, `v1-logs`,
+> `v1-replay`, `uptime`) tournent sur le compute Supabase (Deno) et utilisent
+> `supabase-js`, indépendamment de la base — les supprimer coupe l'ingestion
+> live de `plateforme.groupement-it.com`. La section 1 ci-dessous reste donc
+> documentée telle quelle (ingestion toujours sur Supabase) ; seule la base a
+> changé de fournisseur (section 2, `DATABASE_URL`).
+
 | Ressource | URL |
 |---|---|
-| Ingestion OTLP | `https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces` |
+| Ingestion OTLP | `https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces` (Supabase Edge Functions — inchangé, cf. avertissement ci-dessus) |
 | Console RUM Live | `https://mip-rum-console.vercel.app` |
 | SDK hébergé | `https://mip-rum-console.vercel.app/mip-rum.js` |
-| Projet Supabase | `mip-rum-poc` (`nupxrdpsliqptqnjkmgw`, eu-west-3 Paris, free tier) |
+| Base de données | Neon `neondb` (`ep-restless-hill-axx69y8n`, **us-east-2 Ohio** — cf. avertissement résidence UE dans `docs/NEON_MIGRATION.md`) |
+| Projet Supabase (legacy, ingestion only) | `mip-rum-poc` (`nupxrdpsliqptqnjkmgw`, eu-west-3 Paris, free tier) |
 | Projet Vercel | `julian-talous-projects/mip-rum-console` |
 
 Vérifié en live : préflight CORS origine G-IT → 204 ✅ · POST fixture → 200 + lignes en base ✅ · navigateur réel → cloud (5 vitals, CORS, beacon) ✅ · console branchée sur la base cloud (rôle lecture seule `console_ro`, TLS vérifié CA Supabase épinglée) ✅ · `/correlation` robot vs réel ✅.
@@ -61,8 +73,13 @@ curl -s "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces" \
 
 ```bash
 cd apps/console
-# DATABASE_URL = pooler Supabase (Settings > Database > Connection string, mode transaction, port 6543)
-vercel env add DATABASE_URL production   # coller: postgres://console_ro.nupxrdpsliqptqnjkmgw:<PWD_console_ro>@aws-0-eu-west-3.pooler.supabase.com:6543/postgres
+# DATABASE_URL = rôle console_ro sur Neon (mot de passe généré lors de la migration
+# du 13/08/2026, transmis hors-repo à Julian ; pour le régénérer :
+# Neon console > Roles > console_ro > Reset password, ou
+# ALTER ROLE console_ro LOGIN PASSWORD '…' via le SQL editor Neon). Utiliser l'endpoint POOLER
+# (ajouter -pooler au nom d'hôte, cf. Neon console > Connection Details) plutôt que
+# l'endpoint direct : la console ouvre plusieurs connexions par instance serverless.
+vercel env add DATABASE_URL production   # coller: postgres://console_ro:<PWD_console_ro>@<endpoint>-pooler.<region>.aws.neon.tech/neondb?sslmode=require
 # AUTH_SECRET = secret de signature des sessions JWT — OBLIGATOIRE en prod (sinon la
 # console refuse de démarrer : fail-closed, jamais le secret de dev versionné).
 vercel env add AUTH_SECRET production    # coller: openssl rand -hex 32
@@ -135,13 +152,25 @@ La purge de la télémétrie ancienne est portée par la fonction SQL
 l'ordre des FK et renvoie le détail des suppressions. Deux modes :
 
 ```bash
-# Cloud : planifié automatiquement par migration-v09 SI l'extension pg_cron est
-# présente (job 'mip-purge-daily', 03:17 UTC). Pour l'activer :
-#   create extension if not exists pg_cron;  puis ré-appliquer migration-v09.sql
+# Cloud (Supabase) : planifié automatiquement par migration-v09 SI l'extension
+# pg_cron est présente (job 'mip-purge-daily', 03:17 UTC).
+#
+# Sur Neon : pg_cron existe (v1.6) mais NE PEUT être créé que dans la base
+# `postgres` du projet, jamais dans `neondb` directement (confirmé lors de la
+# migration du 13/08/2026 — `create extension pg_cron` échoue avec "can only
+# create extension in database postgres"). Toutes les migrations testent
+# `if exists (pg_extension where extname='pg_cron')` AVANT de programmer un job
+# -> sur `neondb`, ce test est faux et les blocs cron.schedule(...) sont
+# silencieusement sautés, exactement comme en local/CI. Pour l'activer malgré
+# tout il faut se connecter à la base `postgres` du même projet Neon et utiliser
+# `cron.schedule_in_database('mip-purge-daily', '17 3 * * *', 'select purge_rum(30)',
+# database := 'neondb')` (API cross-database propre à Neon, cf. leur doc pg_cron)
+# — non fait à ce stade, cf. docs/NEON_MIGRATION.md.
 
-# Local / hébergement sans pg_cron : le CLI Node (boucle quotidienne)
+# Local / hébergement sans pg_cron (et donc Neon tant que ce qui précède n'est
+# pas fait) : le CLI Node (boucle quotidienne)
 RETENTION_DAYS=30 node apps/ingest/purge.mjs --loop
-# ou une passe unique (cron système) :
+# ou une passe unique (cron système / Vercel Cron pointant vers une route qui l'appelle) :
 RETENTION_DAYS=30 node apps/ingest/purge.mjs --once
 
 # Inspection manuelle (renvoie {table: lignes supprimées}) :
