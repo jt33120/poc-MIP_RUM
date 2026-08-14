@@ -23,6 +23,9 @@ importers:
       bcryptjs:
         specifier: 3.0.3
         version: 3.0.3
+      ingest:
+        specifier: workspace:*
+        version: link:../ingest
       jose:
         specifier: 6.2.3
         version: 6.2.3

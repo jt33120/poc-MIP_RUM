@@ -1,128 +1,162 @@
-# Migration base de données Supabase → Neon (13/08/2026)
+# Migration Supabase → Neon (13–14/08/2026)
 
-## Ce qui a été fait
+> **État au 14/08/2026.** Le projet Supabase `mip-rum-poc`
+> (`nupxrdpsliqptqnjkmgw`) **n'existe plus** : son sous-domaine ne résout plus
+> (aucun enregistrement DNS) et l'API de gestion répond
+> `"Resource has been removed"` (HTTP 400) là où un projet vivant répond 200.
+> Il a donc disparu APRÈS la copie de la base (celle-ci a bien été lue
+> intégralement le 13/08). **Aucune donnée n'a été perdue** — la copie vérifiée
+> sur Neon fait foi. En revanche l'ingestion, qui vivait sur le compute
+> Supabase, est tombée avec lui : c'est ce que la reprise décrite plus bas
+> rétablit.
 
-- **Schéma** : `apps/ingest/sql/schema.sql` + les 49 migrations (`migration-v02`
-  à `migration-v51`, dans l'ordre — le même jeu que rejoue la CI contre un
-  Postgres vierge) rejouées intégralement sur Neon, statement par statement
-  (283 statements, aucune erreur). Neon est donc au niveau **v51** — le repo —
-  alors que la base Supabase de prod, vérifiée au même moment, s'arrête un cran
-  avant (pas de tables `svi_*` : elles n'existent pas encore côté Supabase).
-  Rien n'a été perdu ; Neon a simplement 6 tables vides en plus (`svi_call`,
-  `svi_call_link`, `svi_leg`, `svi_quality_sample`, `svi_queue_sample`,
-  `svi_step`), prêtes pour quand l'ingestion SVI sera activée.
-- **Données** : les 36 tables `public` copiées intégralement — **251 059 lignes
-  au total, comptage vérifié table par table (36/36 identiques)** entre
-  Supabase et Neon au moment de la bascule. `replay_chunk` (données binaires
-  `bytea`, chunks rrweb gzippés, 18,7 Mo) vérifié **octet pour octet** (md5
-  identique de chaque côté sur échantillon). Colonnes `jsonb` (attribution web-
-  vitals, layout dashboard…) vérifiées structurellement intactes.
-- **Rôle `console_ro`** : recréé sur Neon avec `LOGIN` + mot de passe généré
-  (transmis hors-repo). `rolbypassrls=false`, à l'identique du rôle Supabase de
-  prod actuel (vérifié — pas une régression de posture RLS).
-- **Séquences** (`bigserial` / `identity`) réalignées sur le `max(id)` réellement
-  chargé, pour qu'un futur insert applicatif ne percute pas un id déjà repris
-  de Supabase.
-- **Code** : `apps/console/lib/db.ts` ne pointe plus la CA Supabase épinglée
-  (`apps/console/lib/supabase-ca.ts` + `apps/console/certs/supabase-ca.crt`
-  supprimés) — TLS vérifié contre le magasin CA système, valable pour Neon
-  comme pour n'importe quelle base cloud. Le comportement local (docker-compose,
-  sans TLS) est inchangé.
-- Supabase **n'a pas été modifié ni supprimé** — la migration est une copie,
-  pas un déplacement. La base de prod Supabase continue de tourner et de
-  recevoir du trafic normalement ; c'est le filet de sécurité si besoin de
-  revenir en arrière.
+## 1. Base de données — faite et vérifiée
 
-## Ce qui N'A PAS été fait — à trancher avant de supprimer le projet Supabase
+La base de prod vit désormais sur Neon, **en région UE** : projet
+`mip-rum-poc-eu` (`rough-firefly-49250892`), `aws-eu-central-1` (Francfort),
+Postgres 17, base `neondb`.
 
-### 1. Résidence des données — UE → US
+> Une première copie avait été faite sur un projet `aws-us-east-2` (Ohio) — la
+> chaîne de connexion fournie au départ. Elle a été refaite en UE parce que la
+> résidence européenne est un argument produit explicite (README,
+> `docs/CONFORMITE.md`, `docs/DPA.md`) pour un client GIP français : la laisser
+> aux États-Unis aurait rendu ces documents faux. Le projet Ohio a servi de
+> source pour la copie UE (il contenait déjà la copie vérifiée prise pendant
+> que Supabase existait encore) ; **il peut être supprimé** une fois la bascule
+> confirmée.
 
-Le connection string Neon fourni pointe sur **`us-east-2` (Ohio, AWS)**. La
-base Supabase actuelle est en **`eu-west-3` (Paris)** — et la résidence UE est
-mise en avant comme argument produit explicite : le README (« Souverain :
-données hébergées en UE… Pas de dépendance à un SaaS US ») et
-`docs/CONFORMITE.md` / `docs/DPA.md` s'appuient dessus. Basculer vers
-`us-east-2` **contredit ces documents et l'argumentaire commercial actuel**
-pour un client apparentant à un GIP français. Neon propose des régions UE
-(Frankfurt `eu-central-1`, Londres `eu-west-2`). Si la résidence UE reste
-requise, il faut recréer le projet Neon dans une région UE et rejouer cette
-migration (le script est réutilisable) — **je n'ai pas pris cette décision à
-la place de Julian**, je n'ai fait que suivre le connection string fourni.
+- **Schéma** : `schema.sql` + les 49 migrations (`v02` → `v51`), dans l'ordre —
+  le jeu exact que la CI rejoue contre un Postgres vierge — appliqués statement
+  par statement (283 statements, aucune erreur). Neon est au niveau **v51**,
+  celui du repo. La base Supabase, elle, s'était arrêtée un cran avant : Neon a
+  donc 6 tables `svi_*` vides en plus, prêtes pour l'ingestion SVI.
+- **Données** : les 36 tables `public`, **250 738 lignes**, comptage vérifié
+  **table par table, 36/36 identiques**.
+- **`replay_chunk`** (binaire `bytea`, chunks rrweb gzippés, 18,7 Mo) :
+  vérifié par **md5 agrégé sur les 527 lignes** (`md5(string_agg(md5(body)…))`),
+  identique des deux côtés — vérification exhaustive, pas un échantillon.
+- **Rôle `console_ro`** : recréé avec `LOGIN` + mot de passe généré (transmis
+  hors-repo), `rolbypassrls=false` — identique à la posture du rôle Supabase.
+- **Séquences** (`bigserial` / `identity`) réalignées sur le `max(id)` chargé,
+  pour qu'un insert applicatif ne percute pas un id repris.
 
-### 2. Edge Functions d'ingestion — compute, pas seulement base
+## 2. Ingestion — déplacée du compute Supabase vers la console Vercel
 
-`v1-traces`, `v1-logs`, `v1-replay`, `uptime` (`apps/ingest/supabase/functions/`)
-tournent sur le **compute Supabase (Deno Edge Functions)** et utilisent le
-client `supabase-js` (RPC + upsert PostgREST), pas une connexion Postgres brute.
-Neon ne fournit **aucun compute** (base de données uniquement) : ces 4 fonctions
-n'ont nulle part où tourner sur Neon telles quelles, et supprimer le projet
-Supabase les supprime avec lui.
+Les 4 edge functions (`v1-traces`, `v1-logs`, `v1-replay`, `uptime`) tournaient
+sur le compute Supabase (Deno + `supabase-js`). Neon ne fournit pas de compute :
+elles n'y avaient nulle part où tourner, et elles ont disparu avec le projet.
 
-**Impact concret si le projet Supabase est supprimé sans y toucher** :
-`https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces` — l'URL codée
-en dur dans le snippet **actuellement en production sur
-`plateforme.groupement-it.com`** — se met à 404. L'ingestion RUM du client
-s'arrête net, silencieusement (le SDK a une file de retry mais pas de fallback
-d'URL).
+Elles sont reprises **dans la console Next.js déjà déployée sur Vercel** :
 
-Migrer ces fonctions est un chantier séparé, pas un détail : elles devraient
-être réécrites en client Postgres brut (le pattern existe déjà et tourne en
-prod dans `apps/ingest/dev-server.mjs` — mêmes tables, mêmes RPC, aucune
-dépendance `supabase-js`) puis hébergées ailleurs (routes Vercel, puisque la
-console y est déjà). Non fait ici : décision d'architecture + redéploiement du
-snippet client, hors du périmètre « migrer les tables ».
+| Avant (Supabase, mort) | Maintenant (Vercel) |
+|---|---|
+| `…supabase.co/functions/v1/v1-traces` | `https://mip-rum-console.vercel.app/api/ingest/v1/traces` |
+| `…supabase.co/functions/v1/v1-logs` | `https://mip-rum-console.vercel.app/api/ingest/v1/logs` |
+| `…supabase.co/functions/v1/v1-replay` | `https://mip-rum-console.vercel.app/api/ingest/v1/replay` |
 
-### 3. `pg_cron` — existe sur Neon, mais pas où on l'attend
+Le suffixe `/v1/traces` est conservé À DESSEIN : le SDK dérive l'endpoint replay
+en remplaçant `/v1/traces` par `/v1/replay`
+(`packages/rum-sdk/src/replay.ts`). Le client n'a donc qu'**un seul** champ à
+changer dans son snippet (`endpoint`), et le replay suit tout seul.
 
-`pg_cron` (v1.6) est disponible sur Neon mais **seulement installable dans la
-base `postgres` du projet**, jamais dans `neondb` (`create extension pg_cron`
-y échoue : *"can only create extension in database postgres"*, vérifié en
-direct). Toutes les migrations gardent leurs `cron.schedule(...)` derrière
-`if exists (pg_extension where extname='pg_cron')` — sur `neondb` ce test est
-faux, donc **tous les jobs planifiés (purge quotidienne, rollups horaires,
-metering, SLO burn, anomalies IA, nouvelles erreurs, sonde uptime,
-réconciliation des livraisons d'alerte) sont actuellement INACTIFS sur Neon**,
-comme en local/CI aujourd'hui. Rien ne casse (tout est fail-soft), mais rien
-ne tourne non plus tant que ce n'est pas branché — via
-`cron.schedule_in_database(..., database := 'neondb')` depuis la base
-`postgres`, ou via les runners Node déjà écrits pour ce cas
-(`apps/ingest/purge.mjs --loop`, `apps/ingest/dispatch-alerts.mjs --loop`) qu'il
-faudrait alors héberger quelque part (même chantier que le point 2).
+**Pas de réécriture de la logique** : les inserts et l'auth vivent dans
+`apps/ingest/lib/pg-ingest.mjs`, importé à la fois par le dev-server Node et par
+les routes Next.js — une seule implémentation, dans le même esprit que
+`_shared/otlp.mjs` pour le parsing. Les gardes de prod sont conservées à
+l'identique : 413 sur la taille, 403 sur la clé d'API, 429 sur le débit
+(compteur durable `rate_check`), séparation stricte 400 (requête fautive) /
+500 (incident rejouable), écriture idempotente (`on conflict do nothing`).
 
-### 4. `pg_net` — absent de Neon, sans workaround
+Le middleware d'auth de la console laisse passer `/api/ingest/*` : les beacons
+viennent de navigateurs anonymes sur le site du client, sans cookie de session.
+Sans ce bypass, chaque beacon recevrait un 302 vers `/login` et l'ingestion
+tomberait en silence (le SDK ne suit pas les redirections). L'authentification
+d'ingestion reste la clé d'API dans le handler + le rate limit + la whitelist
+CORS.
 
-Confirmé : `create extension pg_net` échoue sur Neon (*"not in the allowed
-extensions list"*). Les alertes webhook (`check_alerts`, `check_slo_burn`,
-`route_alert`…) qui postent via `net.http_post` **ne peuvent pas fonctionner
-sur Neon, point final** — pas une histoire de configuration. Le seul chemin
-est le dispatcher Node déjà écrit pour ce cas précis
-(`apps/ingest/dispatch-alerts.mjs`), qui a besoin d'un hôte pour tourner en
-continu (même chantier que le point 2 : Vercel Cron + route API, ou un petit
-worker).
+### Vérifié en exécution réelle (Postgres local, schéma + 49 migrations)
 
-### 5. Sécurité — signalé par l'advisor Supabase, pas corrigé
+- POST des fixtures OTLP → `200 {"partialSuccess":{}}` + lignes réellement
+  écrites (`rum_session`, `rum_pageview`, `rum_metric`, `rum_error`,
+  `rum_resource`, `rum_longtask`, `rum_breadcrumb`).
+- **Idempotence** : rejouer le même payload ne duplique rien (compte inchangé).
+- `/v1/logs` → lignes dans `rum_log`. `/v1/replay` (corps gzip) → chunk stocké
+  compressé, `events_count` correct.
+- Préflight CORS depuis `https://plateforme.groupement-it.com` → 204 +
+  `Access-Control-Allow-Origin` ; origine non autorisée → **aucun** en-tête
+  `Allow-Origin`.
+- JSON invalide → **400** (et non 500) ; corps replay non gzip → 400.
+- 13 tests unitaires ajoutés sur le modèle d'auth porté (`tests/unit/pg-ingest.test.ts`) :
+  keyless rejeté sous `REQUIRE_API_KEY` (durcissement E1-S1), app inconnue
+  rejetée, fail-open si le registre n'a jamais chargé, fenêtre glissante,
+  compteurs par app, repli si le SQL de débit tombe.
 
-`public.alert_config` a RLS **désactivé** côté Supabase (et donc aussi côté
-Neon, répliqué à l'identique) — n'importe qui avec la clé `anon` peut lire/
-écrire cette table. Ce n'est pas lié à la migration ; je ne l'ai pas corrigé
-pour ne pas bloquer un accès existant sans policy de remplacement. SQL de
-remédiation (à valider avant d'exécuter — une policy est nécessaire derrière,
-sinon la table devient illisible) :
-```sql
-ALTER TABLE public.alert_config ENABLE ROW LEVEL SECURITY;
+## 3. Ce qui reste à faire — action humaine requise
+
+### 3.1 Mettre à jour le snippet chez le client (SEUL geste qui rétablit l'ingestion)
+
+Tant que ce n'est pas fait, `plateforme.groupement-it.com` poste dans le vide :
+l'ancienne URL n'existe plus. Dans le `<head>` du site (repo `uti-platform`) :
+
+```diff
+ <script>
+   MIPRum.init({
+-    endpoint: "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces",
++    endpoint: "https://mip-rum-console.vercel.app/api/ingest/v1/traces",
+     appId: "gip-plateforme",
+     clientId: "groupement-it",
+     env: "prod",
+     sampleRate: 1.0
+   });
+ </script>
 ```
 
-## Pour finaliser la bascule (une fois les points ci-dessus tranchés)
+### 3.2 Variables d'environnement Vercel
 
-1. `vercel env add DATABASE_URL production` avec la chaîne Neon (`console_ro`,
-   endpoint **pooler**, cf. `DEPLOY.md` §2).
-2. Redéployer la console (`vercel --prod`).
-3. Vérifier `/rum/summary`, `/dashboards`, `/alerts` en prod contre Neon.
-4. Seulement APRÈS avoir réglé les points 1-4 ci-dessus (résidence, ingestion,
-   cron, webhooks) : supprimer le projet Supabase.
+- `DATABASE_URL` → Neon UE, rôle `console_ro`, **endpoint pooler**
+  (cf. `DEPLOY.md` §2). C'est ce qui bascule réellement la prod sur Neon.
+- `REQUIRE_API_KEY` : laisser à `false` tant que **toutes** les apps actives
+  n'ont pas de clé — sinon 403 immédiat (durcissement E1-S1).
 
-## Rollback
+### 3.3 `pg_cron` — absent de `neondb`
 
-Aucune action destructive n'a été faite côté Supabase — la base de prod tourne
-toujours normalement. Revenir en arrière = remettre l'ancien `DATABASE_URL`
-Supabase sur Vercel, rien d'autre.
+`pg_cron` existe sur Neon (v1.6) mais ne s'installe QUE dans la base `postgres`
+du projet, jamais dans `neondb` (`create extension pg_cron` y échoue :
+*"can only create extension in database postgres"*, vérifié). Toutes les
+migrations gardent leurs `cron.schedule(...)` derrière
+`if exists (pg_extension where extname='pg_cron')` : sur `neondb` le test est
+faux, les blocs sont sautés, **et tous les jobs planifiés sont donc inactifs**
+(purge de rétention, rollups horaires, metering, SLO burn, anomalies, nouvelles
+erreurs, sonde uptime, réconciliation des livraisons d'alerte). Rien ne casse —
+tout est fail-soft — mais rien ne tourne. Deux voies : `cron.schedule_in_database(…,
+database := 'neondb')` depuis la base `postgres` du projet, ou Vercel Cron
+appelant des routes dédiées.
+
+### 3.4 `pg_net` — indisponible sur Neon
+
+`create extension pg_net` est refusé (*"not in the allowed extensions list"*).
+Les alertes webhook qui postaient via `net.http_post` **ne peuvent pas
+fonctionner** sur Neon. Le seul chemin est le dispatcher Node déjà écrit pour ce
+cas (`apps/ingest/dispatch-alerts.mjs`), qui a besoin d'un hôte.
+
+### 3.5 Sécurité — signalé, pas corrigé
+
+`public.alert_config` a RLS désactivé (constaté côté Supabase, répliqué à
+l'identique sur Neon). Non corrigé : activer RLS sans policy rendrait la table
+illisible. À trancher :
+
+```sql
+ALTER TABLE public.alert_config ENABLE ROW LEVEL SECURITY;
+-- + une policy adaptée, sinon la table devient inaccessible
+```
+
+### 3.6 Comprendre la disparition du projet Supabase
+
+Le projet a été supprimé sans que ce soit une action de cette session. Vaut la
+peine de vérifier l'historique du compte Supabase, les e-mails de notification,
+et qui d'autre avait accès à l'organisation `rhvtwqcgdyqnxaqtxqgk`.
+
+## 4. Rollback
+
+Il n'y a plus de rollback vers Supabase : le projet n'existe plus. Le filet est
+la double copie Neon (Ohio + UE), toutes deux vérifiées.

@@ -14,7 +14,7 @@ const connectionString =
 // de CA propriétaire comme avec le pooler Supabase.
 const isLocal = /:\/\/[^/]*(localhost|127\.0\.0\.1)([:/]|$)/.test(connectionString);
 
-const pool =
+export const pool =
   globalForPg.pgPool ??
   new Pool({
     connectionString,
