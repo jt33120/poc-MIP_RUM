@@ -130,14 +130,36 @@ du projet, jamais dans `neondb` (`create extension pg_cron` y échoue :
 `if exists (pg_extension where extname='pg_cron')` : sur `neondb` le test est
 faux, ils sont sautés, et **aucun job planifié ne tournait**.
 
-Les fonctions SQL sont inchangées — seul le DÉCLENCHEUR bouge. Trois routes
-(`apps/console/app/api/cron/*`), planifiées dans `apps/console/vercel.json` :
+`cron.schedule_in_database(...)` depuis la base `postgres` du projet (la voie
+recommandée par Neon) a aussi été essayée : **refusée** —
+`permission denied to create extension "pg_cron"`. pg_cron est donc hors jeu,
+pas seulement mal placé.
 
-| Route | Planification | Remplace |
-|---|---|---|
-| `/api/cron/tick` | `*/5 * * * *` | `mip-slo-burn`, `mip-uptime`, `reconcile-alert-deliveries`, + `check_alerts()` et la livraison des webhooks |
-| `/api/cron/hourly` | `5 * * * *` | `refresh_rum_rollups`, `mip-new-errors`, `mip-ai-op-anomaly` |
-| `/api/cron/daily` | `17 3 * * *` | `mip-purge-daily` (`purge_rum_tenants`), `mip-meter-daily` |
+Les fonctions SQL sont inchangées — seul le DÉCLENCHEUR bouge. Trois routes
+(`apps/console/app/api/cron/*`) :
+
+| Route | Planification | Déclenchée par | Remplace |
+|---|---|---|---|
+| `/api/cron/tick` | `*/5 * * * *` | GitHub Actions | `mip-slo-burn`, `mip-uptime`, `reconcile-alert-deliveries`, + `check_alerts()` et la livraison des webhooks |
+| `/api/cron/hourly` | `5 * * * *` | GitHub Actions | `refresh_rum_rollups`, `mip-new-errors`, `mip-ai-op-anomaly` |
+| `/api/cron/daily` | `17 3 * * *` | **Vercel Cron** | `mip-purge-daily` (`purge_rum_tenants`), `mip-meter-daily` |
+
+⚠ **Pourquoi deux déclencheurs.** Le plan Vercel **Hobby n'accepte que des crons
+quotidiens** : déclarer `*/5 * * * *` dans `vercel.json` fait échouer le
+déploiement ENTIER (constaté sur la PR — le message est explicite : *"Hobby
+accounts are limited to daily cron jobs"*). Seul le job quotidien reste donc sur
+Vercel ; les deux fréquences courtes passent par
+`.github/workflows/cron.yml`, gratuit et sans limite de minutes sur ce dépôt
+(public). Limites à connaître : le cron GitHub est best-effort (décalages de
+quelques minutes possibles) et GitHub désactive les workflows planifiés après
+60 jours sans activité sur le dépôt.
+
+**Alternative propre si ces limites gênent** : passer Vercel en **Pro**, remettre
+les trois entrées dans `vercel.json` et supprimer le workflow GitHub.
+
+**Secrets requis** : `CRON_SECRET` **à la fois** dans les variables d'env Vercel
+(la route le vérifie) et dans les secrets GitHub Actions (l'appelant l'envoie).
+Les deux doivent porter la MÊME valeur, sinon 401.
 
 **Auth** : `Authorization: Bearer $CRON_SECRET`, vérifié dans le handler
 (le middleware laisse passer `/api/cron/*`, un scheduler n'ayant pas de cookie).

@@ -16,11 +16,18 @@ COPY apps/ingest/package.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 # Le serveur + ses modules partagés. dev-server.mjs importe en relatif
-# ./supabase/functions/_shared/*.mjs — on préserve donc cette arborescence.
-# purge.mjs (rétention TTL) partage pg + _shared : embarqué pour la commande
-# `docker compose exec ingest node purge.mjs` (pg_cron absent sur postgres:15).
+# ./supabase/functions/_shared/*.mjs ET ./lib/pg-ingest.mjs — on préserve donc
+# ces deux arborescences. Oublier lib/ fait échouer le conteneur au démarrage
+# (module introuvable), pas à la construction : c'est le smoke-test docker qui
+# l'attrape.
+# purge.mjs (rétention TTL) et dispatch-alerts.mjs (livraison des webhooks,
+# remplaçant de pg_net) partagent pg + _shared : embarqués pour les commandes
+# `docker compose exec ingest node purge.mjs` / `node dispatch-alerts.mjs`
+# (ni pg_cron ni pg_net en self-host sur postgres:15).
 COPY apps/ingest/dev-server.mjs ./dev-server.mjs
 COPY apps/ingest/purge.mjs ./purge.mjs
+COPY apps/ingest/dispatch-alerts.mjs ./dispatch-alerts.mjs
+COPY apps/ingest/lib ./lib
 COPY apps/ingest/supabase/functions/_shared ./supabase/functions/_shared
 
 ENV NODE_ENV=production \

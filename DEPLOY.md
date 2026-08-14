@@ -43,10 +43,11 @@ done
 psql "$DATABASE_URL" -c "alter role console_ro login password '<PWD_FORT>'"
 ```
 
-> **Extensions.** `pg_net` n'existe pas sur Neon et `pg_cron` ne s'installe que
-> dans la base `postgres` du projet : les blocs `cron.schedule(...)` /
-> `net.http_post(...)` des migrations sont sautés silencieusement (ils sont tous
-> gardés par `if exists (pg_extension …)`). Leur remplacement est en §6.
+> **Extensions.** Ni `pg_net` ni `pg_cron` ne sont utilisables sur Neon
+> (`pg_net` absent de la liste autorisée ; `pg_cron` refusé à la création, y
+> compris dans la base `postgres` du projet). Les blocs `cron.schedule(...)` /
+> `net.http_post(...)` des migrations sont donc sautés silencieusement — ils sont
+> tous gardés par `if exists (pg_extension …)`. Leur remplacement est en §6.
 
 > **Clé d'API d'ingestion (`REQUIRE_API_KEY`).** Par défaut l'ingestion est
 > *fail-open*. Une fois toutes les apps porteuses d'une clé, passer
@@ -149,16 +150,26 @@ javascript:(()=>{const s=document.createElement('script');s.src='https://mip-rum
 `docs/NEON_MIGRATION.md` §3.3-3.4). La planification passe par **Vercel Cron**,
 déclaré dans `apps/console/vercel.json`, vers trois routes :
 
-| Route | Planification | Contenu |
-|---|---|---|
-| `/api/cron/tick` | `*/5 * * * *` | `check_alerts`, `check_slo_burn`, sonde uptime, livraison des webhooks, réconciliation |
-| `/api/cron/hourly` | `5 * * * *` | `refresh_rum_rollups(26)`, `check_new_errors`, `check_ai_op_anomalies` |
-| `/api/cron/daily` | `17 3 * * *` | `purge_rum_tenants(30)`, `meter_tenant_usage()` |
+| Route | Planification | Déclencheur | Contenu |
+|---|---|---|---|
+| `/api/cron/tick` | `*/5 * * * *` | GitHub Actions | `check_alerts`, `check_slo_burn`, sonde uptime, livraison des webhooks, réconciliation |
+| `/api/cron/hourly` | `5 * * * *` | GitHub Actions | `refresh_rum_rollups(26)`, `check_new_errors`, `check_ai_op_anomalies` |
+| `/api/cron/daily` | `17 3 * * *` | Vercel Cron | `purge_rum_tenants(30)`, `meter_tenant_usage()` |
+
+⚠️ Le plan Vercel **Hobby n'accepte que des crons quotidiens** (un `*/5` dans
+`vercel.json` fait échouer tout le déploiement). D'où le partage : le quotidien
+sur Vercel, les deux autres via `.github/workflows/cron.yml`. En passant Vercel
+en **Pro**, on peut tout remettre dans `vercel.json` et supprimer le workflow.
 
 ```bash
 # OBLIGATOIRE : sans CRON_SECRET, les routes refusent (503, fail-closed) et
 # RIEN ne tourne — ni purge, ni rollups, ni alertes.
 vercel env add CRON_SECRET production     # coller: openssl rand -hex 32
+
+# La MÊME valeur doit être posée en secret GitHub Actions (sinon les ticks
+# fréquents reçoivent 401) :
+#   Settings > Secrets and variables > Actions > New repository secret
+#   nom: CRON_SECRET
 ```
 
 Déclenchement manuel (debug) :

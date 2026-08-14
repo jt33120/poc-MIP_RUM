@@ -1,0 +1,97 @@
+# Déclencheur des tâches planifiées fréquentes (alertes, SLO, uptime, livraison
+# des webhooks, rollups).
+#
+# POURQUOI ICI ET PAS SUR VERCEL. Les jobs tournaient sous `pg_cron` ; ni
+# `pg_cron` ni `pg_net` ne sont utilisables sur Neon (cf. docs/NEON_MIGRATION.md
+# §3.3-3.4). Le relais naturel était Vercel Cron — mais le plan **Hobby n'accepte
+# QUE des crons quotidiens** : déclarer `*/5 * * * *` fait échouer le déploiement
+# entier. Seul `/api/cron/daily` reste donc dans `apps/console/vercel.json` ; les
+# deux fréquences plus courtes sont déclenchées depuis GitHub Actions, gratuit et
+# sans limite de minutes sur ce dépôt (public).
+#
+# LIMITES ASSUMÉES, à connaître avant de s'y fier :
+#   • le cron GitHub est *best-effort* : les exécutions peuvent être décalées de
+#     plusieurs minutes aux heures chargées, et le pas minimal est de 5 min ;
+#   • GitHub DÉSACTIVE les workflows planifiés d'un dépôt resté 60 jours sans
+#     activité (il faut alors les réactiver à la main) ;
+#   • si ces deux points deviennent gênants, la vraie réponse est le plan Vercel
+#     Pro, qui débloque les crons infra-journaliers : il suffit alors de remettre
+#     les trois entrées dans `vercel.json` et de supprimer ce workflow.
+#
+# Les routes appelées sont idempotentes et protégées par `Authorization: Bearer
+# $CRON_SECRET` — un déclenchement en double est sans conséquence.
+name: Cron (tâches planifiées)
+
+on:
+  schedule:
+    # toutes les 5 min : check_alerts, check_slo_burn, uptime, livraison webhooks
+    - cron: "*/5 * * * *"
+    # toutes les heures (à :05) : rollups, nouvelles erreurs, anomalies IA
+    - cron: "5 * * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Route à déclencher manuellement"
+        required: true
+        default: tick
+        type: choice
+        options: [tick, hourly, daily]
+
+permissions: {}
+
+concurrency:
+  # une exécution à la fois : un tick lent ne doit pas s'empiler sur le suivant.
+  group: cron-${{ github.event.schedule || github.event.inputs.job }}
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # ne tourne pas sur les forks (ils n'ont pas le secret, et l'appel
+    # échouerait en 401 à chaque tick).
+    if: github.repository == 'jt33120/mip-rum'
+    steps:
+      - name: Appeler la route planifiée
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          # surchargeable par une variable de dépôt si l'URL de la console change
+          BASE_URL: ${{ vars.CONSOLE_BASE_URL || 'https://mip-rum-console.vercel.app' }}
+          SCHEDULE: ${{ github.event.schedule }}
+          MANUAL_JOB: ${{ github.event.inputs.job }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::secret CRON_SECRET absent — les routes /api/cron/* répondront 401." \
+                 "L'ajouter dans Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+          # workflow_dispatch fournit le job ; sinon on le déduit du schedule.
+          if [ -n "${MANUAL_JOB:-}" ]; then
+            JOB="$MANUAL_JOB"
+          elif [ "$SCHEDULE" = "5 * * * *" ]; then
+            JOB=hourly
+          else
+            JOB=tick
+          fi
+          echo "déclenchement de /api/cron/$JOB"
+
+          # -f absent volontairement : on veut LIRE le corps même en erreur (les
+          # routes renvoient le détail par étape, y compris en 207).
+          code=$(curl -sS -o /tmp/out -w '%{http_code}' --max-time 300 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$BASE_URL/api/cron/$JOB")
+          echo "HTTP $code"
+          cat /tmp/out
+          echo
+
+          case "$code" in
+            200) echo "toutes les étapes ont réussi" ;;
+            # 207 = échec partiel : une étape a échoué, les autres ont tourné.
+            # On échoue le job pour que ce soit visible, sans masquer le détail.
+            207) echo "::error::échec partiel — voir le détail par étape ci-dessus"; exit 1 ;;
+            401|503) echo "::error::HTTP $code — CRON_SECRET manquant ou incorrect côté Vercel"; exit 1 ;;
+            *)   echo "::error::HTTP $code inattendu"; exit 1 ;;
+          esac
