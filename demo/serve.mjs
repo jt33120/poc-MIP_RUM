@@ -17,6 +17,12 @@ const ROUTES = {
     file: join(__dirname, "../packages/rum-sdk/dist/mip-rum-replay.js"),
     type: "application/javascript",
   },
+  // Widget d'avis : servi ici pour que l'e2e exerce le fichier RÉELLEMENT déployé
+  // (apps/console/public), et non une copie.
+  "/mip-rum-feedback.js": {
+    file: join(__dirname, "../apps/console/public/mip-rum-feedback.js"),
+    type: "application/javascript",
+  },
 };
 
 const server = http.createServer(async (req, res) => {

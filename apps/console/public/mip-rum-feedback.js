@@ -6,16 +6,43 @@
  * donc aucune ingestion spécifique : il atterrit en rum_event(name='feedback'),
  * commentaire scrubbé PII côté serveur.
  *
+ * Le FORMAT de l'événement est un contrat figé (la console le lit, et des avis
+ * déjà ingérés doivent rester exploitables) : name='feedback', props = { score,
+ * comment, route }. `score` peut valoir null — cf. « note absente » plus bas.
+ *
  * Config optionnelle avant le chargement :
  *   window.MIPRumFeedback = {
  *     label: "Votre avis ?", accent: "#f89101",
- *     onlyPaths: ["/app", "/dashboard"]  // n'affiche le widget QUE sur ces préfixes
- *                                         // de chemin (ex. pages authentifiées) ;
- *                                         // ré-évalué à la navigation (SPA comprise).
+ *     offset: 20,                          // marge au coin bas-droit, en px ;
+ *                                          // à augmenter si l'app hôte y place
+ *                                          // déjà une pastille flottante.
+ *     onlyPaths: ["/app", "/dashboard"]    // n'affiche le widget QUE sur ces
+ *                                          // préfixes de chemin ; ré-évalué à la
+ *                                          // navigation (SPA comprise).
  *   };
  * (via le SDK : MIPRum.init({ feedback: { onlyPaths: [...] } }).)
  *
  * Zéro dépendance, styles inline scellés (n'impacte pas la CSS du site hôte).
+ *
+ * ── Correctifs du 11/08/2026 (constatés en production sur gip-plateforme) ──
+ *
+ * 1. COMMENTAIRE PERDU. L'avis partait avec comment:"" alors que l'utilisateur
+ *    avait saisi un texte. Le commentaire ne vivait QUE dans la propriété `.value`
+ *    d'un nœud DOM de longue durée de vie — que le widget détachait lui-même à
+ *    l'envoi (`panel.innerHTML = ""`), et qu'un ré-rendu de l'application hôte
+ *    pouvait remplacer à tout moment. On tient désormais un brouillon en mémoire,
+ *    mis à jour à chaque frappe : la valeur envoyée ne dépend plus de la survie
+ *    d'un nœud. Le panneau n'est par ailleurs plus jamais détruit.
+ *
+ * 2. ENVOI SANS ACCUSÉ DE RÉCEPTION. La confirmation s'effaçait toute seule au
+ *    bout de 1,4 s et laissait un panneau vidé de son contenu : le widget était à
+ *    usage unique, et l'utilisateur de gip-plateforme en a conclu qu'il ne
+ *    fonctionnait pas. La confirmation reste maintenant à l'écran jusqu'à ce que
+ *    l'utilisateur la ferme, et le formulaire est réutilisable ensuite.
+ *
+ * 3. LE WIDGET SE MESURAIT LUI-MÊME. Ses clics alimentaient le détecteur de
+ *    frustration du SDK. Toutes ses racines portent désormais data-mip-rum-ui, que
+ *    le détecteur ignore (cf. packages/rum-sdk/src/frustration.ts).
  */
 (function () {
   "use strict";
@@ -26,7 +53,13 @@
   var ACCENT = cfg.accent || "#f89101";
   var LABEL = cfg.label || "Votre avis ?";
   var ONLY = Array.isArray(cfg.onlyPaths) ? cfg.onlyPaths : null; // null = partout
+  var OFFSET = typeof cfg.offset === "number" && cfg.offset >= 0 ? cfg.offset : 20;
   var Z = 2147483000;
+
+  // Marqueur lu par le détecteur de frustration du SDK : tout clic à l'intérieur
+  // d'un élément qui le porte est ignoré. Doit rester identique à MIP_UI_ATTR
+  // (packages/rum-sdk/src/frustration.ts) — verrouillé par un test unitaire.
+  var UI_ATTR = "data-mip-rum-ui";
 
   /** Le chemin courant est-il autorisé ? (préfixe de onlyPaths ; true si non borné). */
   function pathAllowed() {
@@ -38,17 +71,23 @@
     return false;
   }
 
+  /**
+   * Émet l'avis. `score` est un entier 1..5, ou null si l'utilisateur n'a laissé
+   * qu'un commentaire (cf. « note absente »). Retourne true si l'événement est
+   * bien parti — l'accusé de réception affiché à l'utilisateur en dépend, il ne
+   * doit jamais annoncer un envoi qui n'a pas eu lieu.
+   */
   function send(score, comment) {
     try {
-      if (window.MIPRum && typeof MIPRum.track === "function") {
-        MIPRum.track("feedback", {
-          score: score, // 1..5
-          comment: (comment || "").slice(0, 500),
-          route: location.pathname,
-        });
-      }
+      if (!window.MIPRum || typeof MIPRum.track !== "function") return false;
+      MIPRum.track("feedback", {
+        score: score, // 1..5, ou null
+        comment: (comment || "").slice(0, 500),
+        route: location.pathname,
+      });
+      return true;
     } catch (_) {
-      /* le feedback ne doit jamais casser la page hôte */
+      return false; // le feedback ne doit jamais casser la page hôte
     }
   }
 
@@ -60,7 +99,7 @@
   }
 
   var base =
-    "position:fixed;bottom:20px;right:20px;z-index:" + Z + ";" +
+    "position:fixed;bottom:" + OFFSET + "px;right:" + OFFSET + "px;z-index:" + Z + ";" +
     "font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;";
 
   // --- bouton flottant ---
@@ -69,101 +108,226 @@
     base +
       "display:flex;align-items:center;gap:8px;padding:10px 14px;border:0;border-radius:999px;" +
       "background:" + ACCENT + ";color:#0a1430;font-size:13px;font-weight:700;cursor:pointer;" +
-      "box-shadow:0 4px 14px rgba(0,0,0,.18);",
+      "box-shadow:0 4px 14px rgba(0,0,0,.18);transition:transform .12s ease;",
     "💬 " + LABEL
   );
+  // type=button : sans lui, un widget monté dans un <form> hôte (applications
+  // d'entreprise qui enveloppent toute la page) soumettrait ce formulaire à
+  // chaque clic — l'avis serait perdu et la page rechargée.
+  btn.type = "button";
   btn.setAttribute("aria-label", LABEL);
+  btn.setAttribute("aria-expanded", "false");
+  btn.setAttribute(UI_ATTR, "feedback-button");
 
   // --- panneau ---
+  // max-width : le coin bas-droit est partagé avec les pastilles flottantes de
+  // l'app hôte, et sur un petit écran une largeur fixe déborderait de la fenêtre.
   var panel = el(
     "div",
     base +
-      "display:none;width:280px;padding:16px;border-radius:14px;background:#fff;color:#111827;" +
+      "display:none;width:280px;max-width:calc(100vw - " + (2 * OFFSET) + "px);" +
+      "box-sizing:border-box;padding:16px;border-radius:14px;background:#fff;color:#111827;" +
       "box-shadow:0 12px 40px rgba(6,12,32,.22);border:1px solid #e4e8ee;"
   );
+  panel.setAttribute(UI_ATTR, "feedback-panel");
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", LABEL);
+  panel.setAttribute("tabindex", "-1"); // focalisable par script, hors ordre de tabulation
 
-  var title = el("div", "font-size:14px;font-weight:700;margin-bottom:10px;color:#111827;", "Comment s'est passée votre visite ?");
-  panel.appendChild(title);
+  // ── partie « formulaire » ────────────────────────────────────────────────────
+  var form = el("div", null);
+  var title = el(
+    "div",
+    "font-size:14px;font-weight:700;margin-bottom:10px;color:#111827;",
+    "Comment s'est passée votre visite ?"
+  );
+  form.appendChild(title);
 
   var chosen = 0;
   var starsWrap = el("div", "display:flex;gap:6px;margin-bottom:10px;");
   var stars = [];
   function paint() {
-    for (var i = 0; i < 5; i++) stars[i].style.opacity = i < chosen ? "1" : "0.3";
+    for (var i = 0; i < 5; i++) {
+      stars[i].style.opacity = i < chosen ? "1" : "0.3";
+      stars[i].setAttribute("aria-pressed", i < chosen ? "true" : "false");
+    }
   }
   for (var i = 0; i < 5; i++) {
     (function (idx) {
       var s = el(
         "button",
-        "background:none;border:0;font-size:24px;line-height:1;cursor:pointer;padding:0;opacity:.3;",
+        // 32px de cible tactile : sur mobile, 24px de glyphe seul se rate.
+        "background:none;border:0;font-size:24px;line-height:1;cursor:pointer;padding:0;" +
+          "min-width:32px;min-height:32px;opacity:.3;",
         "★"
       );
+      s.type = "button";
       s.style.color = ACCENT;
       s.setAttribute("aria-label", idx + 1 + " sur 5");
       s.onclick = function () {
         chosen = idx + 1;
         paint();
+        title.textContent = "Comment s'est passée votre visite ?";
       };
       stars.push(s);
       starsWrap.appendChild(s);
     })(i);
   }
-  panel.appendChild(starsWrap);
+  form.appendChild(starsWrap);
 
+  // Brouillon du commentaire, tenu EN MÉMOIRE et mis à jour à chaque frappe.
+  // C'est le correctif du défaut nº 1 : la valeur envoyée ne dépend plus de la
+  // survie du nœud <textarea> jusqu'au clic sur « Envoyer ».
+  var draft = "";
   var ta = el(
     "textarea",
     "width:100%;box-sizing:border-box;min-height:60px;padding:8px;border:1px solid #e4e8ee;" +
-      "border-radius:8px;font-size:13px;resize:vertical;color:#111827;background:#fff;"
+      "border-radius:8px;font-size:16px;resize:vertical;color:#111827;background:#fff;"
+    // font-size:16px et non 13px : en dessous de 16px, iOS Safari zoome
+    // automatiquement à la prise de focus et l'utilisateur perd la page de vue.
   );
   ta.setAttribute("placeholder", "Un commentaire ? (optionnel)");
-  panel.appendChild(ta);
+  ta.setAttribute("aria-label", "Votre commentaire (optionnel)");
+  ta.addEventListener("input", function () {
+    draft = ta.value;
+  });
+  form.appendChild(ta);
+
+  /** La valeur du commentaire à envoyer : le champ vivant, sinon le brouillon. */
+  function commentValue() {
+    var live = ta && typeof ta.value === "string" ? ta.value : "";
+    return live !== "" ? live : draft;
+  }
 
   var row = el("div", "display:flex;justify-content:flex-end;gap:8px;margin-top:10px;");
   var cancel = el(
     "button",
-    "background:none;border:0;color:#6b7280;font-size:12px;cursor:pointer;",
+    "background:none;border:0;color:#6b7280;font-size:12px;cursor:pointer;padding:6px;",
     "Fermer"
   );
+  cancel.type = "button";
+  // Deux boutons portent le texte « Fermer » (formulaire et confirmation) : sans
+  // aria-label distinct, un lecteur d'écran annonce deux fois la même chose.
+  cancel.setAttribute("aria-label", "Fermer sans envoyer");
   var submit = el(
     "button",
     "border:0;border-radius:8px;padding:7px 12px;background:" + ACCENT + ";color:#0a1430;" +
       "font-size:12px;font-weight:700;cursor:pointer;",
     "Envoyer"
   );
+  submit.type = "button";
   row.appendChild(cancel);
   row.appendChild(submit);
-  panel.appendChild(row);
+  form.appendChild(row);
+  panel.appendChild(form);
+
+  // ── partie « accusé de réception » ───────────────────────────────────────────
+  // Distincte du formulaire et simplement masquée/affichée : on ne détruit plus
+  // le contenu du panneau, sans quoi le widget devient inutilisable après un envoi.
+  var done = el("div", "display:none;");
+  var doneMsg = el(
+    "div",
+    "font-size:14px;font-weight:700;color:#059669;margin-bottom:4px;",
+    "Merci, votre avis a bien été envoyé 🙏"
+  );
+  // aria-live : l'accusé de réception doit être annoncé aussi aux lecteurs d'écran.
+  done.setAttribute("role", "status");
+  done.setAttribute("aria-live", "polite");
+  done.appendChild(doneMsg);
+  done.appendChild(
+    el(
+      "div",
+      "font-size:12px;color:#6b7280;margin-bottom:10px;",
+      "Il aide l'équipe à prioriser les correctifs."
+    )
+  );
+  var doneRow = el("div", "display:flex;justify-content:flex-end;");
+  var doneClose = el(
+    "button",
+    "border:0;border-radius:8px;padding:7px 12px;background:#f3f4f6;color:#111827;" +
+      "font-size:12px;font-weight:700;cursor:pointer;",
+    "Fermer"
+  );
+  doneClose.type = "button";
+  doneClose.setAttribute("aria-label", "Fermer la confirmation");
+  doneRow.appendChild(doneClose);
+  done.appendChild(doneRow);
+  panel.appendChild(done);
 
   function open() {
+    form.style.display = "block";
+    done.style.display = "none";
     panel.style.display = "block";
     btn.style.display = "none";
+    btn.setAttribute("aria-expanded", "true");
+    // Réaction perceptible ET immédiate au clic : le panneau prend le focus, donc
+    // le clavier suit et un lecteur d'écran annonce l'ouverture. C'est le pendant
+    // « ressenti » du défaut nº 2 — l'utilisateur ne doit jamais se demander si
+    // son clic a été pris en compte.
+    //
+    // On focalise le PANNEAU et non le champ de texte : sur mobile, focaliser un
+    // <textarea> ouvre le clavier virtuel, qui recouvre les étoiles avant même
+    // que l'utilisateur ait pu noter.
+    try {
+      panel.focus({ preventScroll: true });
+    } catch (_) {
+      /* focus indisponible : sans conséquence, le panneau est déjà visible */
+    }
   }
+
+  /** Referme et remet le formulaire à zéro (abandon explicite de la saisie). */
   function shut() {
     panel.style.display = "none";
     btn.style.display = "flex";
+    btn.setAttribute("aria-expanded", "false");
     chosen = 0;
     paint();
+    draft = "";
     ta.value = "";
+    title.textContent = "Comment s'est passée votre visite ?";
+    form.style.display = "block";
+    done.style.display = "none";
   }
+
+  /** Bascule sur l'accusé de réception. Ne se referme PAS tout seul. */
   function thanks() {
-    panel.innerHTML = "";
-    panel.appendChild(el("div", "font-size:14px;font-weight:700;color:#059669;", "Merci pour votre retour 🙏"));
-    setTimeout(function () {
-      location.reload ? null : null; // no-op
-      panel.style.display = "none";
-      btn.style.display = "flex";
-    }, 1400);
+    form.style.display = "none";
+    done.style.display = "block";
+    panel.style.display = "block";
+    btn.style.display = "none";
+    try {
+      doneClose.focus({ preventScroll: true });
+    } catch (_) {
+      /* sans conséquence */
+    }
   }
 
   btn.onclick = open;
   cancel.onclick = shut;
+  doneClose.onclick = shut;
   submit.onclick = function () {
-    if (!chosen) {
-      starsWrap.style.animation = "";
-      title.textContent = "Choisissez une note d'abord :";
+    var comment = commentValue();
+    // Note absente : on part quand même DÈS QU'IL Y A UN COMMENTAIRE, avec
+    // score:null. Refuser l'envoi ferait perdre le verbatim — le signal le plus
+    // riche — au motif qu'il manque un scalaire. Côté console, la lecture est
+    // déjà `(nullif(props->>'score',''))::int`, donc un score null est exclu des
+    // moyennes CSAT sans les fausser. Sans note NI commentaire, il n'y a rien à
+    // envoyer : on le dit au lieu d'émettre un événement vide.
+    if (!chosen && !comment) {
+      title.textContent = "Choisissez une note, ou laissez un commentaire.";
       return;
     }
-    send(chosen, ta.value);
+    if (!send(chosen || null, comment)) {
+      // Le SDK n'est pas là (ou a refusé) : surtout ne pas afficher « envoyé ».
+      title.textContent = "Envoi impossible pour le moment. Réessayez plus tard.";
+      return;
+    }
+    // Vidé APRÈS un envoi confirmé, et jamais avant : la saisie reste disponible
+    // tant que l'avis n'est pas parti.
+    draft = "";
+    ta.value = "";
+    chosen = 0;
+    paint();
     thanks();
   };
 

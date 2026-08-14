@@ -17,6 +17,26 @@ export const TARGET_MAX = 80;
 
 const INTERACTIVE = "button,a,[role='button'],input,select,textarea,label,summary";
 
+/**
+ * Marqueur posé par les interfaces fournies par MIP RUM lui-même (aujourd'hui le
+ * widget d'avis, mip-rum-feedback.js). Tout clic à l'intérieur d'un élément ainsi
+ * marqué est ignoré par le détecteur.
+ *
+ * Sans cette exclusion, on mesure l'INSTRUMENT au lieu de mesurer l'application :
+ * chaque ouverture du panneau d'avis alimenterait les clics morts/rageurs de
+ * l'application cliente, et donc son score d'expérience.
+ */
+export const MIP_UI_ATTR = "data-mip-rum-ui";
+
+/** Le clic vise-t-il une interface de MIP RUM plutôt que l'application hôte ? */
+export function isOwnUi(el: Element): boolean {
+  try {
+    return el.closest(`[${MIP_UI_ATTR}]`) != null;
+  } catch {
+    return false; // closest indisponible (très vieux navigateur) : on ne filtre pas
+  }
+}
+
 export type FrustrationKind = "rage" | "dead";
 
 /**
@@ -56,12 +76,25 @@ export class RageDetector {
  * Décision dead-click (pure, testable) : mort si AUCUNE réaction n'est survenue
  * APRÈS le clic. Conservateur par construction (toute mutation/nav/scroll postérieur
  * disqualifie) → sous-reporte plutôt que de produire des faux positifs.
+ *
+ * La comparaison est STRICTE, et c'est le cœur du correctif du 11/08/2026.
+ *
+ * L'écouteur de clic est posé en phase de CAPTURE : il horodate `clickT` AVANT que
+ * le gestionnaire de l'élément ne s'exécute. Une réaction causée par le clic porte
+ * donc toujours un horodatage `>= clickT` — et l'égalité est le cas NORMAL dès que
+ * le gestionnaire répond en moins d'une milliseconde, c'est-à-dire quand l'interface
+ * est parfaitement réactive.
+ *
+ * Avec `<=`, ces réactions instantanées étaient comptées comme « aucune réaction » :
+ * le détecteur sanctionnait la réponse la plus rapide possible. C'est ce qui a fait
+ * remonter un `frustration.dead` sur le bouton du widget d'avis de MIP RUM lui-même
+ * (gip-plateforme, 11/08/2026 12:01:33 UTC), alors que le panneau s'ouvrait bien.
  */
 export function isDeadClick(
   clickT: number,
   signals: { mutation: number; nav: number; scroll: number },
 ): boolean {
-  return signals.mutation <= clickT && signals.nav <= clickT && signals.scroll <= clickT;
+  return signals.mutation < clickT && signals.nav < clickT && signals.scroll < clickT;
 }
 
 /** Un clic « mérite-t-il » une surveillance dead-click ? (élément d'aspect actionnable) */
@@ -122,6 +155,8 @@ export function initFrustration(emit: Emit, opts: { enabled?: boolean } = {}): F
     (e: Event) => {
       const me = e as MouseEvent;
       if (!(me.target instanceof Element)) return;
+      // L'instrument ne se mesure pas lui-même (cf. MIP_UI_ATTR).
+      if (isOwnUi(me.target)) return;
       const interactive = me.target.closest(INTERACTIVE);
       const el = interactive ?? me.target;
       const label = formatClickLabel(el.tagName, el.textContent, el.getAttribute("aria-label"));

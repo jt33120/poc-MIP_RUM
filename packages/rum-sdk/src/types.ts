@@ -70,12 +70,20 @@ export interface MIPRumConfig {
    * Widget d'avis (CSAT) : false (défaut) = rien. true = charge en lazy le
    * bouton flottant « Votre avis ? » (script mip-rum-feedback.js, même origine
    * que ce SDK) ; l'utilisateur note 1–5 → MIPRum.track('feedback', {score}).
-   * Objet = mêmes options que window.MIPRumFeedback ({ label, accent }).
+   * Objet = mêmes options que window.MIPRumFeedback ({ label, accent, offset }).
    * `onlyPaths` restreint l'affichage à des préfixes de chemin (ex. pages
    * authentifiées) — ré-évalué à la navigation, SPA comprise ; absent = partout.
+   * `offset` (px, défaut 20) écarte le bouton du coin bas-droit : à augmenter
+   * quand l'application y place déjà une pastille flottante (chat, aide…).
    * Aucun script séparé à poser côté site : une ligne de config suffit.
+   *
+   * Le widget marque ses racines avec `data-mip-rum-ui` : ses propres clics sont
+   * donc exclus du détecteur de frustration (cf. frustration.ts), sans quoi
+   * chaque ouverture du panneau polluerait les clics morts de l'application.
    */
-  feedback?: boolean | { label?: string; accent?: string; onlyPaths?: string[] };
+  feedback?:
+    | boolean
+    | { label?: string; accent?: string; offset?: number; onlyPaths?: string[] };
 }
 
 export type VitalName = "LCP" | "INP" | "CLS" | "FCP" | "TTFB";

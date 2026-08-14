@@ -1,6 +1,13 @@
 // P1 — détecteurs de frustration (logique pure, sans DOM) : rage clicks & dead clicks.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isActionable, isDeadClick, RageDetector } from "../../packages/rum-sdk/src/frustration";
+import {
+  isActionable,
+  isDeadClick,
+  isOwnUi,
+  MIP_UI_ATTR,
+  RageDetector,
+} from "../../packages/rum-sdk/src/frustration";
 
 describe("RageDetector", () => {
   it("émet au 3e clic dans la fenêtre (rafale), une seule fois", () => {
@@ -53,8 +60,68 @@ describe("isDeadClick", () => {
   it("vivant si un scroll suit le clic", () => {
     expect(isDeadClick(1000, { mutation: 0, nav: 0, scroll: 1050 })).toBe(false);
   });
-  it("une réaction exactement au temps du clic ne compte pas (≤)", () => {
-    expect(isDeadClick(1000, { mutation: 1000, nav: 1000, scroll: 1000 })).toBe(true);
+  // Régression du 11/08/2026. Ce test affirmait l'inverse (« une réaction
+  // exactement au temps du clic ne compte pas »), et c'était le défaut : l'écouteur
+  // horodate le clic en phase de CAPTURE, donc AVANT le gestionnaire de l'élément.
+  // Une interface qui répond en moins d'une milliseconde produit `mutation === t`
+  // — le cas le plus favorable était classé « clic mort ».
+  it("une réaction dans la MÊME milliseconde que le clic est une réaction", () => {
+    expect(isDeadClick(1000, { mutation: 1000, nav: 0, scroll: 0 })).toBe(false);
+    expect(isDeadClick(1000, { mutation: 0, nav: 1000, scroll: 0 })).toBe(false);
+    expect(isDeadClick(1000, { mutation: 0, nav: 0, scroll: 1000 })).toBe(false);
+  });
+
+  it("mort si la dernière réaction précède strictement le clic", () => {
+    expect(isDeadClick(1000, { mutation: 999, nav: 999, scroll: 999 })).toBe(true);
+  });
+});
+
+describe("isOwnUi — l'instrument ne se mesure pas lui-même", () => {
+  /** Faux Element : `closest` remonte une chaîne de parents en mémoire. */
+  const node = (attrs: Record<string, string>, parent?: Element): Element =>
+    ({
+      closest(sel: string) {
+        const want = sel.replace(/^\[|\]$/g, "");
+        if (want in attrs) return this as unknown as Element;
+        return parent?.closest(sel) ?? null;
+      },
+    }) as unknown as Element;
+
+  it("ignore un clic sur un élément marqué", () => {
+    expect(isOwnUi(node({ [MIP_UI_ATTR]: "feedback-button" }))).toBe(true);
+  });
+
+  it("ignore un clic sur un DESCENDANT d'un élément marqué (étoile, textarea…)", () => {
+    const panel = node({ [MIP_UI_ATTR]: "feedback-panel" });
+    expect(isOwnUi(node({}, panel))).toBe(true);
+  });
+
+  it("laisse passer un clic sur l'application hôte", () => {
+    expect(isOwnUi(node({ class: "btn-primary" }))).toBe(false);
+  });
+
+  it("ne filtre rien si closest lève (très vieux navigateur)", () => {
+    const hostile = {
+      closest() {
+        throw new Error("closest indisponible");
+      },
+    } as unknown as Element;
+    expect(isOwnUi(hostile)).toBe(false);
+  });
+});
+
+describe("contrat widget ↔ SDK", () => {
+  it("le widget marque ses racines avec exactement MIP_UI_ATTR", () => {
+    // Les deux fichiers ne partagent pas de module (le widget est un IIFE servi
+    // en statique) : si l'un des deux renomme l'attribut, l'exclusion redevient
+    // silencieusement inopérante. Ce test est le seul lien entre eux.
+    const widget = readFileSync(
+      new URL("../../apps/console/public/mip-rum-feedback.js", import.meta.url),
+      "utf8",
+    );
+    expect(widget).toContain(`var UI_ATTR = "${MIP_UI_ATTR}"`);
+    expect(widget).toContain("btn.setAttribute(UI_ATTR");
+    expect(widget).toContain("panel.setAttribute(UI_ATTR");
   });
 });
 
