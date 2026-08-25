@@ -39,6 +39,24 @@ pnpm --filter console dev                                  # console :3000
 node apps/sync-synthetic/src/sync.mjs seed                 # runs robot pour /correlation
 ```
 
+## Outillage IA (BMAD + graft)
+
+Le dépôt est câblé pour deux outils d'assistance, versionnés mais **non installés par le clone** :
+
+```bash
+npm install -g @nanonets/graft   # requis : .mcp.json et les hooks appellent le binaire `graft`
+graft build                      # (re)génère le graphe de code dans graft/ — local, gitignoré, ~30 s
+```
+
+- **[graft](https://github.com/trailhq/Graft)** indexe le monorepo en un graphe de code (`graft ask`, `graft callers`,
+  `graft skeleton`, `graft blast`) que l'agent interroge au lieu de tout relire. Le graphe vit dans `graft/`,
+  **jamais commité** : chaque poste régénère le sien. `.ignore` le garde greppable malgré le gitignore.
+  Sans l'installation globale ci-dessus, le serveur MCP déclaré dans `.mcp.json` ne démarre pas.
+- **[BMAD](https://github.com/bmad-code-org/bmad-method)** (module `bmm`) fournit les skills `bmad-*` de
+  `.claude/skills/` — configuration dans `_bmad/`, artefacts produits dans `_bmad-output/`. Nécessite
+  [`uv`](https://docs.astral.sh/uv/) : les skills lancent leurs scripts Python via `uv run`.
+  Point d'entrée : le skill `bmad-help`.
+
 ## Tests
 
 ```bash
