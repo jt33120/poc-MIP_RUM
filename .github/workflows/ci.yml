@@ -3,10 +3,21 @@
 # playwright (qui lance lui-même dev-server :4318, démo :8080, console :3000 via webServer).
 name: CI
 
+# Un commit qui ne touche que de la documentation ou des artefacts de planification
+# ne rebuild pas le SDK et ne rejoue pas Postgres + Chromium : c'est ~3 min de CI et
+# un déploiement Vercel économisés par commit de doc. Le filtre miroir côté Vercel
+# vit dans apps/console/vercel.json ("ignoreCommand").
 on:
   push:
     branches: [master]
+    paths-ignore: &docs-only
+      - 'docs/**'
+      - '_bmad-output/**'
+      - '_bmad/**'
+      - '.claude/**'
+      - '**.md'
   pull_request:
+    paths-ignore: *docs-only
 
 permissions:
   contents: read
