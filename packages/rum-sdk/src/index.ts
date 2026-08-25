@@ -18,7 +18,12 @@ import { initVitals } from "./vitals";
 
 let session: Session | null = null;
 let initialized = false;
-let emitter: Emit | null = null;
+// appId de la session courante, lu par le widget d'avis (MIPRum.appId()) pour
+// cloisonner sa période de silence PAR APPLICATION. Renseigné avant toute
+// sortie anticipée d'init() : deux apps du même navigateur ne doivent pas se
+// masquer l'une l'autre, y compris quand la collecte est refusée.
+let appIdValue = "";
+let emitter: ((name: string, attrs: Parameters<Emit>[1], ts?: number) => boolean) | null = null;
 let trail: BreadcrumbTrail | null = null;
 let gate: ConsentGate | null = null;
 let deliver: Emit | null = null; // émission réelle (post-consent)
@@ -53,6 +58,7 @@ export function init(cfg: MIPRumConfig): void {
     console.warn("[MIPRum] init: endpoint and appId are required");
     return;
   }
+  appIdValue = cfg.appId;
   // Souveraineté / RGPD (Lot 5) : on honore les signaux navigateur d'opt-out
   // (DNT/GPC). Si un refus est signalé, on ne collecte RIEN — aucune session
   // n'est créée, aucun listener posé, aucune requête émise. Désactivable via
@@ -122,10 +128,14 @@ export function init(cfg: MIPRumConfig): void {
   gate = new ConsentGate(cfg.requireConsent ?? false);
   // échantillonnage : en "error-biased", seules les erreurs passent ; la 1re
   // erreur promeut la session en "full" (le reste de la session est alors capté).
-  const emit: Emit = (name, attrs, ts) => {
+  // Renvoie true si l'événement a été PRIS EN CHARGE (livré ou bufferisé en
+  // attente de consentement), false s'il a été jeté — par l'échantillonnage ou
+  // par un refus de consentement. `Emit` déclare `void` : un retour booléen lui
+  // reste assignable, et les appelants qui l'ignorent ne changent pas.
+  const emit = (name: string, attrs: Parameters<Emit>[1], ts?: number): boolean => {
     if (name === "exception") sampler.notifyError();
-    if (!sampler.passes(name)) return;
-    gate!.submit(name, attrs, realEmit, ts);
+    if (!sampler.passes(name)) return false;
+    return gate!.submit(name, attrs, realEmit, ts);
   };
   emitter = emit;
 
@@ -234,9 +244,26 @@ export function consent(granted: boolean): void {
  * Émis comme span 'track.<name>' avec mip.props (JSON) — persisté en v0.2
  * dans rum_event — et laisse un breadcrumb 'custom'.
  */
-export function track(name: string, props: Record<string, unknown> = {}): void {
-  emitter?.(`track.${name}`, { "mip.props": JSON.stringify(props) });
+export function track(name: string, props: Record<string, unknown> = {}): boolean {
+  // Le retour dit si l'événement est PARTI (ou a été bufferisé pour partir), et
+  // non s'il a été « accepté par l'API ». false = jeté avant toute émission :
+  // init() jamais appelé, opt-out DNT/GPC, session "off", ou mode
+  // "error-biased" — où seules les erreurs passent. Un appelant qui affiche une
+  // confirmation à l'utilisateur DOIT le consulter : sans lui, le widget d'avis
+  // annonçait « envoyé » sur un avis silencieusement jeté.
+  const accepted = emitter?.(`track.${name}`, { "mip.props": JSON.stringify(props) }) ?? false;
   trail?.add("custom", name);
+  return accepted;
+}
+
+/**
+ * Identifiant d'application de la session courante, ou "" si init() n'a pas
+ * (encore) été appelé avec une configuration valide. Renseigné même quand la
+ * collecte est ensuite refusée (DNT/GPC, session non échantillonnée) : le widget
+ * d'avis s'en sert comme clé de stockage, et cette clé doit rester stable.
+ */
+export function appId(): string {
+  return appIdValue;
 }
 
 /** Force the export of pending spans (used by tests and before unload). */

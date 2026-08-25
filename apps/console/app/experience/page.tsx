@@ -128,6 +128,9 @@ export default async function Experience({
           </pre>
           <p className="mt-2 text-xs text-ink-faint">
             Il envoie <code>MIPRum.track(&quot;feedback&quot;, …)</code> — aucune autre configuration.
+            Après un avis envoyé, le widget se tait <strong>60 jours</strong> pour ce visiteur et
+            cette application ; ajustez avec{" "}
+            <code>window.MIPRumFeedback = {"{ cooldownDays: 30 }"}</code>.
           </p>
         </div>
       )}

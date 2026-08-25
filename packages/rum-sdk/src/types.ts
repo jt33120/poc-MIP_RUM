@@ -70,12 +70,21 @@ export interface MIPRumConfig {
    * Widget d'avis (CSAT) : false (défaut) = rien. true = charge en lazy le
    * bouton flottant « Votre avis ? » (script mip-rum-feedback.js, même origine
    * que ce SDK) ; l'utilisateur note 1–5 → MIPRum.track('feedback', {score}).
-   * Objet = mêmes options que window.MIPRumFeedback ({ label, accent, offset }).
+   * Objet = mêmes options que window.MIPRumFeedback ({ label, accent, offset,
+   * cooldownDays, once }).
    * `onlyPaths` restreint l'affichage à des préfixes de chemin (ex. pages
    * authentifiées) — ré-évalué à la navigation, SPA comprise ; absent = partout.
    * `offset` (px, défaut 20) écarte le bouton du coin bas-droit : à augmenter
    * quand l'application y place déjà une pastille flottante (chat, aide…).
    * Aucun script séparé à poser côté site : une ligne de config suffit.
+   *
+   * `cooldownDays` (défaut 60) est la période de SILENCE qui suit un avis
+   * envoyé : le lanceur n'est pas monté tant qu'elle court, cloisonnée par appId
+   * (deux apps du même navigateur ne se masquent pas l'une l'autre). 0 = aucun
+   * silence. `once: true` rend le silence définitif — à réserver aux
+   * intégrations qui veulent vraiment un avis unique : un CSAT mesure une
+   * satisfaction dans le temps, et « une fois pour toutes » plafonne le nombre
+   * d'avis au nombre d'utilisateurs, pour la vie du produit.
    *
    * Le widget marque ses racines avec `data-mip-rum-ui` : ses propres clics sont
    * donc exclus du détecteur de frustration (cf. frustration.ts), sans quoi
@@ -83,7 +92,14 @@ export interface MIPRumConfig {
    */
   feedback?:
     | boolean
-    | { label?: string; accent?: string; offset?: number; onlyPaths?: string[] };
+    | {
+        label?: string;
+        accent?: string;
+        offset?: number;
+        onlyPaths?: string[];
+        cooldownDays?: number;
+        once?: boolean;
+      };
 }
 
 export type VitalName = "LCP" | "INP" | "CLS" | "FCP" | "TTFB";
