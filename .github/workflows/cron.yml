@@ -6,8 +6,10 @@
 # §3.3-3.4). Le relais naturel était Vercel Cron — mais le plan **Hobby n'accepte
 # QUE des crons quotidiens** : déclarer `*/5 * * * *` fait échouer le déploiement
 # entier. Seul `/api/cron/daily` reste donc dans `apps/console/vercel.json` ; les
-# deux fréquences plus courtes sont déclenchées depuis GitHub Actions, gratuit et
-# sans limite de minutes sur ce dépôt (public).
+# deux fréquences plus courtes sont déclenchées depuis GitHub Actions. ATTENTION :
+# ce dépôt est PRIVÉ, donc ces exécutions consomment le quota de minutes Actions du
+# compte — contrairement à ce que cette note affirmait jusqu'au 25/08/2026. À la
+# fréquence déclarée ci-dessous, c'est ~8 600 déclenchements par mois.
 #
 # LIMITES ASSUMÉES, à connaître avant de s'y fier :
 #   • le cron GitHub est *best-effort* : les exécutions peuvent être décalées de
@@ -50,7 +52,15 @@ jobs:
     timeout-minutes: 10
     # ne tourne pas sur les forks (ils n'ont pas le secret, et l'appel
     # échouerait en 401 à chaque tick).
-    if: github.repository == 'jt33120/mip-rum'
+    #
+    # ⚠ Cette garde nomme le dépôt en dur : elle doit être mise à jour à tout
+    # renommage, sinon le job est sauté SILENCIEUSEMENT à chaque tick — aucune
+    # exécution, aucune erreur, aucun signal. C'est exactement ce qui s'est
+    # produit entre la migration Neon et le 25/08/2026 : la garde portait
+    # encore `jt33120/mip-rum` alors que le dépôt est `jt33120/poc-MIP_RUM`,
+    # et ni les alertes, ni les sondes uptime, ni les rollups horaires ne se
+    # sont exécutés pendant toute cette période.
+    if: github.repository == 'jt33120/poc-MIP_RUM'
     steps:
       - name: Appeler la route planifiée
         env:
