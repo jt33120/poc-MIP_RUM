@@ -20,18 +20,32 @@ export const ORG = {
   produit: "MIP RUM",
 } as const;
 
-/** Hébergement — factuel (l'architecture réelle du produit). */
+// ⚠ CES CONSTANTES SONT SERVIES PUBLIQUEMENT (/legal/mentions, /legal/confidentialite,
+// /legal/dpa — exemptées d'auth par middleware.ts). Une valeur périmée ici n'est pas une
+// coquille : c'est une déclaration RGPD inexacte et opposable. Elles ont déclaré Supabase /
+// eu-west-3 Paris pendant douze jours après la migration vers Neon / Francfort, et ont omis
+// les deux fournisseurs LLM réellement appelés. Tout changement d'hébergeur ou tout nouvel
+// appel sortant vers un tiers qui reçoit des données doit être répercuté ICI dans la même
+// modification que le code qui l'introduit (cf. invariant AD-7 du spine d'architecture).
+
+/** Hébergement — factuel, vérifié le 25/08/2026 contre docs/NEON_MIGRATION.md et DEPLOY.md. */
 export const HOSTS = {
-  data: "Supabase (base de données PostgreSQL sur infrastructure AWS, région eu-west-3 — Paris, France)",
+  data: "Neon (base de données PostgreSQL sur infrastructure AWS, région aws-eu-central-1 — Francfort, Allemagne)",
   app: "Vercel Inc. (hébergement de l'application console)",
 } as const;
 
-/** Sous-traitants ultérieurs — factuels, pour la politique de confidentialité et le DPA. */
+/**
+ * Sous-traitants ultérieurs — factuels, pour la politique de confidentialité et le DPA.
+ * Les deux fournisseurs LLM sont listés parce que les deux sont câblés dans le code
+ * (apps/console/app/api/{ask,briefing,assist}/route.ts) : celui qui traite dépend de la
+ * clé d'API présente en configuration. Le second implique un transfert hors UE.
+ */
 export const SUBPROCESSORS: { name: string; role: string; location: string }[] = [
-  { name: "Supabase", role: "Hébergement base de données (RUM, comptes)", location: "UE (Paris, eu-west-3)" },
+  { name: "Neon", role: "Hébergement de la base de données (RUM, comptes)", location: "UE (Francfort, aws-eu-central-1)" },
   { name: "Vercel Inc.", role: "Hébergement de l'application console", location: "États-Unis / réseau mondial" },
   { name: "[Fournisseur e-mail — à brancher]", role: "Envoi des alertes e-mail (si activé)", location: "[à préciser — UE recommandé]" },
-  { name: "[Fournisseur LLM — Mistral AI recommandé]", role: "Assistance / synthèse (si activée) sur données agrégées, sans PII", location: "[UE si Mistral 🇫🇷]" },
+  { name: "Mistral AI", role: "Assistance et synthèse IA (si activée), sur données agrégées, sans PII", location: "UE (France)" },
+  { name: "Anthropic", role: "Assistance et synthèse IA (si activée), sur données agrégées, sans PII — employé lorsque la clé correspondante est configurée", location: "États-Unis (transfert hors UE)" },
 ];
 
 export interface LegalDocLink {

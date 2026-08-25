@@ -12,6 +12,7 @@ import { SubNav } from "@/components/SubNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TourGuide } from "@/components/TourGuide";
 import { getUser } from "@/lib/auth";
+import { ingestEndpoint } from "@/lib/ingest-endpoint";
 import { listApps } from "@/lib/queries";
 import { describeProject, selectedProjectId } from "@/lib/project";
 import { logoutAction } from "./logout/actions";
@@ -26,22 +27,23 @@ export const metadata: Metadata = {
 // premier paint. Inline dans <head>, donc exécuté avant l'hydratation.
 const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("mip-theme");var d=t?t==="dark":matchMedia("(prefers-color-scheme: dark)").matches;var e=document.documentElement;e.classList.toggle("dark",d);e.style.colorScheme=d?"dark":"light";}catch(_){}})();`;
 
-// dogfooding : la console s'auto-instrumente avec son propre SDK (limite n°25).
-// Défaut = ingestion prod (edge function v1-traces, verify_jwt off) pour que la
-// console reste auditable même sans NEXT_PUBLIC_RUM_ENDPOINT défini sur Vercel.
-const RUM_ENDPOINT =
-  process.env.NEXT_PUBLIC_RUM_ENDPOINT ??
-  "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
-// dogfooding : session replay activé sur la console elle-même (edge fn v1-replay,
-// déjà déployée). RGPD : saisies masquées à l'enregistrement (maskAllInputs),
-// blocs `mip-rum-block` exclus, capture coupée si DNT/GPC signalé, TTL 30 j.
-// Taux configurable via NEXT_PUBLIC_RUM_REPLAY (défaut 1 = toutes les sessions
-// internes, pour que le rejeu soit toujours peuplé en démo).
+// dogfooding : session replay activé sur la console elle-même. RGPD : saisies
+// masquées à l'enregistrement (maskAllInputs), blocs `mip-rum-block` exclus,
+// capture coupée si DNT/GPC signalé, TTL 30 j. Taux configurable via
+// NEXT_PUBLIC_RUM_REPLAY (défaut 1 = toutes les sessions internes, pour que le
+// rejeu soit toujours peuplé en démo).
 const RUM_REPLAY = Number(process.env.NEXT_PUBLIC_RUM_REPLAY ?? "1");
 const RUM_REPLAY_RATE = Number.isFinite(RUM_REPLAY) ? RUM_REPLAY : 0;
-const RUM_INIT = RUM_ENDPOINT
-  ? `window.MIPRum && MIPRum.init({endpoint:${JSON.stringify(RUM_ENDPOINT)},appId:"mip-rum-console",clientId:"mip",env:"prod",replay:${JSON.stringify(RUM_REPLAY_RATE)}});`
-  : null;
+
+// dogfooding : la console s'auto-instrumente avec son propre SDK (limite n°25).
+// L'endpoint est résolu PAR REQUÊTE, et non figé au chargement du module : c'est ce
+// qui fait suivre naturellement les previews et le self-host, et ce qui évite qu'un
+// hôte codé en dur survive à une migration d'infrastructure — le dogfooding a émis
+// vers un projet Supabase décommissionné pendant douze jours (invariant AD-4).
+function rumInitScript(host: string | null): string {
+  const endpoint = ingestEndpoint("traces", host);
+  return `window.MIPRum && MIPRum.init({endpoint:${JSON.stringify(endpoint)},appId:"mip-rum-console",clientId:"mip",env:"prod",replay:${JSON.stringify(RUM_REPLAY_RATE)}});`;
+}
 
 /** Marque produit : pictogramme pouls sur carré orange MIP + wordmark. */
 function BrandMark() {
@@ -89,6 +91,7 @@ function ProjectSwitcher({ name, appId }: { name: string; appId: string }) {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getUser();
+  const RUM_INIT = rumInitScript((await headers()).get("host"));
 
   // non connecté : seule /login passe le middleware -> coquille nue, sans sidebar
   if (!user) {

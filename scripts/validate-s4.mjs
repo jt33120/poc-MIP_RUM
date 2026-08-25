@@ -3,6 +3,11 @@
 // percentile_cont) depuis les valeurs brutes, puis comparé à l'affichage.
 import { chromium } from "@playwright/test";
 import pg from "pg";
+// Les seuils CWV ne sont PAS recopiés ici : otlp.mjs se désigne source de vérité du
+// rating, et ce script en dérive. Il en portait sa propre copie, restée à l'ancienne
+// borne LCP [2000, 2500] après la correction E0 — donc il validait la console contre
+// un barème que le produit n'utilisait plus (cf. invariant AD-12 du spine).
+import { rating2026 } from "../apps/ingest/supabase/functions/_shared/otlp.mjs";
 
 const CONSOLE = "http://localhost:3000";
 const pool = new pg.Pool({
@@ -21,10 +26,9 @@ function fmtVital(name, value) {
   if (value >= 1000) return (value / 1000).toFixed(2).replace(".", ",") + " s";
   return Math.round(value) + " ms";
 }
-const rate = (name, v) => {
-  const t = { LCP: [2000, 2500], INP: [200, 500], CLS: [0.1, 0.25], FCP: [1800, 3000], TTFB: [800, 1800] }[name];
-  return v <= t[0] ? "Bon" : v <= t[1] ? "À améliorer" : "Mauvais";
-};
+// Libellés tels que la console les affiche ; le verdict lui-même vient de rating2026.
+const RATING_LABEL = { good: "Bon", "needs-improvement": "À améliorer", poor: "Mauvais" };
+const rate = (name, v) => RATING_LABEL[rating2026(name, v)];
 
 const { rows: raw } = await pool.query(
   "select name, value from rum_metric where ts > now() - interval '24 hours'",
