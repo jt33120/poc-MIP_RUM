@@ -27,3 +27,6 @@ __pycache__/
 apps/extension/*.pem
 apps/extension/*-key*.der
 apps/extension/*-key*.b64
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
