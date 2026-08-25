@@ -183,6 +183,22 @@ describe("consent gate", () => {
     expect(out).toEqual([]);
   });
 
+  // Le retour de submit() est le seul moyen pour un appelant de savoir si son
+  // événement est parti. Le widget d'avis s'en sert pour deux décisions
+  // visibles par l'utilisateur : afficher « envoyé », et armer sa période de
+  // silence. Se tromper ici, c'est faire taire le widget sur un avis perdu.
+  it("submit() dit si l'événement est pris en charge (livré, bufferisé) ou jeté", () => {
+    const granted = new ConsentGate(false);
+    expect(granted.submit("feedback", {}, () => {})).toBe(true);
+
+    const pending = new ConsentGate(true);
+    expect(pending.submit("feedback", {}, () => {})).toBe(true); // bufferisé = partira
+
+    const denied = new ConsentGate(true);
+    denied.set(false, () => {});
+    expect(denied.submit("feedback", {}, () => {})).toBe(false); // jeté
+  });
+
   it("buffer cap 200 : FIFO, les plus récents sont conservés", () => {
     const gate = new ConsentGate(true);
     for (let i = 0; i < CONSENT_BUFFER_CAP + 50; i++) gate.submit(`e-${i}`, {}, () => {});

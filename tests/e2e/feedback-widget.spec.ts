@@ -138,7 +138,10 @@ test("ni note ni commentaire : rien n'est émis, et le widget le dit", async ({ 
 test("critère 3 — l'accusé de réception reste affiché jusqu'à ce que l'utilisateur le ferme", async ({
   page,
 }) => {
-  const wire = await mount(page);
+  // cooldownDays: 0 — ce test porte sur le CYCLE DE VIE de la confirmation, pas
+  // sur la période de silence (couverte par feedback-cooldown.spec.ts). Sans ça,
+  // le lanceur ne reviendrait pas après fermeture, et on mélangerait deux sujets.
+  const wire = await mount(page, { cooldownDays: 0 });
   await page.click(OPEN);
   await page.click('button[aria-label="5 sur 5"]');
   await page.click('button:has-text("Envoyer")');
@@ -160,7 +163,11 @@ test("critère 3 — l'accusé de réception reste affiché jusqu'à ce que l'ut
 test("le widget reste utilisable après un envoi (il n'est pas à usage unique)", async ({
   page,
 }) => {
-  const wire = await mount(page);
+  // cooldownDays: 0 : la propriété testée ici est STRUCTURELLE — le panneau n'est
+  // plus détruit à l'envoi (l'ancien `panel.innerHTML = ""` le rendait à usage
+  // unique). Le silence est une POLITIQUE par-dessus, désactivable, et testée
+  // ailleurs. On neutralise la politique pour éprouver la structure.
+  const wire = await mount(page, { cooldownDays: 0 });
   for (const [note, texte] of [
     ["3 sur 5", "premier avis"],
     ["5 sur 5", "second avis"],
@@ -197,7 +204,9 @@ test("critère 4 — utiliser le widget ne produit aucun clic mort sur le widget
 }) => {
   // C'est le défaut de MESURE : le détecteur du SDK signalait un frustration.dead
   // sur le bouton du widget lui-même, polluant les métriques de l'app cliente.
-  const wire = await mount(page);
+  // cooldownDays: 0 pour enchaîner trois cycles complets — c'est la répétition
+  // qui rend le faux positif observable.
+  const wire = await mount(page, { cooldownDays: 0 });
   for (let i = 0; i < 3; i++) {
     await page.click(OPEN);
     await page.click('button[aria-label="4 sur 5"]');
