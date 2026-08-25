@@ -6,16 +6,26 @@
 // doit pas casser une requête), timeout court, à planifier via after() pour ne pas
 // retarder la réponse. Serveur uniquement (utilise fetch + env, importé côté serveur).
 
+import { ingestEndpoint } from "./ingest-endpoint";
 import { traceFields } from "./server-trace-core";
 
-const DEFAULT_TRACES = "https://mip-rum-console.vercel.app/api/ingest/v1/traces";
-
-/** Endpoint logs : explicite (CONSOLE_LOGS_ENDPOINT) sinon dérivé du endpoint traces. */
+/**
+ * Endpoint logs : explicite (CONSOLE_LOGS_ENDPOINT) sinon résolu par la fonction
+ * unique d'AD-4.
+ *
+ * L'implémentation précédente dérivait cette URL du canal traces par
+ * `replace("v1-traces", "v1-logs")`. Cette sous-chaîne datait des edge functions
+ * Supabase (`/functions/v1/v1-traces`) et n'existe plus dans le chemin actuel
+ * (`/api/ingest/v1/traces`) : le remplacement était donc devenu un no-op, et les
+ * logs serveur de la console partaient sur le canal TRACES. Une résolution par
+ * chemin, et non par substitution de sous-chaîne, ne peut pas échouer ainsi.
+ *
+ * Pas d'hôte de requête ici : ce code s'exécute en différé (`after()`), hors du
+ * contexte de la requête d'origine — la résolution retombe donc sur l'hôte de
+ * déploiement.
+ */
 function logsEndpoint(): string {
-  const explicit = process.env.CONSOLE_LOGS_ENDPOINT;
-  if (explicit) return explicit;
-  const traces = process.env.NEXT_PUBLIC_RUM_ENDPOINT ?? DEFAULT_TRACES;
-  return traces.replace("v1-traces", "v1-logs");
+  return process.env.CONSOLE_LOGS_ENDPOINT ?? ingestEndpoint("logs");
 }
 
 const APP_ID = process.env.CONSOLE_LOG_APP_ID ?? "mip-rum-console";

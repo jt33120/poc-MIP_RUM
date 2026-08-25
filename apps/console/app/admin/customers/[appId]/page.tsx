@@ -6,6 +6,7 @@ import { BackendStep } from "@/components/wizard/BackendStep";
 import { SnippetStep } from "@/components/wizard/SnippetStep";
 import { WizardBadge, WizardStep } from "@/components/wizard/WizardStep";
 import { popSecret, requireAdmin } from "@/lib/auth";
+import { ingestEndpoint } from "@/lib/ingest-endpoint";
 import type { SearchParams } from "@/lib/filters";
 import { buildInjectionArtifacts, buildSnippet, deriveStatus } from "@/lib/onboarding";
 import { buildBackendRecipes } from "@/lib/onboarding-recipes";
@@ -40,7 +41,7 @@ export default async function CustomerWizard({
   const host = (await headers()).get("host") ?? "localhost:3000";
   const proto = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
   const sdkUrl = `${proto}://${host}/mip-rum.js`;
-  const endpoint = process.env.NEXT_PUBLIC_RUM_ENDPOINT ?? "http://localhost:4318/v1/traces";
+  const endpoint = ingestEndpoint("traces", host);
 
   const snippet = buildSnippet({
     sdkUrl,

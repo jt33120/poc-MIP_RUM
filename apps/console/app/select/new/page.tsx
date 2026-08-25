@@ -11,6 +11,7 @@ import { ICON_PATHS, Icon } from "@/components/icons";
 import { Bookmarklet } from "@/components/onboarding/Bookmarklet";
 import { OnboardingPoll } from "@/components/OnboardingPoll";
 import { WizardBadge } from "@/components/wizard/WizardStep";
+import { ingestEndpoint } from "@/lib/ingest-endpoint";
 import { getUser, popSecret } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
 import { buildSnippet, deriveStatus } from "@/lib/onboarding";
@@ -224,9 +225,7 @@ async function Integration({
   const host = (await headers()).get("host") ?? "localhost:3000";
   const proto = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
   const sdkUrl = `${proto}://${host}/mip-rum.js`;
-  const endpoint =
-    process.env.NEXT_PUBLIC_RUM_ENDPOINT ??
-    "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
+  const endpoint = ingestEndpoint("traces", host);
 
   const snippet = buildSnippet({ sdkUrl, endpoint, appId, clientId: null, withConsent: false });
   // Bookmarklet : injecte le SDK sur la page courante puis démarre la mesure —
