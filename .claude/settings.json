@@ -46,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-hooks.cjs\" session-start",
+            "command": "command -v graft >/dev/null 2>&1 || npm install -g @nanonets/graft --silent 2>/dev/null || true; node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-hooks.cjs\" session-start",
             "timeout": 8000
           }
         ]
