@@ -24,10 +24,38 @@ function appIdFromForm(fd: FormData): string | null {
   return String(fd.get("app_id") ?? "").trim() || null;
 }
 
+/**
+ * Le tableau de bord `id`, SI l'utilisateur courant a le droit d'y toucher —
+ * null sinon, et l'action s'arrête sans rien écrire.
+ *
+ * Ces actions ne recevaient que l'identifiant, un entier séquentiel donc
+ * devinable, et agissaient sans vérifier à quelle application le tableau
+ * appartient : un viewer scopé sur une app pouvait renommer, vider ou supprimer
+ * le tableau de bord d'une autre. Un tableau sans app_id est transverse et reste
+ * accessible à tout utilisateur connecté, comme avant.
+ */
+async function dashboardAutorise(id: number) {
+  const dash = await getDashboard(id);
+  if (!dash) return null;
+  const user = await getUser();
+  if (!user) return null;
+  if (dash.app_id && user.apps && !user.apps.includes(dash.app_id)) return null;
+  return dash;
+}
+
+/** Un viewer scopé ne crée pas de tableau sur une application qu'il ne voit pas. */
+async function appAutorisee(appId: string | null): Promise<boolean> {
+  if (!appId) return true; // tableau transverse
+  const user = await getUser();
+  if (!user) return false;
+  return !user.apps || user.apps.includes(appId);
+}
+
 export async function createDashboardAction(fd: FormData): Promise<void> {
   const name = String(fd.get("name") ?? "").trim();
   if (!name) return;
   const app_id = appIdFromForm(fd);
+  if (!(await appAutorisee(app_id))) return;
   const created_by = (await getUser())?.email ?? null;
   const id = await insertDashboard({ name, app_id, created_by });
   redirect(`/dashboards/${id}`);
@@ -38,16 +66,18 @@ export async function renameDashboardAction(fd: FormData): Promise<void> {
   if (!Number.isInteger(id)) return;
   const name = String(fd.get("name") ?? "").trim();
   if (!name) return;
-  const dash = await getDashboard(id);
+  const dash = await dashboardAutorise(id);
   if (!dash) return;
-  await updateDashboardMeta(id, name, appIdFromForm(fd));
+  const cible = appIdFromForm(fd);
+  if (!(await appAutorisee(cible))) return; // ni déplacer un tableau hors de son scope
+  await updateDashboardMeta(id, name, cible);
   revalidatePath(`/dashboards/${id}`);
 }
 
 export async function deleteDashboardAction(fd: FormData): Promise<void> {
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
-  const dash = await getDashboard(id);
+  const dash = await dashboardAutorise(id);
   if (!dash) return;
   await deleteDashboard(id);
   redirect("/dashboards");
@@ -69,7 +99,7 @@ export async function addWidgetAction(fd: FormData): Promise<void> {
     }
     metric = m;
   }
-  const dash = await getDashboard(id);
+  const dash = await dashboardAutorise(id);
   if (!dash) return;
   const widget: Widget = {
     type: wtype,
@@ -84,7 +114,7 @@ export async function removeWidgetAction(fd: FormData): Promise<void> {
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   const index = Number(fd.get("index"));
-  const dash = await getDashboard(id);
+  const dash = await dashboardAutorise(id);
   if (!dash) return;
   if (!Number.isInteger(index) || index < 0 || index >= dash.layout.length) return;
   const layout = dash.layout.filter((_, i) => i !== index);
@@ -97,7 +127,7 @@ export async function moveWidgetAction(fd: FormData): Promise<void> {
   if (!Number.isInteger(id)) return;
   const index = Number(fd.get("index"));
   const dir = String(fd.get("dir") ?? "");
-  const dash = await getDashboard(id);
+  const dash = await dashboardAutorise(id);
   if (!dash) return;
   if (!Number.isInteger(index) || index < 0 || index >= dash.layout.length) return;
   const target = dir === "up" ? index - 1 : dir === "down" ? index + 1 : index;
