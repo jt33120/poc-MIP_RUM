@@ -9,6 +9,8 @@
 // jamais déclenchés en production, faute d'authentification du planificateur.
 // Sources : le code, docs/LIMITES.md, docs/RAPPORT_CLIENT.md, docs/INTEGRATION.md.
 import { ICON_PATHS, Icon } from "@/components/icons";
+import { fmtDate } from "@/lib/format";
+import { dernierPassagePlanifie } from "@/lib/queries-planifie";
 
 type Statut = "atteint" | "partiel" | "manque" | "non-mesure";
 
@@ -69,12 +71,6 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
     s: "partiel",
   },
   {
-    c: "Rétention",
-    cible: "Purge à 30 jours, réglable par client",
-    reel: "Codée et testée, mais jamais déclenchée en production",
-    s: "manque",
-  },
-  {
     c: "Latence d'alerte",
     cible: "5 minutes",
     reel: "60 minutes — cadence réduite pour tenir dans le quota d'exécution",
@@ -98,11 +94,6 @@ type Gravite = "bloquant" | "limite";
 
 /** Ce qui manque, en liste simple. */
 const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
-  {
-    t: "Tâches planifiées à câbler",
-    g: "bloquant",
-    d: "Évaluation des alertes, SLO, sondes uptime, purge de rétention et comptage du volume par client partagent le même déclencheur périodique, qui n'est pas authentifié sur cet environnement. Tout ce bloc est écrit et testé, mais ne s'exécute pas.",
-  },
   {
     t: "Clé d'ingestion à rendre obligatoire",
     g: "bloquant",
@@ -135,9 +126,60 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
   },
 ];
 
-const compte = (s: Statut) => CRITERES.filter((c) => c.s === s).length;
+/**
+ * La rétention et le déclencheur périodique sont les deux seuls points dont
+ * l'état CHANGE sans qu'on touche au code : il suffit que le secret du
+ * planificateur soit posé côté hébergeur. Ils sont donc DÉDUITS d'une preuve en
+ * base — la dernière exécution aboutie — plutôt qu'écrits en dur. C'est
+ * exactement là que la version précédente de cette section a menti : elle
+ * affirmait « jamais déclenchée » bien après que le secret ait été posé.
+ */
+function volatiles(dernier: Date | null): {
+  retention: { c: string; cible: string; reel: string; s: Statut };
+  planif: { t: string; d: string; g: Gravite } | null;
+} {
+  const frais = dernier != null && Date.now() - dernier.getTime() < 48 * 3600 * 1000;
 
-export function Etat() {
+  if (frais) {
+    return {
+      retention: {
+        c: "Rétention",
+        cible: "Purge à 30 jours, réglable par client",
+        reel: `Purge par client active — dernier passage le ${fmtDate(dernier!)}`,
+        s: "atteint",
+      },
+      planif: null, // plus un manque : le bloc s'exécute
+    };
+  }
+
+  const jamais = dernier == null;
+  return {
+    retention: {
+      c: "Rétention",
+      cible: "Purge à 30 jours, réglable par client",
+      reel: jamais
+        ? "Codée et testée ; aucune exécution constatée en production"
+        : `Codée et testée ; dernier passage le ${fmtDate(dernier!)}, plus de 48 h`,
+      s: jamais ? "manque" : "partiel",
+    },
+    planif: {
+      t: "Tâches planifiées à relancer",
+      g: "bloquant",
+      d: jamais
+        ? "Évaluation des alertes, SLO, sondes uptime, purge de rétention et comptage du volume par client partagent le même déclencheur périodique. Tout ce bloc est écrit et testé ; aucune exécution n'a encore abouti en production."
+        : "Le déclencheur périodique existe et a déjà abouti, mais pas depuis plus de 48 h — alertes, SLO, sondes uptime, purge et comptage du volume sont donc à l'arrêt.",
+    },
+  };
+}
+
+export async function Etat() {
+  const { retention, planif } = volatiles(await dernierPassagePlanifie());
+  // La rétention se range après le masquage du replay, à sa place d'origine dans
+  // la progression « mesure → restitution → exploitation ».
+  const criteres = [...CRITERES.slice(0, 6), retention, ...CRITERES.slice(6)];
+  const aFaire = planif ? [planif, ...A_FAIRE] : A_FAIRE;
+  const compte = (s: Statut) => criteres.filter((c) => c.s === s).length;
+
   return (
     <section id="etat" className="mip-bande-claire scroll-mt-16 border-y border-line">
       <div className="mx-auto max-w-6xl px-6 py-16 lg:py-20">
@@ -181,7 +223,7 @@ export function Etat() {
           </div>
 
           <ul className="divide-y divide-line">
-            {CRITERES.map((c) => (
+            {criteres.map((c) => (
               <li
                 key={c.c}
                 className="grid gap-x-5 gap-y-2 px-5 py-4 lg:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,7rem)] lg:items-baseline"
@@ -221,7 +263,7 @@ export function Etat() {
             Ce qui manque
           </h3>
           <ul className="mt-5 grid gap-4 sm:grid-cols-2">
-            {A_FAIRE.map((a) => (
+            {aFaire.map((a) => (
               <li key={a.t} className="flex gap-3">
                 <span
                   aria-hidden
