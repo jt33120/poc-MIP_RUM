@@ -66,11 +66,15 @@ export const CATEGORIES: NavCategory[] = [
   { href: "/logs", label: "Logs", icon: "logs", domain: "neutral" },
   // Supervision SVI (serveur vocal). Produit distinct du RUM web : un appel n'est
   // pas une visite, cf. migration-v51. La vue d'ensemble porte le containment NET.
+  // Fermée comme la supervision IA : capacité annoncée, accès non ouvert. Les
+  // sous-onglets restent déclarés pour que la réouverture soit un seul mot à
+  // retirer, mais la sidebar ne les expose plus (l'entrée n'est plus cliquable).
   {
     href: "/svi",
     label: "Supervision SVI",
     icon: "activity",
     domain: "neutral",
+    verrouille: true,
     children: [
       { href: "/svi", label: "Vue d'ensemble" },
       { href: "/svi/appels", label: "Appels" },

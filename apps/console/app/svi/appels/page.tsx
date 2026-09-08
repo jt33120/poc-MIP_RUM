@@ -9,6 +9,7 @@
 //     Un entonnoir calculé sur 34 % des appels ne doit jamais se présenter comme
 //     s'il portait sur la totalité.
 import Link from "next/link";
+import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
@@ -35,6 +36,15 @@ const SERIES: StackSeries[] = [
 ];
 
 export default async function AppelsSvi({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  if (estFermee("/svi")) {
+    return (
+      <CapaciteFermee
+        titre="Supervision SVI"
+        sujet="Supervision du serveur vocal interactif."
+      />
+    );
+  }
+
   const sp = await searchParams;
   const f = parseFilters(sp);
 

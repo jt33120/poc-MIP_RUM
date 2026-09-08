@@ -11,6 +11,7 @@
 // le mot « apparent ». Elle attrape la régression probable — une refonte qui
 // simplifie en ne gardant que le gros chiffre — mais elle ne prouve pas le rendu.
 import Link from "next/link";
+import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Donut } from "@/components/charts/Donut";
@@ -34,6 +35,15 @@ export default async function VueEnsembleSvi({
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
+  if (estFermee("/svi")) {
+    return (
+      <CapaciteFermee
+        titre="Supervision SVI"
+        sujet="Supervision du serveur vocal interactif."
+      />
+    );
+  }
+
   const f = parseFilters(await searchParams);
   const [sum, cont, sorties] = await Promise.all([
     sviSummary(f),

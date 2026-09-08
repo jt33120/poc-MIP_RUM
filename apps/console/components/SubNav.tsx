@@ -10,6 +10,10 @@ export function SubNav() {
   const qs = useSearchParams().toString();
   const cat = activeCategory(pathname);
   if (!cat?.children?.length) return null;
+  // Catégorie fermée : pas de barre d'onglets. Elle s'afficherait au-dessus de
+  // l'écran « accès fermé » en proposant d'entrer dans la zone qu'on vient de
+  // verrouiller — la sidebar n'y mène plus, cette barre ne doit pas y mener non plus.
+  if (cat.verrouille) return null;
 
   return (
     <div className="flex items-center gap-1 border-b border-line bg-panel px-6">

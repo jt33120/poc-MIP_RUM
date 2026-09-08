@@ -3,8 +3,7 @@
 // côté MIP RUM, aucune table rum_ai. Clairement badgé « sponsorisé xSOM » : c'est
 // un placement partenaire, distinct du produit RUM natif de MIP.
 import { PageHeader } from "@/components/PageHeader";
-import { ICON_PATHS, Icon } from "@/components/icons";
-import { CATEGORIES } from "@/components/nav-items";
+import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { parseFilters, periodLabel, type SearchParams } from "@/lib/queries-v2";
 import { fetchAiSummary } from "@/lib/xsom-ai";
 import { XsomSponsorBanner, XsomAiPanel } from "@/components/xsom/XsomAiPanel";
@@ -14,14 +13,18 @@ export const dynamic = "force-dynamic";
 // Lien vers la console publique du partenaire (CTA). Configurable ; défaut = prod xSOM.
 const XSOM_CONSOLE_URL = process.env.XSOM_CONSOLE_URL ?? "https://xsom-ai-guard-production.up.railway.app";
 
-/** Même drapeau que la sidebar : l'accès se rouvre en un seul endroit. */
-const FERME = CATEGORIES.find((c) => c.href === "/ai")?.verrouille === true;
-
 export default async function AiPartner({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   // La sidebar n'y mène plus, mais l'URL reste tapable : le refus doit vivre ICI
   // aussi, sinon le cadenas n'est qu'un décor. Aucun appel à la façade xSOM n'est
   // émis tant que la capacité est fermée.
-  if (FERME) return <AiFerme />;
+  if (estFermee("/ai")) {
+    return (
+      <CapaciteFermee
+        titre="Supervision IA"
+        sujet="Supervision des agents et modèles en production."
+      />
+    );
+  }
 
   const sp = await searchParams;
   const f = parseFilters(sp);
@@ -69,24 +72,3 @@ export default async function AiPartner({ searchParams }: { searchParams?: Promi
   );
 }
 
-/** Écran de capacité fermée — annoncée, pas encore ouverte. */
-function AiFerme() {
-  return (
-    <div className="animate-fade-up">
-      <PageHeader
-        title="Supervision IA"
-        sub="Supervision des agents et modèles en production. Capacité annoncée, accès non ouvert."
-      />
-      <div className="card flex max-w-2xl flex-col items-start gap-3 p-6">
-        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-panel2 text-ink-faint">
-          <Icon paths={ICON_PATHS.lock} className="h-5 w-5" strokeWidth={2.2} />
-        </span>
-        <h2 className="text-base font-semibold text-ink">Accès fermé pour le moment</h2>
-        <p className="text-sm leading-relaxed text-ink-soft">
-          Cet espace n&apos;est pas encore ouvert. Le reste de la console — performance, sessions,
-          erreurs, objectifs et alertes — fonctionne normalement.
-        </p>
-      </div>
-    </div>
-  );
-}
