@@ -17,6 +17,20 @@
 // (`if not exists` partout, c'est ce que la CI vérifie sur une base vierge),
 // mais s'y fier pour 50 fichiers d'affilée serait un pari, pas une méthode.
 //
+// VERROUS ET POOLER — la leçon la plus chère de ce fichier. La première version
+// prenait un `pg_advisory_lock` de SESSION autour de toute la migration. Ça ne
+// marche PAS : la chaîne de connexion de production passe par l'endpoint
+// « pooler » de Neon, un PgBouncer en mode TRANSACTION. Chaque transaction peut
+// atterrir sur un backend différent, donc un verrou de session est pris sur une
+// connexion et perdu sur la suivante. Deux migrateurs se croyaient seuls, ont lu
+// un registre encore vide et ont voulu appliquer le même fichier : le second a
+// échoué sur « duplicate key value violates unique constraint
+// schema_migration_pkey » et a fait tomber le déploiement.
+// D'où deux changements : un verrou de TRANSACTION (`pg_advisory_xact_lock`),
+// qui lui survit au pooler puisqu'une transaction reste sur un seul backend ; et
+// une écriture de registre tolérante, pour qu'une course non couverte reste un
+// non-événement au lieu d'un échec.
+//
 // TRANSACTION PAR FICHIER. Chaque fichier est envoyé en une seule requête,
 // encadrée de BEGIN/COMMIT : il passe en entier ou pas du tout, et l'entrée du
 // registre est écrite DANS la même transaction — impossible d'avoir un fichier
@@ -132,12 +146,6 @@ export async function migrer(pool, { dossier = DOSSIER_SQL, baseline = null, par
   const fichiers = await charger(dossier);
   const client = await pool.connect();
   try {
-    // Verrou : deux migrateurs lancés en même temps (deux services qui
-    // redéploient ensemble) doivent se mettre en file, pas se marcher dessus.
-    // Verrou BLOQUANT et non `try` : le second doit attendre puis constater
-    // qu'il n'y a plus rien à faire, pas repartir en croyant avoir migré.
-    await client.query("select pg_advisory_lock($1)", [VERROU_MIGRATION]);
-
     await client.query(REGISTRE);
     const { rows } = await client.query("select filename, checksum from schema_migration");
 
@@ -182,9 +190,30 @@ export async function migrer(pool, { dossier = DOSSIER_SQL, baseline = null, par
       const debut = Date.now();
       try {
         await client.query("begin");
+        // Verrou de TRANSACTION, et non de session : voir l'en-tête du fichier.
+        // Il sérialise deux migrateurs simultanés sur ce fichier précis.
+        await client.query("select pg_advisory_xact_lock($1)", [VERROU_MIGRATION]);
+        // Relecture SOUS verrou : pendant qu'on attendait, l'autre migrateur a
+        // pu appliquer ce fichier. La décision prise avant le verrou est
+        // périmée ; rejouer le SQL serait au mieux inutile.
+        const { rowCount: deja } = await client.query(
+          "select 1 from schema_migration where filename = $1",
+          [f.nom],
+        );
+        if (deja) {
+          await client.query("commit");
+          log.info("migration déjà appliquée par un autre migrateur", { nom: f.nom });
+          continue;
+        }
         await client.query(f.sql);
+        // `on conflict do nothing` : ceinture ET bretelles. Sans lui, une course
+        // que le verrou n'aurait pas couverte transforme un cas bénin — le
+        // fichier est appliqué, simplement pas par nous — en échec dur du
+        // déploiement. C'est exactement ce qui s'est produit le 08/09/2026 :
+        // « duplicate key value violates unique constraint schema_migration_pkey ».
         await client.query(
-          `insert into schema_migration (filename, checksum, applied_by) values ($1, $2, $3)`,
+          `insert into schema_migration (filename, checksum, applied_by) values ($1, $2, $3)
+           on conflict (filename) do nothing`,
           [f.nom, f.checksum, par],
         );
         await client.query("commit");
@@ -207,7 +236,6 @@ export async function migrer(pool, { dossier = DOSSIER_SQL, baseline = null, par
     });
     return { appliquees, modifies, total: fichiers.length };
   } finally {
-    await client.query("select pg_advisory_unlock($1)", [VERROU_MIGRATION]).catch(() => {});
     client.release();
   }
 }

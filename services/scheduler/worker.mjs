@@ -11,15 +11,22 @@
 //   horaire     à HH:05            rollups, nouvelles erreurs, anomalies
 //   quotidien   à 03:17 UTC        purge de rétention, comptage du volume
 //
-// VERROU. Deux instances (un redéploiement qui chevauche, une montée à deux
-// répliques) ne doivent pas lancer le même travail en parallèle. Un verrou
-// consultatif Postgres le garantit sans table ni état : il est tenu le temps du
-// travail et libéré à la fin, y compris si le process meurt — la session tombe
-// avec lui. Les fonctions SQL sont idempotentes, mais compter là-dessus pour
-// des sondes réseau et des webhooks serait un pari.
+// EXCLUSION. Deux instances (un redéploiement qui chevauche, une montée à deux
+// répliques) ne doivent pas lancer le même travail en parallèle. Les fonctions
+// SQL sont idempotentes, mais compter là-dessus pour des sondes réseau et des
+// webhooks serait un pari : un client recevrait l'alerte en double.
+//
+// La première version prenait un verrou consultatif de session. Elle ne tenait
+// pas : la connexion de production passe par le pooler Neon (PgBouncer en mode
+// TRANSACTION), où un verrou de session est pris sur un backend et perdu au
+// suivant. Deux instances se seraient crues seules toutes les deux. On passe
+// donc par un BAIL — une ligne avec une date d'expiration, qui ne dépend
+// d'aucune propriété de session. Cf. ingest/jobs/bail.mjs.
 import http from "node:http";
 import pg from "pg";
 import { dispatchOnce } from "ingest/dispatch-alerts.mjs";
+import { randomUUID } from "node:crypto";
+import { DUREES, SQL_TABLE, prendreBail, rendreBail } from "ingest/jobs/bail.mjs";
 import { CADENCES, prochainDelai } from "ingest/jobs/cadence.mjs";
 import { travaux } from "ingest/jobs/planifie.mjs";
 import { creerPool, cible } from "ingest/lib/serveur.mjs";
@@ -39,8 +46,9 @@ if (!process.env.DATABASE_URL) {
 const pool = creerPool(pg, { max: 4 });
 const jobs = travaux(pool, { log, dispatch: dispatchOnce });
 
-/** Clés du verrou consultatif — une par cadence, arbitraires mais stables. */
-const VERROUS = { tick: 811_001, horaire: 811_002, quotidien: 811_003 };
+/** Qui tient les baux : une identité par PROCESS, pas par cadence. Railway
+ *  fournit l'identifiant du déploiement ; sinon un UUID fait l'affaire. */
+const PORTEUR = process.env.RAILWAY_DEPLOYMENT_ID ?? `local-${randomUUID()}`;
 
 /** Dernier passage de chaque travail, pour /status. */
 const dernier = {};
@@ -57,10 +65,12 @@ async function sousVerrou(nom, executer) {
   // hors de cette fonction, donc en rejet non capturé, donc en arrêt du
   // process — exactement ce que le commentaire ci-dessous prétendait éviter.
   let client = null;
+  let tenu = false;
   try {
     client = await pool.connect();
-    const { rows } = await client.query("select pg_try_advisory_lock($1) as pris", [VERROUS[nom]]);
-    if (!rows[0].pris) {
+    await client.query(SQL_TABLE);
+    tenu = await prendreBail(client, { job: nom, porteur: PORTEUR, secondes: DUREES[nom] });
+    if (!tenu) {
       log.warn("travail déjà en cours ailleurs — passage sauté", { job: nom });
       return null;
     }
@@ -77,7 +87,7 @@ async function sousVerrou(nom, executer) {
       });
       return bilan;
     } finally {
-      await client.query("select pg_advisory_unlock($1)", [VERROUS[nom]]).catch(() => {});
+      await rendreBail(client, { job: nom, porteur: PORTEUR }).catch(() => {});
     }
   } catch (err) {
     // Une erreur ICI (connexion perdue, base injoignable) ne doit PAS tuer le

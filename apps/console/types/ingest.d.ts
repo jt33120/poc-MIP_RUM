@@ -214,3 +214,17 @@ declare module "ingest/lib/serveur.mjs" {
   export function optionsSsl(connectionString: string): undefined | { rejectUnauthorized: true };
   export function cible(connectionString?: string): Record<string, string>;
 }
+
+declare module "ingest/jobs/bail.mjs" {
+  /** Bail d'exclusion : une ligne à date d'expiration, pooler-safe. */
+  export const SQL_TABLE: string;
+  export const DUREES: Record<"tick" | "horaire" | "quotidien", number>;
+  export function prendreBail(
+    client: unknown,
+    opts: { job: string; porteur: string; secondes: number },
+  ): Promise<boolean>;
+  export function rendreBail(
+    client: unknown,
+    opts: { job: string; porteur: string },
+  ): Promise<void>;
+}

@@ -9,6 +9,7 @@ import { aFaire, empreinte, jusquaInclus } from "../../apps/ingest/migrate.mjs";
 import { CADENCES, prochainDelai } from "../../apps/ingest/jobs/cadence.mjs";
 import { executerEtapes, travaux } from "../../apps/ingest/jobs/planifie.mjs";
 import { optionsSsl } from "../../apps/ingest/lib/serveur.mjs";
+import { DUREES, prendreBail, rendreBail } from "../../apps/ingest/jobs/bail.mjs";
 
 const muet = { info() {}, warn() {}, error() {} };
 
@@ -230,5 +231,65 @@ describe("décision TLS de la connexion Postgres", () => {
       const o = optionsSsl(cs);
       if (o) expect(o.rejectUnauthorized).toBe(true);
     }
+  });
+});
+
+describe("bail d'exclusion des travaux planifiés", () => {
+  /** Client factice : retient la requête et son jeu de paramètres. */
+  function clientFactice(reponse: unknown[] = []) {
+    const appels: Array<{ sql: string; params: unknown[] }> = [];
+    return {
+      appels,
+      query: vi.fn(async (sql: string, params: unknown[] = []) => {
+        appels.push({ sql, params });
+        return { rows: reponse, rowCount: reponse.length };
+      }),
+    };
+  }
+
+  // La prise de bail doit tenir en UNE requête atomique. Une lecture suivie
+  // d'une écriture laisserait une fenêtre où deux instances se croient seules —
+  // exactement ce que le bail existe pour empêcher.
+  it("prend le bail en une seule requête, conditionnée à l'expiration", async () => {
+    const c = clientFactice([{ holder: "moi" }]);
+    const pris = await prendreBail(c as never, { job: "tick", porteur: "moi", secondes: 600 });
+
+    expect(pris).toBe(true);
+    expect(c.appels).toHaveLength(1);
+    const { sql, params } = c.appels[0];
+    expect(sql).toContain("on conflict (job) do update");
+    expect(sql).toContain("where scheduler_lease.expires_at < now()");
+    expect(params).toEqual(["tick", "moi", 600]);
+  });
+
+  it("n'obtient PAS le bail quand la clause d'expiration bloque la mise à jour", async () => {
+    const c = clientFactice([]); // aucune ligne renvoyée = bail tenu par un autre
+    expect(await prendreBail(c as never, { job: "tick", porteur: "moi", secondes: 600 })).toBe(false);
+  });
+
+  // Cas subtil : la requête renvoie une ligne, mais elle porte le nom d'un
+  // AUTRE porteur. Se déclarer titulaire là-dessus autoriserait deux exécutions.
+  it("n'obtient pas le bail si la ligne renvoyée nomme quelqu'un d'autre", async () => {
+    const c = clientFactice([{ holder: "quelqu-un-d-autre" }]);
+    expect(await prendreBail(c as never, { job: "tick", porteur: "moi", secondes: 600 })).toBe(false);
+  });
+
+  // Le point qui compte à la libération : si NOTRE bail a expiré et qu'un autre
+  // l'a repris, le supprimer sans filtrer sur le porteur effacerait LE SIEN et
+  // ouvrirait la porte à une troisième instance.
+  it("ne libère que SON propre bail", async () => {
+    const c = clientFactice();
+    await rendreBail(c as never, { job: "tick", porteur: "moi" });
+    const { sql, params } = c.appels[0];
+    expect(sql).toContain("holder = $2");
+    expect(params).toEqual(["tick", "moi"]);
+  });
+
+  // Un bail plus court que le travail qu'il protège est pire que pas de bail :
+  // il expire en cours de route et autorise le doublon qu'il devait empêcher.
+  it("donne des durées très au-dessus du temps d'exécution observé", () => {
+    expect(DUREES.tick).toBeGreaterThanOrEqual(600);
+    expect(DUREES.horaire).toBeGreaterThanOrEqual(DUREES.tick);
+    expect(DUREES.quotidien).toBeGreaterThanOrEqual(DUREES.horaire);
   });
 });
