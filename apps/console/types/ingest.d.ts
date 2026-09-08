@@ -208,3 +208,9 @@ declare module "ingest/migrate.mjs" {
     opts?: { dossier?: string; baseline?: string | null; par?: string },
   ): Promise<{ appliquees: string[]; modifies: string[]; total: number }>;
 }
+
+declare module "ingest/lib/serveur.mjs" {
+  /** undefined = pas de TLS imposé ; sinon TLS vérifié contre le magasin CA système. */
+  export function optionsSsl(connectionString: string): undefined | { rejectUnauthorized: true };
+  export function cible(connectionString?: string): Record<string, string>;
+}

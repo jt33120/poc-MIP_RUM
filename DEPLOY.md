@@ -144,6 +144,17 @@ remis aux clients et dans `apps/console/lib/ingest-endpoint.ts`.
 
 ## 2. Vercel — console RUM Live
 
+> **`regions: ["fra1"]` dans `apps/console/vercel.json`.** Sans cette clé, les
+> fonctions serveur étaient servies depuis `iad1` (Washington) — mesuré à
+> l'en-tête `x-vercel-id`. La base est à Francfort : chaque rendu de page
+> traversait l'Atlantique par requête SQL, et le traitement avait lieu hors UE.
+> `fra1` est la même ville que la base.
+>
+> Le fichier n'accepte **aucune** propriété hors schéma : une clé de
+> commentaire (`"//regions"`) fait échouer la validation et donc tout le
+> déploiement — `should NOT have additional property`. Les explications vont
+> ici, pas dans le JSON.
+
 ```bash
 cd apps/console
 # DATABASE_URL = rôle PROPRIÉTAIRE `neondb_owner` (⚠ PAS console_ro — voir l'encadré

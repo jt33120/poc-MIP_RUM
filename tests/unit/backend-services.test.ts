@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { aFaire, empreinte, jusquaInclus } from "../../apps/ingest/migrate.mjs";
 import { CADENCES, prochainDelai } from "../../apps/ingest/jobs/cadence.mjs";
 import { executerEtapes, travaux } from "../../apps/ingest/jobs/planifie.mjs";
+import { optionsSsl } from "../../apps/ingest/lib/serveur.mjs";
 
 const muet = { info() {}, warn() {}, error() {} };
 
@@ -188,5 +189,46 @@ describe("cadences et fonctions SQL appelées", () => {
       "check_new_errors",
       "check_ai_op_anomalies",
     ]);
+  });
+});
+
+describe("décision TLS de la connexion Postgres", () => {
+  // Le cas qui a cassé le smoke-test du conteneur : en docker-compose l'hôte
+  // s'appelle `db`. Ce n'est pas `localhost`, mais ce n'est pas public non
+  // plus — et exiger TLS d'un Postgres de conteneur donne « The server does
+  // not support SSL connections ».
+  it("n'impose pas TLS à un hôte qui ne peut pas être public", () => {
+    for (const h of ["localhost", "127.0.0.1", "db", "postgres", "mip-db"]) {
+      expect(optionsSsl(`postgres://u:p@${h}:5432/mip`), h).toBeUndefined();
+    }
+  });
+
+  it("impose TLS vérifié à tout hôte public", () => {
+    for (const h of ["ep-x.eu-central-1.aws.neon.tech", "db.exemple.fr"]) {
+      expect(optionsSsl(`postgres://u:p@${h}/neondb`), h).toEqual({ rejectUnauthorized: true });
+    }
+  });
+
+  // `sslmode` est le réglage standard : quand il est là, il fait autorité —
+  // sur l'heuristique comme sur le reste.
+  it("respecte sslmode quand l'URL le porte", () => {
+    expect(optionsSsl("postgres://u:p@db/mip?sslmode=require")).toEqual({ rejectUnauthorized: true });
+    expect(optionsSsl("postgres://u:p@db.exemple.fr/mip?sslmode=disable")).toBeUndefined();
+    expect(optionsSsl("postgres://u:p@x.fr/m?sslmode=verify-full")).toEqual({ rejectUnauthorized: true });
+  });
+
+  // Ne jamais deviner à la baisse : une chaîne illisible se traite comme
+  // distante, pas comme locale.
+  it("chiffre par défaut sur une chaîne non parsable", () => {
+    expect(optionsSsl("pas une url")).toEqual({ rejectUnauthorized: true });
+  });
+
+  // Le contrat non négociable : jamais de vérification désactivée, sinon une
+  // interception passerait sans bruit.
+  it("ne désactive JAMAIS la vérification du certificat", () => {
+    for (const cs of ["postgres://u:p@x.fr/m", "postgres://u:p@db/m", "n'importe quoi"]) {
+      const o = optionsSsl(cs);
+      if (o) expect(o.rejectUnauthorized).toBe(true);
+    }
   });
 });
