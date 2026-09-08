@@ -2,6 +2,7 @@
 // empilé error/warn/autres + comptes par sévérité ; filtres de niveau ; table des
 // derniers logs avec corrélation trace/session. Alimentée par l'ingestion /v1/logs.
 import Link from "next/link";
+import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
@@ -36,6 +37,15 @@ const SEV_STYLE: Record<string, string> = {
 };
 
 export default async function Logs({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  if (estFermee("/logs")) {
+    return (
+      <CapaciteFermee
+        titre="Logs"
+        sujet="Signal LOGS d'OpenTelemetry, alimenté par le serveur et non par le navigateur."
+      />
+    );
+  }
+
   const sp = await searchParams;
   const f = parseFilters(sp);
   const level = parseLevel(sp?.level);

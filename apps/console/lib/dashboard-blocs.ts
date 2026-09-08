@@ -1,126 +1,143 @@
-// Catalogue des blocs de la Vue d'ensemble, et lecture du choix de l'utilisateur.
-// Logique PURE : aucun accès aux cookies ni à la base ici.
+// Catalogues de composition : quels blocs chaque tableau de bord peut afficher,
+// et quelles mesures il ne couvre pas. Logique PURE — ni cookies, ni base.
+//
+// UN CATALOGUE PAR CATÉGORIE DE NAVIGATION, et un cookie par catalogue : les
+// choix sont indépendants, et éteindre la liste des sessions ne doit rien
+// changer à la Vue d'ensemble.
 //
 // POURQUOI UN COOKIE ET PAS UNE TABLE. Le choix est lu CÔTÉ SERVEUR, ce qui
 // permet de ne pas lancer les requêtes d'un bloc désactivé — masquer en CSS
 // aurait laissé tout le coût. Un cookie donne cette lecture serveur sans
-// migration ; deux migrations attendent déjà d'être appliquées sur la base de
-// production, en ajouter une troisième pour une préférence d'affichage serait
-// mal arbitré. Contrepartie assumée : la préférence vit par NAVIGATEUR, pas par
-// compte. Le jour où elle doit suivre l'utilisateur, seule la couche de lecture
-// change — le catalogue et le rendu, non.
-
-/** Nom du cookie portant le choix. Déclaré ICI et non dans le fichier d'action :
- *  un module "use server" ne peut exporter que des fonctions async. */
-export const COOKIE_BLOCS = "mip-blocs";
-
-export type BlocId =
-  | "briefing"
-  | "sante"
-  | "vitals"
-  | "reseau"
-  | "hero"
-  | "historique"
-  | "anomalies";
+// migration ; deux migrations attendent déjà d'être appliquées en production.
+// Contrepartie assumée : la préférence vit par NAVIGATEUR, pas par compte.
 
 export interface Bloc {
-  id: BlocId;
+  id: string;
   label: string;
   desc: string;
   /** Affiché tant que l'utilisateur n'a rien décidé. */
   defaut: boolean;
 }
 
-/** Dans l'ordre de la page, pour que la fenêtre de réglage la reflète. */
-export const BLOCS: readonly Bloc[] = [
+/** Mesure qu'un RUM du marché propose et que ce produit ne couvre pas. */
+export interface Indisponible {
+  label: string;
+  /** Le motif est OBLIGATOIRE : une liste grisée sans raison se lit comme une
+   *  feuille de route, alors que plusieurs de ces lignes ne seront jamais tenables. */
+  raison: string;
+}
+
+export interface Catalogue {
+  /** href de la catégorie de navigation qui porte la roue. */
+  href: string;
+  titre: string;
+  cookie: string;
+  blocs: readonly Bloc[];
+  indisponibles: readonly Indisponible[];
+}
+
+export const CATALOGUES: readonly Catalogue[] = [
   {
-    id: "briefing",
-    label: "Synthèse IA",
-    desc: "Ce qui a changé depuis votre dernière connexion, en quelques lignes.",
-    defaut: true,
+    href: "/",
+    titre: "Vue d'ensemble",
+    cookie: "mip-blocs",
+    blocs: [
+      { id: "briefing", label: "Synthèse IA", defaut: true, desc: "Ce qui a changé depuis votre dernière connexion, en quelques lignes." },
+      { id: "sante", label: "Score de santé", defaut: true, desc: "Note sur 100 pondérée par les Core Web Vitals, et son évolution." },
+      { id: "vitals", label: "Core Web Vitals", defaut: true, desc: "LCP, INP, CLS, FCP et TTFB au p75, face aux seuils Google." },
+      { id: "reseau", label: "Décomposition réseau", defaut: false, desc: "D'où vient le TTFB : redirection, DNS, connexion, TLS, requête, réponse." },
+      { id: "hero", label: "Courbe LCP et volumétrie", defaut: true, desc: "LCP p75 dans le temps, sessions, pages vues et taux d'erreur." },
+      { id: "historique", label: "Historique de santé 14 jours", defaut: true, desc: "Heatmap jour × heure, avec les courbes de volume et de LCP associées." },
+      { id: "anomalies", label: "Anomalies détectées", defaut: true, desc: "Écarts statistiques sur le LCP, sans seuil à régler." },
+    ],
+    indisponibles: [
+      {
+        label: "Speed Index",
+        raison:
+          "Exige une capture vidéo du rendu. C'est une mesure de laboratoire : elle n'est pas calculable chez le visiteur, quel que soit le capteur.",
+      },
+      {
+        label: "Opérateur réseau",
+        raison:
+          "Aucun navigateur ne l'expose. L'obtenir demanderait de résoudre l'adresse IP à l'ingestion — ce que l'engagement « aucune adresse IP stockée » interdit.",
+      },
+      {
+        label: "Comparaison par version d'app",
+        raison:
+          "La version déployée est désormais collectée sur chaque session, mais aucun écran ne la restitue encore. Celle-ci arrivera.",
+      },
+    ],
   },
   {
-    id: "sante",
-    label: "Score de santé",
-    desc: "Note sur 100 pondérée par les Core Web Vitals, et son évolution.",
-    defaut: true,
+    href: "/sessions",
+    titre: "Sessions",
+    cookie: "mip-blocs-sessions",
+    blocs: [
+      { id: "resume", label: "Nouveaux vs revenants", defaut: true, desc: "Répartition des visiteurs sur la fenêtre, exacte — contrairement à la liste, plafonnée." },
+      { id: "liste", label: "Liste des sessions", defaut: true, desc: "Les dernières sessions, avec appareil, navigateur, pages vues et erreurs." },
+    ],
+    indisponibles: [
+      {
+        label: "Identité du visiteur",
+        raison:
+          "Jamais. Les sessions sont rattachées à un `user_hash` anonyme et la PII est retirée à la collecte comme à l'ingestion — c'est un engagement du produit, pas une fonctionnalité manquante.",
+      },
+      {
+        label: "Enregistrement du texte et des médias",
+        raison:
+          "Le rejeu masque les saisies et exclut les blocs marqués, mais ne masque encore ni le texte ni les images — le standard 2026 le demande, ce n'est pas fait.",
+      },
+    ],
   },
   {
-    id: "vitals",
-    label: "Core Web Vitals",
-    desc: "LCP, INP, CLS, FCP et TTFB au p75, face aux seuils Google.",
-    defaut: true,
-  },
-  {
-    id: "reseau",
-    label: "Décomposition réseau",
-    desc: "D'où vient le TTFB : redirection, DNS, connexion, TLS, requête, réponse.",
-    defaut: false,
-  },
-  {
-    id: "hero",
-    label: "Courbe LCP et volumétrie",
-    desc: "LCP p75 dans le temps, sessions, pages vues et taux d'erreur.",
-    defaut: true,
-  },
-  {
-    id: "historique",
-    label: "Historique de santé 14 jours",
-    desc: "Heatmap jour × heure, avec les courbes de volume et de LCP associées.",
-    defaut: true,
-  },
-  {
-    id: "anomalies",
-    label: "Anomalies détectées",
-    desc: "Écarts statistiques sur le LCP, sans seuil à régler.",
-    defaut: true,
+    href: "/slo",
+    titre: "SLO",
+    cookie: "mip-blocs-slo",
+    blocs: [
+      { id: "budget", label: "Budget d'erreur consommé", defaut: true, desc: "Part du budget brûlée par SLO, et détection de consommation rapide." },
+      { id: "creation", label: "Formulaire de création", defaut: true, desc: "Déclarer un nouvel objectif : app, métrique, cible et fenêtre." },
+      { id: "liste", label: "Liste des objectifs", defaut: true, desc: "Tous les SLO déclarés, avec leur état courant." },
+    ],
+    indisponibles: [
+      {
+        label: "Alerte en temps réel sur un budget brûlé",
+        raison:
+          "Le déclencheur des tâches planifiées tourne au mieux à l'heure sur cet environnement : la latence d'alerte est de 60 minutes, pas de quelques secondes.",
+      },
+      {
+        label: "Politique d'escalade",
+        raison:
+          "Les alertes partent en webhook sortant, sans niveaux, ni astreinte, ni accusé de réception. Il n'y a pas de couche d'escalade dans ce POC.",
+      },
+    ],
   },
 ];
 
-/**
- * Mesures qu'un RUM du marché propose et que ce produit NE COUVRE PAS. Listées
- * grisées, avec la raison — une liste d'indisponibles sans motif se lit comme
- * une promesse, alors que deux de ces trois lignes ne seront jamais tenables.
- */
-export const INDISPONIBLES: readonly { label: string; raison: string }[] = [
-  {
-    label: "Speed Index",
-    raison:
-      "Exige une capture vidéo du rendu. C'est une mesure de laboratoire : elle n'est pas calculable chez le visiteur, quel que soit le capteur.",
-  },
-  {
-    label: "Opérateur réseau",
-    raison:
-      "Aucun navigateur ne l'expose. L'obtenir demanderait de résoudre l'adresse IP à l'ingestion — ce que l'engagement « aucune adresse IP stockée » interdit.",
-  },
-  {
-    label: "Comparaison par version d'app",
-    raison:
-      "La version déployée est désormais collectée sur chaque session, mais aucun écran ne la restitue encore. Celle-ci arrivera.",
-  },
-];
-
-const DEFAUTS = new Map(BLOCS.map((b) => [b.id, b.defaut]));
+export function catalogueDe(href: string): Catalogue | undefined {
+  return CATALOGUES.find((c) => c.href === href);
+}
 
 /**
- * Relit le cookie, sous la forme `id:0|1` séparée par des virgules.
+ * Relit un cookie, sous la forme `id:0|1` séparée par des virgules.
  *
  * Un identifiant ABSENT retombe sur son défaut — et c'est le point important :
  * un bloc ajouté plus tard apparaît chez les utilisateurs qui ont déjà un
  * cookie, au lieu de rester invisible pour eux seuls. Un identifiant inconnu
  * (bloc retiré depuis) est ignoré.
  */
-export function lireChoix(brut: string | undefined | null): Record<BlocId, boolean> {
-  const out = Object.fromEntries(BLOCS.map((b) => [b.id, b.defaut])) as Record<BlocId, boolean>;
+export function lireChoix(cat: Catalogue, brut: string | undefined | null): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const b of cat.blocs) out[b.id] = b.defaut;
+  const connus = new Set(cat.blocs.map((b) => b.id));
   for (const paire of (brut ?? "").split(",")) {
     const [id, v] = paire.split(":");
-    if (DEFAUTS.has(id as BlocId) && (v === "0" || v === "1")) out[id as BlocId] = v === "1";
+    if (connus.has(id) && (v === "0" || v === "1")) out[id] = v === "1";
   }
   return out;
 }
 
-/** Sérialise l'état COMPLET : on ne peut pas distinguer « éteint par défaut »
- *  de « éteint par l'utilisateur » à partir d'une liste partielle. */
-export function serialiserChoix(choix: Record<BlocId, boolean>): string {
-  return BLOCS.map((b) => `${b.id}:${choix[b.id] ? 1 : 0}`).join(",");
+/** Sérialise l'état COMPLET : une liste des seuls blocs actifs ne permettrait
+ *  pas de distinguer « éteint par l'utilisateur » de « éteint par défaut ». */
+export function serialiserChoix(cat: Catalogue, choix: Record<string, boolean>): string {
+  return cat.blocs.map((b) => `${b.id}:${choix[b.id] ? 1 : 0}`).join(",");
 }

@@ -1,20 +1,30 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Donut } from "@/components/charts/Donut";
 import { browserFromUA, fmtDate } from "@/lib/format";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import { listSessions, visitStats } from "@/lib/queries";
+import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
+import { TousEteints } from "@/components/TousEteints";
 
 export const dynamic = "force-dynamic";
 
 export default async function Sessions({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const f = parseFilters(sp);
-  const [rows, vs] = await Promise.all([listSessions(f), visitStats(f)]);
-  const reprises = Math.max(vs.visits - vs.sessions, 0);
-  const identified = vs.new_count + vs.returning_count;
-  const returningPct = identified ? Math.round((vs.returning_count / identified) * 100) : 0;
+  // Composition de l'écran, lue AVANT les requêtes : un bloc éteint ne lance pas
+  // la sienne. `visitStats` et `listSessions` sont deux agrégats distincts, donc
+  // éteindre l'un économise réellement un aller-retour en base.
+  const cat = catalogueDe("/sessions")!;
+  const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
+  const vide = <T,>(v: T) => Promise.resolve(v);
+
+  const [rows, vs] = await Promise.all([
+    blocs.liste ? listSessions(f) : vide([]),
+    blocs.resume ? visitStats(f) : vide(null),
+  ]);
   const qs = new URLSearchParams(
     Object.entries(sp).flatMap(([k, v]) => (typeof v === "string" ? [[k, v] as [string, string]] : [])),
   ).toString();
@@ -28,6 +38,11 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
 
       {/* Hero : répartition nouveaux vs revenants (visitStats, exact sur la
           fenêtre — contrairement à la liste des 50 sessions ci-dessous). */}
+      {blocs.resume && vs && (() => {
+      const reprises = Math.max(vs.visits - vs.sessions, 0);
+      const identified = vs.new_count + vs.returning_count;
+      const returningPct = identified ? Math.round((vs.returning_count / identified) * 100) : 0;
+      return (
       <SupervisionHero
         chartTitle="Nouveaux vs revenants"
         chart={
@@ -64,7 +79,10 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
           visite). Détail des parcours ci-dessous.
         </HeroReading>
       </SupervisionHero>
+      );
+      })()}
 
+      {blocs.liste && (
       <div className="flex flex-col gap-3">
         {rows.map((s) => (
           <div key={s.session_id} className="card p-4 transition hover:shadow-pop">
@@ -111,6 +129,9 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
           <p className="py-8 text-center text-ink-faint">Aucune session sur {PERIODS[f.period].label}</p>
         )}
       </div>
+      )}
+
+      {!blocs.resume && !blocs.liste && <TousEteints />}
     </div>
   );
 }

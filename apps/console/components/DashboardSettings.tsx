@@ -1,22 +1,26 @@
 "use client";
-// Roue de réglage de la Vue d'ensemble : quels blocs de mesure composent le
-// tableau de bord.
+// Roue de réglage d'un tableau de bord : quels blocs le composent. Le catalogue
+// reçu décide de tout — libellés, blocs, mesures non couvertes, cookie — donc
+// une même fenêtre sert la Vue d'ensemble, les Sessions et les SLO.
 //
 // L'état est LOCAL tant que la fenêtre est ouverte, et n'est envoyé qu'à
 // « Appliquer ». Basculer chaque interrupteur via une action serveur
-// re-rendrait la page entière à chaque clic — sur un écran qui porte huit
+// re-rendrait la page entière à chaque clic — sur un écran qui porte neuf
 // requêtes, ça se voit.
 import { useEffect, useRef, useState, useTransition } from "react";
 import { ICON_PATHS, Icon } from "./icons";
-import { BLOCS, INDISPONIBLES, type BlocId } from "@/lib/dashboard-blocs";
+import type { Catalogue } from "@/lib/dashboard-blocs";
 
 export function DashboardSettings({
+  catalogue,
   choix,
   action,
 }: {
-  choix: Record<BlocId, boolean>;
+  catalogue: Catalogue;
+  choix: Record<string, boolean>;
   action: (fd: FormData) => Promise<void>;
 }) {
+  const BLOCS = catalogue.blocs;
   const [ouvert, setOuvert] = useState(false);
   const [etat, setEtat] = useState(choix);
   const [envoi, demarrer] = useTransition();
@@ -28,6 +32,7 @@ export function DashboardSettings({
   // enregistré. Constaté à l'écran avant correction.
   const appliquer = () => {
     const fd = new FormData();
+    fd.set("catalogue", catalogue.href);
     for (const b of BLOCS) if (etat[b.id]) fd.set(`bloc:${b.id}`, "1");
     demarrer(async () => {
       await action(fd);
@@ -58,10 +63,10 @@ export function DashboardSettings({
         type="button"
         onClick={() => setOuvert(true)}
         aria-haspopup="dialog"
-        aria-label="Composer le tableau de bord"
-        title="Composer le tableau de bord"
+        aria-label={`Composer le tableau de bord — ${catalogue.titre}`}
+        title={`Composer — ${catalogue.titre}`}
         data-testid="ouvrir-reglages"
-        className="shrink-0 rounded-lg p-2 text-ink-faint transition hover:bg-panel2 hover:text-ink"
+        className="shrink-0 rounded-lg p-1.5 text-ink-faint transition hover:bg-panel2 hover:text-ink"
       >
         <Icon paths={ICON_PATHS.settings} className="h-4 w-4" strokeWidth={2} />
       </button>
@@ -76,7 +81,7 @@ export function DashboardSettings({
             tabIndex={-1}
             role="dialog"
             aria-modal
-            aria-label="Composer le tableau de bord"
+            aria-label={`Composer le tableau de bord — ${catalogue.titre}`}
             data-testid="reglages-blocs"
             // Sans ça, un clic n'importe où DANS la fenêtre remonterait jusqu'au
             // fond et la refermerait — y compris un clic sur un interrupteur.
@@ -85,10 +90,12 @@ export function DashboardSettings({
           >
             <header className="flex items-start gap-3 border-b border-line px-5 py-4">
               <div className="min-w-0">
-                <h2 className="text-base font-semibold text-ink">Composer le tableau de bord</h2>
+                <h2 className="text-base font-semibold text-ink">
+                  Composer — {catalogue.titre}
+                </h2>
                 <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">
-                  Choisissez les mesures affichées sur la Vue d&apos;ensemble. Un bloc désactivé
-                  n&apos;est pas seulement masqué : sa requête n&apos;est pas exécutée.
+                  Choisissez les mesures affichées sur cet écran. Un bloc désactivé n&apos;est pas
+                  seulement masqué : sa requête n&apos;est pas exécutée.
                 </p>
               </div>
               <button
@@ -127,7 +134,7 @@ export function DashboardSettings({
                   Non couvert par ce produit
                 </h3>
                 <ul className="mt-2 divide-y divide-line/60">
-                  {INDISPONIBLES.map((m) => (
+                  {catalogue.indisponibles.map((m) => (
                     <li key={m.label} className="flex items-start gap-3 py-3 opacity-60">
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-medium text-ink-soft">{m.label}</span>
@@ -173,7 +180,7 @@ function Interrupteur({
   label,
   onChange,
 }: {
-  id: BlocId;
+  id: string;
   actif: boolean;
   label: string;
   onChange: (v: boolean) => void;
