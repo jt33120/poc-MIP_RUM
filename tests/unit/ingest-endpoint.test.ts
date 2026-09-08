@@ -6,7 +6,7 @@
 // projet Supabase décommissionné et un troisième `localhost:4318`, si bien qu'un
 // client onboardé recevait un snippet qui n'ingérait rien, sans erreur exploitable.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ingestEndpoint } from "../../apps/console/lib/ingest-endpoint";
+import { dogfoodingEndpoint, ingestEndpoint } from "../../apps/console/lib/ingest-endpoint";
 
 const ENV_KEYS = [
   "NEXT_PUBLIC_RUM_ENDPOINT",
@@ -92,5 +92,49 @@ describe("ingestEndpoint — hors contexte de requête", () => {
       expect(url).not.toContain(":4318");
       expect(url).toContain("/api/ingest/v1/traces");
     }
+  });
+});
+
+// Ce bloc existe parce que la panne de l'en-tête est REVENUE, en production, le
+// 8 septembre : NEXT_PUBLIC_RUM_ENDPOINT pointait encore le projet Supabase
+// décommissionné, et la console postait sa propre télémétrie là-bas — sans
+// erreur, avec des HTTP 200 côté serveur pour d'autres flux, donc invisible.
+//
+// Le test précédent gardait la FONCTION ; il ne pouvait rien contre une variable
+// d'environnement posée sur l'hébergeur. La seule défense est de retirer à cette
+// variable le pouvoir de détourner le dogfooding : la console sert elle-même
+// /api/ingest/v1/*, donc son propre hôte est correct par construction.
+describe("dogfoodingEndpoint — insensible à l'override", () => {
+  it("ignore NEXT_PUBLIC_RUM_ENDPOINT, même pointant un hôte mort", () => {
+    process.env.NEXT_PUBLIC_RUM_ENDPOINT =
+      "https://nupxrdpsliqptqnjkmgw.supabase.co/functions/v1/v1-traces";
+    expect(dogfoodingEndpoint("mip-rum-console.vercel.app")).toBe(
+      "https://mip-rum-console.vercel.app/api/ingest/v1/traces",
+    );
+  });
+
+  // La divergence est le symptôme même de la panne : le snippet client suit
+  // l'override (c'est voulu), le dogfooding non.
+  it("diverge de ingestEndpoint quand l'override est posé", () => {
+    process.env.NEXT_PUBLIC_RUM_ENDPOINT = "https://ailleurs.example/x";
+    const hote = "mip-rum-console.vercel.app";
+    expect(dogfoodingEndpoint(hote)).not.toBe(ingestEndpoint("traces", hote));
+    expect(new URL(dogfoodingEndpoint(hote)).host).toBe(hote);
+  });
+
+  it("suit les previews et le self-host, puisqu'il suit l'hôte", () => {
+    expect(dogfoodingEndpoint("mip-rum-git-branche.vercel.app")).toBe(
+      "https://mip-rum-git-branche.vercel.app/api/ingest/v1/traces",
+    );
+    expect(dogfoodingEndpoint("localhost:3000")).toBe(
+      "http://localhost:3000/api/ingest/v1/traces",
+    );
+  });
+
+  it("hors contexte de requête, retombe sur l'hôte de déploiement", () => {
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = "mip-rum-console.vercel.app";
+    expect(dogfoodingEndpoint(null)).toBe(
+      "https://mip-rum-console.vercel.app/api/ingest/v1/traces",
+    );
   });
 });

@@ -63,3 +63,22 @@ export function ingestEndpoint(signal: IngestSignal, host?: string | null): stri
 
   return `http://localhost:3000${path}`;
 }
+
+/**
+ * Endpoint d'ingestion DU DOGFOODING : toujours l'hôte de la requête, jamais
+ * `NEXT_PUBLIC_RUM_ENDPOINT`.
+ *
+ * La console SERT elle-même /api/ingest/v1/* : son propre hôte est donc correct
+ * par construction, et un override ne peut que la faire émettre ailleurs. C'est
+ * exactement ce qui s'est produit deux fois — la variable a survécu à la
+ * migration Supabase -> Neon et la console a posté dans le vide, sans erreur,
+ * pendant douze jours la première fois.
+ *
+ * Le reste de la résolution (snippet client, logs serveur) garde l'override :
+ * là, l'ingestion PEUT légitimement vivre ailleurs.
+ */
+export function dogfoodingEndpoint(host: string | null): string {
+  if (host) return `${protocolFor(host)}://${host}${PATHS.traces}`;
+  const deploye = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL ?? null;
+  return deploye ? `https://${deploye}${PATHS.traces}` : `http://localhost:3000${PATHS.traces}`;
+}
