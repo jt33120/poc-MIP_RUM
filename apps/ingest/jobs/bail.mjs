@@ -47,12 +47,25 @@ export async function prendreBail(client, { job, porteur, secondes }) {
 }
 
 /**
- * Rend le bail. La clause sur `holder` est essentielle : si notre bail a expiré
- * et qu'un autre l'a repris entre-temps, on ne doit surtout pas supprimer LE
- * SIEN — ça ouvrirait la porte à une troisième instance.
+ * Rend le bail — en le faisant EXPIRER, pas en supprimant la ligne.
+ *
+ * La clause sur `holder` est essentielle : si notre bail a expiré et qu'un autre
+ * l'a repris entre-temps, on ne doit surtout pas libérer LE SIEN — ça ouvrirait
+ * la porte à une troisième instance.
+ *
+ * POURQUOI EXPIRER PLUTÔT QUE SUPPRIMER. La sémantique est identique pour la
+ * prise suivante (`expires_at < now()` est vrai dans les deux cas), mais la
+ * ligne SURVIT — et devient un battement de cœur gratuit : `max(expires_at)`
+ * pour une cadence donne l'heure de son dernier passage abouti. La vitrine s'en
+ * sert pour dire la latence d'alerte RÉELLE au lieu de l'affirmer en dur, comme
+ * elle le fait déjà pour la purge de rétention. Une ligne supprimée n'aurait
+ * rien laissé à lire.
  */
 export async function rendreBail(client, { job, porteur }) {
-  await client.query("delete from scheduler_lease where job = $1 and holder = $2", [job, porteur]);
+  await client.query(
+    "update scheduler_lease set expires_at = now() where job = $1 and holder = $2",
+    [job, porteur],
+  );
 }
 
 /**

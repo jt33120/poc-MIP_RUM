@@ -16,7 +16,7 @@
 // passage récent.
 import { q } from "./db";
 
-/** Date du dernier passage abouti, ou null si aucun n'a jamais eu lieu. */
+/** Date du dernier passage QUOTIDIEN abouti, ou null si aucun n'a jamais eu lieu. */
 export async function dernierPassagePlanifie(): Promise<Date | null> {
   try {
     const [row] = await q<{ t: string | null }>(
@@ -26,6 +26,33 @@ export async function dernierPassagePlanifie(): Promise<Date | null> {
   } catch {
     // Table absente (base non migrée) ou base injoignable : on ne peut rien
     // prouver, donc on n'affirme rien — l'appelant traite null comme « inconnu ».
+    return null;
+  }
+}
+
+/**
+ * Date du dernier TICK abouti du scheduler, ou null.
+ *
+ * TÉMOIN : `scheduler_lease`. Le bail d'exclusion des travaux planifiés est
+ * relâché en faisant EXPIRER la ligne plutôt qu'en la supprimant, exprès pour
+ * laisser ce battement de cœur (cf. ingest/jobs/bail.mjs). `max(expires_at)`
+ * pour la cadence `tick` est donc l'heure de fin du dernier passage.
+ *
+ * C'est ce qui permet à la vitrine de dire la latence d'alerte RÉELLE au lieu de
+ * l'affirmer en dur. Elle a affiché « 60 minutes » pendant tout le temps où
+ * c'était vrai ; le jour où un déclencheur dédié est arrivé, une phrase statique
+ * serait devenue fausse en silence — exactement ce qui s'était produit pour la
+ * purge de rétention.
+ */
+export async function dernierTickScheduler(): Promise<Date | null> {
+  try {
+    const [row] = await q<{ t: string | null }>(
+      `select max(expires_at)::text as t from scheduler_lease where job = 'tick'`,
+    );
+    return row?.t ? new Date(row.t) : null;
+  } catch {
+    // Table absente (scheduler jamais déployé) ou base injoignable : on ne peut
+    // rien prouver, donc on n'affirme rien.
     return null;
   }
 }

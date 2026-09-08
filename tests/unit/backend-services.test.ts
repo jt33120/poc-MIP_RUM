@@ -285,6 +285,16 @@ describe("bail d'exclusion des travaux planifiés", () => {
     expect(params).toEqual(["tick", "moi"]);
   });
 
+  // La ligne SURVIT à la libération : `max(expires_at)` devient le battement de
+  // cœur que la vitrine lit pour dire la latence d'alerte réelle. Un DELETE
+  // n'aurait rien laissé à lire entre deux passages.
+  it("libère en faisant EXPIRER la ligne, pas en la supprimant", async () => {
+    const c = clientFactice();
+    await rendreBail(c as never, { job: "tick", porteur: "moi" });
+    expect(c.appels[0].sql).toContain("update scheduler_lease set expires_at = now()");
+    expect(c.appels[0].sql).not.toContain("delete");
+  });
+
   // Un bail plus court que le travail qu'il protège est pire que pas de bail :
   // il expire en cours de route et autorise le doublon qu'il devait empêcher.
   it("donne des durées très au-dessus du temps d'exécution observé", () => {
