@@ -22,6 +22,15 @@ import { creerPool, demarrerServeur, cible } from "ingest/lib/serveur.mjs";
 import { createLogger } from "ingest/shared/log.mjs";
 
 const log = createLogger("ingest");
+
+// Fail-fast. Sans DATABASE_URL, `creerPool` retombe sur le Postgres LOCAL de
+// développement : le service répondrait 200 aux beacons et perdrait tout en
+// silence — le pire des comportements pour de la télémétrie.
+if (!process.env.DATABASE_URL) {
+  log.error("DATABASE_URL absent — le service d'ingestion refuse de démarrer");
+  process.exit(2);
+}
+
 const pool = creerPool(pg, { max: 8 });
 
 const { handler } = creerReceveur(pool, {

@@ -26,6 +26,16 @@ import { creerPool, cible } from "ingest/lib/serveur.mjs";
 import { createLogger } from "ingest/shared/log.mjs";
 
 const log = createLogger("scheduler");
+
+// Fail-fast, comme le migrateur. Sans DATABASE_URL, `creerPool` retombe sur le
+// Postgres LOCAL de développement : le worker tournerait alors indéfiniment en
+// tapant dans le vide toutes les 5 minutes, en ayant l'air de vivre. Mieux vaut
+// un déploiement qui refuse de partir et le dit.
+if (!process.env.DATABASE_URL) {
+  log.error("DATABASE_URL absent — le scheduler refuse de démarrer");
+  process.exit(2);
+}
+
 const pool = creerPool(pg, { max: 4 });
 const jobs = travaux(pool, { log, dispatch: dispatchOnce });
 
@@ -42,8 +52,13 @@ const demarre = new Date().toISOString();
  * par n'importe quelle connexion rendue, ce qui ne verrouille rien.
  */
 async function sousVerrou(nom, executer) {
-  const client = await pool.connect();
+  // `pool.connect()` est DANS le try. Il y était à côté, et c'est ce qui a tué
+  // le premier déploiement : une base injoignable faisait remonter le rejet
+  // hors de cette fonction, donc en rejet non capturé, donc en arrêt du
+  // process — exactement ce que le commentaire ci-dessous prétendait éviter.
+  let client = null;
   try {
+    client = await pool.connect();
     const { rows } = await client.query("select pg_try_advisory_lock($1) as pris", [VERROUS[nom]]);
     if (!rows[0].pris) {
       log.warn("travail déjà en cours ailleurs — passage sauté", { job: nom });
@@ -73,7 +88,7 @@ async function sousVerrou(nom, executer) {
     log.error("travail en échec", { job: nom, err: String(err?.stack ?? err) });
     return null;
   } finally {
-    client.release();
+    client?.release();
   }
 }
 
@@ -92,12 +107,14 @@ function planifier(nom, executer) {
   armer();
 }
 
-// --- Sonde HTTP (facultative) ----------------------------------------------
-// Railway fournit PORT aux services web. Sans domaine généré, ce serveur n'est
-// joignable que par le réseau privé du projet — utile pour un healthcheck et
-// pour que la page « Santé interne » de la console sache si le scheduler vit.
+// --- Sonde HTTP -------------------------------------------------------------
+// TOUJOURS active, même sans PORT fourni : un worker sans écoute n'a rien à
+// offrir au healthcheck de l'hébergeur, qui déclare alors le déploiement en
+// échec sans que rien ne soit cassé. Sans domaine généré, ce serveur n'est
+// joignable que par le réseau privé du projet.
 // Aucune donnée client n'y transite : des dates et des compteurs.
-if (process.env.PORT) {
+{
+  const port = process.env.PORT ?? 8080;
   http
     .createServer((req, res) => {
       const chemin = (req.url ?? "/").split("?")[0];
@@ -112,7 +129,7 @@ if (process.env.PORT) {
       res.writeHead(404);
       res.end();
     })
-    .listen(process.env.PORT, () => log.info("sonde http", { port: Number(process.env.PORT) }));
+    .listen(port, () => log.info("sonde http", { port: Number(port) }));
 }
 
 log.info("scheduler démarré", {
