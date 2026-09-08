@@ -1,4 +1,11 @@
-# DEPLOY — Mise en production (Neon + Vercel + snippet G-IT)
+# DEPLOY — Mise en production (Neon + Railway + Vercel + snippet G-IT)
+
+> **Le backend a quitté Vercel.** L'ingestion OTLP et les travaux planifiés
+> tournent désormais sur un projet Railway dédié, `mip-rum-backend` — voir la
+> section **1 bis**. La console reste sur Vercel et devient un client de ces
+> services. Les routes `/api/ingest/*` et `/api/cron/*` de la console
+> subsistent comme filet le temps de la bascule ; elles appellent exactement le
+> même code (`apps/ingest`), donc les deux chemins ne peuvent pas diverger.
 
 > **⚠ Le projet Supabase `mip-rum-poc` n'existe plus** (constaté le 14/08/2026 :
 > plus aucun enregistrement DNS, API de gestion `"Resource has been removed"`).
@@ -68,6 +75,72 @@ curl -s "https://mip-rum-console.vercel.app/api/ingest/v1/traces" \
   -H "content-type: application/json" -H "Origin: https://plateforme.groupement-it.com" \
   -d @tests/fixtures/otlp-sample.json
 ```
+
+## 1 bis. Railway — le backend
+
+Projet `mip-rum-backend`, environnement `production`. Deux services, une image
+(`infra/docker/Dockerfile.backend`), deux commandes.
+
+| Service | Commande | Écoute | Redémarrage |
+|---|---|---|---|
+| `ingest` | `node services/ingest/server.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
+| `scheduler` | `node services/scheduler/worker.mjs` | facultatif (`/health`, `/status`) | `ALWAYS` |
+
+**Les migrations sont une étape du déploiement.** Le service `ingest` porte la
+commande pre-deploy `node node_modules/ingest/migrate.mjs` : le schéma ne peut
+plus être en retard sur le code. Le runner tient un registre `schema_migration`,
+applique chaque fichier dans sa propre transaction, et sait adopter une base
+existante sans rien rejouer.
+
+### Variables
+
+`DATABASE_URL` est la SEULE variable indispensable, et elle n'est pas dans le
+dépôt : la poser dans Railway (Variables du service, ou variable partagée de
+l'environnement). Même valeur que sur Vercel — rôle `neondb_owner`, endpoint
+pooler. Sans elle, la commande pre-deploy s'arrête net sur
+`{"level":"error","service":"migrate","msg":"DATABASE_URL absent"}` : c'est le
+comportement voulu, pas une panne.
+
+| Variable | Service | Valeur posée |
+|---|---|---|
+| `DATABASE_URL` | les deux | **à poser** |
+| `MIGRATE_BASELINE` | `ingest` | `migration-v51.sql` |
+| `REQUIRE_API_KEY` | `ingest` | `false` |
+| `RATE_LIMIT_PER_MIN` | `ingest` | `600` |
+| `PGPOOL_MAX` | `ingest` / `scheduler` | `8` / `4` |
+| `NODE_ENV`, `LOG_LEVEL` | les deux | `production`, `info` |
+
+**`MIGRATE_BASELINE=migration-v51.sql`, et pourquoi.** La base Neon est déjà au
+niveau v51 mais n'a pas de registre : sans étalonnage, le premier passage
+rejouerait 49 fichiers sur une base qui les a déjà. L'étalonnage les marque
+comme appliqués SANS les exécuter, puis applique v52 et v53. La variable peut
+rester posée : elle est sans effet une fois le registre écrit, et elle est
+ignorée si la base est vierge (garde `to_regclass('public.rum_session')`) —
+sans quoi une base recréée hériterait d'un registre qui ment.
+
+### Deux réglages à faire à la main
+
+1. **Région** : la définir sur `europe-west4` (Amsterdam) pour les deux
+   services. L'API ne l'expose pas ; c'est Service → Settings → Regions.
+   La base est à Francfort : laisser les services aux États-Unis remettrait un
+   aller-retour transatlantique par requête, et sortirait le traitement de l'UE.
+2. **Branche** : les services suivent `claude/graft-bmad-setup-54gpg7` pour que
+   le premier déploiement soit vérifiable avant fusion. **À basculer sur
+   `master` une fois la PR fusionnée.**
+
+> Railway Corp est une société de droit américain, comme Vercel et Neon. Ce
+> déplacement rapproche le calcul de la donnée et lève les limites de
+> planification ; il ne règle **pas** la question de la souveraineté, qui reste
+> listée comme bloquante sur la page de présentation.
+
+### Bascule de l'ingestion (à faire quand le backend est vérifié)
+
+Une fois `ingest` en bonne santé et un domaine généré, pointer le SDK dessus :
+`NEXT_PUBLIC_RUM_ENDPOINT` n'est plus lu pour le dogfooding (la console poste
+toujours chez elle), donc la bascule se fait dans les extraits d'intégration
+remis aux clients et dans `apps/console/lib/ingest-endpoint.ts`.
+
+---
 
 ## 2. Vercel — console RUM Live
 
