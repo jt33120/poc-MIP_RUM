@@ -42,6 +42,19 @@ create table if not exists schema_migration (
   applied_by  text
 )`;
 
+/** Clé du verrou consultatif tenu pendant toute la migration. Arbitraire, stable. */
+const VERROU_MIGRATION = 811_100;
+
+/**
+ * La base est-elle vierge ? `rum_session` est la table la plus ancienne du
+ * schéma (schema.sql, avant toute migration) : si elle manque, rien n'a jamais
+ * été appliqué ici.
+ */
+async function baseVierge(client) {
+  const { rows } = await client.query("select to_regclass('public.rum_session') as t");
+  return rows[0].t == null;
+}
+
 /** sha256 du contenu, pour repérer un fichier modifié APRÈS avoir été appliqué. */
 export function empreinte(sql) {
   return createHash("sha256").update(sql).digest("hex");
@@ -63,9 +76,14 @@ export function empreinte(sql) {
  */
 export async function fichiersMigration(dossier = DOSSIER_SQL) {
   const noms = await readdir(dossier);
-  return noms
-    .filter((n) => /^migration-v\d+\.sql$/.test(n))
-    .sort();
+  const migrations = noms.filter((n) => /^migration-v\d+\.sql$/.test(n)).sort();
+  // `schema.sql` EN PREMIER, toujours : c'est le socle que les migrations
+  // supposent déjà là (migration-v02 ajoute des colonnes à `rum_session`). En
+  // l'incluant, le runner sait construire une base à partir de RIEN — ce qui
+  // est la condition pour que ce backend soit réellement déployable ailleurs.
+  // Sur une base existante, l'étalonnage le marque comme appliqué avec le
+  // reste : il n'est jamais rejoué.
+  return noms.includes("schema.sql") ? ["schema.sql", ...migrations] : migrations;
 }
 
 /**
@@ -114,10 +132,27 @@ export async function migrer(pool, { dossier = DOSSIER_SQL, baseline = null, par
   const fichiers = await charger(dossier);
   const client = await pool.connect();
   try {
+    // Verrou : deux migrateurs lancés en même temps (deux services qui
+    // redéploient ensemble) doivent se mettre en file, pas se marcher dessus.
+    // Verrou BLOQUANT et non `try` : le second doit attendre puis constater
+    // qu'il n'y a plus rien à faire, pas repartir en croyant avoir migré.
+    await client.query("select pg_advisory_lock($1)", [VERROU_MIGRATION]);
+
     await client.query(REGISTRE);
     const { rows } = await client.query("select filename, checksum from schema_migration");
 
     // Étalonnage : on écrit le registre sans exécuter une seule ligne de SQL.
+    if (baseline && (await baseVierge(client))) {
+      // GARDE-FOU. Un étalonnage sur une base VIERGE marquerait 48 fichiers
+      // comme appliqués sans les exécuter : le schéma serait absent et le
+      // registre affirmerait le contraire. Ça arrive pour de vrai — une base
+      // recréée, un environnement de test — alors que la variable
+      // MIGRATE_BASELINE, elle, reste posée sur le service.
+      log.warn("étalonnage ignoré : la base est vierge, les migrations vont s'appliquer normalement", {
+        baseline,
+      });
+      baseline = null;
+    }
     if (baseline) {
       const jusque = jusquaInclus(fichiers, baseline);
       if (!jusque) throw new Error(`baseline introuvable dans ${dossier} : ${baseline}`);
@@ -172,6 +207,7 @@ export async function migrer(pool, { dossier = DOSSIER_SQL, baseline = null, par
     });
     return { appliquees, modifies, total: fichiers.length };
   } finally {
+    await client.query("select pg_advisory_unlock($1)", [VERROU_MIGRATION]).catch(() => {});
     client.release();
   }
 }
@@ -185,7 +221,7 @@ export async function migrer(pool, { dossier = DOSSIER_SQL, baseline = null, par
 if (import.meta.url === pathToFileURL(path.resolve(process.argv[1] ?? "")).href) {
   const args = process.argv.slice(2);
   const iBase = args.indexOf("--baseline");
-  const baseline = iBase !== -1 ? args[iBase + 1] : null;
+  const baseline = iBase !== -1 ? args[iBase + 1] : (process.env.MIGRATE_BASELINE || null);
   const url = process.env.DATABASE_URL;
   if (!url) {
     log.error("DATABASE_URL absent");
