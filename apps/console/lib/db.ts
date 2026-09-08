@@ -1,4 +1,5 @@
 import { Pool, type PoolClient } from "pg";
+import { optionsSsl } from "ingest/lib/serveur.mjs";
 import { recordDbSpan } from "./server-trace-core";
 
 // pool unique survivant au hot-reload de next dev
@@ -8,11 +9,11 @@ const connectionString =
   process.env.DATABASE_URL ??
   "postgres://postgres:postgres@localhost:5433/mip_rum";
 
-// local Postgres (docker-compose) n'a pas de TLS ; toute base distante (Neon,
-// et avant elle Supabase) en exige un vérifié contre le magasin CA système —
-// le certificat Neon chaîne à une autorité publique, plus besoin d'épingler
-// de CA propriétaire comme avec le pooler Supabase.
-const isLocal = /:\/\/[^/]*(localhost|127\.0\.0\.1)([:/]|$)/.test(connectionString);
+// La décision TLS vient du noyau (`ingest/lib/serveur.mjs`), partagée avec les
+// services backend. Elle vivait ici en double, et les deux copies avaient déjà
+// divergé sur un cas réel : un hôte de docker-compose (`db`, sans point) n'est
+// pas `localhost` mais n'a pas de TLS non plus — la copie du noyau exigeait
+// alors un chiffrement que le serveur ne sait pas faire.
 
 /**
  * Cible de connexion, SANS le mot de passe — pour les logs.
@@ -48,7 +49,7 @@ export const pool =
     // multi-onglets / auto-refresh). Sûr de monter ce plafond derrière un pooler
     // en mode transaction (Neon comme Supabase).
     max: Number(process.env.PGPOOL_MAX ?? 10),
-    ssl: isLocal ? undefined : { rejectUnauthorized: true },
+    ssl: optionsSsl(connectionString),
   });
 
 if (!globalForPg.pgPool) {
@@ -60,7 +61,7 @@ if (!globalForPg.pgPool) {
       service: "db",
       msg: "pool configuré",
       ...describeTarget(connectionString),
-      tls: isLocal ? "désactivé (local)" : "vérifié (magasin CA système)",
+      tls: optionsSsl(connectionString) ? "vérifié (magasin CA système)" : "non imposé (hôte privé ou sslmode explicite)",
     }),
   );
   // Une erreur de connexion survenant hors requête (client inactif coupé par le

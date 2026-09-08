@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Gauge, type GaugeTone } from "@/components/charts/Gauge";
@@ -7,13 +8,28 @@ import { listSlo, sloStatus } from "@/lib/queries-alerting";
 import { createSloAction } from "../alerts/actions";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
 import { SloRow } from "@/components/slo/SloStatusRow";
+import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
+import { TousEteints } from "@/components/TousEteints";
 
 export const dynamic = "force-dynamic";
 
 export default async function Slo({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const sp = (await searchParams) ?? {};
   const f = parseFilters(sp);
-  const [statuses, slos, apps] = await Promise.all([sloStatus(f.app), listSlo(f.app), registeredApps()]);
+  // Composition de l'écran, lue AVANT les requêtes. Attention aux dépendances
+  // croisées : la liste affiche le statut de chaque SLO, donc `sloStatus` est
+  // encore nécessaire quand le bloc « budget » est éteint mais que la liste est
+  // affichée ; et `listSlo` sert aussi au formulaire, qui s'ouvre déplié tant
+  // qu'aucun SLO n'existe. Seul `registeredApps` ne sert qu'au formulaire.
+  const cat = catalogueDe("/slo")!;
+  const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
+  const vide = <T,>(v: T) => Promise.resolve(v);
+
+  const [statuses, slos, apps] = await Promise.all([
+    blocs.budget || blocs.liste ? sloStatus(f.app) : vide([]),
+    blocs.liste || blocs.creation ? listSlo(f.app) : vide([]),
+    blocs.creation ? registeredApps() : vide([]),
+  ]);
   // slo_status() ne renvoie que les SLO actifs → on indexe pour superposer le statut
   // sur la liste complète (actifs + désactivés), afin de pouvoir réactiver.
   const statusById = new Map(statuses.map((s) => [s.slo_id, s]));
@@ -30,7 +46,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
         }
       />
 
-      {statuses.length > 0 && (() => {
+      {blocs.budget && statuses.length > 0 && (() => {
         const sloTone = (b: number | null, fast: boolean): GaugeTone => {
           if (fast || (b != null && b >= 100)) return "poor";
           if (b != null && b >= 75) return "warn";
@@ -79,6 +95,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
       })()}
 
       {/* ----- Création ----- */}
+      {blocs.creation && (
       <details className="card mb-6" open={!slos.length}>
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-soft transition hover:text-ink">
           + Nouveau SLO
@@ -143,7 +160,9 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
           </button>
         </form>
       </details>
+      )}
 
+      {blocs.liste && (
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-panel2">
@@ -164,13 +183,18 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
             {!slos.length && (
               <tr>
                 <td colSpan={7} className="px-4 py-6 text-center text-ink-faint">
-                  Aucun SLO — crée le premier ci-dessus.
+                  {blocs.creation
+                    ? "Aucun SLO — crée le premier ci-dessus."
+                    : "Aucun SLO. Réactive le bloc « Formulaire de création » pour en déclarer un."}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+      )}
+
+      {!blocs.budget && !blocs.creation && !blocs.liste && <TousEteints />}
     </div>
   );
 }

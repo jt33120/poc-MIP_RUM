@@ -14,7 +14,7 @@ import { TourGuide } from "@/components/TourGuide";
 import { getUser } from "@/lib/auth";
 import { dogfoodingEndpoint } from "@/lib/ingest-endpoint";
 import { DashboardSettings } from "@/components/DashboardSettings";
-import { COOKIE_BLOCS, lireChoix } from "@/lib/dashboard-blocs";
+import { CATALOGUES, lireChoix } from "@/lib/dashboard-blocs";
 import { reglerBlocsAction } from "./actions-dashboard";
 import { listApps } from "@/lib/queries";
 import { describeProject, selectedProjectId } from "@/lib/project";
@@ -115,6 +115,24 @@ function Capteur({ init }: { init: string }) {
   );
 }
 
+/** Une roue par catalogue, indexée par href de catégorie. Les cookies sont lus
+ *  ICI parce que c'est le layout qui rend la sidebar ; chaque page relit le sien
+ *  de son côté pour décider quelles requêtes lancer. */
+async function rouesDeReglage(): Promise<Record<string, React.ReactNode>> {
+  const jar = await cookies();
+  return Object.fromEntries(
+    CATALOGUES.map((cat) => [
+      cat.href,
+      <DashboardSettings
+        key={cat.href}
+        catalogue={cat}
+        choix={lireChoix(cat, jar.get(cat.cookie)?.value)}
+        action={reglerBlocsAction}
+      />,
+    ]),
+  );
+}
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getUser();
   const RUM_INIT = rumInitScript((await headers()).get("host"));
@@ -174,7 +192,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <AutoRefresh />
         <div className="flex min-h-screen">
           {/* Sidebar claire : neutre, épurée — n'entre plus en concurrence avec le contenu */}
-          <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-panel p-4">
+          <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-panel p-4">
             <div className="mb-6 px-1 pt-1">
               <BrandMark />
             </div>
@@ -186,14 +204,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   menu qu'elle compose. Le choix est lu ici parce que le layout
                   la rend — la Vue d'ensemble le relit de son côté pour décider
                   quelles requêtes lancer. */}
-              <Nav
-                reglages={
-                  <DashboardSettings
-                    choix={lireChoix((await cookies()).get(COOKIE_BLOCS)?.value)}
-                    action={reglerBlocsAction}
-                  />
-                }
-              />
+              <Nav reglages={await rouesDeReglage()} />
             </Suspense>
             {user.role === "admin" && (
               <div className="mt-5 border-t border-line pt-4">
@@ -256,7 +267,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 Architecture &amp; fonctionnement
               </Link>
               <footer className="px-1 pt-3 text-[10px] tracking-wide text-ink-faint">
-                v0.3 — OTel-native · souverain UE
+                v0.3 — OTel-native · données en UE
               </footer>
             </div>
           </aside>

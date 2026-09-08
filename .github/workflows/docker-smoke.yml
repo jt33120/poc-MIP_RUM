@@ -1,5 +1,5 @@
 # E2-S1 (revue BMAD) — PROUVER le conteneur d'ingestion self-host.
-# Build l'image `Dockerfile.ingest` + `docker compose up` (Postgres + ingest, avec
+# Build l'image `Dockerfile.backend` + `docker compose up` (Postgres + ingest, avec
 # schema.sql + toutes les migrations appliquées par initdb.sh), puis smoke-test :
 #   /health -> 200, POST /v1/traces {"resourceSpans":[]} -> 200 partialSuccess.
 # Rend le « backend dockerisé/intégrable » VÉRIFIÉ à chaque PR (les runners GitHub

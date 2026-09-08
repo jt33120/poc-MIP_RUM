@@ -71,6 +71,19 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
     s: "partiel",
   },
   {
+    c: "Hébergement",
+    cible: "Donnée ET traitement en UE, chez un hébergeur de droit européen",
+    // Chaque moitié est vérifiée séparément. La base : docs/NEON_MIGRATION.md et
+    // lib/legal.ts. La console : l'en-tête `x-vercel-id` d'une réponse NON mise en
+    // cache, qui valait `iad1:iad1::iad1::…` (Washington) et vaut désormais
+    // `iad1:iad1::fra1::…` — le troisième segment est la région d'exécution ; la
+    // clé `regions` de apps/console/vercel.json l'a fixée à Francfort.
+    // Le backend : projet Railway `mip-rum-backend`, services `ingest` et
+    // `scheduler`, cf. DEPLOY.md § 1 bis.
+    reel: "Base Neon et console Vercel à Francfort ; backend sorti sur Railway — trois fournisseurs de droit américain",
+    s: "partiel",
+  },
+  {
     c: "Latence d'alerte",
     cible: "5 minutes",
     reel: "60 minutes — cadence réduite pour tenir dans le quota d'exécution",
@@ -108,6 +121,11 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
     t: "Pas de couche organisation",
     g: "bloquant",
     d: "Le cloisonnement s'arrête à l'application. Aucun niveau au-dessus pour regrouper les applications d'un même client, ni facturer à ce niveau.",
+  },
+  {
+    t: "Backend sur Railway, à migrer chez un hébergeur souverain",
+    g: "bloquant",
+    d: "L'ingestion et les travaux planifiés ont quitté la console : ce sont des services autonomes, sans framework, déployés sur Railway. Ce déplacement rapproche le calcul de la donnée et lève les limites de planification, mais il ne change RIEN à la souveraineté — Neon, Vercel et Railway sont trois sociétés de droit américain, et la résidence européenne des données n'est pas la souveraineté. Cible : base, console et backend chez un hébergeur de droit européen, qualifié SecNumCloud pour un acheteur public. Le backend y est prêt : il ne dépend que de Node et de PostgreSQL, et son image se construit depuis ce dépôt.",
   },
   {
     t: "SDK non distribuables",
@@ -296,8 +314,9 @@ export async function Etat() {
           — collecte, ingestion, restitution — tient les critères de fond : poids, seuils,
           percentile, anonymat. Ce qui manque relève de l&apos;exploitation, pas de la conception :
           brancher le déclencheur des tâches planifiées, fermer l&apos;ingestion par défaut, activer
-          le filet d&apos;isolation en base, et changer de moteur de stockage avant la montée en
-          volume.
+          le filet d&apos;isolation en base, rapatrier l&apos;hébergement chez un fournisseur de
+          droit européen — le backend, désormais autonome, est prêt à être déplacé — et
+          changer de moteur de stockage avant la montée en volume.
         </p>
       </div>
     </section>

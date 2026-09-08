@@ -33,14 +33,22 @@ const FONCTIONNEMENT = [
 const STACK = [
   "SDK navigateur (Web Vitals · rrweb)",
   "OpenTelemetry · OTLP/HTTP",
-  "Ingestion Deno / Node",
+  // « Deno » décrivait les edge functions Supabase, mortes avec leur projet en
+  // août 2026 : plus rien ne tourne sur Deno. Et l'ingestion n'est plus une route
+  // de la console : c'est un service Node autonome (services/ingest), déployé sur
+  // Railway. Les routes Next subsistent le temps de la bascule et appellent le
+  // MÊME code — dire « routes Next.js » décrirait le montage, pas le produit.
+  "Backend Node autonome — Railway",
   // Ce qui TOURNE, pas la cible : ClickHouse a son schéma et son bench, mais
   // n'est branché nulle part, et la purge à 30 jours n'est jamais déclenchée
   // faute de planificateur authentifié. Les deux sont dits dans « L'écart, sans
   // le maquiller » ; les annoncer ici comme acquis contredirait ce tableau.
   "PostgreSQL",
   "Next.js 15 · React 19",
-  "Hébergé en UE — Francfort",
+  // « Hébergé en UE » tout court était trop large : c'est la BASE qui est à
+  // Francfort. Les fonctions serveur, elles, sont servies depuis iad1
+  // (Washington) — cf. la ligne « Hébergement » de la section « L'écart ».
+  "Base de données en UE — Francfort",
 ];
 
 
@@ -190,7 +198,7 @@ export function Landing() {
       {/* Pied de page ------------------------------------------------------- */}
       <footer className="border-t border-line bg-panel/60 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-4 gap-y-2 px-6 py-5 text-xs text-ink-faint">
-          <span>MIP RUM — POC · OpenTelemetry-natif · souverain UE</span>
+          <span>MIP RUM — POC · OpenTelemetry-natif · données en UE, souveraineté visée</span>
           <Link href="/legal/mentions" className="hover:text-ink">Mentions légales</Link>
           <Link href="/legal/cgu" className="hover:text-ink">CGU</Link>
           <Link href="/legal/cgv" className="hover:text-ink">CGV</Link>

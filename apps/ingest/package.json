@@ -2,15 +2,19 @@
   "name": "ingest",
   "version": "0.1.0",
   "private": true,
-  "description": "Receiver OTLP /v1/traces — routes Next.js (prod) + dev server Node (local) + schéma Postgres",
+  "description": "Noyau backend MIP RUM — réception OTLP, écritures Postgres, travaux planifiés, migrations. Sans framework : importable par la console Next.js comme par les services Railway.",
   "type": "module",
   "exports": {
-    "./lib/pg-ingest.mjs": "./lib/pg-ingest.mjs",
+    "./lib/*": "./lib/*",
+    "./jobs/*": "./jobs/*",
+    "./migrate.mjs": "./migrate.mjs",
     "./dispatch-alerts.mjs": "./dispatch-alerts.mjs",
+    "./purge.mjs": "./purge.mjs",
     "./shared/*": "./supabase/functions/_shared/*"
   },
   "scripts": {
-    "dev": "node dev-server.mjs"
+    "dev": "node dev-server.mjs",
+    "migrate": "node migrate.mjs"
   },
   "dependencies": {
     "pg": "8.21.0"

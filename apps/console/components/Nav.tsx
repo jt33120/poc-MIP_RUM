@@ -44,7 +44,7 @@ function Pastille({ c, isActive }: { c: NavCategory; isActive: boolean }) {
  * remonterait au lien — on ouvrirait la fenêtre ET on naviguerait. D'où la
  * rangée en flex, avec le lien qui prend la place et le réglage à sa droite.
  */
-export function Nav({ reglages }: { reglages?: React.ReactNode }) {
+export function Nav({ reglages }: { reglages?: Record<string, React.ReactNode> }) {
   const pathname = usePathname();
   const qs = useSearchParams().toString(); // filtres (dont ?app) persistés
   const active = activeCategory(pathname);
@@ -88,13 +88,14 @@ export function Nav({ reglages }: { reglages?: React.ReactNode }) {
           </Link>
         );
 
-        // Le réglage n'est proposé que sur la catégorie qu'il configure.
-        const avecReglage = reglages && c.href === "/";
+        // Le réglage n'est proposé que sur les catégories qui en ont un — pas
+        // sur celles qui n'ont rien à composer, ni sur les catégories fermées.
+        const reglage = c.verrouille ? undefined : reglages?.[c.href];
 
         return (
-          <div key={c.href} className={avecReglage ? "flex items-center gap-0.5" : undefined}>
+          <div key={c.href} className={reglage ? "flex items-center gap-0.5" : undefined}>
             {lien}
-            {avecReglage && reglages}
+            {reglage}
           </div>
         );
       })}

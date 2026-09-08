@@ -1,0 +1,14 @@
+{
+  "name": "@mip/service-scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Déclencheur des travaux planifiés (alertes, SLO, uptime, rollups, purge) — déployé sur Railway",
+  "type": "module",
+  "scripts": {
+    "start": "node worker.mjs"
+  },
+  "dependencies": {
+    "ingest": "workspace:*",
+    "pg": "8.21.0"
+  }
+}

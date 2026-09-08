@@ -149,3 +149,82 @@ declare module "ingest/dispatch-alerts.mjs" {
     pool: Pool,
   ): Promise<{ sent: number; failed: number; dead: number }>;
 }
+
+// --- Travaux planifiés (apps/ingest/jobs) ------------------------------------
+// Ils vivaient dans les route handlers `app/api/cron/*` ; ils sont descendus
+// dans le noyau pour que le service `scheduler` (Railway) et ces routes
+// exécutent LE MÊME code. Une divergence entre les deux ne serait pas visible :
+// les deux « marchent », mais ne font pas la même chose.
+
+declare module "ingest/jobs/planifie.mjs" {
+  import type { Pool } from "pg";
+
+  export interface BilanEtapes {
+    ok: boolean;
+    echecs: number;
+    resultats: Record<string, unknown>;
+  }
+
+  export function executerEtapes(
+    etapes: Array<{ name: string; run: () => Promise<unknown> }>,
+    log?: unknown,
+  ): Promise<BilanEtapes>;
+
+  export function appelerFn(pool: Pool, fn: string): Promise<unknown>;
+
+  export function sonderUptime(pool: Pool, log?: unknown): Promise<{ ran: number; down: number }>;
+
+  export function travaux(
+    pool: Pool,
+    opts?: { log?: unknown; dispatch?: ((pool: Pool) => Promise<unknown>) | null },
+  ): {
+    tick(): Promise<BilanEtapes>;
+    horaire(): Promise<BilanEtapes>;
+    quotidien(): Promise<BilanEtapes>;
+  };
+}
+
+declare module "ingest/jobs/cadence.mjs" {
+  export const CADENCES: Record<"tick" | "horaire" | "quotidien", string>;
+  export function prochainDelai(
+    nom: "tick" | "horaire" | "quotidien",
+    maintenant: number | Date,
+  ): number;
+}
+
+declare module "ingest/migrate.mjs" {
+  import type { Pool } from "pg";
+
+  export const DOSSIER_SQL: string;
+  export function empreinte(sql: string): string;
+  export function fichiersMigration(dossier?: string): Promise<string[]>;
+  export function aFaire(
+    fichiers: Array<{ nom: string; checksum: string }>,
+    dejaApplique: Array<{ filename: string; checksum: string }>,
+  ): { enAttente: Array<{ nom: string; checksum: string }>; modifies: string[] };
+  export function jusquaInclus<T extends { nom: string }>(fichiers: T[], jusqua: string): T[] | null;
+  export function migrer(
+    pool: Pool,
+    opts?: { dossier?: string; baseline?: string | null; par?: string },
+  ): Promise<{ appliquees: string[]; modifies: string[]; total: number }>;
+}
+
+declare module "ingest/lib/serveur.mjs" {
+  /** undefined = pas de TLS imposé ; sinon TLS vérifié contre le magasin CA système. */
+  export function optionsSsl(connectionString: string): undefined | { rejectUnauthorized: true };
+  export function cible(connectionString?: string): Record<string, string>;
+}
+
+declare module "ingest/jobs/bail.mjs" {
+  /** Bail d'exclusion : une ligne à date d'expiration, pooler-safe. */
+  export const SQL_TABLE: string;
+  export const DUREES: Record<"tick" | "horaire" | "quotidien", number>;
+  export function prendreBail(
+    client: unknown,
+    opts: { job: string; porteur: string; secondes: number },
+  ): Promise<boolean>;
+  export function rendreBail(
+    client: unknown,
+    opts: { job: string; porteur: string },
+  ): Promise<void>;
+}

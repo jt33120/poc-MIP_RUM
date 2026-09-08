@@ -134,6 +134,24 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  services/ingest:
+    dependencies:
+      ingest:
+        specifier: workspace:*
+        version: link:../../apps/ingest
+      pg:
+        specifier: 8.21.0
+        version: 8.21.0
+
+  services/scheduler:
+    dependencies:
+      ingest:
+        specifier: workspace:*
+        version: link:../../apps/ingest
+      pg:
+        specifier: 8.21.0
+        version: 8.21.0
+
 packages:
 
   '@alloc/quick-lru@5.2.0':

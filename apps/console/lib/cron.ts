@@ -1,23 +1,24 @@
-// Socle des routes planifiées (/api/cron/*).
+// Socle HTTP des routes planifiées (/api/cron/*).
 //
-// Ces routes remplacent les jobs `pg_cron` : l'extension existe bien sur Neon,
-// mais ne s'installe QUE dans la base `postgres` du projet, jamais dans
-// `neondb` — donc les blocs `cron.schedule(...)` des migrations, tous gardés
-// par `if exists (pg_extension where extname='pg_cron')`, sont silencieusement
-// sautés. Sans ce relais, purge, rollups, metering, SLO et alertes ne tournent
-// tout simplement pas.
+// CE QUI RESTE ICI : l'authentification et la traduction en Response. Le TRAVAIL
+// lui-même est descendu dans le noyau (`ingest/jobs/planifie.mjs`), parce qu'il
+// est désormais exécuté par deux déclencheurs : ces routes, et le service
+// `scheduler` déployé sur Railway. Deux copies auraient divergé sans que rien
+// ne le signale — les deux auraient « marché ».
 //
-// Les fonctions SQL elles-mêmes ne changent pas : c'est uniquement le
-// DÉCLENCHEUR qui passe de pg_cron à Vercel Cron.
+// POURQUOI CES ROUTES SUBSISTENT alors que le scheduler les remplace : elles
+// sont le filet. Tant que le scheduler n'a pas fait ses preuves, un
+// déclenchement manuel (workflow_dispatch) ou Vercel Cron reste possible, et
+// le verrou consultatif côté scheduler empêche un double passage simultané.
+import { travaux } from "ingest/jobs/planifie.mjs";
 import { createLogger } from "ingest/shared/log.mjs";
-import { q } from "./db";
+import { pool } from "./db";
 
 export const log = createLogger("cron");
 
 /**
- * Un scheduler n'a pas de cookie de session : l'auth se fait ici, par
- * `Authorization: Bearer $CRON_SECRET`. Vercel Cron envoie cet en-tête si la
- * variable est définie.
+ * Un planificateur n'a pas de cookie de session : l'auth se fait par
+ * `Authorization: Bearer $CRON_SECRET`.
  *
  * Fail-CLOSED : sans CRON_SECRET configuré, la route refuse (503) au lieu de
  * s'ouvrir à tout l'internet — ces endpoints purgent des données et postent des
@@ -36,32 +37,23 @@ export function assertCronAuth(req: Request): Response | null {
 }
 
 /**
- * Exécute une série de tâches SANS qu'un échec n'annule les suivantes : une
- * purge qui casse ne doit pas emporter le metering du même tick. Chaque
- * résultat est rapporté individuellement — le job répond 200 si tout passe,
- * 207 s'il y a des échecs partiels (visible dans les logs Vercel).
+ * Les travaux, câblés sur le pool de la console.
+ *
+ * `dispatch` est chargé À LA DEMANDE : `dispatch-alerts.mjs` sort vers
+ * l'extérieur (webhooks) et n'a rien à faire dans le graphe de modules d'une
+ * route qui ne l'appelle pas.
  */
-export async function runSteps(
-  steps: Array<{ name: string; run: () => Promise<unknown> }>,
-): Promise<Response> {
-  const results: Record<string, unknown> = {};
-  let failed = 0;
-  for (const step of steps) {
-    const started = Date.now();
-    try {
-      results[step.name] = { ok: true, result: await step.run(), ms: Date.now() - started };
-    } catch (err) {
-      failed++;
-      results[step.name] = { ok: false, error: String(err), ms: Date.now() - started };
-      log.error("cron step failed", { step: step.name, err: String(err) });
-    }
-  }
-  log.info("cron tick", { steps: steps.length, failed });
-  return Response.json({ ok: failed === 0, results }, { status: failed ? 207 : 200 });
+async function jobs() {
+  const { dispatchOnce } = await import("ingest/dispatch-alerts.mjs");
+  return travaux(pool, { log, dispatch: dispatchOnce });
 }
 
-/** Appelle une fonction SQL sans argument et renvoie sa valeur de retour. */
-export async function callFn(fn: string): Promise<unknown> {
-  const rows = await q<Record<string, unknown>>(`select ${fn} as result`);
-  return rows[0]?.result ?? null;
+/** Exécute une cadence et traduit son bilan en réponse HTTP. */
+export async function lancer(cadence: "tick" | "horaire" | "quotidien"): Promise<Response> {
+  const t = await jobs();
+  const bilan = await t[cadence]();
+  log.info("cron tick", { cadence, echecs: bilan.echecs });
+  // 207 = échec partiel : une étape a échoué, les autres ont tourné. Le
+  // planificateur doit le voir sans que le détail soit masqué.
+  return Response.json({ ok: bilan.ok, results: bilan.resultats }, { status: bilan.echecs ? 207 : 200 });
 }

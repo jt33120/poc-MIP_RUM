@@ -6,7 +6,8 @@ import { GlossaryTip } from "@/components/GlossaryTip";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { cookies } from "next/headers";
-import { COOKIE_BLOCS, lireChoix } from "@/lib/dashboard-blocs";
+import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
+import { TousEteints } from "@/components/TousEteints";
 import { BriefingCard } from "@/components/BriefingCard";
 import { VitalCard } from "@/components/VitalCard";
 import { HealthBanner } from "@/components/health/HealthBanner";
@@ -45,7 +46,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // données » en dépend, et il doit s'afficher même sur un tableau de bord
   // réduit au minimum — c'est justement là qu'on a besoin de savoir pourquoi
   // l'écran est vide.
-  const blocs = lireChoix((await cookies()).get(COOKIE_BLOCS)?.value);
+  const cat = catalogueDe("/")!;
+  const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
   const vide = <T,>(v: T) => Promise.resolve(v);
 
   const [vitals, vitalsPrev, stats, statsPrev, series, health, grid, traffic, dailyLcp] =
@@ -235,6 +237,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       </section>
 
       {blocs.anomalies && health && <AnomalyTable health={health} />}
+
+      {!Object.values(blocs).some(Boolean) && <TousEteints />}
     </div>
   );
 }

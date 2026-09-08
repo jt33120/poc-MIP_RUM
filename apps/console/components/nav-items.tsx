@@ -63,7 +63,13 @@ export const CATEGORIES: NavCategory[] = [
       { href: "/dashboards", label: "Tableaux de bord" },
     ],
   },
-  { href: "/logs", label: "Logs", icon: "logs", domain: "neutral" },
+  // FERMÉ : ce n'est pas du RUM. rum_log porte le signal LOGS d'OpenTelemetry,
+  // alimenté par le SERVEUR — la console qui forwarde ses propres logs
+  // (lib/log-forward.ts) et l'agent Node (packages/agent-node) qui capture
+  // console.*. Le SDK navigateur n'émet aucun log : la colonne `source` prévoit
+  // 'sdk' et 'extension', rien ne produit ces valeurs. C'est de l'observabilité
+  // back-end corrélée au RUM par trace_id, pas une mesure de l'expérience vécue.
+  { href: "/logs", label: "Logs", icon: "logs", domain: "neutral", verrouille: true },
   // Supervision SVI (serveur vocal). Produit distinct du RUM web : un appel n'est
   // pas une visite, cf. migration-v51. La vue d'ensemble porte le containment NET.
   // Fermée comme la supervision IA : capacité annoncée, accès non ouvert. Les
