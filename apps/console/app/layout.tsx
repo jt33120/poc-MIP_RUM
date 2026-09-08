@@ -12,7 +12,7 @@ import { SubNav } from "@/components/SubNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TourGuide } from "@/components/TourGuide";
 import { getUser } from "@/lib/auth";
-import { ingestEndpoint } from "@/lib/ingest-endpoint";
+import { dogfoodingEndpoint } from "@/lib/ingest-endpoint";
 import { listApps } from "@/lib/queries";
 import { describeProject, selectedProjectId } from "@/lib/project";
 import { logoutAction } from "./logout/actions";
@@ -41,7 +41,9 @@ const RUM_REPLAY_RATE = Number.isFinite(RUM_REPLAY) ? RUM_REPLAY : 0;
 // hôte codé en dur survive à une migration d'infrastructure — le dogfooding a émis
 // vers un projet Supabase décommissionné pendant douze jours (invariant AD-4).
 function rumInitScript(host: string | null): string {
-  const endpoint = ingestEndpoint("traces", host);
+  // dogfoodingEndpoint, PAS ingestEndpoint : la console poste chez elle, et
+  // NEXT_PUBLIC_RUM_ENDPOINT ne doit jamais pouvoir l'envoyer ailleurs.
+  const endpoint = dogfoodingEndpoint(host);
   // Version de l'app : le SHA du commit déployé, fourni par Vercel. Sans elle, une
   // régression de performance ne peut pas être rattachée à une mise en production —
   // et les traces d'erreur restent minifiées faute de savoir quelle source map lire.

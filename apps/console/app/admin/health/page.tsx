@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAdmin } from "@/lib/auth";
-import { ingestEndpoint } from "@/lib/ingest-endpoint";
+import { dogfoodingEndpoint, ingestEndpoint } from "@/lib/ingest-endpoint";
 import { internalHealth } from "@/lib/queries-health";
 
 export const dynamic = "force-dynamic";
@@ -18,11 +18,12 @@ export default async function Health() {
   // décommissionné (invariant AD-4). Un endpoint qui ne pointe pas l'hôte de la page
   // est signalé ici, au lieu de se lire dans un tableau vide des semaines plus tard.
   const hote = (await headers()).get("host");
-  const endpoint = ingestEndpoint("traces", hote);
+  const endpoint = dogfoodingEndpoint(hote);          // la console -> elle-même
+  const snippet = ingestEndpoint("traces", hote);     // ce qu'on remet aux CLIENTS
   const force = Boolean(process.env.NEXT_PUBLIC_RUM_ENDPOINT);
   const memeHote = (() => {
     try {
-      return new URL(endpoint).host === hote;
+      return new URL(snippet).host === hote;
     } catch {
       return false;
     }
@@ -49,17 +50,23 @@ export default async function Health() {
         data-testid="dogfooding-endpoint"
       >
         <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-          Endpoint du capteur (dogfooding)
+          Capteur de la console (dogfooding)
         </div>
         <code className="mt-1 block break-all font-mono text-[13px] text-ink">{endpoint}</code>
+        <div className="mt-1 text-xs text-ink-soft">
+          Toujours l&apos;hôte de cette page — aucune variable ne peut le détourner.
+        </div>
+
+        <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+          Endpoint remis aux clients (snippet d&apos;intégration)
+        </div>
+        <code className="mt-1 block break-all font-mono text-[13px] text-ink">{snippet}</code>
         <div className={`mt-1 text-xs ${memeHote ? "text-ink-soft" : "text-warn"}`}>
           {memeHote
             ? force
               ? "Forcé par NEXT_PUBLIC_RUM_ENDPOINT, et pointe bien cet hôte."
               : "Résolu depuis l'hôte de la requête — aucune configuration à maintenir."
-            : force
-              ? "NEXT_PUBLIC_RUM_ENDPOINT pointe un AUTRE hôte que celui-ci : la télémétrie de cette console part ailleurs, sans erreur visible. Retirez la variable pour revenir à l'hôte courant."
-              : "L'endpoint ne pointe pas l'hôte de cette page — la télémétrie part ailleurs."}
+            : "NEXT_PUBLIC_RUM_ENDPOINT pointe un AUTRE hôte que celui-ci. Chaque snippet copié depuis la console envoie donc la télémétrie du client là-bas, sans erreur visible ni côté client ni ici. Retirez la variable pour revenir à l'hôte courant."}
         </div>
       </div>
 
