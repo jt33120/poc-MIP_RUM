@@ -459,6 +459,15 @@ function ExtensionConfig({
     null,
     2,
   );
+  // Nommage des postes dans l'inventaire. C'est une policy SÉPARÉE d'ExtensionSettings :
+  // Chrome range la configuration destinée à une extension sous `3rdparty`, et elle
+  // arrive côté extension par chrome.storage.managed (lecture seule). MIP ne
+  // fabrique jamais ce libellé — sans cette policy, l'inventaire reste anonyme.
+  const nommage = JSON.stringify(
+    { "3rdparty": { extensions: { [EXT_ID]: { poste: "${machine_name}" } } } },
+    null,
+    2,
+  );
 
   return (
     <>
@@ -577,6 +586,43 @@ function ExtensionConfig({
           <a href={GH_DOC} target="_blank" rel="noopener noreferrer" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
             Packaging avancé (.crx, update.xml) →
           </a>
+        </p>
+      </section>
+
+      {/* Voie B bis — nommer les postes dans l'inventaire. Facultatif et à la main
+          du client : c'est lui qui décide si son parc est nominatif ou anonyme. */}
+      <section className="card mt-5 p-5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-perf/10 text-xs font-bold text-perf">
+              B+
+            </span>
+            Nommer les postes (facultatif)
+          </h2>
+          <span className="rounded-full bg-panel2 px-2 py-0.5 text-[10px] font-medium text-ink-faint">
+            sinon : inventaire anonyme
+          </span>
+        </div>
+        <p className="mt-2 text-xs text-ink-soft">
+          Par défaut, chaque poste apparaît dans <strong>Postes équipés</strong> sous un identifiant
+          d&apos;installation anonyme. Cette seconde policy y fait afficher un nom lisible. Le libellé
+          vient de <strong>votre</strong> console d&apos;administration : MIP ne le fabrique jamais et
+          n&apos;a aucun autre moyen de nommer un poste.
+        </p>
+        <div className="mt-3">
+          <CopyBlock code={nommage} />
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+          Remplacez <code className="chip-mono">{"${machine_name}"}</code> par la variable de votre
+          outil — <code className="chip-mono">%COMPUTERNAME%</code> (GPO/Intune),{" "}
+          <code className="chip-mono">$COMPUTERNAME</code> (Jamf). Sur Windows, la même valeur se pose
+          en registre sous{" "}
+          <code className="chip-mono">
+            HKLM\Software\Policies\Google\Chrome\3rdparty\extensions\{EXT_ID}\policy
+          </code>
+          . Un nom de <strong>machine</strong> reste un inventaire de parc ; un nom de{" "}
+          <strong>personne</strong> en fait un traitement de données personnelles, à déclarer comme
+          tel.
         </p>
       </section>
 

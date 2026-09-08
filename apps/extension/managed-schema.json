@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MIP RUM — capteur navigateur",
+  "description": "Configuration poussée par la politique d'entreprise (Chrome/Edge). Toutes les clés sont facultatives : sans policy, l'extension fonctionne à l'identique et son inventaire reste anonyme.",
+  "type": "object",
+  "properties": {
+    "poste": {
+      "title": "Libellé du poste",
+      "description": "Nom affiché dans l'inventaire MIP RUM à la place de l'identifiant d'installation — par exemple %COMPUTERNAME% (Intune/GPO) ou $COMPUTERNAME (Jamf). Laisser vide pour un inventaire strictement anonyme. MIP ne fabrique jamais ce libellé : il ne vient que d'ici.",
+      "type": "string"
+    }
+  }
+}

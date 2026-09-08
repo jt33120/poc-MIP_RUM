@@ -13,6 +13,9 @@
   "optional_host_permissions": [
     "*://*/*"
   ],
+  "storage": {
+    "managed_schema": "managed-schema.json"
+  },
   "background": {
     "service_worker": "vendor/background.js",
     "type": "module"
