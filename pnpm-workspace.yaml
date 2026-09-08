@@ -1,3 +1,6 @@
 packages:
   - "packages/*"
   - "apps/*"
+  # Les déployables backend (Railway) : des points d'entrée minces au-dessus
+  # du noyau `ingest`. Séparés des apps pour que la frontière soit lisible.
+  - "services/*"

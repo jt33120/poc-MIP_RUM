@@ -44,7 +44,9 @@ services:
   ingest:
     build:
       context: ../..
-      dockerfile: infra/docker/Dockerfile.ingest
+      # MÊME image que les services Railway : ce que ce compose démarre en
+      # local est, à la commande près, ce qui tourne en production.
+      dockerfile: infra/docker/Dockerfile.backend
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-mip_rum}
       INGEST_PORT: "4318"
