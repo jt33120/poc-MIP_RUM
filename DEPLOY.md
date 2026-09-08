@@ -84,14 +84,18 @@ vercel env add AUTH_SECRET production    # coller: openssl rand -hex 32
 # METRICS_TOKEN = (optionnel) active GET /api/metrics (Prometheus, santé interne).
 # Non défini ⇒ endpoint désactivé (404, fail-closed). Scrape : Authorization: Bearer <token>.
 vercel env add METRICS_TOKEN production  # coller: openssl rand -hex 32
-# DEMO_USER_EMAIL = (optionnel) ouvre le compte de démonstration de la vitrine
-# publique : /demo pose une session SANS mot de passe pour ce compte, et le bouton
-# « Voir le compte démo » apparaît sur /presentation. Non défini ⇒ fermé (aucun
-# bouton, /demo renvoie vers /login). Le compte doit exister, être `viewer` et
-# scopé — `node scripts/seed-demo-user.mjs` le crée et refuse tout compte admin.
-# ⚠ Ce que voient les apps de son scope devient PUBLIC : routes, temps de
-# chargement, messages d'erreur. À ne pointer que sur des apps où c'est acceptable.
-vercel env add DEMO_USER_EMAIL production  # coller: demo@mip-rum.local
+# DEMO_USER_APPS = (optionnel) ouvre le compte de démonstration de la vitrine
+# publique : /demo pose une session SANS mot de passe, en lecture seule, et le
+# bouton « Voir le compte démo » apparaît sur /presentation. La valeur EST le
+# périmètre : la liste des app_id visibles, séparés par des virgules. Non définie
+# ⇒ démo fermée (aucun bouton, /demo renvoie vers /login) ; la retirer la referme.
+# Aucune ligne à créer en base : la session est construite depuis cette variable,
+# toujours en rôle viewer, jamais admin, jamais « toutes les apps ».
+# ⚠ Ce que voient ces apps devient PUBLIC : routes, temps de chargement, messages
+# d'erreur. À ne renseigner qu'avec des apps où c'est acceptable.
+vercel env add DEMO_USER_APPS production   # coller: mip-rum-console,insight-performance
+# DEMO_USER_EMAIL = (optionnel) étiquette de la session dans audit_log.
+# Défaut: demo@mip-rum.local
 vercel --prod
 # Noter l'URL: https://mip-rum-console.vercel.app  (sert aussi le SDK: /mip-rum.js)
 ```

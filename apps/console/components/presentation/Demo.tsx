@@ -6,11 +6,11 @@
 // scripts/record-console-tour.mjs) — pas un montage. Sans son, donc sans
 // piste audio dans le fichier.
 //
-// Le bouton « Voir le compte démo » n'apparaît QUE si DEMO_USER_EMAIL est
-// configuré : sans compte démo derrière, un bouton qui renvoie vers /login est
-// une promesse non tenue. Cf. app/demo/route.ts pour les bornes de sécurité.
+// Le bouton « Voir le compte démo » n'apparaît QUE si DEMO_USER_APPS est
+// configurée : sans démo derrière, un bouton qui renvoie vers /login est une
+// promesse non tenue. Cf. lib/demo.ts et app/demo/route.ts pour les bornes.
 import Link from "next/link";
-import { demoEmail } from "@/lib/demo";
+import { demoConfig } from "@/lib/demo";
 
 /** Ce que le visiteur voit défiler, dans l'ordre de la vidéo. */
 const ETAPES = [
@@ -23,7 +23,7 @@ const ETAPES = [
 ];
 
 export function Demo() {
-  const demo = demoEmail();
+  const demo = demoConfig();
 
   return (
     <section id="demo" className="scroll-mt-16">

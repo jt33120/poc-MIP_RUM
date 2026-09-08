@@ -1,8 +1,20 @@
 "use server";
 // Server Actions de la page /alerts — validation côté serveur puis SQL via lib/queries-v2.
+//
+// TOUTES réservées aux administrateurs. Ce fichier n'a longtemps porté AUCUNE
+// garde : n'importe quel utilisateur connecté, y compris un viewer scopé sur une
+// seule application, pouvait créer une règle ou un canal de notification portant
+// une URL de webhook arbitraire, sur n'importe quel app_id. Deux défauts en un —
+// une élévation de privilège (dans ce modèle, « viewer » veut dire lecture seule)
+// et une écriture inter-tenant (aucun contrôle de l'app_id du formulaire) — le
+// tout adossé à une primitive de requête sortante, donc utilisable comme relais.
+//
+// `requireAdmin()` redirige (/login si anonyme, / si viewer) : posé en première
+// ligne, il coupe l'action avant toute lecture du formulaire.
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ALERT_MODES, ALERT_SEVERITIES, CHANNEL_KINDS } from "@/lib/alerting";
+import { requireAdmin } from "@/lib/auth";
 import {
   acknowledgeAlertEvent,
   ALERT_COMPARATORS,
@@ -68,11 +80,13 @@ function ruleFromForm(fd: FormData): RuleInput {
 }
 
 export async function createRuleAction(fd: FormData): Promise<void> {
+  await requireAdmin();
   await insertAlertRule(ruleFromForm(fd));
   revalidatePath("/alerts");
 }
 
 export async function updateRuleAction(fd: FormData): Promise<void> {
+  await requireAdmin();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await updateAlertRule(id, ruleFromForm(fd));
@@ -80,6 +94,7 @@ export async function updateRuleAction(fd: FormData): Promise<void> {
 }
 
 export async function toggleRuleAction(fd: FormData): Promise<void> {
+  await requireAdmin();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await toggleAlertRuleActive(id);
@@ -87,6 +102,7 @@ export async function toggleRuleAction(fd: FormData): Promise<void> {
 }
 
 export async function ackEventAction(fd: FormData): Promise<void> {
+  await requireAdmin();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await acknowledgeAlertEvent(id);
@@ -95,6 +111,7 @@ export async function ackEventAction(fd: FormData): Promise<void> {
 
 /** « Évaluer maintenant » : check_alerts() + check_slo_burn(), total affiché via ?fired=N. */
 export async function evaluateNowAction(fd: FormData): Promise<void> {
+  await requireAdmin();
   const a = await runCheckAlerts();
   const b = await runCheckSloBurn();
   revalidatePath("/alerts");
@@ -128,11 +145,13 @@ function sloFromForm(fd: FormData): SloInput {
 }
 
 export async function createSloAction(fd: FormData): Promise<void> {
+  await requireAdmin();
   await insertSlo(sloFromForm(fd));
   revalidatePath("/slo");
 }
 
 export async function toggleSloAction(fd: FormData): Promise<void> {
+  await requireAdmin();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await toggleSlo(id);
@@ -140,6 +159,7 @@ export async function toggleSloAction(fd: FormData): Promise<void> {
 }
 
 export async function deleteSloAction(fd: FormData): Promise<void> {
+  await requireAdmin();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await deleteSlo(id);
@@ -168,11 +188,13 @@ function channelFromForm(fd: FormData): ChannelInput {
 }
 
 export async function createChannelAction(fd: FormData): Promise<void> {
+  await requireAdmin();
   await insertChannel(channelFromForm(fd));
   revalidatePath("/alerts");
 }
 
 export async function toggleChannelAction(fd: FormData): Promise<void> {
+  await requireAdmin();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await toggleChannel(id);
@@ -180,6 +202,7 @@ export async function toggleChannelAction(fd: FormData): Promise<void> {
 }
 
 export async function deleteChannelAction(fd: FormData): Promise<void> {
+  await requireAdmin();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await deleteChannel(id);
