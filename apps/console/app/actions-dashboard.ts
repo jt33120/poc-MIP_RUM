@@ -19,5 +19,8 @@ export async function reglerBlocsAction(fd: FormData): Promise<void> {
     sameSite: "strict",
     maxAge: 60 * 60 * 24 * 365,
   });
-  revalidatePath("/");
+  // "layout" et pas la page seule : la roue est rendue par le layout, donc son
+  // état affiché vient de là. Revalider la page seule laisserait la sidebar sur
+  // l'ancien choix jusqu'au prochain rechargement complet.
+  revalidatePath("/", "layout");
 }

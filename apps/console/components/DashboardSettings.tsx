@@ -58,12 +58,12 @@ export function DashboardSettings({
         type="button"
         onClick={() => setOuvert(true)}
         aria-haspopup="dialog"
+        aria-label="Composer le tableau de bord"
         title="Composer le tableau de bord"
         data-testid="ouvrir-reglages"
-        className="btn-ghost flex items-center gap-1.5"
+        className="shrink-0 rounded-lg p-2 text-ink-faint transition hover:bg-panel2 hover:text-ink"
       >
         <Icon paths={ICON_PATHS.settings} className="h-4 w-4" strokeWidth={2} />
-        <span className="hidden sm:inline">Composer</span>
       </button>
 
       {ouvert && (

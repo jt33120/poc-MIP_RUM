@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AskAssistant } from "@/components/AskAssistant";
@@ -13,6 +13,9 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { TourGuide } from "@/components/TourGuide";
 import { getUser } from "@/lib/auth";
 import { dogfoodingEndpoint } from "@/lib/ingest-endpoint";
+import { DashboardSettings } from "@/components/DashboardSettings";
+import { COOKIE_BLOCS, lireChoix } from "@/lib/dashboard-blocs";
+import { reglerBlocsAction } from "./actions-dashboard";
 import { listApps } from "@/lib/queries";
 import { describeProject, selectedProjectId } from "@/lib/project";
 import { logoutAction } from "./logout/actions";
@@ -179,7 +182,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <ProjectSwitcher name={currentProject.name} appId={currentProject.app_id} />
             )}
             <Suspense>
-              <Nav />
+              {/* La roue vit dans la sidebar, contre « Performance » : c'est ce
+                  menu qu'elle compose. Le choix est lu ici parce que le layout
+                  la rend — la Vue d'ensemble le relit de son côté pour décider
+                  quelles requêtes lancer. */}
+              <Nav
+                reglages={
+                  <DashboardSettings
+                    choix={lireChoix((await cookies()).get(COOKIE_BLOCS)?.value)}
+                    action={reglerBlocsAction}
+                  />
+                }
+              />
             </Suspense>
             {user.role === "admin" && (
               <div className="mt-5 border-t border-line pt-4">

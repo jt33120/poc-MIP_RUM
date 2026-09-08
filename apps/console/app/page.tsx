@@ -6,9 +6,7 @@ import { GlossaryTip } from "@/components/GlossaryTip";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { cookies } from "next/headers";
-import { DashboardSettings } from "@/components/DashboardSettings";
 import { COOKIE_BLOCS, lireChoix } from "@/lib/dashboard-blocs";
-import { reglerBlocsAction } from "./actions-dashboard";
 import { BriefingCard } from "@/components/BriefingCard";
 import { VitalCard } from "@/components/VitalCard";
 import { HealthBanner } from "@/components/health/HealthBanner";
@@ -79,9 +77,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title="Vue d'ensemble" help="rum">
-        <DashboardSettings choix={blocs} action={reglerBlocsAction} />
-      </PageHeader>
+      <PageHeader title="Vue d'ensemble" help="rum" />
 
       {f.app && stats.sessions === 0 && (
         <div
