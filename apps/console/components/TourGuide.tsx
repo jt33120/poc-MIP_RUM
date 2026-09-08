@@ -27,7 +27,7 @@ const STEPS: Step[] = [
           production (Real User Monitoring), pas une simulation en laboratoire.
         </p>
         <p className="mt-2">
-          Socle <strong>OpenTelemetry-natif</strong> et <strong>souverain UE</strong> : navigateur → OTLP →
+          Socle <strong>OpenTelemetry-natif</strong>, <strong>données en UE</strong> : navigateur → OTLP →
           Postgres → cette console. Ce guide fait le tour des écrans en 1 minute.
         </p>
       </>

@@ -22,8 +22,8 @@ export default function ArchitecturePage() {
           Architecture &amp; fonctionnement
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-soft">
-          Comment MIP RUM est construit, de la collecte navigateur jusqu&apos;au stockage
-          souverain. Cette page est aussi la référence que l&apos;assistant IA cite : chaque
+          Comment MIP RUM est construit, de la collecte navigateur jusqu&apos;au stockage en
+          Union européenne. Cette page est aussi la référence que l&apos;assistant IA cite : chaque
           réponse renvoie ici, à la section exacte d&apos;où vient l&apos;information.
         </p>
       </header>

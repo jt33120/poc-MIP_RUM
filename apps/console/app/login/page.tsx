@@ -101,7 +101,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
           </div>
         </div>
         <p className="mt-4 text-center text-[11px] tracking-wide text-ink-faint">
-          Monitoring OTel-native · données hébergées en UE 🇪🇺
+          Monitoring OTel-native · base de données en UE 🇪🇺 Francfort
         </p>
       </div>
     </main>

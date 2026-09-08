@@ -31,7 +31,7 @@ export default async function Presentation() {
         help="rum"
         sub={
           <>
-            Monitoring de l'expérience réelle, OpenTelemetry-natif et souverain UE. Cette page présente
+            Monitoring de l'expérience réelle, OpenTelemetry-natif, données en UE. Cette page présente
             l'outil ; le poste de pilotage est sur{" "}
             <Link href="/" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
               la Vue d'ensemble
@@ -67,10 +67,13 @@ export default async function Presentation() {
           {[
             "SDK navigateur (Web Vitals API, rrweb)",
             "OpenTelemetry · OTLP/HTTP",
-            "Ingestion Deno / Node",
+            "Ingestion Node — routes Next.js",
             "PostgreSQL",
             "Console Next.js 15 / React 19",
-            "Souverain UE",
+            // Ce qui est vrai : la donnée est en UE (Neon, Francfort). Ce qui ne
+            // l'est pas : la souveraineté — Neon et Vercel sont de droit
+            // américain, et les fonctions serveur sont servies depuis iad1.
+            "Base de données en UE — Francfort",
           ].map((chip) => (
             <span
               key={chip}

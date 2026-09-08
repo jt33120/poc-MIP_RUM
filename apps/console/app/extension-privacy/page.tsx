@@ -7,7 +7,7 @@ export const dynamic = "force-static";
 export const metadata = {
   title: "MIP RUM — Confidentialité de l'extension navigateur",
   description:
-    "Ce que le capteur navigateur MIP RUM mesure, comment, et vos droits. Données anonymes, hébergées en UE.",
+    "Ce que le capteur navigateur MIP RUM mesure, comment, et vos droits. Données anonymes, stockées en UE (Francfort).",
 };
 
 const UPDATED = "15 juillet 2026";
@@ -82,7 +82,9 @@ export default function ExtensionPrivacy() {
       <h2 className="mt-8 text-lg font-semibold">Hébergement, conservation, droits</h2>
       <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
         <li>
-          <strong>Résidence UE</strong> : données hébergées en Union européenne (infrastructure à Paris).
+          <strong>Résidence UE</strong> : base de données en Union européenne (Neon, AWS Francfort). Le
+          traitement, lui, passe par la console hébergée sur Vercel, dont les fonctions serveur sont
+          servies depuis les États-Unis.
         </li>
         <li>
           <strong>Conservation</strong> : purge automatique après <strong>30 jours</strong> (TTL).

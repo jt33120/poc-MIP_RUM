@@ -267,7 +267,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 Architecture &amp; fonctionnement
               </Link>
               <footer className="px-1 pt-3 text-[10px] tracking-wide text-ink-faint">
-                v0.3 — OTel-native · souverain UE
+                v0.3 — OTel-native · données en UE
               </footer>
             </div>
           </aside>

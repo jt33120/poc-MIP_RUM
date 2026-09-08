@@ -71,6 +71,16 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
     s: "partiel",
   },
   {
+    c: "Hébergement",
+    cible: "Donnée ET traitement en UE, chez un hébergeur de droit européen",
+    // Les deux moitiés sont vérifiées séparément : la base par docs/NEON_MIGRATION.md
+    // et lib/legal.ts, le calcul par l'en-tête `x-vercel-id` d'une réponse NON mise
+    // en cache (`iad1:iad1::iad1::…`, deux fois, dont une route d'API) — et par
+    // l'absence de clé `regions` dans apps/console/vercel.json.
+    reel: "Base sur Neon / AWS Francfort (UE) ; fonctions serveur servies depuis iad1 (Washington)",
+    s: "partiel",
+  },
+  {
     c: "Latence d'alerte",
     cible: "5 minutes",
     reel: "60 minutes — cadence réduite pour tenir dans le quota d'exécution",
@@ -108,6 +118,11 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
     t: "Pas de couche organisation",
     g: "bloquant",
     d: "Le cloisonnement s'arrête à l'application. Aucun niveau au-dessus pour regrouper les applications d'un même client, ni facturer à ce niveau.",
+  },
+  {
+    t: "Hébergement à rapatrier chez un fournisseur souverain",
+    g: "bloquant",
+    d: "La base vit sur Neon (PostgreSQL sur AWS, Francfort) : la donnée est bien en UE, mais l'hébergeur relève du droit américain — résidence européenne n'est pas souveraineté. Et la console, ingestion comprise, tourne sur Vercel en région iad1 (Washington) : aucune région n'est fixée dans la configuration. Cible : base et calcul chez un hébergeur de droit européen, qualifié SecNumCloud pour un acheteur public.",
   },
   {
     t: "SDK non distribuables",
@@ -296,8 +311,8 @@ export async function Etat() {
           — collecte, ingestion, restitution — tient les critères de fond : poids, seuils,
           percentile, anonymat. Ce qui manque relève de l&apos;exploitation, pas de la conception :
           brancher le déclencheur des tâches planifiées, fermer l&apos;ingestion par défaut, activer
-          le filet d&apos;isolation en base, et changer de moteur de stockage avant la montée en
-          volume.
+          le filet d&apos;isolation en base, rapatrier l&apos;hébergement chez un fournisseur de
+          droit européen, et changer de moteur de stockage avant la montée en volume.
         </p>
       </div>
     </section>

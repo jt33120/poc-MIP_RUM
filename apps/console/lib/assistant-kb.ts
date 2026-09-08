@@ -37,15 +37,21 @@ export function cardUrl(id: string): string {
 }
 
 // --- Faits d'architecture natifs (ancrés dans le dépôt réel) -----------------
-// Rédigés à partir du code : packages/rum-sdk, apps/console, apps/ingest (edge
-// functions Deno), integrations/fastapi (middleware ASGI stdlib), packages/
-// agent-node. Ne rien affirmer ici qui ne soit vrai dans le dépôt.
+// Rédigés à partir du code : packages/rum-sdk, apps/console (dont les routes
+// d'ingestion app/api/ingest/v1/*), apps/ingest (le noyau d'ingestion partagé),
+// integrations/fastapi (middleware ASGI stdlib), packages/agent-node.
+//
+// Ne rien affirmer ici qui ne soit vrai dans le dépôt — et cette base est CITÉE
+// par l'assistant, donc une carte périmée devient une réponse fausse donnée à
+// un utilisateur. Deux l'ont été jusqu'ici : l'ingestion était décrite comme
+// des edge functions Supabase en Deno et la base comme un Postgres Supabase à
+// Paris, plus de trois semaines après la migration vers Vercel et Neon.
 const ARCHITECTURE: KbCard[] = [
   {
     id: "produit",
     title: "Ce qu'est MIP RUM",
     group: "Vue d'ensemble",
-    body: "MIP RUM est une solution de Real User Monitoring (supervision de la performance et des erreurs vécues par les vrais utilisateurs) souveraine et OpenTelemetry-native. Chaîne : SDK navigateur → OTLP → Postgres (UE) → console Next.js. Pas de format propriétaire, donc pas d'enfermement fournisseur.",
+    body: "MIP RUM est une solution de Real User Monitoring (supervision de la performance et des erreurs vécues par les vrais utilisateurs), OpenTelemetry-native et conçue pour être auto-hébergeable. Chaîne : SDK navigateur → OTLP → Postgres (UE) → console Next.js. Pas de format propriétaire, donc pas d'enfermement fournisseur. « Souverain » est la cible, pas encore l'état : l'hébergement actuel (Neon, Vercel) est de droit américain — voir la carte « Base de données & souveraineté ».",
   },
   {
     id: "stack-console",
@@ -69,7 +75,7 @@ const ARCHITECTURE: KbCard[] = [
     id: "ingestion",
     title: "Ingestion",
     group: "Ingestion & protocole",
-    body: "L'ingestion repose sur des Edge Functions Supabase exécutées en Deno : `v1-traces` (métriques, erreurs, spans), `v1-logs` (journaux), `v1-replay` (rejeu). Elles reçoivent du OTLP/HTTP JSON, l'aplatissent et l'écrivent en Postgres. Auth par clé d'API optionnelle (hachée en SHA-256) et limitation de débit.",
+    body: "L'ingestion est assurée par des routes de la console Next.js elle-même, déployées en fonctions serveur sur Vercel : `/api/ingest/v1/traces` (métriques, erreurs, spans), `/api/ingest/v1/logs` (journaux), `/api/ingest/v1/replay` (rejeu). Elles reçoivent du OTLP/HTTP JSON, l'aplatissent et l'écrivent en Postgres. Auth par clé d'API optionnelle (hachée en SHA-256) et limitation de débit. Elles remplacent les edge functions Deno qui tournaient sur Supabase jusqu'à la migration d'août 2026.",
   },
   {
     id: "protocole",
@@ -81,7 +87,7 @@ const ARCHITECTURE: KbCard[] = [
     id: "database",
     title: "Base de données & souveraineté",
     group: "Base de données & souveraineté",
-    body: "Les données sont stockées dans Postgres (v17) hébergé par Supabase en région eu-west-3 (Paris) — résidence des données dans l'Union européenne. La sécurité en base repose sur le Row Level Security (RLS) activé et des fonctions au `search_path` épinglé.",
+    body: "Les données sont stockées dans Postgres 17 hébergé par Neon sur AWS, région `aws-eu-central-1` (Francfort) : la donnée est en Union européenne. Attention à la nuance : Neon et Vercel sont deux fournisseurs de droit américain, et les fonctions serveur de la console sont servies depuis la région `iad1` (Washington) — c'est une résidence européenne des données, pas une souveraineté. La migration vers un hébergeur de droit européen est listée comme bloquante sur la page de présentation. La sécurité en base repose sur le Row Level Security (RLS) activé et des fonctions au `search_path` épinglé ; le rôle de production reste toutefois propriétaire, donc il contourne ces policies.",
   },
   {
     id: "backend-python",
