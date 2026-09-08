@@ -5,6 +5,10 @@ import { VitalsTimeseries } from "@/components/charts/VitalsTimeseries";
 import { GlossaryTip } from "@/components/GlossaryTip";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { cookies } from "next/headers";
+import { DashboardSettings } from "@/components/DashboardSettings";
+import { COOKIE_BLOCS, lireChoix } from "@/lib/dashboard-blocs";
+import { reglerBlocsAction } from "./actions-dashboard";
 import { BriefingCard } from "@/components/BriefingCard";
 import { VitalCard } from "@/components/VitalCard";
 import { HealthBanner } from "@/components/health/HealthBanner";
@@ -35,17 +39,28 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     return qs ? `/?${qs}` : "/";
   };
 
+  // Le choix des blocs est lu ICI, AVANT les requêtes : un bloc éteint ne coûte
+  // rien. Masquer en CSS aurait laissé tout le travail serveur en place, ce qui
+  // vide la fonctionnalité de son intérêt sur un écran qui porte neuf requêtes.
+  //
+  // `overviewStats(f)` reste inconditionnel : le bandeau « pas encore de
+  // données » en dépend, et il doit s'afficher même sur un tableau de bord
+  // réduit au minimum — c'est justement là qu'on a besoin de savoir pourquoi
+  // l'écran est vide.
+  const blocs = lireChoix((await cookies()).get(COOKIE_BLOCS)?.value);
+  const vide = <T,>(v: T) => Promise.resolve(v);
+
   const [vitals, vitalsPrev, stats, statsPrev, series, health, grid, traffic, dailyLcp] =
     await Promise.all([
-      vitalsP75(f),
-      vitalsP75(f, true),
+      blocs.vitals || blocs.reseau ? vitalsP75(f) : vide([]),
+      blocs.vitals ? vitalsP75(f, true) : vide([]),
       overviewStats(f),
       overviewStats(f, true),
-      vitalSeries(f, "LCP"),
-      healthScore(f),
-      healthGrid(f),
-      dailyTraffic(f),
-      dailyLcpSeries(f),
+      blocs.hero ? vitalSeries(f, "LCP") : vide([]),
+      blocs.sante || blocs.anomalies ? healthScore(f) : vide(null),
+      blocs.historique ? healthGrid(f) : vide([]),
+      blocs.historique ? dailyTraffic(f) : vide([]),
+      blocs.historique ? dailyLcpSeries(f) : vide([]),
     ]);
 
   const byName = Object.fromEntries(vitals.map((v) => [v.name, v]));
@@ -64,7 +79,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title="Vue d'ensemble" help="rum" />
+      <PageHeader title="Vue d'ensemble" help="rum">
+        <DashboardSettings choix={blocs} action={reglerBlocsAction} />
+      </PageHeader>
 
       {f.app && stats.sessions === 0 && (
         <div
@@ -81,15 +98,16 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </div>
       )}
 
-      {f.app && stats.sessions > 0 && <BriefingCard app={f.app} />}
+      {blocs.briefing && f.app && stats.sessions > 0 && <BriefingCard app={f.app} />}
 
       {/* Vue « Tous » : synthèse LLM d'état du PORTAIL (toutes apps), depuis la
           dernière connexion. Affichée même sans trafic — c'est là qu'elle dit
           honnêtement « pas assez de données pour conclure ». */}
-      {!f.app && <BriefingCard />}
+      {blocs.briefing && !f.app && <BriefingCard />}
 
-      <HealthBanner health={health} periodLabel={period.label} />
+      {blocs.sante && health && <HealthBanner health={health} periodLabel={period.label} />}
 
+      {blocs.vitals && (
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
         {["LCP", "INP", "CLS", "FCP", "TTFB"].map((name) => (
           <VitalCard
@@ -103,9 +121,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           />
         ))}
       </div>
+      )}
 
-      <PhasesReseau vitals={byName} periodLabel={period.label} />
+      {blocs.reseau && <PhasesReseau vitals={byName} periodLabel={period.label} />}
 
+      {blocs.hero && (
       <SupervisionHero
         chartTitle={`LCP p75 dans le temps (buckets ${period.bucketLabel})`}
         chart={
@@ -143,6 +163,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           précédente. Détail vital par vital ci-dessous, historique 14&nbsp;jours plus bas.
         </HeroReading>
       </SupervisionHero>
+      )}
 
       {/* Historique de santé 14 j (fenêtre fixe, comme les anomalies) :
           heatmap jour × heure + courbes de volume et de p75 LCP associées. */}
@@ -217,7 +238,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </div>
       </section>
 
-      <AnomalyTable health={health} />
+      {blocs.anomalies && health && <AnomalyTable health={health} />}
     </div>
   );
 }
