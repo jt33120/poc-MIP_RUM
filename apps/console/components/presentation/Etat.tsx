@@ -1,63 +1,103 @@
-// Quatrième section de la vitrine : l'état réel du POC, en deux colonnes.
-// À gauche ce qui tourne, à droite ce qui manque — y compris ce qui empêche de
-// vendre. Une vitrine de POC qui ne montre que la colonne de gauche se fait
-// démonter au premier rendez-vous technique ; celle-ci donne l'écart d'avance.
+// Quatrième section de la vitrine : où en est le POC face aux critères d'un
+// outil de RUM sérieux. Un tableau cible/réel d'abord — c'est lui qui dit à
+// quel point on répond au cahier des charges — puis la liste de ce qui manque.
 //
-// Chaque ligne a été VÉRIFIÉE dans le dépôt, pas reprise d'un document de
-// cadrage — plusieurs affirmations de docs/MARKET_SCAN_BMAD.md (juillet) sont
-// devenues fausses depuis : les policies RLS ne sont plus en `using(true)`, et
-// le comptage de volume par client existe. Sources : docs/LIMITES.md,
-// _bmad-output/planning-artifacts/CHANTIERS.md, et le code lui-même.
+// Chaque ligne est VÉRIFIÉE dans le dépôt, pas reprise d'un document de
+// cadrage : plusieurs affirmations de docs/MARKET_SCAN_BMAD.md (juillet) sont
+// périmées, et deux lignes de la version précédente de cette section étaient
+// fausses — la purge de rétention et le comptage de volume sont codés mais
+// jamais déclenchés en production, faute d'authentification du planificateur.
+// Sources : le code, docs/LIMITES.md, docs/RAPPORT_CLIENT.md, docs/INTEGRATION.md.
 import { ICON_PATHS, Icon } from "@/components/icons";
 
-/** Ce qui tourne aujourd'hui, vérifié dans le code. */
-const OPERATIONNEL: { t: string; d: string }[] = [
+type Statut = "atteint" | "partiel" | "manque" | "non-mesure";
+
+const LIBELLE: Record<Statut, string> = {
+  atteint: "Atteint",
+  partiel: "Partiel",
+  manque: "Non atteint",
+  "non-mesure": "Non mesuré",
+};
+
+const TON: Record<Statut, string> = {
+  atteint: "border-good/40 bg-good/10 text-good",
+  partiel: "border-warn/40 bg-warn/10 text-warn",
+  manque: "border-bad/40 bg-bad/10 text-bad",
+  "non-mesure": "border-line bg-panel2 text-ink-faint",
+};
+
+/** Les critères d'un RUM sérieux, la cible visée, et où on en est vraiment. */
+const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
-    t: "Deux capteurs, un pipeline",
-    d: "SDK ~12 ko et extension Chrome/Edge MV3 écrivent le même OTLP, avec le même identifiant d'application.",
+    c: "Poids du capteur",
+    cible: "≤ 35 ko gzip (budget du build)",
+    reel: "12,0 ko gzip — sous Sentry (~20 ko) et Datadog (~25 ko)",
+    s: "atteint",
   },
   {
-    t: "Core Web Vitals au p75",
-    d: "LCP, INP, CLS, FCP, TTFB par route et par appareil, avec la distribution derrière la moyenne.",
+    c: "Seuils Core Web Vitals",
+    cible: "Barème Google",
+    reel: "LCP 2,5 / 4 s · INP 200 / 500 ms · CLS 0,1 / 0,25",
+    s: "atteint",
   },
   {
-    t: "Erreurs groupées par signature",
-    d: "Regroupement par cause, triage résolu/ignoré/rouvert, détection des régressions.",
+    c: "Agrégation",
+    cible: "p75, comme l'exige le standard CWV",
+    reel: "p75 par route et par appareil, distribution complète",
+    s: "atteint",
   },
   {
-    t: "Sessions, parcours, replay",
-    d: "Timeline d'une session réelle ; replay rrweb en option par app, saisies masquées par défaut.",
+    c: "Donnée identifiante",
+    cible: "Aucune adresse IP stockée",
+    reel: "Géolocalisation par fuseau, scrub PII côté client et serveur",
+    s: "atteint",
   },
   {
-    t: "Tracing front → back",
-    d: "Propagation traceparent jusqu'au middleware FastAPI, un saut, corrélé par trace_id.",
+    c: "Format sur le fil",
+    cible: "OTLP/HTTP standard, backend remplaçable",
+    reel: "OTLP JSON valide et lisible au DevTools, mais sans parentSpanId, kind ni status",
+    s: "partiel",
   },
   {
-    t: "Multi-utilisateur cloisonné",
-    d: "Rôles admin/viewer scopés par application, SSO OIDC, journal d'audit de toute action sensible.",
+    c: "Masquage du replay",
+    cible: "Saisies, texte et médias masqués par défaut (standard 2026)",
+    reel: "Saisies masquées et blocs exclus ; texte et médias non masqués",
+    s: "partiel",
   },
   {
-    t: "RGPD par construction",
-    d: "Aucune adresse IP stockée (géo par fuseau), scrub PII côté client ET serveur, rétention 30 jours.",
+    c: "Rétention",
+    cible: "Purge à 30 jours, réglable par client",
+    reel: "Codée et testée, mais jamais déclenchée en production",
+    s: "manque",
   },
   {
-    t: "Comptage du volume par client",
-    d: "Événements, sessions et erreurs agrégés chaque jour, quota par application, écran d'administration.",
+    c: "Latence d'alerte",
+    cible: "5 minutes",
+    reel: "60 minutes — cadence réduite pour tenir dans le quota d'exécution",
+    s: "manque",
   },
   {
-    t: "Intégrable",
-    d: "API publique v1 documentée en OpenAPI, API de lecture par jeton, conteneur d'ingestion prouvé en CI.",
+    c: "Volumétrie",
+    cible: "10⁸ événements et au-delà (ClickHouse)",
+    reel: "~10⁶–10⁷ sur PostgreSQL avant que les percentiles ne s'effondrent",
+    s: "manque",
+  },
+  {
+    c: "Débit d'ingestion",
+    cible: "Mesuré en conditions cloud réelles",
+    reel: "~4 000 événements/seconde, sur un poste de développement uniquement",
+    s: "non-mesure",
   },
 ];
 
 type Gravite = "bloquant" | "limite";
 
-/** Ce qui manque, et ce que ça empêche concrètement. */
+/** Ce qui manque, en liste simple. */
 const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
   {
-    t: "Alerting à remettre en service",
+    t: "Tâches planifiées à câbler",
     g: "bloquant",
-    d: "Le moteur d'alerte, les SLO et les sondes uptime existent et sont testés, mais leur déclenchement périodique reste à câbler sur cet environnement. Tant que ce n'est pas fait, le produit alerte sur le papier, pas en continu.",
+    d: "Évaluation des alertes, SLO, sondes uptime, purge de rétention et comptage du volume par client partagent le même déclencheur périodique, qui n'est pas authentifié sur cet environnement. Tout ce bloc est écrit et testé, mais ne s'exécute pas.",
   },
   {
     t: "Clé d'ingestion à rendre obligatoire",
@@ -67,22 +107,12 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
   {
     t: "Filet d'isolation en base à activer",
     g: "bloquant",
-    d: "Les policies de cloisonnement existent et filtrent bien par application, mais la connexion de production utilise un rôle propriétaire qui les contourne. L'isolation repose donc aujourd'hui entièrement sur le code, sans filet au niveau du moteur.",
+    d: "Les policies de cloisonnement existent et filtrent bien par application, mais la connexion de production utilise un rôle propriétaire qui les contourne. L'isolation repose aujourd'hui entièrement sur le code, sans filet au niveau du moteur.",
   },
   {
     t: "Pas de couche organisation",
     g: "bloquant",
     d: "Le cloisonnement s'arrête à l'application. Aucun niveau au-dessus pour regrouper les applications d'un même client, ni facturer à ce niveau.",
-  },
-  {
-    t: "Stockage qui ne tiendra pas l'échelle",
-    g: "bloquant",
-    d: "PostgreSQL tient jusqu'à quelques millions d'événements ; au-delà, les calculs de percentile s'effondrent. Le chemin ClickHouse est prouvé en local, jamais déployé.",
-  },
-  {
-    t: "Charge réelle inconnue",
-    g: "limite",
-    d: "~4 000 événements/seconde mesurés sur un poste, jamais en conditions cloud. Le comportement sous vraie charge reste une hypothèse.",
   },
   {
     t: "SDK non distribuables",
@@ -101,18 +131,7 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
   },
 ];
 
-function Coche() {
-  return (
-    <span
-      aria-hidden
-      className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-good/10"
-    >
-      <svg viewBox="0 0 16 16" className="h-3 w-3 text-good" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 8.5 6.5 12 13 4.5" />
-      </svg>
-    </span>
-  );
-}
+const compte = (s: Statut) => CRITERES.filter((c) => c.s === s).length;
 
 export function Etat() {
   return (
@@ -123,82 +142,116 @@ export function Etat() {
             L&apos;écart, sans le maquiller
           </span>
           <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            Ce qui tourne, ce qui manque
+            Face aux critères d&apos;un vrai RUM
           </h2>
           <p className="mt-3 leading-relaxed text-ink-soft">
-            C&apos;est un POC, et il est utile de dire lequel. À gauche ce qui fonctionne en
-            production aujourd&apos;hui ; à droite ce qui reste entre cet état et un produit
-            vendable. Chaque ligne est vérifiée dans le dépôt.
+            Ce qu&apos;un outil de Real User Monitoring doit tenir, et où en est ce POC sur chaque
+            point. Les chiffres viennent du code et des mesures, pas d&apos;un document
+            d&apos;intention.
+          </p>
+          <p className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-full border border-good/40 bg-good/10 px-3 py-1 text-good">
+              {compte("atteint")} atteints
+            </span>
+            <span className="rounded-full border border-warn/40 bg-warn/10 px-3 py-1 text-warn">
+              {compte("partiel")} partiels
+            </span>
+            <span className="rounded-full border border-bad/40 bg-bad/10 px-3 py-1 text-bad">
+              {compte("manque")} non atteints
+            </span>
+            <span className="rounded-full border border-line bg-panel2 px-3 py-1 text-ink-faint">
+              {compte("non-mesure")} non mesuré
+            </span>
           </p>
         </header>
 
-        <div className="mt-10 grid gap-6 lg:grid-cols-2 lg:gap-8">
-          {/* Opérationnel ------------------------------------------------- */}
-          <div className="rounded-2xl border border-good/30 bg-good/[0.04] p-6">
-            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.14em] text-good">
-              <Icon paths={ICON_PATHS.activity} className="h-4 w-4" strokeWidth={2.4} />
-              Opérationnel
-            </h3>
-            <ul className="mt-5 flex flex-col gap-4">
-              {OPERATIONNEL.map((o) => (
-                <li key={o.t} className="flex gap-3">
-                  <Coche />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-ink">{o.t}</span>
-                    <span className="mt-0.5 block text-[13px] leading-relaxed text-ink-soft">
-                      {o.d}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
+        {/* Tableau cible / réel ------------------------------------------- */}
+        <div className="mt-10 overflow-hidden rounded-2xl border border-line bg-panel">
+          {/* En-têtes : desktop seulement — en mobile chaque cellule porte son
+              propre libellé, une ligne de titres n'aurait rien à surmonter. */}
+          <div className="hidden border-b border-line bg-panel2 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint lg:grid lg:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,7rem)] lg:gap-5">
+            <span>Critère</span>
+            <span>Cible</span>
+            <span>Réel</span>
+            <span className="text-right">Statut</span>
           </div>
 
-          {/* À faire ------------------------------------------------------ */}
-          <div className="rounded-2xl border border-warn/30 bg-warn/[0.04] p-6">
-            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.14em] text-warn">
-              <Icon paths={ICON_PATHS.alert} className="h-4 w-4" strokeWidth={2.4} />
-              À faire
-            </h3>
-            <ul className="mt-5 flex flex-col gap-4">
-              {A_FAIRE.map((a) => (
-                <li key={a.t} className="flex gap-3">
-                  <span
-                    aria-hidden
-                    className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${
-                      a.g === "bloquant" ? "bg-bad" : "bg-warn"
-                    }`}
-                  />
-                  <span className="min-w-0">
-                    <span className="flex flex-wrap items-center gap-x-2">
-                      <span className="text-sm font-semibold text-ink">{a.t}</span>
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] ${
-                          a.g === "bloquant"
-                            ? "bg-bad/10 text-bad"
-                            : "bg-warn/10 text-warn"
-                        }`}
-                      >
-                        {a.g === "bloquant" ? "bloque la vente" : "limite connue"}
-                      </span>
-                    </span>
-                    <span className="mt-0.5 block text-[13px] leading-relaxed text-ink-soft">
-                      {a.d}
-                    </span>
+          <ul className="divide-y divide-line">
+            {CRITERES.map((c) => (
+              <li
+                key={c.c}
+                className="grid gap-x-5 gap-y-2 px-5 py-4 lg:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,7rem)] lg:items-baseline"
+              >
+                <span className="text-sm font-semibold text-ink">{c.c}</span>
+
+                <span className="text-[13px] leading-relaxed text-ink-soft">
+                  <span className="mr-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-faint lg:hidden">
+                    Cible
                   </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+                  {c.cible}
+                </span>
+
+                <span className="text-[13px] leading-relaxed text-ink">
+                  <span className="mr-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-faint lg:hidden">
+                    Réel
+                  </span>
+                  {c.reel}
+                </span>
+
+                <span className="lg:text-right">
+                  <span
+                    className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] ${TON[c.s]}`}
+                  >
+                    {LIBELLE[c.s]}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
 
-        <p className="mt-6 rounded-xl border border-line bg-panel px-5 py-4 text-sm leading-relaxed text-ink-soft">
+        {/* Ce qui manque, en liste simple --------------------------------- */}
+        <div className="mt-10">
+          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.14em] text-warn">
+            <Icon paths={ICON_PATHS.alert} className="h-4 w-4" strokeWidth={2.4} />
+            Ce qui manque
+          </h3>
+          <ul className="mt-5 grid gap-4 sm:grid-cols-2">
+            {A_FAIRE.map((a) => (
+              <li key={a.t} className="flex gap-3">
+                <span
+                  aria-hidden
+                  className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${
+                    a.g === "bloquant" ? "bg-bad" : "bg-warn"
+                  }`}
+                />
+                <span className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-x-2">
+                    <span className="text-sm font-semibold text-ink">{a.t}</span>
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] ${
+                        a.g === "bloquant" ? "bg-bad/10 text-bad" : "bg-warn/10 text-warn"
+                      }`}
+                    >
+                      {a.g === "bloquant" ? "bloque la vente" : "limite connue"}
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block text-[13px] leading-relaxed text-ink-soft">
+                    {a.d}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="mt-8 rounded-xl border border-line bg-panel px-5 py-4 text-sm leading-relaxed text-ink-soft">
           <span className="font-semibold text-ink">Ce que ça veut dire.</span> La chaîne de mesure
-          — collecte, ingestion, restitution — est complète et tourne sur des données réelles. Ce
-          qui manque tient à l&apos;exploitation : fermer l&apos;ingestion par défaut, activer le filet
-          d&apos;isolation en base, câbler le déclenchement des alertes, et changer de moteur de
-          stockage avant la montée en volume. Aucun de ces points n&apos;est un inconnu de recherche&nbsp;; tous
-          sont chiffrés dans le découpage en chantiers du dépôt.
+          — collecte, ingestion, restitution — tient les critères de fond : poids, seuils,
+          percentile, anonymat. Ce qui manque relève de l&apos;exploitation, pas de la conception :
+          brancher le déclencheur des tâches planifiées, fermer l&apos;ingestion par défaut, activer
+          le filet d&apos;isolation en base, et changer de moteur de stockage avant la montée en
+          volume.
         </p>
       </div>
     </section>
