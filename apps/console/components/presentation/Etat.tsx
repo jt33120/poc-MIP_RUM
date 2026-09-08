@@ -31,7 +31,11 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Poids du capteur",
     cible: "≤ 35 ko gzip (budget du build)",
-    reel: "12,0 ko gzip — sous Sentry (~20 ko) et Datadog (~25 ko)",
+    // Le chiffre est mesuré (gzip du bundle publié). La comparaison au marché a
+    // été retirée : elle venait d'une note interne sans source, et le poids d'un
+    // SDK concurrent dépend de sa version et des modules activés — invérifiable
+    // en l'état, donc pas affichable comme un fait.
+    reel: "12,0 ko gzip, mesuré sur le bundle publié",
     s: "atteint",
   },
   {

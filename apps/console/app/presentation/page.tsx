@@ -68,7 +68,7 @@ export default async function Presentation() {
             "SDK navigateur (Web Vitals API, rrweb)",
             "OpenTelemetry · OTLP/HTTP",
             "Ingestion Deno / Node",
-            "PostgreSQL → ClickHouse",
+            "PostgreSQL",
             "Console Next.js 15 / React 19",
             "Souverain UE",
           ].map((chip) => (
