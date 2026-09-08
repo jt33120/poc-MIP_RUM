@@ -35,6 +35,10 @@ const KNOWN: Record<string, { tag: string; hint: string }> = {
     tag: "Production",
     hint: "Plateforme UTI (plateforme.groupement-it.com) — utilisateurs réels.",
   },
+  "insight-performance": {
+    tag: "Extension",
+    hint: "Site MIP (insight-performance.com) — observé par l'extension navigateur, sans SDK posé dans le site.",
+  },
 };
 
 export function describeProject(appId: string): { tag: string; hint: string } {

@@ -57,9 +57,23 @@ export async function middleware(req: NextRequest) {
   // entier) : LECTURE SEULE. On refuse toute requête qui n'est pas une lecture,
   // ce qui couvre les Server Actions — elles passent en POST. La borne est ici,
   // en un seul point, plutôt que répétée dans chaque action : une action ajoutée
-  // demain est couverte sans que personne ait à y penser. Seule la déconnexion
-  // reste permise, sinon le visiteur ne pourrait plus sortir de la démo.
-  if (user.demo && req.method !== "GET" && req.method !== "HEAD" && req.nextUrl.pathname !== "/logout") {
+  // demain est couverte sans que personne ait à y penser.
+  //
+  // Deux exceptions, et deux seulement, parce qu'elles n'écrivent qu'un cookie
+  // et qu'un visiteur bloqué dessus n'a plus de démo du tout :
+  //   /logout — sortir de la démo ;
+  //   /select — choisir le projet courant. Chaque carte du sélecteur est un
+  //     formulaire (POST), et un compte démo scopé sur PLUSIEURS apps atterrit
+  //     précisément là : sans cette exception il ne pourrait entrer dans aucune.
+  //     L'action vérifie déjà que le projet demandé est dans le scope de
+  //     l'utilisateur (select/actions.ts, garde anti-forgery).
+  if (
+    user.demo &&
+    req.method !== "GET" &&
+    req.method !== "HEAD" &&
+    req.nextUrl.pathname !== "/logout" &&
+    req.nextUrl.pathname !== "/select"
+  ) {
     return new NextResponse("Compte de démonstration : lecture seule.", { status: 403 });
   }
 
