@@ -546,6 +546,11 @@ export function flattenOtlp(payload, opts = {}) {
           // Ext-A : mode de collecte — 'sdk' (script posé par le dev, défaut) ou
           // 'extension' (SDK injecté par l'extension navigateur). Figé à la 1re vue.
           collection_source: a["mip.collection_source"] === "extension" ? "extension" : "sdk",
+          // v53 : version de l'app et qualité de lien estimée. `release` est une
+          // resource attr (constante sur la requête), `net_type` une span attr,
+          // posée par navtiming au chargement — d'où le back-fill plus bas.
+          release,
+          net_type: a["mip.net_type"] ?? null,
           last_seen_at: ts,
           page_count_inc: 0,
         };
@@ -556,6 +561,10 @@ export function flattenOtlp(payload, opts = {}) {
         // span ayant pu créer la session sans l'attribut.
         if (s.device_type == null)
           s.device_type = a["mip.device_type"] ?? deviceFromUa(res["mip.user_agent"]);
+        // net_type n'arrive que sur les spans de navtiming, émises après `load` :
+        // la session existe déjà, créée par une span antérieure sans l'attribut.
+        if (s.net_type == null && a["mip.net_type"]) s.net_type = a["mip.net_type"];
+        if (s.release == null && release) s.release = release;
         sessions.set(sessionId, s);
 
         if (span.name.startsWith("webvital.")) {

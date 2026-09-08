@@ -104,6 +104,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         ))}
       </div>
 
+      <PhasesReseau vitals={byName} periodLabel={period.label} />
+
       <SupervisionHero
         chartTitle={`LCP p75 dans le temps (buckets ${period.bucketLabel})`}
         chart={
@@ -217,5 +219,64 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
       <AnomalyTable health={health} />
     </div>
+  );
+}
+
+/** Les phases réseau qui composent le TTFB, dans l'ordre chronologique. Libellés
+ *  français à l'affichage, noms bruts pour la lecture des données. */
+const PHASES: { cle: string; label: string }[] = [
+  { cle: "REDIRECT", label: "Redirection" },
+  { cle: "DNS", label: "DNS" },
+  { cle: "TCP", label: "Connexion" },
+  { cle: "TLS", label: "TLS" },
+  { cle: "REQUEST", label: "Requête" },
+  { cle: "RESPONSE", label: "Réponse" },
+];
+
+/**
+ * Décomposition du TTFB. Sans elle, la vue d'ensemble donnait le SYMPTÔME — « la
+ * première donnée arrive en 900 ms » — sans jamais la cause : un DNS lent, une
+ * poignée de main TLS coûteuse et un serveur lent produisent le même TTFB et
+ * appellent trois corrections opposées.
+ *
+ * Aucune requête supplémentaire : `vitalsP75` groupe sur `m.name` sans filtrer,
+ * ces lignes étaient déjà dans le résultat, simplement jamais lues.
+ *
+ * Rendu seulement si au moins une phase a des mesures — un parc qui tourne encore
+ * sur une version antérieure du capteur n'en émet pas, et six cartes vides
+ * feraient croire à une panne.
+ */
+function PhasesReseau({
+  vitals,
+  periodLabel,
+}: {
+  vitals: Record<string, { p75: number | null; p50: number | null; n: number } | undefined>;
+  periodLabel: string;
+}) {
+  // La redirection vaut 0 sur l'immense majorité des navigations : lui donner une
+  // carte permanente gâcherait une place pour n'afficher que des zéros.
+  const visibles = PHASES.filter(
+    (p) => (vitals[p.cle]?.n ?? 0) > 0 && (p.cle !== "REDIRECT" || (vitals[p.cle]?.p75 ?? 0) > 0),
+  );
+  if (visibles.length === 0) return null;
+
+  return (
+    <section className="mb-6">
+      <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+        D&apos;où vient le TTFB — décomposition réseau
+      </h2>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        {visibles.map((p) => (
+          <VitalCard
+            key={p.cle}
+            name={p.label}
+            p75={vitals[p.cle]?.p75 ?? null}
+            median={vitals[p.cle]?.p50 ?? null}
+            n={vitals[p.cle]?.n ?? 0}
+            periodLabel={periodLabel}
+          />
+        ))}
+      </div>
+    </section>
   );
 }

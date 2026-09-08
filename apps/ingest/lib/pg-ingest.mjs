@@ -59,13 +59,25 @@ export async function writeRows(pool, {
     await batchInsert(
       client,
       "rum_session",
-      ["session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type", "geo_country", "is_bot", "started_at", "last_seen_at", "page_count"],
+      // `collection_source` MANQUAIT ICI. batchInsert construit l'INSERT strictement
+      // depuis cette liste : toute clé absente est jetée en silence, et la colonne
+      // retombait donc sur son DEFAULT 'sdk'. Conséquence : aucune session ne
+      // pouvait être enregistrée comme venant de l'extension sur ce chemin — le
+      // seul utilisé en production — alors que le SDK envoyait bien l'attribut.
+      // Il n'est délibérément PAS dans le `do update` : la source est figée à la
+      // première vue de la session (cf. flattenOtlp).
+      ["session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type", "geo_country", "is_bot", "collection_source", "release", "net_type", "started_at", "last_seen_at", "page_count"],
       sessions.map((s) => ({ ...s, started_at: s.last_seen_at, page_count: 0 })),
       `on conflict (session_id) do update
          set last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at),
              user_agent   = coalesce(rum_session.user_agent, excluded.user_agent),
              geo_country  = coalesce(rum_session.geo_country, excluded.geo_country),
-             device_type  = coalesce(rum_session.device_type, excluded.device_type)`,
+             device_type  = coalesce(rum_session.device_type, excluded.device_type),
+             -- v53 : posés au premier lot qui les porte, jamais écrasés ensuite.
+             -- net_type arrive après l'événement load, donc dans un lot POSTÉRIEUR
+             -- à celui qui a créé la session : sans coalesce, elle resterait vide.
+             release      = coalesce(rum_session.release, excluded.release),
+             net_type     = coalesce(rum_session.net_type, excluded.net_type)`,
     );
     await batchInsert(
       client,
