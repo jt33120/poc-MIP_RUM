@@ -36,8 +36,15 @@ function Pastille({ c, isActive }: { c: NavCategory; isActive: boolean }) {
   );
 }
 
-/** Sidebar : une entrée par catégorie (les pages sœurs s'ouvrent en sous-onglets). */
-export function Nav() {
+/**
+ * Sidebar : une entrée par catégorie (les pages sœurs s'ouvrent en sous-onglets).
+ *
+ * `reglages` est monté À CÔTÉ du lien de la catégorie « Performance », jamais
+ * dedans : un bouton imbriqué dans une ancre est invalide en HTML, et le clic
+ * remonterait au lien — on ouvrirait la fenêtre ET on naviguerait. D'où la
+ * rangée en flex, avec le lien qui prend la place et le réglage à sa droite.
+ */
+export function Nav({ reglages }: { reglages?: React.ReactNode }) {
   const pathname = usePathname();
   const qs = useSearchParams().toString(); // filtres (dont ?app) persistés
   const active = activeCategory(pathname);
@@ -64,11 +71,10 @@ export function Nav() {
           );
         }
 
-        return (
+        const lien = (
           <Link
-            key={c.href}
             href={qs ? `${c.href}?${qs}` : c.href}
-            className={`${BASE} ${
+            className={`${BASE} min-w-0 flex-1 ${
               isActive ? "bg-perf/10 text-ink" : "text-ink-soft hover:bg-panel2 hover:text-ink"
             }`}
           >
@@ -78,8 +84,18 @@ export function Nav() {
               }`}
             />
             <Pastille c={c} isActive={isActive} />
-            {c.label}
+            <span className="truncate">{c.label}</span>
           </Link>
+        );
+
+        // Le réglage n'est proposé que sur la catégorie qu'il configure.
+        const avecReglage = reglages && c.href === "/";
+
+        return (
+          <div key={c.href} className={avecReglage ? "flex items-center gap-0.5" : undefined}>
+            {lien}
+            {avecReglage && reglages}
+          </div>
         );
       })}
     </nav>
