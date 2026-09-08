@@ -34,6 +34,80 @@ export function batchInsert(client, table, cols, rows, conflictClause) {
   );
 }
 
+// Colonnes RÉELLEMENT présentes sur rum_session, relues périodiquement.
+//
+// POURQUOI CE GARDE-FOU EXISTE. Sur ce projet le déploiement est automatique et
+// la migration est MANUELLE : entre le déploiement d'un code qui écrit une
+// nouvelle colonne et le `psql` qui la crée, il existe une fenêtre où l'INSERT
+// référence une colonne absente. Postgres rejette alors la requête ENTIÈRE, donc
+// la transaction, donc le lot : ce n'est pas le champ nouveau qui se perd, c'est
+// TOUTE la télémétrie, jusqu'à ce qu'un humain lance la migration. Un écart de
+// quelques minutes vaut un trou de quelques minutes ; un oubli d'un jour vaut un
+// trou d'un jour, sans erreur visible côté client (le SDK poste en beacon).
+//
+// Le TTL est ce qui rend la reprise automatique : sans lui, une instance
+// serverless chaude garderait indéfiniment la liste d'avant la migration et
+// n'écrirait jamais les nouvelles colonnes, même une fois celles-ci créées.
+const TTL_COLONNES_MS = 60_000;
+let colonnesCache = null;
+
+async function colonnesSession(client) {
+  if (colonnesCache && Date.now() - colonnesCache.at < TTL_COLONNES_MS) return colonnesCache.set;
+  const { rows } = await client.query(
+    `select column_name from information_schema.columns
+      where table_schema = 'public' and table_name = 'rum_session'`,
+  );
+  colonnesCache = { at: Date.now(), set: new Set(rows.map((r) => r.column_name)) };
+  return colonnesCache.set;
+}
+
+/** Réinitialise le cache de colonnes (tests). */
+export function _resetColonnesCache() {
+  colonnesCache = null;
+}
+
+/** Colonnes optionnelles de rum_session, dans l'ordre où elles s'insèrent. */
+const OPTIONNELLES = ["collection_source", "release", "net_type"];
+
+/**
+ * Liste de colonnes de l'INSERT, réduite à ce que la base porte réellement.
+ * PURE, donc testable : c'est ici qu'une erreur se paie par le rejet de tout
+ * le lot, pas seulement par la perte d'un champ.
+ */
+export function colonnesInsert(dispo) {
+  return [
+    "session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type",
+    "geo_country", "is_bot",
+    ...OPTIONNELLES.filter((c) => dispo.has(c)),
+    "started_at", "last_seen_at", "page_count",
+  ];
+}
+
+/**
+ * Clause `on conflict`. Assemblée en LISTE et non en chaîne à trous : une clause
+ * optionnelle interpolée laisse une virgule orpheline quand elle est vide, et une
+ * colonne assignée deux fois fait rejeter tout l'INSERT par Postgres
+ * (« multiple assignments to same column »). Les deux ont été commis ici.
+ *
+ * `collection_source` en est délibérément absent : la source est figée à la
+ * première vue de la session (cf. flattenOtlp).
+ */
+export function clauseConflitSession(dispo) {
+  const set = [
+    "last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at)",
+    "user_agent  = coalesce(rum_session.user_agent, excluded.user_agent)",
+    "geo_country = coalesce(rum_session.geo_country, excluded.geo_country)",
+    "device_type = coalesce(rum_session.device_type, excluded.device_type)",
+    // v53 : posés au premier lot qui les porte, jamais écrasés ensuite. net_type
+    // arrive après l'événement load, donc dans un lot POSTÉRIEUR à celui qui a
+    // créé la session : sans coalesce, la colonne resterait vide.
+    ...["release", "net_type"]
+      .filter((c) => dispo.has(c))
+      .map((c) => `${c} = coalesce(rum_session.${c}, excluded.${c})`),
+  ];
+  return `on conflict (session_id) do update set ${set.join(", ")}`;
+}
+
 /**
  * Écrit un lot OTLP aplati (sortie de flattenOtlp) dans une TRANSACTION unique.
  * Idempotent au rejeu : `on conflict do nothing` partout, `greatest` sur les
@@ -56,28 +130,20 @@ export async function writeRows(pool, {
   const client = await pool.connect();
   try {
     await client.query("begin");
+    // Colonnes optionnelles : présentes une fois la migration passée, ignorées
+    // avant. Le reste du lot part normalement dans les deux cas.
+    const dispo = await colonnesSession(client);
     await batchInsert(
       client,
       "rum_session",
-      // `collection_source` MANQUAIT ICI. batchInsert construit l'INSERT strictement
-      // depuis cette liste : toute clé absente est jetée en silence, et la colonne
-      // retombait donc sur son DEFAULT 'sdk'. Conséquence : aucune session ne
-      // pouvait être enregistrée comme venant de l'extension sur ce chemin — le
-      // seul utilisé en production — alors que le SDK envoyait bien l'attribut.
-      // Il n'est délibérément PAS dans le `do update` : la source est figée à la
-      // première vue de la session (cf. flattenOtlp).
-      ["session_id", "app_id", "client_id", "user_hash", "user_agent", "device_type", "geo_country", "is_bot", "collection_source", "release", "net_type", "started_at", "last_seen_at", "page_count"],
+      // `collection_source` MANQUAIT de cette liste. batchInsert construit l'INSERT
+      // strictement depuis elle : toute clé absente est jetée en silence, et la
+      // colonne retombait sur son DEFAULT 'sdk'. Aucune session ne pouvait donc
+      // être enregistrée comme venant de l'extension sur ce chemin — le seul
+      // utilisé en production — alors que le SDK envoyait bien l'attribut.
+      colonnesInsert(dispo),
       sessions.map((s) => ({ ...s, started_at: s.last_seen_at, page_count: 0 })),
-      `on conflict (session_id) do update
-         set last_seen_at = greatest(rum_session.last_seen_at, excluded.last_seen_at),
-             user_agent   = coalesce(rum_session.user_agent, excluded.user_agent),
-             geo_country  = coalesce(rum_session.geo_country, excluded.geo_country),
-             device_type  = coalesce(rum_session.device_type, excluded.device_type),
-             -- v53 : posés au premier lot qui les porte, jamais écrasés ensuite.
-             -- net_type arrive après l'événement load, donc dans un lot POSTÉRIEUR
-             -- à celui qui a créé la session : sans coalesce, elle resterait vide.
-             release      = coalesce(rum_session.release, excluded.release),
-             net_type     = coalesce(rum_session.net_type, excluded.net_type)`,
+      clauseConflitSession(dispo),
     );
     await batchInsert(
       client,
