@@ -70,6 +70,23 @@ Défauts prod codés dans `src/background.ts`. Surchargeables sans rebuild via
 `chrome.storage.local` : clés `mip_resolve_url` et `mip_default_endpoint` (utilisé par le
 smoke-test et pour pointer une pré-prod).
 
+## Inventaire de parc (Ext-D)
+
+Toutes les 6 h, le service worker déclare son installation à la console
+(`POST /api/extension/heartbeat`) : un UUID tiré au hasard au premier démarrage et
+gardé dans `chrome.storage.local` (clé `mip_install`), la version du manifest, et les
+`app_id` pour lesquels le SDK a réellement été injecté. **Jamais d'URL visitée.**
+L'inventaire se lit dans `/admin/extension-installs`.
+
+L'URL du battement est DÉRIVÉE de `mip_resolve_url` (`/resolve` → `/heartbeat`) : un
+override de pré-prod emmène le battement avec lui, au lieu de déclarer les postes de
+staging en production.
+
+Le libellé lisible d'un poste vient de `chrome.storage.managed` (clé `poste`, déclarée
+dans `managed-schema.json`), donc de la policy d'entreprise du client — l'extension ne
+le fabrique jamais. Sans policy, l'inventaire reste anonyme. La console génère le bloc
+de policy à coller dans `/select/new?mode=extension`.
+
 ## Enregistrer un domaine à observer
 
 Via `/admin/extension-scope` dans la console (admin), ou en SQL :

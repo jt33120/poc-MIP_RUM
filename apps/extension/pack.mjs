@@ -14,6 +14,9 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 // Fichiers à empaqueter, avec leur CHEMIN DANS LE ZIP (doit matcher manifest.json).
 const FILES = [
   { zip: "manifest.json", src: "manifest.json" },
+  // Référencé par manifest.storage.managed_schema : absent du zip, Chrome refuse
+  // de charger l'extension entière ("Could not load manifest").
+  { zip: "managed-schema.json", src: "managed-schema.json" },
   { zip: "popup.html", src: "popup.html" },
   { zip: "vendor/background.js", src: "vendor/background.js" },
   { zip: "vendor/popup.js", src: "vendor/popup.js" },

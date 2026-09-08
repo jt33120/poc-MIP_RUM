@@ -49,6 +49,15 @@ export default function ExtensionPrivacy() {
           <strong>Pays approximatif</strong> déduit du <em>fuseau horaire</em> du navigateur — <strong>aucune
           adresse IP n&apos;est stockée</strong>.
         </li>
+        <li>
+          <strong>Déclaration d&apos;installation</strong> : toutes les 6 h, l&apos;extension signale son
+          existence à la console — un identifiant d&apos;installation tiré au hasard (dérivé d&apos;aucune
+          caractéristique de la machine), sa version, et les applications supervisées pour lesquelles elle a
+          effectivement mesuré. <strong>Aucune page visitée n&apos;accompagne cette déclaration.</strong> Elle
+          sert à l&apos;administrateur du parc à savoir quels postes sont équipés et à jour. Si votre
+          organisation pousse un libellé de poste par sa politique d&apos;entreprise, ce libellé est transmis
+          avec — c&apos;est le seul nom que la console peut afficher, et il vient d&apos;elle, jamais de MIP.
+        </li>
       </ul>
 
       <h2 className="mt-8 text-lg font-semibold">Ce qui n&apos;est PAS collecté</h2>
@@ -56,6 +65,10 @@ export default function ExtensionPrivacy() {
         <li>Aucune donnée personnelle identifiante, aucun profil publicitaire.</li>
         <li>Aucune frappe clavier, aucun contenu de formulaire, aucun mot de passe.</li>
         <li>Aucun historique de navigation hors des domaines enregistrés et autorisés.</li>
+        <li>
+          Aucune URL dans la déclaration d&apos;installation, et aucun nom d&apos;utilisateur, de session
+          Windows ou de compte : l&apos;identifiant d&apos;installation n&apos;est relié à aucune personne.
+        </li>
         <li>Aucune revente de données, aucun usage à des fins étrangères à la mesure de performance.</li>
       </ul>
 

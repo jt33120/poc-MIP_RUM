@@ -37,3 +37,34 @@ export function browserFromUA(ua: string | null): string {
   if (/safari/i.test(ua)) return "Safari";
   return "Autre";
 }
+
+/**
+ * Version MAJEURE du navigateur — le seul chiffre qui porte une décision
+ * (« ce parc est-il au-dessus de Chrome 111, minimum requis par l'injection en
+ * MAIN world ? »). Edge se déclare AUSSI « Chrome/… » : son `Edg/` est donc lu
+ * en premier, sinon tout Edge serait compté comme Chrome.
+ */
+export function browserMajorFromUA(ua: string | null): number | null {
+  if (!ua) return null;
+  for (const re of [/edg\/(\d+)/i, /firefox\/(\d+)/i, /chrome\/(\d+)/i, /version\/(\d+).*safari/i]) {
+    const m = re.exec(ua);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+/**
+ * Système du poste, lu dans l'User-Agent. Windows 11 est INDISCERNABLE de
+ * Windows 10 dans l'UA (les deux annoncent « Windows NT 10.0 ») : on s'arrête donc
+ * à « Windows », plutôt que d'afficher une version fausse une fois sur deux.
+ */
+export function platformFromUA(ua: string | null): string | null {
+  if (!ua) return null;
+  if (/windows/i.test(ua)) return "Windows";
+  if (/android/i.test(ua)) return "Android";
+  if (/iphone|ipad|ipod/i.test(ua)) return "iOS";
+  if (/mac os x|macintosh/i.test(ua)) return "macOS";
+  if (/cros/i.test(ua)) return "ChromeOS";
+  if (/linux/i.test(ua)) return "Linux";
+  return null;
+}
