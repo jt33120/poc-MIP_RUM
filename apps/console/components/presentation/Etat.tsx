@@ -10,7 +10,8 @@
 // Sources : le code, docs/LIMITES.md, docs/RAPPORT_CLIENT.md, docs/INTEGRATION.md.
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { fmtDate } from "@/lib/format";
-import { dernierPassagePlanifie } from "@/lib/queries-planifie";
+import { dernierPassagePlanifie, dernierTickScheduler } from "@/lib/queries-planifie";
+import { CADENCE_TICK_MIN, ligneLatence } from "@/lib/etat-latence";
 
 type Statut = "atteint" | "partiel" | "manque" | "non-mesure";
 
@@ -82,12 +83,6 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
     // `scheduler`, cf. DEPLOY.md § 1 bis.
     reel: "Base Neon et console Vercel à Francfort ; backend sorti sur Railway — trois fournisseurs de droit américain",
     s: "partiel",
-  },
-  {
-    c: "Latence d'alerte",
-    cible: "5 minutes",
-    reel: "60 minutes — cadence réduite pour tenir dans le quota d'exécution",
-    s: "manque",
   },
   {
     c: "Volumétrie",
@@ -191,10 +186,23 @@ function volatiles(dernier: Date | null): {
 }
 
 export async function Etat() {
-  const { retention, planif } = volatiles(await dernierPassagePlanifie());
+  const [quotidien, tick] = await Promise.all([dernierPassagePlanifie(), dernierTickScheduler()]);
+  const { retention, planif } = volatiles(quotidien);
+
+  // La latence d'alerte est DÉDUITE du battement de cœur du scheduler, pas
+  // écrite en dur : elle change sans qu'on touche au code (cf. lib/etat-latence).
+  const latence = ligneLatence(tick, Date.now());
+
   // La rétention se range après le masquage du replay, à sa place d'origine dans
-  // la progression « mesure → restitution → exploitation ».
-  const criteres = [...CRITERES.slice(0, 6), retention, ...CRITERES.slice(6)];
+  // la progression « mesure → restitution → exploitation » ; la latence juste
+  // après l'hébergement, là où elle a toujours été.
+  const criteres = [
+    ...CRITERES.slice(0, 6),
+    retention,
+    CRITERES[6], // Hébergement
+    { c: "Latence d'alerte", cible: `${CADENCE_TICK_MIN} minutes`, reel: latence.reel, s: latence.s },
+    ...CRITERES.slice(7),
+  ];
   const aFaire = planif ? [planif, ...A_FAIRE] : A_FAIRE;
   const compte = (s: Statut) => criteres.filter((c) => c.s === s).length;
 
