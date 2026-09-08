@@ -129,7 +129,7 @@ function CarteCapteur({ c }: { c: Capteur }) {
 
       {/* 1 — la phrase pour qui ne code pas */}
       <div className="mt-6 border-l-2 border-accent/60 pl-4">
-        <h4 className="text-[10px] font-bold uppercase tracking-[0.18em] text-accent-deep dark:text-accent">
+        <h4 className="text-[10px] font-bold uppercase tracking-[0.18em] text-accent-deep">
           En clair
         </h4>
         <p className="mt-1.5 text-[15px] leading-relaxed text-ink">{c.enClair}</p>
@@ -191,7 +191,7 @@ function CarteCapteur({ c }: { c: Capteur }) {
 
 export function Capteurs() {
   return (
-    <section id="capteurs" className="scroll-mt-16 border-t border-line/70 bg-panel/25">
+    <section id="capteurs" className="mip-bande-claire scroll-mt-16 border-y border-line">
       <div className="mx-auto max-w-6xl px-6 py-16 lg:py-20">
         <header className="max-w-2xl">
           <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-perf">

@@ -33,6 +33,8 @@ export async function middleware(req: NextRequest) {
   // whitelist CORS. Sans ce bypass, chaque beacon reçoit un 302 vers /login et
   // TOUTE l'ingestion tombe en silence — le SDK ne suit pas les redirections.
   if (req.nextUrl.pathname.startsWith("/api/ingest")) return NextResponse.next();
+  // /demo : ouvre elle-même la session démo, donc s'exécute sans cookie.
+  if (req.nextUrl.pathname === "/demo") return NextResponse.next();
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const user = token ? await verifyJwt(token) : null;
@@ -49,6 +51,16 @@ export async function middleware(req: NextRequest) {
     }
     if (p === "/") return NextResponse.redirect(new URL("/presentation", req.url), 302);
     return NextResponse.redirect(new URL("/login", req.url), 302);
+  }
+
+  // Session démo (ouverte par /demo sans mot de passe, accessible à l'internet
+  // entier) : LECTURE SEULE. On refuse toute requête qui n'est pas une lecture,
+  // ce qui couvre les Server Actions — elles passent en POST. La borne est ici,
+  // en un seul point, plutôt que répétée dans chaque action : une action ajoutée
+  // demain est couverte sans que personne ait à y penser. Seule la déconnexion
+  // reste permise, sinon le visiteur ne pourrait plus sortir de la démo.
+  if (user.demo && req.method !== "GET" && req.method !== "HEAD" && req.nextUrl.pathname !== "/logout") {
+    return new NextResponse("Compte de démonstration : lecture seule.", { status: 403 });
   }
 
   // Porte « projet courant » : RUM et IA sont propres à UNE app, il n'y a pas de

@@ -7,6 +7,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Capteurs } from "@/components/presentation/Capteurs";
+import { Demo } from "@/components/presentation/Demo";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -54,6 +55,24 @@ const TEXTURE = `
     radial-gradient(760px 380px at 92% 115%, rgba(248, 145, 1, 0.07), transparent 70%),
     linear-gradient(rgba(137, 173, 255, 0.07) 1px, transparent 1px),
     linear-gradient(90deg, rgba(137, 173, 255, 0.07) 1px, transparent 1px);
+}
+
+/* Bande claire : la section garde la palette du thème CLAIR même quand le
+   reste de la page est en sombre, pour alterner les fonds le long de la page.
+   Redéfinir les variables suffit — chaque classe Tailwind à l'intérieur
+   (bg-panel, text-ink, border-line…) les relit, aucune classe à toucher. */
+.mip-bande-claire {
+  --c-app: 249 250 251;
+  --c-panel: 255 255 255;
+  --c-panel2: 246 248 250;
+  --c-line: 228 232 238;
+  --c-ink: 17 24 39;
+  --c-ink-soft: 82 95 117;
+  --c-ink-faint: 143 154 172;
+  --c-brand: 37 99 235;
+  --c-brand-strong: 29 78 216;
+  color-scheme: light;
+  background-color: #ffffff;
 }
 
 /* Flèches du chemin de la mesure : une dérive lente qui donne le sens de
@@ -208,6 +227,7 @@ export function Landing() {
         </div>
 
         <Capteurs />
+        <Demo />
       </main>
 
       {/* Pied de page ------------------------------------------------------- */}
