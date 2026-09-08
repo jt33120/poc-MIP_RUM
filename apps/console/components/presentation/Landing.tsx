@@ -34,9 +34,11 @@ const STACK = [
   "SDK navigateur (Web Vitals · rrweb)",
   "OpenTelemetry · OTLP/HTTP",
   // « Deno » décrivait les edge functions Supabase, mortes avec leur projet en
-  // août 2026 : plus rien ne tourne sur Deno. L'ingestion de production, ce sont
-  // les routes app/api/ingest/v1/* de cette console.
-  "Ingestion Node — routes Next.js",
+  // août 2026 : plus rien ne tourne sur Deno. Et l'ingestion n'est plus une route
+  // de la console : c'est un service Node autonome (services/ingest), déployé sur
+  // Railway. Les routes Next subsistent le temps de la bascule et appellent le
+  // MÊME code — dire « routes Next.js » décrirait le montage, pas le produit.
+  "Backend Node autonome — Railway",
   // Ce qui TOURNE, pas la cible : ClickHouse a son schéma et son bench, mais
   // n'est branché nulle part, et la purge à 30 jours n'est jamais déclenchée
   // faute de planificateur authentifié. Les deux sont dits dans « L'écart, sans

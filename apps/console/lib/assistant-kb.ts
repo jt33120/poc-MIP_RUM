@@ -51,7 +51,7 @@ const ARCHITECTURE: KbCard[] = [
     id: "produit",
     title: "Ce qu'est MIP RUM",
     group: "Vue d'ensemble",
-    body: "MIP RUM est une solution de Real User Monitoring (supervision de la performance et des erreurs vécues par les vrais utilisateurs), OpenTelemetry-native et conçue pour être auto-hébergeable. Chaîne : SDK navigateur → OTLP → Postgres (UE) → console Next.js. Pas de format propriétaire, donc pas d'enfermement fournisseur. « Souverain » est la cible, pas encore l'état : l'hébergement actuel (Neon, Vercel) est de droit américain — voir la carte « Base de données & souveraineté ».",
+    body: "MIP RUM est une solution de Real User Monitoring (supervision de la performance et des erreurs vécues par les vrais utilisateurs), OpenTelemetry-native et conçue pour être auto-hébergeable. Chaîne : SDK navigateur → OTLP → service d'ingestion Node → Postgres (UE) → console Next.js. Pas de format propriétaire, donc pas d'enfermement fournisseur. « Souverain » est la cible, pas encore l'état : l'hébergement actuel (Neon, Vercel) est de droit américain — voir la carte « Base de données & souveraineté ».",
   },
   {
     id: "stack-console",
@@ -75,7 +75,7 @@ const ARCHITECTURE: KbCard[] = [
     id: "ingestion",
     title: "Ingestion",
     group: "Ingestion & protocole",
-    body: "L'ingestion est assurée par des routes de la console Next.js elle-même, déployées en fonctions serveur sur Vercel : `/api/ingest/v1/traces` (métriques, erreurs, spans), `/api/ingest/v1/logs` (journaux), `/api/ingest/v1/replay` (rejeu). Elles reçoivent du OTLP/HTTP JSON, l'aplatissent et l'écrivent en Postgres. Auth par clé d'API optionnelle (hachée en SHA-256) et limitation de débit. Elles remplacent les edge functions Deno qui tournaient sur Supabase jusqu'à la migration d'août 2026.",
+    body: "L'ingestion est un SERVICE AUTONOME : un serveur HTTP Node sans framework (`services/ingest`, au-dessus du noyau `apps/ingest`), déployé sur Railway. Il sert les trois signaux — `/v1/traces` (métriques, erreurs, spans), `/v1/logs` (journaux), `/v1/replay` (rejeu) — reçoit du OTLP/HTTP JSON, l'aplatit et l'écrit en Postgres, avec auth par clé d'API optionnelle (hachée en SHA-256) et limitation de débit. Les routes `/api/ingest/v1/*` de la console Next.js subsistent le temps de la bascule et appellent EXACTEMENT le même code : il n'existe qu'une implémentation. Historique : des edge functions Deno tournaient sur Supabase jusqu'à la migration d'août 2026, puis des routes Next jusqu'à l'extraction du backend.",
   },
   {
     id: "protocole",
@@ -87,7 +87,7 @@ const ARCHITECTURE: KbCard[] = [
     id: "database",
     title: "Base de données & souveraineté",
     group: "Base de données & souveraineté",
-    body: "Les données sont stockées dans Postgres 17 hébergé par Neon sur AWS, région `aws-eu-central-1` (Francfort) : la donnée est en Union européenne. Attention à la nuance : Neon et Vercel sont deux fournisseurs de droit américain, et les fonctions serveur de la console sont servies depuis la région `iad1` (Washington) — c'est une résidence européenne des données, pas une souveraineté. La migration vers un hébergeur de droit européen est listée comme bloquante sur la page de présentation. La sécurité en base repose sur le Row Level Security (RLS) activé et des fonctions au `search_path` épinglé ; le rôle de production reste toutefois propriétaire, donc il contourne ces policies.",
+    body: "Les données sont stockées dans Postgres 17 hébergé par Neon sur AWS, région `aws-eu-central-1` (Francfort) : la donnée est en Union européenne. La console Next.js tourne sur Vercel, région `fra1` (Francfort) elle aussi ; le backend — ingestion et travaux planifiés — est sorti sur Railway. Attention à la nuance, elle est importante : Neon, Vercel et Railway sont TROIS sociétés de droit américain, et une résidence européenne des données n'est pas une souveraineté. La migration vers un hébergeur de droit européen (qualifié SecNumCloud pour un acheteur public) est listée comme BLOQUANTE sur la page de présentation ; le backend y est prêt, il ne dépend que de Node et de PostgreSQL. La sécurité en base repose sur le Row Level Security (RLS) activé et des fonctions au `search_path` épinglé ; le rôle de production reste toutefois propriétaire, donc il contourne ces policies.",
   },
   {
     id: "backend-python",

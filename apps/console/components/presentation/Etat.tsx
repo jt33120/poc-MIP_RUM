@@ -73,11 +73,14 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Hébergement",
     cible: "Donnée ET traitement en UE, chez un hébergeur de droit européen",
-    // Les deux moitiés sont vérifiées séparément : la base par docs/NEON_MIGRATION.md
-    // et lib/legal.ts, le calcul par l'en-tête `x-vercel-id` d'une réponse NON mise
-    // en cache (`iad1:iad1::iad1::…`, deux fois, dont une route d'API) — et par
-    // l'absence de clé `regions` dans apps/console/vercel.json.
-    reel: "Base sur Neon / AWS Francfort (UE) ; fonctions serveur servies depuis iad1 (Washington)",
+    // Chaque moitié est vérifiée séparément. La base : docs/NEON_MIGRATION.md et
+    // lib/legal.ts. La console : l'en-tête `x-vercel-id` d'une réponse NON mise en
+    // cache, qui valait `iad1:iad1::iad1::…` (Washington) et vaut désormais
+    // `iad1:iad1::fra1::…` — le troisième segment est la région d'exécution ; la
+    // clé `regions` de apps/console/vercel.json l'a fixée à Francfort.
+    // Le backend : projet Railway `mip-rum-backend`, services `ingest` et
+    // `scheduler`, cf. DEPLOY.md § 1 bis.
+    reel: "Base Neon et console Vercel à Francfort ; backend sorti sur Railway — trois fournisseurs de droit américain",
     s: "partiel",
   },
   {
@@ -120,9 +123,9 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
     d: "Le cloisonnement s'arrête à l'application. Aucun niveau au-dessus pour regrouper les applications d'un même client, ni facturer à ce niveau.",
   },
   {
-    t: "Hébergement à rapatrier chez un fournisseur souverain",
+    t: "Backend sur Railway, à migrer chez un hébergeur souverain",
     g: "bloquant",
-    d: "La base vit sur Neon (PostgreSQL sur AWS, Francfort) : la donnée est bien en UE, mais l'hébergeur relève du droit américain — résidence européenne n'est pas souveraineté. Et la console, ingestion comprise, tourne sur Vercel en région iad1 (Washington) : aucune région n'est fixée dans la configuration. Cible : base et calcul chez un hébergeur de droit européen, qualifié SecNumCloud pour un acheteur public.",
+    d: "L'ingestion et les travaux planifiés ont quitté la console : ce sont des services autonomes, sans framework, déployés sur Railway. Ce déplacement rapproche le calcul de la donnée et lève les limites de planification, mais il ne change RIEN à la souveraineté — Neon, Vercel et Railway sont trois sociétés de droit américain, et la résidence européenne des données n'est pas la souveraineté. Cible : base, console et backend chez un hébergeur de droit européen, qualifié SecNumCloud pour un acheteur public. Le backend y est prêt : il ne dépend que de Node et de PostgreSQL, et son image se construit depuis ce dépôt.",
   },
   {
     t: "SDK non distribuables",
@@ -312,7 +315,8 @@ export async function Etat() {
           percentile, anonymat. Ce qui manque relève de l&apos;exploitation, pas de la conception :
           brancher le déclencheur des tâches planifiées, fermer l&apos;ingestion par défaut, activer
           le filet d&apos;isolation en base, rapatrier l&apos;hébergement chez un fournisseur de
-          droit européen, et changer de moteur de stockage avant la montée en volume.
+          droit européen — le backend, désormais autonome, est prêt à être déplacé — et
+          changer de moteur de stockage avant la montée en volume.
         </p>
       </div>
     </section>

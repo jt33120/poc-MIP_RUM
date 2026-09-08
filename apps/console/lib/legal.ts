@@ -28,10 +28,11 @@ export const ORG = {
 // appel sortant vers un tiers qui reçoit des données doit être répercuté ICI dans la même
 // modification que le code qui l'introduit (cf. invariant AD-7 du spine d'architecture).
 
-/** Hébergement — factuel, vérifié le 25/08/2026 contre docs/NEON_MIGRATION.md et DEPLOY.md. */
+/** Hébergement — factuel, vérifié le 08/09/2026 contre docs/NEON_MIGRATION.md et DEPLOY.md. */
 export const HOSTS = {
   data: "Neon (base de données PostgreSQL sur infrastructure AWS, région aws-eu-central-1 — Francfort, Allemagne)",
-  app: "Vercel Inc. (hébergement de l'application console)",
+  app: "Vercel Inc. (hébergement de l'application console ; fonctions serveur exécutées en région fra1 — Francfort, Allemagne)",
+  backend: "Railway Corp. (hébergement des services backend : réception des mesures et travaux planifiés)",
 } as const;
 
 /**
@@ -42,7 +43,12 @@ export const HOSTS = {
  */
 export const SUBPROCESSORS: { name: string; role: string; location: string }[] = [
   { name: "Neon", role: "Hébergement de la base de données (RUM, comptes)", location: "UE (Francfort, aws-eu-central-1)" },
-  { name: "Vercel Inc.", role: "Hébergement de l'application console", location: "États-Unis / réseau mondial" },
+  { name: "Vercel Inc.", role: "Hébergement de l'application console", location: "États-Unis (société) — fonctions serveur exécutées en UE (Francfort, région fra1)" },
+  // Ajouté le 08/09/2026, dans la MÊME modification que l'extraction du backend
+  // vers des services autonomes : ce sous-traitant reçoit les mesures RUM
+  // envoyées par les navigateurs. Le déclarer après coup aurait fait une
+  // déclaration RGPD inexacte et opposable pendant l'intervalle.
+  { name: "Railway Corp.", role: "Hébergement des services backend (réception des mesures RUM, travaux planifiés)", location: "États-Unis (société) — région de déploiement à fixer en UE (europe-west4, Amsterdam)" },
   { name: "[Fournisseur e-mail — à brancher]", role: "Envoi des alertes e-mail (si activé)", location: "[à préciser — UE recommandé]" },
   { name: "Mistral AI", role: "Assistance et synthèse IA (si activée), sur données agrégées, sans PII", location: "UE (France)" },
   { name: "Anthropic", role: "Assistance et synthèse IA (si activée), sur données agrégées, sans PII — employé lorsque la clé correspondante est configurée", location: "États-Unis (transfert hors UE)" },

@@ -19,7 +19,7 @@ export const PIPELINE: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "gauge",
     title: "3 · Ingestion",
-    body: "Des fonctions serveur Node — les routes d'ingestion de la console — aplatissent le flux OTLP et l'écrivent en base, avec garde-fous de charge et idempotence.",
+    body: "Un service Node autonome — sans framework, déployable partout — aplatit le flux OTLP et l'écrit en base, avec garde-fous de charge et idempotence.",
   },
   {
     icon: "list",

@@ -169,7 +169,7 @@ export const GLOSSARY = {
     label: "OTLP — OpenTelemetry Protocol",
     term: "Protocole standard d'export de télémétrie (ici OTLP/HTTP JSON) reçu par l'ingestion /v1/traces.",
     stack:
-      "Le SDK et les middlewares émettent du OTLP standard ; l'ingestion (routes Next.js en production, dev-server Node en local) l'aplatit vers Postgres.",
+      "Le SDK et les middlewares émettent du OTLP standard ; l'ingestion — un service Node autonome, monté aussi en routes Next le temps de la bascule — l'aplatit vers Postgres.",
     business:
       "Tout repose sur un standard ouvert, pas un format maison. Conséquence directe : pas d'enfermement fournisseur, et compatibilité avec l'écosystème observabilité existant.",
   },

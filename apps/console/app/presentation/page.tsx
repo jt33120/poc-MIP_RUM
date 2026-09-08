@@ -67,7 +67,7 @@ export default async function Presentation() {
           {[
             "SDK navigateur (Web Vitals API, rrweb)",
             "OpenTelemetry · OTLP/HTTP",
-            "Ingestion Node — routes Next.js",
+            "Backend Node autonome — Railway",
             "PostgreSQL",
             "Console Next.js 15 / React 19",
             // Ce qui est vrai : la donnée est en UE (Neon, Francfort). Ce qui ne

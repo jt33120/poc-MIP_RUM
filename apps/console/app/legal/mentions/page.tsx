@@ -22,6 +22,7 @@ export default function Mentions() {
       <LegalSection n="2" title="Hébergement">
         <p>Données (RUM et comptes) : {HOSTS.data}.</p>
         <p>Application console : {HOSTS.app}.</p>
+        <p>Services backend : {HOSTS.backend}.</p>
         <p>
           Les données de mesure sont hébergées et traitées au sein de l'Union européenne. Le détail des
           sous-traitants figure dans la <a href="/legal/confidentialite" className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">politique de confidentialité</a>.
