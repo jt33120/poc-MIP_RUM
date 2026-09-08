@@ -14,6 +14,7 @@ import { createSampler, decideMode, loadMode, storeMode } from "./sampling";
 import { readPrivacySignals, signalsOptOut } from "./privacy";
 import { getOrCreateSession, touchSession, type Session } from "./session";
 import type { MIPRumConfig } from "./types";
+import { initNavTiming } from "./navtiming";
 import { initVitals } from "./vitals";
 
 let session: Session | null = null;
@@ -149,6 +150,9 @@ export function init(cfg: MIPRumConfig): void {
   // signaux de frustration (P1) : rage/dead clicks ; opt-out via cfg.frustration=false
   const frustrationCap = initFrustration(emit, { enabled: cfg.frustration !== false });
   initVitals(emit);
+  // Décomposition réseau (DNS/TCP/TLS/requête/réponse) + qualité du lien : la
+  // CAUSE derrière le TTFB, qui n'en donnait que le symptôme.
+  initNavTiming(emit);
   // form analytics (Lot 7) : instrumentation champ par champ ; opt-out via cfg.forms=false
   if (cfg.forms !== false) initForms(emit);
 

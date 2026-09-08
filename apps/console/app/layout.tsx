@@ -42,7 +42,11 @@ const RUM_REPLAY_RATE = Number.isFinite(RUM_REPLAY) ? RUM_REPLAY : 0;
 // vers un projet Supabase décommissionné pendant douze jours (invariant AD-4).
 function rumInitScript(host: string | null): string {
   const endpoint = ingestEndpoint("traces", host);
-  return `window.MIPRum && MIPRum.init({endpoint:${JSON.stringify(endpoint)},appId:"mip-rum-console",clientId:"mip",env:"prod",replay:${JSON.stringify(RUM_REPLAY_RATE)}});`;
+  // Version de l'app : le SHA du commit déployé, fourni par Vercel. Sans elle, une
+  // régression de performance ne peut pas être rattachée à une mise en production —
+  // et les traces d'erreur restent minifiées faute de savoir quelle source map lire.
+  const release = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? "dev";
+  return `window.MIPRum && MIPRum.init({endpoint:${JSON.stringify(endpoint)},appId:"mip-rum-console",clientId:"mip",env:"prod",release:${JSON.stringify(release)},replay:${JSON.stringify(RUM_REPLAY_RATE)}});`;
 }
 
 /** Marque produit : pictogramme pouls sur carré orange MIP + wordmark. */
