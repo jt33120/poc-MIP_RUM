@@ -6,6 +6,7 @@
 // Rendu serveur ; seule la bascule de thème est un îlot client.
 import Image from "next/image";
 import Link from "next/link";
+import { Capteurs } from "@/components/presentation/Capteurs";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -53,6 +54,17 @@ const TEXTURE = `
     radial-gradient(760px 380px at 92% 115%, rgba(248, 145, 1, 0.07), transparent 70%),
     linear-gradient(rgba(137, 173, 255, 0.07) 1px, transparent 1px),
     linear-gradient(90deg, rgba(137, 173, 255, 0.07) 1px, transparent 1px);
+}
+
+/* Flèches du chemin de la mesure : une dérive lente qui donne le sens de
+   lecture sans attirer l'œil. Décalée par étape (animationDelay en ligne). */
+@keyframes mip-derive {
+  0%, 100% { transform: translateX(0); opacity: 0.55; }
+  50%      { transform: translateX(2px); opacity: 1; }
+}
+.mip-fleche { animation: mip-derive 2.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .mip-fleche { animation: none; opacity: 0.8; }
 }
 `;
 
@@ -194,6 +206,8 @@ export function Landing() {
             </p>
           </div>
         </div>
+
+        <Capteurs />
       </main>
 
       {/* Pied de page ------------------------------------------------------- */}
