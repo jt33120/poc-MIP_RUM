@@ -4,6 +4,9 @@
 // et une vraie capture du portail (pas une maquette). Fond bleu texturé « papier
 // millimétré » : la texture vit dans le CSS ci-dessous, déclinée clair/sombre.
 // Rendu serveur ; seule la bascule de thème est un îlot client.
+// Le fond texturé vit dans globals.css (.mip-sci), pas ici : /select et
+// /select/new le réutilisent, et importer ce module pour une chaîne CSS y
+// tirerait toute la vitrine dans leur bundle.
 import Image from "next/image";
 import Link from "next/link";
 import { Capteurs } from "@/components/presentation/Capteurs";
@@ -36,57 +39,6 @@ const STACK = [
   "Hébergé en UE · TTL 30 j",
 ];
 
-// Fond « papier millimétré » : deux halos doux + une grille 32 px. Sobre —
-// alphas faibles, aucune couleur saturée. Déclinée par thème parce que la même
-// grille doit rester visible sur fond pâle comme sur navy profond.
-const TEXTURE = `
-.mip-sci {
-  background-color: rgb(var(--c-app));
-  background-image:
-    radial-gradient(900px 420px at 12% -15%, rgba(37, 99, 235, 0.10), transparent 70%),
-    radial-gradient(760px 380px at 92% 115%, rgba(0, 51, 153, 0.08), transparent 70%),
-    linear-gradient(rgba(37, 99, 235, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(37, 99, 235, 0.055) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
-}
-.dark .mip-sci {
-  background-color: #060d24;
-  background-image:
-    radial-gradient(900px 420px at 12% -15%, rgba(59, 110, 235, 0.22), transparent 70%),
-    radial-gradient(760px 380px at 92% 115%, rgba(248, 145, 1, 0.07), transparent 70%),
-    linear-gradient(rgba(137, 173, 255, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(137, 173, 255, 0.07) 1px, transparent 1px);
-}
-
-/* Bande claire : la section garde la palette du thème CLAIR même quand le
-   reste de la page est en sombre, pour alterner les fonds le long de la page.
-   Redéfinir les variables suffit — chaque classe Tailwind à l'intérieur
-   (bg-panel, text-ink, border-line…) les relit, aucune classe à toucher. */
-.mip-bande-claire {
-  --c-app: 249 250 251;
-  --c-panel: 255 255 255;
-  --c-panel2: 246 248 250;
-  --c-line: 228 232 238;
-  --c-ink: 17 24 39;
-  --c-ink-soft: 82 95 117;
-  --c-ink-faint: 143 154 172;
-  --c-brand: 37 99 235;
-  --c-brand-strong: 29 78 216;
-  color-scheme: light;
-  background-color: #ffffff;
-}
-
-/* Flèches du chemin de la mesure : une dérive lente qui donne le sens de
-   lecture sans attirer l'œil. Décalée par étape (animationDelay en ligne). */
-@keyframes mip-derive {
-  0%, 100% { transform: translateX(0); opacity: 0.55; }
-  50%      { transform: translateX(2px); opacity: 1; }
-}
-.mip-fleche { animation: mip-derive 2.6s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) {
-  .mip-fleche { animation: none; opacity: 0.8; }
-}
-`;
 
 /** Marque MIP RUM — pouls sur carré orange + wordmark. */
 function BrandMark() {
@@ -157,8 +109,6 @@ function Keywords({ label, items }: { label: string; items: string[] }) {
 export function Landing() {
   return (
     <div className="mip-sci flex min-h-screen flex-col">
-      <style>{TEXTURE}</style>
-
       {/* Barre ------------------------------------------------------------- */}
       <header className="border-b border-line bg-panel/60 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">

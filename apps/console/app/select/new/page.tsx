@@ -8,6 +8,7 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { CopyBlock } from "@/components/CopyBlock";
 import { ICON_PATHS, Icon } from "@/components/icons";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Bookmarklet } from "@/components/onboarding/Bookmarklet";
 import { OnboardingPoll } from "@/components/OnboardingPoll";
 import { WizardBadge } from "@/components/wizard/WizardStep";
@@ -61,7 +62,7 @@ export default async function AddSite({ searchParams }: { searchParams: Promise<
   const appId = typeof sp.app === "string" ? sp.app : null;
 
   return (
-    <main className="min-h-screen bg-app px-6 py-14">
+    <main className="mip-sci min-h-screen px-6 py-14">
       <div className="mx-auto w-full max-w-3xl">
         <header className="mb-8 flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-deep shadow-glow">
@@ -73,9 +74,12 @@ export default async function AddSite({ searchParams }: { searchParams: Promise<
             </div>
             <div className="text-[11px] uppercase tracking-[0.18em] text-ink-faint">Ajouter une application</div>
           </div>
-          <Link href="/select" className="btn-ghost ml-auto">
-            ← Projets
-          </Link>
+          <div className="ml-auto flex items-center gap-2.5">
+            <ThemeToggle />
+            <Link href="/select" className="btn-ghost">
+              ← Projets
+            </Link>
+          </div>
         </header>
 
         {appId ? (
