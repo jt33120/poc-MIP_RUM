@@ -8,6 +8,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Capteurs } from "@/components/presentation/Capteurs";
 import { Demo } from "@/components/presentation/Demo";
+import { Etat } from "@/components/presentation/Etat";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -228,6 +229,7 @@ export function Landing() {
 
         <Capteurs />
         <Demo />
+        <Etat />
       </main>
 
       {/* Pied de page ------------------------------------------------------- */}
