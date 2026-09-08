@@ -6,6 +6,13 @@
 // scripts/record-console-tour.mjs) — pas un montage. Sans son, donc sans
 // piste audio dans le fichier.
 //
+// PROVENANCE DU TRAFIC, à ne pas maquiller : les chiffres à l'écran viennent de
+// scripts/gen-traffic.mjs — des sessions Chromium scriptées sur le site de démo
+// local, passées par le vrai SDK et la vraie chaîne d'ingestion. Les écrans et
+// les calculs sont ceux de production ; les visiteurs, non. Écrire « données
+// réelles » ici contredirait la promesse même de la page d'accueil
+// (« pas une sonde de laboratoire »).
+//
 // Le bouton « Voir le compte démo » n'apparaît QUE si DEMO_USER_APPS est
 // configurée : sans démo derrière, un bouton qui renvoie vers /login est une
 // promesse non tenue. Cf. lib/demo.ts et app/demo/route.ts pour les bornes.
@@ -36,8 +43,10 @@ export function Demo() {
             La console, en mouvement
           </h2>
           <p className="mt-3 leading-relaxed text-ink-soft">
-            Une visite enregistrée de bout en bout, sur des données réelles remontées par le SDK.
-            Aucun montage : c&apos;est l&apos;outil tel qu&apos;il tourne.
+            Une visite enregistrée de bout en bout, sans montage : c&apos;est l&apos;outil tel
+            qu&apos;il tourne. Le trafic mesuré vient de sessions de navigateur scriptées sur un site
+            de démonstration, passées par le vrai SDK et la vraie chaîne d&apos;ingestion — les écrans
+            et les calculs sont ceux de production, les visiteurs non.
           </p>
         </header>
 

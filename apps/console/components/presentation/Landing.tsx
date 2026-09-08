@@ -34,9 +34,13 @@ const STACK = [
   "SDK navigateur (Web Vitals · rrweb)",
   "OpenTelemetry · OTLP/HTTP",
   "Ingestion Deno / Node",
-  "PostgreSQL → ClickHouse",
+  // Ce qui TOURNE, pas la cible : ClickHouse a son schéma et son bench, mais
+  // n'est branché nulle part, et la purge à 30 jours n'est jamais déclenchée
+  // faute de planificateur authentifié. Les deux sont dits dans « L'écart, sans
+  // le maquiller » ; les annoncer ici comme acquis contredirait ce tableau.
+  "PostgreSQL",
   "Next.js 15 · React 19",
-  "Hébergé en UE · TTL 30 j",
+  "Hébergé en UE — Francfort",
 ];
 
 
@@ -172,7 +176,8 @@ export function Landing() {
               />
             </div>
             <p className="mt-3 text-xs text-ink-faint">
-              Capture réelle de la console — vue d&apos;ensemble.
+              Capture réelle de la console. Les chiffres affichés viennent d&apos;un jeu de
+              démonstration, pas d&apos;un client en production.
             </p>
           </div>
         </div>

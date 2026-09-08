@@ -68,9 +68,9 @@ const CAPTEURS: Capteur[] = [
       "Monitoring de masse : trafic public, portails, e-commerce",
       "Corrélation front → back par traceparent (un saut, FastAPI)",
     ],
-    fort: "Couvre 100 % des visiteurs réels, bien au-delà du parc interne.",
+    fort: "Atteint tout le trafic public, bien au-delà du parc interne — moins les visiteurs qui refusent la mesure (DNT et GPC honorés par défaut) et ceux qu'un bloqueur arrête.",
     limite:
-      "Demande une mise en production côté client. Web uniquement — pas de SDK mobile natif.",
+      "Demande une mise en production côté client. Web et React Native (paquet privé, v0.1) ; pas de SDK iOS ou Android natif.",
   },
 ];
 
