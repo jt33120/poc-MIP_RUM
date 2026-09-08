@@ -11,6 +11,15 @@ export interface SessionUser {
   email: string;
   role: "admin" | "viewer";
   apps: string[] | null; // null = toutes les apps
+  /**
+   * Session ouverte par /demo, sans mot de passe, pour un visiteur de la
+   * vitrine. Portée dans le JWT donc infalsifiable côté client, et lue par le
+   * middleware qui refuse toute requête non-GET : une session démo est en
+   * LECTURE SEULE, quoi que fasse la page. Sans cette borne, n'importe quel
+   * visiteur pourrait créer une règle d'alerte avec un webhook vers l'URL de
+   * son choix (app/alerts/actions.ts ne porte aucune garde de rôle).
+   */
+  demo?: boolean;
 }
 
 const DEV_SECRET = "dev-secret-mip-rum";
@@ -44,7 +53,12 @@ function secret(): Uint8Array {
 }
 
 export async function signJwt(user: SessionUser): Promise<string> {
-  return new SignJWT({ email: user.email, role: user.role, apps: user.apps })
+  return new SignJWT({
+    email: user.email,
+    role: user.role,
+    apps: user.apps,
+    ...(user.demo ? { demo: true } : {}),
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_HOURS}h`)
@@ -59,7 +73,7 @@ export async function verifyJwt(token: string): Promise<SessionUser | null> {
     const apps = Array.isArray(payload.apps)
       ? (payload.apps.filter((a) => typeof a === "string") as string[])
       : null;
-    return { email: payload.email, role: payload.role, apps };
+    return { email: payload.email, role: payload.role, apps, demo: payload.demo === true };
   } catch {
     return null; // token absent/expiré/falsifié -> non connecté
   }
