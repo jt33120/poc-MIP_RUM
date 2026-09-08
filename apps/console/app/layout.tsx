@@ -89,6 +89,23 @@ function ProjectSwitcher({ name, appId }: { name: string; appId: string }) {
   );
 }
 
+/** Le capteur, identique sur les trois coquilles. Extrait pour qu'aucune branche
+ *  ne puisse l'oublier : c'est précisément ce qui laissait la vitrine, le login et
+ *  le choix de projet — tout le premier contact d'un visiteur — hors mesure, sur un
+ *  produit dont l'argument est justement de mesurer le premier contact. */
+function Capteur({ init }: { init: string }) {
+  return (
+    <>
+      <script src="/mip-rum.js" />
+      <script dangerouslySetInnerHTML={{ __html: init }} />
+      {/* dogfooding : la console collecte son propre ressenti (widget feedback
+          -> track 'feedback' -> rum_event, app mip-rum-console) pour peupler
+          sa page Expérience. Chargé après l'init RUM. */}
+      <script src="/mip-rum-feedback.js" defer />
+    </>
+  );
+}
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getUser();
   const RUM_INIT = rumInitScript((await headers()).get("host"));
@@ -100,7 +117,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <head>
           <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         </head>
-        <body className="min-h-screen">{children}</body>
+        <body className="min-h-screen">
+          {children}
+          <Capteur init={RUM_INIT} />
+        </body>
       </html>
     );
   }
@@ -114,7 +134,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <head>
           <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         </head>
-        <body className="min-h-screen">{children}</body>
+        <body className="min-h-screen">
+          {children}
+          <Capteur init={RUM_INIT} />
+        </body>
       </html>
     );
   }
@@ -245,16 +268,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <main className="flex-1 p-6 lg:p-8">{children}</main>
           </div>
         </div>
-        {RUM_INIT && (
-          <>
-            <script src="/mip-rum.js" />
-            <script dangerouslySetInnerHTML={{ __html: RUM_INIT }} />
-            {/* dogfooding : la console collecte son propre ressenti (widget feedback
-                -> track 'feedback' -> rum_event, app mip-rum-console) pour peupler
-                sa page Expérience. Chargé après l'init RUM. */}
-            <script src="/mip-rum-feedback.js" defer />
-          </>
-        )}
+        <Capteur init={RUM_INIT} />
         {/* Assistant IA (données + architecture, avec citations vérifiables) */}
         <AskAssistant appId={currentProject?.app_id ?? ""} />
       </body>

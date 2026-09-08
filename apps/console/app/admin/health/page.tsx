@@ -1,5 +1,7 @@
+import { headers } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAdmin } from "@/lib/auth";
+import { ingestEndpoint } from "@/lib/ingest-endpoint";
 import { internalHealth } from "@/lib/queries-health";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +10,23 @@ export const dynamic = "force-dynamic";
 export default async function Health() {
   await requireAdmin();
   const h = await internalHealth();
+
+  // Où le capteur de la console POSTE réellement, résolu comme il l'est pour le
+  // navigateur. Affiché parce que sa panne est SILENCIEUSE : NEXT_PUBLIC_RUM_ENDPOINT
+  // prime sur l'hôte courant, donc une valeur périmée fait émettre dans le vide sans
+  // la moindre erreur — c'est déjà arrivé douze jours durant vers un projet Supabase
+  // décommissionné (invariant AD-4). Un endpoint qui ne pointe pas l'hôte de la page
+  // est signalé ici, au lieu de se lire dans un tableau vide des semaines plus tard.
+  const hote = (await headers()).get("host");
+  const endpoint = ingestEndpoint("traces", hote);
+  const force = Boolean(process.env.NEXT_PUBLIC_RUM_ENDPOINT);
+  const memeHote = (() => {
+    try {
+      return new URL(endpoint).host === hote;
+    } catch {
+      return false;
+    }
+  })();
 
   const lag = h.metering_lag_hours;
   const lagTone = lag == null ? "" : lag > 30 ? "text-red-600 dark:text-red-400" : lag > 26 ? "text-amber-600 dark:text-amber-400" : "";
@@ -23,6 +42,26 @@ export default async function Health() {
           </>
         }
       />
+
+      <h2 className="mb-2 text-sm font-semibold text-ink">Où la console s&apos;envoie</h2>
+      <div
+        className={`card mb-6 px-4 py-3 ${memeHote ? "" : "border-warn/50 bg-warn/5"}`}
+        data-testid="dogfooding-endpoint"
+      >
+        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+          Endpoint du capteur (dogfooding)
+        </div>
+        <code className="mt-1 block break-all font-mono text-[13px] text-ink">{endpoint}</code>
+        <div className={`mt-1 text-xs ${memeHote ? "text-ink-soft" : "text-warn"}`}>
+          {memeHote
+            ? force
+              ? "Forcé par NEXT_PUBLIC_RUM_ENDPOINT, et pointe bien cet hôte."
+              : "Résolu depuis l'hôte de la requête — aucune configuration à maintenir."
+            : force
+              ? "NEXT_PUBLIC_RUM_ENDPOINT pointe un AUTRE hôte que celui-ci : la télémétrie de cette console part ailleurs, sans erreur visible. Retirez la variable pour revenir à l'hôte courant."
+              : "L'endpoint ne pointe pas l'hôte de cette page — la télémétrie part ailleurs."}
+        </div>
+      </div>
 
       <h2 className="mb-2 text-sm font-semibold text-ink">Ingestion (5 min glissantes)</h2>
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">

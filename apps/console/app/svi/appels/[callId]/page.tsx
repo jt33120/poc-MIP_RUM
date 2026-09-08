@@ -6,6 +6,7 @@
 // sujet — la porte du cadrage passerait à la lettre et échouerait en esprit.
 // Cf. l'en-tête de migration-v51.
 import Link from "next/link";
+import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { fmtDate } from "@/lib/format";
@@ -43,6 +44,15 @@ export default async function FicheAppel({
   params: Promise<{ callId: string }>;
   searchParams?: Promise<SearchParams>;
 }) {
+  if (estFermee("/svi")) {
+    return (
+      <CapaciteFermee
+        titre="Supervision SVI"
+        sujet="Supervision du serveur vocal interactif."
+      />
+    );
+  }
+
   const { callId } = await params;
   const f = parseFilters(await searchParams);
 

@@ -3,6 +3,7 @@
 // côté MIP RUM, aucune table rum_ai. Clairement badgé « sponsorisé xSOM » : c'est
 // un placement partenaire, distinct du produit RUM natif de MIP.
 import { PageHeader } from "@/components/PageHeader";
+import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { parseFilters, periodLabel, type SearchParams } from "@/lib/queries-v2";
 import { fetchAiSummary } from "@/lib/xsom-ai";
 import { XsomSponsorBanner, XsomAiPanel } from "@/components/xsom/XsomAiPanel";
@@ -13,6 +14,18 @@ export const dynamic = "force-dynamic";
 const XSOM_CONSOLE_URL = process.env.XSOM_CONSOLE_URL ?? "https://xsom-ai-guard-production.up.railway.app";
 
 export default async function AiPartner({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  // La sidebar n'y mène plus, mais l'URL reste tapable : le refus doit vivre ICI
+  // aussi, sinon le cadenas n'est qu'un décor. Aucun appel à la façade xSOM n'est
+  // émis tant que la capacité est fermée.
+  if (estFermee("/ai")) {
+    return (
+      <CapaciteFermee
+        titre="Supervision IA"
+        sujet="Supervision des agents et modèles en production."
+      />
+    );
+  }
+
   const sp = await searchParams;
   const f = parseFilters(sp);
   // xSOM expose 24h/7d/30d ; on mappe la période console (1h/24h/7d).
@@ -58,3 +71,4 @@ export default async function AiPartner({ searchParams }: { searchParams?: Promi
     </div>
   );
 }
+

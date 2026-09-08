@@ -11,6 +11,10 @@ export type NavCategory = {
   icon: IconName;
   domain: "perf" | "neutral";
   children?: NavLink[]; // sous-onglets ; absent = catégorie mono-page
+  /** Capacité annoncée mais fermée : entrée non cliquable, cadenas, page barrée.
+   *  Drapeau UNIQUE — la sidebar et la page le lisent tous les deux, donc rouvrir
+   *  l'accès se fait en retirant cette ligne, sans risque d'en oublier une moitié. */
+  verrouille?: boolean;
 };
 
 export const CATEGORIES: NavCategory[] = [
@@ -62,19 +66,24 @@ export const CATEGORIES: NavCategory[] = [
   { href: "/logs", label: "Logs", icon: "logs", domain: "neutral" },
   // Supervision SVI (serveur vocal). Produit distinct du RUM web : un appel n'est
   // pas une visite, cf. migration-v51. La vue d'ensemble porte le containment NET.
+  // Fermée comme la supervision IA : capacité annoncée, accès non ouvert. Les
+  // sous-onglets restent déclarés pour que la réouverture soit un seul mot à
+  // retirer, mais la sidebar ne les expose plus (l'entrée n'est plus cliquable).
   {
     href: "/svi",
     label: "Supervision SVI",
     icon: "activity",
     domain: "neutral",
+    verrouille: true,
     children: [
       { href: "/svi", label: "Vue d'ensemble" },
       { href: "/svi/appels", label: "Appels" },
     ],
   },
   // Espace PARTENAIRE (sponsorisé xSOM) — supervision IA lue depuis xSOM AI Guard,
-  // distincte du RUM MIP (cf. ADR-0001). Le libellé « · xSOM » signale le partenaire.
-  { href: "/ai", label: "IA · xSOM", icon: "ai", domain: "neutral" },
+  // distincte du RUM MIP (cf. ADR-0001). Fermée pour l'instant : l'entrée reste
+  // visible pour annoncer la capacité, mais ne mène nulle part.
+  { href: "/ai", label: "Supervision IA", icon: "ai", domain: "neutral", verrouille: true },
   { href: "/api-docs", label: "API", icon: "grid", domain: "neutral" },
 ];
 
