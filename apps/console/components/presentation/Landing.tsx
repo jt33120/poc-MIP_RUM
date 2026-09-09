@@ -11,7 +11,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Capteurs } from "@/components/presentation/Capteurs";
 import { Demo } from "@/components/presentation/Demo";
-import { Etat } from "@/components/presentation/Etat";
+import { Specs } from "@/components/presentation/Specs";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -41,13 +41,14 @@ const STACK = [
   "Backend Node autonome — Railway",
   // Ce qui TOURNE, pas la cible : ClickHouse a son schéma et son bench, mais
   // n'est branché nulle part, et la purge à 30 jours n'est jamais déclenchée
-  // faute de planificateur authentifié. Les deux sont dits dans « L'écart, sans
-  // le maquiller » ; les annoncer ici comme acquis contredirait ce tableau.
+  // faute de planificateur authentifié. Les deux sont dits dans « Specs /
+  // Capacité technique », onglet « Écart au marché » ; les annoncer ici comme
+  // acquis contredirait ce tableau.
   "PostgreSQL",
   "Next.js 15 · React 19",
   // « Hébergé en UE » tout court était trop large : c'est la BASE qui est à
-  // Francfort. Les fonctions serveur, elles, sont servies depuis iad1
-  // (Washington) — cf. la ligne « Hébergement » de la section « L'écart ».
+  // Francfort. Le détail par fournisseur — base, console, backend — est dans
+  // « Specs / Capacité technique », onglet « Infrastructure ».
   "Base de données en UE — Francfort",
 ];
 
@@ -192,7 +193,7 @@ export function Landing() {
 
         <Capteurs />
         <Demo />
-        <Etat />
+        <Specs />
       </main>
 
       {/* Pied de page ------------------------------------------------------- */}
