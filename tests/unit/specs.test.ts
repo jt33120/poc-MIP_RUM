@@ -267,7 +267,11 @@ describe("onglet mesures — ce qu'on capte est routé et stocké pour de vrai",
     // qui annoncerait le contraire serait une déclaration RGPD fausse, pas une
     // coquille.
     const session = MESURES.find((m) => m.table === "rum_session");
-    expect(session?.detail).toContain("aucune adresse IP");
+    // Insensible à la casse : la phrase a été réécrite le 09/09/2026 pour dire le
+    // repli sur l'en-tête pays du CDN, et l'engagement y ouvre désormais une
+    // proposition (« Aucune adresse IP… »). C'est l'ENGAGEMENT qui est vérifié,
+    // pas la majuscule.
+    expect(session?.detail.toLowerCase()).toContain("aucune adresse ip");
   });
 });
 

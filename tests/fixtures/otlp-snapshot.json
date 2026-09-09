@@ -156,7 +156,7 @@
                 {
                   "key": "exception.stacktrace",
                   "value": {
-                    "stringValue": "TypeError at /home (app.js)"
+                    "stringValue": "TypeError: Cannot read properties of undefined\n    at validerPanier (https://app.demo.fr/_next/static/chunks/main-4f2a9c1d.js:1:2345)\n    at HTMLButtonElement.<anonymous> (https://app.demo.fr/_next/static/chunks/main-4f2a9c1d.js:1:900)"
                   }
                 },
                 {

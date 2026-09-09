@@ -10,6 +10,7 @@
 // Libellés : Excellent >= 90 / Bon >= 75 / Dégradé >= 50 / Critique < 50.
 import { q } from "./db";
 import { type Filters, PERIODS } from "./filters";
+import { CORE_VITALS } from "./rating";
 import { internalClause } from "./queries";
 
 export type HealthLabel = "Excellent" | "Bon" | "Dégradé" | "Critique";
@@ -74,10 +75,14 @@ export async function healthScore(f: Filters): Promise<Health> {
        from rum_metric m
        left join rum_session s using (session_id)
        where m.ts > now() - interval '${itv}'
+         -- Les phases réseau (DNS, TCP, TLS…) partagent ce canal et n'ont pas de
+         -- seuil Google : sans ce filtre elles comptent au dénominateur sans
+         -- pouvoir atteindre le numérateur, et le score est plafonné.
+         and m.name = any($3::text[])
          and ($1::text is null or m.app_id = $1)
          and ($2::text is null or s.device_type = $2)${internalClause(f, "m.app_id")}
      ) x`,
-    [f.app, f.device],
+    [f.app, f.device, CORE_VITALS],
   );
 
   // erreurs / pages vues / sessions propres, même fenêtre et mêmes filtres
