@@ -33,6 +33,7 @@ import {
   mesuresNonCouvertes,
   type Statut,
 } from "@/lib/specs";
+import { SDK_BUDGET_KO, SDK_POIDS_TEXTE } from "@/lib/sdk-poids";
 
 const LIBELLE: Record<Statut, string> = {
   atteint: "Atteint",
@@ -63,12 +64,12 @@ function Etiquette({ s, texte }: { s: Statut; texte?: string }) {
 const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Poids du capteur",
-    cible: "≤ 35 ko gzip (budget du build)",
+    cible: `≤ ${SDK_BUDGET_KO} ko gzip (budget du build)`,
     // Le chiffre est mesuré (gzip du bundle publié). La comparaison au marché a
     // été retirée : elle venait d'une note interne sans source, et le poids d'un
     // SDK concurrent dépend de sa version et des modules activés — invérifiable
     // en l'état, donc pas affichable comme un fait.
-    reel: "12,4 ko gzip, mesuré sur le bundle publié",
+    reel: `${SDK_POIDS_TEXTE}, mesuré sur le bundle publié`,
     s: "atteint",
   },
   {
@@ -92,14 +93,22 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Format sur le fil",
     cible: "OTLP/HTTP standard, backend remplaçable",
-    reel: "OTLP JSON valide et lisible au DevTools, mais sans parentSpanId, kind ni status",
+    // Les champs natifs sont émis depuis le 09/09/2026 (parentSpanId, kind,
+    // status) et la trace est enracinée sur la page vue : ce qui reste, c'est le
+    // VOCABULAIRE — d'où « partiel » maintenu, mais pour une autre raison.
+    reel: "OTLP JSON complet — parentSpanId, kind et status natifs, trace enracinée sur la page vue ; vocabulaire encore partiellement propriétaire",
     s: "partiel",
   },
   {
     c: "Masquage du replay",
     cible: "Saisies, texte et médias masqués par défaut (standard 2026)",
-    reel: "Saisies masquées et blocs exclus ; texte et médias non masqués",
-    s: "partiel",
+    // Vérifié le 09/09/2026 dans un Chromium réel, avec le bundle rrweb publié :
+    // ni le texte de la page, ni la valeur d'un champ, ni les octets d'une image
+    // ne survivent à l'enregistrement au niveau par défaut. Le niveau se règle
+    // par application (`replayMask`), mais son DÉFAUT est le plus protecteur —
+    // un masquage qu'il faut penser à activer n'en est pas un.
+    reel: "Saisies, texte et médias masqués par défaut ; blocs marqués jamais capturés",
+    s: "atteint",
   },
   {
     c: "Hébergement",

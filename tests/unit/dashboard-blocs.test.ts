@@ -9,6 +9,7 @@ import {
   lireChoix,
   serialiserChoix,
 } from "../../apps/console/lib/dashboard-blocs";
+import { CADENCE_TICK_MIN } from "../../apps/console/lib/etat-latence";
 import { CATEGORIES } from "../../apps/console/components/nav-items";
 
 const APERCU = catalogueDe("/")!;
@@ -136,5 +137,30 @@ describe("retrait d'un bloc du catalogue", () => {
   it("un cookie ne contenant QUE le bloc disparu retombe sur les défauts", () => {
     const choix = lireChoix(vue, "briefing:1");
     for (const b of vue.blocs) expect(choix[b.id], b.id).toBe(b.defaut);
+  });
+});
+
+// La latence d'alerte a menti pendant des semaines : « 60 minutes » décrivait
+// Vercel Cron relayé par GitHub Actions, alors que le déclencheur dédié passe
+// toutes les cinq minutes depuis son déploiement sur Railway. Personne ne
+// relit une parenthèse dans une liste grisée — donc on la fait relire par un
+// test.
+describe("motifs des mesures non couvertes", () => {
+  const raisons = CATALOGUES.flatMap((c) => c.indisponibles.map((i) => i.raison));
+
+  it("aucune cadence périmée ne subsiste", () => {
+    for (const r of raisons) {
+      expect(r, r).not.toMatch(/60 minutes|à l'heure sur cet environnement/);
+    }
+  });
+
+  it("l'alerte SLO cite la cadence RÉELLE, importée et non retapée", () => {
+    const slo = catalogueDe("/slo")!.indisponibles.find((i) => i.label.includes("temps réel"));
+    expect(slo).toBeDefined();
+    expect(slo!.raison).toContain(`${CADENCE_TICK_MIN} minutes`);
+  });
+
+  it("chaque absence porte un motif non vide — une liste grisée sans raison se lit comme une feuille de route", () => {
+    for (const r of raisons) expect(r.length).toBeGreaterThan(30);
   });
 });

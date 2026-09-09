@@ -5,7 +5,14 @@
 // .setAttributes()`, `span.end(ts)`, `forceFlush()`. Le batch, le flush au
 // pagehide/visibilitychange et la file de retry durable (localStorage, via le
 // décorateur RetryExporter) sont conservés à l'identique.
-import { buildResourceSpans, type Attributes, type EmitSpan, msToHr } from "./otlp-encode";
+import {
+  buildResourceSpans,
+  kindPour,
+  statutPour,
+  type Attributes,
+  type EmitSpan,
+  msToHr,
+} from "./otlp-encode";
 import {
   ExportResultCode,
   type ReadableSpan,
@@ -54,14 +61,43 @@ function hexId(bytes: number): string {
 // Rotation par page vue (et non par session) : une trace doit rester bornée.
 let pageTraceId = hexId(16);
 
+// --- Span RACINE de la page vue ---------------------------------------------
+// Une trace sans racine n'est pas une trace : chaque span de la page était un
+// orphelin, et un backend OTel tiers affichait autant de branches détachées que
+// de mesures. Le span `pageview` devient donc le parent de tout ce que la page
+// produit ensuite — c'est la relation vraie, pas une convention : une métrique,
+// une erreur ou un appel réseau ont bien lieu PENDANT cette page vue.
+//
+// L'identifiant est tiré à l'ouverture de la trace, avant que le span pageview
+// n'existe, parce que les enfants doivent pouvoir le désigner.
+let pageSpanId = hexId(8);
+
+// Le span racine a-t-il été RÉELLEMENT créé pour la trace courante ?
+//
+// Ce drapeau évite un parent fantôme, et il en évite deux sortes :
+//   - un span émis AVANT le pageview (une erreur au tout début du chargement) ;
+//   - une page vue dont le span racine n'est jamais parti — consentement refusé,
+//     ou session en mode « error-biased » où seules les erreurs passent.
+// Dans les deux cas le span reste racine plutôt que de pointer vers un parent
+// qui n'arrivera jamais. Un backend afficherait sinon une trace en attente d'un
+// span perpétuellement manquant.
+let racineCreee = false;
+
 /** traceId de la page vue courante — injecté dans `traceparent` par apispans. */
 export function currentTraceId(): string {
   return pageTraceId;
 }
 
+/** spanId de la page vue courante — parent des spans de cette page. */
+export function currentPageSpanId(): string {
+  return pageSpanId;
+}
+
 /** Ouvre une nouvelle trace : appelé à chaque pageview (initiale et SPA). */
 export function newPageTrace(): string {
   pageTraceId = hexId(16);
+  pageSpanId = hexId(8);
+  racineCreee = false;
   return pageTraceId;
 }
 
@@ -130,10 +166,18 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
   return {
     startSpan(name, opts) {
       const startMs = opts?.startTime ?? Date.now();
+      // Le PREMIER pageview de la trace en est la racine : il prend l'identifiant
+      // réservé, et n'a pas de parent. Les suivants — le rejeu de la file de
+      // retry peut en produire un second — reçoivent un identifiant neuf, sans
+      // quoi deux spans porteraient la même clé et l'ingestion en jetterait un.
+      const estRacine = name === "pageview" && !racineCreee;
+      if (estRacine) racineCreee = true;
       const span: EmitSpan = {
         name,
         traceId: pageTraceId, // tous les spans de la page vue partagent la trace
-        spanId: hexId(8),
+        spanId: estRacine ? pageSpanId : hexId(8),
+        ...(!estRacine && racineCreee ? { parentSpanId: pageSpanId } : {}),
+        kind: kindPour(name),
         startTime: msToHr(startMs),
         endTime: msToHr(startMs),
         attributes: {},
@@ -153,6 +197,10 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
           const a = span.attributes as Record<string, unknown>;
           if (typeof a["mip.trace_id"] === "string") span.traceId = a["mip.trace_id"];
           if (typeof a["mip.span_id"] === "string") span.spanId = a["mip.span_id"];
+          // L'issue ne se connaît qu'à la fermeture : le code HTTP d'un appel
+          // arrive avec la réponse, pas à l'ouverture du span.
+          const statut = statutPour(span.name, span.attributes);
+          if (statut) span.status = statut;
           span.endTime = msToHr(epochMs ?? Date.now());
           buffer.push(span);
           if (buffer.length >= MAX_BATCH) void flushBatch();

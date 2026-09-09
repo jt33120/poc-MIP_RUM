@@ -14,12 +14,13 @@ import { Demo } from "@/components/presentation/Demo";
 import { Specs } from "@/components/presentation/Specs";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { SDK_POIDS_TEXTE } from "@/lib/sdk-poids";
 
 // --- contenu : des mots clés, pas des paragraphes -----------------------------
 
 /** Ce que l'outil mesure et restitue, du navigateur à la décision. */
 const FONCTIONNEMENT = [
-  "Snippet ~12 ko gzip",
+  `Snippet ${SDK_POIDS_TEXTE}`,
   "Core Web Vitals p75 — LCP · INP · CLS",
   "Erreurs JS groupées par cause",
   "Sessions & parcours réels",

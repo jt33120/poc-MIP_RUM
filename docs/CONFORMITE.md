@@ -21,7 +21,7 @@
 | Événements `track.*` | défini par le client | scrub récursif des `props` |
 | Adresse IP | **jamais stockée** | géolocalisation **par timezone** (`mip.tz`) → pays seulement |
 | Identifiant utilisateur | pseudonyme | `user_hash` **anonymisé** côté client (pas de PII) |
-| Session replay (opt-in) | rejouée | **masquage des saisies par défaut**, opt-in par app, consent requis |
+| Session replay (opt-in) | rejouée | **masquage par défaut des saisies, du texte et des médias** (réglable par app via `replayMask`), opt-in par app, consent requis |
 
 **Défense en profondeur PII** : `beforeSend` côté client **+** scrub côté serveur (parité
 dev-server/edge) → on ne dépend pas du seul client. Source maps **privées** (jamais servies).

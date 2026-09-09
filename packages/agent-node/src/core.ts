@@ -103,6 +103,14 @@ export function buildHttpServerSpan(i: HttpSpanInput): Record<string, unknown> {
   return {
     traceId: i.traceId,
     spanId: i.spanId,
+    // `kind` et `parentSpanId` DANS LES CHAMPS NATIFS. Le span DB voisin les
+    // portait déjà (buildDbSpan) ; celui-ci ne les avait qu'en attributs `mip.*`,
+    // si bien que le maillon central du waterfall — la requête serveur — était
+    // le seul qu'un collecteur OpenTelemetry tiers ne savait pas rattacher au
+    // span navigateur qui l'a déclenché. L'attribut est conservé en repli.
+    kind: 2, // SERVER
+    ...(i.parentSpanId ? { parentSpanId: i.parentSpanId } : {}),
+    ...(typeof i.status === "number" ? { status: { code: i.status >= 500 ? 2 : 1 } } : {}),
     name: "http.server",
     startTimeUnixNano: nanos(i.startMs),
     endTimeUnixNano: nanos(i.startMs + i.durationMs),

@@ -38,6 +38,7 @@ import {
   SDK_GZIP_KO,
   mesuresNonCouvertes,
 } from "../../apps/console/lib/specs";
+import { SDK_POIDS_TEXTE } from "../../apps/console/lib/sdk-poids";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(join(RACINE, rel), "utf8");
@@ -125,6 +126,43 @@ describe("chiffres annoncés — remesurés sur les fichiers publiés", () => {
 
   it("poids du widget d'avis, chargé à la demande", () => {
     expect(koGzip("apps/console/public/mip-rum-feedback.js")).toBe(FEEDBACK_GZIP_KO);
+  });
+
+  // « ~12 ko » a survécu à un passage de 12,4 à 12,6 ko sans que rien ne bronche,
+  // à SIX endroits à la fois : vitrine, carrousel d'intégration, page
+  // Présentation, fiche capteur. Un nombre recopié n'est pas relu — donc plus
+  // personne ne le recopie.
+  it("aucun écran ne réécrit le poids du SDK à la main", () => {
+    let source = "";
+    try {
+      source = execFileSync(
+        "grep",
+        [
+          "-rn",
+          "--include=*.ts",
+          "--include=*.tsx",
+          "--exclude-dir=node_modules",
+          "--exclude-dir=.next",
+          "--exclude=sdk-poids.ts",
+          "-E",
+          String.raw`[0-9]+([.,][0-9]+)? ?ko gzip`,
+          join(RACINE, "apps/console"),
+        ],
+        { encoding: "utf8" },
+      ).trim();
+    } catch {
+      source = ""; // grep sort en 1 quand il ne trouve rien — le cas recherché
+    }
+    // Seules les lignes qui INTERPOLENT la constante sont tolérées.
+    const dur = source
+      .split("\n")
+      .filter(Boolean)
+      .filter((l) => !/\$\{|SDK_POIDS_TEXTE|koTexte|SDK_BUDGET_KO/.test(l));
+    expect(dur).toEqual([]);
+  });
+
+  it("la formulation française du poids est bien celle qu'on affiche", () => {
+    expect(SDK_POIDS_TEXTE).toBe(`${String(SDK_GZIP_KO).replace(".", ",")} ko gzip`);
   });
 
   it("le cœur tient sous le budget que le build fait respecter", () => {

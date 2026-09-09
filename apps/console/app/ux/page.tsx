@@ -2,8 +2,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { ScatterPlot } from "@/components/charts/ScatterPlot";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
-import { fmtVital } from "@/lib/format";
-import { inpOffenders, topFrustrations } from "@/lib/queries-frustration";
+import { decouperUrlScript, fmtVital } from "@/lib/format";
+import { inpOffenders, scriptsBloquants, topFrustrations } from "@/lib/queries-frustration";
 import { RATING_CLASS, RATING_HEX, rating2026 } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,11 @@ export const dynamic = "force-dynamic";
 export default async function UxFrustration({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const f = parseFilters(await searchParams);
   const period = PERIODS[f.period];
-  const [signals, inp] = await Promise.all([topFrustrations(f), inpOffenders(f)]);
+  const [signals, inp, scripts] = await Promise.all([
+    topFrustrations(f),
+    inpOffenders(f),
+    scriptsBloquants(f),
+  ]);
 
   const rage = signals.filter((s) => s.kind === "rage").reduce((n, s) => n + s.n, 0);
   const dead = signals.filter((s) => s.kind === "dead").reduce((n, s) => n + s.n, 0);
@@ -21,7 +25,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
     <div className="animate-fade-up">
       <PageHeader
         title="Frustration"
-        sub="Signaux d'agacement : rage clicks, dead clicks et l'élément responsable des interactions lentes (attribution INP)."
+        sub="Signaux d'agacement : rage clicks, dead clicks, l'élément responsable des interactions lentes (attribution INP) et le script qui bloque le fil principal (Long Animation Frames)."
       />
 
       {(() => {
@@ -129,6 +133,70 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
           </tbody>
         </table>
       </div>
+
+      {/* Le chaînon manquant entre « INP à 900 ms » et un correctif : l'élément
+          ci-dessus dit OÙ l'utilisateur a cliqué, celui-ci dit QUEL CODE a tenu
+          le fil principal pendant ce temps-là. */}
+      <h2 className="mb-2 mt-8 text-sm font-semibold text-ink">
+        Scripts qui bloquent le fil principal (Long Animation Frames)
+      </h2>
+      <div className="card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-panel2">
+            <tr>
+              <th className="th">Script</th>
+              <th className="th">Fonction / invocation</th>
+              <th className="th text-right">Frames</th>
+              <th className="th text-right">Blocage cumulé</th>
+              <th className="th text-right">Pire</th>
+            </tr>
+          </thead>
+          <tbody>
+            {scripts.map((s) => (
+              <tr key={`${s.url}-${s.quoi}`} className="border-t border-line/60 transition hover:bg-panel2/60">
+                {/* Nom de fichier en évidence, hôte en dessous : une troncature
+                    de fin n'aurait montré que le préfixe, identique pour tous
+                    les scripts du même site. L'URL entière reste en infobulle. */}
+                <td className="px-4 py-2" title={s.url}>
+                  {(() => {
+                    const { fichier, hote } = decouperUrlScript(s.url);
+                    return (
+                      <>
+                        <span className="block font-mono text-xs font-medium text-ink">{fichier}</span>
+                        {hote && <span className="block font-mono text-[11px] text-ink-faint">{hote}</span>}
+                      </>
+                    );
+                  })()}
+                </td>
+                <td className="px-4 py-2 font-mono text-xs text-ink-soft">{s.quoi}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-ink-soft">
+                  {s.n.toLocaleString("fr-FR")}
+                </td>
+                <td className="px-4 py-2 text-right font-medium tabular-nums text-ink">
+                  {Math.round(s.totalMs).toLocaleString("fr-FR")} ms
+                </td>
+                <td className="px-4 py-2 text-right tabular-nums text-ink-soft">
+                  {Math.round(s.worstMs).toLocaleString("fr-FR")} ms
+                </td>
+              </tr>
+            ))}
+            {!scripts.length && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-ink-faint">
+                  Aucun blocage attribué sur {period.label}. L&apos;API Long Animation Frames
+                  n&apos;existe que sur Chromium : les visiteurs Safari et Firefox n&apos;en
+                  produisent pas.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+        Classé par blocage <strong>cumulé</strong>, pas par pire cas : un script qui bloque 400 ms une
+        fois est un incident, un script qui bloque 60 ms à chaque frappe est le problème — et c&apos;est
+        le second qui décide de l&apos;INP.
+      </p>
     </div>
   );
 }

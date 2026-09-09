@@ -11,6 +11,63 @@ export const CHUNK_FLUSH_MS = 10_000; // flush périodique
 export const CHUNK_MAX_RAW_BYTES = 256 * 1024; // flush anticipé (taille brute)
 export const REPLAY_BUNDLE = "mip-rum-replay.js";
 
+// ───────────────────────────── Masquage du rejeu ──────────────────────────────
+//
+// CE QUI ÉTAIT ENREGISTRÉ EN CLAIR. Le rejeu masquait les SAISIES
+// (`maskAllInputs`) et excluait les blocs marqués `.mip-rum-block` par l'app.
+// Tout le reste partait tel quel : le texte de la page — un nom sur une fiche
+// client, un montant, un numéro de dossier — et les médias, dont l'URL d'une
+// pièce jointe ou d'un justificatif. Un formulaire vide était protégé ; la même
+// donnée, une fois AFFICHÉE par l'application, ne l'était plus.
+//
+// Le standard 2026 attend l'inverse par défaut : on masque, et on démasque ce
+// qu'on a décidé de montrer. C'est ce que fait `"all"`.
+
+/**
+ * Éléments porteurs de CONTENU, remplacés par un cadre de même taille.
+ *
+ * `svg` en fait partie, et c'est le choix qui coûte : les icônes d'une
+ * interface sont presque toujours des SVG en ligne, et le rejeu perd donc ses
+ * pictogrammes. On l'assume — un graphique SVG porte des chiffres de client
+ * aussi sûrement qu'un `canvas`, et un masquage par défaut qui laisse passer
+ * une catégorie entière n'est pas un masquage par défaut. Les apps qui veulent
+ * leurs icônes choisissent `"media"` ou `"inputs"` en connaissance de cause.
+ *
+ * `iframe` n'y figure PAS : rrweb enregistre le contenu d'une iframe de même
+ * origine comme un document à part, auquel les mêmes règles de masquage
+ * s'appliquent — la bloquer perdrait l'enregistrement au lieu de le protéger.
+ */
+export const SELECTEUR_MEDIAS = "img,video,audio,canvas,svg,picture,object,embed";
+
+/** Classe que l'application pose pour exclure un bloc, quel que soit le niveau. */
+export const CLASSE_BLOC = "mip-rum-block";
+
+/** Ce que le rejeu cache. `all` est le défaut. */
+export type NiveauMasquage = "all" | "media" | "inputs";
+
+export interface OptionsMasquage {
+  maskAllInputs: true;
+  blockClass: string;
+  maskTextSelector?: string;
+  blockSelector?: string;
+}
+
+/**
+ * Options rrweb correspondant à un niveau de masquage.
+ *
+ * `maskAllInputs` et `blockClass` sont dans les TROIS niveaux : une saisie n'est
+ * jamais enregistrée, et un bloc que l'application a marqué comme sensible n'est
+ * jamais capturé, quel que soit le réglage. Aucun niveau ne peut donc les
+ * désactiver — c'est le plancher, pas une option.
+ */
+export function optionsMasquage(niveau: NiveauMasquage = "all"): OptionsMasquage {
+  const base: OptionsMasquage = { maskAllInputs: true, blockClass: CLASSE_BLOC };
+  if (niveau === "inputs") return base;
+  if (niveau === "media") return { ...base, blockSelector: SELECTEUR_MEDIAS };
+  // "all" : le texte aussi. `*` couvre tout élément, donc tout nœud de texte.
+  return { ...base, maskTextSelector: "*", blockSelector: SELECTEUR_MEDIAS };
+}
+
 /** Échantillonnage replay : true = toutes les sessions, number = taux 0..1. */
 export function isReplaySampled(
   replay: boolean | number | undefined,
@@ -187,8 +244,9 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string): void {
         emit: (event: unknown) => {
           if (buffer.add(event)) flush(); // ≥ 256 Ko brut -> flush anticipé
         },
-        maskAllInputs: true, // masquage par défaut (RGPD)
-        blockClass: "mip-rum-block",
+        // Masqué PAR DÉFAUT, y compris le texte et les médias : démasquer est
+        // une décision que l'application prend, pas un réglage qu'elle oublie.
+        ...optionsMasquage(cfg.replayMask),
       });
       timer = setInterval(flush, CHUNK_FLUSH_MS);
       // cap 2 min : flush final puis stop

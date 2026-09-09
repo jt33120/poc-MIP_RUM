@@ -1,0 +1,110 @@
+// Comparaison des versions déployées — le bloc « Comparaison par version ».
+//
+// LA DONNÉE EXISTAIT, L'ÉCRAN MANQUAIT. `rum_session.release` est collecté par le
+// SDK depuis longtemps (attribut `mip.release`, posé pour associer une erreur à
+// sa source map) et n'était restitué nulle part. La roue des blocs le disait
+// elle-même : « la version déployée est désormais collectée sur chaque session,
+// mais aucun écran ne la restitue encore ».
+//
+// NE S'AFFICHE PAS SOUS DEUX VERSIONS. Une « comparaison » d'une seule ligne
+// n'apprend rien et occupe l'écran ; sur une app qui ne renseigne pas `release`,
+// elle afficherait éternellement « (non renseignée) » comme s'il s'agissait
+// d'un résultat. Le bloc décide donc lui-même de son affichage, plutôt que de
+// faire porter la condition à l'écran qui l'appelle.
+import { GlossaryTip } from "@/components/GlossaryTip";
+import {
+  comparable,
+  ecartPoints,
+  tauxErreur,
+  versionReference,
+  type VersionRow,
+} from "@/lib/queries-deploys";
+import { fmtVital } from "@/lib/format";
+import { RATING_CLASS, rating2026 } from "@/lib/rating";
+
+/** Cellule de vital, colorée au barème 2026. Vide quand la mesure manque. */
+function VitalCell({ name, v }: { name: "LCP" | "INP"; v: number | null }) {
+  if (v == null) return <span className="text-ink-faint">—</span>;
+  const r = rating2026(name, Number(v));
+  return (
+    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${r ? RATING_CLASS[r] : ""}`}>
+      {fmtVital(name, Number(v))}
+    </span>
+  );
+}
+
+export function VersionsTable({ rows, periodLabel }: { rows: VersionRow[]; periodLabel: string }) {
+  if (!comparable(rows)) return null;
+  const ref = versionReference(rows)!;
+
+  return (
+    <section className="mb-8">
+      <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink">
+        Comparaison par version
+        <GlossaryTip id="rum" />
+      </h2>
+      <div className="card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-panel2">
+            <tr>
+              <th className="th">Version</th>
+              <th className="th text-right">Sessions</th>
+              <th className="th text-right">LCP p75</th>
+              <th className="th text-right">INP p75</th>
+              <th className="th text-right">Sessions avec erreur</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const taux = tauxErreur(r);
+              const ecart = ecartPoints(r, ref);
+              return (
+                <tr key={r.version} className="border-t border-line/60 transition hover:bg-panel2/60">
+                  <td className="px-4 py-2 font-mono text-xs font-medium text-ink">
+                    {r.version}
+                    {r.version === ref.version && (
+                      <span className="ml-2 rounded bg-panel2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+                        référence
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums text-ink-soft">
+                    {r.sessions.toLocaleString("fr-FR")}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <VitalCell name="LCP" v={r.lcp} />
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <VitalCell name="INP" v={r.inp} />
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {taux == null ? (
+                      <span className="text-ink-faint">—</span>
+                    ) : (
+                      <>
+                        <span className="text-ink">{(taux * 100).toFixed(1)} %</span>
+                        {ecart != null && Math.abs(ecart) >= 0.1 && (
+                          <span className={`ml-2 text-xs ${ecart > 0 ? "text-bad" : "text-good"}`}>
+                            {ecart > 0 ? "+" : ""}
+                            {ecart.toFixed(1)} pt
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {/* La limite est dite SOUS le tableau, pas ailleurs : c'est là qu'on lit
+          l'écart, donc là qu'il faut savoir ce qu'il mélange. */}
+      <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+        Sur {periodLabel}, sans normalisation : deux versions qui n&apos;ont pas tourné aux mêmes
+        heures sont jugées sur des publics différents. L&apos;écart mêle donc le code et le
+        contexte — à lire comme un signal, pas comme une mesure d&apos;impact.
+      </p>
+    </section>
+  );
+}

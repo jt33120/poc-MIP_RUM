@@ -350,7 +350,18 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
        select 'breadcrumb', ts, type, label, seq::float, null
        from rum_breadcrumb where session_id = $1
        union all
-       select 'longtask', ts, 'Long task', route, duration_ms, null
+       -- Le libellé porte l'ATTRIBUTION quand on l'a (Long Animation Frames) :
+       -- « Blocage · recalculerTotal » vaut mieux que « Long task » répété
+       -- douze fois. Le détail garde la route, et lui adjoint le script.
+       select 'longtask', ts,
+              case when script_function is not null and script_function <> ''
+                        then 'Blocage · ' || script_function
+                   when invoker is not null and invoker <> ''
+                        then 'Blocage · ' || invoker
+                   else 'Long task' end,
+              coalesce(route, '') ||
+                coalesce(' · ' || regexp_replace(script_url, '^https?://', ''), ''),
+              coalesce(blocking_ms, duration_ms), null
        from rum_longtask where session_id = $1
        union all
        select 'event', ts, name, props::text, null, null

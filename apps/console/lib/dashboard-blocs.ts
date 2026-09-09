@@ -11,6 +11,8 @@
 // migration ; deux migrations attendent déjà d'être appliquées en production.
 // Contrepartie assumée : la préférence vit par NAVIGATEUR, pas par compte.
 
+import { CADENCE_TICK_MIN } from "./etat-latence";
+
 export interface Bloc {
   id: string;
   label: string;
@@ -48,6 +50,7 @@ export const CATALOGUES: readonly Catalogue[] = [
       { id: "hero", label: "Courbe LCP et volumétrie", defaut: true, desc: "LCP p75 dans le temps, sessions, pages vues et taux d'erreur." },
       { id: "historique", label: "Historique de santé 14 jours", defaut: true, desc: "Heatmap jour × heure, avec les courbes de volume et de LCP associées." },
       { id: "anomalies", label: "Anomalies détectées", defaut: true, desc: "Écarts statistiques sur le LCP, sans seuil à régler." },
+      { id: "versions", label: "Comparaison par version", defaut: true, desc: "LCP, INP et taux d'erreur par version déployée. Ne s'affiche que si au moins deux versions ont été vues." },
     ],
     indisponibles: [
       {
@@ -61,9 +64,12 @@ export const CATALOGUES: readonly Catalogue[] = [
           "Aucun navigateur ne l'expose. L'obtenir demanderait de résoudre l'adresse IP à l'ingestion — ce que l'engagement « aucune adresse IP stockée » interdit.",
       },
       {
-        label: "Comparaison par version d'app",
+        // La ligne d'avant — « aucun écran ne la restitue encore » — a été tenue
+        // le 09/09/2026 : le bloc « Comparaison par version » existe. Ce qui
+        // reste, c'est la comparabilité elle-même.
+        label: "Comparaison de versions à trafic comparable",
         raison:
-          "La version déployée est désormais collectée sur chaque session, mais aucun écran ne la restitue encore. Celle-ci arrivera.",
+          "Les versions sont comparées sur la MÊME fenêtre de temps, sans normalisation. Une version qui n'a tourné que la nuit est donc jugée sur un autre public, une autre répartition d'appareils et d'autres routes que celle qui a tourné aux heures de pointe. L'écart affiché mêle le code et le contexte ; les séparer demanderait une pondération par route et par appareil, qui n'existe pas.",
       },
     ],
   },
@@ -82,9 +88,13 @@ export const CATALOGUES: readonly Catalogue[] = [
           "Jamais. Les sessions sont rattachées à un `user_hash` anonyme et la PII est retirée à la collecte comme à l'ingestion — c'est un engagement du produit, pas une fonctionnalité manquante.",
       },
       {
-        label: "Enregistrement du texte et des médias",
+        // La ligne d'avant — « ne masque encore ni le texte ni les images » —
+        // est devenue fausse le 09/09/2026 : le rejeu masque par défaut les
+        // saisies, le texte ET les médias, vérifié dans un vrai navigateur.
+        // Ce qui manque à sa place, c'est le mouvement INVERSE.
+        label: "Démasquage sélectif au rejeu",
         raison:
-          "Le rejeu masque les saisies et exclut les blocs marqués, mais ne masque encore ni le texte ni les images — le standard 2026 le demande, ce n'est pas fait.",
+          "Le masquage se règle par application — tout, les médias seuls, ou les saisies seules — mais pas élément par élément : on ne peut pas demander « montre ce tableau, cache cette colonne ». La version de rrweb utilisée n'expose pas de sélecteur de démasquage, seulement de masquage.",
       },
     ],
   },
@@ -100,8 +110,14 @@ export const CATALOGUES: readonly Catalogue[] = [
     indisponibles: [
       {
         label: "Alerte en temps réel sur un budget brûlé",
-        raison:
-          "Le déclencheur des tâches planifiées tourne au mieux à l'heure sur cet environnement : la latence d'alerte est de 60 minutes, pas de quelques secondes.",
+        // « 60 minutes » était un VESTIGE de Vercel Cron, dont le plan Hobby ne
+        // descendait pas sous le quotidien et qu'on relayait à l'heure par
+        // GitHub Actions. Le déclencheur dédié (services/scheduler) passe toutes
+        // les CADENCE_TICK_MIN minutes depuis son déploiement sur Railway ; la
+        // phrase est restée fausse le temps que quelqu'un la relise. D'où le
+        // nombre IMPORTÉ, et non retapé : la vitrine mesure déjà cette cadence
+        // (lib/etat-latence), les deux ne peuvent plus se contredire.
+        raison: `Le déclencheur des tâches planifiées passe toutes les ${CADENCE_TICK_MIN} minutes : un budget peut donc être consommé jusqu'à ${CADENCE_TICK_MIN} minutes avant que l'alerte ne parte. C'est une cadence, pas du temps réel — évaluer le SLO à chaque mesure écrite demanderait un déclencheur en base, pas un passage périodique.`,
       },
       {
         label: "Politique d'escalade",

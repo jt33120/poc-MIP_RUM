@@ -23,7 +23,15 @@ describe("flattenOtlp — snapshot du contrat de sortie", () => {
     expect(rows.metrics).toHaveLength(1);
     expect(rows.errors).toHaveLength(1);
     expect(rows.resources).toHaveLength(1);
-    expect(rows.longtasks).toHaveLength(1);
+    // longtask ET loaf : le MÊME fait — le fil principal a bloqué — rangé dans
+    // la même table, avec `source` pour dire laquelle des deux API a parlé.
+    expect(rows.longtasks).toHaveLength(2);
+    expect(rows.longtasks.map((l) => l.source)).toEqual(["longtask", "loaf"]);
+    // l'attribution LoAF : le script, sa fonction, ce qui l'a invoqué
+    expect(rows.longtasks[1].script_function).toBe("recalculerTotal");
+    expect(rows.longtasks[1].invoker).toBe("BUTTON#payer.onclick");
+    // et son URL nettoyée de son jeton — un sourceURL est une URL comme une autre
+    expect(rows.longtasks[1].script_url).toBe("https://app.demo.fr/static/panier.js");
     expect(rows.breadcrumbs).toHaveLength(1);
     expect(rows.events).toHaveLength(2); // track.signup + frustration (P1)
     expect(rows.spans).toHaveLength(3); // http.client + http.server + OTel server

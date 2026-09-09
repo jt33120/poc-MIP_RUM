@@ -227,8 +227,17 @@ export function flattenOtlp(payload, opts = {}) {
   const sviLegs = [];
   let rejected = 0;
 
-  /** Ligne rum_span commune front/back ; null si trace_id/span_id absents. */
-  const spanRow = (tier, a, appId, ts) => {
+  /**
+   * Ligne rum_span commune front/back ; null si trace_id/span_id absents.
+   *
+   * `parentNatif` est le champ OTLP `span.parentSpanId`, que les capteurs de ce
+   * dépôt renseignent depuis qu'ils émettent des spans standard. Il PRIME sur
+   * l'attribut propriétaire `mip.parent_span_id`, qui reste lu en repli : un SDK
+   * déjà posé chez un client continue d'alimenter le waterfall sans être
+   * redéployé. L'ordre compte — le champ natif est celui qu'un collecteur tiers
+   * lirait, donc celui qui fait foi.
+   */
+  const spanRow = (tier, a, appId, ts, parentNatif = null) => {
     const traceId = a["mip.trace_id"];
     const spanId = a["mip.span_id"];
     const durationMs = a["http.duration_ms"];
@@ -236,7 +245,7 @@ export function flattenOtlp(payload, opts = {}) {
     return {
       span_id: spanId,
       trace_id: traceId,
-      parent_span_id: a["mip.parent_span_id"] ?? null,
+      parent_span_id: parentNatif || a["mip.parent_span_id"] || null,
       tier,
       session_id: a["mip.session_id"] ?? null,
       app_id: appId,
@@ -438,7 +447,7 @@ export function flattenOtlp(payload, opts = {}) {
         // span backend (middleware serveur) : pas de session requise, pas
         // d'upsert rum_session (le front est seul maître de la session)
         if (span.name === "http.server") {
-          const row = spanRow("back", a, appId, nanosToDate(span.startTimeUnixNano, now));
+          const row = spanRow("back", a, appId, nanosToDate(span.startTimeUnixNano, now), span.parentSpanId);
           if (row) spans.push(row);
           else rejected++;
           continue;
@@ -643,6 +652,39 @@ export function flattenOtlp(payload, opts = {}) {
             app_id: appId,
             route,
             duration_ms: durationMs,
+            source: "longtask",
+            ts,
+          });
+        } else if (span.name === "loaf") {
+          // Long Animation Frames : le MÊME fait qu'un longtask — le fil
+          // principal a bloqué — mais avec l'attribution. Même table, donc même
+          // purge, même comptage de volume, même cloisonnement, même effacement
+          // RGPD ; `source` dit laquelle des deux API a parlé.
+          //
+          // Les deux ne sont jamais actives ensemble côté SDK : ce n'est pas une
+          // règle qu'on applique ici, c'est un fait dont dépend le comptage.
+          const durationMs = a["loaf.duration_ms"];
+          if (typeof durationMs !== "number") {
+            rejected++;
+            continue;
+          }
+          const nombreOuNull = (v) => (typeof v === "number" ? v : null);
+          longtasks.push({
+            span_id: span.spanId,
+            session_id: sessionId,
+            app_id: appId,
+            route,
+            duration_ms: durationMs,
+            source: "loaf",
+            blocking_ms: nombreOuNull(a["loaf.blocking_ms"]),
+            render_ms: nombreOuNull(a["loaf.render_ms"]),
+            // Textes libres venus du navigateur : ils passent au même nettoyage
+            // que les messages d'erreur. Un nom de fonction ne devrait pas
+            // porter de PII, mais « ne devrait pas » n'est pas une garantie.
+            script_url: scrubUrl(a["loaf.script_url"]),
+            script_function: scrubText(a["loaf.script_function"]),
+            script_ms: nombreOuNull(a["loaf.script_ms"]),
+            invoker: scrubText(a["loaf.invoker"]),
             ts,
           });
         } else if (span.name === "breadcrumb") {
@@ -656,7 +698,7 @@ export function flattenOtlp(payload, opts = {}) {
             ts,
           });
         } else if (span.name === "http.client") {
-          const row = spanRow("front", a, appId, ts);
+          const row = spanRow("front", a, appId, ts, span.parentSpanId);
           if (row) spans.push(row);
           else rejected++;
         } else if (span.name.startsWith("track.")) {

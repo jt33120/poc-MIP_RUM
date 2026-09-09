@@ -49,21 +49,61 @@ export function batchInsert(client, table, cols, rows, conflictClause) {
 // serverless chaude garderait indéfiniment la liste d'avant la migration et
 // n'écrirait jamais les nouvelles colonnes, même une fois celles-ci créées.
 const TTL_COLONNES_MS = 60_000;
-let colonnesCache = null;
+/** Un cache PAR TABLE : `rum_session` et `rum_longtask` ont chacune gagné des
+ *  colonnes à des dates différentes, et un cache partagé les confondrait. */
+const colonnesCache = new Map();
 
-async function colonnesSession(client) {
-  if (colonnesCache && Date.now() - colonnesCache.at < TTL_COLONNES_MS) return colonnesCache.set;
+async function colonnesDe(client, table) {
+  const vu = colonnesCache.get(table);
+  if (vu && Date.now() - vu.at < TTL_COLONNES_MS) return vu.set;
   const { rows } = await client.query(
     `select column_name from information_schema.columns
-      where table_schema = 'public' and table_name = 'rum_session'`,
+      where table_schema = 'public' and table_name = $1`,
+    [table],
   );
-  colonnesCache = { at: Date.now(), set: new Set(rows.map((r) => r.column_name)) };
-  return colonnesCache.set;
+  const set = new Set(rows.map((r) => r.column_name));
+  colonnesCache.set(table, { at: Date.now(), set });
+  return set;
 }
+
+const colonnesSession = (client) => colonnesDe(client, "rum_session");
 
 /** Réinitialise le cache de colonnes (tests). */
 export function _resetColonnesCache() {
-  colonnesCache = null;
+  colonnesCache.clear();
+}
+
+/** Colonnes d'attribution LoAF, ajoutées par migration-v55. */
+const OPTIONNELLES_LONGTASK = [
+  "source",
+  "blocking_ms",
+  "render_ms",
+  "script_url",
+  "script_function",
+  "script_ms",
+  "invoker",
+];
+
+/**
+ * Colonnes de l'INSERT rum_longtask, réduites à ce que la base porte.
+ *
+ * Même garde-fou que pour rum_session, pour la même raison : une colonne
+ * référencée mais absente fait rejeter par Postgres la requête ENTIÈRE, donc la
+ * transaction, donc TOUT le lot — ce n'est pas l'attribution qui se perd, c'est
+ * la télémétrie complète, en silence (le SDK poste en beacon). Le déploiement
+ * applique bien les migrations en pre-deploy, mais ce chemin sert aussi aux
+ * installations qui ne passent pas par lui.
+ */
+export function colonnesLongtask(dispo) {
+  return [
+    "span_id",
+    "session_id",
+    "app_id",
+    "route",
+    "duration_ms",
+    ...OPTIONNELLES_LONGTASK.filter((c) => dispo.has(c)),
+    "ts",
+  ];
 }
 
 /** Colonnes optionnelles de rum_session, dans l'ordre où elles s'insèrent. */
@@ -176,7 +216,7 @@ export async function writeRows(pool, {
     await batchInsert(
       client,
       "rum_longtask",
-      ["span_id", "session_id", "app_id", "route", "duration_ms", "ts"],
+      colonnesLongtask(await colonnesDe(client, "rum_longtask")),
       longtasks,
       "on conflict (span_id) do nothing",
     );

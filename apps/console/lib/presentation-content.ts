@@ -3,13 +3,14 @@
 // app/presentation/page.tsx pour garder la page mince. Données pures, sans JSX.
 import type { IconName } from "@/components/icons";
 import type { GlossaryId } from "@/lib/glossary";
+import { SDK_POIDS_TEXTE } from "@/lib/sdk-poids";
 
 /** Étapes du pipeline (navigateur → console), rendues en frise. */
 export const PIPELINE: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "activity",
     title: "1 · Mesure navigateur",
-    body: "Un SDK léger (~12 ko gzip) lit les Core Web Vitals, les erreurs JS et les interactions chez le vrai visiteur, via les API standard du navigateur (PerformanceObserver).",
+    body: `Un SDK léger (${SDK_POIDS_TEXTE}) lit les Core Web Vitals, les erreurs JS et les interactions chez le vrai visiteur, via les API standard du navigateur (PerformanceObserver).`,
   },
   {
     icon: "trace",
