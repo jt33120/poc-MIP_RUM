@@ -72,7 +72,17 @@ export default async function SessionDetail({
           value={meta.collection_source === "extension" ? "Extension" : "SDK"}
           tone={meta.collection_source === "extension" ? "extension" : undefined}
         />
-        <Meta label="Utilisateur (hash)" value={meta.user_hash ? `${meta.user_hash.slice(0, 10)}…` : "—"} mono />
+        <Meta
+          label={meta.visitor_id ? "Visiteur (aléatoire)" : "Classe d'appareil (héritée)"}
+          value={
+            meta.visitor_id
+              ? `${meta.visitor_id.slice(0, 10)}…`
+              : meta.user_hash
+                ? `${meta.user_hash.slice(0, 10)}… — n'identifie pas une personne`
+                : "—"
+          }
+          mono
+        />
         <Meta label="Durée" value={fmtDuration(durationMs)} />
         <Meta label="Pages" value={String(meta.page_count)} />
       </div>

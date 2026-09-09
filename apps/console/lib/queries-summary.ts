@@ -106,7 +106,14 @@ export interface RumSummary extends AiSummarySection {
   window: SummaryWindow;
   generated_at: string;
   sessions: number;
+  /** Visiteurs distincts. Ne compte que les sessions PORTANT un identifiant de
+   *  visiteur ; voir `unidentified_sessions` pour ce qui reste dehors. */
   users: number;
+  /** Sessions sans identifiant de visiteur sur la fenêtre — historique antérieur
+   *  au 09/09/2026 et SDK non mis à jour. Elles ne sont représentées NULLE PART
+   *  dans `users` : sans ce champ, un consommateur de l'API lirait un
+   *  sous-comptage comme un comptage. */
+  unidentified_sessions: number;
   page_views: number;
   avg_load_ms: number | null;
   p75_lcp_ms: number | null;
@@ -135,6 +142,7 @@ export async function rumSummary(
     q<{
       sessions: number;
       users: number;
+      unidentified_sessions: number;
       page_views: number;
       avg_load_ms: number | null;
       p75_lcp_ms: number | null;
@@ -145,8 +153,14 @@ export async function rumSummary(
       `select
          (select count(distinct p.session_id)::int from rum_pageview p join rum_session s on s.session_id=p.session_id
             where p.app_id=$1 and p.started_at>now()-$2::interval and not coalesce(s.is_bot,false)) as sessions,
-         (select count(distinct s.user_hash)::int from rum_session s
-            where s.app_id=$1 and s.started_at>now()-$2::interval and not coalesce(s.is_bot,false) and s.user_hash is not null) as users,
+         -- visitor_id et non user_hash : l'ancienne empreinte était dérivée du
+         -- terminal, donc un parc homogène de cent postes s'y comptait comme un
+         -- utilisateur. Voir migration-v57. Les sessions sans identifiant sortent
+         -- du compte et sont exposées à part, plutôt que devinées.
+         (select count(distinct s.visitor_id)::int from rum_session s
+            where s.app_id=$1 and s.started_at>now()-$2::interval and not coalesce(s.is_bot,false) and s.visitor_id is not null) as users,
+         (select count(*)::int from rum_session s
+            where s.app_id=$1 and s.started_at>now()-$2::interval and not coalesce(s.is_bot,false) and s.visitor_id is null) as unidentified_sessions,
          (select count(*)::int from rum_pageview p join rum_session s on s.session_id=p.session_id
             where p.app_id=$1 and p.started_at>now()-$2::interval and not coalesce(s.is_bot,false)) as page_views,
          (select round(avg(m.value))::int from rum_metric m join rum_session s on s.session_id=m.session_id
@@ -224,6 +238,7 @@ export async function rumSummary(
     generated_at: generatedAt,
     sessions,
     users: k?.users ?? 0,
+    unidentified_sessions: k?.unidentified_sessions ?? 0,
     page_views: k?.page_views ?? 0,
     avg_load_ms: n(k?.avg_load_ms),
     p75_lcp_ms: n(k?.p75_lcp_ms),

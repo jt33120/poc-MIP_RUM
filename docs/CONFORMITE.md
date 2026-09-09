@@ -34,7 +34,8 @@
 | Erreurs (message, stack) | technique, **PII possible** | **scrub serveur** (`_shared/scrub.mjs`) avant écriture |
 | Événements `track.*` | défini par le client | scrub récursif des `props` |
 | Adresse IP | **jamais stockée** | pays déduit du **fuseau horaire** (`mip.tz`) ; à défaut, de l'**en-tête pays posé par le CDN** (`x-vercel-ip-country`, `cf-ipcountry`) quand il y en a un devant — la résolution IP→pays a alors lieu chez le CDN, aucune IP ne transite ni n'est stockée côté MIP |
-| Identifiant utilisateur | **pseudonyme faible — à refaire** | `user_hash` est dérivé du user-agent, de la langue, de la résolution et du décalage horaire, sans aléa : sur un parc homogène, plusieurs personnes partagent la même valeur. Il ne doit pas être présenté comme un identifiant de personne, ni comme anonyme au sens du RGPD. Correctif au chantier « identité du visiteur » (`docs/AUDIT_RUM_EXTERNE.md`, finding 1.3) |
+| Identifiant de visiteur | **pseudonyme** | `visitor_id` : tirage ALÉATOIRE du SDK (UUID v4), persisté dans le stockage local du navigateur, sans lien avec le terminal ni avec un compte. Effaçable par le visiteur en vidant le stockage local. Reste une donnée à caractère personnel au sens du RGPD — un pseudonyme, pas une donnée anonyme |
+| `user_hash` (héritage, ≤ 09/09/2026) | **ni anonyme, ni identifiant de personne** | Ancienne empreinte dérivée du user-agent, de la langue, de la résolution et du décalage horaire, sans aléa : sur un parc homogène, plusieurs personnes partagent la même valeur. Le SDK ne l'émet plus. Un export ou un effacement RGPD **refuse** de s'exécuter dessus (`id_kind = 'device_class'`), parce qu'il porterait sur les données de tiers. Ces lignes s'éteignent à l'échéance de rétention (30 j). Voir `apps/ingest/sql/migration-v57.sql` |
 | Session replay (opt-in) | rejouée | **masquage par défaut des saisies, du texte et des médias** (réglable par app via `replayMask`), opt-in par app, consent requis |
 
 **Défense en profondeur PII** : `beforeSend` côté client **+** scrub côté serveur (parité
@@ -46,9 +47,13 @@ dev-server/edge) → on ne dépend pas du seul client. Source maps **privées** 
   *avant* la barrière de consentement, et n'est pas purgé au refus (finding 1.11 de l'audit) : à
   corriger avant tout déploiement soumis à recueil de consentement.
 - **Opt-out navigateur honoré** : `honorDNT` (défaut `true`) respecte **Do Not Track** et **Global Privacy Control** — signal présent → aucune collecte (0 session, 0 requête).
-- **DSAR** (`/admin/privacy`, admin only) : droit d'**accès/portabilité** (export JSON par `user_hash`, une clé par table) et droit à l'**effacement** (suppression transactionnelle, enfants avant l'ancre `rum_session`). Chaque effacement est tracé dans `audit_log` (`dsar_erase`).
-- **Minimisation** : aucune adresse IP stockée, géo au pays, scrub systématique. Le `user_hash`
-  n'est **pas** une donnée anonyme (cf. §2) — c'est un pseudonyme faible, à refaire.
+- **DSAR** (`/admin/privacy`, admin only) : droit d'**accès/portabilité** (export JSON par `visitor_id`,
+  une clé par table) et droit à l'**effacement** (suppression transactionnelle, enfants avant l'ancre
+  `rum_session`). Les deux **refusent** de s'exécuter sur une ligne `id_kind = 'device_class'`, avec un
+  motif explicite : répondre partiellement à une demande art. 15 vaut mieux que d'y joindre les données
+  d'un tiers. Effacements **et refus** sont tracés dans `audit_log` (`dsar_erase`, `dsar_erase_refuse`).
+- **Minimisation** : aucune adresse IP stockée, géo au pays, scrub systématique. Le `visitor_id`
+  n'est **pas** une donnée anonyme (cf. §2) — c'est un pseudonyme, tiré au hasard et effaçable.
 - **Sécurité du transport** : TLS de bout en bout jusqu'à Neon.
 
 ## 4. Rétention — **configurable par client** (migration-v14)

@@ -78,14 +78,22 @@ export const CATALOGUES: readonly Catalogue[] = [
     titre: "Sessions",
     cookie: "mip-blocs-sessions",
     blocs: [
-      { id: "resume", label: "Nouveaux vs revenants", defaut: true, desc: "Répartition des visiteurs sur la fenêtre, exacte — contrairement à la liste, plafonnée." },
+      // « exacte » était vrai de l'agrégat (il balaie toute la fenêtre, là où la
+      // liste s'arrête à 50 lignes) et faux de la POPULATION : le partage ne
+      // porte que sur les sessions qui ont un identifiant de visiteur. On dit
+      // désormais les deux.
+      { id: "resume", label: "Nouveaux vs revenants", defaut: true, desc: "Partage des visiteurs IDENTIFIÉS sur toute la fenêtre — la liste, elle, s'arrête à 50 sessions. Les sessions sans identifiant sont comptées à part." },
       { id: "liste", label: "Liste des sessions", defaut: true, desc: "Les dernières sessions, avec appareil, navigateur, pages vues et erreurs." },
     ],
     indisponibles: [
       {
+        // Cette ligne disait « rattachées à un user_hash anonyme ». Le hash
+        // n'était pas anonyme au sens où on l'entendait : il était DÉRIVÉ du
+        // terminal, donc réidentifiant par recoupement et partagé entre
+        // plusieurs personnes. Le SDK ne l'émet plus (migration-v57).
         label: "Identité du visiteur",
         raison:
-          "Jamais. Les sessions sont rattachées à un `user_hash` anonyme et la PII est retirée à la collecte comme à l'ingestion — c'est un engagement du produit, pas une fonctionnalité manquante.",
+          "Jamais de personne nommée. Une session porte un identifiant de visiteur TIRÉ AU HASARD, sans lien avec le terminal ni avec un compte, et la PII est retirée à la collecte comme à l'ingestion. C'est un engagement du produit, pas une fonctionnalité manquante.",
       },
       {
         // La ligne d'avant — « ne masque encore ni le texte ni les images » —

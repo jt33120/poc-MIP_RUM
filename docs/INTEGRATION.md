@@ -124,10 +124,19 @@ Collecté (par session) :
 | Long tasks | durée |
 | Breadcrumbs | type (click/nav/error/custom) + label court |
 | Événements `track()` | nom + props fournies par le site |
-| Session | `user_hash` (empreinte **anonymisée**, non réversible), user-agent, type de device |
+| Session | `visitor_id` (**tiré au hasard** par le SDK, persisté en `localStorage`, sans lien avec le terminal), user-agent, type de device |
+
+> **Changement du 09/09/2026.** Le SDK émettait auparavant un `user_hash` : un FNV-1a
+> de (user-agent + langue + résolution + fuseau). Il était décrit ici comme « anonymisé
+> et non réversible » — c'était faux dans les deux sens. Non réversible, oui ; mais il
+> ne désignait pas une personne (deux postes identiques d'un même parc obtenaient la
+> même valeur) et il était réidentifiant par recoupement, puisque entièrement dérivé
+> de caractéristiques du terminal. Il est remplacé par un tirage aléatoire, qu'un
+> visiteur peut effacer en vidant le stockage local de son navigateur. Voir
+> `apps/ingest/sql/migration-v57.sql`.
 
 Garanties :
-- **Aucune PII par construction** : pas de nom, email, IP stockée ; pas de cookie (session en `localStorage`, TTL 30 min d'inactivité) ; pas d'identifiant utilisateur réversible.
+- **Aucune PII par construction** : pas de nom, email, IP stockée ; pas de cookie (session en `localStorage`, TTL 30 min d'inactivité) ; l'identifiant de visiteur est un tirage aléatoire, sans lien avec le terminal ni avec un compte.
 - **Scrub des URLs en double rideau** : query strings et fragments retirés côté SDK **et** côté ingestion.
 - `beforeSend` = point de filtrage final côté client (ex. masquer un label de breadcrumb sensible).
 - **Rétention 30 jours** (purge quotidienne automatique, v0.2).

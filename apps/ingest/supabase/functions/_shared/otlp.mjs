@@ -600,6 +600,22 @@ export function flattenOtlp(payload, opts = {}) {
           session_id: sessionId,
           app_id: appId,
           client_id: res["mip.client_id"] || null,
+          // IDENTITÉ DU VISITEUR — deux champs, deux natures, jamais confondus.
+          //
+          // `visitor_id` est un tirage aléatoire du SDK : il identifie une
+          // personne (au sens d'un navigateur qui revient), et c'est la seule
+          // clé sur laquelle un export ou un effacement RGPD peut s'exécuter.
+          //
+          // `user_hash` est l'ANCIENNE empreinte de classe d'appareil, que les
+          // SDK déjà posés chez des clients continuent d'émettre. On l'accepte
+          // — refuser reviendrait à perdre leur télémétrie — mais on marque la
+          // session pour que personne n'en tire un compte de personnes ni une
+          // réponse à une demande d'accès. `id_kind` porte cette marque, et
+          // aucune conversion n'est possible dans un sens ou dans l'autre.
+          // `id_kind` n'est pas écrit ici : c'est une colonne GÉNÉRÉE en base,
+          // dérivée de la présence de `visitor_id` (migration-v57). Deux
+          // colonnes pour un même fait finiraient par se contredire.
+          visitor_id: a["mip.visitor_id"] ?? null,
           user_hash: a["mip.user_hash"] ?? null,
           user_agent: res["mip.user_agent"] ?? null,
           device_type: a["mip.device_type"] ?? deviceFromUa(res["mip.user_agent"]),

@@ -258,7 +258,7 @@ export const MESURES: Mesure[] = [
     table: "rum_session",
     module: "packages/rum-sdk/src/index.ts",
     detail:
-      "Type d'appareil, navigateur déduit du user-agent, pays déduit du FUSEAU HORAIRE — et à défaut de l'en-tête pays que pose le CDN, quand il y en a un devant. Aucune adresse IP n'est stockée côté MIP ; « ni même résolue » serait faux, puisque c'est bien une résolution IP→pays que fait le CDN dans ce second cas. Nouveau ou revenant, source de collecte (balise ou extension), version déployée, qualité du lien.",
+      "Type d'appareil, navigateur déduit du user-agent, pays déduit du FUSEAU HORAIRE — et à défaut de l'en-tête pays que pose le CDN, quand il y en a un devant. Aucune adresse IP n'est stockée côté MIP ; « ni même résolue » serait faux, puisque c'est bien une résolution IP→pays que fait le CDN dans ce second cas. Le visiteur porte un identifiant TIRÉ AU HASARD par le SDK (attribut `mip.visitor_id`), persisté dans le stockage local du navigateur : ni cookie, ni dérivation du terminal, effaçable par le visiteur. Jusqu'au 09/09/2026 c'était une empreinte de user-agent+langue+résolution+fuseau — donc partagée par tout un parc homogène ; les sessions d'avant restent marquées comme telles et sortent des comptes de personnes. Source de collecte (balise ou extension), version déployée, qualité du lien.",
   },
   {
     quoi: "Erreurs JavaScript",

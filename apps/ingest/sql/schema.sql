@@ -8,7 +8,9 @@ create table if not exists rum_session (
   session_id    text primary key,
   app_id        text not null,          -- ex: 'gip-plateforme'
   client_id     text,                   -- ex: 'groupement-it'
-  user_hash     text,                   -- fingerprint ANONYMISÉ (pas de PII)
+  user_hash     text,                   -- ANCIENNE empreinte de classe d'appareil, plus émise (migration-v57).
+                                          -- Ne désigne PAS une personne : un parc homogène partage la valeur.
+                                          -- L'identité du visiteur est `visitor_id`, ajoutée par migration-v57.
   user_agent    text,
   device_type   text,                   -- mobile/desktop/tablet
   geo_country   text,

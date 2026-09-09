@@ -30,7 +30,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
     <div className="animate-fade-up">
       <PageHeader
         title="Rétention"
-        sub="Part des utilisateurs (user_hash anonymisé) qui reviennent, par cohorte de première activité hebdomadaire."
+        sub="Part des visiteurs identifiés qui reviennent, par cohorte de première activité hebdomadaire."
       />
 
       <div className="mb-4 flex items-center gap-2 text-xs">
@@ -50,7 +50,8 @@ export default async function Retention({ searchParams }: { searchParams: Promis
 
       {!cohorts.length ? (
         <div className="card p-8 text-center text-ink-faint">
-          Aucune activité utilisateur identifiée (user_hash) sur la fenêtre.
+          Aucun visiteur identifié sur la fenêtre. Les sessions collectées avant le 09/09/2026 ne portent pas
+          d&apos;identifiant de visiteur et n&apos;entrent donc dans aucune cohorte.
         </div>
       ) : (
         <>

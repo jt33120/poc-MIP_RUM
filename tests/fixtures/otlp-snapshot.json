@@ -50,6 +50,12 @@
                   }
                 },
                 {
+                  "key": "mip.visitor_id",
+                  "value": {
+                    "stringValue": "5f3a9c21-0e44-4bd7-9a10-6c2e88f14b03"
+                  }
+                },
+                {
                   "key": "mip.route",
                   "value": {
                     "stringValue": "/home"

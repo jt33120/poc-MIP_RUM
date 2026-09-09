@@ -107,7 +107,7 @@ export function colonnesLongtask(dispo) {
 }
 
 /** Colonnes optionnelles de rum_session, dans l'ordre où elles s'insèrent. */
-const OPTIONNELLES = ["collection_source", "release", "net_type"];
+const OPTIONNELLES = ["collection_source", "release", "net_type", "visitor_id"];
 
 /**
  * Liste de colonnes de l'INSERT, réduite à ce que la base porte réellement.
@@ -141,7 +141,11 @@ export function clauseConflitSession(dispo) {
     // v53 : posés au premier lot qui les porte, jamais écrasés ensuite. net_type
     // arrive après l'événement load, donc dans un lot POSTÉRIEUR à celui qui a
     // créé la session : sans coalesce, la colonne resterait vide.
-    ...["release", "net_type"]
+    // `visitor_id` rejoint la liste pour la même raison, plus une : la file de
+    // retry peut rejouer un lot d'un SDK antérieur, sans identifiant. Le
+    // coalesce garantit qu'un identifiant déjà connu n'est jamais effacé par un
+    // lot qui n'en porte pas.
+    ...["release", "net_type", "visitor_id"]
       .filter((c) => dispo.has(c))
       .map((c) => `${c} = coalesce(rum_session.${c}, excluded.${c})`),
   ];

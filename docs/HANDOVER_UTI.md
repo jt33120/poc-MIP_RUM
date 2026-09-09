@@ -120,8 +120,11 @@ payant à décider — cf. `docs/ALERTING.md`).
 
 - **MIP** : ingestion, calculs, rétention, RGPD/DSAR, alertes, seuils — la maîtrise.
 - **UTI** : affichage. Le front consomme l'API et stylise ses tableaux (API pure).
-- **Confidentialité** : `user_hash` est anonymisé (aucune PII). Le jeton scopé garantit
-  qu'UTI ne lit que son périmètre.
+- **Confidentialité** : une session porte un `visitor_id` TIRÉ AU HASARD par le SDK
+  (aucune PII, aucun lien avec le terminal). Le champ `users` de `/summary` compte ces
+  visiteurs ; `unidentified_sessions` expose les sessions qui n'en portent pas, pour
+  qu'un sous-comptage ne se lise pas comme un comptage. Le jeton scopé garantit qu'UTI
+  ne lit que son périmètre.
 
 ## 7. Références
 
