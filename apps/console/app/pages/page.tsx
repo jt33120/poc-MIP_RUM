@@ -6,6 +6,8 @@ import { HISTO_BUCKETS, VITAL_CAP } from "@/lib/distribution";
 import { fmtVital } from "@/lib/format";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import {
+  ROUTES_MAX,
+  nombreDeRoutes,
   slowResourcesByRoute,
   slowRoutes,
   vitalHistogram,
@@ -19,8 +21,9 @@ export const dynamic = "force-dynamic";
 export default async function SlowPages({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const f = parseFilters(await searchParams);
   const period = PERIODS[f.period];
-  const [rows, resources, pcts, lcpH, inpH, clsH] = await Promise.all([
+  const [rows, routesTotal, resources, pcts, lcpH, inpH, clsH] = await Promise.all([
     slowRoutes(f),
+    nombreDeRoutes(f),
     slowResourcesByRoute(f),
     vitalPercentiles(f),
     vitalHistogram(f, "LCP", VITAL_CAP.LCP, HISTO_BUCKETS),
@@ -34,6 +37,29 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
         title="Pages lentes"
         sub="Les routes au chargement perçu le plus lent (LCP p75) et ce qui le cause — ressources et tâches JS longues."
       />
+
+      {/* LA LISTE EST PLAFONNÉE, ET ELLE LE DIT (finding 2.6). Avant, elle
+          rendait TOUTES les routes : sur un catalogue à forte cardinalité,
+          plusieurs milliers de lignes en HTML, avec deux sous-requêtes
+          corrélées chacune. Une liste coupée en silence ferait croire à un
+          catalogue plus petit qu'il n'est. */}
+      {routesTotal > ROUTES_MAX && (
+        <div
+          className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+          data-testid="routes-tronquees"
+        >
+          <p className="font-semibold">
+            {routesTotal.toLocaleString("fr-FR")} routes distinctes sur {period.label} — les{" "}
+            {ROUTES_MAX} plus lentes sont affichées.
+          </p>
+          <p className="mt-1 text-xs">
+            Au-delà de quelques centaines de routes, il y a une statistique par page, donc plus de
+            statistique du tout. Une cardinalité qui grimpe ainsi vient presque toujours
+            d&apos;identifiants non normalisés dans l&apos;URL — slugs, dates, numéros de dossier —
+            que <code className="font-mono">normalizeRoute</code> ne reconnaît pas encore.
+          </p>
+        </div>
+      )}
 
       {(() => {
         // Hero : classement des routes par LCP p75 (le message central de la page).

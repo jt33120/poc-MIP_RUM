@@ -6,6 +6,7 @@
 // entrée utilisateur. Chaque requête est fail-soft (section supplémentaire :
 // elle dégrade en vide plutôt que de casser l'Overview).
 import { q } from "./db";
+import { fuseauDe } from "./fuseau";
 import type { Filters } from "./filters";
 import { internalClause, type SeriesRow } from "./queries";
 import { CORE_VITALS } from "./rating";
@@ -32,21 +33,27 @@ export interface HealthGridCell {
  * que le health score (LCP ×2). Sert à colorer une case par heure de la journée.
  */
 export async function healthGrid(f: Filters): Promise<HealthGridCell[]> {
+  // LE FUSEAU DE L'APPLICATION, pas celui du serveur (finding 2.8). Le
+  // pré-agrégat `rum_rollup_hourly` reste écrit en UTC — une heure dure une
+  // heure partout — mais le REGROUPEMENT en jours et en heures affichées se
+  // fait en local, sinon la colonne « 9 h » montre le trafic de 11 h.
+  const tz = await fuseauDe(f.app);
   try {
     if (useRollups())
       return await q<HealthGridCell>(
-        `select date_trunc('day', hour) as day, extract(hour from hour)::int as hour,
+        `select date_trunc('day', hour at time zone $3) as day,
+                extract(hour from hour at time zone $3)::int as hour,
                 sum(good_w)::float as good_w, sum(total_w)::float as total_w
          from rum_rollup_hourly
          where hour >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
            and ($1::text is null or app_id = $1)
            and ($2::text is null or device_type = $2)${internalClause(f, "app_id")}
          group by 1, 2 having sum(total_w) > 0`,
-        [f.app, f.device],
+        [f.app, f.device, tz],
       );
     return await q<HealthGridCell>(
-      `select date_trunc('day', m.ts) as day,
-              extract(hour from m.ts)::int as hour,
+      `select date_trunc('day', m.ts at time zone $4) as day,
+              extract(hour from m.ts at time zone $4)::int as hour,
               sum(case when m.rating = 'good'
                        then (case when m.name = 'LCP' then 2 else 1 end) else 0 end)::float as good_w,
               sum(case when m.name = 'LCP' then 2 else 1 end)::float as total_w
@@ -59,7 +66,7 @@ export async function healthGrid(f: Filters): Promise<HealthGridCell[]> {
          and ($1::text is null or m.app_id = $1)
          and ($2::text is null or s.device_type = $2)${internalClause(f, "m.app_id")}
        group by 1, 2`,
-      [f.app, f.device, CORE_VITALS],
+      [f.app, f.device, CORE_VITALS, tz],
     );
   } catch {
     return [];
@@ -74,6 +81,10 @@ export interface DailyTraffic {
 
 /** Volume quotidien (pages vues / erreurs JS) sur 14 j, jours vides à zéro. */
 export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
+  // Journées découpées dans le fuseau de l'application (finding 2.8) : sinon la
+  // journée coupe à 2 h du matin heure locale en été, et le trafic de soirée
+  // bascule sur le lendemain.
+  const tz = await fuseauDe(f.app);
   try {
     if (useRollups())
       return await q<DailyTraffic>(
@@ -81,36 +92,36 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
                 coalesce(pv.n, 0)::int as pageviews,
                 coalesce(er.n, 0)::int as errors
          from generate_series(
-                date_trunc('day', now()) - interval '${GRID_DAYS - 1} days',
-                date_trunc('day', now()),
+                date_trunc('day', now() at time zone $3) - interval '${GRID_DAYS - 1} days',
+                date_trunc('day', now() at time zone $3),
                 interval '1 day') gs(day)
          left join (
-           select date_trunc('day', hour) d, sum(pageviews)::int n
+           select date_trunc('day', hour at time zone $3) d, sum(pageviews)::int n
            from rum_rollup_hourly
            where hour >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
              and ($1::text is null or app_id = $1) and ($2::text is null or device_type = $2)${internalClause(f, "app_id")}
            group by 1
          ) pv on pv.d = gs.day
          left join (
-           select date_trunc('day', hour) d, sum(errors)::int n
+           select date_trunc('day', hour at time zone $3) d, sum(errors)::int n
            from rum_rollup_hourly
            where hour >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
              and ($1::text is null or app_id = $1) and ($2::text is null or device_type = $2)${internalClause(f, "app_id")}
            group by 1
          ) er on er.d = gs.day
          order by 1`,
-        [f.app, f.device],
+        [f.app, f.device, tz],
       );
     return await q<DailyTraffic>(
       `select gs.day::date as day,
               coalesce(pv.n, 0)::int as pageviews,
               coalesce(er.n, 0)::int as errors
        from generate_series(
-              date_trunc('day', now()) - interval '${GRID_DAYS - 1} days',
-              date_trunc('day', now()),
+              date_trunc('day', now() at time zone $3) - interval '${GRID_DAYS - 1} days',
+              date_trunc('day', now() at time zone $3),
               interval '1 day') gs(day)
        left join (
-         select date_trunc('day', p.started_at) d, count(*)::int n
+         select date_trunc('day', p.started_at at time zone $3) d, count(*)::int n
          from rum_pageview p
          left join rum_session s using (session_id)
          where p.started_at >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
@@ -119,7 +130,7 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
          group by 1
        ) pv on pv.d = gs.day
        left join (
-         select date_trunc('day', e.ts) d, count(*)::int n
+         select date_trunc('day', e.ts at time zone $3) d, sum(e.occurrences)::int n
          from rum_error e
          left join rum_session s using (session_id)
          where e.ts >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
@@ -128,7 +139,7 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
          group by 1
        ) er on er.d = gs.day
        order by 1`,
-      [f.app, f.device],
+      [f.app, f.device, tz],
     );
   } catch {
     return [];
@@ -137,9 +148,10 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
 
 /** p75 LCP par jour sur 14 j (réutilise VitalsTimeseries, buckets journaliers). */
 export async function dailyLcpSeries(f: Filters): Promise<SeriesRow[]> {
+  const tz = await fuseauDe(f.app);
   try {
     return await q<SeriesRow>(
-      `select date_trunc('day', m.ts) as bucket,
+      `select date_trunc('day', m.ts at time zone $3) as bucket,
               percentile_cont(0.75) within group (order by m.value) as p75
        from rum_metric m
        left join rum_session s using (session_id)
@@ -147,7 +159,7 @@ export async function dailyLcpSeries(f: Filters): Promise<SeriesRow[]> {
          and ($1::text is null or m.app_id = $1)
          and ($2::text is null or s.device_type = $2)${internalClause(f, "m.app_id")}
        group by 1 order by 1`,
-      [f.app, f.device],
+      [f.app, f.device, tz],
     );
   } catch {
     return [];

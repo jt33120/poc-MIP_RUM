@@ -8,6 +8,7 @@
 // marquée `unavailable` (champs vides) — AUCUN recalcul local. La moitié RUM
 // (sessions/vitals/erreurs/routes) est inchangée.
 import { q } from "./db";
+import { fuseauDe } from "./fuseau";
 import type { SummaryWindow } from "./read-tokens";
 import { fetchAiSummary } from "./xsom-ai";
 
@@ -181,7 +182,11 @@ export async function rumSummary(
   interval: string,
   generatedAt: string,
 ): Promise<RumSummary> {
-  const p = [app, interval];
+  // Le fuseau de l'application découpe les JOURNÉES de la série (finding 2.8).
+  // Sans lui, la journée coupait à 2 h du matin heure locale en été : tout le
+  // trafic de soirée basculait sur le lendemain.
+  const tz = await fuseauDe(app);
+  const p = [app, interval, tz];
 
   const [kpis, series, routes, errors, ai] = await Promise.all([
     q<{
@@ -251,19 +256,21 @@ export async function rumSummary(
               coalesce(pv.page_views,0)::int as page_views,
               coalesce(er.errors,0)::int as errors,
               fcp.avg_load_ms
-       from generate_series((now()-$2::interval)::date, now()::date, interval '1 day') d
+       from generate_series(((now() at time zone $3)-$2::interval)::date,
+                            (now() at time zone $3)::date, interval '1 day') d
        left join (
-         select date_trunc('day',p.started_at)::date dd, count(distinct p.session_id) sessions, count(*) page_views
+         select (p.started_at at time zone $3)::date dd,
+                coalesce(sum(s.weight),0) sessions, coalesce(sum(s.weight),0) page_views
          from rum_pageview p join rum_session s on s.session_id=p.session_id
          where p.app_id=$1 and p.started_at>now()-$2::interval and not coalesce(s.is_bot,false) group by 1
        ) pv on pv.dd=d::date
        left join (
-         select date_trunc('day',e.ts)::date dd, count(*) errors
+         select (e.ts at time zone $3)::date dd, coalesce(sum(e.occurrences),0) errors
          from rum_error e join rum_session s on s.session_id=e.session_id
          where e.app_id=$1 and e.ts>now()-$2::interval and not coalesce(s.is_bot,false) group by 1
        ) er on er.dd=d::date
        left join (
-         select date_trunc('day',m.ts)::date dd, round(avg(m.value))::int avg_load_ms
+         select (m.ts at time zone $3)::date dd, round(avg(m.value))::int avg_load_ms
          from rum_metric m join rum_session s on s.session_id=m.session_id
          where m.app_id=$1 and m.name='FCP' and m.ts>now()-$2::interval and not coalesce(s.is_bot,false) group by 1
        ) fcp on fcp.dd=d::date
