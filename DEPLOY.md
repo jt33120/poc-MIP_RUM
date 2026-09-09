@@ -129,6 +129,12 @@ les données de tous les clients. Il n'a donc aucun secret à stocker, ni à
 faire fuir. Un domaine généré est en revanche nécessaire : c'est l'URL que les
 clients MCP appelleront.
 
+> **`scheduler_lease` est passée dans le schéma (v54).** Elle naissait à
+> l'exécution, par le scheduler. La console la lit pourtant, sur la vitrine
+> PUBLIQUE : tant que le scheduler n'avait pas tourné, chaque visite anonyme
+> provoquait un `relation "scheduler_lease" does not exist`. Rien à faire côté
+> production — la table existe déjà, la migration est un no-op sur elle.
+
 **`MIGRATE_BASELINE=migration-v51.sql`, et pourquoi.** La base Neon est déjà au
 niveau v51 mais n'a pas de registre : sans étalonnage, le premier passage
 rejouerait 49 fichiers sur une base qui les a déjà. L'étalonnage les marque

@@ -18,6 +18,21 @@
 // observé, et les travaux restent idempotents. Un verrou parfait exigerait une
 // session stable, que le pooler ne donne pas.
 
+/**
+ * DDL du bail. LA SOURCE DE VÉRITÉ EST `sql/migration-v54.sql`, pas cette
+ * constante : le schéma se décrit dans les migrations, sinon une base
+ * reconstruite depuis le dépôt n'est pas celle de la production.
+ *
+ * Cette table naissait ici, et NULLE PART AILLEURS. La console la lit pourtant
+ * (`dernierTickScheduler`, pour la ligne « Latence d'alerte » de la vitrine
+ * PUBLIQUE) : tant que le scheduler n'avait pas tourné, chaque visite anonyme
+ * provoquait un `relation "scheduler_lease" does not exist`. En échec doux,
+ * donc invisible — mais c'est une erreur Postgres déclenchable par n'importe qui.
+ *
+ * L'appel reste exécuté au démarrage : il est `if not exists`, donc gratuit, et
+ * garde le scheduler déployable seul sur une base non migrée. Un test compare
+ * cette DDL à celle de la migration pour qu'elles ne divergent pas.
+ */
 export const SQL_TABLE = `
 create table if not exists scheduler_lease (
   job        text primary key,

@@ -8,7 +8,6 @@ import { SupervisionHero, HeroStat, HeroReading } from "@/components/Supervision
 import { cookies } from "next/headers";
 import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
 import { TousEteints } from "@/components/TousEteints";
-import { BriefingCard } from "@/components/BriefingCard";
 import { VitalCard } from "@/components/VitalCard";
 import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
@@ -95,13 +94,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </Link>
         </div>
       )}
-
-      {blocs.briefing && f.app && stats.sessions > 0 && <BriefingCard app={f.app} />}
-
-      {/* Vue « Tous » : synthèse LLM d'état du PORTAIL (toutes apps), depuis la
-          dernière connexion. Affichée même sans trafic — c'est là qu'elle dit
-          honnêtement « pas assez de données pour conclure ». */}
-      {blocs.briefing && !f.app && <BriefingCard />}
 
       {blocs.sante && health && <HealthBanner health={health} periodLabel={period.label} />}
 

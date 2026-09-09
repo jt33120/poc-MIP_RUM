@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
-import { AssistBox } from "@/components/AssistBox";
 import { BackendStep } from "@/components/wizard/BackendStep";
 import { SnippetStep } from "@/components/wizard/SnippetStep";
 import { WizardBadge, WizardStep } from "@/components/wizard/WizardStep";
@@ -215,7 +214,6 @@ export default async function CustomerWizard({
       </div>
 
       <div className="mt-6">
-        <AssistBox appId={appId} />
       </div>
     </div>
   );

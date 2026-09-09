@@ -111,3 +111,30 @@ describe("catalogues", () => {
     }
   });
 });
+
+// Le bloc « Synthèse IA » (id `briefing`) a été RETIRÉ du catalogue le 09/09/2026
+// avec l'assistant IA interne. Les navigateurs des utilisateurs portent encore un
+// cookie qui le nomme, et ce cookie survivra des mois. Le retrait d'un bloc doit
+// donc être inoffensif pour un cookie déjà posé — sinon chaque retrait futur
+// casserait l'écran de tous ceux qui avaient personnalisé leur tableau de bord.
+describe("retrait d'un bloc du catalogue", () => {
+  const vue = CATALOGUES.find((c) => c.href === "/")!;
+
+  it("le catalogue n'offre plus « Synthèse IA »", () => {
+    expect(vue.blocs.some((b) => b.id === "briefing")).toBe(false);
+    expect(vue.blocs.some((b) => b.label.includes("IA"))).toBe(false);
+  });
+
+  it("un cookie nommant un bloc disparu est ignoré, pas propagé", () => {
+    const choix = lireChoix(vue, "briefing:1,sante:0,vitals:1");
+    expect(choix.briefing).toBeUndefined();
+    // et les blocs encore valides du même cookie sont bien respectés
+    expect(choix.sante).toBe(false);
+    expect(choix.vitals).toBe(true);
+  });
+
+  it("un cookie ne contenant QUE le bloc disparu retombe sur les défauts", () => {
+    const choix = lireChoix(vue, "briefing:1");
+    for (const b of vue.blocs) expect(choix[b.id], b.id).toBe(b.defaut);
+  });
+});

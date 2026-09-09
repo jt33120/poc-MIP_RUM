@@ -42,7 +42,6 @@ export const CATALOGUES: readonly Catalogue[] = [
     titre: "Vue d'ensemble",
     cookie: "mip-blocs",
     blocs: [
-      { id: "briefing", label: "Synthèse IA", defaut: true, desc: "Ce qui a changé depuis votre dernière connexion, en quelques lignes." },
       { id: "sante", label: "Score de santé", defaut: true, desc: "Note sur 100 pondérée par les Core Web Vitals, et son évolution." },
       { id: "vitals", label: "Core Web Vitals", defaut: true, desc: "LCP, INP, CLS, FCP et TTFB au p75, face aux seuils Google." },
       { id: "reseau", label: "Décomposition réseau", defaut: false, desc: "D'où vient le TTFB : redirection, DNS, connexion, TLS, requête, réponse." },

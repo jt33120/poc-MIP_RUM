@@ -24,7 +24,7 @@ export const ORG = {
 // /legal/dpa — exemptées d'auth par middleware.ts). Une valeur périmée ici n'est pas une
 // coquille : c'est une déclaration RGPD inexacte et opposable. Elles ont déclaré Supabase /
 // eu-west-3 Paris pendant douze jours après la migration vers Neon / Francfort, et ont omis
-// les deux fournisseurs LLM réellement appelés. Tout changement d'hébergeur ou tout nouvel
+// les deux fournisseurs LLM alors réellement appelés. Tout changement d'hébergeur ou tout nouvel
 // appel sortant vers un tiers qui reçoit des données doit être répercuté ICI dans la même
 // modification que le code qui l'introduit (cf. invariant AD-7 du spine d'architecture).
 
@@ -38,9 +38,15 @@ export const HOSTS = {
 
 /**
  * Sous-traitants ultérieurs — factuels, pour la politique de confidentialité et le DPA.
- * Les deux fournisseurs LLM sont listés parce que les deux sont câblés dans le code
- * (apps/console/app/api/{ask,briefing,assist}/route.ts) : celui qui traite dépend de la
- * clé d'API présente en configuration. Le second implique un transfert hors UE.
+ *
+ * MISTRAL AI ET ANTHROPIC EN SONT SORTIS le 09/09/2026, dans la même modification
+ * que la suppression de l'assistant IA interne. Ils y figuraient parce que
+ * `app/api/{ask,briefing,assist}/route.ts` les appelaient réellement ; ces routes
+ * n'existent plus, aucune donnée ne part donc plus vers un fournisseur de modèle.
+ * Les laisser aurait été le symétrique exact du défaut que cet en-tête met en
+ * garde : déclarer un sous-traitant qui ne traite rien est aussi faux que d'en
+ * omettre un qui traite. Le transfert hors UE qu'impliquait le second disparaît
+ * avec eux.
  */
 export const SUBPROCESSORS: { name: string; role: string; location: string }[] = [
   { name: "Neon", role: "Hébergement de la base de données (RUM, comptes)", location: "UE (Francfort, aws-eu-central-1)" },
@@ -55,8 +61,6 @@ export const SUBPROCESSORS: { name: string; role: string; location: string }[] =
   // l'interroge est l'outil de son utilisateur, pas un sous-traitant de MIP.
   { name: "Railway Corp.", role: "Hébergement des services backend (réception des mesures RUM, travaux planifiés, serveur MCP de lecture)", location: "États-Unis (société) — services déployés en UE (europe-west4, Amsterdam, Pays-Bas), relevé le 09/09/2026" },
   { name: "[Fournisseur e-mail — à brancher]", role: "Envoi des alertes e-mail (si activé)", location: "[à préciser — UE recommandé]" },
-  { name: "Mistral AI", role: "Assistance et synthèse IA (si activée), sur données agrégées, sans PII", location: "UE (France)" },
-  { name: "Anthropic", role: "Assistance et synthèse IA (si activée), sur données agrégées, sans PII — employé lorsque la clé correspondante est configurée", location: "États-Unis (transfert hors UE)" },
 ];
 
 export interface LegalDocLink {
