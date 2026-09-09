@@ -68,6 +68,9 @@ async function sousVerrou(nom, executer) {
   let tenu = false;
   try {
     client = await pool.connect();
+    // Ceinture, pas bretelle : depuis migration-v54 la table vient du schéma.
+    // On garde l'appel (`if not exists`, donc gratuit) pour que le scheduler
+    // reste déployable seul sur une base qu'on n'aurait pas migrée.
     await client.query(SQL_TABLE);
     tenu = await prendreBail(client, { job: nom, porteur: PORTEUR, secondes: DUREES[nom] });
     if (!tenu) {

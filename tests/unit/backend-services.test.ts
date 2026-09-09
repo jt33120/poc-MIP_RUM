@@ -4,12 +4,13 @@
 // Ce qui est couvert ici est ce qui n'a PAS de filet ailleurs : une cadence
 // fausse ne se voit qu'au bout d'une heure d'attente, et un runner de
 // migrations qui se trompe touche la base de production.
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { aFaire, empreinte, jusquaInclus } from "../../apps/ingest/migrate.mjs";
 import { CADENCES, prochainDelai } from "../../apps/ingest/jobs/cadence.mjs";
 import { executerEtapes, travaux } from "../../apps/ingest/jobs/planifie.mjs";
 import { optionsSsl } from "../../apps/ingest/lib/serveur.mjs";
-import { DUREES, prendreBail, rendreBail } from "../../apps/ingest/jobs/bail.mjs";
+import { DUREES, SQL_TABLE, prendreBail, rendreBail } from "../../apps/ingest/jobs/bail.mjs";
 
 const muet = { info() {}, warn() {}, error() {} };
 
@@ -301,5 +302,48 @@ describe("bail d'exclusion des travaux planifiés", () => {
     expect(DUREES.tick).toBeGreaterThanOrEqual(600);
     expect(DUREES.horaire).toBeGreaterThanOrEqual(DUREES.tick);
     expect(DUREES.quotidien).toBeGreaterThanOrEqual(DUREES.horaire);
+  });
+});
+
+// `scheduler_lease` a longtemps existé en DEUX endroits qui pouvaient diverger :
+// la constante SQL_TABLE, exécutée par le scheduler, et… rien d'autre. Aucune
+// migration ne la créait, si bien que la console la lisait sur une table absente
+// (erreur Postgres à chaque rendu de la vitrine PUBLIQUE tant que le scheduler
+// n'avait pas tourné). migration-v54 la fait entrer dans le schéma.
+//
+// Elles sont désormais deux à décrire la même table. Ce test est ce qui les
+// empêche de partir chacune de son côté : une colonne ajoutée à SQL_TABLE sans
+// migration ne casserait rien à l'exécution (la table existe déjà, le `create
+// if not exists` est un no-op) — elle manquerait simplement en base, en silence.
+describe("scheduler_lease — le code et le schéma décrivent la même table", () => {
+  const migration = readFileSync("apps/ingest/sql/migration-v54.sql", "utf8");
+  const normaliser = (s: string) => s.replace(/\s+/g, " ").replace(/\s*\(\s*/g, "(").trim();
+
+  it("la migration contient la DDL exacte de SQL_TABLE", () => {
+    expect(normaliser(migration)).toContain(normaliser(SQL_TABLE));
+  });
+
+  it("les trois colonnes du bail y sont, avec leurs contraintes", () => {
+    const m = normaliser(migration);
+    expect(m).toContain("job text primary key");
+    expect(m).toContain("holder text not null");
+    expect(m).toContain("expires_at timestamptz not null");
+  });
+
+  // Une migration non idempotente casse le déploiement de production, où la
+  // table existe déjà — créée par le scheduler avant que ce fichier n'existe.
+  it("est idempotente : rien ne s'exécute inconditionnellement sur une base déjà pourvue", () => {
+    expect(migration).toContain("create table if not exists scheduler_lease");
+    expect(migration).not.toMatch(/create table scheduler_lease/);
+    expect(migration).not.toMatch(/drop table/i);
+  });
+
+  // Sans policy, une lecture par un rôle soumis à la RLS ne lève PAS d'erreur :
+  // elle renvoie zéro ligne. La vitrine dirait alors « aucun passage constaté »
+  // pendant que le scheduler tourne — faux, et présenté comme mesuré.
+  it("pose la policy de lecture en même temps que la RLS, jamais l'une sans l'autre", () => {
+    expect(migration).toContain("enable row level security");
+    expect(migration).toContain("create policy cro_sel_scheduler_lease");
+    expect(migration).toContain("grant select on scheduler_lease to console_ro");
   });
 });
