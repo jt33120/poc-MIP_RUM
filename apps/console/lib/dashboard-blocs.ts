@@ -84,9 +84,13 @@ export const CATALOGUES: readonly Catalogue[] = [
           "Jamais. Les sessions sont rattachées à un `user_hash` anonyme et la PII est retirée à la collecte comme à l'ingestion — c'est un engagement du produit, pas une fonctionnalité manquante.",
       },
       {
-        label: "Enregistrement du texte et des médias",
+        // La ligne d'avant — « ne masque encore ni le texte ni les images » —
+        // est devenue fausse le 09/09/2026 : le rejeu masque par défaut les
+        // saisies, le texte ET les médias, vérifié dans un vrai navigateur.
+        // Ce qui manque à sa place, c'est le mouvement INVERSE.
+        label: "Démasquage sélectif au rejeu",
         raison:
-          "Le rejeu masque les saisies et exclut les blocs marqués, mais ne masque encore ni le texte ni les images — le standard 2026 le demande, ce n'est pas fait.",
+          "Le masquage se règle par application — tout, les médias seuls, ou les saisies seules — mais pas élément par élément : on ne peut pas demander « montre ce tableau, cache cette colonne ». La version de rrweb utilisée n'expose pas de sélecteur de démasquage, seulement de masquage.",
       },
     ],
   },

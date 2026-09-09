@@ -102,8 +102,13 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Masquage du replay",
     cible: "Saisies, texte et médias masqués par défaut (standard 2026)",
-    reel: "Saisies masquées et blocs exclus ; texte et médias non masqués",
-    s: "partiel",
+    // Vérifié le 09/09/2026 dans un Chromium réel, avec le bundle rrweb publié :
+    // ni le texte de la page, ni la valeur d'un champ, ni les octets d'une image
+    // ne survivent à l'enregistrement au niveau par défaut. Le niveau se règle
+    // par application (`replayMask`), mais son DÉFAUT est le plus protecteur —
+    // un masquage qu'il faut penser à activer n'en est pas un.
+    reel: "Saisies, texte et médias masqués par défaut ; blocs marqués jamais capturés",
+    s: "atteint",
   },
   {
     c: "Hébergement",

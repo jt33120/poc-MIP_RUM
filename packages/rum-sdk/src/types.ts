@@ -44,6 +44,23 @@ export interface MIPRumConfig {
   /** Replay endpoint override; default = endpoint with /v1/traces replaced by /v1/replay */
   replayEndpoint?: string;
   /**
+   * Ce que le rejeu MASQUE. Défaut : `"all"`.
+   *
+   *   "all"    saisies + texte + médias (images, vidéos, canvas, SVG).
+   *            Le standard 2026 : on masque, et l'app démasque ce qu'elle a
+   *            décidé de montrer.
+   *   "media"  saisies + médias ; le texte de la page reste lisible. Pour une
+   *            application interne dont l'écran ne porte pas de donnée
+   *            personnelle, mais dont les pièces jointes en portent.
+   *   "inputs" saisies seulement — le comportement d'avant. À ne choisir qu'en
+   *            connaissance de cause : tout ce que l'application AFFICHE est
+   *            alors enregistré en clair.
+   *
+   * Dans les trois cas, les saisies sont masquées et un bloc marqué
+   * `.mip-rum-block` par l'application n'est jamais capturé.
+   */
+  replayMask?: "all" | "media" | "inputs";
+  /**
    * Tracing distribué (v0.4) : false = off ; true (défaut) = propagation
    * traceparent sur les appels same-origin ; string[] = origins SUPPLÉMENTAIRES
    * (ex. 'https://api.exemple.fr') en plus du same-origin.
