@@ -184,17 +184,27 @@ survit à un redéploiement et se réplique sans état partagé. Un `GET /mcp`
 répond `405` — sans session il n'y a aucun flux serveur→client à ouvrir, et
 laisser le client attendre serait pire qu'un refus.
 
-### Déploiement Railway
+### Déploiement Railway — fait
 
 Service `mcp` dans le projet `mip-rum-backend`, à côté de `ingest` et
 `scheduler` :
 
 | Réglage | Valeur |
 |---|---|
-| Dockerfile | `infra/docker/Dockerfile.backend` → **non**, `infra/docker/Dockerfile.mcp` |
-| Variables | `MIP_CONSOLE_URL`, `PORT=8080` |
+| Dockerfile | `infra/docker/Dockerfile.mcp` (**pas** `Dockerfile.backend`) |
+| Variables | `MIP_CONSOLE_URL`, `PORT=8080`, `NODE_ENV=production` |
 | Healthcheck | `/health` |
-| Domaine | à générer — c'est l'URL que les clients MCP appelleront |
+| Région | `europe-west4-drams3a` (Amsterdam) |
+| Branche | `master` |
+| Domaine | `https://mcp-production-201c.up.railway.app` |
+
+Adresse à donner à un client MCP distant :
+
+```
+https://mcp-production-201c.up.railway.app/mcp
+```
+
+avec un en-tête `Authorization: Bearer <jeton>`. Sans jeton, `401`.
 
 **Image séparée, à dessein.** Les autres services partagent
 `Dockerfile.backend` parce qu'ils ont le même noyau et les mêmes dépendances.

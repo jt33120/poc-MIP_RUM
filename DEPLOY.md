@@ -86,6 +86,9 @@ Projet `mip-rum-backend`, environnement `production`. Trois services.
 | `scheduler` | `Dockerfile.backend` | `node services/scheduler/worker.mjs` | facultatif (`/health`, `/status`) | `ALWAYS` |
 | `mcp` | **`Dockerfile.mcp`** | `node services/mcp/http.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
 
+Domaine public du serveur MCP : `https://mcp-production-201c.up.railway.app`
+(`POST /mcp`, jeton porteur exigé — cf. `docs/MCP.md`).
+
 `ingest` et `scheduler` partagent une image : même noyau, mêmes dépendances,
 seule la commande change. `mcp` a la sienne — non par exception, mais parce
 qu'**il ne doit pas pouvoir atteindre la base**. C'est le seul service
@@ -134,19 +137,35 @@ rester posée : elle est sans effet une fois le registre écrit, et elle est
 ignorée si la base est vierge (garde `to_regclass('public.rum_session')`) —
 sans quoi une base recréée hériterait d'un registre qui ment.
 
-### Deux réglages à faire à la main
+### Région et branche — faits le 09/09/2026
 
-1. **Région** : la définir sur `europe-west4` (Amsterdam) pour les deux
-   services. L'API ne l'expose pas ; c'est Service → Settings → Regions.
-   La base est à Francfort : laisser les services aux États-Unis remettrait un
-   aller-retour transatlantique par requête, et sortirait le traitement de l'UE.
-2. **Branche** : les services suivent `claude/graft-bmad-setup-54gpg7` pour que
-   le premier déploiement soit vérifiable avant fusion. **À basculer sur
-   `master` une fois la PR fusionnée.**
-3. **Jeton pour le MCP** : ajouter une entrée à `CONSOLE_API_TOKENS` **côté
-   Vercel** (pas côté Railway), scopée si le client MCP est un partenaire —
-   `jeton-uti@uti-portail` ne verra que cette app, par le serveur MCP comme par
-   l'API.
+Les trois services tournent en **`europe-west4-drams3a`** (Amsterdam) et suivent
+**`master`**. Relevé dans `multiRegionConfig` des trois services après la
+bascule depuis `us-west2` ; le journal du scheduler confirme la base atteinte :
+`ep-old-math-b2lu8752-pooler.c-6.eu-central-1.aws.neon.tech`.
+
+La région n'est **pas** exposée par l'API publique de Railway ni par
+`update-service` (« Scaling (replicas/regions) … not handled by this tool »).
+Deux façons de la changer : le tableau de bord, Service → Settings → Regions,
+ou l'agent Railway, qui écrit `multiRegionConfig` puis commite les changements
+en attente. Le retirer de l'ancienne région se fait en la passant à `null` dans
+le même patch, sans quoi le service tourne dans les deux.
+
+Amsterdam plutôt que Francfort : Railway n'offre pas Francfort. C'est la région
+la plus proche de la base, à ~350 km — l'aller-retour transatlantique disparaît,
+et le traitement reste en UE.
+
+> Cela ne règle pas la souveraineté. Railway Corp est une société de droit
+> américain, comme Vercel et Neon ; une région européenne n'y change rien. Le
+> point reste listé comme bloquant sur la page de présentation.
+
+### Le seul réglage qui reste manuel
+
+**Jeton pour le MCP** : ajouter une entrée à `CONSOLE_API_TOKENS` **côté Vercel**
+(pas côté Railway), scopée si le client MCP est un partenaire —
+`jeton-uti@uti-portail` ne verra que cette app, par le serveur MCP comme par
+l'API. Le service `mcp` n'a pas besoin d'en connaître la valeur : il relaie
+celui de l'appelant.
 
 > Railway Corp est une société de droit américain, comme Vercel et Neon. Ce
 > déplacement rapproche le calcul de la donnée et lève les limites de

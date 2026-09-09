@@ -33,7 +33,7 @@ export const HOSTS = {
   data: "Neon (base de données PostgreSQL sur infrastructure AWS, région aws-eu-central-1 — Francfort, Allemagne)",
   app: "Vercel Inc. (hébergement de l'application console ; fonctions serveur exécutées en région fra1 — Francfort, Allemagne)",
   backend:
-    "Railway Corp. (hébergement des services backend : réception des mesures, travaux planifiés, et serveur MCP de lecture)",
+    "Railway Corp. (hébergement des services backend — réception des mesures, travaux planifiés, serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
 } as const;
 
 /**
@@ -53,7 +53,7 @@ export const SUBPROCESSORS: { name: string; role: string; location: string }[] =
   // agrégats, à un agent IA cette fois. Il ne fait PAS entrer de tiers
   // supplémentaire dans la liste : il ne parle qu'à la console, et le modèle qui
   // l'interroge est l'outil de son utilisateur, pas un sous-traitant de MIP.
-  { name: "Railway Corp.", role: "Hébergement des services backend (réception des mesures RUM, travaux planifiés, serveur MCP de lecture)", location: "États-Unis (société) — région de déploiement à fixer en UE (europe-west4, Amsterdam)" },
+  { name: "Railway Corp.", role: "Hébergement des services backend (réception des mesures RUM, travaux planifiés, serveur MCP de lecture)", location: "États-Unis (société) — services déployés en UE (europe-west4, Amsterdam, Pays-Bas), relevé le 09/09/2026" },
   { name: "[Fournisseur e-mail — à brancher]", role: "Envoi des alertes e-mail (si activé)", location: "[à préciser — UE recommandé]" },
   { name: "Mistral AI", role: "Assistance et synthèse IA (si activée), sur données agrégées, sans PII", location: "UE (France)" },
   { name: "Anthropic", role: "Assistance et synthèse IA (si activée), sur données agrégées, sans PII — employé lorsque la clé correspondante est configurée", location: "États-Unis (transfert hors UE)" },
