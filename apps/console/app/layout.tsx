@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { Suspense } from "react";
-import { AskAssistant } from "@/components/AskAssistant";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { GlobalFilters } from "@/components/GlobalFilters";
 import { ICON_PATHS, Icon } from "@/components/icons";
@@ -10,7 +9,6 @@ import { Nav } from "@/components/Nav";
 import { SegmentBar } from "@/components/SegmentBar";
 import { SubNav } from "@/components/SubNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { TourGuide } from "@/components/TourGuide";
 import { getUser } from "@/lib/auth";
 import { dogfoodingEndpoint } from "@/lib/ingest-endpoint";
 import { DashboardSettings } from "@/components/DashboardSettings";
@@ -259,13 +257,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   </button>
                 </form>
               </div>
-              <Link
-                href="/help/architecture"
-                className="mt-3 flex items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] font-medium text-ink-faint transition hover:bg-panel2 hover:text-ink"
-              >
-                <Icon paths={ICON_PATHS.compass} className="h-3.5 w-3.5" />
-                Architecture &amp; fonctionnement
-              </Link>
               <footer className="px-1 pt-3 text-[10px] tracking-wide text-ink-faint">
                 v0.3 — OTel-native · données en UE
               </footer>
@@ -286,7 +277,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-emerald-500" />
                   LIVE · 5 s
                 </span>
-                <TourGuide />
                 <ThemeToggle />
               </div>
             </header>
@@ -300,8 +290,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </div>
         </div>
         <Capteur init={RUM_INIT} />
-        {/* Assistant IA (données + architecture, avec citations vérifiables) */}
-        <AskAssistant appId={currentProject?.app_id ?? ""} />
       </body>
     </html>
   );

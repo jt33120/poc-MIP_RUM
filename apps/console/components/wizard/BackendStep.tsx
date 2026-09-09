@@ -60,8 +60,9 @@ export function BackendStep({
           <div className="mt-2">
             <CopyBlock code={otherStack} />
             <p className="mt-2 text-xs text-slate-500">
-              L&apos;assistant IA en bas de page peut générer le middleware pour la stack
-              exacte du client.
+              Le principe est le même dans toutes les stacks : propager l&apos;en-tête{" "}
+              <code>traceparent</code> et le réémettre en réponse. Adapter l&apos;extrait ci-dessus
+              à la stack du client.
             </p>
           </div>
         </details>
