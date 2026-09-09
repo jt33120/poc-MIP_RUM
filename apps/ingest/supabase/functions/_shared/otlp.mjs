@@ -652,6 +652,39 @@ export function flattenOtlp(payload, opts = {}) {
             app_id: appId,
             route,
             duration_ms: durationMs,
+            source: "longtask",
+            ts,
+          });
+        } else if (span.name === "loaf") {
+          // Long Animation Frames : le MÊME fait qu'un longtask — le fil
+          // principal a bloqué — mais avec l'attribution. Même table, donc même
+          // purge, même comptage de volume, même cloisonnement, même effacement
+          // RGPD ; `source` dit laquelle des deux API a parlé.
+          //
+          // Les deux ne sont jamais actives ensemble côté SDK : ce n'est pas une
+          // règle qu'on applique ici, c'est un fait dont dépend le comptage.
+          const durationMs = a["loaf.duration_ms"];
+          if (typeof durationMs !== "number") {
+            rejected++;
+            continue;
+          }
+          const nombreOuNull = (v) => (typeof v === "number" ? v : null);
+          longtasks.push({
+            span_id: span.spanId,
+            session_id: sessionId,
+            app_id: appId,
+            route,
+            duration_ms: durationMs,
+            source: "loaf",
+            blocking_ms: nombreOuNull(a["loaf.blocking_ms"]),
+            render_ms: nombreOuNull(a["loaf.render_ms"]),
+            // Textes libres venus du navigateur : ils passent au même nettoyage
+            // que les messages d'erreur. Un nom de fonction ne devrait pas
+            // porter de PII, mais « ne devrait pas » n'est pas une garantie.
+            script_url: scrubUrl(a["loaf.script_url"]),
+            script_function: scrubText(a["loaf.script_function"]),
+            script_ms: nombreOuNull(a["loaf.script_ms"]),
+            invoker: scrubText(a["loaf.invoker"]),
             ts,
           });
         } else if (span.name === "breadcrumb") {

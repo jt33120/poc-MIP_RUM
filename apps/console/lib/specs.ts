@@ -277,12 +277,20 @@ export const MESURES: Mesure[] = [
       "Au-delà de 300 ms par défaut : type, taille transférée, blocage du rendu. De quoi désigner le script tiers ou l'image qui retarde la page.",
   },
   {
-    quoi: "Tâches longues",
+    quoi: "Blocage du fil principal, attribué",
+    otlp: "loaf",
+    table: "rum_longtask",
+    module: "packages/rum-sdk/src/loaf.ts",
+    detail:
+      "Long Animation Frames : non seulement QUE le fil a bloqué, mais QUEL SCRIPT le tenait — URL, nom de fonction, et ce qui l'a invoqué (un clic, un minuteur). C'est le chaînon qui manquait entre « INP à 900 ms » et un correctif. API Chromium ; ailleurs le SDK retombe sur les Long Tasks, qui disent la durée sans la cause.",
+  },
+  {
+    quoi: "Tâches longues (repli)",
     otlp: "longtask",
     table: "rum_longtask",
     module: "packages/rum-sdk/src/longtasks.ts",
     detail:
-      "Les blocages du fil principal de plus de 50 ms. L'API est absente de Safari : sur ce navigateur la mesure n'existe pas, et le SDK collecte le reste sans elle.",
+      "Les blocages de plus de 50 ms, sans attribution. Utilisé UNIQUEMENT là où Long Animation Frames n'existe pas : les deux ensemble compteraient deux fois le même blocage. L'API est elle-même absente de Safari.",
   },
   {
     quoi: "Fil d'Ariane",
@@ -366,12 +374,6 @@ export interface AngleMort {
 }
 
 export const ANGLES_MORTS: AngleMort[] = [
-  {
-    label: "Long Animation Frames (LoAF)",
-    raison:
-      "Le successeur des Long Tasks, et la seule façon d'attribuer un INP mauvais à la fonction qui l'a causé. L'API est disponible sur Chromium ; rien ne la lit ici. C'est l'écart le plus net avec un RUM du marché.",
-    marqueur: ["packages/rum-sdk/src", "long-animation-frame"],
-  },
   {
     label: "Conventions sémantiques OpenTelemetry",
     // Ce qui reste de l'ancienne ligne « Spans OTLP plats », une fois les champs

@@ -71,3 +71,58 @@ export async function inpOffenders(f: Filters): Promise<InpOffender[]> {
     return [];
   }
 }
+
+export interface ScriptBloquant {
+  /** URL du script, déjà nettoyée de sa query string à la collecte. */
+  url: string;
+  /** Nom de fonction, ou ce qui a invoqué le script quand la fonction est minifiée. */
+  quoi: string;
+  n: number;
+  /** Somme du temps de blocage attribué, en millisecondes. */
+  totalMs: number;
+  /** La pire frame observée. */
+  worstMs: number;
+}
+
+/**
+ * Les scripts qui bloquent le fil principal, classés par temps de blocage CUMULÉ.
+ *
+ * POURQUOI LE CUMUL ET NON LE PIRE CAS. Un script qui bloque 400 ms une fois est
+ * un incident ; un script qui bloque 60 ms à chaque frappe au clavier est le
+ * problème. Classer par maximum remonte le premier et enterre le second, alors
+ * que c'est le second qui décide de l'INP. Le pire cas reste affiché à côté —
+ * il dit s'il faut chercher une opération unique ou une répétition.
+ *
+ * `blocking_ms` de préférence à `duration_ms` : la durée compte tout le cycle de
+ * rendu, y compris la part que le navigateur aurait passée à peindre de toute
+ * façon. Le blocage est la part que l'utilisateur SUBIT. Repli sur la durée pour
+ * les navigateurs qui ne renseignent pas le champ.
+ *
+ * Ne rend QUE des lignes attribuées (`script_url is not null`) : une entrée
+ * Long Tasks n'a pas de script, et l'afficher sous « (inconnu) » ferait une
+ * première ligne écrasante qui n'apprend rien.
+ */
+export async function scriptsBloquants(f: Filters): Promise<ScriptBloquant[]> {
+  const itv = PERIODS[f.period].interval;
+  try {
+    return await q<ScriptBloquant>(
+      `select l.script_url as url,
+              coalesce(nullif(l.script_function, ''), nullif(l.invoker, ''), '(anonyme)') as quoi,
+              count(*)::int as n,
+              round(sum(coalesce(l.blocking_ms, l.duration_ms))::numeric)::float as "totalMs",
+              round(max(coalesce(l.blocking_ms, l.duration_ms))::numeric)::float as "worstMs"
+       from rum_longtask l
+       left join rum_session s using (session_id)
+       where l.script_url is not null
+         and l.ts > now() - interval '${itv}'
+         and ($1::text is null or l.app_id = $1)
+         and ($2::text is null or s.device_type = $2)
+       group by 1, 2
+       order by "totalMs" desc
+       limit 20`,
+      [f.app, f.device],
+    );
+  } catch {
+    return [];
+  }
+}

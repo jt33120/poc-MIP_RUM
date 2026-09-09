@@ -5,6 +5,7 @@ import { currentRoute, initNavigation, scrubUrl } from "./context";
 import { initErrors, type Emit } from "./errors";
 import { initForms } from "./forms";
 import { initFrustration } from "./frustration";
+import { initLoaf } from "./loaf";
 import { initLongTasks } from "./longtasks";
 import { currentTraceId, forceFlush, initOtel, newPageTrace } from "./otel";
 import { isReplaySampled, startReplay } from "./replay";
@@ -145,7 +146,12 @@ export function init(cfg: MIPRumConfig): void {
     slowResourceMs: cfg.slowResourceMs ?? DEFAULT_SLOW_RESOURCE_MS,
     endpoint: cfg.endpoint,
   });
-  const longtaskCap = initLongTasks(emit);
+  // Blocage du fil principal : LoAF si le navigateur le connaît, Long Tasks
+  // sinon. JAMAIS LES DEUX — un même blocage produit une entrée de chaque côté,
+  // et les compter tous les deux doublerait le nombre de blocages affiché. LoAF
+  // est le successeur : il porte en plus le script responsable, ce qui est la
+  // seule information dont on puisse faire un correctif.
+  const longtaskCap = initLoaf(emit) ?? initLongTasks(emit);
   initClickBreadcrumbs(trail);
   // signaux de frustration (P1) : rage/dead clicks ; opt-out via cfg.frustration=false
   const frustrationCap = initFrustration(emit, { enabled: cfg.frustration !== false });
