@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifyJwt } from "@/lib/auth";
+import { estCheminPublic } from "@/lib/chemins-publics";
 
 // Auth v0.3 (B3) : JWT cookie httpOnly signé AUTH_SECRET — remplace le basic auth v0.2.
 // PUBLICS sans auth (matcher) : /login, /mip-rum.js, /mip-rum-replay.js, /_next/*, /favicon*.
@@ -46,9 +47,7 @@ export async function middleware(req: NextRequest) {
     // /presentation = vitrine ; /extension-privacy = politique de confidentialité
     // PUBLIQUE de l'extension (URL exigée par le Chrome Web Store) ; /legal/* =
     // documents légaux publics (mentions, CGU, CGV, confidentialité, DPA).
-    if (p === "/presentation" || p === "/extension-privacy" || p.startsWith("/legal")) {
-      return NextResponse.next();
-    }
+    if (estCheminPublic(p)) return NextResponse.next();
     if (p === "/") return NextResponse.redirect(new URL("/presentation", req.url), 302);
     return NextResponse.redirect(new URL("/login", req.url), 302);
   }
@@ -99,7 +98,13 @@ export async function middleware(req: NextRequest) {
     !pathname.startsWith("/api/") &&
     !pathname.startsWith("/admin") &&
     pathname !== "/select" &&
-    !pathname.startsWith("/select/");
+    !pathname.startsWith("/select/") &&
+    // Les pages PUBLIQUES ne sont pas des écrans de console : elles n'ont pas de
+    // projet courant. Sans cette exclusion, un utilisateur connecté était
+    // redirigé vers /presentation?app=… — et, s'il n'avait aucun projet
+    // résoluble, vers /select : des mentions légales devenues illisibles pour
+    // qui n'a pas encore choisi de projet.
+    !estCheminPublic(pathname);
   if (gated) {
     const requested = req.nextUrl.searchParams.get("app");
     const cookieApp = req.cookies.get("mip-project")?.value ?? null; // cf. lib/project.ts

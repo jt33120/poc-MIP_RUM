@@ -10,13 +10,13 @@ import { SegmentBar } from "@/components/SegmentBar";
 import { SubNav } from "@/components/SubNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getUser } from "@/lib/auth";
+import { estCheminPublic } from "@/lib/chemins-publics";
 import { dogfoodingEndpoint } from "@/lib/ingest-endpoint";
 import { DashboardSettings } from "@/components/DashboardSettings";
 import { CATALOGUES, lireChoix } from "@/lib/dashboard-blocs";
 import { reglerBlocsAction } from "./actions-dashboard";
 import { listApps } from "@/lib/queries";
 import { describeProject, selectedProjectId } from "@/lib/project";
-import { logoutAction } from "./logout/actions";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -150,10 +150,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     );
   }
 
-  // /select : étape de choix du projet -> rendu plein écran, sans la coquille
-  // (sidebar/header) qui suppose un projet déjà sélectionné.
+  // Rendu PLEIN ÉCRAN, sans la coquille (sidebar/en-tête) qui suppose un projet
+  // déjà sélectionné :
+  //   · /select — l'étape de choix du projet, forcément avant d'en avoir un ;
+  //   · les pages PUBLIQUES — la vitrine et les documents légaux ne sont pas des
+  //     écrans de console. Elles étaient jusqu'ici enveloppées dans la sidebar
+  //     dès qu'on était connecté : /presentation affichait le bandeau projet et
+  //     la navigation par-dessus la page d'accueil du produit, ce qui la rendait
+  //     inconsultable pour un utilisateur connecté.
   const pathname = (await headers()).get("x-pathname") ?? "";
-  if (pathname === "/select" || pathname.startsWith("/select/")) {
+  if (pathname === "/select" || pathname.startsWith("/select/") || estCheminPublic(pathname)) {
     return (
       <html lang="fr" suppressHydrationWarning>
         <head>
@@ -245,7 +251,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   </span>
                   <span className="block text-[10px] uppercase tracking-wider text-ink-faint">{user.role}</span>
                 </span>
-                <form action={logoutAction} className="ml-auto shrink-0">
+                <form action="/logout" method="post" className="ml-auto shrink-0">
                   <button
                     type="submit"
                     data-testid="logout"
