@@ -10,6 +10,18 @@
             }
           },
           {
+            "key": "mip.sample_rate",
+            "value": {
+              "stringValue": "0.25"
+            }
+          },
+          {
+            "key": "mip.error_sample_rate",
+            "value": {
+              "stringValue": "1"
+            }
+          },
+          {
             "key": "mip.client_id",
             "value": {
               "stringValue": "acme"
@@ -120,6 +132,12 @@
                   "key": "webvital.value",
                   "value": {
                     "doubleValue": 2340.5
+                  }
+                },
+                {
+                  "key": "webvital.id",
+                  "value": {
+                    "stringValue": "v5-1760000000000-4821"
                   }
                 },
                 {

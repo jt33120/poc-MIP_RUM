@@ -107,7 +107,12 @@ export function colonnesLongtask(dispo) {
 }
 
 /** Colonnes optionnelles de rum_session, dans l'ordre où elles s'insèrent. */
-const OPTIONNELLES = ["collection_source", "release", "net_type", "visitor_id"];
+const OPTIONNELLES = [
+  "collection_source", "release", "net_type", "visitor_id",
+  // v58 : échantillonnage. `weight` n'y figure PAS — c'est une colonne générée,
+  // que PostgreSQL refuse qu'on écrive.
+  "sample_rate", "error_sample_rate", "has_error",
+];
 
 /**
  * Liste de colonnes de l'INSERT, réduite à ce que la base porte réellement.
@@ -148,8 +153,76 @@ export function clauseConflitSession(dispo) {
     ...["release", "net_type", "visitor_id"]
       .filter((c) => dispo.has(c))
       .map((c) => `${c} = coalesce(rum_session.${c}, excluded.${c})`),
+    // v58 — `has_error` ne redescend JAMAIS. Les spans d'une session arrivent en
+    // plusieurs lots ; celui qui portait l'exception peut être suivi d'un lot
+    // sans erreur, et un `= excluded.has_error` remettrait le drapeau à faux.
+    // La session changerait alors de poids après coup, ce qui ferait bouger des
+    // agrégats déjà affichés.
+    ...(dispo.has("has_error")
+      ? ["has_error = rum_session.has_error or excluded.has_error"]
+      : []),
+    // `sample_rate` et `error_sample_rate` sont délibérément ABSENTS de cette
+    // liste, pour la même raison que `collection_source` : le taux est figé à la
+    // première vue de la session. Un lot rejoué par un SDK antérieur, qui ne
+    // porte pas l'attribut, retomberait sur 1 et effacerait l'échantillonnage —
+    // multipliant d'un coup tous les volumes de cette session par son taux.
   ];
   return `on conflict (session_id) do update set ${set.join(", ")}`;
+}
+
+const COLONNES_METRIQUE = [
+  "span_id", "session_id", "app_id", "route", "name", "value", "rating", "attribution", "ts",
+];
+
+/**
+ * Écrit les Web Vitals, en DEUX passes — et la raison n'est pas cosmétique.
+ *
+ * CLS et INP sont rapportés PLUSIEURS FOIS par chargement de page : `web-vitals`
+ * rappelle son callback à chaque passage de l'onglet en `hidden`. Chaque rapport
+ * devenait une ligne, et comme ces métriques croissent au fil de la page, les
+ * rapports intermédiaires — systématiquement plus favorables — tiraient le p75
+ * vers le bas. Le SDK émet `webvital.id`, qui identifie la métrique pour ce
+ * chargement ; l'ingestion le jetait (finding 1.5).
+ *
+ * POURQUOI DEUX PASSES. PostgreSQL n'accepte qu'UNE clause `on conflict` par
+ * ordre. Les lignes qui portent `metric_uid` se dédupliquent sur l'index partiel
+ * `uq_metric_report` ; celles qui n'en portent pas — historique et SDK non mis à
+ * jour — n'y figurent pas et doivent retomber sur l'unicité de `span_id`. Les
+ * mélanger ferait échouer la seconde catégorie sur une violation d'unicité, donc
+ * avorter TOUTE la transaction : un lot entier perdu pour une ligne ancienne.
+ *
+ * POURQUOI `greatest` ET PAS « le dernier gagne ». Les cinq vitals sont monotones
+ * croissantes sur la vie d'une page (CLS cumule, INP retient la pire interaction,
+ * LCP ne peut que grandir ; FCP et TTFB ne sont rapportés qu'une fois, où
+ * `greatest` ne fait rien). Prendre le maximum donne le même résultat que « le
+ * dernier » quand les lots arrivent dans l'ordre, et reste juste quand ils
+ * arrivent dans le désordre — ce qui se produit dès qu'un lot passe par la file
+ * de rejeu. Une seule règle pour les cinq, donc aucune branche qui puisse dériver.
+ */
+async function ecrireMetriques(client, metrics) {
+  const dispo = await colonnesDe(client, "rum_metric");
+  const avecUid = dispo.has("metric_uid");
+  const cols = avecUid ? [...COLONNES_METRIQUE, "metric_uid"] : COLONNES_METRIQUE;
+  const prep = (m) => ({ ...m, attribution: m.attribution ? JSON.stringify(m.attribution) : null });
+
+  if (!avecUid) {
+    await batchInsert(client, "rum_metric", cols, metrics.map(prep), "on conflict (span_id) do nothing");
+    return;
+  }
+  const identifiees = metrics.filter((m) => m.metric_uid);
+  const anonymes = metrics.filter((m) => !m.metric_uid);
+
+  await batchInsert(
+    client,
+    "rum_metric",
+    cols,
+    identifiees.map(prep),
+    `on conflict (session_id, name, metric_uid) where metric_uid is not null do update set
+       value  = greatest(rum_metric.value, excluded.value),
+       rating = case when excluded.value > rum_metric.value then excluded.rating else rum_metric.rating end,
+       ts     = case when excluded.value > rum_metric.value then excluded.ts     else rum_metric.ts     end`,
+  );
+  await batchInsert(client, "rum_metric", cols, anonymes.map(prep), "on conflict (span_id) do nothing");
 }
 
 /**
@@ -196,13 +269,7 @@ export async function writeRows(pool, {
       pageviews.map((p) => ({ ...p, started_at: p.ts })),
       "on conflict (span_id) do nothing",
     );
-    await batchInsert(
-      client,
-      "rum_metric",
-      ["span_id", "session_id", "app_id", "route", "name", "value", "rating", "attribution", "ts"],
-      metrics.map((m) => ({ ...m, attribution: m.attribution ? JSON.stringify(m.attribution) : null })),
-      "on conflict (span_id) do nothing",
-    );
+    await ecrireMetriques(client, metrics);
     await batchInsert(
       client,
       "rum_error",

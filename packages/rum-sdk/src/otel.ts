@@ -147,6 +147,18 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
     ...(cfg.release ? { "mip.release": cfg.release } : {}),
     // sendBeacon/keepalive ne portent pas de headers : la clé voyage en resource
     ...(cfg.apiKey ? { "mip.api_key": cfg.apiKey } : {}),
+    // ÉCHANTILLONNAGE — les deux taux, pas seulement le premier.
+    //
+    // Sans eux, un backend ne peut pas repondérer : il voit un échantillon et le
+    // prend pour la population. Et `sampleRate` SEUL ne suffit pas, parce que
+    // l'échantillonnage de ce SDK n'est pas uniforme mais biaisé-erreurs (voir
+    // sampling.ts). Une session sans erreur n'apparaît qu'avec une probabilité
+    // `sampleRate` ; une session AVEC erreur apparaît avec
+    // `sampleRate + (1 - sampleRate) × errorSampleRate`. Les deux nombres sont
+    // donc nécessaires pour reconstruire la probabilité d'inclusion, et c'est
+    // elle — pas le taux — qui donne le poids. Détail dans migration-v58.
+    "mip.sample_rate": String(cfg.sampleRate ?? 1),
+    "mip.error_sample_rate": String((cfg.keepOnError ?? true) ? (cfg.errorSampleRate ?? 1) : 0),
   };
   // décorateur retry : export raté -> file localStorage, rejouée au prochain init
   exporter = new RetryExporter(httpExporter(cfg.endpoint));

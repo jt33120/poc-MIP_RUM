@@ -101,6 +101,22 @@ export interface AiSummarySection {
   /** Série journalière IA (calls/coût/latence p75/taux d'erreur). */
   ai_series: SummaryAiSeriesPoint[];
 }
+/**
+ * Déclaration d'échantillonnage. Existe pour une seule raison : une valeur
+ * biaisée annoncée comme telle vaut mieux qu'une valeur biaisée présentée
+ * comme exacte.
+ */
+export interface SamplingNotice {
+  /** Le taux le plus bas rencontré sur la fenêtre (0 < r < 1). */
+  min_sample_rate: number;
+  /** Champs REPONDÉRÉS : ils estiment la population, pas l'échantillon. */
+  extrapolated: string[];
+  /** Champs NON corrigés : ils portent sur l'échantillon seul. */
+  not_corrected: string[];
+  /** Ce qu'un lecteur doit en faire, en une phrase. */
+  message: string;
+}
+
 export interface RumSummary extends AiSummarySection {
   app: string;
   window: SummaryWindow;
@@ -114,6 +130,10 @@ export interface RumSummary extends AiSummarySection {
    *  dans `users` : sans ce champ, un consommateur de l'API lirait un
    *  sous-comptage comme un comptage. */
   unidentified_sessions: number;
+  /** Ce que l'échantillonnage fait à ces chiffres — `null` quand il est inactif.
+   *  Un consommateur qui l'ignore lit des volumes extrapolés sans le savoir ;
+   *  un consommateur qui le lit sait AUSSI ce qui n'est pas corrigé. */
+  sampling_notice: SamplingNotice | null;
   page_views: number;
   avg_load_ms: number | null;
   p75_lcp_ms: number | null;
@@ -123,6 +143,31 @@ export interface RumSummary extends AiSummarySection {
   series: SummarySeriesPoint[];
   top_routes: SummaryRoute[];
   top_errors: SummaryError[];
+}
+
+/**
+ * Construit la déclaration d'échantillonnage, ou `null` s'il n'y en a pas.
+ *
+ * PURE et exportée, donc testable sans base. Le seuil est « strictement moins
+ * de 1 » : dès qu'une seule session de la fenêtre a été échantillonnée, les
+ * volumes sont des estimations et le lecteur doit le savoir.
+ */
+export function noticeEchantillonnage(min: number | null | undefined): SamplingNotice | null {
+  const r = Number(min);
+  if (!Number.isFinite(r) || r >= 1 || r <= 0) return null;
+  const pct = Math.round(r * 1000) / 10;
+  return {
+    min_sample_rate: r,
+    extrapolated: ["sessions", "page_views", "error_rate"],
+    not_corrected: ["users", "p75_lcp_ms", "p75_inp_ms", "avg_load_ms", "frustration_signals"],
+    message:
+      `Échantillonnage actif sur cette fenêtre (jusqu'à ${pct} % des sessions collectées). ` +
+      "Les volumes et le taux d'erreur sont REPONDÉRÉS par la probabilité d'inclusion réelle de " +
+      "chaque session : ils estiment la population. Les visiteurs uniques et les percentiles ne " +
+      "le sont PAS — extrapoler un compte de distincts demande une estimation de cardinalité, et " +
+      "PostgreSQL n'a pas de percentile pondéré. Ces champs portent donc sur l'échantillon seul, " +
+      "et l'échantillon sur-représente les sessions en erreur, donc les plus lentes.",
+  };
 }
 
 const iso = (v: unknown): string => (v instanceof Date ? v.toISOString() : new Date(String(v)).toISOString());
@@ -144,15 +189,34 @@ export async function rumSummary(
       users: number;
       unidentified_sessions: number;
       page_views: number;
+      min_sample_rate: number;
       avg_load_ms: number | null;
       p75_lcp_ms: number | null;
       p75_inp_ms: number | null;
       frustration_signals: number;
       error_sessions: number;
     }>(
+      // ═════════════ VOLUMES PONDÉRÉS PAR L'ÉCHANTILLONNAGE (v58) ═════════════
+      //
+      // `sum(s.weight)` et non `count(*)`. À `sampleRate: 0.1` — que la
+      // documentation d'intégration RECOMMANDAIT — ces trois compteurs
+      // affichaient 10 % de la réalité, sans mention. Le poids vaut 1 partout
+      // tant qu'aucun échantillonnage n'est configuré : sans échantillonnage,
+      // ces requêtes rendent exactement ce qu'elles rendaient avant.
+      //
+      // CE QUI N'EST PAS PONDÉRÉ, ET POURQUOI. `users` reste un comptage brut de
+      // visiteurs distincts : extrapoler un nombre de DISTINCTS demande une
+      // estimation de cardinalité (HyperLogLog ou équivalent), pas une somme de
+      // poids — un visiteur revenu dans deux sessions de poids différents n'a pas
+      // de poids unique. Les percentiles non plus : PostgreSQL n'a pas de
+      // `percentile_cont` pondéré. Les deux limites sont DÉCLARÉES, dans
+      // `sampling_notice` ci-dessous et dans docs/API_CONSOLE.md, plutôt que
+      // laissées à deviner.
       `select
-         (select count(distinct p.session_id)::int from rum_pageview p join rum_session s on s.session_id=p.session_id
-            where p.app_id=$1 and p.started_at>now()-$2::interval and not coalesce(s.is_bot,false)) as sessions,
+         (select coalesce(sum(s.weight), 0)::int from rum_session s
+            where s.app_id=$1 and not coalesce(s.is_bot,false)
+              and exists (select 1 from rum_pageview p
+                           where p.session_id = s.session_id and p.started_at > now()-$2::interval)) as sessions,
          -- visitor_id et non user_hash : l'ancienne empreinte était dérivée du
          -- terminal, donc un parc homogène de cent postes s'y comptait comme un
          -- utilisateur. Voir migration-v57. Les sessions sans identifiant sortent
@@ -161,7 +225,7 @@ export async function rumSummary(
             where s.app_id=$1 and s.started_at>now()-$2::interval and not coalesce(s.is_bot,false) and s.visitor_id is not null) as users,
          (select count(*)::int from rum_session s
             where s.app_id=$1 and s.started_at>now()-$2::interval and not coalesce(s.is_bot,false) and s.visitor_id is null) as unidentified_sessions,
-         (select count(*)::int from rum_pageview p join rum_session s on s.session_id=p.session_id
+         (select coalesce(sum(s.weight), 0)::int from rum_pageview p join rum_session s on s.session_id=p.session_id
             where p.app_id=$1 and p.started_at>now()-$2::interval and not coalesce(s.is_bot,false)) as page_views,
          (select round(avg(m.value))::int from rum_metric m join rum_session s on s.session_id=m.session_id
             where m.app_id=$1 and m.name='FCP' and m.ts>now()-$2::interval and not coalesce(s.is_bot,false)) as avg_load_ms,
@@ -171,8 +235,14 @@ export async function rumSummary(
             where m.app_id=$1 and m.name='INP' and m.ts>now()-$2::interval and not coalesce(s.is_bot,false)) as p75_inp_ms,
          (select count(*)::int from rum_event e join rum_session s on s.session_id=e.session_id
             where e.app_id=$1 and e.name in ('frustration.rage','frustration.dead') and e.ts>now()-$2::interval and not coalesce(s.is_bot,false)) as frustration_signals,
-         (select count(distinct e.session_id)::int from rum_error e join rum_session s on s.session_id=e.session_id
-            where e.app_id=$1 and e.ts>now()-$2::interval and not coalesce(s.is_bot,false)) as error_sessions`,
+         (select coalesce(sum(s.weight), 0)::int from rum_session s
+            where s.app_id=$1 and not coalesce(s.is_bot,false)
+              and exists (select 1 from rum_error e
+                           where e.session_id = s.session_id and e.ts > now()-$2::interval)) as error_sessions,
+         -- Le taux d'échantillonnage le PLUS BAS de la fenêtre : 1 = aucun.
+         -- C'est ce qui déclenche l'avertissement plutôt qu'un silence.
+         (select coalesce(min(s.sample_rate), 1) from rum_session s
+            where s.app_id=$1 and s.last_seen_at>now()-$2::interval) as min_sample_rate`,
       p,
     ),
     q<SummarySeriesPoint>(
@@ -239,6 +309,7 @@ export async function rumSummary(
     sessions,
     users: k?.users ?? 0,
     unidentified_sessions: k?.unidentified_sessions ?? 0,
+    sampling_notice: noticeEchantillonnage(k?.min_sample_rate),
     page_views: k?.page_views ?? 0,
     avg_load_ms: n(k?.avg_load_ms),
     p75_lcp_ms: n(k?.p75_lcp_ms),
