@@ -24,7 +24,7 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
       "app_id": "demo",
       "colno": 7,
       "error_type": "TypeError",
-      "fingerprint": "5963d92c",
+      "fingerprint": "368e01a8",
       "kind": "error",
       "lineno": 42,
       "message": "login failed for [email] password=[redacted]",
@@ -33,7 +33,9 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
       "session_id": "sess-1",
       "source": "https://app.demo.fr/app.js",
       "span_id": "e1",
-      "stack": "TypeError at /home (app.js)",
+      "stack": "TypeError: Cannot read properties of undefined
+    at validerPanier (https://app.demo.fr/_next/static/chunks/main-4f2a9c1d.js:1:2345)
+    at HTMLButtonElement.<anonymous> (https://app.demo.fr/_next/static/chunks/main-4f2a9c1d.js:1:900)",
       "ts": 2025-10-09T08:53:22.000Z,
     },
   ],

@@ -113,12 +113,68 @@ function normalizeMessage(message) {
     .trim();
 }
 
-/** Premier frame de la stack (ligne `at …` ou style `fn@url`), sans line:col. */
-function firstStackFrame(stack) {
+// ─────────────── Normalisation d'une frame de pile, pour le regroupement ──────
+//
+// CE QUI SE PASSAIT. La frame ne perdait que `:ligne:colonne`. L'URL du bundle y
+// restait entière — avec son EMPREINTE DE CONTENU. Or toute application moderne
+// (Next.js, Vite, webpack, Angular CLI) sert des fichiers à nom haché :
+//
+//   déploiement N    …/chunks/main-4f2a9c1d.js   -> empreinte d218b59b
+//   déploiement N+1  …/chunks/main-7b3e88ff.js   -> empreinte ec52be20
+//
+// Le même bug changeait donc de groupe à CHAQUE mise en production. `first_seen`
+// repartait à zéro, le statut de triage (error_status, clé app_id+fingerprint) ne
+// suivait pas, une erreur marquée « résolue » revenait en groupe neuf plutôt
+// qu'en régression, et la détection de régression ne se déclenchait jamais.
+// Pendant ce temps la vitrine promettait « groupées par empreinte pour qu'un même
+// bug ne compte qu'une fois ».
+//
+// CE QU'ON RETIRE, ET CE QU'ON GARDE. On retire l'origine (une même application
+// est servie depuis des domaines différents en préproduction, en préversion et en
+// production), la query string, et les empreintes de contenu — dans le nom de
+// fichier comme dans les segments de chemin. On GARDE le nom de fonction et le
+// chemin logique : c'est ce qui distingue deux bugs.
+//
+// PRUDENCE ASSUMÉE. Trop normaliser est pire que pas assez : deux bugs distincts
+// fondus dans un même groupe, c'est un bug qu'on ne voit plus du tout, alors
+// qu'un groupe qui se scinde reste visible. Un segment n'est donc remplacé que
+// s'il est ENTIÈREMENT hexadécimal sur 8 caractères ou plus — jamais sur une
+// heuristique d'entropie. Reste connu : un identifiant de build non hexadécimal
+// (`/_next/static/<buildId>/`, en base 62) échappe encore à la règle.
+
+/** `-4f2a9c1d` ou `.a1b2c3d4` juste avant l'extension : une empreinte de contenu. */
+const RE_HASH_FICHIER = /([._-])[0-9a-f]{8,}(?=\.[a-z0-9]+$)/i;
+/** Un segment de chemin entièrement hexadécimal : un identifiant de build. */
+const RE_SEGMENT_HEX = /^[0-9a-f]{8,}$/i;
+
+/** Chemin d'un module, débarrassé de ce qui change à chaque déploiement. */
+export function normalizeModulePath(url) {
+  let chemin = String(url ?? "");
+  // Origine et protocole : `https://app.fr/a/b.js` -> `/a/b.js`. Le repli couvre
+  // les URL relatives et les schémas non http (extension, blob, eval).
+  chemin = chemin.replace(/^[a-z-]+:\/\/[^/]+/i, "");
+  chemin = chemin.split("?")[0].split("#")[0];
+  const segments = chemin.split("/").map((seg, i, tous) => {
+    if (RE_SEGMENT_HEX.test(seg)) return "#";
+    // Le dernier segment est le nom de fichier : son empreinte y est infixée.
+    if (i === tous.length - 1) return seg.replace(RE_HASH_FICHIER, "$1#");
+    return seg;
+  });
+  return segments.join("/");
+}
+
+/** Premier frame de la stack (ligne `at …` ou style `fn@url`), normalisé. */
+export function firstStackFrame(stack) {
   const lines = String(stack ?? "").split("\n");
   for (const line of lines) {
     const l = line.trim();
-    if (/^at\s/.test(l) || /\S@\S/.test(l)) return l.replace(/:\d+:\d+/g, "");
+    if (!/^at\s/.test(l) && !/\S@\S/.test(l)) continue;
+    // `:ligne:colonne` d'abord — sinon il serait pris pour une partie de l'URL.
+    const sansPosition = l.replace(/:\d+:\d+/g, "");
+    // Puis chaque URL de la frame passe par la normalisation de chemin.
+    return sansPosition.replace(/(?:[a-z-]+:\/\/[^\s"')]+|\/[^\s"')]+)/gi, (u) =>
+      normalizeModulePath(u),
+    );
   }
   return "";
 }

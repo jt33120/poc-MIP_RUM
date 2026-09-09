@@ -258,7 +258,7 @@ export const MESURES: Mesure[] = [
     table: "rum_session",
     module: "packages/rum-sdk/src/index.ts",
     detail:
-      "Type d'appareil, navigateur déduit du user-agent, pays DÉDUIT DU FUSEAU HORAIRE — aucune adresse IP n'est stockée, ni même résolue. Nouveau ou revenant, source de collecte (balise ou extension), version déployée, qualité du lien.",
+      "Type d'appareil, navigateur déduit du user-agent, pays déduit du FUSEAU HORAIRE — et à défaut de l'en-tête pays que pose le CDN, quand il y en a un devant. Aucune adresse IP n'est stockée côté MIP ; « ni même résolue » serait faux, puisque c'est bien une résolution IP→pays que fait le CDN dans ce second cas. Nouveau ou revenant, source de collecte (balise ou extension), version déployée, qualité du lien.",
   },
   {
     quoi: "Erreurs JavaScript",
@@ -306,7 +306,7 @@ export const MESURES: Mesure[] = [
     table: "rum_span",
     module: "packages/rum-sdk/src/apispans.ts",
     detail:
-      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un arbre enraciné, lisible par un collecteur tiers. Un seul saut : front → back, pas back → back.",
+      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un ARBRE enraciné. Elle n'est pas encore une CHRONOLOGIE — un span part avec un début et une fin sur la même milliseconde, et la durée réelle ne voyage que dans un attribut propriétaire (http.duration_ms). Un seul saut : front → back, pas back → back.",
   },
   {
     quoi: "Traces serveur",
@@ -379,8 +379,14 @@ export const ANGLES_MORTS: AngleMort[] = [
     // Ce qui reste de l'ancienne ligne « Spans OTLP plats », une fois les champs
     // natifs (parentSpanId, kind, status) émis et la trace enracinée sur la page
     // vue : la STRUCTURE est standard, le VOCABULAIRE ne l'est pas encore.
+    //
+    // La phrase « un backend tiers affichera donc le waterfall correctement » a
+    // été RETIRÉE d'ici le 09/09/2026 : elle était fausse. Un waterfall se
+    // dessine avec des durées, et nos spans n'en portent pas — cette limite-là
+    // vit maintenant dans le critère « Format sur le fil », où elle est prose et
+    // n'a pas à se falsifier par un marqueur d'absence.
     raison:
-      "Les spans sont standard dans leur structure — parenté, nature, issue — mais pas dans leur vocabulaire. Une erreur est émise comme un span nommé « exception » là où OpenTelemetry attend un ÉVÉNEMENT porté par le span concerné, et les attributs HTTP suivent l'ancienne convention http.method / http.url, dépréciée au profit de http.request.method / url.full. Un backend tiers affichera donc le waterfall correctement, mais ne comptera pas nos erreurs comme des erreurs.",
+      "Les spans sont standard dans leur structure — parenté, nature, issue — mais pas dans leur vocabulaire. Une erreur est émise comme un span nommé « exception » là où OpenTelemetry attend un ÉVÉNEMENT porté par le span concerné, et les attributs HTTP suivent l'ancienne convention http.method / http.url, dépréciée au profit de http.request.method / url.full. Un backend tiers ne comptera donc pas nos erreurs comme des erreurs.",
     marqueur: ["packages/rum-sdk/src", "http.request.method"],
   },
   {

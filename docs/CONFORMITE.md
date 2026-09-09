@@ -6,8 +6,22 @@
 > des promesses. Modèle de contrat : [`docs/DPA.md`](DPA.md).
 
 ## 1. Résidence des données 🇪🇺
-- Base **PostgreSQL (Supabase) en région `eu-west-3` (Paris)**. Aucune donnée hors UE.
-- Console **Next.js** déployable en UE ; le SDK est servi par la console (auto-hébergeable).
+
+> Ces trois lignes sont le reflet de `apps/console/lib/legal.ts` (constantes `HOSTS` et
+> `SUBPROCESSORS`), qui alimente `/legal/mentions` et `/legal/dpa`. `tests/unit/conformite.test.ts`
+> refuse qu'elles divergent : ce document a déclaré **Supabase / `eu-west-3` (Paris)** pendant des
+> semaines après la migration vers Neon, et omis Railway alors que ce sous-traitant reçoit les
+> mesures. Une pièce d'appel d'offres périmée n'est pas une coquille, c'est une déclaration
+> inexacte et opposable.
+
+- Base **PostgreSQL (Neon)** sur infrastructure AWS, région **`aws-eu-central-1` (Francfort)**.
+- Console **Next.js** sur **Vercel**, fonctions serveur en région **`fra1` (Francfort)** ;
+  le SDK est servi par la console (auto-hébergeable).
+- Services backend — réception des mesures, travaux planifiés, serveur MCP — sur **Railway**,
+  région **`europe-west4` (Amsterdam)**.
+- **Donnée et traitement sont en UE. La souveraineté, non** : Neon, Vercel et Railway sont trois
+  sociétés de droit américain. La résidence européenne des données n'est pas la souveraineté ;
+  la cible reste un hébergeur de droit européen (cf. §8).
 - Le jour de la bascule **ClickHouse**, l'hébergement reste **souverain** (auto-géré
   Scaleway/OVH/Clever Cloud ou on-prem — cf. `infra/clickhouse/DEPLOY.md`).
 - Le **flux OTLP** va du navigateur directement à l'ingestion MIP : pas d'intermédiaire US.
@@ -19,19 +33,23 @@
 | Route / URL | technique | **query string & fragment retirés**, scrub PII du chemin |
 | Erreurs (message, stack) | technique, **PII possible** | **scrub serveur** (`_shared/scrub.mjs`) avant écriture |
 | Événements `track.*` | défini par le client | scrub récursif des `props` |
-| Adresse IP | **jamais stockée** | géolocalisation **par timezone** (`mip.tz`) → pays seulement |
-| Identifiant utilisateur | pseudonyme | `user_hash` **anonymisé** côté client (pas de PII) |
+| Adresse IP | **jamais stockée** | pays déduit du **fuseau horaire** (`mip.tz`) ; à défaut, de l'**en-tête pays posé par le CDN** (`x-vercel-ip-country`, `cf-ipcountry`) quand il y en a un devant — la résolution IP→pays a alors lieu chez le CDN, aucune IP ne transite ni n'est stockée côté MIP |
+| Identifiant utilisateur | **pseudonyme faible — à refaire** | `user_hash` est dérivé du user-agent, de la langue, de la résolution et du décalage horaire, sans aléa : sur un parc homogène, plusieurs personnes partagent la même valeur. Il ne doit pas être présenté comme un identifiant de personne, ni comme anonyme au sens du RGPD. Correctif au chantier « identité du visiteur » (`docs/AUDIT_RUM_EXTERNE.md`, finding 1.3) |
 | Session replay (opt-in) | rejouée | **masquage par défaut des saisies, du texte et des médias** (réglable par app via `replayMask`), opt-in par app, consent requis |
 
 **Défense en profondeur PII** : `beforeSend` côté client **+** scrub côté serveur (parité
 dev-server/edge) → on ne dépend pas du seul client. Source maps **privées** (jamais servies).
 
 ## 3. RGPD *by design*
-- **Consentement** : `requireConsent` met le SDK en tampon mémoire jusqu'à `MIPRum.consent(true)`.
+- **Consentement** : `requireConsent` met le SDK en tampon mémoire jusqu'à `MIPRum.consent(true)` —
+  **côté réseau uniquement**. L'identifiant de session est aujourd'hui écrit dans le stockage local
+  *avant* la barrière de consentement, et n'est pas purgé au refus (finding 1.11 de l'audit) : à
+  corriger avant tout déploiement soumis à recueil de consentement.
 - **Opt-out navigateur honoré** : `honorDNT` (défaut `true`) respecte **Do Not Track** et **Global Privacy Control** — signal présent → aucune collecte (0 session, 0 requête).
 - **DSAR** (`/admin/privacy`, admin only) : droit d'**accès/portabilité** (export JSON par `user_hash`, une clé par table) et droit à l'**effacement** (suppression transactionnelle, enfants avant l'ancre `rum_session`). Chaque effacement est tracé dans `audit_log` (`dsar_erase`).
-- **Minimisation** : pas d'IP, géo au pays, hash utilisateur anonyme, scrub systématique.
-- **Sécurité du transport** : TLS de bout en bout (CA Supabase épinglée côté console).
+- **Minimisation** : aucune adresse IP stockée, géo au pays, scrub systématique. Le `user_hash`
+  n'est **pas** une donnée anonyme (cf. §2) — c'est un pseudonyme faible, à refaire.
+- **Sécurité du transport** : TLS de bout en bout jusqu'à Neon.
 
 ## 4. Rétention — **configurable par client** (migration-v14)
 - `purge_rum_tenants(default_days)` purge **chaque app selon SA rétention**
@@ -58,11 +76,18 @@ dev-server/edge) → on ne dépend pas du seul client. Source maps **privées** 
 - **Cloisonnement multi-tenant** : scoping `app_id` + RBAC (renforcement P0 #5 à venir).
 
 ## 7. Sous-traitants (registre)
+> Registre tenu dans `apps/console/lib/legal.ts` (`SUBPROCESSORS`) — ce tableau en est le reflet,
+> et le test le vérifie. **Mistral et Anthropic en sont sortis le 09/09/2026**, dans la même
+> modification que la suppression de l'assistant IA interne : les routes qui les appelaient
+> n'existent plus, aucune donnée ne part vers un fournisseur de modèle. Déclarer un sous-traitant
+> qui ne traite rien est aussi faux que d'en omettre un qui traite.
+
 | Sous-traitant | Rôle | Localisation | Donnée |
 |---|---|---|---|
-| Supabase | base PostgreSQL managée | UE (`eu-west-3`) | télémétrie |
-| Vercel | hébergement console (option) | configurable UE | aucune donnée RUM stockée (rendu) |
-| Mistral / Anthropic | assistant d'intégration **optionnel** | UE (Mistral) / US | **désactivé par défaut** ; n'envoie aucune donnée RUM client |
+| Neon | base PostgreSQL managée | UE (Francfort, `aws-eu-central-1`) — société de droit américain | télémétrie, comptes |
+| Vercel Inc. | hébergement de la console | fonctions serveur en UE (Francfort, `fra1`) — société de droit américain | rendu ; pas de stockage RUM |
+| Railway Corp. | services backend : réception des mesures, travaux planifiés, serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | **télémétrie RUM en transit et en traitement** |
+| *[Fournisseur e-mail — à brancher]* | envoi des alertes (si activé) | *[à préciser — UE recommandé]* | adresse de destination |
 
 ## 8. Trajectoire de certification (gap analysis)
 | Cible | En place | Reste à faire |

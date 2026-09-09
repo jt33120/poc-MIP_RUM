@@ -8,6 +8,7 @@
 import { q } from "./db";
 import type { Filters } from "./filters";
 import { internalClause, type SeriesRow } from "./queries";
+import { CORE_VITALS } from "./rating";
 
 /** Profondeur de l'historique affiché par la heatmap et les courbes. */
 export const GRID_DAYS = 14;
@@ -52,10 +53,13 @@ export async function healthGrid(f: Filters): Promise<HealthGridCell[]> {
        from rum_metric m
        left join rum_session s using (session_id)
        where m.ts >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'
+         -- Même filtre que le score de santé, pour la même raison : les phases
+         -- réseau ne sont pas notables et plafonneraient chaque créneau.
+         and m.name = any($3::text[])
          and ($1::text is null or m.app_id = $1)
          and ($2::text is null or s.device_type = $2)${internalClause(f, "m.app_id")}
        group by 1, 2`,
-      [f.app, f.device],
+      [f.app, f.device, CORE_VITALS],
     );
   } catch {
     return [];

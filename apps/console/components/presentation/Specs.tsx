@@ -93,10 +93,16 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Format sur le fil",
     cible: "OTLP/HTTP standard, backend remplaçable",
-    // Les champs natifs sont émis depuis le 09/09/2026 (parentSpanId, kind,
-    // status) et la trace est enracinée sur la page vue : ce qui reste, c'est le
-    // VOCABULAIRE — d'où « partiel » maintenu, mais pour une autre raison.
-    reel: "OTLP JSON complet — parentSpanId, kind et status natifs, trace enracinée sur la page vue ; vocabulaire encore partiellement propriétaire",
+    // CE QUI A ÉTÉ ÉCRIT DE TRAVERS, ET CORRIGÉ LE MÊME JOUR. Cette ligne a
+    // annoncé le matin du 09/09/2026 une trace « lisible par un collecteur
+    // tiers ». La STRUCTURE avait bien été vérifiée — parenté, nature, issue —
+    // mais pas le TEMPS : `realEmit` ouvre le span et le referme dans la foulée
+    // (cf. otel.ts), si bien que début et fin tombent sur la même milliseconde.
+    // La durée réelle ne vit que dans l'attribut propriétaire `http.duration_ms`.
+    // Un collecteur tiers reçoit donc un arbre juste et une chronologie vide :
+    // il dessine un waterfall PLAT. Vérifier la forme d'un span ne dit rien de
+    // ce qu'il mesure.
+    reel: "OTLP JSON complet dans sa structure — parentSpanId, kind, status, trace enracinée sur la page vue. Mais les spans partent avec une durée nulle : un collecteur tiers dessine un waterfall plat. Vocabulaire encore partiellement propriétaire.",
     s: "partiel",
   },
   {

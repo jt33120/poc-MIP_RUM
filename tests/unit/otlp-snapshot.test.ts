@@ -39,6 +39,15 @@ describe("flattenOtlp — snapshot du contrat de sortie", () => {
     // garde-fous de contrat : scrub PII appliqué, clé d'API extraite
     expect(rows.errors[0].message).toBe("login failed for [email] password=[redacted]");
     expect(rows.errors[0].release).toBe("1.4.2"); // mip.release (resource) -> dé-minification
+    // La pile de la fixture porte un bundle À NOM HACHÉ, comme en produit toute
+    // application moderne. L'empreinte de regroupement ne doit PAS en dépendre :
+    // sinon le même bug change de groupe à chaque mise en production. On rejoue
+    // ici la même erreur avec un autre hachage de déploiement.
+    const autreDeploiement = JSON.parse(
+      JSON.stringify(fixture).replaceAll("main-4f2a9c1d.js", "main-7b3e88ff.js"),
+    );
+    const apres = flattenOtlp(autreDeploiement, { now: Date.parse("2025-10-09T09:00:00Z") });
+    expect(apres.errors[0].fingerprint).toBe(rows.errors[0].fingerprint);
     expect(rows.events[0].props).toEqual({ email: "[redacted]", plan: "pro" });
     // P1 : signal de frustration -> rum_event sous nom réservé 'frustration.<kind>'
     expect(rows.events[1].name).toBe("frustration.rage");
