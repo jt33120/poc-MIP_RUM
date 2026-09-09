@@ -90,7 +90,10 @@ export const CATEGORIES: NavCategory[] = [
   // distincte du RUM MIP (cf. ADR-0001). Fermée pour l'instant : l'entrée reste
   // visible pour annoncer la capacité, mais ne mène nulle part.
   { href: "/ai", label: "Supervision IA", icon: "ai", domain: "neutral", verrouille: true },
-  { href: "/api-docs", label: "API", icon: "grid", domain: "neutral" },
+  // « API et MCP » : les deux manières de sortir la donnée du portail. L'API REST
+  // pour un front ou un partenaire, le serveur MCP pour un agent IA. Même socle
+  // — le MCP n'est qu'un client de l'API v1 — donc une seule page.
+  { href: "/api-docs", label: "API et MCP", icon: "grid", domain: "neutral" },
 ];
 
 /** Un href de nav correspond-il au chemin courant ? ("/" exige l'égalité stricte). */

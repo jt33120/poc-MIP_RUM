@@ -52,6 +52,29 @@ function ref0(name: string) {
   return { $ref: `#/components/responses/${name}` };
 }
 
+/**
+ * La liste des endpoints de LECTURE, dérivée de la spec ci-dessous.
+ *
+ * Sert le descripteur `GET /api/v1`, qui énumérait auparavant sa propre liste
+ * écrite à la main — et qui a fini par annoncer trois routes `/ai` inexistantes
+ * tout en omettant `/docs` et `/deploys`. Une seconde liste, c'est une liste
+ * qui dérive : celle-ci ne peut pas contenir une route absente de la spec.
+ *
+ * Fonction PURE (aucun import next/*), testée.
+ */
+export function endpointsDeclares(): { method: string; path: string; desc: string }[] {
+  const paths = buildOpenApi().paths as Record<string, { get?: { summary?: string } }>;
+  return Object.entries(paths)
+    .filter(([, op]) => op.get)
+    .map(([chemin, op]) => ({
+      method: "GET",
+      // La spec est relative au serveur `/api/v1` ; le descripteur, lui, donne
+      // des chemins absolus — c'est ce qu'un client colle dans une requête.
+      path: chemin === "/" ? "/api/v1" : `/api/v1${chemin}`,
+      desc: op.get?.summary ?? "",
+    }));
+}
+
 export function buildOpenApi(): Record<string, unknown> {
   const commonFilters = [
     { $ref: "#/components/parameters/app" },

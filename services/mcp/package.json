@@ -1,0 +1,14 @@
+{
+  "name": "@mip/service-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Serveur MCP MIP RUM — expose l'API v1 de lecture à un agent IA. Deux transports : stdio (local) et Streamable HTTP (Railway).",
+  "type": "module",
+  "scripts": {
+    "start": "node http.mjs",
+    "start:stdio": "node stdio.mjs"
+  },
+  "dependencies": {
+    "mip-mcp": "workspace:*"
+  }
+}

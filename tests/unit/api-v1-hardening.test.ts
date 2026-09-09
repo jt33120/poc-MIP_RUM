@@ -4,9 +4,27 @@ import { describe, expect, it } from "vitest";
 import { parsePagination } from "../../apps/console/lib/api/pagination";
 import { rateLimit } from "../../apps/console/lib/api/ratelimit";
 import { weakEtag } from "../../apps/console/lib/api/etag";
-import { buildOpenApi } from "../../apps/console/lib/api/openapi";
+import { buildOpenApi, endpointsDeclares } from "../../apps/console/lib/api/openapi";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const sp = (q: string) => new URLSearchParams(q);
+
+/** Les routes GET réellement présentes sous app/api/v1, lues sur le disque. */
+function routesSurDisque(racine = "apps/console/app/api/v1"): string[] {
+  const trouvees: string[] = [];
+  const parcourir = (dir: string, prefixe: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.isDirectory()) parcourir(join(dir, e.name), `${prefixe}/${e.name}`);
+      else if (e.name === "route.ts") {
+        const src = readFileSync(join(dir, e.name), "utf8");
+        if (/export\s+(const|async\s+function|function)\s+GET/.test(src)) trouvees.push(prefixe || "/");
+      }
+    }
+  };
+  parcourir(racine, "");
+  return trouvees.map((p) => (p === "/" ? "/" : p)).sort();
+}
 
 describe("parsePagination — bornes & défauts", () => {
   it("vide -> défaut fourni, offset 0", () => {
@@ -103,5 +121,49 @@ describe("buildOpenApi — spec valide et complète", () => {
       for (const p of parts) cur = cur?.[p];
       expect(cur, `ref pendouillante ${r}`).toBeDefined();
     }
+  });
+});
+
+// La découverte `GET /api/v1` énumérait sa propre liste, écrite à la main. Elle a
+// fini par annoncer /api/v1/ai, /ai/costs et /ai/credits — supprimés de la spec
+// (le test ci-dessus le vérifiait déjà) mais oubliés là — et par omettre /docs et
+// /deploys, qui existent. Sans conséquence tant qu'un humain lisait la réponse ;
+// avec le serveur MCP, c'est un modèle qui la lit, et un modèle croit ce qu'on
+// lui dit. La liste est maintenant dérivée de la spec ; ce test ferme la boucle
+// en la confrontant aux FICHIERS.
+describe("endpointsDeclares — la découverte ne peut plus mentir", () => {
+  const declares = endpointsDeclares();
+  const cheminsDeclares = declares.map((e) => e.path).sort();
+  // Correspondance spec → disque : `/` est la découverte elle-même, `{fingerprint}`
+  // et `{id}` sont les segments dynamiques, écrits `[x]` sur le disque.
+  const versDisque = (p: string) =>
+    p.replace(/^\/api\/v1/, "").replace(/\{(\w+)\}/g, "[$1]") || "/";
+
+  it("n'annonce que des routes qui existent sur le disque", () => {
+    const disque = new Set(routesSurDisque());
+    for (const p of cheminsDeclares)
+      expect(disque, `annoncée mais absente du disque : ${p}`).toContain(versDisque(p));
+  });
+
+  it("n'oublie aucune route GET existante", () => {
+    // /docs sert du HTML (Swagger UI) : ce n'est pas un endpoint de données, il est
+    // signalé à part dans le descripteur. Toutes les autres doivent être listées.
+    const attendues = routesSurDisque().filter((p) => p !== "/docs");
+    const annoncees = new Set(cheminsDeclares.map(versDisque));
+    for (const p of attendues) expect(annoncees, `route GET non annoncée : ${p}`).toContain(p);
+  });
+
+  it("donne des chemins absolus, prêts à être appelés", () => {
+    expect(cheminsDeclares.every((p) => p.startsWith("/api/v1"))).toBe(true);
+    expect(cheminsDeclares).toContain("/api/v1");
+    expect(cheminsDeclares).toContain("/api/v1/overview");
+  });
+
+  it("décrit chaque endpoint", () => {
+    for (const e of declares) expect(e.desc.length, e.path).toBeGreaterThan(5);
+  });
+
+  it("n'annonce plus aucune route /ai", () => {
+    expect(cheminsDeclares.some((p) => p.includes("/ai"))).toBe(false);
   });
 });
