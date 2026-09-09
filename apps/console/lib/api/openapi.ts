@@ -257,8 +257,13 @@ export function buildOpenApi(): Record<string, unknown> {
         ),
         RouteRow: o({ route: str, views: num, lcp_p75: nul(num), inp_p75: nul(num), cls_p75: nul(num), longtasks: num }, ["route"]),
 
+        // `occurrences`, `sessions` et `users_affected` portent sur la FENÊTRE
+        // demandée (`period`) ; `first_seen` est la première apparition connue,
+        // toutes fenêtres confondues. `users_affected` était déjà renvoyé sans
+        // figurer au contrat — un champ non déclaré qu'un client ne peut pas
+        // utiliser sans deviner qu'il existe.
         ErrorGroupRow: o(
-          { app_id: str, fingerprint: str, error_type: nul(str), sample_message: nul(str), occurrences: int, sessions: int, first_seen: dateTime, last_seen: dateTime },
+          { app_id: str, fingerprint: str, error_type: nul(str), sample_message: nul(str), occurrences: int, sessions: int, users_affected: int, first_seen: dateTime, last_seen: dateTime },
           ["app_id", "fingerprint", "occurrences", "sessions"],
         ),
         ErrorSample: o({ message: nul(str), error_type: nul(str), kind: nul(str), stack: nul(str), source: nul(str), lineno: nul(int), colno: nul(int), route: nul(str), session_id: nul(str), release: nul(str), ts: dateTime }),

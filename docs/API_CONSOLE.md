@@ -120,6 +120,18 @@ Les `previous` couvrent la **période précédente** (calcul des deltas côté f
 ### `GET /api/v1/errors` — groupes d'erreurs
 `data = { groups: ErrorGroupRow[], unfingerprinted: number }`.
 
+**Les compteurs portent sur la fenêtre `period`** (`1h` | `24h` | `7d`, défaut `24h`) :
+`occurrences`, `sessions` et `users_affected` sont recalculés dessus, et un groupe sans
+occurrence dans la fenêtre n'est pas renvoyé. Seul `first_seen` reste la première apparition
+connue, toutes fenêtres confondues — bornée par la seule rétention.
+
+Jusqu'au 09/09/2026 ces trois compteurs venaient d'une vue **sans borne temporelle** : ils
+valaient le cumul depuis la première ingestion quelle que soit la `period` demandée. Un client
+qui s'en servait pour suivre une tendance lisait une constante. Le tri par défaut a changé en
+conséquence : d'abord le triage (régression, ouverte, ignorée, résolue), puis l'**impact sur la
+fenêtre** — visiteurs distincts touchés, puis sessions, puis occurrences — au lieu du volume
+cumulé.
+
 ### `GET /api/v1/errors/{fingerprint}` — détail d'un groupe
 `data: ErrorGroupDetail` (groupe + dernier échantillon avec stack + occurrences).
 `404` si le fingerprint est inconnu (sur le scope).

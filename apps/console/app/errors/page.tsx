@@ -10,6 +10,9 @@ import {
   filtersToQuery,
   parseFilters,
   periodLabel,
+  periodNombreDeSeaux,
+  periodSeauLabel,
+  periodSeauSecondes,
   unfingerprintedCount,
   type SearchParams,
 } from "@/lib/queries-v2";
@@ -36,17 +39,25 @@ export default async function Errors({
       />
 
       {(() => {
-        // Hero : volume d'erreurs par heure sur 24 h, empilé par groupe dominant
-        // (repère les pics et quel groupe les cause). errorSparklines : index 0 =
-        // il y a 23 h, index 23 = heure courante.
+        // Hero : volume d'erreurs par seau SUR LA PÉRIODE CHOISIE, empilé par
+        // groupe dominant. Le graphique était figé sur 24 h pendant que le
+        // classement des groupes, lui, suivait la période : sur 7 jours, on
+        // empilait les 24 dernières heures des groupes classés sur la semaine.
+        // errorSparklines : index 0 = seau le plus ancien, dernier = seau courant.
         const PALETTE = ["#ef4444", "#f89101", "#d97706", "#7c3aed", "#2563eb"];
         const TOP_N = 5;
         const top = groups.slice(0, TOP_N);
+        const nbSeaux = periodNombreDeSeaux(f);
+        const seauMs = periodSeauSecondes(f) * 1000;
         const now = Date.now();
-        const stackData = Array.from({ length: 24 }, (_v, i) => {
-          const t = new Date(now - (23 - i) * 3_600_000);
+        const stackData = Array.from({ length: nbSeaux }, (_v, i) => {
+          const t = new Date(now - (nbSeaux - 1 - i) * seauMs);
           const row: Record<string, number | string> = {
-            h: t.toLocaleTimeString("fr-FR", { hour: "2-digit" }),
+            // Sur 7 jours l'heure seule est ambiguë : on date les seaux longs.
+            h:
+              seauMs >= 6 * 3_600_000
+                ? t.toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit" })
+                : t.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
           };
           top.forEach((g, gi) => {
             row[`g${gi}`] = (sparklines.get(g.fingerprint) ?? [])[i] ?? 0;
@@ -70,10 +81,13 @@ export default async function Errors({
           (mx, r) => Math.max(mx, series.reduce((a, se) => a + (Number(r[se.key]) || 0), 0)),
           0,
         );
+        // `totalOcc` est désormais VRAI : depuis que les compteurs sont bornés
+        // par la fenêtre, la somme correspond au libellé de la tuile. Avant, elle
+        // annonçait « Occurrences · 1 h » et affichait le cumul depuis toujours.
         const totalOcc = groups.reduce((s, g) => s + g.occurrences, 0);
         return (
           <SupervisionHero
-            chartTitle="Volume d'erreurs par heure (24 h) — par groupe"
+            chartTitle={`Volume d'erreurs par ${periodSeauLabel(f)} (${periodLabel(f)}) — par groupe`}
             chart={
               groups.length ? (
                 <StackedBars data={stackData} xKey="h" series={series} yUnit="" />
@@ -89,14 +103,15 @@ export default async function Errors({
             />
             <HeroStat label="Groupes distincts" value={groups.length.toLocaleString("fr-FR")} />
             <HeroStat
-              label="Pic horaire (24 h)"
+              label={`Pic par ${periodSeauLabel(f)}`}
               value={peak.toLocaleString("fr-FR")}
-              hint={`${total24.toLocaleString("fr-FR")} erreurs sur les dernières 24 h`}
+              hint={`${total24.toLocaleString("fr-FR")} erreurs sur ${periodLabel(f)}`}
             />
             <HeroReading>
-              Chaque colonne = une heure, empilée par groupe d&apos;erreur dominant (les autres regroupés en
-              gris). Une barre haute isolée = un pic à investiguer. Détail par signature, sessions touchées et
-              tendance dans le tableau ci-dessous.
+              Chaque colonne = {periodSeauLabel(f)}, empilée par groupe d&apos;erreur dominant (les autres
+              regroupés en gris). Une barre haute isolée = un pic à investiguer. Tous les compteurs de cet
+              écran portent sur {periodLabel(f)} — sauf « Première vue », qui remonte à la première
+              apparition connue, par définition hors fenêtre.
             </HeroReading>
           </SupervisionHero>
         );
@@ -110,8 +125,10 @@ export default async function Errors({
               <th className="th">Occurrences</th>
               <th className="th">Sessions</th>
               <th className="th">Utilisateurs</th>
-              <th className="th">24 h</th>
-              <th className="th">Première vue</th>
+              <th className="th">{periodLabel(f)}</th>
+              <th className="th" title="Première apparition connue, toutes fenêtres confondues — bornée seulement par la rétention.">
+                Première vue <span className="font-normal text-ink-faint">(depuis toujours)</span>
+              </th>
               <th className="th">Dernière vue</th>
               <th className="th" />
             </tr>
@@ -160,7 +177,9 @@ export default async function Errors({
                   <td className="px-4 py-3 tabular-nums">{g.sessions}</td>
                   <td className="px-4 py-3 tabular-nums">{g.users_affected}</td>
                   <td className="px-4 py-3">
-                    <Sparkline values={sparklines.get(g.fingerprint) ?? new Array(24).fill(0)} />
+                    <Sparkline
+                      values={sparklines.get(g.fingerprint) ?? new Array(periodNombreDeSeaux(f)).fill(0)}
+                    />
                   </td>
                   <td className="px-4 py-3 text-xs text-ink-soft">{fmtDate(g.first_seen)}</td>
                   <td className="px-4 py-3 text-xs text-ink-soft">{fmtDate(g.last_seen)}</td>
