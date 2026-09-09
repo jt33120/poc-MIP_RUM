@@ -24,8 +24,9 @@ export function splitVisits(timestampsMs: number[], gapMs: number = VISIT_GAP_MS
 }
 
 /**
- * Une session est « revenante » si l'utilisateur (user_hash) a une activité
- * ANTÉRIEURE à son démarrage — sinon « nouvelle ».
+ * Une session est « revenante » si le VISITEUR (visitor_id) a une activité
+ * ANTÉRIEURE à son démarrage — sinon « nouvelle ». Une session sans identifiant
+ * de visiteur n'est ni l'un ni l'autre : elle ne passe pas par ici.
  */
 export function isReturning(previousStartsMs: number[], thisStartMs: number): boolean {
   return previousStartsMs.some((t) => t < thisStartMs);

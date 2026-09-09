@@ -300,6 +300,11 @@ export interface SessionMeta {
   session_id: string;
   app_id: string;
   client_id: string | null;
+  /** Identifiant de visiteur (tirage aléatoire du SDK). NULL avant le 09/09/2026. */
+  visitor_id: string | null;
+  /** Colonne GÉNÉRÉE : 'random' si visitor_id, 'device_class' sinon (migration-v57). */
+  id_kind: string | null;
+  /** ANCIENNE empreinte de classe d'appareil — n'identifie pas une personne. */
   user_hash: string | null;
   user_agent: string | null;
   device_type: string | null;
@@ -388,15 +393,30 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
 export interface VisitStats {
   sessions: number; // sessions actives (≥ 1 page vue) sur la fenêtre
   visits: number; // visites après découpage sur inactivité 30 min
-  returning_count: number; // sessions dont l'utilisateur a une activité antérieure
-  new_count: number; // sessions d'un utilisateur jamais vu avant
+  returning_count: number; // sessions d'un visiteur identifié déjà vu sur cette app
+  new_count: number; // sessions d'un visiteur identifié jamais vu avant
+  /** Sessions SANS identifiant de visiteur, donc absentes du partage ci-dessus.
+   *  Ni nouvelles ni revenantes : inconnues. Le compter est ce qui empêche le
+   *  camembert de faire passer un échantillon partiel pour la population. */
+  unidentified_count: number;
 }
 
 /**
  * Lot 4 : dérive les VISITES (découpage 30 min) et new/returning au requêtage —
  * corrige les métriques par session (une session peut s'étaler des heures). Le
- * découpage reflète lib/sessions.splitVisits ; new/returning s'appuie sur le
- * user_hash anonymisé.
+ * découpage reflète lib/sessions.splitVisits.
+ *
+ * NEW/RETURNING S'APPUIE SUR `visitor_id`, PAS SUR `user_hash`. L'ancienne
+ * empreinte était dérivée du terminal (userAgent+langue+résolution+fuseau) :
+ * dans un parc géré par une DSI, tout le monde partageait la même valeur, donc
+ * le deuxième visiteur d'un modèle de poste donné était déclaré « revenant »
+ * sans jamais être revenu. Voir migration-v57.
+ *
+ * DEUX CONSÉQUENCES ASSUMÉES. (1) Les sessions sans identifiant — tout
+ * l'historique antérieur au 09/09/2026 — sortent du partage et sont comptées
+ * à part, plutôt que réparties au jugé. (2) La sous-requête est enfin bornée
+ * par `app_id` : une session sur une autre application ne rend plus « revenant »
+ * un visiteur qui arrive ici pour la première fois.
  */
 export async function visitStats(f: Filters): Promise<VisitStats> {
   const itv = PERIODS[f.period].interval;
@@ -424,22 +444,26 @@ export async function visitStats(f: Filters): Promise<VisitStats> {
      ),
      nr as (
        select
-         count(*) filter (where is_returning)::int as returning_count,
-         count(*) filter (where not is_returning)::int as new_count
+         count(*) filter (where identifie and is_returning)::int as returning_count,
+         count(*) filter (where identifie and not is_returning)::int as new_count,
+         count(*) filter (where not identifie)::int as unidentified_count
        from (
-         select exists(
+         select s.visitor_id is not null as identifie,
+                exists(
                   select 1 from rum_session s2
-                  where s2.user_hash = s.user_hash and s2.started_at < s.started_at
+                  where s2.visitor_id = s.visitor_id
+                    and s2.app_id = s.app_id
+                    and s2.started_at < s.started_at
                 ) as is_returning
          from rum_session s
          where s.last_seen_at > now() - interval '${itv}'
            and ($1::text is null or s.app_id = $1)
            and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
-           and s.user_hash is not null
        ) t
      )
-     select vis.sessions, vis.visits, nr.returning_count, nr.new_count from vis, nr`,
+     select vis.sessions, vis.visits, nr.returning_count, nr.new_count, nr.unidentified_count
+       from vis, nr`,
     [f.app, f.device, ...seg.params],
   );
-  return row ?? { sessions: 0, visits: 0, returning_count: 0, new_count: 0 };
+  return row ?? { sessions: 0, visits: 0, returning_count: 0, new_count: 0, unidentified_count: 0 };
 }

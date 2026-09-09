@@ -44,7 +44,8 @@ curl -s -H "Authorization: Bearer $MIP_RUM_READ_TOKEN" \
   "window": "30d",
   "generated_at": "2026-07-09T09:00:00.000Z",
   "sessions": 92,               // sessions distinctes (bots exclus)
-  "users": 17,                  // utilisateurs distincts (user_hash anonymisé)
+  "users": 17,                  // visiteurs distincts (visitor_id, tirage aléatoire du SDK)
+  "unidentified_sessions": 4,   // sessions SANS identifiant de visiteur, donc hors de `users`
   "page_views": 1971,
   "avg_load_ms": 1210,          // temps de chargement moyen (FCP), null si indispo
   "p75_lcp_ms": 1835,           // LCP p75, null si indispo

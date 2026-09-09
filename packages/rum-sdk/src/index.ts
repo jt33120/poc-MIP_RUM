@@ -99,7 +99,9 @@ export function init(cfg: MIPRumConfig): void {
     touchSession(session!);
     let merged: Record<string, unknown> = {
       "mip.session_id": session!.sessionId,
-      "mip.user_hash": session!.userHash,
+      // `mip.user_hash` N'EST PLUS ÉMIS : c'était une empreinte de terminal
+      // (cf. session.ts). L'ingestion l'accepte encore des SDK déjà déployés.
+      "mip.visitor_id": session!.visitorId,
       "mip.route": currentRoute(),
       "mip.tz": tz,
       "mip.device_type": /mobile|tablet/i.test(navigator.userAgent)

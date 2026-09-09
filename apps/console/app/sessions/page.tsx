@@ -33,11 +33,13 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     <div className="animate-fade-up">
       <PageHeader
         title="Sessions"
-        sub="Parcours utilisateurs réels, anonymisés (user_hash, aucune PII) — ouvre une session pour sa timeline pas à pas."
+        sub="Parcours réels, rattachés à un identifiant de visiteur tiré au hasard (aucune PII) — ouvre une session pour sa timeline pas à pas."
       />
 
-      {/* Hero : répartition nouveaux vs revenants (visitStats, exact sur la
-          fenêtre — contrairement à la liste des 50 sessions ci-dessous). */}
+      {/* Hero : partage nouveaux vs revenants (visitStats, sur TOUTE la fenêtre —
+          contrairement à la liste des 50 sessions ci-dessous). Le partage ne
+          porte que sur les sessions identifiées ; les autres sont affichées
+          comme telles plutôt que réparties au jugé. */}
       {blocs.resume && vs && (() => {
       const reprises = Math.max(vs.visits - vs.sessions, 0);
       const identified = vs.new_count + vs.returning_count;
@@ -57,7 +59,14 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
             />
           ) : (
             <p className="py-12 text-center text-sm text-ink-faint">
-              Pas encore d&apos;utilisateurs identifiés sur {PERIODS[f.period].label}.
+              Aucun visiteur identifié sur {PERIODS[f.period].label}.
+              {vs.unidentified_count > 0 && (
+                <>
+                  <br />
+                  {vs.unidentified_count.toLocaleString("fr-FR")} session(s) sans identifiant de visiteur :
+                  collectées avant le 09/09/2026, ou par un SDK pas encore à jour.
+                </>
+              )}
             </p>
           )
         }
@@ -71,12 +80,18 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
         <HeroStat
           label="Part de revenants"
           value={identified ? `${returningPct} %` : "—"}
-          hint={`${vs.returning_count.toLocaleString("fr-FR")} revenants · ${vs.new_count.toLocaleString("fr-FR")} nouveaux`}
+          hint={
+            vs.unidentified_count > 0
+              ? `sur ${identified.toLocaleString("fr-FR")} session(s) identifiée(s) · ${vs.unidentified_count.toLocaleString("fr-FR")} sans identifiant`
+              : `${vs.returning_count.toLocaleString("fr-FR")} revenants · ${vs.new_count.toLocaleString("fr-FR")} nouveaux`
+          }
         />
         <HeroReading>
-          L&apos;anneau distingue les utilisateurs vus pour la première fois de ceux qui reviennent (fidélité).
+          L&apos;anneau distingue les visiteurs vus pour la première fois de ceux qui reviennent (fidélité).
           Une session = un parcours ; une visite = un passage (reprise après 30 min d&apos;inactivité = nouvelle
-          visite). Détail des parcours ci-dessous.
+          visite). « Revenant » se juge sur cette application seulement, et uniquement sur les sessions qui
+          portent un identifiant de visiteur — les autres sont comptées à part, jamais réparties. Détail des
+          parcours ci-dessous.
         </HeroReading>
       </SupervisionHero>
       );

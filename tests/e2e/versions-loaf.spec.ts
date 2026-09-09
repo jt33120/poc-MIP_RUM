@@ -61,8 +61,10 @@ async function semer() {
     for (let i = 0; i < p.n; i++) {
       const sid = `${APP_ID}-${p.release}-${i}`;
       await pool.query(
-        `insert into rum_session (session_id, app_id, user_hash, release, device_type, is_bot, started_at, last_seen_at, page_count)
-         values ($1, $2, 'h', $3, 'desktop', false, now() - interval '10 minutes', now() - interval '10 minutes', 1)
+        // Un visiteur distinct par session : ce que le SDK émet depuis
+        // migration-v57. `user_hash` n'est plus produit, donc plus semé ici.
+        `insert into rum_session (session_id, app_id, visitor_id, release, device_type, is_bot, started_at, last_seen_at, page_count)
+         values ($1, $2, $1, $3, 'desktop', false, now() - interval '10 minutes', now() - interval '10 minutes', 1)
          on conflict (session_id) do nothing`,
         [sid, APP_ID, p.release],
       );

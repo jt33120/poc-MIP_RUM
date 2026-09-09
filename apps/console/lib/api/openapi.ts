@@ -270,7 +270,7 @@ export function buildOpenApi(): Record<string, unknown> {
           ["session_id", "app_id"],
         ),
         SessionMeta: o(
-          { session_id: str, app_id: str, client_id: nul(str), user_hash: nul(str), user_agent: nul(str), device_type: nul(str), geo_country: nul(str), started_at: dateTime, last_seen_at: dateTime, page_count: int },
+          { session_id: str, app_id: str, client_id: nul(str), visitor_id: nul(str), id_kind: nul(str), user_hash: nul(str), user_agent: nul(str), device_type: nul(str), geo_country: nul(str), started_at: dateTime, last_seen_at: dateTime, page_count: int },
           ["session_id", "app_id"],
         ),
         TimelineItem: o(

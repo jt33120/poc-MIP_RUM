@@ -1,5 +1,5 @@
 // Rétention par cohortes — logique PURE et testée (Lot 8c, à la Matomo/Amplitude).
-// À partir des SEMAINES d'activité par utilisateur (user_hash anonymisé), on
+// À partir des SEMAINES d'activité par visiteur (visitor_id, tirage aléatoire), on
 // regroupe les utilisateurs par semaine de PREMIÈRE activité (cohorte) et on mesure
 // combien reviennent aux semaines suivantes -> matrice triangulaire cohorte × offset.
 // Les semaines sont des index entiers (semaines depuis l'epoch) : l'arithmétique

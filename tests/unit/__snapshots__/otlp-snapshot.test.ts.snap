@@ -148,6 +148,7 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
       "session_id": "sess-1",
       "user_agent": "Mozilla/5.0 Test",
       "user_hash": null,
+      "visitor_id": "5f3a9c21-0e44-4bd7-9a10-6c2e88f14b03",
     },
   ],
   "spans": [

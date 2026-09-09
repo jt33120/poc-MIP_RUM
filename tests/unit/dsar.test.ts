@@ -55,12 +55,13 @@ describe("summarizeCounts / buildDsarExport", () => {
   it("assemble un document stable avec session_count dérivé de l'ancre", () => {
     const doc = buildDsarExport({
       app: "demo",
-      userHash: "abc123def456",
+      visitorId: "abc123def456",
       generatedAt: "2026-07-08T10:00:00.000Z",
       tables,
     });
     expect(doc.kind).toBe("mip-rum-dsar-export");
-    expect(doc.version).toBe(1);
+    expect(doc.version).toBe(2); // v2 : l'ancre est visitor_id, plus user_hash
+    expect(doc.visitor_id).toBe("abc123def456");
     expect(doc.app).toBe("demo");
     expect(doc.session_count).toBe(2);
     expect(doc.summary.rum_metric).toBe(3);
@@ -69,7 +70,7 @@ describe("summarizeCounts / buildDsarExport", () => {
   it("session_count = 0 si aucune session", () => {
     const doc = buildDsarExport({
       app: "demo",
-      userHash: "x",
+      visitorId: "x",
       generatedAt: "2026-07-08T10:00:00.000Z",
       tables: { rum_metric: [{ v: 1 }] },
     });
@@ -78,12 +79,12 @@ describe("summarizeCounts / buildDsarExport", () => {
 });
 
 describe("dsarExportFilename", () => {
-  it("horodaté, hash tronqué, sans caractères problématiques", () => {
+  it("horodaté, identifiant tronqué, sans caractères problématiques", () => {
     const name = dsarExportFilename("abcdef0123456789zzz", "2026-07-08T10:00:00.000Z");
     expect(name).toBe("dsar-abcdef012345-2026-07-08T10-00-00-000Z.json");
     expect(name).not.toMatch(/[:.](?!json)/); // pas de ':' ni '.' hors extension
   });
-  it("replie sur \"user\" si le hash ne donne rien d'alphanumérique", () => {
+  it("replie sur \"user\" si l'identifiant ne donne rien d'alphanumérique", () => {
     expect(dsarExportFilename("!!!", "2026-07-08T10-00-00Z")).toContain("dsar-user-");
   });
 });

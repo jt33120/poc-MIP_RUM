@@ -36,6 +36,13 @@ describe("flattenOtlp — snapshot du contrat de sortie", () => {
     expect(rows.events).toHaveLength(2); // track.signup + frustration (P1)
     expect(rows.spans).toHaveLength(3); // http.client + http.server + OTel server
     expect(rows.rejected).toBe(1); // le 2e resourceSpans (sans mip.app_id)
+    // L'identité du visiteur voyage jusqu'à la ligne de session, et la colonne
+    // dérivée la qualifie. Une fixture sans `mip.visitor_id` figerait un `null`,
+    // ce qui ne prouverait rien du chemin de l'attribut.
+    expect(rows.sessions[0].visitor_id).toBe("5f3a9c21-0e44-4bd7-9a10-6c2e88f14b03");
+    // `id_kind` n'est PAS écrit par l'ingestion : c'est une colonne générée que
+    // PostgreSQL refuse qu'on écrive (migration-v57). L'absence est le contrat.
+    expect(rows.sessions[0]).not.toHaveProperty("id_kind");
     // garde-fous de contrat : scrub PII appliqué, clé d'API extraite
     expect(rows.errors[0].message).toBe("login failed for [email] password=[redacted]");
     expect(rows.errors[0].release).toBe("1.4.2"); // mip.release (resource) -> dé-minification

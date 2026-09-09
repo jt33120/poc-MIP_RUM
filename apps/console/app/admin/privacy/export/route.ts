@@ -2,7 +2,7 @@
 // complet des données d'un utilisateur en pièce jointe. Pas de redirect ici
 // (endpoint de téléchargement) : 401/403 explicites si non-admin.
 import { getUser } from "@/lib/auth";
-import { dsarExportFilename } from "@/lib/dsar";
+import { DsarRefus, dsarExportFilename } from "@/lib/dsar";
 import { dsarExport } from "@/lib/queries-dsar";
 
 export const dynamic = "force-dynamic";
@@ -13,14 +13,28 @@ export async function GET(req: Request): Promise<Response> {
   if (user.role !== "admin") return new Response("forbidden", { status: 403 });
 
   const url = new URL(req.url);
-  const userHash = (url.searchParams.get("user") ?? "").trim();
+  const visitorId = (url.searchParams.get("user") ?? "").trim();
   const app = (url.searchParams.get("app") ?? "all").trim() || "all";
-  if (!userHash) return new Response("missing user", { status: 400 });
+  if (!visitorId) return new Response("missing user", { status: 400 });
 
   // horodatage figé de la génération (attribut du document + nom de fichier)
   const generatedAt = new Date().toISOString();
-  const doc = await dsarExport(app, userHash, generatedAt);
-  const filename = dsarExportFilename(userHash, generatedAt);
+  let doc;
+  try {
+    doc = await dsarExport(app, visitorId, generatedAt);
+  } catch (e) {
+    // Un refus n'est pas une panne : il se dit, en clair, avec son motif. 409
+    // plutôt que 400 — la demande est bien formée, c'est l'état de la donnée qui
+    // interdit d'y répondre.
+    if (e instanceof DsarRefus) {
+      return new Response(e.message, {
+        status: 409,
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
+    throw e;
+  }
+  const filename = dsarExportFilename(visitorId, generatedAt);
 
   return new Response(JSON.stringify(doc, null, 2), {
     status: 200,
