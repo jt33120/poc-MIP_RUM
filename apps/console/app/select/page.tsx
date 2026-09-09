@@ -18,7 +18,6 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { getUser } from "@/lib/auth";
 import { describeProject, projectsForUser } from "@/lib/project";
 import { signauxProjets, type ModeCollecte } from "@/lib/queries-projects";
-import { logoutAction } from "../logout/actions";
 import { selectProjectAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +69,7 @@ export default async function SelectProject() {
           </div>
           <div className="ml-auto flex items-center gap-2.5">
             <ThemeToggle />
-            <form action={logoutAction}>
+            <form action="/logout" method="post">
               <button className="btn-ghost" type="submit">
                 {user!.email} · quitter
               </button>
