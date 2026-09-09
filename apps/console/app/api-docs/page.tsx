@@ -11,8 +11,17 @@
 // avait dérivé. Elle vient maintenant de `endpointsDeclares()`, comme le
 // descripteur : une seule source, celle qui sert aussi les schémas.
 import Link from "next/link";
+import { CopyBlock } from "@/components/CopyBlock";
 import { PageHeader } from "@/components/PageHeader";
 import { endpointsDeclares } from "@/lib/api/openapi";
+import {
+  MCP_ENDPOINT,
+  commandeCli,
+  configDistante,
+  configLocale,
+  curlVerification,
+} from "@/lib/mcp-public";
+import { sonderMcp } from "@/lib/mcp-sonde";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +80,11 @@ const OUTILS_MCP: { nom: string; desc: string }[] = [
   { nom: "mip_rum_get_health_grid", desc: "Heatmap jour × heure, trafic quotidien." },
 ];
 
-export default function ApiDocs() {
+export default async function ApiDocs() {
+  // L'adresse du serveur est une constante du dépôt ; son état, non. La page
+  // interroge /health à chaque rendu pour ne pas distribuer une URL morte comme
+  // si elle marchait. Échec doux : « pas pu vérifier » n'est pas « en panne ».
+  const etat = await sonderMcp();
   return (
     <div className="animate-fade-up">
       <PageHeader
@@ -84,6 +97,110 @@ export default function ApiDocs() {
           </>
         }
       />
+
+      {/* Brancher une IA — EN HAUT, parce que c'est ce qu'on vient chercher --- */}
+      <section className="card mb-6 border-perf/30 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-ink">Brancher une IA sur MIP RUM</h2>
+          {/* L'état est MESURÉ, pas affirmé : une pastille verte sur un service
+              mort serait pire que pas de pastille du tout. */}
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              etat.joignable ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+            }`}
+          >
+            {etat.joignable
+              ? `en ligne${etat.version ? ` · v${etat.version}` : ""}`
+              : `état non vérifié — ${etat.motif}`}
+          </span>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+          Copiez l'adresse ci-dessous dans un client compatible <strong>Model Context Protocol</strong> (Claude Code,
+          Claude Desktop, un IDE). L'agent obtient alors {OUTILS_MCP.length} outils de lecture et peut répondre à
+          « quelles routes se sont dégradées cette semaine ? » sans que personne n'écrive une requête.
+        </p>
+
+        <div className="mt-4">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+            Adresse du serveur
+          </h3>
+          <div className="mt-1.5">
+            <CopyBlock code={MCP_ENDPOINT} label="Copier l'URL" />
+          </div>
+          <p className="mt-1.5 text-xs text-ink-faint">
+            Le chemin <code className="chip-mono">/mcp</code> fait partie de l'adresse. La racine et{" "}
+            <code className="chip-mono">/health</code> ne servent qu'aux sondes de l'hébergeur.
+          </p>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+            Il vous faut un jeton
+          </h3>
+          <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+            Remplacez <code className="chip-mono">VOTRE_JETON</code> par une entrée de{" "}
+            <code className="chip-mono">CONSOLE_API_TOKENS</code> — le même jeton que l'API v1. Le serveur MCP n'en
+            détient aucun : il <strong>relaie le vôtre</strong>. Un jeton scopé à une app
+            (<code className="chip-mono">jeton@mon-app</code>) ne voit que celle-là, ici comme ailleurs.
+          </p>
+        </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+              Configuration du client (fichier JSON)
+            </h3>
+            <div className="mt-1.5">
+              <CopyBlock code={configDistante()} label="Copier la config" />
+            </div>
+            <p className="mt-1.5 text-xs text-ink-faint">
+              Le champ <code className="chip-mono">&quot;type&quot;: &quot;http&quot;</code> est
+              <strong> obligatoire</strong> : une entrée qui porte <code className="chip-mono">url</code> sans{" "}
+              <code className="chip-mono">type</code> est lue comme un serveur local et échoue.
+            </p>
+          </div>
+          <div>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+              Ou en une commande
+            </h3>
+            <div className="mt-1.5">
+              <CopyBlock code={commandeCli()} label="Copier" />
+            </div>
+            <p className="mt-1.5 text-xs text-ink-faint">
+              Le client garde alors l'en-tête et l'envoie à chaque appel. Le jeton reste chez vous : il ne transite
+              que vers la console, jamais vers un tiers.
+            </p>
+          </div>
+        </div>
+
+        {/* Pleine largeur : ces lignes sont longues, les serrer dans une colonne
+            les rendrait illisibles avant même d'être copiées. */}
+        <div className="mt-4">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+            Vérifier soi-même — le troisième appel DOIT échouer
+          </h3>
+          <div className="mt-1.5">
+            <CopyBlock code={curlVerification()} label="Copier les tests" />
+          </div>
+          <p className="mt-1.5 text-xs text-ink-faint">
+            Ne tester que le cas qui passe ne dit pas si le serveur est ouvert à tous. Le troisième appel, sans
+            jeton, doit répondre <code className="chip-mono">401</code>.
+          </p>
+        </div>
+
+        <details className="mt-4 rounded-xl border border-line bg-panel2/50 p-3">
+          <summary className="cursor-pointer text-xs font-semibold text-ink">
+            En local plutôt qu'en distant (transport stdio)
+          </summary>
+          <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+            Pour faire tourner le serveur sur votre poste depuis une copie du dépôt. Le jeton vient alors de
+            l'environnement : il n'y a pas de requête HTTP entrante pour le porter.
+          </p>
+          <div className="mt-2">
+            <CopyBlock code={configLocale()} label="Copier la config locale" />
+          </div>
+        </details>
+      </section>
 
       {/* Liens clés ---------------------------------------------------------- */}
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
