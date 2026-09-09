@@ -11,6 +11,8 @@
 // migration ; deux migrations attendent déjà d'être appliquées en production.
 // Contrepartie assumée : la préférence vit par NAVIGATEUR, pas par compte.
 
+import { CADENCE_TICK_MIN } from "./etat-latence";
+
 export interface Bloc {
   id: string;
   label: string;
@@ -100,8 +102,14 @@ export const CATALOGUES: readonly Catalogue[] = [
     indisponibles: [
       {
         label: "Alerte en temps réel sur un budget brûlé",
-        raison:
-          "Le déclencheur des tâches planifiées tourne au mieux à l'heure sur cet environnement : la latence d'alerte est de 60 minutes, pas de quelques secondes.",
+        // « 60 minutes » était un VESTIGE de Vercel Cron, dont le plan Hobby ne
+        // descendait pas sous le quotidien et qu'on relayait à l'heure par
+        // GitHub Actions. Le déclencheur dédié (services/scheduler) passe toutes
+        // les CADENCE_TICK_MIN minutes depuis son déploiement sur Railway ; la
+        // phrase est restée fausse le temps que quelqu'un la relise. D'où le
+        // nombre IMPORTÉ, et non retapé : la vitrine mesure déjà cette cadence
+        // (lib/etat-latence), les deux ne peuvent plus se contredire.
+        raison: `Le déclencheur des tâches planifiées passe toutes les ${CADENCE_TICK_MIN} minutes : un budget peut donc être consommé jusqu'à ${CADENCE_TICK_MIN} minutes avant que l'alerte ne parte. C'est une cadence, pas du temps réel — évaluer le SLO à chaque mesure écrite demanderait un déclencheur en base, pas un passage périodique.`,
       },
       {
         label: "Politique d'escalade",

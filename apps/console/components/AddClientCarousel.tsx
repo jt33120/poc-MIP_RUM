@@ -5,6 +5,7 @@
 // optionnel, vérification live, accès scopé. Contenu statique (tutoriel), une
 // seule entrée dynamique : `isAdmin` décide du call-to-action vers l'écran admin.
 import Link from "next/link";
+import { SDK_POIDS_TEXTE } from "@/lib/sdk-poids";
 import { useState } from "react";
 import { CopyBlock } from "./CopyBlock";
 import { ICON_PATHS, Icon, type IconName } from "./icons";
@@ -54,7 +55,7 @@ const STEPS: Step[] = [
       <>
         <p>
           La fiche du client ouvre un guide qui génère <strong>deux balises</strong>{" "}
-          <code className="chip-mono">&lt;script&gt;</code> pré-remplies : le SDK (~12 ko gzip) et l'appel{" "}
+          <code className="chip-mono">&lt;script&gt;</code> pré-remplies : le SDK ({SDK_POIDS_TEXTE}) et l'appel{" "}
           <code className="chip-mono">MIPRum.init</code> (endpoint, <code className="chip-mono">app_id</code>,
           clé). Exemple :
         </p>

@@ -227,8 +227,17 @@ export function flattenOtlp(payload, opts = {}) {
   const sviLegs = [];
   let rejected = 0;
 
-  /** Ligne rum_span commune front/back ; null si trace_id/span_id absents. */
-  const spanRow = (tier, a, appId, ts) => {
+  /**
+   * Ligne rum_span commune front/back ; null si trace_id/span_id absents.
+   *
+   * `parentNatif` est le champ OTLP `span.parentSpanId`, que les capteurs de ce
+   * dépôt renseignent depuis qu'ils émettent des spans standard. Il PRIME sur
+   * l'attribut propriétaire `mip.parent_span_id`, qui reste lu en repli : un SDK
+   * déjà posé chez un client continue d'alimenter le waterfall sans être
+   * redéployé. L'ordre compte — le champ natif est celui qu'un collecteur tiers
+   * lirait, donc celui qui fait foi.
+   */
+  const spanRow = (tier, a, appId, ts, parentNatif = null) => {
     const traceId = a["mip.trace_id"];
     const spanId = a["mip.span_id"];
     const durationMs = a["http.duration_ms"];
@@ -236,7 +245,7 @@ export function flattenOtlp(payload, opts = {}) {
     return {
       span_id: spanId,
       trace_id: traceId,
-      parent_span_id: a["mip.parent_span_id"] ?? null,
+      parent_span_id: parentNatif || a["mip.parent_span_id"] || null,
       tier,
       session_id: a["mip.session_id"] ?? null,
       app_id: appId,
@@ -438,7 +447,7 @@ export function flattenOtlp(payload, opts = {}) {
         // span backend (middleware serveur) : pas de session requise, pas
         // d'upsert rum_session (le front est seul maître de la session)
         if (span.name === "http.server") {
-          const row = spanRow("back", a, appId, nanosToDate(span.startTimeUnixNano, now));
+          const row = spanRow("back", a, appId, nanosToDate(span.startTimeUnixNano, now), span.parentSpanId);
           if (row) spans.push(row);
           else rejected++;
           continue;
@@ -656,7 +665,7 @@ export function flattenOtlp(payload, opts = {}) {
             ts,
           });
         } else if (span.name === "http.client") {
-          const row = spanRow("front", a, appId, ts);
+          const row = spanRow("front", a, appId, ts, span.parentSpanId);
           if (row) spans.push(row);
           else rejected++;
         } else if (span.name.startsWith("track.")) {

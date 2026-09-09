@@ -25,6 +25,13 @@
 // Les chiffres (poids gzip, version d'extension) sont comparés au fichier réel.
 // Les faits d'hébergeur relevés à la main portent leur date de relevé.
 import { CATALOGUES, type Indisponible } from "./dashboard-blocs";
+import {
+  FEEDBACK_GZIP_KO,
+  REPLAY_GZIP_KO,
+  SDK_BUDGET_KO,
+  SDK_GZIP_KO,
+  koTexte,
+} from "./sdk-poids";
 import { HOSTS } from "./legal";
 import { MCP_ORIGINE } from "./mcp-public";
 
@@ -32,14 +39,18 @@ export type Statut = "atteint" | "partiel" | "manque" | "non-mesure";
 
 // ══════════════════════════ Onglet 1 — infrastructure ══════════════════════════
 
-/** Poids gzip du bundle cœur publié (apps/console/public/mip-rum.js). Mesuré. */
-export const SDK_GZIP_KO = 12.4;
-/** Budget que le build refuse de dépasser (packages/rum-sdk/build.mjs). */
-export const SDK_BUDGET_KO = 35;
-/** Bundle rejeu, chargé À LA DEMANDE et seulement si le rejeu est activé. */
-export const REPLAY_GZIP_KO = 56.9;
-/** Widget d'avis, chargé à la demande lui aussi. */
-export const FEEDBACK_GZIP_KO = 7.6;
+// Les poids vivent dans un module FEUILLE (sans import), parce que des
+// composants client les citent aussi : les définir ici tirerait tout le graphe
+// des specs dans le bundle du navigateur. Réexportés pour que lib/specs reste le
+// point d'entrée unique de la section.
+export {
+  FEEDBACK_GZIP_KO,
+  REPLAY_GZIP_KO,
+  SDK_BUDGET_KO,
+  SDK_GZIP_KO,
+  SDK_POIDS_TEXTE,
+  koTexte,
+} from "./sdk-poids";
 
 /** Version de l'extension, telle qu'elle est dans apps/extension/manifest.json. */
 export const EXT_VERSION = "0.4.3";
@@ -130,13 +141,13 @@ export const INFRA: GroupeInfra[] = [
     lignes: [
       {
         k: "Snippet SDK",
-        v: `${SDK_GZIP_KO.toString().replace(".", ",")} ko gzip pour le cœur — mesuré sur le bundle publié, contre un budget de ${SDK_BUDGET_KO} ko que le build refuse de dépasser.`,
+        v: `${koTexte(SDK_GZIP_KO)} ko gzip pour le cœur — mesuré sur le bundle publié, contre un budget de ${SDK_BUDGET_KO} ko que le build refuse de dépasser.`,
         s: "atteint",
         preuve: "apps/console/public/mip-rum.js",
       },
       {
         k: "Modules à la demande",
-        v: `Le rejeu (${REPLAY_GZIP_KO.toString().replace(".", ",")} ko gzip, rrweb) et le widget d'avis (${FEEDBACK_GZIP_KO.toString().replace(".", ",")} ko gzip) sont des bundles SÉPARÉS, chargés seulement si l'app les active. Le cœur ne les porte pas.`,
+        v: `Le rejeu (${koTexte(REPLAY_GZIP_KO)} ko gzip, rrweb) et le widget d'avis (${koTexte(FEEDBACK_GZIP_KO)} ko gzip) sont des bundles SÉPARÉS, chargés seulement si l'app les active. Le cœur ne les porte pas.`,
         s: "atteint",
         preuve: "apps/console/public/mip-rum-replay.js",
       },
@@ -287,7 +298,7 @@ export const MESURES: Mesure[] = [
     table: "rum_span",
     module: "packages/rum-sdk/src/apispans.ts",
     detail:
-      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Un seul saut : front → back, pas back → back.",
+      "fetch et XHR : méthode, URL nettoyée, statut, durée, avec un traceparent W3C propagé vers le même domaine et les origines déclarées. Le span descend de la page vue et le span serveur descend de lui : la trace est un arbre enraciné, lisible par un collecteur tiers. Un seul saut : front → back, pas back → back.",
   },
   {
     quoi: "Traces serveur",
@@ -362,10 +373,13 @@ export const ANGLES_MORTS: AngleMort[] = [
     marqueur: ["packages/rum-sdk/src", "long-animation-frame"],
   },
   {
-    label: "Spans OTLP plats",
+    label: "Conventions sémantiques OpenTelemetry",
+    // Ce qui reste de l'ancienne ligne « Spans OTLP plats », une fois les champs
+    // natifs (parentSpanId, kind, status) émis et la trace enracinée sur la page
+    // vue : la STRUCTURE est standard, le VOCABULAIRE ne l'est pas encore.
     raison:
-      "Le SDK navigateur sérialise ses spans sans parentSpanId, sans kind et sans status : la parenté voyage dans un attribut mip.parent_span_id que seul notre backend sait relire. Un collecteur OpenTelemetry tiers accepterait le flux, mais reconstruirait mal le waterfall. « Backend remplaçable » n'est donc vrai qu'à moitié.",
-    marqueur: ["packages/rum-sdk/src/otlp-encode.ts", "parentSpanId"],
+      "Les spans sont standard dans leur structure — parenté, nature, issue — mais pas dans leur vocabulaire. Une erreur est émise comme un span nommé « exception » là où OpenTelemetry attend un ÉVÉNEMENT porté par le span concerné, et les attributs HTTP suivent l'ancienne convention http.method / http.url, dépréciée au profit de http.request.method / url.full. Un backend tiers affichera donc le waterfall correctement, mais ne comptera pas nos erreurs comme des erreurs.",
+    marqueur: ["packages/rum-sdk/src", "http.request.method"],
   },
   {
     label: "Supervision d'un serveur vocal (SVI)",

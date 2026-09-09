@@ -9,6 +9,7 @@
 // docs/LIMITES.md (ce qui manque, assumé) et docs/OFFRE.md (positionnement).
 // Rendu 100 % serveur, aucun JS envoyé au navigateur.
 import { ICON_PATHS, Icon, type IconName } from "@/components/icons";
+import { SDK_GZIP_KO, SDK_POIDS_TEXTE, koTexte } from "@/lib/sdk-poids";
 
 type Capteur = {
   n: string;
@@ -54,11 +55,11 @@ const CAPTEURS: Capteur[] = [
     icon: "logs",
     titre: "SDK embarqué",
     accroche: "Une balise dans la page",
-    flux: ["Visiteur", "SDK ~12 ko", "OTLP/HTTP", "Console"],
+    flux: ["Visiteur", `SDK ${koTexte(SDK_GZIP_KO)} ko`, "OTLP/HTTP", "Console"],
     enClair:
       "Une ligne à coller dans le site. Chaque visiteur, où qu'il soit et quel que soit son appareil, mesure sa propre expérience et l'envoie. C'est le mode normal quand le site vous appartient.",
     specs: [
-      { k: "Déploiement", v: "Une balise <script>, ~12 ko gzip" },
+      { k: "Déploiement", v: `Une balise <script>, ${SDK_POIDS_TEXTE}` },
       { k: "Intégration", v: "Une ligne d'init, côté développeur" },
       { k: "Portée", v: "Tout le trafic réel, échantillonnable" },
       { k: "Capture", v: "Vitals, erreurs, fetch/XHR, replay opt-in" },
