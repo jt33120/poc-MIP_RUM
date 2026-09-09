@@ -1,0 +1,50 @@
+# Image du serveur MCP MIP RUM — l'API v1 de lecture, exposée à un agent IA.
+#
+# POURQUOI UNE IMAGE À PART, alors que Dockerfile.backend en fait une seule pour
+# l'ingestion, le scheduler et les migrations. Ce n'est pas une entorse à cette
+# règle, c'en est l'application : là-bas, une seule image parce que MÊME noyau et
+# MÊMES dépendances. Ici, ni l'un ni l'autre — et surtout :
+#
+#   CE SERVICE NE DOIT PAS POUVOIR ATTEINDRE LA BASE.
+#
+# Il est joignable depuis l'internet et pilotable par un modèle de langage, donc
+# par le texte que ce modèle a lu. La seule protection qui tienne contre une
+# injection de prompt réussie, c'est qu'il n'y ait rien à atteindre : pas de
+# `pg`, pas de DATABASE_URL, aucun accès réseau à Postgres. Tout passe par
+# l'API v1, qui applique déjà le cloisonnement par jeton.
+#
+# Empaqueter le serveur MCP dans l'image du backend annulerait cette garantie
+# pour économiser une couche de cache.
+#
+# PAS DE pnpm ICI, comme pour le backend : `npm install` depuis le manifeste du
+# noyau fige les versions du SDK MCP et de zod, et l'arborescence est recomposée
+# à la main. Contexte de build = RACINE du dépôt.
+FROM node:22-alpine
+
+WORKDIR /app
+
+# 1) Les dépendances runtime : le SDK MCP et zod, rien d'autre. Couche mise en
+#    cache tant que ces deux versions ne bougent pas.
+COPY apps/mcp/package.json ./package.json
+RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
+
+# 2) Le noyau MCP, placé là où Node résout le specifier nu `mip-mcp/...` —
+#    exactement comme en développement, où pnpm pose le même lien.
+COPY apps/mcp/package.json ./node_modules/mip-mcp/package.json
+COPY apps/mcp/serveur.mjs  ./node_modules/mip-mcp/serveur.mjs
+COPY apps/mcp/lib          ./node_modules/mip-mcp/lib
+
+# 3) Les points d'entrée. Minces par construction.
+COPY services/mcp ./services/mcp
+
+ENV NODE_ENV=production
+
+# Le port est imposé par l'hébergeur (Railway fournit PORT) ; 8080 est le défaut.
+EXPOSE 8080
+
+# Non-root : l'image node fournit l'utilisateur `node`.
+USER node
+
+# Le transport distant. `services/mcp/stdio.mjs` existe pour l'usage LOCAL
+# (Claude Desktop, un IDE) et n'a pas vocation à tourner dans un conteneur.
+CMD ["node", "services/mcp/http.mjs"]

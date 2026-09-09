@@ -32,7 +32,8 @@ export const ORG = {
 export const HOSTS = {
   data: "Neon (base de données PostgreSQL sur infrastructure AWS, région aws-eu-central-1 — Francfort, Allemagne)",
   app: "Vercel Inc. (hébergement de l'application console ; fonctions serveur exécutées en région fra1 — Francfort, Allemagne)",
-  backend: "Railway Corp. (hébergement des services backend : réception des mesures et travaux planifiés)",
+  backend:
+    "Railway Corp. (hébergement des services backend : réception des mesures, travaux planifiés, et serveur MCP de lecture)",
 } as const;
 
 /**
@@ -48,7 +49,11 @@ export const SUBPROCESSORS: { name: string; role: string; location: string }[] =
   // vers des services autonomes : ce sous-traitant reçoit les mesures RUM
   // envoyées par les navigateurs. Le déclarer après coup aurait fait une
   // déclaration RGPD inexacte et opposable pendant l'intervalle.
-  { name: "Railway Corp.", role: "Hébergement des services backend (réception des mesures RUM, travaux planifiés)", location: "États-Unis (société) — région de déploiement à fixer en UE (europe-west4, Amsterdam)" },
+  // Le serveur MCP (09/09/2026) tourne sur le même hébergeur et sert les mêmes
+  // agrégats, à un agent IA cette fois. Il ne fait PAS entrer de tiers
+  // supplémentaire dans la liste : il ne parle qu'à la console, et le modèle qui
+  // l'interroge est l'outil de son utilisateur, pas un sous-traitant de MIP.
+  { name: "Railway Corp.", role: "Hébergement des services backend (réception des mesures RUM, travaux planifiés, serveur MCP de lecture)", location: "États-Unis (société) — région de déploiement à fixer en UE (europe-west4, Amsterdam)" },
   { name: "[Fournisseur e-mail — à brancher]", role: "Envoi des alertes e-mail (si activé)", location: "[à préciser — UE recommandé]" },
   { name: "Mistral AI", role: "Assistance et synthèse IA (si activée), sur données agrégées, sans PII", location: "UE (France)" },
   { name: "Anthropic", role: "Assistance et synthèse IA (si activée), sur données agrégées, sans PII — employé lorsque la clé correspondante est configurée", location: "États-Unis (transfert hors UE)" },

@@ -1,22 +1,33 @@
-# E2-S1 (revue BMAD) — PROUVER le conteneur d'ingestion self-host.
-# Build l'image `Dockerfile.backend` + `docker compose up` (Postgres + ingest, avec
+# E2-S1 (revue BMAD) — PROUVER les conteneurs backend self-host.
+#
+# `ingest` : build `Dockerfile.backend` + `docker compose up` (Postgres + ingest, avec
 # schema.sql + toutes les migrations appliquées par initdb.sh), puis smoke-test :
 #   /health -> 200, POST /v1/traces {"resourceSpans":[]} -> 200 partialSuccess.
+#
+# `mcp` : build `Dockerfile.mcp` (image SÉPARÉE, sans pg ni DATABASE_URL — cf.
+# docs/MCP.md) puis smoke-test du protocole. `tools/list` n'appelle pas l'API,
+# donc le test est complet sans console : il prouve que l'image démarre, qu'elle
+# refuse un appel sans jeton, et qu'elle sert bien ses onze outils.
+#
 # Rend le « backend dockerisé/intégrable » VÉRIFIÉ à chaque PR (les runners GitHub
 # fournissent Docker ; l'env de dev n'a pas de démon). Isolé de ci.yml.
-name: Docker smoke (ingest self-host)
+name: Docker smoke (backend self-host)
 
 on:
   pull_request:
     paths:
       - "infra/docker/**"
       - "apps/ingest/**"
+      - "apps/mcp/**"
+      - "services/**"
       - ".github/workflows/docker-smoke.yml"
   push:
     branches: [master]
     paths:
       - "infra/docker/**"
       - "apps/ingest/**"
+      - "apps/mcp/**"
+      - "services/**"
   workflow_dispatch:
 
 jobs:
@@ -64,3 +75,77 @@ jobs:
       - name: Teardown
         if: always()
         run: docker compose down -v
+
+  mcp-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build l'image MCP
+        run: docker build -f infra/docker/Dockerfile.mcp -t mip-mcp:ci .
+
+      # La garantie centrale de ce service : il ne peut pas atteindre la base.
+      # Si `pg` réapparaît dans l'image, c'est que quelqu'un a fusionné les deux
+      # Dockerfiles — et la garantie tombe sans que rien d'autre n'échoue.
+      - name: Vérifier l'absence de pg dans l'image
+        run: |
+          if docker run --rm --entrypoint sh mip-mcp:ci -c 'ls /app/node_modules | grep -qx pg'; then
+            echo "::error::pg est présent dans l'image MCP — ce service ne doit pas pouvoir joindre Postgres"
+            exit 1
+          fi
+          echo "pg absent — conforme"
+
+      - name: Démarrer le service
+        run: |
+          docker run -d --name mcp -p 8080:8080 \
+            -e MIP_CONSOLE_URL=http://127.0.0.1:9 \
+            mip-mcp:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/health >/dev/null 2>&1; then echo "mcp up"; exit 0; fi
+            sleep 2
+          done
+          echo "::error::le serveur MCP n'a jamais répondu"; exit 1
+
+      - name: Smoke /health
+        run: |
+          body=$(curl -fsS http://localhost:8080/health)
+          echo "GET /health -> $body"
+          echo "$body" | grep -q '"name":"mip-rum-mcp-server"'
+
+      - name: POST /mcp sans jeton -> 401
+        run: |
+          code=$(curl -s -o /tmp/out -w '%{http_code}' -X POST http://localhost:8080/mcp \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+          echo "-> $code ($(cat /tmp/out))"
+          test "$code" = "401"
+
+      - name: POST /mcp avec jeton -> initialize puis 11 outils
+        run: |
+          init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
+          curl -fsS -X POST http://localhost:8080/mcp \
+            -H 'authorization: Bearer jeton-ci' \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -d "$init" > /tmp/init.json
+          grep -q 'mip-rum-mcp-server' /tmp/init.json
+          # Note : le serveur est SANS SESSION, chaque POST est autonome — d'où
+          # une seconde initialisation dans la même requête n'est pas nécessaire.
+          curl -fsS -X POST http://localhost:8080/mcp \
+            -H 'authorization: Bearer jeton-ci' \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' > /tmp/tools.json
+          n=$(grep -o 'mip_rum_[a-z_]*' /tmp/tools.json | sort -u | wc -l)
+          echo "outils exposés : $n"
+          test "$n" = "11"
+
+      - name: Logs (si échec)
+        if: failure()
+        run: docker logs mcp || true
+
+      - name: Teardown
+        if: always()
+        run: docker rm -f mcp || true

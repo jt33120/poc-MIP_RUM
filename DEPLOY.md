@@ -78,13 +78,20 @@ curl -s "https://mip-rum-console.vercel.app/api/ingest/v1/traces" \
 
 ## 1 bis. Railway — le backend
 
-Projet `mip-rum-backend`, environnement `production`. Deux services, une image
-(`infra/docker/Dockerfile.backend`), deux commandes.
+Projet `mip-rum-backend`, environnement `production`. Trois services.
 
-| Service | Commande | Écoute | Redémarrage |
-|---|---|---|---|
-| `ingest` | `node services/ingest/server.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
-| `scheduler` | `node services/scheduler/worker.mjs` | facultatif (`/health`, `/status`) | `ALWAYS` |
+| Service | Image | Commande | Écoute | Redémarrage |
+|---|---|---|---|---|
+| `ingest` | `Dockerfile.backend` | `node services/ingest/server.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
+| `scheduler` | `Dockerfile.backend` | `node services/scheduler/worker.mjs` | facultatif (`/health`, `/status`) | `ALWAYS` |
+| `mcp` | **`Dockerfile.mcp`** | `node services/mcp/http.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
+
+`ingest` et `scheduler` partagent une image : même noyau, mêmes dépendances,
+seule la commande change. `mcp` a la sienne — non par exception, mais parce
+qu'**il ne doit pas pouvoir atteindre la base**. C'est le seul service
+pilotable par un modèle de langage ; sans `pg` ni `DATABASE_URL`, une injection
+de prompt réussie ne donne que ce que le jeton de l'appelant permettait déjà de
+lire. Cf. `docs/MCP.md`.
 
 **Les migrations sont une étape du déploiement.** Le service `ingest` porte la
 commande pre-deploy `node node_modules/ingest/migrate.mjs` : le schéma ne peut
@@ -103,12 +110,21 @@ comportement voulu, pas une panne.
 
 | Variable | Service | Valeur posée |
 |---|---|---|
-| `DATABASE_URL` | les deux | **à poser** |
+| `DATABASE_URL` | `ingest`, `scheduler` | **à poser** |
 | `MIGRATE_BASELINE` | `ingest` | `migration-v51.sql` |
 | `REQUIRE_API_KEY` | `ingest` | `false` |
 | `RATE_LIMIT_PER_MIN` | `ingest` | `600` |
 | `PGPOOL_MAX` | `ingest` / `scheduler` | `8` / `4` |
-| `NODE_ENV`, `LOG_LEVEL` | les deux | `production`, `info` |
+| `PORT` | les trois | `8080` |
+| `NODE_ENV`, `LOG_LEVEL` | `ingest`, `scheduler` | `production`, `info` |
+| `MIP_CONSOLE_URL` | `mcp` | `https://mip-rum-console.vercel.app` |
+
+**`mcp` ne prend ni `DATABASE_URL` ni jeton d'API**, et ce n'est pas un oubli :
+il relaie le jeton de l'appelant vers l'API v1. Lui en donner un ferait de son
+URL publique un contournement de l'authentification — quiconque la trouve lirait
+les données de tous les clients. Il n'a donc aucun secret à stocker, ni à
+faire fuir. Un domaine généré est en revanche nécessaire : c'est l'URL que les
+clients MCP appelleront.
 
 **`MIGRATE_BASELINE=migration-v51.sql`, et pourquoi.** La base Neon est déjà au
 niveau v51 mais n'a pas de registre : sans étalonnage, le premier passage
@@ -127,6 +143,10 @@ sans quoi une base recréée hériterait d'un registre qui ment.
 2. **Branche** : les services suivent `claude/graft-bmad-setup-54gpg7` pour que
    le premier déploiement soit vérifiable avant fusion. **À basculer sur
    `master` une fois la PR fusionnée.**
+3. **Jeton pour le MCP** : ajouter une entrée à `CONSOLE_API_TOKENS` **côté
+   Vercel** (pas côté Railway), scopée si le client MCP est un partenaire —
+   `jeton-uti@uti-portail` ne verra que cette app, par le serveur MCP comme par
+   l'API.
 
 > Railway Corp est une société de droit américain, comme Vercel et Neon. Ce
 > déplacement rapproche le calcul de la donnée et lève les limites de

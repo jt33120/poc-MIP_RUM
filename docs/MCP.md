@@ -1,0 +1,242 @@
+# MCP — interroger le portail MIP RUM avec une IA
+
+Le **Model Context Protocol** est la prise standard entre un modèle de langage et
+un système. Branché sur MIP RUM, il permet de demander
+
+> « quelles routes se sont dégradées cette semaine, et sur quels appareils ? »
+
+au lieu d'enchaîner à la main une dizaine d'appels REST.
+
+Le serveur vit dans ce dépôt :
+
+```
+apps/mcp/         LE NOYAU — catalogue d'outils, client HTTP, rendu
+services/mcp/     les deux points d'entrée : stdio (local), HTTP (Railway)
+```
+
+---
+
+## 1. Ce que le serveur est — et ce qu'il n'est pas
+
+**C'est un client de l'API v1.** Il n'a aucun accès à Postgres : pas de
+`DATABASE_URL`, pas de `pg` dans son image. Chaque outil se traduit en un
+`GET /api/v1/…` porteur du jeton de l'appelant.
+
+Ce n'est pas un détail d'implémentation, c'est la conception :
+
+| | Serveur MCP → API v1 | Serveur MCP → Postgres |
+|---|---|---|
+| Cloisonnement par app | celui de l'API, écrit une fois | à réimplémenter, donc à faire diverger |
+| Débit | compté par l'API, par principal | à refaire |
+| Injection de prompt réussie | donne ce que le jeton donnait déjà | donne la base entière |
+
+Le dépôt a déjà payé le prix d'une règle d'accès écrite deux fois : il a existé
+**trois** implémentations de l'ingestion, et le serveur de développement
+acceptait une app sans clé là où la production la rejetait.
+
+**Lecture seule.** Les onze outils sont des `GET`. `POST /api/v1/deploys` existe
+côté API et n'est **pas** exposé — donner à un agent conversationnel de quoi
+écrire en production est une décision qui se prend à froid, pas un oubli qu'on
+comble. Un test verrouille cette absence.
+
+---
+
+## 2. Authentification
+
+**Oui, un jeton est nécessaire.** C'est le même que celui de l'API v1 :
+une entrée de `CONSOLE_API_TOKENS` côté console.
+
+```
+CONSOLE_API_TOKENS=jeton-interne,jeton-partenaire@uti-portail
+                   ^ toutes apps   ^ scopé à uti-portail
+```
+
+Là où les deux transports diffèrent :
+
+| | D'où vient le jeton | Pourquoi |
+|---|---|---|
+| **stdio** (local) | `MIP_API_TOKEN` dans l'environnement | un poste, un utilisateur, aucune requête HTTP entrante pour le porter |
+| **HTTP** (distant) | l'en-tête `Authorization` de l'appelant, **relayé** | le serveur est une URL publique ; s'il portait son propre jeton, quiconque la trouve lirait les données de tous les clients |
+
+Le serveur HTTP **ne détient aucun secret**. Un `POST /mcp` sans en-tête
+`Authorization` reçoit `401` avant que quoi que ce soit ne soit lu.
+
+### Le cas qu'il ne faut pas rater
+
+L'API ne **refuse** pas une app hors périmètre : elle **ramène** la demande au
+périmètre du jeton (`scopeApp`, dans `lib/api/params.ts`). Un jeton scopé à
+`uti-portail` qui demande `gip-plateforme` reçoit donc les chiffres
+d'`uti-portail`, avec un `meta.app` qui le dit — mais que rien n'oblige à lire.
+
+Chaque outil compare l'app demandée à `meta.app` et, si elles diffèrent, place
+l'avertissement **en tête** de sa réponse :
+
+```
+⚠️ Périmètre : l'app « gip-plateforme » a été demandée, mais le jeton n'y a pas
+accès — l'API a répondu pour « uti-portail ». Ces chiffres ne concernent PAS
+l'app demandée.
+```
+
+Sans cela, un modèle présenterait 4 sessions d'une app comme les chiffres d'une
+autre. C'est le pire mode de défaillance possible ici : une réponse fausse,
+présentée comme juste.
+
+---
+
+## 3. Les onze outils
+
+Tous portent les filtres communs `app`, `period` (`1h` / `24h` / `7d`),
+`device`, et un `format` (`json` par défaut, ou `markdown`).
+
+| Outil | Endpoint | Pour répondre à |
+|---|---|---|
+| `mip_rum_list_apps` | `/apps` | « à quoi ai-je accès ? » — **à appeler en premier** |
+| `mip_rum_get_overview` | `/overview` | « comment va cette app ? » (avec la période précédente) |
+| `mip_rum_get_vitals` | `/vitals` | « est-ce que ça se dégrade ? » (`series=LCP,INP`) |
+| `mip_rum_list_slow_pages` | `/pages` | « qu'est-ce qui est lent, et pour combien de monde ? » |
+| `mip_rum_list_errors` | `/errors` | « qu'est-ce qui casse ? » |
+| `mip_rum_get_error_group` | `/errors/{fingerprint}` | « qui est touché par cette erreur ? » |
+| `mip_rum_list_sessions` | `/sessions` | « que s'est-il passé récemment ? » |
+| `mip_rum_get_session` | `/sessions/{id}` | « qu'a vécu cet utilisateur ? » |
+| `mip_rum_get_tracing` | `/tracing` | « le backend est-il en cause ? » |
+| `mip_rum_get_correlation` | `/correlation` | « pourquoi le monitoring est au vert et les utilisateurs se plaignent ? » |
+| `mip_rum_get_health_grid` | `/health-grid` | « est-ce toujours le lundi matin ? » |
+
+### Ce que les outils disent au modèle, et qui compte
+
+Les descriptions énoncent les limites **explicitement**, parce qu'un modèle qui
+les ignore comble les trous par des suppositions :
+
+- trois fenêtres seulement, aucune date libre ;
+- les listes sont paginées **sans total** — une page pleine indique une suite
+  probable, jamais combien ;
+- `device=tablet` n'est pas distingué par les endpoints historiques ;
+- aucune donnée personnelle : les utilisateurs sont des empreintes.
+
+### `json` ou `markdown`
+
+Le défaut est **`json`** — l'enveloppe de l'API telle quelle, sans
+transformation. La convention MCP recommande l'inverse ; ici la valeur du
+produit est l'exactitude d'un chiffre, et toute mise en forme est une occasion
+d'en perdre un.
+
+Le rendu `markdown` existe et reste **générique** : une fonction pour les onze
+outils, pas onze gabarits. Un gabarit oublié n'échoue pas — il affiche l'ancienne
+colonne comme si elle était toute la vérité.
+
+En JSON, ce que le serveur MCP a constaté est rangé à part, sous `_mcp`
+(`chemin`, `pagination`, `avertissement`) : on ne doit pas pouvoir confondre une
+observation du serveur avec une donnée mesurée.
+
+---
+
+## 4. Brancher un client — local (stdio)
+
+Dans la configuration du client MCP (Claude Desktop, un IDE…) :
+
+```json
+{
+  "mcpServers": {
+    "mip-rum": {
+      "command": "node",
+      "args": ["/chemin/vers/poc-MIP_RUM/services/mcp/stdio.mjs"],
+      "env": {
+        "MIP_CONSOLE_URL": "https://mip-rum-console.vercel.app",
+        "MIP_API_TOKEN": "<jeton listé dans CONSOLE_API_TOKENS>"
+      }
+    }
+  }
+}
+```
+
+Sans l'une des deux variables, le serveur **refuse de démarrer** (code 2) au lieu
+de s'annoncer puis de répondre 401 à chaque outil — le pire des deux mondes,
+puisque le modèle croirait avoir un accès.
+
+Vérifier à la main :
+
+```bash
+MIP_CONSOLE_URL=http://localhost:3000 MIP_API_TOKEN=xxx \
+  node services/mcp/stdio.mjs
+# -> mcp: prêt sur stdio (api http://localhost:3000/api/v1)
+```
+
+---
+
+## 5. Brancher un client — distant (Streamable HTTP)
+
+| Variable | Obligatoire | Rôle |
+|---|---|---|
+| `MIP_CONSOLE_URL` | **oui** | origine de la console, ex. `https://mip-rum-console.vercel.app` |
+| `PORT` | fourni par l'hébergeur | port d'écoute (défaut 8080) |
+| `MCP_PATH` | non | chemin du point MCP (défaut `/mcp`) |
+
+Pas de `MIP_API_TOKEN` : le serveur relaie celui de l'appelant.
+
+```
+POST /mcp     JSON-RPC MCP — exige Authorization: Bearer <jeton>
+GET  /health  sonde de l'hébergeur, publique, ne dit que « le process vit »
+```
+
+Le mode est **sans session** (`sessionIdGenerator: undefined`,
+`enableJsonResponse: true`) : chaque requête est autonome, donc le service
+survit à un redéploiement et se réplique sans état partagé. Un `GET /mcp`
+répond `405` — sans session il n'y a aucun flux serveur→client à ouvrir, et
+laisser le client attendre serait pire qu'un refus.
+
+### Déploiement Railway
+
+Service `mcp` dans le projet `mip-rum-backend`, à côté de `ingest` et
+`scheduler` :
+
+| Réglage | Valeur |
+|---|---|
+| Dockerfile | `infra/docker/Dockerfile.backend` → **non**, `infra/docker/Dockerfile.mcp` |
+| Variables | `MIP_CONSOLE_URL`, `PORT=8080` |
+| Healthcheck | `/health` |
+| Domaine | à générer — c'est l'URL que les clients MCP appelleront |
+
+**Image séparée, à dessein.** Les autres services partagent
+`Dockerfile.backend` parce qu'ils ont le même noyau et les mêmes dépendances.
+Le serveur MCP n'a ni l'un ni l'autre — et surtout, il ne doit pas pouvoir
+atteindre la base. L'empaqueter avec eux annulerait cette garantie pour
+économiser une couche de cache.
+
+---
+
+## 6. Vérifier
+
+```bash
+# tests unitaires du serveur MCP (catalogue, rendu, erreurs, périmètre)
+npx vitest run tests/unit/mcp-serveur.test.ts
+
+# chaîne complète, à la main
+PORT=8111 MIP_CONSOLE_URL=http://localhost:3000 node services/mcp/http.mjs &
+curl -s localhost:8111/health
+curl -s -X POST localhost:8111/mcp \
+  -H 'authorization: Bearer <jeton>' \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Un `POST /mcp` sans `Authorization` doit répondre `401` avec un en-tête
+`WWW-Authenticate: Bearer` — c'est le test le plus important de la liste.
+
+---
+
+## 7. Limites connues
+
+- **Onze outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
+  exposé : SLO, alertes, tableaux de bord, replay, logs, SVI. Les ajouter passe
+  par l'API d'abord, jamais par un accès direct depuis le serveur MCP.
+- **Pas de total sur les listes.** L'API n'en fournit pas ; le serveur ne
+  l'invente pas.
+- **Chaîne de dépendances.** Le SDK MCP tire une centaine de paquets transitifs
+  sur un service exposé à l'internet. C'est le coût de ne pas réimplémenter
+  JSON-RPC et le transport à la main — mais c'est une surface à surveiller lors
+  des montées de version.
+- **Pas d'OAuth.** L'authentification est un jeton porteur, comme le reste de
+  l'API. La spec MCP prévoit OAuth 2.1 pour les serveurs distants ; ce serait le
+  bon chantier suivant si le serveur devait être ouvert au-delà de partenaires
+  identifiés.
