@@ -68,3 +68,27 @@ export function platformFromUA(ua: string | null): string | null {
   if (/linux/i.test(ua)) return "Linux";
   return null;
 }
+
+/**
+ * Une URL de script, découpée pour être LISIBLE dans une colonne étroite.
+ *
+ * POURQUOI PAS L'URL ENTIÈRE, TRONQUÉE. Une troncature de fin sur
+ * `https://app.exemple.fr/static/js/vendor/panier.a1b2c3.js` donne
+ * « https://app.… » : le préfixe est identique pour tous les scripts d'un même
+ * site, donc la seule partie affichée est la seule qui n'apprend rien. Ce qu'on
+ * cherche est à la FIN — le nom du fichier.
+ *
+ * Rend le nom de fichier d'un côté, l'hôte de l'autre. Une URL qu'on ne sait pas
+ * analyser est rendue telle quelle en `fichier`, sans hôte : mieux vaut une
+ * chaîne brute qu'une cellule vide.
+ */
+export function decouperUrlScript(url: string | null): { fichier: string; hote: string | null } {
+  if (!url) return { fichier: "(inconnu)", hote: null };
+  try {
+    const u = new URL(url);
+    const segments = u.pathname.split("/").filter(Boolean);
+    return { fichier: segments[segments.length - 1] || u.pathname || "/", hote: u.host };
+  } catch {
+    return { fichier: url, hote: null };
+  }
+}

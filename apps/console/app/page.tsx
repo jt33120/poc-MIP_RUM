@@ -11,10 +11,12 @@ import { TousEteints } from "@/components/TousEteints";
 import { VitalCard } from "@/components/VitalCard";
 import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
+import { VersionsTable } from "@/components/VersionsTable";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
 import { healthScore } from "@/lib/health";
 import { overviewStats, vitalSeries, vitalsP75 } from "@/lib/queries";
 import { dailyLcpSeries, dailyTraffic, GRID_DAYS, healthGrid } from "@/lib/queries-grid";
+import { comparaisonVersions } from "@/lib/queries-deploys";
 import { THRESHOLDS } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +51,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
   const vide = <T,>(v: T) => Promise.resolve(v);
 
-  const [vitals, vitalsPrev, stats, statsPrev, series, health, grid, traffic, dailyLcp] =
+  const [vitals, vitalsPrev, stats, statsPrev, series, health, grid, traffic, dailyLcp, versions] =
     await Promise.all([
       blocs.vitals || blocs.reseau ? vitalsP75(f) : vide([]),
       blocs.vitals ? vitalsP75(f, true) : vide([]),
@@ -60,6 +62,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       blocs.historique ? healthGrid(f) : vide([]),
       blocs.historique ? dailyTraffic(f) : vide([]),
       blocs.historique ? dailyLcpSeries(f) : vide([]),
+      blocs.versions ? comparaisonVersions(f) : vide([]),
     ]);
 
   const byName = Object.fromEntries(vitals.map((v) => [v.name, v]));
@@ -227,6 +230,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </div>
         </div>
       </section>
+
+      {/* Le bloc décide LUI-MÊME de s'afficher : sous deux versions, une
+          « comparaison » d'une ligne n'apprend rien (cf. VersionsTable). */}
+      {blocs.versions && <VersionsTable rows={versions} periodLabel={period.label} />}
 
       {blocs.anomalies && health && <AnomalyTable health={health} />}
 

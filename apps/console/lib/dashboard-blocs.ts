@@ -50,6 +50,7 @@ export const CATALOGUES: readonly Catalogue[] = [
       { id: "hero", label: "Courbe LCP et volumétrie", defaut: true, desc: "LCP p75 dans le temps, sessions, pages vues et taux d'erreur." },
       { id: "historique", label: "Historique de santé 14 jours", defaut: true, desc: "Heatmap jour × heure, avec les courbes de volume et de LCP associées." },
       { id: "anomalies", label: "Anomalies détectées", defaut: true, desc: "Écarts statistiques sur le LCP, sans seuil à régler." },
+      { id: "versions", label: "Comparaison par version", defaut: true, desc: "LCP, INP et taux d'erreur par version déployée. Ne s'affiche que si au moins deux versions ont été vues." },
     ],
     indisponibles: [
       {
@@ -63,9 +64,12 @@ export const CATALOGUES: readonly Catalogue[] = [
           "Aucun navigateur ne l'expose. L'obtenir demanderait de résoudre l'adresse IP à l'ingestion — ce que l'engagement « aucune adresse IP stockée » interdit.",
       },
       {
-        label: "Comparaison par version d'app",
+        // La ligne d'avant — « aucun écran ne la restitue encore » — a été tenue
+        // le 09/09/2026 : le bloc « Comparaison par version » existe. Ce qui
+        // reste, c'est la comparabilité elle-même.
+        label: "Comparaison de versions à trafic comparable",
         raison:
-          "La version déployée est désormais collectée sur chaque session, mais aucun écran ne la restitue encore. Celle-ci arrivera.",
+          "Les versions sont comparées sur la MÊME fenêtre de temps, sans normalisation. Une version qui n'a tourné que la nuit est donc jugée sur un autre public, une autre répartition d'appareils et d'autres routes que celle qui a tourné aux heures de pointe. L'écart affiché mêle le code et le contexte ; les séparer demanderait une pondération par route et par appareil, qui n'existe pas.",
       },
     ],
   },

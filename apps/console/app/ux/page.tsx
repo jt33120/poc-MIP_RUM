@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { ScatterPlot } from "@/components/charts/ScatterPlot";
 import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
-import { fmtVital } from "@/lib/format";
+import { decouperUrlScript, fmtVital } from "@/lib/format";
 import { inpOffenders, scriptsBloquants, topFrustrations } from "@/lib/queries-frustration";
 import { RATING_CLASS, RATING_HEX, rating2026 } from "@/lib/rating";
 
@@ -154,8 +154,19 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
           <tbody>
             {scripts.map((s) => (
               <tr key={`${s.url}-${s.quoi}`} className="border-t border-line/60 transition hover:bg-panel2/60">
-                <td className="max-w-0 truncate px-4 py-2 font-mono text-xs text-ink" title={s.url}>
-                  {s.url}
+                {/* Nom de fichier en évidence, hôte en dessous : une troncature
+                    de fin n'aurait montré que le préfixe, identique pour tous
+                    les scripts du même site. L'URL entière reste en infobulle. */}
+                <td className="px-4 py-2" title={s.url}>
+                  {(() => {
+                    const { fichier, hote } = decouperUrlScript(s.url);
+                    return (
+                      <>
+                        <span className="block font-mono text-xs font-medium text-ink">{fichier}</span>
+                        {hote && <span className="block font-mono text-[11px] text-ink-faint">{hote}</span>}
+                      </>
+                    );
+                  })()}
                 </td>
                 <td className="px-4 py-2 font-mono text-xs text-ink-soft">{s.quoi}</td>
                 <td className="px-4 py-2 text-right tabular-nums text-ink-soft">
