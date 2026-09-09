@@ -1,6 +1,11 @@
 // Requêtes SQL v0.3 (chantier A4) : groupes d'erreurs, alerting, corrélation v2.
 // Lit les filtres globaux (app/period/device) de façon défensive — défauts app='all', period=24h.
 import { q } from "./db";
+// Le DÉCOUPAGE EN SEAUX seulement — pas le modèle de filtres, dont la dette est
+// décrite juste en dessous. Les deux tables PERIODS de ce dépôt partagent leurs
+// clés et leurs intervalles ; tests/unit/erreurs-fenetre.test.ts vérifie qu'elles
+// ne divergent pas, plutôt que d'introduire ici une troisième copie du seau.
+import { nombreDeSeaux, seauEnSecondes } from "./filters";
 
 // ---------------------------------------------------------------------------
 // Filtres globaux — MODÈLE HISTORIQUE « v2 » (app/period/device)
@@ -29,6 +34,20 @@ const PERIODS = {
   "7d": { interval: "7 days", label: "7 j" },
 } as const;
 export type PeriodKey = keyof typeof PERIODS;
+
+/** Largeur d'un seau pour cette période, en secondes (dérivée de lib/filters). */
+export function periodSeauSecondes(f: Filters): number {
+  return seauEnSecondes(f.period);
+}
+/** Nombre de seaux couvrant la période — 1 h → 12, 24 h → 24, 7 j → 28. */
+export function periodNombreDeSeaux(f: Filters): number {
+  return nombreDeSeaux(f.period);
+}
+/** Libellé d'un seau, pour les titres de graphiques (« 5 min », « 1 h », « 6 h »). */
+export function periodSeauLabel(f: Filters): string {
+  const s = seauEnSecondes(f.period);
+  return s < 3600 ? `${s / 60} min` : `${s / 3600} h`;
+}
 
 const DEVICES = ["mobile", "desktop", "tablet"] as const;
 
@@ -97,8 +116,101 @@ export interface ErrorGroupRow {
   regressed: boolean;
 }
 
-// SELECT commun (liste + détail) : v_error_group_ext (occurrences/sessions/users)
-// ⟕ error_status ; statut par défaut 'open', régression dérivée à la lecture.
+// ════════════ Les compteurs d'un groupe d'erreurs, BORNÉS PAR LA FENÊTRE ═══════
+//
+// CE QUI ÉTAIT FAUX (finding 1.1 de docs/AUDIT_RUM_EXTERNE.md). Ce SELECT lisait
+// `v_error_group_ext`, une vue SANS AUCUNE BORNE TEMPORELLE. La tuile de l'écran
+// annonçait « Occurrences · 1 h » et affichait le total depuis la première
+// ingestion. Un exploitant qui basculait 7 j → 24 h → 1 h voyait LE MÊME NOMBRE
+// et en concluait que rien ne se calmait. Le tri, sur ce même total cumulé,
+// plaçait un bug corrigé il y a deux semaines devant la régression du jour.
+//
+// ─────────── POURQUOI PAS L'AGRÉGAT HORAIRE QUE PROPOSAIT L'AUDIT ─────────────
+//
+// Le plan recommandait une table `error_group_hourly (app_id, fingerprint, hour,
+// occurrences, sessions, visitors)`, « sommable sur n'importe quelle fenêtre ».
+// Elle ne l'est pas. `occurrences` est un comptage de lignes, donc sommable ;
+// `sessions` et `visitors` sont des comptages de DISTINCTS, et une session à
+// cheval sur deux heures apparaît dans les deux seaux. Mesuré sur une base
+// réelle — une personne, une session, un bug rencontré trois fois en trois
+// heures :
+//
+//     somme des seaux horaires : 3 occurrences, 3 sessions, 3 visiteurs
+//     vérité sur la fenêtre    : 3 occurrences, 1 session,  1 visiteur
+//
+// On aurait remplacé un sur-comptage DANS LE TEMPS par un sur-comptage DES
+// DISTINCTS — et précisément sur la mesure dont l'audit veut faire le critère de
+// tri (« impact réel »). Trier sur un impact gonflé serait pire que trier sur le
+// volume. On retient donc l'autre option du même rapport : une source paramétrée
+// par la fenêtre, exacte pour les trois compteurs.
+//
+// ────────────────────────── CE QUE ÇA COÛTE, MESURÉ ──────────────────────────
+//
+// Sur 500 000 erreurs / 2 000 signatures / 40 000 sessions réparties sur 30
+// jours — bien au-delà du volume réel —, médiane de cinq exécutions :
+//
+//     1 h             52 ms
+//     24 h (défaut)   99 ms
+//     7 j (maximum)  194 ms
+//
+// `PERIODS` (lib/filters.ts) n'expose QUE ces trois fenêtres : il n'existe pas
+// de cas plus large à optimiser. AUCUN INDEX N'A ÉTÉ AJOUTÉ — un candidat
+// `(app_id, fingerprint, ts)` a été construit et mesuré, le planificateur ne
+// l'a jamais choisi (0 scan) et les temps étaient identiques à 5 ms près. Un
+// index inutile se paie à chaque écriture sur la table la plus chaude du
+// système.
+//
+// LE VRAI PIÈGE EST LA MATÉRIALISATION DES CTE. Tant que `origine` référençait
+// `fenetre`, PostgreSQL matérialisait cette dernière — et une CTE matérialisée
+// perd le parallélisme : 24 h passait de 99 ms à 287 ms. Les deux CTE sont donc
+// délibérément INDÉPENDANTES, jointes seulement à la fin. C'est la raison pour
+// laquelle `origine` refait son propre filtre plutôt que de se restreindre aux
+// groupes déjà retenus, ce qui paraîtrait pourtant plus économe.
+
+/**
+ * Source des groupes d'erreurs, paramétrée par la fenêtre.
+ *
+ * `pApp` et `pFenetre` sont les POSITIONS des paramètres ($1, $2…) chez
+ * l'appelant — jamais des valeurs. Deux appelants (liste et détail) numérotent
+ * différemment, et c'est la seule raison de cette indirection.
+ *
+ * `first_seen` reste NON BORNÉ, délibérément : « première apparition » n'a de
+ * sens que depuis toujours. C'est la seule colonne dans ce cas, et l'écran la
+ * libelle comme telle. Elle est calculée sur les seuls groupes retenus par la
+ * fenêtre, pas sur toute la table.
+ */
+function sourceGroupes(pApp: number, pFenetre: number): string {
+  const perimetre = `($${pApp} = 'all' or e.app_id = $${pApp})`;
+  return `
+  with fenetre as (
+    select e.app_id, e.fingerprint,
+           count(*)                     as occurrences,
+           count(distinct e.session_id) as sessions,
+           count(distinct s.visitor_id) as users_affected,
+           max(e.ts)                    as last_seen,
+           max(e.error_type)            as error_type,
+           max(e.message)               as sample_message
+      from rum_error e
+      left join rum_session s on s.session_id = e.session_id
+     where e.fingerprint is not null
+       and e.ts > now() - $${pFenetre}::interval
+       and ${perimetre}
+     group by e.app_id, e.fingerprint
+  ),
+  origine as (
+    select e.app_id, e.fingerprint, min(e.ts) as first_seen
+      from rum_error e
+     where e.fingerprint is not null
+       and ${perimetre}
+     group by e.app_id, e.fingerprint
+  ),
+  g as (
+    select fenetre.*, origine.first_seen
+      from fenetre join origine using (app_id, fingerprint)
+  )`;
+}
+
+/** Le SELECT commun (liste + détail), au-dessus de `sourceGroupes`. */
 const ERROR_GROUP_SELECT = `
   select g.app_id, g.fingerprint, g.error_type, g.sample_message,
          g.occurrences::int as occurrences, g.sessions::int as sessions,
@@ -106,17 +218,28 @@ const ERROR_GROUP_SELECT = `
          coalesce(st.status, 'open') as status,
          st.resolved_at,
          (st.status = 'resolved' and g.last_seen > st.resolved_at) as regressed
-  from v_error_group_ext g
+  from g
   left join error_status st on st.app_id = g.app_id and st.fingerprint = g.fingerprint`;
 
 // Tri triage : régressions d'abord, puis ouvertes, puis résolues, puis ignorées.
+//
+// PUIS PAR IMPACT SUR LA FENÊTRE, pas par volume cumulé. « Impact » = visiteurs
+// distincts touchés : mille occurrences chez une personne pèsent moins qu'une
+// occurrence chez cent.
+//
+// LA RETOMBÉE SUR `sessions` N'EST PAS UN ORNEMENT. Depuis migration-v57 seules
+// les sessions portant un `visitor_id` alimentent `users_affected` ; tant que la
+// rétention n'a pas fait disparaître l'historique (30 jours), beaucoup de
+// groupes auront 0 visiteur identifié. Sans ce deuxième critère, le tri
+// s'effondrerait sur le départage et rangerait au hasard. `sessions` est exact
+// sur la fenêtre et constitue le meilleur substitut d'impact disponible.
 const ERROR_GROUP_ORDER = `
   order by (case
     when (st.status = 'resolved' and g.last_seen > st.resolved_at) then 0
     when coalesce(st.status, 'open') = 'open' then 1
     when coalesce(st.status, 'open') = 'ignored' then 3
     else 2 end),
-    g.occurrences desc, g.last_seen desc`;
+    g.users_affected desc, g.sessions desc, g.occurrences desc, g.last_seen desc`;
 
 export async function errorGroups(
   f: Filters,
@@ -124,10 +247,12 @@ export async function errorGroups(
 ): Promise<ErrorGroupRow[]> {
   const limit = page?.limit ?? 100;
   const offset = page?.offset ?? 0;
+  // La fenêtre n'est plus un simple filtre de sélection : elle définit les
+  // compteurs eux-mêmes. Un groupe absent de la fenêtre ne sort pas du `group by`,
+  // donc le `where g.last_seen > …` d'avant est devenu redondant.
   return q<ErrorGroupRow>(
-    `${ERROR_GROUP_SELECT}
-     where ($1 = 'all' or g.app_id = $1)
-       and g.last_seen > now() - $2::interval
+    `${sourceGroupes(1, 2)}
+     ${ERROR_GROUP_SELECT}
      ${ERROR_GROUP_ORDER}
      limit $3 offset $4`,
     [f.app, periodInterval(f), limit, offset],
@@ -154,27 +279,47 @@ export async function setErrorStatus(
   );
 }
 
-/** Occurrences par heure sur 24 h, par fingerprint → tableaux de 24 buckets pour les sparklines. */
+/**
+ * Occurrences par seau, par fingerprint → un tableau par groupe pour les
+ * sparklines et l'histogramme empilé.
+ *
+ * SUIT LA PÉRIODE CHOISIE, et c'est le correctif. La version précédente était
+ * figée sur 24 seaux d'une heure : sur une fenêtre de 7 jours, l'écran classait
+ * les groupes sur 7 jours puis dessinait leurs 24 dernières heures, sous un
+ * titre annonçant l'un ou l'autre selon l'endroit. Un groupe pouvait être en
+ * tête du tableau avec une sparkline entièrement plate.
+ *
+ * Le seau vient de PERIODS (1 h → 5 min, 24 h → 1 h, 7 j → 6 h) et le nombre de
+ * seaux en est DÉRIVÉ, de sorte qu'ajuster une période ne laisse pas les
+ * graphiques en arrière.
+ */
 export async function errorSparklines(
   fingerprints: string[],
   f: Filters,
 ): Promise<Map<string, number[]>> {
   const map = new Map<string, number[]>();
   if (!fingerprints.length) return map;
-  const rows = await q<{ fingerprint: string; bucket: Date; n: number }>(
-    `select fingerprint, date_trunc('hour', ts) as bucket, count(*)::int as n
+  const secondes = periodSeauSecondes(f);
+  const nb = periodNombreDeSeaux(f);
+  // Seaux par époque plutôt que date_trunc : celui-ci ne sait pas tronquer à
+  // 5 minutes ni à 6 heures, et la largeur du seau est justement variable ici.
+  const rows = await q<{ fingerprint: string; seau: string; n: number }>(
+    `select fingerprint,
+            floor(extract(epoch from ts) / $3)::bigint as seau,
+            count(*)::int as n
      from rum_error
      where fingerprint = any($1)
-       and ts > now() - interval '24 hours'
+       and ts > now() - $4::interval
        and ($2 = 'all' or app_id = $2)
      group by 1, 2`,
-    [fingerprints, f.app],
+    [fingerprints, f.app, secondes, periodInterval(f)],
   );
-  const now = Date.now();
-  for (const fp of fingerprints) map.set(fp, new Array(24).fill(0));
+  const seauCourant = Math.floor(Date.now() / 1000 / secondes);
+  for (const fp of fingerprints) map.set(fp, new Array(nb).fill(0));
   for (const r of rows) {
-    const idx = 23 - Math.floor((now - new Date(r.bucket).getTime()) / 3_600_000);
-    if (idx >= 0 && idx < 24) map.get(r.fingerprint)![idx] += r.n;
+    // index 0 = le seau le plus ancien de la fenêtre, index nb-1 = le courant.
+    const idx = nb - 1 - (seauCourant - Number(r.seau));
+    if (idx >= 0 && idx < nb) map.get(r.fingerprint)![idx] += r.n;
   }
   return map;
 }
@@ -226,11 +371,14 @@ export async function errorGroupDetail(
   fingerprint: string,
   f: Filters,
 ): Promise<ErrorGroupDetail | null> {
+  // Le détail lit la MÊME source que la liste, avec la MÊME fenêtre : sans cela,
+  // ouvrir une ligne afficherait des chiffres différents de celle qu'on a cliquée.
   const [group] = await q<ErrorGroupRow>(
-    `${ERROR_GROUP_SELECT}
-     where g.fingerprint = $1 and ($2 = 'all' or g.app_id = $2)
+    `${sourceGroupes(2, 3)}
+     ${ERROR_GROUP_SELECT}
+     where g.fingerprint = $1
      limit 1`,
-    [fingerprint, f.app],
+    [fingerprint, f.app, periodInterval(f)],
   );
   if (!group) return null;
   const [last] = await q<ErrorSample>(

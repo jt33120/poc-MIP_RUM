@@ -22,6 +22,41 @@ export const PERIODS: Record<
   "7d": { label: "7 j", interval: "7 days", bucket: "6 hours", bucketLabel: "6 h" },
 };
 
+// ══════════════════════ Découpage d'une période en seaux ══════════════════════
+//
+// DÉRIVÉ de PERIODS, jamais retapé : une sparkline codée en dur sur 24 seaux
+// d'une heure continuait d'afficher 24 h quelle que soit la période choisie —
+// un graphique qui montre une autre fenêtre que celle qu'il annonce.
+
+const UNITES_MS: Record<string, number> = {
+  minute: 60_000,
+  minutes: 60_000,
+  hour: 3_600_000,
+  hours: 3_600_000,
+  day: 86_400_000,
+  days: 86_400_000,
+};
+
+/** Convertit un intervalle PostgreSQL simple (« 6 hours ») en millisecondes. */
+export function intervalleEnMs(intervalle: string): number {
+  const m = /^(\d+)\s+([a-z]+)$/.exec(intervalle.trim());
+  const unite = m ? UNITES_MS[m[2]] : undefined;
+  // Jeter plutôt que rendre 0 : un intervalle non reconnu produirait des seaux
+  // de largeur nulle, donc une division par zéro silencieuse dans les graphiques.
+  if (!m || !unite) throw new Error(`intervalle non reconnu : ${intervalle}`);
+  return Number(m[1]) * unite;
+}
+
+/** Largeur d'un seau, en secondes — l'unité que prend le SQL. */
+export function seauEnSecondes(p: PeriodKey): number {
+  return intervalleEnMs(PERIODS[p].bucket) / 1000;
+}
+
+/** Nombre de seaux couvrant la période : 1 h → 12, 24 h → 24, 7 j → 28. */
+export function nombreDeSeaux(p: PeriodKey): number {
+  return Math.round(intervalleEnMs(PERIODS[p].interval) / intervalleEnMs(PERIODS[p].bucket));
+}
+
 export type SearchParams = Record<string, string | string[] | undefined>;
 
 function first(v: string | string[] | undefined): string | undefined {
