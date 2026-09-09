@@ -172,6 +172,12 @@
                   }
                 },
                 {
+                  "key": "mip.error_count",
+                  "value": {
+                    "stringValue": "37"
+                  }
+                },
+                {
                   "key": "exception.message",
                   "value": {
                     "stringValue": "login failed for jean@client.fr password=hunter2"

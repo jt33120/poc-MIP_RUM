@@ -121,9 +121,14 @@ describe("retry — décorateur d'exporter + rejeu", () => {
     const results: number[] = [];
     exporter.export([fakeSpan("pageview")] as never, (r) => results.push(r.code));
     expect(results).toEqual([ExportResultCode.FAILED]); // le résultat inner est propagé
-    const queue = loadRetryQueue();
-    expect(queue.length).toBe(1);
-    expect(queue[0].n).toBe("pageview");
+    const file = loadRetryQueue();
+    expect(file.spans.length).toBe(1);
+    expect(file.spans[0].n).toBe("pageview");
+    // v59 : la file porte son échéance. Un échec sans `retryable` explicite est
+    // traité comme rejouable — le comportement d'avant, pour tout exporteur
+    // tiers qui ne connaîtrait pas le champ.
+    expect(file.tentatives).toBe(1);
+    expect(file.notBefore).toBeGreaterThan(Date.now());
   });
 
   it("export SUCCESS -> rien n'est persisté", () => {
@@ -133,7 +138,7 @@ describe("retry — décorateur d'exporter + rejeu", () => {
       shutdown: () => Promise.resolve(),
     };
     new RetryExporter(inner as never).export([fakeSpan("pageview")] as never, () => {});
-    expect(loadRetryQueue()).toEqual([]);
+    expect(loadRetryQueue().spans).toEqual([]);
   });
 
   it("replayRetryQueue ré-émet avec timestamps d'origine puis purge", () => {
@@ -145,7 +150,7 @@ describe("retry — décorateur d'exporter + rejeu", () => {
     const n = replayRetryQueue((name, _attrs, s, e) => replayed.push([name, s, e]));
     expect(n).toBe(1);
     expect(replayed).toEqual([["longtask", 1000, 1320]]);
-    expect(loadRetryQueue()).toEqual([]); // purgée
+    expect(loadRetryQueue().spans).toEqual([]); // purgée
   });
 });
 

@@ -28,6 +28,7 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
       "kind": "error",
       "lineno": 42,
       "message": "login failed for [email] password=[redacted]",
+      "occurrences": 37,
       "release": "1.4.2",
       "route": "/home",
       "session_id": "sess-1",

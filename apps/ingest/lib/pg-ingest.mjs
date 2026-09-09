@@ -270,10 +270,16 @@ export async function writeRows(pool, {
       "on conflict (span_id) do nothing",
     );
     await ecrireMetriques(client, metrics);
+    const dispoErr = await colonnesDe(client, "rum_error");
     await batchInsert(
       client,
       "rum_error",
-      ["span_id", "session_id", "app_id", "route", "kind", "message", "error_type", "stack", "source", "lineno", "colno", "release", "fingerprint", "ts"],
+      [
+        "span_id", "session_id", "app_id", "route", "kind", "message", "error_type",
+        "stack", "source", "lineno", "colno", "release", "fingerprint",
+        ...(dispoErr.has("occurrences") ? ["occurrences"] : []),
+        "ts",
+      ],
       errors,
       "on conflict (span_id) do nothing",
     );
@@ -424,6 +430,13 @@ const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 export function createPgAuth(pool, opts = {}) {
   const requireApiKey = opts.requireApiKey ?? false;
   const rateLimitPerMin = opts.rateLimitPerMin ?? 600;
+  /**
+   * Part du plafond nominal qu'une SEULE instance s'autorise quand le compteur
+   * durable est injoignable. Un quart : avec quatre instances on retombe
+   * approximativement sur la limite globale, et avec une seule on reste
+   * nettement au-dessus du trafic ordinaire d'une application.
+   */
+  const plafondRepli = Math.max(1, Math.ceil(rateLimitPerMin * (opts.fractionRepli ?? 0.25)));
   const log = opts.log ?? {};
   const now = opts.now ?? (() => Date.now());
 
@@ -463,20 +476,53 @@ export function createPgAuth(pool, opts = {}) {
     return null;
   }
 
+  // ════════════════ Le compteur mémoire, et son plafond de repli ═══════════════
+  //
+  // Finding 2.3 de docs/AUDIT_RUM_EXTERNE.md — bloquant.
+  //
+  // « QUAND LA BASE EST LE GOULOT, LE MÉCANISME QUI PROTÈGE LA BASE CONSOMME LA
+  // BASE. » Le limiteur interrogeait `rate_check()` à CHAQUE beacon, et son
+  // repli en cas d'échec SQL était `return false` — c'est-à-dire « on laisse
+  // passer », au moment précis où la base ne répond plus. Combiné au fail-open
+  // documenté de `checkApiKey`, l'ingestion se retrouvait sans AUCUNE protection
+  // dès que la base était indisponible : le seul moment où elle en a besoin.
   const rateHits = new Map();
-  function rateLimited(appId) {
+
+  /**
+   * Enregistre un coup et rend le nombre de coups de la dernière minute POUR
+   * CETTE INSTANCE, celui-ci compris.
+   *
+   * Un seul compteur, deux seuils : compter deux fois le même beacon — une fois
+   * pour le pré-filtre, une fois pour le repli — le refuserait deux fois plus
+   * vite qu'annoncé.
+   */
+  function compterLocal(appId) {
     const t = now();
     const hits = rateHits.get(appId) ?? [];
     while (hits.length && hits[0] <= t - 60_000) hits.shift();
-    if (hits.length >= rateLimitPerMin) return true;
     hits.push(t);
     rateHits.set(appId, hits);
-    return false;
+    return hits.length;
   }
 
-  /** Pré-filtre mémoire (rapide) puis compteur durable partagé ; fallback mémoire. */
+  /**
+   * Pré-filtre mémoire, puis compteur durable partagé.
+   *
+   * LE REPLI REFUSE, il n'accepte plus. Le compteur mémoire est PAR INSTANCE :
+   * pendant une indisponibilité de la base, chaque instance ne voit que sa part
+   * du trafic, donc appliquer le plafond nominal en local autoriserait
+   * `instances × plafond` requêtes au total. On applique donc un plafond de
+   * repli plus bas — assez pour laisser passer le trafic ordinaire d'une
+   * instance, pas assez pour qu'une boucle d'erreurs achève une base déjà à
+   * terre.
+   *
+   * Ce n'est pas une limite exacte : c'en est une DÉGRADÉE, et c'est le point.
+   * Refuser un peu trop pendant un incident est réparable ; accepter tout ne
+   * l'est pas.
+   */
   async function rateLimitedDurable(appId) {
-    if (rateLimited(appId)) return true;
+    const local = compterLocal(appId);
+    if (local > rateLimitPerMin) return true;
     try {
       const { rows } = await pool.query("select rate_check($1, $2) as ok", [
         appId,
@@ -484,10 +530,17 @@ export function createPgAuth(pool, opts = {}) {
       ]);
       return rows[0].ok === false;
     } catch (err) {
-      log.warn?.("rate_check sql failed (fallback mémoire)", { err: String(err) });
-      return false;
+      const refuse = local > plafondRepli;
+      log.warn?.("rate_check sql failed (repli mémoire, fermé)", {
+        err: String(err),
+        app_id: appId,
+        coups_locaux: local,
+        plafond_repli: plafondRepli,
+        refuse,
+      });
+      return refuse;
     }
   }
 
-  return { getAppRegistry, checkApiKey, rateLimitedDurable };
+  return { getAppRegistry, checkApiKey, rateLimitedDurable, plafondRepli };
 }

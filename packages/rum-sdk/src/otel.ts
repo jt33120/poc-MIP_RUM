@@ -14,7 +14,9 @@ import {
   msToHr,
 } from "./otlp-encode";
 import {
+  classerReponse,
   ExportResultCode,
+  lireRetryAfter,
   type ReadableSpan,
   RetryExporter,
   type SpanExporter,
@@ -101,7 +103,14 @@ export function newPageTrace(): string {
   return pageTraceId;
 }
 
-/** Exporter HTTP OTLP/JSON : POST keepalive ; échec réseau/HTTP -> FAILED. */
+/**
+ * Exporter HTTP OTLP/JSON : POST keepalive.
+ *
+ * TROIS ISSUES, pas deux (finding 2.2). Un 403 sur une clé mal saisie et un 503
+ * pendant un incident ne demandent pas la même chose : le premier ne s'arrangera
+ * jamais, le second s'arrangera tout seul. Les confondre faisait rejouer
+ * indéfiniment une requête en tort, à chaque page, pour rien.
+ */
 function httpExporter(url: string): SpanExporter {
   return {
     export(spans, cb) {
@@ -116,8 +125,20 @@ function httpExporter(url: string): SpanExporter {
         // au-delà, envoi normal (le pagehide aura déjà tenté un flush plus tôt).
         keepalive: body.length < 60_000,
       })
-        .then((res) => cb({ code: res.ok ? ExportResultCode.SUCCESS : ExportResultCode.FAILED }))
-        .catch(() => cb({ code: ExportResultCode.FAILED }));
+        .then((res) => {
+          if (res.ok) return cb({ code: ExportResultCode.SUCCESS });
+          const { retryable } = classerReponse(res.status);
+          cb({
+            code: ExportResultCode.FAILED,
+            retryable,
+            // L'ingestion renvoie `retry-after` sur ses 429 depuis toujours ;
+            // personne ne le lisait.
+            retryAfterMs: lireRetryAfter(res.headers.get("retry-after")),
+          });
+        })
+        // Pas de réponse du tout : réseau coupé, onglet fermé, DNS. C'est le cas
+        // nominal du mode hors-ligne, celui pour lequel la file existe.
+        .catch(() => cb({ code: ExportResultCode.FAILED, retryable: true, retryAfterMs: null }));
     },
     shutdown: () => Promise.resolve(),
   };

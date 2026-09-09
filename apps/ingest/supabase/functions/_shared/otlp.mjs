@@ -112,6 +112,19 @@ export function tauxErreurs(v) {
   return Number.isFinite(n) && n >= 0 && n <= 1 ? n : 1;
 }
 
+/**
+ * Occurrences représentées par une ligne d'erreur (`mip.error_count`).
+ *
+ * BORNÉ À 10 000, et pas par superstition : ce nombre vient du navigateur, donc
+ * d'une valeur qu'un tiers peut fabriquer. Non borné, un seul beacon suffirait à
+ * faire afficher des milliards d'occurrences et à écraser tous les autres
+ * groupes du classement. 1 sur toute valeur absente, illisible ou < 1.
+ */
+export function occurrencesDe(v) {
+  const n = typeof v === "number" ? v : Number.parseInt(v, 10);
+  return Number.isFinite(n) && n > 1 ? Math.min(Math.floor(n), 10_000) : 1;
+}
+
 /** Attributs string JSON (webvital.attribution, mip.props) -> objet pour le jsonb. */
 function parseJsonAttr(raw) {
   if (typeof raw !== "string" || !raw) return null;
@@ -730,6 +743,10 @@ export function flattenOtlp(payload, opts = {}) {
             session_id: sessionId,
             app_id: appId,
             route,
+            // Le SDK déduplique et compte (v59) : cette ligne peut représenter
+            // plusieurs occurrences. Absent = 1, donc les SDK antérieurs restent
+            // justes sans rien changer.
+            occurrences: occurrencesDe(a["mip.error_count"]),
             kind: a["mip.error_kind"] ?? "error",
             message,
             error_type: errorType,

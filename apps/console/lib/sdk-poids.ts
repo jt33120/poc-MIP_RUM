@@ -14,7 +14,7 @@
 // écrire ici — une fois.
 
 /** Bundle cœur publié (apps/console/public/mip-rum.js), gzip. Mesuré. */
-export const SDK_GZIP_KO = 12.9;
+export const SDK_GZIP_KO = 13.8;
 /** Budget que packages/rum-sdk/build.mjs refuse de dépasser. */
 export const SDK_BUDGET_KO = 35;
 /** Bundle rejeu (rrweb), chargé À LA DEMANDE et seulement si le rejeu est activé. */

@@ -51,6 +51,9 @@ describe("flattenOtlp — snapshot du contrat de sortie", () => {
     expect(rows.sessions[0].error_sample_rate).toBe(1);
     // `weight` n'est PAS écrit par l'ingestion : colonne générée (migration-v58).
     expect(rows.sessions[0]).not.toHaveProperty("weight");
+    // v59 — une ligne d'erreur peut REPRÉSENTER plusieurs occurrences : le SDK
+    // déduplique une erreur qui se répète et joint le compte qu'il a tu.
+    expect(rows.errors[0].occurrences).toBe(37);
     // garde-fous de contrat : scrub PII appliqué, clé d'API extraite
     expect(rows.errors[0].message).toBe("login failed for [email] password=[redacted]");
     expect(rows.errors[0].release).toBe("1.4.2"); // mip.release (resource) -> dé-minification
