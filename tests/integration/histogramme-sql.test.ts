@@ -16,7 +16,11 @@
 // base JETABLE, jamais une base qui porte des données.
 //
 //   SQL_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5433/histo_test \
-//     npx vitest run tests/integration
+//     pnpm test:sql
+//
+// `--no-file-parallelism` (dans le script) n'est pas un confort : chaque fichier
+// applique le schéma complet, et deux `create or replace function` simultanés sur
+// la même base échouent avec « tuple concurrently updated ».
 //
 // Sans cette variable, la suite est SAUTÉE — et le dit, plutôt que de passer en
 // vert sans avoir rien vérifié.

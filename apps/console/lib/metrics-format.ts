@@ -14,6 +14,13 @@ export interface HealthSnapshot {
   deliveries_failed: number;
   deliveries_dead: number;
   metering_lag_hours: number | null; // null = aucun métering encore
+  /** Applications ayant ATTEINT leur plafond de routes : leurs routes inédites
+   *  sont regroupées sous `(other)`. Ce n'est pas une panne, c'est une perte de
+   *  détail — et elle doit être visible, sinon un tableau par route ment par
+   *  omission (migration-v62). */
+  apps_route_capped: number;
+  /** Plus grand nombre de routes distinctes retenues pour une application. */
+  routes_max: number;
 }
 
 export interface Metric {
@@ -40,6 +47,8 @@ export function healthToMetrics(h: HealthSnapshot): Metric[] {
     g("miprum_alert_deliveries", "Livraisons d'alerte par statut.", h.deliveries_failed, { status: "failed" }),
     g("miprum_alert_deliveries", "Livraisons d'alerte par statut.", h.deliveries_dead, { status: "dead" }),
     g("miprum_metering_lag_hours", "Ancienneté du dernier métering d'usage (heures).", h.metering_lag_hours),
+    g("miprum_apps_route_capped", "Applications au plafond de cardinalité de route (routes inédites regroupées sous (other)).", h.apps_route_capped),
+    g("miprum_routes_max", "Plus grand nombre de routes distinctes retenues pour une application.", h.routes_max),
   ];
 }
 

@@ -86,6 +86,22 @@ export default async function Health() {
         <Stat label="Livraisons abandonnées" value={h.deliveries_dead} tone={h.deliveries_dead > 0 ? "text-red-600 dark:text-red-400" : ""} />
       </div>
 
+      <h2 className="mb-2 text-sm font-semibold text-ink">Cardinalité des routes</h2>
+      <p className="mb-2 text-xs text-ink-faint">
+        Au-delà du plafond d&apos;une application, ses routes inédites sont regroupées sous{" "}
+        <code>(other)</code>. Rien n&apos;est perdu côté volumes ; c&apos;est le DÉTAIL par route qui
+        s&apos;arrête. Une application au plafond doit recevoir des règles de normalisation
+        (<code>route_pattern</code>), pas un plafond plus haut.
+      </p>
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Stat
+          label="Apps au plafond"
+          value={h.apps_route_capped}
+          tone={h.apps_route_capped > 0 ? "text-amber-600 dark:text-amber-400" : ""}
+        />
+        <Stat label="Routes distinctes (max)" value={h.routes_max} />
+      </div>
+
       <h2 className="mb-2 text-sm font-semibold text-ink">Tenants & métering</h2>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Apps actives" value={h.apps_active} />

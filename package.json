@@ -7,7 +7,7 @@
     "build": "pnpm -r build",
     "test:unit": "vitest run tests/unit",
     "test:e2e": "playwright test",
-    "test:sql": "vitest run tests/integration",
+    "test:sql": "vitest run tests/integration --no-file-parallelism",
     "test:isolation": "node scripts/verify-tenant-isolation.mjs",
     "test:svi": "node scripts/verify-svi-modele.mjs"
   },

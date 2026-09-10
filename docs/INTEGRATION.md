@@ -133,6 +133,43 @@ Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe
   deviner. Avant cette date, aucun de ces chiffres n'était corrigé ni signalé : à `sampleRate: 0.1`,
   un taux d'erreur réel de 1 % s'affichait autour de 9 %.
 
+### Normaliser les routes d'une application
+
+`normalizeRoute` (SDK) remplace les entiers, les UUID et les hexadécimaux longs. Il ne connaît ni
+vos slugs, ni vos références de commande — sur un catalogue, chaque page produit alors sa propre
+statistique, c'est-à-dire aucune statistique.
+
+Depuis le 10/09/2026, chaque application peut ajouter ses règles (`route_pattern`, expressions
+rationnelles POSIX, appliquées **en base** donc quel que soit le chemin d'ingestion) :
+
+```sql
+insert into route_pattern (app_id, motif, remplacement, priorite)
+values ('mon-app', '^/produit/[^/]+$', '/produit/:slug', 10);
+```
+
+Le **premier** motif qui correspond gagne (ordre `priorite`, puis `id`) ; les motifs ne s'enchaînent
+pas. Les groupes de capture fonctionnent (`\1`).
+
+**Rejouer l'historique.** Une règle ajoutée aujourd'hui ne réécrit pas hier : la série d'une route se
+couperait en deux, et les deux moitiés auraient l'air de deux routes différentes. On regarde d'abord
+ce que ça changerait, puis on écrit :
+
+```sql
+select * from mip_apercu_backfill('mon-app');   -- n'écrit rien
+select backfill_route_patterns('mon-app');      -- DÉFINITIF
+```
+
+La réécriture est **irréversible** : la route d'origine n'est conservée nulle part. Un motif trop
+large détruit du détail sans retour possible — d'où l'aperçu.
+
+**Le plafond.** Au-delà de `app_registry.route_limit` routes distinctes (2 000 par défaut), une route
+**inédite** est enregistrée sous `(other)`. Les routes déjà connues continuent de passer : le plafond
+arrête la croissance de la dimension, il ne casse pas les séries en cours. `/admin/health` affiche le
+nombre d'applications au plafond ; la réponse est d'écrire des motifs, pas de relever le plafond.
+
+Coût mesuré sur le chemin d'écriture : 8 à 16 µs par ligne insérée selon les exécutions
+(`scripts/bench-route-trigger.mjs`), soit 0,1 à 0,2 ms sur un beacon d'une douzaine de lignes.
+
 ## 6. RGPD — ce qui est collecté, ce qui est anonymisé
 
 Collecté (par session) :
