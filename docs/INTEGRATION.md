@@ -121,10 +121,14 @@ Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe
   |---|---|
   | sessions, pages vues, taux d'erreur | **oui** — repondérés, ils estiment la population |
   | visiteurs uniques | non — extrapoler un compte de distincts demande une estimation de cardinalité |
-  | p75 LCP/INP, temps de chargement moyen | non — PostgreSQL n'a pas de percentile pondéré |
+  | p75 LCP/INP | **oui**, depuis le 10/09/2026 — somme cumulée sur des seaux pondérés (migration-v61), à ±1 % près |
+  | temps de chargement moyen, signaux de frustration | non — moyenne et comptages bruts sur l'échantillon |
 
   Les champs non corrigés portent sur l'échantillon **seul**, et cet échantillon sur-représente les
-  sessions en erreur, donc les plus lentes : les percentiles penchent alors du côté pessimiste.
+  sessions en erreur, donc les plus lentes : ils penchent du côté pessimiste. Les percentiles ont
+  cessé d'en faire partie le 10/09/2026 : `percentile_cont` n'accepte pas de poids, mais une somme
+  cumulée sur une distribution en seaux n'en a pas besoin — le poids est DANS le seau. Le prix payé
+  est une résolution de ±1 % (soit ±25 ms sur un LCP de 2 500 ms), pas un biais.
   L'API le déclare dans `sampling_notice` et la console l'affiche ; ce n'est pas au lecteur de le
   deviner. Avant cette date, aucun de ces chiffres n'était corrigé ni signalé : à `sampleRate: 0.1`,
   un taux d'erreur réel de 1 % s'affichait autour de 9 %.

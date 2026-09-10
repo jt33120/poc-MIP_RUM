@@ -9,6 +9,7 @@
 // (sessions/vitals/erreurs/routes) est inchangée.
 import { q } from "./db";
 import { fuseauDe } from "./fuseau";
+import { percentilesPonderes } from "./queries-histogramme";
 import type { SummaryWindow } from "./read-tokens";
 import { fetchAiSummary } from "./xsom-ai";
 
@@ -159,15 +160,17 @@ export function noticeEchantillonnage(min: number | null | undefined): SamplingN
   const pct = Math.round(r * 1000) / 10;
   return {
     min_sample_rate: r,
-    extrapolated: ["sessions", "page_views", "error_rate"],
-    not_corrected: ["users", "p75_lcp_ms", "p75_inp_ms", "avg_load_ms", "frustration_signals"],
+    extrapolated: ["sessions", "page_views", "error_rate", "p75_lcp_ms", "p75_inp_ms"],
+    not_corrected: ["users", "avg_load_ms", "frustration_signals"],
     message:
       `Échantillonnage actif sur cette fenêtre (jusqu'à ${pct} % des sessions collectées). ` +
       "Les volumes et le taux d'erreur sont REPONDÉRÉS par la probabilité d'inclusion réelle de " +
-      "chaque session : ils estiment la population. Les visiteurs uniques et les percentiles ne " +
-      "le sont PAS — extrapoler un compte de distincts demande une estimation de cardinalité, et " +
-      "PostgreSQL n'a pas de percentile pondéré. Ces champs portent donc sur l'échantillon seul, " +
-      "et l'échantillon sur-représente les sessions en erreur, donc les plus lentes.",
+      "chaque session : ils estiment la population. Les percentiles LCP et INP le sont aussi, par " +
+      "somme cumulée sur des seaux pondérés (±1 % de résolution) plutôt que par un percentile " +
+      "exact non pondéré. Les visiteurs uniques, la moyenne de chargement et les signaux de " +
+      "frustration ne le sont PAS : extrapoler un compte de distincts demande une estimation de " +
+      "cardinalité, pas une somme de poids. Ces champs portent donc sur l'échantillon seul, et " +
+      "l'échantillon sur-représente les sessions en erreur, donc les plus lentes.",
   };
 }
 
@@ -188,7 +191,7 @@ export async function rumSummary(
   const tz = await fuseauDe(app);
   const p = [app, interval, tz];
 
-  const [kpis, series, routes, errors, ai] = await Promise.all([
+  const [kpis, series, routes, errors, ai, p75] = await Promise.all([
     q<{
       sessions: number;
       users: number;
@@ -196,8 +199,6 @@ export async function rumSummary(
       page_views: number;
       min_sample_rate: number;
       avg_load_ms: number | null;
-      p75_lcp_ms: number | null;
-      p75_inp_ms: number | null;
       frustration_signals: number;
       error_sessions: number;
     }>(
@@ -213,10 +214,16 @@ export async function rumSummary(
       // visiteurs distincts : extrapoler un nombre de DISTINCTS demande une
       // estimation de cardinalité (HyperLogLog ou équivalent), pas une somme de
       // poids — un visiteur revenu dans deux sessions de poids différents n'a pas
-      // de poids unique. Les percentiles non plus : PostgreSQL n'a pas de
-      // `percentile_cont` pondéré. Les deux limites sont DÉCLARÉES, dans
-      // `sampling_notice` ci-dessous et dans docs/API_CONSOLE.md, plutôt que
-      // laissées à deviner.
+      // de poids unique. Cette limite reste DÉCLARÉE, dans `sampling_notice`
+      // ci-dessous et dans docs/API_CONSOLE.md, plutôt que laissée à deviner.
+      //
+      // LES PERCENTILES, EUX, NE SONT PLUS ICI. Ils l'étaient — deux
+      // `percentile_cont` sur les lignes brutes, non pondérés faute d'équivalent
+      // pondéré en SQL, donc portant sur un échantillon qui sur-représente les
+      // sessions en erreur, donc les plus lentes. Ils passent désormais par les
+      // seaux pré-agrégés de migration-v61, où le poids est DANS le seau :
+      // cf. percentilesPonderes(). C'est un calcul différent, pas un habillage —
+      // la valeur change quand l'échantillonnage est actif, et c'est le but.
       `select
          (select coalesce(sum(s.weight), 0)::int from rum_session s
             where s.app_id=$1 and not coalesce(s.is_bot,false)
@@ -234,10 +241,6 @@ export async function rumSummary(
             where p.app_id=$1 and p.started_at>now()-$2::interval and not coalesce(s.is_bot,false)) as page_views,
          (select round(avg(m.value))::int from rum_metric m join rum_session s on s.session_id=m.session_id
             where m.app_id=$1 and m.name='FCP' and m.ts>now()-$2::interval and not coalesce(s.is_bot,false)) as avg_load_ms,
-         (select percentile_cont(0.75) within group (order by m.value)::int from rum_metric m join rum_session s on s.session_id=m.session_id
-            where m.app_id=$1 and m.name='LCP' and m.ts>now()-$2::interval and not coalesce(s.is_bot,false)) as p75_lcp_ms,
-         (select percentile_cont(0.75) within group (order by m.value)::int from rum_metric m join rum_session s on s.session_id=m.session_id
-            where m.app_id=$1 and m.name='INP' and m.ts>now()-$2::interval and not coalesce(s.is_bot,false)) as p75_inp_ms,
          (select count(*)::int from rum_event e join rum_session s on s.session_id=e.session_id
             where e.app_id=$1 and e.name in ('frustration.rage','frustration.dead') and e.ts>now()-$2::interval and not coalesce(s.is_bot,false)) as frustration_signals,
          (select coalesce(sum(s.weight), 0)::int from rum_session s
@@ -303,6 +306,10 @@ export async function rumSummary(
       p,
     ),
     resolveAi(app, windowKey),
+    // Les percentiles, par somme cumulée sur les seaux pondérés. En parallèle
+    // des autres, comme le reste : c'est une requête de plus, pas une passe de
+    // plus.
+    percentilesPonderes(app, interval, ["LCP", "INP"]),
   ]);
 
   const k = kpis[0];
@@ -319,8 +326,10 @@ export async function rumSummary(
     sampling_notice: noticeEchantillonnage(k?.min_sample_rate),
     page_views: k?.page_views ?? 0,
     avg_load_ms: n(k?.avg_load_ms),
-    p75_lcp_ms: n(k?.p75_lcp_ms),
-    p75_inp_ms: n(k?.p75_inp_ms),
+    // Arrondis à l'entier comme avant (des millisecondes), mais `null` reste
+    // `null` : « aucune mesure » ne doit pas s'écrire 0.
+    p75_lcp_ms: p75.LCP == null ? null : Math.round(p75.LCP),
+    p75_inp_ms: p75.INP == null ? null : Math.round(p75.INP),
     error_rate: errorRate == null ? null : Math.round(errorRate * 10000) / 10000,
     frustration_signals: k?.frustration_signals ?? 0,
     series: series.map((s) => ({ ...s, avg_load_ms: n(s.avg_load_ms) })),

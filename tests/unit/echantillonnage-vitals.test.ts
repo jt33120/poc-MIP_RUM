@@ -182,7 +182,13 @@ describe("la déclaration d'échantillonnage", () => {
     const n = noticeEchantillonnage(0.25)!;
     expect(n.extrapolated).toContain("error_rate");
     expect(n.not_corrected).toContain("users");
-    expect(n.not_corrected.some((c) => c.startsWith("p75"))).toBe(true);
+    // Les p75 sont passés de « non corrigé » à « extrapolé » (migration-v61 :
+    // somme cumulée sur seaux pondérés). Ce test vérifie le déplacement, pas
+    // seulement la présence — une liste dont les deux moitiés contiennent p75
+    // passerait le test précédent.
+    expect(n.extrapolated).toContain("p75_lcp_ms");
+    expect(n.not_corrected.some((c) => c.startsWith("p75"))).toBe(false);
+    expect(n.not_corrected).toContain("avg_load_ms");
     expect(n.extrapolated.filter((c) => n.not_corrected.includes(c))).toEqual([]);
   });
 
