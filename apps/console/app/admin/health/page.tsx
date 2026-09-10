@@ -86,6 +86,34 @@ export default async function Health() {
         <Stat label="Livraisons abandonnées" value={h.deliveries_dead} tone={h.deliveries_dead > 0 ? "text-red-600 dark:text-red-400" : ""} />
       </div>
 
+      <h2 className="mb-2 text-sm font-semibold text-ink">Miroir synthétique</h2>
+      <p className="mb-2 text-xs text-ink-faint">
+        DEUX âges, et pas un : celui de la dernière <strong>capture</strong> du robot, celui du
+        dernier <strong>import</strong>. « Le robot n&apos;a pas tourné » et « le miroir n&apos;a pas
+        tourné » sont deux pannes, chez deux équipes — les confondre fait chercher au mauvais
+        endroit. <code>—</code> veut dire <strong>jamais</strong>, ce qui n&apos;est pas « à
+        l&apos;instant ».
+      </p>
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Age label="Dernière capture robot" secondes={h.syn_age_capture_s} seuilH={6} />
+        <Age label="Dernier import" secondes={h.syn_age_import_s} seuilH={6} />
+        <div className="card px-4 py-3">
+          <div className="text-[11px] uppercase tracking-wide text-ink-faint">Dernier import</div>
+          <div
+            className={`mt-0.5 text-2xl font-bold ${
+              h.syn_dernier_import_ok === false ? "text-red-600 dark:text-red-400" : ""
+            }`}
+          >
+            {h.syn_dernier_import_ok === null ? "jamais" : h.syn_dernier_import_ok ? "OK" : "échec"}
+          </div>
+        </div>
+        <Stat
+          label="Échecs d'import (24 h)"
+          value={h.syn_echecs_24h}
+          tone={h.syn_echecs_24h > 0 ? "text-red-600 dark:text-red-400" : ""}
+        />
+      </div>
+
       <h2 className="mb-2 text-sm font-semibold text-ink">File de débarquement</h2>
       <p className="mb-2 text-xs text-ink-faint">
         Active seulement si <code>INGEST_DEFERRED</code> est allumé. La table est <strong>UNLOGGED</strong> :
@@ -141,6 +169,38 @@ function Stat({ label, value, tone = "" }: { label: string; value: number; tone?
       <div className="text-[11px] uppercase tracking-wide text-ink-faint">{label}</div>
       <div className={`mt-0.5 text-2xl font-bold tabular-nums ${tone || "text-ink"}`}>
         {value.toLocaleString("fr-FR")}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Un âge en secondes, rendu dans l'unité qui se lit.
+ *
+ * `null` s'écrit « jamais » et non « 0 s » : les deux se ressemblent sur un
+ * écran et disent le contraire l'un de l'autre. C'est la même règle que
+ * `metering_lag_hours` plus haut, et que le `null` des percentiles côté API.
+ */
+function Age({ label, secondes, seuilH }: { label: string; secondes: number | null; seuilH: number }) {
+  const heures = secondes == null ? null : secondes / 3600;
+  const alerte = heures != null && heures > seuilH;
+  const texte =
+    secondes == null
+      ? "jamais"
+      : secondes < 90
+        ? `${Math.round(secondes)} s`
+        : secondes < 5400
+          ? `${Math.round(secondes / 60)} min`
+          : `${(secondes / 3600).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} h`;
+  return (
+    <div className="card px-4 py-3">
+      <div className="text-[11px] uppercase tracking-wide text-ink-faint">{label}</div>
+      <div
+        className={`mt-0.5 text-2xl font-bold tabular-nums ${
+          secondes == null ? "text-ink-faint" : alerte ? "text-amber-600 dark:text-amber-400" : "text-ink"
+        }`}
+      >
+        {texte}
       </div>
     </div>
   );

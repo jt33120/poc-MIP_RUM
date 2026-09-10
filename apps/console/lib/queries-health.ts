@@ -9,6 +9,8 @@ const ZERO: HealthSnapshot = {
   apps_active: 0, alerts_unacked: 0, deliveries_queued: 0, deliveries_failed: 0,
   deliveries_dead: 0, metering_lag_hours: null, apps_route_capped: 0, routes_max: 0,
   ingest_backlog: 0, ingest_backlog_blocked: 0, ingest_backlog_age_s: 0,
+  syn_age_capture_s: null, syn_age_import_s: null, syn_dernier_import_ok: null,
+  syn_imports_24h: 0, syn_echecs_24h: 0,
 };
 
 /** Instantané de santé interne (un seul aller-retour). */
@@ -39,7 +41,17 @@ export async function internalHealth(): Promise<HealthSnapshot> {
          (select count(*) filter (where tentatives < 5) from ingest_raw)::int as ingest_backlog,
          (select count(*) filter (where tentatives >= 5) from ingest_raw)::int as ingest_backlog_blocked,
          (select coalesce(extract(epoch from (now() - min(recu_at))), 0) from ingest_raw
-           where tentatives < 5)::float as ingest_backlog_age_s`,
+           where tentatives < 5)::float as ingest_backlog_age_s,
+         -- Miroir synthétique (migration-v64). DEUX âges et non un : celui de la
+         -- dernière capture du robot, celui du dernier import. Les confondre fait
+         -- chercher la panne chez la mauvaise équipe. Une valeur nulle veut dire
+         -- JAMAIS, et ne doit surtout pas se lire « à l'instant ».
+         sf.age_capture_s::float     as syn_age_capture_s,
+         sf.age_import_s::float      as syn_age_import_s,
+         sf.dernier_import_ok        as syn_dernier_import_ok,
+         sf.imports_24h              as syn_imports_24h,
+         sf.echecs_24h               as syn_echecs_24h
+       from syn_fraicheur() sf`,
     );
     return r ?? ZERO;
   } catch {

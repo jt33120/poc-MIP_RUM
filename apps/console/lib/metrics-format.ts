@@ -29,6 +29,18 @@ export interface HealthSnapshot {
   ingest_backlog_blocked: number;
   /** Âge du plus vieux lot en attente, en secondes. */
   ingest_backlog_age_s: number;
+  /** Âge de la dernière CAPTURE du robot synthétique, en secondes. `null` = jamais.
+   *  Distinct de l'âge d'import : « le robot n'a pas tourné » et « le miroir n'a
+   *  pas tourné » sont deux pannes, chez deux équipes (migration-v64). */
+  syn_age_capture_s: number | null;
+  /** Âge du dernier IMPORT terminé, en secondes. `null` = jamais importé. */
+  syn_age_import_s: number | null;
+  /** Verdict du dernier import terminé. `null` = aucun import terminé. */
+  syn_dernier_import_ok: boolean | null;
+  /** Imports lancés sur 24 h, et ceux qui n'ont pas rendu un succès (échec
+   *  propre OU passage jamais terminé — partir sans revenir est un échec). */
+  syn_imports_24h: number;
+  syn_echecs_24h: number;
 }
 
 export interface Metric {
@@ -60,6 +72,10 @@ export function healthToMetrics(h: HealthSnapshot): Metric[] {
     g("miprum_ingest_backlog", "Lots débarqués en attente de drain (ingestion différée).", h.ingest_backlog),
     g("miprum_ingest_backlog_blocked", "Lots abandonnés après cinq échecs d'écriture.", h.ingest_backlog_blocked),
     g("miprum_ingest_backlog_age_seconds", "Âge du plus vieux lot en attente de drain (secondes).", h.ingest_backlog_age_s),
+    g("miprum_synthetic_capture_age_seconds", "Âge de la dernière capture du robot synthétique (secondes).", h.syn_age_capture_s),
+    g("miprum_synthetic_import_age_seconds", "Âge du dernier import synthétique terminé (secondes).", h.syn_age_import_s),
+    g("miprum_synthetic_imports_24h", "Imports synthétiques lancés sur 24 h.", h.syn_imports_24h),
+    g("miprum_synthetic_import_failures_24h", "Imports synthétiques sur 24 h n'ayant pas rendu un succès.", h.syn_echecs_24h),
   ];
 }
 

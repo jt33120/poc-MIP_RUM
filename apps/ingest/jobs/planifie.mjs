@@ -153,6 +153,10 @@ export function travaux(pool, { log = console, dispatch = null } = {}) {
         [
           { name: "purge_rum_tenants", run: fn("purge_rum_tenants(30)") },
           { name: "meter_tenant_usage", run: fn("meter_tenant_usage()") },
+          // Le journal des imports synthétiques (migration-v64). 90 jours : une
+          // table d'exploitation qui ne purge jamais finit par coûter plus cher
+          // que ce qu'elle documente.
+          { name: "syn_import_purger", run: fn("syn_import_purger(90)") },
         ],
         log,
       ),
