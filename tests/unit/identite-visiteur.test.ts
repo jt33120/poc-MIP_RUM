@@ -23,7 +23,6 @@
 // se corrige PAS : l'information « qui était derrière ce hash » n'a jamais
 // existé. D'où un REFUS explicite, testé plus bas — répondre partiellement vaut
 // mieux que répondre avec les données de quelqu'un d'autre.
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -34,6 +33,9 @@ import {
   DsarRefus,
   dsarVerdict,
 } from "../../apps/console/lib/dsar";
+
+import { chercher as chercherDansDepot, lignesTrouvees } from "../outils/recherche";
+import { surEchec } from "../outils/diagnostic";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(join(RACINE, rel), "utf8");
@@ -48,17 +50,16 @@ function sansCommentaires(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 }
 
-/** `grep -R` sans faire échouer le test quand il ne trouve rien (grep sort en 1). */
-function chercher(motif: string, ...cibles: string[]): string {
-  try {
-    return execFileSync("grep", ["-RIn", "--", motif, ...cibles], {
-      cwd: RACINE,
-      encoding: "utf8",
-    });
-  } catch {
-    return "";
-  }
-}
+/**
+ * Recherche dans le dépôt, via l'outil partagé.
+ *
+ * ÉTAIT UN `try/catch` QUI RENDAIT "" SUR N'IMPORTE QUEL ÉCHEC. C'est ce qui a
+ * fait tomber ce fichier deux fois en suite complète sans qu'il soit
+ * reproductible seul : sous charge, `grep` échouait à s'exécuter et son échec se
+ * lisait « rien trouvé ». Pire dans l'autre sens — une cible renommée aurait fait
+ * passer la garde d'absence au vert pour toujours. Cf. tests/outils/recherche.ts.
+ */
+const chercher = (motif: string, ...cibles: string[]) => chercherDansDepot(motif, cibles, RACINE);
 
 const V57 = lire("apps/ingest/sql/migration-v57.sql");
 const QUERIES = lire("apps/console/lib/queries.ts");
@@ -203,14 +204,16 @@ describe("plus aucune affirmation d'exactitude que le chiffre ne tient", () => {
     // décrit le produit tel qu'il était. Le réécrire pour verdir un test
     // reviendrait à effacer la trace de l'erreur — l'inverse de ce que ce
     // fichier défend.
-    const trouve = chercher("fingerprint anonymisé", "apps/console", "docs")
-      .split("\n")
-      // `/archive/` n'importe où dans la ligne, pas un PRÉFIXE : la sortie de
-      // grep n'est relative que parce qu'on lui fixe un répertoire courant.
-      // Faire dépendre le filtre de cette relativité, c'est laisser le test
-      // rougir sur du contenu d'archive le jour où elle change.
-      .filter((l) => l && !l.includes("/archive/"))
-      .join("\n");
+    surEchec("la console ne doit plus parler de « fingerprint anonymisé »", () => ({
+      "lignes hors archive": lignesTrouvees("fingerprint anonymisé", ["apps/console", "docs"], RACINE),
+      "lignes d'archive (attendues, non comptées)": lignesTrouvees(
+        "fingerprint anonymisé",
+        ["apps/console", "docs"],
+        RACINE,
+        { horsArchive: false },
+      ).filter((l) => l.includes("/archive/")).length,
+    }));
+    const trouve = lignesTrouvees("fingerprint anonymisé", ["apps/console", "docs"], RACINE).join("\n");
     expect(trouve, `« fingerprint anonymisé » subsiste :\n${trouve}`).toBe("");
     // Anti-tautologie : la sonde fonctionne sur une chaîne réellement présente.
     expect(chercher("visitor_id", "apps/console/lib/queries-dsar.ts")).not.toBe("");
