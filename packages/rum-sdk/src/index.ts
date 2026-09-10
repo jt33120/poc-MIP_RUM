@@ -190,7 +190,9 @@ export function init(cfg: MIPRumConfig): void {
   }
 
   // chaque erreur laisse aussi un breadcrumb (parcours menant à l'erreur)
-  initErrors((name, attrs) => {
+  // `errorCap` : plafond par page ET déduplication par empreinte (finding 2.1).
+  // Il rejoint les autres plafonds remis à zéro à chaque page vue, ci-dessous.
+  const errorCap = initErrors((name, attrs) => {
     emit(name, attrs);
     trail?.add("error", String(attrs["exception.message"] ?? "error"));
   });
@@ -204,6 +206,7 @@ export function init(cfg: MIPRumConfig): void {
     longtaskCap.reset();
     apiCap?.reset();
     frustrationCap.reset();
+    errorCap.reset();
     trail!.cap.reset();
     emit("pageview", {
       "mip.url": scrubUrl(location.href),

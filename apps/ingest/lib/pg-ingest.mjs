@@ -107,7 +107,12 @@ export function colonnesLongtask(dispo) {
 }
 
 /** Colonnes optionnelles de rum_session, dans l'ordre où elles s'insèrent. */
-const OPTIONNELLES = ["collection_source", "release", "net_type", "visitor_id"];
+const OPTIONNELLES = [
+  "collection_source", "release", "net_type", "visitor_id",
+  // v58 : échantillonnage. `weight` n'y figure PAS — c'est une colonne générée,
+  // que PostgreSQL refuse qu'on écrive.
+  "sample_rate", "error_sample_rate", "has_error",
+];
 
 /**
  * Liste de colonnes de l'INSERT, réduite à ce que la base porte réellement.
@@ -148,8 +153,76 @@ export function clauseConflitSession(dispo) {
     ...["release", "net_type", "visitor_id"]
       .filter((c) => dispo.has(c))
       .map((c) => `${c} = coalesce(rum_session.${c}, excluded.${c})`),
+    // v58 — `has_error` ne redescend JAMAIS. Les spans d'une session arrivent en
+    // plusieurs lots ; celui qui portait l'exception peut être suivi d'un lot
+    // sans erreur, et un `= excluded.has_error` remettrait le drapeau à faux.
+    // La session changerait alors de poids après coup, ce qui ferait bouger des
+    // agrégats déjà affichés.
+    ...(dispo.has("has_error")
+      ? ["has_error = rum_session.has_error or excluded.has_error"]
+      : []),
+    // `sample_rate` et `error_sample_rate` sont délibérément ABSENTS de cette
+    // liste, pour la même raison que `collection_source` : le taux est figé à la
+    // première vue de la session. Un lot rejoué par un SDK antérieur, qui ne
+    // porte pas l'attribut, retomberait sur 1 et effacerait l'échantillonnage —
+    // multipliant d'un coup tous les volumes de cette session par son taux.
   ];
   return `on conflict (session_id) do update set ${set.join(", ")}`;
+}
+
+const COLONNES_METRIQUE = [
+  "span_id", "session_id", "app_id", "route", "name", "value", "rating", "attribution", "ts",
+];
+
+/**
+ * Écrit les Web Vitals, en DEUX passes — et la raison n'est pas cosmétique.
+ *
+ * CLS et INP sont rapportés PLUSIEURS FOIS par chargement de page : `web-vitals`
+ * rappelle son callback à chaque passage de l'onglet en `hidden`. Chaque rapport
+ * devenait une ligne, et comme ces métriques croissent au fil de la page, les
+ * rapports intermédiaires — systématiquement plus favorables — tiraient le p75
+ * vers le bas. Le SDK émet `webvital.id`, qui identifie la métrique pour ce
+ * chargement ; l'ingestion le jetait (finding 1.5).
+ *
+ * POURQUOI DEUX PASSES. PostgreSQL n'accepte qu'UNE clause `on conflict` par
+ * ordre. Les lignes qui portent `metric_uid` se dédupliquent sur l'index partiel
+ * `uq_metric_report` ; celles qui n'en portent pas — historique et SDK non mis à
+ * jour — n'y figurent pas et doivent retomber sur l'unicité de `span_id`. Les
+ * mélanger ferait échouer la seconde catégorie sur une violation d'unicité, donc
+ * avorter TOUTE la transaction : un lot entier perdu pour une ligne ancienne.
+ *
+ * POURQUOI `greatest` ET PAS « le dernier gagne ». Les cinq vitals sont monotones
+ * croissantes sur la vie d'une page (CLS cumule, INP retient la pire interaction,
+ * LCP ne peut que grandir ; FCP et TTFB ne sont rapportés qu'une fois, où
+ * `greatest` ne fait rien). Prendre le maximum donne le même résultat que « le
+ * dernier » quand les lots arrivent dans l'ordre, et reste juste quand ils
+ * arrivent dans le désordre — ce qui se produit dès qu'un lot passe par la file
+ * de rejeu. Une seule règle pour les cinq, donc aucune branche qui puisse dériver.
+ */
+async function ecrireMetriques(client, metrics) {
+  const dispo = await colonnesDe(client, "rum_metric");
+  const avecUid = dispo.has("metric_uid");
+  const cols = avecUid ? [...COLONNES_METRIQUE, "metric_uid"] : COLONNES_METRIQUE;
+  const prep = (m) => ({ ...m, attribution: m.attribution ? JSON.stringify(m.attribution) : null });
+
+  if (!avecUid) {
+    await batchInsert(client, "rum_metric", cols, metrics.map(prep), "on conflict (span_id) do nothing");
+    return;
+  }
+  const identifiees = metrics.filter((m) => m.metric_uid);
+  const anonymes = metrics.filter((m) => !m.metric_uid);
+
+  await batchInsert(
+    client,
+    "rum_metric",
+    cols,
+    identifiees.map(prep),
+    `on conflict (session_id, name, metric_uid) where metric_uid is not null do update set
+       value  = greatest(rum_metric.value, excluded.value),
+       rating = case when excluded.value > rum_metric.value then excluded.rating else rum_metric.rating end,
+       ts     = case when excluded.value > rum_metric.value then excluded.ts     else rum_metric.ts     end`,
+  );
+  await batchInsert(client, "rum_metric", cols, anonymes.map(prep), "on conflict (span_id) do nothing");
 }
 
 /**
@@ -196,17 +269,17 @@ export async function writeRows(pool, {
       pageviews.map((p) => ({ ...p, started_at: p.ts })),
       "on conflict (span_id) do nothing",
     );
-    await batchInsert(
-      client,
-      "rum_metric",
-      ["span_id", "session_id", "app_id", "route", "name", "value", "rating", "attribution", "ts"],
-      metrics.map((m) => ({ ...m, attribution: m.attribution ? JSON.stringify(m.attribution) : null })),
-      "on conflict (span_id) do nothing",
-    );
+    await ecrireMetriques(client, metrics);
+    const dispoErr = await colonnesDe(client, "rum_error");
     await batchInsert(
       client,
       "rum_error",
-      ["span_id", "session_id", "app_id", "route", "kind", "message", "error_type", "stack", "source", "lineno", "colno", "release", "fingerprint", "ts"],
+      [
+        "span_id", "session_id", "app_id", "route", "kind", "message", "error_type",
+        "stack", "source", "lineno", "colno", "release", "fingerprint",
+        ...(dispoErr.has("occurrences") ? ["occurrences"] : []),
+        "ts",
+      ],
       errors,
       "on conflict (span_id) do nothing",
     );
@@ -357,6 +430,13 @@ const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 export function createPgAuth(pool, opts = {}) {
   const requireApiKey = opts.requireApiKey ?? false;
   const rateLimitPerMin = opts.rateLimitPerMin ?? 600;
+  /**
+   * Part du plafond nominal qu'une SEULE instance s'autorise quand le compteur
+   * durable est injoignable. Un quart : avec quatre instances on retombe
+   * approximativement sur la limite globale, et avec une seule on reste
+   * nettement au-dessus du trafic ordinaire d'une application.
+   */
+  const plafondRepli = Math.max(1, Math.ceil(rateLimitPerMin * (opts.fractionRepli ?? 0.25)));
   const log = opts.log ?? {};
   const now = opts.now ?? (() => Date.now());
 
@@ -396,20 +476,53 @@ export function createPgAuth(pool, opts = {}) {
     return null;
   }
 
+  // ════════════════ Le compteur mémoire, et son plafond de repli ═══════════════
+  //
+  // Finding 2.3 de docs/AUDIT_RUM_EXTERNE.md — bloquant.
+  //
+  // « QUAND LA BASE EST LE GOULOT, LE MÉCANISME QUI PROTÈGE LA BASE CONSOMME LA
+  // BASE. » Le limiteur interrogeait `rate_check()` à CHAQUE beacon, et son
+  // repli en cas d'échec SQL était `return false` — c'est-à-dire « on laisse
+  // passer », au moment précis où la base ne répond plus. Combiné au fail-open
+  // documenté de `checkApiKey`, l'ingestion se retrouvait sans AUCUNE protection
+  // dès que la base était indisponible : le seul moment où elle en a besoin.
   const rateHits = new Map();
-  function rateLimited(appId) {
+
+  /**
+   * Enregistre un coup et rend le nombre de coups de la dernière minute POUR
+   * CETTE INSTANCE, celui-ci compris.
+   *
+   * Un seul compteur, deux seuils : compter deux fois le même beacon — une fois
+   * pour le pré-filtre, une fois pour le repli — le refuserait deux fois plus
+   * vite qu'annoncé.
+   */
+  function compterLocal(appId) {
     const t = now();
     const hits = rateHits.get(appId) ?? [];
     while (hits.length && hits[0] <= t - 60_000) hits.shift();
-    if (hits.length >= rateLimitPerMin) return true;
     hits.push(t);
     rateHits.set(appId, hits);
-    return false;
+    return hits.length;
   }
 
-  /** Pré-filtre mémoire (rapide) puis compteur durable partagé ; fallback mémoire. */
+  /**
+   * Pré-filtre mémoire, puis compteur durable partagé.
+   *
+   * LE REPLI REFUSE, il n'accepte plus. Le compteur mémoire est PAR INSTANCE :
+   * pendant une indisponibilité de la base, chaque instance ne voit que sa part
+   * du trafic, donc appliquer le plafond nominal en local autoriserait
+   * `instances × plafond` requêtes au total. On applique donc un plafond de
+   * repli plus bas — assez pour laisser passer le trafic ordinaire d'une
+   * instance, pas assez pour qu'une boucle d'erreurs achève une base déjà à
+   * terre.
+   *
+   * Ce n'est pas une limite exacte : c'en est une DÉGRADÉE, et c'est le point.
+   * Refuser un peu trop pendant un incident est réparable ; accepter tout ne
+   * l'est pas.
+   */
   async function rateLimitedDurable(appId) {
-    if (rateLimited(appId)) return true;
+    const local = compterLocal(appId);
+    if (local > rateLimitPerMin) return true;
     try {
       const { rows } = await pool.query("select rate_check($1, $2) as ok", [
         appId,
@@ -417,10 +530,17 @@ export function createPgAuth(pool, opts = {}) {
       ]);
       return rows[0].ok === false;
     } catch (err) {
-      log.warn?.("rate_check sql failed (fallback mémoire)", { err: String(err) });
-      return false;
+      const refuse = local > plafondRepli;
+      log.warn?.("rate_check sql failed (repli mémoire, fermé)", {
+        err: String(err),
+        app_id: appId,
+        coups_locaux: local,
+        plafond_repli: plafondRepli,
+        refuse,
+      });
+      return refuse;
     }
   }
 
-  return { getAppRegistry, checkApiKey, rateLimitedDurable };
+  return { getAppRegistry, checkApiKey, rateLimitedDurable, plafondRepli };
 }

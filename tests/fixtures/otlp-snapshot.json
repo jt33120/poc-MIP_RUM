@@ -10,6 +10,18 @@
             }
           },
           {
+            "key": "mip.sample_rate",
+            "value": {
+              "stringValue": "0.25"
+            }
+          },
+          {
+            "key": "mip.error_sample_rate",
+            "value": {
+              "stringValue": "1"
+            }
+          },
+          {
             "key": "mip.client_id",
             "value": {
               "stringValue": "acme"
@@ -123,6 +135,12 @@
                   }
                 },
                 {
+                  "key": "webvital.id",
+                  "value": {
+                    "stringValue": "v5-1760000000000-4821"
+                  }
+                },
+                {
                   "key": "webvital.attribution",
                   "value": {
                     "stringValue": "{\"element\":\"#hero\"}"
@@ -151,6 +169,12 @@
                   "key": "exception.type",
                   "value": {
                     "stringValue": "TypeError"
+                  }
+                },
+                {
+                  "key": "mip.error_count",
+                  "value": {
+                    "stringValue": "37"
                   }
                 },
                 {

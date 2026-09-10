@@ -111,6 +111,24 @@ Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe
 - Caps par page pour borner le volume : 20 ressources lentes, 30 long tasks, 50 breadcrumbs.
 - `sampleRate` permet de réduire la volumétrie sur les sites à fort trafic. Par défaut (`keepOnError`), l'échantillonnage est **biaisé-erreurs** : on garde 100 % des sessions à incident (via `errorSampleRate`) tout en n'échantillonnant que le trafic nominal — on ne perd jamais une session d'erreur en abaissant `sampleRate`.
 
+  **Ce que l'échantillonnage fait aux chiffres, depuis le 09/09/2026.** Le SDK émet ses deux taux
+  (`mip.sample_rate`, `mip.error_sample_rate`) et l'ingestion en dérive la **probabilité d'inclusion
+  réelle** de chaque session — pas simplement `1 / sampleRate`, qui serait faux ici : une session
+  sans erreur n'apparaît qu'avec la probabilité `sampleRate`, une session avec erreur avec
+  `sampleRate + (1 − sampleRate) × errorSampleRate`.
+
+  | | corrigé ? |
+  |---|---|
+  | sessions, pages vues, taux d'erreur | **oui** — repondérés, ils estiment la population |
+  | visiteurs uniques | non — extrapoler un compte de distincts demande une estimation de cardinalité |
+  | p75 LCP/INP, temps de chargement moyen | non — PostgreSQL n'a pas de percentile pondéré |
+
+  Les champs non corrigés portent sur l'échantillon **seul**, et cet échantillon sur-représente les
+  sessions en erreur, donc les plus lentes : les percentiles penchent alors du côté pessimiste.
+  L'API le déclare dans `sampling_notice` et la console l'affiche ; ce n'est pas au lecteur de le
+  deviner. Avant cette date, aucun de ces chiffres n'était corrigé ni signalé : à `sampleRate: 0.1`,
+  un taux d'erreur réel de 1 % s'affichait autour de 9 %.
+
 ## 6. RGPD — ce qui est collecté, ce qui est anonymisé
 
 Collecté (par session) :

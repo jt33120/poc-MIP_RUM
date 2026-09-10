@@ -108,8 +108,12 @@ describe("les compteurs d'un groupe d'erreurs sont bornés par la fenêtre", () 
 
   it("les trois compteurs sont calculés DANS la fenêtre", () => {
     expect(SOURCE).toContain("e.ts > now() - $");
-    for (const c of ["count(*)", "count(distinct e.session_id)", "count(distinct s.visitor_id)"])
+    // `sum(e.occurrences)` et non `count(*)` depuis migration-v59 : le SDK
+    // déduplique une erreur qui se répète et joint le nombre d'occurrences
+    // qu'il a tues. Compter les lignes sous-estimerait la boucle qu'on veut voir.
+    for (const c of ["sum(e.occurrences)", "count(distinct e.session_id)", "count(distinct s.visitor_id)"])
       expect(SOURCE, c).toContain(c);
+    expect(SOURCE).not.toContain("count(*)");
   });
 
   it("compte des visiteurs, pas des empreintes de terminal (lot 1)", () => {

@@ -189,33 +189,104 @@ export interface RouteRow {
   longtasks: number;
 }
 
+/**
+ * Nombre maximal de routes rendues. Au-delà, l'écran n'est plus lisible : une
+ * statistique par page, donc aucune statistique.
+ */
+export const ROUTES_MAX = 200;
+
+/**
+ * Routes les plus lentes, par p75 LCP.
+ *
+ * ─────────────────────── CE QUI ÉTAIT EN PLACE ───────────────────────────────
+ *
+ * Finding 2.6 de docs/AUDIT_RUM_EXTERNE.md. Un `group by m.route` SANS `LIMIT`,
+ * et chaque ligne déclenchait DEUX sous-requêtes corrélées — l'une comptant les
+ * pages vues, l'autre les tâches longues. Sur un catalogue de 20 000 URL
+ * distinctes, cela fait 40 000 sous-requêtes et 20 000 lignes rendues en HTML.
+ *
+ * Et la cardinalité de `route` n'est bornée par rien : `normalizeRoute` ne
+ * couvre que les entiers, les UUID et les hexadécimaux longs. Ni les slugs, ni
+ * les dates, ni les identifiants alphanumériques courts. Un site e-commerce ou
+ * un portail de recherche fait exploser la dimension en quelques heures.
+ *
+ * ─────────────────────────── CE QU'ON FAIT ───────────────────────────────────
+ *
+ * Les deux sous-requêtes corrélées deviennent des CTE agrégées, calculées UNE
+ * fois puis jointes : le coût cesse de dépendre du nombre de routes. Et la
+ * liste est bornée à `ROUTES_MAX`, en gardant les PLUS LENTES — celles qu'on est
+ * venu chercher.
+ *
+ * LE PLAFOND EST VISIBLE, pas silencieux : `tronque` dit à l'écran qu'il ne
+ * montre pas tout. Une liste coupée sans le dire ferait croire à un catalogue
+ * plus petit qu'il n'est, ce qui est exactement le genre de silence que ce
+ * dépôt corrige ailleurs.
+ */
 export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
   const itv = PERIODS[f.period].interval;
   const seg = buildSegment(f.segment, 3);
   return q<RouteRow>(
-    `select m.route,
-            (select count(*)::int from rum_pageview p
-              left join rum_session ps using (session_id)
-              where p.route = m.route and p.started_at > now() - interval '${itv}'
-                and ($1::text is null or p.app_id = $1)
-                and ($2::text is null or ps.device_type = $2)${seg.where("ps")}${botClause(f, "ps")}) as views,
-            percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'LCP') as lcp_p75,
-            percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'INP') as inp_p75,
-            percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'CLS') as cls_p75,
-            (select count(*)::int from rum_longtask l
-              left join rum_session ls using (session_id)
-              where l.route = m.route and l.ts > now() - interval '${itv}'
-                and ($1::text is null or l.app_id = $1)
-                and ($2::text is null or ls.device_type = $2)${seg.where("ls")}${botClause(f, "ls")}) as longtasks
-     from rum_metric m
-     left join rum_session s using (session_id)
-     where m.ts > now() - interval '${itv}' and m.route is not null
-       and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "m.app_id")}
-     group by m.route
-     order by lcp_p75 desc nulls last`,
+    `with vues as (
+       select p.route, count(*)::int as views
+         from rum_pageview p
+         left join rum_session ps using (session_id)
+        where p.started_at > now() - interval '${itv}' and p.route is not null
+          and ($1::text is null or p.app_id = $1)
+          and ($2::text is null or ps.device_type = $2)${seg.where("ps")}${botClause(f, "ps")}
+        group by p.route
+     ),
+     taches as (
+       select l.route, count(*)::int as longtasks
+         from rum_longtask l
+         left join rum_session ls using (session_id)
+        where l.ts > now() - interval '${itv}' and l.route is not null
+          and ($1::text is null or l.app_id = $1)
+          and ($2::text is null or ls.device_type = $2)${seg.where("ls")}${botClause(f, "ls")}
+        group by l.route
+     ),
+     vitals as (
+       select m.route,
+              percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'LCP') as lcp_p75,
+              percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'INP') as inp_p75,
+              percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'CLS') as cls_p75
+         from rum_metric m
+         left join rum_session s using (session_id)
+        where m.ts > now() - interval '${itv}' and m.route is not null
+          and ($1::text is null or m.app_id = $1)
+          and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "m.app_id")}
+        group by m.route
+     )
+     select v.route,
+            coalesce(vues.views, 0) as views,
+            v.lcp_p75, v.inp_p75, v.cls_p75,
+            coalesce(taches.longtasks, 0) as longtasks
+       from vitals v
+       left join vues   on vues.route   = v.route
+       left join taches on taches.route = v.route
+      order by v.lcp_p75 desc nulls last
+      limit ${ROUTES_MAX}`,
     [f.app, f.device, ...seg.params],
   );
+}
+
+/**
+ * Routes DISTINCTES vues sur la fenêtre. Sert à dire si la liste ci-dessus est
+ * tronquée, et à faire remonter une explosion de cardinalité avant qu'elle ne
+ * rende l'écran inutile.
+ */
+export async function nombreDeRoutes(f: Filters): Promise<number> {
+  const itv = PERIODS[f.period].interval;
+  const seg = buildSegment(f.segment, 3);
+  const [r] = await q<{ n: number }>(
+    `select count(distinct m.route)::int as n
+       from rum_metric m
+       left join rum_session s using (session_id)
+      where m.ts > now() - interval '${itv}' and m.route is not null
+        and ($1::text is null or m.app_id = $1)
+        and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "m.app_id")}`,
+    [f.app, f.device, ...seg.params],
+  );
+  return r?.n ?? 0;
 }
 
 export interface SlowResource {

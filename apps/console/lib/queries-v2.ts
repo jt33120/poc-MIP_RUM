@@ -184,7 +184,10 @@ function sourceGroupes(pApp: number, pFenetre: number): string {
   return `
   with fenetre as (
     select e.app_id, e.fingerprint,
-           count(*)                     as occurrences,
+           -- SOMME, pas comptage (v59). Le SDK déduplique une erreur qui se
+           -- répète et joint le nombre d'occurrences qu'il a tues : compter les
+           -- lignes sous-estimerait précisément la boucle qu'on veut voir.
+           sum(e.occurrences)           as occurrences,
            count(distinct e.session_id) as sessions,
            count(distinct s.visitor_id) as users_affected,
            max(e.ts)                    as last_seen,
@@ -327,7 +330,7 @@ export async function errorSparklines(
 /** Erreurs v0.1 sans fingerprint (non groupables) — affiché en note de bas de page. */
 export async function unfingerprintedCount(f: Filters): Promise<number> {
   const [r] = await q<{ n: number }>(
-    `select count(*)::int as n
+    `select coalesce(sum(occurrences), 0)::int as n
      from rum_error
      where fingerprint is null
        and ($1 = 'all' or app_id = $1)

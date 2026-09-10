@@ -14,7 +14,9 @@ import {
   msToHr,
 } from "./otlp-encode";
 import {
+  classerReponse,
   ExportResultCode,
+  lireRetryAfter,
   type ReadableSpan,
   RetryExporter,
   type SpanExporter,
@@ -101,7 +103,14 @@ export function newPageTrace(): string {
   return pageTraceId;
 }
 
-/** Exporter HTTP OTLP/JSON : POST keepalive ; échec réseau/HTTP -> FAILED. */
+/**
+ * Exporter HTTP OTLP/JSON : POST keepalive.
+ *
+ * TROIS ISSUES, pas deux (finding 2.2). Un 403 sur une clé mal saisie et un 503
+ * pendant un incident ne demandent pas la même chose : le premier ne s'arrangera
+ * jamais, le second s'arrangera tout seul. Les confondre faisait rejouer
+ * indéfiniment une requête en tort, à chaque page, pour rien.
+ */
 function httpExporter(url: string): SpanExporter {
   return {
     export(spans, cb) {
@@ -116,8 +125,20 @@ function httpExporter(url: string): SpanExporter {
         // au-delà, envoi normal (le pagehide aura déjà tenté un flush plus tôt).
         keepalive: body.length < 60_000,
       })
-        .then((res) => cb({ code: res.ok ? ExportResultCode.SUCCESS : ExportResultCode.FAILED }))
-        .catch(() => cb({ code: ExportResultCode.FAILED }));
+        .then((res) => {
+          if (res.ok) return cb({ code: ExportResultCode.SUCCESS });
+          const { retryable } = classerReponse(res.status);
+          cb({
+            code: ExportResultCode.FAILED,
+            retryable,
+            // L'ingestion renvoie `retry-after` sur ses 429 depuis toujours ;
+            // personne ne le lisait.
+            retryAfterMs: lireRetryAfter(res.headers.get("retry-after")),
+          });
+        })
+        // Pas de réponse du tout : réseau coupé, onglet fermé, DNS. C'est le cas
+        // nominal du mode hors-ligne, celui pour lequel la file existe.
+        .catch(() => cb({ code: ExportResultCode.FAILED, retryable: true, retryAfterMs: null }));
     },
     shutdown: () => Promise.resolve(),
   };
@@ -147,6 +168,18 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
     ...(cfg.release ? { "mip.release": cfg.release } : {}),
     // sendBeacon/keepalive ne portent pas de headers : la clé voyage en resource
     ...(cfg.apiKey ? { "mip.api_key": cfg.apiKey } : {}),
+    // ÉCHANTILLONNAGE — les deux taux, pas seulement le premier.
+    //
+    // Sans eux, un backend ne peut pas repondérer : il voit un échantillon et le
+    // prend pour la population. Et `sampleRate` SEUL ne suffit pas, parce que
+    // l'échantillonnage de ce SDK n'est pas uniforme mais biaisé-erreurs (voir
+    // sampling.ts). Une session sans erreur n'apparaît qu'avec une probabilité
+    // `sampleRate` ; une session AVEC erreur apparaît avec
+    // `sampleRate + (1 - sampleRate) × errorSampleRate`. Les deux nombres sont
+    // donc nécessaires pour reconstruire la probabilité d'inclusion, et c'est
+    // elle — pas le taux — qui donne le poids. Détail dans migration-v58.
+    "mip.sample_rate": String(cfg.sampleRate ?? 1),
+    "mip.error_sample_rate": String((cfg.keepOnError ?? true) ? (cfg.errorSampleRate ?? 1) : 0),
   };
   // décorateur retry : export raté -> file localStorage, rejouée au prochain init
   exporter = new RetryExporter(httpExporter(cfg.endpoint));

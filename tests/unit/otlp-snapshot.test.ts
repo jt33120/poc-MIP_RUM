@@ -43,6 +43,17 @@ describe("flattenOtlp — snapshot du contrat de sortie", () => {
     // `id_kind` n'est PAS écrit par l'ingestion : c'est une colonne générée que
     // PostgreSQL refuse qu'on écrive (migration-v57). L'absence est le contrat.
     expect(rows.sessions[0]).not.toHaveProperty("id_kind");
+    // v58 — la déduplication des vitals et le poids d'échantillonnage voyagent
+    // jusqu'aux lignes. Une fixture sans ces attributs figerait des `null`, ce
+    // qui ne prouverait rien du chemin.
+    expect(rows.metrics[0].metric_uid).toBe("v5-1760000000000-4821");
+    expect(rows.sessions[0].sample_rate).toBe(0.25);
+    expect(rows.sessions[0].error_sample_rate).toBe(1);
+    // `weight` n'est PAS écrit par l'ingestion : colonne générée (migration-v58).
+    expect(rows.sessions[0]).not.toHaveProperty("weight");
+    // v59 — une ligne d'erreur peut REPRÉSENTER plusieurs occurrences : le SDK
+    // déduplique une erreur qui se répète et joint le compte qu'il a tu.
+    expect(rows.errors[0].occurrences).toBe(37);
     // garde-fous de contrat : scrub PII appliqué, clé d'API extraite
     expect(rows.errors[0].message).toBe("login failed for [email] password=[redacted]");
     expect(rows.errors[0].release).toBe("1.4.2"); // mip.release (resource) -> dé-minification

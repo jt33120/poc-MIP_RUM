@@ -81,6 +81,50 @@ export function nanosToDate(nanos, nowMs = Date.now()) {
   return new Date(ms);
 }
 
+/**
+ * Taux d'échantillonnage principal, dans ]0, 1]. Rend 1 sur toute valeur
+ * absente, illisible, nulle ou hors bornes.
+ *
+ * ZÉRO EST REFUSÉ ICI, ET C'EST DÉLIBÉRÉ. Le poids vaut `1 / taux` : un 0
+ * accepté donnerait un poids infini, et une seule ligne corrompue suffirait à
+ * faire exploser tous les volumes de l'application. Un taux réellement nul n'a
+ * de toute façon pas de sens sur une session qu'on est en train d'ingérer — il
+ * n'aurait produit aucune donnée. 1 signifie « pas d'échantillonnage », donc
+ * « ne repondère rien » : le repli qui ne peut pas mentir dans les grandes
+ * largeurs.
+ */
+export function tauxPrincipal(v) {
+  const n = typeof v === "number" ? v : Number.parseFloat(v);
+  return Number.isFinite(n) && n > 0 && n <= 1 ? n : 1;
+}
+
+/**
+ * Taux biaisé-erreurs, dans [0, 1] — ZÉRO COMPRIS, contrairement au précédent.
+ *
+ * `keepOnError: false` est une configuration parfaitement valide, et le SDK émet
+ * alors 0. Le confondre avec « absent » et retomber sur 1 ferait croire que
+ * toute session en erreur est certaine d'être collectée : les sessions en erreur
+ * seraient sous-pondérées et le taux d'erreur affiché trop bas. Zéro ne divise
+ * rien ici — il n'intervient qu'en facteur, `sr + (1 - sr) × esr`.
+ */
+export function tauxErreurs(v) {
+  const n = typeof v === "number" ? v : Number.parseFloat(v);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : 1;
+}
+
+/**
+ * Occurrences représentées par une ligne d'erreur (`mip.error_count`).
+ *
+ * BORNÉ À 10 000, et pas par superstition : ce nombre vient du navigateur, donc
+ * d'une valeur qu'un tiers peut fabriquer. Non borné, un seul beacon suffirait à
+ * faire afficher des milliards d'occurrences et à écraser tous les autres
+ * groupes du classement. 1 sur toute valeur absente, illisible ou < 1.
+ */
+export function occurrencesDe(v) {
+  const n = typeof v === "number" ? v : Number.parseInt(v, 10);
+  return Number.isFinite(n) && n > 1 ? Math.min(Math.floor(n), 10_000) : 1;
+}
+
 /** Attributs string JSON (webvital.attribution, mip.props) -> objet pour le jsonb. */
 function parseJsonAttr(raw) {
   if (typeof raw !== "string" || !raw) return null;
@@ -632,6 +676,17 @@ export function flattenOtlp(payload, opts = {}) {
           // posée par navtiming au chargement — d'où le back-fill plus bas.
           release,
           net_type: a["mip.net_type"] ?? null,
+          // ÉCHANTILLONNAGE (migration-v58). Les deux taux, parce que celui de
+          // ce SDK est biaisé-erreurs : `sample_rate` seul ne permet PAS de
+          // reconstruire la probabilité d'inclusion d'une session. `has_error`
+          // est posé plus bas, à la première exception rencontrée.
+          //
+          // Défaut 1 quand l'attribut manque — SDK antérieur ou lot rejoué : la
+          // session est alors traitée comme non échantillonnée, ce qui est vrai
+          // pour tout ce qui a été collecté jusqu'ici.
+          sample_rate: tauxPrincipal(res["mip.sample_rate"]),
+          error_sample_rate: tauxErreurs(res["mip.error_sample_rate"]),
+          has_error: false,
           last_seen_at: ts,
           page_count_inc: 0,
         };
@@ -664,9 +719,21 @@ export function flattenOtlp(payload, opts = {}) {
             value,
             rating: rating2026(name, value),
             attribution: parseJsonAttr(a["webvital.attribution"]),
+            // `webvital.id` identifie UNE métrique pour UN chargement de page.
+            // Le SDK l'émettait déjà — avec un commentaire disant qu'il sert à
+            // ne pas double-compter — et l'ingestion le jetait. CLS et INP sont
+            // rapportés à chaque passage de l'onglet en `hidden` : sans cette
+            // clé, trois masquages faisaient trois lignes pour une page vue, et
+            // comme ces deux métriques croissent, les rapports intermédiaires
+            // tiraient le p75 vers le bas. Voir migration-v58.
+            metric_uid: a["webvital.id"] ?? null,
             ts,
           });
         } else if (span.name === "exception") {
+          // La session porte une erreur : c'est ce qui décide LAQUELLE des deux
+          // probabilités d'inclusion s'applique à son poids (migration-v58).
+          // Une session biaisée-erreurs n'apparaît QUE si elle en a une.
+          s.has_error = true;
           const errorType = a["exception.type"] ?? null;
           // scrub PII AVANT troncature (un secret ne doit pas survivre coupé en deux)
           const message = (scrubText(a["exception.message"]) ?? "").slice(0, 1000);
@@ -676,6 +743,10 @@ export function flattenOtlp(payload, opts = {}) {
             session_id: sessionId,
             app_id: appId,
             route,
+            // Le SDK déduplique et compte (v59) : cette ligne peut représenter
+            // plusieurs occurrences. Absent = 1, donc les SDK antérieurs restent
+            // justes sans rien changer.
+            occurrences: occurrencesDe(a["mip.error_count"]),
             kind: a["mip.error_kind"] ?? "error",
             message,
             error_type: errorType,
