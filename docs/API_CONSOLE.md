@@ -153,29 +153,55 @@ hors-scope (un `viewer` ne lit que ses apps).
 `data = { grid: HealthGridCell[], dailyTraffic: DailyTraffic[] }`
 (cellule = une heure, jour×heure ; + trafic quotidien).
 
-### `GET /api/v1/ai` — performance IA
-`data = { overview: AiOverview, byModel: AiModelRow[], byRoute: AiRouteRow[], daily: AiDailyRow[], recent: AiCallRow[] }`.
-Coût (`cost_usd`), tokens, latence p75 et **taux d'erreur** — en global, par modèle/fournisseur,
-par route, en série journalière, plus les **derniers appels** (dont les **échecs** :
-`status='error'`, `error_type` — ex. OpenRouter en échec). `rum_ai` n'a pas de notion
-d'appareil : seuls `app` et `period` s'appliquent (`device` ignoré). `?recent=N` borne les
-derniers appels (0..200, défaut 50 ; `0` = aucun). Sources : `lib/queries-ai.ts`.
+### Performance IA — **déplacé hors de cette API**
 
-### `GET /api/v1/ai/costs` — coût IA par dimension
-`data = { group_by, rows, unattributed? }`. `?group_by=user` (défaut) agrège le coût **par
-utilisateur** (`user_hash` anonymisé, join `rum_ai.session_id → rum_session.user_hash`) et
-ajoute `unattributed` (appels sans session ou sans `user_hash`) ; `?group_by=model|route`
-réutilise les agrégats correspondants. `?limit=1..500` (défaut 100) pour `group_by=user`.
-La dimension est validée par allowlist (`lib/ai-costs.ts`) — anti-injection.
+> Trois endpoints figuraient ici : `GET /api/v1/ai`, `GET /api/v1/ai/costs` et
+> `GET /api/v1/ai/credits`. **Ils n'existent plus** — la supervision IA a été extraite
+> vers le service **xSOM AI Guard**, qui en est désormais la source de vérité unique
+> (ADR-0001, `docs/EXTRACTION_XSOM_AI_GUARD.md`). Aucun fichier de route ne leur
+> correspond dans `apps/console/app/api/v1/` : un client qui les appelle reçoit un **404**.
+>
+> Ils sont restés documentés ici après leur suppression. Le descripteur
+> `GET /api/v1` les annonçait aussi, et a été corrigé depuis ; ce document ne l'avait pas
+> été. Un test verrouille désormais la correspondance entre les endpoints décrits dans ce
+> fichier et les routes qui existent réellement — voir `tests/unit/api-doc-verite.test.ts`.
+>
+> **Où lire les données IA aujourd'hui** : `GET /api/rum/summary`
+> (`docs/RUM_READ_API.md`) porte la moitié IA sous les champs `ai_*`, servie par xSOM.
+> Quand xSOM est indisponible, la section est marquée `unavailable` avec des champs vides —
+> **aucun recalcul local**, donc jamais de chiffre inventé pour combler.
 
-### `GET /api/v1/ai/credits` — solde OpenRouter
-`data = { status, balance, total_credits, total_usage, threshold, currency, checked_at }`
-(ou `{ status: null, note }` tant qu'aucun relevé). `status` vaut `ok` ou `low` — le front
-affiche le **warning rouge** quand `low` (solde < seuil, défaut 5, `OPENROUTER_LOW_BALANCE`).
-Le relevé est produit par le cron **`/api/cron/openrouter-balance`** (Vercel Cron, clé
-`OPENROUTER_API_KEY` en env) ; l'alerte « solde bas » émet un `alert_event` routé vers
-webhook/slack (e-mail = stub existant, cf. `docs/ALERTING.md`). Compte OpenRouter global :
-`app`/`period` sans effet. Sources : `lib/openrouter.ts`, `lib/queries-openrouter.ts`.
+---
+
+## Endpoints de service
+
+Trois routes qui ne portent pas d'agrégats, et qu'un client a pourtant besoin de connaître.
+
+### `GET /api/v1/health` — liveness
+`data = { status, version }`. **Sans authentification** : un contrôle de vivacité qui exigerait
+un jeton ne dirait rien à un superviseur qui n'en a pas. Ne touche pas la base — c'est
+délibéré : cette route doit répondre même quand la base est en panne, sinon elle mesure
+autre chose que ce qu'elle annonce.
+
+### `GET /api/v1/openapi` — spec machine
+Spec **OpenAPI 3.0** en JSON, sans authentification. Construite à partir des mêmes schémas
+que les réponses (`lib/api/openapi.ts`) : elle ne peut pas décrire un champ que le code
+ne renvoie pas.
+
+### `GET /api/v1/docs` — Swagger UI
+Page HTML (pas de JSON, pas d'enveloppe `{ meta, data }`), sans authentification. Rend la
+spec ci-dessus lisible dans un navigateur.
+
+---
+
+## Écriture — la seule
+
+### `POST /api/v1/deploys` — marqueur de déploiement
+La **seule** route non-`GET` de l'API. Enregistre un marqueur de déploiement depuis une
+chaîne d'intégration continue, ce qui permet aux écrans de dater une régression par rapport
+à une mise en production. Tout le reste de `/api/v1` est en lecture seule ; cette exception
+est annoncée séparément dans le descripteur `GET /api/v1` (champ `write`) plutôt que noyée
+dans l'énumération des lectures.
 
 ---
 
@@ -195,8 +221,6 @@ webhook/slack (e-mail = stub existant, cf. `docs/ALERTING.md`). Compte OpenRoute
 | Routes les plus lentes (`/pages`) | barres classées | `GET /pages` | `routes[].route` → `lcp_p75` (couleur = rating) ; `views` en libellé |
 | Décomposition latence serveur vs réseau (`/tracing`) | barres empilées | `GET /tracing` | `apiCalls[]` : segment serveur = `back_p75`, réseau = `front_p75 − back_p75` |
 | Routes backend p75/p95 (`/tracing`) | barres | `GET /tracing` | `backRoutes[].{route,p75,p95,err}` |
-| Coût LLM par jour (`/ai`) | ligne + volume | `GET /ai` | `daily[].day` → `cost_usd` (ligne) & `calls` (barres) |
-| Coût / usage par modèle (`/ai`) | donut ou barres | `GET /ai` | `byModel[].{provider,model,cost_usd,calls,total_tokens}` |
 | Scatter corrélation robot ↔ réel (`/correlation`) | nuage de points | `GET /correlation` | `cards[]` : x = `syn_latency_avg` (robot), y = `rum_lcp_p75` (réel), taille = `rum_sessions` |
 | Angles morts (`/correlation`) | table / barres | `GET /correlation` | `blindSpots[].{route,bucket,rum_lcp_p75,syn_latency_avg,gap_ms}` |
 | Groupes d'erreurs (top) (`/errors`) | barres | `GET /errors` | `groups[].{error_type,sample_message,occurrences,sessions}` |
