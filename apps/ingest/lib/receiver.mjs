@@ -17,6 +17,7 @@
 // de l'hébergeur (Railway, un reverse-proxy) et le service reste ainsi portable.
 import { gunzipSync } from "node:zlib";
 import { createPgAuth, writeLogs, writeReplayChunk, writeRows } from "./pg-ingest.mjs";
+import { deposerLot } from "./ingest-differe.mjs";
 import { corsHeaders as buildCors, originsFromRegistry, REPLAY_ALLOW_HEADERS } from "../supabase/functions/_shared/cors.mjs";
 import { createLogger } from "../supabase/functions/_shared/log.mjs";
 import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "../supabase/functions/_shared/limits.mjs";
@@ -67,6 +68,11 @@ export function creerReceveur(pool, opts = {}) {
   const signaux = new Set(opts.signaux ?? ["traces", "logs", "replay"]);
   const aliasSante = opts.aliasSante ?? [];
   const nom = opts.nom ?? "ingest";
+  // Ingestion DIFFÉRÉE (migration-v63) : le lot est débarqué dans une table
+  // UNLOGGED et écrit plus tard par un travailleur. ÉTEINTE par défaut — la
+  // table est vidée par PostgreSQL après un arrêt brutal, donc ce compromis se
+  // choisit explicitement. Le gain mesuré est dans docs/BUILD_LOG.md.
+  const differe = opts.differe ?? process.env.INGEST_DEFERRED === "true";
 
   const auth = createPgAuth(pool, { requireApiKey, rateLimitPerMin, log });
 
@@ -156,9 +162,19 @@ export function creerReceveur(pool, opts = {}) {
     const pays = entete(req, "x-vercel-ip-country") ?? entete(req, "cf-ipcountry");
     if (pays) for (const s of rows.sessions) s.geo_country = s.geo_country ?? pays;
 
-    await withRetry(() => writeRows(pool, rows), {
-      onRetry: (e, n) => log.warn("db retry", { attempt: n, code: e?.code }),
-    });
+    if (differe) {
+      // Le contrôle de clé et le rate-limit sont DÉJÀ passés au-dessus : on ne
+      // débarque que ce qui a le droit d'entrer. Une file derrière une porte
+      // ouverte serait un amplificateur, pas un découplage.
+      const appId = rows.apiKeys[0]?.app_id ?? rows.sessions[0]?.app_id ?? "inconnu";
+      await withRetry(() => deposerLot(pool, appId, rows), {
+        onRetry: (e, n) => log.warn("db retry (differe)", { attempt: n, code: e?.code }),
+      });
+    } else {
+      await withRetry(() => writeRows(pool, rows), {
+        onRetry: (e, n) => log.warn("db retry", { attempt: n, code: e?.code }),
+      });
+    }
     log.info("ingested", {
       sessions: rows.sessions.length,
       pageviews: rows.pageviews.length,

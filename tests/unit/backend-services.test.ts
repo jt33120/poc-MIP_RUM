@@ -183,14 +183,20 @@ describe("cadences et fonctions SQL appelées", () => {
     expect(pool.requetes.some((q) => /purge_rum\(/.test(q))).toBe(false);
   });
 
-  it("l'horaire rafraîchit les rollups et les deux détections", async () => {
+  it("l'horaire rafraîchit les DEUX pré-agrégats et les deux détections", async () => {
+    // Les histogrammes de percentiles (migration-v61) sont un pré-agrégat au
+    // même titre que les rollups, et sur la même cadence : oublier de les
+    // planifier laisserait la console recalculer 30 jours de lignes brutes à
+    // chaque affichage, sans que rien ne le signale.
     const pool = poolFactice();
     const bilan = await travaux(pool as never, { log: muet }).horaire();
     expect(Object.keys(bilan.resultats)).toEqual([
       "refresh_rum_rollups",
+      "refresh_metric_histogram",
       "check_new_errors",
       "check_ai_op_anomalies",
     ]);
+    expect(pool.requetes.some((q) => q.includes("refresh_metric_histogram(26)"))).toBe(true);
   });
 });
 

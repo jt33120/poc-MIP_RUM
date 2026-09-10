@@ -121,13 +121,80 @@ Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe
   |---|---|
   | sessions, pages vues, taux d'erreur | **oui** — repondérés, ils estiment la population |
   | visiteurs uniques | non — extrapoler un compte de distincts demande une estimation de cardinalité |
-  | p75 LCP/INP, temps de chargement moyen | non — PostgreSQL n'a pas de percentile pondéré |
+  | p75 LCP/INP | **oui**, depuis le 10/09/2026 — somme cumulée sur des seaux pondérés (migration-v61), à ±1 % près |
+  | temps de chargement moyen, signaux de frustration | non — moyenne et comptages bruts sur l'échantillon |
 
   Les champs non corrigés portent sur l'échantillon **seul**, et cet échantillon sur-représente les
-  sessions en erreur, donc les plus lentes : les percentiles penchent alors du côté pessimiste.
+  sessions en erreur, donc les plus lentes : ils penchent du côté pessimiste. Les percentiles ont
+  cessé d'en faire partie le 10/09/2026 : `percentile_cont` n'accepte pas de poids, mais une somme
+  cumulée sur une distribution en seaux n'en a pas besoin — le poids est DANS le seau. Le prix payé
+  est une résolution de ±1 % (soit ±25 ms sur un LCP de 2 500 ms), pas un biais.
   L'API le déclare dans `sampling_notice` et la console l'affiche ; ce n'est pas au lecteur de le
   deviner. Avant cette date, aucun de ces chiffres n'était corrigé ni signalé : à `sampleRate: 0.1`,
   un taux d'erreur réel de 1 % s'affichait autour de 9 %.
+
+### Normaliser les routes d'une application
+
+`normalizeRoute` (SDK) remplace les entiers, les UUID et les hexadécimaux longs. Il ne connaît ni
+vos slugs, ni vos références de commande — sur un catalogue, chaque page produit alors sa propre
+statistique, c'est-à-dire aucune statistique.
+
+Depuis le 10/09/2026, chaque application peut ajouter ses règles (`route_pattern`, expressions
+rationnelles POSIX, appliquées **en base** donc quel que soit le chemin d'ingestion) :
+
+```sql
+insert into route_pattern (app_id, motif, remplacement, priorite)
+values ('mon-app', '^/produit/[^/]+$', '/produit/:slug', 10);
+```
+
+Le **premier** motif qui correspond gagne (ordre `priorite`, puis `id`) ; les motifs ne s'enchaînent
+pas. Les groupes de capture fonctionnent (`\1`).
+
+**Rejouer l'historique.** Une règle ajoutée aujourd'hui ne réécrit pas hier : la série d'une route se
+couperait en deux, et les deux moitiés auraient l'air de deux routes différentes. On regarde d'abord
+ce que ça changerait, puis on écrit :
+
+```sql
+select * from mip_apercu_backfill('mon-app');   -- n'écrit rien
+select backfill_route_patterns('mon-app');      -- DÉFINITIF
+```
+
+La réécriture est **irréversible** : la route d'origine n'est conservée nulle part. Un motif trop
+large détruit du détail sans retour possible — d'où l'aperçu.
+
+**Le plafond.** Au-delà de `app_registry.route_limit` routes distinctes (2 000 par défaut), une route
+**inédite** est enregistrée sous `(other)`. Les routes déjà connues continuent de passer : le plafond
+arrête la croissance de la dimension, il ne casse pas les séries en cours. `/admin/health` affiche le
+nombre d'applications au plafond ; la réponse est d'écrire des motifs, pas de relever le plafond.
+
+Coût mesuré sur le chemin d'écriture : 8 à 16 µs par ligne insérée selon les exécutions
+(`scripts/bench-route-trigger.mjs`), soit 0,1 à 0,2 ms sur un beacon d'une douzaine de lignes.
+
+### Ingestion différée (`INGEST_DEFERRED`) — optionnelle, et pas gratuite
+
+Par défaut, le receveur écrit le lot dans les tables finales avant de répondre 200. Avec
+`INGEST_DEFERRED=true`, il le débarque dans `ingest_raw` et un travailleur (dans le même processus,
+toutes les 250 ms par défaut, `INGEST_DRAIN_MS`) écrit la suite.
+
+Mesuré par `scripts/bench-ingest.mjs` (vrai receveur, vrai PostgreSQL, 400 requêtes × 12 en vol,
+lot de 17 spans, modes alternés) :
+
+| | p50 | p95 | débit |
+|---|---|---|---|
+| synchrone | ~15 ms | ~22 ms | ~770 req/s |
+| différé | ~6 ms | ~11 ms | ~1 900 req/s |
+
+Soit **p95 divisé par deux et débit multiplié par 2,5** environ — les chiffres bougent d'une
+exécution à l'autre, la fourchette mesurée est −48 à −57 % sur le p95.
+
+**Le prix.** `ingest_raw` est une table **UNLOGGED** : PostgreSQL la vide après un arrêt brutal. Un
+lot acquitté `200` mais pas encore drainé est alors **perdu, définitivement et sans trace**. C'est
+acceptable pour de la télémétrie d'audience — on perd quelques secondes de mesures — et ça ne l'est
+pas pour de la donnée dont dépend une décision. D'où le mode optionnel, éteint par défaut.
+
+`/admin/health` affiche la file en attente, les lots abandonnés (cinq échecs d'écriture) et l'âge du
+plus vieux. Une file qui monte n'est pas un détail de performance : c'est la quantité de données
+qu'un redémarrage emporterait. `GET /health` du service d'ingestion annonce `ingest_deferred`.
 
 ## 6. RGPD — ce qui est collecté, ce qui est anonymisé
 

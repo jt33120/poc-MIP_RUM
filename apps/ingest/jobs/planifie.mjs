@@ -132,6 +132,10 @@ export function travaux(pool, { log = console, dispatch = null } = {}) {
       executerEtapes(
         [
           { name: "refresh_rum_rollups", run: fn("refresh_rum_rollups(26)") },
+          // 26 h comme les rollups, et pour la même raison : une heure en cours
+          // est incomplète, et un passage manqué doit être rattrapé au suivant
+          // sans double-compter (`on conflict do update`, pas `+=`).
+          { name: "refresh_metric_histogram", run: fn("refresh_metric_histogram(26)") },
           { name: "check_new_errors", run: fn("check_new_errors()") },
           { name: "check_ai_op_anomalies", run: fn("check_ai_op_anomalies()") },
         ],

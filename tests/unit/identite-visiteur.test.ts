@@ -205,7 +205,11 @@ describe("plus aucune affirmation d'exactitude que le chiffre ne tient", () => {
     // fichier défend.
     const trouve = chercher("fingerprint anonymisé", "apps/console", "docs")
       .split("\n")
-      .filter((l) => l && !l.startsWith("docs/archive/"))
+      // `/archive/` n'importe où dans la ligne, pas un PRÉFIXE : la sortie de
+      // grep n'est relative que parce qu'on lui fixe un répertoire courant.
+      // Faire dépendre le filtre de cette relativité, c'est laisser le test
+      // rougir sur du contenu d'archive le jour où elle change.
+      .filter((l) => l && !l.includes("/archive/"))
       .join("\n");
     expect(trouve, `« fingerprint anonymisé » subsiste :\n${trouve}`).toBe("");
     // Anti-tautologie : la sonde fonctionne sur une chaîne réellement présente.

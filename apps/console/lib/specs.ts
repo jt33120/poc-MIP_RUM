@@ -250,7 +250,7 @@ export const MESURES: Mesure[] = [
     table: "rum_pageview",
     module: "packages/rum-sdk/src/index.ts",
     detail:
-      "Route normalisée (les identifiants deviennent :id, sinon chaque page produirait sa propre statistique), navigations SPA comprises — pushState, replaceState et retour arrière.",
+      "Route normalisée (les identifiants deviennent :id, sinon chaque page produirait sa propre statistique), navigations SPA comprises — pushState, replaceState et retour arrière. La normalisation du SDK ne couvre que les entiers, les UUID et les hexadécimaux longs : depuis le 10/09/2026 chaque application peut ajouter ses propres règles (`route_pattern`, expressions POSIX), appliquées EN BASE — donc quel que soit le chemin d'ingestion — et rejouables sur l'historique pour que la série d'une route ne se coupe pas en deux le jour où la règle est écrite. Au-delà de 2 000 routes distinctes par application, les routes inédites sont regroupées sous `(other)` et /admin/health le signale : la dimension cesse de croître, et la perte de détail est visible.",
   },
   {
     quoi: "Sessions anonymes",
