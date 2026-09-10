@@ -117,10 +117,21 @@ comportement voulu, pas une panne.
 | `MIGRATE_BASELINE` | `ingest` | `migration-v51.sql` |
 | `REQUIRE_API_KEY` | `ingest` | `false` |
 | `RATE_LIMIT_PER_MIN` | `ingest` | `600` |
+| `INGEST_DEFERRED` | `ingest` | `false` |
+| `INGEST_DRAIN_MS` | `ingest` | `250` (si différé) |
 | `PGPOOL_MAX` | `ingest` / `scheduler` | `8` / `4` |
 | `PORT` | les trois | `8080` |
 | `NODE_ENV`, `LOG_LEVEL` | `ingest`, `scheduler` | `production`, `info` |
 | `MIP_CONSOLE_URL` | `mcp` | `https://mip-rum-console.vercel.app` |
+
+> **Ingestion différée (`INGEST_DEFERRED`).** À `true`, le receveur débarque le lot
+> dans `ingest_raw` et rend la main ; un travailleur du même processus écrit la
+> suite toutes les `INGEST_DRAIN_MS`. Mesuré : p95 divisé par deux, débit ×2,5
+> (`scripts/bench-ingest.mjs`). **`ingest_raw` est UNLOGGED** : PostgreSQL la vide
+> après un arrêt brutal, donc un lot acquitté `200` mais pas encore drainé est
+> perdu définitivement. C'est pour ça que le défaut est `false` — le compromis se
+> choisit. `/admin/health` montre la file, les lots abandonnés et l'âge du plus
+> vieux ; `GET /health` du service annonce `ingest_deferred`.
 
 **`mcp` ne prend ni `DATABASE_URL` ni jeton d'API**, et ce n'est pas un oubli :
 il relaie le jeton de l'appelant vers l'API v1. Lui en donner un ferait de son

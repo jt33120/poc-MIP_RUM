@@ -170,6 +170,32 @@ nombre d'applications au plafond ; la réponse est d'écrire des motifs, pas de 
 Coût mesuré sur le chemin d'écriture : 8 à 16 µs par ligne insérée selon les exécutions
 (`scripts/bench-route-trigger.mjs`), soit 0,1 à 0,2 ms sur un beacon d'une douzaine de lignes.
 
+### Ingestion différée (`INGEST_DEFERRED`) — optionnelle, et pas gratuite
+
+Par défaut, le receveur écrit le lot dans les tables finales avant de répondre 200. Avec
+`INGEST_DEFERRED=true`, il le débarque dans `ingest_raw` et un travailleur (dans le même processus,
+toutes les 250 ms par défaut, `INGEST_DRAIN_MS`) écrit la suite.
+
+Mesuré par `scripts/bench-ingest.mjs` (vrai receveur, vrai PostgreSQL, 400 requêtes × 12 en vol,
+lot de 17 spans, modes alternés) :
+
+| | p50 | p95 | débit |
+|---|---|---|---|
+| synchrone | ~15 ms | ~22 ms | ~770 req/s |
+| différé | ~6 ms | ~11 ms | ~1 900 req/s |
+
+Soit **p95 divisé par deux et débit multiplié par 2,5** environ — les chiffres bougent d'une
+exécution à l'autre, la fourchette mesurée est −48 à −57 % sur le p95.
+
+**Le prix.** `ingest_raw` est une table **UNLOGGED** : PostgreSQL la vide après un arrêt brutal. Un
+lot acquitté `200` mais pas encore drainé est alors **perdu, définitivement et sans trace**. C'est
+acceptable pour de la télémétrie d'audience — on perd quelques secondes de mesures — et ça ne l'est
+pas pour de la donnée dont dépend une décision. D'où le mode optionnel, éteint par défaut.
+
+`/admin/health` affiche la file en attente, les lots abandonnés (cinq échecs d'écriture) et l'âge du
+plus vieux. Une file qui monte n'est pas un détail de performance : c'est la quantité de données
+qu'un redémarrage emporterait. `GET /health` du service d'ingestion annonce `ingest_deferred`.
+
 ## 6. RGPD — ce qui est collecté, ce qui est anonymisé
 
 Collecté (par session) :

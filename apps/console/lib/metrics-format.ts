@@ -21,6 +21,14 @@ export interface HealthSnapshot {
   apps_route_capped: number;
   /** Plus grand nombre de routes distinctes retenues pour une application. */
   routes_max: number;
+  /** Lots débarqués en attente de drain (ingestion différée, migration-v63).
+   *  Une file qui monte veut dire que le travailleur ne suit pas — et la table
+   *  est UNLOGGED, donc ce qui s'y accumule est ce qu'un redémarrage perdrait. */
+  ingest_backlog: number;
+  /** Lots ABANDONNÉS après cinq échecs : ils ne seront plus repris. */
+  ingest_backlog_blocked: number;
+  /** Âge du plus vieux lot en attente, en secondes. */
+  ingest_backlog_age_s: number;
 }
 
 export interface Metric {
@@ -49,6 +57,9 @@ export function healthToMetrics(h: HealthSnapshot): Metric[] {
     g("miprum_metering_lag_hours", "Ancienneté du dernier métering d'usage (heures).", h.metering_lag_hours),
     g("miprum_apps_route_capped", "Applications au plafond de cardinalité de route (routes inédites regroupées sous (other)).", h.apps_route_capped),
     g("miprum_routes_max", "Plus grand nombre de routes distinctes retenues pour une application.", h.routes_max),
+    g("miprum_ingest_backlog", "Lots débarqués en attente de drain (ingestion différée).", h.ingest_backlog),
+    g("miprum_ingest_backlog_blocked", "Lots abandonnés après cinq échecs d'écriture.", h.ingest_backlog_blocked),
+    g("miprum_ingest_backlog_age_seconds", "Âge du plus vieux lot en attente de drain (secondes).", h.ingest_backlog_age_s),
   ];
 }
 

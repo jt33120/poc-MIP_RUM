@@ -86,6 +86,24 @@ export default async function Health() {
         <Stat label="Livraisons abandonnées" value={h.deliveries_dead} tone={h.deliveries_dead > 0 ? "text-red-600 dark:text-red-400" : ""} />
       </div>
 
+      <h2 className="mb-2 text-sm font-semibold text-ink">File de débarquement</h2>
+      <p className="mb-2 text-xs text-ink-faint">
+        Active seulement si <code>INGEST_DEFERRED</code> est allumé. La table est <strong>UNLOGGED</strong> :
+        ce qui attend ici est exactement ce qu&apos;un redémarrage brutal de PostgreSQL perdrait. Une
+        file qui monte veut dire que le travailleur ne suit pas ; des lots abandonnés veulent dire
+        qu&apos;une écriture échoue en boucle, et ceux-là ne seront plus repris.
+      </p>
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Stat label="Lots en attente" value={h.ingest_backlog} tone={h.ingest_backlog > 1000 ? "text-amber-600 dark:text-amber-400" : ""} />
+        <Stat label="Lots abandonnés" value={h.ingest_backlog_blocked} tone={h.ingest_backlog_blocked > 0 ? "text-red-600 dark:text-red-400" : ""} />
+        <div className="card px-4 py-3">
+          <div className="text-[11px] uppercase tracking-wide text-ink-faint">Plus vieux lot</div>
+          <div className="mt-0.5 text-2xl font-bold tabular-nums">
+            {h.ingest_backlog === 0 ? "—" : `${h.ingest_backlog_age_s.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} s`}
+          </div>
+        </div>
+      </div>
+
       <h2 className="mb-2 text-sm font-semibold text-ink">Cardinalité des routes</h2>
       <p className="mb-2 text-xs text-ink-faint">
         Au-delà du plafond d&apos;une application, ses routes inédites sont regroupées sous{" "}
