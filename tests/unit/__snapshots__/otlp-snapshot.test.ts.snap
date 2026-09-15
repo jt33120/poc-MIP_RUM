@@ -40,6 +40,7 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
       "ts": 2025-10-09T08:53:22.000Z,
     },
   ],
+  "eventIndex": [],
   "events": [
     {
       "app_id": "demo",

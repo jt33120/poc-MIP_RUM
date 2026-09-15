@@ -25,6 +25,13 @@ const THRESHOLDS = {
 // de PII à côté de `label`, même si le SDK officiel émet déjà cette liste.
 const BREADCRUMB_TYPES = new Set(["click", "nav", "error", "custom"]);
 const BREADCRUMB_LABEL_MAX = 120;
+const RESOURCE_TYPES = new Set([
+  "document", "stylesheet", "script", "image", "font", "xhr", "fetch", "beacon", "media", "worker", "other",
+]);
+const SPAN_INDEX_KINDS = new Set(["client", "server", "db", "internal"]);
+const EVENT_INDEX_ROUTE_MAX = 512;
+const EVENT_INDEX_VITALS = new Set(Object.keys(THRESHOLDS));
+const NATIVE_SPAN_ID = /^[0-9a-f]{16}$/i;
 
 export function breadcrumbType(value) {
   return typeof value === "string" && BREADCRUMB_TYPES.has(value.toLowerCase())
@@ -35,6 +42,71 @@ export function breadcrumbType(value) {
 export function breadcrumbLabel(value) {
   const clean = scrubText(value);
   return clean == null ? null : clean.slice(0, BREADCRUMB_LABEL_MAX);
+}
+
+/**
+ * Libellé optionnel de la projection d'événements.
+ *
+ * L'index n'est pas un second stockage de texte libre : il ne retient qu'un
+ * nom court, déjà scrubbed, pour distinguer les catégories homogènes. Les
+ * messages, stacks, props et corps de log ne passent jamais par ici.
+ */
+export function isNativeSpanId(value) {
+  return typeof value === "string" && NATIVE_SPAN_ID.test(value);
+}
+
+/**
+ * Frontière route de la projection. Une URL absolue, un protocole-relative ou
+ * une route non-string ne deviennent jamais un second canal de stockage. La
+ * base applique ensuite exactement mip_router_ou_autre() (règles + plafond de
+ * cardinalité), via le trigger de rum_event_index.
+ */
+export function eventIndexRoute(value) {
+  const clean = scrubUrl(value);
+  if (clean == null || !clean.startsWith("/") || clean.startsWith("//")) return null;
+  return clean.slice(0, EVENT_INDEX_ROUTE_MAX);
+}
+
+/**
+ * Projection minimale construite UNIQUEMENT depuis les lignes déjà
+ * normalisées par flattenOtlp. Ne jamais la dériver des attributs OTLP : cela
+ * réintroduirait les URL brutes, props ou identités que les collections source
+ * viennent précisément de contrôler.
+ */
+export function buildEventIndex({ pageviews = [], metrics = [], errors = [], resources = [], longtasks = [], breadcrumbs = [], events = [], spans = [] }) {
+  const index = [];
+  const ajouter = (kind, row, sourceName = null) => {
+    // L'ID de span OTLP est une valeur technique de 64 bits, pas un texte libre.
+    // Toute autre chaîne reste éventuellement dans la source historique, mais
+    // n'entre jamais dans la projection/API.
+    if (!row || !isNativeSpanId(row.span_id)) return;
+    index.push({
+      app_id: row.app_id,
+      session_id: row.session_id ?? null,
+      ts: row.ts,
+      route: eventIndexRoute(row.route),
+      kind,
+      source_name: sourceName,
+      source_span_id: row.span_id.toLowerCase(),
+    });
+  };
+
+  for (const row of pageviews) ajouter("pageview", row);
+  for (const row of metrics) {
+    ajouter("vital", row, EVENT_INDEX_VITALS.has(row.name) ? row.name : null);
+  }
+  for (const row of errors) ajouter("error", row);
+  for (const row of resources) {
+    const type = typeof row.type === "string" ? row.type.toLowerCase() : "other";
+    ajouter("resource", row, RESOURCE_TYPES.has(type) ? type : "other");
+  }
+  for (const row of longtasks) ajouter("longtask", row, row.source === "loaf" ? "loaf" : "longtask");
+  for (const row of breadcrumbs) ajouter("breadcrumb", row, BREADCRUMB_TYPES.has(row.type) ? row.type : null);
+  for (const row of events) {
+    ajouter("event", row, row.name === "frustration.rage" || row.name === "frustration.dead" ? row.name : "track");
+  }
+  for (const row of spans) ajouter("span", row, SPAN_INDEX_KINDS.has(row.kind) ? row.kind : null);
+  return index;
 }
 
 /** Rating CWV selon seuils 2026 ; null si métrique inconnue. */
@@ -901,6 +973,17 @@ export function flattenOtlp(payload, opts = {}) {
       }
     }
   }
+  const eventIndex = buildEventIndex({
+    pageviews,
+    metrics,
+    errors,
+    resources,
+    longtasks,
+    breadcrumbs,
+    events,
+    spans,
+  });
+
   return {
     sessions: [...sessions.values()],
     pageviews,
@@ -911,6 +994,7 @@ export function flattenOtlp(payload, opts = {}) {
     breadcrumbs,
     events,
     spans,
+    eventIndex,
     apiKeys,
     sviCalls,
     sviSteps,

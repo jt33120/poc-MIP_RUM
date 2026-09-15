@@ -43,8 +43,8 @@ describe("CLS et INP ne comptent plus qu'une fois par chargement", () => {
     expect(PG).toContain("on conflict (session_id, name, metric_uid) where metric_uid is not null");
     expect(PG).toContain("on conflict (span_id) do nothing");
     const f = PG.slice(PG.indexOf("async function ecrireMetriques"));
-    expect(f).toContain("metrics.filter((m) => m.metric_uid)");
-    expect(f).toContain("metrics.filter((m) => !m.metric_uid)");
+    expect(f).toContain("consolidées.filter((m) => m.metric_uid)");
+    expect(f).toContain("consolidées.filter((m) => !m.metric_uid)");
   });
 
   it("retient le MAXIMUM, pas « le dernier arrivé »", () => {

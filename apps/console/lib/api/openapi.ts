@@ -85,6 +85,10 @@ export function buildOpenApi(): Record<string, unknown> {
     { $ref: "#/components/parameters/limit" },
     { $ref: "#/components/parameters/offset" },
   ];
+  const eventPageParams = [
+    { $ref: "#/components/parameters/limit" },
+    { $ref: "#/components/parameters/eventOffset" },
+  ];
 
   return {
     openapi: "3.0.3",
@@ -173,6 +177,17 @@ export function buildOpenApi(): Record<string, unknown> {
           },
         ),
       },
+      "/events": {
+        get: get(
+          "Événements RUM indexés (projection minimale, paginée)",
+          "rum",
+          o({ events: arr(ref("EventIndexRow")), page: ref("Page") }, ["events", "page"]),
+          {
+            params: [{ $ref: "#/components/parameters/app" }, { $ref: "#/components/parameters/eventKind" }, ...eventPageParams],
+            extraResponses: { "400": ref0("BadRequest") },
+          },
+        ),
+      },
       "/tracing": {
         get: get(
           "Couverture tracing + appels API + routes back",
@@ -219,10 +234,13 @@ export function buildOpenApi(): Record<string, unknown> {
         app: { name: "app", in: "query", schema: str, description: "slug d'app, ou 'all' (défaut)" },
         period: { name: "period", in: "query", schema: { type: "string", enum: ["1h", "24h", "7d"] }, description: "fenêtre (défaut 24h)" },
         device: { name: "device", in: "query", schema: { type: "string", enum: ["mobile", "desktop", "tablet", "all"] }, description: "type d'appareil (défaut all)" },
+        eventKind: { name: "kind", in: "query", schema: { type: "string", enum: ["pageview", "vital", "error", "resource", "longtask", "breadcrumb", "event", "span"] }, description: "catégorie d'événement indexé (défaut toutes)" },
         limit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 200 }, description: "taille de page (borné 1..200)" },
         offset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0 }, description: "décalage de page" },
+        eventOffset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0, maximum: 10000 }, description: "décalage du journal d'événements (borné à 10 000)" },
       },
       responses: {
+        BadRequest: { description: "Paramètre invalide", content: { "application/json": { schema: ref("Error") } } },
         Unauthorized: { description: "Authentification requise/invalide", content: { "application/json": { schema: ref("Error") } } },
         NotFound: { description: "Ressource inconnue (ou hors-scope)", content: { "application/json": { schema: ref("Error") } } },
         RateLimited: { description: "Trop de requêtes (voir en-têtes RateLimit-* / Retry-After)", content: { "application/json": { schema: ref("Error") } } },
@@ -277,6 +295,10 @@ export function buildOpenApi(): Record<string, unknown> {
         SessionMeta: o(
           { session_id: str, app_id: str, client_id: nul(str), visitor_id: nul(str), id_kind: nul(str), user_hash: nul(str), user_agent: nul(str), device_type: nul(str), geo_country: nul(str), started_at: dateTime, last_seen_at: dateTime, page_count: int },
           ["session_id", "app_id"],
+        ),
+        EventIndexRow: o(
+          { id: { type: "string", pattern: "^[0-9]+$", description: "bigint PostgreSQL (int64) sérialisé en chaîne pour éviter la perte de précision JavaScript" }, app_id: str, session_id: nul(str), ts: dateTime, route: nul(str), kind: { type: "string", enum: ["pageview", "vital", "error", "resource", "longtask", "breadcrumb", "event", "span"] }, source_name: nul(str), source_span_id: str },
+          ["id", "app_id", "ts", "kind", "source_span_id"],
         ),
         TimelineItem: o(
           { kind: { type: "string", enum: ["pageview", "vital", "error", "breadcrumb", "longtask", "event", "api"] }, ts: dateTime, title: nul(str), detail: nul(str), value: nul(num), rating: nul(str) },

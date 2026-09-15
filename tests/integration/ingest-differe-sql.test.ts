@@ -54,7 +54,7 @@ function lot(n: number) {
     }));
   const span = (nom: string, extra: Record<string, string | number>, i: number) => ({
     name: nom,
-    spanId: `${sid}-${i}`,
+    spanId: (n * 16 + i + 1).toString(16).padStart(16, "0"),
     traceId: `${sid}-t`,
     startTimeUnixNano: String((base + i) * 1e6),
     endTimeUnixNano: String((base + i + 5) * 1e6),
@@ -94,6 +94,7 @@ afterAll(async () => {
 
 async function repartirDeZero() {
   await pool.query("delete from ingest_raw");
+  await pool.query("delete from rum_event_index where app_id = $1", [APP]);
   await pool.query("delete from rum_metric where app_id = $1", [APP]);
   await pool.query("delete from rum_pageview where app_id = $1", [APP]);
   await pool.query("delete from rum_session where app_id = $1", [APP]);
@@ -114,7 +115,21 @@ suite("le lot débarqué finit dans les tables finales, à l'identique", () => {
     expect(bilan).toEqual({ drains: 5, echecs: 0 });
     expect(Number((await pool.query("select count(*)::int n from rum_metric where app_id=$1", [APP])).rows[0].n)).toBe(5);
     expect(Number((await pool.query("select count(*)::int n from rum_pageview where app_id=$1", [APP])).rows[0].n)).toBe(5);
+    // Chaque lot porte une pageview et un vital : la projection est conservée
+    // dans le jsonb aplati et écrite par le même drain que les sources.
+    expect(Number((await pool.query("select count(*)::int n from rum_event_index where app_id=$1", [APP])).rows[0].n)).toBe(10);
     expect((await etatIngestRaw(pool)).en_attente).toBe(0);
+  });
+
+  it("un même lot différé rejoué garde une seule projection par identité native", async () => {
+    await repartirDeZero();
+    const rejoue = lot(77);
+    await deposerLot(pool, APP, rejoue);
+    await deposerLot(pool, APP, rejoue);
+    expect(await drainerIngestRaw(pool, { max: 10, log: muet })).toEqual({ drains: 2, echecs: 0 });
+    expect(Number((await pool.query("select count(*)::int n from rum_pageview where app_id=$1", [APP])).rows[0].n)).toBe(1);
+    expect(Number((await pool.query("select count(*)::int n from rum_metric where app_id=$1", [APP])).rows[0].n)).toBe(1);
+    expect(Number((await pool.query("select count(*)::int n from rum_event_index where app_id=$1", [APP])).rows[0].n)).toBe(2);
   });
 
   it("supprime le lot drainé — sinon un second passage le rejouerait", async () => {

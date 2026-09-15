@@ -143,6 +143,27 @@ cumulé.
 `data = { meta: SessionMeta, timeline: TimelineItem[] }`. `404` si inconnue ou
 hors-scope (un `viewer` ne lit que ses apps).
 
+### `GET /api/v1/events` — journal RUM unifié
+`data = { events: EventIndexRow[], page: { limit, offset } }`, trié de façon stable
+par `ts DESC, id DESC`. La projection ne contient que `app_id`, `session_id`, `ts`,
+route scrubbed, normalisée et plafonnée, `kind`, libellé source de taxonomie fermée et
+`source_span_id` OTLP hexadécimal : jamais de props,
+message/stack, URL brute, UA ou identité visiteur.
+
+- `kind` est optionnel et fermé à `pageview`, `vital`, `error`, `resource`, `longtask`,
+  `breadcrumb`, `event`, `span` ; toute autre valeur reçoit `400`.
+- `limit` est borné à `1..200` (défaut `100`) ; `offset` est borné à `10 000`.
+- `id` est un `bigint` PostgreSQL sérialisé en chaîne décimale (`int64`) afin de ne
+  jamais perdre de précision côté JavaScript.
+- Le scope `app` est appliqué avant la requête : un viewer ou jeton scopé ne peut lire
+  qu'une app autorisée, même en demandant une autre valeur. Cette liste parcourt la
+  rétention disponible ; `period` et `device` ne la filtrent pas.
+
+La projection commence avec la migration v65 : aucun backfill historique n'est lancé
+automatiquement. Le collecteur actif est le chemin Node (`/api/ingest/v1/traces`) ;
+l'ancienne Edge Function Supabase n'est plus sur le chemin de collecte actif et sa
+compatibilité v65 est donc explicitement différée plutôt que simulée.
+
 ### `GET /api/v1/tracing` — tracing distribué
 `data = { coverage: TraceCoverage, apiCalls: ApiCallRow[], backRoutes: BackRouteRow[] }`.
 

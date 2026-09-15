@@ -23,6 +23,7 @@ import {
   type DsarExport,
   type DsarVerdict,
 } from "./dsar";
+import type { PoolClient } from "pg";
 import { q, tx } from "./db";
 
 /** Périmètre commun : $1 = app ou 'all', $2 = identifiant de visiteur. */
@@ -42,6 +43,30 @@ const SQL_HERITEES = `select count(*)::int as n from rum_session
 export interface DsarCount {
   table: string;
   rows: number;
+}
+
+/** v65 peut être appliquée après le déploiement console : seule cette table est optionnelle. */
+const DSAR_OPTIONAL_TABLE = "rum_event_index";
+
+async function tableDsarDisponible(table: string): Promise<boolean> {
+  if (table !== DSAR_OPTIONAL_TABLE) return true;
+  const [row] = await q<{ present: boolean }>(
+    "select to_regclass($1) is not null as present",
+    [`public.${table}`],
+  );
+  return row?.present === true;
+}
+
+async function tableDsarDisponibleDansTransaction(
+  client: PoolClient,
+  table: string,
+): Promise<boolean> {
+  if (table !== DSAR_OPTIONAL_TABLE) return true;
+  const { rows } = await client.query<{ present: boolean }>(
+    "select to_regclass($1) is not null as present",
+    [`public.${table}`],
+  );
+  return rows[0]?.present === true;
 }
 
 /** Recevabilité d'une demande, décomptes à l'appui. */
@@ -79,6 +104,10 @@ async function exigerRecevable(app: string, id: string): Promise<void> {
 export async function dsarCounts(app: string, visitorId: string): Promise<DsarCount[]> {
   const out: DsarCount[] = [];
   for (const t of DSAR_CHILD_TABLES) {
+    if (!(await tableDsarDisponible(t))) {
+      out.push({ table: t, rows: 0 });
+      continue;
+    }
     const [r] = await q<{ n: number }>(
       `select count(*)::int as n from ${t} where session_id in (${SESSIONS_SUBQ})`,
       [app, visitorId],
@@ -113,6 +142,10 @@ export async function dsarExport(
   await exigerRecevable(app, visitorId);
   const tables: Record<string, unknown[]> = {};
   for (const t of DSAR_CHILD_TABLES) {
+    if (!(await tableDsarDisponible(t))) {
+      tables[t] = [];
+      continue;
+    }
     tables[t] = await q(
       `select * from ${t} where session_id in (${SESSIONS_SUBQ})`,
       [app, visitorId],
@@ -140,7 +173,31 @@ export async function dsarErase(
   await exigerRecevable(app, visitorId);
   return tx(async (client) => {
     const deleted: { table: string; deleted: number }[] = [];
+    // Une session art. 17 ne doit pas être recréée lorsqu'un lot déjà déposé
+    // sera drainé. On retire donc, sous la même transaction, les lots qui la
+    // portent avant de toucher les tables finales.
+    const sessions = await client.query<{ session_id: string }>(
+      `select session_id from rum_session where ${PERIMETRE} for update`,
+      [app, visitorId],
+    );
+    const sessionIds = sessions.rows.map((s) => s.session_id);
+    if (sessionIds.length) {
+      await client.query(
+        `delete from ingest_raw
+          where ($1 = 'all' or app_id = $1)
+            and exists (
+              select 1
+                from jsonb_array_elements(coalesce(lot->'sessions', '[]'::jsonb)) queued
+               where queued->>'session_id' = any($2::text[])
+            )`,
+        [app, sessionIds],
+      );
+    }
     for (const t of DSAR_CHILD_TABLES) {
+      if (!(await tableDsarDisponibleDansTransaction(client, t))) {
+        deleted.push({ table: t, deleted: 0 });
+        continue;
+      }
       const r = await client.query(
         `delete from ${t} where session_id in (${SESSIONS_SUBQ})`,
         [app, visitorId],

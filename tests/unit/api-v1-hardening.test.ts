@@ -103,6 +103,16 @@ describe("buildOpenApi — spec valide et complète", () => {
     expect(spec.components.securitySchemes.sessionCookie.in).toBe("cookie");
   });
 
+  it("documente le 400 et la borne offset propres à /events", () => {
+    const events = spec.paths["/events"].get;
+    expect(events.responses["400"].$ref).toBe("#/components/responses/BadRequest");
+    const params = events.parameters.map((p: { $ref: string }) => p.$ref);
+    expect(params).toContain("#/components/parameters/eventOffset");
+    expect(spec.components.parameters.eventOffset.schema.maximum).toBe(10_000);
+    expect(spec.components.parameters.offset.schema.maximum).toBeUndefined();
+    expect(spec.components.schemas.EventIndexRow.properties.id.type).toBe("string");
+  });
+
   it("aucun $ref pendouillant (tout référencé existe)", () => {
     const refs: string[] = [];
     const walk = (o: unknown) => {

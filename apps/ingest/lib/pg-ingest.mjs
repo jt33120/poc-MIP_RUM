@@ -10,6 +10,7 @@
 //
 // Aucune dépendance à Deno ni à supabase-js : `pg` et rien d'autre.
 import { createHash } from "node:crypto";
+import { isNativeSpanId } from "../supabase/functions/_shared/otlp.mjs";
 
 // ───────────────────────────── Écriture ─────────────────────────────
 
@@ -174,6 +175,27 @@ const COLONNES_METRIQUE = [
   "span_id", "session_id", "app_id", "route", "name", "value", "rating", "attribution", "ts",
 ];
 
+/** Une seule ligne par vital consolidé dans un même lot (CLS/INP inclus). */
+function consoliderMetriques(metrics) {
+  const uniques = new Map();
+  for (const metric of metrics) {
+    if (!metric.metric_uid) {
+      uniques.set(Symbol(), metric);
+      continue;
+    }
+    const key = `${metric.app_id}\u0000${metric.session_id}\u0000${metric.name}\u0000${metric.metric_uid}`;
+    const previous = uniques.get(key);
+    // La première ligne conserve l'identité span_id canonique ; les rapports
+    // ultérieurs ne peuvent améliorer que la valeur/ts/rating, jamais la clé.
+    if (!previous || metric.value > previous.value) {
+      uniques.set(key, previous
+        ? { ...metric, span_id: previous.span_id }
+        : metric);
+    }
+  }
+  return [...uniques.values()];
+}
+
 /**
  * Écrit les Web Vitals, en DEUX passes — et la raison n'est pas cosmétique.
  *
@@ -200,17 +222,18 @@ const COLONNES_METRIQUE = [
  * de rejeu. Une seule règle pour les cinq, donc aucune branche qui puisse dériver.
  */
 async function ecrireMetriques(client, metrics) {
+  const consolidées = consoliderMetriques(metrics);
   const dispo = await colonnesDe(client, "rum_metric");
   const avecUid = dispo.has("metric_uid");
   const cols = avecUid ? [...COLONNES_METRIQUE, "metric_uid"] : COLONNES_METRIQUE;
   const prep = (m) => ({ ...m, attribution: m.attribution ? JSON.stringify(m.attribution) : null });
 
   if (!avecUid) {
-    await batchInsert(client, "rum_metric", cols, metrics.map(prep), "on conflict (span_id) do nothing");
+    await batchInsert(client, "rum_metric", cols, consolidées.map(prep), "on conflict (span_id) do nothing");
     return;
   }
-  const identifiees = metrics.filter((m) => m.metric_uid);
-  const anonymes = metrics.filter((m) => !m.metric_uid);
+  const identifiees = consolidées.filter((m) => m.metric_uid);
+  const anonymes = consolidées.filter((m) => !m.metric_uid);
 
   await batchInsert(
     client,
@@ -223,6 +246,44 @@ async function ecrireMetriques(client, metrics) {
        ts     = case when excluded.value > rum_metric.value then excluded.ts     else rum_metric.ts     end`,
   );
   await batchInsert(client, "rum_metric", cols, anonymes.map(prep), "on conflict (span_id) do nothing");
+}
+
+/**
+ * Les rapports CLS/INP peuvent porter plusieurs span_id pour le même
+ * webvital.id. Après l'upsert de rum_metric, on reprend donc l'identité de la
+ * ligne canonique (celle qui survit au conflit metric_uid) avant d'indexer.
+ * Le reste des kinds conserve son span OTLP natif du lot.
+ */
+async function indexAvecVitalsConsolides(client, eventIndex, metrics) {
+  const metricBySpan = new Map(
+    (metrics ?? [])
+      .filter((metric) => metric?.metric_uid && isNativeSpanId(metric.span_id))
+      .map((metric) => [metric.span_id.toLowerCase(), metric]),
+  );
+
+  const resolved = await Promise.all(eventIndex.map(async (event) => {
+    if (event.kind !== "vital") return event;
+    const metric = metricBySpan.get(event.source_span_id);
+    if (!metric) return event;
+    const { rows } = await client.query(
+      `select app_id, session_id, ts, route, name, span_id
+         from rum_metric
+        where app_id = $1 and session_id = $2 and name = $3 and metric_uid = $4
+        limit 1`,
+      [metric.app_id, metric.session_id, metric.name, metric.metric_uid],
+    );
+    const canonical = rows[0];
+    if (!canonical || !isNativeSpanId(canonical.span_id)) return null;
+    return {
+      ...event,
+      app_id: canonical.app_id,
+      session_id: canonical.session_id,
+      ts: canonical.ts,
+      route: canonical.route,
+      source_span_id: canonical.span_id.toLowerCase(),
+    };
+  }));
+  return resolved.filter(Boolean);
 }
 
 /**
@@ -240,6 +301,7 @@ export async function writeRows(pool, {
   breadcrumbs,
   events,
   spans,
+  eventIndex = [],
   sviCalls,
   sviSteps,
   sviLegs,
@@ -318,6 +380,22 @@ export async function writeRows(pool, {
       spans ?? [],
       "on conflict (span_id) do nothing",
     );
+    // Projection append-only, dérivée à partir de collections déjà scrubbed par
+    // flattenOtlp. Elle n'entre volontairement dans AUCUN compteur de quota :
+    // un même signal source produit une ligne de lecture, pas un événement de
+    // télémétrie supplémentaire.
+    // Comme les autres ajouts de schéma, ne jamais faire tomber les écritures
+    // sources pendant l'intervalle code-déployé / migration-appliquée.
+    if ((await colonnesDe(client, "rum_event_index")).has("source_span_id")) {
+      const projection = await indexAvecVitalsConsolides(client, eventIndex, metrics);
+      await batchInsert(
+        client,
+        "rum_event_index",
+        ["app_id", "session_id", "ts", "route", "kind", "source_name", "source_span_id"],
+        projection,
+        "on conflict (app_id, kind, source_span_id) do nothing",
+      );
+    }
 
     // SVI (migration-v51) : la fusion des lots est non triviale (ne jamais
     // régresser un champ vers NULL, retenir le début le plus tôt / la fin la

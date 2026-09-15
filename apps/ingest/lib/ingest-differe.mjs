@@ -11,6 +11,7 @@
 // acquitté mais non drainé disparaît si PostgreSQL redémarre brutalement. Ce
 // compromis se choisit, il ne se subit pas — cf. migration-v63.
 import { writeRows } from "./pg-ingest.mjs";
+import { buildEventIndex } from "../supabase/functions/_shared/otlp.mjs";
 
 /** Au-delà, un lot cesse d'être repris et garde son erreur. */
 export const MAX_TENTATIVES = 5;
@@ -42,6 +43,10 @@ function completer(lot) {
     breadcrumbs: lot.breadcrumbs ?? vide,
     events: lot.events ?? vide,
     spans: lot.spans ?? vide,
+    // Les lots déjà déposés avant v65 ne portent pas la projection. Ils
+    // contiennent néanmoins les collections normalisées : la reconstruire ici
+    // est sûre, et évite de réserver la nouvelle API aux seuls lots récents.
+    eventIndex: lot.eventIndex ?? buildEventIndex(lot),
     sviCalls: lot.sviCalls ?? vide,
     sviSteps: lot.sviSteps ?? vide,
     sviLegs: lot.sviLegs ?? vide,
