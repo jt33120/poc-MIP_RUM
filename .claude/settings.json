@@ -20,7 +20,7 @@
         ]
       },
       {
-        "matcher": "Bash|mcp__graft__",
+        "matcher": "Bash|mcp__graft__|Read|Grep|Glob",
         "hooks": [
           {
             "type": "command",
@@ -46,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v graft >/dev/null 2>&1 || npm install -g @nanonets/graft --silent 2>/dev/null || true; node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-hooks.cjs\" session-start",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-hooks.cjs\" session-start",
             "timeout": 8000
           }
         ]

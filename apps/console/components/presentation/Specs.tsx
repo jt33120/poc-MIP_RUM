@@ -289,7 +289,7 @@ export async function Specs() {
   const nonCouvertes = mesuresNonCouvertes();
 
   return (
-    <section id="specs" className="mip-bande-claire scroll-mt-16 border-y border-line">
+    <section id="specs" className="scroll-mt-16 border-y border-line">
       <div className="mx-auto max-w-6xl px-6 py-16 lg:py-20">
         <header className="max-w-3xl">
           <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-perf">

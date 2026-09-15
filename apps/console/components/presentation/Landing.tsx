@@ -10,49 +10,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Capteurs } from "@/components/presentation/Capteurs";
-import { Demo } from "@/components/presentation/Demo";
 import { Specs } from "@/components/presentation/Specs";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { SDK_POIDS_TEXTE } from "@/lib/sdk-poids";
-
-// --- contenu : des mots clés, pas des paragraphes -----------------------------
-
-/** Ce que l'outil mesure et restitue, du navigateur à la décision. */
-const FONCTIONNEMENT = [
-  `Snippet ${SDK_POIDS_TEXTE}`,
-  "Core Web Vitals p75 — LCP · INP · CLS",
-  "Erreurs JS groupées par cause",
-  "Sessions & parcours réels",
-  "Tracing front → back",
-  "Score de santé /100",
-  "Anomalies sans seuil à régler",
-  "Anonyme — aucune donnée identifiante",
-];
-
-/** La chaîne technique derrière, de la collecte au stockage. */
-const STACK = [
-  "SDK navigateur (Web Vitals · rrweb)",
-  "OpenTelemetry · OTLP/HTTP",
-  // « Deno » décrivait les edge functions Supabase, mortes avec leur projet en
-  // août 2026 : plus rien ne tourne sur Deno. Et l'ingestion n'est plus une route
-  // de la console : c'est un service Node autonome (services/ingest), déployé sur
-  // Railway. Les routes Next subsistent le temps de la bascule et appellent le
-  // MÊME code — dire « routes Next.js » décrirait le montage, pas le produit.
-  "Backend Node autonome — Railway",
-  // Ce qui TOURNE, pas la cible : ClickHouse a son schéma et son bench, mais
-  // n'est branché nulle part, et la purge à 30 jours n'est jamais déclenchée
-  // faute de planificateur authentifié. Les deux sont dits dans « Specs /
-  // Capacité technique », onglet « Écart au marché » ; les annoncer ici comme
-  // acquis contredirait ce tableau.
-  "PostgreSQL",
-  "Next.js 15 · React 19",
-  // « Hébergé en UE » tout court était trop large : c'est la BASE qui est à
-  // Francfort. Le détail par fournisseur — base, console, backend — est dans
-  // « Specs / Capacité technique », onglet « Infrastructure ».
-  "Base de données en UE — Francfort",
-];
-
+import { demoConfig } from "@/lib/demo";
 
 /** Marque MIP RUM — pouls sur carré orange + wordmark. */
 function BrandMark() {
@@ -85,37 +46,49 @@ function PocLabel({ className = "" }: { className?: string }) {
   );
 }
 
-/** Bouton principal — dégradé orange, la seule surface pleine de la page. */
-function LoginButton({ size = "md" }: { size?: "sm" | "md" }) {
-  const pad = size === "sm" ? "px-4 py-2 text-sm" : "px-6 py-3 text-base";
-  return (
-    <Link
-      href="/login"
-      data-testid={size === "sm" ? "presentation-login-top" : "presentation-login"}
-      className={`inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-accent via-[#fca62b] to-accent-deep font-semibold text-navy-950 shadow-[0_8px_22px_-10px_rgba(248,145,1,0.9)] transition hover:brightness-110 hover:shadow-[0_10px_26px_-8px_rgba(248,145,1,0.95)] ${pad}`}
-    >
-      Se connecter <span aria-hidden>→</span>
-    </Link>
-  );
-}
+const PLEIN =
+  "bg-gradient-to-r from-accent via-[#fca62b] to-accent-deep text-navy-950 shadow-[0_8px_22px_-10px_rgba(248,145,1,0.9)] hover:brightness-110 hover:shadow-[0_10px_26px_-8px_rgba(248,145,1,0.95)]";
+const CONTOUR = "border border-line bg-panel/70 text-ink backdrop-blur-sm hover:border-accent/50";
+const VERROUILLE =
+  "cursor-not-allowed border border-dashed border-line bg-panel/40 text-ink-faint";
 
-/** Rangée de mots clés sous un intitulé court. */
-function Keywords({ label, items }: { label: string; items: string[] }) {
+/** Démo et connexion côte à côte, toujours dans cet ordre. Sans
+ *  DEMO_USER_APPS, la démo reste affichée mais verrouillée — pas de lien mort,
+ *  juste une promesse pas encore tenue, avec l'info au survol. */
+function Actions({ size = "md" }: { size?: "sm" | "md" }) {
+  const demo = demoConfig();
+  const pad = size === "sm" ? "px-4 py-2 text-sm" : "px-6 py-3 text-base";
+  const base = `inline-flex shrink-0 items-center gap-2 rounded-xl font-semibold transition ${pad}`;
+  const suffixe = size === "sm" ? "-top" : "";
   return (
-    <div>
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-        {label}
-      </h2>
-      <ul className="mt-3 flex flex-wrap gap-2">
-        {items.map((k) => (
-          <li
-            key={k}
-            className="rounded-full border border-line bg-panel/70 px-3 py-1 text-xs font-medium text-ink-soft backdrop-blur-sm"
-          >
-            {k}
-          </li>
-        ))}
-      </ul>
+    <div className="flex flex-wrap items-center gap-2.5">
+      {demo ? (
+        <Link
+          href="/demo"
+          prefetch={false}
+          data-testid={`presentation-demo${suffixe}`}
+          className={`${base} ${PLEIN}`}
+        >
+          Voir la démo <span aria-hidden>→</span>
+        </Link>
+      ) : (
+        <span
+          aria-disabled="true"
+          title="Démo bientôt disponible"
+          data-testid={`presentation-demo${suffixe}`}
+          className={`${base} ${VERROUILLE}`}
+        >
+          <Icon paths={ICON_PATHS.lock} className="h-3.5 w-3.5" strokeWidth={2.4} />
+          Voir la démo
+        </span>
+      )}
+      <Link
+        href="/login"
+        data-testid={`presentation-login${suffixe}`}
+        className={`${base} ${demo ? CONTOUR : PLEIN}`}
+      >
+        Se connecter {!demo && <span aria-hidden>→</span>}
+      </Link>
     </div>
   );
 }
@@ -134,7 +107,7 @@ export function Landing() {
           <PocLabel className="hidden sm:inline-flex" />
           <div className="ml-auto flex items-center gap-2.5">
             <ThemeToggle />
-            <LoginButton size="sm" />
+            <Actions size="sm" />
           </div>
         </div>
       </header>
@@ -147,18 +120,9 @@ export function Landing() {
               MIP <span className="text-accent">RUM</span>
               <PocLabel className="translate-y-1" />
             </h1>
-            <p className="mt-4 text-lg leading-relaxed text-ink-soft">
-              Le monitoring de l&apos;expérience réelle : la performance et les erreurs vécues par vos
-              visiteurs en production, pas une sonde de laboratoire.
-            </p>
-
-            <div className="mt-10 flex flex-col gap-8">
-              <Keywords label="Comment ça marche" items={FONCTIONNEMENT} />
-              <Keywords label="Stack technique" items={STACK} />
-            </div>
 
             <div className="mt-10">
-              <LoginButton />
+              <Actions />
             </div>
           </div>
 
@@ -193,7 +157,6 @@ export function Landing() {
         </div>
 
         <Capteurs />
-        <Demo />
         <Specs />
       </main>
 

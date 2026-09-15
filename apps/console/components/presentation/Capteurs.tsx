@@ -18,8 +18,6 @@ type Capteur = {
   accroche: string;
   /** Étapes du chemin de la mesure, du poste du visiteur jusqu'à la console. */
   flux: string[];
-  /** La phrase pour quelqu'un qui ne code pas. Pas de jargon, pas de sigle. */
-  enClair: string;
   specs: { k: string; v: string }[];
   pourQui: string[];
   fort: string;
@@ -33,8 +31,6 @@ const CAPTEURS: Capteur[] = [
     titre: "Extension navigateur",
     accroche: "Sans toucher au site",
     flux: ["Poste géré", "Extension MV3", "OTLP/HTTP", "Console"],
-    enClair:
-      "On installe un module dans le navigateur des collaborateurs. Il n'observe que les sites que vous avez déclarés, et remonte ce que ces personnes vivent vraiment — sans que personne ait à modifier une ligne du site.",
     specs: [
       { k: "Déploiement", v: "Politique Chrome / Edge, ou sideload" },
       { k: "Intégration", v: "Aucune — le site n'est pas modifié" },
@@ -56,8 +52,6 @@ const CAPTEURS: Capteur[] = [
     titre: "SDK embarqué",
     accroche: "Une balise dans la page",
     flux: ["Visiteur", `SDK ${koTexte(SDK_GZIP_KO)} ko`, "OTLP/HTTP", "Console"],
-    enClair:
-      "Une ligne à coller dans le site. Chaque visiteur, où qu'il soit et quel que soit son appareil, mesure sa propre expérience et l'envoie. C'est le mode normal quand le site vous appartient.",
     specs: [
       { k: "Déploiement", v: `Une balise <script>, ${SDK_POIDS_TEXTE}` },
       { k: "Intégration", v: "Une ligne d'init, côté développeur" },
@@ -128,15 +122,7 @@ function CarteCapteur({ c }: { c: Capteur }) {
         <Flux etapes={c.flux} />
       </div>
 
-      {/* 1 — la phrase pour qui ne code pas */}
-      <div className="mt-6 border-l-2 border-accent/60 pl-4">
-        <h4 className="text-[10px] font-bold uppercase tracking-[0.18em] text-accent-deep">
-          En clair
-        </h4>
-        <p className="mt-1.5 text-[15px] leading-relaxed text-ink">{c.enClair}</p>
-      </div>
-
-      {/* 2 — les spécifications qui le situent */}
+      {/* les spécifications qui le situent */}
       <div className="mt-6">
         <h4 className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-faint">
           Spécifications
@@ -196,14 +182,17 @@ export function Capteurs() {
       <div className="mx-auto max-w-6xl px-6 py-16 lg:py-20">
         <header className="max-w-2xl">
           <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-perf">
-            Deux façons de poser la mesure
+            Deux points d&apos;entrée
           </span>
           <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            Deux capteurs, un seul catalogue
+            Extension navigateur ou SDK embarqué
           </h2>
           <p className="mt-3 leading-relaxed text-ink-soft">
-            Le moteur de collecte est le même des deux côtés. Ce qui change, c&apos;est le point
-            d&apos;entrée : un module posé dans le navigateur, ou une balise posée dans le site.
+            Même moteur de collecte, même console. Chrome et Edge pour l&apos;extension ; une
+            balise <code className="rounded bg-app/70 px-1.5 py-0.5 font-mono text-[13px] text-ink">
+              {"<script>"}
+            </code>{" "}
+            pour le SDK, sur n&apos;importe quel site.
           </p>
         </header>
 

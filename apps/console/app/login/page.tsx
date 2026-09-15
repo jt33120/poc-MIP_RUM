@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { LoginSubmitButton } from "@/components/LoginSubmitButton";
+import { PasswordField } from "@/components/PasswordField";
 import { getUser } from "@/lib/auth";
 import type { SearchParams } from "@/lib/filters";
 import { isOidcEnabled } from "@/lib/oidc";
@@ -61,16 +62,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
                   className="field mt-1 w-full"
                 />
               </label>
-              <label className="text-sm font-medium text-ink-soft">
-                Mot de passe
-                <input
-                  name="password"
-                  type="password"
-                  required
-                  autoComplete="current-password"
-                  className="field mt-1 w-full"
-                />
-              </label>
+              <PasswordField />
               {error && (
                 <p
                   data-testid="login-error"

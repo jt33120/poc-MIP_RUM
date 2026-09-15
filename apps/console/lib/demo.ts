@@ -1,6 +1,5 @@
 // Compte de démonstration de la vitrine publique — un seul point de vérité,
-// partagé par la route qui ouvre la session (app/demo/route.ts) et par la
-// section qui décide d'afficher, ou non, le bouton (components/presentation/Demo.tsx).
+// pour la route qui ouvre la session (app/demo/route.ts).
 //
 // TOUT VIENT DE L'ENVIRONNEMENT, rien de la base. C'est délibéré : la démo
 // s'ouvre et se ferme avec une variable Vercel, sans ligne à créer dans
