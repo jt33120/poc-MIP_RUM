@@ -7,7 +7,7 @@
 ## 1. Résumé exécutif
 
 Le POC prouve en 5 points que MIP sait faire du RUM OTel-native : (1) un SDK Web léger
-(**22,3 KB gzip**) capte les Core Web Vitals réels (LCP/INP/CLS/FCP/TTFB), les erreurs JS
+(**16,3 KB gzip**) capte les Core Web Vitals réels (LCP/INP/CLS/FCP/TTFB), les erreurs JS
 et les sessions de vrais navigateurs ; (2) la donnée circule en **OTLP/HTTP JSON standard**
 — vérifiable dans l'onglet réseau, donc portable et sans lock-in ; (3) elle est ingérée,
 stockée et restituée dans une **console RUM Live** (p75, seuils 2026) ; (4) la vue
@@ -73,7 +73,7 @@ surligné, données mippoc réelles), 06 mini-site de démo.
 - **Corrélation lisible** : pour chaque route, robot vs réel côte à côte + écart % ;
   la vue fonctionne avec les données synthétiques réelles (mesure TVMonaco via mippoc)
   comme avec le seed.
-- **Chiffres mesurés** : bundle 22,3 KB gzip ; p75 console = recalcul manuel (vérifié) ;
+- **Chiffres mesurés** : bundle 16,3 KB gzip ; p75 console = recalcul manuel (vérifié) ;
   ingestion 1 000 events en 0,3 s (~4 000 events/s) en local ; 36 tests unitaires +
   5 E2E verts (dont CORS préflight).
 - **Sondage mippoc concluant** : schéma réel constaté (`get_measure_execution_info` →
@@ -95,7 +95,7 @@ surligné, données mippoc réelles), 06 mini-site de démo.
 ## 6. Ce qui n'a pas / partiellement fonctionné
 
 - **Bundle > 10 KB** : la cible « <10 KB » du rapport v1 est irréaliste pour un SDK
-  OTel-natif ; 22,3 KB gzip est le coût du « vrai OTLP sur le fil » (full
+  OTel-natif ; 16,3 KB gzip est le coût du « vrai OTLP sur le fil » (full
   auto-instrumentation OTel ≈ 60 KB ; voie web-vitals seule ≈ 2-5 KB mais sans OTLP).
 - **Mapping route↔mesure synthétique partiel** : les mesures DEM existantes (TVMonaco…)
   ne correspondent pas aux routes de l'app cible ; le POC corrèle via `route_hint`

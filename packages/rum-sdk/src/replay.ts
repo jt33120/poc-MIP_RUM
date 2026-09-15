@@ -179,13 +179,19 @@ async function gzip(text: string): Promise<Uint8Array> {
 }
 
 let started = false;
+let boundaryFlush: (() => void) | null = null;
+
+/** Vide le chunk courant avant une rotation d'identité/session. */
+export function flushReplayBoundary(): void {
+  boundaryFlush?.();
+}
 
 /**
  * Démarre l'enregistrement replay (appelé par init() une fois la session
  * échantillonnée ET le consent acquis). Masquage par défaut : maskAllInputs
  * + blockClass 'mip-rum-block'. Caps : 2 min ou 1 Mo gzip cumulé.
  */
-export function startReplay(cfg: MIPRumConfig, sessionId: string): void {
+export function startReplay(cfg: MIPRumConfig, sessionId: string | (() => string)): void {
   if (started) return;
   if (typeof CompressionStream === "undefined") return; // navigateur trop ancien
   started = true;
@@ -205,12 +211,16 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string): void {
       /* déjà stoppé */
     }
     stopRecording = undefined;
+    boundaryFlush = null;
     buffer.stopped = true;
   };
 
   const flush = () => {
     const chunk = buffer.take();
     if (!chunk) return;
+    // Capture la session AVANT d'enfiler la compression asynchrone. Une
+    // rotation suivante ne peut donc pas rattacher l'ancien chunk au nouvel ID.
+    const chunkSessionId = typeof sessionId === "function" ? sessionId() : sessionId;
     posting = posting.then(async () => {
       try {
         const bytes = await gzip(JSON.stringify(chunk.events));
@@ -218,7 +228,7 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string): void {
           method: "POST",
           headers: {
             "content-type": "application/octet-stream",
-            "x-mip-session": sessionId,
+            "x-mip-session": chunkSessionId,
             "x-mip-app": cfg.appId,
             "x-mip-seq": String(chunk.seq),
             // clé d'API pour les apps qui en exigent une (l'ingestion replay
@@ -236,6 +246,7 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string): void {
       }
     });
   };
+  boundaryFlush = flush;
 
   loadReplayBundle(resolveReplayScriptUrl(mainScriptSrc))
     .then((record) => {
@@ -261,5 +272,6 @@ export function startReplay(cfg: MIPRumConfig, sessionId: string): void {
     })
     .catch(() => {
       started = false; // bundle indisponible : replay off, le RUM continue
+      boundaryFlush = null;
     });
 }

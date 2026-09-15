@@ -10,6 +10,8 @@ import {
   dsarExportFilename,
   isSafeDeleteOrder,
   summarizeCounts,
+  buildDsarIdentityExport,
+  isDsarIdentityHash,
 } from "../../apps/console/lib/dsar";
 
 describe("périmètre DSAR", () => {
@@ -86,5 +88,22 @@ describe("dsarExportFilename", () => {
   });
   it("replie sur \"user\" si l'identifiant ne donne rien d'alphanumérique", () => {
     expect(dsarExportFilename("!!!", "2026-07-08T10-00-00Z")).toContain("dsar-user-");
+  });
+});
+
+describe("DSAR par identité métier", () => {
+  const hash = "a".repeat(64);
+  it("n'accepte que le HMAC et assemble un export sans identifiant brut", () => {
+    expect(isDsarIdentityHash(hash)).toBe(true);
+    expect(isDsarIdentityHash("alice@example.test")).toBe(false);
+    const doc = buildDsarIdentityExport({
+      app: "demo",
+      identityKind: "user",
+      identityHash: hash,
+      generatedAt: "2026-09-15T00:00:00.000Z",
+      tables: { rum_session: [] },
+    });
+    expect(doc).toMatchObject({ version: 1, identity_kind: "user", identity_hash: hash });
+    expect(JSON.stringify(doc)).not.toContain("alice@example.test");
   });
 });

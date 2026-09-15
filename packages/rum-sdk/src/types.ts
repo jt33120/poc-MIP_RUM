@@ -1,3 +1,5 @@
+import type { EventMeta } from "./event-context";
+
 export interface MIPRumConfig {
   /** OTLP/HTTP JSON endpoint, ex: https://<ingest>/v1/traces */
   endpoint: string;
@@ -38,7 +40,10 @@ export interface MIPRumConfig {
    */
   honorDNT?: boolean;
   /** Last-chance PII filter applied to every span's attributes; return null to drop */
-  beforeSend?: (attributes: Record<string, unknown>) => Record<string, unknown> | null;
+  beforeSend?: (
+    attributes: Record<string, unknown>,
+    meta?: EventMeta,
+  ) => Record<string, unknown> | null;
   /** Session replay (v0.3) : false (défaut) | true (toutes les sessions) | taux 0..1 */
   replay?: boolean | number;
   /** Replay endpoint override; default = endpoint with /v1/traces replaced by /v1/replay */

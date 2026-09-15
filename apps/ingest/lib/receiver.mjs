@@ -23,6 +23,7 @@ import { createLogger } from "../supabase/functions/_shared/log.mjs";
 import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "../supabase/functions/_shared/limits.mjs";
 import { flattenOtlp, flattenOtlpLogs } from "../supabase/functions/_shared/otlp.mjs";
 import { withRetry } from "../supabase/functions/_shared/retry.mjs";
+import { secureOtlpIdentities } from "./identity-hash.mjs";
 
 /** Garde-fou replay : > au plafond du SDK (1 Mo gzip par session). */
 export const MAX_REPLAY_BYTES = 2 * 1024 * 1024;
@@ -59,6 +60,7 @@ async function lireCorps(req, max) {
  *   signaux?: ("traces"|"logs"|"replay")[],
  *   aliasSante?: string[],   // chemins supplémentaires répondant comme /health
  *   nom?: string,            // nom du service, renvoyé par /health
+ *   identityHashSecret?: string, // injection explicite du secret HMAC (tests/self-host)
  * }} opts
  */
 export function creerReceveur(pool, opts = {}) {
@@ -68,6 +70,7 @@ export function creerReceveur(pool, opts = {}) {
   const signaux = new Set(opts.signaux ?? ["traces", "logs", "replay"]);
   const aliasSante = opts.aliasSante ?? [];
   const nom = opts.nom ?? "ingest";
+  const identityHashSecret = opts.identityHashSecret ?? process.env.IDENTITY_HASH_SECRET;
   // Ingestion DIFFÉRÉE (migration-v63) : le lot est débarqué dans une table
   // UNLOGGED et écrit plus tard par un travailleur. ÉTEINTE par défaut — la
   // table est vidée par PostgreSQL après un arrêt brutal, donc ce compromis se
@@ -137,6 +140,11 @@ export function creerReceveur(pool, opts = {}) {
       log.warn("bad request", { reason: "invalid json body" });
       return repondre(res, 400, { error: "invalid json body" }, entetes);
     }
+    const secured = secureOtlpIdentities(
+      payload,
+      identityHashSecret,
+    );
+    payload = secured.payload;
     if (opts.tampon) {
       recents.push(payload);
       if (recents.length > TAILLE_TAMPON) recents.shift();
@@ -240,7 +248,11 @@ export function creerReceveur(pool, opts = {}) {
         return res.end();
       }
       if (req.method === "GET" && (chemin === "/health" || aliasSante.includes(chemin))) {
-        return repondre(res, 200, { status: "ok", service: nom }, entetes);
+        return repondre(res, 200, {
+          status: "ok",
+          service: nom,
+          identity_hash: { configured: typeof identityHashSecret === "string" && identityHashSecret.length > 0 },
+        }, entetes);
       }
       // Readiness : la base répond. Distincte de /health à dessein — un
       // orchestrateur doit pouvoir cesser de router du trafic sans tuer le

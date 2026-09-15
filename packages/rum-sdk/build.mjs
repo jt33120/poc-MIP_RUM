@@ -1,5 +1,5 @@
 import { build } from "esbuild";
-import { readFileSync } from "node:fs";
+import { copyFileSync, readFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 
 const common = {
@@ -17,6 +17,10 @@ await build({
   globalName: "MIPRum",
   outfile: "dist/mip-rum.js",
 });
+// Les deux surfaces réellement livrées doivent provenir du même build. La CI
+// vérifie ensuite le diff : impossible de publier une API P2 uniquement dans dist.
+copyFileSync("dist/mip-rum.js", "../../apps/console/public/mip-rum.js");
+copyFileSync("dist/mip-rum.js", "../../apps/extension/vendor/mip-rum.js");
 await build({
   ...common,
   entryPoints: ["src/index.ts"],

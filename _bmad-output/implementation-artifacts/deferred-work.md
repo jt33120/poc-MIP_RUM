@@ -5,3 +5,7 @@
 - source_spec: `spec-rum-event-foundation.md`
   summary: Planifier un backfill contrôlé de `rum_event_index` pour les signaux RUM antérieurs à la migration v65.
   evidence: La migration indexe les nouvelles écritures immédiates et différées. Rejouer l'historique exige une fenêtre de rétention, une estimation de charge et un créneau de production à valider avant toute exécution.
+
+- source_spec: `spec-rum-browser-context-identity.md`
+  summary: Sérialiser l'effacement DSAR avec toute ingestion simultanée de la même identité, y compris les lots encore sans session matérialisée.
+  evidence: La suppression actuelle retire les lots connus et verrouille les sessions existantes, mais une arrivée concurrente après le snapshot peut recréer des données; fermer ce cas impose un verrou/tombstone partagé avec tous les chemins d'ingestion.

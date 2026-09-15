@@ -145,6 +145,10 @@ export function serializeSpan(span: {
 }): RetrySpan {
   const a: RetryAttrs = {};
   for (const [k, v] of Object.entries(span.attributes)) {
+    // Les identifiants métier bruts ne doivent jamais atteindre localStorage.
+    // Ils sont transportés une seule fois vers le port d'ingestion, qui les
+    // remplace par un HMAC avant toute file/persistance serveur.
+    if (k === "mip.identity.user_id" || k === "mip.identity.account_id") continue;
     if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") a[k] = v;
   }
   return { n: span.name, a, s: hrToMs(span.startTime), e: hrToMs(span.endTime) };

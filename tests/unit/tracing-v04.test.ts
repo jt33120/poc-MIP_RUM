@@ -2,6 +2,7 @@
 // format traceparent, et extraction des spans http.client / http.server (parser).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  initApiSpans,
   resolveTarget,
   traceparent,
   type ApiSpanOptions,
@@ -53,6 +54,31 @@ describe("traceparent — format W3C", () => {
   it("00-<32 hex>-<16 hex>-01", () => {
     const tp = traceparent("ab".repeat(16), "cd".repeat(8));
     expect(tp).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  });
+});
+
+describe("propagation de session après changement d'identité", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("relit l'identifiant de session à chaque fetch instrumenté", async () => {
+    let currentSession = "session-a";
+    const propagated: string[] = [];
+    const originalFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      propagated.push(new Headers(init?.headers).get("tracestate") ?? "");
+      return { status: 200 } as Response;
+    });
+    vi.stubGlobal("location", { href: "https://app.test/page", origin: "https://app.test" });
+    vi.stubGlobal("performance", { now: () => 1 });
+    vi.stubGlobal("window", { fetch: originalFetch });
+    initApiSpans(() => true, {
+      extraOrigins: [], denyOrigins: [], sessionId: () => currentSession,
+      traceId: () => "a".repeat(32),
+    });
+
+    await window.fetch("/api/first");
+    currentSession = "session-b";
+    await window.fetch("/api/second");
+    expect(propagated).toEqual(["mip=s:session-a", "mip=s:session-b"]);
   });
 });
 

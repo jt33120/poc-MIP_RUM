@@ -47,13 +47,23 @@ Prérequis côté MIP (à faire une fois par application) :
 | `honorDNT` | `boolean` | `true` | Souveraineté/RGPD : honore les signaux navigateur d'opt-out **Do Not Track** et **Global Privacy Control**. Si un refus est signalé, **aucune collecte** (0 session, 0 requête). Mettre `false` seulement si l'app recueille elle-même un consentement affirmatif via `MIPRum.consent()` (cf. §3) |
 | `slowResourceMs` | `number` | `300` | Seuil au-delà duquel une ressource (script, image, fetch…) est reportée comme lente (cap 20 ressources/page) |
 | `forms` | `boolean` | `true` | Form analytics : instrumentation des formulaires **au niveau du champ** (ordre de remplissage, temps par champ, abandon). Émet `form.submit` / `form.abandon`. **Ne capte jamais les valeurs** (identifiants + durées ; champs `password` réduits à `[password]`). `false` pour désactiver |
-| `beforeSend` | `(attrs) => attrs \| null` | — | Filtre de dernière chance appliqué aux attributs de chaque span avant émission ; retourner `null` supprime le span. C'est le point d'extension PII côté client |
+| `beforeSend` | `(attrs, meta?) => attrs \| null` | — | Filtre de dernière chance ; `meta` expose le type/nom d'événement. Le second argument est optionnel pour préserver les callbacks existants. Retourner `null` supprime le span. Les identités, contexte, props et contenus sensibles restent supprimables ; seuls les champs structurels (session/app/trace/type/liaisons) sont restaurés par le SDK. |
 
 API runtime exposée sur `window.MIPRum` :
 
 - `MIPRum.init(config)` — démarre la collecte (idempotent, le 2ᵉ appel est ignoré).
 - `MIPRum.consent(granted: boolean)` — accorde/retire le consentement (cf. §3).
 - `MIPRum.track(name, props?)` — événement métier custom, ex. `MIPRum.track("partner_search", { results: 12 })`. Émis comme span `track.<name>`, persisté en v0.2 dans la table `rum_event` (props en jsonb).
+- `MIPRum.setGlobalContext(context)` — remplace le contexte global des événements futurs.
+- `MIPRum.setUser({ id, ...context })` / `setAccount({ id, ...context })` — identité métier. Le brut reste en mémoire navigateur et en transit ; le serveur le remplace par un HMAC-SHA256 cloisonné par `appId` avant toute file ou écriture. En cas de panne avant réception, la file retry conserve l'événement mais omet volontairement l'identité : aucune valeur brute user/account n'entre dans `localStorage`, au prix d'une corrélation d'identité perdue pour cet événement.
+- `MIPRum.startView(name, context?)` — démarre une vue nommée, sans remplacer la route normalisée.
+- `MIPRum.addAction(name, context?)`, `addTiming(name, timestamp?)`, `addFeatureFlagEvaluation(name, value)` et `addError(error, context?)` — événements manuels typés. `addAction` ne réalise aucune corrélation causale automatique.
+
+Le contexte est un snapshot JSON immuable avec précédence `global < user/account < view < action < événement`.
+Les noms/clefs sont bornés à 100 caractères, les chaînes à 500, la profondeur à 4, le total à 64 clefs
+et 16 Kio sérialisés. Les champs `mip.*`, de session, trace, app et sampling restent réservés au SDK.
+`IDENTITY_HASH_SECRET` doit être configuré sur chaque port d'ingestion : s'il manque, la télémétrie continue
+mais les identités user/account sont omises et `/admin/health` affiche un état dégradé.
 - `MIPRum.flush()` — force l'export des spans en attente (utile en test).
 
 ## 3. Consent mode (RGPD)
@@ -104,7 +114,7 @@ Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe
 
 ## 5. Poids et impact performance
 
-- Bundle cœur mesuré : **11,7 KB gzip** (30,9 KB raw) — toutes les instrumentations incluses (vitals, erreurs, ressources, long tasks, breadcrumbs, tracing front→back, consent, retry). Le replay (rrweb) est un bundle séparé chargé à la demande.
+- Bundle cœur mesuré : **16,3 KB gzip** (45,3 KB raw) — toutes les instrumentations incluses (vitals, erreurs, ressources, long tasks, breadcrumbs, tracing front→back, consent, retry, contexte et événements manuels). Le replay (rrweb) est un bundle séparé chargé à la demande.
 - Historique : v0.1 **22,3 KB**, v0.2 **23,8 KB**, puis **27,4 KB** avant l'allègement. Le SDK OpenTelemetry a été remplacé par un émetteur OTLP/HTTP JSON maison (même format sur le fil), d'où la chute à ~12 KB.
 - C'est un SDK **OTLP-natif** (vrai OTLP sur le fil, backend remplaçable) — désormais plus léger que les RUM du marché (Sentry ~20 KB, Datadog ~25 KB).
 - Émission par batch (flush toutes les `flushIntervalMs`), `sendBeacon`/flush forcé au passage en arrière-plan : pas de requête bloquante pendant la navigation.

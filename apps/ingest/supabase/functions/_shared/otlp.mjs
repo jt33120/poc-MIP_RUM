@@ -32,6 +32,21 @@ const SPAN_INDEX_KINDS = new Set(["client", "server", "db", "internal"]);
 const EVENT_INDEX_ROUTE_MAX = 512;
 const EVENT_INDEX_VITALS = new Set(Object.keys(THRESHOLDS));
 const NATIVE_SPAN_ID = /^[0-9a-f]{16}$/i;
+const IDENTITY_HASH = /^[0-9a-f]{64}$/i;
+const MANUAL_EVENT_TYPES = new Set(["custom", "view", "action", "timing", "feature_flag", "error"]);
+const CONTEXT_MAX_BYTES = 16 * 1024;
+const CONTEXT_MAX_KEYS = 64;
+const CONTEXT_MAX_DEPTH = 4;
+const CONTEXT_MAX_STRING = 500;
+const CONTEXT_MAX_NAME = 100;
+// Même allowlist négative que le SDK : sans ce miroir, un émetteur OTLP tiers
+// pourrait réintroduire dans `mip.context` des noms techniques que le SDK
+// officiel interdit, puis les faire persister comme données métier.
+const CONTEXT_RESERVED_KEYS = new Set([
+  "session_id", "trace_id", "span_id", "app_id", "client_id", "sampling",
+  "sample_rate", "error_sample_rate", "route", "view_id", "action_id",
+]);
+const CONTEXT_DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 
 export function breadcrumbType(value) {
   return typeof value === "string" && BREADCRUMB_TYPES.has(value.toLowerCase())
@@ -67,6 +82,84 @@ export function eventIndexRoute(value) {
   return clean.slice(0, EVENT_INDEX_ROUTE_MAX);
 }
 
+function boundedName(value) {
+  if (typeof value !== "string") return null;
+  const clean = scrubText(value)?.trim() ?? "";
+  if (clean.length > CONTEXT_MAX_NAME) return null;
+  return clean || null;
+}
+
+function boundedString(value) {
+  if (typeof value !== "string" || value.length > CONTEXT_MAX_STRING) return null;
+  const clean = scrubText(value);
+  return clean ? clean : null;
+}
+
+function boundedContextValue(value, depth, budget) {
+  if (value == null) return null;
+  if (typeof value === "string") return value.length <= CONTEXT_MAX_STRING ? (scrubText(value) ?? "") : undefined;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (depth >= CONTEXT_MAX_DEPTH) return undefined;
+  if (Array.isArray(value)) {
+    return value.map((item) => boundedContextValue(item, depth + 1, budget)).filter((item) => item !== undefined);
+  }
+  if (typeof value !== "object") return undefined;
+  const out = {};
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    if (budget.keys >= CONTEXT_MAX_KEYS) break;
+    const key = (scrubText(rawKey) ?? "").trim();
+    if (key.length > CONTEXT_MAX_NAME) continue;
+    if (!key || key.startsWith("mip.") || CONTEXT_RESERVED_KEYS.has(key.toLowerCase()) || CONTEXT_DANGEROUS_KEYS.has(key.toLowerCase())) continue;
+    budget.keys++;
+    const clean = boundedContextValue(rawValue, depth + 1, budget);
+    if (clean !== undefined) out[key] = clean;
+  }
+  return out;
+}
+
+/** Seconde frontière de limites/scrub, indépendante du SDK officiel. */
+export function boundedEventContext(raw) {
+  const parsed = typeof raw === "string" ? parseJsonAttr(raw) : raw;
+  const clean = boundedContextValue(parsed, 0, { keys: 0 });
+  if (!clean || Array.isArray(clean) || typeof clean !== "object") return {};
+  const out = {};
+  for (const [key, value] of Object.entries(clean)) {
+    out[key] = value;
+    if (BufferLikeByteLength(JSON.stringify(out)) > CONTEXT_MAX_BYTES) delete out[key];
+  }
+  return out;
+}
+
+function BufferLikeByteLength(value) {
+  return typeof TextEncoder !== "undefined" ? new TextEncoder().encode(value).length : value.length;
+}
+
+function eventMetadata(attributes) {
+  const type = MANUAL_EVENT_TYPES.has(attributes["mip.event_type"])
+    ? attributes["mip.event_type"]
+    : null;
+  const userHash = attributes["mip.user_id_hash"];
+  const accountHash = attributes["mip.account_id_hash"];
+  const context = boundedEventContext(attributes["mip.context"]);
+  const viewId = boundedName(attributes["mip.view_id"]);
+  const viewName = boundedName(attributes["mip.view_name"]);
+  const actionId = boundedName(attributes["mip.action_id"]);
+  const featureFlagValue = boundedString(attributes["mip.feature_flag_value"]);
+  const timing = attributes["mip.timing_ms"];
+  return {
+    ...(type ? { event_type: type } : {}),
+    ...(Object.keys(context).length ? { context } : {}),
+    ...(typeof userHash === "string" && IDENTITY_HASH.test(userHash) ? { user_id_hash: userHash.toLowerCase() } : {}),
+    ...(typeof accountHash === "string" && IDENTITY_HASH.test(accountHash) ? { account_id_hash: accountHash.toLowerCase() } : {}),
+    ...(viewId ? { view_id: viewId } : {}),
+    ...(viewName ? { view_name: viewName } : {}),
+    ...(actionId ? { action_id: actionId } : {}),
+    ...(typeof timing === "number" && Number.isFinite(timing) && timing >= 0 ? { timing_ms: timing } : {}),
+    ...(featureFlagValue !== null ? { feature_flag_value: featureFlagValue } : {}),
+  };
+}
+
 /**
  * Projection minimale construite UNIQUEMENT depuis les lignes déjà
  * normalisées par flattenOtlp. Ne jamais la dériver des attributs OTLP : cela
@@ -80,6 +173,7 @@ export function buildEventIndex({ pageviews = [], metrics = [], errors = [], res
     // Toute autre chaîne reste éventuellement dans la source historique, mais
     // n'entre jamais dans la projection/API.
     if (!row || !isNativeSpanId(row.span_id)) return;
+    const context = row.context && Object.keys(row.context).length ? row.context : null;
     index.push({
       app_id: row.app_id,
       session_id: row.session_id ?? null,
@@ -88,6 +182,15 @@ export function buildEventIndex({ pageviews = [], metrics = [], errors = [], res
       kind,
       source_name: sourceName,
       source_span_id: row.span_id.toLowerCase(),
+      ...(row.event_type ? { event_type: row.event_type } : {}),
+      ...(context ? { context } : {}),
+      ...(row.user_id_hash ? { user_id_hash: row.user_id_hash } : {}),
+      ...(row.account_id_hash ? { account_id_hash: row.account_id_hash } : {}),
+      ...(row.view_id ? { view_id: row.view_id } : {}),
+      ...(row.view_name ? { view_name: row.view_name } : {}),
+      ...(row.action_id ? { action_id: row.action_id } : {}),
+      ...(row.timing_ms != null ? { timing_ms: row.timing_ms } : {}),
+      ...(row.feature_flag_value != null ? { feature_flag_value: row.feature_flag_value } : {}),
     });
   };
 
@@ -449,6 +552,7 @@ export function flattenOtlp(payload, opts = {}) {
         (tier === "front" ? "http.client" : "http.server"),
       kind: tier === "front" ? "client" : "server",
       ts,
+      ...eventMetadata(a),
     };
   };
 
@@ -728,6 +832,7 @@ export function flattenOtlp(payload, opts = {}) {
         }
         const ts = nanosToDate(span.startTimeUnixNano, now);
         const route = a["mip.route"] ?? null;
+        const metadata = eventMetadata(a);
 
         const s = sessions.get(sessionId) ?? {
           session_id: sessionId,
@@ -776,6 +881,9 @@ export function flattenOtlp(payload, opts = {}) {
           sample_rate: tauxPrincipal(res["mip.sample_rate"]),
           error_sample_rate: tauxErreurs(res["mip.error_sample_rate"]),
           has_error: false,
+          ...(metadata.user_id_hash ? { user_id_hash: metadata.user_id_hash } : {}),
+          ...(metadata.account_id_hash ? { account_id_hash: metadata.account_id_hash } : {}),
+          ...(metadata.context ? { context: metadata.context } : {}),
           last_seen_at: ts,
           page_count_inc: 0,
         };
@@ -790,6 +898,9 @@ export function flattenOtlp(payload, opts = {}) {
         // la session existe déjà, créée par une span antérieure sans l'attribut.
         if (s.net_type == null && a["mip.net_type"]) s.net_type = a["mip.net_type"];
         if (s.release == null && release) s.release = release;
+        if (s.user_id_hash == null && metadata.user_id_hash) s.user_id_hash = metadata.user_id_hash;
+        if (s.account_id_hash == null && metadata.account_id_hash) s.account_id_hash = metadata.account_id_hash;
+        if (Object.keys(s.context ?? {}).length === 0 && Object.keys(metadata.context ?? {}).length) s.context = metadata.context;
         sessions.set(sessionId, s);
 
         if (span.name.startsWith("webvital.")) {
@@ -817,6 +928,7 @@ export function flattenOtlp(payload, opts = {}) {
             // tiraient le p75 vers le bas. Voir migration-v58.
             metric_uid: a["webvital.id"] ?? null,
             ts,
+            ...metadata,
           });
         } else if (span.name === "exception") {
           // La session porte une erreur : c'est ce qui décide LAQUELLE des deux
@@ -846,6 +958,7 @@ export function flattenOtlp(payload, opts = {}) {
             release,
             fingerprint: errorFingerprint(errorType, message, stack),
             ts,
+            ...metadata,
           });
         } else if (span.name === "pageview") {
           s.page_count_inc++;
@@ -858,6 +971,7 @@ export function flattenOtlp(payload, opts = {}) {
             referrer: scrubUrl(a["mip.referrer"]),
             nav_type: a["mip.nav_type"] ?? null,
             ts,
+            ...metadata,
           });
         } else if (span.name === "resource") {
           resources.push({
@@ -871,6 +985,7 @@ export function flattenOtlp(payload, opts = {}) {
             transfer_size: a["resource.transfer_size"] ?? null,
             render_blocking: a["resource.render_blocking"] ?? null,
             ts,
+            ...metadata,
           });
         } else if (span.name === "longtask") {
           const durationMs = a["longtask.duration_ms"];
@@ -886,6 +1001,7 @@ export function flattenOtlp(payload, opts = {}) {
             duration_ms: durationMs,
             source: "longtask",
             ts,
+            ...metadata,
           });
         } else if (span.name === "loaf") {
           // Long Animation Frames : le MÊME fait qu'un longtask — le fil
@@ -918,6 +1034,7 @@ export function flattenOtlp(payload, opts = {}) {
             script_ms: nombreOuNull(a["loaf.script_ms"]),
             invoker: scrubText(a["loaf.invoker"]),
             ts,
+            ...metadata,
           });
         } else if (span.name === "breadcrumb") {
           breadcrumbs.push({
@@ -932,20 +1049,56 @@ export function flattenOtlp(payload, opts = {}) {
             label: breadcrumbLabel(a["breadcrumb.label"]),
             seq: a["breadcrumb.seq"] ?? null,
             ts,
+            ...metadata,
           });
         } else if (span.name === "http.client") {
           const row = spanRow("front", a, appId, ts, span.parentSpanId);
           if (row) spans.push(row);
           else rejected++;
         } else if (span.name.startsWith("track.")) {
+          if (metadata.event_type && metadata.event_type !== "custom") {
+            rejected++;
+            continue;
+          }
           events.push({
             span_id: span.spanId,
             session_id: sessionId,
             app_id: appId,
             route,
-            name: span.name.slice("track.".length),
+            name: boundedName(a["mip.event_name"]) ?? boundedName(span.name.slice("track.".length)) ?? "track",
             props: scrubProps(parseJsonAttr(a["mip.props"])),
             ts,
+            ...metadata,
+          });
+        } else if (span.name.startsWith("rum.")) {
+          const eventType = metadata.event_type;
+          const eventName = boundedName(a["mip.event_name"]);
+          const expectedType = {
+            "rum.view": "view",
+            "rum.action": "action",
+            "rum.timing": "timing",
+            "rum.feature_flag": "feature_flag",
+          }[span.name];
+          if (
+            !eventType || !eventName ||
+            !expectedType || eventType !== expectedType ||
+            (eventType === "view" && !metadata.view_id) ||
+            (eventType === "timing" && metadata.timing_ms == null) ||
+            (eventType === "feature_flag" && metadata.feature_flag_value == null) ||
+            (eventType === "action" && !metadata.action_id)
+          ) {
+            rejected++;
+            continue;
+          }
+          events.push({
+            span_id: span.spanId,
+            session_id: sessionId,
+            app_id: appId,
+            route,
+            name: eventName,
+            props: {},
+            ts,
+            ...metadata,
           });
         } else if (span.name === "frustration") {
           // Signaux de frustration (P1) : rage/dead clicks. Stockés dans rum_event
@@ -967,6 +1120,7 @@ export function flattenOtlp(payload, opts = {}) {
               count: typeof a["frustration.count"] === "number" ? a["frustration.count"] : 1,
             }),
             ts,
+            ...metadata,
           });
         }
         // autres spans (futures instrumentations) : ignorés silencieusement

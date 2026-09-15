@@ -17,7 +17,8 @@ export interface ApiSpanOptions {
   extraOrigins: string[];
   /** Origins à ne JAMAIS instrumenter (endpoints d'ingestion MIP : boucle interdite). */
   denyOrigins: string[];
-  sessionId: string;
+  /** Peut être dynamique : P2 ouvre une nouvelle session quand l'identité change. */
+  sessionId: string | (() => string);
   /**
    * traceId de la page vue courante (E0). Rattache l'appel API à la trace de la
    * page plutôt que d'ouvrir une trace par requête : le span serveur rejoint
@@ -58,6 +59,7 @@ export function resolveTarget(rawUrl: string, opts: ApiSpanOptions): string | nu
 
 export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
   const cap = makeCap(API_CAP_PER_PAGE);
+  const sessionId = () => typeof opts.sessionId === "function" ? opts.sessionId() : opts.sessionId;
 
   const record = (
     url: string,
@@ -101,7 +103,7 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
           init?.headers ?? (input instanceof Request ? input.headers : undefined),
         );
         headers.set("traceparent", traceparent(traceId, spanId));
-        headers.set("tracestate", `mip=s:${opts.sessionId}`);
+        headers.set("tracestate", `mip=s:${sessionId()}`);
         const startPerf = performance.now();
         const ts = Date.now();
         return orig.call(this, input as RequestInfo, { ...init, headers }).then(
@@ -142,7 +144,7 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
           const traceId = opts.traceId?.() ?? randHex(16);
           const spanId = randHex(8);
           this.setRequestHeader("traceparent", traceparent(traceId, spanId));
-          this.setRequestHeader("tracestate", `mip=s:${opts.sessionId}`);
+          this.setRequestHeader("tracestate", `mip=s:${sessionId()}`);
           const startPerf = performance.now();
           const ts = Date.now();
           // loadend couvre load/error/abort/timeout ; status 0 = échec réseau

@@ -15,6 +15,7 @@
 // quelle pour tous les enfants.
 import {
   buildDsarExport,
+  buildDsarIdentityExport,
   DSAR_ANCHOR,
   DSAR_CHILD_TABLES,
   DSAR_ID_COLUMN,
@@ -22,6 +23,7 @@ import {
   dsarVerdict,
   type DsarExport,
   type DsarVerdict,
+  type DsarIdentityKind,
 } from "./dsar";
 import type { PoolClient } from "pg";
 import { q, tx } from "./db";
@@ -127,6 +129,136 @@ export function dsarTotalRows(counts: DsarCount[]): number {
   return counts.reduce((acc, c) => acc + c.rows, 0);
 }
 
+export type { DsarIdentityKind } from "./dsar";
+
+function identityColumn(kind: DsarIdentityKind): "user_id_hash" | "account_id_hash" {
+  return kind === "user" ? "user_id_hash" : "account_id_hash";
+}
+
+function identitySessionsSubquery(kind: DsarIdentityKind): string {
+  return `select session_id from rum_session where ${identityColumn(kind)} = $2 and app_id = $1`;
+}
+
+/** Couture I/O injectable : la production garde q/tx, les tests SQL exercent
+ * les fonctions publiques contre leur vraie base jetable, sans faux client. */
+export interface IdentityDsarIo {
+  query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
+  transaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T>;
+}
+
+const DEFAULT_IDENTITY_IO: IdentityDsarIo = {
+  query: q,
+  transaction: tx,
+};
+
+async function identityTableDisponible(io: IdentityDsarIo, table: string): Promise<boolean> {
+  if (table !== DSAR_OPTIONAL_TABLE) return true;
+  const [row] = await io.query<{ present: boolean }>(
+    "select to_regclass($1) is not null as present",
+    [`public.${table}`],
+  );
+  return row?.present === true;
+}
+
+/** Aperçu DSAR par HMAC déjà calculé ; le brut n'entre jamais dans cette couche. */
+export async function dsarIdentityCounts(
+  app: string,
+  kind: DsarIdentityKind,
+  hash: string,
+  io: IdentityDsarIo = DEFAULT_IDENTITY_IO,
+): Promise<DsarCount[]> {
+  const sessionsSubq = identitySessionsSubquery(kind);
+  const out: DsarCount[] = [];
+  for (const table of DSAR_CHILD_TABLES) {
+    if (!(await identityTableDisponible(io, table))) {
+      out.push({ table, rows: 0 });
+      continue;
+    }
+    const [row] = await io.query<{ n: number }>(
+      `select count(*)::int as n from ${table} where session_id in (${sessionsSubq})`,
+      [app, hash],
+    );
+    out.push({ table, rows: row?.n ?? 0 });
+  }
+  const [session] = await io.query<{ n: number }>(
+    `select count(*)::int as n from rum_session where app_id = $1 and ${identityColumn(kind)} = $2`,
+    [app, hash],
+  );
+  out.push({ table: DSAR_ANCHOR, rows: session?.n ?? 0 });
+  return out;
+}
+
+export async function dsarIdentityExport(
+  app: string,
+  kind: DsarIdentityKind,
+  hash: string,
+  generatedAt: string,
+  io: IdentityDsarIo = DEFAULT_IDENTITY_IO,
+) {
+  return io.transaction(async (client) => {
+    // Toutes les tables du document sont lues dans le même snapshot : une
+    // ingestion concurrente ne peut pas produire un export incohérent.
+    await client.query("set transaction isolation level repeatable read, read only");
+    const sessionsSubq = identitySessionsSubquery(kind);
+    const tables: Record<string, unknown[]> = {};
+    for (const table of DSAR_CHILD_TABLES) {
+      if (!(await tableDsarDisponibleDansTransaction(client, table))) {
+        tables[table] = [];
+        continue;
+      }
+      tables[table] = (await client.query(
+        `select * from ${table} where session_id in (${sessionsSubq})`, [app, hash],
+      )).rows;
+    }
+    tables[DSAR_ANCHOR] = (await client.query(
+      `select * from rum_session where app_id = $1 and ${identityColumn(kind)} = $2`,
+      [app, hash],
+    )).rows;
+    return buildDsarIdentityExport({ app, identityKind: kind, identityHash: hash, generatedAt, tables });
+  });
+}
+
+export async function dsarIdentityErase(
+  app: string,
+  kind: DsarIdentityKind,
+  hash: string,
+  io: IdentityDsarIo = DEFAULT_IDENTITY_IO,
+) {
+  const column = identityColumn(kind);
+  return io.transaction(async (client) => {
+    const sessions = await client.query<{ session_id: string }>(
+      `select session_id from rum_session where app_id = $1 and ${column} = $2 for update`,
+      [app, hash],
+    );
+    const sessionIds = sessions.rows.map((row) => row.session_id);
+    if (sessionIds.length) {
+      await client.query(
+        `delete from ingest_raw where app_id = $1 and exists (
+           select 1 from jsonb_array_elements(case
+             when jsonb_typeof(lot->'sessions') = 'array' then lot->'sessions'
+             else '[]'::jsonb end) queued
+            where queued->>'session_id' = any($2::text[]))`,
+        [app, sessionIds],
+      );
+    }
+    const deleted: { table: string; deleted: number }[] = [];
+    for (const table of DSAR_CHILD_TABLES) {
+      if (!(await tableDsarDisponibleDansTransaction(client, table))) continue;
+      const result = await client.query(
+        `delete from ${table} where session_id = any($1::text[])`,
+        [sessionIds],
+      );
+      deleted.push({ table, deleted: result.rowCount ?? 0 });
+    }
+    const anchor = await client.query(
+      `delete from rum_session where app_id = $1 and ${column} = $2`,
+      [app, hash],
+    );
+    deleted.push({ table: DSAR_ANCHOR, deleted: anchor.rowCount ?? 0 });
+    return deleted;
+  });
+}
+
 /**
  * Export complet des données du visiteur (droit d'accès / portabilité).
  * Une clé par table ; l'ancre (rum_session) en dernier pour un document lisible.
@@ -187,7 +319,9 @@ export async function dsarErase(
           where ($1 = 'all' or app_id = $1)
             and exists (
               select 1
-                from jsonb_array_elements(coalesce(lot->'sessions', '[]'::jsonb)) queued
+              from jsonb_array_elements(case
+                when jsonb_typeof(lot->'sessions') = 'array' then lot->'sessions'
+                else '[]'::jsonb end) queued
                where queued->>'session_id' = any($2::text[])
             )`,
         [app, sessionIds],

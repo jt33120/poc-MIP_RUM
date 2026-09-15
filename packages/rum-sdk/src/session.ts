@@ -45,10 +45,14 @@ export interface Session {
 }
 
 function uuid(): string {
-  if (crypto.randomUUID) return crypto.randomUUID();
-  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
-    b.toString(16).padStart(2, "0"),
-  ).join("");
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
+  if (typeof cryptoApi?.getRandomValues === "function") {
+    return Array.from(cryptoApi.getRandomValues(new Uint8Array(16)), (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join("");
+  }
+  return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`.slice(0, 32).padEnd(32, "0");
 }
 
 /** Stable session id with 30 min inactivity TTL, persisted in localStorage. */
@@ -68,6 +72,18 @@ export function getOrCreateSession(): Session {
     /* private mode: session lives for the page only */
   }
   return { sessionId: sid, visitorId: getOrCreateVisitor() };
+}
+
+/** Ouvre une nouvelle session technique en conservant le visiteur. Utilisé
+ * quand l'identité métier change pour qu'une session ne mélange jamais A/B. */
+export function rotateSession(visitorId: string): Session {
+  const session = { sessionId: uuid(), visitorId };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sid: session.sessionId, last: Date.now() }));
+  } catch {
+    /* session volatile */
+  }
+  return session;
 }
 
 /**

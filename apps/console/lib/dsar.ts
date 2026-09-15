@@ -165,6 +165,42 @@ export interface DsarExport {
   tables: Record<string, unknown[]>;
 }
 
+export const DSAR_IDENTITY_KINDS = ["user", "account"] as const;
+export type DsarIdentityKind = (typeof DSAR_IDENTITY_KINDS)[number];
+
+export function isDsarIdentityHash(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
+export interface DsarIdentityExport {
+  kind: "mip-rum-dsar-identity-export";
+  version: 1;
+  app: string;
+  identity_kind: DsarIdentityKind;
+  identity_hash: string;
+  generated_at: string;
+  tables: Record<string, unknown[]>;
+}
+
+export function buildDsarIdentityExport(input: {
+  app: string;
+  identityKind: DsarIdentityKind;
+  identityHash: string;
+  generatedAt: string;
+  tables: Record<string, unknown[]>;
+}): DsarIdentityExport {
+  if (!isDsarIdentityHash(input.identityHash)) throw new Error("invalid identity hash");
+  return {
+    kind: "mip-rum-dsar-identity-export",
+    version: 1,
+    app: input.app,
+    identity_kind: input.identityKind,
+    identity_hash: input.identityHash,
+    generated_at: input.generatedAt,
+    tables: input.tables,
+  };
+}
+
 /** Compte de lignes par table (résumé lisible du volume exporté/à effacer). */
 export function summarizeCounts(tables: Record<string, unknown[]>): Record<string, number> {
   const out: Record<string, number> = {};

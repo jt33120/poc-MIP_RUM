@@ -34,6 +34,8 @@ jobs:
   docker-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      IDENTITY_HASH_SECRET: docker-smoke-test-only-secret
     defaults:
       run:
         working-directory: infra/docker
@@ -58,15 +60,22 @@ jobs:
           body=$(curl -fsS http://localhost:4318/health)
           echo "GET /health -> $body"
           echo "$body" | grep -q '"status"'
+          echo "$body" | grep -q '"identity_hash":{"configured":true}'
 
-      - name: Smoke POST /v1/traces (payload vide -> 200 partialSuccess)
+      - name: Smoke identité brute -> HMAC persisté
         run: |
           code=$(curl -s -o /tmp/out -w '%{http_code}' -X POST \
             -H 'content-type: application/json' \
-            -d '{"resourceSpans":[]}' \
+            -d '{"resourceSpans":[{"resource":{"attributes":[{"key":"mip.app_id","value":{"stringValue":"docker-smoke"}}]},"scopeSpans":[{"spans":[{"name":"rum.action","traceId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","spanId":"bbbbbbbbbbbbbbbb","startTimeUnixNano":"1800000000000000000","endTimeUnixNano":"1800000000010000000","attributes":[{"key":"mip.session_id","value":{"stringValue":"docker-identity-session"}},{"key":"mip.event_type","value":{"stringValue":"action"}},{"key":"mip.event_name","value":{"stringValue":"checkout"}},{"key":"mip.action_id","value":{"stringValue":"docker-action"}},{"key":"mip.identity.user_id","value":{"stringValue":"raw-user-must-not-persist"}}]}]}]}]}' \
             http://localhost:4318/v1/traces)
           echo "POST /v1/traces -> $code ($(cat /tmp/out))"
           test "$code" = "200"
+          stored=$(docker compose exec -T db psql -U postgres -d mip_rum -tAc \
+            "select user_id_hash ~ '^[0-9a-f]{64}$' from rum_session where session_id='docker-identity-session'")
+          test "$stored" = "t"
+          leaked=$(docker compose exec -T db psql -U postgres -d mip_rum -tAc \
+            "select count(*) from rum_session where row_to_json(rum_session)::text like '%raw-user-must-not-persist%'")
+          test "$leaked" = "0"
 
       - name: Logs conteneurs (si échec)
         if: failure()

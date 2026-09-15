@@ -55,6 +55,7 @@ services:
       REQUIRE_API_KEY: ${REQUIRE_API_KEY:-false}
       RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-600}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      IDENTITY_HASH_SECRET: ${IDENTITY_HASH_SECRET:-}
     depends_on:
       db:
         condition: service_healthy

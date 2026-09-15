@@ -5,6 +5,7 @@ import { writeLogs } from "ingest/lib/pg-ingest.mjs";
 import { flattenOtlpLogs } from "ingest/shared/otlp.mjs";
 import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "ingest/shared/limits.mjs";
 import { withRetry } from "ingest/shared/retry.mjs";
+import { secureOtlpIdentities } from "ingest/lib/identity-hash.mjs";
 import { pool } from "@/lib/db";
 import { corsFor, guardApps, json, log } from "@/lib/ingest";
 
@@ -40,6 +41,7 @@ export async function POST(req: Request) {
     } catch {
       throw new BadRequestError("invalid json body");
     }
+    payload = secureOtlpIdentities(payload, process.env.IDENTITY_HASH_SECRET).payload;
     const parsed = flattenOtlpLogs(payload, { maxLogs: MAX_SPANS_PER_REQUEST });
 
     const blocked = await guardApps(parsed.apiKeys, cors);

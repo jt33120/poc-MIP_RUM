@@ -19,6 +19,41 @@ export function healthLabel(score: number): HealthLabel {
   return score >= 90 ? "Excellent" : score >= 75 ? "Bon" : score >= 50 ? "Dégradé" : "Critique";
 }
 
+/** État de la pseudonymisation métier, affiché dans les surfaces admin. */
+export function identityHashHealth(env: NodeJS.ProcessEnv = process.env): {
+  configured: boolean;
+  label: "ok" | "degraded";
+} {
+  const configured = typeof env.IDENTITY_HASH_SECRET === "string" && env.IDENTITY_HASH_SECRET.length > 0;
+  return { configured, label: configured ? "ok" : "degraded" };
+}
+
+/** Vérifie aussi que la projection v66 est réellement présente. Fail-soft. */
+export async function identityPersistenceHealth(env: NodeJS.ProcessEnv = process.env): Promise<{
+  configured: boolean;
+  schema: boolean;
+  label: "ok" | "degraded";
+}> {
+  const secret = identityHashHealth(env).configured;
+  try {
+    const [row] = await q<{ columns_ok: boolean; constraints_ok: boolean }>(
+      `select
+        (select count(*) = 21 from information_schema.columns where table_schema='public' and (
+          (table_name='rum_session' and column_name = any(array['user_id_hash','account_id_hash','context'])) or
+          (table_name in ('rum_event','rum_event_index') and column_name = any(array[
+            'event_type','context','user_id_hash','account_id_hash','view_id','view_name','action_id','timing_ms','feature_flag_value'
+          ])))) as columns_ok,
+        (select count(*) = 3 from pg_constraint where conname = any(array[
+          'rum_session_identity_hashes_v66','rum_event_context_v66','rum_event_index_context_v66'
+        ])) as constraints_ok`,
+    );
+    const schema = row?.columns_ok === true && row?.constraints_ok === true;
+    return { configured: secret, schema, label: secret && schema ? "ok" : "degraded" };
+  } catch {
+    return { configured: secret, schema: false, label: "degraded" };
+  }
+}
+
 export const HEALTH_CLASS: Record<HealthLabel, string> = {
   Excellent:
     "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-400/10 dark:text-emerald-300 dark:border-emerald-400/30",

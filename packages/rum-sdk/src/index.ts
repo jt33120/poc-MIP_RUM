@@ -8,15 +8,25 @@ import { initFrustration } from "./frustration";
 import { initLoaf } from "./loaf";
 import { initLongTasks } from "./longtasks";
 import { currentTraceId, forceFlush, initOtel, newPageTrace } from "./otel";
-import { isReplaySampled, startReplay } from "./replay";
+import { flushReplayBoundary, isReplaySampled, startReplay } from "./replay";
 import { DEFAULT_SLOW_RESOURCE_MS, initResources } from "./resources";
 import { replayRetryQueue } from "./retry";
 import { createSampler, decideMode, loadMode, storeMode } from "./sampling";
 import { readPrivacySignals, signalsOptOut } from "./privacy";
-import { getOrCreateSession, touchSession, type Session } from "./session";
+import { getOrCreateSession, rotateSession, touchSession, type Session } from "./session";
 import type { MIPRumConfig } from "./types";
 import { initNavTiming } from "./navtiming";
 import { initVitals } from "./vitals";
+import {
+  boundedName,
+  eventContext,
+  newEnvelopeId,
+  type EventContext,
+  type EventMeta,
+  type IdentityInput,
+} from "./event-context";
+
+export type { EventContext, EventMeta, IdentityInput } from "./event-context";
 
 let session: Session | null = null;
 let initialized = false;
@@ -32,6 +42,30 @@ let deliver: Emit | null = null; // émission réelle (post-consent)
 let replayRetry: (() => void) | null = null;
 let replayArm: (() => void) | null = null; // replay échantillonné, en attente de consent
 let drainErrors: (() => void) | null = null;
+
+/** Couture pure du hook public : compatibilité un argument + champs SDK immuables. */
+export function applyBeforeSend(
+  hook: MIPRumConfig["beforeSend"],
+  attributes: Record<string, unknown>,
+  meta: EventMeta,
+): Record<string, unknown> | null {
+  if (!hook) return attributes;
+  const structural = new Set([
+    "mip.session_id", "mip.trace_id", "mip.span_id", "mip.app_id", "mip.client_id",
+    "mip.visitor_id", "mip.route", "mip.tz", "mip.device_type", "mip.collection_source",
+    "mip.sample_rate", "mip.error_sample_rate", "mip.event_type",
+    "mip.event_name", "mip.view_id", "mip.view_name", "mip.action_id", "mip.timing_ms",
+    "mip.feature_flag_value",
+  ]);
+  const reserved = Object.fromEntries(Object.entries(attributes).filter(([key]) => structural.has(key)));
+  const filtered = hook({ ...attributes }, meta);
+  if (!filtered) return null;
+  const merged = Object.fromEntries(
+    Object.entries(filtered).filter(([key]) => !structural.has(key)),
+  );
+  Object.assign(merged, reserved);
+  return merged;
+}
 
 /**
  * Une seule couture pour tous les chemins qui vident les répétitions d'erreur.
@@ -118,30 +152,9 @@ export function init(cfg: MIPRumConfig): void {
 
   // émission réelle : crée le span OTel (ts optionnel = rejeu consent/retry)
   const realEmit: Emit = (name, attrs, ts) => {
-    touchSession(session!);
-    let merged: Record<string, unknown> = {
-      "mip.session_id": session!.sessionId,
-      // `mip.user_hash` N'EST PLUS ÉMIS : c'était une empreinte de terminal
-      // (cf. session.ts). L'ingestion l'accepte encore des SDK déjà déployés.
-      "mip.visitor_id": session!.visitorId,
-      "mip.route": currentRoute(),
-      "mip.tz": tz,
-      "mip.device_type": /mobile|tablet/i.test(navigator.userAgent)
-        ? "mobile"
-        : "desktop",
-      // Ext-A : étiquette du capteur ('sdk' par défaut ; 'extension' quand le SDK
-      // est injecté par l'extension navigateur). Persisté sur rum_session.
-      "mip.collection_source": cfg.collectionSource === "extension" ? "extension" : "sdk",
-      ...attrs,
-    };
-    if (cfg.beforeSend) {
-      const filtered = cfg.beforeSend(merged);
-      if (!filtered) return;
-      merged = filtered;
-    }
     const span =
       ts != null ? tracer.startSpan(name, { startTime: ts }) : tracer.startSpan(name);
-    span.setAttributes(merged as Record<string, string | number>);
+    span.setAttributes(attrs as Record<string, string | number>);
     if (ts != null) span.end(ts);
     else span.end();
     // INP/CLS finals arrivent pendant le passage en hidden : flush immédiat
@@ -161,7 +174,32 @@ export function init(cfg: MIPRumConfig): void {
   const emit = (name: string, attrs: Parameters<Emit>[1], ts?: number): boolean => {
     if (name === "exception") sampler.notifyError();
     if (!sampler.passes(name)) return false;
-    return gate!.submit(name, attrs, realEmit, ts);
+    const current = session!;
+    touchSession(current);
+    const envelope = eventContext.envelope();
+    const snapshotted: Record<string, unknown> = {
+      "mip.session_id": current.sessionId,
+      "mip.visitor_id": current.visitorId,
+      "mip.route": currentRoute(),
+      "mip.tz": tz,
+      "mip.device_type": /mobile|tablet/i.test(navigator.userAgent) ? "mobile" : "desktop",
+      "mip.collection_source": cfg.collectionSource === "extension" ? "extension" : "sdk",
+      ...(envelope.context ? { "mip.context": envelope.context } : {}),
+      ...(envelope.userId ? { "mip.identity.user_id": envelope.userId } : {}),
+      ...(envelope.accountId ? { "mip.identity.account_id": envelope.accountId } : {}),
+      ...(envelope.viewId ? { "mip.view_id": envelope.viewId } : {}),
+      ...(envelope.viewName ? { "mip.view_name": envelope.viewName } : {}),
+      ...attrs,
+    };
+    const meta: EventMeta = {
+      type: typeof snapshotted["mip.event_type"] === "string"
+        ? snapshotted["mip.event_type"] as EventMeta["type"]
+        : name === "exception" ? "error" : name.startsWith("track.") ? "custom" : "telemetry",
+      name: typeof snapshotted["mip.event_name"] === "string" ? String(snapshotted["mip.event_name"]) : name,
+    };
+    const filtered = applyBeforeSend(cfg.beforeSend, snapshotted, meta);
+    if (!filtered) return false;
+    return gate!.submit(name, filtered as Parameters<Emit>[1], realEmit, ts);
   };
   emitter = emit;
 
@@ -206,7 +244,7 @@ export function init(cfg: MIPRumConfig): void {
         ? cfg.trace.map((o) => o.replace(/\/+$/, ""))
         : [],
       denyOrigins,
-      sessionId: session.sessionId,
+      sessionId: () => session!.sessionId,
       traceId: currentTraceId, // même trace que la page vue (E0)
     });
   }
@@ -228,6 +266,8 @@ export function init(cfg: MIPRumConfig): void {
     // nouvelle page vue = nouvelle trace W3C (E0) : ouverte AVANT le span
     // pageview pour qu'il en soit le premier span. Borne la taille des traces.
     newPageTrace();
+    const vue = eventContext.currentView();
+    if (!vue || vue.route !== currentRoute()) eventContext.startView(currentRoute(), currentRoute());
     // caps par page : remis à zéro à chaque pageview (initiale et SPA)
     resourceCap.reset();
     longtaskCap.reset();
@@ -258,7 +298,7 @@ export function init(cfg: MIPRumConfig): void {
   // session replay (B2) : échantillonné une fois à l'init, démarré seulement
   // quand le consent est acquis (lazy-load du bundle séparé mip-rum-replay.js)
   replayArm = isReplaySampled(cfg.replay)
-    ? () => startReplay(cfg, session!.sessionId)
+    ? () => startReplay(cfg, () => session!.sessionId)
     : null;
 
   if (gate.granted) {
@@ -289,16 +329,134 @@ export function consent(granted: boolean): void {
  * Émis comme span 'track.<name>' avec mip.props (JSON) — persisté en v0.2
  * dans rum_event — et laisse un breadcrumb 'custom'.
  */
-export function track(name: string, props: Record<string, unknown> = {}): boolean {
+export function track(
+  name: string,
+  props: Record<string, unknown> = {},
+  context: EventContext = {},
+): boolean {
   // Le retour dit si l'événement est PARTI (ou a été bufferisé pour partir), et
   // non s'il a été « accepté par l'API ». false = jeté avant toute émission :
   // init() jamais appelé, opt-out DNT/GPC, session "off", ou mode
   // "error-biased" — où seules les erreurs passent. Un appelant qui affiche une
   // confirmation à l'utilisateur DOIT le consulter : sans lui, le widget d'avis
   // annonçait « envoyé » sur un avis silencieusement jeté.
-  const accepted = emitter?.(`track.${name}`, { "mip.props": JSON.stringify(props) }) ?? false;
-  trail?.add("custom", name);
+  const safeName = boundedName(name);
+  if (!safeName) return false;
+  const envelope = eventContext.envelope({}, { ...props, ...context });
+  const accepted = emitter?.(`track.${safeName}`, {
+    "mip.props": JSON.stringify(props),
+    "mip.event_type": "custom",
+    "mip.event_name": safeName,
+    ...(envelope.context ? { "mip.context": envelope.context } : {}),
+  }) ?? false;
+  trail?.add("custom", safeName);
   return accepted;
+}
+
+/** Remplace le contexte global appliqué aux événements futurs. */
+export function setGlobalContext(context: EventContext): void {
+  eventContext.setGlobal(context);
+}
+
+export function setGlobalContextProperty(key: string, value: unknown): void {
+  eventContext.setGlobalProperty(key, value);
+}
+
+export function removeGlobalContextProperty(key: string): void {
+  eventContext.removeGlobalProperty(key);
+}
+
+export function clearGlobalContext(): void { eventContext.setGlobal({}); }
+
+export function getGlobalContext(): Readonly<EventContext> { return eventContext.getGlobal(); }
+
+/** Définit ou efface l'identité utilisateur métier. L'identifiant brut reste en mémoire. */
+export function setUser(user: string | IdentityInput | null): void {
+  if (eventContext.setUser(user) && initialized && session) {
+    flushReplayBoundary();
+    session = rotateSession(session.visitorId);
+  }
+}
+
+export function clearUser(): void { setUser(null); }
+
+/** Définit ou efface l'identité compte métier. L'identifiant brut reste en mémoire. */
+export function setAccount(account: string | IdentityInput | null): void {
+  if (eventContext.setAccount(account) && initialized && session) {
+    flushReplayBoundary();
+    session = rotateSession(session.visitorId);
+  }
+}
+
+export function clearAccount(): void { setAccount(null); }
+
+/** Démarre une vue nommée stable, sans modifier la route normalisée. */
+export function startView(name: string, context: EventContext = {}): boolean {
+  const view = eventContext.startView(name, currentRoute(), context);
+  if (!view) return false;
+  const envelope = eventContext.envelope();
+  return emitter?.("rum.view", {
+    "mip.event_type": "view",
+    "mip.event_name": view.name,
+    "mip.view_id": view.id,
+    "mip.view_name": view.name,
+    ...(envelope.context ? { "mip.context": envelope.context } : {}),
+  }) ?? false;
+}
+
+/** Émet une action manuelle typée. P3 reste propriétaire de la corrélation causale. */
+export function addAction(name: string, context: EventContext = {}): boolean {
+  const safeName = boundedName(name);
+  if (!safeName) return false;
+  const actionId = newEnvelopeId();
+  const envelope = eventContext.envelope(context, {}, actionId);
+  return emitter?.("rum.action", {
+    "mip.event_type": "action",
+    "mip.event_name": safeName,
+    "mip.action_id": actionId,
+    ...(envelope.context ? { "mip.context": envelope.context } : {}),
+  }) ?? false;
+}
+
+/** Émet un timing relatif au début de la vue courante. */
+export function addTiming(name: string, timestamp: number = Date.now()): boolean {
+  const safeName = boundedName(name);
+  if (!safeName) return false;
+  const duration = eventContext.timing(safeName, timestamp);
+  if (duration == null) return false;
+  return emitter?.("rum.timing", {
+    "mip.event_type": "timing",
+    "mip.event_name": safeName,
+    "mip.timing_ms": duration,
+  }) ?? false;
+}
+
+/** Émet une évaluation bornée puis la rattache au contexte futur de la vue. */
+export function addFeatureFlagEvaluation(name: string, value: string | number | boolean | null): boolean {
+  const safeName = boundedName(name);
+  if (!safeName || !eventContext.addFlag(safeName, value)) return false;
+  return emitter?.("rum.feature_flag", {
+    "mip.event_type": "feature_flag",
+    "mip.event_name": safeName,
+    "mip.feature_flag_value": value == null ? "null" : String(value),
+  }) ?? false;
+}
+
+/** Signale explicitement une erreur en réutilisant la voie exception existante. */
+export function addError(error: Error | string, context: EventContext = {}): boolean {
+  const message = typeof error === "string" ? error : error.message;
+  const errorName = boundedName(typeof error === "string" ? "Error" : error.name) ?? "Error";
+  const safeMessage = message.length <= 500 ? message : message.slice(0, 500);
+  const safeStack = typeof error === "string" || !error.stack ? null : error.stack.slice(0, 4000);
+  const envelope = eventContext.envelope({}, context);
+  return emitter?.("exception", {
+    "mip.event_type": "error",
+    "mip.event_name": errorName,
+    "exception.type": errorName,
+    "exception.message": safeMessage,
+    ...(safeStack ? { "exception.stacktrace": safeStack } : {}),
+    ...(envelope.context ? { "mip.context": envelope.context } : {}),
+  }) ?? false;
 }
 
 /**

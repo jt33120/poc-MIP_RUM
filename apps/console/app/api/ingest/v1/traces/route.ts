@@ -10,6 +10,7 @@
 // replay.ts). Changer ce suffixe casserait le replay chez les clients qui ne
 // surchargent pas `replayEndpoint`.
 import { writeRows } from "ingest/lib/pg-ingest.mjs";
+import { secureOtlpIdentities } from "ingest/lib/identity-hash.mjs";
 import { flattenOtlp } from "ingest/shared/otlp.mjs";
 import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "ingest/shared/limits.mjs";
 import { withRetry } from "ingest/shared/retry.mjs";
@@ -52,7 +53,8 @@ export async function POST(req: Request) {
     } catch {
       throw new BadRequestError("invalid json body");
     }
-    const rows = flattenOtlp(payload, { maxSpans: MAX_SPANS_PER_REQUEST });
+    const secured = secureOtlpIdentities(payload, process.env.IDENTITY_HASH_SECRET);
+    const rows = flattenOtlp(secured.payload, { maxSpans: MAX_SPANS_PER_REQUEST });
 
     const blocked = await guardApps(rows.apiKeys, cors);
     if (blocked) return blocked;

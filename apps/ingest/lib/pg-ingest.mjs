@@ -113,6 +113,8 @@ const OPTIONNELLES = [
   // v58 : échantillonnage. `weight` n'y figure PAS — c'est une colonne générée,
   // que PostgreSQL refuse qu'on écrive.
   "sample_rate", "error_sample_rate", "has_error",
+  // v66 : identité métier pseudonymisée + snapshot global de session.
+  "user_id_hash", "account_id_hash", "context",
 ];
 
 /**
@@ -151,9 +153,12 @@ export function clauseConflitSession(dispo) {
     // retry peut rejouer un lot d'un SDK antérieur, sans identifiant. Le
     // coalesce garantit qu'un identifiant déjà connu n'est jamais effacé par un
     // lot qui n'en porte pas.
-    ...["release", "net_type", "visitor_id"]
+    ...["release", "net_type", "visitor_id", "user_id_hash", "account_id_hash"]
       .filter((c) => dispo.has(c))
       .map((c) => `${c} = coalesce(rum_session.${c}, excluded.${c})`),
+    ...(dispo.has("context")
+      ? ["context = case when excluded.context <> '{}'::jsonb then excluded.context else rum_session.context end"]
+      : []),
     // v58 — `has_error` ne redescend JAMAIS. Les spans d'une session arrivent en
     // plusieurs lots ; celui qui portait l'exception peut être suivi d'un lot
     // sans erreur, et un `= excluded.has_error` remettrait le drapeau à faux.
@@ -321,7 +326,12 @@ export async function writeRows(pool, {
       // être enregistrée comme venant de l'extension sur ce chemin — le seul
       // utilisé en production — alors que le SDK envoyait bien l'attribut.
       colonnesInsert(dispo),
-      sessions.map((s) => ({ ...s, started_at: s.last_seen_at, page_count: 0 })),
+      sessions.map((s) => ({
+        ...s,
+        context: s.context ? JSON.stringify(s.context) : "{}",
+        started_at: s.last_seen_at,
+        page_count: 0,
+      })),
       clauseConflitSession(dispo),
     );
     await batchInsert(
@@ -366,11 +376,20 @@ export async function writeRows(pool, {
       breadcrumbs,
       "on conflict (span_id) do nothing",
     );
+    const eventDispo = await colonnesDe(client, "rum_event");
+    const eventOptionnelles = [
+      "event_type", "context", "user_id_hash", "account_id_hash", "view_id", "view_name",
+      "action_id", "timing_ms", "feature_flag_value",
+    ].filter((col) => eventDispo.has(col));
     await batchInsert(
       client,
       "rum_event",
-      ["span_id", "session_id", "app_id", "route", "name", "props", "ts"],
-      events.map((e) => ({ ...e, props: e.props ? JSON.stringify(e.props) : null })),
+      ["span_id", "session_id", "app_id", "route", "name", "props", ...eventOptionnelles, "ts"],
+      events.map((e) => ({
+        ...e,
+        props: e.props ? JSON.stringify(e.props) : null,
+        context: e.context ? JSON.stringify(e.context) : "{}",
+      })),
       "on conflict (span_id) do nothing",
     );
     await batchInsert(
@@ -388,11 +407,19 @@ export async function writeRows(pool, {
     // sources pendant l'intervalle code-déployé / migration-appliquée.
     if ((await colonnesDe(client, "rum_event_index")).has("source_span_id")) {
       const projection = await indexAvecVitalsConsolides(client, eventIndex, metrics);
+      const indexDispo = await colonnesDe(client, "rum_event_index");
+      const indexOptionnelles = [
+        "event_type", "context", "user_id_hash", "account_id_hash", "view_id", "view_name",
+        "action_id", "timing_ms", "feature_flag_value",
+      ].filter((col) => indexDispo.has(col));
       await batchInsert(
         client,
         "rum_event_index",
-        ["app_id", "session_id", "ts", "route", "kind", "source_name", "source_span_id"],
-        projection,
+        ["app_id", "session_id", "ts", "route", "kind", "source_name", "source_span_id", ...indexOptionnelles],
+        projection.map((event) => ({
+          ...event,
+          context: event.context ? JSON.stringify(event.context) : "{}",
+        })),
         "on conflict (app_id, kind, source_span_id) do nothing",
       );
     }
