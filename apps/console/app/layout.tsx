@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { CoquilleGarde } from "@/components/CoquilleGarde";
 import { GlobalFilters } from "@/components/GlobalFilters";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { Nav } from "@/components/Nav";
@@ -10,7 +11,7 @@ import { SegmentBar } from "@/components/SegmentBar";
 import { SubNav } from "@/components/SubNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getUser } from "@/lib/auth";
-import { estCheminPublic } from "@/lib/chemins-publics";
+import { estCoquilleNue } from "@/lib/chemins-publics";
 import { dogfoodingEndpoint } from "@/lib/ingest-endpoint";
 import { DashboardSettings } from "@/components/DashboardSettings";
 import { CATALOGUES, lireChoix } from "@/lib/dashboard-blocs";
@@ -143,6 +144,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         </head>
         <body className="min-h-screen">
+          <CoquilleGarde rendue="nue" />
           {children}
           <Capteur init={RUM_INIT} />
         </body>
@@ -159,13 +161,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   //     la navigation par-dessus la page d'accueil du produit, ce qui la rendait
   //     inconsultable pour un utilisateur connecté.
   const pathname = (await headers()).get("x-pathname") ?? "";
-  if (pathname === "/select" || pathname.startsWith("/select/") || estCheminPublic(pathname)) {
+  if (estCoquilleNue(pathname)) {
     return (
       <html lang="fr" suppressHydrationWarning>
         <head>
           <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         </head>
         <body className="min-h-screen">
+          <CoquilleGarde rendue="nue" />
           {children}
           <Capteur init={RUM_INIT} />
         </body>
@@ -194,6 +197,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body className="min-h-screen">
         <AutoRefresh />
+        <CoquilleGarde rendue="console" />
         <div className="flex min-h-screen">
           {/* Sidebar claire : neutre, épurée — n'entre plus en concurrence avec le contenu */}
           <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-panel p-4">

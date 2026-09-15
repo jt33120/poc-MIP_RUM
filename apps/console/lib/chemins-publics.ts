@@ -37,3 +37,13 @@ export function estCheminPublic(pathname: string): boolean {
     pathname.startsWith("/legal/")
   );
 }
+
+/**
+ * Ce chemin se rend-il en PLEIN ÉCRAN, sans la coquille console, pour un
+ * utilisateur connecté ? /select (le choix du projet, forcément avant d'en avoir
+ * un) et les pages publiques. Partagé par le layout, qui décide, et par
+ * CoquilleGarde, qui vérifie côté client que la décision suit la navigation.
+ */
+export function estCoquilleNue(pathname: string): boolean {
+  return pathname === "/select" || pathname.startsWith("/select/") || estCheminPublic(pathname);
+}

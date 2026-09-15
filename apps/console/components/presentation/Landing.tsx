@@ -63,14 +63,14 @@ function Actions({ size = "md" }: { size?: "sm" | "md" }) {
   return (
     <div className="flex flex-wrap items-center gap-2.5">
       {demo ? (
-        <Link
-          href="/demo"
-          prefetch={false}
-          data-testid={`presentation-demo${suffixe}`}
-          className={`${base} ${PLEIN}`}
-        >
+        // <a>, PAS <Link> : /demo ouvre une session, donc change de coquille (nue ->
+        // console). Une navigation client ne re-rend jamais le layout racine : la
+        // Vue d'ensemble s'affichait sans sidebar ni en-tête jusqu'au rechargement.
+        // Une navigation document re-rend tout, et ne préchargera jamais la route
+        // (un prefetch ouvrirait une session démo au simple survol).
+        <a href="/demo" data-testid={`presentation-demo${suffixe}`} className={`${base} ${PLEIN}`}>
           Voir la démo <span aria-hidden>→</span>
-        </Link>
+        </a>
       ) : (
         <span
           aria-disabled="true"
