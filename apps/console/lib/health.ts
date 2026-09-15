@@ -93,7 +93,7 @@ export async function healthScore(f: Filters): Promise<Health> {
          where p.started_at > now() - interval '${itv}'
            and ($1::text is null or p.app_id = $1)
            and ($2::text is null or s.device_type = $2)${internalClause(f, "p.app_id")}) as pageviews,
-       (select count(*)::int from rum_error e
+       (select coalesce(sum(e.occurrences), 0)::int from rum_error e
          left join rum_session s using (session_id)
          where e.ts > now() - interval '${itv}'
            and ($1::text is null or e.app_id = $1)

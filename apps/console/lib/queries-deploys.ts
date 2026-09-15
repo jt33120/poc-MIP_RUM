@@ -73,10 +73,10 @@ export async function latestDeployImpact(f: Filters): Promise<DeployImpact | nul
           from rum_metric m, d
          where m.name = 'LCP' and ($1::text is null or m.app_id = $1)
            and m.ts >= d.ts and m.ts < d.ts + interval '2 hours') as lcp_after,
-       coalesce((select count(*) from rum_error e, d
+       coalesce((select sum(e.occurrences) from rum_error e, d
           where ($1::text is null or e.app_id = $1)
             and e.ts >= d.ts - interval '2 hours' and e.ts < d.ts), 0)::int as errors_before,
-       coalesce((select count(*) from rum_error e, d
+       coalesce((select sum(e.occurrences) from rum_error e, d
           where ($1::text is null or e.app_id = $1)
             and e.ts >= d.ts and e.ts < d.ts + interval '2 hours'), 0)::int as errors_after`,
     [f.app],
@@ -146,7 +146,7 @@ export async function comparaisonVersions(f: Filters, limit = 12): Promise<Versi
        v as (select version, count(*)::int as sessions from s group by 1),
        m as (select s.version, x.name, x.value from rum_metric x join s using (session_id)
              where x.name in ('LCP', 'INP')),
-       e as (select s.version, count(*)::int as erreurs,
+       e as (select s.version, coalesce(sum(x.occurrences), 0)::int as erreurs,
                     count(distinct x.session_id)::int as "sessionsEnErreur"
              from rum_error x join s using (session_id) group by 1)
        select v.version, v.sessions,

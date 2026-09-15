@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { fmtDate } from "@/lib/format";
-import { parseFilters, type Filters, type SearchParams } from "@/lib/filters";
+import { type Filters, type SearchParams } from "@/lib/filters";
 import { listDashboards } from "@/lib/queries-dashboards";
 import { registeredApps } from "@/lib/queries";
+import { getUser } from "@/lib/auth";
+import { canCreateDashboard, dashboardApps, dashboardListFilters } from "@/lib/dashboard-access";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { createDashboardAction } from "./actions";
 
@@ -24,9 +26,17 @@ export default async function Dashboards({
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
-  const f = parseFilters((await searchParams) ?? {});
-  const [dashboards, apps] = await Promise.all([listDashboards(f.app), registeredApps()]);
+  const user = await getUser();
+  // L'accès normal est garanti par le middleware. Ne pas afficher une liste
+  // vide à un visiteur sans session évite néanmoins d'exposer ses métadonnées.
+  if (!user) return null;
+  const rawSearchParams = (await searchParams) ?? {};
+  const f = dashboardListFilters(rawSearchParams, user);
+  if (!f) return null;
+  const [dashboards, allApps] = await Promise.all([listDashboards(f.app), registeredApps()]);
+  const apps = dashboardApps(allApps, user);
   const qs = filterQs(f);
+  const canCreateGlobal = canCreateDashboard(user, null);
 
   return (
     <div className="animate-fade-up">
@@ -56,7 +66,7 @@ export default async function Dashboards({
           <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
             App
             <select name="app_id" defaultValue={f.app ?? ""} className={INPUT_CLASS}>
-              <option value="">(toutes apps)</option>
+              {canCreateGlobal && <option value="">(toutes apps)</option>}
               {apps.map((a) => (
                 <option key={a.app_id} value={a.app_id}>
                   {a.app_id}

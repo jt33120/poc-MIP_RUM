@@ -20,6 +20,23 @@ const THRESHOLDS = {
   TTFB: [800, 1800],
 };
 
+// Les types de breadcrumb sont une petite taxonomie, pas un champ de texte.
+// Accepter une valeur libre reviendrait à créer un second canal de persistance
+// de PII à côté de `label`, même si le SDK officiel émet déjà cette liste.
+const BREADCRUMB_TYPES = new Set(["click", "nav", "error", "custom"]);
+const BREADCRUMB_LABEL_MAX = 120;
+
+export function breadcrumbType(value) {
+  return typeof value === "string" && BREADCRUMB_TYPES.has(value.toLowerCase())
+    ? value.toLowerCase()
+    : "custom";
+}
+
+export function breadcrumbLabel(value) {
+  const clean = scrubText(value);
+  return clean == null ? null : clean.slice(0, BREADCRUMB_LABEL_MAX);
+}
+
 /** Rating CWV selon seuils 2026 ; null si métrique inconnue. */
 export function rating2026(name, value) {
   const t = THRESHOLDS[name];
@@ -835,8 +852,12 @@ export function flattenOtlp(payload, opts = {}) {
             span_id: span.spanId,
             session_id: sessionId,
             app_id: appId,
-            type: a["breadcrumb.type"] ?? "custom",
-            label: a["breadcrumb.label"] ?? null,
+            type: breadcrumbType(a["breadcrumb.type"]),
+            // Un breadcrumb décrit une action de l'utilisateur : son libellé est
+            // donc du texte libre, au même titre qu'un message d'erreur. Le SDK
+            // le borne côté client, mais la frontière de confidentialité est
+            // ici, avant toute persistance et pour tous les émetteurs OTLP.
+            label: breadcrumbLabel(a["breadcrumb.label"]),
             seq: a["breadcrumb.seq"] ?? null,
             ts,
           });

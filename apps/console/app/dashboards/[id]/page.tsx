@@ -7,9 +7,16 @@ import {
   WIDGET_VITALS,
   type WidgetType,
 } from "@/lib/dashboards";
-import { parseFilters, type Filters, type SearchParams } from "@/lib/filters";
-import { getDashboard } from "@/lib/queries-dashboards";
+import { type Filters, type SearchParams } from "@/lib/filters";
 import { registeredApps } from "@/lib/queries";
+import { getUser } from "@/lib/auth";
+import {
+  canCreateDashboard,
+  canMutateDashboard,
+  dashboardApps,
+  dashboardFilters,
+  getAccessibleDashboard,
+} from "@/lib/dashboard-access";
 import { resolveWidget } from "@/lib/widget-data";
 import {
   addWidgetAction,
@@ -32,17 +39,21 @@ export default async function D({
 }) {
   const { id } = await params;
   const idNum = Number(id);
-  const dash = Number.isInteger(idNum) ? await getDashboard(idNum) : null;
+  const user = await getUser();
+  const dash = Number.isInteger(idNum) ? await getAccessibleDashboard(idNum, user) : null;
   if (!dash) notFound();
 
-  const f = parseFilters((await searchParams) ?? {});
-  const eff: Filters = { ...f, app: dash.app_id ?? f.app };
+  const f = dashboardFilters(dash, (await searchParams) ?? {}, user);
+  if (!f) notFound();
+  const eff: Filters = f;
   const data = await Promise.all(dash.layout.map((w) => resolveWidget(w, eff)));
-  const apps = await registeredApps();
+  const apps = dashboardApps(await registeredApps(), user);
 
   const qs = filterQs(f);
   const exportHref = `/api/dashboards/${dash.id}/export${qs ? `?${qs}` : ""}`;
   const scope = dash.app_id ?? "toutes les apps";
+  const editable = canMutateDashboard(user, dash);
+  const canUseGlobal = canCreateDashboard(user, null);
 
   return (
     <div className="animate-fade-up">
@@ -85,7 +96,7 @@ export default async function D({
       )}
 
       {/* ----- Édition ----- */}
-      <details className="card mt-8" data-testid="edit-panel">
+      {editable && <details className="card mt-8" data-testid="edit-panel">
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-soft transition hover:text-ink">
           Éditer le tableau de bord
         </summary>
@@ -133,7 +144,7 @@ export default async function D({
             <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
               App
               <select name="app_id" defaultValue={dash.app_id ?? ""} className={INPUT_CLASS}>
-                <option value="">(toutes apps)</option>
+                {canUseGlobal && <option value="">(toutes apps)</option>}
                 {apps.map((a) => (
                   <option key={a.app_id} value={a.app_id}>
                     {a.app_id}
@@ -158,7 +169,7 @@ export default async function D({
             </button>
           </form>
         </div>
-      </details>
+      </details>}
     </div>
   );
 }

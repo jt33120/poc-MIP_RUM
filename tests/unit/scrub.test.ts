@@ -113,6 +113,16 @@ describe("flattenOtlp — scrub appliqué aux erreurs et aux événements", () =
                   { key: "mip.props", value: sv('{"email":"a@b.fr","plan":"pro"}') },
                 ],
               },
+              {
+                spanId: "s3",
+                name: "breadcrumb",
+                startTimeUnixNano: "1760000000000000000",
+                attributes: [
+                  { key: "mip.session_id", value: sv("sess-1") },
+                  { key: "breadcrumb.type", value: sv("email jean@client.fr password=hunter2") },
+                  { key: "breadcrumb.label", value: sv("clic jean@client.fr eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N depuis 192.168.1.42") },
+                ],
+              },
             ],
           },
         ],
@@ -134,5 +144,38 @@ describe("flattenOtlp — scrub appliqué aux erreurs et aux événements", () =
   it("événement : clé sensible des props masquée", () => {
     expect(rows.events[0].props).toEqual({ email: "[redacted]", plan: "pro" });
     expect(JSON.stringify(rows.events)).not.toContain("a@b.fr");
+  });
+
+  it("breadcrumb : email, JWT et IP ne franchissent jamais la persistance", () => {
+    expect(rows.breadcrumbs[0].label).toContain("[email]");
+    expect(rows.breadcrumbs[0].label).toContain("[jwt]");
+    expect(rows.breadcrumbs[0].label).toContain("[ip]");
+    const blob = JSON.stringify(rows.breadcrumbs);
+    expect(blob).not.toContain("jean@client.fr");
+    expect(blob).not.toContain("dozjgNryP4J3jVmNHl0w5N");
+    expect(blob).not.toContain("192.168.1.42");
+  });
+
+  it("breadcrumb : type est une taxonomie et label est scrubé puis borné", () => {
+    expect(rows.breadcrumbs[0].type).toBe("custom");
+    const oversized = flattenOtlp({
+      ...payload,
+      resourceSpans: [{
+        ...payload.resourceSpans[0],
+        scopeSpans: [{
+          ...payload.resourceSpans[0].scopeSpans[0],
+          spans: [{
+            ...payload.resourceSpans[0].scopeSpans[0].spans[2],
+            attributes: [
+              { key: "mip.session_id", value: sv("sess-1") },
+              { key: "breadcrumb.type", value: sv("NAV") },
+              { key: "breadcrumb.label", value: sv("a".repeat(300)) },
+            ],
+          }],
+        }],
+      }],
+    });
+    expect(oversized.breadcrumbs[0]).toMatchObject({ type: "nav" });
+    expect(oversized.breadcrumbs[0].label).toHaveLength(120);
   });
 });

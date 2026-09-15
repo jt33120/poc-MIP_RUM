@@ -143,7 +143,7 @@ export async function overviewStats(f: Filters, shift = false): Promise<Overview
          where ${win("s.last_seen_at")}
            and ($1::text is null or s.app_id = $1)
            and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "s.app_id")}) as sessions,
-       (select count(*)::int from rum_error e
+       (select coalesce(sum(e.occurrences), 0)::int from rum_error e
          left join rum_session s using (session_id)
          where ${win("e.ts")}
            and ($1::text is null or e.app_id = $1)
@@ -355,7 +355,7 @@ export async function listSessions(
        from rum_pageview where session_id = s.session_id
      ) p on true
      left join lateral (
-       select count(*)::int as err_count
+       select coalesce(sum(occurrences), 0)::int as err_count
        from rum_error where session_id = s.session_id
      ) e on true
      where s.last_seen_at > now() - interval '${itv}'

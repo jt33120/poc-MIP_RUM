@@ -60,7 +60,7 @@ export async function probeOnboarding(appId: string): Promise<OnboardingProbe> {
          where app_id = $1 and started_at > now() - interval '24 hours')::int   as sessions_24h,
        (select min(ts) from rum_span where app_id = $1 and tier = 'front')      as first_front_span_at,
        (select min(ts) from rum_span where app_id = $1 and tier = 'back')       as first_back_span_at,
-       (select count(*) from rum_error
+       (select coalesce(sum(occurrences), 0) from rum_error
          where app_id = $1 and ts > now() - interval '24 hours')::int           as errors_24h
     `,
     [appId],

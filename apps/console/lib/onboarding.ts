@@ -77,7 +77,7 @@ export function buildSnippet(opts: {
   ];
   if (opts.clientId) init.push(`    clientId: ${JSON.stringify(opts.clientId)},`);
   init.push(`    env: "prod",`);
-  init.push(`    apiKey: "COLLE_ICI_LA_CLE_API", // affichée une seule fois à la création`);
+  init.push(`    apiKey: "COLLE_ICI_LA_CLE_API", // placeholder : ne jamais versionner une vraie clé`);
   if (opts.withConsent)
     init.push(`    requireConsent: true, // rien ne part avant MIPRum.consent(true)`);
   return [

@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { RadarScore } from "@/components/charts/RadarScore";
 import { LineTrend } from "@/components/charts/LineTrend";
+import { ExperienceUnavailable } from "@/components/ExperienceUnavailable";
 import { experienceScore, frustrationPenalty, scoreTone } from "@/lib/experience";
 import { parseFilters, type SearchParams } from "@/lib/queries-v2";
 import {
@@ -21,8 +22,8 @@ export const dynamic = "force-dynamic";
 const TONE_TEXT = { good: "text-good", warn: "text-warn", bad: "text-bad" } as const;
 
 /** LCP p75 -> sous-score perçu 0..100 (repères Web Vitals 2026). */
-function vitalsScore(lcpP75: number | null): number {
-  if (lcpP75 == null) return 70; // pas de vitals sur la fenêtre : base neutre
+function vitalsScore(lcpP75: number | null): number | null {
+  if (lcpP75 == null) return null;
   if (lcpP75 <= 2000) return 100;
   if (lcpP75 <= 2500) return 82;
   if (lcpP75 <= 4000) return 55;
@@ -50,7 +51,7 @@ export default async function Experience({
     frustrationPenalty: frustrationPenalty(ratePer1k),
     csat: csatVal,
   });
-  const tone = scoreTone(score);
+  const tone = score == null ? "warn" : scoreTone(score);
 
   return (
     <div className="animate-fade-up">
@@ -69,15 +70,17 @@ export default async function Experience({
         const satisfaction = csatVal != null ? Math.round(csatVal * 100) : null;
         const heroTone = tone === "bad" ? "poor" : tone;
         const radarData = [
-          { axis: "Perf perçue", value: perfSub },
+          ...(perfSub != null ? [{ axis: "Perf perçue", value: perfSub }] : []),
           { axis: "Sérénité", value: serenity },
           ...(satisfaction != null ? [{ axis: "Satisfaction", value: satisfaction }] : []),
         ];
         return (
           <SupervisionHero
-            chartTitle={satisfaction != null ? "Profil d'expérience — sous-scores /100" : "Score d'expérience"}
+            chartTitle={score == null ? "Mesures d'expérience" : satisfaction != null ? "Profil d'expérience — sous-scores /100" : "Score d'expérience"}
             chart={
-              satisfaction != null ? (
+              score == null ? (
+                <ExperienceUnavailable />
+              ) : satisfaction != null ? (
                 <RadarScore data={radarData} />
               ) : (
                 <div className="flex h-[260px] flex-col items-center justify-center gap-2">
@@ -92,9 +95,9 @@ export default async function Experience({
           >
             <HeroStat
               label="Score d'expérience"
-              value={<span data-testid="xp-score">{score}<span className="text-base text-ink-faint">/100</span></span>}
-              tone={heroTone}
-              hint="perf perçue × frustration × CSAT"
+              value={score == null ? <span data-testid="xp-score">données insuffisantes</span> : <span data-testid="xp-score">{score}<span className="text-base text-ink-faint">/100</span></span>}
+              tone={score == null ? "neutral" : heroTone}
+              hint={score == null ? "aucune mesure exploitable" : "perf perçue × frustration × CSAT"}
             />
             <HeroStat
               label="CSAT"
@@ -108,7 +111,9 @@ export default async function Experience({
               hint={`note moy. ${stats.avg == null ? "—" : stats.avg.toFixed(1)}/5 · ${stats.detractors} détracteur(s)`}
             />
             <HeroReading>
-              {satisfaction != null
+              {score == null
+                ? "Données insuffisantes : aucune mesure exploitable sur cette période."
+                : satisfaction != null
                 ? "Le radar croise les trois piliers du ressenti : ce que l'utilisateur perçoit (perf), ce qui l'agace (sérénité) et ce qu'il déclare (satisfaction). Un axe creusé = le levier prioritaire."
                 : "Sans feedback, le score repose sur la seule performance perçue. Ajoutez le widget de feedback (voir ci-dessous) pour activer les axes satisfaction."}
             </HeroReading>

@@ -18,7 +18,7 @@ export async function internalHealth(): Promise<HealthSnapshot> {
       `select
          (select count(*) from rum_metric   where ts > now() - interval '5 minutes')::int as ingest_metrics_5m,
          (select count(*) from rum_pageview where started_at > now() - interval '5 minutes')::int as ingest_pageviews_5m,
-         (select count(*) from rum_error    where ts > now() - interval '5 minutes')::int as ingest_errors_5m,
+         (select coalesce(sum(occurrences), 0) from rum_error where ts > now() - interval '5 minutes')::int as ingest_errors_5m,
          (select count(distinct session_id) from rum_pageview where started_at > now() - interval '5 minutes')::int as ingest_sessions_5m,
          (select count(*) from app_registry where active)::int as apps_active,
          (select count(*) from alert_event where not acknowledged)::int as alerts_unacked,

@@ -13,12 +13,12 @@ import {
 } from "@/lib/dashboards";
 import {
   deleteDashboard,
-  getDashboard,
   insertDashboard,
   updateDashboardMeta,
   updateLayout,
 } from "@/lib/queries-dashboards";
 import { getUser } from "@/lib/auth";
+import { canCreateDashboard, getWritableDashboard } from "@/lib/dashboard-access";
 
 function appIdFromForm(fd: FormData): string | null {
   return String(fd.get("app_id") ?? "").trim() || null;
@@ -28,27 +28,18 @@ function appIdFromForm(fd: FormData): string | null {
  * Le tableau de bord `id`, SI l'utilisateur courant a le droit d'y toucher —
  * null sinon, et l'action s'arrête sans rien écrire.
  *
- * Ces actions ne recevaient que l'identifiant, un entier séquentiel donc
- * devinable, et agissaient sans vérifier à quelle application le tableau
- * appartient : un viewer scopé sur une app pouvait renommer, vider ou supprimer
- * le tableau de bord d'une autre. Un tableau sans app_id est transverse et reste
- * accessible à tout utilisateur connecté, comme avant.
+ * Lecture et écriture ne sont pas équivalentes : un dashboard transverse peut
+ * être lu avec un filtre tenant, mais seul son admin peut le modifier. Un viewer
+ * ne touche qu'à ses propres dashboards liés à une app autorisée.
  */
 async function dashboardAutorise(id: number) {
-  const dash = await getDashboard(id);
-  if (!dash) return null;
   const user = await getUser();
-  if (!user) return null;
-  if (dash.app_id && user.apps && !user.apps.includes(dash.app_id)) return null;
-  return dash;
+  return getWritableDashboard(id, user);
 }
 
-/** Un viewer scopé ne crée pas de tableau sur une application qu'il ne voit pas. */
+/** Un viewer ne crée que dans une app de son scope — jamais en transverse. */
 async function appAutorisee(appId: string | null): Promise<boolean> {
-  if (!appId) return true; // tableau transverse
-  const user = await getUser();
-  if (!user) return false;
-  return !user.apps || user.apps.includes(appId);
+  return canCreateDashboard(await getUser(), appId);
 }
 
 export async function createDashboardAction(fd: FormData): Promise<void> {

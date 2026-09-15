@@ -1,4 +1,4 @@
-import { scrubUrl } from "./context";
+import { currentRoute, scrubUrl } from "./context";
 import { makeCap, type PageCap } from "./caps";
 
 export type AttrValue = string | number | boolean;
@@ -67,6 +67,12 @@ export interface Etranglement {
    * (≥ 1) si le span doit partir, ou `null` s'il faut se taire.
    */
   admettre(empreinte: string, maintenant: number): number | null;
+  /**
+   * Rend les répétitions tues depuis la dernière transmission, puis remet leur
+   * compteur à zéro. Le plafond reste intact : vider avant pagehide ne donne
+   * jamais de nouveaux slots à une page bruyante.
+   */
+  drainer(maintenant: number): Array<{ empreinte: string; occurrences: number }>;
   reset(): void;
 }
 
@@ -107,6 +113,16 @@ export function creerEtranglement(
       e.accumule++;
       return null;
     },
+    drainer(maintenant) {
+      const restants: Array<{ empreinte: string; occurrences: number }> = [];
+      for (const [empreinte, e] of vues) {
+        if (!e.accumule) continue;
+        restants.push({ empreinte, occurrences: e.accumule });
+        e.accumule = 0;
+        e.dernierEnvoi = maintenant;
+      }
+      return restants;
+    },
     reset() {
       vues = new Map();
       cap.reset();
@@ -120,16 +136,46 @@ export function creerEtranglement(
  */
 export function initErrors(emit: Emit, horloge: () => number = Date.now): Etranglement {
   const etr = creerEtranglement();
+  // Les deux maps restent bornées par `ERREURS_PAR_PAGE` : on ne mémorise une
+  // empreinte que si `admettre` lui a effectivement réservé un slot. En
+  // particulier, une nouvelle empreinte refusée par le cap ne peut pas remplir
+  // cette mémoire latérale avec du texte tiers.
+  type Detail = { attrs: Record<string, AttrValue>; ts: number };
+  const details = new Map<string, Detail>();
+  // Première occurrence tue après une émission : c'est son contexte, et non
+  // celui de la destination (navigation SPA/pagehide), qui doit être conservé
+  // quand le lot compacté est finalement envoyé.
+  const pendingDetails = new Map<string, Detail>();
 
   const transmettre = (
     empreinte: string,
     attrs: Record<string, AttrValue>,
   ) => {
-    const n = etr.admettre(empreinte, horloge());
-    if (n == null) return;
+    const detail: Detail = {
+      // `realEmit` apporte aussi la route courante par défaut. La poser ici
+      // capture la route de l'erreur, avant toute navigation qui déclenche le
+      // drain, et l'attribut explicite a priorité dans le merge.
+      attrs: { ...attrs, "mip.route": currentRoute() },
+      ts: horloge(),
+    };
+    const n = etr.admettre(empreinte, detail.ts);
+    if (n == null) {
+      // `null` couvre une répétition silencieuse ET une empreinte nouvelle
+      // refusée par le cap. Seule la première possède déjà un slot/document :
+      // elle peut avoir besoin d'un drain, la seconde ne doit pas être stockée.
+      if (details.has(empreinte) && !pendingDetails.has(empreinte)) pendingDetails.set(empreinte, detail);
+      return;
+    }
+    const original = n > 1 ? (pendingDetails.get(empreinte) ?? detail) : detail;
+    pendingDetails.delete(empreinte);
+    details.set(empreinte, detail);
     // `mip.error_count` n'est posé que lorsqu'il dépasse 1 : sur le cas courant
     // — une erreur isolée — l'attribut n'existe pas et le payload ne grossit pas.
-    emit("exception", n > 1 ? { ...attrs, "mip.error_count": n } : attrs);
+    emit(
+      "exception",
+      n > 1 ? { ...original.attrs, "mip.error_count": n } : original.attrs,
+      original.ts,
+    );
   };
 
   addEventListener("error", (e: ErrorEvent) => {
@@ -161,5 +207,23 @@ export function initErrors(emit: Emit, horloge: () => number = Date.now): Etrang
     });
   });
 
-  return etr;
+  return {
+    ...etr,
+    drainer(maintenant) {
+      for (const queued of etr.drainer(maintenant)) {
+        const detail = pendingDetails.get(queued.empreinte) ?? details.get(queued.empreinte);
+        if (!detail) continue;
+        emit("exception", { ...detail.attrs, "mip.error_count": queued.occurrences }, detail.ts);
+        // Le prochain groupe silencieux doit capturer sa propre première
+        // occurrence plutôt que de réutiliser le contexte de ce groupe-ci.
+        pendingDetails.delete(queued.empreinte);
+      }
+      return [];
+    },
+    reset() {
+      details.clear();
+      pendingDetails.clear();
+      etr.reset();
+    },
+  };
 }

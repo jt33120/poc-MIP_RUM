@@ -2,8 +2,7 @@
 // cookie de session (getUser). Réutilise resolveWidget + widgetToCsv pour que
 // l'export et le rendu HTML partagent EXACTEMENT la même donnée.
 import { getUser } from "@/lib/auth";
-import { parseFilters, type Filters } from "@/lib/filters";
-import { getDashboard } from "@/lib/queries-dashboards";
+import { dashboardFilters, getAccessibleDashboard } from "@/lib/dashboard-access";
 import { resolveWidget, widgetToCsv } from "@/lib/widget-data";
 
 export const dynamic = "force-dynamic";
@@ -14,12 +13,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const { id } = await ctx.params;
   const idNum = Number(id);
-  const dash = Number.isInteger(idNum) ? await getDashboard(idNum) : null;
+  const dash = Number.isInteger(idNum) ? await getAccessibleDashboard(idNum, user) : null;
   if (!dash) return new Response("not found", { status: 404 });
 
   const url = new URL(req.url);
-  const f = parseFilters(Object.fromEntries(url.searchParams));
-  const eff: Filters = { ...f, app: dash.app_id ?? f.app };
+  const eff = dashboardFilters(dash, Object.fromEntries(url.searchParams), user);
+  if (!eff) return new Response("not found", { status: 404 });
 
   const blocks = await Promise.all(
     dash.layout.map(async (w) => widgetToCsv(w.title, await resolveWidget(w, eff))),

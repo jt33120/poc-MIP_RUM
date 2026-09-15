@@ -34,8 +34,8 @@ export function breakdown(scores: number[]): { promoters: number; passives: numb
 }
 
 export interface ExperienceInputs {
-  /** Qualité perçue de la performance, 0..100 (ex. healthScore des vitals). */
-  vitals: number;
+  /** Qualité perçue de la performance, 0..100 (ex. healthScore des vitals), ou null si aucune mesure. */
+  vitals: number | null;
   /** Pénalité de frustration déjà bornée 0..100 (rage/dead clicks -> points en moins). */
   frustrationPenalty?: number;
   /** CSAT 0..1 (part de feedbacks positifs), ou null si aucun feedback. */
@@ -47,7 +47,11 @@ export interface ExperienceInputs {
  * frustration, puis — si des feedbacks existent — on pondère avec la satisfaction
  * déclarée (60 % mesuré / 40 % déclaré). Sans feedback, c'est la perf ajustée.
  */
-export function experienceScore({ vitals, frustrationPenalty = 0, csat = null }: ExperienceInputs): number {
+export function experienceScore({ vitals, frustrationPenalty = 0, csat = null }: ExperienceInputs): number | null {
+  // Aucun LCP ne permet de parler de performance perçue. Une valeur neutre
+  // fabriquée (70/100) aurait l'apparence d'une mesure et masquerait justement
+  // l'absence de données que cette page doit signaler.
+  if (vitals == null || !Number.isFinite(vitals)) return null;
   const base = clamp(vitals - frustrationPenalty, 0, 100);
   if (csat == null) return Math.round(base);
   return Math.round(0.6 * base + 0.4 * csat * 100);

@@ -40,6 +40,9 @@ describe("experienceScore", () => {
     expect(experienceScore({ vitals: 10, frustrationPenalty: 50 })).toBe(0);
     expect(experienceScore({ vitals: 100, csat: 1 })).toBe(100);
   });
+  it("sans mesure LCP : ne fabrique jamais un score neutre", () => {
+    expect(experienceScore({ vitals: null, csat: null })).toBeNull();
+  });
 });
 
 describe("frustrationPenalty", () => {

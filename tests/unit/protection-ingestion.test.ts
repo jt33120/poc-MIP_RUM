@@ -21,7 +21,10 @@ import {
   FENETRE_SILENCE_MS,
   creerEtranglement,
   empreinteLocale,
+  initErrors,
 } from "../../packages/rum-sdk/src/errors";
+import { initNavigation } from "../../packages/rum-sdk/src/context";
+import { wireErrorDrainLifecycle } from "../../packages/rum-sdk/src/index";
 import {
   RETRY_MAX_TENTATIVES,
   classerReponse,
@@ -54,6 +57,130 @@ describe("une erreur en boucle est comptée, pas transmise mille fois", () => {
     e.admettre("boom", 1);
     expect(e.admettre("boom", FENETRE_SILENCE_MS)).toBe(2);
     expect(e.admettre("boom", FENETRE_SILENCE_MS * 2)).toBe(1);
+  });
+
+  it("draine les répétitions avant la sortie sans libérer le plafond", () => {
+    const e = creerEtranglement();
+    expect(e.admettre("boom", 0)).toBe(1);
+    for (let t = 1; t <= 9; t++) expect(e.admettre("boom", t)).toBeNull();
+    // 1 span déjà émis + 9 occurrences drainées = 10 persistées.
+    expect(e.drainer(10)).toEqual([{ empreinte: "boom", occurrences: 9 }]);
+    expect(e.drainer(11)).toEqual([]);
+    expect(e.admettre("boom", 12)).toBeNull();
+  });
+
+  it("réémet les répétitions drainées avec leur mesure avant la sortie", () => {
+    const emits: Array<{ name: string; attrs: Record<string, string | number | boolean> }> = [];
+    let receiveError: ((event: ErrorEvent) => void) | undefined;
+    vi.stubGlobal("addEventListener", (type: string, listener: EventListenerOrEventListenerObject) => {
+      if (type === "error") receiveError = listener as (event: ErrorEvent) => void;
+    });
+    try {
+      const e = initErrors((name, attrs) => emits.push({ name, attrs }), () => 0);
+      const event = {
+        message: "boom",
+        error: new Error("boom"),
+        filename: "https://app.example.test/app.js",
+        lineno: 1,
+        colno: 1,
+      } as ErrorEvent;
+
+      receiveError!(event);
+      for (let i = 0; i < 9; i++) receiveError!(event);
+      e.drainer(1);
+
+      expect(emits).toHaveLength(2);
+      expect(emits[0].name).toBe("exception");
+      expect(emits[1].attrs["mip.error_count"]).toBe(9);
+      expect(1 + Number(emits[1].attrs["mip.error_count"])).toBe(10);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("conserve la route et l'horodatage d'origine à travers SPA, pagehide et MIPRum.flush", () => {
+    const emits: Array<{ attrs: Record<string, string | number | boolean>; ts?: number }> = [];
+    const listeners = new Map<string, (event?: Event) => void>();
+    const documentListeners = new Map<string, () => void>();
+    let now = 101;
+    const page = {
+      visibilityState: "visible",
+      addEventListener: (type: string, listener: () => void) => documentListeners.set(type, listener),
+    };
+    const loc = { pathname: "/origin", href: "https://app.example.test/origin" };
+    const hist = { pushState: () => undefined, replaceState: () => undefined };
+    vi.stubGlobal("document", page);
+    vi.stubGlobal("location", loc);
+    vi.stubGlobal("history", hist);
+    vi.stubGlobal("addEventListener", (type: string, listener: (event?: Event) => void) => {
+      listeners.set(type, listener);
+    });
+    try {
+      const errors = initErrors((_, attrs, ts) => emits.push({ attrs, ts }), () => now);
+      const wiring = wireErrorDrainLifecycle(() => errors.drainer(Date.now()), async () => {});
+      initNavigation(() => wiring.onSpaNavigation());
+      const event = {
+        message: "boom",
+        error: new Error("boom"),
+        filename: "https://app.example.test/app.js",
+        lineno: 1,
+        colno: 1,
+      } as ErrorEvent;
+
+      listeners.get("error")!(event); // route /origin, ts 101
+      now = 102;
+      listeners.get("error")!(event); // silencieuse, à drainer après SPA
+      loc.pathname = "/destination";
+      hist.pushState();
+
+      now = 103;
+      listeners.get("error")!(event); // silencieuse, à drainer au pagehide
+      listeners.get("pagehide")!();
+
+      now = 104;
+      listeners.get("error")!(event); // silencieuse, à drainer par flush public
+      wiring.onPublicFlush();
+
+      now = 105;
+      listeners.get("error")!(event); // silencieuse, à drainer en visibilitychange
+      page.visibilityState = "hidden";
+      documentListeners.get("visibilitychange")!();
+
+      expect(emits).toHaveLength(5);
+      expect(emits.map((e) => e.attrs["mip.route"])).toEqual(["/origin", "/origin", "/destination", "/destination", "/destination"]);
+      expect(emits.map((e) => e.ts)).toEqual([101, 102, 103, 104, 105]);
+      expect(emits.slice(1).every((e) => e.attrs["mip.error_count"] === 1)).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("ne retient pas de détails pour une nouvelle empreinte rejetée par le cap", () => {
+    const emits: Array<Record<string, string | number | boolean>> = [];
+    const listeners = new Map<string, (event: ErrorEvent) => void>();
+    vi.stubGlobal("addEventListener", (type: string, listener: (event: ErrorEvent) => void) => {
+      listeners.set(type, listener);
+    });
+    try {
+      const errors = initErrors((_, attrs) => emits.push(attrs), () => 0);
+      const messages = Array.from({ length: ERREURS_PAR_PAGE + 1 }, (_, i) => `erreur-${String.fromCharCode(65 + i)}`);
+      for (let i = 0; i <= ERREURS_PAR_PAGE; i++) {
+        listeners.get("error")!({
+          message: messages[i],
+          error: new Error(messages[i]),
+          filename: "",
+          lineno: 0,
+          colno: 0,
+        } as ErrorEvent);
+      }
+      // La 51e empreinte est refusée, y compris si elle se répète puis si un
+      // cycle de vie force le drain : aucun détail nouveau n'est mémorisé.
+      listeners.get("error")!({ message: messages[50], error: new Error(messages[50]) } as ErrorEvent);
+      errors.drainer(1);
+      expect(emits).toHaveLength(ERREURS_PAR_PAGE);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("le plafond porte sur les EMPREINTES distinctes, pas sur les occurrences", () => {

@@ -309,7 +309,7 @@ export async function errorSparklines(
   const rows = await q<{ fingerprint: string; seau: string; n: number }>(
     `select fingerprint,
             floor(extract(epoch from ts) / $3)::bigint as seau,
-            count(*)::int as n
+            coalesce(sum(occurrences), 0)::int as n
      from rum_error
      where fingerprint = any($1)
        and ts > now() - $4::interval

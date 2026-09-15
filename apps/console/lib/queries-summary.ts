@@ -190,6 +190,7 @@ export async function rumSummary(
   // trafic de soirée basculait sur le lendemain.
   const tz = await fuseauDe(app);
   const p = [app, interval, tz];
+  const p2 = [app, interval];
 
   const [kpis, series, routes, errors, ai, p75] = await Promise.all([
     q<{
@@ -251,7 +252,7 @@ export async function rumSummary(
          -- C'est ce qui déclenche l'avertissement plutôt qu'un silence.
          (select coalesce(min(s.sample_rate), 1) from rum_session s
             where s.app_id=$1 and s.last_seen_at>now()-$2::interval) as min_sample_rate`,
-      p,
+      p2,
     ),
     q<SummarySeriesPoint>(
       `select to_char(d::date,'YYYY-MM-DD') as date,
@@ -285,7 +286,7 @@ export async function rumSummary(
          select p.route, count(*)::int views from rum_pageview p join rum_session s on s.session_id=p.session_id
          where p.app_id=$1 and p.started_at>now()-$2::interval and not coalesce(s.is_bot,false) and p.route is not null group by p.route
        ), er as (
-         select e.route, count(*)::int errors from rum_error e join rum_session s on s.session_id=e.session_id
+         select e.route, coalesce(sum(e.occurrences),0)::int errors from rum_error e join rum_session s on s.session_id=e.session_id
          where e.app_id=$1 and e.ts>now()-$2::interval and not coalesce(s.is_bot,false) and e.route is not null group by e.route
        ), fcp as (
          select m.route, round(avg(m.value))::int avg_ms from rum_metric m join rum_session s on s.session_id=m.session_id
@@ -294,16 +295,16 @@ export async function rumSummary(
        select pv.route, pv.views, fcp.avg_ms, coalesce(er.errors,0)::int errors
        from pv left join er using(route) left join fcp using(route)
        order by pv.views desc limit 10`,
-      p,
+      p2,
     ),
     q<{ message: string; count: number; last_seen: string }>(
-      `select left(e.message,200) as message, count(*)::int as count, max(e.ts) as last_seen
+      `select left(e.message,200) as message, coalesce(sum(e.occurrences),0)::int as count, max(e.ts) as last_seen
        from rum_error e join rum_session s on s.session_id=e.session_id
        where e.app_id=$1 and e.ts>now()-$2::interval and not coalesce(s.is_bot,false)
          and e.message is not null and e.message <> ''
        group by left(e.message,200)
-       order by count(*) desc limit 10`,
-      p,
+       order by count desc limit 10`,
+      p2,
     ),
     resolveAi(app, windowKey),
     // Les percentiles, par somme cumulée sur les seaux pondérés. En parallèle

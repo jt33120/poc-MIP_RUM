@@ -31,6 +31,28 @@ let gate: ConsentGate | null = null;
 let deliver: Emit | null = null; // émission réelle (post-consent)
 let replayRetry: (() => void) | null = null;
 let replayArm: (() => void) | null = null; // replay échantillonné, en attente de consent
+let drainErrors: (() => void) | null = null;
+
+/**
+ * Une seule couture pour tous les chemins qui vident les répétitions d'erreur.
+ * Exposée pour couvrir le vrai câblage navigateur sans démarrer tout le SDK :
+ * pagehide/visibilitychange, navigation SPA et MIPRum.flush() doivent drainer
+ * exactement une fois, avant l'export correspondant.
+ */
+export function wireErrorDrainLifecycle(
+  drain: () => void,
+  flush: () => Promise<void> | void,
+): { onSpaNavigation: () => void; onPublicFlush: () => void } {
+  const beforeExport = () => {
+    drain();
+    void flush();
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") beforeExport();
+  });
+  addEventListener("pagehide", beforeExport, { capture: true });
+  return { onSpaNavigation: beforeExport, onPublicFlush: drain };
+}
 
 // src du script SDK, capturé au CHARGEMENT du module (document.currentScript est
 // nul une fois le script exécuté) — sert à résoudre mip-rum-feedback.js à la même
@@ -192,10 +214,15 @@ export function init(cfg: MIPRumConfig): void {
   // chaque erreur laisse aussi un breadcrumb (parcours menant à l'erreur)
   // `errorCap` : plafond par page ET déduplication par empreinte (finding 2.1).
   // Il rejoint les autres plafonds remis à zéro à chaque page vue, ci-dessous.
-  const errorCap = initErrors((name, attrs) => {
-    emit(name, attrs);
+  const errorCap = initErrors((name, attrs, ts) => {
+    emit(name, attrs, ts);
     trail?.add("error", String(attrs["exception.message"] ?? "error"));
   });
+  const errorLifecycle = wireErrorDrainLifecycle(
+    () => errorCap.drainer(Date.now()),
+    forceFlush,
+  );
+  drainErrors = errorLifecycle.onPublicFlush;
 
   initNavigation((navType) => {
     // nouvelle page vue = nouvelle trace W3C (E0) : ouverte AVANT le span
@@ -206,6 +233,9 @@ export function init(cfg: MIPRumConfig): void {
     longtaskCap.reset();
     apiCap?.reset();
     frustrationCap.reset();
+    errorLifecycle.onSpaNavigation();
+    // Le span final doit être mis dans le batch AVANT qu'une navigation SPA ne
+    // remette les compteurs à zéro.
     errorCap.reset();
     trail!.cap.reset();
     emit("pageview", {
@@ -283,5 +313,6 @@ export function appId(): string {
 
 /** Force the export of pending spans (used by tests and before unload). */
 export function flush(): Promise<void> {
+  drainErrors?.();
   return forceFlush();
 }
