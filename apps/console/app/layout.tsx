@@ -7,6 +7,7 @@ import { CoquilleGarde } from "@/components/CoquilleGarde";
 import { GlobalFilters } from "@/components/GlobalFilters";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { Nav } from "@/components/Nav";
+import { CATEGORIES } from "@/components/nav-items";
 import { SegmentBar } from "@/components/SegmentBar";
 import { SubNav } from "@/components/SubNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -200,7 +201,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <CoquilleGarde rendue="console" />
         <div className="flex min-h-screen">
           {/* Sidebar claire : neutre, épurée — n'entre plus en concurrence avec le contenu */}
-          <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-panel p-4">
+          <aside className="hidden w-64 shrink-0 flex-col border-r border-line bg-panel p-4 lg:flex">
             <div className="mb-6 px-1 pt-1">
               <BrandMark />
             </div>
@@ -274,7 +275,58 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </aside>
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-panel/80 px-6 py-2.5 backdrop-blur-md">
+            <div className="flex items-center justify-between gap-3 border-b border-line bg-panel px-4 py-3 lg:hidden">
+              <BrandMark />
+              <div className="flex items-center gap-2">
+                {currentProject && (
+                  <Link
+                    href="/select"
+                    className="max-w-32 truncate rounded-lg border border-line bg-panel2 px-3 py-2 text-xs font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                    title={`Projet : ${currentProject.name}`}
+                  >
+                    {currentProject.name}
+                  </Link>
+                )}
+                <details className="group relative">
+                  <summary className="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg border border-line bg-panel2 text-ink-soft transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
+                    <Icon paths={ICON_PATHS.grid} className="h-5 w-5" />
+                    <span className="sr-only">Ouvrir la navigation</span>
+                  </summary>
+                  <nav className="absolute right-0 z-30 mt-2 flex w-72 flex-col gap-1 rounded-xl border border-line bg-panel p-2 shadow-card">
+                    {CATEGORIES.map((category) => category.verrouille ? (
+                      <span key={category.href} aria-disabled className="rounded-lg px-3 py-2 text-sm text-ink-faint">
+                        {category.label} · bientôt disponible
+                      </span>
+                    ) : (
+                      <Link
+                        key={category.href}
+                        href={category.href}
+                        className="rounded-lg px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                      >
+                        {category.label}
+                      </Link>
+                    ))}
+                    {user.role === "admin" && (
+                      <Link
+                        href="/admin/customers"
+                        className="rounded-lg border-t border-line px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                      >
+                        Administration
+                      </Link>
+                    )}
+                    <form action="/logout" method="post" className="border-t border-line pt-1">
+                      <button
+                        type="submit"
+                        className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                      >
+                        Se déconnecter
+                      </button>
+                    </form>
+                  </nav>
+                </details>
+              </div>
+            </div>
+            <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-line bg-panel/80 px-4 py-2.5 backdrop-blur-md sm:px-6">
               <Suspense>
                 <GlobalFilters />
               </Suspense>
@@ -296,7 +348,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Suspense>
               <SegmentBar />
             </Suspense>
-            <main className="flex-1 p-6 lg:p-8">{children}</main>
+            <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
           </div>
         </div>
         <Capteur init={RUM_INIT} />

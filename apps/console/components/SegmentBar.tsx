@@ -26,6 +26,7 @@ function segmentApplies(pathname: string): boolean {
   return (
     pathname === "/" ||
     pathname.startsWith("/pages") ||
+    pathname.startsWith("/actions") ||
     pathname.startsWith("/sessions") ||
     pathname.startsWith("/paths") ||
     pathname.startsWith("/forms") ||
@@ -127,7 +128,7 @@ export function SegmentBar() {
 
   return (
     <div
-      className="flex flex-wrap items-center gap-1.5 border-b border-line bg-panel/60 px-6 py-2"
+      className="flex flex-wrap items-center gap-1.5 border-b border-line bg-panel/60 px-4 py-2 sm:px-6"
       data-testid="segment-bar"
     >
       <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">

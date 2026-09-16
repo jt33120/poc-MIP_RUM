@@ -7,12 +7,12 @@ import { type Filters, PERIODS } from "./filters";
 
 export interface FrustrationRow {
   route: string;
-  kind: "rage" | "dead";
+  kind: "rage" | "dead" | "error";
   target: string;
   n: number;
 }
 
-/** Top des signaux de frustration (rage + dead), groupés par route/cible. */
+/** Top des signaux de frustration (rage + dead + error clicks), groupés par route/cible. */
 export async function topFrustrations(f: Filters): Promise<FrustrationRow[]> {
   const itv = PERIODS[f.period].interval;
   try {
@@ -23,7 +23,7 @@ export async function topFrustrations(f: Filters): Promise<FrustrationRow[]> {
               count(*)::int as n
        from rum_event e
        left join rum_session s using (session_id)
-       where e.name in ('frustration.rage', 'frustration.dead')
+       where e.name in ('frustration.rage', 'frustration.dead', 'frustration.error')
          and e.ts > now() - interval '${itv}'
          and ($1::text is null or e.app_id = $1)
          and ($2::text is null or s.device_type = $2)

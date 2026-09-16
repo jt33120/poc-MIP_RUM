@@ -59,7 +59,7 @@ export default async function SessionDetail({
         Session <span className="font-mono text-lg text-ink-soft">{meta.session_id.slice(0, 8)}…</span>
       </h1>
       <p className="mb-6 text-sm text-ink-soft">
-        Timeline fusionnée : pages vues, vitals, erreurs, breadcrumbs, long tasks et events métier
+        Timeline fusionnée : actions causales, pages vues, vitals, erreurs, ressources, appels API et événements métier
       </p>
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">

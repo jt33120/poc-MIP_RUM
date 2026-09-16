@@ -72,6 +72,11 @@ export default {
         pop: "0 4px 12px rgb(6 12 32 / 0.08), 0 12px 32px rgb(6 12 32 / 0.10)",
         glow: "0 0 20px rgb(248 145 1 / 0.35)",
       },
+      minWidth: {
+        // Largeur sémantique des tableaux denses à neuf colonnes. Au-dessous,
+        // le conteneur défile sans élargir le document.
+        table: "70rem",
+      },
       keyframes: {
         "pulse-dot": {
           "0%": { boxShadow: "0 0 0 0 rgb(16 185 129 / 0.5)" },

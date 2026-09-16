@@ -35,6 +35,7 @@ function attributes(values: Record<string, string | number>) {
 
 function lot(spanId: string, raw = RAW, sessionId = `session-${spanId}`) {
   const nowNanos = BigInt(Date.now()) * 1_000_000n;
+  const actionId = spanId.repeat(2);
   const payload = {
     resourceSpans: [{
       resource: { attributes: attributes({ "mip.app_id": APP }) },
@@ -51,7 +52,7 @@ function lot(spanId: string, raw = RAW, sessionId = `session-${spanId}`) {
           "mip.event_name": "checkout",
           "mip.identity.user_id": raw,
           "mip.view_id": "view-checkout",
-          "mip.action_id": "action-checkout",
+          "mip.action_id": actionId,
           "mip.context": JSON.stringify({ plan: "pro", email: raw }),
         }),
       }] }],
@@ -64,6 +65,7 @@ async function clean() {
   for (const app of [APP, OTHER_APP]) {
     await pool.query("delete from ingest_raw where app_id=$1", [app]);
     await pool.query("delete from rum_event_index where app_id=$1", [app]);
+    await pool.query("delete from rum_action where app_id=$1", [app]);
     await pool.query("delete from rum_event where app_id=$1", [app]);
     await pool.query("delete from rum_pageview where app_id=$1", [app]);
     await pool.query("delete from rum_session where app_id=$1", [app]);
@@ -125,7 +127,7 @@ suite("P2 contexte et identité — PostgreSQL", () => {
       "select event_type, user_id_hash, context from rum_event_index where app_id=$1", [APP],
     )).rows[0];
     expect(session.user_id_hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(event).toMatchObject({ event_type: "action", view_id: "view-checkout", action_id: "action-checkout" });
+    expect(event).toMatchObject({ event_type: "action", view_id: "view-checkout", action_id: "a100000000000001a100000000000001" });
     expect(index.event_type).toBe("action");
     expect(event.context).toEqual({ plan: "pro", email: "[email]" });
     expect(JSON.stringify({ session, event, index })).not.toContain(RAW);
@@ -203,17 +205,20 @@ suite("P2 contexte et identité — PostgreSQL", () => {
     const counts = await dsarIdentityCounts(APP, "user", hash, dsarIo);
     expect(counts).toContainEqual({ table: "rum_event", rows: 1 });
     expect(counts).toContainEqual({ table: "rum_event_index", rows: 1 });
+    expect(counts).toContainEqual({ table: "rum_action", rows: 1 });
     expect(counts).toContainEqual({ table: "rum_pageview", rows: 1 });
     expect(counts).toContainEqual({ table: "rum_session", rows: 1 });
 
     const exported = await dsarIdentityExport(APP, "user", hash, "2026-09-15T00:00:00.000Z", dsarIo);
     expect(exported.tables.rum_session).toHaveLength(1);
     expect(exported.tables.rum_event).toHaveLength(1);
+    expect(exported.tables.rum_action).toHaveLength(1);
     expect(JSON.stringify(exported.tables)).not.toContain(OTHER_APP);
 
     const deleted = await dsarIdentityErase(APP, "user", hash, dsarIo);
     expect(deleted).toContainEqual({ table: "rum_event", deleted: 1 });
     expect(deleted).toContainEqual({ table: "rum_event_index", deleted: 1 });
+    expect(deleted).toContainEqual({ table: "rum_action", deleted: 1 });
     expect(deleted).toContainEqual({ table: "rum_pageview", deleted: 1 });
     expect(deleted).toContainEqual({ table: "rum_session", deleted: 1 });
     expect(Number((await pool.query("select count(*)::int n from ingest_raw where app_id=$1", [APP])).rows[0].n)).toBe(0);

@@ -275,6 +275,101 @@ describe("l'émetteur produit un ARBRE, pas une poignée d'orphelins", () => {
     expect(spans[1].spanId).not.toBe(spans[0].spanId);
     expect(spans[1].parentSpanId).toBe(spans[0].spanId);
   });
+
+  it("discardPendingSpans détruit un lot matérialisé avant son export", async () => {
+    const tracer = otel.initOtel({ endpoint: "https://x/v1/traces", appId: "demo" });
+    const span = tracer.startSpan("rum.action");
+    span.setAttributes({
+      "mip.session_id": "sess-1",
+      "mip.event_type": "action",
+      "mip.action_id": "11111111-2222-4333-8444-555555555555",
+    });
+    span.end();
+    otel.discardPendingSpans();
+    await otel.forceFlush();
+    expect(poste).toEqual([]);
+  });
+
+  it("annule aussi l'export HTTP déjà parti lors d'un refus", async () => {
+    let aborted = false;
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+      removeItem: (key: string) => void store.delete(key),
+    });
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    }));
+    const tracer = otel.initOtel({ endpoint: "https://x/v1/traces", appId: "demo" });
+    const span = tracer.startSpan("rum.action");
+    span.setAttributes({
+      "mip.session_id": "sess-1",
+      "mip.event_type": "action",
+      "mip.action_id": "11111111-2222-4333-8444-555555555555",
+    });
+    span.end();
+    const flushing = otel.forceFlush();
+    await Promise.resolve();
+    const retry = await import("../../packages/rum-sdk/src/retry");
+    retry.purgeRetryQueue();
+    otel.discardPendingSpans();
+    await flushing;
+    expect(aborted).toBe(true);
+    expect(store.has(retry.RETRY_KEY)).toBe(false);
+    expect(store.has(retry.RETRY_REVOKED_ACTIONS_KEY)).toBe(false);
+  });
+
+  it("sérialise réellement deux lots pour qu'un enfant ne dépasse pas sa racine", async () => {
+    const releases: Array<(response: { ok: boolean }) => void> = [];
+    let requests = 0;
+    vi.stubGlobal("fetch", () => {
+      requests++;
+      return new Promise<{ ok: boolean }>((resolve) => releases.push(resolve));
+    });
+    const tracer = otel.initOtel({ endpoint: "https://x/v1/traces", appId: "demo" });
+    const root = tracer.startSpan("rum.action");
+    root.setAttributes({ "mip.session_id": "sess-1", "mip.event_type": "action" });
+    root.end();
+    const first = otel.forceFlush();
+    await Promise.resolve();
+    expect(requests).toBe(1);
+
+    const child = tracer.startSpan("exception");
+    child.setAttributes({ "mip.session_id": "sess-1" });
+    child.end();
+    const second = otel.forceFlush();
+    await Promise.resolve();
+    expect(requests).toBe(1);
+
+    releases[0]({ ok: true });
+    await first;
+    await Promise.resolve();
+    expect(requests).toBe(2);
+    releases[1]({ ok: true });
+    await second;
+  });
+
+  it("un rejeu restaure traceId, spanId et parentSpanId natifs", async () => {
+    const tracer = otel.initOtel({ endpoint: "https://x/v1/traces", appId: "demo" });
+    const replay = tracer.startSpan("http.client");
+    replay.setAttributes({
+      "mip.session_id": "sess-1",
+      "mip.trace_id": "d".repeat(32),
+      "mip.span_id": "e".repeat(16),
+      "mip.parent_span_id": "f".repeat(16),
+    });
+    replay.end();
+    await otel.forceFlush();
+    expect(poste[0]).toMatchObject({
+      traceId: "d".repeat(32),
+      spanId: "e".repeat(16),
+      parentSpanId: "f".repeat(16),
+    });
+  });
 });
 
 // ───────────────────── l'ingestion lit le champ natif en premier ──────────────

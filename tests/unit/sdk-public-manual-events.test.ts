@@ -5,6 +5,7 @@ const { spans } = vi.hoisted(() => ({ spans: [] as Array<Record<string, unknown>
 vi.mock("../../packages/rum-sdk/src/otel", () => ({
   currentTraceId: () => "a".repeat(32),
   forceFlush: () => Promise.resolve(),
+  discardPendingSpans: () => {},
   newPageTrace: () => "a".repeat(32),
   initOtel: () => ({
     startSpan(name: string, opts?: { startTime?: number }) {
@@ -65,7 +66,7 @@ vi.mock("../../packages/rum-sdk/src/retry", () => ({ replayRetryQueue: () => 0 }
 
 import {
   addAction, addError, addFeatureFlagEvaluation, addTiming, consent, init,
-  setGlobalContext, setUser, startView,
+  setGlobalContext, setUser, startView, track,
 } from "../../packages/rum-sdk/src/index";
 import { buildResourceSpans } from "../../packages/rum-sdk/src/otlp-encode";
 // @ts-expect-error module JS partagé sans déclarations
@@ -92,6 +93,11 @@ describe("API publique SDK → OTLP", () => {
       endpoint: "https://ingest.test/v1/traces", appId: "sdk-public-app", trace: false,
       requireConsent: true,
       beforeSend(attributes, meta) {
+        if (meta?.type === "action" && meta.name === "Private action") {
+          const next = { ...attributes };
+          delete next["mip.event_name"];
+          return next;
+        }
         if (meta?.name !== "SensitiveError") return attributes;
         const next = { ...attributes, "mip.session_id": "forged" };
         for (const key of ["mip.context", "mip.props", "mip.identity.user_id", "mip.url", "exception.message", "exception.stacktrace"])
@@ -114,6 +120,8 @@ describe("API publique SDK → OTLP", () => {
     manualError.name = "SensitiveError";
     manualError.stack = "secret stack";
     expect(addError(manualError, { secret: "context" })).toBe(true);
+    expect(addAction("Private action")).toBe(false);
+    expect(track("after_private_action")).toBe(true);
 
     const payload = buildResourceSpans(
       { "mip.app_id": "sdk-public-app" },
@@ -142,6 +150,8 @@ describe("API publique SDK → OTLP", () => {
     expect(redacted["mip.session_id"]).toBe("sdk-rotated-session");
     for (const key of ["mip.context", "mip.identity.user_id", "exception.message", "exception.stacktrace"])
       expect(redacted).not.toHaveProperty(key);
+    const afterRejectedAction = rawSpans.find((attrs) => attrs["mip.event_name"] === "after_private_action")!;
+    expect(afterRejectedAction).not.toHaveProperty("mip.action_id");
     clock.mockRestore();
   });
 });

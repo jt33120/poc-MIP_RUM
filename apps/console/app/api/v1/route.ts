@@ -32,7 +32,7 @@ export const GET = handle(async () => ({
     device: "mobile | desktop | tablet | all (défaut)",
   },
   pagination:
-    "les listes (/errors, /sessions, /events) acceptent limit (1..200) & offset ; /events borne offset à 10 000. page renvoyée dans data.page. Aucun total n'est fourni.",
+    "les listes (/errors, /sessions, /events, /actions) acceptent limit (1..200) & offset ; /events et /actions bornent offset à 10 000. page renvoyée dans data.page. Aucun total n'est fourni.",
   spec: "/api/v1/openapi (OpenAPI 3.0, sans auth)",
   docs: "/api/v1/docs (Swagger UI, sans auth)",
   mcp: {

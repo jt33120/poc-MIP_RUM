@@ -52,6 +52,7 @@ export const DSAR_CHILD_TABLES = [
   "rum_error",
   "rum_pageview",
   "rum_event_index",
+  "rum_action",
   "rum_span",
   "rum_event",
   "rum_breadcrumb",

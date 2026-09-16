@@ -27,6 +27,11 @@ export function TimelineRow({ item, t0 }: { item: TimelineItem; t0: number }) {
         </span>
         <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${st.badge}`}>{st.label}</span>
         <ItemBody item={item} />
+        {item.action_id && item.kind !== "action" && (
+          <span className="rounded-full border border-fuchsia-300 bg-fuchsia-50 px-2 py-0.5 text-[11px] font-medium text-fuchsia-800 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/10 dark:text-fuchsia-300">
+            ↳ {item.action_name ?? "action"}
+          </span>
+        )}
       </div>
     </li>
   );
@@ -93,6 +98,22 @@ function ItemBody({ item }: { item: TimelineItem }) {
               {item.detail}
             </span>
           )}
+        </>
+      );
+    case "action":
+      return (
+        <>
+          <span className="font-semibold text-fuchsia-700 dark:text-fuchsia-300">{item.title}</span>
+          {item.detail && <span className="text-xs text-ink-faint">{item.detail}</span>}
+        </>
+      );
+    case "resource":
+      return (
+        <>
+          <span className="font-semibold text-amber-700 dark:text-amber-300">
+            {item.value != null ? `${Math.round(Number(item.value))} ms` : item.title}
+          </span>
+          {item.detail && <span className="max-w-xl truncate font-mono text-xs text-ink-faint" title={item.detail}>{item.detail}</span>}
         </>
       );
     case "api":

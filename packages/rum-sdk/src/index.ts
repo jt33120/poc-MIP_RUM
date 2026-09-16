@@ -1,16 +1,17 @@
 import { initApiSpans } from "./apispans";
+import { ActionTracker, actionAttrs, initAutomaticActions } from "./actions";
 import { createBreadcrumbTrail, initClickBreadcrumbs, type BreadcrumbTrail } from "./breadcrumbs";
 import { ConsentGate } from "./consent";
 import { currentRoute, initNavigation, scrubUrl } from "./context";
 import { initErrors, type Emit } from "./errors";
 import { initForms } from "./forms";
-import { initFrustration } from "./frustration";
+import { initFrustration, type FrustrationWatch } from "./frustration";
 import { initLoaf } from "./loaf";
 import { initLongTasks } from "./longtasks";
-import { currentTraceId, forceFlush, initOtel, newPageTrace } from "./otel";
+import { currentTraceId, discardPendingSpans, forceFlush, initOtel, newPageTrace } from "./otel";
 import { flushReplayBoundary, isReplaySampled, startReplay } from "./replay";
 import { DEFAULT_SLOW_RESOURCE_MS, initResources } from "./resources";
-import { replayRetryQueue } from "./retry";
+import { purgeRetryQueue, replayRetryQueue } from "./retry";
 import { createSampler, decideMode, loadMode, storeMode } from "./sampling";
 import { readPrivacySignals, signalsOptOut } from "./privacy";
 import { getOrCreateSession, rotateSession, touchSession, type Session } from "./session";
@@ -21,6 +22,7 @@ import {
   boundedName,
   eventContext,
   newEnvelopeId,
+  sanitizeContext,
   type EventContext,
   type EventMeta,
   type IdentityInput,
@@ -42,6 +44,44 @@ let deliver: Emit | null = null; // émission réelle (post-consent)
 let replayRetry: (() => void) | null = null;
 let replayArm: (() => void) | null = null; // replay échantillonné, en attente de consent
 let drainErrors: (() => void) | null = null;
+let resetErrors: (() => void) | null = null;
+let causalActions: ActionTracker | null = null;
+let collectionOrigin: (at?: number) => Record<string, string | number | boolean> = () => ({});
+let updateCollectionConsent: ((granted: boolean) => void) | null = null;
+
+const COLLECTION_EPOCH = "mip.collection_epoch";
+const COLLECTION_ALLOWED = "mip.collection_allowed";
+
+const CAUSAL_ATTR_KEYS = [
+  "mip.action_id", "mip.action_epoch", "mip.session_id", "mip.route",
+  "mip.context", "mip.view_id", "mip.view_name",
+  "mip.identity.user_id", "mip.identity.account_id",
+] as const;
+
+/** Isole l'enveloppe causale : aucun message/stack d'erreur n'est recopié aux signaux frères. */
+function causalOnly(attributes: Record<string, unknown>): Record<string, string | number | boolean> {
+  const captured: Record<string, string | number | boolean> = {};
+  for (const key of CAUSAL_ATTR_KEYS) {
+    const value = attributes[key];
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") captured[key] = value;
+  }
+  return captured;
+}
+
+/** Fusion P2 : contexte d'action puis contexte local d'erreur, le plus local gagne. */
+function mergeSerializedContexts(actionRaw: unknown, localRaw: unknown): string | undefined {
+  const parse = (value: unknown): EventContext => {
+    if (typeof value !== "string") return {};
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+  const merged = sanitizeContext({ ...parse(actionRaw), ...parse(localRaw) });
+  return Object.keys(merged).length ? JSON.stringify(merged) : undefined;
+}
 
 /** Couture pure du hook public : compatibilité un argument + champs SDK immuables. */
 export function applyBeforeSend(
@@ -54,8 +94,8 @@ export function applyBeforeSend(
     "mip.session_id", "mip.trace_id", "mip.span_id", "mip.app_id", "mip.client_id",
     "mip.visitor_id", "mip.route", "mip.tz", "mip.device_type", "mip.collection_source",
     "mip.sample_rate", "mip.error_sample_rate", "mip.event_type",
-    "mip.event_name", "mip.view_id", "mip.view_name", "mip.action_id", "mip.timing_ms",
-    "mip.feature_flag_value",
+    "mip.view_id", "mip.view_name", "mip.action_id", "mip.timing_ms",
+    "mip.feature_flag_value", "mip.action_type",
   ]);
   const reserved = Object.fromEntries(Object.entries(attributes).filter(([key]) => structural.has(key)));
   const filtered = hook({ ...attributes }, meta);
@@ -64,6 +104,14 @@ export function applyBeforeSend(
     Object.entries(filtered).filter(([key]) => !structural.has(key)),
   );
   Object.assign(merged, reserved);
+  if (meta.type === "action") {
+    // L'ingestion exige un nom d'action valide. Accepter une racine dont le
+    // hook a supprimé/invalidé le nom laisserait ensuite des enfants action_id
+    // sans projection rum_action.
+    const actionName = boundedName(merged["mip.event_name"]);
+    if (!actionName) return null;
+    merged["mip.event_name"] = actionName;
+  }
   return merged;
 }
 
@@ -165,15 +213,47 @@ export function init(cfg: MIPRumConfig): void {
 
   // consent mode : tout passe par la gate (0 span créé => 0 requête réseau)
   gate = new ConsentGate(cfg.requireConsent ?? false);
+  let collectionEpoch = 0;
+  let collectionAllowed = true; // consentement en attente = buffer autorisé
+  const consentHistory: Array<{ at: number; epoch: number; allowed: boolean }> = [
+    { at: Number.NEGATIVE_INFINITY, epoch: collectionEpoch, allowed: collectionAllowed },
+  ];
+  collectionOrigin = (at = Date.now()) => {
+    let state = consentHistory[0];
+    for (const transition of consentHistory) {
+      if (transition.at > at) break;
+      state = transition;
+    }
+    return { [COLLECTION_EPOCH]: state.epoch, [COLLECTION_ALLOWED]: state.allowed };
+  };
+  updateCollectionConsent = (granted) => {
+    if (!granted) collectionEpoch++;
+    collectionAllowed = granted;
+    consentHistory.push({ at: Date.now(), epoch: collectionEpoch, allowed: collectionAllowed });
+  };
   // échantillonnage : en "error-biased", seules les erreurs passent ; la 1re
   // erreur promeut la session en "full" (le reste de la session est alors capté).
   // Renvoie true si l'événement a été PRIS EN CHARGE (livré ou bufferisé en
   // attente de consentement), false s'il a été jeté — par l'échantillonnage ou
   // par un refus de consentement. `Emit` déclare `void` : un retour booléen lui
   // reste assignable, et les appelants qui l'ignorent ne changent pas.
-  const emit = (name: string, attrs: Parameters<Emit>[1], ts?: number): boolean => {
-    if (name === "exception") sampler.notifyError();
-    if (!sampler.passes(name)) return false;
+  const prepareBase = (
+    name: string,
+    attrs: Parameters<Emit>[1],
+    options: { allowUnacceptedAction?: boolean; preserveEpoch?: boolean } = {},
+  ): Record<string, unknown> | null => {
+    // `mip.action_epoch` ne quitte jamais le SDK : c'est un témoin interne qui
+    // révoque les callbacks tardifs après refus de consentement/session changée.
+    const causal = name === "rum.action"
+      ? { ...attrs }
+      : (causalActions?.validate(attrs, true, options.allowUnacceptedAction) ?? attrs);
+    const originEpoch = causal[COLLECTION_EPOCH];
+    const originAllowed = causal[COLLECTION_ALLOWED];
+    delete causal[COLLECTION_EPOCH];
+    delete causal[COLLECTION_ALLOWED];
+    if (originAllowed === false || (typeof originEpoch === "number" && originEpoch !== collectionEpoch)) {
+      return null;
+    }
     const current = session!;
     touchSession(current);
     const envelope = eventContext.envelope();
@@ -189,17 +269,103 @@ export function init(cfg: MIPRumConfig): void {
       ...(envelope.accountId ? { "mip.identity.account_id": envelope.accountId } : {}),
       ...(envelope.viewId ? { "mip.view_id": envelope.viewId } : {}),
       ...(envelope.viewName ? { "mip.view_name": envelope.viewName } : {}),
-      ...attrs,
+      ...causal,
     };
+    const internalEpoch = snapshotted["mip.action_epoch"];
+    const publicSnapshot = { ...snapshotted };
+    delete publicSnapshot["mip.action_epoch"];
     const meta: EventMeta = {
-      type: typeof snapshotted["mip.event_type"] === "string"
-        ? snapshotted["mip.event_type"] as EventMeta["type"]
+      type: typeof publicSnapshot["mip.event_type"] === "string"
+        ? publicSnapshot["mip.event_type"] as EventMeta["type"]
         : name === "exception" ? "error" : name.startsWith("track.") ? "custom" : "telemetry",
-      name: typeof snapshotted["mip.event_name"] === "string" ? String(snapshotted["mip.event_name"]) : name,
+      name: typeof publicSnapshot["mip.event_name"] === "string" ? String(publicSnapshot["mip.event_name"]) : name,
     };
-    const filtered = applyBeforeSend(cfg.beforeSend, snapshotted, meta);
-    if (!filtered) return false;
-    return gate!.submit(name, filtered as Parameters<Emit>[1], realEmit, ts);
+    const filtered = applyBeforeSend(cfg.beforeSend, publicSnapshot, meta);
+    if (!filtered) return null;
+    if (options.preserveEpoch && typeof internalEpoch === "number") {
+      filtered["mip.action_epoch"] = internalEpoch;
+    }
+    return filtered;
+  };
+
+  const submitBase = (name: string, attrs: Record<string, unknown>, ts?: number): boolean => {
+    const outbound = { ...attrs };
+    delete outbound["mip.action_epoch"];
+    return gate!.submit(name, outbound as Parameters<Emit>[1], realEmit, ts);
+  };
+
+  type EmitDecision = "accepted" | "sampled_out" | "rejected";
+  const emitBaseDecision = (name: string, attrs: Parameters<Emit>[1], ts?: number): EmitDecision => {
+    if (!sampler.passes(name)) return "sampled_out";
+    const prepared = prepareBase(name, attrs);
+    if (!prepared) return "rejected";
+    return submitBase(name, prepared, ts) ? "accepted" : "rejected";
+  };
+  const emitBase = (name: string, attrs: Parameters<Emit>[1], ts?: number): boolean => {
+    return emitBaseDecision(name, attrs, ts) === "accepted";
+  };
+
+  causalActions = new ActionTracker({
+    emitRoot: (attrs, ts) => emitBaseDecision("rum.action", attrs, ts),
+    rootSnapshot: (context) => {
+      const current = session!;
+      const envelope = eventContext.envelope(context);
+      return {
+        "mip.session_id": current.sessionId,
+        "mip.route": currentRoute(),
+        ...(envelope.context ? { "mip.context": envelope.context } : {}),
+        ...(envelope.userId ? { "mip.identity.user_id": envelope.userId } : {}),
+        ...(envelope.accountId ? { "mip.identity.account_id": envelope.accountId } : {}),
+        ...(envelope.viewId ? { "mip.view_id": envelope.viewId } : {}),
+        ...(envelope.viewName ? { "mip.view_name": envelope.viewName } : {}),
+      };
+    },
+    sessionId: () => session!.sessionId,
+    newId: newEnvelopeId,
+  });
+
+  let frustrationWatch: FrustrationWatch | null = null;
+  const emit = (name: string, attrs: Parameters<Emit>[1], ts?: number): boolean => {
+    if (name !== "exception") return emitBase(name, attrs, ts);
+    if (!sampler.passes(name)) return false;
+
+    // Construire l'exception finale SANS promouvoir ni rejouer : beforeSend a
+    // le dernier mot. Un refus ne doit laisser ni racine ni frustration.error.
+    let causal = causalActions!.validate(attrs, true);
+    let needsRootReplay = false;
+    if (typeof causal["mip.action_id"] !== "string") {
+      const localContext = causal["mip.context"];
+      const root = actionAttrs(causalActions!.errorCandidate(ts ?? Date.now()));
+      const mergedContext = mergeSerializedContexts(root["mip.context"], localContext);
+      causal = { ...causal, ...root };
+      if (mergedContext) causal["mip.context"] = mergedContext;
+      causal = causalActions!.validate(causal, true, true);
+      needsRootReplay = typeof causal["mip.action_id"] === "string";
+    }
+    const prepared = prepareBase(name, causal, {
+      allowUnacceptedAction: needsRootReplay,
+      preserveEpoch: true,
+    });
+    if (!prepared) return false;
+
+    // Seulement après acceptation du hook : promotion puis racine, avant les
+    // deux effets liés. L'ordre observable reste racine → frustration → erreur.
+    sampler.notifyError();
+    if (needsRootReplay) {
+      const root = causalActions!.forError(ts ?? Date.now());
+      if (!root || root.id !== prepared["mip.action_id"]) {
+        delete prepared["mip.action_id"];
+        delete prepared["mip.action_epoch"];
+      }
+    }
+    const actionId = prepared["mip.action_id"];
+    if (typeof actionId === "string" && causalActions!.markError(actionId)) {
+      // Le nom original du contrôle peut avoir été pseudonymisé par beforeSend.
+      // La jointure action_id restitue déjà le libellé filtré côté console : ne
+      // dupliquons jamais ici le texte DOM pré-hook.
+      frustrationWatch?.error?.(causalOnly(prepared), "action", ts);
+    }
+    return submitBase(name, prepared, ts);
   };
   emitter = emit;
 
@@ -207,6 +373,7 @@ export function init(cfg: MIPRumConfig): void {
   const resourceCap = initResources(emit, {
     slowResourceMs: cfg.slowResourceMs ?? DEFAULT_SLOW_RESOURCE_MS,
     endpoint: cfg.endpoint,
+    actionAt: (at) => ({ ...collectionOrigin(at), ...actionAttrs(causalActions!.atTimestamp(at)) }),
   });
   // Blocage du fil principal : LoAF si le navigateur le connaît, Long Tasks
   // sinon. JAMAIS LES DEUX — un même blocage produit une entrée de chaque côté,
@@ -214,9 +381,14 @@ export function init(cfg: MIPRumConfig): void {
   // est le successeur : il porte en plus le script responsable, ce qui est la
   // seule information dont on puisse faire un correctif.
   const longtaskCap = initLoaf(emit) ?? initLongTasks(emit);
-  initClickBreadcrumbs(trail);
+  // Ordre volontaire : la racine s'ouvre avant le breadcrumb du même clic.
+  initAutomaticActions(causalActions);
+  initClickBreadcrumbs(trail, () => actionAttrs(causalActions!.current()));
   // signaux de frustration (P1) : rage/dead clicks ; opt-out via cfg.frustration=false
-  const frustrationCap = initFrustration(emit, { enabled: cfg.frustration !== false });
+  frustrationWatch = initFrustration(emit, {
+    enabled: cfg.frustration !== false,
+    action: () => ({ ...collectionOrigin(), ...actionAttrs(causalActions!.origin()) }),
+  });
   initVitals(emit);
   // Décomposition réseau (DNS/TCP/TLS/requête/réponse) + qualité du lien : la
   // CAUSE derrière le TTFB, qui n'en donnait que le symptôme.
@@ -246,6 +418,7 @@ export function init(cfg: MIPRumConfig): void {
       denyOrigins,
       sessionId: () => session!.sessionId,
       traceId: currentTraceId, // même trace que la page vue (E0)
+      action: () => ({ ...collectionOrigin(), ...actionAttrs(causalActions!.origin()) }),
     });
   }
 
@@ -253,16 +426,43 @@ export function init(cfg: MIPRumConfig): void {
   // `errorCap` : plafond par page ET déduplication par empreinte (finding 2.1).
   // Il rejoint les autres plafonds remis à zéro à chaque page vue, ci-dessous.
   const errorCap = initErrors((name, attrs, ts) => {
-    emit(name, attrs, ts);
-    trail?.add("error", String(attrs["exception.message"] ?? "error"));
+    if (!emit(name, attrs, ts)) return;
+    // Le breadcrumb d'erreur est un enfant causal lui aussi. On ne lui recopie
+    // que l'enveloppe figée à l'occurrence (jamais message/stack), afin qu'un
+    // drain après un nouveau clic ne le réattribue pas à l'action courante.
+    trail?.add(
+      "error",
+      String(attrs["exception.message"] ?? "error"),
+      causalActions!.validate(causalOnly(attrs)),
+    );
+  }, Date.now, (at) => {
+    // Une répétition peut être drainée après un changement de contexte ou
+    // d'identité. Figer ici l'enveloppe complète de l'occurrence évite de la
+    // réétiqueter avec la session/utilisateur courant au moment du drain.
+    const current = session!;
+    const envelope = eventContext.envelope();
+    return {
+      ...collectionOrigin(at),
+      "mip.session_id": current.sessionId,
+      "mip.visitor_id": current.visitorId,
+      "mip.route": currentRoute(),
+      ...(envelope.context ? { "mip.context": envelope.context } : {}),
+      ...(envelope.userId ? { "mip.identity.user_id": envelope.userId } : {}),
+      ...(envelope.accountId ? { "mip.identity.account_id": envelope.accountId } : {}),
+      ...(envelope.viewId ? { "mip.view_id": envelope.viewId } : {}),
+      ...(envelope.viewName ? { "mip.view_name": envelope.viewName } : {}),
+      ...actionAttrs(causalActions!.origin(at)),
+    };
   });
   const errorLifecycle = wireErrorDrainLifecycle(
     () => errorCap.drainer(Date.now()),
     forceFlush,
   );
   drainErrors = errorLifecycle.onPublicFlush;
+  resetErrors = () => errorCap.reset();
 
   initNavigation((navType) => {
+    causalActions!.close();
     // nouvelle page vue = nouvelle trace W3C (E0) : ouverte AVANT le span
     // pageview pour qu'il en soit le premier span. Borne la taille des traces.
     newPageTrace();
@@ -272,7 +472,7 @@ export function init(cfg: MIPRumConfig): void {
     resourceCap.reset();
     longtaskCap.reset();
     apiCap?.reset();
-    frustrationCap.reset();
+    frustrationWatch?.reset();
     errorLifecycle.onSpaNavigation();
     // Le span final doit être mis dans le batch AVANT qu'une navigation SPA ne
     // remette les compteurs à zéro.
@@ -317,6 +517,20 @@ export function init(cfg: MIPRumConfig): void {
  */
 export function consent(granted: boolean): void {
   if (!gate || !deliver) return; // init() non appelé ou session non échantillonnée
+  updateCollectionConsent?.(granted);
+  causalActions?.consent(granted);
+  if (!granted) {
+    // Le buffer de consentement n'est pas la seule mémoire du SDK : les erreurs
+    // compactées et la file offline attendent aussi un drain futur. Un refus
+    // explicite doit les rendre irrécupérables, pas les rejouer au ré-accord.
+    resetErrors?.();
+    purgeRetryQueue();
+    discardPendingSpans();
+  } else {
+    // Les occurrences vues pendant une période explicitement refusée ne
+    // doivent ni retarder ni grossir la première erreur post-réaccord.
+    resetErrors?.();
+  }
   gate.set(granted, deliver);
   if (granted) {
     replayRetry?.();
@@ -373,6 +587,9 @@ export function getGlobalContext(): Readonly<EventContext> { return eventContext
 /** Définit ou efface l'identité utilisateur métier. L'identifiant brut reste en mémoire. */
 export function setUser(user: string | IdentityInput | null): void {
   if (eventContext.setUser(user) && initialized && session) {
+    drainErrors?.();
+    resetErrors?.();
+    causalActions?.close();
     flushReplayBoundary();
     session = rotateSession(session.visitorId);
   }
@@ -383,6 +600,9 @@ export function clearUser(): void { setUser(null); }
 /** Définit ou efface l'identité compte métier. L'identifiant brut reste en mémoire. */
 export function setAccount(account: string | IdentityInput | null): void {
   if (eventContext.setAccount(account) && initialized && session) {
+    drainErrors?.();
+    resetErrors?.();
+    causalActions?.close();
     flushReplayBoundary();
     session = rotateSession(session.visitorId);
   }
@@ -404,18 +624,11 @@ export function startView(name: string, context: EventContext = {}): boolean {
   }) ?? false;
 }
 
-/** Émet une action manuelle typée. P3 reste propriétaire de la corrélation causale. */
+/** Émet une action manuelle et ouvre la même fenêtre causale que le clic automatique. */
 export function addAction(name: string, context: EventContext = {}): boolean {
   const safeName = boundedName(name);
-  if (!safeName) return false;
-  const actionId = newEnvelopeId();
-  const envelope = eventContext.envelope(context, {}, actionId);
-  return emitter?.("rum.action", {
-    "mip.event_type": "action",
-    "mip.event_name": safeName,
-    "mip.action_id": actionId,
-    ...(envelope.context ? { "mip.context": envelope.context } : {}),
-  }) ?? false;
+  if (!safeName || !causalActions) return false;
+  return causalActions.open(safeName, "manual", context);
 }
 
 /** Émet un timing relatif au début de la vue courante. */

@@ -60,6 +60,16 @@ async function main() {
       [app, `s-${app}`, app === "app-a" ? "00000000000000a1" : "00000000000000b1"],
     );
     await c.query(
+      `insert into rum_action (action_id,span_id,session_id,app_id,type,name,route,ts)
+       values ($1,$2,$3,$4,'click','Payer','/x',now() - interval '5 min')`,
+      [
+        app === "app-a" ? "11111111-2222-4333-8444-555555555555" : "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        app === "app-a" ? "00000000000000a2" : "00000000000000b2",
+        `s-${app}`,
+        app,
+      ],
+    );
+    await c.query(
       `insert into alert_rule (app_id,metric,comparator,threshold,window_minutes,mode,severity)
        values ($1,'LCP','>',2000,15,'threshold','warning')`, [app]);
     await c.query(
@@ -102,6 +112,7 @@ async function main() {
   assert("console_ro + portée A : ne voit QUE les erreurs de A", (await seen(c, "rum_error")) === 1);
   assert("console_ro + portée A : ne voit QUE les sessions de A", (await seen(c, "rum_session")) === 1);
   assert("console_ro + portée A : ne voit QUE les événements indexés de A", (await seen(c, "rum_event_index")) === 1);
+  assert("console_ro + portée A : ne voit QUE les actions de A", (await seen(c, "rum_action")) === 1);
   assert("console_ro + portée A : ne voit QUE les règles de A", (await seen(c, "alert_rule")) === 1);
   assert("console_ro + portée A : ne voit QUE le registre de A", (await seen(c, "app_registry")) === 1);
 
@@ -118,6 +129,7 @@ async function main() {
   const rowsB = (await c.query("select distinct app_id from rum_metric")).rows.map((r) => r.app_id);
   assert("portée B : ne voit QUE B (symétrique)", rowsB.length === 1 && rowsB[0] === "app-b");
   assert("portée B : ne voit QUE les événements indexés de B", (await seen(c, "rum_event_index")) === 1);
+  assert("portée B : ne voit QUE les actions de B", (await seen(c, "rum_action")) === 1);
   assert("portée B : l'événement d'alerte de A est invisible", (await seen(c, "alert_event")) === 0);
   assert("portée B : la livraison de A est invisible", (await seen(c, "alert_delivery")) === 0);
   assert("portée B : le résultat uptime de A est invisible", (await seen(c, "uptime_result")) === 0);
@@ -127,6 +139,7 @@ async function main() {
   assert("portée vide : AUCUNE métrique visible (fail-closed)", (await seen(c, "rum_metric")) === 0);
   assert("portée vide : AUCUNE erreur visible (fail-closed)", (await seen(c, "rum_error")) === 0);
   assert("portée vide : AUCUN événement indexé visible (fail-closed)", (await seen(c, "rum_event_index")) === 0);
+  assert("portée vide : AUCUNE action visible (fail-closed)", (await seen(c, "rum_action")) === 0);
 
   await c.query("reset role");
 
@@ -144,8 +157,10 @@ async function main() {
     await c.query(`set role ${role}`);
     await c.query("select set_config('app.current_app_id','app-a',false)");
     const vus = await seen(c, "rum_metric");
+    const actionsVues = await seen(c, "rum_action");
     await c.query("reset role");
     assert(`API publique : ${role} ne lit RIEN même avec une portée posée`, vus === 0);
+    assert(`API publique : ${role} ne lit AUCUNE action même avec une portée posée`, actionsVues === 0);
   }
 
   // ── console_ro n'écrit que là où la console écrit vraiment (v48) ────────────
@@ -166,11 +181,14 @@ async function main() {
             has_table_privilege('console_ro','rum_metric','SELECT') as tele_select,
             has_table_privilege('console_ro','rum_event_index','SELECT') as index_select,
             has_table_privilege('console_ro','rum_event_index','INSERT') as index_insert,
+            has_table_privilege('console_ro','rum_action','SELECT') as action_select,
+            has_table_privilege('console_ro','rum_action','INSERT') as action_insert,
             has_table_privilege('console_ro','slo','UPDATE')        as conf_update,
             has_table_privilege('console_ro','rum_span','INSERT')   as dogfood_insert`)).rows[0];
   assert("v48 : PRIVILÈGE d'insertion retiré sur rum_metric", priv.tele_insert === false);
   assert("v48 : lecture PRÉSERVÉE sur rum_metric", priv.tele_select === true);
   assert("v65 : lecture autorisée mais écriture refusée sur rum_event_index", priv.index_select === true && priv.index_insert === false);
+  assert("v67 : lecture autorisée mais écriture refusée sur rum_action", priv.action_select === true && priv.action_insert === false);
   assert("v48 : écriture préservée sur la configuration (slo)", priv.conf_update === true);
   assert("v48 : écriture préservée sur rum_span (dogfooding console)", priv.dogfood_insert === true);
 

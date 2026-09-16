@@ -1,13 +1,20 @@
 // P1 — détecteurs de frustration (logique pure, sans DOM) : rage clicks & dead clicks.
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DEAD_CLICK_WINDOW_MS,
+  initFrustration,
   isActionable,
   isDeadClick,
   isOwnUi,
   MIP_UI_ATTR,
   RageDetector,
 } from "../../packages/rum-sdk/src/frustration";
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe("RageDetector", () => {
   it("émet au 3e clic dans la fenêtre (rafale), une seule fois", () => {
@@ -128,5 +135,75 @@ describe("contrat widget ↔ SDK", () => {
 describe("isActionable", () => {
   it("vrai sans inspection si l'élément est interactif", () => {
     expect(isActionable({} as Element, true)).toBe(true);
+  });
+});
+
+describe("collecteur de frustration causal", () => {
+  class FakeElement {
+    tagName: string;
+    textContent: string;
+    control: FakeElement | null = null;
+
+    constructor(tag = "button", text = "Payer") {
+      this.tagName = tag.toUpperCase();
+      this.textContent = text;
+    }
+
+    getAttribute() { return null; }
+    closest(selector: string) {
+      if (selector === `[${MIP_UI_ATTR}]`) return null;
+      return this;
+    }
+  }
+
+  function fixture() {
+    let click: ((event: MouseEvent) => void) | null = null;
+    const emitted: Array<Record<string, string | number | boolean>> = [];
+    let actionId = "11111111-2222-4333-8444-555555555555";
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    vi.stubGlobal("Element", FakeElement);
+    vi.stubGlobal("MutationObserver", class { observe() {} });
+    vi.stubGlobal("addEventListener", () => {});
+    vi.stubGlobal("document", {
+      documentElement: {},
+      addEventListener(type: string, listener: (event: MouseEvent) => void) {
+        if (type === "click") click = listener;
+      },
+    });
+    initFrustration((_name, attrs) => { emitted.push(attrs); }, {
+      action: () => ({ "mip.action_id": actionId }),
+    });
+    return {
+      emitted,
+      dispatch(target: FakeElement, detail = 1) {
+        click!({ target, detail, button: 0 } as unknown as MouseEvent);
+      },
+      setAction(value: string) { actionId = value; },
+    };
+  }
+
+  it("conserve le snapshot de l'action du clic jusqu'à la décision différée", () => {
+    const f = fixture();
+    f.dispatch(new FakeElement());
+    f.setAction("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+    vi.advanceTimersByTime(DEAD_CLICK_WINDOW_MS);
+    expect(f.emitted).toHaveLength(1);
+    expect(f.emitted[0]).toMatchObject({
+      "frustration.kind": "dead",
+      "mip.action_id": "11111111-2222-4333-8444-555555555555",
+    });
+  });
+
+  it("déduplique le clic synthétique label vers contrôle", () => {
+    const f = fixture();
+    const control = new FakeElement("input", "");
+    const label = new FakeElement("label", "Notifications");
+    label.control = control;
+    f.dispatch(label);
+    f.dispatch(control, 0);
+    vi.advanceTimersByTime(DEAD_CLICK_WINDOW_MS);
+    expect(f.emitted).toHaveLength(1);
+    expect(f.emitted[0]["frustration.target"]).toBe('label "Notifications"');
   });
 });

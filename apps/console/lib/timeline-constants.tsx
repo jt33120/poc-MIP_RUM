@@ -39,6 +39,16 @@ export const KIND_STYLE: Record<TimelineKind, { label: string; dot: string; badg
     badge:
       "bg-cyan-100 text-cyan-800 border-cyan-300 dark:bg-cyan-400/10 dark:text-cyan-300 dark:border-cyan-400/30",
   },
+  action: {
+    label: "Action",
+    dot: "bg-fuchsia-600",
+    badge: "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300 dark:bg-fuchsia-400/10 dark:text-fuchsia-300 dark:border-fuchsia-400/30",
+  },
+  resource: {
+    label: "Ressource",
+    dot: "bg-amber-600",
+    badge: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-400/10 dark:text-amber-300 dark:border-amber-400/30",
+  },
   api: {
     label: "Appel API",
     dot: "bg-sky-600",
@@ -62,5 +72,7 @@ export const KIND_ICON: Record<TimelineKind, React.ReactNode> = {
   breadcrumb: <Icon d="M4 3l9 5-4 1.5L7.5 14 4 3Z" />,
   longtask: <Icon d="M9 4.5V9l3 2M9 16A7 7 0 1 0 9 2a7 7 0 0 0 0 14Z" />,
   event: <Icon d="M3 3h6l6 6-6 6-6-6V3Zm3 3h.5" />,
+  action: <Icon d="M3 9h12M9 3v12" />,
+  resource: <Icon d="M3 4h12v10H3zM6 7h6" />,
   api: <Icon d="M2 9h5m4 0h5M7 9l2-3m0 6 2-3" />,
 };

@@ -2,6 +2,7 @@
 
 exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète des lignes produites 1`] = `
 {
+  "actions": [],
   "apiKeys": [
     {
       "api_key": "mip_secretkey1234",

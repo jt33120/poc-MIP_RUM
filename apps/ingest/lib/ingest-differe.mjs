@@ -42,6 +42,7 @@ function completer(lot) {
     longtasks: lot.longtasks ?? vide,
     breadcrumbs: lot.breadcrumbs ?? vide,
     events: lot.events ?? vide,
+    actions: lot.actions ?? vide,
     spans: lot.spans ?? vide,
     // Les lots déjà déposés avant v65 ne portent pas la projection. Ils
     // contiennent néanmoins les collections normalisées : la reconstruire ici

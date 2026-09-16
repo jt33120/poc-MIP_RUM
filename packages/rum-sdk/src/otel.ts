@@ -40,6 +40,8 @@ let flushTimer: ReturnType<typeof setInterval> | null = null;
 let exporter: SpanExporter | null = null;
 let resourceAttrs: Attributes = {};
 let pending: Promise<void> = Promise.resolve();
+let discardEpoch = 0;
+const activeExports = new Set<AbortController>();
 
 /** Identifiant hex aléatoire (16 octets = traceId, 8 octets = spanId). */
 function hexId(bytes: number): string {
@@ -117,18 +119,28 @@ function httpExporter(url: string): SpanExporter {
       // les objets sont des EmitSpan (surensemble de ReadableSpan) : on rebâtit
       // l'enveloppe OTLP à partir du lot + des attributs de resource courants.
       const body = JSON.stringify(buildResourceSpans(resourceAttrs, spans as unknown as EmitSpan[]));
+      const controller = typeof AbortController === "undefined" ? null : new AbortController();
+      if (controller) activeExports.add(controller);
+      let finished = false;
+      const finish = (result: Parameters<typeof cb>[0]) => {
+        if (finished) return;
+        finished = true;
+        if (controller) activeExports.delete(controller);
+        cb(result);
+      };
       fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body,
+        ...(controller ? { signal: controller.signal } : {}),
         // keepalive : la requête survit à l'unload (cap navigateur ~64 Ko) ;
         // au-delà, envoi normal (le pagehide aura déjà tenté un flush plus tôt).
         keepalive: body.length < 60_000,
       })
         .then((res) => {
-          if (res.ok) return cb({ code: ExportResultCode.SUCCESS });
+          if (res.ok) return finish({ code: ExportResultCode.SUCCESS });
           const { retryable } = classerReponse(res.status);
-          cb({
+          finish({
             code: ExportResultCode.FAILED,
             retryable,
             // L'ingestion renvoie `retry-after` sur ses 429 depuis toujours ;
@@ -138,7 +150,14 @@ function httpExporter(url: string): SpanExporter {
         })
         // Pas de réponse du tout : réseau coupé, onglet fermé, DNS. C'est le cas
         // nominal du mode hors-ligne, celui pour lequel la file existe.
-        .catch(() => cb({ code: ExportResultCode.FAILED, retryable: true, retryAfterMs: null }));
+        .catch(() => finish({
+          code: ExportResultCode.FAILED,
+          // Un refus de consentement annule l'envoi : ce lot ne doit surtout
+          // pas revenir par la file offline après sa purge.
+          retryable: controller?.signal.aborted ? false : true,
+          discarded: controller?.signal.aborted === true,
+          retryAfterMs: null,
+        }));
     },
     shutdown: () => Promise.resolve(),
   };
@@ -146,14 +165,26 @@ function httpExporter(url: string): SpanExporter {
 
 /** Vide le buffer courant vers l'exporter (décorateur retry). Sérialise les envois. */
 function flushBatch(): Promise<void> {
-  if (!exporter || buffer.length === 0) return Promise.resolve();
+  if (!exporter || buffer.length === 0) return pending;
   const batch = buffer;
   buffer = [];
-  const done = new Promise<void>((resolve) => {
+  const epoch = discardEpoch;
+  const operation = pending.then(() => new Promise<void>((resolve) => {
+    // Un refus de consentement survenu pendant l'attente annule ce lot avant
+    // toute requête réseau. Un export déjà parti ne peut pas être rappelé.
+    if (epoch !== discardEpoch) return resolve();
     exporter!.export(batch as unknown as ReadableSpan[], () => resolve());
-  });
-  pending = pending.then(() => done).catch(() => {});
-  return done;
+  }));
+  pending = operation.catch(() => {});
+  return pending;
+}
+
+/** Rend irrécupérables les spans matérialisés mais pas encore exportés. */
+export function discardPendingSpans(): void {
+  buffer = [];
+  discardEpoch++;
+  for (const controller of activeExports) controller.abort();
+  activeExports.clear();
 }
 
 export function initOtel(cfg: MIPRumConfig): Tracer {
@@ -230,6 +261,7 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
           const a = span.attributes as Record<string, unknown>;
           if (typeof a["mip.trace_id"] === "string") span.traceId = a["mip.trace_id"];
           if (typeof a["mip.span_id"] === "string") span.spanId = a["mip.span_id"];
+          if (typeof a["mip.parent_span_id"] === "string") span.parentSpanId = a["mip.parent_span_id"];
           // L'issue ne se connaît qu'à la fermeture : le code HTTP d'un appel
           // arrive avec la réponse, pas à l'ouverture du span.
           const statut = statutPour(span.name, span.attributes);
@@ -245,6 +277,5 @@ export function initOtel(cfg: MIPRumConfig): Tracer {
 
 /** Force l'export des spans en attente (tests + avant unload). */
 export function forceFlush(): Promise<void> {
-  void flushBatch();
-  return pending;
+  return flushBatch();
 }

@@ -160,9 +160,10 @@ message/stack, URL brute, UA ou identité visiteur.
   rétention disponible ; `period` et `device` ne la filtrent pas.
 
 La projection commence avec la migration v65 : aucun backfill historique n'est lancé
-automatiquement. Le collecteur actif est le chemin Node (`/api/ingest/v1/traces`) ;
-l'ancienne Edge Function Supabase n'est plus sur le chemin de collecte actif et sa
-compatibilité v65 est donc explicitement différée plutôt que simulée.
+automatiquement. Le collecteur actif est le chemin Node (`/api/ingest/v1/traces`).
+Le receiver Edge Supabase, conservé pour les installations historiques, applique lui
+aussi les écritures progressives v65/v66/v67 : table ou colonne optionnelle absente
+n'annule jamais les écritures sources du lot.
 
 ### `GET /api/v1/tracing` — tracing distribué
 `data = { coverage: TraceCoverage, apiCalls: ApiCallRow[], backRoutes: BackRouteRow[] }`.
@@ -292,3 +293,9 @@ const overview = await rum("/overview", { app: "partenaires", period: "7d" });
 
 > **Note SDK** : si MIP préfère l'unification totale (module Angular natif, option A du
 > cadrage), cette API reste le socle data — la migration des vues se branche dessus.
+
+### `GET /api/v1/actions` — Top Actions causal
+
+Filtres communs `app`, `period`, `device` et pagination `limit`/`offset` (offset borné à 10 000). Le classement est déterministe : erreurs, temps lié, volume, puis clefs textuelles. Les erreurs, ressources et spans sont d'abord agrégés par `action_id` dans PostgreSQL avant la jointure, afin qu'une action ne soit jamais multipliée par ses différentes familles d'effets.
+
+La réponse expose la liste paginée `actions`, un `summary` calculé sur toute la fenêtre filtrée, puis `page`. Le résumé contient notamment `actions`, `sessions`, `errors`, `error_clicks`, `resources`, `api_calls`, `resource_ms`, `api_ms` et `total_ms`. Quand `sampleRate < 1` est observé, `summary.sampling_notice` précise que ces volumes sont ceux de l'échantillon, sans extrapolation, et que le mode biaisé-erreurs peut sur-représenter les sessions en incident. Un viewer scopé ne peut pas élargir son périmètre avec `?app=`.

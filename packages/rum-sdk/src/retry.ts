@@ -1,9 +1,8 @@
 // File de retry/offline (LIMITES §4) — best-effort documenté :
 // décorateur de SpanExporter ; si l'export échoue (FAILED), les spans sont
 // sérialisés (name + attributs + timestamps) dans localStorage et ré-émis au
-// prochain init() avec leurs timestamps d'origine (les span_id changent — le
-// `on conflict do nothing` côté ingestion reste donc sans effet ici, doublon
-// possible si l'échec était un faux négatif réseau ; assumé pour un POC).
+// prochain init() avec leurs timestamps ET identifiants OTLP d'origine. Un faux
+// négatif réseau est donc absorbé par les clés idempotentes de l'ingestion.
 // Limite connue : un envoi sendBeacon « accepté » par le navigateur mais perdu
 // ensuite n'est pas détectable — seuls les échecs remontés par l'exporter
 // (réseau down, 4xx/5xx en XHR/fetch) alimentent la file.
@@ -17,6 +16,8 @@ export enum ExportResultCode {
 export interface ExportResult {
   code: ExportResultCode;
   error?: Error;
+  /** Annulation volontaire (retrait de consentement) : ne rien persister. */
+  discarded?: boolean;
   /**
    * L'échec vaut-il la peine d'être rejoué ? `false` = définitif, on jette.
    *
@@ -109,6 +110,10 @@ export interface ReadableSpan {
   attributes: Record<string, unknown>;
   startTime: HrTime;
   endTime: HrTime;
+  /** Identifiants OTLP natifs, conservés pour rendre un rejeu idempotent. */
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
 }
 export interface SpanExporter {
   export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void;
@@ -117,8 +122,14 @@ export interface SpanExporter {
 }
 
 export const RETRY_KEY = "mip_rum_retry";
+export const RETRY_REVOKED_ACTIONS_KEY = "mip_rum_retry_revoked_actions";
 export const RETRY_MAX_SPANS = 100;
 export const RETRY_MAX_BYTES = 50_000; // ~50 Ko sérialisés
+const RETRY_MAX_REVOKED_ACTIONS = 200;
+// Non borné uniquement pendant la vie de la page : les requêtes encore en vol
+// peuvent terminer après plus de 200 évictions. Après reload elles n'existent
+// plus; le miroir localStorage peut donc rester borné.
+const revokedRootsMemory = new Set<string>();
 
 export type RetryAttrs = Record<string, string | number | boolean>;
 
@@ -142,6 +153,9 @@ export function serializeSpan(span: {
   attributes: Record<string, unknown>;
   startTime: HrTime;
   endTime: HrTime;
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
 }): RetrySpan {
   const a: RetryAttrs = {};
   for (const [k, v] of Object.entries(span.attributes)) {
@@ -150,6 +164,17 @@ export function serializeSpan(span: {
     // remplace par un HMAC avant toute file/persistance serveur.
     if (k === "mip.identity.user_id" || k === "mip.identity.account_id") continue;
     if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") a[k] = v;
+  }
+  // Le rejeu reconstruit un span via otel.ts. Ces attributs sont recopiés dans
+  // les champs natifs à end(), afin que le receiver retrouve la même clé et
+  // applique ses ON CONFLICT au lieu de compter un faux doublon.
+  if (typeof span.traceId === "string" && !("mip.trace_id" in a)) a["mip.trace_id"] = span.traceId;
+  if (typeof span.spanId === "string" && !("mip.span_id" in a)) a["mip.span_id"] = span.spanId;
+  if (!("mip.parent_span_id" in a)) {
+    // L'absence de parent fait partie de l'identité native du span. Sans ce
+    // marqueur, un rejeu lancé après la pageview hériterait à tort du parent
+    // de la page courante tout en conservant son ancien traceId.
+    a["mip.parent_span_id"] = typeof span.parentSpanId === "string" ? span.parentSpanId : "";
   }
   return { n: span.name, a, s: hrToMs(span.startTime), e: hrToMs(span.endTime) };
 }
@@ -160,10 +185,48 @@ export function appendRetry(
   spans: RetrySpan[],
   capCount: number = RETRY_MAX_SPANS,
   capBytes: number = RETRY_MAX_BYTES,
+  revokedRoots: Set<string> = new Set(),
 ): RetrySpan[] {
-  let merged = queue.concat(spans);
+  const incomingRoots = new Set(
+    spans
+      .filter((span) => span.n === "rum.action" && span.a["mip.event_type"] === "action")
+      .map((span) => span.a["mip.action_id"])
+      .filter((id): id is string => typeof id === "string"),
+  );
+  for (const id of incomingRoots) revokedRoots.delete(id);
+  const safeIncoming = spans.map((span) => {
+    const id = span.a["mip.action_id"];
+    if (span.n === "rum.action" || typeof id !== "string" || !revokedRoots.has(id)) return span;
+    const attrs = { ...span.a };
+    delete attrs["mip.action_id"];
+    return { ...span, a: attrs };
+  });
+  let merged = queue.concat(safeIncoming);
+  const rootsBefore = new Set(
+    merged
+      .filter((span) => span.n === "rum.action" && span.a["mip.event_type"] === "action")
+      .map((span) => span.a["mip.action_id"])
+      .filter((id): id is string => typeof id === "string"),
+  );
   if (merged.length > capCount) merged = merged.slice(merged.length - capCount);
   while (merged.length > 0 && JSON.stringify(merged).length > capBytes) merged.shift();
+  const rootsAfter = new Set(
+    merged
+      .filter((span) => span.n === "rum.action" && span.a["mip.event_type"] === "action")
+      .map((span) => span.a["mip.action_id"])
+      .filter((id): id is string => typeof id === "string"),
+  );
+  const evictedRoots = new Set([...rootsBefore].filter((id) => !rootsAfter.has(id)));
+  for (const id of evictedRoots) revokedRoots.add(id);
+  if (evictedRoots.size) {
+    merged = merged.map((span) => {
+      const id = span.a["mip.action_id"];
+      if (typeof id !== "string" || !evictedRoots.has(id) || span.n === "rum.action") return span;
+      const attrs = { ...span.a };
+      delete attrs["mip.action_id"];
+      return { ...span, a: attrs };
+    });
+  }
   return merged;
 }
 
@@ -184,6 +247,40 @@ export interface FileRejeu {
 
 const FILE_VIDE: FileRejeu = { spans: [], notBefore: 0, tentatives: 0 };
 
+function loadRevokedRoots(): Set<string> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RETRY_REVOKED_ACTIONS_KEY) || "[]");
+    if (Array.isArray(raw)) {
+      for (const id of raw.slice(-RETRY_MAX_REVOKED_ACTIONS)) {
+        if (typeof id === "string") revokedRootsMemory.add(id);
+      }
+    }
+  } catch {
+    /* stockage indisponible : la mémoire de page reste autoritaire */
+  }
+  return revokedRootsMemory;
+}
+
+function saveRevokedRoots(roots: Set<string>): void {
+  for (const id of roots) revokedRootsMemory.add(id);
+  try {
+    localStorage.setItem(
+      RETRY_REVOKED_ACTIONS_KEY,
+      JSON.stringify([...revokedRootsMemory].slice(-RETRY_MAX_REVOKED_ACTIONS)),
+    );
+  } catch {
+    /* quota / mode privé : best-effort */
+  }
+}
+
+function clearRetryFile(): void {
+  try {
+    localStorage.removeItem(RETRY_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function loadRetryQueue(): FileRejeu {
   try {
     const raw = JSON.parse(localStorage.getItem(RETRY_KEY) || "null");
@@ -201,20 +298,26 @@ export function loadRetryQueue(): FileRejeu {
   }
 }
 
-export function saveRetryQueue(file: FileRejeu): void {
+export function saveRetryQueue(file: FileRejeu): boolean {
   try {
     localStorage.setItem(RETRY_KEY, JSON.stringify(file));
+    return true;
   } catch {
-    /* quota / mode privé : on abandonne, best-effort */
+    return false;
+  }
+}
+
+function revokeRootsFrom(spans: RetrySpan[], roots: Set<string>): void {
+  for (const span of spans) {
+    const id = span.n === "rum.action" ? span.a["mip.action_id"] : null;
+    if (typeof id === "string") roots.add(id);
   }
 }
 
 export function purgeRetryQueue(): void {
-  try {
-    localStorage.removeItem(RETRY_KEY);
-  } catch {
-    /* ignore */
-  }
+  clearRetryFile();
+  revokedRootsMemory.clear();
+  try { localStorage.removeItem(RETRY_REVOKED_ACTIONS_KEY); } catch { /* ignore */ }
 }
 
 /**
@@ -234,7 +337,9 @@ export function replayRetryQueue(
   // PAS ENCORE DUE. On se tait, et surtout on ne purge pas : la file doit
   // survivre à ce chargement de page pour être rejouée au bon moment.
   if (file.notBefore > maintenant) return 0;
-  purgeRetryQueue();
+  // Les tombstones survivent au rejeu : un effet lent d'une racine déjà
+  // évincée peut encore arriver dans un lot ultérieur.
+  clearRetryFile();
   for (const s of file.spans) emitRaw(s.n, s.a, s.s, s.e);
   return file.spans.length;
 }
@@ -257,30 +362,63 @@ export class RetryExporter implements SpanExporter {
   ) {}
 
   export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
-    this.inner.export(spans, (result) => {
-      if (result.code === ExportResultCode.FAILED && result.retryable !== false) {
+    const revokedRoots = loadRevokedRoots();
+    // Une racine réellement réémise restaure la cohérence; sinon tout enfant
+    // d'une racine abandonnée/évincée est délié AVANT même un export réussi.
+    for (const span of spans) {
+      if (span.name === "rum.action" && span.attributes["mip.event_type"] === "action") {
+        const id = span.attributes["mip.action_id"];
+        if (typeof id === "string") revokedRoots.delete(id);
+      }
+    }
+    const outbound = spans.map((span) => {
+      const id = span.attributes["mip.action_id"];
+      if (span.name === "rum.action" || typeof id !== "string" || !revokedRoots.has(id)) return span;
+      const attributes = { ...span.attributes };
+      delete attributes["mip.action_id"];
+      return { ...span, attributes };
+    });
+    saveRevokedRoots(revokedRoots);
+
+    this.inner.export(outbound, (result) => {
+      if (result.code === ExportResultCode.FAILED && result.discarded) {
+        // L'utilisateur a explicitement demandé la destruction de ce lot.
+        // Ni retry ni tombstone ne doit survivre à cette décision.
+      } else if (result.code === ExportResultCode.FAILED && result.retryable !== false) {
         try {
           const file = loadRetryQueue();
           const tentatives = file.tentatives + 1;
+          const serialized = outbound.map(serializeSpan);
           if (tentatives > RETRY_MAX_TENTATIVES) {
             // Six échecs successifs : ce lot ne passera pas. Le garder
             // remplirait la file au détriment de spans plus récents, qui eux
             // ont une chance.
-            purgeRetryQueue();
+            clearRetryFile();
+            revokeRootsFrom(serialized, revokedRoots);
+            saveRevokedRoots(revokedRoots);
             this.signalerAbandon("file rejouée sans succès, abandonnée");
           } else {
             const maintenant = this.horloge();
-            saveRetryQueue({
-              spans: appendRetry(file.spans, spans.map(serializeSpan)),
+            const queued = appendRetry(file.spans, serialized, RETRY_MAX_SPANS, RETRY_MAX_BYTES, revokedRoots);
+            const saved = saveRetryQueue({
+              spans: queued,
               notBefore:
                 maintenant + delaiProchainEssai(tentatives, result.retryAfterMs ?? null),
               tentatives,
             });
+            if (!saved) revokeRootsFrom(serialized, revokedRoots);
+            // Tant que la racine n'a pas été réellement réémise, les lots
+            // live suivants continuent sans elle mais sont déliés. On préserve
+            // ainsi la télémétrie d'une SPA longue sans créer d'orphelins.
+            revokeRootsFrom(serialized, revokedRoots);
+            saveRevokedRoots(revokedRoots);
           }
         } catch {
           /* best-effort */
         }
       } else if (result.code === ExportResultCode.FAILED) {
+        revokeRootsFrom(outbound.map(serializeSpan), revokedRoots);
+        saveRevokedRoots(revokedRoots);
         this.signalerAbandon("réponse définitive de l'ingestion, lot abandonné");
       }
       resultCallback(result);

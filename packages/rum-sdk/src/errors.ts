@@ -134,7 +134,11 @@ export function creerEtranglement(
  * Branche la collecte d'erreurs. Rend l'étranglement pour que la boucle de
  * pageview le remette à zéro, exactement comme les autres plafonds.
  */
-export function initErrors(emit: Emit, horloge: () => number = Date.now): Etranglement {
+export function initErrors(
+  emit: Emit,
+  horloge: () => number = Date.now,
+  action: (at: number) => Record<string, AttrValue> = () => ({}),
+): Etranglement {
   const etr = creerEtranglement();
   // Les deux maps restent bornées par `ERREURS_PAR_PAGE` : on ne mémorise une
   // empreinte que si `admettre` lui a effectivement réservé un slot. En
@@ -151,12 +155,13 @@ export function initErrors(emit: Emit, horloge: () => number = Date.now): Etrang
     empreinte: string,
     attrs: Record<string, AttrValue>,
   ) => {
+    const ts = horloge();
     const detail: Detail = {
       // `realEmit` apporte aussi la route courante par défaut. La poser ici
       // capture la route de l'erreur, avant toute navigation qui déclenche le
       // drain, et l'attribut explicite a priorité dans le merge.
-      attrs: { ...attrs, "mip.route": currentRoute() },
-      ts: horloge(),
+      attrs: { ...action(ts), ...attrs, "mip.route": currentRoute() },
+      ts,
     };
     const n = etr.admettre(empreinte, detail.ts);
     if (n == null) {

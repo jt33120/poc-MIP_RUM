@@ -80,6 +80,91 @@ describe("propagation de session après changement d'identité", () => {
     await window.fetch("/api/second");
     expect(propagated).toEqual(["mip=s:session-a", "mip=s:session-b"]);
   });
+
+  it("conserve l'action capturée au départ malgré un clic B avant la réponse A", async () => {
+    const pending: Array<(response: Response) => void> = [];
+    const originalFetch = vi.fn(() => new Promise<Response>((resolve) => pending.push(resolve)));
+    const emitted: Array<Record<string, unknown>> = [];
+    let action = { "mip.action_id": "11111111-2222-4333-8444-555555555555" };
+    vi.stubGlobal("location", { href: "https://app.test/page", origin: "https://app.test" });
+    vi.stubGlobal("performance", { now: () => 1 });
+    vi.stubGlobal("window", { fetch: originalFetch });
+    initApiSpans((_name, attrs) => { emitted.push(attrs); }, {
+      extraOrigins: [], denyOrigins: [], sessionId: "session-a",
+      traceId: () => "a".repeat(32), action: () => ({ ...action }),
+    });
+
+    const requestA = window.fetch("/api/a");
+    action = { "mip.action_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" };
+    const requestB = window.fetch("/api/b");
+    pending[1]({ status: 200 } as Response);
+    await requestB;
+    pending[0]({ status: 200 } as Response);
+    await requestA;
+
+    expect(emitted.map((attrs) => attrs["mip.action_id"])).toEqual([
+      "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      "11111111-2222-4333-8444-555555555555",
+    ]);
+  });
+
+  it("conserve aussi le snapshot d'origine sur XMLHttpRequest/axios", () => {
+    const emitted: Array<Record<string, unknown>> = [];
+    let action = {
+      "mip.action_id": "11111111-2222-4333-8444-555555555555",
+      "mip.identity.user_id": "user-a",
+    };
+    class FakeXhr {
+      status = 0;
+      headers: Record<string, string> = {};
+      listeners = new Map<string, Array<{ listener: () => void; once: boolean }>>();
+      open(_method: string, _url: string | URL) {}
+      send(_body?: unknown) {}
+      setRequestHeader(name: string, value: string) { this.headers[name] = value; }
+      addEventListener(name: string, listener: () => void, options?: AddEventListenerOptions) {
+        const rows = this.listeners.get(name) ?? [];
+        rows.push({ listener, once: options?.once === true });
+        this.listeners.set(name, rows);
+      }
+      finish(status: number) {
+        this.status = status;
+        const rows = [...(this.listeners.get("loadend") ?? [])];
+        for (const row of rows) row.listener();
+        this.listeners.set("loadend", rows.filter((row) => !row.once));
+      }
+    }
+    vi.stubGlobal("location", { href: "https://app.test/page", origin: "https://app.test" });
+    vi.stubGlobal("performance", { now: () => 1 });
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("XMLHttpRequest", FakeXhr);
+    initApiSpans((_name, attrs) => { emitted.push(attrs); }, {
+      extraOrigins: [], denyOrigins: [], sessionId: "session-a",
+      traceId: () => "a".repeat(32), action: () => ({ ...action }),
+    });
+
+    const xhr = new FakeXhr();
+    xhr.open("GET", "/api/a");
+    xhr.send();
+    action = {
+      "mip.action_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      "mip.identity.user_id": "user-b",
+    };
+    xhr.finish(200);
+    expect(emitted[0]).toMatchObject({
+      "mip.action_id": "11111111-2222-4333-8444-555555555555",
+      "mip.identity.user_id": "user-a",
+    });
+
+    xhr.open("POST", "/api/b");
+    xhr.send();
+    xhr.finish(201);
+    expect(emitted).toHaveLength(2);
+    expect(emitted[1]).toMatchObject({
+      "mip.action_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      "mip.identity.user_id": "user-b",
+      "http.status_code": 201,
+    });
+  });
 });
 
 // --- parser ----------------------------------------------------------------------

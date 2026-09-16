@@ -5,12 +5,13 @@ import type { Emit } from "./errors";
 
 export const BREADCRUMB_CAP_PER_PAGE = 50;
 export const BREADCRUMB_LABEL_MAX = 40;
+export const MIP_UI_ATTR = "data-mip-rum-ui";
 const SEQ_KEY = "mip_rum_seq";
 
 export type BreadcrumbType = "click" | "nav" | "error" | "custom";
 
 export interface BreadcrumbTrail {
-  add(type: BreadcrumbType, label: string): void;
+  add(type: BreadcrumbType, label: string, attrs?: Record<string, string | number | boolean>): void;
   cap: PageCap;
 }
 
@@ -52,9 +53,10 @@ export function createBreadcrumbTrail(emit: Emit): BreadcrumbTrail {
   const nextSeq = createSeq();
   return {
     cap,
-    add(type: BreadcrumbType, label: string): void {
+    add(type: BreadcrumbType, label: string, attrs = {}): void {
       if (!cap.take()) return;
       emit("breadcrumb", {
+        ...attrs,
         "breadcrumb.type": type,
         "breadcrumb.label": String(label).slice(0, 120),
         "breadcrumb.seq": nextSeq(),
@@ -64,16 +66,32 @@ export function createBreadcrumbTrail(emit: Emit): BreadcrumbTrail {
 }
 
 /** Écoute les clics (capture) sur l'élément interactif le plus proche. */
-export function initClickBreadcrumbs(trail: BreadcrumbTrail): void {
+export function initClickBreadcrumbs(
+  trail: BreadcrumbTrail,
+  action: () => Record<string, string | number | boolean> = () => ({}),
+): void {
+  let forwardedControl: Element | null = null;
+  let forwardedAt = 0;
   document.addEventListener(
     "click",
     (e: MouseEvent) => {
-      if (!(e.target instanceof Element)) return;
+      if (e.button !== 0 || !(e.target instanceof Element)) return;
       const el =
         e.target.closest("button,a,[role='button'],input,select,textarea,label") ?? e.target;
+      if (el.closest(`[${MIP_UI_ATTR}]`)) return;
+      const now = Date.now();
+      if (forwardedControl === el && e.detail === 0 && now - forwardedAt < 1_000) {
+        forwardedControl = null;
+        return;
+      }
+      if (el.tagName.toLowerCase() === "label") {
+        forwardedControl = (el as HTMLLabelElement).control;
+        forwardedAt = now;
+      }
       trail.add(
         "click",
         formatClickLabel(el.tagName, el.textContent, el.getAttribute("aria-label")),
+        action(),
       );
     },
     { capture: true, passive: true },

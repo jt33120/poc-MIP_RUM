@@ -90,7 +90,7 @@ describe("buildOpenApi — spec valide et complète", () => {
     for (const p of [
       "/health", "/openapi", "/", "/apps", "/overview", "/vitals", "/pages",
       "/errors", "/errors/{fingerprint}", "/sessions", "/sessions/{id}",
-      "/tracing", "/correlation", "/health-grid",
+      "/events", "/actions", "/tracing", "/correlation", "/health-grid",
     ])
       expect(paths, `manque ${p}`).toContain(p);
     // La supervision IA (/ai*) a quitté mip-rum pour xSOM AI Guard.
@@ -111,6 +111,14 @@ describe("buildOpenApi — spec valide et complète", () => {
     expect(spec.components.parameters.eventOffset.schema.maximum).toBe(10_000);
     expect(spec.components.parameters.offset.schema.maximum).toBeUndefined();
     expect(spec.components.schemas.EventIndexRow.properties.id.type).toBe("string");
+  });
+
+  it("borne indépendamment la pagination du classement /actions", () => {
+    const actions = spec.paths["/actions"].get;
+    const params = actions.parameters.map((p: { $ref?: string }) => p.$ref).filter(Boolean);
+    expect(params).toContain("#/components/parameters/actionOffset");
+    expect(spec.components.parameters.actionOffset.schema.maximum).toBe(10_000);
+    expect(spec.components.schemas.TopActionRow.properties.name.type).toBe("string");
   });
 
   it("aucun $ref pendouillant (tout référencé existe)", () => {

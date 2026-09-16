@@ -5,7 +5,7 @@
 //     AUCUNE réaction (mutation DOM, navigation, scroll) dans le délai imparti.
 // Émis comme span 'frustration' (kind/target/count) ; stocké côté serveur dans
 // rum_event sous le nom réservé 'frustration.<kind>' (cf. _shared/otlp.mjs).
-import { formatClickLabel } from "./breadcrumbs";
+import { formatClickLabel, MIP_UI_ATTR } from "./breadcrumbs";
 import { makeCap, type PageCap } from "./caps";
 import type { Emit } from "./errors";
 
@@ -26,7 +26,7 @@ const INTERACTIVE = "button,a,[role='button'],input,select,textarea,label,summar
  * chaque ouverture du panneau d'avis alimenterait les clics morts/rageurs de
  * l'application cliente, et donc son score d'expérience.
  */
-export const MIP_UI_ATTR = "data-mip-rum-ui";
+export { MIP_UI_ATTR } from "./breadcrumbs";
 
 /** Le clic vise-t-il une interface de MIP RUM plutôt que l'application hôte ? */
 export function isOwnUi(el: Element): boolean {
@@ -37,7 +37,7 @@ export function isOwnUi(el: Element): boolean {
   }
 }
 
-export type FrustrationKind = "rage" | "dead";
+export type FrustrationKind = "rage" | "dead" | "error";
 
 /**
  * Détecteur de rage clicks (pur, testable). Émet UNE fois par rafale : dès que la
@@ -109,13 +109,24 @@ export function isActionable(el: Element, interactive: boolean): boolean {
 
 export interface FrustrationWatch {
   reset(): void;
+  error(
+    actionAttrs: Record<string, string | number | boolean>,
+    target: string,
+    ts?: number,
+  ): void;
 }
 
 /** Câble l'écoute des clics + le suivi des réactions DOM/nav/scroll. */
-export function initFrustration(emit: Emit, opts: { enabled?: boolean } = {}): FrustrationWatch {
+export function initFrustration(
+  emit: Emit,
+  opts: {
+    enabled?: boolean;
+    action?: () => Record<string, string | number | boolean>;
+  } = {},
+): FrustrationWatch {
   const cap = makeCap(FRUSTRATION_CAP_PER_PAGE);
   if (opts.enabled === false || typeof document === "undefined") {
-    return { reset: () => cap.reset() };
+    return { reset: () => cap.reset(), error: () => {} };
   }
 
   const rage = new RageDetector();
@@ -123,6 +134,8 @@ export function initFrustration(emit: Emit, opts: { enabled?: boolean } = {}): F
   let lastMutation = 0;
   let lastNav = 0;
   let lastScroll = 0;
+  let forwardedControl: Element | null = null;
+  let forwardedAt = 0;
 
   // Observateur partagé (léger) : marque la dernière réaction structurelle du DOM.
   try {
@@ -141,9 +154,15 @@ export function initFrustration(emit: Emit, opts: { enabled?: boolean } = {}): F
   addEventListener("hashchange", markNav, { passive: true });
   addEventListener("scroll", () => { lastScroll = now(); }, { capture: true, passive: true });
 
-  const signal = (kind: FrustrationKind, target: string, count: number) => {
+  const signal = (
+    kind: FrustrationKind,
+    target: string,
+    count: number,
+    actionAttrs: Record<string, string | number | boolean>,
+  ) => {
     if (!cap.take()) return;
     emit("frustration", {
+      ...actionAttrs,
       "frustration.kind": kind,
       "frustration.target": target.slice(0, TARGET_MAX),
       "frustration.count": count,
@@ -159,13 +178,23 @@ export function initFrustration(emit: Emit, opts: { enabled?: boolean } = {}): F
       if (isOwnUi(me.target)) return;
       const interactive = me.target.closest(INTERACTIVE);
       const el = interactive ?? me.target;
+      const clickAt = now();
+      if (forwardedControl === el && me.detail === 0 && clickAt - forwardedAt < 1_000) {
+        forwardedControl = null;
+        return;
+      }
+      if (el.tagName.toLowerCase() === "label") {
+        forwardedControl = (el as HTMLLabelElement).control;
+        forwardedAt = clickAt;
+      }
       const label = formatClickLabel(el.tagName, el.textContent, el.getAttribute("aria-label"));
-      const t = now();
+      const t = clickAt;
+      const actionAttrs = opts.action?.() ?? {};
 
       // rage : prioritaire (un acharnement n'est pas un dead click)
       const burst = rage.click(label, t);
       if (burst != null) {
-        signal("rage", label, burst);
+        signal("rage", label, burst, actionAttrs);
         return;
       }
 
@@ -173,11 +202,22 @@ export function initFrustration(emit: Emit, opts: { enabled?: boolean } = {}): F
       if (!isActionable(el, !!interactive)) return;
       setTimeout(() => {
         if (isDeadClick(t, { mutation: lastMutation, nav: lastNav, scroll: lastScroll }))
-          signal("dead", label, 1);
+          signal("dead", label, 1, actionAttrs);
       }, DEAD_CLICK_WINDOW_MS);
     },
     { capture: true, passive: true },
   );
 
-  return { reset: () => cap.reset() };
+  return {
+    reset: () => cap.reset(),
+    error(actionAttrs, target, ts) {
+      if (!cap.take()) return;
+      emit("frustration", {
+        ...actionAttrs,
+        "frustration.kind": "error",
+        "frustration.target": target.slice(0, TARGET_MAX),
+        "frustration.count": 1,
+      }, ts);
+    },
+  };
 }

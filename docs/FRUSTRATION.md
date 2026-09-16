@@ -1,4 +1,4 @@
-# Signaux de frustration — rage / dead clicks + attribution INP (P1)
+# Signaux de frustration — rage / dead / error clicks + attribution INP
 
 > Détecter là où l'utilisateur **galère** (pas seulement où le navigateur est lent).
 > Standard du marché (FullStory, Dynatrace DEM, Datadog RUM). Console : **/ux**.
@@ -9,6 +9,7 @@
 |---|---|---|---|
 | **Rage click** | ≥ 3 clics sur la **même cible** en < 1 s (l'UI ne réagit pas comme attendu). | span `frustration` (`kind=rage`, `count`) — **une fois par rafale**. | `rum_event` (`name='frustration.rage'`). |
 | **Dead click** | Clic sur un élément **d'aspect actionnable** (`<button>/<a>/role=button/…` ou `cursor:pointer`) sans **aucune réaction** (mutation DOM, navigation, scroll) dans 1,5 s. | span `frustration` (`kind=dead`). | `rum_event` (`name='frustration.dead'`). |
+| **Error click** | Première exception rattachée à une action causale dans sa fenêtre de 5 s. | span `frustration` (`kind=error`) — une seule fois par action. | `rum_event` (`name='frustration.error'`, `action_id`). |
 | **Attribution INP** | Élément responsable de l'interaction lente (`interactionTarget` de web-vitals). | déjà capté dans `webvital.attribution` (P0). | `rum_metric.attribution` (jsonb). |
 
 ## SDK (`packages/rum-sdk/src/frustration.ts`)
@@ -20,22 +21,22 @@
 
 ## Ingestion (`_shared/otlp.mjs`)
 
-Le span `frustration` est mappé vers `rum_event` sous le **nom réservé** `frustration.<kind>`, `props = { target, count }`. Choix volontaire : `rum_event` **hérite** déjà de toute la plomberie (policy `console_ro`, purge par rétention, effacement RGPD `erase_app_data`/`erase_session`, métering, index `(app_id, name, ts)`) — pas de nouvelle table à recâbler (leçon des findings #1/#4). `target` est **scrubbé** (PII) comme tout texte libre (`scrubProps`). `kind` hors {`rage`,`dead`} ⇒ **rejeté**.
+Le span `frustration` est mappé vers `rum_event` sous le **nom réservé** `frustration.<kind>`, `props = { target, count }`. `target` est **scrubbé** comme tout texte libre (`scrubProps`). `kind` hors {`rage`,`dead`,`error`} est rejeté ; `error` sans `action_id` valide l'est aussi.
 
 ## Console (`/ux`, `lib/queries-frustration.ts`)
 
-- **Signaux de frustration** : top rage/dead par route × cible (fenêtre = filtre global).
+- **Signaux de frustration** : top rage/dead/error par route × cible (fenêtre = filtre global).
 - **Interactions lentes** : éléments classés par **INP p75** (depuis l'attribution), avec pire valeur.
 - Filtres app/device/période standards ; fail-soft (vide si la base bronche).
 
 ## Preuves
 
 - `tests/unit/frustration.test.ts` : détecteurs (rafale, réarmement, dead-click).
-- `tests/unit/otlp.test.ts` : mapping `frustration` → `rum_event` (rage/dead, défaut `count`, `kind` invalide rejeté, scrub de la cible).
+- `tests/unit/otlp.test.ts` : mapping `frustration` → `rum_event` (rage/dead/error, défaut `count`, `kind` invalide rejeté, scrub de la cible).
 - `tests/unit/otlp-snapshot.test.ts` : span `frustration` ajouté au contrat figé.
 - `scripts/verify-frustration.mjs` : agrégats + attribution INP **sur Postgres réel**, et lecture sous `console_ro`.
 
 ## Suivi (non bloquant)
 
-- Les signaux de frustration ne sont **pas** comptés dans le métering d'events (`meter_tenant_usage`) — volume marginal ; à inclure si la facturation doit les couvrir.
+- Le signal source `rum_event` reste compté une seule fois par le métering existant. La projection `rum_action`, dérivée pour la lecture causale, n'est jamais ajoutée au quota afin d'éviter un double comptage.
 - Lien direct depuis `/ux` vers la session/replay correspondante (corrélation parcours).

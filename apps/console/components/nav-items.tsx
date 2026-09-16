@@ -31,6 +31,7 @@ export const CATEGORIES: NavCategory[] = [
       { href: "/pages", label: "Pages lentes" },
       { href: "/errors", label: "Erreurs JS" },
       { href: "/ux", label: "Frustration" },
+      { href: "/actions", label: "Actions" },
       { href: "/experience", label: "Expérience" },
     ],
   },

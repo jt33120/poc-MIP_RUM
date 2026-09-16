@@ -76,7 +76,12 @@ describe("une erreur en boucle est comptée, pas transmise mille fois", () => {
       if (type === "error") receiveError = listener as (event: ErrorEvent) => void;
     });
     try {
-      const e = initErrors((name, attrs) => emits.push({ name, attrs }), () => 0);
+      let actionId = "11111111-2222-4333-8444-555555555555";
+      const e = initErrors(
+        (name, attrs) => emits.push({ name, attrs }),
+        () => 0,
+        () => ({ "mip.action_id": actionId }),
+      );
       const event = {
         message: "boom",
         error: new Error("boom"),
@@ -87,11 +92,13 @@ describe("une erreur en boucle est comptée, pas transmise mille fois", () => {
 
       receiveError!(event);
       for (let i = 0; i < 9; i++) receiveError!(event);
+      actionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
       e.drainer(1);
 
       expect(emits).toHaveLength(2);
       expect(emits[0].name).toBe("exception");
       expect(emits[1].attrs["mip.error_count"]).toBe(9);
+      expect(emits[1].attrs["mip.action_id"]).toBe("11111111-2222-4333-8444-555555555555");
       expect(1 + Number(emits[1].attrs["mip.error_count"])).toBe(10);
     } finally {
       vi.unstubAllGlobals();

@@ -47,11 +47,11 @@ export interface DsarCount {
   rows: number;
 }
 
-/** v65 peut être appliquée après le déploiement console : seule cette table est optionnelle. */
-const DSAR_OPTIONAL_TABLE = "rum_event_index";
+/** Les projections peuvent être appliquées après le déploiement console. */
+const DSAR_OPTIONAL_TABLES = new Set(["rum_event_index", "rum_action"]);
 
 async function tableDsarDisponible(table: string): Promise<boolean> {
-  if (table !== DSAR_OPTIONAL_TABLE) return true;
+  if (!DSAR_OPTIONAL_TABLES.has(table)) return true;
   const [row] = await q<{ present: boolean }>(
     "select to_regclass($1) is not null as present",
     [`public.${table}`],
@@ -63,7 +63,7 @@ async function tableDsarDisponibleDansTransaction(
   client: PoolClient,
   table: string,
 ): Promise<boolean> {
-  if (table !== DSAR_OPTIONAL_TABLE) return true;
+  if (!DSAR_OPTIONAL_TABLES.has(table)) return true;
   const { rows } = await client.query<{ present: boolean }>(
     "select to_regclass($1) is not null as present",
     [`public.${table}`],
@@ -152,7 +152,7 @@ const DEFAULT_IDENTITY_IO: IdentityDsarIo = {
 };
 
 async function identityTableDisponible(io: IdentityDsarIo, table: string): Promise<boolean> {
-  if (table !== DSAR_OPTIONAL_TABLE) return true;
+  if (!DSAR_OPTIONAL_TABLES.has(table)) return true;
   const [row] = await io.query<{ present: boolean }>(
     "select to_regclass($1) is not null as present",
     [`public.${table}`],

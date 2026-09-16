@@ -54,6 +54,36 @@ export async function identityPersistenceHealth(env: NodeJS.ProcessEnv = process
   }
 }
 
+/** État de la projection causale v67; le code d'ingestion reste compatible v66. */
+export async function causalActionsHealth(): Promise<{
+  schema: boolean;
+  label: "ok" | "degraded";
+}> {
+  try {
+    const [row] = await q<{ table_ok: boolean; columns_ok: boolean; policy_ok: boolean }>(
+      `select
+         to_regclass('public.rum_action') is not null as table_ok,
+         (select count(*) = 14 from information_schema.columns
+           where table_schema = 'public' and (
+             (table_name = 'rum_action' and column_name = any(array[
+               'action_id','span_id','session_id','app_id','type','name','route','context','ts'
+             ])) or
+             (table_name = 'rum_error' and column_name = 'action_id') or
+             (table_name = 'rum_resource' and column_name = 'action_id') or
+             (table_name = 'rum_breadcrumb' and column_name = any(array['action_id','route'])) or
+             (table_name = 'rum_span' and column_name = 'action_id')
+           )) as columns_ok,
+         exists (select 1 from pg_policies
+                  where schemaname = 'public' and tablename = 'rum_action'
+                    and policyname = 'tenant_scope') as policy_ok`,
+    );
+    const schema = row?.table_ok === true && row?.columns_ok === true && row?.policy_ok === true;
+    return { schema, label: schema ? "ok" : "degraded" };
+  } catch {
+    return { schema: false, label: "degraded" };
+  }
+}
+
 export const HEALTH_CLASS: Record<HealthLabel, string> = {
   Excellent:
     "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-400/10 dark:text-emerald-300 dark:border-emerald-400/30",

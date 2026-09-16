@@ -16,7 +16,7 @@ Une seule promesse, prouvée en live. Pas de slide avant la minute 8.
 - [ ] Onglets ouverts dans l'ordre : [1] plateforme G-IT, [2] console Overview, [3] session replay,
       [4] /alerts, [5] /correlation. Réseau du client = imprévisible : **plan B prêt** (ci-dessous).
 - [ ] Chiffres en tête : **robot 1,14 s « ok » vs LCP p75 réel 4,04 s « poor » = +254 %** sur
-      `/login` (constaté en prod le 10/06/2026) ; SDK cœur **16,3 KB gzip** ; OTLP standard.
+      `/login` (constaté en prod le 10/06/2026) ; SDK cœur **19,4 KB gzip** ; OTLP standard.
 
 ## Plan B hors-ligne (démo 100 % locale, 5 commandes)
 
@@ -82,7 +82,7 @@ leurs applications, restitution des écarts robot↔réel.
    **corrélé nativement à votre synthétique existant**, à une fraction du budget. Si votre besoin
    est la suite tout-en-un, prenez Dynatrace ; si c'est voir l'écart robot↔réel sans exporter vos
    données chez un éditeur US, c'est nous. »
-2. **« Encore un agent JS qui va ralentir mon site »** — « 16,3 KB gzip pour le cœur, mesuré ;
+2. **« Encore un agent JS qui va ralentir mon site »** — « 19,4 KB gzip pour le cœur, mesuré ;
    le replay est un module séparé chargé uniquement si activé. Envoi en arrière-plan, aucun
    traitement bloquant. Et le POC le prouve chez vous en 30 jours, snippet une ligne. »
 3. **« RGPD ? Mon DPO va hurler. »** — « Pas d'IP stockée — la géolocalisation se fait par

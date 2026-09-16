@@ -26,6 +26,8 @@ export interface ApiSpanOptions {
    * Omis (tests unitaires) -> une trace par appel, comportement historique.
    */
   traceId?: () => string;
+  /** Snapshot causal pris au DÉPART de l'appel, jamais à sa réponse. */
+  action?: () => Record<string, string | number | boolean>;
 }
 
 function randHex(nBytes: number): string {
@@ -69,10 +71,12 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
     status: number,
     startPerf: number,
     tsMs: number,
+    actionAttrs: Record<string, string | number | boolean>,
   ) => {
     emit(
       "http.client",
       {
+        ...actionAttrs,
         "mip.trace_id": traceId,
         "mip.span_id": spanId,
         "http.url": scrubUrl(url),
@@ -106,13 +110,14 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
         headers.set("tracestate", `mip=s:${sessionId()}`);
         const startPerf = performance.now();
         const ts = Date.now();
+        const actionAttrs = opts.action?.() ?? {};
         return orig.call(this, input as RequestInfo, { ...init, headers }).then(
           (resp) => {
-            record(target, method, traceId, spanId, resp.status, startPerf, ts);
+            record(target, method, traceId, spanId, resp.status, startPerf, ts, actionAttrs);
             return resp;
           },
           (err) => {
-            record(target, method, traceId, spanId, 0, startPerf, ts); // réseau coupé
+            record(target, method, traceId, spanId, 0, startPerf, ts, actionAttrs); // réseau coupé
             throw err;
           },
         );
@@ -147,9 +152,12 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
           this.setRequestHeader("tracestate", `mip=s:${sessionId()}`);
           const startPerf = performance.now();
           const ts = Date.now();
+          const actionAttrs = opts.action?.() ?? {};
           // loadend couvre load/error/abort/timeout ; status 0 = échec réseau
-          this.addEventListener("loadend", () =>
-            record(target, meta.method, traceId, spanId, this.status, startPerf, ts),
+          this.addEventListener(
+            "loadend",
+            () => record(target, meta.method, traceId, spanId, this.status, startPerf, ts, actionAttrs),
+            { once: true },
           );
         }
       } catch {

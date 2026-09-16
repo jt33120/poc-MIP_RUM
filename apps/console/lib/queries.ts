@@ -398,6 +398,8 @@ export type TimelineKind =
   | "breadcrumb"
   | "longtask"
   | "event"
+  | "action"
+  | "resource"
   | "api";
 
 export interface TimelineItem {
@@ -407,12 +409,83 @@ export interface TimelineItem {
   detail: string | null; // nav_type | route | message | label | props
   value: number | null; // valeur vital | seq | duration_ms
   rating: string | null; // good|needs-improvement|poor (vitals)
+  action_id: string | null;
+  action_name: string | null;
 }
 
 /** Timeline fusionnée chronologique d'une session (toutes tables v0.1 + v0.2). */
 export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
+  const [schema] = await q<{ v67: boolean }>(
+    "select to_regclass('public.rum_action') is not null as v67",
+  );
+  if (schema?.v67) {
+    return q<TimelineItem>(
+      `select t.kind, t.ts, t.title, t.detail, t.value, t.rating,
+              case when t.kind = 'action' then t.action_id else a.action_id end as action_id,
+              coalesce(t.action_name, a.name) as action_name
+         from (
+           select 'pageview' as kind, started_at as ts, route as title, nav_type as detail,
+                  null::float as value, null::text as rating, null::text as action_id, null::text as action_name,
+                  app_id
+           from rum_pageview where session_id = $1
+           union all
+           select 'vital', ts, name, route, value, rating, null, null, app_id
+           from rum_metric where session_id = $1
+           union all
+           select 'action', ts, name, type || coalesce(' · ' || route, ''), null, null, action_id, name, app_id
+           from rum_action where session_id = $1
+           union all
+           select 'error', ts, coalesce(error_type, kind), message, null, null, action_id, null, app_id
+           from rum_error where session_id = $1
+           union all
+           select 'breadcrumb', ts, type, label, seq::float, null, action_id, null, app_id
+           from rum_breadcrumb where session_id = $1
+           union all
+           select 'resource', ts, coalesce(type, 'resource'), url, duration_ms, null, action_id, null, app_id
+           from rum_resource where session_id = $1 and action_id is not null
+           union all
+           select 'longtask', ts,
+                  case when script_function is not null and script_function <> ''
+                            then 'Blocage · ' || script_function
+                       when invoker is not null and invoker <> ''
+                            then 'Blocage · ' || invoker
+                       else 'Long task' end,
+                  coalesce(route, '') || coalesce(' · ' || regexp_replace(script_url, '^https?://', ''), ''),
+                  coalesce(blocking_ms, duration_ms), null, null, null, app_id
+           from rum_longtask where session_id = $1
+           union all
+           select 'event', ts, name, props::text, null, null, action_id, null, app_id
+           from rum_event where session_id = $1 and event_type is distinct from 'action'
+           union all
+           select 'api', f.ts,
+                  f.method || ' ' || regexp_replace(coalesce(f.url, ''), '^https?://[^/]+', ''),
+                  coalesce(f.status_code::text, '—')
+                    || coalesce(' · serveur ' || round(b.duration_ms::numeric) || ' ms', ''),
+                  f.duration_ms,
+                  case when coalesce(f.status_code, 0) >= 400 or coalesce(f.status_code, 0) = 0
+                       then 'poor' end,
+                  f.action_id, null, f.app_id
+           from rum_span f
+           left join lateral (
+             select child.duration_ms
+               from rum_span child
+              where child.trace_id = f.trace_id and child.tier = 'back'
+                and child.parent_span_id = f.span_id
+              order by child.ts asc, child.id asc
+              limit 1
+           ) b on true
+           where f.session_id = $1 and f.tier = 'front'
+         ) t
+         left join rum_action a
+           on a.action_id = t.action_id and a.app_id = t.app_id and a.session_id = $1
+        order by t.ts asc, case when t.kind = 'action' then 0 else 1 end, t.kind
+        limit 500`,
+      [id],
+    );
+  }
   return q<TimelineItem>(
-    `select kind, ts, title, detail, value, rating from (
+    `select kind, ts, title, detail, value, rating,
+            null::text as action_id, null::text as action_name from (
        select 'pageview' as kind, started_at as ts, route as title, nav_type as detail,
               null::float as value, null::text as rating
        from rum_pageview where session_id = $1
@@ -452,7 +525,14 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
               case when coalesce(f.status_code, 0) >= 400 or coalesce(f.status_code, 0) = 0
                    then 'poor' end
        from rum_span f
-       left join rum_span b on b.trace_id = f.trace_id and b.tier = 'back'
+       left join lateral (
+         select child.duration_ms
+           from rum_span child
+          where child.trace_id = f.trace_id and child.tier = 'back'
+            and child.parent_span_id = f.span_id
+          order by child.ts asc, child.id asc
+          limit 1
+       ) b on true
        where f.session_id = $1 and f.tier = 'front'
      ) t
      order by ts asc, kind

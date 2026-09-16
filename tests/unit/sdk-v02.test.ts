@@ -7,8 +7,10 @@ import {
   appendRetry,
   ExportResultCode,
   loadRetryQueue,
+  purgeRetryQueue,
   replayRetryQueue,
   RETRY_KEY,
+  RETRY_REVOKED_ACTIONS_KEY,
   RetryExporter,
   serializeSpan,
   type RetrySpan,
@@ -66,17 +68,39 @@ describe("breadcrumb seq (compteur session)", () => {
 });
 
 describe("retry — sérialisation", () => {
-  it("ne garde que name + attributs primitifs + timestamps en ms", () => {
+  it("garde les identifiants natifs, les attributs primitifs et les timestamps en ms", () => {
     const s = serializeSpan({
       name: "webvital.LCP",
       attributes: { "webvital.value": 1234.5, "mip.route": "/login", ok: true, nested: { a: 1 } },
       startTime: [1_700_000_000, 500_000_000],
       endTime: [1_700_000_001, 0],
+      traceId: "a".repeat(32),
+      spanId: "b".repeat(16),
+      parentSpanId: "c".repeat(16),
     });
     expect(s.n).toBe("webvital.LCP");
-    expect(s.a).toEqual({ "webvital.value": 1234.5, "mip.route": "/login", ok: true });
+    expect(s.a).toEqual({
+      "webvital.value": 1234.5,
+      "mip.route": "/login",
+      ok: true,
+      "mip.trace_id": "a".repeat(32),
+      "mip.span_id": "b".repeat(16),
+      "mip.parent_span_id": "c".repeat(16),
+    });
     expect(s.s).toBe(1_700_000_000_500);
     expect(s.e).toBe(1_700_000_001_000);
+  });
+
+  it("sérialise explicitement l'absence de parent pour préserver une racine au rejeu", () => {
+    const s = serializeSpan({
+      name: "rum.action",
+      attributes: { "mip.action_id": "11111111-2222-4333-8444-555555555555" },
+      startTime: [1, 0],
+      endTime: [2, 0],
+      traceId: "a".repeat(32),
+      spanId: "b".repeat(16),
+    });
+    expect(s.a["mip.parent_span_id"]).toBe("");
   });
 });
 
@@ -100,7 +124,10 @@ describe("retry — caps de la file", () => {
 });
 
 describe("retry — décorateur d'exporter + rejeu", () => {
-  beforeEach(() => stubLocalStorage());
+  beforeEach(() => {
+    stubLocalStorage();
+    purgeRetryQueue();
+  });
   afterEach(() => vi.unstubAllGlobals());
 
   const fakeSpan = (name: string) =>
@@ -131,6 +158,70 @@ describe("retry — décorateur d'exporter + rejeu", () => {
     expect(file.notBefore).toBeGreaterThan(Date.now());
   });
 
+  it("un enfant envoyé après une racine en retry est délié, jamais orphelin", () => {
+    const sent: Array<Array<{ name: string; attributes: Record<string, unknown> }>> = [];
+    const inner = {
+      export: (spans: Array<{ name: string; attributes: Record<string, unknown> }>, cb: (r: { code: ExportResultCode }) => void) => {
+        sent.push(spans);
+        cb({ code: sent.length === 1 ? ExportResultCode.FAILED : ExportResultCode.SUCCESS });
+      },
+      shutdown: () => Promise.resolve(),
+    };
+    const exporter = new RetryExporter(inner as never);
+    const actionId = "11111111-2222-4333-8444-555555555555";
+    exporter.export([{
+      name: "rum.action",
+      attributes: { "mip.event_type": "action", "mip.action_id": actionId },
+      startTime: [1, 0], endTime: [2, 0],
+    }] as never, () => {});
+    exporter.export([{
+      name: "exception",
+      attributes: { "mip.action_id": actionId },
+      startTime: [3, 0], endTime: [4, 0],
+    }] as never, () => {});
+
+    expect(sent.map((batch) => batch.map((span) => span.name))).toEqual([["rum.action"], ["exception"]]);
+    expect(sent[1][0].attributes).not.toHaveProperty("mip.action_id");
+    expect(loadRetryQueue().spans.map((span) => span.n)).toEqual(["rum.action"]);
+  });
+
+  it("délie l'enfant si le stockage de sa racine échoue sur quota", () => {
+    const store = new Map<string, string>();
+    let rejectRootFile = true;
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (key === RETRY_KEY && rejectRootFile) {
+          rejectRootFile = false;
+          throw new DOMException("quota", "QuotaExceededError");
+        }
+        store.set(key, value);
+      },
+      removeItem: (key: string) => void store.delete(key),
+    });
+    purgeRetryQueue();
+    const inner = {
+      export: (_spans: never[], cb: (r: { code: ExportResultCode }) => void) =>
+        cb({ code: ExportResultCode.FAILED }),
+      shutdown: () => Promise.resolve(),
+    };
+    const exporter = new RetryExporter(inner as never);
+    const actionId = "11111111-2222-4333-8444-555555555555";
+    exporter.export([{
+      name: "rum.action",
+      attributes: { "mip.event_type": "action", "mip.action_id": actionId },
+      startTime: [1, 0], endTime: [2, 0],
+    }] as never, () => {});
+    exporter.export([{
+      name: "exception",
+      attributes: { "mip.action_id": actionId },
+      startTime: [3, 0], endTime: [4, 0],
+    }] as never, () => {});
+
+    expect(loadRetryQueue().spans).toHaveLength(1);
+    expect(loadRetryQueue().spans[0].a).not.toHaveProperty("mip.action_id");
+  });
+
   it("export SUCCESS -> rien n'est persisté", () => {
     const inner = {
       export: (_spans: never[], cb: (r: { code: ExportResultCode }) => void) =>
@@ -139,6 +230,67 @@ describe("retry — décorateur d'exporter + rejeu", () => {
     };
     new RetryExporter(inner as never).export([fakeSpan("pageview")] as never, () => {});
     expect(loadRetryQueue().spans).toEqual([]);
+  });
+
+  it("retire avant un export réussi le lien vers une racine retry déjà évincée", () => {
+    const actionId = "11111111-2222-4333-8444-555555555555";
+    localStorage.setItem(RETRY_REVOKED_ACTIONS_KEY, JSON.stringify([actionId]));
+    let outbound: Array<{ attributes: Record<string, unknown> }> = [];
+    const inner = {
+      export: (spans: typeof outbound, cb: (r: { code: ExportResultCode }) => void) => {
+        outbound = spans;
+        cb({ code: ExportResultCode.SUCCESS });
+      },
+      shutdown: () => Promise.resolve(),
+    };
+    const child = {
+      name: "http.client",
+      attributes: { "mip.action_id": actionId },
+      startTime: [1, 0],
+      endTime: [2, 0],
+    };
+    new RetryExporter(inner as never).export([child] as never, () => {});
+    expect(outbound[0].attributes).not.toHaveProperty("mip.action_id");
+  });
+
+  it("garde en mémoire plus de 200 racines évincées tant que leurs effets peuvent finir", () => {
+    const failed = {
+      export: (_spans: never[], cb: (r: { code: ExportResultCode }) => void) =>
+        cb({ code: ExportResultCode.FAILED }),
+      shutdown: () => Promise.resolve(),
+    };
+    const exporter = new RetryExporter(failed as never);
+    const ids = Array.from({ length: 201 }, (_, i) =>
+      `${i.toString(16).padStart(8, "0")}-2222-4333-8444-555555555555`);
+    for (const [i, actionId] of ids.entries()) {
+      const root = {
+        name: "rum.action",
+        attributes: { "mip.event_type": "action", "mip.action_id": actionId },
+        startTime: [1, i], endTime: [2, i],
+      };
+      const fillers = Array.from({ length: 100 }, (_, j) => ({
+        name: `span-${i}-${j}`, attributes: {}, startTime: [1, j], endTime: [2, j],
+      }));
+      exporter.export([root, ...fillers] as never, () => {});
+    }
+    const persisted = JSON.parse(localStorage.getItem(RETRY_REVOKED_ACTIONS_KEY) ?? "[]") as string[];
+    expect(persisted).toHaveLength(200);
+    expect(persisted).not.toContain(ids[0]);
+
+    let outbound: Array<{ attributes: Record<string, unknown> }> = [];
+    const succeeds = {
+      export: (spans: typeof outbound, cb: (r: { code: ExportResultCode }) => void) => {
+        outbound = spans;
+        cb({ code: ExportResultCode.SUCCESS });
+      },
+      shutdown: () => Promise.resolve(),
+    };
+    new RetryExporter(succeeds as never).export([{
+      name: "http.client",
+      attributes: { "mip.action_id": ids[0] },
+      startTime: [1, 0], endTime: [2, 0],
+    }] as never, () => {});
+    expect(outbound[0].attributes).not.toHaveProperty("mip.action_id");
   });
 
   it("replayRetryQueue ré-émet avec timestamps d'origine puis purge", () => {

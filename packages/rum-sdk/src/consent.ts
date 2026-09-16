@@ -16,6 +16,7 @@ interface BufferedEvent {
 export class ConsentGate {
   private state: ConsentState;
   private buffer: BufferedEvent[] = [];
+  private revokedRoots = new Set<string>();
 
   constructor(
     requireConsent: boolean,
@@ -42,13 +43,37 @@ export class ConsentGate {
    * ni armer sa période de silence sur un avis qui n'est jamais parti.
    */
   submit(name: string, attrs: Record<string, AttrValue>, deliver: Emit, ts?: number): boolean {
+    const actionId = typeof attrs["mip.action_id"] === "string" ? attrs["mip.action_id"] : null;
+    const isRoot = name === "rum.action" && attrs["mip.event_type"] === "action";
     if (this.state === "granted") {
-      deliver(name, attrs, ts);
+      let deliveredAttrs = attrs;
+      if (isRoot && actionId) this.revokedRoots.delete(actionId);
+      else if (actionId && this.revokedRoots.has(actionId)) {
+        deliveredAttrs = { ...attrs };
+        delete deliveredAttrs["mip.action_id"];
+      }
+      deliver(name, deliveredAttrs, ts);
       return true;
     }
     if (this.state === "denied") return false;
-    if (this.buffer.length >= this.capacity) this.buffer.shift(); // FIFO : on garde le plus récent
-    this.buffer.push({ name, attrs, ts: ts ?? Date.now() });
+    let bufferedAttrs = attrs;
+
+    if (this.buffer.length >= this.capacity) {
+      const evicted = this.buffer.shift(); // FIFO : on garde le plus récent
+      const evictedId = evicted && this.rootActionId(evicted);
+      if (evictedId) {
+        this.revokedRoots.add(evictedId);
+        this.buffer = this.buffer.filter((event) => event.attrs["mip.action_id"] !== evictedId);
+      }
+    }
+    // En attente de consentement, aucun enfant ne peut survivre sans sa racine
+    // dans le même buffer. On vérifie APRÈS l'éviction FIFO : si celle-ci vient
+    // de retirer la racine, l'effet reste collectable mais devient non lié.
+    if (actionId && !isRoot && !this.hasBufferedRoot(actionId)) {
+      bufferedAttrs = { ...attrs };
+      delete bufferedAttrs["mip.action_id"];
+    }
+    this.buffer.push({ name, attrs: bufferedAttrs, ts: ts ?? Date.now() });
     return true;
   }
 
@@ -62,6 +87,18 @@ export class ConsentGate {
     } else {
       this.state = "denied";
       this.buffer = [];
+      this.revokedRoots.clear();
     }
+  }
+
+  private rootActionId(event: BufferedEvent): string | null {
+    const id = event.attrs["mip.action_id"];
+    return event.name === "rum.action" && event.attrs["mip.event_type"] === "action" && typeof id === "string"
+      ? id
+      : null;
+  }
+
+  private hasBufferedRoot(actionId: string): boolean {
+    return this.buffer.some((event) => this.rootActionId(event) === actionId);
   }
 }

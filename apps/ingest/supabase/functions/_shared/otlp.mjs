@@ -34,6 +34,8 @@ const EVENT_INDEX_VITALS = new Set(Object.keys(THRESHOLDS));
 const NATIVE_SPAN_ID = /^[0-9a-f]{16}$/i;
 const IDENTITY_HASH = /^[0-9a-f]{64}$/i;
 const MANUAL_EVENT_TYPES = new Set(["custom", "view", "action", "timing", "feature_flag", "error"]);
+const ACTION_TYPES = new Set(["click", "manual"]);
+const ACTION_ID = /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
 const CONTEXT_MAX_BYTES = 16 * 1024;
 const CONTEXT_MAX_KEYS = 64;
 const CONTEXT_MAX_DEPTH = 4;
@@ -95,6 +97,10 @@ function boundedString(value) {
   return clean ? clean : null;
 }
 
+export function causalActionId(value) {
+  return typeof value === "string" && ACTION_ID.test(value) ? value.toLowerCase() : null;
+}
+
 function boundedContextValue(value, depth, budget) {
   if (value == null) return null;
   if (typeof value === "string") return value.length <= CONTEXT_MAX_STRING ? (scrubText(value) ?? "") : undefined;
@@ -144,7 +150,7 @@ function eventMetadata(attributes) {
   const context = boundedEventContext(attributes["mip.context"]);
   const viewId = boundedName(attributes["mip.view_id"]);
   const viewName = boundedName(attributes["mip.view_name"]);
-  const actionId = boundedName(attributes["mip.action_id"]);
+  const actionId = causalActionId(attributes["mip.action_id"]);
   const featureFlagValue = boundedString(attributes["mip.feature_flag_value"]);
   const timing = attributes["mip.timing_ms"];
   return {
@@ -206,7 +212,10 @@ export function buildEventIndex({ pageviews = [], metrics = [], errors = [], res
   for (const row of longtasks) ajouter("longtask", row, row.source === "loaf" ? "loaf" : "longtask");
   for (const row of breadcrumbs) ajouter("breadcrumb", row, BREADCRUMB_TYPES.has(row.type) ? row.type : null);
   for (const row of events) {
-    ajouter("event", row, row.name === "frustration.rage" || row.name === "frustration.dead" ? row.name : "track");
+    ajouter("event", row,
+      row.name === "frustration.rage" || row.name === "frustration.dead" || row.name === "frustration.error"
+        ? row.name
+        : "track");
   }
   for (const row of spans) ajouter("span", row, SPAN_INDEX_KINDS.has(row.kind) ? row.kind : null);
   return index;
@@ -494,7 +503,7 @@ function routeFromOtelName(name) {
  *        `maxSpans` spans dans une même requête, les suivants sont comptés
  *        `rejected` plutôt que traités (défaut 20 000).
  * @returns {{sessions: object[], pageviews: object[], metrics: object[], errors: object[],
- *            resources: object[], longtasks: object[], breadcrumbs: object[], events: object[],
+ *            resources: object[], longtasks: object[], breadcrumbs: object[], events: object[], actions: object[],
  *            spans: object[], apiKeys: {app_id: string, api_key: string|null}[], rejected: number}}
  */
 export function flattenOtlp(payload, opts = {}) {
@@ -510,6 +519,7 @@ export function flattenOtlp(payload, opts = {}) {
   const longtasks = [];
   const breadcrumbs = [];
   const events = [];
+  const actions = [];
   const spans = [];
   const apiKeys = [];
   // SVI (migration-v51) : appels, étapes et tronçons voix. Collections séparées
@@ -1037,10 +1047,12 @@ export function flattenOtlp(payload, opts = {}) {
             ...metadata,
           });
         } else if (span.name === "breadcrumb") {
+          const breadcrumbRoute = eventIndexRoute(route);
           breadcrumbs.push({
             span_id: span.spanId,
             session_id: sessionId,
             app_id: appId,
+            ...(breadcrumbRoute ? { route: breadcrumbRoute } : {}),
             type: breadcrumbType(a["breadcrumb.type"]),
             // Un breadcrumb décrit une action de l'utilisateur : son libellé est
             // donc du texte libre, au même titre qu'un message d'erreur. Le SDK
@@ -1072,7 +1084,10 @@ export function flattenOtlp(payload, opts = {}) {
           });
         } else if (span.name.startsWith("rum.")) {
           const eventType = metadata.event_type;
-          const eventName = boundedName(a["mip.event_name"]);
+          const rawEventName = boundedName(a["mip.event_name"]);
+          const eventName = eventType === "action"
+            ? boundedName(scrubText(rawEventName))
+            : rawEventName;
           const expectedType = {
             "rum.view": "view",
             "rum.action": "action",
@@ -1100,12 +1115,40 @@ export function flattenOtlp(payload, opts = {}) {
             ts,
             ...metadata,
           });
+          if (eventType === "action") {
+            const actionType = ACTION_TYPES.has(a["mip.action_type"])
+              ? a["mip.action_type"]
+              : "manual"; // SDK P2 : action manuelle sans attribut dédié
+            // Une action automatique est du texte libre issu du DOM. Le nom de
+            // la projection de lecture repasse donc à la frontière serveur par
+            // le scrub PII, même si le SDK l'a déjà borné.
+            const actionName = eventName;
+            if (!actionName) {
+              rejected++;
+              continue;
+            }
+            actions.push({
+              action_id: metadata.action_id,
+              span_id: span.spanId,
+              session_id: sessionId,
+              app_id: appId,
+              type: actionType,
+              name: actionName,
+              route: eventIndexRoute(route),
+              context: metadata.context ?? {},
+              ts,
+            });
+          }
         } else if (span.name === "frustration") {
           // Signaux de frustration (P1) : rage/dead clicks. Stockés dans rum_event
           // sous le nom réservé 'frustration.<kind>' (hérite RLS/purge/erase/métering
           // de rum_event ; target scrubbé comme tout texte libre).
           const kind = a["frustration.kind"];
-          if (kind !== "rage" && kind !== "dead") {
+          if (kind !== "rage" && kind !== "dead" && kind !== "error") {
+            rejected++;
+            continue;
+          }
+          if (kind === "error" && !metadata.action_id) {
             rejected++;
             continue;
           }
@@ -1147,6 +1190,7 @@ export function flattenOtlp(payload, opts = {}) {
     longtasks,
     breadcrumbs,
     events,
+    actions,
     spans,
     eventIndex,
     apiKeys,

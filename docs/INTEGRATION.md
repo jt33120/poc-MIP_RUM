@@ -57,7 +57,7 @@ API runtime exposée sur `window.MIPRum` :
 - `MIPRum.setGlobalContext(context)` — remplace le contexte global des événements futurs.
 - `MIPRum.setUser({ id, ...context })` / `setAccount({ id, ...context })` — identité métier. Le brut reste en mémoire navigateur et en transit ; le serveur le remplace par un HMAC-SHA256 cloisonné par `appId` avant toute file ou écriture. En cas de panne avant réception, la file retry conserve l'événement mais omet volontairement l'identité : aucune valeur brute user/account n'entre dans `localStorage`, au prix d'une corrélation d'identité perdue pour cet événement.
 - `MIPRum.startView(name, context?)` — démarre une vue nommée, sans remplacer la route normalisée.
-- `MIPRum.addAction(name, context?)`, `addTiming(name, timestamp?)`, `addFeatureFlagEvaluation(name, value)` et `addError(error, context?)` — événements manuels typés. `addAction` ne réalise aucune corrélation causale automatique.
+- `MIPRum.addAction(name, context?)`, `addTiming(name, timestamp?)`, `addFeatureFlagEvaluation(name, value)` et `addError(error, context?)` — événements manuels typés. `addAction` ouvre la même fenêtre causale de 5 s qu'un clic automatique.
 
 Le contexte est un snapshot JSON immuable avec précédence `global < user/account < view < action < événement`.
 Les noms/clefs sont bornés à 100 caractères, les chaînes à 500, la profondeur à 4, le total à 64 clefs
@@ -65,6 +65,14 @@ et 16 Kio sérialisés. Les champs `mip.*`, de session, trace, app et sampling r
 `IDENTITY_HASH_SECRET` doit être configuré sur chaque port d'ingestion : s'il manque, la télémétrie continue
 mais les identités user/account sont omises et `/admin/health` affiche un état dégradé.
 - `MIPRum.flush()` — force l'export des spans en attente (utile en test).
+
+### Actions causales
+
+Le SDK ouvre automatiquement une action sur chaque clic primaire visant un élément interactif. Le nom vient de `data-mip-action-name` lorsqu'il est valide, sinon d'un libellé accessible borné ; aucune valeur de champ n'est lue. L'action la plus récente reçoit les nouveaux effets pendant 5 secondes. Un fetch/XHR, une ressource ou une erreur conserve toutefois le snapshot pris à son origine, même si un autre clic survient avant sa fin.
+
+Préférez un libellé métier stable et non personnel dans `data-mip-action-name` (`checkout.submit`, par exemple). Si le libellé accessible peut contenir un nom, un numéro de dossier ou toute autre donnée métier sensible, réécrivez `mip.event_name` dans `beforeSend`. Pour abandonner l'action entière, retournez `null` : supprimer ou invalider uniquement son nom rejette aussi la racine et empêche ses effets futurs de conserver un `action_id` orphelin. L'enveloppe causale (`session`, `trace`, `action_id`, type) reste protégée contre la modification.
+
+Les interfaces marquées `data-mip-rum-ui` sont exclues. Navigation, refus de consentement et rotation d'identité ferment l'action ; un ré-accord ne ressuscite jamais un clic survenu pendant le refus. La corrélation reste heuristique : elle explique une proximité causale bornée, pas une preuve métier.
 
 ## 3. Consent mode (RGPD)
 
@@ -114,7 +122,7 @@ Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe
 
 ## 5. Poids et impact performance
 
-- Bundle cœur mesuré : **16,3 KB gzip** (45,3 KB raw) — toutes les instrumentations incluses (vitals, erreurs, ressources, long tasks, breadcrumbs, tracing front→back, consent, retry, contexte et événements manuels). Le replay (rrweb) est un bundle séparé chargé à la demande.
+- Bundle cœur mesuré : **19,4 KB gzip** (56,2 KB raw) — toutes les instrumentations incluses (vitals, erreurs, ressources, long tasks, actions causales, breadcrumbs, tracing front→back, consent, retry, contexte et événements manuels). Le replay (rrweb) est un bundle séparé chargé à la demande.
 - Historique : v0.1 **22,3 KB**, v0.2 **23,8 KB**, puis **27,4 KB** avant l'allègement. Le SDK OpenTelemetry a été remplacé par un émetteur OTLP/HTTP JSON maison (même format sur le fil), d'où la chute à ~12 KB.
 - C'est un SDK **OTLP-natif** (vrai OTLP sur le fil, backend remplaçable) — désormais plus léger que les RUM du marché (Sentry ~20 KB, Datadog ~25 KB).
 - Émission par batch (flush toutes les `flushIntervalMs`), `sendBeacon`/flush forcé au passage en arrière-plan : pas de requête bloquante pendant la navigation.

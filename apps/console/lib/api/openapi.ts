@@ -188,6 +188,19 @@ export function buildOpenApi(): Record<string, unknown> {
           },
         ),
       },
+      "/actions": {
+        get: get(
+          "Actions causales agrégées (coût, erreurs et sessions)",
+          "rum",
+          o(
+            { actions: arr(ref("TopActionRow")), summary: ref("ActionSummary"), page: ref("Page") },
+            ["actions", "summary", "page"],
+          ),
+          {
+            params: [...commonFilters, { $ref: "#/components/parameters/limit" }, { $ref: "#/components/parameters/actionOffset" }],
+          },
+        ),
+      },
       "/tracing": {
         get: get(
           "Couverture tracing + appels API + routes back",
@@ -238,6 +251,7 @@ export function buildOpenApi(): Record<string, unknown> {
         limit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 200 }, description: "taille de page (borné 1..200)" },
         offset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0 }, description: "décalage de page" },
         eventOffset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0, maximum: 10000 }, description: "décalage du journal d'événements (borné à 10 000)" },
+        actionOffset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0, maximum: 10000 }, description: "décalage du classement d'actions (borné à 10 000)" },
       },
       responses: {
         BadRequest: { description: "Paramètre invalide", content: { "application/json": { schema: ref("Error") } } },
@@ -300,8 +314,46 @@ export function buildOpenApi(): Record<string, unknown> {
           { id: { type: "string", pattern: "^[0-9]+$", description: "bigint PostgreSQL (int64) sérialisé en chaîne pour éviter la perte de précision JavaScript" }, app_id: str, session_id: nul(str), ts: dateTime, route: nul(str), kind: { type: "string", enum: ["pageview", "vital", "error", "resource", "longtask", "breadcrumb", "event", "span"] }, source_name: nul(str), source_span_id: str },
           ["id", "app_id", "ts", "kind", "source_span_id"],
         ),
+        TopActionRow: o(
+          {
+            app_id: str,
+            name: str,
+            type: { type: "string", enum: ["click", "manual"] },
+            route: nul(str),
+            actions: int,
+            sessions: int,
+            errors: int,
+            error_clicks: int,
+            resources: int,
+            api_calls: int,
+            resource_ms: num,
+            api_ms: num,
+            total_ms: num,
+            last_seen: dateTime,
+          },
+          ["app_id", "name", "type", "actions", "sessions", "errors", "total_ms", "last_seen"],
+        ),
+        ActionSamplingNotice: o(
+          { min_sample_rate: num, message: str },
+          ["min_sample_rate", "message"],
+        ),
+        ActionSummary: o(
+          {
+            actions: int,
+            sessions: int,
+            errors: int,
+            error_clicks: int,
+            resources: int,
+            api_calls: int,
+            resource_ms: num,
+            api_ms: num,
+            total_ms: num,
+            sampling_notice: nul(ref("ActionSamplingNotice")),
+          },
+          ["actions", "sessions", "errors", "error_clicks", "resources", "api_calls", "resource_ms", "api_ms", "total_ms", "sampling_notice"],
+        ),
         TimelineItem: o(
-          { kind: { type: "string", enum: ["pageview", "vital", "error", "breadcrumb", "longtask", "event", "api"] }, ts: dateTime, title: nul(str), detail: nul(str), value: nul(num), rating: nul(str) },
+          { kind: { type: "string", enum: ["pageview", "vital", "error", "breadcrumb", "longtask", "event", "action", "resource", "api"] }, ts: dateTime, title: nul(str), detail: nul(str), value: nul(num), rating: nul(str), action_id: nul(str), action_name: nul(str) },
           ["kind", "ts"],
         ),
 

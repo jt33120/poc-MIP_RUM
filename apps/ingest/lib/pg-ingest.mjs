@@ -305,6 +305,7 @@ export async function writeRows(pool, {
   longtasks,
   breadcrumbs,
   events,
+  actions = [],
   spans,
   eventIndex = [],
   sviCalls,
@@ -342,6 +343,21 @@ export async function writeRows(pool, {
       "on conflict (span_id) do nothing",
     );
     await ecrireMetriques(client, metrics);
+    // La racine est écrite avant tous les enfants liés dans la transaction.
+    // Pas de FK synchrone : le retry/déploiement progressif restent possibles.
+    const actionDispo = await colonnesDe(client, "rum_action");
+    if (actionDispo.has("action_id")) {
+      await batchInsert(
+        client,
+        "rum_action",
+        ["action_id", "span_id", "session_id", "app_id", "type", "name", "route", "context", "ts"],
+        actions.map((action) => ({
+          ...action,
+          context: action.context ? JSON.stringify(action.context) : "{}",
+        })),
+        "on conflict (action_id) do nothing",
+      );
+    }
     const dispoErr = await colonnesDe(client, "rum_error");
     await batchInsert(
       client,
@@ -350,15 +366,18 @@ export async function writeRows(pool, {
         "span_id", "session_id", "app_id", "route", "kind", "message", "error_type",
         "stack", "source", "lineno", "colno", "release", "fingerprint",
         ...(dispoErr.has("occurrences") ? ["occurrences"] : []),
+        ...(dispoErr.has("action_id") ? ["action_id"] : []),
         "ts",
       ],
       errors,
       "on conflict (span_id) do nothing",
     );
+    const resourceDispo = await colonnesDe(client, "rum_resource");
     await batchInsert(
       client,
       "rum_resource",
-      ["span_id", "session_id", "app_id", "route", "url", "type", "duration_ms", "transfer_size", "render_blocking", "ts"],
+      ["span_id", "session_id", "app_id", "route", "url", "type", "duration_ms", "transfer_size", "render_blocking",
+       ...(resourceDispo.has("action_id") ? ["action_id"] : []), "ts"],
       resources,
       "on conflict (span_id) do nothing",
     );
@@ -369,10 +388,12 @@ export async function writeRows(pool, {
       longtasks,
       "on conflict (span_id) do nothing",
     );
+    const breadcrumbDispo = await colonnesDe(client, "rum_breadcrumb");
     await batchInsert(
       client,
       "rum_breadcrumb",
-      ["span_id", "session_id", "app_id", "type", "label", "seq", "ts"],
+      ["span_id", "session_id", "app_id", ...(breadcrumbDispo.has("route") ? ["route"] : []), "type", "label", "seq",
+       ...(breadcrumbDispo.has("action_id") ? ["action_id"] : []), "ts"],
       breadcrumbs,
       "on conflict (span_id) do nothing",
     );
@@ -392,10 +413,12 @@ export async function writeRows(pool, {
       })),
       "on conflict (span_id) do nothing",
     );
+    const spanDispo = await colonnesDe(client, "rum_span");
     await batchInsert(
       client,
       "rum_span",
-      ["span_id", "trace_id", "parent_span_id", "tier", "session_id", "app_id", "route", "url", "method", "status_code", "duration_ms", "name", "kind", "ts"],
+      ["span_id", "trace_id", "parent_span_id", "tier", "session_id", "app_id", "route", "url", "method", "status_code", "duration_ms", "name", "kind",
+       ...(spanDispo.has("action_id") ? ["action_id"] : []), "ts"],
       spans ?? [],
       "on conflict (span_id) do nothing",
     );
@@ -406,7 +429,12 @@ export async function writeRows(pool, {
     // Comme les autres ajouts de schéma, ne jamais faire tomber les écritures
     // sources pendant l'intervalle code-déployé / migration-appliquée.
     if ((await colonnesDe(client, "rum_event_index")).has("source_span_id")) {
-      const projection = await indexAvecVitalsConsolides(client, eventIndex, metrics);
+      let projection = await indexAvecVitalsConsolides(client, eventIndex, metrics);
+      if (!actionDispo.has("action_id")) {
+        projection = projection.map((event) => event.source_name === "frustration.error"
+          ? { ...event, source_name: "track" }
+          : event);
+      }
       const indexDispo = await colonnesDe(client, "rum_event_index");
       const indexOptionnelles = [
         "event_type", "context", "user_id_hash", "account_id_hash", "view_id", "view_name",

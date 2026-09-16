@@ -20,12 +20,13 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
 
   const rage = signals.filter((s) => s.kind === "rage").reduce((n, s) => n + s.n, 0);
   const dead = signals.filter((s) => s.kind === "dead").reduce((n, s) => n + s.n, 0);
+  const errorClicks = signals.filter((s) => s.kind === "error").reduce((n, s) => n + s.n, 0);
 
   return (
     <div className="animate-fade-up">
       <PageHeader
         title="Frustration"
-        sub="Signaux d'agacement : rage clicks, dead clicks, l'élément responsable des interactions lentes (attribution INP) et le script qui bloque le fil principal (Long Animation Frames)."
+        sub="Signaux d'agacement et d'échec : rage clicks, dead clicks, actions suivies d'une erreur, interactions lentes et scripts qui bloquent le fil principal."
       />
 
       {(() => {
@@ -63,6 +64,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
           >
             <HeroStat label="Rage clicks" value={rage.toLocaleString("fr-FR")} tone={rage > 0 ? "poor" : "good"} />
             <HeroStat label="Dead clicks" value={dead.toLocaleString("fr-FR")} tone={dead > 0 ? "warn" : "good"} />
+            <HeroStat label="Error clicks" value={errorClicks.toLocaleString("fr-FR")} tone={errorClicks > 0 ? "poor" : "good"} />
             <HeroStat
               label="Élément le plus lent"
               value={worstEl ? fmtVital("INP", Number(worstEl.p75)) : "—"}
@@ -201,14 +203,16 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
   );
 }
 
-function KindChip({ kind }: { kind: "rage" | "dead" }) {
+function KindChip({ kind }: { kind: "rage" | "dead" | "error" }) {
   const cls =
     kind === "rage"
       ? "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300"
-      : "border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300";
+      : kind === "error"
+        ? "border-fuchsia-300 bg-fuchsia-100 text-fuchsia-800 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/10 dark:text-fuchsia-300"
+        : "border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300";
   return (
     <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${cls}`}>
-      {kind === "rage" ? "rage" : "dead"}
+      {kind === "rage" ? "rage" : kind === "error" ? "error" : "dead"}
     </span>
   );
 }

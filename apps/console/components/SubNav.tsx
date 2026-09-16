@@ -16,8 +16,8 @@ export function SubNav() {
   if (cat.verrouille) return null;
 
   return (
-    <div className="flex items-center gap-1 border-b border-line bg-panel px-6">
-      <span className="mr-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+    <div className="flex items-center gap-1 overflow-x-auto border-b border-line bg-panel px-4 sm:px-6">
+      <span className="mr-2 hidden shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint md:inline">
         {cat.label}
       </span>
       {cat.children.map((t) => {
@@ -26,7 +26,7 @@ export function SubNav() {
           <Link
             key={t.href}
             href={qs ? `${t.href}?${qs}` : t.href}
-            className={`-mb-px border-b-2 px-3 py-2.5 text-sm font-medium transition ${
+            className={`-mb-px shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
               active
                 ? "border-perf text-ink"
                 : "border-transparent text-ink-soft hover:text-ink"

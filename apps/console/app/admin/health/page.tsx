@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireAdmin } from "@/lib/auth";
 import { dogfoodingEndpoint, ingestEndpoint } from "@/lib/ingest-endpoint";
 import { internalHealth } from "@/lib/queries-health";
-import { identityPersistenceHealth } from "@/lib/health";
+import { causalActionsHealth, identityPersistenceHealth } from "@/lib/health";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,10 @@ export const dynamic = "force-dynamic";
 export default async function Health() {
   await requireAdmin();
   const h = await internalHealth();
-  const identity = await identityPersistenceHealth();
+  const [identity, causal] = await Promise.all([
+    identityPersistenceHealth(),
+    causalActionsHealth(),
+  ]);
 
   // Où le capteur de la console POSTE réellement, résolu comme il l'est pour le
   // navigateur. Affiché parce que sa panne est SILENCIEUSE : NEXT_PUBLIC_RUM_ENDPOINT
@@ -52,6 +55,13 @@ export default async function Health() {
           {!identity.configured && <><code>IDENTITY_HASH_SECRET</code> est absent. </>}
           {!identity.schema && <>La migration v66 n&apos;est pas détectée. </>}
           Les identifiants user/account sont omis si nécessaire, tandis que la télémétrie existante continue.
+        </div>
+      )}
+
+      {causal.label === "degraded" && (
+        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200" data-testid="causal-actions-health-degraded">
+          <strong>Actions causales dégradées.</strong> La migration v67 n&apos;est pas détectée :
+          l&apos;ingestion P2 continue sans interruption, mais les liens et le classement Top Actions restent indisponibles.
         </div>
       )}
 

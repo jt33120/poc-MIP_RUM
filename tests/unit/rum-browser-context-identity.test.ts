@@ -35,7 +35,7 @@ function payload(app = "app-a") {
           attr("mip.route", "/checkout"),
           attr("mip.event_type", "action"),
           attr("mip.event_name", "checkout"),
-          attr("mip.action_id", "action-1"),
+          attr("mip.action_id", "11111111-2222-4333-8444-555555555555"),
           attr("mip.identity.user_id", "alice@example.test"),
           attr("mip.identity.account_id", "customer-42"),
           attr("mip.context", JSON.stringify({ plan: "pro", email: "alice@example.test" })),
@@ -103,19 +103,37 @@ describe("contexte navigateur P2", () => {
     vi.stubGlobal("crypto", saved);
   });
 
-  it("préserve beforeSend(attrs), fournit meta et protège les champs mip.*", () => {
+  it("préserve beforeSend(attrs), fournit meta, protège l'enveloppe et permet de pseudonymiser le nom", () => {
     let metaSeen: unknown;
     const attrs = { "mip.session_id": "real", "mip.visitor_id": "visitor", custom: "before" };
     const legacy = applyBeforeSend((input) => ({
       ...input, custom: "after", "mip.session_id": "fake", "mip.visitor_id": "fake",
     }), attrs, { type: "custom", name: "signup" });
     expect(legacy).toEqual({ custom: "after", "mip.session_id": "real", "mip.visitor_id": "visitor" });
+    const actionAttrs = { ...attrs, "mip.event_name": "checkout" };
     const modern = applyBeforeSend((input, meta) => {
       metaSeen = meta;
       return input;
-    }, attrs, { type: "action", name: "checkout" });
-    expect(modern).toEqual(attrs);
+    }, actionAttrs, { type: "action", name: "checkout" });
+    expect(modern).toEqual(actionAttrs);
     expect(metaSeen).toEqual({ type: "action", name: "checkout" });
+    expect(applyBeforeSend((input) => ({
+      ...input,
+      "mip.event_name": "checkout.submit",
+      "mip.session_id": "fake",
+    }), { ...attrs, "mip.event_name": "Jean Dupont" }, { type: "action", name: "Jean Dupont" }))
+      .toMatchObject({ "mip.event_name": "checkout.submit", "mip.session_id": "real" });
+    expect(applyBeforeSend((input) => {
+      const next = { ...input };
+      delete next["mip.event_name"];
+      return next;
+    }, { ...attrs, "mip.event_name": "Jean Dupont" }, { type: "action", name: "Jean Dupont" }))
+      .toBeNull();
+    expect(applyBeforeSend((input) => ({
+      ...input,
+      "mip.event_name": "x".repeat(101),
+    }), { ...attrs, "mip.event_name": "Payer" }, { type: "action", name: "Payer" }))
+      .toBeNull();
     expect(applyBeforeSend(() => null, attrs, { type: "custom", name: "drop" })).toBeNull();
   });
 });
