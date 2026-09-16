@@ -13,6 +13,8 @@ export function RuleFields({
   rule?: AlertRuleRow;
   defaultApp?: string;
 }) {
+  const selectedMetric = rule?.metric.startsWith("event:") ? "event" : (rule?.metric ?? "LCP");
+  const eventName = rule?.metric.startsWith("event:") ? rule.metric.slice(6) : "";
   return (
     <>
       <Field label="App">
@@ -25,13 +27,22 @@ export function RuleFields({
         </select>
       </Field>
       <Field label="Métrique">
-        <select name="metric" defaultValue={rule?.metric ?? "LCP"} className={INPUT_CLASS}>
+        <select name="metric" defaultValue={selectedMetric} className={INPUT_CLASS}>
           {ALERT_METRICS.map((m) => (
             <option key={m} value={m}>
               {metricLabel(m)}
             </option>
           ))}
         </select>
+      </Field>
+      <Field label="Nom d’événement">
+        <input
+          name="event_name"
+          defaultValue={eventName}
+          maxLength={100}
+          placeholder="checkout (si métrique événement)"
+          className={`${INPUT_CLASS} w-48`}
+        />
       </Field>
       <Field label="Mode">
         <select name="mode" defaultValue={rule?.mode ?? "threshold"} className={INPUT_CLASS}>
@@ -119,8 +130,8 @@ export function RuleFields({
       </Field>
       <p className="w-full text-xs text-ink-faint">
         (seuil = mode &laquo;&nbsp;threshold&nbsp;&raquo; ; sensibilité = mode &laquo;&nbsp;baseline&nbsp;&raquo;).{" "}
-        <strong>Logs ERROR</strong> se cumule sur la fenêtre — p.&nbsp;ex. un seuil sur une fenêtre de
-        1440&nbsp;min.
+        <strong>Logs ERROR</strong> et <strong>Événement custom</strong> se cumulent sur la fenêtre —
+        les heures inactives valent zéro pour la baseline.
       </p>
     </>
   );

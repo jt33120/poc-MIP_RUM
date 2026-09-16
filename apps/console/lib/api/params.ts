@@ -48,6 +48,6 @@ export function parseApiFilters(sp: URLSearchParams, principal: ApiPrincipal): A
     v2: { app: app ?? "all", period, device: v2Device },
     app,
     period,
-    device: dev || null,
+    device: ["mobile", "desktop", "tablet"].includes(dev) ? dev : null,
   };
 }

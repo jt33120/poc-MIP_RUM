@@ -3,11 +3,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { boundedEventProps, flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
 import {
   EVENT_INDEX_KINDS,
   EVENT_INDEX_MAX_OFFSET,
+  encodeEventCursor,
+  parseEventAttribute,
+  parseEventCursor,
   parseEventKind,
+  parseEventName,
   parseEventPage,
 } from "../../apps/console/lib/queries-events";
 
@@ -33,6 +37,42 @@ function fixtureAvecIdsNatifs() {
 }
 
 describe("flattenOtlp — rum_event_index", () => {
+  it("borne les props avant persistance et facettage", () => {
+    const props = Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`key_${i}`, "x".repeat(800)]));
+    const bounded = boundedEventProps(props) as Record<string, string>;
+    expect(Object.keys(bounded).length).toBeLessThanOrEqual(64);
+    expect(Object.values(bounded).every((value) => value.length <= 500)).toBe(true);
+    expect(new TextEncoder().encode(JSON.stringify(bounded)).length).toBeLessThanOrEqual(12 * 1024);
+  });
+
+  it("applique le bornage dans le vrai chemin flattenOtlp avant écriture", () => {
+    const stringValue = (value: string) => ({ stringValue: value });
+    const huge = Object.fromEntries(Array.from({ length: 5_000 }, (_, i) => [
+      i === 0 ? "token" : `key_${i}`,
+      i === 0 ? "sk-live-super-secret" : `jane${i}@example.test-${"x".repeat(700)}`,
+    ]));
+    const rows = flattenOtlp({
+      resourceSpans: [{
+        resource: { attributes: [{ key: "mip.app_id", value: stringValue("safe-app") }] },
+        scopeSpans: [{ spans: [{
+          name: "track.checkout",
+          spanId: "00000000000068ff",
+          startTimeUnixNano: "1760000000000000000",
+          attributes: [
+            { key: "mip.session_id", value: stringValue("session-safe") },
+            { key: "mip.route", value: stringValue("/checkout") },
+            { key: "mip.props", value: stringValue(JSON.stringify(huge)) },
+          ],
+        }] }],
+      }],
+    });
+    expect(rows.events).toHaveLength(1);
+    const persisted = rows.events[0].props as Record<string, unknown>;
+    expect(new TextEncoder().encode(JSON.stringify(persisted)).length).toBeLessThanOrEqual(12 * 1024);
+    expect(persisted.token == null || persisted.token === "[redacted]").toBe(true);
+    expect(JSON.stringify(persisted)).not.toContain("example.test");
+  });
+
   it("projette chaque collection RUM reconnue avec sa seule identité native", () => {
     const rows = flattenOtlp(fixtureAvecIdsNatifs(), { now: Date.parse("2025-10-09T09:00:00Z") });
     const sourceCount = rows.pageviews.length + rows.metrics.length + rows.errors.length +
@@ -140,5 +180,38 @@ describe("contrat de lecture v1 de rum_event_index", () => {
       limit: 200,
       offset: EVENT_INDEX_MAX_OFFSET,
     });
+  });
+
+  it("parse une égalité primitive top-level et refuse JSONPath/type/taille hostiles", () => {
+    expect(parseEventAttribute(new URLSearchParams("attr_source=props&attr_key=plan&attr_type=string&attr_value=pro"))).toEqual({
+      source: "props", key: "plan", type: "string", value: "pro",
+    });
+    expect(parseEventAttribute(new URLSearchParams("attr_source=context&attr_key=score&attr_type=number&attr_value=2.5"))).toMatchObject({ value: 2.5 });
+    expect(parseEventAttribute(new URLSearchParams("attr_source=props&attr_key=enabled&attr_type=boolean&attr_value=true"))).toMatchObject({ value: true });
+    expect(parseEventAttribute(new URLSearchParams("attr_source=props&attr_key=enabled&attr_type=boolean&attr_value=false"))).toMatchObject({ value: false });
+    expect(parseEventAttribute(new URLSearchParams("attr_source=context&attr_key=campaign&attr_type=null"))).toMatchObject({ value: null });
+    expect(parseEventAttribute(new URLSearchParams("attr_source=props&attr_key=enabled&attr_type=boolean&attr_value=yes"))).toBeUndefined();
+    expect(parseEventAttribute(new URLSearchParams("attr_source=props&attr_key=$.secret&attr_type=string&attr_value=x"))).toBeUndefined();
+    expect(parseEventAttribute(new URLSearchParams(`attr_source=props&attr_key=plan&attr_type=string&attr_value=${"x".repeat(501)}`))).toBeUndefined();
+    expect(parseEventName("checkout")).toBe("checkout");
+    expect(parseEventName("x".repeat(101))).toBeUndefined();
+  });
+
+  it("encode un curseur opaque (ts,id) et refuse un curseur modifié", () => {
+    const cursor = encodeEventCursor({ ts: new Date("2026-09-16T10:00:00Z"), id: "9007199254740993" });
+    expect(parseEventCursor(cursor)).toEqual({ ts: "2026-09-16T10:00:00.000Z", id: "9007199254740993" });
+    expect(parseEventCursor("%%%sql%%%")).toBeUndefined();
+    expect(parseEventCursor(Buffer.from(JSON.stringify(["bad-date", "1"])).toString("base64url"))).toBeUndefined();
+    expect(parseEventCursor(Buffer.from(JSON.stringify(["2026-09-16T10:00:00Z", "9".repeat(40)])).toString("base64url"))).toBeUndefined();
+    expect(parseEventCursor(Buffer.from(JSON.stringify(["2026-09-16T10:00:00Z", "9223372036854775808"])).toString("base64url"))).toBeUndefined();
+  });
+
+  it("préserve les microsecondes PostgreSQL nécessaires aux égalités de timestamp", () => {
+    const cursor = encodeEventCursor({
+      ts: new Date("2026-09-16T10:00:00.123Z"),
+      cursor_ts: "2026-09-16T10:00:00.123456Z",
+      id: "42",
+    });
+    expect(parseEventCursor(cursor)).toEqual({ ts: "2026-09-16T10:00:00.123456Z", id: "42" });
   });
 });

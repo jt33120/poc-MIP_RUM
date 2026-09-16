@@ -1,8 +1,8 @@
 "use server";
 // Server Actions des tableaux de bord configurables (P1). Validation côté serveur
 // puis CRUD via lib/queries-dashboards ; le layout est normalisé par updateLayout.
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "@/lib/next-cache";
 import {
   defaultTitle,
   WIDGET_META,
@@ -90,12 +90,21 @@ export async function addWidgetAction(fd: FormData): Promise<void> {
     }
     metric = m;
   }
+  let eventName: string | undefined;
+  if (WIDGET_META[wtype].needsEventName) {
+    const name = String(fd.get("event_name") ?? "").trim();
+    if (!name || name.length > 100 || /[\u0000-\u001F\u007F]/.test(name)) {
+      throw new Error("nom d’événement invalide");
+    }
+    eventName = name;
+  }
   const dash = await dashboardAutorise(id);
   if (!dash) return;
   const widget: Widget = {
     type: wtype,
-    title: defaultTitle(wtype, metric),
+    title: defaultTitle(wtype, metric, eventName),
     ...(metric ? { metric } : {}),
+    ...(eventName ? { eventName } : {}),
   };
   await updateLayout(id, [...dash.layout, widget]);
   revalidatePath(`/dashboards/${id}`);

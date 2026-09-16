@@ -123,6 +123,17 @@ jobs:
           DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum_rls \
             pnpm test:isolation
 
+      # P4 — vérifie sur PostgreSQL réel le comptage event:<nom>, son isolation
+      # tenant, la baseline zero-filled et les index de l'Explorer.
+      - name: Alerting événements custom (base dédiée)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'create database mip_rum_alerting'
+          DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum_alerting \
+            pnpm test:alerting
+
       # SVI I0 — le modèle d'appel porte les propriétés dont dépendent tous les
       # taux affichés (containment, abandon, transfert) : écriture désordonnée,
       # rejeu idempotent, issue non inventable, saisie sensible sans longueur.

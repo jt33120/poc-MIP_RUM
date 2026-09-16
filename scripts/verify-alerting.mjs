@@ -9,10 +9,22 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 
 const SQL = (f) => new URL(`../apps/ingest/sql/${f}`, import.meta.url);
-const MIGR = ["schema.sql", ...["02","03","04","05","07","08","09","10","11","12","13","14","15","16","17","45","46","49","50"].map((n) => `migration-v${n}.sql`)];
+const MIGR = ["schema.sql", ...[
+  "02","03","04","05","07","08","09","10","11","12","13","14","15","16","17",
+  "20","29","45","46","49","50","58","62","65","66","68",
+].map((n) => `migration-v${n}.sql`)];
 
 async function applyAll(c) {
   for (const f of MIGR) {
+    // v62/v65 consume the fail-closed helper introduced by v47. This focused
+    // verifier intentionally does not replay the full tenant-isolation stack,
+    // so install the same helper before creating rum_event_index.
+    if (f === "migration-v62.sql") {
+      await c.query(`create or replace function current_app_ids() returns text[] language sql stable as $$
+        select case when nullif(current_setting('app.current_app_ids', true), '') is null
+          then array[]::text[] else string_to_array(current_setting('app.current_app_ids', true), ',') end
+      $$`);
+    }
     try { await c.query(await readFile(SQL(f), "utf8")); }
     catch (e) { if (!/pg_cron|pg_net|cron\.|net\.|extension/i.test(String(e.message))) throw e; }
   }
@@ -61,6 +73,66 @@ async function main() {
   const bmsg = (await c.query(`select message from alert_event ae join alert_rule r on r.id=ae.rule_id
                                where r.mode='baseline' order by ae.id desc limit 1`)).rows[0]?.message ?? "";
   assert("baseline : message mentionne le normal (≈)", /normal≈/.test(bmsg));
+
+  // ── P4 : événements custom, threshold + baseline zero-filled ─────────────
+  await c.query("insert into app_registry (app_id, name) values ('app-b','B') on conflict do nothing");
+  await c.query("insert into rum_session (session_id, app_id) values ('s2','app-b') on conflict do nothing");
+  await c.query("update rum_session set sample_rate=0.5 where session_id='s1' and app_id='app-a'");
+  await c.query(`with ins as (
+                   insert into rum_event (span_id,session_id,app_id,route,name,props,ts)
+                   values ('0000000000006801','s1','app-a','/checkout','checkout','{"plan":"pro"}',now()-interval '2 min'),
+                          ('0000000000006802','s1','app-a','/checkout','checkout','{"plan":"pro"}',now()-interval '1 min')
+                   returning span_id,session_id,app_id,route,name,ts
+                 )
+                 insert into rum_event_index (app_id,session_id,ts,route,kind,source_span_id)
+                 select app_id,session_id,ts,route,'event',span_id from ins`);
+  await c.query(`with ins as (
+                   insert into rum_event (span_id,session_id,app_id,route,name,props,ts)
+                   select lpad(to_hex(50000+g),16,'0'),'s2','app-b','/checkout','checkout','{}',now()-interval '1 min'
+                     from generate_series(1,20) g
+                   returning span_id,session_id,app_id,route,ts
+                 )
+                 insert into rum_event_index (app_id,session_id,ts,route,kind,source_span_id)
+                 select app_id,session_id,ts,route,'event',span_id from ins`);
+  await c.query(`insert into alert_rule (app_id,metric,comparator,threshold,window_minutes,mode,severity)
+                 values ('app-a','event:checkout','>',1,15,'threshold','warning')`);
+  assert("event threshold : compte uniquement l'app de la règle", (await fire(c)) >= 1);
+  const eventValue = Number((await c.query(`select ae.value from alert_event ae join alert_rule r on r.id=ae.rule_id
+                                             where r.metric='event:checkout' order by ae.id desc limit 1`)).rows[0]?.value);
+  assert("event threshold : valeur observée app-a = 2 (aucune fuite app-b)", eventValue === 2);
+  const eventMessage = String((await c.query(`select ae.message from alert_event ae join alert_rule r on r.id=ae.rule_id
+                                               where r.metric='event:checkout' order by ae.id desc limit 1`)).rows[0]?.message ?? "");
+  assert("event threshold : message signale le sampling sans extrapoler", /échantillon/.test(eventMessage) && /sans extrapolation/.test(eventMessage));
+
+  // 20 événements existent dans l'heure historique mais HORS de la fenêtre
+  // de 30 min. Une baseline figée à l'heure compterait 20 ; la baseline alignée
+  // sur la règle voit cinq zéros (MAD=0) et doit détecter le pic courant.
+  for (const w of [1, 2, 3, 4, 5]) {
+    await c.query(`with ins as (
+                     insert into rum_event (span_id,session_id,app_id,route,name,props,ts)
+                     select lpad(to_hex(30000+$1*100+g),16,'0'),'s1','app-a','/signup','signup','{}',
+                            now() - make_interval(weeks => $1) - interval '45 min'
+                       from generate_series(1,20) g
+                     returning span_id,session_id,app_id,route,ts
+                   )
+                   insert into rum_event_index (app_id,session_id,ts,route,kind,source_span_id)
+                   select app_id,session_id,ts,route,'event',span_id from ins`, [w]);
+  }
+  await c.query(`with ins as (
+                   insert into rum_event (span_id,session_id,app_id,route,name,props,ts)
+                   select lpad(to_hex(40000+g),16,'0'),'s1','app-a','/signup','signup','{}',now()-interval '1 min'
+                     from generate_series(1,10) g
+                   returning span_id,session_id,app_id,route,ts
+                 )
+                 insert into rum_event_index (app_id,session_id,ts,route,kind,source_span_id)
+                 select app_id,session_id,ts,route,'event',span_id from ins`);
+  await c.query(`insert into alert_rule (app_id,metric,route,comparator,threshold,window_minutes,mode,sensitivity,baseline_weeks,severity)
+                 values ('app-a','event:signup','/signup','>',999999,30,'baseline',3,5,'critical')`);
+  assert("event baseline : fenêtre 30 min, zéros et MAD=0 déclenchent sur le pic", (await fire(c)) >= 1);
+
+  const eventIndex = await c.query(`select indexname from pg_indexes where indexname in
+    ('idx_rum_event_explorer_v68','idx_rum_event_props_v68','idx_event_context_v66')`);
+  assert("v68 : index explorer/props + GIN context v66 présents", eventIndex.rowCount === 3);
 
   // ── Pilier 2 : SLO + burn ──────────────────────────────────────────────────
   // SLO LCP 99% / 28 j. Dernière heure dégradée (20% poor) -> fast burn.

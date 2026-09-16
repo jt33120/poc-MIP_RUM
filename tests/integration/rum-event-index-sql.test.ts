@@ -59,6 +59,32 @@ function lot(app = APP, session = "p1-index-session") {
   });
 }
 
+function oversizedEventLot() {
+  const stringValue = (value: string) => ({ stringValue: value });
+  const props = Object.fromEntries(Array.from({ length: 200 }, (_, i) => [
+    i === 0 ? "token" : `key_${i}`,
+    i === 0 ? "sk-live-secret" : "x".repeat(700),
+  ]));
+  const now = (BigInt(Date.now()) * 1_000_000n).toString();
+  return flattenOtlp({
+    resourceSpans: [{
+      resource: { attributes: [{ key: "mip.app_id", value: stringValue(APP) }] },
+      scopeSpans: [{ spans: [{
+        name: "track.oversized",
+        spanId: "00000000000068ee",
+        traceId: "000000000000000000000000000068ee",
+        startTimeUnixNano: now,
+        endTimeUnixNano: now,
+        attributes: [
+          { key: "mip.session_id", value: stringValue("p4-oversized-session") },
+          { key: "mip.route", value: stringValue("/oversized") },
+          { key: "mip.props", value: stringValue(JSON.stringify(props)) },
+        ],
+      }] }],
+    }],
+  });
+}
+
 function vitalsConsolides() {
   const stringValue = (value: string) => ({ stringValue: value });
   const attrs = (values: Record<string, string | number>) => Object.entries(values).map(([key, value]) => ({
@@ -122,6 +148,24 @@ afterAll(async () => {
 });
 
 suite("rum_event_index — projection, idempotence et confidentialité", () => {
+  it("écrit un payload custom hostile sans dépasser la contrainte v68", async () => {
+    await clean(APP);
+    try {
+      const rows = oversizedEventLot();
+      await writeRows(pool, rows);
+      const stored = (await pool.query<{ kind: string; bytes: number; props: Record<string, unknown> }>(
+        `select jsonb_typeof(props) as kind, octet_length(props::text)::int as bytes, props
+           from rum_event where app_id=$1 and name='oversized'`,
+        [APP],
+      )).rows[0];
+      expect(stored.kind).toBe("object");
+      expect(stored.bytes).toBeLessThanOrEqual(16 * 1024);
+      expect(JSON.stringify(stored.props)).not.toContain("sk-live-secret");
+    } finally {
+      await clean(APP);
+    }
+  });
+
   it("indexe une seule fois chaque signal source et ne change pas le métering", async () => {
     await clean(APP);
     const rows = lot();

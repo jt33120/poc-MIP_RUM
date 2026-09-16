@@ -15,7 +15,7 @@ const botClause = (f: Filters, alias: string): string =>
 // vue « toutes apps ». Quand une app précise est sélectionnée, AUCUNE exclusion —
 // l'app interne reste consultable. N'ajoute aucun paramètre (sous-requête pure),
 // donc composable dans toutes les requêtes sans décaler l'indexation $n.
-export const internalClause = (f: Filters, appCol: string): string =>
+export const internalClause = (f: Pick<Filters, "app" | "includeInternal">, appCol: string): string =>
   f.app || f.includeInternal
     ? ""
     : ` and ${appCol} not in (select app_id from app_registry where internal)`;

@@ -59,8 +59,8 @@ export default async function Alerts({
         }
         sub={
           <>
-            Se déclenchent quand un vital (p75) ou le taux d&apos;erreur franchit son seuil sur la fenêtre —
-            évaluation automatique côté base, notification par webhook
+            Se déclenchent quand un vital (p75), un taux d&apos;erreur ou le compte d&apos;un événement custom
+            franchit son seuil ou sa baseline — évaluation automatique côté base, notification par webhook
           </>
         }
       >

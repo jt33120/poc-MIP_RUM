@@ -11,14 +11,14 @@
 //
 // `requireAdmin()` redirige (/login si anonyme, / si viewer) : posé en première
 // ligne, il coupe l'action avant toute lecture du formulaire.
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "@/lib/next-cache";
 import { ALERT_MODES, ALERT_SEVERITIES, CHANNEL_KINDS } from "@/lib/alerting";
 import { requireAdmin } from "@/lib/auth";
 import {
   acknowledgeAlertEvent,
   ALERT_COMPARATORS,
-  ALERT_METRICS,
+  isAlertMetric,
   insertAlertRule,
   runCheckAlerts,
   runCheckSloBurn,
@@ -39,8 +39,10 @@ import {
 } from "@/lib/queries-alerting";
 
 function ruleFromForm(fd: FormData): RuleInput {
-  const metric = String(fd.get("metric") ?? "");
-  if (!(ALERT_METRICS as readonly string[]).includes(metric)) {
+  const selectedMetric = String(fd.get("metric") ?? "");
+  const eventName = String(fd.get("event_name") ?? "").trim();
+  const metric = selectedMetric === "event" ? `event:${eventName}` : selectedMetric;
+  if (!isAlertMetric(metric) || metric === "event") {
     throw new Error(`metric invalide : ${metric}`);
   }
   const comparator = String(fd.get("comparator") ?? ">");

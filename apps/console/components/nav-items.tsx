@@ -32,6 +32,7 @@ export const CATEGORIES: NavCategory[] = [
       { href: "/errors", label: "Erreurs JS" },
       { href: "/ux", label: "Frustration" },
       { href: "/actions", label: "Actions" },
+      { href: "/events", label: "Événements" },
       { href: "/experience", label: "Expérience" },
     ],
   },

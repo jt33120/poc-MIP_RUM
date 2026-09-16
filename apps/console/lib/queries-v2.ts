@@ -6,6 +6,7 @@ import { q } from "./db";
 // clés et leurs intervalles ; tests/unit/erreurs-fenetre.test.ts vérifie qu'elles
 // ne divergent pas, plutôt que d'introduire ici une troisième copie du seau.
 import { nombreDeSeaux, seauEnSecondes } from "./filters";
+import { isValidEventName } from "./queries-events";
 
 // ---------------------------------------------------------------------------
 // Filtres globaux — MODÈLE HISTORIQUE « v2 » (app/period/device)
@@ -417,7 +418,7 @@ export const SLO_METRICS = ["LCP", "INP", "CLS", "FCP", "TTFB", "error_rate"] as
 // Métriques éligibles comme RÈGLE D'ALERTE : les métriques SLO + deux métriques
 // opérationnelles absolues (budget IA, pics d'erreurs applicatives) évaluées par
 // check_alerts (migration-v38).
-export const ALERT_METRICS = [...SLO_METRICS, "log_errors"] as const;
+export const ALERT_METRICS = [...SLO_METRICS, "log_errors", "event"] as const;
 export const ALERT_COMPARATORS = [">", "<"] as const;
 
 /** Libellé lisible + unité d'une métrique d'alerte/SLO (dropdowns, feed d'événements). */
@@ -429,11 +430,18 @@ export const METRIC_LABELS: Record<string, string> = {
   TTFB: "TTFB (ms)",
   error_rate: "Taux d'erreur JS",
   log_errors: "Logs ERROR (nombre)",
+  event: "Événement custom (nombre)",
 };
 
 /** Libellé d'une métrique (repli : la clé brute si inconnue). */
 export function metricLabel(metric: string): string {
+  if (metric.startsWith("event:")) return `Événement « ${metric.slice(6)} » (nombre)`;
   return METRIC_LABELS[metric] ?? metric;
+}
+
+export function isAlertMetric(metric: string): boolean {
+  if (metric !== "event" && (ALERT_METRICS as readonly string[]).includes(metric)) return true;
+  return metric.startsWith("event:") && isValidEventName(metric.slice(6));
 }
 
 export interface AlertRuleRow {

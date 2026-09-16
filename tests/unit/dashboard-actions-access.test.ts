@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/next-cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getUser: vi.fn() }));
 vi.mock("@/lib/dashboard-access", () => ({
@@ -14,10 +14,11 @@ vi.mock("@/lib/queries-dashboards", () => ({
   updateLayout: vi.fn(),
 }));
 
-import { createDashboardAction, deleteDashboardAction, renameDashboardAction } from "@/app/dashboards/actions";
+import { addWidgetAction, createDashboardAction, deleteDashboardAction, renameDashboardAction } from "@/app/dashboards/actions";
 import { getUser } from "@/lib/auth";
 import { canCreateDashboard, getWritableDashboard } from "@/lib/dashboard-access";
-import { deleteDashboard, insertDashboard, updateDashboardMeta } from "@/lib/queries-dashboards";
+import { deleteDashboard, insertDashboard, updateDashboardMeta, updateLayout } from "@/lib/queries-dashboards";
+import { revalidatePath } from "@/lib/next-cache";
 
 const form = (entries: Record<string, string>) => {
   const fd = new FormData();
@@ -40,5 +41,26 @@ describe("actions dashboards — lecture transverse ≠ écriture", () => {
     expect(insertDashboard).not.toHaveBeenCalled();
     expect(updateDashboardMeta).not.toHaveBeenCalled();
     expect(deleteDashboard).not.toHaveBeenCalled();
+  });
+
+  it("ajoute un widget event_count valide au dashboard autorisé", async () => {
+    vi.mocked(getUser).mockResolvedValue({ email: "admin@example.test", role: "admin", apps: null });
+    vi.mocked(getWritableDashboard).mockResolvedValue({
+      id: 44,
+      name: "Ops",
+      app_id: "app-a",
+      created_by: "admin@example.test",
+      created_at: new Date("2026-09-16T10:00:00Z"),
+      updated_at: new Date("2026-09-16T10:00:00Z"),
+      layout: [{ type: "traffic", title: "Trafic" }],
+    });
+
+    await addWidgetAction(form({ id: "44", type: "event_count", event_name: " checkout " }));
+
+    expect(updateLayout).toHaveBeenCalledWith(44, [
+      { type: "traffic", title: "Trafic" },
+      { type: "event_count", eventName: "checkout", title: "Événements · checkout" },
+    ]);
+    expect(revalidatePath).toHaveBeenCalledWith("/dashboards/44");
   });
 });

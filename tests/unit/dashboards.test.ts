@@ -31,6 +31,14 @@ describe("normalizeLayout", () => {
     expect(w.title).toBe(defaultTitle("traffic"));
   });
 
+  it("event_count exige un nom borné et le conserve pour le rendu/export partagé", () => {
+    expect(normalizeLayout([{ type: "event_count" }])).toEqual([]);
+    expect(normalizeLayout([{ type: "event_count", eventName: "x".repeat(101) }])).toEqual([]);
+    expect(normalizeLayout([{ type: "event_count", eventName: "checkout" }])).toEqual([{
+      type: "event_count", eventName: "checkout", title: "Événements · checkout",
+    }]);
+  });
+
   it("borne le nombre de widgets à MAX_WIDGETS", () => {
     const many = Array.from({ length: MAX_WIDGETS + 10 }, () => ({ type: "traffic" }));
     expect(normalizeLayout(many)).toHaveLength(MAX_WIDGETS);

@@ -88,6 +88,7 @@ export function buildOpenApi(): Record<string, unknown> {
   const eventPageParams = [
     { $ref: "#/components/parameters/limit" },
     { $ref: "#/components/parameters/eventOffset" },
+    { $ref: "#/components/parameters/eventCursor" },
   ];
 
   return {
@@ -179,11 +180,20 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       "/events": {
         get: get(
-          "Événements RUM indexés (projection minimale, paginée)",
+          "Explorer les événements RUM : journal, tendance et facettes bornées",
           "rum",
-          o({ events: arr(ref("EventIndexRow")), page: ref("Page") }, ["events", "page"]),
+          ref("EventExplorer"),
           {
-            params: [{ $ref: "#/components/parameters/app" }, { $ref: "#/components/parameters/eventKind" }, ...eventPageParams],
+            params: [
+              ...commonFilters,
+              { $ref: "#/components/parameters/eventKind" },
+              { $ref: "#/components/parameters/eventName" },
+              { $ref: "#/components/parameters/eventAttrSource" },
+              { $ref: "#/components/parameters/eventAttrKey" },
+              { $ref: "#/components/parameters/eventAttrType" },
+              { $ref: "#/components/parameters/eventAttrValue" },
+              ...eventPageParams,
+            ],
             extraResponses: { "400": ref0("BadRequest") },
           },
         ),
@@ -251,6 +261,12 @@ export function buildOpenApi(): Record<string, unknown> {
         limit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 200 }, description: "taille de page (borné 1..200)" },
         offset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0 }, description: "décalage de page" },
         eventOffset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0, maximum: 10000 }, description: "décalage du journal d'événements (borné à 10 000)" },
+        eventCursor: { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "curseur opaque (ts,id) renvoyé dans page.next_cursor" },
+        eventName: { name: "name", in: "query", schema: { type: "string", minLength: 1, maxLength: 100 }, description: "nom exact d'événement custom" },
+        eventAttrSource: { name: "attr_source", in: "query", schema: { type: "string", enum: ["props", "context"] }, description: "objet top-level portant l'attribut" },
+        eventAttrKey: { name: "attr_key", in: "query", schema: { type: "string", pattern: "^[A-Za-z][A-Za-z0-9_.-]{0,99}$" }, description: "clé top-level sûre, jamais JSONPath" },
+        eventAttrType: { name: "attr_type", in: "query", schema: { type: "string", enum: ["string", "number", "boolean", "null"] }, description: "type JSON primitif exact" },
+        eventAttrValue: { name: "attr_value", in: "query", schema: { type: "string", maxLength: 500 }, description: "valeur exacte sérialisée selon attr_type" },
         actionOffset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0, maximum: 10000 }, description: "décalage du classement d'actions (borné à 10 000)" },
       },
       responses: {
@@ -311,8 +327,25 @@ export function buildOpenApi(): Record<string, unknown> {
           ["session_id", "app_id"],
         ),
         EventIndexRow: o(
-          { id: { type: "string", pattern: "^[0-9]+$", description: "bigint PostgreSQL (int64) sérialisé en chaîne pour éviter la perte de précision JavaScript" }, app_id: str, session_id: nul(str), ts: dateTime, route: nul(str), kind: { type: "string", enum: ["pageview", "vital", "error", "resource", "longtask", "breadcrumb", "event", "span"] }, source_name: nul(str), source_span_id: str },
+          { id: { type: "string", pattern: "^[0-9]+$", description: "bigint PostgreSQL (int64) sérialisé en chaîne pour éviter la perte de précision JavaScript" }, app_id: str, session_id: nul(str), ts: dateTime, route: nul(str), kind: { type: "string", enum: ["pageview", "vital", "error", "resource", "longtask", "breadcrumb", "event", "span"] }, source_name: nul(str), source_span_id: str, name: nul(str), props: nul(o({})), context: nul(o({})), device_type: nul(str) },
           ["id", "app_id", "ts", "kind", "source_span_id"],
+        ),
+        EventTrendRow: o({ bucket: dateTime, count: int }, ["bucket", "count"]),
+        EventNameFacet: o({ value: str, count: int }, ["value", "count"]),
+        EventAttributeFacet: o({ source: { type: "string", enum: ["props", "context"] }, key: str, count: int }, ["source", "key", "count"]),
+        EventValueFacet: o({ type: { type: "string", enum: ["string", "number", "boolean", "null"] }, value: nul(str), count: int }, ["type", "count"]),
+        EventSamplingNotice: o({ min_sample_rate: num, message: str }, ["min_sample_rate", "message"]),
+        EventExplorer: o(
+          {
+            events: arr(ref("EventIndexRow")),
+            page: o({ limit: int, offset: int, next_cursor: nul(str) }, ["limit", "offset", "next_cursor"]),
+            total: int,
+            trend: arr(ref("EventTrendRow")),
+            facets: o({ names: arr(ref("EventNameFacet")), attributes: arr(ref("EventAttributeFacet")), values: arr(ref("EventValueFacet")) }, ["names", "attributes", "values"]),
+            sampling_notice: nul(ref("EventSamplingNotice")),
+            enrichment: o({ available: { type: "boolean" }, diagnostic: nul(str) }, ["available"]),
+          },
+          ["events", "page", "total", "trend", "facets", "sampling_notice", "enrichment"],
         ),
         TopActionRow: o(
           {

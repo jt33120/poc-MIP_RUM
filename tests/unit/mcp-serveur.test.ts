@@ -107,6 +107,32 @@ describe("construireChemin", () => {
       "/sessions/s1",
     );
   });
+
+  it("construit l'Explorer d'événements sans interpréter clé, valeur ou curseur", () => {
+    expect(construireChemin(outil("mip_rum_list_events"), {
+      app: "gip", period: "1h", kind: "event", name: "checkout",
+      attr_source: "props", attr_key: "plan", attr_type: "string", attr_value: "pro",
+      limit: 25, cursor: "opaque_cursor",
+    })).toBe("/events?app=gip&period=1h&kind=event&name=checkout&attr_source=props&attr_key=plan&attr_type=string&attr_value=pro&limit=25&cursor=opaque_cursor");
+  });
+
+  it("cible les événements custom par défaut", () => {
+    expect(construireChemin(outil("mip_rum_list_events"), { app: "gip" })).toBe(
+      "/events?app=gip&kind=event",
+    );
+  });
+
+  it("refuse localement un filtre d'attribut partiel", () => {
+    expect(() => construireChemin(outil("mip_rum_list_events"), {
+      attr_source: "props",
+      attr_key: "plan",
+    })).toThrow(/filtre d'attribut incomplet/);
+    expect(construireChemin(outil("mip_rum_list_events"), {
+      attr_source: "context",
+      attr_key: "campaign",
+      attr_type: "null",
+    })).toBe("/events?kind=event&attr_source=context&attr_key=campaign&attr_type=null");
+  });
 });
 
 describe("avertissementPerimetre — le mensonge à ne pas laisser passer", () => {
@@ -139,6 +165,13 @@ describe("indicesPage — pagination sans total", () => {
 
   it("annonce la fin quand la page est incomplète", () => {
     expect(indicesPage(page(50, 0, 3))).toMatchObject({ peut_avoir_suite: false, offset_suivant: null });
+  });
+
+  it("privilégie le curseur stable et le total mesuré de l'Explorer", () => {
+    expect(indicesPage({
+      events: [{ id: "1" }], trend: Array.from({ length: 28 }, () => ({})),
+      total: 42, page: { limit: 1, offset: 0, next_cursor: "opaque" },
+    })).toMatchObject({ recus: 1, peut_avoir_suite: true, cursor_suivant: "opaque", total: 42 });
   });
 
   // L'API ne renvoie AUCUN total. En inventer un (par exemple offset + reçus)
@@ -294,6 +327,21 @@ describe("executer — de l'appel d'outil à la réponse", () => {
     const { client, vus } = clientFactice(enveloppe);
     await executer(outil("mip_rum_get_vitals"), { app: "a", period: "7d", series: "LCP" }, client);
     expect(vus).toEqual(["/vitals?app=a&period=7d&series=LCP"]);
+  });
+
+  it("rend le curseur stable et le total filtré de l'Explorer en markdown", async () => {
+    const { client, vus } = clientFactice({
+      meta: { app: "alpha", period: "24h", device: "tablet", generatedAt: "2026-09-16T12:00:00.000Z" },
+      data: {
+        events: [{ id: "1", name: "checkout" }],
+        total: 42,
+        page: { limit: 1, offset: 0, next_cursor: "opaque-next" },
+      },
+    });
+    const result = await executer(outil("mip_rum_list_events"), { app: "alpha", format: "markdown" }, client);
+    expect(vus).toEqual(["/events?app=alpha&kind=event"]);
+    expect(result.texte).toContain("cursor=opaque-next");
+    expect(result.texte).toContain("Total filtré : 42");
   });
 
   it("propage l'erreur du client sans la maquiller", async () => {

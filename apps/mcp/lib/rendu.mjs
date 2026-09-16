@@ -8,8 +8,8 @@
 //    un nombre de sessions touchées. Toute mise en forme est une occasion de
 //    perdre un champ en silence, et un champ perdu se lit comme un zéro.
 //
-// 2. Le rendu markdown est GÉNÉRIQUE — une fonction pour les onze outils, pas
-//    onze gabarits. Un gabarit par endpoint serait plus joli et afficherait
+// 2. Le rendu markdown est GÉNÉRIQUE — une fonction pour les douze outils, pas
+//    douze gabarits. Un gabarit par endpoint serait plus joli et afficherait
 //    exactement les colonnes utiles ; il faudrait aussi le corriger à chaque
 //    champ ajouté à l'API, et un gabarit oublié n'échoue pas : il affiche
 //    l'ancienne colonne comme si elle était toute la vérité. Le rendu générique
@@ -124,16 +124,19 @@ export function enMarkdown(titre, corps) {
 export function indicesPage(data) {
   const page = data?.page;
   if (!page || typeof page.limit !== "number") return null;
-  const listes = Object.values(data).filter(Array.isArray);
-  if (!listes.length) return null;
-  const recus = Math.max(...listes.map((l) => l.length));
-  const suite = recus >= page.limit;
+  const liste = data.events ?? data.sessions ?? data.groups ?? data.actions ??
+    Object.values(data).find(Array.isArray);
+  if (!Array.isArray(liste)) return null;
+  const recus = liste.length;
+  const cursorSuivant = typeof page.next_cursor === "string" && page.next_cursor ? page.next_cursor : null;
+  const suite = cursorSuivant != null || recus >= page.limit;
   return {
     limit: page.limit,
     offset: page.offset ?? 0,
     recus,
     peut_avoir_suite: suite,
     offset_suivant: suite ? (page.offset ?? 0) + page.limit : null,
-    total: null, // l'API n'en fournit pas — ne pas l'inventer
+    cursor_suivant: cursorSuivant,
+    total: typeof data.total === "number" ? data.total : null,
   };
 }

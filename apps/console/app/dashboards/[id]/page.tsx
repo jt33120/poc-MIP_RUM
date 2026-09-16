@@ -124,6 +124,10 @@ export default async function D({
                 ))}
               </select>
             </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+              Nom d’événement (widget événements)
+              <input name="event_name" placeholder="checkout" maxLength={100} className={`${INPUT_CLASS} w-44`} />
+            </label>
             <button type="submit" data-testid="add-widget" className="btn-accent">
               + Ajouter un widget
             </button>

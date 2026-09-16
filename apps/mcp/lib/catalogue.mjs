@@ -3,10 +3,10 @@
 //
 // TOUT EST DONNÉE, RIEN N'EST CODE. Un outil est un objet — nom, description,
 // paramètres acceptés, chemin d'API. La construction de l'URL est UNE fonction
-// pour les onze outils. C'est ce qui empêche la dérive : le dépôt a déjà connu
+// pour les douze outils. C'est ce qui empêche la dérive : le dépôt a déjà connu
 // TROIS implémentations de l'ingestion qui avaient silencieusement divergé (le
 // dev-server acceptait une app sans clé là où la production la rejetait).
-// Onze petits handlers écrits à la main referaient exactement ça.
+// Douze petits handlers écrits à la main referaient exactement ça.
 //
 // Ce module est PUR : ni réseau, ni horloge, ni variable d'environnement. Il se
 // teste en comparant des chaînes.
@@ -32,6 +32,13 @@ export const PARAMS = {
     "Vitals à détailler en série temporelle : liste séparée par des virgules ('LCP,INP') ou 'all'. Par défaut aucune série n'est renvoyée, seulement les p75.",
   fingerprint: "Signature du groupe d'erreurs, telle que renvoyée par mip_rum_list_errors.",
   session_id: "Identifiant de session, tel que renvoyé par mip_rum_list_sessions.",
+  kind: "Catégorie fermée : pageview, vital, error, resource, longtask, breadcrumb, event ou span. Utiliser 'event' pour les événements custom.",
+  name: "Nom exact de l'événement custom (100 caractères maximum).",
+  attr_source: "Objet top-level à filtrer : 'props' ou 'context'. À fournir avec attr_key, attr_type et attr_value.",
+  attr_key: "Clé top-level sûre de l'attribut, sans JSONPath.",
+  attr_type: "Type primitif exact : string, number, boolean ou null.",
+  attr_value: "Valeur exacte de l'attribut. Omise seulement avec attr_type='null'.",
+  cursor: "Curseur opaque next_cursor renvoyé par la page précédente. Ne pas le modifier.",
   format:
     "Forme de la réponse : 'json' (défaut — la réponse de l'API telle quelle, sans transformation) ou 'markdown' (tableaux lisibles, aucune donnée retirée).",
 };
@@ -137,6 +144,19 @@ export const OUTILS = [
     params: ["session_id"],
   },
   {
+    nom: "mip_rum_list_events",
+    titre: "Explorer les événements custom",
+    resume: "Journal, total, tendance et facettes des événements custom scrubbed.",
+    description:
+      "Explore les événements RUM avec une pagination stable. Pour les événements métier, passer kind='event' et éventuellement un nom exact. " +
+      "Les filtres d'attribut portent uniquement sur une primitive top-level de props ou context : aucun JSONPath, regex ou SQL n'est accepté. " +
+      "La réponse contient les comptes observés, une série zero-filled, des facettes bornées et un avertissement si le sampling peut les biaiser. " +
+      "Pour poursuivre, recopier data.page.next_cursor dans cursor ; offset reste accepté pour compatibilité.",
+    chemin: "/events",
+    params: [...FILTRES, "kind", "name", "attr_source", "attr_key", "attr_type", "attr_value", ...PAGE, "cursor"],
+    defaults: { kind: "event" },
+  },
+  {
     nom: "mip_rum_get_tracing",
     titre: "Tracing front → back",
     resume: "Couverture du tracing, appels d'API et routes backend vues depuis le navigateur.",
@@ -189,10 +209,25 @@ function segments(chemin) {
  * @returns {string} chemin relatif à la base `/api/v1`
  */
 export function construireChemin(outil, args = {}) {
+  if (outil.nom === "mip_rum_list_events") {
+    const noms = ["attr_source", "attr_key", "attr_type", "attr_value"];
+    const presente = (nom) => args[nom] != null && args[nom] !== "";
+    if (noms.some(presente)) {
+      const complet = presente("attr_source") && presente("attr_key") && presente("attr_type") &&
+        (args.attr_type === "null" || presente("attr_value"));
+      if (!complet) {
+        throw new Error(
+          "filtre d'attribut incomplet : fournir attr_source, attr_key, attr_type et attr_value (sauf pour le type null)",
+        );
+      }
+    }
+  }
+
   const dyn = segments(outil.chemin);
   let chemin = outil.chemin;
   for (const nom of dyn) {
-    const v = args[nom];
+    const brut = args[nom];
+    const v = brut == null || brut === "" ? outil.defaults?.[nom] : brut;
     if (v == null || v === "") throw new Error(`paramètre requis manquant : ${nom}`);
     chemin = chemin.replace(`{${nom}}`, encodeURIComponent(String(v)));
   }
@@ -200,7 +235,8 @@ export function construireChemin(outil, args = {}) {
   const qs = new URLSearchParams();
   for (const nom of outil.params) {
     if (dyn.includes(nom)) continue; // déjà dans le chemin
-    const v = args[nom];
+    const brut = args[nom];
+    const v = brut == null || brut === "" ? outil.defaults?.[nom] : brut;
     if (v == null || v === "") continue;
     qs.set(nom, String(v));
   }

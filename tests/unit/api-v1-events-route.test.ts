@@ -1,21 +1,11 @@
 // Contrat réel de GET /api/v1/events : auth, scope A/B, kind, pagination et 400.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listEventIndex } = vi.hoisted(() => ({ listEventIndex: vi.fn() }));
+const { exploreEvents } = vi.hoisted(() => ({ exploreEvents: vi.fn() }));
 
-vi.mock("@/lib/queries-events", () => ({
-  listEventIndex,
-  parseEventKind(value: string | null) {
-    if (value == null || value === "") return null;
-    return ["pageview", "vital", "error", "resource", "longtask", "breadcrumb", "event", "span"].includes(value)
-      ? value
-      : undefined;
-  },
-  parseEventPage(searchParams: URLSearchParams) {
-    const limit = Math.min(Math.max(Number(searchParams.get("limit")) || 100, 1), 200);
-    const offset = Math.min(Math.max(Math.floor(Number(searchParams.get("offset")) || 0), 0), 10_000);
-    return { limit, offset };
-  },
+vi.mock("@/lib/queries-events", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../apps/console/lib/queries-events")>()),
+  exploreEvents,
 }));
 
 import { GET } from "../../apps/console/app/api/v1/events/route";
@@ -35,10 +25,15 @@ function request(query: string) {
 describe("GET /api/v1/events", () => {
   beforeEach(() => {
     process.env.CONSOLE_API_TOKENS = "events-secret@app-a";
-    listEventIndex.mockResolvedValue([
-      { id: "9007199254740993", app_id: "app-a", session_id: "a", ts: new Date("2026-01-01T00:00:00Z"), route: "/a", kind: "vital", source_name: "LCP", source_span_id: "00000000000000a2" },
-      { id: "9007199254740992", app_id: "app-a", session_id: "a", ts: new Date("2025-12-31T23:59:00Z"), route: "/a", kind: "vital", source_name: "INP", source_span_id: "00000000000000a1" },
-    ]);
+    exploreEvents.mockResolvedValue({
+      events: [
+        { id: "9007199254740993", app_id: "app-a", session_id: "a", ts: new Date("2026-01-01T00:00:00Z"), route: "/a", kind: "vital", source_name: "LCP", source_span_id: "00000000000000a2" },
+        { id: "9007199254740992", app_id: "app-a", session_id: "a", ts: new Date("2025-12-31T23:59:00Z"), route: "/a", kind: "vital", source_name: "INP", source_span_id: "00000000000000a1" },
+      ],
+      page: { limit: 1, offset: 1, next_cursor: null }, total: 2, trend: [],
+      facets: { names: [], attributes: [], values: [] }, sampling_notice: null,
+      enrichment: { available: true, diagnostic: null },
+    });
   });
 
   afterEach(() => {
@@ -49,10 +44,15 @@ describe("GET /api/v1/events", () => {
   it("force A malgré une demande B et conserve kind, ordre et pagination", async () => {
     const response = await request("app=app-b&kind=vital&limit=1&offset=1");
     expect(response.status).toBe(200);
-    expect(listEventIndex).toHaveBeenCalledWith("app-a", "vital", { limit: 1, offset: 1 });
+    expect(exploreEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ app: "app-a", period: "24h" }),
+      { kind: "vital", name: null, attribute: null },
+      { limit: 1, offset: 1 },
+      null,
+    );
     const body = await response.json();
     expect(body.meta.app).toBe("app-a");
-    expect(body.data.page).toEqual({ limit: 1, offset: 1 });
+    expect(body.data.page).toEqual({ limit: 1, offset: 1, next_cursor: null });
     expect(body.data.events.map((event: { id: string }) => event.id)).toEqual([
       "9007199254740993", "9007199254740992",
     ]);
@@ -61,7 +61,19 @@ describe("GET /api/v1/events", () => {
   it("refuse un kind hostile avec 400, sans appeler la lecture", async () => {
     const response = await request("kind=event%3Bdrop%20table%20rum_event_index");
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "kind invalide" });
-    expect(listEventIndex).not.toHaveBeenCalled();
+    expect(await response.json()).toEqual({ error: "filtre d’événement invalide" });
+    expect(exploreEvents).not.toHaveBeenCalled();
+  });
+
+  it("applique tablet uniquement à l’Explorer et remet offset à zéro avec un curseur", async () => {
+    const cursor = Buffer.from(JSON.stringify(["2026-09-16T10:00:00.000Z", "42"])).toString("base64url");
+    const response = await request(`kind=event&device=tablet&offset=99&cursor=${cursor}`);
+    expect(response.status).toBe(200);
+    expect(exploreEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ app: "app-a", device: "tablet" }),
+      { kind: "event", name: null, attribute: null },
+      { limit: 100, offset: 0 },
+      { ts: "2026-09-16T10:00:00.000Z", id: "42" },
+    );
   });
 });

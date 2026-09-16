@@ -22,6 +22,7 @@ import {
   curlVerification,
 } from "@/lib/mcp-public";
 import { sonderMcp } from "@/lib/mcp-sonde";
+import { OUTILS } from "../../../mcp/lib/catalogue.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -65,20 +66,11 @@ function LinkCard({
   );
 }
 
-/** Les onze outils MCP. Source : apps/mcp/lib/catalogue.mjs. */
-const OUTILS_MCP: { nom: string; desc: string }[] = [
-  { nom: "mip_rum_list_apps", desc: "Applications accessibles au jeton — à appeler en premier." },
-  { nom: "mip_rum_get_overview", desc: "Santé, vitals p75, trafic, avec la période précédente." },
-  { nom: "mip_rum_get_vitals", desc: "Core Web Vitals p75, et séries temporelles à la demande." },
-  { nom: "mip_rum_list_slow_pages", desc: "Routes les plus lentes, avec leur volume." },
-  { nom: "mip_rum_list_errors", desc: "Groupes d'erreurs JS, paginés." },
-  { nom: "mip_rum_get_error_group", desc: "Détail d'un groupe d'erreurs." },
-  { nom: "mip_rum_list_sessions", desc: "Sessions récentes, paginées." },
-  { nom: "mip_rum_get_session", desc: "Chronologie complète d'une session." },
-  { nom: "mip_rum_get_tracing", desc: "Couverture du tracing, appels API, routes backend." },
-  { nom: "mip_rum_get_correlation", desc: "Robot ↔ réel, et angles morts." },
-  { nom: "mip_rum_get_health_grid", desc: "Heatmap jour × heure, trafic quotidien." },
-];
+/** Dérivé du catalogue réellement enregistré par le serveur MCP. */
+const OUTILS_MCP: { nom: string; desc: string }[] = OUTILS.map((outil) => ({
+  nom: outil.nom,
+  desc: outil.resume,
+}));
 
 export default async function ApiDocs() {
   // L'adresse du serveur est une constante du dépôt ; son état, non. La page
@@ -329,7 +321,7 @@ export default async function ApiDocs() {
 
         <p className="mt-3 text-xs text-ink-faint">
           Ce que le serveur ne fait pas, et le dit au modèle : aucune écriture, trois fenêtres seulement
-          (1h / 24h / 7d), aucun total sur les listes paginées. Une app demandée hors périmètre n'est pas refusée
+          (1h / 24h / 7d), et aucun total sur les listes historiques (l’Explorer d’événements fait exception). Une app demandée hors périmètre n'est pas refusée
           par l'API — elle est ramenée au périmètre du jeton ; l'outil le signale alors explicitement dans sa
           réponse, pour qu'un chiffre d'une autre app ne passe jamais pour celui demandé.
         </p>

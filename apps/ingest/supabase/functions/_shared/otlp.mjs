@@ -41,6 +41,13 @@ const CONTEXT_MAX_KEYS = 64;
 const CONTEXT_MAX_DEPTH = 4;
 const CONTEXT_MAX_STRING = 500;
 const CONTEXT_MAX_NAME = 100;
+// `jsonb::text` ajoute des séparateurs avec espaces là où JSON.stringify est
+// compact. Garder une marge avant la contrainte PostgreSQL de 16 KiB évite que
+// la représentation acceptée ici soit ensuite rejetée par la base.
+const EVENT_PROPS_MAX_BYTES = 12 * 1024;
+const EVENT_PROPS_MAX_NODES = 256;
+const EVENT_PROP_KEY = /^[A-Za-z][A-Za-z0-9_.-]{0,99}$/;
+const EVENT_PROP_SECRET_KEY = /pass(?:word|wd)?|pwd|secret|token|api[_-]?key|auth|bearer|email|e[_-]?mail|phone|ssn|credit|card|cvv|iban/i;
 // Même allowlist négative que le SDK : sans ce miroir, un émetteur OTLP tiers
 // pourrait réintroduire dans `mip.context` des noms techniques que le SDK
 // officiel interdit, puis les faire persister comme données métier.
@@ -133,6 +140,52 @@ export function boundedEventContext(raw) {
   for (const [key, value] of Object.entries(clean)) {
     out[key] = value;
     if (BufferLikeByteLength(JSON.stringify(out)) > CONTEXT_MAX_BYTES) delete out[key];
+  }
+  return out;
+}
+
+function boundedPropsValue(value, depth, budget) {
+  if (budget.nodes >= EVENT_PROPS_MAX_NODES) return undefined;
+  budget.nodes++;
+  if (value == null) return null;
+  if (typeof value === "string") return scrubText(value.slice(0, CONTEXT_MAX_STRING)) ?? "";
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (depth >= CONTEXT_MAX_DEPTH) return undefined;
+  if (Array.isArray(value)) {
+    return value.slice(0, CONTEXT_MAX_KEYS)
+      .map((item) => boundedPropsValue(item, depth + 1, budget))
+      .filter((item) => item !== undefined);
+  }
+  if (typeof value !== "object") return undefined;
+  const out = {};
+  for (const rawKey in value) {
+    if (!Object.prototype.hasOwnProperty.call(value, rawKey)) continue;
+    if (budget.keys >= CONTEXT_MAX_KEYS) break;
+    if (rawKey.length > CONTEXT_MAX_NAME) continue;
+    const key = (scrubText(rawKey) ?? "").trim();
+    if (!EVENT_PROP_KEY.test(key) || CONTEXT_DANGEROUS_KEYS.has(key.toLowerCase())) continue;
+    budget.keys++;
+    const clean = EVENT_PROP_SECRET_KEY.test(key)
+      ? "[redacted]"
+      : boundedPropsValue(value[rawKey], depth + 1, budget);
+    if (clean !== undefined) out[key] = clean;
+  }
+  return out;
+}
+
+/** Props custom scrubbed puis bornées avant toute écriture et toute facette. */
+export function boundedEventProps(raw) {
+  if (typeof raw === "string" && BufferLikeByteLength(raw) > EVENT_PROPS_MAX_BYTES * 4) return {};
+  const parsed = typeof raw === "string" ? parseJsonAttr(raw) : raw;
+  // Le scrub et le bornage partagent la même traversée : on ne clone jamais
+  // d'abord un payload hostile complet avant de lui appliquer les limites.
+  const clean = boundedPropsValue(parsed, 0, { keys: 0, nodes: 0 });
+  if (!clean || Array.isArray(clean) || typeof clean !== "object") return {};
+  const out = {};
+  for (const [key, value] of Object.entries(clean)) {
+    out[key] = value;
+    if (BufferLikeByteLength(JSON.stringify(out)) > EVENT_PROPS_MAX_BYTES) delete out[key];
   }
   return out;
 }
@@ -1078,7 +1131,7 @@ export function flattenOtlp(payload, opts = {}) {
             app_id: appId,
             route,
             name: boundedName(a["mip.event_name"]) ?? boundedName(span.name.slice("track.".length)) ?? "track",
-            props: scrubProps(parseJsonAttr(a["mip.props"])),
+            props: boundedEventProps(a["mip.props"]),
             ts,
             ...metadata,
           });
@@ -1158,7 +1211,7 @@ export function flattenOtlp(payload, opts = {}) {
             app_id: appId,
             route,
             name: `frustration.${kind}`,
-            props: scrubProps({
+            props: boundedEventProps({
               target: a["frustration.target"] ?? null,
               count: typeof a["frustration.count"] === "number" ? a["frustration.count"] : 1,
             }),

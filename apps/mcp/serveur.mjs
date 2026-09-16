@@ -1,6 +1,6 @@
 // Assemblage du serveur MCP : le catalogue devient des outils enregistrés.
 //
-// Un seul handler, partagé par les onze outils — il construit le chemin, appelle
+// Un seul handler, partagé par les douze outils — il construit le chemin, appelle
 // l'API, met en forme. Les outils ne diffèrent que par leur DONNÉE (catalogue.mjs).
 //
 // Ce module ne choisit PAS de transport et ne lit AUCUNE variable
@@ -29,7 +29,7 @@ Limites à respecter, elles ne sont pas contournables :
 - LECTURE SEULE. Aucun outil ne modifie quoi que ce soit.
 - Trois fenêtres seulement : 1h, 24h, 7d. Aucun outil n'accepte de dates libres, et il n'existe pas d'historique plus profond ici.
 - Le périmètre dépend du jeton. Une app hors périmètre n'est pas refusée : la réponse porte alors sur une AUTRE app, et l'outil le signale explicitement. Lire cet avertissement avant de conclure.
-- Les listes sont paginées sans total. Une page pleine signifie qu'il y a probablement une suite, jamais combien.
+- Les listes historiques sont paginées sans total. L'Explorer d'événements fournit un total filtré et un curseur opaque stable.
 - Pas de données personnelles : les utilisateurs sont des empreintes anonymes.
 
 Si un chiffre demandé n'est dans aucune réponse, le dire — ne pas l'estimer.`;
@@ -46,6 +46,20 @@ function schemaParam(nom) {
       return z.number().int().min(1).max(200).optional().describe(d);
     case "offset":
       return z.number().int().min(0).optional().describe(d);
+    case "kind":
+      return z.enum(["pageview", "vital", "error", "resource", "longtask", "breadcrumb", "event", "span"]).optional().describe(d);
+    case "attr_source":
+      return z.enum(["props", "context"]).optional().describe(d);
+    case "attr_type":
+      return z.enum(["string", "number", "boolean", "null"]).optional().describe(d);
+    case "cursor":
+      return z.string().max(512).optional().describe(d);
+    case "name":
+      return z.string().min(1).max(100).optional().describe(d);
+    case "attr_key":
+      return z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/).optional().describe(d);
+    case "attr_value":
+      return z.string().max(500).optional().describe(d);
     // Les segments de chemin sont les SEULS paramètres requis : sans eux il n'y
     // a pas d'URL à construire.
     case "fingerprint":
@@ -84,8 +98,8 @@ export async function executer(outil, args, client) {
     if (page)
       parts.push(
         `---\n\n_Pagination : ${page.recus} élément(s) reçu(s), offset ${page.offset}, limite ${page.limit}.` +
-          `${page.peut_avoir_suite ? ` Page pleine — appeler de nouveau avec offset=${page.offset_suivant} pour la suite.` : " Page incomplète : c'est la fin."}` +
-          ` L'API ne fournit pas de total._`,
+          `${page.peut_avoir_suite ? (page.cursor_suivant ? ` Appeler de nouveau avec cursor=${page.cursor_suivant} pour la suite stable.` : ` Page pleine — appeler de nouveau avec offset=${page.offset_suivant} pour la suite.`) : " Page incomplète : c'est la fin."}` +
+          `${page.total == null ? " L'API ne fournit pas de total." : ` Total filtré : ${page.total}.`}_`,
       );
     if (avert) parts.unshift(avert);
     return { texte: parts.join("\n\n"), structure: null };

@@ -9,6 +9,7 @@ import { dailyTraffic } from "./queries-grid";
 import { topFrustrations } from "./queries-frustration";
 import { errorGroups } from "./queries-v2";
 import { slowRoutes, vitalsP75 } from "./queries";
+import { eventCount } from "./queries-events";
 
 export interface WidgetData {
   kind: "value" | "table";
@@ -75,6 +76,18 @@ export async function resolveWidget(w: Widget, f: Filters): Promise<WidgetData> 
           kind: "table",
           columns: ["Type", "Cible", "Route", "Occurrences"],
           rows: rows.map((r) => [r.kind, r.target, r.route, r.n]),
+        };
+      }
+      case "event_count": {
+        if (!w.eventName) return { kind: "value", value: "—", sub: "nom d’événement manquant" };
+        const result = await eventCount(f, w.eventName);
+        if (!result.available || result.count == null) {
+          return { kind: "value", value: "—", sub: result.diagnostic ?? "donnée indisponible" };
+        }
+        return {
+          kind: "value",
+          value: result.count.toLocaleString("fr-FR"),
+          sub: result.sampling_notice?.message ?? `événements « ${w.eventName} » observés`,
         };
       }
       default:
