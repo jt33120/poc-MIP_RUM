@@ -10,7 +10,7 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 | Sous-lot | PR | Migration | Implémenté | Testé localement | CI | Déployé | Vérifié sur vraie app |
 |---|---|---|---|---|---|---|---|
 | P6.1 — dimensions aux bonnes frontières | #191 | v75 (additive, sans backfill) | oui | oui | verte | non — PR ouverte | non |
-| P6.2 — unifier les filtres sans rupture | #192 | aucune | oui | oui | en cours | non | non |
+| P6.2 — unifier les filtres sans rupture | #192 | aucune | oui | oui | verte | non | non |
 | P6.3 — analyses prêtes à l'emploi | — | — | non | — | — | — | — |
 | P6.4 — Explorer générique | — | — | non | — | — | — | — |
 | P6.5 — dashboards graphiques, vues enregistrées | — | — | non | — | — | — | — |
