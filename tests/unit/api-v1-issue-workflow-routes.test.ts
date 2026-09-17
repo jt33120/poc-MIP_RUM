@@ -188,7 +188,7 @@ describe("mutations : contrat et statuts", () => {
       { app: "app-a", body: "voir avec [email]", expectedRevision: "4" },
     );
 
-    simul.linkIssue.mockResolvedValue({ kind: "conflict", error: "ce lien est déjà attaché à l'issue", revision: "5" });
+    simul.linkIssue.mockResolvedValue({ kind: "duplicate", error: "ce lien est déjà attaché à l'issue" });
     const doublon = await LIER(
       requete(`/api/v1/issues/${ISSUE}/links`, { cookie: admin }, {
         method: "POST",
@@ -196,7 +196,9 @@ describe("mutations : contrat et statuts", () => {
       }),
       route(),
     );
-    expect(doublon.status).toBe(409);
+    // Un doublon n'est pas un conflit de révision : 422, sans révision à relire.
+    expect(doublon.status).toBe(422);
+    expect(await doublon.json()).toEqual({ error: "ce lien est déjà attaché à l'issue" });
   });
 });
 
@@ -210,8 +212,12 @@ describe("GET /api/v1/issues/{id}/activity", () => {
     const corps = await reponse.json();
     expect(corps.meta.app).toBe("app-a");
     expect(corps.data).toEqual({ activities: [], next_cursor: null });
-    expect(simul.listIssueActivity).toHaveBeenCalledWith(ISSUE, ["app-a"], { limit: 100, cursor: null });
+    // Jeton partenaire, puis viewer : jamais les adresses des comptes de la console.
+    expect(simul.listIssueActivity).toHaveBeenCalledWith(ISSUE, ["app-a"], { limit: 100, cursor: null }, { emails: false });
     expect((await lire({ cookie: viewer })).status).toBe(200);
+    expect(simul.listIssueActivity).toHaveBeenLastCalledWith(ISSUE, expect.anything(), { limit: 50, cursor: null }, { emails: false });
+    expect((await lire({ cookie: admin })).status).toBe(200);
+    expect(simul.listIssueActivity).toHaveBeenLastCalledWith(ISSUE, null, { limit: 50, cursor: null }, { emails: true });
   });
 
   it("401 sans authentification, 400 identifiant ou curseur invalide, 404 hors périmètre ou session sans app", async () => {

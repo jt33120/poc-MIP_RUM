@@ -97,6 +97,13 @@ Erreurs : `{ "error": "message" }` avec le statut HTTP (`400`, `401`, `403`, `40
 
 ## Journal des changements
 
+### 17/09/2026 — workflow des issues, suivi de revue (P5.6)
+
+Deux contrats se précisent. `POST /api/v1/issues/{id}/links` répond `422` (et non plus `409`) quand l'URL est
+déjà liée à l'issue : recharger n'y changerait rien, et un client qui rejouait tout `409` après relecture
+bouclait. `GET /api/v1/issues/{id}/activity` ne rend les adresses des comptes de la console (acteur, assignés,
+auteur d'un lien) qu'à une session admin : un jeton d'API ou une session viewer reçoit `email: null`.
+
 ### 17/09/2026 — workflow des issues : triage, commentaires, liens et historique (P5.6)
 
 Une lecture et trois écritures s'ajoutent, sans rien changer aux routes existantes :
@@ -324,8 +331,10 @@ quel dans `cursor` avec les mêmes filtres. `400` pour `status`, `source`, `rele
 - `kind` : `status` (ancien et nouveau statut ; une résolution porte sa release et son env de référence),
   `assignee` (ancien et nouvel assigné), `comment` (texte scrubbé ; `legacy_fingerprint` quand c'est la note
   d'un groupe historique reprise une seule fois), `link` (lien de ticket) et `regression` (release qui a rouvert
-  l'issue et release de référence dépassée). `actor` : `user` (compte console, `email` null s'il a été
-  supprimé) ou `system`. Jamais de stack, de message d'erreur ni d'identité RUM.
+  l'issue et release de référence dépassée). `actor` : `user` (compte console) ou `system`. Jamais de stack, de
+  message d'erreur ni d'identité RUM.
+- Adresses des comptes (acteur, assignés, auteur d'un lien) : pour une session admin seulement. Un jeton d'API
+  ou une session viewer reçoit `email: null` — comme pour un compte supprimé.
 - Le plus récent d'abord ; `limit` 1..100 (défaut 50) ; `next_cursor` (horodatage à la microseconde et
   identifiant) à renvoyer dans `cursor`. `400` `id invalide (UUID attendu)` ou `cursor invalide` ; `503` avant
   migration-v73.
@@ -445,8 +454,8 @@ puis borné à 2 000 caractères **après** masquage (`400` au-delà). `201`, `d
 ### `POST /api/v1/issues/{id}/links` — lien de ticket
 Corps `{ app, url, label, expectedRevision }`. `url` : HTTPS, sans identifiants, normalisée (hôte en punycode,
 caractères encodés), 2 048 caractères au plus ; `label` : une ligne scrubbée de 120 caractères. La même URL deux
-fois sur une issue : `409`. `201`, `data = { link, activity, revision }`. Aucune synchronisation avec l'outil
-de tickets (P8.6).
+fois sur une issue : `422` — un rechargement n'y changerait rien, à la différence d'un `409`. `201`,
+`data = { link, activity, revision }`. Aucune synchronisation avec l'outil de tickets (P8.6).
 
 ---
 

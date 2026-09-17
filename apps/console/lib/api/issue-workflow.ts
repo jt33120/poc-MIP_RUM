@@ -1,6 +1,7 @@
 // Traduction HTTP du workflow d'une issue (P5.6), partagée par ses routes v1 :
-// chaque issue de lib/error-issue-workflow.ts a son statut, et un 409 rend la
-// révision courante pour que l'écran propose de recharger.
+// chaque issue de lib/error-issue-workflow.ts a son statut. Un 409 rend la
+// révision courante pour que l'écran propose de recharger ; un doublon est un 422,
+// qu'aucun rechargement ne résoudrait.
 import type { SessionUser } from "../auth";
 import type { WorkflowResult } from "../error-issue-workflow";
 import { errorScopeFor, scopeApps } from "../queries-errors";
@@ -26,6 +27,8 @@ export function valeurOuErreur<T>(result: WorkflowResult<T>): T {
       throw new ApiHttpError(404, ISSUE_INTROUVABLE);
     case "conflict":
       throw new ApiHttpError(409, result.error, { revision: result.revision });
+    case "duplicate":
+      throw new ApiHttpError(422, result.error);
     case "invalid":
       throw new ApiHttpError(400, result.error);
   }

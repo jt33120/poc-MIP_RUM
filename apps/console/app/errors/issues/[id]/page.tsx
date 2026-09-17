@@ -78,12 +78,13 @@ export default async function IssuePage({
   const detail = await issueDetail(issue, f, { limit: parseOccurrencesPage(url).limit, cursor });
   const { impact, trend, last_sample: last, occurrences, sampling, enrichment } = detail;
   // Workflow P5.6 : null avant migration-v73. Un curseur d'historique illisible rend la page la plus récente.
-  const workflow = await issueWorkflowView(issue.id, issue.app_id);
+  // Les adresses des comptes (acteurs, assignés) ne sont lues que pour un admin.
+  const admin = user?.role === "admin" && !user.demo;
+  const workflow = await issueWorkflowView(issue.id, issue.app_id, { emails: admin });
   const activiteCurseur = parseErrorCursor(url.get("activite")) ?? null;
   const activite = workflow
-    ? await listIssueActivity(issue.id, scopeApps(errorScopeFor(user)), { limit: 20, cursor: activiteCurseur })
+    ? await listIssueActivity(issue.id, scopeApps(errorScopeFor(user)), { limit: 20, cursor: activiteCurseur }, { emails: admin })
     : null;
-  const admin = user?.role === "admin" && !user.demo;
   const { label, bucketLabel } = PERIODS[f.period];
   const pageExtra = url.has("limit") ? { limit: url.get("limit") ?? "" } : undefined;
 

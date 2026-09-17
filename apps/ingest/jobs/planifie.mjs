@@ -119,6 +119,14 @@ export async function sonderUptime(pool, log = console) {
 }
 
 /**
+ * La route cron coupe le tick à 60 s. Passé ce délai depuis le DÉBUT du tick, le
+ * dispatcher n'entame plus de livraison, quel que soit le temps pris avant lui
+ * (check_alerts qui attend l'autre déclencheur, sondes uptime lentes) : ce qui
+ * reste part au tick suivant, et chaque POST est borné par le temps restant.
+ */
+export const ECHEANCE_LIVRAISON_MS = 45_000;
+
+/**
  * Les trois cadences. `dispatch` est injecté plutôt qu'importé : le dispatcher
  * de webhooks est le seul morceau qui sort vers l'extérieur, et un appelant
  * (un test, un environnement sans réseau sortant) doit pouvoir le neutraliser.
@@ -128,8 +136,9 @@ export function travaux(pool, { log = console, dispatch = null } = {}) {
 
   return {
     /** Toutes les 5 minutes : ce qui doit réagir vite. */
-    tick: () =>
-      executerEtapes(
+    tick: () => {
+      const echeance = Date.now() + ECHEANCE_LIVRAISON_MS;
+      return executerEtapes(
         [
           // Évaluation des règles : insère les alert_event + livraisons 'queued'.
           { name: "check_alerts", run: fn("check_alerts()") },
@@ -148,14 +157,15 @@ export function travaux(pool, { log = console, dispatch = null } = {}) {
           { name: "check_slo_burn", run: fn("check_slo_burn()") },
           { name: "uptime", run: () => sonderUptime(pool, log) },
           // Livraison effective des webhooks en attente (remplace pg_net).
-          ...(dispatch ? [{ name: "dispatch_alerts", run: () => dispatch(pool) }] : []),
+          ...(dispatch ? [{ name: "dispatch_alerts", run: () => dispatch(pool, { echeance }) }] : []),
           // Réconciliation des livraisons 'sent' héritées de l'ère pg_net :
           // sans pg_net la fonction ne trouve rien, mais elle reste correcte et
           // bon marché — la garder évite des lignes 'sent' éternelles.
           { name: "reconcile_deliveries", run: fn("reconcile_alert_deliveries()") },
         ],
         log,
-      ),
+      );
+    },
 
     /** Toutes les heures : pré-agrégats et détections moins urgentes. */
     horaire: () =>

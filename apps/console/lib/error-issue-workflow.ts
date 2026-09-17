@@ -16,7 +16,6 @@
 // recopie ni stack, ni message d'erreur, ni identité RUM.
 import type { PoolClient } from "pg";
 import { COMMENTAIRE_MAX, texteActivite } from "ingest/lib/error-issue-workflow.mjs";
-import { hasControlCharacters } from "ingest/shared/sourcemap.mjs";
 import { q, tx } from "./db";
 import { ISSUE_STATUSES, isIssueId, type IssueStatus } from "./error-issues";
 import { encodeErrorCursor } from "./queries-errors";
@@ -37,8 +36,17 @@ const BIGINT_ID = /^[1-9]\d{0,17}$/;
 export interface IssueUserRef {
   /** bigint PostgreSQL sérialisé en chaîne. */
   user_id: string;
-  /** null : compte supprimé depuis. */
+  /** null : compte supprimé depuis, ou lecteur qui n'est pas une session admin. */
   email: string | null;
+}
+
+/**
+ * Qui lit. Les adresses des comptes de la console (acteurs, assignés, auteurs de
+ * liens) ne sortent que vers une session admin : un viewer, la démo publique ou
+ * un jeton d'API partenaire lisent l'historique sans elles.
+ */
+export interface WorkflowReader {
+  emails: boolean;
 }
 
 export interface IssueLink {
@@ -90,6 +98,8 @@ export type WorkflowResult<T> =
   | { kind: "forbidden"; error: string }
   | { kind: "not_found" }
   | { kind: "conflict"; error: string; revision: string }
+  /** L'état courant rend la demande sans objet : la rejouer après rechargement n'y changerait rien. */
+  | { kind: "duplicate"; error: string }
   | { kind: "invalid"; error: string };
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -117,13 +127,22 @@ export interface LinkRequest {
 
 // ────────────────────────────── Validation ───────────────────────────────────
 
+/**
+ * Caractère que `[[:cntrl:]]` refuse en base (locale UTF-8) : C0, DEL, et aussi
+ * C1. Le contrôle partagé des source maps s'arrête à DEL : un libellé portant
+ * U+0085 passait la validation puis heurtait la contrainte — 500 au lieu de 400.
+ */
+export function hasSqlControlCharacters(texte: string): boolean {
+  return /[\u0000-\u001f\u007f-\u009f]/.test(texte);
+}
+
 function objet(body: unknown): Record<string, unknown> | null {
   return body !== null && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
 }
 
 function appDe(v: unknown): string | null {
   const app = typeof v === "string" ? v.trim() : "";
-  return app && app.length <= 200 && !hasControlCharacters(app) ? app : null;
+  return app && app.length <= 200 && !hasSqlControlCharacters(app) ? app : null;
 }
 
 /** Identifiant bigint positif, en nombre sûr ou en chaîne décimale ; null sinon. */
@@ -208,7 +227,7 @@ export function parseLinkRequest(body: unknown): Parsed<LinkRequest> {
     return { ok: false, error: `url invalide (https, sans identifiants, ${LINK_URL_MAX_CHARS} caractères au plus)` };
   }
   const label = texteActivite(champs.label);
-  if (label === null || hasControlCharacters(label) || [...label].length > LINK_LABEL_MAX_CHARS) {
+  if (label === null || hasSqlControlCharacters(label) || [...label].length > LINK_LABEL_MAX_CHARS) {
     return { ok: false, error: `label requis (${LINK_LABEL_MAX_CHARS} caractères au plus, sans retour à la ligne)` };
   }
   return { ok: true, value: { app, url, label, expectedRevision } };
@@ -222,8 +241,8 @@ export async function issueWorkflowAvailable(): Promise<boolean> {
   return row?.v73 === true;
 }
 
-const USER_REF = (colonne: string, alias: string) =>
-  `case when ${colonne} is null then null else jsonb_build_object('user_id', ${colonne}::text, 'email', ${alias}.email) end`;
+const USER_REF = (colonne: string, alias: string, emails: boolean) =>
+  `case when ${colonne} is null then null else jsonb_build_object('user_id', ${colonne}::text, 'email', ${emails ? `${alias}.email` : "null"}) end`;
 
 interface ActivitySqlRow extends Omit<IssueActivity, "link"> {
   link_id: string | null;
@@ -235,15 +254,15 @@ interface ActivitySqlRow extends Omit<IssueActivity, "link"> {
   cursor_ts: string;
 }
 
-const ACTIVITY_SQL = `
+const activitySql = (emails: boolean) => `
   select a.id::text as id, a.kind,
-         jsonb_build_object('kind', a.actor_kind, 'user', ${USER_REF("a.actor_user_id", "acteur")}) as actor,
+         jsonb_build_object('kind', a.actor_kind, 'user', ${USER_REF("a.actor_user_id", "acteur", emails)}) as actor,
          a.old_status, a.new_status,
-         ${USER_REF("a.old_assignee_user_id", "ancien")} as old_assignee,
-         ${USER_REF("a.new_assignee_user_id", "nouveau")} as new_assignee,
+         ${USER_REF("a.old_assignee_user_id", "ancien", emails)} as old_assignee,
+         ${USER_REF("a.new_assignee_user_id", "nouveau", emails)} as new_assignee,
          a.body, a.legacy_fingerprint, a.release, a.reference_release, a.env, a.created_at,
          t.id::text as link_id, t.url as link_url, t.label as link_label,
-         ${USER_REF("t.created_by_user_id", "createur")} as link_created_by, t.created_at as link_created_at,
+         ${USER_REF("t.created_by_user_id", "createur", emails)} as link_created_by, t.created_at as link_created_at,
          a.id::text as cursor_id,
          to_char(a.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_ts
     from error_issue_activity a
@@ -270,6 +289,7 @@ export async function listIssueActivity(
   issueId: string,
   apps: string[] | null,
   page: { limit: number; cursor: { ts: string; id: string } | null },
+  lecteur: WorkflowReader,
 ): Promise<WorkflowResult<{ app_id: string; activities: IssueActivity[]; next_cursor: string | null }>> {
   if (apps?.length === 0 || !isIssueId(issueId)) return { kind: "not_found" };
   if (!(await issueWorkflowAvailable())) return { kind: "unavailable" };
@@ -279,7 +299,7 @@ export async function listIssueActivity(
   );
   if (!issue) return { kind: "not_found" };
   const rows = await q<ActivitySqlRow>(
-    `${ACTIVITY_SQL}
+    `${activitySql(lecteur.emails)}
       where a.app_id = $1 and a.issue_id = $2
         and ($3::timestamptz is null or (a.created_at, a.id) < ($3::timestamptz, $4::bigint))
       order by a.created_at desc, a.id desc
@@ -303,16 +323,16 @@ export interface IssueWorkflowView {
   /** La dernière décision de statut est une régression confirmée : ce qui a rouvert l'issue. */
   regression: IssueActivity | null;
   links: IssueLink[];
-  /** Comptes assignables : actifs et autorisés sur l'app de l'issue. */
+  /** Comptes assignables, actifs et autorisés sur l'app de l'issue : pour une session admin seulement. */
   assignable_users: IssueUserRef[];
 }
 
 /** Ce que l'écran d'une issue ajoute à sa lecture P5.5 ; null sans migration-v73. */
-export async function issueWorkflowView(issueId: string, appId: string): Promise<IssueWorkflowView | null> {
+export async function issueWorkflowView(issueId: string, appId: string, lecteur: WorkflowReader): Promise<IssueWorkflowView | null> {
   if (!(await issueWorkflowAvailable())) return null;
   const [etat] = await q<{ assignee: IssueUserRef | null; resolved_by: IssueUserRef | null }>(
-    `select ${USER_REF("i.assignee_user_id", "assigne")} as assignee,
-            ${USER_REF("i.resolved_by_user_id", "resolveur")} as resolved_by
+    `select ${USER_REF("i.assignee_user_id", "assigne", lecteur.emails)} as assignee,
+            ${USER_REF("i.resolved_by_user_id", "resolveur", lecteur.emails)} as resolved_by
        from error_issue i
        left join console_user assigne on assigne.id = i.assignee_user_id
        left join console_user resolveur on resolveur.id = i.resolved_by_user_id
@@ -321,14 +341,14 @@ export async function issueWorkflowView(issueId: string, appId: string): Promise
   );
   if (!etat) return null;
   const [decision] = await q<ActivitySqlRow>(
-    `${ACTIVITY_SQL}
+    `${activitySql(lecteur.emails)}
       where a.app_id = $1 and a.issue_id = $2 and a.kind in ('status', 'regression')
       order by a.created_at desc, a.id desc
       limit 1`,
     [appId, issueId],
   );
   const links = await q<IssueLink>(
-    `select t.id::text as id, t.url, t.label, ${USER_REF("t.created_by_user_id", "createur")} as created_by, t.created_at
+    `select t.id::text as id, t.url, t.label, ${USER_REF("t.created_by_user_id", "createur", lecteur.emails)} as created_by, t.created_at
        from error_issue_ticket t
        left join console_user createur on createur.id = t.created_by_user_id
       where t.app_id = $1 and t.issue_id = $2
@@ -336,13 +356,15 @@ export async function issueWorkflowView(issueId: string, appId: string): Promise
       limit 100`,
     [appId, issueId],
   );
-  const assignable_users = await q<IssueUserRef>(
-    `select id::text as user_id, email from console_user
-      where active and (apps is null or $1 = any(apps))
-      order by email
-      limit 500`,
-    [appId],
-  );
+  const assignable_users = lecteur.emails
+    ? await q<IssueUserRef>(
+        `select id::text as user_id, email from console_user
+          where active and (apps is null or $1 = any(apps))
+          order by email
+          limit 500`,
+        [appId],
+      )
+    : [];
   return {
     ...etat,
     regression: decision?.kind === "regression" ? toActivity(decision) : null,
@@ -359,7 +381,6 @@ interface LockedIssue {
   status: IssueStatus;
   assignee_user_id: string | null;
   revision: string;
-  last_release: string | null;
 }
 
 interface MutationContext {
@@ -371,10 +392,11 @@ interface MutationContext {
 
 type Mutation<T> = (client: PoolClient, issue: LockedIssue, actorId: string) => Promise<WorkflowResult<T>>;
 
+/** Réponse d'une mutation, donc d'une session admin : adresses comprises. */
 const STATE_SQL = `
   select i.id::text as id, i.app_id, i.status, i.status_source,
-         ${USER_REF("i.assignee_user_id", "assigne")} as assignee,
-         i.resolved_at, ${USER_REF("i.resolved_by_user_id", "resolveur")} as resolved_by,
+         ${USER_REF("i.assignee_user_id", "assigne", true)} as assignee,
+         i.resolved_at, ${USER_REF("i.resolved_by_user_id", "resolveur", true)} as resolved_by,
          i.resolved_release, i.resolved_env, i.revision::text as revision, i.updated_at
     from error_issue i
     left join console_user assigne on assigne.id = i.assignee_user_id
@@ -397,10 +419,10 @@ async function muter<T>(ctx: MutationContext, app: string, expectedRevision: str
     if (!acteur) return { kind: "forbidden", error: "aucun compte console actif pour cette session" };
     const { rows: [issue] } = await client.query<LockedIssue>(
       `select id::text as id, app_id, status, assignee_user_id::text as assignee_user_id,
-              revision::text as revision, last_release
+              revision::text as revision
          from error_issue
         where app_id = $1 and id = $2
-        for update`,
+        for no key update`,
       [app, ctx.issueId],
     );
     if (!issue) return { kind: "not_found" };
@@ -434,25 +456,32 @@ async function nouvelleRevision(client: PoolClient, issue: LockedIssue): Promise
  * env, par l'ordre des marqueurs de déploiement. Une issue dont la dernière vue
  * vient d'un groupe historique garde la dernière release connue et un env inconnu :
  * toute réapparition restera alors « à vérifier ».
+ *
+ * `mip.release` arrive brut de l'émetteur : une release qui n'est pas un nom court
+ * (1 à 200 octets, sans caractère de contrôle), comme un env hors de 1 à 120, n'est
+ * pas retenue. L'activité la refuserait — la résolution échouerait à chaque essai —
+ * et migration-v74 ne confirme de régression qu'avec des valeurs ainsi bornées.
  */
 async function referenceResolution(client: PoolClient, issue: LockedIssue): Promise<{ release: string | null; env: string | null }> {
   // `last_seen` reste en base : relu en JavaScript, il perdrait ses microsecondes.
   // La fenêtre d'une milliseconde couvre la dernière vue écrite par l'ingestion,
   // elle-même tronquée à la milliseconde, sans parcourir l'historique de l'issue.
-  const { rows: [derniere] } = await client.query<{ release: string | null; env: string | null }>(
-    `select e.release, e.env
+  const { rows: [reference] } = await client.query<{ release: string | null; env: string | null }>(
+    `select case when octet_length(r.release) between 1 and 200 and r.release !~ '[[:cntrl:]]' then r.release end as release,
+            case when octet_length(e.env) between 1 and 120 and e.env !~ '[[:cntrl:]]' then e.env end as env
        from error_issue i
-       join lateral (
+       left join lateral (
          select release, env from rum_error
           where ts between i.last_seen - interval '1 millisecond' and i.last_seen + interval '1 millisecond'
             and app_id = i.app_id and issue_id = i.id
           order by ts desc, id desc
           limit 1
        ) e on true
+       cross join lateral (select coalesce(e.release, i.last_release) as release) r
       where i.app_id = $1 and i.id = $2`,
     [issue.app_id, issue.id],
   );
-  return derniere ? { release: derniere.release ?? issue.last_release, env: derniere.env } : { release: issue.last_release, env: null };
+  return reference ?? { release: null, env: null };
 }
 
 /** Statut et/ou assigné. L'assignation ne change jamais le statut. */
@@ -525,7 +554,7 @@ export async function commentIssue(
     );
     const revision = await nouvelleRevision(client, issue);
     await audit(client, ctx.actorEmail, "error_issue_comment", { app_id: issue.app_id, issue_id: issue.id, activity_id: cree.id });
-    const { rows: [activite] } = await client.query<ActivitySqlRow>(`${ACTIVITY_SQL} where a.id = $1`, [cree.id]);
+    const { rows: [activite] } = await client.query<ActivitySqlRow>(`${activitySql(true)} where a.id = $1`, [cree.id]);
     return { kind: "ok", value: { activity: toActivity(activite), revision } };
   });
 }
@@ -543,7 +572,7 @@ export async function linkIssue(
        returning id::text as id`,
       [issue.app_id, issue.id, request.url, request.label, actorId],
     );
-    if (!ticket) return { kind: "conflict", error: "ce lien est déjà attaché à l'issue", revision: issue.revision };
+    if (!ticket) return { kind: "duplicate", error: "ce lien est déjà attaché à l'issue" };
     const { rows: [cree] } = await client.query<{ id: string }>(
       `insert into error_issue_activity (app_id, issue_id, kind, actor_kind, actor_user_id, ticket_id)
        values ($1, $2, 'link', 'user', $3, $4) returning id::text as id`,
@@ -551,7 +580,7 @@ export async function linkIssue(
     );
     const revision = await nouvelleRevision(client, issue);
     await audit(client, ctx.actorEmail, "error_issue_link", { app_id: issue.app_id, issue_id: issue.id, ticket_id: ticket.id });
-    const { rows: [activite] } = await client.query<ActivitySqlRow>(`${ACTIVITY_SQL} where a.id = $1`, [cree.id]);
+    const { rows: [activite] } = await client.query<ActivitySqlRow>(`${activitySql(true)} where a.id = $1`, [cree.id]);
     const value = toActivity(activite);
     return { kind: "ok", value: { link: value.link as IssueLink, activity: value, revision } };
   });

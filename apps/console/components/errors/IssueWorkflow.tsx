@@ -1,7 +1,9 @@
 // Workflow d'une issue sur son écran (P5.6) : triage et assignation, référence de
 // résolution, régression confirmée ou réapparition à vérifier, liens de ticket,
 // puis historique et commentaires. Rendu serveur ; les formulaires sont des îlots
-// client, rendus pour un admin seulement.
+// client, rendus pour un admin seulement. Hors session admin, la lecture arrive
+// sans adresse de compte (lib/error-issue-workflow.ts) : l'écran dit « un compte
+// de la console », jamais « compte supprimé ».
 import { ERROR_LINK } from "@/components/errors/ErrorOccurrences";
 import { IssueCommentForm, IssueLinkForm, IssueTriageForm } from "@/components/errors/IssueWorkflowForms";
 import type { IssueActivity, IssueUserRef, IssueWorkflowView } from "@/lib/error-issue-workflow";
@@ -11,9 +13,10 @@ import { fmtDate } from "@/lib/format";
 const CARTE_TITRE = "text-[11px] font-semibold uppercase tracking-wider text-ink-faint";
 const NOTICE = "rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-ink-soft";
 
-function personne(ref: IssueUserRef | null): string {
+/** `emails` : lecture d'une session admin, où une adresse absente veut dire un compte supprimé. */
+function personne(ref: IssueUserRef | null, emails: boolean): string {
   if (!ref) return "personne";
-  return ref.email ?? "compte supprimé";
+  return ref.email ?? (emails ? "compte supprimé" : "un compte de la console");
 }
 
 function reference(release: string | null, env: string | null): string {
@@ -51,13 +54,13 @@ export function IssueTriageCard({
           <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-xs text-ink-faint">Assignée à</dt>
-              <dd data-testid="issue-assignee">{personne(workflow.assignee)}</dd>
+              <dd data-testid="issue-assignee">{personne(workflow.assignee, canWrite)}</dd>
             </div>
             {issue.status === "resolved" && issue.resolved_at && (
               <div>
                 <dt className="text-xs text-ink-faint">Résolution</dt>
                 <dd data-testid="issue-resolution">
-                  le {fmtDate(issue.resolved_at)} par {personne(workflow.resolved_by)} — référence{" "}
+                  le {fmtDate(issue.resolved_at)} par {personne(workflow.resolved_by, canWrite)} — référence{" "}
                   {reference(issue.resolved_release, issue.resolved_env)}
                 </dd>
               </div>
@@ -106,7 +109,7 @@ export function IssueTriageCard({
                     </a>
                     <span className="text-xs text-ink-faint">
                       {" "}
-                      — ajouté par {personne(lien.created_by)} le {fmtDate(lien.created_at)}
+                      — ajouté par {personne(lien.created_by, canWrite)} le {fmtDate(lien.created_at)}
                     </span>
                   </li>
                 ))}
@@ -131,8 +134,11 @@ function statut(s: IssueStatus | null): string {
 }
 
 /** Une ligne d'historique, en clair. Jamais de stack ni de message d'erreur : l'activité n'en porte pas. */
-function Evenement({ activite }: { activite: IssueActivity }) {
-  const acteur = activite.actor.kind === "system" ? "Système" : (activite.actor.user?.email ?? "compte supprimé");
+function Evenement({ activite, emails }: { activite: IssueActivity; emails: boolean }) {
+  const acteur =
+    activite.actor.kind === "system"
+      ? "Système"
+      : (activite.actor.user?.email ?? (emails ? "Compte supprimé" : "Un compte de la console"));
   switch (activite.kind) {
     case "status":
       return (
@@ -144,11 +150,11 @@ function Evenement({ activite }: { activite: IssueActivity }) {
     case "assignee":
       return activite.new_assignee ? (
         <>
-          <strong>{acteur}</strong> a assigné l&apos;issue à {personne(activite.new_assignee)}.
+          <strong>{acteur}</strong> a assigné l&apos;issue à {personne(activite.new_assignee, emails)}.
         </>
       ) : (
         <>
-          <strong>{acteur}</strong> a retiré l&apos;assignation ({personne(activite.old_assignee)}).
+          <strong>{acteur}</strong> a retiré l&apos;assignation ({personne(activite.old_assignee, emails)}).
         </>
       );
     case "comment":
@@ -224,7 +230,7 @@ export function IssueActivitySection({
               {activities.map((a) => (
                 <li key={a.id} className="border-l-2 border-line pl-3" data-testid={`issue-activity-${a.kind}`}>
                   <span className="block text-xs text-ink-faint">{fmtDate(a.created_at)}</span>
-                  <Evenement activite={a} />
+                  <Evenement activite={a} emails={canWrite} />
                 </li>
               ))}
             </ol>

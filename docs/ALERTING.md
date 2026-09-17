@@ -62,7 +62,7 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
 - **E-mail / SMS** : `kind='email'` est **tracé `skipped`** (hook prêt) mais **non livré**
   — nécessite un service externe **payant** (Resend/SES/Postmark). À brancher sur décision.
 
-## Pilier 4 — Issues d'erreurs : nouvelle, régression, pic (P5.6, migration-v73)
+## Pilier 4 — Issues d'erreurs : nouvelle, régression, pic (P5.6, migrations v73 et v74)
 
 - **Outbox `error_issue_notification`** : une notification par clé d'événement unique
   (`new:<issue>`, `regression:<résolution>:<issue>`, `spike:<règle>:<fenêtre>`), avec une
@@ -70,6 +70,8 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
   transaction qui la justifie** : le déclencheur de création d'une issue `new` (jamais
   une issue `migration`), l'écrivain d'ingestion pour une régression, `check_alerts` pour un
   pic. Jamais un curseur d'identifiants : une transaction validée tard n'est pas perdue.
+  Une release qui n'est pas un nom court (1 à 200 octets, sans caractère de contrôle) n'est
+  pas recopiée dans la charge (v74) : elle ne peut plus faire échouer le lot qui crée l'issue.
 - **`route_error_issue_notifications()`**, étape du tick juste après `check_alerts` : crée
   l'`alert_event` (rattaché à la règle pour un pic) et appelle `route_alert` — mêmes
   canaux, même sévérité, même livraison. `for update skip locked` : le scheduler et le cron
@@ -81,8 +83,10 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
   dernière occurrence au moment de la résolution). Même release, plus ancienne, sans
   marqueur, env inconnu : « réapparition à vérifier », l'issue reste résolue. Une issue
   ignorée le reste. Décidée par `error_issue_record_occurrences()` dans la transaction de
-  l'écrivain, issue verrouillée : deux lots concurrents donnent une activité et une
-  notification.
+  l'écrivain, issue verrouillée `for no key update` (v74) : deux lots concurrents donnent une
+  activité et une notification, et le verrou n'attend pas les clés étrangères posées par un
+  alias, une note ou un pic (plus d'interblocage croisé). Une release ou un env hors bornes
+  ne confirme rien : réapparition à vérifier.
 - **Règle `issue:<uuid>`** (console `/alerts`, ou « Créer une alerte de pic » depuis une
   issue) : somme des occurrences **observées** sur la fenêtre de la règle, bots exclus,
   `route` et `env` de la règle appliqués. Baseline P4 exacte : même fenêtre les semaines
@@ -94,13 +98,16 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
   `breached`, `no_data`), `last_value`, `last_reason`, `last_evaluated_at`, affichés sur
   `/alerts`. Issue absente ou regroupement inactif, fenêtre incomplète, aucune mesure,
   comparables insuffisants : jamais un zéro silencieux.
-- **`check_new_errors`** (watermark v64) ne voit plus que les groupes historiques : une
-  ligne rattachée à une issue est notifiée par l'outbox, pas deux fois.
+- **`check_new_errors`** (watermark v64) écarte la ligne d'une issue qui a sa notification
+  `new` dans l'outbox (v74) : notifiée une fois, pas deux. Une issue née avant v73, sans
+  notification, reste couverte par le watermark.
 - **Dispatcher local** : livre désormais aussi les événements **sans règle** (nouvelles
   erreurs, SLO, uptime, issues) déclenchés depuis `alert_config.rule_less_dispatch_since` ;
-  l'arriéré antérieur a été soldé `skipped` par la migration. Passe bornée (50 livraisons,
-  40 s), `for update skip locked` ; une cible non HTTP (adresse e-mail) est `skipped` au
-  lieu d'échouer cinq fois.
+  l'arriéré antérieur a été soldé `skipped` par la migration. Chaque livraison est réservée
+  (`for update skip locked`), postée et marquée dans **sa** transaction : une passe coupée
+  ne reposte que la livraison en cours. Passe bornée à 50 livraisons et par une échéance
+  mesurée depuis le début du tick (45 s, la route cron coupe à 60) ; une cible non HTTP
+  (adresse e-mail) est `skipped` au lieu d'échouer cinq fois.
 
 ## Sécurité / exploitation
 

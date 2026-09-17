@@ -78,6 +78,8 @@ describe("actions alertes — pic d'une issue issue:<uuid>", () => {
     await expect(
       createRuleAction(eventRuleForm({ metric: "issue", issue_id: ISSUE, env: "x".repeat(121) })),
     ).rejects.toThrow(/env invalide/);
+    // U+0085 : refusé par `[[:cntrl:]]` en base, donc ici, avant l'écriture.
+    await expect(createRuleAction(eventRuleForm({ metric: "issue", issue_id: ISSUE, env: "prod\u0085" }))).rejects.toThrow(/env invalide/);
     expect(insertAlertRule).not.toHaveBeenCalled();
   });
 });

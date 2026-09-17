@@ -1167,6 +1167,19 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
       }
     });
 
+    it("v74 : une release démesurée ne fait plus échouer la création de l'issue ; la notification part sans elle", async () => {
+      // Recopiée deux fois, 2 100 caractères dépassaient les 4 096 octets de la charge : tout le lot échouait.
+      const longue = await creerIssue(pool, A, { lastRelease: "r".repeat(2100) });
+      const [recue] = await notifications(pool, longue.id);
+      expect(recue.payload.first_release).toBeNull();
+      expect(recue.payload.text).not.toContain("release");
+      // Court en caractères, long en octets : 60 × 4 octets.
+      const emojis = await creerIssue(pool, A, { lastRelease: "\u{1F680}".repeat(60) });
+      expect((await notifications(pool, emojis.id))[0].payload.first_release).toBeNull();
+      const courte = await creerIssue(pool, A, { lastRelease: "2026.09.17-abc" });
+      expect((await notifications(pool, courte.id))[0].payload).toMatchObject({ first_release: "2026.09.17-abc" });
+    });
+
     it("check_new_errors : watermark conservé pour les groupes historiques, lignes d'issue exclues", async () => {
       await pool.query("select check_new_errors()");
       const issue = await creerIssue(pool, A);
@@ -1177,6 +1190,19 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
       );
       expect((await pool.query("select check_new_errors() as n")).rows[0].n).toBe(0);
       await pool.query("insert into rum_error (span_id, app_id, message, fingerprint, ts) values ($1, $2, 'historique', 'p56-fp-legacy', now())", [spanId(), A]);
+      expect((await pool.query("select check_new_errors() as n")).rows[0].n).toBe(1);
+    });
+
+    it("v74 : la ligne d'une issue sans notification `new`, née avant v73, suit le watermark historique", async () => {
+      await pool.query("select check_new_errors()");
+      const avantV73 = await creerIssue(pool, A);
+      await pool.query("delete from error_issue_notification where issue_id = $1", [avantV73.id]);
+      await pool.query(
+        `insert into rum_error (span_id, app_id, message, fingerprint, ts, issue_id, grouping_version, grouping_key, grouping_basis)
+         values ($1, $2, 'née avant v73', $3, now(), $4, 2, $5, 'normalized_frame')`,
+        [spanId(), A, `p56-fp-avant-v73-${span}`, avantV73.id, avantV73.key],
+      );
+      // Ingérée entre le dernier passage horaire et la migration : personne d'autre ne la notifierait.
       expect((await pool.query("select check_new_errors() as n")).rows[0].n).toBe(1);
     });
 
@@ -1225,6 +1251,53 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         expect(rejeu.rowCount).toBe(0);
         expect(await enregistrerOccurrences(pool, A, issue.id, await occurrence(pool, A, issue, { release: "1.1" }))).toBeNull();
         expect((await notifications(pool, issue.id)).filter((n) => n.kind === "regression")).toHaveLength(1);
+      });
+
+      it("v74 : une release ou une référence démesurée ne confirme rien et n'annule jamais le lot de l'écrivain", async () => {
+        const longue = "9".repeat(250);
+        await marqueur(pool, A, "1.0", "prod", "10 days");
+        await marqueur(pool, A, longue, "prod", "1 day");
+        await marqueur(pool, A, "2.0", "prod", "1 minute");
+        const issue = await creerIssue(pool, A);
+        await resoudre(pool, A, issue.id, "1.0", "prod");
+        expect(await enregistrerOccurrences(pool, A, issue.id, await occurrence(pool, A, issue, { release: longue }))).toBe("reappearance");
+        // Référence écrite avant v74, trop longue pour une activité : rien à comparer.
+        const ancienne = await creerIssue(pool, A);
+        await resoudre(pool, A, ancienne.id, longue, "prod");
+        expect(await enregistrerOccurrences(pool, A, ancienne.id, await occurrence(pool, A, ancienne, { release: "2.0" }))).toBe("reappearance");
+        expect((await pool.query("select status from error_issue where id = any($1::uuid[])", [[issue.id, ancienne.id]])).rows.map((r) => r.status))
+          .toEqual(["resolved", "resolved"]);
+        expect([...await activites(pool, issue.id), ...await activites(pool, ancienne.id)]).toEqual([]);
+      });
+
+      it("v74 : un alias posé sur l'issue par un lot n'interbloque plus la régression décidée par un autre", async () => {
+        await marqueur(pool, A, "1.0", "prod", "10 days");
+        await marqueur(pool, A, "1.1", "prod", "1 day");
+        const x = await creerIssue(pool, A);
+        const w = await creerIssue(pool, A);
+        await resoudre(pool, A, x.id, "1.0", "prod");
+        const [c1, c2] = [await pool.connect(), await pool.connect()];
+        try {
+          await c1.query("begin");
+          await c2.query("begin");
+          // Une attente de verrou échoue vite au lieu de bloquer la suite.
+          await c2.query("set local lock_timeout = '2s'");
+          // Lot 1 : alias sur X (verrou KEY SHARE de clé étrangère), puis mise à jour de W.
+          await c1.query("insert into error_issue_alias (app_id, legacy_fingerprint, issue_id) values ($1, $2, $3)", [A, `p56-alias-${span}`, x.id]);
+          // Lot 2 : W d'abord, puis la décision sur X — sans attendre le lot 1.
+          await c2.query("update error_issue set last_seen = now() where id = $1", [w.id]);
+          expect(await enregistrerOccurrences(c2, A, x.id, await occurrence(c2, A, x, { release: "1.1" }))).toBe("regression");
+          const croise = c1.query("update error_issue set last_seen = now() where id = $1", [w.id]);
+          await new Promise((r) => setTimeout(r, 100));
+          await c2.query("commit");
+          await croise;
+          await c1.query("commit");
+        } finally {
+          await Promise.all([c1, c2].map((c) => c.query("rollback").catch(() => undefined)));
+          c1.release();
+          c2.release();
+        }
+        expect((await activites(pool, x.id)).map((a) => a.kind)).toEqual(["regression"]);
       });
 
       it("ignorée reste ignorée ; ouverte ou à revoir ne bouge pas", async () => {
@@ -1395,6 +1468,19 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         expect(audits.map((a) => [a.user_email, JSON.parse(a.detail).status?.to ?? null])).toEqual([[ADMIN, "resolved"], [ADMIN, "open"]]);
       });
 
+      it("résoudre malgré une release démesurée : référence sans release, jamais une erreur", async () => {
+        const longue = "x".repeat(300);
+        const issue = await creerIssue(pool, A, { lastRelease: longue });
+        await occurrence(pool, A, issue, {
+          ts: `(select last_seen from error_issue where id = '${issue.id}')`,
+          release: longue,
+          env: "prod",
+        });
+        const resolu = await lib.triageIssue(ctx(issue.id), { app: A, status: "resolved", expectedRevision: await revisionDe(issue.id) });
+        expect(resolu).toMatchObject({ kind: "ok", value: { status: "resolved", resolved_release: null, resolved_env: "prod" } });
+        expect((await activites(pool, issue.id)).map((a) => [a.kind, a.release, a.env])).toEqual([["status", null, "prod"]]);
+      });
+
       it("deux éditions concurrentes sur la même révision : une réussit, l'autre reçoit 409", async () => {
         const issue = await creerIssue(pool, A);
         const r = await revisionDe(issue.id);
@@ -1405,7 +1491,7 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         expect(resultats.map((x) => x.kind).sort()).toEqual(["conflict", "ok"]);
       });
 
-      it("commentaires et liens : stockés tels que validés, doublon en conflit, historique paginé à la microseconde", async () => {
+      it("commentaires et liens : stockés tels que validés, doublon refusé sans conflit, historique paginé à la microseconde", async () => {
         const issue = await creerIssue(pool, A);
         const autre = await creerIssue(pool, B);
         let revision = await revisionDe(issue.id);
@@ -1419,7 +1505,7 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         const lie = await lib.linkIssue(ctx(issue.id), lien);
         expect(lie).toMatchObject({ kind: "ok", value: { link: { url: lien.url, label: "MIP-7", created_by: { email: ADMIN } } } });
         revision = lie.kind === "ok" ? lie.value.revision : "";
-        expect(await lib.linkIssue(ctx(issue.id), { ...lien, expectedRevision: revision })).toMatchObject({ kind: "conflict", error: expect.stringMatching(/déjà attaché/) });
+        expect(await lib.linkIssue(ctx(issue.id), { ...lien, expectedRevision: revision })).toEqual({ kind: "duplicate", error: "ce lien est déjà attaché à l'issue" });
         expect(await lib.commentIssue(ctx(autre.id), { app: B, body: "B", expectedRevision: await revisionDe(autre.id) })).toMatchObject({ kind: "ok" });
 
         for (let i = 0; i < 3; i++) {
@@ -1431,7 +1517,7 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         const vues: string[] = [];
         let curseur: { ts: string; id: string } | null = null;
         for (let page = 0; page < 5; page++) {
-          const lu = await lib.listIssueActivity(issue.id, [A], { limit: 2, cursor: curseur });
+          const lu = await lib.listIssueActivity(issue.id, [A], { limit: 2, cursor: curseur }, { emails: true });
           expect(lu.kind).toBe("ok");
           if (lu.kind !== "ok") break;
           vues.push(...lu.value.activities.map((a) => a.id));
@@ -1442,11 +1528,19 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         const toutes = (await activites(pool, issue.id)).map((a) => String(a.id));
         expect([...vues].sort()).toEqual([...toutes].sort());
         expect(new Set(vues).size).toBe(5);
-        expect(await lib.listIssueActivity(issue.id, [B], { limit: 10, cursor: null })).toEqual({ kind: "not_found" });
+        expect(await lib.listIssueActivity(issue.id, [B], { limit: 10, cursor: null }, { emails: true })).toEqual({ kind: "not_found" });
 
-        const vue = await lib.issueWorkflowView(issue.id, A);
+        const vue = await lib.issueWorkflowView(issue.id, A, { emails: true });
         expect(vue?.links.map((l) => l.url)).toEqual([lien.url]);
         expect(vue?.assignable_users.map((u) => u.email)).toEqual([ADMIN, VIEWER_A]);
+
+        // Viewer, démo, jeton : mêmes lignes, sans aucune adresse de compte, ni liste d'assignables.
+        const masquee = await lib.issueWorkflowView(issue.id, A, { emails: false });
+        expect(masquee?.links.map((l) => l.created_by)).toEqual([{ user_id: expect.any(String), email: null }]);
+        expect(masquee?.assignable_users).toEqual([]);
+        const lue = await lib.listIssueActivity(issue.id, [A], { limit: 50, cursor: null }, { emails: false });
+        expect(JSON.stringify(lue)).not.toContain(ADMIN);
+        expect(lue).toMatchObject({ kind: "ok", value: { activities: expect.arrayContaining([expect.objectContaining({ kind: "link", actor: { kind: "user", user: { user_id: expect.any(String), email: null } } })]) } });
       });
     });
 
@@ -1534,6 +1628,9 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         const seuil = await regle(A, `issue:${issue.id}`);
         await pool.query("select check_alerts()");
         expect(await etat(seuil)).toMatchObject({ last_state: "no_data", last_reason: expect.stringMatching(/regroupement v2 inactif/) });
+        // v74 — non suivie : aucune fenêtre comparable, jamais des zéros prêtés par la seule rétention.
+        expect((await pool.query("select * from issue_metric_baseline($1, $2::uuid, null, null, 4, 15)", [A, issue.id])).rows[0])
+          .toEqual({ med: null, mad: null, n: 0 });
 
         await suivie(A, "5 minutes");
         await pool.query("select check_alerts()");
@@ -1627,6 +1724,40 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
           { target: `${recepteur.base}/a`, status: "delivered" },
           { target: "ops@exemple.fr", status: "skipped" },
         ]);
+      });
+
+      it("passe interrompue : une livraison déjà postée reste acquise, seule celle en cours repart", async () => {
+        recepteur.recus.length = 0;
+        const regle = (await pool.query(
+          "insert into alert_rule (app_id, metric, threshold, webhook_url) values ($1, 'LCP', 1, $2) returning id",
+          [A, `${recepteur.base}/regle`],
+        )).rows[0].id;
+        const evenement = (await pool.query("insert into alert_event (rule_id, value, message) values ($1, 3, 'LCP p56-app-a') returning id", [regle])).rows[0].id;
+        const ids = (await pool.query(
+          "insert into alert_delivery (alert_event_id, target) select $1, $2 || n from generate_series(1, 3) n returning id::text as id",
+          [evenement, `${recepteur.base}/interrompue-`],
+        )).rows.map((r) => r.id as string);
+        // Panne au marquage de la deuxième livraison, après son POST : la passe s'arrête là.
+        const panne = {
+          query: pool.query.bind(pool),
+          connect: async () => {
+            const client = await pool.connect();
+            return {
+              query: (sql: string, params?: unknown[]) =>
+                sql.startsWith("update alert_delivery") && params?.some((p) => String(p) === ids[1])
+                  ? Promise.reject(new Error("connexion perdue"))
+                  : client.query(sql, params),
+              release: () => client.release(),
+            };
+          },
+        };
+        await expect(dispatchOnce(panne as unknown as pg.Pool)).rejects.toThrow(/connexion perdue/);
+        await dispatchOnce(pool);
+        const recus = recepteur.recus.map((r) => r.url).filter((u) => u.startsWith("/interrompue-"));
+        // La première n'est jamais repostée ; la deuxième, en cours pendant la panne, l'est une fois.
+        expect(recus).toEqual(["/interrompue-1", "/interrompue-2", "/interrompue-2", "/interrompue-3"]);
+        expect((await pool.query("select status from alert_delivery where id = any($1::bigint[]) order by id", [ids])).rows.map((r) => r.status))
+          .toEqual(["delivered", "delivered", "delivered"]);
       });
 
       it("l'arriéré sans règle d'avant v73 reste soldé ; une nouvelle erreur historique part désormais", async () => {

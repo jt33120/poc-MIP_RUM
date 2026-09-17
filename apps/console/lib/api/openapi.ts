@@ -675,7 +675,7 @@ export function buildOpenApi(): Record<string, unknown> {
         IssueUserRef: o(
           {
             user_id: { type: "string", pattern: "^[0-9]+$", description: "identifiant du compte console (bigint en chaîne)" },
-            email: nul({ type: "string", description: "null : compte supprimé depuis" }),
+            email: nul({ type: "string", description: "adresse du compte, pour une session admin seulement ; null pour un jeton, un viewer, ou un compte supprimé" }),
           },
           ["user_id", "email"],
         ),

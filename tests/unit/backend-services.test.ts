@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { aFaire, empreinte, jusquaInclus } from "../../apps/ingest/migrate.mjs";
 import { CADENCES, prochainDelai } from "../../apps/ingest/jobs/cadence.mjs";
-import { executerEtapes, travaux } from "../../apps/ingest/jobs/planifie.mjs";
+import { ECHEANCE_LIVRAISON_MS, executerEtapes, travaux } from "../../apps/ingest/jobs/planifie.mjs";
 import { optionsSsl } from "../../apps/ingest/lib/serveur.mjs";
 import { DUREES, SQL_TABLE, prendreBail, rendreBail } from "../../apps/ingest/jobs/bail.mjs";
 
@@ -149,7 +149,8 @@ describe("cadences et fonctions SQL appelées", () => {
 
   it("le tick évalue alertes, route les notifications d'issue, SLO, uptime, livraison et réconciliation", async () => {
     const pool = poolFactice();
-    const dispatch = vi.fn(async () => ({ sent: 0 }));
+    const dispatch = vi.fn(async (_pool: unknown, _options: { echeance: number }) => ({ sent: 0 }));
+    const debut = Date.now();
     const bilan = await travaux(pool as never, { log: muet, dispatch }).tick();
 
     expect(bilan.ok).toBe(true);
@@ -164,6 +165,10 @@ describe("cadences et fonctions SQL appelées", () => {
       "reconcile_deliveries",
     ]);
     expect(dispatch).toHaveBeenCalledOnce();
+    // L'échéance de livraison se mesure depuis le début du tick, pas depuis le dispatcher.
+    const { echeance } = dispatch.mock.calls[0][1];
+    expect(echeance).toBeGreaterThanOrEqual(debut + ECHEANCE_LIVRAISON_MS);
+    expect(echeance).toBeLessThanOrEqual(Date.now() + ECHEANCE_LIVRAISON_MS);
     expect(pool.requetes.some((q) => q.includes("check_alerts()"))).toBe(true);
     expect(pool.requetes.some((q) => q.includes("uptime_check"))).toBe(true);
   });

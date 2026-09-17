@@ -57,7 +57,7 @@ export function RuleFields({
           defaultValue={issueId}
           maxLength={36}
           placeholder="UUID (si métrique issue)"
-          className={`${INPUT_CLASS} w-72 font-mono`}
+          className={`${INPUT_CLASS} w-72 max-w-full font-mono`}
         />
       </Field>
       <Field label="Env (issue, optionnel)">
