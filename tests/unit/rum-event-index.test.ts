@@ -82,9 +82,12 @@ describe("flattenOtlp — rum_event_index", () => {
     expect(new Set(rows.eventIndex.map((e) => `${e.app_id}:${e.kind}:${e.source_span_id}`)).size).toBe(sourceCount);
     expect(new Set(rows.eventIndex.map((e) => e.kind))).toEqual(new Set(EVENT_INDEX_KINDS));
     for (const event of rows.eventIndex) {
+      // P6.1 : la release déclarée par la resource (mip.release) suit chaque ligne
+      // source ; la fixture ne déclare ni environnement ni service.
       expect(Object.keys(event).sort()).toEqual([
-        "app_id", "kind", "route", "session_id", "source_name", "source_span_id", "ts",
+        "app_id", "kind", "release", "route", "session_id", "source_name", "source_span_id", "ts",
       ]);
+      expect(event.release).toBe("1.4.2");
       expect(event.source_span_id).toBeTruthy();
     }
   });
