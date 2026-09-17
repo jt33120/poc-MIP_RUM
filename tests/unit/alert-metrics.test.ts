@@ -20,12 +20,21 @@ describe("séparation ALERT_METRICS / SLO_METRICS", () => {
     expect(METRIC_LABELS.ai_cost).toBeUndefined();
   });
 
-  it("ALERT_METRICS ajoute les comptes log et événement sans les rendre éligibles aux SLO", () => {
-    expect([...ALERT_METRICS]).toEqual([...SLO_METRICS, "log_errors", "event"]);
+  it("ALERT_METRICS ajoute les comptes log, événement et issue sans les rendre éligibles aux SLO", () => {
+    expect([...ALERT_METRICS]).toEqual([...SLO_METRICS, "log_errors", "event", "issue"]);
     expect(isAlertMetric("event:checkout")).toBe(true);
     expect(isAlertMetric("event")).toBe(false);
     expect(isAlertMetric("event:")).toBe(false);
     expect(isAlertMetric(`event:${"x".repeat(101)}`)).toBe(false);
+  });
+
+  it("issue:<uuid> exige un UUID en minuscules, comme la contrainte de migration-v73", () => {
+    expect(isAlertMetric("issue:11111111-2222-4333-8444-555555555555")).toBe(true);
+    expect(isAlertMetric("issue")).toBe(false);
+    expect(isAlertMetric("issue:")).toBe(false);
+    expect(isAlertMetric("issue:11111111-2222-4333-8444-55555555555G")).toBe(false);
+    expect(isAlertMetric("issue:11111111-2222-4333-8444-555555555555 ")).toBe(false);
+    expect(isAlertMetric("issue:AAAAAAAA-2222-4333-8444-555555555555")).toBe(false);
   });
 });
 
@@ -35,6 +44,7 @@ describe("metricLabel", () => {
     expect(metricLabel("error_rate")).toBe("Taux d'erreur JS");
     expect(metricLabel("LCP")).toBe("LCP (ms)");
     expect(metricLabel("event:checkout")).toBe("Événement « checkout » (nombre)");
+    expect(metricLabel("issue:11111111-2222-4333-8444-555555555555")).toBe("Issue 11111111 (occurrences)");
   });
 
   it("repli sur la clé brute si métrique inconnue", () => {

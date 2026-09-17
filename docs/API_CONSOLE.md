@@ -7,7 +7,8 @@
 > `lib/health.ts`) — **aucune logique SQL dupliquée**.
 
 - **Base** : `/api/v1` (servie par la console Next.js).
-- **Lecture seule** : que des `GET`. Aucune mutation exposée.
+- **Lecture**, plus quelques écritures annoncées à part (section « Écritures ») : le marqueur de
+  déploiement de la CI et le workflow des issues, réservé à une session admin de la console.
 - **Format** : JSON UTF-8, enveloppe stable `{ meta, data }` (voir plus bas).
 - **Découverte** : `GET /api/v1` renvoie la liste des endpoints et des filtres.
 
@@ -95,6 +96,16 @@ Erreurs : `{ "error": "message" }` avec le statut HTTP (`400`, `401`, `403`, `40
 ---
 
 ## Journal des changements
+
+### 17/09/2026 — workflow des issues : triage, commentaires, liens et historique (P5.6)
+
+Une lecture et trois écritures s'ajoutent, sans rien changer aux routes existantes :
+`GET /api/v1/issues/{id}/activity`, `POST /api/v1/issues/{id}/triage`, `POST /api/v1/issues/{id}/comments` et
+`POST /api/v1/issues/{id}/links`. Les écritures exigent une **session admin de la console** et son Origin : un
+jeton `CONSOLE_API_TOKENS` reste en lecture seule (`403`), comme une session viewer ou démo. Chaque écriture
+porte `expectedRevision`, la révision lue : `409` si l'issue a changé depuis, avec la révision courante. Le
+serveur MCP n'expose aucune de ces écritures. Commentaires et liens restent dans la console : rien n'est
+envoyé à un outil de tickets.
 
 ### 17/09/2026 — issues d'erreurs : regroupement versionné et identité durable (P5.5)
 
@@ -304,6 +315,21 @@ quel dans `cursor` avec les mêmes filtres. `400` pour `status`, `source`, `rele
 - Occurrences paginées par curseur : `limit` 1..100 (défaut 100), `next_cursor` à renvoyer dans `cursor`.
 - `400` `id invalide (UUID attendu)` ou `cursor invalide` ; `404` `issue introuvable`.
 
+### `GET /api/v1/issues/{id}/activity` — historique d'une issue
+`data = { activities: IssueActivity[], next_cursor }` (source de vérité : `IssueActivity` dans
+`apps/console/lib/error-issue-workflow.ts`, schéma `IssueActivityPage` de la spec OpenAPI).
+
+- Lecture : session ou jeton, dans le périmètre du principal. L'identifiant fait foi : `meta.app` est l'app de
+  l'issue ; hors périmètre, `404`.
+- `kind` : `status` (ancien et nouveau statut ; une résolution porte sa release et son env de référence),
+  `assignee` (ancien et nouvel assigné), `comment` (texte scrubbé ; `legacy_fingerprint` quand c'est la note
+  d'un groupe historique reprise une seule fois), `link` (lien de ticket) et `regression` (release qui a rouvert
+  l'issue et release de référence dépassée). `actor` : `user` (compte console, `email` null s'il a été
+  supprimé) ou `system`. Jamais de stack, de message d'erreur ni d'identité RUM.
+- Le plus récent d'abord ; `limit` 1..100 (défaut 50) ; `next_cursor` (horodatage à la microseconde et
+  identifiant) à renvoyer dans `cursor`. `400` `id invalide (UUID attendu)` ou `cursor invalide` ; `503` avant
+  migration-v73.
+
 ### `GET /api/v1/sessions` — sessions récentes
 `data.sessions: SessionRow[]`.
 
@@ -384,14 +410,43 @@ spec ci-dessus lisible dans un navigateur.
 
 ---
 
-## Écriture — la seule
+## Écritures
+
+Quatre routes non-`GET`, annoncées séparément dans le descripteur `GET /api/v1` (champ `write`) plutôt
+que noyées dans l'énumération des lectures. Tout le reste de `/api/v1` est en lecture seule.
 
 ### `POST /api/v1/deploys` — marqueur de déploiement
-La **seule** route non-`GET` de l'API. Enregistre un marqueur de déploiement depuis une
-chaîne d'intégration continue, ce qui permet aux écrans de dater une régression par rapport
-à une mise en production. Tout le reste de `/api/v1` est en lecture seule ; cette exception
-est annoncée séparément dans le descripteur `GET /api/v1` (champ `write`) plutôt que noyée
-dans l'énumération des lectures.
+Enregistre un marqueur de déploiement depuis une chaîne d'intégration continue, ce qui permet aux écrans de
+dater une régression par rapport à une mise en production. Les marqueurs ordonnent aussi les releases d'une
+app et d'un env pour confirmer la régression d'une issue (P5.6) : jamais d'ordre lexical ni SemVer.
+
+### Garde commune des écritures d'une issue
+Session admin de la console (cookie `mip_session`, rôle `admin`, jamais une session démo) et en-tête `Origin`
+de la console : `401` sans session ; `403` pour un jeton d'API, une session viewer ou démo, ou une autre
+origine ; `429` au-delà du débit ; `413` au-delà de 16 Kio ; `400` pour un JSON ou un contrat invalide ; `404`
+pour une issue inconnue, hors périmètre ou d'une autre `app` que celle du corps ; `409` si `expectedRevision`
+n'est plus la révision courante (corps `{ error, revision }` : recharger puis rejouer) ; `503` avant
+migration-v73. Réponse `{ meta: { app, generatedAt }, data }`, jamais mise en cache. Chaque écriture
+incrémente la révision, trace une activité et une entrée `audit_log` (sans le texte d'un commentaire).
+
+### `POST /api/v1/issues/{id}/triage` — statut et assigné
+Corps `{ app, status?, assigneeUserId?, expectedRevision }`, au moins `status` ou `assigneeUserId`
+(`null` : désassigner). `status` : `open`, `for_review`, `resolved` ou `ignored`. L'assigné doit être un compte
+actif autorisé sur l'app de l'issue (`console_user.apps` nul ou la contenant), sinon `400` ; l'assignation ne
+change jamais le statut. Résoudre fige la **référence** : release et env de la dernière occurrence rattachée.
+Une occurrence ultérieure ne rouvre l'issue que si sa release, dans cet env, a été déployée strictement après
+la référence d'après les marqueurs de déploiement ; sinon la réapparition reste « à vérifier ». Une issue
+ignorée le reste. Rien à changer : `200` sans nouvelle révision. `data = { issue: IssueWorkflowState }`.
+
+### `POST /api/v1/issues/{id}/comments` — commentaire
+Corps `{ app, body, expectedRevision }`. Le texte est scrubbé (e-mails, secrets, longues suites de chiffres)
+puis borné à 2 000 caractères **après** masquage (`400` au-delà). `201`, `data = { activity, revision }`.
+
+### `POST /api/v1/issues/{id}/links` — lien de ticket
+Corps `{ app, url, label, expectedRevision }`. `url` : HTTPS, sans identifiants, normalisée (hôte en punycode,
+caractères encodés), 2 048 caractères au plus ; `label` : une ligne scrubbée de 120 caractères. La même URL deux
+fois sur une issue : `409`. `201`, `data = { link, activity, revision }`. Aucune synchronisation avec l'outil
+de tickets (P8.6).
 
 ---
 

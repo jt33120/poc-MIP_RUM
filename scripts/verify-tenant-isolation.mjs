@@ -85,6 +85,13 @@ async function main() {
        values ($1,2,repeat('c',32),'normalized_frame','new','open',now(),now()) returning id`, [app])).rows[0].id;
     await c.query(
       "insert into error_issue_alias (app_id,legacy_fingerprint,issue_id) values ($1,'368e01a8',$2)", [app, issue]);
+    // P5.6 : la notification « new » de l'issue naît par déclencheur ; un commentaire, un lien de ticket.
+    await c.query(
+      `insert into error_issue_activity (app_id,issue_id,kind,actor_kind,body) values ($1,$2,'comment','user','suivi')`,
+      [app, issue]);
+    await c.query(
+      `insert into error_issue_ticket (app_id,issue_id,url,label) values ($1,$2,'https://tickets.exemple.fr/1','T-1')`,
+      [app, issue]);
   }
   // Un événement d'alerte + une livraison rattachés au tenant A uniquement.
   const ruleA = (await c.query("select id from alert_rule where app_id='app-a' limit 1")).rows[0].id;
@@ -94,6 +101,11 @@ async function main() {
   await c.query(`insert into alert_delivery (alert_event_id,target,status) values ($1,'http://x/','ok')`, [evA]);
   const chkA = (await c.query("select id from uptime_check where app_id='app-a' limit 1")).rows[0].id;
   await c.query(`insert into uptime_result (check_id,ok,status_code,latency_ms) values ($1,true,200,10)`, [chkA]);
+  // P5.6 : l'événement SANS règle né de la notification d'issue de A appartient à A.
+  const evIssueA = (await c.query(
+    `insert into alert_event (rule_id,value,message,severity) values (null,null,'nouvelle issue','warning') returning id`)).rows[0].id;
+  await c.query(
+    `update error_issue_notification set state='delivered', delivered_at=now(), alert_event_id=$1 where app_id='app-a'`, [evIssueA]);
 
   // ── Garde structurelle : aucune policy permissive résiduelle ───────────────
   // Les policies permissives se combinent en OU : une seule `using (true)`
@@ -130,12 +142,15 @@ async function main() {
   assert("console_ro + portée A : ne voit QUE les issues de A", (await seen(c, "error_issue")) === 1);
   assert("console_ro + portée A : ne voit QUE les alias de A", (await seen(c, "error_issue_alias")) === 1);
   assert("console_ro + portée A : ne voit QUE la configuration de regroupement de A", (await seen(c, "error_grouping_config")) === 1);
+  assert("console_ro + portée A : ne voit QUE l'activité des issues de A", (await seen(c, "error_issue_activity")) === 1);
+  assert("console_ro + portée A : ne voit QUE les liens de ticket de A", (await seen(c, "error_issue_ticket")) === 1);
+  assert("console_ro + portée A : ne voit QUE les notifications d'issue de A", (await seen(c, "error_issue_notification")) === 1);
 
   const rows = (await c.query("select distinct app_id from rum_metric")).rows.map((r) => r.app_id);
   assert("console_ro + portée A : aucune ligne de B ne transparaît", rows.length === 1 && rows[0] === "app-a");
 
   // Tables filles : scopées via leur parent.
-  assert("fille alert_event : visible (parent A)", (await seen(c, "alert_event")) === 1);
+  assert("fille alert_event : visible (règle A et notification d'issue A)", (await seen(c, "alert_event")) === 2);
   assert("fille alert_delivery : visible (parent A)", (await seen(c, "alert_delivery")) === 1);
   assert("fille uptime_result : visible (parent A)", (await seen(c, "uptime_result")) === 1);
 
@@ -147,7 +162,9 @@ async function main() {
   assert("portée B : ne voit QUE les actions de B", (await seen(c, "rum_action")) === 1);
   assert("portée B : ne voit QUE les jetons de source maps de B", (await seen(c, "sourcemap_upload_token")) === 1);
   assert("portée B : ne voit QUE les issues de B", (await seen(c, "error_issue")) === 1);
-  assert("portée B : l'événement d'alerte de A est invisible", (await seen(c, "alert_event")) === 0);
+  assert("portée B : ne voit QUE l'activité et les liens des issues de B",
+    (await seen(c, "error_issue_activity")) === 1 && (await seen(c, "error_issue_ticket")) === 1);
+  assert("portée B : les événements d'alerte de A, de règle comme d'issue, sont invisibles", (await seen(c, "alert_event")) === 0);
   assert("portée B : la livraison de A est invisible", (await seen(c, "alert_delivery")) === 0);
   assert("portée B : le résultat uptime de A est invisible", (await seen(c, "uptime_result")) === 0);
 
@@ -160,6 +177,8 @@ async function main() {
   assert("portée vide : AUCUN jeton de source maps visible (fail-closed)", (await seen(c, "sourcemap_upload_token")) === 0);
   assert("portée vide : AUCUNE issue ni alias visible (fail-closed)",
     (await seen(c, "error_issue")) === 0 && (await seen(c, "error_issue_alias")) === 0);
+  assert("portée vide : AUCUNE activité, AUCUN lien, AUCUNE notification d'issue (fail-closed)",
+    (await seen(c, "error_issue_activity")) + (await seen(c, "error_issue_ticket")) + (await seen(c, "error_issue_notification")) === 0);
 
   await c.query("reset role");
 
@@ -180,11 +199,14 @@ async function main() {
     const actionsVues = await seen(c, "rum_action");
     const jetonsVus = await seen(c, "sourcemap_upload_token");
     const issuesVues = await seen(c, "error_issue");
+    const workflowVu = (await seen(c, "error_issue_activity")) + (await seen(c, "error_issue_ticket"))
+      + (await seen(c, "error_issue_notification"));
     await c.query("reset role");
     assert(`API publique : ${role} ne lit RIEN même avec une portée posée`, vus === 0);
     assert(`API publique : ${role} ne lit AUCUNE action même avec une portée posée`, actionsVues === 0);
     assert(`API publique : ${role} ne lit AUCUN jeton de source maps même avec une portée posée`, jetonsVus === 0);
     assert(`API publique : ${role} ne lit AUCUNE issue même avec une portée posée`, issuesVues === 0);
+    assert(`API publique : ${role} ne lit RIEN du workflow des issues même avec une portée posée`, workflowVu === 0);
   }
 
   // ── console_ro n'écrit que là où la console écrit vraiment (v48) ────────────
@@ -214,7 +236,12 @@ async function main() {
             has_table_privilege('console_ro','rum_span','INSERT')   as dogfood_insert,
             has_table_privilege('console_ro','sourcemap_upload_token','DELETE') as jeton_delete,
             has_column_privilege('console_ro','sourcemap_upload_token','secret_hash','UPDATE') as jeton_rehash,
-            has_column_privilege('console_ro','sourcemap_upload_token','revoked_at','UPDATE') as jeton_revoke`)).rows[0];
+            has_column_privilege('console_ro','sourcemap_upload_token','revoked_at','UPDATE') as jeton_revoke,
+            has_table_privilege('console_ro','error_issue_activity','INSERT') as activite_insert,
+            has_table_privilege('console_ro','error_issue_activity','UPDATE') as activite_update,
+            has_table_privilege('console_ro','error_issue_notification','INSERT') as outbox_insert,
+            has_column_privilege('console_ro','error_issue','status','UPDATE') as issue_triage,
+            has_column_privilege('console_ro','error_issue','grouping_key','UPDATE') as issue_cle`)).rows[0];
   assert("v48 : PRIVILÈGE d'insertion retiré sur rum_metric", priv.tele_insert === false);
   assert("v48 : lecture PRÉSERVÉE sur rum_metric", priv.tele_select === true);
   assert("v65 : lecture autorisée mais écriture refusée sur rum_event_index", priv.index_select === true && priv.index_insert === false);
@@ -225,6 +252,9 @@ async function main() {
   assert("v48 : écriture préservée sur rum_span (dogfooding console)", priv.dogfood_insert === true);
   assert("v71 : jetons de source maps révocables, jamais supprimés ni re-hachés par console_ro",
     priv.jeton_revoke === true && priv.jeton_delete === false && priv.jeton_rehash === false);
+  assert("v73 : activité append-only, outbox en lecture seule, triage sans toucher la clé de regroupement",
+    priv.activite_insert === true && priv.activite_update === false && priv.outbox_insert === false
+      && priv.issue_triage === true && priv.issue_cle === false);
 
   await c.query("set role console_ro");
   await c.query("select set_config('app.current_app_id','app-a',false)");

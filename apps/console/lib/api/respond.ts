@@ -26,8 +26,13 @@ export function apiJson(
   });
 }
 
-export function apiError(req: NextRequest, status: number, message: string): NextResponse {
-  return apiJson(req, { error: message }, { status });
+export function apiError(
+  req: NextRequest,
+  status: number,
+  message: string,
+  details?: Record<string, unknown>,
+): NextResponse {
+  return apiJson(req, { ...details, error: message }, { status });
 }
 
 /** Réponse au préflight CORS (OPTIONS). */
@@ -40,12 +45,14 @@ export function preflight(req: NextRequest): NextResponse {
 
 /**
  * Erreur HTTP « attendue » (404, 400…) à lancer depuis un handler : le wrapper la
- * traduit en réponse avec le bon statut au lieu de la masquer en 500.
+ * traduit en réponse avec le bon statut au lieu de la masquer en 500. `details`
+ * complète le corps d'erreur (ex. la révision courante d'un 409).
  */
 export class ApiHttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "ApiHttpError";

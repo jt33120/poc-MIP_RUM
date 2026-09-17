@@ -20,6 +20,12 @@
 // pour ça que ce module est du code appelable, pas une route.
 //
 // Les fonctions SQL, elles, ne bougent pas. Ce qui change est le DÉCLENCHEUR.
+//
+// DEUX DÉCLENCHEURS À LA FOIS. Le scheduler Railway et le cron GitHub (via la
+// route /api/cron) peuvent lancer la même cadence au même instant : chaque étape
+// reste idempotente sous concurrence, avec des verrous de TRANSACTION seulement
+// (le pooler Neon perd un verrou de session), et tient dans la minute de la route.
+import { importerNotesHistoriques } from "../lib/error-issue-workflow.mjs";
 
 /**
  * Exécute une série d'étapes SANS qu'un échec annule les suivantes : une purge
@@ -48,6 +54,18 @@ export async function executerEtapes(etapes, log = console) {
 export async function appelerFn(pool, fn) {
   const { rows } = await pool.query(`select ${fn} as result`);
   return rows[0]?.result ?? null;
+}
+
+/**
+ * Appelle une fonction SQL apportée par une migration récente, si elle existe.
+ * Le code peut précéder sa migration sur un déploiement : l'étape rend alors la
+ * raison de son absence au lieu d'échouer — un 207 à chaque tick masquerait les
+ * vrais échecs. `signature` est la forme regprocedure, `fn` l'appel.
+ */
+export async function appelerFnSiPresente(pool, signature, fn, migration) {
+  const { rows } = await pool.query("select to_regprocedure($1) is not null as present", [signature]);
+  if (!rows[0]?.present) return { absent: `${migration} non appliquée` };
+  return appelerFn(pool, fn);
 }
 
 /**
@@ -115,6 +133,18 @@ export function travaux(pool, { log = console, dispatch = null } = {}) {
         [
           // Évaluation des règles : insère les alert_event + livraisons 'queued'.
           { name: "check_alerts", run: fn("check_alerts()") },
+          // Notifications d'issue (nouvelle, régression, pic de l'évaluation
+          // ci-dessus) remises à route_alert, AVANT la livraison du même tick.
+          {
+            name: "route_error_issue_notifications",
+            run: () =>
+              appelerFnSiPresente(
+                pool,
+                "route_error_issue_notifications(integer)",
+                "route_error_issue_notifications()",
+                "migration-v73",
+              ),
+          },
           { name: "check_slo_burn", run: fn("check_slo_burn()") },
           { name: "uptime", run: () => sonderUptime(pool, log) },
           // Livraison effective des webhooks en attente (remplace pg_net).
@@ -138,6 +168,9 @@ export function travaux(pool, { log = console, dispatch = null } = {}) {
           { name: "refresh_metric_histogram", run: fn("refresh_metric_histogram(26)") },
           { name: "check_new_errors", run: fn("check_new_errors()") },
           { name: "check_ai_op_anomalies", run: fn("check_ai_op_anomalies()") },
+          // Notes de triage des groupes historiques devenus alias d'une issue,
+          // importées une fois en activité (clé d'événement unique).
+          { name: "import_legacy_issue_notes", run: () => importerNotesHistoriques(pool) },
         ],
         log,
       ),

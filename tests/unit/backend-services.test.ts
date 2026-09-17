@@ -147,14 +147,17 @@ describe("cadences et fonctions SQL appelées", () => {
     };
   }
 
-  it("le tick évalue alertes, SLO, uptime, livraison et réconciliation", async () => {
+  it("le tick évalue alertes, route les notifications d'issue, SLO, uptime, livraison et réconciliation", async () => {
     const pool = poolFactice();
     const dispatch = vi.fn(async () => ({ sent: 0 }));
     const bilan = await travaux(pool as never, { log: muet, dispatch }).tick();
 
     expect(bilan.ok).toBe(true);
+    // Le routage des notifications d'issue suit check_alerts (un pic y part dans
+    // l'outbox) et précède la livraison du même tick.
     expect(Object.keys(bilan.resultats)).toEqual([
       "check_alerts",
+      "route_error_issue_notifications",
       "check_slo_burn",
       "uptime",
       "dispatch_alerts",
@@ -163,6 +166,34 @@ describe("cadences et fonctions SQL appelées", () => {
     expect(dispatch).toHaveBeenCalledOnce();
     expect(pool.requetes.some((q) => q.includes("check_alerts()"))).toBe(true);
     expect(pool.requetes.some((q) => q.includes("uptime_check"))).toBe(true);
+  });
+
+  // Le code peut être publié avant migration-v73 : l'étape le dit au lieu d'échouer,
+  // sans quoi chaque tick rendrait un 207 qui masquerait les vrais échecs.
+  it("sans migration-v73, le routage des notifications d'issue rend son absence, sans échec", async () => {
+    const pool = {
+      requetes: [] as string[],
+      query: vi.fn(async (sql: string) => {
+        pool.requetes.push(sql);
+        return { rows: [sql.includes("to_regprocedure") ? { present: false } : { result: 0 }] };
+      }),
+    };
+    const bilan = await travaux(pool as never, { log: muet }).tick();
+    expect(bilan.resultats.route_error_issue_notifications).toMatchObject({
+      ok: true,
+      result: { absent: "migration-v73 non appliquée" },
+    });
+    expect(pool.requetes.some((q) => q.includes("select route_error_issue_notifications()"))).toBe(false);
+
+    const present = {
+      requetes: [] as string[],
+      query: vi.fn(async (sql: string) => {
+        present.requetes.push(sql);
+        return { rows: [sql.includes("to_regprocedure") ? { present: true } : { result: 2 }] };
+      }),
+    };
+    const routage = await travaux(present as never, { log: muet }).tick();
+    expect(routage.resultats.route_error_issue_notifications).toMatchObject({ ok: true, result: 2 });
   });
 
   // `dispatch` est injecté : sans lui, aucune étape de livraison. C'est ce qui
@@ -183,7 +214,7 @@ describe("cadences et fonctions SQL appelées", () => {
     expect(pool.requetes.some((q) => /purge_rum\(/.test(q))).toBe(false);
   });
 
-  it("l'horaire rafraîchit les DEUX pré-agrégats et les deux détections", async () => {
+  it("l'horaire rafraîchit les DEUX pré-agrégats, les deux détections et reprend les notes historiques", async () => {
     // Les histogrammes de percentiles (migration-v61) sont un pré-agrégat au
     // même titre que les rollups, et sur la même cadence : oublier de les
     // planifier laisserait la console recalculer 30 jours de lignes brutes à
@@ -195,6 +226,7 @@ describe("cadences et fonctions SQL appelées", () => {
       "refresh_metric_histogram",
       "check_new_errors",
       "check_ai_op_anomalies",
+      "import_legacy_issue_notes",
     ]);
     expect(pool.requetes.some((q) => q.includes("refresh_metric_histogram(26)"))).toBe(true);
   });

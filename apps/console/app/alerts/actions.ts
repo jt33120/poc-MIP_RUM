@@ -22,6 +22,7 @@ import {
   insertAlertRule,
   runCheckAlerts,
   runCheckSloBurn,
+  runRouteIssueNotifications,
   SLO_METRICS,
   toggleAlertRuleActive,
   updateAlertRule,
@@ -41,9 +42,17 @@ import {
 function ruleFromForm(fd: FormData): RuleInput {
   const selectedMetric = String(fd.get("metric") ?? "");
   const eventName = String(fd.get("event_name") ?? "").trim();
-  const metric = selectedMetric === "event" ? `event:${eventName}` : selectedMetric;
-  if (!isAlertMetric(metric) || metric === "event") {
+  const issueId = String(fd.get("issue_id") ?? "").trim().toLowerCase();
+  const metric =
+    selectedMetric === "event" ? `event:${eventName}` : selectedMetric === "issue" ? `issue:${issueId}` : selectedMetric;
+  if (!isAlertMetric(metric)) {
     throw new Error(`metric invalide : ${metric}`);
+  }
+  // L'env filtre les occurrences d'une issue ; ailleurs il n'a pas de source et
+  // serait ignoré en silence : refusé.
+  const env = String(fd.get("env") ?? "").trim() || null;
+  if (env && (!metric.startsWith("issue:") || env.length > 120 || /[\u0000-\u001f\u007f]/.test(env))) {
+    throw new Error("env invalide : réservé aux alertes d'issue, 120 caractères au plus");
   }
   const comparator = String(fd.get("comparator") ?? ">");
   if (!(ALERT_COMPARATORS as readonly string[]).includes(comparator)) {
@@ -77,7 +86,7 @@ function ruleFromForm(fd: FormData): RuleInput {
   );
   return {
     app_id, metric, route, comparator, threshold, window_minutes, webhook_url,
-    mode, severity, sensitivity, baseline_weeks,
+    mode, severity, sensitivity, baseline_weeks, env,
   };
 }
 
@@ -111,10 +120,15 @@ export async function ackEventAction(fd: FormData): Promise<void> {
   revalidatePath("/alerts");
 }
 
-/** « Évaluer maintenant » : check_alerts() + check_slo_burn(), total affiché via ?fired=N. */
+/**
+ * « Évaluer maintenant » : check_alerts() + check_slo_burn(), total affiché via
+ * ?fired=N. Un pic d'issue part dans l'outbox : il est routé dans la foulée,
+ * comme au tick, pour apparaître dans le flux affiché.
+ */
 export async function evaluateNowAction(fd: FormData): Promise<void> {
   await requireAdmin();
   const a = await runCheckAlerts();
+  await runRouteIssueNotifications();
   const b = await runCheckSloBurn();
   revalidatePath("/alerts");
   // qs = filtres globaux à préserver (app/period/device), fourni par la page

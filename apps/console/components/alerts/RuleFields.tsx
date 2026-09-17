@@ -3,18 +3,25 @@ import { ALERT_MODES, ALERT_SEVERITIES } from "@/lib/alerting";
 import { ALERT_COMPARATORS, ALERT_METRICS, metricLabel, type AlertRuleRow } from "@/lib/queries-v2";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
 
-/** Champs partagés création/édition (composant serveur, formulaires HTML purs). */
+/**
+ * Champs partagés création/édition (composant serveur, formulaires HTML purs).
+ * `defaultIssue` préremplit une alerte de pic depuis la page d'une issue.
+ */
 export function RuleFields({
   apps,
   rule,
   defaultApp,
+  defaultIssue,
 }: {
   apps: { app_id: string; name: string }[];
   rule?: AlertRuleRow;
   defaultApp?: string;
+  defaultIssue?: string;
 }) {
-  const selectedMetric = rule?.metric.startsWith("event:") ? "event" : (rule?.metric ?? "LCP");
-  const eventName = rule?.metric.startsWith("event:") ? rule.metric.slice(6) : "";
+  const family = rule?.metric.startsWith("event:") ? "event" : rule?.metric.startsWith("issue:") ? "issue" : null;
+  const selectedMetric = family ?? rule?.metric ?? (defaultIssue ? "issue" : "LCP");
+  const eventName = family === "event" ? rule!.metric.slice(6) : "";
+  const issueId = family === "issue" ? rule!.metric.slice(6) : (defaultIssue ?? "");
   return (
     <>
       <Field label="App">
@@ -42,6 +49,24 @@ export function RuleFields({
           maxLength={100}
           placeholder="checkout (si métrique événement)"
           className={`${INPUT_CLASS} w-48`}
+        />
+      </Field>
+      <Field label="Issue (identifiant)">
+        <input
+          name="issue_id"
+          defaultValue={issueId}
+          maxLength={36}
+          placeholder="UUID (si métrique issue)"
+          className={`${INPUT_CLASS} w-72 font-mono`}
+        />
+      </Field>
+      <Field label="Env (issue, optionnel)">
+        <input
+          name="env"
+          defaultValue={rule?.env ?? ""}
+          maxLength={120}
+          placeholder="prod (vide = tous)"
+          className={`${INPUT_CLASS} w-28`}
         />
       </Field>
       <Field label="Mode">
@@ -131,7 +156,9 @@ export function RuleFields({
       <p className="w-full text-xs text-ink-faint">
         (seuil = mode &laquo;&nbsp;threshold&nbsp;&raquo; ; sensibilité = mode &laquo;&nbsp;baseline&nbsp;&raquo;).{" "}
         <strong>Logs ERROR</strong> et <strong>Événement custom</strong> se cumulent sur la fenêtre —
-        les heures inactives valent zéro pour la baseline.
+        les heures inactives valent zéro pour la baseline. <strong>Issue</strong> somme les occurrences
+        observées hors bots ; sa baseline ne retient que les fenêtres où l&apos;issue était suivie, et
+        rend &laquo;&nbsp;données insuffisantes&nbsp;&raquo; sous 4 fenêtres comparables.
       </p>
     </>
   );

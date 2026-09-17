@@ -258,6 +258,21 @@ export function buildOpenApi(): Record<string, unknown> {
           },
         ),
       },
+      "/issues/{id}/activity": {
+        get: get(
+          "Historique d'une issue (P5.6) : statuts, assignations, commentaires, liens de ticket et régressions confirmées",
+          "rum",
+          ref("IssueActivityPage"),
+          {
+            params: [
+              { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+              { $ref: "#/components/parameters/activityLimit" },
+              { $ref: "#/components/parameters/errorCursor" },
+            ],
+            extraResponses: { "400": ref0("BadRequest"), "404": ref0("NotFound"), "503": ref0("Unavailable") },
+          },
+        ),
+      },
       "/sessions": {
         get: get(
           "Sessions récentes",
@@ -375,6 +390,7 @@ export function buildOpenApi(): Record<string, unknown> {
         issueSource: { name: "source", in: "query", schema: { ...errorSource, nullable: false, enum: errorSource.enum.filter((s) => s !== null) }, description: "source des occurrences comptées" },
         issueLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "entrées par page (borné 1..100)" },
         issueCursor: { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "curseur opaque renvoyé dans data.next_cursor, avec les mêmes filtres ; un curseur modifié reçoit 400" },
+        activityLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "activités par page (borné 1..100)" },
       },
       responses: {
         BadRequest: { description: "Paramètre invalide", content: { "application/json": { schema: ref("Error") } } },
@@ -383,6 +399,7 @@ export function buildOpenApi(): Record<string, unknown> {
         NotFound: { description: "Ressource inconnue (ou hors-scope)", content: { "application/json": { schema: ref("Error") } } },
         RateLimited: { description: "Trop de requêtes (voir en-têtes RateLimit-* / Retry-After)", content: { "application/json": { schema: ref("Error") } } },
         ServerError: { description: "Erreur interne", content: { "application/json": { schema: ref("Error") } } },
+        Unavailable: { description: "Schéma requis non migré (ex. migration-v73 pour le workflow des issues)", content: { "application/json": { schema: ref("Error") } } },
       },
       schemas: {
         Error: o({ error: str }, ["error"]),
@@ -654,6 +671,46 @@ export function buildOpenApi(): Record<string, unknown> {
             legacy_groups: arr(ref("IssueLegacyGroup")),
           },
           ["id", "app_id", "grouping_version", "grouping_basis", "origin", "status", "first_seen", "last_seen", "revision", "grouping_active", "legacy_groups"],
+        ),
+        IssueUserRef: o(
+          {
+            user_id: { type: "string", pattern: "^[0-9]+$", description: "identifiant du compte console (bigint en chaîne)" },
+            email: nul({ type: "string", description: "null : compte supprimé depuis" }),
+          },
+          ["user_id", "email"],
+        ),
+        IssueLink: o(
+          {
+            id: { type: "string", pattern: "^[0-9]+$" },
+            url: { type: "string", format: "uri", maxLength: 2048, description: "https, normalisée, sans identifiants" },
+            label: { type: "string", maxLength: 120 },
+            created_by: nul(ref("IssueUserRef")),
+            created_at: dateTime,
+          },
+          ["id", "url", "label", "created_by", "created_at"],
+        ),
+        IssueActivity: o(
+          {
+            id: { type: "string", pattern: "^[0-9]+$" },
+            kind: { type: "string", enum: ["status", "assignee", "comment", "link", "regression"] },
+            actor: o({ kind: { type: "string", enum: ["user", "system"] }, user: nul(ref("IssueUserRef")) }, ["kind", "user"]),
+            old_status: nul({ ...issueStatus, enum: [...issueStatus.enum, null] }),
+            new_status: nul({ ...issueStatus, enum: [...issueStatus.enum, null] }),
+            old_assignee: nul(ref("IssueUserRef")),
+            new_assignee: nul(ref("IssueUserRef")),
+            body: nul({ type: "string", maxLength: 2000, description: "commentaire scrubbé à l'enregistrement" }),
+            legacy_fingerprint: nul({ type: "string", description: "commentaire système : note du groupe historique reprise une fois" }),
+            link: nul(ref("IssueLink")),
+            release: nul({ type: "string", description: "status → resolved : release de référence ; regression : release qui rouvre" }),
+            reference_release: nul({ type: "string", description: "regression : release de référence dépassée" }),
+            env: nul(str),
+            created_at: dateTime,
+          },
+          ["id", "kind", "actor", "created_at"],
+        ),
+        IssueActivityPage: o(
+          { activities: arr(ref("IssueActivity")), next_cursor: nul(str) },
+          ["activities", "next_cursor"],
         ),
         IssueDetail: o(
           {

@@ -329,7 +329,21 @@ declare module "ingest/dispatch-alerts.mjs" {
   /** Poste les livraisons 'queued' + les 'failed' rééligibles ; met à jour leur statut. */
   export function dispatchOnce(
     pool: Pool,
-  ): Promise<{ sent: number; failed: number; dead: number }>;
+    opts?: { lot?: number; budgetMs?: number },
+  ): Promise<{ sent: number; failed: number; dead: number; skipped: number }>;
+}
+
+declare module "ingest/lib/error-issue-workflow.mjs" {
+  import type { Pool } from "pg";
+
+  export const COMMENTAIRE_MAX: number;
+  /** Texte scrubbé, sans NUL, espaces de bord retirés ; null s'il ne reste rien. */
+  export function texteActivite(texte: unknown): string | null;
+  export function tronquerCaracteres(texte: string, max: number): string;
+  export function importerNotesHistoriques(
+    pool: Pool,
+    opts?: { limite?: number },
+  ): Promise<{ importees: number } | { absent: string }>;
 }
 
 // --- Travaux planifiés (apps/ingest/jobs) ------------------------------------
