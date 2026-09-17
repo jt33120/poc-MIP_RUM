@@ -18,10 +18,8 @@ import type { PoolClient } from "pg";
 import { COMMENTAIRE_MAX, texteActivite } from "ingest/lib/error-issue-workflow.mjs";
 import { hasControlCharacters } from "ingest/shared/sourcemap.mjs";
 import { q, tx } from "./db";
+import { ISSUE_STATUSES, isIssueId, type IssueStatus } from "./error-issues";
 import { encodeErrorCursor } from "./queries-errors";
-
-export const ISSUE_WORKFLOW_STATUSES = ["open", "for_review", "resolved", "ignored"] as const;
-export type IssueWorkflowStatus = (typeof ISSUE_WORKFLOW_STATUSES)[number];
 
 export const ACTIVITY_KINDS = ["status", "assignee", "comment", "link", "regression"] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
@@ -32,7 +30,6 @@ export const LINK_LABEL_MAX_CHARS = 120;
 export const ACTIVITY_DEFAULT_LIMIT = 50;
 export const ACTIVITY_MAX_LIMIT = 100;
 
-const ISSUE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const BIGINT_ID = /^[1-9]\d{0,17}$/;
 
 // ─────────────────────────────── Contrats ────────────────────────────────────
@@ -56,8 +53,8 @@ export interface IssueActivity {
   id: string;
   kind: ActivityKind;
   actor: { kind: "user" | "system"; user: IssueUserRef | null };
-  old_status: IssueWorkflowStatus | null;
-  new_status: IssueWorkflowStatus | null;
+  old_status: IssueStatus | null;
+  new_status: IssueStatus | null;
   old_assignee: IssueUserRef | null;
   new_assignee: IssueUserRef | null;
   body: string | null;
@@ -76,7 +73,7 @@ export interface IssueActivity {
 export interface IssueWorkflowState {
   id: string;
   app_id: string;
-  status: IssueWorkflowStatus;
+  status: IssueStatus;
   status_source: "system" | "migration" | "user";
   assignee: IssueUserRef | null;
   resolved_at: Date | null;
@@ -99,7 +96,7 @@ type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export interface TriageRequest {
   app: string;
-  status?: IssueWorkflowStatus;
+  status?: IssueStatus;
   /** undefined : inchangé ; null : désassigner. */
   assigneeUserId?: string | null;
   expectedRevision: string;
@@ -135,10 +132,6 @@ export function parseBigintId(v: unknown): string | null {
   return typeof v === "string" && BIGINT_ID.test(v) ? v : null;
 }
 
-export function isIssueWorkflowId(v: string): boolean {
-  return ISSUE_ID.test(v);
-}
-
 function socle(body: unknown): Parsed<{ champs: Record<string, unknown>; app: string; expectedRevision: string }> {
   const champs = objet(body);
   if (!champs) return { ok: false, error: "objet JSON attendu" };
@@ -156,7 +149,7 @@ export function parseTriageRequest(body: unknown): Parsed<TriageRequest> {
   const { champs, app, expectedRevision } = base.value;
   const request: TriageRequest = { app, expectedRevision };
   if (champs.status !== undefined) {
-    const status = ISSUE_WORKFLOW_STATUSES.find((s) => s === champs.status);
+    const status = ISSUE_STATUSES.find((s) => s === champs.status);
     if (!status) return { ok: false, error: "status invalide (open, for_review, resolved ou ignored)" };
     request.status = status;
   }
@@ -278,7 +271,7 @@ export async function listIssueActivity(
   apps: string[] | null,
   page: { limit: number; cursor: { ts: string; id: string } | null },
 ): Promise<WorkflowResult<{ app_id: string; activities: IssueActivity[]; next_cursor: string | null }>> {
-  if (apps?.length === 0 || !ISSUE_ID.test(issueId)) return { kind: "not_found" };
+  if (apps?.length === 0 || !isIssueId(issueId)) return { kind: "not_found" };
   if (!(await issueWorkflowAvailable())) return { kind: "unavailable" };
   const [issue] = await q<{ app_id: string }>(
     "select app_id from error_issue where id = $1 and ($2::text[] is null or app_id = any($2::text[]))",
@@ -307,6 +300,8 @@ export async function listIssueActivity(
 export interface IssueWorkflowView {
   assignee: IssueUserRef | null;
   resolved_by: IssueUserRef | null;
+  /** La dernière décision de statut est une régression confirmée : ce qui a rouvert l'issue. */
+  regression: IssueActivity | null;
   links: IssueLink[];
   /** Comptes assignables : actifs et autorisés sur l'app de l'issue. */
   assignable_users: IssueUserRef[];
@@ -325,6 +320,13 @@ export async function issueWorkflowView(issueId: string, appId: string): Promise
     [appId, issueId],
   );
   if (!etat) return null;
+  const [decision] = await q<ActivitySqlRow>(
+    `${ACTIVITY_SQL}
+      where a.app_id = $1 and a.issue_id = $2 and a.kind in ('status', 'regression')
+      order by a.created_at desc, a.id desc
+      limit 1`,
+    [appId, issueId],
+  );
   const links = await q<IssueLink>(
     `select t.id::text as id, t.url, t.label, ${USER_REF("t.created_by_user_id", "createur")} as created_by, t.created_at
        from error_issue_ticket t
@@ -341,7 +343,12 @@ export async function issueWorkflowView(issueId: string, appId: string): Promise
       limit 500`,
     [appId],
   );
-  return { ...etat, links, assignable_users };
+  return {
+    ...etat,
+    regression: decision?.kind === "regression" ? toActivity(decision) : null,
+    links,
+    assignable_users,
+  };
 }
 
 // ─────────────────────────────── Mutations ───────────────────────────────────
@@ -349,7 +356,7 @@ export async function issueWorkflowView(issueId: string, appId: string): Promise
 interface LockedIssue {
   id: string;
   app_id: string;
-  status: IssueWorkflowStatus;
+  status: IssueStatus;
   assignee_user_id: string | null;
   revision: string;
   last_release: string | null;
@@ -379,7 +386,7 @@ const STATE_SQL = `
  * annoncée, révision attendue — puis la mutation, dans la même transaction.
  */
 async function muter<T>(ctx: MutationContext, app: string, expectedRevision: string, mutation: Mutation<T>): Promise<WorkflowResult<T>> {
-  if (ctx.apps?.length === 0 || !ISSUE_ID.test(ctx.issueId)) return { kind: "not_found" };
+  if (ctx.apps?.length === 0 || !isIssueId(ctx.issueId)) return { kind: "not_found" };
   if (ctx.apps && !ctx.apps.includes(app)) return { kind: "not_found" };
   if (!(await issueWorkflowAvailable())) return { kind: "unavailable" };
   return tx(async (client) => {

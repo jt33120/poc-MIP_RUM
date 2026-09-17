@@ -195,7 +195,8 @@ async function rattacherSessions(client, errors) {
  * celles d'une app activée leur issue (error-grouping.mjs). Première et dernière
  * vue des issues suivent les lignes RETURNING : `finaliser` les applique en fin
  * de transaction, juste avant le commit, pour ne tenir le verrou d'une issue
- * chaude que le temps de celui-ci.
+ * chaude que le temps de celui-ci. Dès migration-v73, il y décide aussi la
+ * régression d'une issue résolue (P5.6), jamais un travail planifié après coup.
  *
  * @returns {Promise<{ bilan: {recues: number, inserees: number, ignorees: number}, finaliser: () => Promise<void> }>}
  */
@@ -218,13 +219,15 @@ async function ecrireErreurs(client, errors) {
       // antérieur, émetteur sans contexte) écrit l'objet vide, jamais NULL. Les
       // autres champs absents de ces lots deviennent NULL, c'est-à-dire inconnus.
       lignes.slice(debut, debut + ERREURS_PAR_INSERT).map((e) => ({ ...e, context: JSON.stringify(e.context ?? {}) })),
-      plan ? "on conflict (span_id) do nothing returning id, app_id, issue_id, ts, release" : "on conflict (span_id) do nothing returning id",
+      plan ? "on conflict (span_id) do nothing returning id, app_id, issue_id, ts, release, env" : "on conflict (span_id) do nothing returning id",
     );
     inserees.push(...rows);
   }
+  // v73 (P5.6) : la régression d'une issue résolue se décide dans cette transaction.
+  const regression = plan !== null && (await colonnesDe(client, "error_issue_activity")).size > 0;
   return {
     bilan: { recues: errors.length, inserees: inserees.length, ignorees: errors.length - retenues.length },
-    finaliser: () => finaliserIssues(client, plan, inserees),
+    finaliser: () => finaliserIssues(client, plan, inserees, { regression }),
   };
 }
 

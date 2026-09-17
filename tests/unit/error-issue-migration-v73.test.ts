@@ -1,6 +1,6 @@
 // P5.6 — ce que migration-v73 doit garder vrai, lu dans le fichier.
 //
-// Le comportement est prouvé sur PostgreSQL (tests/integration/error-issue-workflow-sql.test.ts).
+// Le comportement est prouvé sur PostgreSQL (tests/integration/error-issues-sql.test.ts).
 // Ici on verrouille des propriétés que seul le TEXTE garantit et qu'une migration
 // ultérieure pourrait défaire sans qu'un test d'exécution ne le remarque : aucun
 // curseur d'identifiants pour notifier, aucun verrou de session, aucun ordre
@@ -74,7 +74,8 @@ describe("migration-v73 — notifications sans curseur", () => {
 
   it("la régression se décide sous verrou de l'issue, par l'ordre des marqueurs de déploiement", () => {
     const fonction = corps("error_issue_record_occurrences");
-    expect(fonction).toMatch(/from error_issue\s+where app_id = p_app_id and id = p_issue_id\s+for update;/);
+    // Seule une issue résolue est verrouillée : une issue ouverte d'un lot ne coûte aucun verrou.
+    expect(fonction).toMatch(/from error_issue\s+where app_id = p_app_id and id = p_issue_id and status = 'resolved'\s+for update;/);
     expect(fonction).toContain("from deploy_marker m");
     expect(fonction).toContain("m.env = i.resolved_env");
     // Jamais de comparaison de releases comme chaînes : seul l'instant du premier marqueur ordonne.

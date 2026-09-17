@@ -11,6 +11,9 @@
 // Utilisateur admin DÉDIÉ (seed-admin régénère le mot de passe de julian@ à
 // chaque run et les specs tournent en parallèle) ; app explicite dans chaque URL,
 // jamais le cookie projet.
+//
+// P5.6 (bloc final) : workflow d'une issue — résolution et régression, commentaire,
+// lien de ticket, 409, viewer en lecture seule, clavier et 390/768/1440 px.
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { gzipSync } from "node:zlib";
@@ -374,3 +377,248 @@ for (const width of [390, 768, 1440]) {
     }
   });
 }
+
+// ═══════════════ P5.6 — workflow, régression et alerte par issue ═══════════════
+//
+// Une issue d'une app activée, semée en SQL avant chaque test. L'occurrence qui
+// arrive après une résolution passe par la primitive que l'écrivain d'ingestion
+// appelle dans sa transaction (error_issue_record_occurrences) ; le chemin complet
+// de l'écrivain est prouvé par tests/integration/error-issues-sql.test.ts. Ce bloc
+// prouve ce que l'ÉCRAN en fait : résolution avec sa référence, régression
+// confirmée, réapparition à vérifier, commentaire masqué, lien de ticket, 409 avec
+// rechargement, viewer en lecture seule refusé par l'API, clavier, 390/768/1440 px.
+test.describe("P5.6 — workflow d'une issue", () => {
+  const APP_W = "p56-e2e-a";
+  const ISSUE_W = "56e2e000-0000-4000-8000-000000000001";
+  const CLE_W = "56e2e0000000000000000000000000a1";
+  const VIEWER_EMAIL = "e2e-issue-viewer@mip-rum.local";
+  const VIEWER_PASSWORD = "e2e-issue-viewer-mdp-local";
+  const PAGE_ISSUE = `/errors/issues/${ISSUE_W}?app=${APP_W}&period=24h`;
+
+  async function nettoyerW() {
+    for (const table of ["error_issue", "error_grouping_config", "deploy_marker", "rum_error", "rum_session", "app_registry"])
+      await pool.query(`delete from ${table} where app_id = $1`, [APP_W]);
+  }
+
+  test.beforeAll(async () => {
+    const { rows: [{ v73 }] } = await pool.query<{ v73: boolean }>(
+      "select to_regclass('public.error_issue_activity') is not null as v73",
+    );
+    expect(v73, "la base E2E doit porter migration-v73 (schéma + toutes les migrations)").toBe(true);
+    await pool.query(
+      `insert into console_user (email, password_hash, role, apps, active)
+       values ($1, $2, 'viewer', array[$3], true)
+       on conflict (email) do update
+         set password_hash = excluded.password_hash, role = 'viewer', apps = excluded.apps, active = true`,
+      [VIEWER_EMAIL, bcryptHash(VIEWER_PASSWORD), APP_W],
+    );
+  });
+
+  test.beforeEach(async () => {
+    await nettoyerW();
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("insert into app_registry (app_id, name, active, internal) values ($1, $1, true, false)", [APP_W]);
+      await client.query(
+        "insert into rum_session (session_id, app_id, device_type, is_bot, sample_rate, error_sample_rate) values ('p56-e2e-s1', $1, 'desktop', false, 1, 1)",
+        [APP_W],
+      );
+      await client.query(
+        `insert into error_issue (id, app_id, grouping_version, grouping_key, grouping_basis, origin, status, status_source,
+                                  first_seen, last_seen, first_release, last_release)
+         values ($1, $2, 2, $3, 'normalized_frame', 'new', 'open', 'system',
+                 now() - interval '2 hours', now() - interval '30 minutes', '2.0.0', '2.0.0')`,
+        [ISSUE_W, APP_W, CLE_W],
+      );
+      await client.query(
+        `insert into rum_error (app_id, fingerprint, session_id, occurrences, error_type, message, kind, release, env,
+                                grouping_version, grouping_key, grouping_basis, issue_id, ts)
+         select $1, 'p56e2efp', 'p56-e2e-s1', 2, 'TypeError', 'panier vide p56', 'error', '2.0.0', 'prod',
+                2, $2, 'normalized_frame', $3, i.last_seen
+           from error_issue i where i.id = $3`,
+        [APP_W, CLE_W, ISSUE_W],
+      );
+      await client.query(
+        `insert into deploy_marker (app_id, version, env, ts) values
+           ($1, '2.0.0', 'prod', now() - interval '3 days'), ($1, '2.1.0', 'prod', now() - interval '1 hour')`,
+        [APP_W],
+      );
+      await client.query("select error_grouping_activate($1, 'e2e@p56.test')", [APP_W]);
+      await client.query("commit");
+    } catch (e) {
+      await client.query("rollback");
+      throw e;
+    } finally {
+      client.release();
+    }
+  });
+
+  test.afterAll(async () => {
+    await nettoyerW();
+    await pool.query("delete from console_user where email = $1", [VIEWER_EMAIL]);
+  });
+
+  /** Ce que fait l'écrivain d'ingestion pour une occurrence nouvelle : ligne, dernière vue, décision, un seul commit. */
+  async function occurrenceEcrite(release: string) {
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      const { rows } = await client.query(
+        `insert into rum_error (app_id, fingerprint, session_id, occurrences, error_type, message, kind, release, env,
+                                grouping_version, grouping_key, grouping_basis, issue_id, ts)
+         values ($1, 'p56e2efp', 'p56-e2e-s1', 1, 'TypeError', 'panier vide p56', 'error', $2, 'prod', 2, $3, 'normalized_frame', $4, clock_timestamp())
+         returning ts, release, env`,
+        [APP_W, release, CLE_W, ISSUE_W],
+      );
+      await client.query("update error_issue set last_seen = $2, last_release = $3 where id = $1", [ISSUE_W, rows[0].ts, release]);
+      await client.query(
+        "select error_issue_record_occurrences($1, $2, $3::timestamptz[], $4::text[], $5::text[])",
+        [APP_W, ISSUE_W, [rows[0].ts], [release], ["prod"]],
+      );
+      await client.query("commit");
+    } catch (e) {
+      await client.query("rollback");
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  async function loginAs(page: Page, email: string, password: string) {
+    await page.goto(`${CONSOLE}/login`);
+    await page.fill('input[name="email"]', email);
+    await page.fill('input[name="password"]', password);
+    await page.click('button[type="submit"]');
+    await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
+  }
+
+  async function resoudre(page: Page) {
+    const triage = page.getByTestId("issue-triage-form");
+    await triage.getByTestId("issue-triage-status").selectOption("resolved");
+    await triage.getByTestId("issue-triage-submit").click();
+    await expect(page.getByTestId("issue-status")).toHaveText("Résolue");
+  }
+
+  test("résolution avec sa référence, régression confirmée sur release postérieure, puis réapparition à vérifier", async ({ page }) => {
+    await login(page);
+    await page.goto(`${CONSOLE}${PAGE_ISSUE}`);
+    await expect(page.getByTestId("issue-assignee")).toHaveText("personne");
+    await resoudre(page);
+    await expect(page.getByTestId("issue-resolution")).toContainText("release 2.0.0 (env prod)");
+    await expect(page.getByTestId("issue-activity-status")).toContainText("« Ouverte » à « Résolue »");
+
+    // Release 2.1.0, déployée après la référence : l'issue est rouverte.
+    await occurrenceEcrite("2.1.0");
+    await page.reload();
+    await expect(page.getByTestId("issue-status")).toHaveText("Ouverte");
+    await expect(page.getByTestId("issue-regression")).toContainText("release 2.1.0 (env prod)");
+    await expect(page.getByTestId("issue-activity-regression")).toContainText("Régression confirmée");
+
+    // Résolue en 2.1.0, puis un ancien client en 2.0.0 : réapparition à vérifier, l'issue reste résolue.
+    await resoudre(page);
+    await expect(page.getByTestId("issue-resolution")).toContainText("release 2.1.0 (env prod)");
+    await occurrenceEcrite("2.0.0");
+    await page.reload();
+    await expect(page.getByTestId("issue-status")).toHaveText("Résolue");
+    await expect(page.getByTestId("issue-reappeared")).toContainText("Réapparition à vérifier");
+    await expect(page.getByTestId("issue-regression")).toHaveCount(0);
+  });
+
+  test("commentaire masqué, lien de ticket et triage au clavier", async ({ page }) => {
+    await login(page);
+    await page.goto(`${CONSOLE}${PAGE_ISSUE}`);
+
+    const commentaire = page.getByTestId("issue-comment-body");
+    await commentaire.fill("Voir avec marie@exemple.fr avant la release");
+    await page.getByTestId("issue-comment-submit").focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("issue-activity-comment")).toContainText("Voir avec [email] avant la release");
+    await expect(commentaire).toHaveValue("");
+
+    const lien = page.getByTestId("issue-link-form");
+    await lien.getByTestId("issue-link-url").fill("https://tickets.exemple.fr/browse/MIP-56");
+    await lien.getByTestId("issue-link-label").fill("MIP-56");
+    await lien.getByRole("button", { name: "Lier" }).click();
+    await expect(page.getByTestId("issue-links").getByRole("link", { name: "MIP-56" }))
+      .toHaveAttribute("href", "https://tickets.exemple.fr/browse/MIP-56");
+    await expect(page.getByTestId("issue-activity-link")).toContainText("a lié le ticket MIP-56");
+
+    // Clavier seul : statut suivant (« À revoir »), puis Tab jusqu'au bouton et Entrée.
+    const statut = page.getByTestId("issue-triage-status");
+    await statut.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(statut).toHaveValue("for_review");
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("issue-triage-assignee")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("issue-triage-submit")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("issue-status")).toHaveText("À revoir");
+  });
+
+  test("édition concurrente : 409, rechargement proposé, la sélection se rejoue avec la révision relue", async ({ page }) => {
+    await login(page);
+    await page.goto(`${CONSOLE}${PAGE_ISSUE}`);
+    // Quelqu'un d'autre modifie l'issue entre la lecture et l'enregistrement.
+    await pool.query("update error_issue set revision = revision + 1, updated_at = now() where id = $1", [ISSUE_W]);
+
+    const triage = page.getByTestId("issue-triage-form");
+    await triage.getByTestId("issue-triage-status").selectOption("ignored");
+    await triage.getByTestId("issue-triage-submit").click();
+    const conflit = page.getByTestId("issue-triage-conflict");
+    await expect(conflit).toContainText("modifiée depuis sa lecture");
+    await expect(page.getByTestId("issue-status")).toHaveText("Ouverte");
+
+    const { rows: [{ revision }] } = await pool.query("select revision::text as revision from error_issue where id = $1", [ISSUE_W]);
+    await conflit.getByRole("button", { name: "Recharger l'issue" }).click();
+    await expect(conflit).toHaveCount(0);
+    // La page relue porte la nouvelle révision ; la sélection en cours, elle, est restée.
+    await expect(triage).toHaveAttribute("data-revision", revision);
+    await expect(triage.getByTestId("issue-triage-status")).toHaveValue("ignored");
+    await triage.getByTestId("issue-triage-submit").click();
+    await expect(page.getByTestId("issue-status")).toHaveText("Ignorée");
+  });
+
+  test("viewer : état lisible, aucun formulaire, et l'API refuse l'écriture", async ({ page }) => {
+    await loginAs(page, VIEWER_EMAIL, VIEWER_PASSWORD);
+    await page.goto(`${CONSOLE}${PAGE_ISSUE}`);
+    await expect(page.getByTestId("issue-triage")).toContainText("Lecture seule");
+    await expect(page.getByTestId("issue-assignee")).toHaveText("personne");
+    for (const formulaire of ["issue-triage-form", "issue-comment-form", "issue-link-form", "issue-alert-link"]) {
+      await expect(page.getByTestId(formulaire), formulaire).toHaveCount(0);
+    }
+
+    const { rows: [{ revision }] } = await pool.query("select revision::text as revision from error_issue where id = $1", [ISSUE_W]);
+    const refus = await page.request.post(`${CONSOLE}/api/v1/issues/${ISSUE_W}/triage`, {
+      headers: { origin: CONSOLE },
+      data: { app: APP_W, status: "resolved", expectedRevision: revision },
+    });
+    expect(refus.status()).toBe(403);
+    expect((await pool.query("select status from error_issue where id = $1", [ISSUE_W])).rows[0].status).toBe("open");
+  });
+
+  for (const width of [390, 768, 1440]) {
+    test(`issue avec son workflow : aucun débordement horizontal de la page à ${width} px`, async ({ page }) => {
+      const url = "https://tickets.exemple.fr/browse/MIP-56-un-identifiant-de-ticket-particulierement-long-pour-le-mobile";
+      await pool.query(
+        `with t as (insert into error_issue_ticket (app_id, issue_id, url, label) values ($1, $2, $3, 'MIP-56') returning id)
+         insert into error_issue_activity (app_id, issue_id, kind, actor_kind, ticket_id) select $1, $2, 'link', 'user', id from t`,
+        [APP_W, ISSUE_W, url],
+      );
+      await pool.query(
+        "insert into error_issue_activity (app_id, issue_id, kind, actor_kind, body) values ($1, $2, 'comment', 'user', $3)",
+        [APP_W, ISSUE_W, `Analyse ${"sans-espace-".repeat(20)}`],
+      );
+      await page.setViewportSize({ width, height: 900 });
+      await login(page);
+      await page.goto(`${CONSOLE}${PAGE_ISSUE}`);
+      await expect(page.getByTestId("issue-triage-form")).toBeVisible();
+      await expect(page.getByTestId("issue-activity-comment")).toBeVisible();
+      const deborde = await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      );
+      expect(deborde).toBe(false);
+    });
+  }
+});

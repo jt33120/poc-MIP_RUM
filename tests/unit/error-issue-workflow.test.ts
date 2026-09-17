@@ -4,7 +4,7 @@
 // error_issue_ticket_v73 : commentaire scrubbé de 1 à 2 000 caractères APRÈS
 // masquage, URL HTTPS normalisée en ASCII sans identifiants, libellé d'une ligne.
 // Le comportement transactionnel (409, périmètre, assigné, régression) est prouvé
-// sur PostgreSQL dans tests/integration/error-issue-workflow-sql.test.ts.
+// sur PostgreSQL dans tests/integration/error-issues-sql.test.ts.
 import { describe, expect, it } from "vitest";
 import {
   COMMENTAIRE_MAX,
@@ -13,13 +13,13 @@ import {
 } from "../../apps/ingest/lib/error-issue-workflow.mjs";
 import {
   COMMENT_MAX_CHARS,
-  ISSUE_WORKFLOW_STATUSES,
   normalizeTicketUrl,
   parseBigintId,
   parseCommentRequest,
   parseLinkRequest,
   parseTriageRequest,
 } from "../../apps/console/lib/error-issue-workflow";
+import { ISSUE_STATUSES } from "../../apps/console/lib/error-issues";
 
 const base = { app: "app-a", expectedRevision: "3" };
 
@@ -40,7 +40,7 @@ describe("texte d'activité partagé ingestion/console", () => {
 
 describe("POST /api/v1/issues/{id}/triage — corps", () => {
   it("statuts de migration-v72, assigné en identifiant de compte ou null", () => {
-    for (const status of ISSUE_WORKFLOW_STATUSES) {
+    for (const status of ISSUE_STATUSES) {
       expect(parseTriageRequest({ ...base, status })).toEqual({ ok: true, value: { ...base, status } });
     }
     expect(parseTriageRequest({ ...base, assigneeUserId: 12 })).toEqual({ ok: true, value: { ...base, assigneeUserId: "12" } });

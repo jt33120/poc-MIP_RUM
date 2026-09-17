@@ -103,11 +103,18 @@ describe("aucune route réelle n'est passée sous silence", () => {
     expect(absents, `dans la spec mais pas dans le document :\n${absents.join("\n")}`).toEqual([]);
   });
 
-  it("l'unique écriture est annoncée comme telle", () => {
-    // Tout le reste est en lecture seule, et le document le promet en tête.
-    // Une exception non signalée ferait de cette promesse un mensonge.
+  it("les écritures sont annoncées comme telles, et seulement elles", () => {
+    // Le document les regroupe sous « Écritures ». P5.6 (17/09/2026) en ajoute trois,
+    // délibérément : triage, commentaire et lien d'une issue — session admin de la
+    // console seulement, jamais un jeton CONSOLE_API_TOKENS, jamais un outil MCP. Une
+    // écriture de plus, non signalée ici, ferait mentir cette liste.
     const ecritures = documentes().filter((e) => e.methode !== "GET");
-    expect(ecritures.map((e) => `${e.methode} ${e.chemin}`)).toEqual(["POST /api/v1/deploys"]);
+    expect(ecritures.map((e) => `${e.methode} ${e.chemin}`)).toEqual([
+      "POST /api/v1/deploys",
+      "POST /api/v1/issues/{id}/triage",
+      "POST /api/v1/issues/{id}/comments",
+      "POST /api/v1/issues/{id}/links",
+    ]);
   });
 
   // Anti-tautologie : la sonde sait lire des sections, et il y en a plus d'une

@@ -62,6 +62,46 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
 - **E-mail / SMS** : `kind='email'` est **tracé `skipped`** (hook prêt) mais **non livré**
   — nécessite un service externe **payant** (Resend/SES/Postmark). À brancher sur décision.
 
+## Pilier 4 — Issues d'erreurs : nouvelle, régression, pic (P5.6, migration-v73)
+
+- **Outbox `error_issue_notification`** : une notification par clé d'événement unique
+  (`new:<issue>`, `regression:<résolution>:<issue>`, `spike:<règle>:<fenêtre>`), avec une
+  charge minimale — ni message d'erreur, ni stack, ni identité. Écrite **dans la
+  transaction qui la justifie** : le déclencheur de création d'une issue `new` (jamais
+  une issue `migration`), l'écrivain d'ingestion pour une régression, `check_alerts` pour un
+  pic. Jamais un curseur d'identifiants : une transaction validée tard n'est pas perdue.
+- **`route_error_issue_notifications()`**, étape du tick juste après `check_alerts` : crée
+  l'`alert_event` (rattaché à la règle pour un pic) et appelle `route_alert` — mêmes
+  canaux, même sévérité, même livraison. `for update skip locked` : le scheduler et le cron
+  GitHub ne routent jamais deux fois la même notification ; échec = nouvel essai à 30 s ×
+  2^n, `failed` après 5.
+- **Régression confirmée** : issue résolue, occurrence postérieure à la résolution, dans
+  l'env de référence, sur une release dont le **premier marqueur de déploiement** de cet env
+  est strictement postérieur à celui de la release de référence (release et env de la
+  dernière occurrence au moment de la résolution). Même release, plus ancienne, sans
+  marqueur, env inconnu : « réapparition à vérifier », l'issue reste résolue. Une issue
+  ignorée le reste. Décidée par `error_issue_record_occurrences()` dans la transaction de
+  l'écrivain, issue verrouillée : deux lots concurrents donnent une activité et une
+  notification.
+- **Règle `issue:<uuid>`** (console `/alerts`, ou « Créer une alerte de pic » depuis une
+  issue) : somme des occurrences **observées** sur la fenêtre de la règle, bots exclus,
+  `route` et `env` de la règle appliqués. Baseline P4 exacte : même fenêtre les semaines
+  précédentes, zéros compris, **4 fenêtres comparables minimum**, MAD=0 sensible au moindre
+  écart — une fenêtre n'est comparable que si l'issue y était suivie (activation v2) et
+  ses données encore conservées. Délai de grâce : pas de nouvelle notification tant que
+  l'événement de la règle n'est pas acquitté dans la fenêtre, ni deux dans une même fenêtre.
+- **`no_data` explicite** pour toutes les règles : `alert_rule.last_state` (`ok`,
+  `breached`, `no_data`), `last_value`, `last_reason`, `last_evaluated_at`, affichés sur
+  `/alerts`. Issue absente ou regroupement inactif, fenêtre incomplète, aucune mesure,
+  comparables insuffisants : jamais un zéro silencieux.
+- **`check_new_errors`** (watermark v64) ne voit plus que les groupes historiques : une
+  ligne rattachée à une issue est notifiée par l'outbox, pas deux fois.
+- **Dispatcher local** : livre désormais aussi les événements **sans règle** (nouvelles
+  erreurs, SLO, uptime, issues) déclenchés depuis `alert_config.rule_less_dispatch_since` ;
+  l'arriéré antérieur a été soldé `skipped` par la migration. Passe bornée (50 livraisons,
+  40 s), `for update skip locked` ; une cible non HTTP (adresse e-mail) est `skipped` au
+  lieu d'échouer cinq fois.
+
 ## Sécurité / exploitation
 
 - `check_alerts` / `check_slo_burn` / `route_alert` / `metric_baseline` sont

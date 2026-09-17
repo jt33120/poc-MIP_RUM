@@ -297,10 +297,18 @@ const DIVERGE = `(status_source <> 'user' and status <> 'for_review'
  * `for_review` d'une issue qu'un de ces groupes contredit. Une issue par
  * instruction, dans l'ordre des identifiants ; une issue que rien ne change n'est
  * ni modifiée ni verrouillée.
+ *
+ * `regression` (migration-v73, P5.6) : juste après sa mise à jour, chaque issue
+ * qui a reçu des occurrences insérées passe par error_issue_record_occurrences —
+ * régression confirmée ou réapparition à vérifier, décidée dans CETTE transaction,
+ * dans le même ordre d'identifiants : le verrou d'une issue résolue s'ajoute à la
+ * suite des autres sans jamais les croiser. Une issue ouverte n'y est pas verrouillée.
  */
-export async function finaliserIssues(client, plan, inserees) {
+export async function finaliserIssues(client, plan, inserees, { regression = false } = {}) {
   if (!plan) return;
   const parIssue = new Map();
+  /** Occurrences insérées par issue : les seules qu'une régression peut juger. */
+  const occurrences = new Map();
   const etendre = (id, app_id, premiere, derniere) => {
     const u = parIssue.get(id) ?? { app_id, premiere: null, derniere: null };
     if (premiere && (!u.premiere || instant(premiere.ts) < instant(u.premiere.ts))) u.premiere = premiere;
@@ -308,7 +316,10 @@ export async function finaliserIssues(client, plan, inserees) {
     parIssue.set(id, u);
   };
   for (const r of inserees) {
-    if (r.issue_id) etendre(r.issue_id, r.app_id, { ts: r.ts, release: r.release ?? null }, { ts: r.ts, release: r.release ?? null });
+    if (!r.issue_id) continue;
+    etendre(r.issue_id, r.app_id, { ts: r.ts, release: r.release ?? null }, { ts: r.ts, release: r.release ?? null });
+    if (!occurrences.has(r.issue_id)) occurrences.set(r.issue_id, []);
+    occurrences.get(r.issue_id).push(r);
   }
   for (const [id, b] of plan.bornes) etendre(id, plan.apps.get(id), b.premiere, b.derniere);
   for (const id of plan.divergences.keys()) etendre(id, plan.apps.get(id), null, null);
@@ -337,5 +348,12 @@ export async function finaliserIssues(client, plan, inserees) {
         statuts ? [...statuts] : null,
       ],
     );
+    const lignes = occurrences.get(id);
+    if (regression && lignes) {
+      await client.query(
+        "select error_issue_record_occurrences($1, $2, $3::timestamptz[], $4::text[], $5::text[])",
+        [u.app_id, id, lignes.map((o) => o.ts), lignes.map((o) => o.release ?? null), lignes.map((o) => o.env ?? null)],
+      );
+    }
   }
 }

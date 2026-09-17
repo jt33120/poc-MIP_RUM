@@ -54,10 +54,11 @@ export const PARAMS = {
  * Les outils. `chemin` peut contenir `{param}` : le paramètre est alors injecté
  * dans le chemin (encodé) au lieu d'aller dans la query string.
  *
- * `lecture: true` partout — l'API v1 exposée ici est en lecture seule, et c'est
- * délibéré : `POST /api/v1/deploys` existe mais n'est PAS exposé en outil.
- * Donner à un agent conversationnel de quoi écrire dans la base de production
- * n'est pas un oubli qu'on comble, c'est une décision qui se prend à froid.
+ * `lecture: true` partout — les outils ne font que lire, et c'est délibéré :
+ * `POST /api/v1/deploys` et les écritures du workflow des issues (triage,
+ * commentaires, liens) existent mais ne sont PAS exposés en outil. Donner à un
+ * agent conversationnel de quoi écrire dans la base de production n'est pas un
+ * oubli qu'on comble, c'est une décision qui se prend à froid.
  */
 export const OUTILS = [
   {

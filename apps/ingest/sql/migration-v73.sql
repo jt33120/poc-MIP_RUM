@@ -385,10 +385,11 @@ end $function$;
 -- mise à jour de première et dernière vue, donc aucun interblocage entre lots).
 -- Ne reçoit que les lignes effectivement insérées : un rejeu n'en fournit aucune.
 --
--- Le verrou de ligne sérialise deux écrivains concurrents : le second relit
--- l'issue après le commit du premier, la trouve rouverte et n'écrit rien. Un
--- écrivain qui a commencé tôt et valide tard décide sur l'état validé au moment
--- où il écrit, pas sur un curseur déjà dépassé.
+-- Seule une issue résolue est verrouillée : l'appel est sans coût de verrou pour
+-- les issues ouvertes d'un lot. Le verrou sérialise deux écrivains concurrents :
+-- le second attend, relit l'issue après le commit du premier, la trouve rouverte
+-- et n'écrit rien. Un écrivain qui a commencé tôt et valide tard décide sur l'état
+-- validé au moment où il écrit, pas sur un curseur déjà dépassé.
 --
 -- Régression CONFIRMÉE : issue résolue, occurrence postérieure à la résolution,
 -- dans l'env de référence, sur une release dont le premier marqueur de
@@ -406,12 +407,12 @@ declare
   confirmee record;
   cle text;
 begin
-  select id, status, resolved_at, resolved_release, resolved_env
+  select id, resolved_at, resolved_release, resolved_env
     into i
     from error_issue
-   where app_id = p_app_id and id = p_issue_id
+   where app_id = p_app_id and id = p_issue_id and status = 'resolved'
    for update;
-  if not found or i.status <> 'resolved' or i.resolved_at is null then
+  if not found or i.resolved_at is null then
     return null;
   end if;
   if not exists (select 1 from unnest(p_ts) as t (ts) where t.ts > i.resolved_at) then

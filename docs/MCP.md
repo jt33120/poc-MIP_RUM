@@ -34,10 +34,12 @@ Le dépôt a déjà payé le prix d'une règle d'accès écrite deux fois : il a
 **trois** implémentations de l'ingestion, et le serveur de développement
 acceptait une app sans clé là où la production la rejetait.
 
-**Lecture seule.** Les quatorze outils sont des `GET`. `POST /api/v1/deploys` existe
-côté API et n'est **pas** exposé — donner à un agent conversationnel de quoi
-écrire en production est une décision qui se prend à froid, pas un oubli qu'on
-comble. Un test verrouille cette absence.
+**Lecture seule.** Les quatorze outils sont des `GET`. `POST /api/v1/deploys` et les
+écritures du workflow des issues (`/issues/{id}/triage`, `/comments`, `/links`)
+existent côté API et ne sont **pas** exposés — donner à un agent conversationnel de
+quoi écrire en production est une décision qui se prend à froid, pas un oubli qu'on
+comble. Ces écritures refusent d'ailleurs tout jeton d'API : seule une session admin
+de la console les passe. Un test verrouille cette absence.
 
 ---
 

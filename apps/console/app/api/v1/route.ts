@@ -26,14 +26,15 @@ export const OPTIONS = preflight;
 
 export const GET = handle(async () => ({
   version: "1",
-  description: "API lecture seule des agrégats RUM (consommée par le front MIP et par le serveur MCP).",
+  description:
+    "API des agrégats RUM (consommée par le front MIP et par le serveur MCP) : lecture, plus les écritures listées dans `write`.",
   filters: {
     app: "slug d'app, ou 'all' (défaut)",
     period: "1h | 24h (défaut) | 7d",
     device: "mobile | desktop | tablet | all (défaut)",
   },
   pagination:
-    "les listes (/errors, /sessions, /events, /actions) acceptent limit (1..200) & offset ; /errors, /events et /actions bornent offset à 10 000. page renvoyée dans data.page. /errors, /issues et /events fournissent un total (data.total) ; /sessions et /actions n'en fournissent aucun. /errors/{fingerprint} pagine ses occurrences par cursor (data.page.next_cursor), limit 1..100 ; /events accepte aussi cursor. /issues et /issues/{id} paginent uniquement par cursor (data.next_cursor), limit 1..100.",
+    "les listes (/errors, /sessions, /events, /actions) acceptent limit (1..200) & offset ; /errors, /events et /actions bornent offset à 10 000. page renvoyée dans data.page. /errors, /issues et /events fournissent un total (data.total) ; /sessions et /actions n'en fournissent aucun. /errors/{fingerprint} pagine ses occurrences par cursor (data.page.next_cursor), limit 1..100 ; /events accepte aussi cursor. /issues, /issues/{id} et /issues/{id}/activity paginent uniquement par cursor (data.next_cursor), limit 1..100.",
   spec: "/api/v1/openapi (OpenAPI 3.0, sans auth)",
   docs: "/api/v1/docs (Swagger UI, sans auth)",
   mcp: {
@@ -44,9 +45,13 @@ export const GET = handle(async () => ({
     doc: "docs/MCP.md",
   },
   endpoints: endpointsDeclares(),
-  // Écriture : hors de l'énumération ci-dessus, qui décrit la lecture. Signalée
-  // explicitement plutôt que passée sous silence.
+  // Écritures : hors de l'énumération ci-dessus, qui décrit la lecture. Signalées
+  // explicitement plutôt que passées sous silence. Celles des issues exigent une
+  // session admin de la console et refusent tout jeton d'API.
   write: [
     { method: "POST", path: "/api/v1/deploys", desc: "enregistre un marqueur de déploiement (intégration CI/CD)" },
+    { method: "POST", path: "/api/v1/issues/{id}/triage", desc: "statut et assigné d'une issue (session admin, expectedRevision)" },
+    { method: "POST", path: "/api/v1/issues/{id}/comments", desc: "commentaire scrubbé sur une issue (session admin, expectedRevision)" },
+    { method: "POST", path: "/api/v1/issues/{id}/links", desc: "lien de ticket HTTPS sur une issue (session admin, expectedRevision)" },
   ],
 }));

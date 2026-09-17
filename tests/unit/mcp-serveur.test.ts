@@ -70,12 +70,13 @@ describe("catalogue — le contrat exposé à l'IA", () => {
     expect(cites.filter((nom) => !noms.has(nom))).toEqual([]);
   });
 
-  // La garantie centrale du serveur : aucun outil n'écrit. `POST /api/v1/deploys`
-  // existe côté API et n'est délibérément pas exposé — ce test échoue si
-  // quelqu'un l'ajoute sans y repenser.
+  // La garantie centrale du serveur : aucun outil n'écrit. `POST /api/v1/deploys` et
+  // les écritures du workflow des issues (P5.6) existent côté API et ne sont
+  // délibérément pas exposés — ce test échoue si quelqu'un les ajoute sans y repenser.
   it("n'expose que de la lecture", () => {
     expect(OUTILS.every((o) => !("methode" in o) || o.methode === "GET")).toBe(true);
-    expect(OUTILS.some((o) => /deploy|create|record|delete/i.test(o.nom))).toBe(false);
+    expect(OUTILS.some((o) => /deploy|create|record|delete|triage|comment|link|assign/i.test(o.nom))).toBe(false);
+    expect(OUTILS.some((o) => /\/(deploys|triage|comments|links)$/.test(o.chemin))).toBe(false);
   });
 });
 

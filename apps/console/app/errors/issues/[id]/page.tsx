@@ -2,9 +2,10 @@
 // reprend avec leurs statuts et leurs notes, puis impact, tendance, stack et
 // occurrences sur la fenêtre et les filtres — la même base que la liste.
 //
-// Lecture seule : le statut suit les groupes historiques repris tant qu'aucune
-// décision de triage n'a été prise. L'URL reste valide après un retour arrière du
-// regroupement v2, et quand le bug se tait sur la période.
+// Workflow (P5.6) : triage, assignation et liens de ticket sous l'état, historique
+// et commentaires en fin de page ; les formulaires ne sont rendus qu'à un admin hors
+// démo, et l'API applique la même règle. L'URL reste valide après un retour arrière
+// du regroupement v2, et quand le bug se tait sur la période.
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ObservedTrend } from "@/components/charts/ObservedTrend";
@@ -14,8 +15,10 @@ import { ERROR_LINK, ErrorOccurrences } from "@/components/errors/ErrorOccurrenc
 import { ErrorStackCard } from "@/components/errors/ErrorStackCard";
 import { ErrorStat } from "@/components/errors/ErrorStat";
 import { GroupingBasisBadge, IssueOriginBadge, IssueStatusBadge, ReappearedBadge } from "@/components/errors/IssueBadges";
+import { IssueActivitySection, IssueTriageCard } from "@/components/errors/IssueWorkflow";
 import { errorGroupHref, errorSearchParams, errorsHref, fmtCount, fmtCoverage, issueHref } from "@/components/errors/error-view";
 import { getUser } from "@/lib/auth";
+import { issueWorkflowView, listIssueActivity } from "@/lib/error-issue-workflow";
 import { ISSUE_STATUS_LABELS, isIssueId, issueDetail, resolveIssue, type IssueDetailResult } from "@/lib/error-issues";
 import { PERIODS, type SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
@@ -31,7 +34,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const SOURCE_STATUT = {
-  system: "statut initial d'une issue nouvelle",
+  system: "statut initial d'une issue nouvelle, ou rouverte par une régression confirmée",
   migration: "hérité des groupes historiques repris",
   user: "décision de triage",
 } as const;
@@ -74,6 +77,13 @@ export default async function IssuePage({
 
   const detail = await issueDetail(issue, f, { limit: parseOccurrencesPage(url).limit, cursor });
   const { impact, trend, last_sample: last, occurrences, sampling, enrichment } = detail;
+  // Workflow P5.6 : null avant migration-v73. Un curseur d'historique illisible rend la page la plus récente.
+  const workflow = await issueWorkflowView(issue.id, issue.app_id);
+  const activiteCurseur = parseErrorCursor(url.get("activite")) ?? null;
+  const activite = workflow
+    ? await listIssueActivity(issue.id, scopeApps(errorScopeFor(user)), { limit: 20, cursor: activiteCurseur })
+    : null;
+  const admin = user?.role === "admin" && !user.demo;
   const { label, bucketLabel } = PERIODS[f.period];
   const pageExtra = url.has("limit") ? { limit: url.get("limit") ?? "" } : undefined;
 
@@ -99,6 +109,13 @@ export default async function IssuePage({
       </div>
 
       <IssueState detail={detail} f={f} />
+
+      <IssueTriageCard
+        issue={issue}
+        workflow={workflow}
+        canWrite={admin}
+        alertHref={`/alerts?app=${encodeURIComponent(issue.app_id)}&issue=${issue.id}`}
+      />
 
       <ErrorNotices sampling={sampling} enrichment={enrichment} />
 
@@ -132,7 +149,7 @@ export default async function IssuePage({
         />
       </div>
 
-      <ErrorStackCard appId={issue.app_id} last={last} admin={user?.role === "admin" && !user.demo} />
+      <ErrorStackCard appId={issue.app_id} last={last} admin={admin} />
 
       <ErrorOccurrences
         appId={issue.app_id}
@@ -140,6 +157,18 @@ export default async function IssuePage({
         caption={`Occurrences de l'issue ${issue.id} dans ${issue.app_id} sur ${label}, les plus récentes d'abord`}
         firstHref={cursor ? issueHref(issue, f, pageExtra) : null}
         nextHref={detail.next_cursor ? issueHref(issue, f, { ...pageExtra, cursor: detail.next_cursor }) : null}
+      />
+
+      <IssueActivitySection
+        issue={issue}
+        activities={activite?.kind === "ok" ? activite.value.activities : null}
+        canWrite={admin}
+        olderHref={
+          activite?.kind === "ok" && activite.value.next_cursor
+            ? `${issueHref(issue, f, { activite: activite.value.next_cursor })}#activite`
+            : null
+        }
+        newestHref={activiteCurseur ? `${issueHref(issue, f)}#activite` : null}
       />
     </div>
   );
@@ -168,10 +197,8 @@ function IssueState({ detail, f }: { detail: IssueDetailResult; f: ErrorFilters 
       <p className="mt-2 text-sm text-ink-soft">
         {ISSUE_STATUS_LABELS[issue.status]} — {SOURCE_STATUT[issue.status_source]}.
         {issue.status === "for_review" &&
+          issue.status_source === "migration" &&
           " Les groupes historiques repris portaient des statuts différents : la décision reste à prendre."}
-        {issue.reappeared &&
-          issue.resolved_at &&
-          ` Revue depuis sa résolution du ${fmtDate(issue.resolved_at)} : réapparition à vérifier (release et déploiement), pas une régression confirmée.`}
       </p>
       {!actif && (
         <p role="status" className="mt-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-ink-soft">
