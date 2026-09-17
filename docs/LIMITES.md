@@ -2,6 +2,23 @@
 
 Liste honnête, demandée par Julian. Colonne « v0.2 » = traité dans le sprint nuit du 10→11/06 (cf. archive/ROADMAP_V02.md) ; « v0.3 » = sprint nuit 2 (cf. archive/ROADMAP_V03.md et la section ci-dessous) ; « Phase 1+ » = nécessite un vrai chantier produit MIP.
 
+## Mise à jour P6.6 (18/09/2026 — agrégats pré-calculés et budget de lecture)
+
+Quand l'Explorer répond depuis un agrégat plutôt que depuis les lignes, il le DIT : `meta.source` vaut
+`rollup+raw`, `meta.approximate` passe à vrai et `meta.rollup.reason` donne, le cas échéant, la raison
+pour laquelle l'agrégat n'a pas pu servir. Rien n'est arrondi en silence.
+
+| Sujet | Ce qui est garanti | Ce qui ne l'est pas |
+|---|---|---|
+| Emploi d'un agrégat | Il ne répond que s'il porte **toutes** les dimensions demandées (regroupement ET filtres) et **exactement** la même population. Un agrégat sans colonne navigateur ne répond jamais à `browser=Firefox`. | Aucun rabattement « au plus près » : la lecture repasse aux lignes brutes, plus lente et juste. |
+| Percentiles | Les distributions horaires sont **fusionnées**, puis le quantile est lu sur la distribution obtenue. | Jamais une moyenne de p75 horaires : elle donnerait à une heure creuse le poids d'une heure de pointe. Valeur approchée à une largeur de seau (2 %) près, annoncée par `meta.approximate`. |
+| Dénominateur | L'agrégat sert le compte **observé** (`observed_count`, migration-v80), le même que la lecture brute. | `weighted_count` (poids d'échantillonnage, v61) reste réservé aux tuiles de qualité : les deux ne se comparent pas. |
+| Partition agrégat / brut | Les heures **entières** consolidées sous le filigrane viennent de l'agrégat ; tout le reste — heure en cours comprise — est relu brut. Aucune ligne n'est comptée deux fois. | L'heure en cours n'est jamais servie par un agrégat, quelle que soit sa fraîcheur. |
+| Arrivées tardives, DSAR | Une mesure arrivée après le filigrane est relue brute ; un effacement DSAR **marque** l'heure, que la lecture cesse de croire jusqu'au rafraîchissement suivant. | Aucun recalcul historique massif : une marque plus vieille que la fenêtre de rafraîchissement laisse son heure en lecture brute jusqu'à la reprise historique (P8). |
+| Distincts (sessions, visiteurs, utilisateurs) | Toujours calculés sur les lignes. | Jamais une somme de distincts horaires : une session qui traverse une heure serait comptée deux fois. Aucune structure fusionnable (HLL, t-digest) n'existe dans ce dépôt. |
+| Budget de lecture | `statement_timeout` posé en `SET LOCAL`, rendu avec la transaction : il ne fuit jamais vers la requête suivante du pooler. Dépassement → 503 `query_budget_exceeded`. | Jamais une série de zéros qu'on prendrait pour une absence de trafic. |
+| Temps de réponse | Mesuré sur base jetable de 1,2 M d'événements sur 7 jours (voir l'en-tête de `migration-v80.sql`) : 26 à 337 ms selon la lecture, 1 030 ms au p95 pour la plus lourde. | Ce n'est pas un SLA de production : la mesure vaut pour ce matériel, ce volume et ce jeu de données. |
+
 ## Mise à jour P6.3 (17/09/2026 — analyses prêtes à l'emploi et drill-downs)
 
 Ce que les nouveaux chiffres mesurent EXACTEMENT, et ce qu'ils ne mesurent pas. Chaque définition est
