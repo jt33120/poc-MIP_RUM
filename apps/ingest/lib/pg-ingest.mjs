@@ -88,6 +88,18 @@ const OPTIONNELLES_LONGTASK = [
 ];
 
 /**
+ * Dimensions déclarées d'un événement (migration-v75), réduites à ce que la table
+ * porte : env et release, plus service sur rum_span et rum_event_index.
+ *
+ * Même garde-fou que les autres colonnes optionnelles : écrites avant la
+ * migration, elles feraient rejeter le lot ENTIER. La valeur voyage sur chaque
+ * ligne depuis flattenOtlp ; elle n'est jamais relue sur la session.
+ */
+export function colonnesDimensions(dispo, { service = false } = {}) {
+  return ["env", "release", ...(service ? ["service"] : [])].filter((c) => dispo.has(c));
+}
+
+/**
  * Colonnes de l'INSERT rum_longtask, réduites à ce que la base porte.
  *
  * Même garde-fou que pour rum_session, pour la même raison : une colonne
@@ -105,6 +117,7 @@ export function colonnesLongtask(dispo) {
     "route",
     "duration_ms",
     ...OPTIONNELLES_LONGTASK.filter((c) => dispo.has(c)),
+    ...colonnesDimensions(dispo),
     "ts",
   ];
 }
@@ -239,6 +252,8 @@ const OPTIONNELLES = [
   "sample_rate", "error_sample_rate", "has_error",
   // v66 : identité métier pseudonymisée + snapshot global de session.
   "user_id_hash", "account_id_hash", "context",
+  // v75 (P6.1) : navigateur et système déduits de l'user-agent.
+  "browser", "browser_version", "os", "os_version",
 ];
 
 /**
@@ -277,7 +292,10 @@ export function clauseConflitSession(dispo) {
     // retry peut rejouer un lot d'un SDK antérieur, sans identifiant. Le
     // coalesce garantit qu'un identifiant déjà connu n'est jamais effacé par un
     // lot qui n'en porte pas.
-    ...["release", "net_type", "visitor_id", "user_id_hash", "account_id_hash"]
+    // v75 : navigateur et système, figés à la première valeur connue comme
+    // l'user-agent dont ils dérivent.
+    ...["release", "net_type", "visitor_id", "user_id_hash", "account_id_hash",
+      "browser", "browser_version", "os", "os_version"]
       .filter((c) => dispo.has(c))
       .map((c) => `${c} = coalesce(rum_session.${c}, excluded.${c})`),
     ...(dispo.has("context")
@@ -354,7 +372,9 @@ async function ecrireMetriques(client, metrics) {
   const consolidées = consoliderMetriques(metrics);
   const dispo = await colonnesDe(client, "rum_metric");
   const avecUid = dispo.has("metric_uid");
-  const cols = avecUid ? [...COLONNES_METRIQUE, "metric_uid"] : COLONNES_METRIQUE;
+  // Les dimensions (v75) restent celles du premier rapport : tous les rapports
+  // d'une même métrique viennent du même chargement de page, donc de la même release.
+  const cols = [...COLONNES_METRIQUE, ...(avecUid ? ["metric_uid"] : []), ...colonnesDimensions(dispo)];
   const prep = (m) => ({ ...m, attribution: m.attribution ? JSON.stringify(m.attribution) : null });
 
   if (!avecUid) {
@@ -473,7 +493,8 @@ export async function writeRows(pool, {
     await batchInsert(
       client,
       "rum_pageview",
-      ["span_id", "session_id", "app_id", "route", "url", "referrer", "nav_type", "started_at"],
+      ["span_id", "session_id", "app_id", "route", "url", "referrer", "nav_type",
+       ...colonnesDimensions(await colonnesDe(client, "rum_pageview")), "started_at"],
       pageviews.map((p) => ({ ...p, started_at: p.ts })),
       "on conflict (span_id) do nothing",
     );
@@ -485,7 +506,8 @@ export async function writeRows(pool, {
       await batchInsert(
         client,
         "rum_action",
-        ["action_id", "span_id", "session_id", "app_id", "type", "name", "route", "context", "ts"],
+        ["action_id", "span_id", "session_id", "app_id", "type", "name", "route", "context",
+         ...colonnesDimensions(actionDispo), "ts"],
         actions.map((action) => ({
           ...action,
           context: action.context ? JSON.stringify(action.context) : "{}",
@@ -515,7 +537,7 @@ export async function writeRows(pool, {
       client,
       "rum_resource",
       ["span_id", "session_id", "app_id", "route", "url", "type", "duration_ms", "transfer_size", "render_blocking",
-       ...(resourceDispo.has("action_id") ? ["action_id"] : []), "ts"],
+       ...(resourceDispo.has("action_id") ? ["action_id"] : []), ...colonnesDimensions(resourceDispo), "ts"],
       resources,
       "on conflict (span_id) do nothing",
     );
@@ -539,7 +561,7 @@ export async function writeRows(pool, {
     const eventOptionnelles = [
       "event_type", "context", "user_id_hash", "account_id_hash", "view_id", "view_name",
       "action_id", "timing_ms", "feature_flag_value",
-    ].filter((col) => eventDispo.has(col));
+    ].filter((col) => eventDispo.has(col)).concat(colonnesDimensions(eventDispo));
     await batchInsert(
       client,
       "rum_event",
@@ -556,7 +578,7 @@ export async function writeRows(pool, {
       client,
       "rum_span",
       ["span_id", "trace_id", "parent_span_id", "tier", "session_id", "app_id", "route", "url", "method", "status_code", "duration_ms", "name", "kind",
-       ...(spanDispo.has("action_id") ? ["action_id"] : []), "ts"],
+       ...(spanDispo.has("action_id") ? ["action_id"] : []), ...colonnesDimensions(spanDispo, { service: true }), "ts"],
       spans ?? [],
       "on conflict (span_id) do nothing",
     );
@@ -577,7 +599,7 @@ export async function writeRows(pool, {
       const indexOptionnelles = [
         "event_type", "context", "user_id_hash", "account_id_hash", "view_id", "view_name",
         "action_id", "timing_ms", "feature_flag_value",
-      ].filter((col) => indexDispo.has(col));
+      ].filter((col) => indexDispo.has(col)).concat(colonnesDimensions(indexDispo, { service: true }));
       await batchInsert(
         client,
         "rum_event_index",

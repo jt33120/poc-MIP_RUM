@@ -38,6 +38,7 @@ Prérequis côté MIP (à faire une fois par application) :
 | `appId` | `string` | **requis** | Identifiant de l'application (doit exister dans `app_registry`) |
 | `clientId` | `string` | — | Identifiant du client (groupement, organisation) |
 | `env` | `string` | — | Environnement (`prod`, `staging`, `dev`) |
+| `release` | `string` | — | Version de l'app (`mip.release`), recopiée sur chaque signal et clé des source maps : 1 à 120 caractères sans caractère de contrôle, jamais modifiée ; au-delà, ignorée (« Inconnue »). Voir [SOURCEMAPS.md](SOURCEMAPS.md) |
 | `sampleRate` | `number` 0..1 | `1.0` | Fraction de sessions **entièrement** collectées (tirage à l'init, persisté par session) |
 | `keepOnError` | `boolean` | `true` | Échantillonnage biaisé-erreurs : les sessions hors `sampleRate` ne sont pas jetées mais passent en mode « error-biased » (télémétrie de routine supprimée, **erreurs conservées**, la 1ʳᵉ erreur promeut la session en collecte complète pour la suite). `false` = ancien comportement (session non échantillonnée → rien) |
 | `errorSampleRate` | `number` 0..1 | `1.0` | Fraction des sessions hors `sampleRate` gardées sur erreur (n'a d'effet que si `keepOnError`) |

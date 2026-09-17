@@ -80,6 +80,17 @@ describe("flattenOtlp — snapshot du contrat de sortie", () => {
       service: null,
       fingerprint: "368e01a8",
     });
+    // P6.1 — le snapshot gagne DÉLIBÉRÉMENT les dimensions de migration-v75. La
+    // release déclarée par la resource suit chaque signal ; l'environnement n'est
+    // pas déclaré, il reste NULL. L'user-agent de la fixture (« Mozilla/5.0 Test »)
+    // ne nomme ni navigateur ni système : seul l'indice du SDK donne la classe.
+    for (const ligne of [...rows.pageviews, ...rows.metrics, ...rows.errors, ...rows.resources,
+      ...rows.longtasks, ...rows.breadcrumbs, ...rows.events, ...rows.spans]) {
+      expect(ligne).toMatchObject({ env: null, release: "1.4.2" });
+    }
+    expect(rows.sessions[0]).toMatchObject({
+      browser: null, browser_version: null, os: null, os_version: null, device_type: "desktop",
+    });
     expect(rows.events[0].props).toEqual({ email: "[redacted]", plan: "pro" });
     // P1 : signal de frustration -> rum_event sous nom réservé 'frustration.<kind>'
     expect(rows.events[1].name).toBe("frustration.rage");

@@ -77,7 +77,9 @@ describe("lireRequeteUpload — le contrat complet avant toute écriture", () =>
     ["un corps illisible", Buffer.from("{"), 400, /JSON invalide/],
     ["un tableau", corps([]), 400, /objet JSON/],
     ["appId absent", corps({ release: "1", maps: [{ filename: "a.js", content: MAP }] }), 400, /appId requis/],
-    ["release trop longue", corps({ appId: "a", release: "r".repeat(201), maps: [{ filename: "a.js", content: MAP }] }), 400, /release requis/],
+    // P6.1 : la règle de l'ingestion — au-delà de 120 caractères, la release ne serait jamais stockée.
+    ["release trop longue", corps({ appId: "a", release: "r".repeat(121), maps: [{ filename: "a.js", content: MAP }] }), 400, /release requise \(1 à 120 caractères/],
+    ["release avec un caractère de format", corps({ appId: "a", release: `1.2${String.fromCharCode(0x200d)}`, maps: [{ filename: "a.js", content: MAP }] }), 400, /release requise/],
     ["aucune map", corps({ appId: "a", release: "1", maps: [] }), 400, /au moins une map/],
     ["replace non booléen", requete([{ filename: "a.js", content: MAP }], { replace: "oui" }), 400, /replace/],
     ["un fichier .map comme nom", requete([{ filename: "main.js.map", content: MAP }]), 400, /pas le fichier \.map/],
