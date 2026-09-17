@@ -47,6 +47,7 @@ Prérequis côté MIP (à faire une fois par application) :
 | `honorDNT` | `boolean` | `true` | Souveraineté/RGPD : honore les signaux navigateur d'opt-out **Do Not Track** et **Global Privacy Control**. Si un refus est signalé, **aucune collecte** (0 session, 0 requête). Mettre `false` seulement si l'app recueille elle-même un consentement affirmatif via `MIPRum.consent()` (cf. §3) |
 | `slowResourceMs` | `number` | `300` | Seuil au-delà duquel une ressource (script, image, fetch…) est reportée comme lente (cap 20 ressources/page) |
 | `forms` | `boolean` | `true` | Form analytics : instrumentation des formulaires **au niveau du champ** (ordre de remplissage, temps par champ, abandon). Émet `form.submit` / `form.abandon`. **Ne capte jamais les valeurs** (identifiants + durées ; champs `password` réduits à `[password]`). `false` pour désactiver |
+| `captureErrors` | `{ console?, resources?, csp?, network? }` | tout à `false` | Collecte d'erreurs élargie, **voie par voie et sur demande** : `console.error`, échecs de chargement de ressources, violations CSP, échecs fetch/XHR. Les exceptions non interceptées et les promesses rejetées restent collectées sans option (cf. « Erreurs : collecte élargie ») |
 | `beforeSend` | `(attrs, meta?) => attrs \| null` | — | Filtre de dernière chance ; `meta` expose le type/nom d'événement. Le second argument est optionnel pour préserver les callbacks existants. Retourner `null` supprime le span. Les identités, contexte, props et contenus sensibles restent supprimables ; seuls les champs structurels (session/app/trace/type/liaisons) sont restaurés par le SDK. |
 
 API runtime exposée sur `window.MIPRum` :
@@ -57,7 +58,8 @@ API runtime exposée sur `window.MIPRum` :
 - `MIPRum.setGlobalContext(context)` — remplace le contexte global des événements futurs.
 - `MIPRum.setUser({ id, ...context })` / `setAccount({ id, ...context })` — identité métier. Le brut reste en mémoire navigateur et en transit ; le serveur le remplace par un HMAC-SHA256 cloisonné par `appId` avant toute file ou écriture. En cas de panne avant réception, la file retry conserve l'événement mais omet volontairement l'identité : aucune valeur brute user/account n'entre dans `localStorage`, au prix d'une corrélation d'identité perdue pour cet événement.
 - `MIPRum.startView(name, context?)` — démarre une vue nommée, sans remplacer la route normalisée.
-- `MIPRum.addAction(name, context?)`, `addTiming(name, timestamp?)`, `addFeatureFlagEvaluation(name, value)` et `addError(error, context?)` — événements manuels typés. `addAction` ouvre la même fenêtre causale de 5 s qu'un clic automatique.
+- `MIPRum.addAction(name, context?)`, `addTiming(name, timestamp?)`, `addFeatureFlagEvaluation(name, value)` et `addError(error, context?, { fingerprint? })` — événements manuels typés. `addAction` ouvre la même fenêtre causale de 5 s qu'un clic automatique.
+- `MIPRum.getErrorCollectionStats()` — métriques de la collecte d'erreurs, voie par voie (cf. « Erreurs : collecte élargie »).
 
 Le contexte est un snapshot JSON immuable avec précédence `global < user/account < view < action < événement`.
 Les noms/clefs sont bornés à 100 caractères, les chaînes à 500, la profondeur à 4, le total à 64 clefs
@@ -73,6 +75,47 @@ Le SDK ouvre automatiquement une action sur chaque clic primaire visant un élé
 Préférez un libellé métier stable et non personnel dans `data-mip-action-name` (`checkout.submit`, par exemple). Si le libellé accessible peut contenir un nom, un numéro de dossier ou toute autre donnée métier sensible, réécrivez `mip.event_name` dans `beforeSend`. Pour abandonner l'action entière, retournez `null` : supprimer ou invalider uniquement son nom rejette aussi la racine et empêche ses effets futurs de conserver un `action_id` orphelin. L'enveloppe causale (`session`, `trace`, `action_id`, type) reste protégée contre la modification.
 
 Les interfaces marquées `data-mip-rum-ui` sont exclues. Navigation, refus de consentement et rotation d'identité ferment l'action ; un ré-accord ne ressuscite jamais un clic survenu pendant le refus. La corrélation reste heuristique : elle explique une proximité causale bornée, pas une preuve métier.
+
+### Erreurs : collecte élargie (opt-in)
+
+Les exceptions non interceptées et les promesses rejetées sont toujours collectées. Quatre voies s'y ajoutent, chacune sur demande explicite : une seule d'entre elles peut multiplier le volume d'erreurs d'une application du jour au lendemain. Mesurez-la sur une application de recette avant la production.
+
+```js
+MIPRum.init({
+  /* …options…, */
+  captureErrors: {
+    console: true,   // console.error
+    resources: true, // échecs de chargement img, script, link, média
+    csp: true,       // violations Content-Security-Policy
+    network: true,   // fetch/XHR : échecs réseau, délais dépassés, réponses 5xx
+    // network: { clientErrors: true, aborts: true } ajoute les 4xx et les abandons volontaires
+  },
+});
+```
+
+| Voie | Activation | `mip.error_kind` → source | Plafond / page | Ce qui part |
+|---|---|---|---|---|
+| `uncaught` | toujours | `error`, `unhandledrejection` → `browser_js` | 50 | type, message, pile, fichier et position ; non gérée |
+| `console` | `console: true` | `console` → `browser_console` | 20 | arguments joints, objets en JSON borné (profondeur 3, 20 entrées, 1 000 caractères, cycles en `[Circular]`, valeurs des clés sensibles en `[redacted]`), pile du premier `Error` ; gérée |
+| `resources` | `resources: true` | `resource` → `browser_resource` | 20 | balise et URL sans query, fragment ni identifiants ; jamais de statut HTTP, que l'événement ne donne pas |
+| `csp` | `csp: true` | `csp` → `browser_csp` | 10 | directive, hôte bloqué ou mot-clé (`inline`, `eval`…), fichier et position ; jamais l'extrait `sample` ni le texte de la politique |
+| `network` | `network: true` | `network` → `browser_network` | 20 | méthode, hôte et chemin, statut (`HTTP 503`) ou issue (`NetworkError`, `TimeoutError`, `AbortError`), lien vers le span de l'appel ; jamais query, corps ni en-têtes |
+
+**Un seul chemin.** Chaque voie suit celui des exceptions : silence de 10 s par empreinte (les répétitions sont comptées dans `mip.error_count`, pas perdues), plafond de page propre à la voie (une console bavarde ne fait jamais taire les exceptions), échantillonnage biaisé-erreurs — la première erreur, quelle que soit sa voie, promeut une session « error-biased » —, attribution à l'action causale, `beforeSend` (type `error`) et consentement. Une erreur constatée après un refus ou une révocation n'est jamais envoyée, même pour un appel parti avant.
+
+**Un objet, un incident.** `console.error(err)` suivi de `throw err`, ou deux journalisations du même objet dans une même tâche, ne font qu'un incident : la première capture gagne. `addError(err)` émet toujours ; un `console.error` du même objet dans la même tâche est alors ignoré.
+
+**Console.** L'original est appelé exactement une fois par appel, même si la capture échoue. Ce qui est journalisé pendant la capture — un `beforeSend` qui journalise — passe sans être capturé : le SDK ne se mesure pas lui-même. Seul `console.error` est enveloppé.
+
+**Réseau.** La voie repose sur les wrappers du tracing : avec `trace: false`, elle est inactive. Seuls les appels instrumentés sont observés — même origine et origines listées dans `trace`, 100 par page au plus — ; l'ingestion MIP et les origines tierces ne le sont jamais. Un abandon volontaire (`AbortController`) est classé à part et n'est signalé qu'avec `aborts: true`, un 4xx qu'avec `clientErrors: true`. L'erreur porte l'horodatage et l'action causale du **départ** de l'appel, sa trace, et le span `http.client` pour parent : la console la relie à l'appel. Le statut entre dans le type pour que 500 et 404 restent deux groupes.
+
+**CSP.** L'événement `securitypolicyviolation` et `ReportingObserver`, qui rattrape les violations antérieures au chargement du SDK, signalent souvent la même violation : elle ne compte qu'une fois. Le blocage de l'ingestion MIP elle-même n'est pas signalé — l'erreur repartirait vers l'origine bloquée. Là où `ReportingObserver` manque, seul l'événement est écouté, et `unsupported` le dit.
+
+**Métriques et API absentes.** `MIPRum.getErrorCollectionStats()` rend, voie par voie depuis `init()` : `enabled`, `unsupported` (API navigateur absentes), et les occurrences `emitted`, `capped` (tues par le plafond de page) et `rejected` (refusées par `beforeSend` ou le consentement). Ces compteurs restent dans le navigateur : ils ne sont pas transmis à l'ingestion.
+
+**Clé de regroupement.** `addError(error, context, { fingerprint })` accepte une clé opaque de 100 caractères au plus, sans donnée personnelle, transmise en `mip.error_fingerprint`. Le regroupement actuel ne la consomme pas encore ; une clé invalide est ignorée et l'erreur part quand même.
+
+**beforeSend.** `mip.error_kind`, `mip.error_handled` et `mip.parent_span_id` rejoignent les champs structurels restaurés : un hook peut masquer le message ou refuser l'erreur, pas changer sa voie ni son lien vers l'appel.
 
 ## 3. Consent mode (RGPD)
 
@@ -122,11 +165,11 @@ Note : le snippet d'init inline nécessite que la CSP autorise ce bloc (`'unsafe
 
 ## 5. Poids et impact performance
 
-- Bundle cœur mesuré : **19,4 KB gzip** (56,2 KB raw) — toutes les instrumentations incluses (vitals, erreurs, ressources, long tasks, actions causales, breadcrumbs, tracing front→back, consent, retry, contexte et événements manuels). Le replay (rrweb) est un bundle séparé chargé à la demande.
+- Bundle cœur mesuré : **22,0 KB gzip** (63,4 KB raw) — toutes les instrumentations incluses (vitals, erreurs et leurs voies opt-in console/ressources/CSP/réseau, ressources, long tasks, actions causales, breadcrumbs, tracing front→back, consent, retry, contexte et événements manuels). Le replay (rrweb) est un bundle séparé chargé à la demande.
 - Historique : v0.1 **22,3 KB**, v0.2 **23,8 KB**, puis **27,4 KB** avant l'allègement. Le SDK OpenTelemetry a été remplacé par un émetteur OTLP/HTTP JSON maison (même format sur le fil), d'où la chute à ~12 KB.
-- C'est un SDK **OTLP-natif** (vrai OTLP sur le fil, backend remplaçable) — désormais plus léger que les RUM du marché (Sentry ~20 KB, Datadog ~25 KB).
+- C'est un SDK **OTLP-natif** (vrai OTLP sur le fil, backend remplaçable) — dans la fourchette des RUM du marché (Sentry ~20 KB, Datadog ~25 KB).
 - Émission par batch (flush toutes les `flushIntervalMs`), `sendBeacon`/flush forcé au passage en arrière-plan : pas de requête bloquante pendant la navigation.
-- Caps par page pour borner le volume : 20 ressources lentes, 30 long tasks, 50 breadcrumbs.
+- Caps par page pour borner le volume : 20 ressources lentes, 30 long tasks, 50 breadcrumbs, 50 erreurs distinctes — plus 20 console, 20 ressources, 10 CSP et 20 réseau quand ces voies sont activées.
 - `sampleRate` permet de réduire la volumétrie sur les sites à fort trafic. Par défaut (`keepOnError`), l'échantillonnage est **biaisé-erreurs** : on garde 100 % des sessions à incident (via `errorSampleRate`) tout en n'échantillonnant que le trafic nominal — on ne perd jamais une session d'erreur en abaissant `sampleRate`.
 
   **Ce que l'échantillonnage fait aux chiffres, depuis le 09/09/2026.** Le SDK émet ses deux taux
@@ -223,6 +266,7 @@ Collecté (par session) :
 | Web Vitals | LCP, INP, CLS, FCP, TTFB + attribution technique (élément, timings) |
 | Pageviews | **routes normalisées** (`/partners/:id` — les ids numériques/uuid/hex sont remplacés), type de navigation |
 | Erreurs JS | message (tronqué à 1 000 c.), type, stack (tronquée à 4 000 c.), fichier source |
+| Erreurs navigateur (opt-in) | console : arguments sérialisés et bornés, valeurs des clés sensibles masquées ; ressources et réseau : URL **sans query string** ni fragment, méthode et statut, jamais corps ni en-têtes ; CSP : directive et hôte bloqué, jamais l'extrait inline |
 | Ressources lentes | URL **sans query string**, type, durée, taille transférée |
 | Long tasks | durée |
 | Breadcrumbs | type (click/nav/error/custom) + label court |

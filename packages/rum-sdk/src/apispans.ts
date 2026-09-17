@@ -6,11 +6,51 @@
 //   pipeline normal (consent gate, beforeSend, retry) ; la corrélation avec le
 //   span backend 'http.server' se fait par mip.trace_id (table rum_span).
 // XHR est patché car axios (G-IT) repose dessus ; fetch couvre le reste.
+// P5.2 : ces mêmes wrappers signalent, sur option, les appels en échec comme
+// erreurs `network` — jamais un appel non instrumenté, donc ni l'ingestion MIP ni
+// une origine hors liste.
 import { makeCap, type PageCap } from "./caps";
 import { scrubUrl } from "./context";
+import { urlNettoyee } from "./error-capture";
 import type { Emit } from "./errors";
 
 export const API_CAP_PER_PAGE = 100;
+
+/** Issue d'un appel resté sans réponse HTTP. */
+export type IssueReseau = "network" | "timeout" | "abort";
+
+/** Ce que `captureErrors.network` signale en plus des échecs réseau et des 5xx. */
+export interface NetworkErrorPolicy {
+  clientErrors: boolean;
+  aborts: boolean;
+}
+
+/**
+ * L'appel est-il une erreur à signaler ? PURE. `null` = non.
+ *
+ * Un abandon volontaire (AbortController, requête annulée par l'application)
+ * n'est pas un incident : classé à part, il n'est signalé que sur demande. Un
+ * délai dépassé en est un. Un 4xx dit souvent « pas trouvé » ou « pas autorisé »
+ * au sens métier : sur demande aussi. Un statut 0 SANS échec — réponse opaque
+ * `no-cors` — n'est pas un échec.
+ *
+ * Le statut entre dans le TYPE (« HTTP 503 ») et pas seulement dans le message :
+ * l'empreinte serveur remplace les chiffres d'un message, et 500 et 404
+ * tomberaient sinon dans le même groupe.
+ */
+export function echecReseau(
+  status: number,
+  issue: IssueReseau | null,
+  policy: NetworkErrorPolicy,
+): { type: string; detail: string } | null {
+  if (issue === "abort") return policy.aborts ? { type: "AbortError", detail: "requête abandonnée" } : null;
+  if (issue === "timeout") return { type: "TimeoutError", detail: "délai dépassé" };
+  if (issue === "network") return { type: "NetworkError", detail: "échec réseau" };
+  if (status >= 500 || (policy.clientErrors && status >= 400)) {
+    return { type: `HTTP ${status}`, detail: `HTTP ${status}` };
+  }
+  return null;
+}
 
 export interface ApiSpanOptions {
   /** Origins supplémentaires (ex. 'https://api.exemple.fr') vers lesquels propager. */
@@ -28,6 +68,14 @@ export interface ApiSpanOptions {
   traceId?: () => string;
   /** Snapshot causal pris au DÉPART de l'appel, jamais à sa réponse. */
   action?: () => Record<string, string | number | boolean>;
+  /**
+   * Erreurs réseau (`captureErrors.network`) ; absent = aucune. `report` reçoit
+   * les attributs de l'exception et l'horodatage de DÉPART de l'appel, celui de
+   * son span : l'attribution causale reste celle du départ.
+   */
+  errors?: NetworkErrorPolicy & {
+    report: (attrs: Record<string, string | number | boolean>, ts: number) => void;
+  };
 }
 
 function randHex(nBytes: number): string {
@@ -69,23 +117,48 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
     traceId: string,
     spanId: string,
     status: number,
+    issue: IssueReseau | null,
     startPerf: number,
     tsMs: number,
     actionAttrs: Record<string, string | number | boolean>,
   ) => {
-    emit(
-      "http.client",
-      {
-        ...actionAttrs,
-        "mip.trace_id": traceId,
-        "mip.span_id": spanId,
-        "http.url": scrubUrl(url),
-        "http.method": method,
-        "http.status_code": status,
-        "http.duration_ms": Math.round(performance.now() - startPerf),
-      },
-      tsMs,
-    );
+    try {
+      const echec = opts.errors ? echecReseau(status, issue, opts.errors) : null;
+      const propre = echec ? urlNettoyee(url) : null;
+      if (echec && propre) {
+        const verbe = method.slice(0, 16);
+        // AVANT le span : dans une session error-biased, c'est l'erreur qui
+        // promeut la session, et le span de l'appel en échec passe avec elle.
+        opts.errors!.report({
+          ...actionAttrs,
+          "mip.error_kind": "network",
+          "exception.type": echec.type,
+          // Méthode, hôte et chemin : ni query, ni identifiants, ni corps, ni en-tête.
+          "exception.message": `${verbe} ${propre.cible} : ${echec.detail}`,
+          "mip.error_source": propre.source,
+          "http.method": verbe,
+          ...(status ? { "http.status_code": status } : {}),
+          // Lien vers le span de l'appel : même trace, ce span pour parent.
+          "mip.trace_id": traceId,
+          "mip.parent_span_id": spanId,
+        }, tsMs);
+      }
+      emit(
+        "http.client",
+        {
+          ...actionAttrs,
+          "mip.trace_id": traceId,
+          "mip.span_id": spanId,
+          "http.url": scrubUrl(url),
+          "http.method": method,
+          "http.status_code": status,
+          "http.duration_ms": Math.round(performance.now() - startPerf),
+        },
+        tsMs,
+      );
+    } catch {
+      /* la mesure ne change jamais la réponse rendue à l'application */
+    }
   };
 
   // --- fetch ------------------------------------------------------------------
@@ -113,11 +186,18 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
         const actionAttrs = opts.action?.() ?? {};
         return orig.call(this, input as RequestInfo, { ...init, headers }).then(
           (resp) => {
-            record(target, method, traceId, spanId, resp.status, startPerf, ts, actionAttrs);
+            record(target, method, traceId, spanId, resp.status, null, startPerf, ts, actionAttrs);
             return resp;
           },
           (err) => {
-            record(target, method, traceId, spanId, 0, startPerf, ts, actionAttrs); // réseau coupé
+            // Rejet : délai (AbortSignal.timeout), abandon volontaire — le motif
+            // passé à abort() peut être n'importe quelle valeur, d'où le signal —
+            // ou réseau coupé.
+            const signal = init?.signal ?? (input instanceof Request ? input.signal : null);
+            const nom = (err as { name?: unknown } | null)?.name;
+            const issue: IssueReseau =
+              nom === "TimeoutError" ? "timeout" : nom === "AbortError" || signal?.aborted ? "abort" : "network";
+            record(target, method, traceId, spanId, 0, issue, startPerf, ts, actionAttrs);
             throw err;
           },
         );
@@ -153,10 +233,18 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
           const startPerf = performance.now();
           const ts = Date.now();
           const actionAttrs = opts.action?.() ?? {};
+          // error/timeout/abort précèdent toujours loadend : ils disent POURQUOI
+          // le statut vaut 0, que loadend seul ne dit pas.
+          let issue: IssueReseau | null = null;
+          if (opts.errors) {
+            this.addEventListener("error", () => { issue = "network"; }, { once: true });
+            this.addEventListener("timeout", () => { issue = "timeout"; }, { once: true });
+            this.addEventListener("abort", () => { issue = "abort"; }, { once: true });
+          }
           // loadend couvre load/error/abort/timeout ; status 0 = échec réseau
           this.addEventListener(
             "loadend",
-            () => record(target, meta.method, traceId, spanId, this.status, startPerf, ts, actionAttrs),
+            () => record(target, meta.method, traceId, spanId, this.status, issue, startPerf, ts, actionAttrs),
             { once: true },
           );
         }
