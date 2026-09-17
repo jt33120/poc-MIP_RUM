@@ -5,11 +5,12 @@
 // base directement — c'est plus court d'un saut réseau. Il ne le fait pas, pour
 // deux raisons qui pèsent plus que la latence :
 //
-//   1. Le CLOISONNEMENT est écrit dans l'API, pas ici. `parseApiFilters` ramène
-//      un jeton scopé à son périmètre d'apps, `handle` applique le débit et
-//      l'enveloppe. Réimplémenter ça côté MCP, ce serait une deuxième version de
-//      la règle d'accès — et deux versions finissent par diverger. Le dépôt en a
-//      déjà fait les frais avec trois receveurs d'ingestion.
+//   1. Le CLOISONNEMENT est écrit dans l'API, pas ici. `parseApiFilters` résout le
+//      périmètre du jeton (une app hors périmètre est refusée, pas rabattue),
+//      `handle` applique le débit et l'enveloppe. Réimplémenter ça côté MCP, ce
+//      serait une deuxième version de la règle d'accès — et deux versions
+//      finissent par diverger. Le dépôt en a déjà fait les frais avec trois
+//      receveurs d'ingestion.
 //   2. Ce service est EXPOSÉ À UNE IA. Sans identifiants de base, une injection
 //      de prompt réussie ne donne accès qu'à ce que le jeton de l'appelant
 //      permet déjà de lire. Avec DATABASE_URL, elle donnerait la base entière.

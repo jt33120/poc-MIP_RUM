@@ -29,10 +29,18 @@ export const GET = handle(async () => ({
   description:
     "API des agrégats RUM (consommée par le front MIP et par le serveur MCP) : lecture, plus les écritures listées dans `write`.",
   filters: {
-    app: "slug d'app, ou 'all' (défaut)",
-    period: "1h | 24h (défaut) | 7d",
+    app: "slug d'app, ou 'all' (défaut : toutes les apps AUTORISÉES). Une app hors périmètre reçoit 403 forbidden_app, jamais les chiffres d'une autre.",
+    period: "1h | 24h (défaut) | 7d — fenêtre glissante ; une valeur inconnue vaut 24h",
+    from: "début INCLUS d'une plage personnalisée (ISO UTC explicite, …Z), avec to et sans period",
+    to: "fin EXCLUE d'une plage personnalisée : 30 jours au plus, jamais dans le futur",
     device: "mobile | desktop | tablet | all (défaut)",
+    dimensions: "browser, os, env, service, release, route, country : valeur exacte (1 à 500 caractères). Une dimension que la mesure ne porte pas reçoit 400 unsupported_dimension, jamais un filtre ignoré.",
+    seg: "segment : 'v2:dimension:eq|neq|is_null[:valeur encodée]' séparés par ';' (format v1 encore lu) ; 10 conditions au plus",
+    bots: "1 = inclure le trafic non humain (exclu par défaut)",
+    internal: "1 = inclure les apps internes dans la vue « toutes apps » (exclues par défaut)",
   },
+  meta:
+    "chaque réponse annonce ce qui a été APPLIQUÉ : meta.scope (app demandée, apps effectives), meta.range ([from,to) UTC, preset, largeur de seau) et meta.filters (conditions, bots, apps internes).",
   pagination:
     "les listes (/errors, /sessions, /events, /actions) acceptent limit (1..200) & offset ; /errors, /events et /actions bornent offset à 10 000. page renvoyée dans data.page. /errors, /issues et /events fournissent un total (data.total) ; /sessions et /actions n'en fournissent aucun. /errors/{fingerprint} pagine ses occurrences par cursor (data.page.next_cursor), limit 1..100 ; /events accepte aussi cursor. /issues, /issues/{id} et /issues/{id}/activity paginent uniquement par cursor (data.next_cursor), limit 1..100.",
   spec: "/api/v1/openapi (OpenAPI 3.0, sans auth)",

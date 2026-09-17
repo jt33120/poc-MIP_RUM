@@ -100,16 +100,18 @@ Production :
 
 ## Suivis consolidés
 
-- **Navigation client bloquée** : un `<Link>` vers la même route avec une autre query et `router.refresh()` peuvent
-  ne jamais aboutir une fois les prefetchs terminés (reproduit sur « Réinitialiser » de `/events`, sur le triage P5.6
-  et probablement l'auto-refresh « LIVE » de 5 s). P5.1 et P5.6 contournent par ancres natives et rechargement
-  complet ; la cause est à corriger dans la coquille de la console.
+- ~~**Navigation client bloquée**~~ — **résolu en P6.2** (`delivery-p6.md`) : la cause était les frontières
+  `loading.tsx` de `/events`, `/errors` et `/actions`, qui laissaient la transition racine suspendue sans ping.
+  Retirées, la navigation et `router.refresh()` commettent en ~200 ms ; les ancres natives de P5.1 redeviennent des
+  `<Link>` et un test E2E verrouille le comportement. Le rechargement complet du workflow d'issue (P5.6) reste, pour
+  une autre raison : il remet les formulaires sur l'issue relue.
 - **Recette sur vraie app** : aucune erreur ingérée depuis le déploiement ; regroupement v2 activé pour aucune app.
 - **Ingestion** : surrogate UTF-16 isolé dans `mip.context`/props (jsonb 22P02), NUL dans les champs de span non
   passés par `anyValue`, `mip.release` non borné à l'ingestion, contrôle de caractères de P5.4/P5.5 plus permissif
   que PostgreSQL.
-- **Portée** : `scopeApp` (lib/api/params.ts) traite `apps = []` comme sans restriction pour les routes v1 hors
-  erreurs/issues ; `/api/replay/[sessionId]` lit `replay_chunk` sans borne `app_id`.
+- ~~**Portée**~~ — **résolu en P6.2** : une liste d'apps vide ne vaut plus « sans restriction » (403 partout, et
+  `token@` compris), une app hors périmètre est refusée au lieu d'être rabattue, et `/api/replay/[sessionId]` lit
+  `replay_chunk` borné à l'app de la session.
 - **DSAR** : effacement par identité fondé sur `rum_session.user_id_hash` (lignes écrites sous une autre identité dans
   la même session non atteintes) ; exceptions dont la session est inconnue à l'écriture (P8.1).
 - **Alertes** : les alertes « nouvelle erreur » historiques restent fondées sur l'empreinte ; une source map arrivée

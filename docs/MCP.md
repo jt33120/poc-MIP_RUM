@@ -65,23 +65,42 @@ Le serveur HTTP **ne détient aucun secret**. Un `POST /mcp` sans en-tête
 
 ### Le cas qu'il ne faut pas rater
 
-L'API ne **refuse** pas une app hors périmètre : elle **ramène** la demande au
-périmètre du jeton (`scopeApp`, dans `lib/api/params.ts`). Un jeton scopé à
-`uti-portail` qui demande `gip-plateforme` reçoit donc les chiffres
-d'`uti-portail`, avec un `meta.app` qui le dit — mais que rien n'oblige à lire.
+Depuis **P6.2**, une app hors périmètre est **refusée** : l'API répond `403` avec
+`code: "forbidden_app"`, et un jeton sans aucune app autorisée reçoit
+`code: "no_app_access"`. Elle ne ramène plus la demande au périmètre du jeton —
+un partenaire ne peut donc plus recevoir, sans le voir, les chiffres d'une autre
+app que celle qu'il a nommée. Sans `app`, la réponse couvre **toutes** les apps
+autorisées du jeton, et `meta.scope.effective_apps` les énumère.
 
-Chaque outil compare l'app demandée à `meta.app` et, si elles diffèrent, place
-l'avertissement **en tête** de sa réponse :
+Il reste un cas où `meta.app` diffère de l'app demandée, et il est légitime : le
+**détail d'un groupe d'erreurs ou d'une issue** porte l'app de la ressource, dont
+l'identifiant fait foi. Chaque outil compare l'app demandée à `meta.app` et, si
+elles diffèrent, place l'avertissement **en tête** de sa réponse :
 
 ```
-⚠️ Périmètre : l'app « gip-plateforme » a été demandée, mais le jeton n'y a pas
-accès — l'API a répondu pour « uti-portail ». Ces chiffres ne concernent PAS
-l'app demandée.
+⚠️ Périmètre : l'app « gip-plateforme » a été demandée, mais la réponse porte sur
+« uti-portail » (l'identifiant de la ressource fait foi, ou le jeton n'a pas accès
+à l'app demandée). Ces chiffres ne concernent PAS l'app demandée.
 ```
 
 Sans cela, un modèle présenterait 4 sessions d'une app comme les chiffres d'une
 autre. C'est le pire mode de défaillance possible ici : une réponse fausse,
 présentée comme juste.
+
+### Ce que la réponse annonce
+
+Chaque enveloppe porte, en plus de `meta.app`, `meta.period` et `meta.device` :
+
+| Champ | Ce qu'il dit |
+|---|---|
+| `meta.scope` | l'app demandée et les apps réellement lues (`effective_apps`) |
+| `meta.range` | les bornes UTC `[from, to)` appliquées, le preset et la largeur de seau |
+| `meta.filters` | les conditions appliquées, l'inclusion des robots et des apps internes |
+
+Un filtre qu'une mesure ne sait pas appliquer n'est jamais ignoré : l'API répond
+`400` avec `code: "unsupported_dimension"` et la dimension en cause. Les outils
+MCP n'exposent aujourd'hui que `app`, `period` et `device` ; les dimensions
+(navigateur, système, release…) arriveront avec l'Explorer générique (P6.4).
 
 ---
 
