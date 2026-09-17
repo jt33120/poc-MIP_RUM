@@ -1,24 +1,12 @@
-// Requêtes des pages cœur (Overview / Pages lentes / Sessions), filtres globaux v0.3.
-// Convention : $1 = app (null = toutes), $2 = device (null = tous) ; l'intervalle vient
-// de PERIODS (constantes), jamais d'une entrée utilisateur.
+// Requêtes des pages cœur (Overview / Pages lentes / Sessions).
+// Contrat commun P6.2 : périmètre d'apps, plage [from,to), appareil, dimensions,
+// segment, bots et apps internes sont compilés par lib/query-compiler.ts en
+// paramètres liés ; la jointure de session est toujours scopée par app.
 import { q } from "./db";
-import { type Filters, PERIODS } from "./filters";
-import { buildSegment } from "./segments";
-
-// Lot 2 : exclut le trafic non humain (rum_session.is_bot) par défaut. `alias`
-// est constant côté code (jamais une entrée utilisateur). `includeBots` lève le
-// filtre. Composé avec le segment sur les mêmes alias (s / ps / ls).
-const botClause = (f: Filters, alias: string): string =>
-  f.includeBots ? "" : ` and not coalesce(${alias}.is_bot, false)`;
-
-// Exclut les apps internes (dogfooding : la console qui se mesure elle-même) de la
-// vue « toutes apps ». Quand une app précise est sélectionnée, AUCUNE exclusion —
-// l'app interne reste consultable. N'ajoute aucun paramètre (sous-requête pure),
-// donc composable dans toutes les requêtes sans décaler l'indexation $n.
-export const internalClause = (f: Pick<Filters, "app" | "includeInternal">, appCol: string): string =>
-  f.app || f.includeInternal
-    ? ""
-    : ` and ${appCol} not in (select app_id from app_registry where internal)`;
+import { type Filters } from "./filters";
+import { bucketExpr, sessionJoin } from "./query-compiler";
+import { previousRange } from "./query-contract";
+import { sqlContext } from "./query-sql";
 
 export interface AppItem {
   app_id: string;
@@ -52,25 +40,26 @@ export interface VitalAgg {
   n: number;
 }
 
-/** p75 par vital sur la fenêtre courante, ou la fenêtre précédente (shift=true). */
+/** p75 par vital sur la plage courante, ou la période précédente contiguë (shift=true). */
 export async function vitalsP75(f: Filters, shift = false): Promise<VitalAgg[]> {
-  const itv = PERIODS[f.period].interval;
-  const window = shift
-    ? `m.ts > now() - interval '${itv}' * 2 and m.ts <= now() - interval '${itv}'`
-    : `m.ts > now() - interval '${itv}'`;
-  const seg = buildSegment(f.segment, 3);
+  const sql = await sqlContext(f);
+  const where = sql.where({
+    dataset: "vitals",
+    row: "m",
+    session: "s",
+    time: "m.ts",
+    ...(shift ? { range: previousRange(sql.query.range) } : {}),
+  });
   return q<VitalAgg>(
     `select m.name,
             percentile_cont(0.75) within group (order by m.value) as p75,
             percentile_cont(0.5) within group (order by m.value) as p50,
             count(*)::int as n
      from rum_metric m
-     left join rum_session s using (session_id)
-     where ${window}
-       and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "m.app_id")}
+     ${sessionJoin("m", "s")}
+     where true${where}
      group by m.name`,
-    [f.app, f.device, ...seg.params],
+    sql.params,
   );
 }
 
@@ -82,19 +71,17 @@ export interface VitalPercentiles {
 
 /** p50/p75/p90/p95/p99 par vital — la distribution que le seul p75 masque. */
 export async function vitalPercentiles(f: Filters): Promise<VitalPercentiles[]> {
-  const itv = PERIODS[f.period].interval;
-  const seg = buildSegment(f.segment, 3);
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });
   return q<VitalPercentiles>(
     `select m.name,
             percentile_cont(array[0.5,0.75,0.9,0.95,0.99]) within group (order by m.value) as pcts,
             count(*)::int as n
      from rum_metric m
-     left join rum_session s using (session_id)
-     where m.ts > now() - interval '${itv}'
-       and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+     ${sessionJoin("m", "s")}
+     where true${where}
      group by m.name`,
-    [f.app, f.device, ...seg.params],
+    sql.params,
   );
 }
 
@@ -110,17 +97,18 @@ export async function vitalHistogram(
   cap: number,
   nbuckets: number,
 ): Promise<HistoRow[]> {
-  const itv = PERIODS[f.period].interval;
-  const seg = buildSegment(f.segment, 6);
+  const sql = await sqlContext(f);
+  const nom = sql.bind(name);
+  const plafond = sql.bind(cap);
+  const tranches = sql.bind(nbuckets);
+  const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });
   return q<HistoRow>(
-    `select width_bucket(m.value, 0, $4::float, $5::int) as bucket, count(*)::int as count
+    `select width_bucket(m.value, 0, ${plafond}::float, ${tranches}::int) as bucket, count(*)::int as count
      from rum_metric m
-     left join rum_session s using (session_id)
-     where m.name = $3 and m.ts > now() - interval '${itv}'
-       and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+     ${sessionJoin("m", "s")}
+     where m.name = ${nom}${where}
      group by 1 order by 1`,
-    [f.app, f.device, name, cap, nbuckets, ...seg.params],
+    sql.params,
   );
 }
 
@@ -130,30 +118,23 @@ export interface OverviewStats {
   pageviews: number;
 }
 
+/** Sessions vues, erreurs (occurrences) et pages vues sur la plage, ou la précédente (shift). */
 export async function overviewStats(f: Filters, shift = false): Promise<OverviewStats> {
-  const itv = PERIODS[f.period].interval;
-  const win = (col: string) =>
-    shift
-      ? `${col} > now() - interval '${itv}' * 2 and ${col} <= now() - interval '${itv}'`
-      : `${col} > now() - interval '${itv}'`;
-  const seg = buildSegment(f.segment, 3);
+  const sql = await sqlContext(f);
+  const range = shift ? previousRange(sql.query.range) : undefined;
+  const sessions = sql.where({ dataset: "sessions", row: "s", session: "s", time: "s.last_seen_at", range });
+  const errors = sql.where({ dataset: "errors", row: "e", session: "s", time: "e.ts", range });
+  const pageviews = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at", range });
   const [row] = await q<OverviewStats>(
     `select
-       (select count(*)::int from rum_session s
-         where ${win("s.last_seen_at")}
-           and ($1::text is null or s.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "s.app_id")}) as sessions,
+       (select count(*)::int from rum_session s where true${sessions}) as sessions,
        (select coalesce(sum(e.occurrences), 0)::int from rum_error e
-         left join rum_session s using (session_id)
-         where ${win("e.ts")}
-           and ($1::text is null or e.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "e.app_id")}) as errors,
+         ${sessionJoin("e", "s")}
+         where true${errors}) as errors,
        (select count(*)::int from rum_pageview p
-         left join rum_session s using (session_id)
-         where ${win("p.started_at")}
-           and ($1::text is null or p.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "p.app_id")}) as pageviews`,
-    [f.app, f.device, ...seg.params],
+         ${sessionJoin("p", "s")}
+         where true${pageviews}) as pageviews`,
+    sql.params,
   );
   return row;
 }
@@ -163,20 +144,19 @@ export interface SeriesRow {
   p75: number;
 }
 
-/** Série temporelle p75 d'un vital, taille de bucket adaptée à la période. */
+/** Série temporelle p75 d'un vital, seaux alignés UTC de la largeur de la plage. */
 export async function vitalSeries(f: Filters, name: string): Promise<SeriesRow[]> {
-  const { interval, bucket } = PERIODS[f.period];
-  const seg = buildSegment(f.segment, 4);
+  const sql = await sqlContext(f);
+  const nom = sql.bind(name);
+  const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });
   return q<SeriesRow>(
-    `select date_bin('${bucket}', m.ts, timestamptz '2000-01-01') as bucket,
+    `select ${bucketExpr("m.ts", sql.query.range)} as bucket,
             percentile_cont(0.75) within group (order by m.value) as p75
      from rum_metric m
-     left join rum_session s using (session_id)
-     where m.name = $3 and m.ts > now() - interval '${interval}'
-       and ($1::text is null or m.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "m.app_id")}
+     ${sessionJoin("m", "s")}
+     where m.name = ${nom}${where}
      group by 1 order by 1`,
-    [f.app, f.device, name, ...seg.params],
+    sql.params,
   );
 }
 
@@ -223,25 +203,23 @@ export const ROUTES_MAX = 200;
  * dépôt corrige ailleurs.
  */
 export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
-  const itv = PERIODS[f.period].interval;
-  const seg = buildSegment(f.segment, 3);
+  const sql = await sqlContext(f);
+  const vues = sql.where({ dataset: "views", row: "p", session: "ps", time: "p.started_at" });
+  const taches = sql.where({ dataset: "longtasks", row: "l", session: "ls", time: "l.ts" });
+  const vitals = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });
   return q<RouteRow>(
     `with vues as (
        select p.route, count(*)::int as views
          from rum_pageview p
-         left join rum_session ps using (session_id)
-        where p.started_at > now() - interval '${itv}' and p.route is not null
-          and ($1::text is null or p.app_id = $1)
-          and ($2::text is null or ps.device_type = $2)${seg.where("ps")}${botClause(f, "ps")}
+         ${sessionJoin("p", "ps")}
+        where p.route is not null${vues}
         group by p.route
      ),
      taches as (
        select l.route, count(*)::int as longtasks
          from rum_longtask l
-         left join rum_session ls using (session_id)
-        where l.ts > now() - interval '${itv}' and l.route is not null
-          and ($1::text is null or l.app_id = $1)
-          and ($2::text is null or ls.device_type = $2)${seg.where("ls")}${botClause(f, "ls")}
+         ${sessionJoin("l", "ls")}
+        where l.route is not null${taches}
         group by l.route
      ),
      vitals as (
@@ -250,10 +228,8 @@ export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
               percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'INP') as inp_p75,
               percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'CLS') as cls_p75
          from rum_metric m
-         left join rum_session s using (session_id)
-        where m.ts > now() - interval '${itv}' and m.route is not null
-          and ($1::text is null or m.app_id = $1)
-          and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "m.app_id")}
+         ${sessionJoin("m", "s")}
+        where m.route is not null${vitals}
         group by m.route
      )
      select v.route,
@@ -265,7 +241,7 @@ export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
        left join taches on taches.route = v.route
       order by v.lcp_p75 desc nulls last
       limit ${ROUTES_MAX}`,
-    [f.app, f.device, ...seg.params],
+    sql.params,
   );
 }
 
@@ -275,16 +251,14 @@ export async function slowRoutes(f: Filters): Promise<RouteRow[]> {
  * rende l'écran inutile.
  */
 export async function nombreDeRoutes(f: Filters): Promise<number> {
-  const itv = PERIODS[f.period].interval;
-  const seg = buildSegment(f.segment, 3);
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });
   const [r] = await q<{ n: number }>(
     `select count(distinct m.route)::int as n
        from rum_metric m
-       left join rum_session s using (session_id)
-      where m.ts > now() - interval '${itv}' and m.route is not null
-        and ($1::text is null or m.app_id = $1)
-        and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}${internalClause(f, "m.app_id")}`,
-    [f.app, f.device, ...seg.params],
+       ${sessionJoin("m", "s")}
+      where m.route is not null${where}`,
+    sql.params,
   );
   return r?.n ?? 0;
 }
@@ -300,7 +274,8 @@ export interface SlowResource {
 
 /** Top 3 ressources lentes par route (durée moyenne décroissante). */
 export async function slowResourcesByRoute(f: Filters): Promise<Map<string, SlowResource[]>> {
-  const itv = PERIODS[f.period].interval;
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "resources", row: "r", session: "s", time: "r.ts" });
   const rows = await q<SlowResource>(
     `select route, url, type, avg_ms, n, render_blocking from (
        select r.route, r.url, max(r.type) as type,
@@ -308,13 +283,11 @@ export async function slowResourcesByRoute(f: Filters): Promise<Map<string, Slow
               bool_or(r.render_blocking) as render_blocking,
               row_number() over (partition by r.route order by avg(r.duration_ms) desc) as rk
        from rum_resource r
-       left join rum_session s using (session_id)
-       where r.ts > now() - interval '${itv}' and r.route is not null
-         and ($1::text is null or r.app_id = $1)
-         and ($2::text is null or s.device_type = $2)
+       ${sessionJoin("r", "s")}
+       where r.route is not null${where}
        group by r.route, r.url
      ) x where rk <= 3`,
-    [f.app, f.device],
+    sql.params,
   );
   const byRoute = new Map<string, SlowResource[]>();
   for (const r of rows) {
@@ -339,31 +312,30 @@ export interface SessionRow {
   collection_source: string | null; // 'sdk' (défaut) | 'extension'
 }
 
+/** Sessions vues sur la plage, les plus récentes d'abord ; pages et erreurs de la même app. */
 export async function listSessions(
   f: Filters,
   page?: { limit?: number; offset?: number },
 ): Promise<SessionRow[]> {
-  const itv = PERIODS[f.period].interval;
-  const limit = page?.limit ?? 50;
-  const offset = page?.offset ?? 0;
-  const seg = buildSegment(f.segment, 5);
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "sessions", row: "s", session: "s", time: "s.last_seen_at" });
+  const limit = sql.bind(page?.limit ?? 50);
+  const offset = sql.bind(page?.offset ?? 0);
   return q<SessionRow>(
     `select s.*, p.routes, coalesce(e.err_count, 0)::int as err_count
      from rum_session s
      left join lateral (
        select array_agg(route order by started_at) as routes
-       from rum_pageview where session_id = s.session_id
+       from rum_pageview where app_id = s.app_id and session_id = s.session_id
      ) p on true
      left join lateral (
        select coalesce(sum(occurrences), 0)::int as err_count
-       from rum_error where session_id = s.session_id
+       from rum_error where app_id = s.app_id and session_id = s.session_id
      ) e on true
-     where s.last_seen_at > now() - interval '${itv}'
-       and ($1::text is null or s.app_id = $1)
-       and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+     where true${where}
      order by s.last_seen_at desc
-     limit $3 offset $4`,
-    [f.app, f.device, limit, offset, ...seg.params],
+     limit ${limit} offset ${offset}`,
+    sql.params,
   );
 }
 
@@ -541,6 +513,7 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
   );
 }
 
+
 export interface VisitStats {
   sessions: number; // sessions actives (≥ 1 page vue) sur la fenêtre
   visits: number; // visites après découpage sur inactivité 30 min
@@ -570,16 +543,15 @@ export interface VisitStats {
  * un visiteur qui arrive ici pour la première fois.
  */
 export async function visitStats(f: Filters): Promise<VisitStats> {
-  const itv = PERIODS[f.period].interval;
-  const seg = buildSegment(f.segment, 3);
+  const sql = await sqlContext(f);
+  const vues = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at" });
+  const sessions = sql.where({ dataset: "sessions", row: "s", session: "s", time: "s.last_seen_at" });
   const [row] = await q<VisitStats>(
     `with ev as (
        select p.session_id, p.started_at as ts
        from rum_pageview p
-       left join rum_session s using (session_id)
-       where p.started_at > now() - interval '${itv}'
-         and ($1::text is null or p.app_id = $1)
-         and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+       ${sessionJoin("p", "s")}
+       where true${vues}
      ),
      flagged as (
        select session_id,
@@ -607,14 +579,12 @@ export async function visitStats(f: Filters): Promise<VisitStats> {
                     and s2.started_at < s.started_at
                 ) as is_returning
          from rum_session s
-         where s.last_seen_at > now() - interval '${itv}'
-           and ($1::text is null or s.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${seg.where("s")}${botClause(f, "s")}
+         where true${sessions}
        ) t
      )
      select vis.sessions, vis.visits, nr.returning_count, nr.new_count, nr.unidentified_count
        from vis, nr`,
-    [f.app, f.device, ...seg.params],
+    sql.params,
   );
   return row ?? { sessions: 0, visits: 0, returning_count: 0, new_count: 0, unidentified_count: 0 };
 }

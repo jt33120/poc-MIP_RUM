@@ -2,7 +2,7 @@
 // aucune lecture, testée par tests/unit/errors-view.test.ts.
 import type { StackSeries } from "@/components/charts/StackedBars";
 import type { IssueListFilters } from "@/lib/error-issues";
-import type { PeriodKey, SearchParams } from "@/lib/filters";
+import { queryOf, type SearchParams } from "@/lib/filters";
 import type {
   ErrorFilters,
   ErrorGroupRef,
@@ -10,7 +10,7 @@ import type {
   ErrorOccurrenceRow,
   ErrorTrendPoint,
 } from "@/lib/queries-errors";
-import { serializeSegment } from "@/lib/segments";
+import { queryToSearchParams } from "@/lib/query-contract";
 
 /** Next livre un paramètre répété en tableau : on retient le premier, comme parseFilters. */
 export function errorSearchParams(sp: SearchParams): URLSearchParams {
@@ -23,7 +23,8 @@ export function errorSearchParams(sp: SearchParams): URLSearchParams {
 }
 
 /**
- * URL d'un écran Erreurs portant les filtres actifs : période, appareil, segment,
+ * URL d'un écran Erreurs portant les filtres actifs, sous leur forme canonique du
+ * contrat commun : plage (preset ou from/to), appareil, dimensions, segment v2,
  * bots, apps internes. L'app est TOUJOURS explicite — « all » quand aucune : sans
  * elle, la porte projet du middleware substituerait l'app du cookie et le lien
  * ouvrirait un autre périmètre que celui qu'on lisait. Curseur et limite ne
@@ -35,12 +36,8 @@ export function errorsHref(
   app: string | null,
   extra: Record<string, string> = {},
 ): string {
-  const p = new URLSearchParams({ app: app ?? "all", period: f.period });
-  if (f.device) p.set("device", f.device);
-  const seg = serializeSegment(f.segment);
-  if (seg) p.set("seg", seg);
-  if (f.includeBots) p.set("bots", "1");
-  if (f.includeInternal) p.set("internal", "1");
+  const p = queryToSearchParams(queryOf(f));
+  p.set("app", app ?? "all");
   for (const [key, value] of Object.entries(extra)) p.set(key, value);
   return `${path}?${p}`;
 }
@@ -101,9 +98,9 @@ export function fmtCoverage(v: number | null): string {
   return v === null ? "Inconnue" : `${(v * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %`;
 }
 
-/** Libellé d'un seau : sur 7 jours l'heure seule est ambiguë, on date les seaux de 6 h. */
-export function bucketTick(bucket: Date, period: PeriodKey): string {
-  return period === "7d"
+/** Libellé d'un seau : dès 6 h de largeur l'heure seule est ambiguë, on date le seau. */
+export function bucketTick(bucket: Date, bucketSeconds: number): string {
+  return bucketSeconds >= 21_600
     ? bucket.toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit" })
     : bucket.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
@@ -121,11 +118,11 @@ const TOP_N = 5;
 export function errorVolumeChart(
   groups: Pick<ErrorGroupRow, "error_type" | "series">[],
   trend: ErrorTrendPoint[],
-  period: PeriodKey,
+  bucketSeconds: number,
 ): { data: Record<string, number | string>[]; series: StackSeries[] } {
   const top = groups.slice(0, TOP_N);
   const data = trend.map((point, i) => {
-    const row: Record<string, number | string> = { h: bucketTick(point.bucket, period) };
+    const row: Record<string, number | string> = { h: bucketTick(point.bucket, bucketSeconds) };
     let dessine = 0;
     top.forEach((g, gi) => {
       const v = g.series?.[i] ?? 0;

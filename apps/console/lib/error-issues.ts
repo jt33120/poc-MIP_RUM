@@ -12,6 +12,8 @@
 // ici la console et l'API lisent l'état initialisé à l'ingestion.
 import { q } from "./db";
 import { parsePagination } from "./api/pagination";
+import { queryOf } from "./filters";
+import { resourceScope } from "./query-contract";
 import {
   IMPACT_SQL,
   enrichmentOf,
@@ -387,10 +389,11 @@ export async function listIssues(
 ): Promise<IssueListResult> {
   const schema = await errorSchema();
   const { v69, v72 } = schema;
+  const { range, scope } = queryOf(f);
   const state = await groupingState(opts.apps ?? null, schema);
   const restriction = { apps: opts.apps ?? null, release: filters.release, source: filters.source, issues: { v72 } };
   return snapshot(async (lire) => {
-    const entriesBase = errorBase(f, v69, restriction);
+    const entriesBase = errorBase(f, schema, restriction);
     const curseur = page.cursor
       ? ` where (${TRI}) > (${entriesBase.bind(page.cursor.rank)}::int, ${entriesBase.bind(-page.cursor.visitors)}::float8,
                     ${entriesBase.bind(-page.cursor.sessions)}::float8, ${entriesBase.bind(-page.cursor.occurrences)}::float8,
@@ -405,7 +408,7 @@ export async function listIssues(
       entriesBase.params,
     );
 
-    const summaryBase = errorBase(f, v69, restriction);
+    const summaryBase = errorBase(f, schema, restriction);
     const [summary] = await lire<SummarySqlRow>(
       `${entriesSql(summaryBase, null, v72)}
        select count(*) filter (where ${summaryBase.bind(filters.status)}::text is null or status = ${summaryBase.bind(filters.status)}::text)::float8 as total,
@@ -423,10 +426,10 @@ export async function listIssues(
     let totals: ErrorTotals | undefined;
     let trend: ErrorTrendPoint[] | undefined;
     if (opts.overview) {
-      const totalsBase = errorBase(f, v69, restriction);
+      const totalsBase = errorBase(f, schema, restriction);
       const totalsRows = await lire<TotalsSqlRow>(totalsSql(totalsBase), totalsBase.params);
-      const trendBase = errorBase(f, v69, restriction);
-      trend = await lire<ErrorTrendPoint>(trendSql(trendBase, f.period), trendBase.params);
+      const trendBase = errorBase(f, schema, restriction);
+      trend = await lire<ErrorTrendPoint>(trendSql(trendBase, range), trendBase.params);
       const population = totalsRows.find((row) => !row.unfingerprinted_rows);
       totals = {
         occurrences: population?.occurrences ?? 0,
@@ -439,12 +442,12 @@ export async function listIssues(
         unfingerprinted: totalsRows.find((row) => row.unfingerprinted_rows)?.occurrences ?? 0,
       };
       if (rows.length) {
-        const seriesBase = errorBase(f, v69, restriction);
+        const seriesBase = errorBase(f, schema, restriction);
         const refs = seriesBase.bind(rows.map((r) => r.ref));
         const points = await lire<EntrySeriesSqlRow>(
           `${seriesBase.sql}
            select coalesce(issue_ref::text, 'legacy:' || fingerprint) as ref,
-                  ${bucketSql(f.period, "ts")} as bucket, sum(occurrences)::float8 as occurrences
+                  ${bucketSql(range, "ts")} as bucket, sum(occurrences)::float8 as occurrences
              from filtered_errors
             where coalesce(issue_ref::text, 'legacy:' || fingerprint) = any(${refs}::text[])
             group by 1, 2`,
@@ -465,7 +468,9 @@ export async function listIssues(
         grouping_version: 2,
         available: state.available,
         // Une app demandée ne rend compte que d'elle-même.
-        active_apps: f.app ? state.active_apps.filter((app) => app === f.app) : state.active_apps,
+        active_apps: scope.requestedApp
+          ? state.active_apps.filter((app) => app === scope.requestedApp)
+          : state.active_apps,
         issues: summary?.issues ?? 0,
         legacy_groups: summary?.legacy_groups ?? 0,
         occurrences_in_issues: summary?.occurrences_in_issues ?? 0,
@@ -596,8 +601,11 @@ export async function issueDetail(
   f: ErrorFilters,
   page: { limit: number; cursor: { ts: string; id: string } | null },
 ): Promise<IssueDetailResult> {
-  const { v69 } = await errorSchema();
-  const scoped: ErrorFilters = { ...f, app: issue.app_id };
+  const schema = await errorSchema();
+  const { v69 } = schema;
+  // L'identifiant fait foi : les chiffres viennent de l'app de l'issue, dans les apps autorisées.
+  const query = resourceScope(queryOf(f), issue.app_id);
+  const scoped: ErrorFilters = { ...f, app: issue.app_id, query };
   const restriction = { issues: { v72: true }, issueId: issue.id };
   return snapshot(async (lire) => {
     const [actif] = await lire<{ active: boolean }>(
@@ -617,7 +625,7 @@ export async function issueDetail(
         limit 50`,
       [issue.app_id, issue.id],
     );
-    const impactBase = errorBase(scoped, v69, restriction);
+    const impactBase = errorBase(scoped, schema, restriction);
     const [impact] = await lire<ImpactSqlRow>(
       `${impactBase.sql}
        select max(error_type) as error_type, max(message) as sample_message, ${IMPACT_SQL},
@@ -625,11 +633,11 @@ export async function issueDetail(
          from filtered_errors`,
       impactBase.params,
     );
-    const trendBase = errorBase(scoped, v69, restriction);
-    const trend = await lire<ErrorTrendPoint>(trendSql(trendBase, scoped.period), trendBase.params);
-    const exemplarBase = errorBase(scoped, v69, restriction);
+    const trendBase = errorBase(scoped, schema, restriction);
+    const trend = await lire<ErrorTrendPoint>(trendSql(trendBase, query.range), trendBase.params);
+    const exemplarBase = errorBase(scoped, schema, restriction);
     const [last] = await lire<ErrorExemplar>(exemplarSql(exemplarBase), exemplarBase.params);
-    const occurrencesBase = errorBase(scoped, v69, { ...restriction, cursor: page.cursor });
+    const occurrencesBase = errorBase(scoped, schema, { ...restriction, cursor: page.cursor });
     const rows = await lire<OccurrenceSqlRow>(
       `${occurrencesSql(occurrencesBase)}
        limit ${occurrencesBase.bind(page.limit)}`,

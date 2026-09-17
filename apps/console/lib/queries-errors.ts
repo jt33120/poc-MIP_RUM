@@ -1,24 +1,32 @@
 // Contrat unique de lecture des erreurs (P5.1). Liste, totaux, tendance, séries,
-// détail, exemplaire et occurrences partagent UNE base filtrée — app, fenêtre
-// [from,to), appareil (tablette comprise), segment, bots, apps internes — et UNE
-// photographie PostgreSQL. Avant ce module, la liste, le détail et ses
-// occurrences appliquaient chacun leurs propres prédicats : ouvrir une ligne
-// pouvait afficher un autre nombre que celui qu'on venait de cliquer.
+// détail, exemplaire et occurrences partagent UNE base filtrée — périmètre d'apps,
+// plage [from,to), appareil (tablette comprise), dimensions (route, release, env,
+// service…), segment, bots, apps internes — et UNE photographie PostgreSQL. Avant
+// ce module, la liste, le détail et ses occurrences appliquaient chacun leurs
+// propres prédicats : ouvrir une ligne pouvait afficher un autre nombre que celui
+// qu'on venait de cliquer. Depuis P6.2, ces prédicats viennent du contrat commun
+// (lib/query-compiler.ts).
 //
-// Les valeurs utilisateur restent des paramètres liés ; seules les périodes et
-// largeurs de seau issues de PERIODS sont interpolées dans le SQL.
+// Les valeurs utilisateur restent des paramètres liés ; seules les largeurs de
+// seau calculées par le contrat sont interpolées dans le SQL.
 import { parsePagination } from "./api/pagination";
-import type { SessionUser } from "./auth";
 import { q, tx } from "./db";
-import { PERIODS, parseFilters, type Filters, type PeriodKey, type SearchParams } from "./filters";
-import { internalClause } from "./queries";
+import { queryOf, type FiltersLike } from "./filters";
 import { parseEventCursor } from "./queries-events";
 import type { ErrorStatus } from "./queries-v2";
-import { buildSegment } from "./segments";
+import {
+  bucketExpr,
+  bucketSeriesSql,
+  compileScope,
+  compileWhereOrThrow,
+  type DimensionSchema,
+} from "./query-compiler";
+import { authorizedAppsOf, resourceScope, type Device, type ResolvedRange } from "./query-contract";
+import { dimensionSchema } from "./query-schema";
 
-export type ErrorDevice = "desktop" | "mobile" | "tablet";
+export type ErrorDevice = Device;
 /** Filtres globaux de lib/filters, plus la tablette que le modèle historique ignore. */
-export type ErrorFilters = Omit<Filters, "device"> & { device: ErrorDevice | null };
+export type ErrorFilters = FiltersLike;
 
 export const ERROR_LIST_DEFAULT_LIMIT = 100;
 export const ERROR_LIST_MAX_LIMIT = 200;
@@ -121,27 +129,18 @@ export function errorDeviceFrom(raw: string | null | undefined): ErrorDevice | n
 
 export type ErrorScope = { kind: "all" } | { kind: "apps"; apps: string[] } | { kind: "none" };
 
+/** Périmètre d'un principal signé, par le contrat commun : une liste vide est un accès NUL (AD-16). */
 export function errorScopeFor(
   principal: { role: "admin" | "viewer"; apps: string[] | null } | null,
 ): ErrorScope {
-  if (!principal) return { kind: "none" };
-  if (principal.role === "admin" || principal.apps === null) return { kind: "all" };
-  // AD-16 : une liste vide est un accès NUL. `parseFilters(sp, [])` la traiterait
-  // comme « sans restriction » et ouvrirait toutes les apps.
-  return principal.apps.length ? { kind: "apps", apps: principal.apps } : { kind: "none" };
+  const apps = authorizedAppsOf(principal);
+  if (apps === null) return { kind: "all" };
+  return apps.length ? { kind: "apps", apps } : { kind: "none" };
 }
 
 export function scopeApps(scope: ErrorScope): string[] | null {
   if (scope.kind === "all") return null;
   return scope.kind === "apps" ? scope.apps : [];
-}
-
-/** Filtres des pages Erreurs, intersectés avec le principal signé ; `null` = aucun accès. */
-export function errorPageFilters(sp: SearchParams, user: SessionUser | null): ErrorFilters | null {
-  const scope = errorScopeFor(user);
-  if (scope.kind === "none") return null;
-  const device = Array.isArray(sp.device) ? sp.device[0] : sp.device;
-  return { ...parseFilters(sp, scopeApps(scope)), device: errorDeviceFrom(device) };
 }
 
 // ─────────────────────── Qui est touché, et qui l'ignore ──────────────────────
@@ -369,6 +368,8 @@ export interface ErrorSchema {
   v69: boolean;
   /** Regroupement v2 P5.5 (clé, issue, alias). */
   v72: boolean;
+  /** Colonnes de dimensions présentes (contrat commun P6.2). */
+  dimensions: DimensionSchema;
 }
 
 /**
@@ -380,13 +381,16 @@ export interface ErrorSchema {
  * `set transaction` doit en rester la première instruction.
  */
 export async function errorSchema(): Promise<ErrorSchema> {
-  const [row] = await q<ErrorSchema>(
-    `select exists(select 1 from information_schema.columns
-             where table_schema='public' and table_name='rum_error' and column_name='error_source') as v69,
-            exists(select 1 from information_schema.columns
-             where table_schema='public' and table_name='rum_error' and column_name='issue_id') as v72`,
-  );
-  return { v69: row?.v69 === true, v72: row?.v72 === true };
+  const [[row], dimensions] = await Promise.all([
+    q<{ v69: boolean; v72: boolean }>(
+      `select exists(select 1 from information_schema.columns
+               where table_schema='public' and table_name='rum_error' and column_name='error_source') as v69,
+              exists(select 1 from information_schema.columns
+               where table_schema='public' and table_name='rum_error' and column_name='issue_id') as v72`,
+    ),
+    dimensionSchema(),
+  ]);
+  return { v69: row?.v69 === true, v72: row?.v72 === true, dimensions };
 }
 
 export function enrichmentOf(v69: boolean): ErrorEnrichment {
@@ -472,7 +476,7 @@ export interface ErrorBase {
  */
 function rattachementIssues(
   r: ErrorRestriction,
-  apps: string | null,
+  perimetreAlias: () => string,
   bind: (value: unknown) => string,
 ): { colonnes: string; jointure: string; filtre: string } {
   if (!r.issues) return { colonnes: "", jointure: "", filtre: "" };
@@ -487,15 +491,18 @@ function rattachementIssues(
     colonnes: ", coalesce(e.issue_id, ua.issue_id) as issue_ref, e.grouping_basis",
     jointure: `
         left join (
-          select app_id, legacy_fingerprint, (array_agg(issue_id))[1] as issue_id
-            from error_issue_alias
-           where ($1::text is null or app_id = $1)${apps ? ` and app_id = any(${apps}::text[])` : ""}
-           group by app_id, legacy_fingerprint
+          select a.app_id, a.legacy_fingerprint, (array_agg(a.issue_id))[1] as issue_id
+            from error_issue_alias a
+           where true${perimetreAlias()}
+           group by a.app_id, a.legacy_fingerprint
           having count(*) = 1
         ) ua on e.issue_id is null and ua.app_id = e.app_id and ua.legacy_fingerprint = e.fingerprint`,
     filtre: r.issueId ? ` and coalesce(e.issue_id, ua.issue_id) = ${bind(r.issueId)}::uuid` : "",
   };
 }
+
+/** Ce que la base filtrée doit savoir du schéma : enveloppe v69 et dimensions présentes. */
+export type ErrorBaseSchema = Pick<ErrorSchema, "v69" | "dimensions">;
 
 /**
  * La base filtrée, construite ICI et nulle part ailleurs.
@@ -517,24 +524,34 @@ function rattachementIssues(
  *
  * Mode issues (P5.5, `r.issues`) : voir `rattachementIssues`.
  */
-export function errorBase(f: ErrorFilters, v69: boolean, r: ErrorRestriction = {}): ErrorBase {
-  const params: unknown[] = [f.app, f.device];
+export function errorBase(f: ErrorFilters, schema: ErrorBaseSchema, r: ErrorRestriction = {}): ErrorBase {
+  const { v69 } = schema;
+  const query = queryOf(f);
+  const params: unknown[] = [];
   const bind = (value: unknown) => `$${params.push(value)}`;
   const apps = r.apps ? bind(r.apps) : null;
   const perimetre =
-    "($1::text is null or e.app_id = $1)" +
+    compileScope(query, "e.app_id", bind) +
     (apps ? ` and e.app_id = any(${apps}::text[])` : "") +
-    (r.fingerprints ? ` and e.fingerprint = any(${bind(r.fingerprints)}::text[])` : "") +
-    internalClause(f, "e.app_id");
+    (r.fingerprints ? ` and e.fingerprint = any(${bind(r.fingerprints)}::text[])` : "");
+  // Lié seulement si la jointure des alias est écrite : un `$n` inutilisé est refusé.
+  const perimetreAlias = () =>
+    compileScope(query, "a.app_id", bind) + (apps ? ` and a.app_id = any(${apps}::text[])` : "");
   const curseur = r.cursor
     ? ` and (e.ts, e.id) < (${bind(r.cursor.ts)}::timestamptz, ${bind(r.cursor.id)}::bigint)`
     : "";
   const population =
     (r.release ? ` and e.release = ${bind(r.release)}` : "") +
     (r.source && v69 ? ` and e.error_source = ${bind(r.source)}` : "");
-  const issue = rattachementIssues(r, apps, bind);
-  const segment = buildSegment(f.segment, params.length + 1);
-  params.push(...segment.params);
+  const issue = rattachementIssues(r, perimetreAlias, bind);
+  // Plage, conditions (appareil, dimensions, segment) et bots : le contrat commun.
+  // Le périmètre d'apps est compilé à part : `origine` le partage sans la fenêtre.
+  const filtres = compileWhereOrThrow(
+    query,
+    { dataset: "errors", row: "e", session: "s", time: "e.ts", scope: false },
+    schema.dimensions,
+    bind,
+  );
   const enveloppe = ENVELOPPE_V69.map(([col, type]) => (v69 ? `e.${col}` : `null::${type} as ${col}`)).join(", ");
   // L'identité métier de l'occurrence prime (snapshot v69), sinon celle de sa session.
   const identite = v69 ? "coalesce(e.user_id_hash, s.user_id_hash)" : "s.user_id_hash";
@@ -552,15 +569,12 @@ export function errorBase(f: ErrorFilters, v69: boolean, r: ErrorRestriction = {
              end as inclusion_probability${issue.colonnes}
         from rum_error e
         left join rum_session s on s.app_id = e.app_id and s.session_id = e.session_id${issue.jointure}
-       where e.ts >= now() - interval '${PERIODS[f.period].interval}' and e.ts < now()
-         and ${perimetre}${curseur}${population}${issue.filtre}
-         and ($2::text is null or s.device_type = $2)${segment.where("s")}${f.includeBots ? "" : " and not coalesce(s.is_bot, false)"}
+       where true${perimetre}${curseur}${population}${issue.filtre}${filtres}
     )`,
     origine: `origine as (
       select e.app_id, e.fingerprint, min(e.ts) as first_seen
         from rum_error e
-       where e.fingerprint is not null
-         and ${perimetre}
+       where e.fingerprint is not null${perimetre}
        group by e.app_id, e.fingerprint
     )`,
   };
@@ -646,30 +660,30 @@ export function totalsSql(base: ErrorBase): string {
    group by fingerprint is null`;
 }
 
-export function bucketSql(period: PeriodKey, ts: string): string {
-  return `date_bin(interval '${PERIODS[period].bucket}', ${ts}, timestamptz '2000-01-01')`;
+/** Seau aligné UTC d'une colonne, de la largeur de la plage résolue. */
+export function bucketSql(range: ResolvedRange, ts: string): string {
+  return bucketExpr(ts, range);
 }
 
 /**
  * Occurrences par seau, zéros compris, de la population avec empreinte.
  *
- * SUIT LA PÉRIODE CHOISIE. Une version précédente était figée sur 24 seaux d'une
+ * SUIT LA PLAGE CHOISIE. Une version précédente était figée sur 24 seaux d'une
  * heure : sur une fenêtre de 7 jours, l'écran classait les groupes sur 7 jours
  * puis dessinait leurs 24 dernières heures. Un groupe pouvait être en tête du
  * tableau avec une sparkline entièrement plate.
  *
- * Le seau vient de PERIODS (1 h → 5 min, 24 h → 1 h, 7 j → 6 h) et les bornes
- * sont les seaux de `from` et de `to` : une fenêtre glissante entame deux seaux
- * partiels, d'où N + 1 points (13 / 25 / 29). Toute ligne de [from,to) tombe dans
- * un seau listé : la somme de la tendance égale le total affiché.
+ * Le seau vient du contrat (≤ 1 h → 5 min, ≤ 24 h → 1 h, ≤ 7 j → 6 h, au-delà → 24 h),
+ * aligné UTC, et les bornes sont les seaux de `from` et de l'instant qui précède
+ * `to` : une fenêtre glissante entame deux seaux partiels, d'où N + 1 points
+ * (13 / 25 / 29). Toute ligne de [from,to) tombe dans un seau listé : la somme de
+ * la tendance égale le total affiché.
  */
-export function trendSql(base: ErrorBase, period: PeriodKey): string {
-  const { bucket, interval } = PERIODS[period];
+export function trendSql(base: ErrorBase, range: ResolvedRange): string {
   return `${base.sql}, buckets as (
-    select generate_series(${bucketSql(period, `now() - interval '${interval}'`)},
-                           ${bucketSql(period, "now()")}, interval '${bucket}') as bucket
+    select ${bucketSeriesSql(range, base.bind)} as bucket
   ), counts as (
-    select ${bucketSql(period, "ts")} as bucket, sum(occurrences)::float8 as occurrences
+    select ${bucketSql(range, "ts")} as bucket, sum(occurrences)::float8 as occurrences
       from filtered_errors
      where fingerprint is not null
      group by 1
@@ -681,9 +695,9 @@ export function trendSql(base: ErrorBase, period: PeriodKey): string {
 }
 
 /** Occurrences par seau des groupes d'une page ; le zéro-remplissage suit `trend`. */
-function seriesSql(base: ErrorBase, period: PeriodKey): string {
+function seriesSql(base: ErrorBase, range: ResolvedRange): string {
   return `${base.sql}
-  select app_id, fingerprint, ${bucketSql(period, "ts")} as bucket, sum(occurrences)::float8 as occurrences
+  select app_id, fingerprint, ${bucketSql(range, "ts")} as bucket, sum(occurrences)::float8 as occurrences
     from filtered_errors
    group by 1, 2, 3`;
 }
@@ -813,27 +827,29 @@ export async function listErrorGroups(
   page: { limit: number; offset: number },
   opts?: { series?: boolean; apps?: string[] | null },
 ): Promise<ErrorListResult> {
-  const { v69 } = await errorSchema();
+  const schema = await errorSchema();
+  const { v69 } = schema;
+  const { range } = queryOf(f);
   const restriction: ErrorRestriction = { apps: opts?.apps ?? null };
   return snapshot(async (lire) => {
-    const groupsBase = errorBase(f, v69, restriction);
+    const groupsBase = errorBase(f, schema, restriction);
     const rows = await lire<GroupSqlRow>(
       `${groupsSql(groupsBase)}
        limit ${groupsBase.bind(page.limit)} offset ${groupsBase.bind(page.offset)}`,
       groupsBase.params,
     );
-    const totalsBase = errorBase(f, v69, restriction);
+    const totalsBase = errorBase(f, schema, restriction);
     const totalsRows = await lire<TotalsSqlRow>(totalsSql(totalsBase), totalsBase.params);
-    const trendBase = errorBase(f, v69, restriction);
-    const trend = await lire<ErrorTrendPoint>(trendSql(trendBase, f.period), trendBase.params);
+    const trendBase = errorBase(f, schema, restriction);
+    const trend = await lire<ErrorTrendPoint>(trendSql(trendBase, range), trendBase.params);
 
     let groups = rows.map(toGroupRow);
     if (opts?.series && groups.length) {
-      const seriesBase = errorBase(f, v69, {
+      const seriesBase = errorBase(f, schema, {
         ...restriction,
         fingerprints: [...new Set(groups.map((group) => group.fingerprint))],
       });
-      const points = await lire<SeriesSqlRow>(seriesSql(seriesBase, f.period), seriesBase.params);
+      const points = await lire<SeriesSqlRow>(seriesSql(seriesBase, range), seriesBase.params);
       groups = withSeries(groups, trend, points);
     }
 
@@ -869,7 +885,7 @@ export async function listErrorGroups(
  * l'appelant fait choisir.
  *
  * Seules l'app, les occurrences et la date sont lues : la base en forme antérieure
- * à v69 est valide sur les deux schémas et évite une sonde.
+ * à v69 est valide sur les deux schémas et évite la sonde d'enveloppe.
  */
 export async function resolveErrorGroup(
   fingerprint: string,
@@ -878,7 +894,7 @@ export async function resolveErrorGroup(
 ): Promise<ErrorGroupResolution> {
   // AD-16 : un périmètre vide ne voit rien, inutile d'interroger la base.
   if (apps?.length === 0) return { kind: "not_found" };
-  const base = errorBase(f, false, { apps, fingerprints: [fingerprint] });
+  const base = errorBase(f, { v69: false, dimensions: await dimensionSchema() }, { apps, fingerprints: [fingerprint] });
   const candidates = await q<ErrorGroupCandidate>(
     `${base.sql}
      select app_id, sum(occurrences)::float8 as occurrences, max(ts) as last_seen
@@ -903,20 +919,23 @@ export async function errorGroupDetail(
   f: ErrorFilters,
   page: { limit: number; cursor: { ts: string; id: string } | null },
 ): Promise<ErrorGroupDetailResult | null> {
-  const { v69 } = await errorSchema();
+  const schema = await errorSchema();
+  const { v69 } = schema;
   // La référence résolue fixe l'app : le détail ne déborde jamais sur une autre,
-  // quel que soit le filtre reçu. Une app explicite n'exclut pas les apps internes.
-  const scoped: ErrorFilters = { ...f, app: ref.app_id };
+  // quel que soit le filtre reçu, et ne sort jamais des apps autorisées. Une app
+  // explicite n'exclut pas les apps internes.
+  const query = resourceScope(queryOf(f), ref.app_id);
+  const scoped: ErrorFilters = { ...f, app: ref.app_id, query };
   const groupe: ErrorRestriction = { fingerprints: [ref.fingerprint] };
   return snapshot(async (lire) => {
-    const groupBase = errorBase(scoped, v69, groupe);
+    const groupBase = errorBase(scoped, schema, groupe);
     const [row] = await lire<GroupSqlRow>(groupsSql(groupBase), groupBase.params);
     if (!row) return null;
-    const trendBase = errorBase(scoped, v69, groupe);
-    const trend = await lire<ErrorTrendPoint>(trendSql(trendBase, scoped.period), trendBase.params);
-    const exemplarBase = errorBase(scoped, v69, groupe);
+    const trendBase = errorBase(scoped, schema, groupe);
+    const trend = await lire<ErrorTrendPoint>(trendSql(trendBase, query.range), trendBase.params);
+    const exemplarBase = errorBase(scoped, schema, groupe);
     const [last] = await lire<ErrorExemplar>(exemplarSql(exemplarBase), exemplarBase.params);
-    const occurrencesBase = errorBase(scoped, v69, { ...groupe, cursor: page.cursor });
+    const occurrencesBase = errorBase(scoped, schema, { ...groupe, cursor: page.cursor });
     const rows = await lire<OccurrenceSqlRow>(
       `${occurrencesSql(occurrencesBase)}
        limit ${occurrencesBase.bind(page.limit)}`,

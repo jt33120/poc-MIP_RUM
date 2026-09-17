@@ -1,53 +1,45 @@
-// Parsing des filtres communs (app / period / device) pour l'API v1, à partir des
-// query params. Produit LES DEUX formes de `Filters` du code existant — la couche
-// data n'est pas dupliquée :
-//   - `legacy` (lib/filters.ts) : app `string|null` (null = toutes), device `desktop|mobile|null`
-//     -> queries.ts, queries-grid.ts, queries-tracing.ts, health.ts
-//   - `v2` (lib/queries-v2.ts) : app `string` ('all'), device `string` ('all'|mobile|desktop|tablet)
-//     -> queries-v2.ts (erreurs, corrélation, alerting)
-// Le RBAC est appliqué ICI : un viewer scopé voit son app forcée (jamais « toutes »).
-// Helper PUR : prend URLSearchParams + principal, aucun import next/*.
-import type { Filters as LegacyFilters } from "../filters";
+// Filtres communs de l'API v1, résolus par le contrat unique (lib/query-contract.ts).
+// Produit la requête résolue et, pour les lectures qui ne connaissent que les presets,
+// les deux façades historiques — la couche data n'est pas dupliquée :
+//   - `legacy` (lib/filters.ts) : app `string|null`, device `desktop|mobile|null`, `query` inclus ;
+//   - `v2` (lib/queries-v2.ts) : app `string` ('all'), device `string`.
+// Le PÉRIMÈTRE est résolu ICI, contre le principal signé : une liste d'apps vide
+// n'ouvre rien (403), une app hors périmètre est refusée (403) au lieu d'être
+// rabattue sur la première app autorisée, et « toutes » vaut toutes les apps
+// AUTORISÉES. Helper PUR : prend URLSearchParams + principal, aucun import next/*.
+import { filtersOfQuery, type Filters as LegacyFilters, type PeriodKey } from "../filters";
 import type { Filters as V2Filters } from "../queries-v2";
-import { parseSegment } from "../segments";
+import { parseAnalyticsQuery, type AnalyticsQuery, type Parsed } from "../query-contract";
 import type { ApiPrincipal } from "./auth";
 
-const PERIOD_KEYS = ["1h", "24h", "7d"] as const;
-type PeriodKey = (typeof PERIOD_KEYS)[number];
-
-/** Clampe l'app demandée selon le scope du principal (admin/token = libre). */
-function scopeApp(p: ApiPrincipal, requested: string | null): string | null {
-  if (p.role === "admin" || !p.apps?.length) return requested;
-  return requested && p.apps.includes(requested) ? requested : p.apps[0];
-}
-
 export interface ApiFilters {
+  query: AnalyticsQuery;
   legacy: LegacyFilters;
   v2: V2Filters;
-  app: string | null; // app effective après scoping (null = toutes)
-  period: PeriodKey;
-  device: string | null; // device demandé normalisé (null = tous), pour le meta
+  app: string | null; // app demandée (null = toutes les apps autorisées)
+  period: PeriodKey | "custom";
+  device: string | null; // appareil demandé (null = tous), pour le meta
 }
 
-export function parseApiFilters(sp: URLSearchParams, principal: ApiPrincipal): ApiFilters {
-  const rawApp = sp.get("app");
-  const requested = rawApp && rawApp !== "all" ? rawApp : null;
-  const app = scopeApp(principal, requested);
-
-  const pr = (sp.get("period") ?? "24h").toLowerCase().replace("7j", "7d");
-  const period: PeriodKey = (PERIOD_KEYS as readonly string[]).includes(pr)
-    ? (pr as PeriodKey)
-    : "24h";
-
-  const dev = (sp.get("device") ?? "").toLowerCase();
-  const legacyDevice = dev === "desktop" || dev === "mobile" ? dev : null;
-  const v2Device = ["mobile", "desktop", "tablet"].includes(dev) ? dev : "all";
-
+export function parseApiFilters(
+  sp: URLSearchParams,
+  principal: Pick<ApiPrincipal, "role" | "apps">,
+  nowMs = Date.now(),
+): Parsed<ApiFilters> {
+  const parsed = parseAnalyticsQuery(sp, { principal, nowMs, mode: "strict" });
+  if (!parsed.ok) return parsed;
+  const query = parsed.value;
+  const legacy = filtersOfQuery(query);
+  const device = query.filters.device ?? null;
   return {
-    legacy: { app, period, device: legacyDevice, segment: parseSegment(sp.get("seg")) },
-    v2: { app: app ?? "all", period, device: v2Device },
-    app,
-    period,
-    device: ["mobile", "desktop", "tablet"].includes(dev) ? dev : null,
+    ok: true,
+    value: {
+      query,
+      legacy,
+      v2: { app: query.scope.requestedApp ?? "all", period: legacy.period, device: device ?? "all" },
+      app: query.scope.requestedApp,
+      period: query.range.preset ?? "custom",
+      device,
+    },
   };
 }

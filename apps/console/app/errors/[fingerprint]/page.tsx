@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ObservedTrend } from "@/components/charts/ObservedTrend";
 import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
-import { ErrorAccessDenied, ErrorNotices } from "@/components/errors/ErrorNotices";
+import { ErrorNotices } from "@/components/errors/ErrorNotices";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { ERROR_LINK, ErrorOccurrences } from "@/components/errors/ErrorOccurrences";
 import { ErrorStackCard } from "@/components/errors/ErrorStackCard";
 import { ErrorStat } from "@/components/errors/ErrorStat";
@@ -18,11 +19,12 @@ import {
 } from "@/components/errors/error-view";
 import { getUser } from "@/lib/auth";
 import { legacyIssueTargets, type LegacyIssueTarget } from "@/lib/error-issues";
-import { PERIODS, type SearchParams } from "@/lib/filters";
+import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
+import { pageFilters } from "@/lib/page-filters";
+import { authorizedScope } from "@/lib/query-contract";
 import {
   errorGroupDetail,
-  errorPageFilters,
   errorScopeFor,
   isFingerprintParam,
   parseErrorCursor,
@@ -52,8 +54,10 @@ export default async function ErrorGroup({
   if (!isFingerprintParam(fingerprint)) notFound();
 
   const user = await getUser();
-  const f = errorPageFilters(sp, user);
-  if (!f) return <ErrorAccessDenied />;
+  const ecran = await pageFilters(sp, `/errors/${encodeURIComponent(fingerprint)}`);
+  if (!ecran.ok) return <FilterProblemNotice title="Erreurs JS" problem={ecran.problem} />;
+  const f = ecran.deviceFilters;
+  const { label, bucketLabel } = ecran;
   const url = errorSearchParams(sp);
   // `legacy=1` : le détail historique lui-même, même quand des issues le reprennent.
   const historique = url.get("legacy") === "1";
@@ -97,7 +101,11 @@ export default async function ErrorGroup({
   if (explicite?.kind === "found") {
     ref = explicite.ref;
   } else {
-    const recherche = await resolveErrorGroup(fingerprint, { ...f, app: null }, scopeApps(errorScopeFor(user)));
+    const recherche = await resolveErrorGroup(
+      fingerprint,
+      { ...f, app: null, query: authorizedScope(ecran.query) },
+      scopeApps(errorScopeFor(user)),
+    );
     if (recherche.kind === "not_found") notFound();
     if (recherche.kind === "ambiguous" || f.app) {
       const choices =
@@ -125,7 +133,6 @@ export default async function ErrorGroup({
   // Résolue puis disparue entre les deux lectures (rétention, purge) : introuvable.
   if (!detail) notFound();
   const { group, last, occurrences, trend, page, sampling, enrichment } = detail;
-  const { label, bucketLabel } = PERIODS[f.period];
 
   // La limite demandée suit la pagination ; le curseur ne suit jamais un changement de filtre.
   const pageExtra = {

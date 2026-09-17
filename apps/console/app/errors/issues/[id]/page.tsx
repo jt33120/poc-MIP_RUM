@@ -10,7 +10,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ObservedTrend } from "@/components/charts/ObservedTrend";
 import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
-import { ErrorAccessDenied, ErrorNotices } from "@/components/errors/ErrorNotices";
+import { ErrorNotices } from "@/components/errors/ErrorNotices";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { ERROR_LINK, ErrorOccurrences } from "@/components/errors/ErrorOccurrences";
 import { ErrorStackCard } from "@/components/errors/ErrorStackCard";
 import { ErrorStat } from "@/components/errors/ErrorStat";
@@ -20,10 +21,10 @@ import { errorGroupHref, errorSearchParams, errorsHref, fmtCount, fmtCoverage, i
 import { getUser } from "@/lib/auth";
 import { issueWorkflowView, listIssueActivity } from "@/lib/error-issue-workflow";
 import { ISSUE_STATUS_LABELS, isIssueId, issueDetail, resolveIssue, type IssueDetailResult } from "@/lib/error-issues";
-import { PERIODS, type SearchParams } from "@/lib/filters";
+import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
+import { pageFilters } from "@/lib/page-filters";
 import {
-  errorPageFilters,
   errorScopeFor,
   parseErrorCursor,
   parseOccurrencesPage,
@@ -50,8 +51,10 @@ export default async function IssuePage({
   if (!isIssueId(id)) notFound();
 
   const user = await getUser();
-  const f = errorPageFilters(sp, user);
-  if (!f) return <ErrorAccessDenied />;
+  const ecran = await pageFilters(sp, `/errors/issues/${id}`);
+  if (!ecran.ok) return <FilterProblemNotice title="Erreurs JS" problem={ecran.problem} />;
+  const f = ecran.deviceFilters;
+  const { label, bucketLabel } = ecran;
   const url = errorSearchParams(sp);
   const cursor = parseErrorCursor(url.get("cursor"));
 
@@ -85,7 +88,6 @@ export default async function IssuePage({
   const activite = workflow
     ? await listIssueActivity(issue.id, scopeApps(errorScopeFor(user)), { limit: 20, cursor: activiteCurseur }, { emails: admin })
     : null;
-  const { label, bucketLabel } = PERIODS[f.period];
   const pageExtra = url.has("limit") ? { limit: url.get("limit") ?? "" } : undefined;
 
   return (

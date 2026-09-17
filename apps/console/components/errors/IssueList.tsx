@@ -33,7 +33,7 @@ import {
   type IssueListFilters,
   type IssueListResult,
 } from "@/lib/error-issues";
-import { PERIODS } from "@/lib/filters";
+import { queryOf } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { ERROR_SOURCES, ERROR_SOURCE_LABELS, type ErrorFilters, type ErrorTrendPoint } from "@/lib/queries-errors";
 
@@ -61,10 +61,15 @@ export function IssueList({
   result,
   curseur,
   limit,
+  label,
+  bucketLabel,
 }: {
   f: ErrorFilters;
   filtres: IssueListFilters;
   result: IssueListResult;
+  /** Plage lue (« 24 h », ou dates) et largeur de seau, dans le fuseau de l'app. */
+  label: string;
+  bucketLabel: string;
   /** La page affichée suit un curseur. */
   curseur: boolean;
   /** Limite demandée explicitement, qui suit la pagination. */
@@ -73,13 +78,15 @@ export function IssueList({
   const { issues, total, coverage, sampling, enrichment } = result;
   const trend = result.trend ?? [];
   const occurrences = result.totals?.occurrences ?? 0;
-  const { label, bucketLabel } = PERIODS[f.period];
-  const chart = errorVolumeChart(issues, trend, f.period);
+  const { bucketSeconds } = queryOf(f).range;
+  const chart = errorVolumeChart(issues, trend, bucketSeconds);
   const peak = trend.reduce<ErrorTrendPoint | null>(
     (best, point) => (point.occurrences > (best?.occurrences ?? 0) ? point : best),
     null,
   );
-  const cachees = new URLSearchParams(errorsHref("/errors", f, f.app).split("?")[1]);
+  // La release est un champ visible du formulaire : la cacher aussi la répéterait, et le
+  // contrat refuse un paramètre répété.
+  const cachees = [...new URLSearchParams(errorsHref("/errors", f, f.app).split("?")[1])].filter(([nom]) => nom !== "release");
   const limite: Record<string, string> = limit ? { limit } : {};
   const filtre = Boolean(filtres.status || filtres.source || filtres.release);
 
@@ -88,7 +95,7 @@ export function IssueList({
       <PageHeader title={TITRE} sub={SOUS_TITRE} />
 
       <form method="get" action="/errors" className="card mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Filtres des issues">
-        {[...cachees].map(([nom, valeur]) => (
+        {cachees.map(([nom, valeur]) => (
           <input key={nom} type="hidden" name={nom} value={valeur} />
         ))}
         <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
@@ -180,7 +187,7 @@ export function IssueList({
         <HeroStat
           label={`Pic par ${bucketLabel}`}
           value={(peak?.occurrences ?? 0).toLocaleString("fr-FR")}
-          hint={peak ? `à partir de ${bucketTick(peak.bucket, f.period)}` : undefined}
+          hint={peak ? `à partir de ${bucketTick(peak.bucket, bucketSeconds)}` : undefined}
         />
         <HeroReading>
           Triées pour le triage : à revoir, réapparitions, ouvertes, résolues, ignorées, puis par impact. « À revoir » :
