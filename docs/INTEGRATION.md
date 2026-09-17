@@ -113,7 +113,7 @@ MIPRum.init({
 
 **Métriques et API absentes.** `MIPRum.getErrorCollectionStats()` rend, voie par voie depuis `init()` : `enabled`, `unsupported` (API navigateur absentes), et les occurrences `emitted`, `capped` (tues par le plafond de page) et `rejected` (refusées par `beforeSend` ou le consentement). Ces compteurs restent dans le navigateur : ils ne sont pas transmis à l'ingestion.
 
-**Clé de regroupement.** `addError(error, context, { fingerprint })` accepte une clé opaque de 100 caractères au plus, sans donnée personnelle, transmise en `mip.error_fingerprint`. Le regroupement actuel ne la consomme pas encore ; une clé invalide est ignorée et l'erreur part quand même.
+**Clé de regroupement.** `addError(error, context, { fingerprint })` accepte une clé opaque de 100 caractères au plus, sans donnée personnelle, transmise en `mip.error_fingerprint`. Quand le regroupement v2 des issues est actif pour l'app, elle prime sur la stack : toutes les erreurs portant la même clé forment une seule issue, quels que soient leur type et leur pile. L'ingestion la rescrubbe et n'en garde qu'une empreinte propre à l'app ; la clé elle-même n'est jamais stockée, et une clé vide une fois scrubbée est ignorée avec un diagnostic. Elle ne change pas la signature historique `fingerprint`. Une clé invalide est ignorée et l'erreur part quand même.
 
 **beforeSend.** `mip.error_kind`, `mip.error_handled` et `mip.parent_span_id` rejoignent les champs structurels restaurés : un hook peut masquer le message ou refuser l'erreur, pas changer sa voie ni son lien vers l'appel.
 

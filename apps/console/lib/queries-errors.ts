@@ -363,23 +363,33 @@ const ENVELOPPE_V69 = [
   ["service", "text"],
 ] as const;
 
-/**
- * v69 est-elle appliquée ? Vercel publie la console AVANT que la migration ne
- * tourne sur Railway : pendant cette fenêtre, lire `e.trace_id` ferait échouer
- * tout l'écran. La sonde est rejouée à chaque lecture — jamais mémorisée par le
- * module — pour basculer dès le passage de la migration, sans redémarrage. Elle
- * précède la transaction : le texte SQL en dépend, et `set transaction` doit en
- * rester la première instruction.
- */
-async function errorSchemaV69(): Promise<boolean> {
-  const [row] = await q<{ v69: boolean }>(
-    `select exists(select 1 from information_schema.columns
-      where table_schema='public' and table_name='rum_error' and column_name='error_source') as v69`,
-  );
-  return row?.v69 === true;
+/** Migrations dont dépend le texte SQL des lectures d'erreurs. */
+export interface ErrorSchema {
+  /** Enveloppe P5.1 (trace, source, identité). */
+  v69: boolean;
+  /** Regroupement v2 P5.5 (clé, issue, alias). */
+  v72: boolean;
 }
 
-function enrichmentOf(v69: boolean): ErrorEnrichment {
+/**
+ * v69 et v72 sont-elles appliquées ? Vercel publie la console AVANT que la
+ * migration ne tourne sur Railway : pendant cette fenêtre, lire `e.trace_id` ou
+ * `e.issue_id` ferait échouer tout l'écran. La sonde est rejouée à chaque lecture
+ * — jamais mémorisée par le module — pour basculer dès le passage de la migration,
+ * sans redémarrage. Elle précède la transaction : le texte SQL en dépend, et
+ * `set transaction` doit en rester la première instruction.
+ */
+export async function errorSchema(): Promise<ErrorSchema> {
+  const [row] = await q<ErrorSchema>(
+    `select exists(select 1 from information_schema.columns
+             where table_schema='public' and table_name='rum_error' and column_name='error_source') as v69,
+            exists(select 1 from information_schema.columns
+             where table_schema='public' and table_name='rum_error' and column_name='issue_id') as v72`,
+  );
+  return { v69: row?.v69 === true, v72: row?.v72 === true };
+}
+
+export function enrichmentOf(v69: boolean): ErrorEnrichment {
   return v69
     ? { available: true, diagnostic: null }
     : { available: false, diagnostic: DIAGNOSTIC_PRE_V69 };
@@ -394,7 +404,7 @@ function enrichmentOf(v69: boolean): ErrorEnrichment {
  * erreur est gardée (p = 1) et aucun avertissement n'est dû. Aucune
  * extrapolation : on montre l'incertitude plutôt qu'une estimation non démontrée.
  */
-function samplingOf(p: number | null | undefined): ErrorSampling {
+export function samplingOf(p: number | null | undefined): ErrorSampling {
   if (p == null) return { min_inclusion_probability: null, message: null };
   const pct = (p * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 });
   return {
@@ -406,7 +416,7 @@ function samplingOf(p: number | null | undefined): ErrorSampling {
   };
 }
 
-type Lecture = <T>(sql: string, params: unknown[]) => Promise<T[]>;
+export type Lecture = <T>(sql: string, params: unknown[]) => Promise<T[]>;
 
 /**
  * Une photographie et une horloge pour toutes les instructions d'une lecture :
@@ -414,21 +424,35 @@ type Lecture = <T>(sql: string, params: unknown[]) => Promise<T[]>;
  * peut pas faire diverger liste, totaux et tendance. `set transaction` DOIT être
  * la première instruction : PostgreSQL la refuse après la moindre requête.
  */
-function snapshot<T>(fn: (lire: Lecture) => Promise<T>): Promise<T> {
+export function snapshot<T>(fn: (lire: Lecture) => Promise<T>): Promise<T> {
   return tx(async (client) => {
     await client.query("set transaction isolation level repeatable read read only");
     return fn(async <R>(sql: string, params: unknown[]) => (await client.query(sql, params)).rows as R[]);
   });
 }
 
-interface ErrorRestriction {
+export interface ErrorRestriction {
   /** Apps d'un principal scopé ; `null` = pas de liste (admin). */
   apps?: string[] | null;
   fingerprints?: string[];
   cursor?: { ts: string; id: string } | null;
+  /** Release exacte de l'occurrence (P5.5). */
+  release?: string | null;
+  /** Source de l'occurrence (P5.5) ; exige v69. */
+  source?: ErrorSource | null;
+  /**
+   * Rattachement de chaque ligne à son issue (P5.5) : `issue_ref` vaut l'issue de
+   * la ligne, sinon celle de son empreinte historique quand UNE SEULE issue la
+   * reprend. Une empreinte répartie sur plusieurs issues reste un groupe
+   * historique : ses lignes non rattachées ne sont attribuées à aucune d'elles.
+   * Sans migration-v72 (`v72: false`), aucune ligne n'a d'issue.
+   */
+  issues?: { v72: boolean };
+  /** Avec `issues` : seulement les lignes de cette issue. */
+  issueId?: string;
 }
 
-interface ErrorBase {
+export interface ErrorBase {
   /** `with filtered_errors as (…)` — à citer UNE seule fois par instruction. */
   sql: string;
   /** CTE `origine` (première vue), indépendante de `filtered_errors`. */
@@ -436,6 +460,41 @@ interface ErrorBase {
   params: unknown[];
   /** Ajoute une valeur liée et rend sa position (`$n`). */
   bind: (value: unknown) => string;
+}
+
+/**
+ * Colonnes, jointure et filtre du rattachement des lignes à leur issue (P5.5).
+ *
+ * La sous-requête des alias n'est lue qu'une fois par instruction, bornée au
+ * périmètre d'apps, et jointe par hachage : chaque ligne reste comptée UNE fois,
+ * dans son issue ou dans son groupe historique. Sans migration-v72, les colonnes
+ * sont des NULL typés et aucune ligne n'appartient à une issue.
+ */
+function rattachementIssues(
+  r: ErrorRestriction,
+  apps: string | null,
+  bind: (value: unknown) => string,
+): { colonnes: string; jointure: string; filtre: string } {
+  if (!r.issues) return { colonnes: "", jointure: "", filtre: "" };
+  if (!r.issues.v72) {
+    return {
+      colonnes: ", null::uuid as issue_ref, null::text as grouping_basis",
+      jointure: "",
+      filtre: r.issueId ? " and false" : "",
+    };
+  }
+  return {
+    colonnes: ", coalesce(e.issue_id, ua.issue_id) as issue_ref, e.grouping_basis",
+    jointure: `
+        left join (
+          select app_id, legacy_fingerprint, (array_agg(issue_id))[1] as issue_id
+            from error_issue_alias
+           where ($1::text is null or app_id = $1)${apps ? ` and app_id = any(${apps}::text[])` : ""}
+           group by app_id, legacy_fingerprint
+          having count(*) = 1
+        ) ua on e.issue_id is null and ua.app_id = e.app_id and ua.legacy_fingerprint = e.fingerprint`,
+    filtre: r.issueId ? ` and coalesce(e.issue_id, ua.issue_id) = ${bind(r.issueId)}::uuid` : "",
+  };
 }
 
 /**
@@ -455,18 +514,25 @@ interface ErrorBase {
  * Chaque appel a sa propre liste de paramètres, de sorte qu'une instruction ne
  * déclare que des `$n` qu'elle utilise : PostgreSQL refuse un paramètre dont il
  * ne peut pas déduire le type.
+ *
+ * Mode issues (P5.5, `r.issues`) : voir `rattachementIssues`.
  */
-function errorBase(f: ErrorFilters, v69: boolean, r: ErrorRestriction = {}): ErrorBase {
+export function errorBase(f: ErrorFilters, v69: boolean, r: ErrorRestriction = {}): ErrorBase {
   const params: unknown[] = [f.app, f.device];
   const bind = (value: unknown) => `$${params.push(value)}`;
+  const apps = r.apps ? bind(r.apps) : null;
   const perimetre =
     "($1::text is null or e.app_id = $1)" +
-    (r.apps ? ` and e.app_id = any(${bind(r.apps)}::text[])` : "") +
+    (apps ? ` and e.app_id = any(${apps}::text[])` : "") +
     (r.fingerprints ? ` and e.fingerprint = any(${bind(r.fingerprints)}::text[])` : "") +
     internalClause(f, "e.app_id");
   const curseur = r.cursor
     ? ` and (e.ts, e.id) < (${bind(r.cursor.ts)}::timestamptz, ${bind(r.cursor.id)}::bigint)`
     : "";
+  const population =
+    (r.release ? ` and e.release = ${bind(r.release)}` : "") +
+    (r.source && v69 ? ` and e.error_source = ${bind(r.source)}` : "");
+  const issue = rattachementIssues(r, apps, bind);
   const segment = buildSegment(f.segment, params.length + 1);
   params.push(...segment.params);
   const enveloppe = ENVELOPPE_V69.map(([col, type]) => (v69 ? `e.${col}` : `null::${type} as ${col}`)).join(", ");
@@ -483,11 +549,11 @@ function errorBase(f: ErrorFilters, v69: boolean, r: ErrorRestriction = {}): Err
              s.session_id as same_app_session_id, s.visitor_id, s.device_type,
              case when s.session_id is not null
                   then coalesce(s.sample_rate, 1) + (1 - coalesce(s.sample_rate, 1)) * coalesce(s.error_sample_rate, 1)
-             end as inclusion_probability
+             end as inclusion_probability${issue.colonnes}
         from rum_error e
-        left join rum_session s on s.app_id = e.app_id and s.session_id = e.session_id
+        left join rum_session s on s.app_id = e.app_id and s.session_id = e.session_id${issue.jointure}
        where e.ts >= now() - interval '${PERIODS[f.period].interval}' and e.ts < now()
-         and ${perimetre}${curseur}
+         and ${perimetre}${curseur}${population}${issue.filtre}
          and ($2::text is null or s.device_type = $2)${segment.where("s")}${f.includeBots ? "" : " and not coalesce(s.is_bot, false)"}
     )`,
     origine: `origine as (
@@ -506,7 +572,7 @@ function errorBase(f: ErrorFilters, v69: boolean, r: ErrorRestriction = {}): Err
 // le nombre d'occurrences qu'il a tues : compter les lignes sous-estimerait
 // précisément la boucle qu'on veut voir. `float8` partout : exact jusqu'à 2^53,
 // là où `::int` déborde, et une division de deux entiers tronquerait un ratio à 0.
-const IMPACT_SQL = `sum(occurrences)::float8 as occurrences,
+export const IMPACT_SQL = `sum(occurrences)::float8 as occurrences,
          nullif(count(distinct same_app_session_id), 0)::float8 as sessions_affected,
          nullif(count(distinct visitor_id), 0)::float8 as visitors_affected,
          nullif(count(distinct identity_hash), 0)::float8 as identified_users_affected,
@@ -570,7 +636,7 @@ function groupsSql(base: ErrorBase): string {
  * l'impact, le nombre de groupes et l'échantillonnage ; celles sans empreinte
  * (v0.1, non groupables) ne donnent que leurs occurrences.
  */
-function totalsSql(base: ErrorBase): string {
+export function totalsSql(base: ErrorBase): string {
   return `${base.sql}
   select fingerprint is null as unfingerprinted_rows,
          ${IMPACT_SQL},
@@ -580,7 +646,7 @@ function totalsSql(base: ErrorBase): string {
    group by fingerprint is null`;
 }
 
-function bucketSql(period: PeriodKey, ts: string): string {
+export function bucketSql(period: PeriodKey, ts: string): string {
   return `date_bin(interval '${PERIODS[period].bucket}', ${ts}, timestamptz '2000-01-01')`;
 }
 
@@ -597,7 +663,7 @@ function bucketSql(period: PeriodKey, ts: string): string {
  * partiels, d'où N + 1 points (13 / 25 / 29). Toute ligne de [from,to) tombe dans
  * un seau listé : la somme de la tendance égale le total affiché.
  */
-function trendSql(base: ErrorBase, period: PeriodKey): string {
+export function trendSql(base: ErrorBase, period: PeriodKey): string {
   const { bucket, interval } = PERIODS[period];
   return `${base.sql}, buckets as (
     select generate_series(${bucketSql(period, `now() - interval '${interval}'`)},
@@ -622,7 +688,7 @@ function seriesSql(base: ErrorBase, period: PeriodKey): string {
    group by 1, 2, 3`;
 }
 
-function exemplarSql(base: ErrorBase): string {
+export function exemplarSql(base: ErrorBase): string {
   return `${base.sql}
   select id::float8 as id, ts, message, error_type, kind, stack, source, lineno, colno, route,
          session_id, release, occurrences, trace_id, source_parent_span_id, error_source,
@@ -644,7 +710,7 @@ function exemplarSql(base: ErrorBase): string {
  * de span et de session sont émis par le client ; sans ce contrôle, une erreur
  * forgée ouvrirait la trace ou la session d'un autre tenant.
  */
-function occurrencesSql(base: ErrorBase): string {
+export function occurrencesSql(base: ErrorBase): string {
   return `${base.sql}
   select fe.id::float8 as id, fe.ts, fe.route, fe.session_id, fe.kind, fe.message, fe.device_type,
          fe.occurrences, fe.release, fe.error_source, fe.handled, fe.is_fatal, fe.view_name,
@@ -674,7 +740,7 @@ function occurrencesSql(base: ErrorBase): string {
 
 type GroupSqlRow = Omit<ErrorGroupRow, "series"> & { min_inclusion_probability: number | null };
 
-interface TotalsSqlRow extends ErrorImpact {
+export interface TotalsSqlRow extends ErrorImpact {
   unfingerprinted_rows: boolean;
   groups: number;
   min_inclusion_probability: number | null;
@@ -685,7 +751,7 @@ interface SeriesSqlRow extends ErrorGroupRef {
   occurrences: number;
 }
 
-type OccurrenceSqlRow = Omit<ErrorOccurrenceRow, "links"> & {
+export type OccurrenceSqlRow = Omit<ErrorOccurrenceRow, "links"> & {
   link_session: boolean;
   link_replay: boolean;
   link_trace: boolean;
@@ -701,7 +767,7 @@ function toGroupRow({ min_inclusion_probability: _sampling, ...group }: GroupSql
   return group;
 }
 
-function toOccurrenceRow({
+export function toOccurrenceRow({
   link_session,
   link_replay,
   link_trace,
@@ -747,7 +813,7 @@ export async function listErrorGroups(
   page: { limit: number; offset: number },
   opts?: { series?: boolean; apps?: string[] | null },
 ): Promise<ErrorListResult> {
-  const v69 = await errorSchemaV69();
+  const { v69 } = await errorSchema();
   const restriction: ErrorRestriction = { apps: opts?.apps ?? null };
   return snapshot(async (lire) => {
     const groupsBase = errorBase(f, v69, restriction);
@@ -837,7 +903,7 @@ export async function errorGroupDetail(
   f: ErrorFilters,
   page: { limit: number; cursor: { ts: string; id: string } | null },
 ): Promise<ErrorGroupDetailResult | null> {
-  const v69 = await errorSchemaV69();
+  const { v69 } = await errorSchema();
   // La référence résolue fixe l'app : le détail ne déborde jamais sur une autre,
   // quel que soit le filtre reçu. Une app explicite n'exclut pas les apps internes.
   const scoped: ErrorFilters = { ...f, app: ref.app_id };

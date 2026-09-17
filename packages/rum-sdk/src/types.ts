@@ -170,8 +170,9 @@ export type ErrorCollectionStats = Record<ErrorCategory, ErrorCategoryStats>;
 export interface AddErrorOptions {
   /**
    * Clé de regroupement opaque, sans donnée personnelle, 100 caractères au plus.
-   * Transmise en `mip.error_fingerprint` ; le regroupement serveur ne la
-   * consomme pas encore. Une clé invalide est ignorée, l'erreur part quand même.
+   * Transmise en `mip.error_fingerprint` ; prioritaire dans le regroupement v2
+   * des issues, qui n'en garde qu'une empreinte propre à l'app. Une clé invalide
+   * est ignorée, l'erreur part quand même.
    */
   fingerprint?: string;
 }

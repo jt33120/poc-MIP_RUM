@@ -1,6 +1,7 @@
 // Liens, libellés et données de graphique des écrans Erreurs (P5.1). Logique pure :
 // aucune lecture, testée par tests/unit/errors-view.test.ts.
 import type { StackSeries } from "@/components/charts/StackedBars";
+import type { IssueListFilters } from "@/lib/error-issues";
 import type { PeriodKey, SearchParams } from "@/lib/filters";
 import type {
   ErrorFilters,
@@ -47,6 +48,24 @@ export function errorsHref(
 /** Le détail d'un groupe, dans SON app : une empreinte seule peut en désigner plusieurs. */
 export function errorGroupHref(ref: ErrorGroupRef, f: ErrorFilters, extra?: Record<string, string>): string {
   return errorsHref(`/errors/${encodeURIComponent(ref.fingerprint)}`, f, ref.app_id, extra);
+}
+
+/** Le détail d'une issue (P5.5), dans son app, avec les filtres actifs. */
+export function issueHref(ref: { id: string; app_id: string }, f: ErrorFilters, extra?: Record<string, string>): string {
+  return errorsHref(`/errors/issues/${encodeURIComponent(ref.id)}`, f, ref.app_id, extra);
+}
+
+/**
+ * La liste des issues avec ses filtres d'entrée et d'occurrence (statut, source,
+ * release) : ils suivent la pagination, jamais le curseur un changement de filtre.
+ */
+export function issueListHref(f: ErrorFilters, filtres: IssueListFilters, extra: Record<string, string> = {}): string {
+  return errorsHref("/errors", f, f.app, {
+    ...(filtres.status ? { status: filtres.status } : {}),
+    ...(filtres.source ? { source: filtres.source } : {}),
+    ...(filtres.release ? { release: filtres.release } : {}),
+    ...extra,
+  });
 }
 
 export interface OccurrenceHrefs {
@@ -100,7 +119,7 @@ const TOP_N = 5;
  * ne dessine jamais une quantité négative.
  */
 export function errorVolumeChart(
-  groups: ErrorGroupRow[],
+  groups: Pick<ErrorGroupRow, "error_type" | "series">[],
   trend: ErrorTrendPoint[],
   period: PeriodKey,
 ): { data: Record<string, number | string>[]; series: StackSeries[] } {

@@ -44,6 +44,16 @@ const symbolicationStatus = {
     "failed : map inutilisable ; pending : budget d'ingestion épuisé ; null : aucune frame JavaScript",
 } as const;
 
+// Recopiés de lib/error-issues.ts (taxonomies de migration-v72), pour la même raison.
+const issueStatus = { type: "string", enum: ["open", "for_review", "resolved", "ignored"] } as const;
+const groupingBasis = {
+  type: "string",
+  enum: ["override", "symbolicated_frame", "normalized_frame", "low_confidence"],
+  description:
+    "override : clé déclarée par l'émetteur ; symbolicated_frame : première frame applicative en positions source ; " +
+    "normalized_frame : première frame applicative minifiée ou non symbolisée ; low_confidence : aucune frame applicative, repli peu discriminant",
+} as const;
+
 function nul(schema: Record<string, unknown>) {
   return { ...schema, nullable: true };
 }
@@ -214,6 +224,40 @@ export function buildOpenApi(): Record<string, unknown> {
           },
         ),
       },
+      "/issues": {
+        get: get(
+          "Issues d'erreurs (regroupement v2) et groupes historiques non repris : impact, statut, couverture, échantillonnage",
+          "rum",
+          ref("IssueList"),
+          {
+            params: [
+              ...commonFilters,
+              { $ref: "#/components/parameters/issueStatus" },
+              { $ref: "#/components/parameters/issueRelease" },
+              { $ref: "#/components/parameters/issueSource" },
+              { $ref: "#/components/parameters/issueLimit" },
+              { $ref: "#/components/parameters/issueCursor" },
+            ],
+            extraResponses: { "400": ref0("BadRequest"), "403": ref0("Forbidden") },
+          },
+        ),
+      },
+      "/issues/{id}": {
+        get: get(
+          "Détail d'une issue : état, groupes historiques repris, impact, tendance, dernier exemplaire et occurrences liées",
+          "rum",
+          ref("IssueDetail"),
+          {
+            params: [
+              { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+              ...commonFilters,
+              { $ref: "#/components/parameters/occurrenceLimit" },
+              { $ref: "#/components/parameters/errorCursor" },
+            ],
+            extraResponses: { "400": ref0("BadRequest"), "404": ref0("NotFound") },
+          },
+        ),
+      },
       "/sessions": {
         get: get(
           "Sessions récentes",
@@ -326,6 +370,11 @@ export function buildOpenApi(): Record<string, unknown> {
         errorOffset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0, maximum: 10000 }, description: "décalage de la liste de groupes d'erreurs (borné à 10 000)" },
         occurrenceLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 100 }, description: "occurrences par page (borné 1..100)" },
         errorCursor: { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "curseur opaque (ts à la microseconde, id) renvoyé dans page.next_cursor ; un curseur modifié reçoit 400" },
+        issueStatus: { name: "status", in: "query", schema: issueStatus, description: "statut de l'entrée (un groupe historique n'est jamais for_review) ; absent = tous" },
+        issueRelease: { name: "release", in: "query", schema: { type: "string", minLength: 1, maxLength: 200 }, description: "release exacte des occurrences comptées" },
+        issueSource: { name: "source", in: "query", schema: { ...errorSource, nullable: false, enum: errorSource.enum.filter((s) => s !== null) }, description: "source des occurrences comptées" },
+        issueLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "entrées par page (borné 1..100)" },
+        issueCursor: { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "curseur opaque renvoyé dans data.next_cursor, avec les mêmes filtres ; un curseur modifié reçoit 400" },
       },
       responses: {
         BadRequest: { description: "Paramètre invalide", content: { "application/json": { schema: ref("Error") } } },
@@ -514,6 +563,109 @@ export function buildOpenApi(): Record<string, unknown> {
             enrichment: ref("ErrorEnrichment"),
           },
           ["group", "last", "occurrences", "trend", "page", "sampling", "enrichment"],
+        ),
+
+        // P5.5 — une entrée de liste est une issue (identité durable, regroupement v2)
+        // OU un groupe historique qu'aucune issue ne reprend. Chaque occurrence de la
+        // population est comptée dans une seule entrée.
+        IssueEntry: {
+          allOf: [
+            ref("ErrorImpact"),
+            o(
+              {
+                kind: { type: "string", enum: ["issue", "legacy"] },
+                id: { type: "string", format: "uuid", description: "kind=issue seulement" },
+                fingerprint: { type: "string", description: "kind=legacy seulement : empreinte historique, à ouvrir avec /errors/{fingerprint}" },
+                app_id: str,
+                error_type: nul(str),
+                sample_message: nul(str),
+                status: issueStatus,
+                reappeared: { type: "boolean", description: "résolue puis revue depuis : réapparition à vérifier, jamais une régression confirmée" },
+                resolved_at: nul(dateTime),
+                first_seen: { ...dateTime, description: "issue : première vue persistée (groupes historiques compris) ; groupe historique : première apparition connue" },
+                last_seen: dateTime,
+                origin: { type: "string", enum: ["new", "migration"], description: "kind=issue : migration = clé v2 recouvrant un groupe historique déjà vu" },
+                grouping_basis: groupingBasis,
+                first_release: nul(str),
+                last_release: nul(str),
+                revision: { type: "string", pattern: "^[0-9]+$", description: "bigint sérialisé en chaîne (concurrence optimiste)" },
+              },
+              ["kind", "app_id", "status", "reappeared", "first_seen", "last_seen"],
+            ),
+          ],
+        },
+        IssueCoverage: o(
+          {
+            grouping_version: { type: "integer", enum: [2] },
+            available: { type: "boolean", description: "migration v72 appliquée ; sinon toutes les entrées sont des groupes historiques" },
+            active_apps: arr(str),
+            issues: int,
+            legacy_groups: int,
+            occurrences_in_issues: int,
+            occurrences_legacy: int,
+            occurrences_low_confidence: int,
+            issue_share: nul({ type: "number", minimum: 0, maximum: 1 }),
+          },
+          ["grouping_version", "available", "active_apps", "issues", "legacy_groups", "occurrences_in_issues", "occurrences_legacy", "occurrences_low_confidence", "issue_share"],
+        ),
+        IssueList: o(
+          {
+            issues: arr(ref("IssueEntry")),
+            total: { type: "integer", description: "entrées de la population filtrée (statut compris)" },
+            next_cursor: nul(str),
+            sampling: ref("ErrorSampling"),
+            coverage: ref("IssueCoverage"),
+          },
+          ["issues", "total", "next_cursor", "sampling", "coverage"],
+        ),
+        IssueLegacyGroup: o(
+          {
+            fingerprint: str,
+            legacy_status: nul({ type: "string", enum: ["open", "resolved", "ignored", null] }),
+            legacy_resolved_at: nul(dateTime),
+            current_status: { type: "string", enum: ["open", "resolved", "ignored"] },
+            note: nul(str),
+            issues: { type: "integer", description: "issues reprenant la même empreinte (plus d'une : empreinte répartie)" },
+            attached_at: dateTime,
+          },
+          ["fingerprint", "legacy_status", "current_status", "note", "issues", "attached_at"],
+        ),
+        IssueRecord: o(
+          {
+            id: { type: "string", format: "uuid" },
+            app_id: str,
+            grouping_version: { type: "integer", enum: [2] },
+            grouping_basis: groupingBasis,
+            origin: { type: "string", enum: ["new", "migration"] },
+            status: issueStatus,
+            status_source: { type: "string", enum: ["system", "migration", "user"] },
+            first_seen: dateTime,
+            last_seen: dateTime,
+            first_release: nul(str),
+            last_release: nul(str),
+            resolved_at: nul(dateTime),
+            resolved_release: nul(str),
+            resolved_env: nul(str),
+            reappeared: bool,
+            revision: { type: "string", pattern: "^[0-9]+$" },
+            created_at: dateTime,
+            updated_at: dateTime,
+            grouping_active: { type: "boolean", description: "false après un retour arrière : l'issue reste lisible, ses nouvelles occurrences ne lui sont plus rattachées" },
+            legacy_groups: arr(ref("IssueLegacyGroup")),
+          },
+          ["id", "app_id", "grouping_version", "grouping_basis", "origin", "status", "first_seen", "last_seen", "revision", "grouping_active", "legacy_groups"],
+        ),
+        IssueDetail: o(
+          {
+            issue: ref("IssueRecord"),
+            impact: ref("ErrorImpact"),
+            trend: arr(ref("ErrorTrendPoint")),
+            last_sample: nul(ref("ErrorSample")),
+            occurrences: arr(ref("ErrorOccurrence")),
+            next_cursor: nul(str),
+            sampling: ref("ErrorSampling"),
+          },
+          ["issue", "impact", "trend", "last_sample", "occurrences", "next_cursor", "sampling"],
         ),
 
         SessionRow: o(
