@@ -139,6 +139,35 @@ function identitySessionsSubquery(kind: DsarIdentityKind): string {
   return `select session_id from rum_session where ${identityColumn(kind)} = $2 and app_id = $1`;
 }
 
+/** v69 porte l'identité sur rum_error ; avant, seule la session y mène. */
+const SQL_ERREUR_IDENTIFIABLE = `select exists(
+  select 1 from information_schema.columns
+   where table_schema = 'public' and table_name = 'rum_error' and column_name = $1) as present`;
+
+type Lecteur = <T>(text: string, params: unknown[]) => Promise<T[]>;
+
+/**
+ * Les exceptions SANS session portent-elles l'identité sur ce schéma ?
+ *
+ * P5.3 : une exception backend n'est rattachée à une session que si l'ingestion a
+ * pu la prouver dans la même app. Sans session, elle reste atteignable par
+ * l'identité qu'elle déclare — jamais par la ressemblance d'un message ou d'une
+ * stack. Les autres tables enfant n'ont pas de ligne sans session à rattacher.
+ */
+async function erreursSansSessionIdentifiables(lire: Lecteur, table: string, kind: DsarIdentityKind): Promise<boolean> {
+  if (table !== "rum_error") return false;
+  const [row] = await lire<{ present: boolean }>(SQL_ERREUR_IDENTIFIABLE, [identityColumn(kind)]);
+  return row?.present === true;
+}
+
+/** Prédicat de lecture d'une table enfant ($1 = app, $2 = hash) : ses sessions, plus ses exceptions sans session. */
+async function identityChildPredicate(lire: Lecteur, table: string, kind: DsarIdentityKind): Promise<string> {
+  const parSession = `session_id in (${identitySessionsSubquery(kind)})`;
+  return (await erreursSansSessionIdentifiables(lire, table, kind))
+    ? `(${parSession} or (app_id = $1 and session_id is null and ${identityColumn(kind)} = $2))`
+    : parSession;
+}
+
 /** Couture I/O injectable : la production garde q/tx, les tests SQL exercent
  * les fonctions publiques contre leur vraie base jetable, sans faux client. */
 export interface IdentityDsarIo {
@@ -167,7 +196,7 @@ export async function dsarIdentityCounts(
   hash: string,
   io: IdentityDsarIo = DEFAULT_IDENTITY_IO,
 ): Promise<DsarCount[]> {
-  const sessionsSubq = identitySessionsSubquery(kind);
+  const lire: Lecteur = <T,>(text: string, params: unknown[]) => io.query<T>(text, params);
   const out: DsarCount[] = [];
   for (const table of DSAR_CHILD_TABLES) {
     if (!(await identityTableDisponible(io, table))) {
@@ -175,7 +204,7 @@ export async function dsarIdentityCounts(
       continue;
     }
     const [row] = await io.query<{ n: number }>(
-      `select count(*)::int as n from ${table} where session_id in (${sessionsSubq})`,
+      `select count(*)::int as n from ${table} where ${await identityChildPredicate(lire, table, kind)}`,
       [app, hash],
     );
     out.push({ table, rows: row?.n ?? 0 });
@@ -199,7 +228,7 @@ export async function dsarIdentityExport(
     // Toutes les tables du document sont lues dans le même snapshot : une
     // ingestion concurrente ne peut pas produire un export incohérent.
     await client.query("set transaction isolation level repeatable read, read only");
-    const sessionsSubq = identitySessionsSubquery(kind);
+    const lire: Lecteur = async (text, params) => (await client.query(text, params)).rows;
     const tables: Record<string, unknown[]> = {};
     for (const table of DSAR_CHILD_TABLES) {
       if (!(await tableDsarDisponibleDansTransaction(client, table))) {
@@ -207,7 +236,7 @@ export async function dsarIdentityExport(
         continue;
       }
       tables[table] = (await client.query(
-        `select * from ${table} where session_id in (${sessionsSubq})`, [app, hash],
+        `select * from ${table} where ${await identityChildPredicate(lire, table, kind)}`, [app, hash],
       )).rows;
     }
     tables[DSAR_ANCHOR] = (await client.query(
@@ -241,13 +270,18 @@ export async function dsarIdentityErase(
         [app, sessionIds],
       );
     }
+    const lire: Lecteur = async (text, params) => (await client.query(text, params)).rows;
     const deleted: { table: string; deleted: number }[] = [];
     for (const table of DSAR_CHILD_TABLES) {
       if (!(await tableDsarDisponibleDansTransaction(client, table))) continue;
-      const result = await client.query(
-        `delete from ${table} where session_id = any($1::text[])`,
-        [sessionIds],
-      );
+      const result = await erreursSansSessionIdentifiables(lire, table, kind)
+        ? await client.query(
+          `delete from ${table}
+            where session_id = any($1::text[])
+               or (app_id = $2 and session_id is null and ${column} = $3)`,
+          [sessionIds, app, hash],
+        )
+        : await client.query(`delete from ${table} where session_id = any($1::text[])`, [sessionIds]);
       deleted.push({ table, deleted: result.rowCount ?? 0 });
     }
     const anchor = await client.query(

@@ -26,6 +26,7 @@ import {
   parseOccurrencesPage,
   resolveErrorGroup,
   scopeApps,
+  stackSymbolisable,
   type ErrorFilters,
   type ErrorGroupRef,
   type ErrorOccurrenceLinks,
@@ -107,10 +108,11 @@ export default async function ErrorGroup({
   const { label, bucketLabel } = PERIODS[f.period];
 
   // Dé-minification (P0 #3) : si une source map existe pour la release de l'erreur,
-  // on réécrit la stack en positions source. Sinon on garde la stack brute.
+  // on réécrit la stack en positions source. Sinon on garde la stack brute. Jamais
+  // sur une stack backend (P5.3) : une map navigateur n'en décrit aucune frame.
   let displayStack = last?.stack ?? null;
   let deminified = false;
-  if (last?.stack && last.release) {
+  if (last?.stack && last.release && stackSymbolisable(last.error_source)) {
     const maps = await getSourceMaps(group.app_id, last.release);
     if (Object.keys(maps).length) {
       const r = symbolicateStack(last.stack, maps);

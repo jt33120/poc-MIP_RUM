@@ -47,12 +47,18 @@ export async function POST(req: Request) {
     const blocked = await guardApps(parsed.apiKeys, cors);
     if (blocked) return blocked;
 
-    await withRetry(() => writeLogs(pool, parsed.logs), {
+    // P5.3 : les exceptions structurées des logs partent dans la même transaction.
+    const ecrit = await withRetry(() => writeLogs(pool, parsed.logs, parsed.errors), {
       onRetry: (e: unknown, attempt: number) =>
         log.warn("db retry (logs)", { attempt, code: (e as { code?: string })?.code }),
     });
 
-    log.info("ingested logs", { logs: parsed.logs.length, rejected: parsed.rejected });
+    log.info("ingested logs", {
+      logs: parsed.logs.length,
+      // Exceptions RÉELLEMENT insérées (RETURNING), pas la taille du lot.
+      exceptions: ecrit.erreurs.inserees,
+      rejected: parsed.rejected,
+    });
     return json({ partialSuccess: {} }, 200, cors);
   } catch (err) {
     if (err instanceof BadRequestError) {

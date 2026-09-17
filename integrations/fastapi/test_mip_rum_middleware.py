@@ -156,11 +156,182 @@ class MiddlewareTest(unittest.TestCase):
         async def main():
             t0 = mrm.time.perf_counter()
             for _ in range(5):
-                mw._record(scope, 200, t0, mrm.time.time_ns())
+                mw._record(scope, {"code": 200, "started": True}, t0, mrm.time.time_ns())
 
         asyncio.run(main())
         self.assertEqual(len(mw._buf), 2)  # file bornée
         self.assertEqual(mw._dropped, 3)  # 3 spans perdus, comptés
+
+
+def traceparent(n: int) -> bytes:
+    return f"00-{n:032x}-{n:016x}-01".encode()
+
+
+class ExceptionsTest(unittest.TestCase):
+    """P5.3 : exception non gérée -> événement du span, jamais avalée."""
+
+    def setUp(self):
+        self.posts = []
+        self._orig_post = mrm._post
+        mrm._post = lambda endpoint, payload: self.posts.append((endpoint, payload))
+
+    def tearDown(self):
+        mrm._post = self._orig_post
+
+    def attrs(self, record):
+        return {kv["key"]: next(iter(kv["value"].values())) for kv in record["attributes"]}
+
+    def middleware(self, app):
+        # Lot jamais atteint : les spans restent lisibles dans le tampon.
+        return mrm.MIPRumMiddleware(app, endpoint="http://x/v1/traces", app_id="demo-app", batch_size=1000)
+
+    def assert_exception(self, span, exc_type, message):
+        (event,) = span["events"]
+        self.assertEqual(event["name"], "exception")
+        self.assertRegex(event["timeUnixNano"], r"^\d+$")
+        a = self.attrs(event)
+        self.assertEqual(a["exception.type"], exc_type)
+        self.assertEqual(a["exception.message"], message)
+        self.assertIn("Traceback (most recent call last)", a["exception.stacktrace"])
+        self.assertIn(f"{exc_type}: {message}", a["exception.stacktrace"])
+        self.assertRegex(a["mip.exception_id"], r"^[0-9a-f]{32}$")
+        self.assertIs(a["mip.error_handled"], False)
+
+    def test_avant_les_en_tetes_500_exception_et_trace_sans_avaler(self):
+        class BoomApp:
+            async def __call__(self, scope, receive, send):
+                raise ValueError("montant invalide")
+
+        mw = self.middleware(BoomApp())
+        try:
+            run_request(mw, headers=[(b"traceparent", TRACEPARENT.encode())])
+        except ValueError as exc:
+            # Elle remonte avec SA traceback : la ligne de l'app y est toujours.
+            lignes = [f.line for f in mrm.traceback.extract_tb(exc.__traceback__)]
+            self.assertIn('raise ValueError("montant invalide")', lignes)
+        else:
+            self.fail("exception avalée par le middleware")
+
+        (span,) = mw._buf
+        a = self.attrs(span)
+        self.assertEqual(span["traceId"], "ab" * 16)
+        self.assertEqual(span["parentSpanId"], "cd" * 8)
+        self.assertEqual(a["http.status_code"], "500")  # le serveur ASGI répondra 500
+        self.assertEqual(span["status"], {"code": 2})
+        self.assertEqual(a["error.type"], "ValueError")
+        self.assert_exception(span, "ValueError", "montant invalide")
+
+    def test_apres_les_en_tetes_statut_reel_et_echec_sans_500_invente(self):
+        class StreamBoomApp:
+            async def __call__(self, scope, receive, send):
+                await send({"type": "http.response.start", "status": 200, "headers": []})
+                await send({"type": "http.response.body", "body": b"debut", "more_body": True})
+                raise RuntimeError("flux interrompu")
+
+        mw = self.middleware(StreamBoomApp())
+        sent = []
+
+        async def main():
+            async def send(msg):
+                sent.append(msg)
+
+            async def receive():
+                return {"type": "http.request"}
+
+            scope = {"type": "http", "method": "GET", "path": "/export", "headers": []}
+            await mw(scope, receive, send)
+
+        with self.assertRaises(RuntimeError):
+            asyncio.run(main())
+        self.assertEqual([m["type"] for m in sent], ["http.response.start", "http.response.body"])
+        (span,) = mw._buf
+        a = self.attrs(span)
+        self.assertEqual(a["http.status_code"], "200")  # le statut réellement envoyé
+        self.assertEqual(span["status"], {"code": 2})
+        self.assertEqual(a["error.type"], "RuntimeError")
+        self.assert_exception(span, "RuntimeError", "flux interrompu")
+
+    def test_reponse_500_sans_exception_n_est_pas_une_exception(self):
+        class HttpErrorApp:  # HTTPException rendue par FastAPI : réponse, pas exception
+            async def __call__(self, scope, receive, send):
+                await send({"type": "http.response.start", "status": 500, "headers": []})
+                await send({"type": "http.response.body", "body": b"erreur"})
+
+        mw = self.middleware(HttpErrorApp())
+        run_request(mw)
+        (span,) = mw._buf
+        self.assertEqual(self.attrs(span)["http.status_code"], "500")
+        self.assertNotIn("events", span)
+        self.assertNotIn("error.type", self.attrs(span))
+
+    def test_annulation_traverse_sans_etre_une_exception_applicative(self):
+        class CancelledApp:
+            async def __call__(self, scope, receive, send):
+                raise asyncio.CancelledError()
+
+        mw = self.middleware(CancelledApp())
+        with self.assertRaises(asyncio.CancelledError):
+            run_request(mw)
+        (span,) = mw._buf
+        self.assertNotIn("events", span)
+        self.assertNotIn("status", span)
+
+    def test_requetes_concurrentes_sans_melange_de_trace(self):
+        class MixedApp:
+            async def __call__(self, scope, receive, send):
+                n = int(scope["path"].rsplit("/", 1)[1])
+                await asyncio.sleep((n % 7) * 0.001)  # entrelace les requêtes
+                if n % 3 == 0:
+                    raise LookupError(f"introuvable {n}")
+                await send({"type": "http.response.start", "status": 200, "headers": []})
+                await asyncio.sleep((n % 5) * 0.001)
+                if n % 3 == 1:
+                    raise RuntimeError(f"flux {n}")
+                await send({"type": "http.response.body", "body": b"ok"})
+
+        mw = self.middleware(MixedApp())
+
+        async def une(n):
+            scope = {
+                "type": "http",
+                "method": "GET",
+                "path": f"/items/{n}",
+                "headers": [(b"traceparent", traceparent(n))],
+            }
+
+            async def send(msg):
+                pass
+
+            async def receive():
+                return {"type": "http.request"}
+
+            await mw(scope, receive, send)
+
+        async def main():
+            return await asyncio.gather(*(une(n) for n in range(1, 61)), return_exceptions=True)
+
+        resultats = asyncio.run(main())
+        for n, resultat in zip(range(1, 61), resultats):
+            attendu = {0: LookupError, 1: RuntimeError, 2: type(None)}[n % 3]
+            self.assertIsInstance(resultat, attendu, n)  # chaque exception remonte à SA requête
+
+        self.assertEqual(len(mw._buf), 60)
+        for span in mw._buf:
+            n = int(span["traceId"], 16)
+            a = self.attrs(span)
+            self.assertEqual(a["http.url"], f"/items/{n}")
+            self.assertEqual(span["parentSpanId"], f"{n:016x}")
+            if n % 3 == 0:
+                self.assertEqual(a["http.status_code"], "500")
+                self.assert_exception(span, "LookupError", f"introuvable {n}")
+            elif n % 3 == 1:
+                self.assertEqual(a["http.status_code"], "200")
+                self.assert_exception(span, "RuntimeError", f"flux {n}")
+            else:
+                self.assertEqual(a["http.status_code"], "200")
+                self.assertNotIn("events", span)
+        identifiants = [self.attrs(s["events"][0])["mip.exception_id"] for s in mw._buf if "events" in s]
+        self.assertEqual(len(identifiants), len(set(identifiants)))
 
 
 if __name__ == "__main__":
