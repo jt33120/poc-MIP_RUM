@@ -117,25 +117,32 @@ export function enMarkdown(titre, corps) {
 }
 
 /**
- * Indices de pagination. L'API ne renvoie AUCUN total : on ne peut donc pas dire
- * combien d'éléments existent, seulement qu'une page pleine en laisse
- * probablement d'autres. Le dire ainsi, plutôt que d'inventer un `total`.
+ * Indices de pagination. Seuls certains endpoints renvoient un total (groupes
+ * d'erreurs, Explorer d'événements) : ailleurs on ne peut pas dire combien
+ * d'éléments existent, seulement qu'une page pleine en laisse probablement
+ * d'autres. Le dire ainsi, plutôt que d'inventer un `total`.
+ *
+ * Une page par curseur (détail d'un groupe d'erreurs : `{ limit, next_cursor }`)
+ * n'a pas d'offset. En inventer un enverrait l'IA vers un paramètre que l'outil
+ * n'accepte pas : elle relirait la même page en croyant avancer.
  */
 export function indicesPage(data) {
   const page = data?.page;
   if (!page || typeof page.limit !== "number") return null;
-  const liste = data.events ?? data.sessions ?? data.groups ?? data.actions ??
+  const liste = data.events ?? data.sessions ?? data.groups ?? data.actions ?? data.occurrences ??
     Object.values(data).find(Array.isArray);
   if (!Array.isArray(liste)) return null;
   const recus = liste.length;
-  const cursorSuivant = typeof page.next_cursor === "string" && page.next_cursor ? page.next_cursor : null;
+  const brut = page.next_cursor ?? data.next_cursor;
+  const cursorSuivant = typeof brut === "string" && brut ? brut : null;
   const suite = cursorSuivant != null || recus >= page.limit;
+  const offset = typeof page.offset === "number" ? page.offset : null;
   return {
     limit: page.limit,
-    offset: page.offset ?? 0,
+    offset,
     recus,
     peut_avoir_suite: suite,
-    offset_suivant: suite ? (page.offset ?? 0) + page.limit : null,
+    offset_suivant: suite && offset != null ? offset + page.limit : null,
     cursor_suivant: cursorSuivant,
     total: typeof data.total === "number" ? data.total : null,
   };

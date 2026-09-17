@@ -128,15 +128,24 @@ export interface TraceSpanRow {
  * matière du waterfall « douleur utilisateur → cause backend ». `ts` porte le
  * début de span (nanosToDate à l'ingestion), donc les offsets se calculent par
  * différence côté rendu.
+ *
+ * `opts.apps` restreint aux apps autorisées ET demandées (P5.1) : un trace_id est
+ * émis par le client, deux tenants peuvent donc le partager, et un lien depuis
+ * une erreur de l'app A ne doit jamais montrer les spans de B. `null` = aucune
+ * restriction ; `[]` = aucune app, donc aucun span.
  */
-export async function traceSpans(traceId: string): Promise<TraceSpanRow[]> {
+export async function traceSpans(
+  traceId: string,
+  opts?: { apps?: string[] | null },
+): Promise<TraceSpanRow[]> {
   return q<TraceSpanRow>(
     `select span_id, parent_span_id, tier, name, kind, route, url, method,
             status_code, duration_ms, ts, app_id, session_id
        from rum_span
       where trace_id = $1
+        and ($2::text[] is null or app_id = any($2::text[]))
       order by ts asc, case tier when 'front' then 0 when 'back' then 1 else 2 end`,
-    [traceId],
+    [traceId, opts?.apps ?? null],
   );
 }
 

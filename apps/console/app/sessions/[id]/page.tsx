@@ -29,17 +29,30 @@ export default async function SessionDetail({
   const { getUser } = await import("@/lib/auth");
   const user = await getUser();
   if (user?.apps && !user.apps.includes(meta.app_id)) notFound();
+  // Un lien qui annonce son app (erreur, trace — P5.1) ne doit jamais ouvrir la
+  // session d'une autre : l'identifiant de session est émis par le client, et une
+  // erreur forgée peut citer celui d'un autre tenant. Paramètre répété : la
+  // première valeur, comme la porte projet du middleware.
+  const app = Array.isArray(sp.app) ? sp.app[0] : sp.app;
+  if (app && app !== "all" && app !== meta.app_id) notFound();
 
-  // filtres globaux conservés dans les liens, onglet exclu (propre au détail)
+  // Instant de l'erreur (epoch ms) vers lequel positionner le replay. Une valeur
+  // non entière est ignorée : le lecteur ne devine pas un instant.
+  const at = typeof sp.at === "string" && /^\d{1,15}$/.test(sp.at) ? Number(sp.at) : null;
+
+  // filtres globaux conservés dans les liens ; onglet et instant exclus (propres au détail)
   const qs = new URLSearchParams(
     Object.entries(sp).flatMap(([k, v]) =>
-      typeof v === "string" && k !== "tab" ? [[k, v] as [string, string]] : [],
+      typeof v === "string" && k !== "tab" && k !== "at" ? [[k, v] as [string, string]] : [],
     ),
   ).toString();
   const tab: "timeline" | "replay" = sp.tab === "replay" ? "replay" : "timeline";
   const tabHref = (t: "timeline" | "replay") => {
     const p = new URLSearchParams(qs);
-    if (t === "replay") p.set("tab", "replay");
+    if (t === "replay") {
+      p.set("tab", "replay");
+      if (at !== null) p.set("at", String(at));
+    }
     const s = p.toString();
     return `/sessions/${meta.session_id}${s ? `?${s}` : ""}`;
   };
@@ -112,7 +125,7 @@ export default async function SessionDetail({
       </div>
 
       {tab === "replay" ? (
-        <ReplayPlayer sessionId={meta.session_id} />
+        <ReplayPlayer sessionId={meta.session_id} atMs={at} />
       ) : (
         <div className="card p-6">
           {timeline.length ? (

@@ -139,5 +139,8 @@ test("replay : session enregistrée sur la démo puis rejouée dans la console",
     waitUntil: "domcontentloaded",
   });
   await expect(page.getByTestId("replay-player")).toBeVisible();
-  await expect(page.locator(".rr-player")).toBeVisible({ timeout: 15_000 });
+  // Le lecteur monte le Replayer de @rrweb/replay : la page rejouée vit dans une
+  // iframe. `.rr-player` (rrweb-player) s'affichait sans jamais rien rejouer.
+  await expect(page.getByTestId("replay-player")).toHaveAttribute("data-state", "ready", { timeout: 15_000 });
+  await expect(page.getByTestId("replay-player").locator("iframe")).toBeAttached();
 });

@@ -107,6 +107,32 @@ export function colonnesLongtask(dispo) {
   ];
 }
 
+/** Colonnes optionnelles de rum_error, dans l'ordre où elles s'insèrent. */
+const OPTIONNELLES_ERREUR = [
+  // v59 : répétitions comptées par le SDK ; v67 : action causale.
+  "occurrences", "action_id",
+  // v69 (P5.1) : corrélation, source, caractère géré/fatal, snapshot P2 et
+  // dimensions déclarées par l'émetteur.
+  "trace_id", "source_parent_span_id", "error_source", "handled", "is_fatal", "context",
+  "view_id", "view_name", "user_id_hash", "account_id_hash", "env", "service",
+];
+
+/**
+ * Colonnes de l'INSERT rum_error, réduites à ce que la base porte.
+ *
+ * Même garde-fou que pour rum_session : le code part en production AVANT que le
+ * pre-deploy n'applique migration-v69, et une colonne absente ferait rejeter
+ * tout le lot, pas seulement le champ nouveau.
+ */
+export function colonnesErreur(dispo) {
+  return [
+    "span_id", "session_id", "app_id", "route", "kind", "message", "error_type",
+    "stack", "source", "lineno", "colno", "release", "fingerprint",
+    ...OPTIONNELLES_ERREUR.filter((c) => dispo.has(c)),
+    "ts",
+  ];
+}
+
 /** Colonnes optionnelles de rum_session, dans l'ordre où elles s'insèrent. */
 const OPTIONNELLES = [
   "collection_source", "release", "net_type", "visitor_id",
@@ -358,18 +384,14 @@ export async function writeRows(pool, {
         "on conflict (action_id) do nothing",
       );
     }
-    const dispoErr = await colonnesDe(client, "rum_error");
     await batchInsert(
       client,
       "rum_error",
-      [
-        "span_id", "session_id", "app_id", "route", "kind", "message", "error_type",
-        "stack", "source", "lineno", "colno", "release", "fingerprint",
-        ...(dispoErr.has("occurrences") ? ["occurrences"] : []),
-        ...(dispoErr.has("action_id") ? ["action_id"] : []),
-        "ts",
-      ],
-      errors,
+      colonnesErreur(await colonnesDe(client, "rum_error")),
+      // `context` est NOT NULL en v69 : une ligne sans snapshot (lot différé
+      // antérieur, émetteur sans contexte) écrit l'objet vide, jamais NULL. Les
+      // autres champs absents de ces lots deviennent NULL, c'est-à-dire inconnus.
+      errors.map((e) => ({ ...e, context: JSON.stringify(e.context ?? {}) })),
       "on conflict (span_id) do nothing",
     );
     const resourceDispo = await colonnesDe(client, "rum_resource");

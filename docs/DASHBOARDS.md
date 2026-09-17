@@ -17,7 +17,7 @@ created_by, created_at, updated_at)`. Aucune nouvelle table de données : les wi
 | `vital_p75` | `vitalsP75` | grand chiffre p75 d'un Web Vital (LCP/INP/CLS/FCP/TTFB) |
 | `traffic` | `dailyTraffic` | pages vues / erreurs par jour |
 | `slow_routes` | `slowRoutes` | top routes par LCP/INP p75 |
-| `top_errors` | `errorGroups` | top erreurs (occurrences, sessions) |
+| `top_errors` | `listErrorGroups` (`lib/queries-errors.ts`) | top erreurs (occurrences, sessions) — même population que l'écran Erreurs : segment, bots et apps internes compris |
 | `frustration` | `topFrustrations` | rage/dead clicks par cible |
 
 Les widgets sont scopés **app + période + device** (filtres globaux ; l'app du dashboard

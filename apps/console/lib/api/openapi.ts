@@ -6,7 +6,33 @@
 const str = { type: "string" } as const;
 const int = { type: "integer" } as const;
 const num = { type: "number" } as const;
+const bool = { type: "boolean" } as const;
 const dateTime = { type: "string", format: "date-time" } as const;
+const traceId = { type: "string", pattern: "^[0-9a-f]{32}$" } as const;
+const spanId = { type: "string", pattern: "^[0-9a-f]{16}$" } as const;
+
+// Recopiés de lib/queries-v2.ts et lib/queries-errors.ts : ces modules ouvrent le
+// pool PostgreSQL à l'import, et cette spec doit rester pure. Une copie dérive :
+// tests/unit/api-v1-errors-route.test.ts compare les listes publiées aux originales.
+const errorStatus = { type: "string", enum: ["open", "resolved", "ignored"] } as const;
+// OpenAPI 3.0.3 : `nullable` n'ajoute pas null à un `enum` — il doit y figurer.
+const errorSource = {
+  type: "string",
+  nullable: true,
+  enum: [
+    "browser_js",
+    "browser_console",
+    "browser_resource",
+    "browser_csp",
+    "browser_network",
+    "node",
+    "python",
+    "react_native_js",
+    "native",
+    "otel",
+    null,
+  ],
+} as const;
 
 function nul(schema: Record<string, unknown>) {
   return { ...schema, nullable: true };
@@ -144,20 +170,39 @@ export function buildOpenApi(): Record<string, unknown> {
       },
       "/errors": {
         get: get(
-          "Groupes d'erreurs (fingerprint) + erreurs non groupables",
+          "Groupes d'erreurs (app + fingerprint) sur la fenêtre : impact, totaux, tendance, échantillonnage",
           "rum",
-          o({ groups: arr(ref("ErrorGroupRow")), unfingerprinted: int, page: ref("Page") }, ["groups", "unfingerprinted"]),
-          { params: [...commonFilters, ...pageParams] },
+          ref("ErrorGroupList"),
+          {
+            params: [...commonFilters, { $ref: "#/components/parameters/limit" }, { $ref: "#/components/parameters/errorOffset" }],
+            extraResponses: { "403": ref0("Forbidden") },
+          },
         ),
       },
       "/errors/{fingerprint}": {
-        get: get("Détail d'un groupe d'erreurs", "rum", ref("ErrorGroupDetail"), {
-          params: [
-            { name: "fingerprint", in: "path", required: true, schema: str },
-            ...commonFilters,
-          ],
-          extraResponses: { "404": ref0("NotFound") },
-        }),
+        get: get(
+          "Détail d'un groupe d'erreurs : impact, tendance, exemplaire et occurrences liées",
+          "rum",
+          ref("ErrorGroupDetail"),
+          {
+            params: [
+              { name: "fingerprint", in: "path", required: true, schema: { type: "string", minLength: 1, maxLength: 64 } },
+              ...commonFilters,
+              { $ref: "#/components/parameters/occurrenceLimit" },
+              { $ref: "#/components/parameters/errorCursor" },
+            ],
+            extraResponses: {
+              // Un 400 propre à cette route : l'ambiguïté se résout en rappelant avec `app`.
+              "400": {
+                description:
+                  "fingerprint ou cursor invalide, ou fingerprint présent dans plusieurs apps du périmètre sans `app` " +
+                  "(le message liste les apps candidates : rappeler avec l'une d'elles)",
+                content: { "application/json": { schema: ref("Error") } },
+              },
+              "404": ref0("NotFound"),
+            },
+          },
+        ),
       },
       "/sessions": {
         get: get(
@@ -268,10 +313,14 @@ export function buildOpenApi(): Record<string, unknown> {
         eventAttrType: { name: "attr_type", in: "query", schema: { type: "string", enum: ["string", "number", "boolean", "null"] }, description: "type JSON primitif exact" },
         eventAttrValue: { name: "attr_value", in: "query", schema: { type: "string", maxLength: 500 }, description: "valeur exacte sérialisée selon attr_type" },
         actionOffset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0, maximum: 10000 }, description: "décalage du classement d'actions (borné à 10 000)" },
+        errorOffset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0, maximum: 10000 }, description: "décalage de la liste de groupes d'erreurs (borné à 10 000)" },
+        occurrenceLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 100 }, description: "occurrences par page (borné 1..100)" },
+        errorCursor: { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "curseur opaque (ts à la microseconde, id) renvoyé dans page.next_cursor ; un curseur modifié reçoit 400" },
       },
       responses: {
         BadRequest: { description: "Paramètre invalide", content: { "application/json": { schema: ref("Error") } } },
         Unauthorized: { description: "Authentification requise/invalide", content: { "application/json": { schema: ref("Error") } } },
+        Forbidden: { description: "Principal authentifié sans aucune application autorisée", content: { "application/json": { schema: ref("Error") } } },
         NotFound: { description: "Ressource inconnue (ou hors-scope)", content: { "application/json": { schema: ref("Error") } } },
         RateLimited: { description: "Trop de requêtes (voir en-têtes RateLimit-* / Retry-After)", content: { "application/json": { schema: ref("Error") } } },
         ServerError: { description: "Erreur interne", content: { "application/json": { schema: ref("Error") } } },
@@ -305,18 +354,151 @@ export function buildOpenApi(): Record<string, unknown> {
         ),
         RouteRow: o({ route: str, views: num, lcp_p75: nul(num), inp_p75: nul(num), cls_p75: nul(num), longtasks: num }, ["route"]),
 
-        // `occurrences`, `sessions` et `users_affected` portent sur la FENÊTRE
-        // demandée (`period`) ; `first_seen` est la première apparition connue,
-        // toutes fenêtres confondues. `users_affected` était déjà renvoyé sans
-        // figurer au contrat — un champ non déclaré qu'un client ne peut pas
-        // utiliser sans deviner qu'il existe.
-        ErrorGroupRow: o(
-          { app_id: str, fingerprint: str, error_type: nul(str), sample_message: nul(str), occurrences: int, sessions: int, users_affected: int, first_seen: dateTime, last_seen: dateTime },
-          ["app_id", "fingerprint", "occurrences", "sessions"],
+        // Tous les compteurs d'erreurs portent sur la FENÊTRE demandée (`period`,
+        // [début, fin)) et sur la même population que l'écran /errors ; seul
+        // `first_seen` est la première apparition connue, toutes fenêtres confondues.
+        // Trois populations distinctes, jamais additionnées : sessions, visiteurs,
+        // utilisateurs identifiés. Un compte à null = personne de CONNU (erreur sans
+        // session ni identité), pas zéro ; une couverture à null = aucune occurrence.
+        ErrorImpact: o(
+          {
+            occurrences: { type: "integer", description: "somme des répétitions reçues (pas un nombre de lignes)" },
+            sessions_affected: nul(int),
+            visitors_affected: nul(int),
+            identified_users_affected: nul(int),
+            session_coverage: nul({ type: "number", minimum: 0, maximum: 1, description: "part des occurrences rattachées à une session de la même app" }),
+            identity_coverage: nul({ type: "number", minimum: 0, maximum: 1, description: "part des occurrences rattachées à un visiteur ou à une identité" }),
+          },
+          ["occurrences", "sessions_affected", "visitors_affected", "identified_users_affected", "session_coverage", "identity_coverage"],
         ),
-        ErrorSample: o({ message: nul(str), error_type: nul(str), kind: nul(str), stack: nul(str), source: nul(str), lineno: nul(int), colno: nul(int), route: nul(str), session_id: nul(str), release: nul(str), ts: dateTime }),
-        ErrorOccurrence: o({ id: int, ts: dateTime, route: nul(str), session_id: nul(str), kind: nul(str), message: nul(str), device_type: nul(str) }),
-        ErrorGroupDetail: o({ group: ref("ErrorGroupRow"), last: nul(ref("ErrorSample")), occurrences: arr(ref("ErrorOccurrence")) }, ["group", "occurrences"]),
+        // `sessions` et `users_affected` (visiteurs distincts) sont les champs
+        // historiques, inchangés : les comptes d'impact avec null ramené à 0.
+        ErrorGroupRow: {
+          allOf: [
+            ref("ErrorImpact"),
+            o(
+              {
+                app_id: str,
+                fingerprint: str,
+                error_type: nul(str),
+                sample_message: nul(str),
+                sessions: int,
+                users_affected: int,
+                first_seen: dateTime,
+                last_seen: dateTime,
+                status: errorStatus,
+                resolved_at: nul(dateTime),
+                regressed: { type: "boolean", description: "groupe marqué résolu puis revu depuis (last_seen > resolved_at) ; jamais null" },
+              },
+              ["app_id", "fingerprint", "sessions", "users_affected", "first_seen", "last_seen", "status", "resolved_at", "regressed"],
+            ),
+          ],
+        },
+        ErrorTotals: {
+          allOf: [
+            ref("ErrorImpact"),
+            o({ groups: int, unfingerprinted: int }, ["groups", "unfingerprinted"]),
+          ],
+        },
+        ErrorTrendPoint: o({ bucket: dateTime, occurrences: int }, ["bucket", "occurrences"]),
+        ErrorSampling: o(
+          {
+            min_inclusion_probability: nul({ type: "number", minimum: 0, maximum: 1 }),
+            message: nul({ type: "string", description: "non null seulement si une erreur a pu ne pas être conservée (0 < probabilité < 1) ; aucune extrapolation n'est appliquée" }),
+          },
+          ["min_inclusion_probability", "message"],
+        ),
+        ErrorEnrichment: o({ available: { type: "boolean" }, diagnostic: nul(str) }, ["available", "diagnostic"]),
+        ErrorGroupList: o(
+          {
+            groups: arr(ref("ErrorGroupRow")),
+            unfingerprinted: int,
+            page: ref("Page"),
+            total: { type: "integer", description: "nombre de groupes de la population filtrée" },
+            totals: ref("ErrorTotals"),
+            trend: arr(ref("ErrorTrendPoint")),
+            sampling: ref("ErrorSampling"),
+            enrichment: ref("ErrorEnrichment"),
+          },
+          ["groups", "unfingerprinted", "page", "total", "totals", "trend", "sampling", "enrichment"],
+        ),
+        // Dernier exemplaire du groupe dans la fenêtre filtrée. Les champs d'enveloppe
+        // (trace, source, handled…) valent null avant la migration v69 ou quand
+        // l'émetteur ne les fournit pas.
+        ErrorSample: o(
+          {
+            id: int,
+            ts: dateTime,
+            message: nul(str),
+            error_type: nul(str),
+            kind: nul(str),
+            stack: nul(str),
+            source: nul(str),
+            lineno: nul(int),
+            colno: nul(int),
+            route: nul(str),
+            session_id: nul(str),
+            release: nul(str),
+            occurrences: int,
+            trace_id: nul(traceId),
+            source_parent_span_id: nul(spanId),
+            error_source: errorSource,
+            handled: nul(bool),
+            is_fatal: nul(bool),
+            view_name: nul(str),
+            env: nul({ type: "string", description: "environnement déclaré par l'émetteur, non vérifié" }),
+            service: nul(str),
+            action_id: nul(str),
+          },
+          ["id", "ts", "occurrences"],
+        ),
+        // Un lien vaut true seulement si la relation existe DANS LA MÊME APP : les
+        // identifiants de session, trace et span sont émis par le client.
+        ErrorOccurrenceLinks: o(
+          {
+            session: bool,
+            replay: bool,
+            trace: bool,
+            parent_span: bool,
+            action: nul(o({ id: str, name: nul(str), type: nul(str) }, ["id", "name", "type"])),
+          },
+          ["session", "replay", "trace", "parent_span", "action"],
+        ),
+        ErrorOccurrence: o(
+          {
+            id: int,
+            ts: dateTime,
+            route: nul(str),
+            session_id: nul({ type: "string", description: "tel qu'émis ; links.session dit s'il existe dans la même app" }),
+            kind: nul(str),
+            message: nul(str),
+            device_type: nul(str),
+            occurrences: int,
+            release: nul(str),
+            error_source: errorSource,
+            handled: nul(bool),
+            is_fatal: nul(bool),
+            view_name: nul(str),
+            env: nul(str),
+            service: nul(str),
+            trace_id: nul(traceId),
+            source_parent_span_id: nul(spanId),
+            links: ref("ErrorOccurrenceLinks"),
+          },
+          ["id", "ts", "occurrences", "links"],
+        ),
+        ErrorGroupDetail: o(
+          {
+            group: ref("ErrorGroupRow"),
+            last: nul(ref("ErrorSample")),
+            occurrences: arr(ref("ErrorOccurrence")),
+            trend: arr(ref("ErrorTrendPoint")),
+            page: o({ limit: int, next_cursor: nul(str) }, ["limit", "next_cursor"]),
+            sampling: ref("ErrorSampling"),
+            enrichment: ref("ErrorEnrichment"),
+          },
+          ["group", "last", "occurrences", "trend", "page", "sampling", "enrichment"],
+        ),
 
         SessionRow: o(
           { session_id: str, app_id: str, device_type: nul(str), geo_country: nul(str), user_agent: nul(str), started_at: dateTime, last_seen_at: dateTime, page_count: int, routes: nul(arr(str)), err_count: int },

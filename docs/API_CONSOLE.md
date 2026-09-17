@@ -90,7 +90,41 @@ app hors de son périmètre (ou `all`) est **rabattu sur sa première app autori
 }
 ```
 
-Erreurs : `{ "error": "message" }` avec le statut HTTP (`401`, `404`, `500`).
+Erreurs : `{ "error": "message" }` avec le statut HTTP (`400`, `401`, `403`, `404`, `429`, `500`).
+
+---
+
+## Journal des changements
+
+### 16/09/2026 — erreurs : une seule lecture pour la console, l'API et le MCP (P5.1)
+
+`GET /api/v1/errors` et `GET /api/v1/errors/{fingerprint}` lisent désormais la même base filtrée que
+l'écran `/errors` (`apps/console/lib/queries-errors.ts`). Auparavant la liste, le détail et ses
+occurrences appliquaient chacun leurs propres prédicats : ouvrir un groupe pouvait afficher un autre nombre
+que celui de la liste. Ce qui change pour un client :
+
+- **`device` s'applique aux compteurs d'erreurs** (tablette comprise). La liste l'ignorait.
+- **Bots et apps internes exclus**, comme dans la console. Une app interne reste lisible en la nommant
+  dans `app`.
+- **Fenêtre `[début, fin)`** en UTC, bornée des deux côtés et figée pour toute la réponse.
+- **Jointures de session scopées par app** : un identifiant de session cité par une autre app ne prête
+  plus ni appareil, ni visiteur, ni lien. `sessions` et `users_affected` gardent leur nom, leur type et
+  leur définition (sessions et visiteurs distincts touchés, jamais `null`), mais ne comptent plus que des
+  sessions existant dans la même app.
+- **`regressed` n'est jamais `null`** : `false` pour un groupe sans statut de triage.
+- **Nouveaux champs d'impact** : `sessions_affected`, `visitors_affected`, `identified_users_affected`
+  (`null` = personne de connu, pas zéro), `session_coverage`, `identity_coverage`.
+- **Liste** : `total`, `totals`, `trend`, `sampling` et `enrichment` s'ajoutent après les clés
+  historiques ; `offset` est plafonné à 10 000.
+- **Détail** : l'exemplaire `last` et les `occurrences` suivent la même fenêtre et les mêmes filtres que le
+  groupe (ils n'étaient pas bornés dans le temps). Occurrences paginées par curseur (`limit` 1..100,
+  `cursor`), chacune avec ses `links` ; `trend`, `page`, `sampling` et `enrichment` ajoutés.
+- **Empreinte ambiguë** : sans `app`, une empreinte présente dans plusieurs apps du périmètre répond `400`
+  en listant les apps candidates, au lieu d'en retenir une arbitrairement.
+- **Session viewer sans aucune app** : `403` sur la liste, `404` sur le détail. Sur ces deux routes, une
+  liste d'apps vide ne vaut plus « toutes les apps ».
+- **`env`** est l'environnement **déclaré par l'émetteur**, non vérifié (le SDK web déclare `dev` par
+  défaut) ; aucun filtre ne s'appuie dessus.
 
 ---
 
@@ -118,23 +152,88 @@ Les `previous` couvrent la **période précédente** (calcul des deltas côté f
 `data.routes: RouteRow[]` (p75 LCP/INP, volume, part mobile).
 
 ### `GET /api/v1/errors` — groupes d'erreurs
-`data = { groups: ErrorGroupRow[], unfingerprinted: number }`.
+`data = { groups: ErrorGroupRow[], unfingerprinted, page: { limit, offset }, total, totals: ErrorTotals, trend: ErrorTrendPoint[], sampling: ErrorSampling, enrichment: ErrorEnrichment }`
+(sources de vérité : `ErrorListResult` dans `apps/console/lib/queries-errors.ts`, schéma
+`ErrorGroupList` de la spec OpenAPI). Les clés historiques viennent en tête.
 
-**Les compteurs portent sur la fenêtre `period`** (`1h` | `24h` | `7d`, défaut `24h`) :
-`occurrences`, `sessions` et `users_affected` sont recalculés dessus, et un groupe sans
-occurrence dans la fenêtre n'est pas renvoyé. Seul `first_seen` reste la première apparition
-connue, toutes fenêtres confondues — bornée par la seule rétention.
+**Même population que l'écran `/errors`** : fenêtre UTC `[now − period, now)`, `app` après scoping,
+`device` (tablette comprise), trafic de bots et apps internes exclus (une app interne reste lisible avec
+`app` explicite). Un groupe est un couple `(app_id, fingerprint)` ; un groupe sans occurrence dans la
+fenêtre n'est pas renvoyé.
 
-Jusqu'au 09/09/2026 ces trois compteurs venaient d'une vue **sans borne temporelle** : ils
-valaient le cumul depuis la première ingestion quelle que soit la `period` demandée. Un client
-qui s'en servait pour suivre une tendance lisait une constante. Le tri par défaut a changé en
-conséquence : d'abord le triage (régression, ouverte, ignorée, résolue), puis l'**impact sur la
-fenêtre** — visiteurs distincts touchés, puis sessions, puis occurrences — au lieu du volume
-cumulé.
+| Champ d'un groupe | Sens |
+|---|---|
+| `occurrences` | somme des répétitions reçues sur la fenêtre — pas un nombre de lignes |
+| `sessions_affected` | sessions distinctes de la même app ; `null` si aucune occurrence n'a de session connue |
+| `visitors_affected` | visiteurs distincts (`visitor_id` du SDK) ; `null` si aucun n'est connu |
+| `identified_users_affected` | identités métier distinctes (HMAC par app) ; `null` si aucune n'est connue |
+| `session_coverage` | part (0..1) des occurrences rattachées à une session de la même app ; `null` sans occurrence |
+| `identity_coverage` | part (0..1) des occurrences rattachées à un visiteur ou à une identité |
+| `sessions`, `users_affected` | champs historiques : `sessions_affected` et `visitors_affected`, `null` ramené à `0` |
+| `first_seen` | première apparition connue, **toutes fenêtres confondues** — seul champ hors fenêtre |
+| `last_seen` | dernière occurrence de la fenêtre |
+| `status`, `resolved_at`, `regressed` | triage ; `regressed` = marqué résolu puis revu depuis (`last_seen > resolved_at`), jamais `null` |
+
+Sessions, visiteurs et identités sont trois populations distinctes, **jamais additionnées**. Un compte à
+`null` veut dire « personne de connu » (une erreur backend sans session, par exemple), pas zéro personne.
+
+- `totals` : le même impact sur **toute la population filtrée** — des personnes distinctes, pas la somme
+  des groupes (un visiteur touché par deux groupes reste un visiteur) —, plus `groups` et `unfingerprinted`.
+- `total` : nombre de groupes de la population (égal à `totals.groups`).
+- `trend` : occurrences par intervalle (`bucket` de 5 min, 1 h ou 6 h pour `1h`, `24h`, `7d`), zéros
+  compris : 13, 25 ou 29 points, la fenêtre glissante entamant deux intervalles partiels. La somme de
+  `trend[].occurrences` vaut `totals.occurrences`.
+- `unfingerprinted` : occurrences sans empreinte (erreurs v0.1) de la même population, absentes de tout
+  groupe.
+- `sampling` : `{ min_inclusion_probability, message }`. Probabilité minimale qu'une erreur de la
+  population ait été conservée : `sample_rate + (1 − sample_rate) × error_sample_rate` de sa session
+  (`null` sans session connue). `message` n'est renseigné que si elle est strictement entre 0 et 1.
+  **Aucune extrapolation** : les volumes restent ceux observés.
+- `enrichment` : `{ available, diagnostic }`. `available: false` tant que la migration v69 n'est pas
+  appliquée : trace, source, identité d'occurrence et `handled` valent alors `null`, les compteurs
+  historiques restent exacts.
+
+Tri : triage d'abord (régression, ouverte, résolue, ignorée), puis l'**impact sur la fenêtre** — visiteurs
+distincts, puis sessions (inconnus en dernier), puis occurrences, dernière vue, et enfin `app_id`,
+`fingerprint` pour un ordre total : deux pages d'offset ne répètent ni ne sautent un groupe.
+
+Pagination : `limit` 1..200 (défaut 100), `offset` plafonné à 10 000. `403` `aucune application autorisée`
+pour une session viewer sans aucune app.
+
+Jusqu'au 09/09/2026 `occurrences`, `sessions` et `users_affected` venaient d'une vue **sans borne
+temporelle** : ils valaient le cumul depuis la première ingestion quelle que soit la `period` demandée. Un
+client qui s'en servait pour suivre une tendance lisait une constante. Le tri a changé à cette date pour
+classer par impact sur la fenêtre au lieu du volume cumulé.
 
 ### `GET /api/v1/errors/{fingerprint}` — détail d'un groupe
-`data: ErrorGroupDetail` (groupe + dernier échantillon avec stack + occurrences).
-`404` si le fingerprint est inconnu (sur le scope).
+`data = { group: ErrorGroupRow, last: ErrorSample | null, occurrences: ErrorOccurrence[], trend: ErrorTrendPoint[], page: { limit, next_cursor }, sampling, enrichment }`
+(source de vérité : `ErrorGroupDetailResult` dans `apps/console/lib/queries-errors.ts`).
+
+Mêmes filtres et même fenêtre que la liste : `group.occurrences` est le nombre affiché par la ligne qu'on
+vient d'ouvrir.
+
+- **Résolution de l'app.** Une empreinte n'est unique que dans une app. Avec `app`, le groupe est cherché
+  dans cette app (ramenée au périmètre comme ailleurs). Sans `app` (ou `app=all`), il est cherché dans tout
+  le périmètre du principal : une seule app candidate → détail de celle-ci, dont `meta.app` porte
+  l'identifiant ; plusieurs → **`400`** `fingerprint présent dans plusieurs apps : préciser app (<apps>)`,
+  apps candidates limitées au périmètre ; aucune → `404`.
+- `last` : dernière occurrence de la fenêtre filtrée (stack, release, `source:lineno:colno`, `route`,
+  `view_name`, `trace_id`, `source_parent_span_id`, `error_source`, `handled`, `is_fatal`, `env`,
+  `service`, `action_id`). `null` si aucune.
+- `occurrences` : de la plus récente à la plus ancienne (`ts`, `id`), chacune avec ses propres `ts`,
+  `release`, `device_type`, `trace_id`… et ses `links` :
+  `session` (une session de la même app existe), `replay` (cette session a aussi un enregistrement),
+  `trace` (la trace existe dans la même app), `parent_span` (le span parent y existe aussi), `action`
+  (`{ id, name, type }` de l'action causale, dans la même app et la même session, ou `null`). Un lien à
+  `false` veut dire que la relation n'existe pas dans la même app : `session_id` et `trace_id` sont émis
+  par le client, et une erreur forgée ne doit pas ouvrir la session ou la trace d'un autre tenant.
+- **Pagination par curseur.** `limit` 1..100 (défaut 100). `page.next_cursor` n'est renseigné que si la
+  page est pleine ; le renvoyer tel quel dans `cursor`, avec les mêmes filtres. Il conserve les
+  microsecondes PostgreSQL : deux occurrences à 1 µs d'écart ne sont jamais perdues entre deux pages. Un
+  curseur modifié reçoit `400` `cursor invalide`.
+- `400` `fingerprint invalide` (vide, plus de 64 caractères ou caractère de contrôle) ; `404` `groupe
+  d'erreurs introuvable` si le groupe n'a aucune occurrence sur cette fenêtre avec ces filtres, ou pour une
+  session viewer sans aucune app.
 
 ### `GET /api/v1/sessions` — sessions récentes
 `data.sessions: SessionRow[]`.
@@ -246,6 +345,7 @@ dans l'énumération des lectures.
 | Scatter corrélation robot ↔ réel (`/correlation`) | nuage de points | `GET /correlation` | `cards[]` : x = `syn_latency_avg` (robot), y = `rum_lcp_p75` (réel), taille = `rum_sessions` |
 | Angles morts (`/correlation`) | table / barres | `GET /correlation` | `blindSpots[].{route,bucket,rum_lcp_p75,syn_latency_avg,gap_ms}` |
 | Groupes d'erreurs (top) (`/errors`) | barres | `GET /errors` | `groups[].{error_type,sample_message,occurrences,sessions}` |
+| Occurrences d'erreurs dans le temps (`/errors`) | barres | `GET /errors` | `trend[].bucket` → `trend[].occurrences` (population entière) |
 
 ### Non exposé par l'API (visuels console uniquement)
 
@@ -253,8 +353,8 @@ Ces graphes s'appuient sur des agrégats **non publiés** par `/api/v1` — les 
 demanderait un **nouvel endpoint** (petit ajout : la couche `lib/queries*.ts` existe déjà,
 il ne reste qu'à l'exposer). À nous signaler si UTI en a besoin :
 
-- **Erreurs par heure empilées (24 h)** — `/errors` ne renvoie que les compteurs agrégés,
-  pas la série horaire par signature.
+- **Erreurs empilées par groupe** — `/errors` renvoie la tendance de toute la population
+  (`trend`), pas la série de chaque signature.
 - **Robot vs réel _dans le temps_** — `/correlation` renvoie les cartes + angles morts
   (scalaires), pas la série horaire `v_correlation`.
 - **Frustration** (scatter INP), **Expérience** (radar + tendance CSAT), **Sessions**

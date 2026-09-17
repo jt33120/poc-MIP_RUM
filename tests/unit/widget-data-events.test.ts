@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/queries", () => ({ slowRoutes: vi.fn(), vitalsP75: vi.fn() }));
 vi.mock("@/lib/queries-grid", () => ({ dailyTraffic: vi.fn() }));
 vi.mock("@/lib/queries-frustration", () => ({ topFrustrations: vi.fn() }));
-vi.mock("@/lib/queries-v2", () => ({ errorGroups: vi.fn() }));
+vi.mock("@/lib/queries-errors", () => ({ listErrorGroups: vi.fn() }));
 vi.mock("@/lib/queries-events", () => ({ eventCount: vi.fn() }));
 
 import { eventCount } from "@/lib/queries-events";
