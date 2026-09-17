@@ -9,7 +9,7 @@ Une case n’est cochée que sur preuve. « Testé localement » ne vaut ni dép
 
 | Sous-lot | Branche | Implémenté | Testé localement | Déployé | Vérifié sur vraie app | Bloqué |
 |---|---|---|---|---|---|---|
-| P5.1 — corrélation, compteurs, détail scoped | `feat/datadog-rum-error-tracking-p5-1` | en cours | — | — | — | — |
+| P5.1 — corrélation, compteurs, détail scoped | `feat/datadog-rum-error-tracking-p5-1` | oui | oui | v69 Neon ; code en cours | — | — |
 | P5.2 — collecte navigateur opt-in | — | — | — | — | — | — |
 | P5.3 — erreurs OTel/backend | — | — | — | — | — | — |
 | P5.4 — source maps CI | — | — | — | — | — | — |
@@ -53,8 +53,35 @@ lecture console, API/UI). Décisions retenues :
 
 ### Preuves
 
-À compléter au fil de la livraison.
+Locales (17/09/2026, PostgreSQL 15 jetable, build de production de la console) :
+
+- `pnpm test:unit` : 124 fichiers, 1 357 tests verts ; `tsc --noEmit` console vert.
+- Suites SQL sur bases neuves : `test:isolation`, `test:alerting`, `test:svi` verts ; `test:sql` 10 fichiers,
+  72 tests, dont `error-envelope-v69-sql` (rejeu, contrainte, NUL/1e308, différé, purge/DSAR, fenêtre v68→v69) et
+  `error-queries-p51-sql` (jeu de recette : 38 partout sur A/24 h/desktop, 47 et couvertures 45/47 et 38/47 tous
+  appareils, 43 sur 7 j, 49 bots inclus, choix [A 38, B 13], curseur µs sans perte, liens, échantillonnage).
+- Playwright (build de production) : 47 verts, 2 ignorés préexistants, dont `error-tracking.spec.ts` (liste→détail
+  38, liens, trace/session étrangères en 404, choix d'app, rejeu positionné/indisponible, clavier, 390/768/1440 px),
+  `rum-flow`, `erreurs-fenetre`, `events-explorer`, `tracing`, `versions-loaf`.
+
+Production :
+
+- Neon PG 17.11 : `migration-v69.sql` appliquée le 17/09/2026 en une transaction (verrou 811100, registre
+  `schema_migration`, checksum identique à `migrate.mjs`) via l'API SQL HTTPS de Neon — le port 5432 est fermé depuis
+  le poste de livraison. Vérifié : 12 colonnes, `rum_error_envelope_v69` non validée.
 
 ### Suivis identifiés hors P5.1
 
-À compléter au fil de la livraison.
+- **CI** : ajouter `SQL_TEST_V68_DATABASE_URL` (+ `create database mip_rum_v68`) au job SQL de `ci.yml` ; le jeton
+  GitHub de livraison n'a pas le scope `workflow`. Sans lui, les cas « code avant v69 » des nouveaux tests SQL sont
+  ignorés en CI (ils passent en local).
+- **Navigation client** : un `<Link>` vers la même route avec une autre query ne navigue plus une fois les prefetchs
+  de la barre latérale terminés (reproduit sur « Réinitialiser » de `/events`, P4). P5.1 contourne par des ancres
+  natives sur ses liens même-route ; corriger la cause dans la coquille de la console.
+- **Ingestion** : surrogate UTF-16 isolé dans `mip.context`/props (jsonb 22P02) et NUL dans les champs de span non
+  passés par `anyValue` (span/trace ids, logs) peuvent encore annuler un lot.
+- **Portée** : `scopeApp` (lib/api/params.ts) traite `apps = []` comme sans restriction pour les autres routes v1 ;
+  `/api/replay/[sessionId]` lit `replay_chunk` sans borne `app_id`.
+- **DSAR identité** : l'effacement par identité passe par `rum_session.user_id_hash` ; des lignes d'erreur écrites
+  sous une autre identité dans la même session ne sont pas atteintes (même limite déjà présente sur `rum_event`).
+- **Liste** : pas de badge de source par groupe (la source est portée par l'exemplaire du détail).
