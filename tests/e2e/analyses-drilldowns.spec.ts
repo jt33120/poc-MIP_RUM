@@ -154,10 +154,18 @@ async function debordements(page: Page): Promise<string[]> {
         return ["absolute", "fixed"].includes(getComputedStyle(el).position) || !dansDefilant(el);
       })
       .slice(0, 5)
-      .map(
-        (el) =>
-          `${el.tagName.toLowerCase()}[${el.getAttribute("class") ?? ""}] → ${Math.round(el.getBoundingClientRect().right)} px`,
-      );
+      .map((el) => {
+        // Un repère LISIBLE : le libellé d'aide de la bulle, le titre de la
+        // section, ou le début du texte. Une liste de classes Tailwind dit
+        // quel composant déborde, jamais lequel de ses dix exemplaires.
+        const parent = el.parentElement;
+        const repere =
+          parent?.querySelector("[aria-label]")?.getAttribute("aria-label") ??
+          el.closest("section, h1, h2, h3")?.textContent?.trim().slice(0, 60) ??
+          el.textContent?.trim().slice(0, 60) ??
+          "";
+        return `${el.tagName.toLowerCase()} « ${repere} » → ${Math.round(el.getBoundingClientRect().right)} px`;
+      });
     return [`page ${totale} px > fenêtre ${largeur} px`, ...fautifs];
   });
 }
