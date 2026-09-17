@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { ObservedTrend } from "@/components/charts/ObservedTrend";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { getUser } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
@@ -17,7 +18,6 @@ import {
   parseEventCursor,
   parseEventPage,
   parseEventQuery,
-  type EventTrendRow,
 } from "@/lib/queries-events";
 
 export const dynamic = "force-dynamic";
@@ -27,43 +27,6 @@ function nextHref(current: URLSearchParams, cursor: string) {
   next.set("cursor", cursor);
   next.delete("offset");
   return `/events?${next}`;
-}
-
-function Trend({ rows }: { rows: EventTrendRow[] }) {
-  const max = Math.max(1, ...rows.map((row) => Number(row.count)));
-  return (
-    <figure className="card p-4" aria-labelledby="event-trend-title">
-      <figcaption id="event-trend-title" className="text-sm font-semibold text-ink">
-        Événements observés dans le temps
-      </figcaption>
-      <div className="mt-4 flex h-36 items-end gap-1" aria-hidden="true">
-        {rows.map((row) => (
-          <div
-            key={new Date(row.bucket).toISOString()}
-            className="min-w-1 flex-1 rounded-t bg-perf/80"
-            style={{ height: `${Math.max(2, (Number(row.count) / max) * 100)}%` }}
-            title={`${fmtDate(row.bucket)} · ${row.count}`}
-          />
-        ))}
-      </div>
-      <details className="mt-3 text-xs text-ink-soft">
-        <summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-          Alternative textuelle de la série
-        </summary>
-        <table className="mt-2 w-full">
-          <thead><tr><th className="py-1 text-left">Période</th><th className="py-1 text-right">Événements</th></tr></thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={new Date(row.bucket).toISOString()} className="border-t border-line/60">
-                <td className="py-1">{fmtDate(row.bucket)}</td>
-                <td className="py-1 text-right tabular-nums">{Number(row.count).toLocaleString("fr-FR")}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </details>
-    </figure>
-  );
 }
 
 export default async function EventsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -150,7 +113,11 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
       )}
 
       <div className="mb-6 grid gap-4 lg:grid-cols-[2fr_1fr]">
-        <Trend rows={result.trend} />
+        <ObservedTrend
+          title="Événements observés dans le temps"
+          rows={result.trend.map((row) => ({ bucket: row.bucket, value: Number(row.count) }))}
+          valueLabel="Événements"
+        />
         <aside className="card p-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Total observé</div>
           <div data-testid="events-total" className="mt-1 text-3xl font-bold tabular-nums text-ink">{result.total.toLocaleString("fr-FR")}</div>

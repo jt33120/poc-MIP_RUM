@@ -26,11 +26,13 @@ export const PARAMS = {
   period: "Fenêtre d'observation : '1h', '24h' (défaut) ou '7d'. L'API n'en accepte AUCUNE autre ; une valeur inconnue retombe silencieusement sur '24h'.",
   device:
     "Type d'appareil : 'mobile', 'desktop', 'tablet' ou 'all' (défaut). Attention : les endpoints historiques (overview, vitals, pages, tracing, health-grid) ne distinguent que mobile/desktop — 'tablet' y est traité comme 'tous'.",
-  limit: "Nombre d'éléments par page (1 à 200).",
+  limit:
+    "Nombre d'éléments par page (1 à 200). Le détail d'un groupe d'erreurs plafonne ses occurrences à 100 par page.",
   offset: "Décalage de pagination, à partir de 0.",
   series:
     "Vitals à détailler en série temporelle : liste séparée par des virgules ('LCP,INP') ou 'all'. Par défaut aucune série n'est renvoyée, seulement les p75.",
-  fingerprint: "Signature du groupe d'erreurs, telle que renvoyée par mip_rum_list_errors.",
+  fingerprint:
+    "Signature du groupe d'erreurs, telle que renvoyée par mip_rum_list_errors. Elle n'est unique que DANS une app : passer aussi `app` (l'app_id du groupe).",
   session_id: "Identifiant de session, tel que renvoyé par mip_rum_list_sessions.",
   kind: "Catégorie fermée : pageview, vital, error, resource, longtask, breadcrumb, event ou span. Utiliser 'event' pour les événements custom.",
   name: "Nom exact de l'événement custom (100 caractères maximum).",
@@ -38,7 +40,7 @@ export const PARAMS = {
   attr_key: "Clé top-level sûre de l'attribut, sans JSONPath.",
   attr_type: "Type primitif exact : string, number, boolean ou null.",
   attr_value: "Valeur exacte de l'attribut. Omise seulement avec attr_type='null'.",
-  cursor: "Curseur opaque next_cursor renvoyé par la page précédente. Ne pas le modifier.",
+  cursor: "Curseur opaque `data.page.next_cursor` renvoyé par la page précédente, avec les mêmes filtres. Ne pas le modifier.",
   format:
     "Forme de la réponse : 'json' (défaut — la réponse de l'API telle quelle, sans transformation) ou 'markdown' (tableaux lisibles, aucune donnée retirée).",
 };
@@ -100,26 +102,36 @@ export const OUTILS = [
   },
   {
     nom: "mip_rum_list_errors",
-    titre: "Groupes d'erreurs JS",
-    resume: "Erreurs JavaScript regroupées par signature, paginées.",
+    titre: "Groupes d'erreurs",
+    resume: "Erreurs regroupées par signature sur la fenêtre : impact, totaux et tendance, paginées.",
     description:
-      "Erreurs JavaScript regroupées par signature (`fingerprint`), avec leur nombre d'occurrences et de sessions touchées. " +
-      "Renvoie aussi `unfingerprinted` : le nombre d'erreurs que le regroupement n'a PAS su rattacher à un groupe — " +
-      "un compteur à ne pas oublier, il n'apparaît dans aucun groupe. " +
-      "Paginé : utiliser `limit`/`offset`. L'API ne renvoie pas de total ; une page pleine signifie qu'il y a probablement une suite.",
+      "Groupes d'erreurs (une signature `fingerprint` PAR app) sur la même population que l'écran Erreurs de la console : " +
+      "fenêtre `period`, appareil (tablette comprise), bots et apps internes exclus. " +
+      "Chaque groupe porte `occurrences` (somme des répétitions reçues), `sessions_affected`, `visitors_affected`, " +
+      "`identified_users_affected`, `session_coverage` (part des occurrences rattachées à une session) et `identity_coverage` " +
+      "(à un visiteur ou une identité). Un compte de personnes à null veut dire INCONNU (erreur sans session ni identité), jamais zéro. " +
+      "`sessions` et `users_affected` sont les champs historiques (null ramené à 0). " +
+      "`totals` décrit toute la population filtrée — des personnes distinctes, pas une somme des groupes —, `total` compte les groupes " +
+      "et `trend` donne les occurrences par intervalle. Si `sampling.message` est renseigné, les volumes sont ceux d'un échantillon, " +
+      "sans extrapolation : le dire. `unfingerprinted` compte les occurrences qu'aucun groupe ne contient — à ne pas oublier. " +
+      "Paginé par `limit`/`offset` (offset plafonné à 10 000).",
     chemin: "/errors",
     params: [...FILTRES, ...PAGE],
   },
   {
     nom: "mip_rum_get_error_group",
     titre: "Détail d'un groupe d'erreurs",
-    resume: "Occurrences, navigateurs et routes touchés par une signature d'erreur.",
+    resume: "Impact, tendance, dernier exemplaire et occurrences liées d'une signature d'erreur.",
     description:
-      "Détail d'un groupe d'erreurs identifié par sa signature : occurrences dans le temps, navigateurs et routes concernés, " +
-      "derniers exemples. Le `fingerprint` s'obtient avec mip_rum_list_errors. " +
-      "Renvoie une erreur explicite si la signature est inconnue sur la période demandée — élargir `period` avant de conclure qu'elle n'existe pas.",
+      "Détail d'un groupe d'erreurs, sur la même fenêtre et les mêmes filtres que mip_rum_list_errors : `group` (impact ; null = inconnu), " +
+      "`trend`, `last` (dernier exemplaire : stack, release, source, trace) et `occurrences`, chacune avec ses `links` " +
+      "(session, replay, trace, span parent, action). Un lien à false signifie que la relation n'existe pas dans la même app. " +
+      "Le `fingerprint` s'obtient avec mip_rum_list_errors ; une signature présente dans plusieurs apps renvoie une erreur qui liste " +
+      "les apps candidates : rappeler avec `app`. Occurrences paginées par curseur : `limit` 100 au plus, puis recopier " +
+      "`data.page.next_cursor` dans `cursor`. Renvoie une erreur explicite si la signature est inconnue sur la période demandée — " +
+      "élargir `period` avant de conclure qu'elle n'existe pas.",
     chemin: "/errors/{fingerprint}",
-    params: [...FILTRES, "fingerprint"],
+    params: [...FILTRES, "fingerprint", "limit", "cursor"],
   },
   {
     nom: "mip_rum_list_sessions",

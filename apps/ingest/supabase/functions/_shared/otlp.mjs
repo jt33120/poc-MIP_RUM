@@ -108,11 +108,27 @@ export function causalActionId(value) {
   return typeof value === "string" && ACTION_ID.test(value) ? value.toLowerCase() : null;
 }
 
+/**
+ * Nombre gardé dans un contexte ou des props : fini, et écrit SANS exposant.
+ *
+ * Les bornes d'octets se mesurent ici en JSON compact, mais la contrainte
+ * PostgreSQL mesure `jsonb::text`, où un numeric s'écrit en toutes lettres :
+ * `1e308` y occupe 309 octets au lieu de 6. Un contexte de 120 × 1e308, loin
+ * sous les 16 Kio en JSON, dépassait donc la limite en base et faisait rejeter
+ * tout le lot. JavaScript n'écrit un exposant qu'au-delà de 1e21 ou en deçà de
+ * 1e-6 : sans ces valeurs, un nombre garde la même longueur des deux côtés.
+ */
+function nombreSansExposant(value) {
+  return Number.isFinite(value) && !/e/i.test(String(value));
+}
+
 function boundedContextValue(value, depth, budget) {
   if (value == null) return null;
-  if (typeof value === "string") return value.length <= CONTEXT_MAX_STRING ? (scrubText(value) ?? "") : undefined;
+  // Un `\u0000` échappé dans le JSON redevient un vrai NUL après JSON.parse :
+  // la frontière d'anyValue ne l'a donc jamais vu passer.
+  if (typeof value === "string") return value.length <= CONTEXT_MAX_STRING ? sansNul(scrubText(value) ?? "") : undefined;
   if (typeof value === "boolean") return value;
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "number") return nombreSansExposant(value) ? value : undefined;
   if (depth >= CONTEXT_MAX_DEPTH) return undefined;
   if (Array.isArray(value)) {
     return value.map((item) => boundedContextValue(item, depth + 1, budget)).filter((item) => item !== undefined);
@@ -121,7 +137,7 @@ function boundedContextValue(value, depth, budget) {
   const out = {};
   for (const [rawKey, rawValue] of Object.entries(value)) {
     if (budget.keys >= CONTEXT_MAX_KEYS) break;
-    const key = (scrubText(rawKey) ?? "").trim();
+    const key = sansNul((scrubText(rawKey) ?? "").trim());
     if (key.length > CONTEXT_MAX_NAME) continue;
     if (!key || key.startsWith("mip.") || CONTEXT_RESERVED_KEYS.has(key.toLowerCase()) || CONTEXT_DANGEROUS_KEYS.has(key.toLowerCase())) continue;
     budget.keys++;
@@ -148,9 +164,11 @@ function boundedPropsValue(value, depth, budget) {
   if (budget.nodes >= EVENT_PROPS_MAX_NODES) return undefined;
   budget.nodes++;
   if (value == null) return null;
-  if (typeof value === "string") return scrubText(value.slice(0, CONTEXT_MAX_STRING)) ?? "";
+  // Mêmes raisons que boundedContextValue : NUL ressuscité par JSON.parse,
+  // exposant démultiplié par `jsonb::text`.
+  if (typeof value === "string") return sansNul(scrubText(value.slice(0, CONTEXT_MAX_STRING)) ?? "");
   if (typeof value === "boolean") return value;
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "number") return nombreSansExposant(value) ? value : undefined;
   if (depth >= CONTEXT_MAX_DEPTH) return undefined;
   if (Array.isArray(value)) {
     return value.slice(0, CONTEXT_MAX_KEYS)
@@ -288,10 +306,27 @@ export function deviceFromUa(ua) {
   return /mobile|tablet|iphone|ipad|android|silk|kindle/i.test(ua) ? "mobile" : "desktop";
 }
 
+/**
+ * Remplace U+0000 par U+FFFD dans une chaîne ; toute autre valeur est rendue
+ * telle quelle.
+ *
+ * PostgreSQL refuse ce caractère dans un text (22021) comme dans un jsonb
+ * (22P05), et le refus d'UNE valeur annule la transaction, donc tout le lot. Il
+ * arrive sans aucune malveillance : le message d'erreur de `JSON.parse` en V8
+ * recopie l'entrée fautive, NUL compris. Remplacer plutôt que rejeter garde
+ * l'erreur visible, et le caractère de remplacement dit qu'un octet a été
+ * altéré.
+ */
+export function sansNul(value) {
+  return typeof value === "string" ? value.replaceAll("\u0000", "\uFFFD") : value;
+}
+
 /** Déstructure un AnyValue OTLP ({stringValue|intValue|doubleValue|boolValue}). */
 export function anyValue(v) {
   if (v == null) return null;
-  if ("stringValue" in v) return v.stringValue;
+  // Frontière unique pour TOUTES les chaînes d'attribut (message, stack, route,
+  // release, noms de vue…) : aucun lecteur en aval n'a à y repenser.
+  if ("stringValue" in v) return sansNul(v.stringValue);
   if ("doubleValue" in v) return Number(v.doubleValue);
   if ("intValue" in v) return Number(v.intValue); // arrive en string ou number selon l'émetteur
   if ("boolValue" in v) return v.boolValue;
@@ -486,6 +521,146 @@ export function errorFingerprint(errorType, message, stack) {
   return fnv1a(
     [errorType ?? "", normalizeMessage(message), firstStackFrame(stack)].join("|"),
   );
+}
+
+// ─────────────── Enveloppe d'erreur fiable (P5.1, migration-v69) ───────────────
+//
+// Chaque occurrence porte sa corrélation, sa source et son caractère géré ou
+// fatal. RÈGLE COMMUNE : ce que l'émetteur n'a pas dit reste NULL. Une source,
+// une trace ou une fatalité devinée fabriquerait des liens et des filtres
+// faux, là où NULL affiche honnêtement « Inconnu ». Chaque valeur est aussi
+// bornée ici par la contrainte `rum_error_envelope_v69` : une valeur que la base
+// refuserait annulerait le lot entier, pas seulement le champ.
+
+/** Taxonomie fermée de rum_error.error_source, dans l'ordre de migration-v69. */
+export const ERROR_SOURCES = Object.freeze([
+  "browser_js", "browser_console", "browser_resource", "browser_csp", "browser_network",
+  "node", "python", "react_native_js", "native", "otel",
+]);
+
+const NATIVE_TRACE_ID = /^[0-9a-f]{32}$/i;
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+const ERROR_TYPE_MAX = 200;
+const ERROR_KIND = /^[a-z][a-z0-9_.-]{0,39}$/i;
+/** `lineno`/`colno` sont des `int` PostgreSQL. */
+const INT4_MAX = 2_147_483_647;
+/** Catégories navigateur EXPLICITES ; toute autre valeur reste du JS. Une Map,
+ *  pas un objet : `constructor` ne doit pas devenir une source. */
+const BROWSER_ERROR_SOURCES = new Map([
+  ["console", "browser_console"],
+  ["resource", "browser_resource"],
+  ["csp", "browser_csp"],
+  ["network", "browser_network"],
+]);
+/** Listeners globaux des SDK (window error, unhandledrejection, ErrorUtils RN). */
+const UNHANDLED_ERROR_KINDS = new Set(["error", "unhandledrejection", "crash"]);
+
+/**
+ * Trace OTLP native (32 hex), en minuscules, ou null.
+ *
+ * Deux formes bien formées sont refusées. Le tout-zéro est invalide selon W3C.
+ * Seize zéros en tête trahissent un identifiant de 64 bits complété : c'est ce
+ * que fabrique rum-mobile (`spanId.padStart(32, "0")`) quand aucun appel réseau
+ * ne lui donne de trace. Le garder ferait afficher un lien vers une trace qui
+ * n'a jamais existé. Le tout-zéro commençant lui aussi par seize zéros, un seul
+ * test couvre les deux.
+ */
+export function nativeTraceId(value) {
+  if (typeof value !== "string" || !NATIVE_TRACE_ID.test(value)) return null;
+  const id = value.toLowerCase();
+  return id.startsWith("0000000000000000") ? null : id;
+}
+
+/** Span parent OTLP natif (16 hex non nuls), en minuscules, ou null. */
+export function nativeParentSpanId(value) {
+  if (!isNativeSpanId(value) || value === "0000000000000000") return null;
+  return value.toLowerCase();
+}
+
+/**
+ * Dimension courte déclarée par l'émetteur (env, service), ou null.
+ *
+ * Scrubbée comme tout texte venu du client. Trop longue, elle est REFUSÉE et non
+ * tronquée : coupée, elle deviendrait un autre identifiant, donc une valeur de
+ * filtre qu'aucun émetteur n'a déclarée. Un caractère de contrôle trahit une
+ * valeur qui n'est pas un nom.
+ */
+export function boundedDimension(value, max = 120) {
+  if (typeof value !== "string") return null;
+  const clean = (scrubText(value) ?? "").trim();
+  if (!clean || CONTROL_CHARS.test(clean) || clean.length > max) return null;
+  return clean;
+}
+
+/**
+ * `exception.type` borné, ou null.
+ *
+ * Texte libre de l'émetteur : non borné, un seul span écrivait des mégaoctets
+ * dans une colonne affichée partout. Coupé APRÈS le scrub (un secret ne doit pas
+ * survivre coupé en deux). Un type réaliste (`TypeError`, `ValueError`) traverse
+ * inchangé, donc son empreinte de regroupement aussi.
+ */
+export function boundedErrorType(value) {
+  if (typeof value !== "string") return null;
+  return (scrubText(value) ?? "").trim().slice(0, ERROR_TYPE_MAX) || null;
+}
+
+/**
+ * `kind` historique : la valeur explicite, octet pour octet, si c'est un mot
+ * court ; sinon "error". Un texte libre ici serait un second message, non scrubbé.
+ */
+function errorKind(value) {
+  return typeof value === "string" && ERROR_KIND.test(value) ? value : "error";
+}
+
+/**
+ * Ligne ou colonne dans la source : entier de [0, 2^31 - 1], chaîne décimale
+ * acceptée, sinon null. « 12.5 », « 1e21 » ou `true` faisaient refuser l'INSERT
+ * par la colonne `int` — et avec lui tout le lot.
+ */
+function positionSource(value) {
+  const n = typeof value === "number" ? value
+    : typeof value === "string" && /^\d+$/.test(value) ? Number(value)
+      : Number.NaN;
+  return Number.isInteger(n) && n >= 0 && n <= INT4_MAX ? n : null;
+}
+
+/**
+ * Source, caractère géré/fatal et dimensions déclarées d'une exception.
+ *
+ * Le runtime n'est reconnu que sur des marqueurs posés par nos seuls SDK : le
+ * `service.name` constant (mip-rum-web, mip-rum-mobile) ou le scope de
+ * l'émetteur web. Tout autre émetteur reste inconnu : typer un backend OTel est
+ * le travail de P5.3, pas une devinette ici.
+ */
+export function errorEnvelope({ attrs = {}, resource = {}, scopeName = null, eventType = null }) {
+  const serviceName = resource["service.name"];
+  const runtime = serviceName === "mip-rum-mobile"
+    ? "react_native"
+    : scopeName === "@mip/rum-sdk" || serviceName === "mip-rum-web" ? "browser" : null;
+  const kind = attrs["mip.error_kind"];
+
+  let handled = null;
+  if (typeof attrs["mip.error_handled"] === "boolean") handled = attrs["mip.error_handled"];
+  // addError() : l'application a capturé l'erreur elle-même.
+  else if (eventType === "error") handled = true;
+  // Listener global d'un SDK connu : personne ne l'a interceptée. Le même mot
+  // venu d'un émetteur inconnu ne prouve rien.
+  else if (runtime && UNHANDLED_ERROR_KINDS.has(kind)) handled = false;
+
+  return {
+    error_source: runtime === "browser"
+      ? (BROWSER_ERROR_SOURCES.get(kind) ?? "browser_js")
+      : runtime === "react_native" ? "react_native_js" : null,
+    handled,
+    // Jamais déduit : un crash n'est pas forcément fatal, ni l'inverse.
+    is_fatal: typeof attrs["mip.error_fatal"] === "boolean" ? attrs["mip.error_fatal"] : null,
+    // Déclaré par l'émetteur, pas vérifié : le SDK web vaut « dev » par défaut.
+    env: boundedDimension(resource["deployment.environment.name"] ?? resource["deployment.environment"]),
+    // Le nom constant d'un SDK MIP n'est pas le service du client, et
+    // error_source dit déjà d'où vient l'erreur.
+    service: runtime ? null : boundedDimension(resource["service.name"]),
+  };
 }
 
 // --- v0.6 : auto-instrumentation OpenTelemetry standard (backend codeless) ------
@@ -771,14 +946,19 @@ export function flattenOtlp(payload, opts = {}) {
     apiKeys.push({ app_id: appId, api_key: res["mip.api_key"] ?? null });
     const release = res["mip.release"] ?? null; // version de l'app (dé-minification)
     for (const ss of Array.isArray(rs.scopeSpans) ? rs.scopeSpans : []) {
+      // P5.1 : le scope est le seul marqueur du SDK web quand la resource ne
+      // porte pas son service.name (source de l'erreur, cf. errorEnvelope).
+      const scopeName = ss?.scope?.name ?? null;
       for (const span of Array.isArray(ss?.spans) ? ss.spans : []) {
         // garde-fou : au-delà du plafond, on compte sans traiter (mémoire/CPU bornés)
         if (++seen > maxSpans) {
           rejected++;
           continue;
         }
-        // durcissement A5 : un span sans nom (string) ne peut être routé -> rejet
-        if (!span || typeof span.name !== "string") {
+        // durcissement A5 : un span sans nom (string) ne peut être routé -> rejet.
+        // Un NUL dans le nom le rend tout aussi malformé : ce nom finit en base
+        // (événement track.*, span OTel), où PostgreSQL rejetterait tout le lot.
+        if (!span || typeof span.name !== "string" || span.name.includes("\u0000")) {
           rejected++;
           continue;
         }
@@ -998,7 +1178,9 @@ export function flattenOtlp(payload, opts = {}) {
           // probabilités d'inclusion s'applique à son poids (migration-v58).
           // Une session biaisée-erreurs n'apparaît QUE si elle en a une.
           s.has_error = true;
-          const errorType = a["exception.type"] ?? null;
+          // Type borné AVANT l'empreinte : l'empreinte d'un type réaliste ne
+          // change pas, et un type hostile ne gonfle plus la ligne.
+          const errorType = boundedErrorType(a["exception.type"]);
           // scrub PII AVANT troncature (un secret ne doit pas survivre coupé en deux)
           const message = (scrubText(a["exception.message"]) ?? "").slice(0, 1000);
           const stack = (scrubText(a["exception.stacktrace"]) ?? "").slice(0, 4000);
@@ -1011,16 +1193,24 @@ export function flattenOtlp(payload, opts = {}) {
             // plusieurs occurrences. Absent = 1, donc les SDK antérieurs restent
             // justes sans rien changer.
             occurrences: occurrencesDe(a["mip.error_count"]),
-            kind: a["mip.error_kind"] ?? "error",
+            kind: errorKind(a["mip.error_kind"]),
             message,
             error_type: errorType,
             stack,
             source: scrubUrl(a["mip.error_source"]),
-            lineno: a["mip.error_lineno"] ?? null,
-            colno: a["mip.error_colno"] ?? null,
+            lineno: positionSource(a["mip.error_lineno"]),
+            colno: positionSource(a["mip.error_colno"]),
             release,
             fingerprint: errorFingerprint(errorType, message, stack),
+            // P5.1 (migration-v69) : la corrélation vient des champs NATIFS du
+            // span. Elle est propre à cette occurrence, jamais empruntée au
+            // dernier exemplaire du groupe.
+            trace_id: nativeTraceId(span.traceId),
+            source_parent_span_id: nativeParentSpanId(span.parentSpanId),
+            ...errorEnvelope({ attrs: a, resource: res, scopeName, eventType: metadata.event_type }),
             ts,
+            // context, identités HMAC, vue et action : le snapshot P2 déjà
+            // borné par eventMetadata, désormais écrit sur la ligne elle-même.
             ...metadata,
           });
         } else if (span.name === "pageview") {

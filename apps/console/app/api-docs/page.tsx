@@ -209,7 +209,7 @@ export default async function ApiDocs() {
         <LinkCard
           href={`${GH_BASE}/MCP.md`}
           title="Brancher un agent IA (MCP)"
-          desc="Configuration du serveur MCP : les onze outils, les deux transports, et le modèle d'authentification."
+          desc={`Configuration du serveur MCP : les ${OUTILS_MCP.length} outils, les deux transports, et le modèle d'authentification.`}
         />
       </div>
 
@@ -321,7 +321,8 @@ export default async function ApiDocs() {
 
         <p className="mt-3 text-xs text-ink-faint">
           Ce que le serveur ne fait pas, et le dit au modèle : aucune écriture, trois fenêtres seulement
-          (1h / 24h / 7d), et aucun total sur les listes historiques (l’Explorer d’événements fait exception). Une app demandée hors périmètre n'est pas refusée
+          (1h / 24h / 7d), et aucun total sur la liste des sessions (les groupes d’erreurs et l’Explorer
+          d’événements en fournissent un). Une app demandée hors périmètre n'est pas refusée
           par l'API — elle est ramenée au périmètre du jeton ; l'outil le signale alors explicitement dans sa
           réponse, pour qu'un chiffre d'une autre app ne passe jamais pour celui demandé.
         </p>

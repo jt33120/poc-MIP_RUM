@@ -143,7 +143,7 @@ export const GLOSSARY = {
     label: "Session replay",
     term: "Reconstruction visuelle de la session via instantanés DOM (pas de capture vidéo).",
     stack:
-      "Librairie rrweb : enregistre les mutations du DOM côté navigateur, rejouées dans la console (rrweb-player).",
+      "Librairie rrweb : enregistre les mutations du DOM côté navigateur, rejouées dans la console (@rrweb/replay).",
     business:
       "Comme « regarder par-dessus l'épaule » de l'utilisateur pour voir exactement où il a buté — sans caméra ni espionnage, juste la structure de la page.",
   },

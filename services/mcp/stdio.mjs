@@ -16,7 +16,7 @@ const base = process.env.MIP_CONSOLE_URL;
 const jeton = process.env.MIP_API_TOKEN;
 
 // Fail-fast, comme les autres services du backend. Démarrer sans jeton
-// donnerait un serveur qui s'annonce, expose ses onze outils, et répond 401 à
+// donnerait un serveur qui s'annonce, expose tous ses outils, et répond 401 à
 // chacun : le pire des deux mondes, puisque le modèle croit avoir un accès.
 if (!base || !jeton) {
   process.stderr.write(

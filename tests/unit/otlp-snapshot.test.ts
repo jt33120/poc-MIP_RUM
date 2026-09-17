@@ -66,6 +66,20 @@ describe("flattenOtlp — snapshot du contrat de sortie", () => {
     );
     const apres = flattenOtlp(autreDeploiement, { now: Date.parse("2025-10-09T09:00:00Z") });
     expect(apres.errors[0].fingerprint).toBe(rows.errors[0].fingerprint);
+    // P5.1 — le snapshot gagne DÉLIBÉRÉMENT les colonnes de migration-v69. Cette
+    // fixture ne porte ni scope, ni service.name, ni traceId : l'émetteur est
+    // inconnu, donc chaque champ d'enveloppe reste NULL au lieu d'être deviné.
+    // Le type d'exception est désormais borné, sans changer cette empreinte.
+    expect(rows.errors[0]).toMatchObject({
+      trace_id: null,
+      source_parent_span_id: null,
+      error_source: null,
+      handled: null,
+      is_fatal: null,
+      env: null,
+      service: null,
+      fingerprint: "368e01a8",
+    });
     expect(rows.events[0].props).toEqual({ email: "[redacted]", plan: "pro" });
     // P1 : signal de frustration -> rum_event sous nom réservé 'frustration.<kind>'
     expect(rows.events[1].name).toBe("frustration.rage");

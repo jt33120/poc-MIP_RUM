@@ -28,6 +28,8 @@ function segmentApplies(pathname: string): boolean {
     pathname.startsWith("/pages") ||
     pathname.startsWith("/actions") ||
     pathname.startsWith("/sessions") ||
+    // P5.1 : la base filtrée des erreurs applique le segment à leur session.
+    pathname.startsWith("/errors") ||
     pathname.startsWith("/paths") ||
     pathname.startsWith("/forms") ||
     pathname.startsWith("/acquisition") ||

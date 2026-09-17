@@ -29,7 +29,7 @@ Limites à respecter, elles ne sont pas contournables :
 - LECTURE SEULE. Aucun outil ne modifie quoi que ce soit.
 - Trois fenêtres seulement : 1h, 24h, 7d. Aucun outil n'accepte de dates libres, et il n'existe pas d'historique plus profond ici.
 - Le périmètre dépend du jeton. Une app hors périmètre n'est pas refusée : la réponse porte alors sur une AUTRE app, et l'outil le signale explicitement. Lire cet avertissement avant de conclure.
-- Les listes historiques sont paginées sans total. L'Explorer d'événements fournit un total filtré et un curseur opaque stable.
+- La liste des sessions est paginée sans total. Les groupes d'erreurs et l'Explorer d'événements fournissent un total filtré ; le détail d'un groupe d'erreurs et l'Explorer paginent par curseur opaque stable (data.page.next_cursor).
 - Pas de données personnelles : les utilisateurs sont des empreintes anonymes.
 
 Si un chiffre demandé n'est dans aucune réponse, le dire — ne pas l'estimer.`;
@@ -97,7 +97,7 @@ export async function executer(outil, args, client) {
     const parts = [enMarkdown(outil.titre, corps)];
     if (page)
       parts.push(
-        `---\n\n_Pagination : ${page.recus} élément(s) reçu(s), offset ${page.offset}, limite ${page.limit}.` +
+        `---\n\n_Pagination : ${page.recus} élément(s) reçu(s)${page.offset == null ? "" : `, offset ${page.offset}`}, limite ${page.limit}.` +
           `${page.peut_avoir_suite ? (page.cursor_suivant ? ` Appeler de nouveau avec cursor=${page.cursor_suivant} pour la suite stable.` : ` Page pleine — appeler de nouveau avec offset=${page.offset_suivant} pour la suite.`) : " Page incomplète : c'est la fin."}` +
           `${page.total == null ? " L'API ne fournit pas de total." : ` Total filtré : ${page.total}.`}_`,
       );

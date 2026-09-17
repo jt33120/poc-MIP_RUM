@@ -12,10 +12,10 @@
 //      présentés comme ceux de l'app demandée) ;
 //   3. le rendu (un champ perdu se lit comme un zéro).
 import { describe, expect, it } from "vitest";
-import { OUTILS, construireChemin, outilParNom } from "../../apps/mcp/lib/catalogue.mjs";
+import { OUTILS, PARAMS, construireChemin, outilParNom } from "../../apps/mcp/lib/catalogue.mjs";
 import { ErreurApi, creerClient } from "../../apps/mcp/lib/client.mjs";
 import { avertissementPerimetre, enMarkdown, indicesPage } from "../../apps/mcp/lib/rendu.mjs";
-import { executer, schemaEntree } from "../../apps/mcp/serveur.mjs";
+import { INSTRUCTIONS, executer, schemaEntree } from "../../apps/mcp/serveur.mjs";
 
 const outil = (nom: string) => {
   const o = outilParNom(nom);
@@ -60,6 +60,16 @@ describe("catalogue — le contrat exposé à l'IA", () => {
     }
   });
 
+  // Le smoke Docker compte les identifiants `mip_rum_*` distincts de tools/list,
+  // descriptions comprises : un outil cité mais inexistant fausserait ce compte, et
+  // enverrait surtout le modèle vers un outil qu'il ne trouvera pas.
+  it("ne cite dans ses textes que des outils qui existent", () => {
+    const noms = new Set(OUTILS.map((o) => o.nom));
+    const textes = [INSTRUCTIONS, ...Object.values(PARAMS), ...OUTILS.map((o) => o.description)].join("\n");
+    const cites = [...new Set(textes.match(/mip_rum_[a-z_]*/g) ?? [])];
+    expect(cites.filter((nom) => !noms.has(nom))).toEqual([]);
+  });
+
   // La garantie centrale du serveur : aucun outil n'écrit. `POST /api/v1/deploys`
   // existe côté API et n'est délibérément pas exposé — ce test échoue si
   // quelqu'un l'ajoute sans y repenser.
@@ -96,6 +106,14 @@ describe("construireChemin", () => {
     expect(construireChemin(outil("mip_rum_get_error_group"), { fingerprint: "a/b?c" })).toBe(
       "/errors/a%2Fb%3Fc",
     );
+  });
+
+  it("transmet app, limite et curseur au détail d'un groupe d'erreurs", () => {
+    // Sans `app`, une empreinte partagée entre apps est refusée ; sans `cursor`, les
+    // occurrences au-delà de la première page seraient inaccessibles.
+    expect(construireChemin(outil("mip_rum_get_error_group"), {
+      fingerprint: "p51fp001", app: "gip", period: "7d", device: "tablet", limit: 50, cursor: "opaque_cursor",
+    })).toBe("/errors/p51fp001?app=gip&period=7d&device=tablet&limit=50&cursor=opaque_cursor");
   });
 
   it("refuse un segment de chemin manquant plutôt que de construire /errors/undefined", () => {
@@ -153,7 +171,7 @@ describe("avertissementPerimetre — le mensonge à ne pas laisser passer", () =
   });
 });
 
-describe("indicesPage — pagination sans total", () => {
+describe("indicesPage — pagination, avec ou sans total", () => {
   const page = (limit: number, offset: number, n: number) => ({
     sessions: Array.from({ length: n }, (_, i) => ({ id: i })),
     page: { limit, offset },
@@ -178,6 +196,32 @@ describe("indicesPage — pagination sans total", () => {
   // serait un chiffre faux présenté comme mesuré.
   it("laisse le total à null au lieu de l'inventer", () => {
     expect(indicesPage(page(2, 10, 2))?.total).toBeNull();
+  });
+
+  it("reprend le total mesuré des groupes d'erreurs, avec l'offset suivant", () => {
+    expect(indicesPage({
+      groups: [{ fingerprint: "a" }, { fingerprint: "b" }], trend: [{}, {}, {}],
+      total: 7, page: { limit: 2, offset: 4 },
+    })).toMatchObject({ recus: 2, peut_avoir_suite: true, offset_suivant: 6, cursor_suivant: null, total: 7 });
+  });
+
+  // `trend` est placé avant `occurrences` à dessein : deviner la liste par « le
+  // premier tableau venu » dépendrait de l'ordre des clés, et compterait alors les
+  // intervalles de la tendance comme des occurrences reçues.
+  it("compte les occurrences d'un détail paginé par curseur, sans inventer d'offset", () => {
+    const indices = indicesPage({
+      group: { occurrences: 38 }, last: null, trend: Array.from({ length: 25 }, () => ({})),
+      occurrences: [{ id: 2 }], page: { limit: 1, next_cursor: "opaque-next" },
+    });
+    expect(indices).toEqual({
+      limit: 1, offset: null, recus: 1, peut_avoir_suite: true,
+      offset_suivant: null, cursor_suivant: "opaque-next", total: null,
+    });
+  });
+
+  it("annonce la fin d'un détail quand la page n'est pas pleine", () => {
+    expect(indicesPage({ occurrences: [], trend: [], page: { limit: 100, next_cursor: null } }))
+      .toMatchObject({ peut_avoir_suite: false, offset_suivant: null, cursor_suivant: null });
   });
 
   it("ne renvoie rien pour un endpoint non paginé", () => {
@@ -342,6 +386,27 @@ describe("executer — de l'appel d'outil à la réponse", () => {
     expect(vus).toEqual(["/events?app=alpha&kind=event"]);
     expect(result.texte).toContain("cursor=opaque-next");
     expect(result.texte).toContain("Total filtré : 42");
+  });
+
+  it("guide la suite d'un détail d'erreur par curseur, sans parler d'offset", async () => {
+    const { client, vus } = clientFactice({
+      meta: { app: "alpha", period: "24h", device: "all", generatedAt: "2026-09-16T12:00:00.000Z" },
+      data: {
+        group: { app_id: "alpha", fingerprint: "p51fp001", occurrences: 38 },
+        last: null,
+        occurrences: [{ id: 2, links: { session: true } }],
+        trend: [],
+        page: { limit: 1, next_cursor: "opaque-next" },
+      },
+    });
+    const result = await executer(
+      outil("mip_rum_get_error_group"),
+      { fingerprint: "p51fp001", app: "alpha", limit: 1, format: "markdown" },
+      client,
+    );
+    expect(vus).toEqual(["/errors/p51fp001?app=alpha&limit=1"]);
+    expect(result.texte).toContain("cursor=opaque-next");
+    expect(result.texte).not.toMatch(/offset/);
   });
 
   it("propage l'erreur du client sans la maquiller", async () => {

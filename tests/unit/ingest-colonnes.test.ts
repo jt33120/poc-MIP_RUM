@@ -5,7 +5,7 @@
 // n'est pas le champ nouveau qui se perdrait, c'est TOUTE la télémétrie.
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — module JS sans types, importé tel quel par la route d'ingestion
-import { clauseConflitSession, colonnesInsert } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { clauseConflitSession, colonnesErreur, colonnesInsert } from "../../apps/ingest/lib/pg-ingest.mjs";
 
 const TOUTES = new Set(["collection_source", "release", "net_type"]);
 const AUCUNE = new Set<string>();
@@ -71,5 +71,37 @@ describe("clauseConflitSession", () => {
   // premier lot suivant qui ne porte pas l'attribut.
   it("ne met jamais collection_source à jour", () => {
     expect(clauseConflitSession(TOUTES) as string).not.toContain("collection_source");
+  });
+});
+
+describe("colonnesErreur", () => {
+  const SOCLE = [
+    "span_id", "session_id", "app_id", "route", "kind", "message", "error_type",
+    "stack", "source", "lineno", "colno", "release", "fingerprint",
+  ];
+  const ENVELOPPE_V69 = [
+    "trace_id", "source_parent_span_id", "error_source", "handled", "is_fatal", "context",
+    "view_id", "view_name", "user_id_hash", "account_id_hash", "env", "service",
+  ];
+
+  it("sur un schéma antérieur à v59, n'écrit que le socle", () => {
+    expect(colonnesErreur(AUCUNE)).toEqual([...SOCLE, "ts"]);
+  });
+
+  // v68 est la fenêtre réelle de P5.1 : code déployé, migration-v69 en attente.
+  it("sur v67/v68, ajoute occurrences et action_id mais aucune colonne v69", () => {
+    expect(colonnesErreur(new Set(["occurrences", "action_id"]))).toEqual([
+      ...SOCLE, "occurrences", "action_id", "ts",
+    ]);
+  });
+
+  it("sur v69, écrit toute l'enveloppe, `ts` restant la dernière colonne", () => {
+    expect(colonnesErreur(new Set(["occurrences", "action_id", ...ENVELOPPE_V69, "ingested_at", "id"]))).toEqual([
+      ...SOCLE, "occurrences", "action_id", ...ENVELOPPE_V69, "ts",
+    ]);
+  });
+
+  it("n'écrit jamais une colonne que la base ne porte pas, même à moitié migrée", () => {
+    expect(colonnesErreur(new Set(["trace_id", "context"]))).toEqual([...SOCLE, "trace_id", "context", "ts"]);
   });
 });

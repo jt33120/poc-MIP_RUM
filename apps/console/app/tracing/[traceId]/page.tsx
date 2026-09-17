@@ -26,14 +26,44 @@ function tierLabel(s: TraceSpanRow): string {
   return s.kind === "db" ? "base de données" : "interne";
 }
 
-export default async function TraceDetail({ params }: { params: Promise<{ traceId: string }> }) {
-  const { traceId } = await params;
-  const spans = await traceSpans(decodeURIComponent(traceId));
-  if (spans.length === 0) notFound();
+const SPAN_ID = /^[0-9a-f]{16}$/i;
 
-  // scoping viewer : la trace doit appartenir à une app autorisée
+function first(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+/**
+ * Apps dont la trace montre les spans. Un trace_id est émis par le client : deux
+ * tenants peuvent le partager, et le lien depuis une erreur de l'app A (P5.1) ne
+ * doit rien révéler de B. L'app demandée est donc bornée au périmètre signé ;
+ * hors périmètre, aucune app. Sans app demandée (ou « all »), un utilisateur
+ * restreint voit ses apps et un admin toute la trace, comme avant.
+ */
+function traceApps(requested: string | undefined, scope: string[] | null): string[] | null {
+  const app = requested && requested !== "all" ? requested : null;
+  if (!app) return scope;
+  return scope && !scope.includes(app) ? [] : [app];
+}
+
+export default async function TraceDetail({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ traceId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const [{ traceId: raw }, sp] = await Promise.all([params, searchParams]);
+  let traceId: string;
+  try {
+    traceId = decodeURIComponent(raw);
+  } catch {
+    notFound();
+  }
   const user = await getUser();
-  if (user?.apps && !spans.some((s) => user.apps!.includes(s.app_id))) notFound();
+  // Les spans hors périmètre ne sont jamais lus : une trace dont il ne reste rien
+  // est introuvable, sans dire si elle existe ailleurs.
+  const spans = await traceSpans(traceId, { apps: traceApps(first(sp.app), user?.apps ?? null) });
+  if (spans.length === 0) notFound();
 
   // profondeur : chaîne de parents si connue, sinon repli par tier
   const byId = new Map(spans.map((s) => [s.span_id, s]));
@@ -51,8 +81,16 @@ export default async function TraceDetail({ params }: { params: Promise<{ traceI
   const t0 = Math.min(...starts);
   const total = Math.max(Math.max(...ends) - t0, 1);
 
+  // ?span : le span parent d'une erreur (P5.1). Mis en évidence seulement s'il est
+  // parmi les spans affichés ; sinon on le dit, plutôt que de laisser croire que
+  // la trace ne contient pas le contexte attendu.
+  const spanParam = first(sp.span);
+  const wantedSpan = spanParam && SPAN_ID.test(spanParam) ? spanParam.toLowerCase() : null;
+  const highlighted = wantedSpan && byId.has(wantedSpan) ? wantedSpan : null;
+  const spanState = spanParam === undefined ? null : highlighted ? "found" : "missing";
+
   const front = spans.find((s) => s.tier === "front");
-  const sessionId = spans.find((s) => s.session_id)?.session_id ?? null;
+  const sessionSpan = spans.find((s) => s.session_id);
   const hasBackend = spans.some((s) => s.tier === "back" || s.tier === "detail");
   const rootMs = front?.duration_ms ?? total;
 
@@ -91,9 +129,14 @@ export default async function TraceDetail({ params }: { params: Promise<{ traceI
         <div className="card p-4">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Session</div>
           <div className="mt-1 text-sm font-medium">
-            {sessionId ? (
-              <Link href={`/sessions/${sessionId}`} className="font-mono text-xs text-brand hover:underline">
-                {sessionId.slice(0, 8)}…
+            {sessionSpan?.session_id ? (
+              // L'app du span accompagne le lien : la page session refuse une
+              // session d'une autre app que celle annoncée.
+              <Link
+                href={`/sessions/${encodeURIComponent(sessionSpan.session_id)}?app=${encodeURIComponent(sessionSpan.app_id)}`}
+                className="font-mono text-xs text-brand hover:underline"
+              >
+                {sessionSpan.session_id.slice(0, 8)}…
               </Link>
             ) : (
               <span className="text-ink-faint/60">—</span>
@@ -107,6 +150,21 @@ export default async function TraceDetail({ params }: { params: Promise<{ traceI
           Aucun span backend reçu pour cette trace — le navigateur voit l&apos;appel mais le serveur n&apos;est
           pas instrumenté. Déployez le middleware MIP (ou un agent OpenTelemetry) pour révéler la cause serveur.
         </div>
+      )}
+
+      {spanState && (
+        <p
+          role="status"
+          data-testid="trace-span-state"
+          data-span-state={spanState}
+          className={`mb-5 rounded-lg border px-4 py-3 text-sm ${
+            spanState === "found" ? "border-accent/40 bg-accent/10 text-ink" : "border-warn/40 bg-warn/10 text-ink-soft"
+          }`}
+        >
+          {spanState === "found"
+            ? "Span parent de l'erreur mis en évidence dans la chronologie."
+            : "Span parent introuvable dans cette trace"}
+        </p>
       )}
 
       {/* waterfall */}
@@ -124,7 +182,10 @@ export default async function TraceDetail({ params }: { params: Promise<{ traceI
             return (
               <li
                 key={s.span_id}
-                className="flex items-center gap-4 border-t border-line/60 px-4 py-2.5 first:border-t-0 hover:bg-panel2/50"
+                aria-current={s.span_id === highlighted ? "true" : undefined}
+                className={`flex items-center gap-4 border-t border-line/60 px-4 py-2.5 first:border-t-0 hover:bg-panel2/50 ${
+                  s.span_id === highlighted ? "bg-accent/10 ring-1 ring-inset ring-accent" : ""
+                }`}
               >
                 <div className="w-[38%] min-w-0" style={{ paddingLeft: `${depth * 14}px` }}>
                   <div className="flex items-center gap-1.5">

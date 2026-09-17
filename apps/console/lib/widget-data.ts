@@ -7,7 +7,7 @@ import type { Filters } from "./filters";
 import { fmtVital } from "./format";
 import { dailyTraffic } from "./queries-grid";
 import { topFrustrations } from "./queries-frustration";
-import { errorGroups } from "./queries-v2";
+import { listErrorGroups } from "./queries-errors";
 import { slowRoutes, vitalsP75 } from "./queries";
 import { eventCount } from "./queries-events";
 
@@ -53,13 +53,10 @@ export async function resolveWidget(w: Widget, f: Filters): Promise<WidgetData> 
         };
       }
       case "top_errors": {
-        const rows = (
-          await errorGroups({
-            app: f.app ?? "all",
-            period: f.period,
-            device: f.device ?? "all",
-          } as Parameters<typeof errorGroups>[0])
-        ).slice(0, 8);
+        // Même lecture que l'écran Erreurs, segment, bots et apps internes compris :
+        // la conversion vers le modèle v2 perdait ces trois filtres, et la tuile
+        // pouvait afficher un autre nombre que la liste qu'elle résume.
+        const { groups: rows } = await listErrorGroups(f, { limit: 8, offset: 0 });
         return {
           kind: "table",
           columns: ["Erreur", "Occurrences", "Sessions"],

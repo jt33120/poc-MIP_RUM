@@ -4,8 +4,13 @@ import { createSchemaCompatibleWriter } from "../../apps/ingest/supabase/functio
 
 const ACTION = "11111111-2222-4333-8444-555555555555";
 const retry = async <T>(fn: () => Promise<T>) => fn();
+// Colonnes rum_error ajoutées par migration-v69 (P5.1).
+const ENVELOPPE_V69 = [
+  "trace_id", "source_parent_span_id", "error_source", "handled", "is_fatal", "context",
+  "view_id", "view_name", "user_id_hash", "account_id_hash", "env", "service",
+];
 
-function fakeSupabase(version: 65 | 66 | 67) {
+function fakeSupabase(version: 65 | 66 | 67 | 68 | 69) {
   const calls: Array<{ table: string; batch: Record<string, unknown>[]; options: Record<string, unknown> }> = [];
   return {
     calls,
@@ -19,7 +24,11 @@ function fakeSupabase(version: 65 | 66 | 67) {
               "action_id", "timing_ms", "feature_flag_value",
             ];
             const eventOnly = p2.filter((key) => key !== "action_id");
-            if (!["rum_action", "rum_event", "rum_event_index"].includes(table) && eventOnly.some((key) => key in batch[0])) {
+            if (table === "rum_error" && version < 69) {
+              const key = ENVELOPPE_V69.find((candidate) => candidate in batch[0]);
+              if (key) return { error: { code: "PGRST204", message: `could not find ${key} column` } };
+            }
+            if (!["rum_action", "rum_event", "rum_event_index", "rum_error"].includes(table) && eventOnly.some((key) => key in batch[0])) {
               const key = eventOnly.find((candidate) => candidate in batch[0]);
               return { error: { code: "PGRST204", message: `could not find ${key} column` } };
             }
@@ -56,7 +65,7 @@ function collections() {
   };
   return {
     actions: [{ ...common, name: "Payer" }],
-    errors: [{ ...common, message: "boom" }],
+    errors: [{ ...common, message: "boom", trace_id: "b".repeat(32), error_source: "browser_js", handled: false }],
     resources: [{ ...common, url: "https://app.test/pay.js" }],
     breadcrumbs: [{ ...common, route: "/checkout", label: "Payer" }],
     spans: [{ ...common, name: "POST /pay" }],
@@ -75,7 +84,7 @@ describe("receiver Supabase v1-traces — compatibilité causale", () => {
 
     expect(db.calls[0].table).toBe("rum_action");
     expect(db.calls.filter((call) => call.table === "rum_action")).toHaveLength(1);
-    for (const table of ["rum_error", "rum_resource", "rum_breadcrumb", "rum_span"]) {
+    for (const table of ["rum_resource", "rum_breadcrumb", "rum_span"]) {
       const attempts = db.calls.filter((call) => call.table === table);
       expect(attempts).toHaveLength(2);
       expect(attempts[0].batch[0]).toHaveProperty("action_id", ACTION);
@@ -83,6 +92,18 @@ describe("receiver Supabase v1-traces — compatibilité causale", () => {
       expect(attempts[0].batch[0]).not.toHaveProperty("context");
       expect(attempts[0].batch[0]).not.toHaveProperty("user_id_hash");
     }
+    // P5.1 : rum_error porte désormais contexte et identités (v69). Son repli
+    // procède par PALIERS — l'enveloppe v69 d'abord, action_id ensuite — et
+    // aboutit sur v66 à la même ligne qu'avant.
+    const errorAttempts = db.calls.filter((call) => call.table === "rum_error");
+    expect(errorAttempts).toHaveLength(3);
+    expect(errorAttempts[0].batch[0]).toMatchObject({
+      action_id: ACTION, context: { dossier: "client" }, user_id_hash: "a".repeat(64), trace_id: "b".repeat(32),
+    });
+    expect(errorAttempts[1].batch[0]).toHaveProperty("action_id", ACTION);
+    for (const key of ENVELOPPE_V69) expect(errorAttempts[1].batch[0]).not.toHaveProperty(key);
+    expect(errorAttempts[2].batch[0]).not.toHaveProperty("action_id");
+    expect(errorAttempts[2].batch[0]).toMatchObject({ span_id: "00000000000000a1", message: "boom" });
     expect(db.calls.find((call) => call.table === "rum_event")?.batch[0])
       .toMatchObject({ event_type: "custom", context: { dossier: "client" } });
     const breadcrumbFallback = db.calls.filter((call) => call.table === "rum_breadcrumb")[1];
@@ -110,21 +131,46 @@ describe("receiver Supabase v1-traces — compatibilité causale", () => {
     expect(indexes[1].batch[0]).not.toHaveProperty("action_id");
   });
 
-  it("sur v67 écrit d'abord la racine et conserve tous les liens et la route", async () => {
-    const db = fakeSupabase(67);
+  // v68 est la fenêtre réelle de P5.1 : code déployé, migration-v69 pas encore
+  // appliquée. Le repli ne doit retirer QUE l'enveloppe, jamais action_id.
+  it.each([67, 68] as const)("sur v%i écrit d'abord la racine et conserve tous les liens et la route", async (version) => {
+    const db = fakeSupabase(version);
     const writer = createSchemaCompatibleWriter(db.client, { retry, onRetry() {} });
     const rows = collections();
 
     await writer.writeTraceCollections(rows);
 
     expect(db.calls.map((call) => call.table)).toEqual([
-      "rum_action", "rum_event", "rum_error", "rum_resource", "rum_breadcrumb", "rum_span", "rum_event_index",
+      "rum_action", "rum_event", "rum_error", "rum_error", "rum_resource", "rum_breadcrumb", "rum_span", "rum_event_index",
     ]);
+    const errorFallback = db.calls.filter((call) => call.table === "rum_error")[1];
+    expect(errorFallback.batch[0]).toMatchObject({ action_id: ACTION, message: "boom" });
+    for (const key of ENVELOPPE_V69) expect(errorFallback.batch[0]).not.toHaveProperty(key);
     expect(db.calls.find((call) => call.table === "rum_breadcrumb")?.batch[0])
       .toMatchObject({ action_id: ACTION, route: "/checkout" });
     expect(db.calls.find((call) => call.table === "rum_action")?.options)
       .toMatchObject({ onConflict: "action_id", ignoreDuplicates: true });
     expect(db.calls.find((call) => call.table === "rum_event_index")?.batch[0])
       .toMatchObject({ action_id: ACTION, source_name: "frustration.error" });
+  });
+
+  it("sur v69 écrit l'enveloppe en un essai, avec un contexte vide explicite", async () => {
+    const db = fakeSupabase(69);
+    const writer = createSchemaCompatibleWriter(db.client, { retry, onRetry() {} });
+    const rows = collections();
+    const sansContexte: Record<string, unknown> = { ...rows.errors[0], span_id: "00000000000000a2", message: "sans contexte" };
+    delete sansContexte.context;
+
+    await writer.writeCausalChildren({ ...rows, errors: [rows.errors[0], sansContexte] });
+
+    const errorAttempts = db.calls.filter((call) => call.table === "rum_error");
+    expect(errorAttempts).toHaveLength(1);
+    expect(errorAttempts[0].batch[0]).toMatchObject({
+      action_id: ACTION, trace_id: "b".repeat(32), error_source: "browser_js", handled: false,
+      context: { dossier: "client" }, user_id_hash: "a".repeat(64),
+    });
+    // Un upsert en masse enverrait NULL pour la clé absente : le NOT NULL de
+    // v69 ferait alors échouer tout le lot.
+    expect(errorAttempts[0].batch[1]).toMatchObject({ message: "sans contexte", context: {} });
   });
 });

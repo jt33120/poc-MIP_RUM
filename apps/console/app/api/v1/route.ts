@@ -18,6 +18,7 @@
 import { handle } from "@/lib/api/handle";
 import { endpointsDeclares } from "@/lib/api/openapi";
 import { preflight } from "@/lib/api/respond";
+import { OUTILS } from "../../../../mcp/lib/catalogue.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -32,12 +33,14 @@ export const GET = handle(async () => ({
     device: "mobile | desktop | tablet | all (défaut)",
   },
   pagination:
-    "les listes (/errors, /sessions, /events, /actions) acceptent limit (1..200) & offset ; /events et /actions bornent offset à 10 000. page renvoyée dans data.page. Aucun total n'est fourni.",
+    "les listes (/errors, /sessions, /events, /actions) acceptent limit (1..200) & offset ; /errors, /events et /actions bornent offset à 10 000. page renvoyée dans data.page. /errors et /events fournissent un total (data.total) ; /sessions et /actions n'en fournissent aucun. /errors/{fingerprint} pagine ses occurrences par cursor (data.page.next_cursor), limit 1..100 ; /events accepte aussi cursor.",
   spec: "/api/v1/openapi (OpenAPI 3.0, sans auth)",
   docs: "/api/v1/docs (Swagger UI, sans auth)",
   mcp: {
     description:
-      "Ces mêmes endpoints sont exposés en outils MCP pour un agent IA (11 outils, lecture seule). Le serveur MCP relaie le jeton de l'appelant : il n'élargit aucun droit.",
+      // Compté sur le catalogue réellement enregistré : écrit en dur, ce nombre
+      // annonçait encore 11 outils après l'ajout du douzième.
+      `Ces mêmes endpoints sont exposés en outils MCP pour un agent IA (${OUTILS.length} outils, lecture seule). Le serveur MCP relaie le jeton de l'appelant : il n'élargit aucun droit.`,
     doc: "docs/MCP.md",
   },
   endpoints: endpointsDeclares(),
