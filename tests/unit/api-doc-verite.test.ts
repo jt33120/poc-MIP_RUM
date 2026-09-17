@@ -116,7 +116,14 @@ describe("aucune route réelle n'est passée sous silence", () => {
     // listes sont donc tenues séparément, et toutes deux exactes : une route non-GET
     // qui n'apparaît dans ni l'une ni l'autre est une route mal classée.
     const LECTURES_EN_POST = ["POST /api/v1/explorer/query"];
+    // P6.5 en ajoute trois, PERSONNELLES et non administratives : une vue
+    // enregistrée appartient à un compte, et son propriétaire — viewer compris —
+    // l'écrit dans son périmètre. Les ranger avec le triage d'issue dirait à un
+    // client qu'il lui faut le rôle admin, ce qui est faux.
     const ECRITURES = [
+      "POST /api/v1/explorer/views",
+      "PATCH /api/v1/explorer/views/{id}",
+      "DELETE /api/v1/explorer/views/{id}",
       "POST /api/v1/deploys",
       "POST /api/v1/issues/{id}/triage",
       "POST /api/v1/issues/{id}/comments",

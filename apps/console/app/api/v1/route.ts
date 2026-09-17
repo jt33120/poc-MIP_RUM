@@ -64,11 +64,18 @@ export const GET = handle(async () => ({
       "Le corps est un AST versionné : dataset, measure {aggregation, field}, range {preset} OU {from,to}, " +
       "filters, groupBy (2 au plus), visualization et limit. Un budget de lecture dépassé rend 503 " +
       "query_budget_exceeded — jamais un résultat à zéro.",
+    views:
+      "GET /api/v1/explorer/views — vues enregistrées de la SESSION (et, pour un admin, celles de ses apps). " +
+      "Un jeton CONSOLE_API_TOKENS est refusé (403) : une vue est personnelle. Écritures dans `write`.",
   },
   // Écritures : hors de l'énumération ci-dessus, qui décrit la lecture. Signalées
   // explicitement plutôt que passées sous silence. Celles des issues exigent une
-  // session admin de la console et refusent tout jeton d'API.
+  // session admin de la console et refusent tout jeton d'API ; celles des vues
+  // enregistrées sont PERSONNELLES — leur propriétaire suffit, viewer compris.
   write: [
+    { method: "POST", path: "/api/v1/explorer/views", desc: "enregistre une analyse comme vue personnelle (session, 50 par app)" },
+    { method: "PATCH", path: "/api/v1/explorer/views/{id}", desc: "renomme une vue ou remplace son AST (propriétaire, expectedRevision)" },
+    { method: "DELETE", path: "/api/v1/explorer/views/{id}", desc: "supprime une vue (propriétaire seul)" },
     { method: "POST", path: "/api/v1/deploys", desc: "enregistre un marqueur de déploiement (intégration CI/CD)" },
     { method: "POST", path: "/api/v1/issues/{id}/triage", desc: "statut et assigné d'une issue (session admin, expectedRevision)" },
     { method: "POST", path: "/api/v1/issues/{id}/comments", desc: "commentaire scrubbé sur une issue (session admin, expectedRevision)" },

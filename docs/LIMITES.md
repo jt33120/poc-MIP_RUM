@@ -2,6 +2,26 @@
 
 Liste honnête, demandée par Julian. Colonne « v0.2 » = traité dans le sprint nuit du 10→11/06 (cf. archive/ROADMAP_V02.md) ; « v0.3 » = sprint nuit 2 (cf. archive/ROADMAP_V03.md et la section ci-dessous) ; « Phase 1+ » = nécessite un vrai chantier produit MIP.
 
+## Mise à jour P6.5 (18/09/2026 — tableaux de bord graphiques et vues enregistrées)
+
+Ce que les bornes valent, et ce qu'elles n'ouvrent pas. Toutes sont appliquées avant SQL, et chacune a son test.
+
+| Borne | Valeur | Ce qu'elle signifie |
+|---|---|---|
+| Cartes par tableau de bord | 24 | Inchangé depuis P1. Une carte illisible **compte** : elle n'est pas supprimée pour faire de la place. |
+| Fenêtre propre d'une carte (`rangeOverride`) | preset glissant, ou 30 jours au plus | Elle est **affichée sur la carte**. Sans elle, la carte suit la fenêtre de l'écran — et le dit aussi. Elle n'étend jamais la rétention. |
+| Conditions d'une carte | 10 au total (AST + carte) | Les filtres de la carte s'**ajoutent** à ceux de l'écran ; ils ne remplacent rien. Les drapeaux robots / apps internes ne peuvent que **restreindre** la population globale, jamais la rouvrir. |
+| Lectures simultanées d'une grille | 4 | Vingt-quatre cartes lancées ensemble épuiseraient le pool de connexions. Aucun rafraîchissement automatique : pas de 24 requêtes lourdes toutes les 5 s. |
+| Cache d'une grille | 10 s, 200 entrées, clé incluant le périmètre effectif | Deux cartes identiques ne posent la question qu'une fois. Une réponse calculée pour A ne peut pas servir à B. |
+| Export CSV | 10 000 lignes, plafond **global** | La troncature est **écrite dans le fichier** : un export tronqué ne doit pas passer pour l'inventaire complet. Une cellule commençant par `=`, `+`, `-` ou `@` est préfixée d'une apostrophe — jamais une formule exécutée par un tableur. |
+| Vues enregistrées | 50 par compte **et** par app, nom ≤ 100 caractères, AST ≤ 32 Kio | Le plafond est compté dans la transaction d'écriture, derrière un verrou : deux onglets ne peuvent pas passer à 51 chacun. |
+
+Ce que P6.5 ne fait **pas** : aucun éditeur de formule libre (les représentations sont `value`, `toplist`,
+`timeseries`, `table`, et rien d'autre) ; aucune vue publique ni partage app-wide — une vue enregistrée
+appartient à un compte et à **une app nommée**, faute de quoi la même vue mesurerait une population
+différente selon son lecteur ; aucun export PDF par service tiers (impression de la vue existante) ;
+aucun agrégat pré-calculé ni budget de lecture mesuré — c'est P6.6.
+
 ## Mise à jour P6.3 (17/09/2026 — analyses prêtes à l'emploi et drill-downs)
 
 Ce que les nouveaux chiffres mesurent EXACTEMENT, et ce qu'ils ne mesurent pas. Chaque définition est

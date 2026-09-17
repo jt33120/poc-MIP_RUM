@@ -7,7 +7,7 @@ import { pageFilters } from "@/lib/page-filters";
 import { listDashboards } from "@/lib/queries-dashboards";
 import { registeredApps } from "@/lib/queries";
 import { getUser } from "@/lib/auth";
-import { canCreateDashboard, dashboardApps } from "@/lib/dashboard-access";
+import { canCreateDashboard, dashboardApps, dashboardPrincipal, ownerLabel } from "@/lib/dashboard-access";
 import { hrefWithQuery } from "@/lib/query-contract";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { createDashboardAction } from "./actions";
@@ -19,7 +19,7 @@ export default async function Dashboards({
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
-  const user = await getUser();
+  const user = await dashboardPrincipal(await getUser());
   // L'accès normal est garanti par le middleware. Ne pas afficher une liste
   // vide à un visiteur sans session évite néanmoins d'exposer ses métadonnées.
   if (!user) return null;
@@ -79,6 +79,7 @@ export default async function Dashboards({
             <tr>
               <th className="th text-left">Nom</th>
               <th className="th text-left">App</th>
+              <th className="th text-left">Propriétaire</th>
               <th className="th text-right">Widgets</th>
               <th className="th text-right">Mise à jour</th>
             </tr>
@@ -92,6 +93,7 @@ export default async function Dashboards({
                   </Link>
                 </td>
                 <td className="px-3 py-2 text-ink-soft">{d.app_id ?? "toutes"}</td>
+                <td className="px-3 py-2 text-ink-soft">{ownerLabel(d, user)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{d.layout.length}</td>
                 <td className="px-3 py-2 text-right text-xs tabular-nums text-ink-soft">
                   {fmtDate(d.updated_at)}
@@ -100,7 +102,7 @@ export default async function Dashboards({
             ))}
             {!dashboards.length && (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-sm text-ink-faint">
+                <td colSpan={5} className="px-3 py-6 text-center text-sm text-ink-faint">
                   Aucun tableau de bord — crée le premier ci-dessus.
                 </td>
               </tr>

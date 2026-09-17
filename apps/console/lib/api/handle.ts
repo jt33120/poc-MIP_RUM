@@ -9,7 +9,7 @@ import { bodyTooLarge } from "ingest/shared/limits.mjs";
 import { SESSION_COOKIE, type SessionUser } from "../auth";
 import { forwardLog } from "../log-forward";
 import { traceFields } from "../server-trace-core";
-import { guardAdmin } from "./admin";
+import { guardAdmin, guardSession } from "./admin";
 import { type ApiPrincipal, authenticateApi } from "./auth";
 import { UnsupportedFilterError } from "../query-compiler";
 import { ExplorerBudgetError, UnsupportedExplorerDimension } from "../analytics-schema";
@@ -275,14 +275,34 @@ export interface ApiMutationResult {
 /** Corps JSON d'une mutation : quelques kilo-octets suffisent à un commentaire de 2 000 caractères. */
 const MUTATION_MAX_BYTES = 16 * 1024;
 
+export interface MutationOptions {
+  /**
+   * `admin` (défaut) : mutations d'administration, réservées au rôle admin.
+   * `session` : écriture PERSONNELLE, ouverte à toute session non démo — le
+   * périmètre et la propriété sont vérifiés par la ressource elle-même.
+   */
+  role?: "admin" | "session";
+  /** `false` : la méthode n'a pas de corps (DELETE), et `body` vaut alors null. */
+  body?: boolean;
+  /** Corps accepté, en octets. Défaut : 16 Kio. */
+  maxBytes?: number;
+}
+
 /**
- * Construit un handler POST de l'API v1 réservé aux mutations d'un humain :
+ * Construit un handler d'ÉCRITURE de l'API v1, réservé à un humain connecté :
  * 401 sans authentification ; 403 pour un jeton CONSOLE_API_TOKENS (lecture
- * seule), une session viewer ou démo, ou une Origin étrangère (CSRF) ; 429 au-delà
- * du débit ; 413 au-delà de 16 Kio ; 400 si le corps n'est pas du JSON. `/api/v1`
- * contourne le middleware : ces gardes sont donc TOUTES ici. Réponse `{ meta, data }`.
+ * seule), une session démo, une Origin étrangère (CSRF) et, en mode `admin`, une
+ * session viewer ; 429 au-delà du débit ; 413 au-delà de la taille ; 400 si le
+ * corps n'est pas du JSON. `/api/v1` contourne le middleware : ces gardes sont
+ * donc TOUTES ici. Réponse `{ meta, data }`.
  */
-export function handleMutation(fn: (ctx: ApiMutationContext) => Promise<ApiMutationResult>) {
+export function handleMutation(
+  fn: (ctx: ApiMutationContext) => Promise<ApiMutationResult>,
+  options: MutationOptions = {},
+) {
+  const attendCorps = options.body !== false;
+  const maxBytes = options.maxBytes ?? MUTATION_MAX_BYTES;
+  const tropGros = `corps de requête trop volumineux (${Math.floor(maxBytes / 1024)} Kio au plus)`;
   return async (req: NextRequest, route: RouteCtx) => {
     const cookie = req.cookies.get(SESSION_COOKIE)?.value ?? null;
     const principal = await authenticateApi(req.headers.get("authorization"), cookie);
@@ -290,7 +310,10 @@ export function handleMutation(fn: (ctx: ApiMutationContext) => Promise<ApiMutat
       return apiError(req, 401, "authentification requise (session de la console)");
     if (principal.kind === "token")
       return apiError(req, 403, "jeton d'API en lecture seule : mutation refusée");
-    const garde = await guardAdmin(req.headers, cookie, { mutation: true });
+    const garde =
+      options.role === "session"
+        ? await guardSession(req.headers, cookie, { mutation: true })
+        : await guardAdmin(req.headers, cookie, { mutation: true });
     if (!garde.ok) return apiError(req, garde.status, garde.error);
 
     const limit = rlLimit();
@@ -304,18 +327,18 @@ export function handleMutation(fn: (ctx: ApiMutationContext) => Promise<ApiMutat
       }
     }
 
-    if (bodyTooLarge(req.headers.get("content-length"), MUTATION_MAX_BYTES))
-      return apiError(req, 413, "corps de requête trop volumineux (16 Kio au plus)");
-    if (!req.body) return apiError(req, 400, "corps JSON requis");
-    let body: unknown;
-    try {
-      // Le ReadableStream web de Node est itérable de façon asynchrone.
-      const flux = req.body as unknown as AsyncIterable<Uint8Array>;
-      body = JSON.parse((await lireCorpsLimite(flux, { max: MUTATION_MAX_BYTES })).toString("utf8"));
-    } catch (e) {
-      if (e instanceof ErreurUpload && e.statut === 413)
-        return apiError(req, 413, "corps de requête trop volumineux (16 Kio au plus)");
-      return apiError(req, 400, "corps JSON invalide");
+    let body: unknown = null;
+    if (attendCorps) {
+      if (bodyTooLarge(req.headers.get("content-length"), maxBytes)) return apiError(req, 413, tropGros);
+      if (!req.body) return apiError(req, 400, "corps JSON requis");
+      try {
+        // Le ReadableStream web de Node est itérable de façon asynchrone.
+        const flux = req.body as unknown as AsyncIterable<Uint8Array>;
+        body = JSON.parse((await lireCorpsLimite(flux, { max: maxBytes })).toString("utf8"));
+      } catch (e) {
+        if (e instanceof ErreurUpload && e.statut === 413) return apiError(req, 413, tropGros);
+        return apiError(req, 400, "corps JSON invalide");
+      }
     }
 
     try {

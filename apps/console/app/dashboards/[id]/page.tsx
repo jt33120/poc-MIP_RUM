@@ -12,17 +12,21 @@ import { registeredApps } from "@/lib/queries";
 import { getUser } from "@/lib/auth";
 import {
   canCreateDashboard,
-  canMutateDashboard,
+  canDashboardAction,
   dashboardApps,
   dashboardFilters,
+  dashboardPrincipal,
   getAccessibleDashboard,
+  ownerLabel,
 } from "@/lib/dashboard-access";
 import { pageFilters } from "@/lib/page-filters";
 import { queryOf } from "@/lib/filters";
-import { hrefWithQuery } from "@/lib/query-contract";
-import { resolveWidget } from "@/lib/widget-data";
+import { fuseauDe } from "@/lib/fuseau";
+import { hrefWithQuery, queryToSearchParams } from "@/lib/query-contract";
+import { resolveWidgets } from "@/lib/widget-data";
 import {
   addWidgetAction,
+  cloneDashboardAction,
   deleteDashboardAction,
   renameDashboardAction,
 } from "../actions";
@@ -42,23 +46,33 @@ export default async function D({
 }) {
   const { id } = await params;
   const idNum = Number(id);
-  const user = await getUser();
+  const user = await dashboardPrincipal(await getUser());
   const dash = Number.isInteger(idNum) ? await getAccessibleDashboard(idNum, user) : null;
   if (!dash) notFound();
 
-  const ecran = await pageFilters((await searchParams) ?? {}, `/dashboards/${dash.id}`);
+  const sp = (await searchParams) ?? {};
+  const ecran = await pageFilters(sp, `/dashboards/${dash.id}`);
   if (!ecran.ok) return <FilterProblemNotice title={dash.name} problem={ecran.problem} />;
   const f = dashboardFilters(dash, ecran.query, user);
   if (!f) notFound();
-  const data = await Promise.all(dash.layout.map((w) => resolveWidget(w, f)));
+
+  const timeZone = await fuseauDe(ecran.query.scope.requestedApp);
+  // Quatre lectures à la fois, dans l'ordre de la grille. Vingt-quatre cartes
+  // lancées ensemble épuiseraient le pool de connexions de la console.
+  const data = await resolveWidgets(dash.layout, { filters: f, timeZone, nowMs: Date.now() });
   const apps = dashboardApps(await registeredApps(), user);
 
+  const contexte = queryToSearchParams(ecran.query).toString();
   const exportHref = hrefWithQuery(`/api/dashboards/${dash.id}/export`, ecran.query);
   const scope = dash.app_id ?? "toutes les apps";
-  const editable = canMutateDashboard(user, dash);
+  const editable = canDashboardAction(user, dash, "rename");
+  const clonable = canDashboardAction(user, dash, "clone");
   const canUseGlobal = canCreateDashboard(user, null);
   // Intersection vide : le tableau de bord porte sur une autre app que celle de l'écran.
   const horsPerimetre = queryOf(f).scope.effectiveApps?.length === 0;
+  const conflit = sp.conflit === "1";
+  const refus = sp.refus === "1";
+  const invalides = dash.layout.filter((w) => w.kind === "invalid").length;
 
   return (
     <div className="animate-fade-up">
@@ -66,7 +80,7 @@ export default async function D({
         title={dash.name}
         sub={
           <>
-            Scope : {scope} · {ecran.label}
+            Scope : {scope} · Propriétaire : {ownerLabel(dash, user)} · {ecran.label}
             {ecran.query.filters.device ? ` · ${ecran.query.filters.device}` : ""}
           </>
         }
@@ -74,16 +88,53 @@ export default async function D({
         <Link href="/dashboards" className="btn-ghost">
           ← Tous
         </Link>
+        {clonable && (
+          <form action={cloneDashboardAction}>
+            <input type="hidden" name="id" value={dash.id} />
+            <button type="submit" data-testid="clone-dashboard" className="btn-ghost">
+              Dupliquer
+            </button>
+          </form>
+        )}
         <a href={exportHref} className="btn-ghost" data-testid="export-csv">
           Export CSV
         </a>
         <PrintButton />
       </PageHeader>
 
+      {conflit && (
+        <p
+          role="alert"
+          data-testid="dashboard-conflit"
+          className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft"
+        >
+          Ce tableau de bord a changé depuis son affichage : rien n’a été écrit, pour ne pas effacer la modification
+          d’un autre onglet. Cette page montre maintenant la version à jour — refaire le geste si nécessaire.
+        </p>
+      )}
+      {refus && (
+        <p
+          role="alert"
+          data-testid="dashboard-refus"
+          className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft"
+        >
+          Modification refusée : la valeur soumise n’est pas applicable à cette carte. Rien n’a été écrit.
+        </p>
+      )}
+
       {horsPerimetre && (
         <p role="status" data-testid="dashboard-hors-perimetre" className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
           Ce tableau de bord porte sur {dash.app_id}, hors de l&apos;app sélectionnée : ses widgets ne remplacent pas
           l&apos;app de l&apos;écran et restent vides. Change de projet pour le lire.
+        </p>
+      )}
+
+      {invalides > 0 && (
+        <p role="status" data-testid="dashboard-invalides" className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
+          {invalides === 1 ? "Une carte n’est pas lisible" : `${invalides} cartes ne sont pas lisibles`} : leur
+          configuration est conservée telle quelle et affichée en diagnostic. {editable
+            ? "La corriger revient à la retirer puis à l’enregistrer de nouveau depuis l’Explorer."
+            : "Un administrateur de cette app peut la corriger."}
         </p>
       )}
 
@@ -96,14 +147,18 @@ export default async function D({
               id={dash.id}
               index={i}
               count={dash.layout.length}
-              title={w.title}
+              widget={w}
               data={data[i]}
+              revision={dash.revision}
+              ctx={contexte}
+              editable={editable}
             />
           ))}
         </div>
       ) : (
         <p className="card px-4 py-8 text-center text-sm text-ink-faint">
-          Aucun widget — ajoute-en via « Éditer le tableau de bord » ci-dessous.
+          Aucun widget — ajoute-en via « Éditer le tableau de bord » ci-dessous, ou enregistre une analyse depuis
+          l&apos;Explorer.
         </p>
       )}
 
@@ -116,6 +171,8 @@ export default async function D({
           {/* Ajouter un widget */}
           <form action={addWidgetAction} className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="id" value={dash.id} />
+            <input type="hidden" name="revision" value={dash.revision} />
+            <input type="hidden" name="ctx" value={contexte} />
             <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
               Type
               <select name="type" defaultValue={WIDGET_TYPES[0]} className={INPUT_CLASS}>
@@ -145,9 +202,20 @@ export default async function D({
             </button>
           </form>
 
+          <p className="text-xs text-ink-faint">
+            Pour une analyse libre (jeu de données, mesure, regroupement, représentation), la composer dans
+            l&apos;
+            <Link href={hrefWithQuery("/explorer", ecran.query)} className="text-accent hover:underline">
+              Explorer
+            </Link>{" "}
+            puis l&apos;enregistrer sur ce tableau de bord.
+          </p>
+
           {/* Renommer / re-scoper */}
           <form action={renameDashboardAction} className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="id" value={dash.id} />
+            <input type="hidden" name="revision" value={dash.revision} />
+            <input type="hidden" name="ctx" value={contexte} />
             <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
               Nom
               <input
