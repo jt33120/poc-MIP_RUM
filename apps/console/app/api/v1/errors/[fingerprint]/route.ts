@@ -9,6 +9,7 @@
 // de choisir à la place du client.
 import { handle } from "@/lib/api/handle";
 import { ApiHttpError, preflight } from "@/lib/api/respond";
+import { exemplarSymbolication } from "@/lib/error-symbolication";
 import {
   errorDeviceFrom,
   errorGroupDetail,
@@ -67,9 +68,16 @@ export const GET = handle(async ({ principal, filters, searchParams, params }) =
   // une autre — une réponse qui contredit sa propre enveloppe. `handle` construit
   // `meta` après ce retour, à partir de cet objet.
   filters.app = ref.app_id;
+  // Stack source (P5.4) : celle de l'ingestion, sinon symbolisée à la lecture si
+  // une map est arrivée depuis. Champs ajoutés, `stack` reste la stack brute.
+  const symbolication = await exemplarSymbolication(ref.app_id, detail.last);
   return {
     group: detail.group,
-    last: detail.last,
+    last: detail.last && {
+      ...detail.last,
+      stack_symbolicated: symbolication?.stack_symbolicated ?? null,
+      symbolication_status: symbolication?.symbolication_status ?? null,
+    },
     occurrences: detail.occurrences,
     trend: detail.trend,
     page: detail.page,

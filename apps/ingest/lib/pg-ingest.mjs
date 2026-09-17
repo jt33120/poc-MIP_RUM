@@ -11,6 +11,7 @@
 // Aucune dépendance à Deno ni à supabase-js : `pg` et rien d'autre.
 import { createHash } from "node:crypto";
 import { isNativeSpanId } from "../supabase/functions/_shared/otlp.mjs";
+import { symbolicateurIngestion } from "./error-symbolication.mjs";
 
 // ───────────────────────────── Écriture ─────────────────────────────
 
@@ -117,6 +118,8 @@ const OPTIONNELLES_ERREUR = [
   "view_id", "view_name", "user_id_hash", "account_id_hash", "env", "service",
   // v70 (P5.3) : origine d'une exception dérivée d'un span ou d'un log.
   "origin_signal", "exception_id",
+  // v71 (P5.4) : résultat de la symbolication faite avant l'écriture.
+  "symbolication_status", "stack_symbolicated",
 ];
 
 /**
@@ -137,6 +140,9 @@ export function colonnesErreur(dispo) {
 
 /** Lignes par INSERT rum_error : très en deçà des 65 535 paramètres d'une requête. */
 const ERREURS_PAR_INSERT = 1000;
+
+/** Sources dont la stack n'est pas du JavaScript livré (miroir de stackSymbolisable côté console). */
+const STACK_BACKEND = new Set(["node", "python", "otel", "native"]);
 
 /**
  * Rattache chaque exception dérivée à la session qu'elle déclare, SI cette
@@ -392,6 +398,10 @@ async function indexAvecVitalsConsolides(client, eventIndex, metrics) {
  * Écrit un lot OTLP aplati (sortie de flattenOtlp) dans une TRANSACTION unique.
  * Idempotent au rejeu : `on conflict do nothing` partout, `greatest` sur les
  * horodatages de session — c'est ce qui autorise le retry côté appelant.
+ *
+ * Les erreurs sont symboliquées AVANT la transaction (migration-v71 appliquée
+ * seulement) : charger une source map de plusieurs Mio ne doit pas prolonger un
+ * verrou d'écriture, et un échec de symbolication n'annule jamais le lot.
  * @returns {Promise<{erreurs: {recues: number, inserees: number, ignorees: number}}>}
  */
 export async function writeRows(pool, {
@@ -409,9 +419,13 @@ export async function writeRows(pool, {
   sviCalls,
   sviSteps,
   sviLegs,
-}) {
+}, { symbolicateur = symbolicateurIngestion } = {}) {
   const client = await pool.connect();
   try {
+    const erreurDispo = errors.length ? await colonnesDe(client, "rum_error") : null;
+    const symbolications = erreurDispo?.has("symbolication_status")
+      ? await symbolicateur.symboliquerLot(client, errors)
+      : null;
     await client.query("begin");
     // Colonnes optionnelles : présentes une fois la migration passée, ignorées
     // avant. Le reste du lot part normalement dans les deux cas.
@@ -457,8 +471,16 @@ export async function writeRows(pool, {
       );
     }
     // Après les sessions du lot : une exception backend qui revendique l'une
-    // d'elles la trouve déjà écrite.
-    const erreurs = await ecrireErreurs(client, errors);
+    // d'elles la trouve déjà écrite. La symbolication, calculée avant la
+    // transaction, voyage avec chaque ligne : le filtrage pré-v70 et le
+    // rattachement de session d'ecrireErreurs ne peuvent donc pas la décaler.
+    // Jamais sur une stack backend (P5.3) : une map navigateur n'en décrit aucune
+    // frame.
+    const erreurs = await ecrireErreurs(client, symbolications
+      ? errors.map((e, i) => (STACK_BACKEND.has(e.error_source)
+        ? e
+        : { ...e, symbolication_status: symbolications[i]?.status ?? null, stack_symbolicated: symbolications[i]?.stack ?? null }))
+      : errors);
     const resourceDispo = await colonnesDe(client, "rum_resource");
     await batchInsert(
       client,

@@ -220,6 +220,12 @@ vient d'ouvrir.
 - `last` : dernière occurrence de la fenêtre filtrée (stack, release, `source:lineno:colno`, `route`,
   `view_name`, `trace_id`, `source_parent_span_id`, `error_source`, `handled`, `is_fatal`, `env`,
   `service`, `action_id`). `null` si aucune.
+- `last.stack_symbolicated` / `last.symbolication_status` (P5.4) : stack réécrite en positions source
+  par les source maps de la release, scrubbed. Écrite à l'ingestion, ou calculée à la lecture quand la
+  map a été mise en ligne après l'erreur — sans changer `fingerprint`. `stack` reste la stack brute.
+  Statuts : `resolved` ; `unavailable` (aucune map pour la release, ou positions absentes) ; `failed`
+  (map inutilisable) ; `pending` (budget d'ingestion épuisé) ; `null` sans frame JavaScript. Le code
+  source des maps n'est jamais exposé par l'API.
 - `occurrences` : de la plus récente à la plus ancienne (`ts`, `id`), chacune avec ses propres `ts`,
   `release`, `device_type`, `trace_id`… et ses `links` :
   `session` (une session de la même app existe), `replay` (cette session a aussi un enregistrement),

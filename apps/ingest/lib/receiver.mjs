@@ -18,6 +18,15 @@
 import { gunzipSync } from "node:zlib";
 import { createPgAuth, writeLogs, writeReplayChunk, writeRows } from "./pg-ingest.mjs";
 import { deposerLot } from "./ingest-differe.mjs";
+import {
+  creerLimiteurUpload,
+  enregistrerMaps,
+  ErreurUpload,
+  LIMITES_UPLOAD,
+  lireCorpsLimite,
+  lireRequeteUpload,
+  verifierJetonUpload,
+} from "./sourcemap-upload.mjs";
 import { corsHeaders as buildCors, originsFromRegistry, REPLAY_ALLOW_HEADERS } from "../supabase/functions/_shared/cors.mjs";
 import { createLogger } from "../supabase/functions/_shared/log.mjs";
 import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "../supabase/functions/_shared/limits.mjs";
@@ -57,7 +66,7 @@ async function lireCorps(req, max) {
  *   rateLimitPerMin?: number,
  *   log?: object,
  *   tampon?: boolean,        // expose GET /__recent (assertions E2E) — JAMAIS en production
- *   signaux?: ("traces"|"logs"|"replay")[],
+ *   signaux?: ("traces"|"logs"|"replay"|"sourcemaps")[],
  *   aliasSante?: string[],   // chemins supplémentaires répondant comme /health
  *   nom?: string,            // nom du service, renvoyé par /health
  *   identityHashSecret?: string, // injection explicite du secret HMAC (tests/self-host)
@@ -67,7 +76,7 @@ export function creerReceveur(pool, opts = {}) {
   const log = opts.log ?? createLogger("ingest");
   const rateLimitPerMin = opts.rateLimitPerMin ?? Number(process.env.RATE_LIMIT_PER_MIN ?? 600);
   const requireApiKey = opts.requireApiKey ?? process.env.REQUIRE_API_KEY === "true";
-  const signaux = new Set(opts.signaux ?? ["traces", "logs", "replay"]);
+  const signaux = new Set(opts.signaux ?? ["traces", "logs", "replay", "sourcemaps"]);
   const aliasSante = opts.aliasSante ?? [];
   const nom = opts.nom ?? "ingest";
   const identityHashSecret = opts.identityHashSecret ?? process.env.IDENTITY_HASH_SECRET;
@@ -78,6 +87,7 @@ export function creerReceveur(pool, opts = {}) {
   const differe = opts.differe ?? process.env.INGEST_DEFERRED === "true";
 
   const auth = createPgAuth(pool, { requireApiKey, rateLimitPerMin, log });
+  const limiteurSourcemaps = creerLimiteurUpload();
 
   // Tampon des derniers payloads : uniquement pour les assertions de bout en
   // bout. Il retient de la donnée en clair, donc il reste éteint par défaut.
@@ -243,6 +253,57 @@ export function creerReceveur(pool, opts = {}) {
     return repondre(res, 200, { ok: true, seq, events: eventsCount }, entetes);
   }
 
+  /**
+   * POST /v1/sourcemaps — port direct des source maps de CI (P5.4).
+   *
+   * Jeton dédié SEUL : le cookie admin reste l'affaire de la console, et un
+   * jeton de lecture n'a pas le format d'un jeton d'upload. L'authentification
+   * précède toute lecture du corps — sans jeton valide, on ne bufferise pas
+   * 20 Mio pour les jeter —, puis débit, taille annoncée, lecture bornée en
+   * octets et en durée, validation de TOUTES les maps et écriture atomique.
+   */
+  async function traiterSourcemaps(req, res, entetes) {
+    let prise = null;
+    try {
+      const jeton = await verifierJetonUpload(pool, entete(req, "authorization"));
+      if (!jeton) {
+        return repondre(res, 401, { error: "jeton d'upload de source maps invalide, expiré ou révoqué" }, entetes);
+      }
+      prise = limiteurSourcemaps.prendre(`jeton:${jeton.id}`);
+      if (prise.refus) {
+        return repondre(res, 429, { error: prise.refus.message }, { ...entetes, "retry-after": String(prise.refus.retryAfter) });
+      }
+      if (bodyTooLarge(entete(req, "content-length"), LIMITES_UPLOAD.corpsDirect)) {
+        return repondre(res, 413, { error: `corps trop volumineux (limite ${LIMITES_UPLOAD.corpsDirect / 1048576} Mio)` }, entetes);
+      }
+      const demande = lireRequeteUpload(await lireCorpsLimite(req, { max: LIMITES_UPLOAD.corpsDirect }));
+      if (demande.appId !== jeton.app_id) {
+        return repondre(res, 403, { error: "ce jeton n'autorise pas l'upload de source maps pour cette application" }, entetes);
+      }
+      if (demande.remplacer) {
+        return repondre(res, 403, { error: "remplacer une source map existante est réservé à un admin, depuis la console" }, entetes);
+      }
+      const { statut, corps } = await enregistrerMaps(pool, {
+        ...demande,
+        par: `jeton:${jeton.id}`,
+        jetonId: jeton.id,
+      });
+      log.info("sourcemaps upload", {
+        app_id: demande.appId,
+        release: demande.release,
+        status: statut,
+        maps: demande.maps.length,
+        token_id: jeton.id,
+      });
+      return repondre(res, statut, corps, entetes);
+    } catch (err) {
+      if (err instanceof ErreurUpload) return repondre(res, err.statut, { error: err.message }, entetes);
+      throw err;
+    } finally {
+      if (prise && !prise.refus) prise.liberer();
+    }
+  }
+
   /** Le gestionnaire à passer à http.createServer. */
   async function handler(req, res) {
     const origin = entete(req, "origin") ?? "";
@@ -292,6 +353,9 @@ export function creerReceveur(pool, opts = {}) {
       }
       if (req.method === "POST" && chemin.startsWith("/v1/logs") && signaux.has("logs")) {
         return await traiterOtlp(req, res, entetes, true);
+      }
+      if (req.method === "POST" && chemin === "/v1/sourcemaps" && signaux.has("sourcemaps")) {
+        return await traiterSourcemaps(req, res, entetes);
       }
 
       res.writeHead(404, entetes);

@@ -34,6 +34,16 @@ const errorSource = {
   ],
 } as const;
 
+// Recopié de ingest/lib/error-symbolication.mjs (statuts de migration-v71).
+const symbolicationStatus = {
+  type: "string",
+  nullable: true,
+  enum: ["pending", "resolved", "unavailable", "failed", null],
+  description:
+    "resolved : stack source disponible ; unavailable : aucune map pour la release ou positions absentes ; " +
+    "failed : map inutilisable ; pending : budget d'ingestion épuisé ; null : aucune frame JavaScript",
+} as const;
+
 function nul(schema: Record<string, unknown>) {
   return { ...schema, nullable: true };
 }
@@ -449,6 +459,12 @@ export function buildOpenApi(): Record<string, unknown> {
             env: nul({ type: "string", description: "environnement déclaré par l'émetteur, non vérifié" }),
             service: nul(str),
             action_id: nul(str),
+            stack_symbolicated: nul({
+              type: "string",
+              description:
+                "stack réécrite en positions source par les source maps de la release, scrubbed ; `stack` reste la stack brute",
+            }),
+            symbolication_status: symbolicationStatus,
           },
           ["id", "ts", "occurrences"],
         ),

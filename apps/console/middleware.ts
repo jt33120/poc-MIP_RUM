@@ -36,6 +36,13 @@ export async function middleware(req: NextRequest) {
   if (req.nextUrl.pathname.startsWith("/api/ingest")) return NextResponse.next();
   // /demo : ouvre elle-même la session démo, donc s'exécute sans cookie.
   if (req.nextUrl.pathname === "/demo") return NextResponse.next();
+  // Source maps (P5.4) : la CI poste avec un jeton dédié, sans cookie, et ces
+  // routes répondent 401/403 en JSON plutôt qu'une redirection. Leur garde
+  // (lib/api/admin.ts) exige une session admin non démo et l'Origin de la
+  // console pour toute mutation — la borne démo ci-dessous y est donc incluse.
+  if (req.nextUrl.pathname === "/api/sourcemaps" || req.nextUrl.pathname.startsWith("/api/admin/sourcemap-tokens")) {
+    return NextResponse.next();
+  }
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const user = token ? await verifyJwt(token) : null;

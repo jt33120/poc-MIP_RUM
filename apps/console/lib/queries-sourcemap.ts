@@ -1,57 +1,77 @@
-// Accès aux source maps (table sourcemap, migration-v13). Lecture pour la
-// dé-minification des stacks à l'affichage ; upsert pour l'upload (/api/sourcemaps).
+// Source maps côté console (P5.4) : releases et fichiers d'une app, sans jamais
+// relire le contenu. L'écriture passe par le contrat partagé
+// `ingest/lib/sourcemap-upload.mjs`, le même pour la console et le backend direct.
+import { empreinteManifeste } from "ingest/lib/sourcemap-upload.mjs";
 import { q } from "./db";
-import type { RawSourceMap } from "./sourcemap";
 
-/** Source maps d'une (app, release), indexées par nom de fichier minifié. JSON déjà parsé. */
-export async function getSourceMaps(
-  appId: string,
-  release: string,
-): Promise<Record<string, RawSourceMap>> {
-  if (!appId || !release) return {};
-  const rows = await q<{ filename: string; content: string }>(
-    `select filename, content from sourcemap where app_id = $1 and release = $2`,
-    [appId, release],
-  );
-  const out: Record<string, RawSourceMap> = {};
-  for (const r of rows) {
-    try {
-      out[r.filename] = JSON.parse(r.content) as RawSourceMap;
-    } catch {
-      /* map illisible : ignorée (la stack brute reste affichée) */
-    }
-  }
-  return out;
-}
-
-/** Upsert d'une source map (upload). Remplace toute version existante du même fichier. */
-export async function upsertSourceMap(
-  appId: string,
-  release: string,
-  filename: string,
-  content: string,
-): Promise<void> {
-  await q(
-    `insert into sourcemap (app_id, release, filename, content, size_bytes)
-     values ($1, $2, $3, $4, $5)
-     on conflict (app_id, release, filename) do update
-       set content = excluded.content, size_bytes = excluded.size_bytes, created_at = now()`,
-    [appId, release, filename, content, Buffer.byteLength(content, "utf8")],
-  );
-}
-
-export interface SourceMapMeta {
+export interface SourcemapRelease {
   release: string;
+  files: number;
+  size_bytes: number;
+  last_uploaded_at: Date;
+}
+
+/**
+ * `legacy` : mise en ligne avant v71, sans validation ni auteur connu ;
+ * `replaced` : contenu remplacé depuis le premier upload (audité) ; `ok` sinon.
+ */
+export type SourcemapFileStatus = "ok" | "replaced" | "legacy";
+
+export interface SourcemapFile {
   filename: string;
   size_bytes: number;
+  checksum: string;
   created_at: Date;
+  uploaded_at: Date;
+  uploaded_by: string | null;
+  status: SourcemapFileStatus;
 }
 
-/** Liste des source maps d'une app (pour l'admin), sans le contenu. */
-export async function listSourceMaps(appId: string): Promise<SourceMapMeta[]> {
-  return q<SourceMapMeta>(
-    `select release, filename, size_bytes, created_at
-     from sourcemap where app_id = $1 order by created_at desc limit 200`,
+export interface ReleaseManifest {
+  files: SourcemapFile[];
+  size_bytes: number;
+  /** Même calcul que le CLI : deux empreintes égales, release complète. */
+  fingerprint: string;
+}
+
+/** Colonne ou table absente : console publiée avant migration-v71. */
+export function schemaSourcemapAbsent(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code;
+  return code === "42703" || code === "42P01";
+}
+
+/** Releases d'une app, la plus récemment mise en ligne d'abord. */
+export async function listSourcemapReleases(appId: string): Promise<SourcemapRelease[]> {
+  return q<SourcemapRelease>(
+    `select release, count(*)::int as files, sum(size_bytes)::float8 as size_bytes,
+            max(uploaded_at) as last_uploaded_at
+       from sourcemap where app_id = $1
+      group by release
+      order by max(uploaded_at) desc, release
+      limit 100`,
     [appId],
   );
+}
+
+/** Fichiers d'une release et empreinte de son manifeste. */
+export async function releaseManifest(appId: string, release: string): Promise<ReleaseManifest> {
+  const rows = await q<Omit<SourcemapFile, "status">>(
+    `select filename, size_bytes, checksum, created_at, uploaded_at, uploaded_by
+       from sourcemap where app_id = $1 and release = $2
+      order by filename`,
+    [appId, release],
+  );
+  const files = rows.map((row) => ({
+    ...row,
+    status: (row.uploaded_by === null
+      ? "legacy"
+      : row.uploaded_at.getTime() > row.created_at.getTime()
+        ? "replaced"
+        : "ok") as SourcemapFileStatus,
+  }));
+  return {
+    files,
+    size_bytes: files.reduce((total, file) => total + file.size_bytes, 0),
+    fingerprint: empreinteManifeste(files),
+  };
 }

@@ -124,7 +124,9 @@ export const OUTILS = [
     resume: "Impact, tendance, dernier exemplaire et occurrences liées d'une signature d'erreur.",
     description:
       "Détail d'un groupe d'erreurs, sur la même fenêtre et les mêmes filtres que mip_rum_list_errors : `group` (impact ; null = inconnu), " +
-      "`trend`, `last` (dernier exemplaire : stack, release, source, trace) et `occurrences`, chacune avec ses `links` " +
+      "`trend`, `last` (dernier exemplaire : stack brute, release, source, trace ; `stack_symbolicated` porte la stack " +
+      "en positions source quand `symbolication_status` vaut resolved — sinon citer ce statut plutôt que deviner) " +
+      "et `occurrences`, chacune avec ses `links` " +
       "(session, replay, trace, span parent, action). Un lien à false signifie que la relation n'existe pas dans la même app. " +
       "Le `fingerprint` s'obtient avec mip_rum_list_errors ; une signature présente dans plusieurs apps renvoie une erreur qui liste " +
       "les apps candidates : rappeler avec `app`. Occurrences paginées par curseur : `limit` 100 au plus, puis recopier " +
