@@ -11,6 +11,9 @@ import { isBot } from "./bots.mjs";
 import { sha256Hex } from "./sha256.mjs";
 // P5.5 : clé de regroupement déclarée, hachée dans le périmètre de l'app.
 import { overrideHash } from "./error-normalize.mjs";
+// P6.1 : navigateur/système/appareil de la session, env/service/release bornés
+// et recopiés sur chaque événement.
+import { boundedDimension, boundedRelease, clientDimensions } from "./dimensions.mjs";
 
 // Seuils Core Web Vitals — bornes [good, needs-improvement], alignés sur la
 // référence web.dev (E0). SOURCE DE VÉRITÉ du rating : il est recalculé ici à
@@ -255,6 +258,8 @@ export function buildEventIndex({ pageviews = [], metrics = [], errors = [], res
     // n'entre jamais dans la projection/API.
     if (!row || !isNativeSpanId(row.span_id)) return;
     const context = row.context && Object.keys(row.context).length ? row.context : null;
+    // Rebornée : un lot différé déposé avant P6.1 porte encore sa release brute.
+    const release = boundedRelease(row.release);
     index.push({
       app_id: row.app_id,
       session_id: row.session_id ?? null,
@@ -272,6 +277,10 @@ export function buildEventIndex({ pageviews = [], metrics = [], errors = [], res
       ...(row.action_id ? { action_id: row.action_id } : {}),
       ...(row.timing_ms != null ? { timing_ms: row.timing_ms } : {}),
       ...(row.feature_flag_value != null ? { feature_flag_value: row.feature_flag_value } : {}),
+      // P6.1 : dimensions déclarées de la source, à l'identique (migration-v75).
+      ...(row.env ? { env: row.env } : {}),
+      ...(release ? { release } : {}),
+      ...(row.service ? { service: row.service } : {}),
     });
   };
 
@@ -301,13 +310,6 @@ export function rating2026(name, value) {
   const t = THRESHOLDS[name];
   if (!t || typeof value !== "number") return null;
   return value <= t[0] ? "good" : value <= t[1] ? "needs-improvement" : "poor";
-}
-
-/** device_type déduit du user-agent — repli quand le SDK n'a pas mis
- *  mip.device_type sur la span (parité avec le helper SQL mip_device_from_ua). */
-export function deviceFromUa(ua) {
-  if (!ua) return null;
-  return /mobile|tablet|iphone|ipad|android|silk|kindle/i.test(ua) ? "mobile" : "desktop";
 }
 
 /**
@@ -582,21 +584,6 @@ export function nativeParentSpanId(value) {
 }
 
 /**
- * Dimension courte déclarée par l'émetteur (env, service), ou null.
- *
- * Scrubbée comme tout texte venu du client. Trop longue, elle est REFUSÉE et non
- * tronquée : coupée, elle deviendrait un autre identifiant, donc une valeur de
- * filtre qu'aucun émetteur n'a déclarée. Un caractère de contrôle trahit une
- * valeur qui n'est pas un nom.
- */
-export function boundedDimension(value, max = 120) {
-  if (typeof value !== "string") return null;
-  const clean = (scrubText(value) ?? "").trim();
-  if (!clean || CONTROL_CHARS.test(clean) || clean.length > max) return null;
-  return clean;
-}
-
-/**
  * `exception.type` borné, ou null.
  *
  * Texte libre de l'émetteur : non borné, un seul span écrivait des mégaoctets
@@ -641,6 +628,37 @@ function runtimeClientMip(resource, scopeName) {
   return scopeName === "@mip/rum-sdk" || serviceName === "mip-rum-web" ? "browser" : null;
 }
 
+// ──────────── Dimensions déclarées d'un signal (P5.1, P6.1 migration-v75) ────────────
+//
+// Posées sur la resource OTLP, donc communes à tous les signaux d'un scope, et
+// recopiées sur CHAQUE ligne : une release qui change au cours d'une session
+// (mise en production pendant la visite) ne réécrit jamais les événements passés.
+
+/** Environnement déclaré, pas vérifié : le SDK web vaut « dev » par défaut. */
+function envDeclare(resource) {
+  return boundedDimension(resource["deployment.environment.name"] ?? resource["deployment.environment"]);
+}
+
+/**
+ * Service déclaré par un émetteur, ou null pour un SDK client MIP : son nom
+ * constant (mip-rum-web, mip-rum-mobile) n'est pas le service du client.
+ */
+function serviceDeclare(resource, scopeName) {
+  return runtimeClientMip(resource, scopeName) ? null : boundedDimension(resource["service.name"]);
+}
+
+/**
+ * Release d'un signal backend : `mip.release`, sinon `service.version`, que les
+ * backends OpenTelemetry emploient pour leur version. Pour un SDK client MIP, ce
+ * même attribut est la version du SDK, jamais celle de l'application. Les
+ * signaux de session, eux, ne lisent que `mip.release` : un ancien SDK web sans
+ * marqueur ferait sinon passer sa propre version pour celle de l'app.
+ */
+function releaseServeur(resource, scopeName) {
+  return boundedRelease(resource["mip.release"]) ??
+    (runtimeClientMip(resource, scopeName) ? null : boundedRelease(resource["service.version"]));
+}
+
 /**
  * Source, caractère géré/fatal et dimensions déclarées d'une exception.
  *
@@ -668,11 +686,9 @@ export function errorEnvelope({ attrs = {}, resource = {}, scopeName = null, eve
     handled,
     // Jamais déduit : un crash n'est pas forcément fatal, ni l'inverse.
     is_fatal: typeof attrs["mip.error_fatal"] === "boolean" ? attrs["mip.error_fatal"] : null,
-    // Déclaré par l'émetteur, pas vérifié : le SDK web vaut « dev » par défaut.
-    env: boundedDimension(resource["deployment.environment.name"] ?? resource["deployment.environment"]),
-    // Le nom constant d'un SDK MIP n'est pas le service du client, et
-    // error_source dit déjà d'où vient l'erreur.
-    service: runtime ? null : boundedDimension(resource["service.name"]),
+    env: envDeclare(resource),
+    // error_source dit déjà d'où vient l'erreur d'un SDK MIP.
+    service: serviceDeclare(resource, scopeName),
   };
 }
 
@@ -826,7 +842,6 @@ function routeServeurOtel(span, a) {
 function exceptionDerivee({ appId, attrs, contexte, resource, scopeName, origin, identity, exceptionId, traceId, parentSpanId, session, route, ts }) {
   const enveloppe = errorEnvelope({ attrs, resource, scopeName });
   const { event_type: _type, timing_ms: _timing, feature_flag_value: _flag, ...snapshot } = eventMetadata(contexte);
-  const releaseMip = resource["mip.release"] ?? null;
   return {
     span_id: identity,
     // Jamais écrite telle quelle : voir `session_claim`.
@@ -835,9 +850,7 @@ function exceptionDerivee({ appId, attrs, contexte, resource, scopeName, origin,
     app_id: appId,
     route,
     ...exceptionNormalisee(appId, attrs),
-    // Un backend déclare sa version en `service.version` ; pour un SDK client
-    // MIP, ce même attribut est la version du SDK, pas celle de l'application.
-    release: releaseMip ?? (runtimeClientMip(resource, scopeName) ? null : boundedDimension(resource["service.version"])),
+    release: releaseServeur(resource, scopeName),
     trace_id: traceId,
     source_parent_span_id: parentSpanId,
     ...enveloppe,
@@ -1055,8 +1068,10 @@ export function flattenOtlp(payload, opts = {}) {
    * déjà posé chez un client continue d'alimenter le waterfall sans être
    * redéployé. L'ordre compte — le champ natif est celui qu'un collecteur tiers
    * lirait, donc celui qui fait foi.
+   *
+   * `dimensions` : env, release et service déclarés par la resource (P6.1).
    */
-  const spanRow = (tier, a, appId, ts, parentNatif = null) => {
+  const spanRow = (tier, a, appId, ts, parentNatif, dimensions) => {
     const traceId = a["mip.trace_id"];
     const spanId = a["mip.span_id"];
     const durationMs = a["http.duration_ms"];
@@ -1079,6 +1094,7 @@ export function flattenOtlp(payload, opts = {}) {
         (tier === "front" ? "http.client" : "http.server"),
       kind: tier === "front" ? "client" : "server",
       ts,
+      ...dimensions,
       ...eventMetadata(a),
     };
   };
@@ -1233,11 +1249,21 @@ export function flattenOtlp(payload, opts = {}) {
       continue;
     }
     apiKeys.push({ app_id: appId, api_key: res["mip.api_key"] ?? null });
-    const release = res["mip.release"] ?? null; // version de l'app (dé-minification)
+    // Version de l'app (dé-minification, P6.1 : bornée, jamais scrubbée) et
+    // environnement : déclarés par la resource, recopiés sur chaque signal.
+    const release = boundedRelease(res["mip.release"]);
+    const env = envDeclare(res);
+    // Navigateur, système et appareil : un user-agent par resource, lu une fois ;
+    // l'indice `mip.device_type` reste propre à chaque span.
+    const appareil = clientDimensions(res["mip.user_agent"]);
     for (const ss of Array.isArray(rs.scopeSpans) ? rs.scopeSpans : []) {
       // P5.1 : le scope est le seul marqueur du SDK web quand la resource ne
       // porte pas son service.name (source de l'erreur, cf. errorEnvelope).
       const scopeName = ss?.scope?.name ?? null;
+      const service = serviceDeclare(res, scopeName);
+      // Dimensions déclarées d'un signal de session, puis d'un signal backend.
+      const dimensions = { env, release };
+      const dimensionsServeur = { env, release: releaseServeur(res, scopeName), service };
       for (const span of Array.isArray(ss?.spans) ? ss.spans : []) {
         // garde-fou : au-delà du plafond, on compte sans traiter (mémoire/CPU bornés)
         if (++seen > maxSpans) {
@@ -1280,7 +1306,7 @@ export function flattenOtlp(payload, opts = {}) {
         // span backend (middleware serveur) : pas de session requise, pas
         // d'upsert rum_session (le front est seul maître de la session)
         if (span.name === "http.server") {
-          const row = spanRow("back", a, appId, nanosToDate(span.startTimeUnixNano, now), span.parentSpanId);
+          const row = spanRow("back", a, appId, nanosToDate(span.startTimeUnixNano, now), span.parentSpanId, dimensionsServeur);
           if (row) spans.push(row);
           else rejected++;
           continue;
@@ -1319,6 +1345,7 @@ export function flattenOtlp(payload, opts = {}) {
               span.name,
             kind: "server",
             ts: nanosToDate(span.startTimeUnixNano, now),
+            ...dimensionsServeur,
           });
           continue;
         }
@@ -1355,6 +1382,7 @@ export function flattenOtlp(payload, opts = {}) {
               name: typeof label === "string" ? label.slice(0, 200) : span.name,
               kind: isDb ? "db" : "internal",
               ts: nanosToDate(span.startTimeUnixNano, now),
+              ...dimensionsServeur,
             });
           } else {
             rejected++;
@@ -1393,7 +1421,9 @@ export function flattenOtlp(payload, opts = {}) {
           visitor_id: a["mip.visitor_id"] ?? null,
           user_hash: a["mip.user_hash"] ?? null,
           user_agent: res["mip.user_agent"] ?? null,
-          device_type: a["mip.device_type"] ?? deviceFromUa(res["mip.user_agent"]),
+          // P6.1 : navigateur, système et classe d'appareil (tablette comprise),
+          // l'user-agent primant sur l'indice du SDK — cf. clientDimensions.
+          ...appareil(a["mip.device_type"]),
           geo_country: null,
           // Lot 2 : classifié à la 1re vue de la session (UA + éventuel signal
           // webdriver du SDK). Flag, pas drop : la donnée reste, mais exclue par
@@ -1427,10 +1457,15 @@ export function flattenOtlp(payload, opts = {}) {
         if (ts > s.last_seen_at) s.last_seen_at = ts;
         // geo RGPD-friendly : timezone (attrs communs SDK v0.3) -> pays, null si inconnue
         if (s.geo_country == null && a["mip.tz"]) s.geo_country = tzToCountry(a["mip.tz"]);
-        // back-fill device_type si une span ultérieure le porte (ou repli UA), la 1re
-        // span ayant pu créer la session sans l'attribut.
-        if (s.device_type == null)
-          s.device_type = a["mip.device_type"] ?? deviceFromUa(res["mip.user_agent"]);
+        // back-fill : la 1re span a pu créer la session sans indice d'appareil, ou
+        // depuis une resource sans user-agent. Famille et version se complètent
+        // d'un bloc : jamais la version d'un système sous le nom d'un autre.
+        if (s.device_type == null || s.os == null || s.browser == null) {
+          const lu = appareil(a["mip.device_type"]);
+          if (s.device_type == null) s.device_type = lu.device_type;
+          if (s.os == null) Object.assign(s, { os: lu.os, os_version: lu.os_version });
+          if (s.browser == null) Object.assign(s, { browser: lu.browser, browser_version: lu.browser_version });
+        }
         // net_type n'arrive que sur les spans de navtiming, émises après `load` :
         // la session existe déjà, créée par une span antérieure sans l'attribut.
         if (s.net_type == null && a["mip.net_type"]) s.net_type = a["mip.net_type"];
@@ -1465,6 +1500,7 @@ export function flattenOtlp(payload, opts = {}) {
             // tiraient le p75 vers le bas. Voir migration-v58.
             metric_uid: a["webvital.id"] ?? null,
             ts,
+            ...dimensions,
             ...metadata,
           });
         } else if (span.name === "exception") {
@@ -1503,6 +1539,7 @@ export function flattenOtlp(payload, opts = {}) {
             referrer: scrubUrl(a["mip.referrer"]),
             nav_type: a["mip.nav_type"] ?? null,
             ts,
+            ...dimensions,
             ...metadata,
           });
         } else if (span.name === "resource") {
@@ -1517,6 +1554,7 @@ export function flattenOtlp(payload, opts = {}) {
             transfer_size: a["resource.transfer_size"] ?? null,
             render_blocking: a["resource.render_blocking"] ?? null,
             ts,
+            ...dimensions,
             ...metadata,
           });
         } else if (span.name === "longtask") {
@@ -1533,6 +1571,7 @@ export function flattenOtlp(payload, opts = {}) {
             duration_ms: durationMs,
             source: "longtask",
             ts,
+            ...dimensions,
             ...metadata,
           });
         } else if (span.name === "loaf") {
@@ -1566,6 +1605,7 @@ export function flattenOtlp(payload, opts = {}) {
             script_ms: nombreOuNull(a["loaf.script_ms"]),
             invoker: scrubText(a["loaf.invoker"]),
             ts,
+            ...dimensions,
             ...metadata,
           });
         } else if (span.name === "breadcrumb") {
@@ -1583,10 +1623,12 @@ export function flattenOtlp(payload, opts = {}) {
             label: breadcrumbLabel(a["breadcrumb.label"]),
             seq: a["breadcrumb.seq"] ?? null,
             ts,
+            // Sans colonne sur rum_breadcrumb : portées pour la projection rum_event_index.
+            ...dimensions,
             ...metadata,
           });
         } else if (span.name === "http.client") {
-          const row = spanRow("front", a, appId, ts, span.parentSpanId);
+          const row = spanRow("front", a, appId, ts, span.parentSpanId, { ...dimensions, service });
           if (row) spans.push(row);
           else rejected++;
         } else if (span.name.startsWith("track.")) {
@@ -1602,6 +1644,7 @@ export function flattenOtlp(payload, opts = {}) {
             name: boundedName(a["mip.event_name"]) ?? boundedName(span.name.slice("track.".length)) ?? "track",
             props: boundedEventProps(a["mip.props"]),
             ts,
+            ...dimensions,
             ...metadata,
           });
         } else if (span.name.startsWith("rum.")) {
@@ -1635,6 +1678,7 @@ export function flattenOtlp(payload, opts = {}) {
             name: eventName,
             props: {},
             ts,
+            ...dimensions,
             ...metadata,
           });
           if (eventType === "action") {
@@ -1659,6 +1703,7 @@ export function flattenOtlp(payload, opts = {}) {
               route: eventIndexRoute(route),
               context: metadata.context ?? {},
               ts,
+              ...dimensions,
             });
           }
         } else if (span.name === "frustration") {
@@ -1685,6 +1730,7 @@ export function flattenOtlp(payload, opts = {}) {
               count: typeof a["frustration.count"] === "number" ? a["frustration.count"] : 1,
             }),
             ts,
+            ...dimensions,
             ...metadata,
           });
         }

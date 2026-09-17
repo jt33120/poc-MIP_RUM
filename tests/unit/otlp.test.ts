@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   anyValue,
-  deviceFromUa,
   flattenOtlp,
   rating2026,
 } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
@@ -43,21 +42,9 @@ describe("rating2026 — seuils mars 2026", () => {
   it("métrique inconnue -> null", () => expect(rating2026("FID", 50)).toBeNull());
 });
 
-describe("deviceFromUa — repli device_type depuis le user-agent (v33)", () => {
-  it.each([
-    ["Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", "mobile"],
-    ["Mozilla/5.0 (Linux; Android 14; Pixel 8)", "mobile"],
-    ["Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)", "mobile"],
-    ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0.0.0", "desktop"],
-    ["Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605", "desktop"],
-  ])("%s -> %s", (ua, expected) => expect(deviceFromUa(ua)).toBe(expected));
-  it("null/undefined -> null", () => {
-    expect(deviceFromUa(null)).toBeNull();
-    expect(deviceFromUa(undefined)).toBeNull();
-  });
-});
-
-describe("flattenOtlp — device_type dérivé de l'UA quand le SDK ne l'envoie pas (v33)", () => {
+// Le corpus complet du parseur vit dans dimensions.test.ts ; ici, le chemin de
+// l'attribut jusqu'à la ligne de session.
+describe("flattenOtlp — device_type déduit de l'user-agent (v33, P6.1)", () => {
   const sv = (s) => ({ stringValue: s });
   const payload = (resAttrs, spanAttrs) => ({
     resourceSpans: [
@@ -91,12 +78,21 @@ describe("flattenOtlp — device_type dérivé de l'UA quand le SDK ne l'envoie 
     expect(rows.sessions[0].device_type).toBe("mobile");
   });
 
-  it("mip.device_type explicite du SDK prime sur le repli UA", () => {
+  // P6.1 : l'user-agent prime. Le SDK web déduit son indice du même user-agent,
+  // avec une règle qui range les tablettes Android en « desktop ».
+  it("un user-agent reconnu prime sur mip.device_type du SDK", () => {
     const rows = flattenOtlp(
       payload(
-        [{ key: "mip.user_agent", value: sv("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)") }],
+        [{ key: "mip.user_agent", value: sv("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36") }],
         [{ key: "mip.device_type", value: sv("desktop") }],
       ),
+    );
+    expect(rows.sessions[0].device_type).toBe("tablet");
+  });
+
+  it("un user-agent muet laisse l'indice du SDK décider", () => {
+    const rows = flattenOtlp(
+      payload([{ key: "mip.user_agent", value: sv("Mozilla/5.0 Test") }], [{ key: "mip.device_type", value: sv("desktop") }]),
     );
     expect(rows.sessions[0].device_type).toBe("desktop");
   });

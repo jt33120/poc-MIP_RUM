@@ -19,6 +19,12 @@ MIPRum.init({
 La `release` est stockée sur chaque `rum_error` : c'est la clé d'association avec les maps.
 Une erreur dont la release ne correspond à aucune map reste **explicitement non symbolisée**.
 
+**Règle de release (P6.1, commune à l'ingestion et à l'upload)** : espaces de bord retirés,
+**1 à 120 caractères**, sans caractère de contrôle ni de format Unicode ; **jamais scrubbée**
+(`4.8.0.1` ou `build-17654321098` restent intacts, comparés à l'octet près). Hors de ces bornes,
+l'ingestion la tient pour **inconnue** (NULL, jamais tronquée) et l'upload répond `400` : une map
+envoyée pour une release que l'ingestion ne stocke pas ne serait jamais utilisée.
+
 ### 2. Créer un jeton de CI
 Console › **Administration › Source maps** › *Jetons de CI* (admin uniquement) :
 - un seul privilège, `sourcemaps:write`, sur **une** application ;

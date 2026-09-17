@@ -4,8 +4,14 @@
 // rejetterait la requête ENTIÈRE — donc la transaction, donc tout le lot. Ce
 // n'est pas le champ nouveau qui se perdrait, c'est TOUTE la télémétrie.
 import { describe, expect, it } from "vitest";
-// @ts-expect-error — module JS sans types, importé tel quel par la route d'ingestion
-import { clauseConflitSession, colonnesErreur, colonnesInsert } from "../../apps/ingest/lib/pg-ingest.mjs";
+import {
+  clauseConflitSession,
+  colonnesDimensions,
+  colonnesErreur,
+  colonnesInsert,
+  colonnesLongtask,
+  // @ts-expect-error — module JS sans types, importé tel quel par la route d'ingestion
+} from "../../apps/ingest/lib/pg-ingest.mjs";
 
 const TOUTES = new Set(["collection_source", "release", "net_type"]);
 const AUCUNE = new Set<string>();
@@ -103,5 +109,38 @@ describe("colonnesErreur", () => {
 
   it("n'écrit jamais une colonne que la base ne porte pas, même à moitié migrée", () => {
     expect(colonnesErreur(new Set(["trace_id", "context"]))).toEqual([...SOCLE, "trace_id", "context", "ts"]);
+  });
+});
+
+// P6.1 — la fenêtre réelle : code publié, migration-v75 en attente (ou l'inverse).
+describe("dimensions de migration-v75", () => {
+  const SESSION_V75 = ["browser", "browser_version", "os", "os_version"];
+
+  it("colonnesDimensions : rien avant v75, env et release après, service seulement sur demande", () => {
+    expect(colonnesDimensions(AUCUNE)).toEqual([]);
+    expect(colonnesDimensions(new Set(["env", "release", "service"]))).toEqual(["env", "release"]);
+    expect(colonnesDimensions(new Set(["env", "release", "service"]), { service: true })).toEqual(["env", "release", "service"]);
+    // rum_error porte déjà release (v0.2) : une table à moitié migrée n'écrit que ce qu'elle a.
+    expect(colonnesDimensions(new Set(["release"]), { service: true })).toEqual(["release"]);
+  });
+
+  it("rum_session écrit navigateur et système seulement quand la base les porte", () => {
+    expect(colonnesInsert(new Set(SESSION_V75))).toEqual(expect.arrayContaining(SESSION_V75));
+    for (const colonne of SESSION_V75) expect(colonnesInsert(TOUTES)).not.toContain(colonne);
+  });
+
+  it("navigateur et système restent la première valeur connue, comme l'user-agent", () => {
+    const sql = clauseConflitSession(new Set(SESSION_V75)) as string;
+    for (const colonne of SESSION_V75) {
+      expect(sql).toContain(`${colonne} = coalesce(rum_session.${colonne}, excluded.${colonne})`);
+    }
+    expect(clauseConflitSession(TOUTES)).not.toContain("browser");
+  });
+
+  it("rum_longtask ajoute les dimensions avant `ts`, sans toucher à l'attribution LoAF", () => {
+    expect(colonnesLongtask(new Set(["source", "env", "release"]))).toEqual([
+      "span_id", "session_id", "app_id", "route", "duration_ms", "source", "env", "release", "ts",
+    ]);
+    expect(colonnesLongtask(AUCUNE)).toEqual(["span_id", "session_id", "app_id", "route", "duration_ms", "ts"]);
   });
 });
