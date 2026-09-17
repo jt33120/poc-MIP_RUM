@@ -335,6 +335,7 @@ function Resultat({
           </div>
           <div className="mt-1 text-xs text-ink-faint">
             {meta.unit} · {meta.counting}
+            {meta.approximate && " · valeur approchée"}
           </div>
           <dl className="mt-4 space-y-1 text-xs text-ink-soft">
             <div className="flex justify-between gap-3">
@@ -348,6 +349,12 @@ function Resultat({
             <div className="flex justify-between gap-3">
               <dt>Agrégation additive</dt>
               <dd>{meta.additive ? "oui" : "non"}</dd>
+            </div>
+            {/* D'où vient le chiffre : les lignes, ou un agrégat déjà consolidé
+                complété par les lignes de la fin de fenêtre (P6.6). */}
+            <div className="flex justify-between gap-3">
+              <dt>Source</dt>
+              <dd data-testid="explorer-source">{meta.source === "rollup+raw" ? "agrégat + lignes" : "lignes brutes"}</dd>
             </div>
           </dl>
         </aside>

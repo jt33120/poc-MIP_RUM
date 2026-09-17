@@ -23,8 +23,10 @@ import {
   DEVICES,
   FILTER_OPERATORS,
   MAX_CONDITIONS,
+  MAX_POINTS,
   RANGE_PRESETS,
   VALUE_MAX,
+  bucketStarts,
   fnv1a,
   isSafeText,
   resolveRange,
@@ -39,6 +41,7 @@ import {
   type ScopePrincipal,
   QUERY_VERSION,
 } from "./query-contract";
+import { rollupCapability, type RollupCapability } from "./analytics-rollups";
 import type { DatasetId } from "./query-compiler";
 
 export const EXPLORER_VERSION = 1 as const;
@@ -956,6 +959,14 @@ export function parseExplorerPlan(source: ExplorerPlanSource, query: AnalyticsQu
       { parameter: "visualization" },
     );
   }
+  // Borne des POINTS, vérifiée avant tout SQL (P6.6). La largeur de seau du
+  // contrat la respecte déjà par construction ; l'écrire ici garantit qu'un futur
+  // seau plus fin ne fabriquera pas une série que le SQL devrait ensuite tronquer.
+  if (visualization === "timeseries" && bucketStarts(query.range).length > MAX_POINTS) {
+    return fail("invalid_query", `au plus ${MAX_POINTS} points par série : réduire la période`, {
+      parameter: "range",
+    });
+  }
 
   const groupBy = parseGroupBy(source.groupBy);
   if (!groupBy.ok) return groupBy;
@@ -1120,6 +1131,12 @@ export interface PublicField {
   /** Sous-population imposée par la mesure. */
   variant: string | null;
   bucketable: boolean;
+  /**
+   * Capacité d'agrégat pré-calculé (P6.6), ou `null` s'il n'en existe aucun.
+   * Elle dit ce qu'un agrégat SAIT servir — dimensions comprises. Une requête qui
+   * en demande une autre est lue sur les lignes brutes, jamais approchée.
+   */
+  rollup: RollupCapability | null;
   notice: string | null;
 }
 
@@ -1165,7 +1182,7 @@ export interface PublicSchema {
  * Vue publique d'un champ. `additive` est DÉRIVÉ, pas déclaré : une agrégation
  * additive le reste quel que soit le jeu de données.
  */
-function publicField(id: string, field: FieldDefinition): PublicField {
+function publicField(dataset: ExplorerDatasetId, id: string, field: FieldDefinition): PublicField {
   const aggregations = [...field.aggregations];
   return {
     id,
@@ -1176,6 +1193,7 @@ function publicField(id: string, field: FieldDefinition): PublicField {
     requiresProperty: field.kind === "json",
     variant: field.variant ?? null,
     bucketable: field.bucketable !== false,
+    rollup: rollupCapability(dataset, id),
     notice: field.notice ?? null,
   };
 }
@@ -1218,7 +1236,7 @@ export function publicSchema(
               required: definition.variant.required,
             }
           : null,
-        fields: Object.entries(definition.fields).map(([fieldId, field]) => publicField(fieldId, field)),
+        fields: Object.entries(definition.fields).map(([fieldId, field]) => publicField(id, fieldId, field)),
         dimensions: DIMENSIONS.map((dimension) => {
           const state = support(definition.dataset, dimension);
           return { id: dimension, label: DIMENSION_LABELS[dimension], available: state.available, reason: state.reason };

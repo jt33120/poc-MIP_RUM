@@ -319,7 +319,9 @@ type Console = Awaited<ReturnType<typeof consoleSur>>;
 
   it("la sonde de schéma voit exactement les colonnes présentes", async () => {
     const schema = await lib.dimensionSchema();
-    const { tables, columns } = lib.registryColumns();
+    // La sonde couvre les colonnes de dimensions ET celles des agrégats (P6.6) :
+    // une seule requête sert les deux registres.
+    const { tables, columns } = lib.probedColumns();
     const { rows } = await c.query<{ key: string }>(
       `select table_name || '.' || column_name as key
          from information_schema.columns
