@@ -1,6 +1,6 @@
 // Assemblage du serveur MCP : le catalogue devient des outils enregistrés.
 //
-// Un seul handler, partagé par les douze outils — il construit le chemin, appelle
+// Un seul handler, partagé par tous les outils — il construit le chemin, appelle
 // l'API, met en forme. Les outils ne diffèrent que par leur DONNÉE (catalogue.mjs).
 //
 // Ce module ne choisit PAS de transport et ne lit AUCUNE variable
@@ -29,7 +29,7 @@ Limites à respecter, elles ne sont pas contournables :
 - LECTURE SEULE. Aucun outil ne modifie quoi que ce soit.
 - Trois fenêtres seulement : 1h, 24h, 7d. Aucun outil n'accepte de dates libres, et il n'existe pas d'historique plus profond ici.
 - Le périmètre dépend du jeton. Une app hors périmètre n'est pas refusée : la réponse porte alors sur une AUTRE app, et l'outil le signale explicitement. Lire cet avertissement avant de conclure.
-- La liste des sessions est paginée sans total. Les groupes d'erreurs et l'Explorer d'événements fournissent un total filtré ; le détail d'un groupe d'erreurs et l'Explorer paginent par curseur opaque stable (data.page.next_cursor).
+- La liste des sessions est paginée sans total. Les groupes d'erreurs, les issues et l'Explorer d'événements fournissent un total filtré ; le détail d'un groupe d'erreurs et l'Explorer paginent par curseur opaque stable (data.page.next_cursor), les issues et leur détail par data.next_cursor.
 - Pas de données personnelles : les utilisateurs sont des empreintes anonymes.
 
 Si un chiffre demandé n'est dans aucune réponse, le dire — ne pas l'estimer.`;
@@ -60,6 +60,17 @@ function schemaParam(nom) {
       return z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/).optional().describe(d);
     case "attr_value":
       return z.string().max(500).optional().describe(d);
+    case "status":
+      return z.enum(["open", "for_review", "resolved", "ignored"]).optional().describe(d);
+    case "source":
+      return z.enum([
+        "browser_js", "browser_console", "browser_resource", "browser_csp", "browser_network",
+        "node", "python", "react_native_js", "native", "otel",
+      ]).optional().describe(d);
+    case "release":
+      return z.string().min(1).max(200).optional().describe(d);
+    case "issue_id":
+      return z.string().uuid().describe(d);
     // Les segments de chemin sont les SEULS paramètres requis : sans eux il n'y
     // a pas d'URL à construire.
     case "fingerprint":
@@ -97,7 +108,7 @@ export async function executer(outil, args, client) {
     const parts = [enMarkdown(outil.titre, corps)];
     if (page)
       parts.push(
-        `---\n\n_Pagination : ${page.recus} élément(s) reçu(s)${page.offset == null ? "" : `, offset ${page.offset}`}, limite ${page.limit}.` +
+        `---\n\n_Pagination : ${page.recus} élément(s) reçu(s)${page.offset == null ? "" : `, offset ${page.offset}`}${page.limit == null ? "" : `, limite ${page.limit}`}.` +
           `${page.peut_avoir_suite ? (page.cursor_suivant ? ` Appeler de nouveau avec cursor=${page.cursor_suivant} pour la suite stable.` : ` Page pleine — appeler de nouveau avec offset=${page.offset_suivant} pour la suite.`) : " Page incomplète : c'est la fin."}` +
           `${page.total == null ? " L'API ne fournit pas de total." : ` Total filtré : ${page.total}.`}_`,
       );

@@ -34,7 +34,7 @@ Le dépôt a déjà payé le prix d'une règle d'accès écrite deux fois : il a
 **trois** implémentations de l'ingestion, et le serveur de développement
 acceptait une app sans clé là où la production la rejetait.
 
-**Lecture seule.** Les douze outils sont des `GET`. `POST /api/v1/deploys` existe
+**Lecture seule.** Les quatorze outils sont des `GET`. `POST /api/v1/deploys` existe
 côté API et n'est **pas** exposé — donner à un agent conversationnel de quoi
 écrire en production est une décision qui se prend à froid, pas un oubli qu'on
 comble. Un test verrouille cette absence.
@@ -83,7 +83,7 @@ présentée comme juste.
 
 ---
 
-## 3. Les douze outils
+## 3. Les quatorze outils
 
 Tous acceptent un `format` (`json` par défaut, ou `markdown`). Tous, sauf
 `mip_rum_list_apps` et `mip_rum_get_session`, portent les filtres communs `app`,
@@ -97,6 +97,8 @@ Tous acceptent un `format` (`json` par défaut, ou `markdown`). Tous, sauf
 | `mip_rum_list_slow_pages` | `/pages` | « qu'est-ce qui est lent, et pour combien de monde ? » |
 | `mip_rum_list_errors` | `/errors` | « qu'est-ce qui casse, et pour combien de personnes ? » |
 | `mip_rum_get_error_group` | `/errors/{fingerprint}` | « qui est touché par cette erreur, et où la retrouver (session, replay, trace, action) ? » |
+| `mip_rum_list_issues` | `/issues` | « quels problèmes durables, avec quel statut, et quelle part des erreurs le regroupement v2 couvre-t-il ? » |
+| `mip_rum_get_issue` | `/issues/{id}` | « cette issue reprend-elle d'anciens groupes, avec quel triage, et qui touche-t-elle ? » |
 | `mip_rum_list_sessions` | `/sessions` | « que s'est-il passé récemment ? » |
 | `mip_rum_get_session` | `/sessions/{id}` | « qu'a vécu cet utilisateur ? » |
 | `mip_rum_list_events` | `/events` | « combien de fois cet événement métier, avec quel attribut ? » |
@@ -120,6 +122,10 @@ les ignore comble les trous par des suppositions :
 - une empreinte d'erreur n'est unique que dans une app : présente dans plusieurs
   apps du périmètre sans `app`, le détail répond une erreur qui liste les apps
   candidates ;
+- les issues comptent chaque occurrence une seule fois, dans une issue ou dans un
+  groupe historique qu'aucune issue ne reprend ; `reappeared` est une réapparition
+  **à vérifier**, pas une régression confirmée, et `low_confidence` un repli peu
+  discriminant ;
 - `device=tablet` n'est pas distingué par les endpoints historiques ;
 - aucune donnée personnelle : les utilisateurs sont des empreintes.
 
@@ -130,8 +136,8 @@ transformation. La convention MCP recommande l'inverse ; ici la valeur du
 produit est l'exactitude d'un chiffre, et toute mise en forme est une occasion
 d'en perdre un.
 
-Le rendu `markdown` existe et reste **générique** : une fonction pour les douze
-outils, pas douze gabarits. Un gabarit oublié n'échoue pas — il affiche l'ancienne
+Le rendu `markdown` existe et reste **générique** : une fonction pour les quatorze
+outils, pas quatorze gabarits. Un gabarit oublié n'échoue pas — il affiche l'ancienne
 colonne comme si elle était toute la vérité.
 
 En JSON, ce que le serveur MCP a constaté est rangé à part, sous `_mcp`
@@ -247,12 +253,12 @@ Un `POST /mcp` sans `Authorization` doit répondre `401` avec un en-tête
 
 ## 7. Limites connues
 
-- **Douze outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
+- **Quatorze outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
   exposé : SLO, alertes, tableaux de bord, replay, logs, SVI. Les ajouter passe
   par l'API d'abord, jamais par un accès direct depuis le serveur MCP.
 - **Pas de total sur les sessions.** L'API n'en fournit pas ; le serveur ne
-  l'invente pas. Seuls les groupes d'erreurs et l'Explorer d'événements en
-  renvoient un, mesuré sur la population filtrée.
+  l'invente pas. Seuls les groupes d'erreurs, les issues et l'Explorer d'événements
+  en renvoient un, mesuré sur la population filtrée.
 - **Chaîne de dépendances.** Le SDK MCP tire une centaine de paquets transitifs
   sur un service exposé à l'internet. C'est le coût de ne pas réimplémenter
   JSON-RPC et le transport à la main — mais c'est une surface à surveiller lors

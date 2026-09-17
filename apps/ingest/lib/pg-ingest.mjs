@@ -11,6 +11,7 @@
 // Aucune dépendance à Deno ni à supabase-js : `pg` et rien d'autre.
 import { createHash } from "node:crypto";
 import { isNativeSpanId } from "../supabase/functions/_shared/otlp.mjs";
+import { finaliserIssues, regrouperErreurs } from "./error-grouping.mjs";
 import { symbolicateurIngestion } from "./error-symbolication.mjs";
 
 // ───────────────────────────── Écriture ─────────────────────────────
@@ -120,6 +121,9 @@ const OPTIONNELLES_ERREUR = [
   "origin_signal", "exception_id",
   // v71 (P5.4) : résultat de la symbolication faite avant l'écriture.
   "symbolication_status", "stack_symbolicated",
+  // v72 (P5.5) : clé de regroupement v2 en ombre, clé déclarée hachée, et issue
+  // quand l'app a activé le regroupement v2.
+  "grouping_version", "grouping_key", "grouping_basis", "fingerprint_override_hash", "grouping_diagnostic", "issue_id",
 ];
 
 /**
@@ -186,14 +190,25 @@ async function rattacherSessions(client, errors) {
  * `origin_signal`, le métering la compterait comme un événement de plus alors
  * que son span porteur l'est déjà. La collecte P5.3 s'active donc avec sa
  * migration ; les erreurs des SDK client, elles, s'écrivent comme avant.
+ *
+ * À PARTIR DE migration-v72, chaque erreur porte sa clé de regroupement v2, et
+ * celles d'une app activée leur issue (error-grouping.mjs). Première et dernière
+ * vue des issues suivent les lignes RETURNING : `finaliser` les applique en fin
+ * de transaction, juste avant le commit, pour ne tenir le verrou d'une issue
+ * chaude que le temps de celui-ci.
+ *
+ * @returns {Promise<{ bilan: {recues: number, inserees: number, ignorees: number}, finaliser: () => Promise<void> }>}
  */
 async function ecrireErreurs(client, errors) {
-  if (!errors.length) return { recues: 0, inserees: 0, ignorees: 0 };
+  if (!errors.length) return { bilan: { recues: 0, inserees: 0, ignorees: 0 }, finaliser: async () => {} };
   const dispo = await colonnesDe(client, "rum_error");
   const retenues = dispo.has("origin_signal") ? errors : errors.filter((e) => !e.origin_signal);
-  const lignes = await rattacherSessions(client, retenues);
+  const rattachees = await rattacherSessions(client, retenues);
+  const { lignes, plan } = dispo.has("grouping_key")
+    ? await regrouperErreurs(client, rattachees)
+    : { lignes: rattachees, plan: null };
   const cols = colonnesErreur(dispo);
-  let inserees = 0;
+  const inserees = [];
   for (let debut = 0; debut < lignes.length; debut += ERREURS_PAR_INSERT) {
     const { rows } = await batchInsert(
       client,
@@ -203,11 +218,14 @@ async function ecrireErreurs(client, errors) {
       // antérieur, émetteur sans contexte) écrit l'objet vide, jamais NULL. Les
       // autres champs absents de ces lots deviennent NULL, c'est-à-dire inconnus.
       lignes.slice(debut, debut + ERREURS_PAR_INSERT).map((e) => ({ ...e, context: JSON.stringify(e.context ?? {}) })),
-      "on conflict (span_id) do nothing returning id",
+      plan ? "on conflict (span_id) do nothing returning id, app_id, issue_id, ts, release" : "on conflict (span_id) do nothing returning id",
     );
-    inserees += rows.length;
+    inserees.push(...rows);
   }
-  return { recues: errors.length, inserees, ignorees: errors.length - retenues.length };
+  return {
+    bilan: { recues: errors.length, inserees: inserees.length, ignorees: errors.length - retenues.length },
+    finaliser: () => finaliserIssues(client, plan, inserees),
+  };
 }
 
 /** Colonnes optionnelles de rum_session, dans l'ordre où elles s'insèrent. */
@@ -401,7 +419,9 @@ async function indexAvecVitalsConsolides(client, eventIndex, metrics) {
  *
  * Les erreurs sont symboliquées AVANT la transaction (migration-v71 appliquée
  * seulement) : charger une source map de plusieurs Mio ne doit pas prolonger un
- * verrou d'écriture, et un échec de symbolication n'annule jamais le lot.
+ * verrou d'écriture, et un échec de symbolication n'annule jamais le lot. Ses
+ * positions source servent aussi la clé de regroupement v2 (P5.5) : la première
+ * frame applicative symbolisée prime sur la frame minifiée.
  * @returns {Promise<{erreurs: {recues: number, inserees: number, ignorees: number}}>}
  */
 export async function writeRows(pool, {
@@ -475,11 +495,17 @@ export async function writeRows(pool, {
     // transaction, voyage avec chaque ligne : le filtrage pré-v70 et le
     // rattachement de session d'ecrireErreurs ne peuvent donc pas la décaler.
     // Jamais sur une stack backend (P5.3) : une map navigateur n'en décrit aucune
-    // frame.
+    // frame. `symbolicated_frames` n'est pas une colonne : la clé v2 la lit, puis
+    // elle disparaît avec la ligne.
     const erreurs = await ecrireErreurs(client, symbolications
       ? errors.map((e, i) => (STACK_BACKEND.has(e.error_source)
         ? e
-        : { ...e, symbolication_status: symbolications[i]?.status ?? null, stack_symbolicated: symbolications[i]?.stack ?? null }))
+        : {
+            ...e,
+            symbolication_status: symbolications[i]?.status ?? null,
+            stack_symbolicated: symbolications[i]?.stack ?? null,
+            symbolicated_frames: symbolications[i]?.positions ?? null,
+          }))
       : errors);
     const resourceDispo = await colonnesDe(client, "rum_resource");
     await batchInsert(
@@ -601,8 +627,9 @@ export async function writeRows(pool, {
         [sessions.map((s) => s.session_id)],
       );
     }
+    await erreurs.finaliser();
     await client.query("commit");
-    return { erreurs };
+    return { erreurs: erreurs.bilan };
   } catch (err) {
     await client.query("rollback").catch(() => {});
     throw err;
@@ -633,8 +660,9 @@ export async function writeLogs(pool, logs, errors = []) {
       "",
     );
     const erreurs = await ecrireErreurs(client, errors);
+    await erreurs.finaliser();
     await client.query("commit");
-    return { logs: logs.length, erreurs };
+    return { logs: logs.length, erreurs: erreurs.bilan };
   } catch (err) {
     await client.query("rollback").catch(() => {});
     throw err;

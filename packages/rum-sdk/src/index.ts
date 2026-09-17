@@ -720,8 +720,9 @@ export function addFeatureFlagEvaluation(name: string, value: string | number | 
  * Signale explicitement une erreur en réutilisant la voie exception existante.
  *
  * `options.fingerprint` : clé de regroupement opaque, bornée comme un nom (100
- * caractères). Elle voyage en `mip.error_fingerprint` sans rien changer au
- * regroupement actuel ; une clé invalide est ignorée, jamais l'erreur.
+ * caractères). Elle voyage en `mip.error_fingerprint` : prioritaire dans le
+ * regroupement v2 des issues, sans rien changer à la signature historique ; une
+ * clé invalide est ignorée, jamais l'erreur.
  */
 export function addError(
   error: Error | string,

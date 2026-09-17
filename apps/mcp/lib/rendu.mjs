@@ -8,8 +8,8 @@
 //    un nombre de sessions touchées. Toute mise en forme est une occasion de
 //    perdre un champ en silence, et un champ perdu se lit comme un zéro.
 //
-// 2. Le rendu markdown est GÉNÉRIQUE — une fonction pour les douze outils, pas
-//    douze gabarits. Un gabarit par endpoint serait plus joli et afficherait
+// 2. Le rendu markdown est GÉNÉRIQUE — une fonction pour tous les outils, pas
+//    un gabarit par outil. Un gabarit par endpoint serait plus joli et afficherait
 //    exactement les colonnes utiles ; il faudrait aussi le corriger à chaque
 //    champ ajouté à l'API, et un gabarit oublié n'échoue pas : il affiche
 //    l'ancienne colonne comme si elle était toute la vérité. Le rendu générique
@@ -125,24 +125,30 @@ export function enMarkdown(titre, corps) {
  * Une page par curseur (détail d'un groupe d'erreurs : `{ limit, next_cursor }`)
  * n'a pas d'offset. En inventer un enverrait l'IA vers un paramètre que l'outil
  * n'accepte pas : elle relirait la même page en croyant avancer.
+ *
+ * Les issues (P5.5) paginent par `data.next_cursor` SANS objet `page` : la limite
+ * appliquée n'est pas renvoyée, donc elle reste null plutôt que devinée, et seule
+ * la présence d'un curseur annonce une suite.
  */
 export function indicesPage(data) {
   const page = data?.page;
-  if (!page || typeof page.limit !== "number") return null;
-  const liste = data.events ?? data.sessions ?? data.groups ?? data.actions ?? data.occurrences ??
+  const curseurSeul = !page && data != null && typeof data === "object" && "next_cursor" in data;
+  if (!curseurSeul && (!page || typeof page.limit !== "number")) return null;
+  const liste = data.events ?? data.sessions ?? data.groups ?? data.actions ?? data.issues ?? data.occurrences ??
     Object.values(data).find(Array.isArray);
   if (!Array.isArray(liste)) return null;
   const recus = liste.length;
-  const brut = page.next_cursor ?? data.next_cursor;
+  const brut = page?.next_cursor ?? data.next_cursor;
   const cursorSuivant = typeof brut === "string" && brut ? brut : null;
-  const suite = cursorSuivant != null || recus >= page.limit;
-  const offset = typeof page.offset === "number" ? page.offset : null;
+  const limit = curseurSeul ? null : page.limit;
+  const suite = cursorSuivant != null || (limit != null && recus >= limit);
+  const offset = typeof page?.offset === "number" ? page.offset : null;
   return {
-    limit: page.limit,
+    limit,
     offset,
     recus,
     peut_avoir_suite: suite,
-    offset_suivant: suite && offset != null ? offset + page.limit : null,
+    offset_suivant: suite && offset != null ? offset + limit : null,
     cursor_suivant: cursorSuivant,
     total: typeof data.total === "number" ? data.total : null,
   };

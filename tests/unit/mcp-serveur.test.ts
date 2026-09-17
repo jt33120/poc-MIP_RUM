@@ -134,6 +134,35 @@ describe("construireChemin", () => {
     })).toBe("/events?app=gip&period=1h&kind=event&name=checkout&attr_source=props&attr_key=plan&attr_type=string&attr_value=pro&limit=25&cursor=opaque_cursor");
   });
 
+  it("transmet filtres, limite et curseur à la liste des issues, sans rien inventer", () => {
+    expect(construireChemin(outil("mip_rum_list_issues"), {
+      app: "gip", period: "7d", device: "tablet", status: "for_review", release: "1.4.2", source: "browser_js",
+      limit: 20, cursor: "opaque_cursor", fingerprint: "ignoré",
+    })).toBe("/issues?app=gip&period=7d&device=tablet&status=for_review&release=1.4.2&source=browser_js&limit=20&cursor=opaque_cursor");
+    expect(construireChemin(outil("mip_rum_list_issues"), {})).toBe("/issues");
+  });
+
+  it("place l'identifiant de l'issue dans le chemin, encodé, et l'exige", () => {
+    expect(construireChemin(outil("mip_rum_get_issue"), {
+      issue_id: "6e8bd3a1-2b1c-4d7e-9f00-0a1b2c3d4e5f", app: "gip", limit: 10, cursor: "c", status: "open",
+    })).toBe("/issues/6e8bd3a1-2b1c-4d7e-9f00-0a1b2c3d4e5f?app=gip&limit=10&cursor=c");
+    expect(construireChemin(outil("mip_rum_get_issue"), { issue_id: "a/b" })).toBe("/issues/a%2Fb");
+    expect(() => construireChemin(outil("mip_rum_get_issue"), {})).toThrow(/issue_id/);
+  });
+
+  it("valide localement statut, source et identifiant d'issue avant tout appel", () => {
+    const liste = schemaEntree(outil("mip_rum_list_issues"));
+    expect(liste.status.safeParse("for_review").success).toBe(true);
+    expect(liste.status.safeParse("reopened").success).toBe(false);
+    expect(liste.source.safeParse("python").success).toBe(true);
+    expect(liste.source.safeParse("java").success).toBe(false);
+    expect(liste.release.safeParse("x".repeat(201)).success).toBe(false);
+    const detail = schemaEntree(outil("mip_rum_get_issue"));
+    expect(detail.issue_id.safeParse("6e8bd3a1-2b1c-4d7e-9f00-0a1b2c3d4e5f").success).toBe(true);
+    expect(detail.issue_id.safeParse("p51fp001").success).toBe(false);
+    expect(detail.issue_id.safeParse(undefined).success).toBe(false);
+  });
+
   it("cible les événements custom par défaut", () => {
     expect(construireChemin(outil("mip_rum_list_events"), { app: "gip" })).toBe(
       "/events?app=gip&kind=event",
@@ -222,6 +251,19 @@ describe("indicesPage — pagination, avec ou sans total", () => {
   it("annonce la fin d'un détail quand la page n'est pas pleine", () => {
     expect(indicesPage({ occurrences: [], trend: [], page: { limit: 100, next_cursor: null } }))
       .toMatchObject({ peut_avoir_suite: false, offset_suivant: null, cursor_suivant: null });
+  });
+
+  // Les issues paginent par `data.next_cursor` sans objet `page` : la limite
+  // appliquée n'est pas renvoyée, elle n'est donc pas devinée.
+  it("suit le curseur des issues sans objet page, ni limite ni offset inventés", () => {
+    expect(indicesPage({ issues: [{ kind: "issue" }], total: 12, next_cursor: "suite", sampling: {}, coverage: {} })).toEqual({
+      limit: null, offset: null, recus: 1, peut_avoir_suite: true, offset_suivant: null, cursor_suivant: "suite", total: 12,
+    });
+    expect(indicesPage({ issues: [], total: 0, next_cursor: null })).toMatchObject({ peut_avoir_suite: false, cursor_suivant: null });
+    expect(indicesPage({
+      issue: { id: "x" }, impact: {}, trend: Array.from({ length: 25 }, () => ({})), last_sample: null,
+      occurrences: [{ id: 1 }, { id: 2 }], next_cursor: "occ",
+    })).toMatchObject({ recus: 2, cursor_suivant: "occ", limit: null });
   });
 
   it("ne renvoie rien pour un endpoint non paginé", () => {
@@ -407,6 +449,18 @@ describe("executer — de l'appel d'outil à la réponse", () => {
     expect(vus).toEqual(["/errors/p51fp001?app=alpha&limit=1"]);
     expect(result.texte).toContain("cursor=opaque-next");
     expect(result.texte).not.toMatch(/offset/);
+  });
+
+  it("guide la suite des issues par curseur en markdown, sans limite ni offset inventés", async () => {
+    const { client, vus } = clientFactice({
+      meta: { app: "alpha", period: "7d", device: "all", generatedAt: "2026-09-17T12:00:00.000Z" },
+      data: { issues: [{ kind: "issue", id: "6e8bd3a1-2b1c-4d7e-9f00-0a1b2c3d4e5f", status: "open" }], total: 3, next_cursor: "suite" },
+    });
+    const result = await executer(outil("mip_rum_list_issues"), { app: "alpha", period: "7d", format: "markdown" }, client);
+    expect(vus).toEqual(["/issues?app=alpha&period=7d"]);
+    expect(result.texte).toContain("cursor=suite");
+    expect(result.texte).toContain("Total filtré : 3");
+    expect(result.texte).not.toMatch(/limite|offset/);
   });
 
   it("propage l'erreur du client sans la maquiller", async () => {

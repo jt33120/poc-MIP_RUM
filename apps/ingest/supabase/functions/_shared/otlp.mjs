@@ -9,6 +9,8 @@ import { scrubProps, scrubText, scrubUrl } from "./scrub.mjs";
 import { isBot } from "./bots.mjs";
 // P5.3 : identité déterministe des exceptions dérivées d'un span ou d'un log.
 import { sha256Hex } from "./sha256.mjs";
+// P5.5 : clé de regroupement déclarée, hachée dans le périmètre de l'app.
+import { overrideHash } from "./error-normalize.mjs";
 
 // Seuils Core Web Vitals — bornes [good, needs-improvement], alignés sur la
 // référence web.dev (E0). SOURCE DE VÉRITÉ du rating : il est recalculé ici à
@@ -680,12 +682,20 @@ export function errorEnvelope({ attrs = {}, resource = {}, scopeName = null, eve
  * AVANT l'empreinte (un type réaliste garde son empreinte, un type hostile ne
  * gonfle plus la ligne), message et stack scrubbés AVANT troncature (un secret
  * ne doit pas survivre coupé en deux).
+ *
+ * P5.5 : la clé déclarée (`mip.error_fingerprint`) ne voyage que sous forme
+ * d'empreinte app-scopée, y compris dans un lot différé ; une clé ignorée laisse
+ * son diagnostic. Champs absents quand l'émetteur n'en déclare pas : la forme
+ * d'une erreur sans clé ne change pas.
  */
-function exceptionNormalisee(attrs) {
+function exceptionNormalisee(appId, attrs) {
   const errorType = boundedErrorType(attrs["exception.type"]);
   const message = (scrubText(attrs["exception.message"]) ?? "").slice(0, 1000);
   const stack = (scrubText(attrs["exception.stacktrace"]) ?? "").slice(0, 4000);
+  const cle = overrideHash(appId, attrs["mip.error_fingerprint"]);
   return {
+    ...(cle.hash ? { fingerprint_override_hash: cle.hash } : {}),
+    ...(cle.diagnostic ? { grouping_diagnostic: cle.diagnostic } : {}),
     // Le SDK peut dédupliquer et compter (v59) : absent = 1.
     occurrences: occurrencesDe(attrs["mip.error_count"]),
     kind: errorKind(attrs["mip.error_kind"]),
@@ -824,7 +834,7 @@ function exceptionDerivee({ appId, attrs, contexte, resource, scopeName, origin,
     session_claim: sessionRevendiquee(session),
     app_id: appId,
     route,
-    ...exceptionNormalisee(attrs),
+    ...exceptionNormalisee(appId, attrs),
     // Un backend déclare sa version en `service.version` ; pour un SDK client
     // MIP, ce même attribut est la version du SDK, pas celle de l'application.
     release: releaseMip ?? (runtimeClientMip(resource, scopeName) ? null : boundedDimension(resource["service.version"])),
@@ -1469,7 +1479,7 @@ export function flattenOtlp(payload, opts = {}) {
             route,
             // Occurrences, type, message, stack et empreinte : la normalisation
             // partagée avec les exceptions dérivées d'un span ou d'un log.
-            ...exceptionNormalisee(a),
+            ...exceptionNormalisee(appId, a),
             release,
             // P5.1 (migration-v69) : la corrélation vient des champs NATIFS du
             // span. Elle est propre à cette occurrence, jamais empruntée au

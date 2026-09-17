@@ -96,6 +96,16 @@ Erreurs : `{ "error": "message" }` avec le statut HTTP (`400`, `401`, `403`, `40
 
 ## Journal des changements
 
+### 17/09/2026 — issues d'erreurs : regroupement versionné et identité durable (P5.5)
+
+Deux routes de lecture s'ajoutent, sans rien changer à `/errors` ni à `/errors/{fingerprint}` :
+`GET /api/v1/issues` et `GET /api/v1/issues/{id}`. Une **issue** est l'identité durable d'un problème dans
+une app (UUID), calculée par le regroupement v2 : clé déclarée par l'émetteur, sinon première frame
+applicative en positions source, sinon frame normalisée, sinon repli marqué `low_confidence`. Le regroupement
+v2 s'active **par app** ; avant, et pour les occurrences antérieures, les groupes historiques restent listés
+tels quels (`kind: "legacy"`). Aucune occurrence n'est comptée deux fois. Les anciennes URL de groupe
+restent valides. Ces deux routes sont en lecture seule : le triage des issues viendra avec ses propres routes.
+
 ### 16/09/2026 — erreurs : une seule lecture pour la console, l'API et le MCP (P5.1)
 
 `GET /api/v1/errors` et `GET /api/v1/errors/{fingerprint}` lisent désormais la même base filtrée que
@@ -240,6 +250,59 @@ vient d'ouvrir.
 - `400` `fingerprint invalide` (vide, plus de 64 caractères ou caractère de contrôle) ; `404` `groupe
   d'erreurs introuvable` si le groupe n'a aucune occurrence sur cette fenêtre avec ces filtres, ou pour une
   session viewer sans aucune app.
+
+### `GET /api/v1/issues` — issues d'erreurs
+`data = { issues: IssueEntry[], total, next_cursor, sampling: ErrorSampling, coverage: IssueCoverage }`
+(sources de vérité : `IssueListResult` dans `apps/console/lib/error-issues.ts`, schéma `IssueList` de la
+spec OpenAPI).
+
+**Même population que `/errors`** (fenêtre, `app`, `device`, bots et apps internes exclus), plus deux
+filtres d'occurrence : `release` (exacte, 200 caractères au plus) et `source` (`browser_js`, `node`…). Chaque
+occurrence est comptée **une fois**, dans une seule entrée :
+
+- `kind: "issue"` (`id` UUID) — occurrences rattachées à l'issue à l'ingestion, plus celles, antérieures, dont
+  l'empreinte historique n'est reprise que par CETTE issue ;
+- `kind: "legacy"` (`fingerprint`) — groupe historique qu'aucune issue ne reprend seule : app sans
+  regroupement v2, occurrences antérieures à l'activation, ou empreinte répartie sur plusieurs issues.
+
+| Champ | Sens |
+|---|---|
+| impact | mêmes champs que les groupes d'erreurs (`occurrences`, `sessions_affected`, `visitors_affected`, `identified_users_affected`, couvertures), sur la fenêtre |
+| `status` | `open`, `for_review` (statuts historiques divergents à trancher), `resolved`, `ignored` ; un groupe historique n'est jamais `for_review` |
+| `reappeared` | résolue puis revue depuis : réapparition **à vérifier**, pas une régression confirmée |
+| `origin` | `new` ou `migration` (clé v2 recouvrant un groupe historique déjà vu : jamais présentée comme nouveau bug) |
+| `grouping_basis` | `override`, `symbolicated_frame`, `normalized_frame`, `low_confidence` |
+| `first_seen`, `last_seen` | issue : cycle de vie persisté, groupes historiques repris compris ; groupe historique : première apparition connue et dernière occurrence de la fenêtre |
+| `revision` | bigint en chaîne, pour la concurrence optimiste des futures décisions de triage |
+
+`coverage` : `available` (migration v72 appliquée), `active_apps` (apps du périmètre où le regroupement v2 est
+actif), nombre d'`issues` et de `legacy_groups`, `occurrences_in_issues`, `occurrences_legacy`,
+`occurrences_low_confidence` et `issue_share` (part des occurrences rattachées à une issue, `null` sans
+occurrence). `status` filtre les entrées, jamais les occurrences : il ne change pas les nombres d'une issue.
+
+Tri : à revoir, réapparitions, ouvertes, résolues, ignorées ; puis impact (visiteurs, sessions, inconnus en
+dernier), occurrences, dernière vue, `app_id` et référence pour un ordre total. Pagination **par curseur
+uniquement** : `limit` 1..100 (défaut 50) ; `next_cursor`, renseigné quand la page est pleine, se renvoie tel
+quel dans `cursor` avec les mêmes filtres. `400` pour `status`, `source`, `release` ou `cursor` hors contrat ;
+`403` `aucune application autorisée` pour une session viewer sans app.
+
+### `GET /api/v1/issues/{id}` — détail d'une issue
+`data = { issue: IssueRecord, impact: ErrorImpact, trend: ErrorTrendPoint[], last_sample: ErrorSample | null, occurrences: ErrorOccurrence[], next_cursor, sampling }`
+(source de vérité : `IssueDetailResult` dans `apps/console/lib/error-issues.ts`).
+
+- **L'identifiant fait foi.** L'UUID d'une issue est global : les chiffres sont ceux de son app, annoncée
+  par `meta.app`, quelle que soit `app` dans la requête. Hors du périmètre du principal : `404`.
+- `issue` : état persisté (`status`, `status_source`, `origin`, `grouping_basis`, première et dernière vue et
+  release, résolution, `revision`), `grouping_active` (`false` après un retour arrière : l'issue reste
+  lisible, ses nouvelles occurrences ne lui sont plus rattachées) et `legacy_groups` — chaque empreinte
+  historique reprise avec son statut au rattachement (`legacy_status`, `null` si elle n'avait jamais été vue),
+  son statut actuel, sa `note` de triage relue telle quelle, et le nombre d'`issues` qui la reprennent.
+- `impact`, `trend`, `last_sample`, `occurrences` : mêmes définitions et mêmes liens vérifiés que
+  `/errors/{fingerprint}`, sur la fenêtre et les filtres demandés ; `last_sample` porte aussi
+  `stack_symbolicated` et `symbolication_status` (P5.4). Une issue sans occurrence sur la fenêtre répond
+  `200` avec un impact nul, jamais `404`.
+- Occurrences paginées par curseur : `limit` 1..100 (défaut 100), `next_cursor` à renvoyer dans `cursor`.
+- `400` `id invalide (UUID attendu)` ou `cursor invalide` ; `404` `issue introuvable`.
 
 ### `GET /api/v1/sessions` — sessions récentes
 `data.sessions: SessionRow[]`.

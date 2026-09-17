@@ -5,6 +5,7 @@ import { StackedBars } from "@/components/charts/StackedBars";
 import { ErrorStatusBadges, ErrorTypeBadge } from "@/components/errors/ErrorBadges";
 import { ErrorAccessDenied, ErrorNotices } from "@/components/errors/ErrorNotices";
 import { GroupSparkline } from "@/components/errors/GroupSparkline";
+import { IssueList, IssueListInvalid } from "@/components/errors/IssueList";
 import {
   bucketTick,
   errorGroupHref,
@@ -14,13 +15,25 @@ import {
   fmtCount,
 } from "@/components/errors/error-view";
 import { getUser } from "@/lib/auth";
+import {
+  groupingState,
+  issueModeFor,
+  listIssues,
+  parseIssueCursor,
+  parseIssueListPage,
+  parseIssueRelease,
+  parseIssueSource,
+  parseIssueStatus,
+} from "@/lib/error-issues";
 import { PERIODS, type SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import {
   ERROR_LIST_MAX_OFFSET,
   errorPageFilters,
+  errorScopeFor,
   listErrorGroups,
   parseErrorListPage,
+  scopeApps,
   type ErrorTrendPoint,
 } from "@/lib/queries-errors";
 
@@ -28,11 +41,32 @@ export const dynamic = "force-dynamic";
 
 export default async function Errors({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
+  const user = await getUser();
   // Le périmètre signé borne la lecture AVANT tout filtre d'URL (AD-16 : aucune app = aucun accès).
-  const f = errorPageFilters(sp, await getUser());
+  const f = errorPageFilters(sp, user);
   if (!f) return <ErrorAccessDenied />;
+  const url = errorSearchParams(sp);
 
-  const page = parseErrorListPage(errorSearchParams(sp));
+  // P5.5 : l'app choisie (ou une app du périmètre « toutes ») a activé le
+  // regroupement v2 → la liste passe aux issues. Sinon, liste historique inchangée.
+  const apps = scopeApps(errorScopeFor(user));
+  if (issueModeFor(await groupingState(apps), f.app)) {
+    const status = parseIssueStatus(url.get("status"));
+    const source = parseIssueSource(url.get("source"));
+    const release = parseIssueRelease(url.get("release"));
+    const cursor = parseIssueCursor(url.get("cursor"));
+    if (status === undefined || source === undefined || release === undefined) {
+      return <IssueListInvalid f={f} raison="Filtre invalide : statut ou source inconnus, ou release de plus de 200 caractères." />;
+    }
+    if (cursor === undefined) {
+      return <IssueListInvalid f={f} raison="Curseur de pagination invalide : il ne provient pas de cette console." />;
+    }
+    const filtres = { status, source, release };
+    const result = await listIssues(f, filtres, { limit: parseIssueListPage(url).limit, cursor }, { apps, overview: true });
+    return <IssueList f={f} filtres={filtres} result={result} curseur={cursor !== null} limit={url.get("limit")} />;
+  }
+
+  const page = parseErrorListPage(url);
   const { groups, total, totals, trend, sampling, enrichment, unfingerprinted } = await listErrorGroups(f, page, {
     series: true,
   });

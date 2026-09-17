@@ -33,7 +33,7 @@ export const GET = handle(async () => ({
     device: "mobile | desktop | tablet | all (défaut)",
   },
   pagination:
-    "les listes (/errors, /sessions, /events, /actions) acceptent limit (1..200) & offset ; /errors, /events et /actions bornent offset à 10 000. page renvoyée dans data.page. /errors et /events fournissent un total (data.total) ; /sessions et /actions n'en fournissent aucun. /errors/{fingerprint} pagine ses occurrences par cursor (data.page.next_cursor), limit 1..100 ; /events accepte aussi cursor.",
+    "les listes (/errors, /sessions, /events, /actions) acceptent limit (1..200) & offset ; /errors, /events et /actions bornent offset à 10 000. page renvoyée dans data.page. /errors, /issues et /events fournissent un total (data.total) ; /sessions et /actions n'en fournissent aucun. /errors/{fingerprint} pagine ses occurrences par cursor (data.page.next_cursor), limit 1..100 ; /events accepte aussi cursor. /issues et /issues/{id} paginent uniquement par cursor (data.next_cursor), limit 1..100.",
   spec: "/api/v1/openapi (OpenAPI 3.0, sans auth)",
   docs: "/api/v1/docs (Swagger UI, sans auth)",
   mcp: {

@@ -3,10 +3,10 @@
 //
 // TOUT EST DONNÉE, RIEN N'EST CODE. Un outil est un objet — nom, description,
 // paramètres acceptés, chemin d'API. La construction de l'URL est UNE fonction
-// pour les douze outils. C'est ce qui empêche la dérive : le dépôt a déjà connu
+// pour tous les outils. C'est ce qui empêche la dérive : le dépôt a déjà connu
 // TROIS implémentations de l'ingestion qui avaient silencieusement divergé (le
 // dev-server acceptait une app sans clé là où la production la rejetait).
-// Douze petits handlers écrits à la main referaient exactement ça.
+// Autant de petits handlers écrits à la main referaient exactement ça.
 //
 // Ce module est PUR : ni réseau, ni horloge, ni variable d'environnement. Il se
 // teste en comparant des chaînes.
@@ -27,7 +27,7 @@ export const PARAMS = {
   device:
     "Type d'appareil : 'mobile', 'desktop', 'tablet' ou 'all' (défaut). Attention : les endpoints historiques (overview, vitals, pages, tracing, health-grid) ne distinguent que mobile/desktop — 'tablet' y est traité comme 'tous'.",
   limit:
-    "Nombre d'éléments par page (1 à 200). Le détail d'un groupe d'erreurs plafonne ses occurrences à 100 par page.",
+    "Nombre d'éléments par page (1 à 200). Le détail d'un groupe d'erreurs, la liste des issues et le détail d'une issue plafonnent à 100 par page.",
   offset: "Décalage de pagination, à partir de 0.",
   series:
     "Vitals à détailler en série temporelle : liste séparée par des virgules ('LCP,INP') ou 'all'. Par défaut aucune série n'est renvoyée, seulement les p75.",
@@ -40,7 +40,12 @@ export const PARAMS = {
   attr_key: "Clé top-level sûre de l'attribut, sans JSONPath.",
   attr_type: "Type primitif exact : string, number, boolean ou null.",
   attr_value: "Valeur exacte de l'attribut. Omise seulement avec attr_type='null'.",
-  cursor: "Curseur opaque `data.page.next_cursor` renvoyé par la page précédente, avec les mêmes filtres. Ne pas le modifier.",
+  cursor: "Curseur opaque renvoyé par la page précédente (`data.page.next_cursor`, ou `data.next_cursor` pour les issues), avec les mêmes filtres. Ne pas le modifier.",
+  status: "Statut d'une issue : 'open', 'for_review' (statuts historiques divergents, à trancher), 'resolved' ou 'ignored'. Omis = tous. Filtre les entrées, jamais les occurrences comptées.",
+  release: "Release exacte des occurrences comptées (200 caractères au plus). Omise = toutes.",
+  source:
+    "Source des occurrences comptées : browser_js, browser_console, browser_resource, browser_csp, browser_network, node, python, react_native_js, native ou otel. Omise = toutes.",
+  issue_id: "Identifiant UUID de l'issue, tel que renvoyé par mip_rum_list_issues (`id` d'une entrée `kind: \"issue\"`).",
   format:
     "Forme de la réponse : 'json' (défaut — la réponse de l'API telle quelle, sans transformation) ou 'markdown' (tableaux lisibles, aucune donnée retirée).",
 };
@@ -134,6 +139,40 @@ export const OUTILS = [
       "élargir `period` avant de conclure qu'elle n'existe pas.",
     chemin: "/errors/{fingerprint}",
     params: [...FILTRES, "fingerprint", "limit", "cursor"],
+  },
+  {
+    nom: "mip_rum_list_issues",
+    titre: "Issues d'erreurs",
+    resume: "Problèmes identifiés durablement (regroupement v2) et groupes historiques non repris : impact, statut, couverture.",
+    description:
+      "Issues d'erreurs sur la même population que mip_rum_list_errors (fenêtre `period`, appareil, bots et apps internes exclus), " +
+      "filtrables par `status`, `release` et `source`. Chaque occurrence est comptée UNE fois, dans une seule entrée : " +
+      "`kind: \"issue\"` (identité durable `id`, statut `open`/`for_review`/`resolved`/`ignored`, `origin` new ou migration, " +
+      "`grouping_basis` override, symbolicated_frame, normalized_frame ou low_confidence) ou `kind: \"legacy\"` (groupe historique " +
+      "`fingerprint` qu'aucune issue ne reprend : app sans regroupement v2, occurrences antérieures à l'activation, empreinte répartie). " +
+      "Mêmes champs d'impact que les groupes d'erreurs ; un compte de personnes à null veut dire INCONNU. `reappeared` signale une " +
+      "réapparition À VÉRIFIER, pas une régression confirmée ; `for_review` signale des statuts historiques divergents. " +
+      "`coverage` dit où le regroupement v2 est actif et quelle part des occurrences il couvre ; `low_confidence` est un repli peu " +
+      "discriminant (« Script error. », pile tierce) : le dire. Si `sampling.message` est renseigné, les volumes sont ceux d'un échantillon. " +
+      "Paginé par curseur uniquement : `limit` 100 au plus, puis recopier `data.next_cursor` dans `cursor`. Lecture seule.",
+    chemin: "/issues",
+    params: [...FILTRES, "status", "release", "source", "limit", "cursor"],
+  },
+  {
+    nom: "mip_rum_get_issue",
+    titre: "Détail d'une issue",
+    resume: "État, groupes historiques repris, impact, tendance, dernier exemplaire et occurrences liées d'une issue.",
+    description:
+      "Détail d'une issue obtenue avec mip_rum_list_issues : `issue` (statut, origine, base de regroupement, première et dernière vue " +
+      "et release, `grouping_active`, et `legacy_groups` — chaque groupe historique repris avec son statut au rattachement, son statut " +
+      "actuel et sa note de triage), puis `impact`, `trend`, `last_sample` (stack brute, release, source, trace ; `stack_symbolicated` " +
+      "porte la stack en positions source quand `symbolication_status` vaut resolved — sinon citer ce statut plutôt que deviner) et `occurrences` avec leurs " +
+      "`links` (session, replay, trace, span parent, action ; false = la relation n'existe pas dans la même app), sur la fenêtre et les " +
+      "filtres demandés. L'identifiant est global : les chiffres sont ceux de l'app de l'issue, que `meta.app` annonce. Une issue sans " +
+      "occurrence sur la période répond avec un impact nul : élargir `period` avant de conclure que le problème a disparu. " +
+      "Occurrences paginées par curseur : `limit` 100 au plus, puis recopier `data.next_cursor` dans `cursor`. Lecture seule.",
+    chemin: "/issues/{issue_id}",
+    params: [...FILTRES, "issue_id", "limit", "cursor"],
   },
   {
     nom: "mip_rum_list_sessions",

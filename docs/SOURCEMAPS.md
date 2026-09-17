@@ -73,18 +73,25 @@ au format d'un jeton de lecture).
 Ne **jamais** publier les `.map` avec le site : elles restent côté MIP.
 
 ### 4. Lire la stack
-- **Écran de détail** `/errors/{fingerprint}` : stack source avec le badge « dé-minifié · release »,
+- **Écrans de détail** `/errors/{fingerprint}` et `/errors/issues/{id}` : stack source avec le badge « dé-minifié · release »,
   stack brute repliable. Si la map est arrivée après l'erreur, la stack est symbolisée à
   l'affichage (mention explicite). Sinon, le statut est dit : *Stack non symbolisée* (aucune map
   pour la release, positions absentes), *Source map inutilisable*, *Symbolication différée*.
 - **Admin seulement** : ±3 lignes de code source autour de la première frame résolue, tirées de
   `sourcesContent`. Jamais pour un viewer ou une session démo, jamais dans l'API.
 - **API v1** `GET /api/v1/errors/{fingerprint}` : `last.stack_symbolicated` et
-  `last.symbolication_status` (additifs, `stack` reste brute) ; mêmes droits que la stack RUM.
-- **MCP** `mip_rum_get_error_group` : mêmes champs, rendus tels quels.
+  `last.symbolication_status` (additifs, `stack` reste brute) ; `GET /api/v1/issues/{id}` : les mêmes
+  champs sur `last_sample`. Mêmes droits que la stack RUM.
+- **MCP** `mip_rum_get_error_group` et `mip_rum_get_issue` : mêmes champs, rendus tels quels.
 
 La symbolication **ne change jamais** `fingerprint` : l'identité d'un groupe ne dépend pas du
 moment où la map a été mise en ligne. Aucune reclassification historique (P8).
+
+Le regroupement v2 des issues, lui, retient la première frame applicative **symbolisée à
+l'ingestion** : une map mise en ligne avant le déploiement donne, dès la première occurrence, une
+clé stable d'un build à l'autre et d'un navigateur à l'autre. Mise en ligne après, les occurrences
+suivantes peuvent ouvrir une autre issue que les précédentes — une scission, jamais une fusion ; la
+symbolication à la lecture ne reclasse rien.
 
 ## Contrat d'upload (les deux ports)
 
