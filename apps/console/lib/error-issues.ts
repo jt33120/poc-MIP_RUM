@@ -389,7 +389,10 @@ export async function listIssues(
 ): Promise<IssueListResult> {
   const schema = await errorSchema();
   const { v69, v72 } = schema;
-  const { range, scope } = queryOf(f);
+  // Requête résolue UNE fois : entrées, synthèse, totaux et tendance partagent le même `to`.
+  const query = queryOf(f);
+  const { range, scope } = query;
+  f = { ...f, query };
   const state = await groupingState(opts.apps ?? null, schema);
   const restriction = { apps: opts.apps ?? null, release: filters.release, source: filters.source, issues: { v72 } };
   return snapshot(async (lire) => {

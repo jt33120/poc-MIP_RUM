@@ -12,7 +12,11 @@ import type {
 } from "@/lib/queries-errors";
 import { queryToSearchParams } from "@/lib/query-contract";
 
-/** Next livre un paramètre répété en tableau : on retient le premier, comme parseFilters. */
+/**
+ * Next livre un paramètre répété en tableau : on retient le premier pour les
+ * paramètres propres à l'écran (statut, curseur…). Ceux du contrat commun, eux,
+ * sont refusés quand ils sont répétés (lib/query-contract.ts).
+ */
 export function errorSearchParams(sp: SearchParams): URLSearchParams {
   const url = new URLSearchParams();
   for (const [key, value] of Object.entries(sp)) {

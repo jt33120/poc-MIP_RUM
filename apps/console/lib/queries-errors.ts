@@ -829,23 +829,26 @@ export async function listErrorGroups(
 ): Promise<ErrorListResult> {
   const schema = await errorSchema();
   const { v69 } = schema;
-  const { range } = queryOf(f);
+  // Requête résolue UNE fois : groupes, totaux, tendance et séries partagent le même `to`.
+  const query = queryOf(f);
+  const { range } = query;
+  const resolved: ErrorFilters = { ...f, query };
   const restriction: ErrorRestriction = { apps: opts?.apps ?? null };
   return snapshot(async (lire) => {
-    const groupsBase = errorBase(f, schema, restriction);
+    const groupsBase = errorBase(resolved, schema, restriction);
     const rows = await lire<GroupSqlRow>(
       `${groupsSql(groupsBase)}
        limit ${groupsBase.bind(page.limit)} offset ${groupsBase.bind(page.offset)}`,
       groupsBase.params,
     );
-    const totalsBase = errorBase(f, schema, restriction);
+    const totalsBase = errorBase(resolved, schema, restriction);
     const totalsRows = await lire<TotalsSqlRow>(totalsSql(totalsBase), totalsBase.params);
-    const trendBase = errorBase(f, schema, restriction);
+    const trendBase = errorBase(resolved, schema, restriction);
     const trend = await lire<ErrorTrendPoint>(trendSql(trendBase, range), trendBase.params);
 
     let groups = rows.map(toGroupRow);
     if (opts?.series && groups.length) {
-      const seriesBase = errorBase(f, schema, {
+      const seriesBase = errorBase(resolved, schema, {
         ...restriction,
         fingerprints: [...new Set(groups.map((group) => group.fingerprint))],
       });

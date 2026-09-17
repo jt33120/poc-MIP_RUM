@@ -59,16 +59,18 @@ describe("les trois agrégations filtrent sur les vitals notables", () => {
   // Trois endroits calculaient le même ratio et se trompaient de la même façon.
   // Corriger l'un des trois aurait donné trois chiffres différents pour la même
   // question, ce qui est pire que trois chiffres également faux.
+  // P6.2 : les paramètres sont numérotés par le compilateur du contrat ; la liste
+  // reste la constante CORE_VITALS, liée, jamais recopiée dans le SQL.
   it("le score de santé (lib/health.ts)", () => {
     const src = lire("apps/console/lib/health.ts");
-    expect(src).toContain("m.name = any($3::text[])");
-    expect(src).toContain("CORE_VITALS");
+    expect(src).toContain("const vitaux = sql.bind(CORE_VITALS);");
+    expect(src).toContain("m.name = any(${vitaux}::text[])");
   });
 
   it("la heatmap d'historique (lib/queries-grid.ts)", () => {
     const src = lire("apps/console/lib/queries-grid.ts");
-    expect(src).toContain("m.name = any($3::text[])");
-    expect(src).toContain("CORE_VITALS");
+    expect(src).toContain("const vitaux = sql.bind(CORE_VITALS);");
+    expect(src).toContain("m.name = any(${vitaux}::text[])");
   });
 
   it("le rollup horaire (migration-v56)", () => {

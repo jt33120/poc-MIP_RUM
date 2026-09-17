@@ -38,8 +38,9 @@ describe("parseTokenConfig", () => {
       { token: "scoped", apps: ["uti"] },
     ]);
   });
-  it("@ sans apps -> null (toutes)", () => {
-    expect(parseTokenConfig("tok@")).toEqual([{ token: "tok", apps: null }]);
+  it("@ sans apps -> [] : périmètre vide, aucune app (P6.2), jamais « toutes »", () => {
+    expect(parseTokenConfig("tok@")).toEqual([{ token: "tok", apps: [] }]);
+    expect(parseTokenConfig("tok@ ; ")).toEqual([{ token: "tok", apps: [] }]);
   });
   it("vide / absent -> []", () => {
     expect(parseTokenConfig("")).toEqual([]);
@@ -64,6 +65,15 @@ describe("authenticateApi — jeton scopé", () => {
       role: "viewer",
       apps: ["uti"],
       subject: "api-token:uti",
+    });
+  });
+  it("jeton au périmètre vide -> apps [] (refusé ensuite par le contrat), sujet distinct du jeton global", async () => {
+    process.env.CONSOLE_API_TOKENS = "vide-secret@";
+    expect(await authenticateApi("Bearer vide-secret", null)).toEqual({
+      kind: "token",
+      role: "viewer",
+      apps: [],
+      subject: "api-token:",
     });
   });
   it("jeton inconnu -> null", async () => {

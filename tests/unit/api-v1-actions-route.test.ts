@@ -43,8 +43,16 @@ describe("GET /api/v1/actions", () => {
     vi.clearAllMocks();
   });
 
-  it("force le scope A malgré app B et transmet une pagination bornée", async () => {
+  it("refuse l'app B hors du périmètre du jeton (403), sans rien lire ni rabattre sur A", async () => {
     const response = await request("app=app-b&period=7d&limit=20&offset=999999");
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "forbidden_app", parameter: "app" });
+    expect(topActions).not.toHaveBeenCalled();
+    expect(topActionsSummary).not.toHaveBeenCalled();
+  });
+
+  it("lit l'app A du périmètre et transmet une pagination bornée", async () => {
+    const response = await request("app=app-a&period=7d&limit=20&offset=999999");
     expect(response.status).toBe(200);
     expect(topActions).toHaveBeenCalledWith(expect.objectContaining({ app: "app-a", period: "7d" }), {
       limit: 20,
@@ -52,7 +60,17 @@ describe("GET /api/v1/actions", () => {
     });
     const body = await response.json();
     expect(body.meta.app).toBe("app-a");
+    expect(body.meta.scope).toEqual({ requested_app: "app-a", effective_apps: ["app-a"] });
     expect(body.data.actions).toEqual([{ app_id: "app-a", name: "Payer", actions: 1 }]);
     expect(body.data.summary.sampling_notice).toMatchObject({ min_sample_rate: 0.1 });
+  });
+
+  it("sans app : toutes les apps AUTORISÉES du jeton, annoncées dans meta", async () => {
+    const response = await request("period=24h");
+    expect(response.status).toBe(200);
+    const [filters] = topActions.mock.calls[0];
+    expect(filters.app).toBeNull();
+    expect(filters.query.scope.effectiveApps).toEqual(["app-a"]);
+    expect((await response.json()).meta).toMatchObject({ app: "all", scope: { requested_app: null, effective_apps: ["app-a"] } });
   });
 });

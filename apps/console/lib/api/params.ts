@@ -9,7 +9,7 @@
 // AUTORISÉES. Helper PUR : prend URLSearchParams + principal, aucun import next/*.
 import { filtersOfQuery, type Filters as LegacyFilters, type PeriodKey } from "../filters";
 import type { Filters as V2Filters } from "../queries-v2";
-import { parseAnalyticsQuery, type AnalyticsQuery, type Parsed } from "../query-contract";
+import { parseAnalyticsQuery, resourceScope, type AnalyticsQuery, type Parsed } from "../query-contract";
 import type { ApiPrincipal } from "./auth";
 
 export interface ApiFilters {
@@ -19,6 +19,16 @@ export interface ApiFilters {
   app: string | null; // app demandée (null = toutes les apps autorisées)
   period: PeriodKey | "custom";
   device: string | null; // appareil demandé (null = tous), pour le meta
+}
+
+/**
+ * Ressource dont l'identifiant fait foi (groupe d'erreurs, issue) : `meta.app`,
+ * `meta.scope` et l'ETag annoncent l'app dont viennent RÉELLEMENT les chiffres.
+ * `app` doit appartenir au périmètre autorisé — la lecture l'a résolue dedans.
+ */
+export function announceResourceApp(filters: ApiFilters, app: string): void {
+  filters.app = app;
+  filters.query = resourceScope(filters.query, app);
 }
 
 export function parseApiFilters(

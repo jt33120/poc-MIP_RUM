@@ -28,25 +28,28 @@
 // disparue, mais sur les instructions réellement envoyées à PostgreSQL (base
 // simulée). S'y ajoutent ceux de P5.1 : `filtered_errors` citée une seule fois
 // par instruction, fenêtre [from,to), aucun `::int` sur un compteur, ratios en
-// float8, `origine` indépendante.
+// float8, `origine` indépendante. Depuis P6.2, les bornes sont des instants UTC
+// liés, résolus UNE fois par le contrat commun, et les seaux sont alignés UTC.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => {
   const journal: string[] = [];
+  const parametres: unknown[][] = [];
   const q = vi.fn(async () => [{ v69: true }]);
   // Une ligne passe-partout : chaque lecture va jusqu'au bout (groupe trouvé,
   // séries demandées), sans que ce test dépende de l'ordre des réponses.
   const ligne = { app_id: "app-a", fingerprint: "fp1", bucket: new Date(0), occurrences: 1 };
   const tx = vi.fn(async (fn: (client: { query: (sql: string) => Promise<{ rows: unknown[] }> }) => unknown) =>
     fn({
-      query: async (sql: string) => {
+      query: async (sql: string, params: unknown[] = []) => {
         journal.push(sql);
+        parametres.push(params);
         return { rows: /^set transaction/.test(sql) ? [] : [ligne] };
       },
     }));
-  return { journal, q, tx };
+  return { journal, parametres, q, tx };
 });
 vi.mock("@/lib/db", () => ({ q: db.q, tx: db.tx }));
 
@@ -72,14 +75,35 @@ const PERIODES = Object.keys(PERIODS) as PeriodKey[];
  */
 async function instructions(period: PeriodKey = "24h") {
   const f = { app: "app-a", period, device: null, segment: [], includeBots: false, includeInternal: false };
+  const lues = () => {
+    const i = db.journal.map((sql, n) => [sql, n] as const).filter(([sql]) => !sql.startsWith("set transaction"));
+    return { sql: i.map(([sql]) => sql), params: i.map(([, n]) => db.parametres[n]) };
+  };
   db.journal.length = 0;
+  db.parametres.length = 0;
   await listErrorGroups(f, { limit: 100, offset: 0 }, { series: true });
-  const liste = db.journal.filter((sql) => !sql.startsWith("set transaction"));
+  const l = lues();
   db.journal.length = 0;
+  db.parametres.length = 0;
   await errorGroupDetail({ app_id: "app-a", fingerprint: "fp1" }, f, { limit: 100, cursor: null });
-  const detail = db.journal.filter((sql) => !sql.startsWith("set transaction"));
-  return { liste, detail, toutes: [...liste, ...detail] };
+  const d = lues();
+  return {
+    liste: l.sql,
+    detail: d.sql,
+    toutes: [...l.sql, ...d.sql],
+    parametres: { liste: l.params, detail: d.params },
+  };
 }
+
+/** Bornes [from,to) liées d'une instruction : valeurs des `$n` de la population. */
+function bornes(sql: string, params: unknown[]): { from: string; to: string } {
+  const m = /e\.ts >= \$(\d+)::timestamptz and e\.ts < \$(\d+)::timestamptz/.exec(cte(sql, "filtered_errors"));
+  if (!m) throw new Error("fenêtre liée absente de filtered_errors");
+  return { from: String(params[Number(m[1]) - 1]), to: String(params[Number(m[2]) - 1]) };
+}
+
+/** Le texte d'une instruction sans la numérotation de ses paramètres. */
+const sansNumeros = (sql: string) => sql.replace(/\$\d+/g, "$?");
 
 /** Le corps d'une CTE nommée, parenthèses équilibrées. */
 function cte(sql: string, nom: string): string {
@@ -157,12 +181,21 @@ describe("les compteurs d'un groupe d'erreurs sont bornés par la fenêtre", () 
     for (const sql of (await instructions()).toutes) expect(sql).not.toContain("v_error_group");
   });
 
-  it("toute instruction borne sa population à [from, to), pour chaque période", async () => {
+  it("toute instruction borne sa population à [from, to) liés, résolus UNE fois, pour chaque période", async () => {
     for (const p of PERIODES) {
-      for (const sql of (await instructions(p)).toutes) {
-        expect(cte(sql, "filtered_errors"), p).toContain(
-          `e.ts >= now() - interval '${PERIODS[p].interval}' and e.ts < now()`,
-        );
+      const { liste, detail, parametres } = await instructions(p);
+      for (const [sqls, params] of [[liste, parametres.liste], [detail, parametres.detail]] as const) {
+        const fenetres = new Set<string>();
+        sqls.forEach((sql, i) => {
+          // Aucune horloge dans le SQL : `now()` évalué par instruction décalerait les bornes.
+          expect(cte(sql, "filtered_errors"), p).not.toContain("now()");
+          const { from, to } = bornes(sql, params[i]);
+          expect(Date.parse(to) - Date.parse(from), p).toBe(intervalleEnMs(PERIODS[p].interval));
+          fenetres.add(`${from}|${to}`);
+        });
+        // Groupes, totaux, tendance, séries (ou groupe, tendance, exemplaire,
+        // occurrences) : une seule et même fenêtre.
+        expect(fenetres.size, p).toBe(1);
       }
     }
   });
@@ -193,10 +226,11 @@ describe("les compteurs d'un groupe d'erreurs sont bornés par la fenêtre", () 
     // vient de cliquer. Le détail ajoute seulement la restriction à son groupe.
     const { liste, detail } = await instructions();
     expect(cte(detail[0], "g")).toBe(cte(liste[0], "g"));
-    const restriction = " and e.fingerprint = any($3::text[])";
+    const restriction = " and e.fingerprint = any($?::text[])";
     for (const sql of detail) {
-      expect(cte(sql, "filtered_errors")).toContain(restriction);
-      expect(cte(sql, "filtered_errors").replace(restriction, "")).toBe(cte(liste[0], "filtered_errors"));
+      const population = sansNumeros(cte(sql, "filtered_errors"));
+      expect(population).toContain(restriction);
+      expect(population.replace(restriction, "")).toBe(sansNumeros(cte(liste[0], "filtered_errors")));
     }
   });
 });
@@ -289,19 +323,20 @@ describe("le tri classe par impact sur la fenêtre, pas par volume cumulé", () 
 // ═══════════════ 4. L'écran n'annonce plus une fenêtre pour une autre ═════════
 
 describe("la tendance suit la période choisie", () => {
-  it("les seaux viennent de PERIODS, bornés par les seaux de from et de to", async () => {
+  it("les seaux suivent la plage, alignés UTC, bornés par les seaux de from et de l'instant avant to", async () => {
     for (const p of PERIODES) {
-      const { bucket, interval } = PERIODS[p];
+      const largeur = `interval '${seauEnSecondes(p)} seconds'`;
+      const origine = "timestamptz '2000-01-01 00:00:00+00'";
       const { liste, detail } = await instructions(p);
       const [, , tendance, series] = liste;
       for (const sql of [tendance, detail[1]]) {
-        expect(sql, p).toContain(
-          `generate_series(date_bin(interval '${bucket}', now() - interval '${interval}', timestamptz '2000-01-01'),`,
+        expect(sansNumeros(sql), p).toContain(
+          `generate_series(date_bin(${largeur}, $?::timestamptz, ${origine}),`,
         );
-        expect(sql, p).toContain(`date_bin(interval '${bucket}', now(), timestamptz '2000-01-01'), interval '${bucket}')`);
+        expect(sansNumeros(sql), p).toContain(`$?::timestamptz - interval '1 microsecond', ${largeur})`);
       }
       // Les séries par groupe tombent dans les MÊMES seaux que la tendance.
-      expect(series, p).toContain(`date_bin(interval '${bucket}', ts, timestamptz '2000-01-01') as bucket`);
+      expect(series, p).toContain(`date_bin(${largeur}, ts, ${origine}) as bucket`);
       for (const sql of [tendance, series]) expect(sql, p).not.toContain("date_trunc(");
     }
   });

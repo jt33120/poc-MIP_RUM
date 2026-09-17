@@ -50,14 +50,14 @@ const groupe = (fingerprint: string, series: number[]): ErrorGroupRow => ({
 const params = (href: string) => new URL(href, "http://console.local").searchParams;
 
 describe("paramètres d'URL des écrans Erreurs", () => {
-  it("retient la première valeur d'un paramètre répété, comme parseFilters", () => {
+  it("retient la première valeur d'un paramètre répété, comme la porte projet du middleware", () => {
     const url = errorSearchParams({ app: ["p51-app-a", "p51-app-b"], period: "7d", cursor: undefined });
     expect(url.get("app")).toBe("p51-app-a");
     expect(url.get("period")).toBe("7d");
     expect(url.has("cursor")).toBe(false);
   });
 
-  it("garde période, appareil, segment, bots et apps internes — et une app TOUJOURS explicite", () => {
+  it("garde période, appareil, segment (format v2), bots et apps internes — et une app TOUJOURS explicite", () => {
     const f = filtres({
       app: null,
       period: "7d",
@@ -70,13 +70,13 @@ describe("paramètres d'URL des écrans Erreurs", () => {
     // Sans app, le middleware substituerait l'app du cookie projet.
     expect(p.get("app")).toBe("all");
     expect(Object.fromEntries(p)).toEqual({
-      app: "all", period: "7d", device: "tablet", seg: "geo==FR", bots: "1", internal: "1",
+      app: "all", period: "7d", device: "tablet", seg: "v2:country:eq:FR", bots: "1", internal: "1",
     });
   });
 
-  it("ne propage ni curseur ni limite, sauf ajout explicite", () => {
+  it("ne propage ni curseur ni limite, sauf ajout explicite ; la période par défaut n'est pas écrite", () => {
     const p = params(errorsHref("/errors", filtres({ device: null }), "p51-app-a"));
-    expect(Object.fromEntries(p)).toEqual({ app: "p51-app-a", period: "24h" });
+    expect(Object.fromEntries(p)).toEqual({ app: "p51-app-a" });
     expect(params(errorsHref("/errors", filtres(), "p51-app-a", { offset: "100" })).get("offset")).toBe("100");
   });
 
