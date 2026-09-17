@@ -57,9 +57,10 @@ patch, aucun surcoût).
 - **Exceptions** (P5.3) : une exception levée par un gestionnaire de requête, une exception
   non interceptée du processus, ou une `Error` passée à `console.error` part **avec sa stack**.
   Celle d'une requête devient un événement `exception` de son span `http.server` (statut OTLP
-  ERROR, `error.type`) ; hors requête, un log d'exception. La même `Error` journalisée puis
-  relancée garde le même `mip.exception_id` : l'ingestion n'en écrit qu'une occurrence. Un
-  `console.error("texte")` reste un simple log.
+  ERROR, `error.type`) ; hors requête, un log d'exception, tant que le pont de journalisation
+  est actif (`MIP_RUM_LOGS`) et que `MIP_RUM_LOG_LEVEL` le laisse passer. La même `Error`
+  journalisée puis relancée garde le même `mip.exception_id` : l'ingestion n'en écrit qu'une
+  occurrence. Un `console.error("texte")` reste un simple log.
 
 L'instrumentation `pg` se branche via un hook `require` (agent **sans dépendance** :
 il n'importe jamais `pg`). Aucune donnée de corps, ni query string, ni en-tête, ni
