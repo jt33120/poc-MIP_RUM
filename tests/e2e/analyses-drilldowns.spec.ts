@@ -130,11 +130,36 @@ async function loginConsole(page: Page) {
   await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
 }
 
-/** Aucun débordement horizontal : le document ne dépasse pas la fenêtre. */
-async function sansDebordement(page: Page): Promise<boolean> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
-  );
+/**
+ * Débordement horizontal : la liste des éléments fautifs, pas un simple booléen.
+ * Un échec doit NOMMER le coupable — sans quoi la recette dit qu'il y a un
+ * problème sans jamais dire où. Un élément dans un conteneur défilant est
+ * légitime (tableau large) ; un élément positionné qui en échappe ne l'est pas.
+ * Même helper que les recettes de débordement de P5.
+ */
+async function debordements(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const largeur = document.documentElement.clientWidth;
+    const totale = document.documentElement.scrollWidth;
+    if (totale <= largeur) return [];
+    const dansDefilant = (el: Element) => {
+      for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+        if (["auto", "scroll", "hidden"].includes(getComputedStyle(parent).overflowX)) return true;
+      }
+      return false;
+    };
+    const fautifs = [...document.body.querySelectorAll("*")]
+      .filter((el) => {
+        if (el.getBoundingClientRect().right <= largeur + 1) return false;
+        return ["absolute", "fixed"].includes(getComputedStyle(el).position) || !dansDefilant(el);
+      })
+      .slice(0, 5)
+      .map(
+        (el) =>
+          `${el.tagName.toLowerCase()}[${el.getAttribute("class") ?? ""}] → ${Math.round(el.getBoundingClientRect().right)} px`,
+      );
+    return [`page ${totale} px > fenêtre ${largeur} px`, ...fautifs];
+  });
 }
 
 test("découpage : onglets, drill-down, clavier et alternative textuelle", async ({ page }) => {
@@ -251,12 +276,17 @@ test("sessions : recherche bornée, refus récupérable et pagination stable", a
 
 test("aucun débordement horizontal à 390, 768 et 1440 px", async ({ page }) => {
   await loginConsole(page);
+  // Toutes les combinaisons sont PARCOURUES avant d'échouer : s'arrêter au
+  // premier écran fautif cacherait les suivants, et la recette repartirait pour
+  // un tour à chaque correction.
+  const fautes: string[] = [];
   for (const largeur of [390, 768, 1440]) {
     await page.setViewportSize({ width: largeur, height: 900 });
     for (const chemin of ["/", "/pages", "/errors", "/sessions"]) {
       await page.goto(`${BASE}${chemin}?app=${APP_ID}&period=24h`);
       await expect(page.locator("h1").first()).toBeVisible();
-      expect(await sansDebordement(page), `${chemin} à ${largeur} px`).toBe(true);
+      for (const faute of await debordements(page)) fautes.push(`${chemin} @ ${largeur} px — ${faute}`);
     }
   }
+  expect(fautes).toEqual([]);
 });
