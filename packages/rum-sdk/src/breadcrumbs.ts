@@ -5,6 +5,8 @@ import type { Emit } from "./errors";
 
 export const BREADCRUMB_CAP_PER_PAGE = 50;
 export const BREADCRUMB_LABEL_MAX = 40;
+/** Longueur d'un libellé sur le fil ; l'ingestion applique la même borne après son scrub. */
+export const BREADCRUMB_WIRE_MAX = 120;
 export const MIP_UI_ATTR = "data-mip-rum-ui";
 const SEQ_KEY = "mip_rum_seq";
 
@@ -24,6 +26,21 @@ export function formatClickLabel(
   const raw = (text ?? "").replace(/\s+/g, " ").trim() || (ariaLabel ?? "").trim();
   const t = raw.slice(0, BREADCRUMB_LABEL_MAX);
   return t ? `${tag.toLowerCase()} "${t}"` : tag.toLowerCase();
+}
+
+/**
+ * Libellé borné pour le fil, sans jamais y laisser un mot COUPÉ.
+ *
+ * L'ingestion masque un JWT, une clé ou un email entiers ; la moitié d'un jeton
+ * ne ressemble plus à rien et passerait telle quelle. Or un libellé d'erreur peut
+ * porter un chemin d'URL (erreur réseau, P5.2) : au-delà de la borne, le dernier
+ * mot ou segment de chemin entamé devient « … » plutôt qu'un fragment. Le « / »
+ * compte comme une frontière : une route longue garde ses premiers segments.
+ */
+export function boundedWireLabel(label: string, max: number = BREADCRUMB_WIRE_MAX): string {
+  if (label.length <= max) return label;
+  const tete = label.slice(0, max - 1);
+  return `${/[\s/]/.test(label[max - 1]) ? tete : tete.replace(/[^\s/]*$/, "")}…`;
 }
 
 /**
@@ -58,7 +75,7 @@ export function createBreadcrumbTrail(emit: Emit): BreadcrumbTrail {
       emit("breadcrumb", {
         ...attrs,
         "breadcrumb.type": type,
-        "breadcrumb.label": String(label).slice(0, 120),
+        "breadcrumb.label": boundedWireLabel(String(label)),
         "breadcrumb.seq": nextSeq(),
       });
     },

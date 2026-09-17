@@ -7,6 +7,8 @@ import { scrubProps, scrubText, scrubUrl } from "./scrub.mjs";
 // Lot 2 : détection de trafic non humain (headless/monitoring/crawlers JS) ->
 // sessions[].is_bot, exclu par défaut des agrégats console.
 import { isBot } from "./bots.mjs";
+// P5.3 : identité déterministe des exceptions dérivées d'un span ou d'un log.
+import { sha256Hex } from "./sha256.mjs";
 
 // Seuils Core Web Vitals — bornes [good, needs-improvement], alignés sur la
 // référence web.dev (E0). SOURCE DE VÉRITÉ du rating : il est recalculé ici à
@@ -626,18 +628,27 @@ function positionSource(value) {
 }
 
 /**
+ * Runtime d'un SDK client MIP (navigateur ou React Native), ou null.
+ *
+ * Reconnu sur les seuls marqueurs posés par nos SDK : le `service.name` constant
+ * (mip-rum-web, mip-rum-mobile) ou le scope de l'émetteur web.
+ */
+function runtimeClientMip(resource, scopeName) {
+  const serviceName = resource["service.name"];
+  if (serviceName === "mip-rum-mobile") return "react_native";
+  return scopeName === "@mip/rum-sdk" || serviceName === "mip-rum-web" ? "browser" : null;
+}
+
+/**
  * Source, caractère géré/fatal et dimensions déclarées d'une exception.
  *
- * Le runtime n'est reconnu que sur des marqueurs posés par nos seuls SDK : le
- * `service.name` constant (mip-rum-web, mip-rum-mobile) ou le scope de
- * l'émetteur web. Tout autre émetteur reste inconnu : typer un backend OTel est
- * le travail de P5.3, pas une devinette ici.
+ * Une exception d'un span dédié `exception` ne voit que le runtime des SDK
+ * client MIP : tout autre émetteur reste inconnu, parce qu'un ancien SDK web sans
+ * marqueur y ressemble. Les exceptions DÉRIVÉES d'un span ou d'un log (P5.3)
+ * complètent la source par `backendErrorSource`.
  */
 export function errorEnvelope({ attrs = {}, resource = {}, scopeName = null, eventType = null }) {
-  const serviceName = resource["service.name"];
-  const runtime = serviceName === "mip-rum-mobile"
-    ? "react_native"
-    : scopeName === "@mip/rum-sdk" || serviceName === "mip-rum-web" ? "browser" : null;
+  const runtime = runtimeClientMip(resource, scopeName);
   const kind = attrs["mip.error_kind"];
 
   let handled = null;
@@ -661,6 +672,270 @@ export function errorEnvelope({ attrs = {}, resource = {}, scopeName = null, eve
     // error_source dit déjà d'où vient l'erreur.
     service: runtime ? null : boundedDimension(resource["service.name"]),
   };
+}
+
+/**
+ * Champs d'une exception, normalisés À L'IDENTIQUE pour toutes les sources :
+ * navigateur, React Native, span dédié, événement de span ou log. Type borné
+ * AVANT l'empreinte (un type réaliste garde son empreinte, un type hostile ne
+ * gonfle plus la ligne), message et stack scrubbés AVANT troncature (un secret
+ * ne doit pas survivre coupé en deux).
+ */
+function exceptionNormalisee(attrs) {
+  const errorType = boundedErrorType(attrs["exception.type"]);
+  const message = (scrubText(attrs["exception.message"]) ?? "").slice(0, 1000);
+  const stack = (scrubText(attrs["exception.stacktrace"]) ?? "").slice(0, 4000);
+  return {
+    // Le SDK peut dédupliquer et compter (v59) : absent = 1.
+    occurrences: occurrencesDe(attrs["mip.error_count"]),
+    kind: errorKind(attrs["mip.error_kind"]),
+    message,
+    error_type: errorType,
+    stack,
+    source: scrubUrl(attrs["mip.error_source"]),
+    lineno: positionSource(attrs["mip.error_lineno"]),
+    colno: positionSource(attrs["mip.error_colno"]),
+    fingerprint: errorFingerprint(errorType, message, stack),
+  };
+}
+
+// ─────────── Exceptions backend et OpenTelemetry (P5.3, migration-v70) ────────────
+//
+// Une exception n'arrive pas seulement en span dédié `exception` (SDK client MIP).
+// Un backend OpenTelemetry la pose en ÉVÉNEMENT `exception` sur le span de
+// l'opération, ou — convention qui remplace désormais les événements de span —
+// en LOG portant `exception.type/message/stacktrace`. Chacune devient une ligne
+// rum_error, sans session inventée, avec trois garanties :
+//
+//   1. IDENTITÉ DÉTERMINISTE. Un rejeu du même lot réécrit la même clé, que
+//      `on conflict (span_id) do nothing` rend inerte. Deux exceptions d'un
+//      même span ne partagent JAMAIS la contrainte unique : la clé est dérivée de
+//      l'app, de la trace, du span porteur, de la position de l'événement et de
+//      son horodatage natif, et le span porteur reste à part dans
+//      `source_parent_span_id`.
+//   2. DÉDUPLICATION DÉCLARÉE, JAMAIS DEVINÉE. Un émetteur qui publie la même
+//      exception en log ET en span leur donne le même `mip.exception_id` : la clé
+//      ne dépend plus alors que de l'app et de cet identifiant. Sans identifiant
+//      commun, deux signaux restent deux lignes — les fusionner sur la
+//      ressemblance d'un message ferait disparaître des occurrences réelles.
+//   3. ORIGINE CONSERVÉE (`origin_signal`). Le span porteur est déjà facturé, un
+//      log ne l'est pas : une exception dérivée n'est donc jamais un événement
+//      facturé de plus (meter_tenant_usage, migration-v70), mais compte bien dans
+//      les occurrences d'erreur.
+
+/** Au-delà, les événements `exception` d'un même span sont comptés rejetés. */
+export const MAX_EXCEPTION_EVENTS_PER_SPAN = 16;
+
+/** Même forme qu'un identifiant d'action : 32 hex ou UUID, jamais un texte libre. */
+const EXCEPTION_ID = ACTION_ID;
+const IDENTITE_EXCEPTION_V1 = "mip.exception.v1";
+/** Horodatage OTLP natif : nanosecondes décimales (fixed64 sérialisé). */
+const NANOS_NATIFS = /^\d{1,20}$/;
+/** Scopes de nos intégrations backend (agent Node, middleware FastAPI). */
+const SCOPE_AGENT_NODE = "@mip/agent-node";
+const SCOPE_FASTAPI = "mip-rum-fastapi";
+const RUNTIMES_PYTHON = new Set(["cpython", "pypy", "python", "ironpython", "jython"]);
+/** severityNumber OTLP : ERROR commence à 17. */
+const SEVERITE_ERREUR = 17;
+const TEXTE_SEVERITE_ERREUR = /^(?:error|fatal|critical|crit|alert|emerg|emergency)\d?$/i;
+
+/** `mip.exception_id` valide, en minuscules, ou null. */
+function exceptionIdOf(value) {
+  return typeof value === "string" && EXCEPTION_ID.test(value) ? value.toLowerCase() : null;
+}
+
+/**
+ * Identité d'une exception dérivée : 128 bits de SHA-256, app-scopés.
+ *
+ * 32 caractères hexadécimaux, jamais 16 : la clé ne peut pas se confondre avec un
+ * span OTLP natif, et la projection rum_event_index — dont l'identité publiée est
+ * exclusivement un span natif — ne l'indexe pas.
+ */
+export function exceptionIdentity(appId, parts) {
+  return sha256Hex(JSON.stringify([IDENTITE_EXCEPTION_V1, appId, ...parts])).slice(0, 32);
+}
+
+/**
+ * Runtime d'un émetteur d'exception dérivée, pour `error_source`.
+ *
+ * D'abord les marqueurs de nos intégrations, puis les attributs de resource
+ * standard (`telemetry.sdk.language`, `process.runtime.name`). Une JVM, Go ou .NET
+ * n'a pas de valeur dédiée dans la taxonomie : « otel » dit qu'elle vient d'un
+ * émetteur OpenTelemetry sans affirmer un runtime qu'on ne connaît pas.
+ */
+export function backendErrorSource(resource = {}, scopeName = null) {
+  const langue = typeof resource["telemetry.sdk.language"] === "string"
+    ? resource["telemetry.sdk.language"].toLowerCase()
+    : "";
+  const runtime = typeof resource["process.runtime.name"] === "string"
+    ? resource["process.runtime.name"].toLowerCase()
+    : "";
+  if (scopeName === SCOPE_AGENT_NODE || langue === "nodejs" || runtime === "nodejs") return "node";
+  if (scopeName === SCOPE_FASTAPI || langue === "python" || RUNTIMES_PYTHON.has(runtime)) return "python";
+  if (langue === "webjs") return "browser_js";
+  return "otel";
+}
+
+/** Une exception au sens OTel porte au moins `exception.type` ou `exception.message`. */
+function exceptionDeclaree(attrs) {
+  const nonVide = (value) => typeof value === "string" && value.trim() !== "";
+  return nonVide(attrs["exception.type"]) || nonVide(attrs["exception.message"]);
+}
+
+/** Horodatage natif tel qu'émis, pour l'identité ; "" s'il est absent ou illisible. */
+function tempsNatif(value) {
+  const texte = typeof value === "number" || typeof value === "string" ? String(value) : "";
+  return NANOS_NATIFS.test(texte) ? texte : "";
+}
+
+/**
+ * Session DÉCLARÉE par l'émetteur, ou null. Elle n'est pas écrite telle quelle :
+ * l'écrivain ne la rattache que si la session existe dans la même app.
+ */
+function sessionRevendiquee(value) {
+  return typeof value === "string" && value !== "" && value.length <= 128 && !CONTROL_CHARS.test(value)
+    ? value
+    : null;
+}
+
+/** Route d'un span serveur OTel : template, puis nom du span, puis chemin. */
+function routeServeurOtel(span, a) {
+  return normalizeRouteTemplate(a["http.route"]) ??
+    normalizeRouteTemplate(routeFromOtelName(span.name)) ??
+    (a["url.path"] ?? null);
+}
+
+/**
+ * Ligne rum_error d'une exception dérivée.
+ *
+ * `attrs` porte l'exception (événement de span ou log) ; `contexte` porte le
+ * snapshot P2 déjà sécurisé aux ports d'ingestion (attributs du span porteur ou
+ * du log). Les attributs d'un événement de span ne passent pas par la
+ * sécurisation des identités : ils ne fournissent donc jamais d'identité.
+ */
+function exceptionDerivee({ appId, attrs, contexte, resource, scopeName, origin, identity, exceptionId, traceId, parentSpanId, session, route, ts }) {
+  const enveloppe = errorEnvelope({ attrs, resource, scopeName });
+  const { event_type: _type, timing_ms: _timing, feature_flag_value: _flag, ...snapshot } = eventMetadata(contexte);
+  const releaseMip = resource["mip.release"] ?? null;
+  return {
+    span_id: identity,
+    // Jamais écrite telle quelle : voir `session_claim`.
+    session_id: null,
+    session_claim: sessionRevendiquee(session),
+    app_id: appId,
+    route,
+    ...exceptionNormalisee(attrs),
+    // Un backend déclare sa version en `service.version` ; pour un SDK client
+    // MIP, ce même attribut est la version du SDK, pas celle de l'application.
+    release: releaseMip ?? (runtimeClientMip(resource, scopeName) ? null : boundedDimension(resource["service.version"])),
+    trace_id: traceId,
+    source_parent_span_id: parentSpanId,
+    ...enveloppe,
+    error_source: enveloppe.error_source ?? backendErrorSource(resource, scopeName),
+    origin_signal: origin,
+    exception_id: exceptionId,
+    ts,
+    ...snapshot,
+  };
+}
+
+/**
+ * Exceptions portées par les événements `exception` d'un span.
+ *
+ * Appelée AVANT toute branche du parseur de spans : un span backend sans session
+ * (http.server, serveur OTel, « detail ») ou même rejeté plus loin garde ses
+ * exceptions. Un span dédié `exception` est déjà, lui-même, l'exception.
+ *
+ * `budget.restant` borne le nombre d'exceptions dérivées d'une requête.
+ * @returns {{ rows: object[], rejected: number }}
+ */
+function spanEventExceptions(span, spanAttrs, { appId, resource, scopeName, now, budget }) {
+  const rows = [];
+  let rejected = 0;
+  if (!Array.isArray(span?.events) || span.name === "exception") return { rows, rejected };
+  const traceId = nativeTraceId(span.traceId);
+  const parentSpanId = nativeParentSpanId(span.spanId);
+  let exceptions = 0;
+  span.events.forEach((event, position) => {
+    if (event?.name !== "exception") return;
+    if (++exceptions > MAX_EXCEPTION_EVENTS_PER_SPAN || budget.restant <= 0) {
+      rejected++;
+      return;
+    }
+    const attrs = attrsToObj(event.attributes);
+    const exceptionId = exceptionIdOf(attrs["mip.exception_id"]);
+    // Sans identifiant déclaré, la clé exige le span porteur : sans lui, deux
+    // spans d'une même trace produiraient la même identité.
+    if (!exceptionDeclaree(attrs) || (!exceptionId && !(traceId && parentSpanId))) {
+      rejected++;
+      return;
+    }
+    const identity = exceptionId
+      ? exceptionIdentity(appId, ["id", exceptionId])
+      : exceptionIdentity(appId, ["span_event", traceId, parentSpanId, position, tempsNatif(event.timeUnixNano)]);
+    budget.restant--;
+    rows.push(exceptionDerivee({
+      appId,
+      attrs,
+      contexte: spanAttrs,
+      resource,
+      scopeName,
+      origin: "span_event",
+      identity,
+      exceptionId,
+      traceId,
+      parentSpanId,
+      session: spanAttrs["mip.session_id"] ?? sessionFromTraceState(span.traceState),
+      route: spanAttrs["mip.route"] ?? (isServerKind(span.kind) ? routeServeurOtel(span, spanAttrs) : null),
+      ts: nanosToDate(event.timeUnixNano ?? span.startTimeUnixNano, now),
+    }));
+  });
+  return { rows, rejected };
+}
+
+/** Gravité ERROR ou plus, par severityNumber, sinon par severityText. */
+function severiteErreur(severityNumber, severityTextValue) {
+  if (typeof severityNumber === "number" && severityNumber > 0) return severityNumber >= SEVERITE_ERREUR;
+  return typeof severityTextValue === "string" && TEXTE_SEVERITE_ERREUR.test(severityTextValue.trim());
+}
+
+/**
+ * Exception structurée portée par un log, ou null.
+ *
+ * Exige une gravité ERROR ou plus ET des attributs `exception.*` : un
+ * `console.error("texte")` reste un log, et une exception journalisée en INFO
+ * (réessai attendu, erreur métier gérée) n'entre pas dans le suivi d'erreurs.
+ *
+ * Sans `mip.exception_id`, l'identité suit la position du log dans le lot et ses
+ * horodatages natifs : un rejeu du même lot est inerte, deux logs distincts ne
+ * fusionnent jamais. Sans aucun horodatage natif, cette identité ne distinguerait
+ * plus deux lots différents : l'exception n'est alors pas dérivée (le log reste).
+ */
+function logRecordException(rec, attrs, { appId, resource, scopeName, severityNumber, position, now }) {
+  if (!severiteErreur(severityNumber, rec?.severityText) || !exceptionDeclaree(attrs)) return null;
+  const traceId = nativeTraceId(rec.traceId ?? attrs["mip.trace_id"]);
+  const parentSpanId = nativeParentSpanId(rec.spanId ?? attrs["mip.span_id"]);
+  const exceptionId = exceptionIdOf(attrs["mip.exception_id"]);
+  const temps = tempsNatif(rec.timeUnixNano);
+  const observe = tempsNatif(rec.observedTimeUnixNano);
+  if (!exceptionId && !temps && !observe) return null;
+  return exceptionDerivee({
+    appId,
+    attrs,
+    contexte: attrs,
+    resource,
+    scopeName,
+    origin: "log",
+    identity: exceptionId
+      ? exceptionIdentity(appId, ["id", exceptionId])
+      : exceptionIdentity(appId, ["log", traceId ?? "", parentSpanId ?? "", temps, observe, position]),
+    exceptionId,
+    traceId,
+    parentSpanId,
+    session: attrs["mip.session_id"],
+    route: attrs["mip.route"] ?? null,
+    ts: nanosToDate(rec.timeUnixNano ?? rec.observedTimeUnixNano, now),
+  });
 }
 
 // --- v0.6 : auto-instrumentation OpenTelemetry standard (backend codeless) ------
@@ -726,6 +1001,8 @@ function routeFromOtelName(name) {
  * v0.4 : spans de tracing distribué — 'http.client' (SDK web, session requise)
  * et 'http.server' (middleware backend, session optionnelle via tracestate) ->
  * table rum_span, corrélés par mip.trace_id.
+ * P5.3 : les événements `exception` de n'importe quel span deviennent des lignes
+ * `errors` dérivées (origin_signal = span_event), sans session inventée.
  * @param {object} payload  enveloppe OTLP/HTTP JSON.
  * @param {{maxSpans?: number}} [opts]  garde-fou anti-charge : au-delà de
  *        `maxSpans` spans dans une même requête, les suivants sont comptés
@@ -756,6 +1033,8 @@ export function flattenOtlp(payload, opts = {}) {
   const sviSteps = [];
   const sviLegs = [];
   let rejected = 0;
+  // P5.3 : exceptions dérivées d'événements de span, bornées comme les spans.
+  const budgetExceptions = { restant: maxSpans };
 
   /**
    * Ligne rum_span commune front/back ; null si trace_id/span_id absents.
@@ -964,6 +1243,14 @@ export function flattenOtlp(payload, opts = {}) {
         }
         const a = attrsToObj(span.attributes);
 
+        // ── P5.3 : exceptions du span, AVANT toute branche. Les branches backend
+        // qui suivent (http.server, serveur OTel, « detail ») sortent toutes par
+        // un `continue`, et un span sans session finit rejeté : placées après,
+        // ces exceptions n'auraient jamais été lues.
+        const derivees = spanEventExceptions(span, a, { appId, resource: res, scopeName, now, budget: budgetExceptions });
+        for (const row of derivees.rows) errors.push(row);
+        rejected += derivees.rejected;
+
         // ── SVI (migration-v51) — EN TÊTE DE CHAÎNE, et ce n'est pas un détail.
         // Plus bas, la branche « span interne » capture TOUT span porteur d'un
         // trace_id/span_id sans mip.session_id, puis `if (!sessionId) rejected++`
@@ -1011,10 +1298,7 @@ export function flattenOtlp(payload, opts = {}) {
             tier: "back",
             session_id: sessionFromTraceState(span.traceState) ?? a["mip.session_id"] ?? null,
             app_id: appId,
-            route:
-              normalizeRouteTemplate(a["http.route"]) ??
-              normalizeRouteTemplate(routeFromOtelName(span.name)) ??
-              (a["url.path"] ?? null),
+            route: routeServeurOtel(span, a),
             url: scrubUrl(a["url.full"] ?? a["http.url"]),
             method: otelMethod ?? null,
             status_code: a["http.response.status_code"] ?? a["http.status_code"] ?? null,
@@ -1178,30 +1462,15 @@ export function flattenOtlp(payload, opts = {}) {
           // probabilités d'inclusion s'applique à son poids (migration-v58).
           // Une session biaisée-erreurs n'apparaît QUE si elle en a une.
           s.has_error = true;
-          // Type borné AVANT l'empreinte : l'empreinte d'un type réaliste ne
-          // change pas, et un type hostile ne gonfle plus la ligne.
-          const errorType = boundedErrorType(a["exception.type"]);
-          // scrub PII AVANT troncature (un secret ne doit pas survivre coupé en deux)
-          const message = (scrubText(a["exception.message"]) ?? "").slice(0, 1000);
-          const stack = (scrubText(a["exception.stacktrace"]) ?? "").slice(0, 4000);
           errors.push({
             span_id: span.spanId,
             session_id: sessionId,
             app_id: appId,
             route,
-            // Le SDK déduplique et compte (v59) : cette ligne peut représenter
-            // plusieurs occurrences. Absent = 1, donc les SDK antérieurs restent
-            // justes sans rien changer.
-            occurrences: occurrencesDe(a["mip.error_count"]),
-            kind: errorKind(a["mip.error_kind"]),
-            message,
-            error_type: errorType,
-            stack,
-            source: scrubUrl(a["mip.error_source"]),
-            lineno: positionSource(a["mip.error_lineno"]),
-            colno: positionSource(a["mip.error_colno"]),
+            // Occurrences, type, message, stack et empreinte : la normalisation
+            // partagée avec les exceptions dérivées d'un span ou d'un log.
+            ...exceptionNormalisee(a),
             release,
-            fingerprint: errorFingerprint(errorType, message, stack),
             // P5.1 (migration-v69) : la corrélation vient des champs NATIFS du
             // span. Elle est propre à cette occurrence, jamais empruntée au
             // dernier exemplaire du groupe.
@@ -1459,15 +1728,18 @@ function severityText(n) {
  * Aplatit un payload OTLP/HTTP JSON du signal LOGS (resourceLogs) en lignes rum_log
  * — miroir de flattenOtlp() pour les traces. Rejette (compte) les resourceLogs sans
  * mip.app_id. Corrélation aux spans via traceId/spanId. PII scrubbée (body + attrs).
+ * P5.3 : un log ERROR ou plus portant `exception.*` produit AUSSI une ligne
+ * `errors` dérivée (origin_signal = log) ; le log lui-même reste écrit.
  * @param {object} payload  enveloppe OTLP/HTTP JSON (resourceLogs[]).
  * @param {{maxLogs?: number}} [opts]  garde-fou anti-charge (défaut 20 000).
- * @returns {{logs: object[], apiKeys: {app_id: string, api_key: string|null}[], rejected: number}}
+ * @returns {{logs: object[], errors: object[], apiKeys: {app_id: string, api_key: string|null}[], rejected: number}}
  */
 export function flattenOtlpLogs(payload, opts = {}) {
   const maxLogs = opts.maxLogs ?? 20_000;
   const now = opts.now ?? Date.now();
   let seen = 0;
   const logs = [];
+  const errors = [];
   const apiKeys = [];
   let rejected = 0;
 
@@ -1487,6 +1759,7 @@ export function flattenOtlpLogs(payload, opts = {}) {
     const resSource = res["mip.source"] ?? res["mip.collection_source"] ?? null;
 
     for (const sl of Array.isArray(rl.scopeLogs) ? rl.scopeLogs : []) {
+      const scopeName = sl?.scope?.name ?? null;
       for (const rec of Array.isArray(sl?.logRecords) ? sl.logRecords : []) {
         if (++seen > maxLogs) {
           rejected++;
@@ -1520,8 +1793,13 @@ export function flattenOtlpLogs(payload, opts = {}) {
           route: a["mip.route"] ?? null,
           attributes: scrubProps(a),
         });
+        // `seen` est la position du log dans CE lot : stable au rejeu du lot.
+        const exception = logRecordException(rec, a, {
+          appId, resource: res, scopeName, severityNumber: sevNum, position: seen, now,
+        });
+        if (exception) errors.push(exception);
       }
     }
   }
-  return { logs, apiKeys, rejected };
+  return { logs, errors, apiKeys, rejected };
 }

@@ -56,6 +56,17 @@ export const ERROR_SOURCE_LABELS: Record<ErrorSource, string> = {
   otel: "OpenTelemetry",
 };
 
+/**
+ * Une source map de release ne décrit que le JavaScript livré au navigateur ou à
+ * React Native. Appliquée à une stack Node, elle réécrirait une frame serveur qui
+ * porte le même nom de fichier ; à une stack Python ou JVM, elle ne décrirait
+ * rien. Source inconnue (émetteur non typé, ligne antérieure à v69) : le
+ * comportement historique est conservé.
+ */
+export function stackSymbolisable(source: ErrorSource | null): boolean {
+  return source === null || source.startsWith("browser_") || source === "react_native_js";
+}
+
 // ───────────────────────────── Paramètres d'URL ──────────────────────────────
 
 const ERROR_DEVICES: readonly ErrorDevice[] = ["desktop", "mobile", "tablet"];

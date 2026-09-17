@@ -63,7 +63,7 @@ vi.mock("../../packages/rum-sdk/src/errors", () => ({
     origin: (at: number) => Record<string, unknown>,
   ) => {
     errorOrigins.push(origin);
-    return { drainer: drainErrors, reset: resetErrors };
+    return { drainer: drainErrors, reset: resetErrors, report: () => {}, dejaCapture: () => false };
   },
 }));
 vi.mock("../../packages/rum-sdk/src/forms", () => ({ initForms: () => {} }));

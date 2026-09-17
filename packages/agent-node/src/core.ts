@@ -67,8 +67,9 @@ export function normalizeRoute(url: string): string {
 
 // --- encodage OTLP (aligné sur anyValue() de l'ingestion) --------------------
 
-type Attr = string | number | null | undefined;
-function anyValue(v: string | number): Record<string, unknown> {
+type Attr = string | number | boolean | null | undefined;
+function anyValue(v: string | number | boolean): Record<string, unknown> {
+  if (typeof v === "boolean") return { boolValue: v };
   if (typeof v === "number") return Number.isInteger(v) ? { intValue: String(v) } : { doubleValue: v };
   return { stringValue: v };
 }
@@ -85,6 +86,100 @@ export function nanos(ms: number): string {
   return `${Math.round(ms)}000000`;
 }
 
+// --- exceptions (P5.3) ---------------------------------------------------------
+// Contrat d'ingestion : un événement `exception` sur le span de la requête, ou un
+// log portant les mêmes attributs `exception.*`. Les deux portent le même
+// `mip.exception_id` quand ils décrivent la même Error : l'ingestion n'en écrit
+// alors qu'une ligne.
+
+/** Exception extraite d'une valeur levée ou journalisée. */
+export interface ErrorDetails {
+  type: string | null;
+  message: string;
+  stack: string | null;
+}
+
+// Plafonds d'ÉMISSION seulement : l'ingestion scrubbe puis tronque plus court.
+// Larges à dessein, pour qu'une troncature ici ne coupe jamais un secret que le
+// scrub serveur n'aurait plus reconnu.
+const EXCEPTION_TYPE_MAX = 200;
+const EXCEPTION_MESSAGE_MAX = 8_000;
+const EXCEPTION_STACK_MAX = 16_000;
+
+/** Lecture protégée : un accesseur hostile ne doit pas faire lever l'agent. */
+function lire(fn: () => unknown): unknown {
+  try {
+    return fn();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Type, message et stack d'une Error, ou null pour toute autre valeur.
+ *
+ * CE QUI ÉTAIT FAUX. Le pont de logs testait `instanceof Error` puis ne gardait
+ * que `name: message` : la stack — ce qui localise le bug — était jetée, et une
+ * Error venue d'un autre realm (vm, worker) échouait au test et se sérialisait
+ * en `{}`. `Object.prototype.toString` reconnaît une Error de tout realm ; une
+ * valeur qui porte `message` et `stack` en chaînes est acceptée aussi.
+ */
+export function describeError(value: unknown): ErrorDetails | null {
+  if (value === null || typeof value !== "object") return null;
+  const tag = lire(() => Object.prototype.toString.call(value));
+  const message = lire(() => (value as { message?: unknown }).message);
+  const stack = lire(() => (value as { stack?: unknown }).stack);
+  if (tag !== "[object Error]" && !(typeof message === "string" && typeof stack === "string")) return null;
+  const name = lire(() => (value as { name?: unknown }).name);
+  const constructeur = lire(() => (value as { constructor?: { name?: unknown } }).constructor?.name);
+  const type = typeof name === "string" && name ? name : typeof constructeur === "string" && constructeur ? constructeur : null;
+  return {
+    type: type ? type.slice(0, EXCEPTION_TYPE_MAX) : null,
+    message: typeof message === "string" ? message.slice(0, EXCEPTION_MESSAGE_MAX) : "",
+    stack: typeof stack === "string" ? stack.slice(0, EXCEPTION_STACK_MAX) : null,
+  };
+}
+
+/** Valeur LEVÉE (throw, rejet) : une Error, ou à défaut son texte, sans type ni stack inventés. */
+export function describeThrown(value: unknown): ErrorDetails {
+  const details = describeError(value);
+  if (details) return details;
+  const texte = lire(() => (typeof value === "string" ? value : JSON.stringify(value) ?? String(value)));
+  return {
+    type: null,
+    message: (typeof texte === "string" ? texte : "valeur illisible").slice(0, EXCEPTION_MESSAGE_MAX),
+    stack: null,
+  };
+}
+
+export interface ExceptionInput {
+  error: ErrorDetails;
+  tsMs: number;
+  /** `mip.exception_id` : identique pour une même Error, levée ou journalisée. */
+  exceptionId: string;
+  /** false : l'exception a échappé au code applicatif ; null : inconnu. */
+  handled: boolean | null;
+  /** true : le processus se termine ; null : inconnu. Jamais deviné. */
+  fatal: boolean | null;
+}
+
+/** Attributs `exception.*` (conventions OpenTelemetry) et marqueurs MIP. */
+export function exceptionAttributes(e: ExceptionInput): Record<string, Attr> {
+  return {
+    "exception.type": e.error.type,
+    "exception.message": e.error.message,
+    "exception.stacktrace": e.error.stack,
+    "mip.exception_id": e.exceptionId,
+    "mip.error_handled": e.handled,
+    "mip.error_fatal": e.fatal,
+  };
+}
+
+/** Événement OTLP `exception` d'un span. */
+export function buildExceptionEvent(e: ExceptionInput): Record<string, unknown> {
+  return { timeUnixNano: nanos(e.tsMs), name: "exception", attributes: encodeAttrs(exceptionAttributes(e)) };
+}
+
 export interface HttpSpanInput {
   traceId: string;
   spanId: string;
@@ -92,14 +187,22 @@ export interface HttpSpanInput {
   method: string;
   route: string;
   url: string | null;
-  status: number;
+  /** null : aucune réponse n'est partie, il n'existe pas de statut à rapporter. */
+  status: number | null;
   sessionId: string | null;
   startMs: number;
   durationMs: number;
+  /** Exceptions survenues pendant la requête, en événements du span. */
+  exceptions?: ExceptionInput[];
 }
 
 /** Span OTLP `http.server` (tier back côté ingestion). */
 export function buildHttpServerSpan(i: HttpSpanInput): Record<string, unknown> {
+  const exceptions = i.exceptions ?? [];
+  // Une exception fait échouer l'opération, quel que soit le statut déjà envoyé.
+  const status = exceptions.length
+    ? { code: 2 }
+    : typeof i.status === "number" ? { code: i.status >= 500 ? 2 : 1 } : null;
   return {
     traceId: i.traceId,
     spanId: i.spanId,
@@ -110,7 +213,7 @@ export function buildHttpServerSpan(i: HttpSpanInput): Record<string, unknown> {
     // span navigateur qui l'a déclenché. L'attribut est conservé en repli.
     kind: 2, // SERVER
     ...(i.parentSpanId ? { parentSpanId: i.parentSpanId } : {}),
-    ...(typeof i.status === "number" ? { status: { code: i.status >= 500 ? 2 : 1 } } : {}),
+    ...(status ? { status } : {}),
     name: "http.server",
     startTimeUnixNano: nanos(i.startMs),
     endTimeUnixNano: nanos(i.startMs + i.durationMs),
@@ -124,7 +227,10 @@ export function buildHttpServerSpan(i: HttpSpanInput): Record<string, unknown> {
       "http.status_code": i.status,
       "http.duration_ms": i.durationMs,
       "mip.session_id": i.sessionId,
+      // Indicateur d'échec standard (OpenTelemetry `error.type`, `_OTHER` sans type).
+      "error.type": exceptions.length ? (exceptions[0].error.type ?? "_OTHER") : null,
     }),
+    ...(exceptions.length ? { events: exceptions.map(buildExceptionEvent) } : {}),
   };
 }
 
@@ -255,6 +361,8 @@ export interface LogRecordInput {
   spanId: string | null;
   sessionId: string | null;
   route: string | null;
+  /** Exception structurée portée par ce log : son Error, jamais son texte. */
+  exception?: ExceptionInput | null;
 }
 
 /**
@@ -273,6 +381,7 @@ export function buildLogRecord(i: LogRecordInput): Record<string, unknown> {
       "mip.source": "backend",
       "mip.session_id": i.sessionId,
       "mip.route": i.route,
+      ...(i.exception ? exceptionAttributes(i.exception) : {}),
     }),
   };
   if (i.traceId) rec.traceId = i.traceId;

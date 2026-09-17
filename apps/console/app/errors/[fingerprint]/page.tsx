@@ -27,6 +27,7 @@ import {
   parseOccurrencesPage,
   resolveErrorGroup,
   scopeApps,
+  stackSymbolisable,
   type ErrorFilters,
   type ErrorGroupRef,
   type ErrorOccurrenceLinks,
@@ -108,9 +109,12 @@ export default async function ErrorGroup({
 
   // Stack source (P0 #3, P5.4) : écrite par l'ingestion, sinon symbolisée à la
   // lecture si une map est arrivée depuis. L'admin voit en plus le code autour de
-  // la première frame résolue ; jamais le viewer, jamais l'API.
+  // la première frame résolue ; jamais le viewer, jamais l'API. Jamais sur une
+  // stack backend (P5.3) : une map navigateur n'en décrit aucune frame.
   const admin = user?.role === "admin" && !user.demo;
-  const symbolication = await exemplarSymbolication(group.app_id, last, { positions: admin });
+  const symbolication = stackSymbolisable(last?.error_source ?? null)
+    ? await exemplarSymbolication(group.app_id, last, { positions: admin })
+    : null;
   const deminified = symbolication?.symbolication_status === "resolved" && !!symbolication.stack_symbolicated;
   const premiere = symbolication?.positions[0];
   const contexte =

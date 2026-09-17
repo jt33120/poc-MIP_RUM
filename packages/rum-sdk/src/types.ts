@@ -71,6 +71,13 @@ export interface MIPRumConfig {
    * (ex. 'https://api.exemple.fr') en plus du same-origin.
    */
   trace?: boolean | string[];
+  /**
+   * Collecte d'erreurs élargie (P5.2). Les exceptions non interceptées et les
+   * promesses rejetées sont TOUJOURS collectées ; chaque voie ci-dessous est
+   * opt-in, parce qu'elle peut changer le volume d'une application du jour au
+   * lendemain. Détail, plafonds et limites : docs/INTEGRATION.md.
+   */
+  captureErrors?: CaptureErrorsConfig;
   /** Signaux de frustration (P1) : rage clicks & dead clicks. true (défaut) | false pour désactiver. */
   frustration?: boolean;
   /**
@@ -122,6 +129,51 @@ export interface MIPRumConfig {
         cooldownDays?: number;
         once?: boolean;
       };
+}
+
+export interface CaptureErrorsConfig {
+  /** `console.error` → erreur `console`, marquée gérée. Défaut false. */
+  console?: boolean;
+  /** Échecs de chargement (img, script, link, média…) → erreur `resource`. Défaut false. */
+  resources?: boolean;
+  /** Violations CSP (événement + ReportingObserver, dédupliqués) → erreur `csp`. Défaut false. */
+  csp?: boolean;
+  /**
+   * Appels fetch/XHR instrumentés par le tracing (`trace`) → erreur `network`.
+   * true = échecs réseau, délais dépassés et réponses 5xx. L'objet ajoute les
+   * 4xx (`clientErrors`) et les abandons volontaires (`aborts`), tous deux
+   * désactivés par défaut. Défaut false.
+   */
+  network?: boolean | { clientErrors?: boolean; aborts?: boolean };
+}
+
+/** Voie de capture d'une erreur ; `uncaught` = exceptions et rejets non interceptés. */
+export type ErrorCategory = "uncaught" | "console" | "resources" | "csp" | "network";
+
+/** Compteurs d'une voie depuis init(), en occurrences. */
+export interface ErrorCategoryStats {
+  /** La voie est active (demandée, et ses prérequis de configuration réunis). */
+  enabled: boolean;
+  /** API navigateur absentes : la voie est partielle, ou muette. */
+  unsupported: string[];
+  /** Occurrences prises en charge par l'émission (livrées ou en attente de consentement). */
+  emitted: number;
+  /** Occurrences d'erreurs distinctes tues par le plafond de la page. */
+  capped: number;
+  /** Occurrences refusées par l'émission : beforeSend, consentement refusé ou révoqué. */
+  rejected: number;
+}
+
+export type ErrorCollectionStats = Record<ErrorCategory, ErrorCategoryStats>;
+
+/** Troisième argument de `addError`. */
+export interface AddErrorOptions {
+  /**
+   * Clé de regroupement opaque, sans donnée personnelle, 100 caractères au plus.
+   * Transmise en `mip.error_fingerprint` ; le regroupement serveur ne la
+   * consomme pas encore. Une clé invalide est ignorée, l'erreur part quand même.
+   */
+  fingerprint?: string;
 }
 
 export type VitalName = "LCP" | "INP" | "CLS" | "FCP" | "TTFB";

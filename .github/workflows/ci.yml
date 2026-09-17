@@ -149,8 +149,9 @@ jobs:
 
       # P0 safety/truth : le test applique le schéma+migrations dans sa base
       # jetable. SQL_TEST_DATABASE_URL interdit le skip silencieux local/CI.
-      # SQL_TEST_V68_DATABASE_URL : fenêtre de déploiement P5.1, code écrit sur un
-      # schéma v68 réel avant d'y appliquer migration-v69.
+      # SQL_TEST_V68_DATABASE_URL : base des fenêtres de déploiement, remise à zéro
+      # par chaque suite qui l'utilise — code P5.1 sur un schéma v68 avant
+      # migration-v69, code P5.3 sur un schéma v69 avant migration-v70.
       # SQL_TEST_PRE_V71_DATABASE_URL : fenêtre de déploiement P5.4, code écrit sur
       # un schéma sans migration-v71 avant de l'y appliquer.
       - name: P0 safety and truth SQL (base dédiée)

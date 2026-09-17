@@ -116,6 +116,8 @@ const OPTIONNELLES_ERREUR = [
   // dimensions déclarées par l'émetteur.
   "trace_id", "source_parent_span_id", "error_source", "handled", "is_fatal", "context",
   "view_id", "view_name", "user_id_hash", "account_id_hash", "env", "service",
+  // v70 (P5.3) : origine d'une exception dérivée d'un span ou d'un log.
+  "origin_signal", "exception_id",
   // v71 (P5.4) : résultat de la symbolication faite avant l'écriture.
   "symbolication_status", "stack_symbolicated",
 ];
@@ -134,6 +136,78 @@ export function colonnesErreur(dispo) {
     ...OPTIONNELLES_ERREUR.filter((c) => dispo.has(c)),
     "ts",
   ];
+}
+
+/** Lignes par INSERT rum_error : très en deçà des 65 535 paramètres d'une requête. */
+const ERREURS_PAR_INSERT = 1000;
+
+/** Sources dont la stack n'est pas du JavaScript livré (miroir de stackSymbolisable côté console). */
+const STACK_BACKEND = new Set(["node", "python", "otel", "native"]);
+
+/**
+ * Rattache chaque exception dérivée à la session qu'elle déclare, SI cette
+ * session existe dans la même app ; sinon `session_id` reste NULL.
+ *
+ * Une session revendiquée n'est pas une session prouvée : un backend la lit dans
+ * un `tracestate` que n'importe qui peut forger, et le lot du navigateur qui la
+ * crée peut arriver après, ou jamais (échantillonnage). Écrite telle quelle, elle
+ * violerait la clé étrangère et ferait perdre le lot entier, ou rattacherait
+ * l'erreur à la session d'un autre tenant. Aucune session n'est créée pour
+ * l'occasion : la trace suffit à relier l'erreur au parcours quand il existe.
+ *
+ * `for key share` verrouille les sessions trouvées jusqu'au commit : un
+ * effacement concurrent ne peut pas les supprimer entre cette lecture et
+ * l'INSERT — il attend, ou il est passé et la session n'est plus trouvée.
+ */
+async function rattacherSessions(client, errors) {
+  const revendiquees = errors.filter((e) => e.session_claim);
+  if (!revendiquees.length) return errors;
+  const { rows } = await client.query(
+    `select app_id, session_id from rum_session
+      where (app_id, session_id) in (select * from unnest($1::text[], $2::text[]))
+      for key share`,
+    [revendiquees.map((e) => e.app_id), revendiquees.map((e) => e.session_claim)],
+  );
+  const connues = new Set(rows.map((r) => JSON.stringify([r.app_id, r.session_id])));
+  return errors.map((e) => (e.session_claim
+    ? { ...e, session_id: connues.has(JSON.stringify([e.app_id, e.session_claim])) ? e.session_claim : null }
+    : e));
+}
+
+/**
+ * Écrit les erreurs d'un lot et rend ce qui a RÉELLEMENT été inséré.
+ *
+ * `inserees` vient de `RETURNING` : un rejeu, une exception déjà reçue par
+ * l'autre signal (même `mip.exception_id`) ou une identité déjà connue ne
+ * comptent pas. Tout compteur en aval part de ce nombre, jamais de la taille du
+ * lot reçu.
+ *
+ * AVANT migration-v70, une exception dérivée n'est PAS écrite : sans colonne
+ * `origin_signal`, le métering la compterait comme un événement de plus alors
+ * que son span porteur l'est déjà. La collecte P5.3 s'active donc avec sa
+ * migration ; les erreurs des SDK client, elles, s'écrivent comme avant.
+ */
+async function ecrireErreurs(client, errors) {
+  if (!errors.length) return { recues: 0, inserees: 0, ignorees: 0 };
+  const dispo = await colonnesDe(client, "rum_error");
+  const retenues = dispo.has("origin_signal") ? errors : errors.filter((e) => !e.origin_signal);
+  const lignes = await rattacherSessions(client, retenues);
+  const cols = colonnesErreur(dispo);
+  let inserees = 0;
+  for (let debut = 0; debut < lignes.length; debut += ERREURS_PAR_INSERT) {
+    const { rows } = await batchInsert(
+      client,
+      "rum_error",
+      cols,
+      // `context` est NOT NULL en v69 : une ligne sans snapshot (lot différé
+      // antérieur, émetteur sans contexte) écrit l'objet vide, jamais NULL. Les
+      // autres champs absents de ces lots deviennent NULL, c'est-à-dire inconnus.
+      lignes.slice(debut, debut + ERREURS_PAR_INSERT).map((e) => ({ ...e, context: JSON.stringify(e.context ?? {}) })),
+      "on conflict (span_id) do nothing returning id",
+    );
+    inserees += rows.length;
+  }
+  return { recues: errors.length, inserees, ignorees: errors.length - retenues.length };
 }
 
 /** Colonnes optionnelles de rum_session, dans l'ordre où elles s'insèrent. */
@@ -328,6 +402,7 @@ async function indexAvecVitalsConsolides(client, eventIndex, metrics) {
  * Les erreurs sont symboliquées AVANT la transaction (migration-v71 appliquée
  * seulement) : charger une source map de plusieurs Mio ne doit pas prolonger un
  * verrou d'écriture, et un échec de symbolication n'annule jamais le lot.
+ * @returns {Promise<{erreurs: {recues: number, inserees: number, ignorees: number}}>}
  */
 export async function writeRows(pool, {
   sessions,
@@ -395,22 +470,17 @@ export async function writeRows(pool, {
         "on conflict (action_id) do nothing",
       );
     }
-    await batchInsert(
-      client,
-      "rum_error",
-      colonnesErreur(await colonnesDe(client, "rum_error")),
-      // `context` est NOT NULL en v69 : une ligne sans snapshot (lot différé
-      // antérieur, émetteur sans contexte) écrit l'objet vide, jamais NULL. Les
-      // autres champs absents de ces lots deviennent NULL, c'est-à-dire inconnus.
-      // Sans frame JavaScript, la symbolication ne s'applique pas : NULL aussi.
-      errors.map((e, i) => ({
-        ...e,
-        context: JSON.stringify(e.context ?? {}),
-        symbolication_status: symbolications?.[i]?.status ?? null,
-        stack_symbolicated: symbolications?.[i]?.stack ?? null,
-      })),
-      "on conflict (span_id) do nothing",
-    );
+    // Après les sessions du lot : une exception backend qui revendique l'une
+    // d'elles la trouve déjà écrite. La symbolication, calculée avant la
+    // transaction, voyage avec chaque ligne : le filtrage pré-v70 et le
+    // rattachement de session d'ecrireErreurs ne peuvent donc pas la décaler.
+    // Jamais sur une stack backend (P5.3) : une map navigateur n'en décrit aucune
+    // frame.
+    const erreurs = await ecrireErreurs(client, symbolications
+      ? errors.map((e, i) => (STACK_BACKEND.has(e.error_source)
+        ? e
+        : { ...e, symbolication_status: symbolications[i]?.status ?? null, stack_symbolicated: symbolications[i]?.stack ?? null }))
+      : errors);
     const resourceDispo = await colonnesDe(client, "rum_resource");
     await batchInsert(
       client,
@@ -532,6 +602,7 @@ export async function writeRows(pool, {
       );
     }
     await client.query("commit");
+    return { erreurs };
   } catch (err) {
     await client.query("rollback").catch(() => {});
     throw err;
@@ -540,11 +611,20 @@ export async function writeRows(pool, {
   }
 }
 
-/** Signal LOGS OTel -> rum_log (bigserial : pas de contrainte d'idempotence). */
-export async function writeLogs(pool, logs) {
-  if (!logs.length) return;
+/**
+ * Signal LOGS OTel -> rum_log (bigserial : pas de contrainte d'idempotence), et
+ * les exceptions structurées qu'il porte -> rum_error (P5.3).
+ *
+ * Une seule transaction : un échec n'écrit ni le log ni son exception, et le
+ * rejeu de l'appelant ne peut pas laisser une exception sans le log qui l'a
+ * portée. Les exceptions, elles, sont idempotentes au rejeu.
+ * @returns {Promise<{logs: number, erreurs: {recues: number, inserees: number, ignorees: number}}>}
+ */
+export async function writeLogs(pool, logs, errors = []) {
+  if (!logs.length && !errors.length) return { logs: 0, erreurs: { recues: 0, inserees: 0, ignorees: 0 } };
   const client = await pool.connect();
   try {
+    await client.query("begin");
     await batchInsert(
       client,
       "rum_log",
@@ -552,6 +632,12 @@ export async function writeLogs(pool, logs) {
       logs.map((l) => ({ ...l, attributes: l.attributes ? JSON.stringify(l.attributes) : null })),
       "",
     );
+    const erreurs = await ecrireErreurs(client, errors);
+    await client.query("commit");
+    return { logs: logs.length, erreurs };
+  } catch (err) {
+    await client.query("rollback").catch(() => {});
+    throw err;
   } finally {
     client.release();
   }

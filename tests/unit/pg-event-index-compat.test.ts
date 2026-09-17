@@ -26,7 +26,7 @@ describe("writeRows avant v65", () => {
       sessions: [], pageviews: [], metrics: [], errors: [], resources: [], longtasks: [], breadcrumbs: [], events: [], spans: [],
       eventIndex: [{ app_id: "a", session_id: "s", ts: new Date(), route: "/x", kind: "event", source_name: "track", source_span_id: "00000000000000a1" }],
       sviCalls: [], sviSteps: [], sviLegs: [],
-    })).resolves.toBeUndefined();
+    })).resolves.toEqual({ erreurs: { recues: 0, inserees: 0, ignorees: 0 } });
     expect(query.mock.calls.some(([sql]) => String(sql).includes("insert into rum_event_index"))).toBe(false);
     expect(query.mock.calls.map(([sql]) => sql).join("\n")).toContain("commit");
   });
@@ -81,7 +81,8 @@ describe("writeRows avant v65", () => {
         user_id_hash: "a".repeat(64), context: { plan: "pro" },
       }],
       sviCalls: [], sviSteps: [], sviLegs: [],
-    })).resolves.toBeUndefined();
+    // La base simulée ne rend aucune ligne RETURNING : reçue, pas insérée.
+    })).resolves.toEqual({ erreurs: { recues: 1, inserees: 0, ignorees: 0 } });
 
     const statements = query.mock.calls.map(([sql]) => String(sql));
     expect(statements.some((sql) => sql.startsWith("insert into rum_session"))).toBe(true);

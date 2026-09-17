@@ -54,6 +54,14 @@ patch, aucun surcoût).
   corrélation **log → trace → session** est automatique et l'application ne
   change pas une ligne.
 
+- **Exceptions** (P5.3) : une exception levée par un gestionnaire de requête, une exception
+  non interceptée du processus, ou une `Error` passée à `console.error` part **avec sa stack**.
+  Celle d'une requête devient un événement `exception` de son span `http.server` (statut OTLP
+  ERROR, `error.type`) ; hors requête, un log d'exception, tant que le pont de journalisation
+  est actif (`MIP_RUM_LOGS`) et que `MIP_RUM_LOG_LEVEL` le laisse passer. La même `Error`
+  journalisée puis relancée garde le même `mip.exception_id` : l'ingestion n'en écrit qu'une
+  occurrence. Un `console.error("texte")` reste un simple log.
+
 L'instrumentation `pg` se branche via un hook `require` (agent **sans dépendance** :
 il n'importe jamais `pg`). Aucune donnée de corps, ni query string, ni en-tête, ni
 valeur SQL n'est collectée. Prochaine étape : `mysql`/`mysql2`, puis `http.client`
@@ -78,6 +86,19 @@ Trois garanties de non-régression : la `console` d'origine est **toujours appel
 en premier** (si le pont casse, les logs sortent quand même) ; une garde de
 ré-entrance empêche nos propres écritures de s'auto-alimenter ; l'envoi est
 asynchrone et par lots, hors chemin critique.
+
+### Exceptions : ce que l'agent ne change pas
+
+L'agent **observe** sans rien décider. Il n'installe **aucun** handler `uncaughtException` ni
+`unhandledRejection` — en poser un transformerait un crash en processus survivant — et lit les
+exceptions fatales par `uncaughtExceptionMonitor`. L'exception d'un gestionnaire de requête
+n'est ni rattrapée ni relancée : le processus se termine avec le **même code de sortie** et le
+**même message** que sans l'agent (prouvé en sous-processus, `tests/unit/agent-node-process.test.ts`).
+
+**Best-effort assumé** : une fermeture fatale ne laisse pas le temps d'un dernier envoi réseau.
+Le lot est tenté, rien ne garantit qu'il parte ; un tampon durable relève d'un lot ultérieur.
+Une exception rattrapée par un handler applicatif part avec le span de sa requête dès que la
+connexion se ferme, sans statut HTTP inventé si aucune réponse n'est partie.
 
 ## Garanties
 

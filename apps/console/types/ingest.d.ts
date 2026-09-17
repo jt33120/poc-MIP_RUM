@@ -38,13 +38,25 @@ declare module "ingest/lib/pg-ingest.mjs" {
     conflictClause: string,
   ): Promise<unknown>;
 
+  /** Erreurs d'un lot : reçues, RÉELLEMENT insérées (RETURNING), ignorées avant v70. */
+  export interface EcritureErreurs {
+    recues: number;
+    inserees: number;
+    ignorees: number;
+  }
+
   export function writeRows(
     pool: Pool,
     rows: FlattenedRows,
     opts?: { symbolicateur?: import("ingest/lib/error-symbolication.mjs").Symbolicateur },
-  ): Promise<void>;
+  ): Promise<{ erreurs: EcritureErreurs }>;
 
-  export function writeLogs(pool: Pool, logs: IngestRow[]): Promise<void>;
+  /** Logs et exceptions structurées qu'ils portent (P5.3), dans une transaction. */
+  export function writeLogs(
+    pool: Pool,
+    logs: IngestRow[],
+    errors?: IngestRow[],
+  ): Promise<{ logs: number; erreurs: EcritureErreurs }>;
 
   export function writeReplayChunk(
     pool: Pool,
@@ -94,7 +106,13 @@ declare module "ingest/shared/otlp.mjs" {
   export function flattenOtlpLogs(
     payload: unknown,
     opts?: { maxLogs?: number },
-  ): { logs: Record<string, unknown>[]; apiKeys: ApiKeyRef[]; rejected: number };
+  ): {
+    logs: Record<string, unknown>[];
+    /** Exceptions structurées dérivées des logs ERROR ou plus (P5.3). */
+    errors: Record<string, unknown>[];
+    apiKeys: ApiKeyRef[];
+    rejected: number;
+  };
 }
 
 // --- Source maps (P5.4) -------------------------------------------------------

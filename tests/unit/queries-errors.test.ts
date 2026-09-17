@@ -42,6 +42,7 @@ import {
   parseOccurrencesPage,
   resolveErrorGroup,
   scopeApps,
+  stackSymbolisable,
   type ErrorFilters,
 } from "../../apps/console/lib/queries-errors";
 
@@ -214,6 +215,17 @@ describe("sources d'erreur", () => {
     expect(Object.keys(ERROR_SOURCE_LABELS).sort()).toEqual([...ERROR_SOURCES].sort());
     expect(ERROR_SOURCE_LABELS.browser_js).toBe("JavaScript navigateur");
     for (const label of Object.values(ERROR_SOURCE_LABELS)) expect(label.trim()).not.toBe("");
+  });
+
+  it("une source map de release ne s'applique qu'à une stack JS navigateur ou React Native (P5.3)", () => {
+    const symbolisables = ERROR_SOURCES.filter((source) => stackSymbolisable(source));
+    expect(symbolisables).toEqual([
+      "browser_js", "browser_console", "browser_resource", "browser_csp", "browser_network", "react_native_js",
+    ]);
+    // Frames Node, Python, JVM ou natives : jamais réécrites par une map navigateur.
+    for (const source of ["node", "python", "otel", "native"] as const) expect(stackSymbolisable(source)).toBe(false);
+    // Émetteur non typé ou ligne antérieure à v69 : comportement historique.
+    expect(stackSymbolisable(null)).toBe(true);
   });
 });
 

@@ -3,6 +3,7 @@
 // uniquement si replay activé + session échantillonnée + consent acquis.
 // Chunks : events rrweb -> JSON -> gzip (CompressionStream) -> POST binaire
 // /v1/replay (headers x-mip-session / x-mip-app / x-mip-seq).
+import { MIP_UI_ATTR } from "./breadcrumbs";
 import type { MIPRumConfig } from "./types";
 
 export const REPLAY_MAX_MS = 120_000; // stop après 2 min d'enregistrement
@@ -163,6 +164,8 @@ function loadReplayBundle(url: string): Promise<RecordFn> {
     const s = document.createElement("script");
     s.src = url;
     s.async = true;
+    // Son échec de chargement n'est pas une erreur de ressource de l'application.
+    s.setAttribute(MIP_UI_ATTR, "");
     s.onload = () => {
       const record = w.MIPRumReplay?.record;
       if (record) resolve(record);

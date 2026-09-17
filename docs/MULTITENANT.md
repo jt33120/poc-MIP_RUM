@@ -83,9 +83,16 @@ des fonctions `security definer`.
 
 - **`tenant_usage_daily(app_id, day, events, sessions, errors)`** : agrégat **durable**
   (sans FK → **survit à la purge** de télémétrie, donc l'historique de facturation reste).
-- **`meter_tenant_usage(day)`** : calcule la consommation d'un jour clos (events = total des
-  lignes ingérées : pageviews + metrics + erreurs + ressources + longtasks + breadcrumbs +
-  events + spans). Idempotent. Planifié **quotidiennement à 3 h 05** (avant la purge de 3 h 17).
+- **`meter_tenant_usage(day)`** : calcule la consommation d'un jour clos. Idempotent. Planifié
+  **quotidiennement à 3 h 05** (avant la purge de 3 h 17).
+- **Unité facturée `events`** : un **signal source stocké** — une ligne de pageviews, metrics,
+  erreurs, ressources, longtasks, breadcrumbs, events ou spans. Les logs (`rum_log`) et les
+  projections (`rum_event_index`, `rum_action`) n'y entrent pas.
+- **Exceptions dérivées (P5.3, migration-v70)** : une exception lue dans un événement de span ou
+  dans un log (`rum_error.origin_signal` = `span_event` ou `log`) **n'est pas un événement de
+  plus** — le span qui la porte est déjà compté, le log ne l'est pas. Elle est exclue de `events`
+  et comptée dans **`errors`**, la somme des occurrences d'erreur. Une app qui n'envoie que des
+  logs d'exception apparaît donc avec `events = 0` et ses `errors`.
 - **`v_tenant_usage_month`** : usage mensuel agrégé. Vue console : **`/admin/usage`** (admin).
 - Prouvé sur Postgres réel : `scripts/verify-tenant.mjs`.
 
