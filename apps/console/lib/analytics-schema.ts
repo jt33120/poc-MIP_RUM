@@ -162,7 +162,11 @@ export interface ExplorerDatasetDefinition {
   population: string;
   variant?: VariantAxis;
   fields: Record<string, FieldDefinition>;
-  /** Journal : projection FERMÉE, déjà scrubbée. Jamais un `select *`. */
+  /**
+   * Journal : projection FERMÉE, déjà scrubbée. Jamais un `select *`. L'`id`
+   * d'une colonne est son nom PUBLIC — celui des lignes rendues et du registre
+   * de capacités —, distinct de la colonne SQL, qui ne sort jamais d'ici.
+   */
   rows: readonly RowColumn[];
   /** Limites de collecte du jeu, indépendantes de la requête. */
   notices: readonly string[];
@@ -250,11 +254,11 @@ export const EXPLORER_DATASETS = {
       },
     },
     rows: [
-      { id: "ts", column: "ts", label: "Date" },
+      { id: "date", column: "ts", label: "Date" },
       { id: "name", column: "name", label: "Événement" },
-      { id: "event_type", column: "event_type", label: "Type" },
+      { id: "type", column: "event_type", label: "Type" },
       { id: "route", column: "route", label: "Route" },
-      { id: "session_id", column: "session_id", label: "Session" },
+      { id: "session", column: "session_id", label: "Session" },
     ],
     notices: [],
   },
@@ -281,13 +285,13 @@ export const EXPLORER_DATASETS = {
       identified_users: UTILISATEURS_IDENTIFIES,
     },
     rows: [
-      { id: "ts", column: "ts", label: "Date" },
-      { id: "error_type", column: "error_type", label: "Type" },
-      { id: "error_source", column: "error_source", label: "Source" },
+      { id: "date", column: "ts", label: "Date" },
+      { id: "type", column: "error_type", label: "Type" },
+      { id: "origin", column: "error_source", label: "Source" },
       { id: "occurrences", column: "occurrences", label: "Occurrences" },
       { id: "route", column: "route", label: "Route" },
       { id: "fingerprint", column: "fingerprint", label: "Signature" },
-      { id: "session_id", column: "session_id", label: "Session" },
+      { id: "session", column: "session_id", label: "Session" },
     ],
     notices: [
       "L'échantillonnage des erreurs est biaisé : une session en erreur est conservée plus souvent " +
@@ -307,10 +311,10 @@ export const EXPLORER_DATASETS = {
       sessions: SESSIONS_DISTINCTES,
     },
     rows: [
-      { id: "started_at", column: "started_at", label: "Date" },
+      { id: "date", column: "started_at", label: "Date" },
       { id: "route", column: "route", label: "Route" },
-      { id: "nav_type", column: "nav_type", label: "Navigation" },
-      { id: "session_id", column: "session_id", label: "Session" },
+      { id: "navigation", column: "nav_type", label: "Navigation" },
+      { id: "session", column: "session_id", label: "Session" },
     ],
     notices: ["Aucun temps passé n'est dérivé de ces vues : le signal ne permet pas de le mesurer."],
   },
@@ -348,12 +352,12 @@ export const EXPLORER_DATASETS = {
       visitors: VISITEURS_DISTINCTS,
     },
     rows: [
-      { id: "started_at", column: "started_at", label: "Début" },
-      { id: "last_seen_at", column: "last_seen_at", label: "Dernier signe" },
-      { id: "device_type", column: "device_type", label: "Appareil" },
-      { id: "geo_country", column: "geo_country", label: "Pays estimé" },
-      { id: "page_count", column: "page_count", label: "Vues" },
-      { id: "session_id", column: "session_id", label: "Session" },
+      { id: "start", column: "started_at", label: "Début" },
+      { id: "last_seen", column: "last_seen_at", label: "Dernier signe" },
+      { id: "device", column: "device_type", label: "Appareil" },
+      { id: "country", column: "geo_country", label: "Pays estimé" },
+      { id: "views", column: "page_count", label: "Vues" },
+      { id: "session", column: "session_id", label: "Session" },
     ],
     notices: [],
   },
@@ -380,12 +384,12 @@ export const EXPLORER_DATASETS = {
       sessions: SESSIONS_DISTINCTES,
     },
     rows: [
-      { id: "ts", column: "ts", label: "Date" },
-      { id: "name", column: "name", label: "Métrique" },
+      { id: "date", column: "ts", label: "Date" },
+      { id: "metric", column: "name", label: "Métrique" },
       { id: "value", column: "value", label: "Valeur" },
       { id: "rating", column: "rating", label: "Appréciation" },
       { id: "route", column: "route", label: "Route" },
-      { id: "session_id", column: "session_id", label: "Session" },
+      { id: "session", column: "session_id", label: "Session" },
     ],
     notices: [
       "CLS et INP sont rapportés une fois par chargement de page : la valeur mesurée est celle " +
@@ -413,12 +417,12 @@ export const EXPLORER_DATASETS = {
       sessions: SESSIONS_DISTINCTES,
     },
     rows: [
-      { id: "ts", column: "ts", label: "Date" },
+      { id: "date", column: "ts", label: "Date" },
       { id: "type", column: "type", label: "Type" },
       { id: "duration_ms", column: "duration_ms", label: "Durée (ms)" },
       { id: "transfer_size", column: "transfer_size", label: "Octets" },
       { id: "route", column: "route", label: "Route" },
-      { id: "session_id", column: "session_id", label: "Session" },
+      { id: "session", column: "session_id", label: "Session" },
     ],
     notices: [
       "Les ressources sont collectées selon le seuil du SDK : cette population est partielle par " +
@@ -465,12 +469,12 @@ export const EXPLORER_DATASETS = {
       sessions: SESSIONS_DISTINCTES,
     },
     rows: [
-      { id: "ts", column: "ts", label: "Date" },
-      { id: "source", column: "source", label: "API" },
+      { id: "date", column: "ts", label: "Date" },
+      { id: "api", column: "source", label: "API" },
       { id: "duration_ms", column: "duration_ms", label: "Durée (ms)" },
       { id: "blocking_ms", column: "blocking_ms", label: "Bloquant (ms)" },
       { id: "route", column: "route", label: "Route" },
-      { id: "session_id", column: "session_id", label: "Session" },
+      { id: "session", column: "session_id", label: "Session" },
     ],
     notices: [],
   },
@@ -494,11 +498,11 @@ export const EXPLORER_DATASETS = {
       sessions: SESSIONS_DISTINCTES,
     },
     rows: [
-      { id: "ts", column: "ts", label: "Date" },
+      { id: "date", column: "ts", label: "Date" },
       { id: "name", column: "name", label: "Action" },
       { id: "type", column: "type", label: "Type" },
       { id: "route", column: "route", label: "Route" },
-      { id: "session_id", column: "session_id", label: "Session" },
+      { id: "session", column: "session_id", label: "Session" },
     ],
     notices: [
       "Une action porte ce que le SDK a observé : ni la durée de ce qu'elle a déclenché, ni un lien " +
@@ -526,14 +530,14 @@ export const EXPLORER_DATASETS = {
       sessions: SESSIONS_DISTINCTES,
     },
     rows: [
-      { id: "ts", column: "ts", label: "Date" },
+      { id: "date", column: "ts", label: "Date" },
       { id: "name", column: "name", label: "Segment" },
       { id: "tier", column: "tier", label: "Palier" },
-      { id: "kind", column: "kind", label: "Nature" },
+      { id: "nature", column: "kind", label: "Nature" },
       { id: "duration_ms", column: "duration_ms", label: "Durée (ms)" },
-      { id: "status_code", column: "status_code", label: "Statut" },
+      { id: "status", column: "status_code", label: "Statut" },
       { id: "route", column: "route", label: "Route" },
-      { id: "session_id", column: "session_id", label: "Session" },
+      { id: "session", column: "session_id", label: "Session" },
     ],
     notices: ["Un segment de trace n'est pas une visite : ces deux populations ne se comparent pas."],
   },

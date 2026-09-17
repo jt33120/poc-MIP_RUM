@@ -9,7 +9,7 @@
 // exactement le même comportement, et aux tests de l'exercer sans réseau.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { OUTILS, PARAMS, construireChemin } from "./lib/catalogue.mjs";
+import { OUTILS, PARAMS, construireChemin, construireCorps } from "./lib/catalogue.mjs";
 import { ErreurApi } from "./lib/client.mjs";
 import { avertissementPerimetre, enMarkdown, indicesPage } from "./lib/rendu.mjs";
 
@@ -72,6 +72,30 @@ function schemaParam(nom) {
       return z.string().min(1).max(200).optional().describe(d);
     case "issue_id":
       return z.string().uuid().describe(d);
+    // Explorer (P6.4). Les listes fermées sont recopiées du registre côté console :
+    // le serveur MCP refuse alors une valeur inexistante AVANT l'appel réseau, et
+    // l'API refuse de toute façon celles qu'il laisserait passer.
+    case "dataset":
+      return z.enum([
+        "custom_events", "errors", "views", "sessions", "vitals", "resources", "longtasks", "actions", "spans",
+      ]).describe(d);
+    case "measure":
+      return z.string().regex(/^[a-z_]{1,60}:(count|sum|avg|p75|p95|distinct)$/).describe(d);
+    case "measure_property":
+      return z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/).optional().describe(d);
+    case "variant":
+      return z.string().min(1).max(60).optional().describe(d);
+    case "group_by":
+      return z.string().regex(/^[a-z_]{1,60}(,[a-z_]{1,60})?$/).optional().describe(d);
+    case "visualization":
+      return z.enum(["value", "toplist", "timeseries", "table"]).optional().describe(d);
+    case "browser":
+    case "os":
+    case "env":
+    case "service":
+    case "route":
+    case "country":
+      return z.string().min(1).max(500).optional().describe(d);
     // Les segments de chemin sont les SEULS paramètres requis : sans eux il n'y
     // a pas d'URL à construire.
     case "fingerprint":
@@ -100,7 +124,10 @@ export function schemaEntree(outil) {
  */
 export async function executer(outil, args, client) {
   const chemin = construireChemin(outil, args);
-  const corps = await client.appeler(chemin);
+  // `construireCorps` rend null pour les outils qui lisent par GET : le client
+  // ne poste que lorsqu'il y a réellement un corps à envoyer.
+  const requete = construireCorps(outil, args);
+  const corps = await client.appeler(chemin, requete ? { corps: requete } : {});
 
   const avert = avertissementPerimetre(args.app, corps?.meta);
   const page = indicesPage(corps?.data);

@@ -38,7 +38,19 @@ export class ErreurApi extends Error {
  */
 function messagePour(statut, corps) {
   const detail = typeof corps?.error === "string" ? ` (${corps.error})` : "";
+  const code = typeof corps?.code === "string" ? corps.code : null;
   switch (statut) {
+    case 400:
+      // Le contrat rend un `code` stable : le donner évite à l'IA de deviner
+      // laquelle de ses dix hypothèses corriger.
+      return `Requête refusée par l'API MIP RUM${detail}${code ? ` [code ${code}]` : ""}. C'est le paramètre ou le corps qui est en cause : le corriger, ne pas réessayer à l'identique.`;
+    case 413:
+      return `Corps de requête trop volumineux${detail}. Réduire le nombre de filtres ou de groupes avant de réessayer.`;
+    case 503:
+      if (code === "query_budget_exceeded") {
+        return `La requête n'a pas tenu son budget de lecture${detail}. Réduire la période, le nombre de groupes ou ajouter un filtre, puis réessayer. IMPORTANT : aucun chiffre n'a été renvoyé — ce n'est PAS un résultat à zéro.`;
+      }
+      return `L'API MIP RUM est indisponible (503)${detail}. C'est une panne côté serveur, pas une erreur d'appel.`;
     case 401:
       return `Jeton refusé par l'API MIP RUM${detail}. Ce n'est pas un problème de paramètre : réessayer la même requête donnera le même résultat. Le jeton doit figurer dans CONSOLE_API_TOKENS côté console.`;
     case 403:
@@ -73,21 +85,32 @@ export function creerClient({ base, jeton, fetchImpl = fetch, delaiMs = DELAI_MS
     racine,
     /**
      * Appelle l'API et renvoie l'enveloppe `{ meta, data }` désérialisée.
+     *
+     * `corps` déclenche un POST. Ce n'est PAS une écriture : l'Explorer (P6.4)
+     * lit par POST parce que son AST ne tient pas dans une query string, et
+     * l'API l'authentifie exactement comme ses GET. Aucun outil du catalogue ne
+     * poste vers une route d'écriture, et un test le verrouille.
+     *
      * @param {string} chemin chemin relatif construit par construireChemin()
+     * @param {object} [options]
+     * @param {object|null} [options.corps] corps JSON ; présent = POST
      */
-    async appeler(chemin) {
+    async appeler(chemin, options = {}) {
       const url = `${racine}${chemin}`;
+      const aCorps = options.corps != null;
       let reponse;
       try {
         reponse = await fetchImpl(url, {
-          method: "GET",
+          method: aCorps ? "POST" : "GET",
           headers: {
             authorization: `Bearer ${jeton}`,
             accept: "application/json",
+            ...(aCorps ? { "content-type": "application/json" } : {}),
             // Identifie l'appelant dans les journaux de la console : un pic de
             // trafic doit pouvoir être attribué à l'IA plutôt qu'au front.
             "user-agent": "mip-rum-mcp-server",
           },
+          ...(aCorps ? { body: JSON.stringify(options.corps) } : {}),
           signal: AbortSignal.timeout(delaiMs),
         });
       } catch (e) {

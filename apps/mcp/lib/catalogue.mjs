@@ -15,6 +15,13 @@
 const FILTRES = ["app", "period", "device"];
 /** Pagination des endpoints de liste. */
 const PAGE = ["limit", "offset"];
+/**
+ * Dimensions du contrat P6.2 exposées par l'Explorer, en égalité exacte. Les
+ * autres outils n'acceptent qu'app/période/appareil : leurs endpoints existaient
+ * avant le contrat commun, et leur ajouter des dimensions sans les migrer
+ * annoncerait un filtre que la mesure ignore.
+ */
+const DIMENSIONS_EXPLORER = ["browser", "os", "env", "service", "release", "route", "country"];
 
 /**
  * Vocabulaire commun, écrit UNE fois. Ces phrases finissent dans le schéma que
@@ -46,6 +53,24 @@ export const PARAMS = {
   source:
     "Source des occurrences comptées : browser_js, browser_console, browser_resource, browser_csp, browser_network, node, python, react_native_js, native ou otel. Omise = toutes.",
   issue_id: "Identifiant UUID de l'issue, tel que renvoyé par mip_rum_list_issues (`id` d'une entrée `kind: \"issue\"`).",
+  dataset:
+    "Jeu de données à mesurer : custom_events (événements déclarés), errors, views (pages vues), sessions, vitals (Web Vitals), resources, longtasks, actions ou spans. Aucun autre n'existe.",
+  measure:
+    "Mesure, sous la forme `champ:agrégation` — par exemple `occurrences:sum` (errors), `rows:count` (n'importe quel jeu), `value:p75` (vitals), `sessions:distinct`, `duration_ms:avg` (resources, longtasks, spans). Un couple non autorisé est refusé (400 unsupported_measure), jamais approché par un autre.",
+  measure_property:
+    "Nom de la propriété numérique à mesurer, pour les mesures qui l'exigent (champ `prop` des événements custom). Seules les propriétés réellement numériques sont comptées : la chaîne « 42 » n'est pas le nombre 42.",
+  variant:
+    "Sous-population fermée du jeu : nom de Web Vital (LCP, INP, CLS, FCP, TTFB — OBLIGATOIRE pour vitals), API de tâche longue (longtask, loaf), palier de span (front, back, detail), type d'action (click, manual) ou type d'événement (custom, timing).",
+  group_by:
+    "Une ou deux dimensions de regroupement séparées par une virgule ('release,browser'). Au plus 50 COMBINAISONS au total, pas 50 par dimension. Une dimension que le jeu ne porte pas est refusée (400 unsupported_dimension), jamais ignorée.",
+  visualization:
+    "Forme du résultat : 'value' (un nombre), 'toplist' (groupes classés), 'timeseries' (série par seau) ou 'table' (journal paginé). Le journal ne sert jamais à recalculer un graphe.",
+  browser: "Navigateur exact (valeur normalisée à l'ingestion). Égalité stricte, 500 caractères au plus.",
+  os: "Système exact (valeur normalisée à l'ingestion). Égalité stricte.",
+  env: "Environnement exact, tel que déclaré par l'émetteur (production, staging…). Égalité stricte.",
+  service: "Service exact, déclaré par un émetteur backend. Porté par les erreurs, la projection d'événements et les spans seulement.",
+  route: "Route normalisée exacte (template, jamais une URL brute). Égalité stricte.",
+  country: "Pays estimé D'APRÈS LE FUSEAU du navigateur, code ISO. Ce n'est pas une géolocalisation.",
   format:
     "Forme de la réponse : 'json' (défaut — la réponse de l'API telle quelle, sans transformation) ou 'markdown' (tableaux lisibles, aucune donnée retirée).",
 };
@@ -243,6 +268,26 @@ export const OUTILS = [
     chemin: "/health-grid",
     params: FILTRES,
   },
+  {
+    nom: "mip_rum_query_explorer",
+    titre: "Explorer générique",
+    resume: "Composer une mesure bornée sur un jeu de données au choix, avec regroupements et représentation.",
+    description:
+      "Répond aux questions que les autres outils ne couvrent pas, en composant une mesure : QUOI mesurer (jeu de données + mesure), " +
+      "SUR QUOI (fenêtre, app, dimensions), COMMENT le découper (jusqu'à deux dimensions) et sous quelle forme. " +
+      "Appeler d'abord GET /api/v1/explorer/schema — ou lire les descriptions de `dataset` et `measure` ci-dessous — pour savoir ce qui existe : " +
+      "le registre est FERMÉ, et un champ absent du catalogue (message d'erreur, pile, URL brute, identité) n'est pas mesurable. " +
+      "Total, groupes et série sont calculés sur la MÊME population et dans le même instantané ; le journal paginé ne sert jamais à recalculer un graphe. " +
+      "Un dénombrement réellement vide vaut 0 ; une moyenne ou un percentile sans échantillon vaut null — ne pas les confondre. " +
+      "Une requête trop large échoue en 503 query_budget_exceeded : c'est une absence de réponse, PAS un résultat à zéro. " +
+      "LECTURE SEULE : l'appel se fait en POST parce que la requête ne tient pas dans une URL, pas parce qu'il écrit quoi que ce soit.",
+    chemin: "/explorer/query",
+    // Pas de `defaults` : une mesure implicite serait une mesure non annoncée.
+    params: ["app", "period", "device", ...DIMENSIONS_EXPLORER, "dataset", "measure", "measure_property", "variant", "group_by", "visualization", "limit", "cursor"],
+    // La présence de `corps` fait de cet outil un POST : `construireCorps` en
+    // dérive l'AST, et `construireChemin` n'écrit alors AUCUNE query string.
+    corps: { dimensions: ["device", ...DIMENSIONS_EXPLORER] },
+  },
 ];
 
 /** Un chemin contient-il un segment dynamique `{nom}` ? */
@@ -286,6 +331,11 @@ export function construireChemin(outil, args = {}) {
     chemin = chemin.replace(`{${nom}}`, encodeURIComponent(String(v)));
   }
 
+  // Un outil qui poste met TOUT dans son corps : recopier ses paramètres dans la
+  // query string donnerait deux sources pour la même requête, et l'API ne lit que
+  // le corps — le désaccord passerait inaperçu.
+  if (outil.corps) return chemin;
+
   const qs = new URLSearchParams();
   for (const nom of outil.params) {
     if (dyn.includes(nom)) continue; // déjà dans le chemin
@@ -296,6 +346,65 @@ export function construireChemin(outil, args = {}) {
   }
   const q = qs.toString();
   return q ? `${chemin}?${q}` : chemin;
+}
+
+/**
+ * Corps JSON d'un outil qui interroge par POST : l'AST de l'Explorer, le MÊME que
+ * celui de l'écran `/explorer` et de l'API. Rien n'est validé ici — les bornes, la
+ * liste des jeux et celle des mesures vivent dans le registre côté console, une
+ * seule fois. Ce qui est refusé à l'écran l'est donc à l'identique pour l'IA.
+ *
+ * `null` pour les outils qui lisent par GET.
+ *
+ * @param {object} outil une entrée de OUTILS
+ * @param {object} args  arguments validés par le schéma d'entrée
+ */
+export function construireCorps(outil, args = {}) {
+  if (!outil.corps) return null;
+  const texte = (nom) => {
+    const v = args[nom];
+    return v == null || v === "" ? null : String(v);
+  };
+
+  const mesure = texte("measure");
+  if (!mesure || !mesure.includes(":")) {
+    throw new Error("measure s'écrit `champ:agrégation`, par exemple `occurrences:sum` ou `rows:count`");
+  }
+  const [field, aggregation] = mesure.split(":");
+  const propriete = texte("measure_property");
+
+  // Chaque dimension fournie devient une condition d'ÉGALITÉ. L'outil n'expose ni
+  // `neq` ni « inconnu » : ils existent dans le contrat, mais une IA qui compose
+  // une négation sans le dire produit un chiffre qu'on lit à l'envers.
+  const filters = [];
+  for (const dimension of outil.corps.dimensions) {
+    const valeur = texte(dimension);
+    // `device=all` n'est pas une valeur d'appareil : c'est l'absence de filtre.
+    if (valeur === null || (dimension === "device" && valeur === "all")) continue;
+    filters.push({ field: dimension, operator: "eq", type: "string", value: valeur });
+  }
+
+  const groupBy = (texte("group_by") ?? "")
+    .split(",")
+    .map((d) => d.trim())
+    .filter(Boolean);
+
+  const limite = args.limit;
+  return {
+    version: 1,
+    app: texte("app"),
+    // Les outils MCP n'acceptent que les trois fenêtres glissantes, comme partout
+    // ailleurs dans ce catalogue : pas de dates libres.
+    range: { preset: texte("period") ?? "24h" },
+    dataset: texte("dataset"),
+    measure: { aggregation, field, ...(propriete ? { property: propriete } : {}) },
+    ...(texte("variant") ? { variant: texte("variant") } : {}),
+    filters,
+    groupBy,
+    visualization: texte("visualization") ?? "value",
+    ...(typeof limite === "number" ? { limit: limite } : {}),
+    ...(texte("cursor") ? { cursor: texte("cursor") } : {}),
+  };
 }
 
 /** L'outil portant ce nom, ou undefined. */

@@ -137,8 +137,11 @@ export function indicesPage(data) {
   const page = data?.page;
   const curseurSeul = !page && data != null && typeof data === "object" && "next_cursor" in data;
   if (!curseurSeul && (!page || typeof page.limit !== "number")) return null;
-  const liste = data.events ?? data.sessions ?? data.groups ?? data.actions ?? data.issues ?? data.occurrences ??
-    Object.values(data).find(Array.isArray);
+  // `rows` en tête : la réponse de l'Explorer porte AUSSI `groups` et `series`,
+  // qui ne sont pas paginés. Compter les groupes d'une série pour annoncer une
+  // page de journal enverrait l'IA chercher une suite qui n'existe pas.
+  const liste = data.rows ?? data.events ?? data.sessions ?? data.groups ?? data.actions ?? data.issues ??
+    data.occurrences ?? Object.values(data).find(Array.isArray);
   if (!Array.isArray(liste)) return null;
   const recus = liste.length;
   const brut = page?.next_cursor ?? data.next_cursor;

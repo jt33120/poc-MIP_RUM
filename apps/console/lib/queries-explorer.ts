@@ -68,6 +68,13 @@ export interface ExplorerPoint extends ExplorerGroup {
 }
 
 export interface ExplorerMeta {
+  /**
+   * App DEMANDÉE (ou « all »), comme dans l'enveloppe commune. L'Explorer ne
+   * substitue jamais une app à une autre — il refuse (403) —, mais publier ce
+   * champ garde les lecteurs génériques (rendu MCP, clients) sur un seul modèle.
+   */
+  app: string;
+  period: string;
   query_version: number;
   effective_apps: string[] | null;
   range: { from: string; to: string; preset: string | null; bucket_seconds: number };
@@ -244,6 +251,8 @@ export async function exploreAnalytics(
 
   return {
     meta: {
+      app: query.scope.requestedApp ?? "all",
+      period: query.range.preset ?? "custom",
       query_version: plan.version,
       effective_apps: query.scope.effectiveApps,
       range: {

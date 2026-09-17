@@ -1015,6 +1015,8 @@ export function buildOpenApi(): Record<string, unknown> {
         ExplorerResult: o({ meta: ref("ExplorerMeta"), data: ref("ExplorerData") }, ["meta", "data"]),
         ExplorerMeta: o(
           {
+            app: str,
+            period: str,
             query_version: int,
             generatedAt: dateTime,
             effective_apps: nul(arr(str)),

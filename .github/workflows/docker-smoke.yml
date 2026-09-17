@@ -7,7 +7,7 @@
 # `mcp` : build `Dockerfile.mcp` (image SÉPARÉE, sans pg ni DATABASE_URL — cf.
 # docs/MCP.md) puis smoke-test du protocole. `tools/list` n'appelle pas l'API,
 # donc le test est complet sans console : il prouve que l'image démarre, qu'elle
-# refuse un appel sans jeton, et qu'elle sert bien ses quatorze outils.
+# refuse un appel sans jeton, et qu'elle sert bien ses quinze outils.
 #
 # Rend le « backend dockerisé/intégrable » VÉRIFIÉ à chaque PR (les runners GitHub
 # fournissent Docker ; l'env de dev n'a pas de démon). Isolé de ci.yml.
@@ -131,7 +131,7 @@ jobs:
           echo "-> $code ($(cat /tmp/out))"
           test "$code" = "401"
 
-      - name: POST /mcp avec jeton -> initialize puis 14 outils
+      - name: POST /mcp avec jeton -> initialize puis 15 outils
         run: |
           init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
           curl -fsS -X POST http://localhost:8080/mcp \
@@ -149,7 +149,7 @@ jobs:
             -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' > /tmp/tools.json
           n=$(grep -o 'mip_rum_[a-z_]*' /tmp/tools.json | sort -u | wc -l)
           echo "outils exposés : $n"
-          test "$n" = "14"
+          test "$n" = "15"
 
       - name: Logs (si échec)
         if: failure()
