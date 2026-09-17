@@ -438,7 +438,7 @@ export function parseSegmentParam(raw: string | null): Parsed<FilterCondition[]>
         return fail("invalid_filter", `is_null ne prend pas de valeur (${name})`, { parameter: "seg", dimension: name });
       }
       const condition = conditionOf(name, operator as FilterOperator, value);
-      if (!condition.ok) return condition;
+      if (!condition.ok) return { ok: false, error: { ...condition.error, parameter: "seg" } };
       conditions.push(condition.value);
     }
     return ok(conditions);
@@ -451,7 +451,7 @@ export function parseSegmentParam(raw: string | null): Parsed<FilterCondition[]>
       return fail("invalid_filter", `segment invalide : ${token.slice(0, 40)}`, { parameter: "seg" });
     }
     const condition = conditionOf(dimension, m[2] === "==" ? "eq" : "neq", m[3].trim());
-    if (!condition.ok) return condition;
+    if (!condition.ok) return { ok: false, error: { ...condition.error, parameter: "seg" } };
     conditions.push(condition.value);
   }
   return ok(conditions);
@@ -672,18 +672,23 @@ export function hrefWithQuery(
 
 /**
  * Empreinte stable d'une requête RÉSOLUE : périmètre autorisé et effectif, plage
- * réelle et filtres triés. Entre dans les clés de cache et les ETag : une réponse
- * calculée pour A ne peut pas servir à B, ni une plage à une autre.
+ * et filtres triés. Entre dans les clés de cache et les ETag : une réponse calculée
+ * pour A ne peut pas servir à B, ni une plage à une autre.
+ *
+ * `exact` (clé d'un calcul) retient les instants [from,to). `sliding` (ETag d'une
+ * représentation) retient le preset d'une fenêtre glissante, dont les instants
+ * avancent à chaque appel : sans cela aucune revalidation ne rendrait jamais 304.
+ * Une plage personnalisée garde ses instants dans les deux cas.
  */
-export function queryFingerprint(query: AnalyticsQuery): string {
+export function queryFingerprint(query: AnalyticsQuery, window: "exact" | "sliding" = "exact"): string {
   const f = query.filters;
+  const { range } = query;
   const canonical = JSON.stringify([
     query.version,
     query.scope.authorizedApps ?? "*",
     query.scope.effectiveApps ?? "*",
-    query.range.from,
-    query.range.to,
-    query.range.bucketSeconds,
+    ...(window === "sliding" && range.preset ? [range.preset] : [range.from, range.to]),
+    range.bucketSeconds,
     f.includeBots,
     f.includeInternal,
     conditionsOf(f)

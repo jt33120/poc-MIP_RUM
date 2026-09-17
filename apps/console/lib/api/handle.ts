@@ -109,13 +109,24 @@ export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
       const body = JSON.stringify({ meta: { ...meta, generatedAt: new Date().toISOString() }, data });
       // L'ETag couvre le principal, l'empreinte de la requête résolue et la donnée —
       // pas l'horodatage de génération : une réponse calculée pour A ne vaut jamais pour B.
+      // Fenêtre glissante : son preset, pas ses instants, qui avancent à chaque appel ;
+      // une donnée inchangée revalide donc en 304 (ETag faible, représentation équivalente).
+      const fenetre = { preset: meta.range.preset, bucket_seconds: meta.range.bucket_seconds };
       const etag = weakEtag(
-        JSON.stringify([principal.kind, principal.subject, principal.apps, queryFingerprint(query), meta, data]),
+        JSON.stringify([
+          principal.kind,
+          principal.subject,
+          principal.apps,
+          queryFingerprint(query, "sliding"),
+          { ...meta, range: query.range.preset ? fenetre : meta.range },
+          data,
+        ]),
       );
       const headers = new Headers(corsHeaders(req.headers.get("origin")));
       headers.set("ETag", etag);
       headers.set("Cache-Control", "private, max-age=15");
-      headers.set("Vary", "Authorization, Cookie");
+      // Ajouté à `Vary: Origin` du CORS, jamais à sa place.
+      headers.append("Vary", "Authorization, Cookie");
       if (rl) applyRate(headers, rl);
       if (req.headers.get("if-none-match") === etag)
         return new NextResponse(null, { status: 304, headers });
