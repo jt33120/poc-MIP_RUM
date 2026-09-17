@@ -3,6 +3,7 @@
 // POST /v1/traces   métriques, erreurs, sessions, spans (OTLP/HTTP JSON)
 // POST /v1/logs     signal LOGS d'OpenTelemetry
 // POST /v1/replay   chunk rrweb gzippé (métadonnées en en-têtes x-mip-*)
+// POST /v1/sourcemaps  source maps de CI, jeton d'upload dédié (P5.4)
 // GET  /health      le process répond
 // GET  /ready       la base répond
 //
@@ -40,7 +41,9 @@ const { handler } = creerReceveur(pool, {
   // outil d'assertion de test, pas une fonctionnalité.
   nom: "ingest",
   tampon: false,
-  signaux: ["traces", "logs", "replay"],
+  // `sourcemaps` : port direct des maps volumineuses (≤ 15 Mio par map), que le
+  // plafond de corps de Vercel interdit à la console.
+  signaux: ["traces", "logs", "replay", "sourcemaps"],
 });
 
 // LE DRAIN VIT ICI, ET PAS DANS LE SCHEDULER. La table de débarquement est une

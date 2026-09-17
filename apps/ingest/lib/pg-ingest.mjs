@@ -11,6 +11,7 @@
 // Aucune dépendance à Deno ni à supabase-js : `pg` et rien d'autre.
 import { createHash } from "node:crypto";
 import { isNativeSpanId } from "../supabase/functions/_shared/otlp.mjs";
+import { symbolicateurIngestion } from "./error-symbolication.mjs";
 
 // ───────────────────────────── Écriture ─────────────────────────────
 
@@ -115,6 +116,8 @@ const OPTIONNELLES_ERREUR = [
   // dimensions déclarées par l'émetteur.
   "trace_id", "source_parent_span_id", "error_source", "handled", "is_fatal", "context",
   "view_id", "view_name", "user_id_hash", "account_id_hash", "env", "service",
+  // v71 (P5.4) : résultat de la symbolication faite avant l'écriture.
+  "symbolication_status", "stack_symbolicated",
 ];
 
 /**
@@ -321,6 +324,10 @@ async function indexAvecVitalsConsolides(client, eventIndex, metrics) {
  * Écrit un lot OTLP aplati (sortie de flattenOtlp) dans une TRANSACTION unique.
  * Idempotent au rejeu : `on conflict do nothing` partout, `greatest` sur les
  * horodatages de session — c'est ce qui autorise le retry côté appelant.
+ *
+ * Les erreurs sont symboliquées AVANT la transaction (migration-v71 appliquée
+ * seulement) : charger une source map de plusieurs Mio ne doit pas prolonger un
+ * verrou d'écriture, et un échec de symbolication n'annule jamais le lot.
  */
 export async function writeRows(pool, {
   sessions,
@@ -337,9 +344,13 @@ export async function writeRows(pool, {
   sviCalls,
   sviSteps,
   sviLegs,
-}) {
+}, { symbolicateur = symbolicateurIngestion } = {}) {
   const client = await pool.connect();
   try {
+    const erreurDispo = errors.length ? await colonnesDe(client, "rum_error") : null;
+    const symbolications = erreurDispo?.has("symbolication_status")
+      ? await symbolicateur.symboliquerLot(client, errors)
+      : null;
     await client.query("begin");
     // Colonnes optionnelles : présentes une fois la migration passée, ignorées
     // avant. Le reste du lot part normalement dans les deux cas.
@@ -391,7 +402,13 @@ export async function writeRows(pool, {
       // `context` est NOT NULL en v69 : une ligne sans snapshot (lot différé
       // antérieur, émetteur sans contexte) écrit l'objet vide, jamais NULL. Les
       // autres champs absents de ces lots deviennent NULL, c'est-à-dire inconnus.
-      errors.map((e) => ({ ...e, context: JSON.stringify(e.context ?? {}) })),
+      // Sans frame JavaScript, la symbolication ne s'applique pas : NULL aussi.
+      errors.map((e, i) => ({
+        ...e,
+        context: JSON.stringify(e.context ?? {}),
+        symbolication_status: symbolications?.[i]?.status ?? null,
+        stack_symbolicated: symbolications?.[i]?.stack ?? null,
+      })),
       "on conflict (span_id) do nothing",
     );
     const resourceDispo = await colonnesDe(client, "rum_resource");

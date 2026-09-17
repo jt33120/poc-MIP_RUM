@@ -1,63 +1,109 @@
-// POST /api/sourcemaps — upload de source maps (P0 #3). Admin requis (cookie de
-// session). Body JSON : { appId, release, filename, content } ou { appId, release,
-// maps: [{filename, content}] }. content = JSON de la source map v3 (string ou objet).
-// La dé-minification se fait à l'affichage (lib/sourcemap.ts), pas ici.
+// POST /api/sourcemaps — upload de source maps, port console (P5.4).
+// GET  /api/sourcemaps — releases d'une app, ou fichiers et manifeste d'une release (admin).
+//
+// Deux authentifications, jamais mélangées : `Authorization: Bearer msu_…` (jeton
+// de CI dédié, app-scopé, expirant) OU cookie de session admin avec Origin de la
+// console. Un jeton CONSOLE_API_TOKENS n'a pas le format d'un jeton d'upload : il
+// est refusé. Le contrat — bornes, validation de TOUTES les maps avant la première
+// écriture, transaction, 409 sur contenu différent — est celui du backend direct
+// (`ingest/lib/sourcemap-upload.mjs`).
+//
+// Corps limité à 4 Mio : le plafond publié de Vercel est 4,5 Mo par requête. Les
+// maps plus lourdes passent par POST /v1/sourcemaps du backend d'ingestion
+// (15 Mio par map), que le CLI sait viser.
 import { type NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, verifyJwt } from "@/lib/auth";
-import { upsertSourceMap } from "@/lib/queries-sourcemap";
+import {
+  creerLimiteurUpload,
+  enregistrerMaps,
+  ErreurUpload,
+  LIMITES_UPLOAD,
+  lireCorpsLimite,
+  lireRequeteUpload,
+  verifierJetonUpload,
+} from "ingest/lib/sourcemap-upload.mjs";
+import { bodyTooLarge } from "ingest/shared/limits.mjs";
+import { guardAdmin } from "@/lib/api/admin";
+import { SESSION_COOKIE } from "@/lib/auth";
+import { pool } from "@/lib/db";
+import { listSourcemapReleases, releaseManifest, schemaSourcemapAbsent } from "@/lib/queries-sourcemap";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-const MAX_BYTES = 15 * 1024 * 1024; // 15 Mo par map
+const PORT_DIRECT =
+  "corps trop volumineux pour le port console (limite 4 Mio) : utiliser POST /v1/sourcemaps du backend d'ingestion";
+
+// Un limiteur par instance, survivant au rechargement à chaud de next dev.
+const g = globalThis as unknown as { mipLimiteurSourcemaps?: ReturnType<typeof creerLimiteurUpload> };
+const limiteur = (g.mipLimiteurSourcemaps ??= creerLimiteurUpload());
+
+const json = (body: unknown, status = 200, headers?: Record<string, string>) =>
+  NextResponse.json(body, { status, headers });
 
 export async function POST(req: NextRequest) {
-  const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const user = token ? await verifyJwt(token) : null;
-  if (!user || user.role !== "admin")
-    return NextResponse.json({ error: "admin requis" }, { status: 403 });
-
-  let body: {
-    appId?: string;
-    release?: string;
-    filename?: string;
-    content?: unknown;
-    maps?: { filename?: string; content?: unknown }[];
-  };
+  let liberer: (() => void) | null = null;
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "JSON invalide" }, { status: 400 });
-  }
-
-  const appId = String(body.appId ?? "").trim();
-  const release = String(body.release ?? "").trim();
-  const maps = Array.isArray(body.maps)
-    ? body.maps
-    : body.filename
-      ? [{ filename: body.filename, content: body.content }]
-      : [];
-  if (!appId || !release || !maps.length)
-    return NextResponse.json(
-      { error: "appId, release et au moins une map (filename + content) requis" },
-      { status: 400 },
-    );
-
-  let uploaded = 0;
-  for (const m of maps) {
-    const filename = String(m.filename ?? "").trim();
-    const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
-    if (!filename || !content) continue;
-    if (content.length > MAX_BYTES)
-      return NextResponse.json({ error: `source map trop volumineuse (${filename})` }, { status: 413 });
-    // validation légère : c'est bien une source map v3 (champ mappings string)
-    try {
-      const j = JSON.parse(content) as { mappings?: unknown };
-      if (typeof j.mappings !== "string") throw new Error("mappings absent");
-    } catch {
-      return NextResponse.json({ error: `source map invalide (${filename})` }, { status: 400 });
+    // 1. Qui écrit — avant toute lecture du corps.
+    let par: string;
+    let jetonId: string | null = null;
+    let appDuJeton: string | null = null;
+    const authorization = req.headers.get("authorization");
+    if (authorization) {
+      const jeton = await verifierJetonUpload(pool, authorization);
+      if (!jeton) return json({ error: "jeton d'upload de source maps invalide, expiré ou révoqué" }, 401);
+      par = `jeton:${jeton.id}`;
+      jetonId = jeton.id;
+      appDuJeton = jeton.app_id;
+    } else {
+      const garde = await guardAdmin(req.headers, req.cookies.get(SESSION_COOKIE)?.value ?? null, { mutation: true });
+      if (!garde.ok) return json({ error: garde.error }, garde.status);
+      par = garde.user.email;
     }
-    await upsertSourceMap(appId, release, filename, content);
-    uploaded++;
+
+    // 2. Débit et taille annoncée, puis lecture bornée en octets et en durée.
+    const prise = limiteur.prendre(par);
+    if ("refus" in prise) return json({ error: prise.refus.message }, 429, { "retry-after": String(prise.refus.retryAfter) });
+    liberer = prise.liberer;
+    if (bodyTooLarge(req.headers.get("content-length"), LIMITES_UPLOAD.corpsConsole)) return json({ error: PORT_DIRECT }, 413);
+    if (!req.body) return json({ error: "corps JSON requis" }, 400);
+    // Le ReadableStream web de Node est itérable de façon asynchrone.
+    const flux = req.body as unknown as AsyncIterable<Uint8Array>;
+    const corps = await lireCorpsLimite(flux, { max: LIMITES_UPLOAD.corpsConsole }).catch((err: unknown) => {
+      throw err instanceof ErreurUpload && err.statut === 413 ? new ErreurUpload(413, PORT_DIRECT) : err;
+    });
+
+    // 3. Contrat complet, puis droits propres à l'émetteur.
+    const demande = lireRequeteUpload(corps);
+    if (appDuJeton !== null && demande.appId !== appDuJeton) {
+      return json({ error: "ce jeton n'autorise pas l'upload de source maps pour cette application" }, 403);
+    }
+    if (jetonId !== null && demande.remplacer) {
+      return json({ error: "remplacer une source map existante est réservé à un admin, depuis la console" }, 403);
+    }
+    const { statut, corps: reponse } = await enregistrerMaps(pool, { ...demande, par, jetonId });
+    return json(reponse, statut);
+  } catch (err) {
+    if (err instanceof ErreurUpload) return json({ error: err.message }, err.statut);
+    console.error("[api/sourcemaps]", err);
+    return json({ error: "erreur interne" }, 500);
+  } finally {
+    liberer?.();
   }
-  return NextResponse.json({ uploaded });
+}
+
+export async function GET(req: NextRequest) {
+  const garde = await guardAdmin(req.headers, req.cookies.get(SESSION_COOKIE)?.value ?? null, { mutation: false });
+  if (!garde.ok) return json({ error: garde.error }, garde.status);
+  const appId = req.nextUrl.searchParams.get("appId")?.trim();
+  if (!appId) return json({ error: "appId requis" }, 400);
+  const release = req.nextUrl.searchParams.get("release")?.trim() || null;
+  try {
+    if (!release) return json({ appId, releases: await listSourcemapReleases(appId) });
+    const manifeste = await releaseManifest(appId, release);
+    return json({ appId, release, ...manifeste });
+  } catch (err) {
+    if (schemaSourcemapAbsent(err)) return json({ error: "schéma source maps non migré : migration-v71 requise" }, 503);
+    console.error("[api/sourcemaps]", err);
+    return json({ error: "erreur interne" }, 500);
+  }
 }

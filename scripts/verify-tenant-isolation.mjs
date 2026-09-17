@@ -74,6 +74,10 @@ async function main() {
        values ($1,'LCP','>',2000,15,'threshold','warning')`, [app]);
     await c.query(
       `insert into uptime_check (app_id,name,url) values ($1,'home','https://ex.invalid/')`, [app]);
+    // P5.4 : jeton de CI d'upload de source maps, secret haché seulement.
+    await c.query(
+      `insert into sourcemap_upload_token (id,app_id,name,secret_hash,created_by,expires_at)
+       values (gen_random_uuid(),$1,'CI',repeat('a',64),'isolation@test',now() + interval '1 day')`, [app]);
   }
   // Un événement d'alerte + une livraison rattachés au tenant A uniquement.
   const ruleA = (await c.query("select id from alert_rule where app_id='app-a' limit 1")).rows[0].id;
@@ -115,6 +119,7 @@ async function main() {
   assert("console_ro + portée A : ne voit QUE les actions de A", (await seen(c, "rum_action")) === 1);
   assert("console_ro + portée A : ne voit QUE les règles de A", (await seen(c, "alert_rule")) === 1);
   assert("console_ro + portée A : ne voit QUE le registre de A", (await seen(c, "app_registry")) === 1);
+  assert("console_ro + portée A : ne voit QUE les jetons de source maps de A", (await seen(c, "sourcemap_upload_token")) === 1);
 
   const rows = (await c.query("select distinct app_id from rum_metric")).rows.map((r) => r.app_id);
   assert("console_ro + portée A : aucune ligne de B ne transparaît", rows.length === 1 && rows[0] === "app-a");
@@ -130,6 +135,7 @@ async function main() {
   assert("portée B : ne voit QUE B (symétrique)", rowsB.length === 1 && rowsB[0] === "app-b");
   assert("portée B : ne voit QUE les événements indexés de B", (await seen(c, "rum_event_index")) === 1);
   assert("portée B : ne voit QUE les actions de B", (await seen(c, "rum_action")) === 1);
+  assert("portée B : ne voit QUE les jetons de source maps de B", (await seen(c, "sourcemap_upload_token")) === 1);
   assert("portée B : l'événement d'alerte de A est invisible", (await seen(c, "alert_event")) === 0);
   assert("portée B : la livraison de A est invisible", (await seen(c, "alert_delivery")) === 0);
   assert("portée B : le résultat uptime de A est invisible", (await seen(c, "uptime_result")) === 0);
@@ -140,6 +146,7 @@ async function main() {
   assert("portée vide : AUCUNE erreur visible (fail-closed)", (await seen(c, "rum_error")) === 0);
   assert("portée vide : AUCUN événement indexé visible (fail-closed)", (await seen(c, "rum_event_index")) === 0);
   assert("portée vide : AUCUNE action visible (fail-closed)", (await seen(c, "rum_action")) === 0);
+  assert("portée vide : AUCUN jeton de source maps visible (fail-closed)", (await seen(c, "sourcemap_upload_token")) === 0);
 
   await c.query("reset role");
 
@@ -158,9 +165,11 @@ async function main() {
     await c.query("select set_config('app.current_app_id','app-a',false)");
     const vus = await seen(c, "rum_metric");
     const actionsVues = await seen(c, "rum_action");
+    const jetonsVus = await seen(c, "sourcemap_upload_token");
     await c.query("reset role");
     assert(`API publique : ${role} ne lit RIEN même avec une portée posée`, vus === 0);
     assert(`API publique : ${role} ne lit AUCUNE action même avec une portée posée`, actionsVues === 0);
+    assert(`API publique : ${role} ne lit AUCUN jeton de source maps même avec une portée posée`, jetonsVus === 0);
   }
 
   // ── console_ro n'écrit que là où la console écrit vraiment (v48) ────────────
@@ -184,13 +193,18 @@ async function main() {
             has_table_privilege('console_ro','rum_action','SELECT') as action_select,
             has_table_privilege('console_ro','rum_action','INSERT') as action_insert,
             has_table_privilege('console_ro','slo','UPDATE')        as conf_update,
-            has_table_privilege('console_ro','rum_span','INSERT')   as dogfood_insert`)).rows[0];
+            has_table_privilege('console_ro','rum_span','INSERT')   as dogfood_insert,
+            has_table_privilege('console_ro','sourcemap_upload_token','DELETE') as jeton_delete,
+            has_column_privilege('console_ro','sourcemap_upload_token','secret_hash','UPDATE') as jeton_rehash,
+            has_column_privilege('console_ro','sourcemap_upload_token','revoked_at','UPDATE') as jeton_revoke`)).rows[0];
   assert("v48 : PRIVILÈGE d'insertion retiré sur rum_metric", priv.tele_insert === false);
   assert("v48 : lecture PRÉSERVÉE sur rum_metric", priv.tele_select === true);
   assert("v65 : lecture autorisée mais écriture refusée sur rum_event_index", priv.index_select === true && priv.index_insert === false);
   assert("v67 : lecture autorisée mais écriture refusée sur rum_action", priv.action_select === true && priv.action_insert === false);
   assert("v48 : écriture préservée sur la configuration (slo)", priv.conf_update === true);
   assert("v48 : écriture préservée sur rum_span (dogfooding console)", priv.dogfood_insert === true);
+  assert("v71 : jetons de source maps révocables, jamais supprimés ni re-hachés par console_ro",
+    priv.jeton_revoke === true && priv.jeton_delete === false && priv.jeton_rehash === false);
 
   await c.query("set role console_ro");
   await c.query("select set_config('app.current_app_id','app-a',false)");

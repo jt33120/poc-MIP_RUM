@@ -151,12 +151,15 @@ jobs:
       # jetable. SQL_TEST_DATABASE_URL interdit le skip silencieux local/CI.
       # SQL_TEST_V68_DATABASE_URL : fenêtre de déploiement P5.1, code écrit sur un
       # schéma v68 réel avant d'y appliquer migration-v69.
+      # SQL_TEST_PRE_V71_DATABASE_URL : fenêtre de déploiement P5.4, code écrit sur
+      # un schéma sans migration-v71 avant de l'y appliquer.
       - name: P0 safety and truth SQL (base dédiée)
         env:
           PGPASSWORD: postgres
           SQL_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_p0
           SQL_TEST_V65_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_v65
           SQL_TEST_V68_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_v68
+          SQL_TEST_PRE_V71_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v71
         run: |
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -c 'create database mip_rum_p0'
@@ -164,6 +167,8 @@ jobs:
             -c 'create database mip_rum_v65'
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -c 'create database mip_rum_v68'
+          psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'create database mip_rum_pre_v71'
           pnpm test:sql
 
       - name: Build SDK (servi par demo/serve.mjs et la console)

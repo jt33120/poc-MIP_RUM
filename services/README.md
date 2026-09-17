@@ -16,7 +16,7 @@ services/*       les points d'entrée           ← minces par construction
 
 | Service | Rôle | Écoute | Commande |
 |---|---|---|---|
-| `ingest` | réception OTLP : traces, logs, replay | oui (`PORT`) | `node services/ingest/server.mjs` |
+| `ingest` | réception OTLP : traces, logs, replay ; source maps de CI (`POST /v1/sourcemaps`, jeton dédié) | oui (`PORT`) | `node services/ingest/server.mjs` |
 | `scheduler` | déclenche les travaux planifiés | facultatif | `node services/scheduler/worker.mjs` |
 | `mcp` | expose l'API v1 à un agent IA | oui (`PORT`) | `node services/mcp/http.mjs` |
 | _(migrations)_ | applique le SQL en attente | non | `node node_modules/ingest/migrate.mjs` |

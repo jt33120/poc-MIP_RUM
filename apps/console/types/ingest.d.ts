@@ -38,7 +38,11 @@ declare module "ingest/lib/pg-ingest.mjs" {
     conflictClause: string,
   ): Promise<unknown>;
 
-  export function writeRows(pool: Pool, rows: FlattenedRows): Promise<void>;
+  export function writeRows(
+    pool: Pool,
+    rows: FlattenedRows,
+    opts?: { symbolicateur?: import("ingest/lib/error-symbolication.mjs").Symbolicateur },
+  ): Promise<void>;
 
   export function writeLogs(pool: Pool, logs: IngestRow[]): Promise<void>;
 
@@ -91,6 +95,163 @@ declare module "ingest/shared/otlp.mjs" {
     payload: unknown,
     opts?: { maxLogs?: number },
   ): { logs: Record<string, unknown>[]; apiKeys: ApiKeyRef[]; rejected: number };
+}
+
+// --- Source maps (P5.4) -------------------------------------------------------
+// Un moteur, un contrat d'upload, un symbolicateur : partagés par l'ingestion,
+// les deux ports d'upload, le CLI de CI et la console.
+
+declare module "ingest/shared/sourcemap.mjs" {
+  /** Source map v3 telle que parsée depuis son JSON. */
+  export interface RawSourceMap {
+    version: number;
+    sources: (string | null)[];
+    names?: string[];
+    mappings: string;
+    sourceRoot?: string | null;
+    sourcesContent?: (string | null)[] | null;
+    file?: string | null;
+  }
+
+  export interface OrigPos {
+    source: string | null;
+    line: number | null; // 1-based (présentation)
+    column: number | null; // 0-based (comme la spec)
+    name: string | null;
+  }
+
+  export interface StackFrame {
+    fn: string | null;
+    file: string;
+    line: number;
+    col: number;
+  }
+
+  export interface SourceMapConsumer {
+    /** Mémoire retenue, en octets. */
+    bytes: number;
+    originalPositionFor(genLine1: number, genCol0: number): OrigPos;
+  }
+
+  /** Frame résolue : ligne de la stack, bundle d'origine et position source. */
+  export interface ResolvedFrame {
+    index: number;
+    bundle: string;
+    source: string;
+    line: number;
+    column: number;
+    name: string | null;
+  }
+
+  export interface CodeContext {
+    source: string;
+    line: number;
+    start: number;
+    lines: string[];
+  }
+
+  export function hasControlCharacters(texte: string): boolean;
+  export function createConsumer(map: RawSourceMap, opts?: { strict?: boolean }): SourceMapConsumer;
+  export function parseStackLine(line: string): StackFrame | null;
+  export function symbolicateStack(
+    stack: string,
+    maps: Record<string, RawSourceMap>,
+  ): { stack: string; resolved: number };
+  export function codeContext(map: RawSourceMap, source: string, line: number, radius?: number): CodeContext | null;
+}
+
+declare module "ingest/lib/error-symbolication.mjs" {
+  import type { ResolvedFrame } from "ingest/shared/sourcemap.mjs";
+
+  export type SymbolicationStatus = "pending" | "resolved" | "unavailable" | "failed";
+
+  export interface SymbolicationResult {
+    status: SymbolicationStatus;
+    /** Stack réécrite et rescrubbée ; null si aucune frame n'est résolue. */
+    stack: string | null;
+    /** Diagnostic lisible quand la stack n'est pas résolue. */
+    raison: string | null;
+    positions: ResolvedFrame[];
+  }
+
+  export interface Symbolicateur {
+    symboliquerLot(
+      db: { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> },
+      erreurs: Array<{ app_id?: string | null; release?: string | null; stack?: string | null }>,
+      opts?: { checksum?: boolean },
+    ): Promise<(SymbolicationResult | null)[]>;
+    etat(): { entrees: number; octets: number; negatifs: number };
+  }
+
+  export function creerSymbolicateur(options?: {
+    limites?: Record<string, number>;
+    maintenant?: () => number;
+    log?: Partial<import("ingest/shared/log.mjs").Logger>;
+  }): Symbolicateur;
+}
+
+declare module "ingest/lib/sourcemap-upload.mjs" {
+  import type { Pool } from "pg";
+
+  export const LIMITES_UPLOAD: Readonly<{
+    corpsDirect: number;
+    corpsConsole: number;
+    map: number;
+    maps: number;
+    lotConsole: number;
+    delaiCorpsMs: number;
+    parMinute: number;
+    simultanes: number;
+  }>;
+  export const EXPIRATION_JETON: Readonly<{ min: number; max: number; defaut: number }>;
+  export const PRIVILEGE_JETON: "sourcemaps:write";
+
+  export class ErreurUpload extends Error {
+    statut: number;
+    constructor(statut: number, message: string);
+  }
+
+  export interface MapValidee {
+    filename: string;
+    content: string;
+    octets: number;
+    checksum: string;
+  }
+
+  export function empreinteManifeste(entrees: Array<{ filename: string; checksum: string | null }>): string;
+  export function genererJetonUpload(): { id: string; jeton: string; empreinte: string };
+  export function verifierJetonUpload(
+    db: { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> },
+    authorization: string | null,
+  ): Promise<{ id: string; app_id: string } | null>;
+  export function creerLimiteurUpload(opts?: {
+    parMinute?: number;
+    simultanes?: number;
+    maintenant?: () => number;
+  }): {
+    prendre(cle: string): { refus: { message: string; retryAfter: number } } | { liberer: () => void };
+  };
+  export function lireCorpsLimite(
+    flux: AsyncIterable<Uint8Array | string>,
+    opts: { max: number; delaiMs?: number },
+  ): Promise<Buffer>;
+  export function lireRequeteUpload(corps: Buffer | string): {
+    appId: string;
+    release: string;
+    remplacer: boolean;
+    maps: MapValidee[];
+  };
+  export function enregistrerMaps(
+    pool: Pool,
+    demande: {
+      appId: string;
+      release: string;
+      maps: MapValidee[];
+      remplacer?: boolean;
+      par: string;
+      jetonId?: string | null;
+    },
+  ): Promise<{ statut: number; corps: Record<string, unknown> }>;
 }
 
 declare module "ingest/shared/cors.mjs" {
