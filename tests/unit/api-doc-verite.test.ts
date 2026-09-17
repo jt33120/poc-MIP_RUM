@@ -108,13 +108,34 @@ describe("aucune route réelle n'est passée sous silence", () => {
     // délibérément : triage, commentaire et lien d'une issue — session admin de la
     // console seulement, jamais un jeton CONSOLE_API_TOKENS, jamais un outil MCP. Une
     // écriture de plus, non signalée ici, ferait mentir cette liste.
-    const ecritures = documentes().filter((e) => e.methode !== "GET");
-    expect(ecritures.map((e) => `${e.methode} ${e.chemin}`)).toEqual([
+    //
+    // UN POST N'EST PAS UNE ÉCRITURE. P6.4 ajoute `POST /api/v1/explorer/query`, qui
+    // LIT : son verbe vient de la taille de l'AST, pas d'un changement d'état. Le
+    // ranger parmi les écritures dirait à un client — et à un modèle — qu'il lui faut
+    // une session admin de même origine, alors qu'un jeton de lecture suffit. Les deux
+    // listes sont donc tenues séparément, et toutes deux exactes : une route non-GET
+    // qui n'apparaît dans ni l'une ni l'autre est une route mal classée.
+    const LECTURES_EN_POST = ["POST /api/v1/explorer/query"];
+    const ECRITURES = [
       "POST /api/v1/deploys",
       "POST /api/v1/issues/{id}/triage",
       "POST /api/v1/issues/{id}/comments",
       "POST /api/v1/issues/{id}/links",
-    ]);
+    ];
+    const nonGet = documentes()
+      .filter((e) => e.methode !== "GET")
+      .map((e) => `${e.methode} ${e.chemin}`);
+    expect(nonGet.filter((e) => !LECTURES_EN_POST.includes(e))).toEqual(ECRITURES);
+    expect(nonGet.filter((e) => LECTURES_EN_POST.includes(e))).toEqual(LECTURES_EN_POST);
+  });
+
+  it("le descripteur ne range pas la lecture en POST de l'Explorer parmi les écritures", () => {
+    // `write` est ce qu'un client lit pour savoir ce qui exige une session admin. Y
+    // faire figurer une lecture lui ferait croire qu'un jeton d'API ne suffit pas.
+    const route = readFileSync(join(API, "route.ts"), "utf8");
+    const write = route.slice(route.indexOf("write: ["));
+    expect(write).not.toContain("/explorer/query");
+    expect(route).toContain("POST /api/v1/explorer/query");
   });
 
   // Anti-tautologie : la sonde sait lire des sections, et il y en a plus d'une

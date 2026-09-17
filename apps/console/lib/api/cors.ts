@@ -25,7 +25,10 @@ export function corsHeaders(origin: string | null): Record<string, string> {
   } else {
     return {}; // origine non listée -> pas de CORS
   }
-  h["Access-Control-Allow-Methods"] = "GET, OPTIONS";
+  // POST couvre la LECTURE analytique de l'Explorer (P6.4), dont l'AST ne tient pas
+  // dans une query string. Les écritures, elles, ne dépendent pas de cette liste :
+  // elles exigent en plus une session admin de MÊME ORIGINE (lib/api/admin.ts).
+  h["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
   h["Access-Control-Allow-Headers"] = "Authorization, Content-Type";
   h["Access-Control-Max-Age"] = "600";
   return h;

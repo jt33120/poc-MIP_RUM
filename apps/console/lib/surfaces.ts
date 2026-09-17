@@ -39,6 +39,12 @@ const LEGACY_DIMENSIONS: readonly Dimension[] = ["device", "country", "client", 
 
 // Du plus spécifique au plus général : le premier préfixe qui correspond gagne.
 export const SURFACES: Surface[] = [
+  // L'Explorer ne fixe PAS son jeu de données : c'est l'utilisateur qui le choisit.
+  // Déclarer une liste ici reviendrait à n'autoriser que les dimensions communes à
+  // TOUS les jeux — `service` disparaîtrait alors même des erreurs. Il n'ignore pour
+  // autant aucun filtre : la requête est validée contre le jeu RÉELLEMENT choisi et
+  // refuse avec `unsupported_dimension` ce qu'il ne porte pas (lib/analytics-schema.ts).
+  { path: "/explorer", datasets: [], range: "custom" },
   { path: "/errors/", datasets: ["errors"], range: "custom" },
   { path: "/errors", datasets: ["errors"], range: "custom" },
   { path: "/events", datasets: ["events"], range: "custom" },

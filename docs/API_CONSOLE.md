@@ -445,6 +445,86 @@ n'annule jamais les écritures sources du lot.
 `data = { grid: HealthGridCell[], dailyTraffic: DailyTraffic[] }`
 (cellule = une heure, jour×heure ; + trafic quotidien).
 
+---
+
+## Explorer générique (P6.4)
+
+Deux routes, un contrat : un **AST versionné** décrit la requête, et le même AST sert à
+l'écran `/explorer`, à cette API, à l'outil MCP `mip_rum_query_explorer` et — à partir de
+P6.5 — aux tableaux de bord. Ce qui n'est pas promis : ni formule libre, ni recherche sur
+une clé arbitraire, ni scan sans limite.
+
+### `GET /api/v1/explorer/schema` — registre des capacités
+`data = ExplorerSchema` : jeux de données, mesures (unité, agrégations autorisées,
+avertissement de collecte), dimensions **réellement disponibles** pour chaque jeu, colonnes
+du journal, opérateurs, représentations et limites du contrat.
+
+Ce registre publie des **identifiants d'API et des libellés**. Il ne publie ni table, ni
+colonne, ni secret, ni **aucune valeur de client** : l'union des releases ou des
+environnements de plusieurs tenants en révélerait à chacun ceux des autres. Les valeurs se
+demandent app par app et fenêtre par fenêtre.
+
+`capabilities.save_to_dashboard` dit si l'appelant a le droit d'enregistrer une analyse
+(session admin de la console). Un jeton `CONSOLE_API_TOKENS` reçoit toujours `false` : il
+est en lecture seule.
+
+### `POST /api/v1/explorer/query` — requête analytique bornée
+**C'est une LECTURE.** Le verbe est `POST` parce qu'un AST ne tient pas dans une query
+string, pas parce que la route écrit : elle n'écrit rien, et son authentification est
+exactement celle des `GET` — jeton `CONSOLE_API_TOKENS` ou cookie de session, avec le même
+RBAC. Réponse `no-store` : une réponse qui dépend d'un corps n'est pas mise en cache.
+
+```jsonc
+{
+  "version": 1,
+  "app": "demo-app",                       // DEMANDE, jamais une autorisation : le périmètre
+                                           // est résolu contre le principal signé
+  "range": { "preset": "24h" },            // EXACTEMENT { preset } ou { from, to }
+  "dataset": "errors",
+  "measure": { "aggregation": "sum", "field": "occurrences" },
+  "filters": [{ "field": "browser", "operator": "eq", "type": "string", "value": "Firefox" }],
+  "groupBy": ["release"],                  // 2 dimensions au plus
+  "visualization": "timeseries",           // value | toplist | timeseries | table
+  "limit": 10
+}
+```
+
+- **Bornes** : corps ≤ **32 Kio** (`413 body_too_large`), 10 conditions `AND`, 100 caractères
+  par nom de dimension, 500 par valeur, 2 dimensions de regroupement et **50 combinaisons au
+  total** (pas 50 × 50), 200 lignes de journal. Ni `OR` récursif, ni expression régulière, ni
+  SQL, ni JSONPath.
+- **Une seule population** : `data.total`, `data.groups` et `data.series` sont calculés sur la
+  même population, dans un seul instantané `repeatable read`. Le journal paginé
+  (`data.rows`) ne sert **jamais** à calculer un graphe, et le total est calculé
+  indépendamment du top-N.
+- **Série temporelle** : les groupes du haut sont choisis une fois sur toute la fenêtre puis
+  rendus dans **tous** les seaux ; un groupe ne peut pas apparaître à un seau et disparaître
+  au suivant. `meta.truncated_groups` signale les combinaisons omises.
+- **Zéro et null** : un dénombrement réellement vide vaut `0` ; une moyenne ou un percentile
+  sans échantillon vaut `null`. Un seau sans ligne vaut `0` seulement si l'agrégation est
+  additive (`meta.additive`) — jamais pour un percentile ou un dénombrement de distincts.
+- **Clés de groupe** : `key` est un **tuple JSON** aussi long que `groupBy`, jamais une
+  concaténation — une valeur de dimension peut contenir n'importe quel séparateur.
+- **Curseur** : `data.next_cursor` ne pagine que le journal. Il est lié à la requête et à la
+  plage **résolue** : changer un filtre, la fenêtre ou l'app le rend caduc
+  (`400 stale_cursor`) ; un curseur falsifié reçoit `400 invalid_cursor`.
+- **Budget** : au-delà du délai SQL, la réponse est `503 query_budget_exceeded`. L'Explorer
+  dit qu'il n'a pas pu répondre ; il ne rend **jamais** une série de zéros qu'on lirait
+  comme une absence de trafic.
+- **Refus explicites** : un jeu de données, une mesure ou une représentation absents du
+  registre reçoivent `400 unsupported_dataset` / `unsupported_measure` /
+  `unsupported_visualization` ; une dimension que le jeu ne porte pas reçoit
+  `400 unsupported_dimension` — jamais un filtre ignoré en silence. Un champ qui n'est pas au
+  catalogue (message, pile, URL brute, identité) n'est pas mesurable, et le refus ne dit pas
+  s'il existe ailleurs.
+
+`meta` annonce ce qui a été appliqué : `dataset`, `measure`, `unit`, `aggregation`,
+`additive`, `counting` (la population comptée, en toutes lettres), `source: "raw"`,
+`coverage` (`complete` | `partial` | `unknown` — la couverture du **stockage interrogé**,
+pas une garantie d'avoir collecté tout le trafic), `warnings` (échantillonnage, collecte
+partielle — ils restent même quand le stockage est complet) et `query`, l'**AST canonique**
+rejouable qu'un tableau de bord enregistrera en P6.5.
+
 ### Performance IA — **déplacé hors de cette API**
 
 > Trois endpoints figuraient ici : `GET /api/v1/ai`, `GET /api/v1/ai/costs` et
