@@ -3,6 +3,7 @@
 // historique. Chaque occurrence est comptée dans UNE seule ligne. Rendu serveur :
 // la page lit, ce composant présente.
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { HeroReading, HeroStat, SupervisionHero } from "@/components/SupervisionHero";
 import { StackedBars } from "@/components/charts/StackedBars";
@@ -64,6 +65,8 @@ export function IssueList({
   limit,
   label,
   bucketLabel,
+  decoupage,
+  vue = {},
 }: {
   f: ErrorFilters;
   filtres: IssueListFilters;
@@ -75,6 +78,14 @@ export function IssueList({
   curseur: boolean;
   /** Limite demandée explicitement, qui suit la pagination. */
   limit: string | null;
+  /** Découpage par dimension (P6.3), rendu par la page — les deux listes le partagent. */
+  decoupage?: ReactNode;
+  /**
+   * Paramètres de VUE de l'écran (onglet de découpage) : ils ne filtrent rien, mais
+   * suivent la pagination et le formulaire — sans quoi paginer remettrait l'onglet
+   * au défaut sous les yeux de l'utilisateur.
+   */
+  vue?: Record<string, string>;
 }) {
   const { issues, total, coverage, sampling, enrichment } = result;
   const trend = result.trend ?? [];
@@ -87,8 +98,10 @@ export function IssueList({
   );
   // La release est un champ visible du formulaire : la cacher aussi la répéterait, et le
   // contrat refuse un paramètre répété.
-  const cachees = [...new URLSearchParams(errorsHref("/errors", f, f.app).split("?")[1])].filter(([nom]) => nom !== "release");
-  const limite: Record<string, string> = limit ? { limit } : {};
+  const cachees = [...new URLSearchParams(errorsHref("/errors", f, f.app, vue).split("?")[1])].filter(
+    ([nom]) => nom !== "release",
+  );
+  const limite: Record<string, string> = { ...vue, ...(limit ? { limit } : {}) };
   const filtre = Boolean(filtres.status || filtres.source || filtres.release);
 
   return (
@@ -130,7 +143,7 @@ export function IssueList({
             Filtrer
           </button>
           {filtre && (
-            <Link href={errorsHref("/errors", f, f.app)} className="btn-ghost">
+            <Link href={errorsHref("/errors", f, f.app, vue)} className="btn-ghost">
               Réinitialiser
             </Link>
           )}
@@ -196,6 +209,8 @@ export function IssueList({
           applicative n&apos;a pu identifier l&apos;erreur. Tous les compteurs portent sur {label}, sauf « Première vue ».
         </HeroReading>
       </SupervisionHero>
+
+      {decoupage}
 
       <div className="card overflow-x-auto">
         <table className="w-full min-w-table text-sm">

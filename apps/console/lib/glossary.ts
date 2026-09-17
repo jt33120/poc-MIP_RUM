@@ -266,6 +266,52 @@ export const GLOSSARY = {
     business:
       "Dit sur quelle fraction du trafic l'entonnoir de menu est réellement calculé. Un entonnoir portant sur 34 % des appels ne doit jamais être présenté comme s'il en couvrait la totalité.",
   },
+  // --- Analyses prêtes à l'emploi (P6.3) -------------------------------------
+  decoupage: {
+    label: "Découpage par dimension",
+    term:
+      "Répartition d'une mesure selon une dimension (route, navigateur, système, pays estimé, appareil, release), avec le nombre d'échantillons de chaque groupe.",
+    stack:
+      "Regroupement SQL sur la colonne du registre de dimensions ; les lignes sans valeur forment un groupe « Inconnu » (is null), jamais une chaîne. Les groupes sont plafonnés, et leur nombre réel est affiché.",
+    business:
+      "Répond à « pour qui est-ce lent ? » plutôt qu'à « est-ce lent ? ». Un p75 global correct peut cacher une release ou un navigateur très dégradé ; le découpage le fait apparaître, et chaque groupe ouvre son détail.",
+  },
+  dureeObservee: {
+    label: "Durée observée d'une session",
+    term:
+      "session_duration_observed = max(0, last_seen_at − started_at), sur les sessions COMMENCÉES dans la fenêtre.",
+    stack:
+      "Écart entre la première et la dernière observation reçue pour la session. Les sessions encore actives à la fin de la fenêtre sont comptées et signalées : leur durée n'est pas finie.",
+    business:
+      "Une estimation de présence, pas du temps actif : un onglet laissé ouvert l'allonge, une fermeture brutale la raccourcit. À lire comme un ordre de grandeur comparatif, jamais comme du « temps passé sur le site ».",
+  },
+  sessionUneVue: {
+    label: "Sessions à une seule vue",
+    term:
+      "single_view_session_rate = sessions ayant vu exactement une page / sessions ayant vu au moins une page.",
+    stack:
+      "Compté sur `rum_session.page_count`, maintenu par l'ingestion à partir du nombre réel de pages vues de la session. Affiché seulement au-delà d'un seuil de sessions.",
+    business:
+      "Ce N'EST PAS un taux de rebond : aucune durée minimale ni interaction n'entre dans la définition, contrairement aux conventions — incompatibles entre elles — des outils du marché. On mesure exactement ce qu'on nomme.",
+  },
+  ressourcesSeuil: {
+    label: "Ressources collectées selon seuil SDK",
+    term:
+      "Une ressource n'est envoyée que si elle dépasse le seuil de lenteur configuré (300 ms par défaut) ou bloque le rendu, et au plus vingt par page vue.",
+    stack:
+      "Filtrage dans le SDK (PerformanceObserver 'resource'). Le partage première/tierce partie compare l'hôte de l'URL déjà collectée aux origines DÉCLARÉES de l'application ; aucun appel sortant n'est émis par le serveur.",
+    business:
+      "Un échantillon volontairement biaisé vers le lent, pas un inventaire du réseau. Les totaux ne sont donc jamais extrapolés, et une application qui ne déclare pas ses origines n'obtient pas de partage première/tierce partie inventé.",
+  },
+  blocages: {
+    label: "Blocages du fil principal",
+    term:
+      "Tâches longues (Long Tasks) et Long Animation Frames (LoAF) : les moments où le fil principal du navigateur ne peut pas répondre.",
+    stack:
+      "Deux API distinctes, gardées séparées : un même blocage observé par les deux serait compté deux fois. La série compte des blocages et donne leur p75 ; aucune somme de durées n'est présentée.",
+    business:
+      "Additionner les durées de blocage de plusieurs visiteurs ne donne le temps d'attente de personne. On montre donc combien de fois ça bloque, à quel point, et dans quelle session aller regarder.",
+  },
 } as const satisfies Record<string, GlossaryEntry>;
 
 export type GlossaryId = keyof typeof GLOSSARY;

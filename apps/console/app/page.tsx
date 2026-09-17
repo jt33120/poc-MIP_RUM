@@ -13,12 +13,25 @@ import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
 import { VersionsTable } from "@/components/VersionsTable";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { Breakdown } from "@/components/Breakdown";
+import { VITALS_BREAKDOWN_COLUMNS, vitalsBreakdownItems } from "@/components/breakdown-view";
 import { type SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
+import {
+  BREAKDOWN_NOTICES,
+  BREAKDOWN_PARAM,
+  availableBreakdowns,
+  breakdownTabs,
+  datasetAvailability,
+  parseBreakdown,
+} from "@/lib/breakdowns";
 import { healthScore } from "@/lib/health";
+import { paramReader } from "@/lib/query-contract";
+import { dimensionSchema } from "@/lib/query-schema";
 import { overviewStats, vitalSeries, vitalsP75 } from "@/lib/queries";
+import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown } from "@/lib/queries-breakdowns";
 import { dailyLcpSeries, dailyTraffic, GRID_DAYS, healthGrid } from "@/lib/queries-grid";
-import { comparaisonVersions } from "@/lib/queries-deploys";
+import { comparaisonVersions, type ComparaisonVersions } from "@/lib/queries-deploys";
 import { THRESHOLDS } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +68,17 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
   const vide = <T,>(v: T) => Promise.resolve(v);
 
-  const [vitals, vitalsPrev, stats, statsPrev, series, health, grid, traffic, dailyLcp, versions] =
+  // Découpage (P6.3) : l'onglet est jugé sur les mesures RÉELLEMENT groupées —
+  // les Web Vitals — et non sur ce que l'écran sait filtrer. L'accueil compte
+  // aussi des sessions, qui ne portent pas de route : c'est pourquoi le clic sur
+  // un groupe de routes ouvre `/pages`, la surface qui sait appliquer ce filtre.
+  const schema = await dimensionSchema();
+  const dispoDecoupage = datasetAvailability(VITALS_BREAKDOWN_DATASETS, schema);
+  const decoupage = blocs.decoupage
+    ? parseBreakdown(paramReader(sp).get(BREAKDOWN_PARAM), availableBreakdowns(dispoDecoupage))
+    : null;
+
+  const [vitals, vitalsPrev, stats, statsPrev, series, health, grid, traffic, dailyLcp, versions, decoupe] =
     await Promise.all([
       blocs.vitals || blocs.reseau ? vitalsP75(f) : vide([]),
       blocs.vitals ? vitalsP75(f, true) : vide([]),
@@ -66,7 +89,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       blocs.historique ? healthGrid(f) : vide([]),
       blocs.historique ? dailyTraffic(f) : vide([]),
       blocs.historique ? dailyLcpSeries(f) : vide([]),
-      blocs.versions ? comparaisonVersions(f) : vide([]),
+      blocs.versions ? comparaisonVersions(f) : vide<ComparaisonVersions>({ rows: [], source: "occurrence" }),
+      decoupage ? vitalsBreakdown(f, decoupage) : vide(null),
     ]);
 
   const byName = Object.fromEntries(vitals.map((v) => [v.name, v]));
@@ -162,6 +186,25 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       </SupervisionHero>
       )}
 
+      {/* Découpage (P6.3) : les mêmes Web Vitals, répartis par dimension. Chaque
+          groupe ouvre la surface de détail avec la MÊME plage et le filtre du
+          groupe en plus — jamais à la place des filtres déjà posés. */}
+      {decoupage && decoupe && (
+        <Breakdown
+          title="Web Vitals par dimension"
+          tabs={breakdownTabs("/", ecran.query, decoupage, dispoDecoupage, {
+            hours: businessHours ? "business" : null,
+          })}
+          notice={BREAKDOWN_NOTICES[decoupage]}
+          items={vitalsBreakdownItems({ pathname: "/", query: ecran.query, schema, dimension: decoupage }, decoupe.rows)}
+          columns={VITALS_BREAKDOWN_COLUMNS}
+          groups={decoupe.groups}
+          truncated={decoupe.truncated}
+          measureLabel="Mesures"
+          emptyLabel={`Aucune mesure LCP, INP ou CLS sur ${period.label}.`}
+        />
+      )}
+
       {/* Historique de santé 14 j (fenêtre fixe, comme les anomalies) :
           heatmap jour × heure + courbes de volume et de p75 LCP associées. */}
       <section className="card mt-6 p-4">
@@ -237,7 +280,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
       {/* Le bloc décide LUI-MÊME de s'afficher : sous deux versions, une
           « comparaison » d'une ligne n'apprend rien (cf. VersionsTable). */}
-      {blocs.versions && <VersionsTable rows={versions} periodLabel={period.label} />}
+      {blocs.versions && <VersionsTable comparaison={versions} periodLabel={period.label} />}
 
       {blocs.anomalies && health && <AnomalyTable health={health} />}
 
