@@ -7,14 +7,20 @@ Une case n’est cochée que sur preuve. « Testé localement » ne vaut ni dép
 
 ## État des sous-lots
 
-| Sous-lot | Branche | Implémenté | Testé localement | Déployé | Vérifié sur vraie app | Bloqué |
-|---|---|---|---|---|---|---|
-| P5.1 — corrélation, compteurs, détail scoped | `feat/datadog-rum-error-tracking-p5-1` | oui | oui | v69 Neon ; code en cours | — | — |
-| P5.2 — collecte navigateur opt-in | — | — | — | — | — | — |
-| P5.3 — erreurs OTel/backend | — | — | — | — | — | — |
-| P5.4 — source maps CI | — | — | — | — | — | — |
-| P5.5 — groupes versionnés | — | — | — | — | — | — |
-| P5.6 — triage, régressions, notifications | — | — | — | — | — | — |
+| Sous-lot | PR | Migration (Neon, appliquée le 17/09/2026) | Implémenté | Testé localement | CI | Déployé (master `8219de6`) | Vérifié sur vraie app |
+|---|---|---|---|---|---|---|---|
+| P5.1 — corrélation, compteurs, détail scoped | #182, #183 | v69 (HTTPS, avant merge) | oui | oui | verte | oui | non — aucune erreur ingérée depuis |
+| P5.2 — collecte navigateur opt-in | #184 | — | oui | oui | verte | oui | non — catégories opt-in non activées |
+| P5.3 — erreurs OTel/backend | #185 | v70 (pre-deploy Railway) | oui | oui | verte | oui | non — aucun émetteur backend en prod |
+| P5.4 — source maps CI | #186 | v71 (pre-deploy Railway) | oui | oui | verte | oui | non — aucun upload client (P8.4) |
+| P5.5 — groupes versionnés, issues | #187 | v72 (pre-deploy Railway) | oui | oui | verte | oui | non — v2 activé pour aucune app |
+| P5.6 — triage, régressions, notifications | #188, #189 | v73, v74 (pre-deploy Railway) | oui | oui | verte (#189 ; #188 mergée E2E rouge, corrigée par #189) | oui | non |
+
+État production relevé le 17/09/2026 : `schema_migration` porte v69 à v74 ; statuts de déploiement `Vercel`,
+`ingest`, `scheduler`, `mcp` en succès sur `8219de6` ; `rum_error` compte 5 lignes, la dernière ingérée le
+16/09/2026 à 08:30 UTC, `error_issue` et `error_grouping_config` sont vides. La recette sur vraie app reste donc à
+jouer : envoyer une erreur réelle, activer le regroupement v2 d'une app (fonction SQL d'activation de v72), puis
+contrôler liste, issue, triage et notification.
 
 ## P5.1 — détails fiables et corrélation
 
@@ -70,18 +76,47 @@ Production :
   `schema_migration`, checksum identique à `migrate.mjs`) via l'API SQL HTTPS de Neon — le port 5432 est fermé depuis
   le poste de livraison. Vérifié : 12 colonnes, `rum_error_envelope_v69` non validée.
 
-### Suivis identifiés hors P5.1
+## P5.2 à P5.6 — synthèse
 
-- **CI** : ajouter `SQL_TEST_V68_DATABASE_URL` (+ `create database mip_rum_v68`) au job SQL de `ci.yml` ; le jeton
-  GitHub de livraison n'a pas le scope `workflow`. Sans lui, les cas « code avant v69 » des nouveaux tests SQL sont
-  ignorés en CI (ils passent en local).
-- **Navigation client** : un `<Link>` vers la même route avec une autre query ne navigue plus une fois les prefetchs
-  de la barre latérale terminés (reproduit sur « Réinitialiser » de `/events`, P4). P5.1 contourne par des ancres
-  natives sur ses liens même-route ; corriger la cause dans la coquille de la console.
-- **Ingestion** : surrogate UTF-16 isolé dans `mip.context`/props (jsonb 22P02) et NUL dans les champs de span non
-  passés par `anyValue` (span/trace ids, logs) peuvent encore annuler un lot.
-- **Portée** : `scopeApp` (lib/api/params.ts) traite `apps = []` comme sans restriction pour les autres routes v1 ;
-  `/api/replay/[sessionId]` lit `replay_chunk` sans borne `app_id`.
-- **DSAR identité** : l'effacement par identité passe par `rum_session.user_id_hash` ; des lignes d'erreur écrites
-  sous une autre identité dans la même session ne sont pas atteintes (même limite déjà présente sur `rum_event`).
-- **Liste** : pas de badge de source par groupe (la source est portée par l'exemplaire du détail).
+- **P5.2 (#184)** : `addError(error, context, { fingerprint })`, configuration `captureErrors` avec catégories opt-in
+  console, ressources, CSP et réseau (non interceptées et rejets non gérés toujours actifs), plafonds par catégorie,
+  échantillonnage et consentement respectés ; bundles SDK reconstruits.
+- **P5.3 (#185, v70)** : exceptions portées par les événements de span OpenTelemetry et les logs structurés écrites
+  dans `rum_error` sans session inventée ; identité déterministe par événement, `mip.exception_id` pour dédupliquer
+  log + span, lignes réellement insérées seules comptées ; une exception dérivée n'est pas un événement facturé de
+  plus mais reste une erreur ; agent Node et middleware FastAPI capturent les erreurs de requête sans changer la
+  terminaison du processus ni le statut réellement envoyé.
+- **P5.4 (#186, v71)** : symbolication partagée console/ingestion, upload atomique validé avant écriture, port
+  backend `POST /v1/sourcemaps` et jetons dédiés app-scopés expirants, CLI `scripts/upload-sourcemaps.mjs`, page
+  `/admin/sourcemaps`, cache borné (32 entrées / 64 Mio) et analyse linéaire résistante aux fichiers hostiles.
+- **P5.5 (#187, v72)** : normalisation multi-moteurs, clé v2 calculée en ombre sur chaque nouvelle occurrence,
+  `error_issue` / `error_issue_alias` / `error_grouping_config`, activation et retour arrière par app via fonctions
+  SQL, anciens liens redirigés ou choix d'issue, API `/api/v1/issues` et outils MCP en lecture.
+- **P5.6 (#188, #189, v73, v74)** : triage admin avec `expectedRevision` (409), assignation, commentaires et liens
+  de tickets, journal d'activité, régression décidée dans la transaction d'ingestion selon l'ordre des marqueurs de
+  déploiement, notifications par outbox livrées par le dispatcher existant, alertes de pic `issue:<uuid>` avec
+  `no_data` explicite ; v74 corrige sans toucher aux données (release bornée, verrou non bloquant, notifications des
+  issues antérieures à v73).
+
+## Suivis consolidés
+
+- **Navigation client bloquée** : un `<Link>` vers la même route avec une autre query et `router.refresh()` peuvent
+  ne jamais aboutir une fois les prefetchs terminés (reproduit sur « Réinitialiser » de `/events`, sur le triage P5.6
+  et probablement l'auto-refresh « LIVE » de 5 s). P5.1 et P5.6 contournent par ancres natives et rechargement
+  complet ; la cause est à corriger dans la coquille de la console.
+- **Recette sur vraie app** : aucune erreur ingérée depuis le déploiement ; regroupement v2 activé pour aucune app.
+- **Ingestion** : surrogate UTF-16 isolé dans `mip.context`/props (jsonb 22P02), NUL dans les champs de span non
+  passés par `anyValue`, `mip.release` non borné à l'ingestion, contrôle de caractères de P5.4/P5.5 plus permissif
+  que PostgreSQL.
+- **Portée** : `scopeApp` (lib/api/params.ts) traite `apps = []` comme sans restriction pour les routes v1 hors
+  erreurs/issues ; `/api/replay/[sessionId]` lit `replay_chunk` sans borne `app_id`.
+- **DSAR** : effacement par identité fondé sur `rum_session.user_id_hash` (lignes écrites sous une autre identité dans
+  la même session non atteintes) ; exceptions dont la session est inconnue à l'écriture (P8.1).
+- **Alertes** : les alertes « nouvelle erreur » historiques restent fondées sur l'empreinte ; une source map arrivée
+  après les premières occurrences peut ouvrir une seconde issue ; double instrumentation log + span sans identifiant
+  commun non signalée à l'écran (colonnes `origin_signal` / `exception_id` disponibles).
+- **Backend** : vidage durable à l'arrêt fatal (P7/P8) ; rejets non gérés hors mode `throw` non observés côté Node ;
+  la fonction Supabase historique des logs ne dérive pas d'exceptions.
+- **Liste** : pas de badge de source par groupe.
+- **Nommage** : branches futures en `feat/rum-…` ; « Datadog » ne désigne qu'une référence de comparaison
+  fonctionnelle, aucun SDK, API ni compte Datadog n'est utilisé.
