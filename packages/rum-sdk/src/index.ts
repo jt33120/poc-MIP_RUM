@@ -1,8 +1,9 @@
 import { initApiSpans } from "./apispans";
 import { ActionTracker, actionAttrs, initAutomaticActions } from "./actions";
-import { createBreadcrumbTrail, initClickBreadcrumbs, type BreadcrumbTrail } from "./breadcrumbs";
+import { createBreadcrumbTrail, initClickBreadcrumbs, MIP_UI_ATTR, type BreadcrumbTrail } from "./breadcrumbs";
 import { ConsentGate } from "./consent";
 import { currentRoute, initNavigation, scrubUrl } from "./context";
+import { initConsoleErrors, initCspErrors, initResourceErrors } from "./error-capture";
 import { initErrors, type Emit } from "./errors";
 import { initForms } from "./forms";
 import { initFrustration, type FrustrationWatch } from "./frustration";
@@ -15,7 +16,12 @@ import { purgeRetryQueue, replayRetryQueue } from "./retry";
 import { createSampler, decideMode, loadMode, storeMode } from "./sampling";
 import { readPrivacySignals, signalsOptOut } from "./privacy";
 import { getOrCreateSession, rotateSession, touchSession, type Session } from "./session";
-import type { MIPRumConfig } from "./types";
+import type {
+  AddErrorOptions,
+  ErrorCategory,
+  ErrorCollectionStats,
+  MIPRumConfig,
+} from "./types";
 import { initNavTiming } from "./navtiming";
 import { initVitals } from "./vitals";
 import {
@@ -45,6 +51,8 @@ let replayRetry: (() => void) | null = null;
 let replayArm: (() => void) | null = null; // replay échantillonné, en attente de consent
 let drainErrors: (() => void) | null = null;
 let resetErrors: (() => void) | null = null;
+let markManualError: ((error: Error) => void) | null = null;
+let errorStats: (() => ErrorCollectionStats) | null = null;
 let causalActions: ActionTracker | null = null;
 let collectionOrigin: (at?: number) => Record<string, string | number | boolean> = () => ({});
 let updateCollectionConsent: ((granted: boolean) => void) | null = null;
@@ -96,6 +104,9 @@ export function applyBeforeSend(
     "mip.sample_rate", "mip.error_sample_rate", "mip.event_type",
     "mip.view_id", "mip.view_name", "mip.action_id", "mip.timing_ms",
     "mip.feature_flag_value", "mip.action_type",
+    // P5.2 : lien d'une erreur réseau vers le span de son appel, et voie de
+    // capture dont l'ingestion dérive la source et le caractère géré.
+    "mip.parent_span_id", "mip.error_kind", "mip.error_handled",
   ]);
   const reserved = Object.fromEntries(Object.entries(attributes).filter(([key]) => structural.has(key)));
   const filtered = hook({ ...attributes }, meta);
@@ -155,6 +166,8 @@ function loadFeedbackWidget(opt: boolean | { label?: string; accent?: string }):
   const s = document.createElement("script");
   s.src = url;
   s.defer = true;
+  // Son échec de chargement n'est pas une erreur de ressource de l'application.
+  s.setAttribute(MIP_UI_ATTR, "");
   document.head.appendChild(s);
 }
 
@@ -396,37 +409,11 @@ export function init(cfg: MIPRumConfig): void {
   // form analytics (Lot 7) : instrumentation champ par champ ; opt-out via cfg.forms=false
   if (cfg.forms !== false) initForms(emit);
 
-  // tracing distribué (v0.4) : fetch/XHR -> traceparent + span 'http.client'.
-  // Les endpoints d'ingestion MIP sont exclus (pas de boucle SDK -> SDK).
-  let apiCap: ReturnType<typeof initApiSpans> | null = null;
-  if (cfg.trace !== false) {
-    const denyOrigins: string[] = [];
-    for (const u of [
-      cfg.endpoint,
-      cfg.replayEndpoint ?? cfg.endpoint.replace("/v1/traces", "/v1/replay"),
-    ]) {
-      try {
-        denyOrigins.push(new URL(u, location.href).origin);
-      } catch {
-        /* endpoint relatif invalide : ignoré */
-      }
-    }
-    apiCap = initApiSpans(emit, {
-      extraOrigins: Array.isArray(cfg.trace)
-        ? cfg.trace.map((o) => o.replace(/\/+$/, ""))
-        : [],
-      denyOrigins,
-      sessionId: () => session!.sessionId,
-      traceId: currentTraceId, // même trace que la page vue (E0)
-      action: () => ({ ...collectionOrigin(), ...actionAttrs(causalActions!.origin()) }),
-    });
-  }
-
   // chaque erreur laisse aussi un breadcrumb (parcours menant à l'erreur)
   // `errorCap` : plafond par page ET déduplication par empreinte (finding 2.1).
   // Il rejoint les autres plafonds remis à zéro à chaque page vue, ci-dessous.
   const errorCap = initErrors((name, attrs, ts) => {
-    if (!emit(name, attrs, ts)) return;
+    if (!emit(name, attrs, ts)) return false;
     // Le breadcrumb d'erreur est un enfant causal lui aussi. On ne lui recopie
     // que l'enveloppe figée à l'occurrence (jamais message/stack), afin qu'un
     // drain après un nouveau clic ne le réattribue pas à l'action courante.
@@ -435,6 +422,7 @@ export function init(cfg: MIPRumConfig): void {
       String(attrs["exception.message"] ?? "error"),
       causalActions!.validate(causalOnly(attrs)),
     );
+    return true;
   }, Date.now, (at) => {
     // Une répétition peut être drainée après un changement de contexte ou
     // d'identité. Figer ici l'enveloppe complète de l'occurrence évite de la
@@ -460,6 +448,79 @@ export function init(cfg: MIPRumConfig): void {
   );
   drainErrors = errorLifecycle.onPublicFlush;
   resetErrors = () => errorCap.reset();
+  markManualError = (error) => {
+    errorCap.dejaCapture(error, "manual");
+  };
+
+  // Origines de l'ingestion MIP : jamais instrumentées par le tracing (pas de
+  // boucle SDK -> SDK), jamais signalées par la voie CSP.
+  const denyOrigins: string[] = [];
+  for (const u of [
+    cfg.endpoint,
+    cfg.replayEndpoint ?? cfg.endpoint.replace("/v1/traces", "/v1/replay"),
+  ]) {
+    try {
+      denyOrigins.push(new URL(u, location.href).origin);
+    } catch {
+      /* endpoint relatif invalide : ignoré */
+    }
+  }
+
+  // Collecte élargie (P5.2) : chaque voie est opt-in et rejoint errorCap. La voie
+  // réseau vit dans les wrappers du tracing : sans eux, elle n'existe pas.
+  const capture = cfg.captureErrors ?? {};
+  const network = cfg.trace !== false ? capture.network : undefined;
+  const enabled: Record<ErrorCategory, boolean> = {
+    uncaught: true,
+    console: Boolean(capture.console),
+    resources: Boolean(capture.resources),
+    csp: Boolean(capture.csp),
+    network: Boolean(network),
+  };
+  const unsupported: Record<ErrorCategory, string[]> = {
+    uncaught: [],
+    console: enabled.console ? initConsoleErrors(errorCap) : [],
+    resources: [],
+    csp: enabled.csp ? initCspErrors(errorCap, denyOrigins) : [],
+    network: enabled.network
+      ? [
+          ...(typeof window.fetch === "function" ? [] : ["fetch"]),
+          ...(typeof XMLHttpRequest === "function" ? [] : ["XMLHttpRequest"]),
+        ]
+      : [],
+  };
+  if (enabled.resources) initResourceErrors(errorCap);
+  errorStats = () => {
+    const compteurs = errorCap.compteurs();
+    const stats = {} as ErrorCollectionStats;
+    for (const voie of Object.keys(compteurs) as ErrorCategory[]) {
+      stats[voie] = { enabled: enabled[voie], unsupported: [...unsupported[voie]], ...compteurs[voie] };
+    }
+    return stats;
+  };
+
+  // tracing distribué (v0.4) : fetch/XHR -> traceparent + span 'http.client'.
+  let apiCap: ReturnType<typeof initApiSpans> | null = null;
+  if (cfg.trace !== false) {
+    apiCap = initApiSpans(emit, {
+      extraOrigins: Array.isArray(cfg.trace)
+        ? cfg.trace.map((o) => o.replace(/\/+$/, ""))
+        : [],
+      denyOrigins,
+      sessionId: () => session!.sessionId,
+      traceId: currentTraceId, // même trace que la page vue (E0)
+      action: () => ({ ...collectionOrigin(), ...actionAttrs(causalActions!.origin()) }),
+      ...(network
+        ? {
+            errors: {
+              clientErrors: typeof network === "object" && network.clientErrors === true,
+              aborts: typeof network === "object" && network.aborts === true,
+              report: (attrs, ts) => errorCap.report("network", attrs, ts),
+            },
+          }
+        : {}),
+    });
+  }
 
   initNavigation((navType) => {
     causalActions!.close();
@@ -655,13 +716,26 @@ export function addFeatureFlagEvaluation(name: string, value: string | number | 
   }) ?? false;
 }
 
-/** Signale explicitement une erreur en réutilisant la voie exception existante. */
-export function addError(error: Error | string, context: EventContext = {}): boolean {
+/**
+ * Signale explicitement une erreur en réutilisant la voie exception existante.
+ *
+ * `options.fingerprint` : clé de regroupement opaque, bornée comme un nom (100
+ * caractères). Elle voyage en `mip.error_fingerprint` sans rien changer au
+ * regroupement actuel ; une clé invalide est ignorée, jamais l'erreur.
+ */
+export function addError(
+  error: Error | string,
+  context: EventContext = {},
+  options: AddErrorOptions = {},
+): boolean {
   const message = typeof error === "string" ? error : error.message;
   const errorName = boundedName(typeof error === "string" ? "Error" : error.name) ?? "Error";
   const safeMessage = message.length <= 500 ? message : message.slice(0, 500);
   const safeStack = typeof error === "string" || !error.stack ? null : error.stack.slice(0, 4000);
   const envelope = eventContext.envelope({}, context);
+  const fingerprint = boundedName(options?.fingerprint);
+  // Un console.error du même objet dans la même tâche n'en fait pas un second incident.
+  if (typeof error !== "string") markManualError?.(error);
   return emitter?.("exception", {
     "mip.event_type": "error",
     "mip.event_name": errorName,
@@ -669,7 +743,17 @@ export function addError(error: Error | string, context: EventContext = {}): boo
     "exception.message": safeMessage,
     ...(safeStack ? { "exception.stacktrace": safeStack } : {}),
     ...(envelope.context ? { "mip.context": envelope.context } : {}),
+    ...(fingerprint ? { "mip.error_fingerprint": fingerprint } : {}),
   }) ?? false;
+}
+
+/**
+ * Métriques de la collecte d'erreurs, voie par voie, depuis init() : occurrences
+ * émises, tues par le plafond de page, refusées (beforeSend, consentement), et
+ * API navigateur absentes. `null` tant que la collecte n'a pas démarré.
+ */
+export function getErrorCollectionStats(): ErrorCollectionStats | null {
+  return errorStats?.() ?? null;
 }
 
 /**

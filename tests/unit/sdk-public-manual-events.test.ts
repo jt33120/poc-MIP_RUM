@@ -47,7 +47,9 @@ vi.mock("../../packages/rum-sdk/src/breadcrumbs", () => ({
   initClickBreadcrumbs: () => {},
   createBreadcrumbTrail: () => ({ add: () => {}, cap: { reset: () => {} } }),
 }));
-vi.mock("../../packages/rum-sdk/src/errors", () => ({ initErrors: () => ({ drainer: () => {}, reset: () => {} }) }));
+vi.mock("../../packages/rum-sdk/src/errors", () => ({
+  initErrors: () => ({ drainer: () => {}, reset: () => {}, report: () => {}, dejaCapture: () => false }),
+}));
 vi.mock("../../packages/rum-sdk/src/forms", () => ({ initForms: () => {} }));
 vi.mock("../../packages/rum-sdk/src/frustration", () => ({ initFrustration: () => ({ reset: () => {} }) }));
 vi.mock("../../packages/rum-sdk/src/loaf", () => ({ initLoaf: () => null }));

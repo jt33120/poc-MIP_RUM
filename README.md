@@ -15,7 +15,7 @@ Démontré en production le 10/06/2026 sur `plateforme.groupement-it.com` : sur 
 ## Architecture
 
 ```
-[App web cliente] -> [MIP RUM SDK 19,4 KB gzip] --OTLP/HTTP JSON--> [Ingestion /v1/traces] --> [Postgres]
+[App web cliente] -> [MIP RUM SDK 22,0 KB gzip] --OTLP/HTTP JSON--> [Ingestion /v1/traces] --> [Postgres]
                                                                                                  ^    |
 [Synthétique DEM (mippoc ou seed)] --> [sync-synthetic] ---------------------------------------/     v
                                                                           [Console RUM Live (Next.js)]
@@ -70,7 +70,7 @@ La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) re
 
 | Workspace | Rôle |
 |---|---|
-| `packages/rum-sdk` | SDK Web (émetteur OTLP maison + web-vitals, 19,4 Ko gzip), build esbuild IIFE `mip-rum.js` |
+| `packages/rum-sdk` | SDK Web (émetteur OTLP maison + web-vitals, 22,0 Ko gzip), build esbuild IIFE `mip-rum.js` |
 | `packages/agent-node` | Agent backend **zéro-config** Node.js (`node -r @mip/agent-node/register`) : span `http.server` sans changement de code |
 | `packages/rum-mobile` | SDK **React Native** : crashes, écrans, réseau (traceparent), événements → mêmes tables (`device_type=mobile`) |
 | `apps/ingest` | Receiver OTLP `/v1/traces`, `/v1/logs`, `/v1/replay` (edge functions Deno + dev-server Node) + SQL (schéma, migrations) |

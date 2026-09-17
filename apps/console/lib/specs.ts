@@ -269,6 +269,14 @@ export const MESURES: Mesure[] = [
       "Erreurs non capturées et promesses rejetées, groupées par empreinte (type, message, première frame) pour qu'un même bug ne compte qu'une fois. Message et pile nettoyés de la PII à l'émission ET à l'ingestion.",
   },
   {
+    quoi: "Erreurs navigateur sur option",
+    otlp: "exception",
+    table: "rum_error",
+    module: "packages/rum-sdk/src/error-capture.ts",
+    detail:
+      "Activées voie par voie (captureErrors), jamais par défaut : console.error, ressources qui échouent à charger, violations CSP, appels fetch/XHR en échec, en délai dépassé ou en 5xx — les 4xx et les abandons volontaires seulement sur demande. Chaque voie a son plafond par page, et ses pertes sont comptées dans le navigateur, pas encore à l'ingestion. Ni query string, ni corps, ni en-tête de requête ; ni l'extrait inline d'une violation CSP ; aucun statut HTTP deviné pour une ressource.",
+  },
+  {
     quoi: "Ressources lentes",
     otlp: "resource",
     table: "rum_resource",
