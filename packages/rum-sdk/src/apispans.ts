@@ -174,6 +174,8 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
         const method = (
           init?.method ?? (input instanceof Request ? input.method : "GET")
         ).toUpperCase();
+        // Lu au départ, sous la garde : il dira si un rejet est un abandon voulu.
+        const signal = init?.signal ?? (input instanceof Request ? input.signal : null);
         const traceId = opts.traceId?.() ?? randHex(16);
         const spanId = randHex(8);
         const headers = new Headers(
@@ -193,7 +195,6 @@ export function initApiSpans(emit: Emit, opts: ApiSpanOptions): PageCap {
             // Rejet : délai (AbortSignal.timeout), abandon volontaire — le motif
             // passé à abort() peut être n'importe quelle valeur, d'où le signal —
             // ou réseau coupé.
-            const signal = init?.signal ?? (input instanceof Request ? input.signal : null);
             const nom = (err as { name?: unknown } | null)?.name;
             const issue: IssueReseau =
               nom === "TimeoutError" ? "timeout" : nom === "AbortError" || signal?.aborted ? "abort" : "network";

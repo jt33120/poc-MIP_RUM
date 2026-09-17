@@ -843,11 +843,19 @@ describe("en base : ni corps, ni en-têtes métier, ni query, ni JWT", () => {
     expect(fil?.label).toMatch(/…$/);
   });
 
-  it("un libellé trop long perd son dernier mot entamé, pas la moitié d'un jeton", () => {
+  it("un libellé trop long perd son dernier mot ou segment entamé, pas la moitié d'un jeton", () => {
     expect(boundedWireLabel("court")).toBe("court");
     const libelle = `PUT app.test/api/${"a".repeat(80)} ${JWT} : HTTP 500`;
     expect(boundedWireLabel(libelle)).toBe(`PUT app.test/api/${"a".repeat(80)} …`);
     expect(boundedWireLabel(`${"b".repeat(119)} suite`)).toBe(`${"b".repeat(119)}…`);
+    // Coupe au milieu du jeton : le segment entamé disparaît, le chemin qui précède reste.
+    expect(boundedWireLabel(`/api/reinitialisation/${"x".repeat(60)}/${JWT}`)).toBe(
+      `/api/reinitialisation/${"x".repeat(60)}/…`,
+    );
+    // Jeton ENTIER suivi d'autres segments : gardé tel quel, l'ingestion le masque.
+    expect(boundedWireLabel(`/r/${JWT}${"/segment".repeat(10)}`)).toContain(`/r/${JWT}/segment/`);
+    expect(boundedWireLabel("/a".repeat(100))).toBe(`${"/a".repeat(59)}/…`);
+    expect(boundedWireLabel(`contact ${"x".repeat(100)}.jean@exemple.fr`)).toBe("contact …");
     expect(boundedWireLabel("x".repeat(300))).toBe("…");
   });
 });

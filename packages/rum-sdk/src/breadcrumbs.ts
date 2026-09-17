@@ -34,12 +34,13 @@ export function formatClickLabel(
  * L'ingestion masque un JWT, une clé ou un email entiers ; la moitié d'un jeton
  * ne ressemble plus à rien et passerait telle quelle. Or un libellé d'erreur peut
  * porter un chemin d'URL (erreur réseau, P5.2) : au-delà de la borne, le dernier
- * mot entamé devient « … » plutôt qu'un fragment.
+ * mot ou segment de chemin entamé devient « … » plutôt qu'un fragment. Le « / »
+ * compte comme une frontière : une route longue garde ses premiers segments.
  */
 export function boundedWireLabel(label: string, max: number = BREADCRUMB_WIRE_MAX): string {
   if (label.length <= max) return label;
   const tete = label.slice(0, max - 1);
-  return `${/\s/.test(label[max - 1]) ? tete : tete.replace(/\S*$/, "")}…`;
+  return `${/[\s/]/.test(label[max - 1]) ? tete : tete.replace(/[^\s/]*$/, "")}…`;
 }
 
 /**
