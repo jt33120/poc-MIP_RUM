@@ -4,6 +4,18 @@
 // le relais : POST du même payload JSON (champ `text` compatible Slack), puis
 // statut sent/failed + code http dans `response`.
 // Usage : node apps/ingest/dispatch-alerts.mjs [--once|--loop]  (--loop : poll 30 s)
+//
+// ÉVÉNEMENTS SANS RÈGLE (migration-v73). La sélection joignait `alert_rule` en
+// jointure interne : nouvelles erreurs, SLO, uptime et notifications d'issue
+// restaient `queued` pour toujours. Dès v73, ils partent aussi — seulement ceux
+// déclenchés depuis `alert_config.rule_less_dispatch_since`, l'arriéré ayant été
+// soldé par la migration. Avant v73, la sélection historique est conservée.
+//
+// DEUX DÉCLENCHEURS. Le tick tourne depuis le scheduler Railway ET depuis la route
+// cron appelée par GitHub : les livraisons d'une passe sont réservées par
+// `for update skip locked` dans sa transaction, la passe concurrente prend les
+// suivantes. Une passe est bornée en nombre et en durée pour tenir dans la
+// minute de la route cron ; ce qui reste part au passage suivant.
 import pg from "pg";
 import { createLogger } from "./supabase/functions/_shared/log.mjs";
 
@@ -14,6 +26,10 @@ const DATABASE_URL =
   "postgres://postgres:postgres@localhost:5433/mip_rum";
 const POLL_MS = Number(process.env.DISPATCH_POLL_MS || 30_000);
 const TIMEOUT_MS = Number(process.env.DISPATCH_TIMEOUT_MS || 10_000);
+/** Livraisons réservées par passe. */
+const LOT = Number(process.env.DISPATCH_BATCH || 50);
+/** Au-delà, aucune nouvelle livraison n'est entamée dans la passe. */
+const BUDGET_MS = Number(process.env.DISPATCH_BUDGET_MS || 40_000);
 
 /** Rendu numérique aligné sur round(v::numeric, 1) de check_alerts (ex: '3200.0'). */
 function round1(v) {
@@ -39,6 +55,28 @@ export function buildPayload(d) {
   };
 }
 
+/**
+ * Corps d'une livraison, selon ce qui l'a déclenchée : la charge minimale d'une
+ * notification d'issue telle que l'outbox l'a figée, le payload d'une règle, ou,
+ * pour un événement sans règle (nouvelle erreur, SLO, uptime), son message.
+ * @param {{notification?: object|null, metric?: string|null, severity?: string, message?: string|null}} d
+ */
+export function payloadOf(d) {
+  if (d.notification) return d.notification;
+  if (d.metric) return buildPayload(d);
+  return { source: "mip-rum", severity: d.severity, text: `[MIP RUM] ${d.message ?? ""}` };
+}
+
+/** Le dispatcher ne sait poster qu'en HTTP(S) : une adresse e-mail n'est pas une URL. */
+export function cibleHttp(target) {
+  try {
+    const url = new URL(target);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 // Rejeu borné (R5) : une livraison 'failed' est retentée jusqu'à MAX_ATTEMPTS,
 // avec backoff exponentiel ; au-delà elle bascule en 'dead' (état terminal).
 const MAX_ATTEMPTS = Number(process.env.DISPATCH_MAX_ATTEMPTS || 5);
@@ -60,61 +98,100 @@ export function decideStatus(ok, attemptsBefore, maxAttempts = MAX_ATTEMPTS) {
 }
 
 /**
- * Traite les livraisons en attente : 'queued' (jamais tentées) + 'failed'
- * éligibles au rejeu (sous le plafond ET passé le backoff). POST + maj statut.
- * @returns {Promise<{sent:number, failed:number, dead:number}>}
+ * Sélection des livraisons à tenter : 'queued' + 'failed' éligibles au rejeu
+ * (sous le plafond ET passé le backoff de 30 s × 2^attempts).
+ * @param {boolean} v73  migration-v73 appliquée (événements sans règle livrables)
  */
-export async function dispatchOnce(pool) {
-  // backoff : une 'failed' n'est re-sélectionnée que si la dernière tentative
-  // date d'au moins 30 s × 2^attempts (borné par le power côté SQL).
-  const { rows } = await pool.query(
-    `select d.id, d.target, d.attempts, e.value,
-            r.app_id, r.metric, r.route, r.threshold, r.window_minutes, r.comparator
-       from alert_delivery d
-       join alert_event e on e.id = d.alert_event_id
-       join alert_rule  r on r.id = e.rule_id
-      where d.status = 'queued'
-         or (d.status = 'failed'
-             and d.attempts < $1
-             and d.attempted_at < now() - (interval '30 seconds' * power(2, d.attempts)))
-      order by d.id`,
-    [MAX_ATTEMPTS],
-  );
+export function selectionSql(v73) {
+  const sources = v73
+    ? `left join alert_rule r on r.id = e.rule_id
+       left join error_issue_notification n on n.alert_event_id = e.id
+       left join alert_config c on c.singleton`
+    : "join alert_rule r on r.id = e.rule_id";
+  return `select d.id, d.target, d.attempts, e.value, e.message, e.severity,
+                 r.app_id, r.metric, r.route, r.threshold, r.window_minutes, r.comparator,
+                 ${v73 ? "n.payload" : "null::jsonb"} as notification
+            from alert_delivery d
+            join alert_event e on e.id = d.alert_event_id
+            ${sources}
+           where (d.status = 'queued'
+                  or (d.status = 'failed'
+                      and d.attempts < $1
+                      and d.attempted_at < now() - (interval '30 seconds' * power(2, d.attempts))))
+             ${v73 ? "and (e.rule_id is not null or e.fired_at >= c.rule_less_dispatch_since)" : ""}
+           order by d.id
+           limit $2
+           for update of d skip locked`;
+}
+
+/**
+ * Traite une passe de livraisons en attente : POST + maj statut, dans une
+ * transaction qui réserve les lignes traitées.
+ * @returns {Promise<{sent:number, failed:number, dead:number, skipped:number}>}
+ */
+export async function dispatchOnce(pool, { lot = LOT, budgetMs = BUDGET_MS } = {}) {
+  const fin = Date.now() + budgetMs;
   let sent = 0;
   let failed = 0;
   let dead = 0;
-  for (const d of rows) {
-    let ok = false;
-    let response;
-    try {
-      const res = await fetch(d.target, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(buildPayload(d)),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      response = `http ${res.status}`;
-      ok = res.ok;
-    } catch (err) {
-      response = String(err.cause?.code ?? err.message).slice(0, 200);
-    }
-    const status = decideStatus(ok, d.attempts ?? 0);
-    await pool.query(
-      "update alert_delivery set status = $1, response = $2, attempts = attempts + 1, attempted_at = now() where id = $3",
-      [status, response, d.id],
+  let skipped = 0;
+  const client = await pool.connect();
+  try {
+    const { rows: [schema] } = await client.query(
+      "select to_regclass('public.error_issue_notification') is not null as v73",
     );
-    if (status === "delivered") sent++;
-    else if (status === "dead") dead++;
-    else failed++;
-    log[ok ? "info" : "warn"]("delivery", {
-      id: d.id,
-      target: d.target,
-      status,
-      attempt: (d.attempts ?? 0) + 1,
-      response,
-    });
+    await client.query("begin");
+    const { rows } = await client.query(selectionSql(schema.v73), [MAX_ATTEMPTS, lot]);
+    for (const d of rows) {
+      const reste = fin - Date.now();
+      if (reste <= 0) break;
+      if (!cibleHttp(d.target)) {
+        await client.query(
+          "update alert_delivery set status = 'skipped', response = $1, attempted_at = now() where id = $2",
+          ["cible non HTTP : le dispatcher local ne livre que des webhooks", d.id],
+        );
+        skipped++;
+        log.warn("delivery", { id: d.id, status: "skipped", response: "cible non HTTP" });
+        continue;
+      }
+      let ok = false;
+      let response;
+      try {
+        const res = await fetch(d.target, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payloadOf(d)),
+          signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, reste)),
+        });
+        response = `http ${res.status}`;
+        ok = res.ok;
+      } catch (err) {
+        response = String(err.cause?.code ?? err.message).slice(0, 200);
+      }
+      const status = decideStatus(ok, d.attempts ?? 0);
+      await client.query(
+        "update alert_delivery set status = $1, response = $2, attempts = attempts + 1, attempted_at = now() where id = $3",
+        [status, response, d.id],
+      );
+      if (status === "delivered") sent++;
+      else if (status === "dead") dead++;
+      else failed++;
+      log[ok ? "info" : "warn"]("delivery", {
+        id: d.id,
+        target: d.target,
+        status,
+        attempt: (d.attempts ?? 0) + 1,
+        response,
+      });
+    }
+    await client.query("commit");
+  } catch (err) {
+    await client.query("rollback").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
-  return { sent, failed, dead };
+  return { sent, failed, dead, skipped };
 }
 
 // Exécution CLI uniquement (le module reste importable par les tests)
@@ -130,8 +207,8 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop()
     });
   }
   do {
-    const { sent, failed, dead } = await dispatchOnce(pool);
-    log.info("pass", { sent, failed, dead });
+    const { sent, failed, dead, skipped } = await dispatchOnce(pool);
+    log.info("pass", { sent, failed, dead, skipped });
     if (loop && running) await new Promise((r) => setTimeout(r, POLL_MS));
   } while (loop && running);
   await pool.end();

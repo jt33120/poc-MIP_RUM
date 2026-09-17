@@ -57,3 +57,27 @@ describe("actions alertes — adaptation event:<nom>", () => {
     expect(insertAlertRule).not.toHaveBeenCalled();
   });
 });
+
+describe("actions alertes — pic d'une issue issue:<uuid>", () => {
+  afterEach(() => vi.clearAllMocks());
+  const ISSUE = "11111111-2222-4333-8444-555555555555";
+
+  it("compose la métrique depuis l'identifiant d'issue et garde l'env", async () => {
+    vi.mocked(requireAdmin).mockResolvedValue({ email: "admin@example.test", role: "admin", apps: null });
+    await createRuleAction(eventRuleForm({ metric: "issue", issue_id: ` ${ISSUE.toUpperCase()} `, env: " prod " }));
+    expect(insertAlertRule).toHaveBeenCalledWith(expect.objectContaining({ metric: `issue:${ISSUE}`, env: "prod" }));
+
+    await updateRuleAction(eventRuleForm({ id: "7", metric: "issue", issue_id: ISSUE, env: "" }));
+    expect(updateAlertRule).toHaveBeenCalledWith(7, expect.objectContaining({ metric: `issue:${ISSUE}`, env: null }));
+  });
+
+  it("refuse un identifiant d'issue invalide et un env hors d'une alerte d'issue", async () => {
+    vi.mocked(requireAdmin).mockResolvedValue({ email: "admin@example.test", role: "admin", apps: null });
+    await expect(createRuleAction(eventRuleForm({ metric: "issue", issue_id: "pas-un-uuid" }))).rejects.toThrow(/metric invalide/);
+    await expect(createRuleAction(eventRuleForm({ env: "prod" }))).rejects.toThrow(/env invalide/);
+    await expect(
+      createRuleAction(eventRuleForm({ metric: "issue", issue_id: ISSUE, env: "x".repeat(121) })),
+    ).rejects.toThrow(/env invalide/);
+    expect(insertAlertRule).not.toHaveBeenCalled();
+  });
+});

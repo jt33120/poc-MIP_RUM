@@ -6,6 +6,7 @@ import {
   alertEvents,
   alertRules,
   filtersToQuery,
+  isAlertMetric,
   parseFilters,
   unackedAlertCount,
   type SearchParams,
@@ -40,6 +41,9 @@ export default async function Alerts({
   ]);
   const firedRaw = Array.isArray(sp.fired) ? sp.fired[0] : sp.fired;
   const fired = firedRaw != null && /^\d+$/.test(firedRaw) ? Number(firedRaw) : null;
+  // « Créer une alerte de pic » depuis une issue : `?issue=<uuid>` préremplit le formulaire.
+  const issueRaw = Array.isArray(sp.issue) ? sp.issue[0] : sp.issue;
+  const defaultIssue = issueRaw && isAlertMetric(`issue:${issueRaw}`) ? issueRaw : undefined;
 
   return (
     <div className="animate-fade-up">
@@ -59,8 +63,9 @@ export default async function Alerts({
         }
         sub={
           <>
-            Se déclenchent quand un vital (p75), un taux d&apos;erreur ou le compte d&apos;un événement custom
-            franchit son seuil ou sa baseline — évaluation automatique côté base, notification par webhook
+            Se déclenchent quand un vital (p75), un taux d&apos;erreur, le compte d&apos;un événement custom ou
+            les occurrences d&apos;une issue franchit son seuil ou sa baseline — évaluation automatique côté
+            base, notification par webhook
           </>
         }
       >
@@ -138,12 +143,12 @@ export default async function Alerts({
       })()}
 
       {/* ----- Création ----- */}
-      <details className="card mb-6" open={!rules.length}>
+      <details className="card mb-6" open={!rules.length || defaultIssue !== undefined}>
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-soft transition hover:text-ink">
           + Nouvelle règle
         </summary>
         <form action={createRuleAction} className="flex flex-wrap items-end gap-3 border-t border-line p-4">
-          <RuleFields apps={apps} defaultApp={f.app !== "all" ? f.app : undefined} />
+          <RuleFields apps={apps} defaultApp={f.app !== "all" ? f.app : undefined} defaultIssue={defaultIssue} />
           <button type="submit" data-testid="create-rule" className="btn-accent">
             Créer
           </button>

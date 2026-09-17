@@ -2,7 +2,7 @@
 // geo_country dans flattenOtlp, payload webhook du dispatcher (pendant pg_net).
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module ESM hors rootDir ts
-import { buildPayload, decideStatus } from "../../apps/ingest/dispatch-alerts.mjs";
+import { buildPayload, cibleHttp, decideStatus, payloadOf, selectionSql } from "../../apps/ingest/dispatch-alerts.mjs";
 import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
 import { tzToCountry } from "../../apps/ingest/supabase/functions/_shared/tz-country.mjs";
 
@@ -144,5 +144,41 @@ describe("decideStatus — rejeu borné des livraisons (R5)", () => {
   it("échec à la dernière tentative -> 'dead' (état terminal)", () => {
     expect(decideStatus(false, 4, 5)).toBe("dead"); // 4+1 = 5 = plafond
     expect(decideStatus(false, 9, 5)).toBe("dead");
+  });
+});
+
+describe("dispatcher — événements sans règle et notifications d'issue (migration-v73)", () => {
+  it("corps : notification d'issue figée par l'outbox, sinon règle, sinon message de l'événement", () => {
+    const notification = { source: "mip-rum", kind: "regression", app_id: "a", issue_id: "i", text: "[MIP RUM] Régression" };
+    expect(payloadOf({ notification, metric: "issue:x", severity: "warning", message: "m" })).toBe(notification);
+    expect(payloadOf({
+      notification: null, metric: "LCP", app_id: "a", route: null, value: 3000, threshold: 2500, window_minutes: 15,
+      comparator: ">", severity: "warning", message: "m",
+    })).toMatchObject({ metric: "LCP", text: "[MIP RUM] LCP > 3000.0 (seuil 2500) — app a" });
+    expect(payloadOf({ notification: null, metric: null, severity: "critical", message: "SLO LCP en burn rapide" })).toEqual({
+      source: "mip-rum",
+      severity: "critical",
+      text: "[MIP RUM] SLO LCP en burn rapide",
+    });
+  });
+
+  it("n'essaie de poster qu'en HTTP(S) : une adresse e-mail est soldée, pas retentée cinq fois", () => {
+    expect(cibleHttp("https://hooks.slack.com/services/x")).toBe(true);
+    expect(cibleHttp("http://127.0.0.1:9999/hook")).toBe(true);
+    expect(cibleHttp("ops@example.com")).toBe(false);
+    expect(cibleHttp("mailto:ops@example.com")).toBe(false);
+    expect(cibleHttp("")).toBe(false);
+  });
+
+  it("avant v73 la sélection garde la jointure interne ; dès v73 l'arriéré sans règle reste exclu", () => {
+    const avant = selectionSql(false);
+    expect(avant).toContain("join alert_rule r on r.id = e.rule_id");
+    expect(avant).not.toMatch(/left join alert_rule|error_issue_notification|rule_less_dispatch_since/);
+    const apres = selectionSql(true);
+    expect(apres).toContain("left join alert_rule r on r.id = e.rule_id");
+    expect(apres).toContain("left join error_issue_notification n on n.alert_event_id = e.id");
+    expect(apres).toContain("e.rule_id is not null or e.fired_at >= c.rule_less_dispatch_since");
+    // Deux déclencheurs simultanés ne réservent jamais la même livraison.
+    for (const sql of [avant, apres]) expect(sql).toContain("for update of d skip locked");
   });
 });
