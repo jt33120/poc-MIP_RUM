@@ -329,7 +329,7 @@ declare module "ingest/dispatch-alerts.mjs" {
   /** Poste les livraisons 'queued' + les 'failed' rééligibles ; met à jour leur statut. */
   export function dispatchOnce(
     pool: Pool,
-    opts?: { lot?: number; budgetMs?: number },
+    opts?: { lot?: number; budgetMs?: number; echeance?: number },
   ): Promise<{ sent: number; failed: number; dead: number; skipped: number }>;
 }
 
@@ -370,9 +370,12 @@ declare module "ingest/jobs/planifie.mjs" {
 
   export function sonderUptime(pool: Pool, log?: unknown): Promise<{ ran: number; down: number }>;
 
+  /** Délai, depuis le début d'un tick, au-delà duquel aucune livraison n'est entamée. */
+  export const ECHEANCE_LIVRAISON_MS: number;
+
   export function travaux(
     pool: Pool,
-    opts?: { log?: unknown; dispatch?: ((pool: Pool) => Promise<unknown>) | null },
+    opts?: { log?: unknown; dispatch?: ((pool: Pool, opts: { echeance: number }) => Promise<unknown>) | null },
   ): {
     tick(): Promise<BilanEtapes>;
     horaire(): Promise<BilanEtapes>;

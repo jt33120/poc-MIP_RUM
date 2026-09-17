@@ -13,6 +13,7 @@ import {
 } from "../../apps/ingest/lib/error-issue-workflow.mjs";
 import {
   COMMENT_MAX_CHARS,
+  hasSqlControlCharacters,
   normalizeTicketUrl,
   parseBigintId,
   parseCommentRequest,
@@ -107,6 +108,10 @@ describe("POST /api/v1/issues/{id}/links — corps", () => {
       value: { ...base, url, label: "Ticket de [email]" },
     });
     expect(parseLinkRequest({ ...base, url, label: "a\nb" })).toMatchObject({ ok: false, error: expect.stringMatching(/label/) });
+    // `[[:cntrl:]]` de PostgreSQL refuse aussi C1 (U+0080 à U+009F) : 400 ici plutôt que 500 en base.
+    expect(parseLinkRequest({ ...base, url, label: "MIP\u0085-1" })).toMatchObject({ ok: false, error: expect.stringMatching(/label/) });
+    expect(hasSqlControlCharacters("a\u009fb")).toBe(true);
+    expect(hasSqlControlCharacters("MIP-1 \u00a0é")).toBe(false);
     expect(parseLinkRequest({ ...base, url, label: "x".repeat(121) })).toMatchObject({ ok: false });
     expect(parseLinkRequest({ ...base, url, label: "" })).toMatchObject({ ok: false });
     expect(parseLinkRequest({ ...base, url: "ftp://x", label: "x" })).toMatchObject({ ok: false, error: expect.stringMatching(/url invalide/) });

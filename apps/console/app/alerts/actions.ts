@@ -15,6 +15,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "@/lib/next-cache";
 import { ALERT_MODES, ALERT_SEVERITIES, CHANNEL_KINDS } from "@/lib/alerting";
 import { requireAdmin } from "@/lib/auth";
+import { hasSqlControlCharacters } from "@/lib/error-issue-workflow";
 import {
   acknowledgeAlertEvent,
   ALERT_COMPARATORS,
@@ -51,7 +52,7 @@ function ruleFromForm(fd: FormData): RuleInput {
   // L'env filtre les occurrences d'une issue ; ailleurs il n'a pas de source et
   // serait ignoré en silence : refusé.
   const env = String(fd.get("env") ?? "").trim() || null;
-  if (env && (!metric.startsWith("issue:") || env.length > 120 || /[\u0000-\u001f\u007f]/.test(env))) {
+  if (env && (!metric.startsWith("issue:") || env.length > 120 || hasSqlControlCharacters(env))) {
     throw new Error("env invalide : réservé aux alertes d'issue, 120 caractères au plus");
   }
   const comparator = String(fd.get("comparator") ?? ">");
