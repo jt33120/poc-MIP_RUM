@@ -73,7 +73,9 @@ export default async function Dashboards({
       </details>
 
       {/* ----- Liste ----- */}
-      <div className="card overflow-hidden">
+      {/* `overflow-x-auto` : la colonne « Propriétaire » (P6.5) fait cinq colonnes,
+          qui ne tiennent pas à 390 px. Les masquer cacherait qui possède quoi. */}
+      <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr>

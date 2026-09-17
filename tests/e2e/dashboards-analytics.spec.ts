@@ -98,11 +98,42 @@ async function creerTableau(page: Page): Promise<string> {
   return new URL(page.url()).pathname.split("/").pop()!;
 }
 
-const deborde = (page: Page) =>
-  page.evaluate(() => {
-    const racine = document.querySelector("main") ?? document.body;
-    return racine.scrollWidth > racine.clientWidth + 1;
+/**
+ * Débordement horizontal : la liste des éléments fautifs, pas un booléen. Un
+ * échec doit NOMMER le coupable — sans quoi la recette dit qu'il y a un problème
+ * sans jamais dire où. Un élément dans un conteneur défilant est légitime
+ * (tableau large) ; un élément qui en échappe ne l'est pas. Même helper que les
+ * recettes de débordement de P5 et P6.3.
+ */
+async function debordements(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const largeur = document.documentElement.clientWidth;
+    const totale = document.documentElement.scrollWidth;
+    if (totale <= largeur) return [];
+    const dansDefilant = (el: Element) => {
+      for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+        if (["auto", "scroll", "hidden"].includes(getComputedStyle(parent).overflowX)) return true;
+      }
+      return false;
+    };
+    const fautifs = [...document.body.querySelectorAll("*")]
+      .filter((el) => {
+        if (el.getBoundingClientRect().right <= largeur + 1) return false;
+        return ["absolute", "fixed"].includes(getComputedStyle(el).position) || !dansDefilant(el);
+      })
+      .slice(0, 5)
+      .map((el) => {
+        const parent = el.parentElement;
+        const repere =
+          parent?.querySelector("[aria-label]")?.getAttribute("aria-label") ??
+          el.closest("section, h1, h2, h3")?.textContent?.trim().slice(0, 60) ??
+          el.textContent?.trim().slice(0, 60) ??
+          "";
+        return `${el.tagName.toLowerCase()} « ${repere} » → ${Math.round(el.getBoundingClientRect().right)} px`;
+      });
+    return [`page ${totale} px > fenêtre ${largeur} px`, ...fautifs];
   });
+}
 
 test("Explorer → carte → rechargement → duplication → CSV", async ({ page }) => {
   await login(page);
@@ -133,12 +164,13 @@ test("Explorer → carte → rechargement → duplication → CSV", async ({ pag
   await page.reload();
   await expect(page.getByTestId("widget-0")).toContainText("6 occurrences", { timeout: 20_000 });
 
-  // 5. Duplication : NOUVEL identifiant, même app, même contenu.
+  // 5. Duplication : NOUVEL identifiant, même app, même contenu. On attend le
+  // TITRE du clone, pas l'URL : `/dashboards/<n>` correspond déjà à la page
+  // courante, et l'attendre laisserait passer une duplication qui n'a rien fait.
   await page.getByTestId("clone-dashboard").click();
-  await page.waitForURL(/\/dashboards\/\d+/, { timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: `${TABLEAU} (copie)` })).toBeVisible({ timeout: 20_000 });
   const clone = new URL(page.url()).pathname.split("/").pop()!;
   expect(clone).not.toBe(id);
-  await expect(page.getByRole("heading", { name: `${TABLEAU} (copie)` })).toBeVisible();
   await expect(page.getByTestId("widget-0")).toContainText("Occurrences par route", { timeout: 20_000 });
 
   // 6. Export CSV : même population, et une cellule ne devient jamais une formule.
@@ -240,13 +272,15 @@ test("ordre des cartes au clavier, et aucune largeur qui déborde (390 / 768 / 1
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("widget-1").locator("h3")).toHaveText(premier, { timeout: 20_000 });
 
+  const fautes: string[] = [];
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
     await expect(page.getByTestId("widget-0")).toBeVisible({ timeout: 20_000 });
-    expect(await deborde(page), `débordement horizontal à ${width} px`).toBe(false);
+    for (const faute of await debordements(page)) fautes.push(`tableau de bord @ ${width} px — ${faute}`);
     await page.goto(`${consoleUrl}/explorer/views`);
     await expect(page.getByRole("heading", { name: "Vues enregistrées" })).toBeVisible();
-    expect(await deborde(page), `débordement horizontal des vues à ${width} px`).toBe(false);
+    for (const faute of await debordements(page)) fautes.push(`vues @ ${width} px — ${faute}`);
   }
+  expect(fautes, fautes.join("\n")).toEqual([]);
 });

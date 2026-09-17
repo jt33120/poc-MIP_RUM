@@ -69,7 +69,10 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
       )}
 
       {result.kind === "ok" && (
-        <div className="card overflow-hidden">
+        // `overflow-x-auto` et non `overflow-hidden` : à 390 px, cinq colonnes
+        // dont un champ de saisie ne tiennent pas. Les MASQUER rendrait le
+        // renommage inatteignable ; les faire défiler le garde accessible.
+        <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <caption className="sr-only">Vues enregistrées lisibles par ce compte</caption>
             <thead>
