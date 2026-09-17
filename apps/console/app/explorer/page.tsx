@@ -120,7 +120,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
   const limiteCourante = plan.ok && limites.includes(plan.value.limit) ? plan.value.limit : limites[0];
 
   return (
-    <div className="animate-fade-up">
+    <div data-testid="explorer-racine" className="animate-fade-up">
       <PageHeader
         title="Explorer"
         sub={`Composer une mesure bornée sur ${ecran.label}, puis l’exécuter. Aucune requête n’est lancée avant.`}
@@ -155,9 +155,9 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
         ))}
         <input type="hidden" name="dataset" value={dataset} />
 
-        <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft lg:col-span-2">
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft lg:col-span-2">
           Mesure
-          <select name="measure" defaultValue={mesureCourante} className={INPUT_CLASS}>
+          <select name="measure" defaultValue={mesureCourante} className={`${INPUT_CLASS} w-full`}>
             {mesures.map((mesure) => (
               <option key={mesure.valeur} value={mesure.valeur}>
                 {mesure.libelle}
@@ -167,24 +167,24 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
         </label>
 
         {mesures.some((mesure) => mesure.property) && (
-          <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
             Propriété numérique
             <input
               name="prop"
               defaultValue={plan.ok ? (plan.value.measure.property ?? "") : ""}
               placeholder="amount"
-              className={INPUT_CLASS}
+              className={`${INPUT_CLASS} w-full`}
             />
           </label>
         )}
 
         {definition.variant && (
-          <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
             {definition.variant.label}
             <select
               name="variant"
               defaultValue={plan.ok ? (plan.value.variant ?? "") : ""}
-              className={INPUT_CLASS}
+              className={`${INPUT_CLASS} w-full`}
             >
               {!definition.variant.required && <option value="">Toutes</option>}
               {definition.variant.values.map((valeur) => (
@@ -197,12 +197,12 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
         )}
 
         {([0, 1] as const).map((rang) => (
-          <label key={rang} className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+          <label key={rang} className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
             {rang === 0 ? "Grouper par" : "Puis par"}
             <select
               name={`g${rang}`}
               defaultValue={plan.ok ? (plan.value.groupBy[rang] ?? "") : ""}
-              className={INPUT_CLASS}
+              className={`${INPUT_CLASS} w-full`}
             >
               <option value="">Aucun regroupement</option>
               {dimensions.map((dimension) => (
@@ -215,9 +215,9 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
           </label>
         ))}
 
-        <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
           Représentation
-          <select name="viz" defaultValue={vizCourante} className={INPUT_CLASS}>
+          <select name="viz" defaultValue={vizCourante} className={`${INPUT_CLASS} w-full`}>
             {VISUALIZATIONS.map((viz) => (
               <option key={viz} value={viz}>
                 {VISUALIZATION_LABELS[viz]}
@@ -227,9 +227,9 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
         </label>
 
         {vizCourante !== "value" && (
-          <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-ink-soft">
             Nombre maximum
-            <select name="limit" defaultValue={String(limiteCourante)} className={INPUT_CLASS}>
+            <select name="limit" defaultValue={String(limiteCourante)} className={`${INPUT_CLASS} w-full`}>
               {LIMITES[vizCourante].map((valeur) => (
                 <option key={valeur} value={valeur}>
                   {valeur}
@@ -306,7 +306,7 @@ function Resultat({
 
   return (
     <>
-      <p data-testid="explorer-resume" className="mb-4 rounded-lg border border-line bg-panel2 px-4 py-3 text-sm text-ink-soft">
+      <p data-testid="explorer-resume" className="mb-4 break-words rounded-lg border border-line bg-panel2 px-4 py-3 text-sm text-ink-soft">
         <span className="font-semibold text-ink">Requête appliquée — </span>
         {resume}
       </p>
@@ -328,7 +328,7 @@ function Resultat({
       ))}
 
       <div className="mb-6 grid gap-4 lg:grid-cols-[1fr_2fr]">
-        <aside className="card p-4">
+        <aside className="card min-w-0 p-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Total observé</div>
           <div data-testid="explorer-total" className="mt-1 text-3xl font-bold tabular-nums text-ink">
             {nombre(data.total)}
@@ -352,7 +352,7 @@ function Resultat({
           </dl>
         </aside>
 
-        <section className="card p-4">
+        <section className="card min-w-0 p-4">
           <h2 className="text-sm font-semibold text-ink">{VISUALIZATION_LABELS[plan.visualization]}</h2>
           {vide ? (
             <p data-testid="explorer-vide" className="py-10 text-center text-sm text-ink-faint">
