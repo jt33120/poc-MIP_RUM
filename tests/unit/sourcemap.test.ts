@@ -8,6 +8,9 @@
 // passent par la réexportation console (importateurs historiques) ; les suivants
 // prouvent ce que P5.4 ajoute : validation stricte, index à points de reprise,
 // empreinte mémoire calculée avant décodage, chemins virtuels, garde ReDoS.
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   createConsumer,
@@ -276,6 +279,89 @@ describe("P5.4 — stack hostile et frames bornées", () => {
     ]);
     // Ligne pour ligne : les frames au-delà de la borne restent brutes.
     expect(r.stack.split("\n")[3]).toBe("    at n (https://cdn/app.min.js:1:21)");
+  });
+});
+
+describe("P5.4 — analyseur de frames linéaire, même résultat que les expressions historiques", () => {
+  // L'oracle : les deux expressions d'avant P5.4, exactes mais quadratiques.
+  const CHROME = /^\s*at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?\s*$/;
+  const FIREFOX = /^\s*(?:(.*?)@)?(.+?):(\d+):(\d+)\s*$/;
+  const oracle = (ligne: string) => {
+    const m = CHROME.exec(ligne) || FIREFOX.exec(ligne);
+    return m ? { fn: m[1] || null, file: m[2], line: Number(m[3]), col: Number(m[4]) } : null;
+  };
+
+  it("donne le résultat de l'oracle sur 60 000 lignes aléatoires, pièges compris", () => {
+    const pieces = ["a", "t", "at", " ", "(", ")", ":", "1", "2", "@", "\r", "x", ".js", "\t", "\u2028", "at "];
+    const fins = ["", ":1:2", ":12:3)", " :1:2", ":1:2 ", "(x.js:1:2)", "@x.js:3:4"];
+    let graine = 54;
+    const hasard = (n: number) => {
+      graine = (graine * 1103515245 + 12345) & 0x7fffffff;
+      return graine % n;
+    };
+    const ecarts: string[] = [];
+    for (let i = 0; i < 60_000; i++) {
+      let ligne = "";
+      for (let j = hasard(14); j > 0; j--) ligne += pieces[hasard(pieces.length)];
+      ligne += fins[hasard(fins.length)];
+      if (JSON.stringify(parseStackLine(ligne)) !== JSON.stringify(oracle(ligne))) ecarts.push(JSON.stringify(ligne));
+    }
+    expect(ecarts.slice(0, 5)).toEqual([]);
+  });
+
+  it("reste linéaire sur des lignes hostiles qui font exploser les expressions", () => {
+    const hostiles = [
+      `at${" ".repeat(340)}${" (".repeat(170)}${"1:".repeat(170)}`,
+      `at ${"a (".repeat(340)}`,
+      `${"@".repeat(1000)}:1:`,
+      `at ${" \r(".repeat(250)}`,
+    ].map((h) => h.slice(0, MAX_FRAME_LINE_LENGTH));
+    const debut = performance.now();
+    for (let i = 0; i < 50; i++) for (const h of hostiles) parseStackLine(h);
+    expect(performance.now() - debut).toBeLessThan(200);
+  });
+});
+
+describe("P5.4 — séparateurs et noms : coût et contenu bornés", () => {
+  it("un segment vide est une erreur de structure, à l'upload comme à la lecture ; une ligne vide ne l'est pas", () => {
+    for (const mappings of ["AAAA,,CAAA", ",AAAA", "AAAA,", "AAAA,;AAAA", ";,AAAA"]) {
+      const map = { version: 3, sources: ["a.ts"], names: [], mappings };
+      expect(() => validateSourceMap(map), mappings).toThrow(/segment vide/);
+      expect(() => createConsumer(map), mappings).toThrow(/segment vide/);
+    }
+    expect(validateSourceMap({ version: 3, sources: ["a.ts"], names: [], mappings: "AAAA;;;AAAA" }).segments).toBe(2);
+  });
+
+  it("une recherche ne parcourt jamais les lignes suivantes, même séparées par des millions de `;`", () => {
+    const c = createConsumer({ version: 3, sources: ["a.ts"], names: [], mappings: `AAAA${";".repeat(4 * 1024 * 1024)}CAAA` });
+    const debut = performance.now();
+    for (let i = 0; i < 2_000; i++) c.originalPositionFor(1, 5);
+    expect(performance.now() - debut).toBeLessThan(200);
+    expect(c.originalPositionFor(1, 5)).toEqual({ source: "a.ts", line: 1, column: 0, name: null });
+    expect(c.originalPositionFor(4 * 1024 * 1024 + 1, 1)).toEqual({ source: "a.ts", line: 1, column: 0, name: null });
+  });
+
+  it("un nom de map ancienne perd ses caractères de contrôle et reste borné", () => {
+    const nom = createConsumer({ version: 3, sources: ["a.ts"], names: [`f${String.fromCharCode(0)}x${"y".repeat(400)}`], mappings: "AAAAA" })
+      .originalPositionFor(1, 0).name;
+    expect(nom?.startsWith("fxy")).toBe(true);
+    expect(nom).toHaveLength(256);
+  });
+
+  it("le consommateur ne retient pas la map d'origine (sourcesContent compris)", () => {
+    // Processus dédié : seul `--expose-gc` permet d'observer la libération.
+    const moteur = pathToFileURL(join(__dirname, "..", "..", "apps/ingest/supabase/functions/_shared/sourcemap.mjs")).href;
+    const script = `
+      const { createConsumer } = await import(${JSON.stringify(moteur)});
+      let map = { version: 3, sources: ["src/a.ts"], names: ["f"], mappings: "AAAAA", sourcesContent: ["x".repeat(4 * 1024 * 1024)] };
+      const ref = new WeakRef(map);
+      const consommateur = createConsumer(map);
+      map = null;
+      for (let i = 0; i < 3; i++) { await new Promise((ok) => setTimeout(ok, 0)); globalThis.gc(); }
+      process.stdout.write(JSON.stringify({ libere: ref.deref() === undefined, source: consommateur.originalPositionFor(1, 0).source }));
+    `;
+    const sortie = execFileSync(process.execPath, ["--expose-gc", "--input-type=module", "-e", script], { encoding: "utf8" });
+    expect(JSON.parse(sortie)).toEqual({ libere: true, source: "src/a.ts" });
   });
 });
 

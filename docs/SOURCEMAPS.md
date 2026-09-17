@@ -98,14 +98,15 @@ Authentification :
 - **console** : le même jeton, **ou** la session admin avec l'`Origin` de la console (CSRF) ;
   jamais viewer, démo ni jeton de lecture.
 
-Ordre des contrôles : jeton → débit (60 uploads/min par émetteur et 2 simultanés, par instance) →
-taille annoncée → corps lu borné en octets **et** en durée (60 s) → contrat complet (≤ 200 maps,
-≤ 15 Mio par map mesurés **avant** son parsing) → une transaction.
+Ordre des contrôles : jeton → débit (par instance : 60 uploads/min et 2 simultanés par émetteur,
+6 simultanés au total) → taille annoncée → corps lu borné en octets **et** en durée (60 s au total,
+10 s sans données) → contrat complet (≤ 200 maps, ≤ 15 Mio par map mesurés **avant** son parsing)
+→ une transaction.
 
 Validation d'une map (refus explicites, `400`) : `version` 3 ; `sources`, `names`,
 `sourcesContent`, `sourceRoot`, `file` typés et sans caractère de contrôle ; `mappings` décodé en
-entier (base64 VLQ, 1/4/5 champs, index de source et de nom dans les bornes, colonnes ordonnées,
-valeurs dans Int32) ; **map indexée** (`sections`) et **map externe** (URL, `data:`,
+entier (base64 VLQ, 1/4/5 champs, aucun segment vide, index de source et de nom dans les bornes,
+colonnes ordonnées, valeurs dans Int32) ; **map indexée** (`sections`) et **map externe** (URL, `data:`,
 `sourceMappingURL`) refusées ; `filename` = bundle minifié (pas de `.map`, pas de `..`, pas de `\`).
 Les chemins des sources ne sont que des **étiquettes** : schéma retiré, `..` résolu sans remonter
 au-dessus de la racine. Rien n'est jamais lu sur disque ni sur le réseau (`sourceRoot` compris).
@@ -155,12 +156,17 @@ trois chemins d'écriture (receveur Railway, route Vercel, file différée). Bor
 | Index d'une map (calculé **avant** décodage) | 32 Mio | `failed` |
 | JSON de maps parsé par lot | 8 Mio (la 1re map passe toujours) | `pending` |
 | Frames par erreur / par lot | 50 / 2 000 | frames brutes / `pending` |
-| Durée par lot | 1 s | `pending` |
+| Fichiers vérifiés en base par lot (une entrée fraîche du cache ne compte pas) | 64 | `pending` |
+| Durée par lot, lecture des frames comprise | 1 s | `pending` |
 | Revalidation présence, absence, échec | 60 s | — |
 
 Le moteur garde la chaîne `mappings` et un point de reprise tous les 32 segments (≈ 1 octet d'index
 par segment, contre ~80 pour un objet par segment). Mesuré sur une map synthétique de 15 Mio
-(3 millions de segments) : validation 0,24 s, indexation 0,27 s, recherche ≈ 1 µs par frame. Une map
+(3 millions de segments) : validation 0,24 s, indexation 0,27 s, recherche ≈ 1 µs par frame. Une
+recherche ne quitte jamais sa ligne générée et ne décode qu'entre deux points de reprise ; un segment
+vide est refusé ; le consommateur ne retient ni le JSON ni `sourcesContent` ; les noms sont nettoyés
+et bornés. Les frames sont lues par un analyseur linéaire (même résultat que les expressions
+historiques, sans retour arrière) : une stack hostile ne coûte pas de CPU. Une map
 illisible ou démesurée donne `failed`, un journal `symbolication: source map inutilisable` une fois
 par version, et l'erreur est écrite **brute scrubbed** : un fichier hostile ne bloque pas un lot.
 La stack symbolisée est rescrubbée et bornée à 8 000 caractères.

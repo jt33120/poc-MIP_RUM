@@ -18,6 +18,13 @@
 // frame. Le coût mémoire est CALCULABLE AVANT le décodage (`consumerFootprint`) :
 // une map trop lourde est refusée sans rien allouer.
 //
+// COÛT BORNÉ FACE À UNE ENTRÉE HOSTILE. Une recherche ne quitte jamais sa ligne
+// générée (elle s'arrête au premier `;`) et ne décode qu'entre deux points de
+// reprise ; un segment vide (`,,`) est une erreur de structure, pas une suite de
+// séparateurs à parcourir. Les frames de stack sont lues par un analyseur
+// linéaire, sans expression régulière à retour arrière : la stack vient du client.
+// Le consommateur ne retient ni le JSON d'origine ni `sourcesContent`.
+//
 // CE QUE CE MODULE NE FAIT JAMAIS. Suivre un `sourceRoot` ou une URL de source,
 // lire un fichier, résoudre un `sourceMappingURL`. Les chemins des sources sont
 // des ÉTIQUETTES : `virtualSourcePath` les réduit à un chemin relatif sans
@@ -46,10 +53,12 @@ const POIDS_MAX = 2 ** 30;
 export const CHECKPOINT_EVERY = 32;
 /** Octets d'un point de reprise : huit Int32. */
 const OCTETS_REPRISE = 32;
-/** Au-delà, une ligne de stack n'est pas analysée : les expressions sont quadratiques. */
+/** Au-delà, une ligne de stack n'est pas une frame : aucune frame réelle n'est aussi longue. */
 export const MAX_FRAME_LINE_LENGTH = 1024;
 /** Longueur maximale d'un chemin virtuel de source. */
 const MAX_SOURCE_PATH = 512;
+/** Longueur maximale d'un nom de fonction rendu par une map. */
+const MAX_NAME = 256;
 
 /**
  * Décodeur séquentiel de `mappings`, sans allocation par segment. Après un
@@ -57,9 +66,11 @@ const MAX_SOURCE_PATH = 512;
  * l'état cumulé AVANT lui, ce qu'un point de reprise enregistre.
  */
 class MappingsCursor {
-  constructor(mappings, { strict = false, sources = Infinity, names = Infinity } = {}) {
+  constructor(mappings, { strict = false, sources = Infinity, names = Infinity, uneLigne = false } = {}) {
     this.mappings = mappings;
     this.strict = strict;
+    // Recherche : la ligne générée demandée seulement, jamais les suivantes.
+    this.uneLigne = uneLigne;
     this.sourceCount = sources;
     this.nameCount = names;
     this.champs = [0, 0, 0, 0, 0];
@@ -92,13 +103,25 @@ class MappingsCursor {
     const m = this.mappings;
     const len = m.length;
     let i = this.offset;
+    // Une virgule consommée par le segment précédent annonce un segment.
+    const apresVirgule = i > 0 && i <= len && m.charCodeAt(i - 1) === VIRGULE;
+    if (apresVirgule && (i === len || m.charCodeAt(i) === VIRGULE || m.charCodeAt(i) === POINT_VIRGULE)) {
+      throw new SourceMapError(`segment vide en position ${i}`);
+    }
     for (; i < len; i++) {
       const c = m.charCodeAt(i);
       if (c === POINT_VIRGULE) {
+        if (this.uneLigne) {
+          this.offset = i;
+          return false;
+        }
         this.line++;
         this.column = 0;
         this.indexInLine = 0;
-      } else if (c !== VIRGULE) break;
+      } else if (c === VIRGULE) {
+        // Hors d'un segment, une virgule ouvre un segment vide : `,,` ou `;,`.
+        throw new SourceMapError(`segment vide en position ${i}`);
+      } else break;
     }
     if (i >= len) {
       this.offset = len;
@@ -284,7 +307,8 @@ function chaineOptionnelle(valeur, champ, max) {
  * Validation STRICTE d'une source map v3 déjà parsée, sans allocation
  * proportionnelle aux segments. Refus explicites : map indexée (`sections`),
  * version ≠ 3, types inattendus, chemins avec caractères de contrôle, mappings
- * mal formés, non ordonnés ou incohérents avec `sources`/`names`.
+ * mal formés (segment vide compris), non ordonnés ou incohérents avec
+ * `sources`/`names`.
  *
  * @returns {{ sources: number, names: number, segments: number }}
  */
@@ -323,14 +347,24 @@ export function validateSourceMap(map) {
 
 const VIDE = Object.freeze({ source: null, line: null, column: null, name: null });
 
+/** Nom rendu par une map : chaîne sans caractère de contrôle, bornée ; sinon null. */
+function nomAffichable(nom) {
+  if (typeof nom !== "string") return null;
+  return nom.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, MAX_NAME) || null;
+}
+
 /**
  * Consommateur d'une source map : position générée (ligne 1-based, colonne
  * 0-based) → position d'origine. `bytes` est la mémoire qu'il retient — la
- * valeur de `consumerFootprint`, que le cache d'ingestion additionne. Le JSON
- * d'origine n'est pas retenu, ni `sourcesContent`.
+ * valeur de `consumerFootprint`, que le cache d'ingestion additionne.
  *
- * Tolérant par défaut (lecture de maps anciennes, uploadées avant la validation
- * stricte) ; `strict` refuse les incohérences comme l'upload.
+ * Seuls la chaîne `mappings`, les chemins virtuels et les noms nettoyés passent
+ * à `indexer` : aucune fonction retournée ne capture l'objet `map`, dont le JSON
+ * complet (`sourcesContent` compris) peut ainsi être libéré.
+ *
+ * Tolérant par défaut (maps anciennes, uploadées avant la validation stricte) ;
+ * `strict` refuse les incohérences comme l'upload. Les erreurs de structure
+ * (VLQ invalide, segment vide…) sont refusées dans les deux modes.
  *
  * @param {object} map source map v3 parsée
  * @param {{ strict?: boolean }} [opts]
@@ -341,10 +375,15 @@ export function createConsumer(map, { strict = false } = {}) {
   }
   if ("sections" in map) throw new SourceMapError("source map indexée (sections) non prise en charge");
   const mappings = typeof map.mappings === "string" ? map.mappings : "";
-  const sources = Array.isArray(map.sources) ? map.sources.map((s) => virtualSourcePath(map.sourceRoot, s)) : [];
-  const names = Array.isArray(map.names) ? map.names.map((n) => (typeof n === "string" ? n : null)) : [];
+  const racine = map.sourceRoot;
+  const sources = Array.isArray(map.sources) ? map.sources.map((s) => virtualSourcePath(racine, s)) : [];
+  const names = Array.isArray(map.names) ? map.names.map(nomAffichable) : [];
   const forme = structure(mappings);
-  const bytes = empreinteMemoire(map, mappings, forme);
+  return indexer(mappings, sources, names, empreinteMemoire(map, mappings, forme), forme, strict);
+}
+
+/** Index à points de reprise et recherche bornée, construits sans la map d'origine. */
+function indexer(mappings, sources, names, bytes, forme, strict) {
   const nbLignes = forme.lines;
   const capacite = Math.ceil(forme.segments / CHECKPOINT_EVERY) + forme.linesWithSegments;
   const reprise = {
@@ -383,7 +422,7 @@ export function createConsumer(map, { strict = false } = {}) {
     }
     return lo;
   };
-  const lecteur = new MappingsCursor(mappings);
+  const lecteur = new MappingsCursor(mappings, { uneLigne: true });
 
   return {
     bytes,
@@ -413,8 +452,10 @@ export function createConsumer(map, { strict = false } = {}) {
       let line = -1;
       let column = -1;
       let nom = -1;
-      // Plus grand segment de la ligne dont la colonne générée est ≤ la colonne demandée.
-      while (lecteur.next() && lecteur.line === ligne && lecteur.column <= genCol0) {
+      // Plus grand segment de la ligne dont la colonne générée est ≤ la colonne
+      // demandée : au plus un intervalle entre deux points de reprise, le point
+      // suivant ayant, par la dichotomie, une colonne supérieure.
+      while (lecteur.next() && lecteur.column <= genCol0) {
         trouve = true;
         source = lecteur.hasSource ? lecteur.source : -1;
         line = lecteur.originalLine;
@@ -432,23 +473,99 @@ export function createConsumer(map, { strict = false } = {}) {
   };
 }
 
-// Chrome/V8 : "    at fn (url:line:col)" ou "    at url:line:col"
-const CHROME = /^\s*at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?\s*$/;
-// Firefox/Safari : "fn@url:line:col"
-const FIREFOX = /^\s*(?:(.*?)@)?(.+?):(\d+):(\d+)\s*$/;
+// Formats reconnus, avec EXACTEMENT le résultat des expressions historiques
+//   Chrome/V8        /^\s*at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?\s*$/
+//   Firefox/Safari   /^\s*(?:(.*?)@)?(.+?):(\d+):(\d+)\s*$/
+// mais en un parcours : ces deux expressions reviennent en arrière de façon
+// quadratique (mesuré : 406 ms pour une ligne hostile de 1 022 caractères), et la
+// stack est une donnée du client. tests/unit/sourcemap.test.ts compare les deux
+// implémentations sur un corpus aléatoire.
+
+/** Caractères que `.` refuse : une frame ne les contient pas hors des espaces. */
+const FIN_DE_LIGNE = /[\n\r\u2028\u2029]/;
+const ESPACE = /\s/;
+const estChiffre = (code) => code >= 48 && code <= 57;
+
+/**
+ * `:ligne:colonne` en fin de texte, après les espaces finaux et, pour Chrome,
+ * une parenthèse fermante. Rend l'indice de fin du fichier, ou null.
+ */
+function positionFinale(texte, debut, parenthese) {
+  let fin = texte.length;
+  while (fin > debut && ESPACE.test(texte[fin - 1])) fin--;
+  if (parenthese && fin > debut && texte[fin - 1] === ")") fin--;
+  let i = fin;
+  while (i > debut && estChiffre(texte.charCodeAt(i - 1))) i--;
+  if (i === fin || i - 1 < debut || texte[i - 1] !== ":") return null;
+  let j = i - 1;
+  while (j > debut && estChiffre(texte.charCodeAt(j - 1))) j--;
+  if (j === i - 1 || j - 1 < debut || texte[j - 1] !== ":") return null;
+  return { finFichier: j - 1, line: Number(texte.slice(j, i - 1)), col: Number(texte.slice(i, fin)) };
+}
+
+/** Premier et dernier indice d'un caractère de fin de ligne dans [debut, fin), ou -1. */
+function bornesFinDeLigne(texte, debut, fin) {
+  let premier = -1;
+  let dernier = -1;
+  for (let i = debut; i < fin; i++) {
+    if (FIN_DE_LIGNE.test(texte[i])) {
+      if (premier < 0) premier = i;
+      dernier = i;
+    }
+  }
+  return { premier, dernier };
+}
+
+/**
+ * Découpe `[debut, finFichier)` en fonction et fichier au premier séparateur
+ * valide (`@` pour Firefox, espaces puis `(` pour Chrome), comme le quantificateur
+ * paresseux d'origine ; sans séparateur valide, tout est fichier.
+ */
+function decouper(texte, debut, finFichier, chrome, espacesAvant) {
+  const { premier, dernier } = bornesFinDeLigne(texte, debut, finFichier);
+  // Une fonction commence à `debut`, un fichier finit à `finFichier` : le premier
+  // (resp. dernier) caractère de fin de ligne de la zone suffit à les juger.
+  const fonctionPropre = (fin) => premier < 0 || premier >= fin;
+  const fichierPropre = (depart) => dernier < depart;
+  const marque = chrome ? "(" : "@";
+  for (let p = texte.indexOf(marque, debut); p >= 0 && p < finFichier; p = texte.indexOf(marque, p + 1)) {
+    let finFn = p;
+    if (chrome) {
+      while (finFn > debut && ESPACE.test(texte[finFn - 1])) finFn--;
+      if (finFn === p || finFn === debut) continue; // `\s+\(` après une fonction non vide
+    }
+    if (!fonctionPropre(finFn)) break; // toute fonction plus longue contiendrait ce caractère
+    if (p + 1 >= finFichier) break; // tout fichier plus court serait vide
+    if (!fichierPropre(p + 1)) continue;
+    return { fn: texte.slice(debut, finFn) || null, file: texte.slice(p + 1, finFichier) };
+  }
+  if (debut < finFichier) return fichierPropre(debut) ? { fn: null, file: texte.slice(debut, finFichier) } : null;
+  // Fichier vide : l'expression reprend un espace de tête pour en faire le fichier,
+  // sauf si c'est un caractère de fin de ligne, que `.` refuse.
+  return espacesAvant && !FIN_DE_LIGNE.test(texte[debut - 1]) ? { fn: null, file: texte[debut - 1] } : null;
+}
 
 /**
  * Frame JavaScript d'une ligne de stack, ou null. Une ligne de plus de
- * `MAX_FRAME_LINE_LENGTH` caractères n'en est pas une : les deux expressions
- * sont quadratiques, et une stack hostile ne doit pas coûter de CPU.
+ * `MAX_FRAME_LINE_LENGTH` caractères n'en est pas une.
  *
  * @returns {{ fn: string|null, file: string, line: number, col: number }|null}
  */
 export function parseStackLine(line) {
   if (typeof line !== "string" || line.length > MAX_FRAME_LINE_LENGTH) return null;
-  const m = CHROME.exec(line) || FIREFOX.exec(line);
-  if (!m) return null;
-  return { fn: m[1] || null, file: m[2], line: Number(m[3]), col: Number(m[4]) };
+  let debut = 0;
+  while (debut < line.length && ESPACE.test(line[debut])) debut++;
+  // Chrome : `at` suivi d'au moins un espace.
+  if (line.startsWith("at", debut) && debut + 2 < line.length && ESPACE.test(line[debut + 2])) {
+    let apres = debut + 3;
+    while (apres < line.length && ESPACE.test(line[apres])) apres++;
+    const position = positionFinale(line, apres, true);
+    const morceaux = position && decouper(line, apres, position.finFichier, true, apres - (debut + 2) >= 2);
+    if (morceaux) return { ...morceaux, line: position.line, col: position.col };
+  }
+  const position = positionFinale(line, debut, false);
+  const morceaux = position && decouper(line, debut, position.finFichier, false, debut > 0);
+  return morceaux ? { ...morceaux, line: position.line, col: position.col } : null;
 }
 
 /** Nom de bundle d'un fichier de frame : dernier segment, sans requête ni fragment. */

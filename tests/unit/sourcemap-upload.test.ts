@@ -174,16 +174,27 @@ describe("creerLimiteurUpload", () => {
     expect("liberer" in l.prendre("jeton:1")).toBe(true);
   });
 
-  it("borne les uploads simultanés ; libérer deux fois ne rend qu'une place", () => {
-    const l = creerLimiteurUpload({ parMinute: 100, simultanes: 1 });
+  it("un émetteur lent n'occupe que SES places : les autres continuent jusqu'au plafond global", () => {
+    const l = creerLimiteurUpload({ parMinute: 100, simultanesParCle: 2, simultanes: 3 });
+    const lentes = [l.prendre("jeton:lent"), l.prendre("jeton:lent")];
+    expect(l.prendre("jeton:lent")).toMatchObject({ refus: { retryAfter: 5 } });
+    const autre = l.prendre("jeton:autre");
+    expect("liberer" in autre).toBe(true);
+    // Plafond global atteint (3) : même un émetteur sans upload en cours attend.
+    expect(l.prendre("jeton:troisieme")).toMatchObject({ refus: { retryAfter: 5 } });
+    for (const prise of lentes) if ("liberer" in prise) prise.liberer();
+    expect("liberer" in l.prendre("jeton:troisieme")).toBe(true);
+  });
+
+  it("libérer deux fois ne rend qu'une place", () => {
+    const l = creerLimiteurUpload({ parMinute: 100, simultanesParCle: 1, simultanes: 1 });
     const premiere = l.prendre("a");
     expect(l.prendre("b")).toMatchObject({ refus: { retryAfter: 5 } });
     if ("liberer" in premiere) {
       premiere.liberer();
       premiere.liberer();
     }
-    const seconde = l.prendre("b");
-    expect("liberer" in seconde).toBe(true);
+    expect("liberer" in l.prendre("b")).toBe(true);
     expect(l.prendre("c")).toMatchObject({ refus: expect.anything() });
   });
 });
@@ -229,13 +240,25 @@ describe("lireCorpsLimite — octets et durée bornés", () => {
     }
   });
 
-  it("408 quand le corps n'arrive pas dans le délai", async () => {
+  it("408 quand le corps n'arrive pas dans le délai total", async () => {
     async function* lent() {
       yield Buffer.from("{");
       await new Promise((r) => setTimeout(r, 200));
       yield Buffer.from("}");
     }
     await expect(lireCorpsLimite(lent(), { max: 10, delaiMs: 50 })).rejects.toMatchObject({ statut: 408 });
+  });
+
+  it("408 après un silence entre deux morceaux, même dans le délai total", async () => {
+    async function* goutteAGoutte() {
+      yield Buffer.from("{");
+      await new Promise((r) => setTimeout(r, 150));
+      yield Buffer.from("}");
+    }
+    await expect(lireCorpsLimite(goutteAGoutte(), { max: 10, delaiMs: 5_000, delaiInactiviteMs: 50 })).rejects.toMatchObject({
+      statut: 408,
+    });
+    expect((await lireCorpsLimite(goutteAGoutte(), { max: 10, delaiMs: 5_000, delaiInactiviteMs: 1_000 })).toString()).toBe("{}");
   });
 });
 

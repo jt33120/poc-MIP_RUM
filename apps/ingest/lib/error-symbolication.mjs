@@ -111,8 +111,15 @@ export function creerSymbolicateur(options = {}) {
     const debut = maintenant();
     const resultats = erreurs.map(() => null);
     const candidates = [];
+    const epuise = Object.freeze({ status: "pending", stack: null, raison: "budget de symbolication du lot épuisé", positions: Object.freeze([]) });
     erreurs.forEach((erreur, i) => {
       if (!erreur?.stack) return;
+      // Même la lecture des frames compte dans le budget : au-delà, l'erreur est
+      // écrite brute et la lecture console retentera.
+      if (maintenant() - debut > limites.msParLot) {
+        resultats[i] = epuise;
+        return;
+      }
       const fichiers = [];
       for (const ligne of String(erreur.stack).split("\n")) {
         if (fichiers.length >= limites.framesParErreur) break;
@@ -128,7 +135,14 @@ export function creerSymbolicateur(options = {}) {
     });
     if (!candidates.length) return resultats;
 
-    // Noms recherchés par (app, release) : nom de bundle, puis URL complète.
+    /** Consommateurs utilisables par CE lot, indépendamment des évictions du cache. */
+    const utilisables = new Map();
+    /** Clés non vérifiées ou non chargées faute de budget : leurs erreurs restent `pending`. */
+    const differees = new Set();
+
+    // Noms recherchés par (app, release) : nom de bundle, puis URL complète. Seul
+    // un nom à vérifier en base consomme le budget de fichiers ; une entrée
+    // fraîche du cache ne coûte rien et reste utilisable au-delà.
     const groupes = new Map();
     let fichiersDemandes = 0;
     for (const c of candidates) {
@@ -137,17 +151,19 @@ export function creerSymbolicateur(options = {}) {
       const noms = groupes.get(g).noms;
       for (const fichier of c.fichiers) {
         for (const nom of [bundleName(fichier), fichier]) {
-          if (noms.has(nom) || fichiersDemandes >= limites.fichiersParLot) continue;
+          if (noms.has(nom)) continue;
+          const k = cle(c.app, c.release, nom);
+          const connue = cache.get(k) ?? negatifs.get(k);
+          const fraiche = connue !== undefined && debut - connue.verifieA < limites.ttlMs;
+          if (!fraiche && fichiersDemandes >= limites.fichiersParLot) {
+            differees.add(k);
+            continue;
+          }
           noms.add(nom);
-          fichiersDemandes++;
+          if (!fraiche) fichiersDemandes++;
         }
       }
     }
-
-    /** Consommateurs utilisables par CE lot, indépendamment des évictions du cache. */
-    const utilisables = new Map();
-    /** Clés présentes en base mais non chargées faute de budget. */
-    const differees = new Set();
     try {
       const version = checksum ? "coalesce(checksum, extract(epoch from created_at)::text)" : "extract(epoch from created_at)::text";
       let octetsLus = 0;
@@ -248,7 +264,7 @@ export function creerSymbolicateur(options = {}) {
     let framesLot = 0;
     for (const c of candidates) {
       if (framesLot >= limites.framesParLot || maintenant() - debut > limites.msParLot) {
-        resultats[c.i] = { status: "pending", stack: null, raison: "budget de symbolication du lot épuisé", positions: [] };
+        resultats[c.i] = epuise;
         continue;
       }
       let echec = null;
@@ -278,7 +294,7 @@ export function creerSymbolicateur(options = {}) {
           positions: r.positions,
         };
       } else if (differee) {
-        resultats[c.i] = { status: "pending", stack: null, raison: "budget de symbolication du lot épuisé", positions: [] };
+        resultats[c.i] = epuise;
       } else if (echec) {
         resultats[c.i] = { status: "failed", stack: null, raison: echec, positions: [] };
       } else {

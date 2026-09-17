@@ -200,7 +200,9 @@ declare module "ingest/lib/sourcemap-upload.mjs" {
     maps: number;
     lotConsole: number;
     delaiCorpsMs: number;
+    delaiInactiviteMs: number;
     parMinute: number;
+    simultanesParCle: number;
     simultanes: number;
   }>;
   export const EXPIRATION_JETON: Readonly<{ min: number; max: number; defaut: number }>;
@@ -226,6 +228,7 @@ declare module "ingest/lib/sourcemap-upload.mjs" {
   ): Promise<{ id: string; app_id: string } | null>;
   export function creerLimiteurUpload(opts?: {
     parMinute?: number;
+    simultanesParCle?: number;
     simultanes?: number;
     maintenant?: () => number;
   }): {
@@ -233,7 +236,7 @@ declare module "ingest/lib/sourcemap-upload.mjs" {
   };
   export function lireCorpsLimite(
     flux: AsyncIterable<Uint8Array | string>,
-    opts: { max: number; delaiMs?: number },
+    opts: { max: number; delaiMs?: number; delaiInactiviteMs?: number },
   ): Promise<Buffer>;
   export function lireRequeteUpload(corps: Buffer | string): {
     appId: string;

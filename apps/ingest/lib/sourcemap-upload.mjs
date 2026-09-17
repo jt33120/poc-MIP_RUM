@@ -34,10 +34,14 @@ export const LIMITES_UPLOAD = Object.freeze({
   lotConsole: 3 * MIO,
   /** Lecture du corps : au-delà, 408. */
   delaiCorpsMs: 60_000,
+  /** Silence maximal entre deux morceaux du corps : au-delà, 408. */
+  delaiInactiviteMs: 10_000,
   /** Uploads par jeton ou par admin, par minute et par instance. */
   parMinute: 60,
-  /** Uploads traités en même temps par une instance. */
-  simultanes: 2,
+  /** Uploads simultanés d'un même émetteur, par instance. */
+  simultanesParCle: 2,
+  /** Uploads simultanés tous émetteurs confondus, par instance : borne la mémoire des corps lus. */
+  simultanes: 6,
 });
 
 /** Durée de vie d'un jeton, en jours. */
@@ -141,29 +145,37 @@ export async function verifierJetonUpload(db, authorization) {
 }
 
 /**
- * Limiteur par instance : uploads par minute pour une clé (jeton ou admin) et
- * uploads simultanés. Un refus porte le statut et le délai à annoncer.
+ * Limiteur par instance : uploads par minute et uploads simultanés pour une clé
+ * (jeton ou admin), plus un plafond global de simultanéité. Le plafond par clé
+ * empêche un émetteur lent d'occuper toutes les places ; le plafond global borne
+ * la mémoire des corps en cours de lecture. Un refus porte le délai à annoncer.
  */
 export function creerLimiteurUpload({
   parMinute = LIMITES_UPLOAD.parMinute,
+  simultanesParCle = LIMITES_UPLOAD.simultanesParCle,
   simultanes = LIMITES_UPLOAD.simultanes,
   maintenant = () => Date.now(),
 } = {}) {
   const coups = new Map();
+  const enCoursParCle = new Map();
   let enCours = 0;
   return {
     /** @returns {{ refus: { message: string, retryAfter: number } } | { liberer: () => void }} */
     prendre(cle) {
       const t = maintenant();
       const recents = (coups.get(cle) ?? []).filter((x) => x > t - 60_000);
-      coups.set(cle, recents);
+      if (recents.length) coups.set(cle, recents);
+      else coups.delete(cle);
       if (recents.length >= parMinute) {
         return { refus: { message: "trop d'uploads de source maps pour cet émetteur : réessayer dans une minute", retryAfter: 60 } };
       }
-      if (enCours >= simultanes) {
+      const siens = enCoursParCle.get(cle) ?? 0;
+      if (siens >= simultanesParCle || enCours >= simultanes) {
         return { refus: { message: "trop d'uploads de source maps simultanés : réessayer dans quelques secondes", retryAfter: 5 } };
       }
       recents.push(t);
+      coups.set(cle, recents);
+      enCoursParCle.set(cle, siens + 1);
       enCours++;
       let libere = false;
       return {
@@ -171,6 +183,9 @@ export function creerLimiteurUpload({
           if (libere) return;
           libere = true;
           enCours--;
+          const restants = enCoursParCle.get(cle) - 1;
+          if (restants > 0) enCoursParCle.set(cle, restants);
+          else enCoursParCle.delete(cle);
         },
       };
     },
@@ -180,9 +195,9 @@ export function creerLimiteurUpload({
 // ──────────────────────────── Corps et contrat ───────────────────────────────
 
 /**
- * Lit un corps (flux Node ou ReadableStream web) en bornant les octets ET la
- * durée. Le dépassement est détecté au morceau qui le provoque : rien n'est
- * accumulé au-delà de `max`.
+ * Lit un corps (flux Node ou ReadableStream web) en bornant les octets, la durée
+ * totale et le silence entre deux morceaux. Le dépassement est détecté au morceau
+ * qui le provoque : rien n'est accumulé au-delà de `max`.
  *
  * Le flux n'est PAS détruit en cas de refus. Détruire la requête coupe la
  * connexion (mesuré : le client reçoit EPIPE, pas le 413) ; laissé tel quel, le
@@ -190,15 +205,18 @@ export function creerLimiteurUpload({
  * le client lit son 413 ou son 408 avec le message qui dit quoi faire.
  *
  * @param {AsyncIterable<Uint8Array|string>} flux
- * @param {{ max: number, delaiMs?: number }} opts
+ * @param {{ max: number, delaiMs?: number, delaiInactiviteMs?: number }} opts
  */
-export async function lireCorpsLimite(flux, { max, delaiMs = LIMITES_UPLOAD.delaiCorpsMs }) {
+export async function lireCorpsLimite(
+  flux,
+  { max, delaiMs = LIMITES_UPLOAD.delaiCorpsMs, delaiInactiviteMs = LIMITES_UPLOAD.delaiInactiviteMs },
+) {
   const iterateur = flux[Symbol.asyncIterator]();
   const morceaux = [];
   let total = 0;
   const echeance = Date.now() + delaiMs;
   for (;;) {
-    const restant = echeance - Date.now();
+    const restant = Math.min(echeance - Date.now(), delaiInactiviteMs);
     if (restant <= 0) throw new ErreurUpload(408, "corps de requête reçu trop lentement");
     let minuteur;
     const expiration = new Promise((_, rejeter) => {

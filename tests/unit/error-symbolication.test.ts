@@ -207,6 +207,31 @@ describe("creerSymbolicateur — bornes", () => {
     expect((await lente.symboliquerLot(base.db, [erreur])).map((r) => r?.status)).toEqual(["pending"]);
   });
 
+  it("budget de fichiers épuisé : pending, pas unavailable ; une map déjà en cache reste utilisée", async () => {
+    const base = baseFactice({ "a|1.0|chaude.js": { content: mapPour("chaude.ts", "f"), version: "v" } });
+    const s = creerSymbolicateur({ limites: { fichiersParLot: 2 } });
+    const chaude = { app_id: "a", release: "1.0", stack: stackPour("chaude.js") };
+    expect((await s.symboliquerLot(base.db, [chaude]))[0]?.status).toBe("resolved");
+
+    // 40 fichiers d'abord : le budget part dans les deux premiers noms.
+    const lourde = { app_id: "a", release: "1.0", stack: stackPour(...Array.from({ length: 40 }, (_, i) => `chunk-${i}.js`)) };
+    const [surchargee, encoreChaude] = await s.symboliquerLot(base.db, [lourde, chaude]);
+    expect(surchargee).toMatchObject({ status: "pending", raison: "budget de symbolication du lot épuisé" });
+    expect(encoreChaude?.status).toBe("resolved");
+  });
+
+  it("la lecture des frames compte dans le budget de durée : au-delà, pending sans requête", async () => {
+    const base = baseFactice({ "a|1.0|main.js": { content: mapPour("a.ts", "f"), version: "v" } });
+    // Chaque lecture d'horloge avance de 20 ms : le budget de 10 ms est dépassé
+    // dès la première erreur, avant d'avoir lu une seule frame.
+    let t = 0;
+    const s = creerSymbolicateur({ limites: { msParLot: 10 }, maintenant: () => (t += 20) });
+    const erreur = { app_id: "a", release: "1.0", stack: stackPour("main.js") };
+    const resultats = await s.symboliquerLot(base.db, [erreur, erreur, erreur]);
+    expect(resultats.map((r) => r?.status)).toEqual(["pending", "pending", "pending"]);
+    expect(base.requetes).toEqual([]);
+  });
+
   it("absence mémorisée pendant le TTL, puis revérifiée : une map mise en ligne ensuite est prise", async () => {
     const base = baseFactice();
     let t = 0;
