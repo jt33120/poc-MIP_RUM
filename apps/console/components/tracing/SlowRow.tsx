@@ -2,16 +2,17 @@
 // réseau + lien session. Rendu 100 % serveur. Extrait de app/tracing/page.tsx.
 import Link from "next/link";
 import type { SlowTrace } from "@/lib/queries-tracing";
+import { hrefWithQuery, type AnalyticsQuery } from "@/lib/query-contract";
 import { fmtMs } from "@/components/tracing/format";
 
-/** Ligne détaillant une trace lente et son statut front. */
-export function SlowRow({ t }: { t: SlowTrace }) {
+/** Ligne détaillant une trace lente et son statut front ; les filtres suivent ses liens. */
+export function SlowRow({ t, query }: { t: SlowTrace; query: AnalyticsQuery }) {
   const bad = (t.front_status ?? 0) >= 400 || (t.front_status ?? 0) === 0;
   return (
     <tr className="border-t border-line/60 transition hover:bg-panel2/60">
       <td className="px-4 py-3 font-mono text-xs">
         <Link
-          href={`/tracing/${encodeURIComponent(t.trace_id)}`}
+          href={hrefWithQuery(`/tracing/${encodeURIComponent(t.trace_id)}`, query)}
           className="group inline-flex items-center gap-1.5 hover:text-brand"
           title="Voir le détail de la trace (waterfall)"
         >
@@ -36,7 +37,7 @@ export function SlowRow({ t }: { t: SlowTrace }) {
       <td className="px-4 py-3 tabular-nums">{fmtMs(t.network_ms)}</td>
       <td className="px-4 py-3">
         {t.session_id ? (
-          <Link href={`/sessions/${t.session_id}`} className="font-mono text-xs text-brand hover:underline">
+          <Link href={hrefWithQuery(`/sessions/${t.session_id}`, query)} className="font-mono text-xs text-brand hover:underline">
             {t.session_id.slice(0, 8)}…
           </Link>
         ) : (

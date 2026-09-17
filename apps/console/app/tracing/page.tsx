@@ -204,7 +204,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
           </thead>
           <tbody>
             {slow.map((t) => (
-              <SlowRow key={t.trace_id} t={t} />
+              <SlowRow key={t.trace_id} t={t} query={ecran.query} />
             ))}
             {!slow.length && <Empty cols={6} msg="Aucune trace sur la fenêtre" />}
           </tbody>

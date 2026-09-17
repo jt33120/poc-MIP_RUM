@@ -7,6 +7,7 @@ import { browserFromUA, fmtDate } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
+import { hrefWithQuery } from "@/lib/query-contract";
 import { listSessions, visitStats } from "@/lib/queries";
 import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
 import { TousEteints } from "@/components/TousEteints";
@@ -29,10 +30,6 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     blocs.liste ? listSessions(f) : vide([]),
     blocs.resume ? visitStats(f) : vide(null),
   ]);
-  const qs = new URLSearchParams(
-    Object.entries(sp).flatMap(([k, v]) => (typeof v === "string" ? [[k, v] as [string, string]] : [])),
-  ).toString();
-
   return (
     <div className="animate-fade-up">
       <PageHeader
@@ -107,7 +104,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
           <div key={s.session_id} className="card p-4 transition hover:shadow-pop">
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <Link
-                href={`/sessions/${s.session_id}${qs ? `?${qs}` : ""}`}
+                href={hrefWithQuery(`/sessions/${encodeURIComponent(s.session_id)}`, ecran.query)}
                 className="font-mono text-xs font-semibold text-brand hover:underline"
                 data-testid="session-link"
               >

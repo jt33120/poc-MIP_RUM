@@ -11,6 +11,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { experienceScore, frustrationPenalty, scoreTone } from "@/lib/experience";
 import type { SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
+import { hrefWithQuery } from "@/lib/query-contract";
 import {
   experienceContext,
   feedbackByRoute,
@@ -219,7 +220,10 @@ export default async function Experience({
                 </span>
                 <span className="shrink-0 chip-mono">{r.route ?? "(app)"}</span>
                 {r.session_id && (
-                  <Link href={`/sessions/${r.session_id}`} className="shrink-0 text-xs font-medium text-perf hover:underline">
+                  <Link
+                    href={hrefWithQuery(`/sessions/${encodeURIComponent(r.session_id)}`, ecran.query)}
+                    className="shrink-0 text-xs font-medium text-perf hover:underline"
+                  >
                     session →
                   </Link>
                 )}

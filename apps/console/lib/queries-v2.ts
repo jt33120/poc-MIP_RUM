@@ -47,17 +47,6 @@ export function periodLabel(f: Filters): string {
 }
 
 
-/** Query string préservant les filtres actifs pour les liens internes. */
-export function filtersToQuery(f: Filters, extra?: Record<string, string>): string {
-  const p = new URLSearchParams();
-  if (f.app !== "all") p.set("app", f.app);
-  if (f.period !== "24h") p.set("period", f.period);
-  if (f.device !== "all") p.set("device", f.device);
-  for (const [k, v] of Object.entries(extra ?? {})) p.set(k, v);
-  const s = p.toString();
-  return s ? `?${s}` : "";
-}
-
 // ---------------------------------------------------------------------------
 // Triage des groupes d'erreurs (error_status). Les LECTURES de groupes —
 // compteurs, tendance, détail, occurrences — vivent dans ./queries-errors.ts
