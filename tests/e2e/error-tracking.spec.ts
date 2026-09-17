@@ -531,6 +531,8 @@ test.describe("P5.6 — workflow d'une issue", () => {
 
     const commentaire = page.getByTestId("issue-comment-body");
     await commentaire.fill("Voir avec marie@exemple.fr avant la release");
+    // Le focus n'attend pas l'hydratation : on attend que le bouton soit actif.
+    await expect(page.getByTestId("issue-comment-submit")).toBeEnabled();
     await page.getByTestId("issue-comment-submit").focus();
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("issue-activity-comment")).toContainText("Voir avec [email] avant la release");
@@ -546,6 +548,7 @@ test.describe("P5.6 — workflow d'une issue", () => {
 
     // Clavier seul : statut suivant (« À revoir »), puis Tab jusqu'au bouton et Entrée.
     const statut = page.getByTestId("issue-triage-status");
+    await expect(statut).toBeEnabled();
     await statut.focus();
     await page.keyboard.press("ArrowDown");
     await expect(statut).toHaveValue("for_review");
@@ -557,11 +560,12 @@ test.describe("P5.6 — workflow d'une issue", () => {
     await expect(page.getByTestId("issue-status")).toHaveText("À revoir");
   });
 
-  test("édition concurrente : 409, rechargement proposé, la sélection se rejoue avec la révision relue", async ({ page }) => {
+  test("édition concurrente : 409, rechargement proposé, seule la saisie de l'utilisateur se rejoue sur la révision relue", async ({ page }) => {
     await login(page);
     await page.goto(`${CONSOLE}${PAGE_ISSUE}`);
-    // Quelqu'un d'autre modifie l'issue entre la lecture et l'enregistrement.
-    await pool.query("update error_issue set revision = revision + 1, updated_at = now() where id = $1", [ISSUE_W]);
+    // Quelqu'un d'autre assigne l'issue entre la lecture et l'enregistrement.
+    const { rows: [{ id: viewerId }] } = await pool.query("select id::text as id from console_user where email = $1", [VIEWER_EMAIL]);
+    await pool.query("update error_issue set assignee_user_id = $2, revision = revision + 1, updated_at = now() where id = $1", [ISSUE_W, viewerId]);
 
     const triage = page.getByTestId("issue-triage-form");
     await triage.getByTestId("issue-triage-status").selectOption("ignored");
@@ -573,18 +577,30 @@ test.describe("P5.6 — workflow d'une issue", () => {
     const { rows: [{ revision }] } = await pool.query("select revision::text as revision from error_issue where id = $1", [ISSUE_W]);
     await conflit.getByRole("button", { name: "Recharger l'issue" }).click();
     await expect(conflit).toHaveCount(0);
-    // La page relue porte la nouvelle révision ; la sélection en cours, elle, est restée.
+    // La page relue porte la nouvelle révision et l'assignation de l'autre ; le statut choisi, lui, est repris.
     await expect(triage).toHaveAttribute("data-revision", revision);
+    await expect(page.getByTestId("issue-assignee")).toHaveText(VIEWER_EMAIL);
     await expect(triage.getByTestId("issue-triage-status")).toHaveValue("ignored");
+    await expect(triage.getByTestId("issue-triage-assignee")).toHaveValue(viewerId);
     await triage.getByTestId("issue-triage-submit").click();
     await expect(page.getByTestId("issue-status")).toHaveText("Ignorée");
+    // Le champ non touché n'a pas été renvoyé : l'assignation de l'autre tient.
+    await expect(page.getByTestId("issue-assignee")).toHaveText(VIEWER_EMAIL);
   });
 
-  test("viewer : état lisible, aucun formulaire, et l'API refuse l'écriture", async ({ page }) => {
+  test("viewer : état lisible sans adresse de compte, aucun formulaire, et l'API refuse l'écriture", async ({ page }) => {
+    const { rows: [{ id: adminId }] } = await pool.query("select id from console_user where email = $1", [E2E_EMAIL]);
+    await pool.query(
+      "insert into error_issue_activity (app_id, issue_id, kind, actor_kind, actor_user_id, body) values ($1, $2, 'comment', 'user', $3, 'vu en prod')",
+      [APP_W, ISSUE_W, adminId],
+    );
     await loginAs(page, VIEWER_EMAIL, VIEWER_PASSWORD);
     await page.goto(`${CONSOLE}${PAGE_ISSUE}`);
     await expect(page.getByTestId("issue-triage")).toContainText("Lecture seule");
     await expect(page.getByTestId("issue-assignee")).toHaveText("personne");
+    // L'auteur d'un commentaire est un compte de la console, jamais son adresse.
+    await expect(page.getByTestId("issue-activity-comment")).toContainText("Un compte de la console a commenté");
+    await expect(page.getByTestId("issue-activity")).not.toContainText(E2E_EMAIL);
     for (const formulaire of ["issue-triage-form", "issue-comment-form", "issue-link-form", "issue-alert-link"]) {
       await expect(page.getByTestId(formulaire), formulaire).toHaveCount(0);
     }
