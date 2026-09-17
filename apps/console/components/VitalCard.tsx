@@ -74,9 +74,12 @@ export function VitalCard({
   return (
     <div className="card p-4 transition hover:shadow-pop">
       <div className="flex items-center justify-between gap-2">
+        {/* La bulle OUVRE le nom : sur deux colonnes à 390 px, une bulle de
+            288 px centrée après le nom de la carte de droite sortait de l'écran
+            et élargissait la page. En tête, elle s'ouvre vers l'intérieur. */}
         <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-          {name}
           {name in GLOSSARY && <GlossaryTip id={name as GlossaryId} />}
+          {name}
         </span>
         {rating && (
           <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${RATING_CLASS[rating]}`}>
