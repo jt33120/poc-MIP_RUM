@@ -13,6 +13,7 @@
 // invalide ne persiste donc rien, et un conflit sur une seule map annule la
 // requête entière : jamais de succès partiel déguisé.
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { boundedRelease } from "../supabase/functions/_shared/dimensions.mjs";
 import {
   hasControlCharacters,
   SourceMapError,
@@ -320,7 +321,12 @@ export function lireRequeteUpload(corps) {
   }
   if (json === null || typeof json !== "object" || Array.isArray(json)) throw new ErreurUpload(400, "objet JSON attendu");
   const appId = texteRequis(json.appId, "appId", 200);
-  const release = texteRequis(json.release, "release", 200);
+  // La règle de l'ingestion (P6.1) : une release qu'elle ne stockerait pas ne
+  // serait jamais associée à ces maps. Mieux vaut un 400 en CI qu'un succès inutile.
+  const release = boundedRelease(json.release);
+  if (!release) {
+    throw new ErreurUpload(400, "release requise (1 à 120 caractères, sans caractère de contrôle ni de format)");
+  }
   if (json.replace !== undefined && typeof json.replace !== "boolean") {
     throw new ErreurUpload(400, "replace : booléen attendu");
   }

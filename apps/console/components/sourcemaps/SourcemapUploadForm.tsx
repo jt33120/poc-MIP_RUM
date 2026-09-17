@@ -83,7 +83,7 @@ export function SourcemapUploadForm({ appId, release }: { appId: string; release
       <form onSubmit={envoyer} className="flex flex-col gap-3" data-testid="upload-sourcemaps">
         <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
           Release (valeur exacte de mip.release dans le SDK)
-          <input name="release" required maxLength={200} defaultValue={release ?? ""} className={INPUT_CLASS} />
+          <input name="release" required maxLength={120} defaultValue={release ?? ""} className={INPUT_CLASS} />
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
           Fichiers .map

@@ -42,6 +42,8 @@ export const DIMENSIONS = {
   // les « services inconnus » noierait le chiffre qui compte.
   service: { label: "Service", population: "signaux", column: "service", kinds: ["error", "span"], migration: "v75" },
   release: { label: "Release", population: "signaux", column: "release", migration: "v75" },
+  // Template déjà normalisé et plafonné à l'écriture (migration-v62), jamais l'URL brute.
+  route: { label: "Route", population: "signaux", column: "route", migration: null },
 } as const satisfies Record<string, DimensionDefinition>;
 
 export type DimensionKey = keyof typeof DIMENSIONS;
@@ -114,7 +116,10 @@ export function dimensionValuesRequest(input: DimensionValuesInput): DimensionVa
  * forment une seule ligne à part. Signaux : la projection rum_event_index, plus
  * les exceptions dérivées d'un span ou d'un log (P5.3), qu'elle n'indexe pas —
  * les deux ensembles sont disjoints. Une session d'une autre app ne peut ni
- * exclure ni prêter son statut de robot : la jointure est scopée par app.
+ * exclure ni prêter son statut de robot : la recherche est scopée par app.
+ *
+ * Aucun index dédié : mesuré sur 1,2 M de signaux par app et 7 jours, la lecture
+ * passe par (app_id, ts) et un index (app_id, release, ts) n'est pas choisi.
  */
 export function dimensionValuesSql(r: DimensionValuesRequest): { text: string; params: unknown[] } {
   const d: DimensionDefinition = DIMENSIONS[r.dimension];
@@ -132,10 +137,10 @@ export function dimensionValuesSql(r: DimensionValuesRequest): { text: string; p
         where s.app_id = $1 and s.last_seen_at >= $2::timestamptz and s.started_at < $3::timestamptz${r.includeBots ? "" : " and not s.is_bot"}`
     : r.includeBots
       ? `select o.valeur from (${signaux}) o`
-      // Un signal sans session (backend) n'est pas un robot : il reste compté.
+      // Anti-jointure sur les seules sessions robots de l'app (index partiel
+      // idx_session_is_bot) : un signal sans session (backend) reste compté.
       : `select o.valeur from (${signaux}) o
-           left join rum_session s on s.app_id = o.app_id and s.session_id = o.session_id
-          where not coalesce(s.is_bot, false)`;
+          where not exists (select 1 from rum_session s where s.app_id = $1 and s.is_bot and s.session_id = o.session_id)`;
   return {
     text: `with valeurs as (
       select valeur, count(*)::float8 as n from (${observations}) obs group by valeur

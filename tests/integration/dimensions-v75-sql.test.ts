@@ -467,6 +467,8 @@ suite("migration-v75 et dimensions — PostgreSQL", () => {
         .toEqual([{ value: "2.3.1", count: 9 }, { value: "robot-1.0", count: 1 }]);
       // Service : seuls spans et erreurs comptent, et aucun ne vient d'un SDK MIP.
       expect(await valeurs("service", A)).toMatchObject({ values: [], unknown: 2 });
+      // Route : le template normalisé de la projection ; la ligne historique n'en a pas.
+      expect(await valeurs("route", A)).toMatchObject({ available: true, values: [{ value: "/panier", count: 9 }], unknown: 1 });
     });
 
     it("sessions : navigateur, système, appareil et pays estimé de la fenêtre", async () => {

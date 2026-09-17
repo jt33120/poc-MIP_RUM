@@ -113,9 +113,10 @@ describe("clientDimensions — React Native, robots, inconnus", () => {
     ["Chrome sans tête", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/139.0.0.0 Safari/537.36"],
     ["Lighthouse", "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36 Chrome-Lighthouse"],
     ["client HTTP", "curl/8.7.1"],
-  ])("un robot (%s) n'a ni navigateur, ni système, ni appareil — même avec un indice du SDK", (_nom, ua) => {
+  ])("un robot (%s) n'a ni navigateur ni système ; sa classe ne vient que de l'indice du SDK", (_nom, ua) => {
     expect(lire(ua)).toEqual(INCONNU);
-    expect(lire(ua, "desktop")).toEqual(INCONNU);
+    // Comme avant P6.1 : le trafic robot ne change pas de classe dans les agrégats existants.
+    expect(lire(ua, "desktop")).toEqual(d(null, null, null, null, "desktop"));
   });
 
   it("un user-agent inconnu, absent ou hostile reste inconnu sans lever", () => {

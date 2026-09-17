@@ -193,9 +193,11 @@ function parserUserAgent(ua) {
  * rien — et « ios »/« android » du SDK React Native y deviennent « mobile », la
  * plateforme restant portée par `os`. Toute autre valeur d'indice est ignorée.
  *
- * Un ROBOT n'a ni navigateur, ni système, ni classe d'appareil : `is_bot` le dit
- * déjà, et lui prêter « Chrome / Linux / desktop » gonflerait ces valeurs dès que
- * les robots sont inclus dans une analyse. L'indice est alors ignoré aussi.
+ * Un ROBOT n'a ni navigateur ni système : `is_bot` le dit déjà, et lui prêter
+ * « Chrome / Linux » gonflerait ces familles dès que les robots sont inclus dans
+ * une analyse. Son user-agent n'est donc pas lu ; seule la classe déclarée par le
+ * SDK reste, comme avant P6.1, pour ne pas déplacer le trafic robot entre les
+ * classes des agrégats existants (rum_rollup_hourly ne filtre pas les robots).
  * Aucun user-agent n'est exigé : une session sans lui ni indice reste inconnue.
  *
  * @param {unknown} userAgent `mip.user_agent` de la resource.
@@ -204,8 +206,7 @@ function parserUserAgent(ua) {
  */
 export function clientDimensions(userAgent) {
   const ua = typeof userAgent === "string" && userAgent.length <= UA_MAX ? userAgent.trim() : "";
-  if (ua && isBot(ua)) return () => AUCUNE;
-  const lu = ua ? parserUserAgent(ua) : AUCUNE;
+  const lu = ua && !isBot(ua) ? parserUserAgent(ua) : AUCUNE;
   return (deviceHint) => {
     const indice = typeof deviceHint === "string" ? deviceHint.trim().toLowerCase() : "";
     const plateforme = PLATEFORMES_MOBILES.get(indice) ?? null;

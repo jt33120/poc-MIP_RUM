@@ -27,6 +27,19 @@
 -- porte sur une colonne existante : une release longue ou un `device_type`
 -- « ios » écrits par l'ancien code ne peuvent pas faire échouer un lot.
 --
+-- INDEX : AUCUN, et c'est mesuré. PostgreSQL 15 jetable, 1,56 M de signaux et
+-- autant de vues sur 7 jours (app A 1,2 M, B 300 k, C 60 k), 500 k sessions :
+--   • sélecteur de valeurs, seul lecteur livré : 7 jours 392 ms (signaux, via
+--     (app_id, ts) et l'index partiel des sessions robots), 37 ms (sessions, via
+--     idx_session_app_seen). Un index (app_id, release, ts) construit n'y est pas
+--     choisi.
+--   • filtre release ou env sur une fenêtre, lecture que P6.2 n'a pas encore
+--     écrite : 100 à 120 ms en parcours séquentiel, 0,4 à 7 ms avec (app_id,
+--     release|env, ts), pour 60 Mio d'index par table. Le premier lecteur qui en
+--     dépend le crée, sur sa table, avec son pré-déploiement CONCURRENTLY.
+-- Construits ici, ces index bloqueraient l'écriture des tables les plus chaudes
+-- pendant leur construction, pour des lectures qui n'existent pas encore.
+--
 -- VERROUS. Chaque `alter table` prend un ACCESS EXCLUSIVE tenu jusqu'au commit
 -- (le runner applique le fichier dans une transaction). Les tables sont prises
 -- dans l'ordre où writeRows les écrit — session, vue, métrique, action,

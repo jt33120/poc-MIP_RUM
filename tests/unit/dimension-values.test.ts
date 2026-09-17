@@ -66,10 +66,17 @@ describe("dimensionValuesSql — identifiants du registre, valeurs liées", () =
         expect(text).not.toContain("drop table");
         expect(text).not.toContain(r.from);
         expect(text).toContain(`limit ${DIMENSION_VALUES_CAP + 1}`);
-        // Chaque table lue est bornée par l'app ET par la fenêtre.
+        // Chaque table lue est bornée par l'app ; chaque observation, aussi par la
+        // fenêtre. Seule la recherche des sessions robots n'a pas de fenêtre : une
+        // session commencée avant reste un robot.
         const lectures = text.match(/from rum_\w+ \w+\s+where [^\n]*/g) ?? [];
         expect(lectures.length).toBeGreaterThan(0);
-        for (const lecture of lectures) expect(lecture).toMatch(/app_id = \$1 and .*\$2::timestamptz.*\$3::timestamptz/);
+        for (const lecture of lectures) {
+          expect(lecture).toMatch(/\.app_id = \$1 and /);
+          if (!lecture.includes("s.is_bot and s.session_id = o.session_id")) {
+            expect(lecture).toMatch(/\$2::timestamptz.*\$3::timestamptz/);
+          }
+        }
       }
     }
   });
@@ -86,8 +93,7 @@ describe("dimensionValuesSql — identifiants du registre, valeurs liées", () =
     const { text } = dimensionValuesSql(valide({ dimension: "env" }));
     expect(text).toContain("from rum_event_index i");
     expect(text).toContain("e.origin_signal is not null");
-    expect(text).toContain("left join rum_session s on s.app_id = o.app_id and s.session_id = o.session_id");
-    expect(text).toContain("where not coalesce(s.is_bot, false)");
+    expect(text).toContain("where not exists (select 1 from rum_session s where s.app_id = $1 and s.is_bot and s.session_id = o.session_id)");
     expect(text).not.toContain("i.kind in");
     // Robots inclus : aucune jointure à payer.
     expect(dimensionValuesSql(valide({ dimension: "env", includeBots: true })).text).not.toContain("rum_session");

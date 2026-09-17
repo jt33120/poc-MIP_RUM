@@ -96,12 +96,12 @@ describe("flattenOtlp — dimensions client de la session", () => {
     expect(rows.sessions[0]).toMatchObject({ browser: "Samsung Internet", os: "Android", os_version: "14", device_type: "tablet" });
   });
 
-  it("un robot garde son drapeau, sans navigateur, système ni classe", () => {
+  it("un robot garde son drapeau et la classe du SDK, sans navigateur ni système", () => {
     const rows = flattenOtlp(lot(
       web({ "mip.user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/139.0.0.0 Safari/537.36" }),
       signauxWeb("p61-robot"),
     ));
-    expect(rows.sessions[0]).toMatchObject({ is_bot: true, browser: null, browser_version: null, os: null, device_type: null });
+    expect(rows.sessions[0]).toMatchObject({ is_bot: true, browser: null, browser_version: null, os: null, device_type: "desktop" });
   });
 
   it("vieux SDK : ni user-agent, ni env, ni release, ni indice — tout reste inconnu", () => {
