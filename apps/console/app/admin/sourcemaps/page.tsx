@@ -165,7 +165,7 @@ function Releases({ app, releases, courante }: { app: string; releases: Sourcema
         Releases
       </h2>
       {releases.length ? (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-sm">
             <caption className="sr-only">Releases de {app} portant des source maps, la plus récente d&apos;abord</caption>
             <thead className="bg-panel2">
@@ -229,7 +229,7 @@ function Manifeste({ release, manifest }: { release: string; manifest: ReleaseMa
         </dl>
       </div>
       {manifest.files.length > 0 && (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-sm">
             <caption className="sr-only">Fichiers de la release {release}, par nom</caption>
             <thead className="bg-panel2">
@@ -287,7 +287,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
         <TokenCreateForm appId={app} />
       </div>
       {tokens.length ? (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-sm">
             <caption className="sr-only">Jetons de CI de {app}, actifs d&apos;abord</caption>
             <thead className="bg-panel2">

@@ -229,7 +229,7 @@ export default async function ErrorGroup({
           Occurrences ({occurrences.length} affichées)
         </h2>
         {occurrences.length ? (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full min-w-table text-sm">
               <caption className="sr-only">
                 Occurrences du groupe {group.fingerprint} dans {group.app_id} sur {label}, les plus récentes
@@ -352,7 +352,7 @@ function CodeContextBlock({ context }: { context: CodeContext }) {
       <figcaption className="break-all px-4 py-2 font-mono text-xs text-ink-soft">
         {context.source}:{context.line} <span className="font-sans text-ink-faint">· visible par les admins</span>
       </figcaption>
-      <pre className="overflow-x-auto bg-navy-950 py-3 text-xs leading-relaxed text-slate-300">
+      <pre className="relative overflow-x-auto bg-navy-950 py-3 text-xs leading-relaxed text-slate-300">
         {context.lines.map((ligne, i) => {
           const numero = context.start + i;
           const courante = numero === context.line;

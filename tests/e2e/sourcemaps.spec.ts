@@ -102,8 +102,10 @@ async function login(page: Page, compte: { email: string; password: string }) {
 
 /**
  * Débordement horizontal de la page : vide s'il n'y en a pas, sinon la mesure et
- * les éléments qui dépassent hors d'un conteneur défilant — un simple booléen ne
- * dit pas, dans le journal de CI, QUEL contrôle est trop large.
+ * les éléments qui dépassent — un simple booléen ne dit pas, dans le journal de
+ * CI, QUEL élément est en cause. Les boîtes en position absolue sont listées même
+ * dans un conteneur défilant : sans ancêtre positionné, un `.sr-only` échappe à ce
+ * conteneur et élargit la page (cause du premier échec de ce test).
  */
 async function debordements(page: Page): Promise<string[]> {
   return page.evaluate(() => {
@@ -117,7 +119,10 @@ async function debordements(page: Page): Promise<string[]> {
       return false;
     };
     const fautifs = [...document.body.querySelectorAll("*")]
-      .filter((el) => el.getBoundingClientRect().right > largeur + 1 && !dansDefilant(el))
+      .filter((el) => {
+        if (el.getBoundingClientRect().right <= largeur + 1) return false;
+        return ["absolute", "fixed"].includes(getComputedStyle(el).position) || !dansDefilant(el);
+      })
       .slice(0, 5)
       .map((el) => `${el.tagName.toLowerCase()}[${el.getAttribute("class") ?? ""}] → ${Math.round(el.getBoundingClientRect().right)} px`);
     return [`page ${totale} px > fenêtre ${largeur} px`, ...fautifs];
