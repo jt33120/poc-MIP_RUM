@@ -209,9 +209,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           heatmap jour × heure + courbes de volume et de p75 LCP associées. */}
       <section className="card mt-6 p-4">
         <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-2">
+          {/* La bulle d'aide OUVRE le titre au lieu de le clore : posée après un
+              intitulé long, sa bulle de 288 px centrée sortait de l'écran par la
+              droite et portait la page à 493 px sur une fenêtre de 390. En tête
+              de titre, elle s'ouvre toujours vers l'intérieur de la page. */}
           <h2 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Historique de santé — {GRID_DAYS} derniers jours
             <GlossaryTip id="healthGrid" />
+            Historique de santé — {GRID_DAYS} derniers jours
           </h2>
           {/* filtre heures ouvrées (Lun–Ven, 8h–19h) — ne montre que les créneaux à trafic attendu */}
           <div className="ml-auto flex gap-0.5 rounded-lg border border-line bg-panel2 p-0.5">
