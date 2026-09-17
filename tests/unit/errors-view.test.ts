@@ -67,8 +67,10 @@ describe("paramètres d'URL des écrans Erreurs", () => {
       includeInternal: true,
     });
     const p = params(errorsHref("/errors", f, f.app));
-    // Sans app, le middleware substituerait l'app du cookie projet.
+    // Sans app, le middleware substituerait l'app du cookie projet. Elle est aussi
+    // EN TÊTE : l'URL se lit en commençant par son périmètre, quel que soit le reste.
     expect(p.get("app")).toBe("all");
+    expect([...p.keys()][0]).toBe("app");
     expect(Object.fromEntries(p)).toEqual({
       app: "all", period: "7d", device: "tablet", seg: "v2:country:eq:FR", bots: "1", internal: "1",
     });

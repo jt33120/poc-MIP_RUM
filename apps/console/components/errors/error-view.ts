@@ -40,8 +40,10 @@ export function errorsHref(
   app: string | null,
   extra: Record<string, string> = {},
 ): string {
-  const p = queryToSearchParams(queryOf(f));
-  p.set("app", app ?? "all");
+  // L'app EN TÊTE : une URL d'erreur se lit en commençant par son périmètre, et
+  // l'ordre reste stable quels que soient les autres filtres.
+  const p = new URLSearchParams({ app: app ?? "all" });
+  for (const [key, value] of queryToSearchParams(queryOf(f))) if (key !== "app") p.set(key, value);
   for (const [key, value] of Object.entries(extra)) p.set(key, value);
   return `${path}?${p}`;
 }

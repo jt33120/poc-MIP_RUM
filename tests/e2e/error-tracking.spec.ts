@@ -214,7 +214,7 @@ test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché 
   // Un seul lien par ligne, qui garde l'app et les filtres.
   await expect(ligne.getByRole("link")).toHaveCount(1);
   const href = await ligne.getByRole("link").getAttribute("href");
-  expect(href).toMatch(new RegExp(`^/errors/p51fp001\\?app=${A}&period=24h&device=desktop$`));
+  expect(href).toMatch(new RegExp(`^/errors/p51fp001\\?app=${A}&device=desktop$`));
 
   // Tous appareils : l'erreur backend sans session garde des personnes INCONNUES.
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h`);
@@ -225,7 +225,7 @@ test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché 
 
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h&device=desktop`);
   await groupe(page, "p51fp001", A).getByRole("link").click();
-  await expect(page).toHaveURL(new RegExp(`/errors/p51fp001\\?app=${A}&period=24h&device=desktop`));
+  await expect(page).toHaveURL(new RegExp(`/errors/p51fp001\\?app=${A}&device=desktop`));
   await expect(page.getByTestId("detail-occurrences")).toHaveText("38");
   await expect(page.getByTestId("detail-sessions")).toHaveText("1");
   await expect(page.getByTestId("detail-users")).toHaveText("1");
@@ -299,8 +299,8 @@ test("empreinte partagée : choix explicite de l'app, jamais un tirage", async (
   await expect(choix.getByRole("heading")).toHaveText("Cette signature existe dans plusieurs applications");
   const liens = choix.getByRole("link");
   await expect(liens).toHaveCount(2);
-  await expect(choix.getByRole("link", { name: A })).toHaveAttribute("href", `/errors/p51fp001?app=${A}&period=24h&device=desktop`);
-  await expect(choix.getByRole("link", { name: B })).toHaveAttribute("href", `/errors/p51fp001?app=${B}&period=24h&device=desktop`);
+  await expect(choix.getByRole("link", { name: A })).toHaveAttribute("href", `/errors/p51fp001?app=${A}&device=desktop`);
+  await expect(choix.getByRole("link", { name: B })).toHaveAttribute("href", `/errors/p51fp001?app=${B}&device=desktop`);
   await expect(choix).toContainText("13 occurrence(s)");
 
   // Absente de l'app demandée, présente dans une seule autre : un lien, et on le dit.

@@ -138,6 +138,13 @@ trace) ne filtrent que par app et le disent à l'écran.
   (P6.4) leur donnera une forme stable. Les descriptions MCP disent en revanche la nouvelle vérité du périmètre.
 - **`rum_rollup_hourly`** ne porte aucune dimension : la heatmap rollup n'est lue que si la requête s'y prête
   (aucun filtre de dimension), sinon elle repasse sur les lignes brutes.
+- **Plus de squelette de chargement** sur `/events`, `/errors` et `/actions` : sans `loading.tsx`, la navigation
+  attend la réponse du serveur. C'est le prix d'une navigation qui aboutit ; le streaming sera revu quand la cause
+  amont (React canary vendorisé par Next) sera corrigée. Les `<Suspense>` de la coquille (navigation, barres de
+  filtres) restent en place et ne reproduisent pas le blocage : seules les frontières de ROUTE le déclenchaient.
+- **Lectures historiques `logs`, `SVI` et assistant IA** : elles filtrent par l'app NOMMÉE (`app_id = $1`), pas par
+  le périmètre effectif. La porte projet garantit qu'un viewer y arrive toujours avec une app de son périmètre, et
+  ces écrans refusent tout le reste ; leur passage au contrat viendra avec leur propre tranche.
 
 ### Suivis pour P6.3 / P6.4
 
