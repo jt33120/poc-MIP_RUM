@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { contextSearchParams } from "@/lib/query-contract";
 import { CATEGORIES, activeCategory, type NavCategory } from "./nav-items";
 import { ICON_PATHS, Icon } from "./icons";
 
@@ -46,7 +47,8 @@ function Pastille({ c, isActive }: { c: NavCategory; isActive: boolean }) {
  */
 export function Nav({ reglages }: { reglages?: Record<string, React.ReactNode> }) {
   const pathname = usePathname();
-  const qs = useSearchParams().toString(); // filtres (dont ?app) persistés
+  // Contexte global persisté (app, plage, filtres) ; les paramètres propres à l'écran quitté restent derrière.
+  const qs = contextSearchParams(useSearchParams()).toString();
   const active = activeCategory(pathname);
 
   return (

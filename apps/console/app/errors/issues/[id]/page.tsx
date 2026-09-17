@@ -227,14 +227,12 @@ function IssueState({ detail, f }: { detail: IssueDetailResult; f: ErrorFilters 
               {groupes.map((g) => (
                 <tr key={g.fingerprint} className="border-t border-line/60 align-top">
                   <td className="px-4 py-2">
-                    {/* Ancre native : la navigation client vers la même route avec une autre query
-                        reste bloquée dans cette console (suivi consigné dans delivery-p5.md). */}
-                    <a
+                    <Link
                       href={errorGroupHref({ app_id: issue.app_id, fingerprint: g.fingerprint }, f, { legacy: "1" })}
                       className={`break-all font-mono text-xs ${ERROR_LINK}`}
                     >
                       {g.fingerprint}
-                    </a>
+                    </Link>
                     {g.issues > 1 && (
                       <span className="block text-xs text-ink-faint">répartie sur {g.issues} issues</span>
                     )}

@@ -1,6 +1,12 @@
 // Requêtes SQL P1 (alerting mature) : SLO + error-budget + canaux de notification.
 // Helpers purs (sloView, severityRank…) dans ./alerting ; accès base via ./db.
+//
+// LISTES DE CONFIGURATION (P6.2). SLO et canaux ne sont bornés que par le périmètre
+// d'apps de la requête commune : chaque SLO se mesure sur sa propre fenêtre, sa
+// métrique et sa route, et l'écran n'annonce ni plage ni filtre de population.
 import { q } from "./db";
+import { queryOf, type FiltersLike } from "./filters";
+import { binder, compileScope } from "./query-compiler";
 
 // ---------------------------------------------------------------------------
 // SLO (objectifs de service) — vue calculée par la fonction slo_status()
@@ -20,13 +26,18 @@ export interface SloStatusRow {
   fast_burn: boolean;
 }
 
-/** Statut + error-budget des SLO actifs (slo_status gère NULL = toutes apps). */
-export async function sloStatus(app: string | null): Promise<SloStatusRow[]> {
+/** Statut + error-budget des SLO actifs du périmètre (une app nommée est passée à slo_status). */
+export async function sloStatus(f: FiltersLike): Promise<SloStatusRow[]> {
+  const query = queryOf(f);
+  const { params, bind } = binder();
+  const apps = query.scope.effectiveApps;
+  const cible = bind(apps?.length === 1 ? apps[0] : null);
   return q<SloStatusRow>(
-    `select slo_id::int as slo_id, app_id, name, metric, route, objective, window_days,
-            attainment, budget, burned_pct, fast_burn
-     from slo_status($1)`,
-    [app && app !== "all" ? app : null],
+    `select st.slo_id::int as slo_id, st.app_id, st.name, st.metric, st.route, st.objective, st.window_days,
+            st.attainment, st.budget, st.burned_pct, st.fast_burn
+     from slo_status(${cible}::text) st
+     where true${compileScope(query, "st.app_id", bind)}`,
+    params,
   );
 }
 
@@ -41,15 +52,16 @@ export interface SloRaw {
   active: boolean;
 }
 
-/** Tous les SLO (actifs ET désactivés) — gestion : permet de réactiver un SLO
- *  qui sort de slo_status() une fois désactivé. */
-export async function listSlo(app: string | null): Promise<SloRaw[]> {
+/** Tous les SLO (actifs ET désactivés) du périmètre — gestion : permet de réactiver un
+ *  SLO qui sort de slo_status() une fois désactivé. */
+export async function listSlo(f: FiltersLike): Promise<SloRaw[]> {
+  const { params, bind } = binder();
   return q<SloRaw>(
-    `select id::int as id, app_id, name, metric, objective, window_days, route, active
-     from slo
-     where $1::text is null or app_id = $1
-     order by id desc`,
-    [app && app !== "all" ? app : null],
+    `select s.id::int as id, s.app_id, s.name, s.metric, s.objective, s.window_days, s.route, s.active
+     from slo s
+     where true${compileScope(queryOf(f), "s.app_id", bind)}
+     order by s.id desc`,
+    params,
   );
 }
 
@@ -92,14 +104,15 @@ export interface NotifyChannelRow {
   active: boolean;
 }
 
-/** Canaux : globaux (app_id null) + ceux de l'app filtrée ; tous si pas de filtre. */
-export async function listChannels(app: string | null): Promise<NotifyChannelRow[]> {
+/** Canaux : globaux (app_id null) + ceux des apps du périmètre. */
+export async function listChannels(f: FiltersLike): Promise<NotifyChannelRow[]> {
+  const { params, bind } = binder();
   return q<NotifyChannelRow>(
-    `select id::int as id, app_id, kind, target, severity_min, active
-     from notify_channel
-     where $1::text is null or app_id is null or app_id = $1
-     order by id desc`,
-    [app && app !== "all" ? app : null],
+    `select c.id::int as id, c.app_id, c.kind, c.target, c.severity_min, c.active
+     from notify_channel c
+     where c.app_id is null or (true${compileScope(queryOf(f), "c.app_id", bind)})
+     order by c.id desc`,
+    params,
   );
 }
 

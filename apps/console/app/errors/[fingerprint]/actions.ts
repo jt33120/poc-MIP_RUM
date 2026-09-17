@@ -5,6 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/auth";
 import { q } from "@/lib/db";
+import { authorizedAppsOf } from "@/lib/query-contract";
 import { ERROR_STATUSES, setErrorStatus, type ErrorStatus } from "@/lib/queries-v2";
 
 export async function setErrorStatusAction(fd: FormData): Promise<void> {
@@ -16,8 +17,9 @@ export async function setErrorStatusAction(fd: FormData): Promise<void> {
   const status = String(fd.get("status") ?? "") as ErrorStatus;
   if (!appId || !fingerprint || !ERROR_STATUSES.includes(status)) return;
 
-  // scoping : un utilisateur restreint ne peut trier que ses apps
-  if (user.apps && !user.apps.includes(appId)) return;
+  // scoping : un utilisateur restreint ne peut trier que ses apps (liste vide = aucune)
+  const authorized = authorizedAppsOf(user);
+  if (authorized !== null && !authorized.includes(appId)) return;
 
   await setErrorStatus(appId, fingerprint, status, user.email);
   await q(`insert into audit_log (user_email, action, detail) values ($1, $2, $3)`, [

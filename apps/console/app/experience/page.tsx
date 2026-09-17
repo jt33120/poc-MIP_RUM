@@ -7,8 +7,10 @@ import { SupervisionHero, HeroStat, HeroReading } from "@/components/Supervision
 import { RadarScore } from "@/components/charts/RadarScore";
 import { LineTrend } from "@/components/charts/LineTrend";
 import { ExperienceUnavailable } from "@/components/ExperienceUnavailable";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { experienceScore, frustrationPenalty, scoreTone } from "@/lib/experience";
-import { parseFilters, type SearchParams } from "@/lib/queries-v2";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 import {
   experienceContext,
   feedbackByRoute,
@@ -35,7 +37,9 @@ export default async function Experience({
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
-  const f = parseFilters(await searchParams);
+  const ecran = await pageFilters((await searchParams) ?? {}, "/experience");
+  if (!ecran.ok) return <FilterProblemNotice title="Expérience" problem={ecran.problem} />;
+  const f = ecran.filters;
   const [stats, ctx, trend, recent, byRoute] = await Promise.all([
     feedbackStats(f),
     experienceContext(f),

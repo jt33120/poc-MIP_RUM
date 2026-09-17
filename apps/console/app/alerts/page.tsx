@@ -2,15 +2,11 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import { fmtDate } from "@/lib/format";
-import {
-  alertEvents,
-  alertRules,
-  filtersToQuery,
-  isAlertMetric,
-  parseFilters,
-  unackedAlertCount,
-  type SearchParams,
-} from "@/lib/queries-v2";
+import { FilterProblemNotice, FiltersNotAppliedNote } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { queryToSearchParams } from "@/lib/query-contract";
+import { alertEvents, alertRules, isAlertMetric, unackedAlertCount } from "@/lib/queries-v2";
 import { registeredApps } from "@/lib/queries";
 import { listChannels } from "@/lib/queries-alerting";
 import { SeverityBadge } from "@/components/alerts/SeverityBadge";
@@ -31,13 +27,15 @@ export default async function Alerts({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/alerts");
+  if (!ecran.ok) return <FilterProblemNotice title="Alertes" problem={ecran.problem} />;
+  const f = ecran.filters;
   const [rules, events, unacked, apps, channels] = await Promise.all([
     alertRules(f),
     alertEvents(f),
     unackedAlertCount(f),
     registeredApps(),
-    listChannels(f.app),
+    listChannels(f),
   ]);
   const firedRaw = Array.isArray(sp.fired) ? sp.fired[0] : sp.fired;
   const fired = firedRaw != null && /^\d+$/.test(firedRaw) ? Number(firedRaw) : null;
@@ -70,12 +68,13 @@ export default async function Alerts({
         }
       >
         <form action={evaluateNowAction}>
-          <input type="hidden" name="qs" value={filtersToQuery(f)} />
+          <input type="hidden" name="qs" value={`?${queryToSearchParams(ecran.query)}`} />
           <button type="submit" data-testid="evaluate-now" className="btn-accent">
             Évaluer maintenant
           </button>
         </form>
       </PageHeader>
+      <FiltersNotAppliedNote note={ecran.notApplied} />
 
       {fired != null && (
         <div
@@ -148,7 +147,7 @@ export default async function Alerts({
           + Nouvelle règle
         </summary>
         <form action={createRuleAction} className="flex flex-wrap items-end gap-3 border-t border-line p-4">
-          <RuleFields apps={apps} defaultApp={f.app !== "all" ? f.app : undefined} defaultIssue={defaultIssue} />
+          <RuleFields apps={apps} defaultApp={f.app ?? undefined} defaultIssue={defaultIssue} />
           <button type="submit" data-testid="create-rule" className="btn-accent">
             Créer
           </button>
@@ -250,7 +249,7 @@ export default async function Alerts({
       </div>
 
       {/* ----- Canaux de notification ----- */}
-      <ChannelsSection channels={channels} apps={apps} defaultApp={f.app !== "all" ? f.app : undefined} />
+      <ChannelsSection channels={channels} apps={apps} defaultApp={f.app ?? undefined} />
     </div>
   );
 }

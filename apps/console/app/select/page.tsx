@@ -46,11 +46,19 @@ const MODE: Record<ModeCollecte, { label: string; icon: IconName; ton: string }>
   },
 };
 
-export default async function SelectProject() {
+export default async function SelectProject({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await getUser();
   if (!user) redirect("/login");
   const projects = await projectsForUser(user!);
   const signaux = await signauxProjets(projects.map((p) => p.app_id));
+  // Posé par le middleware quand l'URL nommait une app hors périmètre (P6.2) : le
+  // refus est dit, au lieu d'ouvrir silencieusement un autre projet.
+  const refus = (await searchParams).hors_perimetre;
+  const horsPerimetre = typeof refus === "string" && refus.trim() ? refus.trim().slice(0, 200) : null;
 
   return (
     <main className="mip-sci min-h-screen px-6 py-14">
@@ -87,6 +95,16 @@ export default async function SelectProject() {
           rien y toucher. Chaque carte indique le mode réellement observé et les domaines
           surveillés.
         </p>
+        {horsPerimetre && (
+          <p
+            role="alert"
+            data-testid="select-hors-perimetre"
+            className="mt-4 max-w-2xl rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft"
+          >
+            Le projet <span className="font-mono text-ink">{horsPerimetre}</span> ne fait pas partie de votre
+            périmètre : choisissez un projet autorisé.
+          </p>
+        )}
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
           {projects.length === 0 && (

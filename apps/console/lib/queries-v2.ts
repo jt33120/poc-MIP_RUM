@@ -1,29 +1,20 @@
 // Requêtes SQL v0.3 (chantier A4) : triage des erreurs, alerting, corrélation v2.
-// Lit les filtres globaux (app/period/device) de façon défensive — défauts app='all', period=24h.
 import { q } from "./db";
+import { periodOf, queryOf, type FiltersLike } from "./filters";
 import { isValidEventName } from "./queries-events";
+import { binder, bucketExpr, compileScope, sessionJoin } from "./query-compiler";
+import type { AnalyticsQuery } from "./query-contract";
+import { sqlContext, type SqlContext } from "./query-sql";
 
 // ---------------------------------------------------------------------------
-// Filtres globaux — MODÈLE HISTORIQUE « v2 » (app/period/device)
+// Filtres globaux — FAÇADE « v2 » du contrat commun (lib/query-contract.ts)
 //
-// ⚠️ DETTE CONNUE : il existe DEUX modèles de filtres dans le repo, aux
-// sémantiques différentes, tous deux vivants :
-//   • ./filters.ts    → app: string | null  (null = toutes), device union stricte.
-//                        Utilisé par : home, sessions, pages, tracing, ux,
-//                        dashboards, admin/* et les lib queries*.ts (sauf ici).
-//   • ce fichier      → app: string ('all' = toutes), device: string (+ 'tablet').
-//                        Utilisé par : correlation, alerts, slo. Les erreurs
-//                        l'ont quitté en P5.1 (./queries-errors.ts).
-//
-// Le SQL d'ici compare littéralement `= 'all'` (cf. clauses ci-dessous), alors
-// que ./filters.ts s'appuie sur `is null`. Unifier les deux (sur le modèle
-// null de filters.ts) est un SUIVI volontairement différé : il réécrit la
-// sémantique WHERE de ~6 pages et touche le filtrage en prod — à faire dans
-// un chantier dédié, vérifié page par page. En attendant, ne PAS mélanger les
-// deux `Filters` : chaque page importe celui qui correspond à ses requêtes.
+// Forme historique : app `string` ('all' = toutes), device `string` (+ 'tablet').
+// Elle ne sert plus qu'aux lectures pas encore migrées vers le contrat (logs, SVI,
+// assistant IA) : ces écrans n'acceptent que les presets et leur page valide l'URL
+// par `pageFilters` avant de dériver cette façade avec `v2FiltersOf`. Les
+// lectures migrées (corrélation, alertes) prennent la requête résolue.
 // ---------------------------------------------------------------------------
-
-export type SearchParams = Record<string, string | string[] | undefined>;
 
 const PERIODS = {
   "1h": { interval: "1 hour", label: "1 h" },
@@ -32,26 +23,18 @@ const PERIODS = {
 } as const;
 export type PeriodKey = keyof typeof PERIODS;
 
-const DEVICES = ["mobile", "desktop", "tablet"] as const;
-
 export interface Filters {
   app: string; // 'all' = toutes les apps
   period: PeriodKey;
   device: string; // 'all' = tous les devices
 }
 
-function first(v: string | string[] | undefined): string | undefined {
-  return Array.isArray(v) ? v[0] : v;
-}
-
-/** Lecture défensive des searchParams (jamais d'exception, valeurs sûres pour le SQL). */
-export function parseFilters(sp?: SearchParams): Filters {
-  const rawPeriod = (first(sp?.period) ?? "24h").toLowerCase().replace("7j", "7d");
-  const device = first(sp?.device) ?? "all";
+/** Façade v2 d'une requête résolue par le contrat (écrans à presets). */
+export function v2FiltersOf(query: AnalyticsQuery): Filters {
   return {
-    app: first(sp?.app)?.trim() || "all",
-    period: (rawPeriod in PERIODS ? rawPeriod : "24h") as PeriodKey,
-    device: (DEVICES as readonly string[]).includes(device) ? device : "all",
+    app: query.scope.requestedApp ?? "all",
+    period: periodOf(query),
+    device: query.filters.device ?? "all",
   };
 }
 
@@ -178,7 +161,14 @@ export interface AlertRuleRow {
   last_evaluated_at: Date | null;
 }
 
-export async function alertRules(f: Filters): Promise<AlertRuleRow[]> {
+/**
+ * Règles d'alerte : une LISTE DE CONFIGURATION. Seul le périmètre d'apps la borne ;
+ * la plage et les filtres de population ne décrivent pas l'évaluation d'une règle
+ * (métrique, route, fenêtre et env qui lui sont propres) et l'écran ne les annonce
+ * pas comme appliqués.
+ */
+export async function alertRules(f: FiltersLike): Promise<AlertRuleRow[]> {
+  const { params, bind } = binder();
   // Colonnes de migration-v73 lues par `to_jsonb` : une clé absente vaut NULL, là
   // où citer la colonne ferait échouer la page si la console précède la migration.
   return q<AlertRuleRow>(
@@ -193,9 +183,9 @@ export async function alertRules(f: Filters): Promise<AlertRuleRow[]> {
             to_jsonb(r)->>'last_reason' as last_reason,
             (to_jsonb(r)->>'last_evaluated_at')::timestamptz as last_evaluated_at
      from alert_rule r
-     where ($1 = 'all' or r.app_id = $1)
+     where true${compileScope(queryOf(f), "r.app_id", bind)}
      order by r.id desc`,
-    [f.app],
+    params,
   );
 }
 
@@ -245,36 +235,46 @@ async function sourcesEvenement(): Promise<{ jointures: string; app: string }> {
 
 /** Un événement vient d'une règle, d'un SLO ou d'une issue : left joins + coalesce des champs.
  *  `delivered` compte les livraisons effectives — sans lui, l'interface affichait
- *  une alerte « déclenchée » sans dire qu'elle n'avait atteint personne. */
-export async function alertEvents(f: Filters): Promise<AlertEventRow[]> {
+ *  une alerte « déclenchée » sans dire qu'elle n'avait atteint personne. Les 100
+ *  derniers déclenchements du périmètre : chacun a été évalué sur la fenêtre de sa
+ *  règle, pas sur la plage de l'écran. */
+export async function alertEvents(f: FiltersLike): Promise<AlertEventRow[]> {
   const sources = await sourcesEvenement();
+  const { params, bind } = binder();
   return q<AlertEventRow>(
-    `select ae.id::int as id, ae.rule_id::int as rule_id, ae.fired_at, ae.value,
-            ae.message, ae.acknowledged, ae.severity,
-            (select count(*) from alert_delivery d
-              where d.alert_event_id = ae.id and d.status = 'delivered')::int as delivered,
-            (select count(*) from alert_delivery d
-              where d.alert_event_id = ae.id and d.status = 'sent')::int as pending,
-            coalesce(r.metric, s.metric) as metric,
-            ${sources.app} as app_id,
-            coalesce(r.route, s.route) as route
-     from alert_event ae
-     ${sources.jointures}
-     where ($1 = 'all' or ${sources.app} = $1)
-     order by ae.fired_at desc
+    `select ev.* from (
+       select ae.id::int as id, ae.rule_id::int as rule_id, ae.fired_at, ae.value,
+              ae.message, ae.acknowledged, ae.severity,
+              (select count(*) from alert_delivery d
+                where d.alert_event_id = ae.id and d.status = 'delivered')::int as delivered,
+              (select count(*) from alert_delivery d
+                where d.alert_event_id = ae.id and d.status = 'sent')::int as pending,
+              coalesce(r.metric, s.metric) as metric,
+              ${sources.app} as app_id,
+              coalesce(r.route, s.route) as route
+       from alert_event ae
+       ${sources.jointures}
+     ) ev
+     where true${compileScope(queryOf(f), "ev.app_id", bind)}
+     order by ev.fired_at desc
      limit 100`,
-    [f.app],
+    params,
   );
 }
 
-export async function unackedAlertCount(f: Filters): Promise<number> {
+export async function unackedAlertCount(f: FiltersLike): Promise<number> {
   const sources = await sourcesEvenement();
+  const { params, bind } = binder();
   const [r] = await q<{ n: number }>(
     `select count(*)::int as n
-     from alert_event ae
-     ${sources.jointures}
-     where not ae.acknowledged and ($1 = 'all' or ${sources.app} = $1)`,
-    [f.app],
+     from (
+       select ${sources.app} as app_id
+       from alert_event ae
+       ${sources.jointures}
+       where not ae.acknowledged
+     ) ev
+     where true${compileScope(queryOf(f), "ev.app_id", bind)}`,
+    params,
   );
   return r?.n ?? 0;
 }
@@ -367,8 +367,16 @@ export async function runCheckSloBurn(): Promise<number> {
   return r?.fired ?? 0;
 }
 
+
 // ---------------------------------------------------------------------------
 // Corrélation v2 (cartes + série historisée + angles morts)
+//
+// Le côté RÉEL et le côté ROBOT sont chacun filtrés par le contrat commun : plage
+// [from,to), périmètre d'apps, route ; le réel exclut aussi les bots et suit les
+// dimensions de session. Le robot n'a ni appareil, ni pays, ni session : l'écran
+// désactive ces filtres (lib/surfaces.ts) plutôt que d'en afficher un qui
+// n'agirait que sur une moitié de la comparaison. Les vues historiques
+// v_correlation / v_blind_spot, sans plage ni bots, ne sont plus lues ici.
 // ---------------------------------------------------------------------------
 
 export interface CorrCardRow {
@@ -383,51 +391,63 @@ export interface CorrCardRow {
   syn_measures: string | null;
 }
 
-/** Agrégats robot vs réel par app/route — robot et réel calculés chacun de leur côté. */
-export async function correlationCards(f: Filters): Promise<CorrCardRow[]> {
-  return q<CorrCardRow>(
-    `with rum as (
-       select app_id, route,
-              percentile_cont(0.75) within group (order by value) filter (where name = 'LCP') as rum_lcp_p75,
-              percentile_cont(0.75) within group (order by value) filter (where name = 'INP') as rum_inp_p75,
-              count(distinct session_id)::int as rum_sessions
-       from rum_metric
-       where ts > now() - $1::interval
-       group by 1, 2
+/** CTE `rum` et `syn` filtrées ; `grain` ajoute le seau horaire aligné UTC. */
+function correlationSources(sql: SqlContext, grain: "fenetre" | "heure"): string {
+  const reel = sql.where({ dataset: "vitals", row: "m", session: "ms", time: "m.ts" });
+  const robot = sql.where({ dataset: "synthetic", row: "y", time: "y.captured_at" });
+  const horaire = { ...sql.query.range, bucketSeconds: 3600 };
+  const seauReel = grain === "heure" ? `, ${bucketExpr("m.ts", horaire)} as bucket` : "";
+  const seauRobot = grain === "heure" ? `, ${bucketExpr("y.captured_at", horaire)} as bucket` : "";
+  const groupe = grain === "heure" ? "1, 2, 3" : "1, 2";
+  return `rum as (
+       select m.app_id, m.route${seauReel},
+              percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'LCP') as rum_lcp_p75,
+              percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'INP') as rum_inp_p75,
+              count(distinct m.session_id)::int as rum_sessions
+       from rum_metric m
+       ${sessionJoin("m", "ms")}
+       where true${reel}
+       group by ${groupe}
      ),
      syn as (
-       select app_id, route_hint as route,
-              avg(latency_ms) as syn_latency_avg,
-              avg(score) as syn_score_avg,
-              case max(case state when 'incident' then 3 when 'warn' then 2 when 'ok' then 1 else 0 end)
+       select y.app_id, y.route_hint as route${seauRobot},
+              avg(y.latency_ms) as syn_latency_avg,
+              avg(y.score) as syn_score_avg,
+              case max(case y.state when 'incident' then 3 when 'warn' then 2 when 'ok' then 1 else 0 end)
                 when 3 then 'incident' when 2 then 'warn' when 1 then 'ok' end as syn_state,
-              string_agg(distinct measure_name, ', ') as syn_measures
-       from syn_snapshot
-       where captured_at > now() - $1::interval
-       group by 1, 2
-     )
+              string_agg(distinct y.measure_name, ', ') as syn_measures
+       from syn_snapshot y
+       where true${robot}
+       group by ${groupe}
+     )`;
+}
+
+/** Agrégats robot vs réel par app/route sur la plage — chacun calculé de son côté. */
+export async function correlationCards(f: FiltersLike): Promise<CorrCardRow[]> {
+  const sql = await sqlContext(f);
+  return q<CorrCardRow>(
+    `with ${correlationSources(sql, "fenetre")}
      select coalesce(r.app_id, s.app_id) as app_id, coalesce(r.route, s.route) as route,
             r.rum_lcp_p75, r.rum_inp_p75, r.rum_sessions,
             s.syn_latency_avg, s.syn_score_avg, s.syn_state, s.syn_measures
      from rum r full outer join syn s using (app_id, route)
-     where ($2 = 'all' or coalesce(r.app_id, s.app_id) = $2)
      order by (r.rum_lcp_p75 is not null and s.syn_latency_avg is not null) desc, app_id, route`,
-    [periodInterval(f), f.app],
+    sql.params,
   );
 }
 
-/** Routes disposant à la fois de données robot ET réel sur la période (pour le sélecteur). */
-export async function correlationRoutes(f: Filters): Promise<string[]> {
+/** Routes disposant à la fois de données robot ET réel sur la plage (pour le sélecteur). */
+export async function correlationRoutes(f: FiltersLike): Promise<string[]> {
+  const sql = await sqlContext(f);
   const rows = await q<{ route: string }>(
-    `select route
-     from v_correlation
-     where route is not null
-       and bucket > now() - $1::interval
-       and ($2 = 'all' or app_id = $2)
-     group by route
-     having count(rum_lcp_p75) > 0 and count(syn_latency_avg) > 0
-     order by route`,
-    [periodInterval(f), f.app],
+    `with ${correlationSources(sql, "heure")}
+     select coalesce(r.route, s.route) as route
+       from rum r full outer join syn s using (app_id, route, bucket)
+      where coalesce(r.route, s.route) is not null
+      group by 1
+     having count(r.rum_lcp_p75) > 0 and count(s.syn_latency_avg) > 0
+      order by 1`,
+    sql.params,
   );
   return rows.map((r) => r.route);
 }
@@ -438,16 +458,18 @@ export interface CorrSeriesRow {
   syn_latency_avg: number | null;
 }
 
-/** Série temporelle historisée robot vs réel pour une route (buckets horaires de v_correlation). */
-export async function correlationSeries(route: string, f: Filters): Promise<CorrSeriesRow[]> {
+/** Série horaire robot vs réel pour une route, sur la plage (seaux horaires alignés UTC). */
+export async function correlationSeries(route: string, f: FiltersLike): Promise<CorrSeriesRow[]> {
+  const sql = await sqlContext(f);
+  const sources = correlationSources(sql, "heure");
+  const cible = sql.bind(route);
   return q<CorrSeriesRow>(
-    `select bucket, rum_lcp_p75, syn_latency_avg
-     from v_correlation
-     where route = $1
-       and ($2 = 'all' or app_id = $2)
-       and bucket > now() - $3::interval
-     order by bucket`,
-    [route, f.app, periodInterval(f)],
+    `with ${sources}
+     select coalesce(r.bucket, s.bucket) as bucket, r.rum_lcp_p75, s.syn_latency_avg
+       from (select * from rum where route = ${cible}) r
+       full outer join (select * from syn where route = ${cible}) s using (app_id, route, bucket)
+      order by 1`,
+    sql.params,
   );
 }
 
@@ -461,15 +483,17 @@ export interface BlindSpotRow {
   gap_ms: number;
 }
 
-/** Angles morts : robot=ok mais réel=poor (vue v_blind_spot), triés par écart décroissant. */
-export async function blindSpots(f: Filters): Promise<BlindSpotRow[]> {
+/** Angles morts : robot « ok » mais réel « poor » (LCP p75 > 2,5 s) sur une même heure, écart décroissant. */
+export async function blindSpots(f: FiltersLike): Promise<BlindSpotRow[]> {
+  const sql = await sqlContext(f);
   return q<BlindSpotRow>(
-    `select app_id, route, bucket, rum_lcp_p75, syn_latency_avg, syn_state, gap_ms::int as gap_ms
-     from v_blind_spot
-     where ($1 = 'all' or app_id = $1)
-       and bucket > now() - $2::interval
-     order by gap_ms desc
-     limit 50`,
-    [f.app, periodInterval(f)],
+    `with ${correlationSources(sql, "heure")}
+     select r.app_id, r.route, r.bucket, r.rum_lcp_p75, s.syn_latency_avg, s.syn_state,
+            round((r.rum_lcp_p75 - s.syn_latency_avg)::numeric)::int as gap_ms
+       from rum r join syn s using (app_id, route, bucket)
+      where s.syn_state = 'ok' and r.rum_lcp_p75 > 2500 and s.syn_latency_avg is not null
+      order by gap_ms desc
+      limit 50`,
+    sql.params,
   );
 }

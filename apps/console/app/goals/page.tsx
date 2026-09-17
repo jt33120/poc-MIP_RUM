@@ -2,7 +2,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { RankBar } from "@/components/charts/RankBar";
 import { getUser } from "@/lib/auth";
-import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { PERIODS } from "@/lib/filters";
 import { listApps } from "@/lib/queries";
 import { listGoals } from "@/lib/queries-goals";
 import { goalConversions } from "@/lib/queries-goals";
@@ -14,7 +17,9 @@ const pctFmt = (v: number) => `${(v * 100).toFixed(1)} %`;
 
 export default async function Goals({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/goals");
+  if (!ecran.ok) return <FilterProblemNotice title="Objectifs" problem={ecran.problem} />;
+  const f = ecran.filters;
   const period = PERIODS[f.period];
   const [user, { total, rows }] = await Promise.all([getUser(), goalConversions(f)]);
   const isAdmin = user?.role === "admin";

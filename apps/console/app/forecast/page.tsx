@@ -6,7 +6,9 @@ import { fmtLatency } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { ForecastChart, type ForecastPoint } from "@/components/charts/ForecastChart";
-import { parseFilters, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 import {
   buildForecastNarrative,
   etaToThreshold,
@@ -34,7 +36,9 @@ interface Metric {
 }
 
 export default async function Forecast({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const f = parseFilters(await searchParams);
+  const ecran = await pageFilters(await searchParams, "/forecast");
+  if (!ecran.ok) return <FilterProblemNotice title="Prévisions" problem={ecran.problem} />;
+  const f = ecran.filters;
   const [traffic, lcp] = await Promise.all([dailyTraffic(f), dailyLcpSeries(f)]);
 
   // Axe canonique : les 14 jours zéro-remplis du trafic. On aligne LCP dessus.

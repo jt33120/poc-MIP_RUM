@@ -2,6 +2,8 @@
 // stocké en jsonb ; on le NORMALISE en lecture/écriture (helpers purs ./dashboards).
 import { normalizeLayout, type Widget } from "./dashboards";
 import { q } from "./db";
+import { queryOf, type FiltersLike } from "./filters";
+import { binder, compileScope } from "./query-compiler";
 
 export interface DashboardRow {
   id: number;
@@ -18,14 +20,15 @@ interface RawRow extends Omit<DashboardRow, "layout"> {
 }
 const hydrate = (r: RawRow): DashboardRow => ({ ...r, layout: normalizeLayout(r.layout) });
 
-/** Liste (métadonnées) — scopée à l'app filtrée + dashboards non scopés (app_id null). */
-export async function listDashboards(app: string | null): Promise<DashboardRow[]> {
+/** Liste (métadonnées) — dashboards des apps du périmètre + dashboards non scopés (app_id null). */
+export async function listDashboards(f: FiltersLike): Promise<DashboardRow[]> {
+  const { params, bind } = binder();
   const rows = await q<RawRow>(
-    `select id::int as id, name, app_id, layout, created_by, created_at, updated_at
-     from dashboard
-     where $1::text is null or app_id is null or app_id = $1
-     order by updated_at desc`,
-    [app && app !== "all" ? app : null],
+    `select d.id::int as id, d.name, d.app_id, d.layout, d.created_by, d.created_at, d.updated_at
+     from dashboard d
+     where d.app_id is null or (true${compileScope(queryOf(f), "d.app_id", bind)})
+     order by d.updated_at desc`,
+    params,
   );
   return rows.map(hydrate);
 }

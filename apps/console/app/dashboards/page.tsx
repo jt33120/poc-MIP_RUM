@@ -1,25 +1,18 @@
 import Link from "next/link";
+import { FilterProblemNotice, FiltersNotAppliedNote } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { fmtDate } from "@/lib/format";
-import { type Filters, type SearchParams } from "@/lib/filters";
+import { type SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 import { listDashboards } from "@/lib/queries-dashboards";
 import { registeredApps } from "@/lib/queries";
 import { getUser } from "@/lib/auth";
-import { canCreateDashboard, dashboardApps, dashboardListFilters } from "@/lib/dashboard-access";
+import { canCreateDashboard, dashboardApps } from "@/lib/dashboard-access";
+import { hrefWithQuery } from "@/lib/query-contract";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { createDashboardAction } from "./actions";
 
 export const dynamic = "force-dynamic";
-
-/** Querystring des filtres globaux (préservation des liens internes). */
-function filterQs(f: Filters): string {
-  const p = new URLSearchParams();
-  if (f.app) p.set("app", f.app);
-  if (f.period !== "24h") p.set("period", f.period);
-  if (f.device) p.set("device", f.device);
-  const s = p.toString();
-  return s ? `?${s}` : "";
-}
 
 export default async function Dashboards({
   searchParams,
@@ -30,12 +23,10 @@ export default async function Dashboards({
   // L'accès normal est garanti par le middleware. Ne pas afficher une liste
   // vide à un visiteur sans session évite néanmoins d'exposer ses métadonnées.
   if (!user) return null;
-  const rawSearchParams = (await searchParams) ?? {};
-  const f = dashboardListFilters(rawSearchParams, user);
-  if (!f) return null;
-  const [dashboards, allApps] = await Promise.all([listDashboards(f.app), registeredApps()]);
+  const ecran = await pageFilters((await searchParams) ?? {}, "/dashboards");
+  if (!ecran.ok) return <FilterProblemNotice title="Tableaux de bord" problem={ecran.problem} />;
+  const [dashboards, allApps] = await Promise.all([listDashboards(ecran.filters), registeredApps()]);
   const apps = dashboardApps(allApps, user);
-  const qs = filterQs(f);
   const canCreateGlobal = canCreateDashboard(user, null);
 
   return (
@@ -44,6 +35,7 @@ export default async function Dashboards({
         title="Tableaux de bord"
         sub="Assemble tes propres vues à partir de widgets (vitals, trafic, routes lentes, erreurs, frustration), puis exporte en CSV / PDF."
       />
+      <FiltersNotAppliedNote note={ecran.notApplied} />
 
       {/* ----- Création ----- */}
       <details className="card mb-6" open={!dashboards.length}>
@@ -65,7 +57,7 @@ export default async function Dashboards({
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
             App
-            <select name="app_id" defaultValue={f.app ?? ""} className={INPUT_CLASS}>
+            <select name="app_id" defaultValue={ecran.filters.app ?? ""} className={INPUT_CLASS}>
               {canCreateGlobal && <option value="">(toutes apps)</option>}
               {apps.map((a) => (
                 <option key={a.app_id} value={a.app_id}>
@@ -95,7 +87,7 @@ export default async function Dashboards({
             {dashboards.map((d) => (
               <tr key={d.id} className="border-t border-line hover:bg-panel2">
                 <td className="px-3 py-2 font-medium">
-                  <Link href={`/dashboards/${d.id}${qs}`} className="text-accent hover:underline">
+                  <Link href={hrefWithQuery(`/dashboards/${d.id}`, ecran.query)} className="text-accent hover:underline">
                     {d.name}
                   </Link>
                 </td>

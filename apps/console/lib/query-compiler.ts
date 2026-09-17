@@ -62,14 +62,15 @@ const SESSION_DIMENSIONS: Partial<Record<Dimension, DimensionColumn>> = {
   os: sessionColumn("os"),
 };
 
-// Release, env et service sont des instantanés PAR OCCURRENCE : la release de la
-// session est mutable et ne s'applique jamais au passé.
-function occurrenceDimensions(table: string, route = "route"): Partial<Record<Dimension, DimensionColumn>> {
+// Release et env sont des instantanés PAR OCCURRENCE (la release de la session est
+// mutable et ne s'applique jamais au passé) ; `service` n'existe que là où un
+// émetteur backend le déclare : erreurs, spans et leur projection d'événements.
+function occurrenceDimensions(table: string, withService = false): Partial<Record<Dimension, DimensionColumn>> {
   return {
-    route: rowColumn(table, route),
+    route: rowColumn(table, "route"),
     release: rowColumn(table, "release"),
     env: rowColumn(table, "env"),
-    service: rowColumn(table, "service"),
+    ...(withService ? { service: rowColumn(table, "service") } : {}),
   };
 }
 
@@ -91,13 +92,13 @@ export const DATASET_REGISTRY: Record<DatasetId, DatasetDefinition> = {
     table: "rum_error",
     label: "les erreurs",
     sessioned: true,
-    dimensions: { ...SESSION_DIMENSIONS, ...occurrenceDimensions("rum_error") },
+    dimensions: { ...SESSION_DIMENSIONS, ...occurrenceDimensions("rum_error", true) },
   },
   events: {
     table: "rum_event_index",
     label: "le journal d'événements",
     sessioned: true,
-    dimensions: { ...SESSION_DIMENSIONS, ...occurrenceDimensions("rum_event_index") },
+    dimensions: { ...SESSION_DIMENSIONS, ...occurrenceDimensions("rum_event_index", true) },
   },
   custom_events: {
     table: "rum_event",
@@ -109,25 +110,25 @@ export const DATASET_REGISTRY: Record<DatasetId, DatasetDefinition> = {
     table: "rum_action",
     label: "les actions",
     sessioned: true,
-    dimensions: { ...SESSION_DIMENSIONS, route: rowColumn("rum_action", "route") },
+    dimensions: { ...SESSION_DIMENSIONS, ...occurrenceDimensions("rum_action") },
   },
   longtasks: {
     table: "rum_longtask",
     label: "les tâches longues",
     sessioned: true,
-    dimensions: { ...SESSION_DIMENSIONS, route: rowColumn("rum_longtask", "route") },
+    dimensions: { ...SESSION_DIMENSIONS, ...occurrenceDimensions("rum_longtask") },
   },
   resources: {
     table: "rum_resource",
     label: "les ressources",
     sessioned: true,
-    dimensions: { ...SESSION_DIMENSIONS, route: rowColumn("rum_resource", "route") },
+    dimensions: { ...SESSION_DIMENSIONS, ...occurrenceDimensions("rum_resource") },
   },
   spans: {
     table: "rum_span",
     label: "les appels tracés",
     sessioned: true,
-    dimensions: { ...SESSION_DIMENSIONS, ...occurrenceDimensions("rum_span") },
+    dimensions: { ...SESSION_DIMENSIONS, ...occurrenceDimensions("rum_span", true) },
   },
   synthetic: {
     table: "syn_snapshot",
@@ -274,7 +275,11 @@ export function compileScope(query: AnalyticsQuery, appColumn: string, bind: Bin
   if (!QUALIFIED.test(appColumn)) throw new Error("colonne d'app invalide");
   const apps = query.scope.effectiveApps;
   if (apps !== null) return ` and ${appColumn} = any(${bind(apps)}::text[])`;
-  return query.filters.includeInternal ? "" : ` and ${appColumn} not in (select app_id from app_registry where internal)`;
+  // `not exists` plutôt que `not in` : une ligne sans app (événement d'alerte orphelin)
+  // reste dans « toutes les apps » au lieu de disparaître sur un NULL.
+  return query.filters.includeInternal
+    ? ""
+    : ` and not exists (select 1 from app_registry internes where internes.internal and internes.app_id = ${appColumn})`;
 }
 
 /** Variante qui lève l'erreur typée : pour les lectures dont la surface a déjà validé ses capacités. */

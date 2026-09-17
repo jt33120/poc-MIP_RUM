@@ -23,7 +23,9 @@ export async function DeployPanel({ f }: { f: Filters }) {
     <section className="card mb-6 p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-ink">Déploiements & régression</h2>
-        <span className="text-[11px] text-ink-faint">fenêtre ±2 h autour du dernier déploiement</span>
+        <span className="text-[11px] text-ink-faint">
+          app entière, fenêtre ±2 h autour du dernier déploiement — plage et filtres de population non appliqués
+        </span>
       </div>
 
       {impact?.deploy_ts && (

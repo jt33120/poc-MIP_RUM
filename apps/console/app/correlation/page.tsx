@@ -4,15 +4,11 @@ import { RouteCard } from "@/components/correlation/RouteCard";
 import { RobotVsRealChart } from "@/components/features/RobotVsRealChart";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
-import {
-  blindSpots,
-  correlationCards,
-  correlationRoutes,
-  correlationSeries,
-  filtersToQuery,
-  parseFilters,
-  type SearchParams,
-} from "@/lib/queries-v2";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { hrefWithQuery } from "@/lib/query-contract";
+import { blindSpots, correlationCards, correlationRoutes, correlationSeries } from "@/lib/queries-v2";
 
 export const dynamic = "force-dynamic";
 
@@ -22,13 +18,17 @@ export default async function Correlation({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/correlation");
+  if (!ecran.ok) return <FilterProblemNotice title="Corrélation synthétique ↔ RUM" problem={ecran.problem} />;
+  const f = ecran.filters;
   const [rows, routes, spots] = await Promise.all([
     correlationCards(f),
     correlationRoutes(f),
     blindSpots(f),
   ]);
-  const requested = Array.isArray(sp.route) ? sp.route[0] : sp.route;
+  // `serie` choisit la courbe affichée ; `route`, filtre du contrat commun, restreint
+  // TOUTE la page (cartes, angles morts) à une route.
+  const requested = Array.isArray(sp.serie) ? sp.serie[0] : sp.serie;
   const selectedRoute = requested && routes.includes(requested) ? requested : routes[0] ?? null;
   const series = selectedRoute ? await correlationSeries(selectedRoute, f) : [];
 
@@ -41,14 +41,14 @@ export default async function Correlation({
 
       {/* Hero : la série robot vs réel (le graphe qui « raconte » la corrélation). */}
       <SupervisionHero
-        chartTitle="Robot vs réel dans le temps (buckets horaires)"
+        chartTitle={`Robot vs réel dans le temps (buckets horaires, ${ecran.label})`}
         chartMeta={
           routes.length ? (
             <div className="flex max-w-full flex-wrap justify-end gap-1">
               {routes.slice(0, 6).map((route) => (
                 <Link
                   key={route}
-                  href={`/correlation${filtersToQuery(f, { route })}`}
+                  href={hrefWithQuery("/correlation", ecran.query, { serie: route })}
                   className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] transition ${
                     route === selectedRoute
                       ? "bg-accent font-semibold text-navy-950 shadow-sm"
@@ -111,8 +111,8 @@ export default async function Correlation({
             ⚠ Angles morts — le robot ne le voit pas
           </h2>
           <p className="mt-0.5 text-xs text-red-700 dark:text-red-300/80">
-            Routes où le robot dit « ok » alors que les utilisateurs réels sont en « poor » (LCP p75 &gt; 2,5 s) ·
-            vue v_blind_spot
+            Heures où le robot dit « ok » alors que les utilisateurs réels sont en « poor » (LCP p75 &gt; 2,5 s) ·
+            {ecran.label}
           </p>
         </div>
         <table className="w-full text-sm">

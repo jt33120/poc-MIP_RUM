@@ -222,9 +222,9 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
                 <td colSpan={7} className="px-4 py-8 text-center text-ink-faint">
                   {total > 0 ? (
                     // Offset au-delà de la population (lien ancien, erreurs résolues entre-temps).
-                    <a href={pageHref(0)} className="text-brand hover:underline">
+                    <Link href={pageHref(0)} className="text-brand hover:underline">
                       Aucun groupe à cette position — revenir au début de la liste
-                    </a>
+                    </Link>
                   ) : (
                     "Aucune erreur sur cette période"
                   )}
@@ -246,16 +246,14 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
           </span>
           <span className="flex gap-4">
             {page.offset > 0 && (
-              // Ancres natives : la navigation client vers la même route avec une autre query
-              // reste bloquée dans cette console (suivi consigné dans delivery-p5.md).
-              <a href={pageHref(Math.max(0, page.offset - page.limit))} className="text-brand hover:underline">
+              <Link href={pageHref(Math.max(0, page.offset - page.limit))} className="text-brand hover:underline">
                 Groupes précédents
-              </a>
+              </Link>
             )}
             {hasNext && (
-              <a href={pageHref(page.offset + page.limit)} className="text-brand hover:underline">
+              <Link href={pageHref(page.offset + page.limit)} className="text-brand hover:underline">
                 Groupes suivants
-              </a>
+              </Link>
             )}
           </span>
         </nav>

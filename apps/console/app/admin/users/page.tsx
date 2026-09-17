@@ -146,7 +146,7 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
                   </span>
                 </td>
                 <td className="px-4 py-2 text-xs text-ink-soft">
-                  {u.apps?.length ? u.apps.join(", ") : "toutes"}
+                  {u.apps === null ? "toutes" : u.apps.length ? u.apps.join(", ") : "aucune"}
                 </td>
                 <td className="px-4 py-2">
                   <span

@@ -12,7 +12,9 @@ import { VitalCard } from "@/components/VitalCard";
 import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
 import { VersionsTable } from "@/components/VersionsTable";
-import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { type SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 import { healthScore } from "@/lib/health";
 import { overviewStats, vitalSeries, vitalsP75 } from "@/lib/queries";
 import { dailyLcpSeries, dailyTraffic, GRID_DAYS, healthGrid } from "@/lib/queries-grid";
@@ -23,8 +25,10 @@ export const dynamic = "force-dynamic";
 
 export default async function Overview({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const f = parseFilters(sp);
-  const period = PERIODS[f.period];
+  const ecran = await pageFilters(sp, "/");
+  if (!ecran.ok) return <FilterProblemNotice title="Vue d'ensemble" problem={ecran.problem} />;
+  const f = ecran.filters;
+  const period = { label: ecran.label, bucketLabel: ecran.bucketLabel };
 
   // toggle « heures ouvrées » de la heatmap, porté par l'URL (?hours=business),
   // en préservant les autres filtres (app/période/device)

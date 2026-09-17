@@ -10,7 +10,10 @@ import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { fmtDate } from "@/lib/format";
-import { parseFilters, type SearchParams } from "@/lib/queries-v2";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { v2FiltersOf } from "@/lib/queries-v2";
 import { sviCallDetail } from "@/lib/queries-svi";
 import { fmtDuration, outcomeLabel } from "@/lib/svi-outcome";
 
@@ -54,7 +57,9 @@ export default async function FicheAppel({
   }
 
   const { callId } = await params;
-  const f = parseFilters(await searchParams);
+  const ecran = await pageFilters(await searchParams, `/svi/appels/${encodeURIComponent(callId)}`);
+  if (!ecran.ok) return <FilterProblemNotice title="Appel SVI" problem={ecran.problem} />;
+  const f = v2FiltersOf(ecran.query);
 
   // `f.app` est la portée de l'utilisateur : un appel d'une autre app est
   // introuvable, pas « interdit ». On ne révèle pas son existence.

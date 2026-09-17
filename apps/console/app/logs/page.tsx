@@ -7,7 +7,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import { fmtDate } from "@/lib/format";
-import { parseFilters, periodLabel, filtersToQuery, type SearchParams } from "@/lib/queries-v2";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { filtersToQuery, periodLabel, v2FiltersOf } from "@/lib/queries-v2";
 import {
   logAnomalies,
   logEntries,
@@ -47,7 +50,9 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
   }
 
   const sp = await searchParams;
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/logs");
+  if (!ecran.ok) return <FilterProblemNotice title="Logs" problem={ecran.problem} />;
+  const f = v2FiltersOf(ecran.query);
   const level = parseLevel(sp?.level);
 
   const [rows, counts, volume, anomalies, byRoute] = await Promise.all([

@@ -2,7 +2,9 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { LineTrend } from "@/components/charts/LineTrend";
-import { parseFilters, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 import { retentionCohorts, weekIndexToDate } from "@/lib/queries-cohorts";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +14,9 @@ const fmtWeek = (d: Date) => d.toLocaleDateString("fr-FR", { day: "2-digit", mon
 
 export default async function Retention({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/retention");
+  if (!ecran.ok) return <FilterProblemNotice title="Rétention" problem={ecran.problem} />;
+  const f = ecran.filters;
   const wRaw = Number(typeof sp.weeks === "string" ? sp.weeks : 8);
   const weeks = Number.isFinite(wRaw) ? Math.min(26, Math.max(2, Math.trunc(wRaw))) : 8;
   const cohorts = await retentionCohorts(f, weeks);

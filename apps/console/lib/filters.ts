@@ -11,7 +11,7 @@ import {
   type Device,
   type FilterCondition,
 } from "./query-contract";
-import { parseSegment, type SegCond } from "./segments";
+import type { SegCond } from "./segments";
 
 export type PeriodKey = "1h" | "24h" | "7d";
 
@@ -71,43 +71,6 @@ export function nombreDeSeaux(p: PeriodKey): number {
 }
 
 export type SearchParams = Record<string, string | string[] | undefined>;
-
-function first(v: string | string[] | undefined): string | undefined {
-  return Array.isArray(v) ? v[0] : v;
-}
-
-/**
- * Lecture historique des searchParams, SANS principal : réservée aux appelants qui
- * ont déjà borné l'app (le middleware pour les pages, un test). `allowedApps` borne
- * encore l'app ; une app hors liste ne retombe plus sur la première autorisée — elle
- * donne un périmètre vide. Les pages passent par `pageFilters` (lib/page-filters.ts).
- */
-export function parseFilters(sp: SearchParams, allowedApps?: string[] | null): Filters {
-  const period = first(sp.period);
-  const device = first(sp.device);
-  const raw = first(sp.app);
-  const app = raw && raw !== "all" ? raw : null;
-  const filters: Filters = {
-    app,
-    period: period === "1h" || period === "7d" ? period : "24h",
-    device: device === "desktop" || device === "mobile" ? device : null,
-    segment: parseSegment(first(sp.seg)),
-    includeBots: first(sp.bots) === "1",
-    includeInternal: first(sp.internal) === "1",
-  };
-  if (allowedApps === undefined || allowedApps === null) return filters;
-  const query = queryOf(filters);
-  const authorized = [...new Set(allowedApps)].sort();
-  const scoped: AnalyticsQuery = {
-    ...query,
-    scope: {
-      requestedApp: app,
-      authorizedApps: authorized,
-      effectiveApps: app === null ? authorized : authorized.filter((a) => a === app),
-    },
-  };
-  return { ...filters, query: scoped };
-}
 
 const LEGACY_DIMENSION: Record<string, FilterCondition["dimension"]> = {
   geo: "country",
@@ -174,7 +137,7 @@ export type FiltersLike = Omit<Filters, "device"> & { device: Device | null };
 export function queryOf(f: FiltersLike, nowMs = Date.now()): AnalyticsQuery {
   if (f.query) return f.query;
   const period = (RANGE_PRESETS as readonly string[]).includes(f.period) ? f.period : "24h";
-  const range = resolveRange({ period }, nowMs, "compat");
+  const range = resolveRange({ period }, nowMs);
   if (!range.ok) throw new Error(range.error.message);
   return {
     version: 1,

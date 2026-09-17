@@ -3,9 +3,10 @@
 // de page ni l'export CSV. Toutes les surfaces passent donc ici et échouent sans
 // révéler le tableau hors périmètre.
 import type { SessionUser } from "./auth";
-import { parseFilters, type Filters, type SearchParams } from "./filters";
+import { filtersOfQuery, type Filters } from "./filters";
 import type { AppItem } from "./queries";
 import { getDashboard, type DashboardRow } from "./queries-dashboards";
+import { intersectApp, type AnalyticsQuery } from "./query-contract";
 
 function isUnrestricted(user: SessionUser): boolean {
   return user.role === "admin" || user.apps === null;
@@ -72,28 +73,18 @@ export function dashboardApps(apps: AppItem[], user: SessionUser | null): AppIte
   return apps;
 }
 
-/** Filtres du catalogue : eux aussi ne suivent jamais un `?app=` non autorisé. */
-export function dashboardListFilters(
-  searchParams: SearchParams,
-  user: SessionUser | null,
-): Filters | null {
-  if (!user) return null;
-  if (!isUnrestricted(user) && (user.apps?.length ?? 0) === 0) return null;
-  return parseFilters(searchParams, isUnrestricted(user) ? null : user.apps);
-}
-
 /**
- * Les filtres des widgets sont dérivés du dashboard autorisé et du scope signé,
- * jamais du seul query string. Un viewer sans app n'obtient aucune valeur ; un
- * dashboard transverse reste utilisable mais est borné à une app autorisée.
+ * Les filtres des widgets : la requête de l'écran — déjà résolue contre le principal
+ * signé (périmètre vide ou app hors périmètre refusés en amont) — INTERSECTÉE avec
+ * l'app du tableau de bord. Un tableau de bord lié à B lu avec `app=A` ne remplace
+ * pas A par B : l'intersection est vide et chaque widget rend zéro. Un tableau de
+ * bord transverse suit l'app de l'écran.
  */
 export function dashboardFilters(
   dashboard: DashboardRow,
-  searchParams: SearchParams,
+  query: AnalyticsQuery,
   user: SessionUser | null,
 ): Filters | null {
   if (!user || !canAccessDashboard(user, dashboard)) return null;
-  const filters = dashboardListFilters(searchParams, user);
-  if (!filters) return null;
-  return { ...filters, app: dashboard.app_id ?? filters.app };
+  return filtersOfQuery(dashboard.app_id ? intersectApp(query, dashboard.app_id) : query);
 }

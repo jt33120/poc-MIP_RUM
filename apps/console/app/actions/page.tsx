@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
-import { getUser } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
-import { parseFilters, PERIODS, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { type SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 import {
   ACTIONS_MAX_OFFSET,
   hasNextActionsPage,
@@ -15,10 +16,11 @@ export const dynamic = "force-dynamic";
 
 export default async function ActionsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const user = await getUser();
-  // Le scope du viewer est appliqué avant même de construire le SQL : demander
-  // explicitement ?app=B ne permet pas de contourner sa liste A.
-  const f = parseFilters(sp, user?.apps ?? undefined);
+  // Le périmètre signé est appliqué avant même de construire le SQL : demander
+  // explicitement ?app=B hors de sa liste est refusé, jamais rabattu sur A.
+  const ecran = await pageFilters(sp, "/actions");
+  if (!ecran.ok) return <FilterProblemNotice title="Actions" problem={ecran.problem} />;
+  const f = ecran.filters;
   const url = new URLSearchParams(
     Object.entries(sp).flatMap(([key, value]) => typeof value === "string" ? [[key, value] as [string, string]] : []),
   );
@@ -40,7 +42,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <Stat label={`Actions · ${PERIODS[f.period].label}`} value={summary.actions.toLocaleString("fr-FR")} />
+        <Stat label={`Actions · ${ecran.label}`} value={summary.actions.toLocaleString("fr-FR")} />
         <Stat label="Erreurs liées" value={summary.errors.toLocaleString("fr-FR")} tone={summary.errors ? "warn" : undefined} />
         <Stat label="Temps lié" value={`${Math.round(summary.total_ms).toLocaleString("fr-FR")} ms`} />
       </div>
@@ -99,7 +101,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
         </div>
       ) : (
         <div className="card px-4 py-10 text-center text-sm text-ink-faint">
-          Aucune action causale sur {PERIODS[f.period].label}.
+          Aucune action causale sur {ecran.label}.
         </div>
       )}
 

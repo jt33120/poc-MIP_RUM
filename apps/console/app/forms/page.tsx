@@ -3,7 +3,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { RankBar } from "@/components/charts/RankBar";
 import { fieldReport, formReport } from "@/lib/form-analytics";
-import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { PERIODS } from "@/lib/filters";
 import { formEvents } from "@/lib/queries-form-analytics";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +16,9 @@ const pctFmt = (v: number) => `${Math.round(v * 100)} %`;
 
 export default async function Forms({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/forms");
+  if (!ecran.ok) return <FilterProblemNotice title="Formulaires" problem={ecran.problem} />;
+  const f = ecran.filters;
   const period = PERIODS[f.period];
   const events = await formEvents(f);
   const forms = formReport(events);

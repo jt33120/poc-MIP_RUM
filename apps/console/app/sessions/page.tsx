@@ -4,7 +4,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Donut } from "@/components/charts/Donut";
 import { browserFromUA, fmtDate } from "@/lib/format";
-import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 import { listSessions, visitStats } from "@/lib/queries";
 import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
 import { TousEteints } from "@/components/TousEteints";
@@ -13,7 +15,9 @@ export const dynamic = "force-dynamic";
 
 export default async function Sessions({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/sessions");
+  if (!ecran.ok) return <FilterProblemNotice title="Sessions" problem={ecran.problem} />;
+  const f = ecran.filters;
   // Composition de l'écran, lue AVANT les requêtes : un bloc éteint ne lance pas
   // la sienne. `visitStats` et `listSessions` sont deux agrégats distincts, donc
   // éteindre l'un économise réellement un aller-retour en base.
@@ -59,7 +63,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
             />
           ) : (
             <p className="py-12 text-center text-sm text-ink-faint">
-              Aucun visiteur identifié sur {PERIODS[f.period].label}.
+              Aucun visiteur identifié sur {ecran.label}.
               {vs.unidentified_count > 0 && (
                 <>
                   <br />
@@ -141,7 +145,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
           </div>
         ))}
         {!rows.length && (
-          <p className="py-8 text-center text-ink-faint">Aucune session sur {PERIODS[f.period].label}</p>
+          <p className="py-8 text-center text-ink-faint">Aucune session sur {ecran.label}</p>
         )}
       </div>
       )}

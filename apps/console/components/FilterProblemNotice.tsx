@@ -23,3 +23,17 @@ export function FilterProblemNotice({ title, problem }: { title: string; problem
     </div>
   );
 }
+
+/** Écran de configuration : les filtres de l'URL restent dans le lien mais ne s'appliquent pas ici. */
+export function FiltersNotAppliedNote({ note }: { note: string | null }) {
+  if (!note) return null;
+  return (
+    <p
+      role="note"
+      data-testid="filters-not-applied"
+      className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft"
+    >
+      Filtres non appliqués sur cet écran. {note}
+    </p>
+  );
+}

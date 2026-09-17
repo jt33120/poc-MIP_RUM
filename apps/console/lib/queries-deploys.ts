@@ -1,9 +1,12 @@
 // Requêtes « déploiements & régression » (Voie A · inc. 3). Un marqueur de
 // déploiement croisé aux métriques RUM répond à « et l'heure de régression » :
 // on compare le p75 LCP et le volume d'erreurs sur la fenêtre AVANT vs APRÈS le
-// dernier déploiement. Convention : $1 = app (null = toutes).
+// dernier déploiement. Marqueurs et fenêtres ±2 h sont bornés par le périmètre d'apps de la requête
+// commune (P6.2), jamais par ses filtres de population : le panneau le dit.
 import { q } from "./db";
-import { type Filters, PERIODS } from "./filters";
+import { queryOf, type Filters } from "./filters";
+import { binder, compileScope } from "./query-compiler";
+import { softFail, sqlContext } from "./query-sql";
 
 export interface DeployRow {
   id: number;
@@ -13,15 +16,16 @@ export interface DeployRow {
   source: string;
 }
 
-/** Marqueurs de déploiement récents pour l'app filtrée. */
+/** Marqueurs de déploiement récents du périmètre. */
 export async function listDeploys(f: Filters, limit = 20): Promise<DeployRow[]> {
+  const { params, bind } = binder();
   return q<DeployRow>(
-    `select id, ts, version, env, source
-       from deploy_marker
-      where ($1::text is null or app_id = $1)
-      order by ts desc
+    `select dm.id, dm.ts, dm.version, dm.env, dm.source
+       from deploy_marker dm
+      where true${compileScope(queryOf(f), "dm.app_id", bind)}
+      order by dm.ts desc
       limit ${Number(limit)}`,
-    [f.app],
+    params,
   );
 }
 
@@ -55,11 +59,14 @@ export interface DeployImpact {
  * précèdent vs les 2 h qui suivent. null partout si aucun déploiement.
  */
 export async function latestDeployImpact(f: Filters): Promise<DeployImpact | null> {
+  const query = queryOf(f);
+  const { params, bind } = binder();
+  // Mesures lues dans l'app DU marqueur : un déploiement de A ne juge pas le LCP de B.
   const [row] = await q<DeployImpact>(
     `with d as (
-       select ts, version, env from deploy_marker
-       where ($1::text is null or app_id = $1)
-       order by ts desc limit 1
+       select dm.app_id, dm.ts, dm.version, dm.env from deploy_marker dm
+       where true${compileScope(query, "dm.app_id", bind)}
+       order by dm.ts desc limit 1
      )
      select
        (select ts from d)      as deploy_ts,
@@ -67,19 +74,19 @@ export async function latestDeployImpact(f: Filters): Promise<DeployImpact | nul
        (select env from d)     as env,
        (select percentile_cont(0.75) within group (order by m.value)
           from rum_metric m, d
-         where m.name = 'LCP' and ($1::text is null or m.app_id = $1)
+         where m.name = 'LCP' and m.app_id = d.app_id
            and m.ts >= d.ts - interval '2 hours' and m.ts < d.ts) as lcp_before,
        (select percentile_cont(0.75) within group (order by m.value)
           from rum_metric m, d
-         where m.name = 'LCP' and ($1::text is null or m.app_id = $1)
+         where m.name = 'LCP' and m.app_id = d.app_id
            and m.ts >= d.ts and m.ts < d.ts + interval '2 hours') as lcp_after,
        coalesce((select sum(e.occurrences) from rum_error e, d
-          where ($1::text is null or e.app_id = $1)
+          where e.app_id = d.app_id
             and e.ts >= d.ts - interval '2 hours' and e.ts < d.ts), 0)::int as errors_before,
        coalesce((select sum(e.occurrences) from rum_error e, d
-          where ($1::text is null or e.app_id = $1)
+          where e.app_id = d.app_id
             and e.ts >= d.ts and e.ts < d.ts + interval '2 hours'), 0)::int as errors_after`,
-    [f.app],
+    params,
   );
   return row?.deploy_ts ? row : null;
 }
@@ -132,23 +139,23 @@ export interface VersionRow {
  * fois où la même exception se répète dans une boucle.
  */
 export async function comparaisonVersions(f: Filters, limit = 12): Promise<VersionRow[]> {
-  const itv = PERIODS[f.period].interval;
   try {
+    // Sessions vues sur la plage, avec le périmètre et les filtres de session du
+    // contrat commun ; mesures et erreurs rattachées par (app, session).
+    const sql = await sqlContext(f);
+    const where = sql.where({ dataset: "sessions", row: "rs", session: "rs", time: "rs.last_seen_at" });
     return await q<VersionRow>(
       `with s as (
-         select session_id, coalesce(nullif(release, ''), '(non renseignée)') as version
-         from rum_session
-         where last_seen_at > now() - interval '${itv}'
-           and ($1::text is null or app_id = $1)
-           and ($2::text is null or device_type = $2)
-           and not coalesce(is_bot, false)
+         select rs.app_id, rs.session_id, coalesce(nullif(rs.release, ''), '(non renseignée)') as version
+         from rum_session rs
+         where true${where}
        ),
        v as (select version, count(*)::int as sessions from s group by 1),
-       m as (select s.version, x.name, x.value from rum_metric x join s using (session_id)
+       m as (select s.version, x.name, x.value from rum_metric x join s on s.app_id = x.app_id and s.session_id = x.session_id
              where x.name in ('LCP', 'INP')),
        e as (select s.version, coalesce(sum(x.occurrences), 0)::int as erreurs,
                     count(distinct x.session_id)::int as "sessionsEnErreur"
-             from rum_error x join s using (session_id) group by 1)
+             from rum_error x join s on s.app_id = x.app_id and s.session_id = x.session_id group by 1)
        select v.version, v.sessions,
               (select percentile_cont(0.75) within group (order by value)
                  from m where m.version = v.version and m.name = 'LCP') as lcp,
@@ -159,10 +166,10 @@ export async function comparaisonVersions(f: Filters, limit = 12): Promise<Versi
        from v left join e on e.version = v.version
        order by v.sessions desc
        limit ${Number(limit)}`,
-      [f.app, f.device],
+      sql.params,
     );
-  } catch {
-    return [];
+  } catch (e) {
+    return softFail(e, []);
   }
 }
 

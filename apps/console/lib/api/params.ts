@@ -26,7 +26,7 @@ export function parseApiFilters(
   principal: Pick<ApiPrincipal, "role" | "apps">,
   nowMs = Date.now(),
 ): Parsed<ApiFilters> {
-  const parsed = parseAnalyticsQuery(sp, { principal, nowMs, mode: "strict" });
+  const parsed = parseAnalyticsQuery(sp, { principal, nowMs });
   if (!parsed.ok) return parsed;
   const query = parsed.value;
   const legacy = filtersOfQuery(query);

@@ -244,11 +244,9 @@ function GroupChooser({
         <ul className="mt-4 divide-y divide-line/60">
           {choices.map((choice) => (
             <li key={choice.app_id} className="flex flex-wrap items-baseline justify-between gap-2 py-2">
-              {/* Ancre native : la navigation client vers la même route avec une autre query
-                  reste bloquée dans cette console (suivi consigné dans delivery-p5.md). */}
-              <a href={errorGroupHref({ app_id: choice.app_id, fingerprint }, f)} className={`font-mono text-sm ${ERROR_LINK}`}>
+              <Link href={errorGroupHref({ app_id: choice.app_id, fingerprint }, f)} className={`font-mono text-sm ${ERROR_LINK}`}>
                 {choice.app_id}
-              </a>
+              </Link>
               {choice.detail && <span className="text-xs text-ink-faint">{choice.detail}</span>}
             </li>
           ))}
@@ -280,9 +278,9 @@ function IssueChooser({ groupRef, f, issues }: { groupRef: ErrorGroupRef; f: Err
         <ul className="mt-4 divide-y divide-line/60">
           {issues.map((issue) => (
             <li key={issue.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-              <a href={issueHref({ id: issue.id, app_id: groupRef.app_id }, f)} className={`break-all font-mono text-sm ${ERROR_LINK}`}>
+              <Link href={issueHref({ id: issue.id, app_id: groupRef.app_id }, f)} className={`break-all font-mono text-sm ${ERROR_LINK}`}>
                 issue {issue.id}
-              </a>
+              </Link>
               <span className="flex flex-wrap items-center gap-1 text-xs text-ink-faint">
                 <IssueStatusBadge status={issue.status} />
                 <GroupingBasisBadge basis={issue.grouping_basis} />
@@ -292,9 +290,9 @@ function IssueChooser({ groupRef, f, issues }: { groupRef: ErrorGroupRef; f: Err
           ))}
         </ul>
         <p className="mt-4 text-sm">
-          <a href={errorGroupHref(groupRef, f, { legacy: "1" })} className={ERROR_LINK}>
+          <Link href={errorGroupHref(groupRef, f, { legacy: "1" })} className={ERROR_LINK}>
             Voir le détail historique de la signature
-          </a>
+          </Link>
         </p>
       </section>
     </div>

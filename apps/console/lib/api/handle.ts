@@ -11,6 +11,7 @@ import { forwardLog } from "../log-forward";
 import { traceFields } from "../server-trace-core";
 import { guardAdmin } from "./admin";
 import { type ApiPrincipal, authenticateApi } from "./auth";
+import { UnsupportedFilterError } from "../query-compiler";
 import { conditionsOf, contractErrorStatus, queryFingerprint } from "../query-contract";
 import { weakEtag } from "./etag";
 import { type ApiFilters, parseApiFilters } from "./params";
@@ -126,9 +127,19 @@ export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
   };
 }
 
-/** ApiHttpError rendue telle quelle ; toute autre exception journalisée et masquée en 500. */
+/**
+ * ApiHttpError rendue telle quelle ; un filtre que la lecture ne sait pas appliquer
+ * est un 400 typé (jamais un résultat qui l'ignore) ; toute autre exception est
+ * journalisée et masquée en 500.
+ */
 function erreurHandler(req: NextRequest, e: unknown) {
   if (e instanceof ApiHttpError) return apiError(req, e.status, e.message, e.details);
+  if (e instanceof UnsupportedFilterError) {
+    return apiError(req, 400, e.error.message, {
+      code: e.error.code,
+      ...(e.error.dimension ? { dimension: e.error.dimension } : {}),
+    });
+  }
   console.error("[api/v1]", req.nextUrl.pathname, e);
   // Dogfooding : remonte l'incident dans la page /logs (après la réponse, best-effort).
   // La corrélation est capturée MAINTENANT, pas dans le callback : le contexte

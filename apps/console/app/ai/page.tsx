@@ -4,7 +4,10 @@
 // un placement partenaire, distinct du produit RUM natif de MIP.
 import { PageHeader } from "@/components/PageHeader";
 import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
-import { parseFilters, periodLabel, type SearchParams } from "@/lib/queries-v2";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { periodLabel, v2FiltersOf } from "@/lib/queries-v2";
 import { fetchAiSummary } from "@/lib/xsom-ai";
 import { XsomSponsorBanner, XsomAiPanel } from "@/components/xsom/XsomAiPanel";
 
@@ -27,7 +30,9 @@ export default async function AiPartner({ searchParams }: { searchParams?: Promi
   }
 
   const sp = await searchParams;
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/ai");
+  if (!ecran.ok) return <FilterProblemNotice title="Assistant IA" problem={ecran.problem} />;
+  const f = v2FiltersOf(ecran.query);
   // xSOM expose 24h/7d/30d ; on mappe la période console (1h/24h/7d).
   const windowKey = f.period === "7d" ? "7d" : "24h";
   // Lecture façade — app-scopée par le token xSOM ; null (échec/non couvert) => état « indisponible ».

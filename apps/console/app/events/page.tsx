@@ -1,16 +1,13 @@
 import Link from "next/link";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { ObservedTrend } from "@/components/charts/ObservedTrend";
 import { INPUT_CLASS } from "@/components/forms/Field";
-import { getUser } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
-import { parseFilters, PERIODS, type SearchParams } from "@/lib/filters";
-import {
-  eventPageFilters,
-  eventPagePagination,
-  eventResetHref,
-  eventSearchParams,
-} from "@/lib/events-page-params";
+import { type SearchParams } from "@/lib/filters";
+import { eventPagePagination, eventResetHref, eventSearchParams } from "@/lib/events-page-params";
+import { pageFilters } from "@/lib/page-filters";
+import { hrefWithQuery, queryToSearchParams } from "@/lib/query-contract";
 import {
   EVENT_ATTRIBUTE_SOURCES,
   EVENT_ATTRIBUTE_TYPES,
@@ -31,9 +28,10 @@ function nextHref(current: URLSearchParams, cursor: string) {
 
 export default async function EventsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const user = await getUser();
+  const ecran = await pageFilters(sp, "/events");
+  if (!ecran.ok) return <FilterProblemNotice title="Événements" problem={ecran.problem} />;
+  const filters = ecran.deviceFilters;
   const url = eventSearchParams(sp);
-  const filters = eventPageFilters(parseFilters(sp, user?.apps ?? undefined), url);
   if (url && !url.has("kind")) url.set("kind", "event");
   const query = url ? parseEventQuery(url) : undefined;
   const cursor = url ? parseEventCursor(url.get("cursor")) : undefined;
@@ -58,13 +56,14 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
     <div className="animate-fade-up">
       <PageHeader
         title="Événements"
-        sub={`Explorer les événements custom observés sur ${PERIODS[filters.period].label}, sans extrapolation du sampling.`}
+        sub={`Explorer les événements custom observés sur ${ecran.label}, sans extrapolation du sampling.`}
       />
 
       <form method="get" className="card mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6" aria-label="Filtres des événements">
-        {filters.app && <input type="hidden" name="app" value={filters.app} />}
-        <input type="hidden" name="period" value={filters.period} />
-        {filters.device && <input type="hidden" name="device" value={filters.device} />}
+        {/* Le contexte global suit la recherche : plage, appareil, dimensions, segment. */}
+        {[...queryToSearchParams(ecran.query)].map(([nom, valeur]) => (
+          <input key={nom} type="hidden" name={nom} value={valeur} />
+        ))}
         <input type="hidden" name="kind" value="event" />
         <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft lg:col-span-2">
           Nom d’événement
@@ -97,7 +96,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
         </label>
         <div className="flex items-end gap-2 lg:col-span-6">
           <button className="btn-accent" type="submit">Appliquer</button>
-          <Link href={eventResetHref(filters)} className="btn-ghost">Réinitialiser</Link>
+          <Link href={eventResetHref(ecran.query)} className="btn-ghost">Réinitialiser</Link>
         </div>
       </form>
 
@@ -151,7 +150,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
                       <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-all rounded bg-panel2 p-2 text-[11px] text-ink-soft">{JSON.stringify({ props: event.props ?? {}, context: event.context ?? {} }, null, 2)}</pre>
                     </details>
                   </td>
-                  <td className="px-4 py-3 text-xs">{event.session_id ? <Link className="text-brand hover:underline" href={`/sessions/${encodeURIComponent(event.session_id)}?app=${encodeURIComponent(event.app_id)}`}>{event.session_id.slice(0, 8)}…</Link> : "—"}</td>
+                  <td className="px-4 py-3 text-xs">{event.session_id ? <Link className="text-brand hover:underline" href={hrefWithQuery(`/sessions/${encodeURIComponent(event.session_id)}`, ecran.query, { app: event.app_id })}>{event.session_id.slice(0, 8)}…</Link> : "—"}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-ink-faint">{fmtDate(event.ts)}</td>
                 </tr>
               ))}
@@ -160,7 +159,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
         </div>
       ) : (
         <div className="card px-4 py-10 text-center text-sm text-ink-faint">
-          Aucun événement ne correspond à ces filtres sur {PERIODS[filters.period].label}.
+          Aucun événement ne correspond à ces filtres sur {ecran.label}.
         </div>
       )}
 

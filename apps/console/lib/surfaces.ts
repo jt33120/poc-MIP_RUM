@@ -12,6 +12,7 @@ import {
   type AnalyticsQuery,
   type ContractError,
   type Dimension,
+  type FilterCondition,
   type Parsed,
 } from "./query-contract";
 
@@ -132,6 +133,16 @@ export function dimensionAvailability(surface: Surface, dimension: Dimension, sc
   return { available: true };
 }
 
+/** Une condition complète (dimension, opérateur, valeur) est-elle applicable à l'écran ? */
+export function conditionAvailability(surface: Surface, condition: FilterCondition, schema: DimensionSchema): FilterAvailability {
+  const availability = dimensionAvailability(surface, condition.dimension, schema);
+  if (!availability.available) return availability;
+  if (surface.legacy && (condition.operator === "is_null" || condition.value === "tablet")) {
+    return { available: false, reason: "Cet écran n'applique ni « Inconnu » ni la tablette." };
+  }
+  return { available: true };
+}
+
 export function rangeAvailability(surface: Surface, custom: boolean): FilterAvailability {
   if (surface.range === "none") {
     return { available: false, reason: surface.rangeNote ?? surface.noFilters ?? "La plage ne s'applique pas à cet écran." };
@@ -158,13 +169,8 @@ export function checkSurface(query: AnalyticsQuery, surface: Surface, schema: Di
     if (!range.available) return unsupported(range.reason, { parameter: "from" });
   }
   for (const condition of conditionsOf(query.filters)) {
-    const availability = dimensionAvailability(surface, condition.dimension, schema);
-    if (!availability.available) {
-      return unsupported(availability.reason, { dimension: condition.dimension });
-    }
-    if (surface.legacy && (condition.operator === "is_null" || condition.value === "tablet")) {
-      return unsupported("Cet écran n'applique ni « Inconnu » ni la tablette.", { dimension: condition.dimension });
-    }
+    const availability = conditionAvailability(surface, condition, schema);
+    if (!availability.available) return unsupported(availability.reason, { dimension: condition.dimension });
   }
   return { ok: true, value: true };
 }

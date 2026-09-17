@@ -2,7 +2,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Donut } from "@/components/charts/Donut";
 import type { Channel } from "@/lib/acquisition";
-import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { PERIODS } from "@/lib/filters";
 import { acquisition } from "@/lib/queries-acquisition";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +33,9 @@ const HEX: Record<Channel, string> = {
 };
 
 export default async function Acquisition({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const f = parseFilters(await searchParams);
+  const ecran = await pageFilters(await searchParams, "/acquisition");
+  if (!ecran.ok) return <FilterProblemNotice title="Acquisition" problem={ecran.problem} />;
+  const f = ecran.filters;
   const period = PERIODS[f.period];
   const rep = await acquisition(f);
   const total = rep.total;

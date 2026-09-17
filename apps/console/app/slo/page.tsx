@@ -2,7 +2,10 @@ import { cookies } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Gauge, type GaugeTone } from "@/components/charts/Gauge";
-import { metricLabel, parseFilters, SLO_METRICS, type SearchParams } from "@/lib/queries-v2";
+import { FilterProblemNotice, FiltersNotAppliedNote } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { metricLabel, SLO_METRICS } from "@/lib/queries-v2";
 import { registeredApps } from "@/lib/queries";
 import { listSlo, sloStatus } from "@/lib/queries-alerting";
 import { createSloAction } from "../alerts/actions";
@@ -15,7 +18,9 @@ export const dynamic = "force-dynamic";
 
 export default async function Slo({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const sp = (await searchParams) ?? {};
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/slo");
+  if (!ecran.ok) return <FilterProblemNotice title="SLO & error-budget" problem={ecran.problem} />;
+  const f = ecran.filters;
   // Composition de l'écran, lue AVANT les requêtes. Attention aux dépendances
   // croisées : la liste affiche le statut de chaque SLO, donc `sloStatus` est
   // encore nécessaire quand le bloc « budget » est éteint mais que la liste est
@@ -26,8 +31,8 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
   const vide = <T,>(v: T) => Promise.resolve(v);
 
   const [statuses, slos, apps] = await Promise.all([
-    blocs.budget || blocs.liste ? sloStatus(f.app) : vide([]),
-    blocs.liste || blocs.creation ? listSlo(f.app) : vide([]),
+    blocs.budget || blocs.liste ? sloStatus(f) : vide([]),
+    blocs.liste || blocs.creation ? listSlo(f) : vide([]),
     blocs.creation ? registeredApps() : vide([]),
   ]);
   // slo_status() ne renvoie que les SLO actifs → on indexe pour superposer le statut
@@ -45,6 +50,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
           </>
         }
       />
+      <FiltersNotAppliedNote note={ecran.notApplied} />
 
       {blocs.budget && statuses.length > 0 && (() => {
         const sloTone = (b: number | null, fast: boolean): GaugeTone => {
@@ -104,7 +110,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
           <Field label="App">
             <select
               name="app_id"
-              defaultValue={f.app !== "all" ? f.app : apps[0]?.app_id}
+              defaultValue={f.app ?? apps[0]?.app_id}
               className={INPUT_CLASS}
             >
               {apps.map((a) => (

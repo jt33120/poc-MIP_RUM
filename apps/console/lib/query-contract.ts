@@ -240,8 +240,6 @@ export function bucketStarts(range: Pick<ResolvedRange, "from" | "to" | "bucketS
   return starts;
 }
 
-export type RangeMode = "strict" | "compat";
-
 export interface RangeInput {
   period?: string | null;
   from?: string | null;
@@ -253,10 +251,11 @@ export interface RangeInput {
  * moins la durée. Personnalisée : ISO UTC explicites, from < to ≤ maintenant,
  * 30 jours au plus. Preset ET from/to : refus, jamais un choix silencieux.
  *
- * `compat` garde le défaut documenté des anciennes URL (période inconnue → 24 h) ;
- * `strict` (API) la refuse. Une plage personnalisée invalide est refusée partout.
+ * Les presets restent inchangés, défaut documenté des anciennes URL compris :
+ * `period` absent ou inconnu vaut 24 h (API et pages). Une plage personnalisée
+ * invalide, elle, est refusée partout.
  */
-export function resolveRange(input: RangeInput, nowMs: number, mode: RangeMode): Parsed<ResolvedRange> {
+export function resolveRange(input: RangeInput, nowMs: number): Parsed<ResolvedRange> {
   const rawFrom = input.from?.trim() || null;
   const rawTo = input.to?.trim() || null;
   const rawPeriod = input.period?.trim() || null;
@@ -284,11 +283,7 @@ export function resolveRange(input: RangeInput, nowMs: number, mode: RangeMode):
   }
 
   const normalized = rawPeriod?.toLowerCase().replace("7j", "7d") ?? "24h";
-  const preset = (RANGE_PRESETS as readonly string[]).includes(normalized) ? (normalized as RangePreset) : null;
-  if (preset === null && mode === "strict") {
-    return fail("invalid_range", "period invalide (1h, 24h ou 7d)", { parameter: "period" });
-  }
-  const chosen = preset ?? "24h";
+  const chosen = (RANGE_PRESETS as readonly string[]).includes(normalized) ? (normalized as RangePreset) : "24h";
   const duration = PRESET_MS[chosen];
   return ok({
     from: new Date(nowMs - duration).toISOString(),
@@ -382,7 +377,7 @@ export function utcToLocalInput(iso: string, timeZone: string): string {
 
 /** Texte borné sans caractère de contrôle (valeurs de dimension, app). */
 export function isSafeText(value: string, max: number): boolean {
-  return value.length > 0 && value.length <= max && !/[ -]/u.test(value);
+  return value.length > 0 && value.length <= max && !/[\u0000-\u001f\u007f]/u.test(value);
 }
 
 function isDimension(value: string): value is Dimension {
@@ -501,7 +496,12 @@ export function paramReader(sp: SearchParamsRecord | URLSearchParams): ParamRead
 /** Paramètres du contrat : répétés, ils sont ambigus et refusés. */
 export const CONTRACT_PARAMS = ["app", "period", "from", "to", "device", "bots", "internal", "seg", ...PARAM_DIMENSIONS] as const;
 
-export function parseFilterParams(sp: ParamReader, mode: RangeMode): Parsed<AnalyticsFilters> {
+/**
+ * Filtres d'une query string. Les paramètres historiques gardent leur défaut
+ * documenté (`device` inconnu = tous) ; les nouveaux — dimensions, segment v2 —
+ * sont validés : une valeur illisible est refusée, jamais ignorée.
+ */
+export function parseFilterParams(sp: ParamReader): Parsed<AnalyticsFilters> {
   for (const name of CONTRACT_PARAMS) {
     if (sp.getAll(name).length > 1) return fail("ambiguous_parameter", `paramètre répété : ${name}`, { parameter: name });
   }
@@ -511,10 +511,7 @@ export function parseFilterParams(sp: ParamReader, mode: RangeMode): Parsed<Anal
     segments: [],
   };
   const rawDevice = sp.get("device")?.trim().toLowerCase() ?? "";
-  if (rawDevice && rawDevice !== "all") {
-    if ((DEVICES as readonly string[]).includes(rawDevice)) filters.device = rawDevice as Device;
-    else if (mode === "strict") return fail("invalid_filter", "device invalide (desktop, mobile, tablet ou all)", { parameter: "device" });
-  }
+  if ((DEVICES as readonly string[]).includes(rawDevice)) filters.device = rawDevice as Device;
   for (const dimension of PARAM_DIMENSIONS) {
     const raw = sp.get(dimension);
     if (raw === null || raw === "") continue;
@@ -561,13 +558,12 @@ export function dimensionsUsed(filters: AnalyticsFilters): Dimension[] {
 export interface QueryParseOptions {
   principal: ScopePrincipal | null;
   nowMs: number;
-  mode: RangeMode;
 }
 
 export function parseAnalyticsQuery(sp: ParamReader, options: QueryParseOptions): Parsed<AnalyticsQuery> {
-  const filters = parseFilterParams(sp, options.mode);
+  const filters = parseFilterParams(sp);
   if (!filters.ok) return filters;
-  const range = resolveRange({ period: sp.get("period"), from: sp.get("from"), to: sp.get("to") }, options.nowMs, options.mode);
+  const range = resolveRange({ period: sp.get("period"), from: sp.get("from"), to: sp.get("to") }, options.nowMs);
   if (!range.ok) return range;
   const scope = resolveScope(options.principal, requestedAppOf(sp.get("app")));
   if (!scope.ok) return scope;
@@ -645,6 +641,18 @@ export function queryToSearchParams(query: AnalyticsQuery): URLSearchParams {
 }
 
 /**
+ * Contexte global d'une URL reporté vers un autre écran (navigation) : app, plage,
+ * appareil, dimensions, segment, bots, apps internes — tels quels, sans les valider.
+ * Les paramètres propres à l'écran quitté (curseur, pagination, recherche) restent
+ * derrière : ils n'ont pas de sens ailleurs.
+ */
+export function contextSearchParams(sp: URLSearchParams): URLSearchParams {
+  const out = new URLSearchParams();
+  for (const name of CONTRACT_PARAMS) for (const value of sp.getAll(name)) out.append(name, value);
+  return out;
+}
+
+/**
  * Lien vers une autre surface en conservant les filtres courants. `extra` ajoute
  * ou remplace des paramètres propres à la cible (`null` retire).
  */
@@ -711,9 +719,11 @@ export interface SavedSegmentsV2 {
 }
 
 /**
- * Reprise des segments enregistrés dans le navigateur. v1 : tableau `{name, seg}`
- * au format d'URL historique, converti en v2 ; les entrées illisibles sont
- * écartées ET comptées, jamais réinterprétées.
+ * Reprise des segments enregistrés dans le navigateur. Le magasin v2 fait foi dès
+ * qu'il existe ; sinon la v1 (tableau `{name, seg}` au format d'URL historique) est
+ * convertie. La clé v1 n'est jamais réécrite : un retour arrière la relit intacte,
+ * et un segment supprimé en v2 ne ressuscite pas depuis la v1. Les entrées
+ * illisibles sont écartées ET comptées, jamais réinterprétées.
  */
 export function migrateSavedSegments(rawV2: string | null, rawV1: string | null): { store: SavedSegmentsV2; dropped: number } {
   const items: SavedSegment[] = [];
@@ -742,14 +752,17 @@ export function migrateSavedSegments(rawV2: string | null, rawV1: string | null)
       return null;
     }
   };
+  if (rawV2 !== null) {
+    const v2 = read(rawV2);
+    if (v2 && typeof v2 === "object" && (v2 as SavedSegmentsV2).version === 2 && Array.isArray((v2 as SavedSegmentsV2).items)) {
+      for (const entry of (v2 as SavedSegmentsV2).items) push(entry?.name, entry?.seg);
+    } else if (v2 !== null) {
+      dropped++;
+    }
+    return { store: { version: 2, items }, dropped };
+  }
   const v1 = read(rawV1);
   if (Array.isArray(v1)) for (const entry of v1) push(entry?.name, entry?.seg);
   else if (v1 !== null) dropped++;
-  const v2 = read(rawV2);
-  if (v2 && typeof v2 === "object" && (v2 as SavedSegmentsV2).version === 2 && Array.isArray((v2 as SavedSegmentsV2).items)) {
-    for (const entry of (v2 as SavedSegmentsV2).items) push(entry?.name, entry?.seg);
-  } else if (v2 !== null) {
-    dropped++;
-  }
   return { store: { version: 2, items }, dropped };
 }

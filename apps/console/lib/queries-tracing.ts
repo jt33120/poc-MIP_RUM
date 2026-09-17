@@ -1,35 +1,40 @@
 // Requêtes /tracing (v0.4) — corrélation front↔back par trace_id (rum_span).
-// Même convention que queries.ts : $1 = app (null = toutes), $2 = device,
-// intervalle exclusivement depuis PERIODS.
+// Contrat commun P6.2 : plage [from,to), périmètre d'apps, route, dimensions de
+// session et bots compilés en paramètres liés. Le jumeau backend est cherché DANS
+// LA MÊME APP : un trace_id est émis par le client, deux tenants peuvent le partager.
 import { q } from "./db";
-import { type Filters, PERIODS } from "./filters";
+import { type FiltersLike } from "./filters";
+import { sessionJoin } from "./query-compiler";
+import { sqlContext } from "./query-sql";
 
 export interface TraceCoverage {
   total: number; // appels API vus du navigateur (spans front)
-  correlated: number; // dont jumeau backend trouvé (même trace_id)
+  correlated: number; // dont jumeau backend trouvé (même trace_id, même app)
   back_total: number; // spans back reçus (inclut le trafic sans front : robots, curl)
   front_p75: number | null;
   back_p75: number | null;
 }
 
-export async function traceCoverage(f: Filters): Promise<TraceCoverage> {
-  const itv = PERIODS[f.period].interval;
+const JUMEAU_BACK = "left join rum_span b on b.app_id = fr.app_id and b.trace_id = fr.trace_id and b.tier = 'back'";
+
+export async function traceCoverage(f: FiltersLike): Promise<TraceCoverage> {
+  const sql = await sqlContext(f);
+  const front = sql.where({ dataset: "spans", row: "fr", session: "s", time: "fr.ts" });
+  const back = sql.where({ dataset: "spans", row: "bk", session: "bs", time: "bk.ts" });
   const [row] = await q<TraceCoverage>(
     `select
-       count(*) filter (where f.tier = 'front')::int as total,
+       count(*) filter (where fr.tier = 'front')::int as total,
        count(b.span_id)::int as correlated,
-       (select count(*)::int from rum_span
-         where tier = 'back' and ts > now() - interval '${itv}'
-           and ($1::text is null or app_id = $1)) as back_total,
-       percentile_cont(0.75) within group (order by f.duration_ms) as front_p75,
+       (select count(*)::int from rum_span bk
+         ${sessionJoin("bk", "bs")}
+         where bk.tier = 'back'${back}) as back_total,
+       percentile_cont(0.75) within group (order by fr.duration_ms) as front_p75,
        percentile_cont(0.75) within group (order by b.duration_ms) as back_p75
-     from rum_span f
-     left join rum_span b on b.trace_id = f.trace_id and b.tier = 'back'
-     left join rum_session s on s.session_id = f.session_id
-     where f.tier = 'front' and f.ts > now() - interval '${itv}'
-       and ($1::text is null or f.app_id = $1)
-       and ($2::text is null or s.device_type = $2)`,
-    [f.app, f.device],
+     from rum_span fr
+     ${JUMEAU_BACK}
+     ${sessionJoin("fr", "s")}
+     where fr.tier = 'front'${front}`,
+    sql.params,
   );
   return row;
 }
@@ -44,27 +49,26 @@ export interface ApiCallRow {
 }
 
 /** Appels API vus du navigateur, avec le temps serveur corrélé quand il existe. */
-export async function apiCalls(f: Filters): Promise<ApiCallRow[]> {
-  const itv = PERIODS[f.period].interval;
+export async function apiCalls(f: FiltersLike): Promise<ApiCallRow[]> {
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "spans", row: "fr", session: "s", time: "fr.ts" });
   return q<ApiCallRow>(
-    `select regexp_replace(coalesce(f.url, ''), '^https?://[^/]+', '') as url,
-            f.method,
+    `select regexp_replace(coalesce(fr.url, ''), '^https?://[^/]+', '') as url,
+            fr.method,
             count(*)::int as n,
-            percentile_cont(0.75) within group (order by f.duration_ms) as front_p75,
+            percentile_cont(0.75) within group (order by fr.duration_ms) as front_p75,
             percentile_cont(0.75) within group (order by b.duration_ms)
               filter (where b.duration_ms is not null) as back_p75,
-            count(*) filter (where coalesce(f.status_code, 0) >= 400
-                                or coalesce(f.status_code, 0) = 0)::int as err
-     from rum_span f
-     left join rum_span b on b.trace_id = f.trace_id and b.tier = 'back'
-     left join rum_session s on s.session_id = f.session_id
-     where f.tier = 'front' and f.ts > now() - interval '${itv}'
-       and ($1::text is null or f.app_id = $1)
-       and ($2::text is null or s.device_type = $2)
+            count(*) filter (where coalesce(fr.status_code, 0) >= 400
+                                or coalesce(fr.status_code, 0) = 0)::int as err
+     from rum_span fr
+     ${JUMEAU_BACK}
+     ${sessionJoin("fr", "s")}
+     where fr.tier = 'front'${where}
      group by 1, 2
      order by front_p75 desc nulls last
      limit 50`,
-    [f.app, f.device],
+    sql.params,
   );
 }
 
@@ -76,22 +80,23 @@ export interface BackRouteRow {
   err: number;
 }
 
-/** Routes backend (templates FastAPI), tout trafic confondu — la vue « serveur ». */
-export async function backRoutes(f: Filters): Promise<BackRouteRow[]> {
-  const itv = PERIODS[f.period].interval;
+/** Routes backend (templates FastAPI) — la vue « serveur » ; un filtre de session écarte le trafic sans session. */
+export async function backRoutes(f: FiltersLike): Promise<BackRouteRow[]> {
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "spans", row: "bk", session: "s", time: "bk.ts" });
   return q<BackRouteRow>(
-    `select coalesce(route, '—') as route,
+    `select coalesce(bk.route, '—') as route,
             count(*)::int as n,
-            percentile_cont(0.75) within group (order by duration_ms) as p75,
-            percentile_cont(0.95) within group (order by duration_ms) as p95,
-            count(*) filter (where coalesce(status_code, 0) >= 500)::int as err
-     from rum_span
-     where tier = 'back' and ts > now() - interval '${itv}'
-       and ($1::text is null or app_id = $1)
+            percentile_cont(0.75) within group (order by bk.duration_ms) as p75,
+            percentile_cont(0.95) within group (order by bk.duration_ms) as p95,
+            count(*) filter (where coalesce(bk.status_code, 0) >= 500)::int as err
+     from rum_span bk
+     ${sessionJoin("bk", "s")}
+     where bk.tier = 'back'${where}
      group by 1
      order by p75 desc nulls last
      limit 50`,
-    [f.app],
+    sql.params,
   );
 }
 
@@ -149,20 +154,23 @@ export async function traceSpans(
   );
 }
 
-/** Les appels les plus lents de la fenêtre, décomposés front / serveur / réseau. */
-export async function slowTraces(f: Filters): Promise<SlowTrace[]> {
-  const itv = PERIODS[f.period].interval;
+/** Les appels les plus lents de la plage, décomposés front / serveur / réseau. */
+export async function slowTraces(f: FiltersLike): Promise<SlowTrace[]> {
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "spans", row: "fr", session: "s", time: "fr.ts" });
   return q<SlowTrace>(
-    `select t.trace_id, t.session_id,
-            regexp_replace(coalesce(t.url, ''), '^https?://[^/]+', '') as url,
-            t.method, t.front_status, t.front_ms, t.back_ms, t.network_ms, t.ts
-     from v_trace t
-     left join rum_session s on s.session_id = t.session_id
-     where t.ts > now() - interval '${itv}'
-       and ($1::text is null or t.app_id = $1)
-       and ($2::text is null or s.device_type = $2)
-     order by t.front_ms desc
+    `select fr.trace_id, fr.session_id,
+            regexp_replace(coalesce(fr.url, ''), '^https?://[^/]+', '') as url,
+            fr.method, fr.status_code as front_status, fr.duration_ms as front_ms,
+            b.duration_ms as back_ms,
+            case when b.duration_ms is not null then greatest(fr.duration_ms - b.duration_ms, 0) end as network_ms,
+            fr.ts
+     from rum_span fr
+     ${JUMEAU_BACK}
+     ${sessionJoin("fr", "s")}
+     where fr.tier = 'front'${where}
+     order by fr.duration_ms desc
      limit 20`,
-    [f.app, f.device],
+    sql.params,
   );
 }

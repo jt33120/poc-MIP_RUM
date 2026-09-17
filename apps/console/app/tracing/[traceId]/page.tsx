@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { fmtMs } from "@/components/tracing/format";
 import { getUser } from "@/lib/auth";
 import { traceSpans, type TraceSpanRow } from "@/lib/queries-tracing";
+import { authorizedAppsOf } from "@/lib/query-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,7 @@ export default async function TraceDetail({
   const user = await getUser();
   // Les spans hors périmètre ne sont jamais lus : une trace dont il ne reste rien
   // est introuvable, sans dire si elle existe ailleurs.
-  const spans = await traceSpans(traceId, { apps: traceApps(first(sp.app), user?.apps ?? null) });
+  const spans = await traceSpans(traceId, { apps: traceApps(first(sp.app), authorizedAppsOf(user)) });
   if (spans.length === 0) notFound();
 
   // profondeur : chaîne de parents si connue, sinon repli par tier

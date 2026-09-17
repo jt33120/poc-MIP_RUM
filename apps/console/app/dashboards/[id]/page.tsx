@@ -7,7 +7,7 @@ import {
   WIDGET_VITALS,
   type WidgetType,
 } from "@/lib/dashboards";
-import { type Filters, type SearchParams } from "@/lib/filters";
+import { type SearchParams } from "@/lib/filters";
 import { registeredApps } from "@/lib/queries";
 import { getUser } from "@/lib/auth";
 import {
@@ -17,6 +17,9 @@ import {
   dashboardFilters,
   getAccessibleDashboard,
 } from "@/lib/dashboard-access";
+import { pageFilters } from "@/lib/page-filters";
+import { queryOf } from "@/lib/filters";
+import { hrefWithQuery } from "@/lib/query-contract";
 import { resolveWidget } from "@/lib/widget-data";
 import {
   addWidgetAction,
@@ -25,8 +28,8 @@ import {
 } from "../actions";
 import { PrintButton } from "./PrintButton";
 import { INPUT_CLASS } from "@/components/forms/Field";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { WidgetCard } from "@/components/dashboards/WidgetCard";
-import { filterQs } from "@/components/dashboards/filterQs";
 
 export const dynamic = "force-dynamic";
 
@@ -43,17 +46,19 @@ export default async function D({
   const dash = Number.isInteger(idNum) ? await getAccessibleDashboard(idNum, user) : null;
   if (!dash) notFound();
 
-  const f = dashboardFilters(dash, (await searchParams) ?? {}, user);
+  const ecran = await pageFilters((await searchParams) ?? {}, `/dashboards/${dash.id}`);
+  if (!ecran.ok) return <FilterProblemNotice title={dash.name} problem={ecran.problem} />;
+  const f = dashboardFilters(dash, ecran.query, user);
   if (!f) notFound();
-  const eff: Filters = f;
-  const data = await Promise.all(dash.layout.map((w) => resolveWidget(w, eff)));
+  const data = await Promise.all(dash.layout.map((w) => resolveWidget(w, f)));
   const apps = dashboardApps(await registeredApps(), user);
 
-  const qs = filterQs(f);
-  const exportHref = `/api/dashboards/${dash.id}/export${qs ? `?${qs}` : ""}`;
+  const exportHref = hrefWithQuery(`/api/dashboards/${dash.id}/export`, ecran.query);
   const scope = dash.app_id ?? "toutes les apps";
   const editable = canMutateDashboard(user, dash);
   const canUseGlobal = canCreateDashboard(user, null);
+  // Intersection vide : le tableau de bord porte sur une autre app que celle de l'écran.
+  const horsPerimetre = queryOf(f).scope.effectiveApps?.length === 0;
 
   return (
     <div className="animate-fade-up">
@@ -61,8 +66,8 @@ export default async function D({
         title={dash.name}
         sub={
           <>
-            Scope : {scope} · période {f.period}
-            {f.device ? ` · ${f.device}` : ""}
+            Scope : {scope} · {ecran.label}
+            {ecran.query.filters.device ? ` · ${ecran.query.filters.device}` : ""}
           </>
         }
       >
@@ -74,6 +79,13 @@ export default async function D({
         </a>
         <PrintButton />
       </PageHeader>
+
+      {horsPerimetre && (
+        <p role="status" data-testid="dashboard-hors-perimetre" className="mb-6 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
+          Ce tableau de bord porte sur {dash.app_id}, hors de l&apos;app sélectionnée : ses widgets ne remplacent pas
+          l&apos;app de l&apos;écran et restent vides. Change de projet pour le lire.
+        </p>
+      )}
 
       {/* ----- Grille de widgets ----- */}
       {dash.layout.length ? (

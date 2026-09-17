@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifyJwt } from "@/lib/auth";
 import { estCheminPublic } from "@/lib/chemins-publics";
+import { authorizedAppsOf } from "@/lib/query-contract";
 
 // Auth v0.3 (B3) : JWT cookie httpOnly signé AUTH_SECRET — remplace le basic auth v0.2.
 // PUBLICS sans auth (matcher) : /login, /mip-rum.js, /mip-rum-replay.js, /_next/*, /favicon*.
@@ -87,8 +88,9 @@ export async function middleware(req: NextRequest) {
   // vue « toutes les apps ». On réconcilie cookie de projet et paramètre ?app sur
   // les GET de pages (jamais les POST de server actions ni les routes API) :
   //   - ?app présent et dans le scope         -> on laisse passer ;
-  //   - sinon, on retombe sur le cookie        -> redirect en injectant ?app ;
-  //   - aucun projet résoluble                 -> redirect vers /select (picker).
+  //   - ?app nommé hors du scope               -> /select, refus annoncé ;
+  //   - absent (ou « all » pour un viewer)     -> cookie, redirect en injectant ?app ;
+  //   - aucun projet résoluble, scope vide     -> redirect vers /select (picker).
   // /admin/* est trans-projet (gestion clients/users/audit) : pas de scope app,
   // donc pas de porte projet. /select est la porte elle-même.
   const { pathname } = req.nextUrl;
@@ -115,7 +117,17 @@ export async function middleware(req: NextRequest) {
   if (gated) {
     const requested = req.nextUrl.searchParams.get("app");
     const cookieApp = req.cookies.get("mip-project")?.value ?? null; // cf. lib/project.ts
-    const scope = user.role === "viewer" && user.apps?.length ? user.apps : null;
+    // Périmètre signé (lib/query-contract.ts) : null = toutes les apps, [] = AUCUNE.
+    const scope = authorizedAppsOf(user);
+    // Aucune app autorisée : aucun écran de console ; le sélecteur le dit.
+    if (scope !== null && scope.length === 0) return NextResponse.redirect(new URL("/select", req.url), 302);
+    // App nommée hors périmètre : refus annoncé sur le sélecteur, jamais un repli
+    // silencieux sur une autre app sous une URL partagée.
+    if (requested && requested !== "all" && scope !== null && !scope.includes(requested)) {
+      const url = new URL("/select", req.url);
+      url.searchParams.set("hors_perimetre", requested);
+      return NextResponse.redirect(url, 302);
+    }
 
     let eff = requested;
     if (scope && (!eff || !scope.includes(eff))) eff = null;
