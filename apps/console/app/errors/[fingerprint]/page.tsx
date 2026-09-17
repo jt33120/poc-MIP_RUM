@@ -349,7 +349,7 @@ function SymbolicationNotice({
 function CodeContextBlock({ context }: { context: CodeContext }) {
   return (
     <figure className="border-t border-line" data-testid="code-context">
-      <figcaption className="px-4 py-2 font-mono text-xs text-ink-soft">
+      <figcaption className="break-all px-4 py-2 font-mono text-xs text-ink-soft">
         {context.source}:{context.line} <span className="font-sans text-ink-faint">· visible par les admins</span>
       </figcaption>
       <pre className="overflow-x-auto bg-navy-950 py-3 text-xs leading-relaxed text-slate-300">

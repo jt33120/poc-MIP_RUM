@@ -112,9 +112,11 @@ export default async function SourcemapsAdmin({ searchParams }: { searchParams: 
       {donnees.kind !== "error" && app && (
         <>
           <form method="get" className="card mb-6 flex flex-wrap items-end gap-3 p-4">
-            <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+            {/* Un sélecteur prend la largeur de sa plus longue option : sans `max-w-full`,
+                un nom d'app long fait déborder la page sur mobile. */}
+            <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs font-medium text-ink-soft">
               Application
-              <select name="app" defaultValue={app} className={INPUT_CLASS}>
+              <select name="app" defaultValue={app} className={`${INPUT_CLASS} max-w-full`}>
                 {apps.map((a) => (
                   <option key={a.app_id} value={a.app_id}>
                     {a.name} ({a.app_id})

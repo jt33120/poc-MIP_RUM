@@ -100,6 +100,30 @@ async function login(page: Page, compte: { email: string; password: string }) {
   await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
 }
 
+/**
+ * Débordement horizontal de la page : vide s'il n'y en a pas, sinon la mesure et
+ * les éléments qui dépassent hors d'un conteneur défilant — un simple booléen ne
+ * dit pas, dans le journal de CI, QUEL contrôle est trop large.
+ */
+async function debordements(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const largeur = document.documentElement.clientWidth;
+    const totale = document.documentElement.scrollWidth;
+    if (totale <= largeur) return [];
+    const dansDefilant = (el: Element) => {
+      for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+        if (["auto", "scroll", "hidden"].includes(getComputedStyle(parent).overflowX)) return true;
+      }
+      return false;
+    };
+    const fautifs = [...document.body.querySelectorAll("*")]
+      .filter((el) => el.getBoundingClientRect().right > largeur + 1 && !dansDefilant(el))
+      .slice(0, 5)
+      .map((el) => `${el.tagName.toLowerCase()}[${el.getAttribute("class") ?? ""}] → ${Math.round(el.getBoundingClientRect().right)} px`);
+    return [`page ${totale} px > fenêtre ${largeur} px`, ...fautifs];
+  });
+}
+
 /** Lot OTLP/HTTP JSON du SDK web : une exception de la release, sur une session. */
 function lotErreur() {
   const nano = String(BigInt(Date.now() - 1_000) * 1_000_000n);
@@ -178,11 +202,12 @@ test("admin : jeton de CI, upload direct, manifeste, stack source et révocation
   const apresRevocation = await request.post(`${INGEST}/v1/sourcemaps`, { data: corps, headers: { authorization: `Bearer ${secret}` } });
   expect(apresRevocation.status()).toBe(401);
 
-  // 390 px : la page d'administration ne déborde pas horizontalement.
+  // 390 px : la page d'administration ne déborde pas horizontalement, même avec
+  // les noms d'apps longs du registre de la base E2E dans le sélecteur.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${CONSOLE}/admin/sourcemaps?app=${APP}&release=${RELEASE}`);
   await expect(page.getByTestId("sourcemap-manifest")).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(await debordements(page)).toEqual([]);
 });
 
 test("viewer : ni administration ni écriture, stack symbolisée à l'affichage sans code source", async ({ page }) => {

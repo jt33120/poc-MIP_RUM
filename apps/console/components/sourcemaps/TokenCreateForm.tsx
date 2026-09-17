@@ -48,9 +48,15 @@ export function TokenCreateForm({ appId }: { appId: string }) {
   return (
     <div>
       <form onSubmit={creer} className="flex flex-wrap items-end gap-3" data-testid="create-sourcemap-token">
-        <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+        <label className="flex min-w-0 max-w-full flex-col gap-1 text-xs font-medium text-ink-soft">
           Nom du jeton
-          <input name="name" required maxLength={100} placeholder="CI GitHub — production" className={`${INPUT_CLASS} w-56`} />
+          <input
+            name="name"
+            required
+            maxLength={100}
+            placeholder="CI GitHub — production"
+            className={`${INPUT_CLASS} w-56 max-w-full`}
+          />
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
           Validité (jours)

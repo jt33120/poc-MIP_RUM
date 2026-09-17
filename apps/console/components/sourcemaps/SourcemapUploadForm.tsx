@@ -87,7 +87,14 @@ export function SourcemapUploadForm({ appId, release }: { appId: string; release
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
           Fichiers .map
-          <input name="maps" type="file" accept=".map,application/json" multiple required className="text-sm text-ink" />
+          <input
+            name="maps"
+            type="file"
+            accept=".map,application/json"
+            multiple
+            required
+            className="max-w-full text-sm text-ink"
+          />
         </label>
         <label className="flex items-center gap-2 text-xs text-ink-soft">
           <input name="replace" type="checkbox" />
