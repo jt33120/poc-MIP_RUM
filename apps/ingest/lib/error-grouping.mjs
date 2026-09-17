@@ -27,11 +27,18 @@
 // groupes connus au basculement. Son statut suit les groupes historiques touchés
 // (unanimes : leur statut ; divergents : `for_review`), et leur première et
 // dernière vue sont lues par deux lectures bornées sur l'index
-// (app_id, fingerprint, ts). Les notes de `error_status` ne sont ni copiées ni
+// (app_id, fingerprint, ts). Une empreinte rattachée plus tard à une issue
+// existante étend sa première et sa dernière vue, et la passe en `for_review` si
+// son statut la contredit. Les notes de `error_status` ne sont ni copiées ni
 // supprimées : l'issue les relit par ses alias.
 import { errorGrouping, GROUPING_VERSION } from "../supabase/functions/_shared/error-normalize.mjs";
 
-/** Empreintes historiques consultées par lot, au plus. Au-delà : rattachées sans historique. */
+/**
+ * Empreintes historiques consultées par lot, au plus. Au-delà, une empreinte
+ * n'est pas rattachée dans ce lot (ni alias, ni historique) : le prochain lot qui
+ * la porte le fera. Une issue créée sans avoir pu consulter toutes ses empreintes
+ * est ambiguë : elle naît `migration`, jamais « nouveau bug ».
+ */
 export const MAX_GROUPES_HISTORIQUES_PAR_LOT = 64;
 
 /** Longueur maximale d'une empreinte historique (contrainte `error_issue_alias_v72`). */
@@ -119,38 +126,46 @@ export async function regrouperErreurs(client, erreurs) {
   }
   const historique = await groupesHistoriques(client, [...aConsulter.values()]);
 
-  const creees = await creerIssues(client, manquantes, historique);
+  const creees = await creerIssues(client, manquantes, historique, aConsulter);
   for (const [k, id] of creees) ids.set(k, id);
   const restantes = manquantes.filter((c) => !creees.has(cle(c.app_id, c.grouping_key)));
   if (restantes.length) for (const [k, id] of await issuesExistantes(client, restantes)) ids.set(k, id);
 
-  // Alias : toutes les empreintes des issues créées ici ; pour les autres, celles
-  // qui n'étaient pas encore rattachées (une issue créée par un lot concurrent
-  // reçoit les siennes, le conflit les rend inertes).
+  // Alias des empreintes consultées : toutes celles des issues créées ici ; pour
+  // les autres, celles qui n'étaient pas encore rattachées (une issue créée par un
+  // lot concurrent reçoit les siennes, le conflit les rend inertes).
   const alias = [];
   for (const c of toutes) {
     const id = ids.get(cle(c.app_id, c.grouping_key));
-    const creeeIci = creees.has(cle(c.app_id, c.grouping_key));
     for (const fp of c.empreintes) {
-      if (!creeeIci && ids.has(cle(c.app_id, c.grouping_key)) && connues.has(cle(c.app_id, `${fp}\u0000${id}`))) continue;
+      if (!aConsulter.has(cle(c.app_id, fp)) || connues.has(cle(c.app_id, `${fp}\u0000${id}`))) continue;
       const h = historique.get(cle(c.app_id, fp));
-      alias.push({ app_id: c.app_id, fp, issue_id: id, creeeIci, statut: h?.first_seen ? h.status : null, resolue: h?.first_seen ? h.resolved_at : null });
+      alias.push({ app_id: c.app_id, fp, issue_id: id, statut: h?.first_seen ? h.status : null, resolue: h?.first_seen ? h.resolved_at : null });
     }
   }
+  // Ce qu'une empreinte rattachée ICI à une issue d'un lot antérieur lui apporte :
+  // son statut historique, et sa première et dernière vue.
   const divergences = new Map();
+  const bornes = new Map();
   if (alias.length) {
     const { rows } = await client.query(
       `insert into error_issue_alias (app_id, legacy_fingerprint, issue_id, legacy_status, legacy_resolved_at)
        select * from unnest($1::text[], $2::text[], $3::uuid[], $4::text[], $5::timestamptz[])
        on conflict (app_id, legacy_fingerprint, issue_id) do nothing
-       returning issue_id, legacy_status`,
+       returning app_id, legacy_fingerprint, issue_id, legacy_status`,
       [alias.map((a) => a.app_id), alias.map((a) => a.fp), alias.map((a) => a.issue_id), alias.map((a) => a.statut), alias.map((a) => a.resolue)],
     );
     const creeesIci = new Set(creees.values());
     for (const r of rows) {
-      // Une issue créée ici a déjà dérivé son statut de ces mêmes groupes.
-      if (!r.legacy_status || creeesIci.has(r.issue_id)) continue;
-      divergences.set(r.issue_id, (divergences.get(r.issue_id) ?? new Set()).add(r.legacy_status));
+      // Une issue créée ici a déjà dérivé statut et vues de ces mêmes groupes.
+      if (creeesIci.has(r.issue_id)) continue;
+      if (r.legacy_status) divergences.set(r.issue_id, (divergences.get(r.issue_id) ?? new Set()).add(r.legacy_status));
+      const h = historique.get(cle(r.app_id, r.legacy_fingerprint));
+      if (!h?.first_seen) continue;
+      const b = bornes.get(r.issue_id) ?? { premiere: null, derniere: null };
+      if (!b.premiere || instant(h.first_seen) < instant(b.premiere.ts)) b.premiere = { ts: h.first_seen, release: h.first_release };
+      if (!b.derniere || instant(h.last_seen) > instant(b.derniere.ts)) b.derniere = { ts: h.last_seen, release: h.last_release };
+      bornes.set(r.issue_id, b);
     }
   }
 
@@ -159,7 +174,7 @@ export async function regrouperErreurs(client, erreurs) {
     e.issue_id = ids.get(cle(e.app_id, e.grouping_key));
     apps.set(e.issue_id, e.app_id);
   }
-  return { lignes, plan: { apps, divergences } };
+  return { lignes, plan: { apps, divergences, bornes } };
 }
 
 /** Identifiants des issues déjà présentes pour ces clés : Map(app + clé → id). */
@@ -212,12 +227,14 @@ async function groupesHistoriques(client, empreintes) {
  * `on conflict do nothing` : une issue créée au même instant par un autre lot
  * garde ses valeurs, et celles calculées ici sont abandonnées.
  *
+ * @param {Map<string, unknown>} consultees empreintes dont l'historique a été lu
  * @returns {Promise<Map<string,string>>} app + clé → id, pour les issues créées ICI
  */
-async function creerIssues(client, manquantes, historique) {
+async function creerIssues(client, manquantes, historique, consultees) {
   if (!manquantes.length) return new Map();
   const nouvelles = manquantes.map((c) => {
     const groupes = [...c.empreintes].map((fp) => historique.get(cle(c.app_id, fp))).filter((h) => h?.first_seen);
+    const ambigue = [...c.empreintes].some((fp) => !consultees.has(cle(c.app_id, fp)));
     const statuts = new Set(groupes.map((h) => h.status));
     const statut = statuts.size === 0 ? "open" : statuts.size === 1 ? [...statuts][0] : "for_review";
     let premiere = { ts: c.premiere.ts, release: c.premiere.release ?? null };
@@ -231,7 +248,7 @@ async function creerIssues(client, manquantes, historique) {
       : null;
     return {
       ...c,
-      origin: groupes.length ? "migration" : "new",
+      origin: groupes.length || ambigue ? "migration" : "new",
       status: statut,
       status_source: statuts.size === 0 ? "system" : "migration",
       premiere,
@@ -276,24 +293,25 @@ const DIVERGE = `(status_source <> 'user' and status <> 'for_review'
 
 /**
  * Fin de transaction : première et dernière vue des issues d'après les lignes
- * RÉELLEMENT insérées, et passage en `for_review` d'une issue qu'un groupe
- * historique rattaché ici contredit. Une issue par instruction, dans l'ordre des
- * identifiants ; une issue que rien ne change n'est ni modifiée ni verrouillée.
+ * RÉELLEMENT insérées et les groupes historiques rattachés ici, et passage en
+ * `for_review` d'une issue qu'un de ces groupes contredit. Une issue par
+ * instruction, dans l'ordre des identifiants ; une issue que rien ne change n'est
+ * ni modifiée ni verrouillée.
  */
 export async function finaliserIssues(client, plan, inserees) {
   if (!plan) return;
   const parIssue = new Map();
+  const etendre = (id, app_id, premiere, derniere) => {
+    const u = parIssue.get(id) ?? { app_id, premiere: null, derniere: null };
+    if (premiere && (!u.premiere || instant(premiere.ts) < instant(u.premiere.ts))) u.premiere = premiere;
+    if (derniere && (!u.derniere || instant(derniere.ts) > instant(u.derniere.ts))) u.derniere = derniere;
+    parIssue.set(id, u);
+  };
   for (const r of inserees) {
-    if (!r.issue_id) continue;
-    const t = instant(r.ts);
-    const u = parIssue.get(r.issue_id) ?? { app_id: r.app_id, premiere: null, derniere: null };
-    if (!u.premiere || t < instant(u.premiere.ts)) u.premiere = { ts: r.ts, release: r.release ?? null };
-    if (!u.derniere || t > instant(u.derniere.ts)) u.derniere = { ts: r.ts, release: r.release ?? null };
-    parIssue.set(r.issue_id, u);
+    if (r.issue_id) etendre(r.issue_id, r.app_id, { ts: r.ts, release: r.release ?? null }, { ts: r.ts, release: r.release ?? null });
   }
-  for (const id of plan.divergences.keys()) {
-    if (!parIssue.has(id)) parIssue.set(id, { app_id: plan.apps.get(id), premiere: null, derniere: null });
-  }
+  for (const [id, b] of plan.bornes) etendre(id, plan.apps.get(id), b.premiere, b.derniere);
+  for (const id of plan.divergences.keys()) etendre(id, plan.apps.get(id), null, null);
   for (const id of [...parIssue.keys()].sort()) {
     const u = parIssue.get(id);
     const statuts = plan.divergences.get(id);

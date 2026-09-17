@@ -10,7 +10,9 @@
 //   • rejouer un lot, immédiat ou différé : ni occurrence, ni issue, ni alias, ni
 //     révision ne bougent ;
 //   • basculement : un groupe connu naît `migration` avec son statut, jamais
-//     renotifié ; des statuts historiques divergents donnent `for_review` ;
+//     renotifié ; des statuts historiques divergents donnent `for_review` ; au-delà
+//     de la borne d'historique d'un lot, l'issue naît `migration` et l'empreinte
+//     est rattachée, avec son historique, par le lot suivant ;
 //   • retour arrière : v2 désactivé sans perdre statuts ni URL, et la réactivation
 //     retrouve les mêmes issues.
 // Plus ce qui ne se lit que dans la base : contraintes, rétention, effacement, et
@@ -28,6 +30,8 @@ import { buildResourceSpans, msToHr, type EmitSpan } from "../../packages/rum-sd
 import type { ErrorFilters } from "../../apps/console/lib/queries-errors";
 // @ts-expect-error module JS partagé sans déclarations
 import { deposerLot, drainerIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
+// @ts-expect-error module JS partagé sans déclarations
+import { MAX_GROUPES_HISTORIQUES_PAR_LOT } from "../../apps/ingest/lib/error-grouping.mjs";
 // @ts-expect-error module JS partagé sans déclarations
 import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
 // @ts-expect-error module JS partagé sans déclarations
@@ -50,7 +54,8 @@ const APP_OMBRE = "p55-ombre";
 const APP_BASCULE = "p55-bascule";
 const APP_FENETRE = "p55-fenetre";
 const APP_CARTES = "p55-cartes";
-const APPS = [APP, APP_B, APP_OMBRE, APP_BASCULE, APP_CARTES];
+const APP_BORNE = "p55-borne";
+const APPS = [APP, APP_B, APP_OMBRE, APP_BASCULE, APP_CARTES, APP_BORNE];
 const muet = { error() {} };
 
 /** Tables écrites ici, enfants avant parents (clés étrangères). */
@@ -669,6 +674,50 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
       // Un bug jamais vu naît `new`.
       await writeRows(pool, lot(APP_BASCULE, [{ type: "FreshError", message: "tout neuf", stack: "FreshError\n    at neuf (https://boutique.test/src/neuf.ts:1:1)" }]));
       expect((await issues(pool, APP_BASCULE)).map((i) => [i.origin, i.status])).toEqual([["migration", "for_review"], ["new", "open"]]);
+    });
+
+    it("au-delà de la borne d'historique d'un lot : issue ambiguë `migration`, empreinte rattachée au lot suivant", async () => {
+      await nettoyer(pool, [APP_BORNE]);
+      const stack = "BorneError\n    at borne (https://boutique.test/src/borne.ts:1:1)";
+      // Les chiffres d'un message sont normalisés par l'empreinte historique : des lettres la font varier.
+      const erreur = (i: number, avantMs = 5_000): ErreurNavigateur => ({
+        type: "BorneError", message: `échec ${String.fromCharCode(97 + Math.floor(i / 26), 97 + (i % 26))}`, stack, cle: "lot.borne", avantMs,
+      });
+      const n = MAX_GROUPES_HISTORIQUES_PAR_LOT + 6;
+      const tardiveIndex = MAX_GROUPES_HISTORIQUES_PAR_LOT + 2;
+      await writeRows(pool, lot(APP_BORNE, [erreur(tardiveIndex, 3 * 86_400_000)]));
+      const [{ fingerprint: tardive }] = await erreurs(pool, APP_BORNE);
+      await pool.query(
+        "insert into error_status (app_id, fingerprint, status, resolved_at) values ($1, $2, 'resolved', now() - interval '2 days')",
+        [APP_BORNE, tardive],
+      );
+      await activer(pool, APP_BORNE);
+
+      // Une clé déclarée, n empreintes historiques : les dernières dépassent la borne.
+      await writeRows(pool, lot(APP_BORNE, Array.from({ length: n }, (_, i) => erreur(i))));
+      const [issue] = await issues(pool, APP_BORNE);
+      expect(await issues(pool, APP_BORNE)).toHaveLength(1);
+      // Historique non lu pour six empreintes : jamais présentée comme un nouveau bug.
+      expect(issue).toMatchObject({ origin: "migration", status: "open", status_source: "system", revision: "1" });
+      const rattachees = (await alias(pool, APP_BORNE)).map((a) => a.legacy_fingerprint);
+      expect(rattachees).toHaveLength(MAX_GROUPES_HISTORIQUES_PAR_LOT);
+      expect(rattachees).not.toContain(tardive);
+      expect((await erreurs(pool, APP_BORNE)).filter((r) => r.issue_id === issue.id)).toHaveLength(n);
+
+      // Le lot suivant qui la porte la rattache : statut historique divergent et première vue.
+      await writeRows(pool, lot(APP_BORNE, [erreur(tardiveIndex)]));
+      const [apres] = await issues(pool, APP_BORNE);
+      expect(apres).toMatchObject({ id: issue.id, status: "for_review", status_source: "migration", revision: "2" });
+      const premiere = (await pool.query(
+        "select min(ts) as ts from rum_error where app_id = $1 and fingerprint = $2", [APP_BORNE, tardive],
+      )).rows[0].ts;
+      expect(apres.first_seen).toEqual(premiere);
+      expect((await alias(pool, APP_BORNE)).find((a) => a.legacy_fingerprint === tardive)).toMatchObject({ legacy_status: "resolved" });
+
+      // Une occurrence de plus de la même empreinte : ni second alias, ni nouvelle révision.
+      await writeRows(pool, lot(APP_BORNE, [erreur(tardiveIndex)]));
+      expect(await alias(pool, APP_BORNE)).toHaveLength(MAX_GROUPES_HISTORIQUES_PAR_LOT + 1);
+      expect(await issues(pool, APP_BORNE)).toEqual([expect.objectContaining({ id: issue.id, status: "for_review", revision: "2" })]);
     });
 
     it("lecture : chaque occurrence comptée une fois, dans son issue ou dans son groupe historique", async () => {
