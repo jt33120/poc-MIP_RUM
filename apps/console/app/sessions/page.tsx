@@ -3,7 +3,6 @@ import { cookies } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Donut } from "@/components/charts/Donut";
-import { GlossaryTip } from "@/components/GlossaryTip";
 import { ObservedTrend } from "@/components/charts/ObservedTrend";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { browserFromUA, fmtDate } from "@/lib/format";
@@ -200,10 +199,8 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
           quelque chose. */}
       {blocs.engagement && engagement && (
         <section className="card mb-6 p-4" data-testid="engagement">
-          <h2 className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+          <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
             Durée observée et sessions à une seule vue
-            <GlossaryTip id="dureeObservee" />
-            <GlossaryTip id="sessionUneVue" />
           </h2>
           {engagementSuffisant(engagement) ? (
             <>

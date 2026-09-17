@@ -13,7 +13,6 @@
 // d'un groupe inconnu) vivent dans lib/breakdowns.ts, où elles sont testées.
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { GlossaryTip } from "@/components/GlossaryTip";
 import type { BreakdownTab } from "@/lib/breakdowns";
 
 export interface BreakdownCell {
@@ -69,10 +68,7 @@ export function Breakdown({
   return (
     <section className="card mb-6 p-4" data-testid="breakdown">
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h2 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-          {title}
-          <GlossaryTip id="decoupage" />
-        </h2>
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{title}</h2>
       </div>
 
       <nav aria-label={`Découper ${title.toLowerCase()} par`} className="mb-3 flex flex-wrap gap-1">
@@ -134,7 +130,7 @@ export function Breakdown({
                       {item.display}
                     </span>
                   </span>
-                  <span className="flex shrink-0 flex-wrap gap-x-3 text-xs tabular-nums text-ink-soft">
+                  <span className="flex basis-full flex-wrap gap-x-3 text-xs tabular-nums text-ink-soft sm:basis-auto sm:shrink-0">
                     {item.cells.map((cell) => (
                       <span key={cell.label}>
                         <span className="text-ink-faint">{cell.label} </span>

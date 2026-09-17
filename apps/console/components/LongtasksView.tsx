@@ -10,7 +10,6 @@
 import Link from "next/link";
 import { StackedBars } from "@/components/charts/StackedBars";
 import { bucketTick } from "@/components/errors/error-view";
-import { GlossaryTip } from "@/components/GlossaryTip";
 import { fmtDate, fmtVital } from "@/lib/format";
 import type { LongtaskBucket, LongtaskWorst } from "@/lib/queries-longtasks";
 
@@ -46,10 +45,7 @@ export function LongtasksView({
 
   return (
     <section className="mb-8" data-testid="longtasks">
-      <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink">
-        Blocages du fil principal dans le temps
-        <GlossaryTip id="blocages" />
-      </h2>
+      <h2 className="mb-2 text-sm font-semibold text-ink">Blocages du fil principal dans le temps</h2>
       <div className="card p-4">
         {total > 0 ? (
           <>

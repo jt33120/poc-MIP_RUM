@@ -232,7 +232,7 @@ test("sessions : recherche bornée, refus récupérable et pagination stable", a
   // Recherche par identifiant technique exact.
   await page.selectOption('select[name="qf"]', "session");
   await page.fill('input[name="q"]', SESSIONS[0].id);
-  await page.click('button[type="submit"]');
+  await page.getByRole("button", { name: "Rechercher" }).click();
   await page.waitForURL((u) => u.searchParams.get("q") === SESSIONS[0].id, { timeout: 15_000 });
   await expect(page.getByTestId("recherche-resume")).toContainText("identifiant");
   await expect(page.getByTestId("session-link")).toHaveCount(1);
