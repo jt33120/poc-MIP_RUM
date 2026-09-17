@@ -3,6 +3,9 @@
 // instrumente le client `pg` (node-postgres) pour émettre un span DB enfant par
 // requête SQL — aucun changement de code dans l'app. Le lien parent/enfant passe
 // par un contexte de requête (AsyncLocalStorage). Best-effort : jamais bloquant.
+// P5.3 : les exceptions (levées par un gestionnaire de requête, non interceptées,
+// journalisées avec console.error) partent avec leur stack, sans jamais changer le
+// sort de l'application.
 // Construit par esbuild (dist/register.js, CJS) ; la logique pure vit dans core.ts.
 import { randomBytes } from "node:crypto";
 import httpMod from "node:http";
@@ -17,6 +20,9 @@ import {
   buildLogPayload,
   buildLogRecord,
   buildPayload,
+  describeError,
+  describeThrown,
+  type ExceptionInput,
   type LogLevel,
   logsEndpoint,
   normalizeRoute,
@@ -24,6 +30,7 @@ import {
   parseTraceparent,
   passesLevel,
   resolveLogLevel,
+  SEVERITY,
   sessionFromTracestate,
   sqlOperation,
 } from "./core";
@@ -41,6 +48,10 @@ interface ReqCtx {
   spanId: string;
   sessionId: string | null;
   route: string | null;
+  /** Exceptions de la requête, émises avec son span http.server. */
+  exceptions: ExceptionInput[];
+  /** Émet le span http.server, une seule fois. */
+  emettre: (fin: "reponse" | "fermeture" | "fatale") => void;
 }
 const als = new AsyncLocalStorage<ReqCtx>();
 
@@ -77,27 +88,43 @@ function onRequest(req: any, res: any): ReqCtx {
   const spanId = hex(8); // identité du span http.server (parent des spans DB)
   const sessionId = sessionFromTracestate(header(req?.headers?.tracestate));
   const route = normalizeRoute(String(req?.url ?? "/"));
-  res?.on?.("finish", () => {
-    try {
-      enqueue(
-        buildHttpServerSpan({
-          traceId,
-          spanId,
-          parentSpanId,
-          method: String(req?.method ?? "GET"),
-          route,
-          url: null,
-          status: Number(res?.statusCode ?? 0),
-          sessionId,
-          startMs: start,
-          durationMs: Date.now() - start,
-        }),
-      );
-    } catch {
-      /* ignore */
-    }
-  });
-  return { traceId, spanId, sessionId, route };
+  let emis = false;
+  const ctx: ReqCtx = {
+    traceId,
+    spanId,
+    sessionId,
+    route,
+    exceptions: [],
+    emettre(fin) {
+      // Sans réponse complète, seul un span porteur d'exception est émis : une
+      // requête simplement abandonnée par le client n'en produisait pas.
+      if (emis || (fin !== "reponse" && !ctx.exceptions.length)) return;
+      emis = true;
+      try {
+        enqueue(
+          buildHttpServerSpan({
+            traceId,
+            spanId,
+            parentSpanId,
+            method: String(req?.method ?? "GET"),
+            route,
+            url: null,
+            // Aucun en-tête parti : il n'existe pas de statut, pas même un 500.
+            status: fin === "reponse" || res?.headersSent ? Number(res?.statusCode ?? 0) : null,
+            sessionId,
+            startMs: start,
+            durationMs: Date.now() - start,
+            exceptions: ctx.exceptions,
+          }),
+        );
+      } catch {
+        /* ignore */
+      }
+    },
+  };
+  res?.on?.("finish", () => ctx.emettre("reponse"));
+  res?.on?.("close", () => ctx.emettre("fermeture"));
+  return ctx;
 }
 
 function patch(mod: any): void {
@@ -114,11 +141,95 @@ function patch(mod: any): void {
       }
       // Le traitement de la requête (et ses appels DB asynchrones) tourne dans
       // le contexte ALS -> les spans DB retrouvent leur parent http.server.
-      if (ctx) return als.run(ctx, () => origEmit.call(this, event, ...args));
+      if (ctx) {
+        const courant = ctx;
+        let termine = false;
+        try {
+          const retour = als.run(courant, () => origEmit.call(this, event, ...args));
+          termine = true;
+          return retour;
+        } finally {
+          // Pas de `catch` : l'exception d'un gestionnaire poursuit son chemin
+          // intacte, sans relance qui déplacerait le message de crash de Node
+          // vers ce fichier. Le moniteur la recevra avec ce contexte.
+          if (!termine) requeteInterrompue(courant);
+        }
+      }
     }
     return origEmit.call(this, event, ...args);
   };
   proto.__mipPatched = true;
+}
+
+// --- exceptions (P5.3) ---------------------------------------------------------
+// Trois voies, un même identifiant : l'exception levée par un gestionnaire de
+// requête, l'exception non interceptée du processus, et `console.error(err)`. Une
+// même Error vue deux fois (journalisée puis relancée) garde son
+// `mip.exception_id`, et l'ingestion n'en écrit qu'une ligne.
+//
+// AUCUN handler `uncaughtException` ni `unhandledRejection` : en poser un
+// transformerait un crash en processus survivant. `uncaughtExceptionMonitor`
+// OBSERVE sans rien décider : Node termine le processus comme sans l'agent, avec
+// le même code de sortie.
+//
+// BEST-EFFORT ASSUMÉ. Une fermeture fatale ne laisse pas le temps d'un dernier
+// envoi réseau : le lot est tenté, rien ne garantit qu'il parte. Un tampon
+// durable relève de P7/P8.
+const identifiants = new WeakMap<object, string>();
+
+function exceptionIdPour(valeur: unknown): string {
+  if (valeur === null || (typeof valeur !== "object" && typeof valeur !== "function")) return hex(16);
+  let id = identifiants.get(valeur);
+  if (!id) {
+    id = hex(16);
+    identifiants.set(valeur, id);
+  }
+  return id;
+}
+
+/**
+ * Requête dont le gestionnaire vient de lever. En sortant de `als.run`, le
+ * contexte n'est plus actif : si personne n'intercepte l'exception, le moniteur
+ * la reçoit dans la foulée, avant toute autre tâche, et la rattache à ce contexte.
+ */
+let interrompue: ReqCtx | null = null;
+
+function requeteInterrompue(ctx: ReqCtx): void {
+  interrompue = ctx;
+  // Interceptée plus haut, l'exception ne reviendra jamais au moniteur : le
+  // contexte ne doit pas survivre pour être prêté à une exception ultérieure.
+  setImmediate(() => {
+    if (interrompue === ctx) interrompue = null;
+  }).unref();
+}
+
+function surveillerExceptions(): void {
+  process.on("uncaughtExceptionMonitor", (err: unknown) => {
+    try {
+      // Sans handler applicatif, Node termine le processus juste après ce moniteur.
+      const fatale =
+        process.listenerCount("uncaughtException") === 0 && !process.hasUncaughtExceptionCaptureCallback();
+      const ctx = interrompue ?? als.getStore();
+      interrompue = null;
+      const exception: ExceptionInput = {
+        error: describeThrown(err),
+        tsMs: Date.now(),
+        exceptionId: exceptionIdPour(err),
+        handled: false,
+        fatal: fatale ? true : null,
+      };
+      if (ctx) ctx.exceptions.push(exception);
+      else if (LOGS_ENABLED) journaliserException(fatale ? "fatal" : "error", exception);
+      if (fatale) {
+        // Le processus ne répondra plus : le span part maintenant ou jamais.
+        ctx?.emettre("fatale");
+        void flush();
+        if (LOGS_ENABLED) void flushLogs();
+      }
+    } catch {
+      /* ignore */
+    }
+  });
 }
 
 // --- pont de journalisation (signal LOGS) ------------------------------------
@@ -160,7 +271,9 @@ function formatArgs(args: unknown[]): string {
   return args
     .map((a) => {
       if (typeof a === "string") return a;
-      if (a instanceof Error) return `${a.name}: ${a.message}`;
+      // La stack ne va pas dans le corps : elle voyage en `exception.stacktrace`.
+      const erreur = describeError(a);
+      if (erreur) return erreur.type ? `${erreur.type}: ${erreur.message}` : erreur.message;
       try {
         return JSON.stringify(a);
       } catch {
@@ -170,6 +283,39 @@ function formatArgs(args: unknown[]): string {
     .join(" ");
 }
 
+/**
+ * Exception structurée d'un `console.error(…, err)` : la première Error passée.
+ * Du texte seul reste un log — « texte » n'est pas une exception —, et un
+ * avertissement n'entre pas dans le suivi d'erreurs.
+ */
+function exceptionJournalisee(level: LogLevel, args: unknown[], tsMs: number): ExceptionInput | null {
+  if (SEVERITY[level] < SEVERITY.error) return null;
+  for (const arg of args) {
+    const error = describeError(arg);
+    // `handled` reste inconnu : journaliser une Error ne dit pas si elle est relancée.
+    if (error) return { error, tsMs, exceptionId: exceptionIdPour(arg), handled: null, fatal: null };
+  }
+  return null;
+}
+
+/** Log d'une exception non interceptée survenue hors de toute requête. */
+function journaliserException(level: LogLevel, exception: ExceptionInput): void {
+  if (!passesLevel(level, LOG_FLOOR)) return;
+  const { type, message } = exception.error;
+  logBuffer.push(
+    buildLogRecord({
+      level,
+      body: type ? `${type}: ${message}` : message,
+      tsMs: exception.tsMs,
+      traceId: null,
+      spanId: null,
+      sessionId: null,
+      route: null,
+      exception,
+    }),
+  );
+}
+
 function captureLog(level: LogLevel, args: unknown[]): void {
   if (inBridge || !passesLevel(level, LOG_FLOOR)) return;
   inBridge = true;
@@ -177,15 +323,17 @@ function captureLog(level: LogLevel, args: unknown[]): void {
     const ctx = als.getStore();
     const body = formatArgs(args);
     if (!body) return;
+    const tsMs = Date.now();
     logBuffer.push(
       buildLogRecord({
         level,
         body,
-        tsMs: Date.now(),
+        tsMs,
         traceId: ctx?.traceId ?? null,
         spanId: ctx?.spanId ?? null,
         sessionId: ctx?.sessionId ?? null,
         route: ctx?.route ?? null,
+        exception: exceptionJournalisee(level, args, tsMs),
       }),
     );
     if (logBuffer.length >= MAX_LOG_BATCH) void flushLogs();
@@ -308,6 +456,7 @@ if (!cfg.enabled) {
   patch(httpMod);
   patch(httpsMod);
   hookRequire();
+  surveillerExceptions();
   const timer = setInterval(() => {
     void flush();
     if (LOGS_ENABLED) void flushLogs();

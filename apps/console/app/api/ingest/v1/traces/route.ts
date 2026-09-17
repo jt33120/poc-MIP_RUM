@@ -69,7 +69,7 @@ export async function POST(req: Request) {
 
     // La transaction entière est idempotente (on conflict do nothing /
     // greatest) : la rejouer sur erreur Postgres transitoire est sûr.
-    await withRetry(() => writeRows(pool, rows), {
+    const ecrit = await withRetry(() => writeRows(pool, rows), {
       onRetry: (e: unknown, attempt: number) =>
         log.warn("db retry", { attempt, code: (e as { code?: string })?.code }),
     });
@@ -79,6 +79,8 @@ export async function POST(req: Request) {
       sessions: rows.sessions.length,
       metrics: rows.metrics.length,
       errors: rows.errors.length,
+      // Erreurs RÉELLEMENT insérées (RETURNING) : un rejeu n'en ajoute aucune.
+      errors_inserted: ecrit.erreurs.inserees,
       spans: rows.spans.length,
       rejected: rows.rejected,
     });

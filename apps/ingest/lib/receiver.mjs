@@ -154,10 +154,15 @@ export function creerReceveur(pool, opts = {}) {
       const parsed = flattenOtlpLogs(payload, { maxLogs: MAX_SPANS_PER_REQUEST });
       const refus = await gardes(parsed.apiKeys, entetes);
       if (refus) return repondre(res, refus.statut, refus.corps, refus.entetes);
-      await withRetry(() => writeLogs(pool, parsed.logs), {
+      const ecrit = await withRetry(() => writeLogs(pool, parsed.logs, parsed.errors), {
         onRetry: (e, n) => log.warn("db retry (logs)", { attempt: n, code: e?.code }),
       });
-      log.info("ingested logs", { logs: parsed.logs.length, rejected: parsed.rejected });
+      log.info("ingested logs", {
+        logs: parsed.logs.length,
+        // Exceptions RÉELLEMENT insérées (RETURNING), pas la taille du lot.
+        exceptions: ecrit.erreurs.inserees,
+        rejected: parsed.rejected,
+      });
       return repondre(res, 200, { partialSuccess: {} }, entetes);
     }
 
@@ -170,6 +175,9 @@ export function creerReceveur(pool, opts = {}) {
     const pays = entete(req, "x-vercel-ip-country") ?? entete(req, "cf-ipcountry");
     if (pays) for (const s of rows.sessions) s.geo_country = s.geo_country ?? pays;
 
+    // Erreurs RÉELLEMENT insérées (RETURNING) ; inconnues tant qu'un lot différé
+    // n'est pas drainé.
+    let erreursInserees = null;
     if (differe) {
       // Le contrôle de clé et le rate-limit sont DÉJÀ passés au-dessus : on ne
       // débarque que ce qui a le droit d'entrer. Une file derrière une porte
@@ -179,15 +187,17 @@ export function creerReceveur(pool, opts = {}) {
         onRetry: (e, n) => log.warn("db retry (differe)", { attempt: n, code: e?.code }),
       });
     } else {
-      await withRetry(() => writeRows(pool, rows), {
+      const ecrit = await withRetry(() => writeRows(pool, rows), {
         onRetry: (e, n) => log.warn("db retry", { attempt: n, code: e?.code }),
       });
+      erreursInserees = ecrit.erreurs.inserees;
     }
     log.info("ingested", {
       sessions: rows.sessions.length,
       pageviews: rows.pageviews.length,
       metrics: rows.metrics.length,
       errors: rows.errors.length,
+      errors_inserted: erreursInserees,
       resources: rows.resources.length,
       longtasks: rows.longtasks.length,
       breadcrumbs: rows.breadcrumbs.length,

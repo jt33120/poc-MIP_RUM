@@ -28,9 +28,28 @@ MIP_RUM_IGNORE=/health      # défaut : /health,/docs,/openapi.json,/favicon.ico
 
 Par requête : route template (`/aos/{ao_id}`, jamais l'URL brute), méthode,
 statut HTTP, durée serveur en ms, et les identifiants W3C (`traceparent` /
-`tracestate: mip=s:<session>`) posés par le SDK web MIP RUM. **Ni corps, ni
-query string, ni headers métier, ni IP.** Envoi par batch (5 s / 20 spans),
-best effort, timeout 3 s : l'API ne ralentit ni ne casse jamais.
+`tracestate: mip=s:<session>`) posés par le SDK web MIP RUM ; pour une exception
+non gérée, son type, son message et sa traceback, nettoyés de la PII à
+l'ingestion. **Ni corps, ni query string, ni headers métier, ni IP.** Envoi par
+batch (5 s / 20 spans), best effort, timeout 3 s : l'API ne ralentit ni ne casse
+jamais.
+
+## Exceptions non gérées
+
+Une exception qui traverse toute l'app devient un **événement `exception`** du span
+(type, message, traceback, `mip.exception_id`), puis **remonte intacte** au serveur ASGI :
+le middleware ne l'avale jamais.
+
+- **Avant le début de la réponse** : le serveur répondra 500, le span porte `http.status_code`
+  500, le statut OTLP ERROR et `error.type`.
+- **Après le début de la réponse** (flux interrompu) : le span garde le **statut réellement
+  envoyé** et porte l'indicateur d'échec (statut OTLP ERROR, `error.type`) — jamais un 500
+  inventé.
+- Une réponse d'erreur rendue par l'app (`HTTPException`) n'est pas une exception ; une
+  annulation (`asyncio.CancelledError`, client parti) non plus.
+
+L'ingestion en fait une erreur `python`, rattachée à la trace et au span de la requête, sans
+session inventée.
 
 ## Tests
 
