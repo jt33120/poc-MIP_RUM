@@ -92,9 +92,13 @@ export function HealthBanner({ health, periodLabel }: { health: Health; periodLa
       <div className="flex items-center gap-5">
         <HealthRing score={health.score} label={health.label} />
         <div>
+          {/* La bulle OUVRE le libellé : posée après lui, à droite de l'anneau,
+              sa bulle de 288 px centrée sortait de l'écran et portait la page à
+              415 px sur une fenêtre de 390. En tête, elle s'ouvre toujours vers
+              l'intérieur. */}
           <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Santé ({periodLabel})
             <GlossaryTip id="health" />
+            Santé ({periodLabel})
           </div>
           <span
             className={`mt-1.5 inline-block rounded-full border px-3 py-1 text-sm font-semibold ${HEALTH_CLASS[health.label]}`}
