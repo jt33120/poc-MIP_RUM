@@ -296,18 +296,24 @@ type Console = Awaited<ReturnType<typeof consoleSur>>;
     expect(trend.trend.reduce((s, p) => s + p.occurrences, 0)).toBe(3);
   });
 
+  // Les jeux de données qui PORTENT `service` : les erreurs depuis v69, la
+  // projection d'événements depuis migration-v75 (P6.1). Sur eux, le filtre
+  // s'applique — c'est la bascule annoncée par la matrice « — → oui ». Partout
+  // ailleurs, il reste refusé : une session n'a pas de service.
+  const PORTENT_SERVICE = ["Erreurs", "Explorer d'événements"];
+
   it("une dimension qu'un jeu de données ne porte pas est refusée, jamais ignorée", async () => {
     // `service` n'est déclaré que là où un émetteur backend le pose : les erreurs
     // (v69) et la projection d'événements (v75). Partout ailleurs, le filtre est
     // refusé — jamais appliqué à moitié.
-    const PORTENT_SERVICE = ["Erreurs", "Explorer d'événements"];
     for (const { ecran, lire } of COMPTEURS.filter((c) => !PORTENT_SERVICE.includes(c.ecran))) {
       await expect(lire(filtres(`app=${A}&service=api`)), ecran).rejects.toThrow(/Service/);
     }
     // Là où il est porté, il s'applique vraiment : aucune ligne de la recette ne
-    // déclare `service`, donc zéro — pas le total non filtré.
+    // déclare `service`, donc zéro — et le total non filtré, lui, reste positif.
     for (const { ecran, lire } of COMPTEURS.filter((c) => PORTENT_SERVICE.includes(c.ecran))) {
       expect(await lire(filtres(`app=${A}&service=api`)), ecran).toBe(0);
+      expect(await lire(filtres(`app=${A}`)), ecran).toBeGreaterThan(0);
     }
   });
 

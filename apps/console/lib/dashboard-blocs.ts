@@ -48,6 +48,7 @@ export const CATALOGUES: readonly Catalogue[] = [
       { id: "vitals", label: "Core Web Vitals", defaut: true, desc: "LCP, INP, CLS, FCP et TTFB au p75, face aux seuils Google." },
       { id: "reseau", label: "Décomposition réseau", defaut: false, desc: "D'où vient le TTFB : redirection, DNS, connexion, TLS, requête, réponse." },
       { id: "hero", label: "Courbe LCP et volumétrie", defaut: true, desc: "LCP p75 dans le temps, sessions, pages vues et taux d'erreur." },
+      { id: "decoupage", label: "Découpage des Web Vitals", defaut: true, desc: "LCP, INP et CLS répartis par route, navigateur, système, pays estimé, appareil ou release, avec le nombre de mesures. Chaque groupe ouvre le détail filtré." },
       { id: "historique", label: "Historique de santé 14 jours", defaut: true, desc: "Heatmap jour × heure, avec les courbes de volume et de LCP associées." },
       { id: "anomalies", label: "Anomalies détectées", defaut: true, desc: "Écarts statistiques sur le LCP, sans seuil à régler." },
       { id: "versions", label: "Comparaison par version", defaut: true, desc: "LCP, INP et taux d'erreur par version déployée. Ne s'affiche que si au moins deux versions ont été vues." },
@@ -83,7 +84,9 @@ export const CATALOGUES: readonly Catalogue[] = [
       // porte que sur les sessions qui ont un identifiant de visiteur. On dit
       // désormais les deux.
       { id: "resume", label: "Nouveaux vs revenants", defaut: true, desc: "Partage des visiteurs IDENTIFIÉS sur toute la fenêtre — la liste, elle, s'arrête à 50 sessions. Les sessions sans identifiant sont comptées à part." },
-      { id: "liste", label: "Liste des sessions", defaut: true, desc: "Les dernières sessions, avec appareil, navigateur, pages vues et erreurs." },
+      { id: "liste", label: "Liste des sessions", defaut: true, desc: "Les dernières sessions, avec appareil, navigateur, pages vues et erreurs. Recherche bornée à l'identifiant technique exact, à la route normalisée ou à la release." },
+      { id: "visiteurs", label: "Tendance des visiteurs observés", defaut: true, desc: "Visiteurs distincts par seau de temps. Les seaux ne s'additionnent pas : un visiteur présent dans trois seaux y est compté trois fois." },
+      { id: "engagement", label: "Durée observée et sessions à une vue", defaut: true, desc: "Médiane de l'écart entre la première et la dernière observation, et part des sessions qui n'ont vu qu'une page. Affiché seulement si la fenêtre porte assez de sessions." },
     ],
     indisponibles: [
       {

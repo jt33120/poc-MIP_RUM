@@ -28,6 +28,18 @@ import {
 import type { SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
 import { fmtDate } from "@/lib/format";
+import { Breakdown } from "@/components/Breakdown";
+import { ERRORS_BREAKDOWN_COLUMNS, errorsBreakdownItems } from "@/components/breakdown-view";
+import {
+  BREAKDOWN_NOTICES,
+  BREAKDOWN_PARAM,
+  availableBreakdowns,
+  breakdownTabs,
+  datasetAvailability,
+  parseBreakdown,
+} from "@/lib/breakdowns";
+import { dimensionSchema } from "@/lib/query-schema";
+import { ERRORS_BREAKDOWN_DATASETS, errorsBreakdown } from "@/lib/queries-breakdowns";
 import {
   ERROR_LIST_MAX_OFFSET,
   listErrorGroups,
@@ -46,6 +58,36 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   const { label, bucketLabel } = ecran;
   const { bucketSeconds } = ecran.query.range;
   const url = errorSearchParams(sp);
+
+  // Découpage (P6.3) : les MÊMES onglets que l'accueil et `/pages`, limités aux
+  // dimensions que les occurrences d'erreurs portent réellement. Calculé avant la
+  // bifurcation P5.5 : les deux listes — issues et groupes historiques — montrent
+  // le même découpage, sur la même population.
+  const schema = await dimensionSchema();
+  const dispoDecoupage = datasetAvailability(ERRORS_BREAKDOWN_DATASETS, schema);
+  const dimension = parseBreakdown(url.get(BREAKDOWN_PARAM), availableBreakdowns(dispoDecoupage));
+  const decoupe = dimension ? await errorsBreakdown(f, dimension) : null;
+  // Les filtres propres à l'écran suivent l'onglet, et réciproquement : changer de
+  // découpage ne doit pas effacer un triage en cours, ni paginer remettre l'onglet
+  // au défaut. La pagination, elle, repart du début — la population a changé.
+  const vueEcran: Record<string, string> = dimension ? { [BREAKDOWN_PARAM]: dimension } : {};
+  const filtresEcran = Object.fromEntries(
+    ["status", "source", "limit"].flatMap((nom) => (url.get(nom) ? [[nom, url.get(nom) as string]] : [])),
+  );
+  const decoupage =
+    dimension && decoupe ? (
+      <Breakdown
+        title="Occurrences par dimension"
+        tabs={breakdownTabs("/errors", ecran.query, dimension, dispoDecoupage, filtresEcran)}
+        notice={`${BREAKDOWN_NOTICES[dimension]} Ce classement porte sur TOUTES les occurrences de la fenêtre : le statut de triage et la source, qui filtrent la liste ci-dessous, ne le découpent pas.`}
+        items={errorsBreakdownItems({ pathname: "/errors", query: ecran.query, schema, dimension }, decoupe.rows)}
+        columns={ERRORS_BREAKDOWN_COLUMNS}
+        groups={decoupe.groups}
+        truncated={decoupe.truncated}
+        measureLabel="Occurrences"
+        emptyLabel={`Aucune occurrence d'erreur sur ${label}.`}
+      />
+    ) : null;
 
   // P5.5 : l'app choisie (ou une app du périmètre « toutes ») a activé le
   // regroupement v2 → la liste passe aux issues. Sinon, liste historique inchangée.
@@ -72,6 +114,8 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
         limit={url.get("limit")}
         label={label}
         bucketLabel={bucketLabel}
+        decoupage={decoupage}
+        vue={vueEcran}
       />
     );
   }
@@ -87,7 +131,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
     null,
   );
   const pageHref = (offset: number) =>
-    errorsHref("/errors", f, f.app, { offset: String(offset), limit: String(page.limit) });
+    errorsHref("/errors", f, f.app, { ...vueEcran, offset: String(offset), limit: String(page.limit) });
   const hasNext = total > page.offset + page.limit && page.offset + page.limit <= ERROR_LIST_MAX_OFFSET;
 
   return (
@@ -151,6 +195,8 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
           ou à un visiteur connu (une erreur backend sans session, par exemple) — ce n&apos;est pas zéro personne.
         </HeroReading>
       </SupervisionHero>
+
+      {decoupage}
 
       <div className="card overflow-x-auto">
         <table className="w-full min-w-table text-sm">

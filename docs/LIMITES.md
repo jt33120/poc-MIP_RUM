@@ -2,6 +2,29 @@
 
 Liste honnête, demandée par Julian. Colonne « v0.2 » = traité dans le sprint nuit du 10→11/06 (cf. archive/ROADMAP_V02.md) ; « v0.3 » = sprint nuit 2 (cf. archive/ROADMAP_V03.md et la section ci-dessous) ; « Phase 1+ » = nécessite un vrai chantier produit MIP.
 
+## Mise à jour P6.3 (17/09/2026 — analyses prêtes à l'emploi et drill-downs)
+
+Ce que les nouveaux chiffres mesurent EXACTEMENT, et ce qu'ils ne mesurent pas. Chaque définition est
+affichée à l'écran (bulle de glossaire) et vérifiée par un test ; aucune n'emprunte une convention du
+marché sans la nommer.
+
+| Mesure affichée | Définition exacte | Ce qu'elle n'est PAS |
+|---|---|---|
+| Découpage par dimension (route, navigateur, système, pays estimé, appareil, release) | Regroupement des mesures sur la colonne de la dimension ; les lignes sans valeur forment un groupe « Inconnu » (`is null`). Groupes plafonnés, nombre réel affiché. | Pas de groupe « Autres » : additionner des p75 n'a pas de sens. Un onglet dont la dimension n'est pas collectée est **désactivé avec sa raison**, jamais rendu en l'ignorant. |
+| `session_duration_observed` | `max(0, last_seen_at − started_at)`, sur les sessions **commencées** dans la fenêtre. Les sessions encore actives à la fin de la fenêtre sont comptées **et signalées**. | Pas du temps actif : un onglet laissé ouvert l'allonge, une fermeture brutale la raccourcit. |
+| `single_view_session_rate` | Sessions ayant vu exactement une page / sessions ayant vu au moins une page. Affiché seulement au-delà de 30 sessions. | **Pas un taux de rebond** : aucune durée minimale ni interaction n'entre dans la définition, contrairement aux conventions — incompatibles entre elles — des autres outils. |
+| Tendance des visiteurs observés | Identifiants de visiteur **distincts par seau**. | Non additionnable : la somme des seaux n'est pas le nombre de visiteurs de la fenêtre, et aucun total n'en est déduit. |
+| Ressources (durée, taille, type, origine) | Les ressources **retenues par le SDK** : seuil de lenteur (300 ms par défaut) ou blocage du rendu, vingt au plus par page vue. | Pas un inventaire du réseau : échantillon volontairement biaisé vers le lent, jamais extrapolé. |
+| Partage première / tierce partie | Hôte de l'URL déjà collectée comparé aux **origines déclarées** de l'application (`app_registry.allowed_origins`), application par application. | Aucun appel sortant : le serveur ne résout et ne récupère jamais une URL de ressource. Sans origine déclarée, le partage est annoncé **non calculable** plutôt qu'inventé. |
+| Blocages du fil principal | Nombre de blocages par seau, p75 et pire cas ; Long Tasks et Long Animation Frames comptés **séparément**. | Aucune somme de durées : des blocages concurrents de plusieurs visiteurs ne s'additionnent pas en temps d'attente vécu. |
+| Comparaison par version | Release déclarée **sur chaque mesure** (migration-v75) : vue, métrique et erreur portent la leur. Une session qui traverse un déploiement compte dans les deux versions. | La colonne « Sessions » n'est donc pas additionnable d'une ligne à l'autre. Avant v75, repli sur la release de session, annoncé à l'écran. |
+
+Recherche de sessions : **égalité stricte** sur trois champs seulement — identifiant technique exact, route
+normalisée, release. Ni motif, ni préfixe, ni recherche par identité (visiteur, compte, adresse) : une URL
+partageable ne doit pas permettre de retrouver le parcours d'une personne. C'est une décision de produit,
+pas une fonctionnalité en attente. La pagination utilise une clé stable `(last_seen_at, session_id)` : deux
+pages successives ne peuvent ni répéter ni sauter une ligne.
+
 ## Mise à jour v0.8 (17/06/2026 — sécurité base + scrub PII serveur)
 
 | Limite d'origine | Ce qui est livré en v0.8 |

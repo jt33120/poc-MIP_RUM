@@ -6,7 +6,9 @@ import { q } from "./db";
 import { type Filters } from "./filters";
 import { bucketExpr, sessionJoin } from "./query-compiler";
 import { previousRange } from "./query-contract";
-import { sqlContext } from "./query-sql";
+import { dimensionSchema } from "./query-schema";
+import { sqlContext, type SqlContext } from "./query-sql";
+import type { SessionCursor, SessionSearch } from "./sessions-search";
 
 export interface AppItem {
   app_id: string;
@@ -310,19 +312,63 @@ export interface SessionRow {
   routes: string[] | null;
   err_count: number;
   collection_source: string | null; // 'sdk' (défaut) | 'extension'
+  /** Position de pagination stable, microsecondes conservées (P6.3). */
+  cursor_ts: string;
 }
 
-/** Sessions vues sur la plage, les plus récentes d'abord ; pages et erreurs de la même app. */
-export async function listSessions(
-  f: Filters,
-  page?: { limit?: number; offset?: number },
-): Promise<SessionRow[]> {
+export interface SessionListPage {
+  limit?: number;
+  /** Pagination historique de l'API v1 ; ignoré dès qu'un curseur est fourni. */
+  offset?: number;
+  /** Pagination stable de la console (P6.3) : reprend après cette clé. */
+  cursor?: SessionCursor | null;
+  /** Recherche bornée (identifiant exact, route normalisée, release). */
+  search?: SessionSearch | null;
+}
+
+/**
+ * Prédicat d'une recherche de session (P6.3). Route et release sont des
+ * dimensions PAR OCCURRENCE : elles se lisent sur les pages vues de la session,
+ * et non sur `rum_session.release`, qui ne retient que la première release vue et
+ * décrirait donc le passé avec une valeur unique. Sans la colonne de v75, la
+ * recherche par release retombe sur la session, et l'écran le dit.
+ *
+ * Valeur toujours LIÉE, comparaison toujours en égalité stricte.
+ */
+function rechercheSql(sql: SqlContext, search: SessionSearch): string {
+  if (search.field === "session") return ` and s.session_id = ${sql.bind(search.value)}`;
+  if (search.field === "route") {
+    return ` and exists (select 1 from rum_pageview rp
+              where rp.app_id = s.app_id and rp.session_id = s.session_id and rp.route = ${sql.bind(search.value)})`;
+  }
+  if (!sql.schema.has("rum_pageview.release")) return ` and s.release = ${sql.bind(search.value)}`;
+  return ` and exists (select 1 from rum_pageview rp
+            where rp.app_id = s.app_id and rp.session_id = s.session_id and rp.release = ${sql.bind(search.value)})`;
+}
+
+/** La recherche par release porte-t-elle sur l'occurrence, ou sur la session faute de colonne ? */
+export async function releaseRechercheParOccurrence(): Promise<boolean> {
+  return (await dimensionSchema()).has("rum_pageview.release");
+}
+
+/**
+ * Sessions vues sur la plage, les plus récentes d'abord ; pages et erreurs de la
+ * même app. La clé de tri `(last_seen_at, session_id)` est stricte et totale :
+ * avec un curseur, deux pages successives ne peuvent ni répéter ni sauter une
+ * ligne, même si des sessions sont vues entre les deux lectures.
+ */
+export async function listSessions(f: Filters, page?: SessionListPage): Promise<SessionRow[]> {
   const sql = await sqlContext(f);
   const where = sql.where({ dataset: "sessions", row: "s", session: "s", time: "s.last_seen_at" });
+  const recherche = page?.search ? rechercheSql(sql, page.search) : "";
+  const curseur = page?.cursor
+    ? ` and (s.last_seen_at, s.session_id) < (${sql.bind(page.cursor.ts)}::timestamptz, ${sql.bind(page.cursor.id)})`
+    : "";
   const limit = sql.bind(page?.limit ?? 50);
-  const offset = sql.bind(page?.offset ?? 0);
+  const offset = sql.bind(page?.cursor ? 0 : (page?.offset ?? 0));
   return q<SessionRow>(
-    `select s.*, p.routes, coalesce(e.err_count, 0)::int as err_count
+    `select s.*, p.routes, coalesce(e.err_count, 0)::int as err_count,
+            to_char(s.last_seen_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_ts
      from rum_session s
      left join lateral (
        select array_agg(route order by started_at) as routes
@@ -332,8 +378,8 @@ export async function listSessions(
        select coalesce(sum(occurrences), 0)::int as err_count
        from rum_error where app_id = s.app_id and session_id = s.session_id
      ) e on true
-     where true${where}
-     order by s.last_seen_at desc
+     where true${where}${recherche}${curseur}
+     order by s.last_seen_at desc, s.session_id desc
      limit ${limit} offset ${offset}`,
     sql.params,
   );

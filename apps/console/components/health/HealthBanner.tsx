@@ -61,10 +61,13 @@ function FactorBar({
           ? "bg-amber-500"
           : "bg-red-500";
   return (
-    <div title={detail}>
+    // `min-w-0` : un élément de grille ne descend pas sous le min-content de
+    // son contenu sans lui. Le libellé d'un facteur élargissait donc la grille,
+    // puis le bandeau, puis la page — de 6 px sur une fenêtre de 390.
+    <div title={detail} className="min-w-0">
       <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="font-medium text-ink-soft">{label}</span>
-        <span className="tabular-nums text-ink-faint">
+        <span className="min-w-0 truncate font-medium text-ink-soft">{label}</span>
+        <span className="shrink-0 tabular-nums text-ink-faint">
           {earned == null ? "n/a" : `${earned.toLocaleString("fr-FR")} / ${max}`}
         </span>
       </div>
@@ -92,9 +95,13 @@ export function HealthBanner({ health, periodLabel }: { health: Health; periodLa
       <div className="flex items-center gap-5">
         <HealthRing score={health.score} label={health.label} />
         <div>
+          {/* La bulle OUVRE le libellé : posée après lui, à droite de l'anneau,
+              sa bulle de 288 px centrée sortait de l'écran et portait la page à
+              415 px sur une fenêtre de 390. En tête, elle s'ouvre toujours vers
+              l'intérieur. */}
           <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Santé ({periodLabel})
             <GlossaryTip id="health" />
+            Santé ({periodLabel})
           </div>
           <span
             className={`mt-1.5 inline-block rounded-full border px-3 py-1 text-sm font-semibold ${HEALTH_CLASS[health.label]}`}

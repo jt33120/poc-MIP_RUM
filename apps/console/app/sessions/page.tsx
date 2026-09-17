@@ -3,33 +3,103 @@ import { cookies } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Donut } from "@/components/charts/Donut";
+import { ObservedTrend } from "@/components/charts/ObservedTrend";
+import { INPUT_CLASS } from "@/components/forms/Field";
 import { browserFromUA, fmtDate } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
-import { hrefWithQuery } from "@/lib/query-contract";
-import { listSessions, visitStats } from "@/lib/queries";
+import { breakdownDrillHref } from "@/lib/breakdowns";
+import {
+  engagementRaison,
+  engagementSuffisant,
+  fmtDuree,
+  partActive,
+  singleViewSessionRate,
+  STILL_ACTIVE_MINUTES,
+} from "@/lib/engagement";
+import { hrefWithQuery, paramReader, queryToSearchParams } from "@/lib/query-contract";
+import { dimensionSchema } from "@/lib/query-schema";
+import { listSessions, releaseRechercheParOccurrence, visitStats } from "@/lib/queries";
+import { engagementStats, observedVisitorsTrend } from "@/lib/queries-sessions";
+import {
+  SESSION_PAGE_SIZE,
+  SESSION_SEARCH_FIELDS,
+  SESSION_SEARCH_FIELD_PARAM,
+  SESSION_SEARCH_LABELS,
+  SESSION_SEARCH_PARAM,
+  SESSION_SEARCH_PLACEHOLDERS,
+  SESSION_SEARCH_PROBLEMS,
+  encodeSessionCursor,
+  parseSessionCursor,
+  parseSessionSearch,
+  parseSessionSearchField,
+  sessionSearchSummary,
+} from "@/lib/sessions-search";
 import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
 import { TousEteints } from "@/components/TousEteints";
 
 export const dynamic = "force-dynamic";
+
+/** Paramètre de pagination : une clé opaque, jamais un numéro de page. */
+const CURSOR_PARAM = "cursor";
 
 export default async function Sessions({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const ecran = await pageFilters(sp, "/sessions");
   if (!ecran.ok) return <FilterProblemNotice title="Sessions" problem={ecran.problem} />;
   const f = ecran.filters;
+  const url = paramReader(sp);
+
+  // Recherche et curseur sont RELUS AVANT toute lecture : une saisie refusée ne
+  // doit pas produire une liste qui l'ignore, et un curseur qui ne vient pas de
+  // cette console ne doit pas être présenté à PostgreSQL.
+  const champ = parseSessionSearchField(url.get(SESSION_SEARCH_FIELD_PARAM));
+  const recherche = parseSessionSearch(champ, url.get(SESSION_SEARCH_PARAM));
+  const curseur = parseSessionCursor(url.get(CURSOR_PARAM));
+  const refus =
+    recherche === undefined
+      ? SESSION_SEARCH_PROBLEMS[champ]
+      : curseur === undefined
+        ? "Curseur de pagination invalide : il ne provient pas de cette console."
+        : null;
+
   // Composition de l'écran, lue AVANT les requêtes : un bloc éteint ne lance pas
   // la sienne. `visitStats` et `listSessions` sont deux agrégats distincts, donc
   // éteindre l'un économise réellement un aller-retour en base.
   const cat = catalogueDe("/sessions")!;
   const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
   const vide = <T,>(v: T) => Promise.resolve(v);
+  const liste = blocs.liste && !refus;
 
-  const [rows, vs] = await Promise.all([
-    blocs.liste ? listSessions(f) : vide([]),
+  const [schema, rows, vs, visiteurs, engagement, releaseParOccurrence] = await Promise.all([
+    dimensionSchema(),
+    // Une ligne de plus que la page : c'est ainsi qu'on sait s'il en reste, sans
+    // compter toute la population à chaque affichage.
+    liste
+      ? listSessions(f, {
+          limit: SESSION_PAGE_SIZE + 1,
+          cursor: curseur ?? null,
+          search: recherche ?? null,
+        })
+      : vide([]),
     blocs.resume ? visitStats(f) : vide(null),
+    blocs.visiteurs ? observedVisitorsTrend(f) : vide([]),
+    blocs.engagement ? engagementStats(f) : vide(null),
+    releaseRechercheParOccurrence(),
   ]);
+
+  const page = rows.slice(0, SESSION_PAGE_SIZE);
+  const suivante = rows.length > SESSION_PAGE_SIZE ? page[page.length - 1] : null;
+  const rechercheParams = recherche
+    ? { [SESSION_SEARCH_FIELD_PARAM]: recherche.field, [SESSION_SEARCH_PARAM]: recherche.value }
+    : {};
+  const lienPage = (cursor: string | null) =>
+    hrefWithQuery("/sessions", ecran.query, { ...rechercheParams, [CURSOR_PARAM]: cursor });
+  // Les filtres du contrat voyagent en champs cachés : le formulaire est un GET,
+  // et sans eux « Rechercher » effacerait la plage et les filtres en cours.
+  const caches = [...queryToSearchParams(ecran.query)];
+
   return (
     <div className="animate-fade-up">
       <PageHeader
@@ -38,9 +108,9 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
       />
 
       {/* Hero : partage nouveaux vs revenants (visitStats, sur TOUTE la fenêtre —
-          contrairement à la liste des 50 sessions ci-dessous). Le partage ne
-          porte que sur les sessions identifiées ; les autres sont affichées
-          comme telles plutôt que réparties au jugé. */}
+          contrairement à la page de sessions ci-dessous). Le partage ne porte que
+          sur les sessions identifiées ; les autres sont affichées comme telles
+          plutôt que réparties au jugé. */}
       {blocs.resume && vs && (() => {
       const reprises = Math.max(vs.visits - vs.sessions, 0);
       const identified = vs.new_count + vs.returning_count;
@@ -98,56 +168,247 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
       );
       })()}
 
-      {blocs.liste && (
-      <div className="flex flex-col gap-3">
-        {rows.map((s) => (
-          <div key={s.session_id} className="card p-4 transition hover:shadow-pop">
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <Link
-                href={hrefWithQuery(`/sessions/${encodeURIComponent(s.session_id)}`, ecran.query)}
-                className="font-mono text-xs font-semibold text-brand hover:underline"
-                data-testid="session-link"
-              >
-                {s.session_id.slice(0, 8)}…
-              </Link>
-              <Badge>{s.device_type ?? "?"}</Badge>
-              <Badge>{browserFromUA(s.user_agent)}</Badge>
-              {s.geo_country && <Badge>{s.geo_country}</Badge>}
-              {s.collection_source === "extension" && (
-                <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent-deep dark:text-accent">
-                  extension
-                </span>
-              )}
-              <span className="text-ink-soft">{s.page_count} page(s)</span>
-              {s.err_count > 0 && (
-                <span className="rounded-full border border-red-300 bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
-                  {s.err_count} erreur(s)
-                </span>
-              )}
-              <span className="ml-auto text-xs tabular-nums text-ink-faint">
-                {fmtDate(s.started_at)} → {fmtDate(s.last_seen_at)}
-              </span>
-            </div>
-            {/* parcours utilisateur : la lecture « analytics produit » de la session */}
-            {s.routes?.length ? (
-              <div className="mt-2.5 flex flex-wrap items-center gap-1 font-mono text-xs text-ink-soft">
-                {s.routes.map((r, i) => (
-                  <span key={i}>
-                    {i > 0 && <span className="mx-1 text-accent/70">→</span>}
-                    <span className="chip-mono">{r}</span>
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ))}
-        {!rows.length && (
-          <p className="py-8 text-center text-ink-faint">Aucune session sur {ecran.label}</p>
-        )}
-      </div>
+      {/* Tendance des visiteurs OBSERVÉS (P6.3). Des distincts par seau : leur
+          somme n'est pas le nombre de visiteurs de la fenêtre, et aucun total
+          n'est affiché sous la courbe. */}
+      {blocs.visiteurs && (
+        <section className="mb-6" data-testid="visiteurs-observes">
+          <ObservedTrend
+            title={`Visiteurs observés par ${ecran.bucketLabel} — ${ecran.label}`}
+            rows={visiteurs.map((point) => ({ bucket: point.bucket, value: point.visitors }))}
+            valueLabel="Visiteurs distincts"
+          />
+          <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+            Chaque seau compte les identifiants de visiteur DISTINCTS des sessions commencées pendant ce
+            seau. <strong>Ces valeurs ne s&apos;additionnent pas</strong> : un visiteur présent dans trois
+            seaux y figure trois fois, et aucun total de fenêtre n&apos;en est déduit.{" "}
+            {visiteurs.some((point) => point.sans_identifiant > 0) && (
+              <>
+                {visiteurs
+                  .reduce((somme, point) => somme + point.sans_identifiant, 0)
+                  .toLocaleString("fr-FR")}{" "}
+                session(s) sans identifiant de visiteur sont hors de ce compte.
+              </>
+            )}
+          </p>
+        </section>
       )}
 
-      {!blocs.resume && !blocs.liste && <TousEteints />}
+      {/* Durée observée et sessions à une vue (P6.3) : affichées seulement si la
+          fenêtre porte assez de sessions pour que ces chiffres veuillent dire
+          quelque chose. */}
+      {blocs.engagement && engagement && (
+        <section className="card mb-6 p-4" data-testid="engagement">
+          <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+            Durée observée et sessions à une seule vue
+          </h2>
+          {engagementSuffisant(engagement) ? (
+            <>
+              <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <Mesure
+                  label="Durée observée médiane"
+                  value={fmtDuree(engagement.duration_p50_s)}
+                  hint="session_duration_observed = max(0, dernière observation − première)"
+                />
+                <Mesure label="Durée observée p75" value={fmtDuree(engagement.duration_p75_s)} hint="les 25 % les plus longues" />
+                <Mesure
+                  label="Sessions à une seule vue"
+                  value={
+                    singleViewSessionRate(engagement) == null
+                      ? "—"
+                      : `${(singleViewSessionRate(engagement)! * 100).toFixed(1)} %`
+                  }
+                  hint={`${engagement.single_view_sessions.toLocaleString("fr-FR")} sur ${engagement.sessions_with_view.toLocaleString("fr-FR")} session(s) avec au moins une vue`}
+                />
+                <Mesure
+                  label="Sessions encore actives"
+                  value={engagement.still_active.toLocaleString("fr-FR")}
+                  hint={`vues dans les ${STILL_ACTIVE_MINUTES} dernières minutes de la fenêtre : durée non finie`}
+                />
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-ink-faint">
+                Population : les {engagement.sessions_started.toLocaleString("fr-FR")} session(s){" "}
+                <strong>commencées</strong> dans la fenêtre — une session ouverte avant elle apporterait
+                une durée qui ne s&apos;y est pas déroulée. La durée observée est un écart entre deux
+                observations, <strong>pas du temps actif</strong> : un onglet laissé ouvert l&apos;allonge.
+                « Sessions à une seule vue » n&apos;est pas un taux de rebond : aucune durée minimale ni
+                interaction n&apos;entre dans sa définition.
+                {partActive(engagement) != null && engagement.still_active > 0 && (
+                  <>
+                    {" "}
+                    {(partActive(engagement)! * 100).toFixed(0)} % des sessions comptées étaient encore
+                    actives à la fin de la fenêtre : leur durée et leur nombre de vues peuvent encore
+                    augmenter.
+                  </>
+                )}
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-ink-faint" data-testid="engagement-insuffisant">
+              {engagementRaison(engagement)}
+            </p>
+          )}
+        </section>
+      )}
+
+      {blocs.liste && (
+      <>
+      <form method="get" action="/sessions" className="card mb-4 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Rechercher une session">
+        {caches.map(([nom, valeur]) => (
+          <input key={nom} type="hidden" name={nom} value={valeur} />
+        ))}
+        <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+          Chercher par
+          <select name={SESSION_SEARCH_FIELD_PARAM} defaultValue={champ} className={INPUT_CLASS}>
+            {SESSION_SEARCH_FIELDS.map((field) => (
+              <option key={field} value={field}>
+                {SESSION_SEARCH_LABELS[field]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft sm:col-span-2">
+          Valeur exacte
+          <input
+            name={SESSION_SEARCH_PARAM}
+            defaultValue={recherche?.value ?? url.get(SESSION_SEARCH_PARAM) ?? ""}
+            maxLength={512}
+            placeholder={SESSION_SEARCH_PLACEHOLDERS[champ]}
+            aria-invalid={refus ? true : undefined}
+            aria-describedby={refus ? "recherche-refus" : "recherche-aide"}
+            className={INPUT_CLASS}
+          />
+        </label>
+        <div className="flex items-end gap-2">
+          <button className="btn-accent" type="submit">
+            Rechercher
+          </button>
+          {(recherche || refus) && (
+            <Link href={hrefWithQuery("/sessions", ecran.query)} className="btn-ghost">
+              Réinitialiser
+            </Link>
+          )}
+        </div>
+        {refus ? (
+          <p
+            id="recherche-refus"
+            role="alert"
+            data-testid="recherche-refus"
+            className="text-xs text-bad sm:col-span-2 lg:col-span-4"
+          >
+            {refus}
+          </p>
+        ) : (
+          <p id="recherche-aide" className="text-xs leading-relaxed text-ink-faint sm:col-span-2 lg:col-span-4">
+            Égalité exacte, jamais un motif ni un préfixe. La recherche par identité — visiteur, compte,
+            adresse — n&apos;est pas proposée : une URL partageable ne doit pas permettre de retrouver le
+            parcours d&apos;une personne.
+            {!releaseParOccurrence && " La release est lue sur la session tant que les colonnes par occurrence ne sont pas présentes."}
+          </p>
+        )}
+      </form>
+
+      {recherche && !refus && (
+        <p className="mb-3 text-xs text-ink-soft" data-testid="recherche-resume">
+          {sessionSearchSummary(recherche)} · {ecran.label}
+        </p>
+      )}
+
+      {!refus && (
+        <div className="flex flex-col gap-3">
+          {page.map((s) => (
+            <div key={s.session_id} className="card p-4 transition hover:shadow-pop">
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                <Link
+                  href={hrefWithQuery(`/sessions/${encodeURIComponent(s.session_id)}`, ecran.query)}
+                  className="rounded font-mono text-xs font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                  data-testid="session-link"
+                >
+                  {s.session_id.slice(0, 8)}…
+                </Link>
+                <Badge>{s.device_type ?? "?"}</Badge>
+                <Badge>{browserFromUA(s.user_agent)}</Badge>
+                {s.geo_country && <Badge>{s.geo_country}</Badge>}
+                {s.collection_source === "extension" && (
+                  <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent-deep dark:text-accent">
+                    extension
+                  </span>
+                )}
+                <span className="text-ink-soft">{s.page_count} page(s)</span>
+                {s.err_count > 0 && (
+                  <span className="rounded-full border border-red-300 bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
+                    {s.err_count} erreur(s)
+                  </span>
+                )}
+                <span className="ml-auto text-xs tabular-nums text-ink-faint">
+                  {fmtDate(s.started_at)} → {fmtDate(s.last_seen_at)}
+                </span>
+              </div>
+              {/* Parcours utilisateur : la lecture « analytics produit » de la session.
+                  Chaque route ouvre `/pages` filtré sur elle — cet écran compte des
+                  sessions, qui ne portent pas de route. */}
+              {s.routes?.length ? (
+                <div className="mt-2.5 flex flex-wrap items-center gap-1 font-mono text-xs text-ink-soft">
+                  {s.routes.map((r, i) => (
+                    <span key={i}>
+                      {i > 0 && <span className="mx-1 text-accent/70">→</span>}
+                      <Link
+                        href={breakdownDrillHref("/sessions", ecran.query, "route", r, schema)}
+                        aria-label={`Route ${r} — ouvrir les mesures de cette route`}
+                        className="chip-mono rounded hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                      >
+                        {r}
+                      </Link>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))}
+          {!page.length && (
+            <p className="py-8 text-center text-ink-faint">
+              {recherche
+                ? `Aucune session ne correspond à cette recherche sur ${ecran.label}`
+                : `Aucune session sur ${ecran.label}`}
+            </p>
+          )}
+        </div>
+      )}
+
+      {!refus && (page.length > 0 || curseur) && (curseur || suivante) && (
+        <nav className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm" aria-label="Pagination des sessions">
+          <span className="text-xs text-ink-faint">
+            {page.length.toLocaleString("fr-FR")} session(s) affichée(s) · pagination par clé stable
+            (dernière vue, identifiant) : aucune ligne n&apos;est répétée ni sautée entre deux pages.
+          </span>
+          <span className="flex gap-4">
+            {curseur && (
+              <Link href={lienPage(null)} className="text-brand hover:underline">
+                Retour au début
+              </Link>
+            )}
+            {suivante && (
+              <Link href={lienPage(encodeSessionCursor(suivante))} className="text-brand hover:underline">
+                Sessions suivantes
+              </Link>
+            )}
+          </span>
+        </nav>
+      )}
+      </>
+      )}
+
+      {!blocs.resume && !blocs.liste && !blocs.visiteurs && !blocs.engagement && <TousEteints />}
+    </div>
+  );
+}
+
+function Mesure({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div>
+      <div className="text-[11px] font-medium uppercase tracking-wider text-ink-faint">{label}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums text-ink">{value}</div>
+      <div className="mt-0.5 text-[11px] leading-snug text-ink-faint">{hint}</div>
     </div>
   );
 }
@@ -159,4 +420,3 @@ function Badge({ children }: { children: React.ReactNode }) {
     </span>
   );
 }
-
