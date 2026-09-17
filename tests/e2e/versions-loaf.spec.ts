@@ -43,7 +43,7 @@ const pool = new pg.Pool({
 /** Deux versions au volume et au taux d'erreur DIFFÉRENTS, et des frames LoAF. */
 async function semer() {
   // Re-runnable : on repart d'une app propre.
-  for (const t of ["rum_longtask", "rum_error", "rum_metric", "rum_session"])
+  for (const t of ["rum_longtask", "rum_error", "rum_metric", "rum_pageview", "rum_session"])
     await pool.query(`delete from ${t} where app_id = $1`, [APP_ID]);
   await pool.query(`delete from app_registry where app_id = $1`, [APP_ID]);
   await pool.query(
@@ -68,18 +68,26 @@ async function semer() {
          on conflict (session_id) do nothing`,
         [sid, APP_ID, p.release],
       );
+      // La release est portée par CHAQUE signal (migration-v75) : c'est elle que
+      // lit la comparaison par version, et non plus celle de la session.
       await pool.query(
-        `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, ts)
-         values ($1, $2, $3, '/', 'LCP', $4, 'good', now() - interval '10 minutes')
+        `insert into rum_pageview (span_id, session_id, app_id, route, release, started_at)
+         values ($1, $2, $3, '/', $4, now() - interval '10 minutes')
          on conflict (span_id) do nothing`,
-        [`${sid}-lcp`, sid, APP_ID, p.lcp],
+        [`${sid}-pv`, sid, APP_ID, p.release],
+      );
+      await pool.query(
+        `insert into rum_metric (span_id, session_id, app_id, route, release, name, value, rating, ts)
+         values ($1, $2, $3, '/', $4, 'LCP', $5, 'good', now() - interval '10 minutes')
+         on conflict (span_id) do nothing`,
+        [`${sid}-lcp`, sid, APP_ID, p.release, p.lcp],
       );
       if (i < p.enErreur) {
         await pool.query(
-          `insert into rum_error (span_id, session_id, app_id, route, kind, message, ts)
-           values ($1, $2, $3, '/', 'error', 'boom', now() - interval '10 minutes')
+          `insert into rum_error (span_id, session_id, app_id, route, release, kind, message, ts)
+           values ($1, $2, $3, '/', $4, 'error', 'boom', now() - interval '10 minutes')
            on conflict (span_id) do nothing`,
-          [`${sid}-err`, sid, APP_ID],
+          [`${sid}-err`, sid, APP_ID, p.release],
         );
       }
     }
@@ -166,7 +174,12 @@ test("comparaison par version : les deux releases, leur LCP et leur taux d'erreu
 test("le bloc disparaît quand il n'y a qu'une version à montrer", async ({ page }) => {
   // Une « comparaison » d'une seule ligne n'apprend rien ; sur une app sans
   // `release`, elle afficherait « (non renseignée) » comme un résultat.
-  await pool.query(`update rum_session set release = '1.4.2' where app_id = $1`, [APP_ID]);
+  //
+  // La release est ramenée à une seule valeur SUR LES SIGNAUX, pas sur la session :
+  // depuis P6.3 la comparaison lit la release de chaque vue, mesure et erreur.
+  for (const table of ["rum_pageview", "rum_metric", "rum_error"]) {
+    await pool.query(`update ${table} set release = '1.4.2' where app_id = $1`, [APP_ID]);
+  }
   await loginConsole(page);
   await page.goto(`http://localhost:3000/?app=${APP_ID}&period=24h`);
   await expect(page.locator("h2", { hasText: "Comparaison par version" })).toHaveCount(0);

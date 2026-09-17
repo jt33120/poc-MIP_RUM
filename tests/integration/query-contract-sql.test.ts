@@ -296,12 +296,21 @@ type Console = Awaited<ReturnType<typeof consoleSur>>;
     expect(trend.trend.reduce((s, p) => s + p.occurrences, 0)).toBe(3);
   });
 
+  // Les jeux de données qui PORTENT `service` : les erreurs depuis v69, la
+  // projection d'événements depuis migration-v75 (P6.1). Sur eux, le filtre
+  // s'applique — c'est la bascule annoncée par la matrice « — → oui ». Partout
+  // ailleurs, il reste refusé : une session n'a pas de service.
+  const PORTENT_SERVICE = ["Erreurs", "Explorer d'événements"];
+
   it("une dimension qu'un jeu de données ne porte pas est refusée, jamais ignorée", async () => {
-    for (const { ecran, lire } of COMPTEURS.filter((c) => c.ecran !== "Erreurs")) {
+    for (const { ecran, lire } of COMPTEURS.filter((c) => !PORTENT_SERVICE.includes(c.ecran))) {
       await expect(lire(filtres(`app=${A}&service=api`)), ecran).rejects.toThrow(/Service/);
     }
-    // Les erreurs portent `service` depuis v69 : le filtre s'applique (aucune ligne ici).
-    expect(await lib.listErrorGroups(filtres(`app=${A}&service=api`), PAGE).then((r) => r.totals.occurrences)).toBe(0);
+    for (const { ecran, lire } of COMPTEURS.filter((c) => PORTENT_SERVICE.includes(c.ecran))) {
+      // Le filtre s'applique vraiment : aucune ligne semée ne déclare ce service.
+      expect(await lire(filtres(`app=${A}&service=api`)), ecran).toBe(0);
+      expect(await lire(filtres(`app=${A}`)), ecran).toBeGreaterThan(0);
+    }
   });
 
   it("la sonde de schéma voit exactement les colonnes présentes", async () => {
