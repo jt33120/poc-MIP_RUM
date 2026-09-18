@@ -12,7 +12,7 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 |---|---|---|---|---|---|---|---|
 | P7.1 — primitives pures et enveloppe RN | — | **aucune** | oui | oui | — | non | non |
 | P7.2 — consentement, visiteur, transport | [#202](https://github.com/jt33120/poc-MIP_RUM/pull/202) | **aucune** | oui | oui | verte | non | non |
-| P7.3 — navigation, actions, erreurs JS | — | **aucune** | oui | oui | — | non | non |
+| P7.3 — navigation, actions, erreurs JS | [#204](https://github.com/jt33120/poc-MIP_RUM/pull/204) | **aucune** | oui | oui | verte | non | non |
 | P7.4 — API Node et FastAPI | — | — | non | — | — | — | — |
 | P7.5 — `/mobile`, API/MCP, distribution | — | — | non | — | — | — | — |
 
