@@ -6,8 +6,9 @@
 //
 //   · hybride et brut rendent le MÊME percentile, à la largeur de seau près, et
 //     `meta.source` dit laquelle des deux sources a répondu ;
-//   · l'heure EN COURS n'est comptée qu'une fois — un double comptage se verrait
-//     immédiatement sur l'effectif ;
+//   · l'heure ENCORE EN COURS DE REMPLISSAGE n'est jamais servie par l'agrégat et
+//     n'est comptée qu'une fois — un double comptage se verrait immédiatement sur
+//     l'effectif ;
 //   · une mesure ARRIVÉE EN RETARD dans une heure déjà agrégée est comptée une
 //     fois, et une seule, grâce au filigrane d'identifiant ;
 //   · un effacement DSAR invalide l'heure : l'agrégat cesse d'être cru, le brut
@@ -18,6 +19,31 @@
 //   · le budget est posé en `SET LOCAL` et ne fuit pas vers la requête suivante
 //     du même pool ;
 //   · sur une base restée en v79, la lecture reste brute et le dit.
+//
+// ───────── POURQUOI LA RECETTE EST ANCRÉE SUR LE FILIGRANE, PAS SUR L'HEURE ───
+//
+// La lecture ne partitionne PAS sur `now()` : elle coupe au début de l'heure du
+// FILIGRANE (`metric_histogram_state.refreshed_at`, cf. `fenetreHybride`). Une
+// recette semée relativement à `date_trunc('hour', now())` faisait donc dépendre
+// la partition de l'instant du lancement, et le test était instable une minute
+// par heure :
+//
+//   · lancé dans les 60 premières secondes d'une heure, le semis « heure en
+//     cours » à `borne + 60 s` tombait APRÈS `now()` ; le rafraîchissement
+//     (`m.ts < v_now`), le percentile de référence (`m.ts < now()`) et la fenêtre
+//     de 24 h le rejetaient tous les trois, et quatre effectifs attendus à 9
+//     valaient 8 ;
+//   · si l'heure tournait entre la capture de la borne et le rafraîchissement, ce
+//     même semis devenait une heure entière révolue, donc éligible à l'agrégat :
+//     la partition s'inversait SANS rougir, et la suite cessait de prouver ce
+//     qu'elle annonce.
+//
+// Le filigrane, lui, est une donnée que le test ÉCRIT. La recette choisit donc
+// son heure vive : elle sème deux heures en arrière et repose le filigrane à
+// l'intérieur de cette heure-là après chaque rafraîchissement. `hw` vaut alors
+// `heureVive` quelle que soit la pendule, et la fenêtre de 24 h — résolue depuis
+// `Date.now()` — garde presque deux heures de marge sur le semis le plus récent
+// comme sur le plus ancien. Le passage d'une heure ronde n'a plus d'effet.
 //
 //   SQL_TEST_DATABASE_URL=<base jetable> SQL_TEST_V68_DATABASE_URL=<autre base jetable> pnpm test:sql
 import { readFileSync, readdirSync } from "node:fs";
@@ -72,9 +98,49 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
 (url ? describe : describe.skip)("Agrégats et lecture hybride P6.6 sur PostgreSQL", () => {
   const c = new pg.Client(url ? { connectionString: url } : {});
   let lib: Console;
-  /** Début de l'heure en cours : la frontière que l'agrégat ne franchit jamais. */
-  let heureEnCours: Date;
+  /**
+   * L'heure encore EN COURS DE REMPLISSAGE aux yeux de la lecture : celle du
+   * filigrane, la frontière que l'agrégat ne franchit jamais. Le test la CHOISIT
+   * (deux heures en arrière) au lieu de la subir, et repose le filigrane dedans
+   * après chaque rafraîchissement : la partition cesse ainsi de dépendre de
+   * l'endroit où le lancement tombe dans l'heure.
+   */
+  let heureVive: Date;
+  /** Ce que le DERNIER vrai rafraîchissement avait écrit, avant qu'on repose la borne. */
+  let filigraneReel: { instant: Date; sousLaPendule: boolean };
   let compteur = 0;
+
+  /**
+   * L'instant posé comme filigrane : 30 min DANS `heureVive`. La lecture coupe au
+   * début de l'heure du filigrane, donc `hw = heureVive` — exactement le régime
+   * qu'un vrai rafraîchissement produit pour l'heure murale en cours.
+   */
+  const filigrane = () => new Date(heureVive.getTime() + 30 * 60_000);
+
+  /**
+   * Rafraîchit l'agrégat, puis REPOSE le filigrane sur `filigrane()`.
+   *
+   * `refresh_metric_histogram` écrit `refreshed_at = now()` : le laisser tel quel
+   * rendrait à la pendule le pouvoir qu'on vient de lui retirer, et l'heure vive
+   * du semis redeviendrait une heure révolue donc agrégeable. `max_metric_id`
+   * n'est PAS touché : c'est lui qui sépare les mesures arrivées en retard, et le
+   * test doit continuer à le prouver tel que la production l'écrit.
+   */
+  async function rafraichir(): Promise<void> {
+    await c.query("select refresh_metric_histogram(26)");
+    // Relevé AVANT de reposer la borne. `refreshed_at <= now()` toujours, donc
+    // `hw = date_trunc('hour', refreshed_at)` n'atteint jamais l'heure murale en
+    // cours : c'est ce lien-là qui autorise la recette à déplacer l'heure vive —
+    // elle change de témoin, elle n'invente pas un régime que la production
+    // n'aurait pas.
+    const { rows } = await c.query<{ instant: Date; sous: boolean }>(
+      `select refreshed_at as instant,
+              date_trunc('hour', refreshed_at) <= date_trunc('hour', now()) as sous
+         from metric_histogram_state`,
+    );
+    filigraneReel = { instant: rows[0].instant, sousLaPendule: rows[0].sous };
+    await c.query("update metric_histogram_state set refreshed_at = $1", [filigrane()]);
+  }
 
   /** Requête validée, sur une fenêtre de 24 h qui englobe tout le semis. */
   function requete(ast: Record<string, unknown>, principal: ScopePrincipal = ADMIN): ExplorerRequest {
@@ -132,8 +198,12 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
     for (const file of migrations()) await c.query(readFileSync(file, "utf8"));
     await nettoyer();
 
-    const { rows } = await c.query<{ h: Date }>("select date_trunc('hour', now()) as h");
-    heureEnCours = rows[0].h;
+    // Deux heures en arrière, et non l'heure murale : le semis le plus récent
+    // (`heureVive + 60 s`) garde alors 1 h 59 min de marge sous `now()`, et le
+    // plus ancien (`heureVive - 3 h + 60 s`) reste à cinq heures du bord de la
+    // fenêtre de 24 h. Aucune de ces deux marges ne se franchit pendant un test.
+    const { rows } = await c.query<{ h: Date }>("select date_trunc('hour', now() - interval '2 hours') as h");
+    heureVive = rows[0].h;
 
     await c.query(
       `insert into app_registry (app_id, name, active, internal)
@@ -157,9 +227,9 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
       );
     }
 
-    // Trois heures ENTIÈRES révolues, puis l'heure en cours. Les valeurs sont
-    // distinctes et croissantes : un double comptage déplacerait le percentile.
-    const heure = (n: number) => new Date(heureEnCours.getTime() - n * 3_600_000 + 60_000);
+    // Trois heures ENTIÈREMENT sous le filigrane, puis l'heure vive. Les valeurs
+    // sont distinctes et croissantes : un double comptage déplacerait le percentile.
+    const heure = (n: number) => new Date(heureVive.getTime() - n * 3_600_000 + 60_000);
     for (const [i, valeur] of [1000, 1100, 1200, 1300, 1400, 1500].entries()) {
       await mesurer(A, i % 2 === 0 ? "p66-a-1" : "p66-a-2", valeur, heure(3 - Math.floor(i / 2)));
     }
@@ -169,10 +239,11 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
     // Bruit qui ne doit jamais entrer : une autre app, un robot.
     await mesurer(B, "p66-b-1", 4000, heure(2));
     await mesurer(A, "p66-a-robot", 8000, heure(2));
-    // L'heure EN COURS, jamais agrégée.
-    await mesurer(A, "p66-a-1", 1600, new Date(heureEnCours.getTime() + 60_000));
+    // L'heure VIVE : le rafraîchissement écrira sa cellule, la lecture refusera
+    // de la croire. Toujours dans le passé, donc jamais rejetée par `m.ts < now()`.
+    await mesurer(A, "p66-a-1", 1600, new Date(heureVive.getTime() + 60_000));
 
-    await c.query("select refresh_metric_histogram(26)");
+    await rafraichir();
 
     // APRÈS le rafraîchissement : ces lignes restent brutes, et donnent au test
     // du budget une lecture qu'une milliseconde ne peut pas terminer. Bornées et
@@ -202,9 +273,15 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
     );
     expect(Number(rows[0].cellules)).toBeGreaterThan(0);
     // Les neuf mesures non robots de l'app A, robot exclu. La neuvième est celle
-    // de l'heure EN COURS : le rafraîchissement l'écrit dans la cellule de cette
+    // de l'heure VIVE : le rafraîchissement l'écrit dans la cellule de cette
     // heure — c'est la LECTURE qui refuse de croire une heure non terminée.
     expect(Number(rows[0].observees)).toBe(9);
+    // Et le filigrane qu'un VRAI rafraîchissement a posé ne dépasse pas la
+    // pendule : l'heure murale en cours est donc hors de l'intervalle d'agrégat
+    // par construction. C'est l'invariant que la recette transpose sur l'heure
+    // qu'elle choisit, et la raison pour laquelle la transposition est fidèle.
+    expect(filigraneReel.sousLaPendule).toBe(true);
+    expect(filigraneReel.instant.getTime()).toBeLessThanOrEqual(Date.now());
   });
 
   it("hybride et brut rendent le même p75, et meta le dit sans le cacher", async () => {
@@ -218,12 +295,32 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
     expect(Math.abs(resultat.data.total! - reference.valeur!) / reference.valeur!).toBeLessThan(TOLERANCE);
   });
 
-  it("l'heure EN COURS est comptée une fois : l'effectif vaut celui des lignes", async () => {
+  it("l'heure VIVE n'est jamais servie par l'agrégat, et n'est comptée qu'une fois", async () => {
     const reference = await exact(A);
     const resultat = await lib.exploreAnalytics(lcp());
-    // 9 mesures : 6 régulières + 2 de la session DSAR + celle de l'heure en cours.
+    // 9 mesures : 6 régulières + 2 de la session DSAR + celle de l'heure vive.
     expect(reference.lignes).toBe(9);
     expect(resultat.data.samples).toBe(reference.lignes);
+
+    // L'effectif juste ne suffit pas à prouver QUELLE branche a répondu : les
+    // deux rendent 9 tant que la partition reste disjointe, même si elle est
+    // placée au mauvais endroit. On gonfle donc la cellule d'agrégat de l'heure
+    // vive — celle que le test précédent vient de compter. Si la lecture la
+    // croyait, l'effectif sauterait de cent ; il ne bouge pas, donc cette heure
+    // est bien relue sur les lignes brutes.
+    const gonflee = await c.query(
+      "update metric_histogram_hourly set observed_count = observed_count + 100 where app_id = $1 and hour = $2",
+      [A, heureVive],
+    );
+    expect(gonflee.rowCount).toBeGreaterThan(0);
+    try {
+      expect((await lib.exploreAnalytics(lcp())).data.samples).toBe(reference.lignes);
+    } finally {
+      await c.query(
+        "update metric_histogram_hourly set observed_count = observed_count - 100 where app_id = $1 and hour = $2",
+        [A, heureVive],
+      );
+    }
   });
 
   it("isole les apps et exclut les robots des DEUX branches", async () => {
@@ -238,12 +335,12 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
   it("une mesure arrivée EN RETARD dans une heure déjà agrégée est comptée une fois", async () => {
     const avant = await lib.exploreAnalytics(lcp());
     // `ts` ancien, identifiant récent : le filigrane d'identifiant la sépare.
-    await mesurer(A, "p66-a-1", 1250, new Date(heureEnCours.getTime() - 2 * 3_600_000 + 120_000));
+    await mesurer(A, "p66-a-1", 1250, new Date(heureVive.getTime() - 2 * 3_600_000 + 120_000));
     const apres = await lib.exploreAnalytics(lcp());
     expect(apres.data.samples).toBe(avant.data.samples + 1);
     expect(apres.data.samples).toBe((await exact(A)).lignes);
     // Un second rafraîchissement l'absorbe dans l'agrégat, sans la dupliquer.
-    await c.query("select refresh_metric_histogram(26)");
+    await rafraichir();
     const consolide = await lib.exploreAnalytics(lcp());
     expect(consolide.data.samples).toBe(apres.data.samples);
   });
@@ -285,7 +382,7 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
     // change pas, seul le chemin le fait. Chaque projection lève SA marque —
     // une marque qu'aucun rafraîchissement ne recalcule ne serait pas une
     // sécurité, seulement une dette.
-    await c.query("select refresh_metric_histogram(26)");
+    await rafraichir();
     await c.query("select refresh_rum_rollups(26)");
     const { rows: restantes } = await c.query<{ n: string }>(
       "select count(*)::bigint as n from analytics_rollup_invalidation where app_id = $1",
@@ -308,7 +405,7 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
     expect(resultat.meta.approximate).toBe(true);
     expect(resultat.data.samples).toBe(reference.lignes);
     expect(Math.abs(resultat.data.total! - reference.valeur!) / reference.valeur!).toBeLessThan(TOLERANCE);
-    await c.query("select refresh_metric_histogram(26)");
+    await rafraichir();
     expect((await lib.exploreAnalytics(lcp())).meta.source).toBe("rollup+raw");
   });
 
