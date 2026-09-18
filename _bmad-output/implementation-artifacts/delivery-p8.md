@@ -11,7 +11,7 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 |---|---|---|---|---|---|---|---|
 | P8.1 — effacement sérialisé avec l'ingestion | #205 | v81, appliquée sur Neon le 18/09 10:16 | oui | oui | verte | oui (`b06a5ce`) | non — aucun effacement réel joué depuis l'activation |
 | P8.2 — outillage de backfill et dry-run | #208 | v83 (non appliquée en production) | oui | oui | verte | non | non — **aucun backfill exécuté**, aucun périmètre choisi |
-| P8.7 — GeoIP optionnel | #— | v85 (non appliquée en production) | oui | oui | verte | non | non — le service `ingest` n'a pas de domaine public ; le GeoIP ne tourne sur aucun chemin de production |
+| P8.7 — GeoIP optionnel | #210 | v85 (non appliquée en production) | oui | oui | verte | non | non — le service `ingest` n'a pas de domaine public ; le GeoIP ne tourne sur aucun chemin de production |
 | P8.3 à P8.6, P8.8 | — | — | non | — | — | — | — |
 
 ## P8.1 — effacement sérialisé avec l'ingestion
