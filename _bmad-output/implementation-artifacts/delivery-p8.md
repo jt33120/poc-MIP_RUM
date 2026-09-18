@@ -112,9 +112,11 @@ une liste recopiée.
 Locales, 18/09/2026, PostgreSQL 15.18 en conteneur (aarch64, port 5433), bases jetables créées et
 supprimées pour l'occasion :
 
-- `pnpm exec vitest run tests/unit --exclude '**/.claude/**'` : **161 fichiers, 2 183 tests verts**
-  (référence master : 160 / 2 158 ; +1 fichier `privacy-barriere.test.ts`, +25 tests).
-- `pnpm test:sql` : **23 fichiers, 273 tests verts, 12 ignorés** (référence : 22 / 256), dont le
+- `pnpm exec vitest run tests/unit --exclude '**/.claude/**'` : **162 fichiers, 2 248 tests verts**
+  après fusion de `origin/master` (qui a apporté P7.3). Avant la fusion : 161 / 2 183, pour une
+  référence master de 160 / 2 158 — soit +1 fichier (`privacy-barriere.test.ts`) et +25 tests de ce
+  lot, aucun test existant perdu.
+- `pnpm test:sql` : **23 fichiers, 276 tests verts, 12 ignorés** (référence : 22 / 256), dont le
   nouveau `tests/integration/dsar-concurrency-sql.test.ts` — **17 tests**.
 - `pnpm test:isolation`, `pnpm test:alerting` : verts sur bases dédiées.
 - `pnpm --filter console exec tsc --noEmit` : vert. `pnpm -r build` : vert.
