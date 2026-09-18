@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2019",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // Pas de "DOM" : le type-check échoue si une primitive touche document,
+    // window ou navigator. La règle « aucun import DOM » est ainsi vérifiée par
+    // le compilateur, pas par une relecture.
+    "lib": ["ES2020"],
+    // Aucun `@types/*` implicite : `process`, `Buffer` et `console` de Node ne
+    // doivent pas entrer par la porte de service.
+    "types": [],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}

@@ -110,6 +110,19 @@ importers:
         version: 8.21.0
 
   packages/agent-node:
+    dependencies:
+      '@mip/rum-core':
+        specifier: workspace:*
+        version: link:../rum-core
+    devDependencies:
+      esbuild:
+        specifier: 0.28.0
+        version: 0.28.0
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/rum-core:
     devDependencies:
       esbuild:
         specifier: 0.28.0
@@ -119,6 +132,10 @@ importers:
         version: 5.9.3
 
   packages/rum-mobile:
+    dependencies:
+      '@mip/rum-core':
+        specifier: workspace:*
+        version: link:../rum-core
     devDependencies:
       esbuild:
         specifier: 0.28.0
@@ -129,6 +146,9 @@ importers:
 
   packages/rum-sdk:
     dependencies:
+      '@mip/rum-core':
+        specifier: workspace:*
+        version: link:../rum-core
       rrweb:
         specifier: 2.0.1
         version: 2.0.1
