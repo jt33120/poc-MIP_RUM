@@ -37,6 +37,12 @@ export const DIMENSIONS = [
   "release",
   "route",
   "country",
+  // P8.7 : d'où vient le pays de la session. Une dimension à part entière, et
+  // non une note de bas de page : sans elle, un classement par pays mélange
+  // silencieusement une résolution d'adresse et un réglage de terminal.
+  // Nommée comme `country` l'est : un identifiant d'API, jamais le nom de la
+  // colonne (`geo_source`) qui l'alimente.
+  "country_source",
   "source",
   "client",
 ] as const;
@@ -54,7 +60,10 @@ export const DIMENSION_LABELS: Record<Dimension, string> = {
   service: "Service",
   release: "Release",
   route: "Route",
-  country: "Pays estimé (fuseau)",
+  // « estimé », et jamais « Pays » tout court : trois provenances possibles, dont
+  // aucune ne localise une personne (cf. lib/geo.ts).
+  country: "Pays estimé",
+  country_source: "Provenance du pays",
   source: "Source de collecte",
   client: "Client",
 };

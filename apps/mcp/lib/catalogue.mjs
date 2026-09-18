@@ -72,7 +72,13 @@ export const PARAMS = {
   env: "Environnement exact, tel que déclaré par l'émetteur (production, staging…). Égalité stricte.",
   service: "Service exact, déclaré par un émetteur backend. Porté par les erreurs, la projection d'événements et les spans seulement.",
   route: "Route normalisée exacte (template, jamais une URL brute). Égalité stricte.",
-  country: "Pays estimé D'APRÈS LE FUSEAU du navigateur, code ISO. Ce n'est pas une géolocalisation.",
+  country:
+    "Pays ESTIMÉ, code ISO à deux lettres. Ce n'est PAS une géolocalisation : selon la session il vient d'une "
+    + "base IP→pays locale, du fuseau horaire du terminal ou d'un en-tête de CDN. Aucune adresse IP n'est stockée. "
+    + "La dimension `country_source` dit laquelle des trois, et « Inconnue » pour les sessions antérieures à cette collecte.",
+  country_source:
+    "Provenance du pays : geoip (base IP→pays locale), timezone (fuseau du terminal), cdn (en-tête d'un CDN). "
+    + "Vide = provenance inconnue, cas de l'historique. Sert à ne pas additionner des mesures qui ne valent pas la même chose.",
   format:
     "Forme de la réponse : 'json' (défaut — la réponse de l'API telle quelle, sans transformation) ou 'markdown' (tableaux lisibles, aucune donnée retirée).",
 };
@@ -305,7 +311,12 @@ export const OUTILS = [
     params: ["app", "period", "device", ...DIMENSIONS_EXPLORER, "dataset", "measure", "measure_property", "variant", "group_by", "visualization", "limit", "cursor"],
     // La présence de `corps` fait de cet outil un POST : `construireCorps` en
     // dérive l'AST, et `construireChemin` n'écrit alors AUCUNE query string.
-    corps: { dimensions: ["device", ...DIMENSIONS_EXPLORER] },
+    // `country_source` (P8.7) n'est PAS un paramètre d'URL — il n'a pas de
+    // `?country_source=` —, mais il est filtrable et groupable dans le corps, comme
+    // `device`. C'est ce qui permet de séparer les pays résolus depuis une
+    // adresse de ceux déduits d'un fuseau, au lieu de les additionner sans le
+    // savoir.
+    corps: { dimensions: ["device", "country_source", ...DIMENSIONS_EXPLORER] },
   },
 ];
 

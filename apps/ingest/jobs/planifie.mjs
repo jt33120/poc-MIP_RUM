@@ -158,6 +158,17 @@ export function travaux(pool, { log = console, dispatch = null } = {}) {
           { name: "uptime", run: () => sonderUptime(pool, log) },
           // Livraison effective des webhooks en attente (remplace pg_net).
           ...(dispatch ? [{ name: "dispatch_alerts", run: () => dispatch(pool, { echeance }) }] : []),
+          // P8.6 : la file de sortie des tickets suit le MÊME tick que l'outbox
+          // de notifications, à dessein — un second planificateur aurait sa
+          // propre cadence, son propre verrou et ses propres régressions.
+          // Chargé à la demande : ce module sort vers l'extérieur.
+          {
+            name: "dispatch_tickets",
+            run: async () => {
+              const { livrerTickets } = await import("../lib/integrations/tickets/dispatcher.mjs");
+              return livrerTickets(pool, { echeance, log });
+            },
+          },
           // Réconciliation des livraisons 'sent' héritées de l'ère pg_net :
           // sans pg_net la fonction ne trouve rien, mais elle reste correcte et
           // bon marché — la garder évite des lignes 'sent' éternelles.

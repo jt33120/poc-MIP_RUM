@@ -56,6 +56,9 @@ const rowColumn = (table: string, column: string): DimensionColumn => ({ on: "ro
 const SESSION_DIMENSIONS: Partial<Record<Dimension, DimensionColumn>> = {
   device: sessionColumn("device_type"),
   country: sessionColumn("geo_country"),
+  // P8.7 : colonne nullable ajoutée par v85 ; tant qu'elle manque, la dimension
+  // est « pas encore collectée » — jamais un filtre ignoré en silence.
+  country_source: sessionColumn("geo_source"),
   client: sessionColumn("client_id"),
   source: sessionColumn("collection_source"),
   browser: sessionColumn("browser"),

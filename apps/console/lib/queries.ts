@@ -305,6 +305,9 @@ export interface SessionRow {
   app_id: string;
   device_type: string | null;
   geo_country: string | null;
+  /** P8.7 (v85) : d'où vient `geo_country`. NULL = provenance inconnue (historique). */
+  geo_source?: string | null;
+  geo_db_version?: string | null;
   user_agent: string | null;
   started_at: Date;
   last_seen_at: Date;
@@ -398,6 +401,9 @@ export interface SessionMeta {
   user_agent: string | null;
   device_type: string | null;
   geo_country: string | null;
+  /** P8.7 (v85) : d'où vient `geo_country`, et avec quelle livraison DB-IP. */
+  geo_source?: string | null;
+  geo_db_version?: string | null;
   started_at: Date;
   last_seen_at: Date;
   page_count: number;

@@ -254,6 +254,17 @@ declare module "ingest/shared/otlp.mjs" {
   };
 }
 
+// P8.7 — pays et PROVENANCE du pays. La console ne résout aucune adresse : elle
+// n'utilise de ce module que le geste qui pose la provenance sur les sessions
+// d'un lot, pour que son filet d'ingestion écrive la même chose que le service.
+declare module "ingest/shared/geoip.mjs" {
+  export const PROVENANCES: readonly ["geoip", "timezone", "cdn"];
+  export function appliquerGeo(
+    sessions: Record<string, unknown>[],
+    source?: { geoip?: { country: string; version?: string | null } | null; cdn?: string | null },
+  ): void;
+}
+
 // --- Source maps (P5.4) -------------------------------------------------------
 // Un moteur, un contrat d'upload, un symbolicateur : partagés par l'ingestion,
 // les deux ports d'upload, le CLI de CI et la console.
@@ -503,9 +514,21 @@ declare module "ingest/dispatch-alerts.mjs" {
 }
 
 declare module "ingest/lib/error-issue-workflow.mjs" {
-  import type { Pool } from "pg";
+  import type { Pool, PoolClient } from "pg";
 
   export const COMMENTAIRE_MAX: number;
+  /**
+   * Release et env de la dernière occurrence d'une issue — la référence contre
+   * laquelle une régression se jugera. Partagée depuis P8.6 : un fournisseur de
+   * tickets peut résoudre une issue par webhook, et deux copies auraient donné
+   * deux verdicts de régression selon qui l'a fermée.
+   */
+  export const SQL_REFERENCE_RESOLUTION: string;
+  export function referenceResolution(
+    client: PoolClient,
+    appId: string,
+    issueId: string,
+  ): Promise<{ release: string | null; env: string | null }>;
   /** Texte scrubbé, sans NUL, espaces de bord retirés ; null s'il ne reste rien. */
   export function texteActivite(texte: unknown): string | null;
   export function tronquerCaracteres(texte: string, max: number): string;
@@ -597,4 +620,189 @@ declare module "ingest/jobs/bail.mjs" {
     client: unknown,
     opts: { job: string; porteur: string },
   ): Promise<void>;
+}
+
+// --- Connecteur de tickets (P8.6) --------------------------------------------
+// L'interface est écrite une fois ici pour que la console ne puisse pas appeler
+// un adaptateur autrement que par son contrat. GitHub Issues est l'unique
+// implémentation de ce lot ; la cible reste l'outil ITSM de MIP (ServiceNow,
+// sous réserve de confirmation).
+
+declare module "ingest/lib/integrations/tickets/adapter.mjs" {
+  export const PROVIDERS: string[];
+  export const TITRE_MAX: number;
+  export const DESCRIPTION_MAX: number;
+  export const MESSAGE_MAX: number;
+  /** « GitHub aujourd'hui, ITSM MIP demain », en une seule définition. */
+  export const MENTION_ETAPE: string;
+  export const REFERENCE_PREFIXE: string;
+  export const CODES: Record<string, string>;
+  export const STRATEGIE: { baseMs: number; plafondMs: number; tentativesMax: number };
+
+  export class ErreurTicket extends Error {
+    constructor(
+      code: string,
+      options?: { rejouable?: boolean; incertain?: boolean; degrade?: boolean; attendreSec?: number | null },
+    );
+    code: string;
+    rejouable: boolean;
+    incertain: boolean;
+    degrade: boolean;
+    attendreSec: number | null;
+  }
+
+  export interface ChargeTicket {
+    titre: string;
+    description: string;
+    url: string;
+    reference: string;
+  }
+
+  export interface EtatIssuePourTicket {
+    issueId: string;
+    appId: string;
+    errorType: string | null;
+    message: string | null;
+    firstRelease: string | null;
+    lastRelease: string | null;
+    /** null = inconnu (jamais 0 à la place d'une inconnue). */
+    occurrences: number | null;
+    firstSeen: Date | string | null;
+    lastSeen: Date | string | null;
+  }
+
+  export function referenceMip(issueId: string): string;
+  export function prochaineTentative(
+    tentatives: number,
+    opts?: { attendreSec?: number | null; maintenant?: number },
+  ): number;
+  export function tronquer(texte: string, max: number): string;
+  /** Le contenu EXACT d'un ticket : aperçu admin et charge figée viennent d'ici. */
+  export function construireCharge(issue: EtatIssuePourTicket, ctx: { consoleBase: string }): ChargeTicket;
+  export function urlConsole(issue: { issueId: string; appId: string }, consoleBase: string): string;
+  export function egalTempsConstant(a: Uint8Array, b: Uint8Array): boolean;
+  export function octetsHex(hex: string): Uint8Array | null;
+  export function statutPropose(
+    evenement: { action: string; etat: string },
+    mapping: { closed?: string | null; reopened?: string | null },
+    statutActuel: string,
+  ): { statut: string } | { statut: null; raison: string };
+  export function mappingStatut(config: unknown): { closed: string | null; reopened: string | null };
+}
+
+declare module "ingest/lib/integrations/tickets/github.mjs" {
+  import type { ChargeTicket } from "ingest/lib/integrations/tickets/adapter.mjs";
+
+  export const PROVIDER: string;
+  export const WEBHOOK_MAX_OCTETS: number;
+
+  export interface TicketDistant {
+    externalId: string;
+    url: string;
+    etat: "open" | "closed" | "unknown";
+  }
+
+  export interface EvenementNormalise {
+    provider: string;
+    deliveryId: string;
+    type: string;
+    action: string;
+    externalId: string | null;
+    etat: "open" | "closed" | "unknown";
+    cible: string | null;
+  }
+
+  export function createIssue(params: {
+    cible: string;
+    secret: string;
+    charge: ChargeTicket;
+    labels?: string[];
+    fetchImpl?: typeof fetch;
+    signal?: AbortSignal;
+  }): Promise<TicketDistant>;
+
+  export function getIssue(params: {
+    cible: string;
+    secret: string;
+    externalId: string;
+    fetchImpl?: typeof fetch;
+    signal?: AbortSignal;
+  }): Promise<TicketDistant>;
+
+  export function chercherParReference(params: {
+    cible: string;
+    secret: string;
+    reference: string;
+    depuis?: Date | string | null;
+    fetchImpl?: typeof fetch;
+    signal?: AbortSignal;
+  }): Promise<{ concluante: true; trouve: TicketDistant | null } | { concluante: false; raison: string }>;
+
+  export function validateWebhook(params: {
+    secret: string;
+    entetes: Headers | Record<string, string>;
+    corps: Uint8Array;
+  }): { ok: true; deliveryId: string; type: string } | { ok: false; raison: string };
+
+  export function normalizeWebhook(params: {
+    entetes: Headers | Record<string, string>;
+    corps: unknown;
+  }): EvenementNormalise;
+
+  export const adaptateur: {
+    provider: string;
+    createIssue: typeof createIssue;
+    getIssue: typeof getIssue;
+    chercherParReference: typeof chercherParReference;
+    validateWebhook: typeof validateWebhook;
+    normalizeWebhook: typeof normalizeWebhook;
+  };
+  export default adaptateur;
+}
+
+declare module "ingest/lib/integrations/tickets/secrets.mjs" {
+  export class ErreurSecret extends Error {
+    constructor(code: string);
+    code: string;
+  }
+  /** `env:NOM` ou `enc:v1:…` — jamais un secret en clair. */
+  export function referenceValide(ref: unknown): boolean;
+  export function decrire(ref: unknown): { kind: "env"; name: string } | { kind: "encrypted" } | { kind: "invalid" };
+  export function chiffrer(secret: string, env?: NodeJS.ProcessEnv): string;
+  export function resoudre(ref: string, env?: NodeJS.ProcessEnv): string;
+}
+
+declare module "ingest/lib/integrations/tickets/dispatcher.mjs" {
+  import type { Pool, PoolClient } from "pg";
+  import type { EvenementNormalise, adaptateur } from "ingest/lib/integrations/tickets/github.mjs";
+
+  export function adaptateurDe(provider: string): typeof adaptateur | null;
+  export function schemaPresent(pool: Pool): Promise<boolean>;
+
+  export function livrerTickets(
+    pool: Pool,
+    options?: {
+      limite?: number;
+      echeance?: number;
+      fetchImpl?: typeof fetch;
+      env?: NodeJS.ProcessEnv;
+      maintenant?: number;
+      /** Délai d'attente par APPEL distant (un signal neuf à chaque requête). */
+      timeoutMs?: number;
+      log?: Pick<Console, "error">;
+    },
+  ): Promise<
+    | { absent: string }
+    | { reservees: number; envoyes: number; rejouables: number; echecs: number; incertaines: number }
+  >;
+
+  /** Applique un événement DÉJÀ vérifié ; ne décide rien du mapping, il est configuré. */
+  export function appliquerEvenement(
+    client: PoolClient,
+    params: {
+      integration: { id: string; app_id: string; provider: string; target: string; config: unknown };
+      evenement: EvenementNormalise;
+      deliveryId: string;
+    },
+  ): Promise<{ status: string; issueId?: string; statut?: string }>;
 }

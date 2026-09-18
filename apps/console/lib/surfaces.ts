@@ -43,7 +43,11 @@ export interface Surface {
   noFilters?: string;
 }
 
-const LEGACY_DIMENSIONS: readonly Dimension[] = ["device", "country", "client", "source"];
+// `country_source` (P8.7) accompagne `country` : les écrans qui savent segmenter sur
+// un pays savent segmenter sur sa provenance, puisque c'est la même jointure de
+// session et le même compilateur. Les séparer aurait rendu un pays filtrable
+// sans que son origine le soit — exactement le mélange que ce lot corrige.
+const LEGACY_DIMENSIONS: readonly Dimension[] = ["device", "country", "country_source", "client", "source"];
 
 // Du plus spécifique au plus général : le premier préfixe qui correspond gagne.
 export const SURFACES: Surface[] = [

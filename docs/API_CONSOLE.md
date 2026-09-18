@@ -406,6 +406,20 @@ quel dans `cursor` avec les mêmes filtres. `400` pour `status`, `source`, `rele
   identifiant) à renvoyer dans `cursor`. `400` `id invalide (UUID attendu)` ou `cursor invalide` ; `503` avant
   migration-v73.
 
+### `GET /api/v1/issues/{id}/tickets` — demandes de ticket et état de livraison
+`data = { deliveries: IssueTicketDelivery[] }` (schéma `IssueTicketDelivery` de la spec OpenAPI).
+
+- Lecture : session ou jeton, dans le périmètre du principal. `meta.app` est l'app de l'issue ; hors périmètre,
+  `404`. `503` avant migration-v84.
+- `state` dit ce qui s'est réellement passé : `pending` (en file), `sent` (créé chez le fournisseur,
+  `external_id` et `external_url` renseignés), `failed` (rien n'a été créé), **`delivery_uncertain`** (un délai
+  a été dépassé après l'envoi : le ticket existe peut-être, un opérateur doit vérifier — MIP ne relance jamais
+  tout seul), `cancelled`.
+- `last_error` est un **code** (`auth_refusee`, `cible_introuvable`, `debit_depasse`, `livraison_incertaine`…),
+  jamais un message : un message de fournisseur peut citer la donnée qu'on refuse de faire sortir.
+- Les tickets eux-mêmes restent dans `GET /api/v1/issues/{id}/activity` (`kind: "link"`), qu'ils viennent du
+  connecteur ou d'un lien collé à la main.
+
 ### `GET /api/v1/sessions` — sessions récentes
 `data.sessions: SessionRow[]`.
 
@@ -689,7 +703,27 @@ puis borné à 2 000 caractères **après** masquage (`400` au-delà). `201`, `d
 Corps `{ app, url, label, expectedRevision }`. `url` : HTTPS, sans identifiants, normalisée (hôte en punycode,
 caractères encodés), 2 048 caractères au plus ; `label` : une ligne scrubbée de 120 caractères. La même URL deux
 fois sur une issue : `422` — un rechargement n'y changerait rien, à la différence d'un `409`. `201`,
-`data = { link, activity, revision }`. Aucune synchronisation avec l'outil de tickets (P8.6).
+`data = { link, activity, revision }`. **Ce lien fonctionne sans connecteur** : c'est la voie manuelle, et
+P8.6 ne l'a pas remplacée.
+
+### `POST /api/v1/issues/{id}/tickets` — demander la création d'un ticket (P8.6)
+Corps `{ app, integrationId, expectedRevision }`. Réponse **`202`** — la demande est acceptée, le ticket
+n'existe pas encore : il est créé par la file de sortie au tick suivant.
+`data = { jobId, state, payload, revision }`, où `payload` est le titre, la description et le lien
+**exactement** tels qu'ils partiront (l'écran d'administration affiche le résultat du même calcul).
+
+- Session **admin** de la console et même origine. Un jeton `CONSOLE_API_TOKENS` reste en lecture seule et
+  n'obtient jamais un droit d'écriture externe (`403`), comme une session viewer ou démo.
+- L'intégration doit appartenir à l'app de l'issue, être activée, non dégradée **et éprouvée** (`400` sinon) :
+  tant qu'aucun ticket réel n'a été créé et relu avec cette configuration, la console ne la propose pas.
+- `409` si l'issue a changé depuis sa lecture, avec la révision courante : ce qui partirait ne serait plus ce
+  qui a été montré.
+- **Idempotent** : la clé est `ticket:<intégration>:<issue>`. Deux clics, deux onglets ou un rejeu du `202`
+  retombent sur la même demande, donc sur le même ticket.
+- Charge minimale : message scrubbé, application, release, compteur observé, lien console. **La pile d'appels
+  complète et les identités ne sortent pas de MIP.**
+- GitHub Issues est l'implémentation actuelle du connecteur ; la cible reste l'outil ITSM de MIP — ServiceNow,
+  sous réserve de confirmation.
 
 ---
 

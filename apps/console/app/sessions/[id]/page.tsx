@@ -4,6 +4,7 @@ import ReplayPlayer from "@/components/replay/ReplayPlayer";
 import { TabLink } from "@/components/sessions/TabLink";
 import { TimelineRow } from "@/components/sessions/Timeline";
 import { browserFromUA, fmtDate } from "@/lib/format";
+import { geoSourceLabel } from "@/lib/geo";
 import { sessionMeta, sessionTimeline, type TimelineKind } from "@/lib/queries";
 import { authorizedAppsOf } from "@/lib/query-contract";
 import { KIND_STYLE } from "@/lib/timeline-constants";
@@ -81,7 +82,14 @@ export default async function SessionDetail({
         <Meta label="App" value={meta.app_id} />
         <Meta label="Device" value={meta.device_type ?? "—"} />
         <Meta label="Navigateur" value={browserFromUA(meta.user_agent)} />
-        <Meta label="Pays" value={meta.geo_country ?? "—"} />
+        {/* P8.7 : le pays ne s'affiche jamais seul. Sa provenance le suit, parce
+            qu'une adresse résolue et un fuseau déclaré ne valent pas la même
+            chose, et que « Inconnue » est la vérité de l'historique. */}
+        <Meta
+          label="Pays estimé"
+          value={meta.geo_country ?? "—"}
+          hint={meta.geo_country ? `${geoSourceLabel(meta.geo_source)}${meta.geo_db_version ? ` · ${meta.geo_db_version}` : ""}` : null}
+        />
         <Meta
           label="Source"
           value={meta.collection_source === "extension" ? "Extension" : "SDK"}
@@ -152,12 +160,15 @@ function Meta({
   value,
   mono = false,
   tone,
+  hint,
 }: {
   label: string;
   value: string;
   mono?: boolean;
   /** met la valeur en avant — 'extension' colore en accent (capteur navigateur). */
   tone?: "extension";
+  /** Seconde ligne : d'où vient la valeur. Écrite, pas seulement en infobulle. */
+  hint?: string | null;
 }) {
   const toneCls = tone === "extension" ? "text-accent" : "";
   return (
@@ -166,6 +177,7 @@ function Meta({
       <div className={`mt-0.5 truncate text-sm font-semibold ${mono ? "font-mono" : ""} ${toneCls}`} title={value}>
         {value}
       </div>
+      {hint && <div className="mt-0.5 truncate text-[11px] text-ink-soft" title={hint}>{hint}</div>}
     </div>
   );
 }

@@ -1,0 +1,13 @@
+{
+  "source": "DB-IP IP to Country Lite",
+  "licence": "CC BY 4.0",
+  "attribution": "IP Geolocation by DB-IP (https://db-ip.com)",
+  "version": "dbip-country-lite-2026-09",
+  "url": "https://download.db-ip.com/free/dbip-country-lite-2026-09.csv.gz",
+  "sha256": "a32bb3c384bd3de60ad9024596aa5b395a6dd5beaa27a7223407cc2edc681d0b",
+  "octets": 4522052,
+  "plages": 717170,
+  "plages_v4": 357325,
+  "plages_v6": 359845,
+  "releve_le": "2026-09-18"
+}

@@ -12,6 +12,7 @@
 import { writeRows } from "ingest/lib/pg-ingest.mjs";
 import { secureOtlpIdentities } from "ingest/lib/identity-hash.mjs";
 import { flattenOtlp } from "ingest/shared/otlp.mjs";
+import { appliquerGeo } from "ingest/shared/geoip.mjs";
 import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "ingest/shared/limits.mjs";
 import { withRetry } from "ingest/shared/retry.mjs";
 import { pool } from "@/lib/db";
@@ -61,11 +62,16 @@ export async function POST(req: Request) {
 
     // géo sans stocker d'IP : priorité mip.tz (posé par flattenOtlp), repli
     // sur l'en-tête pays du CDN.
-    const country =
-      req.headers.get("x-vercel-ip-country") ?? req.headers.get("cf-ipcountry");
-    if (country) {
-      for (const s of rows.sessions) s.geo_country = s.geo_country ?? country;
-    }
+    //
+    // PAS DE GEOIP LOCAL ICI, ET C'EST DÉLIBÉRÉ (P8.7). Ce filet vit dans une
+    // fonction serverless : elle n'emporte pas la base DB-IP, et son processus
+    // est recréé assez souvent pour qu'un chargement d'une seconde soit payé
+    // bien plus qu'une fois. Le GeoIP est donc réservé au service d'ingestion
+    // Railway, qui tourne en continu. La provenance `cdn` dit exactement ce qui
+    // s'est passé : la résolution a eu lieu chez le CDN, pas chez nous.
+    appliquerGeo(rows.sessions, {
+      cdn: req.headers.get("x-vercel-ip-country") ?? req.headers.get("cf-ipcountry"),
+    });
 
     // La transaction entière est idempotente (on conflict do nothing /
     // greatest) : la rejouer sur erreur Postgres transitoire est sûr.

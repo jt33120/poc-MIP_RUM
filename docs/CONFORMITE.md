@@ -33,7 +33,7 @@
 | Route / URL | technique | **query string & fragment retirés**, scrub PII du chemin |
 | Erreurs (message, stack) | technique, **PII possible** | **scrub serveur** (`_shared/scrub.mjs`) avant écriture |
 | Événements `track.*` | défini par le client | scrub récursif des `props` |
-| Adresse IP | **jamais stockée** | pays déduit du **fuseau horaire** (`mip.tz`) ; à défaut, de l'**en-tête pays posé par le CDN** (`x-vercel-ip-country`, `cf-ipcountry`) quand il y en a un devant — la résolution IP→pays a alors lieu chez le CDN, aucune IP ne transite ni n'est stockée côté MIP |
+| Adresse IP | **jamais stockée**, sous aucune forme (ni en clair, ni hachée, ni tronquée, ni temporairement) | Elle sert, dans la mémoire du processus qui reçoit la requête et pour la durée de cette requête seule, à déduire un **code pays**. Trois provenances possibles, tracées ligne par ligne dans `rum_session.geo_source` (migration-v85) : **`timezone`** — déduit de `mip.tz`, aucune adresse lue ; **`geoip`** — résolu dans une base **DB-IP Lite embarquée**, chargée en mémoire, **sans aucun appel réseau et sans qu'aucun tiers reçoive l'adresse** ; **`cdn`** — en-tête pays d'un CDN en façade (`x-vercel-ip-country`, `cf-ipcountry`), la résolution ayant alors lieu chez le CDN. Aucune coordonnée, aucune ville, aucune région n'est ni lue ni stockée |
 | Identifiant de visiteur | **pseudonyme** | `visitor_id` : tirage ALÉATOIRE du SDK (UUID v4), persisté dans le stockage local du navigateur, sans lien avec le terminal ni avec un compte. Effaçable par le visiteur en vidant le stockage local. Reste une donnée à caractère personnel au sens du RGPD — un pseudonyme, pas une donnée anonyme |
 | `user_hash` (héritage, ≤ 09/09/2026) | **ni anonyme, ni identifiant de personne** | Ancienne empreinte dérivée du user-agent, de la langue, de la résolution et du décalage horaire, sans aléa : sur un parc homogène, plusieurs personnes partagent la même valeur. Le SDK ne l'émet plus. Un export ou un effacement RGPD **refuse** de s'exécuter dessus (`id_kind = 'device_class'`), parce qu'il porterait sur les données de tiers. Ces lignes s'éteignent à l'échéance de rétention (30 j). Voir `apps/ingest/sql/migration-v57.sql` |
 | Session replay (opt-in) | rejouée | **masquage par défaut des saisies, du texte et des médias** (réglable par app via `replayMask`), opt-in par app, consent requis |
@@ -94,6 +94,55 @@ déjà posées (aucune migration descendante ne les supprime), mais un writer d'
 **ignore** la table : il ne les consulte pas. Un retour arrière ne se fait donc pas en silence — soit
 on reste sur une version compatible, soit on suspend l'ingestion des applications concernées
 (`app_registry.ingestion_suspended_at`) le temps du retour.
+
+### 3.2 Pays estimé et adresse IP (P8.7, migration-v85)
+
+**Ce qui est traité.** L'adresse IP de la connexion entrante est une **donnée à caractère
+personnel**. MIP RUM la lit — quand l'exploitation a déclaré d'où la lire (`GEOIP_IP_SOURCE`) —
+et la transforme immédiatement en un **code pays à deux lettres**. L'adresse n'est écrite nulle
+part : ni en base, ni dans un journal, ni dans une clef d'erreur, ni dans un cache. Il n'existe
+**aucun cache de résolution**, délibérément : ce serait le seul endroit où une adresse survivrait
+à la requête qui l'a apportée, et on préfère ne pas créer l'objet à protéger. La résolution est
+une recherche dichotomique en mémoire, sans entrée/sortie — d'où l'absence de délai d'attente.
+
+**Base légale de fait.** Intérêt légitime du responsable de traitement (art. 6.1.f) : connaître la
+répartition géographique de l'audience d'une application pour la dimensionner et interpréter ses
+mesures de performance. La donnée conservée — un code pays sur une session déjà collectée — est
+**moins identifiante** que l'adresse dont elle dérive, et le traitement n'ajoute ni suivi, ni
+profil, ni enrichissement par un tiers. **Aucune adresse n'est transmise à qui que ce soit** : la
+variante « appel à un fournisseur de géolocalisation », qui aurait envoyé l'adresse **avant tout
+scrub MIP**, a été explicitement écartée. DB-IP n'est donc **pas un sous-traitant** : nous
+téléchargeons un fichier, il ne reçoit aucune donnée.
+
+**Ce qui est conservé.** `rum_session.geo_country` (code pays), `rum_session.geo_source`
+(`geoip` / `timezone` / `cdn`, ou NULL pour l'historique antérieur à v85) et
+`rum_session.geo_db_version` (livraison DB-IP qui a répondu, pour les seules lignes `geoip`). Ces
+trois colonnes suivent la rétention, la purge, `erase_session`, `erase_app_data` et les exports
+DSAR de la table `rum_session` — dont elles font partie. Aucune table n'a été créée.
+
+**Ce qui n'est pas conservé.** L'adresse IP, sous quelque forme que ce soit. Aucune coordonnée
+géographique, aucune ville, aucune subdivision administrative : la base « City Lite » de DB-IP,
+qui les porte, est refusée par le chargeur — la raison n'est pas technique, c'est ce que ce
+produit a décidé de ne jamais collecter.
+
+**Ce que la mesure vaut.** Une base pays ne localise **pas une personne**. Elle situe une
+**adresse**, qui est le plus souvent celle d'un opérateur, d'un relais d'entreprise ou d'un VPN :
+un télétravailleur derrière le VPN de son employeur est classé au pays de sortie du VPN. Le
+fuseau horaire, lui, est un **réglage du terminal**, que la personne choisit. Les écrans écrivent
+« Pays estimé », jamais « Pays », et affichent la provenance à côté de la valeur.
+
+**Conséquence définitive sur l'historique.** Aucun enrichissement rétrospectif du pays n'est
+possible, et ne le sera jamais : **l'adresse IP des visites passées n'a jamais été stockée**.
+Ce n'est pas un manque à combler plus tard, c'est le résultat voulu de la minimisation. Les
+sessions antérieures à v85 gardent `geo_source` à NULL — « provenance inconnue », ce qui est
+exact —, et ce lot n'introduit **aucun stockage d'adresse** qui rendrait un tel backfill possible
+à l'avenir.
+
+**Licence de la base.** DB-IP IP to Country Lite est distribuée sous **CC BY 4.0**, qui exige une
+attribution visible. Elle figure dans les mentions légales publiques (`/legal/mentions`, via
+`apps/console/lib/legal.ts`), dans `apps/ingest/data/LICENCE-DB-IP.txt` et ici :
+**IP Geolocation by DB-IP (https://db-ip.com)**. Le fichier est utilisé tel quel, sans
+modification ni redistribution.
 
 ## 4. Rétention — **configurable par client** (migration-v14)
 - `purge_rum_tenants(default_days)` purge **chaque app selon SA rétention**

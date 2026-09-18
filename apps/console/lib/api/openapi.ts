@@ -302,6 +302,18 @@ export function buildOpenApi(): Record<string, unknown> {
           },
         ),
       },
+      "/issues/{id}/tickets": {
+        get: get(
+          "Demandes de création de ticket d'une issue (P8.6) et leur état de livraison ; " +
+            "GitHub Issues est l'implémentation actuelle, la cible reste l'outil ITSM de MIP",
+          "rum",
+          ref("IssueTicketDeliveries"),
+          {
+            params: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+            extraResponses: { "400": ref0("BadRequest"), "404": ref0("NotFound"), "503": ref0("Unavailable") },
+          },
+        ),
+      },
       "/sessions": {
         get: get(
           "Sessions récentes",
@@ -553,7 +565,7 @@ export function buildOpenApi(): Record<string, unknown> {
         service: { name: "service", in: "query", schema: dimension, description: "service déclaré par un émetteur backend (erreurs, spans)" },
         release: { name: "release", in: "query", schema: dimension, description: "release de l'occurrence (jamais celle, mutable, de la session)" },
         route: { name: "route", in: "query", schema: dimension, description: "route normalisée exacte (jamais une URL brute)" },
-        country: { name: "country", in: "query", schema: dimension, description: "pays estimé d'après le fuseau de la session (geo_source=timezone)" },
+        country: { name: "country", in: "query", schema: dimension, description: "pays ESTIMÉ de la session : selon la ligne, résolu depuis l'adresse réseau dans une base locale, déduit du fuseau du terminal, ou repris d'un en-tête de CDN. Jamais une géolocalisation ; aucune adresse IP n'est stockée. `country_source` dit lequel des trois" },
         seg: { name: "seg", in: "query", schema: { type: "string", maxLength: 2048 }, description: "segment : v2 'v2:dimension:eq|neq|is_null[:valeur encodée]' séparés par ';' (format v1 'geo==FR;device!=mobile' encore lu) ; 10 conditions au plus, jeton illisible = 400" },
         bots: { name: "bots", in: "query", schema: { type: "string", enum: ["1"] }, description: "1 = inclure le trafic non humain (exclu par défaut)" },
         internal: { name: "internal", in: "query", schema: { type: "string", enum: ["1"] }, description: "1 = inclure les apps internes dans la vue « toutes apps » (exclues par défaut)" },
@@ -944,6 +956,29 @@ export function buildOpenApi(): Record<string, unknown> {
           { activities: arr(ref("IssueActivity")), next_cursor: nul(str) },
           ["activities", "next_cursor"],
         ),
+        // P8.6. `state` dit ce qui s'est réellement passé, sans euphémisme :
+        // `delivery_uncertain` signale qu'un ticket a PEUT-ÊTRE été créé et
+        // qu'un opérateur doit trancher — jamais une relance automatique.
+        IssueTicketDelivery: o(
+          {
+            id: str,
+            integration_id: str,
+            provider: str,
+            target: str,
+            state: {
+              type: "string",
+              enum: ["pending", "sent", "failed", "delivery_uncertain", "cancelled"],
+            },
+            attempts: int,
+            external_id: nul(str),
+            external_url: nul(str),
+            last_error: nul(str),
+            created_at: dateTime,
+            sent_at: nul(dateTime),
+          },
+          ["id", "integration_id", "provider", "target", "state", "attempts"],
+        ),
+        IssueTicketDeliveries: o({ deliveries: arr(ref("IssueTicketDelivery")) }, ["deliveries"]),
         IssueDetail: o(
           {
             issue: ref("IssueRecord"),

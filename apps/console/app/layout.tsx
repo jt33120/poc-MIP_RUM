@@ -20,6 +20,7 @@ import { reglerBlocsAction } from "./actions-dashboard";
 import { FUSEAU_DEFAUT, fuseauDe } from "@/lib/fuseau";
 import { describeProject, projectsForUser, selectedProjectId } from "@/lib/project";
 import { dimensionSchema } from "@/lib/query-schema";
+import { surfaceTicketsOuverte } from "@/lib/queries-ticket-integrations";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -195,6 +196,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     Promise.all(apps.map(async (a) => [a.app_id, await fuseauDe(a.app_id)] as const)).then(Object.fromEntries),
   ]);
 
+  // P8.6 : l'entrée « Connecteurs de tickets » n'apparaît que lorsqu'un
+  // fournisseur est branché et testé. La page applique la MÊME décision et rend
+  // un 404 sinon : un lien caché n'est pas une autorisation.
+  const tickets = user.role === "admin" && (await surfaceTicketsOuverte());
+
   return (
     <html lang="fr" suppressHydrationWarning>
       <head>
@@ -231,6 +237,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     { href: "/admin/privacy", label: "Vie privée · DSAR", icon: "shield" as const },
                     { href: "/admin/read-tokens", label: "Tokens de lecture", icon: "trace" as const },
                     { href: "/admin/sourcemaps", label: "Source maps", icon: "list" as const },
+                    ...(tickets
+                      ? [{ href: "/admin/ticket-integrations", label: "Connecteurs de tickets", icon: "bell" as const }]
+                      : []),
                     { href: "/admin/extension-scope", label: "Extension navigateur", icon: "compass" as const },
                     { href: "/admin/extension-installs", label: "Postes équipés", icon: "grid" as const },
                     { href: "/admin/uptime", label: "Uptime", icon: "target" as const },

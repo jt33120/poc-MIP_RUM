@@ -6,6 +6,7 @@ import { Donut } from "@/components/charts/Donut";
 import { ObservedTrend } from "@/components/charts/ObservedTrend";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { browserFromUA, fmtDate } from "@/lib/format";
+import { geoSourceLabel } from "@/lib/geo";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
@@ -328,7 +329,17 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
                 </Link>
                 <Badge>{s.device_type ?? "?"}</Badge>
                 <Badge>{browserFromUA(s.user_agent)}</Badge>
-                {s.geo_country && <Badge>{s.geo_country}</Badge>}
+                {/* P8.7 : le badge porte sa provenance en alternative textuelle
+                    ET en infobulle — un lecteur d'écran l'entend, une souris la
+                    voit, et personne ne lit un pays comme une position. */}
+                {s.geo_country && (
+                  <Badge>
+                    <span title={`Pays estimé · ${geoSourceLabel(s.geo_source)}`}>
+                      {s.geo_country}
+                      <span className="sr-only"> — pays estimé, provenance : {geoSourceLabel(s.geo_source)}</span>
+                    </span>
+                  </Badge>
+                )}
                 {s.collection_source === "extension" && (
                   <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent-deep dark:text-accent">
                     extension

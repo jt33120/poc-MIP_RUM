@@ -44,6 +44,17 @@ export async function middleware(req: NextRequest) {
   if (req.nextUrl.pathname === "/api/sourcemaps" || req.nextUrl.pathname.startsWith("/api/admin/sourcemap-tokens")) {
     return NextResponse.next();
   }
+  // /api/admin/ticket-integrations (P8.6) : même raison que ci-dessus — la garde
+  // (lib/api/admin.ts) exige une session admin non démo et l'Origin de la
+  // console, et la route répond en JSON plutôt qu'en redirection.
+  if (req.nextUrl.pathname.startsWith("/api/admin/ticket-integrations")) return NextResponse.next();
+  // /api/webhooks/* : livraisons entrantes d'un fournisseur de tickets (P8.6).
+  // Aucun cookie, aucune session : l'autorité est la SIGNATURE vérifiée dans le
+  // handler. Sans ce contournement, chaque livraison recevrait un 302 vers
+  // /login — que GitHub compterait comme une livraison réussie, et la
+  // synchronisation tomberait en silence. La route refuse elle-même toute
+  // requête portant le cookie de session.
+  if (req.nextUrl.pathname.startsWith("/api/webhooks/")) return NextResponse.next();
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const user = token ? await verifyJwt(token) : null;

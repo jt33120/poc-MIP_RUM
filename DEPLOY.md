@@ -123,6 +123,35 @@ comportement voulu, pas une panne.
 | `PORT` | les trois | `8080` |
 | `NODE_ENV`, `LOG_LEVEL` | `ingest`, `scheduler` | `production`, `info` |
 | `MIP_CONSOLE_URL` | `mcp` | `https://mip-rum-console.vercel.app` |
+| `GEOIP_IP_SOURCE` | `ingest` | **non posée** (= GeoIP éteint) |
+| `GEOIP_DB_PATH` | `ingest` | non posée (base cherchée dans l'image) |
+| `GEOIP_MAX_AGE_DAYS` | `ingest` | non posée (`180`) |
+
+> **GeoIP optionnel (P8.7).** Éteint tant que `GEOIP_IP_SOURCE` n'est pas posée,
+> et c'est voulu : un déploiement dont personne n'a décrit la façade ne doit pas
+> deviner d'où lire une adresse IP. Valeurs : `none` (défaut), `socket` (adresse
+> de la connexion), `railway` (`X-Real-IP`, exigée avec un marqueur d'arête
+> Railway), `xff:<n>` (`X-Forwarded-For` avec `n` relais de confiance — on lit le
+> n-ième EN PARTANT DE LA DROITE, ce qui ignore tout préfixe forgé par le client).
+>
+> **État de fait au 18/09/2026 : le service `ingest` n'a AUCUN domaine public**
+> (relevé par l'API Railway). Le trafic de production entre par
+> `https://mip-rum-console.vercel.app/api/ingest/v1/traces`, c'est-à-dire la
+> console sur Vercel — où le pays vient du fuseau, et à défaut de
+> `x-vercel-ip-country` (provenance `cdn`). Poser `GEOIP_IP_SOURCE` sur le
+> service Railway ne changerait donc rien tant qu'aucun domaine ne l'expose. Le
+> GeoIP local sert l'ingestion **auto-hébergée** — conteneur, VM, hébergeur
+> souverain —, là où aucun CDN ne fournit d'en-tête pays.
+>
+> **La base n'est pas dans le dépôt** (4,5 Mio, renouvelée tous les mois).
+> `Dockerfile.backend` la télécharge à la construction et vérifie son empreinte ;
+> un échec n'arrête PAS la construction, l'image part alors sans base et
+> l'ingestion fonctionne comme avant. `--build-arg GEOIP_FETCH=0` pour une
+> construction sans sortie réseau ; la base se monte alors sur un volume via
+> `GEOIP_DB_PATH`. Voir `apps/ingest/data/README.md`.
+>
+> `GET /health` du service `ingest` annonce l'état réel :
+> `{"geoip":{"source_ip":"railway","etat":"actif","version":"dbip-country-lite-2026-09","raison":null}}`.
 
 > **Ingestion différée (`INGEST_DEFERRED`).** À `true`, le receveur débarque le lot
 > dans `ingest_raw` et rend la main ; un travailleur du même processus écrit la

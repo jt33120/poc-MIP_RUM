@@ -128,6 +128,10 @@ describe("aucune route réelle n'est passée sous silence", () => {
       "POST /api/v1/issues/{id}/triage",
       "POST /api/v1/issues/{id}/comments",
       "POST /api/v1/issues/{id}/links",
+      // P8.6 : la seule écriture du dépôt qui sorte VERS L'EXTÉRIEUR. Elle rend
+      // 202 — la demande est acceptée, le ticket distant n'existe pas encore —
+      // et reste une écriture d'administration, jamais accessible à un jeton.
+      "POST /api/v1/issues/{id}/tickets",
     ];
     const nonGet = documentes()
       .filter((e) => e.methode !== "GET")
