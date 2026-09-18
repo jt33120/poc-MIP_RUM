@@ -97,6 +97,20 @@ async function main() {
     await c.query(
       `insert into error_issue_ticket (app_id,issue_id,url,label) values ($1,$2,'https://tickets.exemple.fr/1','T-1')`,
       [app, issue]);
+    // P8.6 : un connecteur de tickets, sa file de sortie et une livraison entrante.
+    // Trois tables scopées de plus, donc trois policies de plus à prouver — et,
+    // pour le connecteur, une colonne de RÉFÉRENCE de secret que console_ro ne
+    // doit même pas pouvoir lire.
+    const integ = (await c.query(
+      `insert into ticket_integration (app_id,provider,target,credential_ref,enabled,verified_at)
+       values ($1,'github','moi/bac','env:GITHUB_TICKETS_TOKEN',true,now()) returning id`, [app])).rows[0].id;
+    await c.query(
+      `insert into ticket_outbox (app_id,integration_id,issue_id,idempotency_key,payload)
+       values ($1,$2,$3,$4,'{"titre":"t","description":"d","url":"https://c/","reference":"r"}'::jsonb)`,
+      [app, integ, issue, `ticket:${integ}:${issue}`]);
+    await c.query(
+      `insert into ticket_webhook_event (app_id,integration_id,delivery_id,event_type,status)
+       values ($1,$2,'d-1','issues','ignored')`, [app, integ]);
   }
   // Un événement d'alerte + une livraison rattachés au tenant A uniquement.
   const ruleA = (await c.query("select id from alert_rule where app_id='app-a' limit 1")).rows[0].id;
@@ -151,6 +165,9 @@ async function main() {
   assert("console_ro + portée A : ne voit QUE les liens de ticket de A", (await seen(c, "error_issue_ticket")) === 1);
   assert("console_ro + portée A : ne voit QUE les notifications d'issue de A", (await seen(c, "error_issue_notification")) === 1);
   assert("console_ro + portée A : ne voit QUE les capacités mobiles de A", (await seen(c, "mobile_capabilities")) === 1);
+  assert("console_ro + portée A : ne voit QUE les connecteurs de tickets de A", (await seen(c, "ticket_integration")) === 1);
+  assert("console_ro + portée A : ne voit QUE la file de tickets de A", (await seen(c, "ticket_outbox")) === 1);
+  assert("console_ro + portée A : ne voit QUE les livraisons entrantes de A", (await seen(c, "ticket_webhook_event")) === 1);
 
   const rows = (await c.query("select distinct app_id from rum_metric")).rows.map((r) => r.app_id);
   assert("console_ro + portée A : aucune ligne de B ne transparaît", rows.length === 1 && rows[0] === "app-a");
@@ -168,6 +185,9 @@ async function main() {
   assert("portée B : ne voit QUE les actions de B", (await seen(c, "rum_action")) === 1);
   assert("portée B : ne voit QUE les jetons de source maps de B", (await seen(c, "sourcemap_upload_token")) === 1);
   assert("portée B : ne voit QUE les capacités mobiles de B", (await seen(c, "mobile_capabilities")) === 1);
+  assert("portée B : ne voit QUE les connecteurs, la file et les livraisons de B",
+    (await seen(c, "ticket_integration")) === 1 && (await seen(c, "ticket_outbox")) === 1
+      && (await seen(c, "ticket_webhook_event")) === 1);
   assert("portée B : ne voit QUE les issues de B", (await seen(c, "error_issue")) === 1);
   assert("portée B : ne voit QUE l'activité et les liens des issues de B",
     (await seen(c, "error_issue_activity")) === 1 && (await seen(c, "error_issue_ticket")) === 1);
@@ -183,6 +203,9 @@ async function main() {
   assert("portée vide : AUCUNE action visible (fail-closed)", (await seen(c, "rum_action")) === 0);
   assert("portée vide : AUCUN jeton de source maps visible (fail-closed)", (await seen(c, "sourcemap_upload_token")) === 0);
   assert("portée vide : AUCUNE capacité mobile visible (fail-closed)", (await seen(c, "mobile_capabilities")) === 0);
+  assert("portée vide : AUCUN connecteur de tickets, file ni livraison (fail-closed)",
+    (await seen(c, "ticket_integration")) + (await seen(c, "ticket_outbox"))
+      + (await seen(c, "ticket_webhook_event")) === 0);
   assert("portée vide : AUCUNE issue ni alias visible (fail-closed)",
     (await seen(c, "error_issue")) === 0 && (await seen(c, "error_issue_alias")) === 0);
   assert("portée vide : AUCUNE activité, AUCUN lien, AUCUNE notification d'issue (fail-closed)",
@@ -209,12 +232,16 @@ async function main() {
     const issuesVues = await seen(c, "error_issue");
     const workflowVu = (await seen(c, "error_issue_activity")) + (await seen(c, "error_issue_ticket"))
       + (await seen(c, "error_issue_notification"));
+    const connecteursVus = (await seen(c, "ticket_integration")) + (await seen(c, "ticket_outbox"))
+      + (await seen(c, "ticket_webhook_event"));
     await c.query("reset role");
     assert(`API publique : ${role} ne lit RIEN même avec une portée posée`, vus === 0);
     assert(`API publique : ${role} ne lit AUCUNE action même avec une portée posée`, actionsVues === 0);
     assert(`API publique : ${role} ne lit AUCUN jeton de source maps même avec une portée posée`, jetonsVus === 0);
     assert(`API publique : ${role} ne lit AUCUNE issue même avec une portée posée`, issuesVues === 0);
     assert(`API publique : ${role} ne lit RIEN du workflow des issues même avec une portée posée`, workflowVu === 0);
+    assert(`API publique : ${role} ne lit RIEN des connecteurs de tickets même avec une portée posée`,
+      connecteursVus === 0);
   }
 
   // ── console_ro n'écrit que là où la console écrit vraiment (v48) ────────────

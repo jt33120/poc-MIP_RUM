@@ -147,7 +147,7 @@ describe("cadences et fonctions SQL appelées", () => {
     };
   }
 
-  it("le tick évalue alertes, route les notifications d'issue, SLO, uptime, livraison et réconciliation", async () => {
+  it("le tick évalue alertes, route les notifications d'issue, SLO, uptime, livraison, tickets et réconciliation", async () => {
     const pool = poolFactice();
     const dispatch = vi.fn(async (_pool: unknown, _options: { echeance: number }) => ({ sent: 0 }));
     const debut = Date.now();
@@ -162,6 +162,9 @@ describe("cadences et fonctions SQL appelées", () => {
       "check_slo_burn",
       "uptime",
       "dispatch_alerts",
+      // P8.6 : la file de sortie des tickets suit le MÊME tick que l'outbox de
+      // notifications — pas un second planificateur qui dériverait.
+      "dispatch_tickets",
       "reconcile_deliveries",
     ]);
     expect(dispatch).toHaveBeenCalledOnce();

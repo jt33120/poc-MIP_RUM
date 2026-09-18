@@ -15,7 +15,11 @@
 // Aucune donnée ne part vers un fournisseur de tickets (P8.6), et l'activité ne
 // recopie ni stack, ni message d'erreur, ni identité RUM.
 import type { PoolClient } from "pg";
-import { COMMENTAIRE_MAX, texteActivite } from "ingest/lib/error-issue-workflow.mjs";
+import {
+  COMMENTAIRE_MAX,
+  referenceResolution as referenceResolutionPartagee,
+  texteActivite,
+} from "ingest/lib/error-issue-workflow.mjs";
 import { q, tx } from "./db";
 import { ISSUE_STATUSES, isIssueId, type IssueStatus } from "./error-issues";
 import { encodeErrorCursor } from "./queries-errors";
@@ -452,36 +456,15 @@ async function nouvelleRevision(client: PoolClient, issue: LockedIssue): Promise
 
 /**
  * Référence d'une résolution : la release et l'env de la dernière occurrence
- * rattachée (celle de `last_seen`). La régression se jugera contre elles, dans cet
- * env, par l'ordre des marqueurs de déploiement. Une issue dont la dernière vue
- * vient d'un groupe historique garde la dernière release connue et un env inconnu :
- * toute réapparition restera alors « à vérifier ».
+ * rattachée. La requête vit dans `ingest/lib/error-issue-workflow.mjs` depuis
+ * P8.6 : un fournisseur de tickets peut résoudre une issue par webhook, et deux
+ * copies auraient donné deux références — donc deux verdicts de régression pour
+ * la même issue selon qui l'a fermée. Son commentaire y explique le détail.
  *
- * `mip.release` arrive brut de l'émetteur : une release qui n'est pas un nom court
- * (1 à 200 octets, sans caractère de contrôle), comme un env hors de 1 à 120, n'est
- * pas retenue. L'activité la refuserait — la résolution échouerait à chaque essai —
- * et migration-v74 ne confirme de régression qu'avec des valeurs ainsi bornées.
+ * `last_seen` reste en base : relu en JavaScript, il perdrait ses microsecondes.
  */
 async function referenceResolution(client: PoolClient, issue: LockedIssue): Promise<{ release: string | null; env: string | null }> {
-  // `last_seen` reste en base : relu en JavaScript, il perdrait ses microsecondes.
-  // La fenêtre d'une milliseconde couvre la dernière vue écrite par l'ingestion,
-  // elle-même tronquée à la milliseconde, sans parcourir l'historique de l'issue.
-  const { rows: [reference] } = await client.query<{ release: string | null; env: string | null }>(
-    `select case when octet_length(r.release) between 1 and 200 and r.release !~ '[[:cntrl:]]' then r.release end as release,
-            case when octet_length(e.env) between 1 and 120 and e.env !~ '[[:cntrl:]]' then e.env end as env
-       from error_issue i
-       left join lateral (
-         select release, env from rum_error
-          where ts between i.last_seen - interval '1 millisecond' and i.last_seen + interval '1 millisecond'
-            and app_id = i.app_id and issue_id = i.id
-          order by ts desc, id desc
-          limit 1
-       ) e on true
-       cross join lateral (select coalesce(e.release, i.last_release) as release) r
-      where i.app_id = $1 and i.id = $2`,
-    [issue.app_id, issue.id],
-  );
-  return reference ?? { release: null, env: null };
+  return referenceResolutionPartagee(client, issue.app_id, issue.id) as Promise<{ release: string | null; env: string | null }>;
 }
 
 /** Statut et/ou assigné. L'assignation ne change jamais le statut. */

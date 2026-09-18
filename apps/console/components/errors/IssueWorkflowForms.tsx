@@ -63,7 +63,7 @@ function useBrouillon<T>(issueId: string, formulaire: string): [T | null, (broui
   return [repris, garderPuisRecharger];
 }
 
-function useMutation(issueId: string, action: "triage" | "comments" | "links") {
+function useMutation(issueId: string, action: "triage" | "comments" | "links" | "tickets") {
   const [etat, setEtat] = useState<Etat>({ kind: "repos" });
 
   async function envoyer(corps: Record<string, unknown>): Promise<void> {
@@ -317,6 +317,75 @@ export function IssueLinkForm({ issueId, appId, revision }: { issueId: string; a
         </button>
       </div>
       <Retour etat={etat} recharger={() => garder({ url, label: libelle })} testid="issue-link" />
+    </form>
+  );
+}
+
+/**
+ * Créer un ticket chez le fournisseur configuré (P8.6).
+ *
+ * L'APERÇU N'EST PAS UN APERÇU. Le titre, la description et le lien affichés
+ * au-dessus de ce formulaire sont le résultat de la MÊME fonction que celle qui
+ * fige la charge dans la file de sortie, sur la même lecture de l'issue. Ce
+ * formulaire n'envoie donc pas un contenu : il envoie une décision (« oui,
+ * envoie ce qui est affiché »), et la révision qu'il porte garantit que l'issue
+ * n'a pas changé depuis. Si elle a changé, la réponse est un 409 et l'écran
+ * propose de recharger pour REVOIR ce qui partirait.
+ *
+ * La réponse est un 202 : la demande est acceptée, le ticket n'existe pas
+ * encore. On le dit à l'écran plutôt que d'annoncer une création.
+ */
+export function IssueTicketForm({
+  issueId,
+  appId,
+  revision,
+  integrations,
+}: {
+  issueId: string;
+  appId: string;
+  revision: string;
+  integrations: { id: string; label: string }[];
+}) {
+  const pret = useHydrate();
+  const { etat, envoyer, occupe } = useMutation(issueId, "tickets");
+  const [choix, setChoix] = useState(integrations[0]?.id ?? "");
+  const [repris, garder] = useBrouillon<{ integrationId: string }>(issueId, "ticket");
+  useEffect(() => {
+    if (repris) setChoix(repris.integrationId);
+  }, [repris]);
+  const inactif = !pret || occupe || integrations.length === 0;
+
+  async function soumettre(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await envoyer({ app: appId, integrationId: choix, expectedRevision: revision });
+  }
+
+  return (
+    <form onSubmit={soumettre} aria-label="Créer un ticket" data-testid="issue-ticket-form">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className={CHAMP}>
+          Destination
+          <select
+            name="integrationId"
+            required
+            value={choix}
+            onChange={(e) => setChoix(e.target.value)}
+            disabled={inactif}
+            className={`${INPUT_CLASS} w-72 max-w-full`}
+            data-testid="issue-ticket-integration"
+          >
+            {integrations.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" className="btn-accent" disabled={inactif} data-testid="issue-ticket-submit">
+          {occupe ? "Envoi…" : "Créer le ticket"}
+        </button>
+      </div>
+      <Retour etat={etat} recharger={() => garder({ integrationId: choix })} testid="issue-ticket" />
     </form>
   );
 }
