@@ -10,7 +10,7 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 | Sous-lot | PR | Migration | Implémenté | Testé localement | CI | Déployé | Vérifié sur vraie app |
 |---|---|---|---|---|---|---|---|
 | P8.1 — effacement sérialisé avec l'ingestion | #205 | v81, appliquée sur Neon le 18/09 10:16 | oui | oui | verte | oui (`b06a5ce`) | non — aucun effacement réel joué depuis l'activation |
-| P8.2 — outillage de backfill et dry-run | #207 | v83 (non appliquée en production) | oui | oui | verte | non | non — **aucun backfill exécuté**, aucun périmètre choisi |
+| P8.2 — outillage de backfill et dry-run | #208 | v83 (non appliquée en production) | oui | oui | verte | non | non — **aucun backfill exécuté**, aucun périmètre choisi |
 | P8.3 à P8.8 | — | — | non | — | — | — | — |
 
 ## P8.1 — effacement sérialisé avec l'ingestion
@@ -278,7 +278,7 @@ silencieusement aucune protection, et c'est le pire des états — on croirait l
 
 ## P8.2 — outillage de backfill et dry-run
 
-Branche `feat/rum-backfill-p8-2`, PR #207. Migration **v83** (v81 est prise par P8.1, v82 par P7.5).
+Branche `feat/rum-backfill-p8-2`, PR #208. Migration **v83** (v81 est prise par P8.1, v82 par P7.5).
 
 **Aucun backfill n'a été exécuté.** Ce lot livre l'outil, ses tests et son dry-run. L'exécution
 historique est P8.3, et elle exige un périmètre app / fenêtre / charge que personne n'a choisi.
