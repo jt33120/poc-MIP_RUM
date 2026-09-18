@@ -5,6 +5,7 @@ L'envoi réseau est intercepté en monkeypatchant mip_rum_middleware._post.
 """
 
 import asyncio
+import json
 import unittest
 
 import mip_rum_middleware as mrm
@@ -332,6 +333,233 @@ class ExceptionsTest(unittest.TestCase):
                 self.assertNotIn("events", span)
         identifiants = [self.attrs(s["events"][0])["mip.exception_id"] for s in mw._buf if "events" in s]
         self.assertEqual(len(identifiants), len(set(identifiants)))
+
+
+class ContexteTest(unittest.TestCase):
+    """P7.4 : contexte ContextVar, isolation, capture manuelle et déduplication."""
+
+    def setUp(self):
+        self.posts = []
+        self._orig_post = mrm._post
+        mrm._post = lambda endpoint, payload: self.posts.append((endpoint, payload))
+
+    def tearDown(self):
+        mrm._post = self._orig_post
+
+    def attrs(self, record):
+        return {kv["key"]: next(iter(kv["value"].values())) for kv in record["attributes"]}
+
+    def middleware(self, app):
+        return mrm.MIPRumMiddleware(app, endpoint="http://x/v1/traces", app_id="demo-app", batch_size=1000)
+
+    def test_hors_requete_aucune_route_ouverte_et_rien_ne_leve(self):
+        self.assertIsNone(mrm.current_context())
+        # Un script ou un test appelle du code instrumenté : il ne doit pas casser.
+        with mrm.rum_context(user_id="u-1") as scope:
+            self.assertIsNone(scope)
+        self.assertFalse(mrm.capture_exception(ValueError("hors requête")))
+        self.assertFalse(mrm.capture_exception("pas une exception"))
+        self.assertIsNone(mrm.current_context())
+
+    def test_scope_visible_dans_la_requete_puis_restaure(self):
+        vu = {}
+
+        class App:
+            async def __call__(self, scope, receive, send):
+                vu["entree"] = mrm.current_context()
+                with mrm.rum_context(user_id="u-7", canal="web"):
+                    vu["dedans"] = mrm.current_context()
+                    with mrm.rum_context(etape="paiement"):
+                        vu["imbrique"] = mrm.current_context()
+                    vu["apres_imbrique"] = mrm.current_context()
+                vu["sortie"] = mrm.current_context()
+                await send({"type": "http.response.start", "status": 200, "headers": []})
+                await send({"type": "http.response.body", "body": b"ok"})
+
+        mw = self.middleware(App())
+        run_request(mw, path="/commandes", headers=[(b"traceparent", TRACEPARENT.encode())])
+
+        self.assertEqual(vu["entree"]["trace_id"], "ab" * 16)
+        self.assertEqual(vu["entree"]["attributes"], {})
+        self.assertEqual(vu["dedans"]["user_id"], "u-7")
+        self.assertEqual(vu["dedans"]["attributes"], {"canal": "web"})
+        self.assertEqual(vu["imbrique"]["attributes"], {"canal": "web", "etape": "paiement"})
+        # La vue lexicale du parent revient telle quelle après le bloc imbriqué.
+        self.assertEqual(vu["apres_imbrique"]["attributes"], {"canal": "web"})
+        # Ce que la requête a DÉCLARÉ lui reste : c'est ce que portera son span.
+        self.assertEqual(vu["sortie"]["attributes"], {"canal": "web", "etape": "paiement"})
+        # Fin de requête : plus aucun contexte, rien ne fuit vers la suivante.
+        self.assertIsNone(mrm.current_context())
+
+        (span,) = mw._buf
+        a = self.attrs(span)
+        self.assertEqual(json.loads(a["mip.context"]), {"canal": "web", "etape": "paiement"})
+        # Identité BRUTE : le HMAC app-scopé est calculé au port d'ingestion.
+        self.assertEqual(a["mip.identity.user_id"], "u-7")
+        self.assertNotIn("mip.user_id_hash", a)
+
+    def test_scope_restaure_meme_quand_le_bloc_leve(self):
+        class App:
+            async def __call__(self, scope, receive, send):
+                with mrm.rum_context(niveau="requete"):
+                    try:
+                        with mrm.rum_context(etape="fragile"):
+                            raise RuntimeError("boum")
+                    except RuntimeError:
+                        pass
+                    # Vue lexicale du parent, restaurée par le `finally` : elle
+                    # ne garde rien du bloc qui a levé.
+                    assert mrm.current_context()["attributes"] == {"niveau": "requete"}
+                await send({"type": "http.response.start", "status": 200, "headers": []})
+                await send({"type": "http.response.body", "body": b"ok"})
+
+        mw = self.middleware(App())
+        run_request(mw)
+        self.assertIsNone(mrm.current_context())
+
+    def test_capture_manuelle_puis_raise_ne_fait_qu_une_erreur(self):
+        class App:
+            async def __call__(self, scope, receive, send):
+                try:
+                    raise ValueError("montant invalide")
+                except ValueError as exc:
+                    mrm.capture_exception(exc, {"moyen": "carte"})
+                    raise  # relancée : le middleware la reverra
+
+        mw = self.middleware(App())
+        with self.assertRaises(ValueError):
+            run_request(mw)
+        (span,) = mw._buf
+        # Un seul événement : l'identifiant voyage avec l'objet exception.
+        (event,) = span["events"]
+        self.assertEqual(event["name"], "exception")
+        a = self.attrs(event)
+        self.assertIs(a["mip.error_handled"], True)  # capturée, puis relancée
+        self.assertEqual(json.loads(self.attrs(span)["mip.context"]), {"moyen": "carte"})
+        # Elle a tout de même traversé l'app : la requête est en échec.
+        self.assertEqual(span["status"], {"code": 2})
+
+    def test_deux_exceptions_distinctes_restent_deux_erreurs(self):
+        class App:
+            async def __call__(self, scope, receive, send):
+                try:
+                    raise ValueError("cause")
+                except ValueError as exc:
+                    mrm.capture_exception(exc)
+                    # Exception DIFFÉRENTE : aucun identifiant commun, on ne
+                    # devine pas une égalité entre deux objets distincts.
+                    raise RuntimeError("conséquence") from exc
+
+        mw = self.middleware(App())
+        with self.assertRaises(RuntimeError):
+            run_request(mw)
+        (span,) = mw._buf
+        types = [self.attrs(e)["exception.type"] for e in span["events"]]
+        self.assertEqual(types, ["ValueError", "RuntimeError"])
+        identifiants = {self.attrs(e)["mip.exception_id"] for e in span["events"]}
+        self.assertEqual(len(identifiants), 2)
+        self.assertEqual([self.attrs(e)["mip.error_handled"] for e in span["events"]], [True, False])
+
+    def test_capture_repetee_du_meme_objet_n_ajoute_rien(self):
+        class App:
+            async def __call__(self, scope, receive, send):
+                exc = KeyError("absent")
+                assert mrm.capture_exception(exc) is True
+                assert mrm.capture_exception(exc) is False
+                await send({"type": "http.response.start", "status": 200, "headers": []})
+                await send({"type": "http.response.body", "body": b"ok"})
+
+        mw = self.middleware(App())
+        run_request(mw)
+        (span,) = mw._buf
+        self.assertEqual(len(span["events"]), 1)
+        # Capturée puis traitée : la réponse est partie, la requête n'échoue pas.
+        self.assertNotIn("status", span)
+        self.assertEqual(self.attrs(span)["http.status_code"], "200")
+
+    def test_cent_requetes_concurrentes_contextes_distincts_sans_fuite(self):
+        class App:
+            async def __call__(self, scope, receive, send):
+                n = int(scope["path"].rsplit("/", 1)[1])
+                groupe = "a" if n % 2 == 0 else "b"
+                with mrm.rum_context(user_id=f"u-{groupe}-{n}", groupe=groupe, n=n):
+                    # Entrelace les requêtes : chacune reprend après les autres.
+                    await asyncio.sleep((n % 7) * 0.001)
+                    with mrm.rum_context(etape="calcul"):
+                        assert mrm.current_context()["attributes"]["n"] == n
+                    if n % 3 == 0:
+                        try:
+                            raise LookupError(f"introuvable {n}")
+                        except LookupError as exc:
+                            mrm.capture_exception(exc)
+                    assert mrm.current_context()["user_id"] == f"u-{groupe}-{n}"
+                await send({"type": "http.response.start", "status": 200, "headers": []})
+                await send({"type": "http.response.body", "body": b"ok"})
+
+        mw = self.middleware(App())
+
+        async def une(n):
+            scope = {
+                "type": "http",
+                "method": "GET",
+                "path": f"/items/{n}",
+                "headers": [(b"traceparent", traceparent(n))],
+            }
+
+            async def send(msg):
+                pass
+
+            async def receive():
+                return {"type": "http.request"}
+
+            await mw(scope, receive, send)
+
+        async def main():
+            await asyncio.gather(*(une(n) for n in range(1, 101)))
+
+        asyncio.run(main())
+        self.assertEqual(len(mw._buf), 100)
+        for span in mw._buf:
+            n = int(span["traceId"], 16)
+            a = self.attrs(span)
+            contexte = json.loads(a["mip.context"])
+            # Le contexte de la requête n n'a JAMAIS celui d'une autre.
+            self.assertEqual(contexte["n"], n)
+            self.assertEqual(contexte["groupe"], "a" if n % 2 == 0 else "b")
+            self.assertEqual(a["mip.identity.user_id"], f"u-{contexte['groupe']}-{n}")
+            self.assertEqual(len(span.get("events", [])), 1 if n % 3 == 0 else 0)
+            if n % 3 == 0:
+                self.assertEqual(self.attrs(span["events"][0])["exception.message"], f"introuvable {n}")
+        # Après la dernière requête, aucun contexte ne survit dans le processus.
+        self.assertIsNone(mrm.current_context())
+
+    def test_contexte_borne_et_valeurs_inconnues_conservees(self):
+        class App:
+            async def __call__(self, scope, receive, send):
+                with mrm.rum_context(
+                    texte="x" * 900,
+                    nombre=3,
+                    vrai=True,
+                    inconnu=None,
+                    refuse=object(),
+                    session_id="pas valide !",
+                ):
+                    pass
+                await send({"type": "http.response.start", "status": 200, "headers": []})
+                await send({"type": "http.response.body", "body": b"ok"})
+
+        mw = self.middleware(App())
+        run_request(mw)
+        (span,) = mw._buf
+        contexte = json.loads(self.attrs(span)["mip.context"])
+        self.assertEqual(len(contexte["texte"]), 500)
+        self.assertEqual(contexte["nombre"], 3)
+        self.assertIs(contexte["vrai"], True)
+        # `None` reste `None` : une donnée déclarée inconnue ne devient pas 0.
+        self.assertIsNone(contexte["inconnu"])
+        self.assertNotIn("refuse", contexte)
+        # Une session invalide n'en invente pas une : elle est simplement absente.
+        self.assertNotIn("mip.session_id", self.attrs(span))
 
 
 if __name__ == "__main__":

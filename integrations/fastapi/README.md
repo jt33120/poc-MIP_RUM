@@ -51,6 +51,56 @@ le middleware ne l'avale jamais.
 L'ingestion en fait une erreur `python`, rattachée à la trace et au span de la requête, sans
 session inventée.
 
+## Contexte de requête et capture manuelle
+
+Trois fonctions, toujours **stdlib seule** (`contextvars`, `contextlib`) :
+
+```python
+from mip_rum_middleware import MIPRumMiddleware, capture_exception, current_context, rum_context
+```
+
+| Fonction | Rôle |
+| --- | --- |
+| `rum_context(**attributs)` | scope de contexte, restauré à la sortie du bloc |
+| `capture_exception(exc, context=None)` | exception rattrapée → événement du span de la requête |
+| `current_context()` | copie en lecture du contexte courant, ou `None` hors requête |
+
+```python
+@app.post("/commandes")
+async def creer(commande: Commande):
+    with rum_context(user_id=commande.client, canal="web"):
+        try:
+            return await traiter(commande)
+        except PaiementRefuse as exc:
+            capture_exception(exc, {"moyen": commande.moyen})
+            raise
+```
+
+**Isolation.** Le contexte vit dans un `ContextVar` : chaque requête a le sien,
+chaque tâche `asyncio` hérite du sien, et le scope précédent est restauré dans un
+`finally` — y compris quand le bloc lève. Rien ne survit à la fin d'une requête
+(vérifié sur 100 requêtes concurrentes entrelacées, `test_mip_rum_middleware.py`).
+
+**Scopes imbriqués.** `rum_context` hérite du scope englobant. Sa vue lexicale
+disparaît à la sortie du bloc, mais ce qu'il **déclare** reste attaché à la
+requête : c'est son span qui le portera (`mip.context`).
+
+**Clés reconnues** : `session_id`, `route`, `user_id`, `account_id` alimentent les
+champs du span ; tout le reste est du contexte métier libre (chaînes bornées à
+500 caractères, nombres, booléens, et `None` qui reste « inconnu »). Les
+identités partent **brutes** (`mip.identity.user_id`) : leur HMAC app-scopé est
+calculé au port d'ingestion, jamais ici.
+
+**Déduplication.** L'identifiant `mip.exception_id` est porté par l'objet
+exception. `capture_exception(exc)` puis `raise` ne produit donc **qu'une** erreur.
+Deux exceptions différentes (`raise Autre from exc`) restent deux erreurs : on ne
+devine pas une égalité. Une exception capturée puis **traitée** ne fait pas échouer
+la requête — la réponse est partie normalement, le span garde son statut.
+
+**Hors requête**, `capture_exception` renvoie `False` et `rum_context` ne fait
+rien : cette intégration n'ouvre pas de route pour un script ou une tâche de
+fond, et le code instrumenté reste appelable depuis un test.
+
 ## Tests
 
 ```bash
