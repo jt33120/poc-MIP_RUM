@@ -2,6 +2,26 @@
 
 Liste honnête, demandée par Julian. Colonne « v0.2 » = traité dans le sprint nuit du 10→11/06 (cf. archive/ROADMAP_V02.md) ; « v0.3 » = sprint nuit 2 (cf. archive/ROADMAP_V03.md et la section ci-dessous) ; « Phase 1+ » = nécessite un vrai chantier produit MIP.
 
+## Mise à jour P8.8 (18/09/2026 — ce que la recette finale a établi ou mesuré)
+
+Bilan complet, capacité par capacité : [`RUM_PARITY_STATUS.md`](RUM_PARITY_STATUS.md). Ne figurent
+ici que les limites **nouvelles**, ou dont ce relevé a changé la portée. Chacune a été vérifiée sur
+`master` à `ed33e27`, sur bases jetables ; aucune base de production n'a été interrogée.
+
+| Sujet | Ce qui est garanti | Ce qui ne l'est pas |
+|---|---|---|
+| **Recette sur vraie application** | Les suites locales et la CI sont vertes, sur fixtures et sur bases jetables. | **Aucun écran, aucune API, aucun outil MCP de P5 à P8 n'a été éprouvé sur des données réellement ingérées.** C'est la limite qui domine toutes les autres : un chiffre juste sur fixtures peut être faux sur du trafic. |
+| **Chemin d'ingestion réellement joignable** | Le trafic entre par la console Vercel (`app/api/ingest/v1/traces/route.ts`), avec le même parseur et le même writer que le backend. | Le service Railway `ingest` **n'a aucun domaine public** (ni Railway, ni personnalisé) : il tourne, et rien ne l'atteint. Tout ce qui n'existe que dans son image ne s'exécute donc pas sur le trafic — à commencer par la base GeoIP de P8.7, et par le port direct `POST /v1/sourcemaps`. |
+| **Vérification des types** | `pnpm --filter console exec tsc --noEmit` est vert. | `pnpm --filter @mip/rum-sdk exec tsc --noEmit` **échoue** (`src/replay.ts:242`, `Uint8Array` / `BodyInit`), et **aucun workflow de CI ne joue `tsc --noEmit`**, pour aucun paquet. Le défaut est invisible de la CI. |
+| **Construction du dépôt** | `pnpm -r build` est vert **après** `pnpm build:sdk` : 13 paquets. | Il **échoue depuis un dépôt fraîchement installé** : `apps/extension` copie `packages/rum-sdk/dist/mip-rum.js` sans déclarer de dépendance d'espace de travail, donc rien n'ordonne les deux builds. |
+| **Couverture de la CI SQL** | `test:sql`, `test:isolation`, `test:alerting` et `test:svi` tournent à chaque PR. | Deux suites sont **ignorées en silence**, faute de leur variable : les bancs de mesure (`BENCH_DATABASE_URL`) et la fenêtre de déploiement v82→v83 (`SQL_TEST_PRE_V83_DATABASE_URL`). Les chiffres de performance publiés ne sont donc jamais revérifiés. |
+| **Compteur de visiteurs mobiles** | Le visiteur web est un tirage aléatoire persisté localement. | Le visiteur **mobile** est un tirage **mémoire**, remis à zéro à chaque lancement : le compteur de visiteurs mobiles **surestime** les personnes. Défaut connu, non corrigé. |
+| **Compatibilité React Native** | Le paquet est construit, ses exports CJS/ESM/types sont vérifiés par 36 contrôles en CI. | **La matrice de compatibilité est vide.** Aucune version de React Native, React, Hermes, JSC, Metro, iOS, Android, Fabric, Paper, React Navigation ni Expo n'a été exécutée. Rien ne doit être promis sur ce point. |
+| **Rétention** | `purge_rum_app` couvre les tables RUM, les agrégats et leurs marques d'invalidation. | Elle **ne purge toujours pas les tables SVI** — `erase_app_data` les vide, la rétention non. Vérifié en base le 18/09. |
+| **Effacement et sauvegardes** | L'effacement est sérialisé avec tous les chemins d'écriture, et les barrières sont actives sans expiration. | **La garantie ne porte pas sur les sauvegardes** : une restauration PITR antérieure à un effacement devrait rejouer les barrières avant de rouvrir lectures et ingestion. Cette procédure n'est ni écrite ni éprouvée. |
+| **Export à la mort d'un processus** | Les envois acquittés ne sont jamais rejoués en double. | Trois pertes restent possibles : vidage durable non garanti à l'arrêt fatal d'un service Node ; chunk de rejeu web arrivé avant son ancre OTLP sous `enforce` (`425`, corps non persisté, SDK web sans rejeu) ; file mobile en mémoire, le stockage durable étant désactivé par défaut. |
+| **Crashes natifs** | L'écran `/mobile` affiche « Non collecté ». | **Aucune table de crash natif n'existe**, délibérément : une table vide se lirait comme un zéro. Une erreur `ErrorUtils` n'est pas un crash natif. |
+
 ## Mise à jour P6.6 (18/09/2026 — agrégats pré-calculés et budget de lecture)
 
 Quand l'Explorer répond depuis un agrégat plutôt que depuis les lignes, il le DIT : `meta.source` vaut
