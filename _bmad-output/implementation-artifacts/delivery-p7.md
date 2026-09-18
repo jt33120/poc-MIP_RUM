@@ -715,6 +715,20 @@ peu : il dit exactement le contraire de la vérité, avec l'autorité d'un chiff
   la même base sans v82 échoue de la même façon à la même minute, et passe deux
   minutes plus tard. Il n'est pas corrigé ici — c'est du P6.6 — mais il est
   consigné : la CI peut rougir sur ce test sans qu'aucun code n'ait changé.
+- **Deux fichiers de P8.1 et un workflow sont touchés, et la CI l'a exigé.**
+  `.github/workflows/docker-smoke.yml` comparait le nombre d'outils MCP à `15`
+  en dur : il passe à `16`. Et `tests/integration/dsar-concurrency-sql.test.ts`
+  échouait sur `column "runtime" of relation "rum_session" does not exist` — un
+  défaut RÉEL du harnais, révélé par la première colonne optionnelle ajoutée
+  depuis l'écriture de cette suite. Le cache de colonnes de `pg-ingest` est
+  indexé par TABLE, pas par base, et vit 60 s ; cette suite écrit dans une
+  SECONDE base au schéma plus ancien depuis le même processus, et reprenait donc
+  la liste relevée sur la base complète. Le garde-fou de déploiement progressif
+  se retournait contre lui-même, faute d'être rejoué au changement de base.
+  Corrigé par `_resetColonnesCache()` — l'export existe exactement pour cela —
+  dans le `beforeAll` et l'`afterAll` de la suite. Vérifié dans les deux sens :
+  sans la remise à zéro, 2 tests sur 17 échouent ; avec, les 17 passent.
+
 - **Aucune recette sur appareil réel.** La couverture native (crashes natifs,
   ANR, démarrage natif) reste « non vérifiée » : elle appartient à P8.5. C'est
   précisément ce que l'écran affiche, plutôt que de le taire.
