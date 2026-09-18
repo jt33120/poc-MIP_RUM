@@ -702,9 +702,11 @@ peu : il dit exactement le contraire de la vérité, avec l'autorité d'un chiff
   déclarations en silence. Le conflit de fusion sur `writeRowsWithClient` a été
   résolu en gardant la signature de P8.1 (client fourni, verrou d'app) et en y
   ajoutant le seul paramètre nouveau.
-- **Le bundle React Native grossit de 1,6 Kio gzip** (22,4 → 24,0 Kio), pour un
-  module de 120 lignes et un attribut de resource. Aucun budget n'est défini sur
-  ce paquet ; les 35 Kio gzip portent sur le SDK web, **inchangé à 22,1 Kio**.
+- **Le bundle React Native grossit de 0,7 Kio gzip** : `dist/index.js` passe de
+  82 578 à 84 972 octets bruts (80,6 → 83,0 Kio) et de 22 953 à 23 680 octets
+  gzip (22,4 → 23,1 Kio), mesuré sur les deux artefacts réellement construits.
+  Aucun budget n'est défini sur ce paquet ; les 35 Kio gzip portent sur le SDK
+  web, **inchangé à 22,1 Kio**.
 - **`analytics-rollups-sql.test.ts` est INSTABLE au passage d'une heure ronde.**
   Constaté deux fois pendant ce lot, à 12:59:54 et 13:00:38 : quatre tests
   échouent, puis repassent au verdict suivant sur la MÊME base. Le test attend
