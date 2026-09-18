@@ -4,19 +4,24 @@
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import {
+  boundedObject,
   buildConfig,
   buildDbSpan,
   buildHttpServerSpan,
   buildLogPayload,
   buildLogRecord,
   buildPayload,
+  buildTrackSpan,
   describeError,
   describeThrown,
   type ExceptionInput,
   normalizeRoute,
   normalizeSql,
   parseTraceparent,
+  positiveNumber,
   sqlOperation,
+  validateGlobalContext,
+  validateRequestContext,
 } from "../../packages/agent-node/src/core";
 import { flattenOtlp, flattenOtlpLogs } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
 
@@ -244,5 +249,227 @@ describe("agent-node — exceptions en span et en log, round-trip ingestion", ()
     })]));
     expect(logs.logs).toHaveLength(1);
     expect(logs.errors).toEqual([]);
+  });
+});
+
+// ─────────────────── P7.4 : configuration, contexte, événements ───────────────
+
+describe("agent-node — configuration bornée", () => {
+  it("une variable absente ou vide garde le DÉFAUT, jamais zéro", () => {
+    // `Number("")` vaut 0 : lu naïvement, une variable absente aurait supprimé
+    // le timer de flush et réduit le budget d'envoi à 1 ms.
+    expect(positiveNumber(undefined, 3000, 300_000)).toBe(3000);
+    expect(positiveNumber("", 3000, 300_000)).toBe(3000);
+    expect(positiveNumber("   ", 3000, 300_000)).toBe(3000);
+    expect(positiveNumber("abc", 3000, 300_000)).toBe(3000);
+    expect(positiveNumber("-5", 3000, 300_000)).toBe(3000);
+    // Zéro reste valide quand il est réellement écrit (aucun timer périodique).
+    expect(positiveNumber("0", 3000, 300_000)).toBe(0);
+    expect(positiveNumber("9999999", 3000, 300_000)).toBe(300_000);
+  });
+
+  it("les défauts d'un agent de supervision restent modestes", () => {
+    const c = buildConfig({ MIP_RUM_ENDPOINT: "https://i/v1/traces", MIP_RUM_APP_ID: "demo" });
+    expect(c.flushMs).toBe(3000);
+    expect(c.maxQueue).toBe(1000);
+    expect(c.logs).toBe(true);
+    expect(c.logLevel).toBe("warn");
+    expect(c.logsEndpoint).toBe("https://i/v1/logs");
+    // Très en deçà du sursis d'arrêt usuel (10 s Docker/Kubernetes).
+    expect(c.shutdownTimeoutMs).toBe(2000);
+  });
+});
+
+describe("agent-node — validation du contexte de requête", () => {
+  it("un traceparent valide rattache, un traceparent hostile ne rattache RIEN", () => {
+    const valide = validateRequestContext({ traceparent: "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01" });
+    expect(valide.traceId).toBe("0af7651916cd43dd8448eb211c80319c");
+    expect(valide.parentSpanId).toBe("b7ad6b7169203331");
+    for (const hostile of ["", "00-zz-zz-01", `00-${"0".repeat(32)}-b7ad6b7169203331-01`, "n'importe quoi"]) {
+      const patch = validateRequestContext({ traceparent: hostile });
+      expect(patch.traceId).toBeNull();
+      expect(patch.parentSpanId).toBeNull();
+    }
+  });
+
+  it("un parent sans trace n'est pas conservé : il rattacherait à un arbre inconnu", () => {
+    expect(validateRequestContext({ parentSpanId: "b7ad6b7169203331" }).parentSpanId).toBeNull();
+  });
+
+  it("session, route et identités : validées ou nulles, jamais devinées", () => {
+    const patch = validateRequestContext({
+      sessionId: "sess-1234",
+      route: "/users/42/orders/7?token=x",
+      userId: "u-9",
+      accountId: "acct-1",
+      attributes: { plan: "pro", essais: 3, actif: true, inconnu: null, rejete: () => 1 },
+    });
+    expect(patch.sessionId).toBe("sess-1234");
+    expect(patch.route).toBe("/users/:id/orders/:id");
+    expect(patch.userId).toBe("u-9");
+    expect(patch.accountId).toBe("acct-1");
+    // `null` reste `null` : une donnée déclarée inconnue ne devient pas 0 ni "".
+    expect(patch.attributes).toEqual({ plan: "pro", essais: 3, actif: true, inconnu: null });
+    expect(validateRequestContext({ sessionId: "sess 1234!" }).sessionId).toBeNull();
+    expect(validateRequestContext(null).attributes).toEqual({});
+    expect(validateRequestContext(undefined).traceId).toBeNull();
+  });
+
+  it("un objet cyclique ou d'un type illisible ne fait jamais lever l'agent", () => {
+    const cycle: Record<string, unknown> = { a: 1 };
+    cycle.moi = cycle;
+    // La profondeur est bornée : le cycle s'arrête, il ne déborde pas la pile.
+    const borne = boundedObject(cycle, 16 * 1024) as Record<string, unknown>;
+    expect(borne.a).toBe(1);
+    let niveau: unknown = borne;
+    let profondeur = 0;
+    while (niveau && typeof niveau === "object" && "moi" in (niveau as Record<string, unknown>)) {
+      niveau = (niveau as Record<string, unknown>).moi;
+      profondeur++;
+    }
+    expect(profondeur).toBeLessThanOrEqual(4);
+    expect(boundedObject("texte", 1024)).toEqual({});
+    expect(boundedObject([1, 2], 1024)).toEqual({});
+  });
+});
+
+describe("agent-node — contexte GLOBAL réservé au service", () => {
+  it("accepte des attributs de service stables", () => {
+    expect(validateGlobalContext({ region: "eu-west-3", instance: "api-7" })).toEqual({
+      region: "eu-west-3",
+      instance: "api-7",
+    });
+  });
+
+  it("refuse EN BLOC toute clé qui varie par requête", () => {
+    // Un identifiant posé ici serait attribué à toutes les requêtes suivantes,
+    // y compris celles d'autres personnes.
+    for (const cle of ["user_id", "userId", "account", "client_id", "session", "visitor_id", "tenant", "email", "ip"]) {
+      expect(validateGlobalContext({ region: "eu", [cle]: "x" })).toBeNull();
+    }
+    expect(validateGlobalContext("texte")).toBeNull();
+  });
+});
+
+describe("agent-node — événement métier track (round-trip ingestion)", () => {
+  const cfgTrack = buildConfig({ MIP_RUM_ENDPOINT: "https://i/v1/traces", MIP_RUM_APP_ID: "demo", MIP_RUM_SERVICE: "api" });
+  const trace = "0af7651916cd43dd8448eb211c80319c";
+
+  it("sans session (émetteur backend) : événement écrit, session NULL, jamais inventée", () => {
+    const span = buildTrackSpan({
+      name: "commande_validee",
+      props: { montant: 42.5, devise: "EUR" },
+      traceId: trace,
+      spanId: "aaaa1111bbbb2222",
+      parentSpanId: "00aa11bb22cc33dd",
+      sessionId: null,
+      route: "/api/commandes",
+      attributes: { canal: "batch" },
+      tsMs: 1_760_000_000_000,
+    });
+    const rows = flattenOtlp(buildPayload(cfgTrack, [span]));
+    expect(rows.rejected).toBe(0);
+    // Surtout PAS un faux span de détail : c'est un événement.
+    expect(rows.spans).toEqual([]);
+    expect(rows.events).toHaveLength(1);
+    expect(rows.events[0]).toMatchObject({
+      span_id: "aaaa1111bbbb2222",
+      session_id: null,
+      app_id: "demo",
+      name: "commande_validee",
+      route: "/api/commandes",
+      event_type: "custom",
+      props: { montant: 42.5, devise: "EUR" },
+      service: "api",
+    });
+    expect(rows.events[0].context).toEqual({ canal: "batch" });
+  });
+
+  // Un événement QUI PORTE une session suit le chemin historique du SDK web :
+  // c'est lui qui écrit aussi la ligne `rum_session` du lot, sans laquelle
+  // l'insertion violerait `rum_event_session_id_fkey`. L'agent Node n'en émet
+  // donc jamais — le front reste seul maître de la session.
+  it("avec session déclarée : chemin historique, session du lot écrite avec", () => {
+    const span = buildTrackSpan({
+      name: "commande_validee",
+      props: {},
+      traceId: trace,
+      spanId: "cccc3333dddd4444",
+      parentSpanId: null,
+      sessionId: "sess-9",
+      route: "/api/commandes",
+      tsMs: 1_760_000_000_000,
+    });
+    const rows = flattenOtlp(buildPayload(cfgTrack, [span]));
+    expect(rows.rejected).toBe(0);
+    expect(rows.events[0]).toMatchObject({ session_id: "sess-9", name: "commande_validee" });
+    // Dimensions de session (env/release), sans `service` : celles du SDK web.
+    expect(rows.events[0].service).toBeUndefined();
+    // La ligne de session part dans le MÊME lot : c'est ce qui rend la clé
+    // étrangère de rum_event satisfaisable.
+    expect(rows.sessions.map((s: { session_id: string }) => s.session_id)).toEqual(["sess-9"]);
+  });
+
+  it("l'identité métier part BRUTE : le hash app-scopé reste au port serveur", () => {
+    const span = buildTrackSpan({
+      name: "paiement",
+      props: {},
+      traceId: trace,
+      spanId: "eeee5555ffff6666",
+      parentSpanId: null,
+      sessionId: null,
+      route: null,
+      userId: "u-9",
+      tsMs: 1_760_000_000_000,
+    });
+    const cles = (span.attributes as Array<{ key: string }>).map((a) => a.key);
+    expect(cles).toContain("mip.identity.user_id");
+    expect(cles).not.toContain("mip.user_id_hash");
+    expect(cles).not.toContain("mip.user_hash");
+  });
+});
+
+describe("agent-node — une exception capturée puis traitée n'est pas une requête en échec", () => {
+  const base = {
+    traceId: "0af7651916cd43dd8448eb211c80319c",
+    spanId: "00aa11bb22cc33dd",
+    parentSpanId: null,
+    method: "POST",
+    route: "/api/pay",
+    url: null,
+    sessionId: null,
+    startMs: 1_760_000_000_000,
+    durationMs: 12,
+  };
+  const exception = (handled: boolean | null): ExceptionInput => ({
+    error: { type: "PaiementRefuse", message: "carte", stack: "PaiementRefuse: carte" },
+    tsMs: 1_760_000_000_001,
+    exceptionId: "0123456789abcdef0123456789abcdef",
+    handled,
+    fatal: null,
+  });
+  const lireAttrs = (span: Record<string, unknown>) =>
+    Object.fromEntries(
+      (span.attributes as Array<{ key: string; value: Record<string, unknown> }>).map((a) => [a.key, Object.values(a.value)[0]]),
+    );
+
+  it("handled: true -> statut réel conservé, mais l'erreur part quand même", () => {
+    const span = buildHttpServerSpan({ ...base, status: 200, exceptions: [exception(true)] });
+    expect(span.status).toEqual({ code: 1 });
+    expect((span.events as unknown[]).length).toBe(1);
+    expect(Object.keys(lireAttrs(span))).not.toContain("error.type");
+  });
+
+  it("handled: false -> échec, quel que soit le statut déjà envoyé", () => {
+    const span = buildHttpServerSpan({ ...base, status: 200, exceptions: [exception(true), exception(false)] });
+    expect(span.status).toEqual({ code: 2 });
+    expect(lireAttrs(span)["error.type"]).toBe("PaiementRefuse");
+  });
+
+  it("le contexte du scope voyage en `mip.context` du span porteur", () => {
+    const span = buildHttpServerSpan({ ...base, status: 500, attributes: { canal: "web" }, userId: "u-9" });
+    const attrs = lireAttrs(span);
+    expect(JSON.parse(String(attrs["mip.context"]))).toEqual({ canal: "web" });
+    expect(attrs["mip.identity.user_id"]).toBe("u-9");
   });
 });

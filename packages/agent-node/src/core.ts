@@ -12,6 +12,33 @@ export interface AgentConfig {
   apiKey: string | null;
   env: string;
   service: string;
+  /** Intervalle d'envoi par lot ; 0 = aucun timer périodique. */
+  flushMs: number;
+  /** Plafond de chaque file mémoire (spans, logs). Au-delà : le plus ancien part. */
+  maxQueue: number;
+  /** Pont de journalisation actif. */
+  logs: boolean;
+  logLevel: LogLevel;
+  logsEndpoint: string;
+  /** Budget d'un flush d'arrêt (SIGTERM, shutdown). Borné par construction. */
+  shutdownTimeoutMs: number;
+}
+
+/**
+ * Entier positif lu dans l'environnement ou une option, sinon le défaut.
+ *
+ * Une variable ABSENTE ou vide vaut « non configuré », pas zéro : `Number("")`
+ * rend 0, ce qui transformerait silencieusement chaque défaut en « pas de
+ * timer » et « budget d'envoi nul ». Zéro reste une valeur valide, mais seulement
+ * quand l'exploitant l'a réellement écrite.
+ */
+export function positiveNumber(raw: unknown, defaut: number, max: number): number {
+  if (raw === null || raw === undefined) return defaut;
+  const texte = typeof raw === "number" ? raw : String(raw).trim();
+  if (texte === "") return defaut;
+  const n = Number(texte);
+  if (!Number.isFinite(n) || n < 0) return defaut;
+  return Math.min(Math.floor(n), max);
 }
 
 /** Construit la config depuis l'environnement. Désactivé si endpoint/app_id manquent. */
@@ -25,6 +52,15 @@ export function buildConfig(env: Record<string, string | undefined>): AgentConfi
     apiKey: (env.MIP_RUM_API_KEY ?? "").trim() || null,
     env: (env.MIP_RUM_ENV ?? "prod").trim() || "prod",
     service: (env.MIP_RUM_SERVICE ?? "backend").trim() || "backend",
+    flushMs: positiveNumber(env.MIP_RUM_FLUSH_MS, 3000, 300_000),
+    maxQueue: positiveNumber(env.MIP_RUM_MAX_QUEUE, 1000, 100_000) || 1000,
+    logs: (env.MIP_RUM_LOGS ?? "true") !== "false",
+    logLevel: resolveLogLevel(env.MIP_RUM_LOG_LEVEL),
+    logsEndpoint: logsEndpoint(endpoint, env.MIP_RUM_LOGS_ENDPOINT),
+    // 2 s par défaut : très en deçà du sursis d'arrêt usuel (10 s chez Docker et
+    // Kubernetes). Un agent de supervision ne doit jamais être la raison pour
+    // laquelle un conteneur se fait tuer au lieu de s'arrêter proprement.
+    shutdownTimeoutMs: positiveNumber(env.MIP_RUM_SHUTDOWN_MS, 2000, 30_000),
   };
 }
 
@@ -194,13 +230,23 @@ export interface HttpSpanInput {
   durationMs: number;
   /** Exceptions survenues pendant la requête, en événements du span. */
   exceptions?: ExceptionInput[];
+  /** Identités métier BRUTES du scope de requête (HMAC au port serveur). */
+  userId?: string | null;
+  accountId?: string | null;
+  /** Contexte métier du scope (`mip.context`) — snapshot des exceptions dérivées. */
+  attributes?: Record<string, unknown>;
 }
 
 /** Span OTLP `http.server` (tier back côté ingestion). */
 export function buildHttpServerSpan(i: HttpSpanInput): Record<string, unknown> {
   const exceptions = i.exceptions ?? [];
-  // Une exception fait échouer l'opération, quel que soit le statut déjà envoyé.
-  const status = exceptions.length
+  // Une exception qui a ÉCHAPPÉ au code fait échouer l'opération, quel que soit
+  // le statut déjà envoyé. Une exception capturée à la main puis traitée
+  // (`handled: true`, P7.4) n'est pas un échec de requête : la réponse est
+  // partie normalement, le span garde son statut — l'erreur est tout de même
+  // remontée par son événement.
+  const echouee = exceptions.find((e) => e.handled === false) ?? null;
+  const status = echouee
     ? { code: 2 }
     : typeof i.status === "number" ? { code: i.status >= 500 ? 2 : 1 } : null;
   return {
@@ -226,9 +272,13 @@ export function buildHttpServerSpan(i: HttpSpanInput): Record<string, unknown> {
       "http.method": i.method,
       "http.status_code": i.status,
       "http.duration_ms": i.durationMs,
-      "mip.session_id": i.sessionId,
+      // Session, route, identités brutes et contexte métier du scope de requête.
+      // Le port d'ingestion lit `mip.context` du span porteur comme snapshot des
+      // exceptions qu'il transporte : le contexte d'un `withContext` arrive donc
+      // sur l'erreur sans second canal.
+      ...contextAttributes({ ...i, attributes: i.attributes }),
       // Indicateur d'échec standard (OpenTelemetry `error.type`, `_OTHER` sans type).
-      "error.type": exceptions.length ? (exceptions[0].error.type ?? "_OTHER") : null,
+      "error.type": echouee ? (echouee.error.type ?? "_OTHER") : null,
     }),
     ...(exceptions.length ? { events: exceptions.map(buildExceptionEvent) } : {}),
   };
@@ -363,6 +413,11 @@ export interface LogRecordInput {
   route: string | null;
   /** Exception structurée portée par ce log : son Error, jamais son texte. */
   exception?: ExceptionInput | null;
+  /** Identités métier BRUTES du scope (HMAC au port serveur). */
+  userId?: string | null;
+  accountId?: string | null;
+  /** Contexte métier du scope, porté en `mip.context` comme sur les spans. */
+  attributes?: Record<string, unknown>;
 }
 
 /**
@@ -379,14 +434,243 @@ export function buildLogRecord(i: LogRecordInput): Record<string, unknown> {
     body: { stringValue: i.body.slice(0, 4000) },
     attributes: encodeAttrs({
       "mip.source": "backend",
-      "mip.session_id": i.sessionId,
-      "mip.route": i.route,
+      ...contextAttributes(i),
       ...(i.exception ? exceptionAttributes(i.exception) : {}),
     }),
   };
   if (i.traceId) rec.traceId = i.traceId;
   if (i.spanId) rec.spanId = i.spanId;
   return rec;
+}
+
+// --- P7.4 : contexte de requête et événements métier (API publique) ----------
+// Tout ce qui suit est PUR : la validation du contexte et la construction des
+// spans `track.*` se testent sans processus, sans horloge réelle et sans réseau.
+// Les limites reprennent celles du port d'ingestion (100 caractères pour un nom,
+// 500 pour une valeur, 64 clés, profondeur 4). Le serveur reborne et scrubbe à
+// réception : ce bornage-ci évite un aller-retour inutile, il ne le remplace pas.
+
+const CONTEXT_MAX_NAME = 100;
+const CONTEXT_MAX_STRING = 500;
+const CONTEXT_MAX_KEYS = 64;
+const CONTEXT_MAX_DEPTH = 4;
+const IDENTITY_MAX = 500;
+
+/** Nom d'événement ou de clé : non vide, sans caractère de contrôle, borné. */
+export function boundedName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const clean = value.trim();
+  if (!clean || clean.length > CONTEXT_MAX_NAME) return null;
+  // eslint-disable-next-line no-control-regex
+  return /[ -]/.test(clean) ? null : clean;
+}
+
+/**
+ * Valeur de contexte conservée telle quelle : chaîne bornée, nombre fini,
+ * booléen ou `null`. `undefined` signifie « rejetée ».
+ *
+ * `null` est une valeur, pas une absence : une propriété déclarée inconnue doit
+ * le rester jusqu'en base plutôt que de devenir `0` ou `""`.
+ */
+function boundedValue(value: unknown, depth: number, budget: { keys: number }): unknown {
+  if (value === null) return null;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "string") return value.length <= CONTEXT_MAX_STRING ? value : value.slice(0, CONTEXT_MAX_STRING);
+  if (typeof value !== "object") return undefined;
+  if (depth >= CONTEXT_MAX_DEPTH) return undefined;
+  if (Array.isArray(value)) {
+    const out: unknown[] = [];
+    for (const item of value.slice(0, CONTEXT_MAX_KEYS)) {
+      const clean = boundedValue(item, depth + 1, budget);
+      if (clean !== undefined) out.push(clean);
+    }
+    return out;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (budget.keys >= CONTEXT_MAX_KEYS) break;
+    const name = boundedName(key);
+    if (!name) continue;
+    const clean = boundedValue(item, depth + 1, budget);
+    if (clean === undefined) continue;
+    budget.keys++;
+    out[name] = clean;
+  }
+  return out;
+}
+
+/**
+ * Objet de contexte/props borné. Un cycle ou une valeur illisible n'est jamais
+ * une exception dans l'application hôte : la clé fautive disparaît, le reste part.
+ */
+export function boundedObject(raw: unknown, maxBytes: number): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  let clean: unknown;
+  try {
+    clean = boundedValue(raw, 0, { keys: 0 });
+  } catch {
+    return {};
+  }
+  if (!clean || typeof clean !== "object" || Array.isArray(clean)) return {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(clean as Record<string, unknown>)) {
+    out[key] = value;
+    let taille: number;
+    try {
+      taille = JSON.stringify(out).length;
+    } catch {
+      delete out[key];
+      continue;
+    }
+    if (taille > maxBytes) delete out[key];
+  }
+  return out;
+}
+
+/** Contexte accepté par `withContext` — tout est optionnel et validé. */
+export interface RequestContextInput {
+  /** En-tête W3C complet ; il prime sur `traceId`/`parentSpanId` séparés. */
+  traceparent?: string;
+  traceId?: string;
+  parentSpanId?: string;
+  /** Session RUM du navigateur, propagée par `tracestate: mip=s:<id>`. */
+  sessionId?: string;
+  route?: string;
+  /** Identifiant métier BRUT : hashé en HMAC app-scopé au port serveur. */
+  userId?: string;
+  accountId?: string;
+  /** Attributs métier libres du scope (`mip.context`). */
+  attributes?: Record<string, unknown>;
+}
+
+/** Contexte validé : chaque champ est soit conforme, soit `null` (inconnu). */
+export interface RequestContextPatch {
+  traceId: string | null;
+  parentSpanId: string | null;
+  sessionId: string | null;
+  route: string | null;
+  userId: string | null;
+  accountId: string | null;
+  attributes: Record<string, unknown>;
+}
+
+const SESSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Valide un contexte de requête. Aucune valeur n'est devinée : un `traceparent`
+ * malformé ne produit pas une trace inventée, il produit `null`. C'est ce qui
+ * empêche un en-tête hostile de rattacher une requête à la trace d'un autre.
+ */
+export function validateRequestContext(input: RequestContextInput | null | undefined): RequestContextPatch {
+  const source = input && typeof input === "object" ? input : {};
+  const tp = typeof source.traceparent === "string" ? parseTraceparent(source.traceparent) : null;
+  const traceId = tp?.traceId ?? (typeof source.traceId === "string" && HEX32.test(source.traceId) && !/^0+$/.test(source.traceId) ? source.traceId.toLowerCase() : null);
+  const parentSpanId = tp?.spanId ?? (typeof source.parentSpanId === "string" && HEX16.test(source.parentSpanId) && !/^0+$/.test(source.parentSpanId) ? source.parentSpanId.toLowerCase() : null);
+  const identite = (raw: unknown): string | null =>
+    typeof raw === "string" && raw !== "" && raw.length <= IDENTITY_MAX && !/[ -]/.test(raw) ? raw : null;
+  return {
+    traceId,
+    // Un parent sans trace n'a aucun sens : il rattacherait le span à un arbre
+    // dont on ignore la racine.
+    parentSpanId: traceId ? parentSpanId : null,
+    sessionId: typeof source.sessionId === "string" && SESSION_ID.test(source.sessionId) ? source.sessionId : null,
+    route: typeof source.route === "string" && source.route ? normalizeRoute(source.route).slice(0, 200) : null,
+    userId: identite(source.userId),
+    accountId: identite(source.accountId),
+    attributes: boundedObject(source.attributes, 16 * 1024),
+  };
+}
+
+/**
+ * Clés refusées dans le contexte GLOBAL du processus.
+ *
+ * Le contexte global décrit le service, qui ne change pas d'une requête à
+ * l'autre. Y poser un utilisateur ou un client, c'est l'attribuer à toutes les
+ * requêtes suivantes, y compris celles d'autres personnes — la fuite exacte que
+ * `withContext` existe pour éviter.
+ */
+export const GLOBAL_CONTEXT_REFUSE = new Set([
+  "user", "account", "client", "session", "visitor", "customer",
+  "tenant", "request", "trace", "span", "order", "email", "ip",
+]);
+
+/** Premier mot d'une clé, quelle que soit sa casse (`userId`, `user_id`, `USER-ID`). */
+export function firstWord(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)[0]
+    ?.toLowerCase() ?? "";
+}
+
+/** Attributs de service stables, ou `null` si l'un d'eux appartient à une requête. */
+export function validateGlobalContext(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  for (const key of Object.keys(raw as Record<string, unknown>)) {
+    if (GLOBAL_CONTEXT_REFUSE.has(firstWord(key))) return null;
+  }
+  return boundedObject(raw, 16 * 1024);
+}
+
+/** Attributs `mip.*` communs portés par un signal de requête. */
+export function contextAttributes(ctx: {
+  sessionId: string | null;
+  route: string | null;
+  userId?: string | null;
+  accountId?: string | null;
+  attributes?: Record<string, unknown>;
+}): Record<string, Attr> {
+  const contexte = ctx.attributes && Object.keys(ctx.attributes).length ? ctx.attributes : null;
+  return {
+    "mip.session_id": ctx.sessionId,
+    "mip.route": ctx.route,
+    // Identités BRUTES : le port d'ingestion les remplace par leur HMAC
+    // app-scopé avant tout parseur. Aucun secret de hachage ne vit dans l'agent.
+    "mip.identity.user_id": ctx.userId ?? null,
+    "mip.identity.account_id": ctx.accountId ?? null,
+    "mip.context": contexte ? JSON.stringify(contexte) : null,
+  };
+}
+
+export interface TrackSpanInput {
+  name: string;
+  props: Record<string, unknown>;
+  traceId: string;
+  spanId: string;
+  /** Span `http.server` de la requête courante, s'il y en a une. */
+  parentSpanId: string | null;
+  sessionId: string | null;
+  route: string | null;
+  userId?: string | null;
+  accountId?: string | null;
+  attributes?: Record<string, unknown>;
+  tsMs: number;
+}
+
+/**
+ * Span OTLP d'un événement métier — même enveloppe que `track()` du SDK web
+ * (`track.<nom>`, `mip.event_type=custom`, `mip.event_name`, `mip.props`).
+ *
+ * Durée nulle : un événement est un instant, pas un intervalle. `kind` reste
+ * absent, comme côté web ; c'est le nom qui route côté ingestion.
+ */
+export function buildTrackSpan(i: TrackSpanInput): Record<string, unknown> {
+  const span: Record<string, unknown> = {
+    traceId: i.traceId,
+    spanId: i.spanId,
+    name: `track.${i.name}`,
+    startTimeUnixNano: nanos(i.tsMs),
+    endTimeUnixNano: nanos(i.tsMs),
+    attributes: encodeAttrs({
+      "mip.event_type": "custom",
+      "mip.event_name": i.name,
+      "mip.props": JSON.stringify(i.props),
+      ...contextAttributes(i),
+    }),
+  };
+  if (i.parentSpanId) span.parentSpanId = i.parentSpanId;
+  return span;
 }
 
 /** Enveloppe OTLP/HTTP JSON pour un lot de logs (miroir de buildPayload). */
