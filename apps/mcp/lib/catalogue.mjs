@@ -49,7 +49,9 @@ export const PARAMS = {
   attr_value: "Valeur exacte de l'attribut. Omise seulement avec attr_type='null'.",
   cursor: "Curseur opaque renvoyé par la page précédente (`data.page.next_cursor`, ou `data.next_cursor` pour les issues), avec les mêmes filtres. Ne pas le modifier.",
   status: "Statut d'une issue : 'open', 'for_review' (statuts historiques divergents, à trancher), 'resolved' ou 'ignored'. Omis = tous. Filtre les entrées, jamais les occurrences comptées.",
-  release: "Release exacte des occurrences comptées (200 caractères au plus). Omise = toutes.",
+  release: "Release exacte des occurrences comptées (200 caractères au plus). Omise = toutes. Sur mip_rum_mobile_summary, c'est la version du binaire mobile, stable pour toute une session : elle filtre la COHORTE, pas seulement les occurrences.",
+  platform:
+    "Plateforme mobile : 'ios' ou 'android'. Traduite en condition `os` du contrat commun et INTERSECTÉE avec un `os` déjà demandé — jamais un remplacement. Omise = les deux.",
   source:
     "Source des occurrences comptées : browser_js, browser_console, browser_resource, browser_csp, browser_network, node, python, react_native_js, native ou otel. Omise = toutes.",
   issue_id: "Identifiant UUID de l'issue, tel que renvoyé par mip_rum_list_issues (`id` d'une entrée `kind: \"issue\"`).",
@@ -234,6 +236,23 @@ export const OUTILS = [
     chemin: "/events",
     params: [...FILTRES, "kind", "name", "attr_source", "attr_key", "attr_type", "attr_value", ...PAGE, "cursor"],
     defaults: { kind: "event" },
+  },
+  {
+    nom: "mip_rum_mobile_summary",
+    titre: "Runtime React Native",
+    resume: "Ce que la couche JS mobile observe — et ce qu'elle n'observe PAS.",
+    description:
+      "Résumé d'un périmètre React Native : capacités DÉCLARÉES par le SDK, sessions et visiteurs observés, erreurs JavaScript, " +
+      "temps JS jusqu'au premier écran, écrans fréquents et requêtes lentes. " +
+      "LIRE `data.capabilities` AVANT TOUT LE RESTE. Trois états : `active` (une release déclare collecter), `unavailable` " +
+      "(une release déclare NE PAS collecter) et `unknown` (personne n'a rien déclaré). " +
+      "CRASHES NATIFS, ANR ET DÉMARRAGE NATIF NE SONT PAS COLLECTÉS et n'ont AUCUN champ dans cette réponse : ne jamais en " +
+      "conclure qu'ils valent zéro, ni qu'une application « ne plante pas ». Aucun module natif n'existe dans ce produit. " +
+      "`js_error_free_session_rate` porte sur les seules erreurs JAVASCRIPT — ce n'est PAS un taux « sans crash », et il vaut " +
+      "null (avec sa raison) quand un pourcentage mentirait. `verified_at` ne vient que d'une recette d'opérateur, jamais d'une " +
+      "déclaration du client. Lecture seule.",
+    chemin: "/mobile/summary",
+    params: ["app", "period", "device", "release", "platform"],
   },
   {
     nom: "mip_rum_get_tracing",

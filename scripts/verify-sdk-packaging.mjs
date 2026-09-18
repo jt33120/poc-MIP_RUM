@@ -96,6 +96,11 @@ for (const [nom, source] of [["web", web], ["RN CJS", rnCjs], ["RN ESM", rnEsm],
 // dépôt : la résolution passe par `exports`, comme chez un client.
 
 const EXPORTS_ATTENDUS_MOBILE = [
+  // P7.5 — le vocabulaire FERMÉ des capacités et la raison, en toutes lettres,
+  // pour laquelle aucune capacité native n'est active. Exportés parce qu'une
+  // application qui construit son propre écran de diagnostic doit pouvoir lire
+  // les mêmes noms que la console, sans les recopier.
+  "CAPACITES_MOBILES", "RAISON_CAPACITES_NATIVES",
   "addAction", "addError", "addFeatureFlagEvaluation", "addTiming",
   "clearAccount", "clearGlobalContext", "clearUser", "consent", "default",
   "flushNow", "getDiagnostics", "getGlobalContext", "init",
@@ -145,11 +150,17 @@ try {
     const sdk = require("@mip/rum-mobile");
     const noms = Object.keys(sdk).sort();
     const diag = sdk.getDiagnostics();
-    console.log(JSON.stringify({ noms, diag }));
+    // P7.5 — la déclaration APRÈS init, sur le paquet réellement publié : c'est
+    // là que se vérifie qu'aucune capacité native n'est annoncée active par un
+    // artefact que personne n'a relu ligne à ligne.
+    sdk.init({ endpoint: "https://ingest.test/v1/traces", appId: "consommateur", appVersion: "1.0.0" });
+    const apres = sdk.getDiagnostics();
+    console.log(JSON.stringify({ noms, diag, capacites: apres.capabilities, natives: apres.nativeCapabilities,
+                                 raison: apres.nativeCapabilitiesReason, vocabulaire: sdk.CAPACITES_MOBILES }));
   `);
 
   const sortieCjs = execFileSync(process.execPath, [join(bac, "consommateur.cjs")], { encoding: "utf8" });
-  const { noms, diag } = JSON.parse(sortieCjs.trim().split("\n").pop());
+  const { noms, diag, capacites, natives, raison, vocabulaire } = JSON.parse(sortieCjs.trim().split("\n").pop());
   verifie(
     JSON.stringify(noms) === JSON.stringify(EXPORTS_ATTENDUS_MOBILE),
     `exports CommonJS de @mip/rum-mobile conformes (obtenu : ${noms.join(", ")})`,
@@ -161,8 +172,28 @@ try {
     diag.queued === 0 && diag.dropped === 0 && diag.retries === null &&
       diag.storageAvailable === null && diag.consent === null && diag.nativeCapabilities === null &&
       diag.identityPersistence === null && diag.lastTransportStatus === null &&
-      diag.storageCorruptions === null && diag.jsCapabilities === null,
+      diag.storageCorruptions === null && diag.jsCapabilities === null &&
+      diag.capabilities === null && diag.nativeCapabilities === null,
     "getDiagnostics() distingue le connu (0) de l'inconnu (null)",
+  );
+
+  // P7.5 — sur le PAQUET CONSTRUIT, après `init` : aucune capacité native n'est
+  // active, et ce n'est pas une inconnue mais un fait, dit en toutes lettres.
+  // C'est ce que la console traduira par « Non collecté » plutôt que par 0.
+  verifie(
+    Array.isArray(natives) && natives.length === 0 && typeof raison === "string" && raison.includes("P8.5"),
+    `aucune capacité native active sur le paquet publié (obtenu : ${JSON.stringify(natives)})`,
+  );
+  verifie(
+    capacites && capacites.native_crashes === "unavailable" && capacites.anr === "unavailable" &&
+      capacites.native_start === "unavailable",
+    "les trois capacités natives sont déclarées « unavailable », jamais absentes",
+  );
+  verifie(
+    JSON.stringify(vocabulaire) === JSON.stringify([
+      "js_errors", "native_crashes", "anr", "native_start", "offline_persistence", "screen_tracking",
+    ]),
+    `vocabulaire de capacités exporté et fermé (obtenu : ${JSON.stringify(vocabulaire)})`,
   );
 
   // ESM — le chemin `module`/`import` des bundlers modernes.

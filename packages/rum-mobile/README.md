@@ -19,6 +19,18 @@ P7.3 ajoute la **navigation**, les **interactions**, la **fenêtre causale**, le
 `traceOrigins`** : [lire la migration](#migration-v02--v03--traceorigins-est-une-liste-fermée)
 **avant** de mettre à jour.
 
+P7.4 (v0.4) ajoute la **déclaration de capacités** : le SDK dit au serveur, à
+chaque envoi, ce qu'il collecte et ce qu'il ne collecte pas. C'est ce qui permet
+à l'écran `/mobile` d'afficher « Non collecté » au lieu de `0` — voir
+[Capacités déclarées](#capacités-déclarées-p75). Aucun changement d'API : rien
+à faire pour en bénéficier.
+
+> **Versions réellement exercées : [MATRICE-RUNTIME.md](MATRICE-RUNTIME.md).**
+> Aucune plage de compatibilité React Native n'est déclarée, parce qu'aucune
+> version réelle de React Native n'a été exécutée. Ce n'est pas une omission,
+> c'est le refus d'extrapoler un test sous doubles vers un moteur, un bundler et
+> un système d'exploitation que personne n'a lancés.
+
 > ## Migration v0.2 → v0.3 — `traceOrigins` est une liste fermée
 >
 > **Avant**, `traceOrigins: []` (ou l'option absente) propageait `traceparent` et
@@ -55,7 +67,18 @@ P7.3 ajoute la **navigation**, les **interactions**, la **fenêtre causale**, le
 > reste exclu même s'il figure dans la liste — une requête d'ingestion tracée
 > produirait un span, qui produirait une requête.
 
-## Installation & init
+## Installation & init — React Native **bare**
+
+> L'exemple ci-dessous est celui d'un projet **React Native bare** : les modules
+> cités (`Platform`, `AppState`, `AsyncStorage`, la référence du conteneur de
+> navigation, le module de suivi de rejets) sont ceux que l'application possède
+> déjà, et c'est elle qui les résout. Le SDK n'en importe **aucun**.
+>
+> **Expo n'est pas documenté ici, parce qu'il n'a pas été testé.** Rien ne s'y
+> oppose *a priori* — le paquet est du JavaScript sans dépendance native — mais
+> « rien ne s'y oppose » n'est pas « vérifié », et seule la seconde formule a sa
+> place dans une documentation d'intégration. Voir
+> [MATRICE-RUNTIME.md](MATRICE-RUNTIME.md).
 
 ```ts
 import RUM from "@mip/rum-mobile";
@@ -381,8 +404,57 @@ vaut `"unavailable"`. **Ce n'est pas « zéro rejet »** : toute surface qui lit
 ```ts
 getDiagnostics().jsCapabilities
 // { errorHandler, unhandledRejection, navigation, appStart } — "active" | "unavailable"
-// null AVANT init. Distinct de `nativeCapabilities`, qui reste null (P7.5).
+// null AVANT init. Grain FIN, propre au runtime : il décrit ce que la couche JS
+// a pu installer. La déclaration envoyée au serveur, elle, est plus grossière —
+// six noms et deux états. Voir ci-dessous.
 ```
+
+## Capacités déclarées (P7.5)
+
+Le SDK **transmet** à chaque envoi, sur la resource OTLP, ce qu'il collecte et ce
+qu'il ne collecte pas. Le serveur valide contre un **vocabulaire fermé** — six
+noms, deux états — et range la déclaration par app, runtime et release.
+
+```ts
+getDiagnostics().capabilities
+// {
+//   js_errors:           "active" | "unavailable",
+//   native_crashes:      "unavailable",   // toujours
+//   anr:                 "unavailable",   // toujours
+//   native_start:        "unavailable",   // toujours
+//   offline_persistence: "active" | "unavailable",
+//   screen_tracking:     "active" | "unavailable",
+// }
+getDiagnostics().nativeCapabilities        // [] après init — un FAIT, pas une inconnue
+getDiagnostics().nativeCapabilitiesReason  // pourquoi, en toutes lettres
+```
+
+**Pourquoi déclarer plutôt que laisser deviner.** Une console qui ne reçoit
+aucun crash natif ne peut pas distinguer « cette application ne plante pas » de
+« rien ne mesure ses plantages ». Les deux rendent zéro ligne. Le premier mérite
+d'être annoncé ; le second est un angle mort — et c'est celui que ce SDK laisse
+ouvert, en entier, pour tout ce qui est natif.
+
+**Les trois capacités natives sont TOUJOURS `unavailable`, et ce n'est pas
+configurable.** Aucun module natif MIP n'existe, ni pour iOS ni pour Android. Un
+crash natif — signal POSIX, exception Objective-C, `SIGABRT`, ANR du watchdog
+Android — n'est pas observable depuis le runtime JavaScript, qui en est la
+première victime. Ajouter une option d'`init` ne les rendrait pas observables :
+cela donnerait seulement le moyen de déclarer une collecte qui n'a pas lieu.
+
+**Une capacité active n'est pas un test natif passé.** La déclaration dit ce que
+le SDK croit avoir installé, sur la foi de son propre code. Elle ne dit pas qu'un
+signal a été reçu, écrit et affiché. La console distingue les deux : la colonne
+« Vérifié » ne se remplit que par une recette d'opérateur, jamais par ce que
+le client envoie.
+
+**Trois états côté console**, et la différence compte :
+
+| En base | Sur l'écran `/mobile` | Ce que ça veut dire |
+| --- | --- | --- |
+| ligne `declared = true` | **Collecté** | une release déclare collecter ; les chiffres ont un sens |
+| ligne `declared = false` | **Non collecté** | le SDK a regardé et n'a rien pu installer |
+| aucune ligne | **Inconnu** | personne n'a rien dit (SDK antérieur à la v0.4) |
 
 ## Garanties
 
@@ -405,21 +477,27 @@ getDiagnostics().jsCapabilities
 
 ## Ce qui n'est PAS là
 
-> Périmètre v0.3 : **couche JS React Native**. Enveloppe, contexte, consentement,
-> identité, transport, navigation, interactions, causalité et erreurs JS.
+> Périmètre v0.4 : **couche JS React Native**. Enveloppe, contexte, consentement,
+> identité, transport, navigation, interactions, causalité, erreurs JS et
+> déclaration de capacités.
 >
-> - **Capacités natives** (`getDiagnostics().nativeCapabilities`) restent `null` :
->   rien ne les observe encore. P7.5 porte le modèle de capacités et la vue
->   `/mobile`. `jsCapabilities`, lui, est renseigné dès `init`.
 > - **Crashes natifs** iOS/Android hors JS, **ANR** et **démarrage natif** : hors
 >   couche JS, **non collectés**. Aucun badge « 100 % sans crash » ne peut être
->   dérivé de ce SDK.
-> - **Aucune matrice de compatibilité déclarée.** Les adaptateurs
+>   dérivé de ce SDK — et il ne l'est pas : l'écran `/mobile` affiche
+>   « Non collecté », et son taux porte le nom de ce qu'il mesure, « sessions
+>   sans erreur JS ».
+> - **Aucune matrice de compatibilité déclarée**, et le fichier qui le dit est
+>   [MATRICE-RUNTIME.md](MATRICE-RUNTIME.md). Les adaptateurs
 >   `navigationDepuisRouteur` et `rejetsDepuisTracker` sont éprouvés contre des
 >   doubles conformes à la surface publique qu'ils consomment ; **aucune version
 >   réelle** de React Native, de React, de Hermes, d'OS ou de routeur n'a été
->   exercée. La matrice réellement testée appartient à P7.5 et à la recette sur
->   appareil de P8.5.
+>   exercée. La matrice se remplira par la recette sur appareil de P8.5.
+> - **Aucune publication npm ni store.** Le paquet est `private: true`, il se
+>   construit et s'installe (`scripts/verify-sdk-packaging.mjs` l'installe dans un
+>   consommateur isolé, en CJS, en ESM et en types), mais **aucun registre cible
+>   ni compte de publication n'a été décidé**. Publier exige ce choix : registre
+>   public ou privé, nom définitif du paquet, politique de versions et de
+>   dépréciation. Ce lot ne le suppose pas.
 > - **Aucune recette sur appareil réel** : la couverture native reste « non
 >   vérifiée » et appartient à P8.5. Aucun test sous Metro ni sur simulateur.
 > - **`onLongPress` n'est pas instrumenté** : c'est un geste différent, et lui

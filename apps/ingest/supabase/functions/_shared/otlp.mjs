@@ -14,6 +14,7 @@ import { overrideHash } from "./error-normalize.mjs";
 // P6.1 : navigateur/système/appareil de la session, env/service/release bornés
 // et recopiés sur chaque événement.
 import { boundedDimension, boundedRelease, clientDimensions } from "./dimensions.mjs";
+import { CAPABILITY_ATTRIBUTE, capabilityRows } from "./mobile-capabilities.mjs";
 
 // Seuils Core Web Vitals — bornes [good, needs-improvement], alignés sur la
 // référence web.dev (E0). SOURCE DE VÉRITÉ du rating : il est recalculé ici à
@@ -1055,6 +1056,10 @@ export function flattenOtlp(payload, opts = {}) {
   const sviCalls = [];
   const sviSteps = [];
   const sviLegs = [];
+  // P7.5 : capacités DÉCLARÉES par un runtime mobile, dédoublonnées dans le lot
+  // par (app, runtime, release, capacité). Un lot qui redit six fois la même
+  // chose ne doit pas écrire six lignes — ni six fois la même.
+  const capabilities = new Map();
   let rejected = 0;
   // P5.3 : exceptions dérivées d'événements de span, bornées comme les spans.
   const budgetExceptions = { restant: maxSpans };
@@ -1261,6 +1266,15 @@ export function flattenOtlp(payload, opts = {}) {
       // porte pas son service.name (source de l'erreur, cf. errorEnvelope).
       const scopeName = ss?.scope?.name ?? null;
       const service = serviceDeclare(res, scopeName);
+      // P7.5 : le runtime de l'émetteur était déjà calculé ici, puis jeté. Il est
+      // désormais retenu sur la session — c'est la POPULATION de l'écran /mobile,
+      // et la déduire d'un user-agent donnerait un dénominateur deviné.
+      const runtime = runtimeClientMip(res, scopeName);
+      // Capacités déclarées : lues sur la resource, donc UNE fois par scope, et
+      // seulement pour un runtime mobile. Un navigateur n'a ni crash natif ni ANR.
+      for (const ligne of capabilityRows({ appId, runtime, release, raw: res[CAPABILITY_ATTRIBUTE] })) {
+        capabilities.set(`${ligne.app_id} ${ligne.runtime} ${ligne.release ?? ""} ${ligne.capability}`, ligne);
+      }
       // Dimensions déclarées d'un signal de session, puis d'un signal backend.
       const dimensions = { env, release };
       const dimensionsServeur = { env, release: releaseServeur(res, scopeName), service };
@@ -1465,6 +1479,10 @@ export function flattenOtlp(payload, opts = {}) {
           // Ext-A : mode de collecte — 'sdk' (script posé par le dev, défaut) ou
           // 'extension' (SDK injecté par l'extension navigateur). Figé à la 1re vue.
           collection_source: a["mip.collection_source"] === "extension" ? "extension" : "sdk",
+          // P7.5 (v82) : `react_native`, `browser`, ou NULL quand aucun marqueur
+          // de SDK MIP ne le désigne — un émetteur OTel tiers reste INCONNU, pas
+          // « web ». Back-fillé plus bas si le premier span ne le portait pas.
+          runtime,
           // v53 : version de l'app et qualité de lien estimée. `release` est une
           // resource attr (constante sur la requête), `net_type` une span attr,
           // posée par navtiming au chargement — d'où le back-fill plus bas.
@@ -1502,6 +1520,11 @@ export function flattenOtlp(payload, opts = {}) {
         // net_type n'arrive que sur les spans de navtiming, émises après `load` :
         // la session existe déjà, créée par une span antérieure sans l'attribut.
         if (s.net_type == null && a["mip.net_type"]) s.net_type = a["mip.net_type"];
+        // Le runtime est figé à la première valeur CONNUE : un même lot peut
+        // mêler un scope reconnu et un scope qui ne l'est pas (une bibliothèque
+        // OTel tierce posée dans la même application), et le second ne doit pas
+        // effacer ce que le premier a établi.
+        if (s.runtime == null && runtime) s.runtime = runtime;
         if (s.release == null && release) s.release = release;
         if (s.user_id_hash == null && metadata.user_id_hash) s.user_id_hash = metadata.user_id_hash;
         if (s.account_id_hash == null && metadata.account_id_hash) s.account_id_hash = metadata.account_id_hash;
@@ -1798,6 +1821,7 @@ export function flattenOtlp(payload, opts = {}) {
     sviCalls,
     sviSteps,
     sviLegs,
+    capabilities: [...capabilities.values()],
     rejected,
   };
 }

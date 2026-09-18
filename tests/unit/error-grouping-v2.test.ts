@@ -422,12 +422,27 @@ describe("taxonomies partagées avec la console, la migration et l'OpenAPI", () 
 const SQL = join(__dirname, "..", "..", "apps", "ingest", "sql");
 const V72 = readFileSync(join(SQL, "migration-v72.sql"), "utf8");
 
-/** Corps d'une fonction dans un fichier, jusqu'à sa fin `end $$;`. */
+/**
+ * Corps d'une fonction RECOPIÉE dans un fichier, jusqu'à sa fin `end $$;`.
+ *
+ * ANCRÉ EN DÉBUT DE LIGNE : depuis v83, une migration peut insérer une
+ * instruction dans la définition COURANTE (`execute 'create or replace …' ||
+ * quote_literal(replace(prosrc, …))`) plutôt que de recopier cent lignes. Cette
+ * forme ne peut rien perdre — elle part du corps en place. Le garde-fou vise les
+ * RECOPIES, qui, elles, le peuvent : c'est ainsi que v80 a repris la définition
+ * d'avant v79 et perdu `analytics_saved_view` et `dashboard`.
+ */
 function corps(sql: string, fonction: string): string | null {
-  const debut = sql.indexOf(`create or replace function ${fonction}(`);
+  const debut = sql.search(new RegExp(`^create or replace function ${fonction}\\(`, "m"));
   if (debut < 0) return null;
   const bloc = sql.slice(debut);
   return bloc.slice(0, bloc.indexOf("end $$;"));
+}
+
+/** Le fichier modifie-t-il la fonction EN PLACE, à partir de `prosrc` ? */
+function patchEnPlace(sql: string, fonction: string): boolean {
+  return new RegExp(`execute[^;]*create or replace function ${fonction}`, "s").test(sql)
+    && /quote_literal\(replace\(src,/.test(sql);
 }
 
 describe("migration-v72", () => {
@@ -478,5 +493,21 @@ describe("toute redéfinition, v72 comprise, emporte les issues", () => {
       expect(bloc, f).toMatch(/delete from error_grouping_config\s+where app_id = p_app_id/);
     }
     expect(V72).toContain("references error_issue (app_id, id) on delete cascade");
+  });
+
+  /**
+   * L'autre forme, et la seule autre autorisée : la modification EN PLACE. Une
+   * recopie simplement indentée — dans un `do $$` — échapperait autrement au
+   * garde-fou ci-dessus.
+   */
+  it("une redéfinition non recopiée part de la définition COURANTE", () => {
+    for (const f of fichiers) {
+      const sql = readFileSync(join(SQL, f), "utf8");
+      for (const fonction of ["purge_rum_app", "erase_app_data"]) {
+        if (!sql.includes(`create or replace function ${fonction}`)) continue;
+        if (corps(sql, fonction) !== null) continue;
+        expect(patchEnPlace(sql, fonction), `${f} / ${fonction}`).toBe(true);
+      }
+    }
   });
 });

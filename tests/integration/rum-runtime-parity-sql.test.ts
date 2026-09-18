@@ -511,3 +511,193 @@ suite("P7.3 — la causalité mobile jusqu'à PostgreSQL", () => {
     });
   }, 60_000);
 });
+
+// ─────────── P7.5 — capacités, runtime et lectures /mobile de bout en bout ───
+
+/**
+ * Modules console branchés sur la base jetable. `db.ts` lit DATABASE_URL à
+ * l'évaluation et mémorise son pool sur globalThis : viser cette base exige
+ * d'oublier ce pool ET le registre de modules.
+ */
+async function consoleMobile() {
+  delete (globalThis as { pgPool?: unknown }).pgPool;
+  vi.resetModules();
+  process.env.DATABASE_URL = url;
+  const mobile = await import("../../apps/console/lib/queries-mobile");
+  const schema = await import("../../apps/console/lib/query-schema");
+  const { pool: consolePool } = await import("../../apps/console/lib/db");
+  schema.forgetDimensionSchema();
+  return { ...mobile, consolePool };
+}
+
+const filtresMobile = (app: string) => ({
+  app,
+  period: "24h" as const,
+  device: null,
+  segment: [],
+  includeBots: false,
+  includeInternal: false,
+});
+
+const oublierCapacites = () =>
+  pool.query("delete from mobile_capabilities where app_id = any($1::text[])", [[APP, AUTRE]]);
+
+suite("P7.5 — du paquet réel jusqu'à l'écran /mobile", () => {
+  it("le SDK déclare ses capacités, le serveur les valide, la console les lit", async () => {
+    await nettoyer();
+    await oublierCapacites();
+    const { sdk, lots } = await sdkMobile(APP);
+    sdk.screen("Accueil");
+    sdk.addError(new Error("incident"), {});
+    await sdk.flushNow();
+    const rows = await ingerer(lots[lots.length - 1]);
+    expect(rows.rejected).toBe(0);
+
+    // 1. La session porte le RUNTIME déclaré, et non une déduction d'user-agent.
+    const session = (await pool.query("select runtime, os from rum_session where app_id=$1", [APP])).rows[0];
+    expect(session).toMatchObject({ runtime: "react_native", os: "iOS" });
+
+    // 2. Les six capacités sont en base, pour cette app et cette release.
+    const capacites = (await pool.query(
+      "select capability, declared, release, runtime, verified_at from mobile_capabilities where app_id=$1 order by capability",
+      [APP],
+    )).rows;
+    expect(capacites).toHaveLength(6);
+    expect(capacites.every((c) => c.runtime === "react_native" && c.release === "3.1.0")).toBe(true);
+    // Les trois natives sont déclarées INDISPONIBLES — pas absentes, pas à zéro.
+    const parNom = Object.fromEntries(capacites.map((c) => [c.capability, c.declared]));
+    expect(parNom.native_crashes).toBe(false);
+    expect(parNom.anr).toBe(false);
+    expect(parNom.native_start).toBe(false);
+    // Et AUCUNE n'est vérifiée : l'ingestion ne peut pas écrire cette colonne.
+    expect(capacites.every((c) => c.verified_at === null)).toBe(true);
+
+    // 3. La console lit la même chose, avec ses trois états.
+    const lib = await consoleMobile();
+    const resume = await lib.mobileSummary(filtresMobile(APP));
+    expect(resume.sessions.sessions).toBe(1);
+    expect(resume.capabilities.find((c) => c.capability === "native_crashes")?.state).toBe("unavailable");
+    expect(resume.capabilities.find((c) => c.capability === "anr")?.state).toBe("unavailable");
+    // Aucun compte de crash natif n'existe dans la réponse : pas même un zéro.
+    expect(JSON.stringify(resume)).not.toContain("native_crash_count");
+    await lib.consolePool.end();
+  }, 60_000);
+
+  it("un lot rejoué ne double NI les signaux NI les déclarations de capacités", async () => {
+    await nettoyer();
+    await oublierCapacites();
+    const { sdk, lots } = await sdkMobile(APP);
+    sdk.screen("Accueil");
+    sdk.track("achat", { n: 1 });
+    await sdk.flushNow();
+    const corps = lots[lots.length - 1];
+    await ingerer(corps);
+    await ingerer(corps); // même corps HTTP, deux fois : perte d'acquittement
+
+    const compte = async (sql: string) => Number((await pool.query(sql, [APP])).rows[0].n);
+    expect(await compte("select count(*)::int n from rum_session where app_id=$1")).toBe(1);
+    expect(await compte("select count(*)::int n from rum_pageview where app_id=$1")).toBe(1);
+    expect(await compte("select count(*)::int n from rum_event where app_id=$1")).toBe(1);
+    // Six capacités, pas douze : l'upsert reconnaît la même (app, runtime, release).
+    expect(await compte("select count(*)::int n from mobile_capabilities where app_id=$1")).toBe(6);
+    // Et la table de capacités n'entre dans AUCUNE projection d'événements : un
+    // lot qui ne fait que redéclarer n'ajoute rien au métering.
+    expect(await compte("select count(*)::int n from rum_event_index where app_id=$1 and kind='capability'")).toBe(0);
+  }, 60_000);
+
+  it("A et B ne partagent ni cohorte, ni capacités", async () => {
+    await nettoyer();
+    await oublierCapacites();
+    const a = await sdkMobile(APP);
+    a.sdk.screen("A");
+    await a.sdk.flushNow();
+    await ingerer(a.lots[a.lots.length - 1]);
+
+    const b = await sdkMobile(AUTRE);
+    b.sdk.screen("B");
+    await b.sdk.flushNow();
+    await ingerer(b.lots[b.lots.length - 1]);
+
+    const lib = await consoleMobile();
+    const resumeA = await lib.mobileSummary(filtresMobile(APP));
+    expect(resumeA.sessions.sessions).toBe(1);
+    expect(resumeA.screens).toEqual([{ route: "A", views: 1, sessions: 1 }]);
+    expect(resumeA.declarations).toHaveLength(6);
+    const resumeB = await lib.mobileSummary(filtresMobile(AUTRE));
+    expect(resumeB.screens).toEqual([{ route: "B", views: 1, sessions: 1 }]);
+    await lib.consolePool.end();
+  }, 60_000);
+
+  it("un SDK mobile ANTÉRIEUR au modèle laisse ses capacités INCONNUES, pas à zéro", async () => {
+    await nettoyer();
+    await oublierCapacites();
+    const nanos = `${Date.now()}000000`;
+    const attr = (o: Record<string, string | number>) =>
+      Object.entries(o).map(([key, v]) => ({
+        key,
+        value: typeof v === "number" ? { intValue: String(v) } : { stringValue: v },
+      }));
+    // Un lot d'un SDK 0.3 : le `service.name` est là, `mip.capabilities` non.
+    await ingerer({
+      resourceSpans: [{
+        resource: { attributes: attr({ "service.name": "mip-rum-mobile", "mip.app_id": APP, "mip.release": "2.0.0" }) },
+        scopeSpans: [{
+          scope: { name: "@mip/rum-mobile", version: "0.3.0" },
+          spans: [{
+            traceId: "a".repeat(32), spanId: "b".repeat(16), name: "pageview",
+            startTimeUnixNano: nanos, endTimeUnixNano: nanos,
+            attributes: attr({ "mip.session_id": "p75-vieux", "mip.route": "Legacy", "mip.device_type": "android" }),
+          }],
+        }],
+      }],
+    });
+
+    // Le runtime, lui, est bien reconnu : il vient du `service.name`, pas de la
+    // déclaration de capacités.
+    const session = (await pool.query("select runtime from rum_session where app_id=$1", [APP])).rows[0];
+    expect(session.runtime).toBe("react_native");
+    expect(Number((await pool.query(
+      "select count(*)::int n from mobile_capabilities where app_id=$1", [APP],
+    )).rows[0].n)).toBe(0);
+
+    const lib = await consoleMobile();
+    const resume = await lib.mobileSummary(filtresMobile(APP));
+    expect(resume.sessions.sessions).toBe(1);
+    // Six « Inconnu », et surtout PAS six « Non collecté » : un silence n'est pas
+    // un refus, et un refus n'est pas un zéro.
+    expect(resume.capabilities.every((c) => c.state === "unknown")).toBe(true);
+    expect(resume.js_error_free_session_rate).toBeNull();
+    expect(resume.js_error_free_unavailable_reason).toBe("capability_unknown");
+    await lib.consolePool.end();
+  }, 60_000);
+
+  it("une erreur backend SANS session ne rejoint jamais la cohorte mobile", async () => {
+    await nettoyer();
+    await oublierCapacites();
+    const { sdk, lots } = await sdkMobile(APP);
+    sdk.screen("Accueil");
+    await sdk.flushNow();
+    await ingerer(lots[lots.length - 1]);
+
+    // P7.4 : l'agent Node écrit une erreur SANS session et n'écrit AUCUNE ligne
+    // `rum_session`. Elle doit rester hors de tout compteur de sessions mobiles.
+    await pool.query(
+      `insert into rum_error (span_id, session_id, app_id, message, kind, occurrences, error_source, handled, ts)
+       values ('p75-backend-1', null, $1, 'échec backend', 'error', 7, 'node', true, now())`,
+      [APP],
+    );
+    await pool.query(
+      `insert into rum_event (span_id, session_id, app_id, name, event_type, ts)
+       values ('p75-backend-2', null, $1, 'job_termine', 'custom', now())`,
+      [APP],
+    );
+
+    const lib = await consoleMobile();
+    const resume = await lib.mobileSummary(filtresMobile(APP));
+    // Une session observée (celle du mobile), et l'erreur backend n'en ajoute pas.
+    expect(resume.sessions.sessions).toBe(1);
+    expect(resume.js_errors?.occurrences).toBe(0);
+    expect(resume.js_errors?.sessions_affected).toBe(0);
+    await lib.consolePool.end();
+  }, 60_000);
+});

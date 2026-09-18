@@ -25,7 +25,7 @@ import {
 } from "@mip/rum-core";
 
 /** Version du SDK mobile : scope OTLP, `service.version` et user-agent synthétique. */
-export const MOBILE_SDK_VERSION = "0.3.0";
+export const MOBILE_SDK_VERSION = "0.4.0";
 const SCOPE: EmitScope = { name: "@mip/rum-mobile", version: MOBILE_SDK_VERSION };
 
 // Réexports de compatibilité : `core.ts` était la seule table d'encodage du
@@ -41,8 +41,18 @@ export interface MobileConfig {
   clientId: string | null;
   /** version applicative (mip.release) — dé-minification / suivi de version. */
   appVersion: string | null;
-  /** user-agent synthétique mobile (mip.user_agent), ex. "MIP-RN/0.3 (ios 17)". */
+  /** user-agent synthétique mobile (mip.user_agent), ex. "MIP-RN/0.4 (ios 17)". */
   userAgent: string;
+  /**
+   * Capacités DÉCLARÉES, déjà sérialisées (`nom:état,…`, cf. `capacites.ts`).
+   *
+   * Le runtime la rafraîchit avant chaque envoi, et non à `init` : un adaptateur
+   * de navigation abonné après coup, un stockage qui ne répond qu'au premier
+   * accès ou une mesure de démarrage déclarée plus tard changent la réponse.
+   * Figée à `init`, la déclaration décrirait un état qui n'a duré qu'un instant.
+   * `null` : rien n'est déclaré (appelant historique, test de `core.ts` isolé).
+   */
+  capabilities?: string | null;
 }
 
 /**
@@ -320,6 +330,10 @@ export function resourceAttrs(cfg: MobileConfig): Attributes {
     "deployment.environment.name": cfg.env,
     "mip.release": cfg.appVersion,
     "mip.api_key": cfg.apiKey,
+    // P7.5 : ce que ce runtime déclare collecter, pour cette release. Absent
+    // plutôt que vide quand rien n'est déclaré : une chaîne vide se lirait comme
+    // « aucune capacité », alors que c'est « aucune déclaration ».
+    ...(cfg.capabilities ? { "mip.capabilities": cfg.capabilities } : {}),
   };
 }
 

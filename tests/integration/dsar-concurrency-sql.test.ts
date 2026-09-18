@@ -23,7 +23,7 @@ import { hashIdentity, secureOtlpIdentities } from "../../apps/ingest/lib/identi
 // @ts-expect-error module JS sans déclarations
 import { deposerLot, drainerIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
 // @ts-expect-error module JS sans déclarations
-import { writeLogs, writeReplayChunk, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeLogs, writeReplayChunk, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
 // @ts-expect-error module JS sans déclarations
 import {
   ErreurVerrouIngestion,
@@ -673,10 +673,22 @@ suiteFenetre("P8.1 — code publié AVANT migration-v81", () => {
       [APP],
     );
     _resetPresenceBarrieres();
+    // Le cache de colonnes de `pg-ingest` est indexé par TABLE, pas par base, et
+    // il vit 60 s. Cette suite écrit dans une SECONDE base, au schéma plus
+    // ancien, depuis le même processus : sans cette remise à zéro, l'INSERT
+    // reprend la liste de colonnes relevée sur la base complète et cite une
+    // colonne que celle-ci n'a pas encore — ce qui fait rejeter le lot ENTIER.
+    // C'est le garde-fou de déploiement progressif qui se retourne contre
+    // lui-même, faute d'être rejoué au changement de base. Révélé par la colonne
+    // `runtime` de v82, la première ajoutée depuis l'écriture de cette suite.
+    _resetColonnesCache();
   }, 300_000);
 
   afterAll(async () => {
     if (!urlPreV81) return;
+    // Symétrique : ne pas laisser au fichier suivant une liste de colonnes
+    // relevée sur un schéma tronqué, où l'oubli serait SILENCIEUX.
+    _resetColonnesCache();
     await poolFenetre.end();
   });
 

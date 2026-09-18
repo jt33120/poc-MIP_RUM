@@ -262,6 +262,8 @@ const OPTIONNELLES = [
   "user_id_hash", "account_id_hash", "context",
   // v75 (P6.1) : navigateur et système déduits de l'user-agent.
   "browser", "browser_version", "os", "os_version",
+  // v82 (P7.5) : runtime de l'émetteur — la population de l'écran /mobile.
+  "runtime",
 ];
 
 /**
@@ -302,8 +304,13 @@ export function clauseConflitSession(dispo) {
     // lot qui n'en porte pas.
     // v75 : navigateur et système, figés à la première valeur connue comme
     // l'user-agent dont ils dérivent.
+    // v82 : `runtime` rejoint la liste des champs figés à la première valeur
+    // CONNUE. Un lot d'un SDK antérieur au marqueur, ou d'une bibliothèque OTel
+    // tierce posée dans la même application, n'en porte pas : sans coalesce, il
+    // ferait retomber la session à « inconnu » et la sortirait de la population
+    // de /mobile après coup.
     ...["release", "net_type", "visitor_id", "user_id_hash", "account_id_hash",
-      "browser", "browser_version", "os", "os_version"]
+      "browser", "browser_version", "os", "os_version", "runtime"]
       .filter((c) => dispo.has(c))
       .map((c) => `${c} = coalesce(rum_session.${c}, excluded.${c})`),
     ...(dispo.has("context")
@@ -331,6 +338,39 @@ export function clauseConflitSession(dispo) {
   // parallèle sous DEUX verrous différents et ne s'attendent donc pas.
   return `on conflict (session_id) do update set ${set.join(", ")}
             where rum_session.app_id = excluded.app_id`;
+}
+
+/**
+ * Capacités déclarées d'un runtime mobile (P7.5, migration-v82).
+ *
+ * TROIS RAISONS À CETTE FONCTION, chacune une ligne de code :
+ *
+ *   · `to_regclass` d'abord. Comme pour les colonnes optionnelles, la console est
+ *     publiée avant que la migration ne tourne. Une table absente ferait rejeter
+ *     par Postgres la requête ENTIÈRE, donc la transaction, donc TOUT le lot : on
+ *     perdrait la télémétrie pour une déclaration de capacité.
+ *   · `verified_at`, `verified_by` et `verified_note` sont ABSENTS du
+ *     `do update set`. C'est là, et nulle part ailleurs, que se joue la règle
+ *     « une capacité activée n'est pas un test natif passé » : aucun chemin
+ *     d'ingestion ne peut écrire une vérification, quoi que le client envoie.
+ *   · `first_declared_at` n'est pas non plus mis à jour : « depuis quand cette
+ *     release déclare-t-elle collecter ceci » se perdrait au premier lot suivant.
+ *
+ * La table ne compte dans aucun quota : elle ne porte pas un événement de
+ * télémétrie de plus, seulement ce qu'un runtime dit savoir observer.
+ */
+async function ecrireCapacites(client, capabilities) {
+  if (!capabilities?.length) return;
+  const { rows } = await client.query("select to_regclass('public.mobile_capabilities') as t");
+  if (rows[0]?.t == null) return;
+  await batchInsert(
+    client,
+    "mobile_capabilities",
+    ["app_id", "runtime", "release", "capability", "declared"],
+    capabilities,
+    `on conflict (app_id, runtime, release, capability) do update
+       set declared = excluded.declared, last_declared_at = now()`,
+  );
 }
 
 const COLONNES_METRIQUE = [
@@ -554,6 +594,9 @@ export async function writeRowsWithClient(client, {
   sviCalls,
   sviSteps,
   sviLegs,
+  // P7.5 — capacités DÉCLARÉES par un runtime mobile. Défaut `[]` : un lot
+  // antérieur au modèle, ou déposé avant lui dans `ingest_raw`, n'en porte pas.
+  capabilities = [],
 }) {
   {
     await verifierPorteeSessions(client, { sessions });
@@ -715,6 +758,10 @@ export async function writeRowsWithClient(client, {
         e_model_params: l.e_model_params ? JSON.stringify(l.e_model_params) : null })),
       "on conflict (app_id, call_id, leg_ref, dir) do nothing",
     );
+    // P7.5 : ce que le runtime mobile DÉCLARE collecter. Dans la transaction du
+    // lot, comme le reste : une déclaration écrite alors que la télémétrie qui
+    // l'accompagne est annulée décrirait une collecte qui n'a pas eu lieu.
+    await ecrireCapacites(client, capabilities);
     // page_count DÉRIVÉ du compte réel de pageviews (idempotent au rejeu, cf.
     // migration-v07) plutôt qu'incrémenté.
     if (sessions.length) {
