@@ -164,6 +164,8 @@ jobs:
       # migration-v69, code P5.3 sur un schéma v69 avant migration-v70.
       # SQL_TEST_PRE_V71_DATABASE_URL : fenêtre de déploiement P5.4, code écrit sur
       # un schéma sans migration-v71 avant de l'y appliquer.
+      # SQL_TEST_PRE_V81_DATABASE_URL : fenêtre de déploiement P8.1, code écrit sur
+      # un schéma v80 — sans table de barrières — avant de l'y appliquer.
       - name: P0 safety and truth SQL (base dédiée)
         env:
           PGPASSWORD: postgres
@@ -171,6 +173,7 @@ jobs:
           SQL_TEST_V65_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_v65
           SQL_TEST_V68_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_v68
           SQL_TEST_PRE_V71_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v71
+          SQL_TEST_PRE_V81_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v81
         run: |
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -c 'create database mip_rum_p0'
@@ -180,6 +183,8 @@ jobs:
             -c 'create database mip_rum_v68'
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -c 'create database mip_rum_pre_v71'
+          psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'create database mip_rum_pre_v81'
           pnpm test:sql
 
       # `...` entraîne `@mip/rum-core`, dont le SDK web inline les primitives.
