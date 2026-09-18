@@ -974,7 +974,9 @@ export function parseExplorerPlan(
   // Borne des POINTS, vérifiée avant tout SQL (P6.6). La largeur de seau du
   // contrat la respecte déjà par construction ; l'écrire ici garantit qu'un futur
   // seau plus fin ne fabriquera pas une série que le SQL devrait ensuite tronquer.
-  if (visualization === "timeseries" && bucketStarts(query.range).length > MAX_POINTS) {
+  // Un plan ENREGISTRÉ (P6.5) n'a pas de fenêtre : il hérite de celle de son
+  // lecteur, et c'est à la lecture — où `query` existe — que la borne s'applique.
+  if (query && visualization === "timeseries" && bucketStarts(query.range).length > MAX_POINTS) {
     return fail("invalid_query", `au plus ${MAX_POINTS} points par série : réduire la période`, {
       parameter: "range",
     });
