@@ -45,13 +45,23 @@ jobs:
       - name: Install (lockfile gelé)
         run: pnpm install --frozen-lockfile
 
-      - name: Build SDK (esbuild -> dist/mip-rum.js + budget taille)
-        run: pnpm --filter @mip/rum-sdk build
+      # P7.1 — un seul point d'entrée pour les paquets SDK. Le suffixe `...` du
+      # filtre pnpm entraîne les DÉPENDANCES : `@mip/rum-core` est construit
+      # avant les runtimes qui l'inlinent, sans que personne ait à connaître
+      # l'ordre. La console (`next build`) reste au job E2E.
+      - name: Build des SDK (cœur partagé, web + budget taille, React Native, agent Node)
+        run: pnpm build:sdk
 
       # Empêche l'extension d'expédier un SDK périmé (vendor/mip-rum.js) ou une
       # version de manifest qui dérive du SDK. Nécessite le build SDK ci-dessus.
       - name: Extension — synchro bundle & version
         run: node apps/extension/scripts/check-sync.mjs
+
+      # P7.1 — étanchéité des bundles (web sans RN, RN sans DOM, Node sans React)
+      # et installation des paquets CONSTRUITS dans un consommateur isolé : ce que
+      # `exports` publie réellement, en CJS, en ESM et en types.
+      - name: Empaquetage SDK — étanchéité et mini-consommateur
+        run: node scripts/verify-sdk-packaging.mjs
 
       - name: Tests unitaires (vitest)
         run: pnpm test:unit
@@ -172,8 +182,9 @@ jobs:
             -c 'create database mip_rum_pre_v71'
           pnpm test:sql
 
+      # `...` entraîne `@mip/rum-core`, dont le SDK web inline les primitives.
       - name: Build SDK (servi par demo/serve.mjs et la console)
-        run: pnpm --filter @mip/rum-sdk build
+        run: pnpm --filter "@mip/rum-sdk..." build
 
       # le test corrélation attend des runs robot en face des données RUM générées par le test
       - name: Seed synthétique (app demo-app, 24 h de runs)

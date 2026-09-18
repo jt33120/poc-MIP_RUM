@@ -65,25 +65,25 @@ export function normalizeRoute(url: string): string {
   return parts.join("/") || "/";
 }
 
-// --- encodage OTLP (aligné sur anyValue() de l'ingestion) --------------------
+// --- encodage OTLP -----------------------------------------------------------
+//
+// P7.1 : la table de correspondance AnyValue et la conversion des horodatages
+// viennent de `@mip/rum-core`, partagées avec les SDK web et React Native. Elles
+// existaient ici en copie : un `intValue` encodé en nombre d'un côté et en
+// chaîne de l'autre aurait produit deux vérités pour le même attribut, sans
+// qu'aucun test ne le voie. Les NOMS exportés ne changent pas — `register.ts` et
+// ses tests continuent d'appeler `encodeAttrs` et `nanos`.
+import { encodeAttributes, msToNanos } from "@mip/rum-core";
 
 type Attr = string | number | boolean | null | undefined;
-function anyValue(v: string | number | boolean): Record<string, unknown> {
-  if (typeof v === "boolean") return { boolValue: v };
-  if (typeof v === "number") return Number.isInteger(v) ? { intValue: String(v) } : { doubleValue: v };
-  return { stringValue: v };
-}
+
 export function encodeAttrs(o: Record<string, Attr>): Array<{ key: string; value: Record<string, unknown> }> {
-  const out: Array<{ key: string; value: Record<string, unknown> }> = [];
-  for (const [key, v] of Object.entries(o)) {
-    if (v == null) continue;
-    out.push({ key, value: anyValue(v) });
-  }
-  return out;
+  return encodeAttributes(o);
 }
+
 /** Epoch ms -> nanosecondes en chaîne (précision préservée, > 2^53). */
 export function nanos(ms: number): string {
-  return `${Math.round(ms)}000000`;
+  return msToNanos(ms);
 }
 
 // --- exceptions (P5.3) ---------------------------------------------------------

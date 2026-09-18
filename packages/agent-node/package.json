@@ -11,6 +11,9 @@
   "scripts": {
     "build": "node build.mjs"
   },
+  "dependencies": {
+    "@mip/rum-core": "workspace:*"
+  },
   "devDependencies": {
     "esbuild": "0.28.0",
     "typescript": "5.9.3"

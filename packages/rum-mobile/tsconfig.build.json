@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Les types SEULS : le JavaScript est produit par esbuild (build.mjs). Deux
+    // générateurs pour un même fichier finiraient par diverger.
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist"
+  }
+}

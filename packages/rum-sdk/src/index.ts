@@ -24,6 +24,7 @@ import type {
 } from "./types";
 import { initNavTiming } from "./navtiming";
 import { initVitals } from "./vitals";
+import { applyBeforeSend } from "@mip/rum-core";
 import {
   boundedName,
   eventContext,
@@ -91,40 +92,16 @@ function mergeSerializedContexts(actionRaw: unknown, localRaw: unknown): string 
   return Object.keys(merged).length ? JSON.stringify(merged) : undefined;
 }
 
-/** Couture pure du hook public : compatibilité un argument + champs SDK immuables. */
-export function applyBeforeSend(
-  hook: MIPRumConfig["beforeSend"],
-  attributes: Record<string, unknown>,
-  meta: EventMeta,
-): Record<string, unknown> | null {
-  if (!hook) return attributes;
-  const structural = new Set([
-    "mip.session_id", "mip.trace_id", "mip.span_id", "mip.app_id", "mip.client_id",
-    "mip.visitor_id", "mip.route", "mip.tz", "mip.device_type", "mip.collection_source",
-    "mip.sample_rate", "mip.error_sample_rate", "mip.event_type",
-    "mip.view_id", "mip.view_name", "mip.action_id", "mip.timing_ms",
-    "mip.feature_flag_value", "mip.action_type",
-    // P5.2 : lien d'une erreur réseau vers le span de son appel, et voie de
-    // capture dont l'ingestion dérive la source et le caractère géré.
-    "mip.parent_span_id", "mip.error_kind", "mip.error_handled",
-  ]);
-  const reserved = Object.fromEntries(Object.entries(attributes).filter(([key]) => structural.has(key)));
-  const filtered = hook({ ...attributes }, meta);
-  if (!filtered) return null;
-  const merged = Object.fromEntries(
-    Object.entries(filtered).filter(([key]) => !structural.has(key)),
-  );
-  Object.assign(merged, reserved);
-  if (meta.type === "action") {
-    // L'ingestion exige un nom d'action valide. Accepter une racine dont le
-    // hook a supprimé/invalidé le nom laisserait ensuite des enfants action_id
-    // sans projection rum_action.
-    const actionName = boundedName(merged["mip.event_name"]);
-    if (!actionName) return null;
-    merged["mip.event_name"] = actionName;
-  }
-  return merged;
-}
+/**
+ * Couture pure du hook public : compatibilité un argument + champs SDK immuables.
+ *
+ * L'implémentation vit dans `@mip/rum-core` — React Native applique exactement
+ * la même règle de restauration des attributs structurels. Le web l'appelle SANS
+ * garde d'isolation : son contrat historique laisse remonter une exception du
+ * hook à l'appelant, et le changer ici modifierait le comportement d'un SDK déjà
+ * posé chez des clients.
+ */
+export { applyBeforeSend };
 
 /**
  * Une seule couture pour tous les chemins qui vident les répétitions d'erreur.
