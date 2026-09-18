@@ -3,10 +3,14 @@
     "target": "ES2019",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    // Pas de "DOM" : le type-check échoue si le runtime React Native touche
+    // document, window ou navigator. Les globals RN (fetch, Headers, ErrorUtils,
+    // console) passent par `declare const global: any`, volontairement souple.
     "lib": ["ES2020"],
+    "types": [],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src/core.ts"]
+  "include": ["src"]
 }

@@ -45,13 +45,25 @@ jobs:
       - name: Install (lockfile gelé)
         run: pnpm install --frozen-lockfile
 
-      - name: Build SDK (esbuild -> dist/mip-rum.js + budget taille)
-        run: pnpm --filter @mip/rum-sdk build
+      # P7.1 — les quatre paquets SDK, dans l'ordre topologique imposé par leurs
+      # dépendances workspace : `@mip/rum-core` (primitives pures) est construit
+      # avant les runtimes qui l'inlinent. `pnpm` s'en charge, mais la liste doit
+      # rester explicite : la console (`next build`) reste au job E2E.
+      - name: Build des SDK (cœur partagé, web + budget taille, React Native, agent Node)
+        run: >-
+          pnpm --filter @mip/rum-core --filter @mip/rum-sdk
+          --filter @mip/rum-mobile --filter @mip/agent-node build
 
       # Empêche l'extension d'expédier un SDK périmé (vendor/mip-rum.js) ou une
       # version de manifest qui dérive du SDK. Nécessite le build SDK ci-dessus.
       - name: Extension — synchro bundle & version
         run: node apps/extension/scripts/check-sync.mjs
+
+      # P7.1 — étanchéité des bundles (web sans RN, RN sans DOM, Node sans React)
+      # et installation des paquets CONSTRUITS dans un consommateur isolé : ce que
+      # `exports` publie réellement, en CJS, en ESM et en types.
+      - name: Empaquetage SDK — étanchéité et mini-consommateur
+        run: node scripts/verify-sdk-packaging.mjs
 
       - name: Tests unitaires (vitest)
         run: pnpm test:unit
