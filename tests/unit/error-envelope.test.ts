@@ -15,7 +15,6 @@ import { drainerIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
 import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
 import {
   ERROR_SOURCES,
-  boundedDimension,
   boundedErrorType,
   errorEnvelope,
   errorFingerprint,
@@ -165,17 +164,6 @@ describe("helpers d'enveloppe", () => {
     for (const hostile of ["0".repeat(16), PARENT.slice(1), `${PARENT}0`, "g".repeat(16), "", 7, null]) {
       expect(nativeParentSpanId(hostile)).toBeNull();
     }
-  });
-
-  it("boundedDimension scrubbe, refuse contrôle et longueur, ne tronque jamais", () => {
-    expect(boundedDimension("  production ")).toBe("production");
-    expect(boundedDimension("prod jean@client.fr")).toBe("prod [email]");
-    expect(boundedDimension("x".repeat(120))).toBe("x".repeat(120));
-    expect(boundedDimension("x".repeat(121))).toBeNull();
-    expect(boundedDimension("abcd", 3)).toBeNull();
-    expect(boundedDimension(`pr${String.fromCharCode(7)}od`)).toBeNull();
-    expect(boundedDimension(`pr${String.fromCharCode(0x7f)}od`)).toBeNull();
-    for (const vide of ["", "   ", 42, true, null, undefined]) expect(boundedDimension(vide)).toBeNull();
   });
 
   it("boundedErrorType scrubbe, coupe à 200 et rend null sur un vide ou un non-texte", () => {

@@ -2,6 +2,9 @@
 // réseau, événement) produits par le cœur sont ingérés par flattenOtlp dans les
 // MÊMES tables que le web, avec device_type = mobile. Preuve que le mobile
 // réutilise toute la pipeline sans changement serveur.
+//
+// P6.1 : env et release du SDK voyagent sur chaque signal, et la plateforme
+// déclarée (« ios ») devient le système de la session, jamais sa classe.
 import { describe, expect, it } from "vitest";
 import {
   buildExceptionSpan,
@@ -35,9 +38,13 @@ describe("rum-mobile — round-trip OTLP -> flattenOtlp", () => {
   ];
   const rows = flattenOtlp(buildPayload(cfg, spans));
 
-  it("crée la session mobile (device_type)", () => {
+  it("crée la session mobile : classe mobile, plateforme portée par le système (P6.1)", () => {
     expect(rows.sessions).toHaveLength(1);
-    expect(rows.sessions[0].device_type).toBe("ios");
+    // « ios » n'est pas une classe d'appareil : le user-agent synthétique du SDK
+    // donne mobile, iOS 17, et aucun navigateur.
+    expect(rows.sessions[0]).toMatchObject({
+      device_type: "mobile", os: "iOS", os_version: "17", browser: null, browser_version: null,
+    });
     expect(rows.sessions[0].geo_country).toBe("FR"); // depuis mip.tz
     expect(rows.apiKeys[0]).toEqual({ app_id: "mon-app", api_key: "mip_mob_123" });
   });
@@ -56,5 +63,13 @@ describe("rum-mobile — round-trip OTLP -> flattenOtlp", () => {
     expect(rows.events[0].name).toBe("checkout");
     expect(rows.events[0].props).toEqual({ amount: 42, email: "[redacted]" });
     expect(rows.rejected).toBe(0);
+  });
+
+  it("recopie env et release sur chaque signal ; le nom constant du SDK n'est pas un service", () => {
+    for (const ligne of [...rows.pageviews, ...rows.errors, ...rows.spans, ...rows.events]) {
+      expect(ligne).toMatchObject({ env: "prod", release: "1.2.3" });
+    }
+    expect(rows.errors[0].service).toBeNull();
+    expect(rows.spans[0].service).toBeNull();
   });
 });

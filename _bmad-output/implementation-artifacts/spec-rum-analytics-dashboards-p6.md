@@ -124,11 +124,16 @@ Forme des éléments : `groups[{key:[string|null,...],value:number|null,samples:
 
 ### P6.1 — dimensions aux bonnes frontières (M)
 
-- [ ] Ajouter parser/dimensions normalisés dans `_shared/dimensions.mjs`, couvrir navigateurs usuels, UA inconnus, bots, UA RN ; propager dans `otlp.mjs`, `pg-ingest.mjs`, index et sources nécessaires.
-- [ ] Ajouter migration additive, colonnes optionnelles détectées pour le writer avant migration et fixtures vieux SDK. Aucune obligation d’UA si backend sans session.
-- [ ] Stocker env/release à l’événement, pas via session mutable. Fenêtres d’analytics ne dépendent pas de données futures de session.
-- [ ] Ajouter sélecteurs de valeurs distinctes limités à app/fenêtre, avec `unknown` et cap 100. Aucun inventaire global transverse envoyé au viewer.
+- [x] Ajouter parser/dimensions normalisés dans `_shared/dimensions.mjs`, couvrir navigateurs usuels, UA inconnus, bots, UA RN ; propager dans `otlp.mjs`, `pg-ingest.mjs`, index et sources nécessaires.
+  - Preuve : `tests/unit/dimensions.test.ts` (corpus), `tests/unit/otlp-dimensions.test.ts`. Tablette déduite de l’UA (prime sur l’indice du SDK web), `ios`/`android` → `mobile` + `os`, robots sans navigateur ni système.
+- [x] Ajouter migration additive, colonnes optionnelles détectées pour le writer avant migration et fixtures vieux SDK. Aucune obligation d’UA si backend sans session.
+  - Preuve : `migration-v75.sql` ; `tests/integration/dimensions-v75-sql.test.ts` (rejeu, bornes, lot différé antérieur, backend sans UA, fenêtre v74 → v75).
+- [x] Stocker env/release à l’événement, pas via session mutable. Fenêtres d’analytics ne dépendent pas de données futures de session.
+  - Preuve : même fichier, « une release qui change pendant la visite, puis une session modifiée après coup, ne réécrivent pas le passé ». `mip.release` bornée à l’ingestion (1–120 caractères, jamais scrubbée), règle reprise par l’upload de source maps.
+- [x] Ajouter sélecteurs de valeurs distinctes limités à app/fenêtre, avec `unknown` et cap 100. Aucun inventaire global transverse envoyé au viewer.
+  - Preuve : `apps/console/lib/{dimensions,queries-dimensions}.ts` (lib seule, aucun endpoint), `tests/unit/dimension-values.test.ts` et le test SQL (A/B, `[from,to)`, plafond, robots, historique).
 - [ ] Index ciblés `(app_id,env,ts)` / `(app_id,release,ts)` selon plans réels, pas toutes combinaisons de dimensions.
+  - Mesuré (en-tête de `migration-v75.sql`) : aucun lecteur P6.1 n’en a besoin ; un filtre release/env sur fenêtre passe de 100–120 ms à 0,4–7 ms avec l’index. À créer par le premier lecteur filtré (P6.2 ou P6.6), sur sa table, avec pré-déploiement CONCURRENTLY.
 
 Recette : vieilles lignes null, mobile/tablet, changement release dans une même session et erreur backend sans UA. Le regroupement historique ne change pas après mise à jour de la session.
 
