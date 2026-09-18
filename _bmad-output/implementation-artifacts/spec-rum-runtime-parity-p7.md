@@ -87,13 +87,15 @@ Adapters : storage async `{getItem,setItem,removeItem}` ; lifecycle `{subscribe(
 
 ### P7.1 — primitives pures et enveloppe RN (M)
 
-- [ ] Extraire les helpers utilisés par au moins deux runtimes, avec tests de snapshot commun. Déclarations de dépendances workspace/exports/build cohérentes ; pas d’import de TS source non compilé depuis un artefact publié.
-- [ ] Étendre `MobileConfig`, `Ctx` et builders vers les champs P2/P5/P6 : visitor/session/view/action, context, user/account transport, platform/device/env/release, erreurs et timings.
-- [ ] Conserver le round-trip OTLP → parser → PostgreSQL actuel. Ne pas envoyer `mip.user_hash` legacy comme identité personnelle.
-- [ ] Métadonnées structurelles restaurées après `beforeSend`; exceptions hook isolées avec drop/diagnostic borné. Tous payloads passent à nouveau par scrub serveur.
-- [ ] Vérifier web sans RN dans le bundle, RN sans globals DOM, Node sans React. Installer le package construit dans un mini-consommateur isolé de test pour valider les exports.
+- [x] Extraire les helpers utilisés par au moins deux runtimes, avec tests de snapshot commun. Déclarations de dépendances workspace/exports/build cohérentes ; pas d’import de TS source non compilé depuis un artefact publié.
+- [x] Étendre `MobileConfig`, `Ctx` et builders vers les champs P2/P5/P6 : visitor/session/view/action, context, user/account transport, platform/device/env/release, erreurs et timings.
+- [x] Conserver le round-trip OTLP → parser → PostgreSQL actuel. Ne pas envoyer `mip.user_hash` legacy comme identité personnelle.
+- [x] Métadonnées structurelles restaurées après `beforeSend`; exceptions hook isolées avec drop/diagnostic borné. Tous payloads passent à nouveau par scrub serveur.
+- [x] Vérifier web sans RN dans le bundle, RN sans globals DOM, Node sans React. Installer le package construit dans un mini-consommateur isolé de test pour valider les exports.
 
 Recette : même événement dans web/RN conserve mêmes types/limites et précédence ; bool/null/number exacts ; cycles/profondeur excessive traités ; anciens `screen/track/flushNow` fonctionnent.
+
+Livré le 18/09/2026 sur `feat/rum-runtime-p7-1`, sans migration. Preuves et écarts assumés : [delivery-p7.md](delivery-p7.md).
 
 ### P7.2 — consentement, visiteur et transport (L)
 
