@@ -11,7 +11,7 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 |---|---|---|---|---|---|---|---|
 | P8.1 — effacement sérialisé avec l'ingestion | #205 | v81, appliquée sur Neon le 18/09 10:16 | oui | oui | verte | oui (`b06a5ce`) | non — aucun effacement réel joué depuis l'activation |
 | P8.2 — outillage de backfill et dry-run | #208 | v83 (non appliquée en production) | oui | oui | verte | non | non — **aucun backfill exécuté**, aucun périmètre choisi |
-| P8.6 — connecteur de tickets (GitHub Issues) | #210 | v84 (non appliquée en production) | oui | oui | verte | non | **partiellement** — un vrai ticket créé dans un dépôt bac à sable ; webhook jamais reçu d'un vrai fournisseur |
+| P8.6 — connecteur de tickets (GitHub Issues) | #211 | v84 (non appliquée en production) | oui | oui | verte | non | **partiellement** — un vrai ticket créé dans un dépôt bac à sable ; webhook jamais reçu d'un vrai fournisseur |
 | P8.3 à P8.5, P8.7, P8.8 | — | — | non | — | — | — | — |
 
 ## P8.1 — effacement sérialisé avec l'ingestion
@@ -552,7 +552,7 @@ lecture, mais elle vise une base que personne ne m'a demandé d'atteindre.
 
 ## P8.6 — connecteur de tickets, GitHub Issues d'abord
 
-Branche `feat/rum-tickets-p8-6`, PR #210. Migration **v84** (v81 = P8.1, v82 = P7.5, v83 = P8.2).
+Branche `feat/rum-tickets-p8-6`, PR #211. Migration **v84** (v81 = P8.1, v82 = P7.5, v83 = P8.2).
 
 ### La décision, et sa réserve écrite noir sur blanc
 
