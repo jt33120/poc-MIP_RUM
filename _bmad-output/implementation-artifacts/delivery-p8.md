@@ -9,7 +9,7 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 
 | Sous-lot | PR | Migration | Implémenté | Testé localement | CI | Déployé | Vérifié sur vraie app |
 |---|---|---|---|---|---|---|---|
-| P8.1 — effacement sérialisé avec l'ingestion | — | v81 (non appliquée en production) | oui | oui | — | non | non — protection durable **non activée** |
+| P8.1 — effacement sérialisé avec l'ingestion | #205 | v81 (non appliquée en production) | oui | oui | verte | non | non — protection durable **non activée** |
 | P8.2 à P8.8 | — | — | non | — | — | — | — |
 
 ## P8.1 — effacement sérialisé avec l'ingestion
@@ -119,6 +119,9 @@ supprimées pour l'occasion :
 - `pnpm test:sql` : **23 fichiers, 276 tests verts, 12 ignorés** (référence : 22 / 256), dont le
   nouveau `tests/integration/dsar-concurrency-sql.test.ts` — **17 tests**.
 - `pnpm test:isolation`, `pnpm test:alerting` : verts sur bases dédiées.
+- CI de la PR #205 : les six contrôles au vert (`Build SDK + tests unitaires`, `E2E Playwright
+  (Postgres service)` — qui joue aussi `test:sql`, `test:isolation`, `test:alerting` et `test:svi` —,
+  `docker-smoke`, `mcp-smoke`, Vercel).
 - `pnpm --filter console exec tsc --noEmit` : vert. `pnpm -r build` : vert.
 - Migration v81 appliquée **deux fois de suite** sur une base neuve (idempotente) et sur un schéma
   **v80** (fenêtre de déploiement, suite dédiée `SQL_TEST_PRE_V81_DATABASE_URL`).
