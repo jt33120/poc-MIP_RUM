@@ -1472,6 +1472,12 @@ export function flattenOtlp(payload, opts = {}) {
           // l'user-agent primant sur l'indice du SDK — cf. clientDimensions.
           ...appareil(a["mip.device_type"]),
           geo_country: null,
+          // P8.7 (v85) : d'OÙ vient ce pays. Un pays déduit du fuseau et un pays
+          // résolu depuis l'adresse réseau ne valent pas la même chose, et rien
+          // ne permettait de les distinguer une fois écrits. La colonne voyage
+          // avec la valeur, toujours posée en même temps qu'elle.
+          geo_source: null,
+          geo_db_version: null,
           // Lot 2 : classifié à la 1re vue de la session (UA + éventuel signal
           // webdriver du SDK). Flag, pas drop : la donnée reste, mais exclue par
           // défaut des agrégats console.
@@ -1507,7 +1513,16 @@ export function flattenOtlp(payload, opts = {}) {
         };
         if (ts > s.last_seen_at) s.last_seen_at = ts;
         // geo RGPD-friendly : timezone (attrs communs SDK v0.3) -> pays, null si inconnue
-        if (s.geo_country == null && a["mip.tz"]) s.geo_country = tzToCountry(a["mip.tz"]);
+        if (s.geo_country == null && a["mip.tz"]) {
+          const pays = tzToCountry(a["mip.tz"]);
+          if (pays) {
+            s.geo_country = pays;
+            // La provenance est posée DANS LE MÊME GESTE que la valeur. Les
+            // séparer laisserait exister un pays sans origine, c'est-à-dire un
+            // chiffre dont on ne sait plus ce qu'il mesure.
+            s.geo_source = "timezone";
+          }
+        }
         // back-fill : la 1re span a pu créer la session sans indice d'appareil, ou
         // depuis une resource sans user-agent. Famille et version se complètent
         // d'un bloc : jamais la version d'un système sous le nom d'un autre.

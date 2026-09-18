@@ -63,6 +63,32 @@ export const SUBPROCESSORS: { name: string; role: string; location: string }[] =
   { name: "[Fournisseur e-mail — à brancher]", role: "Envoi des alertes e-mail (si activé)", location: "[à préciser — UE recommandé]" },
 ];
 
+/**
+ * Sources de données tierces embarquées, et l'attribution que leur licence EXIGE.
+ *
+ * DB-IP IP to Country Lite est distribuée sous CC BY 4.0 : la licence autorise
+ * l'usage, y compris commercial, À CONDITION de créditer la source de façon
+ * visible. Un fichier de licence au fond du dépôt ne satisfait pas cette
+ * condition — c'est pourquoi la mention est rendue dans les mentions légales
+ * publiques, servies sans authentification.
+ *
+ * Elle figure ici MÊME QUAND LA BASE N'EST PAS DÉPOSÉE : la console ne sait pas
+ * ce que porte l'image du service d'ingestion, et une attribution en trop est
+ * inoffensive là où une attribution manquante est un manquement de licence.
+ *
+ * Ce n'est PAS un sous-traitant : aucune donnée ne part chez DB-IP. Le fichier
+ * est lu en mémoire de notre propre processus, et aucune adresse IP ne sort.
+ */
+export const DATA_SOURCES: { name: string; use: string; licence: string; attribution: string; url: string }[] = [
+  {
+    name: "DB-IP IP to Country Lite",
+    use: "Estimation du pays d'origine du trafic à partir de l'adresse réseau, résolue localement (aucune adresse IP n'est transmise ni stockée)",
+    licence: "CC BY 4.0",
+    attribution: "IP Geolocation by DB-IP",
+    url: "https://db-ip.com",
+  },
+];
+
 export interface LegalDocLink {
   slug: string;
   title: string;

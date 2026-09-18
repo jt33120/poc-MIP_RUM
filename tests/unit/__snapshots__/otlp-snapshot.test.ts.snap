@@ -171,6 +171,8 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
       "device_type": "desktop",
       "error_sample_rate": 1,
       "geo_country": "FR",
+      "geo_db_version": null,
+      "geo_source": "timezone",
       "has_error": true,
       "is_bot": false,
       "last_seen_at": 2025-10-09T08:53:27.000Z,

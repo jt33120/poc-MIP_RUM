@@ -27,6 +27,9 @@ import {
   lireRequeteUpload,
   verifierJetonUpload,
 } from "./sourcemap-upload.mjs";
+import { creerGeoip } from "./geoip-db.mjs";
+import { ipClient, parseSourceIp } from "../supabase/functions/_shared/client-ip.mjs";
+import { appliquerGeo } from "../supabase/functions/_shared/geoip.mjs";
 import { corsHeaders as buildCors, originsFromRegistry, REPLAY_ALLOW_HEADERS } from "../supabase/functions/_shared/cors.mjs";
 import { createLogger } from "../supabase/functions/_shared/log.mjs";
 import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "../supabase/functions/_shared/limits.mjs";
@@ -88,6 +91,22 @@ export function creerReceveur(pool, opts = {}) {
 
   const auth = createPgAuth(pool, { requireApiKey, rateLimitPerMin, log });
   const limiteurSourcemaps = creerLimiteurUpload();
+
+  // GeoIP OPTIONNEL (P8.7). Deux déclarations, toutes deux inertes par défaut :
+  // `GEOIP_IP_SOURCE` dit d'où lire l'adresse du client (rien, sans elle), et la
+  // base DB-IP est cherchée dans `apps/ingest/data`. Sans l'une ou l'autre, le
+  // pays continue d'être estimé d'après le fuseau, exactement comme avant.
+  //
+  // LE CHARGEMENT NE BLOQUE PAS : `creerGeoip` rend tout de suite un résolveur
+  // qui répond `null` tant que la base n'est pas indexée. Les lots reçus pendant
+  // ce temps gardent leur pays de fuseau — jamais une attente, jamais un rejet.
+  const sourceIp = opts.sourceIp ?? parseSourceIp(process.env.GEOIP_IP_SOURCE);
+  if (sourceIp.mode === "invalide") {
+    log.warn("GEOIP_IP_SOURCE ignoré", { valeur: sourceIp.brut, attendu: "none|socket|railway|xff:<n>" });
+  }
+  const geoip = opts.geoip ?? (sourceIp.mode === "none" || sourceIp.mode === "invalide"
+    ? null
+    : creerGeoip({ log }));
 
   // Tampon des derniers payloads : uniquement pour les assertions de bout en
   // bout. Il retient de la donnée en clair, donc il reste éteint par défaut.
@@ -180,10 +199,17 @@ export function creerReceveur(pool, opts = {}) {
     const refus = await gardes(rows.apiKeys, entetes);
     if (refus) return repondre(res, refus.statut, refus.corps, refus.entetes);
 
-    // Géo sans jamais stocker d'IP : mip.tz d'abord (posé par flattenOtlp),
-    // repli sur l'en-tête pays du CDN quand il y en a un devant.
-    const pays = entete(req, "x-vercel-ip-country") ?? entete(req, "cf-ipcountry");
-    if (pays) for (const s of rows.sessions) s.geo_country = s.geo_country ?? pays;
+    // Géo SANS JAMAIS STOCKER D'IP. L'adresse ne vit que le temps de cet appel :
+    // elle n'est pas écrite, pas journalisée, pas mise en cache, pas attachée à
+    // une clef d'erreur. Seuls sortent d'ici un code pays et sa provenance.
+    //
+    // Ordre : GeoIP local (si une base est chargée et une façade déclarée), sinon
+    // le fuseau déjà posé par flattenOtlp, sinon l'en-tête pays d'un CDN.
+    const resolu = geoip ? geoip.resoudre(ipClient(req, sourceIp)) : null;
+    appliquerGeo(rows.sessions, {
+      geoip: resolu,
+      cdn: entete(req, "x-vercel-ip-country") ?? entete(req, "cf-ipcountry"),
+    });
 
     // Erreurs RÉELLEMENT insérées (RETURNING) ; inconnues tant qu'un lot différé
     // n'est pas drainé.
@@ -334,6 +360,15 @@ export function creerReceveur(pool, opts = {}) {
           status: "ok",
           service: nom,
           identity_hash: { configured: typeof identityHashSecret === "string" && identityHashSecret.length > 0 },
+          // P8.7 : un exploitant doit pouvoir lire, sans fouiller les variables,
+          // si le pays est résolu localement et avec QUELLE livraison. `etat`
+          // vaut `eteint` par défaut, et c'est un état normal, pas une panne.
+          geoip: {
+            source_ip: sourceIp.mode,
+            etat: geoip?.etat() ?? "eteint",
+            version: geoip?.version() ?? null,
+            raison: geoip?.raison() ?? null,
+          },
         }, entetes);
       }
       // Readiness : la base répond. Distincte de /health à dessein — un
