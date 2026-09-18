@@ -73,7 +73,7 @@ La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) re
 | `packages/rum-sdk` | SDK Web (émetteur OTLP maison + web-vitals, 22,0 Ko gzip), build esbuild IIFE `mip-rum.js` |
 | `packages/agent-node` | Agent backend **zéro-config** Node.js (`node -r @mip/agent-node/register`) : span `http.server` sans changement de code, plus une API publique (`track`, `captureException`, `withContext`, `flush`) qui réutilise la même instrumentation |
 | `packages/rum-mobile` | SDK **React Native** : crashes, écrans, réseau (traceparent), événements → mêmes tables (`device_type=mobile`) |
-| `apps/ingest` | Receiver OTLP `/v1/traces`, `/v1/logs`, `/v1/replay`, upload de source maps `/v1/sourcemaps` (edge functions Deno + dev-server Node) + SQL (schéma, migrations) |
+| `apps/ingest` | Receiver OTLP `/v1/traces`, `/v1/logs`, `/v1/replay`, upload de source maps `/v1/sourcemaps` + SQL (schéma, migrations). **En production, le collecteur actif est la route Next de la console** ; le receveur autonome sert l'auto-hébergement (voir [infra/docker/](infra/docker/)) et [docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md) |
 | `apps/sync-synthetic` | Synchro synthétique → `syn_snapshot` (interface `SyntheticSource` : seed ou export mippoc) |
 | `apps/extension` | Extension navigateur MV3 (injection du SDK par domaine enregistré) |
 | `apps/console` | Console RUM Live (Next.js 15) : Overview, Pages, Erreurs, Sessions, Tracing (waterfall), Corrélation, Logs, IA… |
