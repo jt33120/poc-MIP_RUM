@@ -402,3 +402,112 @@ suite("P7.2 — un même événement acquitté deux fois ne compte qu'une occurr
     expect(hash).toBe(reference);
   }, 60_000);
 });
+
+// ────────────────── P7.3 — causalité, erreurs JS et démarrage ────────────────
+
+/** Runtime mobile avec horloge monotone pilotée : la fenêtre causale se mesure. */
+async function sdkCausal(appId: string) {
+  vi.resetModules();
+  const lots: Lot[] = [];
+  let t = 0;
+  const horloge = { nowMs: () => t, avance: (ms: number) => { t += ms; } };
+  vi.stubGlobal("fetch", async (_url: string, init: { body: string }) => {
+    lots.push(JSON.parse(init.body));
+    return { status: 202 };
+  });
+  const sdk = await import("../../packages/rum-mobile/src/index");
+  sdk.init({
+    endpoint: "https://ingest.test/v1/traces",
+    appId,
+    apiKey: "mip_mob_p73",
+    clientId: "acme",
+    env: "prod",
+    appVersion: "3.1.0",
+    platform: "android",
+    osVersion: "14",
+    flushIntervalMs: 3_600_000,
+    adapters: { monotonicClock: horloge },
+  });
+  return { sdk, lots, horloge };
+}
+
+suite("P7.3 — la causalité mobile jusqu'à PostgreSQL", () => {
+  it("un appui relie ses effets, et ce qui suit la fenêtre reste non attribué", async () => {
+    await nettoyer();
+    const { sdk, lots, horloge } = await sdkCausal(APP);
+    sdk.screen("Panier");
+    const props = sdk.instrumentPressable({
+      mipActionName: "checkout.payer",
+      accessibilityLabel: "Payer la commande",
+      onPress: () => { sdk.track("paiement_lance", { montant: 42 }); },
+    });
+    (props as { onPress: () => void }).onPress();
+
+    // Hors fenêtre : un travail tardif n'est PAS rattaché au dernier appui.
+    horloge.avance(5_001);
+    sdk.track("beaucoup_plus_tard", { n: 1 });
+    await sdk.flushNow();
+    const rows = await ingerer(lots[lots.length - 1]);
+    expect(rows.rejected).toBe(0);
+
+    // L'action racine existe bel et bien en base, avec le type du geste observé.
+    const action = (await pool.query(
+      "select action_id, name, type from rum_action where app_id=$1", [APP],
+    )).rows[0];
+    expect(action).toMatchObject({ name: "checkout.payer", type: "click" });
+
+    const parNom = Object.fromEntries((await pool.query(
+      "select name, action_id from rum_event where app_id=$1", [APP],
+    )).rows.map((r) => [r.name, r.action_id]));
+    expect(parNom["paiement_lance"]).toBe(action.action_id);
+    // La preuve décisive : l'effet tardif ne DÉSIGNE PAS l'action.
+    expect(parNom["beaucoup_plus_tard"]).toBeNull();
+
+    // Et le libellé affiché n'a jamais été collecté : seul le nom déclaré l'est.
+    const dump = (await pool.query(
+      "select coalesce(string_agg(t::text,'|'),'') d from rum_action t where app_id=$1", [APP],
+    )).rows[0].d;
+    expect(dump).not.toContain("Payer la commande");
+  }, 60_000);
+
+  it("un JS fatal est enregistré fatal et non intercepté, sans être un crash natif", async () => {
+    await nettoyer();
+    let handler: ((e: unknown, fatal: boolean) => void) | null = null;
+    vi.stubGlobal("ErrorUtils", {
+      getGlobalHandler: () => handler,
+      setGlobalHandler: (h: (e: unknown, fatal: boolean) => void) => { handler = h; },
+    });
+    const { sdk, lots } = await sdkCausal(APP);
+    handler!(new Error("plantage JS"), true);
+    await sdk.flushNow();
+    await ingerer(lots[lots.length - 1]);
+
+    const erreur = (await pool.query(
+      "select kind, handled, is_fatal, error_source from rum_error where app_id=$1", [APP],
+    )).rows[0];
+    // `is_fatal` valait NULL — « inconnu » — pour tous les crashes mobiles avant
+    // ce lot : le handler recevait la fatalité du moteur et la jetait.
+    expect(erreur).toMatchObject({
+      kind: "crash", handled: false, is_fatal: true, error_source: "react_native_js",
+    });
+    vi.stubGlobal("ErrorUtils", undefined);
+  }, 60_000);
+
+  it("le démarrage JS est un timing nommé, lisible sans colonne nouvelle", async () => {
+    await nettoyer();
+    const { sdk, lots, horloge } = await sdkCausal(APP);
+    horloge.avance(742);
+    expect(sdk.markFirstScreenRendered()).toBe(true);
+    await sdk.flushNow();
+    await ingerer(lots[lots.length - 1]);
+
+    const timing = (await pool.query(
+      "select name, event_type, timing_ms from rum_event where app_id=$1", [APP],
+    )).rows[0];
+    // Aucune migration : P7.5 lit `rum_event` par son nom, comme n'importe quel
+    // autre timing P2.
+    expect(timing).toMatchObject({
+      name: "js_start_to_first_screen_ms", event_type: "timing", timing_ms: 742,
+    });
+  }, 60_000);
+});
