@@ -5,6 +5,7 @@
   "description": "POC MIP RUM — Real User Monitoring OpenTelemetry-native (hybride : OTLP/HTTP JSON + Postgres)",
   "scripts": {
     "build": "pnpm -r build",
+    "build:sdk": "pnpm --filter \"@mip/rum-sdk...\" --filter \"@mip/rum-mobile...\" --filter \"@mip/agent-node...\" build",
     "test:unit": "vitest run tests/unit",
     "test:e2e": "playwright test",
     "test:sql": "vitest run tests/integration --no-file-parallelism",

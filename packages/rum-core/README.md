@@ -29,8 +29,13 @@ dans l'autre le jour où les deux cohabitent dans une WebView.
 ## Build et consommation
 
 ```sh
+pnpm build:sdk                      # cœur PUIS runtimes, dans l'ordre topologique
 pnpm --filter @mip/rum-core build   # esbuild -> dist/index.{js,mjs} ; tsc -> dist/*.d.ts
 ```
+
+Un runtime ne se construit jamais seul : le suffixe `...` du filtre pnpm
+(`pnpm --filter "@mip/rum-sdk..." build`) entraîne ses dépendances, donc ce
+paquet. `pnpm build:sdk` le fait pour les trois d'un coup.
 
 `exports` pointe sur `dist/`, jamais sur `src/` : un consommateur n'a jamais à
 compiler du TypeScript qui ne lui a pas été publié. Les trois runtimes

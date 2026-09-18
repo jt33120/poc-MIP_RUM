@@ -45,14 +45,12 @@ jobs:
       - name: Install (lockfile gelé)
         run: pnpm install --frozen-lockfile
 
-      # P7.1 — les quatre paquets SDK, dans l'ordre topologique imposé par leurs
-      # dépendances workspace : `@mip/rum-core` (primitives pures) est construit
-      # avant les runtimes qui l'inlinent. `pnpm` s'en charge, mais la liste doit
-      # rester explicite : la console (`next build`) reste au job E2E.
+      # P7.1 — un seul point d'entrée pour les paquets SDK. Le suffixe `...` du
+      # filtre pnpm entraîne les DÉPENDANCES : `@mip/rum-core` est construit
+      # avant les runtimes qui l'inlinent, sans que personne ait à connaître
+      # l'ordre. La console (`next build`) reste au job E2E.
       - name: Build des SDK (cœur partagé, web + budget taille, React Native, agent Node)
-        run: >-
-          pnpm --filter @mip/rum-core --filter @mip/rum-sdk
-          --filter @mip/rum-mobile --filter @mip/agent-node build
+        run: pnpm build:sdk
 
       # Empêche l'extension d'expédier un SDK périmé (vendor/mip-rum.js) ou une
       # version de manifest qui dérive du SDK. Nécessite le build SDK ci-dessus.
@@ -184,8 +182,9 @@ jobs:
             -c 'create database mip_rum_pre_v71'
           pnpm test:sql
 
+      # `...` entraîne `@mip/rum-core`, dont le SDK web inline les primitives.
       - name: Build SDK (servi par demo/serve.mjs et la console)
-        run: pnpm --filter @mip/rum-sdk build
+        run: pnpm --filter "@mip/rum-sdk..." build
 
       # le test corrélation attend des runs robot en face des données RUM générées par le test
       - name: Seed synthétique (app demo-app, 24 h de runs)
