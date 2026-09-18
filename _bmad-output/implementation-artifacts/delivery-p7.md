@@ -10,11 +10,20 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 
 | Sous-lot | PR | Migration | Implémenté | Testé localement | CI | Déployé | Vérifié sur vraie app |
 |---|---|---|---|---|---|---|---|
-| P7.1 — primitives pures et enveloppe RN | — | **aucune** | oui | oui | — | non | non |
+| P7.1 — primitives pures et enveloppe RN | [#199](https://github.com/jt33120/poc-MIP_RUM/pull/199) | **aucune** | oui | oui | verte | non | non |
 | P7.2 — consentement, visiteur, transport | [#202](https://github.com/jt33120/poc-MIP_RUM/pull/202) | **aucune** | oui | oui | verte | non | non |
 | P7.3 — navigation, actions, erreurs JS | [#204](https://github.com/jt33120/poc-MIP_RUM/pull/204) | **aucune** | oui | oui | verte | non | non |
-| P7.4 — API Node et FastAPI | — | — | non | — | — | — | — |
-| P7.5 — `/mobile`, API/MCP, distribution | — | — | non | — | — | — | — |
+| P7.4 — API Node et FastAPI | [#200](https://github.com/jt33120/poc-MIP_RUM/pull/200) | **aucune** | oui | oui | verte | non | non |
+| P7.5 — `/mobile`, API/MCP, distribution | à ouvrir | **v82** | oui | oui | à vérifier | non | non |
+
+« Déployé » et « Vérifié sur vraie app » restent à **non** pour les cinq :
+aucune de ces livraisons n'a été poussée en production, et **aucune n'a tourné
+sur un appareil**. C'est le périmètre de P8.5, et l'écran `/mobile` l'affiche
+plutôt que de le taire — voir la clôture en fin de fichier.
+
+P7.4 n'a pas de section propre dans ce journal : il a été livré en parallèle de
+P7.1, avant l'ouverture de ce fichier. Sa PR (#200) et ses commits
+(`55caeab`, `f3ca72c`) font foi.
 
 ## P7.1 — primitives pures et enveloppe RN
 
@@ -539,3 +548,356 @@ aucune migration :
 du modèle `mobile_capabilities` de P7.5 — pour les valeurs `js_errors` et `screen_tracking`.
 Il reste un **déclaratif client** : comme la spec §4 P7.5 l'exige, `verified_at` ne peut venir
 que d'une recette opérateur, jamais de ce booléen.
+
+## P7.5 — `/mobile`, API/MCP et distribution
+
+Démarré le 18/09/2026 sur `feat/rum-runtime-p7-5`, branchée sur `origin/master`
+— qui contenait déjà P7.1 (#199), P7.4 (#200), P7.2 (#202) et P7.3 (#204), tous
+fusionnés. **Migration `v82`** : v80 était le maximum au démarrage, et v81 a été
+prise par P8.1 (#205), fusionnée pendant ce lot.
+
+**Le défaut que ce sous-lot existe pour empêcher tient en une phrase.** Une
+console qui ne reçoit aucun crash natif ne peut pas distinguer « cette
+application ne plante pas » de « rien ne mesure ses plantages ». Les deux rendent
+zéro ligne. Le premier est une bonne nouvelle ; le second est un angle mort — et
+c'est celui que P7 laisse ouvert, en entier, pour tout ce qui est natif. Un
+tableau de bord qui affiche « 0 crash » dans le second cas ne se trompe pas d'un
+peu : il dit exactement le contraire de la vérité, avec l'autorité d'un chiffre.
+
+### Décisions d'implémentation
+
+- **Le runtime est DÉCLARÉ, pas déduit** — et c'est la décision structurante du
+  lot. Sans colonne, la seule façon de désigner « les sessions React Native »
+  était `os in ('iOS','Android') and browser is null`. C'est faux dans les deux
+  sens : un navigateur mobile que le parseur ne sait pas nommer laisse `browser`
+  à NULL et serait compté React Native. L'information EXISTAIT déjà à
+  l'ingestion — `runtimeClientMip()` (otlp.mjs) lit le `service.name` constant
+  de nos SDK — et elle était calculée puis jetée. `rum_session.runtime` la garde.
+  Un taux dont le dénominateur est une devinette n'est pas un taux.
+- **Trois états, pas deux.** Une ligne `declared = true` dit « le SDK a installé
+  et observe » ; une ligne `declared = false` dit « il a REGARDÉ et n'a rien pu
+  installer » ; l'absence de ligne dit « personne n'a rien dit ». Fondre les deux
+  derniers effacerait la différence entre « on sait que ce n'est pas mesuré » et
+  « on ne sait pas ». L'écran les rend par « Non collecté » et « Inconnu », et
+  jamais par 0.
+- **`verified_at` est structurellement hors de portée du client.** L'upsert du
+  writer ne cite ni `verified_at`, ni `verified_by`, ni `verified_note` dans son
+  `do update set` ; `console_ro` n'a que `select` sur la table. Un test SQL pose
+  une vérification, réingère une déclaration contradictoire, et prouve que la
+  date ne bouge pas. C'est là, et nulle part ailleurs, que se joue la règle
+  « une capacité activée n'est pas un test natif passé ».
+- **Les trois capacités natives sont TOUJOURS `unavailable`, et ce n'est pas
+  configurable.** Les rendre optionnelles ne les rendrait pas observables : cela
+  donnerait seulement à une application le moyen de déclarer une collecte qui
+  n'a pas lieu, et à la console d'afficher « 100 % sans crash » sur un silence.
+- **Le taux refuse de se calculer quand il mentirait.**
+  `js_error_free_session_rate` vaut `null`, avec sa raison, dans trois cas :
+  aucune session (pas de dénominateur), capacité déclarée indisponible, aucune
+  déclaration. Le deuxième est le cas qui compte : 10 sessions et 0 erreur
+  observée donneraient « 100 % », et ce serait l'inverse de la vérité.
+- **Le libellé ne dit pas « crash-free », et le calcul non plus.** Une erreur
+  JavaScript non interceptée arrête le bundle et affiche la redbox ; elle ne tue
+  pas le processus natif. La carte s'appelle « Sessions sans erreur JS », et
+  l'écran démonte la confusion en toutes lettres plutôt que de l'ignorer. L'e2e
+  vérifie que le mot « crash-free » n'apparaît nulle part sur la page.
+- **La réponse d'API n'a AUCUN champ pour les crashes natifs, les ANR et le
+  démarrage natif.** Pas même un `null` : un champ laisserait croire que la
+  mesure existe et qu'elle est vide. `data.capabilities` porte l'information.
+- **`platform` n'est pas une dimension nouvelle** : c'est `os`, restreint aux
+  deux valeurs qu'un runtime React Native peut rendre, et INTERSECTÉ avec un
+  `os=` déjà présent. `?os=iOS&platform=android` rend zéro ligne — la réponse
+  exacte — et jamais l'un des deux par écrasement. Une seconde dimension aurait
+  été une seconde vérité à maintenir.
+- **`/mobile` applique MOINS de dimensions que ses jeux de données n'en portent,
+  et c'est délibéré.** Ses mesures sont des taux sur une cohorte de sessions :
+  `route`, `service`, `env`, `country` et `browser` filtreraient le numérateur
+  sans filtrer le dénominateur. D'où `Surface.only`, une liste blanche ajoutée
+  au contrat P6 : une dimension absente de la liste est REFUSÉE avec sa raison
+  (400 `unsupported_dimension` sur l'API, écran de reprise sur la page), jamais
+  appliquée à moitié.
+- **La `release` filtre la COHORTE, contre le classement du contrat P6.** P6
+  range `release` en dimension d'occurrence, pour une raison écrite dans
+  `query-compiler.ts` : sur le web, une mise en production pendant la visite
+  change la release, et la relire sur la session réécrirait le passé. Un binaire
+  mobile, lui, ne se remplace pas sous les pieds de l'utilisateur : changer de
+  version exige un redémarrage, donc une nouvelle session. `rum_session.release`
+  est ici un fait exact, et c'est la seule façon d'avoir un taux dont les deux
+  termes parlent de la même population.
+- **L'index est créé sur MESURE, et contre l'intuition de départ.** On pensait
+  qu'il ne servirait à rien : `idx_session_app_last_seen` (v61) borne déjà les
+  sessions par app. C'était faux — cet index porte sur `last_seen_at`, et la
+  cohorte borne sur `started_at`. Il n'y avait donc AUCUN index utilisable, et
+  l'écran parcourait `rum_session` en entier. Mesuré sur 120 000 sessions : 28 →
+  3,5 ms sur 24 h, 48 → 26 ms sur 7 j, plan vérifié dans les trois scénarios.
+  Le banc (`rum-mobile-bench-p75`) retire l'index, mesure, le recrée, remesure,
+  et échoue si le planificateur cesse de le choisir.
+- **La déclaration est rafraîchie AVANT CHAQUE ENVOI, pas à `init`.** Un
+  adaptateur de navigation abonné après coup, un stockage qui ne répond qu'au
+  premier accès, une file durable qui tombe : chacun change la réponse. Figée à
+  `init`, la déclaration décrirait un état qui n'a duré qu'un instant.
+- **Le vocabulaire est fermé, et sa copie est surveillée.** Le paquet React
+  Native ne peut pas importer un module Node : la liste y est recopiée, comme
+  `ERROR_SOURCES` l'est entre `otlp.mjs` et `queries-errors.ts`. Un test unitaire
+  compare les trois sources (SDK, serveur, console) — une divergence devient un
+  échec de test, pas une capacité silencieusement jetée à l'ingestion.
+- **v82 reprend `purge_rum_app` et `erase_app_data` depuis v81, pas depuis v80.**
+  `create or replace function` remplace le corps ENTIER : repartir de v80 —
+  celle qu'on avait sous les yeux — aurait effacé, sans conflit et sans alerte,
+  le verrou d'application et la suspension d'ingestion que P8.1 venait de poser.
+  C'est exactement ce qui s'est produit entre v79 et v80. La règle est écrite en
+  tête du fichier : on repart de la dernière définition présente, jamais de celle
+  qu'on connaît.
+
+### Écarts assumés
+
+- **`mobile_capabilities` n'entre PAS dans `DSAR_CHILD_TABLES`, et la consigne
+  demandait l'inverse.** Raison : ces tables sont interrogées par
+  `where session_id in (…)`, et cette table n'a pas de `session_id` — l'y ajouter
+  ferait ÉCHOUER l'effacement d'une personne, pas le compléter. Elle ne porte ni
+  session, ni visiteur, ni identité, ni message : une app, un runtime, une
+  release et un nom de capacité. Elle est donc traitée par l'effacement
+  d'APPLICATION (`erase_app_data`) et par la rétention (`purge_rum_app`), et
+  trois tests le prouvent — dont un qui vérifie que la table ne porte aucune des
+  colonnes d'ancrage DSAR. Le garde-fou de P8.1 (`dsar-concurrency-sql` compare
+  `erase_app_data` au catalogue des tables portant `app_id`) l'aurait de toute
+  façon imposé : c'est lui qui rend l'oubli impossible, et il passe.
+- **Aucune matrice de compatibilité n'est déclarée**, et c'est le résultat
+  demandé plutôt qu'un manque : [MATRICE-RUNTIME.md](../../packages/rum-mobile/MATRICE-RUNTIME.md)
+  liste ce qui a été exécuté (Node 26, PostgreSQL 15.18, Chromium, le paquet
+  construit installé dans un consommateur isolé) et ce qui ne l'a pas été —
+  React Native, React, Hermes, JSC, Metro, iOS, Android, Fabric, Paper, React
+  Navigation, Expo. Aucun n'a été lancé. Déclarer « compatible RN 0.72 à 0.76 »
+  reviendrait à extrapoler d'un test sous doubles vers un moteur, un bundler et
+  un système d'exploitation que personne n'a exécutés.
+- **Expo n'est pas documenté**, pour la même raison : la spec demande de ne le
+  documenter que s'il est réellement testé. Rien ne s'y oppose *a priori* — le
+  paquet est du JavaScript sans dépendance native — mais « rien ne s'y oppose »
+  n'est pas « vérifié ».
+- **Aucune publication npm ni store, et ce n'est pas supposé autorisé.** Le
+  paquet reste `private: true`. Le dépôt et le build sont prêts :
+  `verify-sdk-packaging.mjs` installe l'artefact réellement produit dans un
+  consommateur isolé et le charge en CJS, en ESM et en types (36 contrôles).
+  Ce qui manque n'est pas technique : **registre cible (public ou privé), compte
+  de publication, nom définitif du paquet, politique de versions et de
+  dépréciation** — quatre décisions, aucune prise. Elles ne se déduisent pas.
+- **Aucune interface d'opérateur pour renseigner `verified_at`.** La colonne, sa
+  contrainte et son affichage existent ; son écriture se fait aujourd'hui par
+  `update` direct, documenté. Ouvrir une mutation console demanderait un droit
+  RBAC nouveau (« marquer une capacité vérifiée ») qui n'existe pas et ne figure
+  dans aucune des six cases. `console_ro` n'a que `select` sur la table : la
+  garantie tient sans l'interface, l'inverse ne serait pas vrai.
+- **`packages/rum-mobile/src/index.ts` et `core.ts` sont modifiés** au-delà de la
+  seule déclaration : `MobileConfig` gagne un champ `capabilities`, `flushInterne`
+  le rafraîchit, et `getDiagnostics()` gagne trois champs. Aucun signal, aucune
+  navigation, aucune interaction, aucune erreur n'a été retouchée. Le type de
+  `nativeCapabilities` passe de `string[] | null` toujours `null` à un tableau
+  réellement rempli : personne ne pouvait en dépendre, puisqu'il n'avait jamais
+  de valeur.
+- **`apps/ingest/lib/pg-ingest.mjs` et `ingest-differe.mjs` sont touchés**, alors
+  que P8.1 y travaillait en parallèle. Le strict minimum : une entrée
+  `capabilities` dans la déstructuration de `writeRowsWithClient`, un appel à
+  `ecrireCapacites` dans la transaction du lot, `runtime` ajouté aux colonnes
+  optionnelles de `rum_session` et à sa clause `on conflict`, et une ligne dans
+  `completer()` du drain différé — sans laquelle le chemin différé perdrait les
+  déclarations en silence. Le conflit de fusion sur `writeRowsWithClient` a été
+  résolu en gardant la signature de P8.1 (client fourni, verrou d'app) et en y
+  ajoutant le seul paramètre nouveau.
+- **Le bundle React Native grossit de 1,6 Kio gzip** (22,4 → 24,0 Kio), pour un
+  module de 120 lignes et un attribut de resource. Aucun budget n'est défini sur
+  ce paquet ; les 35 Kio gzip portent sur le SDK web, **inchangé à 22,1 Kio**.
+- **`analytics-rollups-sql.test.ts` est INSTABLE au passage d'une heure ronde.**
+  Constaté deux fois pendant ce lot, à 12:59:54 et 13:00:38 : quatre tests
+  échouent, puis repassent au verdict suivant sur la MÊME base. Le test attend
+  neuf mesures dont « la neuvième est celle de l'heure EN COURS » ; une exécution
+  à cheval sur la bascule en compte huit. Vérifié comme **antérieur à ce lot** :
+  la même base sans v82 échoue de la même façon à la même minute, et passe deux
+  minutes plus tard. Il n'est pas corrigé ici — c'est du P6.6 — mais il est
+  consigné : la CI peut rougir sur ce test sans qu'aucun code n'ait changé.
+- **Aucune recette sur appareil réel.** La couverture native (crashes natifs,
+  ANR, démarrage natif) reste « non vérifiée » : elle appartient à P8.5. C'est
+  précisément ce que l'écran affiche, plutôt que de le taire.
+
+### Preuves locales
+
+| Preuve | Résultat |
+|---|---|
+| `pnpm exec vitest run tests/unit --exclude '**/.claude/**'` | **163 fichiers, 2 279 tests verts** (161/2 223 sur la base P7.3 ; +2 fichiers et +56 tests, dont P8.1 fusionné entre-temps) |
+| dont `tests/unit/rum-mobile-p75.test.ts` | 28 tests — vocabulaire, déclaration, validation serveur, trois états, taux, plateforme, transmission |
+| dont `tests/unit/surfaces.test.ts` | +3 tests — la liste blanche de `/mobile` et ses refus |
+| `SQL_TEST_DATABASE_URL=… pnpm test:sql` | **22 fichiers, 284 tests verts** (20/243 sur la base P7.3), 3 fichiers / 29 tests ignorés |
+| dont `tests/integration/rum-mobile-p75-sql.test.ts` | 19 tests — clé `nulls not distinct`, `verified_at` intouchable, cohorte, tenants, taux, démarrage, écrans, requêtes, périmètre vide, effacement, rétention, exclusion DSAR, schéma antérieur |
+| dont `tests/integration/rum-runtime-parity-sql.test.ts` | 13 tests (8 en P7.3 : +5) — paquet réel → parseur → writer → API, A/B, vieux SDK, erreur backend sans session, zéro double comptage |
+| `pnpm test:isolation` | isolation multi-tenant PROUVÉE, `mobile_capabilities` comprise (portée A, portée B, portée vide, et lecture seule pour `console_ro`) |
+| `pnpm --filter console exec tsc --noEmit` | aucune erreur |
+| `pnpm --filter console build` | `/mobile` et `/api/v1/mobile/summary` construits |
+| `pnpm -r build` | tous les paquets construits, console incluse |
+| `node scripts/verify-sdk-packaging.mjs` | **36 contrôles verts** (33 en P7.3), surface publique à **28 exports** |
+| `pnpm --filter @mip/rum-sdk size-check` | `dist/mip-rum.js` 63,6 Kio brut / **22,1 Kio gzip** — **inchangé** |
+| `pnpm exec playwright test tests/e2e/mobile-console.spec.ts --workers=1` | **2 tests verts** — badges, chiffres, 390 px, clavier, filtre de plateforme, données manquantes, drill-down, filtre refusé, API |
+| `BENCH_DATABASE_URL=… … rum-mobile-bench-p75` | index choisi dans les 3 scénarios ; 28 → 3,5 ms (24 h), 48 → 26 ms (7 j) |
+
+Bases jetables dédiées sur le PostgreSQL 15 local (port 5433) : `p75_migration`
+(chaîne complète + rejeu), `p75_prev80` (schéma de version précédente, v82 seule
+appliquée dessus), `p75_sql` (recette), `p75_rls` (isolation), `p75_bench`
+(banc), toutes supprimées après la recette. `DATABASE_URL` n'a jamais été
+utilisée pour les tests ; l'e2e a tourné sur la base locale `mip_rum` du
+conteneur de développement, comme le prévoit `playwright.config.ts`.
+
+### La migration v82, et ce qu'elle a été testée pour faire
+
+| Contrôle | Résultat |
+|---|---|
+| Chaîne complète sur base vierge | appliquée, `schema.sql` + 40 migrations |
+| Rejeu de v82 sur la même base | idempotent (aucune erreur, aucun objet dupliqué) |
+| v82 seule sur un schéma de version précédente (v80) | appliquée ; les sessions existantes prennent `runtime = NULL`, « Inconnu », jamais « web » |
+| `nulls not distinct` (PostgreSQL 15) | trois déclarations sans release → UNE ligne, état à jour |
+| `on conflict` sur une clé à NULL | l'inférence par colonnes trouve bien l'index |
+| Contrainte « note sans date de vérification » | refusée |
+| Contrainte `first_declared_at <= last_declared_at` | refusée quand on recule la seule dernière date |
+| RLS et droits | portée A / portée B / portée vide ; `console_ro` en lecture seule, `verified_at` hors de portée |
+| `erase_app_data` | emporte les capacités de l'app, et seulement les siennes |
+| `purge_rum_app` | retire une déclaration qu'aucun lot ne rafraîchit plus, garde l'active |
+| Catalogue P8.1 des tables app-scopées | `mobile_capabilities` traitée par l'effacement |
+| Aucune projection, aucun quota | un lot rejoué écrit 6 lignes, pas 12 ; rien dans `rum_event_index` |
+| Index | mesuré, choisi par le planificateur, `predeploy-v82-indexes.sql` fourni pour une table chaude |
+
+### Recette exigée, et où elle est prouvée
+
+| Scénario | Preuve |
+|---|---|
+| Filtres et plateforme | `mobile-console` e2e : `platform=android` change la cohorte, le taux et les écrans |
+| Données manquantes | `mobile-console` e2e : release inexistante → 0 session, « Non calculable » et sa raison |
+| Drill-down vers une issue | `mobile-console` e2e : lien vers `/errors/issues` avec `source=react_native_js` et les filtres |
+| Clavier | `mobile-console` e2e : le contrôle « Plateforme » est labellisé, focusable, et la série a son alternative textuelle |
+| Largeur mobile | `mobile-console` e2e : aucun débordement horizontal à 390 px |
+| Payload du VRAI paquet → parseur → writer → API | `rum-runtime-parity-sql` : six capacités écrites, runtime posé, console lisant la même chose |
+| A/B | `rum-runtime-parity-sql` : deux apps, deux cohortes, deux jeux de déclarations |
+| Vieux SDK | `rum-runtime-parity-sql` : lot 0.3 sans `mip.capabilities` → runtime reconnu, capacités « Inconnu » |
+| Erreur backend sans session | `rum-runtime-parity-sql` : une erreur `node` sans session n'entre dans aucun compteur mobile |
+| Zéro double comptage | `rum-runtime-parity-sql` : même corps HTTP ingéré deux fois → 1 session, 1 page vue, 1 événement, 6 capacités |
+
+### Ce que l'écran affiche en « Non collecté », et pourquoi
+
+| Capacité | État affiché | Raison |
+|---|---|---|
+| Crashes natifs | **Non collecté** | aucun module natif MIP n'existe ; un crash natif n'est pas observable depuis le runtime JS, qui en est la première victime |
+| ANR | **Non collecté** | un compteur JavaScript ne sait pas distinguer un fil principal bloqué d'une application au repos |
+| Démarrage natif | **Non collecté** | le SDK ne mesure que le temps JS depuis `init()` jusqu'à un premier écran DÉCLARÉ ; ni le lancement du processus, ni le pré-main, ni l'écran de lancement |
+| Reprise hors ligne | **Non collecté** par défaut | `offline.persistent` est faux tant que P8.1 n'est pas activé en production ; une file active sur un stockage muet ne persiste rien |
+| Erreurs JS | Collecté si `ErrorUtils` est posé | sinon « Non collecté » : l'absence d'erreur n'est alors pas une absence d'erreur |
+| Suivi des écrans | Collecté si un adaptateur de navigation est abonné | sinon « Non collecté » — ce qui ne veut PAS dire « aucune page vue » : `screen()` manuel alimente toujours la table, mais la COUVERTURE n'est pas garantie |
+
+Une capacité dont aucune release ne dit rien s'affiche **« Inconnu »**, et non
+« Non collecté » : un silence n'est pas un refus.
+
+---
+
+# Clôture de P7
+
+Les cinq sous-lots sont livrés. Ce qui suit est le bilan consolidé : ce qui
+existe, ce qui est suivi, et ce qui reste **non vérifié** — la troisième liste
+étant la seule qui compte pour décider de la suite.
+
+## 1. État final des cinq sous-lots
+
+| Sous-lot | PR | Migration | Implémenté | Testé localement | CI | Déployé | Vérifié sur vraie app |
+|---|---|---|---|---|---|---|---|
+| P7.1 — primitives pures et enveloppe RN | [#199](https://github.com/jt33120/poc-MIP_RUM/pull/199) | aucune | oui | oui | verte | **non** | **non** |
+| P7.2 — consentement, visiteur, transport | [#202](https://github.com/jt33120/poc-MIP_RUM/pull/202) | aucune | oui | oui | verte | **non** | **non** |
+| P7.3 — navigation, actions, erreurs JS | [#204](https://github.com/jt33120/poc-MIP_RUM/pull/204) | aucune | oui | oui | verte | **non** | **non** |
+| P7.4 — API Node et FastAPI | [#200](https://github.com/jt33120/poc-MIP_RUM/pull/200) | aucune | oui | oui | verte | **non** | **non** |
+| P7.5 — `/mobile`, API/MCP, distribution | cette PR | **v82** | oui | oui | à vérifier | **non** | **non** |
+
+**Une seule migration pour tout P7**, et c'est délibéré : P7.1 à P7.4 n'écrivent
+que des attributs déjà lus par l'ingestion depuis P2/P3/P5/P6. v82 n'arrive que
+parce que `/mobile` a besoin de deux choses qui n'existaient pas — le runtime
+d'une session, et un endroit où ranger ce qu'un SDK déclare collecter.
+
+## 2. La matrice par capacité, telle que §6 du plan la demande
+
+| Capacité | Implémenté | Testé localement | Déployé | Vérifié sur vraie app | Preuve |
+|---|---|---|---|---|---|
+| Contexte global / local RN | oui | oui | non | non | `rum-mobile-p72`, `rum-runtime-parity-sql` |
+| User / account pseudonymes | oui | oui | non | non | HMAC app-scopé vérifié en base, aucune identité brute |
+| Consentement, époques, révocation | oui | oui | non | non | `rum-mobile-p72` (44 tests) |
+| Écrans (`screen` / adaptateur) | oui | oui | non | non | `rum-mobile-p73`, dédoublonnage prouvé |
+| Actions et causalité | oui | oui | non | non | `rum-mobile-p73`, `rum-actions-causal-sql` |
+| Timings, flags, erreurs déclarées | oui | oui | non | non | `rum-runtime-parity-sql` |
+| Tracing réseau et `traceOrigins` | oui | oui | non | non | `rum-mobile-p73` — liste fermée depuis v0.3 |
+| Erreurs JS non interceptées | oui | oui | non | **non** | `is_fatal` renseigné, `error_source=react_native_js` |
+| Rejets de promesses | oui | oui | non | **non** | adaptateur explicite ; `unavailable` si rien n'est branché |
+| Offline (retry borné) | oui | oui | non | non | `rum-mobile-p72` : acquittement avant retrait |
+| Offline DURABLE | oui, **désactivé** | oui | non | non | conditionné à P8.1, désormais fusionné — l'activation reste une décision |
+| API Node (`track`, `captureException`, `withContext`, `flush`) | oui | oui | non | non | P7.4, `agent-node-backend-events-sql` |
+| Contexte FastAPI (ContextVar) | oui | oui | non | non | P7.4, `python3 -m unittest` |
+| Écran `/mobile` et API/MCP | oui | oui | non | non | P7.5, `mobile-console` e2e + `rum-mobile-p75-sql` |
+| Modèle de capacités | oui | oui | non | non | P7.5, v82 |
+| **Crashes natifs** | **non** | — | — | **non** | aucun module natif ; « Non collecté » à l'écran |
+| **ANR** | **non** | — | — | **non** | idem |
+| **Démarrage natif** | **non** | — | — | **non** | seule la part JS est mesurée, et elle le dit dans son nom |
+| **Symbolication native** | **non** | — | — | **non** | P8.5 |
+
+## 3. Suivis consolidés — ce qui est ouvert et attribué
+
+1. **Recette sur appareil réel (P8.5).** Application de recette, appareil ou
+   simulateur, crash / relance / hors ligne, symboles et release exacte. Rien de
+   P7 n'a tourné sur un téléphone. C'est le suivi le plus important de cette
+   liste : il conditionne les quatre suivants.
+2. **Matrice de compatibilité (P8.5).**
+   [MATRICE-RUNTIME.md](../../packages/rum-mobile/MATRICE-RUNTIME.md) attend ses
+   cellules : version de React Native, de React, moteur et sa version, OS,
+   routeur, architecture native. Aucune n'est remplie, et aucune ne peut l'être
+   depuis ce dépôt.
+3. **`verified_at` sans interface d'opérateur (P7.5, ouvert).** La colonne, sa
+   contrainte, son affichage et sa garantie d'écriture existent ; le geste qui la
+   remplit est un `update` documenté. Une mutation console demanderait un droit
+   RBAC nouveau, qui se décide à froid.
+4. **Publication du paquet (non décidée).** Build et installation prouvés ;
+   registre cible, compte, nom définitif et politique de versions restent à
+   trancher. Ce ne sont pas des tâches techniques.
+5. **Activation du stockage durable en production (P7.2 × P8.1).** P8.1 est
+   fusionné, donc le prérequis technique est levé ; l'activation reste une
+   décision d'exploitation, application par application.
+6. **`analytics-rollups-sql` instable au passage d'une heure ronde (P6.6).**
+   Quatre tests échouent quand l'exécution est à cheval sur la bascule, et
+   repassent deux minutes plus tard sur la même base. Antérieur à P7.5, vérifié
+   comme tel. La CI peut rougir sans qu'aucun code n'ait changé.
+7. **`pnpm --filter @mip/rum-sdk exec tsc --noEmit` échoue** sur
+   `packages/rum-sdk/src/replay.ts:242` (`Uint8Array` / `BodyInit`), à
+   l'identique sur `master`. Pré-existant, non joué par la CI, hors périmètre P7.
+
+## 4. Ce qui reste NON VÉRIFIÉ, et qu'il ne faut pas présenter autrement
+
+- **Aucune ligne de P7 n'a tourné en production.** « Testé localement » n'est ni
+  « déployé » ni « vérifié ». Les cinq colonnes « Déployé » sont à non.
+- **Aucune ligne de P7 n'a tourné sur un appareil**, ni sur un simulateur, ni
+  sous Metro. Les adaptateurs sont éprouvés contre des doubles conformes à la
+  surface publique qu'ils consomment : cela prouve le contrat, pas l'intégration.
+- **Aucune version réelle de React Native, React, Hermes, JSC, iOS ou Android
+  n'a été exercée.** Aucune plage de compatibilité n'est donc déclarée.
+- **La couverture native est nulle, et c'est visible dans le produit.** Crashes
+  natifs, ANR et démarrage natif s'affichent « Non collecté » sur `/mobile`, sans
+  aucun champ correspondant dans l'API. Un taux « sans crash » ne peut pas être
+  dérivé de P7, et le seul taux affiché porte le nom de ce qu'il mesure :
+  « sessions sans erreur JS ».
+- **Un connecteur simulé n'est pas une intégration, et une erreur `ErrorUtils`
+  n'est pas un crash natif.** Le plan le disait en §6 ; P7 s'y tient.
+
+## 5. Ce que P8.5 hérite
+
+- **Le modèle de capacités est posé et prêt à recevoir le natif.** Les trois
+  valeurs `native_crashes`, `anr` et `native_start` existent dans le vocabulaire
+  fermé, des deux côtés, et sont déclarées `unavailable`. Le jour où un module
+  natif est livré, il n'y a rien à migrer : le SDK déclare `active`, la console
+  passe de « Non collecté » à « Collecté », et l'écran cesse de dire qu'il ne
+  sait pas.
+- **`verified_at` attend une recette, pas un booléen.** C'est la colonne que
+  P8.5 remplira, et le chemin d'ingestion est structurellement incapable d'y
+  toucher.
+- **AUCUNE table de crash natif n'a été créée d'avance** — la spec l'interdit, et
+  la raison est la même que partout ailleurs dans ce lot : une table vide se lit
+  comme un zéro.
+- **`rum_session.runtime` désigne déjà la population**, et `rum_error.is_fatal`
+  est renseigné depuis P7.3. Un crash natif ingéré plus tard entrera dans la même
+  cohorte, avec `error_source = 'native'`, valeur déjà prévue par l'énumération
+  de P5.1.

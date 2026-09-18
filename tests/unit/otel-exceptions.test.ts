@@ -375,7 +375,11 @@ describe("écrivain PostgreSQL — erreurs dérivées", () => {
     const rows = lignesInserees(appels);
     expect(rows).toHaveLength(1);
     expect(Object.keys(rows[0])).not.toContain("origin_signal");
-    expect(appels.some(({ sql }) => sql.includes("from rum_session"))).toBe(false);
+    // Aucun RATTACHEMENT de session : c'est la requête `for key share` qui le
+    // fait, et elle ne doit pas être émise quand les dérivées sont écartées. La
+    // lecture de portée d'application (P8.1), elle, a bien lieu — elle vérifie
+    // qu'aucun identifiant du lot n'appartient à un autre locataire.
+    expect(appels.some(({ sql }) => sql.includes("for key share"))).toBe(false);
     expect(appels.at(-1)?.sql).toBe("commit");
   });
 
@@ -393,7 +397,17 @@ describe("écrivain PostgreSQL — erreurs dérivées", () => {
     const { appels, pool } = fakePool(V70);
     expect(await writeLogs(pool, parsed.logs, parsed.errors)).toEqual({ logs: 1, erreurs: { recues: 1, inserees: 1, ignorees: 0 } });
     const ordre = appels.map(({ sql }) => sql.split(" ").slice(0, 3).join(" ")).filter((s) => !s.startsWith("select column_name"));
-    expect(ordre).toEqual(["begin", "insert into rum_log", "insert into rum_error", "commit"]);
+    // P8.1 : la transaction commence par borner l'attente puis prendre le verrou
+    // d'ingestion de l'app. L'ordre est une propriété — verrouiller APRÈS avoir
+    // lu laisserait passer un effacement concurrent.
+    expect(ordre).toEqual([
+      "begin",
+      "set local lock_timeout",
+      "select pg_advisory_xact_lock($1::int4, hashtext($2)::int4)",
+      "insert into rum_log",
+      "insert into rum_error",
+      "commit",
+    ]);
 
     const panne = fakePool(V70);
     const connect = panne.pool.connect;

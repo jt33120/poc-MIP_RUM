@@ -260,12 +260,18 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
       [A],
     );
     expect(Number(cellules[0].n)).toBeGreaterThan(0);
+    // P8.1 : les DEUX projections horaires sont faussées par l'effacement —
+    // l'histogramme des vitals, lu par l'Explorer, et la heatmap `rum_rollup_hourly`,
+    // lue par le tableau de bord. Marquer la première seulement laissait la
+    // seconde afficher indéfiniment l'effectif d'une personne effacée.
     const { rows: marques } = await c.query<{ source: string; reason: string }>(
-      "select source, reason from analytics_rollup_invalidation where app_id = $1",
+      "select source, reason from analytics_rollup_invalidation where app_id = $1 order by source",
       [A],
     );
-    expect(marques).toHaveLength(1);
-    expect(marques[0]).toEqual({ source: "metric_histogram_hourly", reason: "dsar" });
+    expect(marques).toEqual([
+      { source: "metric_histogram_hourly", reason: "dsar" },
+      { source: "rum_rollup_hourly", reason: "dsar" },
+    ]);
 
     const reference = await exact(A);
     const apres = await lib.exploreAnalytics(lcp());
@@ -276,8 +282,11 @@ const hex = (prefixe: string, i: number) => (prefixe + i.toString(16).padStart(4
     expect(apres.data.total!).toBeLessThan(avant.data.total!);
 
     // Un rafraîchissement recalcule l'heure et lève la marque : le résultat ne
-    // change pas, seul le chemin le fait.
+    // change pas, seul le chemin le fait. Chaque projection lève SA marque —
+    // une marque qu'aucun rafraîchissement ne recalcule ne serait pas une
+    // sécurité, seulement une dette.
     await c.query("select refresh_metric_histogram(26)");
+    await c.query("select refresh_rum_rollups(26)");
     const { rows: restantes } = await c.query<{ n: string }>(
       "select count(*)::bigint as n from analytics_rollup_invalidation where app_id = $1",
       [A],

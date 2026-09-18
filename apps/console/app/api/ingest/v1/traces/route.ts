@@ -15,7 +15,7 @@ import { flattenOtlp } from "ingest/shared/otlp.mjs";
 import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "ingest/shared/limits.mjs";
 import { withRetry } from "ingest/shared/retry.mjs";
 import { pool } from "@/lib/db";
-import { corsFor, guardApps, json, log } from "@/lib/ingest";
+import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
 
 // Beacons navigateur : jamais de cache, toujours du calcul serveur.
 export const dynamic = "force-dynamic";
@@ -91,6 +91,10 @@ export async function POST(req: Request) {
       log.warn("bad request", { reason: err.message });
       return json({ error: err.message }, 400, cors);
     }
+    // P8.1 : portée d'application (409) et attente de verrou épuisée (503) sont
+    // des refus identifiés, pas des incidents.
+    const refus = refusIngestion(err, cors);
+    if (refus) return refus;
     // 500 : incident serveur — le client PEUT rejouer (sa file de retry le fera).
     log.error("internal error", { err: String(err) });
     return json({ error: "internal error" }, 500, cors);

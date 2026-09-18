@@ -473,6 +473,11 @@ describe("writeRows — correspondance des colonnes rum_error", () => {
       if (sql.includes("information_schema.columns")) {
         return { rows: params[0] === "rum_error" ? errorColumns.map((column_name) => ({ column_name })) : [] };
       }
+      // P8.1 — le drain pré-lit un candidat SANS verrou (app d'abord, file
+      // ensuite), puis reprend CET identifiant sous le verrou d'application.
+      if (sql.startsWith("select id, app_id from ingest_raw")) {
+        return { rows: file.length ? [{ id: file[0].id, app_id: file[0].app_id }] : [] };
+      }
       if (sql.startsWith("select id, app_id, lot, tentatives from ingest_raw")) return { rows: file.splice(0, 1) };
       return { rows: [] };
     };

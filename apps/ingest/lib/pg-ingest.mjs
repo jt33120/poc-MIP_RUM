@@ -13,6 +13,14 @@ import { createHash } from "node:crypto";
 import { isNativeSpanId } from "../supabase/functions/_shared/otlp.mjs";
 import { finaliserIssues, regrouperErreurs } from "./error-grouping.mjs";
 import { symbolicateurIngestion } from "./error-symbolication.mjs";
+import {
+  appsDuLot,
+  barriereActivee,
+  ErreurPorteeApp,
+  filtrerParBarrieres,
+  sessionSousBarriere,
+  withAppIngestTransaction,
+} from "./privacy-barriere.mjs";
 
 // ───────────────────────────── Écriture ─────────────────────────────
 
@@ -322,7 +330,14 @@ export function clauseConflitSession(dispo) {
     // porte pas l'attribut, retomberait sur 1 et effacerait l'échantillonnage —
     // multipliant d'un coup tous les volumes de cette session par son taux.
   ];
-  return `on conflict (session_id) do update set ${set.join(", ")}`;
+  // LA CLAUSE EST BORNÉE À L'APPLICATION. La cible du conflit est `session_id`
+  // seul — c'est la clé primaire —, donc un lot déclarant l'app B avec un
+  // identifiant déjà stocké sous A mettait à jour la ligne de A : horodatage,
+  // release, identité. `writeRowsWithClient` refuse déjà ce lot avant d'écrire ;
+  // ce garde-fou couvre la fenêtre restante, où deux applications écrivent en
+  // parallèle sous DEUX verrous différents et ne s'attendent donc pas.
+  return `on conflict (session_id) do update set ${set.join(", ")}
+            where rum_session.app_id = excluded.app_id`;
 }
 
 /**
@@ -476,18 +491,95 @@ async function indexAvecVitalsConsolides(client, eventIndex, metrics) {
 }
 
 /**
- * Écrit un lot OTLP aplati (sortie de flattenOtlp) dans une TRANSACTION unique.
+ * Symbolique les erreurs d'un lot et REPORTE le résultat SUR chaque ligne.
+ *
+ * Le résultat voyageait par POSITION dans le tableau d'origine. Il ne peut plus :
+ * le filtrage par barrières (P8.1) retire des lignes entre la symbolication et
+ * l'écriture, et un tableau indexé se serait décalé en silence — la stack d'une
+ * personne serait allée sur l'erreur d'une autre.
+ *
+ * Fait AVANT la transaction par `writeRows` : charger une source map de plusieurs
+ * Mio ne doit pas prolonger la tenue du verrou d'application.
+ */
+export async function appliquerSymbolication(client, errors, symbolicateur = symbolicateurIngestion) {
+  if (!errors?.length || !symbolicateur) return errors ?? [];
+  const dispo = await colonnesDe(client, "rum_error");
+  if (!dispo.has("symbolication_status")) return errors;
+  const resultats = await symbolicateur.symboliquerLot(client, errors);
+  // Jamais sur une stack backend (P5.3) : une map navigateur n'en décrit aucune
+  // frame. `symbolicated_frames` n'est pas une colonne : la clé v2 la lit, puis
+  // elle disparaît avec la ligne.
+  return errors.map((e, i) => (STACK_BACKEND.has(e.error_source)
+    ? e
+    : {
+        ...e,
+        symbolication_status: resultats[i]?.status ?? null,
+        stack_symbolicated: resultats[i]?.stack ?? null,
+        symbolicated_frames: resultats[i]?.positions ?? null,
+      }));
+}
+
+/**
+ * Une session déjà enregistrée sous une AUTRE application ne peut pas être
+ * ÉCRITE par celle-ci.
+ *
+ * `on conflict (session_id) do update` ne porte PAS l'app dans sa cible : un lot
+ * qui déclare l'app B avec un identifiant de session déjà stocké sous A mettait
+ * à jour la ligne de A — horodatage, release, identité. Écrire chez un autre
+ * locataire n'est pas un conflit à fusionner : c'est une demande hors portée, et
+ * la rejouer donnerait le même résultat. On refuse le lot, en le disant.
+ *
+ * SEULE la collection `sessions` est contrôlée, et c'est délibéré : ce sont les
+ * seules lignes qui déclenchent l'upsert. Une ligne enfant qui REVENDIQUE une
+ * session d'une autre app relève d'un autre mécanisme, déjà en place — P5.3 ne
+ * rattache une exception que si la session existe dans la MÊME app, et les
+ * autres tables s'écrivent en `on conflict do nothing`, qui ne met rien à jour
+ * chez le voisin.
+ *
+ * Le message ne porte AUCUN identifiant de session : les deux applications
+ * suffisent à diagnostiquer, et un journal n'a pas à recevoir de pseudonyme.
+ */
+async function verifierPorteeSessions(client, rows) {
+  const revendiques = new Map();
+  for (const ligne of rows.sessions ?? []) {
+    const { app_id: app, session_id: session } = ligne ?? {};
+    if (typeof app !== "string" || !app) continue;
+    if (typeof session !== "string" || !session) continue;
+    let apps = revendiques.get(session);
+    if (!apps) revendiques.set(session, (apps = new Set()));
+    apps.add(app);
+  }
+  if (!revendiques.size) return;
+  const { rows: stockees } = await client.query(
+    "select session_id, app_id from rum_session where session_id = any($1::text[])",
+    [[...revendiques.keys()]],
+  );
+  for (const { session_id: session, app_id: proprietaire } of stockees) {
+    const apps = revendiques.get(session);
+    if (apps && !apps.has(proprietaire)) {
+      throw new ErreurPorteeApp(
+        `session déjà enregistrée pour « ${proprietaire} », revendiquée par « ${[...apps].join(", ")} »`,
+      );
+    }
+  }
+}
+
+/**
+ * Écrit un lot OTLP aplati (sortie de flattenOtlp) avec un client DÉJÀ dans une
+ * transaction, qui tient DÉJÀ le verrou de ses applications.
+ *
+ * Ni begin, ni commit, ni release : l'appelant les possède. C'est ce qui permet
+ * au drain de la file d'écrire les tables finales AVEC LE MÊME CLIENT que celui
+ * qui tient sa ligne de file — l'ancien code appelait `writeRows(pool, …)`, qui
+ * ouvrait sa propre transaction sur une autre connexion, et les deux n'étaient
+ * donc sérialisées avec rien.
+ *
+ * Les erreurs doivent déjà porter leur symbolication (`appliquerSymbolication`).
  * Idempotent au rejeu : `on conflict do nothing` partout, `greatest` sur les
  * horodatages de session — c'est ce qui autorise le retry côté appelant.
- *
- * Les erreurs sont symboliquées AVANT la transaction (migration-v71 appliquée
- * seulement) : charger une source map de plusieurs Mio ne doit pas prolonger un
- * verrou d'écriture, et un échec de symbolication n'annule jamais le lot. Ses
- * positions source servent aussi la clé de regroupement v2 (P5.5) : la première
- * frame applicative symbolisée prime sur la frame minifiée.
  * @returns {Promise<{erreurs: {recues: number, inserees: number, ignorees: number}}>}
  */
-export async function writeRows(pool, {
+export async function writeRowsWithClient(client, {
   sessions,
   pageviews,
   metrics,
@@ -502,15 +594,12 @@ export async function writeRows(pool, {
   sviCalls,
   sviSteps,
   sviLegs,
+  // P7.5 — capacités DÉCLARÉES par un runtime mobile. Défaut `[]` : un lot
+  // antérieur au modèle, ou déposé avant lui dans `ingest_raw`, n'en porte pas.
   capabilities = [],
-}, { symbolicateur = symbolicateurIngestion } = {}) {
-  const client = await pool.connect();
-  try {
-    const erreurDispo = errors.length ? await colonnesDe(client, "rum_error") : null;
-    const symbolications = erreurDispo?.has("symbolication_status")
-      ? await symbolicateur.symboliquerLot(client, errors)
-      : null;
-    await client.query("begin");
+}) {
+  {
+    await verifierPorteeSessions(client, { sessions });
     // Colonnes optionnelles : présentes une fois la migration passée, ignorées
     // avant. Le reste du lot part normalement dans les deux cas.
     const dispo = await colonnesSession(client);
@@ -557,22 +646,10 @@ export async function writeRows(pool, {
       );
     }
     // Après les sessions du lot : une exception backend qui revendique l'une
-    // d'elles la trouve déjà écrite. La symbolication, calculée avant la
-    // transaction, voyage avec chaque ligne : le filtrage pré-v70 et le
-    // rattachement de session d'ecrireErreurs ne peuvent donc pas la décaler.
-    // Jamais sur une stack backend (P5.3) : une map navigateur n'en décrit aucune
-    // frame. `symbolicated_frames` n'est pas une colonne : la clé v2 la lit, puis
-    // elle disparaît avec la ligne.
-    const erreurs = await ecrireErreurs(client, symbolications
-      ? errors.map((e, i) => (STACK_BACKEND.has(e.error_source)
-        ? e
-        : {
-            ...e,
-            symbolication_status: symbolications[i]?.status ?? null,
-            stack_symbolicated: symbolications[i]?.stack ?? null,
-            symbolicated_frames: symbolications[i]?.positions ?? null,
-          }))
-      : errors);
+    // d'elles la trouve déjà écrite. La symbolication voyage SUR chaque ligne
+    // (cf. appliquerSymbolication) : ni le filtrage pré-v70, ni le rattachement
+    // de session, ni le filtrage par barrières ne peuvent la décaler.
+    const erreurs = await ecrireErreurs(client, errors);
     const resourceDispo = await colonnesDe(client, "rum_resource");
     await batchInsert(
       client,
@@ -688,85 +765,149 @@ export async function writeRows(pool, {
     // page_count DÉRIVÉ du compte réel de pageviews (idempotent au rejeu, cf.
     // migration-v07) plutôt qu'incrémenté.
     if (sessions.length) {
+      // Compté et recollé PAR APPLICATION : `session_id` seul joignait un
+      // identifiant émis par le client, donc deux applications qui émettent la
+      // même valeur échangeaient leur nombre de pages — la même correction que
+      // celle apportée à l'histogramme en v80.
       await client.query(
         `update rum_session s
            set page_count = sub.c
-          from (select session_id, count(*) c from rum_pageview
-                 where session_id = any($1) group by session_id) sub
-         where s.session_id = sub.session_id`,
-        [sessions.map((s) => s.session_id)],
+          from (select app_id, session_id, count(*) c from rum_pageview
+                 where (app_id, session_id) in (select * from unnest($1::text[], $2::text[]))
+                 group by app_id, session_id) sub
+         where s.app_id = sub.app_id and s.session_id = sub.session_id`,
+        [sessions.map((s) => s.app_id), sessions.map((s) => s.session_id)],
       );
     }
     await erreurs.finaliser();
-    await client.query("commit");
     return { erreurs: erreurs.bilan };
-  } catch (err) {
-    await client.query("rollback").catch(() => {});
-    throw err;
-  } finally {
-    client.release();
   }
 }
 
 /**
- * Signal LOGS OTel -> rum_log (bigserial : pas de contrainte d'idempotence), et
- * les exceptions structurées qu'il porte -> rum_error (P5.3).
+ * Wrapper compatible : ouvre la transaction, verrouille la ou les applications
+ * du lot, filtre par barrières, puis délègue à `writeRowsWithClient`.
+ *
+ * La symbolication reste AVANT la transaction : charger une source map de
+ * plusieurs Mio sous le verrou d'application ferait attendre tout le trafic de
+ * cette app. Son résultat voyage sur chaque ligne, donc le filtrage qui suit ne
+ * peut pas le décaler.
+ *
+ * `opts.client` permet à un appelant qui tient DÉJÀ une transaction verrouillée
+ * de réutiliser ce chemin sans en rouvrir une seconde.
+ * @returns {Promise<{erreurs: {recues: number, inserees: number, ignorees: number}, refuses?: object}>}
+ */
+export async function writeRows(pool, rows, { symbolicateur = symbolicateurIngestion, client: fourni = null } = {}) {
+  const client = fourni ?? (await pool.connect());
+  try {
+    // Client fourni : il est déjà dans une transaction verrouillée par son
+    // appelant, et symboliquer ici allonge la tenue de ce verrou. C'est le prix
+    // à payer : rouvrir une connexion pour symboliquer romprait la
+    // sérialisation, c'est-à-dire exactement le défaut qu'on répare.
+    const symbolisees = { ...rows, errors: await appliquerSymbolication(client, rows.errors ?? [], symbolicateur) };
+    const travail = async (c) => {
+      const filtre = await filtrerParBarrieres(c, symbolisees);
+      const bilan = await writeRowsWithClient(c, filtre.rows);
+      return filtre.total ? { ...bilan, refuses: filtre.refuses } : bilan;
+    };
+    if (fourni) return await travail(client);
+    return await withAppIngestTransaction(pool, appsDuLot(symbolisees), travail, { client });
+  } finally {
+    if (!fourni) client.release();
+  }
+}
+
+/**
+ * Signal LOGS OTel -> rum_log, et les exceptions structurées qu'il porte ->
+ * rum_error (P5.3), avec un client DÉJÀ transactionnel et verrouillé.
  *
  * Une seule transaction : un échec n'écrit ni le log ni son exception, et le
  * rejeu de l'appelant ne peut pas laisser une exception sans le log qui l'a
  * portée. Les exceptions, elles, sont idempotentes au rejeu.
  * @returns {Promise<{logs: number, erreurs: {recues: number, inserees: number, ignorees: number}}>}
  */
-export async function writeLogs(pool, logs, errors = []) {
+export async function writeLogsWithClient(client, logs, errors = []) {
+  await batchInsert(
+    client,
+    "rum_log",
+    ["app_id", "ts", "severity_num", "severity_text", "body", "source", "trace_id", "span_id", "session_id", "route", "attributes"],
+    logs.map((l) => ({ ...l, attributes: l.attributes ? JSON.stringify(l.attributes) : null })),
+    "",
+  );
+  const erreurs = await ecrireErreurs(client, errors);
+  await erreurs.finaliser();
+  return { logs: logs.length, erreurs: erreurs.bilan };
+}
+
+/** Wrapper compatible de `writeLogsWithClient` : transaction, verrou, barrières. */
+export async function writeLogs(pool, logs, errors = [], { client: fourni = null } = {}) {
   if (!logs.length && !errors.length) return { logs: 0, erreurs: { recues: 0, inserees: 0, ignorees: 0 } };
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
-    await batchInsert(
-      client,
-      "rum_log",
-      ["app_id", "ts", "severity_num", "severity_text", "body", "source", "trace_id", "span_id", "session_id", "route", "attributes"],
-      logs.map((l) => ({ ...l, attributes: l.attributes ? JSON.stringify(l.attributes) : null })),
-      "",
-    );
-    const erreurs = await ecrireErreurs(client, errors);
-    await erreurs.finaliser();
-    await client.query("commit");
-    return { logs: logs.length, erreurs: erreurs.bilan };
-  } catch (err) {
-    await client.query("rollback").catch(() => {});
-    throw err;
-  } finally {
-    client.release();
-  }
+  const travail = async (c) => {
+    // Un log et une exception portent app_id, session_id et, pour l'exception,
+    // les HMAC d'identité : ils passent par la MÊME barrière que les traces.
+    const filtre = await filtrerParBarrieres(c, { logs, errors });
+    const bilan = await writeLogsWithClient(c, filtre.rows.logs, filtre.rows.errors);
+    return filtre.total ? { ...bilan, refuses: filtre.refuses } : bilan;
+  };
+  if (fourni) return travail(fourni);
+  return withAppIngestTransaction(pool, appsDuLot({ logs, errors }), travail);
 }
 
 /**
- * Chunk rrweb (corps gzip) -> replay_chunk. La ligne rum_session minimale est
- * créée d'abord : un chunk peut précéder le 1er lot OTLP, et la FK l'exige.
+ * Chunk rrweb (corps gzip) -> replay_chunk, avec un client déjà transactionnel.
+ *
+ * LA SESSION MINIMALE N'EST PLUS CRÉÉE AVEUGLÉMENT. Elle l'était parce qu'un
+ * chunk peut précéder le premier lot OTLP et que la clé étrangère l'exige — mais
+ * cette création contournait la barrière : elle recréait l'ancre d'une session
+ * effacée, et le rejeu de la personne revenait avec elle. Désormais :
+ *
+ *   · session sous barrière              -> refus DÉFINITIF, corps non persisté ;
+ *   · session inconnue, app en `enforce`  -> refus TEMPORAIRE borné : le SDK
+ *     rejoue après que l'ancre OTLP est arrivée. Le corps n'est pas persisté ;
+ *   · session connue d'une AUTRE app      -> erreur de portée ;
+ *   · sinon                               -> comportement historique.
+ *
+ * LIMITE ASSUMÉE, et c'est pour cela que le refus temporaire est derrière
+ * l'activation : le transport de rejeu du SDK web ne rejoue pas (cf.
+ * packages/rum-sdk/src/replay.ts, « best effort : chunk perdu »). Sous `enforce`,
+ * un chunk arrivé avant son ancre est donc PERDU, pas différé. On l'annonce au
+ * lieu de contourner la barrière.
+ * @returns {Promise<{etat: "ecrit"|"refus_barriere"|"attente_session", retryAfterS?: number}>}
  */
-export async function writeReplayChunk(pool, { sessionId, appId, seq, body, eventsCount }) {
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
+export async function writeReplayChunkWithClient(client, { sessionId, appId, seq, body, eventsCount }) {
+  if (await sessionSousBarriere(client, appId, sessionId)) {
+    return { etat: "refus_barriere" };
+  }
+  const { rows: connue } = await client.query(
+    "select app_id from rum_session where session_id = $1",
+    [sessionId],
+  );
+  if (connue.length && connue[0].app_id !== appId) {
+    throw new ErreurPorteeApp(
+      `session de rejeu déjà enregistrée pour « ${connue[0].app_id} », revendiquée par « ${appId} »`,
+    );
+  }
+  if (!connue.length) {
+    if (await barriereActivee(client, appId)) return { etat: "attente_session", retryAfterS: 5 };
     await client.query(
       `insert into rum_session (session_id, app_id) values ($1, $2)
          on conflict (session_id) do nothing`,
       [sessionId, appId],
     );
-    await client.query(
-      `insert into replay_chunk (session_id, app_id, seq, events_count, body)
-         values ($1, $2, $3, $4, $5)
-         on conflict (session_id, seq) do nothing`,
-      [sessionId, appId, seq, eventsCount, body],
-    );
-    await client.query("commit");
-  } catch (err) {
-    await client.query("rollback").catch(() => {});
-    throw err;
-  } finally {
-    client.release();
   }
+  await client.query(
+    `insert into replay_chunk (session_id, app_id, seq, events_count, body)
+       values ($1, $2, $3, $4, $5)
+       on conflict (session_id, seq) do nothing`,
+    [sessionId, appId, seq, eventsCount, body],
+  );
+  return { etat: "ecrit" };
+}
+
+/** Wrapper compatible : transaction, verrou d'application, puis délégation. */
+export function writeReplayChunk(pool, chunk, { client: fourni = null } = {}) {
+  if (fourni) return writeReplayChunkWithClient(fourni, chunk);
+  return withAppIngestTransaction(pool, chunk.appId, (c) => writeReplayChunkWithClient(c, chunk));
 }
 
 // ───────────────────────── Auth / registre / débit ─────────────────────────
@@ -804,7 +945,14 @@ export function createPgAuth(pool, opts = {}) {
     if (now() - registryLoadedAt < 60_000 && appRegistry.size) return appRegistry;
     try {
       const { rows } = await pool.query(
-        "select app_id, api_key_hash, active, allowed_origins from app_registry",
+        // `to_jsonb(...)->>` et non une colonne citée : le code part en
+        // production AVANT que le pré-déploiement n'applique v81, et citer une
+        // colonne absente ferait échouer TOUT le chargement du registre — donc
+        // basculer l'ingestion entière en repli fail-open. L'opérateur de jsonb
+        // rend NULL quand la clé n'existe pas.
+        `select app_id, api_key_hash, active, allowed_origins,
+                (to_jsonb(app_registry.*) ->> 'ingestion_suspended_at') as ingestion_suspended_at
+           from app_registry`,
       );
       appRegistry = new Map(rows.map((r) => [r.app_id, r]));
       registryLoadedAt = now();
@@ -817,12 +965,21 @@ export function createPgAuth(pool, opts = {}) {
 
   /** null si accepté, sinon la raison du 403. */
   async function checkApiKey(appId, apiKey) {
-    if (!requireApiKey) return null;
     const registry = await getAppRegistry();
     if (!registryEverLoaded) {
-      log.warn?.("api key check fail-open (registry never loaded)", { app_id: appId });
+      if (requireApiKey) log.warn?.("api key check fail-open (registry never loaded)", { app_id: appId });
       return null;
     }
+    // SUSPENSION D'INGESTION (P8.1) — vérifiée AVANT `requireApiKey`, et donc
+    // même quand aucune clé n'est exigée. `erase_app_data` efface les données
+    // d'une application ET pose cette marque dans la même transaction : sans ce
+    // contrôle, le prochain beacon recréerait des lignes dans l'application que
+    // l'on vient de vider, et l'effacement n'aurait garanti le silence que
+    // jusqu'au message suivant. La reprise est une opération d'exploitation
+    // explicite — on efface la marque à la main — jamais l'effet d'un événement.
+    const suspendue = registry.get(appId)?.ingestion_suspended_at;
+    if (suspendue != null) return `ingestion suspended for app: ${appId}`;
+    if (!requireApiKey) return null;
     const app = registry.get(appId);
     if (!app || !app.active) return `unknown or inactive app: ${appId}`;
     // Durcissement E1-S1 : sous REQUIRE_API_KEY, une app SANS clé est rejetée.

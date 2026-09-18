@@ -246,9 +246,20 @@ export function creerReceveur(pool, opts = {}) {
       return repondre(res, 400, { error: "body must be gzipped JSON" }, entetes);
     }
 
-    await withRetry(() => writeReplayChunk(pool, { sessionId, appId, seq, body, eventsCount }), {
+    const issue = await withRetry(() => writeReplayChunk(pool, { sessionId, appId, seq, body, eventsCount }), {
       onRetry: (e, n) => log.warn("db retry (replay)", { attempt: n, code: e?.code }),
     });
+    // Le corps n'est persisté dans AUCUN de ces deux refus : un chunk refusé ne
+    // doit pas rester lisible « en attendant ».
+    if (issue?.etat === "refus_barriere") {
+      log.warn("replay refused (erased session)", { app_id: appId, seq });
+      return repondre(res, 410, { error: "session erased" }, entetes);
+    }
+    if (issue?.etat === "attente_session") {
+      log.info("replay deferred (session anchor missing)", { app_id: appId, seq });
+      return repondre(res, 425, { error: "session anchor not received yet", retry: true },
+        { ...entetes, "retry-after": String(issue.retryAfterS) });
+    }
     log.info("ingested replay", { app_id: appId, seq, events: eventsCount, gzip: body.length });
     return repondre(res, 200, { ok: true, seq, events: eventsCount }, entetes);
   }
@@ -361,6 +372,23 @@ export function creerReceveur(pool, opts = {}) {
       res.writeHead(404, entetes);
       return res.end();
     } catch (err) {
+      // Deux refus IDENTIFIÉS avant le 500 générique (P8.1).
+      //
+      // Portée d'application : la demande revendique un identifiant stocké chez
+      // un autre locataire. La rejouer donnerait le même résultat — 409, et le
+      // SDK la jette au lieu de la faire tourner dans sa file.
+      if (err?.name === "ErreurPorteeApp" && !res.headersSent) {
+        log.warn("rejected: app scope", { reason: String(err.message) });
+        return repondre(res, 409, { error: String(err.message) }, entetes);
+      }
+      // Attente de verrou épuisée : rien n'a été écrit, et rejouer a toutes les
+      // chances de réussir. 503 + Retry-After, pas un 500 qui ferait croire à un
+      // incident.
+      if (err?.name === "ErreurVerrouIngestion" && !res.headersSent) {
+        log.warn("busy: app ingest lock", { apps: err.apps });
+        return repondre(res, 503, { error: "ingestion busy, retry", retry: true },
+          { ...entetes, "retry-after": "2" });
+      }
       // Ici on n'est plus dans un cas client : un corps illisible a déjà été
       // traité en 400 plus haut. Tout ce qui remonte est un incident serveur,
       // et le client PEUT rejouer — sa file de retry le fera.

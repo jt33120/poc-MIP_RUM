@@ -3,8 +3,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireAdmin } from "@/lib/auth";
 import type { SearchParams } from "@/lib/filters";
 import { listApps } from "@/lib/queries";
-import { DSAR_MESSAGES } from "@/lib/dsar";
-import { dsarCible, dsarCounts, dsarIdentityCounts, dsarTotalRows, type DsarIdentityKind } from "@/lib/queries-dsar";
+import { DSAR_BARRIERE_MESSAGES, DSAR_LIMITES, DSAR_MESSAGES } from "@/lib/dsar";
+import { dsarCible, dsarCounts, dsarIdentityCounts, dsarTotalRows, etatBarriere, type DsarIdentityKind } from "@/lib/queries-dsar";
 import { identityPersistenceHealth } from "@/lib/health";
 import { eraseIdentityAction, eraseUserAction, searchIdentityAction } from "./actions";
 
@@ -43,6 +43,9 @@ export default async function AdminPrivacy({
   // On INSTRUIT avant de compter : sur une ancienne empreinte de terminal, il
   // n'y a rien à afficher — ni volume, ni bouton. Voir lib/dsar.ts.
   const identityHealth = await identityPersistenceHealth();
+  // Lu avant d'afficher quoi que ce soit : l'écran annonce l'état RÉEL de la
+  // protection durable, pas celui qu'on souhaiterait.
+  const etatProtection = await etatBarriere(app);
   const identityCounts = identityHash && identityHealth.schema ? await dsarIdentityCounts(app, kind, identityHash) : null;
   const identityTotal = identityCounts ? dsarTotalRows(identityCounts) : 0;
   const identityExportHref = `/admin/privacy/export?app=${encodeURIComponent(app)}&kind=${kind}&identity_hash=${identityHash}`;
@@ -70,6 +73,34 @@ export default async function AdminPrivacy({
           L&apos;ingestion historique continue sans ces champs.
         </div>
       )}
+
+      {/* Ce que la garantie couvre, et ce qu'elle ne couvre pas. Affiché DANS le
+          rapport, pas relégué à une documentation : un opérateur qui croit la
+          garantie plus large qu'elle ne l'est répondra à côté d'une demande. */}
+      <section
+        className="card mb-6 p-4"
+        aria-labelledby="dsar-portee"
+        data-testid="dsar-portee"
+        data-barriere={etatProtection}
+      >
+        <h2 id="dsar-portee" className="mb-2 text-sm font-semibold text-ink">
+          Portée de la garantie d&apos;effacement
+        </h2>
+        <p
+          className={
+            etatProtection === "enforce"
+              ? "mb-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300"
+              : "mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+          }
+        >
+          {DSAR_BARRIERE_MESSAGES[etatProtection]}
+        </p>
+        <ul className="list-disc space-y-1 pl-5 text-sm text-ink-soft">
+          {DSAR_LIMITES.map((limite) => (
+            <li key={limite}>{limite}</li>
+          ))}
+        </ul>
+      </section>
 
       {error && (
         <div className="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">

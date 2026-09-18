@@ -85,11 +85,60 @@ describe("un lot en échec ne bloque ni ne disparaît", () => {
     // Sinon deux travailleurs se repasseraient le lot sans jamais compter, et le
     // renoncement n'arriverait jamais.
     const debut = LIB.indexOf("} catch (err) {");
-    const bloc = LIB.slice(debut, LIB.indexOf("echecs++;", debut));
+    const bloc = LIB.slice(debut, LIB.indexOf('return "echec";', debut));
     expect(bloc).toContain("update ingest_raw");
-    // Et le commit qui suit est celui de la MÊME transaction : le rollback n'est
-    // pris que sur l'erreur externe, pas sur l'échec d'un lot.
-    expect(LIB.slice(LIB.indexOf("echecs++;"))).toContain('await client.query("commit");');
+    // P8.1 — et il est précédé d'un RETOUR AU POINT DE REPRISE. Une transaction
+    // PostgreSQL en échec refuse tout ordre suivant (25P02), y compris un simple
+    // UPDATE de compteur : sans savepoint, le compteur ne montait jamais et le
+    // lot empoisonné revenait sans fin. Le verrou d'application, pris AVANT le
+    // point de reprise, survit à ce retour arrière partiel.
+    expect(LIB).toContain('await client.query("savepoint avant_ecriture");');
+    expect(bloc.indexOf('rollback to savepoint avant_ecriture'))
+      .toBeLessThan(bloc.indexOf("update ingest_raw"));
+    // Le commit appartient à la primitive partagée, pas à ce module : c'est elle
+    // qui ouvre la transaction, borne l'attente et prend le verrou.
+    expect(LIB).toContain("withAppIngestTransaction(pool, candidat.app_id");
+  });
+});
+
+describe("P8.1 — l'ordre des verrous, et le client unique", () => {
+  it("le candidat est pré-lu SANS verrou, puis repris sous le verrou d'app", () => {
+    // On ne peut pas savoir quelle application verrouiller avant d'avoir vu une
+    // ligne, et on ne peut pas verrouiller la ligne avant l'application :
+    // l'effacement prend app puis file, et l'inverse ici s'interbloquerait.
+    const preLecture = LIB.indexOf("async function lireCandidat");
+    expect(preLecture).toBeGreaterThan(0);
+    const corps = LIB.slice(preLecture, LIB.indexOf("}\n", LIB.indexOf("return rows[0] ?? null;")));
+    expect(corps).not.toContain("for update");
+    // La reprise, elle, verrouille la ligne et REVÉRIFIE son éligibilité.
+    const reprise = LIB.slice(LIB.indexOf("async function traiterCandidat"));
+    expect(reprise).toContain("where id = $1 and tentatives < $2 and reprendre_a <= now()");
+    expect(reprise).toContain("for update skip locked");
+    expect(reprise).toContain('if (!ligne) return "absent";');
+  });
+
+  it("les tables finales sont écrites par LE MÊME client que la ligne de file", () => {
+    // C'est la faille d'origine : le drain tenait la file sur sa connexion et
+    // appelait writeRows(pool, …), qui ouvrait une transaction sur une AUTRE
+    // connexion. Les deux n'étaient sérialisées avec rien.
+    expect(LIB).toContain("await writeRows(pool, filtre.rows, { client });");
+    expect(LIB).not.toMatch(/writeRows\(pool,\s*completer\(/);
+  });
+
+  it("le dépôt filtre par barrières et ne dépose pas un lot entièrement interdit", () => {
+    // Déposer un lot interdit en espérant que le drain fera le ménage le
+    // laisserait lisible dans une table de production, et un drain d'une version
+    // antérieure l'écrirait tel quel.
+    const depot = LIB.slice(LIB.indexOf("export async function deposerLot"));
+    expect(depot).toContain("filtrerParBarrieres(client, sousLot)");
+    expect(depot).toContain("if (filtre.total > 0 && !porteDeLaTelemetrie(filtre.rows)) return;");
+  });
+
+  it("un lot multi-app est scindé au dépôt, pour que le verrou soit exact", () => {
+    // Une ligne de file portant l'app A mais contenant des collections de B
+    // ferait écrire dans B sous le verrou de A, c'est-à-dire sans verrou.
+    expect(LIB).toContain("export function scinderParApp");
+    expect(LIB.slice(LIB.indexOf("export async function deposerLot"))).toContain("scinderParApp(rows, appId)");
   });
 });
 

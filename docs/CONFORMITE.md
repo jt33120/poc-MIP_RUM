@@ -56,6 +56,45 @@ dev-server/edge) → on ne dépend pas du seul client. Source maps **privées** 
   n'est **pas** une donnée anonyme (cf. §2) — c'est un pseudonyme, tiré au hasard et effaçable.
 - **Sécurité du transport** : TLS de bout en bout jusqu'à Neon.
 
+### 3.1 Effacement sérialisé avec l'ingestion (P8.1, migration-v81)
+
+**Ce qui est acquis.** L'effacement et TOUS les chemins d'écriture — traces, logs, rejeu, file de
+débarquement différée, rafraîchissements d'agrégats — prennent le même verrou consultatif de
+transaction, par application (`pg_advisory_xact_lock`, jamais un verrou de session : la production
+passe par un pooler transactionnel). Pendant un effacement, aucun writer ne peut recréer une ligne ;
+les lots encore en file sont nettoyés **élément par élément**, de sorte qu'un lot portant deux
+personnes perde celle qui a demandé et conserve l'autre. Une session déjà enregistrée sous une
+application ne peut plus être mise à jour par une autre.
+
+**Ce qui est activé depuis le 18/09/2026.** La *protection durable* —
+`privacy_erasure_barrier`, qui fait refuser par tous les writers les données rattachables à un sujet
+effacé — est **allumée pour les sept applications du registre**
+(`app_registry.privacy_barrier_mode = 'enforce'`). La politique retenue est **la conservation sans
+expiration** : `expires_at` vaut `NULL`. Une durée bornée ne garantirait rien contre une restauration
+plus ancienne qu'elle, et la barrière est assumée pour ce qu'elle est — une donnée pseudonyme, qui
+retient l'identifiant effacé afin de pouvoir le refuser.
+
+**Aucune voie de réactivation n'existe** : ni fonction SQL de levée, ni drapeau du SDK. Les
+identifiants de session effacés restent refusés pour toujours. Par quelle opération une personne
+pourrait reprendre une collecte autorisée après son effacement reste à décider ; rien ne l'implémente
+implicitement.
+
+**Ce que l'activation ne couvre pas : les sauvegardes.** Une restauration PITR antérieure à un
+effacement doit rejouer les barrières **avant** de rouvrir lectures et ingestion. Cette procédure
+n'est ni écrite ni éprouvée. Tant qu'elle ne l'est pas, la garantie ne porte pas sur les
+restaurations, et ce document ne prétend pas le contraire.
+
+**Ce que la garantie ne couvrira jamais.** La preuve porte sur les identifiants fournis ou déjà liés
+(session, visiteur, HMAC utilisateur ou compte, cloisonnés par application). Un événement totalement
+anonyme — nouvelle session, aucun identifiant commun — n'est pas rattachable à une personne effacée.
+Cette limite est affichée **à l'écran** dans le rapport `/admin/privacy`, pas seulement ici.
+
+**Retour arrière.** Revenir à une version applicative antérieure à P8.1 ne lève PAS les barrières
+déjà posées (aucune migration descendante ne les supprime), mais un writer d'une version antérieure
+**ignore** la table : il ne les consulte pas. Un retour arrière ne se fait donc pas en silence — soit
+on reste sur une version compatible, soit on suspend l'ingestion des applications concernées
+(`app_registry.ingestion_suspended_at`) le temps du retour.
+
 ## 4. Rétention — **configurable par client** (migration-v14)
 - `purge_rum_tenants(default_days)` purge **chaque app selon SA rétention**
   (`app_registry.retention_days`, sinon défaut **30 j**), planifié quotidiennement (pg_cron).
@@ -65,7 +104,11 @@ dev-server/edge) → on ne dépend pas du seul client. Source maps **privées** 
 
 ## 5. Droits des personnes (art. 15–17)
 - **Effacement client / offboarding** : `erase_app_data(app_id)` supprime **toute** la
-  télémétrie d'un client (sessions, erreurs, métriques, replay, source maps, alertes).
+  télémétrie d'un client (sessions, erreurs, métriques, replay, SVI, source maps, alertes, vues
+  enregistrées, tableaux de bord) **et suspend son ingestion** dans le registre, sous la même
+  transaction — sans quoi le prochain événement reçu recréerait des lignes dans l'application qu'on
+  vient de vider. La reprise est une opération d'exploitation explicite, jamais l'effet d'un
+  événement entrant.
 - **Effacement d'une personne concernée** : `erase_session(session_id)`.
 - **Accès / portabilité** : export via l'API de lecture (agrégats) / requêtes ciblées.
 - `audit_log` et `console_user` (comptes/traçabilité) ne sont **pas** effacés par ces

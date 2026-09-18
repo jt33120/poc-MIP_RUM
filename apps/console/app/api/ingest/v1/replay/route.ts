@@ -11,7 +11,7 @@ import { writeReplayChunk } from "ingest/lib/pg-ingest.mjs";
 import { REPLAY_ALLOW_HEADERS } from "ingest/shared/cors.mjs";
 import { withRetry } from "ingest/shared/retry.mjs";
 import { pool } from "@/lib/db";
-import { corsFor, guardApps, json, log } from "@/lib/ingest";
+import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
       return json({ error: "body must be gzipped JSON" }, 400, cors);
     }
 
-    await withRetry(
+    const issue = await withRetry(
       () => writeReplayChunk(pool, { sessionId, appId, seq, body, eventsCount }),
       {
         onRetry: (e: unknown, attempt: number) =>
@@ -68,8 +68,24 @@ export async function POST(req: Request) {
       },
     );
 
+    // P8.1 — deux refus, et dans les deux cas le corps n'est PAS persisté.
+    // La session effacée reste refusée pour toujours ; la session pas encore
+    // ancrée peut être rejouée après l'arrivée de son premier lot OTLP.
+    if (issue?.etat === "refus_barriere") {
+      log.warn("replay refused (erased session)", { app_id: appId, seq });
+      return json({ error: "session erased" }, 410, cors);
+    }
+    if (issue?.etat === "attente_session") {
+      log.info("replay deferred (session anchor missing)", { app_id: appId, seq });
+      return json({ error: "session anchor not received yet", retry: true }, 425, cors, {
+        "retry-after": String(issue.retryAfterS ?? 5),
+      });
+    }
+
     return json({ ok: true, seq, events: eventsCount }, 200, cors);
   } catch (err) {
+    const refus = refusIngestion(err, cors);
+    if (refus) return refus;
     log.error("internal error", { err: String(err) });
     return json({ error: "internal error" }, 500, cors);
   }

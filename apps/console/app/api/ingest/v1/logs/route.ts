@@ -7,7 +7,7 @@ import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "ingest/shar
 import { withRetry } from "ingest/shared/retry.mjs";
 import { secureOtlpIdentities } from "ingest/lib/identity-hash.mjs";
 import { pool } from "@/lib/db";
-import { corsFor, guardApps, json, log } from "@/lib/ingest";
+import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -65,6 +65,9 @@ export async function POST(req: Request) {
       log.warn("bad request", { reason: err.message });
       return json({ error: err.message }, 400, cors);
     }
+    // P8.1 : portée d'application (409) et attente de verrou épuisée (503).
+    const refus = refusIngestion(err, cors);
+    if (refus) return refus;
     log.error("internal error", { err: String(err) });
     return json({ error: "internal error" }, 500, cors);
   }

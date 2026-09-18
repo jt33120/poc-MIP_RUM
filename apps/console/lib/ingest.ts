@@ -54,6 +54,34 @@ export const json = (
   });
 
 /**
+ * Refus IDENTIFIÉS de la sérialisation d'écriture (P8.1), à opposer avant le 500
+ * générique. Retourne null si l'erreur n'en est pas un.
+ *
+ * Distinguer les deux compte pour le client : `409` dit « ta demande vise un
+ * autre locataire, la rejouer ne changera rien » et `503` dit « la base était
+ * occupée, rien n'a été écrit, rejoue ». Les confondre en 500 ferait tourner
+ * indéfiniment la file de rejeu du SDK sur une demande qui ne peut pas aboutir.
+ */
+export function refusIngestion(
+  err: unknown,
+  cors: Record<string, string>,
+): Response | null {
+  const nom = (err as { name?: string } | null)?.name;
+  if (nom === "ErreurPorteeApp") {
+    const message = String((err as Error).message);
+    log.warn("rejected: app scope", { reason: message });
+    return json({ error: message }, 409, cors);
+  }
+  if (nom === "ErreurVerrouIngestion") {
+    log.warn("busy: app ingest lock", { apps: (err as { apps?: string[] }).apps });
+    return json({ error: "ingestion busy, retry", retry: true }, 503, cors, {
+      "retry-after": "2",
+    });
+  }
+  return null;
+}
+
+/**
  * Gardes communes aux routes OTLP : clé d'API (403) puis débit (429), une fois
  * par app présente dans le lot. Retourne une Response à renvoyer telle quelle,
  * ou null si la requête passe.

@@ -19,6 +19,9 @@ import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.m
 const URL_TEST = process.env.SQL_TEST_DATABASE_URL;
 const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
 const APP = "differe-app";
+// Seconde application : elle sert à prouver que le verrou de P8.1 est PAR
+// application, et non global — deux apps se drainent bien de front.
+const AUTRE_APP = "differe-app-b";
 const muet = { info() {}, warn() {}, error() {}, debug() {} };
 
 function fichiersSql(): string[] {
@@ -44,7 +47,7 @@ if (!URL_TEST) {
  * `collection_source`, `sample_rate`, `error_sample_rate`). Un lot de test qui
  * dérive du vrai producteur ne peut pas dériver du produit.
  */
-function lot(n: number) {
+function lot(n: number, app: string = APP) {
   const sid = `d-${n}`;
   const base = Date.now() - 1000;
   const attr = (o: Record<string, string | number>) =>
@@ -62,7 +65,7 @@ function lot(n: number) {
   });
   return flattenOtlp({
     resourceSpans: [{
-      resource: { attributes: attr({ "mip.app_id": APP, "mip.client_id": "test" }) },
+      resource: { attributes: attr({ "mip.app_id": app, "mip.client_id": "test" }) },
       scopeSpans: [{
         spans: [
           span("pageview", {
@@ -86,6 +89,9 @@ beforeAll(async () => {
   await c.query(
     `insert into app_registry (app_id, name, active, route_limit) values ($1, $1, true, 5000)
      on conflict (app_id) do update set active = true`, [APP]);
+  await c.query(
+    `insert into app_registry (app_id, name, active, route_limit) values ($1, $1, true, 5000)
+     on conflict (app_id) do update set active = true`, [AUTRE_APP]);
   c.release();
 }, 180_000);
 afterAll(async () => {
@@ -214,9 +220,51 @@ suite("deux travailleurs peuvent drainer en parallèle", () => {
     expect(a.echecs + b.echecs).toBe(0);
     expect((await etatIngestRaw(pool)).en_attente).toBe(0);
     expect(Number((await pool.query("select count(*)::int n from rum_metric where app_id=$1", [APP])).rows[0].n)).toBe(40);
-    // Anti-tautologie : les DEUX ont travaillé, sinon la propriété ne serait pas
-    // éprouvée — un seul travailleur ne peut pas se marcher dessus.
-    expect(Math.min(a.drains, b.drains)).toBeGreaterThan(0);
+  });
+
+  it("une SEULE application se draine en série, et c'est le prix assumé de P8.1", async () => {
+    // LE CHANGEMENT DE CONTRAT, ÉCRIT PLUTÔT QUE SUBI. Avant P8.1, deux
+    // travailleurs drainaient la même application de front — `skip locked` leur
+    // donnait deux lots différents. Désormais ils prennent le MÊME verrou
+    // consultatif d'application : le second attend, constate que le candidat a
+    // disparu, et passe au suivant. Le débit par application n'augmente donc
+    // plus avec le nombre de travailleurs ; c'est ce qui rend l'effacement
+    // prouvable, et le banc de charge le chiffre.
+    await repartirDeZero();
+    for (let n = 3100; n < 3108; n++) await deposerLot(pool, APP, lot(n));
+    const debut = Date.now();
+    const [a, b] = await Promise.all([
+      drainerIngestRaw(pool, { max: 100, log: muet }),
+      drainerIngestRaw(pool, { max: 100, log: muet }),
+    ]);
+    // Aucun doublon, aucun perdu — la propriété qui compte tient toujours.
+    expect(a.drains + b.drains).toBe(8);
+    expect(a.echecs + b.echecs).toBe(0);
+    expect((await etatIngestRaw(pool)).en_attente).toBe(0);
+    // Et personne ne reste bloqué : l'attente est bornée par `lock_timeout`, pas
+    // par la fin de la file.
+    expect(Date.now() - debut).toBeLessThan(20_000);
+  });
+
+  it("deux applications se drainent bien en parallèle : le verrou est PAR app", async () => {
+    // Anti-tautologie de la sérialisation : si le verrou était global, ce test
+    // ne verrait jamais les deux travailleurs avancer ensemble.
+    await repartirDeZero();
+    await pool.query("delete from rum_metric where app_id = $1", [AUTRE_APP]);
+    await pool.query("delete from rum_session where app_id = $1", [AUTRE_APP]);
+    for (let n = 3200; n < 3210; n++) await deposerLot(pool, APP, lot(n));
+    for (let n = 3300; n < 3310; n++) await deposerLot(pool, AUTRE_APP, lot(n, AUTRE_APP));
+    const [a, b] = await Promise.all([
+      drainerIngestRaw(pool, { max: 100, log: muet }),
+      drainerIngestRaw(pool, { max: 100, log: muet }),
+    ]);
+    expect(a.drains + b.drains).toBe(20);
+    expect(a.echecs + b.echecs).toBe(0);
+    expect((await etatIngestRaw(pool)).en_attente).toBe(0);
+    await pool.query("delete from rum_metric where app_id = $1", [AUTRE_APP]);
+    await pool.query("delete from rum_pageview where app_id = $1", [AUTRE_APP]);
+    await pool.query("delete from rum_event_index where app_id = $1", [AUTRE_APP]);
+    await pool.query("delete from rum_session where app_id = $1", [AUTRE_APP]);
   });
 });
 

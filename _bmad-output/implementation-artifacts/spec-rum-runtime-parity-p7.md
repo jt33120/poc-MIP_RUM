@@ -142,12 +142,21 @@ Recette : 100 requêtes concurrentes A/B avec contexte distinct, imbriquées et 
 
 ### P7.5 — `/mobile`, API/MCP et distribution (M)
 
-- [ ] `/mobile` réutilise contrat P6, filtre `platform ios/android`, release/appareil et app. Cartes sessions/visiteurs observés, erreurs JS, temps JS vers premier écran, écrans fréquents, requêtes lentes ; liens issues P5 et sessions.
-- [ ] Modèle de capacité `mobile_capabilities` par app/runtime/release, transmis explicitement par SDK et validé serveur ; valeurs `js_errors`, `native_crashes`, `anr`, `native_start`, `offline_persistence`, `screen_tracking`. Capacité activée n’implique pas test natif passé ; `verified_at` provient seulement de recette opérateur, jamais d’un bool client.
-- [ ] Crashes natifs/ANR non connectés : badge « Non collecté », ni zéro ni « 100 % sans crash ». Calcul JS : `js_error_free_session_rate = 1 - sessions ayant au moins une erreur JS / sessions RN observées` avec même cohorte/fenêtre et sampling annoncé. Label ne dit pas « crash-free ».
-- [ ] Endpoint `GET /api/v1/mobile/summary` reprend filtre/range P6, retourne `{meta,data:{capabilities,sessions,visitors,js_errors,js_error_free_session_rate,startup,screens,resources}}`. Null pour métriques non disponibles. MCP `mip_rum_mobile_summary`, read-only.
-- [ ] Documenter exemples RN bare et adaptateur navigation retenu, Expo seulement si réellement testé. Produire build/package typé et fixture d’installation. Publication npm/store non supposée autorisée : repo/build prêts ; compte/registry cible requis si distribution externe souhaitée.
-- [ ] Fichier de matrice runtime réellement testé : versions RN, React, Hermes/JSC, OS, router et architecture native. Ne pas déclarer une plage de compatibilité à partir d’un seul test sous mocks.
+- [x] `/mobile` réutilise contrat P6, filtre `platform ios/android`, release/appareil et app. Cartes sessions/visiteurs observés, erreurs JS, temps JS vers premier écran, écrans fréquents, requêtes lentes ; liens issues P5 et sessions.
+- [x] Modèle de capacité `mobile_capabilities` par app/runtime/release, transmis explicitement par SDK et validé serveur ; valeurs `js_errors`, `native_crashes`, `anr`, `native_start`, `offline_persistence`, `screen_tracking`. Capacité activée n’implique pas test natif passé ; `verified_at` provient seulement de recette opérateur, jamais d’un bool client.
+- [x] Crashes natifs/ANR non connectés : badge « Non collecté », ni zéro ni « 100 % sans crash ». Calcul JS : `js_error_free_session_rate = 1 - sessions ayant au moins une erreur JS / sessions RN observées` avec même cohorte/fenêtre et sampling annoncé. Label ne dit pas « crash-free ».
+- [x] Endpoint `GET /api/v1/mobile/summary` reprend filtre/range P6, retourne `{meta,data:{capabilities,sessions,visitors,js_errors,js_error_free_session_rate,startup,screens,resources}}`. Null pour métriques non disponibles. MCP `mip_rum_mobile_summary`, read-only.
+- [x] Documenter exemples RN bare et adaptateur navigation retenu, Expo seulement si réellement testé. Produire build/package typé et fixture d’installation. Publication npm/store non supposée autorisée : repo/build prêts ; compte/registry cible requis si distribution externe souhaitée.
+- [x] Fichier de matrice runtime réellement testé : versions RN, React, Hermes/JSC, OS, router et architecture native. Ne pas déclarer une plage de compatibilité à partir d’un seul test sous mocks.
+
+Livré le 18/09/2026 sur `feat/rum-runtime-p7-5`, **migration v82** (v81 étant prise par P8.1,
+fusionné pendant ce lot ; v82 reprend ses définitions d’effacement au lieu de celles de v80).
+La sixième case est cochée sur le fichier, pas sur une plage : **aucune version réelle de React
+Native, React, Hermes, JSC, iOS ou Android n’a été exercée**, et
+[MATRICE-RUNTIME.md](../../packages/rum-mobile/MATRICE-RUNTIME.md) le dit cellule par cellule.
+Expo n’est pas documenté, faute d’avoir été testé. Aucune publication npm ni store : le dépôt et
+le build sont prêts, registre cible et compte restent à décider. Preuves, écarts assumés et
+**clôture de P7** : [delivery-p7.md](delivery-p7.md).
 
 ## 5. Fichiers à modifier/créer
 
@@ -157,11 +166,13 @@ Créer `packages/rum-core/` ; `packages/rum-mobile/src/{consent,session,queue,tr
 
 ## 6. Recette et fin de lot
 
-- [ ] Étendre `tests/unit/rum-mobile.test.ts`, `agent-node.test.ts`, tests runtime contexte/gate/queue/headers avec horloges déterministes.
-- [ ] `tests/integration/rum-runtime-parity-sql.test.ts` : payload construit avec vrai package → parser → writer → API/queries, A/B, vieux SDK, erreur backend sans session et zéro double comptage.
-- [ ] `tests/e2e/mobile-console.spec.ts` : fixtures explicitement RN synthétiques, filtres/platform, données manquantes, drill-down issue, clavier/mobile.
-- [ ] Consommateur de build minimal TypeScript puis bundle Metro si toolchain disponible ; tests d’installation des exports. Ajouter à CI ce qui est reproductible sans compte externe.
+- [x] Étendre `tests/unit/rum-mobile.test.ts`, `agent-node.test.ts`, tests runtime contexte/gate/queue/headers avec horloges déterministes.
+- [x] `tests/integration/rum-runtime-parity-sql.test.ts` : payload construit avec vrai package → parser → writer → API/queries, A/B, vieux SDK, erreur backend sans session et zéro double comptage.
+- [x] `tests/e2e/mobile-console.spec.ts` : fixtures explicitement RN synthétiques, filtres/platform, données manquantes, drill-down issue, clavier/mobile.
+- [~] Consommateur de build minimal TypeScript puis bundle Metro si toolchain disponible ; tests d’installation des exports. Ajouter à CI ce qui est reproductible sans compte externe.
+      → le consommateur TypeScript, CJS et ESM est en CI (`verify-sdk-packaging.mjs`, 36 contrôles). **Aucun bundle Metro** : la toolchain n’est pas disponible dans ce dépôt, et l’y installer ne prouverait toujours rien du moteur ni de l’appareil.
 - [ ] Recette RN réelle dans P8.5 : app, appareil/simulateur, crash/relance/offline, symboles et release exacte. Si app indisponible, P7 JS peut être livré mais couverture native reste « non vérifiée ».
-- [ ] Migration additive, SDK release documentée, compatibilité ancienne version, activation opt-in de la propagation et du stockage durable. Preuve prod sur app de recette si fournie, sinon preuve contrat API et local distinctes.
+      → **non faite, et assumée comme telle.** P7 JS est livré ; la couverture native reste « non vérifiée », et l’écran `/mobile` l’affiche « Non collecté » au lieu de 0.
+- [x] Migration additive, SDK release documentée, compatibilité ancienne version, activation opt-in de la propagation et du stockage durable. Preuve prod sur app de recette si fournie, sinon preuve contrat API et local distinctes.
 
 Références consultées le 16/09/2026 : [Datadog RN Monitoring](https://docs.datadoghq.com/real_user_monitoring/application_monitoring/react_native/), [Setup](https://docs.datadoghq.com/real_user_monitoring/application_monitoring/react_native/setup/), [Advanced Configuration](https://docs.datadoghq.com/real_user_monitoring/application_monitoring/react_native/advanced_configuration/). La comparaison inclut collecte offline, consentement et intégration native ; aucune dépendance au SDK Datadog n’est introduite par ce plan.

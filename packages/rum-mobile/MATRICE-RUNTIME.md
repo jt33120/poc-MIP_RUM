@@ -21,7 +21,7 @@ Dernière mise à jour : 18/09/2026, lot P7.5.
 | pnpm | 9.15.9 (`packageManager`) | installation, build, filtres d'espace de travail |
 | TypeScript | 5.9.3 | compilation des paquets et du consommateur isolé |
 | esbuild | 0.28.0 | bundle CJS + ESM de `dist/` |
-| Vitest | 4.1.8 | 2 250 tests unitaires, 267 tests d'intégration |
+| Vitest | 4.1.8 | 2 279 tests unitaires, 284 tests d'intégration |
 | Playwright | 1.60.0, Chromium | écran `/mobile` (console, pas le SDK) |
 | PostgreSQL | 15.18 (conteneur aarch64) et 15 (service CI) | round-trip SDK → parseur → writer → tables |
 | Système du poste | macOS 26.1 (arm64) | exécution locale |
