@@ -12,7 +12,7 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 |---|---|---|---|---|---|---|---|
 | P7.1 — primitives pures et enveloppe RN | — | **aucune** | oui | oui | — | non | non |
 | P7.2 — consentement, visiteur, transport | — | **aucune** | oui | oui | — | non | non |
-| P7.3 — navigation, actions, erreurs JS | — | — | non | — | — | — | — |
+| P7.3 — navigation, actions, erreurs JS | — | **aucune** | oui | oui | — | non | non |
 | P7.4 — API Node et FastAPI | — | — | non | — | — | — | — |
 | P7.5 — `/mobile`, API/MCP, distribution | — | — | non | — | — | — | — |
 
@@ -276,3 +276,258 @@ Points d'accroche laissés en place :
   causalité côté RN.
 - `installCrashHandler()` et `installFetchPatch()` sont **non durcis** et le restent.
 - `getDiagnostics().nativeCapabilities` vaut `null` et attend P7.5.
+
+## P7.3 — navigation, actions et erreurs JS
+
+Démarré le 18/09/2026 sur `feat/rum-runtime-p7-3`, branchée sur `origin/master` (P7.1, P7.2 et
+P7.4 fusionnés). **Aucune migration** : tout ce que le sous-lot ajoute sur le fil existe déjà
+côté serveur — `mip.action_id` et `mip.action_type` depuis P3, `mip.error_fatal` depuis v69
+(`rum_error.is_fatal`), et la mesure de démarrage est un `rum.timing` P2 nommé. Le schéma, le
+parseur et le writer ne sont pas touchés.
+
+Cinq modules nouveaux, un par frontière : `navigation.ts` (dédoublonnage et adaptateur de
+routeur), `interactions.ts` (instrumentation d'appui), `causal.ts` (fenêtre causale),
+`rejets.ts` (rejets non gérés et capacité absente), `trace.ts` (origines et `traceparent`).
+
+> ### Rupture de comportement : `traceOrigins` est une liste FERMÉE
+>
+> **Avant**, `traceOrigins: []` ou absent propageait `traceparent` **et** `tracestate` vers
+> TOUTES les origines appelées par l'application, sauf l'endpoint. `tracestate` porte
+> `mip=s:<session_id>` : le défaut donnait donc à n'importe quel tiers appelé — régie,
+> fournisseur de cartes, passerelle de paiement — de quoi relier ses propres journaux à la
+> visite en cours. Aucun consentement recueilli pour de la mesure d'audience ne couvre cela.
+>
+> **Désormais**, une liste vide ne propage vers rien. Un client qui utilisait la corrélation
+> mobile → backend doit déclarer ses origines. La migration est documentée dans
+> [le README du paquet](../../packages/rum-mobile/README.md#migration-v02--v03--traceorigins-est-une-liste-fermée),
+> en tête de fichier, avec le `diff` à appliquer. Le paquet passe en **0.3.0** pour que la
+> version le signale.
+>
+> Ce qui NE change pas : les spans `http.client` restent émis pour tous les appels hors
+> endpoint. Mesurer la latence d'un appel tiers n'expose rien à ce tiers ; seuls les en-têtes
+> SORTANTS étaient le problème.
+
+### Décisions d'implémentation
+
+- **Le dédoublonnage compare à l'écran COURANT, jamais à l'historique.** Un routeur notifie
+  son état plusieurs fois par transition — conteneur, puis chaque pile imbriquée, parfois une
+  fois de plus pour l'animation. `getCurrentRoute()` rend la route active LA PLUS PROFONDE :
+  toutes ces notifications résolvent donc vers la même identité, et une seule vue sort.
+  `A → B → A` produit en revanche bien TROIS vues : un retour en arrière est une nouvelle
+  consultation, et l'effacer supprimerait les allers-retours, qui sont exactement ce qu'un
+  entonnoir mesure. L'identité comparée est la **clef de route** quand le routeur en fournit
+  une — elle distingue deux fiches produit empilées —, le nom sinon.
+- **`screen()` manuel dédoublonne aussi.** C'est un changement de comportement, assumé : la
+  plupart des intégrations manuelles branchent `screen()` sur un callback de routeur, qui se
+  répète. Un écran déjà courant n'est pas une navigation. Le README le signale.
+- **L'adaptateur de routeur ne connaît aucun routeur.** `navigationDepuisRouteur(ref)` lit
+  trois membres publics de la référence que l'application passe — `addListener("state")`,
+  `getCurrentRoute()`, `isReady()` — et n'importe rien. Il émet la route d'ouverture à
+  l'abonnement, sans quoi la première consultation ne serait jamais comptée.
+- **Le nom d'action est DÉCLARÉ, et le SDK n'évalue même pas les `children`.** Le SDK web lit
+  le libellé d'un bouton parce qu'un nœud DOM expose un nom accessible déjà public dans la
+  page. React Native n'a pas cet équivalent : le seul texte atteignable est ce que
+  l'utilisateur voit, et sur mobile c'est très souvent une DONNÉE — « Payer 128,40 € »,
+  « Appeler Marie D. ». Conséquence technique : les props sont recopiées **par descripteurs**
+  (`Object.getOwnPropertyDescriptors`) et non par `{...props}`, car un spread ÉVALUE chaque
+  prop. Un test le prouve avec un getter compteur sur `children` : zéro lecture.
+- **Une transformation de props, pas un composant.** Le paquet ne dépend ni de React ni de
+  React Native, et un `<MipPressable>` imposerait les deux. Une fonction props → props
+  s'applique à `Pressable`, `TouchableOpacity`, `Button` ou un composant maison. Le
+  gestionnaire enveloppé est MÉMORISÉ par (gestionnaire, nom) : sans cela, chaque rendu
+  produirait une fonction neuve, React verrait une prop changée, et instrumenter un bouton
+  coûterait un rendu par frame à l'application hôte.
+- **L'exception d'un `onPress` remonte telle quelle.** Notre appel est hors `try` : une erreur
+  applicative ne doit pas disparaître parce que MIP est installé. Et la fenêtre reste alors
+  ouverte, ce qui est exactement ce qu'il faut pour que l'erreur qui suit porte l'action.
+- **La fenêtre causale est celle de P3 (5 s), avec UNE adaptation : les promesses.** Sur le
+  web, la fenêtre est un simple délai. Sur mobile, un `onPress` rend très souvent une
+  promesse, et cette promesse EST la preuve observée que le travail appartient encore à
+  l'appui. Tant qu'elle est en vol, la fenêtre est maintenue — plafond 30 s, parce qu'une
+  promesse qui ne se résout jamais ne doit pas maintenir une attribution indéfinie. Son
+  règlement referme le maintien.
+- **Rien n'est deviné.** Hors fenêtre, `courante()` rend `null` : pas de repli sur « le
+  dernier clic connu ». L'heuristique `atTimestamp()` du web, qui attribue une ressource par
+  son horodatage de départ, n'a pas d'équivalent ici — elle existe côté navigateur parce que
+  `ResourceTiming` livre des entrées SANS contexte d'appel. Le patch `fetch` mobile, lui,
+  prend son instantané au départ de la requête : il n'a rien à reconstituer.
+- **`envelopeCtx()` est le seul point de lecture de l'action.** C'est le chemin traversé par
+  tous les signaux, et `commonAttrs()` y pose déjà `mip.action_id` depuis P7.1. Aucun builder
+  ni aucun code d'ingestion n'a été touché.
+- **Une racine refusée ne laisse aucun enfant orphelin — mécanisme du web, transposé.**
+  `enqueue` tient un ensemble `racinesRefusees` (le `revokedRoots` de
+  `packages/rum-sdk/src/consent.ts`) : une racine que la gate, `beforeSend` ou la file
+  refusent y entre, et tout signal ultérieur qui la désigne perd son `mip.action_id` AVANT le
+  hook. La file signale en plus ses retraits INVOLONTAIRES (capacité, TTL, refus définitif du
+  serveur) : quand une racine en fait partie, `queue.retireAttribut()` coupe le lien des
+  enfants restés en file. Un `action_id` qui survit à sa racine désigne une action que
+  l'ingestion n'a jamais reçue — c'est un lien cassé, pas une information partielle.
+- **La fatalité est DÉCLARÉE, et elle l'était déjà par le moteur.** `ErrorUtils` reçoit
+  `isFatal` et le SDK le jetait : `rum_error.is_fatal` valait donc `null` — « inconnu » — pour
+  tous les crashes mobiles depuis l'origine. Il est maintenant émis en `mip.error_fatal`,
+  colonne existante depuis v69. Un rejet non géré est déclaré NON fatal : il ne termine
+  aucune application React Native.
+- **Un JS fatal n'est pas un crash natif, et le modèle le dit déjà.** La source reste
+  `react_native_js` : le bundle s'arrête, la redbox s'affiche, le processus natif survit. Un
+  crash natif — signal, exception Objective-C, `SIGABRT` — n'est pas observable depuis ce
+  runtime et appartient à P8.5.
+- **Les rejets non gérés passent par un adaptateur, et c'est un choix.** Aucun moteur visé
+  (Hermes, JSC) n'expose de mécanisme standard ET RETIRABLE. Celui de React Native passe par
+  le module de suivi livré avec son polyfill de promesses, dont l'activation est GLOBALE et
+  remplacerait celle de l'application ; le poser nous-mêmes violerait la règle « ne retirer
+  que ce qu'on a posé ». `rejetsDepuisTracker(module)` réduit le branchement à un appel, avec
+  le module que l'application possède déjà — c'est elle qui le résout, pas nous.
+- **`process.on("unhandledRejection")` est explicitement REFUSÉ.** Un test l'a révélé pendant
+  l'écriture du lot : sous Node, la seule PRÉSENCE d'un écouteur sur cet événement supprime le
+  comportement par défaut du runtime — l'avertissement, et depuis Node 15 la terminaison. Y
+  poser un écouteur de télémétrie ferait SURVIVRE un processus que l'exploitant voulait voir
+  mourir, parce que MIP est installé. Seuls restent l'adaptateur explicite et l'événement
+  standard `unhandledrejection`, sur lequel nous n'appelons jamais `preventDefault`.
+- **`global.require("react-native")` est SUPPRIMÉ.** Il paraissait gratuit et ne l'était pas :
+  sous Metro, `global.require` n'est pas le `require` de CommonJS mais le résolveur interne du
+  bundler, indexé par NUMÉRO de module. Selon la configuration, il rendait `undefined` — donc
+  un cycle de vie silencieusement absent — ou levait. Il réussissait sur le poste du
+  développeur et échouait sur un build de production, sans que rien ne le signale.
+- **Le patch `fetch` fusionne les en-têtes au lieu de les remplacer.** Selon WHATWG,
+  `init.headers` REMPLACE la liste d'en-têtes d'un `Request` : l'implémentation précédente
+  (`init.headers || input.headers`) perdait l'`Authorization` et le `Content-Type` de
+  l'appelant dès qu'un `init` portait des en-têtes. La méthode est lue aux DEUX sources :
+  `fetch(new Request(url, {method:"POST"}))` était rapporté « GET » à l'ingestion.
+- **Un `traceparent` déjà posé et valide est préservé, et devient l'identité de notre span.**
+  Une couche tierce a ouvert la trace ; l'écraser couperait sa corrélation en deux. Un
+  `traceparent` MAL FORMÉ, lui, est remplacé : ce n'est pas une trace, et le conserver
+  fabriquerait un lien vers une trace qui n'existe pas (l'ingestion le refuse déjà,
+  `nativeTraceId`). Quand rien n'est à écrire, `init` est passé au `fetch` d'origine TEL QUEL
+  — l'objet n'est même pas recréé.
+- **Le démarrage mesuré est JS, et le nom ne le cache pas.**
+  `js_start_to_first_screen_ms` court depuis `init()` — moteur JS déjà démarré, bundle déjà
+  chargé — jusqu'à un callback EXPLICITE de l'application. Le démarrage à chaud porte un nom
+  DISTINCT (`js_warm_start_to_first_screen_ms`) et part du retour au premier plan : mélanger
+  les deux dans une moyenne rendrait les deux illisibles. Une durée supérieure à 60 s est
+  refusée — ce n'est plus un démarrage, c'est un callback appelé tard — et la fenêtre est
+  consommée quand même, sinon un appel plus tardif encore publierait une valeur pire.
+- **Aucun ANR n'est déduit.** Un compteur JS ne sait pas distinguer un thread principal bloqué
+  d'une application qui n'a rien à faire. Un test vérifie qu'aucun signal n'est émis par le
+  seul écoulement du temps.
+
+### Écarts assumés
+
+- **`traceOrigins` casse la corrélation des intégrations déjà en place** tant qu'elles n'ont
+  pas déclaré leurs origines. C'est le prix explicite de la correction : le défaut précédent
+  envoyait l'identifiant de session à des tiers, et aucun réglage intermédiaire ne permet de
+  « propager un peu moins » sans savoir vers qui. Le README ouvre sur la migration, le paquet
+  passe en 0.3.0.
+- **`screen()` manuel ne double plus un écran déjà courant.** Une application qui appelait
+  `screen("Feed")` à chaque rafraîchissement pour compter des consultations verra ce compteur
+  baisser. Le signal `screen` est documenté comme l'équivalent d'un changement d'URL ; répéter
+  la même URL n'est pas une navigation. `startView()` reste la voie pour marquer une
+  ouverture de vue nommée.
+- **`onLongPress` n'est pas instrumenté.** C'est un geste différent ; lui donner le même nom
+  que l'appui court fondrait deux intentions sous un seul libellé, et lui en donner un second
+  demanderait une seconde prop pour un usage que rien n'a encore réclamé.
+- **Aucune matrice de compatibilité n'est déclarée.** `navigationDepuisRouteur` et
+  `rejetsDepuisTracker` sont éprouvés contre des DOUBLES conformes à la surface publique
+  qu'ils consomment. Aucune version réelle de React Native, React, Hermes, OS ou routeur n'a
+  été exercée : consigner une plage à partir de mocks serait exactement ce que le plan
+  interdit. La matrice appartient à P7.5 et à la recette sur appareil de P8.5.
+- **Le maintien par promesse ne couvre que la valeur RENDUE par `onPress`.** Une chaîne
+  démarrée par un `setTimeout` dans le gestionnaire sort de la fenêtre au bout de 5 s comme
+  n'importe quel travail tardif. Observer les timers demanderait de les patcher tous, ce qui
+  déplacerait le risque du côté de l'application hôte.
+- **`nativeCapabilities` reste `null`.** `jsCapabilities` est un champ NOUVEAU et DISTINCT :
+  il décrit ce que la couche JS a réellement pu installer. Les deux ne doivent pas être
+  confondus par P7.5.
+- **`packages/rum-mobile/src/queue.ts` est modifié** (code livré par P7.2) : un troisième
+  paramètre OPTIONNEL de constructeur signale les retraits involontaires, et
+  `retireAttribut()` s'ajoute en symétrique d'`estampille()`. Sans ces deux points, la
+  fermeture du trou « racine évincée / enfants orphelins » était impossible sans dupliquer la
+  file. Aucune signature existante n'est changée.
+- **Aucune recette sur appareil réel.** La couverture native (crashes natifs, ANR, démarrage
+  natif) reste « non vérifiée » : elle appartient à P8.5. Aucun test sous Metro ni sur
+  simulateur n'a été joué.
+- **Le bundle React Native grossit d'un tiers** : `dist/index.js` passe de 62 086 à
+  82 578 octets bruts (60,6 → 80,6 Kio), et de 17 409 à 22 953 octets gzip (17,0 → 22,4 Kio),
+  mesuré sur les deux artefacts réellement construits. Aucun budget n'est défini sur ce
+  paquet ; les 35 Kio gzip portent sur le SDK web, **inchangé à 22,1 Kio**. Cinq modules
+  nouveaux, une fusion d'en-têtes conforme au WHATWG et une fenêtre causale ne tiennent pas
+  dans zéro octet ; l'alternative était de ne pas les livrer. Le bundle n'est pas minifié —
+  un client Metro le minifie à son tour.
+
+### Preuves locales
+
+| Preuve | Résultat |
+|---|---|
+| `pnpm exec vitest run tests/unit --exclude '**/.claude/**'` | **161 fichiers, 2223 tests verts** (160/2158 sur master : +1 fichier, +65 tests) |
+| dont `tests/unit/rum-mobile-p73.test.ts` | 65 tests — navigation, interactions, fenêtre causale, racines refusées, erreurs JS, fetch, démarrage |
+| `pnpm --filter @mip/rum-sdk size-check` | `dist/mip-rum.js` 63,6 Kio brut / **22,1 Kio gzip** (budget 35 Kio) — **inchangé** |
+| `pnpm --filter console exec tsc --noEmit` | aucune erreur |
+| `pnpm --filter @mip/rum-mobile exec tsc --noEmit` | aucune erreur |
+| `pnpm build:sdk` puis `pnpm -r build` | tous les paquets construits, console incluse |
+| `node scripts/verify-sdk-packaging.mjs` | **33 contrôles verts**, surface publique à **26 exports** (4 ajoutés) |
+| `SQL_TEST_DATABASE_URL=… pnpm test:sql` | **20 fichiers, 243 tests verts** (240 sur master : +3), 2 fichiers / 26 tests skippés |
+| dont `rum-runtime-parity-sql` | 8 tests — dont la causalité, le JS fatal et le démarrage jusqu'aux tables |
+
+Base de test jetable dédiée (`p73_causal` sur le PostgreSQL 15 local, port 5433), supprimée
+après la recette. `DATABASE_URL` n'a jamais été utilisée.
+
+### Recette exigée, et où elle est prouvée
+
+| Scénario | Preuve |
+|---|---|
+| Changement d'écran rapide | `rum-mobile-p73` : trois transitions notifiées deux fois chacune → trois vues, aucune perdue |
+| Routes imbriquées | `rum-mobile-p73` : quatre notifications pour une transition → une seule vue |
+| Retour sur le même écran | `rum-mobile-p73` : `A → B → A` rend bien trois vues |
+| Double callback | `rum-mobile-p73` : trois renotifications sans changement → une seule vue ; idem pour `screen()` manuel |
+| Deux actions proches | `rum-mobile-p73` : chaque effet porte l'identifiant de SA racine |
+| Erreur sans action | `rum-mobile-p73` : `addError` isolé, `action_id` absent |
+| Hook qui rejette | `rum-mobile-p73` : racine jetée par `beforeSend`, les effets partent sans `action_id` |
+| Requête en vol lors d'une rotation d'identité | `rum-mobile-p73` : le span porte l'identité ET la session du départ |
+| Réseau tiers sans en-têtes MIP | `rum-mobile-p73` : `init` passé tel quel, ni `traceparent` ni `mip=s:`, span quand même émis |
+| Racine évincée de la file | `rum-mobile-p73` : `retireAttribut` coupe le lien des enfants restés en file |
+| JS fatal ≠ crash natif | `rum-runtime-parity-sql` : `kind=crash`, `handled=false`, `is_fatal=true`, `error_source=react_native_js` |
+| Causalité jusqu'aux tables | `rum-runtime-parity-sql` : `rum_action.type=click`, l'effet dans la fenêtre pointe dessus, l'effet tardif est `null` |
+| Démarrage JS | `rum-runtime-parity-sql` : `rum_event` `js_start_to_first_screen_ms`, `timing_ms=742` |
+
+### Ce que P7.5 hérite
+
+Surface publique de `@mip/rum-mobile`, **26 exports** (22 en P7.2, +4) : les 22 précédents plus
+`instrumentPressable`, `markFirstScreenRendered`, `navigationDepuisRouteur`,
+`rejetsDepuisTracker`. Paquet en **0.3.0** ; `service.version` et le user-agent synthétique
+(`MIP-RN/0.3 (ios 17)`) suivent.
+
+**Signaux désormais émis par le SDK, et leurs noms exacts** — tous dans des tables existantes,
+aucune migration :
+
+| Signal | Table / forme | Repère de lecture |
+|---|---|---|
+| Démarrage JS à froid | `rum_event` | `event_type='timing'`, `name='js_start_to_first_screen_ms'`, `timing_ms` |
+| Démarrage JS à chaud | `rum_event` | `event_type='timing'`, `name='js_warm_start_to_first_screen_ms'` |
+| Appui instrumenté | `rum_action` + `rum_event` | `type='click'` ; `name` = le `mipActionName` déclaré |
+| Action déclarée | `rum_action` + `rum_event` | `type='manual'` |
+| Effet causal | toute table portant `action_id` | non nul UNIQUEMENT dans la fenêtre d'une racine acceptée |
+| Erreur JS non interceptée | `rum_error` | `kind='crash'`, `handled=false`, `is_fatal` **renseigné**, `error_source='react_native_js'` |
+| Rejet non géré | `rum_error` | `kind='unhandledrejection'`, `handled=false`, `is_fatal=false` |
+| Écran | `rum_pageview` | dédoublonné : une ligne par consultation, pas par callback |
+
+**Ce que le SDK NE PEUT PAS observer, et que `/mobile` ne doit donc pas afficher comme zéro :**
+
+- **crashes natifs, ANR, démarrage natif** : hors couche JS. `nativeCapabilities` reste `null`.
+  Un badge « non collecté » est la seule présentation juste ; « 100 % sans crash » serait faux.
+- **rejets non gérés quand aucun mécanisme n'est branché** :
+  `getDiagnostics().jsCapabilities.unhandledRejection === "unavailable"`. Une application sans
+  adaptateur n'a pas zéro rejet, elle n'en a aucun d'observé.
+- **écrans quand aucun adaptateur de navigation n'est branché** :
+  `jsCapabilities.navigation === "unavailable"`. `screen()` manuel peut néanmoins alimenter la
+  table — l'absence d'adaptateur ne veut donc pas dire absence de données, seulement absence
+  de garantie de couverture.
+- **démarrage tant que l'application n'a pas appelé `markFirstScreenRendered()`** :
+  `jsCapabilities.appStart === "unavailable"`. Il n'y a AUCUNE mesure automatique.
+- **corrélation réseau vers une origine non déclarée** : depuis ce lot, `traceOrigins` est une
+  liste fermée. Un `rum_span` front sans trace serveur jointe n'est pas un incident de
+  tracing : c'est une origine que le client n'a pas déclarée.
+
+`jsCapabilities` (`errorHandler`, `unhandledRejection`, `navigation`, `appStart`, chacun
+`"active" | "unavailable"`, l'objet entier `null` avant `init`) est la source client naturelle
+du modèle `mobile_capabilities` de P7.5 — pour les valeurs `js_errors` et `screen_tracking`.
+Il reste un **déclaratif client** : comme la spec §4 P7.5 l'exige, `verified_at` ne peut venir
+que d'une recette opérateur, jamais de ce booléen.

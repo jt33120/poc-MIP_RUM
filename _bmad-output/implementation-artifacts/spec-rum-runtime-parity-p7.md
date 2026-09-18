@@ -115,14 +115,19 @@ conditionnée à P8.1. Preuves et écarts assumés : [delivery-p7.md](delivery-p
 
 ### P7.3 — navigation, actions et erreurs JS (M)
 
-- [ ] Adaptateur navigation basé sur les callbacks publics du routeur pris en charge ; exposition `screen` manuelle pour les autres. Même écran/route key ne double pas une vue à cause de callbacks répétés.
-- [ ] Adaptateur Pressable/Button opt-in : nom explicite `mipActionName`, pas extraction de texte privé ; appels original et accessibilité conservés. Action racine conservée seulement si gate/hook l’accepte.
-- [ ] Fenêtre causale définie comme P3 mais adaptée aux promesses et interactions RN testables. Un travail asynchrone plus tardif hors fenêtre demeure non attribué ; ne pas deviner le dernier clic.
-- [ ] ErrorUtils + mécanisme public de rejections disponible dans le runtime réel ; mode capacité absent explicite pour moteur non supporté. Garder le handler précédent et la redbox/terminaison ; JS fatal distinct du crash natif.
-- [ ] Fetch : recopier correctement Request/headers/méthode, préserver un traceparent existant valide ; propagation seulement sur `traceOrigins` explicites, aucune donnée de session vers origines tierces par défaut. Endpoint de collecte toujours exclu pour éviter boucle.
-- [ ] App start : mesure JS depuis initialisation SDK jusqu’au premier écran rendu via callback explicite, nom `js_start_to_first_screen_ms`. Ne pas la vendre comme démarrage natif complet. Warm start distinct. Pas d’ANR à partir d’un simple timer JS.
+- [x] Adaptateur navigation basé sur les callbacks publics du routeur pris en charge ; exposition `screen` manuelle pour les autres. Même écran/route key ne double pas une vue à cause de callbacks répétés.
+- [x] Adaptateur Pressable/Button opt-in : nom explicite `mipActionName`, pas extraction de texte privé ; appels original et accessibilité conservés. Action racine conservée seulement si gate/hook l’accepte.
+- [x] Fenêtre causale définie comme P3 mais adaptée aux promesses et interactions RN testables. Un travail asynchrone plus tardif hors fenêtre demeure non attribué ; ne pas deviner le dernier clic.
+- [x] ErrorUtils + mécanisme public de rejections disponible dans le runtime réel ; mode capacité absent explicite pour moteur non supporté. Garder le handler précédent et la redbox/terminaison ; JS fatal distinct du crash natif.
+- [x] Fetch : recopier correctement Request/headers/méthode, préserver un traceparent existant valide ; propagation seulement sur `traceOrigins` explicites, aucune donnée de session vers origines tierces par défaut. Endpoint de collecte toujours exclu pour éviter boucle.
+- [x] App start : mesure JS depuis initialisation SDK jusqu’au premier écran rendu via callback explicite, nom `js_start_to_first_screen_ms`. Ne pas la vendre comme démarrage natif complet. Warm start distinct. Pas d’ANR à partir d’un simple timer JS.
 
 Recette : changement d’écran rapide, routes imbriquées, retour sur même écran, double callback, deux actions proches, erreur sans action, hook qui rejette, requête en vol lors de rotation identité, réseau tiers sans headers MIP.
+
+Livré le 18/09/2026 sur `feat/rum-runtime-p7-3`, sans migration. **Rupture de comportement
+assumée** : `traceOrigins` est désormais une liste FERMÉE — une liste vide ne propage plus
+rien. Migration documentée dans le README du paquet. Preuves et écarts assumés :
+[delivery-p7.md](delivery-p7.md).
 
 ### P7.4 — API Node et FastAPI (M)
 

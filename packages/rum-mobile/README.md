@@ -14,6 +14,47 @@ P7.2 ajoute le **consentement**, le **visiteur d'installation** et un transport
 qui ne retire un lot qu'**après acquittement** : hors ligne, la télémétrie
 attend au lieu de disparaître.
 
+P7.3 ajoute la **navigation**, les **interactions**, la **fenêtre causale**, les
+**rejets de promesses**, la **mesure de démarrage JS** — et **change le défaut de
+`traceOrigins`** : [lire la migration](#migration-v02--v03--traceorigins-est-une-liste-fermée)
+**avant** de mettre à jour.
+
+> ## Migration v0.2 → v0.3 — `traceOrigins` est une liste fermée
+>
+> **Avant**, `traceOrigins: []` (ou l'option absente) propageait `traceparent` et
+> `tracestate` vers **toutes** les origines appelées par l'application, sauf
+> l'endpoint de collecte. **Désormais, une liste vide ne propage vers rien.**
+>
+> **Pourquoi.** `tracestate` transporte l'identifiant de **session** et
+> `traceparent` l'identifiant de **trace**. Les envoyer à une régie publicitaire,
+> à un fournisseur de cartes ou à une passerelle de paiement leur donne de quoi
+> relier leurs propres journaux à la visite en cours. Aucun consentement recueilli
+> pour de la mesure d'audience ne couvre cela, et personne ne l'avait demandé :
+> c'était le défaut.
+>
+> **Ce que vous devez faire.** Si vous utilisiez la corrélation mobile → backend,
+> **déclarez vos origines** :
+>
+> ```diff
+>   RUM.init({
+>     endpoint: "https://<ingest>/v1/traces",
+> -   // rien : le traceparent partait partout
+> +   traceOrigins: ["https://api.exemple.fr", "https://auth.exemple.fr"],
+>   });
+> ```
+>
+> Chaque entrée doit être une **origine absolue** (`schéma://hôte[:port]`) ; une
+> URL complète est acceptée, seule son origine est retenue. Une entrée mal formée
+> est **refusée** avec un avertissement unique au démarrage — depuis que le défaut
+> ne propage plus rien, l'ignorer en silence couperait la corrélation d'un client
+> qui croit l'avoir demandée.
+>
+> **Ce qui ne change pas.** Les spans `http.client` restent émis pour **tous** les
+> appels hors endpoint : mesurer la latence d'un appel tiers n'expose rien à ce
+> tiers. Seuls les **en-têtes sortants** sont concernés. L'endpoint de collecte
+> reste exclu même s'il figure dans la liste — une requête d'ingestion tracée
+> produirait un span, qui produirait une requête.
+
 ## Installation & init
 
 ```ts
@@ -28,7 +69,8 @@ RUM.init({
   appVersion: "1.2.3",
   platform: Platform.OS,          // 'ios' | 'android'
   osVersion: String(Platform.Version),
-  traceOrigins: ["https://api.exemple.fr"], // où propager le traceparent
+  // LISTE FERMÉE : ce qui n'y figure pas ne reçoit aucun en-tête de trace.
+  traceOrigins: ["https://api.exemple.fr"],
   beforeSend: (attributs) => attributs,     // filtre PII SYNCHRONE, facultatif
 
   // P7.2 — consentement. `false` par défaut pour ne pas éteindre une
@@ -42,6 +84,15 @@ RUM.init({
   adapters: {
     storage: AsyncStorage,                  // { getItem, setItem, removeItem }
     lifecycle: { subscribe: (cb) => AppState.addEventListener("change", cb).remove },
+
+    // P7.3 — navigation : les callbacks PUBLICS de votre routeur.
+    navigation: RUM.navigationDepuisRouteur(refConteneur),
+
+    // P7.3 — rejets de promesses non gérés. C'est VOTRE module, vous le
+    // résolvez ; le SDK ne fait aucun `require` (voir plus bas).
+    unhandledRejection: RUM.rejetsDepuisTracker(
+      require("promise/setimmediate/rejection-tracking"),
+    ),
   },
 
   // P7.2 — file hors ligne. `persistent` reste FAUX par défaut : voir plus bas.
@@ -52,19 +103,112 @@ RUM.init({
 RUM.consent(true);
 ```
 
-## Ce qui est capté (v0.2)
+## Ce qui est capté (v0.3)
 
 | Signal | Comment | Table |
 | --- | --- | --- |
-| **Crashes / erreurs JS** | handler global `ErrorUtils` | `rum_error` |
+| **Erreurs JS non interceptées** | handler global `ErrorUtils`, fatalité **déclarée** | `rum_error` (`kind=crash`) |
+| **Rejets de promesses** | `adapters.unhandledRejection` ou événement standard | `rum_error` (`kind=unhandledrejection`) |
 | **Erreur déclarée** | `RUM.addError(e, ctx?, { fingerprint }?)` | `rum_error` |
-| **Écrans** | `RUM.screen("Accueil")` | `rum_pageview` |
+| **Écrans** | `adapters.navigation`, ou `RUM.screen("Accueil", key?)` | `rum_pageview` |
 | **Vue nommée** | `RUM.startView("Checkout", ctx?)` | `rum_event` (`view`) |
-| **Action** | `RUM.addAction("Payer", ctx?)` | `rum_event` + `rum_action` |
+| **Action déclarée** | `RUM.addAction("Payer", ctx?)` | `rum_event` + `rum_action` (`manual`) |
+| **Appui instrumenté** | `RUM.instrumentPressable({ mipActionName, onPress })` | `rum_event` + `rum_action` (`click`) |
 | **Timing** | `RUM.addTiming("prete")` | `rum_event` (`timing`) |
+| **Démarrage JS** | `RUM.markFirstScreenRendered()` | `rum_event` (`timing`) |
 | **Feature flag** | `RUM.addFeatureFlagEvaluation("nom", true)` | `rum_event` (`feature_flag`) |
-| **Réseau** | patch `fetch` + propagation `traceparent` | `rum_span` (front) |
+| **Réseau** | patch `fetch` + `traceparent` vers `traceOrigins` | `rum_span` (front) |
 | **Événements** | `RUM.track("checkout", { amount: 42 })` | `rum_event` (`custom`) |
+
+### Navigation : les callbacks publics du routeur
+
+`adapters.navigation` reçoit les notifications du routeur et **dédoublonne** : un
+même écran — ou une même **clef de route** — ne produit pas deux pages vues parce
+qu'un callback s'est répété. Un routeur notifie son état plusieurs fois pour une
+seule transition (conteneur, puis chaque pile imbriquée) ; sans dédoublonnage,
+toutes les métriques par écran seraient fausses dans ce rapport.
+
+```ts
+import { createNavigationContainerRef } from "@react-navigation/native";
+const refConteneur = createNavigationContainerRef();
+// init({ adapters: { navigation: RUM.navigationDepuisRouteur(refConteneur) } })
+<NavigationContainer ref={refConteneur}>…</NavigationContainer>
+```
+
+`navigationDepuisRouteur` ne lit que trois membres publics —
+`addListener("state")`, `getCurrentRoute()` et `isReady()` — et n'importe
+**aucune** bibliothèque : c'est votre référence que vous passez. Pour tout autre
+routeur, `RUM.screen(nom, clefFacultative)` fait la même chose à la main, avec le
+même dédoublonnage.
+
+> `A → B → A` produit bien **trois** pages vues : le dédoublonnage ne compare
+> qu'à l'écran **courant**, jamais à l'historique. Un retour en arrière est une
+> nouvelle consultation. En revanche, `screen("A")` appelé deux fois de suite
+> n'en produit qu'une — **changement par rapport à la v0.2**, où la seconde
+> passait.
+
+### Interactions : nom déclaré, jamais le texte affiché
+
+```tsx
+<Pressable {...RUM.instrumentPressable({
+  mipActionName: "checkout.payer",          // OBLIGATOIRE — sinon rien n'est fait
+  accessibilityLabel: "Payer la commande",  // préservée telle quelle
+  onPress: payer,
+})} />
+```
+
+Le nom est **déclaré**, jamais extrait des `children`. Sur mobile, le libellé
+d'un bouton est très souvent une **donnée** — « Payer 128,40 € », « Appeler
+Marie D. », « Supprimer mon compte » — et le lire l'enverrait dans un champ de
+télémétrie que personne ne relit avant l'envoi. Le SDK ne l'évalue même pas :
+les props sont recopiées **par descripteurs**, pas par `{...props}`.
+
+Sans `mipActionName` ou sans `onPress`, les props sont rendues **à l'identique**
+(le même objet). L'appel d'origine est préservé : arguments, `this`, valeur
+rendue et **exceptions**, qui remontent inchangées. Le gestionnaire enveloppé est
+mémorisé — un même `onPress` rend le même wrapper, sans re-rendu par frame.
+
+### Fenêtre causale
+
+Une action — `addAction` ou un appui instrumenté — ouvre une fenêtre de **5 s**,
+mesurée sur l'horloge monotone. Tout signal émis pendant cette fenêtre porte
+`mip.action_id`. Ensuite, **plus rien** : un travail asynchrone démarré hors
+fenêtre reste **non attribué**, et le SDK ne « devine » jamais le dernier clic.
+
+Une **promesse rendue par `onPress`** est la seule prolongation : tant qu'elle
+est en vol, la fenêtre est maintenue (plafond **30 s**), parce que cette promesse
+est une preuve *observée* de causalité, pas une supposition. Son règlement
+referme le maintien.
+
+La fenêtre se ferme aussi à chaque **navigation** et à chaque **rotation
+d'identité** : ce qui se passe sur l'écran suivant appartient à l'écran suivant.
+
+**Une racine refusée ne laisse aucun orphelin.** Si le consentement ou
+`beforeSend` rejette l'action, ou si elle tombe de la file (capacité, TTL, refus
+définitif du serveur), les signaux qu'elle a causés perdent leur `mip.action_id`
+— un identifiant qui désigne une action absente de l'ingestion est un lien cassé,
+pas une information partielle.
+
+### Démarrage : **JS**, et seulement JS
+
+`RUM.markFirstScreenRendered()` émet `js_start_to_first_screen_ms`, mesuré depuis
+**`init()`** jusqu'à cet appel — typiquement dans le `onLayout` du premier écran.
+
+> Ce **n'est pas** un temps de démarrage d'application. Il ne contient ni le
+> lancement du processus, ni le pré-main natif, ni l'écran de lancement, ni le
+> chargement du bundle avant `init()`. Présenté comme « le démarrage », il
+> mentirait d'un facteur inconnu, et toujours dans le même sens : il sous-estime.
+> Le démarrage natif complet appartient à P8.5.
+
+Après un retour au premier plan, le même appel émet
+`js_warm_start_to_first_screen_ms`, mesuré depuis ce retour — nom **distinct**,
+parce que les deux populations n'ont ni la même cause ni le même ordre de
+grandeur. Une durée supérieure à **60 s** est refusée : ce n'est plus un
+démarrage.
+
+**Aucun ANR n'est déduit.** Un compteur JS ne sait pas distinguer un thread
+principal bloqué d'une application qui n'a rien à faire. L'ANR est une mesure
+native, et elle appartient à P8.5.
 
 ### Session = visite, visiteur = installation
 
@@ -88,7 +232,11 @@ le web (même `trace_id`, jointure avec l'agent Node ou le middleware serveur).
 | Fonction | Retour | Note |
 | --- | --- | --- |
 | `init(options)` | `void` | idempotent |
-| `screen(name)` | `void` | signal de navigation : page vue, pas une vue P2 |
+| `screen(name, key?)` | `void` | page vue, dédoublonnée sur l'écran courant |
+| `instrumentPressable(props)` | props | opt-in via `mipActionName` ; sans lui, objet inchangé |
+| `markFirstScreenRendered()` | `boolean` | démarrage **JS** ; `false` si déjà mesuré |
+| `navigationDepuisRouteur(ref)` | adaptateur | à passer dans `adapters.navigation` |
+| `rejetsDepuisTracker(module)` | adaptateur | à passer dans `adapters.unhandledRejection` |
 | `track(name, props?, context?)` | `void` | retour historique conservé |
 | `flushNow()` | `Promise<void>` | résolu même si l'envoi échoue ; ne court-circuite pas un retrait en cours |
 | `consent(granted)` | `void` | `false` purge mémoire **et** disque, synchronement |
@@ -197,11 +345,56 @@ Un événement restauré ne porte **aucune identité brute**. Il est rattaché �
 personne seulement si le serveur connaît déjà sa session d'origine — jamais
 reconstruit depuis l'utilisateur courant au lancement suivant.
 
+## Erreurs JS : ce qui est collecté, et ce qui ne l'est pas
+
+| Mécanisme | Collecté | `kind` | `is_fatal` |
+| --- | --- | --- | --- |
+| `ErrorUtils` (erreur JS non interceptée) | oui | `crash` | **déclaré** par le moteur |
+| Rejet de promesse non géré | si un mécanisme est disponible | `unhandledrejection` | `false` |
+| `RUM.addError(...)` | oui | `error` | `null` (inconnu) |
+| **Crash natif** iOS/Android | **non** — hors couche JS | — | — |
+| **ANR** | **non** | — | — |
+
+Le handler précédent est **toujours** rappelé : la redbox, la remontée au natif
+et la terminaison ne sont jamais masquées. Une erreur `ErrorUtils` **n'est pas**
+un crash natif : sa source reste `react_native_js`, le processus natif survit, et
+les compter ensemble produirait un taux de « sessions sans crash » qui ne décrit
+ni l'un ni l'autre.
+
+**Rejets non gérés — pourquoi un adaptateur.** Aucun moteur JS visé (Hermes, JSC)
+n'expose de mécanisme standard **et retirable**. Celui de React Native passe par
+le module de suivi livré avec son polyfill de promesses, dont l'activation est
+**globale** et remplacerait la vôtre ; le SDK refuse de la poser lui-même, parce
+qu'il ne pose que ce qu'il sait retirer. `rejetsDepuisTracker(module)` réduit le
+branchement à un appel, avec **votre** module.
+
+À défaut, le SDK utilise l'événement standard `unhandledrejection` **s'il existe**
+sur l'objet global (sans `preventDefault` : la trace du moteur reste visible).
+Il n'utilise **jamais** `process.on("unhandledRejection")` : sous Node, la seule
+présence d'un écouteur supprime le comportement par défaut du runtime — collecter
+ne doit pas faire survivre un processus que l'exploitant voulait voir mourir.
+
+Quand rien n'est disponible, `getDiagnostics().jsCapabilities.unhandledRejection`
+vaut `"unavailable"`. **Ce n'est pas « zéro rejet »** : toute surface qui lit cet
+état doit afficher « non collecté ».
+
+```ts
+getDiagnostics().jsCapabilities
+// { errorHandler, unhandledRejection, navigation, appStart } — "active" | "unavailable"
+// null AVANT init. Distinct de `nativeCapabilities`, qui reste null (P7.5).
+```
+
 ## Garanties
 
-- **Zéro dépendance runtime** : `@mip/rum-core` est *inliné* au build, l'artefact
-  publié est autonome (`react-native` en peer optionnel, `AppState` chargé en
-  `require` optionnel).
+- **Zéro dépendance runtime et zéro peer dependency** : `@mip/rum-core` est
+  *inliné* au build, l'artefact publié est autonome, et le paquet n'importe
+  **ni** `react-native`, **ni** React, **ni** aucun routeur.
+- **Aucune découverte de capacité à l'exécution.** Le repli historique
+  `global.require("react-native")` a été **supprimé** : sous Metro,
+  `global.require` n'est pas le `require` de CommonJS mais le résolveur interne du
+  bundler, indexé par numéro de module. Il réussissait sur le poste du
+  développeur et échouait en production, sans le signaler. Ce que l'application
+  ne branche pas est **absent**, et `getDiagnostics()` le dit.
 - **Aucun global DOM** dans le bundle — vérifié à chaque CI par
   `scripts/verify-sdk-packaging.mjs`, qui installe le paquet construit dans un
   consommateur isolé et interdit l'accès à `document`/`window`/`navigator`.
@@ -210,21 +403,25 @@ reconstruit depuis l'utilisateur courant au lancement suivant.
   comportement d'origine (redbox / remontée natif).
 - **Souverain** : OTLP/HTTP JSON, backend remplaçable, données en UE.
 
-## Ce qui n'est PAS encore là
+## Ce qui n'est PAS là
 
-> Périmètre v0.2 : couche JS React Native — enveloppe, contexte, consentement,
-> identité et transport.
+> Périmètre v0.3 : **couche JS React Native**. Enveloppe, contexte, consentement,
+> identité, transport, navigation, interactions, causalité et erreurs JS.
 >
-> - **Adaptateur navigation** : le type existe et `init` l'accepte, mais rien ne
->   s'y abonne encore. `screen()` reste la voie manuelle.
-> - **Adaptateur Pressable / interactions**, durcissement d'`ErrorUtils` et de la
->   propagation `fetch`, mesure de démarrage JS : à venir. Par défaut,
->   `traceOrigins: []` propage encore le `traceparent` à **toutes** les origines
->   sauf l'endpoint de collecte — déclarer explicitement ses origines est
->   recommandé dès aujourd'hui.
 > - **Capacités natives** (`getDiagnostics().nativeCapabilities`) restent `null` :
->   rien ne les observe encore.
-> - **Crashes natifs** iOS/Android hors JS, ANR et démarrage natif : hors couche
->   JS, non collectés. Une erreur `ErrorUtils` **n'est pas** un crash natif.
+>   rien ne les observe encore. P7.5 porte le modèle de capacités et la vue
+>   `/mobile`. `jsCapabilities`, lui, est renseigné dès `init`.
+> - **Crashes natifs** iOS/Android hors JS, **ANR** et **démarrage natif** : hors
+>   couche JS, **non collectés**. Aucun badge « 100 % sans crash » ne peut être
+>   dérivé de ce SDK.
+> - **Aucune matrice de compatibilité déclarée.** Les adaptateurs
+>   `navigationDepuisRouteur` et `rejetsDepuisTracker` sont éprouvés contre des
+>   doubles conformes à la surface publique qu'ils consomment ; **aucune version
+>   réelle** de React Native, de React, de Hermes, d'OS ou de routeur n'a été
+>   exercée. La matrice réellement testée appartient à P7.5 et à la recette sur
+>   appareil de P8.5.
 > - **Aucune recette sur appareil réel** : la couverture native reste « non
->   vérifiée » et appartient à P8.5.
+>   vérifiée » et appartient à P8.5. Aucun test sous Metro ni sur simulateur.
+> - **`onLongPress` n'est pas instrumenté** : c'est un geste différent, et lui
+>   donner le même nom que l'appui court fondrait deux intentions sous un seul
+>   libellé.
