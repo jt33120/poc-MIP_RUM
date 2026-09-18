@@ -11,6 +11,13 @@
 // transaction, jamais fuité vers la requête suivante par le pooler. Au-delà, la
 // lecture échoue en `query_budget_exceeded` : l'Explorer dit qu'il n'a pas pu
 // répondre, il ne rend jamais une série de zéros qu'on prendrait pour du calme.
+//
+// DEUX CHEMINS (P6.6). Par défaut, les lignes brutes. Quand un agrégat pré-calculé
+// porte TOUTES les dimensions demandées et exactement la même population, la
+// lecture devient hybride : l'agrégat pour les heures entières déjà consolidées,
+// le brut pour le reste. `meta.source` dit lequel a répondu, `meta.approximate`
+// si la valeur vient d'une distribution en seaux, et `meta.rollup.reason` POURQUOI
+// l'agrégat n'a pas servi — jamais un silence.
 import {
   ExplorerBudgetError,
   UnsupportedExplorerDimension,
@@ -28,15 +35,24 @@ import {
 import {
   COLONNE_PREFIXE,
   compileGroups,
+  compileRollupHistogram,
   compileRows,
   compileSeries,
   compileTotal,
   type CompiledSql,
   type GroupRow,
+  type HistogrammeRow,
   type JournalRow,
   type SeriesRow,
   type TotalRow,
 } from "./analytics-compiler";
+import {
+  chooseRollup,
+  effectif,
+  hybrideDisponible,
+  percentileFusionne,
+  type RollupSource,
+} from "./analytics-rollups";
 import { tx } from "./db";
 import { dimensionSupport, type DatasetId } from "./query-compiler";
 import type { AnalyticsQuery, Dimension, Parsed } from "./query-contract";
@@ -44,10 +60,27 @@ import { contextFor } from "./query-sql";
 import { dimensionSchema } from "./query-schema";
 
 /**
- * Budget par défaut d'une lecture d'Explorer. Objectif de travail, pas un SLA :
- * P6.6 le mesurera sur base représentative et l'ajustera avec ses preuves.
+ * Budget par défaut d'une lecture d'Explorer.
+ *
+ * MESURÉ, pas supposé (P6.6). Base jetable PostgreSQL 15 de 738 Mio — 1,2 M
+ * d'événements sur 7 jours répartis 1 M / 150 k / 50 k entre trois apps, 600 k
+ * Web Vitals, 400 k vues, 250 k erreurs, 120 k sessions dont 6 % de robots. Sur
+ * 20 tirages à chaud, la lecture la plus lourde (série temporelle 7 jours,
+ * filtre d'environnement, regroupement par release) tient à 947 ms en médiane et
+ * 987 ms au p95 — sous l'objectif de test de 2 s. Les autres scénarios vont de
+ * 29 ms (fenêtre de 24 h avec filtre sélectif) à 356 ms. Protocole et chiffres
+ * complets : `tests/integration/explorer-bench-p66.test.ts` et l'en-tête de
+ * `apps/ingest/sql/migration-v80.sql`.
+ *
+ * Le budget RESTE à 5 s après mesure, et ce n'est pas un oubli : il laisse un
+ * facteur cinq pour un cache froid, un hôte plus lent ou un parc plus gros. Le
+ * descendre échangerait une réponse lente contre une erreur, alors que la marge
+ * mesurée n'a jamais été entamée. Objectif de travail, jamais un SLA de production.
  */
 export const EXPLORER_TIMEOUT_MS = 5_000;
+
+/** Origine de la mesure rendue, annoncée dans `meta.source`. */
+export type ExplorerSource = "raw" | "rollup+raw";
 
 /** Rétention de la purge d'ingestion : au-delà, la fenêtre demandée n'est plus couverte. */
 function retentionDays(): number {
@@ -85,8 +118,15 @@ export interface ExplorerMeta {
   additive: boolean;
   /** Ce qui est compté, en toutes lettres. */
   counting: string;
-  /** `raw` : lecture brute. Les agrégats pré-calculés viendront avec P6.6. */
-  source: "raw";
+  /** `raw` : tout vient des lignes. `rollup+raw` : agrégat consolidé + complément brut. */
+  source: ExplorerSource;
+  /**
+   * `true` : la valeur vient d'une distribution en seaux, donc approchée à la
+   * largeur de seau près. Jamais tue, jamais présentée comme exacte.
+   */
+  approximate: boolean;
+  /** L'agrégat a-t-il pu servir, et sinon pourquoi — en toutes lettres. */
+  rollup: { eligible: boolean; source: string | null; reason: string | null };
   group_by: Dimension[];
   visualization: string;
   warnings: string[];
@@ -160,6 +200,27 @@ export interface ExplorerOptions {
   timeoutMs?: number;
 }
 
+/** Exécute une ou plusieurs instructions dans UNE transaction bornée en temps. */
+type Executeur = <T>(sql: CompiledSql | null) => Promise<T[]>;
+
+async function sousBudget<T>(budget: number, fn: (run: Executeur) => Promise<T>): Promise<T> {
+  return tx(async (client) => {
+    // Une seule photographie et une seule horloge pour toutes les lectures.
+    await client.query("set transaction isolation level repeatable read read only");
+    // `SET LOCAL` : rendu avec la transaction. Un `set` de session fuirait le
+    // budget vers la requête suivante qui réutilise la même connexion du pool.
+    await client.query(`set local statement_timeout = ${Number(budget)}`);
+    return fn(async (sql) => (sql ? (await client.query(sql.text, sql.params)).rows : []));
+  }).catch((error: unknown) => {
+    if (estDelaiDepasse(error)) throw new ExplorerBudgetError();
+    throw error;
+  });
+}
+
+async function lireSous<T>(budget: number, sql: CompiledSql): Promise<T[]> {
+  return sousBudget(budget, (run) => run<T>(sql));
+}
+
 /**
  * Exécute une requête déjà validée. Les erreurs de dimension non portée
  * remontent typées (400) ; un dépassement de budget remonte en
@@ -171,8 +232,6 @@ export async function exploreAnalytics(
 ): Promise<ExplorerResult> {
   const { query, plan } = request;
   const schema = await dimensionSchema();
-  const definition = datasetDefinition(plan.dataset);
-  const field = definition.fields[plan.measure.field];
   const additive = estAdditive(plan.measure.aggregation);
   const budget = options.timeoutMs ?? EXPLORER_TIMEOUT_MS;
 
@@ -184,29 +243,35 @@ export async function exploreAnalytics(
     return compiled.value;
   };
 
+  // L'agrégat D'ABORD : s'il répond, il remplace total ET groupes, et la lecture
+  // brute n'est même pas compilée. S'il ne répond pas, la RAISON est rendue.
+  const decision = chooseRollup(plan, query);
+  const disponible = decision.usable && hybrideDisponible(schema);
+  const etatAgregat: ExplorerMeta["rollup"] = decision.usable
+    ? {
+        eligible: disponible,
+        source: decision.source.id,
+        reason: disponible ? null : "l'agrégat n'existe pas encore dans ce schéma (migration v80 non appliquée)",
+      }
+    : { eligible: false, source: null, reason: decision.reason };
+
+  if (disponible && decision.usable) {
+    const sql = compile((ctx, p) => compileRollupHistogram(ctx, p, decision.source));
+    const lignes = await lireSous<HistogrammeRow>(budget, sql);
+    return rendreHybride(request, decision.source, lignes, etatAgregat);
+  }
+
   const total = compile(compileTotal);
   const groupes = plan.visualization === "toplist" || plan.visualization === "timeseries" ? compile(compileGroups) : null;
   const serie = plan.visualization === "timeseries" ? compile(compileSeries) : null;
   const lignes = plan.visualization === "table" ? compile(compileRows) : null;
 
-  const lu = await tx(async (client) => {
-    // Une seule photographie et une seule horloge pour les quatre lectures.
-    await client.query("set transaction isolation level repeatable read read only");
-    // `SET LOCAL` : rendu avec la transaction. Un `set` de session fuirait le
-    // budget vers la requête suivante qui réutilise la même connexion du pool.
-    await client.query(`set local statement_timeout = ${Number(budget)}`);
-    const run = async <T>(sql: CompiledSql | null): Promise<T[]> =>
-      sql ? ((await client.query(sql.text, sql.params)).rows as T[]) : [];
-    return {
-      total: await run<TotalRow>(total),
-      groupes: await run<GroupRow>(groupes),
-      serie: await run<SeriesRow>(serie),
-      lignes: await run<JournalRow>(lignes),
-    };
-  }).catch((error: unknown) => {
-    if (estDelaiDepasse(error)) throw new ExplorerBudgetError();
-    throw error;
-  });
+  const lu = await sousBudget(budget, async (run) => ({
+    total: await run<TotalRow>(total),
+    groupes: await run<GroupRow>(groupes),
+    serie: await run<SeriesRow>(serie),
+    lignes: await run<JournalRow>(lignes),
+  }));
 
   let approx = false;
   const valeurDe = (raw: unknown): number | null => {
@@ -250,31 +315,13 @@ export async function exploreAnalytics(
   }
 
   return {
-    meta: {
-      app: query.scope.requestedApp ?? "all",
-      period: query.range.preset ?? "custom",
-      query_version: plan.version,
-      effective_apps: query.scope.effectiveApps,
-      range: {
-        from: query.range.from,
-        to: query.range.to,
-        preset: query.range.preset,
-        bucket_seconds: query.range.bucketSeconds,
-      },
-      dataset: plan.dataset,
-      measure: plan.measure.field,
-      unit: field.unit,
-      aggregation: plan.measure.aggregation,
-      additive,
-      counting: definition.population,
+    meta: metaCommune(request, {
       source: "raw",
-      group_by: plan.groupBy,
-      visualization: plan.visualization,
+      approximate: false,
+      rollup: etatAgregat,
       warnings,
-      coverage: couverture(query),
       truncated_groups: tronque,
-      query: canonicalAst(query, plan),
-    },
+    }),
     data: {
       total: totalValeur,
       samples: nombre(totalRow?.samples),
@@ -295,6 +342,99 @@ export async function exploreAnalytics(
 /** Clé de groupe : un TUPLE, aussi long que le regroupement demandé. */
 function cle(plan: ExplorerPlan, row: GroupRow): Array<string | null> {
   return plan.groupBy.map((_, index) => (index === 0 ? row.g0 : row.g1));
+}
+
+/** Enveloppe `meta` commune aux deux chemins : une seule définition, pas deux. */
+function metaCommune(
+  request: ExplorerRequest,
+  propre: Pick<ExplorerMeta, "source" | "approximate" | "rollup" | "warnings" | "truncated_groups">,
+): ExplorerMeta {
+  const { query, plan } = request;
+  const definition = datasetDefinition(plan.dataset);
+  return {
+    app: query.scope.requestedApp ?? "all",
+    period: query.range.preset ?? "custom",
+    query_version: plan.version,
+    effective_apps: query.scope.effectiveApps,
+    range: {
+      from: query.range.from,
+      to: query.range.to,
+      preset: query.range.preset,
+      bucket_seconds: query.range.bucketSeconds,
+    },
+    dataset: plan.dataset,
+    measure: plan.measure.field,
+    unit: definition.fields[plan.measure.field].unit,
+    aggregation: plan.measure.aggregation,
+    additive: estAdditive(plan.measure.aggregation),
+    counting: definition.population,
+    group_by: plan.groupBy,
+    visualization: plan.visualization,
+    coverage: couverture(query),
+    query: canonicalAst(query, plan),
+    ...propre,
+  };
+}
+
+/**
+ * Met en forme une lecture hybride : les distributions en seaux sont FUSIONNÉES
+ * par groupe, puis le quantile est lu sur la distribution obtenue. Jamais une
+ * moyenne de percentiles horaires — elle ne correspondrait à aucune mesure réelle.
+ */
+function rendreHybride(
+  request: ExplorerRequest,
+  source: RollupSource,
+  lignes: HistogrammeRow[],
+  etat: ExplorerMeta["rollup"],
+): ExplorerResult {
+  const { plan } = request;
+  const p = plan.measure.aggregation === "p95" ? 0.95 : 0.75;
+  const parGroupe = new Map<string | null, HistogrammeRow[]>();
+  for (const ligne of lignes) {
+    const cle = ligne.g0;
+    const seaux = parGroupe.get(cle);
+    if (seaux) seaux.push(ligne);
+    else parGroupe.set(cle, [ligne]);
+  }
+
+  // L'agrégat n'a rien apporté (fenêtre trop récente, heures invalidées, base
+  // jamais rafraîchie) : tout vient alors des lignes, et on le DIT. La valeur
+  // reste APPROCHÉE pour autant — la branche brute range elle aussi ses mesures
+  // en seaux, faute de quoi les deux ne se fusionneraient pas.
+  const venuDeLAgregat = lignes.some((ligne) => ligne.origine === "agregat");
+
+  const groupes: ExplorerGroup[] = [...parGroupe]
+    .map(([valeur, seaux]) => ({
+      key: plan.groupBy.length ? [valeur] : [],
+      value: percentileFusionne(seaux, p),
+      samples: effectif(seaux),
+    }))
+    .sort((a, b) => (b.value ?? -Infinity) - (a.value ?? -Infinity) || String(a.key[0]).localeCompare(String(b.key[0])));
+
+  const warnings = avertissements(plan);
+  if (source.notice) warnings.push(source.notice);
+
+  return {
+    meta: metaCommune(request, {
+      // `rollup+raw` même quand la fenêtre est entièrement couverte : la branche
+      // brute reste dans la requête, elle a simplement compté zéro ligne.
+      source: venuDeLAgregat ? "rollup+raw" : "raw",
+      approximate: source.approximate,
+      rollup: etat,
+      warnings,
+      truncated_groups: plan.groupBy.length > 0 && groupes.length > plan.limit,
+    }),
+    data: {
+      // Le total porte sur TOUTE la population, fusionnée d'un seul tenant —
+      // indépendamment du classement, comme sur le chemin brut.
+      total: percentileFusionne(lignes, p),
+      samples: effectif(lignes),
+      groups: plan.groupBy.length ? groupes.slice(0, plan.limit) : [],
+      series: [],
+      rows: [],
+      next_cursor: null,
+    },
+  };
 }
 
 /**

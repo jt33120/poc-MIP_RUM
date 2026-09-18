@@ -310,7 +310,7 @@ type Console = Awaited<ReturnType<typeof consoleSur>>;
       await expect(lire(filtres(`app=${A}&service=api`)), ecran).rejects.toThrow(/Service/);
     }
     // Là où il est porté, il s'applique vraiment : aucune ligne de la recette ne
-    // déclare `service`, donc zéro — et non le total non filtré, qui lui est > 0.
+    // déclare `service`, donc zéro — et le total non filtré, lui, reste positif.
     for (const { ecran, lire } of COMPTEURS.filter((c) => PORTENT_SERVICE.includes(c.ecran))) {
       expect(await lire(filtres(`app=${A}&service=api`)), ecran).toBe(0);
       expect(await lire(filtres(`app=${A}`)), ecran).toBeGreaterThan(0);
@@ -319,7 +319,9 @@ type Console = Awaited<ReturnType<typeof consoleSur>>;
 
   it("la sonde de schéma voit exactement les colonnes présentes", async () => {
     const schema = await lib.dimensionSchema();
-    const { tables, columns } = lib.registryColumns();
+    // La sonde couvre les colonnes de dimensions ET celles des agrégats (P6.6) :
+    // une seule requête sert les deux registres.
+    const { tables, columns } = lib.probedColumns();
     const { rows } = await c.query<{ key: string }>(
       `select table_name || '.' || column_name as key
          from information_schema.columns

@@ -1127,7 +1127,24 @@ export function buildOpenApi(): Record<string, unknown> {
             aggregation: str,
             additive: { ...bool, description: "false : ni seau à zéro, ni ligne « Autres » (percentile, distincts)" },
             counting: str,
-            source: { type: "string", enum: ["raw"] },
+            source: {
+              type: "string",
+              enum: ["raw", "rollup+raw"],
+              description:
+                "raw : tout vient des lignes. rollup+raw : heures entières consolidées d'un agrégat, complétées par les lignes du reste de la fenêtre — jamais les deux pour la même ligne",
+            },
+            approximate: {
+              ...bool,
+              description: "true : valeur lue sur une distribution en seaux, approchée à une largeur de seau près",
+            },
+            rollup: o(
+              {
+                eligible: bool,
+                source: nul(str),
+                reason: { ...nul(str), description: "pourquoi l'agrégat n'a pas servi — jamais un refus muet" },
+              },
+              ["eligible", "source", "reason"],
+            ),
             group_by: arr(str),
             visualization: str,
             warnings: arr(str),

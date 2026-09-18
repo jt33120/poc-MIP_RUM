@@ -115,6 +115,10 @@ test("rien ne part avant « Exécuter », puis la mesure composée est exacte", 
   await expect(resume).toContainText("robots exclus");
   await expect(resume).toContainText("groupé par route");
 
+  // L'origine du chiffre est à l'écran (P6.6) : aucun agrégat ne porte les
+  // occurrences d'erreurs, la somme vient donc des lignes, et l'écran le dit.
+  await expect(page.getByTestId("explorer-source")).toHaveText("lignes brutes");
+
   // 5. L'URL rejoue l'analyse, et ne transporte aucun curseur.
   const url = new URL(page.url());
   expect(url.searchParams.get("run")).toBe("1");

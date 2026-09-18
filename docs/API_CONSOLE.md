@@ -556,12 +556,22 @@ RBAC. Réponse `no-store` : une réponse qui dépend d'un corps n'est pas mise e
   catalogue (message, pile, URL brute, identité) n'est pas mesurable, et le refus ne dit pas
   s'il existe ailleurs.
 
+- **Agrégats pré-calculés** : un agrégat ne répond que s'il porte **toutes** les dimensions
+  demandées — regroupement **et** filtres — et exactement la même population. Un agrégat sans
+  colonne navigateur ne répond jamais à `browser=Firefox` : la lecture repasse sur les lignes.
+  Les heures entières déjà consolidées viennent de l'agrégat, l'heure en cours et les
+  arrivées tardives des lignes ; aucune ligne n'est comptée deux fois. Les percentiles sont
+  obtenus en **fusionnant** les distributions puis en lisant le quantile — jamais en moyennant
+  des percentiles horaires. Un dénombrement de distincts n'est jamais servi par un agrégat.
+
 `meta` annonce ce qui a été appliqué : `dataset`, `measure`, `unit`, `aggregation`,
-`additive`, `counting` (la population comptée, en toutes lettres), `source: "raw"`,
-`coverage` (`complete` | `partial` | `unknown` — la couverture du **stockage interrogé**,
-pas une garantie d'avoir collecté tout le trafic), `warnings` (échantillonnage, collecte
-partielle — ils restent même quand le stockage est complet) et `query`, l'**AST canonique**
-rejouable qu'un tableau de bord enregistrera en P6.5.
+`additive`, `counting` (la population comptée, en toutes lettres), `source`
+(`raw` | `rollup+raw`), `approximate` (`true` quand la valeur vient d'une distribution en
+seaux, approchée à une largeur de seau près), `rollup` (`eligible`, `source`, et `reason` —
+**pourquoi** l'agrégat n'a pas servi), `coverage` (`complete` | `partial` | `unknown` — la
+couverture du **stockage interrogé**, pas une garantie d'avoir collecté tout le trafic),
+`warnings` (échantillonnage, collecte partielle — ils restent même quand le stockage est
+complet) et `query`, l'**AST canonique** rejouable qu'un tableau de bord enregistrera en P6.5.
 
 ### Performance IA — **déplacé hors de cette API**
 
