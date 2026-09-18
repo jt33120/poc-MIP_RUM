@@ -71,7 +71,7 @@ La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) re
 | Workspace | Rôle |
 |---|---|
 | `packages/rum-sdk` | SDK Web (émetteur OTLP maison + web-vitals, 22,0 Ko gzip), build esbuild IIFE `mip-rum.js` |
-| `packages/agent-node` | Agent backend **zéro-config** Node.js (`node -r @mip/agent-node/register`) : span `http.server` sans changement de code |
+| `packages/agent-node` | Agent backend **zéro-config** Node.js (`node -r @mip/agent-node/register`) : span `http.server` sans changement de code, plus une API publique (`track`, `captureException`, `withContext`, `flush`) qui réutilise la même instrumentation |
 | `packages/rum-mobile` | SDK **React Native** : crashes, écrans, réseau (traceparent), événements → mêmes tables (`device_type=mobile`) |
 | `apps/ingest` | Receiver OTLP `/v1/traces`, `/v1/logs`, `/v1/replay`, upload de source maps `/v1/sourcemaps` (edge functions Deno + dev-server Node) + SQL (schéma, migrations) |
 | `apps/sync-synthetic` | Synchro synthétique → `syn_snapshot` (interface `SyntheticSource` : seed ou export mippoc) |

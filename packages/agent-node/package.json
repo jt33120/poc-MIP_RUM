@@ -1,17 +1,20 @@
 {
   "name": "@mip/agent-node",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Agent MIP RUM zéro-config pour backends Node.js — auto-instrumente les requêtes HTTP serveur (span http.server OTLP) sans changement de code, via préchargement (node -r @mip/agent-node/register). Sans dépendance.",
+  "description": "Agent MIP RUM pour backends Node.js — auto-instrumente les requêtes HTTP serveur (span http.server OTLP), les requêtes pg et les journaux sans changement de code, via préchargement (node -r @mip/agent-node/register), et expose une API publique (track, captureException, withContext, flush). Sans dépendance.",
   "type": "commonjs",
-  "main": "dist/register.js",
+  "main": "dist/index.js",
   "exports": {
+    ".": "./dist/index.js",
     "./register": "./dist/register.js"
   },
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "@types/node": "^22",
     "esbuild": "0.28.0",
     "typescript": "5.9.3"
   }

@@ -1303,6 +1303,39 @@ export function flattenOtlp(payload, opts = {}) {
           continue;
         }
 
+        // Événement métier `track.<nom>` d'un émetteur SANS session — agent
+        // Node, tâche planifiée (P7.4). EN TÊTE DE CHAÎNE, pour la même raison
+        // que svi.* juste au-dessus : plus bas, la branche « span interne »
+        // capture tout span sans `mip.session_id` et en ferait un faux span de
+        // détail, puis `if (!sessionId) rejected++` écarterait le reste.
+        //
+        // La ligne s'écrit avec `session_id` NULL : aucune session inventée, et
+        // aucune clé étrangère vers une session que ce lot n'écrit pas. Sa
+        // corrélation passe par la trace de son span parent.
+        //
+        // Un événement QUI PORTE une session reste sur le chemin historique
+        // (plus bas) : c'est lui qui crée aussi la ligne `rum_session` du lot,
+        // sans laquelle l'écriture violerait `rum_event_session_id_fkey`.
+        if (span.name.startsWith("track.") && a["mip.session_id"] == null) {
+          const metadataEvenement = eventMetadata(a);
+          if (metadataEvenement.event_type && metadataEvenement.event_type !== "custom") {
+            rejected++;
+            continue;
+          }
+          events.push({
+            span_id: span.spanId,
+            session_id: null,
+            app_id: appId,
+            route: a["mip.route"] ?? null,
+            name: boundedName(a["mip.event_name"]) ?? boundedName(span.name.slice("track.".length)) ?? "track",
+            props: boundedEventProps(a["mip.props"]),
+            ts: nanosToDate(span.startTimeUnixNano, now),
+            ...dimensionsServeur,
+            ...metadataEvenement,
+          });
+          continue;
+        }
+
         // span backend (middleware serveur) : pas de session requise, pas
         // d'upsert rum_session (le front est seul maître de la session)
         if (span.name === "http.server") {
