@@ -11,6 +11,8 @@ import { forwardLog } from "../log-forward";
 import { traceFields } from "../server-trace-core";
 import { guardAdmin } from "./admin";
 import { type ApiPrincipal, authenticateApi } from "./auth";
+import { UnsupportedFilterError } from "../query-compiler";
+import { conditionsOf, contractErrorStatus, queryFingerprint } from "../query-contract";
 import { weakEtag } from "./etag";
 import { type ApiFilters, parseApiFilters } from "./params";
 import { type RateResult, rateLimit } from "./ratelimit";
@@ -66,26 +68,65 @@ export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
     }
 
     const searchParams = new URL(req.url).searchParams;
-    const filters = parseApiFilters(searchParams, principal);
+    // Contrat commun : périmètre signé, plage et filtres résolus avant toute lecture.
+    // Liste d'apps vide ou app hors périmètre : 403 ; entrée invalide : 400 typé.
+    const parsed = parseApiFilters(searchParams, principal);
+    if (!parsed.ok) {
+      const { code, message, parameter, dimension } = parsed.error;
+      return apiError(req, contractErrorStatus(parsed.error), message, {
+        code,
+        ...(parameter ? { parameter } : {}),
+        ...(dimension ? { dimension } : {}),
+      });
+    }
+    const filters = parsed.value;
     // Routes SANS segment dynamique (/api/v1/apps, /api/v1/overview…) : `params`
     // peut être absent -> défaut objet vide (sinon Object.entries(undefined) throw).
     const params = await segments(route);
 
     try {
       const data = await fn({ req, principal, filters, searchParams, params });
-      const body = JSON.stringify({
-        meta: {
-          app: filters.app ?? "all",
-          period: filters.period,
-          device: filters.device ?? "all",
-          generatedAt: new Date().toISOString(),
+      const { query } = filters;
+      const meta = {
+        app: filters.app ?? "all",
+        period: filters.period,
+        device: filters.device ?? "all",
+        // Ajouts P6.2 : ce qui a RÉELLEMENT été appliqué, pas ce qui était demandé.
+        query_version: query.version,
+        scope: { requested_app: query.scope.requestedApp, effective_apps: query.scope.effectiveApps },
+        range: {
+          from: query.range.from,
+          to: query.range.to,
+          preset: query.range.preset,
+          bucket_seconds: query.range.bucketSeconds,
         },
-        data,
-      });
-      const etag = weakEtag(body);
+        filters: {
+          conditions: conditionsOf(query.filters),
+          include_bots: query.filters.includeBots,
+          include_internal: query.filters.includeInternal,
+        },
+      };
+      const body = JSON.stringify({ meta: { ...meta, generatedAt: new Date().toISOString() }, data });
+      // L'ETag couvre le principal, l'empreinte de la requête résolue et la donnée —
+      // pas l'horodatage de génération : une réponse calculée pour A ne vaut jamais pour B.
+      // Fenêtre glissante : son preset, pas ses instants, qui avancent à chaque appel ;
+      // une donnée inchangée revalide donc en 304 (ETag faible, représentation équivalente).
+      const fenetre = { preset: meta.range.preset, bucket_seconds: meta.range.bucket_seconds };
+      const etag = weakEtag(
+        JSON.stringify([
+          principal.kind,
+          principal.subject,
+          principal.apps,
+          queryFingerprint(query, "sliding"),
+          { ...meta, range: query.range.preset ? fenetre : meta.range },
+          data,
+        ]),
+      );
       const headers = new Headers(corsHeaders(req.headers.get("origin")));
       headers.set("ETag", etag);
       headers.set("Cache-Control", "private, max-age=15");
+      // Ajouté à `Vary: Origin` du CORS, jamais à sa place.
+      headers.append("Vary", "Authorization, Cookie");
       if (rl) applyRate(headers, rl);
       if (req.headers.get("if-none-match") === etag)
         return new NextResponse(null, { status: 304, headers });
@@ -97,9 +138,19 @@ export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
   };
 }
 
-/** ApiHttpError rendue telle quelle ; toute autre exception journalisée et masquée en 500. */
+/**
+ * ApiHttpError rendue telle quelle ; un filtre que la lecture ne sait pas appliquer
+ * est un 400 typé (jamais un résultat qui l'ignore) ; toute autre exception est
+ * journalisée et masquée en 500.
+ */
 function erreurHandler(req: NextRequest, e: unknown) {
   if (e instanceof ApiHttpError) return apiError(req, e.status, e.message, e.details);
+  if (e instanceof UnsupportedFilterError) {
+    return apiError(req, 400, e.error.message, {
+      code: e.error.code,
+      ...(e.error.dimension ? { dimension: e.error.dimension } : {}),
+    });
+  }
   console.error("[api/v1]", req.nextUrl.pathname, e);
   // Dogfooding : remonte l'incident dans la page /logs (après la réponse, best-effort).
   // La corrélation est capturée MAINTENANT, pas dans le callback : le contexte

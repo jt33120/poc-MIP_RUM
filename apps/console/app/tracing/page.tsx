@@ -1,7 +1,9 @@
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { RankBar } from "@/components/charts/RankBar";
-import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 import { apiCalls, backRoutes, slowTraces, traceCoverage } from "@/lib/queries-tracing";
 import { DeployPanel } from "@/components/tracing/DeployPanel";
 import { Section } from "@/components/tracing/Section";
@@ -13,8 +15,10 @@ import { fmtMs } from "@/components/tracing/format";
 export const dynamic = "force-dynamic";
 
 export default async function Tracing({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const f = parseFilters(await searchParams);
-  const period = PERIODS[f.period];
+  const ecran = await pageFilters(await searchParams, "/tracing");
+  if (!ecran.ok) return <FilterProblemNotice title="Tracing distribué" problem={ecran.problem} />;
+  const f = ecran.filters;
+  const period = { label: ecran.label };
   const [cov, calls, routes, slow] = await Promise.all([
     traceCoverage(f),
     apiCalls(f),
@@ -200,7 +204,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
           </thead>
           <tbody>
             {slow.map((t) => (
-              <SlowRow key={t.trace_id} t={t} />
+              <SlowRow key={t.trace_id} t={t} query={ecran.query} />
             ))}
             {!slow.length && <Empty cols={6} msg="Aucune trace sur la fenêtre" />}
           </tbody>

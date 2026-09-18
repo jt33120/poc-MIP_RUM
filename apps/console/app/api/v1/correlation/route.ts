@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const OPTIONS = preflight;
 
 export const GET = handle(async ({ filters }) => {
-  const f = filters.v2;
+  const f = filters.legacy;
   const [cards, blind] = await Promise.all([correlationCards(f), blindSpots(f)]);
   return { cards, blindSpots: blind };
 });

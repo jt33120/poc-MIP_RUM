@@ -1,8 +1,7 @@
 import { parsePagination, type Pagination } from "./api/pagination";
 import { q } from "./db";
-import { type Filters, PERIODS } from "./filters";
-import { internalClause } from "./queries";
-import { buildSegment } from "./segments";
+import { type Filters } from "./filters";
+import { sqlContext, type SqlContext } from "./query-sql";
 
 export const ACTIONS_MAX_OFFSET = 10_000;
 
@@ -58,20 +57,15 @@ async function actionsDisponible(): Promise<boolean> {
   return row?.present === true;
 }
 
-function actionCtes(f: Filters, segmentStart: number): { sql: string; params: string[] } {
-  const itv = PERIODS[f.period].interval;
-  const segment = buildSegment(f.segment, segmentStart);
-  const bot = f.includeBots ? "" : " and not coalesce(s.is_bot, false)";
-  return {
-    params: segment.params,
-    sql: `with recursive filtered_actions as (
+/** CTE des actions filtrées par la requête commune, puis de leurs familles causales. */
+function actionCtes(ctx: SqlContext): string {
+  const where = ctx.where({ dataset: "actions", row: "a", session: "s", time: "a.ts" });
+  return `with recursive filtered_actions as (
        select a.action_id, a.app_id, a.session_id, a.name, a.type, a.route, a.ts,
               coalesce(s.sample_rate, 1)::double precision as sample_rate
          from rum_action a
          join rum_session s on s.session_id = a.session_id and s.app_id = a.app_id
-        where a.ts > now() - interval '${itv}'
-          and ($1::text is null or a.app_id = $1)
-          and ($2::text is null or s.device_type = $2)${segment.where("s")}${bot}${internalClause(f, "a.app_id")}
+        where true${where}
      ), error_totals as (
        select e.action_id, coalesce(sum(e.occurrences), 0)::bigint as n
          from rum_error e join filtered_actions a
@@ -170,8 +164,7 @@ function actionCtes(f: Filters, segmentStart: number): { sql: string; params: st
          left join resource_totals rr using (action_id)
          left join api_totals ap using (action_id)
          left join error_click_totals ec using (action_id)
-     )`,
-  };
+     )`;
 }
 
 /**
@@ -181,9 +174,10 @@ function actionCtes(f: Filters, segmentStart: number): { sql: string; params: st
  */
 export async function topActions(f: Filters, page: Pagination = { limit: 50, offset: 0 }): Promise<TopActionRow[]> {
   if (!(await actionsDisponible())) return [];
-  const ctes = actionCtes(f, 5);
+  const ctx = await sqlContext(f);
+  const ctes = actionCtes(ctx);
   return q<TopActionRow>(
-    `${ctes.sql}
+    `${ctes}
      select app_id, name, type, route,
             count(*)::int as actions,
             count(distinct session_id)::int as sessions,
@@ -199,8 +193,8 @@ export async function topActions(f: Filters, page: Pagination = { limit: 50, off
       group by app_id, name, type, route
       order by errors desc, total_ms desc, actions desc,
                app_id asc, name asc, type asc, coalesce(route, '') asc
-      limit $3 offset $4`,
-    [f.app, f.device, page.limit, page.offset, ...ctes.params],
+      limit ${ctx.bind(page.limit)} offset ${ctx.bind(page.offset)}`,
+    ctx.params,
   );
 }
 
@@ -211,9 +205,10 @@ export async function topActionsSummary(f: Filters): Promise<ActionSummary> {
     resources: 0, api_calls: 0, resource_ms: 0, api_ms: 0, total_ms: 0,
     sampling_notice: null,
   };
-  const ctes = actionCtes(f, 3);
+  const ctx = await sqlContext(f);
+  const ctes = actionCtes(ctx);
   const [summary] = await q<Omit<ActionSummary, "sampling_notice"> & { min_sample_rate: number | null }>(
-    `${ctes.sql}
+    `${ctes}
      select count(*)::int as actions,
             count(distinct session_id)::int as sessions,
             coalesce(sum(errors), 0)::int as errors,
@@ -225,7 +220,7 @@ export async function topActionsSummary(f: Filters): Promise<ActionSummary> {
             round(coalesce(sum(resource_ms + api_ms), 0)::numeric, 1)::float as total_ms,
             min(sample_rate)::double precision as min_sample_rate
        from per_action`,
-    [f.app, f.device, ...ctes.params],
+    ctx.params,
   );
   if (summary) {
     const { min_sample_rate, ...totals } = summary;

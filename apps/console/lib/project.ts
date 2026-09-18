@@ -8,15 +8,16 @@ import { cookies } from "next/headers";
 import type { AppItem } from "./queries";
 import { listApps } from "./queries";
 import type { SessionUser } from "./auth";
+import { authorizedAppsOf } from "./query-contract";
 
 export const PROJECT_COOKIE = "mip-project";
 export const PROJECT_COOKIE_MAX_AGE = 180 * 24 * 3600; // 180 j
 
-/** Projets visibles par l'utilisateur (RBAC : viewer scopé à ses apps). */
+/** Projets visibles par l'utilisateur (RBAC : viewer scopé à ses apps ; liste vide = aucun). */
 export async function projectsForUser(user: SessionUser): Promise<AppItem[]> {
   const all = await listApps();
-  if (user.role === "admin" || !user.apps?.length) return all;
-  return all.filter((a) => user.apps!.includes(a.app_id));
+  const authorized = authorizedAppsOf(user);
+  return authorized === null ? all : all.filter((a) => authorized.includes(a.app_id));
 }
 
 /** Id du projet courant (cookie), ou null si aucun n'est sélectionné. */

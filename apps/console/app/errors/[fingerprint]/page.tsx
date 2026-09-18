@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ObservedTrend } from "@/components/charts/ObservedTrend";
 import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
-import { ErrorAccessDenied, ErrorNotices } from "@/components/errors/ErrorNotices";
+import { ErrorNotices } from "@/components/errors/ErrorNotices";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { ERROR_LINK, ErrorOccurrences } from "@/components/errors/ErrorOccurrences";
 import { ErrorStackCard } from "@/components/errors/ErrorStackCard";
 import { ErrorStat } from "@/components/errors/ErrorStat";
@@ -18,11 +19,12 @@ import {
 } from "@/components/errors/error-view";
 import { getUser } from "@/lib/auth";
 import { legacyIssueTargets, type LegacyIssueTarget } from "@/lib/error-issues";
-import { PERIODS, type SearchParams } from "@/lib/filters";
+import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
+import { pageFilters } from "@/lib/page-filters";
+import { authorizedScope } from "@/lib/query-contract";
 import {
   errorGroupDetail,
-  errorPageFilters,
   errorScopeFor,
   isFingerprintParam,
   parseErrorCursor,
@@ -52,8 +54,10 @@ export default async function ErrorGroup({
   if (!isFingerprintParam(fingerprint)) notFound();
 
   const user = await getUser();
-  const f = errorPageFilters(sp, user);
-  if (!f) return <ErrorAccessDenied />;
+  const ecran = await pageFilters(sp, `/errors/${encodeURIComponent(fingerprint)}`);
+  if (!ecran.ok) return <FilterProblemNotice title="Erreurs JS" problem={ecran.problem} />;
+  const f = ecran.deviceFilters;
+  const { label, bucketLabel } = ecran;
   const url = errorSearchParams(sp);
   // `legacy=1` : le détail historique lui-même, même quand des issues le reprennent.
   const historique = url.get("legacy") === "1";
@@ -97,7 +101,11 @@ export default async function ErrorGroup({
   if (explicite?.kind === "found") {
     ref = explicite.ref;
   } else {
-    const recherche = await resolveErrorGroup(fingerprint, { ...f, app: null }, scopeApps(errorScopeFor(user)));
+    const recherche = await resolveErrorGroup(
+      fingerprint,
+      { ...f, app: null, query: authorizedScope(ecran.query) },
+      scopeApps(errorScopeFor(user)),
+    );
     if (recherche.kind === "not_found") notFound();
     if (recherche.kind === "ambiguous" || f.app) {
       const choices =
@@ -125,7 +133,6 @@ export default async function ErrorGroup({
   // Résolue puis disparue entre les deux lectures (rétention, purge) : introuvable.
   if (!detail) notFound();
   const { group, last, occurrences, trend, page, sampling, enrichment } = detail;
-  const { label, bucketLabel } = PERIODS[f.period];
 
   // La limite demandée suit la pagination ; le curseur ne suit jamais un changement de filtre.
   const pageExtra = {
@@ -237,11 +244,9 @@ function GroupChooser({
         <ul className="mt-4 divide-y divide-line/60">
           {choices.map((choice) => (
             <li key={choice.app_id} className="flex flex-wrap items-baseline justify-between gap-2 py-2">
-              {/* Ancre native : la navigation client vers la même route avec une autre query
-                  reste bloquée dans cette console (suivi consigné dans delivery-p5.md). */}
-              <a href={errorGroupHref({ app_id: choice.app_id, fingerprint }, f)} className={`font-mono text-sm ${ERROR_LINK}`}>
+              <Link href={errorGroupHref({ app_id: choice.app_id, fingerprint }, f)} className={`font-mono text-sm ${ERROR_LINK}`}>
                 {choice.app_id}
-              </a>
+              </Link>
               {choice.detail && <span className="text-xs text-ink-faint">{choice.detail}</span>}
             </li>
           ))}
@@ -273,9 +278,9 @@ function IssueChooser({ groupRef, f, issues }: { groupRef: ErrorGroupRef; f: Err
         <ul className="mt-4 divide-y divide-line/60">
           {issues.map((issue) => (
             <li key={issue.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-              <a href={issueHref({ id: issue.id, app_id: groupRef.app_id }, f)} className={`break-all font-mono text-sm ${ERROR_LINK}`}>
+              <Link href={issueHref({ id: issue.id, app_id: groupRef.app_id }, f)} className={`break-all font-mono text-sm ${ERROR_LINK}`}>
                 issue {issue.id}
-              </a>
+              </Link>
               <span className="flex flex-wrap items-center gap-1 text-xs text-ink-faint">
                 <IssueStatusBadge status={issue.status} />
                 <GroupingBasisBadge basis={issue.grouping_basis} />
@@ -285,9 +290,9 @@ function IssueChooser({ groupRef, f, issues }: { groupRef: ErrorGroupRef; f: Err
           ))}
         </ul>
         <p className="mt-4 text-sm">
-          <a href={errorGroupHref(groupRef, f, { legacy: "1" })} className={ERROR_LINK}>
+          <Link href={errorGroupHref(groupRef, f, { legacy: "1" })} className={ERROR_LINK}>
             Voir le détail historique de la signature
-          </a>
+          </Link>
         </p>
       </section>
     </div>

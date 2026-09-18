@@ -24,6 +24,11 @@ const db = vi.hoisted(() => {
   return { journal, q, donnees, tx };
 });
 vi.mock("@/lib/db", () => ({ q: db.q, tx: db.tx }));
+// Schéma migré : la sonde des colonnes de dimensions ne consomme pas les réponses simulées.
+vi.mock("@/lib/query-schema", async () => {
+  const { schemaComplet } = await import("../fixtures/dimension-schema");
+  return { dimensionSchema: async () => schemaComplet() };
+});
 
 import { parseEventCursor } from "../../apps/console/lib/queries-events";
 import {
@@ -33,7 +38,6 @@ import {
   encodeErrorCursor,
   errorDeviceFrom,
   errorGroupDetail,
-  errorPageFilters,
   errorScopeFor,
   isFingerprintParam,
   listErrorGroups,
@@ -184,26 +188,6 @@ describe("périmètre d'un principal", () => {
     expect(scopeApps({ kind: "apps", apps: ["app-a"] })).toEqual(["app-a"]);
   });
 
-  it("filtres de page : app forcée dans le périmètre, tablette conservée", () => {
-    const viewer = { email: "v@test", role: "viewer" as const, apps: ["app-a", "app-b"] };
-    expect(errorPageFilters({}, null)).toBeNull();
-    expect(errorPageFilters({ app: "app-a" }, { ...viewer, apps: [] })).toBeNull();
-    expect(errorPageFilters({ app: "app-z" }, viewer)?.app).toBe("app-a");
-    expect(errorPageFilters({ app: "all" }, viewer)?.app).toBe("app-a");
-    expect(errorPageFilters({ app: "app-b" }, viewer)?.app).toBe("app-b");
-    expect(errorPageFilters({ app: "all" }, { email: "a@test", role: "admin", apps: null })?.app).toBeNull();
-    expect(errorPageFilters({ app: "app-b", period: "7d", device: "tablet", seg: "geo==FR", bots: "1", internal: "1" }, viewer))
-      .toEqual({
-        app: "app-b",
-        period: "7d",
-        device: "tablet",
-        segment: [{ dim: "geo", op: "==", value: "FR" }],
-        includeBots: true,
-        includeInternal: true,
-      });
-    expect(errorPageFilters({ device: ["mobile", "desktop"] }, viewer)?.device).toBe("mobile");
-    expect(errorPageFilters({ device: "phablet" }, viewer)?.device).toBeNull();
-  });
 });
 
 describe("sources d'erreur", () => {
@@ -256,40 +240,53 @@ describe("listErrorGroups — SQL", () => {
 
     const data = donneesSql();
     expect(data).toHaveLength(4);
+    const fenetres = new Set<string>();
     for (const { sql, params } of data) {
       // Deux mentions : la définition, puis UNE référence (sinon matérialisation).
       expect(citations(sql)).toBe(2);
-      expect(sql).toContain("($1::text is null or e.app_id = $1) and e.app_id = any($3::text[])");
+      // Périmètre du principal ($1) ET app de la requête ($2), tous deux liés.
+      expect(sql).toContain("where true and e.app_id = any($2::text[]) and e.app_id = any($1::text[])");
       expect(sql).toContain("left join rum_session s on s.app_id = e.app_id and s.session_id = e.session_id");
-      expect(sql).toContain("e.ts >= now() - interval '24 hours' and e.ts < now()");
-      expect(sql).toContain("($2::text is null or s.device_type = $2)");
+      expect(sql).toMatch(/e\.ts >= \$\d+::timestamptz and e\.ts < \$\d+::timestamptz/);
+      expect(sql).not.toContain("now()");
+      expect(sql).toMatch(/s\.device_type = \$\d+/);
       expect(sql).toContain("not coalesce(s.is_bot, false)");
       expect(sql).not.toMatch(/::int(eger|4)?\b/);
       expect(sql).not.toMatch(/\buser_hash\b/);
-      expect(params.slice(0, 3)).toEqual(["app-a", "tablet", ["app-a", "app-b"]]);
+      expect(params.slice(0, 2)).toEqual([["app-a", "app-b"], ["app-a"]]);
+      const m = /e\.ts >= \$(\d+)::timestamptz and e\.ts < \$(\d+)::timestamptz/.exec(sql)!;
+      fenetres.add(`${params[Number(m[1]) - 1]}|${params[Number(m[2]) - 1]}`);
     }
+    // Une seule plage résolue pour groupes, totaux, tendance et séries.
+    expect(fenetres.size).toBe(1);
+    const [from, to] = [...fenetres][0].split("|");
+    expect(Date.parse(to) - Date.parse(from)).toBe(86_400_000);
     const [groupes, totaux, tendance, series] = data;
-    expect(groupes.params).toEqual(["app-a", "tablet", ["app-a", "app-b"], "FR", 50, 10]);
-    expect(groupes.sql).toContain("s.geo_country = $4");
-    expect(groupes.sql).toContain("limit $5 offset $6");
+    expect(groupes.params).toEqual([["app-a", "app-b"], ["app-a"], from, to, "tablet", "FR", 50, 10]);
+    expect(groupes.sql).toContain("s.device_type = $5 and s.geo_country = $6");
+    expect(groupes.sql).toContain("limit $7 offset $8");
     // `origine` garde le périmètre d'apps, sans jamais citer la population bornée.
-    expect(groupes.sql).toMatch(/origine as \([\s\S]*e\.app_id = any\(\$3::text\[\]\)[\s\S]*group by e\.app_id, e\.fingerprint/);
+    expect(groupes.sql).toMatch(/origine as \([\s\S]*e\.app_id = any\(\$1::text\[\]\)[\s\S]*group by e\.app_id, e\.fingerprint/);
     expect(groupes.sql).toContain("left join error_status st on st.app_id = g.app_id and st.fingerprint = g.fingerprint");
-    expect(totaux.params).toEqual(["app-a", "tablet", ["app-a", "app-b"], "FR"]);
+    expect(totaux.params).toEqual([["app-a", "app-b"], ["app-a"], from, to, "tablet", "FR"]);
     expect(totaux.sql).toContain("group by fingerprint is null");
-    expect(tendance.sql).toContain("generate_series(date_bin(interval '1 hour', now() - interval '24 hours'");
-    expect(series.params).toEqual(["app-a", "tablet", ["app-a", "app-b"], ["fp1"], "FR"]);
-    expect(series.sql).toContain("e.fingerprint = any($4::text[])");
-    expect(series.sql).toContain("s.geo_country = $5");
+    expect(tendance.sql).toContain(
+      "generate_series(date_bin(interval '3600 seconds', $7::timestamptz, timestamptz '2000-01-01 00:00:00+00')",
+    );
+    expect(tendance.params.slice(6)).toEqual([from, to]);
+    expect(series.params).toEqual([["app-a", "app-b"], ["app-a"], ["fp1"], from, to, "tablet", "FR"]);
+    expect(series.sql).toContain("e.fingerprint = any($3::text[])");
+    expect(series.sql).toContain("s.geo_country = $7");
   });
 
   it("toutes apps : exclut les apps internes jusque dans `origine`, et les bots sur demande seulement", async () => {
     db.q.mockResolvedValueOnce([{ v69: true }]);
     await listErrorGroups(filtres({ app: null, includeBots: true, segment: [] }), { limit: 10, offset: 0 });
     const [groupes] = donneesSql();
-    expect((groupes.sql.match(/e\.app_id not in \(select app_id from app_registry where internal\)/g) ?? []).length).toBe(2);
+    const interne = /not exists \(select 1 from app_registry internes where internes\.internal and internes\.app_id = e\.app_id\)/g;
+    expect((groupes.sql.match(interne) ?? []).length).toBe(2);
     expect(groupes.sql).not.toContain("is_bot");
-    expect(groupes.params).toEqual([null, "tablet", 10, 0]);
+    expect(groupes.params).toEqual([expect.any(String), expect.any(String), "tablet", 10, 0]);
   });
 
   it("v69 : enveloppe lue et identité de l'occurrence d'abord", async () => {
@@ -386,7 +383,7 @@ describe("listErrorGroups — résultat", () => {
     });
     expect(result.sampling).toEqual({ min_inclusion_probability: null, message: null });
     // Liste d'apps vide : liée telle quelle, la base ne rend rien — jamais « toutes ».
-    expect(donneesSql()[0].params[2]).toEqual([]);
+    expect(donneesSql()[0].params[0]).toEqual([]);
     expect(donneesSql()).toHaveLength(3);
   });
 
@@ -441,17 +438,19 @@ describe("errorGroupDetail", () => {
     for (const { sql, params } of data) {
       expect(citations(sql)).toBe(2);
       // L'app de la référence est liée même si le filtre reçu n'en fixait aucune.
-      expect(params[0]).toBe("app-a");
-      expect(params[2]).toEqual(["fp1"]);
-      expect(sql).toContain("e.fingerprint = any($3::text[])");
+      expect(params[0]).toEqual(["app-a"]);
+      expect(params[1]).toEqual(["fp1"]);
+      expect(sql).toContain("e.app_id = any($1::text[]) and e.fingerprint = any($2::text[])");
       expect(sql).not.toMatch(/::int(eger|4)?\b/);
     }
     const [groupSql, trendSql, exemplarSql, occurrencesSql] = data.map((d) => d.sql);
     for (const sql of [groupSql, trendSql, exemplarSql]) expect(sql).not.toContain("(e.ts, e.id) <");
     expect(exemplarSql).toMatch(/order by ts desc, id desc\s+limit 1/);
-    expect(occurrencesSql).toContain("(e.ts, e.id) < ($4::timestamptz, $5::bigint)");
-    expect(data[3].params).toEqual(["app-a", "tablet", ["fp1"], "2026-09-16T10:00:00.123456Z", "42", "FR", 2]);
-    expect(occurrencesSql).toContain("limit $7");
+    expect(occurrencesSql).toContain("(e.ts, e.id) < ($3::timestamptz, $4::bigint)");
+    expect(data[3].params).toEqual([
+      ["app-a"], ["fp1"], "2026-09-16T10:00:00.123456Z", "42", expect.any(String), expect.any(String), "tablet", "FR", 2,
+    ]);
+    expect(occurrencesSql).toContain("limit $9");
     expect(occurrencesSql).toContain(`to_char(fe.ts at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_ts`);
     expect(occurrencesSql).toContain("rc.app_id = fe.app_id and rc.session_id = fe.session_id");
     expect(occurrencesSql).toContain("sp.app_id = fe.app_id and sp.trace_id = fe.trace_id");
@@ -552,15 +551,16 @@ describe("resolveErrorGroup", () => {
     const [[scopedSql, scopedParams], [appSql, appParams]] = db.q.mock.calls as [string, unknown[]][];
     for (const sql of [scopedSql, appSql]) {
       expect(citations(sql)).toBe(2);
-      expect(sql).toContain("e.ts >= now() - interval '24 hours' and e.ts < now()");
+      expect(sql).toMatch(/e\.ts >= \$\d+::timestamptz and e\.ts < \$\d+::timestamptz/);
+      expect(sql).not.toContain("now()");
       expect(sql).toContain("s.app_id = e.app_id and s.session_id = e.session_id");
       expect(sql).toMatch(/group by app_id\s+order by occurrences desc, app_id asc\s+limit 20/);
       expect(sql).not.toMatch(/::int(eger|4)?\b/);
     }
-    expect(scopedSql).toContain("e.app_id = any($3::text[]) and e.fingerprint = any($4::text[])");
-    expect(scopedSql).toContain("app_registry where internal");
-    expect(scopedParams).toEqual([null, "tablet", ["app-a", "app-b"], ["fp1"], "FR"]);
-    expect(appSql).toContain("($1::text is null or e.app_id = $1) and e.fingerprint = any($3::text[])");
-    expect(appParams).toEqual(["app-a", "tablet", ["fp1"], "FR"]);
+    expect(scopedSql).toContain("e.app_id = any($1::text[]) and e.fingerprint = any($2::text[])");
+    expect(scopedSql).toContain("not exists (select 1 from app_registry internes where internes.internal");
+    expect(scopedParams).toEqual([["app-a", "app-b"], ["fp1"], expect.any(String), expect.any(String), "tablet", "FR"]);
+    expect(appSql).toContain("where true and e.app_id = any($1::text[]) and e.fingerprint = any($2::text[])");
+    expect(appParams).toEqual([["app-a"], ["fp1"], expect.any(String), expect.any(String), "tablet", "FR"]);
   });
 });

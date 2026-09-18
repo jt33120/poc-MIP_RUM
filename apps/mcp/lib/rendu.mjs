@@ -77,10 +77,13 @@ function valeur(v, titre, niveau) {
 }
 
 /**
- * L'API RAMÈNE silencieusement une app hors périmètre au périmètre du jeton
- * (cf. `scopeApp` dans lib/api/params.ts). Sans cette note, l'IA croirait avoir
- * obtenu les chiffres de l'app qu'elle a demandée. C'est le mode de défaillance
- * le plus grave possible ici : une réponse fausse, présentée comme juste.
+ * Depuis P6.2, une app hors périmètre est REFUSÉE (403) : l'API ne ramène plus
+ * silencieusement la demande au jeton. Il reste un cas où `meta.app` diffère de
+ * l'app demandée, et il est légitime : le détail d'un groupe d'erreurs ou d'une
+ * issue porte l'app de la RESSOURCE — son identifiant fait foi. Sans cette note,
+ * l'IA croirait avoir obtenu les chiffres de l'app qu'elle a nommée. C'est le mode
+ * de défaillance le plus grave possible ici : une réponse fausse, présentée comme
+ * juste. (Elle protège aussi d'une console antérieure à P6.2, qui rabattait.)
  *
  * @returns {string|null} l'avertissement, ou null si rien à signaler
  */
@@ -89,9 +92,9 @@ export function avertissementPerimetre(demande, meta) {
   const obtenue = meta?.app;
   if (!obtenue || obtenue === demande) return null;
   return (
-    `⚠️ Périmètre : l'app « ${demande} » a été demandée, mais le jeton n'y a pas accès — ` +
-    `l'API a répondu pour « ${obtenue} ». Ces chiffres ne concernent PAS l'app demandée. ` +
-    `Utiliser mip_rum_list_apps pour connaître le périmètre réel.`
+    `⚠️ Périmètre : l'app « ${demande} » a été demandée, mais la réponse porte sur « ${obtenue} » ` +
+    `(l'identifiant de la ressource fait foi, ou le jeton n'a pas accès à l'app demandée). ` +
+    `Ces chiffres ne concernent PAS l'app demandée. Utiliser mip_rum_list_apps pour connaître le périmètre réel.`
   );
 }
 

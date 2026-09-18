@@ -4,6 +4,7 @@
 // client, rendus pour un admin seulement. Hors session admin, la lecture arrive
 // sans adresse de compte (lib/error-issue-workflow.ts) : l'écran dit « un compte
 // de la console », jamais « compte supprimé ».
+import Link from "next/link";
 import { ERROR_LINK } from "@/components/errors/ErrorOccurrences";
 import { IssueCommentForm, IssueLinkForm, IssueTriageForm } from "@/components/errors/IssueWorkflowForms";
 import type { IssueActivity, IssueUserRef, IssueWorkflowView } from "@/lib/error-issue-workflow";
@@ -91,9 +92,9 @@ export function IssueTriageCard({
                 statuts={ISSUE_STATUSES.map((s: IssueStatus) => ({ value: s, label: ISSUE_STATUS_LABELS[s] }))}
                 comptes={workflow.assignable_users.map((u) => ({ value: u.user_id, label: u.email ?? u.user_id }))}
               />
-              <a href={alertHref} className={`inline-block text-sm ${ERROR_LINK}`} data-testid="issue-alert-link">
+              <Link href={alertHref} className={`inline-block text-sm ${ERROR_LINK}`} data-testid="issue-alert-link">
                 Créer une alerte de pic sur cette issue
-              </a>
+              </Link>
             </div>
           ) : (
             <p className="mt-3 text-xs text-ink-faint">Lecture seule : le triage est réservé aux administrateurs.</p>
@@ -195,7 +196,7 @@ function Evenement({ activite, emails }: { activite: IssueActivity; emails: bool
   }
 }
 
-/** Historique paginé (le plus récent d'abord) et commentaire. Les liens de page sont des ancres natives. */
+/** Historique paginé (le plus récent d'abord) et commentaire. */
 export function IssueActivitySection({
   issue,
   activities,
@@ -240,14 +241,14 @@ export function IssueActivitySection({
           {(olderHref || newestHref) && (
             <nav aria-label="Pages de l'historique" className="mt-4 flex flex-wrap gap-4 text-sm">
               {newestHref && (
-                <a href={newestHref} className={ERROR_LINK}>
+                <Link href={newestHref} className={ERROR_LINK}>
                   ← Activité la plus récente
-                </a>
+                </Link>
               )}
               {olderHref && (
-                <a href={olderHref} className={ERROR_LINK}>
+                <Link href={olderHref} className={ERROR_LINK}>
                   Activité plus ancienne →
-                </a>
+                </Link>
               )}
             </nav>
           )}

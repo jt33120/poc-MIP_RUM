@@ -54,6 +54,9 @@ const groupingBasis = {
     "normalized_frame : première frame applicative minifiée ou non symbolisée ; low_confidence : aucune frame applicative, repli peu discriminant",
 } as const;
 
+/** Valeur exacte d'une dimension : bornée, sans caractère de contrôle (contrat P6.2). */
+const dimension = { type: "string", minLength: 1, maxLength: 500 } as const;
+
 function nul(schema: Record<string, unknown>) {
   return { ...schema, nullable: true };
 }
@@ -82,7 +85,16 @@ function get(
       description: "OK",
       content: { "application/json": { schema: envelope(dataSchema) } },
     },
-    ...(opts.public ? {} : { "401": ref0("Unauthorized"), "429": ref0("RateLimited") }),
+    // Le contrat commun peut refuser AVANT la lecture : filtre illisible ou non
+    // applicable (400 typé), périmètre vide ou app hors périmètre (403).
+    ...(opts.public
+      ? {}
+      : {
+          "400": ref0("BadRequest"),
+          "401": ref0("Unauthorized"),
+          "403": ref0("Forbidden"),
+          "429": ref0("RateLimited"),
+        }),
     "500": ref0("ServerError"),
     ...(opts.extraResponses ?? {}),
   };
@@ -125,8 +137,23 @@ export function buildOpenApi(): Record<string, unknown> {
   const commonFilters = [
     { $ref: "#/components/parameters/app" },
     { $ref: "#/components/parameters/period" },
+    { $ref: "#/components/parameters/from" },
+    { $ref: "#/components/parameters/to" },
     { $ref: "#/components/parameters/device" },
+    { $ref: "#/components/parameters/browser" },
+    { $ref: "#/components/parameters/os" },
+    { $ref: "#/components/parameters/env" },
+    { $ref: "#/components/parameters/service" },
+    { $ref: "#/components/parameters/release" },
+    { $ref: "#/components/parameters/route" },
+    { $ref: "#/components/parameters/country" },
+    { $ref: "#/components/parameters/seg" },
+    { $ref: "#/components/parameters/bots" },
+    { $ref: "#/components/parameters/internal" },
   ];
+  // Les issues portent leur propre `release` (celle des occurrences comptées) :
+  // deux paramètres du même nom seraient un descripteur invalide.
+  const issueFilters = commonFilters.filter((p) => p.$ref !== "#/components/parameters/release");
   const pageParams = [
     { $ref: "#/components/parameters/limit" },
     { $ref: "#/components/parameters/offset" },
@@ -231,7 +258,8 @@ export function buildOpenApi(): Record<string, unknown> {
           ref("IssueList"),
           {
             params: [
-              ...commonFilters,
+              // `release` vient d'issueRelease : même dimension, bornes de P5.5.
+              ...issueFilters,
               { $ref: "#/components/parameters/issueStatus" },
               { $ref: "#/components/parameters/issueRelease" },
               { $ref: "#/components/parameters/issueSource" },
@@ -254,7 +282,7 @@ export function buildOpenApi(): Record<string, unknown> {
               { $ref: "#/components/parameters/occurrenceLimit" },
               { $ref: "#/components/parameters/errorCursor" },
             ],
-            extraResponses: { "400": ref0("BadRequest"), "404": ref0("NotFound") },
+            extraResponses: { "404": ref0("NotFound") },
           },
         ),
       },
@@ -370,7 +398,19 @@ export function buildOpenApi(): Record<string, unknown> {
       parameters: {
         app: { name: "app", in: "query", schema: str, description: "slug d'app, ou 'all' (défaut)" },
         period: { name: "period", in: "query", schema: { type: "string", enum: ["1h", "24h", "7d"] }, description: "fenêtre (défaut 24h)" },
-        device: { name: "device", in: "query", schema: { type: "string", enum: ["mobile", "desktop", "tablet", "all"] }, description: "type d'appareil (défaut all)" },
+        device: { name: "device", in: "query", schema: { type: "string", enum: ["mobile", "desktop", "tablet", "all"] }, description: "type d'appareil (défaut all) ; une valeur inconnue vaut all" },
+        from: { name: "from", in: "query", schema: { type: "string", format: "date-time" }, description: "début INCLUS d'une plage personnalisée, instant ISO UTC explicite (…Z) ; exige to et exclut period" },
+        to: { name: "to", in: "query", schema: { type: "string", format: "date-time" }, description: "fin EXCLUE d'une plage personnalisée (30 jours au plus, jamais dans le futur)" },
+        browser: { name: "browser", in: "query", schema: dimension, description: "navigateur exact ; 400 unsupported_dimension si la mesure ne le porte pas" },
+        os: { name: "os", in: "query", schema: dimension, description: "système exact ; 400 unsupported_dimension si la mesure ne le porte pas" },
+        env: { name: "env", in: "query", schema: dimension, description: "environnement déclaré par l'émetteur de l'occurrence" },
+        service: { name: "service", in: "query", schema: dimension, description: "service déclaré par un émetteur backend (erreurs, spans)" },
+        release: { name: "release", in: "query", schema: dimension, description: "release de l'occurrence (jamais celle, mutable, de la session)" },
+        route: { name: "route", in: "query", schema: dimension, description: "route normalisée exacte (jamais une URL brute)" },
+        country: { name: "country", in: "query", schema: dimension, description: "pays estimé d'après le fuseau de la session (geo_source=timezone)" },
+        seg: { name: "seg", in: "query", schema: { type: "string", maxLength: 2048 }, description: "segment : v2 'v2:dimension:eq|neq|is_null[:valeur encodée]' séparés par ';' (format v1 'geo==FR;device!=mobile' encore lu) ; 10 conditions au plus, jeton illisible = 400" },
+        bots: { name: "bots", in: "query", schema: { type: "string", enum: ["1"] }, description: "1 = inclure le trafic non humain (exclu par défaut)" },
+        internal: { name: "internal", in: "query", schema: { type: "string", enum: ["1"] }, description: "1 = inclure les apps internes dans la vue « toutes apps » (exclues par défaut)" },
         eventKind: { name: "kind", in: "query", schema: { type: "string", enum: ["pageview", "vital", "error", "resource", "longtask", "breadcrumb", "event", "span"] }, description: "catégorie d'événement indexé (défaut toutes)" },
         limit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 200 }, description: "taille de page (borné 1..200)" },
         offset: { name: "offset", in: "query", schema: { type: "integer", minimum: 0 }, description: "décalage de page" },
@@ -393,17 +433,54 @@ export function buildOpenApi(): Record<string, unknown> {
         activityLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "activités par page (borné 1..100)" },
       },
       responses: {
-        BadRequest: { description: "Paramètre invalide", content: { "application/json": { schema: ref("Error") } } },
+        BadRequest: { description: "Paramètre invalide, ou filtre que la mesure ne sait pas appliquer (corps typé : code, parameter, dimension)", content: { "application/json": { schema: ref("Error") } } },
         Unauthorized: { description: "Authentification requise/invalide", content: { "application/json": { schema: ref("Error") } } },
-        Forbidden: { description: "Principal authentifié sans aucune application autorisée", content: { "application/json": { schema: ref("Error") } } },
+        Forbidden: { description: "Périmètre : aucune application autorisée (no_app_access) ou app demandée hors périmètre (forbidden_app) — jamais un rabattement silencieux", content: { "application/json": { schema: ref("Error") } } },
         NotFound: { description: "Ressource inconnue (ou hors-scope)", content: { "application/json": { schema: ref("Error") } } },
         RateLimited: { description: "Trop de requêtes (voir en-têtes RateLimit-* / Retry-After)", content: { "application/json": { schema: ref("Error") } } },
         ServerError: { description: "Erreur interne", content: { "application/json": { schema: ref("Error") } } },
         Unavailable: { description: "Schéma requis non migré (ex. migration-v73 pour le workflow des issues)", content: { "application/json": { schema: ref("Error") } } },
       },
       schemas: {
-        Error: o({ error: str }, ["error"]),
-        Meta: o({ app: str, period: str, device: str, generatedAt: dateTime }, ["app", "period", "device", "generatedAt"]),
+        Error: o(
+          {
+            error: str,
+            // Code stable du contrat commun : de quoi réagir sans lire le message.
+            code: {
+              type: "string",
+              enum: [
+                "no_app_access", "forbidden_app", "invalid_range", "range_conflict", "range_too_long",
+                "range_in_future", "invalid_filter", "too_many_conditions", "ambiguous_parameter", "unsupported_dimension",
+              ],
+            },
+            parameter: str,
+            dimension: str,
+          },
+          ["error"],
+        ),
+        Meta: o(
+          {
+            app: str,
+            period: str,
+            device: str,
+            generatedAt: dateTime,
+            query_version: int,
+            scope: ref("MetaScope"),
+            range: ref("MetaRange"),
+            filters: ref("MetaFilters"),
+          },
+          ["app", "period", "device", "generatedAt", "query_version", "scope", "range", "filters"],
+        ),
+        MetaScope: o({ requested_app: nul(str), effective_apps: nul(arr(str)) }, ["requested_app", "effective_apps"]),
+        MetaRange: o({ from: dateTime, to: dateTime, preset: nul(str), bucket_seconds: int }, ["from", "to", "preset", "bucket_seconds"]),
+        MetaFilters: o(
+          { conditions: arr(ref("MetaCondition")), include_bots: { type: "boolean" }, include_internal: { type: "boolean" } },
+          ["conditions", "include_bots", "include_internal"],
+        ),
+        MetaCondition: o(
+          { dimension: str, operator: { type: "string", enum: ["eq", "neq", "is_null"] }, value: nul(str) },
+          ["dimension", "operator", "value"],
+        ),
         Page: o({ limit: int, offset: int }, ["limit", "offset"]),
         HealthCheck: o({ status: str, service: str, version: str, generatedAt: dateTime }, ["status"]),
         Discovery: o({ version: str, description: str, filters: o({}), endpoints: arr(o({ method: str, path: str, desc: str })) }),

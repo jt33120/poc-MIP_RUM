@@ -170,8 +170,8 @@ test("liste d'une app activée : issues et groupe historique, chaque occurrence 
   // À revoir d'abord (la table repliée de la tendance a aussi des lignes : on vise les entrées).
   await expect(page.locator('tr[data-testid^="issue-entry-"], tr[data-testid^="legacy-entry-"]').first())
     .toHaveAttribute("data-testid", `issue-entry-${I1}`);
-  await expect(i1.getByRole("link")).toHaveAttribute("href", `/errors/issues/${I1}?app=${A}&period=24h`);
-  await expect(historique.getByRole("link")).toHaveAttribute("href", `/errors/p55fp009?app=${A}&period=24h`);
+  await expect(i1.getByRole("link")).toHaveAttribute("href", `/errors/issues/${I1}?app=${A}`);
+  await expect(historique.getByRole("link")).toHaveAttribute("href", `/errors/p55fp009?app=${A}`);
 
   // Filtre de statut : l'entrée, pas ses nombres.
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h&status=open`);
@@ -182,7 +182,7 @@ test("liste d'une app activée : issues et groupe historique, chaque occurrence 
 test("ancienne URL à alias unique : redirection vers l'issue, groupes historiques et notes relus", async ({ page }) => {
   await login(page);
   await page.goto(`${CONSOLE}/errors/p55fp001?app=${A}&period=24h`);
-  await expect(page).toHaveURL(new RegExp(`/errors/issues/${I1}\\?app=${A}&period=24h$`));
+  await expect(page).toHaveURL(new RegExp(`/errors/issues/${I1}\\?app=${A}$`));
 
   await expect(page.getByTestId("issue-status")).toHaveText("À revoir");
   await expect(page.getByTestId("issue-origin")).toBeVisible();
@@ -191,7 +191,7 @@ test("ancienne URL à alias unique : redirection vers l'issue, groupes historiqu
   await expect(groupes).toContainText("corrigé en 1.0.1");
   await expect(groupes).toContainText("bruit connu");
   await expect(groupes.getByRole("row").filter({ hasText: "p55fp002" })).toContainText("répartie sur 2 issues");
-  await expect(groupes.getByRole("link", { name: "p55fp001" })).toHaveAttribute("href", `/errors/p55fp001?app=${A}&period=24h&legacy=1`);
+  await expect(groupes.getByRole("link", { name: "p55fp001" })).toHaveAttribute("href", `/errors/p55fp001?app=${A}&legacy=1`);
 });
 
 test("empreinte répartie : choix explicite entre les issues, détail historique à un lien", async ({ page }) => {
@@ -199,11 +199,11 @@ test("empreinte répartie : choix explicite entre les issues, détail historique
   await page.goto(`${CONSOLE}/errors/p55fp002?app=${A}&period=24h`);
   const choix = page.getByTestId("error-issue-chooser");
   await expect(choix.getByRole("heading")).toHaveText("Ce groupe est réparti sur plusieurs issues");
-  await expect(choix.getByRole("link", { name: `issue ${I1}` })).toHaveAttribute("href", `/errors/issues/${I1}?app=${A}&period=24h`);
-  await expect(choix.getByRole("link", { name: `issue ${I2}` })).toHaveAttribute("href", `/errors/issues/${I2}?app=${A}&period=24h`);
+  await expect(choix.getByRole("link", { name: `issue ${I1}` })).toHaveAttribute("href", `/errors/issues/${I1}?app=${A}`);
+  await expect(choix.getByRole("link", { name: `issue ${I2}` })).toHaveAttribute("href", `/errors/issues/${I2}?app=${A}`);
 
   await choix.getByRole("link", { name: "Voir le détail historique de la signature" }).click();
-  await expect(page).toHaveURL(new RegExp(`/errors/p55fp002\\?app=${A}&period=24h&legacy=1$`));
+  await expect(page).toHaveURL(new RegExp(`/errors/p55fp002\\?app=${A}&legacy=1$`));
   // La vue historique compte toutes les lignes de la signature, quelle que soit leur issue.
   await expect(page.getByTestId("detail-occurrences")).toHaveText("3");
 });
@@ -233,7 +233,7 @@ test("clavier : une entrée de liste s'ouvre au clavier", async ({ page }) => {
   await lien.focus();
   await expect(lien).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(new RegExp(`/errors/issues/${I2}\\?app=${A}&period=24h$`));
+  await expect(page).toHaveURL(new RegExp(`/errors/issues/${I2}\\?app=${A}$`));
   await expect(page.getByTestId("issue-occurrences")).toHaveText("2");
 });
 

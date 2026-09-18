@@ -101,8 +101,15 @@ afterEach(() => {
 });
 
 describe("GET /api/v1/errors", () => {
-  it("force l'app du jeton, transmet tablette et période, borne l'offset", async () => {
-    const reponse = await liste("app=app-b&period=7d&device=tablet&limit=20&offset=999999", { bearer: "tok" });
+  it("refuse l'app B hors du périmètre du jeton (403 typé), sans la rabattre sur A ni lire", async () => {
+    const reponse = await liste("app=app-b&period=7d&device=tablet", { bearer: "tok" });
+    expect(reponse.status).toBe(403);
+    expect(await reponse.json()).toEqual({ code: "forbidden_app", parameter: "app", error: "app hors périmètre : app-b" });
+    expect(lecture.listErrorGroups).not.toHaveBeenCalled();
+  });
+
+  it("app du jeton : transmet tablette et période, borne l'offset", async () => {
+    const reponse = await liste("app=app-a&period=7d&device=tablet&limit=20&offset=999999", { bearer: "tok" });
     expect(reponse.status).toBe(200);
     expect(lecture.listErrorGroups).toHaveBeenCalledTimes(1);
     const [filtres, page, ...reste] = lecture.listErrorGroups.mock.calls[0];
@@ -137,22 +144,23 @@ describe("GET /api/v1/errors", () => {
   });
 
   it("refuse 403 une session viewer sans aucune app, sans lire la base", async () => {
-    // `parseApiFilters` traite `apps: []` comme non restreint : sans cette garde,
-    // ce principal lirait les erreurs de toutes les apps.
+    // Une liste d'apps vide n'est jamais « sans restriction » : le contrat la refuse.
     const cookie = await signJwt({ email: "v@mip", role: "viewer", apps: [] });
-    const reponse = await liste("app=app-b", { cookie });
-    expect(reponse.status).toBe(403);
-    expect(await reponse.json()).toEqual({ error: "aucune application autorisée" });
+    for (const query of ["app=app-b", ""]) {
+      const reponse = await liste(query, { cookie });
+      expect(reponse.status).toBe(403);
+      expect(await reponse.json()).toEqual({ code: "no_app_access", error: "aucune application autorisée" });
+    }
     expect(lecture.listErrorGroups).not.toHaveBeenCalled();
   });
 });
 
 describe("GET /api/v1/errors/{fingerprint}", () => {
-  it("répond 404 à une session viewer sans aucune app, sans résoudre ni lire", async () => {
+  it("refuse 403 une session viewer sans aucune app, sans résoudre ni lire", async () => {
     const cookie = await signJwt({ email: "v@mip", role: "viewer", apps: [] });
     const reponse = await detail("p51fp001", "app=app-a", { cookie });
-    expect(reponse.status).toBe(404);
-    expect(await reponse.json()).toEqual({ error: "groupe d'erreurs introuvable" });
+    expect(reponse.status).toBe(403);
+    expect(await reponse.json()).toEqual({ code: "no_app_access", error: "aucune application autorisée" });
     expect(lecture.resolveErrorGroup).not.toHaveBeenCalled();
     expect(lecture.errorGroupDetail).not.toHaveBeenCalled();
   });
@@ -170,8 +178,8 @@ describe("GET /api/v1/errors/{fingerprint}", () => {
     expect(await reponse.json()).toEqual({
       error: "fingerprint présent dans plusieurs apps : préciser app (app-a, app-b)",
     });
-    // Filtres sans app (sinon seule la première app du jeton serait vue), apps du
-    // jeton comme périmètre : les candidates ne peuvent venir que de là.
+    // Filtres sans app, apps AUTORISÉES du jeton comme périmètre : les candidates ne
+    // peuvent venir que de là.
     expect(lecture.resolveErrorGroup).toHaveBeenCalledWith(
       "p51fp001",
       expect.objectContaining({ app: null, device: "desktop" }),
@@ -190,8 +198,9 @@ describe("GET /api/v1/errors/{fingerprint}", () => {
       { limit: 100, cursor: null },
     );
     const corps = await reponse.json();
-    // `parseApiFilters` aurait annoncé app-a, la première app du jeton.
+    // Sans app demandée, l'enveloppe annonce l'app dont viennent les chiffres, pas « all ».
     expect(corps.meta.app).toBe("app-b");
+    expect(corps.meta.scope).toEqual({ requested_app: "app-b", effective_apps: ["app-b"] });
     expect(corps.data.group.app_id).toBe("app-b");
   });
 
@@ -222,11 +231,11 @@ describe("GET /api/v1/errors/{fingerprint}", () => {
     expect(corps.data.page).toEqual({ limit: 100, next_cursor: null });
   });
 
-  it("une app nommée hors périmètre est ramenée au jeton, jamais élargie", async () => {
-    lecture.resolveErrorGroup.mockResolvedValue({ kind: "not_found" });
+  it("une app nommée hors périmètre est refusée (403), jamais ramenée au jeton ni élargie", async () => {
     const reponse = await detail("p51fp001", "app=app-b", { bearer: "tok" });
-    expect(reponse.status).toBe(404);
-    expect(lecture.resolveErrorGroup).toHaveBeenCalledWith("p51fp001", expect.objectContaining({ app: "app-a" }), null);
+    expect(reponse.status).toBe(403);
+    expect(await reponse.json()).toMatchObject({ code: "forbidden_app" });
+    expect(lecture.resolveErrorGroup).not.toHaveBeenCalled();
   });
 
   it("refuse 400 un curseur illisible ou à la milliseconde, avant toute lecture", async () => {

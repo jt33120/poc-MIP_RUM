@@ -13,17 +13,14 @@ import {
   parseIssueSource,
   parseIssueStatus,
 } from "@/lib/error-issues";
-import { errorDeviceFrom, errorScopeFor, scopeApps, type ErrorFilters } from "@/lib/queries-errors";
+import { errorDeviceFrom, type ErrorFilters } from "@/lib/queries-errors";
 
 export const dynamic = "force-dynamic";
 
 export const OPTIONS = preflight;
 
-export const GET = handle(async ({ principal, filters, searchParams }) => {
-  // AD-16 : une session viewer SANS app n'a accès à rien, avant toute lecture.
-  const scope = errorScopeFor({ role: principal.role, apps: principal.apps });
-  if (scope.kind === "none") throw new ApiHttpError(403, "aucune application autorisée");
-
+export const GET = handle(async ({ filters, searchParams }) => {
+  // Périmètre déjà résolu par `handle` (AD-16) : sans app autorisée, 403 avant d'arriver ici.
   const status = parseIssueStatus(searchParams.get("status"));
   if (status === undefined) throw new ApiHttpError(400, "status invalide (open, for_review, resolved ou ignored)");
   const source = parseIssueSource(searchParams.get("source"));
@@ -39,7 +36,7 @@ export const GET = handle(async ({ principal, filters, searchParams }) => {
     f,
     { status, release, source },
     { limit: parseIssueListPage(searchParams).limit, cursor },
-    { apps: scopeApps(scope) },
+    { apps: filters.query.scope.authorizedApps },
   );
   // Contrat public énuméré : un champ ajouté à la lecture n'y entre pas sans passer
   // par ici et par la spec OpenAPI.

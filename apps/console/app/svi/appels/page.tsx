@@ -14,7 +14,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import { fmtDate } from "@/lib/format";
-import { parseFilters, periodLabel, type SearchParams } from "@/lib/queries-v2";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { periodLabel, v2FiltersOf } from "@/lib/queries-v2";
 import { sviCalls, sviOutcomesByHour, sviSummary } from "@/lib/queries-svi";
 import { fmtDuration, journeyCoverage, outcomeLabel, outcomeRates } from "@/lib/svi-outcome";
 
@@ -46,7 +49,9 @@ export default async function AppelsSvi({ searchParams }: { searchParams?: Promi
   }
 
   const sp = await searchParams;
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/svi/appels");
+  if (!ecran.ok) return <FilterProblemNotice title="Appels SVI" problem={ecran.problem} />;
+  const f = v2FiltersOf(ecran.query);
 
   const [rows, sum, parHeure] = await Promise.all([
     sviCalls(f),

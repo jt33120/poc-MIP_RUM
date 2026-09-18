@@ -5,6 +5,7 @@ import { TabLink } from "@/components/sessions/TabLink";
 import { TimelineRow } from "@/components/sessions/Timeline";
 import { browserFromUA, fmtDate } from "@/lib/format";
 import { sessionMeta, sessionTimeline, type TimelineKind } from "@/lib/queries";
+import { authorizedAppsOf } from "@/lib/query-contract";
 import { KIND_STYLE } from "@/lib/timeline-constants";
 
 export const dynamic = "force-dynamic";
@@ -25,10 +26,11 @@ export default async function SessionDetail({
   const [meta, timeline] = await Promise.all([sessionMeta(id), sessionTimeline(id)]);
   if (!meta) notFound();
 
-  // scoping viewer : une session d'une app hors périmètre est invisible (404)
+  // scoping viewer : une session d'une app hors périmètre est invisible (404) ;
+  // une liste d'apps vide n'ouvre aucune session.
   const { getUser } = await import("@/lib/auth");
-  const user = await getUser();
-  if (user?.apps && !user.apps.includes(meta.app_id)) notFound();
+  const authorized = authorizedAppsOf(await getUser());
+  if (authorized !== null && !authorized.includes(meta.app_id)) notFound();
   // Un lien qui annonce son app (erreur, trace — P5.1) ne doit jamais ouvrir la
   // session d'une autre : l'identifiant de session est émis par le client, et une
   // erreur forgée peut citer celui d'un autre tenant. Paramètre répété : la

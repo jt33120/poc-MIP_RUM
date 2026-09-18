@@ -17,8 +17,9 @@ import { dogfoodingEndpoint } from "@/lib/ingest-endpoint";
 import { DashboardSettings } from "@/components/DashboardSettings";
 import { CATALOGUES, lireChoix } from "@/lib/dashboard-blocs";
 import { reglerBlocsAction } from "./actions-dashboard";
-import { listApps } from "@/lib/queries";
-import { describeProject, selectedProjectId } from "@/lib/project";
+import { FUSEAU_DEFAUT, fuseauDe } from "@/lib/fuseau";
+import { describeProject, projectsForUser, selectedProjectId } from "@/lib/project";
+import { dimensionSchema } from "@/lib/query-schema";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -177,12 +178,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     );
   }
 
-  // RBAC : on ne considère que les apps autorisées (viewer scopé)
-  const allApps = await listApps();
-  const apps =
-    user.role === "admin" || !user.apps?.length
-      ? allApps
-      : allApps.filter((a) => user.apps!.includes(a.app_id));
+  // RBAC : on ne considère que les apps autorisées (viewer scopé ; liste vide = aucune)
+  const apps = await projectsForUser(user);
 
   // Projet courant (cookie posé par /select ou le middleware). Absent -> le
   // middleware a déjà renvoyé vers /select ; on garde un repli défensif.
@@ -190,6 +187,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const currentProject = apps.find((a) => a.app_id === projectId) ?? null;
 
   const initials = user.email.slice(0, 2).toUpperCase();
+
+  // Capacités des barres de filtres : colonnes de dimensions réellement présentes
+  // (la console peut précéder une migration) et fuseau d'affichage de chaque app.
+  const [schema, timeZones] = await Promise.all([
+    dimensionSchema().then((columns) => [...columns].sort()),
+    Promise.all(apps.map(async (a) => [a.app_id, await fuseauDe(a.app_id)] as const)).then(Object.fromEntries),
+  ]);
 
   return (
     <html lang="fr" suppressHydrationWarning>
@@ -329,7 +333,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </div>
             <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-line bg-panel/80 px-4 py-2.5 backdrop-blur-md sm:px-6">
               <Suspense>
-                <GlobalFilters />
+                <GlobalFilters schema={schema} timeZones={timeZones} defaultTimeZone={FUSEAU_DEFAUT} />
               </Suspense>
               <div className="ml-auto flex items-center gap-3">
                 {/* AutoRefresh re-fetch les server components toutes les 5 s */}
@@ -347,7 +351,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <SubNav />
             </Suspense>
             <Suspense>
-              <SegmentBar />
+              <SegmentBar schema={schema} />
             </Suspense>
             <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
           </div>

@@ -10,7 +10,7 @@ export const SESSION_HOURS = 8;
 export interface SessionUser {
   email: string;
   role: "admin" | "viewer";
-  apps: string[] | null; // null = toutes les apps
+  apps: string[] | null; // null = toutes les apps ; [] = aucune (lib/query-contract.ts)
   /**
    * Session ouverte par /demo, sans mot de passe, pour un visiteur de la
    * vitrine. Portée dans le JWT donc infalsifiable côté client, et lue par le
@@ -93,16 +93,6 @@ export async function requireAdmin(): Promise<SessionUser> {
   if (!user) redirect("/login");
   if (user!.role !== "admin") redirect("/");
   return user as SessionUser;
-}
-
-/**
- * Scoping viewer : app effective pour une app demandée.
- * Admin ou viewer non scopé -> app demandée ; viewer scopé -> app demandée si
- * autorisée, sinon fallback sur la 1re app autorisée (jamais « toutes »).
- */
-export function allowedApps(user: SessionUser | null, requestedApp: string | null): string | null {
-  if (!user || user.role === "admin" || !user.apps?.length) return requestedApp;
-  return requestedApp && user.apps.includes(requestedApp) ? requestedApp : user.apps[0];
 }
 
 // Affichage unique des mots de passe générés (création / reset) : stash mémoire

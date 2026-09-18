@@ -13,11 +13,11 @@ import { verifyJwt } from "../auth";
 export interface ApiPrincipal {
   kind: "token" | "session";
   role: "admin" | "viewer";
-  apps: string[] | null; // null = toutes les apps
+  apps: string[] | null; // null = toutes les apps ; [] = aucune
   subject: string; // identité (email connecté ou "api-token")
 }
 
-/** Un jeton machine + son périmètre d'apps (null = toutes). */
+/** Un jeton machine + son périmètre d'apps (null = toutes, [] = aucune). */
 export interface TokenConfig {
   token: string;
   apps: string[] | null;
@@ -27,7 +27,8 @@ export interface TokenConfig {
  * Parse CONSOLE_API_TOKENS. Entrées séparées par des virgules. Deux formes :
  *   - `token`            -> accès toutes apps (rétro-compatible) ;
  *   - `token@app1;app2`  -> accès SCOPÉ à ces apps (comme un viewer scopé).
- * Un partenaire (ex. UTI) reçoit ainsi un jeton qui ne voit que son app.
+ * Un partenaire (ex. UTI) reçoit ainsi un jeton qui ne voit que son app. `token@`
+ * sans app est un périmètre VIDE : aucun accès (403), jamais « toutes les apps ».
  * Fonction PURE (testée, réutilisée par l'auth).
  */
 export function parseTokenConfig(raw: string | undefined): TokenConfig[] {
@@ -44,7 +45,7 @@ export function parseTokenConfig(raw: string | undefined): TokenConfig[] {
         .split(";")
         .map((a) => a.trim())
         .filter(Boolean);
-      return { token, apps: apps.length ? apps : null };
+      return { token, apps };
     })
     .filter((c) => c.token);
 }

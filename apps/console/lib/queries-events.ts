@@ -1,15 +1,16 @@
-// Contrat unique de lecture des événements RUM. Les valeurs utilisateur restent
-// des paramètres liés ; seules les périodes et largeurs de bucket issues de
-// PERIODS sont interpolées dans le SQL.
+// Contrat unique de lecture des événements RUM. Plage [from,to), périmètre d'apps,
+// appareil (tablette comprise), dimensions, segment, bots et apps internes viennent
+// du contrat commun (lib/query-compiler.ts) ; les valeurs utilisateur restent des
+// paramètres liés. Seules les largeurs de seau calculées sont interpolées.
 import { parsePagination, type Pagination } from "./api/pagination";
 import { q, tx } from "./db";
-import { PERIODS, type Filters } from "./filters";
-import { internalClause } from "./queries";
-import { buildSegment } from "./segments";
+import { queryOf, type FiltersLike } from "./filters";
+import { bucketExpr, bucketSeriesSql, sessionJoin } from "./query-compiler";
+import { contextFor, type SqlContext } from "./query-sql";
+import { dimensionSchema } from "./query-schema";
 
-export type EventFilters = Omit<Filters, "device"> & {
-  device: "desktop" | "mobile" | "tablet" | null;
-};
+export type EventFilters = FiltersLike;
+
 
 export const EVENT_INDEX_KINDS = [
   "pageview", "vital", "error", "resource", "longtask", "breadcrumb", "event", "span",
@@ -197,37 +198,28 @@ function samplingNotice(min: number | null | undefined): EventSamplingNotice | n
   };
 }
 
+
 function attributeJson(attribute: EventAttributeFilter | null): string | null {
   return attribute ? JSON.stringify(attribute.value) : null;
 }
 
-/** Base partagée par journal, total, tendance, facettes et widget. */
-function filteredCte(
-  f: EventFilters,
-  query: EventQuery,
-  cursor: EventCursor | null,
-  includeCursor = true,
-): { sql: string; params: unknown[]; nextIndex: number } {
-  const interval = PERIODS[f.period].interval;
-  // Les sept premiers binds forment le contrat stable des filtres événement.
-  // Le curseur garde $8/$9 pour rester inspectable, puis le segment commence à
-  // $10 (ou $8 sans curseur).
-  const segment = buildSegment(f.segment, includeCursor ? 10 : 8);
-  const params: unknown[] = [
-    f.app, f.device, query.kind, query.name,
-    query.attribute?.source ?? null, query.attribute?.key ?? null,
-    attributeJson(query.attribute),
-    ...(includeCursor ? [cursor?.ts ?? null, cursor?.id ?? null] : []),
-    ...segment.params,
-  ];
-  const attributePredicate = query.attribute
-    ? `and $5::text = '${query.attribute.source}'
-       and e.${query.attribute.source} @> jsonb_build_object($6::text, $7::jsonb)`
-    : "and $5::text is null and $6::text is null and $7::jsonb is null";
-  return {
-    params,
-    nextIndex: params.length + 1,
-    sql: `with filtered_events as (
+/**
+ * Base partagée par journal, total, tendance, facettes et widget. Chaque appel lie
+ * ses propres paramètres dans `ctx` : une instruction ne déclare que les `$n`
+ * qu'elle utilise.
+ */
+function filteredCte(ctx: SqlContext, query: EventQuery, cursor: EventCursor | null): string {
+  const kind = ctx.bind(query.kind);
+  const name = ctx.bind(query.name);
+  // `source` vient de l'énumération props|context validée par le parseur.
+  const attribute = query.attribute
+    ? ` and e.${query.attribute.source} @> jsonb_build_object(${ctx.bind(query.attribute.key)}::text, ${ctx.bind(attributeJson(query.attribute))}::jsonb)`
+    : "";
+  const curseur = cursor
+    ? ` and (i.ts, i.id) < (${ctx.bind(cursor.ts)}::timestamptz, ${ctx.bind(cursor.id)}::bigint)`
+    : "";
+  const where = ctx.where({ dataset: "events", row: "i", session: "s", time: "i.ts" });
+  return `with filtered_events as (
       select i.id, i.app_id, i.session_id, i.ts, i.route, i.kind,
              i.source_name, i.source_span_id,
              e.name, e.props, e.context, s.device_type,
@@ -235,57 +227,43 @@ function filteredCte(
         from rum_event_index i
         left join rum_event e
           on i.kind = 'event' and e.app_id = i.app_id and e.span_id = i.source_span_id
-        left join rum_session s
-          on s.app_id = i.app_id and s.session_id = i.session_id
-       where i.ts > now() - interval '${interval}' and i.ts <= now()
-         and ($1::text is null or i.app_id = $1)
-         and ($2::text is null or s.device_type = $2)
-         and ($3::text is null or i.kind = $3)
-         and ($4::text is null or (i.kind = 'event' and e.name = $4))
-         and ($3::text is distinct from 'event' or coalesce(e.event_type, 'custom') = 'custom')
-         ${attributePredicate}
-         ${includeCursor ? "and ($8::timestamptz is null or (i.ts, i.id) < ($8::timestamptz, $9::bigint))" : ""}
-         ${segment.where("s")}
-         ${f.includeBots ? "" : "and not coalesce(s.is_bot, false)"}
-         ${internalClause(f, "i.app_id")}
-    )`,
-  };
+        ${sessionJoin("i", "s")}
+       where (${kind}::text is null or i.kind = ${kind}::text)
+         and (${name}::text is null or (i.kind = 'event' and e.name = ${name}::text))
+         and (${kind}::text is distinct from 'event' or coalesce(e.event_type, 'custom') = 'custom')${attribute}${curseur}${where}
+    )`;
+}
+
+async function eventContext(f: EventFilters): Promise<{ make: () => SqlContext }> {
+  const query = queryOf(f);
+  const schema = await dimensionSchema();
+  return { make: () => contextFor(query, schema) };
 }
 
 async function listP1(f: EventFilters, kind: EventIndexKind | null, page: Pagination): Promise<EventIndexRow[]> {
-  const interval = PERIODS[f.period].interval;
-  const segment = buildSegment(f.segment, 6);
+  const ctx = (await eventContext(f)).make();
+  const genre = ctx.bind(kind);
+  const where = ctx.where({ dataset: "events", row: "i", session: "s", time: "i.ts" });
   return q<EventIndexRow>(
     `select i.id::text as id, i.app_id, i.session_id, i.ts, i.route, i.kind, i.source_name, i.source_span_id
        from rum_event_index i
-       left join rum_session s on s.app_id = i.app_id and s.session_id = i.session_id
-      where i.ts > now() - interval '${interval}' and i.ts <= now()
-        and ($1::text is null or i.app_id = $1)
-        and ($2::text is null or s.device_type = $2)
-        and ($3::text is null or i.kind = $3)
-        ${segment.where("s")}
-        ${f.includeBots ? "" : "and not coalesce(s.is_bot, false)"}
-        ${internalClause(f, "i.app_id")}
-      order by i.ts desc, i.id desc limit $4 offset $5`,
-    [f.app, f.device, kind, page.limit, page.offset, ...segment.params],
+       ${sessionJoin("i", "s")}
+      where (${genre}::text is null or i.kind = ${genre}::text)${where}
+      order by i.ts desc, i.id desc limit ${ctx.bind(page.limit)} offset ${ctx.bind(page.offset)}`,
+    ctx.params,
   );
 }
 
 async function countP1(f: EventFilters, kind: EventIndexKind | null): Promise<number> {
-  const interval = PERIODS[f.period].interval;
-  const segment = buildSegment(f.segment, 4);
+  const ctx = (await eventContext(f)).make();
+  const genre = ctx.bind(kind);
+  const where = ctx.where({ dataset: "events", row: "i", session: "s", time: "i.ts" });
   const [row] = await q<{ total: number }>(
     `select count(*)::float8 as total
        from rum_event_index i
-       left join rum_session s on s.app_id = i.app_id and s.session_id = i.session_id
-      where i.ts > now() - interval '${interval}' and i.ts <= now()
-        and ($1::text is null or i.app_id = $1)
-        and ($2::text is null or s.device_type = $2)
-        and ($3::text is null or i.kind = $3)
-        ${segment.where("s")}
-        ${f.includeBots ? "" : "and not coalesce(s.is_bot, false)"}
-        ${internalClause(f, "i.app_id")}`,
-    [f.app, f.device, kind, ...segment.params],
+       ${sessionJoin("i", "s")}
+      where (${genre}::text is null or i.kind = ${genre}::text)${where}`,
+    ctx.params,
   );
   return Number(row?.total ?? 0);
 }
@@ -327,56 +305,55 @@ export async function exploreEvents(
     };
   }
 
+  const contexte = await eventContext(f);
   return tx(async (client) => {
     // Une seule photographie et une seule horloge pour les six lectures : une
     // ingestion concurrente ne peut pas faire diverger journal/total/facettes.
     await client.query("set transaction isolation level repeatable read read only");
     const run = async <T>(sql: string, params?: unknown[]): Promise<T[]> =>
       (await client.query(sql, params)).rows as T[];
-    const listBase = filteredCte(f, query, cursor, true);
-    const aggregateBase = filteredCte(f, query, null, false);
-    const bucket = PERIODS[f.period].bucket;
-    const interval = PERIODS[f.period].interval;
-    const listParams = [...listBase.params, page.limit, page.offset];
+
+    const list = contexte.make();
     const rawEvents = await run<EventIndexInternalRow>(
-      `${listBase.sql}
+      `${filteredCte(list, query, cursor)}
        select id::text, app_id, session_id, ts, route, kind, source_name, source_span_id,
               name, props, context, device_type,
               to_char(ts at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_ts
          from filtered_events
-        order by ts desc, id desc limit $${listBase.nextIndex} offset $${listBase.nextIndex + 1}`,
-      listParams,
+        order by ts desc, id desc limit ${list.bind(page.limit)} offset ${list.bind(page.offset)}`,
+      list.params,
     );
+    const totals = contexte.make();
     const totalRows = await run<{ total: number; min_sample_rate: number | null }>(
-      `${aggregateBase.sql}
+      `${filteredCte(totals, query, null)}
        select count(*)::float8 as total, min(sample_rate)::double precision as min_sample_rate
          from filtered_events`,
-      aggregateBase.params,
+      totals.params,
     );
+    const series = contexte.make();
+    const range = series.query.range;
     const trend = await run<EventTrendRow>(
-      `${aggregateBase.sql}, bounds as (
-         select date_bin(interval '${bucket}', now() - interval '${interval}', timestamptz '2000-01-01') as start,
-                date_bin(interval '${bucket}', now(), timestamptz '2000-01-01') as stop
-       ), buckets as (
-         select generate_series(start, stop, interval '${bucket}') as bucket from bounds
+      `${filteredCte(series, query, null)}, buckets as (
+         select ${bucketSeriesSql(range, series.bind)} as bucket
        ), counts as (
-         select date_bin(interval '${bucket}', ts, timestamptz '2000-01-01') as bucket,
-                count(*)::float8 as count
+         select ${bucketExpr("ts", range)} as bucket, count(*)::float8 as count
            from filtered_events group by 1
        )
        select b.bucket, coalesce(c.count, 0)::float8 as count
          from buckets b left join counts c using (bucket) order by b.bucket`,
-      aggregateBase.params,
+      series.params,
     );
+    const facetNames = contexte.make();
     const names = await run<EventNameFacet>(
-      `${aggregateBase.sql}
+      `${filteredCte(facetNames, query, null)}
        select name as value, count(*)::float8 as count from filtered_events
         where kind = 'event' and name is not null
         group by name order by count desc, name asc limit 20`,
-      aggregateBase.params,
+      facetNames.params,
     );
+    const facetAttributes = contexte.make();
     const attributes = await run<EventAttributeFacet>(
-      `${aggregateBase.sql}, attrs as (
+      `${filteredCte(facetAttributes, query, null)}, attrs as (
          select 'props'::text as source, a.key, a.value from filtered_events f
          cross join lateral jsonb_each(case
            when jsonb_typeof(f.props) = 'object' and octet_length(f.props::text) <= 16384 then f.props
@@ -391,24 +368,26 @@ export async function exploreEvents(
         where key ~ '^[A-Za-z][A-Za-z0-9_.-]{0,99}$'
           and jsonb_typeof(value) in ('string','number','boolean','null')
         group by source, key order by count desc, source, key limit 30`,
-      aggregateBase.params,
+      facetAttributes.params,
     );
-    const valuesBase = query.attribute
-      ? filteredCte(f, { ...query, attribute: null }, null, false)
-      : null;
-    const values = query.attribute && valuesBase
-      ? await run<EventValueFacet>(
-          `${valuesBase.sql}
-           select jsonb_typeof(${query.attribute.source} -> $${valuesBase.nextIndex}::text) as type,
-                  case when jsonb_typeof(${query.attribute.source} -> $${valuesBase.nextIndex}::text) = 'null'
-                       then null else ${query.attribute.source} ->> $${valuesBase.nextIndex}::text end as value,
-                  count(*)::float8 as count
-             from filtered_events
-            where jsonb_typeof(${query.attribute.source} -> $${valuesBase.nextIndex}::text) in ('string','number','boolean','null')
-            group by 1, 2 order by count desc, value limit 20`,
-          [...valuesBase.params, query.attribute.key],
-        )
-      : [];
+    let values: EventValueFacet[] = [];
+    if (query.attribute) {
+      const facetValues = contexte.make();
+      const cte = filteredCte(facetValues, { ...query, attribute: null }, null);
+      const key = facetValues.bind(query.attribute.key);
+      const source = query.attribute.source;
+      values = await run<EventValueFacet>(
+        `${cte}
+         select jsonb_typeof(${source} -> ${key}::text) as type,
+                case when jsonb_typeof(${source} -> ${key}::text) = 'null'
+                     then null else ${source} ->> ${key}::text end as value,
+                count(*)::float8 as count
+           from filtered_events
+          where jsonb_typeof(${source} -> ${key}::text) in ('string','number','boolean','null')
+          group by 1, 2 order by count desc, value limit 20`,
+        facetValues.params,
+      );
+    }
     const last = rawEvents.length === page.limit ? rawEvents.at(-1) : undefined;
     const events = rawEvents.map(({ cursor_ts: _cursorTs, ...event }) => event);
     const total = totalRows[0];
@@ -424,7 +403,7 @@ export async function exploreEvents(
   });
 }
 
-/** Compteur du widget : même filtre app/période/device et même table source. */
+/** Compteur du widget : même requête commune et même table source que l'Explorer. */
 export async function eventCount(f: EventFilters, name: string): Promise<{
   count: number | null;
   sampling_notice: EventSamplingNotice | null;
@@ -443,10 +422,11 @@ export async function eventCount(f: EventFilters, name: string): Promise<{
       diagnostic: "migration v68 absente : compteur indisponible",
     };
   }
-  const base = filteredCte(f, { kind: "event", name, attribute: null }, null, false);
+  const ctx = (await eventContext(f)).make();
   const [row] = await q<{ count: number; min_sample_rate: number | null }>(
-    `${base.sql} select count(*)::float8 as count, min(sample_rate)::double precision as min_sample_rate from filtered_events`,
-    base.params,
+    `${filteredCte(ctx, { kind: "event", name, attribute: null }, null)}
+     select count(*)::float8 as count, min(sample_rate)::double precision as min_sample_rate from filtered_events`,
+    ctx.params,
   );
   return {
     count: Number(row?.count ?? 0),

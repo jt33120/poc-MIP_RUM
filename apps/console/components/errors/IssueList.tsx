@@ -2,6 +2,7 @@
 // historiques qu'aucune issue ne reprend, sur la même population que la liste
 // historique. Chaque occurrence est comptée dans UNE seule ligne. Rendu serveur :
 // la page lit, ce composant présente.
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { HeroReading, HeroStat, SupervisionHero } from "@/components/SupervisionHero";
 import { StackedBars } from "@/components/charts/StackedBars";
@@ -33,7 +34,7 @@ import {
   type IssueListFilters,
   type IssueListResult,
 } from "@/lib/error-issues";
-import { PERIODS } from "@/lib/filters";
+import { queryOf } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { ERROR_SOURCES, ERROR_SOURCE_LABELS, type ErrorFilters, type ErrorTrendPoint } from "@/lib/queries-errors";
 
@@ -47,9 +48,9 @@ export function IssueListInvalid({ f, raison }: { f: ErrorFilters; raison: strin
       <PageHeader title={TITRE} sub={SOUS_TITRE} />
       <div role="alert" className="card border-bad/30 p-6 text-sm text-bad">
         {raison}{" "}
-        <a href={errorsHref("/errors", f, f.app)} className={ERROR_LINK}>
+        <Link href={errorsHref("/errors", f, f.app)} className={ERROR_LINK}>
           Revenir à la liste sans filtre
-        </a>
+        </Link>
       </div>
     </div>
   );
@@ -61,10 +62,15 @@ export function IssueList({
   result,
   curseur,
   limit,
+  label,
+  bucketLabel,
 }: {
   f: ErrorFilters;
   filtres: IssueListFilters;
   result: IssueListResult;
+  /** Plage lue (« 24 h », ou dates) et largeur de seau, dans le fuseau de l'app. */
+  label: string;
+  bucketLabel: string;
   /** La page affichée suit un curseur. */
   curseur: boolean;
   /** Limite demandée explicitement, qui suit la pagination. */
@@ -73,13 +79,15 @@ export function IssueList({
   const { issues, total, coverage, sampling, enrichment } = result;
   const trend = result.trend ?? [];
   const occurrences = result.totals?.occurrences ?? 0;
-  const { label, bucketLabel } = PERIODS[f.period];
-  const chart = errorVolumeChart(issues, trend, f.period);
+  const { bucketSeconds } = queryOf(f).range;
+  const chart = errorVolumeChart(issues, trend, bucketSeconds);
   const peak = trend.reduce<ErrorTrendPoint | null>(
     (best, point) => (point.occurrences > (best?.occurrences ?? 0) ? point : best),
     null,
   );
-  const cachees = new URLSearchParams(errorsHref("/errors", f, f.app).split("?")[1]);
+  // La release est un champ visible du formulaire : la cacher aussi la répéterait, et le
+  // contrat refuse un paramètre répété.
+  const cachees = [...new URLSearchParams(errorsHref("/errors", f, f.app).split("?")[1])].filter(([nom]) => nom !== "release");
   const limite: Record<string, string> = limit ? { limit } : {};
   const filtre = Boolean(filtres.status || filtres.source || filtres.release);
 
@@ -88,7 +96,7 @@ export function IssueList({
       <PageHeader title={TITRE} sub={SOUS_TITRE} />
 
       <form method="get" action="/errors" className="card mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Filtres des issues">
-        {[...cachees].map(([nom, valeur]) => (
+        {cachees.map(([nom, valeur]) => (
           <input key={nom} type="hidden" name={nom} value={valeur} />
         ))}
         <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
@@ -122,9 +130,9 @@ export function IssueList({
             Filtrer
           </button>
           {filtre && (
-            <a href={errorsHref("/errors", f, f.app)} className="btn-ghost">
+            <Link href={errorsHref("/errors", f, f.app)} className="btn-ghost">
               Réinitialiser
-            </a>
+            </Link>
           )}
         </div>
       </form>
@@ -180,7 +188,7 @@ export function IssueList({
         <HeroStat
           label={`Pic par ${bucketLabel}`}
           value={(peak?.occurrences ?? 0).toLocaleString("fr-FR")}
-          hint={peak ? `à partir de ${bucketTick(peak.bucket, f.period)}` : undefined}
+          hint={peak ? `à partir de ${bucketTick(peak.bucket, bucketSeconds)}` : undefined}
         />
         <HeroReading>
           Triées pour le triage : à revoir, réapparitions, ouvertes, résolues, ignorées, puis par impact. « À revoir » :
@@ -213,9 +221,9 @@ export function IssueList({
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-ink-faint">
                   {curseur ? (
-                    <a href={issueListHref(f, filtres, limite)} className={ERROR_LINK}>
+                    <Link href={issueListHref(f, filtres, limite)} className={ERROR_LINK}>
                       Aucune entrée à cette position — revenir au début de la liste
-                    </a>
+                    </Link>
                   ) : filtre ? (
                     "Aucune issue ne correspond à ces filtres sur cette période"
                   ) : (
@@ -230,19 +238,17 @@ export function IssueList({
 
       {(curseur || result.next_cursor) && (
         <nav className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm" aria-label="Pagination des issues">
-          {/* Ancres natives : la navigation client vers la même route avec une autre query
-              reste bloquée dans cette console (suivi consigné dans delivery-p5.md). */}
           {curseur ? (
-            <a href={issueListHref(f, filtres, limite)} className={ERROR_LINK}>
+            <Link href={issueListHref(f, filtres, limite)} className={ERROR_LINK}>
               Début de la liste
-            </a>
+            </Link>
           ) : (
             <span />
           )}
           {result.next_cursor && (
-            <a href={issueListHref(f, filtres, { ...limite, cursor: result.next_cursor })} className={ERROR_LINK}>
+            <Link href={issueListHref(f, filtres, { ...limite, cursor: result.next_cursor })} className={ERROR_LINK}>
               Entrées suivantes
-            </a>
+            </Link>
           )}
         </nav>
       )}
@@ -266,7 +272,7 @@ function IssueRow({ entry, f, trend, label }: { entry: IssueEntry; f: ErrorFilte
     >
       <td className="max-w-md px-4 py-3">
         {/* Un seul lien par ligne : une tabulation par entrée au clavier. */}
-        <a href={href} className="block rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
+        <Link href={href} className="block rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
           <ErrorTypeBadge type={entry.error_type} />
           <IssueStatusBadge status={entry.status} />
           <ReappearedBadge reappeared={entry.reappeared} />
@@ -284,7 +290,7 @@ function IssueRow({ entry, f, trend, label }: { entry: IssueEntry; f: ErrorFilte
           <span className="mt-0.5 block break-all font-mono text-xs text-ink-faint">
             {entry.kind === "issue" ? `issue ${entry.id.slice(0, 8)}` : `fingerprint ${entry.fingerprint}`} · {entry.app_id}
           </span>
-        </a>
+        </Link>
       </td>
       <td className="px-4 py-3 font-bold tabular-nums" data-testid="entry-occurrences">
         {entry.occurrences.toLocaleString("fr-FR")}

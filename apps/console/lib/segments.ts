@@ -1,8 +1,10 @@
 // Moteur de segments v1 — logique PURE, testée (pas d'accès DB ici).
 //
-// Un segment = une conjonction de conditions `dimension<op>valeur`, portée dans
-// l'URL (`?seg=geo==FR;device!=mobile`) et appliquée RÉTROACTIVEMENT à toutes les
-// requêtes (elles interrogent les lignes brutes).
+// Un segment = une conjonction de conditions `dimension<op>valeur`, appliquée
+// RÉTROACTIVEMENT aux requêtes (elles interrogent les lignes brutes). Depuis P6.2,
+// l'URL est lue par le contrat commun (lib/query-contract.ts, formats v1 et v2) ;
+// ce module ne compile plus que le prédicat des lectures historiques (parcours,
+// formulaires, objectifs, acquisition, rétention), à partir de `legacySegment`.
 //
 // Sûreté : les colonnes proviennent EXCLUSIVEMENT de l'allowlist `SEG_DIMENSIONS`
 // (jamais d'une entrée utilisateur) et les valeurs sont TOUJOURS des binds `$n`.
@@ -33,33 +35,6 @@ export const SEG_DIMENSIONS: Record<string, { col: string; label: string }> = {
   source: { col: "collection_source", label: "Source" },
 };
 
-const VALUE_MAX = 120;
-
-/** Parse `geo==FR;device!=mobile` -> conditions valides (les jetons inconnus ou
- *  mal formés sont ignorés, pas d'erreur : robuste au trafiquage d'URL). */
-export function parseSegment(raw: string | null | undefined): SegCond[] {
-  if (!raw) return [];
-  const out: SegCond[] = [];
-  for (const tok of raw.split(";")) {
-    const m = tok.match(/^([a-z_]+)(==|!=)(.*)$/);
-    if (!m) continue;
-    const [, dim, op, rawVal] = m;
-    if (!(dim in SEG_DIMENSIONS)) continue;
-    const value = rawVal.trim().slice(0, VALUE_MAX);
-    if (!value) continue;
-    out.push({ dim, op: op as SegOp, value });
-  }
-  return out;
-}
-
-/** Sérialise des conditions vers la forme d'URL (round-trip avec parseSegment). */
-export function serializeSegment(conds: SegCond[]): string {
-  return conds
-    .filter((c) => c.dim in SEG_DIMENSIONS && c.value !== "")
-    .map((c) => `${c.dim}${c.op}${c.value}`)
-    .join(";");
-}
-
 export interface CompiledSegment {
   /** Valeurs à passer en binds, DANS L'ORDRE, à partir de `startIndex`. */
   params: string[];
@@ -81,10 +56,4 @@ export function buildSegment(conds: SegCond[], startIndex: number): CompiledSegm
       })
       .join("");
   return { params, where };
-}
-
-/** Libellé lisible d'une condition (pour les chips UI). */
-export function describeCond(c: SegCond): string {
-  const label = SEG_DIMENSIONS[c.dim]?.label ?? c.dim;
-  return `${label} ${c.op === "==" ? "=" : "≠"} ${c.value}`;
 }

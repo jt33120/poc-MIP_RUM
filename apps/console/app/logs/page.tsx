@@ -7,7 +7,11 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import { fmtDate } from "@/lib/format";
-import { parseFilters, periodLabel, filtersToQuery, type SearchParams } from "@/lib/queries-v2";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { hrefWithQuery } from "@/lib/query-contract";
+import { periodLabel, v2FiltersOf } from "@/lib/queries-v2";
 import {
   logAnomalies,
   logEntries,
@@ -47,7 +51,9 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
   }
 
   const sp = await searchParams;
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/logs");
+  if (!ecran.ok) return <FilterProblemNotice title="Logs" problem={ecran.problem} />;
+  const f = v2FiltersOf(ecran.query);
   const level = parseLevel(sp?.level);
 
   const [rows, counts, volume, anomalies, byRoute] = await Promise.all([
@@ -142,11 +148,11 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
         </div>
       )}
 
-      {/* Filtres de niveau (préservent app/période via filtersToQuery). */}
+      {/* Filtres de niveau : le contexte global (app, période, segment) suit le lien. */}
       <div className="mb-4 flex flex-wrap gap-2">
         {LEVELS.map((l) => {
           const active = l.key === level;
-          const href = `/logs${filtersToQuery(f, l.key !== "all" ? { level: l.key } : {})}`;
+          const href = hrefWithQuery("/logs", ecran.query, { level: l.key === "all" ? null : l.key });
           return (
             <Link
               key={l.key}
@@ -200,7 +206,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
                   <td className="whitespace-nowrap px-4 py-2 text-xs">
                     {r.session_id ? (
                       <Link
-                        href={`/sessions/${encodeURIComponent(r.session_id)}${filtersToQuery(f)}`}
+                        href={hrefWithQuery(`/sessions/${encodeURIComponent(r.session_id)}`, ecran.query)}
                         className="font-mono text-brand hover:underline"
                         title="Voir la session"
                       >
@@ -208,7 +214,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
                       </Link>
                     ) : r.trace_id ? (
                       <Link
-                        href={`/tracing/${encodeURIComponent(r.trace_id)}`}
+                        href={hrefWithQuery(`/tracing/${encodeURIComponent(r.trace_id)}`, ecran.query)}
                         className="font-mono text-brand hover:underline"
                         title="Voir la trace (waterfall front → back)"
                       >

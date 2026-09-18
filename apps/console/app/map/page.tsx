@@ -16,7 +16,9 @@ import {
   type Health,
 } from "@/lib/map";
 import { mapEdges, mapNodes, mapPages } from "@/lib/queries-map";
-import { parseFilters, type SearchParams } from "@/lib/queries-v2";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +30,9 @@ export default async function ExperienceMapPage({
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
-  const f = parseFilters(await searchParams);
+  const ecran = await pageFilters((await searchParams) ?? {}, "/map");
+  if (!ecran.ok) return <FilterProblemNotice title="Carte d'expérience" problem={ecran.problem} />;
+  const f = ecran.filters;
   const [nodes, edges, pages] = await Promise.all([mapNodes(f), mapEdges(f), mapPages(f)]);
 
   const toNode = (r: (typeof nodes)[number]): GNode => {

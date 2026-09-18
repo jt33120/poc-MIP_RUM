@@ -41,8 +41,15 @@ describe("GET /api/v1/events", () => {
     vi.clearAllMocks();
   });
 
-  it("force A malgré une demande B et conserve kind, ordre et pagination", async () => {
+  it("refuse une demande B hors périmètre (403), sans rabattre sur A ni lire", async () => {
     const response = await request("app=app-b&kind=vital&limit=1&offset=1");
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "forbidden_app", parameter: "app" });
+    expect(exploreEvents).not.toHaveBeenCalled();
+  });
+
+  it("lit A et conserve kind, ordre et pagination", async () => {
+    const response = await request("app=app-a&kind=vital&limit=1&offset=1");
     expect(response.status).toBe(200);
     expect(exploreEvents).toHaveBeenCalledWith(
       expect.objectContaining({ app: "app-a", period: "24h" }),
@@ -65,12 +72,15 @@ describe("GET /api/v1/events", () => {
     expect(exploreEvents).not.toHaveBeenCalled();
   });
 
-  it("applique tablet uniquement à l’Explorer et remet offset à zéro avec un curseur", async () => {
+  it("applique tablet à l’Explorer sur toutes les apps autorisées et remet offset à zéro avec un curseur", async () => {
     const cursor = Buffer.from(JSON.stringify(["2026-09-16T10:00:00.000Z", "42"])).toString("base64url");
     const response = await request(`kind=event&device=tablet&offset=99&cursor=${cursor}`);
     expect(response.status).toBe(200);
+    const [filters] = exploreEvents.mock.calls[0];
+    // Sans app : le périmètre AUTORISÉ du jeton, pas sa première app.
+    expect(filters.query.scope.effectiveApps).toEqual(["app-a"]);
     expect(exploreEvents).toHaveBeenCalledWith(
-      expect.objectContaining({ app: "app-a", device: "tablet" }),
+      expect.objectContaining({ app: null, device: "tablet" }),
       { kind: "event", name: null, attribute: null },
       { limit: 100, offset: 0 },
       { ts: "2026-09-16T10:00:00.000Z", id: "42" },

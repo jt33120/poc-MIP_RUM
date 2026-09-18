@@ -1,7 +1,9 @@
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { ScatterPlot } from "@/components/charts/ScatterPlot";
-import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 import { decouperUrlScript, fmtVital } from "@/lib/format";
 import { inpOffenders, scriptsBloquants, topFrustrations } from "@/lib/queries-frustration";
 import { RATING_CLASS, RATING_HEX, rating2026 } from "@/lib/rating";
@@ -10,8 +12,10 @@ export const dynamic = "force-dynamic";
 
 /** Signaux de frustration (P1) : rage/dead clicks + éléments lents à l'INP. */
 export default async function UxFrustration({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const f = parseFilters(await searchParams);
-  const period = PERIODS[f.period];
+  const ecran = await pageFilters(await searchParams, "/ux");
+  if (!ecran.ok) return <FilterProblemNotice title="Frustration" problem={ecran.problem} />;
+  const f = ecran.filters;
+  const period = { label: ecran.label };
   const [signals, inp, scripts] = await Promise.all([
     topFrustrations(f),
     inpOffenders(f),

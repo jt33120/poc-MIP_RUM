@@ -2,11 +2,11 @@
 // Formulaires du workflow d'une issue (P5.6) : triage, commentaire, lien de ticket.
 // Chacun poste vers son endpoint v1 avec la révision lue par la page.
 //
-// APRÈS UNE ÉCRITURE, LA PAGE EST RECHARGÉE. Le routeur client de la console peut
-// laisser un rafraîchissement en suspens sans jamais l'appliquer (déjà contourné en
-// P5.1 par des ancres natives) : l'écran annoncerait un enregistrement que rien ne
-// montre. Un rechargement complet est la seule relecture certaine de l'issue, de
-// son historique et de sa révision.
+// APRÈS UNE ÉCRITURE, LA PAGE EST RECHARGÉE. Un `router.refresh()` relirait l'issue
+// (le blocage de navigation client de P5 est levé en P6.2) mais garderait l'état
+// local des formulaires : statut et assigné initialisés depuis l'ancienne lecture,
+// saisie en cours. Le rechargement complet remet chaque champ sur l'issue relue,
+// son historique et sa révision, sans état client périmé.
 //
 // 409 : l'issue a changé depuis sa lecture. On le dit et on propose de recharger.
 // Ce que l'utilisateur avait saisi — et seulement cela — traverse le rechargement

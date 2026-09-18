@@ -93,19 +93,17 @@ export function ErrorOccurrences({
           aria-label="Pagination des occurrences"
           className="flex flex-wrap justify-between gap-3 border-t border-line px-4 py-3 text-sm"
         >
-          {/* Ancres natives : la navigation client vers la même route avec une autre
-              query reste bloquée dans cette console (suivi consigné dans delivery-p5.md). */}
           {firstHref ? (
-            <a href={firstHref} className={ERROR_LINK}>
+            <Link href={firstHref} className={ERROR_LINK}>
               Occurrences les plus récentes
-            </a>
+            </Link>
           ) : (
             <span />
           )}
           {nextHref && (
-            <a href={nextHref} className={ERROR_LINK}>
+            <Link href={nextHref} className={ERROR_LINK}>
               Occurrences suivantes
-            </a>
+            </Link>
           )}
         </nav>
       )}

@@ -31,6 +31,8 @@ Deux modes (le handler tranche, le middleware ne redirige pas `/api/v1`) :
      Un mauvais `app_id` de scope ne provoque **aucune erreur** : le jeton fonctionne
      mais filtre sur une app vide → tout s'affiche à zéro côté partenaire. Voir
      `docs/HANDOVER_UTI.md`.
+   - `token@` (sans app) → périmètre **vide** : toutes les lectures répondent `403`
+     `no_app_access`. Une configuration incomplète ne vaut jamais « toutes les apps ».
 2. **Cookie de session** — le cookie JWT `mip_session` de la console. Respecte le
    **RBAC** existant : un `viewer` scopé ne voit que ses apps. Pratique pour un appel
    depuis le navigateur d'un utilisateur déjà connecté à la console.
@@ -70,32 +72,97 @@ Tous les endpoints de données acceptent :
 
 | Param | Valeurs | Défaut |
 |---|---|---|
-| `app` | slug d'app, ou `all` | `all` (toutes apps autorisées) |
-| `period` | `1h` \| `24h` \| `7d` (`7j` toléré) | `24h` |
+| `app` | slug d'app, ou `all` | `all` (toutes les apps **autorisées**, lues ensemble) |
+| `period` | `1h` \| `24h` \| `7d` (`7j` toléré) | `24h` — valeur inconnue comprise |
+| `from` / `to` | plage personnalisée, instants **ISO UTC explicites** (`…Z`) | — (exclut `period`) |
 | `device` | `mobile` \| `desktop` \| `tablet` \| `all` | `all` |
+| `browser`, `os`, `env`, `service`, `release`, `route`, `country` | valeur **exacte**, 1 à 500 caractères | — |
+| `seg` | segment : `v2:dimension:eq\|neq\|is_null[:valeur encodée]` séparés par `;` (format v1 `geo==FR;device!=mobile` encore lu) | — |
+| `bots` | `1` = inclure le trafic non humain | exclu |
+| `internal` | `1` = inclure les apps internes dans la vue « toutes apps » | exclues |
 
-Le **scoping RBAC** s'applique au paramètre `app` : un `viewer` scopé qui demande une
-app hors de son périmètre (ou `all`) est **rabattu sur sa première app autorisée**.
+**Plage personnalisée** : `from` est **inclus**, `to` **exclu** ; 30 jours au plus ;
+`to` ne peut pas dépasser l'heure du serveur ; `period` et `from/to` ensemble sont
+refusés (`400 range_conflict`). Une plage invalide n'est jamais rabattue en silence.
+Le maximum n'étend pas la rétention : une fenêtre hors des données conservées rend
+ce qui existe.
+
+**Bornes** : 10 conditions combinées au plus (appareil, dimensions et segment
+confondus), 500 caractères par valeur. `neq` exclut les valeurs inconnues ;
+« Inconnu » s'écrit `is_null`.
+
+Le **scoping RBAC** s'applique au paramètre `app` : une app **hors périmètre** est
+**refusée** (`403` `forbidden_app`), jamais rabattue sur une autre ; un principal
+sans aucune app autorisée reçoit `403` `no_app_access` avant toute lecture. Sans
+`app` (ou `all`), la réponse couvre **toutes** les apps autorisées.
+
+Une dimension qu'une mesure ne porte pas (ou pas encore collectée) est refusée avec
+`400` `unsupported_dimension` et la dimension en cause : **aucun filtre n'est
+ignoré en silence**.
 
 ## Enveloppe de réponse
 
 ```jsonc
 {
   "meta": {
-    "app": "all",            // app effective APRÈS scoping
-    "period": "24h",
+    "app": "demo-app",       // app demandée (ou celle de la ressource résolue)
+    "period": "24h",         // preset, ou "custom"
     "device": "all",
-    "generatedAt": "2026-06-17T08:00:00.000Z"
+    "generatedAt": "2026-06-17T08:00:00.000Z",
+    // Ce qui a RÉELLEMENT été appliqué (P6.2) :
+    "query_version": 1,
+    "scope": { "requested_app": "demo-app", "effective_apps": ["demo-app"] },
+    "range": {
+      "from": "2026-06-16T08:00:00.000Z",  // inclus
+      "to":   "2026-06-17T08:00:00.000Z",  // exclu
+      "preset": "24h",                      // null pour une plage personnalisée
+      "bucket_seconds": 3600
+    },
+    "filters": {
+      "conditions": [{ "dimension": "device", "operator": "eq", "value": "mobile" }],
+      "include_bots": false,
+      "include_internal": false
+    }
   },
   "data": { /* spécifique à l'endpoint */ }
 }
 ```
 
-Erreurs : `{ "error": "message" }` avec le statut HTTP (`400`, `401`, `403`, `404`, `429`, `500`).
+Erreurs : `{ "error": "message", "code": "…", "parameter": "…", "dimension": "…" }`
+avec le statut HTTP (`400`, `401`, `403`, `404`, `429`, `500`). Les `code` du contrat
+sont stables : `no_app_access`, `forbidden_app` (403) ; `invalid_range`,
+`range_conflict`, `range_too_long`, `range_in_future`, `invalid_filter`,
+`too_many_conditions`, `ambiguous_parameter`, `unsupported_dimension` (400).
+
+**Cache** : `Cache-Control: private, max-age=15`, `Vary: Origin, Authorization, Cookie`
+et un `ETag` faible lié au principal, au périmètre, à la plage, aux filtres et à la
+donnée — une réponse calculée pour une app ou un jeton ne peut pas en servir un
+autre. Sur une fenêtre glissante (`period`), une donnée inchangée revalide en `304`.
 
 ---
 
 ## Journal des changements
+
+### 17/09/2026 — filtres unifiés : périmètre refusé plutôt que rabattu, plage personnalisée, dimensions (P6.2)
+
+Un seul contrat de filtres pour la console, l'API et l'export. Ce qui change pour un client :
+
+- **Périmètre** : une app hors périmètre reçoit `403 forbidden_app` au lieu des chiffres
+  d'une autre app, et un jeton sans app autorisée (`token@`) `403 no_app_access`. Sans
+  `app`, la réponse couvre **toutes** les apps autorisées, plus seulement la première.
+- **Plage personnalisée** `from`/`to` (ISO UTC, 30 jours au plus, `to` ≤ heure serveur),
+  en plus des presets, dont les défauts documentés ne changent pas.
+- **Dimensions** `browser`, `os`, `env`, `service`, `release`, `route`, `country` et
+  segment `seg` versionné (`v2:…`, format v1 encore lu). Une dimension qu'une mesure ne
+  porte pas est refusée (`400 unsupported_dimension`), jamais ignorée.
+- **`meta`** annonce ce qui a été appliqué : `scope`, `range` ([from,to) UTC, preset,
+  largeur de seau) et `filters`. Les champs `app`, `period` et `device` restent là ;
+  `period` vaut `custom` pour une plage personnalisée.
+- **Erreurs typées** : `code` (et `parameter`/`dimension`) s'ajoutent au champ `error`.
+- **ETag** : lié au principal, au périmètre, à la plage et aux filtres ; `Vary` ajoute
+  `Authorization` et `Cookie`. Une réponse en cache ne peut plus servir un autre jeton.
+- **Tablette** : `device=tablet` est désormais appliqué par tous les endpoints, y compris
+  `overview`, `vitals`, `pages`, `tracing` et `health-grid`, qui l'ignoraient.
 
 ### 17/09/2026 — workflow des issues, suivi de revue (P5.6)
 

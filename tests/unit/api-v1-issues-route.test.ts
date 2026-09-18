@@ -109,8 +109,15 @@ afterEach(() => {
 });
 
 describe("GET /api/v1/issues", () => {
-  it("force l'app du jeton, transmet filtres et limite bornée, périmètre compris", async () => {
-    const reponse = await liste("app=app-b&period=7d&device=tablet&status=for_review&release=1.1.0&source=browser_js&limit=500", { bearer: "tok" });
+  it("refuse l'app B hors du périmètre du jeton (403), sans la rabattre sur A ni lire", async () => {
+    const reponse = await liste("app=app-b&period=7d&status=for_review", { bearer: "tok" });
+    expect(reponse.status).toBe(403);
+    expect(await reponse.json()).toMatchObject({ code: "forbidden_app", parameter: "app" });
+    expect(lecture.listIssues).not.toHaveBeenCalled();
+  });
+
+  it("app du jeton : transmet filtres et limite bornée, périmètre compris", async () => {
+    const reponse = await liste("app=app-a&period=7d&device=tablet&status=for_review&release=1.1.0&source=browser_js&limit=500", { bearer: "tok" });
     expect(reponse.status).toBe(200);
     expect(lecture.listIssues).toHaveBeenCalledTimes(1);
     const [filtres, criteres, page, opts] = lecture.listIssues.mock.calls[0];
@@ -145,13 +152,26 @@ describe("GET /api/v1/issues", () => {
     ["status=reopened", "status invalide (open, for_review, resolved ou ignored)"],
     ["source=java", "source invalide"],
     [`release=${"x".repeat(201)}`, "release invalide (1 à 200 caractères, sans caractère de contrôle)"],
-    ["release=a%00b", "release invalide (1 à 200 caractères, sans caractère de contrôle)"],
     ["cursor=pas-un-curseur", "cursor invalide"],
     [`cursor=${Buffer.from(JSON.stringify([9, 0, 0, 0, "1", "a", "legacy:x"])).toString("base64url")}`, "cursor invalide"],
   ])("refuse %s en 400, sans lire la base", async (query, message) => {
     const reponse = await liste(query, { bearer: "global" });
     expect(reponse.status).toBe(400);
     expect(await reponse.json()).toEqual({ error: message });
+    expect(lecture.listIssues).not.toHaveBeenCalled();
+  });
+
+  it("refuse release=a%00b par le contrat commun (400 typé), sans lire la base", async () => {
+    // `release` est aussi une dimension du contrat : un caractère de contrôle est
+    // refusé avant la route, avec le code et la dimension en cause.
+    const reponse = await liste("release=a%00b", { bearer: "global" });
+    expect(reponse.status).toBe(400);
+    expect(await reponse.json()).toEqual({
+      code: "invalid_filter",
+      parameter: "release",
+      dimension: "release",
+      error: "release invalide (1 à 500 caractères, sans caractère de contrôle)",
+    });
     expect(lecture.listIssues).not.toHaveBeenCalled();
   });
 
@@ -206,7 +226,7 @@ describe("GET /api/v1/issues/{id}", () => {
     });
   });
 
-  it("404 hors périmètre ou inconnue ; 400 pour un identifiant ou un curseur forgé, sans lire", async () => {
+  it("404 hors périmètre ou inconnue ; 400 pour un identifiant ou un curseur forgé ; 403 sans app, sans lire", async () => {
     lecture.resolveIssue.mockResolvedValueOnce(null);
     expect((await detail(ID, "", { bearer: "tok" })).status).toBe(404);
     expect(lecture.issueDetail).not.toHaveBeenCalled();
@@ -223,10 +243,11 @@ describe("GET /api/v1/issues/{id}", () => {
     }
     expect(lecture.resolveIssue).not.toHaveBeenCalled();
 
+    // Session sans aucune app : refus du contrat (403), avant toute résolution.
     const cookie = await signJwt({ email: "v@mip", role: "viewer", apps: [] });
     const vide = await detail(ID, "", { cookie });
-    expect(vide.status).toBe(404);
-    expect(await vide.json()).toEqual({ error: "issue introuvable" });
+    expect(vide.status).toBe(403);
+    expect(await vide.json()).toEqual({ code: "no_app_access", error: "aucune application autorisée" });
     expect(lecture.resolveIssue).not.toHaveBeenCalled();
   });
 });

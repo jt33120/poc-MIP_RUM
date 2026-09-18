@@ -7,17 +7,11 @@
 // issue hors du périmètre du principal n'existe pas pour lui (404). Une issue sans
 // occurrence sur la fenêtre reste lisible : son URL ne casse pas quand le bug se tait.
 import { handle } from "@/lib/api/handle";
+import { announceResourceApp } from "@/lib/api/params";
 import { ApiHttpError, preflight } from "@/lib/api/respond";
 import { isIssueId, issueDetail, resolveIssue } from "@/lib/error-issues";
 import { exemplarSymbolication } from "@/lib/error-symbolication";
-import {
-  errorDeviceFrom,
-  errorScopeFor,
-  parseErrorCursor,
-  parseOccurrencesPage,
-  scopeApps,
-  type ErrorFilters,
-} from "@/lib/queries-errors";
+import { errorDeviceFrom, parseErrorCursor, parseOccurrencesPage, type ErrorFilters } from "@/lib/queries-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -25,22 +19,20 @@ export const OPTIONS = preflight;
 
 const INTROUVABLE = "issue introuvable";
 
-export const GET = handle(async ({ principal, filters, searchParams, params }) => {
-  const scope = errorScopeFor({ role: principal.role, apps: principal.apps });
-  if (scope.kind === "none") throw new ApiHttpError(404, INTROUVABLE);
-
+export const GET = handle(async ({ filters, searchParams, params }) => {
+  // Périmètre déjà résolu par `handle` (AD-16) : sans app autorisée, 403 avant d'arriver ici.
   const id = params.id ?? "";
   if (!isIssueId(id)) throw new ApiHttpError(400, "id invalide (UUID attendu)");
   const cursor = parseErrorCursor(searchParams.get("cursor"));
   if (cursor === undefined) throw new ApiHttpError(400, "cursor invalide");
   const { limit } = parseOccurrencesPage(searchParams);
 
-  const issue = await resolveIssue(id, scopeApps(scope));
+  const issue = await resolveIssue(id, filters.query.scope.authorizedApps);
   if (!issue) throw new ApiHttpError(404, INTROUVABLE);
 
   const f: ErrorFilters = { ...filters.legacy, device: errorDeviceFrom(filters.device) };
   const detail = await issueDetail(issue, { ...f, app: issue.app_id }, { limit, cursor });
-  filters.app = issue.app_id;
+  announceResourceApp(filters, issue.app_id);
   // Stack source (P5.4), comme /errors/{fingerprint} : `stack` reste la stack brute.
   const symbolication = await exemplarSymbolication(issue.app_id, detail.last_sample);
   return {

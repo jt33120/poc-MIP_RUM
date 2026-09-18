@@ -9,9 +9,11 @@
 // renormalisé sur les composantes restantes. Tout sans donnée => score null.
 // Libellés : Excellent >= 90 / Bon >= 75 / Dégradé >= 50 / Critique < 50.
 import { q } from "./db";
-import { type Filters, PERIODS } from "./filters";
+import { type Filters } from "./filters";
+import { compileScope, sessionJoin } from "./query-compiler";
+import { conditionsOf } from "./query-contract";
+import { sqlContext } from "./query-sql";
 import { CORE_VITALS } from "./rating";
-import { internalClause } from "./queries";
 
 export type HealthLabel = "Excellent" | "Bon" | "Dégradé" | "Critique";
 
@@ -127,9 +129,16 @@ export interface Health {
 
 const PENALTY_PER_ANOMALY = 2.5; // pts retirés (sur 10) par ligne v_anomaly 24 h
 
-/** Calcule le health score sur les filtres globaux (anomalies = 24 h fixes, par app). */
+/**
+ * Calcule le health score sur la requête commune (plage, périmètre, filtres). Les
+ * anomalies restent sur 24 h fixes et ne connaissent que l'app : sous un filtre de
+ * population, leur composante est EXCLUE (et le score renormalisé) plutôt que
+ * comptée au nom d'une population qu'elle ne filtre pas.
+ */
 export async function healthScore(f: Filters): Promise<Health> {
-  const itv = PERIODS[f.period].interval;
+  const sql = await sqlContext(f);
+  const vitaux = sql.bind(CORE_VITALS);
+  const vitals = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });
 
   // part de mesures 'good', LCP pondéré x2
   const [v] = await q<{ good_w: number; total_w: number }>(
@@ -138,60 +147,57 @@ export async function healthScore(f: Filters): Promise<Health> {
      from (
        select m.rating, case when m.name = 'LCP' then 2 else 1 end as w
        from rum_metric m
-       left join rum_session s using (session_id)
-       where m.ts > now() - interval '${itv}'
-         -- Les phases réseau (DNS, TCP, TLS…) partagent ce canal et n'ont pas de
-         -- seuil Google : sans ce filtre elles comptent au dénominateur sans
-         -- pouvoir atteindre le numérateur, et le score est plafonné.
-         and m.name = any($3::text[])
-         and ($1::text is null or m.app_id = $1)
-         and ($2::text is null or s.device_type = $2)${internalClause(f, "m.app_id")}
+       ${sessionJoin("m", "s")}
+       -- Les phases réseau (DNS, TCP, TLS…) partagent ce canal et n'ont pas de
+       -- seuil Google : sans ce filtre elles comptent au dénominateur sans
+       -- pouvoir atteindre le numérateur, et le score est plafonné.
+       where m.name = any(${vitaux}::text[])${vitals}
      ) x`,
-    [f.app, f.device, CORE_VITALS],
+    sql.params,
   );
 
-  // erreurs / pages vues / sessions propres, même fenêtre et mêmes filtres
+  // erreurs / pages vues / sessions propres, même plage et mêmes filtres
+  const comptes = await sqlContext(f);
+  const pageviews = comptes.where({ dataset: "views", row: "p", session: "s", time: "p.started_at" });
+  const errors = comptes.where({ dataset: "errors", row: "e", session: "s", time: "e.ts" });
+  const sessions = comptes.where({ dataset: "sessions", row: "s", session: "s", time: "s.last_seen_at" });
+  const propres = comptes.where({ dataset: "sessions", row: "s", session: "s", time: "s.last_seen_at" });
+  const debut = comptes.bind(comptes.query.range.from);
+  const fin = comptes.bind(comptes.query.range.to);
   const [c] = await q<{ pageviews: number; errors: number; sessions: number; clean_sessions: number }>(
     `select
        (select count(*)::int from rum_pageview p
-         left join rum_session s using (session_id)
-         where p.started_at > now() - interval '${itv}'
-           and ($1::text is null or p.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${internalClause(f, "p.app_id")}) as pageviews,
+         ${sessionJoin("p", "s")}
+         where true${pageviews}) as pageviews,
        (select coalesce(sum(e.occurrences), 0)::int from rum_error e
-         left join rum_session s using (session_id)
-         where e.ts > now() - interval '${itv}'
-           and ($1::text is null or e.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${internalClause(f, "e.app_id")}) as errors,
+         ${sessionJoin("e", "s")}
+         where true${errors}) as errors,
+       (select count(*)::int from rum_session s where true${sessions}) as sessions,
        (select count(*)::int from rum_session s
-         where s.last_seen_at > now() - interval '${itv}'
-           and ($1::text is null or s.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${internalClause(f, "s.app_id")}) as sessions,
-       (select count(*)::int from rum_session s
-         where s.last_seen_at > now() - interval '${itv}'
-           and ($1::text is null or s.app_id = $1)
-           and ($2::text is null or s.device_type = $2)${internalClause(f, "s.app_id")}
+         where true${propres}
            and not exists (select 1 from rum_error e
-                            where e.session_id = s.session_id
-                              and e.ts > now() - interval '${itv}')) as clean_sessions`,
-    [f.app, f.device],
+                            where e.app_id = s.app_id and e.session_id = s.session_id
+                              and e.ts >= ${debut}::timestamptz and e.ts < ${fin}::timestamptz)) as clean_sessions`,
+    comptes.params,
   );
 
-  // anomalies LCP : 24 h FIXES (la vue est horaire vs 7 j glissants), filtre app seulement
-  // (v_anomaly n'a pas de dimension device)
+  // anomalies LCP : 24 h FIXES (la vue est horaire vs 7 j glissants), app seulement.
+  const filtree = conditionsOf(sql.query.filters).length > 0;
   let anomalies: AnomalyRow[] = [];
-  try {
-    anomalies = await q<AnomalyRow>(
-      `select app_id, route, bucket, p75::float as p75, mean_7d::float as mean_7d, z_score::float as z_score
-       from v_anomaly
-       where bucket > now() - interval '24 hours'
-         and ($1::text is null or app_id = $1)${internalClause(f, "app_id")}
-       order by abs(z_score) desc, bucket desc
-       limit 20`,
-      [f.app],
-    );
-  } catch {
-    // vue v_anomaly absente (migration v0.3 pas encore appliquée) : l'Overview reste rendable
+  if (!filtree) {
+    try {
+      const vue = await sqlContext(f);
+      anomalies = await q<AnomalyRow>(
+        `select app_id, route, bucket, p75::float as p75, mean_7d::float as mean_7d, z_score::float as z_score
+         from v_anomaly v
+         where bucket > now() - interval '24 hours'${compileScope(vue.query, "v.app_id", vue.bind)}
+         order by abs(z_score) desc, bucket desc
+         limit 20`,
+        vue.params,
+      );
+    } catch {
+      // vue v_anomaly absente (migration v0.3 pas encore appliquée) : l'Overview reste rendable
+    }
   }
 
   const vitalsRatio = v.total_w > 0 ? v.good_w / v.total_w : null;
@@ -234,10 +240,12 @@ export async function healthScore(f: Filters): Promise<Health> {
     {
       key: "anomalies",
       label: "Anomalies LCP (24 h)",
-      detail: anomalies.length
-        ? `${anomalies.length} anomalie(s), -${PENALTY_PER_ANOMALY} pt(s) chacune`
-        : "aucune anomalie détectée",
-      earned: round1(10 * anomaliesRatio),
+      detail: filtree
+        ? "non comptées sous filtre : la détection ne connaît que l'app et la route"
+        : anomalies.length
+          ? `${anomalies.length} anomalie(s), -${PENALTY_PER_ANOMALY} pt(s) chacune`
+          : "aucune anomalie détectée",
+      earned: filtree ? null : round1(10 * anomaliesRatio),
       max: 10,
     },
   ];

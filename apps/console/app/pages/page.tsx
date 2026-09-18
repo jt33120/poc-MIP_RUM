@@ -4,7 +4,9 @@ import { SupervisionHero, HeroStat, HeroReading } from "@/components/Supervision
 import { RankBar } from "@/components/charts/RankBar";
 import { HISTO_BUCKETS, VITAL_CAP } from "@/lib/distribution";
 import { fmtVital } from "@/lib/format";
-import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 import {
   ROUTES_MAX,
   nombreDeRoutes,
@@ -19,8 +21,10 @@ import { RATING_CLASS, RATING_HEX, rating2026 } from "@/lib/rating";
 export const dynamic = "force-dynamic";
 
 export default async function SlowPages({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const f = parseFilters(await searchParams);
-  const period = PERIODS[f.period];
+  const ecran = await pageFilters(await searchParams, "/pages");
+  if (!ecran.ok) return <FilterProblemNotice title="Pages lentes" problem={ecran.problem} />;
+  const f = ecran.filters;
+  const period = { label: ecran.label };
   const [rows, routesTotal, resources, pcts, lcpH, inpH, clsH] = await Promise.all([
     slowRoutes(f),
     nombreDeRoutes(f),

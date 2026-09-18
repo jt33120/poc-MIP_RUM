@@ -1,13 +1,15 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { contextSearchParams } from "@/lib/query-contract";
 import { activeCategory, hrefMatches } from "./nav-items";
 
 /** Barre de sous-onglets d'une catégorie (rien si la catégorie est mono-page).
  * Rend la hiérarchie visible sans multiplier les titres dans la sidebar. */
 export function SubNav() {
   const pathname = usePathname();
-  const qs = useSearchParams().toString();
+  // Contexte global persisté (app, plage, filtres) ; les paramètres propres à l'écran quitté restent derrière.
+  const qs = contextSearchParams(useSearchParams()).toString();
   const cat = activeCategory(pathname);
   if (!cat?.children?.length) return null;
   // Catégorie fermée : pas de barre d'onglets. Elle s'afficherait au-dessus de

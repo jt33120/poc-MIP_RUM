@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { q } = vi.hoisted(() => ({ q: vi.fn() }));
 vi.mock("@/lib/db", () => ({ q }));
+// Schéma migré : la sonde des colonnes de dimensions ne consomme pas les réponses simulées.
+vi.mock("@/lib/query-schema", async () => {
+  const { schemaComplet } = await import("../fixtures/dimension-schema");
+  return { dimensionSchema: async () => schemaComplet() };
+});
 
 import {
   actionSamplingNotice,
@@ -34,7 +39,10 @@ describe("Top Actions", () => {
       includeInternal: false,
     }, { limit: 25, offset: 50 });
     const [sql, params] = q.mock.calls[1] as [string, unknown[]];
-    expect(params).toEqual(["app-a", "mobile", 25, 50, "FR"]);
+    // Fenêtre [from,to) liée, périmètre, appareil, segment, puis pagination — dans l'ordre des $n.
+    expect(params).toEqual([expect.any(String), expect.any(String), ["app-a"], "mobile", "FR", 25, 50]);
+    expect(Date.parse(params[1] as string) - Date.parse(params[0] as string)).toBe(7 * 86_400_000);
+    expect(sql).toContain("a.ts >= $1::timestamptz and a.ts < $2::timestamptz");
     expect(sql).toContain("a.action_id = e.action_id and a.app_id = e.app_id and a.session_id = e.session_id");
     expect(sql).toContain("a.action_id = r.action_id and a.app_id = r.app_id and a.session_id = r.session_id");
     expect(sql).toContain("a.action_id = p.action_id and a.app_id = p.app_id and a.session_id = p.session_id");
@@ -49,8 +57,10 @@ describe("Top Actions", () => {
     expect(sql).toContain("m.resource_span_id = r.span_id");
     expect(sql).toContain("row_number() over");
     expect(sql).toContain("a.action_id = e.action_id and a.app_id = e.app_id and a.session_id = e.session_id");
-    expect(sql).toContain("a.app_id = $1");
+    expect(sql).toContain("a.app_id = any($3::text[])");
+    expect(sql).toContain("s.device_type = $4");
     expect(sql).toContain("s.geo_country = $5");
+    expect(sql).toContain("limit $6 offset $7");
     expect(sql).toContain("order by errors desc, total_ms desc, actions desc");
     expect(sql).toContain("app_id asc, name asc, type asc, coalesce(route, '') asc");
   });
@@ -84,8 +94,8 @@ describe("Top Actions", () => {
       sampling_notice: { min_sample_rate: 0.25 },
     });
     const [sql, params] = q.mock.calls[1] as [string, unknown[]];
-    expect(params).toEqual(["app-a", "mobile", "FR"]);
-    expect(sql).toContain("s.geo_country = $3");
+    expect(params).toEqual([expect.any(String), expect.any(String), ["app-a"], "mobile", "FR"]);
+    expect(sql).toContain("s.geo_country = $5");
     expect(sql).not.toMatch(/\blimit\s+\$/i);
     expect(sql).not.toMatch(/\boffset\s+\$/i);
     expect(sql).toContain("min(sample_rate)");

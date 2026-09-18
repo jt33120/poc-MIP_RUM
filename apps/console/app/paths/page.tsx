@@ -2,7 +2,10 @@ import { FunnelChart, StepPicker } from "@/components/Funnel";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Sankey } from "@/components/Sankey";
-import { PERIODS, parseFilters, type SearchParams } from "@/lib/filters";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { PERIODS } from "@/lib/filters";
 import { availableEvents, funnelReport } from "@/lib/queries-funnel";
 import { entryExitRoutes, routeTransitions } from "@/lib/queries-paths";
 import { buildSankey } from "@/lib/sankey";
@@ -11,7 +14,9 @@ export const dynamic = "force-dynamic";
 
 export default async function Paths({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const f = parseFilters(sp);
+  const ecran = await pageFilters(sp, "/paths");
+  if (!ecran.ok) return <FilterProblemNotice title="Parcours" problem={ecran.problem} />;
+  const f = ecran.filters;
   const period = PERIODS[f.period];
   // Lot 6c : étapes du funnel depuis s1..s4 (form GET), ordonnées, vides ignorées.
   const steps = [1, 2, 3, 4]

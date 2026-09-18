@@ -139,14 +139,14 @@ Recette : vieilles lignes null, mobile/tablet, changement release dans une même
 
 ### P6.2 — unifier les filtres sans rupture (L)
 
-- [ ] Créer contrat/parseur/compilateur des prédicats ; traiter toutes apps autorisées vs aucune, sans réutiliser aveuglément le fallback « première app » des anciens helpers.
-- [ ] Adapter `filters.ts`, `queries-v2.ts`, P4 `queries-events.ts`, P5 `queries-errors.ts`. Les façades publiques anciennes restent testées jusqu’à migration de leurs derniers appelants.
-- [ ] Migrer par tranches : home/pages/sessions → events/actions/ux → errors → correlation/map/experience → SLO/alerts et widgets. Pour SLO/alertes, distinguer la **liste des configurations** des **mesures temporelles** ; un filtre absent du modèle d’une règle n’est pas annoncé comme appliqué à son évaluation.
-- [ ] Les filtres sans sens sur une surface sont désactivés avec raison, ou la surface expose sa capacité ; ne pas afficher un browser sélectionné au-dessus d’un chiffre qui l’ignore.
-- [ ] Préserver les query params lors de tous les drill-downs. Reprise URL ancienne et segments localStorage avec version ; token invalide rejeté dans API nouvelle et erreur UI récupérable.
-- [ ] Mettre scope/AST/range/permissions dans les clés de cache/ETag. Une réponse A ne peut pas être réutilisée pour B.
+- [x] Créer contrat/parseur/compilateur des prédicats ; traiter toutes apps autorisées vs aucune, sans réutiliser aveuglément le fallback « première app » des anciens helpers.
+- [x] Adapter `filters.ts`, `queries-v2.ts`, P4 `queries-events.ts`, P5 `queries-errors.ts`. Les façades publiques anciennes restent testées jusqu’à migration de leurs derniers appelants.
+- [x] Migrer par tranches : home/pages/sessions → events/actions/ux → errors → correlation/map/experience → SLO/alerts et widgets. Pour SLO/alertes, distinguer la **liste des configurations** des **mesures temporelles** ; un filtre absent du modèle d’une règle n’est pas annoncé comme appliqué à son évaluation.
+- [x] Les filtres sans sens sur une surface sont désactivés avec raison, ou la surface expose sa capacité ; ne pas afficher un browser sélectionné au-dessus d’un chiffre qui l’ignore.
+- [x] Préserver les query params lors de tous les drill-downs. Reprise URL ancienne et segments localStorage avec version ; token invalide rejeté dans API nouvelle et erreur UI récupérable.
+- [x] Mettre scope/AST/range/permissions dans les clés de cache/ETag. Une réponse A ne peut pas être réutilisée pour B.
 
-Recette : matrice page×filtre réellement exécutée ; A/B, empty scope, window UTC et changement d’heure Paris, to futur, range >30j, routes hostile/unknown, intersections widget. Les doubles modèles ne subsistent que sous wrappers de compatibilité testés.
+Recette (livrée le 17/09/2026, journal : delivery-p6.md) : matrice page×filtre réellement exécutée ; A/B, empty scope, window UTC et changement d’heure Paris, to futur, range >30j, routes hostile/unknown, intersections widget. Les doubles modèles ne subsistent que sous wrappers de compatibilité testés.
 
 ### P6.3 — analyses prêtes à l’emploi et drill-downs (M)
 

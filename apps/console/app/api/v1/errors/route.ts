@@ -3,26 +3,16 @@
 // occurrences non groupables. Même lecture que l'écran /errors (lib/queries-errors.ts) :
 // l'API ne peut plus afficher un autre nombre que la console sur le même périmètre.
 import { handle } from "@/lib/api/handle";
-import { ApiHttpError, preflight } from "@/lib/api/respond";
-import {
-  errorDeviceFrom,
-  errorScopeFor,
-  listErrorGroups,
-  parseErrorListPage,
-  type ErrorFilters,
-} from "@/lib/queries-errors";
+import { preflight } from "@/lib/api/respond";
+import { errorDeviceFrom, listErrorGroups, parseErrorListPage, type ErrorFilters } from "@/lib/queries-errors";
 
 export const dynamic = "force-dynamic";
 
 export const OPTIONS = preflight;
 
-export const GET = handle(async ({ principal, filters, searchParams }) => {
-  // AD-16 : une session viewer SANS app n'a accès à rien. `parseApiFilters` la
-  // traiterait comme non restreinte (liste vide = pas de clamp) et ouvrirait toutes
-  // les apps : le refus doit précéder toute lecture.
-  if (errorScopeFor({ role: principal.role, apps: principal.apps }).kind === "none")
-    throw new ApiHttpError(403, "aucune application autorisée");
-  // Filtres `legacy` (segment, bots et apps internes exclus comme la console) +
+export const GET = handle(async ({ filters, searchParams }) => {
+  // Périmètre déjà résolu par `handle` (AD-16) : aucune app autorisée ou app hors
+  // périmètre sont refusées (403) avant d'arriver ici. Filtres `legacy` (segment, bots et apps internes exclus comme la console) +
   // tablette. Jamais `filters.v2.device` : il vaut 'all' quand le paramètre est absent,
   // et un appareil nommé 'all' ne correspond à aucune session.
   const f: ErrorFilters = { ...filters.legacy, device: errorDeviceFrom(filters.device) };

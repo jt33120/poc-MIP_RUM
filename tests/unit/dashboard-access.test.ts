@@ -7,6 +7,14 @@ import {
   dashboardApps,
   dashboardFilters,
 } from "../../apps/console/lib/dashboard-access";
+import { parseAnalyticsQuery, type ScopePrincipal } from "../../apps/console/lib/query-contract";
+
+const NOW = Date.parse("2026-09-17T12:00:00.000Z");
+function requete(qs: string, principal: ScopePrincipal) {
+  const parsed = parseAnalyticsQuery(new URLSearchParams(qs), { principal, nowMs: NOW });
+  if (!parsed.ok) throw new Error(parsed.error.code);
+  return parsed.value;
+}
 
 const dashboard = (app_id: string | null, created_by: string | null = "a@example.test") => ({
   id: 9,
@@ -45,8 +53,25 @@ describe("dashboard access — scope tenant unique", () => {
   });
 
   it("ne laisse ni le query string ni le sélecteur révéler l'app B", () => {
-    expect(dashboardFilters(dashboard(null), { app: "app-b", period: "7d" }, viewerA)?.app).toBe("app-a");
+    // La requête de l'écran est résolue contre le principal : app=app-b est refusée en amont.
+    expect(parseAnalyticsQuery(new URLSearchParams("app=app-b"), { principal: viewerA, nowMs: NOW }).ok).toBe(false);
+    // Tableau transverse sans app : les widgets restent dans les apps AUTORISÉES.
+    const transverse = dashboardFilters(dashboard(null), requete("period=7d", viewerA), viewerA);
+    expect(transverse?.query?.scope.effectiveApps).toEqual(["app-a"]);
+    expect(transverse?.period).toBe("7d");
+    // Tableau B hors périmètre : aucun filtre, donc aucun widget.
+    expect(dashboardFilters(dashboard("app-b"), requete("", viewerA), viewerA)).toBeNull();
     expect(dashboardApps([{ app_id: "app-a", name: "A" }, { app_id: "app-b", name: "B" }], viewerA))
       .toEqual([{ app_id: "app-a", name: "A" }]);
+  });
+
+  it("intersecte l'app du tableau avec celle de l'écran, sans jamais la remplacer", () => {
+    // Tableau lié à A lu en vue « toutes apps » : les widgets se resserrent sur A.
+    expect(dashboardFilters(dashboard("app-a"), requete("", admin), admin)?.query?.scope.effectiveApps).toEqual(["app-a"]);
+    // Tableau lié à A lu avec app=app-c : intersection vide, chaque widget rend zéro.
+    const vide = dashboardFilters(dashboard("app-a"), requete("app=app-c&device=tablet", admin), admin);
+    expect(vide?.query?.scope.effectiveApps).toEqual([]);
+    // Les filtres globaux traversent l'intersection (ET), jamais effacés.
+    expect(vide?.query?.filters.device).toBe("tablet");
   });
 });

@@ -42,7 +42,9 @@ describe("les journées sont découpées dans le fuseau de l'application", () =>
   it("la heatmap regroupe en heure LOCALE, sur ses deux chemins", () => {
     // Deux chemins : le pré-agrégat horaire et les lignes brutes. Corriger un
     // seul donnerait deux heatmaps différentes selon que le rollup est actif.
-    expect((GRID.match(/at time zone \$\d/g) ?? []).length).toBeGreaterThanOrEqual(4);
+    // Le fuseau est un paramètre lié (`${zone}`, numéroté par le compilateur P6.2).
+    expect((GRID.match(/at time zone \$\{zone\}/g) ?? []).length).toBeGreaterThanOrEqual(4);
+    expect(GRID).toContain("const zone = sql.bind(tz);");
     expect(GRID).not.toMatch(/date_trunc\('day', m\.ts\)/);
     expect(GRID).not.toMatch(/extract\(hour from m\.ts\)/);
   });

@@ -98,6 +98,40 @@ describe("buildOpenApi — spec valide et complète", () => {
       expect(paths, `${p} ne doit plus être exposé`).not.toContain(p);
   });
 
+  it("déclare les filtres du contrat commun (P6.2) et leurs refus typés", () => {
+    const filtres = spec.paths["/overview"].get.parameters.map((p: { $ref: string }) => p.$ref.split("/").pop());
+    expect(filtres).toEqual([
+      "app", "period", "from", "to", "device",
+      "browser", "os", "env", "service", "release", "route", "country",
+      "seg", "bots", "internal",
+    ]);
+    // Une lecture peut refuser un filtre (400 typé) ou un périmètre (403) : c'est dit partout.
+    for (const [chemin, op] of Object.entries<any>(spec.paths)) {
+      if (!op.get?.security) continue; // /health et /openapi sont publics
+      expect(Object.keys(op.get.responses), chemin).toEqual(expect.arrayContaining(["400", "401", "403", "429", "500"]));
+    }
+    expect(spec.components.schemas.Error.properties.code.enum).toContain("unsupported_dimension");
+    expect(spec.components.schemas.Error.properties.code.enum).toContain("no_app_access");
+    expect(spec.components.parameters.seg.description).toContain("v2:");
+  });
+
+  it("annonce dans meta ce qui a été appliqué : périmètre, plage et conditions", () => {
+    const meta = spec.components.schemas.Meta;
+    expect(meta.required).toEqual(expect.arrayContaining(["query_version", "scope", "range", "filters"]));
+    expect(spec.components.schemas.MetaScope.required).toEqual(["requested_app", "effective_apps"]);
+    expect(spec.components.schemas.MetaRange.required).toEqual(["from", "to", "preset", "bucket_seconds"]);
+    expect(spec.components.schemas.MetaCondition.properties.operator.enum).toEqual(["eq", "neq", "is_null"]);
+  });
+
+  it("aucune opération ne déclare deux paramètres du même nom", () => {
+    for (const [chemin, op] of Object.entries<any>(spec.paths)) {
+      const noms = (op.get?.parameters ?? []).map((p: { $ref?: string; name?: string }) =>
+        p.$ref ? spec.components.parameters[p.$ref.split("/").pop()!].name : p.name,
+      );
+      expect(new Set(noms).size, `${chemin} : ${noms.join(", ")}`).toBe(noms.length);
+    }
+  });
+
   it("schémas de sécurité Bearer + cookie déclarés", () => {
     expect(spec.components.securitySchemes.bearerAuth.scheme).toBe("bearer");
     expect(spec.components.securitySchemes.sessionCookie.in).toBe("cookie");

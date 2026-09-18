@@ -16,7 +16,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Donut } from "@/components/charts/Donut";
 import { RankBar } from "@/components/charts/RankBar";
-import { parseFilters, periodLabel, type SearchParams } from "@/lib/queries-v2";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { periodLabel, v2FiltersOf } from "@/lib/queries-v2";
 import { sviContainment, sviExitNodes, sviSummary } from "@/lib/queries-svi";
 import { fmtDuration, journeyCoverage } from "@/lib/svi-outcome";
 import { containment, containmentReading } from "@/lib/svi-recall";
@@ -44,7 +47,9 @@ export default async function VueEnsembleSvi({
     );
   }
 
-  const f = parseFilters(await searchParams);
+  const ecran = await pageFilters(await searchParams, "/svi");
+  if (!ecran.ok) return <FilterProblemNotice title="Supervision SVI" problem={ecran.problem} />;
+  const f = v2FiltersOf(ecran.query);
   const [sum, cont, sorties] = await Promise.all([
     sviSummary(f),
     sviContainment(f),

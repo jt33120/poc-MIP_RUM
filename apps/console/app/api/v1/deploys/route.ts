@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { authenticateApi } from "@/lib/api/auth";
 import { SESSION_COOKIE } from "@/lib/auth";
 import { recordDeploy } from "@/lib/queries-deploys";
+import { authorizedAppsOf } from "@/lib/query-contract";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +31,9 @@ export async function POST(req: Request) {
 
   const appId = typeof body.app_id === "string" ? body.app_id.trim() : "";
   if (!appId) return NextResponse.json({ error: "app_id requis" }, { status: 400 });
-  // scope : le principal doit avoir accès à cette app (null = toutes)
-  if (principal.apps && !principal.apps.includes(appId)) {
+  // scope : le principal doit avoir accès à cette app (null = toutes, [] = aucune)
+  const authorized = authorizedAppsOf(principal);
+  if (authorized !== null && !authorized.includes(appId)) {
     return NextResponse.json({ error: `app hors périmètre: ${appId}` }, { status: 403 });
   }
 

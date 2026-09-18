@@ -207,10 +207,15 @@ describe("GET /api/v1/issues/{id}/activity", () => {
 
   it("lecture autorisée au jeton et au viewer, dans leur périmètre ; meta.app = app de l'issue", async () => {
     simul.listIssueActivity.mockResolvedValue({ kind: "ok", value: { app_id: "app-a", activities: [], next_cursor: null } });
-    const reponse = await lire({ bearer: "scope" }, "?app=app-b&limit=500");
+    // Une app NOMMÉE hors périmètre est refusée avant toute lecture (P6.2), jamais rabattue.
+    const refus = await lire({ bearer: "scope" }, "?app=app-b&limit=500");
+    expect(refus.status).toBe(403);
+    expect(simul.listIssueActivity).not.toHaveBeenCalled();
+    const reponse = await lire({ bearer: "scope" }, "?limit=500");
     expect(reponse.status).toBe(200);
     const corps = await reponse.json();
     expect(corps.meta.app).toBe("app-a");
+    expect(corps.meta.scope).toEqual({ requested_app: "app-a", effective_apps: ["app-a"] });
     expect(corps.data).toEqual({ activities: [], next_cursor: null });
     // Jeton partenaire, puis viewer : jamais les adresses des comptes de la console.
     expect(simul.listIssueActivity).toHaveBeenCalledWith(ISSUE, ["app-a"], { limit: 100, cursor: null }, { emails: false });
@@ -220,13 +225,15 @@ describe("GET /api/v1/issues/{id}/activity", () => {
     expect(simul.listIssueActivity).toHaveBeenLastCalledWith(ISSUE, null, { limit: 50, cursor: null }, { emails: true });
   });
 
-  it("401 sans authentification, 400 identifiant ou curseur invalide, 404 hors périmètre ou session sans app", async () => {
+  it("401 sans authentification, 400 identifiant ou curseur invalide, 404 hors périmètre, 403 session sans app", async () => {
     expect((await lire({})).status).toBe(401);
     expect((await lire({ cookie: admin }, "", "pas-un-uuid")).status).toBe(400);
     expect((await lire({ cookie: admin }, "?cursor=forge")).status).toBe(400);
     simul.listIssueActivity.mockResolvedValue({ kind: "not_found" });
     expect((await lire({ cookie: admin })).status).toBe(404);
     const sansApp = await signJwt({ email: "vide@mip", role: "viewer", apps: [] });
-    expect((await lire({ cookie: sansApp })).status).toBe(404);
+    const vide = await lire({ cookie: sansApp });
+    expect(vide.status).toBe(403);
+    expect(await vide.json()).toMatchObject({ code: "no_app_access" });
   });
 });

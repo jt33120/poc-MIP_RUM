@@ -22,10 +22,10 @@ const PAGE = ["limit", "offset"];
  * ne fait pas.
  */
 export const PARAMS = {
-  app: "Slug de l'app à interroger (voir mip_rum_list_apps). Omis ou 'all' = toutes les apps autorisées. Un jeton scopé à une app voit sa demande RAMENÉE à son périmètre sans erreur : vérifier `meta.app` dans la réponse.",
-  period: "Fenêtre d'observation : '1h', '24h' (défaut) ou '7d'. L'API n'en accepte AUCUNE autre ; une valeur inconnue retombe silencieusement sur '24h'.",
+  app: "Slug de l'app à interroger (voir mip_rum_list_apps). Omis ou 'all' = toutes les apps AUTORISÉES du jeton, en une seule réponse. Une app hors périmètre est refusée (403 forbidden_app), jamais remplacée par une autre. `meta.scope` dit ce qui a été lu.",
+  period: "Fenêtre d'observation : '1h', '24h' (défaut) ou '7d'. L'API n'en accepte AUCUNE autre ; une valeur inconnue retombe silencieusement sur '24h'. `meta.range` donne les bornes UTC réellement appliquées.",
   device:
-    "Type d'appareil : 'mobile', 'desktop', 'tablet' ou 'all' (défaut). Attention : les endpoints historiques (overview, vitals, pages, tracing, health-grid) ne distinguent que mobile/desktop — 'tablet' y est traité comme 'tous'.",
+    "Type d'appareil : 'mobile', 'desktop', 'tablet' ou 'all' (défaut). La tablette est désormais comptée comme telle par TOUS les endpoints, y compris overview, vitals, pages, tracing et health-grid.",
   limit:
     "Nombre d'éléments par page (1 à 200). Le détail d'un groupe d'erreurs, la liste des issues et le détail d'une issue plafonnent à 100 par page.",
   offset: "Décalage de pagination, à partir de 0.",

@@ -3,7 +3,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { HeroReading, HeroStat, SupervisionHero } from "@/components/SupervisionHero";
 import { StackedBars } from "@/components/charts/StackedBars";
 import { ErrorStatusBadges, ErrorTypeBadge } from "@/components/errors/ErrorBadges";
-import { ErrorAccessDenied, ErrorNotices } from "@/components/errors/ErrorNotices";
+import { ErrorNotices } from "@/components/errors/ErrorNotices";
+import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { GroupSparkline } from "@/components/errors/GroupSparkline";
 import { IssueList, IssueListInvalid } from "@/components/errors/IssueList";
 import {
@@ -14,7 +15,6 @@ import {
   errorVolumeChart,
   fmtCount,
 } from "@/components/errors/error-view";
-import { getUser } from "@/lib/auth";
 import {
   groupingState,
   issueModeFor,
@@ -25,15 +25,13 @@ import {
   parseIssueSource,
   parseIssueStatus,
 } from "@/lib/error-issues";
-import { PERIODS, type SearchParams } from "@/lib/filters";
+import type { SearchParams } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
 import { fmtDate } from "@/lib/format";
 import {
   ERROR_LIST_MAX_OFFSET,
-  errorPageFilters,
-  errorScopeFor,
   listErrorGroups,
   parseErrorListPage,
-  scopeApps,
   type ErrorTrendPoint,
 } from "@/lib/queries-errors";
 
@@ -41,15 +39,17 @@ export const dynamic = "force-dynamic";
 
 export default async function Errors({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const user = await getUser();
   // Le périmètre signé borne la lecture AVANT tout filtre d'URL (AD-16 : aucune app = aucun accès).
-  const f = errorPageFilters(sp, user);
-  if (!f) return <ErrorAccessDenied />;
+  const ecran = await pageFilters(sp, "/errors");
+  if (!ecran.ok) return <FilterProblemNotice title="Erreurs JS" problem={ecran.problem} />;
+  const f = ecran.deviceFilters;
+  const { label, bucketLabel } = ecran;
+  const { bucketSeconds } = ecran.query.range;
   const url = errorSearchParams(sp);
 
   // P5.5 : l'app choisie (ou une app du périmètre « toutes ») a activé le
   // regroupement v2 → la liste passe aux issues. Sinon, liste historique inchangée.
-  const apps = scopeApps(errorScopeFor(user));
+  const apps = ecran.query.scope.authorizedApps;
   if (issueModeFor(await groupingState(apps), f.app)) {
     const status = parseIssueStatus(url.get("status"));
     const source = parseIssueSource(url.get("source"));
@@ -63,15 +63,24 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
     }
     const filtres = { status, source, release };
     const result = await listIssues(f, filtres, { limit: parseIssueListPage(url).limit, cursor }, { apps, overview: true });
-    return <IssueList f={f} filtres={filtres} result={result} curseur={cursor !== null} limit={url.get("limit")} />;
+    return (
+      <IssueList
+        f={f}
+        filtres={filtres}
+        result={result}
+        curseur={cursor !== null}
+        limit={url.get("limit")}
+        label={label}
+        bucketLabel={bucketLabel}
+      />
+    );
   }
 
   const page = parseErrorListPage(url);
   const { groups, total, totals, trend, sampling, enrichment, unfingerprinted } = await listErrorGroups(f, page, {
     series: true,
   });
-  const { label, bucketLabel } = PERIODS[f.period];
-  const chart = errorVolumeChart(groups, trend, f.period);
+  const chart = errorVolumeChart(groups, trend, bucketSeconds);
   // Premier seau le plus chargé : la tuile nomme le moment, pas seulement la hauteur.
   const peak = trend.reduce<ErrorTrendPoint | null>(
     (best, point) => (point.occurrences > (best?.occurrences ?? 0) ? point : best),
@@ -132,7 +141,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
         <HeroStat
           label={`Pic par ${bucketLabel}`}
           value={(peak?.occurrences ?? 0).toLocaleString("fr-FR")}
-          hint={peak ? `à partir de ${bucketTick(peak.bucket, f.period)}` : undefined}
+          hint={peak ? `à partir de ${bucketTick(peak.bucket, bucketSeconds)}` : undefined}
         />
         <HeroReading>
           Chaque colonne = {bucketLabel}, empilée par groupe d&apos;erreur dominant de la page (le reste de la
@@ -213,9 +222,9 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
                 <td colSpan={7} className="px-4 py-8 text-center text-ink-faint">
                   {total > 0 ? (
                     // Offset au-delà de la population (lien ancien, erreurs résolues entre-temps).
-                    <a href={pageHref(0)} className="text-brand hover:underline">
+                    <Link href={pageHref(0)} className="text-brand hover:underline">
                       Aucun groupe à cette position — revenir au début de la liste
-                    </a>
+                    </Link>
                   ) : (
                     "Aucune erreur sur cette période"
                   )}
@@ -237,16 +246,14 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
           </span>
           <span className="flex gap-4">
             {page.offset > 0 && (
-              // Ancres natives : la navigation client vers la même route avec une autre query
-              // reste bloquée dans cette console (suivi consigné dans delivery-p5.md).
-              <a href={pageHref(Math.max(0, page.offset - page.limit))} className="text-brand hover:underline">
+              <Link href={pageHref(Math.max(0, page.offset - page.limit))} className="text-brand hover:underline">
                 Groupes précédents
-              </a>
+              </Link>
             )}
             {hasNext && (
-              <a href={pageHref(page.offset + page.limit)} className="text-brand hover:underline">
+              <Link href={pageHref(page.offset + page.limit)} className="text-brand hover:underline">
                 Groupes suivants
-              </a>
+              </Link>
             )}
           </span>
         </nav>

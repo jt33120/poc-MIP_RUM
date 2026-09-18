@@ -8,17 +8,16 @@
 // tout le périmètre du principal et refuse (400, apps candidates listées) plutôt que
 // de choisir à la place du client.
 import { handle } from "@/lib/api/handle";
+import { announceResourceApp } from "@/lib/api/params";
 import { ApiHttpError, preflight } from "@/lib/api/respond";
 import { exemplarSymbolication } from "@/lib/error-symbolication";
 import {
   errorDeviceFrom,
   errorGroupDetail,
-  errorScopeFor,
   isFingerprintParam,
   parseErrorCursor,
   parseOccurrencesPage,
   resolveErrorGroup,
-  scopeApps,
   type ErrorFilters,
 } from "@/lib/queries-errors";
 
@@ -28,12 +27,9 @@ export const OPTIONS = preflight;
 
 const INTROUVABLE = "groupe d'erreurs introuvable";
 
-export const GET = handle(async ({ principal, filters, searchParams, params }) => {
-  // AD-16 : sans aucune app autorisée, le groupe n'existe pas pour ce principal —
-  // 404 comme une ressource hors périmètre, sans interroger la base.
-  const scope = errorScopeFor({ role: principal.role, apps: principal.apps });
-  if (scope.kind === "none") throw new ApiHttpError(404, INTROUVABLE);
-
+export const GET = handle(async ({ filters, searchParams, params }) => {
+  // Périmètre déjà résolu par `handle` (AD-16) : aucune app autorisée ou app nommée
+  // hors périmètre sont refusées (403) avant toute lecture.
   const fingerprint = params.fingerprint ?? "";
   if (!isFingerprintParam(fingerprint)) throw new ApiHttpError(400, "fingerprint invalide");
   const cursor = parseErrorCursor(searchParams.get("cursor"));
@@ -42,16 +38,13 @@ export const GET = handle(async ({ principal, filters, searchParams, params }) =
 
   // Voir la liste : `legacy` + tablette, jamais `filters.v2.device`.
   const f: ErrorFilters = { ...filters.legacy, device: errorDeviceFrom(filters.device) };
-  const requested = searchParams.get("app");
   const resolution =
-    requested && requested !== "all"
-      ? // App nommée : déjà ramenée au périmètre par parseApiFilters (même rabattage
-        // silencieux que les autres routes, signalé par `meta.app`).
+    f.app !== null
+      ? // App nommée, autorisée : la résolution se limite à elle.
         await resolveErrorGroup(fingerprint, f, null)
-      : // Sans app, `filters.legacy.app` vaut la PREMIÈRE app d'un principal scopé :
-        // chercher là seulement masquerait une empreinte présente dans une autre de
-        // ses apps. La recherche couvre donc tout son périmètre, et lui seul.
-        await resolveErrorGroup(fingerprint, { ...f, app: null }, scopeApps(scope));
+      : // Sans app : tout le périmètre AUTORISÉ du principal, et lui seul — une
+        // empreinte présente dans deux de ses apps est refusée plus bas (400).
+        await resolveErrorGroup(fingerprint, f, filters.query.scope.authorizedApps);
 
   if (resolution.kind === "not_found") throw new ApiHttpError(404, INTROUVABLE);
   if (resolution.kind === "ambiguous")
@@ -63,11 +56,11 @@ export const GET = handle(async ({ principal, filters, searchParams, params }) =
   const { ref } = resolution;
   const detail = await errorGroupDetail(ref, { ...f, app: ref.app_id }, { limit, cursor });
   if (!detail) throw new ApiHttpError(404, INTROUVABLE);
-  // `meta.app` annonce l'app dont viennent les chiffres. Sans app demandée, ce serait
-  // sinon « all » ou la première app du scope, alors que le groupe résolu peut en être
-  // une autre — une réponse qui contredit sa propre enveloppe. `handle` construit
-  // `meta` après ce retour, à partir de cet objet.
-  filters.app = ref.app_id;
+  // `meta.app` et `meta.scope` annoncent l'app dont viennent les chiffres. Sans app
+  // demandée, ce serait sinon « all », alors que le groupe résolu est dans UNE app —
+  // une réponse qui contredirait sa propre enveloppe. `handle` construit `meta`
+  // après ce retour, à partir de cet objet.
+  announceResourceApp(filters, ref.app_id);
   // Stack source (P5.4) : celle de l'ingestion, sinon symbolisée à la lecture si
   // une map est arrivée depuis. Champs ajoutés, `stack` reste la stack brute.
   const symbolication = await exemplarSymbolication(ref.app_id, detail.last);

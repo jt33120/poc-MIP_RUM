@@ -10,6 +10,11 @@ const { q, tx } = vi.hoisted(() => {
   return { q, tx };
 });
 vi.mock("@/lib/db", () => ({ q, tx }));
+// Schéma migré : la sonde des colonnes de dimensions ne consomme pas les réponses simulées.
+vi.mock("@/lib/query-schema", async () => {
+  const { schemaComplet } = await import("../fixtures/dimension-schema");
+  return { dimensionSchema: async () => schemaComplet() };
+});
 
 import { exploreEvents, eventCount } from "../../apps/console/lib/queries-events";
 
@@ -19,6 +24,14 @@ const filters = {
 };
 
 beforeEach(() => vi.clearAllMocks());
+
+/** Bornes [from,to) liées d'une instruction de l'Explorer. */
+function fenetre(sql: unknown, params: unknown): string {
+  const m = /i\.ts >= \$(\d+)::timestamptz and i\.ts < \$(\d+)::timestamptz/.exec(String(sql));
+  if (!m) throw new Error("fenêtre liée absente");
+  const valeurs = params as unknown[];
+  return `${valeurs[Number(m[1]) - 1]}|${valeurs[Number(m[2]) - 1]}`;
+}
 
 describe("Explorer d'événements — SQL borné et scopé", () => {
   it("partage le même CTE app+période+device+attribut pour liste, total, tendance et facettes", async () => {
@@ -39,17 +52,25 @@ describe("Explorer d'événements — SQL borné et scopé", () => {
     expect(tx).toHaveBeenCalledOnce();
     expect(result.sampling_notice?.message).toContain("Aucune extrapolation");
     const dataCalls = q.mock.calls.slice(1);
+    const fenetres = new Set<string>();
     for (const [sql, params] of dataCalls.slice(0, 5)) {
-      expect(String(sql)).toContain("i.app_id = $1");
+      expect(String(sql)).toMatch(/i\.app_id = any\(\$\d+::text\[\]\)/);
       expect(String(sql)).toContain("s.app_id = i.app_id");
-      expect(String(sql)).toContain("interval '24 hours'");
+      expect(String(sql)).toMatch(/s\.device_type = \$\d+/);
       expect(String(sql)).toContain("e.props @> jsonb_build_object");
       expect(String(sql)).toContain("coalesce(e.event_type, 'custom') = 'custom'");
-      expect(params).toContain("app-a");
+      expect(String(sql)).not.toContain("now()");
+      expect(params).toContainEqual(["app-a"]);
+      expect(params).toContain("mobile");
       expect(params).toContain("plan");
       expect(params).toContain('"pro"');
       expect(String(sql)).not.toContain("checkout");
+      fenetres.add(fenetre(sql, params));
     }
+    // Une seule plage résolue pour le journal, le total, la tendance et les facettes.
+    expect(fenetres.size).toBe(1);
+    const [from, to] = [...fenetres][0].split("|");
+    expect(Date.parse(to) - Date.parse(from)).toBe(86_400_000);
     const [valuesSql, valuesParams] = dataCalls[5];
     expect(String(valuesSql)).not.toContain("e.props @> jsonb_build_object");
     expect(valuesParams).toContain("plan");
@@ -91,12 +112,12 @@ describe("Explorer d'événements — SQL borné et scopé", () => {
       kind: "event", name: null, attribute: null,
     }, { limit: 20, offset: 0 }, { ts: "2026-09-16T10:00:00.000Z", id: "42" });
     const [sql, params] = q.mock.calls[1];
-    expect(String(sql)).toContain("(i.ts, i.id) < ($8::timestamptz, $9::bigint)");
+    expect(String(sql)).toContain("(i.ts, i.id) < ($3::timestamptz, $4::bigint)");
     expect(params).toContain("2026-09-16T10:00:00.000Z");
     expect(params).toContain("42");
   });
 
-  it("borne la fenêtre au même now, protège les facettes legacy et applique segment/bots/interne", async () => {
+  it("borne la fenêtre aux mêmes instants, protège les facettes legacy et applique segment/bots/interne", async () => {
     q.mockResolvedValueOnce([{ p1: true, p4: true }]);
     q.mockResolvedValueOnce([]);
     q.mockResolvedValueOnce([{ total: 0, min_sample_rate: null }]);
@@ -110,13 +131,15 @@ describe("Explorer d'événements — SQL borné et scopé", () => {
     }, { kind: "event", name: null, attribute: null }, { limit: 20, offset: 0 }, null);
 
     const dataCalls = q.mock.calls.slice(1);
-    for (const [sql] of dataCalls) {
-      expect(String(sql)).toContain("i.ts <= now()");
+    const fenetres = new Set<string>();
+    for (const [sql, params] of dataCalls) {
+      fenetres.add(fenetre(sql, params));
       expect(String(sql)).toContain("s.geo_country =");
       expect(String(sql)).toContain("not coalesce(s.is_bot, false)");
-      expect(String(sql)).toContain("app_registry where internal");
+      expect(String(sql)).toContain("not exists (select 1 from app_registry internes where internes.internal and internes.app_id = i.app_id)");
     }
-    expect(String(dataCalls[2][0])).toContain("generate_series(start, stop");
+    expect(fenetres.size).toBe(1);
+    expect(String(dataCalls[2][0])).toContain("generate_series(date_bin(interval '3600 seconds'");
     expect(String(dataCalls[4][0])).toContain("jsonb_typeof(f.props) = 'object'");
   });
 });
