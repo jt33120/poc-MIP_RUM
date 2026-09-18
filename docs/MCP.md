@@ -34,7 +34,7 @@ Le dépôt a déjà payé le prix d'une règle d'accès écrite deux fois : il a
 **trois** implémentations de l'ingestion, et le serveur de développement
 acceptait une app sans clé là où la production la rejetait.
 
-**Lecture seule.** Quatorze des quinze outils sont des `GET`. Le quinzième,
+**Lecture seule.** Quinze des seize outils sont des `GET`. Le seizième,
 `mip_rum_query_explorer`, poste son AST sur `POST /api/v1/explorer/query` — parce
 qu'une requête analytique ne tient pas dans une query string, **pas** parce qu'elle
 écrit : cette route n'écrit rien et s'authentifie exactement comme les `GET`.
@@ -102,16 +102,19 @@ Chaque enveloppe porte, en plus de `meta.app`, `meta.period` et `meta.device` :
 | `meta.filters` | les conditions appliquées, l'inclusion des robots et des apps internes |
 
 Un filtre qu'une mesure ne sait pas appliquer n'est jamais ignoré : l'API répond
-`400` avec `code: "unsupported_dimension"` et la dimension en cause. Les quatorze
-outils historiques n'exposent que `app`, `period` et `device` : leurs endpoints
-existaient avant le contrat commun, et leur ajouter des dimensions sans migrer leurs
-mesures annoncerait un filtre qu'elles ignorent. `mip_rum_query_explorer` (P6.4), lui,
-porte les dimensions du contrat — navigateur, système, environnement, service,
-release, route, pays — en égalité exacte.
+`400` avec `code: "unsupported_dimension"` et la dimension en cause. Les outils
+historiques n'exposent que `app`, `period` et `device` : leurs endpoints existaient
+avant le contrat commun, et leur ajouter des dimensions sans migrer leurs mesures
+annoncerait un filtre qu'elles ignorent. `mip_rum_query_explorer` (P6.4), lui, porte
+les dimensions du contrat — navigateur, système, environnement, service, release,
+route, pays — en égalité exacte. `mip_rum_mobile_summary` (P7.5) en porte trois —
+`device`, `release` et `platform` — et REFUSE les autres : une route ou un service
+filtreraient les occurrences sans filtrer la cohorte, et son taux n'aurait plus le
+même dénominateur que son numérateur.
 
 ---
 
-## 3. Les quinze outils
+## 3. Les seize outils
 
 Tous acceptent un `format` (`json` par défaut, ou `markdown`). Tous, sauf
 `mip_rum_list_apps` et `mip_rum_get_session`, portent les filtres communs `app`,
@@ -130,15 +133,39 @@ Tous acceptent un `format` (`json` par défaut, ou `markdown`). Tous, sauf
 | `mip_rum_list_sessions` | `/sessions` | « que s'est-il passé récemment ? » |
 | `mip_rum_get_session` | `/sessions/{id}` | « qu'a vécu cet utilisateur ? » |
 | `mip_rum_list_events` | `/events` | « combien de fois cet événement métier, avec quel attribut ? » |
+| `mip_rum_mobile_summary` | `/mobile/summary` | « que voit — et que NE voit pas — la couche JS React Native ? » |
 | `mip_rum_get_tracing` | `/tracing` | « le backend est-il en cause ? » |
 | `mip_rum_get_correlation` | `/correlation` | « pourquoi le monitoring est au vert et les utilisateurs se plaignent ? » |
 | `mip_rum_get_health_grid` | `/health-grid` | « est-ce toujours le lundi matin ? » |
-| `mip_rum_query_explorer` | `POST /explorer/query` | « et cette mesure-là, découpée comme ça ? » — la question qu'aucun des quatorze autres ne couvre |
+| `mip_rum_query_explorer` | `POST /explorer/query` | « et cette mesure-là, découpée comme ça ? » — la question qu'aucun des quinze autres ne couvre |
+
+### `mip_rum_mobile_summary` : ce qui n'est pas mesuré n'est pas zéro
+
+Le seul outil du catalogue dont la première chose à lire n'est pas un chiffre mais
+une **liste de capacités**. Un modèle qui reçoit zéro crash natif et en conclut que
+l'application est stable se trompe dans les grandes largeurs : aucun module natif
+n'existe dans ce produit, et les crashes natifs, les ANR et le démarrage natif ne
+sont collectés nulle part — ils appartiennent à P8.5.
+
+La réponse ne leur donne donc **aucun champ**. Ce n'est pas un oubli : un champ à
+`null` se lirait comme « mesuré, et vide ». `data.capabilities` porte l'information,
+avec trois états distincts — `active` (une release déclare collecter), `unavailable`
+(une release déclare ne PAS collecter) et `unknown` (personne n'a rien déclaré) — et
+une note qui dit, capacité par capacité, ce que l'absence de signal veut dire.
+
+`js_error_free_session_rate` porte sur les seules erreurs **JavaScript** : une erreur
+non interceptée arrête le bundle et affiche la redbox, elle ne tue pas le processus
+natif. Ne jamais le présenter comme un taux « sans crash ». Il vaut `null`, avec sa
+raison dans `js_error_free_unavailable_reason`, dès qu'un pourcentage mentirait.
+
+`verified_at` ne vient que d'une recette d'opérateur sur un appareil réel. Une
+capacité déclarée active dit ce que le SDK croit avoir installé, pas qu'un signal a
+été reçu, écrit et affiché.
 
 ### `mip_rum_query_explorer` : composer une mesure, pas en choisir une
 
-Les quatorze premiers outils répondent chacun à une question fixée d'avance. Le
-quinzième laisse le modèle **composer** la sienne : quel jeu de données
+Les quinze premiers outils répondent chacun à une question fixée d'avance. Le
+seizième laisse le modèle **composer** la sienne : quel jeu de données
 (`dataset`), quelle mesure (`measure`, sous la forme `champ:agrégation`), quel
 découpage (`group_by`, deux dimensions au plus) et sous quelle forme
 (`visualization`). C'est exactement l'AST de l'écran `/explorer` : mêmes bornes,
@@ -193,8 +220,8 @@ transformation. La convention MCP recommande l'inverse ; ici la valeur du
 produit est l'exactitude d'un chiffre, et toute mise en forme est une occasion
 d'en perdre un.
 
-Le rendu `markdown` existe et reste **générique** : une fonction pour les quinze
-outils, pas quinze gabarits. Un gabarit oublié n'échoue pas — il affiche l'ancienne
+Le rendu `markdown` existe et reste **générique** : une fonction pour les seize
+outils, pas seize gabarits. Un gabarit oublié n'échoue pas — il affiche l'ancienne
 colonne comme si elle était toute la vérité.
 
 En JSON, ce que le serveur MCP a constaté est rangé à part, sous `_mcp`

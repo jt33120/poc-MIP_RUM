@@ -171,3 +171,33 @@ describe("checkSurface : une URL entièrement applicable, ou un refus typé", ()
     });
   });
 });
+
+// P7.5 — `/mobile` applique MOINS de dimensions que ses jeux de données n'en
+// portent, et c'est délibéré : ses mesures sont des TAUX sur une cohorte de
+// sessions. Une dimension d'occurrence (route, service, env) filtrerait le
+// numérateur sans filtrer le dénominateur, et le résultat ne serait plus un taux.
+describe("/mobile — la liste blanche de dimensions", () => {
+  it("n'applique que l'appareil, le système et la release", () => {
+    expect(disponibles("/mobile")).toEqual(["device", "os", "release"]);
+  });
+
+  it("refuse une dimension d'occurrence avec sa raison, jamais en l'ignorant", () => {
+    expect(checkSurface(requete("route=%2Fpanier"), surface("/mobile"), schemaComplet())).toMatchObject({
+      ok: false,
+      error: { code: "unsupported_dimension", dimension: "route" },
+    });
+    expect(checkSurface(requete("service=api"), surface("/mobile"), schemaComplet()).ok).toBe(false);
+    expect(checkSurface(requete("country=FR"), surface("/mobile"), schemaComplet()).ok).toBe(false);
+    expect(checkSurface(requete("browser=Firefox"), surface("/mobile"), schemaComplet()).ok).toBe(false);
+  });
+
+  it("accepte la plateforme (traduite en `os`), la release et la plage personnalisée", () => {
+    expect(
+      checkSurface(
+        requete("os=iOS&release=4.2.0&device=mobile&from=2026-09-17T10:00:00Z&to=2026-09-17T11:00:00Z"),
+        surface("/mobile"),
+        schemaComplet(),
+      ),
+    ).toEqual({ ok: true, value: true });
+  });
+});

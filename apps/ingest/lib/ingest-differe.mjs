@@ -51,6 +51,10 @@ function completer(lot) {
     sviCalls: lot.sviCalls ?? vide,
     sviSteps: lot.sviSteps ?? vide,
     sviLegs: lot.sviLegs ?? vide,
+    // P7.5 : sans cette ligne, `completer` reconstruit un lot SANS ses capacités
+    // déclarées, et le chemin différé les perdrait en silence — l'écran /mobile
+    // afficherait « Inconnu » pour une application qui déclare bien les siennes.
+    capabilities: lot.capabilities ?? vide,
   };
 }
 

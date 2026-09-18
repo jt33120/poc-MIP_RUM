@@ -59,6 +59,11 @@ async function main() {
        values ($1,$2,now() - interval '5 min','/x','pageview',$3)`,
       [app, `s-${app}`, app === "app-a" ? "00000000000000a1" : "00000000000000b1"],
     );
+    // P7.5 — capacités mobiles déclarées. Une table scopée de plus, donc une
+    // policy de plus à prouver : elle nomme les releases d'un client.
+    await c.query(
+      `insert into mobile_capabilities (app_id, runtime, release, capability, declared)
+       values ($1,'react_native','1.0.0','js_errors',true)`, [app]);
     await c.query(
       `insert into rum_action (action_id,span_id,session_id,app_id,type,name,route,ts)
        values ($1,$2,$3,$4,'click','Payer','/x',now() - interval '5 min')`,
@@ -145,6 +150,7 @@ async function main() {
   assert("console_ro + portée A : ne voit QUE l'activité des issues de A", (await seen(c, "error_issue_activity")) === 1);
   assert("console_ro + portée A : ne voit QUE les liens de ticket de A", (await seen(c, "error_issue_ticket")) === 1);
   assert("console_ro + portée A : ne voit QUE les notifications d'issue de A", (await seen(c, "error_issue_notification")) === 1);
+  assert("console_ro + portée A : ne voit QUE les capacités mobiles de A", (await seen(c, "mobile_capabilities")) === 1);
 
   const rows = (await c.query("select distinct app_id from rum_metric")).rows.map((r) => r.app_id);
   assert("console_ro + portée A : aucune ligne de B ne transparaît", rows.length === 1 && rows[0] === "app-a");
@@ -161,6 +167,7 @@ async function main() {
   assert("portée B : ne voit QUE les événements indexés de B", (await seen(c, "rum_event_index")) === 1);
   assert("portée B : ne voit QUE les actions de B", (await seen(c, "rum_action")) === 1);
   assert("portée B : ne voit QUE les jetons de source maps de B", (await seen(c, "sourcemap_upload_token")) === 1);
+  assert("portée B : ne voit QUE les capacités mobiles de B", (await seen(c, "mobile_capabilities")) === 1);
   assert("portée B : ne voit QUE les issues de B", (await seen(c, "error_issue")) === 1);
   assert("portée B : ne voit QUE l'activité et les liens des issues de B",
     (await seen(c, "error_issue_activity")) === 1 && (await seen(c, "error_issue_ticket")) === 1);
@@ -175,6 +182,7 @@ async function main() {
   assert("portée vide : AUCUN événement indexé visible (fail-closed)", (await seen(c, "rum_event_index")) === 0);
   assert("portée vide : AUCUNE action visible (fail-closed)", (await seen(c, "rum_action")) === 0);
   assert("portée vide : AUCUN jeton de source maps visible (fail-closed)", (await seen(c, "sourcemap_upload_token")) === 0);
+  assert("portée vide : AUCUNE capacité mobile visible (fail-closed)", (await seen(c, "mobile_capabilities")) === 0);
   assert("portée vide : AUCUNE issue ni alias visible (fail-closed)",
     (await seen(c, "error_issue")) === 0 && (await seen(c, "error_issue_alias")) === 0);
   assert("portée vide : AUCUNE activité, AUCUN lien, AUCUNE notification d'issue (fail-closed)",
@@ -241,7 +249,10 @@ async function main() {
             has_table_privilege('console_ro','error_issue_activity','UPDATE') as activite_update,
             has_table_privilege('console_ro','error_issue_notification','INSERT') as outbox_insert,
             has_column_privilege('console_ro','error_issue','status','UPDATE') as issue_triage,
-            has_column_privilege('console_ro','error_issue','grouping_key','UPDATE') as issue_cle`)).rows[0];
+            has_column_privilege('console_ro','error_issue','grouping_key','UPDATE') as issue_cle,
+            has_table_privilege('console_ro','mobile_capabilities','SELECT') as capacite_select,
+            has_table_privilege('console_ro','mobile_capabilities','INSERT') as capacite_insert,
+            has_column_privilege('console_ro','mobile_capabilities','verified_at','UPDATE') as capacite_verif`)).rows[0];
   assert("v48 : PRIVILÈGE d'insertion retiré sur rum_metric", priv.tele_insert === false);
   assert("v48 : lecture PRÉSERVÉE sur rum_metric", priv.tele_select === true);
   assert("v65 : lecture autorisée mais écriture refusée sur rum_event_index", priv.index_select === true && priv.index_insert === false);
@@ -252,6 +263,11 @@ async function main() {
   assert("v48 : écriture préservée sur rum_span (dogfooding console)", priv.dogfood_insert === true);
   assert("v71 : jetons de source maps révocables, jamais supprimés ni re-hachés par console_ro",
     priv.jeton_revoke === true && priv.jeton_delete === false && priv.jeton_rehash === false);
+  // P7.5 — une capacité se DÉCLARE depuis le SDK, elle ne se coche pas dans une
+  // interface ; et `verified_at` appartient à une recette d'opérateur, hors de
+  // portée d'un rôle applicatif. D'où : lecture seule, sans exception.
+  assert("v82 : capacités mobiles lisibles, jamais écrites par console_ro, verified_at hors de portée",
+    priv.capacite_select === true && priv.capacite_insert === false && priv.capacite_verif === false);
   assert("v73 : activité append-only, outbox en lecture seule, triage sans toucher la clé de regroupement",
     priv.activite_insert === true && priv.activite_update === false && priv.outbox_insert === false
       && priv.issue_triage === true && priv.issue_cle === false);

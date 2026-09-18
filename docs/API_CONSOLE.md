@@ -435,6 +435,42 @@ Le receiver Edge Supabase, conservé pour les installations historiques, appliqu
 aussi les écritures progressives v65/v66/v67 : table ou colonne optionnelle absente
 n'annule jamais les écritures sources du lot.
 
+### `GET /api/v1/mobile/summary` — runtime React Native (P7.5)
+`data = { capabilities, declarations, sessions, js_errors, js_error_free_session_rate,
+js_error_free_unavailable_reason, startup, screens, resources, sampling, unavailable }`.
+
+La population est la **cohorte** des sessions dont le runtime déclaré vaut `react_native`
+(colonne `rum_session.runtime`, migration v82) et qui **commencent** dans la fenêtre. Toutes
+les mesures partent de cette même cohorte et de la même photographie PostgreSQL : sans cela,
+le numérateur et le dénominateur d'un taux décriraient deux populations.
+
+- `platform` (`ios` | `android`) est traduit en condition `os` du contrat et **intersecté**
+  avec un `os=` déjà présent : `?os=iOS&platform=android` rend zéro ligne, jamais un filtre
+  écrasé par l'autre.
+- Dimensions appliquées : `app`, plage, `device`, `release`, `platform`. Les autres —
+  `route`, `env`, `service`, `country`, `browser` — sont **refusées** (`400
+  unsupported_dimension`) : ce sont des dimensions d'occurrence, et elles filtreraient le
+  numérateur d'un taux sans filtrer son dénominateur. La `release` d'un binaire mobile, elle,
+  est stable pour toute la session ; elle est donc appliquée sur la cohorte.
+- **Ni crash natif, ni ANR, ni démarrage natif n'ont de champ dans cette réponse.** Ce n'est
+  pas un oubli : un champ, fût-il `null`, laisserait croire qu'ils sont mesurés. Aucun module
+  natif MIP n'existe — ils appartiennent à P8.5. `capabilities` porte l'information, avec
+  trois états : `active` (une release déclare collecter), `unavailable` (une release déclare
+  ne PAS collecter) et `unknown` (personne n'a rien déclaré).
+- `js_error_free_session_rate` = `1 − (sessions de la cohorte portant au moins une erreur JS
+  / sessions observées)`, même fenêtre. **Ce n'est pas un taux « sans crash » :** une erreur
+  JavaScript non interceptée arrête le bundle, elle ne tue pas le processus natif. Le taux
+  vaut `null` — et `js_error_free_unavailable_reason` dit lequel des trois cas s'applique —
+  quand il n'y a aucune session, quand la collecte des erreurs JS est déclarée indisponible,
+  ou quand aucune release ne la déclare : un « 100 % » y annoncerait l'inverse de la vérité.
+- `verified_at` ne vient **que** d'une recette d'opérateur. Aucun chemin d'ingestion ne
+  l'écrit, quoi que le client envoie : une capacité déclarée active dit ce que le SDK croit
+  avoir installé, pas qu'un signal a été reçu, écrit et affiché.
+- `sessions.visitors` vaut `null` quand aucune session ne porte d'identifiant d'installation.
+  Sessions, visiteurs et identités déclarées sont trois populations : elles ne s'additionnent pas.
+- `unavailable` liste ce que le schéma déployé ne permet pas encore de lire (v82 absente, par
+  exemple). Une réponse partielle le dit ; elle ne rend pas 0 à la place.
+
 ### `GET /api/v1/tracing` — tracing distribué
 `data = { coverage: TraceCoverage, apiCalls: ApiCallRow[], backRoutes: BackRouteRow[] }`.
 

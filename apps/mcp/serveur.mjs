@@ -71,6 +71,11 @@ function schemaParam(nom) {
       ]).optional().describe(d);
     case "release":
       return z.string().min(1).max(200).optional().describe(d);
+    // P7.5 : liste FERMÉE. `platform` est le système d'exploitation du contrat,
+    // restreint aux deux valeurs qu'un runtime React Native peut rendre ; refuser
+    // ici évite un appel réseau pour une valeur que l'API refusera de toute façon.
+    case "platform":
+      return z.enum(["ios", "android"]).optional().describe(d);
     case "issue_id":
       return z.string().uuid().describe(d);
     // Explorer (P6.4). Les listes fermées sont recopiées du registre côté console :
