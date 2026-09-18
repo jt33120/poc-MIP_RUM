@@ -57,9 +57,14 @@ describe("DSAR par identité — exceptions sans session (P5.3)", () => {
     const { appels, seam } = io(true);
     await dsarIdentityErase(APP, "account", HASH, seam);
     const [erreurs] = surTable(appels, "delete from", "rum_error");
-    expect(erreurs.sql).toMatch(/session_id = any\(\$1::text\[\]\)\s+or \(app_id = \$2 and session_id is null and account_id_hash = \$3\)/);
+    // P8.1 : `app_id` est lié en TÊTE, donc sur les DEUX branches. Il ne l'était
+    // que sur celle des exceptions sans session : la branche par sessions
+    // supprimait sur un identifiant émis par le client, que deux applications
+    // peuvent porter à l'identique.
+    expect(erreurs.sql).toMatch(/app_id = \$2 and \(session_id = any\(\$1::text\[\]\) or \(session_id is null and account_id_hash = \$3\)\)/);
     expect(erreurs.params).toEqual([["session-identifiee"], APP, HASH]);
-    expect(surTable(appels, "delete from", "rum_metric")[0].params).toEqual([["session-identifiee"]]);
+    expect(surTable(appels, "delete from", "rum_metric")[0].sql).toContain("app_id = $2 and session_id = any($1::text[])");
+    expect(surTable(appels, "delete from", "rum_metric")[0].params).toEqual([["session-identifiee"], APP]);
   });
 
   it("avant v69, rum_error ne porte pas d'identité : le chemin par les sessions reste le seul", async () => {

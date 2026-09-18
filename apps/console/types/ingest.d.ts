@@ -45,10 +45,27 @@ declare module "ingest/lib/pg-ingest.mjs" {
     ignorees: number;
   }
 
+  /** Lot refusé par une barrière d'effacement (P8.1) : nombre de lignes par collection. */
+  export type RefusBarriere = Record<string, number>;
+
+  /**
+   * Wrapper compatible : ouvre la transaction, verrouille la ou les apps du lot,
+   * filtre par barrières, délègue. `client` permet à un appelant qui tient déjà
+   * une transaction verrouillée de ne PAS en rouvrir une seconde.
+   */
   export function writeRows(
     pool: Pool,
     rows: FlattenedRows,
-    opts?: { symbolicateur?: import("ingest/lib/error-symbolication.mjs").Symbolicateur },
+    opts?: {
+      symbolicateur?: import("ingest/lib/error-symbolication.mjs").Symbolicateur | null;
+      client?: PoolClient | null;
+    },
+  ): Promise<{ erreurs: EcritureErreurs; refuses?: RefusBarriere }>;
+
+  /** Écriture pure : ni begin, ni commit, ni release — l'appelant les possède. */
+  export function writeRowsWithClient(
+    client: PoolClient,
+    rows: FlattenedRows,
   ): Promise<{ erreurs: EcritureErreurs }>;
 
   /** Logs et exceptions structurées qu'ils portent (P5.3), dans une transaction. */
@@ -56,18 +73,49 @@ declare module "ingest/lib/pg-ingest.mjs" {
     pool: Pool,
     logs: IngestRow[],
     errors?: IngestRow[],
+    opts?: { client?: PoolClient | null },
+  ): Promise<{ logs: number; erreurs: EcritureErreurs; refuses?: RefusBarriere }>;
+
+  export function writeLogsWithClient(
+    client: PoolClient,
+    logs: IngestRow[],
+    errors?: IngestRow[],
   ): Promise<{ logs: number; erreurs: EcritureErreurs }>;
+
+  /**
+   * `ecrit` : chunk stocké. `refus_barriere` : session effacée, refus définitif.
+   * `attente_session` : ancre OTLP pas encore reçue et protection activée —
+   * refus TEMPORAIRE, corps non persisté.
+   */
+  export interface ResultatReplay {
+    etat: "ecrit" | "refus_barriere" | "attente_session";
+    retryAfterS?: number;
+  }
+
+  export interface ChunkReplay {
+    sessionId: string;
+    appId: string;
+    seq: number;
+    body: Buffer;
+    eventsCount: number;
+  }
 
   export function writeReplayChunk(
     pool: Pool,
-    chunk: {
-      sessionId: string;
-      appId: string;
-      seq: number;
-      body: Buffer;
-      eventsCount: number;
-    },
-  ): Promise<void>;
+    chunk: ChunkReplay,
+    opts?: { client?: PoolClient | null },
+  ): Promise<ResultatReplay>;
+
+  export function writeReplayChunkWithClient(
+    client: PoolClient,
+    chunk: ChunkReplay,
+  ): Promise<ResultatReplay>;
+
+  export function appliquerSymbolication(
+    client: PoolClient,
+    errors: IngestRow[],
+    symbolicateur?: import("ingest/lib/error-symbolication.mjs").Symbolicateur | null,
+  ): Promise<IngestRow[]>;
 
   export interface PgAuth {
     getAppRegistry(): Promise<
@@ -88,6 +136,97 @@ declare module "ingest/lib/pg-ingest.mjs" {
       now?: () => number;
     },
   ): PgAuth;
+}
+
+// --- Effacement sérialisé (P8.1) ---------------------------------------------
+// LA primitive partagée. La console et le noyau d'ingestion doivent prendre LE
+// MÊME verrou : une constante recopiée à la main dériverait en silence, et
+// chacun se croirait seul.
+
+declare module "ingest/lib/privacy-barriere.mjs" {
+  import type { Pool, PoolClient } from "pg";
+
+  export const VERROU_INGESTION_NS: number;
+  export const SUJETS_BARRIERE: readonly ["session", "visitor", "user", "account"];
+  export type SujetBarriere = (typeof SUJETS_BARRIERE)[number];
+  export const STRATEGIE_VERROU: Readonly<{
+    delaiMs: number;
+    tentatives: number;
+    reculMs: readonly number[];
+  }>;
+
+  /** Attente de verrou épuisée : rien n'a été écrit, l'appelant peut rejouer. */
+  export class ErreurVerrouIngestion extends Error {
+    apps: string[];
+    reessayable: true;
+  }
+  /** Identifiant déjà stocké sous une autre application : hors portée, non rejouable. */
+  export class ErreurPorteeApp extends Error {
+    reessayable: false;
+  }
+
+  export function appsDuLot(rows: Record<string, unknown>): string[];
+  export function verrouillerApps(client: PoolClient, appIds: string[]): Promise<string[]>;
+  export function withAppIngestTransaction<T>(
+    pool: Pool,
+    appId: string | string[],
+    travail: (client: PoolClient) => Promise<T>,
+    opts?: { delaiVerrouMs?: number; tentatives?: number; client?: PoolClient | null },
+  ): Promise<T>;
+
+  export function barrieresDisponibles(client: PoolClient): Promise<boolean>;
+  export function _resetPresenceBarrieres(): void;
+  export function sujetsDuLot(
+    rows: Record<string, unknown>,
+  ): Map<string, Record<SujetBarriere, Set<string>>>;
+  export function barrieresDuLot(
+    client: PoolClient,
+    candidats: Map<string, Record<SujetBarriere, Set<string>>>,
+  ): Promise<Map<string, Record<SujetBarriere, Set<string>>>>;
+  export function filtrerLot<T extends Record<string, unknown>>(
+    rows: T,
+    bloques: Map<string, Record<SujetBarriere, Set<string>>>,
+  ): { rows: T; refuses: Record<string, number>; total: number };
+  export function filtrerParBarrieres<T extends Record<string, unknown>>(
+    client: PoolClient,
+    rows: T,
+  ): Promise<{ rows: T; refuses: Record<string, number>; total: number }>;
+  export function sessionSousBarriere(
+    client: PoolClient,
+    appId: string,
+    sessionId: string,
+  ): Promise<boolean>;
+  export function barriereActivee(client: PoolClient, appId: string): Promise<boolean>;
+  export function poserBarrieres(
+    client: PoolClient,
+    appId: string,
+    genre: SujetBarriere,
+    cles: string[],
+    requestId?: string | null,
+  ): Promise<number>;
+}
+
+declare module "ingest/lib/ingest-differe.mjs" {
+  import type { Pool } from "pg";
+  import type { FlattenedRows } from "ingest/lib/pg-ingest.mjs";
+
+  export const MAX_TENTATIVES: number;
+  export function scinderParApp(
+    rows: FlattenedRows,
+    appParDefaut: string,
+  ): Array<[string, FlattenedRows]>;
+  export function deposerLot(
+    pool: Pool,
+    appId: string,
+    rows: FlattenedRows,
+  ): Promise<{ deposes: number; refuses: number }>;
+  export function drainerIngestRaw(
+    pool: Pool,
+    opts?: { max?: number; log?: unknown },
+  ): Promise<{ drains: number; echecs: number }>;
+  export function etatIngestRaw(
+    pool: Pool,
+  ): Promise<{ en_attente: number; bloques: number; age_max_s: number }>;
 }
 
 declare module "ingest/shared/otlp.mjs" {

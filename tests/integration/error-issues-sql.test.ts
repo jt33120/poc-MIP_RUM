@@ -1815,9 +1815,22 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
 
       // DSAR : effacer les occurrences d'une identité ne laisse rien d'identifiant dans le workflow.
       const hash = "d".repeat(64);
+      // Une issue dont l'occurrence n'appartient PAS au demandeur : elle doit
+      // survivre à l'effacement, sinon la preuve ci-dessous ne distinguerait pas
+      // « ciblé » de « tout ».
+      const survivante = await creerIssue(pool, A);
+      await occurrence(pool, A, survivante);
       await pool.query("insert into rum_session (session_id, app_id, user_id_hash) values ('p56-dsar', $1, $2)", [A, hash]);
       await occurrence(pool, A, recente, { session: "p56-dsar" });
       expect(await lib.dsarIdentityErase(A, "user", hash)).toContainEqual({ table: "rum_error", deleted: 1 });
+      // P8.1 — RÉCONCILIATION. `recente` vient de perdre sa DERNIÈRE occurrence :
+      // la garder reviendrait à conserver l'exemplaire d'une personne effacée et
+      // le commentaire de triage écrit à son sujet. Elle part, avec son activité,
+      // son lien de ticket et sa notification (cascade). `survivante`, dont les
+      // occurrences ne relèvent pas du demandeur, reste intacte.
+      expect(Number((await pool.query("select count(*)::int as n from error_issue where id = $1", [recente.id])).rows[0].n)).toBe(0);
+      expect(Number((await pool.query("select count(*)::int as n from error_issue_activity where issue_id = $1", [recente.id])).rows[0].n)).toBe(0);
+      expect(Number((await pool.query("select count(*)::int as n from error_issue where id = $1", [survivante.id])).rows[0].n)).toBe(1);
       const colonnes = (await pool.query(
         `select table_name, column_name from information_schema.columns
           where table_schema = 'public' and table_name in ('error_issue_activity', 'error_issue_ticket', 'error_issue_notification')

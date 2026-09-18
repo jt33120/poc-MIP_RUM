@@ -48,7 +48,11 @@ export async function eraseIdentityAction(fd: FormData): Promise<void> {
     process.env.IDENTITY_HASH_SECRET,
   );
   if (!request.ok) redirect(request.redirectTo);
-  const deleted = await dsarIdentityErase(request.app, request.kind, request.hash);
+  // L'acteur est le compte console, pas une identité RUM : `privacy_erasure_request`
+  // trace QUI a effacé, jamais QUI a été effacé en clair.
+  const deleted = await dsarIdentityErase(
+    request.app, request.kind, request.hash, undefined, admin.email,
+  );
   const total = deleted.reduce((sum, row) => sum + row.deleted, 0);
   await audit(admin.email, "dsar_identity_erase", `${request.auditDetail} rows=${total}`);
   revalidatePath("/admin/privacy");
@@ -69,7 +73,7 @@ export async function eraseUserAction(fd: FormData): Promise<void> {
 
   let deleted;
   try {
-    deleted = await dsarErase(app, visitorId);
+    deleted = await dsarErase(app, visitorId, admin.email);
   } catch (e) {
     if (!(e instanceof DsarRefus)) throw e;
     await audit(admin.email, "dsar_erase_refuse", `user=${visitorId} app=${app} motif=${e.verdict}`);

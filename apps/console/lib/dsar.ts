@@ -66,6 +66,11 @@ export const DSAR_CHILD_TABLES = [
   "rum_breadcrumb",
   "rum_longtask",
   "rum_resource",
+  // P5.3 (v70) : un log OTel porte `session_id`. Il MANQUAIT de cette liste —
+  // un export art. 15 ne le rendait pas, un effacement art. 17 le laissait. La
+  // liste est désormais comparée au catalogue par un test SQL : toute table
+  // portant `session_id` doit y figurer ou être justifiée.
+  "rum_log",
   "rum_ai",
   "replay_chunk",
 ] as const;
@@ -236,6 +241,44 @@ export function buildDsarExport(input: {
     tables: input.tables,
   };
 }
+
+// ═══════════════════ Ce que la garantie couvre, et ce qu'elle ne couvre pas ═══
+//
+// Ces phrases sont affichées À L'ÉCRAN dans le rapport DSAR, pas seulement
+// écrites dans un journal d'implémentation. Une garantie que l'opérateur croit
+// plus large qu'elle ne l'est vaut moins que pas de garantie du tout.
+
+/** Nature de la protection durable, telle qu'elle est réellement configurée. */
+export type EtatBarriere = "enforce" | "off" | "indisponible";
+
+export const DSAR_LIMITES: readonly string[] = [
+  "La preuve porte sur les identifiants FOURNIS ou DÉJÀ LIÉS : identifiant de session, " +
+    "identifiant de visiteur, HMAC utilisateur ou compte, tous cloisonnés par application. " +
+    "Un événement totalement anonyme — nouvelle session, aucun identifiant commun — ne peut " +
+    "pas être attribué à cette personne, et ce produit ne le prétend pas.",
+  "L'égalité repose sur des identifiants techniques ou des HMAC app-scopés. Aucune suppression " +
+    "n'est décidée d'après une ressemblance de message, de stack ou d'user-agent.",
+  "La même empreinte dans une AUTRE application est une autre personne au regard de ce produit : " +
+    "le HMAC est cloisonné par application. Elle n'apparaît ni dans ce rapport, ni dans cet effacement.",
+  "La barrière d'effacement est elle-même une donnée pseudonyme : elle conserve l'identifiant " +
+    "effacé pour pouvoir le refuser. Elle n'a pas d'expiration par défaut.",
+];
+
+export const DSAR_BARRIERE_MESSAGES: Record<EtatBarriere, string> = {
+  enforce:
+    "Protection durable ACTIVE sur cette application : après l'effacement, tout writer refuse " +
+    "les données rattachables aux identifiants supprimés. Les identifiants de session effacés " +
+    "restent refusés pour toujours.",
+  off:
+    "Protection durable NON ACTIVÉE sur cette application. L'effacement est sérialisé avec " +
+    "l'ingestion — aucun writer ne peut recréer de ligne pendant l'opération, et les lots encore " +
+    "en file sont nettoyés — mais aucune barrière n'est conservée : un événement ultérieur " +
+    "portant le même identifiant serait de nouveau collecté. L'activation attend une décision de " +
+    "politique sur la conservation des barrières, leur réactivation et le traitement des sauvegardes.",
+  indisponible:
+    "État de la protection durable inconnu : la migration v81 n'est pas encore appliquée sur cette " +
+    "base. L'effacement reste sérialisé avec l'ingestion ; aucune barrière n'est enregistrée.",
+};
 
 /** Nom de fichier d'export : horodaté et tronqué (identifiant long, pas de PII). */
 export function dsarExportFilename(visitorId: string, generatedAt: string): string {
