@@ -1,7 +1,7 @@
 # Livraison P6 — journal des sous-lots
 
 Référence : [PLAN-CLAUDE-P5-P8.md](PLAN-CLAUDE-P5-P8.md) · [spec-rum-analytics-dashboards-p6.md](spec-rum-analytics-dashboards-p6.md).
-Base : `2a93408` (P5 livré, v74 sur Neon). Master à `154936a` le 18/09/2026.
+Base : `2a93408` (P5 livré, v74 sur Neon). Master à `cac4a8f` le 18/09/2026.
 
 Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déploiement ni recette sur vraie app.
 
@@ -9,26 +9,31 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 
 | Sous-lot | PR | Migration | Implémenté | Testé localement | CI | Déployé | Vérifié sur vraie app |
 |---|---|---|---|---|---|---|---|
-| P6.1 — dimensions aux bonnes frontières | #191 | v75 (additive, sans backfill), 18/09 06:16 | oui | oui | verte | oui (console `05a58d0`) | non |
-| P6.2 — unifier les filtres sans rupture | #192 | aucune | oui | oui | verte | oui (console `05a58d0`) | non |
-| P6.3 — analyses prêtes à l'emploi et drill-downs | #193 | aucune | oui | oui, suites nommées — aucun chiffre publié | verte | oui (console `05a58d0`) | non |
-| P6.4 — Explorer générique borné | #194 | aucune | oui | oui | verte | oui (console `05a58d0`, MCP `7372d55`) | non |
-| P6.5 — tableaux de bord graphiques et vues enregistrées | #195 | v79, 18/09 06:16 | oui | oui | verte | oui (console `05a58d0`) | non |
-| P6.6 — agrégats, budget mesuré et index | #196 | v80, 18/09 06:21 | oui | oui | verte sur `6dc0363`, **rouge sur `ae9d171`** (commit fusionné) | base et backend oui ; **console non** (Vercel en échec sur `154936a`) | non |
+| P6.1 — dimensions aux bonnes frontières | #191 | v75 (additive, sans backfill), 18/09 06:16 | oui | oui | verte | oui (console `cac4a8f`) | non |
+| P6.2 — unifier les filtres sans rupture | #192 | aucune | oui | oui | verte | oui (console `cac4a8f`) | non |
+| P6.3 — analyses prêtes à l'emploi et drill-downs | #193 | aucune | oui | oui, suites nommées — aucun chiffre publié | verte | oui (console `cac4a8f`) | non |
+| P6.4 — Explorer générique borné | #194 | aucune | oui | oui | verte | oui (console `cac4a8f`, MCP `7372d55`) | non |
+| P6.5 — tableaux de bord graphiques et vues enregistrées | #195 | v79, 18/09 06:16 | oui | oui | verte | oui (console `cac4a8f`) | non |
+| P6.6 — agrégats, budget mesuré et index | #196 | v80, 18/09 06:21 | oui | oui | verte sur `6dc0363`, **rouge sur `ae9d171`** (commit fusionné) | oui, après #197 (console `cac4a8f`) ; Vercel avait échoué sur `154936a` | non |
 
-Le correctif de la régression décrite plus bas est la **PR #197** (`fix/rum-analytics-p6-6-plan-sans-fenetre`), **ouverte, non mergée** au moment où ce journal est écrit ; sa CI est verte.
+Le correctif de la régression décrite plus bas est la **PR #197** (`fix/rum-analytics-p6-6-plan-sans-fenetre`), fusionnée en `cac4a8f` le 18/09/2026, CI verte.
 
 ## État de production relevé le 18/09/2026
 
 - **Neon** : `schema_migration` porte v75 (18/09 06:16), v79 (18/09 06:16) et v80 (18/09 06:21). Les trois index de v80 —
   `idx_rum_event_app_ts_v80`, `idx_rum_event_app_release_ts_v80`, `idx_rum_event_app_env_ts_v80` — existent avec
   `indisvalid` et `indisready` à vrai (pré-déploiement `CONCURRENTLY`, comme la garde de taille de v80 l'exige).
-- **Vercel** : le déploiement de production de `154936a` a **échoué** (18/09 06:22). Le dernier déploiement réussi est
-  celui de `05a58d0` (fusion de #195). La console en production exécute donc P6.1 à P6.5 ; **le lecteur hybride de P6.6
-  n'est pas en service**, alors que sa migration et son rafraîchissement le sont.
+- **Vercel** : le déploiement de `154936a` a **échoué** (18/09 06:22) — voir la régression de fusion plus bas. Corrigé
+  par #197, fusionné en `cac4a8f`, dont le déploiement de production est en **succès** (18/09 07:20). La console de
+  production exécute donc P6.1 à P6.6, lecteur hybride compris. Entre les deux, pendant environ une heure, elle est
+  restée sur `05a58d0` : ni régression pour l'utilisateur, mais P6.6 n'était pas en service alors que sa migration et
+  son rafraîchissement l'étaient.
 - **Railway** (`mip-rum-backend`, environnement `production`) : sur `154936a`, `ingest` et `scheduler` en succès ; `mcp`
-  **ignoré** (aucun changement dans ses chemins surveillés) et donc toujours sur le build de `7372d55` (fusion de #194),
-  lui-même en succès. Aucun service en échec. `scheduler` exécute `refresh_metric_histogram(26)` de v80
+  **ignoré**, faute de changement dans ses chemins surveillés, et donc toujours sur le build de `7372d55` (fusion de
+  #194), lui-même en succès. Ce n'est pas un retard : `apps/mcp` n'a reçu aucune modification depuis `7372d55`, et le
+  serveur MCP est un client HTTP mince au-dessus de `/api/v1` de la console (`apps/mcp/lib/client.mjs`) — les champs
+  `meta.source`, `meta.approximate` et `meta.rollup` de P6.6 lui parviennent par la console, sans build à refaire.
+  Aucun service en échec. `scheduler` exécute `refresh_metric_histogram(26)` de v80
   (`apps/ingest/jobs/planifie.mjs`) : les cellules `observed_count` se remplissent même si personne ne les lit encore.
 - **CI de master** : les exécutions déclenchées par les fusions de #191, #192, #194 et #195 ont été **annulées**,
   chacune par la fusion suivante — les cinq fusions vers master se suivent en sept minutes. La seule exécution menée à
@@ -563,8 +568,7 @@ Le garde déréférençait donc `null`. Conséquences sur `154936a` :
   fichiers. Trois vérifications sur six sont en échec (unitaires, E2E, Vercel) ; `docker-smoke` et `mcp-smoke` passent —
   ils ne compilent pas la console.
 
-**Correctif : PR #197** (`fix/rum-analytics-p6-6-plan-sans-fenetre`), **ouverte, non mergée** au moment où ce journal
-est écrit, CI verte. Une ligne : la borne ne s'applique que si `query` existe — c'est-à-dire **à la lecture**, où la
+**Correctif : PR #197** (`fix/rum-analytics-p6-6-plan-sans-fenetre`), fusionnée en `cac4a8f`, CI verte. Une ligne : la borne ne s'applique que si `query` existe — c'est-à-dire **à la lecture**, où la
 fenêtre est connue. La PR annonce 156 fichiers et 2 051 tests verts avec le correctif. La borne P6.6 de 300 points
 reste appliquée partout où elle protège.
 
@@ -624,8 +628,10 @@ elle, était rouge — et la PR a été fusionnée **49 secondes après son dém
 - **Plus de squelette de chargement** sur `/events`, `/errors` et `/actions` (P6.2) : inchangé par P6.3 à P6.6.
 - **Lectures historiques `logs`, `SVI` et assistant IA** (P6.2) : elles filtrent toujours par l'app NOMMÉE, pas par le
   périmètre effectif ; leur passage au contrat viendra avec leur propre tranche.
-- **Master est rouge** tant que #197 n'est pas fusionnée, et la console de production reste sur `05a58d0` : **le
-  lecteur hybride de P6.6 n'est pas en service**, alors que sa migration v80 et son rafraîchissement horaire le sont.
+- **Master a été rouge une heure**, entre la fusion de #196 et celle de #197 : la console de production est restée sur
+  `05a58d0`, sans le lecteur hybride de P6.6, alors que sa migration v80 et son rafraîchissement horaire tournaient
+  déjà. Résolu par `cac4a8f`. Ce qui reste ouvert n'est pas le correctif mais la pratique : une fusion décidée avant
+  le verdict de la CI du commit de fusion peut porter sur master un code que personne n'a exécuté.
 - **Recette sur vraie app** : à jouer pour les six sous-lots — découpages et drill-downs sur des données réellement
   ingérées, Explorer et son API, tableau de bord v2, vue enregistrée, export CSV, et la bascule `raw` / `rollup+raw`
-  annoncée par `meta.source` une fois la console à jour.
+  annoncée par `meta.source`, maintenant que la console porte les six sous-lots.
