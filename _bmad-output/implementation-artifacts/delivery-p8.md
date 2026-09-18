@@ -548,3 +548,81 @@ puisse être choisi :
 La décision qui manque à P8.3 est donc : **quelle application, quel `kind`, quelle fenêtre UTC, et
 quand**. Elle ne peut pas être prise ici, et un `plan` sur la production est le préalable — c'est une
 lecture, mais elle vise une base que personne ne m'a demandé d'atteindre.
+
+---
+
+## P8.8 — recette finale et document de couverture
+
+Branche `docs/rum-parity-status-p8-8`. **Aucune migration, aucun code, aucun test modifié** : ce
+sous-lot vérifie et rédige. Produit : [`docs/RUM_PARITY_STATUS.md`](../../docs/RUM_PARITY_STATUS.md),
+une ligne par capacité, avec verdict, preuve nommée et limite ; plus une section P8.8 dans
+[`docs/LIMITES.md`](../../docs/LIMITES.md).
+
+### Ce qui a été rejoué, et ce que ça a donné
+
+Sur `master` à `ed33e27`, worktree propre, PostgreSQL 15.18 en conteneur (port 5433), bases jetables
+`p88_*` créées puis supprimées. **`DATABASE_URL` n'a été ni lue, ni employée, ni affichée.**
+
+| Commande | Mesure |
+|---|---|
+| `pnpm exec vitest run tests/unit --exclude '**/.claude/**'` | 164 fichiers, **2 312 tests verts**, 0 ignoré |
+| `pnpm test:sql` (5 bases dédiées) | 24 fichiers verts / 2 ignorés (26) ; **349 tests verts** / 16 ignorés (365) |
+| `pnpm test:isolation`, `pnpm test:alerting` | verts |
+| `pnpm --filter console exec tsc --noEmit` | vert |
+| `pnpm --filter @mip/rum-sdk exec tsc --noEmit` | **échec** — `src/replay.ts(242,11)` TS2322 |
+| `pnpm -r build` (dépôt fraîchement installé) | **échec** — `apps/extension` |
+| `pnpm build:sdk` puis `pnpm -r build` | vert, 13 paquets |
+
+### Les écarts trouvés entre les journaux et la mesure
+
+Quatre, tous consignés au § 8 du document de couverture, **aucun corrigé** (ce sous-lot ne touche pas
+au code) :
+
+1. **L'inventaire de `test:sql` est faux dans ce journal.** La section P8.2 écrit « 24 fichiers au
+   total » : `ls tests/integration/` en compte **26**. Et les deux suites ignorées ne sont pas « le
+   banc P6.6 et la fenêtre v65 » mais les **deux bancs** (`explorer-bench-p66`,
+   `rum-mobile-bench-p75`), gouvernés par `BENCH_DATABASE_URL`. Les relevés P8.1 (« 12 ignorés ») et
+   P8.2 (« 26 ignorés ») du même fichier ne sont pas cohérents entre eux.
+2. **Deux suites ne tournent jamais en CI.** `SQL_TEST_PRE_V83_DATABASE_URL` et `BENCH_DATABASE_URL`
+   sont consommées par les tests et **absentes de `ci.yml`**. Mesuré :
+   `backfill-idempotency-sql.test.ts` rend 49 verts + **3 ignorés** sans la première, et **52 verts**
+   avec une base au schéma v82. La fenêtre de déploiement v82→v83 que ce journal met en avant
+   **passe**, mais la CI verte de la PR #208 ne la couvre pas.
+3. **« `pnpm -r build` : vert » est vrai sous condition non dite.** Depuis un dépôt fraîchement
+   installé, il échoue : `apps/extension` copie `packages/rum-sdk/dist/mip-rum.js` sans déclarer de
+   dépendance d'espace de travail, donc rien n'ordonne les deux builds.
+4. **Aucun workflow ne joue `tsc --noEmit`.** `grep -rn 'tsc' .github/workflows/` ne rend aucune
+   occurrence, pour aucun paquet. L'échec du SDK web (`replay.ts:242`), consigné par `delivery-p7.md`
+   comme « non joué par la CI », ne le sera jamais en l'état.
+
+### Ce qui n'a pas pu être vérifié
+
+L'état réel de la base de production — migrations appliquées, nombre de lignes, date de la dernière
+ingestion, périmètre chiffré de P8.3. `DATABASE_URL` était interdite pour ce travail. Tout ce qui
+touche la production dans le document de couverture est **attribué à sa source** et non recontrôlé.
+
+### Reliquat
+
+**`jt33120/mip-rum-tickets-sandbox` existe toujours** — vérifié par `gh api` le 18/09 : privé, créé à
+12:44 UTC, non archivé. Le jeton de la session `gh` ne porte pas `delete_repo`. À supprimer avec un
+jeton qui en dispose, ou à archiver si son ticket doit rester consultable.
+
+---
+
+## État final de P8, au 18/09/2026
+
+| Sous-lot | PR | Migration | Implémenté | Testé localement | CI | Déployé | Éprouvé sur donnée réelle |
+|---|---|---|---|---|---|---|---|
+| P8.1 — effacement sérialisé avec l'ingestion | #205 (fusionnée) | v81, appliquée sur Neon le 18/09 10:16 | oui | oui | verte | oui (`b06a5ce`) | **non** — aucun effacement réel joué depuis l'activation |
+| P8.2 — outillage de backfill et dry-run | #208 (fusionnée) | v83, **non appliquée** | oui | oui | verte (mais 3 tests de fenêtre jamais joués) | non | **non** — aucun backfill exécuté |
+| P8.3 — exécuter un backfill | — | — | **non retenu** | — | — | — | **Décision du 18/09/2026 : ne pas exécuter.** Périmètre mesuré ≈ 97 lignes (90 `gip-plateforme`, 7 `mip-rum-console`) sur 4 046 indexées. Port 5432 refusé depuis le poste (`ECONNREFUSED`). L'outillage est livré ; seule l'exécution manque. |
+| P8.4 — source maps dans la CI du client | — | — | **non** | — | — | — | Jamais entamé — exige l'accès au dépôt, au build et aux releases du client |
+| P8.5 — crashes natifs, symboles, appareils | — | — | **non** | — | — | — | Jamais entamé — exige un choix de moteur, une application native et des builds signés. **Aucune table de crash natif n'a été créée, délibérément.** |
+| P8.6 — connecteur de tickets (GitHub Issues) | **#211 ouverte** | v84, **non appliquée** | oui | oui | verte | non | **partiellement** — un vrai ticket créé dans un dépôt bac à sable ; webhook jamais reçu d'un vrai fournisseur |
+| P8.7 — GeoIP optionnel | **#210 ouverte** | v85, **non appliquée** | oui | oui | verte | non | **non** — le service `ingest` n'a pas de domaine public ; le GeoIP ne tournerait sur aucun chemin de production |
+| P8.8 — recette finale et document de couverture | cette PR | aucune | oui | — | — | — | — |
+
+**Aucun verdict global « fini ».** Cinq points obligatoires restent ouverts : aucune recette sur vraie
+application nulle part, P8.4 et P8.5 jamais entamés, deux capacités encore en PR non fusionnées, et
+deux défauts connus non corrigés (`tsc --noEmit` du SDK web, `pnpm -r build` depuis un dépôt propre).
+Le détail, capacité par capacité, est dans [`docs/RUM_PARITY_STATUS.md`](../../docs/RUM_PARITY_STATUS.md).
