@@ -359,6 +359,9 @@ export const EXPLORER_DATASETS = {
       { id: "last_seen", column: "last_seen_at", label: "Dernier signe" },
       { id: "device", column: "device_type", label: "Appareil" },
       { id: "country", column: "geo_country", label: "Pays estimé" },
+      // P8.7 : lue à côté du pays, et jamais sans lui — c'est ce qui empêche de
+      // confondre une résolution d'adresse avec un réglage de terminal.
+      { id: "country_source", column: "geo_source", label: "Provenance du pays" },
       { id: "views", column: "page_count", label: "Vues" },
       { id: "session", column: "session_id", label: "Session" },
     ],

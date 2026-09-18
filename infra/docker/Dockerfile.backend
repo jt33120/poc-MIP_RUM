@@ -45,6 +45,33 @@ COPY apps/ingest/purge.mjs      ./node_modules/ingest/purge.mjs
 COPY apps/ingest/supabase/functions/_shared ./node_modules/ingest/supabase/functions/_shared
 # Le SQL : nécessaire au runner de migrations, qui lit le dossier au démarrage.
 COPY apps/ingest/sql            ./node_modules/ingest/sql
+# Le dossier de données du GeoIP optionnel (P8.7) : licence, attribution et
+# manifeste. La base elle-même n'est PAS dans le dépôt — 4,5 Mio renouvelés tous
+# les mois —, elle est déposée juste en dessous.
+COPY apps/ingest/data           ./node_modules/ingest/data
+
+# 2 bis) La base IP→pays, OPTIONNELLE de bout en bout.
+#
+# `|| true` N'EST PAS UNE NÉGLIGENCE, C'EST LE CONTRAT : GeoIP ne doit jamais
+# empêcher quoi que ce soit. db-ip.com indisponible, réseau coupé, empreinte qui
+# ne correspond pas — l'image se construit quand même, part sans base, et
+# l'ingestion se comporte exactement comme avant ce lot (pays estimé d'après le
+# fuseau). `--build-arg GEOIP_FETCH=0` pour une construction sans aucune sortie
+# réseau ; la base se monte alors sur un volume, via GEOIP_DB_PATH.
+#
+# CE TÉLÉCHARGEMENT N'EST PAS UN APPEL DE GÉOLOCALISATION : c'est un fichier
+# statique public, tiré une fois à la construction. Aucune adresse de visiteur
+# n'est envoyée nulle part, ni ici ni à l'exécution.
+ARG GEOIP_FETCH=1
+ARG GEOIP_VERSION=dbip-country-lite-2026-09
+ARG GEOIP_SHA256=a32bb3c384bd3de60ad9024596aa5b395a6dd5beaa27a7223407cc2edc681d0b
+RUN if [ "$GEOIP_FETCH" = "1" ]; then \
+      cible="./node_modules/ingest/data/${GEOIP_VERSION}.csv.gz"; \
+      wget -q -O "$cible" "https://download.db-ip.com/free/${GEOIP_VERSION}.csv.gz" \
+        && echo "${GEOIP_SHA256}  ${cible}" | sha256sum -c - \
+        || { echo "geoip: base non déposée, l'ingestion fonctionnera sans"; rm -f "$cible"; }; \
+    fi; \
+    true
 
 # 3) Les points d'entrée. Minces par construction : ils câblent, ils
 #    n'implémentent pas.

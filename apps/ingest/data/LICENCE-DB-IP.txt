@@ -1,0 +1,54 @@
+DB-IP IP to Country Lite — licence et attribution
+=================================================
+
+Ce dossier accueille la base « DB-IP IP to Country Lite », distribuée par DB-IP
+sous licence CREATIVE COMMONS ATTRIBUTION 4.0 INTERNATIONAL (CC BY 4.0).
+
+    Texte intégral : https://creativecommons.org/licenses/by/4.0/
+    Source         : https://db-ip.com/db/download/ip-to-country-lite
+
+
+CE QUE LA LICENCE EXIGE
+-----------------------
+
+CC BY 4.0 autorise l'usage, la redistribution et l'adaptation, y compris à des
+fins commerciales, À UNE CONDITION : créditer la source, indiquer la licence, et
+signaler les modifications éventuelles.
+
+DB-IP formule sa demande ainsi : toute application ou tout site utilisant la base
+doit afficher une attribution visible. La mention retenue, telle quelle, est :
+
+    IP Geolocation by DB-IP (https://db-ip.com)
+
+
+OÙ CETTE ATTRIBUTION FIGURE DANS CE DÉPÔT
+-----------------------------------------
+
+1. Ici même, et dans `dbip-country-lite.manifest.json`, versionnés avec le code.
+2. Dans les mentions légales publiques de la console : `apps/console/lib/legal.ts`
+   (liste des sources de données), rendues par `/legal/mentions`. C'est
+   l'attribution VISIBLE que la licence demande — un fichier de dépôt ne suffit
+   pas à la satisfaire.
+3. Dans `docs/CONFORMITE.md`, qui décrit le traitement associé.
+
+`tests/unit/conformite.test.ts` refuse que ces mentions divergent.
+
+
+CE QUI N'EST PAS MODIFIÉ
+------------------------
+
+Le fichier déposé est la livraison ORIGINALE de DB-IP, octet pour octet
+(l'empreinte sha256 du manifeste le vérifie). MIP RUM ne le transforme pas, ne le
+redistribue pas et n'en publie aucun extrait : il est lu en mémoire du processus
+d'ingestion pour rendre un code pays. Aucune œuvre dérivée n'est donc créée, et
+la clause « indiquer les modifications » reste sans objet.
+
+
+CE QUE MIP RUM N'UTILISE PAS
+----------------------------
+
+DB-IP publie aussi des bases « City Lite » et « ASN Lite ». Elles ne sont PAS
+utilisées, et le chargeur refuse tout fichier dont le nom ne commence pas par
+`dbip-country-lite-`. La raison n'est pas technique : une base ville porte des
+coordonnées et une subdivision administrative, c'est-à-dire exactement ce que ce
+produit a décidé de ne jamais collecter.

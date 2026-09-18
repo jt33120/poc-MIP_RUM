@@ -264,6 +264,9 @@ const OPTIONNELLES = [
   "browser", "browser_version", "os", "os_version",
   // v82 (P7.5) : runtime de l'émetteur — la population de l'écran /mobile.
   "runtime",
+  // v85 (P8.7) : d'où vient `geo_country`, et avec quelle livraison DB-IP. Deux
+  // colonnes, jamais une adresse : l'IP ne franchit pas la frontière du process.
+  "geo_source", "geo_db_version",
 ];
 
 /**
@@ -313,6 +316,17 @@ export function clauseConflitSession(dispo) {
       "browser", "browser_version", "os", "os_version", "runtime"]
       .filter((c) => dispo.has(c))
       .map((c) => `${c} = coalesce(rum_session.${c}, excluded.${c})`),
+    // v85 (P8.7) — LA PROVENANCE SUIT LE PAYS, DANS LE MÊME GESTE. `geo_country`
+    // est figé à la première valeur connue (coalesce, ci-dessus) : la provenance
+    // ne doit donc changer QUE si c'est le lot courant qui a posé le pays. Sans
+    // cette condition, une session dont le pays vient du fuseau se verrait
+    // étiquetée `geoip` au lot suivant — et le chiffre affirmerait une mesure
+    // qui n'a jamais eu lieu. C'est aussi ce qui interdit de réécrire une
+    // ancienne session avec une adresse d'aujourd'hui.
+    ...["geo_source", "geo_db_version"]
+      .filter((c) => dispo.has(c))
+      .map((c) => `${c} = case when rum_session.geo_country is null and excluded.geo_country is not null
+                               then excluded.${c} else rum_session.${c} end`),
     ...(dispo.has("context")
       ? ["context = case when excluded.context <> '{}'::jsonb then excluded.context else rum_session.context end"]
       : []),

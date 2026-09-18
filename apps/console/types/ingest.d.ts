@@ -254,6 +254,17 @@ declare module "ingest/shared/otlp.mjs" {
   };
 }
 
+// P8.7 — pays et PROVENANCE du pays. La console ne résout aucune adresse : elle
+// n'utilise de ce module que le geste qui pose la provenance sur les sessions
+// d'un lot, pour que son filet d'ingestion écrive la même chose que le service.
+declare module "ingest/shared/geoip.mjs" {
+  export const PROVENANCES: readonly ["geoip", "timezone", "cdn"];
+  export function appliquerGeo(
+    sessions: Record<string, unknown>[],
+    source?: { geoip?: { country: string; version?: string | null } | null; cdn?: string | null },
+  ): void;
+}
+
 // --- Source maps (P5.4) -------------------------------------------------------
 // Un moteur, un contrat d'upload, un symbolicateur : partagés par l'ingestion,
 // les deux ports d'upload, le CLI de CI et la console.

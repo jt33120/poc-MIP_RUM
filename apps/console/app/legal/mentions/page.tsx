@@ -1,5 +1,5 @@
 import { LegalShell, LegalSection } from "@/components/legal/LegalShell";
-import { ORG, HOSTS } from "@/lib/legal";
+import { ORG, HOSTS, DATA_SOURCES } from "@/lib/legal";
 
 export const dynamic = "force-static";
 export const metadata = { title: "MIP RUM — Mentions légales" };
@@ -38,6 +38,11 @@ export default function Mentions() {
         <p>
           Les composants sous licence libre utilisés par le service restent régis par leurs licences respectives.
         </p>
+        {DATA_SOURCES.map((s) => (
+          <p key={s.name}>
+            {s.use}, à partir de {s.name} — <a href={s.url} className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">{s.attribution} ({new URL(s.url).host})</a>, sous licence {s.licence}.
+          </p>
+        ))}
       </LegalSection>
 
       <LegalSection n="4" title="Contact">

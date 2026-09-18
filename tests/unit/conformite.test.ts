@@ -23,7 +23,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { HOSTS, SUBPROCESSORS } from "../../apps/console/lib/legal";
+import { DATA_SOURCES, HOSTS, SUBPROCESSORS } from "../../apps/console/lib/legal";
 
 const DOC = readFileSync(join(__dirname, "../../docs/CONFORMITE.md"), "utf8");
 
@@ -111,6 +111,37 @@ describe("affirmations que le code ne tient pas", () => {
     // en base : la résolution IP→pays a bien lieu, chez le CDN. « Aucune IP
     // stockée » reste vrai ; « ni même résolue » ne l'était pas.
     expect(DECLARE).toContain("cf-ipcountry");
+  });
+
+  it("déclare le GeoIP local, sa licence et son attribution — et les dit COMME lib/legal.ts", () => {
+    // CC BY 4.0 n'autorise l'usage QU'À CONDITION d'une attribution visible. Le
+    // fichier de licence au fond du dépôt ne suffit pas : la mention est servie
+    // publiquement par /legal/mentions, et ce document doit dire la même chose.
+    // Si les deux divergent, c'est la même faute que la ligne « Supabase »
+    // restée douze jours après la migration vers Neon.
+    const dbip = DATA_SOURCES.find((s) => s.name.includes("DB-IP"));
+    expect(dbip, "lib/legal.ts ne déclare plus DB-IP").toBeTruthy();
+    expect(DECLARE).toContain(dbip!.attribution);
+    expect(DECLARE).toContain(dbip!.licence);
+    expect(DECLARE).toContain("db-ip.com");
+    // DB-IP ne reçoit AUCUNE donnée : un fichier téléchargé n'est pas une
+    // sous-traitance, et l'inscrire au registre serait aussi faux que d'en
+    // omettre un qui traite.
+    expect(SUBPROCESSORS.map((s) => s.name).join(" ")).not.toContain("DB-IP");
+  });
+
+  it("dit que l'adresse IP n'est stockée sous AUCUNE forme, et que l'historique est définitivement sans recours", () => {
+    // La formulation « jamais stockée » seule laissait ouverte la question du
+    // hachage et de la troncature, deux façons courantes de « ne pas stocker »
+    // une adresse tout en la conservant.
+    expect(DECLARE).toMatch(/ni en clair, ni hachée, ni tronquée/);
+    // Et la limite définitive : aucun enrichissement rétrospectif du pays n'est
+    // possible, parce que l'adresse des visites passées n'a jamais existé en
+    // base. Le dossier doit le dire comme une limite assumée, pas comme un
+    // chantier remis à plus tard — c'est la différence entre une minimisation
+    // et une dette.
+    expect(DECLARE).toMatch(/Aucun enrichissement rétrospectif du pays n'est\s+possible/);
+    expect(DECLARE).toContain("pas un manque à combler plus tard");
   });
 
   it("ne présente pas le tampon de consentement comme couvrant le terminal", () => {

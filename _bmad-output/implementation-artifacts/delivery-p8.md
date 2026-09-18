@@ -11,7 +11,8 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 |---|---|---|---|---|---|---|---|
 | P8.1 — effacement sérialisé avec l'ingestion | #205 | v81, appliquée sur Neon le 18/09 10:16 | oui | oui | verte | oui (`b06a5ce`) | non — aucun effacement réel joué depuis l'activation |
 | P8.2 — outillage de backfill et dry-run | #208 | v83 (non appliquée en production) | oui | oui | verte | non | non — **aucun backfill exécuté**, aucun périmètre choisi |
-| P8.3 à P8.8 | — | — | non | — | — | — | — |
+| P8.7 — GeoIP optionnel | #210 | v85 (non appliquée en production) | oui | oui | verte | non | non — le service `ingest` n'a pas de domaine public ; le GeoIP ne tourne sur aucun chemin de production |
+| P8.3 à P8.6, P8.8 | — | — | non | — | — | — | — |
 
 ## P8.1 — effacement sérialisé avec l'ingestion
 
@@ -548,3 +549,279 @@ puisse être choisi :
 La décision qui manque à P8.3 est donc : **quelle application, quel `kind`, quelle fenêtre UTC, et
 quand**. Elle ne peut pas être prise ici, et un `plan` sur la production est le préalable — c'est une
 lecture, mais elle vise une base que personne ne m'a demandé d'atteindre.
+
+## P8.7 — GeoIP optionnel
+
+Branche `feat/rum-geoip-p8-7`. Migration **v85** (v81 = P8.1, v82 = P7.5, v83 = P8.2, v84 réservée
+à P8.6, développé en parallèle).
+
+### La décision, et ce qu'elle a exclu
+
+**DB-IP Lite, base pays, embarquée** — licence CC BY 4.0, aucun compte, aucune clef, **aucun appel
+réseau et aucun tiers destinataire**. La variante « appel à un fournisseur de géolocalisation »
+aurait envoyé l'adresse IP **avant tout scrub MIP**, ce qui demandait une décision distincte. Elle
+n'a pas été retenue, et rien dans ce lot n'ouvre ce chemin : il n'existe aucun `fetch` vers un
+service de géolocalisation, à aucun moment de l'exécution.
+
+Le seul accès réseau du lot est le **téléchargement du fichier de données**, une fois, à la
+construction de l'image (`Dockerfile.backend`, vérifié par empreinte sha256). Ce n'est pas un appel
+de géolocalisation : c'est un approvisionnement, et aucune adresse de visiteur n'y circule.
+
+**La base « City Lite » est refusée par le chargeur**, et pas par accident : elle porte des
+coordonnées et une subdivision administrative, exactement ce que ce produit a décidé de ne jamais
+collecter. Le nom de fichier attendu commence par `dbip-country-lite-`.
+
+### Décisions d'implémentation, et leur raison
+
+- **Deux modules purs, une seule couche d'entrées/sorties.**
+  `_shared/geoip.mjs` (analyse d'adresse, plages réservées, chargement du CSV, dichotomie),
+  `_shared/client-ip.mjs` (d'où vient l'adresse) et `lib/geoip-db.mjs` (lecture du fichier). Les
+  deux premiers n'importent rien de Node : ils restent testables, et portables là où le reste du
+  `_shared` l'est déjà. **Aucune dépendance npm** n'a été ajoutée — une lecture de fichier et une
+  recherche dichotomique suffisaient, comme le demandait le cadrage.
+
+- **L'adresse ne vient QUE d'une façade déclarée, et le défaut ne lit rien.**
+  `GEOIP_IP_SOURCE` vaut `none` tant qu'on ne l'a pas posée : un déploiement dont personne n'a
+  décrit la façade ne doit pas deviner. Les modes : `socket` (la connexion), `railway`
+  (`X-Real-IP`, **exigée avec un marqueur d'arête Railway** — sans lui, rien n'est lu), `xff:<n>`
+  (`X-Forwarded-For` avec `n` relais de confiance, lu **n-ième en partant de la DROITE**). Le
+  préfixe qu'un client écrit lui-même est donc ignoré par construction, jamais « nettoyé » après
+  coup. Un `X-Real-IP` arrivé dupliqué est lu à sa **dernière** valeur : un relais ajoute après ce
+  qu'il a reçu, donc la dernière est la seule qu'un autre que le client ait pu écrire.
+
+- **Aucun cache de résolution, et c'est un choix.** La spec l'autorisait, borné et à TTL
+  documenté. On n'en pose aucun : une dichotomie sur un tableau typé coûte **500 ns** (mesuré,
+  200 000 résolutions en 100 ms), sans entrée/sortie. Un cache serait le SEUL endroit où une
+  adresse survivrait à la requête qui l'a apportée — il faudrait alors le borner, l'expirer et
+  prouver qu'il n'entre dans aucun journal. On préfère ne pas créer l'objet à protéger.
+  Corollaire assumé : **il n'y a pas de « timeout de résolution »**, parce qu'il n'y a aucune
+  attente. Ce cas de la spec appartenait à la variante fournisseur.
+
+- **Les plages réservées sont écartées AVANT la base, et c'est indispensable.** Vérifié sur la
+  livraison réelle de septembre 2026 : DB-IP range bien `10.0.0.0/8` en `ZZ`, mais il attribue
+  **`fec0::/10` à « CH »**. Interroger la base en premier aurait donc donné un pays à une adresse
+  de réseau interne. En IPv6 le raisonnement est inversé : seul `2000::/3` est de l'unicast global,
+  et tout le reste est écarté — énumérer les exclusions aurait laissé passer les trous.
+
+- **`ZZ` n'est pas un pays.** C'est le marqueur DB-IP des plages non attribuées ; il est chargé
+  comme « inconnu » et ne peut jamais être persisté. Donnée inconnue = `null`, jamais un pays par
+  défaut.
+
+- **Une base absente, mal nommée, périmée, datée du futur, illisible ou non triée est REFUSÉE**,
+  chaque fois avec une raison nommée (`geoip_db_absente`, `geoip_db_perimee`, `geoip_db_non_triee`…)
+  et jamais une exception qui remonte. Un fichier non trié n'est pas réparé en silence : DB-IP en
+  livre un trié, donc un fichier qui ne l'est pas a été tronqué, concaténé ou édité à la main.
+  **Périmée = refusée, pas dégradée** (`GEOIP_MAX_AGE_DAYS`, 180 jours par défaut, soit six
+  livraisons manquées) : les plages se réattribuent d'un pays à l'autre, et un pays périmé n'est
+  pas une information — un pays inconnu en est une.
+  **L'âge se lit dans le NOM du fichier**, jamais dans sa date de modification : une image Docker
+  remet les dates à la construction, et `mtime` dirait qu'une base de mars est neuve.
+
+- **Le chargement ne bloque rien.** Il est lancé au démarrage et dure ~1,1 s ; le serveur écoute
+  pendant ce temps et `resoudre()` rend `null` jusqu'à la fin. Un lot reçu trop tôt garde son pays
+  de fuseau — jamais une attente, jamais un rejet. `GET /health` annonce `etat`
+  (`chargement`/`actif`/`eteint`), `version` et `raison`.
+
+- **Chargement en deux passes, parce que la version naïve coûtait 240 Mio.** `split("\n")` puis des
+  tableaux JavaScript convertis à la fin faisaient culminer le processus à 240 Mio résidents pour un
+  index qui n'en pèse que 15 — 717 000 chaînes et autant de `BigInt` boîtés que V8 ne rend pas au
+  système. On compte d'abord, on alloue exactement, on remplit ensuite : **pic 105 Mio, index
+  15 Mio**. Une première version utilisait `lastIndexOf(":", borne)` pour deviner la famille d'une
+  ligne : coût quadratique, et un chargement qui ne se terminait plus sur la vraie base — remplacé
+  par un balayage du premier champ.
+
+- **GeoIP prime sur le fuseau ; l'en-tête CDN reste en dernier.** C'est le seul changement de
+  classement du lot, et il est demandé par la spec (« GeoIP précise l'approximation ») : sans lui,
+  la base ne servirait presque jamais, le SDK web émettant toujours `mip.tz`. L'ordre
+  `timezone` > `cdn` est en revanche **conservé tel quel**, pour ne pas déplacer des chiffres déjà
+  publiés — rien dans P8.7 ne justifiait d'inverser un classement existant.
+
+- **La provenance est posée DANS LE MÊME GESTE que le pays**, à l'ingestion comme à l'écriture. En
+  base, `geo_source` ne change que si c'est le lot courant qui a posé `geo_country` :
+  `case when rum_session.geo_country is null and excluded.geo_country is not null then … end`.
+  Sans cette condition, une session dont le pays vient du fuseau se verrait étiquetée `geoip` au lot
+  suivant, et le chiffre affirmerait une mesure qui n'a jamais eu lieu. **C'est aussi ce qui
+  interdit de réécrire une ancienne session avec une adresse d'aujourd'hui** — prouvé en base ET en
+  conteneur.
+
+- **La provenance va jusqu'aux lectures.** `country_source` est une dimension à part entière du
+  contrat P6.2 : filtrable et groupable partout où `country` l'est (segments `seg=v2:…`, Explorer,
+  outil MCP), rendue « pas encore collectée » tant que v85 n'est pas appliquée. Elle n'est PAS un
+  paramètre d'URL — le contrat en compte assez —, et son identifiant public ne nomme pas la colonne
+  qui l'alimente (`geo_source`), comme `country` ne nomme pas `geo_country`. À l'écran : le détail
+  de session affiche la provenance et la livraison sous le pays, la liste la porte en infobulle
+  **et** en alternative textuelle, et la note du découpage par pays nomme les trois provenances.
+
+### Migration v85 — deux colonnes, aucune table
+
+Additive, rejouable, `set local lock_timeout = '5s'`, aucun backfill, aucun index (trois valeurs et
+NULL n'en méritent aucun ; la justification est dans l'en-tête du fichier). Contrainte `NOT VALID`
+aux bornes exactes de l'ingestion : les trois provenances et rien d'autre, une version de base
+**seulement** avec `geoip`, une version au format `dbip-country-lite-AAAA-MM`, et **aucune
+provenance sans pays**.
+
+**Ni `erase_app_data` ni `purge_rum_app` ne sont recopiées — elles ne sont pas même touchées.**
+Deux colonnes sur `rum_session`, qui est l'ANCRE du périmètre DSAR : un `select *` l'exporte, un
+`delete` l'emporte, la purge et les deux effacements aussi. Le piège payé entre v79 et v80 ne se
+pose pas ici parce qu'il n'y a rien à insérer dans une définition existante.
+
+**Aucune entrée à ajouter à `DSAR_CHILD_TABLES`**, et c'est prouvé plutôt que supposé : le test
+compare la liste au catalogue des tables portant un `session_id`. Une table `rum_session_geo` aurait
+dû y figurer sous peine d'un export art. 15 incomplet et d'un effacement art. 17 partiel — c'est
+exactement ce qui est arrivé à `rum_log` en P5.3. La plus petite migration qui dit la vérité est
+celle qui n'ajoute pas ce qu'il faudrait ensuite rattraper.
+
+### Où vit la base, et pourquoi elle n'est pas dans le dépôt
+
+La livraison réelle pèse **4,5 Mio compressés** (31,7 Mio en clair, **717 170 plages** : 357 325 en
+IPv4, 359 845 en IPv6) et DB-IP en publie **une par mois**. Le dépôt entier pèse 9,9 Mio : une
+livraison mensuelle versionnée le ferait grossir de ~54 Mio par an, **définitivement** — git
+n'oublie pas —, pour une donnée qui se périme.
+
+Ce qui est versionné : `apps/ingest/data/dbip-country-lite.manifest.json` (version, empreinte
+sha256, taille, comptes de plages, tous **relevés sur le fichier réel**),
+`apps/ingest/data/LICENCE-DB-IP.txt`, `apps/ingest/data/README.md` et le `.gitignore` qui explique
+la décision. Le fichier se dépose par `node scripts/fetch-geoip-db.mjs` (ou `--verify`, sans
+réseau, ou `--update AAAA-MM` pour changer de livraison **et** réécrire le manifeste).
+L'exploitation qui préfère un dépôt auto-suffisant à un dépôt léger n'a qu'à retirer deux lignes du
+`.gitignore` : le manifeste reste valable.
+
+**La base réelle A ÉTÉ téléchargée et validée** depuis l'environnement de développement — ce n'est
+pas un fichier fabriqué : `dbip-country-lite-2026-09`, sha256 `a32bb3c3…c681d0b`, 4 522 052 octets,
+publiée le 01/09/2026. Le parseur la lit **intégralement, zéro ligne rejetée**. Elle **reste à
+déposer** sur l'hébergement cible ; `Dockerfile.backend` le fait à la construction et **la
+construction ne peut pas échouer à cause de ça** (empreinte vérifiée, échec ⇒ image sans base ⇒
+ingestion inchangée).
+
+### Comment l'adresse IP arrive réellement — constaté, et non constaté
+
+**Constaté.** La documentation Railway (« Specs & Limits », lue le 18/09/2026) liste les en-têtes que
+la façade pose : `X-Real-IP` **« for identifying client's remote IP »**, `X-Forwarded-Proto`,
+`X-Forwarded-Host`, `X-Railway-Edge`, `X-Request-Start`, `X-Railway-Request-Id`.
+**`X-Forwarded-For` n'y figure pas** : rien ne garantit qu'il soit posé ni assaini, d'où le refus de
+le lire en mode `railway`. Les journaux HTTP de l'arête exposent un attribut `srcIp` décrit comme
+« the client's IP address that made the request », donc calculé côté façade.
+
+**Constaté, et plus important que le reste : le service `ingest` n'a AUCUN domaine public.** Relevé
+par l'API Railway le 18/09/2026 — seul le service `mcp` en a un
+(`mcp-production-201c.up.railway.app`). Le trafic de production entre par
+`https://mip-rum-console.vercel.app/api/ingest/v1/traces`, c'est-à-dire la console sur Vercel. **Le
+GeoIP local n'y tourne pas, délibérément** : une fonction serverless n'emporte pas 31 Mio d'index et
+son processus est recréé trop souvent pour payer 1,1 s de chargement plus d'une fois. Sur ce chemin,
+le pays vient du fuseau, et à défaut de `x-vercel-ip-country` — désormais **étiqueté `cdn`**, ce qui
+est le vrai gain de ce lot sur la production actuelle. Le GeoIP local sert l'ingestion
+**auto-hébergée** (conteneur, VM, hébergeur souverain), là où aucun CDN ne fournit d'en-tête pays.
+
+**NON constaté.** Que la façade Railway **écrase** un `X-Real-IP` envoyé par le client. Le service
+déployé ne renvoie pas ses en-têtes, ce lot ne déploie pas de sonde, et la lecture des journaux HTTP
+de l'arête n'a rien rendu par l'outillage disponible. Conséquence assumée et bornée : un client
+pourrait, dans le pire cas, se choisir un pays. **Ce n'est pas une aggravation** — il choisit déjà
+son fuseau horaire, d'où vient le pays estimé d'aujourd'hui. C'est une donnée déclarée, jamais une
+preuve, et la colonne de provenance le dit.
+
+### Preuves chiffrées
+
+- `pnpm exec vitest run tests/unit` : **167 fichiers, 2 379 tests verts** (référence master :
+  164 / 2 312 — +3 fichiers, +67 tests). Nouveaux : `geoip.test.ts` (31 tests — adresses ambiguës
+  refusées, IPv4/IPv6, IPv4 déguisée, plages réservées, base non triée/illisible/CRLF, `ZZ`,
+  `fec0::` que la base dit « CH » et que le code dit inconnu, précédence des provenances),
+  `client-ip.test.ts` (21 tests — les quatre modes, **tentative de falsification par proxy**,
+  en-tête dupliqué, `Headers` web, robustesse), `geoip-db.test.ts` (15 tests — base absente, mal
+  nommée, **périmée**, datée du futur, `.gz` qui n'en est pas un, illisible, choix du fichier,
+  résolution avant la fin du chargement, et la **livraison réelle** si elle est déposée).
+- `pnpm test:sql` sur bases jetables : **24 fichiers, 359 tests verts**, dont
+  `geoip-v85-sql.test.ts` (15 tests : rejeu double de v85, contrainte aux bornes, aucune colonne du
+  schéma ne porte une adresse IP ni de coordonnées, les trois provenances écrites par un lot réel,
+  lot différé drainé, **session jamais réécrite par une adresse d'aujourd'hui**, purge / effacement
+  de session / effacement d'app / export DSAR, `DSAR_CHILD_TABLES` inchangée, et la fenêtre de
+  déploiement v83 → v85 sur une seconde base).
+- `pnpm test:isolation` vert. `pnpm --filter console exec tsc --noEmit` vert. `pnpm -r build` vert.
+- **Banc GeoIP** (livraison réelle, Node 26, macOS) : chargement **1,1 s**, index résident
+  **15,0 Mio**, pic **105 Mio**, **500 ns par résolution** (200 000 résolutions en 100 ms),
+  **0 ligne rejetée** sur 717 170.
+- **Recette en conteneur** (image `Dockerfile.backend` construite, **259 Mo**, PostgreSQL jetable) :
+  1. démarrage → `{"msg":"geoip chargé","version":"dbip-country-lite-2026-09","lignes":717170,"ignorees":0,"age_jours":17}` ;
+  2. `GET /health` → `"geoip":{"source_ip":"railway","etat":"actif","version":"dbip-country-lite-2026-09"}` ;
+  3. `POST /v1/traces` avec `x-real-ip: 212.27.38.253` **et un `x-forwarded-for: 1.2.3.4` forgé** →
+     `geo_country=FR, geo_source=geoip, geo_db_version=dbip-country-lite-2026-09`. L'adresse forgée
+     (1.2.3.4 = AU dans la base) n'a pas été lue ;
+  4. second lot, MÊME session, `x-real-ip: 8.8.8.8` (US) → la session reste `FR / geoip` ;
+  5. même lot **sans marqueur d'arête Railway** → pays inconnu, provenance inconnue ;
+  6. `GEOIP_DB_PATH` vers un fichier absent → `"etat":"eteint","raison":"geoip_db_illisible"`,
+     `POST /v1/traces` répond `200`, la ligne est écrite **sans** pays. **L'ingestion n'est jamais
+     bloquée.**
+
+### Ce que la mesure vaut, et ce qu'elle ne vaut pas
+
+Une base **pays** ne localise pas une personne. Elle situe une **adresse**, le plus souvent celle
+d'un opérateur, d'un relais d'entreprise ou d'un VPN : un télétravailleur derrière le VPN de son
+employeur est classé au pays de sortie du VPN, pas au sien. Le fuseau horaire, lui, est un
+**réglage** du terminal, que la personne choisit, et une zone couvre souvent plusieurs pays. C'est
+pourquoi le libellé reste « Pays estimé », partout, et jamais « Pays » — à l'écran, dans l'API,
+dans le catalogue MCP, dans les commentaires de colonne en base et dans `docs/CONFORMITE.md`.
+
+### Licence CC BY 4.0 — ce qu'elle exige, et où c'est satisfait
+
+CC BY 4.0 autorise l'usage, y compris commercial, **à condition** de créditer la source, d'indiquer
+la licence et de signaler les modifications. La mention retenue est celle que DB-IP demande :
+**« IP Geolocation by DB-IP (https://db-ip.com) »**. Elle figure :
+
+1. dans les **mentions légales publiques** (`/legal/mentions`, servies sans authentification), via
+   `DATA_SOURCES` dans `apps/console/lib/legal.ts` — c'est l'attribution *visible* qu'exige la
+   licence ; un fichier au fond du dépôt n'y suffit pas ;
+2. dans `apps/ingest/data/LICENCE-DB-IP.txt` et le manifeste, versionnés **avec** la base ;
+3. dans `docs/CONFORMITE.md` §3.2, qui décrit le traitement.
+
+`tests/unit/conformite.test.ts` refuse que ces mentions divergent. Le fichier est utilisé **tel
+quel**, sans modification ni redistribution : aucune œuvre dérivée, donc la clause « indiquer les
+modifications » reste sans objet. **DB-IP n'est pas un sous-traitant** et n'est pas inscrit au
+registre : nous téléchargeons un fichier, il ne reçoit aucune donnée.
+
+### Ce que ce lot rend DÉFINITIVEMENT impossible
+
+**Aucun enrichissement rétrospectif du pays ne sera jamais possible sur l'historique.** L'adresse IP
+des visites passées n'a jamais été stockée — ni en clair, ni hachée, ni tronquée, ni temporairement.
+L'information de départ n'existe pas : on ne peut ni la retrouver, ni la deviner. Ce n'est pas un
+manque à combler plus tard, c'est une **limite définitive**, et le résultat voulu de la
+minimisation. **Ce lot ne commence pas non plus à stocker l'adresse** : il n'ouvre donc pas la porte
+à un backfill futur. Les sessions antérieures à v85 gardent `geo_source` à NULL, affiché
+« Inconnue » — et non « fuseau », qui serait vraisemblable et faux pour les lignes écrites derrière
+un CDN qui posait déjà son en-tête pays.
+
+### Les six cases de §8, et celles qui ne sont pas cochées
+
+| Case | État | Preuve ou raison |
+|---|---|---|
+| Décision : base locale ou fournisseur, pays seulement, résidence, coût, cadence | **cochée** | DB-IP Lite pays, embarquée, CC BY 4.0, 0 €, mensuelle. Aucun appel fournisseur. |
+| IP depuis la connexion / le proxy de confiance seulement | **cochée en code**, non validée en production | `GEOIP_IP_SOURCE` (4 modes, défaut inerte), falsification par proxy prouvée en test **et** en conteneur. Non validée sur Railway : le service n'a pas de domaine public. |
+| Résolution en mémoire, pays + provenance persistés, jamais l'IP | **cochée** | v85 (2 colonnes), aucun cache, test SQL « aucune colonne du schéma ne porte une adresse ni de coordonnées ». |
+| Décision explicite si envoi de l'IP à un tiers | **sans objet, par décision** | La variante fournisseur n'a pas été retenue ; aucun appel réseau de géolocalisation n'existe. |
+| Erreur / IP privée → `unknown` ou repli fuseau étiqueté ; jamais de réécriture ; pas de backfill | **cochée** | 6 raisons de refus nommées, `null` partout ailleurs, immutabilité prouvée en base et en conteneur, limite définitive écrite ici et dans `CONFORMITE.md`. |
+| Fixtures documentées + **validation dans l'hébergement cible** | **partiellement cochée** | Fixtures : oui (plages de test, falsification proxy, IPv4 **et** IPv6, `unknown`, base absente **et** périmée). Hébergement cible : **NON validé** — voir ci-dessous. |
+
+### Écarts assumés, propres à P8.7
+
+- **Aucune validation sur Railway.** Le service `ingest` n'a pas de domaine public : rien n'y entre
+  depuis l'internet, et y poser `GEOIP_IP_SOURCE` ne changerait rien. La recette a donc été faite
+  dans l'**image réelle** (`Dockerfile.backend`, six scénarios ci-dessus), ce qui prouve le code et
+  l'empaquetage, mais **pas** le comportement de la façade Railway. La question qui reste ouverte
+  est précise : *la façade écrase-t-elle un `X-Real-IP` envoyé par le client ?* Elle se tranchera
+  par une sonde qui renvoie l'en-tête reçu, sur un déploiement exposé.
+- **Le GeoIP ne tourne pas sur le chemin de production actuel** (console Vercel), et c'est un choix
+  motivé plus haut. Ce lot y apporte tout de même la provenance `cdn`, qui manquait.
+- **Pas de région, pas de ville.** La décision initiale parlait d'une base « pays et région » ; seul
+  le **pays** est résolu et persisté. La spec §8 dit « pays seulement par défaut », le cadrage
+  n'autorise à persister que le code pays et la provenance, et une colonne de région serait une
+  dimension personnelle de plus sans lecteur. La base « City Lite », qui la porterait, est refusée
+  par le chargeur.
+- **Pas d'écran dédié.** La provenance est rendue là où le pays l'est déjà (détail de session, liste,
+  note du découpage) et devient filtrable/groupable par le contrat. Une page « qualité de la géo »
+  n'est pas livrée : la spec n'en demande pas, et elle n'aurait rien à montrer tant que le GeoIP ne
+  tourne nulle part.
+- **Pic mémoire de 105 Mio au chargement**, pour un index de 15 Mio. C'est le coût d'un CSV de
+  31,7 Mio lu en une fois. Un format binaire préconstruit le supprimerait ; il ajouterait un format
+  maison à maintenir et une étape de construction, pour un gain qui ne se paie qu'une fois par
+  démarrage de processus. Non fait, sciemment.
+- **Le récepteur Supabase historique** (`supabase/functions/v1-traces/index.ts`) n'écrit pas les
+  colonnes de v85 : il passe par une RPC dont la signature est figée. Même constat qu'en P6.1 pour
+  `write-causal.mjs` ; ce chemin n'est plus déployé.

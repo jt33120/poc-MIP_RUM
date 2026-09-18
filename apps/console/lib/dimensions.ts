@@ -28,7 +28,7 @@ interface DimensionDefinition {
   /** Signaux seulement : familles de la projection qui peuvent porter la dimension. */
   kinds?: readonly string[];
   /** Première migration qui porte la colonne. */
-  migration: "v75" | null;
+  migration: "v75" | "v85" | null;
 }
 
 /** Registre fermé des dimensions filtrables du contrat P6 (`AnalyticsFilters`). */
@@ -36,7 +36,11 @@ export const DIMENSIONS = {
   device: { label: "Appareil", population: "sessions", column: "device_type", migration: null },
   browser: { label: "Navigateur", population: "sessions", column: "browser", migration: "v75" },
   os: { label: "Système", population: "sessions", column: "os", migration: "v75" },
-  country: { label: "Pays estimé d'après le fuseau", population: "sessions", column: "geo_country", migration: null },
+  country: { label: "Pays estimé", population: "sessions", column: "geo_country", migration: null },
+  // P8.7 : d'où vient ce pays (base IP→pays locale, fuseau, en-tête CDN).
+  // Sans elle, un classement par pays mélange une résolution d'adresse et un
+  // réglage de terminal sans que rien ne le dise.
+  country_source: { label: "Provenance du pays", population: "sessions", column: "geo_source", migration: "v85" },
   env: { label: "Environnement", population: "signaux", column: "env", migration: "v75" },
   // Seuls les spans et les erreurs portent un service ; compter les vues parmi
   // les « services inconnus » noierait le chiffre qui compte.

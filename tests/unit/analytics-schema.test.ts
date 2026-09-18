@@ -388,6 +388,9 @@ describe("registre public — des capacités, jamais un schéma", () => {
     // identifiants d'API que la spec publie déjà.
     const vocabulairePublic = new Set([
       "route", "name", "type", "value", "rating", "occurrences", "fingerprint",
+      // P8.7 : `country_source` est un identifiant d'API (contrat de filtre du
+      // registre P6.2) ; la colonne qui l'alimente s'appelle `geo_source`.
+      "country_source",
       "duration_ms", "transfer_size", "blocking_ms", "tier",
     ]);
     for (const id of EXPLORER_DATASET_IDS) {
