@@ -37,6 +37,10 @@ export const CATEGORIES: NavCategory[] = [
       // écrans voisins, mais la mesure se compose au lieu d'être prédéfinie.
       { href: "/explorer", label: "Explorer" },
       { href: "/experience", label: "Expérience" },
+      // P7.5 : le runtime React Native a son écran parce qu'il a ses angles
+      // MORTS — crashes natifs, ANR, démarrage natif. Les fondre dans les
+      // écrans web ferait lire leurs absences comme des zéros.
+      { href: "/mobile", label: "Mobile" },
     ],
   },
   {

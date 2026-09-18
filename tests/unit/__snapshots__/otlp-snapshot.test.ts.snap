@@ -22,6 +22,7 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
       "type": "click",
     },
   ],
+  "capabilities": [],
   "errors": [
     {
       "app_id": "demo",
@@ -178,6 +179,7 @@ exports[`flattenOtlp — snapshot du contrat de sortie > fige la forme complète
       "os_version": null,
       "page_count_inc": 1,
       "release": "1.4.2",
+      "runtime": null,
       "sample_rate": 0.25,
       "session_id": "sess-1",
       "user_agent": "Mozilla/5.0 Test",

@@ -95,6 +95,15 @@ import { SuiviNavigation, navigationDepuisRouteur } from "./navigation";
 import { creerInstrumentation, type Instrumentation, type PropsPressable } from "./interactions";
 import { installerRejets, rejetsDepuisTracker, type EtatCapacite, type InstallationRejets } from "./rejets";
 import {
+  CAPACITES_MOBILES,
+  RAISON_CAPACITES_NATIVES,
+  capacitesNativesActives,
+  declarationCapacites,
+  serialiserCapacites,
+  type CapaciteMobile,
+  type EtatCapaciteMobile,
+} from "./capacites";
+import {
   analyserTraceparent,
   composerTracestate,
   doitPropager,
@@ -118,6 +127,8 @@ export type {
 } from "./adapters";
 export type { EtatConsentement } from "./consent";
 export type { EtatCapacite } from "./rejets";
+export { CAPACITES_MOBILES, RAISON_CAPACITES_NATIVES };
+export type { CapaciteMobile, EtatCapaciteMobile } from "./capacites";
 export type { PropsPressable } from "./interactions";
 export type { RefRouteur } from "./navigation";
 export type { TrackerRejets } from "./rejets";
@@ -249,8 +260,24 @@ export interface MobileDiagnostics {
   storageAvailable: boolean | null;
   /** État du consentement. `null` avant `init`. */
   consent: EtatConsentement | null;
-  /** Capacités natives déclarées : inconnues tant qu'aucun adaptateur ne les observe (P7.5). */
-  nativeCapabilities: string[] | null;
+  /**
+   * Capacités NATIVES actives. `null` avant `init` (inconnu) ; tableau VIDE
+   * après, ce qui est un fait connu et non une inconnue : aucun module natif
+   * MIP n'est livré, donc ni crash natif, ni ANR, ni démarrage natif n'est
+   * observé. `nativeCapabilitiesReason` dit pourquoi, en toutes lettres.
+   */
+  nativeCapabilities: CapaciteMobile[] | null;
+  /** Pourquoi `nativeCapabilities` est vide. `null` avant `init`. */
+  nativeCapabilitiesReason: string | null;
+  /**
+   * Déclaration COMPLÈTE transmise au serveur (les six capacités et leur état),
+   * telle qu'elle partira au prochain envoi. `null` avant `init`.
+   *
+   * C'est un DÉCLARATIF CLIENT : il dit ce que le SDK croit avoir installé.
+   * Aucune valeur de cet objet ne vaut un test natif passé, et aucune ne peut
+   * écrire `verified_at` côté serveur.
+   */
+  capabilities: Record<CapaciteMobile, EtatCapaciteMobile> | null;
   /** Refus non contractuels du hook, par motif. Compteurs bornés. */
   beforeSendFaults: { exception: number; async: number };
   /** D'où vient le visiteur : `memory` quand le stockage est indisponible. */
@@ -608,6 +635,11 @@ async function flushInterne(): Promise<void> {
     if (!lot.length) return;
     const epoqueEnvoi = gate.epoch;
     let corps: string;
+    // La déclaration accompagne le lot, rafraîchie ici : c'est le seul endroit
+    // qui connaît l'état RÉEL au moment de l'envoi. Elle voyage sur la resource,
+    // donc une fois par requête et non par signal.
+    const declaration = declarationCourante();
+    cfg.capabilities = declaration ? serialiserCapacites(declaration) : null;
     try {
       corps = JSON.stringify(buildPayload(cfg, lot.map((e) => e.span)));
     } catch {
@@ -1097,6 +1129,9 @@ export function init(opts: InitOptions): void {
     clientId: opts.clientId ?? null,
     appVersion: opts.appVersion ?? null,
     userAgent: `MIP-RN/${major} (${platform}${opts.osVersion ? ` ${opts.osVersion}` : ""})`,
+    // Renseignée avant chaque envoi par `flushInterne` : à `init`, les
+    // adaptateurs ne sont pas encore posés et la réponse serait fausse.
+    capabilities: null,
   };
   beforeSend = typeof opts.beforeSend === "function" ? opts.beforeSend : undefined;
 
@@ -1593,15 +1628,38 @@ export function addError(
   );
 }
 
+/**
+ * Déclaration de capacités À CET INSTANT.
+ *
+ * Recalculée à chaque appel, et non mémorisée : un adaptateur de navigation
+ * abonné après `init`, un stockage qui ne répond qu'au premier accès, une file
+ * durable qui tombe — chacun change la réponse. Une déclaration figée décrirait
+ * un état qui n'a duré qu'un instant, et elle serait fausse le reste du temps.
+ */
+function declarationCourante(): Record<CapaciteMobile, EtatCapaciteMobile> | null {
+  if (!capacites) return null;
+  return declarationCapacites({
+    errorHandler: capacites.errorHandler,
+    navigation: capacites.navigation,
+    // La persistance n'est « active » que si elle est DEMANDÉE et que le
+    // stockage répond. Activée sur un stockage muet, elle ne persiste rien :
+    // la déclarer serait annoncer une reprise hors ligne qui n'aura pas lieu.
+    offlinePersistence: persistant && persist?.storageAvailable === true ? "active" : "unavailable",
+  });
+}
+
 /** État de la collecte. `null` = information que le runtime ne connaît pas encore. */
 export function getDiagnostics(): MobileDiagnostics {
+  const declaration = declarationCourante();
   return {
     queued: queue?.length ?? 0,
     dropped,
     retries: started ? retries : null,
     storageAvailable: persist ? persist.storageAvailable : null,
     consent: gate ? gate.state : null,
-    nativeCapabilities: null,
+    nativeCapabilities: declaration ? capacitesNativesActives(declaration) : null,
+    nativeCapabilitiesReason: declaration ? RAISON_CAPACITES_NATIVES : null,
+    capabilities: declaration ? { ...declaration } : null,
     beforeSendFaults: { ...hookFaults },
     identityPersistence,
     lastTransportStatus,

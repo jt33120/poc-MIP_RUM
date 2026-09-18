@@ -435,6 +435,36 @@ declare module "ingest/shared/limits.mjs" {
   ): boolean;
 }
 
+// P7.5 — vocabulaire FERMÉ des capacités mobiles. Le module serveur fait
+// autorité à réception ; la console le lit tel quel plutôt que d'en recopier la
+// liste, qui dériverait.
+declare module "ingest/shared/mobile-capabilities.mjs" {
+  export const MOBILE_CAPABILITIES: readonly [
+    "js_errors",
+    "native_crashes",
+    "anr",
+    "native_start",
+    "offline_persistence",
+    "screen_tracking",
+  ];
+  export const MOBILE_CAPABILITY_STATES: readonly ["active", "unavailable"];
+  export const MOBILE_RUNTIMES: readonly ["react_native"];
+  export const CAPABILITY_ATTRIBUTE: string;
+  export const CAPABILITY_DECLARATION_MAX: number;
+  export function isMobileCapability(value: unknown): boolean;
+  export function isMobileRuntime(value: unknown): boolean;
+  export function parseCapabilityDeclaration(
+    raw: unknown,
+  ): { capability: string; declared: boolean }[];
+  export function formatCapabilityDeclaration(etats: Record<string, boolean>): string;
+  export function capabilityRows(entree: {
+    appId: string;
+    runtime: string | null;
+    release: string | null;
+    raw: unknown;
+  }): { app_id: string; runtime: string; release: string | null; capability: string; declared: boolean }[];
+}
+
 declare module "ingest/shared/log.mjs" {
   export interface Logger {
     debug(msg: string, fields?: Record<string, unknown>): void;

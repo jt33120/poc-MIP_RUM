@@ -948,15 +948,18 @@ describe("P7.2 — diagnostics", () => {
     });
   });
 
-  it("après init, 0 renvoi est un vrai 0 — et les capacités natives restent inconnues", async () => {
+  it("après init, 0 renvoi est un vrai 0 — et aucune capacité native n'est active", async () => {
     const { sdk } = await sdkFrais();
     const diag = sdk.getDiagnostics();
     expect(diag.retries).toBe(0);
     expect(diag.consent).toBe("granted");
     // Le bootstrap a déjà lu le stockage : la réponse est connue, pas inconnue.
     expect(diag.storageAvailable).toBe(true);
-    // P7.5 déclarera les capacités natives ; les annoncer ici serait une
-    // promesse que rien n'observe.
-    expect(diag.nativeCapabilities).toBeNull();
+    // P7.5 a posé le modèle de capacités : APRÈS `init`, le tableau est vide et
+    // c'est un FAIT connu — aucun module natif MIP n'est livré. `null` reste
+    // réservé à l'état avant `init`, où le runtime ne sait rien encore. Le
+    // contrat détaillé est vérifié par `tests/unit/rum-mobile-p75.test.ts`.
+    expect(diag.nativeCapabilities).toEqual([]);
+    expect(diag.nativeCapabilitiesReason).toContain("P8.5");
   });
 });

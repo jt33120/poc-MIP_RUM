@@ -131,7 +131,7 @@ jobs:
           echo "-> $code ($(cat /tmp/out))"
           test "$code" = "401"
 
-      - name: POST /mcp avec jeton -> initialize puis 15 outils
+      - name: POST /mcp avec jeton -> initialize puis 16 outils
         run: |
           init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
           curl -fsS -X POST http://localhost:8080/mcp \
@@ -149,7 +149,7 @@ jobs:
             -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' > /tmp/tools.json
           n=$(grep -o 'mip_rum_[a-z_]*' /tmp/tools.json | sort -u | wc -l)
           echo "outils exposés : $n"
-          test "$n" = "15"
+          test "$n" = "16"
 
       - name: Logs (si échec)
         if: failure()

@@ -31,6 +31,14 @@ export interface Surface {
    * source en égalité ou différence) ; `period-only` n'applique que l'app et la période.
    */
   legacy?: "segments" | "period-only";
+  /**
+   * Liste BLANCHE de dimensions, quand l'écran en applique moins que ses jeux de
+   * données ne pourraient. Utile lorsqu'une mesure est un TAUX sur une cohorte :
+   * une dimension d'occurrence (route, service) filtrerait le numérateur sans le
+   * dénominateur, et le résultat ne serait plus un taux. Une dimension absente de
+   * la liste est refusée avec sa raison, jamais appliquée à moitié.
+   */
+  only?: readonly Dimension[];
   /** Écran sans mesure filtrable : seuls l'app et, s'il y a lieu, la plage comptent. */
   noFilters?: string;
 }
@@ -49,6 +57,20 @@ export const SURFACES: Surface[] = [
   { path: "/errors", datasets: ["errors"], range: "custom" },
   { path: "/events", datasets: ["events"], range: "custom" },
   { path: "/actions", datasets: ["actions"], range: "custom" },
+  // `/mobile` mesure une COHORTE de sessions React Native, et en tire des taux.
+  // Les jeux de données sont ceux qu'il lit ; `only` dit ce qu'il applique. Une
+  // route ou un service filtreraient les occurrences sans filtrer les sessions :
+  // le taux de sessions sans erreur JS n'aurait plus le même dénominateur que
+  // son numérateur. `sessions` est volontairement absent des jeux : la release
+  // d'un binaire mobile est stable pour toute la session et se compile sur elle
+  // (cf. lib/queries-mobile.ts), là où le contrat la range en dimension
+  // d'occurrence pour le web.
+  {
+    path: "/mobile",
+    datasets: ["views", "errors", "custom_events", "spans"],
+    range: "custom",
+    only: ["device", "os", "release"],
+  },
   { path: "/ux", datasets: ["custom_events", "vitals", "longtasks"], range: "custom" },
   { path: "/pages", datasets: ["views", "vitals", "longtasks", "resources"], range: "custom" },
   {
@@ -125,6 +147,12 @@ export type FilterAvailability = { available: true } | { available: false; reaso
 /** Une dimension est-elle applicable à TOUTES les mesures de l'écran ? */
 export function dimensionAvailability(surface: Surface, dimension: Dimension, schema: DimensionSchema): FilterAvailability {
   if (surface.noFilters) return { available: false, reason: surface.noFilters };
+  if (surface.only && !surface.only.includes(dimension)) {
+    return {
+      available: false,
+      reason: `« ${DIMENSION_LABELS[dimension]} » n'est pas applicable à cet écran : ses mesures portent sur une cohorte de sessions, pas sur des occurrences`,
+    };
+  }
   if (surface.legacy) {
     if (surface.legacy === "segments" && LEGACY_DIMENSIONS.includes(dimension)) return { available: true };
     return {

@@ -354,6 +354,38 @@ export function buildOpenApi(): Record<string, unknown> {
           },
         ),
       },
+      // P7.5 — le runtime React Native. `platform` n'est pas une dimension
+      // nouvelle : c'est `os`, restreint aux deux valeurs qu'un runtime mobile
+      // peut rendre, et INTERSECTÉ avec un `os=` déjà présent.
+      //
+      // Cet endpoint n'expose AUCUN champ pour les crashes natifs, les ANR et le
+      // démarrage natif. Ce n'est pas un oubli : leur donner un champ, fût-il
+      // `null`, laisserait croire qu'ils sont mesurés. `capabilities` dit
+      // capacité par capacité ce qui est collecté, ce qui ne l'est pas, et ce
+      // dont personne n'a rien déclaré.
+      "/mobile/summary": {
+        get: get(
+          "Résumé d'un périmètre React Native : capacités déclarées, sessions, erreurs JS, démarrage, écrans et requêtes",
+          "rum",
+          ref("MobileSummary"),
+          {
+            params: [
+              ...commonFilters.filter(
+                (p) =>
+                  ![
+                    "#/components/parameters/browser",
+                    "#/components/parameters/env",
+                    "#/components/parameters/service",
+                    "#/components/parameters/route",
+                    "#/components/parameters/country",
+                  ].includes(p.$ref),
+              ),
+              { $ref: "#/components/parameters/platform" },
+            ],
+            extraResponses: { "400": ref0("BadRequest") },
+          },
+        ),
+      },
       "/tracing": {
         get: get(
           "Couverture tracing + appels API + routes back",
@@ -546,6 +578,7 @@ export function buildOpenApi(): Record<string, unknown> {
         issueCursor: { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "curseur opaque renvoyé dans data.next_cursor, avec les mêmes filtres ; un curseur modifié reçoit 400" },
         activityLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "activités par page (borné 1..100)" },
         savedViewId: { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" }, description: "identifiant d'une vue enregistrée" },
+        platform: { name: "platform", in: "query", schema: { type: "string", enum: ["ios", "android"] }, description: "plateforme mobile ; traduite en condition `os` du contrat et INTERSECTÉE avec un `os=` déjà présent (jamais un remplacement). Absente = les deux" },
       },
       responses: {
         BadRequest: { description: "Paramètre invalide, ou filtre que la mesure ne sait pas appliquer (corps typé : code, parameter, dimension)", content: { "application/json": { schema: ref("Error") } } },
@@ -994,6 +1027,102 @@ export function buildOpenApi(): Record<string, unknown> {
         TimelineItem: o(
           { kind: { type: "string", enum: ["pageview", "vital", "error", "breadcrumb", "longtask", "event", "action", "resource", "api"] }, ts: dateTime, title: nul(str), detail: nul(str), value: nul(num), rating: nul(str), action_id: nul(str), action_name: nul(str) },
           ["kind", "ts"],
+        ),
+
+        // ── P7.5 — runtime React Native ────────────────────────────────────
+        //
+        // TROIS ÉTATS, PAS DEUX. `active` : une release déclare collecter.
+        // `unavailable` : une release déclare NE PAS collecter — « Non
+        // collecté », jamais 0. `unknown` : personne n'a rien déclaré.
+        // `verified_at` ne vient QUE d'une recette d'opérateur ; aucun chemin
+        // d'ingestion ne l'écrit, quoi que le client envoie.
+        MobileCapability: o(
+          {
+            capability: { type: "string", enum: ["js_errors", "native_crashes", "anr", "native_start", "offline_persistence", "screen_tracking"] },
+            label: str,
+            note: { ...str, description: "ce que l'absence de signal veut dire pour cette capacité" },
+            state: { type: "string", enum: ["active", "unavailable", "unknown"] },
+            declared_by: { ...arr(nul(str)), description: "releases déclarant la capacité active ; null = release non déclarée par l'application" },
+            verified_at: nul({ ...dateTime, description: "recette d'opérateur ; jamais posé par l'ingestion" }),
+            verified_by: nul(str),
+            last_declared_at: nul(dateTime),
+          },
+          ["capability", "label", "note", "state", "declared_by", "verified_at", "verified_by", "last_declared_at"],
+        ),
+        MobileCapabilityDeclaration: o(
+          {
+            capability: str,
+            runtime: str,
+            release: nul({ ...str, description: "null = l'application ne déclare pas de version" }),
+            declared: bool,
+            first_declared_at: dateTime,
+            last_declared_at: dateTime,
+            verified_at: nul(dateTime),
+            verified_by: nul(str),
+          },
+          ["capability", "runtime", "release", "declared", "first_declared_at", "last_declared_at"],
+        ),
+        MobileStartupMeasure: o({ samples: int, p50_ms: nul(num), p75_ms: nul(num), p95_ms: nul(num) }, ["samples"]),
+        MobileSummary: o(
+          {
+            capabilities: arr(ref("MobileCapability")),
+            declarations: arr(ref("MobileCapabilityDeclaration")),
+            sessions: o(
+              {
+                sessions: { ...int, description: "sessions React Native commencées dans la fenêtre ; un vide réel vaut 0" },
+                visitors: nul({ ...int, description: "installations distinctes ; null = aucune session ne porte d'identifiant. Jamais additionné aux sessions" }),
+                sessions_without_visitor: int,
+              },
+              ["sessions", "visitors", "sessions_without_visitor"],
+            ),
+            js_errors: nul(
+              o(
+                {
+                  occurrences: { ...num, description: "somme des répétitions reçues, pas un nombre de lignes" },
+                  crashes: num,
+                  unhandled_rejections: num,
+                  fatal: nul({ ...num, description: "null = aucune ligne ne renseigne la fatalité (SDK antérieur à P7.3)" }),
+                  sessions_affected: int,
+                },
+                ["occurrences", "crashes", "unhandled_rejections", "fatal", "sessions_affected"],
+              ),
+            ),
+            js_error_free_session_rate: nul({
+              type: "number",
+              minimum: 0,
+              maximum: 1,
+              description:
+                "1 − (sessions de la cohorte portant au moins une erreur JS / sessions React Native observées), même fenêtre. CE N'EST PAS UN TAUX « SANS CRASH » : les crashes natifs ne sont pas collectés. null quand le taux n'aurait pas de sens (voir js_error_free_unavailable_reason)",
+            }),
+            js_error_free_unavailable_reason: nul({
+              type: "string",
+              enum: ["no_sessions", "capability_unavailable", "capability_unknown"],
+            }),
+            startup: o(
+              {
+                cold: nul(ref("MobileStartupMeasure")),
+                warm: nul(ref("MobileStartupMeasure")),
+              },
+              ["cold", "warm"],
+            ),
+            screens: arr(o({ route: nul(str), views: int, sessions: int }, ["route", "views", "sessions"])),
+            resources: arr(o({ path: str, method: nul(str), calls: int, p75_ms: nul(num), max_ms: nul(num), errors: int }, ["path", "calls"])),
+            sampling: o({ min_inclusion_probability: nul(num), message: nul(str) }),
+            unavailable: { ...arr(str), description: "ce que le schéma déployé ne permet pas encore de lire ; vide = réponse complète" },
+          },
+          [
+            "capabilities",
+            "declarations",
+            "sessions",
+            "js_errors",
+            "js_error_free_session_rate",
+            "js_error_free_unavailable_reason",
+            "startup",
+            "screens",
+            "resources",
+            "sampling",
+            "unavailable",
+          ],
         ),
 
         TraceCoverage: o({ total: num, correlated: num, back_total: num, front_p75: nul(num), back_p75: nul(num) }),
