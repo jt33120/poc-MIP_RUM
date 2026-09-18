@@ -1,0 +1,14 @@
+# La livraison DB-IP Lite se DÉPOSE, elle ne se commite pas.
+#
+# 4,5 Mio compressés, renouvelés tous les mois par DB-IP. Le dépôt entier pèse
+# 9,9 Mio : une livraison mensuelle versionnée le ferait grossir de 54 Mio par
+# an, définitivement — git n'oublie pas —, pour une donnée qui se périme.
+#
+# Ce qui EST versionné ici : le manifeste (version attendue, empreinte sha256,
+# taille, comptes de plages), la licence et son attribution, et ce fichier.
+# Le reste se dépose avec `node scripts/fetch-geoip-db.mjs`.
+#
+# L'exploitation qui préfère un dépôt auto-suffisant à un dépôt léger n'a qu'à
+# retirer ces deux lignes — le manifeste reste valable.
+dbip-country-lite-*.csv
+dbip-country-lite-*.csv.gz

@@ -36,7 +36,7 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
   return parsed.value;
 }
 
-const SESSION: Dimension[] = ["device", "browser", "os", "country", "source", "client"];
+const SESSION: Dimension[] = ["device", "browser", "os", "country", "country_source", "source", "client"];
 const OCCURRENCE: Dimension[] = ["route", "release", "env"];
 
 /** Matrice attendue, schéma migré (P6.1 compris) : ce qui est applicable, et rien d'autre. */

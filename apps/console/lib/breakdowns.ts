@@ -23,6 +23,7 @@ import {
   type AnalyticsQuery,
   type Dimension,
 } from "./query-contract";
+import { GEO_NOTICE } from "./geo";
 import { dimensionSupport, type DatasetId, type DimensionSchema } from "./query-compiler";
 import { dimensionAvailability, surfaceFor } from "./surfaces";
 
@@ -63,8 +64,7 @@ export const BREAKDOWN_NOTICES: Record<BreakdownDimension, string> = {
   browser:
     "Famille déduite de l'user-agent déjà collecté, sans collecte supplémentaire ni empreinte : « Inconnu » couvre les user-agents non reconnus et les émetteurs sans navigateur.",
   os: "Système déduit de l'user-agent ou de la plateforme déclarée : « Inconnu » couvre les émetteurs sans terminal (erreur backend, robot).",
-  country:
-    "Pays ESTIMÉ d'après le fuseau horaire du terminal (geo_source = timezone), pas une géolocalisation : un visiteur en déplacement ou derrière un VPN est classé selon son fuseau.",
+  country: GEO_NOTICE,
   device: "Classe de terminal déclarée par l'émetteur (desktop, mobile, tablette) : iOS et Android sont des systèmes, pas des classes.",
   release:
     "Release déclarée par l'émetteur SUR CHAQUE MESURE : une session qui change de version en cours de route compte dans les deux, et une mesure antérieure n'est jamais réécrite par une release posée plus tard.",

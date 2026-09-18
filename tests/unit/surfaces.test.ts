@@ -80,7 +80,8 @@ describe("chaque écran branché sur le contrat déclare ses capacités", () => 
 
 describe("matrice écran × filtre", () => {
   it("écrans de mesures, schéma migré : ce que TOUTES leurs mesures appliquent", () => {
-    const SESSION = ["device", "browser", "os", "country", "source", "client"];
+    // P8.7 : `country_source` accompagne `country` partout où il est disponible.
+    const SESSION = ["device", "browser", "os", "country", "country_source", "source", "client"];
     expect(disponibles("/errors")).toEqual([...DIMENSIONS]);
     expect(disponibles("/errors/fp")).toEqual([...DIMENSIONS]);
     expect(disponibles("/events")).toEqual([...DIMENSIONS]);
@@ -99,8 +100,8 @@ describe("matrice écran × filtre", () => {
   });
 
   it("schéma v74 (console publiée avant P6.1) : navigateur et système « pas encore collectés »", () => {
-    expect(disponibles("/errors", V74).sort()).toEqual(["client", "country", "device", "env", "release", "route", "service", "source"]);
-    expect(disponibles("/pages", V74).sort()).toEqual(["client", "country", "device", "route", "source"]);
+    expect(disponibles("/errors", V74).sort()).toEqual(["client", "country", "country_source", "device", "env", "release", "route", "service", "source"]);
+    expect(disponibles("/pages", V74).sort()).toEqual(["client", "country", "country_source", "device", "route", "source"]);
     expect(dimensionAvailability(surface("/pages"), "browser", V74)).toEqual({
       available: false,
       reason: "« Navigateur » n'est pas encore collecté pour les pages vues",
@@ -114,7 +115,7 @@ describe("matrice écran × filtre", () => {
   it("écrans historiques : segment v1 et presets seulement, ni tablette ni « inconnu »", () => {
     for (const path of ["/paths", "/forms", "/goals", "/acquisition", "/retention"]) {
       const s = surface(path);
-      expect(disponibles(path).sort(), path).toEqual(["client", "country", "device", "source"]);
+      expect(disponibles(path).sort(), path).toEqual(["client", "country", "country_source", "device", "source"]);
       expect(dimensionAvailability(s, "browser", schemaComplet())).toEqual({
         available: false,
         reason: "« Navigateur » n'est pas encore appliqué par cet écran",
