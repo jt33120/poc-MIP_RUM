@@ -71,6 +71,12 @@ touchée.**
 échoue (`Could not resolve "@mip/rum-core"`) et ses 10 tests sont perdus. La CI fait le build avant ;
 un relevé local qui l'oublie mesure 10 tests de moins et croit avoir trouvé un défaut.
 
+**Une PR de documentation ne déclenche pas la CI, et c'est voulu.** `ci.yml` et `docker-smoke.yml`
+portent un `paths-ignore` sur `docs/**`, `_bmad-output/**` et `**.md`, avec son miroir Vercel dans
+`apps/console/vercel.json`. Sur la PR qui porte ce document, « CI verte » signifie donc : les
+contrôles Vercel passent, et les workflows GitHub Actions sont **sautés par filtre de chemins**, pas
+joués. Les chiffres du tableau ci-dessus viennent de ce poste, pas d'un job distant.
+
 **Déploiements constatés le 18/09/2026** (API Railway et API Vercel, pas un journal) :
 
 | Cible | SHA | État | Domaine public |
@@ -222,6 +228,12 @@ c'est ce qui referme le trou de v79/v80 (§ 7). Vérifié en base sur les migrat
 l'ordre : `erase_app_data` cite bien `analytics_saved_view`, `dashboard`, `backfill_run`,
 `error_status`, `svi_call`, `rum_log`, `rum_ai`, `mobile_capabilities`.
 
+**Les deux migrations fusionnées pendant ce relevé ne rouvrent pas ce chemin** : v84 raccroche ses
+trois tables de tickets à `erase_app_data` (et les enfants en `on delete cascade`), et v85 n'ajoute
+que deux colonnes sur `rum_session`, déjà couverte — son en-tête le dit, « aucune ligne à raccrocher
+à `erase_app_data`, `purge_rum_app` ». Vérifié dans les deux fichiers de migration, pas dans leur
+journal.
+
 **Trois chemins restent ouverts** : les sauvegardes (`D7`), le texte libre des commentaires de triage
 (`A8`), et la purge de rétention des tables SVI (`D5`). Aucun effacement réel n'a été joué.
 
@@ -275,7 +287,7 @@ d'historique n'a été exécutée** (`D9`). Concrètement :
 | v72 | Aucune issue : seulement des groupes par empreinte. |
 | v75 | Dimensions à `NULL`, affichées « Inconnu » — navigateur, système, appareil, env, release. |
 | v82 | Aucun `runtime` déclaré, aucune capacité mobile. |
-| v85 (**non appliquée**) | Aucune provenance de pays : `geo_source` restera `NULL`, affiché « Inconnue » et non « fuseau », parce que ce serait vraisemblable et faux derrière un CDN. |
+| v85 | Aucune provenance de pays : `geo_source` reste `NULL`, affiché « Inconnue » et **non** « fuseau » — ce serait vraisemblable, et faux pour les lignes écrites derrière un CDN qui posait déjà son en-tête pays. |
 
 Une marque d'invalidation d'agrégat plus vieille que 26 h n'est jamais levée : l'heure concernée est
 relue **brute** jusqu'à une reprise. Lent, jamais faux.
@@ -536,8 +548,8 @@ exécuter, le 18/09/2026, périmètre mesuré à ≈ 97 lignes. Cette décision 
 referme pas non plus les cinq autres.
 
 **P8.6 et P8.7 ne sont plus ouverts** : fusionnés pendant ce relevé, migrations v84 et v85 appliquées,
-code déployé. Ils ne bloquent plus rien — ils s'ajoutent simplement aux 32 capacités livrées et jamais
-éprouvées sur du trafic.
+code déployé. Ils ne bloquent plus rien — ils s'ajoutent simplement aux 34 capacités livrées, déployées
+et jamais éprouvées sur du trafic.
 
 ---
 
