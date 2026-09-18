@@ -1557,11 +1557,16 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
       );
       const bilans = await Promise.all([importerNotesHistoriques(pool), importerNotesHistoriques(pool)]);
       expect(bilans.map((b) => ("importees" in b ? b.importees : -1)).reduce((s, n) => s + n, 0)).toBe(2);
-      expect(await importerNotesHistoriques(pool)).toEqual({ importees: 0 });
+      expect(await importerNotesHistoriques(pool)).toEqual({ importees: 0, heritees: 0 });
       for (const id of [issue.id, seconde.id]) {
         const [note] = await activites(pool, id);
         expect(note).toMatchObject({ kind: "comment", actor_kind: "system", legacy_fingerprint: "p56-note", event_key: "legacy_note:p56-note" });
-        expect(note.body.startsWith("Contacter [email] xxx")).toBe(true);
+        // P8.2 : ce groupe historique est réparti sur DEUX issues. La note
+        // décrit le groupe, pas l'issue, et elle l'annonce — sans quoi un
+        // opérateur refermerait la seconde sur la foi d'une analyse qui ne la
+        // concernait pas.
+        expect(note.body.startsWith("[hérité du groupe historique p56-note, scindé en 2 issues")).toBe(true);
+        expect(note.body).toContain("Contacter [email] xxx");
         expect([...note.body]).toHaveLength(2000);
       }
     });

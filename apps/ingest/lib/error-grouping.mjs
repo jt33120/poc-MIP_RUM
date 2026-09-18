@@ -178,7 +178,7 @@ export async function regrouperErreurs(client, erreurs) {
 }
 
 /** Identifiants des issues déjà présentes pour ces clés : Map(app + clé → id). */
-async function issuesExistantes(client, cles) {
+export async function issuesExistantes(client, cles) {
   const { rows } = await client.query(
     `select id, app_id, grouping_key from error_issue
       where grouping_version = $1 and (app_id, grouping_key) in (select * from unnest($2::text[], $3::text[]))`,
@@ -196,7 +196,7 @@ async function issuesExistantes(client, cles) {
  * bornées quelle que soit la taille du groupe. Le résolveur historique est un
  * email ; il n'est retenu que s'il désigne un compte de la console.
  */
-async function groupesHistoriques(client, empreintes) {
+export async function groupesHistoriques(client, empreintes) {
   if (!empreintes.length) return new Map();
   const { rows } = await client.query(
     `select f.app_id, f.fingerprint,
@@ -227,10 +227,18 @@ async function groupesHistoriques(client, empreintes) {
  * `on conflict do nothing` : une issue créée au même instant par un autre lot
  * garde ses valeurs, et celles calculées ici sont abandonnées.
  *
+ * `origineForcee` (P8.2) : une reprise d'historique crée TOUJOURS des issues
+ * `migration`, jamais `new`. Le déclencheur `error_issue_notify_new_v73` ne se
+ * déclenche que sur `origin = 'new'` : c'est la seule chose qui garantit qu'un
+ * backfill ne notifie pas des milliers de « nouvelles » issues à propos
+ * d'erreurs vieilles de six mois. Le garde-fou est un PARAMÈTRE explicite et non
+ * un effet de bord du fait qu'un groupe historique existe toujours — un
+ * invariant qu'on ne contrôle pas ne protège de rien.
+ *
  * @param {Map<string, unknown>} consultees empreintes dont l'historique a été lu
  * @returns {Promise<Map<string,string>>} app + clé → id, pour les issues créées ICI
  */
-async function creerIssues(client, manquantes, historique, consultees) {
+export async function creerIssues(client, manquantes, historique, consultees, { origineForcee = null } = {}) {
   if (!manquantes.length) return new Map();
   const nouvelles = manquantes.map((c) => {
     const groupes = [...c.empreintes].map((fp) => historique.get(cle(c.app_id, fp))).filter((h) => h?.first_seen);
@@ -248,7 +256,7 @@ async function creerIssues(client, manquantes, historique, consultees) {
       : null;
     return {
       ...c,
-      origin: groupes.length || ambigue ? "migration" : "new",
+      origin: origineForcee ?? (groupes.length || ambigue ? "migration" : "new"),
       status: statut,
       status_source: statuts.size === 0 ? "system" : "migration",
       premiere,

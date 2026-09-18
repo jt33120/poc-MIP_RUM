@@ -479,10 +479,12 @@ declare module "ingest/lib/error-issue-workflow.mjs" {
   /** Texte scrubbé, sans NUL, espaces de bord retirés ; null s'il ne reste rien. */
   export function texteActivite(texte: unknown): string | null;
   export function tronquerCaracteres(texte: string, max: number): string;
+  /** En-tête d'une note héritée d'un groupe historique SCINDÉ entre plusieurs issues (P8.2). */
+  export function ENTETE_HERITEE(empreinte: string, issues: number): string;
   export function importerNotesHistoriques(
     pool: Pool,
     opts?: { limite?: number },
-  ): Promise<{ importees: number } | { absent: string }>;
+  ): Promise<{ importees: number; heritees: number } | { absent: string }>;
 }
 
 // --- Travaux planifiés (apps/ingest/jobs) ------------------------------------

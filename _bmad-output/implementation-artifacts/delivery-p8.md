@@ -10,7 +10,8 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 | Sous-lot | PR | Migration | Implémenté | Testé localement | CI | Déployé | Vérifié sur vraie app |
 |---|---|---|---|---|---|---|---|
 | P8.1 — effacement sérialisé avec l'ingestion | #205 | v81 (non appliquée en production) | oui | oui | verte | non | non — protection durable **non activée** |
-| P8.2 à P8.8 | — | — | non | — | — | — | — |
+| P8.2 — outillage de backfill et dry-run | #206 | v83 (non appliquée en production) | oui | oui | verte | non | non — **aucun backfill exécuté**, aucun périmètre choisi |
+| P8.3 à P8.8 | — | — | non | — | — | — | — |
 
 ## P8.1 — effacement sérialisé avec l'ingestion
 
@@ -181,7 +182,7 @@ instruit, **avec une preuve équivalente**, pas un protocole improvisé par writ
 été écrit, le SDK rejoue. Un refus de portée est un `409`, non rejouable — les confondre en `500`
 ferait tourner la file de rejeu du SDK sur une demande qui ne peut pas aboutir.
 
-## Écarts assumés
+## Écarts assumés — P8.1
 
 - **Les commentaires de triage d'une issue qui SURVIT ne sont pas scrubés.** Quand un effacement retire
   **toutes** les occurrences d'une issue, l'issue part avec son activité, ses liens de ticket et ses
@@ -257,7 +258,7 @@ L'activation, une fois la décision prise, est une seule instruction par applica
 `update app_registry set privacy_barrier_mode = 'enforce' where app_id = …`, **après** avoir vérifié
 qu'aucun writer antérieur à v81 ne tourne encore.
 
-## Suivis consolidés
+## Suivis consolidés — P8.1
 
 - **Commentaires de triage** : un scrub assisté (l'opérateur voit les commentaires d'issues touchées par
   un effacement et décide) serait le prolongement naturel ; il n'est pas livré.
@@ -266,5 +267,278 @@ qu'aucun writer antérieur à v81 ne tourne encore.
   aujourd'hui. À instruire avec la politique.
 - **Version de protocole des writers** : un en-tête ou une colonne de registre annonçant la version
   minimale acceptée fermerait le dernier « vieux writer » possible. Non livré.
-- **Backfills (P8.2)** : l'outillage doit utiliser cette primitive et reconsulter les sources dans
-  chaque transaction ; la couture est en place (`writeRowsWithClient`, `withAppIngestTransaction`).
+- **Backfills (P8.2)** : livré. L'outillage utilise `withAppIngestTransaction` et reconsulte les
+  sources dans chaque transaction ; voir la section ci-dessous.
+
+## P8.2 — outillage de backfill et dry-run
+
+Branche `feat/rum-backfill-p8-2`, PR #206. Migration **v83** (v81 est prise par P8.1, v82 par P7.5).
+
+**Aucun backfill n'a été exécuté.** Ce lot livre l'outil, ses tests et son dry-run. L'exécution
+historique est P8.3, et elle exige un périmètre app / fenêtre / charge que personne n'a choisi.
+
+### Ce que l'outil est, en une phrase
+
+`scripts/backfill-rum.mjs` — six sous-commandes, quatre reconstructions, une application explicite,
+deux bornes UTC obligatoires, un plan signé, un journal en base, et un `verify` qui ne croit pas le
+runner sur parole.
+
+```sh
+node scripts/backfill-rum.mjs plan   --kind event-index --app <app> --from <UTC> --to <UTC> [--batch 100..5000] [--out plan.json]
+node scripts/backfill-rum.mjs apply  --plan-id <uuid> --plan-sha <sha256> [--max-lots N]
+node scripts/backfill-rum.mjs status --run-id <uuid>
+node scripts/backfill-rum.mjs pause  --run-id <uuid>
+node scripts/backfill-rum.mjs resume --run-id <uuid> --plan-sha <sha256>
+node scripts/backfill-rum.mjs verify --run-id <uuid>
+```
+
+La connexion se lit dans **`BACKFILL_DATABASE_URL`**, jamais dans `DATABASE_URL`. La seconde désigne
+la production partout ailleurs dans le dépôt : un outil qui la prendrait par défaut finirait un jour
+par réécrire la production parce que quelqu'un avait la variable dans son terminal. L'opérateur nomme
+la base qu'il vise, une fois, exprès. Sa valeur n'est jamais affichée.
+
+### Décisions d'implémentation, et leur raison
+
+- **Aucun parseur n'est recopié.** `event-index` rappelle `buildEventIndex` sur des lignes relues en
+  base ; `dimensions` rappelle `clientDimensions` ; `error-groups` rappelle `errorGrouping`,
+  `creerIssues`, `groupesHistoriques`, `finaliserIssues` et `importerNotesHistoriques`. La preuve
+  n'est pas le commentaire, c'est le test : on laisse `writeRows` écrire la projection, **on la
+  relève, on l'efface, on lance la reprise, et on compare ligne à ligne**. Une copie de vieux parser
+  échouerait là.
+- **Le plan est une lecture.** Un test compare l'empreinte `md5` des quinze tables RUM avant et après
+  les quatre `plan` : identiques. Le seul objet écrit est une ligne de `backfill_run`.
+- **La fenêtre tient dans la rétention RÉELLE.** `app_registry.retention_days` d'abord, le défaut de
+  `purge_rum_tenants` ensuite, et la provenance est dite. Une fenêtre qui déborde est **refusée**, en
+  nommant la borne basse admissible — reconstruire ce que la purge de la nuit va effacer serait au
+  mieux inutile, au pire une résurrection. Séparément, le plan rapporte la plus ancienne et la plus
+  récente ligne **réellement présente** par table : après une purge, une fenêtre peut être dans la
+  rétention et pourtant vide, et confondre les deux fait promettre une reconstruction sur des données
+  qui n'existent plus.
+- **`exact` est un mot qui s'achète.** Chaque compte passe par `EXPLAIN` : sous un coût de 2 000 000,
+  comptage exact ; au-delà, **échantillon de 24 heures tirées au sort**, extrapolé, avec un intervalle
+  à 95 % (approximation normale, correction de population finie) — et la méthode est portée par le
+  compte lui-même, pas par une note de bas de page. La méthode globale d'un `kind` est la **pire** de
+  ses méthodes par table : dire « exact » parce que sept tables sur huit l'étaient serait un mensonge
+  par moyenne.
+- **Un identifiant de séquence n'est pas un ordre de commit.** Le plan relève une borne haute par
+  table et par ordre de clé ; le runner parcourt la fenêtre sous cette borne (phase `fenetre`), **puis
+  recommence sans borne** (phase `reconciliation`). Le drain n'est pas espéré : la réconciliation
+  tourne **sous le verrou d'application de P8.1**, et tenir ce verrou signifie qu'aucun writer n'écrit
+  sur cette application — donc que les écritures en vol au moment du plan sont toutes validées et
+  visibles. C'est la seule preuve de drain qu'on ait, et elle est écrite là.
+- **Le point de reprise est dans la transaction du lot.** Écrit après le commit des lignes, une panne
+  entre les deux rejouerait un lot ; écrit avant, elle en sauterait un. Un test **fait échouer l'ordre
+  de checkpoint lui-même** : l'exécution passe en `failed`, le curseur ne bouge pas, la table cible est
+  vide, et la reprise écrit chaque ligne **une** fois.
+- **Une reprise exige le même plan ET le même code.** Le plan n'est pas relu d'un fichier : il est
+  **recalculé** depuis ce que le journal a retenu (périmètre, bornes, taille de lot, rétention) plus
+  les empreintes de code et de schéma relevées maintenant. `code_sha` couvre les six modules de reprise
+  **et** les normalisateurs qu'ils réutilisent (`otlp.mjs`, `dimensions.mjs`, `error-normalize.mjs`,
+  `scrub.mjs`, `error-grouping.mjs`, `error-issue-workflow.mjs`) : si la règle de reconstruction
+  change, la seconde moitié d'une fenêtre ne peut plus être traitée autrement que la première. Trois
+  refus distincts : `plan_sha_discordant`, `code_modifie`, `plan_modifie`.
+- **L'empreinte de plan est canonique.** `jsonb` range les clés par longueur puis par octets, pas par
+  ordre d'insertion : sans un JSON à ordre stable, l'empreinte recalculée à la reprise aurait
+  **toujours** différé, et aucune reprise n'aurait jamais été possible. Un test unitaire joue
+  l'aller-retour.
+- **Une seule exécution vivante par périmètre, un seul travailleur par application** — posé par deux
+  index uniques partiels en base, pas par une convention de code que deux processus lancés à une
+  seconde d'intervalle ne verraient pas.
+- **`failed` se reprend, `completed` non.** Une panne — verrou indisponible, connexion coupée — n'a pas
+  invalidé le travail déjà fait : le curseur d'une exécution en échec désigne un état cohérent,
+  puisqu'il est atomique. Ce qui ne se reprend pas, c'est une exécution terminée (rien à reprendre) ou
+  une exécution qui tourne (deux curseurs sur la même fenêtre).
+- **La symbolication reste hors transaction.** `error-groups` lit les source maps dans une étape
+  `preparer`, sans verrou — charger plusieurs mégaoctets sous le verrou d'application ferait attendre
+  toute l'ingestion de cette application. Son résultat voyage **par identifiant de ligne**, jamais par
+  position dans un tableau : la relecture sous verrou peut avoir perdu des lignes (effacement DSAR
+  entre-temps), et un tableau indexé se serait décalé en silence — la pile d'une personne sur l'erreur
+  d'une autre. C'est exactement la correction déjà payée par `appliquerSymbolication` en P8.1.
+- **Les sources sont relues dans CHAQUE transaction.** C'est la couture avec P8.1 : réinsérer depuis
+  une copie en mémoire lue avant un effacement ressusciterait ce que P8.1 vient de supprimer, et
+  annulerait le lot précédent.
+
+### Bogue trouvé en chemin, dans le code de ce lot
+
+**Un prédicat non parenthésé s'échappait de l'application.** Le compte des lignes « sans identifiant de
+source » s'écrivait `… where app_id = $1 and ts >= $2 and ts < $3 and not (valide) or span_id is null`.
+`and` lie plus fort que `or` : PostgreSQL lisait `(app_id and ts and not valide) or (span_id is null)`,
+et le compte ramassait les lignes sans span **de tous les autres locataires et de toute la base**. Le
+test l'a pris en flagrant délit — il comptait 3 là où la fenêtre en contenait 2. Corrigé, et un test
+insère désormais une ligne sans identifiant **chez le voisin** pour que la régression ne puisse pas
+revenir. Les autres `or` du lot ont été audités un par un.
+
+### Ce que chaque `kind` reconstruit, et ce qu'il refuse de reconstruire
+
+| Kind | Reconstruit | Refuse, et le dit |
+|---|---|---|
+| `event-index` | `buildEventIndex` sur les huit tables sources ; taxonomie, route bornée, dimensions et identités de la LIGNE source | `span_id` absent ou invalide → **skip compté**, jamais d'identifiant inventé ; source purgée → rien à projeter ; métadonnée jamais conservée (env/release d'un fil d'Ariane, par exemple) → reste `NULL` |
+| `rollups` | `rum_rollup_hourly` et `metric_histogram_hourly` recalculés par heure, **`sum(occurrences)`** et non `count(*)`, bucket vidé puis réécrit atomiquement, marques d'invalidation levées sous le verrou | sources purgées → **agrégat restant CONSERVÉ**, jamais remplacé par zéro ; occurrences jamais envoyées par un vieux SDK → irrécupérables ; **moyenne de p75 interdite** |
+| `dimensions` | `browser`/`os` des sessions depuis l'user-agent **stocké** ; `env`/`release`/`service` de la projection depuis la **ligne source qu'elle projette** (vraie clé unique, pas une inférence) | release ou env d'anciennes lignes de signal → **inconnu reste inconnu** ; robots et sessions sans user-agent → inconnus ; **`device_type` n'est pas touché** — c'est une CLÉ d'agrégat, la réécrire déplacerait des heatmaps historiques sans les recalculer |
+| `error-groups` | clé v2 en ombre sur tout l'historique ; issues `migration` si l'app a activé le regroupement ; alias des anciennes empreintes avec leur statut ; notes transférées une fois, avec provenance | **aucune notification** `new` ni `regression` ; statuts divergents → `for_review`, jamais une fusion silencieuse ; statut posé par un humain jamais écrasé ; pas d'assignation ni de lien historiques à transférer (le triage v40 n'en portait pas) |
+
+**Les deux verrous qui ferment les notifications**, et pourquoi ils sont explicites plutôt
+qu'incidents : `creerIssues` reçoit `origineForcee: 'migration'` — le déclencheur
+`error_issue_notify_new_v73` ne se déclenche que sur `origin = 'new'` — et `finaliserIssues` est appelé
+avec `regression: false`. S'en remettre au fait qu'un groupe historique existe toujours serait un
+invariant qu'on ne contrôle pas. Un test compte les notifications avant et après : **zéro ajoutée**.
+
+**Percentiles.** `fusionHistogrammesPossible` / `fusionnerHistogrammes` sont purs et testés seuls :
+deux histogrammes ne se fusionnent que si le pas géométrique, le plancher **et** la population sont
+identiques ; alors on additionne les **effectifs par seau**, et le percentile de la somme est exact.
+Sinon, l'opération est **déclarée impossible** — pas approchée, pas pondérée, pas moyennée.
+
+### Ce que P8.2 a changé dans le code de P5, et pourquoi
+
+- `error-grouping.mjs` : `groupesHistoriques`, `issuesExistantes` et `creerIssues` deviennent exportés,
+  et `creerIssues` prend `{ origineForcee }`. **Réutiliser** la création d'issues de P5.5 vaut mieux
+  qu'en écrire une seconde qui dériverait.
+- `error-issue-workflow.mjs` : `importerNotesHistoriques` préfixe désormais la note d'un groupe
+  historique **scindé** par `ENTETE_HERITEE`. Une note écrite en 2024 sur un groupe réparti en trois
+  issues n'est le diagnostic d'aucune des trois ; recopiée telle quelle, elle se lit comme tel, et un
+  opérateur refermerait deux issues sur la foi d'une analyse qui ne les concernait pas. Le changement
+  vit dans la fonction PARTAGÉE, pas dans une variante du backfill : le travail planifié
+  (`jobs/planifie.mjs`) transfère les mêmes notes, et deux comportements auraient divergé.
+- `tests/unit/{sourcemap-migration-v71,error-grouping-v2}.test.ts` : le garde-fou « toute redéfinition
+  emporte cette table » est désormais **ancré en début de ligne**, et une assertion nouvelle exige
+  qu'une redéfinition non recopiée parte de `prosrc`. Voir ci-dessous.
+
+### Migration v83, et pourquoi elle ne recopie pas `erase_app_data`
+
+`backfill_run(id, kind, app_id, from, to, source_cutoffs_json, plan_sha, code_sha, state,
+checkpoint_json, scanned, written, skipped, failed, started_at, updated_at, ended_at, error_code)`,
+états `planned|running|paused|completed|failed`, RLS `tenant_scope` app-scopée, `console_ro` en lecture
+seule, `anon`/`authenticated` révoqués. Deux index uniques partiels : un par (app, kind, fenêtre) sur
+les états vivants, un par application sur `running`.
+
+Le journal ne contient **aucun extrait de télémétrie** : ni message, ni pile, ni identifiant de
+personne, ni route. `error_code` est contraint à `^[a-z][a-z0-9_]{0,59}$` — un message PostgreSQL peut
+citer la valeur d'une ligne. Un test relit la ligne de journal entière et vérifie qu'elle ne contient ni
+l'adresse de la personne, ni le message d'erreur, ni l'identifiant de session de la fixture.
+
+**`erase_app_data` vide `backfill_run`** — et la ligne est **insérée dans la définition courante**,
+pas recopiée :
+
+```sql
+select p.prosrc into src from pg_proc p … where p.proname = 'erase_app_data';
+if position('from backfill_run ' in src) > 0 then return; end if;   -- rejouable
+if (occurrences de l'ancre) <> 1 then raise exception …; end if;    -- échec bruyant
+execute 'create or replace function erase_app_data(p_app_id text) …'
+     || quote_literal(replace(src, ancre, ajout));
+```
+
+Recopier une fonction de cent lignes pour y ajouter un `delete` est **exactement** le geste qui a fait
+perdre `analytics_saved_view` et `dashboard` entre v79 et v80 : deux fichiers écrits en parallèle,
+fusionnés sans conflit déclaré, et le second reprend la définition d'avant le premier. Or v82 (P7.5)
+s'écrit en parallèle de ce fichier. La forme choisie part du corps **en place, quel qu'il soit**, et
+échoue bruyamment si le point d'insertion n'est pas trouvé exactement une fois — elle ne peut donc rien
+perdre. Les deux garde-fous de v71 et v72 ont été adaptés pour reconnaître cette forme **sans
+s'affaiblir** : ils visent les recopies, et exigent désormais qu'une redéfinition non recopiée parte de
+`prosrc`.
+
+### Preuves chiffrées
+
+Locales, 18/09/2026, PostgreSQL 15.18 en conteneur (aarch64, port 5433), bases jetables créées et
+supprimées pour l'occasion. **Rien n'a touché la production ; `DATABASE_URL` n'a été ni lu ni employé
+par le code livré.**
+
+- `pnpm exec vitest run tests/unit --exclude '**/.claude/**'` : **163 fichiers, 2 281 tests verts**
+  (référence master : 162 / 2 248) — soit +1 fichier (`backfill-p82.test.ts`, 31 tests) et +2 tests de
+  garde dans les fichiers de v71 et v72. Aucun test existant perdu.
+- `pnpm test:sql` : **22 fichiers, 314 tests verts, 26 ignorés** (24 fichiers au total, 2 ignorés faute
+  de leurs bases dédiées : le banc P6.6 et la fenêtre v65). Le nouveau
+  `tests/integration/backfill-idempotency-sql.test.ts` en apporte **52**.
+- `pnpm test:isolation`, `pnpm test:alerting` : verts sur bases dédiées.
+- `pnpm --filter console exec tsc --noEmit` : vert. `pnpm -r build` : vert.
+- Migration v83 appliquée **deux fois de suite** sur une base neuve (idempotente, et la ligne ajoutée à
+  `erase_app_data` ne se double pas) et sur un schéma **v82** (fenêtre de déploiement, suite dédiée
+  `SQL_TEST_PRE_V83_DATABASE_URL`).
+
+#### Les preuves pré-production de §3, une par une
+
+| Preuve exigée | Où | Ce qui est prouvé |
+|---|---|---|
+| Deux exécutions → même état, ni quota ni alerte ajoutés | `backfill-idempotency-sql.test.ts` | Empreinte `md5` de la table cible identique après la seconde passe, pour les quatre `kind`. `meter_tenant_usage` rejoué : `events`/`sessions`/`errors` inchangés ; `alert_event` et `error_issue_notification` inchangés |
+| Arrêt après un lot, puis reprise | idem | `--max-lots 1` → `paused`, écriture partielle ; la reprise produit **exactement** la projection du chemin vivant |
+| Interruption ENTRE l'écriture et le point de reprise | idem | L'ordre de checkpoint est **fait échouer** : `failed`, `error_code = sqlstate_xx000`, curseur `{}`, table cible **vide** ; la reprise écrit chaque ligne une fois |
+| Identifiant de source nul | idem | 2 lignes sans span → `id_source_nul = 2` au plan, `span_id_invalide = 2` par phase, et **aucune** ligne de projection dont l'identité ne soit un span 16 hex |
+| Date limite de purge | idem | Plan **refusé** (`fenetre_hors_retention`) en nommant la rétention lue (« 7 j », `app_registry.retention_days`) et la borne admissible ; côté runner, une ligne qui a franchi la limite pendant la reprise est un skip `hors_retention` |
+| Source disparue après le plan | idem | `erase_session` entre le plan et l'exécution : moins de lignes écrites qu'annoncé, zéro ligne pour la session effacée, `verify` rend `restant = 0` |
+| Même identifiant dans une autre app | idem | Le voisin n'est ni lu ni écrit (empreinte `md5` inchangée) ; et une ligne sans span **chez le voisin** ne compte pas dans le plan |
+| Histogramme incompatible | `backfill-p82.test.ts` + SQL | Pas géométrique, plancher ou population différents → `{possible: false, raison}` ; identiques → addition des effectifs par seau |
+| Tests de concurrence P8.1 réutilisés | `backfill-idempotency-sql.test.ts` §8 | **Pour les quatre `kind`** : l'effacement tient le verrou, la reprise **attend** (condition lue dans `pg_locks`, aucun `sleep`), aucun interblocage, aucune résurrection, barrières posées |
+| `verify` indépendant du runner | idem §7 | Rend côte à côte les compteurs du runner **et** une vérification faite depuis les tables ; voit un trou creusé après coup que les compteurs ignorent ; compte les projections orphelines sans les imputer à la reprise |
+
+#### Recette manuelle de la CLI
+
+Base jetable `p82_cli`, 40 sessions synthétiques (40 vues, 40 mesures, 40 erreurs à 4 occurrences,
+40 ressources), projection effacée pour simuler un historique antérieur à v65 :
+
+| Commande | Résultat observé |
+|---|---|
+| `plan --app all` | `échec [app_globale_refusee]` |
+| `plan` sans `--app` | `échec [option_obligatoire] : --app est obligatoire` |
+| `plan --kind event-index` | 160 éligibles (méthode `exact`), 0 déjà présentes, 0 sans identifiant, rétention 30 j depuis `app_registry.retention_days`, 60 index relevés, 2 lots estimés, espace `null` + `table_vide_ou_jamais_analysee` (la table cible est vide : **aucune largeur observable, donc aucun chiffre inventé**) |
+| `apply --max-lots 1` | 40 lues, 40 écrites, état `paused` |
+| `status` | périmètre, bornes hautes par table, curseur, compteurs |
+| `pause` sur une exécution déjà en pause | `échec [transition_refusee]` |
+| `resume` | 15 lots, 280 lues, 120 écrites, 160 `deja_presente` (la réconciliation repasse), `completed` |
+| `verify` | `restant = 0` sur les huit tables, 160 projetées, 0 projection sans source |
+| `resume` sur une exécution terminée | `échec [transition_refusee]` |
+
+Les trois autres `kind` ont été planifiés sur la même base : `rollups` (1 heure éligible, unité
+« cellule horaire », écart occurrences/lignes rendu), `dimensions` (0 éligible — le chemin vivant avait
+déjà rempli les colonnes — et 200 déjà renseignées), `error-groups` (0 éligible, 40 déjà regroupées,
+`regroupement_v2_actif` dit, carte de correspondance rendue).
+
+### Écarts assumés, propres à P8.2
+
+- **Aucun backfill n'a été exécuté, nulle part.** Ni en production, ni sur une branche Neon. Le lot
+  livre l'outil et sa preuve sur données synthétiques.
+- **`rum_rollup_hourly` sera recalculé avec une jointure de session APP-SCOPÉE**, alors que
+  `refresh_rum_rollups` joint par `using (session_id)` seul. Sur des données où aucun identifiant de
+  session n'est partagé entre deux applications — le cas normal — les deux calculs coïncident
+  exactement. Là où ils divergent, c'est le rafraîchissement en place qui a tort ; le plan **signale la
+  collision** (`session_partagee_entre_apps`) au lieu de la corriger en silence. Corriger
+  `refresh_rum_rollups` lui-même est un autre lot.
+- **La base `symbolicated_frame` d'une clé v2 n'est pas reconstituable sans la source map d'alors.**
+  Le backfill rappelle le vrai symbolicateur ; sans map exacte, la clé retombe sur le chemin normalisé
+  — une clé légitime, mais pas forcément celle qu'aurait produite l'ingestion du jour même.
+- **Le plancher de durée annoncé par `plan` ne mesure que la LECTURE.** Un plan est en lecture seule :
+  il chronomètre un lot de lecture et le dit (`calibrage_lecture_seule`). Le coût d'écriture, la
+  contention du verrou d'application et le trafic concurrent ne seront mesurés que par le canari de
+  P8.3.
+- **Les compteurs du journal sont des totaux sur les DEUX phases.** Une ligne au span invalide est
+  revue par la réconciliation et compte deux fois dans `skipped`. Le bilan rendu par le runner sépare
+  les phases (`par_phase`) ; la colonne, elle, dit « lignes examinées », ce qui est exact.
+- **Aucun écran de console.** Le journal se lit par la CLI (`status`, `verify`) et par SQL. Une surface
+  d'exploitation dans `/admin` serait utile ; elle n'est pas livrée.
+
+### Ce qu'un dry-run révélerait, pour préparer P8.3
+
+**Aucun chiffre de production n'a été relevé** — l'outil n'a jamais été pointé vers la production, et
+c'est délibéré. Voici ce qu'un `plan` rendrait, application par application, pour que le périmètre
+puisse être choisi :
+
+1. **Quelles applications sont candidates** — `select app_id from app_registry` donne la liste ; le
+   plan doit être relancé pour chacune, `all` étant refusé. Le seul ordre de grandeur documenté dans ce
+   dépôt reste « 5 erreurs ingérées au total en production au 17/09/2026 » (`delivery-p5.md`) : si
+   l'ordre de grandeur est toujours celui-là, les quatre reprises sont des opérations de quelques
+   secondes et la question du créneau ne se pose pas.
+2. **Quelle fenêtre est admissible** — la borne basse est `now() - retention_days` de CETTE
+   application, et le plan la refuse en dessous. La fenêtre utile est bornée par le haut par la date de
+   la migration qui a comblé le trou : v65 pour `event-index`, v64 pour `rollups`, v75 pour
+   `dimensions`, v72 pour `error-groups`. Une reprise au-delà de ces dates ne trouverait rien à faire.
+3. **Quels volumes** — `comptes.eligibles` par `kind`, avec sa méthode, plus
+   `retention.donnees_reellement_presentes` qui dit la plus ancienne ligne restante par table. Les deux
+   ensemble répondent à « y a-t-il encore quelque chose à reconstruire ». Il est parfaitement possible
+   que la réponse soit non : si la rétention de 30 jours a déjà emporté tout ce qui précède v75, il
+   **n'y a rien à reprendre**, et le dry-run le dira en une ligne.
+4. **Ce qui ne sera pas reconstruit** — `comptes.id_source_nul`, `comptes.sources_purgees` et
+   `impossible` chiffrent la fraction impossible avant l'opération, pas après.
+5. **Quelle charge** — `charge.lots_estimes`, le plancher de lecture, l'espace attendu (ou `null` quand
+   la table cible est vide et qu'aucune largeur n'est observable).
+
+La décision qui manque à P8.3 est donc : **quelle application, quel `kind`, quelle fenêtre UTC, et
+quand**. Elle ne peut pas être prise ici, et un `plan` sur la production est le préalable — c'est une
+lecture, mais elle vise une base que personne ne m'a demandé d'atteindre.
