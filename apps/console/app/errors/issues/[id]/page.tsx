@@ -7,6 +7,7 @@
 // démo, et l'API applique la même règle. L'URL reste valide après un retour arrière
 // du regroupement v2, et quand le bug se tait sur la période.
 import Link from "next/link";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { ObservedTrend } from "@/components/charts/ObservedTrend";
 import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
@@ -17,6 +18,7 @@ import { ErrorStackCard } from "@/components/errors/ErrorStackCard";
 import { ErrorStat } from "@/components/errors/ErrorStat";
 import { GroupingBasisBadge, IssueOriginBadge, IssueStatusBadge, ReappearedBadge } from "@/components/errors/IssueBadges";
 import { IssueActivitySection, IssueTriageCard } from "@/components/errors/IssueWorkflow";
+import { IssueTicketCard } from "@/components/errors/IssueTickets";
 import { errorGroupHref, errorSearchParams, errorsHref, fmtCount, fmtCoverage, issueHref } from "@/components/errors/error-view";
 import { getUser } from "@/lib/auth";
 import { issueWorkflowView, listIssueActivity } from "@/lib/error-issue-workflow";
@@ -24,6 +26,12 @@ import { ISSUE_STATUS_LABELS, isIssueId, issueDetail, resolveIssue, type IssueDe
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { pageFilters } from "@/lib/page-filters";
+import {
+  apercuTicket,
+  integrationsUtilisables,
+  livraisonsTicket,
+  origineConsole,
+} from "@/lib/queries-ticket-integrations";
 import {
   errorScopeFor,
   parseErrorCursor,
@@ -90,6 +98,16 @@ export default async function IssuePage({
     : null;
   const pageExtra = url.has("limit") ? { limit: url.get("limit") ?? "" } : undefined;
 
+  // Connecteur de tickets (P8.6). L'aperçu n'est composé que pour un admin qui a
+  // au moins un connecteur utilisable : c'est un calcul inutile sinon, et la
+  // carte ne serait de toute façon pas rendue.
+  const integrationsTickets = admin ? await integrationsUtilisables(issue.app_id) : [];
+  const livraisons = await livraisonsTicket(issue.id, scopeApps(errorScopeFor(user)));
+  const apercuTickets =
+    integrationsTickets.length > 0
+      ? await apercuTicket(issue.id, scopeApps(errorScopeFor(user)), origineConsole(await headers()))
+      : null;
+
   return (
     <div className="animate-fade-up">
       <BackLink f={f} />
@@ -118,6 +136,14 @@ export default async function IssuePage({
         workflow={workflow}
         canWrite={admin}
         alertHref={`/alerts?app=${encodeURIComponent(issue.app_id)}&issue=${issue.id}`}
+      />
+
+      <IssueTicketCard
+        issue={issue}
+        integrations={integrationsTickets}
+        apercu={apercuTickets?.apercu ?? null}
+        deliveries={livraisons.kind === "ok" ? livraisons.value.deliveries : []}
+        canWrite={admin}
       />
 
       <ErrorNotices sampling={sampling} enrichment={enrichment} />

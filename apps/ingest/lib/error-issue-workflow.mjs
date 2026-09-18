@@ -22,6 +22,44 @@ export function texteActivite(texte) {
   return propre ? propre : null;
 }
 
+/**
+ * Référence d'une résolution : la release et l'env de la dernière occurrence
+ * rattachée (celle de `last_seen`). La régression se jugera contre elles, dans
+ * cet env, par l'ordre des marqueurs de déploiement. Une issue dont la dernière
+ * vue vient d'un groupe historique garde la dernière release connue et un env
+ * inconnu : toute réapparition restera alors « à vérifier ».
+ *
+ * `mip.release` arrive brut de l'émetteur : une release qui n'est pas un nom
+ * court (1 à 200 octets, sans caractère de contrôle), comme un env hors de 1 à
+ * 120, n'est pas retenue. L'activité la refuserait — la résolution échouerait à
+ * chaque essai — et migration-v74 ne confirme de régression qu'avec des valeurs
+ * ainsi bornées.
+ *
+ * P8.6 : cette fonction vit ICI, et non plus dans la console seule, parce qu'un
+ * fournisseur de tickets peut désormais résoudre une issue par webhook. Deux
+ * copies auraient donné deux références de résolution — donc deux verdicts de
+ * régression pour la même issue selon qui l'a fermée.
+ */
+export const SQL_REFERENCE_RESOLUTION = `
+  select case when octet_length(r.release) between 1 and 200 and r.release !~ '[[:cntrl:]]' then r.release end as release,
+         case when octet_length(e.env) between 1 and 120 and e.env !~ '[[:cntrl:]]' then e.env end as env
+    from error_issue i
+    left join lateral (
+      select release, env from rum_error
+       where ts between i.last_seen - interval '1 millisecond' and i.last_seen + interval '1 millisecond'
+         and app_id = i.app_id and issue_id = i.id
+       order by ts desc, id desc
+       limit 1
+    ) e on true
+    cross join lateral (select coalesce(e.release, i.last_release) as release) r
+   where i.app_id = $1 and i.id = $2`;
+
+/** @returns {Promise<{release: string|null, env: string|null}>} */
+export async function referenceResolution(client, appId, issueId) {
+  const { rows } = await client.query(SQL_REFERENCE_RESOLUTION, [appId, issueId]);
+  return rows[0] ?? { release: null, env: null };
+}
+
 /** Tronque à `max` caractères (points de code, comme `char_length` de PostgreSQL). */
 export function tronquerCaracteres(texte, max) {
   const points = [...texte];

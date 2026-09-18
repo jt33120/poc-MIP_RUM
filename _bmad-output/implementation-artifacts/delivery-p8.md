@@ -11,8 +11,9 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 |---|---|---|---|---|---|---|---|
 | P8.1 — effacement sérialisé avec l'ingestion | #205 | v81, appliquée sur Neon le 18/09 10:16 | oui | oui | verte | oui (`b06a5ce`) | non — aucun effacement réel joué depuis l'activation |
 | P8.2 — outillage de backfill et dry-run | #208 | v83 (non appliquée en production) | oui | oui | verte | non | non — **aucun backfill exécuté**, aucun périmètre choisi |
-| P8.7 — GeoIP optionnel | #210 | v85 (non appliquée en production) | oui | oui | verte | non | non — le service `ingest` n'a pas de domaine public ; le GeoIP ne tourne sur aucun chemin de production |
-| P8.3 à P8.6, P8.8 | — | — | non | — | — | — | — |
+| P8.6 — connecteur de tickets (GitHub Issues) | #211 | v84 (non appliquée en production) | oui | oui | verte | non | **partiellement** — un vrai ticket créé dans un dépôt bac à sable ; webhook jamais reçu d'un vrai fournisseur |
+| P8.7 — GeoIP optionnel | #210 | v85, appliquée sur Neon le 18/09 13:27 | oui | oui | verte | oui (`6485f45`) | non — le service `ingest` n'a pas de domaine public ; le GeoIP ne tourne sur aucun chemin de production |
+| P8.3 à P8.5, P8.8 | — | — | non | — | — | — | — |
 
 ## P8.1 — effacement sérialisé avec l'ingestion
 
@@ -549,6 +550,251 @@ puisse être choisi :
 La décision qui manque à P8.3 est donc : **quelle application, quel `kind`, quelle fenêtre UTC, et
 quand**. Elle ne peut pas être prise ici, et un `plan` sur la production est le préalable — c'est une
 lecture, mais elle vise une base que personne ne m'a demandé d'atteindre.
+
+## P8.6 — connecteur de tickets, GitHub Issues d'abord
+
+Branche `feat/rum-tickets-p8-6`, PR #211. Migration **v84** (v81 = P8.1, v82 = P7.5, v83 = P8.2).
+
+### La décision, et sa réserve écrite noir sur blanc
+
+**GitHub Issues**, pour une raison d'opportunité et pas de conviction : le dépôt y est déjà,
+l'authentification existe, aucun compte ni coût nouveau, et c'est le seul fournisseur qu'on puisse
+éprouver de bout en bout aujourd'hui. Ce n'est pas la destination.
+
+La phrase suivante est une constante unique du code (`MENTION_ETAPE`, `adapter.mjs`), affichée à
+l'écran d'administration, sur l'écran d'une issue, **et recopiée dans le corps de chaque ticket
+créé** :
+
+> GitHub Issues est l'implémentation actuelle du connecteur de tickets. La cible reste l'outil ITSM
+> de MIP — ServiceNow, sous réserve de confirmation.
+
+La réserve est écrite telle quelle, à dessein : **personne n'a confirmé ServiceNow**. L'information
+vient du dialogue produit (« je crois c'est ServiceNow »), et une documentation qui affirme plus que
+ce qu'on sait est un piège pour celui qui la lira dans six mois. Un test unitaire vérifie que les
+trois mots — « GitHub Issues », « ServiceNow », « sous réserve de confirmation » — sont bien là.
+
+### Ce que le connecteur garantit
+
+- **Le lien manuel de P5.6 continue de fonctionner sans connecteur.** `error_issue_ticket` gagne
+  `provider`, `external_id`, `integration_id`, `origin` et `provider_state`, toutes nullables ou à
+  défaut `manual` : une ligne existante reste valide, et un test le prouve sur une app qui n'a
+  **aucune** intégration configurée. Les tickets du connecteur arrivent dans la **même** liste, pas
+  dans une seconde table de liens « automatiques ».
+- **L'aperçu n'est pas un aperçu.** Le titre, la description et le lien affichés avant le clic sont
+  le résultat du **même appel** à `construireCharge` que celui qui fige la charge dans la file de
+  sortie, sur la **même lecture** de l'issue. `expectedRevision` ferme la fenêtre restante : si
+  l'issue change entre l'affichage et la demande, c'est un `409`, pas un envoi différent de ce qui a
+  été montré.
+- **Charge minimale.** Message scrubbé, application, release de première et de dernière vue,
+  compteur **observé** (annoncé comme « somme des répétitions réellement reçues »), lien console. La
+  pile d'appels et les identités restent dans MIP — et le ticket **dit** qu'elles n'y sont pas, pour
+  qu'un lecteur ne croie pas leur absence fortuite. Une donnée manquante s'écrit « Inconnue », jamais
+  `0`.
+- **Aucun dépôt déduit.** `target` est saisi et confirmé à la configuration (`owner/repo`). Rien ne
+  lit le remote git de MIP ; six formes approchantes (`bac`, `moi/`, une URL complète…) sont refusées
+  avec un message qui dit « rien n'est déduit ».
+- **Le secret n'est jamais en base.** `credential_ref` ne peut contenir que `env:NOM_DE_VARIABLE` ou
+  `enc:v1:<chiffré AES-256-GCM par TICKET_SECRET_KEY>`, et c'est une **contrainte de schéma** qui
+  l'impose, pas une convention : un `ghp_…` collé dans ce champ fait échouer l'écriture. L'API ne rend
+  jamais la référence — elle rend sa **forme**, et pour une variable son **nom**. `console_ro` n'a
+  même pas le droit de lire la colonne (`grant select (…)` explicite, vérifié par
+  `has_column_privilege`).
+- **Un seul ticket, quoi qu'il arrive.** La clé d'idempotence est déterministe
+  (`ticket:<intégration>:<issue>`) et unique en base : deux clics, deux onglets, un rejeu du `202`
+  retombent sur la même ligne.
+- **Le timeout après création est traité comme il doit l'être.** La ligne est marquée « incertaine »
+  **avant** l'appel ; après une coupure, le connecteur **cherche le ticket par la référence MIP**
+  portée dans son corps avant tout nouvel envoi. Trouvé → il est adopté. Absence **prouvée** (la
+  fenêtre relue couvre la demande) → nouvelle tentative sûre. Recherche non concluante →
+  `delivery_uncertain`, terminal, **un opérateur tranche**. Aucun chemin ne recrée un ticket après une
+  incertitude, et trois tests le vérifient en comptant les `POST` réellement partis.
+- **Webhook signé par le mécanisme OFFICIEL de GitHub** : HMAC-SHA256 du corps **brut** annoncé dans
+  `X-Hub-Signature-256`, comparé à **temps constant**, taille bornée (1 Mio), identifiant de livraison
+  obligatoire et **unique en base** — c'est là qu'est la protection contre le rejeu, GitHub ne
+  fournissant ni horodatage signé ni nonce, et on n'en invente pas. La route n'accepte **aucun
+  cookie** de session (elle refuse en `400` une requête qui en porte), ne renvoie **aucun détail RUM**
+  (`{ ok: true }`), et rend le même `404` pour une intégration inconnue et pour une intégration hors
+  service : elle n'est pas un oracle.
+- **MIP reste source de vérité pour `ignored`.** Une issue ignorée n'est jamais modifiée par le
+  fournisseur. Les autres statuts ne bougent que selon un mapping **explicitement configuré** ; sans
+  mapping, un ticket fermé ne change rien — seul l'état distant est noté sur le lien.
+- **Pas d'oscillation possible.** MIP n'écrit chez le fournisseur qu'à la **création** ; aucun
+  changement de statut MIP n'est poussé. Et un événement qui propose l'état **courant** ne déclenche
+  rien, tandis qu'une livraison rejouée n'écrit rien (clé d'événement = identifiant de livraison).
+- **Révocation de jeton = `degraded`, jamais un blocage.** Un `401`, un `403` sans quota, un `404` de
+  cible ou un secret absent du runtime font passer l'intégration en `degraded` et rien d'autre : un
+  test écrit un lot par le **vrai** `writeRows` juste après, et la collecte passe.
+- **Viewer, démo et jetons `CONSOLE_API_TOKENS` : lecture seule.** `handleMutation` refuse le jeton en
+  `403` avant toute chose — c'est la règle qui compte le plus ici, puisque l'écriture **sort du
+  produit**. Le périmètre est revérifié **après** résolution de la ressource, pour l'intégration comme
+  pour l'issue : deviner un entier ne doit pas permettre d'activer le connecteur d'un autre client.
+- **La surface de configuration reste cachée** tant qu'aucun fournisseur n'est branché et testé :
+  `TICKET_INTEGRATIONS=1` ouvre la porte, ou la présence d'une intégration déjà **vérifiée** en base.
+  L'entrée de la barre latérale et la page appliquent la même décision, et la page rend un `404` — un
+  lien caché n'est pas une autorisation. Sur une issue, le formulaire n'apparaît que s'il existe une
+  intégration **activée, non dégradée et éprouvée** pour cette app : proposer un bouton qui ne marche
+  pas est pire que ne rien proposer.
+
+### Décisions d'implémentation, et leur raison
+
+- **Une outbox, et c'est le MÊME mécanisme que celui de P5.6** : état, tentatives, `next_attempt_at`,
+  réservation par `for update skip locked`, étape du tick planifié (`jobs/planifie.mjs`, donc
+  scheduler Railway **et** route cron). Pas un second planificateur : deux boucles de livraison
+  divergeraient, et la seconde n'aurait pas les cicatrices de la première (pooler, verrous de session,
+  passes concurrentes, échéance).
+- **La tentative est comptée et le recul armé AVANT l'appel réseau, et validés.** Si le processus
+  meurt pendant l'appel, la ligne revient d'elle-même après le recul, avec `uncertain` déjà posé.
+  Armer après coup laisserait une ligne rejouée en boucle par la passe suivante.
+- **Un délai d'attente par APPEL, pas un par ligne.** Un signal unique partagé aurait déjà expiré au
+  moment de chercher le ticket après un envoi trop long — et la recherche qui empêche le doublon
+  n'aurait jamais eu lieu. Défaut introduit puis corrigé pendant ce lot, et un test l'épingle.
+- **`/search/issues` n'est JAMAIS utilisé.** Son index est à cohérence différée : un ticket créé il y
+  a dix secondes peut n'y être pas encore, et lire cette absence comme une preuve recréerait le
+  ticket. On relit la **liste** du dépôt — la donnée primaire — bornée à trois pages, et on ne conclut
+  à l'absence que si la fenêtre relue couvre la demande. Un test vérifie qu'aucune URL appelée ne
+  contient `/search/`.
+- **`Retry-After` gagne sur le recul calculé**, même s'il est plus long : le fournisseur sait mieux
+  que nous quand il acceptera d'être rappelé. Un recul plus long que l'attente demandée, lui, est
+  conservé — on ne martèle pas.
+- **La référence de résolution est PARTAGÉE.** `referenceResolution` descend de la console vers
+  `ingest/lib/error-issue-workflow.mjs` : un fournisseur peut désormais résoudre une issue par
+  webhook, et deux copies auraient donné deux verdicts de régression pour la même issue selon qui
+  l'a fermée.
+- **`last_error` est un CODE** (`^[a-z][a-z0-9_]{0,59}$`), jamais un message : un message de
+  fournisseur peut citer la valeur d'une ligne. Même discipline que `backfill_run` en v83.
+- **Une trame de pile collée dans le `message` est coupée.** On n'envoie jamais la colonne `stack`,
+  mais un émetteur qui concatène message et pile dans le seul champ `message` la ferait sortir malgré
+  tout. Les deux formes courantes (`    at X (f:12:3)` et `X@f:12:3`) coupent le message.
+- **Aucune dépendance npm ajoutée.** L'API REST v3 suffit avec `fetch` ; Octokit aurait apporté
+  quarante paquets transitifs pour trois requêtes.
+
+### Deux défauts trouvés en chemin, dans le code de ce lot
+
+1. **`Number(null)` vaut `0`.** `attenteDe` lisait `Retry-After` sans vérifier sa présence : sur une
+   réponse **sans** en-tête, elle concluait « attends 0 seconde », donc « limite de débit » — là où il
+   n'y avait qu'un **droit manquant**. Un `403` par jeton insuffisant serait resté rejouable pour
+   toujours au lieu de dégrader l'intégration. L'en-tête est désormais lu en deux temps, présence puis
+   valeur, et deux tests séparent les deux cas.
+2. **PostgreSQL refuse `{16,4096}` dans une expression régulière** (plafond de répétition à 255) — et
+   il le refuse **à l'évaluation** : la contrainte `ticket_integration_credential_v84` se serait créée
+   sans bruit pour n'échouer qu'à la première écriture, en production. La borne haute est devenue un
+   `char_length`. C'est le test de schéma qui l'a pris, pas la relecture.
+
+### Migration v84, et pourquoi elle ne recopie rien
+
+Trois tables — `ticket_integration`, `ticket_outbox`, `ticket_webhook_event` — plus six colonnes
+nullables sur `error_issue_ticket`. RLS `tenant_scope` app-scopée sur les trois, `console_ro` en
+lecture **colonne par colonne** sur la configuration (sans les deux références de secret),
+`anon`/`authenticated` révoqués, aucune policy `using (true)`.
+
+**Deux insertions dans des définitions courantes, jamais une recopie**, selon le geste de v83 :
+
+- `erase_app_data` reçoit `delete from ticket_integration where app_id = p_app_id` — la file de sortie
+  et le journal des livraisons partent **en cascade**, les liens de ticket partent avec leur issue.
+  Ancre `return result;`, échec bruyant si elle n'apparaît pas exactement une fois, sortie anticipée
+  si la ligne est déjà là.
+- La contrainte `error_issue_activity_v73` est **relaxée sur place** pour accepter une ligne `status`
+  posée par le système **à condition qu'elle porte une `event_key`** — cette clé est l'identifiant de
+  livraison du fournisseur, et l'index unique de v73 fait donc qu'un webhook rejoué n'écrit rien une
+  seconde fois. La relaxation part de `pg_get_constraintdef`, pas d'une copie du texte de v73.
+
+v85 (P8.7) s'écrit en parallèle de ce fichier : c'est précisément le cas que cette forme protège, et
+c'est ce qui avait fait perdre `analytics_saved_view` et `dashboard` entre v79 et v80.
+
+**`DSAR_CHILD_TABLES` n'est PAS le bon endroit pour ces tables**, et c'est prouvé plutôt qu'affirmé :
+un test interroge le catalogue et vérifie qu'aucune des trois ne porte de `session_id` — la règle
+posée par P7.5. Le garde-fou catalogue de P8.1 passe, avec deux entrées ajoutées à sa liste de tables
+conservées (`ticket_outbox`, `ticket_webhook_event`), justifiées par la cascade.
+
+### Preuves chiffrées
+
+Locales, 18/09/2026, PostgreSQL 15.18 en conteneur (aarch64, port 5433), bases jetables créées et
+supprimées pour l'occasion. **`DATABASE_URL` n'a été ni lu ni employé.**
+
+- `pnpm exec vitest run tests/unit --exclude '**/.claude/**'` : **165 fichiers, 2 367 tests verts**
+  (référence master : 164 / 2 312) — soit +1 fichier (`ticket-connector-p86.test.ts`, **55 tests**) et
+  aucun test perdu. Trois tests existants ont été **étendus**, pas contournés : la liste des étapes du
+  tick, la liste des écritures documentées et le descripteur OpenAPI.
+- `pnpm test:sql` : **24 fichiers, 366 tests verts, 32 ignorés** (3 fichiers ignorés faute de leurs
+  bases dédiées). Le nouveau `tests/integration/ticket-connector-p86-sql.test.ts` en apporte **33**.
+- `pnpm test:isolation` : vert sur base dédiée, avec **neuf assertions nouvelles** — les trois tables
+  du lot vues par portée A, par portée B, par portée vide, et invisibles à `anon`/`authenticated`.
+- `pnpm --filter console exec tsc --noEmit` : vert. `pnpm -r build` : vert.
+- Migration v84 appliquée **deux fois de suite** sur une base neuve (idempotente : la ligne ajoutée à
+  `erase_app_data` ne se double pas) et sur un schéma **v83** (fenêtre de déploiement), en vérifiant
+  qu'`erase_app_data` conserve `backfill_run`, `analytics_saved_view` et `dashboard`.
+
+### La recette RÉELLE, et où elle a eu lieu
+
+**Un vrai ticket a été créé** : <https://github.com/jt33120/mip-rum-tickets-sandbox/issues/1>.
+
+Le dépôt `jt33120/mip-rum-tickets-sandbox` est **privé, jetable, créé pour cette recette**, et
+n'appartient à aucun client. Aucun ticket client n'a été créé, modifié ni fermé. Le jeton employé est
+celui de la session `gh` de l'opérateur, **fourni à l'exécution** par une variable d'environnement et
+jamais écrit dans le dépôt. Le jeton qui traîne dans des instructions globales n'a été ni recopié, ni
+employé, ni considéré capable de créer un ticket.
+
+| Vérification | Résultat observé |
+|---|---|
+| Existence et statut de retour | `201`, ligne d'outbox `state: sent`, `attempts: 1`, `last_error: null` |
+| URL | `https://github.com/jt33120/mip-rum-tickets-sandbox/issues/1`, rendue par le fournisseur |
+| Relecture (`getIssue`) | `200`, numéro 1, état `open` |
+| Contenu | identique caractère pour caractère à l'aperçu affiché avant l'envoi |
+| Non-fuite | l'adresse e-mail, le jeton factice et les deux trames de pile injectés dans le message sont **absents** du titre comme du corps (`[email]`, `[redacted]`, pile coupée) |
+| Lien d'issue | `origin: connector`, `provider: github`, `external_id: 1`, `provider_state: open` |
+| Journal d'activité | une ligne `link`, clé `ticket_cree:1:1` |
+| Idempotence | seconde demande identique → **0 ligne insérée**, passe suivante → **0 envoi** |
+| Recherche par référence MIP, contre la **vraie** API | trouve le ticket (`concluante: true`) ; référence inconnue → `concluante: true, trouve: null` |
+
+### Écarts assumés — P8.6
+
+- **Le webhook n'a jamais reçu de livraison d'un vrai fournisseur.** Il n'existe pas d'URL publique
+  pour cette branche, et en fabriquer une n'était pas dans le périmètre. La signature est donc prouvée
+  contre un **double fidèle** : le HMAC-SHA256 est calculé exactement comme GitHub le documente, sur
+  le corps brut, et les tests couvrent le corps modifié d'un octet, la signature d'un autre secret,
+  tronquée, non hexadécimale, absente, l'identifiant de livraison manquant et le dépassement de
+  taille. **La recette réelle du webhook n'est pas jouée** ; c'est le premier écart à combler.
+- **Aucune synchronisation de statut n'a donc été observée en vrai.** Le mapping, l'autorité de MIP
+  sur `ignored`, le rejeu et l'absence d'oscillation sont prouvés en base, sur un vrai PostgreSQL,
+  mais avec des charges fabriquées.
+- **Migration v84 non appliquée en production**, connecteur non déployé, `TICKET_INTEGRATIONS` non
+  posé : la surface reste donc invisible partout.
+- **Un seul fournisseur.** Ni Jira, ni Linear, ni ServiceNow. L'interface les accueille, le lot n'en
+  implémente qu'un — c'est la règle du plan, et un second fournisseur demande un choix explicite.
+- **Aucune écriture MIP → fournisseur après la création.** Résoudre une issue dans la console ne
+  ferme pas le ticket. C'est ce qui rend l'oscillation impossible dans ce lot ; c'est aussi une
+  fonction en moins, et elle demandera d'instruire la boucle avant d'être ajoutée.
+- **`delivery_uncertain` n'a pas d'écran de résolution.** Un opérateur voit l'état et sa raison sur
+  l'issue, mais doit trancher en base (ou relancer la demande après avoir vérifié chez le
+  fournisseur). Une action « j'ai vérifié, le ticket est / n'est pas là » serait le prolongement
+  naturel ; elle n'est pas livrée.
+- **La recette E2E Playwright n'a pas été jouée localement** (la base de développement est partagée
+  avec un autre lot en cours) : la carte de tickets ne se rend qu'en présence d'une intégration
+  vérifiée, donc l'écran d'issue est inchangé sans connecteur. La CI de la PR joue la suite complète.
+- **Le dépôt bac à sable n'a pas été supprimé** : le jeton de la session `gh` ne porte pas le droit
+  `delete_repo`. Il reste privé, et son unique ticket sert de preuve consultable.
+
+### Brancher un second adaptateur — ce qu'il faudrait exactement
+
+1. Écrire `apps/ingest/lib/integrations/tickets/<fournisseur>.mjs` avec les cinq fonctions du contrat
+   (`createIssue`, `getIssue`, `chercherParReference`, `validateWebhook`, `normalizeWebhook`) et
+   l'objet `adaptateur` qui les expose. `adapter.mjs` documente ce que chacune doit rendre, et
+   surtout ce qu'elle doit **refuser** de rendre : `chercherParReference` doit répondre
+   `concluante: false` dès qu'elle ne peut pas être **certaine**.
+2. L'ajouter au registre `ADAPTATEURS` de `dispatcher.mjs` et à `PROVIDERS` dans `adapter.mjs`.
+3. Ouvrir la contrainte `provider in ('github')` de `ticket_integration` et celle de
+   `error_issue_ticket` (migration additive), et ajouter l'option au `<select>` de l'écran
+   d'administration.
+4. Adapter `MENTION_ETAPE` : quand l'ITSM de MIP sera branché, c'est cette constante — et elle seule —
+   qui doit changer, et la phrase suivra partout, écrans et nouveaux tickets compris.
+5. Rien d'autre. La file de sortie, l'idempotence, le backoff, la recherche après incertitude, le
+   journal des livraisons, les écrans, les routes, l'effacement et les tests d'isolation sont
+   indépendants du fournisseur. C'est tout l'intérêt d'avoir écrit l'interface maintenant.
+
+**Ce qui manquera, en revanche, et qu'aucun code ne peut fournir** : l'espace cible et ses droits,
+les champs obligatoires du formulaire de création de l'outil, l'URL publique du webhook, la politique
+de synchronisation (quel statut distant vaut quoi dans MIP) et la liste des données autorisées à
+sortir. Ce sont cinq décisions, pas cinq tickets.
 
 ## P8.7 — GeoIP optionnel
 
