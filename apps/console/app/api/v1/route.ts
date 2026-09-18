@@ -53,6 +53,18 @@ export const GET = handle(async () => ({
     doc: "docs/MCP.md",
   },
   endpoints: endpointsDeclares(),
+  // L'Explorer générique (P6.4) est une LECTURE en POST : son AST ne tient pas dans
+  // une query string. Il n'entre donc ni dans `endpoints` — qui énumère les GET —,
+  // ni dans `write` plus bas, qui décrit des écritures. Le dire ici plutôt que le
+  // ranger dans la mauvaise liste : un modèle croit ce qu'on lui annonce.
+  explorer: {
+    schema: "GET /api/v1/explorer/schema — jeux de données, mesures, dimensions disponibles et limites",
+    query:
+      "POST /api/v1/explorer/query — requête analytique bornée (LECTURE, même auth que les GET, corps ≤ 32 Kio). " +
+      "Le corps est un AST versionné : dataset, measure {aggregation, field}, range {preset} OU {from,to}, " +
+      "filters, groupBy (2 au plus), visualization et limit. Un budget de lecture dépassé rend 503 " +
+      "query_budget_exceeded — jamais un résultat à zéro.",
+  },
   // Écritures : hors de l'énumération ci-dessus, qui décrit la lecture. Signalées
   // explicitement plutôt que passées sous silence. Celles des issues exigent une
   // session admin de la console et refusent tout jeton d'API.

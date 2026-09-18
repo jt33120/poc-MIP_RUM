@@ -12,6 +12,7 @@ import { traceFields } from "../server-trace-core";
 import { guardAdmin } from "./admin";
 import { type ApiPrincipal, authenticateApi } from "./auth";
 import { UnsupportedFilterError } from "../query-compiler";
+import { ExplorerBudgetError, UnsupportedExplorerDimension } from "../analytics-schema";
 import { conditionsOf, contractErrorStatus, queryFingerprint } from "../query-contract";
 import { weakEtag } from "./etag";
 import { type ApiFilters, parseApiFilters } from "./params";
@@ -151,6 +152,12 @@ function erreurHandler(req: NextRequest, e: unknown) {
       ...(e.error.dimension ? { dimension: e.error.dimension } : {}),
     });
   }
+  // L'Explorer n'a pas pu tenir son budget de lecture. 503 : le service dit qu'il
+  // n'a pas répondu, au lieu de rendre une série de zéros qu'on lirait comme du calme.
+  if (e instanceof ExplorerBudgetError) return apiError(req, 503, e.message, { code: e.code });
+  if (e instanceof UnsupportedExplorerDimension) {
+    return apiError(req, 400, e.message, { code: e.code, ...(e.dimension ? { dimension: e.dimension } : {}) });
+  }
   console.error("[api/v1]", req.nextUrl.pathname, e);
   // Dogfooding : remonte l'incident dans la page /logs (après la réponse, best-effort).
   // La corrélation est capturée MAINTENANT, pas dans le callback : le contexte
@@ -173,6 +180,81 @@ async function segments(route: RouteCtx): Promise<Record<string, string>> {
     else if (Array.isArray(v) && typeof v[0] === "string") params[k] = v[0];
   }
   return params;
+}
+
+export interface ApiQueryContext {
+  req: NextRequest;
+  principal: ApiPrincipal;
+  /** Corps JSON déjà borné et désérialisé ; sa validation appartient à la route. */
+  body: unknown;
+}
+
+/**
+ * Handler POST de LECTURE (Explorer P6.4). Un POST, pas parce qu'il écrit — il
+ * n'écrit rien — mais parce qu'une requête analytique ne tient pas dans une query
+ * string : elle porte un AST. D'où trois conséquences assumées :
+ *
+ *   · MÊME AUTH QUE `GET` : jeton `CONSOLE_API_TOKENS` en lecture seule accepté,
+ *     session admin ou viewer aussi. `handleMutation` les refuse, lui — et c'est
+ *     justement pourquoi ce chemin est séparé plutôt que réutilisé.
+ *   · AUCUNE GARDE CSRF D'ÉCRITURE : elle protège un changement d'état, et il n'y
+ *     en a pas. Le périmètre reste celui du principal signé ; une origine tierce
+ *     ne lit la réponse que si le CORS l'autorise déjà.
+ *   · `no-store` : la réponse dépend d'un corps, qu'aucun cache HTTP ne sait
+ *     prendre en compte. Mieux vaut ne pas la mettre en cache que la partager.
+ *
+ * Corps refusé au-delà de `maxBytes` (413) ou s'il n'est pas du JSON (400).
+ */
+export function handleQuery(
+  fn: (ctx: ApiQueryContext) => Promise<{ meta: Record<string, unknown>; data: unknown }>,
+  options: { maxBytes: number },
+) {
+  return async (req: NextRequest) => {
+    const principal = await authenticateApi(
+      req.headers.get("authorization"),
+      req.cookies.get(SESSION_COOKIE)?.value ?? null,
+    );
+    if (!principal)
+      return apiError(req, 401, "authentification requise (cookie de session ou en-tête Authorization: Bearer <token>)");
+
+    const limit = rlLimit();
+    let rl: RateResult | null = null;
+    if (limit > 0) {
+      rl = rateLimit(`${principal.kind}:${principal.subject}`, limit, RL_WINDOW_MS, Date.now());
+      if (!rl.ok) {
+        const res = apiError(req, 429, "trop de requêtes — réessaie dans un instant");
+        applyRate(res.headers, rl);
+        res.headers.set("Retry-After", String(Math.ceil(rl.resetMs / 1000)));
+        return res;
+      }
+    }
+
+    const tropGros = `corps de requête trop volumineux (${Math.floor(options.maxBytes / 1024)} Kio au plus)`;
+    // L'en-tête annoncé est vérifié AVANT la lecture ; la lecture le revérifie
+    // octet par octet, car un client peut annoncer moins qu'il n'envoie.
+    if (bodyTooLarge(req.headers.get("content-length"), options.maxBytes))
+      return apiError(req, 413, tropGros, { code: "body_too_large" });
+    if (!req.body) return apiError(req, 400, "corps JSON requis", { code: "invalid_query" });
+    let body: unknown;
+    try {
+      const flux = req.body as unknown as AsyncIterable<Uint8Array>;
+      body = JSON.parse((await lireCorpsLimite(flux, { max: options.maxBytes })).toString("utf8"));
+    } catch (e) {
+      if (e instanceof ErreurUpload && e.statut === 413) return apiError(req, 413, tropGros, { code: "body_too_large" });
+      return apiError(req, 400, "corps JSON invalide", { code: "invalid_query" });
+    }
+
+    try {
+      const { meta, data } = await fn({ req, principal, body });
+      const headers = new Headers(corsHeaders(req.headers.get("origin")));
+      headers.set("Cache-Control", "no-store");
+      headers.append("Vary", "Authorization, Cookie");
+      if (rl) applyRate(headers, rl);
+      return NextResponse.json({ meta: { ...meta, generatedAt: new Date().toISOString() }, data }, { headers });
+    } catch (e) {
+      return erreurHandler(req, e);
+    }
+  };
 }
 
 export interface ApiMutationContext {

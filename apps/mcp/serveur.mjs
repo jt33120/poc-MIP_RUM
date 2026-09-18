@@ -9,7 +9,7 @@
 // exactement le même comportement, et aux tests de l'exercer sans réseau.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { OUTILS, PARAMS, construireChemin } from "./lib/catalogue.mjs";
+import { OUTILS, PARAMS, construireChemin, construireCorps } from "./lib/catalogue.mjs";
 import { ErreurApi } from "./lib/client.mjs";
 import { avertissementPerimetre, enMarkdown, indicesPage } from "./lib/rendu.mjs";
 
@@ -32,6 +32,7 @@ Limites à respecter, elles ne sont pas contournables :
 - Le détail d'un groupe d'erreurs ou d'une issue porte l'app de la RESSOURCE, qui peut différer de celle demandée : l'outil le signale explicitement. Lire cet avertissement avant de conclure.
 - La liste des sessions est paginée sans total. Les groupes d'erreurs, les issues et l'Explorer d'événements fournissent un total filtré ; le détail d'un groupe d'erreurs et l'Explorer paginent par curseur opaque stable (data.page.next_cursor), les issues et leur détail par data.next_cursor.
 - Pas de données personnelles : les utilisateurs sont des empreintes anonymes.
+- Une question qu'aucun outil ne couvre se compose avec mip_rum_query_explorer : jeu de données, mesure, regroupement. Son catalogue est FERMÉ — un champ absent n'est pas mesurable, et le refus ne dit pas s'il existe ailleurs. Un dénombrement vide vaut 0, une moyenne ou un percentile sans échantillon vaut null, et une requête trop large échoue (503) sans rendre de chiffre : ne pas lire cet échec comme un zéro.
 
 Si un chiffre demandé n'est dans aucune réponse, le dire — ne pas l'estimer.`;
 
@@ -72,6 +73,30 @@ function schemaParam(nom) {
       return z.string().min(1).max(200).optional().describe(d);
     case "issue_id":
       return z.string().uuid().describe(d);
+    // Explorer (P6.4). Les listes fermées sont recopiées du registre côté console :
+    // le serveur MCP refuse alors une valeur inexistante AVANT l'appel réseau, et
+    // l'API refuse de toute façon celles qu'il laisserait passer.
+    case "dataset":
+      return z.enum([
+        "custom_events", "errors", "views", "sessions", "vitals", "resources", "longtasks", "actions", "spans",
+      ]).describe(d);
+    case "measure":
+      return z.string().regex(/^[a-z_]{1,60}:(count|sum|avg|p75|p95|distinct)$/).describe(d);
+    case "measure_property":
+      return z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/).optional().describe(d);
+    case "variant":
+      return z.string().min(1).max(60).optional().describe(d);
+    case "group_by":
+      return z.string().regex(/^[a-z_]{1,60}(,[a-z_]{1,60})?$/).optional().describe(d);
+    case "visualization":
+      return z.enum(["value", "toplist", "timeseries", "table"]).optional().describe(d);
+    case "browser":
+    case "os":
+    case "env":
+    case "service":
+    case "route":
+    case "country":
+      return z.string().min(1).max(500).optional().describe(d);
     // Les segments de chemin sont les SEULS paramètres requis : sans eux il n'y
     // a pas d'URL à construire.
     case "fingerprint":
@@ -100,7 +125,10 @@ export function schemaEntree(outil) {
  */
 export async function executer(outil, args, client) {
   const chemin = construireChemin(outil, args);
-  const corps = await client.appeler(chemin);
+  // `construireCorps` rend null pour les outils qui lisent par GET : le client
+  // ne poste que lorsqu'il y a réellement un corps à envoyer.
+  const requete = construireCorps(outil, args);
+  const corps = await client.appeler(chemin, requete ? { corps: requete } : {});
 
   const avert = avertissementPerimetre(args.app, corps?.meta);
   const page = indicesPage(corps?.data);

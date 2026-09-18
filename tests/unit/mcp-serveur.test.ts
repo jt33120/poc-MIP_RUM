@@ -12,7 +12,7 @@
 //      présentés comme ceux de l'app demandée) ;
 //   3. le rendu (un champ perdu se lit comme un zéro).
 import { describe, expect, it } from "vitest";
-import { OUTILS, PARAMS, construireChemin, outilParNom } from "../../apps/mcp/lib/catalogue.mjs";
+import { OUTILS, PARAMS, construireChemin, construireCorps, outilParNom } from "../../apps/mcp/lib/catalogue.mjs";
 import { ErreurApi, creerClient } from "../../apps/mcp/lib/client.mjs";
 import { avertissementPerimetre, enMarkdown, indicesPage } from "../../apps/mcp/lib/rendu.mjs";
 import { INSTRUCTIONS, executer, schemaEntree } from "../../apps/mcp/serveur.mjs";
@@ -23,15 +23,18 @@ const outil = (nom: string) => {
   return o;
 };
 
-/** Client factice : mémorise le chemin demandé, renvoie l'enveloppe fournie. */
+/** Client factice : mémorise chemin et corps demandés, renvoie l'enveloppe fournie. */
 function clientFactice(enveloppe: unknown, erreur?: Error) {
   const vus: string[] = [];
+  const corpsVus: unknown[] = [];
   return {
     vus,
+    corpsVus,
     client: {
       racine: "http://console/api/v1",
-      async appeler(chemin: string) {
+      async appeler(chemin: string, options: { corps?: unknown } = {}) {
         vus.push(chemin);
+        corpsVus.push(options.corps ?? null);
         if (erreur) throw erreur;
         return enveloppe;
       },
@@ -73,10 +76,28 @@ describe("catalogue — le contrat exposé à l'IA", () => {
   // La garantie centrale du serveur : aucun outil n'écrit. `POST /api/v1/deploys` et
   // les écritures du workflow des issues (P5.6) existent côté API et ne sont
   // délibérément pas exposés — ce test échoue si quelqu'un les ajoute sans y repenser.
+  //
+  // CE TEST A CHANGÉ DE PRÉDICAT EN P6.4, ET C'EST LE POINT INTÉRESSANT. Il
+  // vérifiait « aucun outil ne fait de POST », en tenant le verbe pour la
+  // définition de l'écriture. L'Explorer casse cette équivalence : il LIT par
+  // POST, parce que son AST ne tient pas dans une query string, et l'API
+  // l'authentifie comme ses GET. Le verbe ne dit donc plus rien ; ce qui compte
+  // est la ROUTE visée. Un outil qui poste doit viser une route de lecture
+  // explicitement listée ici — ajouter un POST vers une route d'écriture échoue,
+  // et ajouter une route à cette liste est une décision visible en revue.
+  const LECTURES_EN_POST = ["/explorer/query"];
+
   it("n'expose que de la lecture", () => {
-    expect(OUTILS.every((o) => !("methode" in o) || o.methode === "GET")).toBe(true);
+    for (const outil of OUTILS) {
+      if (!("corps" in outil) || !outil.corps) continue;
+      expect(LECTURES_EN_POST, outil.nom).toContain(outil.chemin);
+    }
     expect(OUTILS.some((o) => /deploy|create|record|delete|triage|comment|link|assign/i.test(o.nom))).toBe(false);
     expect(OUTILS.some((o) => /\/(deploys|triage|comments|links)$/.test(o.chemin))).toBe(false);
+    // Les outils P4/P5 gardent leur contrat : aucun d'eux ne s'est mis à poster.
+    for (const nom of ["mip_rum_list_events", "mip_rum_list_errors", "mip_rum_list_issues", "mip_rum_get_issue"]) {
+      expect("corps" in outil(nom), nom).toBe(false);
+    }
   });
 });
 
@@ -467,5 +488,154 @@ describe("executer — de l'appel d'outil à la réponse", () => {
   it("propage l'erreur du client sans la maquiller", async () => {
     const { client } = clientFactice(null, new ErreurApi("message d'origine", 429));
     await expect(executer(outil("mip_rum_list_apps"), {}, client)).rejects.toThrow("message d'origine");
+  });
+});
+
+// ─────────────────────── Explorer générique (P6.4) ───────────────────────────
+//
+// Le quinzième outil est le seul qui POSTE, et le seul dont la requête entière
+// tient dans un corps. Ce qui doit être vrai : le corps est l'AST attendu par
+// l'API — pas un dialecte de plus —, rien ne part en double dans la query
+// string, et le rendu ne confond pas les groupes d'un graphe avec une page de
+// journal.
+describe("mip_rum_query_explorer — l'AST, pas un dialecte", () => {
+  const OUTIL = "mip_rum_query_explorer";
+
+  it("n'écrit RIEN dans la query string : tout est dans le corps", () => {
+    expect(construireChemin(outil(OUTIL), { app: "alpha", dataset: "errors", measure: "occurrences:sum" })).toBe(
+      "/explorer/query",
+    );
+  });
+
+  it("construit l'AST attendu par l'API, dimensions comprises", () => {
+    expect(
+      construireCorps(outil(OUTIL), {
+        app: "alpha",
+        period: "7d",
+        dataset: "errors",
+        measure: "occurrences:sum",
+        browser: "Firefox",
+        device: "mobile",
+        group_by: "release,route",
+        visualization: "timeseries",
+        limit: 5,
+      }),
+    ).toEqual({
+      version: 1,
+      app: "alpha",
+      range: { preset: "7d" },
+      dataset: "errors",
+      measure: { aggregation: "sum", field: "occurrences" },
+      filters: [
+        { field: "device", operator: "eq", type: "string", value: "mobile" },
+        { field: "browser", operator: "eq", type: "string", value: "Firefox" },
+      ],
+      groupBy: ["release", "route"],
+      visualization: "timeseries",
+      limit: 5,
+    });
+  });
+
+  it("`device=all` n'est pas un appareil : c'est l'absence de filtre", () => {
+    const corps = construireCorps(outil(OUTIL), { dataset: "views", measure: "rows:count", device: "all" }) as {
+      filters: unknown[];
+      range: unknown;
+    };
+    expect(corps.filters).toEqual([]);
+    // Défaut identique à celui de toute l'API : 24 h, jamais une fenêtre muette.
+    expect(corps.range).toEqual({ preset: "24h" });
+  });
+
+  it("porte la propriété, la sous-population et le curseur quand ils sont demandés", () => {
+    expect(
+      construireCorps(outil(OUTIL), {
+        dataset: "custom_events",
+        measure: "prop:p95",
+        measure_property: "amount",
+        variant: "custom",
+        cursor: "abc",
+        visualization: "table",
+      }),
+    ).toMatchObject({
+      measure: { aggregation: "p95", field: "prop", property: "amount" },
+      variant: "custom",
+      cursor: "abc",
+    });
+  });
+
+  it("refuse une mesure mal formée AVANT tout appel réseau", () => {
+    expect(() => construireCorps(outil(OUTIL), { dataset: "errors", measure: "occurrences" })).toThrow(/champ:agrégation/);
+  });
+
+  it("les outils qui lisent par GET n'envoient aucun corps", () => {
+    expect(construireCorps(outil("mip_rum_list_errors"), { app: "alpha" })).toBeNull();
+  });
+
+  it("le schéma d'entrée ferme les listes que le registre ferme", () => {
+    const forme = schemaEntree(outil(OUTIL)) as Record<string, { safeParse: (v: unknown) => { success: boolean } }>;
+    expect(forme.dataset.safeParse("errors").success).toBe(true);
+    expect(forme.dataset.safeParse("rum_error").success).toBe(false);
+    expect(forme.measure.safeParse("occurrences:sum").success).toBe(true);
+    expect(forme.measure.safeParse("occurrences:median").success).toBe(false);
+    expect(forme.visualization.safeParse("heatmap").success).toBe(false);
+    expect(forme.group_by.safeParse("release,route").success).toBe(true);
+    expect(forme.group_by.safeParse("release,route,env").success).toBe(false);
+  });
+
+  it("poste le corps et rend le résultat sans le retoucher", async () => {
+    const enveloppe = {
+      meta: { app: "alpha", period: "24h", dataset: "errors", unit: "occurrences", generatedAt: "2026-09-17T12:00:00.000Z" },
+      data: { total: 38, samples: 12, groups: [{ key: ["v1"], value: 38, samples: 12 }], series: [], rows: [], next_cursor: null },
+    };
+    const { client, vus, corpsVus } = clientFactice(enveloppe);
+    const result = await executer(outil(OUTIL), { app: "alpha", dataset: "errors", measure: "occurrences:sum" }, client);
+    expect(vus).toEqual(["/explorer/query"]);
+    expect(corpsVus[0]).toMatchObject({ dataset: "errors", measure: { aggregation: "sum", field: "occurrences" } });
+    expect(result.structure).toMatchObject({ data: { total: 38 } });
+  });
+
+  it("ne prend pas les groupes d'un graphe pour une page de journal", () => {
+    // `groups` et `series` ne sont pas paginés : seule `rows` l'est. Compter les
+    // groupes enverrait l'IA chercher une suite qui n'existe pas.
+    expect(
+      indicesPage({ total: 7, samples: 7, groups: [{ key: ["a"] }, { key: ["b"] }], series: [], rows: [], next_cursor: null }),
+    ).toMatchObject({ recus: 0, peut_avoir_suite: false, total: 7 });
+    expect(
+      indicesPage({ total: 7, samples: 7, groups: [], series: [], rows: [{ date: "x" }, { date: "y" }], next_cursor: "suite" }),
+    ).toMatchObject({ recus: 2, peut_avoir_suite: true, cursor_suivant: "suite" });
+  });
+});
+
+describe("messages d'erreur de l'Explorer : actionnables, jamais confondus avec un résultat", () => {
+  async function statut(code: number, corps: unknown): Promise<string> {
+    const client = creerClient({
+      base: "http://console",
+      jeton: "j",
+      fetchImpl: async () => new Response(JSON.stringify(corps), { status: code }),
+    });
+    try {
+      await client.appeler("/explorer/query", { corps: { dataset: "errors" } });
+      throw new Error("aurait dû échouer");
+    } catch (e) {
+      return (e as Error).message;
+    }
+  }
+
+  it("un budget dépassé dit qu'il n'y a PAS de résultat, et quoi réduire", async () => {
+    const message = await statut(503, { error: "budget dépassé", code: "query_budget_exceeded" });
+    expect(message).toMatch(/Réduire la période/);
+    expect(message).toMatch(/PAS un résultat à zéro/);
+  });
+
+  it("une indisponibilité serveur reste une panne, pas une requête à corriger", async () => {
+    expect(await statut(503, { error: "maintenance" })).toMatch(/panne côté serveur/);
+  });
+
+  it("un 400 donne le code stable du contrat plutôt qu'un numéro nu", async () => {
+    expect(await statut(400, { error: "mesure inconnue", code: "unsupported_measure" })).toContain("unsupported_measure");
+  });
+
+  it("un corps trop volumineux dit quoi enlever", async () => {
+    expect(await statut(413, { error: "trop gros", code: "body_too_large" })).toMatch(/Réduire le nombre de filtres/);
   });
 });

@@ -33,6 +33,9 @@ export const CATEGORIES: NavCategory[] = [
       { href: "/ux", label: "Frustration" },
       { href: "/actions", label: "Actions" },
       { href: "/events", label: "Événements" },
+      // Explorer générique (P6.4) : la même fenêtre et les mêmes filtres que les
+      // écrans voisins, mais la mesure se compose au lieu d'être prédéfinie.
+      { href: "/explorer", label: "Explorer" },
       { href: "/experience", label: "Expérience" },
     ],
   },

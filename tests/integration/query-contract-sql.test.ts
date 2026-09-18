@@ -297,11 +297,18 @@ type Console = Awaited<ReturnType<typeof consoleSur>>;
   });
 
   it("une dimension qu'un jeu de données ne porte pas est refusée, jamais ignorée", async () => {
-    for (const { ecran, lire } of COMPTEURS.filter((c) => c.ecran !== "Erreurs")) {
+    // `service` n'est déclaré que là où un émetteur backend le pose : les erreurs
+    // (v69) et la projection d'événements (v75). Partout ailleurs, le filtre est
+    // refusé — jamais appliqué à moitié.
+    const PORTENT_SERVICE = ["Erreurs", "Explorer d'événements"];
+    for (const { ecran, lire } of COMPTEURS.filter((c) => !PORTENT_SERVICE.includes(c.ecran))) {
       await expect(lire(filtres(`app=${A}&service=api`)), ecran).rejects.toThrow(/Service/);
     }
-    // Les erreurs portent `service` depuis v69 : le filtre s'applique (aucune ligne ici).
-    expect(await lib.listErrorGroups(filtres(`app=${A}&service=api`), PAGE).then((r) => r.totals.occurrences)).toBe(0);
+    // Là où il est porté, il s'applique vraiment : aucune ligne de la recette ne
+    // déclare `service`, donc zéro — pas le total non filtré.
+    for (const { ecran, lire } of COMPTEURS.filter((c) => PORTENT_SERVICE.includes(c.ecran))) {
+      expect(await lire(filtres(`app=${A}&service=api`)), ecran).toBe(0);
+    }
   });
 
   it("la sonde de schéma voit exactement les colonnes présentes", async () => {

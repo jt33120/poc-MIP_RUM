@@ -178,6 +178,7 @@ export function buildOpenApi(): Record<string, unknown> {
     tags: [
       { name: "meta", description: "Découverte, santé, spec" },
       { name: "rum", description: "Agrégats RUM" },
+      { name: "explorer", description: "Explorer générique : registre de capacités et requête analytique bornée" },
     ],
     paths: {
       "/health": {
@@ -380,6 +381,36 @@ export function buildOpenApi(): Record<string, unknown> {
           { params: commonFilters },
         ),
       },
+      "/explorer/schema": {
+        get: get(
+          "Explorer : registre des capacités (jeux, mesures, dimensions, limites)",
+          "explorer",
+          ref("ExplorerSchema"),
+        ),
+      },
+      "/explorer/query": {
+        // POST, et pourtant une LECTURE : l'AST ne tient pas dans une query string.
+        // Même authentification que les GET — un jeton en lecture seule l'appelle.
+        post: {
+          summary: "Explorer : exécuter une requête analytique bornée (lecture)",
+          tags: ["explorer"],
+          security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: ref("ExplorerQuery") } },
+          },
+          responses: {
+            "200": { description: "OK", content: { "application/json": { schema: ref("ExplorerResult") } } },
+            "400": ref0("BadRequest"),
+            "401": ref0("Unauthorized"),
+            "403": ref0("Forbidden"),
+            "413": ref0("PayloadTooLarge"),
+            "429": ref0("RateLimited"),
+            "500": ref0("ServerError"),
+            "503": ref0("BudgetExceeded"),
+          },
+        },
+      },
     },
     components: {
       securitySchemes: {
@@ -439,6 +470,8 @@ export function buildOpenApi(): Record<string, unknown> {
         NotFound: { description: "Ressource inconnue (ou hors-scope)", content: { "application/json": { schema: ref("Error") } } },
         RateLimited: { description: "Trop de requêtes (voir en-têtes RateLimit-* / Retry-After)", content: { "application/json": { schema: ref("Error") } } },
         ServerError: { description: "Erreur interne", content: { "application/json": { schema: ref("Error") } } },
+        PayloadTooLarge: { description: "Corps de requête au-delà de 32 Kio (code body_too_large)", content: { "application/json": { schema: ref("Error") } } },
+        BudgetExceeded: { description: "Budget de lecture dépassé (code query_budget_exceeded) : la requête n'a pas abouti — ce n'est jamais un résultat à zéro", content: { "application/json": { schema: ref("Error") } } },
         Unavailable: { description: "Schéma requis non migré (ex. migration-v73 pour le workflow des issues)", content: { "application/json": { schema: ref("Error") } } },
       },
       schemas: {
@@ -451,6 +484,9 @@ export function buildOpenApi(): Record<string, unknown> {
               enum: [
                 "no_app_access", "forbidden_app", "invalid_range", "range_conflict", "range_too_long",
                 "range_in_future", "invalid_filter", "too_many_conditions", "ambiguous_parameter", "unsupported_dimension",
+                // Explorer (P6.4) : validation de l'AST, curseur et budget de lecture.
+                "invalid_query", "unsupported_dataset", "unsupported_measure", "unsupported_visualization",
+                "invalid_cursor", "stale_cursor", "body_too_large", "query_budget_exceeded",
               ],
             },
             parameter: str,
@@ -883,6 +919,147 @@ export function buildOpenApi(): Record<string, unknown> {
 
         HealthGridCell: o({ day: str, hour: int, good_w: num, total_w: num }, ["day", "hour"]),
         DailyTraffic: o({ day: str, pageviews: num, errors: num }, ["day"]),
+
+        // ───────────────────────── Explorer générique (P6.4) ─────────────────
+        //
+        // Le registre décrit des CAPACITÉS : identifiants d'API, libellés, unités
+        // et limites. Ni table, ni colonne, ni valeur de client n'y figurent.
+        ExplorerSchema: o(
+          {
+            version: int,
+            operators: arr({ type: "string", enum: ["eq", "neq", "is_null"] }),
+            visualizations: arr(o({ id: str, label: str }, ["id", "label"])),
+            limits: o({
+              conditions: int,
+              group_by: int,
+              groups: int,
+              rows: int,
+              body_bytes: int,
+              dimension_name: int,
+              value: int,
+            }),
+            capabilities: o({ save_to_dashboard: bool }, ["save_to_dashboard"]),
+            datasets: arr(ref("ExplorerDataset")),
+          },
+          ["version", "operators", "visualizations", "limits", "capabilities", "datasets"],
+        ),
+        ExplorerDataset: o(
+          {
+            id: str,
+            label: str,
+            summary: str,
+            population: str,
+            variant: nul(o({ id: str, label: str, values: arr(str), required: bool })),
+            fields: arr(ref("ExplorerField")),
+            dimensions: arr(o({ id: str, label: str, available: bool, reason: nul(str) }, ["id", "available"])),
+            columns: arr(o({ id: str, label: str }, ["id", "label"])),
+            notices: arr(str),
+          },
+          ["id", "label", "population", "fields", "dimensions", "columns", "notices"],
+        ),
+        ExplorerField: o(
+          {
+            id: str,
+            label: str,
+            unit: str,
+            aggregations: arr({ type: "string", enum: ["count", "sum", "avg", "p75", "p95", "distinct"] }),
+            additive: arr(str),
+            requiresProperty: bool,
+            variant: nul(str),
+            bucketable: bool,
+            notice: nul(str),
+          },
+          ["id", "label", "unit", "aggregations", "additive"],
+        ),
+        ExplorerQuery: o(
+          {
+            version: { ...int, description: "1 — seule version acceptée" },
+            app: nul(str),
+            range: {
+              description: "EXACTEMENT { preset } ou { from, to } ; les deux ensemble reçoivent 400 range_conflict",
+              oneOf: [
+                o({ preset: { type: "string", enum: ["1h", "24h", "7d"] } }, ["preset"]),
+                o({ from: dateTime, to: dateTime }, ["from", "to"]),
+              ],
+            },
+            dataset: { ...str, description: "identifiant du registre (GET /explorer/schema)" },
+            measure: o(
+              {
+                aggregation: { type: "string", enum: ["count", "sum", "avg", "p75", "p95", "distinct"] },
+                field: str,
+                property: { ...str, description: "clé de propriété numérique, pour les mesures qui l'exigent" },
+              },
+              ["aggregation", "field"],
+            ),
+            variant: { ...str, description: "sous-population fermée du jeu (métrique, API, palier, type)" },
+            filters: arr(
+              o(
+                {
+                  field: str,
+                  operator: { type: "string", enum: ["eq", "neq", "is_null"] },
+                  type: { type: "string", enum: ["string"] },
+                  value: dimension,
+                },
+                ["field", "operator"],
+              ),
+            ),
+            groupBy: { type: "array", items: str, maxItems: 2, description: "2 dimensions au plus, 50 combinaisons au total" },
+            visualization: { type: "string", enum: ["value", "toplist", "timeseries", "table"] },
+            limit: { ...int, description: "1..50 pour les groupes, 1..200 pour le journal" },
+            cursor: { ...str, description: "page suivante du journal ; lié à la requête et à la plage résolue" },
+            includeBots: bool,
+            includeInternal: bool,
+          },
+          ["dataset", "measure", "range"],
+        ),
+        ExplorerResult: o({ meta: ref("ExplorerMeta"), data: ref("ExplorerData") }, ["meta", "data"]),
+        ExplorerMeta: o(
+          {
+            app: str,
+            period: str,
+            query_version: int,
+            generatedAt: dateTime,
+            effective_apps: nul(arr(str)),
+            range: ref("MetaRange"),
+            dataset: str,
+            measure: str,
+            unit: str,
+            aggregation: str,
+            additive: { ...bool, description: "false : ni seau à zéro, ni ligne « Autres » (percentile, distincts)" },
+            counting: str,
+            source: { type: "string", enum: ["raw"] },
+            group_by: arr(str),
+            visualization: str,
+            warnings: arr(str),
+            coverage: o({ status: { type: "string", enum: ["complete", "partial", "unknown"] }, reason: nul(str) }),
+            truncated_groups: { ...bool, description: "true : des combinaisons existent au-delà de la limite demandée" },
+            query: { type: "object", description: "AST canonique rejouable ; aucune donnée de résultat" },
+          },
+          ["query_version", "range", "dataset", "unit", "aggregation", "counting", "source", "coverage"],
+        ),
+        ExplorerData: o(
+          {
+            total: nul(num),
+            samples: int,
+            groups: arr(ref("ExplorerGroup")),
+            series: arr(ref("ExplorerPoint")),
+            rows: arr({ type: "object", description: "projection fermée du jeu (GET /explorer/schema → columns)" }),
+            next_cursor: nul(str),
+          },
+          ["total", "samples", "groups", "series", "rows", "next_cursor"],
+        ),
+        ExplorerGroup: o(
+          {
+            key: { type: "array", items: nul(str), description: "TUPLE aussi long que groupBy — jamais une concaténation" },
+            value: nul(num),
+            samples: int,
+          },
+          ["key", "value", "samples"],
+        ),
+        ExplorerPoint: o(
+          { start: dateTime, end: dateTime, key: arr(nul(str)), value: nul(num), samples: int },
+          ["start", "end", "key", "value", "samples"],
+        ),
       },
     },
   };

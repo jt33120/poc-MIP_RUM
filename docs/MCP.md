@@ -34,9 +34,13 @@ Le dépôt a déjà payé le prix d'une règle d'accès écrite deux fois : il a
 **trois** implémentations de l'ingestion, et le serveur de développement
 acceptait une app sans clé là où la production la rejetait.
 
-**Lecture seule.** Les quatorze outils sont des `GET`. `POST /api/v1/deploys` et les
-écritures du workflow des issues (`/issues/{id}/triage`, `/comments`, `/links`)
-existent côté API et ne sont **pas** exposés — donner à un agent conversationnel de
+**Lecture seule.** Quatorze des quinze outils sont des `GET`. Le quinzième,
+`mip_rum_query_explorer`, poste son AST sur `POST /api/v1/explorer/query` — parce
+qu'une requête analytique ne tient pas dans une query string, **pas** parce qu'elle
+écrit : cette route n'écrit rien et s'authentifie exactement comme les `GET`.
+`POST /api/v1/deploys` et les écritures du workflow des issues
+(`/issues/{id}/triage`, `/comments`, `/links`) existent côté API et ne sont **pas**
+exposés — donner à un agent conversationnel de
 quoi écrire en production est une décision qui se prend à froid, pas un oubli qu'on
 comble. Ces écritures refusent d'ailleurs tout jeton d'API : seule une session admin
 de la console les passe. Un test verrouille cette absence.
@@ -98,13 +102,16 @@ Chaque enveloppe porte, en plus de `meta.app`, `meta.period` et `meta.device` :
 | `meta.filters` | les conditions appliquées, l'inclusion des robots et des apps internes |
 
 Un filtre qu'une mesure ne sait pas appliquer n'est jamais ignoré : l'API répond
-`400` avec `code: "unsupported_dimension"` et la dimension en cause. Les outils
-MCP n'exposent aujourd'hui que `app`, `period` et `device` ; les dimensions
-(navigateur, système, release…) arriveront avec l'Explorer générique (P6.4).
+`400` avec `code: "unsupported_dimension"` et la dimension en cause. Les quatorze
+outils historiques n'exposent que `app`, `period` et `device` : leurs endpoints
+existaient avant le contrat commun, et leur ajouter des dimensions sans migrer leurs
+mesures annoncerait un filtre qu'elles ignorent. `mip_rum_query_explorer` (P6.4), lui,
+porte les dimensions du contrat — navigateur, système, environnement, service,
+release, route, pays — en égalité exacte.
 
 ---
 
-## 3. Les quatorze outils
+## 3. Les quinze outils
 
 Tous acceptent un `format` (`json` par défaut, ou `markdown`). Tous, sauf
 `mip_rum_list_apps` et `mip_rum_get_session`, portent les filtres communs `app`,
@@ -126,6 +133,35 @@ Tous acceptent un `format` (`json` par défaut, ou `markdown`). Tous, sauf
 | `mip_rum_get_tracing` | `/tracing` | « le backend est-il en cause ? » |
 | `mip_rum_get_correlation` | `/correlation` | « pourquoi le monitoring est au vert et les utilisateurs se plaignent ? » |
 | `mip_rum_get_health_grid` | `/health-grid` | « est-ce toujours le lundi matin ? » |
+| `mip_rum_query_explorer` | `POST /explorer/query` | « et cette mesure-là, découpée comme ça ? » — la question qu'aucun des quatorze autres ne couvre |
+
+### `mip_rum_query_explorer` : composer une mesure, pas en choisir une
+
+Les quatorze premiers outils répondent chacun à une question fixée d'avance. Le
+quinzième laisse le modèle **composer** la sienne : quel jeu de données
+(`dataset`), quelle mesure (`measure`, sous la forme `champ:agrégation`), quel
+découpage (`group_by`, deux dimensions au plus) et sous quelle forme
+(`visualization`). C'est exactement l'AST de l'écran `/explorer` : mêmes bornes,
+mêmes refus, même registre.
+
+Le registre est **fermé**. Un jeu, une mesure ou une dimension absents reçoivent
+un `400` typé (`unsupported_dataset`, `unsupported_measure`,
+`unsupported_dimension`) — jamais un filtre ignoré, jamais une mesure approchée
+par une autre. Un champ qui n'est pas au catalogue — message d'erreur, pile, URL
+brute, identité — n'est pas mesurable, et le refus ne dit pas s'il existe
+ailleurs. `GET /api/v1/explorer/schema` publie ce registre.
+
+Trois pièges que la description de l'outil énonce au modèle, parce qu'ils se
+lisent tous comme un chiffre :
+
+- **`0` et `null` ne sont pas la même chose.** Un dénombrement réellement vide
+  vaut `0` ; une moyenne ou un percentile sans échantillon vaut `null`.
+- **`503 query_budget_exceeded` n'est pas un résultat.** La requête n'a pas
+  abouti : il faut réduire la période, les groupes ou les filtres. Une série de
+  zéros se lirait comme une absence de trafic.
+- **Le journal ne fait pas les graphes.** `rows` est paginé par curseur ; total,
+  groupes et série sont calculés sur toute la population, dans le même
+  instantané.
 
 ### Ce que les outils disent au modèle, et qui compte
 
@@ -157,8 +193,8 @@ transformation. La convention MCP recommande l'inverse ; ici la valeur du
 produit est l'exactitude d'un chiffre, et toute mise en forme est une occasion
 d'en perdre un.
 
-Le rendu `markdown` existe et reste **générique** : une fonction pour les quatorze
-outils, pas quatorze gabarits. Un gabarit oublié n'échoue pas — il affiche l'ancienne
+Le rendu `markdown` existe et reste **générique** : une fonction pour les quinze
+outils, pas quinze gabarits. Un gabarit oublié n'échoue pas — il affiche l'ancienne
 colonne comme si elle était toute la vérité.
 
 En JSON, ce que le serveur MCP a constaté est rangé à part, sous `_mcp`
@@ -274,7 +310,7 @@ Un `POST /mcp` sans `Authorization` doit répondre `401` avec un en-tête
 
 ## 7. Limites connues
 
-- **Quatorze outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
+- **Quinze outils, pas toute la console.** Ce qui n'est pas dans l'API v1 n'est pas
   exposé : SLO, alertes, tableaux de bord, replay, logs, SVI. Les ajouter passe
   par l'API d'abord, jamais par un accès direct depuis le serveur MCP.
 - **Pas de total sur les sessions.** L'API n'en fournit pas ; le serveur ne
