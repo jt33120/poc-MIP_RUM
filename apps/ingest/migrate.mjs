@@ -6,6 +6,21 @@
 // faisait rejeter tout un lot d'ingestion (constaté). Ici, la migration devient
 // une étape du déploiement : le schéma ne peut plus être en retard sur le code.
 //
+// QUI L'APPELLE EN PRODUCTION. Le service Railway `scheduler`, en commande de
+// PRÉ-DÉPLOIEMENT (`node node_modules/ingest/migrate.mjs`). C'est délibérément le
+// service dont la disparition se verrait tout de suite : il porte la boucle
+// d'alertes, de SLO et de notifications. Confier les migrations à un service
+// qu'on peut oublier, c'est accepter qu'elles cessent un jour de s'appliquer sans
+// que personne ne le remarque — ce qui a failli arriver quand elles vivaient dans
+// le pré-déploiement d'un receveur que plus rien n'atteignait.
+//
+// ATTENTION AU `redeploy`. Un redéploiement Railway rejoue l'instantané d'un
+// déploiement existant et N'EXÉCUTE PAS la commande de pré-déploiement — vérifié
+// le 18/09/2026 en y plaçant volontairement une commande qui échoue : le
+// déploiement est quand même passé au vert. Seul un vrai déploiement, déclenché
+// par un commit touchant les chemins surveillés du service, applique les
+// migrations. Un `redeploy` ne prouve donc RIEN sur cette étape.
+//
 // CE QU'IL NE FAIT PAS. Pas de rollback : une migration descendante qui se
 // trompe fait plus de dégâts qu'elle n'en répare, et aucune des 52 migrations
 // de ce dépôt n'en a jamais eu. On avance, on ne recule pas.
