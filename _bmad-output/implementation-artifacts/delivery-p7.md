@@ -11,7 +11,7 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 | Sous-lot | PR | Migration | Implémenté | Testé localement | CI | Déployé | Vérifié sur vraie app |
 |---|---|---|---|---|---|---|---|
 | P7.1 — primitives pures et enveloppe RN | — | **aucune** | oui | oui | — | non | non |
-| P7.2 — consentement, visiteur, transport | — | **aucune** | oui | oui | — | non | non |
+| P7.2 — consentement, visiteur, transport | [#202](https://github.com/jt33120/poc-MIP_RUM/pull/202) | **aucune** | oui | oui | verte | non | non |
 | P7.3 — navigation, actions, erreurs JS | — | **aucune** | oui | oui | — | non | non |
 | P7.4 — API Node et FastAPI | — | — | non | — | — | — | — |
 | P7.5 — `/mobile`, API/MCP, distribution | — | — | non | — | — | — | — |
@@ -233,6 +233,14 @@ et `adapters.ts` (les seuls points de contact avec la plateforme).
 
 Base de test jetable dédiée (`p72_transport` sur le PostgreSQL 15 local, port 5433), supprimée après la
 recette. `DATABASE_URL` n'a jamais été utilisée.
+
+CI de [#202](https://github.com/jt33120/poc-MIP_RUM/pull/202) **verte** : « Build SDK + tests
+unitaires » et « E2E Playwright (Postgres service) » passent tous deux. La PR est ouverte sur `master`
+et contient P7.1 (#199), faute de pouvoir cibler une branche non mergée sans y empiler la relecture.
+
+Un échec PRÉ-EXISTANT, non joué par la CI, reste ouvert et n'appartient pas à ce lot :
+`pnpm --filter @mip/rum-sdk exec tsc --noEmit` échoue sur `packages/rum-sdk/src/replay.ts:242`
+(`Uint8Array` / `BodyInit`), identiquement sur `master`.
 
 ### Recette exigée, et où elle est prouvée
 
