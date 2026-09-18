@@ -18,9 +18,25 @@
 //     échoue revient, avec ses identifiants d'origine, et l'ingestion le
 //     dédoublonne au lieu de compter deux fois.
 //
-// Ce qui n'est PAS ici et arrive en P7.3 : les adaptateurs navigation et
-// Pressable, le durcissement d'ErrorUtils et du patch fetch, la mesure de
-// démarrage.
+// P7.3 — navigation, interactions et erreurs JS. Six changements, dont un est
+// une RUPTURE DE COMPORTEMENT :
+//   • la navigation se branche sur les callbacks publics du routeur, et un même
+//     écran ne produit plus deux vues parce qu'un callback s'est répété ;
+//   • `instrumentPressable` instrumente un appui à partir d'un nom DÉCLARÉ,
+//     jamais du texte affiché ;
+//   • une fenêtre causale rattache aux actions ce qu'elles causent réellement —
+//     promesses comprises — et rien d'autre ;
+//   • `ErrorUtils` déclare enfin la fatalité qu'il reçoit, et les rejets non
+//     gérés sont collectés quand le runtime l'autorise, ou déclarés ABSENTS ;
+//   • **`traceOrigins` ne propage plus que vers les origines déclarées.**
+//     Jusqu'ici, une liste vide propageait vers TOUTES les origines sauf
+//     l'endpoint : le `traceparent` et l'identifiant de session partaient donc
+//     chez n'importe quel tiers appelé par l'application. Le README documente la
+//     migration ;
+//   • `markFirstScreenRendered()` mesure le démarrage JS — JS seulement.
+//
+// Ce qui n'est PAS ici : les capacités natives (`nativeCapabilities`, P7.5), les
+// crashes natifs, l'ANR et la symbolication (P8.5).
 import {
   EventContextStore,
   applyBeforeSend,
@@ -74,19 +90,43 @@ import {
   type PersistanceIdentite,
 } from "./session";
 import { classerReponse, delaiProchainEssai, envoyer } from "./transport";
+import { FenetreCausale, type TypeAction } from "./causal";
+import { SuiviNavigation, navigationDepuisRouteur } from "./navigation";
+import { creerInstrumentation, type Instrumentation, type PropsPressable } from "./interactions";
+import { installerRejets, rejetsDepuisTracker, type EtatCapacite, type InstallationRejets } from "./rejets";
+import {
+  analyserTraceparent,
+  composerTracestate,
+  doitPropager,
+  normaliserOrigine,
+  resoudreTraceOrigins,
+} from "./trace";
 import type { EmitSpan } from "@mip/rum-core";
 
 export type { EventContext, EventMeta, IdentityInput } from "@mip/rum-core";
 export type {
   Adapters,
   ClockAdapter,
+  EcranEntrant,
+  EcranObserve,
   EtatCycleDeVie,
   LifecycleAdapter,
   NavigationAdapter,
   RandomAdapter,
   StorageAdapter,
+  UnhandledRejectionAdapter,
 } from "./adapters";
 export type { EtatConsentement } from "./consent";
+export type { EtatCapacite } from "./rejets";
+export type { PropsPressable } from "./interactions";
+export type { RefRouteur } from "./navigation";
+export type { TrackerRejets } from "./rejets";
+
+// Fabriques d'adaptateurs : l'application les appelle avec SES objets (la
+// référence de son routeur, son module de suivi de rejets). Le SDK ne résout
+// aucun module et ne suppose aucune version installée.
+export { navigationDepuisRouteur } from "./navigation";
+export { rejetsDepuisTracker } from "./rejets";
 
 // --- globals RN / JS (déclarés en souple pour éviter une dépendance react-native)
 declare const global: any;
@@ -129,7 +169,24 @@ export interface InitOptions {
   /** 'ios' | 'android' — sert d'indice d'appareil et compose le user-agent. */
   platform?: string;
   osVersion?: string;
-  /** Origines supplémentaires où propager le traceparent (défaut : toutes sauf l'endpoint). */
+  /**
+   * Origines vers lesquelles propager le contexte de trace (`traceparent`,
+   * `tracestate`). **Liste FERMÉE : ce qui n'y figure pas ne reçoit rien.**
+   *
+   * RUPTURE DE COMPORTEMENT depuis la v0.3. Avant, une liste vide ou absente
+   * propageait vers TOUTES les origines sauf l'endpoint de collecte — donc vers
+   * les tiers appelés par l'application. Ces en-têtes portent l'identifiant de
+   * session : les envoyer à une régie, un service de cartes ou une passerelle de
+   * paiement, c'est leur donner de quoi relier leurs propres journaux à la
+   * visite en cours. Le défaut est désormais « rien », et la corrélation
+   * mobile → backend demande de nommer ses origines :
+   * `traceOrigins: ["https://api.exemple.fr"]`.
+   *
+   * Chaque entrée doit être une origine absolue (`schéma://hôte[:port]`) ; une
+   * entrée qui n'en est pas une est refusée, avec un avertissement unique au
+   * démarrage. L'endpoint de collecte reste exclu même s'il y figure : une
+   * requête d'ingestion tracée produirait un span, qui produirait une requête.
+   */
   traceOrigins?: string[];
   flushIntervalMs?: number;
   /**
@@ -202,10 +259,67 @@ export interface MobileDiagnostics {
   lastTransportStatus: number | null;
   /** Enregistrements durables illisibles, détectés puis abandonnés. */
   storageCorruptions: number | null;
+  /**
+   * Capacités de la couche **JavaScript** réellement installées. `null` avant
+   * `init`. Distinct de `nativeCapabilities`, qui décrit ce que le NATIF
+   * observe et reste inconnu tant que P7.5 n'a pas posé son modèle.
+   *
+   * `unavailable` n'est pas « zéro » : c'est « le runtime n'expose rien que le
+   * SDK sache poser ET retirer ». Un tableau de bord qui lirait ces états doit
+   * afficher « non collecté », jamais 0.
+   */
+  jsCapabilities: JsCapabilities | null;
+}
+
+/** États des capacités JS. Voir `MobileDiagnostics.jsCapabilities`. */
+export interface JsCapabilities {
+  /** `ErrorUtils` trouvé et enchaîné : erreurs JS non interceptées. */
+  errorHandler: EtatCapacite;
+  /** Rejets de promesses non gérés — adaptateur, événement standard, ou rien. */
+  unhandledRejection: EtatCapacite;
+  /** Un adaptateur de navigation est abonné ; sinon `screen()` reste manuel. */
+  navigation: EtatCapacite;
+  /** La mesure de démarrage JS a été déclarée par l'application. */
+  appStart: EtatCapacite;
 }
 
 /** Délai maximal accordé au flush de `shutdown()`. */
 const SHUTDOWN_TIMEOUT_MS = 2_000;
+
+/**
+ * Nom de la mesure de démarrage JS. **JS seulement** : elle court depuis
+ * `init()` — c'est-à-dire depuis un moteur JS déjà démarré, un bundle déjà
+ * chargé et une application déjà en train de s'exécuter — jusqu'au premier
+ * écran que l'application DÉCLARE rendu. Elle ne mesure ni le démarrage du
+ * processus, ni le pré-main natif, ni l'écran de lancement. Présentée comme un
+ * « temps de démarrage », elle mentirait d'un facteur inconnu et toujours dans
+ * le même sens : elle sous-estime.
+ */
+const DEMARRAGE_FROID = "js_start_to_first_screen_ms";
+
+/**
+ * Démarrage à CHAUD : depuis un retour au premier plan jusqu'au premier écran
+ * déclaré ensuite. Nom distinct, parce que les deux populations n'ont ni la même
+ * cause ni le même ordre de grandeur — les mélanger dans une même moyenne rend
+ * les deux illisibles.
+ */
+const DEMARRAGE_CHAUD = "js_warm_start_to_first_screen_ms";
+
+/**
+ * Au-delà, la mesure est REFUSÉE. Un « démarrage » de plus d'une minute n'est
+ * pas un démarrage : c'est un callback appelé tard, un écran monté après une
+ * authentification, ou une application restée en arrière-plan. La publier
+ * fabriquerait une queue de distribution qu'on finirait par lire comme un
+ * incident de performance.
+ *
+ * Et cette borne n'est PAS un détecteur d'ANR : un compteur JS ne sait pas
+ * distinguer un thread principal bloqué d'une application qui n'a rien à faire.
+ * L'ANR appartient au natif, donc à P8.5.
+ */
+const DEMARRAGE_MAX_MS = 60_000;
+
+/** Racines refusées mémorisées. Un diagnostic borné, jamais un journal. */
+const RACINES_REFUSEES_MAX = 200;
 
 let cfg: MobileConfig | null = null;
 let ctx: Ctx | null = null;
@@ -224,6 +338,44 @@ let limites: LimitesFile = resoudreLimites();
 let persistant = false;
 let pret: Promise<void> = Promise.resolve();
 let identityPersistence: PersistanceIdentite | null = null;
+
+/** Fenêtre causale : ce qui relie une action à ce qu'elle a réellement causé. */
+let fenetre: FenetreCausale | null = null;
+/** Mémoire de l'écran courant : c'est elle qui absorbe les callbacks répétés. */
+let suiviNav = new SuiviNavigation();
+/**
+ * Racines d'action qui n'ont PAS été livrées — refusées par la gate ou par le
+ * hook, évincées de la file, abandonnées par le serveur. Tout signal encore en
+ * file qui les désigne perd son `mip.action_id` : c'est le mécanisme
+ * `revokedRoots` du SDK web (`packages/rum-sdk/src/consent.ts`), transposé.
+ */
+const racinesRefusees = new Set<string>();
+/** Origine monotone du démarrage JS. */
+let demarrageA = 0;
+/** Instant monotone du dernier retour au premier plan, pour le démarrage à chaud. */
+let retourPremierPlanA: number | null = null;
+let demarrageFroidEmis = false;
+let capacites: JsCapabilities | null = null;
+let rejets: InstallationRejets | null = null;
+let originesRefusees: string[] = [];
+/**
+ * Contexte local de la racine en cours d'ouverture. La fenêtre causale appelle
+ * `emitRoot` sans contexte — c'est sa frontière, et la lui faire traverser
+ * l'obligerait à connaître le contrat P2. Cette variable la transporte sur la
+ * seule pile d'appels qui les relie, et elle est vidée dans un `finally`.
+ */
+let contexteRacine: EventContext = {};
+
+/** Ouvre une racine causale. Rend son identifiant, ou `null` si elle est refusée. */
+function ouvrirAction(nom: string, type: TypeAction, context: EventContext = {}): string | null {
+  if (!fenetre) return null;
+  contexteRacine = context;
+  try {
+    return fenetre.ouvrir(nom, type);
+  } finally {
+    contexteRacine = {};
+  }
+}
 
 /** Désinstallations à rejouer par `shutdown()`, dans l'ordre inverse de pose. */
 const teardown: Array<() => void> = [];
@@ -244,6 +396,7 @@ const hookFaults = { exception: 0, async: 0 };
 let hookWarned = false;
 let transportWarned = false;
 let persistanceWarned = false;
+let originesWarned = false;
 
 function compte(n: number): number {
   return n < COMPTEUR_MAX ? n + 1 : n;
@@ -294,6 +447,12 @@ function envelopeCtx(action: EventContext = {}, local: EventContext = {}): Ctx |
     accountId: envelope.accountId ?? null,
     viewId: envelope.viewId ?? null,
     viewName: envelope.viewName ?? null,
+    // L'ACTION CAUSALE est lue ici, et nulle part ailleurs : `envelopeCtx` est
+    // le seul chemin traversé par tous les signaux, et `commonAttrs()` pose déjà
+    // `mip.action_id` depuis P7.1. La fenêtre rend `null` dès que le lien n'est
+    // plus prouvé — hors délai, racine refusée, session tournée, consentement
+    // révoqué.
+    actionId: fenetre?.courante() ?? null,
   };
 }
 
@@ -317,9 +476,41 @@ function metaDe(span: EmitSpan): EventMeta {
  * applicatif pour un événement que l'utilisateur a refusé serait une collecte
  * en soi, et un hook peut avoir des effets de bord.
  */
+/** Ce span est-il la racine d'une action causale ? */
+function estRacineAction(span: EmitSpan): boolean {
+  return span.name === "rum.action" && span.attributes["mip.event_type"] === "action";
+}
+
+function actionIdDe(span: EmitSpan): string | null {
+  const id = span.attributes["mip.action_id"];
+  return typeof id === "string" && id ? id : null;
+}
+
+/**
+ * Mémorise une racine non livrée, en bornant la mémoire. La plus ancienne part
+ * en premier : au-delà de deux cents racines refusées, les enfants de la
+ * première sont soit partis, soit tombés de la file eux aussi.
+ */
+function racineRefusee(id: string): void {
+  if (racinesRefusees.size >= RACINES_REFUSEES_MAX) {
+    const plusAncienne = racinesRefusees.values().next();
+    if (!plusAncienne.done) racinesRefusees.delete(plusAncienne.value);
+  }
+  racinesRefusees.add(id);
+}
+
 function enqueue(span: EmitSpan | null): boolean {
   if (!span || !cfg || !gate || !queue) return false;
+  const racine = estRacineAction(span);
+  const actionId = actionIdDe(span);
+  // UN ENFANT NE SURVIT PAS À SA RACINE. Si la racine a été refusée, le lien est
+  // retiré AVANT le hook : `beforeSend` ne doit pas voir un identifiant que
+  // l'ingestion ne connaîtra jamais, et l'enfant reste par ailleurs collectable.
+  if (!racine && actionId && racinesRefusees.has(actionId)) {
+    span = { ...span, attributes: { ...span.attributes, "mip.action_id": null } };
+  }
   if (!gate.collecte) {
+    if (racine && actionId) racineRefusee(actionId);
     dropped = compte(dropped);
     return false;
   }
@@ -333,6 +524,7 @@ function enqueue(span: EmitSpan | null): boolean {
     },
   });
   if (!filtered) {
+    if (racine && actionId) racineRefusee(actionId);
     dropped = compte(dropped);
     return false;
   }
@@ -341,6 +533,7 @@ function enqueue(span: EmitSpan | null): boolean {
   try {
     poids = octets(JSON.stringify(complet));
   } catch {
+    if (racine && actionId) racineRefusee(actionId);
     dropped = compte(dropped);
     return false;
   }
@@ -349,9 +542,34 @@ function enqueue(span: EmitSpan | null): boolean {
   // donné ne doit pas coûter de mémoire à l'application hôte.
   const cap = gate.granted ? limites.maxEvents : Math.min(PENDING_MAX_EVENTS, limites.maxEvents);
   const entree: EntreeFile = { id: complet.spanId, span: complet, bytes: poids, at: now() };
-  if (!queue.push(entree, now(), cap)) return false;
+  if (!queue.push(entree, now(), cap)) {
+    if (racine && actionId) racineRefusee(actionId);
+    return false;
+  }
+  // La racine est entrée en file : elle n'est plus refusée. Un identifiant
+  // réutilisé — ce que la borne FIFO rend possible à très long terme — ne doit
+  // pas amputer les enfants d'une action bel et bien livrée.
+  if (racine && actionId) racinesRefusees.delete(actionId);
   if (gate.granted && queue.length >= BATCH_MAX_EVENTS) void flush();
   return true;
+}
+
+/**
+ * Une racine a quitté la file sans être livrée (capacité, TTL, refus définitif
+ * du serveur) : les signaux qu'elle a causés sont encore là et la désignent.
+ * On coupe le lien plutôt que de laisser partir un `action_id` orphelin.
+ */
+function racinesDisparues(entrees: readonly EntreeFile[]): void {
+  const ids = new Set<string>();
+  for (const e of entrees) {
+    if (!estRacineAction(e.span)) continue;
+    const id = actionIdDe(e.span);
+    if (id) {
+      ids.add(id);
+      racineRefusee(id);
+    }
+  }
+  if (ids.size) queue?.retireAttribut("mip.action_id", ids);
 }
 
 // ───────────────────────────── transport ─────────────────────────────────────
@@ -534,24 +752,55 @@ async function bootstrapIdentite(): Promise<void> {
   }
 }
 
-// --- capture crashes (ErrorUtils : handler global RN) ------------------------
-function installCrashHandler(): void {
+// --- erreurs JS non interceptées : ErrorUtils et rejets de promesses ---------
+
+/**
+ * Émet une erreur que PERSONNE n'a interceptée.
+ *
+ * `kind` distingue les deux mécanismes JS (`crash` pour le handler global,
+ * `unhandledrejection` pour un rejet), et l'ingestion les reconnaît tous les
+ * deux comme non gérés (`UNHANDLED_ERROR_KINDS`).
+ *
+ * `fatal` est DÉCLARÉ, jamais déduit : `ErrorUtils` reçoit l'information du
+ * moteur, un rejet non géré ne termine aucune application React Native. Sans
+ * cette déclaration, `rum_error.is_fatal` restait `null` — donc « inconnu » —
+ * pour tous les crashes mobiles depuis l'origine du SDK.
+ *
+ * ET CE N'EST PAS UN CRASH NATIF. La source reste `react_native_js` : une
+ * exception JS fatale arrête le bundle, affiche une redbox en développement et
+ * laisse le processus natif vivant. Un crash natif — signal, exception
+ * Objective-C, `SIGABRT` — n'est pas observable depuis ce runtime et appartient
+ * à P8.5. Compter l'un pour l'autre produirait un taux de « sessions sans
+ * crash » qui ne décrit ni l'un ni l'autre.
+ */
+function emettreNonInterceptee(err: unknown, kind: "crash" | "unhandledrejection", fatal: boolean): void {
+  const snapshot = envelopeCtx();
+  if (!snapshot) return;
+  const e = err as { message?: unknown; name?: unknown; stack?: unknown } | null | undefined;
+  const message = typeof e?.message === "string" && e.message ? e.message : String(err);
+  const span = buildExceptionSpan(
+    snapshot,
+    {
+      message: message.slice(0, 500),
+      type: typeof e?.name === "string" ? e.name : null,
+      stack: typeof e?.stack === "string" ? e.stack.slice(0, 4000) : null,
+    },
+    now(),
+    hex(8),
+  );
+  enqueue({
+    ...span,
+    attributes: { ...span.attributes, "mip.error_kind": kind, "mip.error_fatal": fatal },
+  });
+}
+
+function installCrashHandler(): EtatCapacite {
   const EU = global.ErrorUtils;
-  if (!EU?.getGlobalHandler || !EU?.setGlobalHandler) return;
+  if (!EU?.getGlobalHandler || !EU?.setGlobalHandler) return "unavailable";
   const prev = EU.getGlobalHandler();
   const notre = (err: any, isFatal: boolean) => {
     try {
-      const snapshot = envelopeCtx();
-      if (snapshot) {
-        enqueue(
-          buildExceptionSpan(
-            snapshot,
-            { message: String(err?.message ?? err), type: err?.name ?? null, stack: err?.stack ?? null },
-            now(),
-            hex(8),
-          ),
-        );
-      }
+      emettreNonInterceptee(err, "crash", isFatal === true);
       void flush(); // l'app peut mourir : on tente l'envoi immédiat (keepalive implicite)
     } catch {
       /* ignore */
@@ -568,42 +817,172 @@ function installCrashHandler(): void {
       /* ignore */
     }
   });
+  return "active";
+}
+
+/**
+ * Rejets de promesses non gérés.
+ *
+ * Aucune découverte de module : l'adaptateur de l'application d'abord, puis les
+ * mécanismes STANDARDS de l'objet global — et rien d'autre. Quand rien n'est
+ * disponible, la capacité est déclarée absente ; c'est une information, pas un
+ * échec, et `getDiagnostics().jsCapabilities` la publie pour qu'aucune surface
+ * ne présente « aucun rejet » là où il faut lire « non collecté ».
+ */
+function installRejets(adapters: Adapters): EtatCapacite {
+  // `globalThis` est décrit ici par la seule surface qu'on lit (`GlobalRejets`) :
+  // le tsconfig du paquet n'inclut ni la lib DOM ni les types Node, et un
+  // typage plus large affirmerait une API que le moteur n'expose peut-être pas.
+  const cible = globalThis as unknown as Parameters<typeof installerRejets>[1];
+  const installation = installerRejets(adapters.unhandledRejection, cible, (raison) => {
+    try {
+      // Un rejet non géré n'est PAS fatal : l'application continue de tourner.
+      emettreNonInterceptee(raison, "unhandledrejection", false);
+    } catch {
+      /* ignore */
+    }
+  });
+  rejets = installation;
+  if (installation.etat === "active") {
+    teardown.push(() => installation.desinstaller());
+  }
+  return installation.etat;
 }
 
 // --- patch réseau (fetch) : span http.client + propagation traceparent -------
+
+/** Une requête passée en premier argument (`fetch(new Request(...))`). */
+function estRequest(input: unknown): input is { url: string; method?: unknown; headers?: unknown } {
+  return typeof input === "object" && input !== null && typeof (input as { url?: unknown }).url === "string";
+}
+
+/**
+ * Lit un en-tête SANS rien allouer, dans l'ordre de précédence WHATWG : `init`
+ * d'abord, la requête ensuite. Les trois formes admises par `HeadersInit` sont
+ * traitées — instance `Headers`, tableau de paires, objet simple.
+ *
+ * Volontairement séparé de la fusion : la très grande majorité des requêtes ne
+ * reçoit aucune propagation, et construire un `Headers` complet pour lire une
+ * seule clef coûterait une copie par appel réseau de l'application.
+ */
+function lireEntete(source: unknown, nom: string): string | null {
+  if (!source) return null;
+  const get = (source as { get?: unknown }).get;
+  if (typeof get === "function") {
+    try {
+      const v = (get as (n: string) => unknown).call(source, nom);
+      return typeof v === "string" ? v : null;
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(source)) {
+    for (const paire of source) {
+      if (Array.isArray(paire) && String(paire[0]).toLowerCase() === nom) return String(paire[1]);
+    }
+    return null;
+  }
+  if (typeof source === "object") {
+    for (const clef of Object.keys(source as Record<string, unknown>)) {
+      if (clef.toLowerCase() === nom) {
+        const v = (source as Record<string, unknown>)[clef];
+        return typeof v === "string" ? v : null;
+      }
+    }
+  }
+  return null;
+}
+
+/** Recopie une source d'en-têtes dans un `Headers`, quelle que soit sa forme. */
+function recopierEntetes(source: unknown, cible: { set(n: string, v: string): void }): void {
+  if (!source) return;
+  const forEach = (source as { forEach?: unknown }).forEach;
+  if (typeof forEach === "function") {
+    (forEach as (cb: (v: unknown, n: unknown) => void) => void).call(source, (valeur, nom) => {
+      cible.set(String(nom), String(valeur));
+    });
+    return;
+  }
+  if (Array.isArray(source)) {
+    for (const paire of source) {
+      if (Array.isArray(paire) && paire.length >= 2) cible.set(String(paire[0]), String(paire[1]));
+    }
+    return;
+  }
+  if (typeof source === "object") {
+    for (const clef of Object.keys(source as Record<string, unknown>)) {
+      const valeur = (source as Record<string, unknown>)[clef];
+      if (valeur != null) cible.set(clef, String(valeur));
+    }
+  }
+}
+
 function installFetchPatch(): void {
   const orig = global.fetch;
   if (typeof orig !== "function" || orig.__mipPatched) return;
-  const patched = async (input: any, init: any = {}) => {
+  const patched = async (input: any, init?: any) => {
     // Désinstallé alors qu'un tiers avait patché par-dessus : on ne peut pas se
     // retirer de la chaîne, on devient un simple passe-plat.
     if ((patched as any).__mipInerte) return orig(input, init);
-    const url = typeof input === "string" ? input : input?.url ?? "";
-    const origin = originOf(url);
-    const sameOrTraced =
-      origin && origin !== endpointOrigin && (traceOrigins.length === 0 || traceOrigins.includes(origin));
-    const traceId = hex(16);
-    const spanId = hex(8);
-    if (sameOrTraced && ctx && session) {
-      const headers = new global.Headers(init.headers || (typeof input === "object" ? input.headers : undefined));
-      headers.set("traceparent", `00-${traceId}-${spanId}-01`);
-      headers.set("tracestate", `mip=s:${session.id}`);
-      init = { ...init, headers };
+
+    const requete = estRequest(input);
+    const url = requete ? input.url : typeof input === "string" ? input : String(input ?? "");
+    const origine = normaliserOrigine(url);
+    // LA MÉTHODE VIENT DES DEUX SOURCES. `fetch(new Request(url, {method:"POST"}))`
+    // ne porte rien dans `init` : lire `init.method` seul rapportait « GET » pour
+    // toutes les requêtes construites de cette façon, et l'ingestion en tirait
+    // des `rum_span` faux.
+    const methode = String(
+      init?.method ?? (requete ? (input as { method?: unknown }).method : undefined) ?? "GET",
+    ).toUpperCase();
+
+    // Un `traceparent` DÉJÀ POSÉ et valide est préservé, et devient l'identité
+    // de notre span : l'application (ou une couche tierce) a ouvert la trace,
+    // l'écraser couperait sa corrélation en deux.
+    const existant = analyserTraceparent(
+      lireEntete(init?.headers, "traceparent") ?? (requete ? lireEntete(input.headers, "traceparent") : null),
+    );
+    const propager = doitPropager(origine, traceOrigins, endpointOrigin);
+    const traceId = existant?.traceId ?? hex(16);
+    const spanId = existant?.spanId ?? hex(8);
+
+    let effectif = init;
+    if (propager && !existant && ctx && session && typeof global.Headers === "function") {
+      try {
+        // FUSION, et non remplacement. Selon WHATWG, `init.headers` REMPLACE les
+        // en-têtes de la requête ; repasser seulement les nôtres effacerait
+        // l'Authorization, le Content-Type et tout le reste de l'appelant.
+        const entetes = new global.Headers();
+        if (requete) recopierEntetes((input as { headers?: unknown }).headers, entetes);
+        recopierEntetes(init?.headers, entetes);
+        entetes.set("traceparent", `00-${traceId}-${spanId}-01`);
+        entetes.set("tracestate", composerTracestate(entetes.get?.("tracestate"), session.id));
+        effectif = { ...(init ?? {}), headers: entetes };
+      } catch {
+        // Un `Headers` indisponible ou hostile ne doit pas faire échouer la
+        // requête de l'application : on renonce à propager, pas à l'appeler.
+        effectif = init;
+      }
     }
+
     const start = now();
     // Le snapshot d'enveloppe est pris AU DÉPART de la requête : une rotation
     // d'identité pendant l'appel ne réattribue pas la requête au nouvel
-    // utilisateur au moment du flush.
+    // utilisateur au moment du flush. L'action causale y est figée de la même
+    // façon — ce qui a été lancé sous l'action lui reste attribué.
     const snapshot = envelopeCtx();
+    // L'endpoint de collecte n'est jamais observé : un span par envoi produirait
+    // un envoi par span.
+    const observable = snapshot && origine && origine !== endpointOrigin;
     try {
-      const res = await orig(input, init);
-      if (snapshot && origin && origin !== endpointOrigin) {
-        enqueue(buildHttpSpan(snapshot, { traceId, url, method: (init.method ?? "GET").toUpperCase(), status: res.status, durationMs: now() - start }, start, spanId));
+      const res = effectif === undefined ? await orig(input) : await orig(input, effectif);
+      if (observable) {
+        enqueue(buildHttpSpan(snapshot!, { traceId, url, method: methode, status: res.status, durationMs: now() - start }, start, spanId));
       }
       return res;
     } catch (e) {
-      if (snapshot && origin && origin !== endpointOrigin) {
-        enqueue(buildHttpSpan(snapshot, { traceId, url, method: (init.method ?? "GET").toUpperCase(), status: 0, durationMs: now() - start }, start, spanId));
+      if (observable) {
+        enqueue(buildHttpSpan(snapshot!, { traceId, url, method: methode, status: 0, durationMs: now() - start }, start, spanId));
       }
       throw e;
     }
@@ -617,10 +996,27 @@ function installFetchPatch(): void {
 }
 
 // --- cycle de vie : session, sauvegarde et flush au passage en arrière-plan ---
+
+/**
+ * Cycle de vie — UNIQUEMENT par adaptateur explicite.
+ *
+ * LE REPLI `global.require("react-native")` EST SUPPRIMÉ. Il paraissait gratuit
+ * et ne l'était pas : sous Metro, `global.require` n'est pas le `require` de
+ * CommonJS mais le résolveur interne du bundler, indexé par NUMÉRO de module.
+ * Selon la configuration, il rendait `undefined` — donc un cycle de vie
+ * silencieusement absent — ou levait. Dans les deux cas, la découverte
+ * réussissait sur le poste du développeur et échouait sur un build de
+ * production, sans que rien ne le signale. Ce que l'application ne branche pas
+ * est ABSENT, et `getDiagnostics()` le dit.
+ */
 function installAppState(adapters: Adapters): void {
   const traiter = (etat: EtatCycleDeVie) => {
     session?.cycleDeVie(etat);
     if (etat === "active") {
+      // Le retour au premier plan ouvre la fenêtre d'un démarrage À CHAUD. Il
+      // n'émet rien par lui-même : seule l'application sait quand son écran est
+      // réellement rendu, et c'est `markFirstScreenRendered()` qui le déclare.
+      retourPremierPlanA = clock.nowMs();
       void flush();
       return;
     }
@@ -633,25 +1029,57 @@ function installAppState(adapters: Adapters): void {
     })();
   };
 
-  if (adapters.lifecycle) {
-    try {
-      const desabonner = adapters.lifecycle.subscribe(traiter);
-      if (typeof desabonner === "function") teardown.push(() => { try { desabonner(); } catch { /* ignore */ } });
-    } catch {
-      /* un adaptateur défaillant ne casse pas l'initialisation */
-    }
-    return;
-  }
+  if (!adapters.lifecycle) return;
   try {
-    // Repli historique, laissé tel quel : le durcissement de cette découverte
-    // (peer dependency explicite, versions testées) appartient à P7.3.
-    const rn = (global.require ?? (() => null))("react-native");
-    const abonnement = rn?.AppState?.addEventListener?.("change", (state: string) =>
-      traiter(state as EtatCycleDeVie),
-    );
-    if (abonnement?.remove) teardown.push(() => { try { abonnement.remove(); } catch { /* ignore */ } });
+    const desabonner = adapters.lifecycle.subscribe(traiter);
+    if (typeof desabonner === "function") teardown.push(() => { try { desabonner(); } catch { /* ignore */ } });
   } catch {
-    /* AppState indisponible : la rotation par inactivité prend le relais */
+    /* un adaptateur défaillant ne casse pas l'initialisation */
+  }
+}
+
+// --- navigation : callbacks publics du routeur, dédoublonnés ------------------
+
+/**
+ * Applique un écran : dédoublonnage, route courante, page vue, et fermeture de
+ * la fenêtre causale.
+ *
+ * LA FERMETURE EST LE POINT IMPORTANT. Un changement d'écran met fin à
+ * l'intention de l'appui qui l'a provoqué : ce qui se passe sur le nouvel écran
+ * appartient au nouvel écran. Sans cela, une action « Payer » resterait
+ * attribuée aux requêtes de l'écran de confirmation, et l'analyse causale
+ * désignerait un bouton pour des effets qu'il n'a pas produits.
+ */
+function appliquerEcran(entrant: Parameters<SuiviNavigation["accepte"]>[0]): boolean {
+  if (!ctx) return false;
+  const retenu = suiviNav.accepte(entrant);
+  if (!retenu) return false;
+  ctx.route = retenu.name;
+  fenetre?.fermer();
+  const snapshot = envelopeCtx();
+  if (!snapshot) return false;
+  return enqueue(buildScreenSpan(snapshot, now(), hex(8)));
+}
+
+function installNavigation(adapters: Adapters): EtatCapacite {
+  if (!adapters.navigation) return "unavailable";
+  try {
+    const desabonner = adapters.navigation.subscribeScreen((entrant) => {
+      try {
+        appliquerEcran(entrant);
+      } catch {
+        /* un routeur qui notifie n'importe quoi ne casse pas l'app hôte */
+      }
+    });
+    if (typeof desabonner === "function") {
+      teardown.push(() => { try { desabonner(); } catch { /* ignore */ } });
+      return "active";
+    }
+    // Sans désabonnement, l'écouteur survivrait à `shutdown()`. On préfère
+    // déclarer la capacité absente que promettre un arrêt qu'on ne tient pas.
+    return "unavailable";
+  } catch {
+    return "unavailable";
   }
 }
 
@@ -682,9 +1110,13 @@ export function init(opts: InitOptions): void {
   // pas une taxonomie. Le garder dans la signature documente ce que la file
   // sait, sans promettre au produit une ventilation qu'il faudrait ensuite
   // maintenir stable entre deux versions du SDK.
-  queue = new EventQueue(limites, (_motif: MotifPerte, nombre: number) => {
-    for (let i = 0; i < nombre; i++) dropped = compte(dropped);
-  });
+  queue = new EventQueue(
+    limites,
+    (_motif: MotifPerte, nombre: number) => {
+      for (let i = 0; i < nombre; i++) dropped = compte(dropped);
+    },
+    racinesDisparues,
+  );
   persist = new PersistentStore(adapters.storage, () => {
     /* le diagnostic porte déjà l'information ; pas de journal par échec */
   });
@@ -699,8 +1131,35 @@ export function init(opts: InitOptions): void {
     tz: null,
     deviceType: platform,
   };
-  traceOrigins = (opts.traceOrigins ?? []).map((o) => o.replace(/\/+$/, "").toLowerCase());
-  endpointOrigin = originOf(opts.endpoint) ?? "";
+  const origines = resoudreTraceOrigins(opts.traceOrigins);
+  traceOrigins = origines.origines;
+  originesRefusees = origines.refusees;
+  endpointOrigin = normaliserOrigine(opts.endpoint) ?? "";
+
+  // Fenêtre causale : l'époque de consentement et la session en font partie —
+  // une racine ouverte avant une révocation ou avant une rotation d'identité ne
+  // doit plus rien attribuer.
+  fenetre = new FenetreCausale({
+    now: () => clock.nowMs(),
+    sessionId: () => session?.id ?? "",
+    epoch: () => gate?.epoch ?? 0,
+    newId: () => newEnvelopeId(),
+    emitRoot: (id, nom, type) => emettreActionRacine(id, nom, type),
+  });
+  suiviNav = new SuiviNavigation();
+  racinesRefusees.clear();
+  demarrageA = clock.nowMs();
+  retourPremierPlanA = null;
+  demarrageFroidEmis = false;
+
+  if (originesRefusees.length) {
+    // Le défaut ne propage plus rien : une entrée mal formée SILENCIEUSEMENT
+    // ignorée couperait la corrélation d'un client qui croit l'avoir demandée.
+    originesWarned = avertirUneFois(
+      originesWarned,
+      `traceOrigins : ${originesRefusees.length} entrée(s) ignorée(s), une origine absolue est attendue (https://hôte)`,
+    );
+  }
 
   if (persistant) {
     persistanceWarned = avertirUneFois(
@@ -709,9 +1168,12 @@ export function init(opts: InitOptions): void {
     );
   }
 
-  installCrashHandler();
+  const errorHandler = installCrashHandler();
+  const unhandledRejection = installRejets(adapters);
   installFetchPatch();
   installAppState(adapters);
+  const navigation = installNavigation(adapters);
+  capacites = { errorHandler, unhandledRejection, navigation, appStart: "unavailable" };
 
   pret = bootstrapIdentite().catch(() => undefined);
 
@@ -723,17 +1185,23 @@ export function init(opts: InitOptions): void {
 /**
  * Déclare l'écran courant (route) et émet une vue historique `pageview`.
  *
- * Comportement INCHANGÉ depuis le POC : `screen` est le signal de navigation
- * mobile, l'équivalent d'un changement d'URL côté web. Il n'ouvre pas de vue P2
- * nommée — `startView` le fait, comme sur le web où la navigation et
- * `MIPRum.startView()` restent deux signaux distincts. Émettre les deux depuis
- * `screen` doublerait le nombre d'événements des intégrations déjà en place.
+ * `screen` reste le signal de navigation mobile, l'équivalent d'un changement
+ * d'URL côté web, et n'ouvre pas de vue P2 nommée — `startView` le fait, comme
+ * sur le web. Émettre les deux depuis `screen` doublerait le nombre
+ * d'événements des intégrations déjà en place.
+ *
+ * CHANGEMENT P7.3 : un écran DÉJÀ COURANT ne produit plus de seconde page vue.
+ * C'est la même règle que pour l'adaptateur de navigation, et pour la même
+ * raison : la plupart des intégrations manuelles branchent `screen()` sur un
+ * callback de routeur, qui se répète pour une seule transition. A → B → A
+ * produit toujours trois pages vues : le dédoublonnage ne compare qu'à l'écran
+ * courant, jamais à l'historique.
+ *
+ * `key` permet de distinguer deux instances du même écran empilées l'une sur
+ * l'autre — une fiche produit ouverte depuis une autre fiche produit.
  */
-export function screen(name: string): void {
-  if (!ctx) return;
-  ctx.route = name;
-  const snapshot = envelopeCtx();
-  if (snapshot) enqueue(buildScreenSpan(snapshot, now(), hex(8)));
+export function screen(name: string, key?: string): void {
+  appliquerEcran(typeof key === "string" ? { name, key } : name);
 }
 
 /** Événement métier : track("checkout", { amount: 42 }). Retour historique : void. */
@@ -772,6 +1240,11 @@ export function consent(granted: boolean): void {
   }
   const revoque = gate.set(false);
   queue.purge("revocation");
+  // La fenêtre causale suit la purge : une racine de l'époque révoquée ne doit
+  // rien attribuer, même si son délai n'est pas écoulé. Les racines refusées
+  // mémorisées partent avec elle — la file est vide, plus aucun enfant n'attend.
+  fenetre?.fermer();
+  racinesRefusees.clear();
   tentatives = 0;
   prochainEssaiA = 0;
   try {
@@ -845,6 +1318,15 @@ export async function shutdown(): Promise<void> {
   prochainEssaiA = 0;
   annulation = null;
   pret = Promise.resolve();
+  fenetre = null;
+  suiviNav.reinitialise();
+  racinesRefusees.clear();
+  capacites = null;
+  rejets = null;
+  originesRefusees = [];
+  demarrageA = 0;
+  retourPremierPlanA = null;
+  demarrageFroidEmis = false;
   started = false;
 }
 
@@ -892,8 +1374,21 @@ export function setUser(user: string | IdentityInput | null): boolean {
   if (validateIdentity(user) === undefined) return false;
   // `setUser` renvoie « a changé » : ne tourner la session que dans ce cas, pour
   // qu'un re-rendu qui repose la même identité ne fabrique pas une session.
-  if (store.setUser(user)) session?.rotate();
+  if (store.setUser(user)) rotationIdentite();
   return true;
+}
+
+/**
+ * Rotation d'identité : session neuve, et fenêtre causale FERMÉE.
+ *
+ * Les deux vont ensemble. Laisser la fenêtre ouverte rattacherait au clic de
+ * l'utilisateur précédent les signaux du suivant — la fenêtre causale vérifie
+ * déjà la session, mais la fermer explicitement évite de dépendre de l'ordre
+ * dans lequel la rotation et le prochain signal se produisent.
+ */
+function rotationIdentite(): void {
+  session?.rotate();
+  fenetre?.fermer();
 }
 
 export function clearUser(): void {
@@ -902,7 +1397,7 @@ export function clearUser(): void {
 
 export function setAccount(account: string | IdentityInput | null): boolean {
   if (validateIdentity(account) === undefined) return false;
-  if (store.setAccount(account)) session?.rotate();
+  if (store.setAccount(account)) rotationIdentite();
   return true;
 }
 
@@ -929,18 +1424,109 @@ export function startView(name: string, context: EventContext = {}): boolean {
 }
 
 /**
- * Émet une action déclarée par l'application. P7.2 n'ouvre AUCUNE fenêtre
- * causale : rattacher les signaux suivants à cette action demande d'observer le
- * geste ET sa réponse, ce que seul l'adaptateur d'interactions P7.3 peut faire.
+ * Émet la racine d'une action et rend la décision de la gate ET du hook.
+ *
+ * Ce booléen est tout le contrat de la fenêtre causale : c'est lui, et rien
+ * d'autre, qui décide si les signaux suivants porteront l'identifiant. Une
+ * racine jetée par `beforeSend` ou par un consentement refusé ne laisse donc
+ * aucun enfant orphelin derrière elle.
+ */
+function emettreActionRacine(id: string, nom: string, type: TypeAction): boolean {
+  const snapshot = envelopeCtx(contexteRacine);
+  if (!snapshot) return false;
+  const racine = buildActionSpan(snapshot, { id, name: nom, context: snapshot.context }, now(), hex(8));
+  return enqueue({
+    ...racine,
+    // `manual` reste le défaut historique ; `click` décrit un geste RÉELLEMENT
+    // observé sur un composant instrumenté. L'ingestion n'accepte que ces deux
+    // valeurs (`ACTION_TYPES`), et inventer un « press » les ferait toutes deux
+    // retomber sur `manual` côté serveur.
+    attributes: { ...racine.attributes, "mip.action_type": type, "mip.action_id": id },
+  });
+}
+
+/**
+ * Émet une action déclarée par l'application et OUVRE la fenêtre causale.
+ *
+ * Tout ce qui suit dans les cinq secondes — requête réseau, erreur, événement
+ * métier — portera `mip.action_id`. Au-delà, plus rien : la fenêtre ne devine
+ * pas qu'un travail tardif venait de là.
  */
 export function addAction(name: string, context: EventContext = {}): boolean {
   const safeName = boundedName(name);
-  if (!safeName) return false;
-  const snapshot = envelopeCtx(context);
+  if (!safeName || !fenetre) return false;
+  // Le contexte local de l'appel n'appartient qu'à la RACINE ; la fenêtre ne le
+  // rejoue pas sur les signaux suivants, qui portent le leur.
+  return ouvrirAction(safeName, "manual", context) != null;
+}
+
+/**
+ * Instrumente les props d'un `Pressable`, `TouchableOpacity`, `Button` ou de
+ * n'importe quel composant exposant `onPress`.
+ *
+ * OPT-IN : sans `mipActionName`, les props sont rendues À L'IDENTIQUE — même
+ * objet, même gestionnaire, aucun rendu supplémentaire. Le nom est DÉCLARÉ et
+ * jamais extrait du texte affiché : sur mobile, le libellé d'un bouton est très
+ * souvent une donnée (« Payer 128,40 € », « Appeler Marie D. »).
+ *
+ * ```tsx
+ * <Pressable {...RUM.instrumentPressable({
+ *   mipActionName: "checkout.payer",
+ *   accessibilityLabel: "Payer la commande",
+ *   onPress: payer,
+ * })}>
+ * ```
+ */
+export const instrumentPressable: Instrumentation = creerInstrumentation({
+  ouvrir: (nom: string) => ouvrirAction(nom, "click"),
+  suivre: (resultat: unknown) => fenetre?.suivre(resultat),
+});
+
+/**
+ * Déclare que le premier écran de l'application est rendu.
+ *
+ * Émet `js_start_to_first_screen_ms` au premier appel après `init()`, puis
+ * `js_warm_start_to_first_screen_ms` après chaque retour au premier plan. Rend
+ * `false` si la mesure n'a pas lieu d'être : SDK non démarré, consentement
+ * refusé, mesure déjà prise, ou durée invraisemblable.
+ *
+ * CE QU'ELLE MESURE, ET RIEN DE PLUS : le temps JS écoulé entre l'appel à
+ * `init()` et cet appel-ci. Pas le lancement du processus, pas le pré-main
+ * natif, pas l'écran de lancement, pas le chargement du bundle avant `init`.
+ * L'appeler depuis le `onLayout` du premier écran est le point de mesure
+ * attendu ; l'appeler plus tard mesure autre chose.
+ */
+export function markFirstScreenRendered(): boolean {
+  if (!started || !ctx) return false;
+  const maintenant = clock.nowMs();
+  let nom: string;
+  let depuis: number;
+  if (!demarrageFroidEmis) {
+    nom = DEMARRAGE_FROID;
+    depuis = demarrageA;
+  } else if (retourPremierPlanA != null) {
+    nom = DEMARRAGE_CHAUD;
+    depuis = retourPremierPlanA;
+  } else {
+    // Déjà mesuré, et aucun retour au premier plan depuis : il n'y a pas de
+    // troisième démarrage à décrire.
+    return false;
+  }
+  const duree = maintenant - depuis;
+  if (!Number.isFinite(duree) || duree < 0 || duree > DEMARRAGE_MAX_MS) {
+    // On consomme quand même la fenêtre : sans cela, un appel tardif serait
+    // refusé puis un autre, plus tard encore, publierait une durée pire.
+    if (nom === DEMARRAGE_FROID) demarrageFroidEmis = true;
+    else retourPremierPlanA = null;
+    return false;
+  }
+  const snapshot = envelopeCtx();
   if (!snapshot) return false;
-  return enqueue(
-    buildActionSpan(snapshot, { id: newEnvelopeId(), name: safeName, context: snapshot.context }, now(), hex(8)),
-  );
+  const emis = enqueue(buildTimingSpan(snapshot, nom, duree, now(), hex(8)));
+  if (nom === DEMARRAGE_FROID) demarrageFroidEmis = true;
+  else retourPremierPlanA = null;
+  if (emis && capacites) capacites.appStart = "active";
+  return emis;
 }
 
 /**
@@ -1020,6 +1606,7 @@ export function getDiagnostics(): MobileDiagnostics {
     identityPersistence,
     lastTransportStatus,
     storageCorruptions: persist ? persist.corruptionsDetectees : null,
+    jsCapabilities: capacites ? { ...capacites } : null,
   };
 }
 
@@ -1030,6 +1617,10 @@ export default {
   flushNow,
   consent,
   shutdown,
+  instrumentPressable,
+  markFirstScreenRendered,
+  navigationDepuisRouteur,
+  rejetsDepuisTracker,
   setGlobalContext,
   setGlobalContextProperty,
   removeGlobalContextProperty,
