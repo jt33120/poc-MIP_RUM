@@ -99,15 +99,19 @@ Livré le 18/09/2026 sur `feat/rum-runtime-p7-1`, sans migration. Preuves et éc
 
 ### P7.2 — consentement, visiteur et transport (L)
 
-- [ ] Implémenter gate et snapshots d’époque. Une transition granted→denied purge avant tout nouvel enqueue ; rejected hooks ne modifient pas l’état global.
-- [ ] Implémenter session/visitor via adaptateurs, horloges monotones pour durées et UTC pour timestamps ; horloge murale qui recule ne donne pas de timing négatif.
-- [ ] Queue par app/époque : défaut mémoire 500 événements/1 Mio, maximum 1 000/2 Mio, TTL 24 h, batch ≤64 événements et plafond HTTP réel. Supprimer les plus anciens au dépassement avec compte drop ; ne pas dépasser le plafond à cause d’un seul événement énorme.
-- [ ] Retirer un batch uniquement après acquittement HTTP attendu. 408/429/5xx et réseau retry avec backoff+jitter, `Retry-After` borné ; 400/401/403 non retry infini, diagnostics sans corps sensible. Un événement rejoué garde son ID, pas de nouveau span créé à chaque tentative.
-- [ ] Persistance optionnelle versionnée avec adaptateur natif ; sérialiser des écritures atomiques/manifestes selon capacité, reprise après corruption sans crasher l’app ; aucune API key ou identité brute dans la queue.
-- [ ] Sauvegarde sur background et flush best-effort ; restaurer au démarrage après consentement, TTL et époque. Queue de l’app A impossible à envoyer dans B.
-- [ ] `shutdown` enlève uniquement les hooks/timers posés par MIP ; respecte un patch installé après lui. Re-init/test mount ne duplique pas listeners.
+- [x] Implémenter gate et snapshots d’époque. Une transition granted→denied purge avant tout nouvel enqueue ; rejected hooks ne modifient pas l’état global.
+- [x] Implémenter session/visitor via adaptateurs, horloges monotones pour durées et UTC pour timestamps ; horloge murale qui recule ne donne pas de timing négatif.
+- [x] Queue par app/époque : défaut mémoire 500 événements/1 Mio, maximum 1 000/2 Mio, TTL 24 h, batch ≤64 événements et plafond HTTP réel. Supprimer les plus anciens au dépassement avec compte drop ; ne pas dépasser le plafond à cause d’un seul événement énorme.
+- [x] Retirer un batch uniquement après acquittement HTTP attendu. 408/429/5xx et réseau retry avec backoff+jitter, `Retry-After` borné ; 400/401/403 non retry infini, diagnostics sans corps sensible. Un événement rejoué garde son ID, pas de nouveau span créé à chaque tentative.
+- [x] Persistance optionnelle versionnée avec adaptateur natif ; sérialiser des écritures atomiques/manifestes selon capacité, reprise après corruption sans crasher l’app ; aucune API key ou identité brute dans la queue.
+- [x] Sauvegarde sur background et flush best-effort ; restaurer au démarrage après consentement, TTL et époque. Queue de l’app A impossible à envoyer dans B.
+- [x] `shutdown` enlève uniquement les hooks/timers posés par MIP ; respecte un patch installé après lui. Re-init/test mount ne duplique pas listeners.
 
 Recette : réseau offline→online, perte d’ACK après commit, 429, 401, disque plein/corrompu, révocation pendant flush, fermeture/réouverture, changement user avec retry, 2 apps, horloge reculée. Test SDK+ingest prouve une seule occurrence pour un même événement acquitté deux fois.
+
+Livré le 18/09/2026 sur `feat/rum-runtime-p7-2`, sans migration. Le stockage durable
+(`offline.persistent`) est **désactivé par défaut** : son activation en production reste
+conditionnée à P8.1. Preuves et écarts assumés : [delivery-p7.md](delivery-p7.md).
 
 ### P7.3 — navigation, actions et erreurs JS (M)
 
