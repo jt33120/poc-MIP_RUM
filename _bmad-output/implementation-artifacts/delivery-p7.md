@@ -14,7 +14,7 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 | P7.2 — consentement, visiteur, transport | [#202](https://github.com/jt33120/poc-MIP_RUM/pull/202) | **aucune** | oui | oui | verte | non | non |
 | P7.3 — navigation, actions, erreurs JS | [#204](https://github.com/jt33120/poc-MIP_RUM/pull/204) | **aucune** | oui | oui | verte | non | non |
 | P7.4 — API Node et FastAPI | [#200](https://github.com/jt33120/poc-MIP_RUM/pull/200) | **aucune** | oui | oui | verte | non | non |
-| P7.5 — `/mobile`, API/MCP, distribution | à ouvrir | **v82** | oui | oui | à vérifier | non | non |
+| P7.5 — `/mobile`, API/MCP, distribution | [#207](https://github.com/jt33120/poc-MIP_RUM/pull/207) | **v82** | oui | oui | verte | non | non |
 
 « Déployé » et « Vérifié sur vraie app » restent à **non** pour les cinq :
 aucune de ces livraisons n'a été poussée en production, et **aucune n'a tourné
@@ -752,6 +752,12 @@ peu : il dit exactement le contraire de la vérité, avec l'autorité d'un chiff
 | `pnpm exec playwright test tests/e2e/mobile-console.spec.ts --workers=1` | **2 tests verts** — badges, chiffres, 390 px, clavier, filtre de plateforme, données manquantes, drill-down, filtre refusé, API |
 | `BENCH_DATABASE_URL=… … rum-mobile-bench-p75` | index choisi dans les 3 scénarios ; 28 → 3,5 ms (24 h), 48 → 26 ms (7 j) |
 
+CI de [#207](https://github.com/jt33120/poc-MIP_RUM/pull/207) **verte** après
+correction : « Build SDK + tests unitaires », « E2E Playwright (Postgres
+service) », `docker-smoke` et `mcp-smoke` passent tous. Les deux échecs du
+premier passage sont consignés ci-dessus — un compte d'outils figé à 15, et le
+cache de colonnes qui ne se rejouait pas au changement de base.
+
 Bases jetables dédiées sur le PostgreSQL 15 local (port 5433) : `p75_migration`
 (chaîne complète + rejeu), `p75_prev80` (schéma de version précédente, v82 seule
 appliquée dessus), `p75_sql` (recette), `p75_rls` (isolation), `p75_bench`
@@ -822,7 +828,7 @@ existe, ce qui est suivi, et ce qui reste **non vérifié** — la troisième li
 | P7.2 — consentement, visiteur, transport | [#202](https://github.com/jt33120/poc-MIP_RUM/pull/202) | aucune | oui | oui | verte | **non** | **non** |
 | P7.3 — navigation, actions, erreurs JS | [#204](https://github.com/jt33120/poc-MIP_RUM/pull/204) | aucune | oui | oui | verte | **non** | **non** |
 | P7.4 — API Node et FastAPI | [#200](https://github.com/jt33120/poc-MIP_RUM/pull/200) | aucune | oui | oui | verte | **non** | **non** |
-| P7.5 — `/mobile`, API/MCP, distribution | cette PR | **v82** | oui | oui | à vérifier | **non** | **non** |
+| P7.5 — `/mobile`, API/MCP, distribution | [#207](https://github.com/jt33120/poc-MIP_RUM/pull/207) | **v82** | oui | oui | verte | **non** | **non** |
 
 **Une seule migration pour tout P7**, et c'est délibéré : P7.1 à P7.4 n'écrivent
 que des attributs déjà lus par l'ingestion depuis P2/P3/P5/P6. v82 n'arrive que
