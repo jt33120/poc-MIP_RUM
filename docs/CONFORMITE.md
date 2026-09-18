@@ -66,22 +66,23 @@ les lots encore en file sont nettoyés **élément par élément**, de sorte qu'
 personnes perde celle qui a demandé et conserve l'autre. Une session déjà enregistrée sous une
 application ne peut plus être mise à jour par une autre.
 
-**Ce qui attend une décision, et n'est donc PAS activé.** La *protection durable* —
+**Ce qui est activé depuis le 18/09/2026.** La *protection durable* —
 `privacy_erasure_barrier`, qui fait refuser par tous les writers les données rattachables à un sujet
-effacé, indéfiniment — est livrée avec ses tables, son protocole et ses tests, mais reste **éteinte
-par défaut** (`app_registry.privacy_barrier_mode = 'off'`). Trois questions doivent être tranchées
-avant de l'allumer, et elles ne l'ont pas été :
+effacé — est **allumée pour les sept applications du registre**
+(`app_registry.privacy_barrier_mode = 'enforce'`). La politique retenue est **la conservation sans
+expiration** : `expires_at` vaut `NULL`. Une durée bornée ne garantirait rien contre une restauration
+plus ancienne qu'elle, et la barrière est assumée pour ce qu'elle est — une donnée pseudonyme, qui
+retient l'identifiant effacé afin de pouvoir le refuser.
 
-1. **combien de temps conserve-t-on une barrière** ? Elle est elle-même une donnée pseudonyme : elle
-   retient l'identifiant effacé pour pouvoir le refuser. `expires_at` existe et vaut `NULL` (pas
-   d'expiration) ; aucune durée n'a été inventée, parce qu'une purge à 30 jours ne garantirait rien
-   contre une restauration plus ancienne ;
-2. **une personne peut-elle reprendre une collecte autorisée** après un effacement, et par quelle
-   opération ? Aucune voie de réactivation n'est implémentée : ni fonction SQL de levée, ni drapeau
-   du SDK. Les identifiants de session effacés restent refusés **pour toujours** ;
-3. **que fait-on des sauvegardes** ? Une restauration PITR antérieure à un effacement doit rejouer
-   les barrières avant de rouvrir lectures et ingestion. Tant que cette procédure n'est pas écrite et
-   éprouvée, la garantie ne porte pas sur les sauvegardes.
+**Aucune voie de réactivation n'existe** : ni fonction SQL de levée, ni drapeau du SDK. Les
+identifiants de session effacés restent refusés pour toujours. Par quelle opération une personne
+pourrait reprendre une collecte autorisée après son effacement reste à décider ; rien ne l'implémente
+implicitement.
+
+**Ce que l'activation ne couvre pas : les sauvegardes.** Une restauration PITR antérieure à un
+effacement doit rejouer les barrières **avant** de rouvrir lectures et ingestion. Cette procédure
+n'est ni écrite ni éprouvée. Tant qu'elle ne l'est pas, la garantie ne porte pas sur les
+restaurations, et ce document ne prétend pas le contraire.
 
 **Ce que la garantie ne couvrira jamais.** La preuve porte sur les identifiants fournis ou déjà liés
 (session, visiteur, HMAC utilisateur ou compte, cloisonnés par application). Un événement totalement

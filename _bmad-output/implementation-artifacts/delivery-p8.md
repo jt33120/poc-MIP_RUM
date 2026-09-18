@@ -9,7 +9,7 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 
 | Sous-lot | PR | Migration | Implémenté | Testé localement | CI | Déployé | Vérifié sur vraie app |
 |---|---|---|---|---|---|---|---|
-| P8.1 — effacement sérialisé avec l'ingestion | #205 | v81 (non appliquée en production) | oui | oui | verte | non | non — protection durable **non activée** |
+| P8.1 — effacement sérialisé avec l'ingestion | #205 | v81, appliquée sur Neon le 18/09 10:16 | oui | oui | verte | oui (`b06a5ce`) | non — aucun effacement réel joué depuis l'activation |
 | P8.2 à P8.8 | — | — | non | — | — | — | — |
 
 ## P8.1 — effacement sérialisé avec l'ingestion
@@ -217,45 +217,51 @@ ferait tourner la file de rejeu du SDK sur une demande qui ne peut pas aboutir.
   mais aucun mécanisme automatique ne refuse un writer antérieur à v81. Un writer d'une version
   antérieure **ignore** la table de barrières : c'est à l'exploitant de vérifier qu'il n'en tourne plus
   avant de poser `enforce`.
-- **Rien n'est déployé.** La migration v81 n'a pas été appliquée sur Neon, et la protection durable
-  n'est activée pour aucune application.
+- **Déployé et activé le 18/09/2026.** `migration-v81.sql` est appliquée sur Neon (10:16), la console
+  et les trois services Railway tournent sur `b06a5ce`, et `privacy_barrier_mode` vaut `enforce` pour
+  les **sept** applications du registre. Aucune barrière n'est encore posée : l'activation ne change
+  donc rien au trafic, elle rend la protection réelle au prochain effacement demandé.
 
-## La décision de politique qui manque, nommée
+## La décision de politique, prise le 18/09/2026
 
-**Combien de temps conserve-t-on une barrière d'effacement, que fait-on d'une reprise de collecte
-autorisée après un effacement, et que fait-on des restaurations de sauvegarde ?**
+**« Conserver les barrières sans expiration. »** C'est la première des trois formulations proposées :
+la garantie la plus forte, au prix de conserver indéfiniment un identifiant pseudonyme par personne
+effacée. Elle a été retenue parce qu'une expiration ne garantirait rien contre une restauration plus
+ancienne qu'elle — et qu'une garantie qu'on ne peut pas tenir vaut moins que pas de garantie.
 
-Tant que cette décision n'est pas prise, `app_registry.privacy_barrier_mode` reste à `off` pour toutes
-les applications, aucune barrière n'est enregistrée, et **la protection durable est déclarée non
-activée** — dans le code (défaut de la colonne), dans la documentation (`docs/CONFORMITE.md` §3.1), à
-l'écran (`/admin/privacy` affiche « Protection durable NON ACTIVÉE ») et ici.
+Le code n'a rien demandé de plus : `expires_at` est nullable et reste `NULL`. L'activation a consisté
+en une seule instruction, après avoir vérifié qu'aucun writer antérieur à v81 ne tourne (les trois
+services Railway sont sur `b06a5ce`, qui contient v81) :
 
-Ce qui est déjà tranché, et n'attend rien :
+```sql
+update app_registry set privacy_barrier_mode = 'enforce' where privacy_barrier_mode = 'off';
+-- app-a, app-b, demo-app, gip-plateforme, insight-performance, mip-rum-console, test
+```
+
+Les sept applications sont activées ensemble, délibérément : une application laissée à `off` n'aurait
+silencieusement aucune protection, et c'est le pire des états — on croirait le produit protégé.
+
+### Ce qui est tranché, et n'attend plus rien
 
 - la barrière **est** une donnée pseudonyme — elle retient l'identifiant effacé pour pouvoir le
   refuser. On ne prétend pas le contraire ;
-- `expires_at` est **nullable et vaut NULL** : aucune expiration n'a été inventée, parce qu'une purge à
-  30 jours ne garantirait rien contre une restauration plus ancienne ;
+- `expires_at` vaut `NULL` : aucune expiration, conformément à la décision ;
 - **aucune voie de réactivation n'existe** : ni fonction SQL de levée, ni drapeau du SDK, et un test le
   vérifie. Les identifiants de session effacés restent refusés pour toujours, même si la politique
   autorise un jour l'identité à reprendre avec de **nouveaux** identifiants.
 
-Trois formulations possibles de la décision, pour que l'utilisateur puisse trancher en une phrase :
+### Ce qui reste ouvert, et que l'activation ne referme pas
 
-1. **« Conserver les barrières sans expiration »** — la garantie la plus forte, au prix de conserver
-   indéfiniment un identifiant pseudonyme par personne effacée. C'est ce que le code fait déjà quand on
-   pose `enforce` ; il n'y a rien à écrire de plus.
-2. **« Conserver N jours, au-delà de la fenêtre de restauration réellement disponible »** — exige de
-   connaître la fenêtre PITR du plan Neon, et de la documenter. `expires_at` porte alors `now() + N
-   jours`, et la garantie devient « aucune résurrection tant que la restauration la plus ancienne est
-   plus récente que N jours ».
-3. **« Ne pas activer »** — l'état actuel : l'effacement reste sérialisé avec l'ingestion (aucun writer
-   ne recrée de ligne pendant l'opération, les lots en file sont nettoyés), mais un événement ultérieur
-   portant le même identifiant est de nouveau collecté.
-
-L'activation, une fois la décision prise, est une seule instruction par application :
-`update app_registry set privacy_barrier_mode = 'enforce' where app_id = …`, **après** avoir vérifié
-qu'aucun writer antérieur à v81 ne tourne encore.
+1. **Reprise de collecte autorisée après un effacement** : par quelle opération, par qui, avec quelle
+   trace ? Rien n'est implémenté, et l'activation ne crée aucun besoin urgent — mais la question se
+   posera à la première personne qui demande son effacement puis revient.
+2. **Restaurations de sauvegarde** : une restauration PITR antérieure à un effacement doit rejouer les
+   barrières **avant** de rouvrir lectures et ingestion. Cette procédure n'est ni écrite ni éprouvée.
+   **Tant qu'elle ne l'est pas, la garantie ne porte pas sur les sauvegardes** — l'activation ne change
+   rien à cette limite, et il serait malhonnête de laisser croire le contraire.
+3. **Preuve sous trafic réel** : aucun événement n'est arrivé depuis le 17/09 17:23, et aucun
+   effacement n'a été demandé depuis l'activation. Le protocole est prouvé par 17 tests de concurrence
+   sur PostgreSQL, pas par la production.
 
 ## Suivis consolidés
 
