@@ -99,6 +99,11 @@ const EXPORTS_ATTENDUS_MOBILE = [
   "addAction", "addError", "addFeatureFlagEvaluation", "addTiming",
   "clearAccount", "clearGlobalContext", "clearUser", "consent", "default",
   "flushNow", "getDiagnostics", "getGlobalContext", "init",
+  // P7.3 — instrumentation d'appui, mesure de démarrage JS, et deux fabriques
+  // d'adaptateurs que l'application appelle avec SES objets (référence de
+  // routeur, module de suivi de rejets) : le SDK ne résout aucun module.
+  "instrumentPressable", "markFirstScreenRendered", "navigationDepuisRouteur",
+  "rejetsDepuisTracker",
   "removeGlobalContextProperty", "screen", "setAccount", "setGlobalContext",
   "setGlobalContextProperty", "setUser", "shutdown", "startView", "track",
 ];
@@ -156,7 +161,7 @@ try {
     diag.queued === 0 && diag.dropped === 0 && diag.retries === null &&
       diag.storageAvailable === null && diag.consent === null && diag.nativeCapabilities === null &&
       diag.identityPersistence === null && diag.lastTransportStatus === null &&
-      diag.storageCorruptions === null,
+      diag.storageCorruptions === null && diag.jsCapabilities === null,
     "getDiagnostics() distingue le connu (0) de l'inconnu (null)",
   );
 
@@ -181,7 +186,8 @@ try {
   writeFileSync(join(bac, "consommateur.ts"), `
     import {
       init, addError, consent, shutdown, getDiagnostics, setUser, startView,
-      type EventContext, type StorageAdapter,
+      instrumentPressable, markFirstScreenRendered, navigationDepuisRouteur,
+      type EventContext, type StorageAdapter, type NavigationAdapter,
     } from "@mip/rum-mobile";
     const stockage: StorageAdapter = {
       async getItem() { return null; },
@@ -201,6 +207,25 @@ try {
     addError(new Error("boum"), contexte, { fingerprint: "checkout-v1" });
     const d: number | null = getDiagnostics().retries;
     void d;
+    // P7.3 — l'instrumentation d'appui préserve toutes les autres props, la
+    // fabrique d'adaptateur rend bien un NavigationAdapter, et la mesure de
+    // démarrage rend un booléen (jamais une exception dans l'app hôte).
+    const props = instrumentPressable({
+      mipActionName: "checkout.payer",
+      accessibilityLabel: "Payer la commande",
+      onPress: () => {},
+    });
+    const libelle: string = props.accessibilityLabel;
+    void libelle;
+    const routage: NavigationAdapter = navigationDepuisRouteur({
+      addListener: () => () => {},
+      getCurrentRoute: () => ({ name: "Accueil", key: "Accueil-1" }),
+    });
+    void routage;
+    const demarre: boolean = markFirstScreenRendered();
+    void demarre;
+    const capacites = getDiagnostics().jsCapabilities;
+    void (capacites === null ? null : capacites.unhandledRejection);
     void shutdown();
   `);
   writeFileSync(join(bac, "tsconfig.json"), JSON.stringify({
