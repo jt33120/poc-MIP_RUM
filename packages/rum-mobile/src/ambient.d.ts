@@ -13,3 +13,22 @@ declare const console: {
 
 /** RN renvoie un identifiant opaque ; `unref` n'existe que sous Node. */
 declare function setInterval(handler: () => void, ms: number): { unref?: () => void };
+declare function clearInterval(handle: unknown): void;
+declare function setTimeout(handler: () => void, ms: number): { unref?: () => void };
+declare function clearTimeout(handle: unknown): void;
+
+/**
+ * P7.2 — mesure d'octets et abandon de requête. Les deux sont OPTIONNELS : le
+ * code teste leur présence avant usage, parce qu'aucun des moteurs JS visés ne
+ * les garantit tous les deux.
+ */
+declare class TextEncoder {
+  encode(input: string): { length: number };
+}
+
+declare var crypto:
+  | {
+      randomUUID?: () => string;
+      getRandomValues?: (array: Uint8Array) => Uint8Array;
+    }
+  | undefined;

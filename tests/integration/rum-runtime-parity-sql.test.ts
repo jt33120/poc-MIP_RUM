@@ -271,3 +271,134 @@ suite("P7.1 — round-trip React Native jusqu'à PostgreSQL", () => {
     )).rows[0].n)).toBe(1);
   }, 60_000);
 });
+
+// ───────────────────── P7.2 — acquittement et idempotence ────────────────────
+//
+// LA QUESTION À LAQUELLE CE BLOC RÉPOND. Le transport mobile ne retire un lot
+// qu'après acquittement HTTP. Que se passe-t-il quand le serveur a ÉCRIT le lot
+// mais que l'acquittement se perd — tunnel, coupure TLS, application tuée ? Le
+// client rejoue. Si le rejeu créait de nouveaux identifiants, chaque perte
+// d'acquittement doublerait une session, une erreur, un événement, et les
+// compteurs produit deviendraient faux sans qu'aucune alerte ne se déclenche.
+//
+// Ce test ne simule pas le parseur : il prend les DEUX corps HTTP réellement
+// émis par le SDK et les fait traverser la chaîne complète, deux fois.
+
+/** Runtime mobile dont la première tentative échoue, la seconde réussit. */
+async function sdkAvecAcquittementPerdu(appId: string) {
+  vi.resetModules();
+  const lots: Lot[] = [];
+  let premiere = true;
+  const horloge = { t: 0, nowMs() { return this.t; } };
+  vi.stubGlobal("fetch", async (_url: string, init: { body: string }) => {
+    lots.push(JSON.parse(init.body));
+    if (premiere) {
+      premiere = false;
+      // Le serveur a écrit, mais le client n'apprendra jamais qu'il a écrit.
+      throw new Error("connexion interrompue apres commit");
+    }
+    return { status: 202, headers: { get: () => null } };
+  });
+  const sdk = await import("../../packages/rum-mobile/src/index");
+  sdk.init({
+    endpoint: "https://ingest.test/v1/traces",
+    appId,
+    apiKey: "mip_mob_p72",
+    clientId: "acme",
+    env: "prod",
+    appVersion: "3.1.0",
+    platform: "ios",
+    osVersion: "17",
+    flushIntervalMs: 3_600_000,
+    adapters: { monotonicClock: horloge },
+  });
+  return { sdk, lots, horloge };
+}
+
+/** Identifiants de span d'un lot, triés — la clef d'idempotence de l'ingestion. */
+function idsDe(lot: Lot): string[] {
+  return lot.resourceSpans
+    .flatMap((rs: Lot) => rs.scopeSpans.flatMap((ss: Lot) => ss.spans))
+    .map((s: Lot) => s.spanId)
+    .sort();
+}
+
+suite("P7.2 — un même événement acquitté deux fois ne compte qu'une occurrence", () => {
+  it("rejoue le lot à l'identique et n'écrit qu'une ligne par signal", async () => {
+    await nettoyer();
+    const { sdk, lots, horloge } = await sdkAvecAcquittementPerdu(APP);
+    sdk.setUser({ id: BRUT, role: "admin" });
+    sdk.screen("Accueil");
+    sdk.startView("Checkout", { etape: 1 });
+    sdk.addAction("Payer");
+    sdk.addError(new Error("incident de paiement"), { panier: 3 });
+    sdk.track("checkout", { amount: 42 });
+
+    // Première tentative : le serveur écrit, l'acquittement se perd.
+    await sdk.flushNow();
+    expect(lots).toHaveLength(1);
+    const commit = await ingerer(lots[0]);
+    expect(commit.rejected).toBe(0);
+    // Rien n'a été retiré côté client : sans acquittement, rien ne bouge.
+    expect(sdk.getDiagnostics().queued).toBeGreaterThan(0);
+    expect(sdk.getDiagnostics().retries).toBe(1);
+
+    // Seconde tentative, après l'échéance du retrait exponentiel.
+    horloge.t += 10 * 60_000;
+    await sdk.flushNow();
+    expect(lots).toHaveLength(2);
+    expect(sdk.getDiagnostics().queued).toBe(0);
+
+    // Les identifiants OTLP sont RIGOUREUSEMENT les mêmes : c'est la seule
+    // raison pour laquelle l'ingestion peut appliquer ses `on conflict`.
+    expect(idsDe(lots[1])).toEqual(idsDe(lots[0]));
+
+    const rejeu = await ingerer(lots[1]);
+    expect(rejeu.rejected).toBe(0);
+
+    // Une seule occurrence de chaque signal, et une seule session.
+    const compte = async (table: string) =>
+      Number((await pool.query(`select count(*)::int n from ${table} where app_id=$1`, [APP])).rows[0].n);
+    expect(await compte("rum_session")).toBe(1);
+    expect(await compte("rum_pageview")).toBe(1);
+    expect(await compte("rum_error")).toBe(1);
+    expect(await compte("rum_action")).toBe(1);
+    // vue + action + événement métier = 3 lignes d'événements, pas 6.
+    expect(await compte("rum_event")).toBe(3);
+
+    // Et la projection P1 ne double pas davantage : autant de lignes que de
+    // spans distincts.
+    const total = Number((await pool.query(
+      "select count(*)::int n from rum_event_index where app_id=$1", [APP],
+    )).rows[0].n);
+    const distincts = Number((await pool.query(
+      "select count(distinct (kind, source_span_id))::int n from rum_event_index where app_id=$1", [APP],
+    )).rows[0].n);
+    expect(total).toBe(distincts);
+  }, 60_000);
+
+  it("l'événement rejoué garde l'identité de son émission, pas celle du moment", async () => {
+    await nettoyer();
+    const { sdk, lots, horloge } = await sdkAvecAcquittementPerdu(APP);
+    sdk.setUser(BRUT);
+    sdk.track("achat_alice", { amount: 1 });
+    await sdk.flushNow();
+
+    // L'utilisateur change AVANT que le lot ne parte réellement.
+    sdk.setUser("bob@example.test");
+    horloge.t += 10 * 60_000;
+    await sdk.flushNow();
+    expect(lots).toHaveLength(2);
+    await ingerer(lots[1]);
+
+    const hash = (await pool.query(
+      "select user_id_hash from rum_event where app_id=$1 and name=$2", [APP, "achat_alice"],
+    )).rows[0].user_id_hash;
+
+    // Référence : le hash serveur de l'identité d'ORIGINE, calculé séparément.
+    const reference = flattenOtlp(secureOtlpIdentities(lots[0], SECRET).payload).events[0].user_id_hash;
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    // Jamais de réattribution au flush : ce serait inventer un achat de Bob.
+    expect(hash).toBe(reference);
+  }, 60_000);
+});
