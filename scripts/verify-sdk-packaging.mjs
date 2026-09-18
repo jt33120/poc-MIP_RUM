@@ -97,10 +97,10 @@ for (const [nom, source] of [["web", web], ["RN CJS", rnCjs], ["RN ESM", rnEsm],
 
 const EXPORTS_ATTENDUS_MOBILE = [
   "addAction", "addError", "addFeatureFlagEvaluation", "addTiming",
-  "clearAccount", "clearGlobalContext", "clearUser", "default", "flushNow",
-  "getDiagnostics", "getGlobalContext", "init", "removeGlobalContextProperty",
-  "screen", "setAccount", "setGlobalContext", "setGlobalContextProperty",
-  "setUser", "startView", "track",
+  "clearAccount", "clearGlobalContext", "clearUser", "consent", "default",
+  "flushNow", "getDiagnostics", "getGlobalContext", "init",
+  "removeGlobalContextProperty", "screen", "setAccount", "setGlobalContext",
+  "setGlobalContextProperty", "setUser", "shutdown", "startView", "track",
 ];
 
 const EXPORTS_ATTENDUS_CORE = [
@@ -149,11 +149,14 @@ try {
     JSON.stringify(noms) === JSON.stringify(EXPORTS_ATTENDUS_MOBILE),
     `exports CommonJS de @mip/rum-mobile conformes (obtenu : ${noms.join(", ")})`,
   );
-  // « Inconnu » vaut null, jamais 0 : un lot qui n'a pas de transport avec
-  // retry ne doit pas annoncer « 0 renvoi ».
+  // « Inconnu » vaut null, jamais 0 : AVANT `init`, le runtime ne sait rien de
+  // son consentement, de son stockage ni de ses renvois. Annoncer « 0 renvoi »
+  // à ce moment-là serait une affirmation, pas une mesure.
   verifie(
     diag.queued === 0 && diag.dropped === 0 && diag.retries === null &&
-      diag.storageAvailable === null && diag.consent === null && diag.nativeCapabilities === null,
+      diag.storageAvailable === null && diag.consent === null && diag.nativeCapabilities === null &&
+      diag.identityPersistence === null && diag.lastTransportStatus === null &&
+      diag.storageCorruptions === null,
     "getDiagnostics() distingue le connu (0) de l'inconnu (null)",
   );
 
@@ -176,14 +179,29 @@ try {
 
   // Types — un consommateur TypeScript compile contre les `.d.ts` publiés.
   writeFileSync(join(bac, "consommateur.ts"), `
-    import { init, addError, getDiagnostics, setUser, startView, type EventContext } from "@mip/rum-mobile";
-    init({ endpoint: "https://ingest.test/v1/traces", appId: "demo", platform: "ios" });
+    import {
+      init, addError, consent, shutdown, getDiagnostics, setUser, startView,
+      type EventContext, type StorageAdapter,
+    } from "@mip/rum-mobile";
+    const stockage: StorageAdapter = {
+      async getItem() { return null; },
+      async setItem() {},
+      async removeItem() {},
+    };
+    init({
+      endpoint: "https://ingest.test/v1/traces", appId: "demo", platform: "ios",
+      requireConsent: true, initialConsent: "pending",
+      adapters: { storage: stockage },
+      offline: { persistent: false, maxEvents: 500 },
+    });
+    consent(true);
     const contexte: EventContext = { plan: "pro" };
     setUser({ id: "u-1", ...contexte });
     startView("Accueil", contexte);
     addError(new Error("boum"), contexte, { fingerprint: "checkout-v1" });
     const d: number | null = getDiagnostics().retries;
     void d;
+    void shutdown();
   `);
   writeFileSync(join(bac, "tsconfig.json"), JSON.stringify({
     compilerOptions: {
