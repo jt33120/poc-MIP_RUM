@@ -176,7 +176,12 @@ function loadReplayBundle(url: string): Promise<RecordFn> {
   });
 }
 
-async function gzip(text: string): Promise<Uint8Array> {
+// `Uint8Array<ArrayBuffer>` et non `Uint8Array` tout court : depuis TypeScript 5.7
+// le type est générique sur son tampon, et `BodyInit` n'accepte qu'un tampon non
+// partagé. La précision dit la vérité plutôt qu'elle ne la force — `arrayBuffer()`
+// rend toujours un ArrayBuffer ordinaire — et elle rend ce corps de requête
+// assignable sans assertion.
+async function gzip(text: string): Promise<Uint8Array<ArrayBuffer>> {
   const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }

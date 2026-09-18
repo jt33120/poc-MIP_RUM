@@ -63,6 +63,18 @@ jobs:
       - name: Empaquetage SDK — étanchéité et mini-consommateur
         run: node scripts/verify-sdk-packaging.mjs
 
+      # P8.8 — le typage des paquets publiés n'était joué NULLE PART : le SDK web a
+      # compilé faux pendant plusieurs lots sans qu'aucun contrôle ne rougisse, et
+      # seul un lancement manuel l'a révélé. Un type faux ne casse pas le bundle
+      # esbuild, qui efface les types — il casse l'application cliente qui l'importe.
+      - name: Typage des paquets publiés
+        run: |
+          pnpm --filter @mip/rum-core exec tsc --noEmit
+          pnpm --filter @mip/rum-sdk exec tsc --noEmit
+          pnpm --filter @mip/rum-mobile exec tsc --noEmit
+          pnpm --filter @mip/agent-node exec tsc --noEmit
+          pnpm --filter console exec tsc --noEmit
+
       - name: Tests unitaires (vitest)
         run: pnpm test:unit
 
@@ -166,6 +178,11 @@ jobs:
       # un schéma sans migration-v71 avant de l'y appliquer.
       # SQL_TEST_PRE_V81_DATABASE_URL : fenêtre de déploiement P8.1, code écrit sur
       # un schéma v80 — sans table de barrières — avant de l'y appliquer.
+      # SQL_TEST_PRE_V83_DATABASE_URL : fenêtre de déploiement P8.2, code écrit sur
+      # un schéma v82 — sans le journal de reprise — avant de l'y appliquer. Elle
+      # manquait : la suite se skippait donc en silence, et un vrai échec (le cache
+      # de colonnes de pg-ingest, indexé par table et non par base) est resté
+      # invisible jusqu'à ce que v85 le révèle.
       # SQL_TEST_PRE_V85_DATABASE_URL : fenêtre de déploiement P8.7, code écrit sur
       # un schéma v83 — sans les colonnes de provenance du pays — avant de l'y
       # appliquer. Sans elle, la suite se SKIPPE en silence, ce qui reviendrait à
@@ -178,6 +195,7 @@ jobs:
           SQL_TEST_V68_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_v68
           SQL_TEST_PRE_V71_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v71
           SQL_TEST_PRE_V81_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v81
+          SQL_TEST_PRE_V83_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v83
           SQL_TEST_PRE_V85_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v85
         run: |
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
@@ -190,6 +208,8 @@ jobs:
             -c 'create database mip_rum_pre_v71'
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -c 'create database mip_rum_pre_v81'
+          psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'create database mip_rum_pre_v83'
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -c 'create database mip_rum_pre_v85'
           pnpm test:sql

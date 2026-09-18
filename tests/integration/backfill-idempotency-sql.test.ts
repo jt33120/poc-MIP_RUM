@@ -23,7 +23,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 // @ts-expect-error module JS sans déclarations
 import { hashIdentity, secureOtlpIdentities } from "../../apps/ingest/lib/identity-hash.mjs";
 // @ts-expect-error module JS sans déclarations
-import { writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
 // @ts-expect-error module JS sans déclarations
 import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
 // @ts-expect-error module JS sans déclarations
@@ -1282,8 +1282,20 @@ suiteFenetre("P8.2 — code publié AVANT migration-v83", () => {
     );
   }, 300_000);
 
+  // Le cache de colonnes de `pg-ingest` est indexé par TABLE, pas par base. Les
+  // suites précédentes l'ont rempli depuis une base au schéma complet : sans
+  // remise à zéro, l'écriture viserait ici des colonnes que ce schéma v82 n'a
+  // pas — `rum_session.geo_source` de v85 l'a démontré. On le vide donc avant
+  // CHAQUE test, puisque le troisième applique v83 et change le schéma sous le
+  // cache ; et en sortant, pour ne pas laisser la suite suivante hériter d'un
+  // cache rempli depuis une base en retard.
+  beforeEach(() => {
+    if (urlPreV83) _resetColonnesCache();
+  });
+
   afterAll(async () => {
     if (!urlPreV83) return;
+    _resetColonnesCache();
     await poolFenetre.end();
   });
 
