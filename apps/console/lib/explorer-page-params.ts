@@ -19,6 +19,8 @@ import {
   VISUALIZATION_LABELS,
   datasetDefinition,
   isExplorerDataset,
+  parseAstFilters,
+  parseExplorerPlan,
   type Aggregation,
   type ExplorerDatasetId,
   type ExplorerPlan,
@@ -29,6 +31,7 @@ import {
   conditionsOf,
   hrefWithQuery,
   queryToSearchParams,
+  serializeSegments,
   type AnalyticsQuery,
   type ParamReader,
 } from "./query-contract";
@@ -185,6 +188,54 @@ export function explorerResume(query: AnalyticsQuery, plan: ExplorerPlan, fenetr
   }
   morceaux.push(`${VISUALIZATION_LABELS[plan.visualization].toLowerCase()}, ${plan.limit} au plus`);
   return `${morceaux.join(" · ")}.`;
+}
+
+/**
+ * AST canonique enregistré → URL de l'Explorer, prête à exécuter. Sert les vues
+ * enregistrées (P6.5) : rouvrir une vue, c'est rejouer sa requête sur l'écran, pas
+ * afficher un résultat figé. Un AST illisible rend sa RAISON — la vue reste
+ * renommable et supprimable, elle n'est pas effacée en silence.
+ */
+export function explorerHrefFromAst(ast: unknown): { ok: true; href: string } | { ok: false; reason: string } {
+  if (typeof ast !== "object" || ast === null || Array.isArray(ast)) {
+    return { ok: false, reason: "la requête enregistrée n’est pas un objet JSON" };
+  }
+  const source = ast as Record<string, unknown>;
+  const plan = parseExplorerPlan(
+    {
+      dataset: source.dataset,
+      measure: source.measure,
+      variant: source.variant ?? null,
+      visualization: source.visualization,
+      groupBy: source.groupBy,
+      limit: source.limit,
+    },
+    null,
+  );
+  if (!plan.ok) return { ok: false, reason: plan.error.message };
+  const conditions = parseAstFilters(source.filters);
+  if (!conditions.ok) return { ok: false, reason: conditions.error.message };
+
+  const params = new URLSearchParams();
+  if (typeof source.app === "string" && source.app) params.set("app", source.app);
+  const range = source.range;
+  if (typeof range === "object" && range !== null) {
+    const r = range as Record<string, unknown>;
+    if (typeof r.preset === "string") {
+      if (r.preset !== "24h") params.set("period", r.preset);
+    } else if (typeof r.from === "string" && typeof r.to === "string") {
+      params.set("from", r.from);
+      params.set("to", r.to);
+    }
+  }
+  const seg = serializeSegments(conditions.value);
+  if (seg) params.set("seg", seg);
+  if (source.includeBots === true) params.set("bots", "1");
+  if (source.includeInternal === true) params.set("internal", "1");
+  for (const [nom, valeur] of Object.entries(explorerPlanParams(plan.value))) {
+    if (valeur !== null) params.set(nom, valeur);
+  }
+  return { ok: true, href: `/explorer?${params.toString()}` };
 }
 
 /** Libellé lisible d'une clé de groupe : un tuple, « Inconnu » pour une valeur absente. */

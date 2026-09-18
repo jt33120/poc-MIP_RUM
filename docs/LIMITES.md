@@ -2,6 +2,49 @@
 
 Liste honnête, demandée par Julian. Colonne « v0.2 » = traité dans le sprint nuit du 10→11/06 (cf. archive/ROADMAP_V02.md) ; « v0.3 » = sprint nuit 2 (cf. archive/ROADMAP_V03.md et la section ci-dessous) ; « Phase 1+ » = nécessite un vrai chantier produit MIP.
 
+## Mise à jour P6.5 (18/09/2026 — tableaux de bord graphiques et vues enregistrées)
+
+Ce que les bornes valent, et ce qu'elles n'ouvrent pas. Toutes sont appliquées avant SQL, et chacune a son test.
+
+| Borne | Valeur | Ce qu'elle signifie |
+|---|---|---|
+| Cartes par tableau de bord | 24 | Inchangé depuis P1. Une carte illisible **compte** : elle n'est pas supprimée pour faire de la place. |
+| Fenêtre propre d'une carte (`rangeOverride`) | preset glissant, ou 30 jours au plus | Elle est **affichée sur la carte**. Sans elle, la carte suit la fenêtre de l'écran — et le dit aussi. Elle n'étend jamais la rétention. |
+| Conditions d'une carte | 10 au total (AST + carte) | Les filtres de la carte s'**ajoutent** à ceux de l'écran ; ils ne remplacent rien. Les drapeaux robots / apps internes ne peuvent que **restreindre** la population globale, jamais la rouvrir. |
+| Lectures simultanées d'une grille | 4 | Vingt-quatre cartes lancées ensemble épuiseraient le pool de connexions. Aucun rafraîchissement automatique : pas de 24 requêtes lourdes toutes les 5 s. |
+| Cache d'une grille | 10 s, 200 entrées, clé incluant le périmètre effectif | Deux cartes identiques ne posent la question qu'une fois. Une réponse calculée pour A ne peut pas servir à B. |
+| Export CSV | 10 000 lignes, plafond **global** | La troncature est **écrite dans le fichier** : un export tronqué ne doit pas passer pour l'inventaire complet. Une cellule commençant par `=`, `+`, `-` ou `@` est préfixée d'une apostrophe — jamais une formule exécutée par un tableur. |
+| Vues enregistrées | 50 par compte **et** par app, nom ≤ 100 caractères, AST ≤ 32 Kio | Le plafond est compté dans la transaction d'écriture, derrière un verrou : deux onglets ne peuvent pas passer à 51 chacun. |
+
+Ce que P6.5 ne fait **pas** : aucun éditeur de formule libre (les représentations sont `value`, `toplist`,
+`timeseries`, `table`, et rien d'autre) ; aucune vue publique ni partage app-wide — une vue enregistrée
+appartient à un compte et à **une app nommée**, faute de quoi la même vue mesurerait une population
+différente selon son lecteur ; aucun export PDF par service tiers (impression de la vue existante) ;
+aucun agrégat pré-calculé ni budget de lecture mesuré — c'est P6.6.
+
+## Mise à jour P6.3 (17/09/2026 — analyses prêtes à l'emploi et drill-downs)
+
+Ce que les nouveaux chiffres mesurent EXACTEMENT, et ce qu'ils ne mesurent pas. Chaque définition est
+affichée à l'écran (bulle de glossaire) et vérifiée par un test ; aucune n'emprunte une convention du
+marché sans la nommer.
+
+| Mesure affichée | Définition exacte | Ce qu'elle n'est PAS |
+|---|---|---|
+| Découpage par dimension (route, navigateur, système, pays estimé, appareil, release) | Regroupement des mesures sur la colonne de la dimension ; les lignes sans valeur forment un groupe « Inconnu » (`is null`). Groupes plafonnés, nombre réel affiché. | Pas de groupe « Autres » : additionner des p75 n'a pas de sens. Un onglet dont la dimension n'est pas collectée est **désactivé avec sa raison**, jamais rendu en l'ignorant. |
+| `session_duration_observed` | `max(0, last_seen_at − started_at)`, sur les sessions **commencées** dans la fenêtre. Les sessions encore actives à la fin de la fenêtre sont comptées **et signalées**. | Pas du temps actif : un onglet laissé ouvert l'allonge, une fermeture brutale la raccourcit. |
+| `single_view_session_rate` | Sessions ayant vu exactement une page / sessions ayant vu au moins une page. Affiché seulement au-delà de 30 sessions. | **Pas un taux de rebond** : aucune durée minimale ni interaction n'entre dans la définition, contrairement aux conventions — incompatibles entre elles — des autres outils. |
+| Tendance des visiteurs observés | Identifiants de visiteur **distincts par seau**. | Non additionnable : la somme des seaux n'est pas le nombre de visiteurs de la fenêtre, et aucun total n'en est déduit. |
+| Ressources (durée, taille, type, origine) | Les ressources **retenues par le SDK** : seuil de lenteur (300 ms par défaut) ou blocage du rendu, vingt au plus par page vue. | Pas un inventaire du réseau : échantillon volontairement biaisé vers le lent, jamais extrapolé. |
+| Partage première / tierce partie | Hôte de l'URL déjà collectée comparé aux **origines déclarées** de l'application (`app_registry.allowed_origins`), application par application. | Aucun appel sortant : le serveur ne résout et ne récupère jamais une URL de ressource. Sans origine déclarée, le partage est annoncé **non calculable** plutôt qu'inventé. |
+| Blocages du fil principal | Nombre de blocages par seau, p75 et pire cas ; Long Tasks et Long Animation Frames comptés **séparément**. | Aucune somme de durées : des blocages concurrents de plusieurs visiteurs ne s'additionnent pas en temps d'attente vécu. |
+| Comparaison par version | Release déclarée **sur chaque mesure** (migration-v75) : vue, métrique et erreur portent la leur. Une session qui traverse un déploiement compte dans les deux versions. | La colonne « Sessions » n'est donc pas additionnable d'une ligne à l'autre. Avant v75, repli sur la release de session, annoncé à l'écran. |
+
+Recherche de sessions : **égalité stricte** sur trois champs seulement — identifiant technique exact, route
+normalisée, release. Ni motif, ni préfixe, ni recherche par identité (visiteur, compte, adresse) : une URL
+partageable ne doit pas permettre de retrouver le parcours d'une personne. C'est une décision de produit,
+pas une fonctionnalité en attente. La pagination utilise une clé stable `(last_seen_at, session_id)` : deux
+pages successives ne peuvent ni répéter ni sauter une ligne.
+
 ## Mise à jour v0.8 (17/06/2026 — sécurité base + scrub PII serveur)
 
 | Limite d'origine | Ce qui est livré en v0.8 |

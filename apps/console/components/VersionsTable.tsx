@@ -17,7 +17,7 @@ import {
   ecartPoints,
   tauxErreur,
   versionReference,
-  type VersionRow,
+  type ComparaisonVersions,
 } from "@/lib/queries-deploys";
 import { fmtVital } from "@/lib/format";
 import { RATING_CLASS, rating2026 } from "@/lib/rating";
@@ -33,7 +33,14 @@ function VitalCell({ name, v }: { name: "LCP" | "INP"; v: number | null }) {
   );
 }
 
-export function VersionsTable({ rows, periodLabel }: { rows: VersionRow[]; periodLabel: string }) {
+export function VersionsTable({
+  comparaison,
+  periodLabel,
+}: {
+  comparaison: ComparaisonVersions;
+  periodLabel: string;
+}) {
+  const { rows, source } = comparaison;
   if (!comparable(rows)) return null;
   const ref = versionReference(rows)!;
 
@@ -104,6 +111,21 @@ export function VersionsTable({ rows, periodLabel }: { rows: VersionRow[]; perio
         Sur {periodLabel}, sans normalisation : deux versions qui n&apos;ont pas tourné aux mêmes
         heures sont jugées sur des publics différents. L&apos;écart mêle donc le code et le
         contexte — à lire comme un signal, pas comme une mesure d&apos;impact.
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-ink-faint" data-testid="versions-source">
+        {source === "occurrence" ? (
+          <>
+            Chaque page vue, mesure et erreur porte la release déclarée <strong>au moment où elle est
+            survenue</strong>. Une session qui traverse un déploiement compte donc dans les deux versions,
+            et « Sessions » n&apos;est pas additionnable d&apos;une ligne à l&apos;autre.
+          </>
+        ) : (
+          <>
+            Les colonnes de release par mesure ne sont pas encore présentes dans ce schéma : toutes les
+            mesures d&apos;une session sont attribuées à la <strong>première</strong> release vue par cette
+            session. Une session à cheval sur un déploiement est donc rangée du mauvais côté.
+          </>
+        )}
       </p>
     </section>
   );

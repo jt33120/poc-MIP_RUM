@@ -21,7 +21,14 @@ import { getUser } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
 import { type SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
-import { paramReader, queryToSearchParams, DIMENSION_LABELS, DIMENSIONS } from "@/lib/query-contract";
+import {
+  conditionsOf,
+  paramReader,
+  queryToSearchParams,
+  DIMENSION_LABELS,
+  DIMENSIONS,
+  type AnalyticsQuery,
+} from "@/lib/query-contract";
 import { dimensionSupport } from "@/lib/query-compiler";
 import { dimensionSchema } from "@/lib/query-schema";
 import {
@@ -47,6 +54,13 @@ import {
 } from "@/lib/explorer-page-params";
 import { exploreAnalytics, type ExplorerResult } from "@/lib/queries-explorer";
 import { ExplorerBudgetError, UnsupportedExplorerDimension } from "@/lib/analytics-schema";
+import { widgetConfigJson, widgetFromPlan } from "@/lib/dashboards";
+import { canDashboardAction, dashboardPrincipal } from "@/lib/dashboard-access";
+import { listDashboards, type DashboardRow } from "@/lib/queries-dashboards";
+import { savedViewReader, savedViewsAvailable } from "@/lib/queries-saved-views";
+import { SAVED_VIEW_NAME_MAX, canCreateSavedView } from "@/lib/saved-views";
+import { saveAnalysisAction } from "@/app/dashboards/actions";
+import { saveViewAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -72,9 +86,16 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
   const definition = datasetDefinition(dataset);
   const schema = await dimensionSchema();
   const utilisateur = await getUser();
-  // Le droit d'écriture est annoncé AVANT l'action : un bouton qui échouerait
+  // Les droits d'écriture sont résolus AVANT l'action : un bouton qui échouerait
   // n'est pas proposé, et son absence est expliquée.
-  const peutEnregistrer = utilisateur?.role === "admin";
+  const principal = await dashboardPrincipal(utilisateur);
+  const cibles = principal
+    ? (await listDashboards(ecran.filters)).filter((d) => canDashboardAction(principal, d, "add_widget"))
+    : [];
+  const app = ecran.query.scope.requestedApp;
+  const lecteurVues = utilisateur ? await savedViewReader(utilisateur) : null;
+  const peutEnregistrerVue =
+    app !== null && lecteurVues !== null && canCreateSavedView(lecteurVues, app) && (await savedViewsAvailable());
 
   const source = { ...explorerSource(reader), dataset };
   const plan = parseExplorerPlan(source, ecran.query);
@@ -280,7 +301,11 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
               ? explorerHref(ecran.query, plan.value, { cursor: resultat.data.next_cursor })
               : null
           }
-          peutEnregistrer={peutEnregistrer}
+          cibles={cibles}
+          peutEnregistrerVue={peutEnregistrerVue}
+          contexte={queryToSearchParams(ecran.query).toString()}
+          appDemandee={app}
+          query={ecran.query}
         />
       )}
     </div>
@@ -292,17 +317,33 @@ function Resultat({
   resultat,
   resume,
   suivantHref,
-  peutEnregistrer,
+  cibles,
+  peutEnregistrerVue,
+  contexte,
+  appDemandee,
+  query,
 }: {
   plan: ExplorerPlan;
   resultat: ExplorerResult;
   resume: string;
   suivantHref: string | null;
-  peutEnregistrer: boolean;
+  /** Tableaux de bord sur lesquels la session peut réellement ajouter une carte. */
+  cibles: DashboardRow[];
+  peutEnregistrerVue: boolean;
+  contexte: string;
+  appDemandee: string | null;
+  query: AnalyticsQuery;
 }) {
   const { meta, data } = resultat;
   const definition = datasetDefinition(plan.dataset);
   const vide = data.samples === 0;
+  // La carte fige le QUOI et les filtres composés ici ; elle n'emporte ni l'app ni
+  // la fenêtre, qui appartiennent au tableau de bord qui l'affichera.
+  const carte = widgetFromPlan(plan, {
+    conditions: conditionsOf(query.filters),
+    includeBots: query.filters.includeBots,
+    includeInternal: query.filters.includeInternal,
+  });
 
   return (
     <>
@@ -397,23 +438,128 @@ function Resultat({
       )}
 
       <section className="card mt-6 p-4">
-        <h2 className="text-sm font-semibold text-ink">Enregistrer dans un tableau de bord</h2>
-        {peutEnregistrer ? (
-          <>
-            <p className="mt-1 text-sm text-ink-soft">
-              Voici la requête canonique — l’AST seul, sans aucune donnée de résultat. C’est exactement ce qu’un widget
-              enregistrera, et il la rejouera avec les droits de son lecteur. Le stockage des vues arrive avec P6.5.
+        <h2 className="text-sm font-semibold text-ink">Enregistrer cette analyse</h2>
+        <p className="mt-1 text-sm text-ink-soft">
+          Ce qui est enregistré est la requête canonique — l’AST seul, sans aucune donnée de résultat. Elle sera
+          rejouée avec les droits de son lecteur, sur la fenêtre de l’écran qui l’affiche.
+        </p>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          {/* ----- Carte de tableau de bord ----- */}
+          <div className="min-w-0">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
+              Comme carte d’un tableau de bord
+            </h3>
+            {cibles.length ? (
+              <form action={saveAnalysisAction} className="mt-2 flex flex-col gap-2" data-testid="save-widget">
+                <input type="hidden" name="ctx" value={contexte} />
+                <input type="hidden" name="widget" value={JSON.stringify(widgetConfigJson(carte))} />
+                <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+                  Tableau de bord
+                  <select name="id" className={`${INPUT_CLASS} w-full`}>
+                    {cibles.map((cible) => (
+                      <option key={cible.id} value={cible.id}>
+                        {cible.name} — {cible.app_id ?? "toutes apps"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {/* La révision de CHAQUE cible voyage avec elle : enregistrer sur un
+                    tableau modifié entre-temps est refusé, jamais écrasé. */}
+                {cibles.map((cible) => (
+                  <input key={cible.id} type="hidden" name={`revision_${cible.id}`} value={cible.revision} />
+                ))}
+                <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+                  Titre de la carte
+                  <input
+                    name="title"
+                    maxLength={60}
+                    placeholder={carte.title}
+                    className={`${INPUT_CLASS} w-full`}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+                  Fenêtre de la carte
+                  <select name="fenetre" className={`${INPUT_CLASS} w-full`}>
+                    <option value="">Suivre la fenêtre du tableau de bord</option>
+                    {/* Figer n'a de sens que pour une fenêtre PERSONNALISÉE : un
+                        preset doit rester glissant, sinon la carte vieillit seule. */}
+                    {query.range.preset === null && (
+                      <option value="freeze">
+                        Figer la fenêtre courante (du {query.range.from} au {query.range.to})
+                      </option>
+                    )}
+                  </select>
+                </label>
+                <input
+                  type="hidden"
+                  name="range_override"
+                  value={JSON.stringify({ from: query.range.from, to: query.range.to })}
+                />
+                <button type="submit" className="btn-accent self-start">
+                  Ajouter au tableau de bord
+                </button>
+              </form>
+            ) : (
+              <p className="mt-2 text-sm text-ink-soft">
+                Aucun tableau de bord modifiable dans ce périmètre. En créer un depuis{" "}
+                <Link href="/dashboards" className="text-accent hover:underline">
+                  Tableaux de bord
+                </Link>
+                , ou copier la requête ci-dessous.
+              </p>
+            )}
+          </div>
+
+          {/* ----- Vue enregistrée ----- */}
+          <div className="min-w-0">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
+              Comme vue enregistrée (personnelle)
+            </h3>
+            {peutEnregistrerVue ? (
+              <form action={saveViewAction} className="mt-2 flex flex-col gap-2" data-testid="save-view">
+                <input type="hidden" name="ctx" value={contexte} />
+                <input type="hidden" name="query" value={JSON.stringify(meta.query)} />
+                <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
+                  Nom de la vue
+                  <input
+                    name="name"
+                    required
+                    maxLength={SAVED_VIEW_NAME_MAX}
+                    placeholder="Erreurs Firefox par release"
+                    className={`${INPUT_CLASS} w-full`}
+                  />
+                </label>
+                <button type="submit" className="btn-ghost self-start">
+                  Enregistrer la vue
+                </button>
+                <p className="text-xs text-ink-faint">
+                  Une vue reste privée : elle n’est lisible que par vous et par un administrateur de son application.
+                </p>
+              </form>
+            ) : (
+              <p className="mt-2 text-sm text-ink-soft">
+                {appDemandee === null
+                  ? "Une vue enregistrée nomme son application : choisir un projet dans les filtres avant d’enregistrer."
+                  : "Enregistrer une vue demande une session de la console rattachée à un compte actif, sur une application de votre périmètre."}
+              </p>
+            )}
+            <p className="mt-2 text-xs">
+              <Link href="/explorer/views" className="text-accent hover:underline">
+                Voir les vues enregistrées
+              </Link>
             </p>
-            <div className="mt-3">
-              <CopyBlock code={JSON.stringify(meta.query, null, 2)} label="Copier la requête" />
-            </div>
-          </>
-        ) : (
-          <p className="mt-1 text-sm text-ink-soft">
-            Enregistrer une analyse demande un droit d’écriture sur les tableaux de bord. Votre compte est en lecture
-            seule sur ce périmètre : la requête reste partageable par son URL.
-          </p>
-        )}
+          </div>
+        </div>
+
+        <details className="mt-4 text-xs text-ink-soft">
+          <summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
+            Requête canonique (JSON)
+          </summary>
+          <div className="mt-2">
+            <CopyBlock code={JSON.stringify(meta.query, null, 2)} label="Copier la requête" />
+          </div>
+        </details>
       </section>
 
       <details className="mt-4 text-xs text-ink-soft">

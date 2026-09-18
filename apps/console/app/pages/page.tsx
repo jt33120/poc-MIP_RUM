@@ -1,12 +1,29 @@
+import Link from "next/link";
 import { Histogram, PercentileTable } from "@/components/Distribution";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { RankBar } from "@/components/charts/RankBar";
+import { Breakdown } from "@/components/Breakdown";
+import { VITALS_BREAKDOWN_COLUMNS, vitalsBreakdownItems } from "@/components/breakdown-view";
+import { LongtasksView } from "@/components/LongtasksView";
+import { ResourcesView } from "@/components/ResourcesView";
+import { VitalPill } from "@/components/VitalPill";
 import { HISTO_BUCKETS, VITAL_CAP } from "@/lib/distribution";
 import { fmtVital } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
+import {
+  BREAKDOWN_NOTICES,
+  BREAKDOWN_PARAM,
+  availableBreakdowns,
+  breakdownDrillHref,
+  breakdownTabs,
+  datasetAvailability,
+  parseBreakdown,
+} from "@/lib/breakdowns";
+import { hrefWithQuery, paramReader } from "@/lib/query-contract";
+import { dimensionSchema } from "@/lib/query-schema";
 import {
   ROUTES_MAX,
   nombreDeRoutes,
@@ -16,24 +33,42 @@ import {
   vitalPercentiles,
   type SlowResource,
 } from "@/lib/queries";
-import { RATING_CLASS, RATING_HEX, rating2026 } from "@/lib/rating";
+import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown } from "@/lib/queries-breakdowns";
+import { longtaskSeries, worstLongtasks } from "@/lib/queries-longtasks";
+import { resourcesVue } from "@/lib/queries-resources";
+import { RATING_HEX, rating2026 } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
 
 export default async function SlowPages({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const ecran = await pageFilters(await searchParams, "/pages");
+  const sp = await searchParams;
+  const ecran = await pageFilters(sp, "/pages");
   if (!ecran.ok) return <FilterProblemNotice title="Pages lentes" problem={ecran.problem} />;
   const f = ecran.filters;
   const period = { label: ecran.label };
-  const [rows, routesTotal, resources, pcts, lcpH, inpH, clsH] = await Promise.all([
-    slowRoutes(f),
-    nombreDeRoutes(f),
-    slowResourcesByRoute(f),
-    vitalPercentiles(f),
-    vitalHistogram(f, "LCP", VITAL_CAP.LCP, HISTO_BUCKETS),
-    vitalHistogram(f, "INP", VITAL_CAP.INP, HISTO_BUCKETS),
-    vitalHistogram(f, "CLS", VITAL_CAP.CLS, HISTO_BUCKETS),
-  ]);
+
+  // Découpage (P6.3) : jugé sur les Web Vitals, les mesures effectivement groupées.
+  const schema = await dimensionSchema();
+  const dispoDecoupage = datasetAvailability(VITALS_BREAKDOWN_DATASETS, schema);
+  const decoupage = parseBreakdown(paramReader(sp).get(BREAKDOWN_PARAM), availableBreakdowns(dispoDecoupage));
+
+  const [rows, routesTotal, resources, pcts, lcpH, inpH, clsH, decoupe, ressources, blocages, pires] =
+    await Promise.all([
+      slowRoutes(f),
+      nombreDeRoutes(f),
+      slowResourcesByRoute(f),
+      vitalPercentiles(f),
+      vitalHistogram(f, "LCP", VITAL_CAP.LCP, HISTO_BUCKETS),
+      vitalHistogram(f, "INP", VITAL_CAP.INP, HISTO_BUCKETS),
+      vitalHistogram(f, "CLS", VITAL_CAP.CLS, HISTO_BUCKETS),
+      decoupage ? vitalsBreakdown(f, decoupage) : Promise.resolve(null),
+      resourcesVue(f),
+      longtaskSeries(f),
+      worstLongtasks(f),
+    ]);
+
+  /** Drill-down d'une route : cet écran, même plage, filtré sur elle. */
+  const routeHref = (route: string) => breakdownDrillHref("/pages", ecran.query, "route", route, schema);
 
   return (
     <div className="animate-fade-up">
@@ -118,6 +153,25 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
         );
       })()}
 
+      {/* Découpage (P6.3) : les mêmes Web Vitals répartis par dimension, chaque
+          groupe ouvrant cet écran filtré — même plage, condition en plus. */}
+      {decoupage && decoupe && (
+        <Breakdown
+          title="Web Vitals par dimension"
+          tabs={breakdownTabs("/pages", ecran.query, decoupage, dispoDecoupage)}
+          notice={BREAKDOWN_NOTICES[decoupage]}
+          items={vitalsBreakdownItems(
+            { pathname: "/pages", query: ecran.query, schema, dimension: decoupage },
+            decoupe.rows,
+          )}
+          columns={VITALS_BREAKDOWN_COLUMNS}
+          groups={decoupe.groups}
+          truncated={decoupe.truncated}
+          measureLabel="Mesures"
+          emptyLabel={`Aucune mesure LCP, INP ou CLS sur ${period.label}.`}
+        />
+      )}
+
       {/* Distribution & percentiles (Lot 3) : ce que le p75 seul masque —
           longue traîne (p90/p95/p99) et forme de la distribution. */}
       <section className="mb-6 space-y-4">
@@ -130,16 +184,20 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
       </section>
 
       <h2 className="mb-2 text-sm font-semibold text-ink">Par route</h2>
-      <div className="card overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-table text-sm">
+          <caption className="sr-only">
+            Routes sur {period.label}, de la plus lente à la plus rapide. Chaque route ouvre cet écran filtré
+            sur elle, avec la même plage.
+          </caption>
           <thead className="bg-panel2">
             <tr>
-              <th className="th">Route</th>
-              <th className="th">Vues</th>
-              <th className="th">LCP p75</th>
-              <th className="th">INP p75</th>
-              <th className="th">CLS p75</th>
-              <th className="th">Long tasks</th>
+              <th scope="col" className="th">Route</th>
+              <th scope="col" className="th">Vues</th>
+              <th scope="col" className="th">LCP p75</th>
+              <th scope="col" className="th">INP p75</th>
+              <th scope="col" className="th">CLS p75</th>
+              <th scope="col" className="th">Long tasks</th>
             </tr>
           </thead>
           <tbody>
@@ -147,14 +205,23 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
               const res = resources.get(r.route) ?? [];
               return (
                 <tr key={r.route} className="border-t border-line/60 align-top transition hover:bg-panel2/60">
-                  <td className="px-4 py-3 font-mono text-xs text-ink">
-                    {r.route}
+                  <td className="px-4 py-3">
+                    {/* Un seul lien par ligne : une tabulation par route au clavier. Le
+                        repli des ressources lentes reste un contrôle natif distinct. */}
+                    <Link
+                      href={routeHref(r.route)}
+                      aria-label={`Route ${r.route} — filtrer cet écran sur cette route`}
+                      data-testid="route-drill"
+                      className="block rounded font-mono text-xs text-ink hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                    >
+                      {r.route}
+                    </Link>
                     {res.length > 0 && <SlowResources items={res} />}
                   </td>
                   <td className="px-4 py-3 tabular-nums">{r.views}</td>
-                  <td className="px-4 py-3"><Cell name="LCP" v={r.lcp_p75} /></td>
-                  <td className="px-4 py-3"><Cell name="INP" v={r.inp_p75} /></td>
-                  <td className="px-4 py-3"><Cell name="CLS" v={r.cls_p75} /></td>
+                  <td className="px-4 py-3"><VitalPill name="LCP" value={r.lcp_p75} /></td>
+                  <td className="px-4 py-3"><VitalPill name="INP" value={r.inp_p75} /></td>
+                  <td className="px-4 py-3"><VitalPill name="CLS" value={r.cls_p75} /></td>
                   <td className="px-4 py-3">
                     {r.longtasks > 0 ? (
                       <span className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-xs font-medium tabular-nums text-accent-deep dark:text-accent-soft">
@@ -177,6 +244,21 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
           </tbody>
         </table>
       </div>
+
+      {/* Ressources (P6.3) : ce qui est téléchargé, d'où, à quel coût — avec son
+          avertissement de collecte, et un partage première/tierce partie lu sur
+          les seules origines déclarées de l'application. */}
+      <ResourcesView vue={ressources} periodLabel={period.label} />
+
+      {/* Blocages du fil principal (P6.3) : la série, et le chemin vers la session. */}
+      <LongtasksView
+        series={blocages}
+        worst={pires}
+        bucketSeconds={ecran.query.range.bucketSeconds}
+        bucketLabel={ecran.bucketLabel}
+        periodLabel={period.label}
+        sessionHref={(id) => hrefWithQuery(`/sessions/${encodeURIComponent(id)}`, ecran.query)}
+      />
     </div>
   );
 }
@@ -206,17 +288,5 @@ function SlowResources({ items }: { items: SlowResource[] }) {
         ))}
       </ul>
     </details>
-  );
-}
-
-function Cell({ name, v }: { name: string; v: number | null }) {
-  if (v == null) return <span className="text-ink-faint/60">—</span>;
-  const rating = rating2026(name, Number(v));
-  return (
-    <span
-      className={`rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums ${rating ? RATING_CLASS[rating] : ""}`}
-    >
-      {fmtVital(name, Number(v))}
-    </span>
   );
 }

@@ -25,14 +25,35 @@ export function sameOrigin(headers: Headers): boolean {
   }
 }
 
-export async function guardAdmin(
+/**
+ * Garde d'une écriture par un HUMAIN connecté, quel que soit son rôle : session
+ * signée, jamais une session démo (lecture seule par construction), et même
+ * origine. Elle ne dit rien du périmètre : la ressource écrite le vérifie
+ * elle-même, après l'avoir résolue.
+ *
+ * Elle existe pour les écritures PERSONNELLES (vues enregistrées P6.5), que le
+ * modèle réserve à leur propriétaire plutôt qu'au rôle admin. Les mutations
+ * d'administration passent par `guardAdmin`, qui s'appuie dessus.
+ */
+export async function guardSession(
   headers: Headers,
   sessionCookie: string | null,
   { mutation }: { mutation: boolean },
 ): Promise<AdminGuard> {
   const user = sessionCookie ? await verifyJwt(sessionCookie) : null;
   if (!user) return { ok: false, status: 401, error: "session requise" };
-  if (user.role !== "admin" || user.demo) return { ok: false, status: 403, error: "réservé aux administrateurs" };
+  if (user.demo) return { ok: false, status: 403, error: "session de démonstration : lecture seule" };
   if (mutation && !sameOrigin(headers)) return { ok: false, status: 403, error: "origine de la requête refusée" };
   return { ok: true, user };
+}
+
+export async function guardAdmin(
+  headers: Headers,
+  sessionCookie: string | null,
+  { mutation }: { mutation: boolean },
+): Promise<AdminGuard> {
+  const garde = await guardSession(headers, sessionCookie, { mutation });
+  if (!garde.ok) return garde;
+  if (garde.user.role !== "admin") return { ok: false, status: 403, error: "réservé aux administrateurs" };
+  return garde;
 }
