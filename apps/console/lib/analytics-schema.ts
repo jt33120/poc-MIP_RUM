@@ -678,7 +678,12 @@ const CLES_RACINE = [
   "includeInternal",
 ] as const;
 
-function parseFilters(raw: unknown): ExplorerParsed<FilterCondition[]> {
+/**
+ * Filtres d'un AST : la même validation pour le corps d'une requête API et pour
+ * la configuration d'un widget enregistré (P6.5). Une seule allowlist, un seul
+ * refus — un widget ne peut pas déclarer une dimension que l'API refuserait.
+ */
+export function parseAstFilters(raw: unknown): ExplorerParsed<FilterCondition[]> {
   if (raw === undefined || raw === null) return ok([]);
   if (!Array.isArray(raw)) return fail("invalid_query", "filters doit être un tableau", { parameter: "filters" });
   if (raw.length > MAX_CONDITIONS) {
@@ -932,8 +937,15 @@ export interface ExplorerPlanSource {
  * (périmètre signé, plage unique). L'écran `/explorer` la réutilise telle quelle :
  * il a résolu ses filtres par le contrat commun, et une seconde résolution
  * donnerait une autre fenêtre — l'horloge ayant avancé entre les deux.
+ *
+ * `query` vaut `null` pour un plan ENREGISTRÉ (widget de tableau de bord, vue
+ * enregistrée) : il n'a pas encore de fenêtre, puisqu'il hérite de celle de son
+ * lecteur. Un curseur y est alors refusé — une page ne s'enregistre pas.
  */
-export function parseExplorerPlan(source: ExplorerPlanSource, query: AnalyticsQuery): ExplorerParsed<ExplorerPlan> {
+export function parseExplorerPlan(
+  source: ExplorerPlanSource,
+  query: AnalyticsQuery | null,
+): ExplorerParsed<ExplorerPlan> {
   const dataset = source.dataset;
   if (typeof dataset !== "string" || !isExplorerDataset(dataset)) {
     return fail("unsupported_dataset", `jeu de données inconnu : ${String(dataset).slice(0, 40)}`, {
@@ -987,6 +999,11 @@ export function parseExplorerPlan(source: ExplorerPlanSource, query: AnalyticsQu
   const cursor = decodeExplorerCursor(source.cursor);
   if (cursor === undefined) return fail("invalid_cursor", "curseur illisible", { parameter: "cursor" });
   if (cursor) {
+    if (query === null) {
+      return fail("invalid_cursor", "un curseur ne s'enregistre pas : une page n'est pas une analyse", {
+        parameter: "cursor",
+      });
+    }
     if (plan.visualization !== "table") {
       return fail("invalid_cursor", "un curseur ne pagine que le journal", { parameter: "cursor" });
     }
@@ -1014,7 +1031,7 @@ export function parseExplorerQuery(body: unknown, options: ExplorerParseOptions)
     });
   }
 
-  const filters = parseFilters(body.filters);
+  const filters = parseAstFilters(body.filters);
   if (!filters.ok) return filters;
   for (const flag of ["includeBots", "includeInternal"] as const) {
     if (body[flag] !== undefined && typeof body[flag] !== "boolean") {

@@ -12,7 +12,7 @@ vi.mock("@/lib/queries-events", () => ({ eventCount: vi.fn() }));
 import { listErrorGroups, type ErrorListResult } from "@/lib/queries-errors";
 import { resolveWidget } from "@/lib/widget-data";
 
-const widget = { type: "top_errors" as const, title: "Top erreurs" };
+const widget = { kind: "v1" as const, type: "top_errors" as const, title: "Top erreurs" };
 const filters = {
   app: "app-a",
   period: "24h" as const,
@@ -21,6 +21,9 @@ const filters = {
   includeBots: true,
   includeInternal: false,
 };
+
+/** Contexte d'une grille : filtres de l'écran, fuseau d'affichage et horloge. */
+const ctx = { filters, timeZone: "Europe/Paris", nowMs: Date.parse("2026-09-17T12:00:00Z") };
 
 const groupe = (over: Partial<ErrorListResult["groups"][number]>) => ({
   app_id: "app-a", fingerprint: "fp", error_type: null, sample_message: null, occurrences: 1,
@@ -46,7 +49,7 @@ describe("widget top_errors", () => {
       ],
     } as ErrorListResult);
 
-    await expect(resolveWidget(widget, filters)).resolves.toEqual({
+    await expect(resolveWidget(widget, ctx)).resolves.toEqual({
       kind: "table",
       columns: ["Erreur", "Occurrences", "Sessions"],
       // Sessions = compteur historique : 0 quand aucune session n'est connue.
@@ -57,6 +60,6 @@ describe("widget top_errors", () => {
 
   it("reste fail-soft si la lecture échoue", async () => {
     vi.mocked(listErrorGroups).mockRejectedValue(new Error("base indisponible"));
-    await expect(resolveWidget(widget, filters)).resolves.toEqual({ kind: "table", columns: [], rows: [] });
+    await expect(resolveWidget(widget, ctx)).resolves.toEqual({ kind: "table", columns: [], rows: [] });
   });
 });

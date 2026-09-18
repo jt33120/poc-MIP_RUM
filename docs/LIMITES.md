@@ -19,6 +19,26 @@ pour laquelle l'agrégat n'a pas pu servir. Rien n'est arrondi en silence.
 | Budget de lecture | `statement_timeout` posé en `SET LOCAL`, rendu avec la transaction : il ne fuit jamais vers la requête suivante du pooler. Dépassement → 503 `query_budget_exceeded`. | Jamais une série de zéros qu'on prendrait pour une absence de trafic. |
 | Temps de réponse | Mesuré sur base jetable de 1,2 M d'événements sur 7 jours (voir l'en-tête de `migration-v80.sql`) : 26 à 337 ms selon la lecture, 1 030 ms au p95 pour la plus lourde. | Ce n'est pas un SLA de production : la mesure vaut pour ce matériel, ce volume et ce jeu de données. |
 
+## Mise à jour P6.5 (18/09/2026 — tableaux de bord graphiques et vues enregistrées)
+
+Ce que les bornes valent, et ce qu'elles n'ouvrent pas. Toutes sont appliquées avant SQL, et chacune a son test.
+
+| Borne | Valeur | Ce qu'elle signifie |
+|---|---|---|
+| Cartes par tableau de bord | 24 | Inchangé depuis P1. Une carte illisible **compte** : elle n'est pas supprimée pour faire de la place. |
+| Fenêtre propre d'une carte (`rangeOverride`) | preset glissant, ou 30 jours au plus | Elle est **affichée sur la carte**. Sans elle, la carte suit la fenêtre de l'écran — et le dit aussi. Elle n'étend jamais la rétention. |
+| Conditions d'une carte | 10 au total (AST + carte) | Les filtres de la carte s'**ajoutent** à ceux de l'écran ; ils ne remplacent rien. Les drapeaux robots / apps internes ne peuvent que **restreindre** la population globale, jamais la rouvrir. |
+| Lectures simultanées d'une grille | 4 | Vingt-quatre cartes lancées ensemble épuiseraient le pool de connexions. Aucun rafraîchissement automatique : pas de 24 requêtes lourdes toutes les 5 s. |
+| Cache d'une grille | 10 s, 200 entrées, clé incluant le périmètre effectif | Deux cartes identiques ne posent la question qu'une fois. Une réponse calculée pour A ne peut pas servir à B. |
+| Export CSV | 10 000 lignes, plafond **global** | La troncature est **écrite dans le fichier** : un export tronqué ne doit pas passer pour l'inventaire complet. Une cellule commençant par `=`, `+`, `-` ou `@` est préfixée d'une apostrophe — jamais une formule exécutée par un tableur. |
+| Vues enregistrées | 50 par compte **et** par app, nom ≤ 100 caractères, AST ≤ 32 Kio | Le plafond est compté dans la transaction d'écriture, derrière un verrou : deux onglets ne peuvent pas passer à 51 chacun. |
+
+Ce que P6.5 ne fait **pas** : aucun éditeur de formule libre (les représentations sont `value`, `toplist`,
+`timeseries`, `table`, et rien d'autre) ; aucune vue publique ni partage app-wide — une vue enregistrée
+appartient à un compte et à **une app nommée**, faute de quoi la même vue mesurerait une population
+différente selon son lecteur ; aucun export PDF par service tiers (impression de la vue existante) ;
+aucun agrégat pré-calculé ni budget de lecture mesuré — c'est P6.6.
+
 ## Mise à jour P6.3 (17/09/2026 — analyses prêtes à l'emploi et drill-downs)
 
 Ce que les nouveaux chiffres mesurent EXACTEMENT, et ce qu'ils ne mesurent pas. Chaque définition est

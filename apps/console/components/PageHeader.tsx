@@ -39,7 +39,14 @@ export function PageHeader({
         </h1>
         {sub && <p className="mt-1 text-sm text-ink-soft">{sub}</p>}
       </div>
-      {children && <div className="ml-auto flex shrink-0 items-center gap-2">{children}</div>}
+      {/* Les actions PASSENT À LA LIGNE plutôt que de déborder. `shrink-0` les
+          gardait sur une seule ligne : une quatrième action (« Dupliquer », P6.5)
+          poussait l'en-tête au-delà de 390 px de large. Wrapper n'enlève rien aux
+          en-têtes qui tiennent déjà ; il évite qu'une action de plus ne casse la
+          page la plus étroite. */}
+      {children && (
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">{children}</div>
+      )}
     </div>
   );
 }

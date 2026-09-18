@@ -240,9 +240,12 @@ const MESSAGE = (o: Occurrence["nom"]) => `boom ${o}`;
 
     // Même lecture pour le widget, filtres du tableau de bord tels quels.
     const widgetFilters: Filters = { app: A, period: "24h", device: "desktop", segment: [], includeBots: false, includeInternal: false };
-    const tuile = await lib.resolveWidget({ type: "top_errors", title: "Top erreurs" }, widgetFilters);
+    const tuile = await lib.resolveWidget(
+      { kind: "v1", type: "top_errors", title: "Top erreurs" },
+      { filters: widgetFilters, timeZone: "Europe/Paris", nowMs: Date.now() },
+    );
     expect(tuile).toEqual({ kind: "table", columns: ["Erreur", "Occurrences", "Sessions"], rows: [["TypeError", 38, 1]] });
-    expect(lib.widgetToCsv("Top erreurs", tuile)).toContain("TypeError,38,1");
+    expect(lib.widgetToCsv("Top erreurs", tuile, 100).csv).toContain("TypeError,38,1");
   });
 
   it("A, tous appareils : 47 et 3, un impact inconnu reste NULL et n'est jamais un zéro", async () => {

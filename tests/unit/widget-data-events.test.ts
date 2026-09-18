@@ -20,10 +20,11 @@ describe("widget event_count", () => {
     const filters = { app: "app-a", period: "24h" as const, device: "mobile" as const, segment: [] };
 
     await expect(resolveWidget({
+      kind: "v1",
       type: "event_count",
       title: "Événements · checkout",
       eventName: "checkout",
-    }, filters)).resolves.toEqual({
+    }, { filters, timeZone: "Europe/Paris", nowMs: Date.parse("2026-09-17T12:00:00Z") })).resolves.toEqual({
       kind: "value",
       value: "1 234",
       sub: "Comptage observé, sans extrapolation.",

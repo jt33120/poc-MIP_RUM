@@ -468,6 +468,44 @@ demandent app par app et fenêtre par fenêtre.
 (session admin de la console). Un jeton `CONSOLE_API_TOKENS` reçoit toujours `false` : il
 est en lecture seule.
 
+### `GET /api/v1/explorer/views` — vues enregistrées (P6.5)
+`data = { views: SavedView[] }`. Une vue est **personnelle** : la liste rend celles du
+compte connecté, plus — pour une session **admin** — celles des autres comptes **de ses
+apps**. Aucune vue n'est publique, et aucune n'est créée implicitement.
+
+Un jeton `CONSOLE_API_TOKENS` reçoit `403 forbidden_token`, y compris en lecture : une
+machine ne possède aucune vue, et ne doit pas lire le travail privé d'un opérateur. Une
+liste vide se lirait « aucune vue n'existe » — le refus est donc explicite.
+
+`?app=` restreint à une app du périmètre (`403` hors périmètre). Chaque vue porte son AST
+(`query`), sa `revision` (à citer pour écrire), `mine` (la session en est propriétaire) et
+`owner_email` — renseigné **uniquement** pour une session admin, `null` sinon. Avant
+migration-v79 : `503`.
+
+### `POST /api/v1/explorer/views` — enregistrer une analyse
+Corps `{ name, query }`. **Session uniquement** (cookie `mip_session`, jamais une session
+démo, en-tête `Origin` de la console) ; le rôle `viewer` est accepté — c'est le droit
+d'écriture personnelle qu'il possède déjà sur ses propres tableaux de bord, pas un droit
+nouveau. `query` est un `ExplorerQuery` validé par le registre puis **rendu canonique** :
+ce qui est stocké est exactement ce que `POST /explorer/query` sait rejouer.
+
+Une vue **nomme toujours son app** : `app: null` (« toutes les apps autorisées ») est refusé
+en `400`, parce que la même vue mesurerait alors une population différente selon son
+lecteur. `name` : 1 à 100 caractères sans caractère de contrôle. Plafond : **50 vues par
+compte et par app** — au-delà, `422` (recharger n'y changerait rien). `201`,
+`data = { view }`.
+
+### `PATCH /api/v1/explorer/views/{id}` — renommer / remplacer l'AST
+Corps `{ name?, query?, expectedRevision }`, au moins l'un des deux changements. Le
+**propriétaire seul** écrit : un admin lit les vues de ses apps mais ne renomme pas
+l'analyse personnelle d'un autre (`403`). Une vue ne change jamais d'app (`403`) — ce serait
+un partage déguisé. `409` avec `{ error, revision }` si la vue a bougé depuis sa lecture.
+
+### `DELETE /api/v1/explorer/views/{id}` — supprimer
+Aucun corps. Propriétaire seul, dans une app de son périmètre ; `404` pour un identifiant
+inconnu, hors périmètre ou mal formé — il ne révèle jamais qu'une vue existe ailleurs.
+`data = { deleted: true }`.
+
 ### `POST /api/v1/explorer/query` — requête analytique bornée
 **C'est une LECTURE.** Le verbe est `POST` parce qu'un AST ne tient pas dans une query
 string, pas parce que la route écrit : elle n'écrit rien, et son authentification est
@@ -578,8 +616,11 @@ spec ci-dessus lisible dans un navigateur.
 
 ## Écritures
 
-Quatre routes non-`GET`, annoncées séparément dans le descripteur `GET /api/v1` (champ `write`) plutôt
+Sept routes non-`GET`, annoncées séparément dans le descripteur `GET /api/v1` (champ `write`) plutôt
 que noyées dans l'énumération des lectures. Tout le reste de `/api/v1` est en lecture seule.
+Les trois écritures de vues enregistrées (`POST /explorer/views`, `PATCH` et `DELETE`
+`/explorer/views/{id}`) sont décrites avec l'Explorer, section ci-dessus : elles sont
+personnelles, et non administratives.
 
 ### `POST /api/v1/deploys` — marqueur de déploiement
 Enregistre un marqueur de déploiement depuis une chaîne d'intégration continue, ce qui permet aux écrans de
