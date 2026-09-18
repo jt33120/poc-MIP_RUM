@@ -15,6 +15,11 @@ Une case n'est cochée que sur preuve. « Testé localement » ne vaut ni déplo
 | P8.7 — GeoIP optionnel | #210 | v85, appliquée sur Neon le 18/09 13:27 | oui | oui | verte | oui (`6485f45`) | non — le service `ingest` n'a pas de domaine public ; le GeoIP ne tourne sur aucun chemin de production |
 | P8.3 à P8.5, P8.8 | — | — | non | — | — | — | — |
 
+> **Ce tableau est celui de chaque lot au moment où il a été écrit ; il a vieilli.** Deux lignes sont
+> désormais fausses : **v84 est appliquée** en production depuis le 18/09 13:30:35 UTC, et **v85**
+> depuis 13:27 ; P8.6 et P8.7 sont **déployés** (`2f216cb`). L'état relevé après coup, et la façon
+> dont il a été relevé, sont en fin de fichier — section **P8.8** et **État final de P8**.
+
 ## P8.1 — effacement sérialisé avec l'ingestion
 
 Branche `feat/rum-effacement-p8-1`. Migration **v81** (le maximum présent était v80).
@@ -1071,3 +1076,110 @@ un CDN qui posait déjà son en-tête pays.
 - **Le récepteur Supabase historique** (`supabase/functions/v1-traces/index.ts`) n'écrit pas les
   colonnes de v85 : il passe par une RPC dont la signature est figée. Même constat qu'en P6.1 pour
   `write-causal.mjs` ; ce chemin n'est plus déployé.
+---
+
+
+## P8.8 — recette finale et document de couverture
+
+Branche `docs/rum-parity-status-p8-8`. **Aucune migration, aucun code, aucun test modifié** : ce
+sous-lot vérifie et rédige. Produit : [`docs/RUM_PARITY_STATUS.md`](../../docs/RUM_PARITY_STATUS.md),
+**49 capacités**, une par ligne, avec verdict dans un vocabulaire fermé, preuve nommée et limite ;
+plus une section P8.8 dans [`docs/LIMITES.md`](../../docs/LIMITES.md).
+
+Le relevé a commencé sur `ed33e27`, avec #210 et #211 **ouvertes**. Elles ont été fusionnées pendant
+la rédaction (12:52 et 12:59 UTC). Le document a été repris sur `2f216cb` : verdicts, déploiements et
+suites rejoués sur le résultat.
+
+### Ce qui a été rejoué, et ce que ça a donné
+
+PostgreSQL 15.18 en conteneur (port 5433), bases jetables `p88_*` créées puis supprimées.
+**`DATABASE_URL` n'a été ni lue, ni employée, ni affichée.**
+
+| Commande | Mesure sur `2f216cb` |
+|---|---|
+| `pnpm exec vitest run tests/unit --exclude '**/.claude/**'` | 168 fichiers, **2 436 tests verts**, 0 ignoré |
+| `pnpm test:sql` **tel que la CI le joue** (6 bases) | 26 fichiers verts / 2 ignorés (28) ; **397 verts** / 16 ignorés (413) — vert |
+| `pnpm test:sql` **avec les 7 bases** | **1 ÉCHEC** sur 413 — voir l'écart n° 2 |
+| `pnpm test:isolation`, `pnpm test:alerting` | verts |
+| `pnpm --filter console exec tsc --noEmit` | vert |
+| `pnpm --filter @mip/rum-sdk exec tsc --noEmit` | **échec** — `src/replay.ts(242,11)` TS2322 |
+| `pnpm -r build` (dépôt fraîchement installé) | **échec** — `apps/extension` |
+| `pnpm build:sdk` puis `pnpm -r build` | vert, 13 paquets |
+
+### Les écarts trouvés entre les journaux et la mesure
+
+Cinq, tous détaillés au § 8 du document de couverture, **aucun corrigé** (ce sous-lot ne touche pas
+au code) :
+
+1. **L'inventaire de `test:sql` est faux dans ce journal.** La section P8.2 écrit « 24 fichiers au
+   total » : il y en avait **26** à `ed33e27`, et 28 depuis les deux fusions. Les deux suites ignorées
+   ne sont pas « le banc P6.6 et la fenêtre v65 » mais les **deux bancs**, gouvernés par
+   `BENCH_DATABASE_URL`. Les relevés P8.1 (« 12 ignorés ») et P8.2 (« 26 ignorés ») du même fichier
+   ne sont pas cohérents entre eux.
+
+2. **UN DÉFAUT RÉEL, ENCORE OUVERT : la fenêtre de déploiement de P8.2 est rouge depuis v85.**
+   `backfill-idempotency-sql.test.ts` › « P8.2 — code publié AVANT migration-v83 » échoue sur
+   `column "geo_source" of relation "rum_session" does not exist`. C'est le même piège que P7.5 avait
+   déjà payé : le cache de colonnes de `pg-ingest.mjs` est indexé **par table, pas par base**, avec un
+   TTL de 60 s ; la suite écrit dans une seconde base au schéma v82 depuis le même processus et hérite
+   de la liste relevée sur la base complète — où `geo_source` existe, puisque v85 vient de l'ajouter.
+   `_resetColonnesCache()` existe et neuf suites SQL l'appellent, **dont `geoip-v85-sql.test.ts`,
+   écrite par P8.7 elle-même** ; celle-ci non. P8.7 connaissait donc le piège, a protégé sa propre
+   suite, et a cassé celle qu'elle ne pouvait pas voir — **parce que la CI ne la joue pas**.
+
+3. **Deux suites ne tournent jamais en CI.** `SQL_TEST_PRE_V83_DATABASE_URL` et `BENCH_DATABASE_URL`
+   sont consommées par les tests et absentes de `ci.yml`. P8.7 y a pourtant ajouté **sa** variable de
+   fenêtre (`SQL_TEST_PRE_V85_DATABASE_URL`) : l'omission de celle de P8.2 est un oubli, pas une
+   politique.
+
+4. **« `pnpm -r build` : vert » est vrai sous une condition non dite.** Depuis un dépôt fraîchement
+   installé, il échoue : `apps/extension` copie `packages/rum-sdk/dist/mip-rum.js` sans déclarer de
+   dépendance d'espace de travail, donc rien n'ordonne les deux builds.
+
+5. **Aucun workflow ne joue `tsc --noEmit`**, pour aucun paquet. L'échec du SDK web
+   (`replay.ts:242`), consigné par `delivery-p7.md` comme « non joué par la CI », ne le sera jamais
+   en l'état.
+
+### Une ligne de ce journal était déjà périmée
+
+Le tableau d'état en tête de ce fichier porte « v84 (non appliquée en production) ». Elle **l'est** : le journal
+de pré-déploiement du service `ingest` rend, le 18/09 à **13:30:35 UTC**,
+`migration appliquée · migration-v84.sql · 113 ms`, puis `migrations à jour · total 80 · appliquées 1
+· modifiées 0`. Une seule appliquée, donc v85 était déjà enregistrée — ce que le journal de P8.7 date
+de 13:27. Relevé **sans toucher la base**, par les journaux Railway.
+
+Le journal n'a pas menti : il a été écrit avant la fusion, et personne ne l'a relu après. C'est
+exactement la raison d'être d'un document de couverture relevé plutôt que recopié.
+
+### Ce qui n'a pas pu être vérifié
+
+L'état réel de la base de production — nombre de lignes, date de la dernière ingestion, périmètre
+chiffré de P8.3. `DATABASE_URL` était interdite pour ce travail. Tout ce qui touche la production dans
+le document de couverture est **attribué à sa source** et non recontrôlé, sauf les migrations v84/v85,
+lisibles dans les journaux de déploiement.
+
+### Reliquat
+
+**`jt33120/mip-rum-tickets-sandbox` existe toujours** — vérifié par `gh api` le 18/09 : privé, créé à
+12:44 UTC, non archivé. Le jeton de la session `gh` ne porte pas `delete_repo`. À supprimer avec un
+jeton qui en dispose, ou à archiver si son ticket doit rester consultable.
+
+---
+
+## État final de P8, au 18/09/2026
+
+| Sous-lot | PR | Migration | Implémenté | Testé localement | CI | Déployé | Éprouvé sur donnée réelle |
+|---|---|---|---|---|---|---|---|
+| P8.1 — effacement sérialisé avec l'ingestion | #205 fusionnée | v81, appliquée sur Neon le 18/09 10:16 | oui | oui | verte | oui | **non** — aucun effacement réel joué depuis l'activation |
+| P8.2 — outillage de backfill et dry-run | #208 fusionnée | v83, **non appliquée** | oui | oui | verte, **mais 3 tests de fenêtre jamais joués — et rouges depuis v85** | non | **non** — aucun backfill exécuté |
+| P8.3 — exécuter un backfill | — | — | **non retenu** | — | — | — | **Décision du 18/09/2026 : ne pas exécuter.** Périmètre mesuré ≈ 97 lignes (90 `gip-plateforme`, 7 `mip-rum-console`) sur 4 046 indexées. Port 5432 refusé depuis le poste (`ECONNREFUSED`). L'outillage est livré ; seule l'exécution manque. |
+| P8.4 — source maps dans la CI du client | — | — | **non** | — | — | — | Jamais entamé — exige l'accès au dépôt, au build et aux releases du client |
+| P8.5 — crashes natifs, symboles, appareils | — | — | **non** | — | — | — | Jamais entamé — exige un choix de moteur, une application native et des builds signés. **Aucune table de crash natif n'a été créée, délibérément.** |
+| P8.6 — connecteur de tickets (GitHub Issues) | #211 fusionnée 12:59 | v84, **appliquée** le 18/09 à 13:30:35 UTC | oui | oui | verte | oui (`2f216cb`) | **partiellement** — un vrai ticket créé dans un dépôt bac à sable ; aucune intégration configurée en production, webhook jamais reçu d'un vrai fournisseur |
+| P8.7 — GeoIP optionnel | #210 fusionnée 12:52 | v85, appliquée le 18/09 à 13:27 | oui | oui | verte | oui (`2f216cb` / `6485f45`) | **non** — le service `ingest` n'a pas de domaine public, et la route Vercel n'appelle pas la résolution locale : le GeoIP ne tourne sur aucun chemin de production |
+| P8.8 — recette finale et document de couverture | cette PR | aucune | oui | — | — | — | — |
+
+**Aucun verdict global « fini ».** Cinq points obligatoires restent ouverts : aucune recette sur vraie
+application nulle part, P8.4 et P8.5 jamais entamés, un test rouge que la CI ne joue pas, et deux
+défauts connus non corrigés (`tsc --noEmit` du SDK web, `pnpm -r build` depuis un dépôt propre). Le
+détail, capacité par capacité, est dans [`docs/RUM_PARITY_STATUS.md`](../../docs/RUM_PARITY_STATUS.md).
