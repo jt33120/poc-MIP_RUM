@@ -102,6 +102,15 @@ export class EventQueue {
   constructor(
     private limites: LimitesFile,
     private onPerte: (motif: MotifPerte, nombre: number) => void,
+    /**
+     * Entrées retirées CONTRE LEUR GRÉ — capacité, TTL, refus définitif du
+     * serveur. P7.3 s'en sert pour une seule chose : si une action RACINE
+     * disparaît ainsi, les signaux qu'elle a causés sont encore en file et
+     * portent son identifiant. Les laisser partir désignerait une action que
+     * l'ingestion n'a jamais reçue. C'est le pendant mobile de `revokedRoots`
+     * côté web (`packages/rum-sdk/src/consent.ts`).
+     */
+    private onRetrait?: (entrees: readonly EntreeFile[], motif: MotifPerte) => void,
   ) {}
 
   get length(): number {
@@ -136,19 +145,20 @@ export class EventQueue {
   expire(maintenant: number): number {
     if (!this.entrees.length) return 0;
     const limite = maintenant - this.limites.ttlMs;
-    let perdus = 0;
+    const perdues: EntreeFile[] = [];
     const restantes: EntreeFile[] = [];
     for (const e of this.entrees) {
       if (e.at <= limite) {
         this.taille -= e.bytes;
-        perdus++;
+        perdues.push(e);
       } else restantes.push(e);
     }
-    if (perdus) {
+    if (perdues.length) {
       this.entrees = restantes;
-      this.onPerte("ttl", perdus);
+      this.onPerte("ttl", perdues.length);
+      this.onRetrait?.(perdues, "ttl");
     }
-    return perdus;
+    return perdues.length;
   }
 
   /**
@@ -157,15 +167,18 @@ export class EventQueue {
    * empêcher son écriture.
    */
   private evince(capEvents: number): void {
-    let perdus = 0;
+    const perdues: EntreeFile[] = [];
     while (this.entrees.length > capEvents || this.taille > this.limites.maxBytes) {
       const index = this.entrees.findIndex((e) => !e.leased);
       if (index < 0) break; // tout est en vol : rien à évincer sans mentir
       this.taille -= this.entrees[index].bytes;
+      perdues.push(this.entrees[index]);
       this.entrees.splice(index, 1);
-      perdus++;
     }
-    if (perdus) this.onPerte("capacite", perdus);
+    if (perdues.length) {
+      this.onPerte("capacite", perdues.length);
+      this.onRetrait?.(perdues, "capacite");
+    }
   }
 
   /**
@@ -209,6 +222,7 @@ export class EventQueue {
     if (!lot.length) return;
     this.ack(lot);
     this.onPerte(motif, lot.length);
+    this.onRetrait?.(lot, motif);
   }
 
   /** Vide tout. Utilisé par la révocation de consentement. */
@@ -236,6 +250,34 @@ export class EventQueue {
       if (this.push({ ...e, leased: false }, maintenant)) reprises++;
     }
     return reprises;
+  }
+
+  /**
+   * Retire un attribut des entrées dont la valeur figure dans `valeurs`.
+   *
+   * Symétrique d'`estampille`, et posé pour un seul usage : effacer le lien vers
+   * une action racine qui a quitté la file sans être livrée. Un `action_id` qui
+   * survit à sa racine désigne une action que l'ingestion n'a jamais reçue —
+   * c'est un lien cassé, pas une information partielle.
+   */
+  retireAttribut(cle: string, valeurs: ReadonlySet<string>): number {
+    if (!valeurs.size) return 0;
+    let touchees = 0;
+    for (const e of this.entrees) {
+      const valeur = e.span.attributes[cle];
+      if (typeof valeur !== "string" || !valeurs.has(valeur)) continue;
+      const attributs = { ...e.span.attributes };
+      // `null` et non `delete` : `commonAttrs()` pose toujours la clef, et
+      // l'encodeur OTLP sait ne pas émettre une valeur nulle. Supprimer la clef
+      // produirait deux formes d'enveloppe pour un même signal.
+      attributs[cle] = null;
+      this.taille -= e.bytes;
+      e.span = { ...e.span, attributes: attributs };
+      e.bytes = octets(JSON.stringify(e.span));
+      this.taille += e.bytes;
+      touchees++;
+    }
+    return touchees;
   }
 
   /** Réécrit un attribut sur toutes les entrées — le visiteur résolu tardivement. */

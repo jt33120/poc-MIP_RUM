@@ -37,15 +37,45 @@ export interface LifecycleAdapter {
 }
 
 /**
- * Navigation. Déclaré ici parce que le contrat public d'`init` le prévoit, et
- * CONSOMMÉ par P7.3 : brancher un routeur demande de traiter les callbacks
- * répétés, les routes imbriquées et le retour sur le même écran, ce qui est le
- * périmètre entier de ce lot-là. L'accepter sans l'utiliser serait mentir ; le
- * refuser obligerait P7.3 à casser la signature d'`init`. Il est donc accepté,
- * conservé, et `getDiagnostics()` ne prétend pas qu'un écran est observé.
+ * Écran observé par l'adaptateur de navigation.
+ *
+ * La CLEF DE ROUTE est ce qui distingue deux instances du même écran empilées
+ * l'une sur l'autre — un détail de produit poussé depuis une liste de produits,
+ * puis un autre. Quand le routeur en expose une, le dédoublonnage s'appuie
+ * dessus ; sinon il retombe sur le nom, qui suffit à absorber les callbacks
+ * répétés.
+ */
+export interface EcranObserve {
+  name: string;
+  key?: string | null;
+}
+
+/** Un routeur qui ne connaît qu'un nom passe une chaîne ; les autres, l'objet. */
+export type EcranEntrant = string | EcranObserve;
+
+/**
+ * Navigation — branchée sur les callbacks PUBLICS du routeur de l'application.
+ *
+ * Le SDK ne résout aucun routeur : c'est l'application qui abonne, et qui rend
+ * le désabonnement. `navigationDepuisRouteur()` fabrique cet adaptateur pour un
+ * conteneur de type React Navigation ; `screen()` reste la voie manuelle pour
+ * tous les autres.
  */
 export interface NavigationAdapter {
-  subscribeScreen(callback: (name: string) => void): () => void;
+  subscribeScreen(callback: (screen: EcranEntrant) => void): () => void;
+}
+
+/**
+ * Rejets de promesses non gérés.
+ *
+ * Aucun moteur JS visé n'expose de mécanisme standard ET retirable : c'est
+ * l'application qui branche celui de son runtime. Sans cet adaptateur et sans
+ * mécanisme standard sur l'objet global, la capacité est déclarée ABSENTE — et
+ * le diagnostic le dit, au lieu de laisser croire qu'aucun rejet n'a lieu.
+ * Voir `rejetsDepuisTracker()`.
+ */
+export interface UnhandledRejectionAdapter {
+  subscribe(callback: (reason: unknown) => void): () => void;
 }
 
 /** Source d'aléa. Sert au visiteur et aux identifiants de corrélation. */
@@ -71,6 +101,7 @@ export interface Adapters {
   storage?: StorageAdapter;
   lifecycle?: LifecycleAdapter;
   navigation?: NavigationAdapter;
+  unhandledRejection?: UnhandledRejectionAdapter;
   random?: RandomAdapter;
   monotonicClock?: ClockAdapter;
 }

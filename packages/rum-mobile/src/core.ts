@@ -25,7 +25,7 @@ import {
 } from "@mip/rum-core";
 
 /** Version du SDK mobile : scope OTLP, `service.version` et user-agent synthétique. */
-export const MOBILE_SDK_VERSION = "0.2.0";
+export const MOBILE_SDK_VERSION = "0.3.0";
 const SCOPE: EmitScope = { name: "@mip/rum-mobile", version: MOBILE_SDK_VERSION };
 
 // Réexports de compatibilité : `core.ts` était la seule table d'encodage du
@@ -41,7 +41,7 @@ export interface MobileConfig {
   clientId: string | null;
   /** version applicative (mip.release) — dé-minification / suivi de version. */
   appVersion: string | null;
-  /** user-agent synthétique mobile (mip.user_agent), ex. "MIP-RN/0.2 (ios 17)". */
+  /** user-agent synthétique mobile (mip.user_agent), ex. "MIP-RN/0.3 (ios 17)". */
   userAgent: string;
 }
 
@@ -87,7 +87,11 @@ export interface Ctx {
   accountId?: string | null;
   viewId?: string | null;
   viewName?: string | null;
-  /** Action causale courante (P7.3) ; non renseignée par P7.1. */
+  /**
+   * Action causale courante (P7.3). Renseignée par la fenêtre causale, et
+   * `null` dès que le lien n'est plus prouvé : hors délai, racine refusée,
+   * session tournée, consentement révoqué. Jamais deviné.
+   */
   actionId?: string | null;
 }
 
@@ -212,8 +216,10 @@ export function buildActionSpan(
     "mip.event_type": "action",
     "mip.event_name": action.name,
     "mip.action_id": action.id,
-    // Aucun geste natif n'est observé en P7.1 : une action mobile est déclarée
-    // par l'application. `click` mentirait sur la provenance du signal.
+    // `manual` est le défaut : une action DÉCLARÉE par l'application. Le runtime
+    // le remplace par `click` quand le geste a réellement été observé sur un
+    // composant instrumenté — et seulement dans ce cas. Ce sont les deux seules
+    // valeurs que l'ingestion accepte (`ACTION_TYPES`).
     "mip.action_type": "manual",
     ...(action.context ? { "mip.context": action.context } : {}),
   }, tsMs, spanId);
