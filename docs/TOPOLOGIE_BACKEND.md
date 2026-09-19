@@ -68,12 +68,25 @@ laquelle deux versions coexistent.
 
 ## Le service `ingest`, en cours de retrait
 
-> **État au 18/09/2026** : le service existe encore et applique toujours les
-> migrations. Le `scheduler` a reçu la même commande de pré-déploiement ; elle
-> sera prouvée par le premier vrai déploiement qu'il recevra — c'est-à-dire par
-> la fusion de cette branche, qui touche `apps/ingest/migrate.mjs` et entre donc
-> dans ses chemins surveillés. La suppression n'aura lieu qu'après avoir lu
-> « migrations à jour » dans ses journaux, et pas avant.
+> **État au 19/09/2026.** La preuve est obtenue : la fusion de #214 (commit
+> `322c9a7`, 18/09 15:27) a déclenché un vrai déploiement du `scheduler`
+> (`03850b30`), et ses journaux portent à 15:29:18 la ligne du runner —
+> `migrations à jour` (`total 80, appliquées 0, modifiées 1`). Le scheduler
+> applique donc bien les migrations au pré-déploiement.
+>
+> **Le service `ingest` existe encore.** Sa suppression a été proposée puis
+> refusée à l'invite de confirmation ; elle reste une décision de l'opérateur,
+> à faire depuis le tableau de bord Railway (service `ingest`, projet
+> `mip-rum-backend`). Tant qu'il tourne, il applique lui aussi les migrations
+> — sans dommage, le runner est idempotent et verrouillé — et sert un receveur
+> que rien n'atteint.
+>
+> **« modifiées 1 »** n'est pas une anomalie de P8 : c'est `schema.sql`, dont
+> l'empreinte enregistrée à l'étalonnage ne correspond plus au fichier depuis
+> le lot du 09/09/2026 (identité du visiteur). Le runner le signale à chaque
+> déploiement et ne le rejoue jamais — c'est le comportement voulu. Le faire
+> taire demanderait de ré-étalonner cette seule ligne du registre, décision à
+> prendre en connaissance de cause, pas un correctif.
 
 Il exécute `services/ingest/server.mjs`, un receveur OTLP complet — et **aucun
 domaine public ne pointe dessus**. Rien ne peut donc l'atteindre. Son drain de la
