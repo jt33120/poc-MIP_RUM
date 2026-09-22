@@ -1239,3 +1239,116 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
     });
   });
 });
+
+// ═══════════════════ F19 — filtre de statut de la liste /errors ═══════════════════
+//
+// Une app à elle : cinq groupes couvrant les quatre états AFFICHÉS (ouvert, résolu,
+// régressé, ignoré), dont deux ouverts pour que « Ouverts » ne soit pas une liste
+// d'un seul. Ce que seule la base peut dire : que le filtre porte sur l'état
+// affiché (un « résolu » qui réapparaît répond à `regressed`, pas à `resolved`),
+// qu'il filtre la LISTE sans toucher aux totaux ni à la tendance de l'écran, et que
+// le compte retenu (`totalFiltre`) survit à la pagination.
+(url ? describe : describe.skip)("F19 — liste /errors filtrée par statut sur PostgreSQL", () => {
+  const APP_F19 = "f19-perf-a";
+  const c19 = new pg.Client(url ? { connectionString: url } : {});
+  let lib19: Console;
+  const f19 = (qs = "") => lib19.filtersOfQuery(requete(`${FENETRE}&app=${APP_F19}${qs}`));
+  const f19Vide = () => lib19.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${APP_F19}`)));
+  const PAGE19 = { limit: 100, offset: 0 };
+
+  async function nettoyerF19(): Promise<void> {
+    for (const table of ["rum_error", "rum_pageview", "rum_session", "error_status"]) {
+      await c19.query(`delete from ${table} where app_id = $1`, [APP_F19]);
+    }
+  }
+
+  async function semerF19(): Promise<void> {
+    await c19.query(
+      `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at,
+                                sample_rate, error_sample_rate, has_error)
+       values ($1, $2, 'desktop', false, $3, $3, 1, 1, true)`,
+      ["f19-s1", APP_F19, H(0, 1)],
+    );
+    // [empreinte, occurrences, instant de l'occurrence]
+    const erreurs: [string, number, Date][] = [
+      ["f19-ouvert-a", 10, H(1)],
+      ["f19-ouvert-b", 5, H(2)],
+      ["f19-resolu", 8, H(1)],
+      ["f19-regresse", 3, H(4)],
+      ["f19-ignore", 2, H(3)],
+    ];
+    let n = 0;
+    for (const [fp, occ, ts] of erreurs) {
+      await c19.query(
+        `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type,
+                                fingerprint, occurrences, error_source, ts)
+         values ($1, 'f19-s1', $2, '/', 'error', $3, 'Error', $4, $5, 'browser_js', $6)`,
+        [`f19-e-${n++}`, APP_F19, `boom ${fp}`, fp, occ, ts],
+      );
+    }
+    // Résolu APRÈS sa dernière occurrence : il reste résolu. Résolu AVANT : régressé.
+    await c19.query(
+      `insert into error_status (app_id, fingerprint, status, resolved_at)
+       values ($1, 'f19-resolu', 'resolved', $2), ($1, 'f19-regresse', 'resolved', $3),
+              ($1, 'f19-ignore', 'ignored', null)`,
+      [APP_F19, H(5), H(2)],
+    );
+  }
+
+  beforeAll(async () => {
+    await c19.connect();
+    for (const file of fichiersSql()) await c19.query(readFileSync(file, "utf8"));
+    await nettoyerF19();
+    await semerF19();
+    lib19 = await consoleSur(url!);
+  }, 180_000);
+
+  afterAll(async () => {
+    await lib19?.pool.end();
+    await nettoyerF19();
+    await c19.end();
+  });
+
+  const empreintes = async (statut?: "open" | "resolved" | "ignored" | "regressed") =>
+    (await lib19.listErrorGroups(f19(), PAGE19, { statut })).groups.map((g) => g.fingerprint).sort();
+
+  it("sans filtre : les cinq groupes", async () => {
+    expect(await empreintes()).toEqual(["f19-ignore", "f19-ouvert-a", "f19-ouvert-b", "f19-regresse", "f19-resolu"]);
+  });
+
+  it("le filtre porte sur l'état AFFICHÉ : le régressé répond à « regressed », jamais à « resolved »", async () => {
+    expect(await empreintes("regressed")).toEqual(["f19-regresse"]);
+    expect(await empreintes("resolved")).toEqual(["f19-resolu"]);
+  });
+
+  it("« ouverts » = aucune ligne de triage ; « ignorés » = les ignorés seuls", async () => {
+    expect(await empreintes("open")).toEqual(["f19-ouvert-a", "f19-ouvert-b"]);
+    expect(await empreintes("ignored")).toEqual(["f19-ignore"]);
+  });
+
+  it("filtre la LISTE, pas l'écran : totaux, nombre de groupes et tendance inchangés", async () => {
+    const tous = await lib19.listErrorGroups(f19(), PAGE19);
+    const ouverts = await lib19.listErrorGroups(f19(), PAGE19, { statut: "open" });
+    expect(ouverts.totals).toEqual(tous.totals);
+    expect(ouverts.total).toBe(5);
+    expect(ouverts.trend.map((p) => p.occurrences)).toEqual(tous.trend.map((p) => p.occurrences));
+    expect(tous.totals.occurrences).toBe(28);
+  });
+
+  it("totalFiltre : les groupes retenus, page par page ; absent sans filtre", async () => {
+    const page1 = await lib19.listErrorGroups(f19(), { limit: 1, offset: 0 }, { statut: "open" });
+    expect([page1.groups.length, page1.totalFiltre]).toEqual([1, 2]);
+    const page2 = await lib19.listErrorGroups(f19(), { limit: 1, offset: 1 }, { statut: "open" });
+    expect([page2.groups.length, page2.totalFiltre]).toEqual([1, 2]);
+    expect(page2.groups[0].fingerprint).not.toBe(page1.groups[0].fingerprint);
+    // Page au-delà de la population : rien à paginer, et aucun total inventé.
+    expect((await lib19.listErrorGroups(f19(), { limit: 1, offset: 9 }, { statut: "open" })).totalFiltre).toBeNull();
+    expect((await lib19.listErrorGroups(f19(), PAGE19)).totalFiltre).toBeUndefined();
+  });
+
+  it("le filtre respecte le périmètre et l'ordre demandé", async () => {
+    expect((await lib19.listErrorGroups(f19Vide(), PAGE19, { statut: "open" })).groups).toEqual([]);
+    const recent = await lib19.listErrorGroups(f19(), PAGE19, { statut: "open", tri: "recent" });
+    expect(recent.groups.map((g) => g.fingerprint)).toEqual(["f19-ouvert-b", "f19-ouvert-a"]);
+  });
+});

@@ -1879,3 +1879,130 @@ test.describe("F20 — Détail d'erreur (panneau et page)", () => {
     });
   }
 });
+
+test.describe("F19 — Erreurs : liste et filtre de statut", () => {
+  // Une app à ce bloc : quatre groupes couvrant les quatre états de triage, et des
+  // volumes très inégaux (40 contre 2) pour que l'échelle commune se VOIE — avec une
+  // échelle par ligne, le groupe à 2 occurrences dessinait la même colline que celui
+  // à 40. Le groupe résolu est résolu APRÈS sa dernière occurrence (il reste
+  // résolu) ; le régressé, AVANT (il réapparaît).
+  const APP_F19 = "f19-e2e-liste";
+  const LISTE_F19 = `${consoleUrl}/errors?app=${APP_F19}&period=24h`;
+
+  test.beforeAll(async () => {
+    for (const t of ["rum_error", "rum_pageview", "rum_session", "error_status"]) {
+      await pool.query(`delete from ${t} where app_id = $1`, [APP_F19]);
+    }
+    await pool.query(
+      `insert into app_registry (app_id, name) values ($1, 'Liste des erreurs F19 (e2e)') on conflict (app_id) do nothing`,
+      [APP_F19],
+    );
+    await pool.query(
+      `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+       values ($1, $2, $1, 'desktop', false, now() - interval '200 minutes', now() - interval '100 minutes', 1)`,
+      [`${APP_F19}-s1`, APP_F19],
+    );
+    await pool.query(
+      `insert into rum_pageview (span_id, session_id, app_id, route, started_at)
+       values ($1, $2, $3, '/panier', now() - interval '200 minutes')`,
+      [`${APP_F19}-pv`, `${APP_F19}-s1`, APP_F19],
+    );
+    // [empreinte, message, occurrences, minutes avant maintenant]
+    const groupes: [string, string, number, number][] = [
+      ["f19fpouvert", "Échec du paiement", 40, 90],
+      ["f19fpresolu", "Panier vide au retour", 8, 150],
+      ["f19fpregresse", "Jeton expiré", 5, 60],
+      ["f19fpignore", "Extension bloquante", 2, 120],
+    ];
+    for (const [fp, message, occ, minutes] of groupes) {
+      await pool.query(
+        `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type,
+                                fingerprint, occurrences, error_source, ts)
+         values ($1, $2, $3, '/panier', 'error', $4, 'TypeError', $5, $6, 'browser_js',
+                 now() - interval '${minutes} minutes')`,
+        [`${APP_F19}-e-${fp}`, `${APP_F19}-s1`, APP_F19, message, fp, occ],
+      );
+    }
+    await pool.query(
+      `insert into error_status (app_id, fingerprint, status, resolved_at)
+       values ($1, 'f19fpresolu', 'resolved', now() - interval '30 minutes'),
+              ($1, 'f19fpregresse', 'resolved', now() - interval '300 minutes'),
+              ($1, 'f19fpignore', 'ignored', null)
+       on conflict (app_id, fingerprint) do update set status = excluded.status, resolved_at = excluded.resolved_at`,
+      [APP_F19],
+    );
+  });
+
+  /** Le tracé d'une sparkline de ligne : deux valeurs égales y ont la même hauteur. */
+  const trace = (page: Page, fingerprint: string) =>
+    page.getByTestId(`error-group-${fingerprint}`).getByTestId("sparkline").locator("path").first();
+
+  test("sparklines à échelle commune : le maximum est dit, et un petit groupe reste petit", async ({ page }) => {
+    await login(page);
+    await page.goto(LISTE_F19);
+    const sparklines = page.locator('[data-testid^="error-group-"] [data-testid="sparkline"]');
+    await expect(sparklines).toHaveCount(4);
+    const libelles = await sparklines.evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") ?? ""));
+    // Le même haut d'échelle pour TOUTES les lignes, et il est écrit.
+    const echelles = new Set(libelles.map((l) => l.replace(/^.*échelle commune/, "échelle commune")));
+    expect(echelles.size).toBe(1);
+    expect([...echelles][0]).toContain("échelle commune, max 40");
+    await expect(page.getByTestId("ordre-liste")).toContainText("échelle commune");
+    // 40 contre 2 : les deux tracés ne peuvent pas être identiques (ils l'étaient
+    // quand chaque ligne avait sa propre échelle).
+    const grand = await trace(page, "f19fpouvert").getAttribute("d");
+    const petit = await trace(page, "f19fpignore").getAttribute("d");
+    expect(grand).not.toBe(petit);
+  });
+
+  test("filtre de statut : la liste seule est filtrée, les tuiles gardent la population", async ({ page }) => {
+    await login(page);
+    await page.goto(LISTE_F19);
+    await expect(page.locator('[data-testid^="error-group-"]')).toHaveCount(4);
+    await page.getByTestId("filtre-statut").locator('select[name="statut"]').selectOption("resolved");
+    await page.getByTestId("filtre-statut").getByRole("button", { name: "Filtrer" }).click();
+    await page.waitForURL(/statut=resolved/);
+    // Le régressé est « résolu » en base : il ne doit PAS répondre à « Résolus ».
+    await expect(page.locator('[data-testid^="error-group-"]')).toHaveCount(1);
+    await expect(page.getByTestId("error-group-f19fpresolu")).toBeVisible();
+    await expect(page.locator("#groupes-erreurs")).toContainText("Groupes (1 résolus)");
+    // Les tuiles comptent toujours toute la population (55 = 40 + 8 + 5 + 2).
+    const occurrences = page
+      .getByTestId("kpi-tile")
+      .filter({ has: page.getByText("Occurrences", { exact: true }) });
+    await expect(occurrences.getByTestId("kpi-valeur")).toHaveText("55");
+    // Et le régressé répond à « Régressés », lui seul.
+    await page.goto(`${LISTE_F19}&statut=regressed`);
+    await expect(page.getByTestId("error-group-f19fpregresse")).toBeVisible();
+    await expect(page.locator('[data-testid^="error-group-"]')).toHaveCount(1);
+  });
+
+  test("à 390 px : cartes empilées, occurrences et sessions sans défilement horizontal", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await login(page);
+    await page.goto(LISTE_F19);
+    const liste = page.getByTestId("liste-groupes");
+    await liste.scrollIntoViewIfNeeded();
+    // La liste elle-même ne défile pas : le tableau est devenu une pile de cartes.
+    const defilement = await liste.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(defilement).toBeLessThanOrEqual(1);
+    const carte = page.getByTestId("error-group-f19fpouvert");
+    await expect(carte.getByTestId("group-occurrences")).toBeVisible();
+    await expect(carte.getByTestId("group-occurrences")).toContainText("40");
+    // Chaque nombre garde son libellé en carte : l'en-tête de colonne a disparu.
+    await expect(carte).toContainText("Occurrences");
+    await expect(carte).toContainText("Sessions");
+    expect(await debordements(page)).toEqual([]);
+  });
+
+  for (const largeur of LARGEURS) {
+    test(`aucun débordement à ${largeur} px, filtre de statut compris`, async ({ page }) => {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await login(page);
+      await page.goto(`${LISTE_F19}&statut=open`);
+      await expect(page.getByTestId("filtre-statut")).toBeVisible();
+      await expect(page.getByTestId("error-group-f19fpouvert")).toBeVisible();
+      expect(await debordements(page)).toEqual([]);
+    });
+  }
+});
