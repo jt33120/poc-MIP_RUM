@@ -6,10 +6,12 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DIMENSIONS, parseAnalyticsQuery, type Dimension } from "../../apps/console/lib/query-contract";
 import {
+  RAISON_APP_UNIQUE,
   SURFACES,
   checkSurface,
   conditionAvailability,
   dimensionAvailability,
+  perimetreAvailability,
   rangeAvailability,
   surfaceFor,
   type Surface,
@@ -123,6 +125,7 @@ describe("matrice écran × filtre", () => {
       expect(conditionAvailability(s, { dimension: "device", operator: "eq", value: "tablet" }, schemaComplet()).available).toBe(false);
       expect(conditionAvailability(s, { dimension: "country", operator: "is_null", value: null }, schemaComplet()).available).toBe(false);
       expect(conditionAvailability(s, { dimension: "device", operator: "neq", value: "mobile" }, schemaComplet()).available).toBe(true);
+      if (path === "/retention") continue; // fenêtre en semaines, voir le test suivant
       expect(rangeAvailability(s, true)).toEqual({
         available: false,
         reason: "Cet écran n'accepte encore que les périodes 1 h, 24 h et 7 j.",
@@ -130,6 +133,23 @@ describe("matrice écran × filtre", () => {
       expect(rangeAvailability(s, false).available).toBe(true);
     }
     for (const path of ["/logs", "/ai", "/forecast", "/svi", "/svi/appels/1"]) expect(disponibles(path), path).toEqual([]);
+  });
+
+  // F40 (§ 5.17.5) : la rétention lit N semaines choisies dans l'écran. La période
+  // du haut, active mais sans effet, laissait croire qu'elle s'appliquait (V10).
+  it("/retention lit ses propres semaines : la période est désactivée avec sa raison, une plage refusée", () => {
+    const s = surface("/retention");
+    const raison = "La rétention se lit sur un nombre de semaines choisi dans l'écran ; la période choisie en haut ne s'applique pas.";
+    expect(s.range).toBe("none");
+    expect(s.rangeNote).toBe(raison);
+    expect(rangeAvailability(s, false)).toEqual({ available: false, reason: raison });
+    expect(rangeAvailability(s, true)).toEqual({ available: false, reason: raison });
+    expect(checkSurface(requete("from=2026-09-17T10:00:00Z&to=2026-09-17T11:00:00Z"), s, schemaComplet())).toMatchObject({
+      ok: false,
+      error: { code: "unsupported_dimension", parameter: "from", message: raison },
+    });
+    // Les segments historiques, eux, s'appliquent toujours.
+    expect(checkSurface(requete("seg=geo==FR;device!=mobile"), s, schemaComplet()).ok).toBe(true);
   });
 
   it("/forecast lit une fenêtre fixe : la période est désactivée avec sa raison, jamais ignorée", () => {
@@ -210,5 +230,42 @@ describe("/mobile — la liste blanche de dimensions", () => {
         schemaComplet(),
       ),
     ).toEqual({ ok: true, value: true });
+  });
+});
+
+// F40 (R-A, CS1) — les lectures de ces écrans filtrent l'app par
+// `($1::text is null or app_id = $1)` : sous `app=all`, elles liraient TOUTES les
+// apps de la base. Un principal restreint qui demande toutes ses apps est refusé.
+describe("perimetreAvailability — écrans à lecture mono-app", () => {
+  const MONO_APP = ["/acquisition", "/paths", "/forms", "/retention", "/goals"];
+  const scope = (requestedApp: string | null, authorizedApps: string[] | null) => ({
+    requestedApp,
+    authorizedApps,
+    effectiveApps: requestedApp ? [requestedApp] : authorizedApps,
+  });
+
+  it("exactement les cinq écrans historiques d'usage sont marqués", () => {
+    expect(SURFACES.filter((s) => s.appUnique).map((s) => s.path).sort()).toEqual([...MONO_APP].sort());
+  });
+
+  it("principal restreint + toutes les apps → refus typé, texte opposable", () => {
+    for (const path of MONO_APP) {
+      expect(perimetreAvailability(surface(path), scope(null, ["a"])), path).toEqual({ available: false, reason: RAISON_APP_UNIQUE });
+      expect(perimetreAvailability(surface(path), scope(null, ["a", "b"])), path).toEqual({ available: false, reason: RAISON_APP_UNIQUE });
+    }
+    expect(RAISON_APP_UNIQUE.startsWith("Cet écran lit une application à la fois")).toBe(true);
+  });
+
+  it("une app nommée, ou un principal sans restriction : rien à refuser", () => {
+    for (const path of MONO_APP) {
+      expect(perimetreAvailability(surface(path), scope("a", ["a", "b"])).available, path).toBe(true);
+      expect(perimetreAvailability(surface(path), scope(null, null)).available, path).toBe(true);
+    }
+  });
+
+  it("un écran sur le contrat lie ses apps effectives : jamais refusé sous « toutes »", () => {
+    for (const path of ["/sessions", "/map", "/pages", "/errors", "/"]) {
+      expect(perimetreAvailability(surface(path), scope(null, ["a", "b"])).available, path).toBe(true);
+    }
   });
 });

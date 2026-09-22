@@ -44,10 +44,27 @@ describe("computeFunnel", () => {
     expect(rep[2].convFromPrev).toBeCloseTo(2 / 3);
     expect(rep[2].dropoff).toBe(1);
   });
-  it("aucune session -> zéros, pas de division par zéro", () => {
+  // F40 (V3) : sans départ, il n'y a pas de dénominateur. « 0 % du départ » se
+  // lirait comme un entonnoir qui perd tout le monde ; c'est un taux non calculable.
+  it("départ 0 -> taux null (pas « 0 % »), comptes à 0, pas de division par zéro", () => {
     const rep = computeFunnel([], ["a", "b"]);
     expect(rep.map((s) => s.reached)).toEqual([0, 0]);
-    expect(rep[1].convFromStart).toBe(0);
-    expect(rep[1].convFromPrev).toBe(0);
+    expect(rep.map((s) => s.convFromStart)).toEqual([null, null]);
+    expect(rep.map((s) => s.convFromPrev)).toEqual([null, null]);
+    expect(rep.map((s) => s.dropoff)).toEqual([0, 0]);
+  });
+
+  it("étape précédente vide -> conversion depuis elle null, conversion depuis le départ 0 réel", () => {
+    // Départ atteint par 2 sessions, étape 2 par aucune : 0 % du départ est un VRAI zéro,
+    // mais l'étape 3 n'a pas de dénominateur « étape précédente ».
+    const rep = computeFunnel(
+      [
+        [10, null, null],
+        [10, null, null],
+      ],
+      ["a", "b", "c"],
+    );
+    expect(rep[1]).toMatchObject({ reached: 0, convFromStart: 0, convFromPrev: 0, dropoff: 2 });
+    expect(rep[2]).toMatchObject({ reached: 0, convFromStart: 0, convFromPrev: null, dropoff: 0 });
   });
 });

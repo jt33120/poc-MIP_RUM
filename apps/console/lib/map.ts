@@ -3,23 +3,71 @@
 // (components/map). Le graphe est le service front→back qu'on ingère déjà
 // (rum_span corrélés par trace_id) : cartographie + flux + prévision, sans infra.
 
-export type Health = "good" | "warn" | "bad";
+import { rating2026 } from "./rating";
+
+/**
+ * `unknown` : la mesure qui décide manque. Ce n'est PAS « sain » (F40, V3) : une
+ * pastille verte sur un nœud sans latence mesurée, ou sur une page sans LCP,
+ * affirmait un état que rien n'a observé.
+ */
+export type Health = "good" | "warn" | "bad" | "unknown";
 export type TrendDir = "up" | "down" | "flat";
 
-/** Santé d'un nœud API/backend d'après son taux d'erreur et sa latence p75. */
+/**
+ * Règle de santé d'un nœud API/backend. Règle PROPRE à la console, sans source
+ * publiée (aucun seuil de référence n'existe pour une latence d'API ou un taux
+ * d'erreur HTTP, R-S) : l'écran l'écrit en toutes lettres à côté de la légende
+ * (S6), et le texte est lu ici — jamais recopié.
+ */
+export const REGLE_SANTE_API = {
+  /** Part d'appels en statut HTTP ≥ 400 à partir de laquelle un nœud est « dégradé ». */
+  erreurDegrade: 0.1,
+  /** … « à surveiller ». */
+  erreurSurveiller: 0.02,
+  /** Latence p75 (ms) à partir de laquelle un nœud est « dégradé ». */
+  latenceDegradeMs: 3000,
+  /** … « à surveiller ». */
+  latenceSurveillerMs: 1000,
+} as const;
+
+/**
+ * Santé d'un nœud API/backend d'après son taux d'erreur et sa latence p75.
+ *
+ * Latence inconnue (`null`) : elle ne vaut PAS 0 ms. Le taux d'erreur seul peut
+ * encore conclure « dégradé » (la règle est un OU : un nœud à 15 % d'erreurs est
+ * dégradé quelle que soit sa latence) ; sinon l'état est `unknown` — ni « sain »
+ * ni même « à surveiller », puisque la latence manquante pourrait le rendre dégradé.
+ */
 export function apiHealth(errorRate: number, latencyP75: number | null): Health {
-  const lat = latencyP75 ?? 0;
-  if (errorRate >= 0.1 || lat >= 3000) return "bad";
-  if (errorRate >= 0.02 || lat >= 1000) return "warn";
+  const r = REGLE_SANTE_API;
+  if (errorRate >= r.erreurDegrade) return "bad";
+  if (latencyP75 == null) return "unknown";
+  if (latencyP75 >= r.latenceDegradeMs) return "bad";
+  if (errorRate >= r.erreurSurveiller || latencyP75 >= r.latenceSurveillerMs) return "warn";
   return "good";
 }
 
-/** Santé d'une page d'après son LCP p75 (repères Web Vitals 2026). */
+/**
+ * Santé d'une page d'après son LCP p75 : le verdict web.dev de `rating2026`, lu
+ * dans `lib/rating.ts` (V8) — plus de bornes recopiées ici. Pas de mesure :
+ * `unknown`, jamais « good ».
+ */
 export function pageHealth(lcpP75: number | null): Health {
-  if (lcpP75 == null) return "good"; // pas de mesure : neutre
-  if (lcpP75 >= 4000) return "bad";
-  if (lcpP75 >= 2500) return "warn";
-  return "good";
+  if (lcpP75 == null || !Number.isFinite(lcpP75)) return "unknown";
+  const verdict = rating2026("LCP", lcpP75);
+  return verdict === "good" ? "good" : verdict === "needs-improvement" ? "warn" : verdict === "poor" ? "bad" : "unknown";
+}
+
+/** « dégradé dès 10 % d'erreurs HTTP ≥ 400 ou un p75 ≥ 3 s ; à surveiller dès 2 % ou 1 s » (S6). */
+export function texteRegleSanteApi(): string {
+  const r = REGLE_SANTE_API;
+  const pct = (v: number) => `${(v * 100).toLocaleString("fr-FR")}\u00a0%`;
+  const s = (ms: number) => `${(ms / 1000).toLocaleString("fr-FR")}\u00a0s`;
+  return (
+    `dégradé dès ${pct(r.erreurDegrade)} d'appels en erreur HTTP (statut ≥ 400) ou une latence p75 ≥ ${s(r.latenceDegradeMs)} ; ` +
+    `à surveiller dès ${pct(r.erreurSurveiller)} ou ${s(r.latenceSurveillerMs)} ; ` +
+    "inconnu sans latence mesurée"
+  );
 }
 
 /** Tendance de volume : moitié récente vs moitié ancienne de la fenêtre. */
@@ -30,9 +78,12 @@ export function trend(recent: number, older: number): TrendDir {
   return "flat";
 }
 
-/** Un nœud « à risque » : volume en hausse ET santé dégradée (signal capacity). */
+/**
+ * Un nœud « à risque » : volume en hausse ET santé dégradée (signal capacity).
+ * Une santé `unknown` n'est pas une dégradation observée : pas « à risque ».
+ */
 export function atRisk(dir: TrendDir, health: Health): boolean {
-  return dir === "up" && health !== "good";
+  return dir === "up" && (health === "warn" || health === "bad");
 }
 
 // --- Mise en page du graphe (2 colonnes : front | back) ----------------------

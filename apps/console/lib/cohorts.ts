@@ -5,6 +5,29 @@
 // Les semaines sont des index entiers (semaines depuis l'epoch) : l'arithmétique
 // d'offset reste exacte ; l'étiquetage en date se fait côté page.
 
+/** Secondes par semaine : l'index de semaine vaut `floor(epoch(lundi) / SEMAINE_S)`. */
+export const SEMAINE_S = 604_800;
+
+/** Décalage du lundi dans une semaine d'index : l'epoch (01/01/1970) tombe un JEUDI. */
+const LUNDI_APRES_EPOCH_S = 4 * 86_400;
+
+/**
+ * Lundi (00:00 UTC) de la semaine d'index `index`, tel que le SQL le calcule :
+ * `floor(extract(epoch from date_trunc('week', started_at)) / 604800)`
+ * (lib/queries-cohorts.ts). `date_trunc('week')` rend le LUNDI de la semaine ISO,
+ * mais `index × 604800` retombe sur un JEUDI — l'epoch est un jeudi. L'ancienne
+ * étiquette (`weekIndexToDate`) datait donc chaque cohorte du jeudi qui PRÉCÈDE
+ * son lundi (une date de la semaine d'avant) ; celle-ci rend le lundi, 4 jours
+ * après `index × 604800`.
+ *
+ * Exact quel que soit le fuseau de la session PostgreSQL : un lundi 00:00 local
+ * (au plus 14 h d'écart avec l'UTC) reste dans le même index, puisque le lundi
+ * UTC est à 4 jours du début de l'intervalle d'index.
+ */
+export function lundiDeSemaine(index: number): Date {
+  return new Date((index * SEMAINE_S + LUNDI_APRES_EPOCH_S) * 1000);
+}
+
 export interface CohortCell {
   offset: number; // 0 = semaine de la cohorte, 1 = +1 semaine, ...
   retained: number; // utilisateurs de la cohorte actifs à cet offset

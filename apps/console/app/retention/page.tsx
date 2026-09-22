@@ -3,14 +3,20 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { LineTrend } from "@/components/charts/LineTrend";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
+import { lundiDeSemaine } from "@/lib/cohorts";
 import type { SearchParams } from "@/lib/filters";
+import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
-import { retentionCohorts, weekIndexToDate } from "@/lib/queries-cohorts";
+import { retentionCohorts } from "@/lib/queries-cohorts";
+import { samplingSessionsHistorique } from "@/lib/queries-sessions";
 
 export const dynamic = "force-dynamic";
 
 const WEEK_CHOICES = [4, 8, 12];
-const fmtWeek = (d: Date) => d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+// Lundi de la cohorte, lu en UTC : les semaines sont des semaines UTC, et un
+// serveur à l'ouest de Greenwich afficherait sinon le dimanche.
+const fmtWeek = (d: Date) => d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
 
 export default async function Retention({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
@@ -19,7 +25,11 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   const f = ecran.filters;
   const wRaw = Number(typeof sp.weeks === "string" ? sp.weeks : 8);
   const weeks = Number.isFinite(wRaw) ? Math.min(26, Math.max(2, Math.trunc(wRaw))) : 8;
-  const cohorts = await retentionCohorts(f, weeks);
+  // S7 : sessions identifiées lues par les cohortes sur les N semaines choisies.
+  const [cohorts, echantillonnage] = await Promise.all([
+    retentionCohorts(f, weeks),
+    lire(() => samplingSessionsHistorique(f, { lecture: "cohortes", semaines: weeks })),
+  ]);
   const cols = Math.max(0, ...cohorts.map((c) => c.cells.length)); // nb de colonnes d'offset
 
   const weekHref = (w: number) => {
@@ -51,6 +61,8 @@ export default async function Retention({ searchParams }: { searchParams: Promis
           </Link>
         ))}
       </div>
+
+      <BandeauEchantillonnage lecture={echantillonnage} />
 
       {!cohorts.length ? (
         <div className="card p-8 text-center text-ink-faint">
@@ -91,10 +103,11 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                 }
               >
                 <HeroStat label="Cohortes suivies" value={cohorts.length.toLocaleString("fr-FR")} hint={`${totalUsers.toLocaleString("fr-FR")} utilisateurs`} />
+                {/* Sans verdict coloré (S6, R-S) : aucun seuil publié n'existe pour une
+                    rétention ; les paliers d'avant n'avaient pas de source. */}
                 <HeroStat
                   label="Rétention S+1"
                   value={s1 != null ? `${s1} %` : "—"}
-                  tone={s1 != null ? (s1 >= 40 ? "good" : s1 >= 20 ? "warn" : "poor") : "neutral"}
                   hint="reviennent la semaine suivante"
                 />
                 <HeroStat label="Rétention S+4" value={s4 != null ? `${s4} %` : "—"} hint="4 semaines après" />
@@ -123,7 +136,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
               {cohorts.map((c) => (
                 <tr key={c.cohort}>
                   <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-ink-soft">
-                    sem. {fmtWeek(weekIndexToDate(c.cohort))}
+                    sem. {fmtWeek(lundiDeSemaine(c.cohort))}
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums text-ink-soft">{c.size}</td>
                   {Array.from({ length: cols }, (_, o) => {

@@ -5,7 +5,8 @@ import type { FunnelStep } from "@/lib/funnel";
 import type { EventOption } from "@/lib/queries-funnel";
 
 const MAX_STEPS = 4;
-const pct = (v: number) => `${Math.round(v * 100)}%`;
+/** Taux sans dénominateur (personne au départ) : « — », jamais « 0 % » (V3). */
+const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 
 /** Champs cachés reprenant les filtres courants (tout sauf les étapes s1..sN). */
 function preservedParams(sp: Record<string, string | string[] | undefined>) {

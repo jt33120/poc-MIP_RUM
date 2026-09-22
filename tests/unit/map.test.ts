@@ -1,10 +1,12 @@
 // Carte d'expérience (Lot B DEM) — logique pure : santé, tendance, mise en page.
 import { describe, expect, it } from "vitest";
 import {
+  REGLE_SANTE_API,
   apiHealth,
   atRisk,
   layoutGraph,
   pageHealth,
+  texteRegleSanteApi,
   trend,
   type GEdge,
   type GNode,
@@ -22,14 +24,34 @@ describe("apiHealth", () => {
   it("good sinon", () => {
     expect(apiHealth(0, 200)).toBe("good");
   });
+  // F40 (V3) : une latence inconnue ne vaut pas 0 ms.
+  it("latence null -> unknown, sauf si le taux d'erreur suffit seul à conclure « dégradé »", () => {
+    expect(apiHealth(0, null)).toBe("unknown");
+    expect(apiHealth(0.05, null)).toBe("unknown"); // à surveiller OU dégradé : on ne sait pas
+    expect(apiHealth(0.15, null)).toBe("bad"); // la règle est un OU : l'erreur décide
+  });
 });
 
 describe("pageHealth", () => {
-  it("seuils LCP 2026", () => {
+  it("verdict LCP lu dans lib/rating.ts (bornes web.dev, « bon » inclusif)", () => {
     expect(pageHealth(1500)).toBe("good");
+    expect(pageHealth(2500)).toBe("good"); // « 2.5 seconds or less »
     expect(pageHealth(3000)).toBe("warn");
+    expect(pageHealth(4000)).toBe("warn"); // « mauvais » strict : au-delà de 4,0 s
     expect(pageHealth(5000)).toBe("bad");
-    expect(pageHealth(null)).toBe("good");
+  });
+  it("aucune mesure -> unknown, jamais « good »", () => {
+    expect(pageHealth(null)).toBe("unknown");
+  });
+});
+
+describe("texteRegleSanteApi (S6 : un seuil propre à l'écran est écrit avec sa source)", () => {
+  it("dit les bornes lues dans REGLE_SANTE_API, et l'état inconnu", () => {
+    const t = texteRegleSanteApi().replace(/\u00a0/g, " ");
+    expect(t).toContain(`${REGLE_SANTE_API.erreurDegrade * 100} %`);
+    expect(t).toContain(`${REGLE_SANTE_API.latenceDegradeMs / 1000} s`);
+    expect(t).toContain(`${REGLE_SANTE_API.erreurSurveiller * 100} %`);
+    expect(t).toContain("inconnu sans latence mesurée");
   });
 });
 
@@ -50,6 +72,9 @@ describe("atRisk", () => {
     expect(atRisk("up", "warn")).toBe(true);
     expect(atRisk("up", "good")).toBe(false);
     expect(atRisk("flat", "bad")).toBe(false);
+  });
+  it("santé inconnue : pas une dégradation observée, donc pas « à risque »", () => {
+    expect(atRisk("up", "unknown")).toBe(false);
   });
 });
 

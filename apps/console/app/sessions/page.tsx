@@ -24,7 +24,8 @@ import {
 import { hrefWithQuery, paramReader, queryToSearchParams } from "@/lib/query-contract";
 import { dimensionSchema } from "@/lib/query-schema";
 import { listSessions, releaseRechercheParOccurrence, visitStats, type VisitStats } from "@/lib/queries";
-import { engagementStats, observedVisitorsTrend } from "@/lib/queries-sessions";
+import { engagementStats, observedVisitorsTrend, samplingSessions } from "@/lib/queries-sessions";
+import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
 import {
   SESSION_PAGE_SIZE,
   SESSION_SEARCH_FIELDS,
@@ -81,7 +82,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
   // et les visiteurs rendaient autrefois des zéros pendant une panne. Le schéma
   // sondé, lui, conditionne les liens de tout l'écran : son échec est celui de
   // l'écran (`error.tsx`).
-  const [schema, rows, vs, visiteurs, engagementLu, releaseParOccurrence] = await Promise.all([
+  const [schema, rows, vs, visiteurs, engagementLu, releaseParOccurrence, echantillonnage] = await Promise.all([
     dimensionSchema(),
     // Une ligne de plus que la page : c'est ainsi qu'on sait s'il en reste, sans
     // compter toute la population à chaque affichage.
@@ -98,6 +99,9 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     blocs.visiteurs ? lire(() => observedVisitorsTrend(f)) : sansLecture([]),
     blocs.engagement ? lire(() => engagementStats(f)) : sansLecture(null),
     releaseRechercheParOccurrence(),
+    // S7 : la population de l'écran (sessions commencées OU actives) est-elle un
+    // échantillon ? Lue quel que soit le choix de blocs : elle qualifie tous.
+    lire(() => samplingSessions(f)),
   ]);
 
   const lignes = rows.ok ? rows.data : [];
@@ -119,6 +123,10 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
         title="Sessions"
         sub="Parcours réels, rattachés à un identifiant de visiteur tiré au hasard (aucune PII) — ouvre une session pour sa timeline pas à pas."
       />
+
+      {/* S7 (zone Z2b) : au-dessus des figures qu'il qualifie, tant que la rangée de
+          KPI n'existe pas (F41 l'y placera). Rien n'est rendu hors échantillonnage. */}
+      <BandeauEchantillonnage lecture={echantillonnage} />
 
       {/* Hero : partage nouveaux vs revenants (visitStats, sur TOUTE la fenêtre —
           contrairement à la page de sessions ci-dessous). Le partage ne porte que

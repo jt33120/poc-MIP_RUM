@@ -7,11 +7,23 @@ import { useState } from "react";
 import type { Health, Layout, TrendDir } from "@/lib/map";
 import { NODE_HEIGHT, NODE_WIDTH } from "@/lib/map";
 
-const HEALTH_FILL: Record<Health, string> = {
+const HEALTH_FILL: Record<Exclude<Health, "unknown">, string> = {
   good: "#059669",
   warn: "#d97706",
   bad: "#dc2626",
 };
+
+/**
+ * Pastille de santé. Santé inconnue (latence non mesurée) : cercle CREUX et
+ * neutre — pas une couleur de verdict de plus, une absence de verdict qui se
+ * distingue aussi par la forme (aucune information portée par la seule couleur).
+ */
+function Pastille({ health }: { health: Health }) {
+  if (health === "unknown") {
+    return <circle cx={14} cy={NODE_HEIGHT / 2} r={3.5} style={{ fill: "none", stroke: "rgb(var(--c-ink-faint))" }} strokeWidth={1.5} />;
+  }
+  return <circle cx={14} cy={NODE_HEIGHT / 2} r={4} fill={HEALTH_FILL[health]} />;
+}
 const TREND: Record<TrendDir, string> = { up: "▲", down: "▼", flat: "" };
 
 function label(route: string): string {
@@ -60,6 +72,7 @@ export function ExperienceMap({ layout }: { layout: Layout }) {
             >
               <title>
                 {n.route} · {n.calls} appels{n.risk ? " · en hausse, à surveiller" : ""}
+                {n.health === "unknown" ? " · santé inconnue (latence non mesurée)" : ""}
               </title>
               <rect
                 width={NODE_WIDTH}
@@ -68,7 +81,7 @@ export function ExperienceMap({ layout }: { layout: Layout }) {
                 style={{ fill: "rgb(var(--c-panel))", stroke: n.risk ? "#dc2626" : "rgb(var(--c-line))" }}
                 strokeWidth={n.risk ? 1.5 : 1}
               />
-              <circle cx={14} cy={NODE_HEIGHT / 2} r={4} fill={HEALTH_FILL[n.health]} />
+              <Pastille health={n.health} />
               <text x={26} y={NODE_HEIGHT / 2 - 2} style={{ fill: "rgb(var(--c-ink))" }} fontSize={11} fontFamily="ui-monospace, monospace">
                 {label(n.route)}
               </text>
