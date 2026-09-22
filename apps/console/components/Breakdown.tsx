@@ -304,7 +304,7 @@ export function Breakdown({
             <summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
               Alternative textuelle du découpage
             </summary>
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="mt-2 w-full">
                 <caption className="sr-only">
                   {title} — {items.length.toLocaleString("fr-FR")} groupe(s) affiché(s) sur{" "}
