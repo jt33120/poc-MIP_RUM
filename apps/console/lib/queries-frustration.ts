@@ -1,12 +1,13 @@
 // Signaux de frustration (P1) — lecture console. Rage/dead clicks stockés dans
 // rum_event ('frustration.<kind>') ; attribution INP (élément lent) dans
 // rum_metric.attribution. Requête commune P6.2 (plage, périmètre, filtres, bots)
-// compilée en paramètres liés. Fail-soft (vide si la base bronche) — sauf un filtre
-// non applicable, que l'écran refuse avant d'appeler ces lectures.
+// compilée en paramètres liés. Une lecture en échec LÈVE (F02) : elle rendait
+// autrefois `[]`, soit « Aucun signal » et des tuiles à 0 pendant une panne.
+// L'écran l'enveloppe dans `lire()` (lib/lecture.ts) et dit « Lecture en échec ».
 import { q } from "./db";
 import { type Filters } from "./filters";
 import { sessionJoin } from "./query-compiler";
-import { softFail, sqlContext } from "./query-sql";
+import { sqlContext } from "./query-sql";
 
 export interface FrustrationRow {
   route: string;
@@ -17,25 +18,21 @@ export interface FrustrationRow {
 
 /** Top des signaux de frustration (rage + dead + error clicks), groupés par route/cible. */
 export async function topFrustrations(f: Filters): Promise<FrustrationRow[]> {
-  try {
-    const sql = await sqlContext(f);
-    const where = sql.where({ dataset: "custom_events", row: "e", session: "s", time: "e.ts" });
-    return await q<FrustrationRow>(
-      `select coalesce(e.route, '(inconnu)') as route,
-              replace(e.name, 'frustration.', '') as kind,
-              coalesce(e.props->>'target', '(inconnu)') as target,
-              count(*)::int as n
-       from rum_event e
-       ${sessionJoin("e", "s")}
-       where e.name in ('frustration.rage', 'frustration.dead', 'frustration.error')${where}
-       group by 1, 2, 3
-       order by n desc
-       limit 50`,
-      sql.params,
-    );
-  } catch (e) {
-    return softFail(e, []);
-  }
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "custom_events", row: "e", session: "s", time: "e.ts" });
+  return await q<FrustrationRow>(
+    `select coalesce(e.route, '(inconnu)') as route,
+            replace(e.name, 'frustration.', '') as kind,
+            coalesce(e.props->>'target', '(inconnu)') as target,
+            count(*)::int as n
+     from rum_event e
+     ${sessionJoin("e", "s")}
+     where e.name in ('frustration.rage', 'frustration.dead', 'frustration.error')${where}
+     group by 1, 2, 3
+     order by n desc
+     limit 50`,
+    sql.params,
+  );
 }
 
 export interface InpOffender {
@@ -50,25 +47,21 @@ export interface InpOffender {
  * `interactionTarget` de web-vitals, classé par p75 de la latence INP.
  */
 export async function inpOffenders(f: Filters): Promise<InpOffender[]> {
-  try {
-    const sql = await sqlContext(f);
-    const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });
-    return await q<InpOffender>(
-      `select coalesce(m.attribution->>'interactionTarget', '(inconnu)') as target,
-              count(*)::int as n,
-              percentile_cont(0.75) within group (order by m.value) as p75,
-              max(m.value) as worst
-       from rum_metric m
-       ${sessionJoin("m", "s")}
-       where m.name = 'INP' and m.attribution is not null${where}
-       group by 1
-       order by p75 desc nulls last
-       limit 20`,
-      sql.params,
-    );
-  } catch (e) {
-    return softFail(e, []);
-  }
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });
+  return await q<InpOffender>(
+    `select coalesce(m.attribution->>'interactionTarget', '(inconnu)') as target,
+            count(*)::int as n,
+            percentile_cont(0.75) within group (order by m.value) as p75,
+            max(m.value) as worst
+     from rum_metric m
+     ${sessionJoin("m", "s")}
+     where m.name = 'INP' and m.attribution is not null${where}
+     group by 1
+     order by p75 desc nulls last
+     limit 20`,
+    sql.params,
+  );
 }
 
 
@@ -103,24 +96,20 @@ export interface ScriptBloquant {
  * première ligne écrasante qui n'apprend rien.
  */
 export async function scriptsBloquants(f: Filters): Promise<ScriptBloquant[]> {
-  try {
-    const sql = await sqlContext(f);
-    const where = sql.where({ dataset: "longtasks", row: "l", session: "s", time: "l.ts" });
-    return await q<ScriptBloquant>(
-      `select l.script_url as url,
-              coalesce(nullif(l.script_function, ''), nullif(l.invoker, ''), '(anonyme)') as quoi,
-              count(*)::int as n,
-              round(sum(coalesce(l.blocking_ms, l.duration_ms))::numeric)::float as "totalMs",
-              round(max(coalesce(l.blocking_ms, l.duration_ms))::numeric)::float as "worstMs"
-       from rum_longtask l
-       ${sessionJoin("l", "s")}
-       where l.script_url is not null${where}
-       group by 1, 2
-       order by "totalMs" desc
-       limit 20`,
-      sql.params,
-    );
-  } catch (e) {
-    return softFail(e, []);
-  }
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "longtasks", row: "l", session: "s", time: "l.ts" });
+  return await q<ScriptBloquant>(
+    `select l.script_url as url,
+            coalesce(nullif(l.script_function, ''), nullif(l.invoker, ''), '(anonyme)') as quoi,
+            count(*)::int as n,
+            round(sum(coalesce(l.blocking_ms, l.duration_ms))::numeric)::float as "totalMs",
+            round(max(coalesce(l.blocking_ms, l.duration_ms))::numeric)::float as "worstMs"
+     from rum_longtask l
+     ${sessionJoin("l", "s")}
+     where l.script_url is not null${where}
+     group by 1, 2
+     order by "totalMs" desc
+     limit 20`,
+    sql.params,
+  );
 }

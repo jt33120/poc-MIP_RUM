@@ -6,7 +6,6 @@ import { queryOf, type FiltersLike } from "./filters";
 import {
   binder,
   compileWhereOrThrow,
-  UnsupportedFilterError,
   type Bind,
   type CompileTarget,
   type DimensionSchema,
@@ -28,15 +27,6 @@ export async function sqlContext(f: FiltersLike): Promise<SqlContext> {
   const query = queryOf(f);
   const schema = await dimensionSchema();
   return contextFor(query, schema);
-}
-
-/**
- * Lecture « section supplémentaire » : une base indisponible dégrade en valeur de
- * repli, mais un filtre non applicable reste une erreur — jamais un vide trompeur.
- */
-export function softFail<T>(error: unknown, fallback: T): T {
-  if (error instanceof UnsupportedFilterError) throw error;
-  return fallback;
 }
 
 /** Nouveau jeu de paramètres pour une autre instruction, même requête et même schéma. */

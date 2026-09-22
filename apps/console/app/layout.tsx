@@ -10,6 +10,7 @@ import { Nav } from "@/components/Nav";
 import { CATEGORIES } from "@/components/nav-items";
 import { SegmentBar } from "@/components/SegmentBar";
 import { SubNav } from "@/components/SubNav";
+import { EtatSurface } from "@/components/states/EtatSurface";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getUser } from "@/lib/auth";
 import { estCoquilleNue } from "@/lib/chemins-publics";
@@ -18,6 +19,7 @@ import { DashboardSettings } from "@/components/DashboardSettings";
 import { CATALOGUES, lireChoix } from "@/lib/dashboard-blocs";
 import { reglerBlocsAction } from "./actions-dashboard";
 import { FUSEAU_DEFAUT, fuseauDe } from "@/lib/fuseau";
+import { lire } from "@/lib/lecture";
 import { describeProject, projectsForUser, selectedProjectId } from "@/lib/project";
 import { dimensionSchema } from "@/lib/query-schema";
 import { surfaceTicketsOuverte } from "@/lib/queries-ticket-integrations";
@@ -179,8 +181,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     );
   }
 
+  // LA COQUILLE NE TOMBE PAS AVEC LA BASE (F02). La sonde des colonnes et les
+  // connecteurs de tickets levaient jusqu'au layout racine, qu'aucune frontière
+  // d'écran ne couvre : une base injoignable donnait le message anglais de Next à
+  // la place de TOUTE la console. Les lectures de la coquille passent par `lire()` :
+  // en échec, elle s'affiche sans elles et LE DIT (bandeau « Partiel » ci-dessous),
+  // et l'écran rend sa propre « Lecture en échec ». (`listApps`, sous
+  // `projectsForUser`, se rabat encore lui-même sur une liste vide : hors F02.)
+  //
   // RBAC : on ne considère que les apps autorisées (viewer scopé ; liste vide = aucune)
-  const apps = await projectsForUser(user);
+  const appsLues = await lire(() => projectsForUser(user));
+  const apps = appsLues.ok ? appsLues.data : [];
 
   // Projet courant (cookie posé par /select ou le middleware). Absent -> le
   // middleware a déjà renvoyé vers /select ; on garde un repli défensif.
@@ -191,15 +202,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   // Capacités des barres de filtres : colonnes de dimensions réellement présentes
   // (la console peut précéder une migration) et fuseau d'affichage de chaque app.
-  const [schema, timeZones] = await Promise.all([
-    dimensionSchema().then((columns) => [...columns].sort()),
+  const [schemaLu, timeZones] = await Promise.all([
+    lire(() => dimensionSchema().then((columns) => [...columns].sort())),
     Promise.all(apps.map(async (a) => [a.app_id, await fuseauDe(a.app_id)] as const)).then(Object.fromEntries),
   ]);
+  const schema = schemaLu.ok ? schemaLu.data : [];
 
   // P8.6 : l'entrée « Connecteurs de tickets » n'apparaît que lorsqu'un
   // fournisseur est branché et testé. La page applique la MÊME décision et rend
   // un 404 sinon : un lien caché n'est pas une autorisation.
-  const tickets = user.role === "admin" && (await surfaceTicketsOuverte());
+  const ticketsLu = user.role === "admin" ? await lire(surfaceTicketsOuverte) : null;
+  const tickets = ticketsLu?.ok === true && ticketsLu.data;
+  const coquilleDegradee = !appsLues.ok || !schemaLu.ok || ticketsLu?.ok === false;
 
   return (
     <html lang="fr" suppressHydrationWarning>
@@ -356,6 +370,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <ThemeToggle />
               </div>
             </header>
+            {coquilleDegradee && (
+              <div className="px-4 pt-3 sm:px-6" data-testid="coquille-degradee">
+                <EtatSurface
+                  compact
+                  etat={{
+                    kind: "partiel",
+                    raison:
+                      "la base de données n'a pas répondu à la console. Le projet courant, les filtres par dimension ou les liens d'administration peuvent manquer.",
+                  }}
+                />
+              </div>
+            )}
             <Suspense>
               <SubNav />
             </Suspense>

@@ -1,7 +1,10 @@
 import { headers } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
+import { EchecLecture } from "@/components/states/SectionErreur";
 import { requireAdmin } from "@/lib/auth";
 import { dogfoodingEndpoint, ingestEndpoint } from "@/lib/ingest-endpoint";
+import { lire } from "@/lib/lecture";
+import type { HealthSnapshot } from "@/lib/metrics-format";
 import { internalHealth } from "@/lib/queries-health";
 import { causalActionsHealth, identityPersistenceHealth } from "@/lib/health";
 
@@ -10,7 +13,10 @@ export const dynamic = "force-dynamic";
 /** Santé interne de MIP RUM (auto-observabilité, P1) — admin. Mêmes chiffres que /api/metrics. */
 export default async function Health() {
   await requireAdmin();
-  const h = await internalHealth();
+  // Lecture en échec : les tuiles ne sont PAS rendues à zéro (F02) — un tableau
+  // de bord « 0 alerte, 0 lot en attente » pendant une panne serait le pire des
+  // mensonges sur une page de santé. Le bloc d'endpoint, lui, ne lit rien en base.
+  const sante = await lire(internalHealth);
   const [identity, causal] = await Promise.all([
     identityPersistenceHealth(),
     causalActionsHealth(),
@@ -34,8 +40,6 @@ export default async function Health() {
     }
   })();
 
-  const lag = h.metering_lag_hours;
-  const lagTone = lag == null ? "" : lag > 30 ? "text-red-600 dark:text-red-400" : lag > 26 ? "text-amber-600 dark:text-amber-400" : "";
 
   return (
     <div className="animate-fade-up">
@@ -91,6 +95,17 @@ export default async function Health() {
         </div>
       </div>
 
+      {sante.ok ? <StatsSante h={sante.data} /> : <EchecLecture titre="Santé interne" />}
+    </div>
+  );
+}
+
+/** Les tuiles de l'instantané de santé — rendues seulement sur une lecture réussie. */
+function StatsSante({ h }: { h: HealthSnapshot }) {
+  const lag = h.metering_lag_hours;
+  const lagTone = lag == null ? "" : lag > 30 ? "text-red-600 dark:text-red-400" : lag > 26 ? "text-amber-600 dark:text-amber-400" : "";
+  return (
+    <>
       <h2 className="mb-2 text-sm font-semibold text-ink">Ingestion (5 min glissantes)</h2>
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Events (vitals)" value={h.ingest_metrics_5m} />
@@ -152,7 +167,7 @@ export default async function Health() {
           <div className="mt-0.5 text-[11px] text-ink-faint">dernier meter_tenant_usage</div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

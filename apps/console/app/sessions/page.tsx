@@ -8,7 +8,9 @@ import { INPUT_CLASS } from "@/components/forms/Field";
 import { browserFromUA, fmtDate } from "@/lib/format";
 import { geoSourceLabel } from "@/lib/geo";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import type { SearchParams } from "@/lib/filters";
+import { lire, type Lecture } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 import { breakdownDrillHref } from "@/lib/breakdowns";
 import {
@@ -21,7 +23,7 @@ import {
 } from "@/lib/engagement";
 import { hrefWithQuery, paramReader, queryToSearchParams } from "@/lib/query-contract";
 import { dimensionSchema } from "@/lib/query-schema";
-import { listSessions, releaseRechercheParOccurrence, visitStats } from "@/lib/queries";
+import { listSessions, releaseRechercheParOccurrence, visitStats, type VisitStats } from "@/lib/queries";
 import { engagementStats, observedVisitorsTrend } from "@/lib/queries-sessions";
 import {
   SESSION_PAGE_SIZE,
@@ -70,28 +72,38 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
   // éteindre l'un économise réellement un aller-retour en base.
   const cat = catalogueDe("/sessions")!;
   const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
-  const vide = <T,>(v: T) => Promise.resolve(v);
+  /** Lecture non lancée (bloc éteint) : une valeur sûre, jamais affichée comme mesure. */
+  const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
   const liste = blocs.liste && !refus;
 
-  const [schema, rows, vs, visiteurs, engagement, releaseParOccurrence] = await Promise.all([
+  // Chaque bloc a SA lecture (F02, § 3.8) : `lire()` ne lève pas, un bloc en
+  // échec dit « Lecture en échec » et les autres restent affichés. L'engagement
+  // et les visiteurs rendaient autrefois des zéros pendant une panne. Le schéma
+  // sondé, lui, conditionne les liens de tout l'écran : son échec est celui de
+  // l'écran (`error.tsx`).
+  const [schema, rows, vs, visiteurs, engagementLu, releaseParOccurrence] = await Promise.all([
     dimensionSchema(),
     // Une ligne de plus que la page : c'est ainsi qu'on sait s'il en reste, sans
     // compter toute la population à chaque affichage.
     liste
-      ? listSessions(f, {
-          limit: SESSION_PAGE_SIZE + 1,
-          cursor: curseur ?? null,
-          search: recherche ?? null,
-        })
-      : vide([]),
-    blocs.resume ? visitStats(f) : vide(null),
-    blocs.visiteurs ? observedVisitorsTrend(f) : vide([]),
-    blocs.engagement ? engagementStats(f) : vide(null),
+      ? lire(() =>
+          listSessions(f, {
+            limit: SESSION_PAGE_SIZE + 1,
+            cursor: curseur ?? null,
+            search: recherche ?? null,
+          }),
+        )
+      : sansLecture([]),
+    blocs.resume ? lire(() => visitStats(f)) : sansLecture(null),
+    blocs.visiteurs ? lire(() => observedVisitorsTrend(f)) : sansLecture([]),
+    blocs.engagement ? lire(() => engagementStats(f)) : sansLecture(null),
     releaseRechercheParOccurrence(),
   ]);
 
-  const page = rows.slice(0, SESSION_PAGE_SIZE);
-  const suivante = rows.length > SESSION_PAGE_SIZE ? page[page.length - 1] : null;
+  const lignes = rows.ok ? rows.data : [];
+  const engagement = engagementLu.ok ? engagementLu.data : null;
+  const page = lignes.slice(0, SESSION_PAGE_SIZE);
+  const suivante = lignes.length > SESSION_PAGE_SIZE ? page[page.length - 1] : null;
   const rechercheParams = recherche
     ? { [SESSION_SEARCH_FIELD_PARAM]: recherche.field, [SESSION_SEARCH_PARAM]: recherche.value }
     : {};
@@ -112,93 +124,62 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
           contrairement à la page de sessions ci-dessous). Le partage ne porte que
           sur les sessions identifiées ; les autres sont affichées comme telles
           plutôt que réparties au jugé. */}
-      {blocs.resume && vs && (() => {
-      const reprises = Math.max(vs.visits - vs.sessions, 0);
-      const identified = vs.new_count + vs.returning_count;
-      const returningPct = identified ? Math.round((vs.returning_count / identified) * 100) : 0;
-      return (
-      <SupervisionHero
-        chartTitle="Nouveaux vs revenants"
-        chart={
-          identified > 0 ? (
-            <Donut
-              slices={[
-                { label: "Nouveaux", value: vs.new_count, color: "#f89101" },
-                { label: "Revenants", value: vs.returning_count, color: "#2563eb" },
-              ]}
-              centerValue={identified.toLocaleString("fr-FR")}
-              centerLabel="identifiés"
-            />
+      {blocs.resume && (
+        <SectionErreur titre="Nouveaux vs revenants">
+          {!vs.ok ? (
+            <div className="card mb-6 p-5">
+              <EchecLecture titre="Nouveaux vs revenants" />
+            </div>
           ) : (
-            <p className="py-12 text-center text-sm text-ink-faint">
-              Aucun visiteur identifié sur {ecran.label}.
-              {vs.unidentified_count > 0 && (
-                <>
-                  <br />
-                  {vs.unidentified_count.toLocaleString("fr-FR")} session(s) sans identifiant de visiteur :
-                  collectées avant le 09/09/2026, ou par un SDK pas encore à jour.
-                </>
-              )}
-            </p>
-          )
-        }
-      >
-        <HeroStat label="Sessions actives" value={vs.sessions.toLocaleString("fr-FR")} hint="≥ 1 page vue" />
-        <HeroStat
-          label="Visites"
-          value={vs.visits.toLocaleString("fr-FR")}
-          hint={reprises > 0 ? `dont ${reprises.toLocaleString("fr-FR")} reprise(s) après 30 min` : "aucune reprise"}
-        />
-        <HeroStat
-          label="Part de revenants"
-          value={identified ? `${returningPct} %` : "—"}
-          hint={
-            vs.unidentified_count > 0
-              ? `sur ${identified.toLocaleString("fr-FR")} session(s) identifiée(s) · ${vs.unidentified_count.toLocaleString("fr-FR")} sans identifiant`
-              : `${vs.returning_count.toLocaleString("fr-FR")} revenants · ${vs.new_count.toLocaleString("fr-FR")} nouveaux`
-          }
-        />
-        <HeroReading>
-          L&apos;anneau distingue les visiteurs vus pour la première fois de ceux qui reviennent (fidélité).
-          Une session = un parcours ; une visite = un passage (reprise après 30 min d&apos;inactivité = nouvelle
-          visite). « Revenant » se juge sur cette application seulement, et uniquement sur les sessions qui
-          portent un identifiant de visiteur — les autres sont comptées à part, jamais réparties. Détail des
-          parcours ci-dessous.
-        </HeroReading>
-      </SupervisionHero>
-      );
-      })()}
+            vs.data && <HeroVisites vs={vs.data} label={ecran.label} />
+          )}
+        </SectionErreur>
+      )}
 
       {/* Tendance des visiteurs OBSERVÉS (P6.3). Des distincts par seau : leur
           somme n'est pas le nombre de visiteurs de la fenêtre, et aucun total
           n'est affiché sous la courbe. */}
       {blocs.visiteurs && (
-        <section className="mb-6" data-testid="visiteurs-observes">
-          <ObservedTrend
-            title={`Visiteurs observés par ${ecran.bucketLabel} — ${ecran.label}`}
-            rows={visiteurs.map((point) => ({ bucket: point.bucket, value: point.visitors }))}
-            valueLabel="Visiteurs distincts"
-          />
-          <p className="mt-2 text-xs leading-relaxed text-ink-faint">
-            Chaque seau compte les identifiants de visiteur DISTINCTS des sessions commencées pendant ce
-            seau. <strong>Ces valeurs ne s&apos;additionnent pas</strong> : un visiteur présent dans trois
-            seaux y figure trois fois, et aucun total de fenêtre n&apos;en est déduit.{" "}
-            {visiteurs.some((point) => point.sans_identifiant > 0) && (
-              <>
-                {visiteurs
-                  .reduce((somme, point) => somme + point.sans_identifiant, 0)
-                  .toLocaleString("fr-FR")}{" "}
-                session(s) sans identifiant de visiteur sont hors de ce compte.
-              </>
-            )}
-          </p>
-        </section>
+        <SectionErreur titre="Visiteurs observés">
+          {!visiteurs.ok ? (
+            <div className="mb-6">
+              <EchecLecture titre="Visiteurs observés" />
+            </div>
+          ) : (
+            <section className="mb-6" data-testid="visiteurs-observes">
+              <ObservedTrend
+                title={`Visiteurs observés par ${ecran.bucketLabel} — ${ecran.label}`}
+                rows={visiteurs.data.map((point) => ({ bucket: point.bucket, value: point.visitors }))}
+                valueLabel="Visiteurs distincts"
+              />
+              <p className="mt-2 text-xs leading-relaxed text-ink-faint">
+                Chaque seau compte les identifiants de visiteur DISTINCTS des sessions commencées pendant ce
+                seau. <strong>Ces valeurs ne s&apos;additionnent pas</strong> : un visiteur présent dans trois
+                seaux y figure trois fois, et aucun total de fenêtre n&apos;en est déduit.{" "}
+                {visiteurs.data.some((point) => point.sans_identifiant > 0) && (
+                  <>
+                    {visiteurs.data
+                      .reduce((somme, point) => somme + point.sans_identifiant, 0)
+                      .toLocaleString("fr-FR")}{" "}
+                    session(s) sans identifiant de visiteur sont hors de ce compte.
+                  </>
+                )}
+              </p>
+            </section>
+          )}
+        </SectionErreur>
       )}
 
       {/* Durée observée et sessions à une vue (P6.3) : affichées seulement si la
           fenêtre porte assez de sessions pour que ces chiffres veuillent dire
           quelque chose. */}
+      {blocs.engagement && !engagementLu.ok && (
+        <div className="mb-6">
+          <EchecLecture titre="Durée observée et sessions à une seule vue" />
+        </div>
+      )}
       {blocs.engagement && engagement && (
+        <SectionErreur titre="Durée observée et sessions à une seule vue">
         <section className="card mb-6 p-4" data-testid="engagement">
           <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
             Durée observée et sessions à une seule vue
@@ -250,6 +231,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
             </p>
           )}
         </section>
+        </SectionErreur>
       )}
 
       {blocs.liste && (
@@ -315,7 +297,11 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
         </p>
       )}
 
-      {!refus && (
+      {/* Liste en échec : ni « Aucune session sur 24 h » (un vide qu'on n'a pas
+          lu), ni pagination (une page suivante d'une liste inconnue). */}
+      {!refus && !rows.ok && <EchecLecture titre="Liste des sessions" />}
+      {!refus && rows.ok && (
+        <SectionErreur titre="Liste des sessions">
         <div className="flex flex-col gap-3">
           {page.map((s) => (
             <div key={s.session_id} className="card p-4 transition hover:shadow-pop">
@@ -384,9 +370,10 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
             </p>
           )}
         </div>
+        </SectionErreur>
       )}
 
-      {!refus && (page.length > 0 || curseur) && (curseur || suivante) && (
+      {!refus && rows.ok && (page.length > 0 || curseur) && (curseur || suivante) && (
         <nav className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm" aria-label="Pagination des sessions">
           <span className="text-xs text-ink-faint">
             {page.length.toLocaleString("fr-FR")} session(s) affichée(s) · pagination par clé stable
@@ -411,6 +398,64 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
 
       {!blocs.resume && !blocs.liste && !blocs.visiteurs && !blocs.engagement && <TousEteints />}
     </div>
+  );
+}
+
+/** Hero « Nouveaux vs revenants », rendu seulement sur une lecture réussie de `visitStats`. */
+function HeroVisites({ vs, label }: { vs: VisitStats; label: string }) {
+  const reprises = Math.max(vs.visits - vs.sessions, 0);
+  const identified = vs.new_count + vs.returning_count;
+  const returningPct = identified ? Math.round((vs.returning_count / identified) * 100) : 0;
+  return (
+    <SupervisionHero
+      chartTitle="Nouveaux vs revenants"
+      chart={
+        identified > 0 ? (
+          <Donut
+            slices={[
+              { label: "Nouveaux", value: vs.new_count, color: "#f89101" },
+              { label: "Revenants", value: vs.returning_count, color: "#2563eb" },
+            ]}
+            centerValue={identified.toLocaleString("fr-FR")}
+            centerLabel="identifiés"
+          />
+        ) : (
+          <p className="py-12 text-center text-sm text-ink-faint">
+            Aucun visiteur identifié sur {label}.
+            {vs.unidentified_count > 0 && (
+              <>
+                <br />
+                {vs.unidentified_count.toLocaleString("fr-FR")} session(s) sans identifiant de visiteur :
+                collectées avant le 09/09/2026, ou par un SDK pas encore à jour.
+              </>
+            )}
+          </p>
+        )
+      }
+    >
+      <HeroStat label="Sessions actives" value={vs.sessions.toLocaleString("fr-FR")} hint="≥ 1 page vue" />
+      <HeroStat
+        label="Visites"
+        value={vs.visits.toLocaleString("fr-FR")}
+        hint={reprises > 0 ? `dont ${reprises.toLocaleString("fr-FR")} reprise(s) après 30 min` : "aucune reprise"}
+      />
+      <HeroStat
+        label="Part de revenants"
+        value={identified ? `${returningPct} %` : "—"}
+        hint={
+          vs.unidentified_count > 0
+            ? `sur ${identified.toLocaleString("fr-FR")} session(s) identifiée(s) · ${vs.unidentified_count.toLocaleString("fr-FR")} sans identifiant`
+            : `${vs.returning_count.toLocaleString("fr-FR")} revenants · ${vs.new_count.toLocaleString("fr-FR")} nouveaux`
+        }
+      />
+      <HeroReading>
+        L&apos;anneau distingue les visiteurs vus pour la première fois de ceux qui reviennent (fidélité).
+        Une session = un parcours ; une visite = un passage (reprise après 30 min d&apos;inactivité = nouvelle
+        visite). « Revenant » se juge sur cette application seulement, et uniquement sur les sessions qui
+        portent un identifiant de visiteur — les autres sont comptées à part, jamais réparties. Détail des
+        parcours ci-dessous.
+      </HeroReading>
+    </SupervisionHero>
   );
 }
 

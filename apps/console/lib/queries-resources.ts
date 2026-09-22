@@ -10,7 +10,7 @@
 import { q } from "./db";
 import type { FiltersLike } from "./filters";
 import { binder, compileScope, sessionJoin } from "./query-compiler";
-import { softFail, sqlContext, type SqlContext } from "./query-sql";
+import { sqlContext, type SqlContext } from "./query-sql";
 import { RESOURCE_CAP, declaredHostPairs, type ResourceParty } from "./resources";
 
 /**
@@ -53,83 +53,71 @@ export interface ResourcesVue {
 
 type LigneSql = ResourceGroupe & { kind: "type" | "origine" | "party"; groupes: number };
 
-const VIDE: ResourcesVue = {
-  parType: [],
-  typesTotal: 0,
-  typesTronques: false,
-  parOrigine: [],
-  originesTotal: 0,
-  originesTronquees: false,
-  parParty: [],
-  total: 0,
-  partageCalculable: false,
-};
-
 /**
  * Les trois lectures de la vue — par type, par hôte, et le partage première /
  * tierce partie — en UNE instruction : elles partagent la même population, donc
  * la même photographie. Trois requêtes séparées pourraient afficher trois totaux
  * différents si une ingestion passait entre elles.
+ *
+ * Une lecture en échec LÈVE (F02) : la vue vide qu'elle rendait autrefois se
+ * lisait « aucune ressource retenue » pendant une panne. L'écran l'enveloppe dans
+ * `lire()` et rend la section en « Lecture en échec ».
  */
 export async function resourcesVue(f: FiltersLike, cap = RESOURCE_CAP): Promise<ResourcesVue> {
-  try {
-    const sql = await sqlContext(f);
-    const where = sql.where({ dataset: "resources", row: "r", session: "s", time: "r.ts" });
-    const declarees = await originesDeclarees(sql);
-    const appsDeclarees = sql.bind(declarees.apps);
-    const hotesDeclares = sql.bind(declarees.hosts);
-    const limite = Number(cap);
-    const rows = await q<LigneSql>(
-      `with base as (
-         select r.app_id, r.type, r.duration_ms, r.transfer_size, ${HOTE_SQL} as hote
-           from rum_resource r
-           ${sessionJoin("r", "s")}
-          where true${where}
-       ),
-       hotes as (
-         select d.app_id, array_agg(d.host) as declares
-           from unnest(${appsDeclarees}::text[], ${hotesDeclares}::text[]) as d(app_id, host)
-          group by d.app_id
-       ),
-       classe as (
-         select b.type, b.duration_ms, b.transfer_size, b.hote,
-                case when b.hote is null or h.declares is null then 'unknown'
-                     when b.hote = any(h.declares) then 'first'
-                     else 'third' end as party
-           from base b
-           left join hotes h on h.app_id = b.app_id
-       ),
-       agrege as (
-         select 'type' as kind, c.type as cle, null::text as party, count(*)::int as n,
-                percentile_cont(0.75) within group (order by c.duration_ms) as p75_ms,
-                coalesce(sum(c.transfer_size), 0)::float8 as octets
-           from classe c group by c.type
-         union all
-         select 'origine', c.hote, c.party, count(*)::int,
-                percentile_cont(0.75) within group (order by c.duration_ms),
-                coalesce(sum(c.transfer_size), 0)::float8
-           from classe c group by c.hote, c.party
-         union all
-         select 'party', null::text, c.party, count(*)::int,
-                percentile_cont(0.75) within group (order by c.duration_ms),
-                coalesce(sum(c.transfer_size), 0)::float8
-           from classe c group by c.party
-       ),
-       classee as (
-         select a.*, count(*) over (partition by a.kind)::int as groupes,
-                row_number() over (partition by a.kind order by a.n desc, a.cle asc nulls last) as rang
-           from agrege a
-       )
-       select kind, cle, party, n, p75_ms, octets, groupes
-         from classee
-        where kind = 'party' or rang <= ${limite}
-        order by kind, n desc, cle asc nulls last`,
-      sql.params,
-    );
-    return assembler(rows);
-  } catch (e) {
-    return softFail(e, VIDE);
-  }
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "resources", row: "r", session: "s", time: "r.ts" });
+  const declarees = await originesDeclarees(sql);
+  const appsDeclarees = sql.bind(declarees.apps);
+  const hotesDeclares = sql.bind(declarees.hosts);
+  const limite = Number(cap);
+  const rows = await q<LigneSql>(
+    `with base as (
+       select r.app_id, r.type, r.duration_ms, r.transfer_size, ${HOTE_SQL} as hote
+         from rum_resource r
+         ${sessionJoin("r", "s")}
+        where true${where}
+     ),
+     hotes as (
+       select d.app_id, array_agg(d.host) as declares
+         from unnest(${appsDeclarees}::text[], ${hotesDeclares}::text[]) as d(app_id, host)
+        group by d.app_id
+     ),
+     classe as (
+       select b.type, b.duration_ms, b.transfer_size, b.hote,
+              case when b.hote is null or h.declares is null then 'unknown'
+                   when b.hote = any(h.declares) then 'first'
+                   else 'third' end as party
+         from base b
+         left join hotes h on h.app_id = b.app_id
+     ),
+     agrege as (
+       select 'type' as kind, c.type as cle, null::text as party, count(*)::int as n,
+              percentile_cont(0.75) within group (order by c.duration_ms) as p75_ms,
+              coalesce(sum(c.transfer_size), 0)::float8 as octets
+         from classe c group by c.type
+       union all
+       select 'origine', c.hote, c.party, count(*)::int,
+              percentile_cont(0.75) within group (order by c.duration_ms),
+              coalesce(sum(c.transfer_size), 0)::float8
+         from classe c group by c.hote, c.party
+       union all
+       select 'party', null::text, c.party, count(*)::int,
+              percentile_cont(0.75) within group (order by c.duration_ms),
+              coalesce(sum(c.transfer_size), 0)::float8
+         from classe c group by c.party
+     ),
+     classee as (
+       select a.*, count(*) over (partition by a.kind)::int as groupes,
+              row_number() over (partition by a.kind order by a.n desc, a.cle asc nulls last) as rang
+         from agrege a
+     )
+     select kind, cle, party, n, p75_ms, octets, groupes
+       from classee
+      where kind = 'party' or rang <= ${limite}
+      order by kind, n desc, cle asc nulls last`,
+    sql.params,
+  );
+  return assembler(rows);
 }
 
 /**
