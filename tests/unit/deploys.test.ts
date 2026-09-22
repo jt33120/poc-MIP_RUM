@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { q } = vi.hoisted(() => ({ q: vi.fn() }));
 vi.mock("@/lib/db", () => ({ q }));
 
-import { assessRegression, latestDeployImpact } from "../../apps/console/lib/queries-deploys";
+import { assessRegression, latestDeployImpact, verdictDeploiement } from "../../apps/console/lib/queries-deploys";
 
 beforeEach(() => q.mockReset());
 
@@ -69,5 +69,41 @@ describe("assessRegression", () => {
   it("respecte un ratio personnalisé", () => {
     expect(assessRegression(100, 130, 1.5).regressed).toBe(false); // +30 % < +50 %
     expect(assessRegression(100, 160, 1.5).regressed).toBe(true);
+  });
+});
+
+describe("verdictDeploiement", () => {
+  const BASE = {
+    ...LIGNE,
+    pageviews_before: 40,
+    pageviews_after: 40,
+    sessions_before: 10,
+    sessions_after: 10,
+    errors_before: 5,
+    errors_after: 5,
+  };
+
+  it("stable seulement quand les deux fenêtres sont mesurées", () => {
+    expect(verdictDeploiement(BASE)).toMatchObject({ etat: "stable", manques: [] });
+  });
+
+  it("sans page vue avant : « comparaison impossible », jamais « aucune régression »", () => {
+    const v = verdictDeploiement({ ...BASE, pageviews_before: 0, errors_before: null, lcp_before: null });
+    expect(v.etat).toBe("incomplet");
+    expect(v.manques).toEqual(["aucune page vue dans les 2 h avant"]);
+  });
+
+  it("pages vues sans mesure LCP : incomplet aussi", () => {
+    expect(verdictDeploiement({ ...BASE, lcp_after: null }).manques).toEqual(["aucune mesure LCP après"]);
+  });
+
+  it("des erreurs qui apparaissent (0 → 50) sont une régression, même sans pourcentage", () => {
+    const v = verdictDeploiement({ ...BASE, errors_before: 0, errors_after: 50 });
+    expect(v).toMatchObject({ etat: "regression", erreursApparues: true });
+  });
+
+  it("une régression mesurée l'emporte sur un côté incomplet", () => {
+    const v = verdictDeploiement({ ...BASE, lcp_before: 2000, lcp_after: 3000, pageviews_after: 40, errors_after: 5 });
+    expect(v.etat).toBe("regression");
   });
 });

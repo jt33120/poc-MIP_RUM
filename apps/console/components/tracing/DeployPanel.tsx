@@ -3,7 +3,7 @@
 // (LCP p75 ou volume d'erreurs) a suivi. Répond à « et l'heure de régression ».
 import { fmtMs } from "@/components/tracing/format";
 import type { Filters } from "@/lib/filters";
-import { assessRegression, latestDeployImpact, listDeploys } from "@/lib/queries-deploys";
+import { latestDeployImpact, listDeploys, verdictDeploiement } from "@/lib/queries-deploys";
 
 function fmtWhen(ts: Date): string {
   return new Date(ts).toLocaleString("fr-FR", {
@@ -15,10 +15,12 @@ export async function DeployPanel({ f }: { f: Filters }) {
   const [deploys, impact] = await Promise.all([listDeploys(f, 6), latestDeployImpact(f)]);
   if (!deploys.length) return null; // rien tant qu'aucun déploiement n'est enregistré
 
-  const lcp = assessRegression(impact?.lcp_before ?? null, impact?.lcp_after ?? null);
-  // `null` quand une fenêtre n'a aucune page vue : assessRegression rend alors deltaPct null.
-  const err = assessRegression(impact?.errors_before ?? null, impact?.errors_after ?? null);
-  const regressed = lcp.regressed || err.regressed;
+  const verdict = impact ? verdictDeploiement(impact) : null;
+  const TON = {
+    regression: "border-red-300/60 bg-red-50 text-red-800 dark:border-red-400/25 dark:bg-red-400/10 dark:text-red-200",
+    incomplet: "border-line bg-panel2 text-ink-soft",
+    stable: "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-200",
+  } as const;
 
   return (
     <section className="card mb-6 p-5">
@@ -29,26 +31,31 @@ export async function DeployPanel({ f }: { f: Filters }) {
         </span>
       </div>
 
-      {impact?.deploy_ts && (
-        <div
-          className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
-            regressed
-              ? "border-red-300/60 bg-red-50 text-red-800 dark:border-red-400/25 dark:bg-red-400/10 dark:text-red-200"
-              : "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-200"
-          }`}
-        >
-          {regressed ? (
+      {impact?.deploy_ts && verdict && (
+        <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${TON[verdict.etat]}`} data-testid="deploy-verdict" data-etat={verdict.etat}>
+          {verdict.etat === "regression" ? (
             <>
               <strong>Régression détectée</strong> après le déploiement du {fmtWhen(impact.deploy_ts)}
               {impact.version ? ` (${impact.version})` : ""} —{" "}
-              {lcp.regressed && lcp.deltaPct != null && (
-                <>LCP p75 <strong>+{lcp.deltaPct}%</strong> ({fmtMs(impact.lcp_before)} → {fmtMs(impact.lcp_after)})</>
-              )}
-              {lcp.regressed && err.regressed ? " · " : ""}
-              {err.regressed && err.deltaPct != null && (
-                <>erreurs JS <strong>+{err.deltaPct}%</strong> ({impact.errors_before} → {impact.errors_after})</>
-              )}
+              {[
+                verdict.lcp.regressed && verdict.lcp.deltaPct != null && (
+                  <span key="lcp">LCP p75 <strong>+{verdict.lcp.deltaPct}%</strong> ({fmtMs(impact.lcp_before)} → {fmtMs(impact.lcp_after)})</span>
+                ),
+                verdict.erreurs.regressed && verdict.erreurs.deltaPct != null && (
+                  <span key="err">erreurs JS <strong>+{verdict.erreurs.deltaPct}%</strong> ({impact.errors_before} → {impact.errors_after})</span>
+                ),
+                verdict.erreursApparues && (
+                  <span key="app">erreurs JS <strong>apparues</strong> (0 → {impact.errors_after})</span>
+                ),
+              ]
+                .filter(Boolean)
+                .flatMap((el, i) => (i ? [" · ", el] : [el]))}
               .
+            </>
+          ) : verdict.etat === "incomplet" ? (
+            <>
+              <strong>Comparaison impossible</strong> pour le déploiement du {fmtWhen(impact.deploy_ts)}
+              {impact.version ? ` (${impact.version})` : ""} : {verdict.manques.join(", ")}.
             </>
           ) : (
             <>

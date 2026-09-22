@@ -79,19 +79,25 @@ export interface FeedbackTrendRow {
   positives: number;
 }
 
-/** Tendance du CSAT dans le temps (seaux journaliers alignés UTC, max 30 points). */
+/**
+ * Tendance du CSAT dans le temps (seaux journaliers alignés UTC, max 30 points).
+ * Au-delà de 30 seaux, ce sont les 30 PLUS RÉCENTS qui restent : un `limit 30`
+ * sur l'ordre croissant gardait les premiers jours et coupait la fin de la courbe.
+ */
 export async function feedbackTrend(f: FiltersLike): Promise<FeedbackTrendRow[]> {
   const sql = await sqlContext(f);
   const where = sql.where({ dataset: "custom_events", row: "e", session: "s", time: "e.ts" });
   const jour = bucketExpr("e.ts", { ...sql.query.range, bucketSeconds: 86_400 });
   return q<FeedbackTrendRow>(
-    `select ${jour} as bucket,
-            count(*) filter (where (nullif(e.props->>'score',''))::int is not null)::int as count,
-            count(*) filter (where (nullif(e.props->>'score',''))::int >= 4)::int as positives
-     from rum_event e
-     ${sessionJoin("e", "s")}
-     where e.name = 'feedback'${where}
-     group by 1 order by 1 limit 30`,
+    `select * from (
+       select ${jour} as bucket,
+              count(*) filter (where (nullif(e.props->>'score',''))::int is not null)::int as count,
+              count(*) filter (where (nullif(e.props->>'score',''))::int >= 4)::int as positives
+       from rum_event e
+       ${sessionJoin("e", "s")}
+       where e.name = 'feedback'${where}
+       group by 1 order by 1 desc limit 30
+     ) derniers order by bucket`,
     sql.params,
   );
 }
