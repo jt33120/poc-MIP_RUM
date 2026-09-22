@@ -1,7 +1,13 @@
 // Robot et réel (§ 5.7) : règles pures qui interprètent les lectures de
 // lib/queries-v2.ts (fraîcheur du robot, cartes par couple). Sans accès base.
-import { rating2026, type Rating } from "./rating";
-import type { CorrCardRow, SyntheticFreshnessRow } from "./queries-v2";
+import type { CaseEtat, EtatDef } from "../components/charts/FriseEtats";
+import type { CoupleSerie } from "./correlation-serie";
+import { formater } from "./fmt-ids";
+import { fmtBorne, fmtLatency } from "./format";
+import { bucketStarts, MAX_POINTS } from "./query-contract";
+import { rating2026, THRESHOLDS, type Rating } from "./rating";
+import type { CelluleConcordance, CorrCardRow, CorrSeriesRow, SyntheticFreshnessRow } from "./queries-v2";
+import { grilleIso } from "./series";
 
 export type RetardRobot =
   /** Aucun passage sur la plage : l'écran dit « Non collecté », pas « robot ok ». */
@@ -81,4 +87,168 @@ export function trierSansRobot<T extends Pick<CorrCardRow, "rum_lcp_n" | "rum_lc
       const gb = b.verdict ? GRAVITE[b.verdict] : 3;
       return ga - gb || (b.rum_lcp_n ?? 0) - (a.rum_lcp_n ?? 0);
     });
+}
+
+// ---------------------------------------------------------------------------
+// F58 — écran /correlation : ce que la page tire des lectures, sans accès base.
+// ---------------------------------------------------------------------------
+
+/** Libellés des états du robot, en toutes lettres (frise, matrice, tables). */
+export const LIBELLE_ETAT_ROBOT: Record<string, string> = {
+  ok: "ok",
+  warn: "avertissement",
+  incident: "incident",
+  inconnu: "état inconnu",
+  absent: "aucun passage",
+};
+
+/**
+ * États de la frise robot (CR7-b) : la FORME porte l'état (hauteur, glyphe,
+ * contour, hachures), la couleur ne fait que doubler. `ok` est neutre : un robot
+ * « ok » n'est pas un verdict « Bon » (R-S), rien ici ne se lit comme un seuil.
+ */
+export const ETATS_FRISE_ROBOT: EtatDef[] = [
+  { cle: "ok", libelle: LIBELLE_ETAT_ROBOT.ok, forme: "basse", ton: "neutre" },
+  { cle: "warn", libelle: LIBELLE_ETAT_ROBOT.warn, forme: "moyenne", glyphe: "!", ton: "warn" },
+  { cle: "incident", libelle: LIBELLE_ETAT_ROBOT.incident, forme: "haute", glyphe: "×", ton: "bad" },
+  { cle: "inconnu", libelle: LIBELLE_ETAT_ROBOT.inconnu, forme: "contour", ton: "vide" },
+  { cle: "absent", libelle: LIBELLE_ETAT_ROBOT.absent, forme: "hachure", ton: "vide" },
+];
+
+type LigneRobot = Pick<CorrSeriesRow, "syn_state" | "syn_latency_avg" | "syn_measures">;
+
+/**
+ * Le robot est-il passé dans cette heure ? `correlationSeries` rend une ligne dès
+ * qu'UN côté a mesuré : une heure au réel seul arrive avec les trois champs robot à
+ * `null`. Ce n'est pas un « état inconnu » (le robot n'a rien dit) mais « aucun
+ * passage ». L'état inconnu est un passage dont l'état n'est pas renseigné.
+ */
+export function robotPasse(l: LigneRobot | null): boolean {
+  return l != null && (l.syn_state != null || l.syn_latency_avg != null || l.syn_measures != null);
+}
+
+/**
+ * Cases de la frise robot (CR7-b), une par élément de la grille horaire, dans
+ * l'ordre des lignes ALIGNÉES (`alignerSeaux`) : `null` ou heure sans passage →
+ * « aucun passage » ; passage sans état → « état inconnu ».
+ */
+export function casesFriseRobot(lignes: readonly (LigneRobot | null)[], grille: readonly string[]): CaseEtat[] {
+  return grille.map((t, i) => {
+    const l = lignes[i] ?? null;
+    if (l === null || !robotPasse(l)) return { t, etat: "absent", detail: "aucun passage du robot" };
+    const latence =
+      l.syn_latency_avg != null ? `premier chargement ${fmtLatency(Number(l.syn_latency_avg))}` : "premier chargement non mesuré";
+    return { t, etat: l.syn_state ?? "inconnu", detail: l.syn_measures ? `${latence} · ${l.syn_measures}` : latence };
+  });
+}
+
+/** Aucun passage du robot sur toute la grille : la frise est remplacée par une phrase. */
+export function aucunPassageSurLaGrille(lignes: readonly (LigneRobot | null)[]): boolean {
+  return !lignes.some((l) => robotPasse(l));
+}
+
+/**
+ * Heures × couple en angle mort (CR4) : cellules « robot ok » × réel au-delà de la
+ * borne Bon (« À améliorer » et « Mauvais »). Le même compte que les deux cases
+ * nommées « angle mort » de la matrice (CR8) : c'est la même lecture.
+ */
+export function heuresAngleMort(cellules: readonly CelluleConcordance[]): number {
+  return cellules.filter((c) => c.robot === "ok" && c.reel !== "good").reduce((s, c) => s + c.heures, 0);
+}
+
+/**
+ * La règle des angles morts, en toutes lettres (CR9). La borne est LUE dans
+ * `THRESHOLDS.LCP` au moment de l'appel et formatée : changer la borne change le
+ * texte, jamais l'inverse.
+ */
+export function regleAngleMort(effectifMin: number): string {
+  return (
+    `Robot à l'état ok ET LCP p75 réel au-dessus de ${fmtBorne("LCP", THRESHOLDS.LCP[0])} ` +
+    `(borne Bon de lib/rating.ts) sur la même heure et la même route, heures d'au moins ${effectifMin} mesures.`
+  );
+}
+
+/** Règle courte de l'alerte de la tuile « Heures en angle mort » (CR4). */
+export function regleAlerteAngleMort(): string {
+  return `robot ok et réel au-delà de ${fmtBorne("LCP", THRESHOLDS.LCP[0])} la même heure`;
+}
+
+const HEURE_MS = 3_600_000;
+
+/**
+ * Grille horaire du hero (CR7, CR7-b) : seaux d'UNE heure alignés UTC, quelle que
+ * soit la plage, sur les `MAX_POINTS` dernières heures au plus (plafond de points du
+ * contrat). Au-delà, `tronque` : la figure le dit ; la matrice et les angles morts
+ * portent toujours sur toute la plage.
+ */
+export function grilleHoraire(range: { from: string; to: string }): { starts: number[]; grille: string[]; tronque: boolean } {
+  const finMs = Date.parse(range.to);
+  const debutMs = Math.max(Date.parse(range.from), finMs - MAX_POINTS * HEURE_MS);
+  const starts = bucketStarts({ from: new Date(debutMs).toISOString(), to: range.to, bucketSeconds: 3600 });
+  return { starts, grille: grilleIso(starts), tronque: debutMs > Date.parse(range.from) };
+}
+
+/**
+ * Puces du sélecteur (CR7-a) : les couples aux angles morts les plus nombreux,
+ * heures décroissantes, parmi les options (un couple sans heure vue des deux côtés
+ * ne peut pas s'afficher dans le hero).
+ */
+export function pucesAnglesMorts<T extends CoupleSerie & { heures: number }>(
+  anglesMorts: readonly T[],
+  options: readonly CoupleSerie[],
+  n = 5,
+): T[] {
+  return anglesMorts
+    .filter((a) => a.heures > 0 && options.some((o) => o.app_id === a.app_id && o.route === a.route))
+    .slice(0, n);
+}
+
+/**
+ * Ordre de la table « Routes : robot et réel côte à côte » (CR12) : les couples vus
+ * des deux côtés d'abord (même règle que l'ordre SQL de `correlationCards`), puis
+ * LCP p75 réel décroissant ; un LCP inconnu en dernier.
+ */
+export function trierRoutes<T extends Pick<CorrCardRow, "rum_lcp_p75" | "syn_latency_avg" | "app_id" | "route">>(
+  cartes: readonly T[],
+): T[] {
+  const deuxCotes = (c: T) => c.rum_lcp_p75 != null && c.syn_latency_avg != null;
+  const lcp = (c: T) => (c.rum_lcp_p75 == null ? null : Number(c.rum_lcp_p75));
+  return [...cartes].sort((a, b) => {
+    if (deuxCotes(a) !== deuxCotes(b)) return deuxCotes(a) ? -1 : 1;
+    const la = lcp(a);
+    const lb = lcp(b);
+    if (la !== lb) {
+      if (la === null) return 1;
+      if (lb === null) return -1;
+      return lb - la;
+    }
+    return (a.route ?? "").localeCompare(b.route ?? "") || a.app_id.localeCompare(b.app_id);
+  });
+}
+
+/**
+ * Bandeau de fraîcheur (CR1) : « Dernier passage du robot : il y a 3 h 12 min
+ * (attendu toutes les 15 min) », une ligne par app dont le robot est en retard ou
+ * dont le rythme est inconnu. L'app est nommée dès que le périmètre en compte
+ * plusieurs. Une app sans AUCUN passage n'a pas de ligne ici : elle relève de
+ * l'état « Non collecté ».
+ */
+export function lignesRetard(fraicheurs: readonly SyntheticFreshnessRow[], toMs: number): string[] {
+  const plusieurs = fraicheurs.length > 1;
+  return fraicheurs.flatMap((f) => {
+    const r = retardRobot(f, toMs);
+    if (r.etat !== "en_retard" && r.etat !== "intervalle_inconnu") return [];
+    const attendu =
+      r.etat === "en_retard"
+        ? `attendu toutes les ${formater("s-auto", r.intervalleMs)}`
+        : "rythme attendu inconnu : moins de deux passages d'un même scénario sur la plage";
+    return [`${plusieurs ? `${f.app_id} — ` : ""}Dernier passage du robot : il y a ${formater("s-auto", r.retardMs)} (${attendu})`];
+  });
+}
+
+/** Le passage le plus récent du périmètre (CR6), ou `null` s'il n'y en a aucun. */
+export function dernierPassage(fraicheurs: readonly Pick<SyntheticFreshnessRow, "dernier">[]): Date | null {
+  let plusRecent: Date | null = null;
+  for (const f of fraicheurs) if (f.dernier && (!plusRecent || f.dernier.getTime() > plusRecent.getTime())) plusRecent = f.dernier;
+  return plusRecent;
 }

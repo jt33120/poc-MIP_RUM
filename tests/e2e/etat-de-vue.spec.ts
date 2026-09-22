@@ -176,24 +176,36 @@ test("cmp=release survit à un changement d'onglet et de catégorie ; le tri res
   expect(parametres(page).get("rel_b")).toBeNull();
 });
 
-/** Un écart vs la période précédente, sous ses deux formes : badge (établi) ou phrase (non établi). */
-const ECART = '[title="vs période précédente"], [data-testid="trend"]';
+/**
+ * Un écart vs la période précédente, sous TOUTES ses formes :
+ *   - badge établi : `trend` (`VitalCard`), `delta` (`KpiTile`, F11) ;
+ *   - écart NON ÉTABLI (P*.1, intervalles qui se chevauchent) : écrit sans flèche,
+ *     `kpi-comparaison[data-ecart="non-etabli"]`.
+ * Le TEXTE DE SILENCE d'une tuile (« période précédente incomplète », « pas de mesure
+ * sur … », « échantillon faible ») n'est PAS un écart : il porte `data-ecart="silence"`
+ * et reste hors de ce sélecteur — sinon « aucun écart » serait faux dès qu'on dit
+ * pourquoi il n'y en a pas.
+ */
+const ECART =
+  '[title="vs période précédente"], [data-testid="trend"], [data-testid="delta"], [data-testid="kpi-comparaison"][data-ecart="non-etabli"]';
 
 test("une plage personnalisée de 30 jours n'affiche aucun delta sur /, et dit pourquoi", async ({ page }) => {
   await login(page);
 
   // Témoin : sous 24 h, la période précédente est complète et mesurée — un écart s'affiche.
   // Établi ou non (P*.1 : deux intervalles qui se chevauchent donnent un écart écrit
-  // sans flèche ni `title`), c'est toujours un écart : on le repère par `trend`.
+  // sans flèche ni `title`), c'est toujours un écart. F11 : sur `/`, les tuiles sont
+  // des `KpiTile`, et leur référence est DATÉE (« vs 24 h précédentes (… UTC) »).
   await page.goto(`${consoleUrl}/?app=${APP}&period=24h`, { waitUntil: "domcontentloaded" });
   await expect(page.locator(ECART).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(ECART).first()).toContainText("vs 24 h précédentes");
 
   const to = new Date(Math.floor(Date.now() / 60_000) * 60_000 - 60_000);
   const from = new Date(to.getTime() - 30 * 86_400_000);
   await page.goto(`${consoleUrl}/?app=${APP}&from=${from.toISOString()}&to=${to.toISOString()}`, {
     waitUntil: "domcontentloaded",
   });
-  await expect(page.getByTestId("p75-LCP")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("tuile-LCP")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("note-comparaison")).toContainText("hors rétention (30 jours)");
   await expect(page.locator(ECART)).toHaveCount(0);
 });
@@ -201,7 +213,7 @@ test("une plage personnalisée de 30 jours n'affiche aucun delta sur /, et dit p
 test("cmp=none : aucun delta, et un réglage illisible est signalé", async ({ page }) => {
   await login(page);
   await page.goto(`${consoleUrl}/?app=${APP}&period=24h&cmp=none`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("p75-LCP")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("tuile-LCP")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(ECART)).toHaveCount(0);
 
   await page.goto(`${consoleUrl}/?app=${APP}&period=24h&cmp=hier`, { waitUntil: "domcontentloaded" });

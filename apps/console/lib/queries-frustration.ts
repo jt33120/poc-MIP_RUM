@@ -8,6 +8,8 @@ import { q } from "./db";
 import { type Filters } from "./filters";
 import { sessionJoin } from "./query-compiler";
 import { sqlContext } from "./query-sql";
+import { plageLue } from "./queries";
+import { MOBILE_RUNTIME } from "./queries-mobile";
 
 export interface FrustrationRow {
   route: string;
@@ -112,4 +114,183 @@ export async function scriptsBloquants(f: Filters): Promise<ScriptBloquant[]> {
      limit 20`,
     sql.params,
   );
+}
+
+// ═══════════════════ Interactions : tuiles et hero de /ux (F22) ═══════════════════
+//
+// Registre : plan § 4.5 et § 5.4.2. Deux défauts de `topFrustrations` commandent ces
+// lectures (CP5) : elle coupe à 50 couples route × type × cible — un total calculé en
+// sommant ses lignes est FAUX dès qu'il y a plus de 50 couples — et elle ne dit rien
+// des sessions. Ici, des comptes entiers et des sessions distinctes.
+//
+// LA GARDE DE CAPTEUR (CP16, R-F). Le SDK navigateur et l'extension émettent
+// `frustration.rage|dead|error` ; le SDK React Native n'en émet AUCUN. Une session
+// `runtime = 'react_native'` a donc zéro signal par construction : la compter au
+// dénominateur ferait lire « personne ne s'acharne » là où personne n'écoute.
+// Numérateurs et dénominateurs sont restreints aux sessions dont le capteur émet
+// (runtime autre que `MOBILE_RUNTIME`, ou NULL : navigateur, ingestion antérieure à
+// v82). Sans la colonne `runtime` (avant v82), rien n'est restreint et l'écran le dit.
+
+/** `rum_session.runtime` (v82) présente ? Sondée à chaque lecture, comme `mobileSchema`. */
+async function runtimeDeclare(): Promise<boolean> {
+  const [row] = await q<{ runtime: boolean }>(
+    `select exists(select 1 from information_schema.columns
+             where table_schema='public' and table_name='rum_session' and column_name='runtime') as runtime`,
+  );
+  return row?.runtime === true;
+}
+
+/** Une session (alias `s`) dont le capteur émet des signaux de frustration. */
+function capteurEmet(runtimeLu: boolean, s: string, mobile: string): string {
+  return runtimeLu ? `(${s}.runtime is null or ${s}.runtime <> ${mobile})` : "true";
+}
+
+export type TypeSignal = "rage" | "dead" | "error";
+const TYPES_SIGNAL: readonly TypeSignal[] = ["rage", "dead", "error"];
+
+export interface CapteurFrustration {
+  /** Sessions de la base dont le capteur émet (navigateur, extension, runtime inconnu). */
+  sessionsCouvertes: number;
+  /** Sessions de la base : au moins une vue dans la fenêtre (définition de `sessionsAvecVue`). */
+  sessionsTotal: number;
+  /** `false` : colonne `runtime` absente (avant v82), aucune session n'a pu être écartée. */
+  runtimeLu: boolean;
+}
+
+export interface FrustrationTotaux {
+  /** Par type : signaux émis (compte ENTIER, jamais borné) et sessions distinctes qui les portent. */
+  parType: { kind: TypeSignal; n: number; sessions: number }[];
+  capteur: CapteurFrustration;
+}
+
+/**
+ * Totaux des signaux de frustration (tuiles de `/ux`, § 5.4.2), avec la garde de
+ * capteur.
+ *
+ * `sessionsTotal` — ÉCART au registre, qui dit « sessions commencées » : `/ux`
+ * accepte des filtres de route, de release et d'environnement, que les sessions ne
+ * portent pas (le jeu `sessions` les refuserait). La base est donc celle des sessions
+ * ayant au moins une vue dans la fenêtre sous les MÊMES filtres que les signaux — la
+ * définition unique de `sessionsAvecVue` (R-P) : un clic suppose une page.
+ */
+export async function frustrationTotaux(f: Filters, shift = false): Promise<FrustrationTotaux> {
+  const runtimeLu = await runtimeDeclare();
+  const sql = await sqlContext(f);
+  const range = plageLue(sql.query.range, shift);
+  const vues = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at", range });
+  const signaux = sql.where({ dataset: "custom_events", row: "e", session: "se", time: "e.ts", range });
+  // Liée seulement si elle sert : un paramètre sans `$n` fait refuser l'instruction.
+  const mobile = runtimeLu ? sql.bind(MOBILE_RUNTIME) : "";
+  const parType = TYPES_SIGNAL.map(
+    (k) => `count(*) filter (where kind = '${k}')::int as n_${k},
+            count(distinct (app_id, session_id)) filter (where kind = '${k}' and session_id is not null)::int as s_${k}`,
+  ).join(",\n            ");
+  const [row] = await q<Record<string, number>>(
+    `with base as (
+       select distinct p.app_id, p.session_id, ${capteurEmet(runtimeLu, "s", mobile)} as couverte
+         from rum_pageview p
+         ${sessionJoin("p", "s")}
+        where p.session_id is not null${vues}
+     ), signaux as (
+       select e.app_id, e.session_id, replace(e.name, 'frustration.', '') as kind
+         from rum_event e
+         ${sessionJoin("e", "se")}
+        where e.name in ('frustration.rage', 'frustration.dead', 'frustration.error')
+          and ${capteurEmet(runtimeLu, "se", mobile)}${signaux}
+     ), comptes as (
+       select ${parType}
+         from signaux
+     ), base_comptee as (
+       select count(*)::int as sessions_total,
+              count(*) filter (where b.couverte)::int as sessions_couvertes
+         from base b
+     )
+     select * from comptes, base_comptee`,
+    sql.params,
+  );
+  const lu = (cle: string) => Number(row?.[cle] ?? 0);
+  return {
+    parType: TYPES_SIGNAL.map((kind) => ({ kind, n: lu(`n_${kind}`), sessions: lu(`s_${kind}`) })),
+    capteur: { sessionsCouvertes: lu("sessions_couvertes"), sessionsTotal: lu("sessions_total"), runtimeLu },
+  };
+}
+
+export interface FrustrationRoute {
+  /** `null` : signal ou vue sans route (« Inconnu » à l'écran). */
+  route: string | null;
+  rage: number;
+  dead: number;
+  error: number;
+  /** Sessions de la route (au moins une vue de la route) portant un signal SUR la route. */
+  sessionsTouchees: number;
+  /** Sessions ayant au moins une vue de la route dans la fenêtre. */
+  sessionsRoute: number;
+}
+
+/**
+ * Routes et leurs signaux (hero « Routes les plus frustrantes », § 5.4.2) : par route,
+ * les comptes par type et la part des sessions de la route qui portent au moins un
+ * signal — un TAUX, donc une gravité (un compte brut classerait par trafic).
+ *
+ * Numérateur INCLUS dans le dénominateur (jointure, comme `partSessionsTouchees`) :
+ * une session touchée sur la route sans vue de la route dans la fenêtre n'y entre
+ * pas. Les deux sont restreints aux sessions dont le capteur émet (CP16). Les comptes
+ * par type, eux, portent sur tous les signaux de la route.
+ *
+ * `type` (écart au registre, paramètre d'écran `type=`, § 3.1) : seules les SESSIONS
+ * TOUCHÉES (le pilote) ne retiennent que ce type de signal. Les comptes rage / dead /
+ * error restent lus tous les trois : filtrer la lecture sur un type ferait afficher
+ * « 0 » dans les colonnes des deux autres, qui n'auraient simplement pas été lus (V3).
+ */
+export async function frustrationParRoute(f: Filters, type: TypeSignal | null = null): Promise<FrustrationRoute[]> {
+  const runtimeLu = await runtimeDeclare();
+  const sql = await sqlContext(f);
+  const vues = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at" });
+  const signaux = sql.where({ dataset: "custom_events", row: "e", session: "se", time: "e.ts" });
+  // Liée seulement si elle sert : un paramètre sans `$n` fait refuser l'instruction.
+  const mobile = runtimeLu ? sql.bind(MOBILE_RUNTIME) : "";
+  const duType = type ? ` and x.kind = ${sql.bind(type)}` : "";
+  const rows = await q<FrustrationRoute>(
+    `with vues as (
+       select distinct p.app_id, p.session_id, p.route
+         from rum_pageview p
+         ${sessionJoin("p", "s")}
+        where p.session_id is not null and ${capteurEmet(runtimeLu, "s", mobile)}${vues}
+     ), signaux as (
+       select e.app_id, e.session_id, e.route, replace(e.name, 'frustration.', '') as kind
+         from rum_event e
+         ${sessionJoin("e", "se")}
+        where e.name in ('frustration.rage', 'frustration.dead', 'frustration.error')
+          and ${capteurEmet(runtimeLu, "se", mobile)}${signaux}
+     ), routes as (
+       select route from vues union select route from signaux
+     ), comptes as (
+       select route,
+              count(*) filter (where kind = 'rage')::int as rage,
+              count(*) filter (where kind = 'dead')::int as dead,
+              count(*) filter (where kind = 'error')::int as error
+         from signaux
+        group by route
+     ), touchees as (
+       select v.route,
+              count(*)::int as sessions_route,
+              count(*) filter (where exists (
+                select 1 from signaux x
+                 where x.app_id = v.app_id and x.session_id = v.session_id
+                   and x.route is not distinct from v.route${duType}
+              ))::int as sessions_touchees
+         from vues v
+        group by v.route
+     )
+     select r.route,
+            coalesce(c.rage, 0)::int as rage, coalesce(c.dead, 0)::int as dead, coalesce(c.error, 0)::int as error,
+            coalesce(t.sessions_touchees, 0)::int as "sessionsTouchees",
+            coalesce(t.sessions_route, 0)::int as "sessionsRoute"
+       from routes r
+       left join comptes c on c.route is not distinct from r.route
+       left join touchees t on t.route is not distinct from r.route
+      order by "sessionsRoute" desc, r.route nulls last`,
+    sql.params,
+  );
+  return rows;
 }

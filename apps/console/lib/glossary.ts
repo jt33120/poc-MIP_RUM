@@ -79,9 +79,9 @@ export const GLOSSARY = {
   },
   health: {
     label: "Score de santé",
-    term: "Score composite 0–100 : 40 % vitals (LCP ×2), 30 % erreurs, 20 % stabilité, 10 % anomalies 24 h.",
+    term: "Score composite 0–100 : 40 % vitals (LCP ×2), 30 % erreurs navigateur, 20 % stabilité, 10 % anomalies 24 h.",
     stack:
-      "Pondération calculée côté console à partir des p75, du taux d'erreur et de la détection d'anomalies (vue SQL v_anomaly).",
+      "Pondération calculée côté console à partir des mesures « Bon », des occurrences d'erreurs navigateur pour 100 pages vues, des sessions sans erreur et de la détection d'anomalies (vue SQL v_anomaly).",
     business:
       "Une note unique pour piloter en un coup d'œil, comme un bulletin de santé du site. Idéal pour un comité de direction : vert = tout va bien, rouge = il faut agir.",
   },
@@ -167,9 +167,9 @@ export const GLOSSARY = {
     label: "Robot vs Réel",
     term: "Comparaison du synthétique (sondes programmées) au RUM (utilisateurs réels) pour une même route.",
     stack:
-      "Vue SQL v_correlation : écart p75 robot ↔ réel ; surligne les routes où le monitoring synthétique ment.",
+      "Chaque côté est agrégé par heure et par route avant d'être rapproché : état du robot (pire état de l'heure) contre verdict du LCP p75 réel. Aucun écart chiffré : les deux ne mesurent pas la même chose.",
     business:
-      "Vos tests automatiques disent « tout va bien » mais les vrais utilisateurs souffrent ? Cet écart le révèle — la mesure terrain prime sur le labo.",
+      "Vos tests automatiques disent « tout va bien » mais les vrais utilisateurs souffrent ? Les heures en angle mort le montrent — la mesure terrain prime sur le labo.",
   },
   otlp: {
     label: "OTLP — OpenTelemetry Protocol",
@@ -196,8 +196,8 @@ export const GLOSSARY = {
       "On mesure ce que vivent les visiteurs réels du site en production, pas une simulation. Ces mesures disent ce qu'ils ont vécu ; seules, elles ne disent pas l'effet sur les ventes.",
   },
   experience: {
-    label: "Expérience",
-    term: "Trois constituants du ressenti montrés côte à côte, sans score composite : LCP p75 et son verdict web.dev, frustration (clics rageurs et morts pour 1 000 sessions), CSAT (part des avis ≥ 4/5).",
+    label: "Satisfaction",
+    term: "Ce que les visiteurs déclarent (CSAT : part des avis ≥ 4/5, part de notes 1-2), à côté de ce qu'ils subissent (LCP p75 par page, frustration pour 1 000 sessions), sans score composite.",
     stack:
       "LCP : percentile_cont(0.75) sur rum_metric ; frustration : rum_event 'frustration.rage' / 'frustration.dead' rapportés aux sessions commencées ; CSAT : rum_event name='feedback'. Aucune pondération entre les trois.",
     business:

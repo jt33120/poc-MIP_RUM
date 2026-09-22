@@ -156,15 +156,21 @@ test("/ : un seau sans mesure est un trou, la courbe se coupe", async ({ page })
   expect(d.match(/M/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
 });
 
-test("/ : aucun graphique à deux axes y ; le trafic quotidien en deux panneaux sur la même grille", async ({ page }) => {
+// F13 : les courbes quotidiennes « Volume & fiabilité par jour » et « p75 LCP par
+// jour » ont quitté `/` (plan § 5.1.3, le quotidien 14 j vit sur Tendances) ; les
+// panneaux empilés sur une grille commune sont ceux de « Charge, erreurs et LCP » (F12).
+test("/ : aucun graphique à deux axes y ; « Charge, erreurs et LCP » en trois panneaux sur la même grille", async ({ page }) => {
   await login(page);
   await page.goto(`${consoleUrl}/?app=${APP_ID}&period=24h`, { waitUntil: "domcontentloaded" });
-  const trafic = page.getByTestId("traffic-timeseries");
-  await expect(trafic.locator(".recharts-surface")).toHaveCount(2, { timeout: 15_000 });
-  const panneaux = trafic.locator('[data-testid="stacked-bars"], [data-testid="threshold-series"]');
-  await expect(panneaux).toHaveCount(2);
+  const charge = page.locator("#charge-erreurs-lcp");
+  await expect(charge.locator('[data-testid="panneau-lcp"] .recharts-wrapper')).toHaveCount(1, { timeout: 15_000 });
+  // Les erreurs de ce jeu n'ont pas de source déclarée : hors du panneau « navigateur »
+  // (CP14), qui dit alors « aucune » — les panneaux dessinés partagent la grille.
+  const panneaux = charge.locator('[data-testid="stacked-bars"], [data-testid="threshold-series"]');
   const seaux = await panneaux.evaluateAll((els) => els.map((el) => el.getAttribute("data-seaux")));
-  expect(seaux).toEqual(["14", "14"]);
+  expect(seaux.length).toBeGreaterThanOrEqual(2);
+  expect(new Set(seaux).size).toBe(1);
+  expect(Number(seaux[0])).toBeGreaterThanOrEqual(24);
 
   const axesParGraphique = await page
     .locator(".recharts-wrapper")
