@@ -32,6 +32,7 @@ import { SectionsSeries } from "./sections/series";
 import { SectionIntervalles } from "./sections/intervalles";
 import { SectionF49 } from "./sections/f49";
 import { SectionF38 } from "./sections/f38";
+import { SectionF42 } from "./sections/f42";
 
 export const dynamic = "force-dynamic";
 
@@ -614,6 +615,7 @@ export default async function VitrineComposants() {
       <SectionsFiabilite />
       <SectionF49 />
       <SectionF38 />
+      <SectionF42 />
     </div>
   );
 }
