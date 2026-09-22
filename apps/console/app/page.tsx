@@ -7,7 +7,7 @@ import { GlossaryTip } from "@/components/GlossaryTip";
 import { InsightStrip } from "@/components/InsightStrip";
 import { PageHeader } from "@/components/PageHeader";
 import { PresetBar } from "@/components/PresetBar";
-import { SupervisionHero, HeroReading } from "@/components/SupervisionHero";
+import { ChargeErreursLcp, HeroCwv, type AnnotationsFigure, type ModeSeries } from "@/components/vue-ensemble/SeriesVueEnsemble";
 import { cookies } from "next/headers";
 import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
 import { TousEteints } from "@/components/TousEteints";
@@ -34,7 +34,7 @@ import { etatLectureEchantillonnage } from "@/lib/echantillonnage";
 import { healthScore } from "@/lib/health";
 import { lire, type Lecture } from "@/lib/lecture";
 import { fuseauDe, joursLocaux, libelleDeuxFuseaux } from "@/lib/fuseau";
-import { formatDuVital, formater, VITAUX, type FormatId } from "@/lib/fmt-ids";
+import { formatDuVital, formater, VITAUX, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import { bucketStarts, hrefWithQuery, paramReader } from "@/lib/query-contract";
 import { alignerSeaux, grilleIso, isoSansMs } from "@/lib/series";
 import { cleJour } from "@/lib/forecast";
@@ -43,10 +43,10 @@ import {
   overviewStats,
   pageviewSeries,
   samplingVitals,
-  vitalSeries,
   vitalSeriesN,
   vitalsP75,
   type VitalAgg,
+  type VitalSeriesPoint,
 } from "@/lib/queries";
 import { errorSeries, erreursNavigateur, listErrorGroups } from "@/lib/queries-errors";
 import { engagementStats, observedVisitorsTrend } from "@/lib/queries-sessions";
@@ -59,9 +59,7 @@ import {
   listDeploys,
   type ComparaisonVersions,
 } from "@/lib/queries-deploys";
-import { fmtBorne } from "@/lib/format";
 import { ecartP75 } from "@/lib/stats/incertitude";
-import { THRESHOLDS } from "@/lib/rating";
 import {
   couverturePrecedente,
   deltasDeLaRangee,
@@ -71,6 +69,8 @@ import {
 } from "@/lib/comparaison";
 import { avecCondition, RAISON_AUCUNE_VUE, ratioPour100, serieRatioPour100, sparklineDeCompte } from "@/lib/perf-domain";
 import { choisirReleases, vuesProduit, type Entree } from "@/lib/presets";
+import { annotationsDeploiements } from "@/lib/annotations";
+import { explorerHref } from "@/lib/explorer-page-params";
 import { gabaritZoom, lireComparaison, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
 import {
   ALERTES_PAR_EVENEMENT,
@@ -101,6 +101,8 @@ const SOURCES_TRAFIC: SourceComparaison[] = [
 const REGRESSES_LUS = 50;
 /** Sous ce nombre de mesures, un vital est « échantillon faible » (§ 3.12). */
 const VITAL_FAIBLE_SOUS = 100;
+/** Les trois petits multiples du hero (§ 5.1.2) : trois unités, trois échelles. */
+const VITAUX_HERO = ["LCP", "INP", "CLS"] as const satisfies readonly VitalName[];
 
 export const dynamic = "force-dynamic";
 
@@ -198,6 +200,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const fToutesReleases = filtersOfQuery(sansConditionRelease(query));
   const dispoNavigateur = dispoDecoupage("browser");
   const dispoPays = dispoDecoupage("country");
+  /** La série p75 d'un vital sert-elle à un bloc allumé (tuiles, hero, charge) ? */
+  const serieUtile = (nom: VitalName) =>
+    blocs.vitals || (blocs.hero && (VITAUX_HERO as readonly string[]).includes(nom)) || (blocs.charge && nom === "LCP");
 
   // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8 règle 1). `lire()` ne lève pas :
   // une lecture en échec devient `{ ok: false }`, et seule SA section le dit. Le
@@ -219,7 +224,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     serieErreurs,
     seriesVitaux,
     echantillonnage,
-    series,
+    seriesPrecedentes,
     health,
     grid,
     traffic,
@@ -243,16 +248,21 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     blocs.trafic ? lire(() => engagementStats(f)) : sansLecture(null),
     blocs.trafic && prev ? lire(() => engagementStats(f, true)) : sansLecture(null),
     blocs.trafic ? lire(() => observedVisitorsTrend(f)) : sansLecture([]),
-    blocs.trafic ? lire(() => pageviewSeries(f)) : sansLecture([]),
+    blocs.trafic || blocs.charge ? lire(() => pageviewSeries(f)) : sansLecture([]),
     blocs.trafic ? lire(() => erreursNavigateur(f)) : sansLecture(null),
     blocs.trafic && prev ? lire(() => erreursNavigateur(f, true)) : sansLecture(null),
-    blocs.trafic ? lire(() => errorSeries(f)) : sansLecture(null),
-    // Sparkline de chaque tuile Web Vital : p75 par seau du contrat, sur les mesures brutes (V5).
-    blocs.vitals
-      ? Promise.all(VITAUX.map((nom) => lire(() => vitalSeriesN(f, nom))))
-      : Promise.resolve(VITAUX.map(() => ({ ok: true as const, data: [] }))),
+    blocs.trafic || blocs.charge ? lire(() => errorSeries(f)) : sansLecture(null),
+    // p75 par seau du contrat, sur les mesures brutes (V5) : sparkline de chaque tuile
+    // Web Vital, petits multiples du hero et panneau LCP de la charge — UNE lecture par
+    // vital, mutualisée entre les trois.
+    Promise.all(VITAUX.map((nom) => (serieUtile(nom) ? lire(() => vitalSeriesN(f, nom)) : sansLecture<VitalSeriesPoint[]>([])))),
     blocs.vitals ? lire(() => samplingVitals(f)) : sansLecture(null),
-    blocs.hero ? lire(() => vitalSeries(f, "LCP")) : sansLecture([]),
+    // Période précédente des séries (cmp=prev), alignée par rang de seau (§ 3.2).
+    Promise.all(
+      VITAUX_HERO.map((nom) =>
+        prev && (blocs.hero || (blocs.charge && nom === "LCP")) ? lire(() => vitalSeriesN(f, nom, true)) : sansLecture(null),
+      ),
+    ),
     // Santé ET constats (anomalies 24 h) : lue même bandeau éteint, les constats en dépendent.
     lire(() => healthScore(f)),
     blocs.historique ? lire(() => healthGrid(f)) : sansLecture([]),
@@ -274,7 +284,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       ? lire(async () => ({ mode: "evenements" as const, lignes: (await alertFirings(f, 1)).lignes }))
       : lire(async () => ({ mode: "compte" as const, n: await unackedAlertCount(f) })),
     lire(() => listErrorGroups(f, { limit: REGRESSES_LUS, offset: 0 })),
-    blocs.vitals && prev ? couvertures([SOURCE_VITAUX]) : Promise.resolve<CouverturePrecedente[]>([]),
+    (blocs.vitals || blocs.hero || blocs.charge) && prev
+      ? couvertures([SOURCE_VITAUX])
+      : Promise.resolve<CouverturePrecedente[]>([]),
     blocs.trafic && prev ? couvertures(SOURCES_TRAFIC) : Promise.resolve<CouverturePrecedente[]>([]),
   ]);
 
@@ -290,6 +302,19 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           lire(() => vitalsP75(avecCondition(f, "release", releases.relA))),
         ])
       : [null, null];
+  // …et le hero trace deux séries par vital : orange = B, gris pointillé = A (§ 3.2).
+  const seriesRelease =
+    comparaison.mode === "release" && blocs.hero && releases.ok
+      ? await Promise.all(
+          VITAUX_HERO.map(async (nom) => {
+            const [b, a] = await Promise.all([
+              lire(() => vitalSeriesN(avecCondition(f, "release", releases.relB), nom)),
+              lire(() => vitalSeriesN(avecCondition(f, "release", releases.relA), nom)),
+            ]);
+            return { b, a };
+          }),
+        )
+      : null;
 
   const deltasVitaux = deltasDeLaRangee(comparaison.mode, couvVitaux);
   const deltasTrafic = deltasDeLaRangee(comparaison.mode, couvTrafic);
@@ -529,17 +554,57 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     },
   );
 
-  // SÉRIES SUR GRILLE (F04, § 3.10). Les lectures ne rendent que les seaux non vides :
-  // posées telles quelles, deux heures mesurées de part et d'autre d'un creux de
-  // trafic seraient reliées par une pente jamais mesurée. Chaque série est donc
-  // alignée sur les seaux attendus — un seau sans mesure reste un trou ; un seau sans
-  // page vue vaut 0 page vue.
-  const pointsLcp = series.ok
-    ? alignerSeaux(series.data, debutsSeaux, false).map((r, i) => ({
-        t: grilleContrat[i],
-        p75: r && r.p75 != null ? Number(r.p75) : null,
-      }))
-    : [];
+  // ─── Séries des zones 5 et 6 (F12) ───
+  // SÉRIES SUR GRILLE (§ 3.10) : `vitalSeriesN`, `pageviewSeries` et `errorSeries`
+  // rendent déjà un point par seau attendu (F10) ; un seau sans mesure reste un trou,
+  // un seau sans page vue vaut 0 page vue. Toutes les figures partagent la grille du
+  // contrat, le seau, le gabarit de zoom et les annotations de déploiement.
+  //
+  // Comparaison : la période précédente seulement si elle est COMPLÈTE (même règle
+  // que les tuiles) ; deux releases seulement si elles sont deux.
+  const modeSeries: ModeSeries =
+    comparaison.mode === "release" && releases.ok && seriesRelease
+      ? { kind: "release", relA: releases.relA, relB: releases.relB }
+      : prev && deltasVitaux.deltas
+        ? { kind: "prev" }
+        : { kind: "simple" };
+  // Annotations de déploiement (§ 3.7) : filtrées sur la fenêtre ; sous plage
+  // personnalisée, le message B1 à la place des traits ; lecture en échec, dite.
+  const deploiements = deploys.ok
+    ? annotationsDeploiements(deploys.data, query.range, {
+        // Annotation → comparer cette release à la précédente, même écran, même plage (§ 3.3).
+        lien: (relB, relA) => hrefWithQuery("/", query, { cmp: "release", rel_b: relB, rel_a: relA }),
+      })
+    : null;
+  const annotations: AnnotationsFigure = deploiements
+    ? { annotations: deploiements.annotations, indisponible: deploiements.indisponible }
+    : { annotations: [], indisponible: "lecture des marqueurs de déploiement en échec" };
+  const communSeries = {
+    grille: grilleContrat,
+    seauSecondes: query.range.bucketSeconds,
+    zoomHref: gabaritZoomEcran,
+    annotations,
+    plage: period.label,
+  };
+  const serieDe = (nom: VitalName) => seriesVitaux[VITAUX.indexOf(nom)];
+  /** Période précédente d'une série du hero : lue (ou en échec) en `cmp=prev`, sinon aucune. */
+  const precedenteDe = (i: number): Lecture<VitalSeriesPoint[]> | null => {
+    if (modeSeries.kind !== "prev") return null;
+    const lu = seriesPrecedentes[i];
+    return !lu.ok ? lu : lu.data ? { ok: true, data: lu.data } : null;
+  };
+  const lectureHero =
+    modeSeries.kind === "release"
+      ? `p75 par seau ; orange = release ${modeSeries.relB}, gris pointillé = release ${modeSeries.relA}, même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte. Règle : ${releases.ok ? releases.regle : ""}.`
+      : modeSeries.kind === "prev"
+        ? `p75 par seau sur les zones Bon / À améliorer / Mauvais ; gris pointillé = ${referencePrev.replace(/^vs /, "")}, aligné par rang de seau. Un seau sous 30 mesures est un point creux ; un seau sans mesure, un trou ; un clic zoome sur le seau.`
+        : `p75 par seau sur les zones Bon / À améliorer / Mauvais. Un seau sous 30 mesures est un point creux ; un seau sans mesure, un trou ; un clic zoome sur le seau.${
+            comparaison.mode === "release" && !releases.ok
+              ? ` Comparaison de releases indisponible : ${releases.raison}.`
+              : prev && !deltasVitaux.deltas && deltasVitaux.note
+                ? ` Aucune série de référence : ${deltasVitaux.note}.`
+                : ""
+          }`;
   // L'historique découpe ses JOURS dans le fuseau de l'application (`queries-grid`) :
   // sa grille est celle de `dailyTraffic` (14 jours, vides compris), ou, s'il n'a pas
   // pu être lu, les 14 derniers jours de ce fuseau.
@@ -693,38 +758,52 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </SectionErreur>
       )}
 
+      {/* Zone 5 — HERO (P1) : il répond à la question de l'écran, au-dessus du pli à
+          1440 × 900. Trois petits multiples, trois unités, trois échelles. */}
       {blocs.hero && (
-        <SectionErreur titre="LCP p75 dans le temps">
-          <SupervisionHero
-            chartTitle={`LCP p75 dans le temps (buckets ${period.bucketLabel})`}
-            state={
-              !series.ok
-                ? { kind: "erreur", titre: "LCP p75 dans le temps" }
-                : series.data.length === 0
-                  ? { kind: "vide", population: "mesure LCP", plage: period.label }
-                  : undefined
-            }
-            chart={
-              series.ok && (
-                <VitalsTimeseries
-                  vital="LCP"
-                  grille={grilleContrat}
-                  points={pointsLcp}
-                  seauSecondes={query.range.bucketSeconds}
-                  fuseau="UTC"
-                  zoomHref={gabaritZoomEcran}
-                />
-              )
-            }
-          >
-            <HeroReading>
-              Courbe = LCP p75 dans le temps, sur les zones «&nbsp;Bon&nbsp;» (jusqu&apos;à {fmtBorne("LCP", THRESHOLDS.LCP[0])}),
-              «&nbsp;À améliorer&nbsp;» et «&nbsp;Mauvais&nbsp;» (au-delà de {fmtBorne("LCP", THRESHOLDS.LCP[1])}), seuils web.dev au
-              75ᵉ&nbsp;centile. Un seau sans mesure reste un trou ; un clic sur un seau zoome sur sa plage.{" "}
-              Historique 14&nbsp;jours plus bas.
-            </HeroReading>
-          </SupervisionHero>
+        <SectionErreur titre="Core Web Vitals dans le temps">
+          <HeroCwv
+            {...communSeries}
+            mode={modeSeries}
+            lecture={lectureHero}
+            vitaux={VITAUX_HERO.map((nom, i) => ({
+              vital: nom,
+              courant: serieDe(nom),
+              precedent: precedenteDe(i),
+              releaseB: seriesRelease?.[i].b ?? null,
+              releaseA: seriesRelease?.[i].a ?? null,
+              explorer: explorerHref(query, {
+                version: 1,
+                dataset: "vitals",
+                measure: { field: "value", aggregation: "p75" },
+                variant: nom,
+                groupBy: [],
+                visualization: "timeseries",
+                limit: 5,
+                cursor: null,
+              }),
+            }))}
+          />
         </SectionErreur>
+      )}
+
+      {/* Zone 6 — la dégradation coïncide-t-elle avec la charge ou avec des erreurs ?
+          Trois panneaux empilés, un axe chacun (P5). */}
+      {blocs.charge && (
+        <div className="mb-6 min-w-0">
+          <SectionErreur titre="Charge, erreurs et LCP">
+            <ChargeErreursLcp
+              {...communSeries}
+              mode={modeSeries}
+              lectures={{
+                vues: vues,
+                erreurs: serieErreurs.ok && serieErreurs.data ? { ok: true, data: serieErreurs.data } : { ok: false, raison: "non lue" },
+                lcp: serieDe("LCP"),
+                lcpPrecedent: precedenteDe(0),
+              }}
+            />
+          </SectionErreur>
+        </div>
       )}
 
       {/* Découpage (P6.3) : les mêmes Web Vitals, répartis par dimension. Chaque

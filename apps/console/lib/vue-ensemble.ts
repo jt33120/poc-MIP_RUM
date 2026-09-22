@@ -112,6 +112,101 @@ export function releasesComparees(
   return { ok: true, relA, relB, regle };
 }
 
+// ─────────────────────── Séries du hero et de « Charge, erreurs et LCP » (F12) ───────────────────────
+
+/** Un seau lu par `vitalSeriesN` : p75 des mesures brutes du seau et son effectif. */
+export interface SeauVital {
+  bucket: string;
+  p75: number | null;
+  n: number;
+}
+
+/** Les valeurs d'une série indexées par début de seau (ISO UTC sans millisecondes). */
+function parSeau<T extends { bucket: string }>(lignes: readonly T[]): Map<number, T> {
+  return new Map(lignes.map((l) => [Date.parse(l.bucket), l]));
+}
+
+/**
+ * Points d'un petit multiple du hero (§ 5.1.2) sur la grille du contrat : `p75` et
+ * `n` du seau (un seau absent reste un TROU : `p75: null`, `n: 0`). En `cmp=prev`,
+ * la période précédente s'aligne PAR RANG de seau (§ 3.2) : le i-ème seau d'avant
+ * face au i-ème seau d'aujourd'hui, même largeur ; au-delà de sa longueur, rien.
+ */
+export function pointsVital(
+  grille: readonly string[],
+  courant: readonly SeauVital[],
+  precedent?: readonly SeauVital[] | null,
+): { t: string; p75: number | null; n: number; precedent?: number | null }[] {
+  const lus = parSeau(courant);
+  return grille.map((t, i) => {
+    const l = lus.get(Date.parse(t));
+    const point = { t, p75: l?.p75 ?? null, n: l?.n ?? 0 };
+    return precedent ? { ...point, precedent: precedent[i]?.p75 ?? null } : point;
+  });
+}
+
+/**
+ * Points de `cmp=release` (§ 3.2) : la release B (`b`, effectif `nb`) et la
+ * référence A (`a`, `na`), deux lectures intersectées sur la MÊME fenêtre.
+ */
+export function pointsRelease(
+  grille: readonly string[],
+  b: readonly SeauVital[],
+  a: readonly SeauVital[],
+): { t: string; b: number | null; nb: number; a: number | null; na: number }[] {
+  const lusB = parSeau(b);
+  const lusA = parSeau(a);
+  return grille.map((t) => {
+    const ms = Date.parse(t);
+    return { t, b: lusB.get(ms)?.p75 ?? null, nb: lusB.get(ms)?.n ?? 0, a: lusA.get(ms)?.p75 ?? null, na: lusA.get(ms)?.n ?? 0 };
+  });
+}
+
+/** Une série sans aucune mesure sur la fenêtre : la figure dit « aucune mesure », elle ne dessine pas un axe vide. */
+export function serieVide(points: readonly { [cle: string]: unknown }[], cles: readonly string[]): boolean {
+  return points.every((p) => cles.every((c) => p[c] == null));
+}
+
+export interface PointCharge {
+  t: string;
+  chargements: number;
+  spa: number;
+  inconnu: number;
+  erreurs: number;
+  p75: number | null;
+  n: number;
+}
+
+/**
+ * Points des trois panneaux de « Charge, erreurs et LCP » (§ 5.1.2), sur UNE grille :
+ * (1) vues de chargement / changements de route SPA / type inconnu (comptes, seau
+ * vide = 0), (2) occurrences d'erreurs navigateur (compte), (3) LCP p75 et effectif
+ * (mesure, seau vide = trou). Un seau absent d'une lecture de COMPTE vaut 0 ; absent
+ * de la lecture du LCP, il reste `null`.
+ */
+export function pointsCharge(
+  grille: readonly string[],
+  vues: readonly { bucket: string; chargements: number; spa: number; inconnu: number }[],
+  erreurs: readonly { bucket: string; navigateur: number }[],
+  lcp: readonly SeauVital[],
+): PointCharge[] {
+  const v = parSeau(vues);
+  const e = parSeau(erreurs);
+  const l = parSeau(lcp);
+  return grille.map((t) => {
+    const ms = Date.parse(t);
+    return {
+      t,
+      chargements: v.get(ms)?.chargements ?? 0,
+      spa: v.get(ms)?.spa ?? 0,
+      inconnu: v.get(ms)?.inconnu ?? 0,
+      erreurs: e.get(ms)?.navigateur ?? 0,
+      p75: l.get(ms)?.p75 ?? null,
+      n: l.get(ms)?.n ?? 0,
+    };
+  });
+}
+
 // ─────────────────────────────── Constats (§ 5.1.2, zone 4) ───────────────────────────────
 
 /**
