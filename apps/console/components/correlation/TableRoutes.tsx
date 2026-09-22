@@ -7,6 +7,11 @@
 // visiteurs ne mesurent pas la même chose : ils sont posés côte à côte, jamais
 // divisés l'un par l'autre (l'ancien badge « écart −90 % »).
 //
+// LA COLONNE « CONCORDANCE ROBOT ↔ RÉEL » (P*.8) N'EST PAS UN ÉCART NON PLUS : un
+// coefficient de RANG (Spearman) sur les jours communs dit si les deux montent et
+// descendent ensemble, sans jamais comparer leurs valeurs. Sous 10 jours communs,
+// la cellule refuse en chiffrant ce qui manque.
+//
 // UN CÔTÉ ABSENT EST DIT. « pas de scénario robot sur cette route », « pas de
 // trafic réel sur la plage » ; une route robot sans aucun trafic réel appelle une
 // vérification de la correspondance `route_hint` ↔ route (cas `/partners/:id`).
@@ -32,6 +37,22 @@ export interface LigneRoute {
   /** Sélectionne ce couple dans le hero ; absent si le couple n'y est pas affichable. */
   hrefHero: string | null;
   hrefPages: string | null;
+  /** Concordance robot ↔ réel (P*.8) : ρ et son intervalle, ou le refus chiffré. */
+  concordance: CelluleConcordanceRang;
+}
+
+/**
+ * Ce qu'une cellule de concordance a le droit de dire (P*.8) : un coefficient de
+ * rang avec son intervalle et son issue, ou un refus qui compte ce qui manque —
+ * jamais une case vide, qui se lirait « aucun lien ».
+ */
+export interface CelluleConcordanceRang {
+  /** « ρ 0,71 (0,21 à 0,92) » ou « Concordance non calculée : 4 jours communs, 10 requis ». */
+  texte: string;
+  /** « suit », « ne suit pas », « non établi » ; `null` quand rien n'est calculé. */
+  issue: string | null;
+  /** Jours communs retenus ; `null` quand rien n'est calculé. */
+  jours: number | null;
 }
 
 const TH = "whitespace-nowrap px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-soft";
@@ -88,6 +109,9 @@ export function TableRoutes({ lignes, avecApp }: { lignes: LigneRoute[]; avecApp
               Sessions mesurées
             </th>
             <th scope="col" className={TH}>
+              Concordance robot ↔ réel
+            </th>
+            <th scope="col" className={TH}>
               <span className="sr-only">Liens</span>
             </th>
           </tr>
@@ -138,6 +162,14 @@ export function TableRoutes({ lignes, avecApp }: { lignes: LigneRoute[]; avecApp
                   )}
                 </td>
               )}
+              <td className={`${TD} min-w-0`} data-testid="concordance-route" data-issue={l.concordance.issue ?? "non-calculee"}>
+                <span className="block tabular-nums">{l.concordance.texte}</span>
+                {l.concordance.issue && (
+                  <span className="mt-0.5 block text-xs text-ink-soft">
+                    {l.concordance.issue} · {l.concordance.jours} jours communs
+                  </span>
+                )}
+              </td>
               <td className={`${TD} whitespace-nowrap text-xs`}>
                 {l.hrefPages && (
                   <Link href={l.hrefPages} className="font-medium text-brand hover:underline">
