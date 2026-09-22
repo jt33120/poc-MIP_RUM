@@ -327,12 +327,14 @@ export function regleAngleMort(borneBon: number): string {
 // ─────────────────────────────── Constats (§ 5.1.2, zone 4) ───────────────────────────────
 
 /**
- * Les constats d'alerte PAR ÉVÉNEMENT (`/alerts?evt=<id>`) attendent que `/alerts`
- * sache mettre un événement en évidence (paramètre `evt`, lots F64 et F67). Avant,
- * un lien `evt=` mènerait à une liste où rien ne le désigne : le repli du plan est
- * UN constat « N alertes non acquittées » → `/alerts`. Passer à `true` avec F67.
+ * Les constats d'alerte PAR ÉVÉNEMENT (`/alerts?evt=<id>`) attendaient que
+ * `/alerts` sache mettre un événement en évidence (paramètre `evt`, lots F64 et
+ * F67). F67 l'a livré : chaque événement porte `id="evt-<id>"` et celui que `evt`
+ * désigne est mis en évidence (`aria-current`), donc le lien par événement tient
+ * sa promesse. Le repli (UN constat « N alertes non acquittées » → `/alerts`)
+ * reste écrit à côté : il redevient vrai si la lecture `alertFirings` échoue.
  */
-export const ALERTES_PAR_EVENEMENT = false;
+export const ALERTES_PAR_EVENEMENT = true;
 
 /** Au plus trois alertes nommées, puis « et N autres » (§ 5.1.2). */
 export const MAX_ALERTES_NOMMEES = 3;
@@ -345,6 +347,15 @@ export const REGLE_ANOMALIE_SOUS_FILTRE =
 export const REGLE_DEPLOIEMENT =
   "dernier déploiement : +20 % ou plus sur le LCP p75 ou les occurrences d'erreurs, ±2 h autour du marqueur, filtres de population non appliqués";
 export const REGLE_ALERTES = "alertes déclenchées et non acquittées, toutes dates";
+/**
+ * Règle d'une alerte NOMMÉE (F67) : la source des lignes nommées est
+ * `alertFirings(f, 1)`, le jour calendaire UTC en cours — pas « toutes dates ».
+ * Le compte, lui, reste celui de `unackedAlertCount` (toutes dates) : c'est lui
+ * qui porte le « et N autres », sans quoi une alerte non acquittée d'avant-hier
+ * disparaîtrait des constats à minuit UTC.
+ */
+export const REGLE_ALERTES_NOMMEE =
+  "alerte déclenchée et non acquittée, nommée parmi les déclenchements du jour calendaire UTC en cours";
 export const REGLE_REGRESSION = "groupe d'erreurs marqué résolu qui réapparaît sur la période";
 
 export const FENETRE_CONSTATS = "anomalies : 24 h fixes ; déploiement : ±2 h ; erreurs : période choisie ; alertes : en cours";
@@ -358,10 +369,14 @@ export interface EntreesConstats {
   /** Dernier déploiement (`latestDeployImpact`) et la version précédente (marqueur d'avant). */
   deploiement: LuOuEchec<{ impact: DeployImpact; versionPrecedente: string | null } | null>;
   /**
-   * Alertes non acquittées : un compte (`unackedAlertCount`, repli d'avant F67) ou les
-   * événements (`alertFirings(f, 1)`, champs `event_id`, `acknowledged`).
+   * Alertes non acquittées : un compte (`unackedAlertCount`, repli d'avant F67) ou
+   * les événements (`alertFirings(f, 1)`, champs `event_id`, `acknowledged`) AVEC
+   * le compte total non acquitté (`unackedAlertCount`, toutes dates) — les lignes
+   * nommées viennent du jour UTC en cours, le reste vient du compte.
    */
-  alertes: LuOuEchec<{ mode: "compte"; n: number } | { mode: "evenements"; lignes: AlertFiringRow[] }>;
+  alertes: LuOuEchec<
+    { mode: "compte"; n: number } | { mode: "evenements"; lignes: AlertFiringRow[]; total: number }
+  >;
   /** Groupes d'erreurs régressés de la période (`listErrorGroups`, `regressed`). */
   regresses: LuOuEchec<
     { app_id: string; fingerprint: string; sample_message: string | null; error_type: string | null; occurrences: number }[]
@@ -424,7 +439,7 @@ function constatDeploiement(
 }
 
 function constatsAlertes(
-  alertes: { mode: "compte"; n: number } | { mode: "evenements"; lignes: AlertFiringRow[] },
+  alertes: { mode: "compte"; n: number } | { mode: "evenements"; lignes: AlertFiringRow[]; total: number },
   liens: LiensConstats,
 ): Constat[] {
   if (alertes.mode === "compte") {
@@ -444,10 +459,14 @@ function constatsAlertes(
   const nommees: Constat[] = ouvertes.slice(0, MAX_ALERTES_NOMMEES).map((l) => ({
     type: "alerte",
     titre: `${l.libelle} — déclenchée le ${horodatage(l.fired_at)}`,
-    regle: REGLE_ALERTES,
+    regle: REGLE_ALERTES_NOMMEE,
     href: liens.alerte(l.event_id),
   }));
-  const reste = ouvertes.length - nommees.length;
+  // Le reste se compte sur le TOTAL non acquitté (toutes dates), jamais sur les
+  // seules lignes du jour : une alerte d'avant-hier compte encore, et le compte
+  // reste celui du badge de `/alerts`. Jamais négatif (les deux lectures ne sont
+  // pas simultanées).
+  const reste = Math.max(0, alertes.total - nommees.length);
   if (reste > 0) {
     nommees.push({
       type: "alerte",
