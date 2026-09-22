@@ -104,15 +104,6 @@ export function jourDans(ms: number, fuseau: string): string {
   return `${v("year")}-${v("month")}-${v("day")}`;
 }
 
-/**
- * Les `n` jours calendaires qui finissent aujourd'hui dans `fuseau`, du plus ancien
- * au plus récent — la grille d'une série quotidienne (`dailyTraffic`,
- * `dailyLcpSeries`), qui découpe ses journées dans le fuseau de l'application.
- */
-export function joursLocaux(n: number, fuseau: string, maintenant: number): string[] {
-  const [a, m, j] = jourDans(maintenant, fuseau).split("-").map(Number);
-  return Array.from({ length: n }, (_v, i) => new Date(Date.UTC(a, m - 1, j - (n - 1 - i))).toISOString().slice(0, 10));
-}
 
 // ─────────────────────────────────── Alignement ───────────────────────────────────
 

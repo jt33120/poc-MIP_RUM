@@ -31,7 +31,9 @@ import { healthScore } from "@/lib/health";
 import { lire, type Lecture } from "@/lib/lecture";
 import { fuseauDe, joursLocaux, libelleDeuxFuseaux } from "@/lib/fuseau";
 import { formater } from "@/lib/fmt-ids";
-import { hrefWithQuery, paramReader } from "@/lib/query-contract";
+import { bucketStarts, hrefWithQuery, paramReader } from "@/lib/query-contract";
+import { alignerSeaux, grilleIso } from "@/lib/series";
+import { cleJour } from "@/lib/forecast";
 import { dimensionSchema } from "@/lib/query-schema";
 import { overviewStats, vitalSeries, vitalsP75, type OverviewStats } from "@/lib/queries";
 import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown } from "@/lib/queries-breakdowns";
@@ -191,6 +193,52 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       ? { pct: ((cur - ref) / ref) * 100, reference: "période précédente" }
       : null;
 
+  // SÉRIES SUR GRILLE (F04, § 3.10). Les lectures ne rendent que les seaux non vides :
+  // posées telles quelles, deux heures mesurées de part et d'autre d'un creux de
+  // trafic seraient reliées par une pente jamais mesurée. Chaque série est donc
+  // alignée sur les seaux attendus — un seau sans mesure reste un trou ; un seau sans
+  // page vue vaut 0 page vue.
+  const lecteur = paramReader(sp);
+  const debutsSeaux = bucketStarts(ecran.query.range);
+  const grilleContrat = grilleIso(debutsSeaux);
+  const pointsLcp = series.ok
+    ? alignerSeaux(series.data, debutsSeaux, false).map((r, i) => ({
+        t: grilleContrat[i],
+        p75: r && r.p75 != null ? Number(r.p75) : null,
+      }))
+    : [];
+  // Clic sur un seau : la même vue, restreinte à ce seau (§ 3.3), comparaison gardée.
+  const zoomSeau = hrefWithQuery("/", ecran.query, {
+    period: null,
+    from: "{from}",
+    to: "{to}",
+    cmp: lecteur.get("cmp"),
+    rel_a: lecteur.get("rel_a"),
+    rel_b: lecteur.get("rel_b"),
+  });
+  // L'historique découpe ses JOURS dans le fuseau de l'application (`queries-grid`) :
+  // sa grille est celle de `dailyTraffic` (14 jours, vides compris), ou, s'il n'a pas
+  // pu être lu, les 14 derniers jours de ce fuseau.
+  const jours =
+    traffic.ok && traffic.data.length > 0
+      ? traffic.data.map((t) => cleJour(t.day))
+      : joursLocaux(GRID_DAYS, fuseau, Date.now());
+  const debutsJours = jours.map((j) => Date.parse(j));
+  const pointsTrafic = traffic.ok
+    ? alignerSeaux(
+        traffic.data.map((t) => ({ bucket: cleJour(t.day), pageviews: Number(t.pageviews), errors: Number(t.errors) })),
+        debutsJours,
+        true,
+      ).map((r, i) => ({ t: jours[i], pageviews: r?.pageviews ?? null, errors: r?.errors ?? null }))
+    : [];
+  const pointsLcpJour = dailyLcp.ok
+    ? alignerSeaux(
+        dailyLcp.data.map((r) => ({ bucket: cleJour(r.bucket), p75: r.p75 == null ? null : Number(r.p75) })),
+        debutsJours,
+        false,
+      ).map((r, i) => ({ t: jours[i], p75: r?.p75 ?? null }))
+    : [];
+
   return (
     <div className="animate-fade-up">
       <PageHeader title="Vue d'ensemble" help="rum" />
@@ -310,8 +358,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             chart={
               series.ok && (
                 <VitalsTimeseries
-                  data={series.data.map((s) => ({ ...s, bucket: String(s.bucket), p75: Number(s.p75) }))}
-                  thresholds={THRESHOLDS.LCP}
+                  vital="LCP"
+                  grille={grilleContrat}
+                  points={pointsLcp}
+                  seauSecondes={ecran.query.range.bucketSeconds}
+                  fuseau="UTC"
+                  zoomHref={zoomSeau}
                 />
               )
             }
@@ -324,9 +376,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               <HeroVolume stats={stats.data} statsPrev={statsPrev} periodLabel={period.label} pctOf={pctOf} />
             )}
             <HeroReading>
-              Courbe = LCP p75 dans le temps ; pointillé vert = borne «&nbsp;Bon&nbsp;» ({fmtBorne("LCP", THRESHOLDS.LCP[0])}),
-              pointillé rouge = borne «&nbsp;Mauvais&nbsp;» ({fmtBorne("LCP", THRESHOLDS.LCP[1])}), seuils web.dev au
-              75ᵉ&nbsp;centile.{" "}
+              Courbe = LCP p75 dans le temps, sur les zones «&nbsp;Bon&nbsp;» (jusqu&apos;à {fmtBorne("LCP", THRESHOLDS.LCP[0])}),
+              «&nbsp;À améliorer&nbsp;» et «&nbsp;Mauvais&nbsp;» (au-delà de {fmtBorne("LCP", THRESHOLDS.LCP[1])}), seuils web.dev au
+              75ᵉ&nbsp;centile. Un seau sans mesure reste un trou ; un clic sur un seau zoome sur sa plage.{" "}
               {deltasHero.deltas && "Les tuiles comparent le volume et la fiabilité à la période précédente. "}
               Détail vital par vital ci-dessous, historique 14&nbsp;jours plus bas.
             </HeroReading>
@@ -448,7 +500,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               {!traffic.ok ? (
                 <EchecLecture titre="Volume & fiabilité par jour" />
               ) : traffic.data.length ? (
-                <TrafficTimeseries data={traffic.data.map((t) => ({ ...t, day: String(t.day) }))} />
+                <TrafficTimeseries
+                  grille={jours}
+                  points={pointsTrafic}
+                  seauSecondes={86_400}
+                  fuseau={fuseau}
+                  libelleErreurs="Occurrences d'erreurs, toutes sources"
+                />
               ) : (
                 <p className="py-12 text-center text-sm text-ink-faint">Pas de données.</p>
               )}
@@ -463,9 +521,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 <EchecLecture titre="p75 LCP par jour" />
               ) : dailyLcp.data.length ? (
                 <VitalsTimeseries
-                  data={dailyLcp.data.map((s) => ({ bucket: String(s.bucket), p75: Number(s.p75) }))}
-                  thresholds={THRESHOLDS.LCP}
-                  xAxis="day"
+                  vital="LCP"
+                  grille={jours}
+                  points={pointsLcpJour}
+                  seauSecondes={86_400}
+                  fuseau={fuseau}
                 />
               ) : (
                 <p className="py-12 text-center text-sm text-ink-faint">Pas de données.</p>

@@ -1,6 +1,9 @@
 // lib/series.ts (F04, plan § 3.10, § 4.4) : la grille des seaux. Un seau absent est un
 // trou (mesure) ou un 0 (compte), jamais une valeur inventée ; une ligne hors grille
 // est ignorée ET comptée ; les jours et les heures se lisent dans le bon fuseau.
+// joursLocaux vit dans lib/fuseau.ts (module des fuseaux, R-T) : la grille quotidienne
+// de la vue d'ensemble et l'axe de la heatmap partagent la même fonction.
+import { joursLocaux } from "@/lib/fuseau";
 import { describe, expect, it } from "vitest";
 import {
   alignerSeaux,
@@ -11,7 +14,6 @@ import {
   hrefZoom,
   instantDe,
   jourDans,
-  joursLocaux,
   libelleSeau,
   libelleSeauComplet,
   placerAnnotations,
