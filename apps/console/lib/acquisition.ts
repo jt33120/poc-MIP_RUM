@@ -49,6 +49,16 @@ export interface ReferrerCount {
   sessions: number;
 }
 
+/** Nombre d'hôtes référents renvoyés : au-delà, la liste est tronquée. */
+export const TOP_REFERENTS = 20;
+
+/**
+ * Plafond de sessions lues par `acquisition` (lib/queries-acquisition.ts) : les
+ * sessions retenues sont les PREMIÈRES par identifiant (`order by p.session_id`),
+ * pas les plus récentes. Atteint, il est dit à côté du chiffre (S4).
+ */
+export const PLAFOND_ACQUISITION = 20_000;
+
 export interface AcquisitionReport {
   channels: ChannelCount[]; // ordre CHANNELS, comptes >= 0
   referrers: ReferrerCount[]; // top hôtes externes (hors interne/direct), tri desc
@@ -61,7 +71,7 @@ export interface AcquisitionReport {
  */
 export function acquisitionReport(
   entries: { referrer: string | null; url: string | null }[],
-  topReferrers = 20,
+  topReferrers = TOP_REFERENTS,
 ): AcquisitionReport {
   const chan = new Map<Channel, number>(CHANNELS.map((c) => [c, 0]));
   const refs = new Map<string, { channel: Channel; sessions: number }>();
@@ -85,4 +95,62 @@ export function acquisitionReport(
       .slice(0, topReferrers),
     total: entries.length,
   };
+}
+
+// ═══════════════════════ Lecture de l'écran (F48, § 5.16) ═══════════════════════
+
+/**
+ * Libellé de chaque canal à l'écran. « Direct » ne veut pas dire « adresse tapée » :
+ * il regroupe toute entrée SANS référent reçu, y compris un site d'origine qui
+ * retire son adresse (`Referrer-Policy`) — le libellé le dit (CS5).
+ */
+export const LIBELLE_CANAL: Record<Channel, string> = {
+  direct: "Direct ou référent masqué",
+  search: "Recherche",
+  social: "Réseaux sociaux",
+  referral: "Site référent",
+  internal: "Interne",
+};
+
+export interface LigneCanal {
+  channel: Channel;
+  sessions: number;
+  /** Part de TOUTES les sessions lues ; null sans session (pas de dénominateur, V3). */
+  part: number | null;
+}
+
+/**
+ * Les cinq canaux, TOUJOURS, dans l'ordre fixe de `CHANNELS`, zéros compris :
+ * l'absence de recherche est une information, que l'anneau d'avant cachait en
+ * filtrant les parts nulles. Un ordre fixe (et non par volume) garde chaque canal
+ * à la même place d'une période à l'autre.
+ */
+export function lignesCanaux(r: AcquisitionReport): LigneCanal[] {
+  const parCanal = new Map(r.channels.map((c) => [c.channel, c.sessions]));
+  return CHANNELS.map((channel) => {
+    const sessions = parCanal.get(channel) ?? 0;
+    return { channel, sessions, part: partDuTotal(sessions, r.total) };
+  });
+}
+
+/**
+ * Part des sessions arrivées d'AILLEURS : ni sans référent (direct), ni depuis le
+ * site lui-même (interne). `(total − direct − interne) / total` ; null sans session.
+ */
+export function partHorsDirect(r: AcquisitionReport): number | null {
+  const n = (canal: Channel) => r.channels.find((c) => c.channel === canal)?.sessions ?? 0;
+  return partDuTotal(r.total - n("direct") - n("internal"), r.total);
+}
+
+/** Part d'un compte sur TOUTES les sessions lues (jamais sur un top N) ; null sans session. */
+export function partDuTotal(sessions: number, total: number): number | null {
+  return total > 0 ? sessions / total : null;
+}
+
+/**
+ * La liste des référents est-elle tronquée ? `acquisitionReport` n'en garde que
+ * `top` : en rendre `top` veut dire « au moins `top` », et l'écran écrit « ≥ 20 ».
+ */
+export function referentsTronques(r: AcquisitionReport, top = TOP_REFERENTS): boolean {
+  return r.referrers.length >= top;
 }
