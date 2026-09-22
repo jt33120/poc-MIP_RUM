@@ -326,4 +326,24 @@ const filtres = (over: Partial<FiltersLike> = {}): FiltersLike => ({
       await expect(lib.errorsOfTrace(trace(999), { apps: null })).resolves.toEqual([]);
     });
   });
+
+  // F60 : les tuiles de /tracing se comparent à la période précédente (`cmp=prev`).
+  // Des appels tracés depuis une heure seulement ne font pas une période précédente
+  // de 24 h : la tuile doit se taire et dire pourquoi, pas afficher « +100 % ».
+  describe("couverturePrecedente sur rum_span — tuiles de /tracing (F60)", () => {
+    it("appels tracés depuis moins d'une heure : la période précédente de 24 h est partielle, date lue en base", async () => {
+      const { couverturePrecedente } = await import("../../apps/console/lib/comparaison");
+      const couverture = await couverturePrecedente(queryOf(filtres()), { table: "rum_span", colonneTemps: "ts", additive: true });
+      expect(couverture.etat).toBe("partielle");
+      expect(couverture.raison).toMatch(/^appels tracés collectés depuis le \d{2}\/\d{2} \d{2}:\d{2} UTC seulement$/);
+    });
+
+    it("apps = [] : aucune donnée sur le périmètre, jamais « complète »", async () => {
+      const { couverturePrecedente } = await import("../../apps/console/lib/comparaison");
+      const query = queryOf(filtres());
+      const vide = { ...query, scope: { ...query.scope, authorizedApps: [], effectiveApps: [] } };
+      const couverture = await couverturePrecedente(vide, { table: "rum_span", colonneTemps: "ts", additive: false });
+      expect(couverture.etat).not.toBe("complete");
+    });
+  });
 });

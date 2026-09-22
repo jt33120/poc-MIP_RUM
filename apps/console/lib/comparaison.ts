@@ -50,6 +50,8 @@ const SOURCES: Record<string, { colonnesTemps: readonly string[]; libelle: strin
   rum_error: { colonnesTemps: ["ts"], libelle: "erreurs collectées" },
   rum_event: { colonnesTemps: ["ts"], libelle: "événements collectés" },
   rum_action: { colonnesTemps: ["ts"], libelle: "actions collectées" },
+  // F60 : les tuiles de /tracing (appels API) se comparent à la période précédente.
+  rum_span: { colonnesTemps: ["ts"], libelle: "appels tracés collectés" },
 };
 const IDENTIFIANT = /^[a-z_][a-z0-9_]{0,62}$/;
 
