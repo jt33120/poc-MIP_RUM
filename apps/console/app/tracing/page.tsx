@@ -468,7 +468,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
             {appel ? `Aucune trace de ${libelleAppel(appel)} sur la plage.` : "Aucune trace sur la plage."}
           </Vide>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full text-sm" data-testid="traces-lentes">
               <thead className="bg-panel2">
                 <tr>
@@ -545,7 +545,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
         ) : routes.data.length === 0 ? (
           <Vide>Aucun span serveur reçu : middleware non déployé ou trafic nul.</Vide>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full text-sm" data-testid="back-routes">
               <thead className="bg-panel2">
                 <tr>

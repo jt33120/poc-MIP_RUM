@@ -32,8 +32,12 @@ function Entete() {
         <th scope="col" className={TH}>p75 trajet (par trace)</th>
         <th scope="col" className={TH}>Part serveur (médiane)</th>
         <th scope="col" className={TH}>Échecs</th>
+        {/* En-tête ÉCRIT, pas `sr-only` : un élément en position absolue (ce qu'est
+            `sr-only`) sans ancêtre positionné se place par rapport à la page — dans
+            une table plus large que l'écran, il la POUSSE (débordement constaté à
+            390, 768 et 1440 px). Le conteneur défilant porte aussi `relative`. */}
         <th scope="col" className={TH}>
-          <span className="sr-only">Traces</span>
+          Traces
         </th>
       </tr>
     </thead>
@@ -73,7 +77,7 @@ function Ligne({ a, hrefTraces }: { a: ApiCallDecomposition; hrefTraces: string 
 
 function Table({ lignes, hrefTraces, testId }: { lignes: ApiCallDecomposition[]; hrefTraces: (a: Appel) => string; testId?: string }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full text-sm" data-testid={testId}>
         <Entete />
         <tbody>
