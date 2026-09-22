@@ -10,10 +10,13 @@
 // visiteurs se chevauchent : leur somme n'est le temps perdu de personne. La vue
 // compte des blocages et donne leur p75 et leur pire cas, jamais un cumul
 // libellé « temps d'attente ».
+//
+// Une lecture en échec LÈVE (F02) : une série de zéros pendant une panne se
+// lirait « aucun blocage ». L'écran l'enveloppe dans `lire()` (lib/lecture.ts).
 import { q } from "./db";
 import type { FiltersLike } from "./filters";
 import { bucketExpr, bucketSeriesSql, sessionJoin } from "./query-compiler";
-import { softFail, sqlContext } from "./query-sql";
+import { sqlContext } from "./query-sql";
 
 export interface LongtaskBucket {
   bucket: Date;
@@ -29,35 +32,31 @@ export interface LongtaskBucket {
 
 /** Série des blocages par seau, zéros compris — un seau sans blocage vaut 0. */
 export async function longtaskSeries(f: FiltersLike): Promise<LongtaskBucket[]> {
-  try {
-    const sql = await sqlContext(f);
-    const where = sql.where({ dataset: "longtasks", row: "l", session: "s", time: "l.ts" });
-    const serie = bucketSeriesSql(sql.query.range, sql.bind);
-    return await q<LongtaskBucket>(
-      `with agrege as (
-         select ${bucketExpr("l.ts", sql.query.range)} as bucket,
-                count(*) filter (where l.source = 'loaf')::int as loaf,
-                count(*) filter (where l.source = 'longtask')::int as longtask,
-                count(*) filter (where l.source is null)::int as inconnu,
-                percentile_cont(0.75) within group (order by coalesce(l.blocking_ms, l.duration_ms)) as p75_ms
-           from rum_longtask l
-           ${sessionJoin("l", "s")}
-          where true${where}
-          group by 1
-       )
-       select b.bucket,
-              coalesce(a.loaf, 0) as loaf,
-              coalesce(a.longtask, 0) as longtask,
-              coalesce(a.inconnu, 0) as inconnu,
-              a.p75_ms
-         from ${serie} as b(bucket)
-         left join agrege a on a.bucket = b.bucket
-        order by 1`,
-      sql.params,
-    );
-  } catch (e) {
-    return softFail(e, []);
-  }
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "longtasks", row: "l", session: "s", time: "l.ts" });
+  const serie = bucketSeriesSql(sql.query.range, sql.bind);
+  return await q<LongtaskBucket>(
+    `with agrege as (
+       select ${bucketExpr("l.ts", sql.query.range)} as bucket,
+              count(*) filter (where l.source = 'loaf')::int as loaf,
+              count(*) filter (where l.source = 'longtask')::int as longtask,
+              count(*) filter (where l.source is null)::int as inconnu,
+              percentile_cont(0.75) within group (order by coalesce(l.blocking_ms, l.duration_ms)) as p75_ms
+         from rum_longtask l
+         ${sessionJoin("l", "s")}
+        where true${where}
+        group by 1
+     )
+     select b.bucket,
+            coalesce(a.loaf, 0) as loaf,
+            coalesce(a.longtask, 0) as longtask,
+            coalesce(a.inconnu, 0) as inconnu,
+            a.p75_ms
+       from ${serie} as b(bucket)
+       left join agrege a on a.bucket = b.bucket
+      order by 1`,
+    sql.params,
+  );
 }
 
 export interface LongtaskWorst {
@@ -79,23 +78,19 @@ export const LONGTASK_WORST_LIMIT = 10;
  * blocage, jamais un agrégat — c'est le cas individuel qu'on vient ouvrir.
  */
 export async function worstLongtasks(f: FiltersLike, limit = LONGTASK_WORST_LIMIT): Promise<LongtaskWorst[]> {
-  try {
-    const sql = await sqlContext(f);
-    const where = sql.where({ dataset: "longtasks", row: "l", session: "s", time: "l.ts" });
-    return await q<LongtaskWorst>(
-      `select s.session_id, l.route, l.source, l.ts,
-              coalesce(nullif(l.script_function, ''), nullif(l.invoker, ''),
-                       case when l.source = 'loaf' then 'frame longue (script non attribué)'
-                            else 'tâche longue (sans attribution)' end) as quoi,
-              coalesce(l.blocking_ms, l.duration_ms)::float8 as blocking_ms
-         from rum_longtask l
-         ${sessionJoin("l", "s")}
-        where true${where}
-        order by coalesce(l.blocking_ms, l.duration_ms) desc, l.id desc
-        limit ${Number(limit)}`,
-      sql.params,
-    );
-  } catch (e) {
-    return softFail(e, []);
-  }
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "longtasks", row: "l", session: "s", time: "l.ts" });
+  return await q<LongtaskWorst>(
+    `select s.session_id, l.route, l.source, l.ts,
+            coalesce(nullif(l.script_function, ''), nullif(l.invoker, ''),
+                     case when l.source = 'loaf' then 'frame longue (script non attribué)'
+                          else 'tâche longue (sans attribution)' end) as quoi,
+            coalesce(l.blocking_ms, l.duration_ms)::float8 as blocking_ms
+       from rum_longtask l
+       ${sessionJoin("l", "s")}
+      where true${where}
+      order by coalesce(l.blocking_ms, l.duration_ms) desc, l.id desc
+      limit ${Number(limit)}`,
+    sql.params,
+  );
 }

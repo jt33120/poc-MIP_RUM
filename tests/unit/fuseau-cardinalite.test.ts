@@ -90,8 +90,11 @@ describe("la liste des routes est bornée, et le dit", () => {
     // Une liste coupée en silence ferait croire à un catalogue plus petit qu'il
     // n'est — le genre de silence que ce dépôt corrige ailleurs.
     expect(QUERIES).toContain("export async function nombreDeRoutes");
-    expect(PAGE).toContain("routesTotal > ROUTES_MAX");
+    // Le total est une lecture à part (`lire`, F02) : lu, il est comparé au
+    // plafond ; illisible, l'écran dit que la liste PEUT être coupée.
+    expect(PAGE).toContain("routesTotal.data > ROUTES_MAX");
     expect(PAGE).toContain("routes distinctes sur");
+    expect(PAGE).toContain("le nombre total de routes n'a pas pu être lu");
   });
 
   it("et dit d'où vient une cardinalité qui grimpe", () => {

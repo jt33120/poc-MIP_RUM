@@ -6,7 +6,7 @@
 import { q } from "./db";
 import { queryOf, type Filters } from "./filters";
 import { binder, compileScope, sessionJoin } from "./query-compiler";
-import { softFail, sqlContext, type SqlContext } from "./query-sql";
+import { sqlContext, type SqlContext } from "./query-sql";
 
 export interface DeployRow {
   id: number;
@@ -225,17 +225,17 @@ export const SANS_RELEASE = "(non renseignée)";
  * AVANT migration-v75, les colonnes par occurrence n'existent pas : la lecture
  * retombe sur la release de session, à l'identique de ce qui précédait, et
  * `source` le dit à l'écran plutôt que de laisser croire au découpage fin.
+ *
+ * Une lecture en échec LÈVE (F02) : elle rendait autrefois une comparaison vide,
+ * que le tableau des versions prenait pour « moins de deux versions ». L'écran
+ * l'enveloppe dans `lire()` et dit « Lecture en échec ».
  */
 export async function comparaisonVersions(f: Filters, limit = 12): Promise<ComparaisonVersions> {
-  try {
-    const sql = await sqlContext(f);
-    const parOccurrence =
-      sql.schema.has("rum_pageview.release") && sql.schema.has("rum_metric.release") && sql.schema.has("rum_error.release");
-    const rows = parOccurrence ? await parOccurrenceSql(sql, limit) : await parSessionSql(sql, limit);
-    return { rows, source: parOccurrence ? "occurrence" : "session" };
-  } catch (e) {
-    return softFail(e, { rows: [], source: "occurrence" as VersionSource });
-  }
+  const sql = await sqlContext(f);
+  const parOccurrence =
+    sql.schema.has("rum_pageview.release") && sql.schema.has("rum_metric.release") && sql.schema.has("rum_error.release");
+  const rows = parOccurrence ? await parOccurrenceSql(sql, limit) : await parSessionSql(sql, limit);
+  return { rows, source: parOccurrence ? "occurrence" : "session" };
 }
 
 /** Release de l'événement : chaque famille de mesures porte la sienne. */

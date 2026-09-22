@@ -200,7 +200,8 @@ const occurrences = (page: Page) => page.getByRole("region", { name: /^Occurrenc
 /** La ligne d'occurrence dont le message est `boom <nom>`. */
 const occurrence = (page: Page, nom: string) =>
   occurrences(page).filter({ has: page.getByTitle(`boom ${nom}`, { exact: true }) });
-const introuvable = (page: Page) => expect(page.getByText("This page could not be found")).toBeVisible();
+// `not-found.tsx` en français (F02) : plus le 404 anglais de Next.
+const introuvable = (page: Page) => expect(page.getByTestId("introuvable")).toContainText("introuvable");
 
 test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché comme zéro", async ({ page }) => {
   await login(page);

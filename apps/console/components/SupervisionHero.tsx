@@ -4,8 +4,12 @@
 // qu'on lise l'état de la page « au-dessus du pli » d'un coup d'œil, avant les
 // tables de détail. Composant de mise en page pur (SSR) : le graphe et les
 // chiffres sont passés en props, la brique n'impose aucune source de données.
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { GlossaryTip } from "./GlossaryTip";
+import { ICON_PATHS, Icon } from "./icons";
+import { EtatSurface, type Etat } from "./states/EtatSurface";
+import { EchecLecture } from "./states/SectionErreur";
 import type { GlossaryId } from "@/lib/glossary";
 
 export function SupervisionHero({
@@ -13,6 +17,8 @@ export function SupervisionHero({
   chartHelp,
   chartMeta,
   chart,
+  state,
+  explorer,
   children,
   layout = "split",
 }: {
@@ -23,7 +29,15 @@ export function SupervisionHero({
   /** Zone à droite du titre du graphe (toggle, légende, période…). */
   chartMeta?: ReactNode;
   /** Le graphe principal (n'importe quelle représentation : SVG, recharts…). */
-  chart: ReactNode;
+  chart?: ReactNode;
+  /**
+   * État de la zone graphe (F02, § 3.8) : s'il est présent, il est rendu À LA
+   * PLACE du graphe — une lecture en échec ne dessine jamais un axe vide, qui se
+   * lirait comme une période calme. `erreur` porte son bouton « Réessayer ».
+   */
+  state?: Etat;
+  /** Lien « Ouvrir dans l'Explorer », calculé côté serveur (§ 3.4). */
+  explorer?: string;
   /** Colonne de contexte : tuiles HeroStat + une phrase de lecture. */
   children: ReactNode;
   /**
@@ -39,8 +53,29 @@ export function SupervisionHero({
         {chartTitle}
         {chartHelp && <GlossaryTip id={chartHelp} />}
       </h2>
-      {chartMeta && <div className="ml-auto flex items-center gap-2">{chartMeta}</div>}
+      {(chartMeta || explorer) && (
+        <div className="ml-auto flex items-center gap-2">
+          {chartMeta}
+          {explorer && (
+            <Link
+              href={explorer}
+              title="Ouvrir dans l'Explorer"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-ink-soft transition hover:bg-panel2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+            >
+              <Icon paths={ICON_PATHS.compass} className="h-4 w-4" />
+              <span className="sr-only">Ouvrir dans l&apos;Explorer</span>
+            </Link>
+          )}
+        </div>
+      )}
     </div>
+  );
+  const zone = !state ? (
+    chart
+  ) : state.kind === "erreur" ? (
+    <EchecLecture titre={state.titre} digest={state.digest} />
+  ) : (
+    <EtatSurface etat={state} />
   );
 
   if (layout === "wide") {
@@ -48,7 +83,7 @@ export function SupervisionHero({
       <section className="card mb-6 p-5">
         <div className="mb-4 flex flex-wrap items-start gap-x-8 gap-y-3">{children}</div>
         {title}
-        <div className="min-w-0">{chart}</div>
+        <div className="min-w-0">{zone}</div>
       </section>
     );
   }
@@ -60,7 +95,7 @@ export function SupervisionHero({
         <div className="flex flex-col gap-4 bg-panel p-5">{children}</div>
         <div className="flex min-w-0 flex-col bg-panel p-5">
           {title}
-          <div className="min-w-0 flex-1">{chart}</div>
+          <div className="min-w-0 flex-1">{zone}</div>
         </div>
       </div>
     </section>
