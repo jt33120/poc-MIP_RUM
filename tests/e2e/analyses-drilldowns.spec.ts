@@ -216,11 +216,24 @@ test("découpage : onglets, drill-down, clavier et alternative textuelle", async
   await page.waitForURL((u) => u.searchParams.get("browser") !== null, { timeout: 15_000 });
 
   // Le drill-down a conservé le périmètre et ajouté le filtre du groupe. Il ne
-  // reconduit PAS l'onglet : un drill-down change de question, pas de vue.
-  expect(new URL(page.url()).searchParams.get("app")).toBe(APP_ID);
+  // reconduit PAS l'onglet : un drill-down change de question, pas de vue — et
+  // `split` reste donc absent de l'URL d'arrivée.
+  const apresDrill = new URL(page.url());
+  expect(apresDrill.searchParams.get("app")).toBe(APP_ID);
+  expect(apresDrill.searchParams.get("split")).toBeNull();
+  // Un groupe de la Vue d'ensemble ouvre `/pages` (F13, `breakdownDrillHref`) : la
+  // surface qui sait appliquer la dimension au détail. Elle rend bien son classement,
+  // filtré — mais plus les onglets de découpage, partis avec F14 (doublon de la Vue
+  // d'ensemble, § 5.2.4).
+  expect(apresDrill.pathname).toBe("/pages");
   await expect(decoupageDe(page)).toBeVisible();
+
+  // On revient donc là où les onglets vivent, avec le MÊME périmètre — filtre du
+  // groupe compris — et on rejoue l'onglet sur la population filtrée, exactement
+  // comme le début du test l'a fait sur la population entière.
+  await page.goto(`${BASE}/${apresDrill.search}`);
   await page.getByTestId("breakdown-tab-browser").click();
-  await page.waitForURL((u) => u.searchParams.get("split") === "browser", { timeout: 15_000 });
+  await page.waitForURL((u) => u.pathname === "/" && u.searchParams.get("split") === "browser", { timeout: 15_000 });
   // Filtré sur un seul navigateur, le découpage par navigateur n'a qu'un groupe.
   await expect(lignesDe(page)).toHaveCount(1);
   await expect(decoupageDe(page)).not.toContainText("Firefox");
