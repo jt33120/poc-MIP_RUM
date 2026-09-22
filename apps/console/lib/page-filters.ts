@@ -21,7 +21,7 @@ import {
   type ContractErrorCode,
 } from "./query-contract";
 import { dimensionSchema } from "./query-schema";
-import { checkSurface, surfaceFor, type Surface } from "./surfaces";
+import { checkSurface, perimetreAvailability, surfaceFor, type Surface } from "./surfaces";
 
 export interface FilterProblem {
   code: ContractErrorCode;
@@ -75,6 +75,11 @@ export async function pageFilters(sp: SearchParams | undefined, pathname: string
   const parsed = parseAnalyticsQuery(reader, { principal: user, nowMs: Date.now() });
   if (!parsed.ok) return { ok: false, problem: problemOf(pathname, app, parsed.error.code, parsed.error.message) };
   const query = parsed.value;
+  // Périmètre AVANT les filtres : une lecture mono-app sous `app=all` sortirait du
+  // périmètre d'un principal restreint (R-A). Refus de périmètre, donc reprise vers
+  // le choix d'un projet — pas « réinitialiser les filtres », qui garderait `all`.
+  const perimetre = perimetreAvailability(surface, query.scope);
+  if (!perimetre.available) return { ok: false, problem: problemOf(pathname, app, "forbidden_app", perimetre.reason) };
   if (!surface.noFilters) {
     const check = checkSurface(query, surface, await dimensionSchema());
     if (!check.ok) return { ok: false, problem: problemOf(pathname, app, check.error.code, check.error.message) };

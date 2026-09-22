@@ -14,6 +14,7 @@ import {
   type Dimension,
   type FilterCondition,
   type Parsed,
+  type QueryScope,
 } from "./query-contract";
 
 export type RangeCapability = "custom" | "presets" | "none";
@@ -41,6 +42,16 @@ export interface Surface {
   only?: readonly Dimension[];
   /** Écran sans mesure filtrable : seuls l'app et, s'il y a lieu, la plage comptent. */
   noFilters?: string;
+  /**
+   * Lecture qui ne sait filtrer qu'UNE app, par la clause `($1::text is null or
+   * app_id = $1)` : sous `app=all`, `$1` vaut null et la clause laisse passer TOUTES
+   * les apps de la base, qu'elles soient ou non dans le périmètre du principal
+   * (R-A, CS1). Tant que ces lectures ne passent pas par `sqlContext` (B31 → F53 ;
+   * F66 pour `/goals`), un principal RESTREINT qui demande toutes ses apps est
+   * refusé (`perimetreAvailability`) : un refus dit, plutôt qu'une lecture hors
+   * périmètre.
+   */
+  appUnique?: true;
 }
 
 // `country_source` (P8.7) accompagne `country` : les écrans qui savent segmenter sur
@@ -116,11 +127,21 @@ export const SURFACES: Surface[] = [
     range: "none",
     noFilters: "La liste des tableaux de bord ne dépend que de l'app sélectionnée.",
   },
-  { path: "/paths", datasets: ["sessions"], range: "presets", legacy: "segments" },
-  { path: "/forms", datasets: ["sessions"], range: "presets", legacy: "segments" },
-  { path: "/goals", datasets: ["sessions"], range: "presets", legacy: "segments" },
-  { path: "/acquisition", datasets: ["sessions"], range: "presets", legacy: "segments" },
-  { path: "/retention", datasets: ["sessions"], range: "presets", legacy: "segments" },
+  { path: "/paths", datasets: ["sessions"], range: "presets", legacy: "segments", appUnique: true },
+  { path: "/forms", datasets: ["sessions"], range: "presets", legacy: "segments", appUnique: true },
+  { path: "/goals", datasets: ["sessions"], range: "presets", legacy: "segments", appUnique: true },
+  { path: "/acquisition", datasets: ["sessions"], range: "presets", legacy: "segments", appUnique: true },
+  // La rétention lit N SEMAINES, choisies dans l'écran (`?weeks=`), jamais la
+  // période du haut : lib/queries-cohorts.ts ne lit ni `f.period` ni PERIODS.
+  // Proposer 1 h / 24 h / 7 j laisserait croire qu'ils s'appliquent (§ 5.17.5).
+  {
+    path: "/retention",
+    datasets: ["sessions"],
+    range: "none",
+    rangeNote: "La rétention se lit sur un nombre de semaines choisi dans l'écran ; la période choisie en haut ne s'applique pas.",
+    legacy: "segments",
+    appUnique: true,
+  },
   { path: "/logs", datasets: [], range: "presets", legacy: "period-only" },
   { path: "/ai", datasets: [], range: "presets", legacy: "period-only" },
   // La projection lit toujours les 14 derniers jours complets (lib/queries-grid.ts,
@@ -195,6 +216,30 @@ export function rangeAvailability(surface: Surface, custom: boolean): FilterAvai
   }
   if (custom && surface.range === "presets") {
     return { available: false, reason: "Cet écran n'accepte encore que les périodes 1 h, 24 h et 7 j." };
+  }
+  return { available: true };
+}
+
+/** Refus provisoire des écrans à lecture mono-app (F40, R-A) : texte opposable. */
+export const RAISON_APP_UNIQUE =
+  "Cet écran lit une application à la fois : choisissez l'une des applications de votre périmètre.";
+
+/**
+ * Le périmètre demandé est-il lisible par l'écran ? Refus quand l'écran ne sait
+ * filtrer qu'une app (`appUnique`), que l'URL les demande toutes
+ * (`requestedApp === null`) ET que le principal est restreint
+ * (`authorizedApps !== null`) : la lecture sortirait de son périmètre. Un
+ * principal sans restriction (admin, viewer sans liste) lit de droit toutes les
+ * apps : rien à refuser.
+ *
+ * Défense en profondeur : la porte « projet courant » du middleware réécrit déjà
+ * `app=all` en l'app du projet pour un principal restreint (middleware.ts). Ce
+ * refus tient même si cette porte change ; il se lève avec la migration des
+ * lectures sur `sqlContext` (F53, F66).
+ */
+export function perimetreAvailability(surface: Surface, scope: QueryScope): FilterAvailability {
+  if (surface.appUnique && scope.requestedApp === null && scope.authorizedApps !== null) {
+    return { available: false, reason: RAISON_APP_UNIQUE };
   }
   return { available: true };
 }

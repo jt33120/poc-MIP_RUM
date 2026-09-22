@@ -67,8 +67,45 @@ describe("pageFilters", () => {
       problem: { message: "Cet écran n'applique ni « Inconnu » ni la tablette.", resetHref: "/goals?app=a" },
     });
     expect(
-      await pageFilters({ app: "a", from: "2026-09-16T10:00:00Z", to: "2026-09-16T11:00:00Z" }, "/retention"),
+      await pageFilters({ app: "a", from: "2026-09-16T10:00:00Z", to: "2026-09-16T11:00:00Z" }, "/acquisition"),
     ).toMatchObject({ ok: false, problem: { message: "Cet écran n'accepte encore que les périodes 1 h, 24 h et 7 j." } });
+    // F40 : la rétention lit ses propres semaines ; une plage est refusée avec cette raison.
+    expect(
+      await pageFilters({ app: "a", from: "2026-09-16T10:00:00Z", to: "2026-09-16T11:00:00Z" }, "/retention"),
+    ).toMatchObject({
+      ok: false,
+      problem: {
+        message: "La rétention se lit sur un nombre de semaines choisi dans l'écran ; la période choisie en haut ne s'applique pas.",
+      },
+    });
+  });
+
+  // F40 (R-A) — refus provisoire : une lecture mono-app sous `app=all` sortirait du
+  // périmètre d'un principal restreint. Refus de périmètre, reprise vers /select.
+  it("écran à lecture mono-app, principal restreint, toutes les apps : refus « une application à la fois »", async () => {
+    for (const path of ["/acquisition", "/paths", "/forms", "/retention", "/goals"]) {
+      for (const sp of [{ app: "all" }, {}]) {
+        expect(await pageFilters(sp, path), `${path} ${JSON.stringify(sp)}`).toEqual({
+          ok: false,
+          problem: {
+            code: "forbidden_app",
+            message: "Cet écran lit une application à la fois : choisissez l'une des applications de votre périmètre.",
+            resetHref: "/select",
+            resetLabel: "Choisir un projet autorisé",
+          },
+        });
+      }
+      // Une app nommée du périmètre : l'écran s'affiche.
+      expect((await pageFilters({ app: "a" }, path)).ok, path).toBe(true);
+    }
+    // Viewer sans liste d'apps (= toutes) et admin : lecture de droit sur toutes les apps.
+    simul.user = viewer(null);
+    expect((await pageFilters({ app: "all" }, "/acquisition")).ok).toBe(true);
+    simul.user = { email: "admin@mip", role: "admin" as const, apps: null };
+    expect((await pageFilters({ app: "all" }, "/goals")).ok).toBe(true);
+    // Un écran sur le contrat lie ses apps effectives : pas de refus.
+    simul.user = viewer(["a", "b"]);
+    expect((await pageFilters({ app: "all" }, "/sessions")).ok).toBe(true);
   });
 
   it("écran migré : requête résolue, façade historique et tablette pour les lectures P4/P5", async () => {
