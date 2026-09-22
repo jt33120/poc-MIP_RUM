@@ -37,6 +37,23 @@ describe("F22 — règles de frustration = constantes du SDK", () => {
     expect(clair(error.texte)).toContain("5 s");
   });
 
+  it("pluriels ÉCRITS : « signal » est irrégulier, jamais « signalaux »", () => {
+    expect(console.pluriel("signal", 2)).toBe("signaux");
+    expect(console.pluriel("signal", 1)).toBe("signal");
+    expect(console.pluriel("signal", 0)).toBe("signal");
+    expect(console.pluriel("session", 3)).toBe("sessions");
+    expect(console.pluriel("route", 2)).toBe("routes"); // mot régulier : la règle par défaut
+  });
+
+  it("le sous-texte d'une tuile : « N signaux, N sessions », exactement", () => {
+    expect(console.sousTexteSignaux(2, 1)).toBe("2 signaux, 1 session");
+    expect(console.sousTexteSignaux(1, 1)).toBe("1 signal, 1 session");
+    expect(console.sousTexteSignaux(0, 0)).toBe("0 signal, 0 session");
+    expect(console.sousTexteSignaux(14, 9)).toBe("14 signaux, 9 sessions");
+    expect(console.sousTexteSignaux(60, 1)).toBe("60 signaux, 1 session");
+    expect(clair(console.sousTexteSignaux(2, 1))).not.toContain("signalaux");
+  });
+
   it("les limites disent le sous-report et le plafond", () => {
     expect(console.LIMITES_FRUSTRATION).toContain("sous-report assumé");
     expect(console.LIMITES_FRUSTRATION).toContain(`${sdk.FRUSTRATION_CAP_PER_PAGE} signaux par page vue`);

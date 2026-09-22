@@ -25,6 +25,8 @@ export const ERROR_CLICK_WINDOW_MS = 5000;
 /** Signaux au plus par page vue (`FRUSTRATION_CAP_PER_PAGE`) : au-delà, rien n'est émis. */
 export const FRUSTRATION_CAP_PER_PAGE = 20;
 
+import { formater } from "./fmt-ids";
+
 /** Espace insécable entre la valeur et l'unité (écrite par son code : invisible dans une source). */
 const INSECABLE = String.fromCharCode(0xa0);
 
@@ -66,3 +68,24 @@ export function reglesFrustration(): RegleFrustration[] {
  */
 export const LIMITES_FRUSTRATION =
   `Seuls les clics sont observés : les frappes au clavier ne sont pas comptées. Règles conservatrices, sous-report assumé ; au plus ${FRUSTRATION_CAP_PER_PAGE} signaux par page vue.`;
+
+/**
+ * Pluriel des mots que les tuiles écrivent. « signal » est IRRÉGULIER : coller un
+ * « s » (ou un « aux ») au mot donnait « signalaux ». Les formes sont donc écrites,
+ * jamais fabriquées ; un mot absent de la table suit la règle régulière.
+ */
+const PLURIELS: Record<string, string> = { signal: "signaux", session: "sessions" };
+
+/** `n` au singulier jusqu'à 1 inclus (usage français : « 0 signal », « 1 signal »). */
+export function pluriel(mot: string, n: number): string {
+  return n > 1 ? (PLURIELS[mot] ?? `${mot}s`) : mot;
+}
+
+/**
+ * Sous-texte d'une tuile de signal : « 14 signaux, 9 sessions ». Les deux nombres
+ * ensemble distinguent l'acharné (beaucoup de signaux, une session) des bloqués
+ * (autant de sessions que de signaux) — un compte seul ne le dit pas.
+ */
+export function sousTexteSignaux(signaux: number, sessions: number): string {
+  return `${formater("count", signaux)} ${pluriel("signal", signaux)}, ${formater("count", sessions)} ${pluriel("session", sessions)}`;
+}

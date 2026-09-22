@@ -14,7 +14,7 @@ import { pageFilters } from "@/lib/page-filters";
 import { decouperUrlScript, fmtVital } from "@/lib/format";
 import { formater } from "@/lib/fmt-ids";
 import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
-import { LIMITES_FRUSTRATION, reglesFrustration } from "@/lib/frustration-regles";
+import { LIMITES_FRUSTRATION, reglesFrustration, sousTexteSignaux } from "@/lib/frustration-regles";
 import {
   classerRoutesFrustrantes,
   ecartAuTauxEnsemble,
@@ -336,8 +336,8 @@ function TuilesSignaux({
             reference={reference}
             {...comparaison}
             // « 14 signaux, 9 sessions » distingue l'acharné (un visiteur, beaucoup de
-            // signaux) des bloqués (beaucoup de visiteurs).
-            lecture={`${formater("count", t.n)} signal${t.n > 1 ? "aux" : ""}, ${formater("count", t.sessions)} session${t.sessions > 1 ? "s" : ""}`}
+            // signaux) des bloqués (beaucoup de visiteurs). Pluriels écrits, pas fabriqués.
+            lecture={sousTexteSignaux(t.n, t.sessions)}
             href={hrefType(t.kind)}
           />
         );
