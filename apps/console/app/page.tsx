@@ -199,6 +199,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             p75={byName[name]?.p75 ?? null}
             median={byName[name]?.p50 ?? null}
             n={byName[name]?.n ?? 0}
+            intervalle={byName[name]?.intervalle}
             prev={deltasVitaux.deltas ? (prevByName[name]?.p75 ?? null) : null}
             periodLabel={period.label}
           />

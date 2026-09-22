@@ -8,7 +8,8 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
 import { hrefWithQuery } from "@/lib/query-contract";
-import { blindSpots, correlationCards, correlationRoutes, correlationSeries } from "@/lib/queries-v2";
+import { blindSpots, correlationCards, correlationRoutes, correlationSeries, EFFECTIF_MIN_HEURE } from "@/lib/queries-v2";
+import { ecrireSerie, libelleSerie, lireSerie, serieParDefaut } from "@/lib/correlation-serie";
 import { fmtBorne } from "@/lib/format";
 import { THRESHOLDS } from "@/lib/rating";
 
@@ -23,16 +24,18 @@ export default async function Correlation({
   const ecran = await pageFilters(sp, "/correlation");
   if (!ecran.ok) return <FilterProblemNotice title="Corrélation synthétique ↔ RUM" problem={ecran.problem} />;
   const f = ecran.filters;
-  const [rows, routes, spots] = await Promise.all([
+  const [rows, couples, spots] = await Promise.all([
     correlationCards(f),
     correlationRoutes(f),
     blindSpots(f),
   ]);
-  // `serie` choisit la courbe affichée ; `route`, filtre du contrat commun, restreint
-  // TOUTE la page (cartes, angles morts) à une route.
+  // `serie` choisit le couple (app, route) affiché, au format `<app>:<route>` encodé
+  // (lib/correlation-serie.ts) ; `route`, filtre du contrat commun, restreint TOUTE la
+  // page (cartes, angles morts) à une route.
   const requested = Array.isArray(sp.serie) ? sp.serie[0] : sp.serie;
-  const selectedRoute = requested && routes.includes(requested) ? requested : routes[0] ?? null;
-  const series = selectedRoute ? await correlationSeries(selectedRoute, f) : [];
+  const selected = lireSerie(requested, couples) ?? serieParDefaut(couples, { route: ecran.query.filters.route });
+  const selectedLabel = selected ? libelleSerie(selected, couples) : null;
+  const series = selected ? await correlationSeries(selected.app_id, selected.route, f) : [];
 
   return (
     <div className="animate-fade-up">
@@ -45,26 +48,26 @@ export default async function Correlation({
       <SupervisionHero
         chartTitle={`Robot vs réel dans le temps (buckets horaires, ${ecran.label})`}
         chartMeta={
-          routes.length ? (
+          couples.length ? (
             <div className="flex max-w-full flex-wrap justify-end gap-1">
-              {routes.slice(0, 6).map((route) => (
+              {couples.slice(0, 6).map((c) => (
                 <Link
-                  key={route}
-                  href={hrefWithQuery("/correlation", ecran.query, { serie: route })}
+                  key={ecrireSerie(c.app_id, c.route)}
+                  href={hrefWithQuery("/correlation", ecran.query, { serie: ecrireSerie(c.app_id, c.route) })}
                   className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] transition ${
-                    route === selectedRoute
+                    c.app_id === selected?.app_id && c.route === selected?.route
                       ? "bg-accent font-semibold text-navy-950 shadow-sm"
                       : "bg-panel2 text-ink-soft hover:bg-line/60"
                   }`}
                 >
-                  {route}
+                  {libelleSerie(c, couples)}
                 </Link>
               ))}
             </div>
           ) : undefined
         }
         chart={
-          selectedRoute && series.length ? (
+          selected && series.length ? (
             <RobotVsRealChart
               data={series.map((s) => ({
                 bucket: new Date(s.bucket).toISOString(),
@@ -79,14 +82,14 @@ export default async function Correlation({
           )
         }
       >
-        <HeroStat label="Routes corrélées" value={routes.length.toLocaleString("fr-FR")} hint="robot ET réel disponibles" />
+        <HeroStat label="Routes corrélées" value={couples.length.toLocaleString("fr-FR")} hint="robot ET réel disponibles" />
         <HeroStat
           label="Angles morts"
           value={spots.length.toLocaleString("fr-FR")}
           tone={spots.length > 0 ? "poor" : "good"}
-          hint={`robot « ok » mais LCP p75 réel > ${fmtBorne("LCP", THRESHOLDS.LCP[0])}`}
+          hint={`robot « ok » mais LCP p75 réel > ${fmtBorne("LCP", THRESHOLDS.LCP[0])}, heures d'au moins ${EFFECTIF_MIN_HEURE} mesures LCP`}
         />
-        <HeroStat label="Route affichée" value={selectedRoute ?? "—"} hint="clique une puce pour changer" />
+        <HeroStat label="Route affichée" value={selectedLabel ?? "—"} hint="clique une puce pour changer" />
         <HeroReading>
           Deux courbes : le robot synthétique (ce que MIP mesure en labo) et le réel (LCP p75 subi). Quand
           elles divergent — réel qui grimpe alors que le robot reste plat — c&apos;est un angle mort. Le détail
@@ -114,8 +117,8 @@ export default async function Correlation({
           </h2>
           <p className="mt-0.5 text-xs text-red-700 dark:text-red-300/80">
             Heures où le robot dit « ok » alors que le LCP p75 des utilisateurs réels dépasse la borne « Bon »
-            ({fmtBorne("LCP", THRESHOLDS.LCP[0])}, seuil web.dev) : « À améliorer » ou « Mauvais » ·
-            {ecran.label}
+            ({fmtBorne("LCP", THRESHOLDS.LCP[0])}, seuil web.dev) : « À améliorer » ou « Mauvais », sur des heures
+            d&apos;au moins {EFFECTIF_MIN_HEURE} mesures LCP · {ecran.label}
           </p>
         </div>
         <table className="w-full text-sm">
