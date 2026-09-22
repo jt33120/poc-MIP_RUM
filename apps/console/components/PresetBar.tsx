@@ -87,7 +87,10 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
     <div className="flex min-w-0 items-center gap-2" data-testid="preset-bar">
       <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Vues</span>
       <div className="relative min-w-0 flex-1">
-        <div ref={rangee} className="flex min-w-0 items-center gap-1.5 overflow-x-auto py-0.5" role="list" aria-label="Vues préréglées">
+        {/* `relative` : les textes sr-only (position absolue) des vues hors champ se
+            rangent DANS la rangée défilante ; sinon, positionnés par rapport au bloc
+            parent, ils échappaient au défilement et portaient la page à 695 px sur 390. */}
+        <div ref={rangee} className="relative flex min-w-0 items-center gap-1.5 overflow-x-auto py-0.5" role="list" aria-label="Vues préréglées">
           {toutes.map((vue) => {
             if (vue.indisponible) {
               return (
