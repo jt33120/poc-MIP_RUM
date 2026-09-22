@@ -312,3 +312,132 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
     });
   }
 });
+
+test.describe("F13 — Vue d'ensemble : segments, release, angle mort, historique", () => {
+  // Une app à elle, sous UNE seule release (la comparaison doit se taire), sur trois
+  // heures closes : `/lent` (90 mesures LCP à 3 s, le robot dit « ok » chaque heure :
+  // trois heures en angle mort) et `/rapide` (120 mesures à 1,2 s) — gravité et volume
+  // en ordres OPPOSÉS. Sessions françaises : l'onglet « Pays estimé » a un groupe FR.
+  const APP_F13 = "e2e-f13-vue-ensemble";
+  const ACCUEIL_F13 = `${consoleUrl}/?app=${APP_F13}&period=24h`;
+
+  test.beforeAll(async () => {
+    for (const t of ["rum_error", "rum_metric", "rum_pageview", "rum_session", "syn_snapshot", "deploy_marker"])
+      await pool.query(`delete from ${t} where app_id = $1`, [APP_F13]);
+    await pool.query(
+      `insert into app_registry (app_id, name) values ($1, 'Vue d''ensemble F13 (e2e)') on conflict (app_id) do nothing`,
+      [APP_F13],
+    );
+    const routes = [
+      { route: "/lent", parHeure: 30, lcp: 3000 },
+      { route: "/rapide", parHeure: 40, lcp: 1200 },
+    ];
+    for (const heure of [2, 3, 4]) {
+      // Heure close, en son milieu : jamais à cheval sur deux seaux.
+      const quand = `date_trunc('hour', now()) - interval '${heure} hours' + interval '20 minutes'`;
+      for (const r of routes) {
+        const sid = `${APP_F13}-h${heure}${r.route.replace("/", "-")}`;
+        await pool.query(
+          `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count, release, geo_country)
+           values ($1, $2, $1, 'desktop', false, ${quand}, ${quand} + interval '5 minutes', 1, 'f13-1.0', 'FR')
+           on conflict (session_id) do nothing`,
+          [sid, APP_F13],
+        );
+        await pool.query(
+          `insert into rum_pageview (span_id, session_id, app_id, route, nav_type, started_at, release)
+           values ($1, $2, $3, $4, 'navigate', ${quand}, 'f13-1.0') on conflict (span_id) do nothing`,
+          [`${sid}-pv`, sid, APP_F13, r.route],
+        );
+        await pool.query(
+          `insert into rum_metric (span_id, session_id, app_id, route, name, value, ts, release)
+           select $1 || '-' || g, $2, $3, $4, 'LCP', $5, ${quand} + make_interval(secs => g), 'f13-1.0'
+             from generate_series(1, $6::int) g
+           on conflict (span_id) do nothing`,
+          [`${sid}-lcp`, sid, APP_F13, r.route, r.lcp, r.parHeure],
+        );
+      }
+      // Le robot passe sur `/lent` à la même heure, et le dit « ok ».
+      await pool.query(
+        `insert into syn_snapshot (app_id, site, measure_id, measure_name, route_hint, score, state, latency_ms, captured_at)
+         values ($1, 'recette F13', 'Parcours lent', 'Parcours lent', '/lent', 95, 'ok', 700, ${quand})`,
+        [APP_F13],
+      );
+    }
+  });
+
+  test("segments : gravité par défaut, tri=volume sur demande ; une route ouvre son panneau sur /pages", async ({ page }) => {
+    await login(page);
+    await page.goto(`${ACCUEIL_F13}&split=route`, { waitUntil: "domcontentloaded" });
+    const table = page.getByTestId("impact-table");
+    await expect(table).toHaveAttribute("data-tri", "gravite", { timeout: 15_000 });
+    const libelles = () =>
+      table.getByTestId("impact-ligne").evaluateAll((els) => els.map((el) => el.querySelector("span")?.textContent?.trim() ?? ""));
+    expect(await libelles()).toEqual(["/lent", "/rapide"]);
+    // Une route ouvre son panneau sur /pages (§ 3.3), population et plage gardées.
+    const href = new URL((await table.getByTestId("impact-ligne").first().locator("a").getAttribute("href"))!, consoleUrl);
+    expect(href.pathname).toBe("/pages");
+    expect(href.searchParams.get("panel")).toBe("route:%2Flent");
+    expect(href.searchParams.get("app")).toBe(APP_F13);
+
+    await table.getByTestId("tri-volume").click();
+    await page.waitForURL((u) => u.searchParams.get("tri") === "volume", { timeout: 15_000 });
+    await expect(page.getByTestId("impact-table")).toHaveAttribute("data-tri", "volume");
+    expect(await libelles()).toEqual(["/rapide", "/lent"]);
+  });
+
+  test("onglet « Pays estimé » : une ligne ouvre /pages filtré par country=", async ({ page }) => {
+    await login(page);
+    await page.goto(ACCUEIL_F13, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("breakdown-tab-country").click();
+    await page.waitForURL((u) => u.searchParams.get("split") === "country", { timeout: 15_000 });
+    const ligne = page.getByTestId("impact-table").getByTestId("impact-ligne").filter({ hasText: "FR" });
+    const href = new URL((await ligne.locator("a").getAttribute("href"))!, consoleUrl);
+    expect(href.pathname).toBe("/pages");
+    expect(href.searchParams.get("country")).toBe("FR");
+    expect(href.searchParams.get("app")).toBe(APP_F13);
+  });
+
+  test("une seule release sur la fenêtre : la comparaison est désactivée, avec sa raison", async ({ page }) => {
+    await login(page);
+    await page.goto(ACCUEIL_F13, { waitUntil: "domcontentloaded" });
+    const zone = page.getByTestId("zone-release");
+    await expect(zone).toContainText("Nouvelle release face à la précédente", { timeout: 15_000 });
+    await expect(zone.getByTestId("release-indisponible")).toContainText("moins de deux releases");
+  });
+
+  test("angle mort : un compte exact, la règle écrite, la tuile ouvre /correlation#angles-morts", async ({ page }) => {
+    await login(page);
+    await page.goto(ACCUEIL_F13, { waitUntil: "domcontentloaded" });
+    const angle = page.getByTestId("angle-mort");
+    await expect(angle.getByTestId("kpi-valeur")).toHaveText("3", { timeout: 15_000 });
+    await expect(angle).toContainText("borne Bon de lib/rating.ts");
+    const tuile = new URL((await angle.getByTestId("kpi-tile").getAttribute("href"))!, consoleUrl);
+    expect(tuile.pathname).toBe("/correlation");
+    expect(tuile.hash).toBe("#angles-morts");
+    expect(tuile.searchParams.get("app")).toBe(APP_F13);
+    const pire = new URL((await angle.getByTestId("angle-mort-pire").locator("a").getAttribute("href"))!, consoleUrl);
+    // `serie` = `<app>:<route>` encodés un à un (CR7-a, `ecrireSerie`).
+    expect(pire.searchParams.get("serie")).toBe(`${APP_F13}:%2Flent`);
+  });
+
+  test("historique 14 jours fixes dit sans survol ; anomalies : la section existe toujours", async ({ page }) => {
+    await login(page);
+    await page.goto(ACCUEIL_F13, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("historique-fenetre")).toContainText("14 jours fixes, indépendants de la période", {
+      timeout: 15_000,
+    });
+    await expect(page.locator("details#anomalies")).toHaveCount(1);
+    // Ni « Volume & fiabilité par jour », ni « p75 LCP par jour » : le quotidien vit sur Tendances.
+    await expect(page.getByTestId("traffic-timeseries")).toHaveCount(0);
+  });
+
+  for (const largeur of LARGEURS) {
+    test(`segments, release et angle mort : aucun débordement à ${largeur} px`, async ({ page }) => {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await login(page);
+      await page.goto(ACCUEIL_F13, { waitUntil: "domcontentloaded" });
+      await expect(page.getByTestId("impact-table")).toBeVisible({ timeout: 15_000 });
+      expect(await debordements(page), `${largeur} px`).toEqual([]);
+    });
+  }
+});

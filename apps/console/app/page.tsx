@@ -1,33 +1,34 @@
 import Link from "next/link";
+import { Figure } from "@/components/charts/Figure";
 import { HealthHeatmap } from "@/components/charts/HealthHeatmap";
 import { KpiTile } from "@/components/charts/KpiTile";
-import { TrafficTimeseries } from "@/components/charts/TrafficTimeseries";
-import { VitalsTimeseries } from "@/components/charts/VitalsTimeseries";
-import { GlossaryTip } from "@/components/GlossaryTip";
+import { ImpactTable } from "@/components/ImpactTable";
 import { InsightStrip } from "@/components/InsightStrip";
 import { PageHeader } from "@/components/PageHeader";
 import { PresetBar } from "@/components/PresetBar";
+import { ReleaseCompare, statsDeVersion, type ReleaseStats } from "@/components/ReleaseCompare";
 import { ChargeErreursLcp, HeroCwv, type AnnotationsFigure, type ModeSeries } from "@/components/vue-ensemble/SeriesVueEnsemble";
+import { LIBELLE_ANGLE_MORT, TuileAngleMort, type EtatAngleMort } from "@/components/vue-ensemble/AngleMort";
 import { cookies } from "next/headers";
 import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
 import { TousEteints } from "@/components/TousEteints";
-import { VitalCard } from "@/components/VitalCard";
 import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
 import { VersionsTable } from "@/components/VersionsTable";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
-import { Breakdown } from "@/components/Breakdown";
-import { VITALS_BREAKDOWN_COLUMNS, vitalsBreakdownClasse } from "@/components/breakdown-view";
 import { filtersOfQuery, type SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
 import {
   BREAKDOWN_NOTICES,
   BREAKDOWN_PARAM,
   availableBreakdowns,
+  breakdownDrillHref,
   breakdownTabs,
   datasetAvailability,
+  groupDescription,
+  groupLabel,
   parseBreakdown,
 } from "@/lib/breakdowns";
 import { etatLectureEchantillonnage } from "@/lib/echantillonnage";
@@ -36,9 +37,9 @@ import { lire, type Lecture } from "@/lib/lecture";
 import { fuseauDe, joursLocaux, libelleDeuxFuseaux } from "@/lib/fuseau";
 import { formatDuVital, formater, VITAUX, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import { bucketStarts, hrefWithQuery, paramReader } from "@/lib/query-contract";
-import { alignerSeaux, grilleIso, isoSansMs } from "@/lib/series";
-import { cleJour } from "@/lib/forecast";
+import { grilleIso, isoSansMs } from "@/lib/series";
 import { dimensionSchema } from "@/lib/query-schema";
+import { THRESHOLDS } from "@/lib/rating";
 import {
   overviewStats,
   pageviewSeries,
@@ -50,15 +51,11 @@ import {
 } from "@/lib/queries";
 import { errorSeries, erreursNavigateur, listErrorGroups } from "@/lib/queries-errors";
 import { engagementStats, observedVisitorsTrend } from "@/lib/queries-sessions";
-import { alertFirings, unackedAlertCount } from "@/lib/queries-v2";
+import { alertFirings, correlationCards, correlationConcordance, unackedAlertCount } from "@/lib/queries-v2";
+import { UnsupportedFilterError } from "@/lib/query-compiler";
 import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown, type VitalsBreakdownRow } from "@/lib/queries-breakdowns";
-import { dailyLcpSeries, dailyTraffic, GRID_DAYS, healthGrid } from "@/lib/queries-grid";
-import {
-  comparaisonVersions,
-  latestDeployImpact,
-  listDeploys,
-  type ComparaisonVersions,
-} from "@/lib/queries-deploys";
+import { GRID_DAYS, healthGrid } from "@/lib/queries-grid";
+import { comparaisonVersions, latestDeployImpact, listDeploys } from "@/lib/queries-deploys";
 import { ecartP75 } from "@/lib/stats/incertitude";
 import {
   couverturePrecedente,
@@ -71,16 +68,22 @@ import { avecCondition, RAISON_AUCUNE_VUE, ratioPour100, serieRatioPour100, spar
 import { choisirReleases, vuesProduit, type Entree } from "@/lib/presets";
 import { annotationsDeploiements } from "@/lib/annotations";
 import { explorerHref } from "@/lib/explorer-page-params";
-import { gabaritZoom, lireComparaison, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
+import { ecrirePanel, gabaritZoom, lireComparaison, lireEtatDeVue, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
 import {
   ALERTES_PAR_EVENEMENT,
   constatsVueEnsemble,
+  estVitalDecoupe,
   FENETRE_CONSTATS,
+  heuresAngleMort,
   lectureErreursPour100,
+  lignesSegments,
   referencePrecedente,
   referenceRelease,
+  regleAngleMort,
   releasesComparees,
   sansConditionRelease,
+  VITAUX_DECOUPES,
+  type VitalDecoupe,
 } from "@/lib/vue-ensemble";
 
 /** La question de l'écran (P1) : le sous-titre de l'en-tête. */
@@ -108,6 +111,25 @@ export const dynamic = "force-dynamic";
 
 /** Lecture non lancée (bloc éteint) : une valeur sûre, jamais affichée comme mesure. */
 const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
+
+/** Groupes lus pour le classement des segments (CP1 : coupe par volume, puis tri gravité). */
+const DECOUPAGE_LUS = 200;
+
+/**
+ * Lecture d'un jeu de données que l'écran ne déclare pas dans sa surface (le robot,
+ * `synthetic`) : un filtre de `/` qu'il ne porte pas (appareil, navigateur…) lève
+ * `UnsupportedFilterError`, que `lire` relance pour que l'écran refuse. Ici, la
+ * section seule le dit (`refus`) ; les autres restent.
+ */
+const lireOuRefus = <T,>(fn: () => Promise<T>) =>
+  lire<{ refus: null; data: T } | { refus: string }>(async () => {
+    try {
+      return { refus: null, data: await fn() };
+    } catch (e) {
+      if (e instanceof UnsupportedFilterError) return { refus: e.message };
+      throw e;
+    }
+  });
 
 /** Une tuile, ou l'échec de sa lecture (jamais un « 0 » ou un « — » pour une fenêtre non lue). */
 type Tuile = { cle: string; titre: string } & (
@@ -227,9 +249,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     seriesPrecedentes,
     health,
     grid,
-    traffic,
-    dailyLcp,
-    versions,
+    concordance,
+    cartesRobot,
     decoupe,
     deploys,
     versionsFenetre,
@@ -241,7 +262,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     couvVitaux,
     couvTrafic,
   ] = await Promise.all([
-    blocs.vitals || blocs.reseau || blocs.decoupage ? lire(() => vitalsP75(f)) : sansLecture<VitalAgg[]>([]),
+    blocs.vitals || blocs.decoupage ? lire(() => vitalsP75(f)) : sansLecture<VitalAgg[]>([]),
     blocs.vitals && prev ? lire(() => vitalsP75(f, true)) : sansLecture<VitalAgg[]>([]),
     lire(() => overviewStats(f)),
     blocs.trafic && prev ? lire(() => overviewStats(f, true)) : sansLecture(null),
@@ -266,12 +287,14 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     // Santé ET constats (anomalies 24 h) : lue même bandeau éteint, les constats en dépendent.
     lire(() => healthScore(f)),
     blocs.historique ? lire(() => healthGrid(f)) : sansLecture([]),
-    blocs.historique ? lire(() => dailyTraffic(f)) : sansLecture([]),
-    blocs.historique ? lire(() => dailyLcpSeries(f)) : sansLecture([]),
-    blocs.versions
-      ? lire(() => comparaisonVersions(f))
-      : sansLecture<ComparaisonVersions>({ rows: [], source: "occurrence" }),
-    decoupage ? lire(() => vitalsBreakdown(f, decoupage)) : sansLecture(null),
+    // Angle mort (zone 6) : le COMPTE exact vient de la matrice de concordance (F57),
+    // jamais de la liste plafonnée à 50 couples (CP13) ; l'existence du robot, des cartes.
+    // Un filtre que le synthétique ne porte pas est un refus dit, pas une panne.
+    blocs.angles ? lireOuRefus(() => correlationConcordance(f)) : sansLecture(null),
+    blocs.angles ? lireOuRefus(() => correlationCards(f)) : sansLecture(null),
+    // Classement : 200 groupes lus, ordonnés ENSUITE par gravité (CP1 : la lecture
+    // coupe par volume ; la troncature restante est dite).
+    decoupage ? lire(() => vitalsBreakdown(f, decoupage, DECOUPAGE_LUS)) : sansLecture(null),
     // Vues préréglées (§ 3.6) et releases comparées (§ 3.2) : marqueurs de
     // déploiement et releases de la fenêtre, navigateurs et pays mesurés.
     lire(() => listDeploys(f, 20)),
@@ -605,28 +628,74 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 ? ` Aucune série de référence : ${deltasVitaux.note}.`
                 : ""
           }`;
-  // L'historique découpe ses JOURS dans le fuseau de l'application (`queries-grid`) :
-  // sa grille est celle de `dailyTraffic` (14 jours, vides compris), ou, s'il n'a pas
-  // pu être lu, les 14 derniers jours de ce fuseau.
-  const jours =
-    traffic.ok && traffic.data.length > 0
-      ? traffic.data.map((t) => cleJour(t.day))
-      : joursLocaux(GRID_DAYS, fuseau, Date.now());
-  const debutsJours = jours.map((j) => Date.parse(j));
-  const pointsTrafic = traffic.ok
-    ? alignerSeaux(
-        traffic.data.map((t) => ({ bucket: cleJour(t.day), pageviews: Number(t.pageviews), errors: Number(t.errors) })),
-        debutsJours,
-        true,
-      ).map((r, i) => ({ t: jours[i], pageviews: r?.pageviews ?? null, errors: r?.errors ?? null }))
-    : [];
-  const pointsLcpJour = dailyLcp.ok
-    ? alignerSeaux(
-        dailyLcp.data.map((r) => ({ bucket: cleJour(r.bucket), p75: r.p75 == null ? null : Number(r.p75) })),
-        debutsJours,
-        false,
-      ).map((r, i) => ({ t: jours[i], p75: r?.p75 ?? null }))
-    : [];
+  // ─── Zone 6 — heures × route en angle mort (F13, F57) ───
+  const etatAngle: EtatAngleMort | null = !blocs.angles
+    ? null
+    : !concordance.ok || !cartesRobot.ok || concordance.data === null || cartesRobot.data === null
+      ? { kind: "echec" }
+      : concordance.data.refus !== null || cartesRobot.data.refus !== null
+        ? { kind: "refus", raison: concordance.data.refus ?? cartesRobot.data.refus ?? "filtre non porté par le robot" }
+        : // Le robot existe s'il a au moins un passage sur le périmètre (`correlationCards`).
+          !cartesRobot.data.data.some((c) => c.syn_latency_avg != null)
+          ? { kind: "sans_robot" }
+          : {
+              kind: "ok",
+              heures: heuresAngleMort(concordance.data.data.cellules),
+              pire: concordance.data.data.anglesMortsParRoute[0]
+                ? {
+                    route: concordance.data.data.anglesMortsParRoute[0].route,
+                    heures: concordance.data.data.anglesMortsParRoute[0].heures,
+                    href: lien("/correlation", { serie: concordance.data.data.anglesMortsParRoute[0].serie }),
+                  }
+                : null,
+            };
+
+  // ─── Zone 7 — segments les plus dégradés (F13) ───
+  // Le vital qui pilote le classement (`vital=`, défaut LCP) : le découpage ne lit que
+  // LCP, INP et CLS (CP2) — FCP et TTFB sont refusés, dits, et le LCP classe.
+  const vitalDemande = lireEtatDeVue("/", paramReader(sp)).etat.vital ?? "LCP";
+  const vitalClasse: VitalDecoupe = estVitalDecoupe(vitalDemande) ? vitalDemande : "LCP";
+  const noteVital = estVitalDecoupe(vitalDemande)
+    ? null
+    : `classement ${vitalDemande} non disponible : le découpage ne lit que LCP, INP et CLS — classé par LCP p75.`;
+  const segments =
+    decoupage && decoupe.ok && decoupe.data
+      ? lignesSegments(decoupe.data.rows, {
+          vital: vitalClasse,
+          tri: triDecoupage,
+          ensemble: vitals.ok ? (byName[vitalClasse]?.p75 ?? null) : null,
+          libelle: groupLabel,
+          // Une route ouvre son panneau sur `/pages` (§ 3.3) ; toute autre dimension,
+          // `/pages` filtré ; « Inconnu », la condition `is_null`.
+          lien: (valeur) =>
+            decoupage === "route" && valeur !== null
+              ? lien("/pages", { panel: ecrirePanel({ type: "route", id: valeur }) })
+              : breakdownDrillHref("/pages", query, decoupage, valeur, schema),
+          description: (valeur, mesures) => groupDescription(decoupage, valeur, mesures, `mesure(s) ${vitalClasse}`),
+        })
+      : null;
+  const ensembleVital = vitals.ok ? byName[vitalClasse] : undefined;
+  const referenceSegments = ensembleVital
+    ? {
+        libelle: "Ensemble (toute la population filtrée)",
+        valeurs: {
+          pilote: `${vitalClasse} p75 ${formater(formatDuVital(vitalClasse), ensembleVital.p75)}`,
+          volume: formater("count", ensembleVital.n),
+          lcp: formater("ms", byName.LCP?.p75 ?? null),
+          inp: formater("ms", byName.INP?.p75 ?? null),
+          cls: formater("cls", byName.CLS?.p75 ?? null),
+        },
+      }
+    : null;
+
+  // ─── Zone 8 — nouvelle release face à la précédente (F13) ───
+  // Lues sans le filtre `release` de l'URL (`fToutesReleases`) : sous `release=B`, A
+  // n'aurait aucune session, et la comparaison ne dirait rien.
+  const statsRelease = (v: string): ReleaseStats => {
+    const ligne = versionsFenetre.ok ? versionsFenetre.data.rows.find((r) => r.version === v) : undefined;
+    return ligne ? statsDeVersion(ligne) : { release: v, sessions: 0, lcp_p75: null, inp_p75: null, sessionsEnErreur: null };
+  };
+  const lienRelease = (v: string) => lien("/", { release: v, cmp: null, rel_a: null, rel_b: null });
 
   return (
     <div className="animate-fade-up">
@@ -746,18 +815,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </SectionErreur>
       </div>
 
-      {blocs.reseau && (
-        <SectionErreur titre="Décomposition réseau du TTFB">
-          {vitals.ok ? (
-            <PhasesReseau vitals={byName} periodLabel={period.label} />
-          ) : (
-            <div className="mb-6">
-              <EchecLecture titre="Décomposition réseau du TTFB" />
-            </div>
-          )}
-        </SectionErreur>
-      )}
-
       {/* Zone 5 — HERO (P1) : il répond à la question de l'écran, au-dessus du pli à
           1440 × 900. Trois petits multiples, trois unités, trois échelles. */}
       {blocs.hero && (
@@ -788,194 +845,235 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       )}
 
       {/* Zone 6 — la dégradation coïncide-t-elle avec la charge ou avec des erreurs ?
-          Trois panneaux empilés, un axe chacun (P5). */}
-      {blocs.charge && (
-        <div className="mb-6 min-w-0">
-          <SectionErreur titre="Charge, erreurs et LCP">
-            <ChargeErreursLcp
-              {...communSeries}
-              mode={modeSeries}
-              lectures={{
-                vues: vues,
-                erreurs: serieErreurs.ok && serieErreurs.data ? { ok: true, data: serieErreurs.data } : { ok: false, raison: "non lue" },
-                lcp: serieDe("LCP"),
-                lcpPrecedent: precedenteDe(0),
-              }}
-            />
-          </SectionErreur>
+          Trois panneaux empilés, un axe chacun (P5) — 8/12 ; à côté, 4/12, les heures
+          où le robot dit « ok » et les visiteurs attendaient (angle mort). */}
+      {(blocs.charge || etatAngle) && (
+        <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-12">
+          {blocs.charge && (
+            <div className={`min-w-0 ${etatAngle ? "xl:col-span-8" : "xl:col-span-12"}`}>
+              <SectionErreur titre="Charge, erreurs et LCP">
+                <ChargeErreursLcp
+                  {...communSeries}
+                  mode={modeSeries}
+                  lectures={{
+                    vues: vues,
+                    erreurs:
+                      serieErreurs.ok && serieErreurs.data ? { ok: true, data: serieErreurs.data } : { ok: false, raison: "non lue" },
+                    lcp: serieDe("LCP"),
+                    lcpPrecedent: precedenteDe(0),
+                  }}
+                />
+              </SectionErreur>
+            </div>
+          )}
+          {etatAngle && (
+            <div className={`min-w-0 ${blocs.charge ? "xl:col-span-4" : "xl:col-span-12"}`}>
+              <SectionErreur titre={LIBELLE_ANGLE_MORT}>
+                <TuileAngleMort
+                  etat={etatAngle}
+                  href={`${lien("/correlation")}#angles-morts`}
+                  regle={regleAngleMort(THRESHOLDS.LCP[0])}
+                  plage={period.label}
+                />
+              </SectionErreur>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Découpage (P6.3) : les mêmes Web Vitals, répartis par dimension. Chaque
-          groupe ouvre la surface de détail avec la MÊME plage et le filtre du
-          groupe en plus — jamais à la place des filtres déjà posés. */}
+      {/* Zone 7 — segments classés par GRAVITÉ (P3, IP-Label « top offenders ») :
+          p75 du vital choisi, écart à l'ensemble, échantillon faible en fin. Une
+          route ouvre son panneau sur `/pages`, une autre dimension `/pages` filtré. */}
       {decoupage && (
-        <SectionErreur titre="Web Vitals par dimension">
+        <SectionErreur titre="Segments les plus dégradés">
+          {triLu.ignore && (
+            <p role="note" className="mb-2 text-xs text-ink-soft" data-testid="impact-avertissement">
+              {triLu.ignore}
+            </p>
+          )}
+          {noteVital && (
+            <p role="note" className="mb-2 text-xs text-ink-soft" data-testid="impact-vital-refuse">
+              {noteVital}
+            </p>
+          )}
           {!decoupe.ok ? (
             <div className="mb-6">
-              <EchecLecture titre="Web Vitals par dimension" />
+              <EchecLecture titre="Segments les plus dégradés" />
             </div>
           ) : (
-            decoupe.data && (
-              <Breakdown
-                title="Web Vitals par dimension"
-                tabs={breakdownTabs("/", query, decoupage, dispoDecoupage, {
-                  hours: businessHours ? "business" : null,
-                  tri: triDecoupage === "volume" ? "volume" : null,
-                })}
-                notice={BREAKDOWN_NOTICES[decoupage]}
-                items={vitalsBreakdownClasse(
-                  { pathname: "/", query, schema, dimension: decoupage },
-                  decoupe.data.rows,
-                  { tri: triDecoupage, ensembleLcp: vitals.ok ? (byName.LCP?.p75 ?? null) : null },
-                )}
-                columns={triDecoupage === "gravite" ? ["Mesures LCP", ...VITALS_BREAKDOWN_COLUMNS] : VITALS_BREAKDOWN_COLUMNS}
-                groups={decoupe.data.groups}
-                truncated={decoupe.data.truncated}
-                measureLabel={triDecoupage === "gravite" ? "LCP p75" : "Mesures"}
-                emptyLabel={`Aucune mesure LCP, INP ou CLS sur ${period.label}.`}
-                tri={triDecoupage}
-                triHref={{ gravite: hrefTri(null), volume: hrefTri("volume") }}
-                avertissement={triLu.ignore}
-                reference={
-                  vitals.ok && byName.LCP
-                    ? `Écart au LCP p75 de l'ensemble (toute la population filtrée) : ${formater("ms", byName.LCP.p75)} sur ${byName.LCP.n.toLocaleString("fr-FR")} mesures.`
-                    : null
-                }
-              />
+            decoupe.data &&
+            segments && (
+              <>
+                <nav aria-label="Vital qui classe les segments" className="mb-2 flex flex-wrap items-center gap-1 text-xs">
+                  <span className="text-ink-soft">Classé par :</span>
+                  {VITAUX_DECOUPES.map((v) => (
+                    <Link
+                      key={v}
+                      href={`/?${new URLSearchParams([...baseParams.entries()].filter(([k]) => k !== "vital").concat(v === "LCP" ? [] : [["vital", v]])).toString()}`}
+                      scroll={false}
+                      aria-current={v === vitalClasse ? "true" : undefined}
+                      data-testid={`impact-vital-${v}`}
+                      className={`rounded-md border px-2 py-0.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
+                        v === vitalClasse ? "border-perf/50 bg-perf/10 text-perf" : "border-line text-ink-soft hover:text-ink"
+                      }`}
+                    >
+                      {v} p75
+                    </Link>
+                  ))}
+                </nav>
+                <ImpactTable
+                  titre="Segments les plus dégradés"
+                  onglets={breakdownTabs("/", query, decoupage, dispoDecoupage, {
+                    ...contexte,
+                    hours: businessHours ? "business" : null,
+                    tri: triDecoupage === "volume" ? "volume" : null,
+                    vital: vitalClasse === "LCP" ? null : vitalClasse,
+                  })}
+                  tri={triDecoupage}
+                  // `impact` attend le compte des mesures « Mauvais » par groupe (B2) : barré, avec sa raison.
+                  triHref={{ gravite: hrefTri(null), volume: hrefTri("volume"), impact: null, fourni: null }}
+                  reference={referenceSegments}
+                  referenceRaison={
+                    vitals.ok ? `aucune mesure ${vitalClasse} sur ${period.label}` : "le p75 de l'ensemble n'a pas pu être lu"
+                  }
+                  lignes={segments.lignes}
+                  colonnes={["LCP p75", "INP p75", "CLS p75"]}
+                  unitePilote={vitalClasse === "CLS" ? "cls" : "ms"}
+                  volumeLibelle={`Mesures ${vitalClasse}`}
+                  groupes={decoupe.data.groups}
+                  tronque={decoupe.data.truncated}
+                  notice={
+                    decoupe.data.truncated
+                      ? `${BREAKDOWN_NOTICES[decoupage]} Les ${formater("count", DECOUPAGE_LUS)} groupes les plus mesurés sont classés ; ${formater("count", decoupe.data.groups - decoupe.data.rows.length)} autres, moins mesurés, ne le sont pas.`
+                      : BREAKDOWN_NOTICES[decoupage]
+                  }
+                />
+              </>
             )
           )}
         </SectionErreur>
       )}
 
-      {/* Historique de santé 14 j (fenêtre fixe, comme les anomalies) :
-          heatmap jour × heure + courbes de volume et de p75 LCP associées.
-          Rendu SEULEMENT si le bloc est allumé : éteint, ses lectures ne sont pas
-          lancées, et l'ancien « Pas assez de données sur 14 jours » affiché à sa
-          place décrivait une lecture qui n'avait pas eu lieu. */}
-      {blocs.historique && (
-      <section className="card mt-6 p-4">
-        <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-2">
-          {/* La bulle d'aide OUVRE le titre au lieu de le clore : posée après un
-              intitulé long, sa bulle de 288 px centrée sortait de l'écran par la
-              droite et portait la page à 493 px sur une fenêtre de 390. En tête
-              de titre, elle s'ouvre toujours vers l'intérieur de la page. */}
-          <h2 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            <GlossaryTip id="healthGrid" />
-            Historique de santé — {GRID_DAYS} derniers jours
-          </h2>
-          {/* filtre heures ouvrées (Lun–Ven, 8h–19h) — ne montre que les créneaux à trafic attendu */}
-          <div className="ml-auto flex gap-0.5 rounded-lg border border-line bg-panel2 p-0.5">
-            <Link
-              href={hrefWith(null)}
-              scroll={false}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                !businessHours ? "bg-panel text-ink shadow-sm ring-1 ring-line" : "text-ink-faint hover:text-ink-soft"
-              }`}
-            >
-              24 h/24
-            </Link>
-            <Link
-              href={hrefWith("business")}
-              scroll={false}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                businessHours ? "bg-panel text-ink shadow-sm ring-1 ring-line" : "text-ink-faint hover:text-ink-soft"
-              }`}
-            >
-              Heures ouvrées
-            </Link>
-          </div>
-        </div>
-        <p className="mb-4 text-xs text-ink-faint">
-          Fenêtre fixe (indépendante du filtre période) · une case = une heure, sa couleur = la part de
-          mesures « good ».{" "}
-          {businessHours
-            ? "Vue Lun–Ven, 8h–19h."
-            : "Une case vide = aucune page vue ce créneau (le RUM n'enregistre que le trafic réel) — les nuits/week-ends creux sont normaux."}
-        </p>
-        <SectionErreur titre="Heatmap de santé">
-          {!grid.ok ? (
-            <EchecLecture titre="Heatmap de santé" />
-          ) : grid.data.length > 0 ? (
-            <HealthHeatmap
-              jours={joursLocaux(GRID_DAYS, fuseau)}
-              cellules={grid.data}
-              fuseau={fuseau}
-              zoomHref={gabaritZoomEcran}
-              businessOnly={businessHours}
-            />
-          ) : (
-            <p className="py-10 text-center text-sm text-ink-faint">
-              Pas assez de données sur 14 jours — la heatmap se remplit au fil des mesures.
-            </p>
-          )}
-        </SectionErreur>
-
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div>
-            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              Volume & fiabilité par jour
-            </h3>
-            <SectionErreur titre="Volume & fiabilité par jour">
-              {!traffic.ok ? (
-                <EchecLecture titre="Volume & fiabilité par jour" />
-              ) : traffic.data.length ? (
-                <TrafficTimeseries
-                  grille={jours}
-                  points={pointsTrafic}
-                  seauSecondes={86_400}
-                  fuseau={fuseau}
-                  libelleErreurs="Occurrences d'erreurs, toutes sources"
-                />
-              ) : (
-                <p className="py-12 text-center text-sm text-ink-faint">Pas de données.</p>
-              )}
-            </SectionErreur>
-          </div>
-          <div>
-            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              p75 LCP par jour
-            </h3>
-            <SectionErreur titre="p75 LCP par jour">
-              {!dailyLcp.ok ? (
-                <EchecLecture titre="p75 LCP par jour" />
-              ) : dailyLcp.data.length ? (
-                <VitalsTimeseries
-                  vital="LCP"
-                  grille={jours}
-                  points={pointsLcpJour}
-                  seauSecondes={86_400}
-                  fuseau={fuseau}
-                />
-              ) : (
-                <p className="py-12 text-center text-sm text-ink-faint">Pas de données.</p>
-              )}
-            </SectionErreur>
-          </div>
-        </div>
-      </section>
-      )}
-
-      {/* Le bloc décide LUI-MÊME de s'afficher : sous deux versions, une
-          « comparaison » d'une ligne n'apprend rien (cf. VersionsTable). */}
+      {/* Zone 8 — la dernière release face à la précédente, même fenêtre (§ 3.2). La
+          règle de choix est écrite ; sous deux releases, la comparaison se tait et dit
+          pourquoi. */}
       {blocs.versions && (
-        <SectionErreur titre="Comparaison des versions">
-          {versions.ok ? (
-            <VersionsTable comparaison={versions.data} periodLabel={period.label} />
-          ) : (
-            <div className="mt-6">
-              <EchecLecture titre="Comparaison des versions" />
-            </div>
-          )}
-        </SectionErreur>
+        <section className="mb-6 min-w-0" aria-labelledby="release-titre" data-testid="zone-release">
+          <h2 id="release-titre" className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+            Nouvelle release face à la précédente
+          </h2>
+          <SectionErreur titre="Nouvelle release face à la précédente">
+            {!versionsFenetre.ok ? (
+              <EchecLecture titre="Nouvelle release face à la précédente" />
+            ) : !releases.ok ? (
+              <div className="card p-4" data-testid="release-indisponible">
+                <EtatSurface compact etat={{ kind: "partiel", raison: `comparaison désactivée : ${releases.raison}` }} />
+              </div>
+            ) : (
+              <ReleaseCompare
+                a={statsRelease(releases.relA)}
+                b={statsRelease(releases.relB)}
+                plage={period.label}
+                source={versionsFenetre.data.source}
+                regleChoix={releases.regle}
+                hrefs={{ a: lienRelease(releases.relA), b: lienRelease(releases.relB) }}
+                toutesLesVersions={<VersionsTable comparaison={versionsFenetre.data} periodLabel={period.label} />}
+              />
+            )}
+          </SectionErreur>
+        </section>
       )}
 
+      {/* Zone 9 — historique 14 jours fixes, jour × heure dans le fuseau de l'app,
+          échelle SÉQUENTIELLE (90 % et 50 % ne sont pas des seuils publiés : R-S). Une
+          case ouvre son heure en instants UTC. Rendu seulement si le bloc est allumé. */}
+      {blocs.historique && (
+        <div className="mb-6 min-w-0">
+          <SectionErreur titre="Historique 14 jours">
+            <Figure
+              titre={`Historique ${GRID_DAYS} jours`}
+              aide="healthGrid"
+              id="historique"
+              etat={
+                !grid.ok
+                  ? { kind: "erreur", titre: `Historique ${GRID_DAYS} jours` }
+                  : grid.data.length === 0
+                    ? { kind: "vide", population: "mesure Web Vitals", plage: `les ${GRID_DAYS} derniers jours` }
+                    : undefined
+              }
+              meta={
+                <>
+                  <span data-testid="historique-fenetre">
+                    {GRID_DAYS} jours fixes, indépendants de la période ; le jour en cours est incomplet
+                  </span>
+                  <span>une case = une heure, fuseau de l&apos;app ({fuseau})</span>
+                  <span>légende : % de mesures Bon, pondéré (LCP ×2)</span>
+                </>
+              }
+              lecture={
+                businessHours
+                  ? "Vue Lun–Ven, 8 h–19 h. Teinte d'une seule couleur : plus foncée, plus de mesures « Bon » ; aucune couleur de verdict."
+                  : "Une case vide : aucune donnée sur ce créneau (le RUM n'enregistre que le trafic réel). Teinte d'une seule couleur : plus foncée, plus de mesures « Bon » ; aucune couleur de verdict."
+              }
+            >
+              {/* Heures ouvrées (Lun–Ven, 8 h–19 h) : les créneaux où l'on attend du trafic. */}
+              <div className="mb-3 flex w-fit gap-0.5 rounded-lg border border-line bg-panel2 p-0.5">
+                <Link
+                  href={hrefWith(null)}
+                  scroll={false}
+                  aria-current={!businessHours ? "true" : undefined}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                    !businessHours ? "bg-panel text-ink shadow-sm ring-1 ring-line" : "text-ink-soft hover:text-ink"
+                  }`}
+                >
+                  24 h/24
+                </Link>
+                <Link
+                  href={hrefWith("business")}
+                  scroll={false}
+                  aria-current={businessHours ? "true" : undefined}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                    businessHours ? "bg-panel text-ink shadow-sm ring-1 ring-line" : "text-ink-soft hover:text-ink"
+                  }`}
+                >
+                  Heures ouvrées
+                </Link>
+              </div>
+              {grid.ok && (
+                <HealthHeatmap
+                  jours={joursLocaux(GRID_DAYS, fuseau)}
+                  cellules={grid.data}
+                  fuseau={fuseau}
+                  zoomHref={gabaritZoomEcran}
+                  businessOnly={businessHours}
+                />
+              )}
+            </Figure>
+          </SectionErreur>
+        </div>
+      )}
+
+      {/* Anomalies LCP (24 h) : la section existe toujours — zéro anomalie est une
+          information (P6). Cible du badge du bandeau de santé. */}
       {blocs.anomalies && (
         <SectionErreur titre="Anomalies">
           {health.ok ? (
-            <AnomalyTable health={health.data} />
+            <AnomalyTable
+              health={health.data}
+              filtree={health.data.factors.some((x) => x.key === "anomalies" && x.raisonNull === "sous filtre")}
+              lien={(a) => {
+                const debut = new Date(a.bucket).getTime();
+                return lien("/pages", {
+                  app: a.app_id,
+                  route: a.route,
+                  period: null,
+                  from: isoSansMs(debut),
+                  to: isoSansMs(Math.min(debut + 3_600_000, maintenant)),
+                });
+              }}
+            />
           ) : (
-            <div className="mt-6">
+            <div className="mb-6">
               <EchecLecture titre="Anomalies" />
             </div>
           )}
@@ -1002,63 +1100,3 @@ function RangeeTuiles({ tuiles, classes }: { tuiles: Tuile[]; classes: string })
     </div>
   );
 }
-
-/** Les phases réseau qui composent le TTFB, dans l'ordre chronologique. Libellés
- *  français à l'affichage, noms bruts pour la lecture des données. */
-const PHASES: { cle: string; label: string }[] = [
-  { cle: "REDIRECT", label: "Redirection" },
-  { cle: "DNS", label: "DNS" },
-  { cle: "TCP", label: "Connexion" },
-  { cle: "TLS", label: "TLS" },
-  { cle: "REQUEST", label: "Requête" },
-  { cle: "RESPONSE", label: "Réponse" },
-];
-
-/**
- * Décomposition du TTFB. Sans elle, la vue d'ensemble donnait le SYMPTÔME — « la
- * première donnée arrive en 900 ms » — sans jamais la cause : un DNS lent, une
- * poignée de main TLS coûteuse et un serveur lent produisent le même TTFB et
- * appellent trois corrections opposées.
- *
- * Aucune requête supplémentaire : `vitalsP75` groupe sur `m.name` sans filtrer,
- * ces lignes étaient déjà dans le résultat, simplement jamais lues.
- *
- * Rendu seulement si au moins une phase a des mesures — un parc qui tourne encore
- * sur une version antérieure du capteur n'en émet pas, et six cartes vides
- * feraient croire à une panne.
- */
-function PhasesReseau({
-  vitals,
-  periodLabel,
-}: {
-  vitals: Record<string, { p75: number | null; p50: number | null; n: number } | undefined>;
-  periodLabel: string;
-}) {
-  // La redirection vaut 0 sur l'immense majorité des navigations : lui donner une
-  // carte permanente gâcherait une place pour n'afficher que des zéros.
-  const visibles = PHASES.filter(
-    (p) => (vitals[p.cle]?.n ?? 0) > 0 && (p.cle !== "REDIRECT" || (vitals[p.cle]?.p75 ?? 0) > 0),
-  );
-  if (visibles.length === 0) return null;
-
-  return (
-    <section className="mb-6">
-      <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-        D&apos;où vient le TTFB — décomposition réseau
-      </h2>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        {visibles.map((p) => (
-          <VitalCard
-            key={p.cle}
-            name={p.label}
-            p75={vitals[p.cle]?.p75 ?? null}
-            median={vitals[p.cle]?.p50 ?? null}
-            n={vitals[p.cle]?.n ?? 0}
-            periodLabel={periodLabel}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-

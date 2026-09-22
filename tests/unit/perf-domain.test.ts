@@ -122,3 +122,40 @@ describe("F11 — sparklineDeCompte : valeur et sparkline comptent la même popu
     expect(sparklineDeCompteF11([], debuts, 0)).toEqual([0, 0, 0, 0]);
   });
 });
+
+// ─────────────── F13 — choisirRelB (CP3, § 3.2) : le réexport de F08 ───────────────
+import { choisirRelB as choisirRelBF13 } from "../../apps/console/lib/perf-domain";
+import { choisirReleases as choisirReleasesF13 } from "../../apps/console/lib/presets";
+
+describe("F13 — choisirRelB : la règle du dernier déploiement (CP3)", () => {
+  // Triées par sessions, comme `comparaisonVersions` : le volume n'est pas la date.
+  const versions = [
+    { version: "1.4.1", sessions: 5210 },
+    { version: "1.4.2", sessions: 1840 },
+    { version: "(non renseignée)", sessions: 420 },
+  ];
+
+  it("est la fonction de lib/presets.ts, pas une copie", () => {
+    expect(choisirRelBF13).toBe(choisirReleasesF13);
+  });
+
+  it("rel_b = version du dernier marqueur si elle a des mesures, même moins volumineuse", () => {
+    const choix = choisirRelBF13([{ version: "1.4.2" }, { version: "1.4.1" }], versions);
+    expect(choix.relB).toBe("1.4.2");
+    expect(choix.relA).toBe("1.4.1");
+    expect(choix.regle).toBe("1.4.2 : dernier déploiement déclaré ; 1.4.1 : déploiement précédent");
+  });
+
+  it("dernier marqueur sans mesure sur la fenêtre : la release de plus grand volume, et la règle le dit", () => {
+    const choix = choisirRelBF13([{ version: "2.0.0" }], versions);
+    expect(choix.relB).toBe("1.4.1");
+    expect(choix.regle).toContain("le dernier déploiement déclaré, 2.0.0, n'a aucune mesure sur la fenêtre");
+  });
+
+  it("« (non renseignée) » n'est jamais choisie ; une seule release → indisponible, avec sa raison", () => {
+    const choix = choisirRelBF13([], [{ version: "(non renseignée)", sessions: 900 }, { version: "3.0.0", sessions: 10 }]);
+    expect(choix.relB).toBe("3.0.0");
+    expect(choix.relA).toBeNull();
+    expect(choix.indisponible).toBe("moins de deux releases sur la fenêtre");
+  });
+});
