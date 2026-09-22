@@ -4,7 +4,17 @@
 // lecture ne sait pas appliquer.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handle } from "../../apps/console/lib/api/handle";
+import { buildOpenApi } from "../../apps/console/lib/api/openapi";
 import { UnsupportedFilterError } from "../../apps/console/lib/query-compiler";
+
+// Lectures du tracing simulées telles que la console les rend DEPUIS F59 : la
+// couverture porte `err` (tuile d'écran), que l'API v1 ne publie pas.
+const tracing = vi.hoisted(() => ({
+  traceCoverage: vi.fn(async () => ({ total: 12, correlated: 9, back_total: 15, front_p75: 820, back_p75: 310, err: 3 })),
+  apiCalls: vi.fn(async () => [{ url: "/api/x", method: "GET", n: 12, front_p75: 820, back_p75: 310, err: 3 }]),
+  backRoutes: vi.fn(async () => [{ route: "/api/x", n: 15, p75: 300, p95: 900, err: 1 }]),
+}));
+vi.mock("@/lib/queries-tracing", () => tracing);
 
 // La lecture simulée : même donnée quel que soit l'appel, pour isoler ce que l'enveloppe ajoute.
 const lecture = vi.fn();
@@ -151,5 +161,26 @@ describe("ETag et cache", () => {
     expect(reponse.headers.get("Cache-Control")).toBe("private, max-age=15");
     expect(reponse.headers.get("Vary")).toBe("Origin, Authorization, Cookie");
     expect(reponse.headers.get("Access-Control-Allow-Origin")).toBe("https://front.test");
+  });
+});
+
+describe("forme publiée : une lecture enrichie pour un écran ne change pas l'API", () => {
+  it("GET /api/v1/tracing (F59) : `coverage` = les champs du schéma OpenAPI, sans `err`", async () => {
+    const { GET: tracingGET } = await import("../../apps/console/app/api/v1/tracing/route");
+    const url = "http://console.test/api/v1/tracing?app=app-a";
+    const reponse = await tracingGET(
+      { url, nextUrl: new URL(url), headers: new Headers({ authorization: "Bearer tok-a" }), cookies: { get: () => undefined } } as never,
+      { params: Promise.resolve({}) },
+    );
+    expect(reponse.status).toBe(200);
+    const { data } = await reponse.json();
+    const schemas = (buildOpenApi().components as { schemas: Record<string, { properties: Record<string, unknown> }> }).schemas;
+    expect(Object.keys(data).sort()).toEqual(["apiCalls", "backRoutes", "coverage"]);
+    expect(Object.keys(data.coverage).sort()).toEqual(Object.keys(schemas.TraceCoverage.properties).sort());
+    expect(data.coverage).toEqual({ total: 12, correlated: 9, back_total: 15, front_p75: 820, back_p75: 310 });
+    expect(Object.keys(data.apiCalls[0]).sort()).toEqual(Object.keys(schemas.ApiCallRow.properties).sort());
+    expect(Object.keys(data.backRoutes[0]).sort()).toEqual(Object.keys(schemas.BackRouteRow.properties).sort());
+    // Le périmètre du jeton atteint la lecture : app-a, jamais « toutes les apps ».
+    expect(tracing.traceCoverage).toHaveBeenCalledWith(expect.objectContaining({ app: "app-a" }));
   });
 });
