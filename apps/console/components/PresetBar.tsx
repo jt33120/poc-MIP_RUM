@@ -121,8 +121,10 @@ export function PresetBar({ vues, actif }: { vues: VuePrereglee[]; actif: string
                   scroll={false}
                   className={`${PASTILLE} ${
                     active
-                      ? "border-perf/50 bg-perf/10 text-perf"
-                      : "border-line text-ink-soft hover:border-perf/40 hover:text-perf"
+                      ? // Même règle que les badges de santé (F01) : le TEXTE sur la teinte
+                        // `bg-perf/10` passe en `perf-ink` en clair (4,5:1), `perf` en sombre.
+                        "border-perf/50 bg-perf/10 text-perf-ink dark:text-perf"
+                      : "border-line text-ink-soft hover:border-perf/40 hover:text-perf-ink dark:hover:text-perf"
                   } ${vue.origine === "personnelle" ? "italic" : ""}`}
                 >
                   {vue.libelle}

@@ -1,209 +1,354 @@
+// SLO — /slo (F63, plan § 5.18).
+//
+// LA QUESTION. « Quels objectifs de service consomment leur budget, et lesquels le
+// brûlent en ce moment ? » Des BARRES de budget alignées sur une échelle commune
+// (0-150 %), plus des jauges : dix jauges ne se comparent pas, et une jauge 0-100 ne
+// sait pas dire un dépassement (le consommé va jusqu'à 999 %).
+//
+// CE QUE L'ÉCRAN N'AFFIRME PAS.
+//   - Un SLO sans aucune mesure n'est ni tenu ni manqué : il est compté « non
+//     mesurable », et nulle part comme « 0 % consommé » (V3).
+//   - Aucune couleur sous 100 % : « épuisé » (≥ 100 %) est la seule définition ; les
+//     repères 50 / 75 % sont gris (R-S).
+//   - Aucun historique : `slo_status()` est un instantané ; la figure « dans le
+//     temps » le dit (« Non collecté », B6) au lieu de dessiner une série.
+//   - Aucun bouton d'écriture pour un viewer ou une session de démonstration (V9).
+//
+// CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8) : `lire()` ne lève pas. PAS de
+// `<Suspense>` ni de `loading.tsx` au-dessus de l'écran.
 import { cookies } from "next/headers";
-import { PageHeader } from "@/components/PageHeader";
-import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
-import { Gauge, type GaugeTone } from "@/components/charts/Gauge";
+import { BudgetBars, alternativeBudget } from "@/components/charts/BudgetBars";
+import { Figure } from "@/components/charts/Figure";
+import { KpiTile } from "@/components/charts/KpiTile";
 import { FilterProblemNotice, FiltersNotAppliedNote } from "@/components/FilterProblemNotice";
-import type { SearchParams } from "@/lib/filters";
-import { pageFilters } from "@/lib/page-filters";
-import { metricLabel, SLO_METRICS } from "@/lib/queries-v2";
-import { registeredApps } from "@/lib/queries";
-import { listSlo, sloStatus } from "@/lib/queries-alerting";
-import { createSloAction } from "../alerts/actions";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
+import { PageHeader } from "@/components/PageHeader";
 import { SloRow } from "@/components/slo/SloStatusRow";
-import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
+import { CadreEtat } from "@/components/states/EtatSurface";
+import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { TousEteints } from "@/components/TousEteints";
+import { getUser } from "@/lib/auth";
+import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
+import type { SearchParams } from "@/lib/filters";
+import { lire, type Lecture } from "@/lib/lecture";
+import { pageFilters } from "@/lib/page-filters";
+import { registeredApps, type AppItem } from "@/lib/queries";
+import { listSlo, sloStatus, type SloRaw, type SloStatusRow } from "@/lib/queries-alerting";
+import { alertFirings, SLO_METRICS } from "@/lib/queries-v2";
+import { alertesParSlo, comptesSlo, FACTEUR_BURN_RAPIDE, FORMULE_SLO, lignesBudget, metriqueEnClair } from "@/lib/slo-ecran";
+import { createSloAction } from "../alerts/actions";
 
 export const dynamic = "force-dynamic";
+
+const TITRE = "SLO et budget d'erreur";
+/** Fenêtre de la colonne « Alertes sur 7 j » : jours calendaires UTC, jour en cours compris. */
+const JOURS_ALERTES = 7;
+
+/** Lecture non lancée (bloc éteint) : une valeur sûre, jamais affichée comme mesure. */
+const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
+
+const TH = "whitespace-nowrap px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-soft";
 
 export default async function Slo({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const sp = (await searchParams) ?? {};
   const ecran = await pageFilters(sp, "/slo");
-  if (!ecran.ok) return <FilterProblemNotice title="SLO & error-budget" problem={ecran.problem} />;
+  if (!ecran.ok) return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const f = ecran.filters;
-  // Composition de l'écran, lue AVANT les requêtes. Attention aux dépendances
-  // croisées : la liste affiche le statut de chaque SLO, donc `sloStatus` est
-  // encore nécessaire quand le bloc « budget » est éteint mais que la liste est
-  // affichée ; et `listSlo` sert aussi au formulaire, qui s'ouvre déplié tant
-  // qu'aucun SLO n'existe. Seul `registeredApps` ne sert qu'au formulaire.
+  // Composition de l'écran, lue AVANT les requêtes (blocs configurables conservés) :
+  // `budget` = KPI, hero et historique ; `liste` = définitions ; `creation` = formulaire.
   const cat = catalogueDe("/slo")!;
   const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
-  const vide = <T,>(v: T) => Promise.resolve(v);
+  const utilisateur = await getUser();
+  const admin = utilisateur?.role === "admin" && !utilisateur.demo;
 
-  const [statuses, slos, apps] = await Promise.all([
-    blocs.budget || blocs.liste ? sloStatus(f) : vide([]),
-    blocs.liste || blocs.creation ? listSlo(f) : vide([]),
-    blocs.creation ? registeredApps() : vide([]),
+  const [statuts, slos, apps, declenchements] = await Promise.all([
+    blocs.budget || blocs.liste ? lire(() => sloStatus(f)) : sansLecture<SloStatusRow[]>([]),
+    blocs.liste || blocs.creation ? lire(() => listSlo(f)) : sansLecture<SloRaw[]>([]),
+    blocs.creation && admin ? lire(() => registeredApps()) : sansLecture<AppItem[]>([]),
+    blocs.liste ? lire(() => alertFirings(f, JOURS_ALERTES)) : sansLecture(null),
   ]);
-  // slo_status() ne renvoie que les SLO actifs → on indexe pour superposer le statut
-  // sur la liste complète (actifs + désactivés), afin de pouvoir réactiver.
-  const statusById = new Map(statuses.map((s) => [s.slo_id, s]));
+  const luA = new Date().toISOString().slice(11, 19);
+
+  const lignes = statuts.ok ? lignesBudget(statuts.data) : [];
+  const comptes = statuts.ok ? comptesSlo(statuts.data) : null;
+  // slo_status() ne rend que les SLO actifs : on superpose l'état sur la liste
+  // complète (actifs + désactivés), pour pouvoir réactiver.
+  const statutParId = new Map((statuts.ok ? statuts.data : []).map((s) => [s.slo_id, s]));
+  const alertes = declenchements.ok && declenchements.data ? alertesParSlo(declenchements.data.lignes) : null;
+  const listeSlo = slos.ok ? slos.data : [];
+  const kpi = (n: number | undefined) => (comptes ? (n ?? null) : null);
 
   return (
     <div className="animate-fade-up">
       <PageHeader
-        title="SLO & error-budget"
-        sub={
-          <>
-            Part des mesures conformes à l&apos;objectif, budget d&apos;erreur restant et vitesse de
-            consommation (burn-rate) — un burn trop rapide lève une alerte critique.
-          </>
-        }
+        title={TITRE}
+        domain="fiabilite"
+        sub="Quels objectifs de service consomment leur budget, et lesquels le brûlent en ce moment ?"
       />
       <FiltersNotAppliedNote note={ecran.notApplied} />
 
-      {blocs.budget && statuses.length > 0 && (() => {
-        const sloTone = (b: number | null, fast: boolean | null): GaugeTone => {
-          if (fast || (b != null && b >= 100)) return "poor";
-          if (b != null && b >= 75) return "warn";
-          return "good";
-        };
-        const breached = statuses.filter((s) => s.burned_pct != null && s.burned_pct >= 100).length;
-        const fastBurn = statuses.filter((s) => s.fast_burn === true).length;
-        // Un SLO sans mesure n'a pas de budget consommé : une jauge à 0 % le
-        // dirait « intact ». Il est compté à part, pas dessiné.
-        const mesures = statuses.filter((s) => s.burned_pct != null);
-        const sansMesure = statuses.filter((s) => s.attainment == null).length;
-        return (
-          <SupervisionHero
-            layout="wide"
-            chartTitle="Budget d'erreur consommé — par SLO"
-            chart={
-              <div className="flex flex-wrap gap-x-6 gap-y-4">
-                {mesures.slice(0, 10).map((s) => (
-                  <Gauge
-                    key={s.slo_id}
-                    value={s.burned_pct!}
-                    tone={sloTone(s.burned_pct, s.fast_burn)}
-                    label={s.name}
-                    sub={`${s.metric} · ${s.window_days} j`}
-                  />
-                ))}
-              </div>
-            }
-          >
-            <HeroStat label="SLO actifs" value={statuses.length.toLocaleString("fr-FR")} />
-            <HeroStat
-              label="En dépassement"
-              value={breached.toLocaleString("fr-FR")}
-              tone={breached > 0 ? "poor" : "good"}
-              hint="budget d'erreur épuisé"
-            />
-            <HeroStat
-              label="Burn rapide"
-              value={fastBurn.toLocaleString("fr-FR")}
-              tone={fastBurn > 0 ? "warn" : "good"}
-              hint="consommation anormalement vite"
-            />
-            <HeroReading>
-              Chaque jauge = la part du budget d&apos;erreur déjà dépensée sur la fenêtre du SLO (0 % = intact,
-              100 % = objectif tenu tout juste, au-delà = dépassé). Rouge = à traiter. Le détail atteinte /
-              burn-rate est dans le tableau ci-dessous.
-              {sansMesure > 0 &&
-                ` ${sansMesure} SLO sans aucune mesure sur sa fenêtre : ni tenu, ni manqué, et donc sans jauge.`}
-            </HeroReading>
-          </SupervisionHero>
-        );
-      })()}
+      {blocs.budget && (
+        <>
+          {/* ── Zone 2 : KPI (SL1, SL2, SL2b, SL2c). ── */}
+          <SectionErreur titre="Chiffres clés des SLO">
+            <div className="mb-6 grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-4" data-testid="kpi-slo">
+              <KpiTile
+                label="SLO actifs"
+                valeur={kpi(comptes?.actifs)}
+                format="count"
+                raisonNull="lecture en échec"
+                lecture="sans référence : configuration"
+                href="#definitions"
+              />
+              <KpiTile
+                label="Budget épuisé"
+                valeur={kpi(comptes?.epuises)}
+                format="count"
+                raisonNull="lecture en échec"
+                alerte={{ si: ">", valeur: 0, regle: "consommé ≥ 100 % du budget" }}
+                lecture={
+                  comptes && comptes.nonInterpretables > 0
+                    ? `hors ${comptes.nonInterpretables} non interprétable${comptes.nonInterpretables > 1 ? "s" : ""} : plus d'occurrences d'erreurs que de pages vues`
+                    : undefined
+                }
+                href="#budget"
+              />
+              <KpiTile
+                label="Brûlent vite (dernière heure)"
+                valeur={kpi(comptes?.brulent)}
+                format="count"
+                raisonNull="lecture en échec"
+                alerte={{
+                  si: ">",
+                  valeur: 0,
+                  regle: `consommation sur 1 h ≥ ${FACTEUR_BURN_RAPIDE.toLocaleString("fr-FR")} fois le budget`,
+                }}
+                lecture={`une seule fenêtre, donc sensible aux pics courts${
+                  comptes && comptes.burnInconnu > 0
+                    ? ` ; ${comptes.burnInconnu} sans mesure sur la dernière heure (inconnu)`
+                    : ""
+                }`}
+                href="/alerts#pistes-slo"
+              />
+              <KpiTile
+                label="Non mesurables"
+                valeur={kpi(comptes?.nonMesurables)}
+                format="count"
+                raisonNull="lecture en échec"
+                lecture="aucune mesure sur la fenêtre : ni tenu, ni manqué"
+                href="#definitions"
+              />
+            </div>
+          </SectionErreur>
 
-      {/* ----- Création ----- */}
-      {blocs.creation && (
-      <details className="card mb-6" open={!slos.length}>
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-soft transition hover:text-ink">
-          + Nouveau SLO
-        </summary>
-        <form action={createSloAction} className="flex flex-wrap items-end gap-3 border-t border-line p-4">
-          <Field label="App">
-            <select
-              name="app_id"
-              defaultValue={f.app ?? apps[0]?.app_id}
-              className={INPUT_CLASS}
-            >
-              {apps.map((a) => (
-                <option key={a.app_id} value={a.app_id}>
-                  {a.app_id}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Nom">
-            <input name="name" required placeholder="LCP 99% / 28 j" className={`${INPUT_CLASS} w-44`} />
-          </Field>
-          <Field label="Métrique">
-            <select name="metric" defaultValue="LCP" className={INPUT_CLASS}>
-              {SLO_METRICS.map((m) => (
-                <option key={m} value={m}>
-                  {metricLabel(m)}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Objectif (%)">
-            <input
-              name="objective"
-              type="number"
-              step="0.1"
-              min={0.1}
-              max={99.99}
-              required
-              defaultValue={99}
-              className={`${INPUT_CLASS} w-24`}
+          {/* ── Zone 3 : hero, budget consommé par SLO (SL3). ── */}
+          <div className="mb-6">
+            <SectionErreur titre="Budget d'erreur consommé, par SLO">
+              <Figure
+                titre="Budget d'erreur consommé, par SLO"
+                id="budget"
+                meta={
+                  <span>
+                    instantané calculé à {luA} UTC ; chaque SLO sur sa fenêtre glissante jusqu&apos;à maintenant
+                  </span>
+                }
+                etat={!statuts.ok ? { kind: "erreur", titre: "Budget d'erreur consommé, par SLO" } : undefined}
+                alternative={lignes.length > 0 ? alternativeBudget(lignes) : undefined}
+                lecture={
+                  <>
+                    Consommé = (1 − atteinte) ÷ (1 − objectif). Une barre mène à ce qui consomme le budget (pages
+                    du vital, ou erreurs de la route). Le badge « brûle vite » suit la seule dernière heure (facteur{" "}
+                    {FACTEUR_BURN_RAPIDE.toLocaleString("fr-FR")}, origine non documentée).
+                  </>
+                }
+              >
+                {lignes.length > 0 ? (
+                  <BudgetBars
+                    lignes={lignes}
+                    ariaLabel="Budget d'erreur consommé par SLO, échelle commune de 0 à 150 %"
+                    alternative={false}
+                  />
+                ) : (
+                  <CadreEtat ton="neutre" role="status" testId="etat-vide" etat="vide" className="text-center">
+                    <p>Aucun SLO actif sur ce périmètre.</p>
+                    {admin && blocs.creation ? (
+                      <a href="#nouveau-slo" className="mt-2 inline-block font-medium text-brand hover:underline">
+                        Créer un SLO
+                      </a>
+                    ) : (
+                      <p className="mt-1 text-ink-soft">Demandez à un administrateur d&apos;en déclarer un.</p>
+                    )}
+                  </CadreEtat>
+                )}
+              </Figure>
+            </SectionErreur>
+          </div>
+
+          {/* ── Zone 4 : consommation dans le temps (SL4) — B6 manque. ── */}
+          <div className="mb-6">
+            <Figure
+              titre="Consommation du budget dans le temps"
+              id="consommation-temps"
+              etat={{ kind: "non_collecte", manque: "historique de consommation non conservé (instantané seulement)" }}
             />
-          </Field>
-          <Field label="Fenêtre (j)">
-            <input
-              name="window_days"
-              type="number"
-              min={1}
-              max={90}
-              defaultValue={28}
-              className={`${INPUT_CLASS} w-20`}
-            />
-          </Field>
-          <Field label="Route (optionnel)">
-            <input
-              name="route"
-              placeholder="/login (vide = toutes)"
-              className={`${INPUT_CLASS} w-40 font-mono`}
-            />
-          </Field>
-          <button type="submit" data-testid="create-slo" className="btn-accent">
-            Créer
-          </button>
-        </form>
-      </details>
+          </div>
+        </>
       )}
 
+      {/* ── Zone 5 : définitions et état (SL5). ── */}
       {blocs.liste && (
-      <div className="card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-panel2">
-            <tr>
-              <th className="th">SLO</th>
-              <th className="th">Métrique</th>
-              <th className="th">Objectif</th>
-              <th className="th">Fenêtre</th>
-              <th className="th">Atteinte</th>
-              <th className="th text-right">Budget consommé</th>
-              <th className="th"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {slos.map((s) => (
-              <SloRow key={s.id} raw={s} status={statusById.get(s.id)} />
-            ))}
-            {!slos.length && (
-              <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-ink-faint">
-                  {blocs.creation
-                    ? "Aucun SLO — crée le premier ci-dessus."
-                    : "Aucun SLO. Réactive le bloc « Formulaire de création » pour en déclarer un."}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+        <div className="mb-6">
+          <SectionErreur titre="Définitions et état">
+            <Figure
+              titre="Définitions et état"
+              id="definitions"
+              meta={
+                <span>
+                  alertes : déclenchements des {JOURS_ALERTES} derniers jours calendaires UTC, jour en cours compris
+                  {declenchements.ok && declenchements.data?.tronque ? " (plafond atteint : comptes partiels)" : ""}
+                </span>
+              }
+              etat={!slos.ok ? { kind: "erreur", titre: "Définitions et état" } : undefined}
+              lecture={`Métrique : ${FORMULE_SLO}`}
+            >
+              {!declenchements.ok && (
+                <div className="mb-3">
+                  <EchecLecture titre="Alertes sur 7 j" compact />
+                </div>
+              )}
+              {listeSlo.length > 0 ? (
+                <div className="relative overflow-x-auto">
+                  {/* `relative` : les `sr-only` de la table (légende, en-tête « Actions ») sont en
+                      position absolue ; sans ancêtre positionné, ils se plaçaient par rapport à
+                      la PAGE et l'élargissaient à 1 232 px sur une fenêtre de 390 (piège 16). */}
+                  <table className="w-full min-w-max text-sm" data-testid="table-slo">
+                    <caption className="sr-only">Définitions et état des SLO, actifs et désactivés</caption>
+                    <thead className="bg-panel2">
+                      <tr>
+                        <th scope="col" className={`${TH} sticky left-0 bg-panel2`}>
+                          SLO
+                        </th>
+                        <th scope="col" className={TH}>
+                          Métrique
+                        </th>
+                        <th scope="col" className={TH}>
+                          Route
+                        </th>
+                        <th scope="col" className={TH}>
+                          Objectif
+                        </th>
+                        <th scope="col" className={TH}>
+                          Fenêtre
+                        </th>
+                        <th scope="col" className={TH}>
+                          Atteinte
+                        </th>
+                        <th scope="col" className={TH}>
+                          Consommé
+                        </th>
+                        <th scope="col" className={TH}>
+                          Brûle vite
+                        </th>
+                        <th scope="col" className={TH}>
+                          Alertes sur {JOURS_ALERTES} j
+                        </th>
+                        <th scope="col" className={TH}>
+                          Actif
+                        </th>
+                        {admin && (
+                          <th scope="col" className={TH}>
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {listeSlo.map((s) => (
+                        <SloRow
+                          key={s.id}
+                          raw={s}
+                          status={statutParId.get(s.id)}
+                          alertes7j={alertes ? (alertes.get(s.id) ?? 0) : null}
+                          admin={admin}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="py-4 text-center text-sm text-ink-soft">
+                  {admin && blocs.creation
+                    ? "Aucun SLO déclaré : créez le premier ci-dessous."
+                    : admin
+                      ? "Aucun SLO déclaré. Réactivez le bloc « Formulaire de création » pour en déclarer un."
+                      : "Aucun SLO déclaré. Demandez à un administrateur d'en déclarer un."}
+                </p>
+              )}
+            </Figure>
+          </SectionErreur>
+        </div>
+      )}
+
+      {/* ── Zone 6 : création (SL6), administrateurs seulement, repliée dès qu'un SLO existe. ── */}
+      {blocs.creation && admin && (
+        <details id="nouveau-slo" className="card mb-6" open={listeSlo.length === 0}>
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-soft transition hover:text-ink">
+            + Nouvel SLO
+          </summary>
+          {!apps.ok ? (
+            <div className="border-t border-line p-4">
+              <EchecLecture titre="Liste des applications" compact />
+            </div>
+          ) : (
+            <form action={createSloAction} className="flex flex-wrap items-end gap-3 border-t border-line p-4">
+              <Field label="App">
+                <select name="app_id" defaultValue={f.app ?? apps.data[0]?.app_id} className={INPUT_CLASS}>
+                  {apps.data.map((a) => (
+                    <option key={a.app_id} value={a.app_id}>
+                      {a.app_id}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Nom">
+                <input name="name" required placeholder="LCP 99 % / 28 j" className={`${INPUT_CLASS} w-44`} />
+              </Field>
+              <Field label="Métrique">
+                <select name="metric" defaultValue="LCP" className={INPUT_CLASS}>
+                  {SLO_METRICS.map((m) => (
+                    <option key={m} value={m}>
+                      {metriqueEnClair(m)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Objectif (%)">
+                <input
+                  name="objective"
+                  type="number"
+                  step="0.1"
+                  min={0.1}
+                  max={99.99}
+                  required
+                  defaultValue={99}
+                  className={`${INPUT_CLASS} w-24`}
+                />
+              </Field>
+              <Field label="Fenêtre (j)">
+                <input name="window_days" type="number" min={1} max={90} defaultValue={28} className={`${INPUT_CLASS} w-20`} />
+              </Field>
+              <Field label="Route (optionnel)">
+                <input name="route" placeholder="/login (vide = toutes)" className={`${INPUT_CLASS} w-40 font-mono`} />
+              </Field>
+              <button type="submit" data-testid="create-slo" className="btn-accent">
+                Créer
+              </button>
+              <p className="basis-full text-xs leading-relaxed text-ink-soft" data-testid="formule-slo">
+                Métrique : {FORMULE_SLO}
+              </p>
+            </form>
+          )}
+        </details>
       )}
 
       {!blocs.budget && !blocs.creation && !blocs.liste && <TousEteints />}

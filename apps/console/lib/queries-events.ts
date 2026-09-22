@@ -281,11 +281,18 @@ export async function listEventIndex(app: string | null, kind: EventIndexKind | 
   );
 }
 
+/**
+ * `options.valeursDe` (F25, Journal) : une clé d'attribut CHOISIE depuis une facette,
+ * sans valeur encore. Elle ne filtre rien (la population reste celle de `query`) ;
+ * elle demande seulement la facette des valeurs de cette clé, pour que le Journal
+ * propose ses valeurs en puces sous « Valeur exacte ». L'API ne la passe pas.
+ */
 export async function exploreEvents(
   f: EventFilters,
   query: EventQuery,
   page: Pagination,
   cursor: EventCursor | null,
+  options: { valeursDe?: { source: EventAttributeSource; key: string } | null } = {},
 ): Promise<EventExplorerResult> {
   const status = await schemaStatus();
   const empty = (diagnostic: string): EventExplorerResult => ({
@@ -371,11 +378,15 @@ export async function exploreEvents(
       facetAttributes.params,
     );
     let values: EventValueFacet[] = [];
-    if (query.attribute) {
+    // Clé filtrée, ou clé choisie sans valeur : même lecture, sur la population SANS
+    // filtre d'attribut (les autres valeurs de la clé restent proposées).
+    const cleValeurs = query.attribute ?? (query.kind === "event" ? (options.valeursDe ?? null) : null);
+    if (cleValeurs) {
       const facetValues = contexte.make();
       const cte = filteredCte(facetValues, { ...query, attribute: null }, null);
-      const key = facetValues.bind(query.attribute.key);
-      const source = query.attribute.source;
+      const key = facetValues.bind(cleValeurs.key);
+      // `source` vient de l'énumération props|context validée par le parseur.
+      const source = (EVENT_ATTRIBUTE_SOURCES as readonly string[]).includes(cleValeurs.source) ? cleValeurs.source : "props";
       values = await run<EventValueFacet>(
         `${cte}
          select jsonb_typeof(${source} -> ${key}::text) as type,

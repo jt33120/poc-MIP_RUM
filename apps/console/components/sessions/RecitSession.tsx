@@ -20,7 +20,7 @@ export function RecitSession({
   rejeu: Rejeu | null;
   /**
    * Adresse de la vue qui porte la chronologie, quand elle n'est pas celle
-   * affichée (onglet Replay) : l'ancre seule mènerait nulle part.
+   * affichée (onglets autres que le Déroulé, F44) : l'ancre seule mènerait nulle part.
    */
   lienBase?: string;
 }) {

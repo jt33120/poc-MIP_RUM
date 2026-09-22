@@ -170,11 +170,23 @@ async function debordements(page: Page): Promise<string[]> {
   });
 }
 
+/**
+ * Le découpage d'un écran, dans l'une ou l'autre de ses deux grammaires : `Breakdown`
+ * (F05) ou l'`ImpactTable` qui le remplace écran par écran (F13 sur `/`, F14 sur
+ * `/pages`). Mêmes onglets, même drill-down, même alternative textuelle : le test
+ * vérifie le COMPORTEMENT, pas le composant qui le rend.
+ */
+const decoupageDe = (page: Page) => page.locator('[data-testid="breakdown"], [data-testid="impact-table"]').first();
+const lignesDe = (page: Page) =>
+  decoupageDe(page).locator('a[data-testid="breakdown-row"], [data-testid="impact-ligne"] a');
+
+// Le découpage par dimension a quitté `/pages` (F14, § 5.2.4 : doublon de la Vue
+// d'ensemble) ; ses onglets se vérifient donc là où ils vivent, sur `/`.
 test("découpage : onglets, drill-down, clavier et alternative textuelle", async ({ page }) => {
   await loginConsole(page);
-  await page.goto(`${BASE}/pages?app=${APP_ID}&period=24h`);
+  await page.goto(`${BASE}/?app=${APP_ID}&period=24h`);
 
-  const decoupage = page.getByTestId("breakdown");
+  const decoupage = decoupageDe(page);
   await expect(decoupage).toBeVisible();
 
   // Onglet par défaut : la route, seule dimension collectée depuis toujours.
@@ -188,14 +200,14 @@ test("découpage : onglets, drill-down, clavier et alternative textuelle", async
   await expect(decoupage).toContainText("Firefox");
 
   // L'alternative textuelle existe et porte les mêmes groupes que les barres.
-  const alternative = decoupage.locator("details", { hasText: "Alternative textuelle du découpage" });
+  const alternative = decoupage.locator("details", { hasText: /Alternative textuelle/ }).first();
   await expect(alternative).toBeVisible();
   await alternative.locator("summary").click();
   await expect(alternative.locator("table")).toContainText("Chrome");
   await expect(alternative.locator("table")).toContainText("LCP p75");
 
   // Le clavier seul suffit : le premier groupe se prend au focus et s'ouvre.
-  const premier = decoupage.getByTestId("breakdown-row").first();
+  const premier = lignesDe(page).first();
   await premier.focus();
   await expect(premier).toBeFocused();
   const cible = await premier.getAttribute("href");
@@ -206,25 +218,27 @@ test("découpage : onglets, drill-down, clavier et alternative textuelle", async
   // Le drill-down a conservé le périmètre et ajouté le filtre du groupe. Il ne
   // reconduit PAS l'onglet : un drill-down change de question, pas de vue.
   expect(new URL(page.url()).searchParams.get("app")).toBe(APP_ID);
-  await expect(page.getByTestId("breakdown")).toBeVisible();
+  await expect(decoupageDe(page)).toBeVisible();
   await page.getByTestId("breakdown-tab-browser").click();
   await page.waitForURL((u) => u.searchParams.get("split") === "browser", { timeout: 15_000 });
   // Filtré sur un seul navigateur, le découpage par navigateur n'a qu'un groupe.
-  await expect(page.getByTestId("breakdown").getByTestId("breakdown-row")).toHaveCount(1);
-  await expect(page.getByTestId("breakdown")).not.toContainText("Firefox");
+  await expect(lignesDe(page)).toHaveCount(1);
+  await expect(decoupageDe(page)).not.toContainText("Firefox");
 });
 
-test("une route du tableau ouvre le détail avec la même plage", async ({ page }) => {
+test("une route du classement ouvre le détail avec la même plage", async ({ page }) => {
   await loginConsole(page);
   // Période 7 j, et non le défaut 24 h : une plage conservée doit rester VISIBLE
-  // dans l'URL du drill-down, ce que le défaut ne prouverait pas.
+  // dans l'URL du drill-down, ce que le défaut ne prouverait pas. La table « Par
+  // route » a fusionné dans le hero classé (F14) : c'est sa ligne qu'on ouvre.
   await page.goto(`${BASE}/pages?app=${APP_ID}&period=7d`);
-  const lien = page.getByTestId("route-drill").filter({ hasText: "/panier" }).first();
+  const lignes = page.getByTestId("hero-routes").getByTestId("impact-ligne");
+  const lien = lignes.filter({ hasText: "/panier" }).first().getByRole("link");
   await expect(lien).toBeVisible();
   await lien.click();
   await page.waitForURL((u) => u.searchParams.get("route") === "/panier", { timeout: 15_000 });
   expect(new URL(page.url()).searchParams.get("period")).toBe("7d");
-  await expect(page.getByTestId("route-drill")).toHaveCount(1);
+  await expect(page.getByTestId("hero-routes").getByTestId("impact-ligne")).toHaveCount(1);
 });
 
 test("ressources : l'avertissement de seuil et le partage première/tierce partie", async ({ page }) => {

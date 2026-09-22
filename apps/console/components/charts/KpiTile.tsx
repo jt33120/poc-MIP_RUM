@@ -306,7 +306,10 @@ export function KpiTile({
       )}
 
       {deltaNonEtabli && (
-        <p className="text-xs text-ink-soft" data-testid="kpi-comparaison">
+        // `data-ecart` distingue un ÉCART écrit sans flèche (P*.1 : intervalles qui se
+        // chevauchent) du SILENCE de la tuile (« période précédente incomplète »…) :
+        // les deux sont un `<p>`, un seul est un écart, et les e2e les séparent.
+        <p className="text-xs text-ink-soft" data-testid="kpi-comparaison" data-ecart="non-etabli">
           {texteComparaison}
         </p>
       )}
@@ -314,7 +317,7 @@ export function KpiTile({
         <DeltaBadge pct={comparaison.pct} reference={comparaison.reference} sensMeilleur={sens} />
       )}
       {comparaison?.kind === "silence" && (
-        <p className="text-xs text-ink-soft" data-testid="kpi-comparaison">
+        <p className="text-xs text-ink-soft" data-testid="kpi-comparaison" data-ecart="silence">
           {comparaison.texte}
         </p>
       )}
