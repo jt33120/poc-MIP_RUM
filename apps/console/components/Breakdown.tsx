@@ -272,8 +272,12 @@ export function Breakdown({
                         style={{ width: `${Math.max(2, (item.value / max) * 100)}%` }}
                       />
                     )}
-                    <span className="absolute inset-y-0 right-2 flex items-center text-xs font-semibold tabular-nums text-ink">
-                      {item.display}
+                    {/* Pastille sous la valeur, comme RankBar (F01) : quand la barre remplit
+                        la piste, le texte se posait sur l'orange (3,3:1 en sombre). */}
+                    <span className="absolute inset-y-0 right-2 flex items-center">
+                      <span className="rounded bg-panel/90 px-1 text-xs font-semibold tabular-nums text-ink">
+                        {item.display}
+                      </span>
                     </span>
                   </span>
                   <span className="flex min-w-0 basis-full flex-wrap items-center gap-x-3 gap-y-0.5 text-xs tabular-nums text-ink-soft sm:basis-auto sm:shrink-0">
