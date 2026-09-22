@@ -13,6 +13,7 @@ import { SeverityBadge } from "@/components/alerts/SeverityBadge";
 import { RuleFields } from "@/components/alerts/RuleFields";
 import { RuleRow } from "@/components/alerts/RuleRow";
 import { ChannelsSection } from "@/components/alerts/ChannelsSection";
+import { ligneIgnoree, lireEvt } from "@/lib/view-state";
 import {
   ackEventAction,
   createRuleAction,
@@ -39,6 +40,16 @@ export default async function Alerts({
   ]);
   const firedRaw = Array.isArray(sp.fired) ? sp.fired[0] : sp.fired;
   const fired = firedRaw != null && /^\d+$/.test(firedRaw) ? Number(firedRaw) : null;
+  // `evt` (§ 3.1, lot F67) : l'événement DÉSIGNÉ par un lien croisé (annotation
+  // d'alerte, constat, frise). Ce n'est pas `fired`, qui est un NOMBRE. Valeur
+  // illisible → ignorée et dite, jamais un refus : elle ne touche aucun chiffre.
+  // Mise en évidence minimale ici ; l'écran refondu (F64) la reprend avec A6.
+  const evtRaw = Array.isArray(sp.evt) ? sp.evt[0] : sp.evt;
+  const evt = evtRaw != null ? lireEvt(evtRaw) : null;
+  const evtIgnore = evtRaw != null && evt === null
+    ? ligneIgnoree("evt", evtRaw, "identifiant entier d'un déclenchement attendu")
+    : null;
+  const evtAbsent = evt !== null && !events.some((e) => e.id === evt);
   // « Créer une alerte de pic » depuis une issue : `?issue=<uuid>` préremplit le formulaire.
   const issueRaw = Array.isArray(sp.issue) ? sp.issue[0] : sp.issue;
   const defaultIssue = issueRaw && isAlertMetric(`issue:${issueRaw}`) ? issueRaw : undefined;
@@ -168,6 +179,18 @@ export default async function Alerts({
 
       {/* ----- Flux d'événements ----- */}
       <h2 className="mb-3 text-base font-bold tracking-tight">Événements déclenchés</h2>
+      {evtIgnore && (
+        <p role="note" className="mb-3 text-xs text-ink-soft" data-testid="evt-ignore">
+          {evtIgnore}
+        </p>
+      )}
+      {/* Un lien croisé peut désigner un déclenchement plus ancien que les 100
+          derniers lus : le dire vaut mieux que l'ancre silencieusement sans cible. */}
+      {evtAbsent && (
+        <p role="note" className="mb-3 text-xs text-ink-soft" data-testid="evt-hors-liste">
+          Événement {evt} hors des 100 plus récents.
+        </p>
+      )}
       {/* Une alerte qui se déclenche sans atteindre personne est un faux sentiment
           de sécurité. Tant qu'aucun canal actif n'existe, on le dit ici — au-dessus
           du flux — et pas seulement dans la section « Canaux » plus bas. */}
@@ -186,12 +209,14 @@ export default async function Alerts({
         {events.map((e) => (
           <div
             key={e.id}
+            id={`evt-${e.id}`}
             data-testid={`alert-event-${e.id}`}
+            aria-current={evt === e.id ? "true" : undefined}
             className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 text-sm shadow-card ${
               e.acknowledged
                 ? "border-line bg-panel"
                 : "border-bad/30 bg-bad/10"
-            }`}
+            }${evt === e.id ? " ring-2 ring-perf" : ""}`}
           >
             {!e.acknowledged && (
               <span className="rounded-full bg-bad-fond px-2 py-0.5 text-xs font-bold text-white">

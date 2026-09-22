@@ -304,7 +304,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     // Constats (zone 4) : dernier déploiement, alertes non acquittées, erreurs régressées.
     lire(() => latestDeployImpact(f)),
     ALERTES_PAR_EVENEMENT
-      ? lire(async () => ({ mode: "evenements" as const, lignes: (await alertFirings(f, 1)).lignes }))
+      ? // Les lignes NOMMÉES viennent du jour UTC en cours (`alertFirings(f, 1)`,
+        // § 5.1.2) ; le « et N autres » se compte sur le total non acquitté, sans
+        // quoi une alerte d'avant-hier disparaîtrait des constats à minuit UTC.
+        lire(async () => {
+          const [declenchements, total] = await Promise.all([alertFirings(f, 1), unackedAlertCount(f)]);
+          return { mode: "evenements" as const, lignes: declenchements.lignes, total };
+        })
       : lire(async () => ({ mode: "compte" as const, n: await unackedAlertCount(f) })),
     lire(() => listErrorGroups(f, { limit: REGRESSES_LUS, offset: 0 })),
     (blocs.vitals || blocs.hero || blocs.charge) && prev
@@ -579,7 +585,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       },
       deploiement: (relB, relA) => hrefWithQuery("/", query, { cmp: "release", rel_b: relB, rel_a: relB ? relA : null }),
       alertes: lien("/alerts"),
-      alerte: (evt) => lien("/alerts", { evt: String(evt) }),
+      // L'ancre amène l'événement à l'écran ; `evt` le met en évidence (F67).
+      alerte: (evt) => `${lien("/alerts", { evt: String(evt) })}#evt-${evt}`,
       // Le panneau erreur (`panel=error:<fp>`, F20) et le filtre `statut` (F19) ne sont pas
       // encore lus par `/errors` : la page du groupe, et la liste — où les régressés sont en
       // tête (ordre CP9). Écart déclaré ; F20 / F19 rebasculeront ces deux liens.

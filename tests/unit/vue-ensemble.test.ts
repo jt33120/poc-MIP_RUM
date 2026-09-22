@@ -209,8 +209,9 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
     expect(r.constats).toEqual([]);
   });
 
-  it("repli d'avant F67 : UN constat « N alertes non acquittées » → /alerts, sans identifiant", () => {
-    expect(ALERTES_PAR_EVENEMENT).toBe(false);
+  it("repli (mode compte) : UN constat « N alertes non acquittées » → /alerts, sans identifiant", () => {
+    // F67 a livré `evt` sur /alerts : la vue d'ensemble lit désormais les événements.
+    expect(ALERTES_PAR_EVENEMENT).toBe(true);
     const r = constatsVueEnsemble(entrees({ alertes: { ok: true, data: { mode: "compte", n: 4 } } }), LIENS);
     expect(r.constats).toEqual([
       expect.objectContaining({ type: "alerte", titre: "4 alerte(s) non acquittée(s)", href: "/alerts?app=a" }),
@@ -219,7 +220,7 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
 
   it("par événement (F67) : trois au plus, les plus récents, lien evt=, puis « et N autres »", () => {
     const lignes = [alerte(1, 0), alerte(2, 10), alerte(3, 20, true), alerte(4, 30), alerte(5, 40), alerte(6, 50)];
-    const r = constatsVueEnsemble(entrees({ alertes: { ok: true, data: { mode: "evenements", lignes } } }), LIENS);
+    const r = constatsVueEnsemble(entrees({ alertes: { ok: true, data: { mode: "evenements", lignes, total: 5 } } }), LIENS);
     expect(r.constats.map((c) => c.href)).toEqual([
       "/alerts?app=a&evt=6",
       "/alerts?app=a&evt=5",
@@ -229,12 +230,34 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
     expect(r.constats[3].titre).toBe("et 2 autre(s) alerte(s) non acquittée(s)");
   });
 
+  it("le reste se compte sur le TOTAL non acquitté, pas sur les seules lignes du jour (F67)", () => {
+    // Une seule alerte déclenchée aujourd'hui, mais quatre non acquittées en tout :
+    // les trois d'avant-hier ne disparaissent pas des constats à minuit UTC.
+    const r = constatsVueEnsemble(
+      entrees({ alertes: { ok: true, data: { mode: "evenements", lignes: [alerte(7, 0)], total: 4 } } }),
+      LIENS,
+    );
+    expect(r.constats.map((c) => c.titre)).toEqual([
+      "LCP p75 · /checkout — déclenchée le 22/09 12:00 UTC",
+      "et 3 autre(s) alerte(s) non acquittée(s)",
+    ]);
+    expect(r.constats[1].href).toBe("/alerts?app=a");
+  });
+
+  it("aucune alerte du jour et aucun total : aucun constat d'alerte (F67)", () => {
+    const r = constatsVueEnsemble(
+      entrees({ alertes: { ok: true, data: { mode: "evenements", lignes: [], total: 0 } } }),
+      LIENS,
+    );
+    expect(r.constats).toEqual([]);
+  });
+
   it("aucun lien de constat ne porte fired= (§ 3.1)", () => {
     const r = constatsVueEnsemble(
       entrees({
         anomalies: { ok: true, data: { lignes: [ANOMALIE], filtrees: false } },
         deploiement: { ok: true, data: { impact: IMPACT, versionPrecedente: "1.4.1" } },
-        alertes: { ok: true, data: { mode: "evenements", lignes: [alerte(9, 0)] } },
+        alertes: { ok: true, data: { mode: "evenements", lignes: [alerte(9, 0)], total: 1 } },
         regresses: { ok: true, data: [{ app_id: "a", fingerprint: "fp1", sample_message: "boom", error_type: "TypeError", occurrences: 3 }] },
       }),
       LIENS,
