@@ -244,7 +244,16 @@ const MESSAGE = (o: Occurrence["nom"]) => `boom ${o}`;
       { kind: "v1", type: "top_errors", title: "Top erreurs" },
       { filters: widgetFilters, timeZone: "Europe/Paris", nowMs: Date.now() },
     );
-    expect(tuile).toEqual({ kind: "table", columns: ["Erreur", "Occurrences", "Sessions"], rows: [["TypeError", 38, 1]] });
+    // F36 (W-B9) : la carte porte AUSSI la ligne rendue — tendance et statut —, mais
+    // la projection exportée reste celle de l'écran Erreurs, aux mêmes nombres.
+    expect(tuile).toMatchObject({
+      kind: "table",
+      columns: ["Erreur", "Occurrences", "Sessions"],
+      rows: [["TypeError", 38, 1]],
+    });
+    expect(tuile.erreurs).toMatchObject([
+      { fingerprint: "p51fp001", libelle: "TypeError", occurrences: 38, sessions: 1, statut: "Ouverte" },
+    ]);
     expect(lib.widgetToCsv("Top erreurs", tuile, 100).csv).toContain("TypeError,38,1");
   });
 

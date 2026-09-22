@@ -43,19 +43,26 @@ describe("widget top_errors", () => {
   it("passe les filtres tels quels, 8 groupes, et garde les colonnes historiques", async () => {
     vi.mocked(listErrorGroups).mockResolvedValue({
       groups: [
-        groupe({ fingerprint: "fp1", error_type: "TypeError", occurrences: 38, sessions: 1, sessions_affected: 1 }),
+        groupe({ fingerprint: "fp1", error_type: "TypeError", occurrences: 38, sessions: 1, sessions_affected: 1, series: [4, 0, 9, 25] }),
         groupe({ fingerprint: "fp2", sample_message: "boom", occurrences: 3 }),
-        groupe({ fingerprint: "fp3", occurrences: 2 }),
+        groupe({ fingerprint: "fp3", occurrences: 2, regressed: true, series: [1, 0, 0, 1] }),
       ],
+      sampling: { min_inclusion_probability: null, message: null },
     } as ErrorListResult);
 
-    await expect(resolveWidget(widget, ctx)).resolves.toEqual({
-      kind: "table",
-      columns: ["Erreur", "Occurrences", "Sessions"],
-      // Sessions = compteur historique : 0 quand aucune session n'est connue.
-      rows: [["TypeError", 38, 1], ["boom", 3, 0], ["fp3", 2, 0]],
-    });
-    expect(listErrorGroups).toHaveBeenCalledWith(filters, { limit: 8, offset: 0 });
+    const data = await resolveWidget(widget, ctx);
+    expect(data.kind).toBe("table");
+    expect(data.columns).toEqual(["Erreur", "Occurrences", "Sessions"]);
+    // Sessions = compteur historique : 0 quand aucune session n'est connue.
+    expect(data.rows).toEqual([["TypeError", 38, 1], ["boom", 3, 0], ["fp3", 2, 0]]);
+    // F36 (W-B9) : chaque ligne porte sa tendance, ou l'absence de tendance —
+    // une ligne plate se lirait « stable » alors qu'elle n'est pas mesurée.
+    expect(data.erreurs).toEqual([
+      { fingerprint: "fp1", libelle: "TypeError", occurrences: 38, sessions: 1, statut: "Ouverte", serie: [4, 0, 9, 25] },
+      { fingerprint: "fp2", libelle: "boom", occurrences: 3, sessions: 0, statut: "Ouverte", serie: null },
+      { fingerprint: "fp3", libelle: "fp3", occurrences: 2, sessions: 0, statut: "Régressée", serie: null },
+    ]);
+    expect(listErrorGroups).toHaveBeenCalledWith(filters, { limit: 8, offset: 0 }, { series: true });
   });
 
   // F30 (CE3) : la carte ne casse pas la grille, mais elle DIT son échec — une

@@ -16,13 +16,15 @@ vi.mock("@/lib/queries-errors", () => ({ listErrorGroups: vi.fn() }));
 vi.mock("@/lib/queries-events", () => ({ eventCount: vi.fn() }));
 vi.mock("@/lib/queries-explorer", () => ({ exploreAnalytics: vi.fn() }));
 
-import { normalizeLayout, type AnalyticsWidget } from "@/lib/dashboards";
+import { normalizeLayout, widgetQueryJson, type AnalyticsWidget } from "@/lib/dashboards";
+import { explorerHrefFromAst } from "@/lib/explorer-page-params";
 import { filtersOfQuery } from "@/lib/filters";
 import { dailyTraffic } from "@/lib/queries-grid";
 import { vitalsP75 } from "@/lib/queries";
 import { exploreAnalytics, type ExplorerResult } from "@/lib/queries-explorer";
 import { parseAnalyticsQuery } from "@/lib/query-contract";
 import {
+  COMPARAISON_HORS_FORME,
   RAISON_LECTURE_INDISPONIBLE,
   forgetWidgetCache,
   layoutToCsv,
@@ -177,5 +179,212 @@ describe("preuve de fin F30", () => {
   it("lib/widget-data.ts n'écrit plus « ?? 0 » nulle part", () => {
     const source = readFileSync(join(__dirname, "..", "..", "apps", "console", "lib", "widget-data.ts"), "utf8");
     expect(source).not.toMatch(/\?\?\s*0\b/);
+  });
+});
+
+// ─────────────────────────────── F36 — cartes ───────────────────────────────
+//
+// Ce que ces tests empêchent :
+//   - qu'une carte transporte une chaîne déjà formatée (« 2,7 s ») au lieu du
+//     nombre : le rendu ne pourrait plus ni comparer, ni noter, ni exporter ;
+//   - qu'une moyenne ou un p95 de LCP reçoive un verdict Web Vitals (R-V, CE13) ;
+//   - qu'un vital sans mesure et un percentile non calculable se disent tous les
+//     deux « aucune donnée » (CE4) ;
+//   - qu'une absence devienne « 0 » dans le CSV exporté ;
+//   - qu'un classement ou une série prétendent comparer deux périodes.
+
+/** Une carte v2 « Valeur », sans regroupement — la seule forme qui se compare (W-B2). */
+const carteValeurF36 = (measure: { aggregation: string; field: string }): AnalyticsWidget =>
+  normalizeLayout([
+    {
+      schemaVersion: 2,
+      type: "analytics",
+      title: "LCP",
+      query: { version: 1, dataset: "vitals", variant: "LCP", measure, filters: [], groupBy: [], limit: 1 },
+      visualization: "value",
+      filters: [],
+    },
+  ])[0] as AnalyticsWidget;
+
+/** Résultat d'une carte « Valeur » : un total, un effectif, aucune ventilation. */
+const resultatValeurF36 = (total: number | null, samples = 120, aggregation = "p75"): ExplorerResult => ({
+  meta: {
+    app: "app-a", period: "24h", query_version: 1, effective_apps: ["app-a"],
+    range: { from: "2026-09-16T12:00:00.000Z", to: "2026-09-17T12:00:00.000Z", preset: "24h", bucket_seconds: 3600 },
+    dataset: "vitals", measure: "value", unit: "ms", aggregation,
+    additive: false, counting: "mesures", source: "raw", group_by: [],
+    visualization: "value", warnings: [], coverage: { status: "complete", reason: null },
+    truncated_groups: false, query: {},
+  },
+  data: { total, samples, groups: [], series: [], rows: [], next_cursor: null },
+});
+
+describe("F36 — une carte transporte des NOMBRES, jamais des chaînes formatées", () => {
+  it("carte « Valeur » : total, effectif, format et vital de verdict ; aucun texte mis en forme", async () => {
+    vi.mocked(exploreAnalytics).mockResolvedValue(resultatValeurF36(2450));
+    const data = await resolveWidget(carteValeurF36({ aggregation: "p75", field: "value" }), ctx());
+    expect(data.total).toBe(2450);
+    expect(data.samples).toBe(120);
+    expect(data.format).toBe("ms");
+    expect(data.unit).toBe("ms");
+    // R-V : un p75 de LCP porte bien un verdict.
+    expect(data.vital).toBe("LCP");
+    expect(data.sansVerdict).toBeUndefined();
+    // Le résultat brut voyage tel quel : `ResultatAnalyse` est la seule traduction.
+    expect(data.analyse?.plan.visualization).toBe("value");
+    expect(data.analyse?.data.total).toBe(2450);
+    // Aucune chaîne « 2 450 ms » n'a été fabriquée dans la donnée de la carte.
+    expect(JSON.stringify(data)).not.toContain("2 450");
+  });
+
+  it("CE13 / R-V : une MOYENNE de LCP n'a aucun verdict, et la carte dit pourquoi", async () => {
+    vi.mocked(exploreAnalytics).mockResolvedValue(resultatValeurF36(1800, 90, "avg"));
+    const data = await resolveWidget(carteValeurF36({ aggregation: "avg", field: "value" }), ctx());
+    expect(data.vital).toBeUndefined();
+    expect(data.sansVerdict).toMatch(/aucun verdict n'est donné pour la moyenne/);
+  });
+
+  it("CE13 / R-V : un p95 de LCP non plus", async () => {
+    vi.mocked(exploreAnalytics).mockResolvedValue(resultatValeurF36(4100, 90, "p95"));
+    const data = await resolveWidget(carteValeurF36({ aggregation: "p95", field: "value" }), ctx());
+    expect(data.vital).toBeUndefined();
+    expect(data.sansVerdict).toMatch(/le p95/);
+  });
+});
+
+describe("F36 — CE4 : trois états distincts pour une carte v1 « <Vital> p75 »", () => {
+  it("n = 0 → « aucune mesure de LCP sur 24 h », jamais « aucune donnée »", async () => {
+    vi.mocked(vitalsP75).mockResolvedValue([
+      { name: "LCP", p75: null, p50: 0, n: 0, intervalle: { etat: "indisponible", raison: "0 mesure" } },
+    ] as unknown as Awaited<ReturnType<typeof vitalsP75>>);
+    const [lcp] = normalizeLayout([{ type: "vital_p75", metric: "LCP", title: "LCP" }]);
+    const data = await resolveWidget(lcp, ctx());
+    expect(data.total).toBeNull();
+    expect(data.samples).toBe(0);
+    expect(data.raisonNull).toBe("aucune mesure de LCP sur 24 h");
+    expect(data.vital).toBe("LCP");
+  });
+
+  it("n > 0 mais p75 non calculable → « percentile non calculable », pas la même chose", async () => {
+    vi.mocked(vitalsP75).mockResolvedValue([
+      { name: "LCP", p75: null, p50: 0, n: 7, intervalle: { etat: "indisponible", raison: "7 mesures" } },
+    ] as unknown as Awaited<ReturnType<typeof vitalsP75>>);
+    const [lcp] = normalizeLayout([{ type: "vital_p75", metric: "LCP", title: "LCP" }]);
+    const data = await resolveWidget(lcp, ctx());
+    expect(data.total).toBeNull();
+    expect(data.samples).toBe(7);
+    expect(data.raisonNull).toBe("percentile non calculable");
+  });
+
+  it("valeur mesurée : le nombre et son effectif, verdict permis (c'est un p75)", async () => {
+    vi.mocked(vitalsP75).mockResolvedValue([
+      { name: "LCP", p75: 2450, p50: 1800, n: 320, intervalle: { etat: "indisponible", raison: "—" } },
+    ] as unknown as Awaited<ReturnType<typeof vitalsP75>>);
+    const [lcp] = normalizeLayout([{ type: "vital_p75", metric: "LCP", title: "LCP" }]);
+    const data = await resolveWidget(lcp, ctx());
+    expect(data).toMatchObject({ kind: "value", total: 2450, samples: 320, format: "ms", vital: "LCP" });
+    expect(data.raisonNull).toBeUndefined();
+  });
+});
+
+describe("F36 — cmp=prev : les cartes « Valeur » seulement", () => {
+  it("une carte « Valeur » relit la période précédente et porte son total", async () => {
+    vi.mocked(exploreAnalytics)
+      .mockResolvedValueOnce(resultatValeurF36(2450))
+      .mockResolvedValueOnce(resultatValeurF36(2100, 110));
+    const data = await resolveWidget(carteValeurF36({ aggregation: "p75", field: "value" }), {
+      ...ctx(),
+      comparaison: "prev",
+    });
+    expect(exploreAnalytics).toHaveBeenCalledTimes(2);
+    expect(data.analyse?.precedent?.total).toBe(2100);
+    expect(data.analyse?.precedent?.couverture.etat).toBe("complete");
+    expect(data.analyse?.precedent?.plage).toMatch(/^vs 24 h précédentes/);
+  });
+
+  it("un classement n'est PAS comparé, et la carte le dit", async () => {
+    vi.mocked(exploreAnalytics).mockResolvedValue(resultat({ additive: false, groups: [{ key: ["Chrome"], value: 2400, samples: 120 }] }));
+    const data = await resolveWidget(carte("toplist"), { ...ctx(), comparaison: "prev" });
+    // Une seule lecture : aucune période précédente n'est ouverte pour rien.
+    expect(exploreAnalytics).toHaveBeenCalledTimes(1);
+    expect(data.analyse?.precedent).toBeUndefined();
+    expect(data.notes?.join(" ")).toContain(COMPARAISON_HORS_FORME);
+  });
+});
+
+describe("F36 — « Ouvrir dans l'Explorer » : le JSON d'une carte se relit", () => {
+  // Aller-retour exigé par le plan avant d'utiliser le lien : si le registre
+  // refusait le JSON d'une carte v2, le bouton mènerait à un Explorer en erreur.
+  it("explorerHrefFromAst accepte le JSON d'une carte v2, avec ses conditions", () => {
+    const w = normalizeLayout([
+      {
+        schemaVersion: 2,
+        type: "analytics",
+        title: "Occurrences par route",
+        query: {
+          version: 1,
+          dataset: "errors",
+          measure: { aggregation: "sum", field: "occurrences" },
+          filters: [{ field: "release", operator: "eq", type: "string", value: "1.2.0" }],
+          groupBy: ["route"],
+          limit: 5,
+        },
+        visualization: "toplist",
+        filters: [],
+      },
+    ])[0] as AnalyticsWidget;
+    const lu = explorerHrefFromAst(widgetQueryJson(w));
+    expect(lu.ok).toBe(true);
+    if (lu.ok) {
+      const sp = new URLSearchParams(lu.href.split("?")[1]);
+      expect(sp.get("dataset")).toBe("errors");
+      expect(sp.get("measure")).toBe("occurrences:sum");
+      expect(sp.get("g0")).toBe("route");
+      expect(sp.get("seg")).toContain("release");
+      expect(sp.get("run")).toBe("1");
+      // ÉCART RELEVÉ (§ 0.5) : `widgetQueryJson` n'écrit PAS la représentation —
+      // `serializeLayout` la range hors de l'AST, à côté de lui. Relu seul, l'AST
+      // retombe donc sur « Valeur ». La carte ne s'en sert pas comme adresse :
+      // elle s'en sert comme PORTE (le registre relit-il ce JSON ?) et bâtit son
+      // lien sur `widget.plan`, qui porte la représentation enregistrée.
+      expect(sp.get("viz")).toBe("value");
+    }
+  });
+
+  it("un AST illisible rend sa RAISON : la carte n'affiche pas un lien mort", () => {
+    const lu = explorerHrefFromAst({ version: 1, dataset: "licornes" });
+    expect(lu.ok).toBe(false);
+    if (!lu.ok) expect(lu.reason).toBeTruthy();
+  });
+});
+
+describe("F36 — export CSV : une absence reste une absence", () => {
+  it("total non calculable → cellule VIDE et sa raison, jamais « 0 »", () => {
+    const data: WidgetData = {
+      kind: "value",
+      total: null,
+      samples: 0,
+      format: "ms",
+      unit: "ms",
+      raisonNull: "aucune mesure de LCP sur 24 h",
+    };
+    const csv = layoutToCsv("Perf", normalizeLayout([{ type: "vital_p75", metric: "LCP" }]), [data], new Date(NOW));
+    expect(csv).toContain("Valeur,Effectif,Raison de l’absence");
+    expect(csv).toContain(",0,aucune mesure de LCP sur 24 h");
+    expect(csv).not.toMatch(/^0,0,/m);
+  });
+
+  it("groupe sans valeur calculable → cellule VIDE, jamais « 0 » ni « — »", () => {
+    const data: WidgetData = {
+      kind: "toplist",
+      ranks: [
+        { label: "Chrome", value: 2400, display: "2 400", sub: "120 lignes" },
+        { label: "Safari", value: null, display: "—", sub: "0 lignes" },
+      ],
+    };
+    const csv = layoutToCsv("Perf", normalizeLayout([{ type: "traffic" }]), [data], new Date(NOW));
+    expect(csv).toContain("Chrome,2400,120 lignes");
+    expect(csv).toContain("Safari,,0 lignes");
+    expect(csv).not.toContain("Safari,0,");
   });
 });
