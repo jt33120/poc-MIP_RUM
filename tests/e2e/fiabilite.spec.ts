@@ -526,3 +526,249 @@ test.describe("F65 — Tendances (§ 5.20)", () => {
     expect(fautes).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// F64 — écran Alertes (/alerts, plan § 5.19) : ce qui s'est déclenché, qui en a
+// été averti, et ce qui reste à traiter.
+//
+// Données EXPLICITEMENT SYNTHÉTIQUES dans une app à part, sur 30 jours :
+//   - une règle LCP > 2 500 sur /checkout, FRANCHIE, qui a déclenché il y a 2 h
+//     SANS aucune livraison (personne n'a été averti) ;
+//   - une règle error_rate sur /panier en « données insuffisantes », déclenchée
+//     il y a un jour et LIVRÉE, acquittée ;
+//   - une règle sur une issue, jamais évaluée, déclenchée il y a trois jours avec
+//     une livraison TRANSMISE mais non confirmée (« en attente », v49).
+// Aucun canal de notification actif sur le périmètre : le bandeau doit le dire
+// AVANT les chiffres. Les canaux globaux actifs de la base sont éteints le temps
+// du fichier, puis rallumés — la console ne distingue pas un canal global d'un
+// canal d'app, et un canal étranger rendrait le cas sans objet.
+// ---------------------------------------------------------------------------
+test.describe("F64 — Écran Alertes", () => {
+  const APP_F64 = "f64-e2e-app";
+  const ISSUE_F64 = "f6400000-0000-4000-8000-000000000064";
+  const identifiants = { lcp: 0, erreurs: 0, issue: 0, evtLcp: 0, evtErreurs: 0, evtIssue: 0 };
+  let canauxGlobauxEteints: number[] = [];
+
+  const regleF64 = async (
+    metric: string,
+    route: string | null,
+    seuil: number,
+    fenetre: number,
+    severite: string,
+    etat: string | null,
+    valeur: number | null,
+    raison: string | null,
+  ): Promise<number> => {
+    const { rows } = await pool.query(
+      `insert into alert_rule (app_id, metric, route, comparator, threshold, window_minutes, active,
+                               mode, severity, sensitivity, baseline_weeks,
+                               last_evaluated_at, last_state, last_value, last_reason)
+       values ($1, $2, $3, '>', $4, $5, true, 'threshold', $6, 3, 4,
+               case when $7::text is null then null else now() - interval '10 minutes' end, $7, $8, $9)
+       returning id`,
+      [APP_F64, metric, route, seuil, fenetre, severite, etat, valeur, raison],
+    );
+    return Number(rows[0].id);
+  };
+
+  const evenementF64 = async (
+    ruleId: number,
+    ilYA: string,
+    severite: string,
+    message: string,
+    acquitte: boolean,
+    livraison: "delivered" | "sent" | null,
+  ): Promise<number> => {
+    const { rows } = await pool.query(
+      `insert into alert_event (rule_id, fired_at, value, message, acknowledged, severity)
+       values ($1, now() - $2::interval, 1, $3, $4, $5) returning id`,
+      [ruleId, ilYA, message, acquitte, severite],
+    );
+    const id = Number(rows[0].id);
+    if (livraison) {
+      await pool.query(
+        `insert into alert_delivery (alert_event_id, target, status) values ($1, 'http://hook.local/f64', $2)`,
+        [id, livraison],
+      );
+    }
+    return id;
+  };
+
+  test.beforeAll(async () => {
+    // `alert_event` et `alert_delivery` partent en cascade avec leur règle.
+    await pool.query("delete from alert_rule where app_id = $1", [APP_F64]);
+    await pool.query("delete from notify_channel where app_id = $1", [APP_F64]);
+    await pool.query(`insert into app_registry (app_id, name) values ($1, 'Alertes E2E') on conflict (app_id) do nothing`, [
+      APP_F64,
+    ]);
+    const globaux = await pool.query("update notify_channel set active = false where app_id is null and active returning id");
+    canauxGlobauxEteints = globaux.rows.map((r) => Number(r.id));
+
+    identifiants.lcp = await regleF64("LCP", "/checkout", 2500, 15, "critical", "breached", 3200, null);
+    identifiants.erreurs = await regleF64(
+      "error_rate",
+      "/panier",
+      0.05,
+      30,
+      "warning",
+      "no_data",
+      null,
+      "moins de 4 fenetres comparables",
+    );
+    identifiants.issue = await regleF64(`issue:${ISSUE_F64}`, null, 10, 60, "info", null, null, null);
+
+    identifiants.evtLcp = await evenementF64(identifiants.lcp, "2 hours", "critical", "LCP p75 3 200 ms au-dessus du seuil", false, null);
+    identifiants.evtErreurs = await evenementF64(
+      identifiants.erreurs,
+      "1 day",
+      "warning",
+      "Taux d'erreur au-dessus du seuil",
+      true,
+      "delivered",
+    );
+    identifiants.evtIssue = await evenementF64(identifiants.issue, "3 days", "info", "Pic d'occurrences sur une issue", false, "sent");
+  });
+
+  test.afterAll(async () => {
+    if (canauxGlobauxEteints.length > 0) {
+      await pool.query("update notify_channel set active = true where id = any($1::bigint[])", [canauxGlobauxEteints]);
+    }
+  });
+
+  const ecranF64 = (qs = "") => `${consoleUrl}/alerts?app=${APP_F64}${qs}`;
+  const tuileF64 = (page: Page, libelle: string) =>
+    page.getByTestId("kpi-tile").filter({ hasText: libelle }).getByTestId("kpi-valeur");
+
+  test("« Aucun canal actif » est AU-DESSUS des KPI, et la tuile Canaux actifs vaut 0", async ({ page }) => {
+    await login(page);
+    await page.goto(ecranF64(), { waitUntil: "domcontentloaded" });
+    const bandeau = page.getByTestId("no-channel-warning");
+    await expect(bandeau).toBeVisible();
+    await expect(bandeau).toContainText("la supervision voit, elle ne prévient pas");
+    const kpi = page.getByTestId("kpi-alertes");
+    await expect(kpi).toBeVisible();
+    const hautBandeau = (await bandeau.boundingBox())!.y;
+    const hautKpi = (await kpi.boundingBox())!.y;
+    expect(hautBandeau, "le bandeau se lit avant les chiffres").toBeLessThan(hautKpi);
+    await expect(tuileF64(page, "Canaux actifs")).toHaveText("0");
+    // A1, A3, A4 : les comptes de la seed, jamais un « 0 » de repli.
+    await expect(tuileF64(page, "Non acquittées")).toHaveText("2");
+    await expect(tuileF64(page, "Règles franchies")).toHaveText("1");
+    await expect(tuileF64(page, "Règles sans données")).toHaveText("2");
+    await expect(kpi).toContainText("1 jamais évaluée(s)");
+  });
+
+  test("le hero lit 30 jours FIXES et le dit ; une piste par source, l'état de chaque règle", async ({ page }) => {
+    await login(page);
+    await page.goto(ecranF64(), { waitUntil: "domcontentloaded" });
+    const figure = page.locator("#declenchements");
+    await expect(figure).toContainText("30 jours fixes");
+    await expect(figure).toContainText("la plage de l'écran ne s'applique pas");
+    await expect(figure.getByTestId("piste-declenchements")).toHaveCount(3);
+    await expect(figure.getByTestId("etat-actuel").filter({ hasText: "Franchie" })).toHaveCount(1);
+    await expect(figure).toContainText("Données insuffisantes");
+    // Un marqueur mène à SON déclenchement par `evt` — jamais par `fired`.
+    await expect(
+      figure.locator(`a[href="/alerts?evt=${identifiants.evtLcp}#evt-${identifiants.evtLcp}"]`).first(),
+    ).toBeAttached();
+    expect(await figure.innerHTML()).not.toContain("fired=");
+  });
+
+  test("le flux dit la route, les trois états de livraison, et le motif du MTTA absent", async ({ page }) => {
+    await login(page);
+    await page.goto(ecranF64(), { waitUntil: "domcontentloaded" });
+    const lcp = page.getByTestId(`alert-event-${identifiants.evtLcp}`);
+    // La route était lue sans jamais être affichée : « LCP franchi » sans savoir où.
+    await expect(lcp).toContainText("/checkout");
+    await expect(page.getByTestId(`livraison-${identifiants.evtLcp}`)).toHaveText("non livrée");
+    await expect(page.getByTestId(`livraison-${identifiants.evtErreurs}`)).toContainText("livrée");
+    // Transmis n'est pas livré (v49) : le troisième état existe et se lit.
+    await expect(page.getByTestId(`livraison-${identifiants.evtIssue}`)).toContainText("en attente");
+    // Non acquittés d'abord : le plus ancien non acquitté précède le plus récent acquitté.
+    const ordre = await page
+      .locator('[data-testid^="alert-event-"]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
+    expect(ordre.indexOf(`alert-event-${identifiants.evtIssue}`)).toBeLessThan(
+      ordre.indexOf(`alert-event-${identifiants.evtErreurs}`),
+    );
+    await expect(page.getByTestId("motif-mtta")).toContainText("acknowledged_at");
+  });
+
+  test("« Voir la mesure » porte from/to = la fenêtre ÉVALUÉE, pas la plage de l'écran", async ({ page }) => {
+    await login(page);
+    await page.goto(ecranF64(), { waitUntil: "domcontentloaded" });
+    const lien = page.getByTestId(`mesure-${identifiants.evtLcp}`);
+    const href = new URL((await lien.getAttribute("href"))!, consoleUrl);
+    expect(href.pathname).toBe("/pages");
+    expect(href.searchParams.get("vital")).toBe("LCP");
+    expect(href.searchParams.get("route")).toBe("/checkout");
+    expect(href.searchParams.get("period")).toBeNull();
+    const debut = Date.parse(href.searchParams.get("from")!);
+    const fin = Date.parse(href.searchParams.get("to")!);
+    expect(fin - debut).toBe(15 * 60_000);
+    // Une règle d'issue mène à SA page d'issue.
+    const issue = page.getByTestId(`mesure-${identifiants.evtIssue}`);
+    expect(new URL((await issue.getAttribute("href"))!, consoleUrl).pathname).toBe(`/errors/issues/${ISSUE_F64}`);
+  });
+
+  test("?evt=<id> met le déclenchement en évidence ; un evt hors des 100 plus récents le dit", async ({ page }) => {
+    await login(page);
+    await page.goto(ecranF64(`&evt=${identifiants.evtIssue}`), { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId(`alert-event-${identifiants.evtIssue}`)).toHaveAttribute("aria-current", "true");
+    await expect(page.getByTestId(`alert-event-${identifiants.evtLcp}`)).not.toHaveAttribute("aria-current", "true");
+    await expect(page.getByTestId("evt-hors-flux")).toHaveCount(0);
+
+    await page.goto(ecranF64("&evt=999999999"), { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("evt-hors-flux")).toContainText("hors des 100 plus récents");
+    // Illisible : ignoré et SIGNALÉ, jamais un refus 400 (§ 3.1 règle 3).
+    await page.goto(ecranF64("&evt=abc"), { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("reglage-ignore")).toContainText("evt=abc");
+    await expect(page.getByTestId("filter-problem")).toHaveCount(0);
+  });
+
+  test("?regle_route=/checkout pré-remplit le formulaire, sans note de filtre ni propagation", async ({ page }) => {
+    await login(page);
+    await page.goto(ecranF64("&regle_metrique=INP&regle_route=%2Fcheckout&regle_seuil=300"), {
+      waitUntil: "domcontentloaded",
+    });
+    const formulaire = page.locator("#nouvelle-regle");
+    await expect(formulaire).toHaveAttribute("open", "");
+    await expect(formulaire.getByTestId("champ-route")).toHaveValue("/checkout");
+    await expect(formulaire.getByTestId("champ-seuil")).toHaveValue("300");
+    await expect(formulaire.getByTestId("champ-metrique")).toHaveValue("INP");
+    // `regle_route` n'est PAS `route` : aucun filtre de population n'est annoncé
+    // non appliqué à cause de lui, et la navigation ne le reporte pas.
+    await expect(page.getByTestId("filters-not-applied")).toHaveCount(0);
+    const versSlo = await page.locator('a[href*="/slo"]').first().getAttribute("href");
+    expect(versSlo ?? "").not.toContain("regle_route");
+  });
+
+  test("formulaire par mode : en seuil, aucun champ baseline ; en baseline, aucun champ de seuil", async ({ page }) => {
+    await login(page);
+    await page.goto(ecranF64(), { waitUntil: "domcontentloaded" });
+    const formulaire = page.locator("#nouvelle-regle");
+    await formulaire.locator("summary").click();
+    const seuil = formulaire.getByTestId("champs-seuil");
+    const baseline = formulaire.getByTestId("champs-baseline");
+    await expect(seuil).toBeVisible();
+    await expect(baseline).toBeHidden();
+    await formulaire.getByTestId("mode-baseline").check();
+    await expect(baseline).toBeVisible();
+    await expect(seuil).toBeHidden();
+    // « Régression de release » est présentée, désactivée, avec sa raison (B52).
+    await expect(formulaire.getByTestId("mode-release")).toBeDisabled();
+    await expect(formulaire.getByTestId("raison-release")).toContainText("check_alerts");
+  });
+
+  test("aucun débordement à 390, 768 et 1440 px", async ({ page }) => {
+    await login(page);
+    const fautes: string[] = [];
+    for (const largeur of LARGEURS) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(ecranF64(), { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#declenchements")).toBeVisible();
+      for (const faute of await debordements(page)) fautes.push(`${largeur} px — ${faute}`);
+    }
+    expect(fautes).toEqual([]);
+  });
+});
