@@ -210,3 +210,16 @@
   background: rgb(var(--c-panel2)) !important;
   border-radius: 0.75rem;
 }
+
+/* ------------------------------------------------------------------ */
+/* Formulaire de règle d'alerte (F64, plan § 5.19 A8) : les champs du  */
+/* mode NON choisi sont masqués. Le masquage est purement CSS — aucun  */
+/* JavaScript, le formulaire reste un formulaire HTML.                 */
+/* Sans `:has()` (navigateur ancien), aucune de ces règles ne          */
+/* s'applique : les deux fieldsets restent visibles avec leur légende, */
+/* le repli déclaré par le plan.                                       */
+/* ------------------------------------------------------------------ */
+.regle-modes:has(.regle-mode-seuil:checked) .regle-champs-baseline,
+.regle-modes:has(.regle-mode-baseline:checked) .regle-champs-seuil {
+  display: none;
+}

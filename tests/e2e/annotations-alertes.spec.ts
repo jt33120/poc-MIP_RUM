@@ -125,12 +125,15 @@ test.describe("F67 — annotations d'alerte et liens croisés", () => {
 
     // Hors des 100 plus récents : l'ancre n'a pas de cible, la page le dit.
     await page.goto(`${consoleF67}/alerts?app=${APP_F67}&evt=999999999`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("evt-hors-liste")).toContainText("hors des 100 plus récents");
+    // F64 rend cette ligne sous `evt-hors-flux` : sa version de l'écran a remplacé le bloc
+    // minimal que F67 avait posé en attendant A6.
+    await expect(page.getByTestId("evt-hors-flux")).toContainText("hors des 100 plus récents");
     await expect(page.locator("body")).not.toContainText("Application error");
 
     // Valeur illisible : « Réglage d'affichage ignoré », et les chiffres restent.
     await page.goto(`${consoleF67}/alerts?app=${APP_F67}&evt=pas-un-entier`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("evt-ignore")).toContainText("Réglage d'affichage ignoré : evt=");
+    // Même raison : la ligne passe par `lireEtatDeVue`, donc le testid commun `reglage-ignore`.
+    await expect(page.getByTestId("reglage-ignore")).toContainText("Réglage d'affichage ignoré : evt=");
     await expect(page.locator(`#evt-${evenementF67}`)).toBeVisible();
   });
 
