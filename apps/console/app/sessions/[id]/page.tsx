@@ -1,12 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ReplayPlayer from "@/components/replay/ReplayPlayer";
+import { RecitSession } from "@/components/sessions/RecitSession";
 import { TabLink } from "@/components/sessions/TabLink";
+import { SectionErreur } from "@/components/states/SectionErreur";
 import { TimelineRow } from "@/components/sessions/Timeline";
 import { browserFromUA, fmtDate } from "@/lib/format";
 import { geoSourceLabel } from "@/lib/geo";
+import { lire } from "@/lib/lecture";
 import { sessionMeta, sessionTimeline, type TimelineKind } from "@/lib/queries";
 import { authorizedAppsOf } from "@/lib/query-contract";
+import { ancreEvenement, composerRecit } from "@/lib/recit-session";
+import { sessionARejeu } from "@/lib/session-rejeu";
 import { KIND_STYLE } from "@/lib/timeline-constants";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +66,16 @@ export default async function SessionDetail({
   };
   const t0 = new Date(meta.started_at).getTime();
   const durationMs = new Date(meta.last_seen_at).getTime() - t0;
+  // P*.9 — récit composé des lignes déjà lues (aucune lecture de plus pour les
+  // phrases) ; seule la présence du rejeu est lue, pour pouvoir dire son absence.
+  // Une lecture en échec n'efface pas le récit : il dit « non vérifiée ».
+  const rejeuLu = await lire(() => sessionARejeu(meta.session_id, meta.app_id));
+  const recit = composerRecit({
+    timeline,
+    debut: meta.started_at,
+    fin: meta.last_seen_at,
+    nowMs: Date.now(),
+  });
   const counts = timeline.reduce<Partial<Record<TimelineKind, number>>>((acc, it) => {
     acc[it.kind] = (acc[it.kind] ?? 0) + 1;
     return acc;
@@ -77,6 +92,14 @@ export default async function SessionDetail({
       <p className="mb-6 text-sm text-ink-soft">
         Timeline fusionnée : actions causales, pages vues, vitals, erreurs, ressources, appels API et événements métier
       </p>
+
+      <SectionErreur titre="En bref">
+        <RecitSession
+          phrases={recit.ok ? recit.phrases : []}
+          rejeu={rejeuLu.ok ? (rejeuLu.data ? "present" : "absent") : null}
+          lienBase={tab === "replay" ? tabHref("timeline") : ""}
+        />
+      </SectionErreur>
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
         <Meta label="App" value={meta.app_id} />
@@ -141,7 +164,7 @@ export default async function SessionDetail({
           {timeline.length ? (
             <ol className="relative ml-2 border-l-2 border-line" data-testid="timeline">
               {timeline.map((it, i) => (
-                <TimelineRow key={i} item={it} t0={t0} />
+                <TimelineRow key={i} id={ancreEvenement(i)} item={it} t0={t0} />
               ))}
             </ol>
           ) : (

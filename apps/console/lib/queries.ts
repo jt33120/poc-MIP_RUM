@@ -468,7 +468,7 @@ export interface TimelineItem {
   ts: Date;
   title: string | null; // route | nom du vital | type d'erreur | type de crumb | nom d'event
   detail: string | null; // nav_type | route | message | label | props
-  value: number | null; // valeur vital | seq | duration_ms
+  value: number | null; // valeur vital | seq | duration_ms | occurrences (erreur, schéma ≥ v67)
   rating: string | null; // good|needs-improvement|poor (vitals)
   action_id: string | null;
   action_name: string | null;
@@ -496,7 +496,10 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
            select 'action', ts, name, type || coalesce(' · ' || route, ''), null, null, action_id, name, app_id
            from rum_action where session_id = $1
            union all
-           select 'error', ts, coalesce(error_type, kind), message, null, null, action_id, null, app_id
+           -- value = occurrences (B32, partie « occurrences ») : une ligne peut
+           -- porter un lot SDK ; le récit P*.9 les SOMME (V1). Colonne v59, donc
+           -- présente dans cette branche v67 ; la branche v66 garde null.
+           select 'error', ts, coalesce(error_type, kind), message, occurrences::float, null, action_id, null, app_id
            from rum_error where session_id = $1
            union all
            select 'breadcrumb', ts, type, label, seq::float, null, action_id, null, app_id
