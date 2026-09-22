@@ -134,7 +134,7 @@ export function ContrastBars({
                     <span className="absolute inset-y-0 left-0 rounded" style={{ width: largeur(l.partBase), backgroundColor: SERIE.reference }} />
                   </span>
                 </span>
-                <span className="flex basis-full flex-wrap items-center gap-x-3 text-xs tabular-nums text-ink-soft sm:basis-auto sm:shrink-0">
+                <span className="flex min-w-0 basis-full flex-wrap items-center gap-x-3 text-xs tabular-nums text-ink-soft sm:basis-auto">
                   <span>
                     touchés <span className="text-ink">{pct(l.partTouches)}</span> ({l.nTouches.toLocaleString("fr-FR")})
                   </span>

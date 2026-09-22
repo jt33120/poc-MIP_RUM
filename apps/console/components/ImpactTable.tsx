@@ -261,7 +261,7 @@ export function ImpactTable({
                     </span>
                   </span>
                 </span>
-                <span className="flex min-w-0 basis-full flex-wrap items-center gap-x-3 gap-y-0.5 text-xs sm:basis-auto sm:shrink-0">
+                <span className="flex min-w-0 basis-full flex-wrap items-center gap-x-3 gap-y-0.5 text-xs sm:basis-auto">
                   <span className="tabular-nums text-ink-soft">
                     {volumeLibelle} <span className="text-ink">{nombre(l.volume)}</span>
                   </span>
