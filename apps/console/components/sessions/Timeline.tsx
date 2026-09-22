@@ -11,11 +11,13 @@ function fmtOffset(ms: number): string {
   return `+${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s`;
 }
 
-export function TimelineRow({ item, t0 }: { item: TimelineItem; t0: number }) {
+// `id` : ancre du récit « En bref » (P*.9, `ancreEvenement`) ; la ligne visée
+// s'éclaire (`target:`) pour que le fait cité se voie à l'arrivée.
+export function TimelineRow({ item, t0, id }: { item: TimelineItem; t0: number; id?: string }) {
   const st = KIND_STYLE[item.kind];
   const offset = new Date(item.ts).getTime() - t0;
   return (
-    <li className="relative pb-4 pl-6 last:pb-0">
+    <li id={id} className="relative scroll-mt-24 rounded-r pb-4 pl-6 last:pb-0 target:bg-brand/10">
       <span
         className={`absolute -left-[9px] top-1 flex h-4 w-4 items-center justify-center rounded-full text-white ${st.dot}`}
       >

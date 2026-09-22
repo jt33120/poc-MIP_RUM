@@ -114,7 +114,7 @@ suite("writeRows sur PostgreSQL v65 réel", () => {
       expect(Number((await pool.query(`select count(*)::int n from ${table} where app_id=$1`, [APP])).rows[0].n)).toBe(1);
     process.env.DATABASE_URL = url;
     const { sessionTimeline } = await import("../../apps/console/lib/queries");
-    const timeline = await sessionTimeline("p2-v65-session");
+    const timeline = await sessionTimeline("p2-v65-session", APP);
     expect(timeline).toContainEqual(expect.objectContaining({
       kind: "event", title: "checkout", action_id: null, action_name: null,
     }));

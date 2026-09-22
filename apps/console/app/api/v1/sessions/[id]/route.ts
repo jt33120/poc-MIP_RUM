@@ -15,6 +15,7 @@ export const GET = handle(async ({ principal, params }) => {
   // RBAC : un viewer scopé ne lit que les sessions de ses apps (liste vide = aucune).
   const authorized = authorizedAppsOf(principal);
   if (authorized !== null && !authorized.includes(meta.app_id)) throw new ApiHttpError(404, "session introuvable");
-  const timeline = await sessionTimeline(params.id);
+  // Bornée à l'app de la session : session_id est émis par le client.
+  const timeline = await sessionTimeline(params.id, meta.app_id);
   return { meta, timeline };
 });
