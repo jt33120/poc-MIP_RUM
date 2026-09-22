@@ -100,12 +100,15 @@ async function login(page: Page) {
 for (const schema of ["light", "dark"] as const) {
   for (const chemin of ["/", "/pages", "/errors"]) {
     test(`contraste ≥ 4,5:1 — ${chemin} en ${schema === "light" ? "clair" : "sombre"}`, async ({ page }) => {
-      await page.emulateMedia({ colorScheme: schema });
+      // Mouvement réduit : les écrans entrent en fondu, et axe mesurerait un texte
+      // à mi-opacité — un faux échec qui masquerait les vrais.
+      await page.emulateMedia({ colorScheme: schema, reducedMotion: "reduce" });
       await login(page);
       await page.goto(`${consoleUrl}${chemin}?app=${APP_ID}&period=24h`, { waitUntil: "domcontentloaded" });
       await expect(page.locator("h1").first()).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(schema === "dark");
-      const resultat = await new AxeBuilder({ page }).withRules(["color-contrast"]).analyze();
+      // Seul le logotype est exclu : WCAG 1.4.3 exempte le texte d'un logo.
+      const resultat = await new AxeBuilder({ page }).withRules(["color-contrast"]).exclude("[data-logotype]").analyze();
       const fautes = resultat.violations.flatMap((v) =>
         v.nodes.map((n) => `${n.target.join(" ")} — ${n.any[0]?.message ?? v.help}`),
       );

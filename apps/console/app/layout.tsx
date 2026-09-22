@@ -66,7 +66,9 @@ function BrandMark() {
         <Icon paths={ICON_PATHS.activity} className="h-5 w-5 text-white" strokeWidth={2.4} />
       </span>
       <span className="leading-tight">
-        <span className="block text-base font-bold tracking-tight text-ink">
+        {/* Logotype : exempté du contraste par WCAG 1.4.3 (« text that is part of a
+            logo or brand name ») ; l'e2e de contraste l'exclut par cet attribut. */}
+        <span className="block text-base font-bold tracking-tight text-ink" data-logotype>
           MIP <span className="text-accent">RUM</span>
         </span>
         <span className="block text-[10px] uppercase tracking-[0.18em] text-ink-faint">

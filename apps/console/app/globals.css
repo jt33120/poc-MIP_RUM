@@ -55,6 +55,15 @@
 .mip-fleche { animation: mip-derive 2.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .mip-fleche { animation: none; opacity: 0.8; }
+  /* § 3.9 : aucun mouvement pour qui l'a demandé — les entrées en fondu des écrans
+     comprises (F01 ; elles faisaient aussi mesurer un texte à mi-opacité). */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -89,6 +98,7 @@
   --c-warn-ink: 146 64 14;
   --c-bad: 220 38 38;
   --c-bad-ink: 185 28 28;
+  --c-accent-ink: 163 79 0; /* orange de texte : 5,9:1 sur blanc */
   color-scheme: light;
 }
 
@@ -108,6 +118,7 @@
   --c-warn-ink: 252 211 77;
   --c-bad: 248 113 113;
   --c-bad-ink: 252 165 165;
+  --c-accent-ink: 251 188 100;
   color-scheme: dark;
 }
 

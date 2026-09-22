@@ -102,8 +102,12 @@ export function RankBar({
                   style={{ width: `${w}%`, backgroundColor: d.color ?? ACCENT }}
                 />
               )}
-              <span className="absolute inset-y-0 right-2 flex items-center text-xs font-semibold tabular-nums text-ink">
-                {d.display ?? (d.value === null ? "—" : d.value.toLocaleString("fr-FR"))}
+              {/* Pastille sous la valeur : quand la barre remplit la piste, le texte se
+                  posait sur la couleur de la barre (3,7:1 sur le rouge d'un verdict). */}
+              <span className="absolute inset-y-0 right-2 flex items-center">
+                <span className="rounded bg-panel/90 px-1 text-xs font-semibold tabular-nums text-ink">
+                  {d.display ?? (d.value === null ? "—" : d.value.toLocaleString("fr-FR"))}
+                </span>
               </span>
             </div>
           </div>

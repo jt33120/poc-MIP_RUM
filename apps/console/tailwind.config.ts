@@ -26,10 +26,15 @@ export default {
           DEFAULT: "#f89101",
           soft: "#fbbc64",
           deep: "#d97b00",
+          // TEXTE orange (F01) : l'orange de marque ne tient que 2,3:1 sur blanc.
+          // Plus soutenu en clair, suit le mode sombre.
+          ink: "rgb(var(--c-accent-ink) / <alpha-value>)",
         },
         // ---- Couleurs sémantiques (sens CONSTANT dans toute l'app) ----------
         // Domaine « Performance utilisateur » (RUM). Bleu.
-        perf: { DEFAULT: "#2563eb", soft: "#dbeafe", ink: "#1d4ed8" },
+        // Le bleu perf suit le mode sombre (même variable que `brand`) : #2563eb ne
+        // tenait que 3,7:1 sur le fond de nuit.
+        perf: { DEFAULT: "rgb(var(--c-brand) / <alpha-value>)", soft: "#dbeafe", ink: "#1d4ed8" },
         // Domaine « Intelligence artificielle » (usage LLM). Violet.
         ai: { DEFAULT: "#7c3aed", soft: "#ede9fe", ink: "#6d28d9" },
         // État d'une mesure : bon / à surveiller / mauvais (F01).
