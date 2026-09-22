@@ -100,12 +100,16 @@ test("flux RUM bout-en-bout : vitals + erreur arrivent en base puis en console",
   await expect(page.locator("body")).toContainText("Erreur de démo MIP RUM");
 });
 
-test("corrélation : robot vs réel côte à côte avec écart", async ({ page }) => {
+// F58 (plan § 5.7) : l'écran compare des ÉTATS (robot) à des verdicts (LCP réel),
+// jamais un écart en % entre deux mesures qui ne mesurent pas la même chose. Le
+// badge « écart » des anciennes cartes a disparu ; le détail est dans
+// tests/e2e/fiabilite.spec.ts (bloc F58).
+test("corrélation : robot face au réel, sans écart chiffré", async ({ page }) => {
   await loginConsole(page);
   await page.goto("http://localhost:3000/correlation", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("body")).toContainText("Robot — synthétique DEM");
-  await expect(page.locator("body")).toContainText("Réel — utilisateurs (RUM)");
-  expect(await page.getByTestId("gap").count()).toBeGreaterThanOrEqual(1);
+  await expect(page.locator("#hero")).toContainText("Robot face au réel");
+  await expect(page.locator("body")).toContainText("Routes à trafic réel sans scénario robot");
+  await expect(page.getByTestId("gap")).toHaveCount(0);
 });
 
 test("replay : session enregistrée sur la démo puis rejouée dans la console", async ({ page }) => {

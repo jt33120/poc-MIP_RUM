@@ -167,9 +167,9 @@ export const GLOSSARY = {
     label: "Robot vs Réel",
     term: "Comparaison du synthétique (sondes programmées) au RUM (utilisateurs réels) pour une même route.",
     stack:
-      "Vue SQL v_correlation : écart p75 robot ↔ réel ; surligne les routes où le monitoring synthétique ment.",
+      "Chaque côté est agrégé par heure et par route avant d'être rapproché : état du robot (pire état de l'heure) contre verdict du LCP p75 réel. Aucun écart chiffré : les deux ne mesurent pas la même chose.",
     business:
-      "Vos tests automatiques disent « tout va bien » mais les vrais utilisateurs souffrent ? Cet écart le révèle — la mesure terrain prime sur le labo.",
+      "Vos tests automatiques disent « tout va bien » mais les vrais utilisateurs souffrent ? Les heures en angle mort le montrent — la mesure terrain prime sur le labo.",
   },
   otlp: {
     label: "OTLP — OpenTelemetry Protocol",
