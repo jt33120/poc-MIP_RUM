@@ -7,6 +7,7 @@ import { q } from "./db";
 import { queryOf, type Filters } from "./filters";
 import { binder, compileScope, sessionJoin } from "./query-compiler";
 import { sqlContext, type SqlContext } from "./query-sql";
+import { SANS_RELEASE } from "./releases";
 
 export interface DeployRow {
   id: number;
@@ -198,8 +199,8 @@ export interface ComparaisonVersions {
   source: VersionSource;
 }
 
-/** Libellé du groupe des mesures qui ne déclarent aucune release. */
-export const SANS_RELEASE = "(non renseignée)";
+/** Libellé du groupe des mesures qui ne déclarent aucune release (défini dans lib/releases.ts, module feuille). */
+export { SANS_RELEASE };
 
 /**
  * Comparaison des versions déployées : volume, LCP, INP et erreurs par release.

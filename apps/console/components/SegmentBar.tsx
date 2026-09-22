@@ -10,16 +10,24 @@
 //
 // Segments enregistrés : magasin versionné du navigateur (v2), repris une fois de
 // l'ancienne clé v1 laissée intacte ; les entrées illisibles sont écartées et
-// annoncées.
+// annoncées. Le magasin est partagé avec les vues personnelles de `PresetBar`
+// (components/segments-enregistres.ts). Le nom se saisit dans un champ en ligne
+// (F08) : `window.prompt` bloquait la page et ne se testait pas.
+//
+// Bascules « Bots » et « Interne » : texte seul, sans émoji (F08) — l'état se lit
+// dans le mot (« exclus » / « inclus »), pas dans une image.
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import {
+  EVENEMENT_SEGMENTS,
+  ajouterSegment,
+  ecrireSegmentsEnregistres,
+  lireSegmentsEnregistres,
+} from "@/components/segments-enregistres";
 import {
   DIMENSIONS,
   DIMENSION_LABELS,
   MAX_CONDITIONS,
-  SAVED_SEGMENTS_KEY,
-  SAVED_SEGMENTS_KEY_V1,
-  migrateSavedSegments,
   parseSegmentParam,
   serializeSegments,
   type Dimension,
@@ -48,18 +56,6 @@ function sameCondition(a: FilterCondition, b: FilterCondition): boolean {
   return a.dimension === b.dimension && a.operator === b.operator && a.value === b.value;
 }
 
-function loadSaved(): { items: SavedSegment[]; dropped: number } {
-  try {
-    const rawV2 = window.localStorage.getItem(SAVED_SEGMENTS_KEY);
-    const { store, dropped } = migrateSavedSegments(rawV2, window.localStorage.getItem(SAVED_SEGMENTS_KEY_V1));
-    // Première lecture après la migration : le magasin v2 est écrit, la clé v1 reste.
-    if (rawV2 === null && store.items.length) window.localStorage.setItem(SAVED_SEGMENTS_KEY, JSON.stringify(store));
-    return { items: store.items, dropped };
-  } catch {
-    return { items: [], dropped: 0 };
-  }
-}
-
 export function SegmentBar({ schema }: { schema: string[] }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -74,12 +70,20 @@ export function SegmentBar({ schema }: { schema: string[] }) {
   const [addError, setAddError] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedSegment[]>([]);
   const [dropped, setDropped] = useState(0);
+  /** Nom en cours de saisie ; `null` = champ fermé. */
+  const [nom, setNom] = useState<string | null>(null);
 
-  // localStorage n'est lu qu'au montage client (évite le mismatch d'hydratation).
+  // localStorage n'est lu qu'au montage client (évite le mismatch d'hydratation) ;
+  // `PresetBar` prévient quand elle enregistre une vue.
   useEffect(() => {
-    const loaded = loadSaved();
-    setSaved(loaded.items);
-    setDropped(loaded.dropped);
+    const relire = () => {
+      const loaded = lireSegmentsEnregistres();
+      setSaved(loaded.items);
+      setDropped(loaded.dropped);
+    };
+    relire();
+    window.addEventListener(EVENEMENT_SEGMENTS, relire);
+    return () => window.removeEventListener(EVENEMENT_SEGMENTS, relire);
   }, []);
 
   // Écran sans filtres globaux, ou sans aucune dimension applicable : pas de barre.
@@ -137,21 +141,13 @@ export function SegmentBar({ schema }: { schema: string[] }) {
     setAdding(false);
   }
 
-  function persist(list: SavedSegment[]) {
-    setSaved(list);
-    try {
-      window.localStorage.setItem(SAVED_SEGMENTS_KEY, JSON.stringify({ version: 2, items: list }));
-    } catch {
-      /* quota/privé : on garde l'état en mémoire */
-    }
-  }
-
   function saveCurrent() {
     const seg = serializeSegments(conditions);
-    if (!seg) return;
-    const name = window.prompt("Nom du segment ?", conditions.map(describeCondition).join(", "));
-    if (!name?.trim()) return;
-    persist([...saved.filter((s) => s.name !== name.trim()), { name: name.trim().slice(0, 100), seg }]);
+    if (!seg || nom === null || !nom.trim()) return;
+    const list = ajouterSegment(saved, nom, seg);
+    setSaved(list);
+    ecrireSegmentsEnregistres(list);
+    setNom(null);
   }
 
   return (
@@ -330,7 +326,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
             }
             data-testid="segment-internal-toggle"
           >
-            {includeInternal ? "🏠 Interne inclus" : "🏠 Interne exclu"}
+            {includeInternal ? "Interne inclus" : "Interne exclu"}
           </button>
         )}
         <button
@@ -348,18 +344,53 @@ export function SegmentBar({ schema }: { schema: string[] }) {
           }
           data-testid="segment-bots-toggle"
         >
-          {includeBots ? "🤖 Bots inclus" : "🤖 Bots exclus"}
+          {includeBots ? "Bots inclus" : "Bots exclus"}
         </button>
         {conditions.length > 0 && (
           <>
-            <button
-              type="button"
-              onClick={saveCurrent}
-              className="text-xs font-medium text-ink-faint hover:text-perf"
-              title="Enregistrer ce segment"
-            >
-              ☆ Enregistrer
-            </button>
+            {nom === null ? (
+              <button
+                type="button"
+                onClick={() => setNom(conditions.map(describeCondition).join(", ").slice(0, 100))}
+                className="text-xs font-medium text-ink-soft hover:text-perf"
+                title="Enregistrer ce segment"
+                data-testid="segment-save"
+              >
+                Enregistrer
+              </button>
+            ) : (
+              <form
+                className="flex items-center gap-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  saveCurrent();
+                }}
+              >
+                <input
+                  autoFocus
+                  value={nom}
+                  maxLength={100}
+                  onChange={(e) => setNom(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setNom(null);
+                  }}
+                  aria-label="Nom du segment"
+                  className="w-36 rounded bg-app px-1.5 py-0.5 text-xs text-ink outline-none ring-1 ring-line focus:ring-perf/40"
+                  data-testid="segment-save-name"
+                />
+                <button type="submit" className="rounded bg-perf-ink px-2 py-0.5 text-xs font-semibold text-white hover:opacity-90">
+                  OK
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNom(null)}
+                  className="px-1 text-xs text-ink-soft hover:text-ink"
+                  aria-label="Annuler l'enregistrement"
+                >
+                  ×
+                </button>
+              </form>
+            )}
             <button
               type="button"
               onClick={() => apply([])}

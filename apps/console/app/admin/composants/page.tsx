@@ -26,6 +26,7 @@ import { CATEGORIELLE, RATING_HEX } from "@/lib/palette";
 import { THRESHOLDS, rating2026 } from "@/lib/rating";
 import { SectionPanneau } from "./sections/panneau";
 import { SectionsDistributions } from "./sections/distributions";
+import { SectionsPresets } from "./sections/presets";
 import { SectionsSeries } from "./sections/series";
 import { SectionIntervalles } from "./sections/intervalles";
 
@@ -606,6 +607,7 @@ export default async function VitrineComposants() {
       <SectionPanneau />
       <SectionsSeries />
       <SectionIntervalles />
+      <SectionsPresets />
     </div>
   );
 }
