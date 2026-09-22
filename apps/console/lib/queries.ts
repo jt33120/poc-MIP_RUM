@@ -640,6 +640,23 @@ export interface SessionMeta {
   last_seen_at: Date;
   page_count: number;
   collection_source: string | null; // 'sdk' (défaut) | 'extension'
+  // F44 — colonnes déjà rendues par `select *`, typées pour l'en-tête du détail.
+  // Optionnelles : absentes d'un schéma antérieur à leur migration.
+  /** v75 : navigateur et système déduits à l'ingestion. */
+  browser?: string | null;
+  browser_version?: string | null;
+  os?: string | null;
+  os_version?: string | null;
+  /** v53 : release à l'OUVERTURE de la session (mutable ; celle des occurrences fait foi). */
+  release?: string | null;
+  /** v82 : runtime de l'émetteur (`react_native` : pas de signaux de frustration). */
+  runtime?: string | null;
+  /** v58 : taux d'échantillonnage ; 1 PAR DÉFAUT sur les sessions d'avant le 09/09/2026. */
+  sample_rate?: number | null;
+  error_sample_rate?: number | null;
+  has_error?: boolean | null;
+  // `user_id_hash` et `account_id_hash` (v66) viennent aussi du `select *` et ne
+  // sont volontairement PAS typés : aucun écran ne doit pouvoir les afficher (S5).
 }
 
 export async function sessionMeta(id: string): Promise<SessionMeta | null> {
