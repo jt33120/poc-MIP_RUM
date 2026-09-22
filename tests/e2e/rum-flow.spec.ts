@@ -2,8 +2,8 @@
 // Le test suit SA session (pas de purge de la base) : assertions par session_id.
 // v0.3 : la console exige un login (RBAC B3) — admin de test seedé par le spec.
 import { expect, test, type Page } from "@playwright/test";
-import { execFileSync } from "node:child_process";
 import pg from "pg";
+import { compteDedie } from "./helpers/compte-dedie";
 
 const pool = new pg.Pool({
   connectionString:
@@ -12,17 +12,17 @@ const pool = new pg.Pool({
 
 test.afterAll(() => pool.end());
 
-// seed-admin imprime le mot de passe : on le capture pour le formulaire de login
+// Compte dédié à ce fichier (helpers/compte-dedie.ts), jamais le compte admin local.
+const ADMIN_EMAIL = "e2e-rum-flow@mip-rum.local";
 let adminPassword = "";
-test.beforeAll(() => {
-  const out = execFileSync("node", ["scripts/seed-admin.mjs"], { encoding: "utf8" });
-  adminPassword = out.match(/julian@mip-rum\.local.*?:\s*(\S+)/s)?.[1] ?? "";
+test.beforeAll(async () => {
+  adminPassword = await compteDedie(pool, ADMIN_EMAIL);
   expect(adminPassword).not.toBe("");
 });
 
 async function loginConsole(page: Page) {
   await page.goto("http://localhost:3000/login");
-  await page.fill('input[name="email"]', "julian@mip-rum.local");
+  await page.fill('input[name="email"]', ADMIN_EMAIL);
   await page.fill('input[name="password"]', adminPassword);
   await page.click('button[type="submit"]');
   // attendre la SORTIE de /login (la Server Action pose le cookie puis redirige)

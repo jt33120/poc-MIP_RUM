@@ -7,23 +7,24 @@
 // un zéro se lit comme une bonne nouvelle, et il serait faux pour TOUTES les
 // applications tant que P8.5 n'a pas livré de module natif. Le test vérifie donc
 // d'abord les badges, puis les chiffres.
-import { execFileSync } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
+import { compteDedie } from "./helpers/compte-dedie";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum",
 });
 const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
 const APP = "p75-e2e-app";
+// Compte dédié à ce fichier (helpers/compte-dedie.ts), jamais le compte admin local.
+const ADMIN_EMAIL = "e2e-mobile-console@mip-rum.local";
 let adminPassword = "";
 
 /** La migration v82 est-elle appliquée ? Sans elle, l'écran est partiel par construction. */
 let v82 = false;
 
 test.beforeAll(async () => {
-  const out = execFileSync("node", ["scripts/seed-admin.mjs"], { encoding: "utf8" });
-  adminPassword = out.match(/julian@mip-rum\.local.*?:\s*(\S+)/s)?.[1] ?? "";
+  adminPassword = await compteDedie(pool, ADMIN_EMAIL);
   await pool.query(
     "insert into app_registry (app_id,name,active) values ($1,'P75 e2e',true) on conflict (app_id) do update set active=true",
     [APP],
@@ -123,7 +124,7 @@ test.afterAll(async () => {
 
 async function login(page: Page) {
   await page.goto(`${consoleUrl}/login`);
-  await page.fill('input[name="email"]', "julian@mip-rum.local");
+  await page.fill('input[name="email"]', ADMIN_EMAIL);
   await page.fill('input[name="password"]', adminPassword);
   await page.click('button[type="submit"]');
   await page.waitForURL((url) => url.pathname !== "/login", { timeout: 15_000 });
