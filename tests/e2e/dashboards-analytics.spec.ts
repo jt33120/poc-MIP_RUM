@@ -163,7 +163,8 @@ test("Explorer → carte → rechargement → duplication → CSV", async ({ pag
   await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
   const carte = page.getByTestId("widget-0");
   await expect(carte).toContainText("Occurrences par route", { timeout: 20_000 });
-  await expect(carte).toContainText("6 occurrences");
+  // F36 : le total est un nombre jusqu'au rendu ; l'en-tête de carte le formate.
+  await expect(page.getByTestId("widget-0-total")).toHaveText("6 occurrences");
   await expect(carte.getByTitle("/p65-a")).toBeVisible();
   await expect(carte.getByTitle("/p65-b")).toBeVisible();
   // Les filtres portés par la carte sont écrits SUR la carte.
@@ -171,7 +172,7 @@ test("Explorer → carte → rechargement → duplication → CSV", async ({ pag
 
   // 4. Rechargement : la carte survit, elle n'était pas un état de page.
   await page.reload();
-  await expect(page.getByTestId("widget-0")).toContainText("6 occurrences", { timeout: 20_000 });
+  await expect(page.getByTestId("widget-0-total")).toHaveText("6 occurrences", { timeout: 20_000 });
 
   // 5. Duplication : NOUVEL identifiant, même app, même contenu. On attend le
   // TITRE du clone, pas l'URL : `/dashboards/<n>` correspond déjà à la page
@@ -367,6 +368,161 @@ test.describe("F35 — tableaux de bord : modèles", () => {
       await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
       await expect(page.getByTestId("modele-carte").first()).toBeVisible({ timeout: 15_000 });
       for (const faute of await debordements(page)) fautes.push(`liste @ ${width} px — ${faute}`);
+    }
+    expect(fautes, fautes.join("\n")).toEqual([]);
+  });
+});
+
+// F36 — cartes de tableau de bord (plan § 5.25, W-B1 à W-B11). Une grille de neuf
+// cartes — six analyses v2 et trois cartes v1 — écrite directement en base : le
+// but n'est pas de rejouer les gestes d'ajout (déjà couverts plus haut), mais de
+// voir CHAQUE forme rendue, avec son alternative textuelle, sa barre de
+// population et son lien vers l'Explorer.
+test.describe("F36 — tableau de bord : cartes", () => {
+  const TABLEAU_F36 = "P65 F36 cartes";
+
+  /** Une analyse enregistrée, telle que l'Explorer l'écrit (AST sans app ni fenêtre). */
+  const analyseF36 = (
+    titre: string,
+    visualization: string,
+    query: Record<string, unknown>,
+  ) => ({
+    schemaVersion: 2,
+    type: "analytics",
+    title: titre,
+    query: { version: 1, dataset: "errors", filters: [], groupBy: [], limit: 5, ...query },
+    visualization,
+    filters: [],
+  });
+
+  const GRILLE_F36 = [
+    analyseF36("Occurrences", "value", { measure: { aggregation: "sum", field: "occurrences" } }),
+    analyseF36("Sessions touchées", "value", { measure: { aggregation: "distinct", field: "sessions" } }),
+    analyseF36("Occurrences par route", "toplist", {
+      measure: { aggregation: "sum", field: "occurrences" },
+      groupBy: ["route"],
+    }),
+    analyseF36("Occurrences par release", "toplist", {
+      measure: { aggregation: "sum", field: "occurrences" },
+      groupBy: ["release"],
+    }),
+    analyseF36("Occurrences dans le temps", "timeseries", {
+      measure: { aggregation: "sum", field: "occurrences" },
+    }),
+    analyseF36("Occurrences par route dans le temps", "timeseries", {
+      measure: { aggregation: "sum", field: "occurrences" },
+      groupBy: ["route"],
+    }),
+    { type: "vital_p75", metric: "LCP", title: "LCP p75" },
+    { type: "traffic", title: "Trafic" },
+    { type: "top_errors", title: "Erreurs principales" },
+  ];
+
+  async function menageF36() {
+    await pool.query(`delete from dashboard where name = $1`, [TABLEAU_F36]);
+  }
+  test.beforeAll(menageF36);
+  test.afterAll(menageF36);
+
+  /** Crée le tableau à neuf cartes et rend son identifiant. */
+  async function tableauF36(page: Page): Promise<string> {
+    const id = await creerTableau(page);
+    await pool.query(`update dashboard set name = $2, layout = $3::jsonb where id = $1`, [
+      Number(id),
+      TABLEAU_F36,
+      JSON.stringify(GRILLE_F36),
+    ]);
+    return id;
+  }
+
+  test("neuf cartes : chaque forme rendue, sa population, son lien vers l’Explorer", async ({ page }) => {
+    await login(page);
+    const id = await tableauF36(page);
+    await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
+    await expect(page.getByTestId("widget-0")).toBeVisible({ timeout: 20_000 });
+
+    // W-B1 — la population est écrite au-dessus de la grille, même sans filtre de
+    // segment : chaque carte en hérite, il faut pouvoir la lire.
+    const population = page.getByTestId("population-bar");
+    await expect(population).toBeVisible();
+    await expect(population).toContainText("Robots exclus");
+    await expect(population).toContainText("axes en UTC");
+    // La release du contexte est une condition : elle est écrite ET retirable.
+    await expect(population.getByTestId("population-puce").filter({ hasText: RELEASE })).toBeVisible();
+
+    // Neuf cartes, aucune de moins : une carte qui n'a rien à dire le dit, elle ne
+    // disparaît pas.
+    await expect(page.getByTestId("widget-8")).toBeVisible();
+    await expect(page.getByTestId("widget-9")).toHaveCount(0);
+
+    // Les six analyses passent par la traduction UNIQUE, celle de l'Explorer.
+    await expect(page.getByTestId("resultat-analyse")).toHaveCount(6);
+    // Chaque figure porte son alternative textuelle : aucun nombre n'est visible
+    // au seul pixel près. (Une figure à l'état « vide » n'en a pas : on exige au
+    // moins une alternative par forme dessinée.)
+    expect(await page.getByTestId("alternative").count()).toBeGreaterThan(0);
+
+    // « Ouvrir dans l'Explorer » rouvre la requête sur la population de l'écran.
+    const ouvrir = page.getByTestId("widget-2-explorer");
+    await expect(ouvrir).toBeVisible();
+    const href = await ouvrir.getAttribute("href");
+    expect(href).toContain("/explorer?");
+    expect(new URL(href!, consoleUrl).searchParams.get("app")).toBe("demo-app");
+    expect(new URL(href!, consoleUrl).searchParams.get("dataset")).toBe("errors");
+    await ouvrir.click();
+    await page.waitForURL(/\/explorer/, { timeout: 20_000 });
+    await expect(page.getByTestId("explorer-total")).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("cartes v1 : « 14 jours fixes » et « journée en cours », et un vital sans mesure le DIT", async ({ page }) => {
+    await login(page);
+    const id = await tableauF36(page);
+    await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
+
+    // W-B7 — la fenêtre de la carte « Trafic » n'est PAS celle de l'écran, et elle
+    // l'écrit ; la dernière barre est la journée en cours, incomplète.
+    const trafic = page.getByTestId("widget-7");
+    await expect(trafic).toContainText("14 jours fixes", { timeout: 20_000 });
+    await expect(trafic).toContainText("journée en cours");
+    // Deux panneaux : deux populations, jamais sur le même axe (P5).
+    await expect(trafic.getByTestId("widget-trafic")).toBeVisible();
+
+    // CE4 — sans aucune mesure de LCP sur la fenêtre, la carte dit « aucune
+    // mesure », pas « aucune donnée » : l'absence de collecte et l'absence de
+    // calcul ne se ressemblent plus.
+    const vital = page.getByTestId("widget-6");
+    await expect(vital).toContainText(/aucune mesure de LCP|mesures/, { timeout: 20_000 });
+    await expect(vital).not.toContainText("aucune donnée");
+
+    // W-B9 — chaque erreur porte sa tendance ou la raison de son absence.
+    const erreurs = page.getByTestId("widget-8");
+    await expect(erreurs.getByTestId("widget-erreurs")).toBeVisible();
+    await expect(erreurs).toContainText("TypeError");
+  });
+
+  test("cmp=prev : les cartes « Valeur » seulement, les autres le disent", async ({ page }) => {
+    await login(page);
+    const id = await tableauF36(page);
+    await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}&cmp=prev`);
+    await expect(page.getByTestId("widget-0")).toBeVisible({ timeout: 20_000 });
+
+    // Une carte « Valeur » porte sa référence, en toutes lettres.
+    await expect(page.getByTestId("widget-0")).toContainText("précédentes");
+    // Un classement ne se compare pas : la carte l'écrit plutôt que de se taire.
+    await expect(page.getByTestId("widget-2")).toContainText(
+      "Comparaison à la période précédente non calculée pour cette forme de carte",
+    );
+  });
+
+  test("aucun débordement de la grille à neuf cartes (390 / 768 / 1440 px)", async ({ page }) => {
+    await login(page);
+    const id = await tableauF36(page);
+    const fautes: string[] = [];
+    for (const width of [390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
+      await expect(page.getByTestId("widget-8")).toBeVisible({ timeout: 20_000 });
+      for (const faute of await debordements(page)) fautes.push(`cartes F36 @ ${width} px — ${faute}`);
     }
     expect(fautes, fautes.join("\n")).toEqual([]);
   });

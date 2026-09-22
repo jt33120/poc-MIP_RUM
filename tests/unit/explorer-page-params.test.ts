@@ -29,6 +29,7 @@ import {
 import { resumeVue as f34ResumeVue, explorerHrefFromAst as f34ExplorerHrefFromAst } from "../../apps/console/lib/explorer-page-params";
 import { mesureDeVolume as f33MesureDeVolume, planDeVolume as f33PlanDeVolume, planDeRepartition as f33PlanDeRepartition, LIMITE_REPARTITION as f33LimiteRepartition } from "../../apps/console/lib/explorer-page-params";
 import { EXPLORER_DATASET_IDS as f33DatasetIds, datasetDefinition as f33DatasetDefinition } from "../../apps/console/lib/analytics-schema";
+import { resumePopulation as f36ResumePopulation, retraitsDePopulation as f36RetraitsDePopulation } from "../../apps/console/lib/explorer-page-params";
 import { vitalDeVerdict as f32VitalDeVerdict, phraseSansVerdict as f32PhraseSansVerdict, formatDeMesure as f32FormatDeMesure, titreResultat as f32TitreResultat, referencePrecedente as f32ReferencePrecedente, groupeHref as f32GroupeHref, filtresDuGroupe as f32FiltresDuGroupe } from "../../apps/console/lib/explorer-page-params";
 import {
   encodeExplorerCursor,
@@ -584,5 +585,54 @@ describe("F33 — plans dérivés du contexte (W-E2, W-E7)", () => {
     const avecCurseur: ExplorerPlan = { ...journal, cursor: { fingerprint: "x", ts: "2026-09-17T11:00:00.000Z", key: "1" } };
     expect(f33PlanDeVolume(avecCurseur)!.cursor).toBeNull();
     expect(f33PlanDeRepartition(avecCurseur, "browser")!.cursor).toBeNull();
+  });
+});
+
+// F36 — W-B1 : la population lue, écrite au-dessus d'une grille de cartes. Ce que
+// ces tests empêchent : qu'une population non restreinte se taise (« rien d'écrit »
+// se lit « rien de filtré »… ou « je ne sais pas »), et qu'une condition affichée
+// n'offre pas le geste qui la retire.
+describe("F36 — résumé de la population lue (W-B1)", () => {
+  it("sans aucune condition : « Tous les visiteurs · Robots exclus », et les apps effectives", () => {
+    const puces = f36ResumePopulation(requete("app=demo-app"), "Europe/Paris");
+    expect(puces[0]).toBe("Apps : demo-app");
+    expect(puces.join(" · ")).toContain("Tous les visiteurs · Robots exclus");
+    // Le fuseau des découpes locales est dit : un jour n'est pas le même partout (R-T).
+    expect(puces.at(-1)).toBe("Jours et heures locales lus en Europe/Paris");
+    // La plage et le fuseau d'axe sont les props dédiées de `PopulationBar` : pas ici.
+    expect(puces.join(" · ")).not.toContain("24 h");
+  });
+
+  it("à « toutes les apps », la barre parle quand même — l'absence de filtre est une information", () => {
+    const puces = f36ResumePopulation(requete(""), "UTC");
+    expect(puces[0]).toBe("Toutes les apps autorisées");
+  });
+
+  it("chaque condition est écrite, et robots inclus se dit comme tel", () => {
+    const puces = f36ResumePopulation(requete("app=demo-app&device=mobile&seg=v2:browser:eq:Firefox&bots=1"), "UTC");
+    expect(puces).toContain("Appareil = mobile");
+    expect(puces).toContain("Navigateur = Firefox");
+    expect(puces).toContain("Robots inclus");
+    expect(puces).not.toContain("Tous les visiteurs");
+  });
+
+  it("chaque condition porte le lien de la MÊME page sans elle ; le reste n'est pas un lien", () => {
+    const query = requete("app=demo-app&device=mobile&seg=v2:browser:eq:Firefox");
+    const retraits = f36RetraitsDePopulation(query, (sans) =>
+      `/dashboards/7?${new URLSearchParams(
+        Object.entries({
+          app: sans.scope.requestedApp ?? "",
+          device: sans.filters.device ?? "",
+          browser: sans.filters.browser ?? "",
+          seg: sans.filters.segments.map((c) => c.dimension).join(","),
+        }).filter(([, v]) => v !== ""),
+      ).toString()}`,
+    );
+    // Un libellé par condition retirable, et le lien ne la porte plus.
+    expect(Object.keys(retraits).sort()).toEqual(["Appareil = mobile", "Navigateur = Firefox"]);
+    expect(retraits["Appareil = mobile"]).not.toContain("device=mobile");
+    expect(retraits["Navigateur = Firefox"]).not.toContain("seg=browser");
+    // « Robots exclus » n'est pas retirable : il n'y a pas de geste à faire croire.
+    expect(retraits["Robots exclus"]).toBeUndefined();
   });
 });
