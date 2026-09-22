@@ -1193,3 +1193,155 @@ test.describe("F16 — Pages : tâches longues et ressources", () => {
     });
   }
 });
+
+test.describe("F23 — Interactions : INP et scripts", () => {
+  // Une app à ce bloc. Elle porte ce que les zones 5 et 6 de `/ux` demandent :
+  // des mesures INP étalées sur plusieurs seaux (la série), SEPT sélecteurs
+  // d'attribution de latences différentes (le nuage n'en étiquette que cinq), et
+  // trois couples script × fonction dont le classement par CUMUL diffère du
+  // classement par pire cas — c'est toute la démonstration de la zone 6.
+  const APP_F23 = "f23-e2e-inp";
+  const UX_F23 = `${consoleUrl}/ux?app=${APP_F23}&period=24h`;
+
+  test.beforeAll(async () => {
+    for (const t of ["rum_longtask", "rum_metric", "rum_pageview", "rum_event", "rum_session"])
+      await pool.query(`delete from ${t} where app_id = $1`, [APP_F23]);
+    await pool.query(`delete from deploy_marker where app_id = $1`, [APP_F23]);
+    await pool.query(
+      `insert into app_registry (app_id, name) values ($1, 'Interactions F23 (e2e)') on conflict (app_id) do nothing`,
+      [APP_F23],
+    );
+    // Une instruction par table (`generate_series`), jamais ligne à ligne.
+    await pool.query(
+      `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count, runtime)
+       select $1 || '-s' || g, $1, $1 || '-v' || g, 'desktop', false,
+              now() - interval '6 hours' + g * interval '20 minutes',
+              now() - interval '6 hours' + g * interval '20 minutes' + interval '3 minutes', 1, 'browser'
+         from generate_series(1, 12) g
+       on conflict (session_id) do nothing`,
+      [APP_F23],
+    );
+    await pool.query(
+      `insert into rum_pageview (span_id, session_id, app_id, route, nav_type, started_at)
+       select $1 || '-pv' || g, $1 || '-s' || g, $1, '/f23-panier', 'navigate',
+              now() - interval '6 hours' + g * interval '20 minutes'
+         from generate_series(1, 12) g
+       on conflict (span_id) do nothing`,
+      [APP_F23],
+    );
+    // Sept cibles d'attribution, latences franchement séparées : le nuage étiquette
+    // les CINQ plus hautes, les deux dernières restent des points nus.
+    await pool.query(
+      `insert into rum_metric (span_id, session_id, app_id, route, name, value, attribution, ts)
+       select $1 || '-inp-' || c.cle || '-' || g, $1 || '-s' || g, $1, '/f23-panier', 'INP', c.base + g,
+              jsonb_build_object('interactionTarget', c.cible),
+              now() - interval '6 hours' + g * interval '20 minutes'
+         from generate_series(1, 12) g,
+              (values ('payer', 'button#f23-payer', 900, 12),
+                      ('menu', 'a#f23-menu', 420, 9),
+                      ('recherche', 'input#f23-recherche', 180, 7),
+                      ('carte', 'div#f23-carte', 90, 5),
+                      ('onglet', 'li#f23-onglet', 60, 4),
+                      ('lien', 'a#f23-lien', 35, 3),
+                      ('bandeau', 'span#f23-bandeau', 15, 2)) as c(cle, cible, base, sessions)
+        where g <= c.sessions
+       on conflict (span_id) do nothing`,
+      [APP_F23],
+    );
+    // checkout.js : 6 frames à 100 ms → 600 ms cumulés, pire 100. analytics.js :
+    // une frame à 400 → 400 cumulés, pire 400. Classé par CUMUL, checkout passe devant.
+    await pool.query(
+      `insert into rum_longtask (span_id, session_id, app_id, route, duration_ms, source, blocking_ms,
+                                 script_url, script_function, ts)
+       select $1 || '-lt-' || s.cle || '-' || g, $1 || '-s' || g, $1, '/f23-panier', s.bloc + 20, 'loaf', s.bloc,
+              s.url, s.fonction, now() - interval '5 hours' + g * interval '10 minutes'
+         from generate_series(1, 6) g,
+              (values ('recalcul', 'https://f23.example.fr/checkout.js', 'f23Recalcul', 100, 6),
+                      ('trace', 'https://f23.example.fr/analytics.js', 'f23Trace', 400, 1),
+                      ('boucle', 'https://cdn-f23.example.net/widget.js', 'f23Boucle', 50, 3)) as s(cle, url, fonction, bloc, frames)
+        where g <= s.frames
+       on conflict (span_id) do nothing`,
+      [APP_F23],
+    );
+    await pool.query(
+      `insert into deploy_marker (app_id, version, env, source, ts)
+       values ($1, 'f23-3.1.0', 'prod', 'ci', now() - interval '3 hours')`,
+      [APP_F23],
+    );
+  });
+
+  test("« INP p75 dans le temps » : bandes du vital, seaux, déploiement annoté, alternative", async ({ page }) => {
+    await login(page);
+    await page.goto(UX_F23, { waitUntil: "domcontentloaded" });
+    const figure = page.locator("#figure-inp-dans-le-temps");
+    await figure.scrollIntoViewIfNeeded();
+    const serie = figure.getByTestId("threshold-series");
+    // Les bandes Bon / À améliorer / Mauvais sont celles de `lib/rating.ts` pour l'INP.
+    await expect(serie).toHaveAttribute("data-vital", "INP");
+    expect(Number(await serie.getAttribute("data-seaux"))).toBeGreaterThan(1);
+    // Le marqueur de déploiement est posé sur la série (P9).
+    await expect(figure.getByTestId("annotations")).toHaveCount(1);
+    await figure.getByTestId("alternative").locator("summary").click();
+    await expect(figure.getByTestId("alternative")).toContainText("Seau (UTC)");
+    await expect(figure).toContainText("mesures INP");
+  });
+
+  test("nuage : les cinq plus lents étiquetés, les autres non", async ({ page }) => {
+    await login(page);
+    await page.goto(UX_F23, { waitUntil: "domcontentloaded" });
+    const figure = page.locator("#figure-elements-inp");
+    await figure.scrollIntoViewIfNeeded();
+    const nuage = figure.getByTestId("scatter-plot");
+    // L'axe X porte son unité, et le nom des deux dimensions est dans l'alternative.
+    await expect(nuage).toHaveAttribute("aria-label", /interactions × INP p75/);
+    await expect(nuage).toContainText("button#f23-payer");
+    await expect(nuage).toContainText("li#f23-onglet");
+    // 6ᵉ et 7ᵉ par latence : des points, pas des étiquettes.
+    await expect(nuage).not.toContainText("a#f23-lien");
+    await expect(nuage).not.toContainText("span#f23-bandeau");
+  });
+
+  test("alternative du nuage = la table jumelle, mêmes lignes chiffrées", async ({ page }) => {
+    await login(page);
+    await page.goto(UX_F23, { waitUntil: "domcontentloaded" });
+    const figure = page.locator("#figure-elements-inp");
+    await figure.scrollIntoViewIfNeeded();
+    const table = figure.getByTestId("table-elements-inp");
+    await expect(table.locator("tbody tr")).toHaveCount(7);
+    // Les deux cibles absentes du nuage étiqueté sont bien dans la table.
+    await expect(table).toContainText("a#f23-lien");
+    await expect(table).toContainText("span#f23-bandeau");
+    // Les points ne sont pas cliquables : la figure le dit, et renvoie à la table.
+    await expect(figure).toContainText("ne sont pas cliquables");
+  });
+
+  test("scripts : classés par blocage cumulé, pas par pire cas", async ({ page }) => {
+    await login(page);
+    await page.goto(UX_F23, { waitUntil: "domcontentloaded" });
+    const figure = page.locator("#scripts-bloquants");
+    await figure.scrollIntoViewIfNeeded();
+    const barres = figure.getByRole("img", { name: /Blocage cumulé/ });
+    const texte = await barres.innerText();
+    // checkout.js : 600 ms cumulés mais 100 ms au pire ; analytics.js : 400 cumulés,
+    // 400 au pire. Un classement par pire cas les intervertirait.
+    expect(texte.indexOf("checkout.js")).toBeGreaterThanOrEqual(0);
+    expect(texte.indexOf("checkout.js")).toBeLessThan(texte.indexOf("analytics.js"));
+    await expect(figure).toContainText("f23Recalcul");
+    await expect(figure).toContainText("6 frames");
+    await expect(figure).toContainText(/pire/);
+    // Ce que le cumul n'est pas, et pourquoi une absence de ligne ne prouve rien.
+    await expect(figure).toContainText("n'est le temps vécu de personne");
+    await expect(figure).toContainText("Chromium");
+  });
+
+  for (const largeur of LARGEURS) {
+    test(`aucun débordement à ${largeur} px`, async ({ page }) => {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await login(page);
+      await page.goto(UX_F23, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#figure-inp-dans-le-temps")).toBeVisible();
+      await page.locator("#scripts-bloquants").scrollIntoViewIfNeeded();
+      expect(await debordements(page)).toEqual([]);
+    });
+  }
+});
