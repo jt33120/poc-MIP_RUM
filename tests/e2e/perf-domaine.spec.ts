@@ -293,8 +293,15 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
     await surface.scrollIntoViewIfNeeded();
     const boite = await surface.boundingBox();
     if (!boite) throw new Error("graphique sans boîte");
-    await page.mouse.move(boite.x + boite.width * 0.6, boite.y + boite.height * 0.5);
-    await page.mouse.click(boite.x + boite.width * 0.6, boite.y + boite.height * 0.5);
+    // Le zoom lit `activeLabel` : recharts ne le renseigne qu'une fois le survol
+    // enregistré. Cliquer dans la foulée du `move` partait donc parfois sans seau
+    // actif (vert en local, rouge en CI, plus lente). L'infobulle est le témoin de
+    // cet état : elle n'existe dans le DOM que quand un seau est actif.
+    const x = boite.x + boite.width * 0.6;
+    const y = boite.y + boite.height * 0.5;
+    await page.mouse.move(x, y);
+    await expect(page.locator("#hero-LCP .recharts-tooltip-wrapper > *").first()).toBeVisible({ timeout: 15_000 });
+    await page.mouse.click(x, y);
     await page.waitForURL((u) => u.searchParams.has("from") && u.searchParams.has("to"), { timeout: 15_000 });
     const u = new URL(page.url());
     expect(u.searchParams.get("app")).toBe(APP_F12);
