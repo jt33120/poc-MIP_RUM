@@ -701,10 +701,9 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
       expect(top.filter((r) => r.kind === "rage").reduce((s, r) => s + r.n, 0)).toBeLessThan(60);
     });
 
-    it("base = sessions avec vue ; toutes couvertes (runtime browser ou NULL) ; sessions touchées de la base", async () => {
-      const { capteur, baseTouchee } = await frustration.frustrationTotaux(f22(WEB_F22));
+    it("base = sessions avec vue ; toutes couvertes (runtime browser ou NULL)", async () => {
+      const { capteur } = await frustration.frustrationTotaux(f22(WEB_F22));
       expect(capteur).toEqual({ sessionsCouvertes: 3, sessionsTotal: 3, runtimeLu: true });
-      expect(baseTouchee).toEqual({ tous: 3, rage: 1, dead: 1, error: 1 });
     });
 
     it("sessions React Native seules → sessionsCouvertes = 0 (le capteur n'émet pas), aucun signal", async () => {
@@ -743,17 +742,41 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
       }
     });
 
-    it("type=rage : seuls les rage clicks comptent", async () => {
+    it("type=rage : seules les sessions touchées se restreignent au type ; dead et error restent LUS (jamais un 0 non lu)", async () => {
       const lignes = await frustration.frustrationParRoute(f22(WEB_F22), "rage");
+      // « / » porte un dead click et un error click, aucun rage : ses colonnes le disent,
+      // et aucune de ses sessions n'est touchée PAR UN RAGE CLICK.
       expect(lignes.find((l) => l.route === "/")).toEqual({
         route: "/",
         rage: 0,
-        dead: 0,
-        error: 0,
+        dead: 1,
+        error: 1,
         sessionsTouchees: 0,
         sessionsRoute: 2,
       });
-      expect(lignes.find((l) => l.route === "/panier")).toMatchObject({ rage: 60, sessionsTouchees: 1 });
+      expect(lignes.find((l) => l.route === "/panier")).toEqual({
+        route: "/panier",
+        rage: 60,
+        dead: 0,
+        error: 0,
+        sessionsTouchees: 1,
+        sessionsRoute: 2,
+      });
+      // Mêmes comptes qu'hors filtre : le filtre ne touche que le pilote.
+      const tous = await frustration.frustrationParRoute(f22(WEB_F22));
+      expect(lignes.map(({ rage, dead, error }) => [rage, dead, error])).toEqual(
+        tous.map(({ rage, dead, error }) => [rage, dead, error]),
+      );
+    });
+
+    it("référence « Ensemble » sur les mêmes couples session × route : Σ touchées / Σ sessions de la route", async () => {
+      const { tauxEnsembleRoutes } = await import("../../apps/console/lib/perf-domain");
+      // « / » : 2 touchées sur 2 ; « /panier » : 1 sur 2 → 3 couples touchés sur 4.
+      expect(tauxEnsembleRoutes(await frustration.frustrationParRoute(f22(WEB_F22)))).toEqual({
+        taux: 0.75,
+        touchees: 3,
+        couples: 4,
+      });
     });
 
     it("les sessions React Native sortent des deux côtés : aucune route mobile dans le classement", async () => {

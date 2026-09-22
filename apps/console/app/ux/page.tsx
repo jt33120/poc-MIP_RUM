@@ -15,7 +15,13 @@ import { decouperUrlScript, fmtVital } from "@/lib/format";
 import { formater } from "@/lib/fmt-ids";
 import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
 import { LIMITES_FRUSTRATION, reglesFrustration } from "@/lib/frustration-regles";
-import { classerRoutesFrustrantes, etatCapteurFrustration, referencePeriodePrecedente } from "@/lib/perf-domain";
+import {
+  classerRoutesFrustrantes,
+  ecartAuTauxEnsemble,
+  etatCapteurFrustration,
+  referencePeriodePrecedente,
+  tauxEnsembleRoutes,
+} from "@/lib/perf-domain";
 import { vitalSeriesN, vitalsP75 } from "@/lib/queries";
 import {
   frustrationParRoute,
@@ -210,7 +216,6 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
             label={label}
             query={query}
             routes={routes}
-            totaux={totaux}
             capteurMasque={capteur?.masquer ?? false}
             type={type}
             tri={tri}
@@ -346,7 +351,6 @@ function HeroRoutes({
   label,
   query,
   routes,
-  totaux,
   capteurMasque,
   type,
   tri,
@@ -355,7 +359,6 @@ function HeroRoutes({
   label: string;
   query: AnalyticsQuery;
   routes: Lecture<Awaited<ReturnType<typeof frustrationParRoute>>>;
-  totaux: Lecture<FrustrationTotaux>;
   capteurMasque: boolean;
   type: TypeSignal | null;
   tri: "gravite" | "volume";
@@ -377,15 +380,14 @@ function HeroRoutes({
   }
 
   const { lignes, faibles } = classerRoutesFrustrantes(routes.data, tri);
-  const cleType = type ?? "tous";
-  const base = totaux.ok ? totaux.data.capteur.sessionsCouvertes : null;
-  const touchees = totaux.ok ? totaux.data.baseTouchee[cleType] : null;
-  const tauxEnsemble = base && base > 0 && touchees !== null ? touchees / base : null;
+  // Référence sur les MÊMES couples session × route que les lignes (jamais « touchées
+  // n'importe où / sessions avec vue », une autre population).
+  const ensemble = tauxEnsembleRoutes(routes.data);
   const signaux = type ? LIBELLES_SIGNAL[type].toLowerCase() : "signaux";
 
   const impactLignes: ImpactLigne[] = lignes.map((r) => {
     const libelle = r.route ?? "Inconnu";
-    const ecart = r.taux !== null && tauxEnsemble !== null ? r.taux - tauxEnsemble : null;
+    const ecart = ecartAuTauxEnsemble(r.taux, ensemble.taux);
     return {
       cle: r.route === null ? " inconnu" : `r:${r.route}`,
       libelle,
@@ -403,10 +405,7 @@ function HeroRoutes({
         { cle: "error", valeur: r.error, affichage: formater("count", r.error) },
         { cle: "touchees", valeur: r.sessionsTouchees, affichage: formater("count", r.sessionsTouchees) },
       ],
-      ecart:
-        ecart === null
-          ? undefined
-          : { valeur: ecart, affichage: `${ecart > 0 ? "+" : ""}${(ecart * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} pts vs ensemble` },
+      ecart: ecart ?? undefined,
       echantillonFaible: r.sessionsRoute < 30,
     };
   });
@@ -442,21 +441,26 @@ function HeroRoutes({
           fourni: null,
         }}
         reference={
-          tauxEnsemble === null
+          ensemble.taux === null
             ? null
             : {
-                libelle: "Ensemble",
-                valeurs: { pilote: formater("pct", tauxEnsemble), volume: formater("count", base ?? 0) },
+                // Pas de « volume » : la somme porte sur des couples session × route, pas
+                // sur des sessions ; une session qui voit deux routes y compte deux fois.
+                libelle: "Ensemble (toutes routes)",
+                valeurs: {
+                  pilote: formater("pct", ensemble.taux),
+                  touchees: `${formater("count", ensemble.touchees)} sur ${formater("count", ensemble.couples)} couples session × route`,
+                },
               }
         }
-        referenceRaison={totaux.ok ? `aucune session avec vue sur ${label}` : "lecture des totaux en échec"}
+        referenceRaison={`aucune session avec vue sur ${label}`}
         lignes={impactLignes}
         colonnes={["Rage", "Dead", "Error", "Sessions touchées"]}
         unitePilote="pct"
         volumeLibelle="Sessions de la route"
         groupes={lignes.length}
         tronque={false}
-        notice={`Route normalisée au moment de la vue. Population : sessions dont le capteur émet des signaux de frustration, ${label}. ${faibles > 0 ? `${faibles} route(s) vue(s) par moins de 30 sessions, rangée(s) en fin.` : ""}`}
+        notice={`Route normalisée au moment de la vue. Population : sessions dont le capteur émet des signaux de frustration, ${label}. « Ensemble » = sessions touchées sur la route / sessions qui l'ont vue, sommées sur toutes les routes (mêmes couples session × route que les lignes).${type ? ` Le classement ne retient que les ${signaux} ; les colonnes Rage, Dead et Error comptent tous les signaux de la route.` : ""}${faibles > 0 ? ` ${faibles} route(s) vue(s) par moins de 30 sessions, rangée(s) en fin.` : ""}`}
       />
       <p className="mt-2 text-xs text-ink-soft">
         Les {signaux} eux-mêmes, route par route :{" "}

@@ -222,3 +222,34 @@ describe("F22 — classerRoutesFrustrantes", () => {
     expect(lignes[1].taux).toBeNull();
   });
 });
+
+import { ecartAuTauxEnsemble, tauxEnsembleRoutes } from "../../apps/console/lib/perf-domain";
+
+describe("F22 — tauxEnsembleRoutes et ecartAuTauxEnsemble (même population que les lignes)", () => {
+  // w1 voit /panier et y rage ; w2 voit /panier et /, erreur sur / ; w3 voit /, clic mort.
+  // Par route : /panier 1 touchée (w1) sur 2 (w1, w2) ; / 2 touchées (w2, w3) sur 2.
+  // L'ancienne référence (touchées n'importe où / sessions avec vue) valait 3/3 = 100 % :
+  // « / » paraissait « +0 pt » et /panier « −50 pts ». Sur les couples : 3/4 = 75 %.
+  const routes = [
+    { route: "/panier", sessionsTouchees: 1, sessionsRoute: 2 },
+    { route: "/", sessionsTouchees: 2, sessionsRoute: 2 },
+  ];
+
+  it("Σ touchées / Σ sessions de la route, sur les couples session × route", () => {
+    expect(tauxEnsembleRoutes(routes)).toEqual({ taux: 0.75, touchees: 3, couples: 4 });
+  });
+
+  it("écarts en points au taux de l'ensemble : /panier −25 pts, / +25 pts", () => {
+    const ensemble = tauxEnsembleRoutes(routes).taux;
+    expect(ecartAuTauxEnsemble(0.5, ensemble)).toEqual({ valeur: -0.25, affichage: "−25 pts vs ensemble" });
+    expect(ecartAuTauxEnsemble(1, ensemble)).toEqual({ valeur: 0.25, affichage: "+25 pts vs ensemble" });
+    expect(ecartAuTauxEnsemble(0.75, ensemble)?.affichage).toBe("0 pt vs ensemble");
+  });
+
+  it("sans couple (aucune vue) → null, jamais 0 % ; taux de route inconnu → pas d'écart", () => {
+    expect(tauxEnsembleRoutes([]).taux).toBeNull();
+    expect(tauxEnsembleRoutes([{ sessionsTouchees: 0, sessionsRoute: 0 }]).taux).toBeNull();
+    expect(ecartAuTauxEnsemble(null, 0.5)).toBeNull();
+    expect(ecartAuTauxEnsemble(0.5, null)).toBeNull();
+  });
+});

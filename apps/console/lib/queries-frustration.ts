@@ -161,11 +161,6 @@ export interface FrustrationTotaux {
   /** Par type : signaux émis (compte ENTIER, jamais borné) et sessions distinctes qui les portent. */
   parType: { kind: TypeSignal; n: number; sessions: number }[];
   capteur: CapteurFrustration;
-  /**
-   * Sessions COUVERTES de la base portant au moins un signal (tous types, puis par
-   * type) : numérateur du taux de l'ensemble, référence du hero par route.
-   */
-  baseTouchee: Record<"tous" | TypeSignal, number>;
 }
 
 /**
@@ -190,10 +185,6 @@ export async function frustrationTotaux(f: Filters, shift = false): Promise<Frus
     (k) => `count(*) filter (where kind = '${k}')::int as n_${k},
             count(distinct (app_id, session_id)) filter (where kind = '${k}' and session_id is not null)::int as s_${k}`,
   ).join(",\n            ");
-  const touchees = TYPES_SIGNAL.map(
-    (k) => `count(*) filter (where b.couverte and exists (
-              select 1 from signaux x where x.app_id = b.app_id and x.session_id = b.session_id and x.kind = '${k}'))::int as t_${k}`,
-  ).join(",\n            ");
   const [row] = await q<Record<string, number>>(
     `with base as (
        select distinct p.app_id, p.session_id, ${capteurEmet(runtimeLu, "s", mobile)} as couverte
@@ -211,10 +202,7 @@ export async function frustrationTotaux(f: Filters, shift = false): Promise<Frus
          from signaux
      ), base_comptee as (
        select count(*)::int as sessions_total,
-              count(*) filter (where b.couverte)::int as sessions_couvertes,
-              count(*) filter (where b.couverte and exists (
-                select 1 from signaux x where x.app_id = b.app_id and x.session_id = b.session_id))::int as t_tous,
-              ${touchees}
+              count(*) filter (where b.couverte)::int as sessions_couvertes
          from base b
      )
      select * from comptes, base_comptee`,
@@ -224,7 +212,6 @@ export async function frustrationTotaux(f: Filters, shift = false): Promise<Frus
   return {
     parType: TYPES_SIGNAL.map((kind) => ({ kind, n: lu(`n_${kind}`), sessions: lu(`s_${kind}`) })),
     capteur: { sessionsCouvertes: lu("sessions_couvertes"), sessionsTotal: lu("sessions_total"), runtimeLu },
-    baseTouchee: { tous: lu("t_tous"), rage: lu("t_rage"), dead: lu("t_dead"), error: lu("t_error") },
   };
 }
 
@@ -250,8 +237,10 @@ export interface FrustrationRoute {
  * pas. Les deux sont restreints aux sessions dont le capteur émet (CP16). Les comptes
  * par type, eux, portent sur tous les signaux de la route.
  *
- * `type` (écart au registre, paramètre d'écran `type=`, § 3.1) : les comptes et les
- * sessions touchées ne retiennent que ce type de signal.
+ * `type` (écart au registre, paramètre d'écran `type=`, § 3.1) : seules les SESSIONS
+ * TOUCHÉES (le pilote) ne retiennent que ce type de signal. Les comptes rage / dead /
+ * error restent lus tous les trois : filtrer la lecture sur un type ferait afficher
+ * « 0 » dans les colonnes des deux autres, qui n'auraient simplement pas été lus (V3).
  */
 export async function frustrationParRoute(f: Filters, type: TypeSignal | null = null): Promise<FrustrationRoute[]> {
   const runtimeLu = await runtimeDeclare();
@@ -260,7 +249,7 @@ export async function frustrationParRoute(f: Filters, type: TypeSignal | null = 
   const signaux = sql.where({ dataset: "custom_events", row: "e", session: "se", time: "e.ts" });
   // Liée seulement si elle sert : un paramètre sans `$n` fait refuser l'instruction.
   const mobile = runtimeLu ? sql.bind(MOBILE_RUNTIME) : "";
-  const noms = type ? [`frustration.${type}`] : TYPES_SIGNAL.map((k) => `frustration.${k}`);
+  const duType = type ? ` and x.kind = ${sql.bind(type)}` : "";
   const rows = await q<FrustrationRoute>(
     `with vues as (
        select distinct p.app_id, p.session_id, p.route
@@ -271,7 +260,8 @@ export async function frustrationParRoute(f: Filters, type: TypeSignal | null = 
        select e.app_id, e.session_id, e.route, replace(e.name, 'frustration.', '') as kind
          from rum_event e
          ${sessionJoin("e", "se")}
-        where e.name = any(${sql.bind(noms)}::text[]) and ${capteurEmet(runtimeLu, "se", mobile)}${signaux}
+        where e.name in ('frustration.rage', 'frustration.dead', 'frustration.error')
+          and ${capteurEmet(runtimeLu, "se", mobile)}${signaux}
      ), routes as (
        select route from vues union select route from signaux
      ), comptes as (
@@ -286,7 +276,8 @@ export async function frustrationParRoute(f: Filters, type: TypeSignal | null = 
               count(*)::int as sessions_route,
               count(*) filter (where exists (
                 select 1 from signaux x
-                 where x.app_id = v.app_id and x.session_id = v.session_id and x.route is not distinct from v.route
+                 where x.app_id = v.app_id and x.session_id = v.session_id
+                   and x.route is not distinct from v.route${duType}
               ))::int as sessions_touchees
          from vues v
         group by v.route

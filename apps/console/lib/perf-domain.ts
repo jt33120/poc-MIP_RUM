@@ -211,3 +211,28 @@ export function classerRoutesFrustrantes(
     volume: (r) => r.sessionsRoute,
   });
 }
+
+/**
+ * Taux de référence « Ensemble » du hero par route : Σ sessions touchées / Σ sessions
+ * de la route, sur les MÊMES couples session × route que chaque ligne. Comparer une
+ * route à « sessions touchées n'importe où / sessions avec une vue » opposerait deux
+ * populations : une session qui voit /panier et /, et ne se trompe que sur /, ferait
+ * paraître /panier meilleure que l'ensemble sans rien lui devoir. `null` sans couple.
+ */
+export function tauxEnsembleRoutes(rows: readonly { sessionsTouchees: number; sessionsRoute: number }[]): {
+  taux: number | null;
+  touchees: number;
+  couples: number;
+} {
+  const touchees = rows.reduce((s, r) => s + r.sessionsTouchees, 0);
+  const couples = rows.reduce((s, r) => s + r.sessionsRoute, 0);
+  return { taux: couples > 0 ? Math.min(1, touchees / couples) : null, touchees, couples };
+}
+
+/** Écart d'une route au taux de l'ensemble, en points : « +25 pts vs ensemble » ; `null` sans l'un des deux taux. */
+export function ecartAuTauxEnsemble(taux: number | null, ensemble: number | null): { valeur: number; affichage: string } | null {
+  if (taux === null || ensemble === null) return null;
+  const pts = Math.round((taux - ensemble) * 1000) / 10;
+  const texte = Math.abs(pts).toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+  return { valeur: taux - ensemble, affichage: `${pts > 0 ? "+" : pts < 0 ? "−" : ""}${texte} pt${Math.abs(pts) > 1 ? "s" : ""} vs ensemble` };
+}
