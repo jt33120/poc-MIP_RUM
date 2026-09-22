@@ -1,6 +1,6 @@
 // Entonnoir de conversion — profondeur atteinte, reached, rapport. Logique pure.
 import { describe, expect, it } from "vitest";
-import { computeFunnel, funnelReached, reachedDepth } from "../../apps/console/lib/funnel";
+import { computeFunnel, etapeLaPlusPerdante, funnelReached, reachedDepth } from "../../apps/console/lib/funnel";
 
 describe("reachedDepth", () => {
   it("compte le préfixe d'étapes en ordre temporel", () => {
@@ -66,5 +66,50 @@ describe("computeFunnel", () => {
     );
     expect(rep[1]).toMatchObject({ reached: 0, convFromStart: 0, convFromPrev: 0, dropoff: 2 });
     expect(rep[2]).toMatchObject({ reached: 0, convFromStart: 0, convFromPrev: null, dropoff: 0 });
+  });
+});
+
+// F50 (plan § 5.13.4) — « où décroche-t-on ? » : la marche la plus perdante est
+// désignée, plutôt que laissée à la comparaison de quatre nombres.
+describe("etapeLaPlusPerdante", () => {
+  const rapport = (sessions: (number | null)[][], noms: string[]) => computeFunnel(sessions, noms);
+
+  it("désigne l'étape au plus grand abandon", () => {
+    // reached = [4, 3, 1] : abandons 0, 1, 2 → l'étape 3 perd le plus.
+    const rep = rapport(
+      [
+        [10, 20, 30],
+        [10, 20, null],
+        [10, 20, null],
+        [10, null, null],
+      ],
+      ["a", "b", "c"],
+    );
+    expect(rep.map((s) => s.dropoff)).toEqual([0, 1, 2]);
+    expect(etapeLaPlusPerdante(rep)).toBe(3);
+  });
+
+  it("égalité : la PREMIÈRE marche, celle qui prive toutes les suivantes", () => {
+    // reached = [4, 2, 0] : abandons 0, 2, 2.
+    const rep = rapport(
+      [
+        [10, 20, null],
+        [10, 20, null],
+        [10, null, null],
+        [10, null, null],
+      ],
+      ["a", "b", "c"],
+    );
+    expect(rep.map((s) => s.dropoff)).toEqual([0, 2, 2]);
+    expect(etapeLaPlusPerdante(rep)).toBe(2);
+  });
+
+  // Une « plus forte perte » sans perte serait une accusation sans fait (V3) :
+  // ni un entonnoir parfait ni un entonnoir vide n'en désigne une.
+  it("aucune perte, entonnoir vide ou étape unique -> null", () => {
+    expect(etapeLaPlusPerdante(rapport([[10, 20], [10, 20]], ["a", "b"]))).toBeNull();
+    expect(etapeLaPlusPerdante(rapport([], ["a", "b"]))).toBeNull();
+    expect(etapeLaPlusPerdante(rapport([[10]], ["a"]))).toBeNull();
+    expect(etapeLaPlusPerdante([])).toBeNull();
   });
 });

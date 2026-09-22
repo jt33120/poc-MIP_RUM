@@ -1,6 +1,6 @@
 // Flux Sankey biparti — layout normalisé. Logique pure.
 import { describe, expect, it } from "vitest";
-import { buildSankey } from "../../apps/console/lib/sankey";
+import { buildSankey, hauteurSankey } from "../../apps/console/lib/sankey";
 import type { Transition } from "../../apps/console/lib/paths";
 
 const T = (from: string, to: string, count: number): Transition => ({ from, to, count });
@@ -52,5 +52,27 @@ describe("buildSankey", () => {
     expect(m.shownFlow).toBe(18); // 10 + 8
     expect(m.totalFlow).toBe(28);
     expect(m.shownFlow).toBeLessThan(m.totalFlow);
+  });
+});
+
+// F50 (plan § 5.13.4) — la hauteur du dessin suit le NOMBRE de nœuds : à hauteur
+// fixe, trois routes donnaient des rubans obèses et huit routes des filets.
+describe("hauteurSankey", () => {
+  it("120 px de base, 36 px par nœud de la colonne la plus haute", () => {
+    // 2 sources, 2 cibles : 120 + 36 × 2.
+    expect(hauteurSankey(buildSankey([T("/", "/a", 3), T("/b", "/c", 1)]))).toBe(192);
+    // 3 sources pour 1 cible : c'est la colonne la plus haute qui décide.
+    const troisVersUne = buildSankey([T("/a", "/z", 3), T("/b", "/z", 2), T("/c", "/z", 1)]);
+    expect(troisVersUne.left).toHaveLength(3);
+    expect(troisVersUne.right).toHaveLength(1);
+    expect(hauteurSankey(troisVersUne)).toBe(120 + 36 * 3);
+  });
+
+  it("plafonne à 380 px ; un modèle sans nœud garde la base", () => {
+    // 8 nœuds par côté (le maximum de buildSankey) : 120 + 288 = 408, plafonné.
+    const pleine = buildSankey(Array.from({ length: 8 }, (_, i) => T(`/s${i}`, `/c${i}`, 10 - i)));
+    expect(pleine.left).toHaveLength(8);
+    expect(hauteurSankey(pleine)).toBe(380);
+    expect(hauteurSankey(buildSankey([]))).toBe(120);
   });
 });
