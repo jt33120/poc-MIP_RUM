@@ -12,6 +12,7 @@
 import { execFileSync } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
+import { debordements, LARGEURS } from "./helpers/debordements";
 
 const APP_ID = "f55-e2e-app";
 const E2E_EMAIL = "e2e-fiabilite@mip-rum.local";
@@ -265,7 +266,6 @@ test.describe("F58 — Écran Corrélation", () => {
   });
 
   test("aucun débordement horizontal à 390, 768 et 1440 px", async ({ page }) => {
-    const { debordements, LARGEURS } = await import("./helpers/debordements");
     await login(page);
     for (const largeur of LARGEURS) {
       await page.setViewportSize({ width: largeur, height: 900 });

@@ -50,7 +50,7 @@ function Verdict({ vital, valeur }: { vital: "LCP" | "INP"; valeur: number | nul
 
 export function TableRoutes({ lignes, avecApp }: { lignes: LigneRoute[]; avecApp: boolean }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full min-w-max text-sm" data-testid="table-routes">
         <caption className="sr-only">Routes : robot et réel côte à côte, une ligne par couple app et route</caption>
         <thead className="bg-panel2">

@@ -36,7 +36,7 @@ const TD = "px-3 py-2 align-top";
 
 export function TableAnglesMorts({ lignes, avecApp }: { lignes: LigneAngleMort[]; avecApp: boolean }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full min-w-max text-sm" data-testid="table-angles-morts">
         <caption className="sr-only">Angles morts : une ligne par heure et par route, écart décroissant</caption>
         <thead className="bg-panel2">
