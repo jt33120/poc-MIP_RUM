@@ -78,15 +78,22 @@ export const CATALOGUES: readonly Catalogue[] = [
     href: "/sessions",
     titre: "Sessions",
     cookie: "mip-blocs-sessions",
+    // Dans l'ordre de l'écran (F41, § 5.11.3). Les identifiants d'avant sont
+    // GARDÉS (`resume`, `visiteurs`, `engagement`, `liste`) : un cookie déjà posé
+    // continue de valoir pour le bloc qui a pris sa place. Rangée de KPI et
+    // bandeau d'échantillonnage ne sont pas des blocs : ils qualifient tout
+    // l'écran, ils ne s'éteignent pas.
     blocs: [
+      { id: "priorite", label: "À regarder d'abord", defaut: true, desc: "Les dix sessions qui cumulent le plus d'occurrences d'erreur, de signaux de frustration et d'appels en échec, chacune avec sa raison écrite." },
+      { id: "repartition", label: "Qui sont ces sessions", defaut: true, desc: "Sessions commencées réparties par appareil, navigateur, système, pays estimé ou capteur, avec leur part du tout. Chaque groupe filtre l'écran." },
+      { id: "visiteurs", label: "Volume dans le temps", defaut: true, desc: "Sessions commencées et visiteurs distincts par seau de temps, en deux panneaux. Les visiteurs ne s'additionnent pas : un visiteur présent dans trois seaux y est compté trois fois." },
+      { id: "engagement", label: "Engagement", defaut: true, desc: "Durée observée médiane et p75, et part des sessions qui n'ont vu qu'une page. Affiché seulement si la fenêtre porte assez de sessions." },
       // « exacte » était vrai de l'agrégat (il balaie toute la fenêtre, là où la
       // liste s'arrête à 50 lignes) et faux de la POPULATION : le partage ne
       // porte que sur les sessions qui ont un identifiant de visiteur. On dit
-      // désormais les deux.
-      { id: "resume", label: "Nouveaux vs revenants", defaut: true, desc: "Partage des visiteurs IDENTIFIÉS sur toute la fenêtre — la liste, elle, s'arrête à 50 sessions. Les sessions sans identifiant sont comptées à part." },
+      // désormais les deux, et la troisième part (F41) : les non identifiées.
+      { id: "resume", label: "Nouveaux, revenants, non identifiés", defaut: true, desc: "Sessions actives de la fenêtre : visiteurs IDENTIFIÉS nouveaux ou revenants, et sessions sans identifiant comptées à part — trois parts, aucune répartie au jugé." },
       { id: "liste", label: "Liste des sessions", defaut: true, desc: "Les dernières sessions, avec appareil, navigateur, pages vues et erreurs. Recherche bornée à l'identifiant technique exact, à la route normalisée ou à la release." },
-      { id: "visiteurs", label: "Tendance des visiteurs observés", defaut: true, desc: "Visiteurs distincts par seau de temps. Les seaux ne s'additionnent pas : un visiteur présent dans trois seaux y est compté trois fois." },
-      { id: "engagement", label: "Durée observée et sessions à une vue", defaut: true, desc: "Médiane de l'écart entre la première et la dernière observation, et part des sessions qui n'ont vu qu'une page. Affiché seulement si la fenêtre porte assez de sessions." },
     ],
     indisponibles: [
       {
