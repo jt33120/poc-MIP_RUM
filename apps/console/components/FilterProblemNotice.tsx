@@ -14,7 +14,7 @@ export function FilterProblemNotice({ title, problem }: { title: string; problem
     <div className="animate-fade-up">
       <PageHeader title={title} />
       <CadreEtat ton="erreur" role="alert" testId="filter-problem" etat="refuse">
-        <p className="font-semibold text-bad">
+        <p className="font-semibold text-bad-ink">
           {problem.code === "no_app_access" || problem.code === "forbidden_app"
             ? "Accès refusé"
             : "Filtres non appliqués"}

@@ -132,11 +132,11 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "wa
   return (
     <div className="card p-4">
       <div className="text-xs font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
-      <div className={`mt-1 text-2xl font-bold tabular-nums ${tone === "warn" ? "text-bad" : "text-ink"}`}>{value}</div>
+      <div className={`mt-1 text-2xl font-bold tabular-nums ${tone === "warn" ? "text-bad-ink" : "text-ink"}`}>{value}</div>
     </div>
   );
 }
 
 function N({ value, danger = false }: { value: number; danger?: boolean }) {
-  return <td className={`px-4 py-3 text-right tabular-nums ${danger ? "font-semibold text-bad" : ""}`}>{value.toLocaleString("fr-FR")}</td>;
+  return <td className={`px-4 py-3 text-right tabular-nums ${danger ? "font-semibold text-bad-ink" : ""}`}>{value.toLocaleString("fr-FR")}</td>;
 }

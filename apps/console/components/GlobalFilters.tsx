@@ -360,7 +360,7 @@ function RangeEditor({
         required
       />
       {error?.field === name && (
-        <span id={`${id}-erreur`} role="alert" className="text-[11px] font-medium text-bad" data-testid="filter-range-error">
+        <span id={`${id}-erreur`} role="alert" className="text-[11px] font-medium text-bad-ink" data-testid="filter-range-error">
           {error.message}
         </span>
       )}
@@ -443,7 +443,7 @@ function DimensionDrawer({
               data-testid={`filter-input-${dimension}`}
               className={INPUT_CLASS}
             />
-            <span id={`${id}-${dimension}`} className={`text-[11px] ${invalid === dimension ? "text-bad" : "text-ink-faint"}`}>
+            <span id={`${id}-${dimension}`} className={`text-[11px] ${invalid === dimension ? "text-bad-ink" : "text-ink-faint"}`}>
               {invalid === dimension
                 ? `Valeur invalide (1 à ${VALUE_MAX} caractères, sans caractère de contrôle).`
                 : state.available

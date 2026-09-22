@@ -13,8 +13,8 @@ function Trend({ p75, prev }: { p75: number; prev: number | null }) {
   const cls = flat
     ? "text-ink-faint"
     : delta > 0
-      ? "text-red-600 dark:text-red-400"
-      : "text-emerald-600 dark:text-emerald-400";
+      ? "text-bad-ink"
+      : "text-good-ink";
   const arrow = flat ? "→" : delta > 0 ? "↑" : "↓";
   return (
     <span className={`text-xs font-semibold tabular-nums ${cls}`} data-testid="trend" title="vs période précédente">
@@ -41,12 +41,12 @@ function ThresholdMeter({ name, p75, lecture }: { name: string; p75: number; lec
   const m = lecture.moustache;
   return (
     <div className="relative mt-3 h-1.5 w-full overflow-hidden rounded-full" data-testid={`meter-${name}`}>
-      <div className="absolute inset-y-0 left-0 bg-emerald-500/25" style={{ width: `${(good / max) * 100}%` }} />
+      <div className="absolute inset-y-0 left-0 bg-good/25" style={{ width: `${(good / max) * 100}%` }} />
       <div
-        className="absolute inset-y-0 bg-amber-500/25"
+        className="absolute inset-y-0 bg-warn/25"
         style={{ left: `${(good / max) * 100}%`, width: `${((warn - good) / max) * 100}%` }}
       />
-      <div className="absolute inset-y-0 bg-red-500/25" style={{ left: `${(warn / max) * 100}%`, right: 0 }} />
+      <div className="absolute inset-y-0 bg-bad/25" style={{ left: `${(warn / max) * 100}%`, right: 0 }} />
       {m && (
         <div
           className="absolute inset-y-[1px] rounded-full border-x-2 border-ink/70 bg-ink/25"
@@ -137,7 +137,7 @@ export function VitalCard({
       </div>
       {lowSample && (
         <div
-          className="mt-1 text-[11px] text-amber-600 dark:text-amber-400"
+          className="mt-1 text-[11px] text-warn-ink"
           title="Sur peu de mesures, le p75 est instable (il tombe dans la queue de distribution). La médiane est plus robuste."
         >
           échantillon faible{median != null && <> · médiane {fmtVital(name, median)}</>}

@@ -31,7 +31,7 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
       />
 
       {error && (
-        <div className="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
+        <div className="mb-6 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink">
           Choisis une app.
         </div>
       )}
@@ -39,7 +39,7 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
       {tka && (
         <div
           data-testid="one-time-token"
-          className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+          className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
         >
           {oneTime ? (
             <>
@@ -100,8 +100,8 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                       t.revoked_at
-                        ? "bg-red-100 text-red-800 dark:bg-red-400/10 dark:text-red-300"
-                        : "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
+                        ? "bg-bad/10 text-bad-ink"
+                        : "bg-good/10 text-good-ink"
                     }`}
                   >
                     {t.revoked_at ? "révoqué" : "actif"}
@@ -111,7 +111,7 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
                   {!t.revoked_at && (
                     <form action={revokeReadTokenAction}>
                       <input type="hidden" name="id" value={t.id} />
-                      <button type="submit" className="btn-ghost px-2 py-1 text-red-600 dark:text-red-400">
+                      <button type="submit" className="btn-ghost px-2 py-1 text-bad-ink">
                         Révoquer
                       </button>
                     </form>

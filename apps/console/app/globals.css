@@ -55,6 +55,15 @@
 .mip-fleche { animation: mip-derive 2.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .mip-fleche { animation: none; opacity: 0.8; }
+  /* § 3.9 : aucun mouvement pour qui l'a demandé — les entrées en fondu des écrans
+     comprises (F01 ; elles faisaient aussi mesurer un texte à mi-opacité). */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -75,9 +84,21 @@
   --c-line: 228 232 238; /* bordures discrètes */
   --c-ink: 17 24 39; /* texte principal (slate-900 neutre) */
   --c-ink-soft: 82 95 117; /* texte secondaire */
-  --c-ink-faint: 143 154 172; /* texte tertiaire */
+  /* texte tertiaire : ≥ 4,5:1 sur panel, panel2 et app (F01, mesuré par axe).
+     Il valait 143 154 172, soit ≈ 2,8:1 — illisible en petit corps. */
+  --c-ink-faint: 100 110 125;
   --c-brand: 37 99 235; /* bleu perf — liens & accents de domaine */
   --c-brand-strong: 29 78 216;
+  /* État d'une mesure (F01). Deux niveaux par état : le jeton lui-même pour les
+     remplissages, bordures et teintes (/10, /30…), et `-ink` pour le TEXTE, assez
+     soutenu pour tenir 4,5:1 sur la teinte de son propre badge. */
+  --c-good: 5 150 105;
+  --c-good-ink: 4 120 87;
+  --c-warn: 217 119 6;
+  --c-warn-ink: 146 64 14;
+  --c-bad: 220 38 38;
+  --c-bad-ink: 185 28 28;
+  --c-accent-ink: 163 79 0; /* orange de texte : 5,9:1 sur blanc */
   color-scheme: light;
 }
 
@@ -88,9 +109,16 @@
   --c-line: 38 47 64;
   --c-ink: 229 234 242;
   --c-ink-soft: 156 167 185;
-  --c-ink-faint: 104 116 136;
+  --c-ink-faint: 130 142 160; /* ≥ 4,5:1 sur panel2 sombre (valait 104 116 136) */
   --c-brand: 96 165 250; /* bleu éclairci pour rester lisible la nuit */
   --c-brand-strong: 147 197 253;
+  --c-good: 52 211 153;
+  --c-good-ink: 110 231 183;
+  --c-warn: 251 191 36;
+  --c-warn-ink: 252 211 77;
+  --c-bad: 248 113 113;
+  --c-bad-ink: 252 165 165;
+  --c-accent-ink: 251 188 100;
   color-scheme: dark;
 }
 

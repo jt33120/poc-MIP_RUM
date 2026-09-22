@@ -4,11 +4,11 @@ import type { ErrorStatus } from "@/lib/queries-v2";
 const STATUS_META: Record<ErrorStatus, { label: string; cls: string }> = {
   open: {
     label: "Ouverte",
-    cls: "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300",
+    cls: "border-bad/30 bg-bad/10 text-bad-ink",
   },
   resolved: {
     label: "Résolue",
-    cls: "border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300",
+    cls: "border-good/30 bg-good/10 text-good-ink",
   },
   ignored: {
     label: "Ignorée",
@@ -69,7 +69,7 @@ export function ErrorTriage({
         {meta.label}
       </span>
       {regressed && (
-        <span className="rounded-full border border-amber-400/50 bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-400/10 dark:text-amber-300">
+        <span className="rounded-full border border-warn/50 bg-warn/10 px-2.5 py-0.5 text-xs font-bold text-warn-ink">
           ⚠ Régression — réapparue après résolution
         </span>
       )}

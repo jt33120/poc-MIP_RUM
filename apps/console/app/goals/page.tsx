@@ -41,7 +41,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
       />
 
       {error && (
-        <div className="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
+        <div className="mb-6 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink">
           Champs invalides — objectif non créé.
         </div>
       )}
@@ -113,7 +113,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
                   <div className="flex items-center gap-2">
                     <div className="h-2 flex-1 overflow-hidden rounded-full bg-panel2">
                       {g.rate != null && (
-                        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, g.rate * 100)}%` }} />
+                        <div className="h-full rounded-full bg-good" style={{ width: `${Math.min(100, g.rate * 100)}%` }} />
                       )}
                     </div>
                     <span className="w-14 text-right text-xs font-semibold tabular-nums">{pctFmt(g.rate)}</span>
@@ -198,7 +198,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
                       {g.kind} {g.match_type === "contains" ? "⊃" : "="} {g.pattern}
                     </td>
                     <td className="px-4 py-2">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${g.active ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300" : "bg-panel2 text-ink-faint"}`}>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${g.active ? "bg-good/10 text-good-ink" : "bg-panel2 text-ink-faint"}`}>
                         {g.active ? "actif" : "inactif"}
                       </span>
                     </td>
@@ -212,7 +212,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
                         </form>
                         <form action={deleteGoalAction}>
                           <input type="hidden" name="id" value={g.id} />
-                          <button type="submit" className="btn-ghost px-2 py-1 text-red-600 dark:text-red-400">
+                          <button type="submit" className="btn-ghost px-2 py-1 text-bad-ink">
                             Supprimer
                           </button>
                         </form>

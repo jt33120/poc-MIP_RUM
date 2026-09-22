@@ -32,13 +32,13 @@ export function TokenRevokeButton({ id, name }: { id: string; name: string }) {
         type="button"
         onClick={revoquer}
         disabled={etat === "envoi"}
-        className="btn-ghost px-2 py-1 text-red-600 dark:text-red-400"
+        className="btn-ghost px-2 py-1 text-bad-ink"
         aria-label={`Révoquer le jeton ${name}`}
       >
         {etat === "envoi" ? "Révocation…" : "Révoquer"}
       </button>
       {etat === "echec" && (
-        <span role="alert" className="text-xs text-bad">
+        <span role="alert" className="text-xs text-bad-ink">
           Échec : réessayer
         </span>
       )}

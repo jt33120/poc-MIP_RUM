@@ -15,11 +15,11 @@ export function BlindSpotRow({ spot: s }: { spot: BlindSpotData }) {
           {s.syn_state}
         </span>
       </td>
-      <td className="px-4 py-2 font-bold tabular-nums text-red-700 dark:text-red-400">
+      <td className="px-4 py-2 font-bold tabular-nums text-bad-ink">
         {fmtVital("LCP", Number(s.rum_lcp_p75))}
       </td>
       <td className="px-4 py-2">
-        <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-800 dark:bg-red-400/10 dark:text-red-300">
+        <span className="rounded-full bg-bad/10 px-2.5 py-0.5 text-xs font-bold text-bad-ink">
           +{s.gap_ms} ms — le robot ne le voit pas
         </span>
       </td>

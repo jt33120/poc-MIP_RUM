@@ -8,7 +8,7 @@ export function WizardBadge({ state, children }: { state: StepState; children: R
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-        state === "done" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
+        state === "done" ? "bg-green-100 text-green-800" : "bg-warn/10 text-warn-ink"
       }`}
     >
       {state === "done" ? "✅" : "⏳"} {children}

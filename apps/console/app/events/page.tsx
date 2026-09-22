@@ -43,7 +43,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
     return (
       <div className="animate-fade-up">
         <PageHeader title="Événements" sub="Explorer les événements custom et leurs attributs scrubbed." />
-        <div role="alert" className="card border-bad/30 p-6 text-sm text-bad">
+        <div role="alert" className="card border-bad/30 p-6 text-sm text-bad-ink">
           Filtre invalide. Les noms sont bornés à 100 caractères ; une facette exige une source, une clé sûre,
           un type primitif et une valeur exacte.
         </div>

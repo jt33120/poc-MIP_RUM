@@ -160,13 +160,13 @@ function CarteCapteur({ c }: { c: Capteur }) {
             couple se cale donc en bas pour s'aligner d'une carte à l'autre. */}
         <div className="mt-auto grid gap-2 pt-4 sm:grid-cols-2">
           <p className="rounded-lg border border-good/30 bg-good/5 p-3 text-[12.5px] leading-relaxed text-ink-soft">
-            <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-good">
+            <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-good-ink">
               Point fort
             </span>
             {c.fort}
           </p>
           <p className="rounded-lg border border-warn/30 bg-warn/5 p-3 text-[12.5px] leading-relaxed text-ink-soft">
-            <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-warn">
+            <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-warn-ink">
               Limite assumée
             </span>
             {c.limite}

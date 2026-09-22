@@ -66,7 +66,7 @@ export default async function ErrorGroup({
     return (
       <div className="animate-fade-up">
         <BackLink f={f} />
-        <div role="alert" className="card border-bad/30 p-6 text-sm text-bad">
+        <div role="alert" className="card border-bad/30 p-6 text-sm text-bad-ink">
           Curseur de pagination invalide : il ne provient pas de cette console.{" "}
           <Link href={errorsHref(`/errors/${encodeURIComponent(fingerprint)}`, f, f.app)} className={ERROR_LINK}>
             Revenir aux occurrences les plus récentes

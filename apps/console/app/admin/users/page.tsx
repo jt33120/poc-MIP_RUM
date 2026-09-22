@@ -51,7 +51,7 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
       />
 
       {error && (
-        <div className="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
+        <div className="mb-6 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink">
           {error}
         </div>
       )}
@@ -59,7 +59,7 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
       {pwe && (
         <div
           data-testid="one-time-password"
-          className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+          className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
         >
           {oneTime ? (
             <>
@@ -138,7 +138,7 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
                   <span
                     className={`rounded px-2 py-0.5 text-xs font-medium ${
                       u.role === "admin"
-                        ? "bg-accent/15 text-accent-deep dark:text-accent-soft"
+                        ? "bg-accent/15 text-accent-ink"
                         : "bg-panel2 text-ink-soft"
                     }`}
                   >
@@ -152,8 +152,8 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                       u.active
-                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
-                        : "bg-red-100 text-red-800 dark:bg-red-400/10 dark:text-red-300"
+                        ? "bg-good/10 text-good-ink"
+                        : "bg-bad/10 text-bad-ink"
                     }`}
                   >
                     {u.active ? "actif" : "désactivé"}

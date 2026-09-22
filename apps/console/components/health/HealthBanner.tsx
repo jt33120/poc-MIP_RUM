@@ -2,12 +2,13 @@
 // anomalies. Rendu 100 % serveur (aucune interactivité). Extrait de app/page.tsx.
 import { GlossaryTip } from "@/components/GlossaryTip";
 import { dominantFactors, type Health, HEALTH_CLASS, type HealthLabel } from "@/lib/health";
+import { RATING_HEX } from "@/lib/palette";
 
 const RING_STROKE: Record<HealthLabel, string> = {
-  Excellent: "#10b981",
-  Bon: "#0ea5e9",
-  Dégradé: "#f59e0b",
-  Critique: "#ef4444",
+  Excellent: RATING_HEX.good,
+  Bon: "rgb(var(--c-brand))", // bleu perf : bon, sans être le vert d'un seuil web.dev
+  Dégradé: RATING_HEX["needs-improvement"],
+  Critique: RATING_HEX.poor,
 };
 
 /** Anneau de score SVG (rendu serveur) — la pièce centrale du poste de pilotage. */
@@ -54,14 +55,10 @@ function FactorBar({
   raisonNull?: string;
 }) {
   const ratio = earned == null ? null : earned / max;
-  const color =
-    ratio == null
-      ? "bg-ink-faint/40"
-      : ratio >= 0.85
-        ? "bg-emerald-500"
-        : ratio >= 0.5
-          ? "bg-amber-500"
-          : "bg-red-500";
+  // Une seule couleur, sans verdict (R-S) : les paliers 0,85 / 0,5 qui peignaient
+  // ces barres en vert / ambre / rouge n'avaient aucune source. La longueur dit
+  // la part des points gagnés ; le chiffre est écrit à côté.
+  const color = ratio == null ? "bg-ink-faint/40" : "bg-perf";
   return (
     // `min-w-0` : un élément de grille ne descend pas sous le min-content de
     // son contenu sans lui. Le libellé d'un facteur élargissait donc la grille,
@@ -114,7 +111,7 @@ export function HealthBanner({ health, periodLabel }: { health: Health; periodLa
           {health.anomalies.length > 0 && (
             <a
               href="#anomalies"
-              className="mt-2 block w-fit rounded-full border border-red-300 bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-800 transition hover:bg-red-200 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300 dark:hover:bg-red-400/20"
+              className="mt-2 block w-fit rounded-full border border-bad/30 bg-bad/10 px-2.5 py-0.5 text-xs font-semibold text-bad-ink transition hover:bg-bad/20"
               data-testid="anomaly-badge"
             >
               {health.anomalies.length} anomalie(s) détectée(s)

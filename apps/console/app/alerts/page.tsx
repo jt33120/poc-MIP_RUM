@@ -52,7 +52,7 @@ export default async function Alerts({
             {unacked > 0 && (
               <span
                 data-testid="unacked-badge"
-                className="rounded-full bg-red-600 px-2.5 py-0.5 text-xs font-bold text-white"
+                className="rounded-full bg-bad-fond px-2.5 py-0.5 text-xs font-bold text-white"
               >
                 {unacked} non acquittée(s)
               </span>
@@ -81,8 +81,8 @@ export default async function Alerts({
           data-testid="fired-banner"
           className={`mb-6 rounded-xl border px-4 py-3 text-sm font-medium ${
             fired > 0
-              ? "border-red-300 bg-red-50 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300"
-              : "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300"
+              ? "border-bad/30 bg-bad/10 text-bad-ink"
+              : "border-good/30 bg-good/10 text-good-ink"
           }`}
         >
           check_alerts() exécutée : {fired} alerte(s) déclenchée(s).
@@ -174,7 +174,7 @@ export default async function Alerts({
       {!channels.some((c) => c.active) && events.length > 0 && (
         <div
           data-testid="no-channel-warning"
-          className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+          className="mb-4 rounded-xl border border-warn/30 bg-warn/10 p-4 text-sm text-warn-ink"
         >
           <strong>Aucun canal de notification actif.</strong> Ces {events.length} alertes se sont
           déclenchées <strong>sans être envoyées à personne</strong> — la supervision voit, elle ne
@@ -190,11 +190,11 @@ export default async function Alerts({
             className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 text-sm shadow-card ${
               e.acknowledged
                 ? "border-line bg-panel"
-                : "border-red-300 bg-red-50 dark:border-red-400/30 dark:bg-red-400/10"
+                : "border-bad/30 bg-bad/10"
             }`}
           >
             {!e.acknowledged && (
-              <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+              <span className="rounded-full bg-bad-fond px-2 py-0.5 text-xs font-bold text-white">
                 non acquittée
               </span>
             )}
@@ -219,7 +219,7 @@ export default async function Alerts({
                   ? "bg-panel2 text-ink-faint"
                   : e.pending > 0
                     ? "border border-sky-300 bg-sky-100 text-sky-800 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-300"
-                    : "border border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300"
+                    : "border border-warn/30 bg-warn/10 text-warn-ink"
               }`}
             >
               {e.delivered > 0

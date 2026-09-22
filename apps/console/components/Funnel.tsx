@@ -74,7 +74,7 @@ export function FunnelChart({ steps }: { steps: FunnelStep[] }) {
             <div className="w-32 shrink-0 text-right text-xs tabular-nums">
               <span className="text-ink-soft">{pct(s.convFromStart)}</span>
               {s.ord > 1 && (
-                <span className="ml-2 text-red-600 dark:text-red-400" title="abandon depuis l'étape précédente">
+                <span className="ml-2 text-bad-ink" title="abandon depuis l'étape précédente">
                   −{s.dropoff.toLocaleString("fr-FR")}
                 </span>
               )}

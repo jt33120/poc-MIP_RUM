@@ -26,16 +26,24 @@ export default {
           DEFAULT: "#f89101",
           soft: "#fbbc64",
           deep: "#d97b00",
+          // TEXTE orange (F01) : l'orange de marque ne tient que 2,3:1 sur blanc.
+          // Plus soutenu en clair, suit le mode sombre.
+          ink: "rgb(var(--c-accent-ink) / <alpha-value>)",
         },
         // ---- Couleurs sémantiques (sens CONSTANT dans toute l'app) ----------
         // Domaine « Performance utilisateur » (RUM). Bleu.
-        perf: { DEFAULT: "#2563eb", soft: "#dbeafe", ink: "#1d4ed8" },
+        // Le bleu perf suit le mode sombre (même variable que `brand`) : #2563eb ne
+        // tenait que 3,7:1 sur le fond de nuit.
+        perf: { DEFAULT: "rgb(var(--c-brand) / <alpha-value>)", soft: "#dbeafe", ink: "#1d4ed8" },
         // Domaine « Intelligence artificielle » (usage LLM). Violet.
         ai: { DEFAULT: "#7c3aed", soft: "#ede9fe", ink: "#6d28d9" },
-        // État d'une mesure : bon / à surveiller / mauvais.
-        good: { DEFAULT: "#059669", soft: "#d1fae5" },
-        warn: { DEFAULT: "#d97706", soft: "#fef3c7" },
-        bad: { DEFAULT: "#dc2626", soft: "#fee2e2" },
+        // État d'une mesure : bon / à surveiller / mauvais (F01).
+        //   DEFAULT → remplissages, bordures, teintes (bg-bad/10), suit le mode sombre ;
+        //   ink     → TEXTE, 4,5:1 sur sa propre teinte, suit le mode sombre ;
+        //   fond    → aplat sous du texte blanc (bouton « Supprimer »), constant.
+        good: { DEFAULT: "rgb(var(--c-good) / <alpha-value>)", ink: "rgb(var(--c-good-ink) / <alpha-value>)", fond: "#047857" },
+        warn: { DEFAULT: "rgb(var(--c-warn) / <alpha-value>)", ink: "rgb(var(--c-warn-ink) / <alpha-value>)", fond: "#b45309" },
+        bad: { DEFAULT: "rgb(var(--c-bad) / <alpha-value>)", ink: "rgb(var(--c-bad-ink) / <alpha-value>)", fond: "#b91c1c" },
         // navy MIP fixe (texte sur boutons orange) — identique dans les deux modes
         navy: {
           700: "#16275c",

@@ -67,7 +67,7 @@ export default async function AdminPrivacy({
       />
 
       {identityHealth.label === "degraded" && (
-        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200">
+        <div className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink">
           Recherche indisponible : {!identityHealth.configured && <><code>IDENTITY_HASH_SECRET</code> manque. </>}
           {!identityHealth.schema && <>La migration v66 n&apos;est pas détectée. </>}
           L&apos;ingestion historique continue sans ces champs.
@@ -89,8 +89,8 @@ export default async function AdminPrivacy({
         <p
           className={
             etatProtection === "enforce"
-              ? "mb-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300"
-              : "mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+              ? "mb-3 rounded-lg border border-good/30 bg-good/10 px-3 py-2 text-sm text-good-ink"
+              : "mb-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn-ink"
           }
         >
           {DSAR_BARRIERE_MESSAGES[etatProtection]}
@@ -103,12 +103,12 @@ export default async function AdminPrivacy({
       </section>
 
       {error && (
-        <div className="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
+        <div className="mb-6 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink">
           {error}
         </div>
       )}
       {erased != null && (
-        <div className="mb-6 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300">
+        <div className="mb-6 rounded-xl border border-good/30 bg-good/10 px-4 py-3 text-sm text-good-ink">
           Effacement effectué — <strong>{erased}</strong> ligne(s) supprimée(s).
         </div>
       )}
@@ -199,8 +199,8 @@ export default async function AdminPrivacy({
           </div>
 
           {/* Effacement */}
-          <div className="card border-red-300/60 p-4 dark:border-red-400/20">
-            <h2 className="mb-1 text-sm font-semibold text-red-700 dark:text-red-300">Effacement</h2>
+          <div className="card border-bad/60 p-4">
+            <h2 className="mb-1 text-sm font-semibold text-bad-ink">Effacement</h2>
             <p className="mb-3 text-xs text-ink-faint">
               Supprime <strong>définitivement</strong> toutes les lignes ci-dessus (transaction).
               Irréversible — re-saisis l&apos;identifiant métier pour confirmer.
@@ -219,7 +219,7 @@ export default async function AdminPrivacy({
               />
               <button
                 type="submit"
-                className="rounded-lg border border-red-400 bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                className="rounded-lg border border-bad/30 bg-bad-fond px-3 py-2 text-sm font-semibold text-white transition hover:bg-bad-fond/90"
               >
                 Effacer définitivement
               </button>
@@ -253,7 +253,7 @@ export default async function AdminPrivacy({
       </div>
 
       {visitorTarget?.verdict === "refus_empreinte" && (
-        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200" data-testid="dsar-refus">
+        <div className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink" data-testid="dsar-refus">
           <p className="font-semibold">Demande non exécutable sur cet identifiant</p>
           <p className="mt-1">{DSAR_MESSAGES.refus_empreinte}</p>
           <p className="mt-2 text-xs">{visitorTarget.sessionsHeritees.toLocaleString("fr-FR")} session(s) portent cette valeur en <code className="font-mono">user_hash</code>.</p>
@@ -282,13 +282,13 @@ export default async function AdminPrivacy({
             <h2 className="mb-3 text-sm font-semibold text-ink">Accès & portabilité visitor_id</h2>
             <Link href={visitorExportHref} prefetch={false} className="btn-accent inline-block" data-testid="dsar-visitor-export">Exporter en JSON</Link>
           </div>
-          <div className="card border-red-300/60 p-4 dark:border-red-400/20">
-            <h2 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-300">Effacement visitor_id</h2>
+          <div className="card border-bad/60 p-4">
+            <h2 className="mb-3 text-sm font-semibold text-bad-ink">Effacement visitor_id</h2>
             <form action={eraseUserAction} className="flex flex-col gap-2" data-testid="dsar-visitor-erase-form">
               <input type="hidden" name="app" value={visitorApp} />
               <input type="hidden" name="user" value={visitorId} />
               <input name="confirm" type="text" required placeholder="re-saisir l'identifiant de visiteur" className="field w-full font-mono text-xs" autoComplete="off" />
-              <button type="submit" className="rounded-lg border border-red-400 bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700">Effacer définitivement</button>
+              <button type="submit" className="rounded-lg border border-bad/30 bg-bad-fond px-3 py-2 text-sm font-semibold text-white transition hover:bg-bad-fond/90">Effacer définitivement</button>
             </form>
           </div>
         </div>

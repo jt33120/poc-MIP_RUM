@@ -24,10 +24,10 @@ import { fmtDuration, journeyCoverage, outcomeLabel, outcomeRates } from "@/lib/
 export const dynamic = "force-dynamic";
 
 const OUTCOME_STYLE: Record<string, string> = {
-  contained: "border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300",
+  contained: "border-good/30 bg-good/10 text-good-ink",
   transferred: "border-sky-300 bg-sky-100 text-sky-800 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-300",
-  abandoned: "border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300",
-  failed: "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300",
+  abandoned: "border-warn/30 bg-warn/10 text-warn-ink",
+  failed: "border-bad/30 bg-bad/10 text-bad-ink",
   open: "border-line bg-panel2 text-ink-faint",
 };
 

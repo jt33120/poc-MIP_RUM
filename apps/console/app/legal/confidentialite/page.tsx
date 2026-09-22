@@ -11,7 +11,7 @@ export default function Confidentialite() {
       intro={
         <p>
           Cette politique décrit le traitement des données dans le cadre du service {ORG.produit}. Elle complète,
-          pour le capteur navigateur, la <a href="/extension-privacy" className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">politique dédiée à l'extension</a>.
+          pour le capteur navigateur, la <a href="/extension-privacy" className="text-accent-ink underline-offset-2 hover:underline">politique dédiée à l'extension</a>.
         </p>
       }
     >

@@ -11,7 +11,7 @@ export function GroupSparkline({ values, label }: { values: number[]; label: str
   const max = Math.max(...values, 1);
   const barW = WIDTH / Math.max(values.length, 1);
   return (
-    <svg width={WIDTH} height={HEIGHT} role="img" aria-label={label} className="text-red-500 dark:text-red-400">
+    <svg width={WIDTH} height={HEIGHT} role="img" aria-label={label} className="text-bad-ink">
       <title>{label}</title>
       {values.map((v, i) =>
         v > 0 ? (

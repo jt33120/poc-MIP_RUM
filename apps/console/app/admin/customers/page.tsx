@@ -33,7 +33,7 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
       </p>
 
       {error && (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mb-6 rounded-lg border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink">
           {error}
           {detail && <code className="ml-2 rounded bg-white px-1.5 py-0.5 text-xs">{detail}</code>}
         </div>
@@ -140,7 +140,7 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
                 <td className="px-4 py-2">
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      c.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                      c.active ? "bg-green-100 text-green-800" : "bg-bad/10 text-bad-ink"
                     }`}
                   >
                     {c.active ? "actif" : "désactivé"}

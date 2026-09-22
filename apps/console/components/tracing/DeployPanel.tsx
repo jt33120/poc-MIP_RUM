@@ -17,9 +17,9 @@ export async function DeployPanel({ f }: { f: Filters }) {
 
   const verdict = impact ? verdictDeploiement(impact) : null;
   const TON = {
-    regression: "border-red-300/60 bg-red-50 text-red-800 dark:border-red-400/25 dark:bg-red-400/10 dark:text-red-200",
+    regression: "border-bad/60 bg-bad/10 text-bad-ink",
     incomplet: "border-line bg-panel2 text-ink-soft",
-    stable: "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-200",
+    stable: "border-good/60 bg-good/10 text-good-ink",
   } as const;
 
   return (

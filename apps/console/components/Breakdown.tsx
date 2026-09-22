@@ -82,7 +82,7 @@ export function Breakdown({
               data-testid={`breakdown-tab-${tab.dimension}`}
               className={`rounded-md border px-2.5 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
                 tab.current
-                  ? "border-accent/50 bg-accent/10 text-accent-deep dark:text-accent-soft"
+                  ? "border-accent/50 bg-accent/10 text-accent-ink"
                   : "border-line bg-panel2 text-ink-faint hover:text-ink"
               }`}
             >

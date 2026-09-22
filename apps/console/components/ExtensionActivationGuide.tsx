@@ -44,7 +44,7 @@ export function ExtensionActivationGuide() {
         <Step n={1} title="Enregistrer le domaine">
           Ajoute le domaine du site (ex. <code className="chip-mono">insight-performance.com</code>{" "}
           et sa variante <code className="chip-mono">www.</code>) dans le registre ci-dessous, et
-          rattache-le à la bonne app. Statut <span className="font-medium text-emerald-600 dark:text-emerald-400">actif</span> requis.
+          rattache-le à la bonne app. Statut <span className="font-medium text-good-ink">actif</span> requis.
           L&apos;enregistrement <strong>autorise aussi automatiquement l&apos;origine à envoyer
           ses mesures</strong> (CORS) — plus de seconde étape manuelle.
         </Step>

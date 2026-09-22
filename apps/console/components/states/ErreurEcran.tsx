@@ -33,7 +33,7 @@ export function ErreurEcran({
       <h1 className="mb-4 text-xl font-bold tracking-tight text-ink">{titre}</h1>
       <CadreEtat ton="erreur" role="alert" etat="erreur" className="max-w-2xl">
         <p>
-          <strong className="font-semibold text-bad">Lecture en échec.</strong> La lecture de l&apos;écran «{NBSP}
+          <strong className="font-semibold text-bad-ink">Lecture en échec.</strong> La lecture de l&apos;écran «{NBSP}
           {titre}
           {NBSP}» a échoué{NBSP}; aucun chiffre partiel n&apos;est affiché.
         </p>

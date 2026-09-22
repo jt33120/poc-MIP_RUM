@@ -51,11 +51,11 @@ export default async function Usage() {
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 w-28 overflow-hidden rounded-full bg-line">
                           <div
-                            className={`h-full ${qv.over ? "bg-red-500" : "bg-accent"}`}
+                            className={`h-full ${qv.over ? "bg-bad" : "bg-accent"}`}
                             style={{ width: `${Math.min(100, qv.pct ?? 0)}%` }}
                           />
                         </div>
-                        <span className={`text-xs ${qv.over ? "font-semibold text-red-600 dark:text-red-400" : "text-ink-faint"}`}>
+                        <span className={`text-xs ${qv.over ? "font-semibold text-bad-ink" : "text-ink-faint"}`}>
                           {qv.label} de {r.quota.toLocaleString("fr-FR")}
                           {qv.over && " · dépassé"}
                         </span>

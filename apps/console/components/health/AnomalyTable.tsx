@@ -37,7 +37,7 @@ export function AnomalyTable({ health }: { health: Health }) {
               <td className="px-4 py-2 tabular-nums text-ink-soft">{fmtVital("LCP", a.mean_7d)}</td>
               <td
                 className={`px-4 py-2 font-semibold tabular-nums ${
-                  a.z_score > 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"
+                  a.z_score > 0 ? "text-bad-ink" : "text-good-ink"
                 }`}
               >
                 {a.z_score > 0 ? "+" : ""}

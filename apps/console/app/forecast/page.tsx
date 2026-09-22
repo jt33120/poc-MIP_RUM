@@ -230,7 +230,7 @@ function MetricCard({ m }: { m: Metric }) {
 
   // couleur de la tendance selon le sens « défavorable »
   const bad = dir === (m.higherIsWorse ? "up" : "down");
-  const arrowCls = dir === "flat" ? "text-ink-faint" : bad ? "text-bad" : "text-good";
+  const arrowCls = dir === "flat" ? "text-ink-faint" : bad ? "text-bad-ink" : "text-good-ink";
 
   return (
     <div className="card p-4">
@@ -250,15 +250,15 @@ function MetricCard({ m }: { m: Metric }) {
       {m.threshold != null && (
         <div className="mt-3 text-xs">
           {eta === 0 ? (
-            <span className="rounded-full bg-bad/10 px-2 py-0.5 font-semibold text-bad">
+            <span className="rounded-full bg-bad/10 px-2 py-0.5 font-semibold text-bad-ink">
               seuil {m.thresholdLabel} déjà dépassé
             </span>
           ) : eta != null && eta <= HORIZON ? (
-            <span className="rounded-full bg-warn/10 px-2 py-0.5 font-semibold text-warn">
+            <span className="rounded-full bg-warn/10 px-2 py-0.5 font-semibold text-warn-ink">
               ⚠ dépassement du seuil {m.thresholdLabel} vers J+{Math.ceil(eta)}
             </span>
           ) : (
-            <span className="rounded-full bg-good/10 px-2 py-0.5 font-semibold text-good">
+            <span className="rounded-full bg-good/10 px-2 py-0.5 font-semibold text-good-ink">
               sous le seuil {m.thresholdLabel} sur l&apos;horizon
             </span>
           )}

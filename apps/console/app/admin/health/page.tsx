@@ -54,7 +54,7 @@ export default async function Health() {
       />
 
       {identity.label === "degraded" && (
-        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200" data-testid="identity-health-degraded">
+        <div className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink" data-testid="identity-health-degraded">
           <strong>Identité métier dégradée.</strong>{" "}
           {!identity.configured && <><code>IDENTITY_HASH_SECRET</code> est absent. </>}
           {!identity.schema && <>La migration v66 n&apos;est pas détectée. </>}
@@ -63,7 +63,7 @@ export default async function Health() {
       )}
 
       {causal.label === "degraded" && (
-        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200" data-testid="causal-actions-health-degraded">
+        <div className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink" data-testid="causal-actions-health-degraded">
           <strong>Actions causales dégradées.</strong> La migration v67 n&apos;est pas détectée :
           l&apos;ingestion P2 continue sans interruption, mais les liens et le classement Top Actions restent indisponibles.
         </div>
@@ -86,7 +86,7 @@ export default async function Health() {
           Endpoint remis aux clients (snippet d&apos;intégration)
         </div>
         <code className="mt-1 block break-all font-mono text-[13px] text-ink">{snippet}</code>
-        <div className={`mt-1 text-xs ${memeHote ? "text-ink-soft" : "text-warn"}`}>
+        <div className={`mt-1 text-xs ${memeHote ? "text-ink-soft" : "text-warn-ink"}`}>
           {memeHote
             ? force
               ? "Forcé par NEXT_PUBLIC_RUM_ENDPOINT, et pointe bien cet hôte."
@@ -103,7 +103,7 @@ export default async function Health() {
 /** Les tuiles de l'instantané de santé — rendues seulement sur une lecture réussie. */
 function StatsSante({ h }: { h: HealthSnapshot }) {
   const lag = h.metering_lag_hours;
-  const lagTone = lag == null ? "" : lag > 30 ? "text-red-600 dark:text-red-400" : lag > 26 ? "text-amber-600 dark:text-amber-400" : "";
+  const lagTone = lag == null ? "" : lag > 30 ? "text-bad-ink" : lag > 26 ? "text-warn-ink" : "";
   return (
     <>
       <h2 className="mb-2 text-sm font-semibold text-ink">Ingestion (5 min glissantes)</h2>
@@ -116,10 +116,10 @@ function StatsSante({ h }: { h: HealthSnapshot }) {
 
       <h2 className="mb-2 text-sm font-semibold text-ink">Alertes & livraison</h2>
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Alertes non acquittées" value={h.alerts_unacked} tone={h.alerts_unacked > 0 ? "text-amber-600 dark:text-amber-400" : ""} />
+        <Stat label="Alertes non acquittées" value={h.alerts_unacked} tone={h.alerts_unacked > 0 ? "text-warn-ink" : ""} />
         <Stat label="Livraisons en file" value={h.deliveries_queued} />
-        <Stat label="Livraisons échouées" value={h.deliveries_failed} tone={h.deliveries_failed > 0 ? "text-amber-600 dark:text-amber-400" : ""} />
-        <Stat label="Livraisons abandonnées" value={h.deliveries_dead} tone={h.deliveries_dead > 0 ? "text-red-600 dark:text-red-400" : ""} />
+        <Stat label="Livraisons échouées" value={h.deliveries_failed} tone={h.deliveries_failed > 0 ? "text-warn-ink" : ""} />
+        <Stat label="Livraisons abandonnées" value={h.deliveries_dead} tone={h.deliveries_dead > 0 ? "text-bad-ink" : ""} />
       </div>
 
       <h2 className="mb-2 text-sm font-semibold text-ink">File de débarquement</h2>
@@ -130,8 +130,8 @@ function StatsSante({ h }: { h: HealthSnapshot }) {
         qu&apos;une écriture échoue en boucle, et ceux-là ne seront plus repris.
       </p>
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Lots en attente" value={h.ingest_backlog} tone={h.ingest_backlog > 1000 ? "text-amber-600 dark:text-amber-400" : ""} />
-        <Stat label="Lots abandonnés" value={h.ingest_backlog_blocked} tone={h.ingest_backlog_blocked > 0 ? "text-red-600 dark:text-red-400" : ""} />
+        <Stat label="Lots en attente" value={h.ingest_backlog} tone={h.ingest_backlog > 1000 ? "text-warn-ink" : ""} />
+        <Stat label="Lots abandonnés" value={h.ingest_backlog_blocked} tone={h.ingest_backlog_blocked > 0 ? "text-bad-ink" : ""} />
         <div className="card px-4 py-3">
           <div className="text-[11px] uppercase tracking-wide text-ink-faint">Plus vieux lot</div>
           <div className="mt-0.5 text-2xl font-bold tabular-nums">
@@ -151,7 +151,7 @@ function StatsSante({ h }: { h: HealthSnapshot }) {
         <Stat
           label="Apps au plafond"
           value={h.apps_route_capped}
-          tone={h.apps_route_capped > 0 ? "text-amber-600 dark:text-amber-400" : ""}
+          tone={h.apps_route_capped > 0 ? "text-warn-ink" : ""}
         />
         <Stat label="Routes distinctes (max)" value={h.routes_max} />
       </div>

@@ -73,7 +73,7 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
       )}
 
       {erreur && (
-        <div role="alert" className="mb-6 rounded-xl border border-bad/40 bg-bad/10 px-4 py-3 text-sm text-bad" data-testid="tickets-erreur">
+        <div role="alert" className="mb-6 rounded-xl border border-bad/40 bg-bad/10 px-4 py-3 text-sm text-bad-ink" data-testid="tickets-erreur">
           {erreur}
         </div>
       )}
@@ -192,7 +192,7 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
                   <td className="px-4 py-2 text-xs text-ink-soft">
                     {i.enabled ? "Activé" : "Désactivé"}
                     {i.state === "degraded" && (
-                      <span className="block text-bad">Dégradé{i.last_error ? ` — ${i.last_error}` : ""}</span>
+                      <span className="block text-bad-ink">Dégradé{i.last_error ? ` — ${i.last_error}` : ""}</span>
                     )}
                   </td>
                   <td className="px-4 py-2 text-xs text-ink-soft">

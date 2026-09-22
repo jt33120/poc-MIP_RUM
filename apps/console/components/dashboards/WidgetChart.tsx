@@ -14,9 +14,11 @@
 import { LineTrend, type LineTrendPoint } from "@/components/charts/LineTrend";
 import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import type { WidgetData } from "@/lib/widget-data";
+import { CATEGORIELLE } from "@/lib/palette";
 
 // Même palette que Sankey : huit teintes distinguables, réutilisées cycliquement.
-const PALETTE = ["#2563eb", "#059669", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#65a30d"];
+// Des groupes sans ordre ni verdict : jamais de vert, d'ambre ni de rouge (P15).
+const PALETTE = CATEGORIELLE;
 
 export function WidgetChart({ data, unit = "" }: { data: WidgetData; unit?: string }) {
   const serie = data.series;

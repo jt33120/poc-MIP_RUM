@@ -41,8 +41,8 @@ const NOMBRE = (n: number) => n.toLocaleString("fr-FR");
 const INCONNU = (n: number | null) => (n == null ? "Inconnu" : NOMBRE(n));
 
 const BADGE: Record<CapabilityStatus["state"], string> = {
-  active: "border-good/40 bg-good/10 text-good",
-  unavailable: "border-warn/40 bg-warn/10 text-warn",
+  active: "border-good/40 bg-good/10 text-good-ink",
+  unavailable: "border-warn/40 bg-warn/10 text-warn-ink",
   unknown: "border-line bg-panel2 text-ink-faint",
 };
 

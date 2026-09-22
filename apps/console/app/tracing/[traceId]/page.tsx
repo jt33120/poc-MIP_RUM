@@ -147,7 +147,7 @@ export default async function TraceDetail({
       </div>
 
       {!hasBackend && (
-        <div className="mb-5 rounded-lg border border-amber-300/50 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-200">
+        <div className="mb-5 rounded-lg border border-warn/50 bg-warn/10 px-4 py-3 text-sm text-warn-ink">
           Aucun span backend reçu pour cette trace — le navigateur voit l&apos;appel mais le serveur n&apos;est
           pas instrumenté. Déployez le middleware MIP (ou un agent OpenTelemetry) pour révéler la cause serveur.
         </div>

@@ -45,7 +45,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
               <p className="mt-3 text-sm text-ink-soft">Connexion à la console</p>
               <Link
                 href="/presentation"
-                className="mt-1 inline-block text-xs font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent"
+                className="mt-1 inline-block text-xs font-medium text-accent-ink underline-offset-2 hover:underline"
               >
                 ← Découvrir MIP RUM
               </Link>
@@ -66,7 +66,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
               {error && (
                 <p
                   data-testid="login-error"
-                  className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300"
+                  className="rounded-lg border border-bad/30 bg-bad/10 px-3 py-2 text-sm text-bad-ink"
                 >
                   Identifiants invalides.
                 </p>

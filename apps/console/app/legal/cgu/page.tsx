@@ -19,7 +19,7 @@ export default function CGU() {
         <p>
           Les CGU définissent les modalités de mise à disposition de la console {ORG.produit} et les conditions
           d'utilisation par l'utilisateur autorisé (ci-après « l'Utilisateur »). Les conditions commerciales
-          (souscription, prix) relèvent des <a href="/legal/cgv" className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">CGV</a>.
+          (souscription, prix) relèvent des <a href="/legal/cgv" className="text-accent-ink underline-offset-2 hover:underline">CGV</a>.
         </p>
       </LegalSection>
 
@@ -56,7 +56,7 @@ export default function CGU() {
       <LegalSection n="5" title="Données et confidentialité">
         <p>
           Le traitement des données est décrit dans la{" "}
-          <a href="/legal/confidentialite" className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">politique de confidentialité</a>{" "}
+          <a href="/legal/confidentialite" className="text-accent-ink underline-offset-2 hover:underline">politique de confidentialité</a>{" "}
           et, pour les données traitées pour le compte du client, dans l'
           accord de traitement (DPA). Le
           service est conçu pour ne pas collecter de donnée directement identifiante côté RUM.

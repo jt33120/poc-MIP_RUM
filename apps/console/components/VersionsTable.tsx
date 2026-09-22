@@ -91,7 +91,7 @@ export function VersionsTable({
                       <>
                         <span className="text-ink">{(taux * 100).toFixed(1)} %</span>
                         {ecart != null && Math.abs(ecart) >= 0.1 && (
-                          <span className={`ml-2 text-xs ${ecart > 0 ? "text-bad" : "text-good"}`}>
+                          <span className={`ml-2 text-xs ${ecart > 0 ? "text-bad-ink" : "text-good-ink"}`}>
                             {ecart > 0 ? "+" : ""}
                             {ecart.toFixed(1)} pt
                           </span>

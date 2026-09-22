@@ -131,7 +131,7 @@ export default function ReplayPlayer({ sessionId, atMs = null }: { sessionId: st
         </div>
       )}
       {state === "error" && (
-        <p className="py-8 text-center text-sm text-red-500 dark:text-red-400">
+        <p className="py-8 text-center text-sm text-bad-ink">
           Replay indisponible (erreur de chargement des chunks).
         </p>
       )}

@@ -25,8 +25,8 @@ export function SlowRow({ t, query }: { t: SlowTrace; query: AnalyticsQuery }) {
         <span
           className={`rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums ${
             bad
-              ? "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300"
-              : "border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300"
+              ? "border-bad/30 bg-bad/10 text-bad-ink"
+              : "border-good/30 bg-good/10 text-good-ink"
           }`}
         >
           {t.front_status || "réseau"}

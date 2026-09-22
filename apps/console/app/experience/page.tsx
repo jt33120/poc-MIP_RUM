@@ -157,7 +157,7 @@ export default async function Experience({
                   <tr key={`${r.route}|${i}`} className="border-t border-line/60">
                     <td className="px-4 py-2"><span className="chip-mono">{r.route ?? "(app)"}</span></td>
                     <td className="px-4 py-2 text-right tabular-nums">{r.count}</td>
-                    <td className={`px-4 py-2 text-right font-semibold tabular-nums ${c < 0.5 ? "text-bad" : c < 0.8 ? "text-warn" : "text-good"}`}>
+                    <td className={`px-4 py-2 text-right font-semibold tabular-nums ${c < 0.5 ? "text-bad-ink" : c < 0.8 ? "text-warn-ink" : "text-good-ink"}`}>
                       {Math.round(c * 100)}%
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums text-ink-soft">{r.avg == null ? "—" : r.avg.toFixed(1)}</td>
@@ -178,7 +178,7 @@ export default async function Experience({
           <ul className="divide-y divide-line/60">
             {recent.map((r) => (
               <li key={r.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
-                <span className="shrink-0 tabular-nums text-warn" title={`${r.score ?? "?"}/5`}>
+                <span className="shrink-0 tabular-nums text-warn-ink" title={`${r.score ?? "?"}/5`}>
                   {"★".repeat(r.score ?? 0)}
                   <span className="text-ink-faint">{"★".repeat(Math.max(0, 5 - (r.score ?? 0)))}</span>
                 </span>
