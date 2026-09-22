@@ -22,7 +22,7 @@ import { formater, formatDuVital, type VitalName } from "@/lib/fmt-ids";
 import type { Lecture } from "@/lib/lecture";
 import { bucketLabel } from "@/lib/query-contract";
 import { libelleSeauComplet, type Annotation, type PointSerie, type SerieDef } from "@/lib/series";
-import { pointsCharge, pointsRelease, pointsVital, serieVide, type SeauVital } from "@/lib/vue-ensemble";
+import { pointsCharge, pointsRelease, pointsVital, serieVide, sommeLue, type SeauVital } from "@/lib/vue-ensemble";
 
 /** Ce que les séries comparent : rien, la période précédente, ou deux releases (§ 3.2). */
 export type ModeSeries =
@@ -106,7 +106,17 @@ function petitMultiple(l: LectureVital, mode: ModeSeries, c: Commun) {
     ]),
   };
   const n = somme(points.map((p) => p.n));
-  return { ok: true as const, points: points as PointSerie[], series, etat, alternative, n, meta: `${formater("count", n)} mesures` };
+  // Période précédente demandée mais illisible : la série grise manque, et la méta le dit.
+  const precedentNonLu = mode.kind === "prev" && l.precedent != null && !l.precedent.ok;
+  return {
+    ok: true as const,
+    points: points as PointSerie[],
+    series,
+    etat,
+    alternative,
+    n,
+    meta: `${formater("count", n)} mesures${precedentNonLu ? " · période précédente : non lue" : ""}`,
+  };
 }
 
 export function HeroCwv({
@@ -176,7 +186,7 @@ export function HeroCwv({
 
 export interface LecturesCharge {
   vues: Lecture<{ bucket: string; chargements: number; spa: number; inconnu: number }[]>;
-  erreurs: Lecture<{ restreint: boolean; points: { bucket: string; navigateur: number }[] }>;
+  erreurs: Lecture<{ restreint: boolean; points: { bucket: string; navigateur: number; sansSource: number }[] }>;
   lcp: Lecture<SeauVital[]>;
   /** Période précédente du LCP (`cmp=prev`, complète) : série grise sur le panneau (3) seulement. */
   lcpPrecedent?: Lecture<SeauVital[]> | null;
@@ -199,18 +209,28 @@ export function ChargeErreursLcp({
 }: Commun & { lectures: LecturesCharge; mode: ModeSeries }) {
   const seau = bucketLabel(commun.seauSecondes);
   const synchro = "vue-ensemble-charge";
-  const vues = lectures.vues.ok ? lectures.vues.data : [];
-  const erreurs = lectures.erreurs.ok ? lectures.erreurs.data.points : [];
-  const lcp = lectures.lcp.ok ? lectures.lcp.data : [];
+  // Une lecture en échec reste `null` jusque dans l'alternative et la méta (V3) :
+  // jamais « 0 occurrence » sur une fenêtre qu'on n'a pas pu lire.
+  const vues = lectures.vues.ok ? lectures.vues.data : null;
+  const erreurs = lectures.erreurs.ok ? lectures.erreurs.data.points : null;
+  const lcp = lectures.lcp.ok ? lectures.lcp.data : null;
   const precedent = mode.kind === "prev" && lectures.lcpPrecedent?.ok ? lectures.lcpPrecedent.data : null;
+  const precedentNonLu = mode.kind === "prev" && lectures.lcpPrecedent != null && !lectures.lcpPrecedent.ok;
   const points = pointsCharge(commun.grille, vues, erreurs, lcp);
-  const pointsLcp = pointsVital(commun.grille, lcp, precedent);
+  const pointsLcp = pointsVital(commun.grille, lcp ?? [], precedent);
   const lignes: PointSerie[] = points.map((p, i) => ({ ...p, precedent: pointsLcp[i].precedent ?? null }));
 
-  const totalVues = somme(points.map((p) => p.chargements + p.spa + p.inconnu));
-  const totalErreurs = somme(points.map((p) => p.erreurs));
-  const totalLcp = somme(points.map((p) => p.n));
-  const avecInconnu = points.some((p) => p.inconnu > 0);
+  const totalVues = vues ? sommeLue(points.map((p) => (p.chargements ?? 0) + (p.spa ?? 0) + (p.inconnu ?? 0))) : null;
+  const totalErreurs = erreurs ? sommeLue(points.map((p) => p.erreurs)) : null;
+  const totalSansSource = erreurs ? sommeLue(points.map((p) => p.sansSource)) : null;
+  const totalLcp = lcp ? sommeLue(points.map((p) => p.n)) : null;
+  const avecInconnu = points.some((p) => (p.inconnu ?? 0) > 0);
+  // CP14 : les occurrences sans source déclarée ne sont pas au panneau (2), et c'est dit.
+  const noteSansSource =
+    lectures.erreurs.ok && lectures.erreurs.data.restreint && (totalSansSource ?? 0) > 0
+      ? `${formater("count", totalSansSource)} occurrence(s) sans source déclarée, non comptée(s)`
+      : null;
+  const compte = (n: number | null, unite: string) => (n === null ? `${unite} : non lu` : `${formater("count", n)} ${unite}`);
   // Sans la colonne de source (v69), le numérateur porte toutes les sources : le titre le dit.
   const titreErreurs =
     lectures.erreurs.ok && !lectures.erreurs.data.restreint
@@ -234,9 +254,10 @@ export function ChargeErreursLcp({
         <>
           <span>seau de {seau}</span>
           <span>{commun.grille.length} seaux</span>
-          <span>{formater("count", totalVues)} pages vues</span>
-          <span>{formater("count", totalErreurs)} occurrences</span>
-          <span>{formater("count", totalLcp)} mesures LCP</span>
+          <span>{compte(totalVues, "pages vues")}</span>
+          <span>{compte(totalErreurs, "occurrences navigateur")}</span>
+          <span>{compte(totalLcp, "mesures LCP")}</span>
+          {precedentNonLu && <span>période précédente : non lue</span>}
           <span>{commun.plage}, UTC</span>
         </>
       }
@@ -269,7 +290,8 @@ export function ChargeErreursLcp({
           p.spa,
           ...(avecInconnu ? [p.inconnu] : []),
           p.erreurs,
-          formater("ms", p.p75),
+          // LCP illisible : « — » (null), comme un seau sans mesure ; l'effectif « — » dit lequel.
+          lcp ? formater("ms", p.p75) : null,
           p.n,
         ]),
       }}
@@ -300,7 +322,15 @@ export function ChargeErreursLcp({
           {!lectures.erreurs.ok ? (
             <EchecLecture compact titre="Occurrences d'erreurs par seau" />
           ) : totalErreurs === 0 ? (
-            <EtatSurface compact etat={{ kind: "vide", population: "occurrence d'erreur navigateur", plage: commun.plage }} />
+            <EtatSurface
+              compact
+              etat={{
+                kind: "vide",
+                population: "occurrence d'erreur navigateur",
+                plage: commun.plage,
+                ...(noteSansSource ? { borne: `${noteSansSource}.` } : {}),
+              }}
+            />
           ) : (
             <ThresholdSeries
               {...partage}
@@ -310,6 +340,11 @@ export function ChargeErreursLcp({
               format="count"
               ariaLabel={`${titreErreurs} par seau de ${seau}, ${commun.grille.length} seaux`}
             />
+          )}
+          {noteSansSource && totalErreurs !== 0 && (
+            <p role="note" className="mt-1 text-xs text-ink-soft" data-testid="charge-sans-source">
+              {noteSansSource}.
+            </p>
           )}
         </Panneau>
         <Panneau titre="LCP p75" id="lcp">

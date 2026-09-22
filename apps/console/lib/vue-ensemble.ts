@@ -169,12 +169,17 @@ export function serieVide(points: readonly { [cle: string]: unknown }[], cles: r
 
 export interface PointCharge {
   t: string;
-  chargements: number;
-  spa: number;
-  inconnu: number;
-  erreurs: number;
+  /** `null` : la lecture des vues a échoué — jamais 0 pour une série non lue. */
+  chargements: number | null;
+  spa: number | null;
+  inconnu: number | null;
+  /** Occurrences navigateur ; `null` : lecture en échec. */
+  erreurs: number | null;
+  /** Occurrences sans source déclarée (hors du panneau, dites) ; `null` : lecture en échec. */
+  sansSource: number | null;
   p75: number | null;
-  n: number;
+  /** Mesures LCP du seau ; `null` : lecture en échec. */
+  n: number | null;
 }
 
 /**
@@ -183,28 +188,38 @@ export interface PointCharge {
  * vide = 0), (2) occurrences d'erreurs navigateur (compte), (3) LCP p75 et effectif
  * (mesure, seau vide = trou). Un seau absent d'une lecture de COMPTE vaut 0 ; absent
  * de la lecture du LCP, il reste `null`.
+ *
+ * UNE LECTURE EN ÉCHEC N'EST PAS UNE SÉRIE VIDE (V3) : passée `null`, ses champs
+ * valent `null` dans chaque seau (« — » dans l'alternative, « non lu » en méta),
+ * jamais 0 — sinon la figure écrirait « 0 occurrence » sur une fenêtre non lue.
  */
 export function pointsCharge(
   grille: readonly string[],
-  vues: readonly { bucket: string; chargements: number; spa: number; inconnu: number }[],
-  erreurs: readonly { bucket: string; navigateur: number }[],
-  lcp: readonly SeauVital[],
+  vues: readonly { bucket: string; chargements: number; spa: number; inconnu: number }[] | null,
+  erreurs: readonly { bucket: string; navigateur: number; sansSource?: number }[] | null,
+  lcp: readonly SeauVital[] | null,
 ): PointCharge[] {
-  const v = parSeau(vues);
-  const e = parSeau(erreurs);
-  const l = parSeau(lcp);
+  const v = vues ? parSeau(vues) : null;
+  const e = erreurs ? parSeau(erreurs) : null;
+  const l = lcp ? parSeau(lcp) : null;
   return grille.map((t) => {
     const ms = Date.parse(t);
     return {
       t,
-      chargements: v.get(ms)?.chargements ?? 0,
-      spa: v.get(ms)?.spa ?? 0,
-      inconnu: v.get(ms)?.inconnu ?? 0,
-      erreurs: e.get(ms)?.navigateur ?? 0,
-      p75: l.get(ms)?.p75 ?? null,
-      n: l.get(ms)?.n ?? 0,
+      chargements: v ? (v.get(ms)?.chargements ?? 0) : null,
+      spa: v ? (v.get(ms)?.spa ?? 0) : null,
+      inconnu: v ? (v.get(ms)?.inconnu ?? 0) : null,
+      erreurs: e ? (e.get(ms)?.navigateur ?? 0) : null,
+      sansSource: e ? (e.get(ms)?.sansSource ?? 0) : null,
+      p75: l ? (l.get(ms)?.p75 ?? null) : null,
+      n: l ? (l.get(ms)?.n ?? 0) : null,
     };
   });
+}
+
+/** Somme d'une série lue ; `null` si la série n'a pas été lue (une case `null`). */
+export function sommeLue(valeurs: readonly (number | null)[]): number | null {
+  return valeurs.some((v) => v === null) ? null : valeurs.reduce<number>((a, b) => a + (b ?? 0), 0);
 }
 
 // ─────────────────────────────── Constats (§ 5.1.2, zone 4) ───────────────────────────────

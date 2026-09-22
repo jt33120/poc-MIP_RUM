@@ -269,7 +269,7 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
 });
 
 // ─────────────── F12 — séries du hero et de « Charge, erreurs et LCP » ───────────────
-import { pointsCharge, pointsRelease, pointsVital, serieVide } from "../../apps/console/lib/vue-ensemble";
+import { pointsCharge, pointsRelease, pointsVital, serieVide, sommeLue } from "../../apps/console/lib/vue-ensemble";
 
 describe("F12 — points des séries de la Vue d'ensemble", () => {
   const GRILLE = ["2026-09-22T10:00:00Z", "2026-09-22T11:00:00Z", "2026-09-22T12:00:00Z"];
@@ -317,5 +317,14 @@ describe("F12 — points des séries de la Vue d'ensemble", () => {
     expect(points[0]).toMatchObject({ chargements: 8, spa: 3, inconnu: 1, erreurs: 0, p75: 2100, n: 40 });
     expect(points[1]).toMatchObject({ chargements: 0, spa: 0, inconnu: 0, erreurs: 0, p75: null, n: 0 });
     expect(points[2]).toMatchObject({ erreurs: 4, p75: 2600 });
+  });
+
+  it("une lecture en échec (null) reste null dans chaque seau, jamais 0 (V3)", () => {
+    const points = pointsCharge(GRILLE, null, null, null);
+    for (const p of points) {
+      expect(p).toMatchObject({ chargements: null, spa: null, inconnu: null, erreurs: null, sansSource: null, p75: null, n: null });
+    }
+    expect(sommeLue(points.map((p) => p.erreurs))).toBeNull();
+    expect(sommeLue([0, 3, 0])).toBe(3);
   });
 });
