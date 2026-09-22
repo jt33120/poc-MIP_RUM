@@ -8,6 +8,7 @@ import { DEBUT_SAMPLE_RATE, type EchantillonnageSessions } from "./echantillonna
 import { ENGAGEMENT_VIDE, STILL_ACTIVE_MINUTES, type EngagementStats } from "./engagement";
 import { PERIODS, queryOf, type Filters, type FiltersLike } from "./filters";
 import { bucketExpr, bucketSeriesSql, sessionJoin } from "./query-compiler";
+import { previousRange } from "./query-contract";
 import { sqlContext } from "./query-sql";
 import { buildSegment } from "./segments";
 
@@ -21,11 +22,17 @@ import { buildSegment } from "./segments";
  * du compte RÉEL de pages vues de la session (app-scopé), ce qui rend le taux
  * indépendant de la fenêtre — d'où le décompte des sessions encore actives, dont
  * la durée et le nombre de vues peuvent encore bouger.
+ *
+ * `shift` (F10, `cmp=prev`) : la même mesure sur la période précédente contiguë
+ * (`previousRange`), même patron que `overviewStats(f, shift)`. La borne des
+ * sessions « encore actives » suit la plage LUE : sur la période précédente, c'est
+ * sa propre fin, pas celle de la fenêtre courante.
  */
-export async function engagementStats(f: FiltersLike): Promise<EngagementStats> {
+export async function engagementStats(f: FiltersLike, shift = false): Promise<EngagementStats> {
   const sql = await sqlContext(f);
-  const where = sql.where({ dataset: "sessions", row: "s", session: "s", time: "s.started_at" });
-  const fin = sql.bind(sql.query.range.to);
+  const range = shift ? previousRange(sql.query.range) : sql.query.range;
+  const where = sql.where({ dataset: "sessions", row: "s", session: "s", time: "s.started_at", range });
+  const fin = sql.bind(range.to);
   const [row] = await q<EngagementStats>(
     `with commencees as (
        select s.page_count,
@@ -98,8 +105,12 @@ export async function observedVisitorsTrend(f: FiltersLike): Promise<VisitorsBuc
 // `sample_rate` sinon. Aucune de ces lectures ne pondère quoi que ce soit (V4) :
 // elles disent seulement si l'écran lit un échantillon (règle S7).
 
-/** Agrégat commun : minimum de la probabilité d'inclusion et sessions sans taux enregistré. */
-function agregatEchantillonnage(debut: string): string {
+/**
+ * Agrégat commun : minimum de la probabilité d'inclusion et sessions sans taux
+ * enregistré, sur des lignes `rum_session` d'alias `s`. Exporté pour
+ * `samplingVitals` (F10) : une seule formule biaisée-erreurs dans la console.
+ */
+export function agregatEchantillonnage(debut: string): string {
   return `count(*)::int as sessions,
           min(case when s.has_error then s.sample_rate + (1 - s.sample_rate) * s.error_sample_rate
                    else s.sample_rate end)::float8 as proba_min,
@@ -107,14 +118,14 @@ function agregatEchantillonnage(debut: string): string {
           coalesce(bool_or(s.sample_rate < 1 and s.error_sample_rate > 0), false) as biaise_erreurs`;
 }
 
-interface LigneEchantillonnage {
+export interface LigneEchantillonnage {
   sessions: number;
   proba_min: number | null;
   sans_taux: number;
   biaise_erreurs: boolean;
 }
 
-function echantillonnageDe(row: LigneEchantillonnage | undefined): EchantillonnageSessions {
+export function echantillonnageDe(row: LigneEchantillonnage | undefined): EchantillonnageSessions {
   return {
     probaMin: row?.proba_min ?? null,
     sessions: row?.sessions ?? 0,
