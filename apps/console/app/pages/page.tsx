@@ -65,7 +65,7 @@ import {
 } from "@/lib/perf-domain";
 import { choisirReleases, vuesProduit, type Entree, type LigneNavigateur, type LignePays } from "@/lib/presets";
 import { dimensionSupport } from "@/lib/query-compiler";
-import { hrefWithQuery, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
+import { bucketStarts, hrefWithQuery, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
 import { dimensionSchema } from "@/lib/query-schema";
 import {
   ROUTES_MAX,
@@ -89,7 +89,8 @@ import { comparaisonVersions, listDeploys } from "@/lib/queries-deploys";
 import { longtaskSeries, worstLongtasks } from "@/lib/queries-longtasks";
 import { resourcesVue } from "@/lib/queries-resources";
 import { ecartP75, mesuresMinimales } from "@/lib/stats/incertitude";
-import { ecrireVue, lireComparaison, lireEtatDeVue, lireTri } from "@/lib/view-state";
+import { ecrireVue, gabaritZoom, lireComparaison, lireEtatDeVue, lireTri } from "@/lib/view-state";
+import { annotationsDeploiements, type AnnotationsDeploiements } from "@/lib/annotations";
 
 export const dynamic = "force-dynamic";
 
@@ -301,6 +302,14 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
     const texte = p.toString();
     return texte ? `${chemin}?${texte}` : chemin;
   };
+
+  // Annotations de déploiement (§ 3.7, P9) sur les deux panneaux des tâches longues :
+  // un marqueur ouvre la comparaison de sa version à la précédente, sur cet écran.
+  const annotations: AnnotationsDeploiements = deploys.ok
+    ? annotationsDeploiements(deploys.data, ecran.query.range, {
+        lien: (relB, relA) => hrefCourant({ cmp: "release", rel_b: relB, rel_a: relA }),
+      })
+    : { annotations: [], liste: [], indisponible: "marqueurs de déploiement non lus" };
 
   const lignesJointes: RoutePages[] | null =
     classement.disponible && decoupe.ok && decoupe.data
@@ -562,23 +571,23 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
           </SectionErreur>
         </div>
 
-        {/* Blocages du fil principal (P6.3) : la série, et le chemin vers la session.
-            Série et pires cas forment UNE section : l'un sans l'autre se lirait
-            comme un tableau complet. F16 la reprend. */}
+        {/* Fil principal (F16) : les blocages comptés par API, puis leur p75, sur un axe
+            x commun ; les pires cas et leur session. Série et pires cas sont deux
+            lectures : l'une en échec le dit dans SON bloc, l'autre reste. */}
         <div id="fil-principal" className="min-w-0 scroll-mt-4 lg:col-span-7">
-          <SectionErreur titre="Blocages du fil principal">
-            {blocages.ok && pires.ok ? (
-              <LongtasksView
-                series={blocages.data}
-                worst={pires.data}
-                bucketSeconds={ecran.query.range.bucketSeconds}
-                bucketLabel={ecran.bucketLabel}
-                periodLabel={period.label}
-                sessionHref={(id) => hrefWithQuery(`/sessions/${encodeURIComponent(id)}`, ecran.query)}
-              />
-            ) : (
-              <EchecLecture titre="Blocages du fil principal" />
-            )}
+          <SectionErreur titre="Tâches longues dans le temps">
+            <LongtasksView
+              serie={blocages}
+              worst={pires}
+              grille={bucketStarts(ecran.query.range)}
+              bucketSeconds={ecran.query.range.bucketSeconds}
+              bucketLabel={ecran.bucketLabel}
+              periodLabel={period.label}
+              zoomHref={gabaritZoom(hrefWithQuery("/pages", ecran.query, { period: null, from: "{from}", to: "{to}" }), sp)}
+              annotations={annotations.annotations}
+              annotationsIndisponibles={annotations.indisponible ?? undefined}
+              sessionHref={(id) => hrefWithQuery(`/sessions/${encodeURIComponent(id)}`, ecran.query)}
+            />
           </SectionErreur>
         </div>
       </div>
