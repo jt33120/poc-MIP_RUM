@@ -53,6 +53,7 @@ import {
   distributionsAffichees,
   ecartAEnsemblePages,
   ecartP75EntreReleases,
+  ecartPhaseTtfb,
   joindreRoutesPages,
   p75DeLaRoute,
   phasesTtfb,
@@ -798,7 +799,8 @@ function FigureNavigation({
  * phases ne s'additionnent pas — la somme de six p75 n'est pas le p75 du TTFB —,
  * des barres séparées répondent à « quelle phase est la plus longue » sans suggérer
  * une décomposition exacte. Phase absente : « — » et n = 0 ; aucune phase mesurée :
- * non collecté. En `cmp=prev`, l'écart de chaque p75 (un écart de percentiles) en colonne.
+ * non collecté. En `cmp=prev`, l'écart de chaque p75 (un écart de percentiles) en colonne,
+ * tu sous 100 mesures sur l'une des deux périodes (même garde que les tuiles, § 3.12).
  */
 function FigureTtfb({
   vitaux,
@@ -827,18 +829,24 @@ function FigureTtfb({
     );
   }
   const avant = precedents ? phasesTtfb(precedents) : null;
-  const ecart = (i: number): string | null => {
-    const a = avant?.[i]?.p75 ?? null;
-    const b = phases[i].p75;
-    if (!avant || a == null || b == null) return null;
-    const d = b - a;
-    return `${d > 0 ? "+" : d < 0 ? "−" : "±"}${formater("ms", Math.abs(d))}`;
+  // Même garde d'effectif que les tuiles de l'écran (`ecartPhaseTtfb`) : sous 100
+  // mesures d'un côté ou de l'autre, « échantillon faible », jamais un chiffre.
+  const ecarts = phases.map((p, i) => ecartPhaseTtfb(p, avant?.[i]));
+  /** Cellule de l'alternative (la référence est dans l'en-tête de colonne). */
+  const celluleEcart = (i: number): string | null => {
+    const e = ecarts[i];
+    return !e ? null : e.kind === "ecart" ? e.affichage : e.texte;
+  };
+  /** Sous-texte de la barre : l'écart suivi de sa référence, ou la raison de son absence. */
+  const texteEcart = (i: number): string | null => {
+    const e = ecarts[i];
+    return !e ? null : e.kind === "ecart" ? `${e.affichage} ${reference}` : e.texte;
   };
   const data: RankDatum[] = phases.map((p, i) => ({
     label: p.libelle,
     value: p.p75,
     display: formater("ms", p.p75),
-    sub: [`n = ${formater("count", p.n)}`, ...(ecart(i) ? [`${ecart(i)} ${reference}`] : [])].join(" · "),
+    sub: [`n = ${formater("count", p.n)}`, ...(texteEcart(i) ? [texteEcart(i)] : [])].join(" · "),
     title: `${p.libelle} — p75 ${formater("ms", p.p75)}, ${formater("count", p.n)} mesures`,
   }));
   return (
@@ -864,7 +872,7 @@ function FigureTtfb({
           p.libelle,
           formater("ms", p.p75),
           p.n,
-          ...(avant ? [ecart(i)] : []),
+          ...(avant ? [celluleEcart(i)] : []),
         ]),
       }}
     >

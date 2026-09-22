@@ -347,3 +347,34 @@ export function phasesTtfb(lignes: readonly { name: string; p75: number | null; 
     return { cle, libelle, p75, n };
   });
 }
+
+/**
+ * Effectif sous lequel l'écart d'un p75 de phase n'est pas affiché : celui des tuiles
+ * Web Vitals du même écran (§ 3.12, `faibleSous` 100 pour un vital ; `KpiTile`).
+ */
+export const FAIBLE_SOUS_PHASE_TTFB = 100;
+export const TEXTE_ECART_PHASE_FAIBLE = "écart non affiché : échantillon faible sur l'une des deux périodes";
+export const TEXTE_ECART_PHASE_SANS_MESURE = "aucune mesure de cette phase sur la période précédente";
+
+/**
+ * Écart du p75 d'une phase du TTFB à la période précédente (`cmp=prev`), avec la MÊME
+ * garde que les tuiles de l'écran : un écart sur 3 mesures ne s'écrit pas comme sur
+ * 3 000. Dans l'ordre :
+ *   - pas de période précédente (autre mode, ou période incomplète) ou pas de valeur
+ *     courante → `null` : rien à écrire ;
+ *   - phase non mesurée sur la période précédente → silence, dit ;
+ *   - effectif sous `faibleSous` sur l'UNE des deux périodes → silence « échantillon
+ *     faible », jamais un chiffre ;
+ *   - sinon l'écart signé (un écart de percentiles en ms, pas un pourcentage).
+ */
+export function ecartPhaseTtfb(
+  courante: Pick<PhaseTtfb, "p75" | "n">,
+  precedente: Pick<PhaseTtfb, "p75" | "n"> | null | undefined,
+  faibleSous: number = FAIBLE_SOUS_PHASE_TTFB,
+): { kind: "ecart"; valeur: number; affichage: string } | { kind: "silence"; texte: string } | null {
+  if (!precedente || courante.p75 == null || !Number.isFinite(courante.p75)) return null;
+  if (precedente.p75 == null || !Number.isFinite(precedente.p75)) return { kind: "silence", texte: TEXTE_ECART_PHASE_SANS_MESURE };
+  if (!(courante.n >= faibleSous) || !(precedente.n >= faibleSous)) return { kind: "silence", texte: TEXTE_ECART_PHASE_FAIBLE };
+  const d = courante.p75 - precedente.p75;
+  return { kind: "ecart", valeur: d, affichage: `${d > 0 ? "+" : d < 0 ? "−" : "±"}${formater("ms", Math.abs(d))}` };
+}

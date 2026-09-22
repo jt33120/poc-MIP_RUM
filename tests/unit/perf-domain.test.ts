@@ -249,3 +249,37 @@ describe("F15 — Pages : phases du TTFB et distributions", () => {
     expect(pagesF15.distributionsAffichees("TTFB")).toEqual(["LCP", "INP", "TTFB"]);
   });
 });
+
+describe("F15 — Pages : écart d'une phase du TTFB à la période précédente", () => {
+  const phase = (p75: number | null, n: number) => ({ p75, n });
+
+  it("même seuil que les tuiles Web Vitals de l'écran (§ 3.12 : 100)", () => {
+    expect(pagesF15.FAIBLE_SOUS_PHASE_TTFB).toBe(100);
+  });
+
+  it("3 mesures ne s'écrivent pas comme 3 000 : « échantillon faible » à la place du chiffre", () => {
+    const faible = pagesF15.ecartPhaseTtfb(phase(90, 3), phase(20, 3_000));
+    expect(faible).toEqual({ kind: "silence", texte: pagesF15.TEXTE_ECART_PHASE_FAIBLE });
+    expect(pagesF15.TEXTE_ECART_PHASE_FAIBLE).toContain("échantillon faible");
+    // Faible de l'AUTRE côté aussi : la période précédente sous le seuil.
+    expect(pagesF15.ecartPhaseTtfb(phase(90, 3_000), phase(20, 99))?.kind).toBe("silence");
+  });
+
+  it("au seuil sur les deux périodes : l'écart signé, en ms (un écart de percentiles, jamais un %)", () => {
+    const e = pagesF15.ecartPhaseTtfb(phase(140, 100), phase(100, 3_000));
+    expect(e).toMatchObject({ kind: "ecart", valeur: 40 });
+    expect(e?.kind === "ecart" && e.affichage).toMatch(/^\+40\s+ms$/);
+    const baisse = pagesF15.ecartPhaseTtfb(phase(60, 500), phase(100, 500));
+    expect(baisse?.kind === "ecart" && baisse.affichage).toMatch(/^−40\s+ms$/);
+    expect(baisse?.kind === "ecart" && baisse.affichage).not.toContain("%");
+  });
+
+  it("phase non mesurée avant → dit ; pas de période précédente ou pas de valeur courante → rien", () => {
+    expect(pagesF15.ecartPhaseTtfb(phase(90, 500), phase(null, 0))).toEqual({
+      kind: "silence",
+      texte: pagesF15.TEXTE_ECART_PHASE_SANS_MESURE,
+    });
+    expect(pagesF15.ecartPhaseTtfb(phase(90, 500), undefined)).toBeNull();
+    expect(pagesF15.ecartPhaseTtfb(phase(null, 0), phase(90, 500))).toBeNull();
+  });
+});
