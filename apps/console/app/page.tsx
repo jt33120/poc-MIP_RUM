@@ -198,7 +198,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // trafic seraient reliées par une pente jamais mesurée. Chaque série est donc
   // alignée sur les seaux attendus — un seau sans mesure reste un trou ; un seau sans
   // page vue vaut 0 page vue.
-  const lecteur = paramReader(sp);
   const debutsSeaux = bucketStarts(ecran.query.range);
   const grilleContrat = grilleIso(debutsSeaux);
   const pointsLcp = series.ok
@@ -207,15 +206,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         p75: r && r.p75 != null ? Number(r.p75) : null,
       }))
     : [];
-  // Clic sur un seau : la même vue, restreinte à ce seau (§ 3.3), comparaison gardée.
-  const zoomSeau = hrefWithQuery("/", ecran.query, {
-    period: null,
-    from: "{from}",
-    to: "{to}",
-    cmp: lecteur.get("cmp"),
-    rel_a: lecteur.get("rel_a"),
-    rel_b: lecteur.get("rel_b"),
-  });
   // L'historique découpe ses JOURS dans le fuseau de l'application (`queries-grid`) :
   // sa grille est celle de `dailyTraffic` (14 jours, vides compris), ou, s'il n'a pas
   // pu être lu, les 14 derniers jours de ce fuseau.
@@ -363,7 +353,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                   points={pointsLcp}
                   seauSecondes={ecran.query.range.bucketSeconds}
                   fuseau="UTC"
-                  zoomHref={zoomSeau}
+                  zoomHref={gabaritZoomEcran}
                 />
               )
             }
