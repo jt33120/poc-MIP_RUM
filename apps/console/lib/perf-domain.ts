@@ -82,3 +82,195 @@ export function avecCondition<F extends FiltersLike>(f: F, dimension: Dimension,
     query: intersectQuery(queryOf(f), { conditions: [{ dimension, operator: "eq", value: valeur }] }),
   };
 }
+
+// ═══════════════════ F14 — Pages : KPI, sélecteur de vital, hero classé ═══════════════════
+//
+// Le classement des routes de `/pages` (§ 5.2.2) fusionne les trois listes d'avant
+// (hero à huit barres, découpage « Web Vitals par dimension », table « Par route ») :
+// UNE liste, celle des groupes de `vitalsBreakdown(f, "route", 200)`, classée par le
+// p75 du vital choisi. Vues et tâches longues viennent d'une autre lecture
+// (`slowRoutes`) et s'y joignent par route, côté serveur.
+import type { Ecart, IntervalleP75 } from "./stats/incertitude";
+import type { RouteRow, SlowResource } from "./queries";
+import type { VitalsBreakdownRow } from "./queries-breakdowns";
+import { ecartALaReference, estFaible, SEUIL_ECHANTILLON_FAIBLE } from "./impact";
+import { formatDuVital, formater, type VitalName } from "./fmt-ids";
+import { PRESET_LABELS, previousRange, type ResolvedRange } from "./query-contract";
+import { THRESHOLDS } from "./rating";
+
+/** Vitals que le découpage par route sait classer : ni FCP ni TTFB (CP2, backend B11). */
+export const VITAUX_CLASSES_PAR_ROUTE = ["LCP", "INP", "CLS"] as const;
+export type VitalClasseParRoute = (typeof VITAUX_CLASSES_PAR_ROUTE)[number];
+
+/**
+ * Le vital choisi peut-il classer les routes ? `vitalsBreakdown` ne lit que LCP, INP
+ * et CLS (`where m.name in ('LCP','INP','CLS')`) : sous `vital=FCP` ou `vital=TTFB`,
+ * le classement est désactivé AVEC sa raison — jamais rempli des « — » d'une colonne
+ * qui n'a pas été lue, ni retrié en silence sur le LCP.
+ */
+export function classementParRoute(
+  vital: VitalName,
+): { disponible: true; vital: VitalClasseParRoute } | { disponible: false; raison: string } {
+  return (VITAUX_CLASSES_PAR_ROUTE as readonly string[]).includes(vital)
+    ? { disponible: true, vital: vital as VitalClasseParRoute }
+    : { disponible: false, raison: `classement ${vital} non disponible : le découpage ne lit que LCP, INP, CLS` };
+}
+
+/** Une ligne du hero de `/pages` : le groupe du découpage, et ce que les autres lectures en disent. */
+export type RoutePages = VitalsBreakdownRow & {
+  /** Pages vues de la route (`slowRoutes`) ; `null` : route absente de cette lecture, ou lecture en échec. */
+  vues: number | null;
+  /** Tâches longues de la route (`slowRoutes`) ; `null` : idem. */
+  tachesLongues: number | null;
+  /**
+   * Ressources bloquant le rendu parmi les trois plus lentes de la route
+   * (`slowResourcesByRoute`) ; 0 si aucune n'est collectée ; `null` : lecture en
+   * échec, ou groupe « Inconnu » (sans route, donc sans ressource rattachée).
+   */
+  bloquantes: number | null;
+};
+
+/**
+ * Jointure `vitalsBreakdown(f, "route", 200)` × `slowRoutes(f)` (+ ressources lentes),
+ * par route, côté serveur (§ 5.2.2). JOINTURE À GAUCHE : la population du classement
+ * est celle du découpage (les 200 groupes les plus mesurés, CP1) ; une route que
+ * l'autre lecture ne rend pas (elle garde les 200 routes au LCP le plus lent) reçoit
+ * `null` — « — » à l'écran —, jamais 0 : ne pas l'avoir lue n'est pas n'en avoir
+ * aucune. L'ordre reçu est gardé : le classement vient après (`classerParGravite`).
+ *
+ * @param routes `null` : lecture en échec (vues et tâches longues inconnues)
+ * @param ressources `null` : lecture en échec (ressources bloquantes inconnues)
+ */
+export function joindreRoutesPages(
+  decoupe: readonly VitalsBreakdownRow[],
+  routes: readonly RouteRow[] | null,
+  ressources: ReadonlyMap<string, readonly SlowResource[]> | null,
+): RoutePages[] {
+  const parRoute = new Map((routes ?? []).map((r) => [r.route, r]));
+  return decoupe.map((g) => {
+    const lue = g.valeur === null || routes === null ? undefined : parRoute.get(g.valeur);
+    const liste = g.valeur === null || ressources === null ? null : (ressources.get(g.valeur) ?? []);
+    return {
+      ...g,
+      vues: lue ? Number(lue.views) : null,
+      tachesLongues: lue ? Number(lue.longtasks) : null,
+      bloquantes: liste === null ? null : liste.filter((r) => r.render_blocking === true).length,
+    };
+  });
+}
+
+/** p75 et effectif d'un vital classable sur une ligne du découpage. */
+export function p75DeLaRoute(ligne: VitalsBreakdownRow, vital: VitalClasseParRoute): { p75: number | null; n: number } {
+  if (vital === "LCP") return { p75: ligne.lcp_p75, n: ligne.lcp_n };
+  if (vital === "INP") return { p75: ligne.inp_p75, n: ligne.inp_n };
+  return { p75: ligne.cls_p75, n: ligne.cls_n };
+}
+
+function plurielPages(n: number, un: string, plusieurs: string): string {
+  return `${n.toLocaleString("fr-FR")} ${n > 1 ? plusieurs : un}`;
+}
+
+/**
+ * Tuile « Routes au-delà de « Bon » » (§ 5.2.2) : routes dont le p75 du vital dépasse
+ * la borne basse de `THRESHOLDS`, comptées SUR LES ROUTES NON FAIBLES (au moins 30
+ * mesures, P3) — un p75 sur 12 mesures ne fait pas une route « lente ». Le groupe
+ * « Inconnu » (mesures sans route) n'est pas une route : il n'entre dans aucun compte.
+ *
+ * Le dénominateur s'écrit dans la tuile (`lecture`) : « sur 14 routes classées, 3 à
+ * faible effectif ». Aucune route classée → `null` avec sa raison, jamais « 0 » (un
+ * zéro dirait que toutes les routes vont bien).
+ */
+export function tuileRoutesAuDelaDeBon(
+  lignes: readonly VitalsBreakdownRow[],
+  vital: VitalClasseParRoute,
+  seuilFaible: number = SEUIL_ECHANTILLON_FAIBLE,
+): { valeur: number | null; raison: string | null; classees: number; faibles: number; sansMesure: number; lecture: string } {
+  const borne = THRESHOLDS[vital][0];
+  let classees = 0;
+  let auDela = 0;
+  let faibles = 0;
+  let sansMesure = 0;
+  for (const l of lignes) {
+    if (l.valeur === null) continue;
+    const { p75, n } = p75DeLaRoute(l, vital);
+    if (!(n > 0)) sansMesure++;
+    else if (estFaible(n, seuilFaible)) faibles++;
+    else {
+      classees++;
+      if (p75 != null && Number.isFinite(p75) && p75 > borne) auDela++;
+    }
+  }
+  const lecture = [
+    `p75 ${vital} au-delà de ${formater(formatDuVital(vital), borne)}`,
+    `sur ${plurielPages(classees, "route classée", "routes classées")}, ${faibles.toLocaleString("fr-FR")} à faible effectif`,
+    ...(sansMesure > 0 ? [`${sansMesure.toLocaleString("fr-FR")} sans mesure ${vital}`] : []),
+  ].join(", ");
+  if (classees === 0) {
+    const raison = faibles === 0 ? "aucune route mesurée" : `aucune route avec au moins ${seuilFaible} mesures ${vital}`;
+    return { valeur: null, raison, classees, faibles, sansMesure, lecture };
+  }
+  return { valeur: auDela, raison: null, classees, faibles, sansMesure, lecture };
+}
+
+/**
+ * Écart d'une route au p75 de l'ensemble, écrit : « +1,2 s vs ensemble », « −40 ms vs
+ * ensemble », « ±0 ms vs ensemble ». Un ÉCART de p75 (V5), jamais une contribution.
+ */
+export function ecartAEnsemblePages(
+  valeur: number | null,
+  ensemble: number | null,
+  vital: VitalClasseParRoute,
+): { valeur: number | null; affichage: string } {
+  const ecart = ecartALaReference(valeur, ensemble);
+  if (ecart === null) return { valeur: null, affichage: "écart non calculable" };
+  const signe = ecart > 0 ? "+" : ecart < 0 ? "−" : "±";
+  return { valeur: ecart, affichage: `${signe}${formater(formatDuVital(vital), Math.abs(ecart))} vs ensemble` };
+}
+
+const FORMAT_REFERENCE_PAGES = new Intl.DateTimeFormat("fr-FR", {
+  timeZone: "UTC",
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/** La période précédente nommée, accordée : « 1 h précédente », « 24 h précédentes », « 7 j précédents ». */
+const PERIODE_PRECEDENTE_PAGES: Record<string, string> = {
+  "1h": `${PRESET_LABELS["1h"]} précédente`,
+  "24h": `${PRESET_LABELS["24h"]} précédentes`,
+  "7d": `${PRESET_LABELS["7d"]} précédents`,
+};
+
+/**
+ * Référence d'une tuile en `cmp=prev` (§ 3.12), en toutes lettres et datée en UTC :
+ * « vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC) ». Une plage personnalisée
+ * dit « période précédente » avec ses bornes.
+ */
+export function referencePrecedentePages(range: ResolvedRange): string {
+  const p = previousRange(range);
+  const nom = (range.preset && PERIODE_PRECEDENTE_PAGES[range.preset]) || "période précédente";
+  return `vs ${nom} (${FORMAT_REFERENCE_PAGES.format(new Date(p.from))} → ${FORMAT_REFERENCE_PAGES.format(new Date(p.to))} UTC)`;
+}
+
+/**
+ * L'écart de p75 entre deux RELEASES (`cmp=release`) est-il établi (P*.1) ? Même règle
+ * que `ecartP75` (intervalles à 95 % comparés : chevauchement → non établi), mais
+ * libellée par la release de référence — `ecartP75` parle de « période précédente »,
+ * ce qui serait faux ici.
+ */
+export function ecartP75EntreReleases(
+  candidate: IntervalleP75 | undefined,
+  reference: IntervalleP75 | undefined,
+  relA: string,
+  fmt: (v: number) => string = String,
+): Ecart | null {
+  if (!candidate || !reference) return null;
+  if ("indisponible" in candidate || "indisponible" in reference) {
+    return { etabli: false, regle: "écart non établi : intervalle non calculable sur l'une des deux releases" };
+  }
+  const autre = `release ${relA} entre ${fmt(reference.bas)} et ${fmt(reference.haut)}`;
+  return candidate.bas <= reference.haut && reference.bas <= candidate.haut
+    ? { etabli: false, regle: `écart non établi : intervalles à 95 % qui se chevauchent (${autre})` }
+    : { etabli: true, regle: `intervalles à 95 % disjoints (${autre})` };
+}

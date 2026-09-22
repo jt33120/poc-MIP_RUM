@@ -1,7 +1,7 @@
 "use client";
-// Échec de l'écran « Pages lentes » (F02, § 3.8) : corps commun dans `ErreurEcran`.
+// Échec de l'écran « Pages » (F02, § 3.8) : corps commun dans `ErreurEcran`.
 import { ErreurEcran } from "@/components/states/ErreurEcran";
 
 export default function Erreur(props: { error: Error & { digest?: string }; reset: () => void }) {
-  return <ErreurEcran titre="Pages lentes" {...props} />;
+  return <ErreurEcran titre="Pages" {...props} />;
 }

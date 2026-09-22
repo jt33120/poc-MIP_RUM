@@ -91,3 +91,111 @@ describe("avecCondition", () => {
     expect(avecCondition(avecA, "route", "/b").query.filters.segments).toHaveLength(2);
   });
 });
+
+// ─── F14 — Pages : jointure du classement, tuile « Routes au-delà de Bon », références ───
+import * as pagesF14 from "../../apps/console/lib/perf-domain";
+
+describe("F14 — Pages : classement des routes et tuiles", () => {
+  const groupeF14 = (valeur: string | null, lcp: [number | null, number], inp: [number | null, number] = [null, 0]) => ({
+    valeur,
+    samples: lcp[1] + inp[1],
+    lcp_n: lcp[1],
+    inp_n: inp[1],
+    cls_n: 0,
+    lcp_p75: lcp[0],
+    inp_p75: inp[0],
+    cls_p75: null,
+  });
+  const routeF14 = (route: string, views: number, longtasks: number) => ({
+    route,
+    views,
+    lcp_p75: null,
+    inp_p75: null,
+    cls_p75: null,
+    longtasks,
+  });
+
+  it("jointure par route : vues et tâches longues rapprochées, route absente de l'autre lecture → null", () => {
+    const lignes = pagesF14.joindreRoutesPages(
+      [groupeF14("/a", [3000, 40]), groupeF14("/b", [1200, 80]), groupeF14(null, [900, 5])],
+      [routeF14("/a", 120, 4), routeF14("/hors-classement", 9, 1)],
+      new Map([
+        ["/a", [{ route: "/a", url: "https://x/app.js", type: "script", avg_ms: 900, n: 3, render_blocking: true }]],
+      ]),
+    );
+    expect(lignes.map((l) => [l.valeur, l.vues, l.tachesLongues, l.bloquantes])).toEqual([
+      ["/a", 120, 4, 1],
+      // Absente de `slowRoutes` : inconnue, jamais 0 ; aucune ressource collectée : 0 bloquante.
+      ["/b", null, null, 0],
+      // « Inconnu » (sans route) : rien à rapprocher.
+      [null, null, null, null],
+    ]);
+    // Jointure À GAUCHE : une route que le découpage ne classe pas n'est pas ajoutée.
+    expect(lignes.some((l) => l.valeur === "/hors-classement")).toBe(false);
+  });
+
+  it("lectures en échec → null partout, jamais 0", () => {
+    const [l] = pagesF14.joindreRoutesPages([groupeF14("/a", [3000, 40])], null, null);
+    expect([l.vues, l.tachesLongues, l.bloquantes]).toEqual([null, null, null]);
+  });
+
+  it("FCP et TTFB ne classent pas les routes (CP2), avec la raison", () => {
+    expect(pagesF14.classementParRoute("INP")).toEqual({ disponible: true, vital: "INP" });
+    expect(pagesF14.classementParRoute("FCP")).toEqual({
+      disponible: false,
+      raison: "classement FCP non disponible : le découpage ne lit que LCP, INP, CLS",
+    });
+    expect(pagesF14.classementParRoute("TTFB").disponible).toBe(false);
+  });
+
+  it("« Routes au-delà de Bon » : routes non faibles seulement, dénominateur écrit, « Inconnu » exclu", () => {
+    const tuile = pagesF14.tuileRoutesAuDelaDeBon(
+      [
+        groupeF14("/lente", [4200, 40]),
+        groupeF14("/juste-bonne", [2500, 60]), // borne « Bon » inclusive : pas au-delà
+        groupeF14("/rapide", [900, 300]),
+        groupeF14("/rare-et-lente", [9000, 12]), // faible effectif : non comptée
+        groupeF14("/sans-lcp", [null, 0], [150, 50]),
+        groupeF14(null, [8000, 500]),
+      ],
+      "LCP",
+    );
+    expect(tuile.valeur).toBe(1);
+    expect([tuile.classees, tuile.faibles, tuile.sansMesure]).toEqual([3, 1, 1]);
+    expect(tuile.lecture).toContain("sur 3 routes classées, 1 à faible effectif");
+    expect(tuile.lecture).toContain("1 sans mesure LCP");
+    // La borne vient de lib/rating.ts, formatée, jamais recopiée.
+    expect(tuile.lecture).toContain("au-delà de 2,5");
+  });
+
+  it("aucune route classée → null avec sa raison, jamais « 0 »", () => {
+    expect(pagesF14.tuileRoutesAuDelaDeBon([], "LCP")).toMatchObject({ valeur: null, raison: "aucune route mesurée" });
+    expect(pagesF14.tuileRoutesAuDelaDeBon([groupeF14("/a", [9000, 12])], "LCP")).toMatchObject({
+      valeur: null,
+      raison: "aucune route avec au moins 30 mesures LCP",
+    });
+  });
+
+  it("écart à l'ensemble : signé, formaté, un inconnu d'un côté n'est pas un écart", () => {
+    expect(pagesF14.ecartAEnsemblePages(3700, 2500, "LCP").affichage).toMatch(/^\+1,2\s+s vs ensemble$/);
+    expect(pagesF14.ecartAEnsemblePages(160, 200, "INP").affichage).toMatch(/^−40\s+ms vs ensemble$/);
+    expect(pagesF14.ecartAEnsemblePages(null, 2500, "LCP")).toEqual({ valeur: null, affichage: "écart non calculable" });
+  });
+
+  it("référence `cmp=prev` datée en UTC et accordée", () => {
+    const range = { from: "2026-09-21T14:00:00.000Z", to: "2026-09-22T14:00:00.000Z", preset: "24h" as const, bucketSeconds: 3600 };
+    expect(pagesF14.referencePrecedentePages(range)).toBe("vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC)");
+    expect(pagesF14.referencePrecedentePages({ ...range, from: "2026-09-15T14:00:00.000Z", preset: "7d" })).toMatch(/^vs 7 j précédents \(/);
+    expect(pagesF14.referencePrecedentePages({ ...range, preset: null })).toMatch(/^vs période précédente \(20\/09 14:00/);
+  });
+
+  it("écart de p75 entre releases : établi seulement si les intervalles sont disjoints, libellé par la release", () => {
+    const i = (bas: number, haut: number) => ({ bas, haut, niveau: 0.95 as const, methode: "quantile_normal" as const });
+    expect(pagesF14.ecartP75EntreReleases(i(3000, 3400), i(2000, 2400), "1.4.1")).toMatchObject({ etabli: true });
+    const chevauche = pagesF14.ecartP75EntreReleases(i(2300, 2600), i(2000, 2400), "1.4.1");
+    expect(chevauche?.etabli).toBe(false);
+    expect(chevauche?.regle).toContain("release 1.4.1");
+    expect(chevauche?.regle).not.toContain("période précédente");
+    expect(pagesF14.ecartP75EntreReleases({ indisponible: "7 mesures, 13 requises" }, i(1, 2), "1.4.1")?.etabli).toBe(false);
+  });
+});
