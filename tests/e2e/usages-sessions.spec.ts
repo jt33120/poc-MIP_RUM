@@ -305,11 +305,17 @@ test.describe("F42 — Sessions : priorité et table", () => {
     for (const c of ["Dernière activité (UTC)", "Durée observée", "Pays estimé", "Capteur", "Occurrences d'erreur", "Frustration", "Rejeu"]) {
       await expect(table.locator("thead")).toContainText(c);
     }
-    // La page suivante reprend après le curseur : d'autres sessions, pas les mêmes.
-    const premier = await page.getByTestId("ligne-session").first().textContent();
+    // La page suivante reprend APRÈS le curseur : les identifiants de la première
+    // page n'y reviennent pas (comparaison d'ensembles, pas de la première ligne :
+    // une pagination qui décale d'un rang passerait un test sur la seule tête).
+    const lienSession = page.getByTestId("ligne-session").getByTestId("session-link");
+    const page1 = await lienSession.allInnerTexts();
+    expect(page1).toHaveLength(50);
     await page.getByTestId("sessions-suivantes").click();
     await page.waitForURL((u) => u.searchParams.has("cursor"), { timeout: 15_000 });
-    await expect(page.getByTestId("ligne-session").first()).not.toHaveText(premier ?? "");
+    await expect(page.getByTestId("ligne-session")).toHaveCount(SEMEES - 50);
+    const page2 = await lienSession.allInnerTexts();
+    expect(page2.filter((id) => page1.includes(id))).toEqual([]);
   });
 
   test("390 px : des cartes de trois lignes, pas de table", async ({ page }) => {
