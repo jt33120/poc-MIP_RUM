@@ -96,7 +96,10 @@ export const HEALTH_CLASS: Record<HealthLabel, string> = {
   Excellent:
     "bg-good/10 text-good-ink border-good/30",
   // « Bon » sans être le vert d'un seuil web.dev : le bleu perf, qui suit le thème.
-  Bon: "bg-perf/10 text-perf border-perf/30",
+  // TEXTE en `perf-ink` (#1d4ed8, jeton F01) : `text-perf` (#2563eb) sur la teinte
+  // `bg-perf/10` ne tient que 4,48:1 en clair, sous le seuil de 4,5:1 (axe, F01). En
+  // sombre, `perf` est déjà éclairci et tient : la variante `dark:` le garde.
+  Bon: "bg-perf/10 text-perf-ink dark:text-perf border-perf/30",
   Dégradé:
     "bg-warn/10 text-warn-ink border-warn/30",
   Critique: "bg-bad/10 text-bad-ink border-bad/30",
@@ -105,7 +108,7 @@ export const HEALTH_CLASS: Record<HealthLabel, string> = {
 /** Couleur d'accent (anneau de score, texte) par libellé santé. */
 export const HEALTH_ACCENT: Record<HealthLabel, string> = {
   Excellent: "text-good-ink",
-  Bon: "text-perf",
+  Bon: "text-perf-ink dark:text-perf",
   Dégradé: "text-warn-ink",
   Critique: "text-bad-ink",
 };

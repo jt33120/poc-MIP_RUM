@@ -120,6 +120,17 @@ describe("KpiTile — comparaison", () => {
     expect(aDelta(rendu({ reference: undefined }))).toBe(false);
   });
 
+  // Un écart ÉCRIT sans flèche (P*.1) et le SILENCE de la tuile sont tous deux un
+  // `<p data-testid="kpi-comparaison">` : `data-ecart` les sépare, sans quoi un e2e
+  // qui vérifie « aucun écart » compterait la phrase qui dit pourquoi il n'y en a pas.
+  it("data-ecart sépare l'écart non établi du silence", () => {
+    const nonEtabli = rendu({ ecart: { etabli: false, regle: "intervalles à 95 % qui se chevauchent" } });
+    expect(nonEtabli).toContain('data-testid="kpi-comparaison" data-ecart="non-etabli"');
+    const silence = rendu({ precedent: 0 });
+    expect(silence).toContain('data-testid="kpi-comparaison" data-ecart="silence"');
+    expect(silence).not.toContain('data-ecart="non-etabli"');
+  });
+
   it("sans précédent (cmp=none), ni delta ni phrase de comparaison", () => {
     const html = rendu({ precedent: undefined, reference: undefined, couverturePrecedente: undefined });
     expect(aDelta(html)).toBe(false);
