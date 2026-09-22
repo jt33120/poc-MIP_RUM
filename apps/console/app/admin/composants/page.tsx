@@ -26,6 +26,7 @@ import { CATEGORIELLE, RATING_HEX } from "@/lib/palette";
 import { THRESHOLDS, rating2026 } from "@/lib/rating";
 import { SectionPanneau } from "./sections/panneau";
 import { SectionsDistributions } from "./sections/distributions";
+import { SectionsSeries } from "./sections/series";
 
 export const dynamic = "force-dynamic";
 
@@ -602,6 +603,7 @@ export default async function VitrineComposants() {
         </div>
       </Section>
       <SectionPanneau />
+      <SectionsSeries />
     </div>
   );
 }
