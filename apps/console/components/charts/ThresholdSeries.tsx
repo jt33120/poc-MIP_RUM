@@ -70,6 +70,12 @@ import {
 export { SERIE_MARGES, preparerPoints };
 export type { Annotation, PointSerie, SerieDef };
 
+/** Destination d'un seau et son libellé d'infobulle (`liensSeaux`, F65). */
+export interface LienSeau {
+  href: string;
+  libelle: string;
+}
+
 /** Couleurs des bandes : jetons de `globals.css`, qui suivent le mode sombre. */
 const BANDE = {
   bon: { fond: "rgb(var(--c-good))", texte: "rgb(var(--c-good-ink))" },
@@ -290,6 +296,7 @@ function Infobulle({
   fuseau,
   dernierEnCours,
   dernier,
+  liens,
 }: {
   active?: boolean;
   label?: string;
@@ -302,12 +309,13 @@ function Infobulle({
   fuseau: string;
   dernierEnCours: boolean;
   dernier: string | undefined;
+  liens?: Record<string, LienSeau>;
 }) {
   const ligne = payload?.[0]?.payload;
   if (!active || !ligne || label === undefined) return null;
   return (
     <div className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs text-ink shadow-sm">
-      <p className="mb-1 font-medium">{libelleSeauComplet(label, seauSecondes, fuseau)}</p>
+      <p className="mb-1 font-medium">{liens?.[label]?.libelle ?? libelleSeauComplet(label, seauSecondes, fuseau)}</p>
       {series.map((s) => {
         const v = nombreOuNull(ligne[s.cle]);
         const n = s.effectifCle ? nombreOuNull(ligne[s.effectifCle]) : null;
@@ -362,6 +370,7 @@ export function ThresholdSeries({
   ariaLabel,
   synchro,
   legendeAnnotations = true,
+  liensSeaux,
 }: {
   /** OBLIGATOIRE : débuts de seau attendus, ISO UTC (`bucketStarts`) ou jours « AAAA-MM-JJ ». */
   grille: string[];
@@ -392,6 +401,13 @@ export function ThresholdSeries({
   synchro?: string;
   /** Défaut true. Panneaux empilés : un seul panneau liste les annotations en liens (un arrêt de tabulation chacune). Ajout F04. */
   legendeAnnotations?: boolean;
+  /**
+   * Lien et libellé d'un seau, calculés CÔTÉ SERVEUR, par élément de la grille :
+   * prioritaires sur `zoomHref`. Une grille de jours locaux n'a pas de zoom par
+   * gabarit (ses bornes UTC dépendent du fuseau, § 3.3, R-T) : le serveur les
+   * convertit (`bornesJourLocal`) et l'infobulle écrit les deux fuseaux. Ajout F65.
+   */
+  liensSeaux?: Record<string, LienSeau>;
 }) {
   const router = useRouter();
   const { enCours, maintenant } = useSeauEnCours(grille, seauSecondes, fuseau);
@@ -429,14 +445,20 @@ export function ThresholdSeries({
 
   return (
     <div className="min-w-0" data-testid="threshold-series" data-vital={vitalEffectif} data-seaux={grille.length}>
-      <div role="img" aria-label={ariaLabel} className={zoomHref ? "cursor-pointer" : undefined}>
+      <div role="img" aria-label={ariaLabel} className={zoomHref || liensSeaux ? "cursor-pointer" : undefined}>
         <ResponsiveContainer width="100%" height={hauteur}>
           <ComposedChart
             data={donnees}
             syncId={synchro}
             margin={{ top: placees.length > 0 ? 20 : 8, right: SERIE_MARGES.droite, bottom: 0, left: 0 }}
             onClick={(etat) => {
-              if (!zoomHref || !etat || typeof etat.activeLabel !== "string") return;
+              if (!etat || typeof etat.activeLabel !== "string") return;
+              const lie = liensSeaux?.[etat.activeLabel];
+              if (lie) {
+                router.push(lie.href);
+                return;
+              }
+              if (!zoomHref) return;
               const href = hrefZoom(zoomHref, etat.activeLabel, seauSecondes, maintenant ?? Date.now());
               if (href) router.push(href);
             }}
@@ -509,6 +531,7 @@ export function ThresholdSeries({
                   fuseau={fuseau}
                   dernierEnCours={enCours}
                   dernier={dernier}
+                  liens={liensSeaux}
                 />
               }
             />
