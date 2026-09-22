@@ -10,6 +10,7 @@ import { GlossaryTip } from "./GlossaryTip";
 import { ICON_PATHS, Icon } from "./icons";
 import { EtatSurface, type Etat } from "./states/EtatSurface";
 import { EchecLecture } from "./states/SectionErreur";
+import { libelleReference } from "@/lib/fmt-ids";
 import type { GlossaryId } from "@/lib/glossary";
 
 export function SupervisionHero({
@@ -117,8 +118,11 @@ export function HeroStat({
 }: {
   label: ReactNode;
   value: ReactNode;
-  /** Variation vs période précédente en % (signe inclus) ; null = masquée. */
-  delta?: { pct: number; lowerIsBetter?: boolean } | null;
+  /**
+   * Variation en % (signe inclus) contre une référence NOMMÉE, écrite à côté du
+   * chiffre (P4) ; null = masquée.
+   */
+  delta?: { pct: number; reference: string; lowerIsBetter?: boolean } | null;
   hint?: ReactNode;
   /** Accent de la valeur : good/warn/poor colore le chiffre (état d'un seuil). */
   tone?: "neutral" | "good" | "warn" | "poor";
@@ -132,29 +136,54 @@ export function HeroStat({
   return (
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span className={`text-2xl font-bold tabular-nums tracking-tight ${toneClass}`}>{value}</span>
-        {delta && <DeltaBadge pct={delta.pct} lowerIsBetter={delta.lowerIsBetter} />}
+        {delta && <DeltaBadge pct={delta.pct} reference={delta.reference} lowerIsBetter={delta.lowerIsBetter} />}
       </div>
       {hint && <div className="mt-1 text-xs text-ink-faint">{hint}</div>}
     </div>
   );
 }
 
-/** Badge de variation coloré (vert = amélioration, rouge = dégradation). */
-export function DeltaBadge({ pct, lowerIsBetter = false }: { pct: number; lowerIsBetter?: boolean }) {
-  const flat = Math.abs(pct) < 2;
-  const worse = lowerIsBetter ? pct > 0 : pct < 0;
-  const cls = flat
-    ? "text-ink-faint"
-    : worse
-      ? "text-bad-ink"
-      : "text-good-ink";
+/**
+ * Badge de variation : flèche, écart, et la référence EN TOUTES LETTRES (« vs 24 h
+ * précédentes »), visible — plus seulement dans un `title` qu'aucun écran tactile
+ * n'affiche (P4). Sous ±2 %, « → » sans couleur. La couleur suit le sens du
+ * meilleur : pour un vital, monter est une dégradation ; pour un volume (« neutre »),
+ * ni l'un ni l'autre — la flèche reste sans couleur.
+ */
+export function DeltaBadge({
+  pct,
+  reference,
+  lowerIsBetter = false,
+  sensMeilleur,
+}: {
+  pct: number;
+  /** La période ou la release de référence, avec ou sans son « vs ». */
+  reference: string;
+  /** Forme historique de `sensMeilleur` (tuiles `HeroStat`). */
+  lowerIsBetter?: boolean;
+  /** Prime sur `lowerIsBetter` quand il est fourni (`KpiTile`). */
+  sensMeilleur?: "bas" | "haut" | "neutre";
+}) {
+  const sens = sensMeilleur ?? (lowerIsBetter ? "bas" : "haut");
+  const arrondi = Math.round(pct);
+  // « Stable » se décide sur l'écart AFFICHÉ : 1,5 % s'écrit « +2 % » comme 2,0 %,
+  // les deux ont la même couleur.
+  const flat = Math.abs(arrondi) < 2;
+  const worse = sens === "bas" ? pct > 0 : pct < 0;
+  const cls = flat || sens === "neutre" ? "text-ink-soft" : worse ? "text-bad-ink" : "text-good-ink";
   const arrow = flat ? "→" : pct > 0 ? "↑" : "↓";
+  const libelle = libelleReference(reference);
+  // `title` = la référence, identique au texte visible : les e2e qui repèrent un
+  // écart par `[title="vs période précédente"]` (etat-de-vue) le trouvent toujours.
   return (
-    <span className={`text-xs font-semibold tabular-nums ${cls}`} title="vs période précédente">
-      {arrow} {pct > 0 ? "+" : ""}
-      {pct.toFixed(0)} %
+    <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs" data-testid="delta" title={libelle}>
+      <span className={`font-semibold tabular-nums ${cls}`}>
+        {arrow} {arrondi > 0 ? "+" : ""}
+        {arrondi} %
+      </span>
+      <span className="min-w-0 break-words text-ink-soft">{libelle}</span>
     </span>
   );
 }

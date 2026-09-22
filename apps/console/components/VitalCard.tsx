@@ -1,25 +1,23 @@
+import Link from "next/link";
 import { fmtVital } from "@/lib/format";
 import { GLOSSARY, type GlossaryId } from "@/lib/glossary";
-import { RATING_BAR, RATING_CLASS, RATING_LABEL, THRESHOLDS } from "@/lib/rating";
+import { RATING_BAR, RATING_CLASS, RATING_LABEL, THRESHOLDS, texteSeuils } from "@/lib/rating";
 import type { IntervalleP75 } from "@/lib/stats/incertitude";
 import { echelleJauge, lireVital, type LectureVital } from "@/lib/vital-lecture";
+import { Sparkline } from "./charts/Sparkline";
+import { DeltaBadge } from "./SupervisionHero";
 import { GlossaryTip } from "./GlossaryTip";
 
-/** Tendance vs période précédente : pour un vital, monter = se dégrader. */
+/**
+ * Tendance vs période précédente : pour un vital, monter = se dégrader. Même badge
+ * que les tuiles (P4) : la référence est ÉCRITE à côté de l'écart, pas seulement
+ * dans un `title`. `data-testid="trend"` reste sur l'enveloppe pour les e2e.
+ */
 function Trend({ p75, prev }: { p75: number; prev: number | null }) {
-  if (prev == null || prev === 0) return null;
-  const delta = ((p75 - prev) / prev) * 100;
-  const flat = Math.abs(delta) < 2;
-  const cls = flat
-    ? "text-ink-faint"
-    : delta > 0
-      ? "text-bad-ink"
-      : "text-good-ink";
-  const arrow = flat ? "→" : delta > 0 ? "↑" : "↓";
+  if (prev == null || prev === 0 || !Number.isFinite(prev)) return null;
   return (
-    <span className={`text-xs font-semibold tabular-nums ${cls}`} data-testid="trend" title="vs période précédente">
-      {arrow} {delta > 0 ? "+" : ""}
-      {delta.toFixed(0)} %
+    <span data-testid="trend">
+      <DeltaBadge pct={((p75 - prev) / prev) * 100} reference="période précédente" sensMeilleur="bas" />
     </span>
   );
 }
@@ -29,6 +27,11 @@ function Trend({ p75, prev }: { p75: number; prev: number | null }) {
  * positionné au p75 — lecture de l'état en un coup d'œil (dashboard dense). La
  * moustache de l'intervalle à 95 % double le texte écrit sous la valeur ; elle
  * ne le remplace pas.
+ *
+ * Son alternative textuelle (F03) : la jauge est une image, et son `aria-label`
+ * dit ce qu'elle dessine — la valeur, les seuils lus dans `THRESHOLDS`, et
+ * l'intervalle quand il y en a un. Un lecteur d'écran n'avait que le `title` du
+ * curseur, qui ne s'annonce pas.
  */
 function ThresholdMeter({ name, p75, lecture }: { name: string; p75: number; lecture: LectureVital }) {
   const t = THRESHOLDS[name];
@@ -39,8 +42,21 @@ function ThresholdMeter({ name, p75, lecture }: { name: string; p75: number; lec
   // Le curseur ne prend la couleur du verdict que si le verdict tient.
   const couleur = lecture.verdict?.kind === "etabli" ? RATING_BAR[lecture.verdict.rating] : "bg-ink";
   const m = lecture.moustache;
+  const alternative = [
+    `Jauge des seuils : p75 ${fmtVital(name, p75)}`,
+    texteSeuils(name),
+    lecture.texteIntervalle && lecture.moustache ? `intervalle ${lecture.texteIntervalle}` : null,
+    p75 > max ? "au-delà de l'échelle" : null,
+  ]
+    .filter(Boolean)
+    .join(" ; ");
   return (
-    <div className="relative mt-3 h-1.5 w-full overflow-hidden rounded-full" data-testid={`meter-${name}`}>
+    <div
+      className="relative mt-3 h-1.5 w-full overflow-hidden rounded-full"
+      data-testid={`meter-${name}`}
+      role="img"
+      aria-label={alternative}
+    >
       <div className="absolute inset-y-0 left-0 bg-good/25" style={{ width: `${(good / max) * 100}%` }} />
       <div
         className="absolute inset-y-0 bg-warn/25"
@@ -74,29 +90,41 @@ export function VitalCard({
   median = null,
   n,
   prev = null,
-  periodLabel = "24 h",
+  periodLabel,
   intervalle,
+  serie,
+  href,
 }: {
   name: string;
   p75: number | null;
   median?: number | null;
   n: number;
   prev?: number | null;
-  periodLabel?: string;
+  /**
+   * La fenêtre lue, écrite sous la valeur. OBLIGATOIRE (F03) : le défaut « 24 h »
+   * s'affichait sous une plage de 7 jours dès qu'un appelant l'oubliait.
+   */
+  periodLabel: string;
   /** Intervalle à 95 % de la p75 (P*.1), ou pourquoi il n'est pas calculé. */
   intervalle?: IntervalleP75;
+  /** Sparkline de la p75 par seau, déjà alignée sur la grille (`null` = trou). */
+  serie?: (number | null)[];
+  /** La carte entière devient un lien (un seul arrêt de tabulation). */
+  href?: string;
 }) {
   const lecture = lireVital(name, p75, n, intervalle);
   const verdict = lecture.verdict;
   const lowSample = n > 0 && n < LOW_SAMPLE;
-  return (
-    <div className="card p-4 transition hover:shadow-pop" aria-label={lecture.ariaLabel}>
+  const contenu = (
+    <>
       <div className="flex items-center justify-between gap-2">
         {/* La bulle OUVRE le nom : sur deux colonnes à 390 px, une bulle de
             288 px centrée après le nom de la carte de droite sortait de l'écran
-            et élargissait la page. En tête, elle s'ouvre vers l'intérieur. */}
+            et élargissait la page. En tête, elle s'ouvre vers l'intérieur.
+            Dans une carte-lien, pas de bulle : un bouton dans un lien ferait deux
+            arrêts de tabulation et un HTML invalide. */}
         <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-          {name in GLOSSARY && <GlossaryTip id={name as GlossaryId} />}
+          {!href && name in GLOSSARY && <GlossaryTip id={name as GlossaryId} />}
           {name}
         </span>
         {verdict?.kind === "etabli" && (
@@ -123,7 +151,7 @@ export function VitalCard({
       {p75 != null && <ThresholdMeter name={name} p75={p75} lecture={lecture} />}
       {lecture.texteIntervalle && (
         <div className="mt-2 flex items-start gap-1 text-xs text-ink-soft" data-testid={`intervalle-${name}`}>
-          <GlossaryTip id="intervalle" />
+          {!href && <GlossaryTip id="intervalle" />}
           <span>
             {lecture.texteIntervalle}
             {verdict?.kind === "incertain" && (
@@ -143,6 +171,32 @@ export function VitalCard({
           échantillon faible{median != null && <> · médiane {fmtVital(name, median)}</>}
         </div>
       )}
+      {serie && serie.length > 0 && (
+        <div className="mt-2">
+          <Sparkline
+            valeurs={serie}
+            label={`${name} p75, évolution sur ${serie.length} seaux, ${periodLabel}`}
+            seuils={THRESHOLDS[name]}
+          />
+        </div>
+      )}
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        aria-label={lecture.ariaLabel}
+        className="card block p-4 transition hover:shadow-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+      >
+        {contenu}
+      </Link>
+    );
+  }
+  return (
+    <div className="card p-4 transition hover:shadow-pop" aria-label={lecture.ariaLabel}>
+      {contenu}
     </div>
   );
 }

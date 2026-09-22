@@ -75,6 +75,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
                   yLabel="INP p75"
                   yUnit=" ms"
                   yFormat="int"
+                  ariaLabel={`Éléments lents à l'INP : ${pts.length} éléments, nombre d'interactions × INP p75, ${period.label}`}
                 />
               }
             >
