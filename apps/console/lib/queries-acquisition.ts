@@ -3,7 +3,7 @@
 // pure (lib/acquisition). Respecte segment + bots + app/device/période. Cap de
 // sécurité sur le nombre de sessions rapatriées.
 import { q } from "./db";
-import { acquisitionReport, type AcquisitionReport } from "./acquisition";
+import { acquisitionReport, PLAFOND_ACQUISITION, type AcquisitionReport } from "./acquisition";
 import { type Filters, PERIODS } from "./filters";
 import { buildSegment } from "./segments";
 
@@ -11,7 +11,7 @@ const botClause = (f: Filters, alias: string): string =>
   f.includeBots ? "" : ` and not coalesce(${alias}.is_bot, false)`;
 
 /** Report d'acquisition (canaux + top référents) sur la fenêtre. */
-export async function acquisition(f: Filters, cap = 20000): Promise<AcquisitionReport> {
+export async function acquisition(f: Filters, cap = PLAFOND_ACQUISITION): Promise<AcquisitionReport> {
   const itv = PERIODS[f.period].interval;
   // Le segment suit `$1` (app) et `$2` (appareil) ; le plafond est lié APRÈS lui, à
   // l'indice que rend `push`. Il était `$3` en dur, et le segment compilé à partir de
