@@ -3,7 +3,14 @@
 // chaque catégorie regroupant ses pages sœurs. Couleur = domaine (cf. tailwind).
 import type { IconName } from "./icons";
 
-export type NavLink = { href: string; label: string };
+/**
+ * `sousOnglet: false` (F09) : le lien compte pour `activeCategory` — la catégorie
+ * reste allumée sur sa route — mais `SubNav` ne le rend pas. C'est le cas d'une
+ * route gardée derrière un onglet INTERNE à une page (/actions, sous
+ * « Interactions ») : une entrée de plus dans la barre dirait deux écrans là où
+ * il n'y a qu'une question. Défaut : `true`.
+ */
+export type NavLink = { href: string; label: string; sousOnglet?: boolean };
 
 export type NavCategory = {
   href: string; // page d'atterrissage de la catégorie (1er onglet)
@@ -17,6 +24,10 @@ export type NavCategory = {
   verrouille?: boolean;
 };
 
+// Cinq catégories ouvertes de 3 à 6 onglets (plan § 2.2) : aucune barre de
+// sous-onglets ne dépasse six entrées — neuf sous « Performance » défilaient et se
+// coupaient à 390 px (« Fru… »). AUCUNE ROUTE NE CHANGE D'ADRESSE : on range et on
+// renomme, les liens partagés restent valides.
 export const CATEGORIES: NavCategory[] = [
   // NB : /presentation n'est PLUS dans la nav — c'est la vitrine PUBLIQUE (avant
   // login). Post-login son intérêt est faible ; elle reste joignable directement
@@ -28,47 +39,83 @@ export const CATEGORIES: NavCategory[] = [
     domain: "perf",
     children: [
       { href: "/", label: "Vue d'ensemble" },
-      { href: "/pages", label: "Pages lentes" },
-      { href: "/errors", label: "Erreurs JS" },
-      { href: "/ux", label: "Frustration" },
-      { href: "/actions", label: "Actions" },
-      { href: "/events", label: "Événements" },
-      // Explorer générique (P6.4) : la même fenêtre et les mêmes filtres que les
-      // écrans voisins, mais la mesure se compose au lieu d'être prédéfinie.
-      { href: "/explorer", label: "Explorer" },
-      { href: "/experience", label: "Expérience" },
+      // « Pages » et non « Pages lentes » : l'écran classe TOUTES les routes ;
+      // « lentes » présupposait le verdict que le tri par gravité établit.
+      { href: "/pages", label: "Pages" },
+      // « JS » était faux : error_source couvre réseau, CSP, console, Node,
+      // Python et React Native, et les issues v2 vivent sous /errors/issues.
+      { href: "/errors", label: "Erreurs et issues" },
+      // Frustration et Actions : UNE question (« quels gestes échouent ou font
+      // attendre »), donc une entrée ; les deux routes restent, l'onglet Actions
+      // vit dans la page (§ 5.4).
+      { href: "/ux", label: "Interactions" },
+      { href: "/actions", label: "Actions", sousOnglet: false },
+      // L'écran lit des notes 1-5 et des verbatims : « Expérience » désignait
+      // tout le produit.
+      { href: "/experience", label: "Satisfaction" },
       // P7.5 : le runtime React Native a son écran parce qu'il a ses angles
       // MORTS — crashes natifs, ANR, démarrage natif. Les fondre dans les
       // écrans web ferait lire leurs absences comme des zéros.
       { href: "/mobile", label: "Mobile" },
     ],
   },
+  // Robot et réel : la promesse « synthétique + RUM unifiés », notre
+  // différenciateur, était le 8ᵉ onglet d'une catégorie « Sessions ». Le tracing
+  // et la carte suivent : ils répondent à « la lenteur vient-elle du back ? ».
+  {
+    href: "/correlation",
+    label: "Robot et réel",
+    icon: "compare",
+    domain: "perf",
+    children: [
+      { href: "/correlation", label: "Corrélation synthétique ↔ RUM" },
+      { href: "/tracing", label: "Tracing" },
+      { href: "/map", label: "Carte" },
+    ],
+  },
   {
     href: "/sessions",
-    label: "Sessions & traces",
+    label: "Usages",
     icon: "users",
     domain: "perf",
     children: [
       { href: "/sessions", label: "Sessions" },
+      { href: "/paths", label: "Parcours" },
+      // Objectifs de CONVERSION (pageview / event), pas des objectifs de
+      // service : rangés avec les SLO, ils partageaient le même mot.
+      { href: "/goals", label: "Conversions" },
+      { href: "/forms", label: "Formulaires" },
       { href: "/acquisition", label: "Acquisition" },
       { href: "/retention", label: "Rétention" },
-      { href: "/paths", label: "Parcours" },
-      { href: "/forms", label: "Formulaires" },
-      { href: "/tracing", label: "Tracing" },
-      { href: "/map", label: "Carte" },
-      { href: "/correlation", label: "Corrélation" },
     ],
   },
   {
     href: "/slo",
-    label: "Objectifs & alertes",
+    label: "Fiabilité",
     icon: "target",
     domain: "perf",
     children: [
-      { href: "/goals", label: "Objectifs" },
       { href: "/slo", label: "SLO" },
       { href: "/alerts", label: "Alertes" },
-      { href: "/forecast", label: "Prévisions" },
+      // Ajustement linéaire sur 14 points quotidiens : une tendance, pas une
+      // prévision.
+      { href: "/forecast", label: "Tendances" },
+    ],
+  },
+  {
+    href: "/explorer",
+    label: "Explorer",
+    icon: "compass",
+    domain: "perf",
+    children: [
+      // Explorer générique (P6.4) : la même fenêtre et les mêmes filtres que les
+      // écrans voisins, mais la mesure se compose au lieu d'être prédéfinie. C'est
+      // la destination commune de « Ouvrir dans l'Explorer » de chaque figure.
+      { href: "/explorer", label: "Explorer" },
+      // Journal filtrable (liste + facettes + tendance) : il sert l'exploration.
+      { href: "/events", label: "Journal" },
+      // Un tableau est une composition de requêtes de l'Explorer (widgets v2 =
+      // AST Explorer, lib/dashboards.ts) : il vit à côté d'elles, pas des alertes.
       { href: "/dashboards", label: "Tableaux de bord" },
     ],
   },
@@ -105,14 +152,56 @@ export const CATEGORIES: NavCategory[] = [
   { href: "/api-docs", label: "API et MCP", icon: "grid", domain: "neutral" },
 ];
 
+/** Clé de domaine d'en-tête (`PageHeader.domain`, § 2.4) de chaque catégorie RUM,
+ *  indexée par sa landing. Une page sans `domain` explicite prend celle-ci. */
+export const DOMAINE_DE_CATEGORIE = {
+  "/": "perf",
+  "/correlation": "robot",
+  "/sessions": "usages",
+  "/slo": "fiabilite",
+  "/explorer": "explorer",
+} as const satisfies Record<string, string>;
+export type DomaineRum = (typeof DOMAINE_DE_CATEGORIE)[keyof typeof DOMAINE_DE_CATEGORIE];
+
+/** Domaine d'en-tête d'un chemin, ou null hors des cinq catégories RUM (admin…). */
+export function domaineDe(pathname: string): DomaineRum | null {
+  const c = activeCategory(pathname);
+  if (!c) return null;
+  return (DOMAINE_DE_CATEGORIE as Record<string, DomaineRum>)[c.href] ?? null;
+}
+
+/** Sous-onglets RENDUS par la barre : les liens `sousOnglet: false` en sont retirés. */
+export function sousOnglets(c: NavCategory): NavLink[] {
+  return (c.children ?? []).filter((l) => l.sousOnglet !== false);
+}
+
+/**
+ * Onglet RENDU à allumer pour ce chemin. Un lien masqué est rattaché à l'onglet
+ * visible qui le précède : sur /actions, c'est « Interactions » qui est actif —
+ * la barre ne doit jamais n'allumer aucun onglet sur une route de sa catégorie.
+ */
+export function ongletActif(c: NavCategory, pathname: string): string | undefined {
+  let visible: string | undefined;
+  let best: string | undefined;
+  let bestLen = -1;
+  for (const l of c.children ?? []) {
+    if (l.sousOnglet !== false) visible = l.href;
+    if (visible !== undefined && hrefMatches(l.href, pathname) && l.href.length > bestLen) {
+      best = visible;
+      bestLen = l.href.length;
+    }
+  }
+  return best;
+}
+
 /** Un href de nav correspond-il au chemin courant ? ("/" exige l'égalité stricte). */
 export function hrefMatches(href: string, pathname: string): boolean {
   if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-/** Catégorie active = celle dont un href (catégorie ou sous-onglet) matche le plus
- * longuement le chemin courant. */
+/** Catégorie active = celle dont un href (catégorie ou sous-onglet, masqués
+ * compris) matche le plus longuement le chemin courant. */
 export function activeCategory(pathname: string): NavCategory | undefined {
   let best: NavCategory | undefined;
   let bestLen = -1;

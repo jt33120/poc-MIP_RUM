@@ -7,12 +7,14 @@ import { describe, expect, it } from "vitest";
 import { DIMENSIONS, parseAnalyticsQuery, type Dimension } from "../../apps/console/lib/query-contract";
 import {
   RAISON_APP_UNIQUE,
+  SANS_RAFRAICHISSEMENT,
   SURFACES,
   checkSurface,
   conditionAvailability,
   dimensionAvailability,
   perimetreAvailability,
   rangeAvailability,
+  sansRafraichissement,
   surfaceFor,
   type Surface,
 } from "../../apps/console/lib/surfaces";
@@ -268,4 +270,23 @@ describe("perimetreAvailability — écrans à lecture mono-app", () => {
       expect(perimetreAvailability(surface(path), scope(null, ["a", "b"])).available, path).toBe(true);
     }
   });
+});
+
+// § 3.11 (F09) : les routes à lecture explicite ne sont pas rafraîchies toutes les 5 s.
+describe("SANS_RAFRAICHISSEMENT", () => {
+  it("égalité exacte pour l'Explorer, ses vues et la liste des tableaux ; préfixe pour le détail", () => {
+    expect(SANS_RAFRAICHISSEMENT.exacts).toEqual(["/explorer", "/explorer/views", "/dashboards"]);
+    expect(SANS_RAFRAICHISSEMENT.prefixes).toEqual(["/dashboards/"]);
+  });
+
+  it.each(["/explorer", "/explorer/views", "/dashboards", "/dashboards/abc"])("%s : lu à la demande", (chemin) => {
+    expect(sansRafraichissement(chemin)).toBe(true);
+  });
+
+  it.each(["/errors", "/", "/pages", "/events", "/explorer/autre", "/dashboardsx", "/sessions/abc"])(
+    "%s : rafraîchi",
+    (chemin) => {
+      expect(sansRafraichissement(chemin)).toBe(false);
+    },
+  );
 });

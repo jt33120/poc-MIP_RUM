@@ -4,25 +4,42 @@
 // rendable côté serveur (RSC), zéro hydratation, ouvrable au clavier (le
 // déclencheur est un <button> focusable), et role="tooltip" pour les lecteurs
 // d'écran. Le POC reste léger tout en étant navigable et accessible.
+//
+// BORNÉE (F09). La bulle fermée était seulement TRANSPARENTE : une boîte absolue de
+// 288 px centrée sur l'icône, qui comptait dans la largeur défilable. Posée après
+// un titre long, elle portait la page à 471 px sur une fenêtre de 390 — sans que
+// rien ne soit visible. Désormais :
+//   · fermée, elle est `hidden` (display: none) et n'occupe aucune largeur ;
+//   · ouverte, elle ne dépasse jamais `100vw - 2rem` ;
+//   · sous 640 px, elle se pose au bord de la fenêtre (1 rem de chaque côté, en
+//     bas), là où aucune position de l'icône ne peut la faire sortir de l'écran ;
+//   · au-delà, `align` l'accroche au bord de l'icône (`start` : elle s'étend vers
+//     la droite ; `end` : vers la gauche) plutôt qu'au centre.
 import { ICON_PATHS, Icon, type IconName } from "./icons";
+
+const ALIGN = {
+  center: "sm:left-1/2 sm:-translate-x-1/2",
+  start: "sm:left-0",
+  end: "sm:right-0",
+} as const;
 
 export function InfoTip({
   children,
   icon = "help",
   side = "bottom",
+  align = "center",
   className = "",
   label = "Aide",
 }: {
   children: React.ReactNode;
   icon?: IconName;
   side?: "top" | "bottom";
+  /** Accroche horizontale à partir de 640 px ; en dessous, la bulle est posée au bord de la fenêtre. */
+  align?: keyof typeof ALIGN;
   className?: string;
   label?: string;
 }) {
-  const pos =
-    side === "top"
-      ? "bottom-full mb-2"
-      : "top-full mt-2";
+  const pos = side === "top" ? "sm:bottom-full sm:mb-2" : "sm:bottom-auto sm:top-full sm:mt-2";
   return (
     <span className={`group relative inline-flex align-middle ${className}`}>
       <button
@@ -34,7 +51,7 @@ export function InfoTip({
       </button>
       <span
         role="tooltip"
-        className={`pointer-events-none absolute left-1/2 z-50 w-72 -translate-x-1/2 rounded-xl border border-line bg-panel p-3 text-left text-xs leading-relaxed text-ink-soft opacity-0 shadow-pop transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 ${pos}`}
+        className={`pointer-events-none fixed inset-x-4 bottom-4 z-50 hidden max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-panel p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-ink-soft shadow-pop group-hover:block group-focus-within:block sm:absolute sm:inset-x-auto sm:w-72 ${pos} ${ALIGN[align]}`}
       >
         {children}
       </span>

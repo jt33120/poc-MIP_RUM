@@ -1,38 +1,33 @@
 // En-tête de page standard : titre + sous-titre descriptif + zone d'actions à droite.
 import { GlossaryTip } from "./GlossaryTip";
+import { SurtitreDomaine, type PageDomain } from "./SurtitreDomaine";
 import type { GlossaryId } from "@/lib/glossary";
 
-// Domaine de la page — code couleur constant : bleu = performance utilisateur
-// (RUM), violet = intelligence artificielle. Détermine l'étiquette au-dessus du
-// titre. Défaut : perf (la majorité des pages).
-const DOMAIN = {
-  perf: { label: "Performance utilisateur", dot: "bg-perf", text: "text-perf" },
-  ai: { label: "Intelligence artificielle", dot: "bg-ai", text: "text-ai" },
-} as const;
+export type { PageDomain };
 
 export function PageHeader({
   title,
   sub,
   help,
-  domain = "perf",
+  domain,
   children,
 }: {
   title: React.ReactNode;
+  /** Question à laquelle l'écran répond (P1). Attendu sur tout écran du périmètre :
+   *  il reste optionnel au typage tant que chaque écran n'est pas repris par son lot. */
   sub?: React.ReactNode;
   /** Clé de glossaire : ajoute une bulle d'aide « ? » à côté du titre. */
   help?: GlossaryId;
-  /** Domaine (code couleur). Défaut « perf ». */
-  domain?: keyof typeof DOMAIN;
+  /** Catégorie de navigation (surtitre et couleur, § 2.4) : `perf`, `robot`,
+   *  `usages`, `fiabilite`, `explorer` ou `ai`. Absent : celle qui range la route
+   *  courante dans la navigation, « perf » à défaut. */
+  domain?: PageDomain;
   children?: React.ReactNode;
 }) {
-  const d = DOMAIN[domain];
   return (
     <div className="mb-6 flex flex-wrap items-start gap-3">
       <div className="min-w-0">
-        <div className={`mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] ${d.text}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${d.dot}`} />
-          {d.label}
-        </div>
+        <SurtitreDomaine domain={domain} />
         <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-ink">
           {title}
           {help && <GlossaryTip id={help} />}
