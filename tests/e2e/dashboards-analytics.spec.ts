@@ -237,10 +237,13 @@ test("vue enregistrée : enregistrer, rouvrir, renommer, supprimer", async ({ pa
   await expect(page.getByRole("link", { name: `${VUE} bis` })).toBeVisible({ timeout: 15_000 });
 
   // F30 (CE11, P15) : le rouge est réservé à l'état d'une mesure — aucun bouton
-  // rouge sur la liste des vues.
-  await expect(page.getByRole("button", { name: `Supprimer ${VUE} bis` })).not.toHaveClass(/bg-red-600/);
+  // rouge sur la liste des vues. F34 (W-V3) : supprimer se fait en deux temps.
   expect(await page.locator('[class*="bg-red-600"]').count()).toBe(0);
-  await page.getByRole("button", { name: `Supprimer ${VUE} bis` }).click();
+  const ligneBis = page.getByRole("row", { name: new RegExp(`${VUE} bis`) });
+  await ligneBis.getByTestId("vue-supprimer").locator("summary").click();
+  const confirmer = page.getByRole("button", { name: `Confirmer la suppression de ${VUE} bis` });
+  await expect(confirmer).not.toHaveClass(/bg-red-600/);
+  await confirmer.click();
   await expect(page.getByRole("link", { name: `${VUE} bis` })).toHaveCount(0, { timeout: 15_000 });
 });
 

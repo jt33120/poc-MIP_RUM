@@ -26,6 +26,7 @@ import {
   pastillesRequete,
   representationDemandee,
 } from "../../apps/console/lib/explorer-page-params";
+import { resumeVue as f34ResumeVue, explorerHrefFromAst as f34ExplorerHrefFromAst } from "../../apps/console/lib/explorer-page-params";
 import { vitalDeVerdict as f32VitalDeVerdict, phraseSansVerdict as f32PhraseSansVerdict, formatDeMesure as f32FormatDeMesure, titreResultat as f32TitreResultat, referencePrecedente as f32ReferencePrecedente, groupeHref as f32GroupeHref, filtresDuGroupe as f32FiltresDuGroupe } from "../../apps/console/lib/explorer-page-params";
 import {
   encodeExplorerCursor,
@@ -420,5 +421,69 @@ describe("F32 — drill-down d'un groupe (P8, § 3.3)", () => {
     expect(f32FiltresDuGroupe(query.filters, ["source"], ["extension"]).segments).toEqual([
       { dimension: "source", operator: "eq", value: "extension" },
     ]);
+  });
+});
+
+// F34 — « Ce qu'elle mesure » : le résumé d'une vue enregistrée, lu comme sa réouverture.
+describe("F34 — resumeVue (W-V2)", () => {
+  const AST = {
+    version: 1,
+    app: "demo-app",
+    range: { preset: "24h" },
+    dataset: "vitals",
+    measure: { aggregation: "p75", field: "value" },
+    variant: "LCP",
+    filters: [],
+    groupBy: ["route"],
+    visualization: "toplist",
+    limit: 10,
+  };
+
+  it("un AST du jeu vitals se lit « Web Vitals · Valeur p75 (LCP) · Classement · par Route »", () => {
+    expect(f34ResumeVue(AST)).toEqual({ ok: true, texte: "Web Vitals · Valeur p75 (LCP) · Classement · par Route" });
+  });
+
+  it("l'agrégation se dit quand le champ ne la dit pas ; deux regroupements se lisent « puis »", () => {
+    const erreurs = { ...AST, dataset: "errors", measure: { aggregation: "sum", field: "occurrences" }, variant: undefined };
+    expect(f34ResumeVue({ ...erreurs, visualization: "timeseries", limit: 3, groupBy: ["route", "release"] })).toEqual({
+      ok: true,
+      texte: "Erreurs · Occurrences (somme) · Série · par Route puis Release",
+    });
+    const sessions = { ...AST, dataset: "sessions", measure: { aggregation: "count", field: "started" }, variant: undefined, groupBy: [] };
+    expect(f34ResumeVue({ ...sessions, visualization: "value" })).toEqual({
+      ok: true,
+      texte: "Sessions · Sessions commencées dans la fenêtre · Valeur",
+    });
+    const blocages = {
+      ...AST,
+      dataset: "longtasks",
+      measure: { aggregation: "p95", field: "blocking_ms" },
+      variant: "loaf",
+    };
+    expect(f34ResumeVue(blocages)).toEqual({ ok: true, texte: "Tâches longues · Part bloquante p95 (loaf) · Classement · par Route" });
+  });
+
+  it("un AST illisible rend la raison du registre — la même que la réouverture", () => {
+    expect(f34ResumeVue("pas un objet")).toEqual({ ok: false, raison: "la requête enregistrée n’est pas un objet JSON" });
+    const inconnu = f34ResumeVue({ ...AST, dataset: "inexistant" });
+    expect(inconnu.ok).toBe(false);
+    const ouvrir = f34ExplorerHrefFromAst({ ...AST, dataset: "inexistant" });
+    expect(ouvrir.ok).toBe(false);
+    if (!inconnu.ok && !ouvrir.ok) expect(inconnu.raison).toBe(ouvrir.reason);
+  });
+
+  it("la réouverture est inchangée par le parsing partagé", () => {
+    const ouvrir = f34ExplorerHrefFromAst(AST);
+    expect(ouvrir.ok).toBe(true);
+    if (ouvrir.ok) {
+      const sp = new URLSearchParams(ouvrir.href.split("?")[1]);
+      expect(sp.get("app")).toBe("demo-app");
+      expect(sp.get("dataset")).toBe("vitals");
+      expect(sp.get("measure")).toBe("value:p75");
+      expect(sp.get("variant")).toBe("LCP");
+      expect(sp.get("g0")).toBe("route");
+      expect(sp.get("run")).toBe("1");
+      expect(sp.has("period")).toBe(false);
+    }
   });
 });
