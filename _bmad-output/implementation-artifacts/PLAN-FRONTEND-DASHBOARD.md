@@ -78,7 +78,7 @@ Chemins : `app/…`, `components/…`, `lib/…` sont relatifs à `apps/console/
 | F00–F69 | sous-lots frontend | § 6 |
 | B1–B62 | dépendances backend (registre unique) | § 6.3 |
 | P*.1–P*.10, VM1–VM4, RM1–RM10 | sous-lots, constats et règles de l'épique statistique | § 7 |
-| P**.0–P**.9, PS0–PS12, VS1–VS16, TP1–TP12, K1–K14, R1–R9 | sous-lots, sections, constats, tests, cartes et points « reste » de l'épique site | § 8 |
+| P**.0–P**.10, PS0–PS12, VS1–VS16, TP1–TP12, K1–K14, R1–R9 | sous-lots, sections, constats, tests, cartes et points « reste » de l'épique site | § 8 |
 | A1…F3 dans le § 8 | lignes du document de couverture `docs/RUM_PARITY_STATUS.md` (pas des dépendances backend) | § 8 |
 
 ### 0.3 Conventions de code
@@ -127,8 +127,10 @@ Chaque ligne de lot du § 6 nomme ses fichiers de test.
    `tests/e2e/analyses-drilldowns.spec.ts:L140-147`, extrait vers `tests/e2e/helpers/debordements.ts` par
    F09) à 390, 768 et 1440 px sur chaque écran touché.
 4. `pnpm --filter console build` passe.
-5. La PR contient une capture 1440 × 900 et 390 × 844 de chaque écran touché (script du § 9.1), et la
-   « preuve de fin » du lot (une sortie de commande, un grep vide, une capture).
+5. Chaque écran touché est capturé en 1440 × 900 et 390 × 844 (script du § 9.1) et relu : aucun
+   débordement, aucun écran en erreur. La PR **liste** les écrans capturés et ce qui a été vu ; elle ne
+   joint pas les images (décision du 22/09/2026 : inutile, et impossible depuis la ligne de commande).
+   Elle contient la « preuve de fin » du lot (une sortie de commande, un grep vide, un constat de capture).
 
 ### 0.5 Ce qu'on ne devine pas (règles d'arrêt)
 
@@ -3699,23 +3701,27 @@ Dérivée des tables de détail (§ 6.4, § 6.5) : en cas d'écart, le détail f
 
 ### 6.2 Ordre global
 
-Les dépendances réelles de chaque lot sont dans sa ligne ; cet ordre les respecte et parallélise ce qui
-peut l'être. Une vague commence quand les lots dont elle dépend sont fusionnés, pas quand toute la vague
-précédente l'est.
+**Neuf vagues, de 0 à 8, et rien en dehors.** Chaque lot du plan, épique P* et site P** compris, est
+rangé dans une vague : il n'existe plus de file parallèle. Les dépendances réelles de chaque lot sont
+dans sa ligne ; cet ordre les respecte. **Chaque vague se termine par une revue** (conformité au plan et
+revue adverse du code) avant que la suivante commence ; les corrections de revue partent dans les PR de
+la vague (règle posée le 22/09/2026). À l'intérieur d'une vague, un lot commence quand les lots dont il
+dépend sont fusionnés.
+
+L'ancienne « vague 0 bis » (F55 et l'incrément 0 de P*) est devenue la **tête de la vague 1** : F55 y
+passe en premier parce que `/forecast` plante au rendu et que F57, F59 et F62 en dépendent.
 
 | Vague | Lots | Conditions |
 |---|---|---|
 | 0 — tout de suite | **F00** ; **P**.1** (corrections de vérité de la vitrine, sur `master`) ; **P**.0** (document de couverture lisible par le code, sans effet visible) | aucune |
-| 0 bis | **F55** (écran `/forecast` en panne, formats et libellés) ; **P*.incrément 0** (0-a `lib/stats`, 0-b intervalle sur `VitalCard`, 0-c santé « non testable ») | F00 |
-| 1 | **F01**, **F02**, **F06** en parallèle ; lectures **F57**, **F59**, **F62** (après F55) ; **F40** (vérité et périmètre des écrans d'usage : le refus `app=all` passe avant tout style) ; **F30** (vérité du domaine exploration) | F00 (et F02 pour F40, F30) |
+| 1 | **F55** (écran `/forecast` en panne, formats et libellés) et **P*.incrément 0** (0-a `lib/stats`, 0-b intervalle sur `VitalCard`, 0-c santé « non testable ») en tête ; puis **F01**, **F02**, **F06** ; lectures **F57**, **F59**, **F62** (après F55) ; **F40** (vérité et périmètre des écrans d'usage : le refus `app=all` passe avant tout style) ; **F30** (vérité du domaine exploration) | F00 (et F02 pour F40, F30 ; F55 pour F57, F59, F62) |
 | 2 | **F03** | F01, F02 |
 | 3 | **F04**, **F05**, **F07** en parallèle ; **F31** (Explorer : requête lisible) | F03 (+ F06 pour F07, F31) |
-| 4 | **F08** ; **F09** ; **F10** (lectures partagées performance) ; **F56** (composants fiabilité) | F05 + F06 (F08) ; F06 (F09) ; F04 + F05 (F10) ; F03 + F04 (F56) |
-| 5 — écrans | performance **F11–F16**, **F18**, **F22**, **F25**, **F26** ; exploration **F32**, **F34**, **F35**, **F38** ; usages **F41**, **F44**, **F48**, **F49** ; fiabilité **F58**, **F60**, **F61**, **F63**, **F65**, **F66** | lignes de dépendances de chaque lot ; F13 attend F57 pour sa seule tuile d'angle mort |
-| 6 | **F17**, **F19**, **F20**, **F23**, **F24** ; **F33**, **F36** ; **F42**, **F45**, **F50**, **F51**, **F52** ; **F64** ; **F67** | idem |
-| 7 | **F21** ; **F37** ; **F43**, **F46**, **F47** ; P**.2 → (P**.3, P**.4, P**.5, P**.6) → P**.8 sur la branche `presentation/refonte`, puis **une** PR de bascule | idem ; § 8.4 |
-| 8 — clôture | **F27**, **F54**, **F69** (recettes transverses de domaine) ; **F53** après B31 ; **F39** après B8 ; **F68** après B52 ; **P**.7** (captures) après F04, F09, F21 ; **P**.9** (README) après P**.0 et P**.3 | backend et fondations cités |
-| Épique P* | P*.1 → P*.2 → P*.3 → (P*.4, P*.5) → P*.6 → P*.7 → P*.8 → P*.9 → P*.10, chacun dès que sa colonne « Affichage complet après » (§ 7.2.1) est satisfaite ; P*.9 peut être avancé | fondations F02–F08 ; B3 (P*.6), B60 (P*.10), B61 (P*.8), B62 (P*.5) |
+| 4 | **F08** ; **F09** ; **F10** (lectures partagées performance) ; **F56** (composants fiabilité) ; **P*.1** (intervalle sur chaque chiffre clé) ; **P*.9** (récit de session) | F05 + F06 (F08) ; F06 (F09) ; F04 + F05 (F10) ; F03 + F04 (F56) ; incrément 0 + F03 + F05 (P*.1) ; F07 (P*.9) |
+| 5 — écrans | performance **F11–F16**, **F18**, **F22**, **F25**, **F26** ; exploration **F32**, **F34**, **F35**, **F38** ; usages **F41**, **F44**, **F48**, **F49** ; fiabilité **F58**, **F60**, **F61**, **F63**, **F65**, **F66** ; épique **P*.2**, **P*.3**, **P*.4**, **P*.5** | lignes de dépendances de chaque lot ; F13 attend F57 pour sa seule tuile d'angle mort ; P*.1 (P*.2 à P*.5), F02 (P*.2), F04 + F08 (P*.3, P*.5), F04 (P*.4) |
+| 6 | **F17**, **F19**, **F20**, **F23**, **F24** ; **F33**, **F36** ; **F42**, **F45**, **F50**, **F51**, **F52** ; **F64** ; **F67** ; épique **P*.6** (après B3, livré avec F20), **P*.7**, **P*.8** | idem ; P*.3 (P*.7, P*.8) ; B3 (P*.6) |
+| 7 | **F21** ; **F37** ; **F43**, **F46**, **F47** ; **P**.10** (nouveau relevé du document de couverture, sur `master`) puis P**.2 → (P**.3, P**.4, P**.5, P**.6) → P**.8 sur la branche `presentation/refonte`, puis **une** PR de bascule | idem ; § 8.4 ; P**.10 avant P**.2 |
+| 8 — clôture | **F27**, **F54**, **F69** (recettes transverses de domaine) ; **F53** après B31 ; **F39** après B8 ; **F68** après B52 ; **P**.7** (captures) après F04, F09, F21 ; **P**.9** (README) après P**.0 et P**.3 ; épique **P*.10** (doublons d'issues), seulement si le regroupement v2 est activé sur au moins une application | backend et fondations cités ; B60 (P*.10), B61 (P*.8), B62 (P*.5) |
 
 ### 6.3 Registre unique des dépendances backend
 
@@ -4059,8 +4065,9 @@ Ordre global recommandé, fondations comprises (voir aussi § 6.2) :
    F01 à F08 (F01 et F06 étant pré-requis de F03, F07 et F08) cumulent 3 M + 5 L, soit jusqu'à
    ≈ 34 jours en série, moins en parallèle (estimation, non mesurée) — un ordre de grandeur
    comparable à cette épique elle-même ;
-3. P*.1 (parties d'affichage restantes) → P*.2 → P*.3 → (P*.4, P*.5) → P*.6 → P*.7 → P*.8 → P*.9 →
-   P*.10, chaque lot dès que sa colonne « Affichage complet après » est satisfaite.
+3. P*.1 à P*.10 dans les vagues du § 6.2 : P*.1 et P*.9 en vague 4, P*.2 à P*.5 en vague 5, P*.6 à
+   P*.8 en vague 6, P*.10 en vague 8 (sous condition). Chaque vague respecte la colonne « Affichage
+   complet après » ci-dessous.
 
 **Incrément 0 — retenu.** Pour montrer un résultat sans attendre les fondations, trois morceaux ne dépendent
 que de F00 et de composants existants :
@@ -5468,8 +5475,26 @@ arrêtée à v0.3).
   été lu pour cette épique. Son état est à relever avant P**.9 ; s'il est périmé, le signaler dans la
   PR plutôt que d'élargir le lot.
 
+#### P**.10 — Nouveau relevé du document de couverture (S) — vague 7, sur `master`, avant P**.2
+
+Le site reprend les verdicts de `docs/RUM_PARITY_STATUS.md` tels quels (P**.0). Le relevé du 18/09/2026
+est dépassé sur plusieurs lignes au moment où la vague 0 se termine (22/09/2026) : la CI vérifie les
+types (F2, #213 et F00), la base `PRE_V83` est fournie (F3, #213), le service `ingest` est supprimé et le
+`scheduler` lance les migrations (`TOPOLOGIE_BACKEND.md`), les mentions légales et le DPA en ligne sont
+retirés. Les vagues 1 à 6 en changeront d'autres.
+
+- **Fichiers** : `docs/RUM_PARITY_STATUS.md` (nouvelle date, nouveau SHA, lignes relevées à nouveau),
+  `apps/console/lib/couverture.generated.json` (régénéré par `node scripts/couverture-extraire.mjs`),
+  les repères datés de `tests/unit/couverture-site.test.ts` (49, `18/09/2026`, décomptes de tests).
+- **Méthode** : rejouer les commandes du § 2 du document dans un worktree propre de `master`, sur
+  bases jetables ; revoir chaque ligne au verdict `livre_avec_defaut_connu`, `livre_non_deploye` et
+  `bloque_acces_externe` ; ne changer un verdict que sur une preuve nommée dans la ligne. `DATABASE_URL`
+  n'est ni lue, ni employée.
+- **Tests** : `tests/unit/couverture-site.test.ts` vert sur le nouveau relevé (tests 1 et 2).
+- **Preuve de fin** : le diff du document, verdict par verdict, collé dans la PR.
+
 **Ordre** : P**.1 (tout de suite, seul, sur `master`) ; P**.0 sur `master` (aucun effet visible) ;
-puis, sur la branche `presentation/refonte` : P**.2 → (P**.3, P**.4, P**.5, P**.6 en parallèle) →
+P**.10 sur `master` en vague 7 ; puis, sur la branche `presentation/refonte` : P**.2 → (P**.3, P**.4, P**.5, P**.6 en parallèle) →
 P**.8 → **une** PR de bascule vers `master`. Après la bascule : P**.7 (quand F04, F09 et F21 sont
 livrés). P**.9 après P**.0 (il en lit le JSON) et P**.3 (il lit `lib/presentation-topologie.ts`) ;
 d'ici là, sa réécriture manuelle de la ligne 12 peut partir avec P**.1.
@@ -5499,19 +5524,19 @@ Visiteur non connecté sauf TP10. Largeurs 390, 768, 1440 pour TP5 ; 1440 ailleu
 
 ### 8.6 Non établi
 
-- L'état de Railway après le 18/09/2026 : `ingest` supprimé ou non (`TOPOLOGIE_BACKEND.md:71-82`
-  dit « proposée, pas actée »). Conditionne PS3 et PS11.
+- ~~L'état de Railway après le 18/09/2026~~ — **établi** : `ingest` supprimé le 21/09/2026, relevé par
+  l'API Railway le 22/09 (`mcp` et `scheduler` seuls) ; appliqué dans P**.1 (#218).
 - Le sélecteur DOM du widget « Votre avis ? » à masquer pendant les captures.
 - Les captures V-A et V-B finales : elles dépendent de lots F non encore livrés.
 - La date réelle du dernier événement ingéré : reprise de `delivery-p8.md` par le document de
   couverture, qui ne l'a pas recontrôlée (`RUM_PARITY_STATUS.md:303-304`).
-- Les seuils Web Vitals de `lib/rating.ts:5-11` : conformes à web.dev d'après leur commentaire
-  (`rating.ts:1`), non recontrôlés sur web.dev pour cette épique.
+- ~~Les seuils Web Vitals~~ — **établi** : pages web.dev LCP, INP, CLS, FCP et TTFB relues le
+  22/09/2026 par F00 (#217) ; conformes à `THRESHOLDS` et à `rating2026`.
 - L'apparence réelle des écrans Ekara : aucune capture vue (`iplabel.md:5-12`) ; PS9 ne compare que
   des textes publiés.
-- Qui applique les migrations en production après le 18/09/2026 (`ingest` ou `scheduler`) :
-  `TOPOLOGIE_BACKEND.md:71-76` renvoie la preuve au premier déploiement du `scheduler`. Conditionne
-  la ligne `scheduler` de PS11 et la boîte « Travaux planifiés » de PS3.
+- ~~Qui applique les migrations en production~~ — **établi** : le `scheduler` lance la commande de
+  pré-déploiement (déploiement `03850b30` du 18/09/2026, « migrations à jour », aucune en attente) ;
+  appliqué dans P**.1 (#218).
 - L'activation des aperçus Vercel pour les branches de ce projet (utile à la relecture de la branche
   d'intégration, sans effet sur la page publique).
 - L'état de `DEPLOY.md`, auquel renvoie `README.md:95` (non lu).
