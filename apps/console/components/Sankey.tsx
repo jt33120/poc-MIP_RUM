@@ -2,6 +2,7 @@
 // modèle normalisé de lib/sankey (nœuds gauche/droite + rubans). Sources à gauche,
 // cibles à droite ; épaisseur des rubans ∝ volume. Rendu serveur (pas d'interaction).
 import type { SankeyModel } from "@/lib/sankey";
+import { CATEGORIELLE } from "@/lib/palette";
 
 const W = 720;
 const H = 380;
@@ -13,7 +14,8 @@ const RX0 = X0 + NODE_W;
 const XM = (RX0 + X1) / 2;
 
 // Palette catégorielle déterministe (par route source).
-const PALETTE = ["#2563eb", "#059669", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#65a30d"];
+// Des routes sans ordre ni verdict : jamais de vert, d'ambre ni de rouge (P15).
+const PALETTE = CATEGORIELLE;
 function colorFor(route: string): string {
   let h = 0;
   for (let i = 0; i < route.length; i++) h = (h * 31 + route.charCodeAt(i)) >>> 0;

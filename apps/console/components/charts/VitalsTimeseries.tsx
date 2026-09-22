@@ -9,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { RATING_HEX, SERIE } from "@/lib/palette";
 
 export interface SeriesPoint {
   bucket: string; // ISO date
@@ -16,7 +17,7 @@ export interface SeriesPoint {
 }
 
 // Orange signature MIP pour la série réelle ; axes/grille thémés via globals.css.
-const ACCENT = "#f89101";
+const ACCENT = SERIE.principale;
 
 export function VitalsTimeseries({
   data,
@@ -54,15 +55,15 @@ export function VitalsTimeseries({
           <>
             <ReferenceLine
               y={thresholds[0]}
-              stroke="#10b981"
+              stroke={RATING_HEX.good}
               strokeDasharray="4 4"
-              label={{ value: "good", position: "insideTopRight", fontSize: 10, fill: "#10b981" }}
+              label={{ value: "Bon", position: "insideTopRight", fontSize: 10, fill: RATING_HEX.good }}
             />
             <ReferenceLine
               y={thresholds[1]}
-              stroke="#ef4444"
+              stroke={RATING_HEX.poor}
               strokeDasharray="4 4"
-              label={{ value: "poor", position: "insideTopRight", fontSize: 10, fill: "#ef4444" }}
+              label={{ value: "Mauvais", position: "insideTopRight", fontSize: 10, fill: RATING_HEX.poor }}
             />
           </>
         )}

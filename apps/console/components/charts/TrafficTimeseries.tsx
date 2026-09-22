@@ -12,6 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { SERIE, categorie } from "@/lib/palette";
 
 export interface TrafficPoint {
   day: string; // ISO date (jour)
@@ -19,8 +20,10 @@ export interface TrafficPoint {
   errors: number;
 }
 
-const ACCENT = "#f89101";
-const ERR = "#ef4444";
+const ACCENT = SERIE.principale;
+// Un compte d'erreurs n'est pas un verdict (aucun seuil publié, règle R-S) : pas de
+// rouge, une couleur catégorielle.
+const ERR = categorie(0);
 
 export function TrafficTimeseries({ data }: { data: TrafficPoint[] }) {
   const points = data.map((d) => ({

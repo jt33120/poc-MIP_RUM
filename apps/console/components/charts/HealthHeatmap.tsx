@@ -6,31 +6,22 @@
 // déjà agrégées, ce qui le rend réutilisable pour de la donnée réelle comme
 // pour un échantillon de démonstration.
 
+import { PALIERS_SEQUENTIELLE, SEQUENTIELLE } from "@/lib/palette";
+
 export interface HeatCell {
   good_w: number;
   total_w: number;
 }
 
-export type HeatStatus = "good" | "warn" | "poor" | "none";
+// ÉCHELLE SÉQUENTIELLE, PAS DE VERDICT (F01, règle R-S du plan). Les cases étaient
+// vertes au-dessus de 90 % de mesures « Bon », ambre au-dessus de 50 %, rouges en
+// dessous : deux seuils sans aucune source, peints aux couleurs des verdicts
+// web.dev. Une part de mesures « Bon » est une intensité ; elle se lit sur une
+// teinte unique, et la valeur exacte est dans l'infobulle.
 
-const CELL_CLASS: Record<HeatStatus, string> = {
-  good: "bg-emerald-500",
-  warn: "bg-amber-500",
-  poor: "bg-red-500",
-  none: "bg-panel2",
-};
-
-const STATUS_LABEL: Record<HeatStatus, string> = {
-  good: "bon",
-  warn: "à améliorer",
-  poor: "mauvais",
-  none: "aucune donnée",
-};
-
-function statusOf(c: HeatCell | undefined): HeatStatus {
-  if (!c || c.total_w === 0) return "none";
-  const r = c.good_w / c.total_w;
-  return r >= 0.9 ? "good" : r >= 0.5 ? "warn" : "poor";
+/** Part pondérée de mesures « Bon » d'une case, ou null sans mesure. */
+function partBon(c: HeatCell | undefined): number | null {
+  return c && c.total_w > 0 ? c.good_w / c.total_w : null;
 }
 
 /** Clé de jour stable (UTC) partagée entre l'axe et les cases. */
@@ -92,18 +83,16 @@ export function HealthHeatmap({
               {rowLabel(key)}
             </span>
             {hours.map((h) => {
-              const cell = byKey.get(`${key}|${h}`);
-              const st = statusOf(cell);
-              const pct =
-                cell && cell.total_w > 0 ? Math.round((cell.good_w / cell.total_w) * 100) : null;
+              const part = partBon(byKey.get(`${key}|${h}`));
               return (
                 <span
                   key={h}
-                  className={`h-4 rounded-[3px] ${CELL_CLASS[st]} ${st === "none" ? "opacity-60" : "transition hover:ring-2 hover:ring-ink/30"}`}
+                  className={`h-4 rounded-[3px] ${part == null ? "bg-panel2 opacity-60" : "transition hover:ring-2 hover:ring-ink/30"}`}
+                  style={part == null ? undefined : { backgroundColor: SEQUENTIELLE(part) }}
                   title={
-                    pct == null
-                      ? `${rowLabel(key)} · ${h}h — ${STATUS_LABEL[st]}`
-                      : `${rowLabel(key)} · ${h}h — ${pct}% « good » (${STATUS_LABEL[st]})`
+                    part == null
+                      ? `${rowLabel(key)} · ${h}h — aucune donnée`
+                      : `${rowLabel(key)} · ${h}h — ${Math.round(part * 100)} % de mesures « Bon » (pondéré)`
                   }
                 />
               );
@@ -112,16 +101,20 @@ export function HealthHeatmap({
         ))}
 
         {/* légende */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-ink-faint">
-          {(["good", "warn", "poor", "none"] as HeatStatus[]).map((s) => (
-            <span key={s} className="flex items-center gap-1.5">
-              <span className={`h-3 w-3 rounded-[3px] ${CELL_CLASS[s]} ${s === "none" ? "opacity-60" : ""}`} />
-              {STATUS_LABEL[s]}
-            </span>
-          ))}
-          <span className="ml-auto">
-            case vide = aucune page vue ce créneau · part de mesures « good », LCP pondéré ×2
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-ink-soft">
+          <span className="flex items-center gap-1.5">
+            % de mesures « Bon », pondéré :
+            <span>0 %</span>
+            {PALIERS_SEQUENTIELLE.map((c) => (
+              <span key={c} className="h-3 w-3 rounded-[3px]" style={{ backgroundColor: c }} aria-hidden="true" />
+            ))}
+            <span>100 %</span>
           </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded-[3px] bg-panel2 opacity-60" aria-hidden="true" />
+            aucune donnée
+          </span>
+          <span className="ml-auto">case vide = aucune page vue ce créneau · LCP pondéré ×2</span>
         </div>
       </div>
     </div>

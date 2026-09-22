@@ -60,18 +60,18 @@ export const RATING_LABEL: Record<Rating, string> = {
   poor: "Mauvais",
 };
 
+/** Badge de verdict : jetons de app/globals.css, qui suivent le mode sombre (F01). */
 export const RATING_CLASS: Record<Rating, string> = {
-  good: "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-400/10 dark:text-emerald-300 dark:border-emerald-400/30",
-  "needs-improvement":
-    "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-400/10 dark:text-amber-300 dark:border-amber-400/30",
-  poor: "bg-red-100 text-red-800 border-red-300 dark:bg-red-400/10 dark:text-red-300 dark:border-red-400/30",
+  good: "bg-good/10 text-good-ink border-good/30",
+  "needs-improvement": "bg-warn/10 text-warn-ink border-warn/30",
+  poor: "bg-bad/10 text-bad-ink border-bad/30",
 };
 
 /** Couleur de jauge par rating (barres de seuils des VitalCards). */
 export const RATING_BAR: Record<Rating, string> = {
-  good: "bg-emerald-500",
-  "needs-improvement": "bg-amber-500",
-  poor: "bg-red-500",
+  good: "bg-good",
+  "needs-improvement": "bg-warn",
+  poor: "bg-bad",
 };
 
 /** Couleurs hex par rating — pour les barres/SVG (fills inline hors classes Tailwind). */
