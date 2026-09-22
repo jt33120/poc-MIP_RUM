@@ -10,9 +10,9 @@
 // Ce test échoue si la régression revient : il vérifie que l'URL ET le contenu
 // changent, et que le document n'a PAS été rechargé (un marqueur posé dans la page
 // survit à toute navigation client, jamais à un rechargement).
-import { execFileSync } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
+import { compteDedie } from "./helpers/compte-dedie";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum",
@@ -20,11 +20,12 @@ const pool = new pg.Pool({
 const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
 const SESSION = "p62-nav-session";
 const SPANS = ["62ba000000000001", "62ba000000000002"];
+// Compte dédié à ce fichier (helpers/compte-dedie.ts), jamais le compte admin local.
+const ADMIN_EMAIL = "e2e-navigation-filtres@mip-rum.local";
 let adminPassword = "";
 
 test.beforeAll(async () => {
-  const out = execFileSync("node", ["scripts/seed-admin.mjs"], { encoding: "utf8" });
-  adminPassword = out.match(/julian@mip-rum\.local.*?:\s*(\S+)/s)?.[1] ?? "";
+  adminPassword = await compteDedie(pool, ADMIN_EMAIL);
   await pool.query(`insert into app_registry (app_id,name,active) values ('demo-app','Demo',true) on conflict do nothing`);
   await pool.query(
     `insert into rum_session (session_id,app_id,device_type,geo_country,sample_rate,error_sample_rate,last_seen_at)
@@ -55,7 +56,7 @@ test.afterAll(async () => {
 
 async function login(page: Page) {
   await page.goto(`${consoleUrl}/login`);
-  await page.fill('input[name="email"]', "julian@mip-rum.local");
+  await page.fill('input[name="email"]', ADMIN_EMAIL);
   await page.fill('input[name="password"]', adminPassword);
   await page.click('button[type="submit"]');
   await page.waitForURL((url) => url.pathname !== "/login", { timeout: 15_000 });
