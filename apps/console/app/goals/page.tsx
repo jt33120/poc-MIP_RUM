@@ -9,6 +9,7 @@ import { PERIODS } from "@/lib/filters";
 import { listApps } from "@/lib/queries";
 import { listGoals } from "@/lib/queries-goals";
 import { goalConversions } from "@/lib/queries-goals";
+import { FAIBLE_SOUS_PROPORTION, intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
 import { createGoalAction, deleteGoalAction, toggleGoalAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,9 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
     ? await Promise.all([listApps(), listGoals(f.app)])
     : [[], []];
   const error = typeof sp.error === "string" ? sp.error : null;
+  // P*.1 : chaque taux de conversion porte son intervalle de Wilson (population :
+  // les sessions de la fenêtre). Sans session, ni taux ni intervalle.
+  const intervalleConversion = (conversions: number) => texteIntervalle(intervalleWilson(conversions, total), pctFmt);
 
   return (
     <div className="animate-fade-up">
@@ -78,7 +82,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
               label="Meilleur taux"
               value={best ? pctFmt(best.rate) : "—"}
               tone="good"
-              hint={best?.name}
+              hint={best ? `${best.name} · ${intervalleConversion(best.conversions) ?? ""}` : undefined}
             />
             <HeroReading>
               Chaque barre = un objectif, longueur = sa part de sessions qui l&apos;atteignent (échelle
@@ -118,6 +122,12 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
                     </div>
                     <span className="w-14 text-right text-xs font-semibold tabular-nums">{pctFmt(g.rate)}</span>
                   </div>
+                  {g.rate != null && (
+                    <p className="mt-1 text-[11px] text-ink-soft" data-testid="goal-intervalle">
+                      {intervalleConversion(g.conversions)}
+                      {total < FAIBLE_SOUS_PROPORTION && <span className="font-medium text-warn-ink"> · échantillon faible</span>}
+                    </p>
+                  )}
                 </td>
               </tr>
             ))}

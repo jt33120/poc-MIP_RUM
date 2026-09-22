@@ -14,6 +14,7 @@ import { compileScope, sessionJoin } from "./query-compiler";
 import { conditionsOf } from "./query-contract";
 import { sqlContext } from "./query-sql";
 import { CORE_VITALS } from "./rating";
+import { intervalleWilson, texteIntervalle } from "./stats/incertitude";
 
 export type HealthLabel = "Excellent" | "Bon" | "Dégradé" | "Critique";
 
@@ -307,7 +308,13 @@ export async function healthScore(f: Filters): Promise<Health> {
       detail:
         stabilityRatio == null
           ? "aucune session"
-          : `${c.clean_sessions}/${c.sessions} session(s) sans erreur`,
+          : // P*.1 : la part de sessions sans erreur porte son intervalle de Wilson.
+            [
+              `${c.clean_sessions}/${c.sessions} session(s) sans erreur`,
+              texteIntervalle(intervalleWilson(c.clean_sessions, c.sessions), (x) => `${Math.round(x * 100)} %`),
+            ]
+              .filter(Boolean)
+              .join(", "),
       earned: stabilityRatio == null ? null : round1(20 * stabilityRatio),
       max: 20,
     },

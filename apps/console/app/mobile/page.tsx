@@ -20,6 +20,7 @@ import { INPUT_CLASS } from "@/components/forms/Field";
 import { fmtDate, fmtLatency, fmtPct } from "@/lib/format";
 import { type SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
+import { FAIBLE_SOUS_PROPORTION, intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
 import {
   ERROR_FREE_REASONS,
   PLATFORMS,
@@ -64,6 +65,15 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   const data = await mobileSummary(filtersOfQuery(query));
   const { sessions, js_errors: erreurs, startup } = data;
   const jsErrors = data.capabilities.find((c) => c.capability === "js_errors");
+  // P*.1 : l'intervalle de Wilson de la part de sessions sans erreur JS. Même
+  // numérateur que le taux (`errorFreeSessionRate` borne les sessions touchées au
+  // total) ; aucun intervalle quand le taux n'est pas calculable.
+  const sansErreur =
+    data.js_error_free_session_rate == null
+      ? null
+      : sessions.sessions - Math.min(erreurs?.sessions_affected ?? 0, sessions.sessions);
+  const intervalleSansErreur =
+    sansErreur == null ? null : texteIntervalle(intervalleWilson(sansErreur, sessions.sessions), fmtPct);
   const contexte = queryToSearchParams(ecran.query);
   // CE7 : `/errors/issues` n'a pas de page (seul `/errors/issues/[id]` existe) ;
   // la liste des erreurs lit `source` elle-même (`parseIssueSource`).
@@ -149,6 +159,14 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
           <div data-testid="mobile-taux-sans-erreur" className="mt-1 text-3xl font-bold tabular-nums text-ink">
             {data.js_error_free_session_rate == null ? "Non calculable" : fmtPct(data.js_error_free_session_rate)}
           </div>
+          {intervalleSansErreur && (
+            <p data-testid="mobile-intervalle-sans-erreur" className="mt-1 break-words text-xs text-ink-soft">
+              {intervalleSansErreur} · {NOMBRE(sessions.sessions)} session(s)
+              {sessions.sessions < FAIBLE_SOUS_PROPORTION && (
+                <span className="font-medium text-warn-ink"> · échantillon faible</span>
+              )}
+            </p>
+          )}
           <p className="mt-1 text-xs text-ink-faint">
             {data.js_error_free_unavailable_reason
               ? ERROR_FREE_REASONS[data.js_error_free_unavailable_reason]

@@ -39,7 +39,8 @@ import { overviewStats, vitalSeries, vitalsP75, type OverviewStats } from "@/lib
 import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown } from "@/lib/queries-breakdowns";
 import { dailyLcpSeries, dailyTraffic, GRID_DAYS, healthGrid } from "@/lib/queries-grid";
 import { comparaisonVersions, type ComparaisonVersions } from "@/lib/queries-deploys";
-import { fmtBorne } from "@/lib/format";
+import { fmtBorne, fmtVital } from "@/lib/format";
+import { ecartP75 } from "@/lib/stats/incertitude";
 import { THRESHOLDS } from "@/lib/rating";
 import {
   couverturePrecedente,
@@ -316,6 +317,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                     n={byName[name]?.n ?? 0}
                     intervalle={byName[name]?.intervalle}
                     prev={deltasVitaux.deltas ? (prevByName[name]?.p75 ?? null) : null}
+                    // P*.1 : pas de test sur deux p75 ; leurs intervalles comparés
+                    // disent si l'écart est établi (chevauchement : non établi).
+                    ecart={
+                      deltasVitaux.deltas
+                        ? ecartP75(byName[name]?.intervalle, prevByName[name]?.intervalle, (v) => fmtVital(name, v))
+                        : null
+                    }
                     periodLabel={period.label}
                   />
                 ))}
