@@ -27,6 +27,8 @@ import {
   representationDemandee,
 } from "../../apps/console/lib/explorer-page-params";
 import { resumeVue as f34ResumeVue, explorerHrefFromAst as f34ExplorerHrefFromAst } from "../../apps/console/lib/explorer-page-params";
+import { mesureDeVolume as f33MesureDeVolume, planDeVolume as f33PlanDeVolume, planDeRepartition as f33PlanDeRepartition, LIMITE_REPARTITION as f33LimiteRepartition } from "../../apps/console/lib/explorer-page-params";
+import { EXPLORER_DATASET_IDS as f33DatasetIds, datasetDefinition as f33DatasetDefinition } from "../../apps/console/lib/analytics-schema";
 import { vitalDeVerdict as f32VitalDeVerdict, phraseSansVerdict as f32PhraseSansVerdict, formatDeMesure as f32FormatDeMesure, titreResultat as f32TitreResultat, referencePrecedente as f32ReferencePrecedente, groupeHref as f32GroupeHref, filtresDuGroupe as f32FiltresDuGroupe } from "../../apps/console/lib/explorer-page-params";
 import {
   encodeExplorerCursor,
@@ -485,5 +487,102 @@ describe("F34 — resumeVue (W-V2)", () => {
       expect(sp.get("run")).toBe("1");
       expect(sp.has("period")).toBe(false);
     }
+  });
+});
+
+describe("F33 — plans dérivés du contexte (W-E2, W-E7)", () => {
+  /**
+   * Ce que chaque jeu COMPTE, jeu par jeu et sans exception : `rows:count` partout,
+   * sauf les sessions (comptées à leur début) et les erreurs (comptées en
+   * occurrences, V1 — une ligne d'erreur en tait plusieurs). Ce tableau est écrit
+   * à la main : c'est lui, et non le code, qui dit ce qui est attendu.
+   */
+  const ATTENDU: Record<string, { field: string; aggregation: string; unite: string }> = {
+    custom_events: { field: "rows", aggregation: "count", unite: "événements" },
+    errors: { field: "occurrences", aggregation: "sum", unite: "occurrences" },
+    views: { field: "rows", aggregation: "count", unite: "vues" },
+    sessions: { field: "started", aggregation: "count", unite: "sessions" },
+    vitals: { field: "rows", aggregation: "count", unite: "mesures" },
+    resources: { field: "rows", aggregation: "count", unite: "ressources" },
+    longtasks: { field: "rows", aggregation: "count", unite: "tâches" },
+    actions: { field: "rows", aggregation: "count", unite: "actions" },
+    spans: { field: "rows", aggregation: "count", unite: "segments" },
+  };
+
+  /** Le plan de départ d'un jeu : sa première mesure, et sa variante si elle est exigée. */
+  function f33PlanSource(dataset: string) {
+    const definition = f33DatasetDefinition(dataset as never);
+    const variante = definition.variant?.required ? `&variant=${definition.variant.values[0]}` : "";
+    return plan(`app=demo&dataset=${dataset}&measure=${mesureDefaut(dataset as never)}&viz=value${variante}`);
+  }
+
+  /** Un plan dérivé reste un plan que le REGISTRE accepte — pas seulement un objet. */
+  function f33Revalide(p: ExplorerPlan) {
+    return parseExplorerPlan(
+      {
+        dataset: p.dataset,
+        measure: p.measure,
+        variant: p.variant,
+        visualization: p.visualization,
+        groupBy: p.groupBy,
+        limit: p.limit,
+      },
+      requete("app=demo"),
+    );
+  }
+
+  it("chaque jeu dit ce qu'il compte : rows, started (sessions) ou occurrences (erreurs)", () => {
+    expect(Object.keys(ATTENDU).sort()).toEqual([...f33DatasetIds].sort());
+    for (const dataset of f33DatasetIds) {
+      const volume = f33MesureDeVolume(dataset);
+      expect(volume, dataset).not.toBeNull();
+      expect({ ...volume!.measure, unite: volume!.unite }, dataset).toEqual(ATTENDU[dataset]);
+    }
+  });
+
+  it("le plan de volume : même population, comptée par seau, sans regroupement — et valide", () => {
+    for (const dataset of f33DatasetIds) {
+      const source = f33PlanSource(dataset);
+      const volume = f33PlanDeVolume(source);
+      expect(volume, dataset).not.toBeNull();
+      expect(volume!.dataset, dataset).toBe(source.dataset);
+      // Même variante : le contexte compte la MÊME sous-population que le résultat.
+      expect(volume!.variant, dataset).toBe(source.variant);
+      expect(volume!.measure, dataset).toEqual({ field: ATTENDU[dataset].field, aggregation: ATTENDU[dataset].aggregation });
+      expect(volume!.groupBy, dataset).toEqual([]);
+      expect(volume!.visualization, dataset).toBe("timeseries");
+      expect(volume!.limit, dataset).toBe(1);
+      expect(volume!.cursor, dataset).toBeNull();
+      expect(f33Revalide(volume!).ok, dataset).toBe(true);
+    }
+  });
+
+  it("le plan de répartition : le même dénombrement, groupé par la dimension, classement 10", () => {
+    for (const dataset of f33DatasetIds) {
+      const repartition = f33PlanDeRepartition(f33PlanSource(dataset), "device");
+      expect(repartition, dataset).not.toBeNull();
+      expect(repartition!.measure, dataset).toEqual({ field: ATTENDU[dataset].field, aggregation: ATTENDU[dataset].aggregation });
+      expect(repartition!.groupBy, dataset).toEqual(["device"]);
+      expect(repartition!.visualization, dataset).toBe("toplist");
+      expect(repartition!.limit, dataset).toBe(f33LimiteRepartition);
+      expect(f33Revalide(repartition!).ok, dataset).toBe(true);
+    }
+  });
+
+  it("sessions actives : le volume repart des sessions COMMENCÉES, seules à avoir un seau honnête", () => {
+    const actives = plan("app=demo&dataset=sessions&measure=active:count&viz=value");
+    const volume = f33PlanDeVolume(actives)!;
+    expect(volume.measure).toEqual({ field: "started", aggregation: "count" });
+    // La série d'une mesure sans découpage temporel est refusée par le registre :
+    // c'est bien que le contexte ne la demande jamais.
+    expect(f33Revalide(volume).ok).toBe(true);
+    expect(f33Revalide({ ...actives, visualization: "timeseries" }).ok).toBe(false);
+  });
+
+  it("le curseur du journal ne suit pas le contexte", () => {
+    const journal = plan("app=demo&dataset=views&measure=rows:count&viz=table&limit=25");
+    const avecCurseur: ExplorerPlan = { ...journal, cursor: { fingerprint: "x", ts: "2026-09-17T11:00:00.000Z", key: "1" } };
+    expect(f33PlanDeVolume(avecCurseur)!.cursor).toBeNull();
+    expect(f33PlanDeRepartition(avecCurseur, "browser")!.cursor).toBeNull();
   });
 });
