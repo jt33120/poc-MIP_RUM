@@ -7,7 +7,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { ForecastChart, type ForecastPoint } from "@/components/charts/ForecastChart";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { EchecLecture } from "@/components/states/SectionErreur";
 import type { SearchParams } from "@/lib/filters";
+import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 import {
   HORIZON_JOURS as HORIZON,
@@ -20,7 +22,7 @@ import {
   type TrendDir,
 } from "@/lib/forecast";
 import { dailyLcpSeries, dailyTraffic } from "@/lib/queries-grid";
-import { THRESHOLDS } from "@/lib/rating";
+import { THRESHOLDS, rating2026, type Rating } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,9 @@ const ARROW: Record<TrendDir, string> = { up: "▲", down: "▼", flat: "—" };
 // Borne « Bon » du LCP, lue dans lib/rating.ts : au-delà, le verdict passe à « À améliorer ».
 const LCP_BON = THRESHOLDS.LCP[0];
 const LCP_BON_TEXTE = fmtBorne("LCP", LCP_BON);
+// Ton de la tuile « LCP p75 actuel » : le verdict à trois niveaux de `rating2026`,
+// jamais un seuil binaire — 3 s est « À améliorer », pas « Mauvais ».
+const TON_VERDICT: Record<Rating, "good" | "warn" | "poor"> = { good: "good", "needs-improvement": "warn", poor: "poor" };
 
 interface Metric {
   key: string;
@@ -44,10 +49,40 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
   const ecran = await pageFilters(await searchParams, "/forecast");
   if (!ecran.ok) return <FilterProblemNotice title="Prévisions" problem={ecran.problem} />;
   const f = ecran.filters;
-  const [traffic, lcp] = await Promise.all([dailyTraffic(f), dailyLcpSeries(f)]);
+  // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8 règle 1). Ces deux lectures lèvent
+  // depuis F02 : sans `lire()`, une base indisponible remplaçait tout l'écran par
+  // `error.tsx`. Désormais seule la partie qui dépend d'une lecture en échec le dit.
+  const [trafficLu, lcpLu] = await Promise.all([lire(() => dailyTraffic(f)), lire(() => dailyLcpSeries(f))]);
+
+  const entete = (
+    <PageHeader
+      title="Prévisions"
+      help="forecast"
+      sub={
+        <>
+          Anticiper la dérive <em>avant</em> l&apos;incident, en complément des anomalies (réactives) et
+          du burn-rate SLO
+        </>
+      }
+    />
+  );
+
+  // Le trafic porte l'axe des 14 jours (zéro-rempli) sur lequel tout s'aligne :
+  // sans lui, aucune série ni carte n'a d'axe — l'écran entier est « en échec ».
+  if (!trafficLu.ok) {
+    return (
+      <div className="animate-fade-up">
+        {entete}
+        <EchecLecture titre="Historique des 14 derniers jours" />
+      </div>
+    );
+  }
+  const traffic = trafficLu.data;
+  // LCP illisible : `null`, jamais `[]` — un vide se lirait « aucune mesure ».
+  const lcp = lcpLu.ok ? lcpLu.data : null;
 
   // Axe canonique : les 14 jours zéro-remplis du trafic. On aligne LCP dessus.
-  const lcpByDay = new Map(lcp.map((r) => [cleJour(r.bucket), Number(r.p75)]));
+  const lcpByDay = new Map((lcp ?? []).map((r) => [cleJour(r.bucket), Number(r.p75)]));
   const days = traffic.map((t) => cleJour(t.day));
   const lcpVals = days.map((d) => (lcpByDay.has(d) ? lcpByDay.get(d)! : null));
   const errVals = traffic.map((t) => (t.pageviews ? (t.errors / t.pageviews) * 100 : null));
@@ -89,7 +124,10 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
     },
   ];
 
-  const hasData = traffic.some((t) => t.pageviews > 0) || lcp.length > 0;
+  const hasData = traffic.some((t) => t.pageviews > 0) || (lcp?.length ?? 0) > 0;
+  // LCP en échec : sa carte part avec le hero et la synthèse (seule métrique bornée,
+  // la synthèse dirait « stable » sur un LCP qu'on n'a pas lu).
+  const cartes = lcp ? metrics : metrics.filter((m) => m.key !== "lcp");
 
   // Synthèse déterministe : ETA au seuil des métriques bornées.
   const narrative = buildForecastNarrative(
@@ -111,24 +149,25 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
 
   return (
     <div className="animate-fade-up">
-      <PageHeader
-        title="Prévisions"
-        help="forecast"
-        sub={
-          <>
-            Anticiper la dérive <em>avant</em> l&apos;incident, en complément des anomalies (réactives) et
-            du burn-rate SLO
-          </>
-        }
-      />
+      {entete}
+
+      {!lcp && (
+        <div className="mb-6">
+          <EchecLecture titre="LCP p75 — réel et projection" />
+        </div>
+      )}
 
       {!hasData ? (
-        <div className="card p-8 text-center text-ink-soft">
-          Pas assez d&apos;historique sur 14 jours — les prévisions apparaissent au fil des mesures.
-        </div>
+        // Sans LCP lu, « pas assez d'historique » serait une affirmation sur une
+        // série qu'on n'a pas lue : l'état « en échec » ci-dessus suffit.
+        lcp && (
+          <div className="card p-8 text-center text-ink-soft">
+            Pas assez d&apos;historique sur 14 jours — les prévisions apparaissent au fil des mesures.
+          </div>
+        )
       ) : (
         <>
-        {(() => {
+        {lcp && (() => {
           // Hero : prévision de la métrique phare (LCP p75) — réel + projection + seuil.
           const m = metrics[0];
           const fit = linfit(m.values);
@@ -146,7 +185,9 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
           const chartData: ForecastPoint[] = days.map((d, i) => ({ label: fmtDay(d), real: m.values[i], proj: null }));
           if (fit && chartData.length) chartData[chartData.length - 1].proj = forecastNext(fit, 0);
           proj.forEach((v, i) => chartData.push({ label: `J+${i + 1}`, real: null, proj: v }));
-          const overThreshold = current != null && m.threshold != null && current > m.threshold;
+          // Sans valeur (« — »), ton neutre : une absence de mesure n'est pas « bonne ».
+          const verdict = current != null ? rating2026("LCP", current) : null;
+          const tonActuel = verdict ? TON_VERDICT[verdict] : "neutral";
           return (
             <SupervisionHero
               chartTitle={`LCP p75 — réel + projection à J+${HORIZON}`}
@@ -167,7 +208,7 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
               <HeroStat
                 label="LCP p75 actuel"
                 value={m.fmt(current)}
-                tone={overThreshold ? "poor" : "good"}
+                tone={tonActuel}
                 hint={`projeté J+${HORIZON} : ${m.fmt(projected)}`}
               />
               <HeroStat
@@ -187,20 +228,22 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
         })()}
 
         {/* Synthèse (narration déterministe) */}
-        <div className={`mb-6 rounded-xl border px-4 py-3 ${NARR_STYLE[narrative.status]}`}>
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            <span className={`h-1.5 w-1.5 rounded-full ${NARR_DOT[narrative.status]}`} />
-            Synthèse — {narrative.status === "risk" ? "action requise" : narrative.status === "watch" ? "à surveiller" : "stable"}
+        {lcp && (
+          <div className={`mb-6 rounded-xl border px-4 py-3 ${NARR_STYLE[narrative.status]}`}>
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+              <span className={`h-1.5 w-1.5 rounded-full ${NARR_DOT[narrative.status]}`} />
+              Synthèse — {narrative.status === "risk" ? "action requise" : narrative.status === "watch" ? "à surveiller" : "stable"}
+            </div>
+            <ul className="mt-1.5 space-y-0.5 text-sm text-ink">
+              {narrative.lines.map((l, i) => (
+                <li key={i}>{l}</li>
+              ))}
+            </ul>
           </div>
-          <ul className="mt-1.5 space-y-0.5 text-sm text-ink">
-            {narrative.lines.map((l, i) => (
-              <li key={i}>{l}</li>
-            ))}
-          </ul>
-        </div>
+        )}
 
         <div className="grid gap-4 lg:grid-cols-3">
-          {metrics.map((m) => (
+          {cartes.map((m) => (
             <MetricCard key={m.key} m={m} />
           ))}
         </div>

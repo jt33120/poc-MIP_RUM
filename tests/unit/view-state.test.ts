@@ -46,9 +46,30 @@ describe("aller-retour de chaque paramètre de vue", () => {
     expect(allerRetour("/sessions", { cmp: "prev" }).etat.cmp).toBe("prev");
   });
 
-  it("le défaut de l'écran ne s'écrit pas", () => {
-    expect(ecrireEtatDeVue("/", { cmp: "prev" })).toMatchObject({ cmp: null, rel_a: null, rel_b: null });
-    expect(ecrireEtatDeVue("/sessions", { cmp: "none" }).cmp).toBeNull();
+  it("cmp choisi s'écrit toujours, même égal au défaut de l'écran courant", () => {
+    // `cmp` suit la navigation, et les défauts DIFFÈRENT d'un écran à l'autre : élidé
+    // au défaut de l'écran courant, le choix se perdait sur l'écran suivant.
+    expect(ecrireEtatDeVue("/", { cmp: "prev" })).toEqual({ cmp: "prev", rel_a: null, rel_b: null });
+    expect(ecrireEtatDeVue("/sessions", { cmp: "none" }).cmp).toBe("none");
+  });
+
+  it("cmp survit au changement d'écran quand il vaut le défaut du seul écran quitté", () => {
+    const naviguer = (depuis: string, qs: string, cmp: EtatDeVue["cmp"], vers: string) => {
+      const sp = new URLSearchParams(qs);
+      for (const [cle, valeur] of Object.entries(ecrireEtatDeVue(depuis, { cmp }))) {
+        if (valeur === null) sp.delete(cle);
+        else sp.set(cle, valeur);
+      }
+      const href = contextHref(vers, sp);
+      return lireComparaison(vers, new URLSearchParams(href.split("?")[1] ?? "")).valeur.mode;
+    };
+    // /sessions?cmp=prev → « Aucune » → / : reste « Aucune » (et non le `prev` de /).
+    expect(naviguer("/sessions", "cmp=prev", "none", "/")).toBe("none");
+    // / → « Période précédente » → /sessions : reste `prev` (et non le `none` de /sessions).
+    expect(naviguer("/", "cmp=none", "prev", "/sessions")).toBe("prev");
+  });
+
+  it("le défaut de l'écran ne s'écrit pas (réglages propres à l'écran)", () => {
     expect(ecrireEtatDeVue("/", { tri: "gravite" }).tri).toBeNull();
     expect(ecrireEtatDeVue("/pages", { vital: "LCP" }).vital).toBeNull();
     expect(ecrireEtatDeVue("/sessions/abc", { voir: [...NATURES_CHRONOLOGIE] }).voir).toBeNull();

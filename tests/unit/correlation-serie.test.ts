@@ -47,6 +47,14 @@ describe("ecrireSerie / lireSerie", () => {
     expect(lireSerie("/checkout", [A_CHECKOUT, A_ACCUEIL])).toEqual(A_CHECKOUT);
   });
 
+  it("lien ancien d'une route paramétrée `serie=/partners/:id` : retenu, pas coupé au `:`", () => {
+    // Le `:` d'une route brute n'est pas le séparateur du format couple (qui l'encode
+    // en %3A) : la compatibilité « route seule » est tentée AVANT la coupe.
+    expect(lireSerie("/partners/:id", [DEMO_PARTNER, A_ACCUEIL])).toEqual(DEMO_PARTNER);
+    const deuxApps = [DEMO_PARTNER, { app_id: "autre", route: "/partners/:id" }];
+    expect(lireSerie("/partners/:id", deuxApps)).toBeNull();
+  });
+
   it("deux apps ayant /checkout : deux options distinctes, et `serie=/checkout` est ignoré", () => {
     const options = [A_CHECKOUT, B_CHECKOUT];
     expect(ecrireSerie(A_CHECKOUT.app_id, A_CHECKOUT.route)).not.toBe(ecrireSerie(B_CHECKOUT.app_id, B_CHECKOUT.route));

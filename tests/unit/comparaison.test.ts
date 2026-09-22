@@ -18,6 +18,7 @@ const {
   deltasDeLaRangee,
   evaluerCouverture,
   releasesComparables,
+  sourcesSousFiltres,
 } = await import("../../apps/console/lib/comparaison");
 const { parseAnalyticsQuery } = await import("../../apps/console/lib/query-contract");
 type Source = Parameters<typeof evaluerCouverture>[0]["source"];
@@ -66,6 +67,23 @@ describe("règle 1 — rétention", () => {
 
   it("7 jours tiennent dans 30 : la règle ne s'applique pas", () => {
     expect(evaluer(requete("period=7d"), METRIQUE, new Date(NOW - 20 * JOUR))).toEqual({ etat: "complete", raison: null });
+  });
+
+  it("plage PASSÉE : la purge compte depuis maintenant, pas depuis la fin de la plage", async () => {
+    // [J−29, J−27] : sa précédente [J−31, J−29] déborde la purge (J−30). Ancrée sur
+    // `range.to`, la règle la disait dans la rétention, et la raison devenait
+    // « collectées depuis le … seulement » — la date de la purge, pas du début.
+    const passee = requete(`from=${new Date(NOW - 29 * JOUR).toISOString()}&to=${new Date(NOW - 27 * JOUR).toISOString()}`);
+    const horsRetention = {
+      etat: "partielle",
+      raison: "période précédente hors rétention (30 jours) : les données les plus anciennes ont été purgées",
+    };
+    expect(evaluer(passee, METRIQUE, new Date(NOW - 30 * JOUR))).toEqual(horsRetention);
+    expect(await couverturePrecedente(passee, METRIQUE, { nowMs: NOW, retentionJours: 30 })).toEqual(horsRetention);
+    expect(lecture).not.toHaveBeenCalled();
+    // Une plage passée dont la précédente reste dans la purge n'est pas touchée.
+    const recente = requete(`from=${new Date(NOW - 10 * JOUR).toISOString()}&to=${new Date(NOW - 9 * JOUR).toISOString()}`);
+    expect(evaluer(recente, METRIQUE, new Date(NOW - 30 * JOUR))).toEqual({ etat: "complete", raison: null });
   });
 
   it("la rétention configurée est lue telle quelle (15 jours : 7 j + 7 j tiennent, 8 j + 8 j non)", () => {
@@ -152,6 +170,66 @@ describe("sources", () => {
       couverturePrecedente(requete("period=24h"), { table: "rum_metric", colonneTemps: "ts", colonneRequise: "a b", additive: false }),
     ).rejects.toThrow("colonne requise invalide");
     expect(lecture).not.toHaveBeenCalled();
+  });
+});
+
+describe("sourcesSousFiltres — colonne requise dérivée des filtres actifs", () => {
+  // Sous un filtre porté par une colonne ajoutée par migration (v75 : navigateur,
+  // système, release, env, service ; v85 : provenance du pays), la période
+  // précédente n'est complète que si CETTE colonne était déjà collectée : lire
+  // `min(ts)` de toute la table la disait complète à tort (faux « +100 % »).
+  const SESSIONS: Source = { table: "rum_session", colonneTemps: "started_at", additive: true };
+  const ERREURS: Source = { table: "rum_error", colonneTemps: "ts", additive: false };
+
+  it("sans filtre, ou sous un filtre d'une colonne d'origine : la source seule", () => {
+    expect(sourcesSousFiltres(requete("period=7d"), METRIQUE)).toEqual([METRIQUE]);
+    expect(sourcesSousFiltres(requete("period=7d&device=mobile&route=/panier&country=FR"), VUES)).toEqual([VUES]);
+  });
+
+  it("colonne de la ligne (release) : la même source, colonne requise", () => {
+    expect(sourcesSousFiltres(requete("period=7d&release=1.4.2"), VUES)).toEqual([
+      VUES,
+      { ...VUES, colonneRequise: "release" },
+    ]);
+    expect(sourcesSousFiltres(requete("period=7d&env=prod"), ERREURS)).toEqual([ERREURS, { ...ERREURS, colonneRequise: "env" }]);
+  });
+
+  it("colonne de SESSION (browser) : sur rum_session directement, sinon le début de collecte des sessions", () => {
+    expect(sourcesSousFiltres(requete("period=7d&browser=Firefox"), SESSIONS)).toEqual([
+      SESSIONS,
+      { ...SESSIONS, colonneRequise: "browser" },
+    ]);
+    expect(sourcesSousFiltres(requete("period=7d&browser=Firefox"), METRIQUE)).toEqual([
+      METRIQUE,
+      { table: "rum_session", colonneTemps: "started_at", colonneRequise: "browser", additive: false },
+    ]);
+  });
+
+  it("segments : `neq` exige la colonne (NULL n'est jamais « différent »), `is_null` non", () => {
+    expect(sourcesSousFiltres(requete("period=7d&seg=v2:os:neq:Linux"), SESSIONS)).toEqual([
+      SESSIONS,
+      { ...SESSIONS, colonneRequise: "os" },
+    ]);
+    expect(sourcesSousFiltres(requete("period=7d&seg=v2:browser:is_null"), SESSIONS)).toEqual([SESSIONS]);
+    expect(sourcesSousFiltres(requete("period=7d&seg=v2:country_source:eq:ip"), SESSIONS)).toEqual([
+      SESSIONS,
+      { ...SESSIONS, colonneRequise: "geo_source" },
+    ]);
+  });
+
+  it("une dimension que la table ne porte pas n'ajoute rien ; une colonne citée deux fois, une seule source", () => {
+    // `service` n'existe pas sur rum_metric : la lecture refuse ce filtre ailleurs.
+    expect(sourcesSousFiltres(requete("period=7d&service=api"), METRIQUE)).toEqual([METRIQUE]);
+    expect(sourcesSousFiltres(requete("period=7d&browser=Firefox&seg=v2:browser:neq:Safari"), SESSIONS)).toHaveLength(2);
+  });
+
+  it("la couverture qui en découle : le champ récent décide, pas la table", () => {
+    const q = requete("period=7d&browser=Firefox");
+    const [, navigateur] = sourcesSousFiltres(q, METRIQUE);
+    expect(evaluer(q, navigateur, new Date("2026-09-20T00:00:00Z"))).toEqual({
+      etat: "partielle",
+      raison: "champ « browser » collecté depuis le 20/09 00:00 UTC seulement",
+    });
   });
 });
 

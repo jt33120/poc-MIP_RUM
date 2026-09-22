@@ -813,6 +813,12 @@ const VERDICTS: readonly Rating[] = ["good", "needs-improvement", "poor"];
  * p75 de l'heure (bon inclusif, mauvais strict), bornes LIÉES depuis
  * `THRESHOLDS.LCP`. Période précédente (`cmp=prev`) : passer une requête dont la
  * plage est `previousRange(query.range)`.
+ *
+ * Les heures SANS ROUTE (`route` NULL côté réel ou `route_hint` NULL côté robot)
+ * sont exclues. `full outer join … using (…, route, …)` ne relie jamais deux NULL
+ * (et PostgreSQL refuse `is not distinct from` dans une jointure externe
+ * complète) : la même heure comptait à la fois « robot seul » et « réel seul ».
+ * Une heure sans route ne désigne de toute façon aucun couple (app, route).
  */
 export async function correlationConcordance(f: FiltersLike, effectifMin = EFFECTIF_MIN_HEURE): Promise<Concordance> {
   const sql = await sqlContext(f);
@@ -839,7 +845,7 @@ export async function correlationConcordance(f: FiltersLike, effectifMin = EFFEC
                 else 'poor'
               end as reel
          from rum r full outer join syn s using (app_id, route, bucket)
-        where s.bucket is not null or r.rum_lcp_n > 0
+        where route is not null and (s.bucket is not null or r.rum_lcp_n > 0)
      )
      select classe, case when classe = 'matrice' then robot end as robot,
             case when classe = 'matrice' then reel end as reel,

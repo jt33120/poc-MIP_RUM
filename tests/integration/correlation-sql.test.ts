@@ -12,7 +12,8 @@
 // - LENT : 60 heures en angle mort — le compte dit 60 là où `blindSpots` s'arrête à 50 ;
 // - PANIER_A / PANIER_B : deux apps qui ont chacune `/checkout` ;
 // - ARRET : un robot qui s'est arrêté 3 h avant la fin de la plage ;
-// - SANS_ROBOT : une app du périmètre sans aucun passage.
+// - SANS_ROBOT : une app du périmètre sans aucun passage ;
+// - ROUTE_NULLE : robot ET réel à la même heure, sans route des deux côtés.
 //
 //   SQL_TEST_DATABASE_URL=<base jetable> pnpm test:sql
 import { readFileSync, readdirSync } from "node:fs";
@@ -40,7 +41,8 @@ const PANIER_A = "f57-panier-a";
 const PANIER_B = "f57-panier-b";
 const ARRET = "f57-arret";
 const SANS_ROBOT = "f57-sans-robot";
-const APPS = [MATRICE, BORNES, LENT, PANIER_A, PANIER_B, ARRET, SANS_ROBOT];
+const ROUTE_NULLE = "f57-route-nulle";
+const APPS = [MATRICE, BORNES, LENT, PANIER_A, PANIER_B, ARRET, SANS_ROBOT, ROUTE_NULLE];
 
 const H = 3_600_000;
 // Plage de recette : 72 heures pleines, terminées une heure avant maintenant.
@@ -68,7 +70,7 @@ async function nettoyer(c: pg.Client): Promise<void> {
 let mesures = 0;
 
 /** `n` mesures LCP identiques (le p75 vaut donc `valeur`) à la 10ᵉ minute de l'heure `i`. */
-async function reel(c: pg.Client, app: string, route: string, i: number, valeur: number, n = 30): Promise<void> {
+async function reel(c: pg.Client, app: string, route: string | null, i: number, valeur: number, n = 30): Promise<void> {
   const debut = new Date(heure(i).getTime() + 10 * 60_000);
   await c.query(
     `insert into rum_metric (span_id, session_id, app_id, route, name, value, ts)
@@ -82,7 +84,7 @@ async function reel(c: pg.Client, app: string, route: string, i: number, valeur:
 async function robot(
   c: pg.Client,
   app: string,
-  route: string,
+  route: string | null,
   quand: number | Date,
   etat: string | null,
   scenario = "Parcours",
@@ -147,6 +149,10 @@ async function semer(c: pg.Client): Promise<void> {
     await robot(c, PANIER_B, "/checkout", i, "ok");
     await reel(c, PANIER_B, "/checkout", i, 5000);
   }
+
+  // ROUTE_NULLE — la même heure des deux côtés, route inconnue des deux côtés.
+  await robot(c, ROUTE_NULLE, null, 0, "ok");
+  await reel(c, ROUTE_NULLE, null, 0, 1200);
 
   // ARRET — deux scénarios toutes les 15 min, jusqu'à 3 h avant la fin de la plage.
   for (let t = FROM.getTime(); t <= TO.getTime() - 3 * H; t += 15 * 60_000) {
@@ -224,6 +230,16 @@ type Console = Awaited<ReturnType<typeof consoleSur>>;
     expect(conc.robotInconnu).toBe(1);
     expect(conc.reelInsuffisant).toBe(0);
     expect(conc.anglesMortsParRoute).toEqual([expect.objectContaining({ app_id: BORNES, route: "/b", heures: 2 })]);
+  });
+
+  it("concordance : une heure sans route n'est comptée NI « robot seul » NI « réel seul »", async () => {
+    // `using (app_id, route, bucket)` ne relie jamais deux routes NULL : la même
+    // heure tombait deux fois hors matrice, une fois de chaque côté. Une heure sans
+    // route ne désigne aucun couple : elle est exclue de la concordance.
+    const conc = await lib.correlationConcordance(filtres(`app=${ROUTE_NULLE}`));
+    expect([conc.robotSeul, conc.reelSeul, conc.reelInsuffisant, conc.robotInconnu]).toEqual([0, 0, 0, 0]);
+    expect(conc.cellules.every((x) => x.heures === 0)).toBe(true);
+    expect(conc.anglesMortsParRoute).toEqual([]);
   });
 
   it("60 heures en angle mort : le compte dit 60, la liste s'arrête à 50", async () => {

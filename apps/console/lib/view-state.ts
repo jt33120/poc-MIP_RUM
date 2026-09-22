@@ -490,11 +490,17 @@ export function ignores(pathname: string, sp: ParamReader): string[] {
  * Paramètres d'URL d'un état de vue (partiel), prêts pour `hrefWithQuery(…, extra)` :
  * une clé à `null` RETIRE le paramètre. Les défauts de l'écran ne s'écrivent pas —
  * une URL canonique par état.
+ *
+ * SAUF `cmp`, écrit dès qu'il est choisi. Il suit la navigation
+ * (`VIEW_CONTEXT_PARAMS`) et son défaut change d'un écran à l'autre (`prev` sur
+ * les écrans Performance, `none` ailleurs) : élidé au défaut de l'écran COURANT,
+ * le choix se perdait sur l'écran SUIVANT (`/sessions?cmp=prev` → « Aucune »
+ * retirait `cmp`, et `/` revenait à `prev`).
  */
 export function ecrireEtatDeVue(pathname: string, etat: Partial<EtatDeVue>): Record<string, string | null> {
   const out: Record<string, string | null> = {};
   if (etat.cmp !== undefined) {
-    out.cmp = etat.cmp === comparaisonParDefaut(pathname) ? null : etat.cmp;
+    out.cmp = etat.cmp;
     // Les releases n'ont de sens qu'en comparaison de releases : hors de ce mode, elles partent.
     out.rel_a = etat.cmp === "release" ? (etat.relA ?? null) : null;
     out.rel_b = etat.cmp === "release" ? (etat.relB ?? null) : null;

@@ -19,8 +19,8 @@ import { DEBUT_SAMPLE_RATE } from "./echantillonnage";
 import { filtersOfQuery, type FiltersLike } from "./filters";
 import { couvertureRetention, retentionDays } from "./queries-explorer";
 import { SANS_RELEASE, type VersionRow } from "./queries-deploys";
-import { compileScope } from "./query-compiler";
-import { previousRange, type AnalyticsQuery } from "./query-contract";
+import { DATASETS, DATASET_REGISTRY, compileScope } from "./query-compiler";
+import { conditionsOf, previousRange, type AnalyticsQuery } from "./query-contract";
 import { sqlContext } from "./query-sql";
 import type { ModeComparaison } from "./view-state";
 
@@ -72,6 +72,52 @@ function verifierSource(source: SourceComparaison): void {
   }
 }
 
+/**
+ * Colonnes de filtre ajoutées par une migration (v75 : navigateur, système,
+ * release, environnement, service ; v85 : provenance du pays). Les lignes plus
+ * anciennes les portent à NULL : sous un filtre sur l'une d'elles, la période
+ * précédente n'est mesurée que depuis que CETTE colonne est collectée.
+ */
+const COLONNES_RECENTES: ReadonlySet<string> = new Set(["browser", "os", "release", "env", "service", "geo_source"]);
+
+/**
+ * Sources à évaluer pour une rangée sous les filtres actifs : la source elle-même,
+ * plus une variante par colonne récente qu'un filtre exige (`colonneRequise`).
+ * Sans elle, `debutCollecte` lisait `min(ts)` de toute la table et la période
+ * précédente passait « complète » alors que le champ filtré n'y existait pas encore
+ * (faux « +100 % »).
+ *
+ *   - `eq` et `neq` exigent la colonne (`<>` écarte aussi NULL) ; `is_null` non.
+ *   - Colonne de la LIGNE : même table, `colonneRequise` = la colonne.
+ *   - Colonne de la SESSION sous une table d'occurrences : `debutCollecte` ne joint
+ *     pas la session ; on lit donc le début de collecte du champ sur `rum_session`
+ *     (`started_at`) — une mesure d'une session n'est pas antérieure à son début.
+ *   - Une dimension que la table ne porte pas n'ajoute rien : la lecture refuse ce
+ *     filtre ailleurs (`UnsupportedFilterError`).
+ *
+ * PURE : l'appelant évalue chaque source (`couverturePrecedente`) et la rangée
+ * n'a de delta que si toutes sont complètes (`deltasDeLaRangee`).
+ */
+export function sourcesSousFiltres(query: AnalyticsQuery, source: SourceComparaison): SourceComparaison[] {
+  const dataset = DATASETS.find((d) => DATASET_REGISTRY[d].table === source.table);
+  const sorties: SourceComparaison[] = [source];
+  const vues = new Set<string>();
+  for (const condition of conditionsOf(query.filters)) {
+    if (condition.operator === "is_null") continue;
+    const colonne = dataset ? DATASET_REGISTRY[dataset].dimensions[condition.dimension] : undefined;
+    if (!colonne || !COLONNES_RECENTES.has(colonne.column)) continue;
+    const derivee: SourceComparaison =
+      colonne.on === "row" || source.table === "rum_session"
+        ? { ...source, colonneRequise: colonne.column }
+        : { table: "rum_session", colonneTemps: "started_at", colonneRequise: colonne.column, additive: source.additive };
+    const cle = `${derivee.table}.${derivee.colonneTemps}.${derivee.colonneRequise}`;
+    if (vues.has(cle)) continue;
+    vues.add(cle);
+    sorties.push(derivee);
+  }
+  return sorties;
+}
+
 /** Nom du signal dans une raison : la colonne requise quand il y en a une. */
 function libelleSignal(source: SourceComparaison): string {
   return source.colonneRequise ? `champ « ${source.colonneRequise} » collecté` : SOURCES[source.table].libelle;
@@ -119,11 +165,13 @@ export interface EntreeCouverture {
 }
 
 /** Règle 1 seule : elle ne demande aucune lecture, et en dispense quand elle s'applique. */
-function regleRetention(query: AnalyticsQuery, retentionJours: number): CouverturePrecedente | null {
-  // Les deux périodes bout à bout : la précédente commence là où la rétention
-  // compte depuis la fin de la courante.
+function regleRetention(query: AnalyticsQuery, retentionJours: number, nowMs: number): CouverturePrecedente | null {
+  // Les deux périodes bout à bout, rapportées à la purge. Celle-ci compte depuis
+  // MAINTENANT, pas depuis la fin de la plage : ancrée sur `range.to`, une plage
+  // passée dont la précédente déborde la purge passait la règle, et la règle 2
+  // affichait la date de la purge comme un « début de collecte ».
   const deuxPeriodes = { ...query, range: { ...query.range, from: previousRange(query.range).from } };
-  if (couvertureRetention(deuxPeriodes, retentionJours).status === "complete") return null;
+  if (couvertureRetention(deuxPeriodes, retentionJours, nowMs).status === "complete") return null;
   return {
     etat: "partielle",
     raison: `période précédente hors rétention (${retentionJours} jours) : les données les plus anciennes ont été purgées`,
@@ -132,7 +180,7 @@ function regleRetention(query: AnalyticsQuery, retentionJours: number): Couvertu
 
 /** Les cinq règles du § 3.2, PURES : testées sans base. */
 export function evaluerCouverture({ query, source, debut, nowMs, retentionJours }: EntreeCouverture): CouverturePrecedente {
-  const retention = regleRetention(query, retentionJours);
+  const retention = regleRetention(query, retentionJours, nowMs);
   if (retention) return retention;
 
   const precedente = previousRange(query.range);
@@ -170,7 +218,7 @@ export async function couverturePrecedente(
   const retentionJours = options.retentionJours ?? retentionDays();
   const nowMs = options.nowMs ?? Date.now();
   // Hors rétention, inutile de lire quoi que ce soit : la réponse est connue.
-  const retention = regleRetention(query, retentionJours);
+  const retention = regleRetention(query, retentionJours, nowMs);
   if (retention) return retention;
   let debut: Date | null | "echec";
   try {

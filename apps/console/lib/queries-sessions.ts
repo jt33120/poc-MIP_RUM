@@ -196,6 +196,11 @@ export type PopulationHistorique =
  * admin sous `app=all` → toutes les apps (null) ; principal restreint sous
  * `app=all` → l'écran est refusé avant toute lecture (`perimetreAvailability`).
  * Retiré par F53 quand ces écrans passeront sur le contrat (`samplingSessions`).
+ *
+ * Toute jointure à la session se fait sur `(app_id, session_id)`, comme
+ * `samplingSessions` : `session_id` seul ne désigne pas une session, et une ligne
+ * de A qui citerait l'identifiant d'une session de B ferait entrer B (et son taux)
+ * dans la population de A.
  */
 export async function samplingSessionsHistorique(
   f: Filters,
@@ -209,7 +214,7 @@ export async function samplingSessionsHistorique(
     const semaines = population.semaines;
     if (!Number.isSafeInteger(semaines) || semaines < 1 || semaines > 53) throw new Error("fenêtre de rétention invalide");
     const seg = buildSegment(f.segment, 4);
-    pop = `select s.session_id
+    pop = `select s.app_id, s.session_id
              from rum_session s
             where s.visitor_id is not null
               and s.started_at > now() - $3::int * interval '1 week'
@@ -222,15 +227,15 @@ export async function samplingSessionsHistorique(
     const seg = buildSegment(f.segment, 3);
     pop =
       population.lecture === "vues"
-        ? `select distinct p.session_id
+        ? `select distinct p.app_id, p.session_id
              from rum_pageview p
-             join rum_session s on s.session_id = p.session_id
+             join rum_session s on s.app_id = p.app_id and s.session_id = p.session_id
             where p.started_at > now() - interval '${itv}'
               and ($1::text[] is null or p.app_id = any($1::text[]))
               and ($2::text is null or s.device_type = $2)${seg.where("s")}${bots}`
-        : `select distinct e.session_id
+        : `select distinct e.app_id, e.session_id
              from rum_event e
-             join rum_session s on s.session_id = e.session_id
+             join rum_session s on s.app_id = e.app_id and s.session_id = e.session_id
             where e.ts > now() - interval '${itv}'
               and e.name in ('form.submit', 'form.abandon')
               and ($1::text[] is null or e.app_id = any($1::text[]))
@@ -242,7 +247,7 @@ export async function samplingSessionsHistorique(
     `with population as (${pop})
      select ${agregatEchantillonnage(debut)}
        from population p
-       join rum_session s on s.session_id = p.session_id`,
+       join rum_session s on s.app_id = p.app_id and s.session_id = p.session_id`,
     params,
   );
   return echantillonnageDe(row);

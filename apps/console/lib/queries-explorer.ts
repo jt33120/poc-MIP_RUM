@@ -180,9 +180,17 @@ function avertissements(plan: ExplorerPlan): string[] {
  * La fenêtre [from, to) tient-elle dans la rétention ? Partagée par l'Explorer et
  * par la comparaison à la période précédente (lib/comparaison.ts, F06) : une seule
  * règle de purge, lue au même endroit. `jours` n'est passé que par les tests.
+ *
+ * `ancreMs` : l'instant depuis lequel la purge compte. La purge part de MAINTENANT
+ * (`apps/ingest/purge.mjs`) ; la comparaison passe donc son horloge. Par défaut
+ * `range.to`, le comportement historique de l'Explorer (inchangé ici).
  */
-export function couvertureRetention(query: AnalyticsQuery, jours = retentionDays()): ExplorerMeta["coverage"] {
-  const horizon = Date.parse(query.range.to) - jours * 86_400_000;
+export function couvertureRetention(
+  query: AnalyticsQuery,
+  jours = retentionDays(),
+  ancreMs = Date.parse(query.range.to),
+): ExplorerMeta["coverage"] {
+  const horizon = ancreMs - jours * 86_400_000;
   if (Date.parse(query.range.from) >= horizon) return { status: "complete", reason: null };
   return {
     status: "partial",

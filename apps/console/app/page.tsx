@@ -40,6 +40,7 @@ import { THRESHOLDS } from "@/lib/rating";
 import {
   couverturePrecedente,
   deltasDeLaRangee,
+  sourcesSousFiltres,
   type CouverturePrecedente,
   type SourceComparaison,
 } from "@/lib/comparaison";
@@ -112,6 +113,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // de 30 jours, dont la précédente est purgée, n'en montre donc aucun.
   const comparaison = lireComparaison("/", paramReader(sp)).valeur;
   const prev = comparaison.mode === "prev";
+  // Sous un filtre porté par une colonne récente (`browser`, v75…), la couverture
+  // se juge aussi sur CETTE colonne : une source de plus par colonne exigée.
+  const couvertures = (sources: readonly SourceComparaison[]) =>
+    Promise.all(
+      sources.flatMap((s) => sourcesSousFiltres(ecran.query, s)).map((s) => couverturePrecedente(ecran.query, s)),
+    );
 
   // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8 règle 1). `lire()` ne lève pas :
   // une lecture en échec devient `{ ok: false }`, et seule SA section le dit. Le
@@ -147,12 +154,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       ? lire(() => comparaisonVersions(f))
       : sansLecture<ComparaisonVersions>({ rows: [], source: "occurrence" }),
     decoupage ? lire(() => vitalsBreakdown(f, decoupage)) : sansLecture(null),
-    blocs.vitals && prev
-      ? couverturePrecedente(ecran.query, SOURCE_VITAUX).then((c) => [c])
-      : Promise.resolve<CouverturePrecedente[]>([]),
-    blocs.hero && prev
-      ? Promise.all(SOURCES_HERO.map((s) => couverturePrecedente(ecran.query, s)))
-      : Promise.resolve<CouverturePrecedente[]>([]),
+    blocs.vitals && prev ? couvertures([SOURCE_VITAUX]) : Promise.resolve<CouverturePrecedente[]>([]),
+    blocs.hero && prev ? couvertures(SOURCES_HERO) : Promise.resolve<CouverturePrecedente[]>([]),
   ]);
   const deltasVitaux = deltasDeLaRangee(comparaison.mode, couvVitaux);
   const deltasHero = deltasDeLaRangee(comparaison.mode, couvHero);

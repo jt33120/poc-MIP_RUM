@@ -121,9 +121,10 @@ async function consoleSur(databaseUrl: string) {
   vi.resetModules();
   process.env.DATABASE_URL = databaseUrl;
   const sessions = await import("../../apps/console/lib/queries-sessions");
+  const { acquisition } = await import("../../apps/console/lib/queries-acquisition");
   const filters = await import("../../apps/console/lib/filters");
   const { pool } = await import("../../apps/console/lib/db");
-  return { ...sessions, ...filters, pool };
+  return { ...sessions, acquisition, ...filters, pool };
 }
 type Console = Awaited<ReturnType<typeof consoleSur>>;
 
@@ -236,9 +237,46 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
       expect(viewer).toMatchObject({ probaMin: 0.5, sessions: 2 });
     });
 
+    it("jointure sur (app_id, session_id) : une ligne de A qui cite une session de B n'emporte pas B", async () => {
+      // `session_id` seul ne désigne pas une session : une page vue et un envoi de
+      // formulaire de A portant l'identifiant de la session b1 (échantillonnée à
+      // 10 %) ne doivent ni l'ajouter à la population de A, ni abaisser son minimum.
+      await c.query(
+        `insert into rum_pageview (span_id, session_id, app_id, route, url, referrer, started_at)
+         values ('f40-pv-croise', 'f40-b1', $1, '/', 'https://site.example/', null, $2)`,
+        [A, IL_Y_A(HEURE / 2)],
+      );
+      await c.query(
+        `insert into rum_event (span_id, session_id, app_id, route, name, props, ts)
+         values ('f40-ev-croise', 'f40-b1', $1, '/', 'form.submit', '{"form":"contact"}'::jsonb, $2)`,
+        [A, IL_Y_A(HEURE / 4)],
+      );
+      try {
+        expect(await lib.samplingSessionsHistorique(f(`app=${A}&period=24h`), { lecture: "vues" })).toMatchObject({
+          probaMin: 0.5,
+          sessions: 2,
+        });
+        expect(await lib.samplingSessionsHistorique(f(`app=${A}&period=24h`), { lecture: "formulaires" })).toMatchObject({
+          probaMin: 1,
+          sessions: 1,
+        });
+      } finally {
+        await c.query(`delete from rum_pageview where span_id = 'f40-pv-croise'`);
+        await c.query(`delete from rum_event where span_id = 'f40-ev-croise'`);
+      }
+    });
+
     it("mêmes filtres que la lecture qualifiée : appareil et segment v1", async () => {
       expect((await lib.samplingSessionsHistorique(f(`app=${A}&period=24h&device=mobile`), { lecture: "vues" })).sessions).toBe(0);
       expect((await lib.samplingSessionsHistorique(f(`app=${A}&period=24h&seg=device==desktop`), { lecture: "vues" })).sessions).toBe(2);
+    });
+
+    it("/acquisition sous un segment v1 : la lecture aboutit, sur la même population que « vues »", async () => {
+      // `$3` était déjà `cap` (limit) : le segment, compilé à partir de `$3`, liait sa
+      // valeur au mauvais paramètre et PostgreSQL refusait la requête.
+      expect((await lib.acquisition(f(`app=${A}&period=24h&seg=device==desktop`))).total).toBe(2);
+      expect((await lib.acquisition(f(`app=${A}&period=24h&seg=device==mobile`))).total).toBe(0);
+      expect((await lib.acquisition(f(`app=${A}&period=24h&seg=device==desktop`), 1)).total).toBe(1);
     });
 
     it("une fenêtre de semaines hors bornes est refusée, jamais interpolée", async () => {
