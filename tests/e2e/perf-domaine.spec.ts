@@ -104,7 +104,10 @@ test.describe("F18 — Erreurs : KPI, hero, répartition", () => {
     await page.goto(`${consoleUrl}/errors?app=${APP}`);
     const hero = page.locator("#hero-erreurs");
     await hero.scrollIntoViewIfNeeded();
-    const legende = hero.getByTestId("legende-serie").locator("li");
+    // Les entrées de SÉRIES : la légende ajoute « seau en cours (barre pâle) » quand
+    // le dernier seau de la fenêtre glissante n'est pas fini (le cas sous `period=24h`).
+    // Ce n'est pas une série : elle n'entre pas dans le compte des ≤ 5.
+    const legende = hero.getByTestId("legende-serie").locator("li:not([data-testid=legende-seau-en-cours])");
     await expect(legende).toHaveCount(5); // 4 groupes + « Autres groupes (somme) »
     const textes = (await legende.allInnerTexts()).map((t) => t.trim());
     expect(new Set(textes).size).toBe(textes.length);

@@ -342,7 +342,9 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
         />
       </div>
 
-      <div className="card overflow-x-auto">
+      {/* `relative` : la légende sr-only (position absolue) se place dans CE conteneur
+          défilant, pas dans la page qu'elle élargirait à 390 px (piège de la vague 5). */}
+      <div className="card relative overflow-x-auto">
         <table className="w-full min-w-table text-sm">
           <caption className="sr-only">
             Groupes d&apos;erreurs sur {label}, ordre : {ordreLu}

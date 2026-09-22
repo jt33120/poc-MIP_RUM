@@ -167,7 +167,7 @@ export function IssueList({
         applicative n&apos;a pu identifier l&apos;erreur. Tous les compteurs portent sur {label}, sauf « Première vue ».
       </p>
 
-      <div className="card overflow-x-auto">
+      <div className="card relative overflow-x-auto">
         <table className="w-full min-w-table text-sm">
           <caption className="sr-only">Issues et groupes historiques sur {label}, triés par statut puis par impact</caption>
           <thead className="bg-panel2">
