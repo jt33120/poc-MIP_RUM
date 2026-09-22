@@ -20,7 +20,7 @@ import {
   type TrendDir,
 } from "@/lib/forecast";
 import { dailyLcpSeries, dailyTraffic } from "@/lib/queries-grid";
-import { THRESHOLDS } from "@/lib/rating";
+import { THRESHOLDS, rating2026, type Rating } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +28,9 @@ const ARROW: Record<TrendDir, string> = { up: "▲", down: "▼", flat: "—" };
 // Borne « Bon » du LCP, lue dans lib/rating.ts : au-delà, le verdict passe à « À améliorer ».
 const LCP_BON = THRESHOLDS.LCP[0];
 const LCP_BON_TEXTE = fmtBorne("LCP", LCP_BON);
+// Ton de la tuile « LCP p75 actuel » : le verdict à trois niveaux de `rating2026`,
+// jamais un seuil binaire — 3 s est « À améliorer », pas « Mauvais ».
+const TON_VERDICT: Record<Rating, "good" | "warn" | "poor"> = { good: "good", "needs-improvement": "warn", poor: "poor" };
 
 interface Metric {
   key: string;
@@ -146,7 +149,9 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
           const chartData: ForecastPoint[] = days.map((d, i) => ({ label: fmtDay(d), real: m.values[i], proj: null }));
           if (fit && chartData.length) chartData[chartData.length - 1].proj = forecastNext(fit, 0);
           proj.forEach((v, i) => chartData.push({ label: `J+${i + 1}`, real: null, proj: v }));
-          const overThreshold = current != null && m.threshold != null && current > m.threshold;
+          // Sans valeur (« — »), ton neutre : une absence de mesure n'est pas « bonne ».
+          const verdict = current != null ? rating2026("LCP", current) : null;
+          const tonActuel = verdict ? TON_VERDICT[verdict] : "neutral";
           return (
             <SupervisionHero
               chartTitle={`LCP p75 — réel + projection à J+${HORIZON}`}
@@ -167,7 +172,7 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
               <HeroStat
                 label="LCP p75 actuel"
                 value={m.fmt(current)}
-                tone={overThreshold ? "poor" : "good"}
+                tone={tonActuel}
                 hint={`projeté J+${HORIZON} : ${m.fmt(projected)}`}
               />
               <HeroStat
