@@ -483,7 +483,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
               </thead>
               <tbody>
                 {lentes.data.map((t) => (
-                  <SlowRow key={t.trace_id} t={t} query={query} />
+                  <SlowRow key={t.span_id} t={t} query={query} />
                 ))}
               </tbody>
             </table>

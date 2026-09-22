@@ -41,8 +41,10 @@ export function SlowRow({ t, query }: { t: SlowTrace; query: AnalyticsQuery }) {
         {HEURE_UTC.format(new Date(t.ts))} UTC
       </td>
       <td className="max-w-[18rem] px-4 py-3 font-mono text-xs">
+        {/* `span=` : une trace de page vue porte tous ses appels (E0) ; le détail
+            résume CELUI-CI (latence, route, instant du rejeu), pas le premier venu. */}
         <Link
-          href={hrefWithQuery(`/tracing/${encodeURIComponent(t.trace_id)}`, query)}
+          href={hrefWithQuery(`/tracing/${encodeURIComponent(t.trace_id)}`, query, { span: t.span_id })}
           className="group inline-flex min-w-0 max-w-full items-center gap-1.5 hover:text-brand"
           title={`Détail de la trace ${t.trace_id}`}
         >

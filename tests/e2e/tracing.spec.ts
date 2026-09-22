@@ -306,13 +306,16 @@ test.describe("F60 — écran Tracing (§ 5.8)", () => {
 
     // La plus lente d'abord ; son rejeu s'ouvre à l'instant de l'appel, en ms epoch.
     const { rows } = await pool.query(
-      `select ts from rum_span where app_id = $1 and tier = 'front' and url = '/api/f60/lent' order by duration_ms desc limit 1`,
+      `select ts, span_id from rum_span where app_id = $1 and tier = 'front' and url = '/api/f60/lent' order by duration_ms desc limit 1`,
       [APP_F60],
     );
     const href = await lignes.first().getByTestId("rejeu-instant").getAttribute("href");
     const cible = new URL(href!, CONSOLE_F60);
     expect(cible.searchParams.get("tab")).toBe("replay");
     expect(cible.searchParams.get("at")).toBe(String(new Date(rows[0].ts).getTime()));
+    // Le détail s'ouvre sur CET appel (`span=`) : une trace de page vue en porte plusieurs (E0).
+    const detail = await lignes.first().locator('a[href^="/tracing/"]').getAttribute("href");
+    expect(new URL(detail!, CONSOLE_F60).searchParams.get("span")).toBe(rows[0].span_id);
   });
 
   test("?appel= posé : la table des traces ne liste que cet appel, et le filtre se retire", async ({ page }) => {
