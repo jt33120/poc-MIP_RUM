@@ -25,6 +25,7 @@ import { formater, type FormatId } from "@/lib/fmt-ids";
 import { CATEGORIELLE, RATING_HEX } from "@/lib/palette";
 import { THRESHOLDS, rating2026 } from "@/lib/rating";
 import { SectionPanneau } from "./sections/panneau";
+import { SectionsDistributions } from "./sections/distributions";
 
 export const dynamic = "force-dynamic";
 
@@ -523,6 +524,8 @@ export default async function VitrineComposants() {
           </Exemple>
         </div>
       </Section>
+
+      <SectionsDistributions />
 
       <Section id="donut" titre="Donut" sous="Parts d'un compte additif seulement ; la part inconnue est nommée ; les parts à 0 restent dans la légende.">
         <div className="grid min-w-0 gap-4 lg:grid-cols-2">
