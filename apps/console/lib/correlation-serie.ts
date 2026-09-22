@@ -35,20 +35,26 @@ function decoder(partie: string): string | null {
  * Couple désigné par `serie`, s'il figure parmi les options ; sinon `null` (la
  * valeur est ignorée, l'écran applique son défaut).
  *
- * Compatibilité : une valeur sans `:` vient d'un lien antérieur (`serie=/checkout`)
- * et désigne une route. Elle n'est retenue que si UNE seule option porte cette
- * route : avec deux apps, choisir l'une des deux serait deviner.
+ * Compatibilité : une valeur égale à la route d'une option vient d'un lien
+ * antérieur (`serie=/checkout`, `serie=/partners/:id`) et désigne une route. Elle
+ * n'est retenue que si UNE seule option porte cette route : avec deux apps,
+ * choisir l'une des deux serait deviner.
+ *
+ * Cette lecture passe AVANT la coupe au `:` : une route paramétrée brute
+ * (`/partners/:id`) contient un `:` qui n'est pas le séparateur — le format couple
+ * l'encode en `%3A`. Coupée d'abord, elle devenait l'app `/partners/` et la route
+ * `id`, introuvables. Aucune valeur au format couple n'égale une route : l'app
+ * encodée ne commence jamais par `/` (encodé `%2F`).
  */
 export function lireSerie(
   valeur: string | null | undefined,
   options: readonly CoupleSerie[],
 ): CoupleSerie | null {
   if (!valeur) return null;
+  const memeRoute = options.filter((o) => o.route === valeur);
+  if (memeRoute.length > 0) return memeRoute.length === 1 ? memeRoute[0] : null;
   const separateur = valeur.indexOf(":");
-  if (separateur < 0) {
-    const memeRoute = options.filter((o) => o.route === valeur);
-    return memeRoute.length === 1 ? memeRoute[0] : null;
-  }
+  if (separateur < 0) return null;
   const app = decoder(valeur.slice(0, separateur));
   const route = decoder(valeur.slice(separateur + 1));
   if (app === null || route === null) return null;
