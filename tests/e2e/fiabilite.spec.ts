@@ -107,7 +107,8 @@ test("/forecast s'affiche avec des données, sur un seul horizon de 7 jours", as
   await login(page);
   await page.goto(`${consoleUrl}/forecast?app=${APP_ID}`, { waitUntil: "domcontentloaded" });
   await expect(page.locator("body")).not.toContainText("Application error");
-  await expect(page.locator("body")).toContainText("LCP p75 — réel + projection à J+7");
+  // F65 : le hero s'appelle « LCP p75 quotidien et sa tendance » (§ 5.20.3, TE5).
+  await expect(page.locator("body")).toContainText("LCP p75 quotidien et sa tendance");
   // Le ratio d'erreurs n'est pas une part : jamais « % », et plus de seuil « 2 % » inventé.
   await expect(page.locator("body")).toContainText("Occurrences d'erreurs pour 100 pages vues");
   await expect(page.locator("body")).not.toContainText("Seuil d'alerte : 2 %");
@@ -409,5 +410,119 @@ test.describe("F58 — Écran Corrélation", () => {
       await expect(page.locator("#hero")).toBeVisible();
       expect(await debordements(page), `${largeur} px`).toEqual([]);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F65 — Tendances (§ 5.20) : une app dédiée, 14 jours complets semés (40 mesures
+// LCP par jour, une dérive lente), plus une journée en cours qui ne doit JAMAIS
+// entrer dans les chiffres. Ce bloc prouve :
+//   - que la fenêtre fixe est dite, dates et fuseau compris ;
+//   - que la période choisie en haut ne change aucun chiffre (1 h, 24 h, 7 j) ;
+//   - que l'écran rend sans erreur serveur, avec sa méthode (« ce n'est pas une
+//     prévision ») ;
+//   - qu'il ne déborde pas à 390, 768 et 1440 px.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test.describe("F65 — Tendances (§ 5.20)", () => {
+  const APP_F65 = "f65-e2e-tendances";
+  const TZ_F65 = "Europe/Paris";
+  /** Instant « jour local J−k à midi », calculé par PostgreSQL. */
+  const midiLocal = (k: string) =>
+    `((date_trunc('day', now() at time zone '${TZ_F65}') - ${k} * interval '1 day' + interval '12 hours') at time zone '${TZ_F65}')`;
+
+  test.beforeAll(async () => {
+    for (const t of ["rum_error", "rum_metric", "rum_pageview", "rum_session"])
+      await pool.query(`delete from ${t} where app_id = $1`, [APP_F65]);
+    await pool.query(
+      `insert into app_registry (app_id, name, timezone) values ($1, 'Tendances E2E', $2)
+       on conflict (app_id) do update set timezone = excluded.timezone`,
+      [APP_F65, TZ_F65],
+    );
+    await pool.query(
+      `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+       select $1 || '-s' || k, $1, $1 || '-s' || k, 'desktop', false, ${midiLocal("k")}, ${midiLocal("k")}, 50
+         from generate_series(1, 14) as k
+       on conflict (session_id) do nothing`,
+      [APP_F65],
+    );
+    // 40 mesures LCP par jour, p75 qui monte de ~60 ms par jour : une tendance établie.
+    await pool.query(
+      `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, ts)
+       select $1 || '-lcp-' || k || '-' || j, $1 || '-s' || k, $1, '/', 'LCP',
+              1600 + 60 * (14 - k) + (j % 5) * 20, 'good', ${midiLocal("k")}
+         from generate_series(1, 14) as k, generate_series(1, 40) as j
+       on conflict (span_id) do nothing`,
+      [APP_F65],
+    );
+    await pool.query(
+      `insert into rum_pageview (span_id, session_id, app_id, route, started_at)
+       select $1 || '-pv-' || k || '-' || j, $1 || '-s' || k, $1, '/', ${midiLocal("k")}
+         from generate_series(1, 14) as k, generate_series(1, 50) as j
+       on conflict (span_id) do nothing`,
+      [APP_F65],
+    );
+    await pool.query(
+      `insert into rum_error (span_id, session_id, app_id, route, kind, message, occurrences, ts)
+       select $1 || '-err-' || k, $1 || '-s' || k, $1, '/', 'error', 'f65', 2, ${midiLocal("k")}
+         from generate_series(1, 14) as k
+       on conflict (span_id) do nothing`,
+      [APP_F65],
+    );
+    // Journée en cours : une mesure énorme et des pages vues. Elles ne doivent apparaître nulle part.
+    await pool.query(
+      `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, ts)
+       values ($1 || '-lcp-aujourdhui', $1 || '-s1', $1, '/', 'LCP', 60000, 'poor', now() - interval '1 minute')
+       on conflict (span_id) do nothing`,
+      [APP_F65],
+    );
+  });
+
+  const valeursKpi = async (page: Page, extra: string) => {
+    await page.goto(`${consoleUrl}/forecast?app=${APP_F65}${extra}`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("fenetre-fixe")).toBeVisible();
+    return page.getByTestId("kpi-valeur").allInnerTexts();
+  };
+
+  test("bandeau de fenêtre fixe visible ; changer de période ne change aucun chiffre", async ({ page }) => {
+    await login(page);
+    const reference = await valeursKpi(page, "");
+    expect(reference).toHaveLength(3);
+    expect(reference[0]).not.toBe("—");
+    const bandeau = page.getByTestId("fenetre-fixe");
+    await expect(bandeau).toContainText("14 jours complets, du ");
+    await expect(bandeau).toContainText(TZ_F65);
+    await expect(bandeau).toContainText("la journée en cours est exclue");
+    for (const periode of ["&period=1h", "&period=7d"]) {
+      expect(await valeursKpi(page, periode), periode).toEqual(reference);
+    }
+    // La mesure de 60 s d'aujourd'hui n'entre pas dans le LCP du dernier jour complet.
+    expect(reference[0]).not.toContain("60,0");
+  });
+
+  test("aucune erreur serveur ; hero, petits multiples et méthode", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/forecast?app=${APP_F65}`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("body")).not.toContainText("Application error");
+    await expect(page.locator("#tendance-lcp")).toContainText("LCP p75 quotidien et sa tendance");
+    await expect(page.locator("#tendance-erreurs")).toContainText("Occurrences d'erreurs pour 100 pages vues");
+    await expect(page.locator("#pages-vues-jour")).toBeVisible();
+    await expect(page.locator("#tendance-lcp .recharts-wrapper")).toHaveCount(1);
+    await page.getByTestId("methode").locator("summary").click();
+    await expect(page.getByTestId("methode")).toContainText("ce n'est pas une prévision");
+  });
+
+  test("aucun débordement à 390, 768 et 1440 px", async ({ page }) => {
+    // Import local : le helper n'entre pas dans l'en-tête du fichier, que d'autres lots modifient.
+    const { debordements, LARGEURS } = await import("./helpers/debordements");
+    await login(page);
+    const fautes: string[] = [];
+    for (const largeur of LARGEURS) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(`${consoleUrl}/forecast?app=${APP_F65}`, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#tendance-lcp")).toBeVisible();
+      for (const faute of await debordements(page)) fautes.push(`${largeur} px — ${faute}`);
+    }
+    expect(fautes).toEqual([]);
   });
 });
