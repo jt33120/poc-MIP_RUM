@@ -228,6 +228,15 @@ export const GLOSSARY = {
       "La version « expérience » d'une weather map réseau : on voit d'un coup d'œil quelles briques du parcours sont sollicitées, lesquelles souffrent, et lesquelles montent en charge — cartographie, flux et anticipation réunis.",
   },
 
+  intervalle: {
+    label: "Intervalle à 95 %",
+    term: "Intervalle à 95 % de la p75, par rangs de la loi binomiale (statistiques d'ordre) : aucune hypothèse sur la forme de la distribution.",
+    stack:
+      "Calculé sur les mesures brutes de la période, jamais sur des p75 horaires : rangs exacts sous 30 mesures, rangs normaux au-delà (même formule en SQL). Refusé sous 13 mesures. Aucun poids d'échantillonnage n'est appliqué.",
+    business:
+      "Si l'on tirait d'autres visiteurs de la même période, la p75 tomberait dans cet intervalle 95 fois sur 100. Quand il chevauche un seuil, le verdict n'est pas établi : il est dit « incertain » plutôt qu'affiché en couleur.",
+  },
+
   // --- Supervision SVI -------------------------------------------------------
   containment: {
     label: "Containment (apparent)",

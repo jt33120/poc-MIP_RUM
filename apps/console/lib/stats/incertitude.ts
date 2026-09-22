@@ -98,6 +98,22 @@ export function rangsQuantileNormal(n: number, q = Q75): { r: number; s: number 
 }
 
 /**
+ * Les mêmes rangs, écrits en SQL : `vitalsP75` les emploie, et le test SQL les
+ * compare à `rangsQuantileNormal` pour tout n de 30 à 5 000. Opérations en float8
+ * dans le même ordre que le JS, pour tomber sur les mêmes entiers.
+ *
+ * @param n expression SQL du nombre de mesures (ex. `count(*)`)
+ * @param z expression SQL du quantile normal (ex. un paramètre lié `$3`)
+ */
+export function rangsQuantileNormalSql(n: string, z: string): { r: string; s: string } {
+  const ecart = `${z}::float8 * sqrt(0.1875::float8 * ${n})`;
+  return {
+    r: `greatest(1, floor(0.75::float8 * ${n} - ${ecart}))::int`,
+    s: `least(${n}, ceil(0.75::float8 * ${n} + ${ecart}) + 1)::int`,
+  };
+}
+
+/**
  * Intervalle à 95 % de la p75 de mesures DÉJÀ TRIÉES par ordre croissant. Rangs
  * exacts sous 30 mesures, normaux au-delà ; refus sous 13.
  */
@@ -161,4 +177,26 @@ export function regleDeTrois(n: number): Resultat<{ haut: number }> {
  */
 export function ecartDetectable(p: number, nA: number, nB: number): number {
   return (Z95 + Z80) * Math.sqrt(p * (1 - p) * (1 / nA + 1 / nB));
+}
+
+/** Intervalle affichable d'une p75, ou la raison de son absence (écrite telle quelle à l'écran). */
+export type IntervalleP75 = Intervalle | { indisponible: string };
+
+/**
+ * L'intervalle d'une p75 à partir de ce que la requête a lu : les mesures triées
+ * sous 30 (rangs exacts, en JS), les deux statistiques d'ordre au-delà (rangs
+ * normaux, en SQL, par la même formule que `rangsQuantileNormal`).
+ */
+export function intervalleP75Lu(
+  n: number,
+  valeurs: readonly number[] | null,
+  bas: number | null,
+  haut: number | null,
+): IntervalleP75 {
+  if (n < SEUIL_RANGS_NORMAUX) {
+    const res = intervalleQuantile((valeurs ?? []).map(Number));
+    return res.ok ? { bas: res.bas, haut: res.haut, niveau: 0.95, methode: res.methode } : { indisponible: res.raison };
+  }
+  if (bas == null || haut == null) return { indisponible: "bornes de l'intervalle non lues" };
+  return { bas: Number(bas), haut: Number(haut), niveau: 0.95, methode: "quantile_normal" };
 }
