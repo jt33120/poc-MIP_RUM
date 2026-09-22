@@ -68,7 +68,7 @@ import { avecCondition, RAISON_AUCUNE_VUE, ratioPour100, serieRatioPour100, spar
 import { choisirReleases, vuesProduit, type Entree } from "@/lib/presets";
 import { annotationsDeploiements } from "@/lib/annotations";
 import { explorerHref } from "@/lib/explorer-page-params";
-import { gabaritZoom, lireComparaison, lireEtatDeVue, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
+import { ecrirePanel, gabaritZoom, lireComparaison, lireEtatDeVue, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
 import {
   ALERTES_PAR_EVENEMENT,
   constatsVueEnsemble,
@@ -676,12 +676,14 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           tri: triDecoupage,
           ensemble: vitals.ok ? (byName[vitalClasse]?.p75 ?? null) : null,
           libelle: groupLabel,
-          // Une route ouvre son panneau sur `/pages` (§ 3.3) ; toute autre dimension,
-          // `/pages` filtré ; « Inconnu », la condition `is_null`.
-          // `/pages` filtré sur le groupe (`route=`, `browser=`…, « Inconnu » : `is_null`).
-          // Le panneau route (`panel=route:<r>`, § 3.3) attend F17 : `/pages` ne le lit pas
-          // encore, et le lien filtré est celui qui marchait avant F13 (écart déclaré).
-          lien: (valeur) => breakdownDrillHref("/pages", query, decoupage, valeur, schema),
+          // Une route ouvre son PANNEAU sur `/pages` (§ 3.3, F17) : la route se
+          // qualifie sans quitter le classement. Toute autre dimension — et
+          // « Inconnu », qui n'a pas d'identifiant de panneau — reste un `/pages`
+          // filtré sur le groupe (`browser=`…, ou la condition `is_null`).
+          lien: (valeur) =>
+            decoupage === "route" && valeur !== null
+              ? lien("/pages", { panel: ecrirePanel({ type: "route", id: valeur }), vital: vitalClasse })
+              : breakdownDrillHref("/pages", query, decoupage, valeur, schema),
           description: (valeur, mesures) => groupDescription(decoupage, valeur, mesures, `mesure(s) ${vitalClasse}`),
         })
       : null;
