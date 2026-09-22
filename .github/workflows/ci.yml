@@ -73,7 +73,7 @@ jobs:
           pnpm --filter @mip/rum-sdk exec tsc --noEmit
           pnpm --filter @mip/rum-mobile exec tsc --noEmit
           pnpm --filter @mip/agent-node exec tsc --noEmit
-          pnpm --filter console exec tsc --noEmit
+          pnpm --filter console typecheck
 
       - name: Tests unitaires (vitest)
         run: pnpm test:unit

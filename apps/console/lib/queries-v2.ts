@@ -5,6 +5,7 @@ import { isValidEventName } from "./queries-events";
 import { binder, bucketExpr, compileScope, sessionJoin } from "./query-compiler";
 import type { AnalyticsQuery } from "./query-contract";
 import { sqlContext, type SqlContext } from "./query-sql";
+import { THRESHOLDS } from "./rating";
 
 // ---------------------------------------------------------------------------
 // Filtres globaux — FAÇADE « v2 » du contrat commun (lib/query-contract.ts)
@@ -472,15 +473,22 @@ export interface BlindSpotRow {
   gap_ms: number;
 }
 
-/** Angles morts : robot « ok » mais réel « poor » (LCP p75 > 2,5 s) sur une même heure, écart décroissant. */
+/**
+ * Angles morts : robot « ok » mais LCP p75 réel au-dessus de la borne « Bon »
+ * (`THRESHOLDS.LCP[0]`, donc « À améliorer » ou « Mauvais » pour `rating2026`) sur
+ * une même heure et une même route, écart décroissant. Pas « poor » : un LCP de
+ * 3 s est « À améliorer », et c'est déjà un angle mort du robot.
+ */
 export async function blindSpots(f: FiltersLike): Promise<BlindSpotRow[]> {
   const sql = await sqlContext(f);
+  const sources = correlationSources(sql, "heure");
+  const borneBon = sql.bind(THRESHOLDS.LCP[0]);
   return q<BlindSpotRow>(
-    `with ${correlationSources(sql, "heure")}
+    `with ${sources}
      select r.app_id, r.route, r.bucket, r.rum_lcp_p75, s.syn_latency_avg, s.syn_state,
             round((r.rum_lcp_p75 - s.syn_latency_avg)::numeric)::int as gap_ms
        from rum r join syn s using (app_id, route, bucket)
-      where s.syn_state = 'ok' and r.rum_lcp_p75 > 2500 and s.syn_latency_avg is not null
+      where s.syn_state = 'ok' and r.rum_lcp_p75 > ${borneBon}::float8 and s.syn_latency_avg is not null
       order by gap_ms desc
       limit 50`,
     sql.params,

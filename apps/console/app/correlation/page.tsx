@@ -9,6 +9,8 @@ import type { SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
 import { hrefWithQuery } from "@/lib/query-contract";
 import { blindSpots, correlationCards, correlationRoutes, correlationSeries } from "@/lib/queries-v2";
+import { fmtBorne } from "@/lib/format";
+import { THRESHOLDS } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +84,7 @@ export default async function Correlation({
           label="Angles morts"
           value={spots.length.toLocaleString("fr-FR")}
           tone={spots.length > 0 ? "poor" : "good"}
-          hint="robot « ok » mais réel « poor »"
+          hint={`robot « ok » mais LCP p75 réel > ${fmtBorne("LCP", THRESHOLDS.LCP[0])}`}
         />
         <HeroStat label="Route affichée" value={selectedRoute ?? "—"} hint="clique une puce pour changer" />
         <HeroReading>
@@ -111,7 +113,8 @@ export default async function Correlation({
             ⚠ Angles morts — le robot ne le voit pas
           </h2>
           <p className="mt-0.5 text-xs text-red-700 dark:text-red-300/80">
-            Heures où le robot dit « ok » alors que les utilisateurs réels sont en « poor » (LCP p75 &gt; 2,5 s) ·
+            Heures où le robot dit « ok » alors que le LCP p75 des utilisateurs réels dépasse la borne « Bon »
+            ({fmtBorne("LCP", THRESHOLDS.LCP[0])}, seuil web.dev) : « À améliorer » ou « Mauvais » ·
             {ecran.label}
           </p>
         </div>

@@ -10,6 +10,7 @@ vi.mock("@/lib/query-schema", async () => {
 
 import {
   actionSamplingNotice,
+  actionsDisponible,
   hasNextActionsPage,
   parseActionsPage,
   topActions,
@@ -17,6 +18,21 @@ import {
 } from "../../apps/console/lib/queries-actions";
 
 beforeEach(() => q.mockReset());
+
+describe("actionsDisponible", () => {
+  it("rend false sans la table, en une seule sonde to_regclass", async () => {
+    q.mockResolvedValueOnce([{ present: false }]);
+    await expect(actionsDisponible()).resolves.toBe(false);
+    expect(q).toHaveBeenCalledTimes(1);
+    expect(q.mock.calls[0][0]).toContain("to_regclass");
+    expect(q.mock.calls[0][1]).toEqual(["public.rum_action"]);
+  });
+
+  it("rend true quand la table existe", async () => {
+    q.mockResolvedValueOnce([{ present: true }]);
+    await expect(actionsDisponible()).resolves.toBe(true);
+  });
+});
 
 describe("Top Actions", () => {
   it("fail-soft avant v67 sans interroger rum_action", async () => {

@@ -9,7 +9,7 @@ import { LongtasksView } from "@/components/LongtasksView";
 import { ResourcesView } from "@/components/ResourcesView";
 import { VitalPill } from "@/components/VitalPill";
 import { HISTO_BUCKETS, VITAL_CAP } from "@/lib/distribution";
-import { fmtVital } from "@/lib/format";
+import { fmtBorne, fmtVital } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
@@ -36,7 +36,7 @@ import {
 import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown } from "@/lib/queries-breakdowns";
 import { longtaskSeries, worstLongtasks } from "@/lib/queries-longtasks";
 import { resourcesVue } from "@/lib/queries-resources";
-import { RATING_HEX, rating2026 } from "@/lib/rating";
+import { RATING_HEX, THRESHOLDS, rating2026 } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
 
@@ -136,7 +136,7 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
               label="Routes « mauvais » LCP"
               value={poorCount.toLocaleString("fr-FR")}
               tone={poorCount > 0 ? "poor" : "good"}
-              hint="LCP p75 > 4,0 s (seuil 2026)"
+              hint={`LCP p75 > ${fmtBorne("LCP", THRESHOLDS.LCP[1])} (borne « Mauvais », web.dev)`}
             />
             <HeroStat
               label="Route la plus lente"

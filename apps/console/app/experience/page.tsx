@@ -1,17 +1,23 @@
 // Page « Expérience » : le ressenti utilisateur (feedbacks) marié à la perf
-// mesurée. Un score d'expérience /100, le CSAT, la tendance, les verbatims et le
-// CSAT par route. Rendu 100 % serveur, filtres app/période (modèle « v2 »).
+// mesurée. Les trois constituants du ressenti côte à côte — LCP p75 et son
+// verdict web.dev, frustration pour 1 000 sessions, CSAT —, la tendance, les
+// verbatims et le CSAT par route. Rendu 100 % serveur, filtres app/période.
+//
+// PAS DE SCORE COMPOSITE. L'ancien « score d'expérience /100 » reposait sur des
+// paliers de LCP sans source (100 / 82 / 55 / 32) et une pondération 60/40 au
+// jugé : un chiffre qui avait l'air d'une mesure sans en être une. Chacun des
+// trois constituants a sa source ; aucun n'est pondéré.
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
-import { RadarScore } from "@/components/charts/RadarScore";
 import { LineTrend } from "@/components/charts/LineTrend";
 import { ExperienceUnavailable } from "@/components/ExperienceUnavailable";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
-import { experienceScore, frustrationPenalty, scoreTone } from "@/lib/experience";
 import type { SearchParams } from "@/lib/filters";
+import { fmtVital } from "@/lib/format";
 import { pageFilters } from "@/lib/page-filters";
 import { hrefWithQuery } from "@/lib/query-contract";
+import { RATING_LABEL, rating2026, texteSeuils } from "@/lib/rating";
 import {
   experienceContext,
   feedbackByRoute,
@@ -22,16 +28,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const TONE_TEXT = { good: "text-good", warn: "text-warn", bad: "text-bad" } as const;
-
-/** LCP p75 -> sous-score perçu 0..100 (repères Web Vitals 2026). */
-function vitalsScore(lcpP75: number | null): number | null {
-  if (lcpP75 == null) return null;
-  if (lcpP75 <= 2000) return 100;
-  if (lcpP75 <= 2500) return 82;
-  if (lcpP75 <= 4000) return 55;
-  return 32;
-}
+const RATING_TONE = { good: "good", "needs-improvement": "warn", poor: "poor" } as const;
 
 export default async function Experience({
   searchParams,
@@ -50,13 +47,17 @@ export default async function Experience({
   ]);
 
   const csatVal = stats.count ? stats.positives / stats.count : null;
-  const ratePer1k = ctx.sessions ? (ctx.frustration / ctx.sessions) * 1000 : 0;
-  const score = experienceScore({
-    vitals: vitalsScore(ctx.lcp_p75),
-    frustrationPenalty: frustrationPenalty(ratePer1k),
-    csat: csatVal,
-  });
-  const tone = score == null ? "warn" : scoreTone(score);
+  // Sans session, pas de taux : « — », jamais « 0 », qui se lirait « aucune frustration ».
+  const frustrationPour1000 = ctx.sessions ? (ctx.frustration / ctx.sessions) * 1000 : null;
+  const lcpRating = ctx.lcp_p75 == null ? null : rating2026("LCP", ctx.lcp_p75);
+  // Jour sans avis noté : pas de point — un « 0 % » dessinerait une chute de satisfaction.
+  const trendPoints = trend
+    .filter((t) => t.count > 0)
+    .map((t) => ({
+      label: new Date(t.bucket).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
+      value: Math.round((t.positives / t.count) * 100),
+      volume: t.count,
+    }));
 
   return (
     <div className="animate-fade-up">
@@ -66,72 +67,59 @@ export default async function Experience({
         sub="Le ressenti des utilisateurs (feedbacks) relié à la performance qu'ils ont subie."
       />
 
-      {(() => {
-        // Hero : radar des 3 sous-scores du composite (perf perçue × sérénité ×
-        // satisfaction). L'axe satisfaction n'existe que s'il y a des feedbacks —
-        // sinon on montre le score seul (perf perçue).
-        const perfSub = vitalsScore(ctx.lcp_p75);
-        const serenity = Math.round(100 - frustrationPenalty(ratePer1k));
-        const satisfaction = csatVal != null ? Math.round(csatVal * 100) : null;
-        const heroTone = tone === "bad" ? "poor" : tone;
-        const radarData = [
-          ...(perfSub != null ? [{ axis: "Perf perçue", value: perfSub }] : []),
-          { axis: "Sérénité", value: serenity },
-          ...(satisfaction != null ? [{ axis: "Satisfaction", value: satisfaction }] : []),
-        ];
-        return (
-          <SupervisionHero
-            chartTitle={score == null ? "Mesures d'expérience" : satisfaction != null ? "Profil d'expérience — sous-scores /100" : "Score d'expérience"}
-            chart={
-              score == null ? (
-                <ExperienceUnavailable />
-              ) : satisfaction != null ? (
-                <RadarScore data={radarData} />
-              ) : (
-                <div className="flex h-[260px] flex-col items-center justify-center gap-2">
-                  <div className={`text-6xl font-bold tabular-nums tracking-tight ${TONE_TEXT[tone]}`}>
-                    {score}
-                    <span className="text-2xl text-ink-faint">/100</span>
-                  </div>
-                  <p className="text-xs text-ink-faint">perf perçue seule — aucun feedback sur la fenêtre</p>
-                </div>
-              )
-            }
-          >
-            <HeroStat
-              label="Score d'expérience"
-              value={score == null ? <span data-testid="xp-score">données insuffisantes</span> : <span data-testid="xp-score">{score}<span className="text-base text-ink-faint">/100</span></span>}
-              tone={score == null ? "neutral" : heroTone}
-              hint={score == null ? "aucune mesure exploitable" : "perf perçue × frustration × CSAT"}
+      <SupervisionHero
+        chartTitle="Satisfaction dans le temps — part des avis ≥ 4/5, par jour"
+        chart={
+          trendPoints.length > 0 ? (
+            <LineTrend
+              data={trendPoints}
+              valueName="CSAT"
+              valueUnit="%"
+              volumeName="avis"
+              color="#059669"
+              domain={[0, 100]}
             />
-            <HeroStat
-              label="CSAT"
-              value={csatVal == null ? "—" : `${Math.round(csatVal * 100)} %`}
-              tone={csatVal != null && csatVal < 0.5 ? "poor" : "neutral"}
-              hint="retours ≥ 4/5"
-            />
-            <HeroStat
-              label="Réponses"
-              value={<span data-testid="xp-count">{stats.count}</span>}
-              hint={`note moy. ${stats.avg == null ? "—" : stats.avg.toFixed(1)}/5 · ${stats.detractors} détracteur(s)`}
-            />
-            <HeroReading>
-              {score == null
-                ? "Données insuffisantes : aucune mesure exploitable sur cette période."
-                : satisfaction != null
-                ? "Le radar croise les trois piliers du ressenti : ce que l'utilisateur perçoit (perf), ce qui l'agace (sérénité) et ce qu'il déclare (satisfaction). Un axe creusé = le levier prioritaire."
-                : "Sans feedback, le score repose sur la seule performance perçue. Ajoutez le widget de feedback (voir ci-dessous) pour activer les axes satisfaction."}
-            </HeroReading>
-          </SupervisionHero>
-        );
-      })()}
+          ) : (
+            <ExperienceUnavailable />
+          )
+        }
+      >
+        <HeroStat
+          label="LCP p75"
+          value={fmtVital("LCP", ctx.lcp_p75)}
+          tone={lcpRating ? RATING_TONE[lcpRating] : "neutral"}
+          hint={lcpRating ? `${RATING_LABEL[lcpRating]} — ${texteSeuils("LCP")}` : "aucune mesure LCP sur la période"}
+        />
+        <HeroStat
+          label="Frustration"
+          value={frustrationPour1000 == null ? "—" : frustrationPour1000.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}
+          hint={frustrationPour1000 == null ? "aucune session sur la période" : "clics rageurs et morts pour 1 000 sessions"}
+        />
+        <HeroStat
+          label="CSAT"
+          value={csatVal == null ? "—" : `${Math.round(csatVal * 100)} %`}
+          tone={csatVal != null && csatVal < 0.5 ? "poor" : "neutral"}
+          hint="retours ≥ 4/5"
+        />
+        <HeroStat
+          label="Réponses"
+          value={<span data-testid="xp-count">{stats.count}</span>}
+          hint={`note moy. ${stats.avg == null ? "—" : stats.avg.toFixed(1)}/5 · ${stats.detractors} détracteur(s)`}
+        />
+        <HeroReading>
+          Les trois constituants du ressenti, côte à côte et sans pondération : ce que l&apos;utilisateur
+          subit (LCP p75, jugé aux seuils web.dev), ce qui l&apos;agace (clics rageurs et morts) et ce
+          qu&apos;il déclare (part des avis ≥ 4/5). La courbe ne trace que les jours où au moins un avis
+          noté existe.
+        </HeroReading>
+      </SupervisionHero>
 
       {stats.count === 0 && (
         <div className="card mt-6 p-6 text-sm text-ink-soft">
           <p className="font-medium text-ink">Aucun feedback sur la période.</p>
           <p className="mt-1">
-            Le score ci-dessus repose alors sur la seule performance perçue. Pour collecter le ressenti,
-            ajoutez le widget après le snippet RUM :
+            La satisfaction ne se calcule donc pas ; la performance et la frustration ci-dessus restent
+            mesurées. Pour collecter le ressenti, ajoutez le widget après le snippet RUM :
           </p>
           <pre className="mt-3 overflow-x-auto rounded-lg bg-panel2 p-3 font-mono text-xs text-ink-soft">
             {`<script src="/mip-rum-feedback.js"></script>`}
@@ -142,27 +130,6 @@ export default async function Experience({
             cette application ; ajustez avec{" "}
             <code>window.MIPRumFeedback = {"{ cooldownDays: 30 }"}</code>.
           </p>
-        </div>
-      )}
-
-      {/* Tendance CSAT — courbe % de satisfaction + volume d'avis */}
-      {trend.length > 0 && (
-        <div className="card mt-8 p-4">
-          <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Satisfaction dans le temps
-          </h2>
-          <LineTrend
-            data={trend.map((t) => ({
-              label: new Date(t.bucket).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
-              value: t.count ? Math.round((t.positives / t.count) * 100) : 0,
-              volume: t.count,
-            }))}
-            valueName="CSAT"
-            valueUnit="%"
-            volumeName="avis"
-            color="#059669"
-            domain={[0, 100]}
-          />
         </div>
       )}
 

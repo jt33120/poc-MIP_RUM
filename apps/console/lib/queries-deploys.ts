@@ -50,19 +50,28 @@ export interface DeployImpact {
   env: string | null;
   lcp_before: number | null;
   lcp_after: number | null;
-  errors_before: number;
-  errors_after: number;
+  /** Pages vues de l'app du marqueur, `started_at ∈ [d.ts − 2 h, d.ts)`. */
+  pageviews_before: number;
+  /** Pages vues, `started_at ∈ [d.ts, d.ts + 2 h)`. */
+  pageviews_after: number;
+  /** Sessions distinctes de ces mêmes pages vues (sessions, pas visiteurs). */
+  sessions_before: number;
+  sessions_after: number;
+  /** `sum(occurrences)` ; `null` sans page vue sur la fenêtre : sans dénominateur, « 0 » se lirait « aucune erreur ». */
+  errors_before: number | null;
+  errors_after: number | null;
 }
 
 /**
- * Impact du DERNIER déploiement : p75 LCP et nombre d'erreurs JS sur les 2 h qui
- * précèdent vs les 2 h qui suivent. null partout si aucun déploiement.
+ * Impact du DERNIER déploiement : p75 LCP, volume de pages vues et de sessions,
+ * occurrences d'erreurs JS sur les 2 h qui précèdent vs les 2 h qui suivent.
+ * null si aucun déploiement.
  */
 export async function latestDeployImpact(f: Filters): Promise<DeployImpact | null> {
   const query = queryOf(f);
   const { params, bind } = binder();
   // Mesures lues dans l'app DU marqueur : un déploiement de A ne juge pas le LCP de B.
-  const [row] = await q<DeployImpact>(
+  const [row] = await q<DeployImpact & { errors_before: number; errors_after: number }>(
     `with d as (
        select dm.app_id, dm.ts, dm.version, dm.env from deploy_marker dm
        where true${compileScope(query, "dm.app_id", bind)}
@@ -80,6 +89,18 @@ export async function latestDeployImpact(f: Filters): Promise<DeployImpact | nul
           from rum_metric m, d
          where m.name = 'LCP' and m.app_id = d.app_id
            and m.ts >= d.ts and m.ts < d.ts + interval '2 hours') as lcp_after,
+       coalesce((select count(*) from rum_pageview p, d
+          where p.app_id = d.app_id
+            and p.started_at >= d.ts - interval '2 hours' and p.started_at < d.ts), 0)::int as pageviews_before,
+       coalesce((select count(*) from rum_pageview p, d
+          where p.app_id = d.app_id
+            and p.started_at >= d.ts and p.started_at < d.ts + interval '2 hours'), 0)::int as pageviews_after,
+       coalesce((select count(distinct p.session_id) from rum_pageview p, d
+          where p.app_id = d.app_id
+            and p.started_at >= d.ts - interval '2 hours' and p.started_at < d.ts), 0)::int as sessions_before,
+       coalesce((select count(distinct p.session_id) from rum_pageview p, d
+          where p.app_id = d.app_id
+            and p.started_at >= d.ts and p.started_at < d.ts + interval '2 hours'), 0)::int as sessions_after,
        coalesce((select sum(e.occurrences) from rum_error e, d
           where e.app_id = d.app_id
             and e.ts >= d.ts - interval '2 hours' and e.ts < d.ts), 0)::int as errors_before,
@@ -88,7 +109,12 @@ export async function latestDeployImpact(f: Filters): Promise<DeployImpact | nul
             and e.ts >= d.ts and e.ts < d.ts + interval '2 hours'), 0)::int as errors_after`,
     params,
   );
-  return row?.deploy_ts ? row : null;
+  if (!row?.deploy_ts) return null;
+  return {
+    ...row,
+    errors_before: row.pageviews_before === 0 ? null : row.errors_before,
+    errors_after: row.pageviews_after === 0 ? null : row.errors_after,
+  };
 }
 
 export interface RegressionVerdict {

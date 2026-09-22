@@ -22,7 +22,7 @@ import {
 import { fmtVital } from "@/lib/format";
 import { RATING_CLASS, rating2026 } from "@/lib/rating";
 
-/** Cellule de vital, colorée au barème 2026. Vide quand la mesure manque. */
+/** Cellule de vital, colorée au barème web.dev (lib/rating.ts). Vide quand la mesure manque. */
 function VitalCell({ name, v }: { name: "LCP" | "INP"; v: number | null }) {
   if (v == null) return <span className="text-ink-faint">—</span>;
   const r = rating2026(name, Number(v));

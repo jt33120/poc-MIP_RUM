@@ -6,6 +6,20 @@ export function fmtVital(name: string, value: number | null): string {
   return Math.round(value) + " ms";
 }
 
+/**
+ * Borne d'un Web Vital telle qu'un texte l'écrit : 2 500 → « 2,5 s », 4 000 →
+ * « 4,0 s », 200 → « 200 ms », 0,25 → « 0,25 » (CLS, sans unité). Une phrase qui
+ * cite un seuil le lit dans `THRESHOLDS` et le formate ici : recopié à la main, un
+ * seuil finit par diverger de celui qui colore l'écran — c'est arrivé au LCP.
+ */
+export function fmtBorne(name: string, value: number): string {
+  if (name === "CLS") return value.toLocaleString("fr-FR");
+  if (value >= 1000) {
+    return `${(value / 1000).toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 2 })} s`;
+  }
+  return `${Math.round(value)} ms`;
+}
+
 /** Latence en ms : 245 -> "245 ms", 2340 -> "2,34 s". (sans nom de vital) */
 export function fmtLatency(v: number | null): string {
   if (v == null) return "—";

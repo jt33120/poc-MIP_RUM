@@ -6,6 +6,7 @@ import { type SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
 import {
   ACTIONS_MAX_OFFSET,
+  actionsDisponible,
   hasNextActionsPage,
   parseActionsPage,
   topActions,
@@ -13,6 +14,9 @@ import {
 } from "@/lib/queries-actions";
 
 export const dynamic = "force-dynamic";
+
+const SOUS_TITRE =
+  "Interactions qui déclenchent le plus d’erreurs ou de temps réseau. La corrélation est heuristique, bornée à 5 secondes et figée au départ de chaque effet.";
 
 export default async function ActionsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
@@ -25,6 +29,18 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
     Object.entries(sp).flatMap(([key, value]) => typeof value === "string" ? [[key, value] as [string, string]] : []),
   );
   const page = parseActionsPage(url);
+  // Sans la table, les deux lectures rendraient des zéros : on ne les lance pas, et
+  // l'écran dit « Non collecté » plutôt que « 0 action », qui serait un vide réel.
+  if (!(await actionsDisponible())) {
+    return (
+      <div className="animate-fade-up">
+        <PageHeader title="Actions" sub={SOUS_TITRE} />
+        <div className="card px-4 py-10 text-center text-sm text-ink-soft" data-testid="actions-non-collecte">
+          Non collecté : la table des actions n&apos;existe pas sur ce déploiement
+        </div>
+      </div>
+    );
+  }
   const [rows, summary] = await Promise.all([topActions(f, page), topActionsSummary(f)]);
 
   const href = (offset: number) => {
@@ -36,10 +52,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="animate-fade-up">
-      <PageHeader
-        title="Actions"
-        sub="Interactions qui déclenchent le plus d’erreurs ou de temps réseau. La corrélation est heuristique, bornée à 5 secondes et figée au départ de chaque effet."
-      />
+      <PageHeader title="Actions" sub={SOUS_TITRE} />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat label={`Actions · ${ecran.label}`} value={summary.actions.toLocaleString("fr-FR")} />

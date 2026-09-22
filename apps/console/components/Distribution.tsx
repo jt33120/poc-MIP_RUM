@@ -1,6 +1,6 @@
 // Percentiles & distribution — rendu (serveur, SVG déterministe, sans lib graphe).
 // Ce que le p75 masque : la longue traîne (p90/p95/p99) et la forme de la
-// distribution. Coloration par seuils 2026 (bon / à améliorer / mauvais).
+// distribution. Coloration par seuils web.dev (bon / à améliorer / mauvais).
 import {
   histogramBins,
   labelPercentiles,

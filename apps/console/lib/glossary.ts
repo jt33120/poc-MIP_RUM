@@ -7,6 +7,12 @@
 //   - business : la même chose expliquée à un non-technicien (valeur, décision)
 //
 // Ajouter une clé ici suffit à enrichir n'importe quel <GlossaryTip id="…" />.
+//
+// Les seuils des Web Vitals sont LUS dans `THRESHOLDS` (lib/rating.ts), jamais
+// recopiés : le glossaire a longtemps annoncé « bon < 2,0 s » pour le LCP pendant
+// que l'écran, lui, colorait à 2,5 s.
+import { fmtBorne } from "./format";
+import { THRESHOLDS, texteSeuils } from "./rating";
 
 export interface GlossaryEntry {
   /** Titre lisible affiché en tête de la bulle. */
@@ -23,15 +29,15 @@ export const GLOSSARY = {
   // --- Core Web Vitals -------------------------------------------------------
   LCP: {
     label: "LCP — Largest Contentful Paint",
-    term: "Largest Contentful Paint (Core Web Vital, seuil 2026 : bon < 2,0 s, à améliorer < 2,5 s).",
+    term: `Largest Contentful Paint (Core Web Vital ; ${texteSeuils("LCP")}, au 75ᵉ centile — web.dev).`,
     stack:
       "Mesuré dans le navigateur réel par l'API PerformanceObserver (entry type 'largest-contentful-paint'), émis en span OTLP 'webvital.LCP' par le SDK.",
     business:
-      "Le temps avant que le plus gros élément visible (image, titre) s'affiche. C'est la perception de « la page a chargé ». Au-delà de 2,5 s, l'internaute a l'impression d'attendre.",
+      `Le temps avant que le plus gros élément visible (image, titre) s'affiche. C'est la perception de « la page a chargé ». Au-delà de ${fmtBorne("LCP", THRESHOLDS.LCP[0])}, l'internaute a l'impression d'attendre.`,
   },
   INP: {
     label: "INP — Interaction to Next Paint",
-    term: "Interaction to Next Paint (Core Web Vital, remplace FID ; bon < 200 ms, à améliorer < 500 ms).",
+    term: `Interaction to Next Paint (Core Web Vital, remplace FID ; ${texteSeuils("INP")}, au 75ᵉ centile — web.dev).`,
     stack:
       "Latence entre une interaction (clic, frappe) et le prochain rendu, captée via PerformanceObserver ('event'/'first-input') et agrégée au p75.",
     business:
@@ -39,7 +45,7 @@ export const GLOSSARY = {
   },
   CLS: {
     label: "CLS — Cumulative Layout Shift",
-    term: "Cumulative Layout Shift (Core Web Vital sans unité ; bon < 0,1, à améliorer < 0,25).",
+    term: `Cumulative Layout Shift (Core Web Vital sans unité ; ${texteSeuils("CLS")}, au 75ᵉ centile — web.dev).`,
     stack:
       "Somme des décalages visuels inattendus (layout-shift) mesurés en continu par PerformanceObserver pendant la vie de la page.",
     business:
@@ -47,7 +53,7 @@ export const GLOSSARY = {
   },
   FCP: {
     label: "FCP — First Contentful Paint",
-    term: "First Contentful Paint (bon < 1,8 s, à améliorer < 3,0 s).",
+    term: `First Contentful Paint (${texteSeuils("FCP")}, au 75ᵉ centile — web.dev).`,
     stack:
       "Premier pixel de contenu peint, fourni par l'API Paint Timing du navigateur, émis en span 'webvital.FCP'.",
     business:
@@ -55,7 +61,7 @@ export const GLOSSARY = {
   },
   TTFB: {
     label: "TTFB — Time To First Byte",
-    term: "Time To First Byte (bon < 800 ms, à améliorer < 1,8 s).",
+    term: `Time To First Byte (${texteSeuils("TTFB")}, au 75ᵉ centile — web.dev).`,
     stack:
       "Délai jusqu'au premier octet de la réponse serveur, lu dans l'entrée Navigation Timing (responseStart − requestStart).",
     business:
@@ -190,12 +196,12 @@ export const GLOSSARY = {
       "On mesure le vrai ressenti des clients sur le site live, pas une simulation. C'est la donnée qui compte pour le chiffre d'affaires : un site rapide convertit mieux.",
   },
   experience: {
-    label: "Score d'expérience",
-    term: "Note /100 combinant la qualité perçue (Core Web Vitals), les signaux de frustration et la satisfaction déclarée (CSAT).",
+    label: "Expérience",
+    term: "Trois constituants du ressenti montrés côte à côte, sans score composite : LCP p75 et son verdict web.dev, frustration (clics rageurs et morts pour 1 000 sessions), CSAT (part des avis ≥ 4/5).",
     stack:
-      "Calculé côté console : rating des vitals (p75) × pénalité frustration (rage/dead clicks) × CSAT issu des feedbacks (rum_event name='feedback'). Fonction pure, testée.",
+      "LCP : percentile_cont(0.75) sur rum_metric ; frustration : rum_event 'frustration.rage' / 'frustration.dead' rapportés aux sessions commencées ; CSAT : rum_event name='feedback'. Aucune pondération entre les trois.",
     business:
-      "Une seule note qui marie le mesuré (vitesse, bugs) et le ressenti (ce que l'utilisateur dit). Le chaînon qui manque à un RUM classique : le pont entre chiffres et satisfaction.",
+      "Le mesuré (vitesse, agacement) à côté du déclaré (ce que l'utilisateur dit), chacun avec sa source. Une note unique aurait l'air d'une mesure alors qu'elle dépendrait d'un barème choisi au jugé.",
   },
   csat: {
     label: "CSAT — satisfaction déclarée",
@@ -207,7 +213,7 @@ export const GLOSSARY = {
   },
   forecast: {
     label: "Prévisions (AIOps)",
-    term: "Projection linéaire (moindres carrés) des indicateurs sur 14 jours ; ETA au franchissement de seuil (LCP 2,5 s, taux d'erreur 2 %).",
+    term: `Projection linéaire (moindres carrés) des indicateurs sur 14 jours ; ETA au franchissement de seuil (LCP ${fmtBorne("LCP", THRESHOLDS.LCP[0])}, taux d'erreur 2 %).`,
     stack:
       "lib/forecast (pur) sur les séries journalières (rum_metric/rum_pageview/rum_error). Régression transparente — aucune boîte noire ; complète les anomalies z-score (réactives) par de l'anticipation.",
     business:

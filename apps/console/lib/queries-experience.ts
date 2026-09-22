@@ -50,7 +50,7 @@ export interface ExperienceContext {
   frustration: number; // rage + dead clicks
 }
 
-/** Contexte perf/frustration pour composer le score d'expérience. */
+/** Contexte perf/frustration affiché à côté du CSAT (LCP p75, sessions, clics rageurs et morts). */
 export async function experienceContext(f: FiltersLike): Promise<ExperienceContext> {
   const sql = await sqlContext(f);
   const vitals = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });

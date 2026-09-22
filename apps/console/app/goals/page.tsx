@@ -13,7 +13,7 @@ import { createGoalAction, deleteGoalAction, toggleGoalAction } from "./actions"
 
 export const dynamic = "force-dynamic";
 
-const pctFmt = (v: number) => `${(v * 100).toFixed(1)} %`;
+const pctFmt = (v: number | null) => (v == null ? "—" : `${(v * 100).toFixed(1)} %`);
 
 export default async function Goals({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
@@ -47,7 +47,11 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
       )}
 
       {rows.length > 0 && (() => {
-        const byRate = [...rows].sort((a, b) => b.rate - a.rate);
+        // Un taux `null` (aucune session sur la fenêtre) n'entre pas dans le
+        // classement : une barre de longueur nulle se lirait « 0 % ».
+        const byRate = rows
+          .filter((g): g is typeof g & { rate: number } => g.rate != null)
+          .sort((a, b) => b.rate - a.rate);
         const best = byRate[0];
         const topConv = [...rows].sort((a, b) => b.conversions - a.conversions)[0];
         return (
@@ -108,7 +112,9 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
                 <td className="px-4 py-2">
                   <div className="flex items-center gap-2">
                     <div className="h-2 flex-1 overflow-hidden rounded-full bg-panel2">
-                      <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, g.rate * 100)}%` }} />
+                      {g.rate != null && (
+                        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, g.rate * 100)}%` }} />
+                      )}
                     </div>
                     <span className="w-14 text-right text-xs font-semibold tabular-nums">{pctFmt(g.rate)}</span>
                   </div>

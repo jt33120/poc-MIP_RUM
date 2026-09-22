@@ -1,4 +1,4 @@
-// Valeur d'un Web Vital, colorée au barème 2026. « — » quand la mesure manque :
+// Valeur d'un Web Vital, colorée au barème web.dev (lib/rating.ts). « — » quand la mesure manque :
 // un p75 sans échantillon est une ABSENCE de mesure, jamais un zéro.
 import { fmtVital } from "@/lib/format";
 import { RATING_CLASS, rating2026 } from "@/lib/rating";

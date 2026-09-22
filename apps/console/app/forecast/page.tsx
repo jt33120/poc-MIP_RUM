@@ -2,7 +2,7 @@
 // 14 derniers jours pour anticiper AVANT l'incident — complément prédictif des
 // anomalies z-score (réactives) et du burn-rate SLO. Régression linéaire pure
 // (lib/forecast), réutilise les séries journalières existantes (queries-grid).
-import { fmtLatency } from "@/lib/format";
+import { fmtBorne, fmtLatency } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { ForecastChart, type ForecastPoint } from "@/components/charts/ForecastChart";
@@ -18,11 +18,15 @@ import {
   type TrendDir,
 } from "@/lib/forecast";
 import { dailyLcpSeries, dailyTraffic } from "@/lib/queries-grid";
+import { THRESHOLDS } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
 
 const HORIZON = 3; // jours projetés
 const ARROW: Record<TrendDir, string> = { up: "▲", down: "▼", flat: "—" };
+// Borne « Bon » du LCP, lue dans lib/rating.ts : au-delà, le verdict passe à « À améliorer ».
+const LCP_BON = THRESHOLDS.LCP[0];
+const LCP_BON_TEXTE = fmtBorne("LCP", LCP_BON);
 
 interface Metric {
   key: string;
@@ -52,12 +56,12 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
     {
       key: "lcp",
       label: "LCP p75",
-      help: "Vitesse d'affichage perçue. Seuil « à améliorer » : 2,5 s.",
+      help: `Vitesse d'affichage perçue. Au-delà de ${LCP_BON_TEXTE}, le verdict web.dev passe à « À améliorer ».`,
       values: lcpVals,
       fmt: (v) => fmtLatency(v),
-      threshold: 2500,
+      threshold: LCP_BON,
       higherIsWorse: true,
-      thresholdLabel: "2,5 s",
+      thresholdLabel: LCP_BON_TEXTE,
     },
     {
       key: "err",
@@ -163,14 +167,14 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
                 hint={`projeté J+${HORIZON} : ${m.fmt(projected)}`}
               />
               <HeroStat
-                label="Seuil 2,5 s"
+                label={`Seuil ${LCP_BON_TEXTE}`}
                 value={eta === 0 ? "dépassé" : eta != null && eta <= 7 ? `~J+${Math.ceil(eta)}` : "hors horizon"}
                 tone={eta === 0 ? "poor" : eta != null && eta <= 7 ? "warn" : "good"}
                 hint="échéance estimée de dépassement"
               />
               <HeroReading>
                 La ligne pleine (bleue) = les 14 jours réels, prolongée en pointillé (orange) par la projection
-                linéaire ; la ligne rouge = le seuil « à améliorer ». Si le pointillé croise le rouge sur
+                linéaire ; la ligne rouge = la borne « Bon » du LCP ({LCP_BON_TEXTE}), au-delà de laquelle il est « À améliorer ». Si le pointillé croise le rouge sur
                 l&apos;horizon, c&apos;est le moment d&apos;agir. Les deux autres métriques sont détaillées
                 ci-dessous.
               </HeroReading>
