@@ -4,6 +4,7 @@
 // (rum_span corrélés par trace_id) : cartographie + flux + prévision, sans infra.
 
 import { rating2026 } from "./rating";
+import { formater } from "./fmt-ids";
 
 /**
  * `unknown` : la mesure qui décide manque. Ce n'est PAS « sain » (F40, V3) : une
@@ -70,9 +71,15 @@ export function texteRegleSanteApi(): string {
   );
 }
 
+/**
+ * Effectif minimal (récent + ancien) sous lequel aucune tendance n'est conclue :
+ * le seuil anti-bruit de l'écran, partagé par `trend` et `tendancePct`.
+ */
+export const SEUIL_TENDANCE = 5;
+
 /** Tendance de volume : moitié récente vs moitié ancienne de la fenêtre. */
 export function trend(recent: number, older: number): TrendDir {
-  if (recent + older < 5) return "flat"; // trop peu de données pour conclure
+  if (recent + older < SEUIL_TENDANCE) return "flat"; // trop peu de données pour conclure
   if (recent > older * 1.3 && recent - older >= 3) return "up";
   if (recent < older * 0.7) return "down";
   return "flat";
@@ -96,6 +103,24 @@ export interface GNode {
   health: Health;
   dir: TrendDir;
   risk: boolean;
+  /**
+   * La santé ÉCRITE dans le nœud, en plus de la couleur : « 2,4 % err · p75 1,2 s »
+   * (F52, § 5.10.4). Absente sur un nœud d'agrégation, qui n'a pas de santé propre.
+   */
+  sante?: string;
+  /** Tendance CHIFFRÉE (« +32 % ») ; absente sous le seuil anti-bruit ou sans base. */
+  tendance?: string;
+  /**
+   * Nombre de routes regroupées dans « Autres routes (N) ». Un nœud d'agrégation
+   * n'a ni santé ni tendance (ni p75 moyennable, V5) : il existe pour RECEVOIR les
+   * arêtes des routes masquées, qui étaient jusqu'ici jetées.
+   */
+  agrege?: number;
+  /**
+   * Panneau du nœud (`panel=noeud:<tier>:<route>`) ; `null` = non cliquable. Une
+   * chaîne, jamais une fonction : le nœud traverse la frontière serveur → client.
+   */
+  href?: string | null;
 }
 export interface GEdge {
   from: string; // GNode.id (front)
@@ -124,8 +149,11 @@ export interface Layout {
   edges: PlacedEdge[];
 }
 
-const NODE_W = 190;
-const ROW_H = 46;
+// Trois lignes par nœud depuis F52 (route, volume et tendance, santé écrite) :
+// la boîte gagne 14 px, l'interligne autant.
+const NODE_W = 210;
+const ROW_H = 62;
+const NODE_H = ROW_H - 10;
 const PAD_Y = 24;
 const COL_GAP = 260;
 const PAD_X = 20;
@@ -160,9 +188,9 @@ export function layoutGraph(front: GNode[], back: GNode[], edges: GEdge[]): Layo
       to: e.to,
       calls: e.calls,
       x1: a.x + NODE_W,
-      y1: a.y + ROW_H / 2 - PAD_Y / 2,
+      y1: a.y + NODE_H / 2,
       x2: b.x,
-      y2: b.y + ROW_H / 2 - PAD_Y / 2,
+      y2: b.y + NODE_H / 2,
       width: 1 + (e.calls / maxCalls) * 5, // 1..6 px selon le volume
     });
   }
@@ -177,4 +205,118 @@ export function layoutGraph(front: GNode[], back: GNode[], edges: GEdge[]): Layo
 }
 
 export const NODE_WIDTH = NODE_W;
-export const NODE_HEIGHT = ROW_H - 10;
+export const NODE_HEIGHT = NODE_H;
+
+// --- F52 : santé écrite, tendance chiffrée, nœud « Autres routes (N) » ------
+
+/**
+ * Tendance de volume CHIFFRÉE : variation en % de la moitié récente sur la moitié
+ * ancienne. `null` quand elle ne se calcule pas honnêtement — sous le seuil
+ * anti-bruit (même que `trend`), ou sans base ancienne : « +∞ % » n'est pas une
+ * mesure, c'est une division par zéro (V3).
+ */
+export function tendancePct(recent: number, older: number): number | null {
+  if (recent + older < SEUIL_TENDANCE) return null;
+  if (older <= 0) return null;
+  return ((recent - older) / older) * 100;
+}
+
+/** « +32 % », « −18 % », ou `undefined` quand la tendance n'est pas chiffrable. */
+export function texteTendance(recent: number, older: number): string | undefined {
+  const pct = tendancePct(recent, older);
+  if (pct === null) return undefined;
+  const arrondi = Math.round(pct);
+  return `${arrondi > 0 ? "+" : arrondi < 0 ? "\u2212" : ""}${Math.abs(arrondi)}\u00a0%`;
+}
+
+/**
+ * La santé ÉCRITE dans le nœud : « 2,4 % err · p75 1,2 s » (§ 5.10.4). La couleur
+ * seule ne porte jamais l'information (§ 3.9) — et une latence non mesurée s'écrit
+ * « — », jamais « 0 ms ».
+ */
+export function texteSanteNoeud(errorRate: number | null, latencyP75: number | null): string {
+  return `${formater("pct", errorRate)} err · p75 ${formater("ms", latencyP75)}`;
+}
+
+/** Nœuds affichés par colonne avant regroupement dans « Autres routes (N) ». */
+export const CAP_COLONNE = 10;
+
+/** Identifiant du nœud d'agrégation d'une colonne (aucune route ne peut le porter). */
+export function idAutres(tier: "front" | "back"): string {
+  return `${tier}:\u0000autres`;
+}
+
+export interface CarteAffichee {
+  front: GNode[];
+  back: GNode[];
+  edges: GEdge[];
+  /** Routes regroupées par colonne (0 = colonne entièrement affichée). */
+  masquees: { front: number; back: number };
+}
+
+/** Le nœud d'agrégation d'une colonne : il porte un volume, jamais une santé. */
+function noeudAutres(tier: "front" | "back", masques: GNode[]): GNode {
+  return {
+    id: idAutres(tier),
+    tier,
+    route: `Autres routes (${masques.length.toLocaleString("fr-FR")})`,
+    calls: masques.reduce((s, n) => s + n.calls, 0),
+    // Plusieurs routes n'ont pas de santé commune, et un p75 ne se moyenne pas (V5).
+    health: "unknown",
+    dir: "flat",
+    risk: false,
+    agrege: masques.length,
+    href: null,
+  };
+}
+
+/**
+ * Ce que la carte AFFICHE : les `cap` premières routes de chaque colonne, plus un
+ * nœud « Autres routes (N) » qui REÇOIT les arêtes des routes masquées.
+ *
+ * Avant F52, `layoutGraph` jetait toute arête dont une extrémité sortait du top-N
+ * (`if (!a || !b) continue`) : le graphe montrait alors moins d'appels qu'il n'y en
+ * avait, sans le dire — une page très active pouvait perdre son lien vers un service
+ * lent simplement parce que ce service était onzième. Les arêtes sont désormais
+ * redirigées vers le nœud d'agrégation et FUSIONNÉES (les volumes s'additionnent :
+ * un compte d'appels est additif, contrairement à un p75).
+ */
+export function carteAffichee(
+  front: GNode[],
+  back: GNode[],
+  edges: GEdge[],
+  cap: number = CAP_COLONNE,
+): CarteAffichee {
+  const colonne = (tier: "front" | "back", tous: GNode[]) => {
+    const visibles = tous.slice(0, cap);
+    const masques = tous.slice(cap);
+    return { visibles: masques.length > 0 ? [...visibles, noeudAutres(tier, masques)] : visibles, masques };
+  };
+  const f = colonne("front", front);
+  const b = colonne("back", back);
+
+  // Où va chaque identifiant reçu : lui-même s'il est visible, le nœud d'agrégation
+  // de sa colonne s'il est masqué, rien s'il n'a jamais été lu (arête orpheline).
+  const destination = new Map<string, string>();
+  for (const n of [...f.visibles, ...b.visibles]) destination.set(n.id, n.id);
+  for (const n of f.masques) destination.set(n.id, idAutres("front"));
+  for (const n of b.masques) destination.set(n.id, idAutres("back"));
+
+  const fusion = new Map<string, GEdge>();
+  for (const e of edges) {
+    const from = destination.get(e.from);
+    const to = destination.get(e.to);
+    if (!from || !to) continue; // extrémité jamais lue (hors des 40 nœuds)
+    const cle = `${from}\u0000${to}`;
+    const deja = fusion.get(cle);
+    if (deja) deja.calls += e.calls;
+    else fusion.set(cle, { from, to, calls: e.calls });
+  }
+
+  return {
+    front: f.visibles,
+    back: b.visibles,
+    edges: [...fusion.values()].sort((x, y) => y.calls - x.calls),
+    masquees: { front: f.masques.length, back: b.masques.length },
+  };
+}
