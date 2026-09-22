@@ -8,6 +8,9 @@
 //
 // La population est resserrée sur une release propre à ce test : les autres
 // suites écrivent dans la même app, et un total global serait un total partagé.
+//
+// F31 : connexion par un utilisateur DÉDIÉ (comme `theme-contraste.spec.ts`) —
+// rejouer ce spec ne réinitialise plus le mot de passe de l'administrateur local.
 import { execFileSync } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
@@ -19,7 +22,24 @@ const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000"
 const SESSION = "p64-explorer-session";
 const RELEASE = "p64-e2e-rel";
 const FINGERPRINT = "p64-e2e-fp";
-let adminPassword = "";
+const E2E_EMAIL = "e2e-explorer@mip-rum.local";
+const E2E_PASSWORD = "e2e-explorer-mdp-local";
+
+function bcryptHash(password: string): string {
+  return execFileSync(
+    "node",
+    [
+      "-e",
+      `const { createRequire } = require("node:module");
+       const req = createRequire(process.cwd() + "/apps/console/package.json");
+       const m = req("bcryptjs");
+       const bcrypt = m.hashSync ? m : m.default;
+       process.stdout.write(bcrypt.hashSync(process.argv[1], 4));`,
+      password,
+    ],
+    { encoding: "utf8" },
+  );
+}
 
 /** Trois lignes, deux routes, six occurrences : la somme ≠ le nombre de lignes. */
 const LIGNES: [string, number][] = [
@@ -29,8 +49,12 @@ const LIGNES: [string, number][] = [
 ];
 
 test.beforeAll(async () => {
-  const out = execFileSync("node", ["scripts/seed-admin.mjs"], { encoding: "utf8" });
-  adminPassword = out.match(/julian@mip-rum\.local.*?:\s*(\S+)/s)?.[1] ?? "";
+  await pool.query(
+    `insert into console_user (email, password_hash, role, apps, active)
+     values ($1, $2, 'admin', null, true)
+     on conflict (email) do update set password_hash = excluded.password_hash, active = true`,
+    [E2E_EMAIL, bcryptHash(E2E_PASSWORD)],
+  );
   await pool.query(`insert into app_registry (app_id,name,active) values ('demo-app','Demo',true) on conflict do nothing`);
   await pool.query(
     `insert into rum_session (session_id,app_id,device_type,geo_country,sample_rate,error_sample_rate,last_seen_at)
@@ -56,8 +80,8 @@ test.afterAll(async () => {
 
 async function login(page: Page) {
   await page.goto(`${consoleUrl}/login`);
-  await page.fill('input[name="email"]', "julian@mip-rum.local");
-  await page.fill('input[name="password"]', adminPassword);
+  await page.fill('input[name="email"]', E2E_EMAIL);
+  await page.fill('input[name="password"]', E2E_PASSWORD);
   await page.click('button[type="submit"]');
   await page.waitForURL((url) => url.pathname !== "/login", { timeout: 15_000 });
   await page.context().addCookies([{ name: "mip-project", value: "demo-app", url: consoleUrl }]);
@@ -91,13 +115,19 @@ test("rien ne part avant « Exécuter », puis la mesure composée est exacte", 
 
   // 2. Chaque contrôle porte un libellé — c'est ce dont dépendent le clavier et
   // les lecteurs d'écran. Les interactions passent ensuite par le nom du champ,
-  // qui est aussi ce que l'URL transportera.
-  for (const libelle of ["Mesure", "Représentation", "Grouper par"]) {
+  // qui est aussi ce que l'URL transportera. F31 : la représentation n'est plus un
+  // champ du formulaire mais une rangée d'onglets-liens ; sans exécution, en
+  // changer n'exécute rien.
+  for (const libelle of ["Mesure", "Grouper par"]) {
     await expect(page.getByLabel(libelle).first()).toBeVisible();
   }
+  const representation = page.getByRole("navigation", { name: "Représentation" });
+  await representation.getByRole("link", { name: "Classement" }).click();
+  await page.waitForURL((u) => u.searchParams.get("viz") === "toplist", { timeout: 15_000 });
+  expect(new URL(page.url()).searchParams.has("run")).toBe(false);
+  await expect(page.getByTestId("explorer-total")).toHaveCount(0);
   const champ = (nom: string) => page.locator(`select[name="${nom}"]`);
   await champ("measure").selectOption("occurrences:sum");
-  await champ("viz").selectOption("toplist");
   await champ("g0").selectOption("route");
   await page.getByRole("button", { name: "Exécuter" }).click();
 
@@ -108,12 +138,15 @@ test("rien ne part avant « Exécuter », puis la mesure composée est exacte", 
   await expect(page.getByTitle("/p64-explorer-a")).toBeVisible();
   await expect(page.getByTitle("/p64-explorer-b")).toBeVisible();
 
-  // 4. Le résumé énonce ce qui est RÉELLEMENT appliqué, release comprise.
-  const resume = page.getByTestId("explorer-resume");
-  await expect(resume).toContainText("Somme — occurrences");
+  // 4. Le résumé énonce ce qui est RÉELLEMENT appliqué, release comprise. F31 : il
+  // nomme le groupe de pastilles (`aria-label`), et chaque élément a sa pastille.
+  const resume = page.getByTestId("requete-pastilles");
+  await expect(resume).toHaveAttribute("aria-label", /Somme — occurrences/);
+  await expect(resume).toHaveAttribute("aria-label", new RegExp(`Release = ${RELEASE}`));
+  await expect(resume).toHaveAttribute("aria-label", /robots exclus/);
+  await expect(resume).toHaveAttribute("aria-label", /groupé par route/);
   await expect(resume).toContainText(`Release = ${RELEASE}`);
-  await expect(resume).toContainText("robots exclus");
-  await expect(resume).toContainText("groupé par route");
+  await expect(resume).toContainText("Groupé par route");
 
   // L'origine du chiffre est à l'écran (P6.6) : aucun agrégat ne porte les
   // occurrences d'erreurs, la somme vient donc des lignes, et l'écran le dit.
@@ -184,7 +217,7 @@ test("accès clavier et aucune largeur qui déborde (390 / 768 / 1440 px)", asyn
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${base}&measure=occurrences:sum&viz=table&limit=25&run=1`);
-    await expect(page.getByTestId("explorer-resume")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("requete-pastilles")).toBeVisible({ timeout: 15_000 });
     expect(await deborde(page), `débordement horizontal à ${width} px`).toBe(false);
   }
 });
