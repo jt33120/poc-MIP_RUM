@@ -17,6 +17,7 @@
 //     B33 (§ 0.5).
 //   - Deux conventions de pourcentage sans étiquette dans l'entonnoir : chaque
 //     taux est écrit avec son dénominateur (« du départ », « de l'étape précédente »).
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { FunnelChart, StepPicker } from "@/components/Funnel";
 import { Sankey } from "@/components/Sankey";
@@ -52,7 +53,7 @@ const POPULATION_TRANSITIONS = "passages d'une route à une autre (boucles A→A
 /** Le dénominateur qui manque, écrit partout de la même façon (V3). */
 const PART_NON_CALCULEE = "part de l'ensemble non calculée (dénominateur à créer)";
 const PART_POURQUOI =
-  "Part de toutes les sessions : non calculée tant que le dénominateur (les sessions avec vue, sur la même fenêtre) n'est pas lu sur le contrat (B31). Une part calculée sur les routes affichées serait fausse dès la suivante.";
+  "Part de toutes les sessions : non calculée tant que le dénominateur (les sessions avec vue, sur la même fenêtre) n'est pas lu sur le contrat (B31). Une part calculée sur les routes affichées serait fausse dès la suivante. « Sessions à une vue » et « LCP p75 de la route » ne sont pas non plus affichés : ils viendraient d'une lecture du contrat, dont la fenêtre n'est pas celle de cette table (S2).";
 
 /** Ce que l'ancrage du Sankey attend, et les étapes typées de l'entonnoir (§ 0.5). */
 const ANCRAGE_ABSENT =
@@ -318,19 +319,21 @@ function TableBords({ rows, titre, query }: { rows: RouteCountRow[]; titre: stri
           {rows.map((r) => (
             <tr key={r.route} className="border-b border-line/60 last:border-0">
               <th scope="row" className="max-w-0 py-1.5 pr-3 font-normal">
-                <a
+                {/* `truncate` ne coupe qu'un élément `block` : une route longue sans
+                    espace élargirait la page à 390 px. */}
+                <Link
                   href={lienSessions(query, r.route)}
                   className="block truncate font-mono text-xs text-ink hover:text-accent hover:underline"
                   title={`Sessions passées par ${r.route}`}
                 >
                   {r.route}
-                </a>
-                <a
+                </Link>
+                <Link
                   href={hrefWithQuery("/pages", query, { route: r.route })}
                   className="text-[10px] text-ink-faint hover:text-accent hover:underline"
                 >
                   Ouvrir /pages
-                </a>
+                </Link>
               </th>
               <td className="py-1.5 pr-3 text-right text-xs tabular-nums text-ink">{formater("count", r.n)}</td>
               <td className="py-1.5 text-right text-xs tabular-nums text-ink-faint" title={PART_NON_CALCULEE}>
