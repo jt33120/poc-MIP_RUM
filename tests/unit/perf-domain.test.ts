@@ -92,6 +92,37 @@ describe("avecCondition", () => {
   });
 });
 
+// ─────────────── F11 — tuiles de trafic de la Vue d'ensemble (§ 5.1.2) ───────────────
+import { sparklineDeCompte as sparklineDeCompteF11 } from "../../apps/console/lib/perf-domain";
+
+describe("F11 — sparklineDeCompte : valeur et sparkline comptent la même population (R-P)", () => {
+  const H = 3_600_000;
+  const DEBUT = Date.parse("2026-09-22T00:00:00Z");
+  const debuts = [0, 1, 2, 3].map((i) => DEBUT + i * H);
+  // Sessions commencées par seau (`observedVisitorsTrend.sessions`) ; le seau 2 n'a aucune ligne.
+  const lignes = [
+    { bucket: new Date(DEBUT), n: 4 },
+    { bucket: "2026-09-22T01:00:00Z", n: 7 },
+    { bucket: "2026-09-22T03:00:00Z", n: 1 },
+  ];
+
+  it("Σ sparkline = valeur sur un jeu de lignes fixé ; un seau sans ligne vaut 0 (compte)", () => {
+    const serie = sparklineDeCompteF11(lignes, debuts, 12);
+    expect(serie).toEqual([4, 7, 0, 1]);
+    expect(serie!.reduce((a, b) => a + b, 0)).toBe(12);
+  });
+
+  it("une somme qui ne tombe pas sur la valeur retire la sparkline (null), jamais une courbe fausse", () => {
+    expect(sparklineDeCompteF11(lignes, debuts, 13)).toBeNull();
+    // Une ligne hors de la grille n'est pas comptée : la somme ne tombe plus juste.
+    expect(sparklineDeCompteF11([...lignes, { bucket: "2026-09-21T23:00:00Z", n: 2 }], debuts, 14)).toBeNull();
+  });
+
+  it("aucune ligne et valeur 0 : une sparkline plate, pas un trou", () => {
+    expect(sparklineDeCompteF11([], debuts, 0)).toEqual([0, 0, 0, 0]);
+  });
+});
+
 // ─────────────────────── F25 — Journal : colonnes promues ───────────────────────
 import { colonnesPromues, valeurColonnePromue } from "../../apps/console/lib/perf-domain";
 

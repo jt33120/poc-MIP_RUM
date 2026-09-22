@@ -44,10 +44,15 @@ export const CATALOGUES: readonly Catalogue[] = [
     titre: "Vue d'ensemble",
     cookie: "mip-blocs",
     blocs: [
-      { id: "sante", label: "Score de santé", defaut: true, desc: "Note sur 100 pondérée par les Core Web Vitals, et son évolution." },
+      // « et son évolution » est retiré (F11) : le score n'est pas comparé — une
+      // variation de score composite n'a pas d'unité interprétable (§ 5.1.2).
+      { id: "sante", label: "Score de santé", defaut: true, desc: "Note sur 100 à formule affichée : Web Vitals, erreurs navigateur, stabilité des sessions, anomalies 24 h." },
+      // Bloc ajouté par F11 : les tuiles de trafic quittent le hero pour la rangée de
+      // la santé. Absent d'un cookie existant, il retombe sur son défaut (allumé).
+      { id: "trafic", label: "Trafic", defaut: true, desc: "Sessions commencées, pages vues et occurrences d'erreurs navigateur pour 100 pages vues, avec leur évolution." },
       { id: "vitals", label: "Core Web Vitals", defaut: true, desc: "LCP, INP, CLS, FCP et TTFB au p75, face aux seuils Google." },
       { id: "reseau", label: "Décomposition réseau", defaut: false, desc: "D'où vient le TTFB : redirection, DNS, connexion, TLS, requête, réponse." },
-      { id: "hero", label: "Courbe LCP et volumétrie", defaut: true, desc: "LCP p75 dans le temps, sessions, pages vues et taux d'erreur." },
+      { id: "hero", label: "Courbe LCP", defaut: true, desc: "LCP p75 dans le temps, sur les zones de seuil." },
       { id: "decoupage", label: "Découpage des Web Vitals", defaut: true, desc: "LCP, INP et CLS répartis par route, navigateur, système, pays estimé, appareil ou release, avec le nombre de mesures. Chaque groupe ouvre le détail filtré." },
       { id: "historique", label: "Historique de santé 14 jours", defaut: true, desc: "Heatmap jour × heure, avec les courbes de volume et de LCP associées." },
       { id: "anomalies", label: "Anomalies détectées", defaut: true, desc: "Écarts statistiques sur le LCP, sans seuil à régler." },

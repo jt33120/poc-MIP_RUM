@@ -79,9 +79,9 @@ export const GLOSSARY = {
   },
   health: {
     label: "Score de santé",
-    term: "Score composite 0–100 : 40 % vitals (LCP ×2), 30 % erreurs, 20 % stabilité, 10 % anomalies 24 h.",
+    term: "Score composite 0–100 : 40 % vitals (LCP ×2), 30 % erreurs navigateur, 20 % stabilité, 10 % anomalies 24 h.",
     stack:
-      "Pondération calculée côté console à partir des p75, du taux d'erreur et de la détection d'anomalies (vue SQL v_anomaly).",
+      "Pondération calculée côté console à partir des mesures « Bon », des occurrences d'erreurs navigateur pour 100 pages vues, des sessions sans erreur et de la détection d'anomalies (vue SQL v_anomaly).",
     business:
       "Une note unique pour piloter en un coup d'œil, comme un bulletin de santé du site. Idéal pour un comité de direction : vert = tout va bien, rouge = il faut agir.",
   },

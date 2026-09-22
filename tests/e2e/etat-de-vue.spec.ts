@@ -48,9 +48,63 @@ async function nettoyer() {
 }
 
 /**
- * Mesures il y a 3 jours, 30 heures et 1 heure : sous 24 h, la période précédente
- * est COMPLÈTE (collecte commencée avant elle) et porte des mesures — un delta
- * s'affiche. Deux releases dans la dernière heure pour `APP`, une seule pour `APP_MONO`.
+ * Une VAGUE de sessions mesurées : une session toutes les cinq minutes à partir de
+ * `depuis`, chacune avec sa page vue et sa mesure LCP, et une erreur navigateur
+ * toutes les vingt sessions. Tout est inséré en une instruction par table
+ * (`generate_series`) : semer 260 sessions ligne à ligne coûtait quatre minutes.
+ */
+async function semerVague(prefixe: string, depuis: string, n: number, lcp: number) {
+  const quand = `now() - $2::interval - (i * interval '5 minutes')`;
+  const serie = `from generate_series(1, $4::int) as i`;
+  await pool.query(
+    `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count, release)
+     select $3 || i, $1, $3 || i, 'desktop', false, ${quand}, ${quand}, 1, '1.0.0'
+     ${serie} on conflict (session_id) do nothing`,
+    [APP, depuis, prefixe, n],
+  );
+  await pool.query(
+    `insert into rum_pageview (span_id, session_id, app_id, route, started_at, release)
+     select $3 || i || '-pv', $3 || i, $1, '/', ${quand}, '1.0.0'
+     ${serie} on conflict (span_id) do nothing`,
+    [APP, depuis, prefixe, n],
+  );
+  await pool.query(
+    `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, ts, release)
+     select $3 || i || '-lcp', $3 || i, $1, '/', 'LCP', $5::float8, 'good', ${quand}, '1.0.0'
+     ${serie} on conflict (span_id) do nothing`,
+    [APP, depuis, prefixe, n, lcp],
+  );
+  // `error_source` en « browser_% » : c'est ce que compte la tuile « Occurrences
+  // d'erreurs pour 100 pages vues » (taxonomie fermée de v69).
+  await pool.query(
+    `insert into rum_error (span_id, session_id, app_id, route, kind, error_type, message, error_source, occurrences, ts)
+     select $3 || i || '-err', $3 || i, $1, '/', 'error', 'TypeError', 'erreur synthétique état de vue',
+            'browser_js', 1, ${quand}
+     ${serie} where i % 20 = 0 on conflict (span_id) do nothing`,
+    [APP, depuis, prefixe, n],
+  );
+}
+
+/**
+ * Le TÉMOIN du spec (« sous 24 h, un écart s'affiche ») exige que l'écran ait le
+ * droit de comparer, et de quoi comparer. Sur `/`, deux gardes s'y opposent tant que
+ * le semis est symbolique, et les deux se lisent dans le code :
+ *
+ *   1. COUVERTURE DE LA RANGÉE (`deltasDeLaRangee`, lib/comparaison.ts). Une rangée
+ *      n'a d'écart que si TOUTES ses sources ont commencé à collecter avant la
+ *      période précédente. La rangée trafic en compte trois — `rum_session`,
+ *      `rum_pageview` et `rum_error` — et `debutCollecte` lit `min(ts)` de la table
+ *      SUR LE PÉRIMÈTRE : une table vide y rend `null`, soit « aucune donnée
+ *      collectée sur le périmètre ». Sans une seule erreur, la rangée trafic entière
+ *      perdait donc ses écarts, sans que rien ne soit mal lié. D'où le jalon
+ *      d'erreur à 3 jours, avec les jalons de session, de vue et de mesure.
+ *   2. EFFECTIF DE LA TUILE (`comparaisonDeTuile`, KpiTile). Sous 100 mesures d'un
+ *      côté ou de l'autre, une tuile Web Vital écrit « delta non affiché :
+ *      échantillon faible sur l'une des deux périodes ». D'où les deux vagues, 140
+ *      mesures dans les 24 h et 120 dans les 24 h précédentes.
+ *
+ * Restent les jalons nommés : trois jours, 30 heures et la dernière heure, et les
+ * deux releases de `APP` (une seule pour `APP_MONO`) que lisent les autres tests.
  */
 async function semer() {
   await nettoyer();
@@ -85,6 +139,20 @@ async function semer() {
       [`${sid}-lcp`, sid, app, release],
     );
   }
+  // Jalon d'erreur à 3 jours : il fait commencer la collecte de `rum_error` AVANT la
+  // période précédente, comme les trois autres tables (règle 2 du § 3.2).
+  await pool.query(
+    `insert into rum_error (span_id, session_id, app_id, route, kind, error_type, message, error_source, occurrences, ts)
+     values ($1, $2, $3, '/', 'error', 'TypeError', 'erreur synthétique état de vue', 'browser_js', 1,
+             now() - interval '3 days')
+     on conflict (span_id) do nothing`,
+    [`${APP}-il-y-a-3j-err`, `${APP}-il-y-a-3j`, APP],
+  );
+  // Les deux vagues comparées. 140 mesures sur [now-12 h 40, now-1 h 05] et 120 sur
+  // [now-35 h, now-25 h 05] : chaque vague tient entièrement dans SA fenêtre de 24 h,
+  // avec plus d'une heure de marge de part et d'autre de la frontière.
+  await semerVague(`${APP}-v24-`, "1 hour", 140, 1900);
+  await semerVague(`${APP}-vprec-`, "25 hours", 120, 2400);
 }
 
 test.beforeAll(async () => {
@@ -176,24 +244,38 @@ test("cmp=release survit à un changement d'onglet et de catégorie ; le tri res
   expect(parametres(page).get("rel_b")).toBeNull();
 });
 
-/** Un écart vs la période précédente, sous ses deux formes : badge (établi) ou phrase (non établi). */
-const ECART = '[title="vs période précédente"], [data-testid="trend"]';
+/**
+ * Un écart vs la période précédente, sous TOUTES ses formes :
+ *   - badge établi : `trend` (`VitalCard`), `delta` (`KpiTile`, F11) ;
+ *   - écart NON ÉTABLI (P*.1, intervalles qui se chevauchent) : écrit sans flèche,
+ *     `kpi-comparaison[data-ecart="non-etabli"]`.
+ * Le TEXTE DE SILENCE d'une tuile (« période précédente incomplète », « pas de mesure
+ * sur … », « échantillon faible ») n'est PAS un écart : il porte `data-ecart="silence"`
+ * et reste hors de ce sélecteur — sinon « aucun écart » serait faux dès qu'on dit
+ * pourquoi il n'y en a pas.
+ */
+const ECART =
+  '[title="vs période précédente"], [data-testid="trend"], [data-testid="delta"], [data-testid="kpi-comparaison"][data-ecart="non-etabli"]';
 
 test("une plage personnalisée de 30 jours n'affiche aucun delta sur /, et dit pourquoi", async ({ page }) => {
   await login(page);
 
-  // Témoin : sous 24 h, la période précédente est complète et mesurée — un écart s'affiche.
-  // Établi ou non (P*.1 : deux intervalles qui se chevauchent donnent un écart écrit
-  // sans flèche ni `title`), c'est toujours un écart : on le repère par `trend`.
+  // Témoin : sous 24 h, la période précédente est complète ET assez mesurée des deux
+  // côtés (cf. `semer` : jalons à 3 jours pour les quatre sources, 140 mesures dans la
+  // fenêtre et 120 dans la précédente) — un écart s'affiche. Établi ou non (P*.1 : deux
+  // intervalles qui se chevauchent donnent un écart écrit sans flèche ni `title`), c'est
+  // toujours un écart. F11 : sur `/`, les tuiles sont des `KpiTile`, et leur référence
+  // est DATÉE (« vs 24 h précédentes (… UTC) »).
   await page.goto(`${consoleUrl}/?app=${APP}&period=24h`, { waitUntil: "domcontentloaded" });
   await expect(page.locator(ECART).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(ECART).first()).toContainText("vs 24 h précédentes");
 
   const to = new Date(Math.floor(Date.now() / 60_000) * 60_000 - 60_000);
   const from = new Date(to.getTime() - 30 * 86_400_000);
   await page.goto(`${consoleUrl}/?app=${APP}&from=${from.toISOString()}&to=${to.toISOString()}`, {
     waitUntil: "domcontentloaded",
   });
-  await expect(page.getByTestId("p75-LCP")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("tuile-LCP")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("note-comparaison")).toContainText("hors rétention (30 jours)");
   await expect(page.locator(ECART)).toHaveCount(0);
 });
@@ -201,7 +283,7 @@ test("une plage personnalisée de 30 jours n'affiche aucun delta sur /, et dit p
 test("cmp=none : aucun delta, et un réglage illisible est signalé", async ({ page }) => {
   await login(page);
   await page.goto(`${consoleUrl}/?app=${APP}&period=24h&cmp=none`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("p75-LCP")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("tuile-LCP")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(ECART)).toHaveCount(0);
 
   await page.goto(`${consoleUrl}/?app=${APP}&period=24h&cmp=hier`, { waitUntil: "domcontentloaded" });

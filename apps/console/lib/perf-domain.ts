@@ -83,6 +83,28 @@ export function avecCondition<F extends FiltersLike>(f: F, dimension: Dimension,
   };
 }
 
+// ─────────────────────── F11 — sparkline d'une tuile de compte ───────────────────────
+import { alignerSeaux as alignerSeauxF11 } from "./series";
+
+/**
+ * Sparkline d'une tuile de COMPTE (« Sessions commencées », « Pages vues », § 5.1.2),
+ * posée sur la grille du contrat : un seau sans ligne vaut 0 (un compte additif).
+ *
+ * Valeur et sparkline d'une même tuile comptent la MÊME population (R-P) : la somme
+ * des seaux doit égaler la valeur. Si elle ne l'égale pas (une ligne hors grille, une
+ * lecture qui ne compte pas la même chose), la sparkline est RETIRÉE (`null`) : une
+ * courbe qui contredit le chiffre qu'elle illustre ferait lire deux populations.
+ */
+export function sparklineDeCompte(
+  lignes: readonly { bucket: string | Date; n: number }[],
+  debuts: readonly number[],
+  valeur: number,
+): number[] | null {
+  const seaux = alignerSeauxF11([...lignes], [...debuts], false).map((l) => (l ? Number(l.n) : 0));
+  const somme = seaux.reduce((total, n) => total + n, 0);
+  return somme === valeur ? seaux : null;
+}
+
 // ─────────────────────── F25 — Journal : colonnes promues ───────────────────────
 //
 // « Clés communes promues en colonnes » (§ 5.23.2) : une clé d'attribut présente
