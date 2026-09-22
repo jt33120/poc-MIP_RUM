@@ -188,7 +188,11 @@ test("largeur : plein écran à 390 et 1024 px (bouton « Fermer » en tête), m
 
 test("sans JavaScript : le panneau est dans le HTML, ses liens suffisent", async ({ browser, page }) => {
   await login(page);
-  const contexte = await browser.newContext({ javaScriptEnabled: false, storageState: await page.context().storageState() });
+  const contexte = await browser.newContext({
+    javaScriptEnabled: false,
+    reducedMotion: "reduce",
+    storageState: await page.context().storageState(),
+  });
   const sansJs = await contexte.newPage();
   try {
     await sansJs.goto(avecPanneau("/panier"), { waitUntil: "domcontentloaded" });
