@@ -132,6 +132,16 @@ describe("matrice écran × filtre", () => {
     for (const path of ["/logs", "/ai", "/forecast", "/svi", "/svi/appels/1"]) expect(disponibles(path), path).toEqual([]);
   });
 
+  it("/forecast lit une fenêtre fixe : la période est désactivée avec sa raison, jamais ignorée", () => {
+    const s = surface("/forecast");
+    const raison = "Cet écran lit une fenêtre fixe de 14 jours complets ; la période choisie en haut ne s'applique pas.";
+    expect(rangeAvailability(s, false)).toEqual({ available: false, reason: raison });
+    expect(checkSurface(requete("from=2026-09-17T10:00:00Z&to=2026-09-17T11:00:00Z"), s, schemaComplet())).toMatchObject({
+      ok: false,
+      error: { code: "unsupported_dimension", parameter: "from", message: raison },
+    });
+  });
+
   it("écrans de configuration et détails entiers : aucun filtre de population, raison dite", () => {
     for (const path of ["/slo", "/alerts", "/dashboards", "/sessions/s1", "/tracing/t1"]) {
       const s = surface(path);

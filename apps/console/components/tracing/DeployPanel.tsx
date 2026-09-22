@@ -16,7 +16,8 @@ export async function DeployPanel({ f }: { f: Filters }) {
   if (!deploys.length) return null; // rien tant qu'aucun déploiement n'est enregistré
 
   const lcp = assessRegression(impact?.lcp_before ?? null, impact?.lcp_after ?? null);
-  const err = assessRegression(impact?.errors_before || null, impact?.errors_after || null);
+  // `null` quand une fenêtre n'a aucune page vue : assessRegression rend alors deltaPct null.
+  const err = assessRegression(impact?.errors_before ?? null, impact?.errors_after ?? null);
   const regressed = lcp.regressed || err.regressed;
 
   return (

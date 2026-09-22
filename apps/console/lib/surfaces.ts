@@ -123,7 +123,15 @@ export const SURFACES: Surface[] = [
   { path: "/retention", datasets: ["sessions"], range: "presets", legacy: "segments" },
   { path: "/logs", datasets: [], range: "presets", legacy: "period-only" },
   { path: "/ai", datasets: [], range: "presets", legacy: "period-only" },
-  { path: "/forecast", datasets: [], range: "presets", legacy: "period-only" },
+  // La projection lit toujours les 14 derniers jours complets (lib/queries-grid.ts,
+  // `time: null`) : proposer 1 h / 24 h / 7 j laisserait croire qu'ils s'appliquent.
+  {
+    path: "/forecast",
+    datasets: [],
+    range: "none",
+    rangeNote: "Cet écran lit une fenêtre fixe de 14 jours complets ; la période choisie en haut ne s'applique pas.",
+    legacy: "period-only",
+  },
   { path: "/svi/", datasets: [], range: "presets", legacy: "period-only" },
   { path: "/svi", datasets: [], range: "presets", legacy: "period-only" },
   {

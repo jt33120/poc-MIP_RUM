@@ -1,4 +1,4 @@
-// Ligne d'angle mort : route où le robot dit « ok » alors que le réel est « poor ».
+// Ligne d'angle mort : route où le robot dit « ok » alors que le LCP p75 réel dépasse la borne « Bon ».
 // Rendu 100 % serveur. Extrait de app/correlation/page.tsx.
 import { fmtDate, fmtVital } from "@/lib/format";
 import { type BlindSpotRow as BlindSpotData } from "@/lib/queries-v2";

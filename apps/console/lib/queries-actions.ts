@@ -49,7 +49,13 @@ export function hasNextActionsPage(page: Pagination, rowCount: number): boolean 
   return rowCount === page.limit && page.offset < ACTIONS_MAX_OFFSET;
 }
 
-async function actionsDisponible(): Promise<boolean> {
+/**
+ * La table des actions existe-t-elle sur ce déploiement (migration-v67) ?
+ * Exportée pour que l'écran pose la question AVANT de lire : sans elle,
+ * `topActionsSummary` rend des zéros qui s'affichaient « 0 action » — un vide
+ * réel — là où rien n'a jamais été collecté.
+ */
+export async function actionsDisponible(): Promise<boolean> {
   const [row] = await q<{ present: boolean }>(
     "select to_regclass($1) is not null as present",
     ["public.rum_action"],

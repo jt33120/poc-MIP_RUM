@@ -32,6 +32,7 @@ import { overviewStats, vitalSeries, vitalsP75 } from "@/lib/queries";
 import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown } from "@/lib/queries-breakdowns";
 import { dailyLcpSeries, dailyTraffic, GRID_DAYS, healthGrid } from "@/lib/queries-grid";
 import { comparaisonVersions, type ComparaisonVersions } from "@/lib/queries-deploys";
+import { fmtBorne } from "@/lib/format";
 import { THRESHOLDS } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
@@ -95,7 +96,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
   const byName = Object.fromEntries(vitals.map((v) => [v.name, v]));
   const prevByName = Object.fromEntries(vitalsPrev.map((v) => [v.name, v]));
-  const errorRate = stats.pageviews ? ((stats.errors / stats.pageviews) * 100).toFixed(1) : "0";
+  // Sans page vue, le taux n'a pas de dénominateur : « — », jamais « 0 % » — qui se
+  // lirait « aucune erreur » sur une fenêtre où l'on n'a simplement rien mesuré.
+  const errorRate = stats.pageviews ? (stats.errors / stats.pageviews) * 100 : null;
   const prevErrorRate = statsPrev.pageviews ? (statsPrev.errors / statsPrev.pageviews) * 100 : null;
   const pctOf = (cur: number, prev: number | null | undefined) =>
     prev != null && prev !== 0 ? { pct: ((cur - prev) / prev) * 100 } : null;
@@ -174,13 +177,20 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         />
         <HeroStat
           label="Taux d'erreur JS / page vue"
-          value={`${errorRate} %`}
-          delta={prevErrorRate != null ? { pct: (Number(errorRate) - prevErrorRate) / (prevErrorRate || 1) * 100, lowerIsBetter: true } : null}
-          tone={Number(errorRate) > 2 ? "poor" : Number(errorRate) > 1 ? "warn" : "good"}
+          value={errorRate == null ? "—" : `${errorRate.toFixed(1)} %`}
+          delta={errorRate == null ? null : (() => {
+            // Même règle que les autres tuiles : sans base (période précédente vide ou
+            // à 0), pas de variation — l'ancien `prev || 1` inventait un pourcentage.
+            const d = pctOf(errorRate, prevErrorRate);
+            return d && { ...d, lowerIsBetter: true };
+          })()}
+          tone={errorRate == null ? "neutral" : errorRate > 2 ? "poor" : errorRate > 1 ? "warn" : "good"}
+          hint={errorRate == null ? "aucune page vue sur la période" : undefined}
         />
         <HeroReading>
-          Courbe = LCP p75 dans le temps face aux seuils 2026 (bande verte «&nbsp;bon&nbsp;» sous 2,0&nbsp;s,
-          rouge «&nbsp;mauvais&nbsp;» au-delà). Les tuiles comparent le volume et la fiabilité à la période
+          Courbe = LCP p75 dans le temps ; pointillé vert = borne «&nbsp;Bon&nbsp;» ({fmtBorne("LCP", THRESHOLDS.LCP[0])}),
+          pointillé rouge = borne «&nbsp;Mauvais&nbsp;» ({fmtBorne("LCP", THRESHOLDS.LCP[1])}), seuils web.dev au
+          75ᵉ&nbsp;centile. Les tuiles comparent le volume et la fiabilité à la période
           précédente. Détail vital par vital ci-dessous, historique 14&nbsp;jours plus bas.
         </HeroReading>
       </SupervisionHero>

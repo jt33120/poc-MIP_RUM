@@ -77,7 +77,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
             />
             <HeroReading>
               Chaque point = un élément interactif : X = nombre d&apos;interactions, Y = INP p75, taille = pire
-              cas, couleur = état 2026. Ceux en haut à droite sont à la fois fréquents et lents — à corriger en
+              cas, couleur = verdict web.dev de l&apos;INP. Ceux en haut à droite sont à la fois fréquents et lents — à corriger en
               priorité. Signaux rage/dead et détail par élément ci-dessous.
             </HeroReading>
           </SupervisionHero>

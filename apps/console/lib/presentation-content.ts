@@ -97,7 +97,7 @@ export const STATS: { id: GlossaryId; href: string; icon: IconName; label: strin
     href: "/experience",
     icon: "users",
     label: "Expérience utilisateur",
-    desc: "Le ressenti (feedbacks + CSAT) marié à la perf mesurée : un score d'expérience, le pont chiffres ↔ satisfaction.",
+    desc: "Le ressenti (feedbacks + CSAT) à côté de la perf mesurée et de la frustration, chacun avec sa source : le pont chiffres ↔ satisfaction, sans note composite.",
   },
   {
     id: "experienceMap",

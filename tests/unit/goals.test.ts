@@ -14,9 +14,12 @@ describe("goalMatches", () => {
 });
 
 describe("conversionRate", () => {
-  it("ratio borné, 0 si aucune session", () => {
+  it("ratio des sessions converties", () => {
     expect(conversionRate(3, 12)).toBeCloseTo(0.25);
-    expect(conversionRate(0, 0)).toBe(0);
-    expect(conversionRate(5, 0)).toBe(0);
+    expect(conversionRate(0, 12)).toBe(0); // vide réel : des sessions, aucune conversion
+  });
+  it("sans session, pas de taux : null, jamais « 0 % »", () => {
+    expect(conversionRate(0, 0)).toBeNull();
+    expect(conversionRate(5, 0)).toBeNull();
   });
 });

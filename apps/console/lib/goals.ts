@@ -21,12 +21,15 @@ export function goalMatches(matchType: MatchType, pattern: string, value: string
   return matchType === "exact" ? value === pattern : value.includes(pattern);
 }
 
-/** Taux de conversion (0..1), sûr si dénominateur nul. */
-export function conversionRate(conversions: number, sessions: number): number {
-  return sessions > 0 ? conversions / sessions : 0;
+/**
+ * Taux de conversion (0..1). `null` sans session : sans dénominateur il n'y a pas
+ * de taux, et « 0 % » se lirait « personne n'a converti » sur une fenêtre vide.
+ */
+export function conversionRate(conversions: number, sessions: number): number | null {
+  return sessions > 0 ? conversions / sessions : null;
 }
 
 export interface GoalConversion extends GoalDef {
   conversions: number; // sessions ayant satisfait l'objectif
-  rate: number; // conversions / sessions de la fenêtre
+  rate: number | null; // conversions / sessions de la fenêtre ; null sans session
 }

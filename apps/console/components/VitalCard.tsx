@@ -23,7 +23,7 @@ function Trend({ p75, prev }: { p75: number; prev: number | null }) {
 }
 
 /**
- * Jauge de seuils 2026 : zones good/à améliorer/poor en filigrane, curseur
+ * Jauge des seuils web.dev : zones good/à améliorer/poor en filigrane, curseur
  * positionné au p75 — lecture de l'état en un coup d'œil (dashboard dense).
  */
 function ThresholdMeter({ name, p75 }: { name: string; p75: number }) {

@@ -1,5 +1,10 @@
 // Seuils Core Web Vitals alignés sur la référence web.dev (E0) — miroir de
 // apps/ingest/.../_shared/otlp.mjs, utilisé pour noter les agrégats p75 au rendu.
+// Relus le 22/09/2026 sur web.dev/articles/{lcp,inp,cls,fcp,ttfb} : « bon » est
+// inclusif (« 2.5 seconds or less »), « mauvais » strict (« greater than 4.0
+// seconds »), les deux lus au 75ᵉ centile — c'est exactement `rating2026`.
+import { fmtBorne } from "./format";
+
 export type Rating = "good" | "needs-improvement" | "poor";
 
 export const THRESHOLDS: Record<string, [number, number]> = {
@@ -37,6 +42,16 @@ export function rating2026(name: string, value: number): Rating | null {
   const t = THRESHOLDS[name];
   if (!t) return null;
   return value <= t[0] ? "good" : value <= t[1] ? "needs-improvement" : "poor";
+}
+
+/**
+ * « bon ≤ 2,5 s, mauvais au-delà de 4,0 s » : la phrase des seuils d'un vital,
+ * lue dans `THRESHOLDS`. Aucun texte d'écran ne recopie une borne.
+ */
+export function texteSeuils(name: string): string {
+  const t = THRESHOLDS[name];
+  if (!t) return "";
+  return `bon ≤ ${fmtBorne(name, t[0])}, mauvais au-delà de ${fmtBorne(name, t[1])}`;
 }
 
 export const RATING_LABEL: Record<Rating, string> = {
