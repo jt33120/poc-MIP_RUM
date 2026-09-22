@@ -287,7 +287,9 @@ test("trace et session étrangères : invisibles depuis l'app A", async ({ page 
 
   await page.goto(`${CONSOLE}/tracing/${T1}?app=${A}&span=bbbbbbbbbbbbbbb1`);
   await expect(page.getByTestId("trace-span-state")).toHaveAttribute("data-span-state", "missing");
-  await expect(page.getByText("Span parent introuvable dans cette trace")).toBeVisible();
+  // F61 : le bandeau ne présume plus d'où vient la demande (span parent d'une erreur
+  // OU segment cliqué dans la cascade) et nomme l'autre cause possible : le périmètre.
+  await expect(page.getByText("Segment introuvable dans cette trace")).toBeVisible();
 
   await page.goto(`${CONSOLE}/sessions/p51-b-desktop?app=${A}`);
   await introuvable(page);

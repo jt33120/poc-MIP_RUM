@@ -358,7 +358,11 @@ export default async function TraceDetail({
       {/* TD5 — table des segments : les lignes de la cascade, avec statut et app. */}
       <section className="card mt-6 min-w-0 p-4 sm:p-5" data-testid="table-segments">
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Segments</h2>
-        <div className="overflow-x-auto">
+        {/* `relative` : la légende est `sr-only`, donc en position ABSOLUE ; sans
+            ancêtre positionné, elle se placerait par rapport à la page et la
+            pousserait quand la table est plus large que l'écran (piège constaté
+            sur la table des appels de /tracing). */}
+        <div className="relative overflow-x-auto">
           <table className="w-full text-sm">
             <caption className="sr-only">Segments de la trace, dans l&apos;ordre de leur début</caption>
             <thead className="bg-panel2">
