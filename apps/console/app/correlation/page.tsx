@@ -135,7 +135,7 @@ export default async function Correlation({
             {!spots.length && (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-ink-faint">
-                  Aucun angle mort détecté sur la période 👍
+                  Aucun angle mort détecté sur la période
                 </td>
               </tr>
             )}

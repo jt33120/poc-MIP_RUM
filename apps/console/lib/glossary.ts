@@ -213,7 +213,7 @@ export const GLOSSARY = {
   },
   forecast: {
     label: "Prévisions (AIOps)",
-    term: `Projection linéaire (moindres carrés) des indicateurs sur 14 jours ; ETA au franchissement de seuil (LCP ${fmtBorne("LCP", THRESHOLDS.LCP[0])}, taux d'erreur 2 %).`,
+    term: `Projection linéaire (moindres carrés) des indicateurs sur 14 jours ; échéance de franchissement de la borne « Bon » du LCP (${fmtBorne("LCP", THRESHOLDS.LCP[0])}). Les erreurs sont suivies en tendance, sans seuil : aucun n'est publié pour ce ratio.`,
     stack:
       "lib/forecast (pur) sur les séries journalières (rum_metric/rum_pageview/rum_error). Régression transparente — aucune boîte noire ; complète les anomalies z-score (réactives) par de l'anticipation.",
     business:

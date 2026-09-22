@@ -35,6 +35,15 @@ export function sloView(attainment: number, objective: number): SloView {
 }
 
 /** Libellé court d'une règle selon son mode (pour l'UI). */
+/**
+ * État affichable d'un SLO. `non_mesurable` quand sa fenêtre ne porte aucune
+ * mesure : le SQL rend alors `attainment = null`, que `sloView` lisait comme
+ * 0 % — « objectif manqué » — alors que rien n'a été mesuré.
+ */
+export function etatSlo(attainment: number | null, objective: number): SloView | { status: "non_mesurable" } {
+  return attainment == null ? { status: "non_mesurable" } : sloView(attainment, objective);
+}
+
 export function ruleModeLabel(mode: string): string {
   return mode === "baseline" ? "anomalie (baseline)" : "seuil";
 }

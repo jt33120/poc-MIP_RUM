@@ -2,6 +2,7 @@
 // Graphe de prévision (recharts) — points réels (ligne pleine) prolongés par la
 // projection (ligne pointillée) et une ligne de seuil horizontale. Promeut les
 // sparklines de la page Prévisions en graphe lisible avec axes.
+import { fmtLatency } from "@/lib/format";
 import {
   CartesianGrid,
   Line,
@@ -12,6 +13,20 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+
+/**
+ * Format des valeurs, par NOM : un composant serveur ne peut pas passer une
+ * fonction à ce composant client — Next.js refuse de la sérialiser, et c'est ce
+ * qui faisait planter /forecast au rendu. Les noms suivent le `FormatId` du plan
+ * (lib/fmt-ids.ts, F03), qui remplacera ce type.
+ */
+export type FormatSerie = "ms" | "count" | "pour100";
+
+const FORMATS: Record<FormatSerie, (v: number) => string> = {
+  ms: (v) => fmtLatency(v),
+  count: (v) => Math.round(v).toLocaleString("fr-FR"),
+  pour100: (v) => `${v.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} pour 100`,
+};
 
 export interface ForecastPoint {
   label: string;
@@ -36,9 +51,9 @@ export function ForecastChart({
   thresholdLabel?: string;
   unit?: string;
   height?: number;
-  format?: (v: number) => string;
+  format?: FormatSerie;
 }) {
-  const fmt = format ?? ((v: number) => v.toLocaleString("fr-FR"));
+  const fmt = format ? FORMATS[format] : (v: number) => v.toLocaleString("fr-FR");
   return (
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
@@ -57,7 +72,8 @@ export function ForecastChart({
             label={{ value: `seuil ${thresholdLabel ?? ""}`.trim(), position: "insideTopRight", fontSize: 10, fill: THRESH }}
           />
         )}
-        <Line type="monotone" dataKey="real" name="réel" stroke={REAL} strokeWidth={2.5} dot={{ r: 2 }} connectNulls />
+        {/* Pas de connectNulls : un jour sans mesure reste un trou, pas un segment inventé. */}
+        <Line type="monotone" dataKey="real" name="réel" stroke={REAL} strokeWidth={2.5} dot={{ r: 2 }} />
         <Line
           type="monotone"
           dataKey="proj"
