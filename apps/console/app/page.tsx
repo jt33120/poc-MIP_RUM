@@ -928,7 +928,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                       aria-current={v === vitalClasse ? "true" : undefined}
                       data-testid={`impact-vital-${v}`}
                       className={`rounded-md border px-2 py-0.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
-                        v === vitalClasse ? "border-perf/50 bg-perf/10 text-perf" : "border-line text-ink-soft hover:text-ink"
+                        // TEXTE en `perf-ink` sur la teinte `bg-perf/10` (4,5:1 en clair, F01).
+                        v === vitalClasse
+                          ? "border-perf/50 bg-perf/10 text-perf-ink dark:text-perf"
+                          : "border-line text-ink-soft hover:text-ink"
                       }`}
                     >
                       {v} p75

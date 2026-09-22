@@ -46,7 +46,10 @@ export function VersionsTable({
   const ref = versionReference(rows)!;
 
   return (
-    <section className="mb-8">
+    // `versions-table` : depuis F13, cette table vit DANS « Toutes les versions » de
+    // `ReleaseCompare`, à côté d'une comparaison qui nomme les mêmes releases. Un test
+    // qui cherche « la ligne 1.4.2 » doit pouvoir viser cette table-là, sans ambiguïté.
+    <section className="mb-8" data-testid="versions-table">
       <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink">
         Comparaison par version
         <GlossaryTip id="rum" />
