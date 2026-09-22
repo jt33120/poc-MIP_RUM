@@ -1,4 +1,5 @@
 // Requêtes SQL v0.3 (chantier A4) : triage des erreurs, alerting, corrélation v2.
+import { ALERT_SEVERITIES } from "./alerting";
 import { q } from "./db";
 import { periodOf, queryOf, type FiltersLike } from "./filters";
 import { isValidEventName } from "./queries-events";
@@ -183,6 +184,8 @@ export async function alertRules(f: FiltersLike): Promise<AlertRuleRow[]> {
 export interface AlertEventRow {
   id: number;
   rule_id: number | null;
+  /** SLO dont le burn rapide a déclenché l'événement (`check_slo_burn`) ; null sinon. */
+  slo_id: number | null;
   fired_at: Date;
   value: number | null;
   message: string | null;
@@ -206,7 +209,7 @@ export interface AlertEventRow {
  * Sans cette dernière, un événement d'issue n'aurait pas d'app et disparaîtrait
  * de la page dès qu'une app est choisie.
  */
-async function sourcesEvenement(): Promise<{ jointures: string; app: string }> {
+async function sourcesEvenement(): Promise<{ jointures: string; app: string; issue: string }> {
   const [schema] = await q<{ v73: boolean }>(
     "select to_regclass('public.error_issue_notification') is not null as v73",
   );
@@ -216,11 +219,13 @@ async function sourcesEvenement(): Promise<{ jointures: string; app: string }> {
      left join slo s on s.id = ae.slo_id
      left join error_issue_notification n on n.alert_event_id = ae.id`,
         app: "coalesce(r.app_id, s.app_id, n.app_id)",
+        issue: "n.issue_id::text",
       }
     : {
         jointures: `left join alert_rule r on r.id = ae.rule_id
      left join slo s on s.id = ae.slo_id`,
         app: "coalesce(r.app_id, s.app_id)",
+        issue: "null::text",
       };
 }
 
@@ -234,7 +239,7 @@ export async function alertEvents(f: FiltersLike): Promise<AlertEventRow[]> {
   const { params, bind } = binder();
   return q<AlertEventRow>(
     `select ev.* from (
-       select ae.id::int as id, ae.rule_id::int as rule_id, ae.fired_at, ae.value,
+       select ae.id::int as id, ae.rule_id::int as rule_id, ae.slo_id::int as slo_id, ae.fired_at, ae.value,
               ae.message, ae.acknowledged, ae.severity,
               (select count(*) from alert_delivery d
                 where d.alert_event_id = ae.id and d.status = 'delivered')::int as delivered,
@@ -268,6 +273,181 @@ export async function unackedAlertCount(f: FiltersLike): Promise<number> {
     params,
   );
   return r?.n ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Déclenchements sur une fenêtre FIXE de jours (F62) : l'histogramme par jour et
+// la frise par source ne lisent plus les 100 derniers événements en mémoire, mais
+// tous ceux de la fenêtre, en SQL. La plage de l'écran ne s'y applique pas : une
+// alerte a été évaluée sur la fenêtre de sa règle, pas sur celle de l'écran.
+// ---------------------------------------------------------------------------
+
+/**
+ * Premier jour (minuit UTC, `timestamp` sans fuseau) d'une fenêtre de `jours` jours
+ * calendaires UTC qui finit aujourd'hui, jour en cours compris. Calculé en temps
+ * UTC « nu » : ajouter un jour à un `timestamptz` se fait dans le fuseau de la
+ * session, et une journée de changement d'heure y durerait 23 ou 25 h.
+ */
+function premierJourUtc(jours: string): string {
+  return `(date_trunc('day', now() at time zone 'utc') - make_interval(days => ${jours}::int - 1))`;
+}
+
+function joursValides(jours: number): number {
+  if (!Number.isSafeInteger(jours) || jours < 1 || jours > 366) throw new Error(`fenêtre de jours invalide : ${jours}`);
+  return jours;
+}
+
+export interface AlertDayRow {
+  /** Jour UTC, `AAAA-MM-JJ` (texte : un `date` arriverait en Date à minuit LOCAL). */
+  jour: string;
+  severity: string;
+  /** Déclenchements du jour et de cette sévérité ; 0 pour un jour sans événement. */
+  n: number;
+  /** Dont sans livraison réussie NI en attente : personne n'a été averti. */
+  non_livres: number;
+}
+
+/**
+ * Déclenchements par jour UTC × sévérité sur `jours` jours fixes (A5, § 5.19) :
+ * compte exact en SQL, jours vides à 0 (`generate_series`), chaque sévérité connue
+ * (`ALERT_SEVERITIES`) présente chaque jour. Mêmes sources d'événement et même
+ * périmètre que `alertEvents` ; même définition de la livraison (v49) : un
+ * événement dont une livraison est « sent » (en attente) n'est PAS non livré.
+ */
+export async function alertEventsByDay(f: FiltersLike, jours = 30): Promise<AlertDayRow[]> {
+  const sources = await sourcesEvenement();
+  const sql = await sqlContext(f);
+  const n = sql.bind(joursValides(jours));
+  const severites = sql.bind([...ALERT_SEVERITIES]);
+  const perimetre = compileScope(sql.query, "ev.app_id", sql.bind);
+  return q<AlertDayRow>(
+    `with bornes as (select ${premierJourUtc(n)} as jour0),
+     ev as (
+       select ev.* from (
+         select ${sources.app} as app_id, ae.fired_at, ae.severity,
+                exists (select 1 from alert_delivery d
+                         where d.alert_event_id = ae.id and d.status in ('delivered', 'sent')) as averti
+           from alert_event ae
+           ${sources.jointures}
+          where ae.fired_at >= (select jour0 at time zone 'utc' from bornes)
+       ) ev
+       where true${perimetre}
+     ),
+     jours as (
+       select generate_series(b.jour0, b.jour0 + make_interval(days => ${n}::int - 1), interval '1 day') as jour
+         from bornes b
+     ),
+     severites as (
+       select unnest(${severites}::text[]) as severity
+       union
+       select distinct severity from ev
+     )
+     select to_char(j.jour, 'YYYY-MM-DD') as jour, s.severity,
+            count(ev.fired_at)::int as n,
+            (count(ev.fired_at) filter (where not ev.averti))::int as non_livres
+       from jours j
+      cross join severites s
+       left join ev on ev.severity = s.severity
+                   and ev.fired_at >= j.jour at time zone 'utc'
+                   and ev.fired_at < (j.jour + interval '1 day') at time zone 'utc'
+      group by j.jour, s.severity
+      order by j.jour, s.severity`,
+    sql.params,
+  );
+}
+
+/** Déclenchements sans livraison réussie ni en attente sur la fenêtre (A2) : somme exacte. */
+export function totalNonLivres(parJour: readonly Pick<AlertDayRow, "non_livres">[]): number {
+  return parJour.reduce((total, j) => total + j.non_livres, 0);
+}
+
+/**
+ * Source d'un déclenchement, dans cet ordre : sa règle (y compris une règle
+ * `issue:<uuid>`), son SLO, la notification d'issue qui l'a produit (v73). Reste
+ * `nouvelle_erreur` : l'alerte « nouvelle erreur » de `check_new_errors`, sans
+ * règle, sans SLO ni issue — elle existe en base, elle a sa piste.
+ */
+export type SourceDeclenchement = "regle" | "slo" | "issue" | "nouvelle_erreur";
+
+export interface AlertFiringRow {
+  source: SourceDeclenchement;
+  /** Identifiant de la règle, du SLO ou de l'issue ; « nouvelles-erreurs » pour la piste sans source. */
+  source_id: string;
+  libelle: string;
+  fired_at: Date;
+  severity: string;
+  delivered: number;
+  pending: number;
+  acknowledged: boolean;
+  event_id: number;
+}
+
+/**
+ * Déclenchements des `jours` jours fixes, par source (A5, frise) : les plus récents
+ * d'abord, `plafond` au plus ; `tronque` dit qu'il y en avait davantage. Mêmes
+ * sources, périmètre et livraisons que `alertEvents`.
+ */
+export async function alertFirings(
+  f: FiltersLike,
+  jours = 30,
+  plafond = 2000,
+): Promise<{ lignes: AlertFiringRow[]; tronque: boolean }> {
+  if (!Number.isSafeInteger(plafond) || plafond < 1) throw new Error(`plafond invalide : ${plafond}`);
+  const sources = await sourcesEvenement();
+  const sql = await sqlContext(f);
+  const n = sql.bind(joursValides(jours));
+  const perimetre = compileScope(sql.query, "ev.app_id", sql.bind);
+  const limite = sql.bind(plafond + 1);
+  const rows = await q<{
+    event_id: number;
+    fired_at: Date;
+    severity: string;
+    acknowledged: boolean;
+    rule_id: string | null;
+    slo_id: string | null;
+    issue_id: string | null;
+    rule_metric: string | null;
+    rule_route: string | null;
+    slo_name: string | null;
+    delivered: number;
+    pending: number;
+  }>(
+    `select ev.* from (
+       select ae.id::int as event_id, ae.fired_at, ae.severity, ae.acknowledged,
+              ae.rule_id::text as rule_id, ae.slo_id::text as slo_id, ${sources.issue} as issue_id,
+              r.metric as rule_metric, r.route as rule_route, s.name as slo_name,
+              (select count(*) from alert_delivery d
+                where d.alert_event_id = ae.id and d.status = 'delivered')::int as delivered,
+              (select count(*) from alert_delivery d
+                where d.alert_event_id = ae.id and d.status = 'sent')::int as pending,
+              ${sources.app} as app_id
+         from alert_event ae
+         ${sources.jointures}
+        where ae.fired_at >= ${premierJourUtc(n)} at time zone 'utc'
+     ) ev
+     where true${perimetre}
+     order by ev.fired_at desc, ev.event_id desc
+     limit ${limite}`,
+    sql.params,
+  );
+  const lignes = rows.slice(0, plafond).map((r): AlertFiringRow => {
+    const commun = {
+      fired_at: r.fired_at,
+      severity: r.severity,
+      delivered: r.delivered,
+      pending: r.pending,
+      acknowledged: r.acknowledged,
+      event_id: r.event_id,
+    };
+    if (r.rule_id !== null) {
+      const libelle = `${metricLabel(r.rule_metric ?? "")}${r.rule_route ? ` · ${r.rule_route}` : ""}`;
+      return { source: "regle", source_id: r.rule_id, libelle, ...commun };
+    }
+    if (r.slo_id !== null) return { source: "slo", source_id: r.slo_id, libelle: r.slo_name ?? `SLO ${r.slo_id}`, ...commun };
+    if (r.issue_id !== null) return { source: "issue", source_id: r.issue_id, libelle: `Issue ${r.issue_id.slice(0, 8)}`, ...commun };
+    return { source: "nouvelle_erreur", source_id: "nouvelles-erreurs", libelle: "Nouvelles erreurs (sans issue)", ...commun };
+  });
+  return { lignes, tronque: rows.length > plafond };
 }
 
 
