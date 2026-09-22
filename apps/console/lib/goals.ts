@@ -70,6 +70,26 @@ export function classerObjectifs<T extends { rate: number | null; conversions: n
   );
 }
 
+/** Le meilleur taux (tuile) : le premier taux CONNU dans l'ordre du classement du hero. */
+export function meilleurObjectif<T extends { rate: number | null; conversions: number; sessions: number; name: string }>(
+  rows: readonly T[],
+): T | null {
+  return classerObjectifs(rows).find((g) => g.rate != null) ?? null;
+}
+
+/**
+ * L'effectif d'un taux tel que `KpiTile.couverture` le reçoit. La tuile marque
+ * « échantillon faible » quand `n < faibleSous`, un seuil sur les SESSIONS ; pour
+ * une proportion, la règle porte sur les deux côtés (`echantillonFaibleObjectif` :
+ * moins de 30 conversions OU moins de 30 non-conversions). Le seuil passé rend
+ * donc exactement la décision de cette fonction — la même que le hero et la
+ * table —, jamais un « moins de 30 sessions » qui laisserait passer 5 conversions
+ * sur 400 sessions.
+ */
+export function couvertureTaux(conversions: number, sessions: number): { n: number; unite: string; faibleSous: number } {
+  return { n: sessions, unite: "sessions", faibleSous: echantillonFaibleObjectif(conversions, sessions) ? sessions + 1 : 0 };
+}
+
 /** Demi-largeur d'un intervalle de proportion, en points de pourcentage (« ± 1,8 pt »). */
 export function demiLargeurPoints(i: { bas: number; haut: number }): number {
   return ((i.haut - i.bas) / 2) * 100;

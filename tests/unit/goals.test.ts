@@ -3,12 +3,14 @@ import { describe, expect, it } from "vitest";
 import { conversionRate, goalMatches } from "../../apps/console/lib/goals";
 import {
   classerObjectifs,
+  couvertureTaux,
   demiLargeurPoints,
   ecartPoints,
   echantillonFaibleObjectif,
   formaterPoints,
   libelleCondition,
   lignesAppareils,
+  meilleurObjectif,
 } from "../../apps/console/lib/goals";
 import { intervalleWilson } from "../../apps/console/lib/stats/incertitude";
 
@@ -113,5 +115,45 @@ describe("lignesAppareils (G4)", () => {
   });
   it("ne mélange jamais deux objectifs", () => {
     expect(lignesAppareils(2, lignes).find((l) => l.device === "mobile")?.sessions).toBe(0);
+  });
+});
+
+// Revue F66 : la tuile « Meilleur taux » marquait « échantillon faible » sous 30
+// SESSIONS, le hero et la table sous 30 conversions OU 30 non-conversions. Une
+// seule règle, `echantillonFaibleObjectif`, décide pour les trois.
+describe("tuile « Meilleur taux » : même règle que le hero et la table", () => {
+  // La décision de `KpiTile` : « échantillon faible » si et seulement si n < faibleSous.
+  const tuileFaible = (conversions: number, sessions: number) => {
+    const c = couvertureTaux(conversions, sessions);
+    return c.n < c.faibleSous;
+  };
+
+  it.each([
+    [5, 400], // ≥ 30 sessions mais 5 conversions : faible (l'ancienne règle le laissait passer)
+    [395, 400], // 5 non-conversions : faible
+    [10, 25], // sous 30 sessions
+    [200, 400],
+    [30, 60],
+    [0, 0], // pas de taux : rien à qualifier
+  ])("%i conversions sur %i sessions : décision identique à echantillonFaibleObjectif", (conversions, sessions) => {
+    expect(tuileFaible(conversions, sessions)).toBe(echantillonFaibleObjectif(conversions, sessions));
+  });
+
+  it("l'effectif affiché reste les sessions de l'objectif", () => {
+    expect(couvertureTaux(5, 400)).toMatchObject({ n: 400, unite: "sessions" });
+  });
+
+  it("meilleur objectif : le premier taux connu dans l'ordre du hero", () => {
+    const g = (name: string, conversions: number, sessions: number) => ({
+      name,
+      conversions,
+      sessions,
+      rate: conversionRate(conversions, sessions),
+    });
+    // « Rare » a le taux le plus haut mais 9 conversions : le hero le range en fin.
+    expect(meilleurObjectif([g("Rare", 9, 30), g("Solide", 100, 400)])?.name).toBe("Solide");
+    // Tous faibles : le premier taux connu, qui portera « échantillon faible ».
+    expect(meilleurObjectif([g("Inconnu", 0, 0), g("Rare", 9, 30)])?.name).toBe("Rare");
+    expect(meilleurObjectif([g("Inconnu", 0, 0)])).toBeNull();
   });
 });

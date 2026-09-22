@@ -172,6 +172,24 @@ describe("/goals — par appareil (G4)", () => {
   });
 });
 
+describe("/goals — tuile « Meilleur taux » (revue F66)", () => {
+  /** Le libellé complet que la tuile annonce (valeur, intervalle, effectif, échantillon faible). */
+  const tuile = (html: string) => html.match(/aria-label="(Meilleur taux[^"]*)"/)?.[1] ?? "";
+
+  it("5 conversions sur 400 sessions : « échantillon faible », comme dans le hero et la table", async () => {
+    goalConversions.mockResolvedValue({ total: 400, rows: [objectif(1, "Rare", 5, 400)] });
+    const html = await rendre();
+    expect(tuile(html)).toContain("400 sessions");
+    expect(tuile(html)).toContain("échantillon faible");
+    expect(texte(html)).toMatch(/Rare page vue = \/rare · échantillon faible/);
+  });
+
+  it("200 conversions sur 400 sessions : pas d'« échantillon faible »", async () => {
+    goalConversions.mockResolvedValue({ total: 400, rows: [objectif(1, "Solide", 200, 400)] });
+    expect(tuile(await rendre())).not.toContain("échantillon faible");
+  });
+});
+
 describe("/goals — lectures", () => {
   it("cmp=prev : le dénominateur se compare à la période précédente nommée", async () => {
     goalConversions.mockImplementation(async (_f: unknown, shift?: boolean) => ({ total: shift ? 100 : 150, rows: [] }));

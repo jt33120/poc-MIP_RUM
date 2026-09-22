@@ -31,12 +31,14 @@ import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import {
   classerObjectifs,
+  couvertureTaux,
   demiLargeurPoints,
   ecartPoints,
   echantillonFaibleObjectif,
   formaterPoints,
   libelleCondition,
   lignesAppareils,
+  meilleurObjectif,
 } from "@/lib/goals";
 import { lire, type Lecture } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
@@ -278,9 +280,10 @@ function RangeeKpi({
   couverture: CouverturePrecedente | undefined;
   hrefSessions: string;
 }) {
-  // Le meilleur taux se lit parmi les objectifs que l'échantillon départage ; à
-  // défaut, le premier taux connu, qui porte alors « échantillon faible ».
-  const best = rows.find((g) => g.rate != null);
+  // Le meilleur taux se lit dans l'ordre du hero (objectifs que l'échantillon
+  // départage d'abord) ; à défaut, le premier taux connu, qui porte alors
+  // « échantillon faible » selon la MÊME règle que le hero et la table.
+  const best = meilleurObjectif(rows);
   return (
     <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3">
       <KpiTile
@@ -306,7 +309,7 @@ function RangeeKpi({
         format="pct"
         raisonNull={rows.length === 0 ? "aucun objectif actif" : "aucune session sur la fenêtre : taux non calculables"}
         intervalle={best ? (intervalleWilson(best.conversions, best.sessions) ?? undefined) : undefined}
-        couverture={best ? { n: best.sessions, unite: "sessions", faibleSous: 30 } : undefined}
+        couverture={best ? couvertureTaux(best.conversions, best.sessions) : undefined}
         lecture={best?.name}
       />
     </div>
