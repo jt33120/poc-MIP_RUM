@@ -108,7 +108,7 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
     // Un collecteur tiers reçoit donc un arbre juste et une chronologie vide :
     // il dessine un waterfall PLAT. Vérifier la forme d'un span ne dit rien de
     // ce qu'il mesure.
-    reel: "OTLP JSON complet dans sa structure — parentSpanId, kind, status, trace enracinée sur la page vue. Mais les spans partent avec une durée nulle : un collecteur tiers dessine un waterfall plat. Vocabulaire encore partiellement propriétaire.",
+    reel: "OTLP JSON dont la structure est vérifiée — parentSpanId, kind, status, trace enracinée sur la page vue. Mais les spans partent avec une durée nulle : un collecteur tiers dessine un waterfall plat. Vocabulaire encore partiellement propriétaire.",
     s: "partiel",
   },
   {

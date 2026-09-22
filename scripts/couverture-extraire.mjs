@@ -21,7 +21,7 @@
 // Usage :
 //   node scripts/couverture-extraire.mjs            écrit le JSON
 //   node scripts/couverture-extraire.mjs --verifier échoue si le JSON versionné diffère
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -100,9 +100,12 @@ export function extraireCouverture(texte) {
   if (!mois) throw erreur(3, `mois inconnu : « ${entete[2]} »`);
   const releve = `${entete[1].padStart(2, "0")}/${String(mois).padStart(2, "0")}/${entete[3]}`;
 
-  const unitaires = /\*\*(\d+) fichiers, ([\d\s  ]+) tests verts/.exec(texte);
-  if (!unitaires) throw erreur(0, "décompte des tests unitaires introuvable (« **N fichiers, N tests verts »)");
-  const sql = /\*\*(\d+) fichiers\*\* et \*\*([\d\s  ]+) tests\*\* au total/.exec(texte);
+  // Ancré sur la ligne de la commande vitest du § 2 : le document CITE ailleurs
+  // d'anciens journaux au même format (« **22 fichiers, 314 tests verts »), qui
+  // deviendraient en silence les tests unitaires du relevé.
+  const unitaires = /^\| `pnpm [^`]*vitest run tests\/unit[^`]*` \| \*\*(\d+) fichiers, ([\d\s\u00a0\u202f]+) tests verts/m.exec(texte);
+  if (!unitaires) throw erreur(0, "décompte des tests unitaires introuvable (ligne « | `pnpm exec vitest run tests/unit…` | **N fichiers, N tests verts »)");
+  const sql = /\*\*(\d+) fichiers\*\* et \*\*([\d\s\u00a0\u202f]+) tests\*\* au total/.exec(texte);
   if (!sql) throw erreur(0, "décompte des tests SQL introuvable (« **N fichiers** et **N tests** au total »)");
 
   const debut = lignes.findIndex((l) => /^## 4\. /.test(l));
@@ -161,7 +164,15 @@ export function serialiser(couverture) {
   return `${JSON.stringify(couverture, null, 2)}\n`;
 }
 
-const estPrincipal = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+// Chemins RÉELS des deux côtés : lancé par un lien symbolique, le script ne doit
+// pas se croire importé et sortir en 0 sans rien vérifier.
+const estPrincipal = (() => {
+  try {
+    return Boolean(process.argv[1]) && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+  } catch {
+    return false;
+  }
+})();
 if (estPrincipal) {
   try {
     const attendu = serialiser(extraireCouverture(readFileSync(join(RACINE, DOCUMENT), "utf8")));

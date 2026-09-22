@@ -58,18 +58,26 @@ export const DEPLOYEES_INERTES: readonly string[] = ["D12", "D14"];
 
 const ID_CAPACITE = /^[A-Z]\d+$/;
 
-/** « chemin:12 » ou « chemin:12-18 » → chemin et dernière ligne citée. */
-export function lireFichierCite(cite: string): { chemin: string; derniere: number | null } {
+/**
+ * « chemin:12 » ou « chemin:12-18 » → chemin et lignes citées ; null si la
+ * citation ne porte pas de numéro de ligne, ou une plage vide ou inversée. Une
+ * source sans ligne ne désigne rien de relisible : elle est refusée.
+ */
+export function lireFichierCite(cite: string): { chemin: string; debut: number; fin: number } | null {
   const m = /^(.+?):(\d+)(?:-(\d+))?$/.exec(cite);
-  if (!m) return { chemin: cite, derniere: null };
-  return { chemin: m[1], derniere: Number(m[3] ?? m[2]) };
+  if (!m) return null;
+  const debut = Number(m[2]);
+  const fin = Number(m[3] ?? m[2]);
+  if (debut < 1 || fin < debut) return null;
+  return { chemin: m[1], debut, fin };
 }
 
 function verifierFichier(cite: string, ctx: ContexteControle): string | null {
-  const { chemin, derniere } = lireFichierCite(cite);
-  const n = ctx.lignesDe(chemin);
-  if (n == null) return `fichier introuvable : ${chemin}`;
-  if (derniere != null && derniere > n) return `${cite} : le fichier n'a que ${n} lignes`;
+  const lu = lireFichierCite(cite);
+  if (!lu) return `${cite} : une source fichier s'écrit « chemin:ligne » ou « chemin:début-fin »`;
+  const n = ctx.lignesDe(lu.chemin);
+  if (n == null) return `fichier introuvable : ${lu.chemin}`;
+  if (lu.fin > n) return `${cite} : le fichier n'a que ${n} lignes`;
   return null;
 }
 
@@ -88,6 +96,9 @@ export function verifierCartes(
   for (const carte of cartes) {
     for (const { id } of carte.limites) {
       const cap = parId.get(id);
+      if (DEPLOYEES_INERTES.includes(id)) {
+        erreurs.push(`${carte.id} : ${id} est déployée mais inerte — elle va en « Ce qui reste », pas dans une carte`);
+      }
       if (!cap) erreurs.push(`${carte.id} : ${id} n'est pas une ligne du document`);
       else if (cap.verdict !== VERDICT_MONTRABLE) {
         erreurs.push(`${carte.id} : ${id} est « ${cap.verdict} », pas « ${VERDICT_MONTRABLE} »`);
@@ -133,9 +144,20 @@ export function verifierCartes(
       }
     }
 
-    // 3c — une puce par identifiant
+    // 3c — une puce par identifiant. Un passage qui tombe sur une ligne de
+    // capacité compte comme cette ligne : il ne peut pas servir à citer une
+    // capacité sans lui donner sa puce.
     const puces = new Set(carte.limites.map((l) => l.id));
-    const cites = new Set(carte.sources.flatMap((s) => ("ligne" in s ? [s.ligne] : [])));
+    const cites = new Set(
+      carte.sources.flatMap((s) => {
+        if ("ligne" in s) return [s.ligne];
+        if ("passage" in s) {
+          const cap = parLigne.get(s.passage);
+          return cap ? [cap.id] : [];
+        }
+        return [];
+      }),
+    );
     const sansSource = [...puces].filter((id) => !cites.has(id));
     const sansPuce = [...cites].filter((id) => !puces.has(id));
     if (sansSource.length) erreurs.push(`${carte.id} : puce sans source { ligne } : ${sansSource.join(", ")}`);

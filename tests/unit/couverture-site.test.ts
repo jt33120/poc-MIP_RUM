@@ -66,6 +66,11 @@ describe("0 — l'extracteur découpe les cellules comme le document les écrit"
     expect(x.capacites[0]).toMatchObject({ famille: "Cellules piégées", verdict: "deploye_non_eprouve", ligne: numeroA1 });
   });
 
+  it("le décompte unitaire vient de la ligne de la commande vitest, pas d'un journal cité", () => {
+    // La fixture cite d'abord « **22 fichiers, 314 tests verts » : il ne doit pas être retenu.
+    expect(extraireCouverture(FIXTURE).testsUnitaires).toEqual({ fichiers: 12, tests: 1234 });
+  });
+
   it("une ligne à six cellules fait échouer l'extraction avec son numéro", () => {
     const lignes = FIXTURE.split("\n");
     const apres = lignes.findIndex((l) => l.startsWith("| A2 "));
@@ -209,6 +214,31 @@ describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le doc
     expect(erreurs).toContain("K1 : la puce A1 n'a pas de texte");
   });
 
+  it("3a — D12 et D14, déployées mais inertes, sont refusées dans une carte", () => {
+    const cartes = cartesFixture();
+    carte(cartes, "K11").limites.push({ id: "D12", texte: "tickets" });
+    carte(cartes, "K11").sources.push({ ligne: "D12" });
+    expect(verifierCartes(cartes, RESTE, CTX)).toContain(
+      "K11 : D12 est déployée mais inerte — elle va en « Ce qui reste », pas dans une carte",
+    );
+  });
+
+  it("3c — un passage qui tombe sur une ligne de capacité exige sa puce", () => {
+    const b2 = CAPACITES.find((c) => c.id === "B2")!;
+    const cartes = cartesFixture();
+    carte(cartes, "K8").sources.push({ passage: b2.ligne }); // B2 est dans K6, pas dans K8
+    expect(verifierCartes(cartes, RESTE, CTX)).toContain("K8 : source sans puce de limite : B2");
+  });
+
+  it("3b — une source fichier doit citer une ligne, dans une plage non vide", () => {
+    const cartes = cartesFixture();
+    carte(cartes, "K2").sources.push({ fichier: "README.md" }, { fichier: "README.md:0" }, { fichier: "README.md:9-3" });
+    const erreurs = verifierCartes(cartes, RESTE, CTX);
+    for (const cite of ["README.md", "README.md:0", "README.md:9-3"]) {
+      expect(erreurs).toContain(`K2 : ${cite} : une source fichier s'écrit « chemin:ligne » ou « chemin:début-fin »`);
+    }
+  });
+
   it.todo("3 — sur les vraies cartes de lib/presentation-sait-faire.ts (livrées par P**.4)");
 });
 
@@ -228,12 +258,18 @@ describe("4 — chaque point de « Ce qui reste » cite une source qui existe", 
       "R4 : Z9 n'est pas une ligne du document",
       "R4 : fichier introuvable : docs/absent.md",
     ]);
+    // Un chemin sans numéro de ligne ne désigne rien de relisible.
+    const sansLigne: PointReste[] = [{ id: "R5", titre: "t", manque: "m", debloque: "d", decide: "x", sources: ["docs/CONFORMITE.md"] }];
+    expect(verifierReste(sansLigne, CTX)).toEqual([
+      "R5 : docs/CONFORMITE.md : une source fichier s'écrit « chemin:ligne » ou « chemin:début-fin »",
+    ]);
   });
 
   it.todo("4 — sur les vrais points de lib/presentation-reste.ts (livrés par P**.5)");
 });
 
-// Fichiers dont le texte est la vitrine.
+// Fichiers dont le texte est la vitrine : ses composants, ses contenus, la page
+// elle-même et lib/specs.ts, qui fournit l'essentiel du texte public des Specs.
 function fichiersVitrine(): string[] {
   const presentation = readdirSync(join(CONSOLE, "components/presentation"))
     .filter((f) => f.endsWith(".tsx"))
@@ -241,36 +277,66 @@ function fichiersVitrine(): string[] {
   const libs = readdirSync(join(CONSOLE, "lib"))
     .filter((f) => /^presentation-.*\.ts$/.test(f))
     .map((f) => `apps/console/lib/${f}`);
-  return [...presentation, ...libs, "apps/console/components/AddClientCarousel.tsx"];
+  return [
+    ...presentation,
+    ...libs,
+    "apps/console/components/AddClientCarousel.tsx",
+    "apps/console/app/presentation/page.tsx",
+    "apps/console/lib/specs.ts",
+  ];
+}
+
+/**
+ * Le texte tel qu'un lecteur le lit : entités et apostrophes typographiques
+ * ramenées à leur caractère, espaces insécables à une espace. Sans cela,
+ * `chiffre d&apos;affaires`, `100&nbsp;%` ou `temps&nbsp;réel` passeraient.
+ */
+export function normaliser(texte: string): string {
+  return texte
+    .replace(/&apos;|&#39;|&rsquo;|&lsquo;|[\u2018\u2019]/g, "'")
+    .replace(/&nbsp;|&#160;|[\u00a0\u202f]/g, " ")
+    .replace(/\{" "\}/g, " ");
+}
+
+// « souveraine » n'est admis que dans la phrase exacte de PS4 (§ 8.2).
+const PHRASE_ADMISE = "Ce POC n'est pas une offre souveraine.";
+const INTERDITS: RegExp[] = [
+  /\brobuste/i,
+  /\bcompl[eè]t(e|s|es)?\b/i,
+  /100\s?%/,
+  /prêt pour la production/i,
+  /temps réel/i,
+  /\bcertifié/i,
+  /\bsouverain(e|s|es)?\b/i,
+  /\bconverti(t|r|ssent)?\b/i,
+  /\bconversion\b/i,
+  /chiffre d'affaires/i,
+];
+
+/**
+ * Les fautes d'un texte, lu À PLAT : une phrase coupée par un retour à la ligne
+ * (texte JSX indenté) se lit d'un seul tenant. Chaque faute porte le numéro de
+ * la ligne où elle commence.
+ */
+function fautes(nom: string, texte: string): string[] {
+  const debuts: number[] = [];
+  let plat = "";
+  for (const ligne of texte.split("\n")) {
+    debuts.push(plat.length);
+    plat += `${normaliser(ligne).trim()} `;
+  }
+  plat = plat.split(PHRASE_ADMISE).join(" ".repeat(PHRASE_ADMISE.length));
+  const ligneDe = (i: number) => debuts.filter((d) => d <= i).length;
+  const sortie: string[] = [];
+  for (const motif of INTERDITS) {
+    for (const m of plat.matchAll(new RegExp(motif.source, `${motif.flags}g`))) {
+      sortie.push(`${nom}:${ligneDe(m.index!)} ${motif} — ${plat.slice(Math.max(0, m.index! - 40), m.index! + 50).trim()}`);
+    }
+  }
+  return sortie;
 }
 
 describe("5 — le lexique de la vitrine", () => {
-  const INTERDITS: RegExp[] = [
-    /\brobuste/i,
-    /\bcomplète?s?\b/i,
-    /100\s?%/,
-    /prêt pour la production/i,
-    /temps réel/i,
-    /\bcertifié/i,
-    /\bsouverain\b/i,
-    /\bconverti(t|r|ssent)?\b/i,
-    /\bconversion\b/i,
-    /chiffre d'affaires/i,
-  ];
-  // « souveraine » n'est admis que dans la phrase exacte de PS4 (§ 8.2).
-  const PHRASE_ADMISE = "Ce POC n'est pas une offre souveraine.";
-
-  function fautes(nom: string, texte: string): string[] {
-    const sortie: string[] = [];
-    texte.split("\n").forEach((ligne, i) => {
-      const sansPhrase = ligne.split(PHRASE_ADMISE).join("");
-      for (const motif of [...INTERDITS, /\bsouveraine\b/i]) {
-        if (motif.test(sansPhrase)) sortie.push(`${nom}:${i + 1} ${motif} — ${ligne.trim().slice(0, 90)}`);
-      }
-    });
-    return sortie;
-  }
-
   it("aucun mot qui promet plus que le document", () => {
     const trouvees = fichiersVitrine().flatMap((f) => fautes(f, lire(f)));
     expect(trouvees).toEqual([]);
@@ -279,6 +345,23 @@ describe("5 — le lexique de la vitrine", () => {
   it("ni dans la bulle « RUM » du glossaire, tous champs compris", () => {
     const { term, stack, business } = GLOSSARY.rum;
     expect([...fautes("rum.term", term), ...fautes("rum.stack", stack), ...fautes("rum.business", business)]).toEqual([]);
+  });
+
+  it("ne se contourne ni par une entité, ni par un retour à la ligne, ni par un accord", () => {
+    const pieges = [
+      "Le chiffre d&apos;affaires suit.",
+      "Un chiffre d’affaires.",
+      "Couverture 100&nbsp;%.",
+      "En temps&nbsp;réel.",
+      "Une mesure en temps\n        réel.",
+      "Un relevé complet.",
+      "Des hébergeurs souverains.",
+    ];
+    for (const p of pieges) expect(fautes("piège", p).length, p).toBeGreaterThan(0);
+    // La phrase admise, écrite en JSX avec son entité, reste admise.
+    expect(fautes("PS4", "<p>Ce POC n&apos;est pas une offre souveraine.</p>")).toEqual([]);
+    // « souveraineté », « compléter » et « complètement » ne sont pas visés.
+    expect(fautes("ok", "Rien ne change à la souveraineté ; mentions à compléter ; complètement.")).toEqual([]);
   });
 });
 

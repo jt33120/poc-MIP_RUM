@@ -2,7 +2,13 @@
 
 Relevé le **3 mars 2026**, sur `master` à **`abc1234`** (fixture).
 
-Tests : **12 fichiers, 1 234 tests verts, 0 ignoré** ; **3 fichiers** et **45 tests** au total.
+Un ancien journal cité, au même format, ne doit pas être pris pour le relevé : « **22 fichiers, 314 tests verts ».
+
+| Commande | Résultat |
+|---|---|
+| `pnpm exec vitest run tests/unit` | **12 fichiers, 1 234 tests verts, 0 ignoré** |
+
+SQL : **3 fichiers** et **45 tests** au total.
 
 ## 4. Les capacités
 
