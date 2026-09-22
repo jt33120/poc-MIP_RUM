@@ -70,3 +70,26 @@ export const SEVERITE = {
   warning: { jeton: "warn", motif: "hachures", libelle: "avertissement" },
   info: { jeton: "ink-soft", motif: "points", libelle: "information" },
 } as const;
+
+/**
+ * Rôle d'une série dans une figure temporelle (F03 pour `LineTrend`, repris par
+ * `SerieDef` de `ThresholdSeries` en F04) : c'est le rôle qui choisit la couleur
+ * et le trait, jamais l'appelant — une référence est grise et pointillée partout.
+ */
+export type RoleSerie = "principale" | "reference" | "robot" | "categorie" | "projection";
+
+/** Couleur et trait d'une série selon son rôle (P15). */
+export function styleDeRole(role: RoleSerie, categorieIndex = 0): { couleur: string; pointille: boolean } {
+  switch (role) {
+    case "principale":
+      return { couleur: SERIE.principale, pointille: false };
+    case "reference":
+      return { couleur: SERIE.reference, pointille: true };
+    case "robot":
+      return { couleur: SERIE.robot, pointille: true };
+    case "projection":
+      return { couleur: SERIE.principale, pointille: true };
+    case "categorie":
+      return { couleur: categorie(categorieIndex), pointille: false };
+  }
+}

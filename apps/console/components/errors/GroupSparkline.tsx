@@ -4,9 +4,14 @@
 // Le libellé vient de l'appelant : la version précédente (components/features/
 // Sparkline) annonçait « sur 24 h » en dur, quelle que soit la période choisie —
 // un lecteur d'écran entendait une autre fenêtre que celle dessinée.
+//
+// REMPLACÉ par `components/charts/Sparkline` (F03, plan § 4.1) : les listes
+// d'erreurs y passent avec une échelle commune (`max`) dans leur propre lot (F19,
+// `IssueList` et `/errors`) ; ce fichier est supprimé quand plus rien ne l'importe.
 const WIDTH = 96;
 const HEIGHT = 24;
 
+/** @deprecated Employer `Sparkline` (components/charts/Sparkline.tsx), avec `max` pour une liste. */
 export function GroupSparkline({ values, label }: { values: number[]; label: string }) {
   const max = Math.max(...values, 1);
   const barW = WIDTH / Math.max(values.length, 1);
