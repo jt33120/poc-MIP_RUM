@@ -53,23 +53,27 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
       <FiltersNotAppliedNote note={ecran.notApplied} />
 
       {blocs.budget && statuses.length > 0 && (() => {
-        const sloTone = (b: number | null, fast: boolean): GaugeTone => {
+        const sloTone = (b: number | null, fast: boolean | null): GaugeTone => {
           if (fast || (b != null && b >= 100)) return "poor";
           if (b != null && b >= 75) return "warn";
           return "good";
         };
         const breached = statuses.filter((s) => s.burned_pct != null && s.burned_pct >= 100).length;
-        const fastBurn = statuses.filter((s) => s.fast_burn).length;
+        const fastBurn = statuses.filter((s) => s.fast_burn === true).length;
+        // Un SLO sans mesure n'a pas de budget consommé : une jauge à 0 % le
+        // dirait « intact ». Il est compté à part, pas dessiné.
+        const mesures = statuses.filter((s) => s.burned_pct != null);
+        const sansMesure = statuses.filter((s) => s.attainment == null).length;
         return (
           <SupervisionHero
             layout="wide"
             chartTitle="Budget d'erreur consommé — par SLO"
             chart={
               <div className="flex flex-wrap gap-x-6 gap-y-4">
-                {statuses.slice(0, 10).map((s) => (
+                {mesures.slice(0, 10).map((s) => (
                   <Gauge
                     key={s.slo_id}
-                    value={s.burned_pct ?? 0}
+                    value={s.burned_pct!}
                     tone={sloTone(s.burned_pct, s.fast_burn)}
                     label={s.name}
                     sub={`${s.metric} · ${s.window_days} j`}
@@ -95,6 +99,8 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
               Chaque jauge = la part du budget d&apos;erreur déjà dépensée sur la fenêtre du SLO (0 % = intact,
               100 % = objectif tenu tout juste, au-delà = dépassé). Rouge = à traiter. Le détail atteinte /
               burn-rate est dans le tableau ci-dessous.
+              {sansMesure > 0 &&
+                ` ${sansMesure} SLO sans aucune mesure sur sa fenêtre : ni tenu, ni manqué, et donc sans jauge.`}
             </HeroReading>
           </SupervisionHero>
         );

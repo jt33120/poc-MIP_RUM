@@ -45,7 +45,7 @@ describe("glossaire des Web Vitals", () => {
       const { GLOSSARY } = await import(GLOSSAIRE);
       expect(GLOSSARY.LCP.term).toContain("bon ≤ 3,0 s, mauvais au-delà de 5,0 s");
       expect(GLOSSARY.LCP.business).toContain("Au-delà de 3,0 s");
-      expect(GLOSSARY.forecast.term).toContain("LCP 3,0 s");
+      expect(GLOSSARY.forecast.term).toContain("borne « Bon » du LCP (3,0 s)");
     } finally {
       THRESHOLDS.LCP = avant;
     }

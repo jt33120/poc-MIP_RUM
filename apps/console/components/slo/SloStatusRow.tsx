@@ -1,7 +1,7 @@
 // Ligne de tableau d'un SLO : nom/app/route, métrique, objectif, fenêtre,
 // barre d'atteinte + badge de statut (ok/à risque/manqué) et actions
 // activer/désactiver/supprimer. Rendu 100 % serveur. Extrait de app/slo/page.tsx.
-import { sloView } from "@/lib/alerting";
+import { etatSlo } from "@/lib/alerting";
 import type { SloRaw, SloStatusRow as SloStatusData } from "@/lib/queries-alerting";
 import { deleteSloAction, toggleSloAction } from "@/app/alerts/actions";
 
@@ -22,6 +22,11 @@ export const STATUS_STYLE: Record<string, { bar: string; badge: string; label: s
     badge: "bg-red-100 text-red-800 dark:bg-red-400/10 dark:text-red-300",
     label: "objectif manqué",
   },
+  non_mesurable: {
+    bar: "bg-line",
+    badge: "bg-panel2 text-ink-faint",
+    label: "non mesurable",
+  },
 };
 
 /** Formate une fraction [0..1] en pourcentage localisé (fr-FR). */
@@ -29,9 +34,9 @@ export const pct = (v: number) => `${(v * 100).toLocaleString("fr-FR", { maximum
 
 /** Ligne de tableau d'un SLO avec son statut d'error-budget superposé (si actif). */
 export function SloRow({ raw, status }: { raw: SloRaw; status?: SloStatusData }) {
-  const view = status ? sloView(status.attainment, status.objective) : null;
+  const view = status ? etatSlo(status.attainment, status.objective) : null;
   const style = (view && STATUS_STYLE[view.status]) ?? STATUS_STYLE.ok;
-  const burned = status ? status.burned_pct ?? view?.burnedPct ?? null : null;
+  const burned = status ? status.burned_pct ?? (view && "burnedPct" in view ? view.burnedPct : null) : null;
 
   return (
     <tr data-testid={`slo-${raw.id}`} className={`border-t border-line/60 align-top ${raw.active ? "" : "opacity-60"}`}>
@@ -52,7 +57,11 @@ export function SloRow({ raw, status }: { raw: SloRaw; status?: SloStatusData })
       <td className="px-4 py-2 tabular-nums text-ink-soft">{pct(raw.objective)}</td>
       <td className="px-4 py-2 tabular-nums text-ink-soft">{raw.window_days} j</td>
       <td className="px-4 py-2">
-        {status ? (
+        {status && status.attainment == null ? (
+          <span className={`rounded px-2 py-0.5 text-xs font-medium ${style.badge}`} title="Aucune mesure sur la fenêtre du SLO : ni tenu, ni manqué">
+            {style.label}
+          </span>
+        ) : status && status.attainment != null ? (
           <div className="flex items-center gap-2">
             <div className="h-1.5 w-28 overflow-hidden rounded-full bg-line">
               <div className={`h-full ${style.bar}`} style={{ width: `${Math.min(100, status.attainment * 100)}%` }} />

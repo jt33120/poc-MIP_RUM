@@ -20,10 +20,12 @@ export interface SloStatusRow {
   route: string | null;
   objective: number; // 0..1
   window_days: number;
-  attainment: number; // 0..1
+  /** 0..1 ; null quand la fenêtre ne porte AUCUNE mesure : ni tenu, ni manqué. */
+  attainment: number | null;
   budget: number; // 1 - objective
-  burned_pct: number | null; // % du budget consommé (null si budget nul)
-  fast_burn: boolean;
+  burned_pct: number | null; // % du budget consommé (null si budget nul ou sans mesure)
+  /** null quand la dernière heure ne porte aucune mesure : on ne sait pas. */
+  fast_burn: boolean | null;
 }
 
 /** Statut + error-budget des SLO actifs du périmètre (une app nommée est passée à slo_status). */

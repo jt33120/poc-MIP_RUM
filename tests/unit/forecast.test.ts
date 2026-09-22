@@ -1,7 +1,9 @@
 // AIOps — prévision (régression linéaire). Logique pure.
 import { describe, expect, it } from "vitest";
 import {
+  HORIZON_JOURS,
   buildForecastNarrative,
+  cleJour,
   etaToThreshold,
   forecastNext,
   linfit,
@@ -63,7 +65,7 @@ describe("buildForecastNarrative", () => {
     expect(n.lines[0]).toContain("dépasse déjà");
   });
   it("watch si franchissement à venir sous 7 j", () => {
-    const n = buildForecastNarrative([{ label: "Taux d'erreur", thresholdLabel: "2 %", eta: 2.3 }]);
+    const n = buildForecastNarrative([{ label: "LCP p75", thresholdLabel: "2,5 s", eta: 2.3 }]);
     expect(n.status).toBe("watch");
     expect(n.lines[0]).toContain("J+3");
   });
@@ -71,5 +73,23 @@ describe("buildForecastNarrative", () => {
     const n = buildForecastNarrative([{ label: "LCP p75", thresholdLabel: "2,5 s", eta: null }]);
     expect(n.status).toBe("ok");
     expect(n.lines[0]).toContain("Aucun indicateur");
+  });
+  it("un seul horizon, 7 jours, partout : texte, fenêtre d'alerte et projection", () => {
+    // La narration disait « horizon de 3 jours » tout en signalant jusqu'à J+7.
+    expect(HORIZON_JOURS).toBe(7);
+    const ok = buildForecastNarrative([{ label: "LCP p75", thresholdLabel: "2,5 s", eta: null }]);
+    expect(ok.lines[0]).toContain("7 jours");
+    expect(ok.lines[0]).not.toContain("3 jours");
+    expect(buildForecastNarrative([{ label: "LCP p75", thresholdLabel: "2,5 s", eta: 6.5 }]).lines[0]).toContain("J+7");
+    expect(buildForecastNarrative([{ label: "LCP p75", thresholdLabel: "2,5 s", eta: 7.5 }]).status).toBe("ok");
+  });
+});
+
+describe("cleJour", () => {
+  it("lit un Date de node-postgres par ses composantes locales, pas par String()", () => {
+    // Un `date` PostgreSQL arrive en Date à minuit local.
+    expect(cleJour(new Date(2026, 8, 22))).toBe("2026-09-22");
+    expect(cleJour(new Date(2026, 0, 5))).toBe("2026-01-05");
+    expect(cleJour("2026-09-22T00:00:00.000Z")).toBe("2026-09-22");
   });
 });

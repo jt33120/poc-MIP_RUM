@@ -10,7 +10,9 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
 import {
+  HORIZON_JOURS as HORIZON,
   buildForecastNarrative,
+  cleJour,
   etaToThreshold,
   forecastNext,
   linfit,
@@ -22,7 +24,6 @@ import { THRESHOLDS } from "@/lib/rating";
 
 export const dynamic = "force-dynamic";
 
-const HORIZON = 3; // jours projetés
 const ARROW: Record<TrendDir, string> = { up: "▲", down: "▼", flat: "—" };
 // Borne « Bon » du LCP, lue dans lib/rating.ts : au-delà, le verdict passe à « À améliorer ».
 const LCP_BON = THRESHOLDS.LCP[0];
@@ -46,8 +47,8 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
   const [traffic, lcp] = await Promise.all([dailyTraffic(f), dailyLcpSeries(f)]);
 
   // Axe canonique : les 14 jours zéro-remplis du trafic. On aligne LCP dessus.
-  const lcpByDay = new Map(lcp.map((r) => [String(r.bucket).slice(0, 10), Number(r.p75)]));
-  const days = traffic.map((t) => String(t.day).slice(0, 10));
+  const lcpByDay = new Map(lcp.map((r) => [cleJour(r.bucket), Number(r.p75)]));
+  const days = traffic.map((t) => cleJour(t.day));
   const lcpVals = days.map((d) => (lcpByDay.has(d) ? lcpByDay.get(d)! : null));
   const errVals = traffic.map((t) => (t.pageviews ? (t.errors / t.pageviews) * 100 : null));
   const pvVals = traffic.map((t) => t.pageviews);
@@ -65,13 +66,16 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
     },
     {
       key: "err",
-      label: "Taux d'erreur JS",
-      help: "Part de pages vues avec au moins une erreur. Seuil d'alerte : 2 %.",
+      // Un ratio d'occurrences, pas une part : une page peut porter plusieurs
+      // erreurs, et le ratio peut dépasser 100. Aucun seuil publié n'existe pour
+      // lui : la tendance est montrée, sans verdict (§ 1.5 R-S du plan).
+      label: "Occurrences d'erreurs pour 100 pages vues",
+      help: "Somme des occurrences d'erreurs JS du jour, rapportée à ses pages vues. Aucun seuil publié n'existe pour ce ratio : la tendance est montrée sans verdict.",
       values: errVals,
-      fmt: (v) => (v == null ? "—" : `${v.toFixed(1)} %`),
-      threshold: 2,
+      fmt: (v) => (v == null ? "—" : `${v.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} pour 100`),
+      threshold: null,
       higherIsWorse: true,
-      thresholdLabel: "2 %",
+      thresholdLabel: "",
     },
     {
       key: "traffic",
@@ -145,13 +149,13 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
           const overThreshold = current != null && m.threshold != null && current > m.threshold;
           return (
             <SupervisionHero
-              chartTitle="LCP p75 — réel + projection à J+3"
+              chartTitle={`LCP p75 — réel + projection à J+${HORIZON}`}
               chart={
                 <ForecastChart
                   data={chartData}
                   threshold={m.threshold}
                   thresholdLabel={m.thresholdLabel}
-                  format={(v) => fmtLatency(v)}
+                  format="ms"
                 />
               }
             >
@@ -168,8 +172,8 @@ export default async function Forecast({ searchParams }: { searchParams: Promise
               />
               <HeroStat
                 label={`Seuil ${LCP_BON_TEXTE}`}
-                value={eta === 0 ? "dépassé" : eta != null && eta <= 7 ? `~J+${Math.ceil(eta)}` : "hors horizon"}
-                tone={eta === 0 ? "poor" : eta != null && eta <= 7 ? "warn" : "good"}
+                value={eta === 0 ? "dépassé" : eta != null && eta <= HORIZON ? `~J+${Math.ceil(eta)}` : "hors horizon"}
+                tone={eta === 0 ? "poor" : eta != null && eta <= HORIZON ? "warn" : "good"}
                 hint="échéance estimée de dépassement"
               />
               <HeroReading>
@@ -249,7 +253,7 @@ function MetricCard({ m }: { m: Metric }) {
             <span className="rounded-full bg-bad/10 px-2 py-0.5 font-semibold text-bad">
               seuil {m.thresholdLabel} déjà dépassé
             </span>
-          ) : eta != null && eta <= 7 ? (
+          ) : eta != null && eta <= HORIZON ? (
             <span className="rounded-full bg-warn/10 px-2 py-0.5 font-semibold text-warn">
               ⚠ dépassement du seuil {m.thresholdLabel} vers J+{Math.ceil(eta)}
             </span>

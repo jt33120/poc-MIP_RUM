@@ -58,7 +58,33 @@ export function etaToThreshold(
   return Number.isFinite(steps) && steps > 0 ? steps : null;
 }
 
+// --- Axe des jours -----------------------------------------------------------
+
+/**
+ * Clé « AAAA-MM-JJ » d'un jour rendu par PostgreSQL. node-postgres rend un
+ * `date` (et un `timestamp` sans fuseau) comme un `Date` à minuit LOCAL :
+ * `String(date).slice(0, 10)` donnait « Tue Sep 22 », et l'axe affichait
+ * « undefined/undefined ». On lit donc les composantes locales, qui sont
+ * justement celles que le pilote a posées.
+ */
+export function cleJour(v: unknown): string {
+  if (v instanceof Date) {
+    const mm = String(v.getMonth() + 1).padStart(2, "0");
+    const jj = String(v.getDate()).padStart(2, "0");
+    return `${v.getFullYear()}-${mm}-${jj}`;
+  }
+  return String(v).slice(0, 10);
+}
+
 // --- Narration AIOps (déterministe, sans LLM) --------------------------------
+
+/**
+ * Horizon de la projection ET de la fenêtre d'alerte, en jours. Un seul nombre :
+ * la narration annonçait « horizon de 3 jours » tout en signalant les
+ * franchissements jusqu'à J+7, et le graphe s'arrêtait à J+3 — trois horizons
+ * pour une seule droite.
+ */
+export const HORIZON_JOURS = 7;
 
 export interface NarrativeInput {
   label: string;
@@ -75,11 +101,11 @@ export interface Narrative {
  * dérivé des projections — explicable, jamais une boîte noire. */
 export function buildForecastNarrative(items: NarrativeInput[]): Narrative {
   const breached = items.filter((i) => i.eta === 0);
-  const soon = items.filter((i) => i.eta != null && i.eta > 0 && i.eta <= 7);
+  const soon = items.filter((i) => i.eta != null && i.eta > 0 && i.eta <= HORIZON_JOURS);
   const lines: string[] = [];
   for (const i of breached) lines.push(`${i.label} dépasse déjà son seuil (${i.thresholdLabel}).`);
   for (const i of soon) lines.push(`${i.label} devrait franchir ${i.thresholdLabel} vers J+${Math.ceil(i.eta as number)}.`);
-  if (!lines.length) lines.push("Aucun indicateur ne devrait franchir son seuil sur l'horizon de 3 jours.");
+  if (!lines.length) lines.push(`Aucun indicateur ne devrait franchir son seuil sur l'horizon de ${HORIZON_JOURS} jours.`);
   return { status: breached.length ? "risk" : soon.length ? "watch" : "ok", lines };
 }
 
