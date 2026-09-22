@@ -1,15 +1,7 @@
 "use client";
+// Échec de l'écran « Explorer » (F02, § 3.8) : corps commun dans `ErreurEcran`.
+import { ErreurEcran } from "@/components/states/ErreurEcran";
 
-export default function ExplorerError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  return (
-    <div role="alert" className="card border-bad/30 p-8 text-center">
-      <h1 className="text-lg font-semibold text-ink">Impossible d’exécuter cette requête</h1>
-      <p className="mt-2 text-sm text-ink-soft">
-        Aucun chiffre partiel n’est affiché : un résultat incomplet se lirait comme un résultat.
-      </p>
-      <button className="btn-accent mt-4" type="button" onClick={reset}>
-        Réessayer
-      </button>
-    </div>
-  );
+export default function Erreur(props: { error: Error & { digest?: string }; reset: () => void }) {
+  return <ErreurEcran titre="Explorer" detail="La requête n'a pas pu être exécutée jusqu'au bout." {...props} />;
 }

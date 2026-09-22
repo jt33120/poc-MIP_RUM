@@ -152,7 +152,8 @@ async function login(page: Page) {
 }
 
 const entree = (page: Page, testid: string) => page.locator(`[data-testid="${testid}"]`);
-const introuvable = (page: Page) => expect(page.getByText("This page could not be found")).toBeVisible();
+// `not-found.tsx` en français (F02) : plus le 404 anglais de Next.
+const introuvable = (page: Page) => expect(page.getByTestId("introuvable")).toContainText("introuvable");
 
 test("liste d'une app activée : issues et groupe historique, chaque occurrence comptée une fois", async ({ page }) => {
   await login(page);
