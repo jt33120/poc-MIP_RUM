@@ -65,13 +65,12 @@ export function StepPicker({
         <input key={k} type="hidden" name={k} value={v} />
       ))}
       {Array.from({ length: MAX_STEPS }, (_, i) => (
-        <label key={i} className="min-w-0 text-xs font-medium text-ink-soft">
+        // Sous 640 px, une étape prend toute la largeur (`basis-full`) : quatre
+        // sélecteurs côte à côte y devenaient illisibles, et un `select` à 12 rem
+        // débordait de la carte.
+        <label key={i} className="min-w-0 basis-full text-xs font-medium text-ink-soft sm:basis-auto">
           Étape {i + 1}
-          <select
-            name={`s${i + 1}`}
-            defaultValue={selected[i] ?? ""}
-            className="field mt-1 block w-full max-w-full sm:w-48"
-          >
+          <select name={`s${i + 1}`} defaultValue={selected[i] ?? ""} className="field mt-1 block w-full sm:w-48">
             <option value="">—</option>
             {events.map((e) => (
               <option key={e.name} value={e.name}>
