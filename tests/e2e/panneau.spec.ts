@@ -131,9 +131,14 @@ test("clavier : focus sur le titre à l'ouverture, ↓ / ↑ parcourent la liste
   await page.waitForTimeout(500);
   expect(panneauOuvert(page)).toBe("route:%2Fproduit%2F%5Bid%5D");
 
-  // ↑ ↑ : retour au premier.
+  // ↑ ↑ : retour au premier. Entre deux flèches, on attend que le panneau soit
+  // RENDU avec sa nouvelle place dans la liste : l'îlot clavier lit `precedentHref`
+  // du rendu courant, et une flèche envoyée entre l'URL et le rendu suivrait encore
+  // l'ancien lien — la deuxième ↑ retombait alors sur la même route (CI, 22/09/2026).
   await page.keyboard.press("ArrowUp");
   await expect.poll(() => panneauOuvert(page)).toBe("route:%2Fpanier");
+  await expect(titre).toHaveText("/panier");
+  await expect(titre).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await expect.poll(() => panneauOuvert(page)).toBe("route:%2Fcheckout");
   await expect(titre).toHaveText("/checkout");
