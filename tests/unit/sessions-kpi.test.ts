@@ -4,8 +4,20 @@
 // « 0 », un taux sans dénominateur non plus ; la période précédente se pose par
 // RANG de seau ; la première source incomplète fait taire le delta ; « Inconnu »
 // devient `is_null` dans l'URL, et le capteur passe par `seg`.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { DimensionSchema } from "../../apps/console/lib/query-compiler";
+// Revue F41 : la couverture des visiteurs se juge sur le premier `visitor_id`. Toute
+// lecture en base est une faute ici (la date de début est passée en entrée).
+vi.mock("../../apps/console/lib/db", () => ({
+  q: async () => {
+    throw new Error("aucune lecture attendue dans un test unitaire");
+  },
+  tx: async () => {
+    throw new Error("aucune lecture attendue dans un test unitaire");
+  },
+  pool: {},
+}));
+import { evaluerCouverture, sourcesSousFiltres } from "../../apps/console/lib/comparaison";
 import { parseAnalyticsQuery, previousRange, type AnalyticsQuery } from "../../apps/console/lib/query-contract";
 import {
   DIMENSIONS_REPARTITION,
@@ -22,6 +34,7 @@ import {
   resteNonAffiche,
   visiteursAffiches,
 } from "../../apps/console/lib/sessions-kpi";
+import { SOURCE_VISITEURS, visiteursDuSeau } from "../../apps/console/lib/sessions-kpi";
 
 const NOW = Date.parse("2026-09-21T14:00:00.000Z");
 const NBSP = String.fromCharCode(0xa0);
@@ -196,5 +209,40 @@ describe("répartition", () => {
   it("reste non affiché : exact (des comptes s'additionnent), seulement si tronqué", () => {
     expect(resteNonAffiche(100, [{ sessions: 60 }, { sessions: 30 }], true)).toBe(10);
     expect(resteNonAffiche(100, [{ sessions: 60 }], false)).toBeNull();
+  });
+});
+
+describe("revue F41 — visiteurs : couverture et seaux sans identifiant", () => {
+  it("la source des visiteurs exige `visitor_id` (premier identifiant, pas première session)", () => {
+    expect(SOURCE_VISITEURS).toEqual({
+      table: "rum_session",
+      colonneTemps: "started_at",
+      colonneRequise: "visitor_id",
+      additive: true,
+    });
+    // Sous un filtre, la source de base garde son exigence ; le filtre ajoute la sienne.
+    const sources = sourcesSousFiltres(requete("period=7d&browser=Firefox"), SOURCE_VISITEURS);
+    expect(sources[0]).toEqual(SOURCE_VISITEURS);
+    expect(sources.some((s) => s.colonneRequise === "browser")).toBe(true);
+  });
+
+  it("plage 11/09 → 21/09, premier visitor_id le 09/09 : période précédente (01/09 → 11/09) incomplète, raison écrite", () => {
+    const query = requete("from=2026-09-11T12:00:00.000Z&to=2026-09-21T12:00:00.000Z");
+    const couverture = evaluerCouverture({
+      query,
+      source: SOURCE_VISITEURS,
+      debut: new Date("2026-09-09T00:00:00Z"),
+      nowMs: NOW,
+      retentionJours: 30,
+    });
+    expect(couverture.etat).toBe("partielle");
+    expect(couverture.raison).toContain("« visitor_id »");
+  });
+
+  it("seau : 0 session → 0 (vrai zéro) ; sessions toutes sans identifiant → trou ; sinon les visiteurs identifiés", () => {
+    expect(visiteursDuSeau({ visitors: 0, sessions: 0, sans_identifiant: 0 })).toBe(0);
+    expect(visiteursDuSeau({ visitors: 0, sessions: 4, sans_identifiant: 4 })).toBeNull();
+    expect(visiteursDuSeau({ visitors: 2, sessions: 4, sans_identifiant: 1 })).toBe(2);
+    expect(visiteursDuSeau(null)).toBe(0);
   });
 });

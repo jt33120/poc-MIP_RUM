@@ -91,6 +91,7 @@ import { VIEW_CONTEXT_PARAMS, contextHref, gabaritZoom, lireComparaison } from "
 import {
   DIMENSIONS_REPARTITION,
   LIBELLES_REPARTITION,
+  SOURCE_VISITEURS,
   couvertureCombinee,
   disponibiliteRepartition,
   hrefGroupe,
@@ -103,6 +104,7 @@ import {
   referencePrecedente,
   resteNonAffiche,
   visiteursAffiches,
+  visiteursDuSeau,
   type DimensionRepartition,
 } from "@/lib/sessions-kpi";
 
@@ -117,6 +119,7 @@ const CURSOR_PARAM = "cursor";
 const SOURCE_SESSIONS: SourceComparaison = { table: "rum_session", colonneTemps: "started_at", additive: true };
 const SOURCE_SESSIONS_TAUX: SourceComparaison = { table: "rum_session", colonneTemps: "started_at", additive: false };
 const SOURCE_ERREURS: SourceComparaison = { table: "rum_error", colonneTemps: "ts", additive: false };
+// Visiteurs : `SOURCE_VISITEURS` (lib/sessions-kpi.ts), sur le premier `visitor_id` collecté.
 
 /** Sous ce nombre de sessions, un delta se tait : le seuil d'engagement du domaine (S6, `lib/engagement.ts`). */
 const FAIBLE_SOUS = ENGAGEMENT_MIN_SESSIONS;
@@ -195,6 +198,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     couvSessions,
     couvTaux,
     couvErreurs,
+    couvVisiteurs,
   ] = await Promise.all([
     // Une ligne de plus que la page : c'est ainsi qu'on sait s'il en reste, sans
     // compter toute la population à chaque affichage.
@@ -226,6 +230,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     prev ? couvertures(SOURCE_SESSIONS) : aucuneCouverture,
     prev ? couvertures(SOURCE_SESSIONS_TAUX) : aucuneCouverture,
     prev ? couvertures(SOURCE_ERREURS) : aucuneCouverture,
+    prev ? couvertures(SOURCE_VISITEURS) : aucuneCouverture,
   ]);
 
   const engagement = engagementLu.ok ? engagementLu.data : null;
@@ -248,7 +253,9 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
   const grille = grilleIso(debuts);
   const seaux = tendance.ok ? alignerSeaux(tendance.data, debuts, true) : [];
   const sessionsParSeau = seaux.map((r) => r?.sessions ?? 0);
-  const visiteursParSeau = seaux.map((r) => r?.visitors ?? 0);
+  // Un seau dont TOUTES les sessions sont sans identifiant n'a pas « 0 visiteur » :
+  // il en a un nombre inconnu (trou), comme la tuile dit « — » (`visiteursAffiches`).
+  const visiteursParSeau = seaux.map((r) => visiteursDuSeau(r));
   const sansIdentifiant = tendance.ok ? tendance.data.reduce((s, p) => s + p.sans_identifiant, 0) : null;
   const couvSessionsTotale = couvertureCombinee(couvSessions, nPrec);
   const precedentParSeau =
@@ -264,7 +271,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
   const pointsVolume = grille.map((t, i) => ({
     t,
     sessions: sessionsParSeau[i] ?? 0,
-    visiteurs: visiteursParSeau[i] ?? 0,
+    visiteurs: visiteursParSeau[i] ?? null,
     ...(referenceTracee ? { precedent: precedentParSeau![i] } : {}),
   }));
   const gabarit = gabaritZoom(hrefWithQuery("/sessions", query, { period: null, from: "{from}", to: "{to}" }), sp);
@@ -348,7 +355,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
             sensMeilleur="neutre"
             lecture="identifiant aléatoire seulement ; ne s'additionne pas aux sessions."
             href={explorerHref(query, PLAN_VISITEURS_DISTINCTS)}
-            {...comparer(visiteursPrec, visiteursPrec.ok ? visiteursPrec.data : null, couvSessions)}
+            {...comparer(visiteursPrec, visiteursPrec.ok ? visiteursPrec.data : null, couvVisiteurs)}
           />
         ) : (
           <TuileEnEchec titre="Visiteurs distincts" />
@@ -546,7 +553,8 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
                 </div>
                 {sansIdentifiant !== null && sansIdentifiant > 0 && (
                   <p className="text-xs text-ink-soft">
-                    {formater("count", sansIdentifiant)} session(s) sans identifiant de visiteur sont hors du panneau des visiteurs.
+                    {formater("count", sansIdentifiant)} session(s) sans identifiant de visiteur sont hors du panneau des visiteurs ;
+                    un seau qui n&apos;a que de telles sessions y est un trou, pas un zéro.
                   </p>
                 )}
               </div>

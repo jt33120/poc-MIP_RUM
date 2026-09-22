@@ -18,7 +18,7 @@ import {
   type ResolvedRange,
 } from "./query-contract";
 import { BREAKDOWN_DIMENSIONS, breakdownDrillHref, groupLabel, type BreakdownDimension } from "./breakdowns";
-import type { CouverturePrecedente } from "./comparaison";
+import type { CouverturePrecedente, SourceComparaison } from "./comparaison";
 import { dimensionSupport, type DimensionSchema } from "./query-compiler";
 import { formater } from "./fmt-ids";
 import type { ErreursParSessionCommencee } from "./queries-sessions";
@@ -50,6 +50,21 @@ export function referencePrecedente(precedente: ResolvedRange): string {
   const duree = precedente.preset ? DUREES_PRESET[precedente.preset] : "période précédente";
   return `vs ${duree} (${jourHeureUtc(precedente.from)} → ${jourHeureUtc(precedente.to)} UTC)`;
 }
+
+/**
+ * Source de comparaison de la tuile « Visiteurs distincts » : elle compte
+ * `visitor_id`, collecté depuis v57 (09/09/2026) seulement. `colonneRequise` fait
+ * lire à la couverture le premier `started_at` d'une session IDENTIFIÉE : sans elle,
+ * le premier `started_at` de toute session déclarait complète une période précédente
+ * à peine identifiée — plage 12/09 → 22/09, précédente 02/09 → 12/09 avec trois
+ * jours d'identifiants : « +230 % » sur une audience stable (revue F41).
+ */
+export const SOURCE_VISITEURS: SourceComparaison = {
+  table: "rum_session",
+  colonneTemps: "started_at",
+  colonneRequise: "visitor_id",
+  additive: true,
+};
 
 /**
  * Couverture d'une tuile qui lit plusieurs sources (le taux d'occurrences lit les
@@ -200,4 +215,20 @@ export function resteNonAffiche(total: number, groupes: readonly { sessions: num
   if (!tronque) return null;
   const affiche = groupes.reduce((s, g) => s + g.sessions, 0);
   return Math.max(0, total - affiche);
+}
+
+/**
+ * Visiteurs distincts d'UN seau du panneau « Volume » — même règle que la tuile
+ * (`visiteursAffiches`) : aucune session → 0, un vrai zéro ; des sessions TOUTES sans
+ * identifiant aléatoire → `null` (trou : le nombre de visiteurs est inconnu, pas nul) ;
+ * sinon, le compte des visiteurs identifiés. Seau absent de la lecture (qui rend
+ * toute la grille, zéros compris) : aucune session commencée, donc 0 — comme les
+ * barres des sessions, où un seau absent vaut 0.
+ */
+export function visiteursDuSeau(
+  seau: { visitors: number; sessions: number; sans_identifiant: number } | null | undefined,
+): number | null {
+  if (!seau) return 0;
+  if (seau.sessions > 0 && seau.sans_identifiant >= seau.sessions) return null;
+  return seau.visitors;
 }
