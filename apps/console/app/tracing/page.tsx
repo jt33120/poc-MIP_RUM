@@ -31,6 +31,7 @@ import { SlowRow } from "@/components/tracing/SlowRow";
 import { TableAppels } from "@/components/tracing/TableAppels";
 import { parseExplorerPlan } from "@/lib/analytics-schema";
 import { annotationsDeploiements } from "@/lib/annotations";
+import { annotationsAlertes, fusionnerAnnotations, raisonsAnnotations } from "@/lib/annotations";
 import {
   couverturePrecedente,
   sourcesSousFiltres,
@@ -52,6 +53,7 @@ import {
   type TraceCoverage,
 } from "@/lib/queries-tracing";
 import { bucketStarts, hrefWithQuery, paramReader, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
+import { alertEvents } from "@/lib/queries-v2";
 import { grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
 import { ancreAppel, lireAppel, type Appel } from "@/lib/tracing-ancres";
 import { APPELS_HERO, fragmentVers, libelleAppel, lignesHero, texteDecomposition } from "@/lib/tracing-hero";
@@ -175,7 +177,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
     Promise.all(sourcesSousFiltres(query, source).map((s) => couverturePrecedente(query, s)));
   const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
 
-  const [cov, covPrec, couvAppels, couvDurees, appels, serie, seriePrec, routes, lentes, deploys, impact] =
+  const [cov, covPrec, couvAppels, couvDurees, appels, serie, seriePrec, routes, lentes, deploys, impact, alertes] =
     await Promise.all([
       lire(() => traceCoverage(f)),
       prev ? lire(() => traceCoverage(fPrec)) : sansLecture<TraceCoverage | null>(null),
@@ -188,6 +190,9 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
       lire(() => slowTraces(f, appel ? { appel } : undefined)),
       lire(() => listDeploys(f, 20)),
       lire(() => latestDeployImpact(f)),
+      // Annotations d'alerte (F67) : les 100 derniers déclenchements du périmètre ;
+      // la fenêtre est appliquée par `annotationsAlertes`, pas par la lecture.
+      lire(() => alertEvents(f)),
     ]);
 
   // ─────────────── Liens ───────────────
@@ -241,6 +246,26 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
         lienListe: "#deploiements",
       })
     : null;
+  // Déclenchements d'alerte du périmètre (F67, § 3.7) : la série T7 ne porte pas
+  // sur une route, toutes les alertes de l'app y ont leur place. Chaque trait mène
+  // à SON événement (`/alerts?evt=<id>`, § 3.1), jamais à `fired=`.
+  const lienAlertes = hrefWithQuery("/alerts", query);
+  const annotAlertes = annotationsAlertes(alertes.ok ? alertes.data : [], query.range, {
+    lien: (id) => `${hrefWithQuery("/alerts", query, { evt: String(id) })}#evt-${id}`,
+    lienListe: lienAlertes,
+  });
+  const famillesT7 = [
+    ...(annot ? [{ ...annot, lienListe: "#deploiements" }] : []),
+    { ...annotAlertes, lienListe: lienAlertes },
+  ];
+  const annotationsT7 = fusionnerAnnotations(famillesT7);
+  const raisonFamillesT7 = raisonsAnnotations(famillesT7);
+  const annotationsAbsentesT7 =
+    [
+      ...(annot ? [] : ["lecture des déploiements en échec"]),
+      ...(alertes.ok ? [] : ["lecture des alertes en échec"]),
+      ...(raisonFamillesT7 ? [raisonFamillesT7] : []),
+    ].join(" ; ") || undefined;
   const zoom = gabaritZoom(hrefWithQuery("/tracing", query, { period: null, from: "{from}", to: "{to}" }), sp);
   const planSerie = parseExplorerPlan(
     { dataset: "spans", measure: { field: "duration_ms", aggregation: "p75" }, variant: "front", visualization: "timeseries" },
@@ -428,10 +453,8 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                   series={seriesT7}
                   format="ms"
                   faibleSous={30}
-                  annotations={annot?.annotations ?? []}
-                  annotationsIndisponibles={
-                    annot ? (annot.indisponible ?? undefined) : "lecture des déploiements en échec"
-                  }
+                  annotations={annotationsT7}
+                  annotationsIndisponibles={annotationsAbsentesT7}
                   seauSecondes={query.range.bucketSeconds}
                   fuseau="UTC"
                   zoomHref={zoom}

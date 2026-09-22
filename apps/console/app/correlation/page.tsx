@@ -34,6 +34,7 @@ import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import Link from "next/link";
 import { annotationsDeploiements } from "@/lib/annotations";
+import { annotationsAlertes, fusionnerAnnotations, raisonsAnnotations } from "@/lib/annotations";
 import { getUser } from "@/lib/auth";
 import { couverturePrecedente } from "@/lib/comparaison";
 import {
@@ -63,6 +64,7 @@ import { RATING_HEX } from "@/lib/palette";
 import { hrefWithQuery, paramReader, previousRange, queryToSearchParams, rangeLabel } from "@/lib/query-contract";
 import { listDeploys } from "@/lib/queries-deploys";
 import {
+  alertEvents,
   blindSpots,
   correlationCards,
   correlationConcordance,
@@ -112,7 +114,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
   const lienPages = (app: string, route: string, extra: Record<string, string | null> = {}) =>
     hrefWithQuery("/pages", query, { app, route, panel: ecrirePanel({ type: "route", id: route }), ...extra });
 
-  const [utilisateur, cartes, couples, concordance, concordancePrec, couverturePrec, spots, fraicheurs, deploys] =
+  const [utilisateur, cartes, couples, concordance, concordancePrec, couverturePrec, spots, fraicheurs, deploys, alertes] =
     await Promise.all([
       getUser(),
       lire(() => correlationCards(f)),
@@ -125,6 +127,9 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
       lire(() => blindSpots(f)),
       lire(() => syntheticFreshness(f)),
       lire(() => listDeploys(f, 20)),
+      // Annotations d'alerte (F67) : les 100 derniers déclenchements du périmètre ;
+      // la fenêtre et le couple app × route sont appliqués par `annotationsAlertes`.
+      lire(() => alertEvents(f)),
     ]);
 
   // ── Robot présent ? ───────────────────────────────────────────────────────────
@@ -183,6 +188,28 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
   const annotations = annotationsDeploiements(deploys.ok ? deploys.data : [], query.range, {
     lien: (relB, relA) => lienEcran({ cmp: "release", rel_b: relB, rel_a: relA }),
   });
+  // Déclenchements d'alerte du couple app × route du hero (F67, § 3.7) : chaque
+  // trait mène à SON événement sur `/alerts` (`evt`, § 3.1), jamais à `fired=`.
+  const lienAlertes = hrefWithQuery("/alerts", query);
+  const alertesHero = annotationsAlertes(alertes.ok ? alertes.data : [], query.range, {
+    lien: (id) => `${hrefWithQuery("/alerts", query, { evt: String(id) })}#evt-${id}`,
+    lienListe: lienAlertes,
+    app: choisi?.app_id ?? null,
+    route: choisi?.route ?? null,
+  });
+  const familles = [
+    { ...annotations, lienListe: undefined },
+    { ...alertesHero, lienListe: lienAlertes },
+  ];
+  const annotationsHero = fusionnerAnnotations(familles);
+  const raisonFamilles = raisonsAnnotations(familles);
+  // Une lecture en échec n'est pas « aucune annotation » : la figure la nomme.
+  const annotationsAbsentes =
+    [
+      ...(deploys.ok ? [] : ["lecture des déploiements en échec"]),
+      ...(alertes.ok ? [] : ["lecture des alertes en échec"]),
+      ...(raisonFamilles ? [raisonFamilles] : []),
+    ].join(" ; ") || undefined;
 
   // ── KPI ───────────────────────────────────────────────────────────────────────
   const heuresAM = concordance.ok ? heuresAngleMort(concordance.data.cellules) : null;
@@ -445,8 +472,8 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                     faibleSous={EFFECTIF_MIN_HEURE}
                     seauSecondes={3600}
                     fuseau="UTC"
-                    annotations={annotations.annotations}
-                    annotationsIndisponibles={annotations.indisponible ?? undefined}
+                    annotations={annotationsHero}
+                    annotationsIndisponibles={annotationsAbsentes}
                     zoomHref={zoomHref}
                     hauteur={180}
                     ariaLabel={`LCP p75 réel par heure, ${libelleChoisi ?? ""}, ${plage}, 3 zones de seuil`}
