@@ -741,3 +741,48 @@ export function planDeRepartition(
   if (!volume) return null;
   return { ...plan, measure: volume.measure, groupBy: [dimension], visualization: "toplist", limit: limite, cursor: null };
 }
+
+// ───────────────────────── F36 — barre de population (W-B1) ─────────────────────────
+//
+// Une carte de tableau de bord hérite de la population de l'écran : elle doit se
+// lire au-dessus de la grille, Y COMPRIS à « toutes les apps » — sans quoi trois
+// chiffres se comparent sans qu'on sache sur quoi ils portent (Datadog garde sa
+// barre de variables visible en permanence, `datadog-images-2.md` § 2.4).
+
+/**
+ * W-B1 — la population lue, en toutes lettres : apps effectives, appareil, chaque
+ * condition de filtre, robots et apps internes, puis le fuseau dans lequel les
+ * lectures à découpe locale rendent leurs jours (R-T). La PLAGE et le fuseau
+ * d'axe (UTC) ne sont pas dans cette liste : ce sont les props dédiées `plage` et
+ * `fuseau` de `PopulationBar` (§ 4.2), qui ne les écrit donc pas deux fois.
+ *
+ * Sans aucune condition, la liste dit « Tous les visiteurs · Robots exclus » : une
+ * population non restreinte reste une population, elle ne se tait pas.
+ */
+export function resumePopulation(query: AnalyticsQuery, timeZone: string): string[] {
+  const apps = query.scope.effectiveApps;
+  const puces: string[] = [apps === null ? "Toutes les apps autorisées" : `Apps : ${apps.join(", ")}`];
+  const conditions = conditionsRetirables(query.filters);
+  if (conditions.length === 0) puces.push("Tous les visiteurs");
+  for (const { condition } of conditions) puces.push(libelleCondition(condition));
+  puces.push(query.filters.includeBots ? "Robots inclus" : "Robots exclus");
+  if (query.filters.includeInternal) puces.push("Applications internes incluses");
+  puces.push(`Jours et heures locales lus en ${timeZone}`);
+  return puces;
+}
+
+/**
+ * W-B1 — le lien qui RETIRE chaque condition, indexé par le libellé que
+ * `resumePopulation` a écrit pour elle. Deux conditions identiques partagent une
+ * entrée : retirer l'une retire bien une seule occurrence.
+ */
+export function retraitsDePopulation(
+  query: AnalyticsQuery,
+  lien: (sans: AnalyticsQuery) => string,
+): Record<string, string> {
+  const sorties: Record<string, string> = {};
+  for (const { condition, sans } of conditionsRetirables(query.filters)) {
+    sorties[libelleCondition(condition)] = lien({ ...query, filters: sans });
+  }
+  return sorties;
+}

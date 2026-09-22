@@ -23,7 +23,7 @@ import { pageFilters } from "@/lib/page-filters";
 import { queryOf } from "@/lib/filters";
 import { fuseauDe } from "@/lib/fuseau";
 import { hrefWithQuery, queryToSearchParams } from "@/lib/query-contract";
-import { resolveWidgets } from "@/lib/widget-data";
+import { resolveWidgets, type WidgetData } from "@/lib/widget-data";
 import {
   addWidgetAction,
   cloneDashboardAction,
@@ -34,8 +34,23 @@ import { PrintButton } from "./PrintButton";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { WidgetCard } from "@/components/dashboards/WidgetCard";
+// F36 — barre de population (W-B1) et réglages d'affichage de l'écran (§ 3.1).
+import { PopulationBar } from "@/components/PopulationBar";
+import { resumePopulation, retraitsDePopulation } from "@/lib/explorer-page-params";
+import { paramReader, rangeLabel } from "@/lib/query-contract";
+import { lireComparaison } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Une carte occupe-t-elle toute la largeur de sa rangée (§ 5.25.3) ? Une série et
+ * un journal, oui : un axe de temps ou une table de colonnes comprimés dans un
+ * tiers de page cessent d'être lisibles. Une valeur ou un classement tiennent dans
+ * une case. La règle se lit sur la DONNÉE rendue, pas sur un champ enregistré.
+ */
+function pleineLargeur(data: WidgetData | undefined): boolean {
+  return data?.kind === "timeseries" || data?.kind === "table";
+}
 
 export default async function D({
   params,
@@ -57,10 +72,30 @@ export default async function D({
   if (!f) notFound();
 
   const timeZone = await fuseauDe(ecran.query.scope.requestedApp);
+  // `cmp` de l'écran (§ 3.1) : défaut « aucune » sur ce domaine. En `prev`, seules
+  // les cartes « Valeur » relisent la période précédente (W-B2) ; les autres le disent.
+  const reglages = lireComparaison(`/dashboards/${dash.id}`, paramReader(sp));
   // Quatre lectures à la fois, dans l'ordre de la grille. Vingt-quatre cartes
   // lancées ensemble épuiseraient le pool de connexions de la console.
-  const data = await resolveWidgets(dash.layout, { filters: f, timeZone, nowMs: Date.now() });
+  const data = await resolveWidgets(dash.layout, {
+    filters: f,
+    timeZone,
+    nowMs: Date.now(),
+    comparaison: reglages.valeur.mode,
+  });
   const apps = dashboardApps(await registeredApps(), user);
+
+  // W-B1 — la population lue, écrite au-dessus de la grille, y compris à « toutes
+  // les apps » : chaque carte en hérite. La requête affichée est celle des cartes
+  // (`f`), pas celle de l'URL : le tableau peut restreindre l'app de l'écran.
+  const populationQuery = queryOf(f);
+  const retraits = retraitsDePopulation(populationQuery, (sans) =>
+    hrefWithQuery(`/dashboards/${dash.id}`, sans),
+  );
+  const puces = resumePopulation(populationQuery, timeZone).map((libelle) => ({
+    libelle,
+    ...(retraits[libelle] ? { retirerHref: retraits[libelle] } : {}),
+  }));
 
   const contexte = queryToSearchParams(ecran.query).toString();
   const exportHref = hrefWithQuery(`/api/dashboards/${dash.id}/export`, ecran.query);
@@ -102,6 +137,14 @@ export default async function D({
         <PrintButton />
       </PageHeader>
 
+      <PopulationBar puces={puces} plage={rangeLabel(populationQuery.range, timeZone)} fuseau="UTC" />
+
+      {reglages.ignores.map((ligne) => (
+        <p key={ligne} role="note" className="mb-4 text-xs text-ink-soft">
+          {ligne}
+        </p>
+      ))}
+
       {conflit && (
         <p
           role="alert"
@@ -140,19 +183,30 @@ export default async function D({
 
       {/* ----- Grille de widgets ----- */}
       {dash.layout.length ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        // Grille 1 / 2 / 3 colonnes (§ 5.25.3). Une série ou un journal prennent
+        // TOUTE la largeur de leur rangée : une courbe de 24 seaux dans un tiers de
+        // page n'a plus d'axe lisible. La largeur découle du TYPE de la carte —
+        // aucun champ de taille n'est stocké, donc aucun changement de schéma.
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {dash.layout.map((w, i) => (
-            <WidgetCard
+            <div
               key={i}
-              id={dash.id}
-              index={i}
-              count={dash.layout.length}
-              widget={w}
-              data={data[i]}
-              revision={dash.revision}
-              ctx={contexte}
-              editable={editable}
-            />
+              className={
+                pleineLargeur(data[i]) ? "min-w-0 md:col-span-2 xl:col-span-3" : "min-w-0"
+              }
+            >
+              <WidgetCard
+                id={dash.id}
+                index={i}
+                count={dash.layout.length}
+                widget={w}
+                data={data[i]}
+                revision={dash.revision}
+                ctx={contexte}
+                query={ecran.query}
+                editable={editable}
+              />
+            </div>
           ))}
         </div>
       ) : (
