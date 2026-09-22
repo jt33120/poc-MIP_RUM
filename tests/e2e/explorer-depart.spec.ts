@@ -257,6 +257,16 @@ test("un onglet de représentation relit la même requête sous une autre forme"
   await expect(page.locator('select[name="limit"]')).toHaveValue(sp.get("limit")!);
 });
 
+test("une mesure sans découpage temporel : l'onglet « Série » se dit indisponible au lieu de mener à un refus", async ({ page }) => {
+  await login(page);
+  await page.goto(`${consoleUrl}/explorer?app=${APP_ID}&period=1h&dataset=sessions&measure=active:count&run=1`);
+  const onglets = page.getByTestId("explorer-representation");
+  await expect(onglets.getByTestId("onglet-indisponible")).toHaveText(/Série/);
+  await expect(onglets.getByTestId("onglet-indisponible")).toHaveAttribute("title", /découpage temporel/);
+  await expect(onglets.getByRole("link", { name: /Série/ })).toHaveCount(0);
+  await expect(page.getByTestId("explorer-invalide")).toHaveCount(0);
+});
+
 test("aucun débordement à 390, 768 et 1440 px, avant et après exécution", async ({ page }) => {
   await login(page);
   const avant = `${consoleUrl}/explorer?app=${APP_ID}&period=1h`;

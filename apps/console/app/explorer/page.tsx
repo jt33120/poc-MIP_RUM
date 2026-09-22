@@ -123,6 +123,12 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
 
   const source = { ...explorerSource(reader), dataset };
   const plan = parseExplorerPlan(source, ecran.query);
+  // Une mesure sans découpage temporel honnête (sessions actives) refuse la série :
+  // l'onglet ne mène pas à un refus, il se dit indisponible avec sa raison.
+  const [champId = ""] = (reader.get("measure")?.trim() || mesureDefaut(dataset)).split(":");
+  const champMesure = Object.hasOwn(definition.fields, champId) ? definition.fields[champId] : undefined;
+  const serieIndisponible =
+    champMesure?.bucketable === false ? `« ${champMesure.label} » n'a pas de découpage temporel honnête` : null;
   const demande = explorerDemande(reader);
 
   // Dimensions du jeu choisi : une dimension sans objet ou non collectée est
@@ -332,11 +338,24 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
           mesure, regroupements) sous une autre forme ; il ne la recompose pas.
           À 390 px, la rangée défile plutôt que de pousser la page. */}
       <nav aria-label="Représentation" data-testid="explorer-representation" className="mb-6 flex overflow-x-auto border-b border-line">
-        {VISUALIZATIONS.map((viz) => (
-          <TabLink key={viz} href={explorerOngletHref(ecran.query, reader, viz, vue)} active={viz === vizCourante}>
-            {ONGLETS[viz]}
-          </TabLink>
-        ))}
+        {VISUALIZATIONS.map((viz) =>
+          viz === "timeseries" && serieIndisponible && viz !== vizCourante ? (
+            <span
+              key={viz}
+              aria-disabled="true"
+              title={serieIndisponible}
+              data-testid="onglet-indisponible"
+              className="-mb-px shrink-0 cursor-not-allowed whitespace-nowrap border-b-2 border-transparent px-4 py-2 text-sm font-medium text-ink-faint opacity-60"
+            >
+              {ONGLETS[viz]}
+              <span className="sr-only"> — indisponible : {serieIndisponible}</span>
+            </span>
+          ) : (
+            <TabLink key={viz} href={explorerOngletHref(ecran.query, reader, viz, vue)} active={viz === vizCourante}>
+              {ONGLETS[viz]}
+            </TabLink>
+          ),
+        )}
       </nav>
 
       {!plan.ok && (
