@@ -147,8 +147,12 @@ export function Figure({
           id={titreId}
           className="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-soft"
         >
-          <span className="min-w-0 break-words">{titre}</span>
+          {/* La bulle OUVRE le titre : posée après un titre long, sa bulle de 288 px
+              centrée sur l'icône sortait de l'écran et portait la page à 471 px sur
+              une fenêtre de 390 (même cause que le bandeau de santé). En tête, elle
+              déborde vers la gauche, ce qui n'élargit pas la page. F09 bornera InfoTip. */}
           {aide && <GlossaryTip id={aide} />}
+          <span className="min-w-0 break-words">{titre}</span>
         </h2>
         {explorer && (
           <Link
