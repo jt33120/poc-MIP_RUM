@@ -5,23 +5,19 @@ import { RATING_BAR, RATING_CLASS, RATING_LABEL, THRESHOLDS, texteSeuils } from 
 import type { IntervalleP75 } from "@/lib/stats/incertitude";
 import { echelleJauge, lireVital, type LectureVital } from "@/lib/vital-lecture";
 import { Sparkline } from "./charts/Sparkline";
+import { DeltaBadge } from "./SupervisionHero";
 import { GlossaryTip } from "./GlossaryTip";
 
-/** Tendance vs période précédente : pour un vital, monter = se dégrader. */
+/**
+ * Tendance vs période précédente : pour un vital, monter = se dégrader. Même badge
+ * que les tuiles (P4) : la référence est ÉCRITE à côté de l'écart, pas seulement
+ * dans un `title`. `data-testid="trend"` reste sur l'enveloppe pour les e2e.
+ */
 function Trend({ p75, prev }: { p75: number; prev: number | null }) {
-  if (prev == null || prev === 0) return null;
-  const delta = ((p75 - prev) / prev) * 100;
-  const flat = Math.abs(delta) < 2;
-  const cls = flat
-    ? "text-ink-faint"
-    : delta > 0
-      ? "text-bad-ink"
-      : "text-good-ink";
-  const arrow = flat ? "→" : delta > 0 ? "↑" : "↓";
+  if (prev == null || prev === 0 || !Number.isFinite(prev)) return null;
   return (
-    <span className={`text-xs font-semibold tabular-nums ${cls}`} data-testid="trend" title="vs période précédente">
-      {arrow} {delta > 0 ? "+" : ""}
-      {delta.toFixed(0)} %
+    <span data-testid="trend">
+      <DeltaBadge pct={((p75 - prev) / prev) * 100} reference="période précédente" sensMeilleur="bas" />
     </span>
   );
 }

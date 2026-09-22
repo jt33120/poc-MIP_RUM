@@ -175,7 +175,7 @@ export function ScatterPlot({
             width={56}
             unit={yUnit}
             tickFormatter={fy}
-            domain={hautY != null ? [0, Math.ceil(hautY)] : undefined}
+            domain={hautY != null ? [0, hautY > 10 ? Math.ceil(hautY) : hautY] : undefined}
           />
           {hasZ && <ZAxis type="number" dataKey="z" range={[40, 420]} />}
           <Tooltip

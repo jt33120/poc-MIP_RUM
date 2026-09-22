@@ -245,3 +245,22 @@ describe("comparaisonDeTuile — logique pure", () => {
     expect(comparaisonDeTuile({ ...base, n: null })?.kind).toBe("delta");
   });
 });
+
+describe("revue de vague 2", () => {
+  it("un précédent non fini (0/0 amont) se tait comme null, jamais « NaN % »", () => {
+    const html = rendu({ precedent: Number.NaN });
+    expect(aDelta(html)).toBe(false);
+    expect(texte(html)).not.toMatch(/NaN|Infinity|∞/);
+    expect(texte(html)).toContain("pas de mesure sur");
+  });
+
+  it("« stable » se décide sur l'écart affiché : 1,5 % et 2,0 % s'écrivent « +2 % » et se lisent pareil", () => {
+    const a = rendu({ valeur: 1015, precedent: 1000, vital: undefined, format: "count", sensMeilleur: "haut" });
+    const b = rendu({ valeur: 1020, precedent: 1000, vital: undefined, format: "count", sensMeilleur: "haut" });
+    const couleur = (h: string) => (h.match(/text-(good|bad)-ink/) ?? [null])[0];
+    expect(texte(a)).toContain("+2 %");
+    expect(texte(b)).toContain("+2 %");
+    expect(couleur(b)).toBe("text-good-ink");
+    expect(couleur(a)).toBe(couleur(b));
+  });
+});

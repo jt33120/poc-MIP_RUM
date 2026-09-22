@@ -88,7 +88,11 @@ export function comparaisonDeTuile({
       texte: `période précédente incomplète : ${couverturePrecedente.raison ?? "raison non lue"}`,
     };
   }
-  if (precedent === null) return { kind: "silence", texte: `pas de mesure sur ${referenceSansVs(reference)}` };
+  // Un précédent non fini (un 0/0 calculé en amont) n'est pas une mesure : il se
+  // tait comme null, sinon il s'afficherait « ↓ NaN % », coloré.
+  if (precedent === null || !Number.isFinite(precedent)) {
+    return { kind: "silence", texte: `pas de mesure sur ${referenceSansVs(reference)}` };
+  }
   if (precedent === 0) return { kind: "silence", texte: TEXTE_REFERENCE_NULLE };
   if (sousLeSeuil(n, faibleSous) || sousLeSeuil(couverturePrecedente?.n, faibleSous)) {
     return { kind: "silence", texte: TEXTE_ECHANTILLON_DELTA };
@@ -99,7 +103,9 @@ export function comparaisonDeTuile({
 /** Le texte d'un delta tel qu'un lecteur d'écran l'annonce : « +8 % vs 24 h précédentes ». */
 function texteDelta(pct: number, reference: string): string {
   const arrondi = Math.round(pct);
-  const stable = Math.abs(pct) < SEUIL_STABLE_PCT;
+  // Décidé sur l'écart AFFICHÉ : 1,5 % s'écrit « +2 % », il ne peut pas être « stable »
+  // quand 2,0 % ne l'est pas.
+  const stable = Math.abs(arrondi) < SEUIL_STABLE_PCT;
   return `${stable ? "stable, " : ""}${arrondi > 0 ? "+" : ""}${arrondi} % ${libelleReference(reference)}`;
 }
 

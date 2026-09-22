@@ -75,6 +75,8 @@ describe("Sparkline — seuils et accessibilité", () => {
   it("seuils → bande « Bon » en fond ; sans seuils, pas de bande", () => {
     expect(rendu(<Sparkline valeurs={[2300, 2700]} label="LCP" seuils={[2500, 4000]} />)).toContain('data-bande="bon"');
     expect(rendu(<Sparkline valeurs={[2300, 2700]} label="LCP" />)).not.toContain("data-bande");
+    // Moins de deux points : rien n'est dessiné, bande comprise (revue de vague 2).
+    expect(rendu(<Sparkline valeurs={[2300]} label="LCP" seuils={[2500, 4000]} />)).not.toContain("data-bande");
   });
 
   it("la bande « Bon » reste visible quand toutes les valeurs sont bonnes", () => {

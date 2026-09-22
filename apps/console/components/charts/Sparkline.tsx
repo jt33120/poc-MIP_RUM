@@ -109,7 +109,7 @@ export function Sparkline({
       className="shrink-0 overflow-visible"
     >
       <title>{aria}</title>
-      {g.bandeBon != null && (
+      {g.assezDePoints && g.bandeBon != null && (
         <rect
           x={0}
           y={(hauteur - g.bandeBon).toFixed(1)}

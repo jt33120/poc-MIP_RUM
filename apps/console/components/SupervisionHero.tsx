@@ -167,11 +167,13 @@ export function DeltaBadge({
   sensMeilleur?: "bas" | "haut" | "neutre";
 }) {
   const sens = sensMeilleur ?? (lowerIsBetter ? "bas" : "haut");
-  const flat = Math.abs(pct) < 2;
+  const arrondi = Math.round(pct);
+  // « Stable » se décide sur l'écart AFFICHÉ : 1,5 % s'écrit « +2 % » comme 2,0 %,
+  // les deux ont la même couleur.
+  const flat = Math.abs(arrondi) < 2;
   const worse = sens === "bas" ? pct > 0 : pct < 0;
   const cls = flat || sens === "neutre" ? "text-ink-soft" : worse ? "text-bad-ink" : "text-good-ink";
   const arrow = flat ? "→" : pct > 0 ? "↑" : "↓";
-  const arrondi = Math.round(pct);
   const libelle = libelleReference(reference);
   // `title` = la référence, identique au texte visible : les e2e qui repèrent un
   // écart par `[title="vs période précédente"]` (etat-de-vue) le trouvent toujours.
