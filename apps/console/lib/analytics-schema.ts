@@ -27,6 +27,7 @@ import {
   RANGE_PRESETS,
   VALUE_MAX,
   bucketStarts,
+  conditionsOf,
   fnv1a,
   isSafeText,
   resolveRange,
@@ -1106,6 +1107,13 @@ function parseRange(raw: unknown, nowMs: number): ExplorerParsed<AnalyticsQuery[
  * Il rejoue la requête telle qu'elle a été exécutée — plage résolue comprise pour
  * une fenêtre personnalisée, preset conservé pour une fenêtre glissante, qui doit
  * rester glissante. Aucune donnée de résultat n'y figure.
+ *
+ * TOUTES LES CONDITIONS DE POPULATION (F34). `filters` porte `conditionsOf` — appareil,
+ * paramètres dédiés (`release=`, `route=`…) PUIS segment —, pas le seul segment : une
+ * vue enregistrée depuis `/explorer?release=1.4.2` perdait sa release et, rouverte,
+ * mesurait toute l'app (le total d'une vue « P65 » passait de 6 à 8 dès qu'une autre
+ * erreur de l'app tombait dans la fenêtre). Une requête d'API n'a que des conditions
+ * de segment : pour elle, rien ne change.
  */
 export function canonicalAst(query: AnalyticsQuery, plan: ExplorerPlan): Record<string, unknown> {
   const range = query.range.preset
@@ -1119,7 +1127,7 @@ export function canonicalAst(query: AnalyticsQuery, plan: ExplorerPlan): Record<
     measure: plan.measure.property
       ? { aggregation: plan.measure.aggregation, field: plan.measure.field, property: plan.measure.property }
       : { aggregation: plan.measure.aggregation, field: plan.measure.field },
-    filters: query.filters.segments.map((c) =>
+    filters: conditionsOf(query.filters).map((c) =>
       c.operator === "is_null"
         ? { field: c.dimension, operator: c.operator }
         : { field: c.dimension, operator: c.operator, type: "string", value: c.value },

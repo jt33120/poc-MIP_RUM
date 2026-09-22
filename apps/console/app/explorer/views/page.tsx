@@ -129,7 +129,9 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
         // `overflow-x-auto` et non `overflow-hidden` : à 390 px, six colonnes dont
         // un champ de saisie ne tiennent pas. Les MASQUER rendrait le renommage
         // inatteignable ; les faire défiler le garde accessible.
-        <div className="card overflow-x-auto">
+        // `relative` : la légende et les libellés `sr-only` (position: absolute) restent
+        // dans ce conteneur défilant au lieu d'élargir la page (piège 16).
+        <div className="card relative overflow-x-auto">
           <table className="w-full text-sm">
             <caption className="sr-only">Vues enregistrées lisibles par ce compte</caption>
             <thead>

@@ -28,6 +28,9 @@ import {
   type ExplorerRequest,
 } from "../../apps/console/lib/analytics-schema";
 import type { ScopePrincipal } from "../../apps/console/lib/query-contract";
+import { parseAnalyticsQuery as f34ParseAnalyticsQuery } from "../../apps/console/lib/query-contract";
+import { parseExplorerPlan as f34ParseExplorerPlan } from "../../apps/console/lib/analytics-schema";
+import { explorerHrefFromAst as f34ExplorerHrefFromAst, explorerSource as f34ExplorerSource } from "../../apps/console/lib/explorer-page-params";
 
 const NOW = Date.parse("2026-09-17T12:00:00.000Z");
 const ADMIN: ScopePrincipal = { role: "admin", apps: null };
@@ -443,5 +446,32 @@ describe("mesures rendues sans arrondi silencieux", () => {
   it("une valeur illisible vaut null, jamais zéro", () => {
     expect(mesureNumerique("NaN")).toEqual({ value: null, approx: false });
     expect(mesureNumerique("Infinity")).toEqual({ value: null, approx: false });
+  });
+});
+
+// F34 — une vue enregistrée depuis une URL garde TOUTES ses conditions de population.
+describe("F34 — AST canonique : paramètres dédiés compris", () => {
+  it("`release=` et `device=` de l'URL entrent dans `filters`, et la réouverture les rejoue", () => {
+    const qs =
+      "app=demo-app&period=1h&release=p65-e2e-rel&device=desktop&seg=v2:browser:is_null&dataset=errors&measure=occurrences:sum&viz=toplist&g0=route&limit=5";
+    const query = f34ParseAnalyticsQuery(new URLSearchParams(qs), { principal: ADMIN, nowMs: NOW });
+    if (!query.ok) throw new Error(query.error.code);
+    const plan = f34ParseExplorerPlan(f34ExplorerSource(new URLSearchParams(qs)), query.value);
+    if (!plan.ok) throw new Error(plan.error.code);
+
+    const ast = canonicalAst(query.value, plan.value);
+    expect(ast.filters).toEqual([
+      { field: "device", operator: "eq", type: "string", value: "desktop" },
+      { field: "release", operator: "eq", type: "string", value: "p65-e2e-rel" },
+      { field: "browser", operator: "is_null" },
+    ]);
+    // Rejouée par l'API ou par une vue : même AST.
+    const rejeu = parseExplorerQuery(ast, { principal: ADMIN, nowMs: NOW });
+    expect(rejeu.ok).toBe(true);
+    if (rejeu.ok) expect(canonicalAst(rejeu.value.query, rejeu.value.plan)).toEqual(ast);
+    // Rouverte depuis la liste des vues : la release est dans la population rejouée.
+    const ouvrir = f34ExplorerHrefFromAst(ast);
+    expect(ouvrir.ok).toBe(true);
+    if (ouvrir.ok) expect(new URLSearchParams(ouvrir.href.split("?")[1]).get("seg")).toContain("release:eq:p65-e2e-rel");
   });
 });
