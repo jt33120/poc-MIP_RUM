@@ -142,6 +142,101 @@ export function referencePeriodePrecedente(range: { from: string; to: string; pr
   return `${tete} (${fmt.format(new Date(debut - duree))} → ${fmt.format(new Date(debut))} UTC)`;
 }
 
+// ─────────────────────────────── Interactions (F22) ───────────────────────────────
+import { classerParGravite } from "./impact";
+
+/** État d'une surface de frustration, de forme compatible avec `Etat` (components/states). */
+export type EtatCapteurFrustration =
+  | { kind: "non_collecte"; manque: string }
+  | { kind: "partiel"; raison: string };
+
+export const MANQUE_CAPTEUR_MOBILE = "le SDK mobile n'émet pas de signaux de frustration";
+export const RAISON_RUNTIME_ABSENT =
+  "capteur non identifiable (colonne runtime absente) : un 0 peut venir d'un capteur qui n'émet pas";
+
+/**
+ * Garde de capteur des signaux de frustration (R-F, CP16), dans l'ordre :
+ *   - colonne `runtime` absente → comptes affichés, `partiel` (on ne sait pas qui écoute) ;
+ *   - sessions dans la base mais aucune dont le capteur émet → `non_collecte` : les
+ *     comptes ne sont PAS affichés, un « 0 » dirait « personne ne s'acharne » ;
+ *   - base mixte → `partiel` « compté sur les sessions navigateur seulement (N sur M) » ;
+ *   - sinon rien : un 0 est un vide réel.
+ * `masquer` : les comptes ne doivent pas être rendus.
+ */
+export function etatCapteurFrustration(capteur: {
+  sessionsCouvertes: number;
+  sessionsTotal: number;
+  runtimeLu: boolean;
+}): { etat: EtatCapteurFrustration | null; masquer: boolean } {
+  if (!capteur.runtimeLu) return { etat: { kind: "partiel", raison: RAISON_RUNTIME_ABSENT }, masquer: false };
+  if (capteur.sessionsTotal > 0 && capteur.sessionsCouvertes === 0) {
+    return { etat: { kind: "non_collecte", manque: MANQUE_CAPTEUR_MOBILE }, masquer: true };
+  }
+  if (capteur.sessionsCouvertes > 0 && capteur.sessionsCouvertes < capteur.sessionsTotal) {
+    const n = capteur.sessionsCouvertes.toLocaleString("fr-FR");
+    const m = capteur.sessionsTotal.toLocaleString("fr-FR");
+    return { etat: { kind: "partiel", raison: `compté sur les sessions navigateur seulement (${n} sur ${m})` }, masquer: false };
+  }
+  return { etat: null, masquer: false };
+}
+
+/** Une route du hero « Routes les plus frustrantes », avec son taux. */
+export interface RouteFrustranteClassee {
+  route: string | null;
+  rage: number;
+  dead: number;
+  error: number;
+  sessionsTouchees: number;
+  sessionsRoute: number;
+  /** Part des sessions de la route ayant au moins un signal ; `null` sans session de la route. */
+  taux: number | null;
+}
+
+/**
+ * Classe les routes par GRAVITÉ (§ 5.4.2) : le pilote est la part des sessions de la
+ * route qui portent un signal — un taux, pas un compte, qui classerait par trafic.
+ * Une route vue par moins de 30 sessions ne passe pas devant (échantillon faible,
+ * `classerParGravite`) : 3 sessions sur 3 touchées se rangent APRÈS 40 sur 400. Une
+ * route sans session de vue (signal seul) n'a pas de taux : « — », en dernier.
+ */
+export function classerRoutesFrustrantes(
+  rows: readonly Omit<RouteFrustranteClassee, "taux">[],
+  tri: "gravite" | "volume",
+): { lignes: RouteFrustranteClassee[]; faibles: number } {
+  const avecTaux = rows.map((r) => ({ ...r, taux: r.sessionsRoute > 0 ? Math.min(1, r.sessionsTouchees / r.sessionsRoute) : null }));
+  return classerParGravite(avecTaux, {
+    pilote: (r) => r.taux,
+    effectif: (r) => r.sessionsRoute,
+    tri,
+    volume: (r) => r.sessionsRoute,
+  });
+}
+
+/**
+ * Taux de référence « Ensemble » du hero par route : Σ sessions touchées / Σ sessions
+ * de la route, sur les MÊMES couples session × route que chaque ligne. Comparer une
+ * route à « sessions touchées n'importe où / sessions avec une vue » opposerait deux
+ * populations : une session qui voit /panier et /, et ne se trompe que sur /, ferait
+ * paraître /panier meilleure que l'ensemble sans rien lui devoir. `null` sans couple.
+ */
+export function tauxEnsembleRoutes(rows: readonly { sessionsTouchees: number; sessionsRoute: number }[]): {
+  taux: number | null;
+  touchees: number;
+  couples: number;
+} {
+  const touchees = rows.reduce((s, r) => s + r.sessionsTouchees, 0);
+  const couples = rows.reduce((s, r) => s + r.sessionsRoute, 0);
+  return { taux: couples > 0 ? Math.min(1, touchees / couples) : null, touchees, couples };
+}
+
+/** Écart d'une route au taux de l'ensemble, en points : « +25 pts vs ensemble » ; `null` sans l'un des deux taux. */
+export function ecartAuTauxEnsemble(taux: number | null, ensemble: number | null): { valeur: number; affichage: string } | null {
+  if (taux === null || ensemble === null) return null;
+  const pts = Math.round((taux - ensemble) * 1000) / 10;
+  const texte = Math.abs(pts).toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+  return { valeur: taux - ensemble, affichage: `${pts > 0 ? "+" : pts < 0 ? "−" : ""}${texte} pt${Math.abs(pts) > 1 ? "s" : ""} vs ensemble` };
+}
+
 // ═══════════════════ F14 — Pages : KPI, sélecteur de vital, hero classé ═══════════════════
 //
 // Le classement des routes de `/pages` (§ 5.2.2) fusionne les trois listes d'avant

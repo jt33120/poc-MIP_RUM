@@ -4,6 +4,8 @@ import { fmtDate } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { type SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
+import { OngletsInteractions } from "@/components/perf/OngletsInteractions";
+import { paramReader } from "@/lib/query-contract";
 import {
   ACTIONS_MAX_OFFSET,
   actionsDisponible,
@@ -35,6 +37,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
     return (
       <div className="animate-fade-up">
         <PageHeader title="Actions" sub={SOUS_TITRE} />
+        <OngletsInteractions actif="/actions" sp={paramReader(sp)} />
         <div className="card px-4 py-10 text-center text-sm text-ink-soft" data-testid="actions-non-collecte">
           Non collecté : la table des actions n&apos;existe pas sur ce déploiement
         </div>
@@ -53,6 +56,8 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
   return (
     <div className="animate-fade-up">
       <PageHeader title="Actions" sub={SOUS_TITRE} />
+      {/* Onglets internes d'« Interactions » (F22) ; le reste de l'écran est F24. */}
+      <OngletsInteractions actif="/actions" sp={paramReader(sp)} />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat label={`Actions · ${ecran.label}`} value={summary.actions.toLocaleString("fr-FR")} />

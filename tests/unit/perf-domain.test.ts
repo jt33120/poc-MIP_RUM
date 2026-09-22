@@ -157,6 +157,103 @@ describe("F18 — referencePeriodePrecedente", () => {
   });
 });
 
+// ─────────────────────────────── F22 — Interactions ───────────────────────────────
+import {
+  MANQUE_CAPTEUR_MOBILE,
+  RAISON_RUNTIME_ABSENT,
+  classerRoutesFrustrantes,
+  etatCapteurFrustration,
+} from "../../apps/console/lib/perf-domain";
+
+describe("F22 — etatCapteurFrustration (R-F, CP16)", () => {
+  it("sessions React Native seules → non collecté, comptes masqués (aucun « 0 »)", () => {
+    expect(etatCapteurFrustration({ sessionsCouvertes: 0, sessionsTotal: 3, runtimeLu: true })).toEqual({
+      etat: { kind: "non_collecte", manque: MANQUE_CAPTEUR_MOBILE },
+      masquer: true,
+    });
+  });
+
+  it("population mixte → partiel « N sur M », comptes affichés", () => {
+    expect(etatCapteurFrustration({ sessionsCouvertes: 2, sessionsTotal: 3, runtimeLu: true })).toEqual({
+      etat: { kind: "partiel", raison: "compté sur les sessions navigateur seulement (2 sur 3)" },
+      masquer: false,
+    });
+  });
+
+  it("colonne runtime absente → partiel « capteur non identifiable », comptes affichés", () => {
+    expect(etatCapteurFrustration({ sessionsCouvertes: 5, sessionsTotal: 5, runtimeLu: false })).toEqual({
+      etat: { kind: "partiel", raison: RAISON_RUNTIME_ABSENT },
+      masquer: false,
+    });
+  });
+
+  it("tout couvert, ou aucune session : un 0 est un vide réel", () => {
+    expect(etatCapteurFrustration({ sessionsCouvertes: 4, sessionsTotal: 4, runtimeLu: true })).toEqual({ etat: null, masquer: false });
+    expect(etatCapteurFrustration({ sessionsCouvertes: 0, sessionsTotal: 0, runtimeLu: true })).toEqual({ etat: null, masquer: false });
+  });
+});
+
+describe("F22 — classerRoutesFrustrantes", () => {
+  const route = (r: string | null, touchees: number, sessions: number) => ({
+    route: r,
+    rage: touchees,
+    dead: 0,
+    error: 0,
+    sessionsTouchees: touchees,
+    sessionsRoute: sessions,
+  });
+
+  it("un taux, pas un compte : route à 3 sessions / 3 touchées classée APRÈS route à 400 / 40", () => {
+    const { lignes, faibles } = classerRoutesFrustrantes([route("/petite", 3, 3), route("/checkout", 40, 400)], "gravite");
+    expect(lignes.map((l) => l.route)).toEqual(["/checkout", "/petite"]);
+    expect(lignes[0].taux).toBeCloseTo(0.1);
+    expect(faibles).toBe(1);
+  });
+
+  it("gravité : le plus fort taux d'abord parmi les routes assez vues ; volume : le trafic", () => {
+    const rows = [route("/a", 30, 300), route("/b", 90, 300), route("/c", 10, 1000)];
+    expect(classerRoutesFrustrantes(rows, "gravite").lignes.map((l) => l.route)).toEqual(["/b", "/a", "/c"]);
+    expect(classerRoutesFrustrantes(rows, "volume").lignes.map((l) => l.route)).toEqual(["/c", "/a", "/b"]);
+  });
+
+  it("route sans session de vue (signal seul) → taux null, en dernier, jamais 0 %", () => {
+    const { lignes } = classerRoutesFrustrantes([route(null, 2, 0), route("/a", 1, 100)], "gravite");
+    expect(lignes.map((l) => l.route)).toEqual(["/a", null]);
+    expect(lignes[1].taux).toBeNull();
+  });
+});
+
+import { ecartAuTauxEnsemble, tauxEnsembleRoutes } from "../../apps/console/lib/perf-domain";
+
+describe("F22 — tauxEnsembleRoutes et ecartAuTauxEnsemble (même population que les lignes)", () => {
+  // w1 voit /panier et y rage ; w2 voit /panier et /, erreur sur / ; w3 voit /, clic mort.
+  // Par route : /panier 1 touchée (w1) sur 2 (w1, w2) ; / 2 touchées (w2, w3) sur 2.
+  // L'ancienne référence (touchées n'importe où / sessions avec vue) valait 3/3 = 100 % :
+  // « / » paraissait « +0 pt » et /panier « −50 pts ». Sur les couples : 3/4 = 75 %.
+  const routes = [
+    { route: "/panier", sessionsTouchees: 1, sessionsRoute: 2 },
+    { route: "/", sessionsTouchees: 2, sessionsRoute: 2 },
+  ];
+
+  it("Σ touchées / Σ sessions de la route, sur les couples session × route", () => {
+    expect(tauxEnsembleRoutes(routes)).toEqual({ taux: 0.75, touchees: 3, couples: 4 });
+  });
+
+  it("écarts en points au taux de l'ensemble : /panier −25 pts, / +25 pts", () => {
+    const ensemble = tauxEnsembleRoutes(routes).taux;
+    expect(ecartAuTauxEnsemble(0.5, ensemble)).toEqual({ valeur: -0.25, affichage: "−25 pts vs ensemble" });
+    expect(ecartAuTauxEnsemble(1, ensemble)).toEqual({ valeur: 0.25, affichage: "+25 pts vs ensemble" });
+    expect(ecartAuTauxEnsemble(0.75, ensemble)?.affichage).toBe("0 pt vs ensemble");
+  });
+
+  it("sans couple (aucune vue) → null, jamais 0 % ; taux de route inconnu → pas d'écart", () => {
+    expect(tauxEnsembleRoutes([]).taux).toBeNull();
+    expect(tauxEnsembleRoutes([{ sessionsTouchees: 0, sessionsRoute: 0 }]).taux).toBeNull();
+    expect(ecartAuTauxEnsemble(null, 0.5)).toBeNull();
+    expect(ecartAuTauxEnsemble(0.5, null)).toBeNull();
+  });
+});
+
 // ─── F14 — Pages : jointure du classement, tuile « Routes au-delà de Bon », références ───
 import * as pagesF14 from "../../apps/console/lib/perf-domain";
 

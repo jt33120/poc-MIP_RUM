@@ -606,6 +606,187 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
   });
 });
 
+// ═══════════════════ F22 — Interactions : tuiles et hero de /ux ═══════════════════
+//
+// Trois apps à ce bloc : une app navigateur (60 rage clicks sur 60 cibles : plus que
+// les 50 couples de `topFrustrations`), une app aux seules sessions React Native (le
+// capteur n'émet rien : non collecté), une app mixte (2 navigateur + 1 React Native :
+// « 2 sur 3 », et le signal porté par la session React Native n'est pas compté).
+(url ? describe : describe.skip)("F22 — frustrationTotaux et frustrationParRoute sur PostgreSQL", () => {
+  const WEB_F22 = "f22-perf-web";
+  const MOBILE_F22 = "f22-perf-mobile";
+  const MIXTE_F22 = "f22-perf-mixte";
+  const APPS_F22 = [WEB_F22, MOBILE_F22, MIXTE_F22];
+  const c22 = new pg.Client(url ? { connectionString: url } : {});
+  let lib22: Console;
+  let frustration: typeof import("../../apps/console/lib/queries-frustration");
+  const f22 = (app: string) => lib22.filtersOfQuery(requete(`${FENETRE}&app=${app}`));
+
+  async function nettoyerF22(): Promise<void> {
+    for (const table of ["rum_event", "rum_pageview", "rum_session"]) {
+      await c22.query(`delete from ${table} where app_id = any($1::text[])`, [APPS_F22]);
+    }
+  }
+
+  async function semerF22(): Promise<void> {
+    // [session, app, runtime, début, routes vues]
+    const sessions: [string, string, string | null, Date, string[]][] = [
+      ["f22-w0", WEB_F22, "browser", H(-2), ["/panier"]], // période précédente
+      ["f22-w1", WEB_F22, "browser", H(0, 5), ["/panier"]],
+      ["f22-w2", WEB_F22, null, H(1, 5), ["/panier", "/"]], // runtime NULL : navigateur d'avant v82
+      ["f22-w3", WEB_F22, "browser", H(2, 5), ["/"]],
+      ["f22-m1", MOBILE_F22, "react_native", H(0, 5), ["Accueil"]],
+      ["f22-m2", MOBILE_F22, "react_native", H(1, 5), ["Accueil"]],
+      ["f22-m3", MOBILE_F22, "react_native", H(2, 5), ["Panier"]],
+      ["f22-x1", MIXTE_F22, "browser", H(0, 5), ["/"]],
+      ["f22-x2", MIXTE_F22, "browser", H(1, 5), ["/"]],
+      ["f22-x3", MIXTE_F22, "react_native", H(2, 5), ["Accueil"]],
+    ];
+    for (const [id, app, runtime, debut, routes] of sessions) {
+      await c22.query(
+        `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at, runtime)
+         values ($1, $2, 'desktop', false, $3, $3, $4)`,
+        [id, app, debut, runtime],
+      );
+      for (const [i, route] of routes.entries()) {
+        await c22.query(
+          `insert into rum_pageview (span_id, session_id, app_id, route, url, nav_type, started_at)
+           values ($1, $2, $3, $4, 'https://site.example/', 'navigate', $5)`,
+          [`${id}-pv${i}`, id, app, route, new Date(debut.getTime() + i * 60_000)],
+        );
+      }
+    }
+    // [session, app, route, type, cible, instant]
+    const signaux: [string, string, string, "rage" | "dead" | "error", string, Date][] = [
+      ...Array.from({ length: 60 }, (_, i) => ["f22-w1", WEB_F22, "/panier", "rage", `bouton-${i}`, H(0, 20)] as const),
+      ["f22-w2", WEB_F22, "/", "error", "payer", H(1, 20)],
+      ["f22-w3", WEB_F22, "/", "dead", "lien-mort", H(2, 20)],
+      ["f22-w0", WEB_F22, "/panier", "rage", "bouton-0", H(-2, 20)], // période précédente
+      ["f22-x1", MIXTE_F22, "/", "rage", "menu", H(0, 20)],
+      ["f22-x3", MIXTE_F22, "Accueil", "rage", "onglet", H(2, 20)], // porté par une session React Native
+    ];
+    for (const [n, [sid, app, route, type, cible, ts]] of signaux.entries()) {
+      await c22.query(
+        `insert into rum_event (span_id, session_id, app_id, route, name, props, ts)
+         values ($1, $2, $3, $4, $5, $6, $7)`,
+        [`f22-e-${n}`, sid, app, route, `frustration.${type}`, { target: cible, count: 1 }, ts],
+      );
+    }
+  }
+
+  beforeAll(async () => {
+    await c22.connect();
+    for (const file of fichiersSql()) await c22.query(readFileSync(file, "utf8"));
+    await nettoyerF22();
+    await semerF22();
+    lib22 = await consoleSur(url!);
+    frustration = await import("../../apps/console/lib/queries-frustration");
+  }, 180_000);
+
+  afterAll(async () => {
+    await lib22?.pool.end();
+    await nettoyerF22();
+    await c22.end();
+  });
+
+  describe("frustrationTotaux", () => {
+    it("total ENTIER : 60 rage clicks sur 60 cibles, là où `topFrustrations` s'arrête à 50 couples", async () => {
+      const totaux = await frustration.frustrationTotaux(f22(WEB_F22));
+      expect(totaux.parType).toEqual([
+        { kind: "rage", n: 60, sessions: 1 },
+        { kind: "dead", n: 1, sessions: 1 },
+        { kind: "error", n: 1, sessions: 1 },
+      ]);
+      const top = await frustration.topFrustrations(f22(WEB_F22));
+      expect(top.filter((r) => r.kind === "rage").reduce((s, r) => s + r.n, 0)).toBeLessThan(60);
+    });
+
+    it("base = sessions avec vue ; toutes couvertes (runtime browser ou NULL)", async () => {
+      const { capteur } = await frustration.frustrationTotaux(f22(WEB_F22));
+      expect(capteur).toEqual({ sessionsCouvertes: 3, sessionsTotal: 3, runtimeLu: true });
+    });
+
+    it("sessions React Native seules → sessionsCouvertes = 0 (le capteur n'émet pas), aucun signal", async () => {
+      const totaux = await frustration.frustrationTotaux(f22(MOBILE_F22));
+      expect(totaux.capteur).toEqual({ sessionsCouvertes: 0, sessionsTotal: 3, runtimeLu: true });
+      expect(totaux.parType.every((t) => t.n === 0)).toBe(true);
+    });
+
+    it("mixte : 2 sessions couvertes sur 3 ; le signal porté par la session React Native n'est pas compté", async () => {
+      const totaux = await frustration.frustrationTotaux(f22(MIXTE_F22));
+      expect(totaux.capteur).toEqual({ sessionsCouvertes: 2, sessionsTotal: 3, runtimeLu: true });
+      expect(totaux.parType.find((t) => t.kind === "rage")).toEqual({ kind: "rage", n: 1, sessions: 1 });
+    });
+
+    it("shift : la période précédente, sur sa propre base", async () => {
+      const avant = await frustration.frustrationTotaux(f22(WEB_F22), true);
+      expect(avant.parType.find((t) => t.kind === "rage")).toEqual({ kind: "rage", n: 1, sessions: 1 });
+      expect(avant.capteur).toEqual({ sessionsCouvertes: 1, sessionsTotal: 1, runtimeLu: true });
+    });
+  });
+
+  describe("frustrationParRoute", () => {
+    it("par route : comptes par type, sessions de la route et sessions touchées SUR la route", async () => {
+      const lignes = await frustration.frustrationParRoute(f22(WEB_F22));
+      expect(lignes).toEqual([
+        { route: "/", rage: 0, dead: 1, error: 1, sessionsTouchees: 2, sessionsRoute: 2 },
+        { route: "/panier", rage: 60, dead: 0, error: 0, sessionsTouchees: 1, sessionsRoute: 2 },
+      ]);
+    });
+
+    it("numérateur inclus dans le dénominateur : touchées ≤ sessions de la route, partout", async () => {
+      for (const app of APPS_F22) {
+        for (const l of await frustration.frustrationParRoute(f22(app))) {
+          expect(l.sessionsTouchees).toBeLessThanOrEqual(l.sessionsRoute);
+        }
+      }
+    });
+
+    it("type=rage : seules les sessions touchées se restreignent au type ; dead et error restent LUS (jamais un 0 non lu)", async () => {
+      const lignes = await frustration.frustrationParRoute(f22(WEB_F22), "rage");
+      // « / » porte un dead click et un error click, aucun rage : ses colonnes le disent,
+      // et aucune de ses sessions n'est touchée PAR UN RAGE CLICK.
+      expect(lignes.find((l) => l.route === "/")).toEqual({
+        route: "/",
+        rage: 0,
+        dead: 1,
+        error: 1,
+        sessionsTouchees: 0,
+        sessionsRoute: 2,
+      });
+      expect(lignes.find((l) => l.route === "/panier")).toEqual({
+        route: "/panier",
+        rage: 60,
+        dead: 0,
+        error: 0,
+        sessionsTouchees: 1,
+        sessionsRoute: 2,
+      });
+      // Mêmes comptes qu'hors filtre : le filtre ne touche que le pilote.
+      const tous = await frustration.frustrationParRoute(f22(WEB_F22));
+      expect(lignes.map(({ rage, dead, error }) => [rage, dead, error])).toEqual(
+        tous.map(({ rage, dead, error }) => [rage, dead, error]),
+      );
+    });
+
+    it("référence « Ensemble » sur les mêmes couples session × route : Σ touchées / Σ sessions de la route", async () => {
+      const { tauxEnsembleRoutes } = await import("../../apps/console/lib/perf-domain");
+      // « / » : 2 touchées sur 2 ; « /panier » : 1 sur 2 → 3 couples touchés sur 4.
+      expect(tauxEnsembleRoutes(await frustration.frustrationParRoute(f22(WEB_F22)))).toEqual({
+        taux: 0.75,
+        touchees: 3,
+        couples: 4,
+      });
+    });
+
+    it("les sessions React Native sortent des deux côtés : aucune route mobile dans le classement", async () => {
+      expect(await frustration.frustrationParRoute(f22(MOBILE_F22))).toEqual([]);
+      const mixte = await frustration.frustrationParRoute(f22(MIXTE_F22));
+      expect(mixte).toEqual([{ route: "/", rage: 1, dead: 0, error: 0, sessionsTouchees: 1, sessionsRoute: 2 }]);
+    });
+  });
+});
+
 // ═══════════════ F15 — vuesParNavType (plan § 4.5, § 5.2.2 « Vues par type de navigation ») ═══════════════
 //
 // Sa propre app et ses propres données : ce bloc ne dépend pas du semis de F10.
