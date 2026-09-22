@@ -72,16 +72,25 @@ test.afterAll(async () => {
   await pool.end();
 });
 
-async function ouvrir(page: Page, largeur: number, hauteur: number, extra = "") {
-  await page.setViewportSize({ width: largeur, height: hauteur });
+/** Connexion UNE fois par test : `/login` d'une session ouverte redirige, le champ e-mail n'apparaît plus. */
+async function connecter(page: Page) {
   await page.goto(`${consoleUrl}/login`);
   await page.fill('input[name="email"]', EMAIL_F49);
   await page.fill('input[name="password"]', motDePasseF49);
   await page.click('button[type="submit"]');
   await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
   await page.context().addCookies([{ name: "mip-project", value: APP_F49, url: consoleUrl }]);
-  await page.goto(`${consoleUrl}/retention?app=${APP_F49}${extra}`);
+}
+
+async function aller(page: Page, largeur: number, hauteur: number) {
+  await page.setViewportSize({ width: largeur, height: hauteur });
+  await page.goto(`${consoleUrl}/retention?app=${APP_F49}`);
   await expect(page.getByRole("heading", { name: "Rétention", level: 1 })).toBeVisible();
+}
+
+async function ouvrir(page: Page, largeur: number, hauteur: number) {
+  await connecter(page);
+  await aller(page, largeur, hauteur);
 }
 
 const tuile = (page: Page, libelle: string) => page.getByTestId("kpi-tile").filter({ hasText: libelle });
@@ -147,13 +156,17 @@ test("par appareil : un lien par série ; sous device= la figure le dit au lieu 
 });
 
 test("390, 768 et 1440 px : aucun débordement", async ({ page }) => {
+  await connecter(page);
+  // Toutes les largeurs sont PARCOURUES avant d'échouer : s'arrêter à la première cacherait les autres.
+  const fautes: string[] = [];
   for (const [largeur, hauteur] of [
     [390, 844],
     [768, 1024],
     [1440, 900],
   ] as const) {
-    await ouvrir(page, largeur, hauteur);
+    await aller(page, largeur, hauteur);
     await expect(page.getByTestId("matrice-cohortes")).toBeVisible();
-    expect(await debordements(page), `débordement à ${largeur} px`).toEqual([]);
+    for (const faute of await debordements(page)) fautes.push(`/retention @ ${largeur} px — ${faute}`);
   }
+  expect(fautes).toEqual([]);
 });

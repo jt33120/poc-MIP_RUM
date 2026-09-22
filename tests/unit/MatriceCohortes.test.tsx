@@ -71,6 +71,10 @@ describe("MatriceCohortes", () => {
     expect(texte(html)).toContain("sans verdict");
   });
 
+  it("la zone défilante est positionnée : ses sr-only n'élargissent pas la page (piège 16)", () => {
+    expect(html).toMatch(/class="relative overflow-x-auto"/);
+  });
+
   it("colonne « Cohorte » figée et en-têtes S+0..S+n", () => {
     expect(html).toContain("sticky left-0");
     expect(texte(html)).toMatch(/S\+0 S\+1 S\+2/);

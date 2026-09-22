@@ -41,7 +41,10 @@ export function MatriceCohortes({
   const offsets = Array.from({ length: Math.max(0, colonnes) }, (_v, i) => i);
   return (
     <div className="min-w-0" data-testid="matrice-cohortes">
-      <div className="overflow-x-auto">
+      {/* `relative` : les textes sr-only (position absolue) des cases hors champ se
+          rangent DANS la zone défilante ; sans ancêtre positionné, ils se plaçaient
+          par rapport à la page et la portaient à 465 px sur 390 (piège 16). */}
+      <div className="relative overflow-x-auto">
         <table className="min-w-max border-separate border-spacing-1 text-sm">
           <caption className="sr-only">
             Rétention par cohorte : visiteurs revenus sur taille de la cohorte, et part, pour chaque semaine depuis

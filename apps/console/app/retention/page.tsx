@@ -122,7 +122,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   const totalVisiteurs = rows.reduce((s, r) => s + r.size, 0);
 
   const selecteur = (
-    <nav aria-label="Fenêtre de rétention" className="flex min-w-0 max-w-full items-center gap-1.5 overflow-x-auto py-0.5 text-xs">
+    <nav aria-label="Fenêtre de rétention" className="relative flex min-w-0 max-w-full items-center gap-1.5 overflow-x-auto py-0.5 text-xs">
       <span className="shrink-0 text-ink-soft">Fenêtre :</span>
       {FENETRES.map((w) => (
         <Link
