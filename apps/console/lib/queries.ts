@@ -9,6 +9,13 @@ import { previousRange } from "./query-contract";
 import { dimensionSchema } from "./query-schema";
 import { sqlContext, type SqlContext } from "./query-sql";
 import type { SessionCursor, SessionSearch } from "./sessions-search";
+import {
+  SEUIL_RANGS_NORMAUX,
+  Z95,
+  intervalleP75Lu,
+  rangsQuantileNormalSql,
+  type IntervalleP75,
+} from "./stats/incertitude";
 
 export interface AppItem {
   app_id: string;
@@ -40,6 +47,12 @@ export interface VitalAgg {
   p75: number;
   p50: number; // médiane — plus robuste que le p75 sur petit échantillon
   n: number;
+  /**
+   * Intervalle à 95 % de la p75 (P*.1), calculé sur les mesures BRUTES de la
+   * fenêtre — jamais sur des p75 horaires —, ou la raison de son absence
+   * (« 7 mesures, 13 requises »).
+   */
+  intervalle: IntervalleP75;
 }
 
 /** p75 par vital sur la plage courante, ou la période précédente contiguë (shift=true). */
@@ -52,17 +65,41 @@ export async function vitalsP75(f: Filters, shift = false): Promise<VitalAgg[]> 
     time: "m.ts",
     ...(shift ? { range: previousRange(sql.query.range) } : {}),
   });
-  return q<VitalAgg>(
-    `select m.name,
-            percentile_cont(0.75) within group (order by m.value) as p75,
-            percentile_cont(0.5) within group (order by m.value) as p50,
-            count(*)::int as n
-     from rum_metric m
-     ${sessionJoin("m", "s")}
-     where true${where}
-     group by m.name`,
+  // L'intervalle de la p75 se lit dans le MÊME balayage : les mesures triées sous
+  // 30 (rangs exacts, calculés en JS), les deux statistiques d'ordre aux rangs
+  // normaux au-delà. Les rangs SQL suivent la formule de `rangsQuantileNormal`
+  // opération par opération, en float8, pour tomber sur les mêmes entiers.
+  const seuil = sql.bind(SEUIL_RANGS_NORMAUX);
+  const rangs = rangsQuantileNormalSql("count(*)", sql.bind(Z95));
+  const rows = await q<Omit<VitalAgg, "intervalle"> & { valeurs: number[] | null; bas: number | null; haut: number | null }>(
+    `with m as (
+       select m.name, m.value
+       from rum_metric m
+       ${sessionJoin("m", "s")}
+       where true${where}
+     ), agg as (
+       select name,
+              percentile_cont(0.75) within group (order by value) as p75,
+              percentile_cont(0.5) within group (order by value) as p50,
+              count(*)::int as n,
+              case when count(*) < ${seuil}::int then array_agg(value order by value) end as valeurs,
+              ${rangs.r} as r,
+              ${rangs.s} as s
+       from m
+       group by name
+     ), rangs as (
+       select name, value, row_number() over (partition by name order by value) as rang
+       from m
+     )
+     select a.name, a.p75, a.p50, a.n, a.valeurs,
+            max(x.value) filter (where x.rang = a.r) as bas,
+            max(x.value) filter (where x.rang = a.s) as haut
+     from agg a
+     left join rangs x on x.name = a.name and a.n >= ${seuil}::int and x.rang in (a.r, a.s)
+     group by a.name, a.p75, a.p50, a.n, a.valeurs`,
     sql.params,
   );
+  return rows.map(({ valeurs, bas, haut, ...v }) => ({ ...v, intervalle: intervalleP75Lu(v.n, valeurs, bas, haut) }));
 }
 
 export interface VitalPercentiles {

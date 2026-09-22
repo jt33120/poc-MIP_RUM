@@ -109,6 +109,58 @@ export interface HealthFactor {
   detail: string; // valeurs brutes lisibles (ex : "112/122 mesures good")
   earned: number | null; // points obtenus ; null = pas de donnée (composante exclue)
   max: number;
+  /** Ce que la jauge écrit quand `earned` est null (« non testable »), à la place de « n/a ». */
+  raisonNull?: string;
+}
+
+/** Pénalité d'une anomalie, sur les 10 points de la composante. */
+export const PENALTY_PER_ANOMALY = 2.5;
+
+/**
+ * La composante « Anomalies » du score de santé — PURE (P*.1, incrément 0-c).
+ *
+ * « Aucune anomalie détectée » valait 10/10 même quand la détection n'avait rien
+ * pu TESTER : v_anomaly n'examine une route qu'à partir de 5 heures de mesures LCP
+ * sur 8 jours et d'un écart-type non nul (migration-v03). À 30 sessions par jour,
+ * c'est souvent aucune — et « testé, rien trouvé » se lisait comme « pas testable ».
+ * Sans route éligible, la composante vaut `null` : elle sort du score, qui se
+ * renormalise sur les autres, et l'écran dit pourquoi.
+ */
+export function facteurAnomalies(entree: {
+  filtree: boolean;
+  /** Routes que v_anomaly a pu tester ; null si la détection n'a pas pu être lue. */
+  eligibles: number | null;
+  anomalies: number;
+}): HealthFactor {
+  const base = { key: "anomalies" as const, label: "Anomalies LCP (24 h)", max: 10 };
+  if (entree.filtree) {
+    return {
+      ...base,
+      detail: "non comptées sous filtre : la détection ne connaît que l'app et la route",
+      earned: null,
+      raisonNull: "sous filtre",
+    };
+  }
+  if (entree.eligibles == null) {
+    // Vue absente OU lecture en échec : on ne sait pas lequel, et on ne l'affirme pas.
+    return { ...base, detail: "non testable : la détection d'anomalies n'a pas pu être lue", earned: null, raisonNull: "non testable" };
+  }
+  if (entree.eligibles === 0) {
+    return {
+      ...base,
+      detail: "non testable : 0 route avec 5 heures de mesures LCP sur 8 jours",
+      earned: null,
+      raisonNull: "non testable",
+    };
+  }
+  const ratio = Math.max(0, 1 - (PENALTY_PER_ANOMALY / 10) * entree.anomalies);
+  return {
+    ...base,
+    detail: entree.anomalies
+      ? `${entree.anomalies} anomalie(s), -${PENALTY_PER_ANOMALY} pt(s) chacune`
+      : `aucune anomalie détectée sur ${entree.eligibles} route(s) testable(s)`,
+    earned: round1(10 * ratio),
+  };
 }
 
 export interface AnomalyRow {
@@ -127,7 +179,6 @@ export interface Health {
   anomalies: AnomalyRow[];
 }
 
-const PENALTY_PER_ANOMALY = 2.5; // pts retirés (sur 10) par ligne v_anomaly 24 h
 
 /**
  * Calcule le health score sur la requête commune (plage, périmètre, filtres). Les
@@ -184,8 +235,28 @@ export async function healthScore(f: Filters): Promise<Health> {
   // anomalies LCP : 24 h FIXES (la vue est horaire vs 7 j glissants), app seulement.
   const filtree = conditionsOf(sql.query.filters).length > 0;
   let anomalies: AnomalyRow[] = [];
+  // Routes que la vue a pu TESTER : sa garde (≥ 5 heures sur 8 jours, écart-type
+  // non nul) recopiée de migration-v03, sur le même périmètre.
+  let eligibles: number | null = null;
   if (!filtree) {
     try {
+      // Un contexte par requête : les paramètres liés s'accumulent dans le contexte,
+      // et une seconde requête sur le même aurait reçu ceux de la première.
+      const garde = await sqlContext(f);
+      const [e] = await q<{ eligibles: number }>(
+        `with h as (
+           select m.app_id, m.route, date_trunc('hour', m.ts) as bucket,
+                  percentile_cont(0.75) within group (order by m.value) as p75
+           from rum_metric m
+           where m.name = 'LCP' and m.ts > now() - interval '8 days'
+             and m.ts < date_trunc('hour', now())${compileScope(garde.query, "m.app_id", garde.bind)}
+           group by 1, 2, 3
+         )
+         select count(*)::int as eligibles
+         from (select 1 from h group by app_id, route having count(*) >= 5 and stddev_samp(p75) > 0) x`,
+        garde.params,
+      );
+      eligibles = e?.eligibles ?? 0;
       const vue = await sqlContext(f);
       anomalies = await q<AnomalyRow>(
         `select app_id, route, bucket, p75::float as p75, mean_7d::float as mean_7d, z_score::float as z_score
@@ -196,7 +267,10 @@ export async function healthScore(f: Filters): Promise<Health> {
         vue.params,
       );
     } catch {
-      // vue v_anomaly absente (migration v0.3 pas encore appliquée) : l'Overview reste rendable
+      // vue v_anomaly absente (migration v0.3 pas encore appliquée) : l'Overview reste
+      // rendable, et la composante dit « non testable » au lieu de « rien trouvé ».
+      eligibles = null;
+      anomalies = [];
     }
   }
 
@@ -204,7 +278,6 @@ export async function healthScore(f: Filters): Promise<Health> {
   const errorsRatio =
     c.pageviews > 0 ? Math.max(0, 1 - c.errors / c.pageviews) : c.errors > 0 ? 0 : null;
   const stabilityRatio = c.sessions > 0 ? c.clean_sessions / c.sessions : null;
-  const anomaliesRatio = Math.max(0, 1 - (PENALTY_PER_ANOMALY / 10) * anomalies.length);
 
   const factors: HealthFactor[] = [
     {
@@ -237,17 +310,7 @@ export async function healthScore(f: Filters): Promise<Health> {
       earned: stabilityRatio == null ? null : round1(20 * stabilityRatio),
       max: 20,
     },
-    {
-      key: "anomalies",
-      label: "Anomalies LCP (24 h)",
-      detail: filtree
-        ? "non comptées sous filtre : la détection ne connaît que l'app et la route"
-        : anomalies.length
-          ? `${anomalies.length} anomalie(s), -${PENALTY_PER_ANOMALY} pt(s) chacune`
-          : "aucune anomalie détectée",
-      earned: filtree ? null : round1(10 * anomaliesRatio),
-      max: 10,
-    },
+    facteurAnomalies({ filtree, eligibles, anomalies: anomalies.length }),
   ];
 
   // toutes les composantes "trafic" vides => pas de score (anomalies seules = pas significatif)

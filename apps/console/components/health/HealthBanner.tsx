@@ -45,11 +45,13 @@ function FactorBar({
   detail,
   earned,
   max,
+  raisonNull,
 }: {
   label: string;
   detail: string;
   earned: number | null;
   max: number;
+  raisonNull?: string;
 }) {
   const ratio = earned == null ? null : earned / max;
   const color =
@@ -68,7 +70,7 @@ function FactorBar({
       <div className="flex items-baseline justify-between gap-2 text-xs">
         <span className="min-w-0 truncate font-medium text-ink-soft">{label}</span>
         <span className="shrink-0 tabular-nums text-ink-faint">
-          {earned == null ? "n/a" : `${earned.toLocaleString("fr-FR")} / ${max}`}
+          {earned == null ? raisonNull ?? "n/a" : `${earned.toLocaleString("fr-FR")} / ${max}`}
         </span>
       </div>
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-panel2">
@@ -122,11 +124,19 @@ export function HealthBanner({ health, periodLabel }: { health: Health; periodLa
       </div>
       <div className="grid min-w-0 flex-1 grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
         {health.factors.map((x) => (
-          <FactorBar key={x.key} label={x.label} detail={x.detail} earned={x.earned} max={x.max} />
+          <FactorBar key={x.key} label={x.label} detail={x.detail} earned={x.earned} max={x.max} raisonNull={x.raisonNull} />
         ))}
       </div>
       <div className="w-full text-xs text-ink-faint">
         40 % vitals (LCP x2) · 30 % erreurs · 20 % stabilité · 10 % anomalies 24 h.
+        {health.factors
+          .filter((x) => x.earned == null && x.raisonNull === "non testable")
+          .map((x) => (
+            <span key={x.key}>
+              {" "}
+              {x.label} : {x.detail} — composante exclue, le score se calcule sur les autres.
+            </span>
+          ))}
         {dominant.length > 0 && (
           <>
             {" "}
