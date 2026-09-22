@@ -7,8 +7,9 @@ import type { ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { ErrorTypeBadge } from "@/components/errors/ErrorBadges";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
+import { Sparkline } from "@/components/charts/Sparkline";
 import { ERROR_LINK } from "@/components/errors/ErrorOccurrences";
-import { GroupSparkline } from "@/components/errors/GroupSparkline";
+import { CELLULE_GROUPE, CelluleGroupe, echelleCommune, noteEchelle } from "@/components/errors/ListeErreurs";
 import {
   GroupingBasisBadge,
   IssueOriginBadge,
@@ -53,6 +54,7 @@ export function IssueList({
   curseur,
   limit,
   label,
+  bucketLabel,
   sousTitre,
   avertissements,
   apercu,
@@ -64,6 +66,8 @@ export function IssueList({
   result: IssueListResult;
   /** Plage lue (« 24 h », ou dates), dans le fuseau de l'app. */
   label: string;
+  /** Largeur d'un seau des sparklines (« 1 h ») : l'échelle commune la nomme (F19). */
+  bucketLabel?: string;
   /** Question de l'écran (P1), la même que la liste historique. */
   sousTitre: string;
   /** Lignes « Réglage d'affichage ignoré », rendues sous l'en-tête. */
@@ -96,6 +100,10 @@ export function IssueList({
   );
   const limite: Record<string, string> = { ...vue, ...(limit ? { limit } : {}) };
   const filtre = Boolean(filtres.status || filtres.source || filtres.release);
+  // Échelle commune des sparklines de la page (F19, § 5.3.2) : une issue à 2
+  // occurrences ne doit pas avoir la même hauteur qu'une issue à 500.
+  const echelle = echelleCommune(issues);
+  const noteTendances = noteEchelle(echelle, bucketLabel ?? null);
 
   return (
     <div className="animate-fade-up">
@@ -164,13 +172,18 @@ export function IssueList({
       <p className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="ordre-liste">
         Triées pour le triage : à revoir, réapparitions, ouvertes, résolues, ignorées, puis par impact. « À revoir » :
         les groupes historiques repris portaient des statuts différents. « Faible confiance » : aucune frame
-        applicative n&apos;a pu identifier l&apos;erreur. Tous les compteurs portent sur {label}, sauf « Première vue ».
+        applicative n&apos;a pu identifier l&apos;erreur. Tous les compteurs portent sur {label}, sauf « Première vue ».{" "}
+        {noteTendances}
       </p>
 
-      <div className="card relative overflow-x-auto">
-        <table className="w-full min-w-table text-sm">
-          <caption className="sr-only">Issues et groupes historiques sur {label}, triés par statut puis par impact</caption>
-          <thead className="bg-panel2">
+      {/* Sous 640 px, la table devient une pile de cartes (F19, § 5.3.1) : à 390 px,
+          occurrences et sessions se lisent sans défilement horizontal. */}
+      <div className="card relative min-w-0 sm:overflow-x-auto">
+        <table className="block w-full text-sm sm:table sm:min-w-table">
+          <caption className="sr-only">
+            Issues et groupes historiques sur {label}, triés par statut puis par impact. {noteTendances}
+          </caption>
+          <thead className="hidden bg-panel2 sm:table-header-group">
             <tr>
               <th scope="col" className="th">Issue</th>
               <th scope="col" className="th">Occurrences</th>
@@ -183,13 +196,13 @@ export function IssueList({
               <th scope="col" className="th">Dernière vue</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="block sm:table-row-group">
             {issues.map((entry) => (
-              <IssueRow key={entryKey(entry)} entry={entry} f={f} trend={trend} label={label} />
+              <IssueRow key={entryKey(entry)} entry={entry} f={f} trend={trend} label={label} echelle={echelle} />
             ))}
             {!issues.length && (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-ink-faint">
+              <tr className="block sm:table-row">
+                <td colSpan={7} className="block px-4 py-8 text-center text-ink-faint sm:table-cell">
                   {curseur ? (
                     <Link href={issueListHref(f, filtres, limite)} className={ERROR_LINK}>
                       Aucune entrée à cette position — revenir au début de la liste
@@ -233,17 +246,32 @@ function entryKey(entry: IssueEntry): string {
   return entry.kind === "issue" ? entry.id : `legacy:${entry.app_id}:${entry.fingerprint}`;
 }
 
-function IssueRow({ entry, f, trend, label }: { entry: IssueEntry; f: ErrorFilters; trend: ErrorTrendPoint[]; label: string }) {
+function IssueRow({
+  entry,
+  f,
+  trend,
+  label,
+  echelle,
+}: {
+  entry: IssueEntry;
+  f: ErrorFilters;
+  trend: ErrorTrendPoint[];
+  label: string;
+  /** Haut d'échelle partagé par toutes les lignes de la page (F19). */
+  echelle?: number;
+}) {
   const message = entry.sample_message ?? "(sans message)";
   const attenuee = (entry.status === "resolved" || entry.status === "ignored") && !entry.reappeared;
   const href = entry.kind === "issue" ? issueHref(entry, f) : errorGroupHref(entry, f);
   return (
     <tr
-      className={`border-t border-line/60 align-top transition hover:bg-panel2/60 ${attenuee ? "opacity-60" : ""}`}
+      className={`block border-t border-line/60 px-4 py-3 align-top transition first:border-t-0 hover:bg-panel2/60 sm:table-row sm:p-0 ${
+        attenuee ? "opacity-60" : ""
+      }`}
       data-testid={entry.kind === "issue" ? `issue-entry-${entry.id}` : `legacy-entry-${entry.fingerprint}`}
       data-app-id={entry.app_id}
     >
-      <td className="max-w-md px-4 py-3">
+      <td className={`block min-w-0 sm:max-w-md ${CELLULE_GROUPE}`}>
         {/* Un seul lien par ligne : une tabulation par entrée au clavier. */}
         <Link href={href} className="block rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
           <ErrorTypeBadge type={entry.error_type} />
@@ -265,19 +293,28 @@ function IssueRow({ entry, f, trend, label }: { entry: IssueEntry; f: ErrorFilte
           </span>
         </Link>
       </td>
-      <td className="px-4 py-3 font-bold tabular-nums" data-testid="entry-occurrences">
-        {entry.occurrences.toLocaleString("fr-FR")}
-      </td>
-      <td className="px-4 py-3 tabular-nums">{fmtCount(entry.sessions_affected)}</td>
-      <td className="px-4 py-3 tabular-nums">{fmtCount(entry.visitors_affected)}</td>
-      <td className="px-4 py-3">
-        <GroupSparkline
-          values={entry.series ?? trend.map(() => 0)}
+      <CelluleGroupe libelle="Occurrences" className="sm:text-sm" testId="entry-occurrences">
+        <span className="font-bold tabular-nums text-ink">{entry.occurrences.toLocaleString("fr-FR")}</span>
+      </CelluleGroupe>
+      <CelluleGroupe libelle="Sessions" className="sm:text-sm">
+        <span className="tabular-nums">{fmtCount(entry.sessions_affected)}</span>
+      </CelluleGroupe>
+      <CelluleGroupe libelle="Visiteurs" className="sm:text-sm">
+        <span className="tabular-nums">{fmtCount(entry.visitors_affected)}</span>
+      </CelluleGroupe>
+      <CelluleGroupe libelle="Tendance">
+        <Sparkline
+          valeurs={entry.series ?? trend.map(() => 0)}
+          max={echelle}
           label={`${entry.occurrences.toLocaleString("fr-FR")} occurrence(s) sur ${label}`}
         />
-      </td>
-      <td className="whitespace-nowrap px-4 py-3 text-xs text-ink-soft">{fmtDate(entry.first_seen)}</td>
-      <td className="whitespace-nowrap px-4 py-3 text-xs text-ink-soft">{fmtDate(entry.last_seen)}</td>
+      </CelluleGroupe>
+      <CelluleGroupe libelle="Première vue" className="text-ink-soft sm:whitespace-nowrap">
+        {fmtDate(entry.first_seen)}
+      </CelluleGroupe>
+      <CelluleGroupe libelle="Dernière vue" className="text-ink-soft sm:whitespace-nowrap">
+        {fmtDate(entry.last_seen)}
+      </CelluleGroupe>
     </tr>
   );
 }
