@@ -2,10 +2,13 @@
 //
 // Sur `/` : chaque tuile Web Vital affiche soit un intervalle à 95 %, soit
 // « intervalle non calculable : n mesures, 13 requises » ; aucune tuile n'a de
-// couleur de verdict sous 13 mesures ; la moustache est sur la jauge de chaque
-// tuile qui a un intervalle, et absente des autres ; le lecteur d'écran annonce
-// l'intervalle ; aucun débordement à 390, 768 et 1440 px. Sur `/pages` : la table
-// des percentiles porte la colonne « Intervalle p75 (95 %) ».
+// couleur de verdict sous 13 mesures ; le lecteur d'écran annonce l'intervalle ;
+// aucun débordement à 390, 768 et 1440 px. Sur `/pages` : la table des percentiles
+// porte la colonne « Intervalle p75 (95 %) ».
+//
+// F11 : les tuiles de `/` sont des `KpiTile` (plan § 5.1.3 : `VitalCard` disparaît
+// à l'usage, son intervalle passe à `KpiTile.intervalle`). La jauge et sa moustache
+// partent avec `VitalCard` ; l'intervalle reste écrit sous la valeur et annoncé.
 //
 // Données EXPLICITEMENT SYNTHÉTIQUES, dans une app dédiée, et un compte admin
 // dédié à ce fichier (jamais le compte de seed-admin).
@@ -78,8 +81,8 @@ async function login(page: Page) {
   await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
 }
 
-/** La carte d'un vital : la `.card` qui porte sa valeur p75. */
-const carte = (page: Page, nom: string) => page.locator(".card", { has: page.getByTestId(`p75-${nom}`) }).first();
+/** La tuile d'un vital sur `/` (F11 : `KpiTile`, enveloppe `tuile-<NOM>`). */
+const carte = (page: Page, nom: string) => page.getByTestId(`tuile-${nom}`);
 
 async function largeurDebordante(page: Page): Promise<number> {
   return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -91,19 +94,17 @@ test("/ : chaque tuile Web Vital dit son intervalle, ou pourquoi il manque", asy
 
   for (const nom of AVEC_INTERVALLE) {
     const c = carte(page, nom);
-    await expect(c.getByTestId(`intervalle-${nom}`), nom).toContainText(/entre .+ et .+ \(95 %\)/);
-    await expect(c.getByTestId(`moustache-${nom}`), nom).toHaveCount(1);
-    // Le lecteur d'écran annonce l'intervalle : il est dans l'alternative de la jauge.
-    await expect(c.getByTestId(`meter-${nom}`), nom).toHaveAttribute("aria-label", /intervalle entre/);
+    await expect(c.getByTestId("kpi-intervalle"), nom).toContainText(/entre .+ et .+ \(95 %\)/);
+    // Le lecteur d'écran annonce l'intervalle : il est dans le libellé du lien de la tuile.
+    await expect(c.locator("a").first(), nom).toHaveAttribute("aria-label", /entre .+ et .+ \(95 %\)/);
   }
 
   for (const nom of SANS_INTERVALLE) {
     const c = carte(page, nom);
-    await expect(c.getByTestId(`intervalle-${nom}`), nom).toContainText(
+    await expect(c.getByTestId("kpi-intervalle"), nom).toContainText(
       `intervalle non calculable : ${EFFECTIFS[nom].n} mesures, 13 requises`,
     );
-    await expect(c.getByTestId(`moustache-${nom}`), nom).toHaveCount(0);
-    await expect(c.getByTestId(`verdict-${nom}`), nom).toHaveText("Non établi");
+    await expect(c.getByTestId("kpi-verdict"), nom).toContainText("verdict non établi");
     // Aucune couleur de verdict sous 13 mesures : ni badge teinté, ni curseur coloré.
     // (Badge : classes de RATING_CLASS ; curseur : jeton exact de RATING_BAR, les zones
     // de la jauge portant `bg-good/25`, un autre jeton.)
@@ -128,7 +129,7 @@ for (const largeur of [390, 768, 1440]) {
     await login(page);
     for (const chemin of ["/", "/pages"]) {
       await page.goto(`${consoleUrl}${chemin}?app=${APP_ID}&period=24h`, { waitUntil: "domcontentloaded" });
-      await expect(page.getByTestId(chemin === "/" ? "p75-LCP" : "percentile-table")).toBeVisible();
+      await expect(page.getByTestId(chemin === "/" ? "tuile-LCP" : "percentile-table")).toBeVisible();
       expect(await largeurDebordante(page), `${chemin} à ${largeur} px`).toBeLessThanOrEqual(0);
     }
   });

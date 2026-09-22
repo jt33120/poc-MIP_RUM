@@ -6,6 +6,10 @@
 // heatmap ne porte ni vert, ni ambre, ni rouge, et chaque case mesurée ouvre son
 // heure en instants UTC.
 //
+// F13 : sur `/`, le découpage est l'`ImpactTable` « Segments les plus dégradés »
+// (plan § 5.1.2, zone 7) — lignes `impact-ligne`, référence `impact-reference`,
+// réglage ignoré `impact-avertissement` ; mêmes ordres, mêmes données.
+//
 // Données EXPLICITEMENT SYNTHÉTIQUES, dans une app dédiée, avec des ordres de
 // gravité et de volume OPPOSÉS — sinon le test passerait avec n'importe quel tri :
 //   /lente-frequente  40 mesures LCP à 4,5 s  → 1re en gravité, 2e en volume
@@ -101,11 +105,11 @@ async function login(page: Page) {
   await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
 }
 
-/** Les routes du découpage, dans l'ordre affiché. */
+/** Les routes du classement, dans l'ordre affiché. */
 async function ordre(page: Page): Promise<string[]> {
-  const lignes = page.getByTestId("breakdown").getByTestId("breakdown-row");
+  const lignes = page.getByTestId("impact-table").getByTestId("impact-ligne");
   await expect(lignes).toHaveCount(ROUTES.length);
-  // Le premier <span> d'une ligne est son libellé (grammaire de Breakdown).
+  // Le premier <span> d'une ligne est son libellé (grammaire d'ImpactTable, héritée de Breakdown).
   return lignes.evaluateAll((els) => els.map((el) => el.querySelector("span")?.textContent?.trim() ?? ""));
 }
 
@@ -138,25 +142,26 @@ async function debordements(page: Page): Promise<string[]> {
 test("découpage de `/` : gravité par défaut, échantillon faible en fin", async ({ page }) => {
   await login(page);
   await page.goto(ACCUEIL, { waitUntil: "domcontentloaded" });
-  const decoupage = page.getByTestId("breakdown");
+  const decoupage = page.getByTestId("impact-table");
   await expect(decoupage).toHaveAttribute("data-tri", "gravite");
-  await expect(page.getByTestId("tri-gravite")).toHaveAttribute("aria-current", "true");
+  await expect(decoupage.getByTestId("tri-gravite")).toHaveAttribute("aria-current", "true");
   expect(await ordre(page)).toEqual(["/lente-frequente", "/rapide-massive", "/lente-rare"]);
   // La plus lente est rangée en DERNIER, et le dit : 12 mesures ne classent pas.
-  await expect(decoupage.getByTestId("breakdown-row").last()).toHaveAttribute("data-faible", "1");
-  await expect(decoupage.getByTestId("breakdown-row").last()).toContainText("échantillon faible");
+  await expect(decoupage.getByTestId("impact-ligne").last()).toHaveAttribute("data-faible", "1");
+  await expect(decoupage.getByTestId("impact-ligne").last()).toContainText("échantillon faible");
   // L'écart est lu contre l'ensemble, nommé.
-  await expect(page.getByTestId("breakdown-reference")).toContainText("LCP p75 de l'ensemble");
+  await expect(page.getByTestId("impact-reference")).toContainText("Ensemble (toute la population filtrée)");
+  await expect(decoupage.getByTestId("impact-ecart").first()).toContainText("vs ensemble");
 });
 
 test("découpage de `/` : tri=volume rend l'ordre du volume, la bascule garde les filtres", async ({ page }) => {
   await login(page);
   await page.goto(ACCUEIL, { waitUntil: "domcontentloaded" });
-  await page.getByTestId("tri-volume").click();
+  await page.getByTestId("impact-table").getByTestId("tri-volume").click();
   await page.waitForURL((u) => u.searchParams.get("tri") === "volume", { timeout: 15_000 });
   expect(new URL(page.url()).searchParams.get("app")).toBe(APP_ID);
   expect(new URL(page.url()).searchParams.get("period")).toBe("24h");
-  await expect(page.getByTestId("breakdown")).toHaveAttribute("data-tri", "volume");
+  await expect(page.getByTestId("impact-table")).toHaveAttribute("data-tri", "volume");
   expect(await ordre(page)).toEqual(["/rapide-massive", "/lente-frequente", "/lente-rare"]);
 
   // Un changement d'onglet garde l'ordre choisi.
@@ -169,8 +174,8 @@ test("découpage de `/` : tri=volume rend l'ordre du volume, la bascule garde le
 test("découpage de `/` : tri=impact (B2 absent) est ignoré et signalé, l'ordre reste la gravité", async ({ page }) => {
   await login(page);
   await page.goto(`${ACCUEIL}&tri=impact`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("breakdown-avertissement")).toContainText("Réglage d'affichage ignoré : tri=impact");
-  await expect(page.getByTestId("breakdown")).toHaveAttribute("data-tri", "gravite");
+  await expect(page.getByTestId("impact-avertissement")).toContainText("Réglage d'affichage ignoré : tri=impact");
+  await expect(page.getByTestId("impact-table")).toHaveAttribute("data-tri", "gravite");
   expect(await ordre(page)).toEqual(["/lente-frequente", "/rapide-massive", "/lente-rare"]);
 });
 
@@ -204,7 +209,7 @@ test("heatmap : aucune couleur de verdict ; une case ouvre son heure en instants
   await cases.first().press("Enter");
   await page.waitForURL((u) => u.searchParams.get("from") === from, { timeout: 15_000 });
   await expect(page.locator("h1").first()).toHaveText(/Vue d'ensemble/);
-  await expect(page.getByTestId("breakdown")).toBeVisible();
+  await expect(page.getByTestId("impact-table")).toBeVisible();
   // L'écran d'arrivée dit la plage dans les deux fuseaux (R-T).
   await expect(page.getByTestId("plage-deux-fuseaux")).toContainText(/\d{2}:\d{2}-\d{2}:\d{2} .+ \(.+ UTC\)/);
 });
@@ -216,7 +221,7 @@ test("`/` : aucun débordement à 390, 768 et 1440 px", async ({ page }) => {
   for (const largeur of [390, 768, 1440]) {
     await page.setViewportSize({ width: largeur, height: 900 });
     await page.goto(ACCUEIL, { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("breakdown")).toBeVisible();
+    await expect(page.getByTestId("impact-table")).toBeVisible();
     for (const faute of await debordements(page)) fautes.push(`/ @ ${largeur} px — ${faute}`);
   }
   expect(fautes).toEqual([]);

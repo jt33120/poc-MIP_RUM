@@ -3,7 +3,7 @@
 // CE QUE CE SPEC EXISTE POUR PROUVER (critère de recette du plan, § 7.2 P*.9).
 //   - Chaque phrase du récit a un lien, et ce lien MÈNE à une ligne qui existe
 //     dans la chronologie (pas une ancre morte) : clic → la ligne est la cible.
-//   - Depuis l'onglet Replay, les liens ramènent à la chronologie.
+//   - Depuis un onglet sans chronologie (Erreurs, F44), les liens ramènent au Déroulé.
 //   - Les occurrences sont sommées (« 3 occurrences », pas « 1 erreur »).
 //   - Une session sans rejeu le dit ; une session sans événement n'a pas de récit.
 //   - Aucun mot qui prête une intention ou une cause.
@@ -133,9 +133,22 @@ test("chaque phrase mène à la ligne qui la fonde ; occurrences sommées ; reje
   await expect(cible).toContainText("TypeError");
 });
 
-test("onglet Replay : les liens du récit ramènent à la chronologie", async ({ page }) => {
+// F44 : `tab=replay` (ancien lien) ouvre le Déroulé, qui porte le rejeu ET la
+// chronologie — les liens du récit y sont des ancres de la page elle-même. Depuis un
+// onglet sans chronologie (Erreurs), ils ramènent au Déroulé.
+test("ancien lien tab=replay : le Déroulé porte la chronologie, les liens du récit y mènent", async ({ page }) => {
   await login(page);
   await page.goto(url(RICHE, "&tab=replay"), { waitUntil: "domcontentloaded" });
+  const lien = page.getByTestId("recit-session").getByRole("link", { name: /3 occurrences de TypeError/ });
+  await expect(lien).toHaveAttribute("href", /^#evt-\d+$/);
+  await lien.click();
+  await expect(page.getByTestId("timeline")).toBeVisible();
+  await expect(page.locator("li:target")).toContainText("TypeError");
+});
+
+test("onglet Erreurs : les liens du récit ramènent à la chronologie", async ({ page }) => {
+  await login(page);
+  await page.goto(url(RICHE, "&tab=erreurs"), { waitUntil: "domcontentloaded" });
   const lien = page.getByTestId("recit-session").getByRole("link", { name: /3 occurrences de TypeError/ });
   await expect(lien).toHaveAttribute("href", new RegExp(`^/sessions/${RICHE}\\?app=${APP}#evt-\\d+$`));
   await lien.click();

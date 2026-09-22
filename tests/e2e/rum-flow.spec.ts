@@ -94,7 +94,8 @@ test("flux RUM bout-en-bout : vitals + erreur arrivent en base puis en console",
   // synchronisation.
   await loginConsole(page);
   await page.goto("http://localhost:3000/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("p75-LCP")).not.toHaveText("—");
+  // F11 : la tuile LCP de `/` est une `KpiTile` (enveloppe `tuile-LCP`).
+  await expect(page.getByTestId("tuile-LCP").getByTestId("kpi-valeur")).not.toHaveText("—");
   await page.goto("http://localhost:3000/errors", { waitUntil: "domcontentloaded" });
   await expect(page.locator("body")).toContainText("Erreur de démo MIP RUM");
 });

@@ -149,7 +149,12 @@ test("Explorer → carte → rechargement → duplication → CSV", async ({ pag
   await expect(formulaire).toBeVisible();
   await formulaire.locator('select[name="id"]').selectOption(id);
   await formulaire.locator('input[name="title"]').fill("Occurrences par route");
-  await formulaire.getByRole("button", { name: "Ajouter au tableau de bord" }).click();
+  // L'action serveur ne redirige pas : sans attendre sa réponse, le `goto` qui suit
+  // peut couper le POST avant l'écriture (échec intermittent en CI, 22/09/2026).
+  await Promise.all([
+    page.waitForResponse((r) => r.request().method() === "POST" && r.request().headers()["next-action"] !== undefined),
+    formulaire.getByRole("button", { name: "Ajouter au tableau de bord" }).click(),
+  ]);
 
   // 3. Le tableau de bord la RÉEXÉCUTE : la carte porte le même total, ventilé.
   await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);

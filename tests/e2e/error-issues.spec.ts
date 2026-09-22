@@ -167,7 +167,10 @@ test("liste d'une app activée : issues et groupe historique, chaque occurrence 
   const historique = entree(page, "legacy-entry-p55fp009");
   await expect(historique.getByTestId("entry-occurrences")).toHaveText("1");
   await expect(historique).toContainText("groupe historique");
-  await expect(page.getByText("Occurrences · 24 h", { exact: true }).locator("..")).toContainText("11");
+  // Tuile « Occurrences » de la rangée de F18 : la même population que la liste.
+  await expect(
+    page.getByTestId("kpi-tile").filter({ has: page.getByText("Occurrences", { exact: true }) }).getByTestId("kpi-valeur"),
+  ).toHaveText("11");
   // À revoir d'abord (la table repliée de la tendance a aussi des lignes : on vise les entrées).
   await expect(page.locator('tr[data-testid^="issue-entry-"], tr[data-testid^="legacy-entry-"]').first())
     .toHaveAttribute("data-testid", `issue-entry-${I1}`);

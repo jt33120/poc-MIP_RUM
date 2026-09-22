@@ -3,5 +3,5 @@
 import { ErreurEcran } from "@/components/states/ErreurEcran";
 
 export default function Erreur(props: { error: Error & { digest?: string }; reset: () => void }) {
-  return <ErreurEcran titre="Expérience" {...props} />;
+  return <ErreurEcran titre="Satisfaction" {...props} />;
 }

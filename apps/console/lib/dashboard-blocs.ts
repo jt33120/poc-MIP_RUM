@@ -44,14 +44,25 @@ export const CATALOGUES: readonly Catalogue[] = [
     titre: "Vue d'ensemble",
     cookie: "mip-blocs",
     blocs: [
-      { id: "sante", label: "Score de santé", defaut: true, desc: "Note sur 100 pondérée par les Core Web Vitals, et son évolution." },
+      // « et son évolution » est retiré (F11) : le score n'est pas comparé — une
+      // variation de score composite n'a pas d'unité interprétable (§ 5.1.2).
+      { id: "sante", label: "Score de santé", defaut: true, desc: "Note sur 100 à formule affichée : Web Vitals, erreurs navigateur, stabilité des sessions, anomalies 24 h." },
+      // Bloc ajouté par F11 : les tuiles de trafic quittent le hero pour la rangée de
+      // la santé. Absent d'un cookie existant, il retombe sur son défaut (allumé).
+      { id: "trafic", label: "Trafic", defaut: true, desc: "Sessions commencées, pages vues et occurrences d'erreurs navigateur pour 100 pages vues, avec leur évolution." },
       { id: "vitals", label: "Core Web Vitals", defaut: true, desc: "LCP, INP, CLS, FCP et TTFB au p75, face aux seuils Google." },
-      { id: "reseau", label: "Décomposition réseau", defaut: false, desc: "D'où vient le TTFB : redirection, DNS, connexion, TLS, requête, réponse." },
-      { id: "hero", label: "Courbe LCP et volumétrie", defaut: true, desc: "LCP p75 dans le temps, sessions, pages vues et taux d'erreur." },
-      { id: "decoupage", label: "Découpage des Web Vitals", defaut: true, desc: "LCP, INP et CLS répartis par route, navigateur, système, pays estimé, appareil ou release, avec le nombre de mesures. Chaque groupe ouvre le détail filtré." },
-      { id: "historique", label: "Historique de santé 14 jours", defaut: true, desc: "Heatmap jour × heure, avec les courbes de volume et de LCP associées." },
+      // « Décomposition réseau » a quitté la Vue d'ensemble (F13, § 5.1.3) : la question
+      // du TTFB se pose sur Pages, où ses phases sont lues. Un cookie qui la porte
+      // encore l'ignore (identifiant inconnu).
+      { id: "hero", label: "Core Web Vitals dans le temps", defaut: true, desc: "LCP, INP et CLS au p75, un petit graphique par vital sur ses zones de seuil, avec les déploiements." },
+      // Bloc ajouté par F12 (zone 6 du § 5.1) : trois panneaux empilés, un axe chacun.
+      { id: "charge", label: "Charge, erreurs et LCP", defaut: true, desc: "Pages vues (chargements et changements de route SPA), occurrences d'erreurs navigateur et LCP p75 sur la même échelle de temps, sans double axe." },
+      // Bloc ajouté par F13 (zone 6) : la tuile d'angle mort, qui lit le robot (F57).
+      { id: "angles", label: "Heures × route en angle mort", defaut: true, desc: "Heures où le robot synthétique dit « ok » alors que le LCP p75 des vrais visiteurs de la même route dépasse la borne Bon." },
+      { id: "decoupage", label: "Segments les plus dégradés", defaut: true, desc: "Routes, navigateurs, systèmes, pays estimés, appareils ou releases classés du plus dégradé au moins dégradé (p75 du vital choisi), avec l'effectif et l'écart à l'ensemble. Chaque ligne ouvre le détail." },
+      { id: "historique", label: "Historique 14 jours", defaut: true, desc: "Heatmap jour × heure dans le fuseau de l'app : part de mesures « Bon », sur 14 jours fixes." },
       { id: "anomalies", label: "Anomalies détectées", defaut: true, desc: "Écarts statistiques sur le LCP, sans seuil à régler." },
-      { id: "versions", label: "Comparaison par version", defaut: true, desc: "LCP, INP et taux d'erreur par version déployée. Ne s'affiche que si au moins deux versions ont été vues." },
+      { id: "versions", label: "Nouvelle release face à la précédente", defaut: true, desc: "Dernière release déployée face à la précédente, même fenêtre : sessions, LCP, INP et part de sessions en erreur. La règle de choix est écrite ; sous deux releases, la comparaison se tait et dit pourquoi." },
     ],
     indisponibles: [
       {
