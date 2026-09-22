@@ -1,5 +1,5 @@
 // `/mobile` — ce que la couche JavaScript React Native observe, et ce qu'elle
-// n'observe pas (P7.5).
+// n'observe pas (P7.5, réagencé par F38, plan § 5.6).
 //
 // LA RÈGLE DE CET ÉCRAN TIENT EN UNE PHRASE : une capacité non collectée
 // s'affiche « Non collecté », jamais 0. Un tableau de bord qui annonce
@@ -12,312 +12,656 @@
 // LE LIBELLÉ NE DIT PAS « CRASH-FREE ». Le taux affiché porte sur les erreurs
 // JAVASCRIPT : une erreur non interceptée arrête le bundle et affiche la redbox,
 // elle ne tue pas le processus natif. Les deux populations sont disjointes.
+//
+// D'ABORD CE QUI EST MESURÉ, ENSUITE CE QUI NE L'EST PAS (F38). L'écran ouvrait sur
+// la matrice de capacités : sur une app instrumentée, aucun chiffre n'était visible
+// avant le bas de l'écran. La matrice passe en fin, mais son RÉSUMÉ reste en tête
+// (« Non collecté : crashes natifs, ANR, démarrage natif ») : aucun chiffre ne se
+// lit sans son angle mort. Le hero est la stabilité PAR RELEASE — la coupe où
+// numérateur et dénominateur parlent de la même population (la release est un
+// fait exact de la session mobile).
+//
+// Toutes les mesures portent sur la même cohorte (`runtime = 'react_native'`,
+// sessions COMMENCÉES dans la fenêtre) et la même photographie en lecture
+// répétable (lib/queries-mobile.ts). Seuls `device`, `os` et `release`
+// s'appliquent (lib/surfaces.ts) ; les vues préréglées ne posent que `os` ou
+// `release` — le formulaire « Plateforme » a disparu (§ 3.1, règle 4).
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
 import { PageHeader } from "@/components/PageHeader";
+import { PresetBar } from "@/components/PresetBar";
+import { EtenduePercentiles } from "@/components/charts/EtenduePercentiles";
+import { Figure } from "@/components/charts/Figure";
+import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar } from "@/components/charts/RankBar";
-import { INPUT_CLASS } from "@/components/forms/Field";
-import { fmtDate, fmtLatency, fmtPct } from "@/lib/format";
-import { type SearchParams } from "@/lib/filters";
-import { pageFilters } from "@/lib/page-filters";
-import { FAIBLE_SOUS_PROPORTION, intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
+import { StabiliteParRelease, type TriStabilite } from "@/components/mobile/StabiliteParRelease";
+import { EtatSurface } from "@/components/states/EtatSurface";
+import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
+import { filtersOfQuery, type SearchParams } from "@/lib/filters";
+import { formater } from "@/lib/fmt-ids";
+import { classerParGravite, SEUIL_ECHANTILLON_FAIBLE } from "@/lib/impact";
+import { lire, type Lecture } from "@/lib/lecture";
 import {
+  CAPABILITY_LABELS,
+  CAPABILITY_NOTES,
   ERROR_FREE_REASONS,
   PLATFORMS,
   PLATFORM_LABELS,
   PLATFORM_OS,
   STATE_LABELS,
+  derniereReleaseDeclaree,
+  ordreZonesMobile,
   parsePlatform,
   sessionsCohorte,
+  texteRaisonTaux,
   type CapabilityStatus,
+  type MobileCapability,
+  type ZoneMobile,
 } from "@/lib/mobile-capabilities";
-import { mobileSummary } from "@/lib/queries-mobile";
-import { hrefWithQuery, intersectQuery, queryToSearchParams } from "@/lib/query-contract";
-import { filtersOfQuery } from "@/lib/filters";
+import { pageFilters } from "@/lib/page-filters";
+import { vuesMobiles, type Entree } from "@/lib/presets";
+import {
+  RELEASES_AFFICHEES,
+  mobileDeclarations,
+  mobileParRelease,
+  mobileSchema,
+  mobileSummary,
+  type MobileSummary,
+} from "@/lib/queries-mobile";
+import {
+  hrefWithQuery,
+  intersectQuery,
+  paramReader,
+  previousRange,
+  rangeLabel,
+  type AnalyticsQuery,
+} from "@/lib/query-contract";
+import { ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
+import { lireComparaison, lireTri } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
-
-const NOMBRE = (n: number) => n.toLocaleString("fr-FR");
-/** « Inconnu » et non « 0 » : une population qu'on ne sait pas compter n'est pas vide. */
-const INCONNU = (n: number | null) => (n == null ? "Inconnu" : NOMBRE(n));
 
 const BADGE: Record<CapabilityStatus["state"], string> = {
   active: "border-good/40 bg-good/10 text-good-ink",
   unavailable: "border-warn/40 bg-warn/10 text-warn-ink",
-  unknown: "border-line bg-panel2 text-ink-faint",
+  unknown: "border-line bg-panel2 text-ink-soft",
 };
+
+/** Les trois capacités qu'aucune version du SDK JavaScript n'observe (P8.5). */
+const NATIVES: readonly MobileCapability[] = ["native_crashes", "anr", "native_start"];
+
+const DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
+  timeZone: "UTC",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+const dateUtc = (iso: string) => `${DATE_UTC.format(new Date(iso))} UTC`;
+const nombre = (n: number) => n.toLocaleString("fr-FR");
+
+/** Sessions de la cohorte : leur début de collecte est celui de la colonne `runtime` (v82). */
+const SOURCE_SESSIONS: SourceComparaison = {
+  table: "rum_session",
+  colonneTemps: "started_at",
+  colonneRequise: "runtime",
+  additive: true,
+};
+/** Erreurs JS : distinguées par `error_source` (v69). */
+const SOURCE_ERREURS: SourceComparaison = {
+  table: "rum_error",
+  colonneTemps: "ts",
+  colonneRequise: "error_source",
+  additive: true,
+};
+
+const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
+
+/** Couverture de la période précédente d'une source, filtres de colonnes récentes compris : la pire. */
+async function couverture(query: AnalyticsQuery, source: SourceComparaison): Promise<CouverturePrecedente> {
+  const toutes = await Promise.all(sourcesSousFiltres(query, source).map((s) => couverturePrecedente(query, s)));
+  return toutes.find((c) => c.etat !== "complete") ?? toutes[0];
+}
+
+/** La requête sans aucune condition de release : pour lire TOUTES les déclarations (vue « Dernière release »). */
+function sansRelease(query: AnalyticsQuery): AnalyticsQuery {
+  return {
+    ...query,
+    filters: {
+      ...query.filters,
+      release: undefined,
+      segments: query.filters.segments.filter((c) => c.dimension !== "release"),
+    },
+  };
+}
+
+/** W-M1 : l'angle mort, écrit AVANT le premier chiffre. */
+function texteAnglesMorts(capacites: CapabilityStatus[] | null): string {
+  const natives = NATIVES.map((c) => CAPABILITY_LABELS[c]).join(", ");
+  const parties = [`${natives} : non mesurés par cette version du SDK, qui n'observe que la couche JavaScript`];
+  if (capacites) {
+    const autres = capacites.filter((c) => !NATIVES.includes(c.capability));
+    const refusees = autres.filter((c) => c.state === "unavailable").map((c) => c.label);
+    const inconnues = autres.filter((c) => c.state === "unknown").map((c) => c.label);
+    if (refusees.length) parties.push(`déclaré non collecté : ${refusees.join(", ")}`);
+    if (inconnues.length) parties.push(`aucune déclaration, état inconnu : ${inconnues.join(", ")}`);
+  }
+  return `${parties.join(" ; ")}.`;
+}
 
 export default async function MobilePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const ecran = await pageFilters(sp, "/mobile");
   if (!ecran.ok) return <FilterProblemNotice title="Mobile" problem={ecran.problem} />;
+  const query = ecran.query;
+  const f = filtersOfQuery(query);
+  const lecteur = paramReader(sp);
 
-  const platform = parsePlatform(typeof sp?.platform === "string" ? sp.platform : null);
-  // INTERSECTION avec le contrat, jamais remplacement : un `os=` déjà présent
-  // dans l'URL reste appliqué, et la combinaison contradictoire rend zéro ligne
-  // — la réponse exacte, plutôt qu'un filtre écrasé par l'autre.
-  const query = platform
-    ? intersectQuery(ecran.query, {
-        conditions: [{ dimension: "os", operator: "eq", value: PLATFORM_OS[platform] }],
-      })
-    : ecran.query;
+  // Réglages d'affichage : comparaison (défaut `prev` sur un écran Performance) et
+  // ordre du hero. Sans `tri`, le hero garde l'ordre de la SOURCE (chronologie des
+  // releases) — « fourni » n'est jamais une valeur d'URL (§ 3.1).
+  const comparaisonLue = lireComparaison("/mobile", lecteur);
+  const prev = comparaisonLue.valeur.mode === "prev";
+  const triLu = lecteur.get("tri") ? lireTri("/mobile", lecteur) : null;
+  // Un `tri` ignoré (valeur inconnue, `impact` avant B2) laisse l'ordre par défaut de
+  // CET écran — la chronologie —, pas le défaut générique de `lireTri`.
+  const triHero: TriStabilite = !triLu || triLu.ignore ? "fourni" : triLu.tri === "volume" ? "volume" : "gravite";
+  // L'ancien paramètre `platform` n'est plus lu par l'écran : il est dit, jamais ignoré en silence (V10).
+  const plateformeHeritee = parsePlatform(lecteur.get("platform"));
+  const ignores = [
+    ...comparaisonLue.ignores,
+    ...(triLu?.ignore ? [triLu.ignore] : []),
+    ...(lecteur.get("platform") ? [`Réglage d'affichage ignoré : platform=${lecteur.get("platform")} (le filtre de plateforme est devenu une vue préréglée).`] : []),
+  ];
 
-  const data = await mobileSummary(filtersOfQuery(query));
-  const { sessions, js_errors: erreurs, startup } = data;
-  const jsErrors = data.capabilities.find((c) => c.capability === "js_errors");
-  // P*.1 : l'intervalle de Wilson de la part de sessions sans erreur JS, sur le
-  // numérateur BRUT : plus de sessions touchées que de sessions (lues sur deux
-  // sources) n'est pas une proportion, et `intervalleWilson` le dit — le rogner
-  // comme le fait le taux produirait un intervalle d'apparence mesurée. Aucun
-  // intervalle quand le taux n'est pas calculable.
-  const sansErreur =
-    data.js_error_free_session_rate == null ? null : sessions.sessions - (erreurs?.sessions_affected ?? 0);
-  const intervalleSansErreur =
-    sansErreur == null ? null : texteIntervalle(intervalleWilson(sansErreur, sessions.sessions), fmtPct);
-  const contexte = queryToSearchParams(ecran.query);
-  // CE7 : `/errors/issues` n'a pas de page (seul `/errors/issues/[id]` existe) ;
-  // la liste des erreurs lit `source` elle-même (`parseIssueSource`).
-  const lienErreurs = hrefWithQuery("/errors", ecran.query, { source: "react_native_js" });
-  // CE9 : sans v82, la lecture rend 0 session — l'écran dit « — » et pourquoi.
-  const sessionsLues = sessionsCohorte(data);
+  const precedente = prev ? previousRange(query.range) : null;
+  const fPrecedent = precedente ? filtersOfQuery({ ...query, range: precedente }) : null;
+  const reference = precedente
+    ? `vs période précédente (${rangeLabel({ ...precedente, preset: null }, "UTC")} UTC)`
+    : undefined;
 
-  return (
-    <div className="animate-fade-up">
-      <PageHeader
-        title="Mobile"
-        sub={`Ce que la couche JavaScript React Native observe sur ${ecran.label} — et ce qu'elle n'observe pas.`}
-      />
+  // Une sonde de schéma pour tout l'écran ; en échec, chaque lecture sonde elle-même.
+  const schemaLu = await lire(() => mobileSchema());
+  const schema = schemaLu.ok ? schemaLu.data : undefined;
+  const filtreRelease = query.filters.release !== undefined || query.filters.segments.some((c) => c.dimension === "release");
 
-      {data.unavailable.map((raison) => (
-        <p key={raison} role="status" data-testid="mobile-partiel" className="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
-          Réponse partielle : {raison}.
-        </p>
-      ))}
-      {data.sampling.message && (
-        <p role="note" className="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
-          {data.sampling.message}
-        </p>
-      )}
+  // CHAQUE LECTURE EST INDÉPENDANTE (F02) : une lecture en échec n'efface que sa section.
+  const [resume, parRelease, resumePrec, parReleasePrec, couvSessions, couvErreurs, declarationsToutes] =
+    await Promise.all([
+      lire(() => mobileSummary(f, schema)),
+      lire(() => mobileParRelease(f, RELEASES_AFFICHEES, schema)),
+      fPrecedent ? lire(() => mobileSummary(fPrecedent, schema)) : sansLecture(null),
+      fPrecedent ? lire(() => mobileParRelease(fPrecedent, RELEASES_AFFICHEES, schema)) : sansLecture(null),
+      prev ? couverture(query, SOURCE_SESSIONS) : Promise.resolve(undefined),
+      prev ? couverture(query, SOURCE_ERREURS) : Promise.resolve(undefined),
+      filtreRelease && schema?.capabilities !== false
+        ? lire(() => mobileDeclarations(sansRelease(query)))
+        : sansLecture(null),
+    ]);
 
-      <form method="get" className="card mb-6 flex flex-wrap items-end gap-3 p-4" aria-label="Filtres de l’écran mobile">
-        {/* Le contexte global suit : app, plage, appareil, release, segment. */}
-        {[...contexte].map(([nom, valeur]) => (
-          <input key={nom} type="hidden" name={nom} value={valeur} />
-        ))}
-        <label className="flex flex-col gap-1 text-xs font-medium text-ink-soft">
-          Plateforme
-          <select name="platform" defaultValue={platform ?? ""} className={INPUT_CLASS}>
-            <option value="">Toutes</option>
-            {PLATFORMS.map((p) => (
-              <option key={p} value={p}>{PLATFORM_LABELS[p]}</option>
-            ))}
-          </select>
-        </label>
-        <button className="btn-accent" type="submit">Appliquer</button>
-        <Link href={hrefWithQuery("/mobile", ecran.query, { platform: null })} className="btn-ghost">
-          Réinitialiser
+  const data: MobileSummary | null = resume.ok ? resume.data : null;
+  const dataPrec = resumePrec.ok ? resumePrec.data : null;
+  const etatParRelease: "disponible" | "indisponible" | "erreur" = !parRelease.ok
+    ? "erreur"
+    : parRelease.data.disponible
+      ? "disponible"
+      : "indisponible";
+  const releasesLues = parRelease.ok && parRelease.data.disponible ? parRelease.data : null;
+  const releasesPrec = parReleasePrec.ok && parReleasePrec.data?.disponible ? parReleasePrec.data : null;
+
+  // ── Vues préréglées : iOS, Android, dernière release déclarée ──
+  const declarationsVues = filtreRelease ? (declarationsToutes.ok ? declarationsToutes.data : null) : (data?.declarations ?? null);
+  const derniereRelease: Entree<string | null> = declarationsVues
+    ? { valeur: derniereReleaseDeclaree(declarationsVues) }
+    : { indisponible: "déclarations de capacités non lues" };
+  const vues = vuesMobiles({
+    plateformes: PLATFORMS.map((p) => ({ cle: p, libelle: PLATFORM_LABELS[p], os: PLATFORM_OS[p] })),
+    derniereRelease,
+  });
+
+  // ── Liens ──
+  // CE7 : `/errors/issues` n'a pas de page ; la liste des erreurs lit `source` elle-même.
+  const lienErreurs = hrefWithQuery("/errors", query, { source: "react_native_js" });
+  // Une release `null` ne s'écrit pas `release=` (vide) : `seg=v2:release:is_null` (§ 3.3).
+  // Sous plusieurs apps, la ligne est celle d'UNE app : le lien la pose aussi (`app`
+  // est un paramètre du contrat), sinon il ouvrirait la même release de toutes les apps.
+  const hrefDeRelease = (release: string | null, app: string) => {
+    const appLigne = query.scope.requestedApp === null ? { app } : {};
+    return release === null
+      ? hrefWithQuery(
+          "/mobile",
+          intersectQuery(query, { conditions: [{ dimension: "release", operator: "is_null", value: null }] }),
+          appLigne,
+        )
+      : hrefWithQuery("/mobile", query, { ...appLigne, release });
+  };
+  const hrefTri = (tri: TriStabilite) =>
+    hrefWithQuery("/mobile", query, {
+      tri: tri === "fourni" ? null : tri,
+      cmp: lecteur.get("cmp"),
+      rel_a: lecteur.get("rel_a"),
+      rel_b: lecteur.get("rel_b"),
+    });
+
+  // ── Tuiles (W-M2 à W-M5) ──
+  const sessionsLues = data ? sessionsCohorte(data) : { valeur: null, raison: "lecture du résumé mobile en échec" };
+  const sessionsPrec = dataPrec ? sessionsCohorte(dataPrec).valeur : null;
+  const capaciteJs = data?.capabilities.find((c) => c.capability === "js_errors")?.state ?? "unknown";
+  const erreurs = data?.js_errors ?? null;
+  const occurrences = capaciteJs === "unavailable" ? null : (erreurs?.occurrences ?? null);
+  const raisonOccurrences =
+    capaciteJs === "unavailable"
+      ? "Non collecté : les erreurs JavaScript sont déclarées non collectées sur ce périmètre"
+      : data
+        ? "Inconnu : source d'erreur non lisible sur ce schéma (migration v69)"
+        : "lecture du résumé mobile en échec";
+
+  const taux = releasesLues?.declarantes ?? null;
+  const tauxPrec = releasesPrec?.declarantes ?? null;
+  // Repli (§ 5.6.4, W-M5) : sans lecture par release, le taux global de `mobileSummary`,
+  // dont l'état de collecte est lu sur TOUT le parc — et on le dit.
+  const repliTaux = !taux && data !== null;
+  const declarationJsNonActive = (data?.declarations ?? []).some((d) => d.capability === "js_errors" && !d.declared);
+  const tuileTaux = taux
+    ? {
+        valeur: taux.rate,
+        raison: taux.reason ? texteRaisonTaux(taux.reason) : undefined,
+        k: taux.sessions - taux.touchees,
+        n: taux.sessions,
+        precedent: tauxPrec ? tauxPrec.rate : null,
+        kPrec: tauxPrec ? tauxPrec.sessions - tauxPrec.touchees : 0,
+        nPrec: tauxPrec?.sessions ?? 0,
+        lecture:
+          taux.rate === null
+            ? undefined
+            : `${nombre(taux.touchees)} session${taux.touchees > 1 ? "s" : ""} touchée${taux.touchees > 1 ? "s" : ""} sur ${nombre(taux.sessions)}, releases déclarantes seulement ; ${nombre(taux.exclues)} session${taux.exclues > 1 ? "s" : ""} de releases non déclarantes exclue${taux.exclues > 1 ? "s" : ""}.`,
+      }
+    : data
+      ? {
+          valeur: data.js_error_free_session_rate,
+          raison: data.js_error_free_unavailable_reason ? ERROR_FREE_REASONS[data.js_error_free_unavailable_reason] : undefined,
+          k: data.sessions.sessions - (erreurs?.sessions_affected ?? 0),
+          n: data.sessions.sessions,
+          precedent: dataPrec ? dataPrec.js_error_free_session_rate : null,
+          kPrec: dataPrec ? dataPrec.sessions.sessions - (dataPrec.js_errors?.sessions_affected ?? 0) : 0,
+          nPrec: dataPrec?.sessions.sessions ?? 0,
+          lecture: declarationJsNonActive
+            ? "État de collecte lu sur tout le parc : des sessions de releases non déclarantes peuvent être comptées sans erreur."
+            : undefined,
+        }
+      : null;
+
+  const tuiles = (
+    <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="mobile-kpi">
+      <div className="grid min-w-0" data-testid="mobile-sessions">
+        <KpiTile
+          label="Sessions React Native commencées"
+          valeur={sessionsLues.valeur}
+          format="count"
+          raisonNull={sessionsLues.raison ?? undefined}
+          sensMeilleur="neutre"
+          precedent={prev ? sessionsPrec : undefined}
+          reference={reference}
+          couverturePrecedente={couvSessions}
+        />
+      </div>
+      <div className="grid min-w-0" data-testid="mobile-visiteurs">
+        <KpiTile
+          label="Visiteurs"
+          valeur={data?.sessions.visitors ?? null}
+          format="count"
+          raisonNull={
+            !data
+              ? "lecture du résumé mobile en échec"
+              : sessionsLues.valeur === null
+                ? (sessionsLues.raison ?? undefined)
+                : "Inconnu : aucune session ne porte d'identifiant de visiteur"
+          }
+          sensMeilleur="neutre"
+          precedent={prev ? (dataPrec?.sessions.visitors ?? null) : undefined}
+          reference={reference}
+          couverturePrecedente={couvSessions}
+          lecture={
+            data
+              ? `${
+                  data.sessions.sessions_without_visitor > 0
+                    ? `${nombre(data.sessions.sessions_without_visitor)} session(s) sans identifiant, non rattachables. `
+                    : ""
+                }Surestimés : identifiant d'installation tenu en mémoire, renouvelé à chaque lancement (parité C3).`
+              : undefined
+          }
+        />
+      </div>
+      <div className="grid min-w-0" data-testid="mobile-erreurs">
+        <KpiTile
+          label="Occurrences d'erreurs JS"
+          valeur={occurrences}
+          format="count"
+          raisonNull={raisonOccurrences}
+          sensMeilleur="bas"
+          precedent={prev && capaciteJs !== "unavailable" ? (dataPrec?.js_errors?.occurrences ?? null) : undefined}
+          reference={reference}
+          couverturePrecedente={couvErreurs}
+          href={lienErreurs}
+          lecture={
+            erreurs && occurrences !== null
+              ? `dont ${nombre(erreurs.crashes)} non interceptée(s), ${nombre(erreurs.unhandled_rejections)} rejet(s) de promesse · fatales : ${
+                  erreurs.fatal === null ? "Inconnu" : nombre(erreurs.fatal)
+                }${capaciteJs === "unknown" ? " — capacité non déclarée par le SDK : 0 ne prouve pas l'absence d'erreur" : ""}`
+              : undefined
+          }
+        />
+      </div>
+      <div className="grid min-w-0" data-testid="mobile-taux-sans-erreur">
+        <KpiTile
+          label="Sessions sans erreur JS"
+          valeur={tuileTaux?.valeur ?? null}
+          format="pct"
+          raisonNull={tuileTaux ? tuileTaux.raison : "lecture du résumé mobile en échec"}
+          sensMeilleur="haut"
+          precedent={prev && tuileTaux ? tuileTaux.precedent : undefined}
+          reference={reference}
+          couverturePrecedente={couvSessions}
+          // P*.1 : Wilson sur le numérateur BRUT ; aucun intervalle sans taux.
+          intervalle={tuileTaux && tuileTaux.valeur !== null ? (intervalleWilson(tuileTaux.k, tuileTaux.n) ?? undefined) : undefined}
+          ecart={
+            prev && tuileTaux && tuileTaux.valeur !== null && tuileTaux.precedent != null
+              ? ecartProportions(tuileTaux.k, tuileTaux.n, tuileTaux.kPrec, tuileTaux.nPrec)
+              : undefined
+          }
+          couverture={
+            tuileTaux && tuileTaux.valeur !== null
+              ? { n: tuileTaux.n, unite: repliTaux ? "sessions" : "sessions de releases déclarantes", faibleSous: 30 }
+              : undefined
+          }
+          lecture={[
+            tuileTaux?.lecture,
+            "Erreurs JavaScript seulement : les crashes natifs ne sont pas collectés, ce taux n'en dit rien.",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        />
+      </div>
+    </div>
+  );
+
+  // ── Zones ──
+  const capacites = data?.capabilities ?? null;
+  const zones: Record<ZoneMobile, ReactNode> = {
+    "angles-morts": (
+      <div className="mb-4 flex min-w-0 flex-wrap items-start gap-2" data-testid="mobile-angles-morts">
+        <div className="min-w-0 flex-1 basis-64">
+          <EtatSurface etat={{ kind: "non_collecte", manque: texteAnglesMorts(capacites) }} compact />
+        </div>
+        <Link
+          href="#capacites"
+          className="shrink-0 rounded px-1 py-1.5 text-xs font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+        >
+          Détail
         </Link>
-      </form>
-
-      {/* ── Cartes : populations observées, jamais additionnées ── */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="card p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Sessions observées</div>
-          <div data-testid="mobile-sessions" className="mt-1 text-3xl font-bold tabular-nums text-ink">
-            {sessionsLues.valeur == null ? "—" : NOMBRE(sessionsLues.valeur)}
-          </div>
-          <p className="mt-1 text-xs text-ink-faint">
-            {sessionsLues.raison ?? "Sessions React Native commencées dans la fenêtre."}
-          </p>
-        </div>
-        <div className="card p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Visiteurs observés</div>
-          <div data-testid="mobile-visiteurs" className="mt-1 text-3xl font-bold tabular-nums text-ink">
-            {INCONNU(sessions.visitors)}
-          </div>
-          <p className="mt-1 text-xs text-ink-faint">
-            {sessions.sessions_without_visitor > 0
-              ? `${NOMBRE(sessions.sessions_without_visitor)} session(s) sans identifiant d’installation : non rattachables.`
-              : "Installations distinctes. Ni sessions, ni identités déclarées — ces populations ne s’additionnent pas."}
-          </p>
-        </div>
-        <div className="card p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Erreurs JavaScript</div>
-          <div data-testid="mobile-erreurs" className="mt-1 text-3xl font-bold tabular-nums text-ink">
-            {erreurs ? NOMBRE(erreurs.occurrences) : "Inconnu"}
-          </div>
-          <p className="mt-1 text-xs text-ink-faint">
-            {erreurs
-              ? `${NOMBRE(erreurs.crashes)} non interceptée(s), ${NOMBRE(erreurs.unhandled_rejections)} rejet(s) de promesse · fatales : ${INCONNU(erreurs.fatal)}`
-              : "Source d’erreur non lisible sur ce schéma."}
-          </p>
-        </div>
-        <div className="card p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
-            Sessions sans erreur JS
-          </div>
-          <div data-testid="mobile-taux-sans-erreur" className="mt-1 text-3xl font-bold tabular-nums text-ink">
-            {data.js_error_free_session_rate == null ? "Non calculable" : fmtPct(data.js_error_free_session_rate)}
-          </div>
-          {intervalleSansErreur && (
-            <p data-testid="mobile-intervalle-sans-erreur" className="mt-1 break-words text-xs text-ink-soft">
-              {intervalleSansErreur} · {NOMBRE(sessions.sessions)} session(s)
-              {sessions.sessions < FAIBLE_SOUS_PROPORTION && (
-                <span className="font-medium text-warn-ink"> · échantillon faible</span>
-              )}
-            </p>
-          )}
-          <p className="mt-1 text-xs text-ink-faint">
-            {data.js_error_free_unavailable_reason
-              ? ERROR_FREE_REASONS[data.js_error_free_unavailable_reason]
-              : "Erreurs JavaScript seulement. Ce n’est pas un taux « sans crash » : les crashes natifs ne sont pas collectés."}
-          </p>
-        </div>
       </div>
-
-      {/* ── Capacités : la seule carte qui a le droit de dire « rien » ── */}
-      <section className="card mb-6 overflow-x-auto p-4" aria-labelledby="mobile-capacites">
-        <h2 id="mobile-capacites" className="text-sm font-semibold text-ink">Ce qui est collecté, et ce qui ne l’est pas</h2>
-        <p className="mt-1 text-xs text-ink-faint">
-          Déclaré par le SDK, par application, runtime et release. Une capacité activée n’est pas un test natif
-          passé : seule une recette d’opérateur renseigne la colonne « Vérifié ».
-        </p>
-        <table className="mt-3 w-full min-w-table text-sm">
-          <caption className="sr-only">Capacités de collecte déclarées par le runtime mobile</caption>
-          <thead className="bg-panel2">
-            <tr>
-              <th scope="col" className="th">Capacité</th>
-              <th scope="col" className="th">État</th>
-              <th scope="col" className="th">Releases déclarantes</th>
-              <th scope="col" className="th">Vérifié (recette)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.capabilities.map((c) => (
-              <tr key={c.capability} data-testid={`capacite-${c.capability}`} className="border-t border-line/60 align-top">
-                <td className="px-4 py-3">
-                  <div className="font-medium text-ink">{c.label}</div>
-                  <div className="mt-1 max-w-md text-xs text-ink-faint">{c.note}</div>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`inline-block rounded-full border px-2 py-0.5 text-xs font-semibold ${BADGE[c.state]}`}>
-                    {STATE_LABELS[c.state]}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-xs text-ink-soft">
-                  {c.declared_by.length
-                    ? c.declared_by.map((r) => r ?? "release inconnue").join(", ")
-                    : "—"}
-                </td>
-                <td className="px-4 py-3 text-xs text-ink-soft">
-                  {c.verified_at ? `${fmtDate(c.verified_at)}${c.verified_by ? ` · ${c.verified_by}` : ""}` : "Jamais"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      {/* ── Démarrage JS : deux mesures distinctes, jamais fondues ── */}
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        <section className="card p-4" aria-labelledby="mobile-demarrage">
-          <h2 id="mobile-demarrage" className="text-sm font-semibold text-ink">Temps JS jusqu’au premier écran</h2>
-          <p className="mt-1 text-xs text-ink-faint">
-            Depuis l’initialisation du SDK jusqu’au premier écran que l’application déclare rendu. Ce n’est pas le
-            démarrage natif : ni le lancement du processus, ni le pré-main, ni l’écran de lancement n’y figurent.
-          </p>
-          <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-            {([["À froid", startup.cold], ["À chaud", startup.warm]] as const).map(([titre, mesure]) => (
-              <div key={titre} className="rounded-lg border border-line/60 p-3">
-                <dt className="text-xs font-semibold uppercase tracking-wider text-ink-faint">{titre}</dt>
-                <dd
-                  data-testid={`mobile-demarrage-${titre === "À froid" ? "froid" : "chaud"}`}
-                  className="mt-1 text-2xl font-bold tabular-nums text-ink"
-                >
-                  {mesure ? fmtLatency(mesure.p75_ms) : "Non mesuré"}
-                </dd>
-                <dd className="mt-1 text-xs text-ink-faint">
-                  {mesure
-                    ? `p75 · médiane ${fmtLatency(mesure.p50_ms)} · p95 ${fmtLatency(mesure.p95_ms)} · ${NOMBRE(mesure.samples)} mesure(s)`
-                    : "L’application n’a déclaré aucun premier écran sur la fenêtre."}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-
-        <section className="card p-4" aria-labelledby="mobile-ecrans">
-          <h2 id="mobile-ecrans" className="text-sm font-semibold text-ink">Écrans les plus consultés</h2>
-          <div className="mt-3">
-            <RankBar
-              data={data.screens.map((s) => ({
-                label: s.route ?? "Inconnu",
-                value: s.views,
-                display: NOMBRE(s.views),
-                sub: `${NOMBRE(s.sessions)} session(s)`,
-              }))}
-              emptyLabel="Aucun écran observé sur la fenêtre."
-            />
-          </div>
-          <details className="mt-3 text-xs text-ink-soft">
-            <summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-              Alternative textuelle de la série
-            </summary>
-            <table className="mt-2 w-full">
-              <caption className="sr-only">Écrans consultés et leur volume</caption>
-              <thead><tr><th scope="col" className="py-1 text-left">Écran</th><th scope="col" className="py-1 text-right">Consultations</th><th scope="col" className="py-1 text-right">Sessions</th></tr></thead>
-              <tbody>
-                {data.screens.map((s) => (
-                  <tr key={s.route ?? "inconnu"} className="border-t border-line/60">
-                    <td className="py-1">{s.route ?? "Inconnu"}</td>
-                    <td className="py-1 text-right tabular-nums">{NOMBRE(s.views)}</td>
-                    <td className="py-1 text-right tabular-nums">{NOMBRE(s.sessions)}</td>
-                  </tr>
-                ))}
-                {!data.screens.length && <tr><td className="py-1 text-ink-faint" colSpan={3}>Aucun écran observé.</td></tr>}
-              </tbody>
-            </table>
-          </details>
-        </section>
-      </div>
-
-      {/* ── Requêtes lentes ── */}
-      <section className="card mb-6 overflow-x-auto" aria-labelledby="mobile-requetes">
-        <h2 id="mobile-requetes" className="px-4 pt-4 text-sm font-semibold text-ink">Requêtes les plus lentes</h2>
-        <p className="px-4 pt-1 text-xs text-ink-faint">
-          Appels réseau émis par l’application. Mesurer la latence d’une origine tierce n’expose rien à ce tiers :
-          aucun en-tête MIP n’est envoyé hors des origines explicitement déclarées.
-        </p>
-        <table className="mt-3 w-full min-w-table text-sm">
-          <caption className="sr-only">Appels réseau les plus lents de la cohorte mobile</caption>
-          <thead className="bg-panel2">
-            <tr>
-              <th scope="col" className="th">Chemin</th>
-              <th scope="col" className="th">Méthode</th>
-              <th scope="col" className="th">Appels</th>
-              <th scope="col" className="th">p75</th>
-              <th scope="col" className="th">Max</th>
-              <th scope="col" className="th">≥ 400</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.resources.map((r) => (
-              <tr key={`${r.method}-${r.path}`} className="border-t border-line/60 hover:bg-panel2/60">
-                <td className="max-w-xs truncate px-4 py-3 font-mono text-xs text-ink-soft" title={r.path}>{r.path || "—"}</td>
-                <td className="px-4 py-3 text-xs">{r.method ?? "—"}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{NOMBRE(r.calls)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{fmtLatency(r.p75_ms)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{fmtLatency(r.max_ms)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{NOMBRE(r.errors)}</td>
-              </tr>
-            ))}
-            {!data.resources.length && (
-              <tr><td className="px-4 py-10 text-center text-sm text-ink-faint" colSpan={6}>Aucun appel réseau observé sur la fenêtre.</td></tr>
+    ),
+    bandeaux: (
+      <div className="flex min-w-0 flex-col gap-2 empty:hidden [&:not(:empty)]:mb-4">
+        {ignores.map((ligne) => (
+          <p key={ligne} role="note" className="text-xs text-ink-soft" data-testid="reglage-ignore">
+            {ligne}
+            {plateformeHeritee && ligne.startsWith("Réglage d'affichage ignoré : platform=") && (
+              <>
+                {" "}
+                <Link className="font-medium text-brand hover:underline" href={hrefWithQuery("/mobile", query, { os: PLATFORM_OS[plateformeHeritee] })}>
+                  Vue « {PLATFORM_LABELS[plateformeHeritee]} »
+                </Link>
+              </>
             )}
-          </tbody>
-        </table>
+          </p>
+        ))}
+        {data?.unavailable.map((raison) => (
+          <div key={raison} data-testid="mobile-partiel">
+            <EtatSurface etat={{ kind: "partiel", raison: `réponse partielle, ${raison}.` }} compact />
+          </div>
+        ))}
+        {data?.sampling.min_inclusion_probability != null && data.sampling.min_inclusion_probability < 1 && (
+          <EtatSurface etat={{ kind: "echantillonne", probaMin: data.sampling.min_inclusion_probability, unite: "session" }} compact />
+        )}
+      </div>
+    ),
+    kpi: tuiles,
+    stabilite: (
+      <SectionErreur titre="Stabilité par release">
+        {!parRelease.ok ? (
+          <div className="mb-6">
+            <EchecLecture titre="Stabilité par release" />
+          </div>
+        ) : !parRelease.data.disponible ? (
+          <section className="card mb-6 min-w-0 p-4" data-testid="mobile-stabilite" aria-labelledby="mobile-stabilite-repli">
+            <h2 id="mobile-stabilite-repli" className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+              Stabilité par release
+            </h2>
+            <EtatSurface etat={{ kind: "partiel", raison: parRelease.data.raison }} />
+          </section>
+        ) : (
+          <StabiliteParRelease
+            resultat={parRelease.data}
+            tri={triHero}
+            triHref={{ fourni: hrefTri("fourni"), gravite: hrefTri("gravite"), volume: hrefTri("volume") }}
+            hrefDeRelease={hrefDeRelease}
+            plage={ecran.label}
+          />
+        )}
+      </SectionErreur>
+    ),
+    "demarrage-ecrans": (
+      <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-2">
+        <SectionErreur titre="Démarrage JS jusqu'au premier écran">
+          <Figure
+            titre="Démarrage JS jusqu'au premier écran"
+            id="mobile-demarrage"
+            etat={data ? undefined : { kind: "erreur", titre: "Démarrage JS jusqu'au premier écran" }}
+            meta={
+              data ? (
+                <>
+                  <span>{ecran.label}</span>
+                  {dataPrec && (
+                    <span>
+                      p75 période précédente : à froid {formater("ms", dataPrec.startup.cold?.p75_ms ?? null)}, à chaud{" "}
+                      {formater("ms", dataPrec.startup.warm?.p75_ms ?? null)}
+                    </span>
+                  )}
+                </>
+              ) : undefined
+            }
+            lecture={
+              <>
+                Depuis l&apos;initialisation du SDK jusqu&apos;au premier écran que l&apos;application déclare rendu. Ce
+                n&apos;est pas le démarrage natif : ni le lancement du processus, ni le pré-main, ni l&apos;écran de
+                lancement n&apos;y figurent. Aucun seuil de démarrage n&apos;est publié : aucune couleur de verdict.
+                {data && (!data.startup.cold || !data.startup.warm) && (
+                  <> Non mesuré : l&apos;application n&apos;a déclaré aucun premier écran sur la fenêtre.</>
+                )}
+              </>
+            }
+          >
+            {data && (
+              <EtenduePercentiles
+                format="ms"
+                lignes={[
+                  { libelle: "À froid", m: data.startup.cold },
+                  { libelle: "À chaud", m: data.startup.warm },
+                ].map(({ libelle, m }) => ({
+                  libelle,
+                  n: m?.samples ?? 0,
+                  p50: m?.p50_ms ?? null,
+                  p75: m?.p75_ms ?? null,
+                  p95: m?.p95_ms ?? null,
+                }))}
+              />
+            )}
+          </Figure>
+        </SectionErreur>
+        <SectionErreur titre="Écrans les plus consultés">
+          <Figure
+            titre="Écrans les plus consultés"
+            id="mobile-ecrans"
+            etat={data ? undefined : { kind: "erreur", titre: "Écrans les plus consultés" }}
+            meta={data ? <span>{ecran.label} · 10 écrans au plus, par consultations</span> : undefined}
+            lecture="Une consultation par écran déclaré. Pas de lien vers un écran filtré : le filtre de route de /pages mélangerait web et React Native tant que le runtime n'est pas une dimension de lecture (B8)."
+          >
+            {data &&
+              (() => {
+                const total = data.screens.reduce((s, e) => s + e.views, 0);
+                return (
+                  <RankBar
+                    data={data.screens.map((s) => ({
+                      label: s.route ?? "Inconnu",
+                      value: s.views,
+                      display: `${nombre(s.views)}${total > 0 ? ` · ${formater("pct", s.views / total)}` : ""}`,
+                      sub: `${nombre(s.sessions)} session(s)`,
+                    }))}
+                    legende="Écrans consultés : consultations, part des consultations des 10 premiers écrans, sessions"
+                    emptyLabel={`Aucun écran observé sur la fenêtre. ${CAPABILITY_NOTES.screen_tracking}`}
+                  />
+                );
+              })()}
+          </Figure>
+        </SectionErreur>
+      </div>
+    ),
+    requetes: (
+      <SectionErreur titre="Appels réseau les plus lents">
+        {!data ? (
+          <div className="mb-6">
+            <EchecLecture titre="Appels réseau les plus lents" />
+          </div>
+        ) : (
+          (() => {
+            const lignes: ImpactLigne[] = data.resources.map((r) => {
+              const libelle = `${r.method ?? "—"} ${r.path || "—"}`;
+              const partErreurs = r.calls > 0 ? r.errors / r.calls : null;
+              return {
+                cle: `${r.method ?? ""} ${r.path}`,
+                libelle,
+                href: null,
+                description: `${libelle} : p75 ${formater("ms", r.p75_ms)}, ${nombre(r.calls)} appels`,
+                pilote: r.p75_ms,
+                volume: r.calls,
+                mesures: [
+                  { cle: "max", valeur: r.max_ms, affichage: formater("ms", r.max_ms) },
+                  { cle: "erreurs", valeur: partErreurs, affichage: formater("pct", partErreurs) },
+                ],
+                echantillonFaible: r.calls < SEUIL_ECHANTILLON_FAIBLE,
+              };
+            });
+            return (
+              <ImpactTable
+                titre="Appels réseau les plus lents"
+                tri="fourni"
+                triHref={{ gravite: null, volume: null, impact: null, fourni: null }}
+                ordreLibelle="Ordre : les 10 appels au p75 le plus élevé, du plus lent au plus rapide ; moins de 30 appels en fin de liste. La lecture s'arrête à 10 appels distincts."
+                reference={null}
+                referenceRaison="p75 de l'ensemble des appels non calculé : aucune lecture ne le rend."
+                lignes={classerParGravite(lignes, { pilote: (l) => l.pilote, effectif: (l) => l.volume, tri: "gravite" }).lignes}
+                colonnes={["Max", "Réponses ≥ 400"]}
+                unitePilote="ms"
+                volumeLibelle="Appels"
+                groupes={lignes.length}
+                tronque={false}
+                notice="Appels réseau émis par l'application, origine retirée du chemin. Mesurer la latence d'une origine tierce n'expose rien à ce tiers : aucun en-tête MIP n'est envoyé hors des origines déclarées. Pas de lien : le tracing ne filtre pas par chemin."
+              />
+            );
+          })()
+        )}
+      </SectionErreur>
+    ),
+    temps: (
+      <div className="mb-6">
+        <Figure
+          titre="Sessions et erreurs JS dans le temps"
+          id="mobile-temps"
+          etat={{ kind: "partiel", raison: "Série non disponible : le runtime n'est pas encore une dimension de lecture (B8)." }}
+        />
+      </div>
+    ),
+    capacites: (
+      <section id="capacites" className="card mb-6 min-w-0 p-4" aria-labelledby="mobile-capacites">
+        <h2 id="mobile-capacites" className="text-sm font-semibold text-ink">
+          Ce qui est collecté, et ce qui ne l&apos;est pas
+        </h2>
+        <p className="mt-1 text-xs text-ink-soft">
+          Déclaré par le SDK, par application, runtime et release, sans fenêtre : une déclaration n&apos;est pas une
+          occurrence. Une capacité activée n&apos;est pas un test natif passé : seule une recette d&apos;opérateur
+          renseigne la colonne « Vérifié ».
+        </p>
+        {!data ? (
+          <div className="mt-3">
+            <EchecLecture titre="Capacités déclarées" />
+          </div>
+        ) : (
+          // Une seule table ; sous 640 px chaque ligne devient une carte (libellés en tête de cellule).
+          <table className="mt-3 block w-full text-sm sm:table">
+            <caption className="sr-only">Capacités de collecte déclarées par le runtime mobile</caption>
+            <thead className="hidden bg-panel2 sm:table-header-group">
+              <tr>
+                <th scope="col" className="th text-ink-soft">Capacité</th>
+                <th scope="col" className="th text-ink-soft">État</th>
+                <th scope="col" className="th text-ink-soft">Releases déclarantes</th>
+                <th scope="col" className="th text-ink-soft">Dernière déclaration</th>
+                <th scope="col" className="th text-ink-soft">Vérifié (recette)</th>
+              </tr>
+            </thead>
+            <tbody className="block sm:table-row-group">
+              {data.capabilities.map((c) => (
+                <tr
+                  key={c.capability}
+                  data-testid={`capacite-${c.capability}`}
+                  className="mb-2 block rounded-lg border border-line/60 p-2 align-top sm:mb-0 sm:table-row sm:rounded-none sm:border-0 sm:border-t sm:p-0"
+                >
+                  <th scope="row" className="block px-2 py-1 text-left font-normal sm:table-cell sm:px-4 sm:py-3">
+                    <div className="font-medium text-ink">{c.label}</div>
+                    <details className="mt-1 text-xs text-ink-soft">
+                      <summary className="cursor-pointer select-none hover:text-ink">Ce que l&apos;absence veut dire</summary>
+                      <p className="mt-1 max-w-md">{c.note}</p>
+                    </details>
+                  </th>
+                  <td className="block px-2 py-1 sm:table-cell sm:px-4 sm:py-3">
+                    <span className={`inline-block rounded-full border px-2 py-0.5 text-xs font-semibold ${BADGE[c.state]}`}>
+                      {STATE_LABELS[c.state]}
+                    </span>
+                  </td>
+                  <td className="block px-2 py-1 text-xs text-ink-soft sm:table-cell sm:px-4 sm:py-3">
+                    <span className="sm:hidden">Releases déclarantes : </span>
+                    {c.declared_by.length ? (
+                      <ul className="inline sm:block">
+                        {c.declared_by.map((r) => (
+                          <li key={r ?? "__inconnue"} className="inline after:content-[',_'] last:after:content-none sm:block sm:after:content-none">
+                            {r ?? "release inconnue"}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="block px-2 py-1 text-xs text-ink-soft sm:table-cell sm:px-4 sm:py-3" data-testid="capacite-derniere-declaration">
+                    <span className="sm:hidden">Dernière déclaration : </span>
+                    {c.last_declared_at ? dateUtc(c.last_declared_at) : "—"}
+                  </td>
+                  <td className="block px-2 py-1 text-xs text-ink-soft sm:table-cell sm:px-4 sm:py-3">
+                    <span className="sm:hidden">Vérifié (recette) : </span>
+                    {c.verified_at ? `${dateUtc(c.verified_at)}${c.verified_by ? ` · ${c.verified_by}` : ""}` : "Jamais"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
-
+    ),
+    "plus-loin": (
       <nav className="flex flex-wrap items-center gap-3 text-sm" aria-label="Aller plus loin">
         <Link href={lienErreurs} data-testid="mobile-lien-erreurs" className="btn-ghost">
           Erreurs React Native
@@ -333,10 +677,28 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
         >
           Sessions React Native
         </span>
-        <span className="text-xs text-ink-soft">
+        <span className="min-w-0 text-xs text-ink-soft">
           Indisponible : la liste des sessions ne filtre pas encore le runtime (B8).
         </span>
       </nav>
+    ),
+  };
+
+  return (
+    <div className="animate-fade-up">
+      <PageHeader
+        title="Mobile"
+        domain="perf"
+        sub={`Comment se comporte l'app React Native sur ${ecran.label}, et que ne mesurons-nous pas ?`}
+      />
+      <div className="mb-4 min-w-0">
+        <PresetBar vues={vues} actif={null} />
+      </div>
+      {ordreZonesMobile(etatParRelease).map((zone) => (
+        <div key={zone} data-zone={zone} className="min-w-0">
+          {zones[zone]}
+        </div>
+      ))}
     </div>
   );
 }
