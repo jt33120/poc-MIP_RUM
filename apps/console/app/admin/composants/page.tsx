@@ -24,6 +24,7 @@ import { requireAdmin } from "@/lib/auth";
 import { formater, type FormatId } from "@/lib/fmt-ids";
 import { CATEGORIELLE, RATING_HEX } from "@/lib/palette";
 import { THRESHOLDS, rating2026 } from "@/lib/rating";
+import { SectionPanneau } from "./sections/panneau";
 
 export const dynamic = "force-dynamic";
 
@@ -597,6 +598,7 @@ export default async function VitrineComposants() {
           </Exemple>
         </div>
       </Section>
+      <SectionPanneau />
     </div>
   );
 }
