@@ -320,3 +320,106 @@ test.describe("F15 — Pages : distributions, percentiles, TTFB, type de navigat
     });
   }
 });
+
+// F16 — Pages : tâches longues et ressources (§ 5.2.2, zones 7 droite et 8).
+// Données SYNTHÉTIQUES : des blocages LoAF et Long Tasks il y a 2 h (une API chacun,
+// jamais additionnées en durée), un marqueur de déploiement il y a 3 h (annotation
+// attendue sur les DEUX panneaux), une ressource lente. La coupure de base (« lecture
+// en échec ») se vérifie écran par écran dans tests/e2e/etats.spec.ts (/pages), et
+// section par section dans tests/unit/LongtasksView.test.tsx.
+test.describe("F16 — Pages : tâches longues et ressources", () => {
+  const APP_F16 = "f16-e2e-pages";
+  const PAGES_F16 = `${consoleUrl}/pages?app=${APP_F16}&period=24h`;
+
+  async function semerF16() {
+    for (const t of ["rum_metric", "rum_pageview", "rum_longtask", "rum_resource", "rum_error", "rum_session"])
+      await pool.query(`delete from ${t} where app_id = $1`, [APP_F16]);
+    await pool.query(`delete from deploy_marker where app_id = $1`, [APP_F16]);
+    await pool.query(
+      `insert into app_registry (app_id, name) values ($1, 'Pages F16 E2E') on conflict (app_id) do nothing`,
+      [APP_F16],
+    );
+    await pool.query(
+      `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+       select $1 || '-s' || g, $1, $1 || '-v' || g, 'desktop', false,
+              now() - interval '2 hours', now() - interval '110 minutes', 1
+         from generate_series(1, 6) g
+       on conflict (session_id) do nothing`,
+      [APP_F16],
+    );
+    await pool.query(
+      `insert into rum_pageview (span_id, session_id, app_id, route, nav_type, started_at)
+       select $1 || '-pv' || g, $1 || '-s' || g, $1, '/f16-panier', 'navigate', now() - interval '2 hours'
+         from generate_series(1, 6) g
+       on conflict (span_id) do nothing`,
+      [APP_F16],
+    );
+    await pool.query(
+      `insert into rum_longtask (span_id, session_id, app_id, route, duration_ms, source, blocking_ms,
+                                 script_url, script_function, ts)
+       select $1 || '-lt' || g, $1 || '-s' || g, $1, '/f16-panier', 100 + 40 * g,
+              case when g <= 4 then 'loaf' else 'longtask' end, 50 + 40 * g,
+              'https://f16.example.fr/panier.js', 'f16Recalcul', now() - interval '2 hours' + interval '5 minutes'
+         from generate_series(1, 6) g
+       on conflict (span_id) do nothing`,
+      [APP_F16],
+    );
+    await pool.query(
+      `insert into rum_resource (span_id, session_id, app_id, route, url, type, duration_ms, transfer_size, ts)
+       values ($1 || '-res', $1 || '-s1', $1, '/f16-panier', 'https://cdn-f16.example.net/lib.js', 'script', 900, 48000,
+               now() - interval '2 hours' + interval '6 minutes')
+       on conflict (span_id) do nothing`,
+      [APP_F16],
+    );
+    await pool.query(
+      `insert into deploy_marker (app_id, version, env, source, ts) values ($1, 'f16-2.0.0', 'prod', 'ci', now() - interval '3 hours')`,
+      [APP_F16],
+    );
+  }
+
+  test.beforeAll(async () => {
+    await semerF16();
+  });
+
+  test("tâches longues : deux panneaux sur le même axe x, annotations sur les deux", async ({ page }) => {
+    await login(page);
+    await page.goto(PAGES_F16, { waitUntil: "domcontentloaded" });
+    const figure = page.locator("#figure-taches-longues");
+    await figure.scrollIntoViewIfNeeded();
+    // Deux graphiques (comptés par `.recharts-wrapper`, pas par `.recharts-surface`).
+    await expect(figure.locator(".recharts-wrapper")).toHaveCount(2);
+    const seauxComptes = await figure.getByTestId("stacked-bars").getAttribute("data-seaux");
+    const seauxP75 = await figure.getByTestId("threshold-series").getAttribute("data-seaux");
+    expect(Number(seauxComptes)).toBeGreaterThan(0);
+    expect(seauxP75).toBe(seauxComptes);
+    // Le marqueur de déploiement est posé sur les DEUX panneaux (P9).
+    await expect(figure.getByTestId("annotations")).toHaveCount(2);
+    // Le p75 par seau n'est plus seulement dans la table repliée : il a son panneau.
+    await expect(figure).toContainText("Blocage p75 par seau");
+    await expect(figure).toContainText("Aucun cumul de durées");
+  });
+
+  test("pires blocages : la fonction et le lien vers la session", async ({ page }) => {
+    await login(page);
+    await page.goto(PAGES_F16, { waitUntil: "domcontentloaded" });
+    const blocages = page.getByTestId("longtasks");
+    await expect(blocages).toContainText("f16Recalcul");
+    await expect(blocages.locator('a[href*="/sessions/"]').first()).toBeVisible();
+  });
+
+  test("ressources : l'avertissement de seuil avant les chiffres", async ({ page }) => {
+    await login(page);
+    await page.goto(PAGES_F16, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#ressources").getByTestId("ressources-seuil")).toBeVisible();
+  });
+
+  for (const largeur of LARGEURS) {
+    test(`aucun débordement à ${largeur} px`, async ({ page }) => {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await login(page);
+      await page.goto(PAGES_F16, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#figure-taches-longues")).toBeVisible();
+      expect(await debordements(page)).toEqual([]);
+    });
+  }
+});
