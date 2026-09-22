@@ -215,10 +215,12 @@ test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché 
   await expect(
     page.getByTestId("kpi-tile").filter({ has: page.getByText("Occurrences", { exact: true }) }).getByTestId("kpi-valeur"),
   ).toHaveText("38");
-  // Un seul lien par ligne, qui garde l'app et les filtres.
+  // Un seul lien par ligne, qui garde l'app et les filtres. Depuis F20, il ouvre le
+  // PANNEAU du groupe (`panel=error:`) plutôt que sa page : on qualifie sans quitter
+  // la liste, et « Ouvrir en page » est dans l'en-tête du panneau.
   await expect(ligne.getByRole("link")).toHaveCount(1);
   const href = await ligne.getByRole("link").getAttribute("href");
-  expect(href).toMatch(new RegExp(`^/errors/p51fp001\\?app=${A}&device=desktop$`));
+  expect(href).toMatch(new RegExp(`^/errors\\?app=${A}&device=desktop&panel=error%3Ap51fp001$`));
 
   // Tous appareils : l'erreur backend sans session garde des personnes INCONNUES.
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h`);
@@ -229,6 +231,10 @@ test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché 
 
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h&device=desktop`);
   await groupe(page, "p51fp001", A).getByRole("link").click();
+  // F20 : le clic ouvre le panneau ; « Ouvrir en page » mène au détail complet.
+  await expect(page).toHaveURL(new RegExp(`panel=error%3Ap51fp001`));
+  await expect(page.getByTestId("detail-panel").getByTestId("detail-occurrences")).toHaveText("38");
+  await page.getByTestId("detail-panel-page").click();
   await expect(page).toHaveURL(new RegExp(`/errors/p51fp001\\?app=${A}&device=desktop`));
   await expect(page.getByTestId("detail-occurrences")).toHaveText("38");
   await expect(page.getByTestId("detail-sessions")).toHaveText("1");
@@ -359,7 +365,8 @@ test("clavier : chaque lien d'occurrence est atteignable et activable", async ({
   await groupeLien.focus();
   await expect(groupeLien).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("detail-occurrences")).toHaveText("38");
+  // F20 : au clavier aussi, la ligne ouvre le panneau du groupe.
+  await expect(page.getByTestId("detail-panel").getByTestId("detail-occurrences")).toHaveText("38");
 });
 
 for (const width of [390, 768, 1440]) {

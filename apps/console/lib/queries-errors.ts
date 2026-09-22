@@ -1327,3 +1327,66 @@ export async function topGroupesSeries(f: ErrorFilters, n: 4): Promise<{ groupes
     };
   });
 }
+
+// ═════════════════ Détail d'un groupe : versions touchées (F20) ═════════════════
+
+export interface ReleaseVue {
+  release: string;
+  ts: Date;
+}
+
+export interface ReleasesDuGroupe {
+  /** Première occurrence du groupe PORTANT une release ; `null` si aucune n'en porte. */
+  premiere: ReleaseVue | null;
+  derniere: ReleaseVue | null;
+  /** Releases distinctes portées par le groupe (plafonné) : « apparue puis restée ». */
+  distinctes: number;
+}
+
+/**
+ * « Versions touchées » du bloc 3 du détail (§ 5.3.3) : première et dernière
+ * release vues pour ce groupe, avec leur date.
+ *
+ * NON BORNÉ PAR LA FENÊTRE, délibérément — comme `origine.first_seen` : la question
+ * est « depuis quelle version ? », qui distingue une RÉGRESSION (première release
+ * récente) d'une DETTE (première release ancienne). Une fenêtre de 24 h répondrait
+ * toujours « la release d'hier ». L'écran le libelle « depuis toujours ».
+ * Le périmètre d'apps reste lié (`sqlContext` + `intersectApp` sur l'app du groupe :
+ * une app hors périmètre effectif ne rend rien, jamais un repli sur toutes les apps).
+ *
+ * Seules les occurrences qui DÉCLARENT une release entrent : un groupe dont aucune
+ * occurrence n'en porte rend `null`, que l'écran écrit « release non déclarée » —
+ * jamais une version devinée, jamais « — » confondu avec une release vide.
+ */
+export async function releasesDuGroupe(ref: ErrorGroupRef, f: ErrorFilters): Promise<ReleasesDuGroupe> {
+  const sql = await sqlContext({ ...f, query: intersectApp(queryOf(f), ref.app_id) });
+  // `time: null` : aucune fenêtre (cf. `origine`). Les autres prédicats du contrat
+  // (appareil, dimensions, segment, bots) restent appliqués : le détail affiche la
+  // même population que ses autres chiffres.
+  const where = sql.where({ dataset: "errors", row: "e", session: "s", time: null });
+  const empreinte = sql.bind(ref.fingerprint);
+  const [row] = await q<{
+    premiere_release: string | null;
+    premiere_ts: Date | null;
+    derniere_release: string | null;
+    derniere_ts: Date | null;
+    distinctes: number;
+  }>(
+    `select (array_agg(e.release order by e.ts asc, e.id asc))[1] as premiere_release,
+            min(e.ts) as premiere_ts,
+            (array_agg(e.release order by e.ts desc, e.id desc))[1] as derniere_release,
+            max(e.ts) as derniere_ts,
+            count(distinct e.release)::int as distinctes
+       from rum_error e
+       ${sessionJoin("e", "s")}
+      where e.fingerprint = ${empreinte} and e.release is not null${where}`,
+    sql.params,
+  );
+  const vue = (release: string | null, ts: Date | null): ReleaseVue | null =>
+    release === null || ts === null ? null : { release, ts };
+  return {
+    premiere: vue(row?.premiere_release ?? null, row?.premiere_ts ?? null),
+    derniere: vue(row?.derniere_release ?? null, row?.derniere_ts ?? null),
+    distinctes: row?.distinctes ?? 0,
+  };
+}
