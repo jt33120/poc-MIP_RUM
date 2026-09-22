@@ -7,7 +7,7 @@ import type { ErrorStatus } from "@/lib/queries-v2";
 export function ErrorTypeBadge({ type, large = false }: { type: string | null; large?: boolean }) {
   return (
     <span
-      className={`rounded border border-red-300 bg-red-100 font-mono text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300 ${
+      className={`rounded border border-bad/30 bg-bad/10 font-mono text-bad-ink ${
         large ? "px-2 py-0.5 text-base" : "mr-2 px-1.5 py-0.5 text-xs"
       }`}
     >
@@ -20,14 +20,14 @@ export function ErrorTypeBadge({ type, large = false }: { type: string | null; l
 export function ErrorStatusBadges({ status, regressed }: { status: ErrorStatus; regressed: boolean }) {
   if (regressed) {
     return (
-      <span className="mr-2 rounded-full border border-amber-400/50 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-400/10 dark:text-amber-300">
+      <span className="mr-2 rounded-full border border-warn/50 bg-warn/10 px-1.5 py-0.5 text-[10px] font-bold text-warn-ink">
         ⚠ régression
       </span>
     );
   }
   if (status === "resolved") {
     return (
-      <span className="mr-2 rounded-full border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300">
+      <span className="mr-2 rounded-full border border-good/30 bg-good/10 px-1.5 py-0.5 text-[10px] font-semibold text-good-ink">
         résolue
       </span>
     );
@@ -59,7 +59,7 @@ export function HandledBadge({ handled }: { handled: boolean | null }) {
       className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
         handled
           ? "border-line bg-panel2 text-ink-soft"
-          : "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300"
+          : "border-bad/30 bg-bad/10 text-bad-ink"
       }`}
     >
       {handled ? "gérée" : "non gérée"}

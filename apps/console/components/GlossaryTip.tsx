@@ -26,9 +26,9 @@ export function GlossaryTip({
 
 const TONE: Record<string, string> = {
   brand: "bg-brand/10 text-brand",
-  accent: "bg-accent/15 text-accent-deep dark:text-accent",
+  accent: "bg-accent/15 text-accent-ink",
   emerald:
-    "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    "bg-good/10 text-good-ink",
 };
 
 function Row({ tag, tone, text }: { tag: string; tone: string; text: string }) {

@@ -21,7 +21,7 @@ export function LegalShell({
       {/* Bandeau d'honnêteté : ces documents sont des MODÈLES. Non masqué à l'impression
           du DPA volontairement retiré via print:hidden pour un rendu signable propre. */}
       <div className="mb-8 rounded-lg border border-warn/40 bg-warn/5 px-4 py-3 text-sm text-ink-soft print:hidden">
-        <strong className="text-warn">Modèle à compléter et à faire valider.</strong> Les champs entre
+        <strong className="text-warn-ink">Modèle à compléter et à faire valider.</strong> Les champs entre
         crochets <code>[…]</code> doivent être renseignés (raison sociale, SIREN, adresse, contact DPO…). Ce
         document est un modèle de départ&nbsp;; il doit être <strong>relu par un conseil juridique</strong> avant
         toute mise en production ou signature.

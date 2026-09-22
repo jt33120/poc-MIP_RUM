@@ -33,7 +33,7 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
       />
 
       {error && (
-        <div className="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
+        <div className="mb-6 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink">
           Domaine, nom et URL (http/https) requis.
         </div>
       )}
@@ -107,14 +107,14 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
                     <div className="font-medium text-ink">{c.name}</div>
                     <div className="font-mono text-xs text-ink-faint">{c.url}</div>
                     {state === "down" && c.last_error && (
-                      <div className="mt-0.5 text-xs text-red-600 dark:text-red-400">{c.last_error}</div>
+                      <div className="mt-0.5 text-xs text-bad-ink">{c.last_error}</div>
                     )}
                   </td>
                   <td className="px-4 py-2 tabular-nums">
                     {c.uptime_pct_24h == null ? (
                       <span className="text-ink-faint">—</span>
                     ) : (
-                      <span className={c.uptime_pct_24h >= 99 ? "text-emerald-600 dark:text-emerald-400" : c.uptime_pct_24h >= 95 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}>
+                      <span className={c.uptime_pct_24h >= 99 ? "text-good-ink" : c.uptime_pct_24h >= 95 ? "text-warn-ink" : "text-bad-ink"}>
                         {c.uptime_pct_24h}%
                       </span>
                     )}
@@ -133,14 +133,14 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
                         <input type="hidden" name="enabled" value={c.enabled ? "0" : "1"} />
                         <button
                           type="submit"
-                          className={`btn-ghost px-2 py-1 text-xs ${c.enabled ? "text-ink-soft" : "text-emerald-600 dark:text-emerald-400"}`}
+                          className={`btn-ghost px-2 py-1 text-xs ${c.enabled ? "text-ink-soft" : "text-good-ink"}`}
                         >
                           {c.enabled ? "Désactiver" : "Réactiver"}
                         </button>
                       </form>
                       <form action={deleteUptimeCheckAction}>
                         <input type="hidden" name="id" value={c.id} />
-                        <button type="submit" className="btn-ghost px-2 py-1 text-xs text-red-600 dark:text-red-400">
+                        <button type="submit" className="btn-ghost px-2 py-1 text-xs text-bad-ink">
                           Supprimer
                         </button>
                       </form>
@@ -165,8 +165,8 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
 
 function StatusPill({ state }: { state: "up" | "down" | "pending" | "off" }) {
   const meta = {
-    up: { label: "UP", cls: "border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300" },
-    down: { label: "DOWN", cls: "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300" },
+    up: { label: "UP", cls: "border-good/30 bg-good/10 text-good-ink" },
+    down: { label: "DOWN", cls: "border-bad/30 bg-bad/10 text-bad-ink" },
     pending: { label: "en attente", cls: "border-line bg-panel2 text-ink-soft" },
     off: { label: "désactivé", cls: "border-line bg-panel2 text-ink-faint" },
   }[state];

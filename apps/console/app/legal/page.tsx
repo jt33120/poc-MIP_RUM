@@ -15,7 +15,7 @@ export default function LegalHub() {
       <p className="mt-2 text-sm text-ink-faint">Mise à jour : {LEGAL_UPDATED}</p>
 
       <div className="mt-4 rounded-lg border border-warn/40 bg-warn/5 px-4 py-3 text-sm text-ink-soft">
-        <strong className="text-warn">Modèles à compléter et à faire valider par un conseil juridique.</strong>{" "}
+        <strong className="text-warn-ink">Modèles à compléter et à faire valider par un conseil juridique.</strong>{" "}
         Les champs entre crochets <code>[…]</code> (raison sociale, SIREN, adresse, DPO…) sont à renseigner avant
         toute mise en production.
       </div>
@@ -29,7 +29,7 @@ export default function LegalHub() {
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="font-semibold text-ink">{d.title}</span>
-                <span className="text-accent-deep dark:text-accent">→</span>
+                <span className="text-accent-ink">→</span>
               </div>
               <p className="mt-1 text-sm text-ink-faint">{d.desc}</p>
             </Link>

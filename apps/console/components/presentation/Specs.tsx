@@ -45,9 +45,9 @@ const LIBELLE: Record<Statut, string> = {
 };
 
 const TON: Record<Statut, string> = {
-  atteint: "border-good/40 bg-good/10 text-good",
-  partiel: "border-warn/40 bg-warn/10 text-warn",
-  manque: "border-bad/40 bg-bad/10 text-bad",
+  atteint: "border-good/40 bg-good/10 text-good-ink",
+  partiel: "border-warn/40 bg-warn/10 text-warn-ink",
+  manque: "border-bad/40 bg-bad/10 text-bad-ink",
   "non-mesure": "border-line bg-panel2 text-ink-faint",
 };
 
@@ -267,13 +267,13 @@ export async function Specs() {
             <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-faint">
               Face au marché
             </span>
-            <span className="rounded-full border border-good/40 bg-good/10 px-3 py-1 text-good">
+            <span className="rounded-full border border-good/40 bg-good/10 px-3 py-1 text-good-ink">
               {compte("atteint")} atteints
             </span>
-            <span className="rounded-full border border-warn/40 bg-warn/10 px-3 py-1 text-warn">
+            <span className="rounded-full border border-warn/40 bg-warn/10 px-3 py-1 text-warn-ink">
               {compte("partiel")} partiels
             </span>
-            <span className="rounded-full border border-bad/40 bg-bad/10 px-3 py-1 text-bad">
+            <span className="rounded-full border border-bad/40 bg-bad/10 px-3 py-1 text-bad-ink">
               {compte("manque")} non atteints
             </span>
             <span className="rounded-full border border-line bg-panel2 px-3 py-1 text-ink-faint">
@@ -387,7 +387,7 @@ export async function Specs() {
             {/* Ce qu'on ne mesure pas ------------------------------------- */}
             <div className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel">
               <div className="border-b border-line bg-panel2 px-5 py-3">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-warn">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-warn-ink">
                   <Icon paths={ICON_PATHS.alert} className="h-4 w-4" strokeWidth={2.4} />
                   Ce qu&apos;on ne mesure pas
                 </h3>
@@ -473,7 +473,7 @@ export async function Specs() {
 
             {/* Ce qui manque, en liste simple ----------------------------- */}
             <div className="mt-8">
-              <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.14em] text-warn">
+              <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.14em] text-warn-ink">
                 <Icon paths={ICON_PATHS.alert} className="h-4 w-4" strokeWidth={2.4} />
                 Ce qui manque
               </h3>
@@ -491,7 +491,7 @@ export async function Specs() {
                         <span className="text-sm font-semibold text-ink">{a.t}</span>
                         <span
                           className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] ${
-                            a.g === "bloquant" ? "bg-bad/10 text-bad" : "bg-warn/10 text-warn"
+                            a.g === "bloquant" ? "bg-bad/10 text-bad-ink" : "bg-warn/10 text-warn-ink"
                           }`}
                         >
                           {a.g === "bloquant" ? "bloque la vente" : "limite connue"}

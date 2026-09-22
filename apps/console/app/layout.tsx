@@ -363,10 +363,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <div className="ml-auto flex items-center gap-3">
                 {/* AutoRefresh re-fetch les server components toutes les 5 s */}
                 <span
-                  className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"
+                  className="flex items-center gap-2 rounded-full border border-good/30 bg-good/10 px-2.5 py-1 text-[11px] font-semibold text-good-ink"
                   title="Données rafraîchies automatiquement toutes les 5 secondes"
                 >
-                  <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-emerald-500" />
+                  <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-good" />
                   LIVE · 5 s
                 </span>
                 <ThemeToggle />

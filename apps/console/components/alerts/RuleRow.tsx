@@ -8,11 +8,11 @@ const ETATS: Record<RuleState, { label: string; cls: string }> = {
   ok: { label: "Normale", cls: "bg-panel2 text-ink-soft" },
   breached: {
     label: "Franchie",
-    cls: "bg-red-100 text-red-800 dark:bg-red-400/10 dark:text-red-300",
+    cls: "bg-bad/10 text-bad-ink",
   },
   no_data: {
     label: "Données insuffisantes",
-    cls: "border border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300",
+    cls: "border border-warn/30 bg-warn/10 text-warn-ink",
   },
 };
 
@@ -42,14 +42,14 @@ export function RuleRow({ rule, apps }: { rule: AlertRuleRow; apps: { app_id: st
       <RuleFields apps={apps} rule={rule} />
       <RuleEvaluation rule={rule} />
       {rule.unacked > 0 && (
-        <span className="self-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-800 dark:bg-red-400/10 dark:text-red-300">
+        <span className="self-center rounded-full bg-bad/10 px-2 py-0.5 text-xs font-bold text-bad-ink">
           {rule.unacked} alerte(s) en cours
         </span>
       )}
       <span
         className={`self-center rounded px-2 py-0.5 text-xs font-medium ${
           rule.active
-            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
+            ? "bg-good/10 text-good-ink"
             : "bg-panel2 text-ink-faint"
         }`}
       >
@@ -64,7 +64,7 @@ export function RuleRow({ rule, apps }: { rule: AlertRuleRow; apps: { app_id: st
           formAction={toggleRuleAction}
           data-testid={`toggle-${rule.id}`}
           className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition ${
-            rule.active ? "bg-slate-500 hover:bg-slate-600" : "bg-emerald-600 hover:bg-emerald-700"
+            rule.active ? "bg-slate-500 hover:bg-slate-600" : "bg-good hover:bg-good/90"
           }`}
         >
           {rule.active ? "Désactiver" : "Activer"}

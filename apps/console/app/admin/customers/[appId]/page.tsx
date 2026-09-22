@@ -74,7 +74,7 @@ export default async function CustomerWizard({
         <h1 className="text-2xl font-bold">{customer.name}</h1>
         <span
           className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-            status.live ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
+            status.live ? "bg-green-100 text-green-800" : "bg-warn/10 text-warn-ink"
           }`}
           data-testid="live-badge"
         >
@@ -94,7 +94,7 @@ export default async function CustomerWizard({
       {kt && (
         <div
           data-testid="one-time-key"
-          className="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="mb-6 rounded-lg border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
         >
           {oneTimeKey ? (
             <>

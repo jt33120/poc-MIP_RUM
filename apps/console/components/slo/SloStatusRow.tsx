@@ -8,18 +8,18 @@ import { deleteSloAction, toggleSloAction } from "@/app/alerts/actions";
 /** Classes Tailwind de la barre/statut d'error-budget (ok/at_risk/breached). */
 export const STATUS_STYLE: Record<string, { bar: string; badge: string; label: string }> = {
   ok: {
-    bar: "bg-emerald-500",
-    badge: "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300",
+    bar: "bg-good",
+    badge: "bg-good/10 text-good-ink",
     label: "ok",
   },
   at_risk: {
-    bar: "bg-amber-500",
-    badge: "bg-amber-100 text-amber-800 dark:bg-amber-400/10 dark:text-amber-300",
+    bar: "bg-warn",
+    badge: "bg-warn/10 text-warn-ink",
     label: "à risque",
   },
   breached: {
-    bar: "bg-red-500",
-    badge: "bg-red-100 text-red-800 dark:bg-red-400/10 dark:text-red-300",
+    bar: "bg-bad",
+    badge: "bg-bad/10 text-bad-ink",
     label: "objectif manqué",
   },
   non_mesurable: {
@@ -48,7 +48,7 @@ export function SloRow({ raw, status }: { raw: SloRaw; status?: SloStatusData })
           <span className="ml-2 rounded bg-panel2 px-2 py-0.5 text-xs text-ink-faint">désactivé</span>
         )}
         {status?.fast_burn && (
-          <span className="ml-2 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
+          <span className="ml-2 rounded-full bg-bad-fond px-2 py-0.5 text-xs font-bold text-white">
             burn rapide
           </span>
         )}
@@ -84,7 +84,7 @@ export function SloRow({ raw, status }: { raw: SloRaw; status?: SloStatusData })
               type="submit"
               data-testid={`toggle-slo-${raw.id}`}
               className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition ${
-                raw.active ? "bg-slate-500 hover:bg-slate-600" : "bg-emerald-600 hover:bg-emerald-700"
+                raw.active ? "bg-slate-500 hover:bg-slate-600" : "bg-good hover:bg-good/90"
               }`}
             >
               {raw.active ? "Désactiver" : "Activer"}
@@ -95,7 +95,7 @@ export function SloRow({ raw, status }: { raw: SloRaw; status?: SloStatusData })
             <button
               type="submit"
               data-testid={`delete-slo-${raw.id}`}
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700"
+              className="rounded-lg bg-bad-fond px-3 py-1.5 text-xs font-medium text-white transition hover:bg-bad-fond/90"
             >
               Supprimer
             </button>

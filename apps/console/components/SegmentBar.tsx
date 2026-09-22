@@ -168,7 +168,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
         <span
           role="alert"
           data-testid="segment-invalid"
-          className="flex items-center gap-1.5 rounded-full border border-bad/40 bg-bad/10 px-2 py-0.5 text-xs font-medium text-bad"
+          className="flex items-center gap-1.5 rounded-full border border-bad/40 bg-bad/10 px-2 py-0.5 text-xs font-medium text-bad-ink"
         >
           Segment illisible : {parsed.error.message}
           <button
@@ -292,7 +292,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
             ×
           </button>
           {addError && (
-            <span role="alert" className="basis-full text-[11px] font-medium text-bad" data-testid="segment-error">
+            <span role="alert" className="basis-full text-[11px] font-medium text-bad-ink" data-testid="segment-error">
               {addError}
             </span>
           )}
@@ -338,7 +338,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
           onClick={() => navigate((next) => (includeBots ? next.delete("bots") : next.set("bots", "1")))}
           className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition ${
             includeBots
-              ? "border-warn/40 bg-warn/10 text-warn"
+              ? "border-warn/40 bg-warn/10 text-warn-ink"
               : "border-line text-ink-faint hover:text-ink-soft"
           }`}
           title={
@@ -363,7 +363,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
             <button
               type="button"
               onClick={() => apply([])}
-              className="text-xs font-medium text-ink-faint hover:text-bad"
+              className="text-xs font-medium text-ink-faint hover:text-bad-ink"
               title="Réinitialiser le segment"
             >
               Réinitialiser

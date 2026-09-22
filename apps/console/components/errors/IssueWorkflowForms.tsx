@@ -94,7 +94,7 @@ function useMutation(issueId: string, action: "triage" | "comments" | "links" | 
 function Retour({ etat, recharger, testid }: { etat: Etat; recharger: () => void; testid: string }) {
   if (etat.kind === "conflit") {
     return (
-      <div role="alert" data-testid={`${testid}-conflict`} className="mt-3 flex flex-wrap items-center gap-2 text-sm text-bad">
+      <div role="alert" data-testid={`${testid}-conflict`} className="mt-3 flex flex-wrap items-center gap-2 text-sm text-bad-ink">
         <span>{etat.message}</span>
         <button type="button" className="btn-ghost border border-line px-2 py-1 text-xs" onClick={recharger}>
           Recharger l&apos;issue
@@ -104,7 +104,7 @@ function Retour({ etat, recharger, testid }: { etat: Etat; recharger: () => void
   }
   if (etat.kind === "erreur") {
     return (
-      <p role="alert" className="mt-3 text-sm text-bad">
+      <p role="alert" className="mt-3 text-sm text-bad-ink">
         {etat.message}
       </p>
     );

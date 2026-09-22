@@ -136,7 +136,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                   </td>
                   <td className="px-4 py-3">
                     {c.err > 0 ? (
-                      <span className="rounded border border-red-300 bg-red-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
+                      <span className="rounded border border-bad/30 bg-bad/10 px-1.5 py-0.5 text-xs font-medium tabular-nums text-bad-ink">
                         {c.err}
                       </span>
                     ) : (
@@ -174,7 +174,7 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
                 <td className="px-4 py-3 tabular-nums">{fmtMs(r.p95)}</td>
                 <td className="px-4 py-3">
                   {r.err > 0 ? (
-                    <span className="rounded border border-red-300 bg-red-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
+                    <span className="rounded border border-bad/30 bg-bad/10 px-1.5 py-0.5 text-xs font-medium tabular-nums text-bad-ink">
                       {r.err}
                     </span>
                   ) : (

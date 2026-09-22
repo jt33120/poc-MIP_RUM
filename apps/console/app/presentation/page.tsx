@@ -33,7 +33,7 @@ export default async function Presentation() {
           <>
             Monitoring de l'expérience réelle, OpenTelemetry-natif, données en UE. Cette page présente
             l'outil ; le poste de pilotage est sur{" "}
-            <Link href="/" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+            <Link href="/" className="font-medium text-accent-ink underline-offset-2 hover:underline">
               la Vue d'ensemble
             </Link>
             .
@@ -126,7 +126,7 @@ export default async function Presentation() {
               className="card group flex flex-col p-4 transition hover:shadow-pop"
             >
               <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10 text-accent-deep dark:text-accent">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10 text-accent-ink">
                   <Icon paths={ICON_PATHS[s.icon]} className="h-4 w-4" />
                 </span>
                 <span className="flex items-center gap-1 text-sm font-semibold text-ink">
@@ -135,7 +135,7 @@ export default async function Presentation() {
                 </span>
               </div>
               <p className="mt-2 text-xs leading-relaxed text-ink-soft">{s.desc}</p>
-              <span className="mt-auto pt-2 text-[11px] font-semibold text-accent-deep opacity-0 transition group-hover:opacity-100 dark:text-accent">
+              <span className="mt-auto pt-2 text-[11px] font-semibold text-accent-ink opacity-0 transition group-hover:opacity-100">
                 Ouvrir →
               </span>
             </Link>

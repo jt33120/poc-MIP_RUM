@@ -27,7 +27,7 @@ const MODE: Record<ModeCollecte, { label: string; icon: IconName; ton: string }>
   sdk: {
     label: "Snippet",
     icon: "logs",
-    ton: "border-accent/40 bg-accent/10 text-accent-deep dark:text-accent",
+    ton: "border-accent/40 bg-accent/10 text-accent-ink",
   },
   extension: {
     label: "Extension",
@@ -170,7 +170,7 @@ export default async function SelectProject({
 
                   {/* Alerte : anomalie de LCP en cours, calculée à la volée */}
                   {alerte && (
-                    <span className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-lg border border-bad/40 bg-bad/10 px-2 py-1 text-[11px] font-semibold text-bad">
+                    <span className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-lg border border-bad/40 bg-bad/10 px-2 py-1 text-[11px] font-semibold text-bad-ink">
                       <Icon paths={ICON_PATHS.alert} className="h-3.5 w-3.5" strokeWidth={2.4} />
                       {s.anomalies} anomalie{s.anomalies > 1 ? "s" : ""} de LCP sur 24 h
                     </span>
@@ -193,7 +193,7 @@ export default async function SelectProject({
               data-testid="add-site"
               className="group flex min-h-[9.5rem] flex-col items-center justify-center rounded-xl border border-dashed border-line bg-panel/40 p-5 text-center backdrop-blur-sm transition hover:border-accent/50 hover:bg-panel/70"
             >
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10 text-2xl font-light text-accent-deep transition group-hover:bg-accent/20 dark:text-accent">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10 text-2xl font-light text-accent-ink transition group-hover:bg-accent/20">
                 +
               </span>
               <span className="mt-2 text-sm font-semibold text-ink">Ajouter un site</span>

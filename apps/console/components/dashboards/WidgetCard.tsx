@@ -93,7 +93,7 @@ export function WidgetCard({
               <button
                 type="submit"
                 aria-label={`Retirer — ${position}`}
-                className="btn-ghost px-2 py-1 text-red-600"
+                className="btn-ghost px-2 py-1 text-bad-ink"
               >
                 ✕
               </button>

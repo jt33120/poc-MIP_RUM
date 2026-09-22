@@ -34,7 +34,7 @@ export async function ErrorStackCard({
         {deminified && (
           <span
             data-testid="stack-deminified"
-            className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold normal-case tracking-normal text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"
+            className="rounded bg-good/10 px-1.5 py-0.5 text-[10px] font-bold normal-case tracking-normal text-good-ink"
           >
             dé-minifié{last?.release ? ` · ${last.release}` : ""}
           </span>

@@ -21,8 +21,8 @@ export function RouteCard({ row: r }: { row: CorrCardRow }) {
             data-testid="gap"
             className={`ml-auto rounded-full px-3 py-1 text-xs font-bold ${
               gapPct > 0
-                ? "bg-red-100 text-red-800 dark:bg-red-400/10 dark:text-red-300"
-                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
+                ? "bg-bad/10 text-bad-ink"
+                : "bg-good/10 text-good-ink"
             }`}
           >
             écart {gapPct > 0 ? "+" : ""}
@@ -57,7 +57,7 @@ export function RouteCard({ row: r }: { row: CorrCardRow }) {
           )}
         </div>
         <div className="rounded-lg border border-accent/30 bg-accent/[0.06] p-3">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-accent-deep dark:text-accent-soft">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-accent-ink">
             👤 Réel — utilisateurs (RUM)
           </div>
           {rum != null ? (

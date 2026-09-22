@@ -110,12 +110,12 @@ export default async function Correlation({
       </div>
 
       {/* ----- Angles morts ----- */}
-      <div className="card mt-8 overflow-hidden border-red-300/60 dark:border-red-400/30">
-        <div className="border-b border-red-200 bg-red-50 px-4 py-3 dark:border-red-400/20 dark:bg-red-400/10">
-          <h2 className="text-sm font-bold text-red-800 dark:text-red-300">
+      <div className="card mt-8 overflow-hidden border-bad/60">
+        <div className="border-b border-bad/30 bg-bad/10 px-4 py-3">
+          <h2 className="text-sm font-bold text-bad-ink">
             ⚠ Angles morts — le robot ne le voit pas
           </h2>
-          <p className="mt-0.5 text-xs text-red-700 dark:text-red-300/80">
+          <p className="mt-0.5 text-xs text-bad-ink">
             Heures où le robot dit « ok » alors que le LCP p75 des utilisateurs réels dépasse la borne « Bon »
             ({fmtBorne("LCP", THRESHOLDS.LCP[0])}, seuil web.dev) : « À améliorer » ou « Mauvais », sur des heures
             d&apos;au moins {EFFECTIF_MIN_HEURE} mesures LCP · {ecran.label}

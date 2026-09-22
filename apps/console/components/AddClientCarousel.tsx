@@ -181,7 +181,7 @@ export function AddClientCarousel({ isAdmin }: { isAdmin: boolean }) {
         {isAdmin ? (
           <Link
             href="/admin/customers"
-            className="flex items-center gap-1.5 text-xs font-semibold text-accent-deep transition hover:underline dark:text-accent"
+            className="flex items-center gap-1.5 text-xs font-semibold text-accent-ink transition hover:underline"
           >
             Ouvrir l'écran Clients
             <Icon paths={ICON_PATHS.chevronRight} className="h-3.5 w-3.5" />

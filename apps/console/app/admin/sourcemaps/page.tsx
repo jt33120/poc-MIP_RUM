@@ -37,8 +37,8 @@ type Donnees =
   | { kind: "error"; app: string | null };
 
 const STATUT_FICHIER: Record<SourcemapFileStatus, { label: string; className: string }> = {
-  ok: { label: "validée", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300" },
-  replaced: { label: "remplacée (auditée)", className: "bg-amber-100 text-amber-900 dark:bg-amber-400/10 dark:text-amber-200" },
+  ok: { label: "validée", className: "bg-good/10 text-good-ink" },
+  replaced: { label: "remplacée (auditée)", className: "bg-warn/10 text-warn-ink" },
   legacy: { label: "antérieure à v71", className: "bg-panel2 text-ink-soft" },
 };
 
@@ -97,7 +97,7 @@ export default async function SourcemapsAdmin({ searchParams }: { searchParams: 
       />
 
       {donnees.kind === "error" && (
-        <div role="alert" className="card mb-6 border-bad/30 p-6 text-sm text-bad">
+        <div role="alert" className="card mb-6 border-bad/30 p-6 text-sm text-bad-ink">
           Impossible de charger les source maps.{" "}
           <a href={`/admin/sourcemaps${app ? `?app=${encodeURIComponent(app)}` : ""}`} className={LINK}>
             Réessayer
@@ -319,8 +319,8 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                           statut === "actif"
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
-                            : "bg-red-100 text-red-800 dark:bg-red-400/10 dark:text-red-300"
+                            ? "bg-good/10 text-good-ink"
+                            : "bg-bad/10 text-bad-ink"
                         }`}
                       >
                         {statut}

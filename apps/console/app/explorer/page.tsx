@@ -283,7 +283,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
 
       {!plan.ok && (
         <div role="alert" data-testid="explorer-invalide" className="card mb-6 border-bad/30 p-6 text-sm">
-          <p className="font-semibold text-bad">Requête refusée</p>
+          <p className="font-semibold text-bad-ink">Requête refusée</p>
           <p className="mt-1 text-ink-soft">{plan.error.message}</p>
           <p className="mt-2 text-xs text-ink-faint">Code : {plan.error.code}</p>
         </div>
@@ -297,7 +297,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
 
       {echec && (
         <div role="alert" data-testid="explorer-echec" className="card mb-6 border-bad/30 p-6 text-sm">
-          <p className="font-semibold text-bad">{echec.titre}</p>
+          <p className="font-semibold text-bad-ink">{echec.titre}</p>
           <p className="mt-1 text-ink-soft">{echec.message}</p>
         </div>
       )}

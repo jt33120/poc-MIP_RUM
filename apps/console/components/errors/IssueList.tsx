@@ -47,7 +47,7 @@ export function IssueListInvalid({ f, raison }: { f: ErrorFilters; raison: strin
   return (
     <div className="animate-fade-up">
       <PageHeader title={TITRE} sub={SOUS_TITRE} />
-      <div role="alert" className="card border-bad/30 p-6 text-sm text-bad">
+      <div role="alert" className="card border-bad/30 p-6 text-sm text-bad-ink">
         {raison}{" "}
         <Link href={errorsHref("/errors", f, f.app)} className={ERROR_LINK}>
           Revenir à la liste sans filtre

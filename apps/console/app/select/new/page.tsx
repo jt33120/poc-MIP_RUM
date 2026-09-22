@@ -108,7 +108,7 @@ function CreateForm({ error }: { error: string | null }) {
       </p>
 
       {error && (
-        <div className="mt-6 rounded-lg border border-bad/30 bg-bad/10 px-4 py-2.5 text-sm text-bad">
+        <div className="mt-6 rounded-lg border border-bad/30 bg-bad/10 px-4 py-2.5 text-sm text-bad-ink">
           {ERRORS[error] ?? "Vérifiez les champs."}
         </div>
       )}
@@ -157,13 +157,13 @@ function CreateForm({ error }: { error: string | null }) {
                   <ul className="mt-2.5 space-y-1 text-[11px]">
                     {m.pros.map((p) => (
                       <li key={p} className="flex gap-1.5 text-ink-soft">
-                        <span className="text-good">✓</span>
+                        <span className="text-good-ink">✓</span>
                         {p}
                       </li>
                     ))}
                     {m.cons.map((c) => (
                       <li key={c} className="flex gap-1.5 text-ink-faint">
-                        <span className="text-warn">–</span>
+                        <span className="text-warn-ink">–</span>
                         {c}
                       </li>
                     ))}
@@ -253,7 +253,7 @@ async function Integration({
   return (
     <>
       <div className="flex items-center gap-2">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-good/15 text-good">✓</span>
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-good/15 text-good-ink">✓</span>
         <h1 className="text-2xl font-bold tracking-tight text-ink">{customer.name} est créé</h1>
       </div>
       <p className="mt-1.5 text-sm text-ink-soft">
@@ -262,7 +262,7 @@ async function Integration({
         {mode === "extension"
           ? "Le domaine est enregistré : installez l'extension puis testez."
           : "Posez le capteur, puis simulez un parcours."}{" "}
-        <Link href={`/select/new?app=${encodeURIComponent(appId)}&mode=${mode === "extension" ? "sdk" : "extension"}`} className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+        <Link href={`/select/new?app=${encodeURIComponent(appId)}&mode=${mode === "extension" ? "sdk" : "extension"}`} className="text-accent-ink underline-offset-2 hover:underline">
           Voir l&apos;autre mode
         </Link>
       </p>
@@ -366,7 +366,7 @@ async function Integration({
         <p className="mt-2 text-xs text-ink-faint">
           Autres stacks (FastAPI, Express, agent OpenTelemetry standard) : voir{" "}
           <code className="chip-mono">docs/INTEGRATION.md</code> ou la fiche{" "}
-          <Link href={`/admin/customers/${encodeURIComponent(appId)}`} className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+          <Link href={`/admin/customers/${encodeURIComponent(appId)}`} className="text-accent-ink underline-offset-2 hover:underline">
             Administration → Clients
           </Link>{" "}
           (recettes middleware + injection zéro-touch). App mobile : <code className="chip-mono">@mip/rum-mobile</code> (React Native).
@@ -378,7 +378,7 @@ async function Integration({
         <OnboardingPoll live={status.live} />
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink">Les données arrivent-elles ?</h2>
-          <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${status.live ? "bg-good/15 text-good" : "bg-warn/15 text-warn"}`}>
+          <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${status.live ? "bg-good/15 text-good-ink" : "bg-warn/15 text-warn-ink"}`}>
             {status.live ? "● live" : "en attente"}
           </span>
         </div>
@@ -475,7 +475,7 @@ function ExtensionConfig({
       <section className="card mt-6 p-5">
         <div className="flex items-center gap-2">
           <span
-            className={`flex h-6 w-6 items-center justify-center rounded-full ${allRegistered ? "bg-good/15 text-good" : "bg-warn/15 text-warn"}`}
+            className={`flex h-6 w-6 items-center justify-center rounded-full ${allRegistered ? "bg-good/15 text-good-ink" : "bg-warn/15 text-warn-ink"}`}
           >
             {allRegistered ? "✓" : "!"}
           </span>
@@ -495,7 +495,7 @@ function ExtensionConfig({
                       : "border-warn/30 bg-warn/10 text-ink"
                   }`}
                 >
-                  <span className={d.registered ? "text-good" : "text-warn"}>{d.registered ? "✓" : "•"}</span>
+                  <span className={d.registered ? "text-good-ink" : "text-warn-ink"}>{d.registered ? "✓" : "•"}</span>
                   <code className="font-mono">{d.host}</code>
                   <span className="text-ink-faint">{d.registered ? "observé" : "non enregistré"}</span>
                 </li>
@@ -511,7 +511,7 @@ function ExtensionConfig({
             Aucun domaine détecté depuis l&apos;URL — ajoutez-le dans la gestion des domaines ci-dessous.
           </p>
         )}
-        <Link href="/admin/extension-scope" className="mt-3 inline-block text-xs font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+        <Link href="/admin/extension-scope" className="mt-3 inline-block text-xs font-medium text-accent-ink underline-offset-2 hover:underline">
           Gérer les domaines observés →
         </Link>
       </section>
@@ -583,7 +583,7 @@ function ExtensionConfig({
               <code>.crx</code> + <code>update.xml</code> (packaging à faire une fois).
             </>
           )}{" "}
-          <a href={GH_DOC} target="_blank" rel="noopener noreferrer" className="font-medium text-accent-deep underline-offset-2 hover:underline dark:text-accent">
+          <a href={GH_DOC} target="_blank" rel="noopener noreferrer" className="font-medium text-accent-ink underline-offset-2 hover:underline">
             Packaging avancé (.crx, update.xml) →
           </a>
         </p>

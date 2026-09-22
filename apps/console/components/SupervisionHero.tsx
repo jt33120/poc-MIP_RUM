@@ -125,9 +125,9 @@ export function HeroStat({
 }) {
   const toneClass = {
     neutral: "text-ink",
-    good: "text-emerald-600 dark:text-emerald-400",
-    warn: "text-amber-600 dark:text-amber-400",
-    poor: "text-red-600 dark:text-red-400",
+    good: "text-good-ink",
+    warn: "text-warn-ink",
+    poor: "text-bad-ink",
   }[tone];
   return (
     <div>
@@ -148,8 +148,8 @@ export function DeltaBadge({ pct, lowerIsBetter = false }: { pct: number; lowerI
   const cls = flat
     ? "text-ink-faint"
     : worse
-      ? "text-red-600 dark:text-red-400"
-      : "text-emerald-600 dark:text-emerald-400";
+      ? "text-bad-ink"
+      : "text-good-ink";
   const arrow = flat ? "→" : pct > 0 ? "↑" : "↓";
   return (
     <span className={`text-xs font-semibold tabular-nums ${cls}`} title="vs période précédente">

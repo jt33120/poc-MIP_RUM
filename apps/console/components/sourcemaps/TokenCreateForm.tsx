@@ -67,7 +67,7 @@ export function TokenCreateForm({ appId }: { appId: string }) {
         </button>
       </form>
       {erreur && (
-        <p role="alert" className="mt-3 text-sm text-bad">
+        <p role="alert" className="mt-3 text-sm text-bad-ink">
           {erreur}
         </p>
       )}
@@ -75,7 +75,7 @@ export function TokenCreateForm({ appId }: { appId: string }) {
         <div
           role="status"
           data-testid="sourcemap-token-secret"
-          className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+          className="mt-4 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
         >
           <p className="mb-2">
             Jeton <strong>{secret.name}</strong> : affiché une seule fois, copie-le maintenant. À placer dans la variable

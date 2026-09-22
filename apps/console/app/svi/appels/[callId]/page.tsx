@@ -35,8 +35,8 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 const KIND_COLOR: Record<string, string> = {
-  menu: "bg-sky-400", input: "bg-violet-400", queue: "bg-amber-400",
-  transfer: "bg-sky-500", agent: "bg-emerald-400", error: "bg-red-400",
+  menu: "bg-sky-400", input: "bg-violet-400", queue: "bg-warn",
+  transfer: "bg-sky-500", agent: "bg-good", error: "bg-bad",
   disconnect: "bg-ink-faint",
 };
 
@@ -156,8 +156,8 @@ export default async function FicheAppel({
                         : `${s.input_class}${s.input_len ? ` (${s.input_len})` : ""}`}
                     </span>
                   )}
-                  {s.no_match && <span className="text-amber-600 dark:text-amber-400">non reconnu</span>}
-                  {s.no_input && <span className="text-amber-600 dark:text-amber-400">sans réponse</span>}
+                  {s.no_match && <span className="text-warn-ink">non reconnu</span>}
+                  {s.no_input && <span className="text-warn-ink">sans réponse</span>}
                   <span className="ml-auto tabular-nums text-ink-soft">
                     {fmtDuration(s.duration_ms)}
                   </span>

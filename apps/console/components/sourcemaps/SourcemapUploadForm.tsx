@@ -113,13 +113,13 @@ export function SourcemapUploadForm({ appId, release }: { appId: string; release
         </p>
       )}
       {resultat?.kind === "conflit" && (
-        <p role="alert" className="mt-3 text-sm text-bad">
+        <p role="alert" className="mt-3 text-sm text-bad-ink">
           Rien n&apos;a été écrit : contenu différent déjà présent pour {resultat.fichiers.join(", ")}. Cocher
           « Remplacer » seulement si ce contenu doit vraiment remplacer l&apos;existant.
         </p>
       )}
       {resultat?.kind === "erreur" && (
-        <p role="alert" className="mt-3 text-sm text-bad">
+        <p role="alert" className="mt-3 text-sm text-bad-ink">
           {resultat.message}
         </p>
       )}

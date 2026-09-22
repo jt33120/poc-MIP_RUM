@@ -100,7 +100,7 @@ export function ChannelsSection({
               <span
                 className={`rounded px-2 py-0.5 text-xs font-medium ${
                   c.active
-                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
+                    ? "bg-good/10 text-good-ink"
                     : "bg-panel2 text-ink-faint"
                 }`}
               >
@@ -114,7 +114,7 @@ export function ChannelsSection({
                   type="submit"
                   data-testid={`toggle-channel-${c.id}`}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition ${
-                    c.active ? "bg-slate-500 hover:bg-slate-600" : "bg-emerald-600 hover:bg-emerald-700"
+                    c.active ? "bg-slate-500 hover:bg-slate-600" : "bg-good hover:bg-good/90"
                   }`}
                 >
                   {c.active ? "Désactiver" : "Activer"}
@@ -125,7 +125,7 @@ export function ChannelsSection({
                 <button
                   type="submit"
                   data-testid={`delete-channel-${c.id}`}
-                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700"
+                  className="rounded-lg bg-bad-fond px-3 py-1.5 text-xs font-medium text-white transition hover:bg-bad-fond/90"
                 >
                   Supprimer
                 </button>

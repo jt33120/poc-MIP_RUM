@@ -30,7 +30,7 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
       />
 
       {error && (
-        <div className="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
+        <div className="mb-6 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink">
           Domaine et app requis.
         </div>
       )}
@@ -93,8 +93,8 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                       s.active
-                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300"
-                        : "bg-red-100 text-red-800 dark:bg-red-400/10 dark:text-red-300"
+                        ? "bg-good/10 text-good-ink"
+                        : "bg-bad/10 text-bad-ink"
                     }`}
                   >
                     {s.active ? "actif" : "désactivé"}
@@ -106,7 +106,7 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
                     <input type="hidden" name="active" value={s.active ? "0" : "1"} />
                     <button
                       type="submit"
-                      className={`btn-ghost px-2 py-1 ${s.active ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}
+                      className={`btn-ghost px-2 py-1 ${s.active ? "text-bad-ink" : "text-good-ink"}`}
                     >
                       {s.active ? "Désactiver" : "Réactiver"}
                     </button>

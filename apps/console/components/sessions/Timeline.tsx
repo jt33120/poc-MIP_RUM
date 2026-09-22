@@ -61,7 +61,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
     case "error":
       return (
         <>
-          <span className="font-semibold text-red-700 dark:text-red-400">{item.title}</span>
+          <span className="font-semibold text-bad-ink">{item.title}</span>
           <span className="max-w-xl truncate text-xs text-ink-soft" title={item.detail ?? ""}>
             {item.detail}
           </span>
@@ -110,7 +110,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
     case "resource":
       return (
         <>
-          <span className="font-semibold text-amber-700 dark:text-amber-300">
+          <span className="font-semibold text-warn-ink">
             {item.value != null ? `${Math.round(Number(item.value))} ms` : item.title}
           </span>
           {item.detail && <span className="max-w-xl truncate font-mono text-xs text-ink-faint" title={item.detail}>{item.detail}</span>}
@@ -123,7 +123,7 @@ function ItemBody({ item }: { item: TimelineItem }) {
           <span className="chip-mono">{item.title}</span>
           <span
             className={`font-semibold tabular-nums ${
-              item.rating === "poor" ? "text-red-700 dark:text-red-400" : "text-sky-700 dark:text-sky-400"
+              item.rating === "poor" ? "text-bad-ink" : "text-sky-700 dark:text-sky-400"
             }`}
           >
             {item.value != null ? `${Math.round(Number(item.value))} ms` : "—"}

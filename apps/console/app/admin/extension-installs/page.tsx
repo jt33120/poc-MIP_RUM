@@ -16,8 +16,8 @@ import { forgetInstallAction } from "./actions";
 export const dynamic = "force-dynamic";
 
 const TON: Record<string, string> = {
-  actif: "border-good/40 bg-good/10 text-good",
-  silencieux: "border-warn/40 bg-warn/10 text-warn",
+  actif: "border-good/40 bg-good/10 text-good-ink",
+  silencieux: "border-warn/40 bg-warn/10 text-warn-ink",
   perdu: "border-line bg-panel2 text-ink-faint",
 };
 
@@ -118,10 +118,10 @@ export default async function ExtensionInstalls() {
                     {r.platform && <span className="text-ink-faint"> · {r.platform}</span>}
                   </td>
                   <td className="px-4 py-2">
-                    <span className={`font-mono text-xs ${r.enRetard ? "text-warn" : "text-ink-soft"}`}>
+                    <span className={`font-mono text-xs ${r.enRetard ? "text-warn-ink" : "text-ink-soft"}`}>
                       {r.ext_version ?? "—"}
                     </span>
-                    {r.enRetard && <span className="ml-1.5 text-[11px] text-warn">en retard</span>}
+                    {r.enRetard && <span className="ml-1.5 text-[11px] text-warn-ink">en retard</span>}
                   </td>
                   <td className="px-4 py-2">
                     {r.app_ids.length ? (
@@ -208,7 +208,7 @@ function Stat({
   return (
     <div className="card p-4">
       <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">{label}</div>
-      <div className={`mt-1 text-2xl font-bold tabular-nums ${alerte ? "text-warn" : "text-ink"}`}>{value}</div>
+      <div className={`mt-1 text-2xl font-bold tabular-nums ${alerte ? "text-warn-ink" : "text-ink"}`}>{value}</div>
       <div className="mt-0.5 text-[11px] text-ink-soft">{hint}</div>
     </div>
   );

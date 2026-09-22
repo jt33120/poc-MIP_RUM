@@ -92,7 +92,7 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
           catalogue plus petit qu'il n'est. */}
       {routesTotal.ok && routesTotal.data > ROUTES_MAX && (
         <div
-          className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+          className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
           data-testid="routes-tronquees"
         >
           <p className="font-semibold">
@@ -296,7 +296,7 @@ export default async function SlowPages({ searchParams }: { searchParams: Promis
                         <td className="px-4 py-3"><VitalPill name="CLS" value={r.cls_p75} /></td>
                         <td className="px-4 py-3">
                           {r.longtasks > 0 ? (
-                            <span className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-xs font-medium tabular-nums text-accent-deep dark:text-accent-soft">
+                            <span className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-xs font-medium tabular-nums text-accent-ink">
                               {r.longtasks}
                             </span>
                           ) : (
@@ -373,7 +373,7 @@ function SlowResources({ items }: { items: SlowResource[] }) {
             <span className="font-semibold tabular-nums text-ink">{fmtVital("dur", Number(it.avg_ms))}</span>
             <span className="text-ink-faint">× {it.n}</span>
             {it.render_blocking && (
-              <span className="rounded border border-red-300 bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
+              <span className="rounded border border-bad/30 bg-bad/10 px-1.5 py-0.5 text-[10px] font-medium text-bad-ink">
                 bloquant
               </span>
             )}

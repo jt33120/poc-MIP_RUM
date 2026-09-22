@@ -12,14 +12,14 @@ export const KIND_STYLE: Record<TimelineKind, { label: string; dot: string; badg
   },
   vital: {
     label: "Vital",
-    dot: "bg-emerald-500",
+    dot: "bg-good",
     badge:
-      "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-400/10 dark:text-emerald-300 dark:border-emerald-400/30",
+      "bg-good/10 text-good-ink border-good/30",
   },
   error: {
     label: "Erreur JS",
-    dot: "bg-red-500",
-    badge: "bg-red-100 text-red-800 border-red-300 dark:bg-red-400/10 dark:text-red-300 dark:border-red-400/30",
+    dot: "bg-bad",
+    badge: "bg-bad/10 text-bad-ink border-bad/30",
   },
   breadcrumb: {
     label: "Breadcrumb",
@@ -46,8 +46,8 @@ export const KIND_STYLE: Record<TimelineKind, { label: string; dot: string; badg
   },
   resource: {
     label: "Ressource",
-    dot: "bg-amber-600",
-    badge: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-400/10 dark:text-amber-300 dark:border-amber-400/30",
+    dot: "bg-warn",
+    badge: "bg-warn/10 text-warn-ink border-warn/30",
   },
   api: {
     label: "Appel API",

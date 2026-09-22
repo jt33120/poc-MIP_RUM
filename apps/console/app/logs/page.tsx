@@ -34,8 +34,8 @@ const LEVELS: { key: LevelKey; label: string }[] = [
 
 // Teintes par bucket de sévérité (badge + série du hero).
 const SEV_STYLE: Record<string, string> = {
-  error: "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300",
-  warn: "border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300",
+  error: "border-bad/30 bg-bad/10 text-bad-ink",
+  warn: "border-warn/30 bg-warn/10 text-warn-ink",
   info: "border-sky-300 bg-sky-100 text-sky-800 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-300",
   debug: "border-line bg-panel2 text-ink-faint",
 };
@@ -124,22 +124,22 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
       {/* Anomalies de volume d'erreurs (z-score horaire vs 7 j) — détection auto
           d'un pic anormal, sans seuil manuel. Masqué si aucune anomalie. */}
       {anomalies.length > 0 && (
-        <div className="mb-6 rounded-xl border border-red-300 bg-red-50/70 p-4 dark:border-red-400/30 dark:bg-red-400/5">
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-red-700 dark:text-red-300">
-            <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-red-500" />
+        <div className="mb-6 rounded-xl border border-bad/30 bg-bad/70 p-4">
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-bad-ink">
+            <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-bad" />
             Pics d&apos;erreurs anormaux (24 h) · z-score horaire vs moyenne 7 j
           </div>
           <ul className="flex flex-col gap-1.5 text-sm">
             {anomalies.slice(0, 4).map((a, i) => (
               <li key={i} className="flex flex-wrap items-baseline gap-x-2 text-ink-soft">
-                <span className="font-semibold text-red-700 dark:text-red-300">
+                <span className="font-semibold text-bad-ink">
                   {a.errors.toLocaleString("fr-FR")} logs error
                 </span>
                 <span className="text-ink-faint">
                   à {new Date(a.bucket).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
                 </span>
                 <span className="text-ink-faint">
-                  · normal ≈ {a.mean_7d.toLocaleString("fr-FR")} · <strong className="text-red-600 dark:text-red-400">z {a.z_score > 0 ? "+" : ""}{a.z_score}</strong>
+                  · normal ≈ {a.mean_7d.toLocaleString("fr-FR")} · <strong className="text-bad-ink">z {a.z_score > 0 ? "+" : ""}{a.z_score}</strong>
                 </span>
                 {f.app === "all" && <span className="font-mono text-[11px] text-ink-faint">{a.app_id}</span>}
               </li>
@@ -159,7 +159,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
               href={href}
               className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
                 active
-                  ? "border-accent bg-accent/10 text-accent-deep dark:text-accent"
+                  ? "border-accent bg-accent/10 text-accent-ink"
                   : "border-line bg-panel text-ink-soft hover:border-ink-faint/40"
               }`}
             >
@@ -259,10 +259,10 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
                 {byRoute.map((r, i) => (
                   <tr key={i} className="border-t border-line/60 transition hover:bg-panel2/60">
                     <td className="px-4 py-2 font-mono text-xs text-ink">{r.route}</td>
-                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-red-600 dark:text-red-400">
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-bad-ink">
                       {r.errors.toLocaleString("fr-FR")}
                     </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-amber-600 dark:text-amber-400">
+                    <td className="px-4 py-2 text-right tabular-nums text-warn-ink">
                       {r.warns.toLocaleString("fr-FR")}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums text-ink-soft">

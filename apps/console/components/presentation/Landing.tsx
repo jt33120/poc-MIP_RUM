@@ -40,7 +40,7 @@ function BrandMark() {
 function PocLabel({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`inline-flex -rotate-[5deg] items-center rounded-md border border-dashed border-accent/70 bg-accent/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-accent-deep shadow-sm dark:bg-accent/15 dark:text-accent ${className}`}
+      className={`inline-flex -rotate-[5deg] items-center rounded-md border border-dashed border-accent/70 bg-accent/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-accent-ink shadow-sm dark:bg-accent/15 ${className}`}
     >
       POC
     </span>

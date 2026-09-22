@@ -88,19 +88,19 @@ export async function causalActionsHealth(): Promise<{
 
 export const HEALTH_CLASS: Record<HealthLabel, string> = {
   Excellent:
-    "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-400/10 dark:text-emerald-300 dark:border-emerald-400/30",
+    "bg-good/10 text-good-ink border-good/30",
   Bon: "bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-400/10 dark:text-sky-300 dark:border-sky-400/30",
   Dégradé:
-    "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-400/10 dark:text-amber-300 dark:border-amber-400/30",
-  Critique: "bg-red-100 text-red-800 border-red-300 dark:bg-red-400/10 dark:text-red-300 dark:border-red-400/30",
+    "bg-warn/10 text-warn-ink border-warn/30",
+  Critique: "bg-bad/10 text-bad-ink border-bad/30",
 };
 
 /** Couleur d'accent (anneau de score, texte) par libellé santé. */
 export const HEALTH_ACCENT: Record<HealthLabel, string> = {
-  Excellent: "text-emerald-500",
+  Excellent: "text-good-ink",
   Bon: "text-sky-500",
-  Dégradé: "text-amber-500",
-  Critique: "text-red-500",
+  Dégradé: "text-warn-ink",
+  Critique: "text-bad-ink",
 };
 
 export interface HealthFactor {

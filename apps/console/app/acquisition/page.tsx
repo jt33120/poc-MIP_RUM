@@ -24,8 +24,8 @@ const DOT: Record<Channel, string> = {
   direct: "bg-slate-400",
   search: "bg-blue-500",
   social: "bg-fuchsia-500",
-  referral: "bg-emerald-500",
-  internal: "bg-amber-500",
+  referral: "bg-good",
+  internal: "bg-warn",
 };
 const HEX: Record<Channel, string> = {
   direct: "#94a3b8",

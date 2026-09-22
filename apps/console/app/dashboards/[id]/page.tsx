@@ -247,7 +247,7 @@ export default async function D({
             <button
               type="submit"
               data-testid="delete-dashboard"
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700"
+              className="rounded-lg bg-bad-fond px-3 py-1.5 text-xs font-medium text-white transition hover:bg-bad-fond/90"
             >
               Supprimer ce tableau de bord
             </button>

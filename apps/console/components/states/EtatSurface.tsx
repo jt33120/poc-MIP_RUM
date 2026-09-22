@@ -158,7 +158,7 @@ export function EtatSurface({ etat, compact = false }: { etat: Etat; compact?: b
       return (
         <CadreEtat ton="erreur" role={role} compact={compact} testId={testId} etat={etat.kind}>
           <p>
-            <strong className="font-semibold text-bad">Lecture en échec.</strong> La lecture de «{NBSP}
+            <strong className="font-semibold text-bad-ink">Lecture en échec.</strong> La lecture de «{NBSP}
             {etat.titre}
             {NBSP}» a échoué. Les autres blocs restent valides.
           </p>

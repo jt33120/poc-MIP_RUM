@@ -263,10 +263,10 @@ function HeroSignaux({ signals }: { signals: FrustrationRow[] }) {
 function KindChip({ kind }: { kind: "rage" | "dead" | "error" }) {
   const cls =
     kind === "rage"
-      ? "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300"
+      ? "border-bad/30 bg-bad/10 text-bad-ink"
       : kind === "error"
         ? "border-fuchsia-300 bg-fuchsia-100 text-fuchsia-800 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/10 dark:text-fuchsia-300"
-        : "border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300";
+        : "border-warn/30 bg-warn/10 text-warn-ink";
   return (
     <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${cls}`}>
       {kind === "rage" ? "rage" : kind === "error" ? "error" : "dead"}
