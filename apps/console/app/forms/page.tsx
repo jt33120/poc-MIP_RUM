@@ -57,7 +57,9 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
       {!forms.length ? (
         <div className="card p-8 text-center text-ink-faint">
           Aucun événement de formulaire sur {period.label}. Le SDK émet
-          <code className="chip-mono mx-1">form.submit</code>/<code className="chip-mono mx-1">form.abandon</code>
+          {/* Espaces autour du « / » : collés, les deux puces formaient un seul mot
+              insécable qui portait la page à 424 px sur 390 (e2e F09). */}
+          <code className="chip-mono mx-1">form.submit</code> / <code className="chip-mono mx-1">form.abandon</code>
           automatiquement (option <code className="chip-mono">forms</code>).
         </div>
       ) : (

@@ -279,7 +279,8 @@ test("à 390 px : menu de navigation contextuel et widget d'avis replié", async
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${consoleUrl}/errors?app=demo-app&period=1h`);
   await ecranRendu(page, "/errors");
-  await page.getByText("Ouvrir la navigation").click();
+  // Le libellé est en sr-only sous l'icône : on clique le bouton lui-même (le <summary>).
+  await page.locator("summary").filter({ hasText: "Ouvrir la navigation" }).click();
   const usages = page.locator("details nav").getByRole("link", { name: "Usages", exact: true });
   await expect(usages).toBeVisible();
   expect(await usages.getAttribute("href")).toContain("period=1h");
