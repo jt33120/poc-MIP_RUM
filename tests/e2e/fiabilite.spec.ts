@@ -116,9 +116,17 @@ test("/forecast s'affiche avec des données, sur un seul horizon de 7 jours", as
 test("/slo : un SLO sans mesure est « non mesurable », pas « objectif manqué »", async ({ page }) => {
   await login(page);
   await page.goto(`${consoleUrl}/slo?app=${APP_ID}`, { waitUntil: "domcontentloaded" });
-  const ligne = page.locator("tr", { hasText: "INP sans mesure (e2e)" });
+  // Deux éléments portent l'état de ce SLO depuis F63 : sa ligne de la table
+  // « Définitions et état » et sa barre du hero (dont l'alternative textuelle a aussi
+  // un <tr>). Chacun est visé par son identifiant, et chacun est vérifié.
+  const ligne = page.getByTestId("table-slo").locator("tbody tr", { hasText: "INP sans mesure (e2e)" });
+  await expect(ligne).toHaveAttribute("data-statut", "non_mesurable");
   await expect(ligne).toContainText("non mesurable");
   await expect(ligne).not.toContainText("objectif manqué");
+  const barre = page.locator("#budget").getByTestId("budget-ligne").filter({ hasText: "INP sans mesure (e2e)" });
+  await expect(barre).toHaveAttribute("data-statut", "non_mesurable");
+  await expect(barre).toContainText("Non mesurable");
+  await expect(barre).not.toContainText("objectif manqué");
 });
 
 // ---------------------------------------------------------------------------
@@ -201,7 +209,7 @@ test.describe("F63 — Écran SLO", () => {
     // Tri : consommé décroissant, non mesurable en dernier.
     await expect(budget.getByTestId("budget-ligne").last()).toContainText("CLS sans mesure (e2e)");
 
-    const ligne = page.locator("#definitions tr", { hasText: "CLS sans mesure (e2e)" });
+    const ligne = page.getByTestId("table-slo").locator("tbody tr", { hasText: "CLS sans mesure (e2e)" });
     await expect(ligne).toContainText("non mesurable");
     await expect(ligne).toContainText("Part des mesures CLS notées Bon");
     await expect(ligne).not.toContainText("objectif manqué");
@@ -223,7 +231,7 @@ test.describe("F63 — Écran SLO", () => {
     await page.click('button[type="submit"]');
     await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
     await page.goto(ecran, { waitUntil: "domcontentloaded" });
-    await expect(page.locator("#definitions tr", { hasText: "INP dépassé (e2e)" })).toBeVisible();
+    await expect(page.getByTestId("table-slo").locator("tbody tr", { hasText: "INP dépassé (e2e)" })).toBeVisible();
     await expect(page.locator('[data-testid^="toggle-slo-"], [data-testid^="delete-slo-"], [data-testid="create-slo"]')).toHaveCount(0);
     await expect(page.locator("main form")).toHaveCount(0);
     await expect(page.locator("main").getByText("Créer une alerte")).toHaveCount(0);
@@ -233,7 +241,7 @@ test.describe("F63 — Écran SLO", () => {
   test("admin : les actions sont là (même écran)", async ({ page }) => {
     await login(page);
     await page.goto(ecran, { waitUntil: "domcontentloaded" });
-    const ligne = page.locator("#definitions tr", { hasText: "INP dépassé (e2e)" });
+    const ligne = page.getByTestId("table-slo").locator("tbody tr", { hasText: "INP dépassé (e2e)" });
     await expect(ligne.getByRole("button", { name: "Désactiver" })).toBeVisible();
     await expect(ligne.getByRole("link", { name: "Créer une alerte" })).toHaveAttribute("href", /regle_metrique=INP/);
   });

@@ -212,7 +212,10 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                 </div>
               )}
               {listeSlo.length > 0 ? (
-                <div className="overflow-x-auto">
+                <div className="relative overflow-x-auto">
+                  {/* `relative` : les `sr-only` de la table (légende, en-tête « Actions ») sont en
+                      position absolue ; sans ancêtre positionné, ils se plaçaient par rapport à
+                      la PAGE et l'élargissaient à 1 232 px sur une fenêtre de 390 (piège 16). */}
                   <table className="w-full min-w-max text-sm" data-testid="table-slo">
                     <caption className="sr-only">Définitions et état des SLO, actifs et désactivés</caption>
                     <thead className="bg-panel2">
