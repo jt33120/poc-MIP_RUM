@@ -166,8 +166,10 @@ test("zéro réel, refus explicite et retour à l'invitation après changement d
   await login(page);
 
   // Un zéro RÉEL : la population est vide, et l'écran le dit sans faire d'erreur.
+  // F32 : en représentation « Valeur », le total EST la tuile (l'encadré « Total
+  // observé » qui le répétait a disparu).
   await page.goto(`${base}&measure=occurrences:sum&viz=value&route=/aucune-route-p64&run=1`);
-  await expect(page.getByTestId("explorer-total")).toHaveText("0", { timeout: 15_000 });
+  await expect(page.getByTestId("kpi-valeur")).toHaveText("0", { timeout: 15_000 });
   await expect(page.getByTestId("explorer-vide")).toBeVisible();
 
   // Une requête refusée dit POURQUOI et avec quel code, sans chiffre inventé.
@@ -176,11 +178,12 @@ test("zéro réel, refus explicite et retour à l'invitation après changement d
   await expect(refus).toBeVisible();
   await expect(refus).toContainText("unsupported_measure");
   await expect(page.getByTestId("explorer-total")).toHaveCount(0);
+  await expect(page.getByTestId("kpi-valeur")).toHaveCount(0);
 
   // Changer de jeu de données redémarre le builder : les mesures d'un jeu
   // n'existent pas dans un autre, donc l'écran redemande « Exécuter ».
   await page.goto(`${base}&measure=occurrences:sum&viz=value&run=1`);
-  await expect(page.getByTestId("explorer-total")).toBeVisible();
+  await expect(page.getByTestId("kpi-valeur")).toBeVisible();
   await page.getByRole("link", { name: "Pages vues" }).click();
   await expect(page.getByTestId("explorer-invite")).toBeVisible({ timeout: 15_000 });
   expect(new URL(page.url()).searchParams.has("run")).toBe(false);
@@ -212,7 +215,8 @@ test("accès clavier et aucune largeur qui déborde (390 / 768 / 1440 px)", asyn
   await executer.focus();
   await expect(executer).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("explorer-total")).toBeVisible({ timeout: 15_000 });
+  // Sans représentation choisie : « Valeur », dont la tuile porte le total (F32).
+  await expect(page.getByTestId("kpi-valeur")).toBeVisible({ timeout: 15_000 });
 
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
@@ -220,4 +224,143 @@ test("accès clavier et aucune largeur qui déborde (390 / 768 / 1440 px)", asyn
     await expect(page.getByTestId("requete-pastilles")).toBeVisible({ timeout: 15_000 });
     expect(await deborde(page), `débordement horizontal à ${width} px`).toBe(false);
   }
+});
+
+// F32 — le résultat dans sa figure (plan § 5.21.4, W-E3 à W-E6, W-E8, W-E9, règle R-V).
+// Données SYNTHÉTIQUES dans une app propre à ce bloc : des LCP sur deux routes dans
+// l'heure (« lente » à 4,2 s, « rapide » à 1,5 s), d'autres il y a 30 h (la période
+// précédente d'une plage de 24 h) et il y a 50 h (le début de collecte précède cette
+// période : la comparaison est complète).
+test.describe("F32 — représentations du résultat", () => {
+  const APP_F32 = "f32-explorer-e2e";
+  const baseF32 = `${consoleUrl}/explorer?app=${APP_F32}&dataset=vitals&variant=LCP`;
+
+  test.beforeAll(async () => {
+    for (const table of ["rum_metric", "rum_session"]) await pool.query(`delete from ${table} where app_id = $1`, [APP_F32]);
+    await pool.query(`insert into app_registry (app_id, name, active) values ($1, 'Explorer F32 E2E', true) on conflict do nothing`, [
+      APP_F32,
+    ]);
+    const lots: { session: string; il_y_a: string; route: string; valeurs: number[] }[] = [
+      { session: `${APP_F32}-lente`, il_y_a: "20 minutes", route: "/f32-lente", valeurs: [4200, 4210, 4220, 4230, 4240, 4250] },
+      { session: `${APP_F32}-rapide`, il_y_a: "20 minutes", route: "/f32-rapide", valeurs: [1500, 1510, 1520, 1530, 1540, 1550] },
+      { session: `${APP_F32}-hier`, il_y_a: "30 hours", route: "/f32-rapide", valeurs: [1600, 1610, 1620, 1630, 1640, 1650, 1660, 1670] },
+      { session: `${APP_F32}-avant`, il_y_a: "50 hours", route: "/f32-rapide", valeurs: [1700, 1710] },
+    ];
+    for (const lot of lots) {
+      const quand = `now() - interval '${lot.il_y_a}'`;
+      await pool.query(
+        `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+         values ($1, $2, $1, 'desktop', false, ${quand}, ${quand} + interval '2 minutes', 1)
+         on conflict (session_id) do nothing`,
+        [lot.session, APP_F32],
+      );
+      for (const [k, valeur] of lot.valeurs.entries()) {
+        await pool.query(
+          `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, ts)
+           values ($1, $2, $3, $4, 'LCP', $5, 'good', ${quand} + interval '${k} seconds') on conflict (span_id) do nothing`,
+          [`${lot.session}-lcp-${k}`, lot.session, APP_F32, lot.route, valeur],
+        );
+      }
+    }
+  });
+
+  test.afterAll(async () => {
+    for (const table of ["rum_metric", "rum_session"]) await pool.query(`delete from ${table} where app_id = $1`, [APP_F32]);
+  });
+
+  test("chaque représentation porte une alternative textuelle", async ({ page }) => {
+    await login(page);
+    for (const suite of [
+      "measure=value:p75&viz=value",
+      "measure=value:p75&viz=toplist&g0=route&limit=10",
+      "measure=rows:count&viz=toplist&g0=route&limit=10",
+      "measure=value:p75&viz=timeseries&limit=1",
+    ]) {
+      await page.goto(`${baseF32}&period=1h&${suite}&run=1`);
+      await expect(page.locator('#explorer-resultat [data-testid="alternative"]').first(), suite).toBeAttached({ timeout: 15_000 });
+    }
+    // Le journal EST un tableau : sa légende le décrit, et il se lit sans dessin.
+    await page.goto(`${baseF32}&period=1h&measure=value:p75&viz=table&limit=25&run=1`);
+    await expect(page.locator("#explorer-resultat table caption")).toBeAttached({ timeout: 15_000 });
+    await expect(page.locator("#explorer-resultat")).toContainText("le journal est ordonné par date");
+  });
+
+  test("R-V : bande « Bon » et badge au p75 ; ni badge ni bande pour la moyenne ou le p95", async ({ page }) => {
+    await login(page);
+    await page.goto(`${baseF32}&period=1h&measure=value:p75&viz=value&run=1`);
+    await expect(page.getByTestId("kpi-verdict")).toBeVisible({ timeout: 15_000 });
+
+    await page.goto(`${baseF32}&period=1h&measure=value:avg&viz=value&run=1`);
+    await expect(page.getByTestId("kpi-valeur")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("kpi-verdict")).toHaveCount(0);
+    await expect(page.locator("#explorer-resultat")).toContainText("aucun verdict n'est donné pour la moyenne");
+
+    await page.goto(`${baseF32}&period=1h&measure=value:p75&viz=timeseries&limit=1&run=1`);
+    const serie = page.locator('[data-testid="threshold-series"][data-vital="LCP"]');
+    await serie.scrollIntoViewIfNeeded({ timeout: 15_000 });
+    await expect(serie.locator(".recharts-reference-area.bande-bon").first()).toBeVisible({ timeout: 15_000 });
+
+    await page.goto(`${baseF32}&period=1h&measure=value:p95&viz=timeseries&limit=1&run=1`);
+    await expect(page.getByTestId("threshold-series")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid="threshold-series"][data-vital]')).toHaveCount(0);
+    await expect(page.locator(".recharts-reference-area.bande-bon")).toHaveCount(0);
+  });
+
+  test("cmp=prev : la valeur dit « vs » et la plage précédente en clair", async ({ page }) => {
+    await login(page);
+    await page.goto(`${baseF32}&period=24h&measure=rows:count&viz=value&cmp=prev&run=1`);
+    const delta = page.locator("#explorer-resultat").getByTestId("delta");
+    await expect(delta).toBeVisible({ timeout: 15_000 });
+    await expect(delta).toContainText(/vs 24 h précédentes \(\d\d\/\d\d \d\d:\d\d → \d\d\/\d\d \d\d:\d\d UTC\)/);
+    // 12 mesures contre 8 la veille : +50 %.
+    await expect(delta).toContainText("+50 %");
+  });
+
+  test("onglet « Distribution » : visible, désactivé, avec sa raison", async ({ page }) => {
+    await login(page);
+    await page.goto(`${baseF32}&period=1h&measure=value:p75&viz=value&run=1`);
+    const onglet = page.getByTestId("onglet-distribution");
+    await expect(onglet).toBeVisible({ timeout: 15_000 });
+    await expect(onglet).toHaveAttribute("aria-disabled", "true");
+    await expect(onglet).toContainText("B5");
+    const raison = page.getByTestId("distribution-indisponible");
+    await expect(raison).toContainText("pas encore exposée par l'Explorer");
+    await expect(raison.getByRole("link", { name: /Voir la distribution de LCP sur Pages/ })).toHaveAttribute("href", /vital=LCP/);
+  });
+
+  test("P8 : la 1re barre d'un classement ajoute sa condition et garde la période", async ({ page }) => {
+    await login(page);
+    // Mesure non additive (p75) : ImpactTable, classée par gravité ; mesure additive : barres.
+    for (const [suite, premiere] of [
+      ["measure=value:p75&viz=toplist&g0=route&limit=10", '#explorer-resultat [data-testid="impact-ligne"] a'],
+      ["measure=rows:count&viz=toplist&g0=route&limit=10", '#explorer-resultat [role="listitem"] a'],
+    ] as const) {
+      await page.goto(`${baseF32}&period=1h&${suite}&run=1`);
+      const lien = page.locator(premiere).first();
+      await expect(lien).toBeVisible({ timeout: 15_000 });
+      await lien.click();
+      await page.waitForURL((u) => u.searchParams.get("route") === "/f32-lente", { timeout: 15_000 });
+      const sp = new URL(page.url()).searchParams;
+      expect(sp.get("period"), suite).toBe("1h");
+      expect(sp.get("run"), suite).toBe("1");
+      expect(sp.get("app"), suite).toBe(APP_F32);
+      expect(sp.has("cursor"), suite).toBe(false);
+    }
+  });
+
+  test("aucune largeur qui déborde : classement, série et valeur (390 / 768 / 1440 px)", async ({ page }) => {
+    await login(page);
+    for (const width of [390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const suite of [
+        "measure=value:p75&viz=toplist&g0=route&limit=10",
+        "measure=value:p75&viz=timeseries&limit=1",
+        "measure=value:avg&viz=value",
+      ]) {
+        await page.goto(`${baseF32}&period=1h&${suite}&run=1`);
+        await expect(page.locator("#explorer-resultat")).toBeVisible({ timeout: 15_000 });
+        expect(await deborde(page), `débordement horizontal à ${width} px (${suite})`).toBe(false);
+      }
+    }
+  });
 });

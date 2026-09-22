@@ -18,35 +18,44 @@
 // en changer relit la même requête sous une autre forme, sans la recomposer) ;
 // puis le résultat — ou, avant toute exécution, six analyses de départ qui ne
 // lisent rien tant qu'on ne les ouvre pas (`ModelesDepart`, W-E1).
+//
+// F32 — LE RÉSULTAT DANS SA FIGURE (§ 5.21.3 zones 6-7, W-E3 à W-E6, W-E8, W-E9). Une
+// seule traduction (`ResultatAnalyse`) choisit la forme selon l'additivité et le
+// verdict selon R-V ; l'`<aside>` « Total observé », qui répétait le total, est fondu
+// dans la tuile et dans la méta de la figure. `cmp=prev` relit la même analyse sur la
+// période précédente pour une valeur ou une série sans groupe ; une série porte les
+// déploiements de la fenêtre. L'onglet « Distribution » est visible, désactivé avec
+// sa raison (B5).
 import Link from "next/link";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { ModelesDepart } from "@/components/explorer/ModelesDepart";
 import { QueryPills } from "@/components/explorer/QueryPills";
-import { ObservedTrend } from "@/components/charts/ObservedTrend";
-import { RankBar } from "@/components/charts/RankBar";
+import { ResultatAnalyse, type HrefsResultat, type PrecedentResultat } from "@/components/explorer/ResultatAnalyse";
+import { EtatSurface } from "@/components/states/EtatSurface";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { CopyBlock } from "@/components/CopyBlock";
 import { TabLink } from "@/components/sessions/TabLink";
 import { getUser } from "@/lib/auth";
-import { fmtDate } from "@/lib/format";
 import { type SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
 import {
   conditionsOf,
+  hrefWithQuery,
   paramReader,
+  previousRange,
   queryToSearchParams,
   DIMENSION_LABELS,
   DIMENSIONS,
   type AnalyticsQuery,
 } from "@/lib/query-contract";
-import { dimensionSupport } from "@/lib/query-compiler";
+import { DATASET_REGISTRY, dimensionSupport } from "@/lib/query-compiler";
 import { dimensionSchema } from "@/lib/query-schema";
 import {
   EXPLORER_DATASET_IDS,
   VISUALIZATIONS,
-  VISUALIZATION_LABELS,
   datasetDefinition,
+  estAdditive,
   parseExplorerPlan,
   type ExplorerPlan,
   type Visualization,
@@ -60,25 +69,32 @@ import {
   explorerDemande,
   explorerHref,
   explorerOngletHref,
+  explorerPlanParams,
   explorerResetHref,
   explorerResume,
   explorerSource,
-  libelleCle,
+  groupeHref,
   limitePour,
   mesureDefaut,
   mesuresDe,
   pastillesRequete,
+  referencePrecedente,
   representationDemandee,
 } from "@/lib/explorer-page-params";
 import { modelesDeDepart } from "@/lib/explorer-modeles";
-import { exploreAnalytics, type ExplorerResult } from "@/lib/queries-explorer";
+import { exploreAnalytics, type ExplorerMeta, type ExplorerResult } from "@/lib/queries-explorer";
 import { ExplorerBudgetError, UnsupportedExplorerDimension } from "@/lib/analytics-schema";
 import { widgetConfigJson, widgetFromPlan } from "@/lib/dashboards";
 import { canDashboardAction, dashboardPrincipal } from "@/lib/dashboard-access";
 import { listDashboards, type DashboardRow } from "@/lib/queries-dashboards";
+import { listDeploys } from "@/lib/queries-deploys";
 import { savedViewReader, savedViewsAvailable } from "@/lib/queries-saved-views";
 import { SAVED_VIEW_NAME_MAX, canCreateSavedView } from "@/lib/saved-views";
-import { VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
+import { annotationsDeploiements } from "@/lib/annotations";
+import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente } from "@/lib/comparaison";
+import { lire } from "@/lib/lecture";
+import type { Annotation } from "@/lib/series";
+import { VIEW_CONTEXT_PARAMS, contextHref, gabaritZoom, lireComparaison, lireTri } from "@/lib/view-state";
 import { saveAnalysisAction } from "@/app/dashboards/actions";
 import { saveViewAction } from "./actions";
 
@@ -96,8 +112,82 @@ const ONGLETS: Record<Visualization, string> = {
   table: "Journal",
 };
 
-function nombre(valeur: number | null): string {
-  return valeur === null ? "—" : valeur.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+/**
+ * W-E9 — la représentation « Distribution » n'est pas exposée par l'Explorer : elle
+ * manque au registre (`VISUALIZATIONS`, backend B5). L'onglet est MONTRÉ désactivé
+ * avec sa raison, plutôt que caché : l'absence est une information.
+ */
+const RAISON_DISTRIBUTION =
+  "représentation non disponible : la lecture en distribution n'est pas encore exposée par l'Explorer (B5)";
+
+/** Tables dont `lib/comparaison.ts` sait lire le début de collecte (sa liste blanche). */
+function sourceDeCollecte(plan: ExplorerPlan) {
+  const definition = datasetDefinition(plan.dataset);
+  return {
+    table: DATASET_REGISTRY[definition.dataset].table,
+    colonneTemps: definition.time,
+    additive: estAdditive(plan.measure.aggregation),
+  };
+}
+
+/** Couverture de la méta d'une lecture, dans le vocabulaire de la comparaison (§ 3.2). */
+function couvertureDeMeta(meta: ExplorerMeta, n: number): CouverturePrecedente {
+  if (meta.coverage.status === "complete") return { etat: "complete", raison: null, n };
+  return {
+    etat: meta.coverage.status === "partial" ? "partielle" : "inconnue",
+    raison: meta.coverage.reason ?? "couverture non lue",
+    n,
+  };
+}
+
+/**
+ * La période précédente est-elle COMPLÈTE (§ 3.2) ? D'abord la méta de sa propre
+ * lecture (rétention) ; puis, pour les jeux dont la table figure dans la liste
+ * blanche de `lib/comparaison.ts`, le début de collecte et le retard d'ingestion. La
+ * première couverture incomplète gagne : un delta contre une période à moitié
+ * mesurée mesurerait la collecte, pas le site.
+ */
+async function couvertureDeLaPrecedente(
+  query: AnalyticsQuery,
+  plan: ExplorerPlan,
+  meta: ExplorerMeta,
+  n: number,
+): Promise<CouverturePrecedente> {
+  const deMeta = couvertureDeMeta(meta, n);
+  if (deMeta.etat !== "complete") return deMeta;
+  let collecte: CouverturePrecedente[] = [];
+  try {
+    collecte = await Promise.all(
+      sourcesSousFiltres(query, sourceDeCollecte(plan)).map((source) => couverturePrecedente(query, source)),
+    );
+  } catch {
+    // Table hors de la liste blanche (ressources, tâches longues, appels tracés) :
+    // seule la rétention est vérifiée, par la méta de la lecture ci-dessus.
+    collecte = [];
+  }
+  const incomplete = collecte.find((c) => c.etat !== "complete");
+  return incomplete ? { ...incomplete, n } : deMeta;
+}
+
+/** `tri` de l'écran (P3) : gravité par défaut, volume sur demande. */
+function lienTri(query: AnalyticsQuery, plan: ExplorerPlan, vue: Record<string, string | null>): HrefsResultat["tri"] {
+  return {
+    gravite: explorerHref(query, plan, { ...vue, tri: null }),
+    volume: explorerHref(query, plan, { ...vue, tri: "volume" }),
+    impact: null,
+    fourni: null,
+  };
+}
+
+/**
+ * Gabarit du zoom sur un seau (§ 3.3) : même analyse, exécutée, sur les bornes UTC
+ * du seau ; `period` retiré, réglages de vue conservés (`gabaritZoom`).
+ */
+function gabaritZoomExplorer(query: AnalyticsQuery, plan: ExplorerPlan, sp: SearchParams): string {
+  return gabaritZoom(
+    hrefWithQuery("/explorer", query, { ...explorerPlanParams(plan), cursor: null, period: null, from: "{from}", to: "{to}" }),
+    sp,
+  );
 }
 
 export default async function ExplorerPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -182,6 +272,56 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
   // Paramètres de vue qui suivent la navigation (§ 3.1, `cmp`…) : ils ne changent
   // pas la population, mais un onglet ou une pastille ne doit pas les perdre.
   const vue: Record<string, string | null> = Object.fromEntries(VIEW_CONTEXT_PARAMS.map((nom) => [nom, reader.get(nom)]));
+
+  // Réglages d'affichage (§ 3.1) : comparaison (défaut « aucune » hors Performance)
+  // et ordre du classement. Une valeur illisible est ignorée ET dite.
+  const comparaison = lireComparaison("/explorer", reader);
+  const triLu = lireTri("/explorer", reader);
+  const tri = triLu.tri === "volume" ? "volume" : "gravite";
+  const reglagesIgnores = [...comparaison.ignores, ...(triLu.ignore ? [triLu.ignore] : [])];
+
+  // cmp=prev (W-E3, W-E5) : la MÊME analyse relue sur la période précédente, pour une
+  // valeur ou une série sans groupe. Un classement ne se compare pas (deux ordres côte
+  // à côte trompent) ; une série à groupes doublerait ses courbes : `null`, et la
+  // figure dit pourquoi. Une lecture précédente en échec ne produit aucun delta.
+  let precedent: PrecedentResultat | null | undefined;
+  let annotations: { annotations: Annotation[]; indisponible: string | null } | null = null;
+  if (resultat && plan.ok) {
+    const p = plan.value;
+    const comparable = p.visualization === "value" || (p.visualization === "timeseries" && p.groupBy.length === 0);
+    if (comparaison.valeur.mode === "prev" && p.visualization !== "table") {
+      if (!comparable) {
+        precedent = null;
+      } else {
+        const queryPrecedente: AnalyticsQuery = { ...ecran.query, range: previousRange(ecran.query.range) };
+        const lu = await lire(() => exploreAnalytics({ query: queryPrecedente, plan: { ...p, cursor: null } }));
+        const plage = referencePrecedente(ecran.query.range);
+        precedent = lu.ok
+          ? {
+              total: lu.data.data.total,
+              series: lu.data.data.series,
+              plage,
+              couverture: await couvertureDeLaPrecedente(ecran.query, p, lu.data.meta, lu.data.data.samples),
+            }
+          : {
+              total: null,
+              plage,
+              couverture: { etat: "inconnue", raison: "la lecture de la période précédente a échoué" },
+            };
+      }
+    }
+    // P9 : une série porte les déploiements de sa fenêtre. `listDeploys` lit les 20
+    // derniers marqueurs sans borne de temps ; `annotationsDeploiements` les filtre sur
+    // [from, to) et, sous plage personnalisée, dit qu'il ne peut pas conclure (B1).
+    if (p.visualization === "timeseries") {
+      const deploys = await lire(() => listDeploys(ecran.filters, 20));
+      annotations = deploys.ok
+        ? annotationsDeploiements(deploys.data, ecran.query.range, {
+            lien: (relB, relA) => explorerHref(ecran.query, p, { ...vue, cmp: "release", rel_b: relB, rel_a: relA }),
+          })
+        : { annotations: [], indisponible: "déploiements non affichés : leur lecture a échoué" };
+    }
+  }
   // Le formulaire se replie quand un résultat occupe l'écran ; sans résultat
   // (rien d'exécuté, requête refusée, lecture en échec), il est le seul geste utile.
   const formulaireOuvert = resultat === null;
@@ -356,7 +496,68 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
             </TabLink>
           ),
         )}
+        {/* W-E9 : visible, désactivé, avec sa raison — lue au clavier (sr-only) et écrite sous la rangée. */}
+        <span
+          aria-disabled="true"
+          title={RAISON_DISTRIBUTION}
+          data-testid="onglet-distribution"
+          className="-mb-px shrink-0 cursor-not-allowed whitespace-nowrap border-b-2 border-transparent px-4 py-2 text-sm font-medium text-ink-faint opacity-60"
+        >
+          Distribution
+          <span className="sr-only"> — indisponible : {RAISON_DISTRIBUTION}</span>
+        </span>
       </nav>
+      <p data-testid="distribution-indisponible" className="-mt-4 mb-6 text-xs text-ink-soft">
+        Distribution : {RAISON_DISTRIBUTION}.
+        {dataset === "vitals" && plan.ok && plan.value.variant !== null && (
+          <>
+            {" "}
+            <Link
+              href={hrefWithQuery("/pages", ecran.query, { ...vue, vital: plan.value.variant })}
+              className="font-medium text-brand hover:underline"
+            >
+              Voir la distribution de {plan.value.variant} sur Pages
+            </Link>
+          </>
+        )}
+      </p>
+
+      {/* Zone 6 : constats de lecture — ce qui borne ce que la figure peut affirmer. */}
+      {reglagesIgnores.map((ligne) => (
+        <p key={ligne} role="note" className="mb-4 text-xs text-ink-soft">
+          {ligne}
+        </p>
+      ))}
+      {resultat && comparaison.valeur.mode === "release" && (
+        <p role="note" data-testid="explorer-cmp-release" className="mb-4 text-xs text-ink-soft">
+          Comparaison release contre release : l’Explorer ne la calcule pas. Ajouter une condition de release à la
+          requête, ou{" "}
+          <Link href={contextHref("/", reader)} className="font-medium text-brand hover:underline">
+            ouvrir la Vue d’ensemble sur cette comparaison
+          </Link>
+          .
+        </p>
+      )}
+      {resultat && resultat.meta.coverage.status !== "complete" && (
+        <div className="mb-4">
+          <EtatSurface etat={{ kind: "partiel", raison: resultat.meta.coverage.reason ?? "couverture de la fenêtre non lue" }} />
+        </div>
+      )}
+      {resultat && resultat.meta.truncated_groups && (
+        <div className="mb-4" data-testid="explorer-tronque">
+          <EtatSurface
+            etat={{
+              kind: "partiel",
+              raison: `d’autres combinaisons existent au-delà des ${plan.ok ? plan.value.limit : ""} affichées. Le total, lui, porte sur toute la population.`,
+            }}
+          />
+        </div>
+      )}
+      {resultat?.meta.warnings.map((avertissement) => (
+        <p key={avertissement} role="note" className="mb-4 rounded-lg border border-line bg-panel2/60 px-4 py-3 text-sm text-ink-soft">
+          {avertissement}
+        </p>
+      ))}
 
       {!plan.ok && (
         <div role="alert" data-testid="explorer-invalide" className="card mb-6 border-bad/30 p-6 text-sm">
@@ -392,11 +593,20 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
         <Resultat
           plan={plan.value}
           resultat={resultat}
-          suivantHref={
-            resultat.data.next_cursor
+          precedent={precedent}
+          annotations={annotations}
+          tri={tri}
+          hrefs={{
+            groupe: (key) => groupeHref(ecran.query, plan.value, key, vue),
+            zoom: gabaritZoomExplorer(ecran.query, plan.value, sp),
+            // Le panneau session (§ 3.3) n'existe pas encore (F43) : la ligne ouvre la
+            // page de la session, destination de « Ouvrir en page ».
+            session: (id) => hrefWithQuery(`/sessions/${encodeURIComponent(id)}`, ecran.query),
+            tri: lienTri(ecran.query, plan.value, vue),
+            suivant: resultat.data.next_cursor
               ? explorerHref(ecran.query, plan.value, { ...vue, cursor: resultat.data.next_cursor })
-              : null
-          }
+              : null,
+          }}
           cibles={cibles}
           peutEnregistrerVue={peutEnregistrerVue}
           contexte={queryToSearchParams(ecran.query).toString()}
@@ -411,7 +621,10 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
 function Resultat({
   plan,
   resultat,
-  suivantHref,
+  precedent,
+  annotations,
+  tri,
+  hrefs,
   cibles,
   peutEnregistrerVue,
   contexte,
@@ -420,7 +633,12 @@ function Resultat({
 }: {
   plan: ExplorerPlan;
   resultat: ExplorerResult;
-  suivantHref: string | null;
+  /** `undefined` : pas de comparaison ; `null` : demandée, non calculée pour cette forme. */
+  precedent: PrecedentResultat | null | undefined;
+  /** Déploiements de la fenêtre (série seulement), ou la raison de leur absence. */
+  annotations: { annotations: Annotation[]; indisponible: string | null } | null;
+  tri: "gravite" | "volume";
+  hrefs: HrefsResultat;
   /** Tableaux de bord sur lesquels la session peut réellement ajouter une carte. */
   cibles: DashboardRow[];
   peutEnregistrerVue: boolean;
@@ -430,7 +648,6 @@ function Resultat({
 }) {
   const { meta, data } = resultat;
   const definition = datasetDefinition(plan.dataset);
-  const vide = data.samples === 0;
   // La carte fige le QUOI et les filtres composés ici ; elle n'emporte ni l'app ni
   // la fenêtre, qui appartiennent au tableau de bord qui l'affichera.
   const carte = widgetFromPlan(plan, {
@@ -441,97 +658,18 @@ function Resultat({
 
   return (
     <>
-      {meta.coverage.status !== "complete" && (
-        <p role="note" className="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
-          Résultat partiel : {meta.coverage.reason}
-        </p>
-      )}
-      {meta.truncated_groups && (
-        <p role="note" data-testid="explorer-tronque" className="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
-          D’autres combinaisons existent au-delà des {plan.limit} affichées. Le total, lui, porte sur toute la population.
-        </p>
-      )}
-      {meta.warnings.map((avertissement) => (
-        <p key={avertissement} role="note" className="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink-soft">
-          {avertissement}
-        </p>
-      ))}
-
-      <div className="mb-6 grid gap-4 lg:grid-cols-[1fr_2fr]">
-        <aside className="card min-w-0 p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Total observé</div>
-          <div data-testid="explorer-total" className="mt-1 text-3xl font-bold tabular-nums text-ink">
-            {nombre(data.total)}
-          </div>
-          <div className="mt-1 text-xs text-ink-faint">
-            {meta.unit} · {meta.counting}
-            {meta.approximate && " · valeur approchée"}
-          </div>
-          <dl className="mt-4 space-y-1 text-xs text-ink-soft">
-            <div className="flex justify-between gap-3">
-              <dt>Lignes de population</dt>
-              <dd className="tabular-nums">{data.samples.toLocaleString("fr-FR")}</dd>
-            </div>
-            <div className="flex justify-between gap-3">
-              <dt>Largeur de seau</dt>
-              <dd className="tabular-nums">{meta.range.bucket_seconds} s</dd>
-            </div>
-            <div className="flex justify-between gap-3">
-              <dt>Agrégation additive</dt>
-              <dd>{meta.additive ? "oui" : "non"}</dd>
-            </div>
-            {/* D'où vient le chiffre : les lignes, ou un agrégat déjà consolidé
-                complété par les lignes de la fin de fenêtre (P6.6). */}
-            <div className="flex justify-between gap-3">
-              <dt>Source</dt>
-              <dd data-testid="explorer-source">{meta.source === "rollup+raw" ? "agrégat + lignes" : "lignes brutes"}</dd>
-            </div>
-          </dl>
-        </aside>
-
-        <section className="card min-w-0 p-4">
-          <h2 className="text-sm font-semibold text-ink">{VISUALIZATION_LABELS[plan.visualization]}</h2>
-          {vide ? (
-            <p data-testid="explorer-vide" className="py-10 text-center text-sm text-ink-faint">
-              Aucune ligne ne correspond à cette requête sur la fenêtre demandée. Ce n’est pas une erreur : la population est réellement vide.
-            </p>
-          ) : (
-            <div className="mt-3">
-              {plan.visualization === "value" && (
-                <p className="text-sm text-ink-soft">
-                  Cette représentation ne rend qu’un nombre : {nombre(data.total)} {meta.unit}.
-                </p>
-              )}
-              {plan.visualization === "toplist" && (
-                <RankBar
-                  data={data.groups.map((groupe) => ({
-                    label: libelleCle(groupe.key),
-                    value: groupe.value ?? 0,
-                    display: nombre(groupe.value),
-                    sub: `${groupe.samples.toLocaleString("fr-FR")} lignes`,
-                  }))}
-                  emptyLabel="Aucun groupe sur la fenêtre."
-                />
-              )}
-              {plan.visualization === "timeseries" && <Series resultat={resultat} />}
-              {plan.visualization === "table" && <Journal plan={plan} resultat={resultat} />}
-            </div>
-          )}
-        </section>
-      </div>
-
-      {plan.visualization === "table" && (
-        <nav className="mt-4 flex justify-end text-sm" aria-label="Pagination du journal">
-          {suivantHref && (
-            <Link
-              className="rounded text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
-              href={suivantHref}
-            >
-              Lignes suivantes
-            </Link>
-          )}
-        </nav>
-      )}
+      {/* Zone 7 : le hero « Résultat », une figure pleine largeur (W-E3 à W-E6, W-E8). */}
+      <ResultatAnalyse
+        plan={plan}
+        meta={meta}
+        data={data}
+        precedent={precedent}
+        hrefs={hrefs}
+        annotations={annotations?.annotations}
+        annotationsIndisponibles={annotations?.indisponible ?? undefined}
+        taille="page"
+        tri={tri}
+      />
 
       <section className="card mt-6 p-4">
         <h2 className="text-sm font-semibold text-ink">Enregistrer cette analyse</h2>
@@ -666,68 +804,4 @@ function Resultat({
       </details>
     </>
   );
-}
-
-/** Une série par groupe du haut : les mêmes groupes dans tous les seaux. */
-function Series({ resultat }: { resultat: ExplorerResult }) {
-  const groupes = new Map<string, { key: Array<string | null>; points: Array<{ bucket: Date; value: number }> }>();
-  for (const point of resultat.data.series) {
-    const cle = JSON.stringify(point.key);
-    if (!groupes.has(cle)) groupes.set(cle, { key: point.key, points: [] });
-    // Un seau sans mesure vaut null pour une agrégation non additive : la barre
-    // vaut alors zéro, mais l'alternative textuelle porte la valeur réelle.
-    groupes.get(cle)!.points.push({ bucket: new Date(point.start), value: point.value ?? 0 });
-  }
-  return (
-    <div className="grid gap-4">
-      {[...groupes.values()].map((groupe) => (
-        <ObservedTrend
-          key={JSON.stringify(groupe.key)}
-          title={libelleCle(groupe.key)}
-          rows={groupe.points}
-          valueLabel={resultat.meta.unit}
-        />
-      ))}
-    </div>
-  );
-}
-
-/** Journal paginé : la projection FERMÉE du jeu, jamais un `select *`. */
-function Journal({ plan, resultat }: { plan: ExplorerPlan; resultat: ExplorerResult }) {
-  const colonnes = datasetDefinition(plan.dataset).rows;
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-table text-sm">
-        <caption className="sr-only">Journal des lignes correspondant à la requête</caption>
-        <thead className="bg-panel2">
-          <tr>
-            {colonnes.map((colonne) => (
-              <th key={colonne.id} scope="col" className="th">
-                {colonne.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {resultat.data.rows.map((ligne, index) => (
-            <tr key={index} className="border-t border-line/60 align-top hover:bg-panel2/60">
-              {colonnes.map((colonne) => (
-                <td key={colonne.id} className="px-4 py-2 text-xs text-ink-soft">
-                  {cellule(ligne[colonne.id])}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/** Une cellule de journal : jamais un objet brut, jamais une valeur inventée. */
-function cellule(valeur: unknown): string {
-  if (valeur === null || valeur === undefined) return "—";
-  if (valeur instanceof Date) return fmtDate(valeur);
-  if (typeof valeur === "number") return valeur.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
-  return String(valeur);
 }
