@@ -27,6 +27,7 @@ import { THRESHOLDS, rating2026 } from "@/lib/rating";
 import { SectionPanneau } from "./sections/panneau";
 import { SectionsDistributions } from "./sections/distributions";
 import { SectionsPresets } from "./sections/presets";
+import { SectionsFiabilite } from "./sections/fiabilite";
 import { SectionsSeries } from "./sections/series";
 import { SectionIntervalles } from "./sections/intervalles";
 
@@ -608,6 +609,7 @@ export default async function VitrineComposants() {
       <SectionsSeries />
       <SectionIntervalles />
       <SectionsPresets />
+      <SectionsFiabilite />
     </div>
   );
 }

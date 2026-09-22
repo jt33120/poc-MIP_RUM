@@ -139,3 +139,66 @@ test("vitrine : réservée aux administrateurs", async ({ page }) => {
   await page.waitForURL((u) => u.pathname !== "/admin/composants", { timeout: 15_000 });
   await expect(page.getByText("Vitrine des composants")).toHaveCount(0);
 });
+
+// F56 — composants du domaine fiabilité (plan § 4.2, § 4.3). Le débordement à 390 /
+// 1024 / 1440 px est couvert par le premier test (toute la page) ; ici, les états, et
+// les deux comportements que le rendu serveur ne prouve pas : le regroupement de la
+// frise par requête de conteneur, et son alignement sur la série au-dessus.
+test("vitrine F56 : BudgetBars, MatriceConcordance, FriseDeclenchements, FriseEtats", async ({ page }) => {
+  await login(page, ADMIN);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${consoleUrl}/admin/composants`, { waitUntil: "domcontentloaded" });
+  for (const id of ["budget-bars", "matrice-concordance", "frise-declenchements", "frise-etats"]) {
+    await expect(page.locator(`section#${id}`)).toBeVisible();
+  }
+
+  // BudgetBars : un dépassement écrit, une absence dite sans barre, jamais « 0 % ».
+  const budget = page.locator("section#budget-bars");
+  await expect(budget.locator('[data-statut="epuise"]').first()).toContainText("312");
+  const nonMesurable = budget.locator('[data-statut="non_mesurable"]');
+  await expect(nonMesurable).toContainText("Non mesurable");
+  await expect(nonMesurable.locator("[data-barre]")).toHaveCount(0);
+  await expect(budget.locator('[data-statut="non_interpretable"] [data-barre="hachuree"]')).toHaveCount(1);
+
+  // MatriceConcordance : la case angle mort est nommée ; un zéro est écrit « 0 ».
+  const matrice = page.locator("section#matrice-concordance");
+  await expect(matrice.locator('td[data-nommee="bad"]').first()).toContainText("angle mort");
+  await expect(matrice.locator('td[data-ligne="incident"][data-colonne="needs-improvement"]').first()).toHaveText("0");
+
+  // FriseDeclenchements : intertitre SLO ancré, pistes au-delà de 12 repliées, troncature dite.
+  const frise = page.locator("section#frise-declenchements");
+  await expect(frise.locator("#pistes-slo")).toHaveCount(1);
+  await expect(frise.getByText("Voir les 2 autres sources")).toBeVisible();
+  await expect(frise.locator('[data-etat="partiel"]')).toContainText("2 000 déclenchements");
+
+  // FriseEtats : alignée à ≤ 2 px sur la zone de tracé de la série au-dessus.
+  const etats = page.locator("section#frise-etats");
+  const grilleSerie = etats.locator(".recharts-cartesian-grid-horizontal line").first();
+  await expect(grilleSerie).toBeAttached({ timeout: 15_000 });
+  await grilleSerie.scrollIntoViewIfNeeded();
+  const serie = await grilleSerie.boundingBox();
+  const courte = etats.locator('[data-testid="frise-etats"]').first();
+  const cases = await courte.locator('[data-couche="detail"] svg').boundingBox();
+  expect(serie).not.toBeNull();
+  expect(cases).not.toBeNull();
+  expect(Math.abs(serie!.x - cases!.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(serie!.x + serie!.width - (cases!.x + cases!.width))).toBeLessThanOrEqual(2);
+
+  // Un seul arrêt de tabulation ; flèche droite → case suivante, écrite sous la frise.
+  const detail = courte.locator('[data-couche="detail"] [data-case]');
+  await expect(courte.locator('[data-couche="detail"] [data-case][tabindex="0"]')).toHaveCount(1);
+  await detail.first().focus();
+  const active = courte.getByTestId("frise-etats-active");
+  await expect(active).toHaveText((await detail.first().getAttribute("aria-label")) ?? "");
+  await page.keyboard.press("ArrowRight");
+  await expect(active).toHaveText((await detail.nth(1).getAttribute("aria-label")) ?? "");
+
+  // 300 heures : cases détaillées à 1440 px, regroupées par 3 à 390 px.
+  const longue = etats.locator('[data-testid="frise-etats"][data-cases="300"]');
+  await expect(longue.locator('[data-couche="detail"]')).toBeVisible();
+  await expect(longue.locator('[data-couche="groupe"]')).toBeHidden();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(longue.locator('[data-couche="groupe"]')).toBeVisible();
+  await expect(longue.locator('[data-couche="detail"]')).toBeHidden();
+  await expect(longue.getByTestId("frise-etats-regroupee")).toBeVisible();
+});
