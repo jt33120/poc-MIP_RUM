@@ -136,6 +136,47 @@ export function assessRegression(
   return { regressed: after >= before * ratio, deltaPct };
 }
 
+export interface VerdictDeploiement {
+  /**
+   * `regression` : un signal a franchi son seuil ; `incomplet` : une des deux
+   * fenêtres ne permet pas de juger (aucune page vue, aucune mesure LCP) ;
+   * `stable` : les deux côtés sont mesurés et rien n'a franchi le seuil.
+   */
+  etat: "regression" | "incomplet" | "stable";
+  lcp: RegressionVerdict;
+  erreurs: RegressionVerdict;
+  /** Aucune erreur avant, au moins une après : une régression, même sans pourcentage. */
+  erreursApparues: boolean;
+  /** Ce qui manque pour juger, en clair ; vide sauf en `incomplet`. */
+  manques: string[];
+}
+
+/**
+ * Verdict du panneau « Déploiements & régression ». PUR.
+ *
+ * « Aucune régression » ne s'écrit que si les deux fenêtres ont été mesurées :
+ * sans page vue avant le déploiement, ou sans mesure LCP d'un côté, on ne sait
+ * pas — et le dire en vert, c'était présenter une inconnue comme un fait.
+ */
+export function verdictDeploiement(impact: DeployImpact): VerdictDeploiement {
+  const lcp = assessRegression(impact.lcp_before, impact.lcp_after);
+  const erreurs = assessRegression(impact.errors_before, impact.errors_after);
+  const erreursApparues = impact.errors_before === 0 && (impact.errors_after ?? 0) > 0;
+  const manques: string[] = [];
+  if (impact.pageviews_before === 0) manques.push("aucune page vue dans les 2 h avant");
+  if (impact.pageviews_after === 0) manques.push("aucune page vue dans les 2 h après");
+  if (impact.pageviews_before > 0 && impact.lcp_before == null) manques.push("aucune mesure LCP avant");
+  if (impact.pageviews_after > 0 && impact.lcp_after == null) manques.push("aucune mesure LCP après");
+  const regression = lcp.regressed || erreurs.regressed || erreursApparues;
+  return {
+    etat: regression ? "regression" : manques.length ? "incomplet" : "stable",
+    lcp,
+    erreurs,
+    erreursApparues,
+    manques: regression ? [] : manques,
+  };
+}
+
 export interface VersionRow {
   version: string;
   sessions: number;
