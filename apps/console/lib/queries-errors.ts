@@ -12,6 +12,7 @@
 import { parsePagination } from "./api/pagination";
 import { q, tx } from "./db";
 import { queryOf, type FiltersLike } from "./filters";
+import { plageLue, surGrille } from "./queries";
 import { parseEventCursor } from "./queries-events";
 import type { ErrorStatus } from "./queries-v2";
 import {
@@ -19,10 +20,12 @@ import {
   bucketSeriesSql,
   compileScope,
   compileWhereOrThrow,
+  sessionJoin,
   type DimensionSchema,
 } from "./query-compiler";
-import { authorizedAppsOf, resourceScope, type Device, type ResolvedRange } from "./query-contract";
+import { authorizedAppsOf, intersectApp, resourceScope, type Device, type ResolvedRange } from "./query-contract";
 import { dimensionSchema } from "./query-schema";
+import { sqlContext } from "./query-sql";
 
 export type ErrorDevice = Device;
 /** Filtres globaux de lib/filters, plus la tablette que le modèle historique ignore. */
@@ -956,4 +959,177 @@ export async function errorGroupDetail(
       enrichment: enrichmentOf(v69),
     };
   });
+}
+
+// ═══════════════════ Lectures partagées du domaine performance (F10) ═══════════════════
+//
+// Registre : plan § 4.5. Contrairement aux lectures de la liste (`errorBase`, une
+// transaction, CTE indépendantes), ce sont des COMPTES simples de la fenêtre, lus
+// par `sqlContext(f)` : périmètre d'apps lié, `apps = []` = zéro (R-A).
+//
+// POURQUOI TROIS COMPTES ET PAS UN (CP14). Un ratio « erreurs pour 100 pages vues »
+// divise des occurrences par des vues NAVIGATEUR : une exception Node, Python ou
+// OpenTelemetry n'a aucune page vue en face. Le numérateur est donc restreint aux
+// sources `browser_*` (colonne `error_source`, migration v69) ; les occurrences
+// sans source déclarée et celles des autres sources sont COMPTÉES à part, pour que
+// l'écran dise ce qu'il a laissé de côté (« N occurrences sans source déclarée et
+// M erreurs serveur non comptées »). `serveur` réunit toute source déclarée hors
+// navigateur (node, python, otel, react_native_js, native) : le plan l'appelle
+// « serveur », l'écran qui l'affiche doit l'écrire « hors navigateur ».
+// Sans v69 (`restreint: false`), la source est illisible : `navigateur` porte
+// TOUTES les occurrences et l'écran écrit « inclut les erreurs serveur sans page vue ».
+
+/** Colonne `error_source` (v69) présente ? Sondée à chaque lecture, comme `errorSchema`. */
+async function sourceDeclaree(): Promise<boolean> {
+  const [row] = await q<{ v69: boolean }>(
+    `select exists(select 1 from information_schema.columns
+             where table_schema='public' and table_name='rum_error' and column_name='error_source') as v69`,
+  );
+  return row?.v69 === true;
+}
+
+/** Les trois sommes d'occurrences (`float8` : exact jusqu'à 2^53, jamais une chaîne `bigint`). */
+function comptesParSource(v69: boolean): string {
+  if (!v69) {
+    return `coalesce(sum(e.occurrences), 0)::float8 as navigateur,
+            0::float8 as sans_source,
+            0::float8 as serveur`;
+  }
+  // `\_` : le soulignement est un joker de LIKE ; la taxonomie est fermée (contrainte
+  // v69), mais le préfixe exact dit ce qu'on veut.
+  return `coalesce(sum(e.occurrences) filter (where e.error_source like 'browser\\_%'), 0)::float8 as navigateur,
+          coalesce(sum(e.occurrences) filter (where e.error_source is null), 0)::float8 as sans_source,
+          coalesce(sum(e.occurrences) filter (where e.error_source not like 'browser\\_%'), 0)::float8 as serveur`;
+}
+
+export interface ErreursParSource {
+  navigateur: number;
+  sansSource: number;
+  serveur: number;
+}
+
+export interface ErrorSeriesPoint extends ErreursParSource {
+  /** Début du seau, ISO UTC. */
+  bucket: string;
+}
+
+/**
+ * Occurrences (`sum(occurrences)`, V1) par seau du contrat, réparties par source
+ * (CP14). Série ADDITIVE : un seau sans erreur vaut 0 sur les trois comptes. Le
+ * ratio pour 100 vues d'un seau se calcule avec `pageviewSeries` (même grille) par
+ * `serieRatioPour100` (lib/perf-domain.ts) : un seau sans vue y devient `null`.
+ */
+export async function errorSeries(
+  f: FiltersLike,
+  shift = false,
+): Promise<{ restreint: boolean; points: ErrorSeriesPoint[] }> {
+  const v69 = await sourceDeclaree();
+  const sql = await sqlContext(f);
+  const range = plageLue(sql.query.range, shift);
+  const where = sql.where({ dataset: "errors", row: "e", session: "s", time: "e.ts", range });
+  const rows = await q<{ bucket: Date; navigateur: number; sans_source: number; serveur: number }>(
+    `select ${bucketExpr("e.ts", range)} as bucket, ${comptesParSource(v69)}
+       from rum_error e
+       ${sessionJoin("e", "s")}
+      where true${where}
+      group by 1 order by 1`,
+    sql.params,
+  );
+  return {
+    restreint: v69,
+    points: surGrille(
+      rows,
+      range,
+      (r, t) => ({ bucket: t, navigateur: r.navigateur, sansSource: r.sans_source, serveur: r.serveur }),
+      (t) => ({ bucket: t, navigateur: 0, sansSource: 0, serveur: 0 }),
+    ),
+  };
+}
+
+/**
+ * Totaux de la fenêtre des trois comptes d'`errorSeries` : numérateur du ratio
+ * « occurrences d'erreurs pour 100 pages vues » (`navigateur`) et ce qui en est
+ * exclu (`sansSource`, `serveur`). Une erreur sans session (backend) reste lue —
+ * elle n'entre simplement pas dans `navigateur`, faute de source `browser_*`.
+ */
+export async function erreursNavigateur(
+  f: FiltersLike,
+  shift = false,
+): Promise<{ restreint: boolean } & ErreursParSource> {
+  const v69 = await sourceDeclaree();
+  const sql = await sqlContext(f);
+  const range = plageLue(sql.query.range, shift);
+  const where = sql.where({ dataset: "errors", row: "e", session: "s", time: "e.ts", range });
+  const [row] = await q<{ navigateur: number; sans_source: number; serveur: number }>(
+    `select ${comptesParSource(v69)}
+       from rum_error e
+       ${sessionJoin("e", "s")}
+      where true${where}`,
+    sql.params,
+  );
+  return {
+    restreint: v69,
+    navigateur: row?.navigateur ?? 0,
+    sansSource: row?.sans_source ?? 0,
+    serveur: row?.serveur ?? 0,
+  };
+}
+
+export interface PartSessionsTouchees {
+  /** Sessions avec au moins une vue dans la fenêtre (définition de `sessionsAvecVue`). */
+  base: number;
+  /** Sessions DE CETTE BASE ayant au moins une occurrence dans la fenêtre. */
+  touchees: number;
+  /** Plus petit `sample_rate` des sessions de la base ; `null` si la base est vide. */
+  tauxMin: number | null;
+}
+
+/**
+ * Numérateur et dénominateur de « Part des sessions touchées » (§ 5.3.2) : UNE
+ * instruction, où le numérateur est une JOINTURE sur la base (jamais deux comptes
+ * indépendants) — une session touchée sans vue dans la fenêtre n'y entre pas, et
+ * `touchees ≤ base` par construction. La base reprend la définition de
+ * `sessionsAvecVue` (R-P). La règle de valeur (`null` si la base est vide ou si
+ * `tauxMin < 1`) est `partTouchees` (lib/perf-domain.ts).
+ *
+ * `tauxMin` (CP15) : une session tirée hors `sampleRate` n'envoie que ses erreurs,
+ * puis la première la promeut en collecte complète (vues comprises) : les sessions
+ * touchées entrent dans la base plus souvent que les autres dès que `sample_rate`
+ * est sous 1, et le rapport observé surestime la part réelle.
+ *
+ * `ref` (détail d'un groupe, F20) : les occurrences du seul groupe, et la base
+ * resserrée sur SON app (`intersectApp` : une app hors du périmètre effectif donne
+ * une base vide, jamais un repli sur toutes les apps).
+ */
+export async function partSessionsTouchees(
+  f: FiltersLike,
+  ref?: ErrorGroupRef,
+  shift = false,
+): Promise<PartSessionsTouchees> {
+  const cible = ref ? { ...f, query: intersectApp(queryOf(f), ref.app_id) } : f;
+  const sql = await sqlContext(cible);
+  const range = plageLue(sql.query.range, shift);
+  const vues = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at", range });
+  const erreurs = sql.where({ dataset: "errors", row: "e", session: "se", time: "e.ts", range });
+  const groupe = ref ? ` and e.fingerprint = ${sql.bind(ref.fingerprint)}` : "";
+  const [row] = await q<{ base: number; touchees: number; taux_min: number | null }>(
+    `with base as (
+       select distinct p.app_id, p.session_id
+         from rum_pageview p
+         ${sessionJoin("p", "s")}
+        where p.session_id is not null${vues}
+     )
+     select count(*)::int as base,
+            count(*) filter (where exists (
+              select 1
+                from rum_error e
+                ${sessionJoin("e", "se")}
+               where e.app_id = b.app_id and e.session_id = b.session_id${groupe}${erreurs}
+            ))::int as touchees,
+            min(ss.sample_rate)::float8 as taux_min
+       from base b
+       left join rum_session ss on ss.app_id = b.app_id and ss.session_id = b.session_id`,
+    sql.params,
+  );
+  return { base: row?.base ?? 0, touchees: row?.touchees ?? 0, tauxMin: row?.taux_min ?? null };
 }

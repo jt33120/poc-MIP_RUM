@@ -3,9 +3,13 @@
 // segment, bots et apps internes sont compilés par lib/query-compiler.ts en
 // paramètres liés ; la jointure de session est toujours scopée par app.
 import { q } from "./db";
-import { type Filters } from "./filters";
+import { DEBUT_SAMPLE_RATE, type EchantillonnageSessions } from "./echantillonnage";
+import { type Filters, type FiltersLike } from "./filters";
+import type { VitalName } from "./fmt-ids";
+import { agregatEchantillonnage, echantillonnageDe, type LigneEchantillonnage } from "./queries-sessions";
 import { bucketExpr, sessionJoin } from "./query-compiler";
-import { previousRange } from "./query-contract";
+import { bucketStarts, previousRange, type ResolvedRange } from "./query-contract";
+import { alignerSeaux, isoSansMs } from "./series";
 import { dimensionSchema } from "./query-schema";
 import { sqlContext, type SqlContext } from "./query-sql";
 import type { SessionCursor, SessionSearch } from "./sessions-search";
@@ -197,6 +201,173 @@ export async function vitalSeries(f: Filters, name: string): Promise<SeriesRow[]
      group by 1 order by 1`,
     sql.params,
   );
+}
+
+// ═══════════════════ Lectures partagées du domaine performance (F10) ═══════════════════
+//
+// Registre : plan § 4.5. Toutes passent par `sqlContext(f)` (périmètre d'apps LIÉ,
+// `apps = []` = zéro ligne, R-A) et acceptent `shift` (`cmp=prev`) : la même mesure
+// sur `previousRange`, même largeur de seau, alignée PAR RANG de seau (§ 3.2).
+//
+// LA GRILLE EST POSÉE ICI, PAS PAR L'APPELANT. Une série rend UN point par début de
+// seau attendu (`bucketStarts(range)`), rapproché par `alignerSeaux` (F04, § 3.10) :
+// un seau sans mesure garde `p75: null` (un trou, jamais « 0 ms » noté « Bon ») ;
+// seuls les COMPTES additifs y valent 0 (aucune vue dans le seau, c'est 0 vue).
+// `alignerSeaux(…, additif = true)` ne sait pas zéro-remplir une série SANS aucune
+// ligne (il ne connaît alors aucun champ) : les séries de comptes remplissent donc
+// elles-mêmes les seaux vides, champ par champ.
+
+/** Plage lue : la fenêtre du contrat, ou la période précédente contiguë. */
+export function plageLue(range: ResolvedRange, shift: boolean): ResolvedRange {
+  return shift ? previousRange(range) : range;
+}
+
+/**
+ * Pose des lignes de seaux (bucket rendu par node-postgres en `Date`) sur la grille
+ * du contrat ; `vide(t)` fabrique le point d'un seau sans ligne. Rend les instants
+ * en ISO UTC sans millisecondes (`isoSansMs`), la clé que prennent les figures.
+ */
+export function surGrille<R extends { bucket: string | Date }, P>(
+  rows: R[],
+  range: ResolvedRange,
+  plein: (row: R, t: string) => P,
+  vide: (t: string) => P,
+): P[] {
+  const starts = bucketStarts(range);
+  return alignerSeaux(rows, starts, false).map((row, i) => {
+    const t = isoSansMs(starts[i]);
+    return row === null ? vide(t) : plein(row, t);
+  });
+}
+
+export interface VitalSeriesPoint {
+  /** Début du seau, ISO UTC. */
+  bucket: string;
+  /** p75 des mesures BRUTES du seau ; `null` : aucune mesure (un trou, pas un zéro). */
+  p75: number | null;
+  /** Mesures du seau (point creux sous `faibleSous`, § 3.10). */
+  n: number;
+}
+
+/**
+ * p75 d'un vital par seau du contrat, AVEC l'effectif du seau (CP4) : `vitalSeries`
+ * ne rend que les seaux non vides et sans `n`. Chaque p75 est calculé sur les
+ * mesures brutes de son seau ; aucun p75 n'est jamais agrégé d'un autre (V5).
+ */
+export async function vitalSeriesN(f: FiltersLike, name: VitalName, shift = false): Promise<VitalSeriesPoint[]> {
+  const sql = await sqlContext(f);
+  const range = plageLue(sql.query.range, shift);
+  const nom = sql.bind(name);
+  const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts", range });
+  const rows = await q<{ bucket: Date; p75: number; n: number }>(
+    `select ${bucketExpr("m.ts", range)} as bucket,
+            percentile_cont(0.75) within group (order by m.value) as p75,
+            count(*)::int as n
+     from rum_metric m
+     ${sessionJoin("m", "s")}
+     where m.name = ${nom}${where}
+     group by 1 order by 1`,
+    sql.params,
+  );
+  return surGrille<(typeof rows)[number], VitalSeriesPoint>(
+    rows,
+    range,
+    (r, t) => ({ bucket: t, p75: r.p75, n: r.n }),
+    (t) => ({ bucket: t, p75: null, n: 0 }),
+  );
+}
+
+/**
+ * Sessions distinctes ayant AU MOINS UNE page vue dont `started_at ∈ [from, to)` —
+ * SEULE définition du dénominateur « sessions avec vue » (R-P, CP7). Une vue sans
+ * session n'en est pas une ; la session est comptée par `(app_id, session_id)`,
+ * jamais par son seul identifiant (émis par le client).
+ */
+export async function sessionsAvecVue(f: FiltersLike, shift = false): Promise<number> {
+  const sql = await sqlContext(f);
+  const range = plageLue(sql.query.range, shift);
+  const where = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at", range });
+  const [row] = await q<{ n: number }>(
+    `select count(*)::int as n
+       from (select distinct p.app_id, p.session_id
+               from rum_pageview p
+               ${sessionJoin("p", "s")}
+              where p.session_id is not null${where}) v`,
+    sql.params,
+  );
+  return row?.n ?? 0;
+}
+
+export interface PageviewSeriesPoint {
+  bucket: string;
+  /** Vues de chargement (`nav_type` navigate / reload / back_forward) : seules à porter un LCP (CP17). */
+  chargements: number;
+  /** Changements de route SPA (`nav_type = 'spa'`). */
+  spa: number;
+  /**
+   * Vues sans `nav_type` (émetteur qui ne le déclare pas) : ni rangées d'office
+   * parmi les chargements, ni perdues — Σ des trois = pages vues du seau.
+   */
+  inconnu: number;
+}
+
+/**
+ * Pages vues par seau du contrat, chargements et changements de route SPA séparés
+ * (CP17). Série ADDITIVE : un seau sans vue vaut 0, et la somme des seaux égale
+ * `overviewStats(f).pageviews` pour la même plage.
+ */
+export async function pageviewSeries(f: FiltersLike, shift = false): Promise<PageviewSeriesPoint[]> {
+  const sql = await sqlContext(f);
+  const range = plageLue(sql.query.range, shift);
+  const where = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at", range });
+  const rows = await q<{ bucket: Date; chargements: number; spa: number; inconnu: number }>(
+    `select ${bucketExpr("p.started_at", range)} as bucket,
+            count(*) filter (where p.nav_type is not null and p.nav_type <> 'spa')::int as chargements,
+            count(*) filter (where p.nav_type = 'spa')::int as spa,
+            count(*) filter (where p.nav_type is null)::int as inconnu
+     from rum_pageview p
+     ${sessionJoin("p", "s")}
+     where true${where}
+     group by 1 order by 1`,
+    sql.params,
+  );
+  return surGrille(
+    rows,
+    range,
+    (r, t) => ({ bucket: t, chargements: r.chargements, spa: r.spa, inconnu: r.inconnu }),
+    (t) => ({ bucket: t, chargements: 0, spa: 0, inconnu: 0 }),
+  );
+}
+
+/**
+ * Échantillonnage de la population des Web Vitals (R-E) : sessions portant au moins
+ * une mesure dans la fenêtre, sous les filtres de l'écran. Même formule
+ * biaisée-erreurs que `samplingSessions` (B38) : `agregatEchantillonnage`.
+ *
+ * `probaMin` vaut `null` quand une session de la population a commencé avant le
+ * 09/09/2026 (v58 : `sample_rate = 1` PAR DÉFAUT, pas par mesure — un minimum qui
+ * la compterait à 100 % serait inventé) ou quand aucune session n'est lue. Les
+ * autres champs (`sessions`, `sansTaux`, `biaiseErreurs`) distinguent ces deux
+ * cas et servent `etatEchantillonnage` tels quels.
+ */
+export async function samplingVitals(f: FiltersLike): Promise<EchantillonnageSessions> {
+  const sql = await sqlContext(f);
+  const debut = sql.bind(DEBUT_SAMPLE_RATE);
+  const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });
+  const [row] = await q<LigneEchantillonnage>(
+    `with population as (
+       select distinct m.app_id, m.session_id
+         from rum_metric m
+         ${sessionJoin("m", "s")}
+        where m.session_id is not null${where}
+     )
+     select ${agregatEchantillonnage(debut)}
+       from population p
+       join rum_session s on s.app_id = p.app_id and s.session_id = p.session_id`,
+    sql.params,
+  );
+  const e = echantillonnageDe(row);
+  return e.sansTaux > 0 ? { ...e, probaMin: null } : e;
 }
 
 export interface RouteRow {
