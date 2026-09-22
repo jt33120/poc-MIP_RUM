@@ -7,7 +7,6 @@ import { CoquilleGarde } from "@/components/CoquilleGarde";
 import { GlobalFilters } from "@/components/GlobalFilters";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { Nav } from "@/components/Nav";
-import { CATEGORIES } from "@/components/nav-items";
 import { SegmentBar } from "@/components/SegmentBar";
 import { SubNav } from "@/components/SubNav";
 import { EtatSurface } from "@/components/states/EtatSurface";
@@ -57,6 +56,9 @@ function rumInitScript(host: string | null): string {
   const release = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? "dev";
   return `window.MIPRum && MIPRum.init({endpoint:${JSON.stringify(endpoint)},appId:"mip-rum-console",clientId:"mip",env:"prod",release:${JSON.stringify(release)},replay:${JSON.stringify(RUM_REPLAY_RATE)}});`;
 }
+
+// Configuration du widget d'avis, posée AVANT son chargement (il la lit au montage).
+const FEEDBACK_CONFIG = `window.MIPRumFeedback=Object.assign({compactBelow:768},window.MIPRumFeedback);`;
 
 /** Marque produit : pictogramme pouls sur carré orange MIP + wordmark. */
 function BrandMark() {
@@ -115,7 +117,9 @@ function Capteur({ init }: { init: string }) {
       <script dangerouslySetInnerHTML={{ __html: init }} />
       {/* dogfooding : la console collecte son propre ressenti (widget feedback
           -> track 'feedback' -> rum_event, app mip-rum-console) pour peupler
-          sa page Expérience. Chargé après l'init RUM. */}
+          sa page Expérience. Chargé après l'init RUM. Sous 768 px, le lanceur
+          est replié en pastille : son libellé masquait le contenu du coin. */}
+      <script dangerouslySetInnerHTML={{ __html: FEEDBACK_CONFIG }} />
       <script src="/mip-rum-feedback.js" defer />
     </>
   );
@@ -223,7 +227,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body className="min-h-screen">
-        <AutoRefresh />
         <CoquilleGarde rendue="console" />
         <div className="flex min-h-screen">
           {/* Sidebar claire : neutre, épurée — n'entre plus en concurrence avec le contenu */}
@@ -322,20 +325,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <Icon paths={ICON_PATHS.grid} className="h-5 w-5" />
                     <span className="sr-only">Ouvrir la navigation</span>
                   </summary>
-                  <nav className="absolute right-0 z-30 mt-2 flex w-72 flex-col gap-1 rounded-xl border border-line bg-panel p-2 shadow-card">
-                    {CATEGORIES.map((category) => category.verrouille ? (
-                      <span key={category.href} aria-disabled className="rounded-lg px-3 py-2 text-sm text-ink-faint">
-                        {category.label} · bientôt disponible
-                      </span>
-                    ) : (
-                      <Link
-                        key={category.href}
-                        href={category.href}
-                        className="rounded-lg px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
-                      >
-                        {category.label}
-                      </Link>
-                    ))}
+                  <div className="absolute right-0 z-30 mt-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-xl border border-line bg-panel p-2 shadow-card">
+                    {/* La MÊME navigation que la sidebar (F09) : ses liens portent le
+                        contexte (app, plage, filtres, comparaison) — l'ancienne liste
+                        pointait les landings nues et perdait la population sur mobile. */}
+                    <Suspense>
+                      <Nav />
+                    </Suspense>
                     {user.role === "admin" && (
                       <Link
                         href="/admin/customers"
@@ -352,7 +348,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                         Se déconnecter
                       </button>
                     </form>
-                  </nav>
+                  </div>
                 </details>
               </div>
             </div>
@@ -361,14 +357,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <GlobalFilters schema={schema} timeZones={timeZones} defaultTimeZone={FUSEAU_DEFAUT} />
               </Suspense>
               <div className="ml-auto flex items-center gap-3">
-                {/* AutoRefresh re-fetch les server components toutes les 5 s */}
-                <span
-                  className="flex items-center gap-2 rounded-full border border-good/30 bg-good/10 px-2.5 py-1 text-[11px] font-semibold text-good-ink"
-                  title="Données rafraîchies automatiquement toutes les 5 secondes"
-                >
-                  <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-good" />
-                  LIVE · 5 s
-                </span>
+                {/* AutoRefresh re-fetch les server components toutes les 5 s, sauf
+                    sur les routes à lecture explicite (SANS_RAFRAICHISSEMENT, § 3.11) :
+                    il rend lui-même la pastille, « LIVE · 5 s » ou « Lu à … ». */}
+                <Suspense>
+                  <AutoRefresh />
+                </Suspense>
                 <ThemeToggle />
               </div>
             </header>
@@ -390,7 +384,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Suspense>
               <SegmentBar schema={schema} />
             </Suspense>
-            <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
+            {/* Réserve basse de 72 px à toutes les largeurs : le widget « Votre
+                avis ? », fixé à 20 px du coin bas-droit, recouvrait le bas de
+                l'écran (les KPI des Alertes, les dernières lignes des tables). */}
+            <main className="min-w-0 flex-1 px-4 pb-[72px] pt-4 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">{children}</main>
           </div>
         </div>
         <Capteur init={RUM_INIT} />

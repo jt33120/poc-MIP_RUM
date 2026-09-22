@@ -175,7 +175,28 @@ export function surfaceFor(pathname: string): Surface | null {
   return null;
 }
 
-export type FilterAvailability = { available: true } | { available: false; reason: string };
+/**
+ * Routes à lecture EXPLICITE, que `AutoRefresh` ne relit pas toutes les 5 s (§ 3.11,
+ * CE10). Un Explorer exécuté (`run=1`) relançait sa requête et un tableau de bord
+ * relisait ses cartes au-delà de leur cache : le résultat changeait sous le curseur,
+ * et la promesse « exécution explicite » n'était tenue qu'au premier rendu. Ces
+ * écrans affichent l'heure de lecture et un bouton « Relire ».
+ * `exacts` : égalité stricte ; `prefixes` : tout chemin qui commence ainsi.
+ */
+export const SANS_RAFRAICHISSEMENT = {
+  exacts: ["/explorer", "/explorer/views", "/dashboards"],
+  prefixes: ["/dashboards/"],
+} as const satisfies { exacts: readonly string[]; prefixes: readonly string[] };
+
+/** Ce chemin est-il lu à la demande (pas de rafraîchissement automatique) ? */
+export function sansRafraichissement(pathname: string): boolean {
+  return (
+    (SANS_RAFRAICHISSEMENT.exacts as readonly string[]).includes(pathname) ||
+    SANS_RAFRAICHISSEMENT.prefixes.some((p) => pathname.startsWith(p))
+  );
+}
+
+export type FilterAvailability ={ available: true } | { available: false; reason: string };
 
 /** Une dimension est-elle applicable à TOUTES les mesures de l'écran ? */
 export function dimensionAvailability(surface: Surface, dimension: Dimension, schema: DimensionSchema): FilterAvailability {

@@ -25,6 +25,8 @@
  *                                          // à n'utiliser qu'en connaissance
  *                                          // de cause, cf. plus bas.
  *     appId: "gip-plateforme",             // sinon lu via MIPRum.appId().
+ *     compactBelow: 768,                   // sous cette largeur (px), lanceur
+ *                                          // replié en pastille « 💬 ».
  *   };
  * (via le SDK : MIPRum.init({ feedback: { onlyPaths: [...] } }).)
  *
@@ -69,6 +71,7 @@
   var ONLY = Array.isArray(cfg.onlyPaths) ? cfg.onlyPaths : null; // null = partout
   var OFFSET = typeof cfg.offset === "number" && cfg.offset >= 0 ? cfg.offset : 20;
   var Z = 2147483000;
+  var COMPACT = typeof cfg.compactBelow === "number" ? cfg.compactBelow : 0;
 
   // Marqueur lu par le détecteur de frustration du SDK : tout clic à l'intérieur
   // d'un élément qui le porte est ignoré. Doit rester identique à MIP_UI_ATTR
@@ -221,6 +224,17 @@
   btn.setAttribute("aria-label", LABEL);
   btn.setAttribute("aria-expanded", "false");
   btn.setAttribute(UI_ATTR, "feedback-button");
+
+  // Replié sur écran étroit : le libellé masquait le contenu du coin bas-droit.
+  // Le nom accessible (aria-label) reste entier.
+  if (COMPACT && window.matchMedia) {
+    var mq = window.matchMedia("(max-width:" + (COMPACT - 1) + "px)");
+    var plier = function () {
+      btn.textContent = mq.matches ? "💬" : "💬 " + LABEL;
+    };
+    plier();
+    if (mq.addEventListener) mq.addEventListener("change", plier);
+  }
 
   // --- panneau ---
   // max-width : le coin bas-droit est partagé avec les pastilles flottantes de
