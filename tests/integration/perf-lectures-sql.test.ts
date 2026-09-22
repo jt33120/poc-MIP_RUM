@@ -25,7 +25,9 @@ const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
 
 const A = "f10-perf-a";
 const B = "f10-perf-b";
-const APPS = [A, B];
+// C : une seule session, commencée avant v58, avec une vue dans la fenêtre.
+const C = "f10-perf-c";
+const APPS = [A, B, C];
 
 // Fenêtre FIXE de 6 heures pleines, finie à l'heure pleine passée : seaux d'une
 // heure (`bucketSecondsFor`), alignés, donc une grille de 6 seaux exactement.
@@ -83,6 +85,8 @@ async function semer(c: pg.Client): Promise<void> {
     { id: "f10-b1", app: B, debut: H(0, 5), fin: H(0, 40), sr: 0.1, esr: 1, erreur: true },
     // B : échantillonnée à 50 %, sans erreur : p = 0,5.
     { id: "f10-b2", app: B, debut: H(1, 5), fin: H(1, 40), sr: 0.5, esr: 0 },
+    // C : commencée avant v58 (sample_rate = 1 PAR DÉFAUT), revue dans la fenêtre.
+    { id: "f10-c1", app: C, debut: AOUT, fin: H(2, 30) },
   ];
   for (const s of sessions) {
     await c.query(
@@ -102,6 +106,7 @@ async function semer(c: pg.Client): Promise<void> {
     ["f10-pv-a4-0", "f10-a4", A, "navigate", H(0)], // robot
     ["f10-pv-b1-0", "f10-b1", B, "navigate", H(0)],
     ["f10-pv-b2-0", "f10-b2", B, "navigate", H(1)],
+    ["f10-pv-c1-0", "f10-c1", C, "navigate", H(2)],
   ];
   for (const [span, sid, app, nav, ts] of vues) {
     await c.query(
@@ -348,6 +353,10 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
 
     it("session sr = 0,1 / esr = 1 dans la base → tauxMin 0,1", async () => {
       expect(await lib.partSessionsTouchees(fB())).toEqual({ base: 2, touchees: 1, tauxMin: 0.1 });
+    });
+
+    it("session d'avant v58 dans la base → tauxMin null (même règle que samplingVitals), jamais 100 %", async () => {
+      expect(await lib.partSessionsTouchees(f(`app=${C}`))).toEqual({ base: 1, touchees: 0, tauxMin: null });
     });
 
     it("ref : les occurrences du seul groupe, base resserrée sur son app", async () => {

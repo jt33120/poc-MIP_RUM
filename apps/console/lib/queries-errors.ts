@@ -11,6 +11,7 @@
 // seau calculées par le contrat sont interpolées dans le SQL.
 import { parsePagination } from "./api/pagination";
 import { q, tx } from "./db";
+import { DEBUT_SAMPLE_RATE } from "./echantillonnage";
 import { queryOf, type FiltersLike } from "./filters";
 import { plageLue, surGrille } from "./queries";
 import { parseEventCursor } from "./queries-events";
@@ -1080,7 +1081,10 @@ export interface PartSessionsTouchees {
   base: number;
   /** Sessions DE CETTE BASE ayant au moins une occurrence dans la fenêtre. */
   touchees: number;
-  /** Plus petit `sample_rate` des sessions de la base ; `null` si la base est vide. */
+  /**
+   * Plus petit `sample_rate` des sessions de la base ; `null` si la base est vide
+   * ou si une session de la base a commencé avant v58 (taux non enregistré).
+   */
   tauxMin: number | null;
 }
 
@@ -1112,6 +1116,10 @@ export async function partSessionsTouchees(
   const vues = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at", range });
   const erreurs = sql.where({ dataset: "errors", row: "e", session: "se", time: "e.ts", range });
   const groupe = ref ? ` and e.fingerprint = ${sql.bind(ref.fingerprint)}` : "";
+  // Même règle que `samplingVitals` (R-E) : une session commencée avant v58 porte
+  // `sample_rate = 1` PAR DÉFAUT, pas par mesure — le taux de la base est alors
+  // INCONNU (`null`), jamais 100 %.
+  const debut = sql.bind(DEBUT_SAMPLE_RATE);
   const [row] = await q<{ base: number; touchees: number; taux_min: number | null }>(
     `with base as (
        select distinct p.app_id, p.session_id
@@ -1126,7 +1134,8 @@ export async function partSessionsTouchees(
                 ${sessionJoin("e", "se")}
                where e.app_id = b.app_id and e.session_id = b.session_id${groupe}${erreurs}
             ))::int as touchees,
-            min(ss.sample_rate)::float8 as taux_min
+            case when bool_or(ss.started_at < ${debut}::timestamptz) then null
+                 else min(ss.sample_rate)::float8 end as taux_min
        from base b
        left join rum_session ss on ss.app_id = b.app_id and ss.session_id = b.session_id`,
     sql.params,
