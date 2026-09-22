@@ -6,6 +6,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { GroupSparkline } from "@/components/errors/GroupSparkline";
 import { IssueList, IssueListInvalid } from "@/components/errors/IssueList";
 import { GROUPES_DU_HERO, HeroGroupesErreurs, TuilesErreurs, type PartLue } from "@/components/errors/ApercuErreurs";
+import { PanneauErreur } from "@/components/errors/PanneauErreur";
 import { SectionErreur } from "@/components/states/SectionErreur";
 import { errorGroupHref, errorSearchParams, errorsHref, fmtCount } from "@/components/errors/error-view";
 import {
@@ -42,6 +43,7 @@ import {
   topGroupesSeries,
   totauxErreurs,
   type ErrorFilters,
+  type ErrorGroupRef,
   type OrdreGroupes,
 } from "@/lib/queries-errors";
 import { listDeploys } from "@/lib/queries-deploys";
@@ -52,7 +54,7 @@ import { referencePeriodePrecedente } from "@/lib/perf-domain";
 import { UnsupportedFilterError } from "@/lib/query-compiler";
 import { bucketStarts, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
 import { grilleIso } from "@/lib/series";
-import { gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
+import { ecrirePanel, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
 
@@ -115,6 +117,13 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   if (vue.statut) {
     avertissements.push(ligneIgnoree("statut", vue.statut, "le filtre de statut de la liste historique n'est pas encore disponible"));
   }
+  // Panneau (F20) : seul celui d'un groupe d'erreurs s'ouvre ici. Un `panel=issue:`
+  // ou `panel=session:` n'est pas lu à moitié — il est ignoré, et dit (V10).
+  if (vue.panel && vue.panel.type !== "error") {
+    avertissements.push(
+      ligneIgnoree("panel", url.get("panel") ?? "", "seul le panneau d'un groupe d'erreurs s'ouvre sur cet écran"),
+    );
+  }
 
   // Découpage (P6.3) : les MÊMES onglets que l'accueil et `/pages`, limités aux
   // dimensions que les occurrences d'erreurs portent réellement. Calculé avant la
@@ -156,8 +165,31 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   if (modeIssues && vue.nouveaux) {
     avertissements.push(ligneIgnoree("nouveaux", "1", "la liste des issues ne se restreint pas encore aux groupes apparus"));
   }
+  if (modeIssues && vue.panel?.type === "error") {
+    avertissements.push(
+      ligneIgnoree("panel", url.get("panel") ?? "", "la liste des issues n'ouvre pas le panneau d'un groupe historique"),
+    );
+  }
   const tri: OrdreGroupes = !modeIssues && (vue.tri === "sessions" || vue.tri === "recent") ? vue.tri : "statut";
   const nouveauxSeuls = !modeIssues && vue.nouveaux;
+  const panneau = !modeIssues && vue.panel?.type === "error" ? vue.panel.id : null;
+
+  // Réglages de la liste et lien d'ouverture du panneau (F20) : l'URL porte tout —
+  // « Fermer », « Précédent » et « Suivant » sont de vrais liens, qui gardent la
+  // position dans la liste, son ordre et son découpage.
+  const page = parseErrorListPage(url);
+  const reglagesListe: Record<string, string> = {
+    ...vueEcran,
+    ...(tri !== "statut" ? { tri } : {}),
+    ...(nouveauxSeuls ? { nouveaux: "1" } : {}),
+  };
+  const lienPanneau = (fp: string | null) =>
+    errorsHref("/errors", f, f.app, {
+      ...reglagesListe,
+      ...(page.offset ? { offset: String(page.offset) } : {}),
+      ...(url.get("limit") ? { limit: String(page.limit) } : {}),
+      ...(fp ? { panel: ecrirePanel({ type: "error", id: fp }) } : {}),
+    });
 
   // ── Tuiles et hero (F18) ─────────────────────────────────────────────────
   // CHAQUE LECTURE EST INDÉPENDANTE (§ 3.8) : une tuile en échec dit « lecture en
@@ -228,8 +260,9 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
           grille={grilleIso(bucketStarts(range))}
           totaux={totaux}
           top={top}
-          // Le panneau `panel=error:` arrive avec F20 : d'ici là, la page du groupe.
-          hrefGroupe={(g) => errorGroupHref(g.ref, f)}
+          // Un segment ouvre le PANNEAU du groupe (F20, § 5.3.2) ; en mode issues,
+          // où le panneau historique ne s'ouvre pas, il ouvre sa page.
+          hrefGroupe={(g) => (modeIssues ? errorGroupHref(g.ref, f) : lienPanneau(g.ref.fingerprint))}
           plusieursApps={query.scope.requestedApp === null}
           annotations={annotations.annotations}
           annotationsIndisponibles={deploys.ok ? annotations.indisponible : "marqueurs de déploiement non lus"}
@@ -279,7 +312,6 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
     );
   }
 
-  const page = parseErrorListPage(url);
   const { groups, total, trend, sampling, enrichment, unfingerprinted } = await listErrorGroups(f, page, {
     series: true,
     tri,
@@ -288,14 +320,24 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   // Liste restreinte aux groupes apparus : elle se pagine sur LEUR nombre, pas sur
   // celui de tous les groupes (les totaux de l'écran, eux, ne changent pas).
   const totalListe = nouveauxSeuls ? (nouveaux.ok ? nouveaux.data : groups.length + page.offset) : total;
-  const reglagesListe: Record<string, string> = {
-    ...vueEcran,
-    ...(tri !== "statut" ? { tri } : {}),
-    ...(nouveauxSeuls ? { nouveaux: "1" } : {}),
-  };
   const pageHref = (offset: number) =>
     errorsHref("/errors", f, f.app, { ...reglagesListe, offset: String(offset), limit: String(page.limit) });
   const hasNext = totalListe > page.offset + page.limit && page.offset + page.limit <= ERROR_LIST_MAX_OFFSET;
+
+  // ── Groupe ouvert en panneau (F20, § 3.5) ───────────────────────────────────
+  // Le groupe de la page affichée donne SON app et la liste à parcourir. Hors de
+  // cette page (lien partagé, clic sur un segment du hero), l'app de l'écran suffit
+  // à ouvrir le panneau — sans « Précédent » ni « Suivant », puisqu'il n'y a pas de
+  // liste à parcourir. Sans app explicite, une empreinte peut désigner deux groupes :
+  // on ne tire pas au sort, on le dit.
+  const positionPanneau = panneau === null ? -1 : groups.findIndex((g) => g.fingerprint === panneau);
+  const ouvert: ErrorGroupRef | null =
+    positionPanneau >= 0
+      ? { app_id: groups[positionPanneau].app_id, fingerprint: groups[positionPanneau].fingerprint }
+      : panneau !== null && f.app
+        ? { app_id: f.app, fingerprint: panneau }
+        : null;
+  const pasDansLaPage = panneau !== null && ouvert === null;
   const ordreLu =
     tri === "sessions"
       ? "par sessions touchées (inconnues en dernier), puis visiteurs, puis occurrences"
@@ -311,6 +353,12 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
       <ErrorNotices sampling={sampling} enrichment={enrichment} />
 
       {apercu}
+
+      {pasDansLaPage && (
+        <p role="note" className="mb-3 text-xs text-ink-soft" data-testid="panneau-hors-page">
+          {ligneIgnoree("panel", url.get("panel") ?? "", "ce groupe n'est pas sur la page affichée de la liste")}
+        </p>
+      )}
 
       <h2 id="groupes-erreurs" className="mb-2 text-sm font-semibold text-ink">
         Groupes ({totalListe.toLocaleString("fr-FR")}
@@ -376,11 +424,16 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
                   className={`border-t border-line/60 align-top transition hover:bg-panel2/60 ${dim ? "opacity-60" : ""}`}
                   data-testid={`error-group-${g.fingerprint}`}
                   data-app-id={g.app_id}
+                  data-ouvert={ouvert?.fingerprint === g.fingerprint ? "1" : undefined}
                 >
                   <td className="max-w-md px-4 py-3">
-                    {/* Un seul lien par ligne : une tabulation par groupe au clavier. */}
+                    {/* Un seul lien par ligne : une tabulation par groupe au clavier. Il
+                        ouvre le PANNEAU (F20, § 5.3.2) — qualifier sans quitter la liste ;
+                        « Ouvrir en page » est dans l'en-tête du panneau. */}
                     <Link
-                      href={errorGroupHref(g, f)}
+                      href={lienPanneau(g.fingerprint)}
+                      scroll={false}
+                      aria-current={ouvert?.fingerprint === g.fingerprint ? "true" : undefined}
                       className="block rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
                     >
                       <ErrorTypeBadge type={g.error_type} />
@@ -462,6 +515,37 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
 
       {/* Répartition après la liste (§ 5.3.1, zone 5). */}
       {decoupage && <div className="mt-6">{decoupage}</div>}
+
+      {/* Panneau du groupe ouvert (F20, § 5.3.3) : blocs 1 à 5, sur la plage de l'écran. */}
+      {ouvert && (
+        <PanneauErreur
+          groupe={ouvert}
+          f={f}
+          filtres={ecran.filters}
+          range={range}
+          label={label}
+          bucketLabel={bucketLabel}
+          fermerHref={lienPanneau(null)}
+          pageHref={errorGroupHref(ouvert, f)}
+          precedentHref={
+            positionPanneau < 0 ? undefined : positionPanneau > 0 ? lienPanneau(groups[positionPanneau - 1].fingerprint) : null
+          }
+          suivantHref={
+            positionPanneau < 0
+              ? undefined
+              : positionPanneau < groups.length - 1
+                ? lienPanneau(groups[positionPanneau + 1].fingerprint)
+                : null
+          }
+          hrefValeur={(cle, valeur) =>
+            cle === "route"
+              ? errorsHref("/errors", f, ouvert.app_id, { ...vueEcran, route: valeur })
+              : cle === "release"
+                ? errorsHref("/errors", f, ouvert.app_id, { ...vueEcran, release: valeur })
+                : null
+          }
+        />
+      )}
     </div>
   );
 }

@@ -1193,3 +1193,154 @@ test.describe("F16 — Pages : tâches longues et ressources", () => {
     });
   }
 });
+
+test.describe("F20 — Détail d'erreur (panneau et page)", () => {
+  // Une app à ce bloc : trois sessions avec vue (la base de la part), un groupe
+  // « paiement » porté par deux d'entre elles sur deux releases, dont une session
+  // avec un rejeu enregistré, et un groupe backend sans session (sessions touchées
+  // INCONNUES, jamais 0).
+  const APP = "f20-e2e-detail";
+  const FP = "f20fp-paiement";
+  const FP_BACKEND = "f20fp-backend";
+  const SESSION_REJEU = "f20-s1";
+
+  test.beforeAll(async () => {
+    for (const t of ["rum_error", "replay_chunk", "rum_pageview", "rum_session", "error_status"]) {
+      await pool.query(`delete from ${t} where app_id = $1`, [APP]);
+    }
+    await pool.query(`insert into app_registry (app_id, name) values ($1, $2) on conflict (app_id) do nothing`, [
+      APP,
+      "F20 détail d'erreur",
+    ]);
+    for (const [i, sid] of [SESSION_REJEU, "f20-s2", "f20-s3"].entries()) {
+      const quand = `now() - interval '${30 + i * 10} minutes'`;
+      await pool.query(
+        `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at,
+                                  page_count, sample_rate, error_sample_rate)
+         values ($1, $2, $1, 'desktop', false, ${quand}, ${quand}, 1, 1, 1)`,
+        [sid, APP],
+      );
+      await pool.query(
+        `insert into rum_pageview (span_id, session_id, app_id, route, url, nav_type, started_at)
+         values ($1, $2, $3, '/panier', 'https://site.example/panier', 'navigate', ${quand})`,
+        [`${sid}-pv`, sid, APP],
+      );
+    }
+    // Le rejeu est un CHUNK, pas un drapeau : le lien n'existe que s'il y a de quoi rejouer.
+    await pool.query(
+      `insert into replay_chunk (session_id, app_id, seq, events_count, body) values ($1, $2, 0, 1, $3)`,
+      [SESSION_REJEU, APP, Buffer.from("{}")],
+    );
+    // Le groupe « paiement » : deux sessions sur trois, deux releases, une route.
+    const erreurs: [string, string | null, string | null, number, number][] = [
+      [FP, SESSION_REJEU, "1.4.2", 12, 30],
+      [FP, "f20-s2", "1.5.0", 5, 20],
+      [FP_BACKEND, null, null, 3, 25],
+    ];
+    let n = 0;
+    for (const [fp, sid, release, occ, ilYA] of erreurs) {
+      await pool.query(
+        `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type,
+                                fingerprint, occurrences, release, error_source, ts)
+         values ($1, $2, $3, '/panier', 'error', $4, 'Error', $5, $6, $7, 'browser_js',
+                 now() - interval '${ilYA} minutes')`,
+        [`f20-e-${n++}`, sid, APP, `Échec du paiement (${fp})`, fp, occ, release],
+      );
+    }
+  });
+
+  const panneau = (page: Page) => page.getByTestId("detail-panel");
+
+  test("la ligne de liste ouvre le PANNEAU : phrase d'impact avec son dénominateur, sans quitter la liste", async ({
+    page,
+  }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/errors?app=${APP}`);
+    await page.locator(`[data-testid="error-group-${FP}"] a`).first().click();
+    await expect(page).toHaveURL(new RegExp(`panel=error%3A${FP}`));
+    // La liste reste affichée derrière : on qualifie sans la quitter.
+    await expect(page.locator("#groupes-erreurs")).toHaveCount(1);
+    const p = panneau(page);
+    await expect(p).toHaveAttribute("data-type", "error");
+    // « N occurrences … touchant S sessions et V visiteurs ; x % des T sessions avec au moins une vue »
+    const impact = p.getByTestId("phrase-impact");
+    await expect(impact).toContainText("17 occurrences");
+    await expect(impact).toContainText("2 sessions");
+    await expect(impact).toContainText("sessions avec au moins une vue");
+    // Le dénominateur est NOMMÉ et écrit : 2 sessions touchées sur 3 avec vue.
+    await expect(impact).toContainText("3 sessions avec au moins une vue");
+    await expect(p.getByTestId("detail-occurrences")).toHaveText("17");
+    await expect(p.getByTestId("detail-sessions")).toHaveText("2");
+  });
+
+  test("panneau : versions touchées, et « Ouvrir en page » mène au détail complet", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/errors?app=${APP}&panel=error%3A${FP}`);
+    const p = panneau(page);
+    await expect(p.getByTestId("premiere-release")).toContainText("1.4.2");
+    await expect(p.getByTestId("derniere-release")).toContainText("1.5.0");
+    await p.getByTestId("detail-panel-page").click();
+    await expect(page).toHaveURL(new RegExp(`/errors/${FP}\\?app=${APP}`));
+    await expect(page.getByTestId("phrase-impact")).toContainText("17 occurrences");
+    // Les blocs 6 à 8 ne sont QUE sur la page.
+    await expect(page.getByTestId("error-triage")).toHaveCount(1);
+  });
+
+  test("« Voir le rejeu » mène à la session, positionnée à l'instant de l'erreur", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/errors/${FP}?app=${APP}`);
+    const rejeu = page.getByTestId("voir-le-rejeu");
+    await expect(rejeu).toHaveAttribute("href", new RegExp(`/sessions/${SESSION_REJEU}\\?app=${APP}&tab=replay&at=\\d+`));
+  });
+
+  test("aucun rejeu : pas de bouton mort, une phrase qui le dit", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/errors/${FP_BACKEND}?app=${APP}`);
+    await expect(page.getByTestId("voir-le-rejeu")).toHaveCount(0);
+    await expect(page.getByTestId("rejeu-absent")).toContainText("Aucune occurrence de la fenêtre n'a de rejeu");
+    // Erreur backend : sessions touchées INCONNUES, jamais 0 (V3).
+    await expect(page.getByTestId("detail-sessions")).toHaveText("—");
+    await expect(page.getByTestId("phrase-impact")).toContainText("Inconnu");
+    // Aucune release déclarée : dit, jamais une version devinée.
+    await expect(page.getByTestId("versions-touchees")).toContainText("Release non déclarée");
+  });
+
+  test("bloc 5 avant B3 : aucune barre de base, la raison et le « pas de test » chiffré", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/errors/${FP}?app=${APP}`);
+    const commun = page.locator("#detail-erreur-commun");
+    await commun.scrollIntoViewIfNeeded();
+    await expect(commun.getByTestId("contrast-bars")).toHaveAttribute("data-etat", "indisponible");
+    await expect(commun).toContainText("base de comparaison non lue (B3)");
+    // P*.6 : le test est PUBLIÉ à l'état « pas de test », avec ses volumes minimaux.
+    await expect(commun.getByTestId("commun-pas-de-test")).toContainText("pas de test : 2 sessions touchées, 10 requises");
+    await expect(commun.getByTestId("commun-pas-de-test")).toContainText("Fisher");
+    await expect(commun.getByTestId("commun-pas-de-test")).toContainText("Benjamini-Hochberg");
+    // Le repli dit ce qu'il compte vraiment : les occurrences AFFICHÉES.
+    await expect(commun.getByTestId("commun-titre-repli")).toContainText("pas de la population");
+    await expect(commun.getByTestId("repli-release")).toContainText("1.4.2");
+  });
+
+  test("empreinte inconnue : page « introuvable » en français, avec le retour à la liste", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/errors/f20fp-inexistante?app=${APP}`);
+    await expect(page.getByText("Groupe introuvable", { exact: false }).first()).toBeVisible();
+    await expect(page.getByText("purgé par la rétention", { exact: false })).toBeVisible();
+    // Plus de 404 anglais : aucune trace de « This page could not be found ».
+    await expect(page.locator("body")).not.toContainText("could not be found");
+    await expect(page.getByRole("link", { name: "← Tous les groupes" })).toBeVisible();
+  });
+
+  for (const largeur of LARGEURS) {
+    test(`aucun débordement du détail et du panneau à ${largeur} px`, async ({ page }) => {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await login(page);
+      await page.goto(`${consoleUrl}/errors/${FP}?app=${APP}`);
+      await expect(page.getByTestId("phrase-impact")).toBeVisible();
+      expect(await debordements(page)).toEqual([]);
+      await page.goto(`${consoleUrl}/errors?app=${APP}&panel=error%3A${FP}`);
+      await expect(page.getByTestId("detail-panel")).toBeVisible();
+      expect(await debordements(page)).toEqual([]);
+    });
+  }
+});
