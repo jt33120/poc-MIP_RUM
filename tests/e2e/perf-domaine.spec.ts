@@ -189,7 +189,8 @@ test.describe("F14 — Pages : KPI, sélecteur de vital, hero classé", () => {
 // Données SYNTHÉTIQUES : un LCP très court (30 à 69 ms, comme la démo) — le plafond
 // d'affichage doit alors passer au p99 arrondi, sans quoi tout tomberait dans le premier
 // bac ; cinq phases réseau (pas de redirection : sa ligne reste « — ») ; sur
-// /f15-produit, 20 chargements et 20 changements de route SPA.
+// /f15-produit, une vue de chargement ET un changement de route SPA par session, soit
+// N_F15 (40) chargements, 40 SPA, 0 type inconnu, 80 vues.
 test.describe("F15 — Pages : distributions, percentiles, TTFB, type de navigation", () => {
   const APP_F15 = "f15-e2e-pages";
   const PAGES_F15 = `${consoleUrl}/pages?app=${APP_F15}&period=24h`;
@@ -288,7 +289,15 @@ test.describe("F15 — Pages : distributions, percentiles, TTFB, type de navigat
     await figure.getByText("Alternative textuelle").click();
     const lignes = figure.locator("table tbody tr");
     await expect(lignes.first()).toContainText("Ensemble");
-    await expect(figure.locator("table tr", { hasText: "/f15-produit" })).toContainText("20");
+    // Cellule par cellule (Chargements, SPA, Inconnu, Total) : un `toContainText` sur la
+    // ligne entière accepterait n'importe quel chiffre qui en contient un autre.
+    const n = String(N_F15);
+    await expect(figure.locator("table tbody tr", { hasText: "/f15-produit" }).locator("td")).toHaveText([
+      n,
+      n,
+      "0",
+      String(2 * N_F15),
+    ]);
   });
 
   test("sommaire d'ancres : chaque lien mène à une section de la page", async ({ page }) => {
