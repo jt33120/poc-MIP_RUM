@@ -62,6 +62,7 @@ import {
 } from "@/lib/analytics-schema";
 import {
   EXPLORER_PARAMS,
+  LIBELLES_REPRESENTATION,
   LIMITES,
   SERIES_MAX,
   datasetChoisi,
@@ -103,14 +104,9 @@ export const dynamic = "force-dynamic";
 /**
  * Libellés courts des onglets de représentation (§ 5.21.3, zone 5) : ils tiennent
  * sur une ligne à 390 px. Le libellé long (`VISUALIZATION_LABELS`) reste celui du
- * résumé et du titre du résultat.
+ * résumé et du titre du résultat. Les mêmes mots résument une vue enregistrée (F34).
  */
-const ONGLETS: Record<Visualization, string> = {
-  value: "Valeur",
-  toplist: "Classement",
-  timeseries: "Série",
-  table: "Journal",
-};
+const ONGLETS: Record<Visualization, string> = LIBELLES_REPRESENTATION;
 
 /**
  * W-E9 — la représentation « Distribution » n'est pas exposée par l'Explorer : elle

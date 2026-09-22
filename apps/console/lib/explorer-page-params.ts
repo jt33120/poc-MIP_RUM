@@ -397,24 +397,9 @@ export function pastillesRequete(
  * renommable et supprimable, elle n'est pas effacée en silence.
  */
 export function explorerHrefFromAst(ast: unknown): { ok: true; href: string } | { ok: false; reason: string } {
-  if (typeof ast !== "object" || ast === null || Array.isArray(ast)) {
-    return { ok: false, reason: "la requête enregistrée n’est pas un objet JSON" };
-  }
-  const source = ast as Record<string, unknown>;
-  const plan = parseExplorerPlan(
-    {
-      dataset: source.dataset,
-      measure: source.measure,
-      variant: source.variant ?? null,
-      visualization: source.visualization,
-      groupBy: source.groupBy,
-      limit: source.limit,
-    },
-    null,
-  );
-  if (!plan.ok) return { ok: false, reason: plan.error.message };
-  const conditions = parseAstFilters(source.filters);
-  if (!conditions.ok) return { ok: false, reason: conditions.error.message };
+  const lu = planDeLAst(ast);
+  if (!lu.ok) return lu;
+  const { source, plan, conditions } = lu;
 
   const params = new URLSearchParams();
   if (typeof source.app === "string" && source.app) params.set("app", source.app);
@@ -428,11 +413,11 @@ export function explorerHrefFromAst(ast: unknown): { ok: true; href: string } | 
       params.set("to", r.to);
     }
   }
-  const seg = serializeSegments(conditions.value);
+  const seg = serializeSegments(conditions);
   if (seg) params.set("seg", seg);
   if (source.includeBots === true) params.set("bots", "1");
   if (source.includeInternal === true) params.set("internal", "1");
-  for (const [nom, valeur] of Object.entries(explorerPlanParams(plan.value))) {
+  for (const [nom, valeur] of Object.entries(explorerPlanParams(plan))) {
     if (valeur !== null) params.set(nom, valeur);
   }
   return { ok: true, href: `/explorer?${params.toString()}` };
@@ -598,4 +583,82 @@ export function groupeHref(
   extra: Record<string, string | null> = {},
 ): string {
   return explorerHref({ ...query, filters: filtresDuGroupe(query.filters, plan.groupBy, key) }, plan, extra);
+}
+
+// ───────────────────────── F34 — vues enregistrées ─────────────────────────
+
+/**
+ * Libellés courts des représentations, ceux des onglets de l'Explorer (§ 5.21.3,
+ * zone 5) : ils tiennent sur une ligne à 390 px et se relisent dans le résumé
+ * d'une vue enregistrée.
+ */
+export const LIBELLES_REPRESENTATION: Record<Visualization, string> = {
+  value: "Valeur",
+  toplist: "Classement",
+  timeseries: "Série",
+  table: "Journal",
+};
+
+/**
+ * Lecture d'un AST enregistré (vue, P6.5) : le plan et les conditions, validés par
+ * le registre de l'Explorer — le MÊME parsing pour rouvrir une vue
+ * (`explorerHrefFromAst`) et pour la résumer (`resumeVue`). Un AST illisible rend
+ * la raison du registre, jamais une vue effacée en silence.
+ */
+function planDeLAst(
+  ast: unknown,
+):
+  | { ok: true; source: Record<string, unknown>; plan: ExplorerPlan; conditions: FilterCondition[] }
+  | { ok: false; reason: string } {
+  if (typeof ast !== "object" || ast === null || Array.isArray(ast)) {
+    return { ok: false, reason: "la requête enregistrée n’est pas un objet JSON" };
+  }
+  const source = ast as Record<string, unknown>;
+  const plan = parseExplorerPlan(
+    {
+      dataset: source.dataset,
+      measure: source.measure,
+      variant: source.variant ?? null,
+      visualization: source.visualization,
+      groupBy: source.groupBy,
+      limit: source.limit,
+    },
+    null,
+  );
+  if (!plan.ok) return { ok: false, reason: plan.error.message };
+  const conditions = parseAstFilters(source.filters);
+  if (!conditions.ok) return { ok: false, reason: conditions.error.message };
+  return { ok: true, source, plan: plan.value, conditions: conditions.value };
+}
+
+/**
+ * La mesure d'une vue, en mots : le champ, puis son agrégation quand le champ ne
+ * la dit pas déjà (« Valeur p75 », « Durée moyenne », « Occurrences (somme) » ; un
+ * compte ou des distincts se nomment par leur champ), puis la variante.
+ */
+function mesureDeVue(plan: ExplorerPlan): string {
+  const champ = fieldDefinition(plan.dataset, plan.measure.field);
+  const libelle = `${champ?.label ?? plan.measure.field}${plan.measure.property ? ` « ${plan.measure.property} »` : ""}`;
+  const suffixe = { p75: " p75", p95: " p95", avg: " moyenne", sum: "", count: "", distinct: "" }[plan.measure.aggregation];
+  const entre = [plan.measure.aggregation === "sum" ? "somme" : null, plan.variant].filter((x): x is string => !!x);
+  return `${libelle}${suffixe}${entre.length ? ` (${entre.join(", ")})` : ""}`;
+}
+
+/**
+ * W-V2 — « Ce qu'elle mesure » : le nom qu'un utilisateur donne à sa vue ne dit
+ * pas la mesure. « <Jeu> · <Mesure> <agrégation> · <représentation>[ · par <dim>] »,
+ * par exemple « Web Vitals · Valeur p75 (LCP) · Classement · par Route ». Même
+ * lecture que la réouverture : un AST illisible rend la raison du registre.
+ */
+export function resumeVue(ast: unknown): { ok: true; texte: string } | { ok: false; raison: string } {
+  const lu = planDeLAst(ast);
+  if (!lu.ok) return { ok: false, raison: lu.reason };
+  const { plan } = lu;
+  const morceaux = [
+    datasetDefinition(plan.dataset).label,
+    mesureDeVue(plan),
+    LIBELLES_REPRESENTATION[plan.visualization],
+  ];
+  if (plan.groupBy.length) morceaux.push(`par ${plan.groupBy.map((d) => DIMENSION_LABELS[d]).join(" puis ")}`);
+  return { ok: true, texte: morceaux.join(" · ") };
 }

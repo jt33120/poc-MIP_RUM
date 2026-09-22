@@ -14,6 +14,7 @@
 import { execFileSync } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
+import { createHmac as f34Hmac } from "node:crypto";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum",
@@ -362,5 +363,127 @@ test.describe("F32 — représentations du résultat", () => {
         expect(await deborde(page), `débordement horizontal à ${width} px (${suite})`).toBe(false);
       }
     }
+  });
+});
+
+// F34 — vues enregistrées (plan § 5.22, W-V1 à W-V3). Les vues sont écrites en base
+// (le chemin Explorer → « Enregistrer la vue » est couvert par dashboards-analytics) :
+// ce bloc éprouve la LISTE — ce qu'elle dit de chaque vue, ce qu'elle laisse faire.
+test.describe("F34 — vues enregistrées", () => {
+  const VUE_F34 = "F34 vue recette";
+  const VUE_ILLISIBLE = "F34 vue illisible";
+  const VUE_DEMO = "F34 vue démo";
+  const DEMO_EMAIL = "e2e-vues-demo@mip-rum.local";
+  const AST_F34 = {
+    version: 1,
+    app: "demo-app",
+    range: { preset: "24h" },
+    dataset: "vitals",
+    measure: { aggregation: "p75", field: "value" },
+    variant: "LCP",
+    filters: [],
+    groupBy: ["route"],
+    visualization: "toplist",
+    limit: 10,
+  };
+
+  async function menageF34() {
+    await pool.query(`delete from analytics_saved_view where name like 'F34 %'`);
+  }
+
+  async function vueDe(email: string, nom: string, ast: object) {
+    await pool.query(
+      `insert into analytics_saved_view (app_id, owner_id, name, query_json)
+       select 'demo-app', id, $2, $3::jsonb from console_user where email = $1`,
+      [email, nom, JSON.stringify(ast)],
+    );
+  }
+
+  test.beforeAll(async () => {
+    await menageF34();
+    // Le compte démo est un VIEWER de demo-app qui possède une vue : sans la garde
+    // V9, ses boutons « Renommer » et « Supprimer… » seraient rendus.
+    await pool.query(
+      `insert into console_user (email, password_hash, role, apps, active)
+       values ($1, $2, 'viewer', array['demo-app'], true)
+       on conflict (email) do update set role = 'viewer', apps = array['demo-app'], active = true`,
+      [DEMO_EMAIL, bcryptHash(`mdp-local-${DEMO_EMAIL}`)],
+    );
+    await vueDe(E2E_EMAIL, VUE_F34, AST_F34);
+    await vueDe(E2E_EMAIL, VUE_ILLISIBLE, { version: 1, app: "demo-app", dataset: "inexistant" });
+    await vueDe(DEMO_EMAIL, VUE_DEMO, AST_F34);
+  });
+
+  test.afterAll(async () => {
+    await menageF34();
+    await pool.query(`delete from console_user where email = $1`, [DEMO_EMAIL]);
+  });
+
+  test("la liste dit ce que mesure chaque vue, et les modèles fournis sont en lecture seule", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/explorer/views?app=demo-app`);
+    await expect(page.getByRole("columnheader", { name: "Ce qu’elle mesure" })).toBeVisible({ timeout: 15_000 });
+
+    const ligne = page.getByRole("row", { name: new RegExp(VUE_F34) });
+    await expect(ligne.getByTestId("vue-mesure")).toHaveText("Web Vitals · Valeur p75 (LCP) · Classement · par Route");
+    // Une vue illisible reste listée, avec sa raison, sans lien d'ouverture.
+    const illisible = page.getByRole("row", { name: new RegExp(VUE_ILLISIBLE) });
+    await expect(illisible.getByTestId("vue-mesure")).toContainText("Requête illisible");
+    await expect(illisible.getByRole("link", { name: VUE_ILLISIBLE })).toHaveCount(0);
+
+    // W-V1 : six analyses fournies, des liens vers l'Explorer exécuté, aucune suppression.
+    const modeles = page.getByTestId("vues-modeles");
+    await expect(modeles).toContainText("fourni");
+    await expect(modeles.getByRole("link")).toHaveCount(6);
+    await expect(modeles.getByText(/Supprimer/)).toHaveCount(0);
+    for (const href of await modeles.getByRole("link").evaluateAll((els) => els.map((e) => e.getAttribute("href") ?? ""))) {
+      expect(new URL(href, consoleUrl).searchParams.get("run"), href).toBe("1");
+    }
+
+    // W-V3 : supprimer passe par une confirmation.
+    await ligne.getByTestId("vue-supprimer").locator("summary").click();
+    await expect(page.getByRole("button", { name: `Confirmer la suppression de ${VUE_F34}` })).toBeVisible();
+  });
+
+  test("session de démonstration : aucun bouton d'écriture (V9)", async ({ page }) => {
+    // Jeton de session au format de `signJwt` (lib/auth.ts), `demo: true`. Le secret
+    // est celui de la console de test (playwright.config.ts), à défaut celui de dev.
+    const jeton = (secret: string) => {
+      const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
+      const maintenant = Math.floor(Date.now() / 1000);
+      const corps = `${b64({ alg: "HS256" })}.${b64({
+        email: DEMO_EMAIL,
+        role: "viewer",
+        apps: ["demo-app"],
+        demo: true,
+        iat: maintenant,
+        exp: maintenant + 3600,
+      })}`;
+      return `${corps}.${f34Hmac("sha256", secret).update(corps).digest("base64url")}`;
+    };
+    const secrets = [process.env.E2E_AUTH_SECRET, "e2e-secret-local-jetable-non-production", "dev-secret-mip-rum"].filter(
+      (s): s is string => !!s,
+    );
+    let connecte = false;
+    for (const secret of secrets) {
+      await page.context().clearCookies();
+      await page.context().addCookies([
+        { name: "mip_session", value: jeton(secret), url: consoleUrl },
+        { name: "mip-project", value: "demo-app", url: consoleUrl },
+      ]);
+      await page.goto(`${consoleUrl}/explorer/views?app=demo-app`);
+      if (new URL(page.url()).pathname !== "/login") {
+        connecte = true;
+        break;
+      }
+    }
+    expect(connecte, "aucun secret de session connu n'est accepté par la console (AUTH_SECRET)").toBe(true);
+
+    const ligne = page.getByRole("row", { name: new RegExp(VUE_DEMO) });
+    await expect(ligne).toBeVisible({ timeout: 15_000 });
+    await expect(ligne.getByTestId("vue-lecture-seule")).toHaveText("Session de démonstration : lecture seule.");
+    await expect(page.getByRole("button", { name: "Renommer" })).toHaveCount(0);
+    await expect(page.getByText("Supprimer…")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Confirmer la suppression/ })).toHaveCount(0);
   });
 });
