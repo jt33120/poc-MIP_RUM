@@ -105,6 +105,14 @@ export function sparklineDeCompte(
   return somme === valeur ? seaux : null;
 }
 
+// ─────────────── F13 — `choisirRelB` : le nom du plan (§ 4.4), la règle de F08 ───────────────
+// Reliquat de l'écart 8 de F10 : `lib/presets.ts` (F08) porte la règle du § 3.2 (CP3) sous
+// le nom `choisirReleases`. Réexportée ici sous le nom du registre du plan. Elle rend la
+// PAIRE (B, A) et la règle appliquée, pas `rel_b` seul : une règle écrite sous le titre
+// d'une comparaison nomme les deux releases (« 1.4.2 : dernier déploiement déclaré ;
+// 1.4.1 : déploiement précédent »).
+export { choisirReleases as choisirRelB } from "./presets";
+
 // ─────────────────────── F25 — Journal : colonnes promues ───────────────────────
 //
 // « Clés communes promues en colonnes » (§ 5.23.2) : une clé d'attribut présente

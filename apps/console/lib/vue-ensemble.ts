@@ -2,8 +2,10 @@
 // (tests/unit/vue-ensemble.test.ts), sans accès base. L'écran lit, ce module décide
 // ce qu'il a le droit d'en écrire : la référence d'un écart, le sous-texte du ratio
 // d'erreurs, et les constats automatiques à règle publiée.
+import type { ImpactLigne } from "@/components/ImpactTable";
 import type { Constat } from "@/components/InsightStrip";
 import { formater } from "./fmt-ids";
+import { classerParGravite, ecartALaReference, estFaible } from "./impact";
 import type { AnomalyRow } from "./health";
 import type { AlertFiringRow } from "./queries-v2";
 import { verdictDeploiement, type DeployImpact } from "./queries-deploys";
@@ -220,6 +222,106 @@ export function pointsCharge(
 /** Somme d'une série lue ; `null` si la série n'a pas été lue (une case `null`). */
 export function sommeLue(valeurs: readonly (number | null)[]): number | null {
   return valeurs.some((v) => v === null) ? null : valeurs.reduce<number>((a, b) => a + (b ?? 0), 0);
+}
+
+// ─────────────────────── Segments les plus dégradés (F13, zone 7) ───────────────────────
+
+/** Vitals que le découpage lit (`vitalsBreakdown` ne porte que LCP, INP, CLS : CP2). */
+export const VITAUX_DECOUPES = ["LCP", "INP", "CLS"] as const;
+export type VitalDecoupe = (typeof VITAUX_DECOUPES)[number];
+
+export function estVitalDecoupe(v: string | null | undefined): v is VitalDecoupe {
+  return (VITAUX_DECOUPES as readonly string[]).includes(v ?? "");
+}
+
+/** Une ligne de `vitalsBreakdown` : les trois p75 et leurs effectifs. */
+export interface LigneDecoupage {
+  valeur: string | null;
+  samples: number;
+  lcp_p75: number | null;
+  inp_p75: number | null;
+  cls_p75: number | null;
+  lcp_n: number;
+  inp_n: number;
+  cls_n: number;
+}
+
+const P75: Record<VitalDecoupe, "lcp_p75" | "inp_p75" | "cls_p75"> = { LCP: "lcp_p75", INP: "inp_p75", CLS: "cls_p75" };
+const N: Record<VitalDecoupe, "lcp_n" | "inp_n" | "cls_n"> = { LCP: "lcp_n", INP: "inp_n", CLS: "cls_n" };
+
+/** « +1,2 s vs ensemble », « −0,012 vs ensemble » : un écart de p75, jamais une contribution. */
+function texteEcart(vital: VitalDecoupe, ecart: number): string {
+  const signe = ecart > 0 ? "+" : ecart < 0 ? "−" : "±";
+  const format = vital === "CLS" ? "cls" : "ms";
+  return `${signe}${formater(format, Math.abs(ecart))} vs ensemble`;
+}
+
+/**
+ * Lignes de l'`ImpactTable` « Segments les plus dégradés » (§ 5.1.2), CLASSÉES
+ * côté serveur (P3) : pilote = p75 du vital choisi (`vital=`, défaut LCP), effectif
+ * = ses mesures (une ligne sous 30 mesures passe en fin, « échantillon faible »),
+ * écart de p75 à l'ensemble ; les trois p75 en colonnes, verdict posé sur chacun
+ * (un p75 de vital, R-V). « Inconnu » est un groupe à part, jamais versé ailleurs.
+ */
+export function lignesSegments(
+  rows: readonly LigneDecoupage[],
+  opts: {
+    vital: VitalDecoupe;
+    tri: "gravite" | "volume";
+    /** p75 du vital piloté sur toute la population filtrée (`vitalsP75`). */
+    ensemble: number | null;
+    libelle: (valeur: string | null) => string;
+    lien: (valeur: string | null) => string | null;
+    description: (valeur: string | null, mesures: number) => string;
+  },
+): { lignes: ImpactLigne[]; faibles: number } {
+  const pilote = (r: LigneDecoupage) => r[P75[opts.vital]];
+  const effectif = (r: LigneDecoupage) => r[N[opts.vital]];
+  const { lignes, faibles } = classerParGravite(rows, { tri: opts.tri, pilote, effectif, volume: effectif });
+  const cle = (v: string | null) => (v === null ? " inconnu" : `v:${v}`);
+  return {
+    faibles,
+    lignes: lignes.map((r) => {
+      const ecart = ecartALaReference(pilote(r), opts.ensemble);
+      const mesure = (v: VitalDecoupe) => ({
+        cle: v.toLowerCase(),
+        valeur: r[P75[v]],
+        affichage: formater(v === "CLS" ? "cls" : "ms", r[P75[v]]),
+        vital: v,
+        n: r[N[v]],
+      });
+      return {
+        cle: cle(r.valeur),
+        libelle: opts.libelle(r.valeur),
+        href: opts.lien(r.valeur),
+        description: opts.description(r.valeur, effectif(r)),
+        pilote: pilote(r),
+        volume: effectif(r),
+        mesures: VITAUX_DECOUPES.map(mesure),
+        ...(opts.ensemble == null ? {} : { ecart: { valeur: ecart, affichage: ecart == null ? "—" : texteEcart(opts.vital, ecart) } }),
+        echantillonFaible: estFaible(effectif(r)),
+      };
+    }),
+  };
+}
+
+// ─────────────────────── Heures × route en angle mort (F13, zone 6) ───────────────────────
+
+/**
+ * Compte EXACT des heures × route en angle mort (§ 5.1.2, CR9) : le robot dit « ok »
+ * et le LCP p75 réel de la même heure est au-delà de la borne Bon (À améliorer ou
+ * Mauvais). Lu dans la matrice de `correlationConcordance` (F57), jamais dans
+ * `blindSpots`, plafonné à 50 lignes (CP13).
+ */
+export function heuresAngleMort(cellules: readonly { robot: string; reel: string; heures: number }[]): number {
+  return cellules
+    .filter((c) => c.robot === "ok" && (c.reel === "needs-improvement" || c.reel === "poor"))
+    .reduce((total, c) => total + c.heures, 0);
+}
+
+/** La règle d'un angle mort, écrite avec la borne de `lib/rating.ts` (jamais recopiée). */
+export function regleAngleMort(borneBon: number): string {
+  return `Robot à l'état ok ET LCP p75 réel au-dessus de ${formater("ms", borneBon)} (borne Bon de lib/rating.ts) sur la même heure et la même route.`;
 }
 
 // ─────────────────────────────── Constats (§ 5.1.2, zone 4) ───────────────────────────────

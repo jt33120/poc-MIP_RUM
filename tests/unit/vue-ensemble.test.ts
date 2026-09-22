@@ -328,3 +328,88 @@ describe("F12 — points des séries de la Vue d'ensemble", () => {
     expect(sommeLue([0, 3, 0])).toBe(3);
   });
 });
+
+// ─────────────── F13 — segments, angle mort ───────────────
+import { THRESHOLDS } from "../../apps/console/lib/rating";
+import { formater } from "../../apps/console/lib/fmt-ids";
+import { estVitalDecoupe, heuresAngleMort, lignesSegments, regleAngleMort } from "../../apps/console/lib/vue-ensemble";
+
+describe("F13 — segments les plus dégradés (P3)", () => {
+  const ligne = (valeur: string | null, lcp: number | null, lcp_n: number, inp: number | null = 200, inp_n = lcp_n) => ({
+    valeur,
+    samples: lcp_n + inp_n,
+    lcp_p75: lcp,
+    inp_p75: inp,
+    cls_p75: 0.05,
+    lcp_n,
+    inp_n,
+    cls_n: lcp_n,
+  });
+  const rows = [
+    ligne("/rapide-massive", 1500, 400),
+    ligne("/lente-rare", 7000, 12),
+    ligne("/lente-frequente", 4500, 40),
+    ligne(null, null, 0),
+  ];
+  const opts = {
+    vital: "LCP" as const,
+    tri: "gravite" as const,
+    ensemble: 2000,
+    libelle: (v: string | null) => v ?? "Inconnu",
+    lien: (v: string | null) => (v ? `/pages?panel=route%3A${encodeURIComponent(v)}` : "/pages?seg=v2%3Aroute%3Ais_null"),
+    description: (v: string | null, n: number) => `Route ${v ?? "Inconnu"} — ${n} mesure(s) LCP`,
+  };
+
+  it("gravité : une ligne n = 12 passe après une ligne n = 400, quelle que soit sa p75 ; sans pilote en dernier", () => {
+    const { lignes, faibles } = lignesSegments(rows, opts);
+    expect(lignes.map((l) => l.libelle)).toEqual(["/lente-frequente", "/rapide-massive", "/lente-rare", "Inconnu"]);
+    expect(lignes[2].echantillonFaible).toBe(true);
+    expect(faibles).toBe(2);
+  });
+
+  it("tri=volume : l'ordre du volume (mesures du vital piloté)", () => {
+    const { lignes } = lignesSegments(rows, { ...opts, tri: "volume" });
+    expect(lignes.map((l) => l.libelle)).toEqual(["/rapide-massive", "/lente-frequente", "/lente-rare", "Inconnu"]);
+  });
+
+  it("écart de p75 à l'ensemble (jamais une contribution) ; trois p75 en colonnes, verdict posé sur chacun", () => {
+    const [premiere] = lignesSegments(rows, opts).lignes;
+    expect(espaces(premiere.ecart?.affichage ?? "")).toBe("+2,5 s vs ensemble");
+    expect(premiere.mesures.map((m) => [m.cle, m.vital])).toEqual([
+      ["lcp", "LCP"],
+      ["inp", "INP"],
+      ["cls", "CLS"],
+    ]);
+    expect(premiere.href).toBe("/pages?panel=route%3A%2Flente-frequente");
+  });
+
+  it("pilote INP : le p75 et l'effectif de l'INP classent", () => {
+    const parInp = [ligne("/a", 1000, 100, 150, 100), ligne("/b", 1000, 100, 600, 100)];
+    expect(lignesSegments(parInp, { ...opts, vital: "INP", ensemble: null }).lignes.map((l) => l.libelle)).toEqual(["/b", "/a"]);
+  });
+
+  it("FCP et TTFB ne sont pas découpés (CP2)", () => {
+    expect(estVitalDecoupe("LCP")).toBe(true);
+    expect(estVitalDecoupe("FCP")).toBe(false);
+    expect(estVitalDecoupe("TTFB")).toBe(false);
+  });
+});
+
+describe("F13 — heures × route en angle mort (CR9)", () => {
+  const cellules = (okAmeliorer: number, okMauvais = 0) => [
+    { robot: "ok", reel: "good", heures: 7 },
+    { robot: "ok", reel: "needs-improvement", heures: okAmeliorer },
+    { robot: "ok", reel: "poor", heures: okMauvais },
+    { robot: "incident", reel: "poor", heures: 5 },
+    { robot: "warn", reel: "needs-improvement", heures: 3 },
+  ];
+
+  it("60 heures robot ok × LCP À améliorer → 60, les autres cases n'entrent pas", () => {
+    expect(heuresAngleMort(cellules(60))).toBe(60);
+    expect(heuresAngleMort(cellules(2, 1))).toBe(3);
+  });
+
+  it("la règle cite la borne Bon de lib/rating.ts, formatée, jamais recopiée", () => {
+    expect(regleAngleMort(THRESHOLDS.LCP[0])).toContain(formater("ms", THRESHOLDS.LCP[0]));
+  });
+});
