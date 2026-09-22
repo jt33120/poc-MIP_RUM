@@ -282,7 +282,8 @@ test("trace et session étrangères : invisibles depuis l'app A", async ({ page 
 
   // La même trace, demandée dans son app, existe bien : le 404 vient du périmètre.
   await page.goto(`${CONSOLE}/tracing/${T2}?app=${B}`);
-  await expect(page.getByText("GET /api/cart-b")).toBeVisible();
+  // Une ligne de la cascade (F07) : le libellé figure aussi dans son alternative textuelle, repliée.
+  await expect(page.getByTestId("cascade-element").filter({ hasText: "GET /api/cart-b" })).toBeVisible();
 
   await page.goto(`${CONSOLE}/tracing/${T1}?app=${A}&span=bbbbbbbbbbbbbbb1`);
   await expect(page.getByTestId("trace-span-state")).toHaveAttribute("data-span-state", "missing");

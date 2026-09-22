@@ -1,11 +1,19 @@
-// Détail d'une trace — waterfall « douleur utilisateur → cause backend » (Voie A).
+// Détail d'une trace — cascade « douleur utilisateur → cause backend » (Voie A).
 // Reconstitue la chronologie complète d'un appel : span front (navigateur) →
 // span back (serveur) → spans internes (requêtes DB, sous-appels) captés par
-// l'auto-instrumentation OTel. Chaque barre est positionnée par son offset réel
+// l'auto-instrumentation OTel. Chaque segment est positionné par son offset réel
 // (rum_span.ts = début de span) et sa durée. Rendu 100 % serveur.
+//
+// F07 : la cascade n'est plus dessinée à la main ici, elle est rendue par
+// `Cascade` (components/charts/Cascade.tsx), le composant partagé avec les vues et
+// les sessions — preuve de sa réutilisation. Deux changements de lecture (§ 5.9,
+// TD2) : la COULEUR dit la sévérité (5xx = erreur, 4xx = à surveiller) et non plus
+// le niveau ; le niveau devient une PISTE, écrite sous chaque segment.
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
+import { Cascade, texteDuree, type ElementCascade, type PisteCascade, type TonCascade } from "@/components/charts/Cascade";
+import { Figure } from "@/components/charts/Figure";
 import { fmtMs } from "@/components/tracing/format";
 import { getUser } from "@/lib/auth";
 import { traceSpans, type TraceSpanRow } from "@/lib/queries-tracing";
@@ -13,18 +21,36 @@ import { authorizedAppsOf } from "@/lib/query-contract";
 
 export const dynamic = "force-dynamic";
 
-const TIER_DEPTH: Record<string, number> = { front: 0, back: 1, detail: 2 };
+/** Les pistes d'une trace, dans l'ordre du trajet d'un appel (§ 5.9, TD2). */
+const PISTES_TRACE: PisteCascade[] = [
+  { cle: "navigateur", libelle: "Navigateur" },
+  { cle: "serveur", libelle: "Serveur" },
+  { cle: "base", libelle: "Base de données" },
+  { cle: "interne", libelle: "Interne" },
+];
 
-/** Couleur de barre selon le niveau : bleu front · orange serveur · violet DB. */
-function barColor(s: TraceSpanRow): string {
-  if (s.tier === "front") return "bg-perf";
-  if (s.tier === "back") return "bg-accent";
-  return s.kind === "db" ? "bg-ai" : "bg-ink-faint";
+function pisteDe(s: TraceSpanRow): string {
+  if (s.tier === "front") return "navigateur";
+  if (s.tier === "back") return "serveur";
+  return s.kind === "db" ? "base" : "interne";
 }
+
 function tierLabel(s: TraceSpanRow): string {
   if (s.tier === "front") return "navigateur";
   if (s.tier === "back") return "serveur";
   return s.kind === "db" ? "base de données" : "interne";
+}
+
+/**
+ * Sévérité d'un segment d'après son statut HTTP (TD2) : 5xx = erreur, 4xx = à
+ * surveiller, le reste sans alerte. Aucun segment n'est « bon » ou « mauvais » par
+ * sa DURÉE : une durée de span n'a pas de seuil publié (R-S).
+ */
+function tonDe(statut: number | null): TonCascade {
+  if (statut == null) return "neutre";
+  if (statut >= 500) return "erreur";
+  if (statut >= 400) return "warn";
+  return "neutre";
 }
 
 const SPAN_ID = /^[0-9a-f]{16}$/i;
@@ -66,15 +92,7 @@ export default async function TraceDetail({
   const spans = await traceSpans(traceId, { apps: traceApps(first(sp.app), authorizedAppsOf(user)) });
   if (spans.length === 0) notFound();
 
-  // profondeur : chaîne de parents si connue, sinon repli par tier
   const byId = new Map(spans.map((s) => [s.span_id, s]));
-  const depthOf = (s: TraceSpanRow, seen = new Set<string>()): number => {
-    if (s.parent_span_id && byId.has(s.parent_span_id) && !seen.has(s.span_id)) {
-      seen.add(s.span_id);
-      return 1 + depthOf(byId.get(s.parent_span_id)!, seen);
-    }
-    return TIER_DEPTH[s.tier] ?? 0;
-  };
 
   // fenêtre temporelle de la trace (offsets relatifs au 1er span)
   const starts = spans.map((s) => new Date(s.ts).getTime());
@@ -82,9 +100,10 @@ export default async function TraceDetail({
   const t0 = Math.min(...starts);
   const total = Math.max(Math.max(...ends) - t0, 1);
 
-  // ?span : le span parent d'une erreur (P5.1). Mis en évidence seulement s'il est
-  // parmi les spans affichés ; sinon on le dit, plutôt que de laisser croire que
-  // la trace ne contient pas le contexte attendu.
+  // ?span : le span parent d'une erreur (P5.1), ou le segment cliqué dans la
+  // cascade. Mis en évidence seulement s'il est parmi les spans affichés ; sinon on
+  // le dit, plutôt que de laisser croire que la trace ne contient pas le contexte
+  // attendu.
   const spanParam = first(sp.span);
   const wantedSpan = spanParam && SPAN_ID.test(spanParam) ? spanParam.toLowerCase() : null;
   const highlighted = wantedSpan && byId.has(wantedSpan) ? wantedSpan : null;
@@ -94,6 +113,26 @@ export default async function TraceDetail({
   const sessionSpan = spans.find((s) => s.session_id);
   const hasBackend = spans.some((s) => s.tier === "back" || s.tier === "detail");
   const rootMs = front?.duration_ms ?? total;
+
+  // Un clic sur un segment le désigne par `?span=` ; l'app demandée suit (périmètre).
+  const lienSegment = (spanId: string) => {
+    const q = new URLSearchParams();
+    const app = first(sp.app);
+    if (app) q.set("app", app);
+    q.set("span", spanId);
+    return `/tracing/${encodeURIComponent(traceId)}?${q}`;
+  };
+  const elements: ElementCascade[] = spans.map((s, i) => ({
+    id: s.span_id,
+    piste: pisteDe(s),
+    libelle: s.name ?? tierLabel(s),
+    debutMs: starts[i] - t0,
+    dureeMs: s.duration_ms,
+    ton: tonDe(s.status_code),
+    parentId: s.parent_span_id,
+    href: lienSegment(s.span_id),
+    detail: s.status_code != null ? `HTTP ${s.status_code}` : undefined,
+  }));
 
   return (
     <div className="animate-fade-up">
@@ -159,71 +198,39 @@ export default async function TraceDetail({
           data-testid="trace-span-state"
           data-span-state={spanState}
           className={`mb-5 rounded-lg border px-4 py-3 text-sm ${
-            spanState === "found" ? "border-accent/40 bg-accent/10 text-ink" : "border-warn/40 bg-warn/10 text-ink-soft"
+            spanState === "found" ? "border-perf/40 bg-perf/10 text-ink" : "border-warn/40 bg-warn/10 text-ink-soft"
           }`}
         >
+          {/* Le segment se désigne depuis une erreur (span parent) OU d'un clic dans la
+              cascade : le texte ne présume plus d'où vient la demande. */}
           {spanState === "found"
-            ? "Span parent de l'erreur mis en évidence dans la chronologie."
+            ? "Segment demandé mis en évidence dans la chronologie."
             : "Span parent introuvable dans cette trace"}
         </p>
       )}
 
-      {/* waterfall */}
-      <div className="card overflow-hidden">
-        <div className="flex items-center gap-4 border-b border-line px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-          <span className="w-[38%] min-w-0">Span</span>
-          <span className="flex-1">Chronologie</span>
-          <span className="w-16 text-right">Durée</span>
-        </div>
-        <ul>
-          {spans.map((s, i) => {
-            const leftPct = ((starts[i] - t0) / total) * 100;
-            const widthPct = Math.max((s.duration_ms / total) * 100, 0.6);
-            const depth = Math.min(depthOf(s), 5);
-            return (
-              <li
-                key={s.span_id}
-                aria-current={s.span_id === highlighted ? "true" : undefined}
-                className={`flex items-center gap-4 border-t border-line/60 px-4 py-2.5 first:border-t-0 hover:bg-panel2/50 ${
-                  s.span_id === highlighted ? "bg-accent/10 ring-1 ring-inset ring-accent" : ""
-                }`}
-              >
-                <div className="w-[38%] min-w-0" style={{ paddingLeft: `${depth * 14}px` }}>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`h-2 w-2 shrink-0 rounded-sm ${barColor(s)}`} />
-                    <span className="truncate text-sm font-medium text-ink" title={s.name ?? undefined}>
-                      {s.name ?? s.tier}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-2 pl-3.5 text-[11px] text-ink-faint">
-                    <span>{tierLabel(s)}</span>
-                    {s.status_code != null && (
-                      <span className="tabular-nums">· {s.status_code}</span>
-                    )}
-                  </div>
-                </div>
-                <div className="relative h-6 flex-1">
-                  <div className="absolute inset-y-0 left-0 right-0 my-auto h-px bg-line" />
-                  <div
-                    className={`absolute top-1/2 h-3 -translate-y-1/2 rounded-sm ${barColor(s)} opacity-90`}
-                    style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
-                    title={`${fmtMs(s.duration_ms)} @ +${fmtMs(starts[i] - t0)}`}
-                  />
-                </div>
-                <span className="w-16 text-right text-sm font-semibold tabular-nums text-ink">
-                  {fmtMs(s.duration_ms)}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
-      <p className="mt-4 max-w-3xl text-xs leading-relaxed text-ink-faint">
-        Bleu = navigateur (front) · orange = serveur (back) · violet = base de données · gris = sous-appel
-        interne. Les barres sont positionnées par leur début réel dans la trace ; la profondeur suit la chaîne
-        parent → enfant quand elle est connue.
-      </p>
+      <Figure
+        titre="Chronologie de l'appel"
+        id="chronologie"
+        meta={
+          <>
+            <span>
+              {spans.length} segment{spans.length > 1 ? "s" : ""}
+            </span>
+            <span>axe de 0 à {texteDuree(total)}, depuis le début du premier segment</span>
+          </>
+        }
+        lecture={
+          <>
+            Chaque segment est placé à son début réel dans la trace ; l&apos;indentation suit la chaîne parent →
+            enfant quand elle est connue. La couleur dit la sévérité : rouge hachuré = réponse 5xx, ambre = 4xx,
+            gris = sans statut d&apos;erreur. La piste (navigateur, serveur, base de données, interne) est écrite
+            sous chaque segment ; un clic sur un segment le met en évidence.
+          </>
+        }
+      >
+        <Cascade totalMs={total} pistes={PISTES_TRACE} elements={elements} selection={highlighted} />
+      </Figure>
     </div>
   );
 }
