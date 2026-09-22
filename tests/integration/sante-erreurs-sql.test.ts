@@ -94,7 +94,10 @@ if (!url) console.warn("[sante-erreurs-sql] SAUTÉ — définir SQL_TEST_DATABAS
   it("seules les occurrences navigateur entrent au numérateur (node et sans source exclues)", async () => {
     const f = await erreursDe(AVEC_VUES);
     expect(f.label).toBe("Erreurs navigateur");
-    expect(f.detail.replace(/[  ]/g, " ")).toBe("2 occurrence(s) pour 4 page(s) vue(s) (50 pour 100)");
+    // L'occurrence sans source déclarée est hors du numérateur, et dite (CP14).
+    expect(f.detail.replace(/[\u00a0\u202f]/g, " ")).toBe(
+      "2 occurrence(s) pour 4 page(s) vue(s) (50 pour 100) ; 3 occurrence(s) sans source déclarée, non comptée(s)",
+    );
     expect(f.earned).toBe(15); // 30 × (1 − 2 / 4)
   });
 

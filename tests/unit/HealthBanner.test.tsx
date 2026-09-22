@@ -25,7 +25,7 @@ const SANTE: Health = {
     { key: "vitals", label: "Web Vitals", detail: "81 % de mesures « good » (pondéré, LCP x2)", earned: 32.4, max: 40 },
     // Sans page vue : aucun dénominateur, la composante sort du score (« n/a »).
     { key: "errors", label: "Erreurs navigateur", detail: "aucune page vue : ratio non calculable", earned: null, max: 30 },
-    { key: "stability", label: "Stabilité des sessions", detail: "18/20 session(s) sans erreur", earned: 18, max: 20 },
+    { key: "stability", label: "Stabilité des sessions", detail: "18/20 session(s) active(s) sans erreur", earned: 18, max: 20 },
     {
       key: "anomalies",
       label: "Anomalies LCP (24 h)",

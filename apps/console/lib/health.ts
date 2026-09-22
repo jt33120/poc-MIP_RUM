@@ -181,12 +181,26 @@ export function facteurAnomalies(entree: {
  *
  * `restreint: false` (base sans la colonne de source, v69) : le numérateur porte
  * toutes les sources, et le détail le dit.
+ *
+ * Les occurrences SANS SOURCE DÉCLARÉE ne sont ni au numérateur ni passées sous
+ * silence (CP14 : « comptées à part et dites ») : dès qu'il y en a, le détail écrit
+ * « N occurrence(s) sans source déclarée, non comptée(s) ».
  */
-export function facteurErreurs(entree: { occurrences: number; pageviews: number; restreint: boolean }): HealthFactor {
+export function facteurErreurs(entree: {
+  occurrences: number;
+  pageviews: number;
+  restreint: boolean;
+  /** Occurrences sans `error_source` (`erreursNavigateur.sansSource`) ; 0 sans la colonne v69. */
+  sansSource?: number;
+}): HealthFactor {
   const base = { key: "errors" as const, label: "Erreurs navigateur", max: 30 };
+  const horsCompte =
+    entree.restreint && (entree.sansSource ?? 0) > 0
+      ? ` ; ${formater("count", entree.sansSource ?? 0)} occurrence(s) sans source déclarée, non comptée(s)`
+      : "";
   if (!(entree.pageviews > 0)) {
     // Pas de `raisonNull` : la jauge écrit « n/a », et le détail (visible) dit pourquoi.
-    return { ...base, detail: "aucune page vue : ratio non calculable", earned: null };
+    return { ...base, detail: `aucune page vue : ratio non calculable${horsCompte}`, earned: null };
   }
   const ratio = Math.max(0, 1 - entree.occurrences / entree.pageviews);
   const pour100 = formater("pour100", (100 * entree.occurrences) / entree.pageviews);
@@ -194,7 +208,7 @@ export function facteurErreurs(entree: { occurrences: number; pageviews: number;
     ...base,
     detail:
       `${formater("count", entree.occurrences)} occurrence(s) pour ${formater("count", entree.pageviews)} page(s) vue(s) (${pour100})` +
-      (entree.restreint ? "" : " — toutes sources : colonne de source absente"),
+      (entree.restreint ? horsCompte : " — toutes sources : colonne de source absente"),
     earned: round1(30 * ratio),
   };
 }
@@ -310,7 +324,12 @@ export async function healthScore(f: Filters): Promise<Health> {
   }
 
   const vitalsRatio = v.total_w > 0 ? v.good_w / v.total_w : null;
-  const facteurErr = facteurErreurs({ occurrences: erreurs.navigateur, pageviews: c.pageviews, restreint: erreurs.restreint });
+  const facteurErr = facteurErreurs({
+    occurrences: erreurs.navigateur,
+    pageviews: c.pageviews,
+    restreint: erreurs.restreint,
+    sansSource: erreurs.sansSource,
+  });
   const stabilityRatio = c.sessions > 0 ? c.clean_sessions / c.sessions : null;
 
   const factors: HealthFactor[] = [
@@ -328,12 +347,15 @@ export async function healthScore(f: Filters): Promise<Health> {
     {
       key: "stability",
       label: "Stabilité des sessions",
+      // Population : sessions ACTIVES (dernière activité dans la fenêtre, `last_seen_at`),
+      // pas les « Sessions commencées » de la tuile voisine (R-P) — le détail, désormais
+      // visible, le dit en toutes lettres pour que les deux nombres ne se comparent pas.
       detail:
         stabilityRatio == null
-          ? "aucune session"
+          ? "aucune session active"
           : // P*.1 : la part de sessions sans erreur porte son intervalle de Wilson.
             [
-              `${c.clean_sessions}/${c.sessions} session(s) sans erreur`,
+              `${c.clean_sessions}/${c.sessions} session(s) active(s) sans erreur`,
               texteIntervalle(intervalleWilson(c.clean_sessions, c.sessions), (x) => `${Math.round(x * 100)} %`),
             ]
               .filter(Boolean)

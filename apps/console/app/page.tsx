@@ -71,7 +71,7 @@ import {
 } from "@/lib/comparaison";
 import { avecCondition, RAISON_AUCUNE_VUE, ratioPour100, serieRatioPour100, sparklineDeCompte } from "@/lib/perf-domain";
 import { choisirReleases, vuesProduit, type Entree } from "@/lib/presets";
-import { ecrirePanel, gabaritZoom, lireComparaison, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
+import { gabaritZoom, lireComparaison, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
 import {
   ALERTES_PAR_EVENEMENT,
   constatsVueEnsemble,
@@ -521,8 +521,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       deploiement: (relB, relA) => hrefWithQuery("/", query, { cmp: "release", rel_b: relB, rel_a: relB ? relA : null }),
       alertes: lien("/alerts"),
       alerte: (evt) => lien("/alerts", { evt: String(evt) }),
-      erreur: (g) => lien("/errors", { app: g.app_id, panel: ecrirePanel({ type: "error", id: g.fingerprint }) }),
-      regresses: lien("/errors", { statut: "regressed" }),
+      // Le panneau erreur (`panel=error:<fp>`, F20) et le filtre `statut` (F19) ne sont pas
+      // encore lus par `/errors` : la page du groupe, et la liste — où les régressés sont en
+      // tête (ordre CP9). Écart déclaré ; F20 / F19 rebasculeront ces deux liens.
+      erreur: (g) => lien(`/errors/${encodeURIComponent(g.fingerprint)}`, { app: g.app_id }),
+      regresses: lien("/errors"),
     },
   );
 

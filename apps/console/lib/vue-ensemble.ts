@@ -165,9 +165,9 @@ export interface LiensConstats {
   alertes: string;
   /** `/alerts?evt=<id>` — jamais `fired=` (§ 3.1). */
   alerte: (eventId: number) => string;
-  /** Groupe régressé → `panel=error:<fp>`. */
+  /** Groupe régressé → sa page `/errors/<fp>` (le panneau `panel=error:<fp>` attend F20). */
   erreur: (g: { app_id: string; fingerprint: string }) => string;
-  /** Tous les groupes régressés → `/errors?statut=regressed`. */
+  /** Tous les groupes régressés → `/errors`, régressés en tête (le filtre `statut` attend F19). */
   regresses: string;
 }
 

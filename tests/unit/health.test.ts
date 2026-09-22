@@ -35,6 +35,19 @@ describe("facteurErreurs", () => {
     expect(facteurErreurs({ occurrences: 1, pageviews: 4, restreint: true }).earned).toBe(22.5);
   });
 
+  it("occurrences sans source déclarée : hors du numérateur, et dites dès qu'il y en a (CP14)", () => {
+    const f = facteurErreurs({ occurrences: 2, pageviews: 4, restreint: true, sansSource: 3 });
+    expect(espaces(f.detail)).toBe(
+      "2 occurrence(s) pour 4 page(s) vue(s) (50 pour 100) ; 3 occurrence(s) sans source déclarée, non comptée(s)",
+    );
+    expect(f.earned).toBe(15);
+    expect(facteurErreurs({ occurrences: 2, pageviews: 4, restreint: true, sansSource: 0 }).detail).not.toContain("sans source");
+    // Sans page vue aussi : le ratio manque, les occurrences écartées restent dites.
+    expect(facteurErreurs({ occurrences: 0, pageviews: 0, restreint: true, sansSource: 1 }).detail).toContain(
+      "1 occurrence(s) sans source déclarée, non comptée(s)",
+    );
+  });
+
   it("sans la colonne de source (v69) : toutes sources, et le détail le dit", () => {
     const f = facteurErreurs({ occurrences: 2, pageviews: 10, restreint: false });
     expect(f.detail).toContain("toutes sources : colonne de source absente");
