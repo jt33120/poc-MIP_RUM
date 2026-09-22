@@ -142,4 +142,35 @@ describe("Explorer d'événements — SQL borné et scopé", () => {
     expect(String(dataCalls[2][0])).toContain("generate_series(date_bin(interval '3600 seconds'");
     expect(String(dataCalls[4][0])).toContain("jsonb_typeof(f.props) = 'object'");
   });
+
+  it("F25 — clé choisie sans valeur : facette des valeurs lue, population NON filtrée par l'attribut", async () => {
+    q.mockResolvedValueOnce([{ p1: true, p4: true }]);
+    q.mockResolvedValueOnce([]);
+    q.mockResolvedValueOnce([{ total: 0, min_sample_rate: null }]);
+    q.mockResolvedValueOnce([]);
+    q.mockResolvedValueOnce([]);
+    q.mockResolvedValueOnce([]);
+    q.mockResolvedValueOnce([{ type: "string", value: "pro", count: 2 }]);
+    const result = await exploreEvents(
+      filters,
+      { kind: "event", name: null, attribute: null },
+      { limit: 20, offset: 0 },
+      null,
+      { valeursDe: { source: "context", key: "campaign" } },
+    );
+    expect(result.facets.values).toEqual([{ type: "string", value: "pro", count: 2 }]);
+    const dataCalls = q.mock.calls.slice(1);
+    expect(dataCalls).toHaveLength(6);
+    for (const [sql] of dataCalls) expect(String(sql)).not.toContain("@> jsonb_build_object");
+    const [valuesSql, valuesParams] = dataCalls[5];
+    expect(String(valuesSql)).toContain("jsonb_typeof(context -> $");
+    expect(valuesParams).toContain("campaign");
+  });
+
+  it("F25 — sans clé ni filtre d'attribut : aucune lecture de valeurs (l'API ne change pas)", async () => {
+    q.mockResolvedValueOnce([{ p1: true, p4: true }]);
+    for (let i = 0; i < 5; i++) q.mockResolvedValueOnce(i === 1 ? [{ total: 0, min_sample_rate: null }] : []);
+    await exploreEvents(filters, { kind: "event", name: null, attribute: null }, { limit: 20, offset: 0 }, null);
+    expect(q).toHaveBeenCalledTimes(6);
+  });
 });
