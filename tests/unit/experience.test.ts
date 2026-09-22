@@ -101,13 +101,15 @@ describe("repartitionNotes (F26)", () => {
   });
 });
 
-import { MANQUE_FRUSTRATION_MOBILE, RAISON_CAPTEUR_INCONNU, frustrationPour1000 } from "../../apps/console/lib/experience";
+import { frustrationPour1000 } from "../../apps/console/lib/experience";
+// La garde de capteur est celle de F22 (`etatCapteurFrustration`) : mêmes textes.
+import { MANQUE_CAPTEUR_MOBILE, RAISON_RUNTIME_ABSENT } from "../../apps/console/lib/perf-domain";
 
-describe("frustrationPour1000 — garde de capteur R-F (F26, revue)", () => {
+describe("frustrationPour1000 — garde de capteur R-F de F22 (F26, revue)", () => {
   it("app React Native seule → null et « Non collecté », jamais « 0,00 »", () => {
     const r = frustrationPour1000({ sessions: 600, sessionsCouvertes: 0, signaux: 0, runtimeLu: true }, "24 h");
     expect(r.valeur).toBeNull();
-    expect(r.etat).toEqual({ kind: "non_collecte", manque: MANQUE_FRUSTRATION_MOBILE });
+    expect(r.etat).toEqual({ kind: "non_collecte", manque: MANQUE_CAPTEUR_MOBILE });
     expect(r.raisonNull).toContain("non collecté");
   });
 
@@ -125,7 +127,7 @@ describe("frustrationPour1000 — garde de capteur R-F (F26, revue)", () => {
   it("colonne runtime absente → taux sur toutes les sessions, partiel « capteur non identifiable »", () => {
     const r = frustrationPour1000({ sessions: 50, sessionsCouvertes: 50, signaux: 5, runtimeLu: false });
     expect(r.valeur).toBe(100);
-    expect(r.etat).toEqual({ kind: "partiel", raison: RAISON_CAPTEUR_INCONNU });
+    expect(r.etat).toEqual({ kind: "partiel", raison: RAISON_RUNTIME_ABSENT });
   });
 
   it("aucune session commencée → null, sans état ; tout navigateur → le taux, sans état", () => {
