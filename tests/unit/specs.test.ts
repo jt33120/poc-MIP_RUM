@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { CATALOGUES } from "../../apps/console/lib/dashboard-blocs";
-import { NON_ETABLI_PLANIFIE, volatiles } from "../../apps/console/lib/etat-planifie";
+import { NON_ETABLI_PLANIFIE, latenceDepuis, volatiles } from "../../apps/console/lib/etat-planifie";
 import { ingestPath } from "../../apps/console/lib/ingest-endpoint";
 import { EXAMPLE_SNIPPET } from "../../apps/console/lib/onboarding";
 import { HOSTS } from "../../apps/console/lib/legal";
@@ -378,6 +378,13 @@ describe("vérité de la vitrine (P**.1)", () => {
     expect(retention.reel).toBe(NON_ETABLI_PLANIFIE);
     // Rien n'est ajouté à « Ce qui manque » sur la foi d'une inconnue.
     expect(planif).toBeNull();
+  });
+
+  it("la latence d'alerte suit la même règle : illisible = non établie", () => {
+    const maintenant = Date.parse("2026-09-22T12:00:00Z");
+    expect(latenceDepuis({ etat: "illisible" }, maintenant)).toEqual({ reel: NON_ETABLI_PLANIFIE, s: "non-mesure" });
+    expect(latenceDepuis({ etat: "lu", date: null }, maintenant).s).toBe("manque");
+    expect(latenceDepuis({ etat: "lu", date: new Date(maintenant - 2 * 60_000) }, maintenant).s).toBe("atteint");
   });
 
   it("une lecture aboutie sans passage reste « aucune exécution constatée »", () => {

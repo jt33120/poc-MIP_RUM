@@ -116,7 +116,7 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "scheduler",
-        v: "Applique les migrations au pré-déploiement — prouvé le 18/09/2026 par un vrai déploiement (03850b30, « migrations à jour »). Puis les travaux planifiés : évaluation des alertes, SLO, sondes uptime, purge de rétention, comptage du volume. Bail d'exclusion en base (scheduler_lease) pour qu'une seule instance travaille à la fois.",
+        v: "Lance les migrations au pré-déploiement — vérifié le 18/09/2026 sur un vrai déploiement (03850b30 : « migrations à jour », aucune en attente ce jour-là). Puis les travaux planifiés : évaluation des alertes, SLO, sondes uptime, purge de rétention, comptage du volume. Bail d'exclusion en base (scheduler_lease) pour qu'une seule instance travaille à la fois.",
         s: "atteint",
         preuve: "services/scheduler/worker.mjs",
       },
@@ -193,7 +193,7 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "Conteneurisation",
-        v: "Le backend a ses images, pas la console. L'argument « souverain, déployable chez vous » n'est donc pas livrable de bout en bout.",
+        v: "Le backend a ses images, pas la console. L'argument « déployable chez vous » n'est donc pas livrable de bout en bout.",
         s: "manque",
       },
       {

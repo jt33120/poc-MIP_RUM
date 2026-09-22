@@ -54,8 +54,8 @@ export default async function Presentation() {
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink-soft">
           Le <strong>Real User Monitoring</strong> mesure la performance et les erreurs <strong>réellement
           vécues par vos utilisateurs</strong> en production — pas une sonde de laboratoire. On capte ce que
-          vivent les vrais visiteurs (vitesse d'affichage, réactivité, bugs JavaScript, parcours), parce que
-          c'est cette expérience-là qui pèse sur la conversion et la satisfaction.
+          vivent les vrais visiteurs (vitesse d'affichage, réactivité, bugs JavaScript, parcours) : c'est
+          cette expérience-là, et non celle d'un robot, que la console restitue.
         </p>
       </section>
 

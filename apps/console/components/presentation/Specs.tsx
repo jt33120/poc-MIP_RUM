@@ -22,9 +22,11 @@
 // porte de quoi la contredire (fichier de preuve, marqueur d'absence, valeurs
 // importées de lib/legal.ts). Ici, il n'y a que du rendu.
 import { ICON_PATHS, Icon } from "@/components/icons";
+import { fmtBorne } from "@/lib/format";
+import { THRESHOLDS } from "@/lib/rating";
 import { dernierPassagePlanifie, dernierTickScheduler } from "@/lib/queries-planifie";
-import { CADENCE_TICK_MIN, ligneLatence } from "@/lib/etat-latence";
-import { NON_ETABLI_PLANIFIE, volatiles, type Gravite } from "@/lib/etat-planifie";
+import { CADENCE_TICK_MIN } from "@/lib/etat-latence";
+import { latenceDepuis, volatiles, type Gravite } from "@/lib/etat-planifie";
 import {
   ANGLES_MORTS,
   INFRA,
@@ -75,13 +77,17 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Seuils Core Web Vitals",
     cible: "Barème Google",
-    reel: "LCP 2,5 / 4 s · INP 200 / 500 ms · CLS 0,1 / 0,25",
+    // Lu dans lib/rating.ts, comme l'écran qui colore les valeurs : recopié à la
+    // main, un seuil finit par diverger (c'est arrivé au glossaire).
+    reel: (["LCP", "INP", "CLS"] as const)
+      .map((n) => `${n} ${fmtBorne(n, THRESHOLDS[n][0])} / ${fmtBorne(n, THRESHOLDS[n][1])}`)
+      .join(" · "),
     s: "atteint",
   },
   {
     c: "Agrégation",
     cible: "p75, comme l'exige le standard CWV",
-    reel: "p75 par route et par appareil, distribution complète",
+    reel: "p75 par route et par appareil, et l'histogramme des mesures par tranche de valeur",
     s: "atteint",
   },
   {
@@ -226,10 +232,7 @@ export async function Specs() {
   // La latence d'alerte est DÉDUITE du battement de cœur du scheduler, pas
   // écrite en dur : elle change sans qu'on touche au code (cf. lib/etat-latence).
   // Lecture en échec : « non établi », jamais « aucun passage constaté ».
-  const latence =
-    tick.etat === "illisible"
-      ? { reel: NON_ETABLI_PLANIFIE, s: "non-mesure" as const }
-      : ligneLatence(tick.date, Date.now());
+  const latence = latenceDepuis(tick, Date.now());
 
   // La rétention se range après le masquage du replay, à sa place d'origine dans
   // la progression « mesure → restitution → exploitation » ; la latence juste

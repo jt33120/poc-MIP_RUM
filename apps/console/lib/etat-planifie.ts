@@ -13,6 +13,7 @@
 // désormais « lu, jamais exécuté » (`{ etat: "lu", date: null }`) de « illisible ».
 //
 // Logique PURE — ni base, ni horloge implicite : `maintenant` est un paramètre.
+import { ligneLatence } from "./etat-latence";
 import { fmtDate } from "./format";
 import type { Statut } from "./specs";
 
@@ -65,4 +66,15 @@ export function volatiles(lecture: LecturePlanifie, maintenant: number = Date.no
         : "Le déclencheur périodique existe et a déjà abouti, mais pas depuis plus de 48 h — alertes, SLO, sondes uptime, purge et comptage du volume sont donc à l'arrêt.",
     },
   };
+}
+
+/**
+ * La ligne « Latence d'alerte », depuis la lecture du battement de cœur du
+ * scheduler. Même règle que la rétention : une lecture en échec est « non
+ * établie », jamais « aucun passage constaté ».
+ */
+export function latenceDepuis(lecture: LecturePlanifie, maintenant: number): { reel: string; s: Statut } {
+  if (lecture.etat === "illisible") return { reel: NON_ETABLI_PLANIFIE, s: "non-mesure" };
+  const { reel, s } = ligneLatence(lecture.date, maintenant);
+  return { reel, s };
 }
