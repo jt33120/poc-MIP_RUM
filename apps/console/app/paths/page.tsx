@@ -3,11 +3,14 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Sankey } from "@/components/Sankey";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
 import type { SearchParams } from "@/lib/filters";
+import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 import { PERIODS } from "@/lib/filters";
 import { availableEvents, funnelReport } from "@/lib/queries-funnel";
 import { entryExitRoutes, routeTransitions } from "@/lib/queries-paths";
+import { samplingSessionsHistorique } from "@/lib/queries-sessions";
 import { buildSankey } from "@/lib/sankey";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +25,13 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
   const steps = [1, 2, 3, 4]
     .map((i) => (typeof sp[`s${i}`] === "string" ? (sp[`s${i}`] as string) : ""))
     .filter(Boolean);
-  const [transitions, { entries, exits }, events, funnel] = await Promise.all([
+  const [transitions, { entries, exits }, events, funnel, echantillonnage] = await Promise.all([
     routeTransitions(f),
     entryExitRoutes(f),
     availableEvents(f),
     steps.length >= 2 ? funnelReport(f, steps) : Promise.resolve([]),
+    // S7 : sessions dont les vues sont lues par les transitions et les bords.
+    lire(() => samplingSessionsHistorique(f, { lecture: "vues" })),
   ]);
   const maxT = transitions[0]?.n ?? 0;
   // Lot 6b : flux Sankey (source -> cible) construit sur les mêmes transitions.
@@ -40,6 +45,8 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
         title="Parcours"
         sub="Comment les visiteurs circulent entre les routes — pages d'entrée et de sortie, transitions les plus fréquentes (recharges exclues)."
       />
+
+      <BandeauEchantillonnage lecture={echantillonnage} />
 
       {/* Hero : le flux de navigation (Sankey) est le graphe signature de la page. */}
       <SupervisionHero

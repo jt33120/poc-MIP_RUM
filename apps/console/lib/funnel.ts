@@ -10,8 +10,10 @@ export interface FunnelStep {
   ord: number; // 1-indexé
   name: string;
   reached: number; // sessions ayant atteint cette étape
-  convFromStart: number; // 0..1 vs étape 1
-  convFromPrev: number; // 0..1 vs étape précédente
+  /** 0..1 vs étape 1 ; null sans départ (aucune session à l'étape 1 : pas de dénominateur, V3). */
+  convFromStart: number | null;
+  /** 0..1 vs étape précédente ; null quand l'étape précédente n'a aucune session. */
+  convFromPrev: number | null;
   dropoff: number; // sessions perdues depuis l'étape précédente
 }
 
@@ -42,7 +44,14 @@ export function funnelReached(sessions: (number | null)[][], stepCount: number):
   return reached;
 }
 
-/** Assemble le rapport d'entonnoir (conversion + abandon) à partir des reached et noms. */
+/**
+ * Assemble le rapport d'entonnoir (conversion + abandon) à partir des reached et noms.
+ *
+ * Un taux sans dénominateur est `null`, jamais 0 (V3, F40) : « 0 % du départ »
+ * quand personne n'a commencé se lirait comme un entonnoir qui perd tout le
+ * monde, alors qu'il n'y a rien à mesurer. Les abandons, eux, sont des comptes :
+ * 0 reste 0.
+ */
 export function funnelReport(reached: number[], names: string[]): FunnelStep[] {
   const start = reached[0] ?? 0;
   return names.map((name, i) => {
@@ -52,8 +61,8 @@ export function funnelReport(reached: number[], names: string[]): FunnelStep[] {
       ord: i + 1,
       name,
       reached: r,
-      convFromStart: start > 0 ? r / start : 0,
-      convFromPrev: prev > 0 ? r / prev : i === 0 ? 1 : 0,
+      convFromStart: start > 0 ? r / start : null,
+      convFromPrev: prev > 0 ? r / prev : null,
       dropoff: Math.max(0, prev - r),
     };
   });

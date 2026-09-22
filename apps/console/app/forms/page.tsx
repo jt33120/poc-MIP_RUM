@@ -4,10 +4,13 @@ import { SupervisionHero, HeroStat, HeroReading } from "@/components/Supervision
 import { RankBar } from "@/components/charts/RankBar";
 import { fieldReport, formReport } from "@/lib/form-analytics";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
 import type { SearchParams } from "@/lib/filters";
+import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 import { PERIODS } from "@/lib/filters";
 import { formEvents } from "@/lib/queries-form-analytics";
+import { samplingSessionsHistorique } from "@/lib/queries-sessions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +23,12 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
   if (!ecran.ok) return <FilterProblemNotice title="Formulaires" problem={ecran.problem} />;
   const f = ecran.filters;
   const period = PERIODS[f.period];
-  const events = await formEvents(f);
+  // S7 : sessions des événements `form.*` lus (une session « biaisée-erreurs »
+  // n'émet que ses erreurs : ses formulaires ne sont jamais lus).
+  const [events, echantillonnage] = await Promise.all([
+    formEvents(f),
+    lire(() => samplingSessionsHistorique(f, { lecture: "formulaires" })),
+  ]);
   const forms = formReport(events);
   const selected = typeof sp.form === "string" && sp.form ? sp.form : forms[0]?.form;
   const fields = selected ? fieldReport(events, selected) : [];
@@ -43,6 +51,8 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
         title="Formulaires"
         sub="Analyse des formulaires au niveau du champ — conversion, abandon et temps par champ. Aucune valeur saisie n'est collectée."
       />
+
+      <BandeauEchantillonnage lecture={echantillonnage} />
 
       {!forms.length ? (
         <div className="card p-8 text-center text-ink-faint">
@@ -80,11 +90,13 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
                 }
               >
                 <HeroStat label="Formulaires entamés" value={totalStarters.toLocaleString("fr-FR")} hint="submits + abandons" />
-                <HeroStat label="Soumissions" value={totalSubmits.toLocaleString("fr-FR")} tone="good" hint="formulaires envoyés" />
+                <HeroStat label="Soumissions" value={totalSubmits.toLocaleString("fr-FR")} hint="formulaires envoyés" />
+                {/* Sans verdict coloré (S6, R-S) : aucun seuil publié n'existe pour une
+                    conversion de formulaire ; les paliers « bon / à surveiller » d'avant
+                    n'avaient pas de source. La valeur s'affiche, neutre. */}
                 <HeroStat
                   label="Conversion globale"
                   value={totalStarters ? pctFmt(totalSubmits / totalStarters) : "—"}
-                  tone={totalStarters ? (totalSubmits / totalStarters >= 0.6 ? "good" : totalSubmits / totalStarters >= 0.3 ? "warn" : "poor") : "neutral"}
                   hint="soumis / entamés"
                 />
                 <HeroReading>

@@ -13,15 +13,15 @@
 // Les sessions sans identifiant sont exclues — l'historique antérieur au
 // 09/09/2026 disparaît donc de la matrice au lieu d'y figurer faussement.
 import { q } from "./db";
-import { buildCohorts, type CohortRow } from "./cohorts";
+import { buildCohorts, SEMAINE_S, type CohortRow } from "./cohorts";
 import type { Filters } from "./filters";
 import { buildSegment } from "./segments";
 
 const botClause = (f: Filters, alias: string): string =>
   f.includeBots ? "" : ` and not coalesce(${alias}.is_bot, false)`;
 
-/** Secondes par semaine (index de semaine = epoch/604800). */
-const WEEK_SECONDS = 604800;
+/** Secondes par semaine (index de semaine = epoch(lundi)/604800) : étiquette par `lundiDeSemaine`. */
+const WEEK_SECONDS = SEMAINE_S;
 
 /** Matrice de rétention sur `weeks` dernières semaines (offset max = weeks-1). */
 export async function retentionCohorts(f: Filters, weeks: number): Promise<CohortRow[]> {
@@ -39,7 +39,6 @@ export async function retentionCohorts(f: Filters, weeks: number): Promise<Cohor
   return buildCohorts(rows, Math.max(0, weeks - 1));
 }
 
-/** Convertit un index de semaine en date (lundi) — pour l'étiquetage côté page. */
-export function weekIndexToDate(week: number): Date {
-  return new Date(week * WEEK_SECONDS * 1000);
-}
+// `weekIndexToDate` a disparu (F40) : `index × 604800` tombe un JEUDI, et chaque
+// cohorte était datée du jeudi de la semaine PRÉCÉDENTE. L'étiquetage passe par
+// `lundiDeSemaine` (lib/cohorts.ts, pur et testé).

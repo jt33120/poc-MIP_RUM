@@ -10,19 +10,35 @@ import {
   atRisk,
   layoutGraph,
   pageHealth,
+  texteRegleSanteApi,
   trend,
   type GEdge,
   type GNode,
   type Health,
 } from "@/lib/map";
 import { mapEdges, mapNodes, mapPages } from "@/lib/queries-map";
+import { samplingSessions } from "@/lib/queries-sessions";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
 import type { SearchParams } from "@/lib/filters";
+import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 
 export const dynamic = "force-dynamic";
 
-const DOT: Record<Health, string> = { good: "bg-good", warn: "bg-warn", bad: "bg-bad" };
+// Santé inconnue : pastille CREUSE et neutre, pas une quatrième couleur de verdict.
+const DOT: Record<Health, string> = {
+  good: "bg-good",
+  warn: "bg-warn",
+  bad: "bg-bad",
+  unknown: "border border-ink-faint bg-transparent",
+};
+const LIBELLE_SANTE: Record<Health, string> = {
+  good: "sain",
+  warn: "à surveiller",
+  bad: "dégradé",
+  unknown: "inconnu",
+};
 const CAP = 10; // nœuds affichés par colonne
 
 export default async function ExperienceMapPage({
@@ -33,7 +49,15 @@ export default async function ExperienceMapPage({
   const ecran = await pageFilters((await searchParams) ?? {}, "/map");
   if (!ecran.ok) return <FilterProblemNotice title="Carte d'expérience" problem={ecran.problem} />;
   const f = ecran.filters;
-  const [nodes, edges, pages] = await Promise.all([mapNodes(f), mapEdges(f), mapPages(f)]);
+  // L'échantillonnage qualifie la population des spans front de la fenêtre (S7) :
+  // une session « biaisée-erreurs » sans erreur n'émet aucun span. Sa lecture a son
+  // propre sort (`lire`) : en échec, le bandeau le dit, la carte reste affichée.
+  const [nodes, edges, pages, echantillonnage] = await Promise.all([
+    mapNodes(f),
+    mapEdges(f),
+    mapPages(f),
+    lire(() => samplingSessions(f, { avecSpans: true })),
+  ]);
 
   const toNode = (r: (typeof nodes)[number]): GNode => {
     const health = apiHealth(r.error_rate ?? 0, r.latency_p75);
@@ -65,6 +89,8 @@ export default async function ExperienceMapPage({
         sub="Le graphe de service vu du navigateur : pages → API → backend, coloré par santé et pondéré par le volume."
       />
 
+      <BandeauEchantillonnage lecture={echantillonnage} />
+
       {empty ? (
         <div className="card p-8 text-center text-ink-soft">
           Aucun appel corrélé sur la période — la carte se remplit dès que le tracing front→back émet
@@ -89,6 +115,7 @@ export default async function ExperienceMapPage({
                 <Legend tone="good" label="sain" />
                 <Legend tone="warn" label="à surveiller" />
                 <Legend tone="bad" label="dégradé" />
+                <Legend tone="unknown" label="inconnu" />
                 <span className="text-ink-faint">▲ en hausse</span>
               </span>
             }
@@ -104,6 +131,11 @@ export default async function ExperienceMapPage({
                     +{hidden} route(s) moins actives masquées (top {CAP} par colonne affichés).
                   </p>
                 )}
+                {/* S6 : un seuil propre à l'écran est écrit avec sa source. Aucun seuil
+                    publié n'existe pour une latence d'API : c'est une règle de la console. */}
+                <p className="mt-2 text-xs text-ink-soft" data-testid="regle-sante">
+                  Santé d&apos;un nœud (règle de la console, sans seuil publié de référence) : {texteRegleSanteApi()}.
+                </p>
               </div>
             }
           >
@@ -156,7 +188,7 @@ export default async function ExperienceMapPage({
                       <td className="px-4 py-2 text-ink-faint">{n.tier === "front" ? "navigateur" : "serveur"}</td>
                       <td className="px-4 py-2">
                         <span className="inline-flex items-center gap-2">
-                          <span className={`h-1.5 w-1.5 rounded-full ${DOT[n.health]}`} />
+                          <span className={`h-1.5 w-1.5 rounded-full ${DOT[n.health]}`} title={`santé : ${LIBELLE_SANTE[n.health]}`} />
                           <span className="chip-mono">{n.route}</span>
                         </span>
                       </td>
@@ -194,7 +226,10 @@ export default async function ExperienceMapPage({
                     <tr key={`${p.route}|${i}`} className="border-t border-line/60">
                       <td className="px-4 py-2">
                         <span className="inline-flex items-center gap-2">
-                          <span className={`h-1.5 w-1.5 rounded-full ${DOT[pageHealth(p.lcp_p75)]}`} />
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${DOT[pageHealth(p.lcp_p75)]}`}
+                            title={p.lcp_p75 == null ? "aucune mesure LCP" : `LCP p75 : ${LIBELLE_SANTE[pageHealth(p.lcp_p75)]}`}
+                          />
                           <span className="chip-mono">{p.route}</span>
                         </span>
                       </td>

@@ -1,6 +1,41 @@
 // Rétention par cohortes — matrice triangulaire. Logique pure.
 import { describe, expect, it } from "vitest";
-import { buildCohorts } from "../../apps/console/lib/cohorts";
+import { SEMAINE_S, buildCohorts, lundiDeSemaine } from "../../apps/console/lib/cohorts";
+
+// F40 — l'étiquette d'une cohorte est le LUNDI de sa semaine. L'index vient du SQL :
+// `floor(extract(epoch from date_trunc('week', started_at)) / 604800)`, où
+// `date_trunc('week')` rend le lundi 00:00 (semaine ISO). `index × 604800` tombe un
+// jeudi (l'epoch est un jeudi) : c'était l'ancienne étiquette, `weekIndexToDate`.
+const indexSql = (lundiUtc: Date) => Math.floor(lundiUtc.getTime() / 1000 / SEMAINE_S);
+
+describe("lundiDeSemaine", () => {
+  it("rend un lundi 00:00 UTC pour 10 index", () => {
+    for (let index = 2900; index < 2910; index++) {
+      const d = lundiDeSemaine(index);
+      expect(d.getUTCDay(), `index ${index}`).toBe(1);
+      expect(d.toISOString(), `index ${index}`).toMatch(/T00:00:00\.000Z$/);
+    }
+  });
+
+  it("aller-retour avec la formule SQL : le lundi d'une semaine redonne son index", () => {
+    // Lundi 21/09/2026 (semaine du 22/09/2026) et lundi 07/09/2026.
+    for (const lundi of ["2026-09-21T00:00:00Z", "2026-09-07T00:00:00Z", "2026-01-05T00:00:00Z"]) {
+      const d = new Date(lundi);
+      expect(lundiDeSemaine(indexSql(d)).toISOString()).toBe(d.toISOString());
+    }
+  });
+
+  it("une session PostgreSQL en Europe/Paris (lundi 00:00 local = dimanche 22:00 UTC) donne le même lundi", () => {
+    const lundiParis = new Date("2026-09-20T22:00:00Z"); // lundi 21/09 00:00 heure d'été de Paris
+    expect(lundiDeSemaine(indexSql(lundiParis)).toISOString()).toBe("2026-09-21T00:00:00.000Z");
+  });
+
+  it("n'est plus le jeudi de `index × 604800`", () => {
+    const index = indexSql(new Date("2026-09-21T00:00:00Z"));
+    expect(new Date(index * SEMAINE_S * 1000).getUTCDay()).toBe(4); // jeudi : l'ancienne étiquette
+    expect(lundiDeSemaine(index).getUTCDay()).toBe(1);
+  });
+});
 
 describe("buildCohorts", () => {
   it("vide -> []", () => {

@@ -15,6 +15,7 @@
 //   4. début de collecte non lu — `inconnue`, jamais `complete` par défaut ;
 //   5. sinon `complete`.
 import { q } from "./db";
+import { DEBUT_SAMPLE_RATE } from "./echantillonnage";
 import { filtersOfQuery, type FiltersLike } from "./filters";
 import { couvertureRetention, retentionDays } from "./queries-explorer";
 import { SANS_RELEASE, type VersionRow } from "./queries-deploys";
@@ -52,12 +53,10 @@ const SOURCES: Record<string, { colonnesTemps: readonly string[]; libelle: strin
 };
 const IDENTIFIANT = /^[a-z_][a-z0-9_]{0,62}$/;
 
-/**
- * `rum_session.sample_rate` vaut 1 PAR DÉFAUT sur les lignes antérieures à v58
- * (migration-v58.sql:L26, L65) : un `is not null` ne les écarte pas. Sa collecte
- * réelle commence au 09/09/2026, date de la migration.
- */
-export const DEBUT_SAMPLE_RATE = "2026-09-09T00:00:00.000Z";
+// `DEBUT_SAMPLE_RATE` vit dans lib/echantillonnage.ts (module pur, sans base) : la
+// lecture d'échantillonnage des écrans d'usage (F40) en a besoin sans tirer les
+// lectures de comparaison. Réexporté ici pour les appelants existants.
+export { DEBUT_SAMPLE_RATE };
 
 /** Un compte sur une fenêtre qui se termine à moins de 5 min d'ici attend encore des lignes. */
 const RETARD_INGESTION_MS = 5 * 60_000;

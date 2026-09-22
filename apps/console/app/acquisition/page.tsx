@@ -3,10 +3,13 @@ import { SupervisionHero, HeroStat, HeroReading } from "@/components/Supervision
 import { Donut } from "@/components/charts/Donut";
 import type { Channel } from "@/lib/acquisition";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
 import type { SearchParams } from "@/lib/filters";
+import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 import { PERIODS } from "@/lib/filters";
 import { acquisition } from "@/lib/queries-acquisition";
+import { samplingSessionsHistorique } from "@/lib/queries-sessions";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +40,12 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
   if (!ecran.ok) return <FilterProblemNotice title="Acquisition" problem={ecran.problem} />;
   const f = ecran.filters;
   const period = PERIODS[f.period];
-  const rep = await acquisition(f);
+  // S7 : même population que la lecture (sessions ayant une vue sur la fenêtre
+  // glissante), lue à part : son échec ne masque pas les canaux, il est dit.
+  const [rep, echantillonnage] = await Promise.all([
+    acquisition(f),
+    lire(() => samplingSessionsHistorique(f, { lecture: "vues" })),
+  ]);
   const total = rep.total;
 
   return (
@@ -46,6 +54,8 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
         title="Acquisition"
         sub="D'où viennent les visiteurs — canal d'entrée (direct, recherche, social, référent) et sites référents."
       />
+
+      <BandeauEchantillonnage lecture={echantillonnage} />
 
       {!total ? (
         <div className="card p-8 text-center text-ink-faint">Aucune session sur {period.label}</div>
