@@ -346,12 +346,21 @@ test.describe("F38 — réagencement et stabilité par release", () => {
     await pool.query("delete from app_registry where app_id = $1", [APP_F38]);
   });
 
-  async function ouvrir(page: Page, largeur: number, hauteur: number) {
-    await page.setViewportSize({ width: largeur, height: hauteur });
+  /** Connexion UNE fois par test : `/login` d'une session ouverte redirige, le champ e-mail n'apparaît plus. */
+  async function connecter(page: Page) {
     await login(page);
     await page.context().addCookies([{ name: "mip-project", value: APP_F38, url: consoleUrl }]);
+  }
+
+  async function aller(page: Page, largeur: number, hauteur: number) {
+    await page.setViewportSize({ width: largeur, height: hauteur });
     await page.goto(`${consoleUrl}/mobile?app=${APP_F38}&period=24h`);
     await expect(page.getByRole("heading", { name: "Mobile", level: 1 })).toBeVisible();
+  }
+
+  async function ouvrir(page: Page, largeur: number, hauteur: number) {
+    await connecter(page);
+    await aller(page, largeur, hauteur);
   }
 
   test("ordre des zones : angles morts, tuiles, puis le hero « Stabilité par release » au-dessus du pli à 1440", async ({ page }) => {
@@ -425,15 +434,19 @@ test.describe("F38 — réagencement et stabilité par release", () => {
 
   test("390, 768 et 1440 px : aucun débordement ; la matrice devient une liste à 390", async ({ page }) => {
     test.skip(!v82, "migration v82 absente de la base e2e");
+    await connecter(page);
+    // Toutes les largeurs sont PARCOURUES avant d'échouer : s'arrêter à la première cacherait les autres.
+    const fautes: string[] = [];
     for (const [largeur, hauteur] of [
       [390, 844],
       [768, 1024],
       [1440, 900],
     ] as const) {
-      await ouvrir(page, largeur, hauteur);
+      await aller(page, largeur, hauteur);
       await expect(page.getByTestId("mobile-stabilite")).toBeVisible();
-      expect(await debordements(page), `débordement à ${largeur} px`).toEqual([]);
+      for (const faute of await debordements(page)) fautes.push(`/mobile @ ${largeur} px — ${faute}`);
     }
+    expect(fautes).toEqual([]);
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole("columnheader", { name: "Dernière déclaration" })).toBeHidden();
     await expect(page.getByTestId("capacite-js_errors")).toContainText("Dernière déclaration");
