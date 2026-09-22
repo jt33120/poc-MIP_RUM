@@ -55,7 +55,7 @@ import {
 import { hrefWithQuery, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
 import { RATING_CLASS, RATING_HEX, rating2026 } from "@/lib/rating";
 import { ecartP75 } from "@/lib/stats/incertitude";
-import { gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
+import { ecrirePanel, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
 
@@ -391,11 +391,13 @@ function HeroRoutes({
     return {
       cle: r.route === null ? " inconnu" : `r:${r.route}`,
       libelle,
-      // Le panneau route (`panel=route:`) arrive avec F17 : d'ici là, Pages filtrée sur la route.
+      // Une route ouvre son PANNEAU sur `/pages` (F17, § 5.2.3) : on qualifie la route
+      // sans quitter le classement. « Inconnu » n'a pas d'identifiant de panneau :
+      // il garde la condition `is_null`.
       href:
         r.route === null
           ? hrefWithQuery("/pages", query, { seg: "v2:route:is_null" })
-          : hrefWithQuery("/pages", query, { route: r.route }),
+          : hrefWithQuery("/pages", query, { panel: ecrirePanel({ type: "route", id: r.route }) }),
       description: `Route ${libelle} — ${formater("pct", r.taux)} des ${formater("count", r.sessionsRoute)} sessions avec au moins un signal`,
       pilote: r.taux,
       volume: r.sessionsRoute,
