@@ -84,7 +84,7 @@ export function SloRow({ raw, status }: { raw: SloRaw; status?: SloStatusData })
               type="submit"
               data-testid={`toggle-slo-${raw.id}`}
               className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition ${
-                raw.active ? "bg-slate-500 hover:bg-slate-600" : "bg-good hover:bg-good/90"
+                raw.active ? "bg-slate-500 hover:bg-slate-600" : "bg-good-fond hover:bg-good-fond/90"
               }`}
             >
               {raw.active ? "Désactiver" : "Activer"}

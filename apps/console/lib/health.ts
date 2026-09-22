@@ -89,7 +89,8 @@ export async function causalActionsHealth(): Promise<{
 export const HEALTH_CLASS: Record<HealthLabel, string> = {
   Excellent:
     "bg-good/10 text-good-ink border-good/30",
-  Bon: "bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-400/10 dark:text-sky-300 dark:border-sky-400/30",
+  // « Bon » sans être le vert d'un seuil web.dev : le bleu perf, qui suit le thème.
+  Bon: "bg-perf/10 text-perf border-perf/30",
   Dégradé:
     "bg-warn/10 text-warn-ink border-warn/30",
   Critique: "bg-bad/10 text-bad-ink border-bad/30",
@@ -98,7 +99,7 @@ export const HEALTH_CLASS: Record<HealthLabel, string> = {
 /** Couleur d'accent (anneau de score, texte) par libellé santé. */
 export const HEALTH_ACCENT: Record<HealthLabel, string> = {
   Excellent: "text-good-ink",
-  Bon: "text-sky-500",
+  Bon: "text-perf",
   Dégradé: "text-warn-ink",
   Critique: "text-bad-ink",
 };

@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
 import { Donut } from "@/components/charts/Donut";
 import type { Channel } from "@/lib/acquisition";
+import { categorie } from "@/lib/palette";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
 import type { SearchParams } from "@/lib/filters";
@@ -20,19 +21,15 @@ const LABEL: Record<Channel, string> = {
   referral: "Référent",
   internal: "Interne",
 };
-const DOT: Record<Channel, string> = {
-  direct: "bg-slate-400",
-  search: "bg-blue-500",
-  social: "bg-fuchsia-500",
-  referral: "bg-good",
-  internal: "bg-warn",
-};
+// Un canal est une catégorie, pas un verdict : couleurs de CATEGORIELLE, dans
+// l'ordre fixe des canaux (le « Référent » n'est pas « bon », l'« Interne » pas
+// « à surveiller »).
 const HEX: Record<Channel, string> = {
-  direct: "#94a3b8",
-  search: "#3b82f6",
-  social: "#d946ef",
-  referral: "#10b981",
-  internal: "#f59e0b",
+  direct: categorie(4),
+  search: categorie(0),
+  social: categorie(2),
+  referral: categorie(1),
+  internal: categorie(6),
 };
 
 export default async function Acquisition({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -111,7 +108,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
                     <td className="px-4 py-2 font-mono text-xs">{r.host}</td>
                     <td className="px-4 py-2">
                       <span className="inline-flex items-center gap-1.5 text-xs text-ink-soft">
-                        <span className={`h-2 w-2 rounded-full ${DOT[r.channel]}`} />
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: HEX[r.channel] }} />
                         {LABEL[r.channel]}
                       </span>
                     </td>

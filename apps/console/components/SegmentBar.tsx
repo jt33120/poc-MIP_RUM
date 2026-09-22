@@ -275,7 +275,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
           <button
             type="button"
             onClick={addCondition}
-            className="rounded bg-perf px-2 py-0.5 text-xs font-semibold text-white hover:opacity-90"
+            className="rounded bg-perf-ink px-2 py-0.5 text-xs font-semibold text-white hover:opacity-90"
             data-testid="segment-confirm"
           >
             Ajouter

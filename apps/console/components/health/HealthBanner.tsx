@@ -6,7 +6,7 @@ import { RATING_HEX } from "@/lib/palette";
 
 const RING_STROKE: Record<HealthLabel, string> = {
   Excellent: RATING_HEX.good,
-  Bon: "#0284c7", // ciel : bon, sans être le vert d'un seuil web.dev
+  Bon: "rgb(var(--c-brand))", // bleu perf : bon, sans être le vert d'un seuil web.dev
   Dégradé: RATING_HEX["needs-improvement"],
   Critique: RATING_HEX.poor,
 };
@@ -55,14 +55,10 @@ function FactorBar({
   raisonNull?: string;
 }) {
   const ratio = earned == null ? null : earned / max;
-  const color =
-    ratio == null
-      ? "bg-ink-faint/40"
-      : ratio >= 0.85
-        ? "bg-good"
-        : ratio >= 0.5
-          ? "bg-warn"
-          : "bg-bad";
+  // Une seule couleur, sans verdict (R-S) : les paliers 0,85 / 0,5 qui peignaient
+  // ces barres en vert / ambre / rouge n'avaient aucune source. La longueur dit
+  // la part des points gagnés ; le chiffre est écrit à côté.
+  const color = ratio == null ? "bg-ink-faint/40" : "bg-perf";
   return (
     // `min-w-0` : un élément de grille ne descend pas sous le min-content de
     // son contenu sans lui. Le libellé d'un facteur élargissait donc la grille,

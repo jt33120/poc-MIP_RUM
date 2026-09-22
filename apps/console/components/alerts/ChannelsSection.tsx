@@ -114,7 +114,7 @@ export function ChannelsSection({
                   type="submit"
                   data-testid={`toggle-channel-${c.id}`}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition ${
-                    c.active ? "bg-slate-500 hover:bg-slate-600" : "bg-good hover:bg-good/90"
+                    c.active ? "bg-slate-500 hover:bg-slate-600" : "bg-good-fond hover:bg-good-fond/90"
                   }`}
                 >
                   {c.active ? "Désactiver" : "Activer"}

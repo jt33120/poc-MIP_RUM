@@ -64,7 +64,7 @@ export function RuleRow({ rule, apps }: { rule: AlertRuleRow; apps: { app_id: st
           formAction={toggleRuleAction}
           data-testid={`toggle-${rule.id}`}
           className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition ${
-            rule.active ? "bg-slate-500 hover:bg-slate-600" : "bg-good hover:bg-good/90"
+            rule.active ? "bg-slate-500 hover:bg-slate-600" : "bg-good-fond hover:bg-good-fond/90"
           }`}
         >
           {rule.active ? "Désactiver" : "Activer"}
