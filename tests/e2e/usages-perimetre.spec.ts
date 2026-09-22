@@ -20,6 +20,8 @@
 import { execFileSync } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
+import { compteDedie } from "./helpers/compte-dedie";
+import { debordements, LARGEURS } from "./helpers/debordements";
 
 const A = "f40-e2e-a";
 const B = "f40-e2e-b";
@@ -219,4 +221,127 @@ test("viewer restreint à A + app=B nommée : hors périmètre, jamais rendue", 
     else await expect(page.getByTestId("filter-problem"), ecran).toContainText("Accès refusé");
     for (const marqueur of Object.values(MARQUEURS[B])) await expect(corps(page), `${ecran} → ${marqueur}`).not.toContainText(marqueur);
   }
+});
+
+// ═══════════════════════ F66 — /goals sur le contrat (§ 5.14.0) ═══════════════════════
+//
+// F66 lève, pour /goals, le refus provisoire de F40 : les lectures passent par
+// `sqlContext`, qui lie les apps EFFECTIVES du principal. Un viewer restreint à A qui
+// demande « toutes les apps » voit donc l'écran (réécrit en A par la porte du
+// middleware, ou lu sur ses seules apps) — jamais le refus, jamais un objectif, une
+// conversion ou une session de B. Apps, objectifs et comptes DÉDIÉS à ce bloc.
+test.describe("F66 — /goals : viewer restreint à A + app=all, aucune donnée de B", () => {
+  const APP_A_F66 = "f66-e2e-a";
+  const APP_B_F66 = "f66-e2e-b";
+  const VIEWER_F66 = "e2e-f66-viewer@mip-rum.local";
+  const MDP_VIEWER_F66 = "e2e-f66-viewer-mdp-local";
+  const ADMIN_F66 = "e2e-f66-admin@mip-rum.local";
+  // A : 2 sessions dont 1 convertie ; B : 5 sessions toutes converties. Lue avec B, la
+  // population de A compterait 7 sessions et « 1 sur 7 ».
+  const SESSIONS_F66: Record<string, { n: number; converties: number }> = {
+    [APP_A_F66]: { n: 2, converties: 1 },
+    [APP_B_F66]: { n: 5, converties: 5 },
+  };
+  const OBJECTIF_F66: Record<string, string> = { [APP_A_F66]: "Objectif F66 A", [APP_B_F66]: "Objectif F66 B" };
+  let mdpAdminF66 = "";
+
+  async function nettoyerF66() {
+    for (const t of ["goal", "rum_pageview", "rum_session"])
+      await pool.query(`delete from ${t} where app_id = any($1::text[])`, [[APP_A_F66, APP_B_F66]]);
+  }
+
+  test.beforeAll(async () => {
+    await pool.query(
+      `insert into console_user (email, password_hash, role, apps, active)
+       values ($1, $2, 'viewer', array[$3]::text[], true)
+       on conflict (email) do update
+         set password_hash = excluded.password_hash, role = 'viewer', apps = excluded.apps, active = true`,
+      [VIEWER_F66, bcryptHash(MDP_VIEWER_F66), APP_A_F66],
+    );
+    mdpAdminF66 = await compteDedie(pool, ADMIN_F66);
+    await nettoyerF66();
+    for (const [app, { n, converties }] of Object.entries(SESSIONS_F66)) {
+      await pool.query(`insert into app_registry (app_id, name) values ($1, $1) on conflict (app_id) do nothing`, [app]);
+      for (let i = 0; i < n; i++) {
+        const sid = `${app}-s${i}`;
+        await pool.query(
+          `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+           values ($1, $2, $1, 'desktop', false, now() - interval '2 hours', now() - interval '90 minutes', 2)`,
+          [sid, app],
+        );
+        await pool.query(
+          `insert into rum_pageview (span_id, session_id, app_id, route, url, started_at)
+           values ($1, $2, $3, '/f66-accueil', 'https://site-f66.example/', now() - interval '2 hours')`,
+          [`${sid}-pv1`, sid, app],
+        );
+        if (i < converties) {
+          await pool.query(
+            `insert into rum_pageview (span_id, session_id, app_id, route, url, started_at)
+             values ($1, $2, $3, '/f66-merci', 'https://site-f66.example/merci', now() - interval '110 minutes')`,
+            [`${sid}-pv2`, sid, app],
+          );
+        }
+      }
+      await pool.query(
+        `insert into goal (app_id, name, kind, pattern, match_type, active) values ($1, $2, 'pageview', '/f66-merci', 'exact', true)`,
+        [app, OBJECTIF_F66[app]],
+      );
+    }
+  });
+
+  test.afterAll(async () => {
+    await nettoyerF66();
+  });
+
+  test("témoin admin : B se lit à bon droit ; sous « toutes », chaque objectif sur les sessions de SON app", async ({ page }) => {
+    await login(page, ADMIN_F66, mdpAdminF66);
+    await page.goto(`${consoleUrl}/goals?app=${APP_B_F66}&period=24h`, { waitUntil: "domcontentloaded" });
+    await expect(corps(page)).toContainText(OBJECTIF_F66[APP_B_F66]);
+    await page.goto(`${consoleUrl}/goals?app=all&period=24h`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("filter-problem")).toHaveCount(0);
+    const table = page.locator("#objectifs");
+    await expect(table.locator("tr", { hasText: OBJECTIF_F66[APP_A_F66] })).toContainText("1 sur 2");
+    await expect(table.locator("tr", { hasText: OBJECTIF_F66[APP_B_F66] })).toContainText("5 sur 5");
+    // Plusieurs apps : l'app préfixe la condition dans le hero.
+    await expect(page.locator("#conversions-taux")).toContainText(`${APP_B_F66} · page vue = /f66-merci`);
+  });
+
+  test("viewer restreint à A + app=all : l'écran s'affiche (refus F40 levé), A seule", async ({ page }) => {
+    await login(page, VIEWER_F66, MDP_VIEWER_F66);
+    for (const qs of ["app=all&period=24h", "period=24h"]) {
+      await page.goto(`${consoleUrl}/goals?${qs}`, { waitUntil: "domcontentloaded" });
+      await expect(corps(page), qs).not.toContainText("Application error");
+      // Ni refus « une application à la fois » : les lectures lient les apps effectives.
+      await expect(corps(page), qs).not.toContainText(REFUS);
+      await expect(corps(page), qs).toContainText(OBJECTIF_F66[APP_A_F66]);
+      await expect(corps(page), qs).not.toContainText(OBJECTIF_F66[APP_B_F66]);
+      // Dénominateur : les 2 sessions de A, jamais les 7 de A + B.
+      const denominateur = page.getByTestId("kpi-tile").filter({ hasText: "Sessions de la fenêtre" });
+      await expect(denominateur.getByTestId("kpi-valeur"), qs).toHaveText("2");
+      await expect(page.locator("#objectifs tr", { hasText: OBJECTIF_F66[APP_A_F66] }), qs).toContainText("1 sur 2");
+      // Aucune gestion (écriture) rendue pour un viewer (V9).
+      await expect(page.getByTestId("create-goal"), qs).toHaveCount(0);
+    }
+  });
+
+  test("plage personnalisée, tablette et appareil inconnu acceptés (plus de lecture historique)", async ({ page }) => {
+    await login(page, VIEWER_F66, MDP_VIEWER_F66);
+    const to = new Date(Date.now() - 60_000).toISOString();
+    const from = new Date(Date.now() - 6 * 3_600_000).toISOString();
+    for (const qs of [`from=${from}&to=${to}`, "period=24h&device=tablet", "period=24h&seg=v2%3Adevice%3Ais_null"]) {
+      await page.goto(`${consoleUrl}/goals?app=${APP_A_F66}&${qs}`, { waitUntil: "domcontentloaded" });
+      await expect(page.getByTestId("filter-problem"), qs).toHaveCount(0);
+      await expect(page.locator("#conversions-taux"), qs).toBeVisible();
+    }
+  });
+
+  test("aucun débordement à 390, 768 et 1440 px", async ({ page }) => {
+    await login(page, ADMIN_F66, mdpAdminF66);
+    for (const largeur of LARGEURS) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(`${consoleUrl}/goals?app=all&period=24h`, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#conversions-taux")).toBeVisible();
+      expect(await debordements(page), `${largeur} px`).toEqual([]);
+    }
+  });
 });

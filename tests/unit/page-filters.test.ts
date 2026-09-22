@@ -62,9 +62,9 @@ describe("pageFilters", () => {
       ok: false,
       problem: { code: "unsupported_dimension", message: "« Navigateur » n'est pas encore collecté pour les pages vues" },
     });
-    expect(await pageFilters({ app: "a", device: "tablet" }, "/goals")).toMatchObject({
+    expect(await pageFilters({ app: "a", device: "tablet" }, "/paths")).toMatchObject({
       ok: false,
-      problem: { message: "Cet écran n'applique ni « Inconnu » ni la tablette.", resetHref: "/goals?app=a" },
+      problem: { message: "Cet écran n'applique ni « Inconnu » ni la tablette.", resetHref: "/paths?app=a" },
     });
     expect(
       await pageFilters({ app: "a", from: "2026-09-16T10:00:00Z", to: "2026-09-16T11:00:00Z" }, "/acquisition"),
@@ -83,7 +83,8 @@ describe("pageFilters", () => {
   // F40 (R-A) — refus provisoire : une lecture mono-app sous `app=all` sortirait du
   // périmètre d'un principal restreint. Refus de périmètre, reprise vers /select.
   it("écran à lecture mono-app, principal restreint, toutes les apps : refus « une application à la fois »", async () => {
-    for (const path of ["/acquisition", "/paths", "/forms", "/retention", "/goals"]) {
+    // `/goals` en est sorti avec F66 (lectures sur le contrat) : voir le test F66 plus bas.
+    for (const path of ["/acquisition", "/paths", "/forms", "/retention"]) {
       for (const sp of [{ app: "all" }, {}]) {
         expect(await pageFilters(sp, path), `${path} ${JSON.stringify(sp)}`).toEqual({
           ok: false,
@@ -141,5 +142,28 @@ describe("pageFilters", () => {
 
   it("un écran sans capacités déclarées est une erreur de programmation", async () => {
     await expect(pageFilters({}, "/nouvel-ecran")).rejects.toThrow("écran sans capacités de filtrage déclarées : /nouvel-ecran");
+  });
+});
+
+// F66 (§ 5.14.0) : /goals lit sur le contrat. Le refus provisoire de F40 est levé :
+// un principal restreint qui demande toutes ses apps lit SES apps (apps effectives
+// liées par `sqlContext`) ; plage personnalisée, tablette et « Inconnu » s'appliquent.
+describe("pageFilters — /goals sur le contrat (F66)", () => {
+  it("principal restreint + toutes les apps : l'écran s'affiche, périmètre = ses apps", async () => {
+    for (const sp of [{ app: "all" }, {}]) {
+      const ecran = await pageFilters(sp, "/goals");
+      expect(ecran.ok, JSON.stringify(sp)).toBe(true);
+      if (ecran.ok) expect(ecran.query.scope.effectiveApps).toEqual(["a", "b"]);
+    }
+  });
+
+  it("plage personnalisée, tablette et appareil inconnu acceptés ; dimension d'occurrence refusée", async () => {
+    expect((await pageFilters({ app: "a", from: "2026-09-16T08:00:00Z", to: "2026-09-16T10:00:00Z" }, "/goals")).ok).toBe(true);
+    expect((await pageFilters({ app: "a", device: "tablet" }, "/goals")).ok).toBe(true);
+    expect((await pageFilters({ app: "a", seg: "v2:device:is_null" }, "/goals")).ok).toBe(true);
+    expect(await pageFilters({ app: "a", route: "/merci" }, "/goals")).toMatchObject({
+      ok: false,
+      problem: { code: "unsupported_dimension", message: "« Route » est sans objet pour les sessions" },
+    });
   });
 });

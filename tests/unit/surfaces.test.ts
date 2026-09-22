@@ -117,7 +117,7 @@ describe("matrice écran × filtre", () => {
   });
 
   it("écrans historiques : segment v1 et presets seulement, ni tablette ni « inconnu »", () => {
-    for (const path of ["/paths", "/forms", "/goals", "/acquisition", "/retention"]) {
+    for (const path of ["/paths", "/forms", "/acquisition", "/retention"]) {
       const s = surface(path);
       expect(disponibles(path).sort(), path).toEqual(["client", "country", "country_source", "device", "source"]);
       expect(dimensionAvailability(s, "browser", schemaComplet())).toEqual({
@@ -186,11 +186,11 @@ describe("checkSurface : une URL entièrement applicable, ou un refus typé", ()
   });
 
   it("refuse plage personnalisée sur un écran à presets, tablette sur un écran historique, dimension absente", () => {
-    expect(checkSurface(requete("from=2026-09-17T10:00:00Z&to=2026-09-17T11:00:00Z"), surface("/goals"), schemaComplet())).toMatchObject({
+    expect(checkSurface(requete("from=2026-09-17T10:00:00Z&to=2026-09-17T11:00:00Z"), surface("/paths"), schemaComplet())).toMatchObject({
       ok: false,
       error: { code: "unsupported_dimension", parameter: "from" },
     });
-    expect(checkSurface(requete("device=tablet"), surface("/goals"), schemaComplet())).toMatchObject({
+    expect(checkSurface(requete("device=tablet"), surface("/paths"), schemaComplet())).toMatchObject({
       ok: false,
       error: { code: "unsupported_dimension", dimension: "device", message: "Cet écran n'applique ni « Inconnu » ni la tablette." },
     });
@@ -239,14 +239,15 @@ describe("/mobile — la liste blanche de dimensions", () => {
 // `($1::text is null or app_id = $1)` : sous `app=all`, elles liraient TOUTES les
 // apps de la base. Un principal restreint qui demande toutes ses apps est refusé.
 describe("perimetreAvailability — écrans à lecture mono-app", () => {
-  const MONO_APP = ["/acquisition", "/paths", "/forms", "/retention", "/goals"];
+  // `/goals` en est sorti avec F66 (lectures sur `sqlContext`) : voir le bloc F66.
+  const MONO_APP = ["/acquisition", "/paths", "/forms", "/retention"];
   const scope = (requestedApp: string | null, authorizedApps: string[] | null) => ({
     requestedApp,
     authorizedApps,
     effectiveApps: requestedApp ? [requestedApp] : authorizedApps,
   });
 
-  it("exactement les cinq écrans historiques d'usage sont marqués", () => {
+  it("exactement les écrans historiques d'usage encore non migrés sont marqués", () => {
     expect(SURFACES.filter((s) => s.appUnique).map((s) => s.path).sort()).toEqual([...MONO_APP].sort());
   });
 
@@ -289,4 +290,36 @@ describe("SANS_RAFRAICHISSEMENT", () => {
       expect(sansRafraichissement(chemin)).toBe(false);
     },
   );
+});
+
+// F66 (§ 5.14.0) : /goals lit sur le contrat. Ni lecture historique, ni refus
+// « une application à la fois » ; ses taux portent sur une cohorte de SESSIONS, donc
+// seules les dimensions de session s'appliquent (une route filtrerait le numérateur
+// sans le dénominateur).
+describe("/goals sur le contrat (F66)", () => {
+  const goals = () => surface("/goals");
+
+  it("plus de lecture historique ni de refus de périmètre ; plage personnalisée acceptée", () => {
+    expect(goals().legacy).toBeUndefined();
+    expect(goals().appUnique).toBeUndefined();
+    expect(goals().rangeNote).toBeUndefined();
+    expect(rangeAvailability(goals(), true)).toEqual({ available: true });
+    expect(perimetreAvailability(goals(), { requestedApp: null, authorizedApps: ["a", "b"], effectiveApps: ["a", "b"] })).toEqual({
+      available: true,
+    });
+  });
+
+  it("dimensions de session seulement ; tablette et « Inconnu » acceptés", () => {
+    expect(disponibles("/goals").sort()).toEqual(["browser", "client", "country", "country_source", "device", "os", "source"]);
+    expect(conditionAvailability(goals(), { dimension: "device", operator: "eq", value: "tablet" }, schemaComplet()).available).toBe(true);
+    expect(conditionAvailability(goals(), { dimension: "device", operator: "is_null", value: null }, schemaComplet()).available).toBe(true);
+    expect(checkSurface(requete("from=2026-09-17T10:00:00Z&to=2026-09-17T11:00:00Z&device=tablet"), goals(), schemaComplet())).toEqual({
+      ok: true,
+      value: true,
+    });
+    expect(checkSurface(requete("route=/merci"), goals(), schemaComplet())).toMatchObject({
+      ok: false,
+      error: { dimension: "route", message: "« Route » est sans objet pour les sessions" },
+    });
+  });
 });

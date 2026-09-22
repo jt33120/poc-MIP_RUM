@@ -129,7 +129,12 @@ export const SURFACES: Surface[] = [
   },
   { path: "/paths", datasets: ["sessions"], range: "presets", legacy: "segments", appUnique: true },
   { path: "/forms", datasets: ["sessions"], range: "presets", legacy: "segments", appUnique: true },
-  { path: "/goals", datasets: ["sessions"], range: "presets", legacy: "segments", appUnique: true },
+  // F66 : /goals lit sur le contrat (`sqlContext`, apps effectives liées) — plus de
+  // `legacy` ni de refus « une application à la fois » ; plage personnalisée,
+  // tablette et « Inconnu » s'appliquent. Jeu `sessions` : les taux portent sur une
+  // cohorte de sessions ; une dimension d'occurrence (route, release) filtrerait le
+  // numérateur sans le dénominateur, elle reste refusée avec sa raison.
+  { path: "/goals", datasets: ["sessions"], range: "custom" },
   { path: "/acquisition", datasets: ["sessions"], range: "presets", legacy: "segments", appUnique: true },
   // La rétention lit N SEMAINES, choisies dans l'écran (`?weeks=`), jamais la
   // période du haut : lib/queries-cohorts.ts ne lit ni `f.period` ni PERIODS.
