@@ -572,14 +572,19 @@ export interface CorrCardRow {
  */
 export const EFFECTIF_MIN_HEURE = 30;
 
-/** CTE `rum` et `syn` filtrées ; `grain` ajoute le seau horaire aligné UTC. */
-function correlationSources(sql: SqlContext, grain: "fenetre" | "heure"): string {
+/**
+ * CTE `rum` et `syn` filtrées ; `grain` ajoute le seau aligné UTC — une heure
+ * (concordance des états, série du hero) ou un JOUR (concordance quotidienne de
+ * P*.8, B61). Le grain ne change QUE la largeur du seau : même exclusion des bots,
+ * même périmètre, mêmes colonnes des deux côtés.
+ */
+function correlationSources(sql: SqlContext, grain: "fenetre" | "heure" | "jour"): string {
   const reel = sql.where({ dataset: "vitals", row: "m", session: "ms", time: "m.ts" });
   const robot = sql.where({ dataset: "synthetic", row: "y", time: "y.captured_at" });
-  const horaire = { ...sql.query.range, bucketSeconds: 3600 };
-  const seauReel = grain === "heure" ? `, ${bucketExpr("m.ts", horaire)} as bucket` : "";
-  const seauRobot = grain === "heure" ? `, ${bucketExpr("y.captured_at", horaire)} as bucket` : "";
-  const groupe = grain === "heure" ? "1, 2, 3" : "1, 2";
+  const seau = { ...sql.query.range, bucketSeconds: grain === "jour" ? 86_400 : 3600 };
+  const seauReel = grain === "fenetre" ? "" : `, ${bucketExpr("m.ts", seau)} as bucket`;
+  const seauRobot = grain === "fenetre" ? "" : `, ${bucketExpr("y.captured_at", seau)} as bucket`;
+  const groupe = grain === "fenetre" ? "1, 2" : "1, 2, 3";
   return `rum as (
        select m.app_id, m.route${seauReel},
               percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'LCP') as rum_lcp_p75,
@@ -885,4 +890,59 @@ export async function correlationConcordance(f: FiltersLike, effectifMin = EFFEC
     anglesMortsParRoute,
     bornesLcp,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Concordance quotidienne robot / réel (P*.8, dépendance B61)
+// ---------------------------------------------------------------------------
+
+export interface CorrJourRow {
+  app_id: string;
+  route: string;
+  /** Début du jour UTC (seau de 86 400 secondes aligné sur l'origine UTC). */
+  jour: Date;
+  /** Premier chargement moyen du robot ce jour-là ; `null` : aucun passage. */
+  syn_latency_avg: number | null;
+  /** LCP p75 réel du jour ; `null` : aucune mesure. */
+  rum_lcp_p75: number | null;
+  /** Mesures LCP du jour : l'effectif qui décide si le jour compte (P*.8). */
+  rum_lcp_n: number | null;
+}
+
+/**
+ * Séries QUOTIDIENNES robot et réel, par couple (app, route) — la lecture de la
+ * concordance de P*.8 (B61). Même périmètre, mêmes exclusions et mêmes colonnes
+ * que la série horaire : seul le seau change (`correlationSources(sql, "jour")`).
+ *
+ * `app` et `route` à `null` rendent TOUS les couples en une requête : la table
+ * CR12 porte un coefficient par route, et le plan demande « une requête
+ * quotidienne groupée par route » (§ 7.2, P*.8). Passer le couple garde la
+ * signature `correlationQuotidienne(app, route, f)` du registre B61.
+ *
+ * Les jours sans route (`route` ou `route_hint` NULL) sont exclus, comme dans
+ * `correlationConcordance` : `using (…, route, …)` ne relie jamais deux NULL, et
+ * un jour sans route ne désigne aucun couple. La plage est bornée à 30 jours par
+ * le contrat (V6) : au plus 30 lignes par couple. Seuls les jours où au moins un
+ * côté a mesuré sont rendus ; l'appelant écarte les jours incomplets
+ * (`joursCommuns`, lib/stats/concordance.ts).
+ */
+export async function correlationQuotidienne(
+  app: string | null,
+  route: string | null,
+  f: FiltersLike,
+): Promise<CorrJourRow[]> {
+  const sql = await sqlContext(f);
+  const sources = correlationSources(sql, "jour");
+  const couple =
+    app !== null && route !== null ? ` and app_id = ${sql.bind(app)} and route = ${sql.bind(route)}` : "";
+  return q<CorrJourRow>(
+    `with ${sources}
+     select coalesce(r.app_id, s.app_id) as app_id, coalesce(r.route, s.route) as route,
+            coalesce(r.bucket, s.bucket) as jour,
+            s.syn_latency_avg, r.rum_lcp_p75, r.rum_lcp_n
+       from (select * from rum where route is not null${couple}) r
+       full outer join (select * from syn where route is not null${couple}) s using (app_id, route, bucket)
+      order by 1, 2, 3`,
+    sql.params,
+  );
 }

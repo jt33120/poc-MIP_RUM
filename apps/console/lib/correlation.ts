@@ -8,6 +8,14 @@ import { bucketStarts, MAX_POINTS } from "./query-contract";
 import { rating2026, THRESHOLDS, type Rating } from "./rating";
 import type { CelluleConcordance, CorrCardRow, CorrSeriesRow, SyntheticFreshnessRow } from "./queries-v2";
 import { grilleIso } from "./series";
+// P*.8 — concordance robot ↔ réel (ρ de Spearman sur les jours communs).
+import { ecrireSerie } from "./correlation-serie";
+import type { CorrJourRow } from "./queries-v2";
+import { concordance, joursCommuns, type Concordance as ConcordanceRang, type JourLu } from "./stats/concordance";
+import type { Resultat } from "./stats/types";
+
+/** Le ρ d'un couple, ou son refus chiffré : les deux s'affichent (RM2). */
+export type ResultatConcordance = Resultat<ConcordanceRang>;
 
 export type RetardRobot =
   /** Aucun passage sur la plage : l'écran dit « Non collecté », pas « robot ok ». */
@@ -251,4 +259,43 @@ export function dernierPassage(fraicheurs: readonly Pick<SyntheticFreshnessRow, 
   let plusRecent: Date | null = null;
   for (const f of fraicheurs) if (f.dernier && (!plusRecent || f.dernier.getTime() > plusRecent.getTime())) plusRecent = f.dernier;
   return plusRecent;
+}
+
+/**
+ * Concordance robot ↔ réel par couple (P*.8) : les lignes quotidiennes de
+ * `correlationQuotidienne` regroupées par (app, route), puis le ρ de Spearman de
+ * chaque couple — ou son refus chiffré (« 4 jours communs, 10 requis »).
+ *
+ * La clé est la valeur du paramètre `serie` (`ecrireSerie`), celle qui désigne
+ * déjà un couple dans le hero et dans la table : aucune route n'est confondue
+ * entre deux apps sous `app=all`.
+ */
+export function concordanceParCouple(
+  jours: readonly CorrJourRow[],
+  options: { joursMin?: number; mesuresMin?: number; seuil?: number } = {},
+): Map<string, ResultatConcordance> {
+  const parCouple = new Map<string, JourLu[]>();
+  for (const j of jours) {
+    const cle = ecrireSerie(j.app_id, j.route);
+    const lus = parCouple.get(cle) ?? [];
+    lus.push({
+      robot: j.syn_latency_avg == null ? null : Number(j.syn_latency_avg),
+      reel: j.rum_lcp_p75 == null ? null : Number(j.rum_lcp_p75),
+      mesures: j.rum_lcp_n == null ? null : Number(j.rum_lcp_n),
+    });
+    parCouple.set(cle, lus);
+  }
+  const resultats = new Map<string, ResultatConcordance>();
+  for (const [cle, lus] of parCouple) {
+    resultats.set(cle, concordance(joursCommuns(lus, options.mesuresMin), options));
+  }
+  return resultats;
+}
+
+/**
+ * La concordance d'un couple qui n'a AUCUN jour lu : un refus chiffré (« 0 jour
+ * commun, 10 requis »), jamais une case vide qui se lirait « pas de lien ».
+ */
+export function concordanceAbsente(joursMin?: number): ResultatConcordance {
+  return concordance([], { joursMin });
 }
