@@ -170,9 +170,11 @@ async function debordements(page: Page): Promise<string[]> {
   });
 }
 
+// Le découpage par dimension a quitté `/pages` (F14, § 5.2.4 : doublon de la Vue
+// d'ensemble) ; ses onglets se vérifient donc là où ils vivent, sur `/`.
 test("découpage : onglets, drill-down, clavier et alternative textuelle", async ({ page }) => {
   await loginConsole(page);
-  await page.goto(`${BASE}/pages?app=${APP_ID}&period=24h`);
+  await page.goto(`${BASE}/?app=${APP_ID}&period=24h`);
 
   const decoupage = page.getByTestId("breakdown");
   await expect(decoupage).toBeVisible();
@@ -214,17 +216,19 @@ test("découpage : onglets, drill-down, clavier et alternative textuelle", async
   await expect(page.getByTestId("breakdown")).not.toContainText("Firefox");
 });
 
-test("une route du tableau ouvre le détail avec la même plage", async ({ page }) => {
+test("une route du classement ouvre le détail avec la même plage", async ({ page }) => {
   await loginConsole(page);
   // Période 7 j, et non le défaut 24 h : une plage conservée doit rester VISIBLE
-  // dans l'URL du drill-down, ce que le défaut ne prouverait pas.
+  // dans l'URL du drill-down, ce que le défaut ne prouverait pas. La table « Par
+  // route » a fusionné dans le hero classé (F14) : c'est sa ligne qu'on ouvre.
   await page.goto(`${BASE}/pages?app=${APP_ID}&period=7d`);
-  const lien = page.getByTestId("route-drill").filter({ hasText: "/panier" }).first();
+  const lignes = page.getByTestId("hero-routes").getByTestId("impact-ligne");
+  const lien = lignes.filter({ hasText: "/panier" }).first().getByRole("link");
   await expect(lien).toBeVisible();
   await lien.click();
   await page.waitForURL((u) => u.searchParams.get("route") === "/panier", { timeout: 15_000 });
   expect(new URL(page.url()).searchParams.get("period")).toBe("7d");
-  await expect(page.getByTestId("route-drill")).toHaveCount(1);
+  await expect(page.getByTestId("hero-routes").getByTestId("impact-ligne")).toHaveCount(1);
 });
 
 test("ressources : l'avertissement de seuil et le partage première/tierce partie", async ({ page }) => {

@@ -71,8 +71,9 @@ const memeDocument = (page: Page) => page.evaluate(() => (window as unknown as {
 test("mêmes route et query : le lien, le filtre et le rafraîchissement aboutissent sans rechargement", async ({ page }) => {
   await login(page);
   await page.goto(`${consoleUrl}/events?app=demo-app&period=1h&device=mobile&name=p62-navigation`);
-  await expect(page.getByRole("heading", { name: "Événements" })).toBeVisible();
-  await expect(page.getByTestId("events-total")).toHaveText("1");
+  // F25 : l'écran s'appelle « Journal » ; le total est une tuile (`kpi-valeur`).
+  await expect(page.getByRole("heading", { name: "Journal", level: 1 })).toBeVisible();
+  await expect(page.getByTestId("events-total").getByTestId("kpi-valeur")).toHaveText("1");
   await marquer(page);
 
   // 1. « Réinitialiser » : même route, autre query — le cas qui restait en suspens.
@@ -84,14 +85,14 @@ test("mêmes route et query : le lien, le filtre et le rafraîchissement aboutis
   // 2. Filtre global : la période change l'URL et l'écran, toujours sans rechargement.
   await page.getByTestId("filter-period").getByRole("button", { name: "24 h" }).click();
   await expect(page).toHaveURL(`${consoleUrl}/events?app=demo-app&device=mobile`, { timeout: 10_000 });
-  await expect(page.getByText(/Explorer les événements custom observés sur 24 h/)).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/signaux émis par le SDK, observés sur 24 h/)).toBeVisible({ timeout: 10_000 });
   expect(await memeDocument(page)).toBe(true);
 
   // 3. « LIVE · 5 s » : une ligne ingérée apparaît sans que personne ne recharge.
   // La population est resserrée sur l'événement de ce test : les autres suites E2E
   // écrivent dans la même app, et un compteur global serait un compteur partagé.
   await page.goto(`${consoleUrl}/events?app=demo-app&period=1h&device=mobile&name=p62-navigation`);
-  await expect(page.getByTestId("events-total")).toHaveText("1");
+  await expect(page.getByTestId("events-total").getByTestId("kpi-valeur")).toHaveText("1");
   await marquer(page);
   await pool.query(
     `insert into rum_event (span_id,session_id,app_id,route,name,props,context,ts)
@@ -103,7 +104,7 @@ test("mêmes route et query : le lien, le filtre et le rafraîchissement aboutis
      values ('demo-app',$1, now(), '/p62-nav','event','track',$2)`,
     [SESSION, SPANS[1]],
   );
-  await expect(page.getByTestId("events-total")).toHaveText("2", { timeout: 30_000 });
+  await expect(page.getByTestId("events-total").getByTestId("kpi-valeur")).toHaveText("2", { timeout: 30_000 });
   expect(await memeDocument(page)).toBe(true);
 });
 

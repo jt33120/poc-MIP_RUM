@@ -196,8 +196,8 @@ export const GLOSSARY = {
       "On mesure ce que vivent les visiteurs réels du site en production, pas une simulation. Ces mesures disent ce qu'ils ont vécu ; seules, elles ne disent pas l'effet sur les ventes.",
   },
   experience: {
-    label: "Expérience",
-    term: "Trois constituants du ressenti montrés côte à côte, sans score composite : LCP p75 et son verdict web.dev, frustration (clics rageurs et morts pour 1 000 sessions), CSAT (part des avis ≥ 4/5).",
+    label: "Satisfaction",
+    term: "Ce que les visiteurs déclarent (CSAT : part des avis ≥ 4/5, part de notes 1-2), à côté de ce qu'ils subissent (LCP p75 par page, frustration pour 1 000 sessions), sans score composite.",
     stack:
       "LCP : percentile_cont(0.75) sur rum_metric ; frustration : rum_event 'frustration.rage' / 'frustration.dead' rapportés aux sessions commencées ; CSAT : rum_event name='feedback'. Aucune pondération entre les trois.",
     business:
