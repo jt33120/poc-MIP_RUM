@@ -72,3 +72,23 @@ export function funnelReport(reached: number[], names: string[]): FunnelStep[] {
 export function computeFunnel(sessions: (number | null)[][], names: string[]): FunnelStep[] {
   return funnelReport(funnelReached(sessions, names.length), names);
 }
+
+// ── F50 (plan § 5.13.4) ──────────────────────────────────────────────────────
+// « Où décroche-t-on ? » est la question de l'entonnoir : la marche qui coûte le
+// plus de sessions se lit d'un coup d'œil, plutôt qu'en comparant quatre nombres.
+
+/**
+ * L'étape qui perd le PLUS de sessions depuis la précédente, ou `null` si aucune
+ * n'en perd (entonnoir parfait, ou entonnoir vide : il n'y a alors pas de « plus
+ * forte perte », et en désigner une serait faux). En cas d'égalité, la première :
+ * c'est elle qui prive toutes les suivantes. L'étape 1 n'est jamais candidate —
+ * son abandon vaut 0 par construction (il n'y a pas d'étape avant elle).
+ */
+export function etapeLaPlusPerdante(steps: FunnelStep[]): number | null {
+  let pire: FunnelStep | null = null;
+  for (const s of steps) {
+    if (s.ord === 1 || s.dropoff <= 0) continue;
+    if (!pire || s.dropoff > pire.dropoff) pire = s;
+  }
+  return pire ? pire.ord : null;
+}

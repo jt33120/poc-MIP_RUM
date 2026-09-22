@@ -153,3 +153,24 @@ function assignBands(
     }
   }
 }
+
+// ── F50 (plan § 4.1, § 5.13.4) ───────────────────────────────────────────────
+// La hauteur du dessin suit le NOMBRE de nœuds, pas une constante. À 380 px fixes,
+// trois routes donnaient trois rubans obèses (une transition rare occupait le tiers
+// de l'image) et huit routes des filets illisibles collés les uns aux autres : la
+// même page racontait deux histoires différentes selon le trafic. Une base plus un
+// pas par nœud garde une épaisseur de ruban comparable d'un écran à l'autre.
+
+/** Hauteur du dessin : base, pas par nœud, plafond — en pixels (plan § 5.13.4). */
+export const SANKEY_HAUTEUR = { base: 120, parNoeud: 36, plafond: 380 } as const;
+
+/**
+ * Hauteur en pixels d'un modèle : `base + parNoeud × (nœuds de la colonne la plus
+ * haute)`, plafonnée. La colonne la plus haute décide : c'est elle qui doit loger
+ * ses libellés sans les chevaucher. Un modèle sans nœud garde la base (il n'affiche
+ * de toute façon pas de dessin, mais sa hauteur reste un nombre).
+ */
+export function hauteurSankey(model: SankeyModel): number {
+  const noeuds = Math.max(model.left.length, model.right.length);
+  return Math.min(SANKEY_HAUTEUR.plafond, SANKEY_HAUTEUR.base + SANKEY_HAUTEUR.parNoeud * noeuds);
+}
