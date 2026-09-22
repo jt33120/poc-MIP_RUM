@@ -7,8 +7,16 @@
 //
 // COMPATIBILITÉ. `?tab=replay` et `?tab=timeline` (liens existants, dont
 // components/errors/error-view.ts) ouvrent le Déroulé, qui porte le rejeu ET la
-// chronologie ; `at` reste lu et positionne le lecteur. Groupement par vue (F45),
-// cascade et distributions (F46), synchronisation du rejeu (F47) viennent ensuite.
+// chronologie ; `at` reste lu et positionne le lecteur. Cascade et distributions
+// (F46), synchronisation du rejeu (F47) viennent ensuite.
+//
+// F45 — le Déroulé est GROUPÉ PAR VUE (`Deroule`, `lib/deroule.ts`), filtrable
+// par `voir=` (§ 3.1). Les liens sortants de la chronologie sont PRÉ-CALCULÉS
+// ici, jamais par le composant : seule la page connaît le périmètre d'app.
+// Aujourd'hui, un seul est calculable — la route (`/pages?route=`). L'erreur
+// groupée et la trace attendent B32 (`sessionTimeline` ne projette ni
+// `fingerprint` ni `trace_id`) : la page le DIT, plutôt que de rendre un lien
+// mort ou de taire l'absence.
 //
 // IDENTITÉ. Rien de `select *` n'est passé à un composant client : seules les
 // valeurs choisies sont rendues (S5). `user_id_hash`, `account_id_hash` et
@@ -23,7 +31,9 @@ import { RecitSession } from "@/components/sessions/RecitSession";
 import { TabLink } from "@/components/sessions/TabLink";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { SectionErreur } from "@/components/states/SectionErreur";
-import { TimelineRow } from "@/components/sessions/Timeline";
+import { Deroule } from "@/components/sessions/Deroule";
+import { LIBELLES_NATURES } from "@/lib/deroule";
+import { NATURES_CHRONOLOGIE, ligneIgnoree, lireVoir, type NatureChronologie } from "@/lib/view-state";
 import { formater } from "@/lib/fmt-ids";
 import { fmtDate, fmtVital } from "@/lib/format";
 import { lire } from "@/lib/lecture";
@@ -103,21 +113,42 @@ export default async function SessionDetail({
   const { onglet, ignore } = lireOnglet(premier(sp.tab));
   const at = lireInstant(premier(sp.at));
 
-  // Filtres globaux conservés dans les liens ; onglet et instant exclus (propres au détail).
+  // `voir=` (F06, § 3.1) : natures de la chronologie. Une valeur illisible est
+  // IGNORÉE et signalée — elle ne touche aucun chiffre, donc jamais un refus.
+  // Toutes les natures = défaut, donc `null` : la barre de filtres montre « Tout ».
+  const voirBrut = premier(sp.voir) ?? null;
+  const voirLu = voirBrut === null ? null : lireVoir(voirBrut);
+  const ignoreVoir =
+    voirBrut !== null && voirLu === null
+      ? ligneIgnoree("voir", voirBrut, `natures : ${NATURES_CHRONOLOGIE.join(", ")}`)
+      : null;
+  const voir = voirLu && voirLu.length < NATURES_CHRONOLOGIE.length ? voirLu : null;
+
+  // Filtres globaux conservés dans les liens ; onglet, instant et filtre de
+  // chronologie exclus (propres au détail, et `voir` propre au seul Déroulé).
   const qs = new URLSearchParams(
     Object.entries(sp).flatMap(([k, v]) => {
       const valeur = premier(v);
-      return typeof valeur === "string" && k !== "tab" && k !== "at" ? [[k, valeur] as [string, string]] : [];
+      return typeof valeur === "string" && k !== "tab" && k !== "at" && k !== "voir"
+        ? [[k, valeur] as [string, string]]
+        : [];
     }),
   ).toString();
   const chemin = `/sessions/${encodeURIComponent(meta.session_id)}`;
-  const hrefOnglet = (o: OngletSession, extra: { at?: number | null; ancre?: string } = {}) => {
+  const hrefOnglet = (
+    o: OngletSession,
+    extra: { at?: number | null; ancre?: string; voir?: readonly NatureChronologie[] | null } = {},
+  ) => {
     const p = new URLSearchParams(qs);
     if (o !== "deroule") p.set("tab", o);
     if (extra.at != null) p.set("at", String(extra.at));
+    if (extra.voir?.length) p.set("voir", extra.voir.join(","));
     const s = p.toString();
     return `${chemin}${s ? `?${s}` : ""}${extra.ancre ? `#${extra.ancre}` : ""}`;
   };
+  /** Une page vue mène à la même page pour TOUS les visiteurs — app liée (V7). */
+  const lienRoute = (route: string) =>
+    `/pages?${new URLSearchParams({ app: meta.app_id, route }).toString()}`;
   const lienRelease = (release: string) => {
     const p = new URLSearchParams({ app: meta.app_id, release });
     return `/errors?${p.toString()}`;
@@ -133,6 +164,16 @@ export default async function SessionDetail({
   const avecRejeu = !rejeuLu.ok || rejeuLu.data;
   const recit = composerRecit({ timeline, debut: meta.started_at, fin: meta.last_seen_at, nowMs });
   const puces = pucesDeSession(meta, lienRelease);
+
+  // Liens sortants de la chronologie, PRÉ-CALCULÉS par rang de ligne. Seule la
+  // route est calculable sans B32 ; l'erreur groupée (`fingerprint`) et la trace
+  // (`trace_id`) ne sont pas projetées par `sessionTimeline`, donc leurs lignes
+  // n'ont pas de lien — et la section le dit, plutôt que de rendre un lien mort.
+  const liensChronologie: Record<number, string> = {};
+  timeline.forEach((it, i) => {
+    if (it.kind === "pageview" && it.title) liensChronologie[i] = lienRoute(it.title);
+  });
+  const liensSortantsManquants = timeline.some((it) => it.kind === "error" || it.kind === "api");
 
   const comptes: Record<OngletSession, number | null | undefined> = {
     deroule: undefined,
@@ -182,18 +223,20 @@ export default async function SessionDetail({
         occurrencesParLigne={occurrencesLisibles(timeline)}
         mobile={meta.runtime === RUNTIME_MOBILE}
         hrefs={{
-          deroule: hrefOnglet("deroule", { ancre: "chronologie" }),
+          // Chaque tuile ouvre le Déroulé filtré sur SA nature (§ 5.12.4).
+          vues: hrefOnglet("deroule", { ancre: "chronologie", voir: ["vue"] }),
+          frustration: hrefOnglet("deroule", { ancre: "chronologie", voir: ["frustration"] }),
           erreurs: hrefOnglet("erreurs"),
           api: hrefOnglet("api"),
         }}
       />
 
       {/* Y3 — onglets comptés ; un compte inconnu s'écrit « (—) », jamais « (0) ». */}
-      {ignore && (
-        <p role="note" className="mb-2 text-xs text-ink-soft" data-testid="reglage-ignore">
-          {ignore}
+      {[ignore, ignoreVoir].filter(Boolean).map((ligne) => (
+        <p key={ligne} role="note" className="mb-2 text-xs text-ink-soft" data-testid="reglage-ignore">
+          {ligne}
         </p>
-      )}
+      ))}
       <nav aria-label="Onglets de la session" className="relative mb-4 flex overflow-x-auto border-b border-line" data-testid="session-tabs">
         {ONGLETS_SESSION.map((o) => (
           <TabLink key={o} href={hrefOnglet(o)} active={onglet === o} compte={comptes[o]}>
@@ -221,20 +264,14 @@ export default async function SessionDetail({
                 Aucun rejeu enregistré pour cette session : la chronologie seule.
               </p>
             )}
-            {resume.tronquee && (
-              <div className="mb-4">
-                <EtatSurface compact etat={{ kind: "partiel", raison: `chronologie tronquée à ${LIMITE_CHRONOLOGIE} événements` }} />
-              </div>
+            <FiltresVoir voir={voir} href={(n) => hrefOnglet("deroule", { ancre: "chronologie", voir: n })} />
+            {liensSortantsManquants && (
+              <p role="note" className="mb-3 text-xs text-ink-soft" data-testid="liens-sortants-b32">
+                Liens sortants non disponibles, raison : la chronologie ne porte encore ni l&apos;empreinte de l&apos;erreur
+                ni l&apos;identifiant de trace. Les onglets Erreurs et Appels API listent les mêmes lignes.
+              </p>
             )}
-            {timeline.length ? (
-              <ol className="relative ml-2 border-l-2 border-line" data-testid="timeline">
-                {timeline.map((it, i) => (
-                  <TimelineRow key={i} id={ancreEvenement(i)} item={it} t0={t0} />
-                ))}
-              </ol>
-            ) : (
-              <p className="py-8 text-center text-sm text-ink-soft">Aucun événement enregistré pour cette session</p>
-            )}
+            <Deroule items={timeline} t0={t0} voir={voir} liens={liensChronologie} tronque={resume.tronquee} />
           </section>
         </div>
       )}
@@ -361,6 +398,42 @@ export default async function SessionDetail({
   );
 }
 
+/**
+ * Filtres `voir=` du Déroulé (§ 3.1). Des LIENS, pas des cases : l'état vit dans
+ * l'URL, la page reste partageable et le filtre survit sans JavaScript. Chaque
+ * lien sélectionne UNE nature ; « Tout » la retire. Le filtre ne change que ce
+ * qu'on montre : les tuiles, les comptes d'onglets et le récit restent calculés
+ * sur la chronologie entière (règle 1 du § 3.1).
+ */
+function FiltresVoir({
+  voir,
+  href,
+}: {
+  voir: NatureChronologie[] | null;
+  href: (natures: readonly NatureChronologie[] | null) => string;
+}) {
+  const classe = (actif: boolean) =>
+    `rounded-full border px-2 py-0.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
+      actif ? "border-brand bg-brand/10 font-medium text-brand" : "border-line text-ink-soft hover:border-brand/50"
+    }`;
+  return (
+    <div className="mb-3 flex min-w-0 flex-wrap items-center gap-1.5" data-testid="deroule-filtres">
+      <span className="text-xs text-ink-faint">Voir :</span>
+      <Link href={href(null)} aria-current={voir === null ? "true" : undefined} className={classe(voir === null)}>
+        Tout
+      </Link>
+      {NATURES_CHRONOLOGIE.map((n) => {
+        const actif = voir?.length === 1 && voir[0] === n;
+        return (
+          <Link key={n} href={href([n])} aria-current={actif ? "true" : undefined} className={classe(actif)}>
+            {LIBELLES_NATURES[n]}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Puces de contexte (§ 5.12.4) : même rendu que `DetailPanel.puces`, provenance écrite. */
 function PucesSession({ puces }: { puces: PuceContexte[] }) {
   const liste = (classe: string) => (
@@ -414,7 +487,7 @@ function Resume({
   pages: number;
   occurrencesParLigne: boolean;
   mobile: boolean;
-  hrefs: { deroule: string; erreurs: string; api: string };
+  hrefs: { vues: string; frustration: string; erreurs: string; api: string };
 }) {
   // Avant v67, une ligne d'erreur ne porte pas ses occurrences : on compte des lignes, et on le dit.
   const erreursEnLignes = !resume.tronquee && !occurrencesParLigne;
@@ -426,7 +499,7 @@ function Resume({
         format="s-auto"
         lecture={`écart entre la première et la dernière observation, pas du temps actif${active ? " · encore active : elle peut encore augmenter" : ""}.`}
       />
-      <KpiTile label="Pages vues" valeur={pages} format="count" href={hrefs.deroule} />
+      <KpiTile label="Pages vues" valeur={pages} format="count" href={hrefs.vues} />
       <KpiTile
         label={erreursEnLignes ? "Erreurs (lignes)" : "Occurrences d'erreur"}
         valeur={erreursEnLignes ? resume.erreursLignes : resume.occurrences}
@@ -441,7 +514,7 @@ function Resume({
         raisonNull={mobile ? RAISON_FRUSTRATION_MOBILE : RAISON_TRONQUEE}
         format="count"
         lecture={mobile ? undefined : LECTURE_FRUSTRATION}
-        href={hrefs.deroule}
+        href={hrefs.frustration}
       />
       <KpiTile
         label="Appels API en échec"
