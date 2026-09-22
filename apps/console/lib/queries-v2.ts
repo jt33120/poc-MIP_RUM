@@ -5,7 +5,8 @@ import { isValidEventName } from "./queries-events";
 import { binder, bucketExpr, compileScope, sessionJoin } from "./query-compiler";
 import type { AnalyticsQuery } from "./query-contract";
 import { sqlContext, type SqlContext } from "./query-sql";
-import { THRESHOLDS } from "./rating";
+import { ecrireSerie } from "./correlation-serie";
+import { THRESHOLDS, type Rating } from "./rating";
 
 // ---------------------------------------------------------------------------
 // Filtres globaux — FAÇADE « v2 » du contrat commun (lib/query-contract.ts)
@@ -375,11 +376,21 @@ export interface CorrCardRow {
   rum_lcp_p75: number | null;
   rum_inp_p75: number | null;
   rum_sessions: number | null;
+  /** Mesures LCP réelles de la plage : l'effectif du p75 et le poids de la route
+   *  (additif entre routes, contrairement aux sessions). `null` : aucun côté réel. */
+  rum_lcp_n: number | null;
   syn_latency_avg: number | null;
   syn_score_avg: number | null;
   syn_state: string | null;
   syn_measures: string | null;
 }
+
+/**
+ * Effectif minimal d'une heure × (app, route) pour que son LCP p75 réel entre dans
+ * un verdict robot / réel (matrice de concordance, angles morts). En dessous, un
+ * p75 horaire tient à quelques visites : il est compté à part, « réel insuffisant ».
+ */
+export const EFFECTIF_MIN_HEURE = 30;
 
 /** CTE `rum` et `syn` filtrées ; `grain` ajoute le seau horaire aligné UTC. */
 function correlationSources(sql: SqlContext, grain: "fenetre" | "heure"): string {
@@ -393,7 +404,8 @@ function correlationSources(sql: SqlContext, grain: "fenetre" | "heure"): string
        select m.app_id, m.route${seauReel},
               percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'LCP') as rum_lcp_p75,
               percentile_cont(0.75) within group (order by m.value) filter (where m.name = 'INP') as rum_inp_p75,
-              count(distinct m.session_id)::int as rum_sessions
+              count(distinct m.session_id)::int as rum_sessions,
+              count(*) filter (where m.name = 'LCP')::int as rum_lcp_n
        from rum_metric m
        ${sessionJoin("m", "ms")}
        where true${reel}
@@ -418,7 +430,7 @@ export async function correlationCards(f: FiltersLike): Promise<CorrCardRow[]> {
   return q<CorrCardRow>(
     `with ${correlationSources(sql, "fenetre")}
      select coalesce(r.app_id, s.app_id) as app_id, coalesce(r.route, s.route) as route,
-            r.rum_lcp_p75, r.rum_inp_p75, r.rum_sessions,
+            r.rum_lcp_p75, r.rum_inp_p75, r.rum_sessions, r.rum_lcp_n,
             s.syn_latency_avg, s.syn_score_avg, s.syn_state, s.syn_measures
      from rum r full outer join syn s using (app_id, route)
      order by (r.rum_lcp_p75 is not null and s.syn_latency_avg is not null) desc, app_id, route`,
@@ -426,38 +438,54 @@ export async function correlationCards(f: FiltersLike): Promise<CorrCardRow[]> {
   );
 }
 
-/** Routes disposant à la fois de données robot ET réel sur la plage (pour le sélecteur). */
-export async function correlationRoutes(f: FiltersLike): Promise<string[]> {
+/**
+ * Couples (app, route) disposant à la fois de données robot ET réel sur la plage
+ * (options du sélecteur du hero, CR7-a). Un COUPLE, pas une route : sous `app=all`,
+ * deux apps qui ont chacune `/checkout` donnent deux options.
+ */
+export async function correlationRoutes(f: FiltersLike): Promise<{ app_id: string; route: string }[]> {
   const sql = await sqlContext(f);
-  const rows = await q<{ route: string }>(
+  return q<{ app_id: string; route: string }>(
     `with ${correlationSources(sql, "heure")}
-     select coalesce(r.route, s.route) as route
+     select coalesce(r.app_id, s.app_id) as app_id, coalesce(r.route, s.route) as route
        from rum r full outer join syn s using (app_id, route, bucket)
       where coalesce(r.route, s.route) is not null
-      group by 1
+      group by 1, 2
      having count(r.rum_lcp_p75) > 0 and count(s.syn_latency_avg) > 0
-      order by 1`,
+      order by 2, 1`,
     sql.params,
   );
-  return rows.map((r) => r.route);
 }
 
 export interface CorrSeriesRow {
   bucket: Date;
   rum_lcp_p75: number | null;
+  /** Mesures LCP de l'heure (effectif du point) ; `null` : aucune mesure réelle. */
+  rum_lcp_n: number | null;
   syn_latency_avg: number | null;
+  /** Pire état robot de l'heure ; `null` : aucun passage, ou état non renseigné. */
+  syn_state: "ok" | "warn" | "incident" | null;
+  syn_measures: string | null;
 }
 
-/** Série horaire robot vs réel pour une route, sur la plage (seaux horaires alignés UTC). */
-export async function correlationSeries(route: string, f: FiltersLike): Promise<CorrSeriesRow[]> {
+/**
+ * Série horaire robot et réel d'UN couple (app, route), sur la plage (seaux d'une
+ * heure alignés UTC). L'app et la route s'ajoutent au périmètre compilé : une app
+ * hors périmètre rend 0 ligne. Seules les heures où au moins un côté a mesuré sont
+ * rendues : l'appelant aligne sur la grille horaire avant de tracer, sinon une
+ * heure vide relierait ses voisines.
+ */
+export async function correlationSeries(app: string, route: string, f: FiltersLike): Promise<CorrSeriesRow[]> {
   const sql = await sqlContext(f);
   const sources = correlationSources(sql, "heure");
-  const cible = sql.bind(route);
+  const cibleApp = sql.bind(app);
+  const cibleRoute = sql.bind(route);
   return q<CorrSeriesRow>(
     `with ${sources}
-     select coalesce(r.bucket, s.bucket) as bucket, r.rum_lcp_p75, s.syn_latency_avg
-       from (select * from rum where route = ${cible}) r
-       full outer join (select * from syn where route = ${cible}) s using (app_id, route, bucket)
+     select coalesce(r.bucket, s.bucket) as bucket, r.rum_lcp_p75, r.rum_lcp_n,
+            s.syn_latency_avg, s.syn_state, s.syn_measures
+       from (select * from rum where app_id = ${cibleApp} and route = ${cibleRoute}) r
+       full outer join (select * from syn where app_id = ${cibleApp} and route = ${cibleRoute}) s using (bucket)
       order by 1`,
     sql.params,
   );
@@ -468,29 +496,207 @@ export interface BlindSpotRow {
   route: string | null;
   bucket: Date;
   rum_lcp_p75: number;
+  /** Mesures LCP réelles de l'heure : au moins `EFFECTIF_MIN_HEURE`. */
+  rum_lcp_n: number;
   syn_latency_avg: number;
   syn_state: string;
+  /** Scénarios robot de l'heure (`measure_name`, séparés par des virgules). */
+  syn_measures: string | null;
   gap_ms: number;
 }
 
 /**
  * Angles morts : robot « ok » mais LCP p75 réel au-dessus de la borne « Bon »
  * (`THRESHOLDS.LCP[0]`, donc « À améliorer » ou « Mauvais » pour `rating2026`) sur
- * une même heure et une même route, écart décroissant. Pas « poor » : un LCP de
- * 3 s est « À améliorer », et c'est déjà un angle mort du robot.
+ * une même heure et une même route, sur des heures d'au moins `effectifMin` mesures
+ * LCP (même règle que `correlationConcordance`), écart décroissant. Pas « poor » : un
+ * LCP de 3 s est « À améliorer », et c'est déjà un angle mort du robot.
+ *
+ * Plafonnée à 50 lignes : c'est une LISTE à ouvrir, jamais un compte. Le nombre
+ * d'angles morts vient de `correlationConcordance`.
  */
-export async function blindSpots(f: FiltersLike): Promise<BlindSpotRow[]> {
+export async function blindSpots(f: FiltersLike, effectifMin = EFFECTIF_MIN_HEURE): Promise<BlindSpotRow[]> {
   const sql = await sqlContext(f);
   const sources = correlationSources(sql, "heure");
   const borneBon = sql.bind(THRESHOLDS.LCP[0]);
+  const effectif = sql.bind(effectifValide(effectifMin));
   return q<BlindSpotRow>(
     `with ${sources}
-     select r.app_id, r.route, r.bucket, r.rum_lcp_p75, s.syn_latency_avg, s.syn_state,
+     select r.app_id, r.route, r.bucket, r.rum_lcp_p75, r.rum_lcp_n, s.syn_latency_avg, s.syn_state, s.syn_measures,
             round((r.rum_lcp_p75 - s.syn_latency_avg)::numeric)::int as gap_ms
        from rum r join syn s using (app_id, route, bucket)
       where s.syn_state = 'ok' and r.rum_lcp_p75 > ${borneBon}::float8 and s.syn_latency_avg is not null
-      order by gap_ms desc
+        and r.rum_lcp_n >= ${effectif}::int
+      order by gap_ms desc, r.app_id, r.route, r.bucket
       limit 50`,
     sql.params,
   );
+}
+
+function effectifValide(effectifMin: number): number {
+  // Lié en paramètre, donc sans risque d'injection ; mais un NaN rendrait une
+  // requête qui ne garde rien, et un 0 un verdict sur une heure sans mesure.
+  if (!Number.isSafeInteger(effectifMin) || effectifMin < 1) throw new Error(`effectif minimal invalide : ${effectifMin}`);
+  return effectifMin;
+}
+
+// ---------------------------------------------------------------------------
+// Robot et réel (F57) : fraîcheur du robot, concordance des états par heure.
+// ---------------------------------------------------------------------------
+
+export interface SyntheticFreshnessRow {
+  app_id: string;
+  /** Dernier passage du robot sur la plage ; `null` : aucun passage. */
+  dernier: Date | null;
+  /** Intervalle médian entre deux passages d'un même scénario ; `null` : moins de deux. */
+  intervalle_median_s: number | null;
+  /** Exécutions de scénario sur la plage (lignes `syn_snapshot`). */
+  passages: number;
+}
+
+/**
+ * Fraîcheur du robot, par app, sur la plage : si le robot s'est arrêté, « robot ok »
+ * ne veut plus rien dire, et l'écran doit le dire avant tout chiffre (CR1, CR6).
+ *
+ * L'intervalle se mesure entre deux passages d'un MÊME scénario (`measure_name`) :
+ * plusieurs scénarios capturés au même instant donneraient des écarts nuls, et des
+ * scénarios décalés un intervalle plus court que le vrai rythme du robot. Pas
+ * `measure_id` : la source mippoc y écrit l'identifiant de chaque exécution.
+ *
+ * Périmètre explicite (app choisie, viewer restreint) : une ligne par app, même sans
+ * passage (`dernier = null`) — c'est ce qui permet de dire « aucun passage du robot
+ * sur cette app ». Périmètre non restreint : les apps qui ont au moins un passage.
+ */
+export async function syntheticFreshness(f: FiltersLike): Promise<SyntheticFreshnessRow[]> {
+  const sql = await sqlContext(f);
+  const robot = sql.where({ dataset: "synthetic", row: "y", time: "y.captured_at" });
+  const apps = sql.query.scope.effectiveApps;
+  const perimetre = apps === null ? "" : ` right join unnest(${sql.bind(apps)}::text[]) as perimetre(app_id) using (app_id)`;
+  return q<SyntheticFreshnessRow>(
+    `with executions as (
+       select y.app_id, y.captured_at,
+              extract(epoch from y.captured_at - lag(y.captured_at) over (
+                partition by y.app_id, y.measure_name order by y.captured_at))::float8 as ecart_s
+         from syn_snapshot y
+        where true${robot}
+     ),
+     par_app as (
+       select app_id, max(captured_at) as dernier,
+              percentile_cont(0.5) within group (order by ecart_s) as intervalle_median_s,
+              count(*)::int as passages
+         from executions
+        group by app_id
+     )
+     select app_id, p.dernier, p.intervalle_median_s, coalesce(p.passages, 0)::int as passages
+       from par_app p${perimetre}
+      order by app_id`,
+    sql.params,
+  );
+}
+
+export type EtatRobot = "ok" | "warn" | "incident";
+
+export interface CelluleConcordance {
+  robot: EtatRobot;
+  reel: Rating;
+  heures: number;
+}
+
+export interface Concordance {
+  /** Les 9 cellules (3 états robot × 3 verdicts réels), zéros compris. */
+  cellules: CelluleConcordance[];
+  /** Heures × couple avec un passage du robot et aucune mesure LCP réelle. */
+  robotSeul: number;
+  /** Heures × couple avec des mesures LCP réelles et aucun passage du robot. */
+  reelSeul: number;
+  /** Les deux côtés, mais moins de `effectifMin` mesures LCP : aucun verdict. */
+  reelInsuffisant: number;
+  /** Les deux côtés et assez de mesures, mais l'état du robot n'est pas renseigné. */
+  robotInconnu: number;
+  /** Cellule « robot ok × réel au-delà de la borne Bon », par couple, heures décroissantes. */
+  anglesMortsParRoute: { serie: string; app_id: string; route: string; heures: number }[];
+  /** Bornes du verdict réel, lues dans `THRESHOLDS.LCP` et liées dans la requête. */
+  bornesLcp: [number, number];
+}
+
+const ETATS_ROBOT: readonly EtatRobot[] = ["ok", "warn", "incident"];
+const VERDICTS: readonly Rating[] = ["good", "needs-improvement", "poor"];
+
+/**
+ * Concordance des états robot et réel, par heure et par couple (app, route), sur
+ * toute la plage (CR4, CR8) : la vérité des COMPTES d'angles morts, là où
+ * `blindSpots` n'est qu'une liste plafonnée.
+ *
+ * Chaque heure × couple compte UNE fois, dans l'ordre : présence de chaque côté
+ * (robot seul, réel seul), effectif réel (réel insuffisant), état robot (inconnu),
+ * puis cellule de la matrice. Le verdict réel est celui de `rating2026` sur le LCP
+ * p75 de l'heure (bon inclusif, mauvais strict), bornes LIÉES depuis
+ * `THRESHOLDS.LCP`. Période précédente (`cmp=prev`) : passer une requête dont la
+ * plage est `previousRange(query.range)`.
+ */
+export async function correlationConcordance(f: FiltersLike, effectifMin = EFFECTIF_MIN_HEURE): Promise<Concordance> {
+  const sql = await sqlContext(f);
+  const sources = correlationSources(sql, "heure");
+  const bornesLcp: [number, number] = [THRESHOLDS.LCP[0], THRESHOLDS.LCP[1]];
+  const effectif = sql.bind(effectifValide(effectifMin));
+  const bon = sql.bind(bornesLcp[0]);
+  const mauvais = sql.bind(bornesLcp[1]);
+  const rows = await q<{ classe: string; robot: string | null; reel: string | null; app_id: string | null; route: string | null; heures: number }>(
+    `with ${sources},
+     classees as (
+       select app_id, route,
+              case
+                when s.bucket is null then 'reel_seul'
+                when coalesce(r.rum_lcp_n, 0) = 0 then 'robot_seul'
+                when r.rum_lcp_n < ${effectif}::int then 'reel_insuffisant'
+                when s.syn_state is null then 'robot_inconnu'
+                else 'matrice'
+              end as classe,
+              s.syn_state as robot,
+              case
+                when r.rum_lcp_p75 <= ${bon}::float8 then 'good'
+                when r.rum_lcp_p75 <= ${mauvais}::float8 then 'needs-improvement'
+                else 'poor'
+              end as reel
+         from rum r full outer join syn s using (app_id, route, bucket)
+        where s.bucket is not null or r.rum_lcp_n > 0
+     )
+     select classe, case when classe = 'matrice' then robot end as robot,
+            case when classe = 'matrice' then reel end as reel,
+            null::text as app_id, null::text as route, count(*)::int as heures
+       from classees
+      group by 1, 2, 3
+     union all
+     select 'angle_mort', null, null, app_id, route, count(*)::int
+       from classees
+      where classe = 'matrice' and robot = 'ok' and reel <> 'good' and route is not null
+      group by app_id, route`,
+    sql.params,
+  );
+
+  const cellules: CelluleConcordance[] = ETATS_ROBOT.flatMap((robot) => VERDICTS.map((reel) => ({ robot, reel, heures: 0 })));
+  const hors = { robot_seul: 0, reel_seul: 0, reel_insuffisant: 0, robot_inconnu: 0 };
+  const anglesMortsParRoute: Concordance["anglesMortsParRoute"] = [];
+  for (const r of rows) {
+    if (r.classe === "angle_mort") {
+      anglesMortsParRoute.push({ serie: ecrireSerie(r.app_id!, r.route!), app_id: r.app_id!, route: r.route!, heures: r.heures });
+    } else if (r.classe === "matrice") {
+      const cellule = cellules.find((c) => c.robot === r.robot && c.reel === r.reel);
+      if (cellule) cellule.heures += r.heures;
+    } else if (r.classe in hors) {
+      hors[r.classe as keyof typeof hors] += r.heures;
+    }
+  }
+  anglesMortsParRoute.sort(
+    (a, b) => b.heures - a.heures || (a.route < b.route ? -1 : a.route > b.route ? 1 : a.app_id < b.app_id ? -1 : a.app_id > b.app_id ? 1 : 0),
+  );
+  return {
+    cellules,
+    robotSeul: hors.robot_seul,
+    reelSeul: hors.reel_seul,
+    reelInsuffisant: hors.reel_insuffisant,
+    robotInconnu: hors.robot_inconnu,
+    anglesMortsParRoute,
+    bornesLcp,
+  };
 }
