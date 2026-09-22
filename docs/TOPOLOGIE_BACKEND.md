@@ -66,26 +66,38 @@ modifier le serveur MCP redéployait l'ingestion. Un redéploiement inutile n'es
 pas gratuit — il remet à zéro des caches chauds et ouvre une fenêtre pendant
 laquelle deux versions coexistent.
 
-## Le service `ingest`, en cours de retrait
+## Le service `ingest`, supprimé le 21/09/2026
 
-> **État au 18/09/2026** : le service existe encore et applique toujours les
-> migrations. Le `scheduler` a reçu la même commande de pré-déploiement ; elle
-> sera prouvée par le premier vrai déploiement qu'il recevra — c'est-à-dire par
-> la fusion de cette branche, qui touche `apps/ingest/migrate.mjs` et entre donc
-> dans ses chemins surveillés. La suppression n'aura lieu qu'après avoir lu
-> « migrations à jour » dans ses journaux, et pas avant.
+> **État au 19/09/2026.** La preuve est obtenue : la fusion de #214 (commit
+> `322c9a7`, 18/09 15:27) a déclenché un vrai déploiement du `scheduler`
+> (`03850b30`), et ses journaux portent à 15:29:18 la ligne du runner —
+> `migrations à jour` (`total 80, appliquées 0, modifiées 1`). Le scheduler
+> applique donc bien les migrations au pré-déploiement.
+>
+> **Le service `ingest` a été supprimé par l'opérateur le 21/09/2026**, depuis
+> le tableau de bord Railway, une fois cette preuve obtenue. Vérifié le même jour
+> par l'API Railway : le projet `mip-rum-backend` ne compte plus que `mcp` et
+> `scheduler`. Ses variables — dont `IDENTITY_HASH_SECRET` — ont disparu avec
+> lui ; aucun autre service Railway ne les utilisait.
+>
+> **« modifiées 1 »** n'est pas une anomalie de P8 : c'est `schema.sql`, dont
+> l'empreinte enregistrée à l'étalonnage ne correspond plus au fichier depuis
+> le lot du 09/09/2026 (identité du visiteur). Le runner le signale à chaque
+> déploiement et ne le rejoue jamais — c'est le comportement voulu. Le faire
+> taire demanderait de ré-étalonner cette seule ligne du registre, décision à
+> prendre en connaissance de cause, pas un correctif.
 
-Il exécute `services/ingest/server.mjs`, un receveur OTLP complet — et **aucun
-domaine public ne pointe dessus**. Rien ne peut donc l'atteindre. Son drain de la
-file différée est désactivé (`INGEST_DEFERRED` absent de ses variables), et
-`ingest_raw` est vide. Son seul rôle réel est de lancer les migrations au
+Il exécutait `services/ingest/server.mjs`, un receveur OTLP complet — et **aucun
+domaine public ne pointait dessus**. Rien ne pouvait donc l'atteindre. Son drain
+de la file différée était désactivé (`INGEST_DEFERRED` absent de ses variables),
+et `ingest_raw` était vide. Son seul rôle réel était de lancer les migrations au
 pré-déploiement, rôle repris par `scheduler`.
 
-Il porte par ailleurs `IDENTITY_HASH_SECRET`, `REQUIRE_API_KEY` et
+Il portait par ailleurs `IDENTITY_HASH_SECRET`, `REQUIRE_API_KEY` et
 `RATE_LIMIT_PER_MIN` : un secret et deux réglages pour un travail qu'il ne
 faisait pas. Un secret qui circule sans servir est un secret de trop.
 
-**Ce que sa suppression ne retirera pas.** Le receveur autonome reste dans le
+**Ce que sa suppression n'a pas retiré.** Le receveur autonome reste dans le
 dépôt, construit et démarré par la CI (`docker-smoke`), et documenté pour
 l'auto-hébergement dans [infra/docker/](../infra/docker/). Le produit garde donc
 son chemin souverain : ce qui disparaît, c'est une copie qui tournait à vide.
