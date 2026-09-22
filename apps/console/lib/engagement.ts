@@ -56,9 +56,9 @@ export function engagementSuffisant(stats: EngagementStats): boolean {
   return stats.sessions_with_view >= ENGAGEMENT_MIN_SESSIONS;
 }
 
-/** Ce qui manque, dit à l'écran plutôt qu'un chiffre affiché sans base. */
+/** Ce qui manque, dit à l'écran plutôt qu'un chiffre affiché sans base (vouvoyé, F41). */
 export function engagementRaison(stats: EngagementStats): string {
-  return `${stats.sessions_with_view.toLocaleString("fr-FR")} session(s) avec au moins une page vue sur la fenêtre : il en faut ${ENGAGEMENT_MIN_SESSIONS} pour qu'une durée médiane et un taux de session à une vue veuillent dire quelque chose. Élargis la période.`;
+  return `${stats.sessions_with_view.toLocaleString("fr-FR")} session(s) avec au moins une page vue sur la fenêtre : il en faut ${ENGAGEMENT_MIN_SESSIONS} pour qu'une durée médiane et un taux de session à une vue veuillent dire quelque chose. Élargissez la période.`;
 }
 
 /** Part des sessions encore actives, pour nuancer la durée affichée ; null sans population. */

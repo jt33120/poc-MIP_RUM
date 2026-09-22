@@ -11,6 +11,10 @@ import { bucketExpr, bucketSeriesSql, sessionJoin } from "./query-compiler";
 import { previousRange } from "./query-contract";
 import { sqlContext } from "./query-sql";
 import { buildSegment } from "./segments";
+// F41 : tuiles et répartition lues par l'Explorer (une seule définition des mesures).
+import { EXPLORER_VERSION, type ExplorerPlan } from "./analytics-schema";
+import { exploreAnalytics } from "./queries-explorer";
+import type { AnalyticsQuery, Dimension } from "./query-contract";
 
 /**
  * Durée observée et sessions à une seule vue, sur les sessions COMMENCÉES dans la
@@ -72,14 +76,19 @@ export interface VisitorsBucket {
  * seaux N'EST PAS le nombre de visiteurs de la fenêtre, et l'écran ne l'affiche
  * nulle part. Les sessions sans identifiant — historique antérieur au 09/09/2026,
  * SDK pas à jour — sont comptées à part plutôt que réparties au jugé.
+ *
+ * `shift` (F41, `cmp=prev`) : la même série sur la période précédente contiguë,
+ * sur SES seaux (même largeur, même nombre). L'écran l'aligne par RANG de seau
+ * sur la grille courante, jamais par instant (§ 3.2).
  */
-export async function observedVisitorsTrend(f: FiltersLike): Promise<VisitorsBucket[]> {
+export async function observedVisitorsTrend(f: FiltersLike, shift = false): Promise<VisitorsBucket[]> {
   const sql = await sqlContext(f);
-  const where = sql.where({ dataset: "sessions", row: "s", session: "s", time: "s.started_at" });
-  const serie = bucketSeriesSql(sql.query.range, sql.bind);
+  const range = shift ? previousRange(sql.query.range) : sql.query.range;
+  const where = sql.where({ dataset: "sessions", row: "s", session: "s", time: "s.started_at", range });
+  const serie = bucketSeriesSql(range, sql.bind);
   return await q<VisitorsBucket>(
     `with agrege as (
-       select ${bucketExpr("s.started_at", sql.query.range)} as bucket,
+       select ${bucketExpr("s.started_at", range)} as bucket,
               count(distinct s.visitor_id)::int as visitors,
               count(*)::int as sessions,
               count(*) filter (where s.visitor_id is null)::int as sans_identifiant
@@ -262,4 +271,136 @@ export async function samplingSessionsHistorique(
     params,
   );
   return echantillonnageDe(row);
+}
+
+// ═══════════════ Rangée KPI et répartition de /sessions (F41) ═══════════════
+
+/** Occurrences d'erreur des sessions commencées (B39), et celles qu'aucune session ne porte. */
+export interface ErreursParSessionCommencee {
+  /** Sessions commencées dans `[from, to)` : le dénominateur. */
+  sessions: number;
+  /** `sum(occurrences)` des erreurs RATTACHÉES à ces sessions, quelle que soit leur date (V1). */
+  occurrences: number;
+  /** `sum(occurrences)` des erreurs datées de `[from, to)` sans session rattachée : exclues, dites. */
+  sansSession: number;
+}
+
+/**
+ * Occurrences d'erreur par session commencée (B39, § 5.11.4) : numérateur et
+ * dénominateur portent sur LA MÊME population.
+ *
+ * Le ratio d'avant, `overviewStats.errors / overviewStats.sessions`, divisait des
+ * occurrences datées par `e.ts` — erreurs serveur sans session comprises — par des
+ * sessions comptées sur leur DERNIÈRE activité : deux populations, un quotient qui
+ * n'était le taux de rien. Ici, le dénominateur est la CTE de `engagementStats`
+ * (sessions commencées, `started_at ∈ [from, to)`), et le numérateur somme les
+ * occurrences des erreurs jointes à CES sessions par `(app_id, session_id)` — y
+ * compris celles d'après `to` pour une session à cheval sur la borne : elles
+ * appartiennent à la session comptée. Les erreurs sans session rattachée (Node,
+ * Python, OTel, identifiant de session inconnu) ne peuvent entrer dans aucun des
+ * deux termes : elles sont comptées à part, sur la fenêtre (`e.ts`), pour être
+ * DITES à côté du chiffre.
+ *
+ * `shift` (`cmp=prev`) : la même lecture sur la période précédente contiguë.
+ */
+export async function erreursParSessionCommencee(f: FiltersLike, shift = false): Promise<ErreursParSessionCommencee> {
+  const sql = await sqlContext(f);
+  const range = shift ? previousRange(sql.query.range) : sql.query.range;
+  const commencees = sql.where({ dataset: "sessions", row: "s", session: "s", time: "s.started_at", range });
+  // Erreurs sans session : la jointure de session du compilateur (`sessionJoin`,
+  // app-scopée) ne trouve personne. Les filtres de SESSION (appareil, navigateur…)
+  // les écartent aussi : une erreur sans session n'a pas d'appareil, on ne la
+  // range pas dans un segment qu'on ne peut pas lui attribuer.
+  const orphelines = sql.where({ dataset: "errors", row: "e", session: "s", time: "e.ts", range });
+  const [row] = await q<{ sessions: number; occurrences: number | null; sans_session: number | null }>(
+    `with commencees as (
+       select s.app_id, s.session_id
+         from rum_session s
+        where true${commencees}
+     )
+     select (select count(*) from commencees)::int as sessions,
+            (select coalesce(sum(e.occurrences), 0)
+               from rum_error e
+               join commencees c on c.app_id = e.app_id and c.session_id = e.session_id)::float8 as occurrences,
+            (select coalesce(sum(e.occurrences), 0)
+               from rum_error e
+               ${sessionJoin("e", "s")}
+              where s.session_id is null${orphelines})::float8 as sans_session`,
+    sql.params,
+  );
+  return {
+    sessions: row?.sessions ?? 0,
+    occurrences: Number(row?.occurrences ?? 0),
+    sansSession: Number(row?.sans_session ?? 0),
+  };
+}
+
+/**
+ * Plans Explorer de l'écran : les tuiles et la répartition lisent la MÊME définition
+ * que l'Explorer (garde « identifiant aléatoire » des visiteurs, population des
+ * sessions commencées), et leur lien « Ouvrir dans l'Explorer » rejoue ce plan-là.
+ */
+export const PLAN_VISITEURS_DISTINCTS: ExplorerPlan = {
+  version: EXPLORER_VERSION,
+  dataset: "sessions",
+  measure: { field: "visitors", aggregation: "distinct" },
+  variant: null,
+  groupBy: [],
+  visualization: "value",
+  limit: 10,
+  cursor: null,
+};
+
+export const PLAN_SESSIONS_COMMENCEES: ExplorerPlan = {
+  ...PLAN_VISITEURS_DISTINCTS,
+  measure: { field: "started", aggregation: "count" },
+  visualization: "timeseries",
+};
+
+/** Au plus 12 groupes dans « Qui sont ces sessions » (§ 5.11.4). */
+export const REPARTITION_LIMITE = 12;
+
+export function planRepartition(dimension: Dimension): ExplorerPlan {
+  return {
+    ...PLAN_VISITEURS_DISTINCTS,
+    measure: { field: "started", aggregation: "count" },
+    groupBy: [dimension],
+    visualization: "toplist",
+    limit: REPARTITION_LIMITE,
+  };
+}
+
+/** La requête de l'écran, décalée sur la période précédente contiguë (`cmp=prev`). */
+function periodePrecedente(query: AnalyticsQuery): AnalyticsQuery {
+  return { ...query, range: previousRange(query.range) };
+}
+
+/**
+ * Visiteurs distincts (identifiant ALÉATOIRE seulement) des sessions commencées
+ * dans la fenêtre : le calcul de l'Explorer (`VISITEURS_DISTINCTS`), pas une
+ * seconde définition. Un distinct ne s'additionne pas d'une période à l'autre :
+ * la période précédente est relue, jamais déduite.
+ */
+export async function visiteursDistincts(query: AnalyticsQuery, shift = false): Promise<number | null> {
+  const resultat = await exploreAnalytics({ query: shift ? periodePrecedente(query) : query, plan: PLAN_VISITEURS_DISTINCTS });
+  return resultat.data.total;
+}
+
+export interface RepartitionSessions {
+  /** Sessions commencées de la fenêtre : le tout dont chaque groupe est une part. */
+  total: number;
+  /** Au plus `REPARTITION_LIMITE` groupes, du plus fourni au moins fourni ; `valeur: null` = « Inconnu ». */
+  groupes: { valeur: string | null; sessions: number }[];
+  /** Plus de groupes que la limite : les suivants ne sont pas affichés (et le reste est dit). */
+  tronque: boolean;
+}
+
+/** « Qui sont ces sessions » : sessions commencées par valeur d'une dimension de session. */
+export async function repartitionSessions(query: AnalyticsQuery, dimension: Dimension): Promise<RepartitionSessions> {
+  const { data, meta } = await exploreAnalytics({ query, plan: planRepartition(dimension) });
+  return {
+    total: data.total ?? 0,
+    groupes: data.groups.map((g) => ({ valeur: g.key[0] ?? null, sessions: g.value ?? 0 })),
+    tronque: meta.truncated_groups,
+  };
 }
