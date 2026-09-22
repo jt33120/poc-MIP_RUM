@@ -72,7 +72,9 @@ export function ForecastChart({
             label={{ value: `seuil ${thresholdLabel ?? ""}`.trim(), position: "insideTopRight", fontSize: 10, fill: THRESH }}
           />
         )}
-        {/* Pas de connectNulls : un jour sans mesure reste un trou, pas un segment inventé. */}
+        {/* Aucun connectNulls (F04, § 3.10) : un jour sans mesure reste un trou, pas un
+            segment inventé. La projection n'en avait pas besoin : ses points sont
+            contigus (dernier jour observé, puis J+1 … J+n). */}
         <Line type="monotone" dataKey="real" name="réel" stroke={REAL} strokeWidth={2.5} dot={{ r: 2 }} />
         <Line
           type="monotone"
@@ -82,7 +84,6 @@ export function ForecastChart({
           strokeWidth={2.5}
           strokeDasharray="4 4"
           dot={false}
-          connectNulls
         />
       </LineChart>
     </ResponsiveContainer>

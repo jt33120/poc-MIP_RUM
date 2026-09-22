@@ -1,82 +1,90 @@
 "use client";
-// Courbe « volume & fiabilité » associée à la heatmap : aire = pages vues
-// (échelle gauche), ligne = erreurs JS (échelle droite). Même grammaire
-// visuelle que VitalsTimeseries (orange signature, axes thémés via globals.css).
-import {
-  Area,
-  CartesianGrid,
-  ComposedChart,
-  Line,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { SERIE, categorie } from "@/lib/palette";
+// TrafficTimeseries — volume et erreurs dans le temps, en DEUX PANNEAUX empilés qui
+// partagent l'axe x (F04, plan § 4.1, P5).
+//
+// Avant : une aire de pages vues sur l'axe de gauche et une ligne d'erreurs sur un
+// axe de droite. Deux échelles superposées se lisent comme une corrélation qu'aucune
+// n'affirme : le croisement des deux courbes ne dépend que du choix des échelles. Ici,
+// les pages vues sont des barres (`StackedBars`, un compte) et les occurrences
+// d'erreurs un second panneau (`ThresholdSeries` en barres, un compte) : même grille,
+// mêmes marges (`SERIE_MARGES`), survol synchronisé — la même heure se lit sur les
+// deux, chacune sur SON axe.
+//
+// Un compte d'erreurs n'a pas de seuil publié (R-S) : aucune couleur de verdict,
+// une couleur catégorielle.
+import { useId } from "react";
+import type { Annotation, PointSerie } from "@/lib/series";
+import { StackedBars } from "./StackedBars";
+import { ThresholdSeries } from "./ThresholdSeries";
 
-export interface TrafficPoint {
-  day: string; // ISO date (jour)
-  pageviews: number;
-  errors: number;
-}
+export type TrafficPoint = {
+  /** Élément de la grille (ISO UTC ou jour « AAAA-MM-JJ »). */
+  t: string;
+  pageviews: number | null;
+  /** Somme des occurrences d'erreurs du seau. */
+  errors: number | null;
+};
 
-const ACCENT = SERIE.principale;
-// Un compte d'erreurs n'est pas un verdict (aucun seuil publié, règle R-S) : pas de
-// rouge, une couleur catégorielle.
-const ERR = categorie(0);
-
-export function TrafficTimeseries({ data }: { data: TrafficPoint[] }) {
-  const points = data.map((d) => ({
-    ...d,
-    label: new Date(d.day).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
-  }));
+export function TrafficTimeseries({
+  grille,
+  points,
+  seauSecondes,
+  fuseau,
+  libelleErreurs = "Occurrences d'erreurs",
+  hauteurPanneau = 130,
+  zoomHref,
+  annotations,
+  annotationsIndisponibles,
+}: {
+  grille: string[];
+  points: TrafficPoint[];
+  seauSecondes: number;
+  fuseau: string;
+  /** Titre du panneau des erreurs : il dit la population comptée (« toutes sources »). */
+  libelleErreurs?: string;
+  hauteurPanneau?: number;
+  zoomHref?: string;
+  annotations?: Annotation[];
+  annotationsIndisponibles?: string;
+}) {
+  const synchro = `trafic-${useId()}`;
+  const lignes: PointSerie[] = points;
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <ComposedChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-        <defs>
-          <linearGradient id="mipTraffic" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.32} />
-            <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey="label" fontSize={11} tickLine={false} />
-        <YAxis yAxisId="pv" fontSize={11} width={48} tickLine={false} axisLine={false} />
-        <YAxis
-          yAxisId="err"
-          orientation="right"
-          fontSize={11}
-          width={40}
-          tickLine={false}
-          axisLine={false}
-          allowDecimals={false}
+    <div className="flex min-w-0 flex-col gap-3" data-testid="traffic-timeseries">
+      <div className="min-w-0">
+        <p className="mb-1 text-[11px] font-medium text-ink-soft">Pages vues</p>
+        <StackedBars
+          grille={grille}
+          points={lignes}
+          series={[{ cle: "pageviews", libelle: "Pages vues", categorieIndex: 0 }]}
+          format="count"
+          seauSecondes={seauSecondes}
+          fuseau={fuseau}
+          hauteur={hauteurPanneau}
+          zoomHref={zoomHref}
+          annotations={annotations}
+          legendeAnnotations={false}
+          synchro={synchro}
+          ariaLabel={`Pages vues par seau, ${grille.length} seaux`}
         />
-        <Tooltip
-          formatter={(v: number, name) => [
-            v.toLocaleString("fr-FR"),
-            name === "pageviews" ? "Pages vues" : "Erreurs JS",
-          ]}
+      </div>
+      <div className="min-w-0">
+        <p className="mb-1 text-[11px] font-medium text-ink-soft">{libelleErreurs}</p>
+        <ThresholdSeries
+          grille={grille}
+          points={lignes}
+          series={[{ cle: "errors", libelle: libelleErreurs, role: "categorie", categorieIndex: 1, forme: "barres", additive: true }]}
+          format="count"
+          seauSecondes={seauSecondes}
+          fuseau={fuseau}
+          hauteur={hauteurPanneau}
+          zoomHref={zoomHref}
+          annotations={annotations}
+          annotationsIndisponibles={annotationsIndisponibles}
+          synchro={synchro}
+          ariaLabel={`${libelleErreurs} par seau, ${grille.length} seaux`}
         />
-        <Area
-          yAxisId="pv"
-          type="monotone"
-          dataKey="pageviews"
-          stroke={ACCENT}
-          strokeWidth={2.5}
-          fill="url(#mipTraffic)"
-          dot={false}
-          activeDot={{ r: 4 }}
-        />
-        <Line
-          yAxisId="err"
-          type="monotone"
-          dataKey="errors"
-          stroke={ERR}
-          strokeWidth={2}
-          dot={{ r: 2, fill: ERR, strokeWidth: 0 }}
-          activeDot={{ r: 4 }}
-        />
-      </ComposedChart>
-    </ResponsiveContainer>
+      </div>
+    </div>
   );
 }

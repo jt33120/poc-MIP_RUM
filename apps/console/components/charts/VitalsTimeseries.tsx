@@ -1,82 +1,70 @@
 "use client";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { RATING_HEX, SERIE } from "@/lib/palette";
+// VitalsTimeseries — le p75 d'UN Web Vital dans le temps : une enveloppe de
+// `ThresholdSeries` (F04, plan § 4.1).
+//
+// Ce qu'elle fixe pour l'appelant : les bandes Bon / À améliorer / Mauvais du vital
+// (lues dans `lib/rating.ts` — plus de `thresholds` passés à la main, ni de deux
+// pointillés), le format du vital (« 2,7 s », « 0,081 »), et le rôle « principale »
+// de la série. La grille reste OBLIGATOIRE : une heure sans mesure est un trou,
+// plus une pente tirée entre deux heures éloignées.
+//
+// R-V : `vital` n'est donné que pour un p75 — c'est ce que trace cette enveloppe.
+import { bucketLabel } from "@/lib/query-contract";
+import { formatDuVital, type VitalName } from "@/lib/fmt-ids";
+import type { Annotation } from "@/lib/series";
+import { ThresholdSeries } from "./ThresholdSeries";
 
-export interface SeriesPoint {
-  bucket: string; // ISO date
-  p75: number;
-}
-
-// Orange signature MIP pour la série réelle ; axes/grille thémés via globals.css.
-const ACCENT = SERIE.principale;
+export type VitalPoint = {
+  /** Élément de la grille (ISO UTC ou jour « AAAA-MM-JJ »). */
+  t: string;
+  /** p75 du seau ; `null` = aucune mesure (un trou, jamais 0). */
+  p75: number | null;
+  /** Mesures du seau, si la lecture les compte : point creux sous 30. */
+  n?: number | null;
+};
 
 export function VitalsTimeseries({
-  data,
-  unit = "ms",
-  thresholds,
-  xAxis = "time",
+  vital,
+  grille,
+  points,
+  seauSecondes,
+  fuseau,
+  hauteur = 260,
+  zoomHref,
+  annotations,
+  annotationsIndisponibles,
+  ariaLabel,
 }: {
-  data: SeriesPoint[];
-  unit?: string;
-  thresholds?: [number, number];
-  /** "time" : buckets infra-journaliers (HH:mm) · "day" : buckets journaliers (JJ/MM). */
-  xAxis?: "time" | "day";
+  vital: VitalName;
+  grille: string[];
+  points: VitalPoint[];
+  seauSecondes: number;
+  fuseau: string;
+  hauteur?: number;
+  zoomHref?: string;
+  annotations?: Annotation[];
+  annotationsIndisponibles?: string;
+  /** Défaut : « <vital> p75 par seau de <largeur>, N seaux, 3 zones de seuil ». */
+  ariaLabel?: string;
 }) {
-  const points = data.map((d) => ({
-    ...d,
-    label:
-      xAxis === "day"
-        ? new Date(d.bucket).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })
-        : new Date(d.bucket).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-  }));
+  const avecEffectif = points.some((p) => p.n != null);
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <AreaChart data={points} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
-        <defs>
-          <linearGradient id="mipArea" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.35} />
-            <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey="label" fontSize={11} tickLine={false} />
-        <YAxis fontSize={11} unit={` ${unit}`} width={80} tickLine={false} axisLine={false} />
-        <Tooltip formatter={(v: number) => [`${Math.round(v)} ${unit}`, "p75"]} />
-        {thresholds && (
-          <>
-            <ReferenceLine
-              y={thresholds[0]}
-              stroke={RATING_HEX.good}
-              strokeDasharray="4 4"
-              label={{ value: "Bon", position: "insideTopRight", fontSize: 10, fill: RATING_HEX.good }}
-            />
-            <ReferenceLine
-              y={thresholds[1]}
-              stroke={RATING_HEX.poor}
-              strokeDasharray="4 4"
-              label={{ value: "Mauvais", position: "insideTopRight", fontSize: 10, fill: RATING_HEX.poor }}
-            />
-          </>
-        )}
-        <Area
-          type="monotone"
-          dataKey="p75"
-          stroke={ACCENT}
-          strokeWidth={2.5}
-          fill="url(#mipArea)"
-          dot={{ r: 2.5, fill: ACCENT, strokeWidth: 0 }}
-          activeDot={{ r: 4 }}
-        />
-      </AreaChart>
-    </ResponsiveContainer>
+    <ThresholdSeries
+      grille={grille}
+      points={points}
+      series={[{ cle: "p75", libelle: `${vital} p75`, role: "principale", effectifCle: avecEffectif ? "n" : undefined }]}
+      format={formatDuVital(vital)}
+      vital={vital}
+      seauSecondes={seauSecondes}
+      fuseau={fuseau}
+      hauteur={hauteur}
+      zoomHref={zoomHref}
+      annotations={annotations}
+      annotationsIndisponibles={annotationsIndisponibles}
+      ariaLabel={
+        ariaLabel ??
+        `${vital} p75 par seau de ${bucketLabel(seauSecondes)}, ${grille.length} seaux, 3 zones de seuil (Bon, À améliorer, Mauvais)`
+      }
+    />
   );
 }

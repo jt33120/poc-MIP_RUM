@@ -1,8 +1,13 @@
 "use client";
 // Courbe de tendance générique (recharts) — une série principale (ligne) et un
-// volume optionnel en barres discrètes sur un axe secondaire (ex. % de
-// satisfaction + nombre d'avis, coût + appels). Grammaire commune : accent
-// orange, axes/grille/tooltip thémés via globals.css.
+// volume optionnel (ex. % de satisfaction + nombre d'avis, coût + appels).
+// Grammaire commune : accent orange, axes/grille/tooltip thémés via globals.css.
+//
+// LE VOLUME EST UN SECOND PANNEAU (F04, P5), plus un axe secondaire. Un taux sur
+// l'axe de gauche et un nombre d'avis sur celui de droite se croisaient où le
+// hasard des deux échelles le voulait, et ce croisement se lisait comme un fait.
+// Le volume se lit désormais dans un panneau bas, sous la courbe, qui partage son
+// axe x (mêmes marges, mêmes bandes, survol synchronisé) et a SON axe y.
 //
 // PLUSIEURS SÉRIES (F03, § 4.1) : `series` trace jusqu'à cinq courbes nommées, dont
 // la couleur et le trait viennent de leur RÔLE (`styleDeRole`, lib/palette.ts) —
@@ -11,8 +16,10 @@
 // rien de tronqué en silence ; un « top N » est un classement, pas N courbes).
 //
 // L'alternative textuelle est portée par la `Figure` englobante (mêmes lignes).
+import { useId } from "react";
 import {
   Bar,
+  BarChart,
   CartesianGrid,
   ComposedChart,
   Legend,
@@ -28,7 +35,7 @@ export interface LineTrendPoint {
   label: string;
   /** `null` : aucune mesure sur ce point — un TROU dans la courbe (pas de `connectNulls`), jamais 0. */
   value?: number | null;
-  /** Volume optionnel (barres discrètes, axe droit). */
+  /** Volume optionnel (barres discrètes, panneau bas). */
   volume?: number;
   /** Valeurs des `series`, par clé (`null` = trou). */
   [cle: string]: string | number | null | undefined;
@@ -47,6 +54,11 @@ export interface LineTrendSerie {
 /** Au plus cinq séries par graphique (P14). */
 export const MAX_SERIES_TENDANCE = 5;
 
+/** Largeur de l'axe y, la même pour la courbe et le panneau de volume : leurs x coïncident. */
+const LARGEUR_AXE_Y = 44;
+/** Hauteur du panneau de volume, prise sur la hauteur totale demandée. */
+const HAUTEUR_VOLUME = 72;
+
 export function LineTrend({
   data,
   valueName,
@@ -62,12 +74,14 @@ export function LineTrend({
   valueUnit?: string;
   volumeName?: string;
   color?: string;
+  /** Hauteur totale, panneau de volume compris. */
   height?: number;
-  /** Domaine forcé de l'axe principal (ex. [0, 100] pour un %). */
+  /** Domaine forcé de l'axe de la courbe (ex. [0, 100] pour un %). */
   domain?: [number, number];
   /** Séries nommées (≤ 5) à la place de `value` ; `valueName` reste le nom de la mesure. */
   series?: LineTrendSerie[];
 }) {
+  const synchro = `tendance-${useId()}`;
   const hasVolume = data.some((d) => d.volume != null);
   const tracees = series?.slice(0, MAX_SERIES_TENDANCE);
   const ecartees = series && tracees ? series.slice(tracees.length) : [];
@@ -76,40 +90,27 @@ export function LineTrend({
     const style = styleDeRole(s.role, s.role === "categorie" ? (s.categorieIndex ?? rangCategorie++) : 0);
     return { ...s, ...style };
   });
+  const marge = { top: 8, right: 8, bottom: 0, left: 0 };
+  const hauteurCourbe = hasVolume ? Math.max(120, height - HAUTEUR_VOLUME) : height;
 
   return (
     <div className="min-w-0" data-testid="line-trend">
-      <ResponsiveContainer width="100%" height={height}>
-        <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+      <ResponsiveContainer width="100%" height={hauteurCourbe}>
+        <ComposedChart data={data} margin={marge} syncId={hasVolume ? synchro : undefined}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="label" fontSize={11} tickLine={false} interval="preserveStartEnd" />
-          <YAxis
-            yAxisId="v"
-            fontSize={11}
-            width={44}
-            tickLine={false}
-            axisLine={false}
-            unit={valueUnit}
-            domain={domain}
-          />
-          {hasVolume && (
-            <YAxis yAxisId="vol" orientation="right" fontSize={11} width={36} tickLine={false} axisLine={false} allowDecimals={false} />
-          )}
+          <YAxis fontSize={11} width={LARGEUR_AXE_Y} tickLine={false} axisLine={false} unit={valueUnit} domain={domain} />
           <Tooltip
-            formatter={(val: number, name) => [
-              val == null ? "—" : name === volumeName ? val.toLocaleString("fr-FR") : `${val}${valueUnit}`,
-              name,
-            ]}
+            formatter={(val: number, name) => [val == null ? "—" : `${val}${valueUnit}`, name]}
             contentStyle={{ fontSize: 12 }}
           />
-          {hasVolume && (
-            <Bar yAxisId="vol" dataKey="volume" name={volumeName} fill="rgb(var(--c-ink-faint))" fillOpacity={0.25} maxBarSize={26} radius={[2, 2, 0, 0]} />
-          )}
+          {/* Avec un panneau de volume, une barre CACHÉE met l'axe x en bandes, comme
+              celui des barres du dessous : les deux panneaux tombent sur les mêmes x. */}
+          {hasVolume && <Bar dataKey="__bandes" hide isAnimationActive={false} legendType="none" />}
           {lignes ? (
             lignes.map((s) => (
               <Line
                 key={s.cle}
-                yAxisId="v"
                 type="monotone"
                 dataKey={s.cle}
                 name={s.libelle}
@@ -123,7 +124,6 @@ export function LineTrend({
             ))
           ) : (
             <Line
-              yAxisId="v"
               type="monotone"
               dataKey="value"
               name={valueName}
@@ -136,6 +136,38 @@ export function LineTrend({
           {lignes && <Legend wrapperStyle={{ fontSize: 11 }} />}
         </ComposedChart>
       </ResponsiveContainer>
+      {hasVolume && (
+        <div className="mt-1 min-w-0" data-testid="line-trend-volume">
+          <p className="text-[11px] text-ink-soft">Volume : {volumeName}</p>
+          <ResponsiveContainer width="100%" height={HAUTEUR_VOLUME - 16}>
+            <BarChart data={data} margin={marge} syncId={synchro}>
+              <XAxis dataKey="label" hide />
+              <YAxis
+                fontSize={10}
+                width={LARGEUR_AXE_Y}
+                tickLine={false}
+                axisLine={false}
+                allowDecimals={false}
+                tickCount={3}
+              />
+              <Tooltip
+                formatter={(val: number) => [val == null ? "—" : val.toLocaleString("fr-FR"), volumeName]}
+                contentStyle={{ fontSize: 12 }}
+                cursor={{ fill: "rgb(var(--c-ink-faint))", fillOpacity: 0.12 }}
+              />
+              <Bar
+                dataKey="volume"
+                name={volumeName}
+                fill="rgb(var(--c-ink-faint))"
+                fillOpacity={0.45}
+                maxBarSize={26}
+                radius={[2, 2, 0, 0]}
+                isAnimationActive={false}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
       {ecartees.length > 0 && (
         <p className="mt-1 text-xs text-ink-soft" data-testid="series-ecartees">
           {ecartees.length} série{ecartees.length > 1 ? "s" : ""} non tracée{ecartees.length > 1 ? "s" : ""} (au plus{" "}
