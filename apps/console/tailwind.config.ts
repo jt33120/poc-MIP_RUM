@@ -98,7 +98,11 @@ export default {
       },
       animation: {
         "pulse-dot": "pulse-dot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        "fade-up": "fade-up 0.3s ease-out both",
+        // `backwards`, pas `both` : l'état final ne doit pas rester posé. Un
+        // `transform` retenu (même l'identité) fait de l'écran le bloc conteneur de
+        // tout descendant `fixed` — le panneau de détail (F07) se retrouvait décalé
+        // de la marge de l'écran au lieu d'occuper la fenêtre.
+        "fade-up": "fade-up 0.3s ease-out backwards",
       },
     },
   },
