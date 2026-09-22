@@ -81,3 +81,94 @@ export function buildCohorts(rows: { user: string; week: number }[], maxOffset: 
       return { cohort, size, cells };
     });
 }
+
+// ─────────────────── Semaine en cours, cellules et courbe (F49) ───────────────────
+//
+// LA SEMAINE EN COURS N'EST PAS UNE SEMAINE. Mardi matin, la cellule « S+1 » d'une
+// cohorte de la semaine dernière ne compte que les visiteurs revenus depuis lundi :
+// elle est basse parce qu'elle n'est pas finie, pas parce qu'on décroche. L'ancienne
+// courbe l'incluait (et rendait 0 sans cohorte) : la dernière valeur plongeait
+// chaque début de semaine. Une cellule est INCOMPLÈTE quand `cohorte + offset ≥
+// semaineCourante` ; elle sort du numérateur ET du dénominateur de la courbe, et la
+// matrice la hache.
+
+const JOUR_MS = 86_400_000;
+
+/**
+ * Index de la semaine (lundi UTC) qui contient `ms` — la même formule que le SQL
+ * (`floor(extract(epoch from date_trunc('week', started_at)) / 604800)`,
+ * lib/queries-cohorts.ts) : `floor(epoch(lundi UTC) / 604800)`.
+ */
+export function indexSemaine(ms: number): number {
+  const jour = Math.floor(ms / JOUR_MS);
+  // Le jour 0 (01/01/1970) est un jeudi : (jour + 3) mod 7 vaut 0 le lundi.
+  const lundi = jour - ((((jour + 3) % 7) + 7) % 7);
+  return Math.floor((lundi * 86_400) / SEMAINE_S);
+}
+
+export interface CelluleRetention {
+  offset: number;
+  retenus: number;
+  /** retenus / taille ; `null` sans taille (jamais 0 à la place). */
+  taux: number | null;
+  /** Semaine en cours : la valeur n'est pas finie. */
+  incomplete: boolean;
+}
+
+/**
+ * Cellules d'une cohorte jusqu'à la semaine en cours (offsets 0 à `colonnes − 1`).
+ * Une semaine passée sans aucune activité dans les données n'a pas de cellule dans
+ * `buildCohorts` (qui s'arrête à la dernière semaine active) : elle vaut 0 retenu —
+ * la semaine est finie et personne n'est revenu. Au-delà de la semaine en cours,
+ * aucune cellule : c'est l'avenir, pas un zéro.
+ */
+export function cellulesDeCohorte(row: CohortRow, semaineCourante: number, colonnes: number): CelluleRetention[] {
+  const cellules: CelluleRetention[] = [];
+  for (let offset = 0; offset < colonnes && row.cohort + offset <= semaineCourante; offset++) {
+    const retenus = row.cells.find((c) => c.offset === offset)?.retained ?? 0;
+    cellules.push({
+      offset,
+      retenus,
+      taux: row.size > 0 ? retenus / row.size : null,
+      incomplete: row.cohort + offset >= semaineCourante,
+    });
+  }
+  return cellules;
+}
+
+export interface PointRetention {
+  offset: number;
+  /** Σ retenus / Σ taille des cohortes COMPLÈTES à cet offset ; `null` s'il n'y en a aucune. */
+  taux: number | null;
+  /** Cohortes complètes qui contribuent. */
+  cohortes: number;
+  /** Σ taille de ces cohortes (le dénominateur). */
+  taille: number;
+  /** Cohortes écartées : leur semaine à cet offset n'est pas finie (en cours ou à venir). */
+  exclues: number;
+}
+
+/**
+ * Courbe de rétention pondérée (Datadog « Retention curve ») : à chaque offset,
+ * Σ retenus / Σ taille sur les seules cohortes dont la cellule est COMPLÈTE — une
+ * moyenne pondérée par la taille, jamais une moyenne des taux. La tuile « Retour
+ * en S+1 » en est le point d'offset 1 : les deux rendent le même nombre.
+ */
+export function courbeRetention(rows: readonly CohortRow[], semaineCourante: number, colonnes: number): PointRetention[] {
+  return Array.from({ length: Math.max(0, colonnes) }, (_v, offset) => {
+    let retenus = 0;
+    let taille = 0;
+    let cohortes = 0;
+    let exclues = 0;
+    for (const row of rows) {
+      if (row.cohort + offset >= semaineCourante) {
+        exclues++;
+        continue;
+      }
+      retenus += row.cells.find((c) => c.offset === offset)?.retained ?? 0;
+      taille += row.size;
+      cohortes++;
+    }
+    return { offset, taux: cohortes > 0 && taille > 0 ? retenus / taille : null, cohortes, taille, exclues };
+  });
+}

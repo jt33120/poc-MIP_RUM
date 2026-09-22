@@ -1,6 +1,7 @@
 // Rétention par cohortes — matrice triangulaire. Logique pure.
 import { describe, expect, it } from "vitest";
 import { SEMAINE_S, buildCohorts, lundiDeSemaine } from "../../apps/console/lib/cohorts";
+import { cellulesDeCohorte, courbeRetention, indexSemaine, type CohortRow } from "../../apps/console/lib/cohorts";
 
 // F40 — l'étiquette d'une cohorte est le LUNDI de sa semaine. L'index vient du SQL :
 // `floor(extract(epoch from date_trunc('week', started_at)) / 604800)`, où
@@ -80,5 +81,82 @@ describe("buildCohorts", () => {
     ];
     const c = buildCohorts(rows, 3);
     expect(c[0].cells).toHaveLength(4); // offsets 0..3 malgré latest-cohort=9
+  });
+});
+
+// ═══════════ F49 — courbe pondérée, semaine en cours exclue, cellules ═══════════
+
+/** Une cohorte telle que `buildCohorts` la rend, cellules données par (offset, retenus). */
+const cohorteF49 = (cohort: number, size: number, retenus: number[]): CohortRow => ({
+  cohort,
+  size,
+  cells: retenus.map((retained, offset) => ({ offset, retained, rate: retained / size })),
+});
+
+describe("F49 — indexSemaine", () => {
+  it("même index que la formule SQL, du lundi 00:00 au dimanche 23:59 UTC", () => {
+    const lundi = new Date("2026-09-21T00:00:00Z").getTime();
+    const index = indexSql(new Date(lundi));
+    expect(indexSemaine(lundi)).toBe(index);
+    expect(indexSemaine(new Date("2026-09-22T09:30:00Z").getTime())).toBe(index);
+    expect(indexSemaine(new Date("2026-09-27T23:59:59Z").getTime())).toBe(index);
+    expect(indexSemaine(new Date("2026-09-28T00:00:00Z").getTime())).toBe(index + 1);
+    expect(lundiDeSemaine(indexSemaine(lundi + 3 * 86_400_000)).toISOString()).toBe("2026-09-21T00:00:00.000Z");
+  });
+});
+
+describe("F49 — courbeRetention", () => {
+  const COURANTE = 100;
+
+  it("pondération : 2 cohortes complètes de 10 et 30 visiteurs, 50 % et 10 % → 20 %", () => {
+    const rows = [cohorteF49(90, 10, [10, 5]), cohorteF49(91, 30, [30, 3])];
+    const s1 = courbeRetention(rows, COURANTE, 2)[1];
+    // Σ retenus / Σ taille = (5 + 3) / (10 + 30) ; la moyenne des taux dirait 30 %.
+    expect(s1.taux).toBeCloseTo(0.2, 10);
+    expect(s1).toMatchObject({ cohortes: 2, taille: 40, exclues: 0 });
+  });
+
+  it("cohorte à S+1 incomplète exclue : taux inchangé, exclues = 1 (exemple de la tuile)", () => {
+    const A = cohorteF49(98, 10, [10, 5]); // S+1 = semaine 99 : complète
+    const B = cohorteF49(99, 30, [30, 0]); // S+1 = semaine 100 : la semaine en cours
+    const avec = courbeRetention([A, B], COURANTE, 2)[1];
+    const sans = courbeRetention([A], COURANTE, 2)[1];
+    expect(avec.taux).toBeCloseTo(0.5, 10);
+    expect(avec).toMatchObject({ cohortes: 1, exclues: 1, taille: 10 });
+    expect(avec.taux).toBe(sans.taux);
+  });
+
+  it("aucune cohorte complète à un offset → null, jamais 0", () => {
+    const courbe = courbeRetention([cohorteF49(COURANTE, 12, [4])], COURANTE, 2);
+    expect(courbe[0]).toMatchObject({ taux: null, cohortes: 0, exclues: 1 });
+    expect(courbe[1].taux).toBeNull();
+    expect(courbeRetention([], COURANTE, 3).every((p) => p.taux === null)).toBe(true);
+  });
+
+  it("la courbe et la tuile S+1 rendent le même nombre (une seule fonction)", () => {
+    const rows = [cohorteF49(96, 20, [20, 8, 4]), cohorteF49(97, 5, [5, 1, 0]), cohorteF49(99, 7, [7, 2])];
+    const courbe = courbeRetention(rows, COURANTE, 3);
+    expect(courbe[1].taux).toBeCloseTo((8 + 1) / (20 + 5), 10);
+    expect(courbe[1].exclues).toBe(1);
+  });
+});
+
+describe("F49 — cellulesDeCohorte", () => {
+  it("la cellule de la semaine en cours est incomplete ; au-delà, aucune cellule", () => {
+    const cellules = cellulesDeCohorte(cohorteF49(98, 10, [10, 6, 2]), 100, 5);
+    expect(cellules.map((c) => c.offset)).toEqual([0, 1, 2]);
+    expect(cellules.map((c) => c.incomplete)).toEqual([false, false, true]);
+    expect(cellules[1]).toMatchObject({ retenus: 6, taux: 0.6 });
+  });
+
+  it("une semaine passée sans activité vaut 0 retenu (complète), pas une case vide", () => {
+    // buildCohorts s'arrête à la dernière semaine active (98) ; la semaine 99 est finie.
+    const cellules = cellulesDeCohorte(cohorteF49(97, 4, [4, 1]), 100, 4);
+    expect(cellules.map((c) => [c.offset, c.retenus, c.incomplete])).toEqual([
+      [0, 4, false],
+      [1, 1, false],
+      [2, 0, false],
+      [3, 0, true],
+    ]);
   });
 });

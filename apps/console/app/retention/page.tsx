@@ -1,174 +1,333 @@
+// `/retention` — « Les visiteurs identifiés reviennent-ils, et au bout de combien de
+// semaines décrochent-ils ? » (F49, plan § 5.17).
+//
+// LA CLÉ EST `visitor_id`, tirée au hasard par le SDK : les sessions sans
+// identifiant sont EXCLUES de la matrice (plutôt qu'une répartition au jugé), et
+// l'historique antérieur au 09/09/2026 n'en porte pas (lib/queries-cohorts.ts).
+//
+// CE QUE L'ÉCRAN NE FAIT PLUS.
+//   - Compter la semaine en cours comme une semaine : la courbe et les tuiles ne
+//     retiennent que les cellules COMPLÈTES (`courbeRetention`, lib/cohorts.ts),
+//     et la matrice hache la semaine en cours.
+//   - Rendre 0 sans cohorte : un taux sans dénominateur vaut « — » et sa raison.
+//   - Colorer un verdict : aucun seuil de rétention n'est publié (S6, R-S) ; la
+//     matrice passe sur l'échelle `SEQUENTIELLE`, une intensité sans verdict.
+//   - Interpréter la courbe (« chute = activation, plateau = noyau fidèle ») : une
+//     lecture sans source que l'écran n'a pas à poser.
+//   - Laisser la période du haut active sans effet : la surface est en
+//     `range: "none"`, la fenêtre se choisit ici en semaines (F40).
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
-import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
-import { LineTrend } from "@/components/charts/LineTrend";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
+import { Figure } from "@/components/charts/Figure";
+import { KpiTile } from "@/components/charts/KpiTile";
+import { LineTrend } from "@/components/charts/LineTrend";
+import { MatriceCohortes } from "@/components/charts/MatriceCohortes";
 import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
-import { lundiDeSemaine } from "@/lib/cohorts";
+import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import {
+  cellulesDeCohorte,
+  courbeRetention,
+  indexSemaine,
+  lundiDeSemaine,
+  type CohortRow,
+  type PointRetention,
+} from "@/lib/cohorts";
 import type { SearchParams } from "@/lib/filters";
+import { formater } from "@/lib/fmt-ids";
 import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 import { retentionCohorts } from "@/lib/queries-cohorts";
 import { samplingSessionsHistorique } from "@/lib/queries-sessions";
+import { hrefWithQuery } from "@/lib/query-contract";
 
 export const dynamic = "force-dynamic";
 
-const WEEK_CHOICES = [4, 8, 12];
+/** Fenêtres proposées, en semaines (§ 5.17.3, R1). */
+const FENETRES = [4, 8, 12, 26] as const;
+const FENETRE_DEFAUT = 8;
+
+const APPAREILS = [
+  { cle: "desktop", libelle: "Ordinateurs" },
+  { cle: "mobile", libelle: "Mobiles" },
+] as const;
+
 // Lundi de la cohorte, lu en UTC : les semaines sont des semaines UTC, et un
 // serveur à l'ouest de Greenwich afficherait sinon le dimanche.
-const fmtWeek = (d: Date) => d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
+const fmtSemaine = (d: Date) => d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
+const nombre = (n: number) => n.toLocaleString("fr-FR");
+/** Un taux en pourcentage pour la courbe (0..100, une décimale) ; `null` reste un trou. */
+const enPct = (t: number | null) => (t === null ? null : Math.round(t * 1000) / 10);
+
+/** Tuile « Retour en S+n » : le point de la courbe à cet offset, ou pourquoi il n'existe pas. */
+function tuileRetour(point: PointRetention | undefined, offset: number, lu: boolean) {
+  const complet = point && point.taux !== null ? point : null;
+  return (
+    <KpiTile
+      label={`Retour en S+${offset}`}
+      valeur={complet ? complet.taux : null}
+      format="pct"
+      raisonNull={
+        !lu
+          ? "lecture des cohortes en échec"
+          : offset === 1
+            ? "pas encore une semaine complète de recul"
+            : `pas encore ${offset} semaines complètes de recul`
+      }
+      sensMeilleur="neutre"
+      couverture={complet ? { n: complet.taille, unite: "visiteurs", faibleSous: 30 } : undefined}
+      lecture={
+        point
+          ? `${nombre(point.cohortes)} cohorte${point.cohortes > 1 ? "s" : ""} complète${point.cohortes > 1 ? "s" : ""} (${nombre(point.exclues)} exclue${point.exclues > 1 ? "s" : ""} : semaine incomplète).`
+          : undefined
+      }
+    />
+  );
+}
 
 export default async function Retention({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const ecran = await pageFilters(sp, "/retention");
   if (!ecran.ok) return <FilterProblemNotice title="Rétention" problem={ecran.problem} />;
   const f = ecran.filters;
-  const wRaw = Number(typeof sp.weeks === "string" ? sp.weeks : 8);
-  const weeks = Number.isFinite(wRaw) ? Math.min(26, Math.max(2, Math.trunc(wRaw))) : 8;
-  // S7 : sessions identifiées lues par les cohortes sur les N semaines choisies.
-  const [cohorts, echantillonnage] = await Promise.all([
-    retentionCohorts(f, weeks),
-    lire(() => samplingSessionsHistorique(f, { lecture: "cohortes", semaines: weeks })),
-  ]);
-  const cols = Math.max(0, ...cohorts.map((c) => c.cells.length)); // nb de colonnes d'offset
 
-  const weekHref = (w: number) => {
-    const p = new URLSearchParams(
-      Object.entries(sp).flatMap(([k, v]) => (typeof v === "string" && k !== "weeks" ? [[k, v] as [string, string]] : [])),
-    );
-    p.set("weeks", String(w));
-    return `/retention?${p.toString()}`;
-  };
+  // `weeks` est un réglage de l'écran (§ 3.1) : une valeur hors des fenêtres
+  // proposées est ignorée ET signalée, jamais appliquée à moitié.
+  const brut = typeof sp.weeks === "string" ? sp.weeks : null;
+  const lu = brut === null ? null : Number(brut);
+  const weeks = lu !== null && (FENETRES as readonly number[]).includes(lu) ? lu : FENETRE_DEFAUT;
+  const ignore =
+    brut !== null && weeks !== lu
+      ? `Réglage d'affichage ignoré : weeks=${brut.slice(0, 40)} (fenêtres proposées : ${FENETRES.join(", ")} semaines).`
+      : null;
+  /** La fenêtre retenue, telle qu'un lien la reporte (le défaut ne s'écrit pas). */
+  const weeksParam = weeks === FENETRE_DEFAUT ? null : String(weeks);
+  const semaineCourante = indexSemaine(Date.now());
+  const appareilFiltre = APPAREILS.find((a) => a.cle === f.device) ?? null;
+
+  // Chaque lecture est indépendante (F02) : une lecture en échec n'efface que ses sections.
+  const [cohortes, echantillonnage, parAppareil] = await Promise.all([
+    lire(() => retentionCohorts(f, weeks)),
+    // S7 : sessions identifiées lues par les cohortes sur les N semaines choisies.
+    lire(() => samplingSessionsHistorique(f, { lecture: "cohortes", semaines: weeks })),
+    appareilFiltre
+      ? Promise.resolve(null)
+      : lire(() => Promise.all(APPAREILS.map((a) => retentionCohorts({ ...f, device: a.cle }, weeks)))),
+  ]);
+
+  const rows: CohortRow[] = cohortes.ok ? cohortes.data : [];
+  // Colonnes UTILES : d'une cohorte à la semaine en cours, au plus `weeks`.
+  const colonnes = Math.min(weeks, Math.max(0, ...rows.map((r) => semaineCourante - r.cohort + 1)));
+  const courbe = courbeRetention(rows, semaineCourante, colonnes);
+  const totalVisiteurs = rows.reduce((s, r) => s + r.size, 0);
+
+  const selecteur = (
+    <nav aria-label="Fenêtre de rétention" className="flex min-w-0 max-w-full items-center gap-1.5 overflow-x-auto py-0.5 text-xs">
+      <span className="shrink-0 text-ink-soft">Fenêtre :</span>
+      {FENETRES.map((w) => (
+        <Link
+          key={w}
+          href={hrefWithQuery("/retention", ecran.query, { weeks: w === FENETRE_DEFAUT ? null : String(w) })}
+          aria-current={w === weeks ? "true" : undefined}
+          data-testid="retention-fenetre"
+          className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
+            w === weeks ? "border-perf/50 bg-perf/10 text-perf" : "border-line text-ink-soft hover:bg-panel2"
+          }`}
+        >
+          {w} sem.
+        </Link>
+      ))}
+    </nav>
+  );
 
   return (
     <div className="animate-fade-up">
       <PageHeader
         title="Rétention"
-        sub="Part des visiteurs identifiés qui reviennent, par cohorte de première activité hebdomadaire."
-      />
+        domain="usages"
+        sub="Les visiteurs identifiés reviennent-ils, et au bout de combien de semaines décrochent-ils ?"
+      >
+        {selecteur}
+      </PageHeader>
 
-      <div className="mb-4 flex items-center gap-2 text-xs">
-        <span className="text-ink-faint">Fenêtre :</span>
-        {WEEK_CHOICES.map((w) => (
-          <Link
-            key={w}
-            href={weekHref(w)}
-            className={`rounded-full border px-2.5 py-1 font-medium transition ${
-              w === weeks ? "border-brand bg-brand/10 text-brand" : "border-line text-ink-soft hover:bg-panel2"
-            }`}
-          >
-            {w} sem.
-          </Link>
-        ))}
+      {ignore && (
+        <p role="note" className="mb-4 text-xs text-ink-soft" data-testid="reglage-ignore">
+          {ignore}
+        </p>
+      )}
+
+      {/* R2 — une rangée, une population : les visiteurs identifiés (sauf la 4e tuile, dite). */}
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="retention-kpi">
+        <KpiTile
+          label="Visiteurs identifiés suivis"
+          valeur={cohortes.ok ? totalVisiteurs : null}
+          format="count"
+          raisonNull="lecture des cohortes en échec"
+          sensMeilleur="neutre"
+          lecture={
+            cohortes.ok
+              ? `${nombre(totalVisiteurs)} visiteurs identifiés, en ${nombre(rows.length)} cohorte${rows.length > 1 ? "s" : ""} hebdomadaire${rows.length > 1 ? "s" : ""}, sur ${weeks} semaines.`
+              : undefined
+          }
+        />
+        {tuileRetour(courbe[1], 1, cohortes.ok)}
+        {tuileRetour(courbe[4], 4, cohortes.ok)}
+        <KpiTile
+          label="Sessions sans identifiant, hors matrice"
+          valeur={null}
+          format="count"
+          raisonNull="non lu : la lecture est à créer (B35)"
+          sensMeilleur="neutre"
+        />
       </div>
 
       <BandeauEchantillonnage lecture={echantillonnage} />
 
-      {!cohorts.length ? (
-        <div className="card p-8 text-center text-ink-faint">
+      {!cohortes.ok ? (
+        <EchecLecture titre="Cohortes de rétention" />
+      ) : rows.length === 0 ? (
+        <div className="card p-8 text-center text-ink-soft" data-testid="retention-vide">
           Aucun visiteur identifié sur la fenêtre. Les sessions collectées avant le 09/09/2026 ne portent pas
           d&apos;identifiant de visiteur et n&apos;entrent donc dans aucune cohorte.
         </div>
       ) : (
         <>
-          {(() => {
-            // Courbe de rétention moyenne : à chaque offset S+o, part retenue
-            // pondérée par la taille des cohortes ayant atteint cet offset.
-            const curve = Array.from({ length: cols }, (_v, o) => {
-              let ret = 0;
-              let size = 0;
-              for (const c of cohorts) {
-                const cell = c.cells[o];
-                if (cell) {
-                  ret += cell.retained;
-                  size += c.size;
-                }
-              }
-              return { label: `S+${o}`, value: size ? Math.round((ret / size) * 100) : 0 };
-            });
-            const totalUsers = cohorts.reduce((s, c) => s + c.size, 0);
-            const s1 = curve[1]?.value;
-            const s4 = curve[4]?.value;
-            return (
-              <SupervisionHero
-                chartTitle="Courbe de rétention moyenne"
-                chart={
-                  cols > 1 ? (
-                    <LineTrend data={curve} valueName="Rétention" valueUnit="%" color="#059669" domain={[0, 100]} />
-                  ) : (
-                    <p className="py-12 text-center text-sm text-ink-faint">
-                      Pas encore assez de recul (une seule semaine observée).
+          {/* R3 — hero (7 colonnes) et « Par appareil » (5 colonnes), empilés sous 1024 px. */}
+          <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-12">
+            <div className="min-w-0 lg:col-span-7">
+              <SectionErreur titre="Courbe de rétention">
+                <Figure
+                  titre="Courbe de rétention"
+                  id="retention-courbe"
+                  etat={colonnes <= 1 ? { kind: "partiel", raison: "une seule semaine observée : pas encore de recul" } : undefined}
+                  meta={
+                    <>
+                      <span>{weeks} semaines, semaines UTC</span>
+                      <span>moyenne pondérée par la taille des cohortes dont la semaine est complète ; semaine en cours exclue</span>
+                    </>
+                  }
+                  lecture="Part des visiteurs de chaque cohorte revenus n semaines après leur arrivée. Un point sans cohorte complète est un trou, jamais 0."
+                  alternative={{
+                    legende: "Rétention pondérée par semaine depuis l'arrivée",
+                    colonnes: ["Semaine", "Taux", "Cohortes complètes", "Exclues", "Visiteurs"],
+                    lignes: courbe.map((p) => [`S+${p.offset}`, formater("pct", p.taux), p.cohortes, p.exclues, p.taille]),
+                  }}
+                >
+                  <LineTrend
+                    data={courbe.map((p) => ({ label: `S+${p.offset}`, value: enPct(p.taux) }))}
+                    valueName="Rétention"
+                    valueUnit="%"
+                    domain={[0, 100]}
+                  />
+                </Figure>
+              </SectionErreur>
+            </div>
+            <div className="min-w-0 lg:col-span-5">
+              <SectionErreur titre="Par appareil">
+                <Figure
+                  titre="Par appareil"
+                  id="retention-appareils"
+                  etat={
+                    parAppareil && !parAppareil.ok
+                      ? { kind: "erreur", titre: "Par appareil" }
+                      : !appareilFiltre && colonnes <= 1
+                        ? { kind: "partiel", raison: "une seule semaine observée : pas encore de recul" }
+                        : undefined
+                  }
+                  meta={<span>visiteurs identifiés, même calcul que la courbe ; tablette non lue (lecture historique)</span>}
+                  lecture="Un visiteur mobile peut être surcompté : son identifiant est tenu en mémoire et renouvelé à chaque lancement (parité C3)."
+                  alternative={
+                    parAppareil?.ok
+                      ? {
+                          legende: "Rétention pondérée par appareil et par semaine depuis l'arrivée",
+                          colonnes: ["Semaine", ...APPAREILS.map((a) => a.libelle)],
+                          lignes: Array.from({ length: colonnes }, (_v, o) => [
+                            `S+${o}`,
+                            ...parAppareil.data.map((r) => formater("pct", courbeRetention(r, semaineCourante, colonnes)[o]?.taux ?? null)),
+                          ]),
+                        }
+                      : undefined
+                  }
+                >
+                  {appareilFiltre ? (
+                    <p className="py-8 text-center text-sm text-ink-soft" data-testid="retention-deja-filtre">
+                      Déjà filtré sur {appareilFiltre.libelle.toLowerCase()} : la comparaison par appareil ne
+                      s&apos;applique pas.{" "}
+                      <Link className="font-medium text-brand hover:underline" href={hrefWithQuery("/retention", ecran.query, { device: null, weeks: weeksParam })}>
+                        Retirer le filtre
+                      </Link>
                     </p>
-                  )
-                }
-              >
-                <HeroStat label="Cohortes suivies" value={cohorts.length.toLocaleString("fr-FR")} hint={`${totalUsers.toLocaleString("fr-FR")} utilisateurs`} />
-                {/* Sans verdict coloré (S6, R-S) : aucun seuil publié n'existe pour une
-                    rétention ; les paliers d'avant n'avaient pas de source. */}
-                <HeroStat
-                  label="Rétention S+1"
-                  value={s1 != null ? `${s1} %` : "—"}
-                  hint="reviennent la semaine suivante"
-                />
-                <HeroStat label="Rétention S+4" value={s4 != null ? `${s4} %` : "—"} hint="4 semaines après" />
-                <HeroReading>
-                  La courbe montre la vitesse de décrochage : chute forte entre S+0 et S+1 = problème
-                  d&apos;activation ; plateau = cœur d&apos;utilisateurs fidèles. Le détail cohorte par cohorte
-                  est dans la matrice ci-dessous.
-                </HeroReading>
-              </SupervisionHero>
-            );
-          })()}
-          <div className="card overflow-x-auto p-4">
-          <table className="text-sm">
-            <thead>
-              <tr className="text-ink-faint">
-                <th className="px-3 py-2 text-left text-xs font-semibold">Cohorte</th>
-                <th className="px-3 py-2 text-right text-xs font-semibold">Taille</th>
-                {Array.from({ length: cols }, (_, o) => (
-                  <th key={o} className="px-3 py-2 text-center text-xs font-semibold">
-                    S+{o}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {cohorts.map((c) => (
-                <tr key={c.cohort}>
-                  <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-ink-soft">
-                    sem. {fmtWeek(lundiDeSemaine(c.cohort))}
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-ink-soft">{c.size}</td>
-                  {Array.from({ length: cols }, (_, o) => {
-                    const cell = c.cells[o];
-                    if (!cell) return <td key={o} className="px-1 py-1.5" />;
-                    const light = cell.rate < 0.5;
-                    return (
-                      <td key={o} className="px-1 py-1.5 text-center">
-                        <div
-                          className="mx-auto w-14 rounded py-1 text-xs font-semibold tabular-nums"
-                          style={{
-                            backgroundColor: `rgba(16, 185, 129, ${(0.12 + cell.rate * 0.88).toFixed(3)})`,
-                            color: light ? "rgb(6,78,59)" : "white",
-                          }}
-                          title={`${cell.retained} / ${c.size}`}
-                        >
-                          {Math.round(cell.rate * 100)}%
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  ) : parAppareil?.ok ? (
+                    (() => {
+                      const courbes = parAppareil.data.map((r) => courbeRetention(r, semaineCourante, colonnes));
+                      return (
+                        <>
+                          <LineTrend
+                            data={Array.from({ length: colonnes }, (_v, o) => ({
+                              label: `S+${o}`,
+                              desktop: enPct(courbes[0][o]?.taux ?? null),
+                              mobile: enPct(courbes[1][o]?.taux ?? null),
+                            }))}
+                            valueName="Rétention"
+                            valueUnit="%"
+                            domain={[0, 100]}
+                            series={APPAREILS.map((a) => ({ cle: a.cle, libelle: a.libelle, role: "categorie" as const }))}
+                          />
+                          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                            {APPAREILS.map((a, i) => (
+                              <Link
+                                key={a.cle}
+                                data-testid="retention-appareil-lien"
+                                className="font-medium text-brand hover:underline"
+                                href={hrefWithQuery("/retention", ecran.query, { device: a.cle, weeks: weeksParam })}
+                              >
+                                Rétention des {a.libelle.toLowerCase()} ({nombre(parAppareil.data[i].reduce((s, r) => s + r.size, 0))} visiteurs)
+                              </Link>
+                            ))}
+                          </p>
+                        </>
+                      );
+                    })()
+                  ) : null}
+                </Figure>
+              </SectionErreur>
+            </div>
           </div>
+
+          {/* R4 — matrice pleine largeur ; défilement interne, colonne « Cohorte » figée. */}
+          <SectionErreur titre="Matrice cohorte × semaine">
+            <Figure
+              titre="Matrice cohorte × semaine"
+              id="retention-matrice"
+              meta={
+                <>
+                  <span>
+                    {nombre(rows.length)} cohorte{rows.length > 1 ? "s" : ""}, {nombre(totalVisiteurs)} visiteurs identifiés
+                  </span>
+                  <span>semaines UTC, étiquetées par leur lundi</span>
+                </>
+              }
+              lecture={
+                <>
+                  Cohorte = première semaine d&apos;activité <strong>dans la fenêtre lue</strong> (au plus 30 jours
+                  conservés), pas première visite absolue. S+0 est la semaine de la cohorte (100 %) ; les cases vides
+                  sont des semaines encore à venir pour une cohorte récente (matrice triangulaire). Moins de 10
+                  visiteurs : effectif faible.
+                </>
+              }
+            >
+              <MatriceCohortes
+                colonnes={colonnes}
+                lignes={rows.map((r) => ({
+                  cohorte: `sem. du ${fmtSemaine(lundiDeSemaine(r.cohort))}`,
+                  taille: r.size,
+                  cellules: cellulesDeCohorte(r, semaineCourante, colonnes),
+                }))}
+              />
+            </Figure>
+          </SectionErreur>
         </>
       )}
-      <p className="mt-3 text-[11px] text-ink-faint">
-        S+0 = semaine de la cohorte (100 %). Les cases vides correspondent à des semaines encore à venir
-        pour une cohorte récente (matrice triangulaire).
-      </p>
     </div>
   );
 }

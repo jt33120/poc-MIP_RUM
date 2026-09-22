@@ -171,7 +171,8 @@ test("témoin : un admin qui demande B voit les marqueurs de B (sinon « B absen
     await expect(corps(page), ecran).toContainText(marqueur);
   }
   await page.goto(`${consoleUrl}/retention?app=${B}`, { waitUntil: "domcontentloaded" });
-  await expect(corps(page)).toContainText(`${VISITEURS[B]} utilisateurs`);
+  // F49 : le compte est la tuile « Visiteurs identifiés suivis » (« N visiteurs identifiés, … »).
+  await expect(corps(page)).toContainText(`${VISITEURS[B]} visiteurs identifiés`);
 });
 
 test("viewer restreint à A + app=all : l'app est réécrite en A, ou l'écran est refusé — jamais une donnée de B", async ({ page }) => {
@@ -184,7 +185,7 @@ test("viewer restreint à A + app=all : l'app est réécrite en A, ou l'écran e
     if (url.searchParams.get("app") === A) {
       // Barrière 1 : la porte « projet courant » a réécrit « toutes » en A. L'écran lit A.
       expect(url.pathname, ecran).toBe(ecran);
-      if (ecran === "/retention") await expect(corps(page)).toContainText(`${VISITEURS[A]} utilisateurs`);
+      if (ecran === "/retention") await expect(corps(page)).toContainText(`${VISITEURS[A]} visiteurs identifiés`);
       else await expect(corps(page), ecran).toContainText(MARQUEURS[A][ecran]);
     } else {
       // Barrière 2 : l'URL garde « toutes » → refus typé de F40, reprise vers /select.
@@ -194,7 +195,7 @@ test("viewer restreint à A + app=all : l'app est réécrite en A, ou l'écran e
     // Dans les deux cas : aucune donnée de B.
     for (const marqueur of Object.values(MARQUEURS[B])) await expect(corps(page), `${ecran} → ${marqueur}`).not.toContainText(marqueur);
     if (ecran === "/retention") {
-      await expect(corps(page)).not.toContainText(`${VISITEURS[A] + VISITEURS[B]} utilisateurs`);
+      await expect(corps(page)).not.toContainText(`${VISITEURS[A] + VISITEURS[B]} visiteurs identifiés`);
     }
   }
 });
