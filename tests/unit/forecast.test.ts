@@ -11,6 +11,7 @@ import {
 } from "../../apps/console/lib/forecast";
 import {
   dispersionResidus,
+  echeanceLcp,
   joursComplets,
   penteSignificative,
   pointsTendance,
@@ -236,5 +237,42 @@ describe("pointsTendance — droite sur les 14 jours, projection seulement si é
     ys[4] = null;
     const { points } = pointsTendance(jours, ys, ys.map((v) => (v === null ? 0 : 100)), tendance(ys, ys.map((v) => (v === null ? 0 : 100))));
     expect(points[4]).toMatchObject({ observe: null, n: 0 });
+  });
+});
+
+// ─────────────── F65, revue — « franchi » au sens de lib/rating.ts ───────────────
+//
+// `rating2026` classe « Bon » jusqu'à la borne INCLUSE : un LCP p75 de 2 500 ms est
+// Bon. L'écran disait « dépasse déjà son seuil » à 2 500 ms (`>=`).
+describe("echeanceLcp — la borne « Bon » est incluse", () => {
+  const plat = linfit([2500, 2500, 2500, 2500, 2500, 2500, 2500])!;
+
+  it("2 500 ms, tendance plate : pas franchi, aucune échéance", () => {
+    expect(echeanceLcp(plat, 2500)).toBeNull();
+    const n = buildForecastNarrative([{ label: "LCP p75", thresholdLabel: "2,5 s", eta: echeanceLcp(plat, 2500) }]);
+    expect(n.status).toBe("ok");
+    expect(n.lines.join(" ")).not.toContain("dépasse déjà");
+  });
+
+  it("2 501 ms : déjà franchi (« À améliorer »), même sans droite", () => {
+    expect(echeanceLcp(null, 2501)).toBe(0);
+    expect(echeanceLcp(plat, 2501)).toBe(0);
+  });
+
+  it("2 500 ms sur une droite montante : une échéance à venir, jamais 0", () => {
+    const monte = linfit([2200, 2250, 2300, 2350, 2400, 2450, 2500])!;
+    const eta = echeanceLcp(monte, 2500)!;
+    expect(eta).toBeGreaterThan(0);
+    expect(Math.ceil(eta)).toBe(1);
+  });
+
+  it("droite montante sous la borne : pas comptés depuis le dernier jour", () => {
+    const fit = linfit([1000, 1100, 1200, 1300, 1400, 1500, 1600])!; // +100 ms / jour, 1 600 au dernier jour
+    expect(echeanceLcp(fit, 1600)).toBeCloseTo(9, 6);
+  });
+
+  it("droite descendante ou aucune valeur : null", () => {
+    expect(echeanceLcp(linfit([2400, 2300, 2200])!, 2200)).toBeNull();
+    expect(echeanceLcp(plat, null)).toBeNull();
   });
 });

@@ -2,6 +2,7 @@
 // anticiper la dérive AVANT l'incident (vs les anomalies z-score, réactives).
 // Logique PURE, testée. Volontairement transparente (moindres carrés), pas de
 // boîte noire : on peut expliquer chaque projection.
+import { THRESHOLDS, rating2026 } from "./rating";
 
 export interface Fit {
   slope: number; // variation par pas (jour)
@@ -316,4 +317,25 @@ export function pointsTendance(
     }
   }
   return { grille: points.map((p) => p.t), points };
+}
+
+/**
+ * Échéance de franchissement de la borne « Bon » du LCP (TE1), dans les termes de
+ * `lib/rating.ts` : « franchie » veut dire que le verdict n'est plus « Bon »
+ * (`rating2026`), et « Bon » va jusqu'à la borne INCLUSE — 2 500 ms est encore
+ * Bon. `etaToThreshold` compte l'égalité comme franchie (`>=`) : il n'est plus
+ * employé pour ce seuil.
+ *
+ *   - `0` : la dernière valeur retenue n'est déjà plus « Bon » (c'est une mesure) ;
+ *   - `k > 0` : pas (jours) avant que la droite dépasse la borne ; une droite qui
+ *     l'atteint déjà au dernier jour alors que la mesure est encore « Bon » donne
+ *     J+1 (le premier jour projeté) ;
+ *   - `null` : pas de droite, droite plate ou descendante, ou aucune valeur.
+ */
+export function echeanceLcp(fit: Fit | null, courant: number | null): number | null {
+  if (courant === null || !Number.isFinite(courant)) return null;
+  if (rating2026("LCP", courant) !== "good") return 0;
+  if (!fit || !(fit.slope > 0)) return null;
+  const pas = (THRESHOLDS.LCP[0] - fit.intercept) / fit.slope - (fit.n - 1);
+  return Number.isFinite(pas) ? Math.max(pas, 1) : null;
 }
