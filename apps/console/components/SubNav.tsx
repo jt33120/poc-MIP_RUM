@@ -1,15 +1,15 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { contextSearchParams } from "@/lib/query-contract";
+import { contextHref } from "@/lib/view-state";
 import { activeCategory, hrefMatches } from "./nav-items";
 
 /** Barre de sous-onglets d'une catégorie (rien si la catégorie est mono-page).
  * Rend la hiérarchie visible sans multiplier les titres dans la sidebar. */
 export function SubNav() {
   const pathname = usePathname();
-  // Contexte global persisté (app, plage, filtres) ; les paramètres propres à l'écran quitté restent derrière.
-  const qs = contextSearchParams(useSearchParams()).toString();
+  // Contexte persisté (app, plage, filtres, comparaison) ; les réglages propres à l'écran quitté restent derrière.
+  const sp = useSearchParams();
   const cat = activeCategory(pathname);
   if (!cat?.children?.length) return null;
   // Catégorie fermée : pas de barre d'onglets. Elle s'afficherait au-dessus de
@@ -27,7 +27,7 @@ export function SubNav() {
         return (
           <Link
             key={t.href}
-            href={qs ? `${t.href}?${qs}` : t.href}
+            href={contextHref(t.href, sp)}
             className={`-mb-px shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
               active
                 ? "border-perf text-ink"

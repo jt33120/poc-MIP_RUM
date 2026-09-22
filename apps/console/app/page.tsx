@@ -34,6 +34,18 @@ import { dailyLcpSeries, dailyTraffic, GRID_DAYS, healthGrid } from "@/lib/queri
 import { comparaisonVersions, type ComparaisonVersions } from "@/lib/queries-deploys";
 import { fmtBorne } from "@/lib/format";
 import { THRESHOLDS } from "@/lib/rating";
+import { couverturePrecedente, deltasDeLaRangee, type SourceComparaison } from "@/lib/comparaison";
+import { lireComparaison } from "@/lib/view-state";
+
+// Sources des deux rangées de tuiles comparées à la période précédente (§ 3.2).
+// Un taux (erreurs / pages vues) n'est pas un compte : le retard d'ingestion
+// touche son numérateur et son dénominateur, il n'est pas traité comme additif.
+const SOURCE_VITAUX: SourceComparaison = { table: "rum_metric", colonneTemps: "ts", additive: false };
+const SOURCES_HERO: SourceComparaison[] = [
+  { table: "rum_session", colonneTemps: "last_seen_at", additive: true },
+  { table: "rum_pageview", colonneTemps: "started_at", additive: true },
+  { table: "rum_error", colonneTemps: "ts", additive: false },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -79,29 +91,58 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     ? parseBreakdown(paramReader(sp).get(BREAKDOWN_PARAM), availableBreakdowns(dispoDecoupage))
     : null;
 
-  const [vitals, vitalsPrev, stats, statsPrev, series, health, grid, traffic, dailyLcp, versions, decoupe] =
-    await Promise.all([
-      blocs.vitals || blocs.reseau ? vitalsP75(f) : vide([]),
-      blocs.vitals ? vitalsP75(f, true) : vide([]),
-      overviewStats(f),
-      overviewStats(f, true),
-      blocs.hero ? vitalSeries(f, "LCP") : vide([]),
-      blocs.sante || blocs.anomalies ? healthScore(f) : vide(null),
-      blocs.historique ? healthGrid(f) : vide([]),
-      blocs.historique ? dailyTraffic(f) : vide([]),
-      blocs.historique ? dailyLcpSeries(f) : vide([]),
-      blocs.versions ? comparaisonVersions(f) : vide<ComparaisonVersions>({ rows: [], source: "occurrence" }),
-      decoupage ? vitalsBreakdown(f, decoupage) : vide(null),
-    ]);
+  // Comparaison (F06) : la période précédente n'est lue qu'en `cmp=prev` (défaut de
+  // cet écran), et ses écarts ne s'affichent que si elle est COMPLÈTE — une plage
+  // de 30 jours, dont la précédente est purgée, n'en montre donc aucun.
+  const comparaison = lireComparaison("/", paramReader(sp)).valeur;
+  const prev = comparaison.mode === "prev";
+
+  const [
+    vitals,
+    vitalsPrev,
+    stats,
+    statsPrev,
+    series,
+    health,
+    grid,
+    traffic,
+    dailyLcp,
+    versions,
+    decoupe,
+    couvVitaux,
+    couvHero,
+  ] = await Promise.all([
+    blocs.vitals || blocs.reseau ? vitalsP75(f) : vide([]),
+    blocs.vitals && prev ? vitalsP75(f, true) : vide([]),
+    overviewStats(f),
+    blocs.hero && prev ? overviewStats(f, true) : vide(null),
+    blocs.hero ? vitalSeries(f, "LCP") : vide([]),
+    blocs.sante || blocs.anomalies ? healthScore(f) : vide(null),
+    blocs.historique ? healthGrid(f) : vide([]),
+    blocs.historique ? dailyTraffic(f) : vide([]),
+    blocs.historique ? dailyLcpSeries(f) : vide([]),
+    blocs.versions ? comparaisonVersions(f) : vide<ComparaisonVersions>({ rows: [], source: "occurrence" }),
+    decoupage ? vitalsBreakdown(f, decoupage) : vide(null),
+    blocs.vitals && prev ? couverturePrecedente(ecran.query, SOURCE_VITAUX).then((c) => [c]) : vide([]),
+    blocs.hero && prev ? Promise.all(SOURCES_HERO.map((s) => couverturePrecedente(ecran.query, s))) : vide([]),
+  ]);
+  const deltasVitaux = deltasDeLaRangee(comparaison.mode, couvVitaux);
+  const deltasHero = deltasDeLaRangee(comparaison.mode, couvHero);
+  // Une ligne par raison distincte : la rétention, qui touche toutes les sources, n'est dite qu'une fois.
+  const notesComparaison = [
+    ...new Set(
+      [blocs.vitals ? deltasVitaux.note : null, blocs.hero ? deltasHero.note : null].filter((n): n is string => n !== null),
+    ),
+  ];
 
   const byName = Object.fromEntries(vitals.map((v) => [v.name, v]));
   const prevByName = Object.fromEntries(vitalsPrev.map((v) => [v.name, v]));
   // Sans page vue, le taux n'a pas de dénominateur : « — », jamais « 0 % » — qui se
   // lirait « aucune erreur » sur une fenêtre où l'on n'a simplement rien mesuré.
   const errorRate = stats.pageviews ? (stats.errors / stats.pageviews) * 100 : null;
-  const prevErrorRate = statsPrev.pageviews ? (statsPrev.errors / statsPrev.pageviews) * 100 : null;
-  const pctOf = (cur: number, prev: number | null | undefined) =>
-    prev != null && prev !== 0 ? { pct: ((cur - prev) / prev) * 100 } : null;
+  const prevErrorRate = statsPrev?.pageviews ? (statsPrev.errors / statsPrev.pageviews) * 100 : null;
+  const pctOf = (cur: number, ref: number | null | undefined) =>
+    deltasHero.deltas && ref != null && ref !== 0 ? { pct: ((cur - ref) / ref) * 100 } : null;
 
   // heatmap 14 j : axe des jours + index `${jour}|${heure}` des créneaux
   const gridDays = lastNDayKeys(GRID_DAYS);
@@ -131,6 +172,24 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
       {blocs.sante && health && <HealthBanner health={health} periodLabel={period.label} />}
 
+      {/* Pourquoi les tuiles n'ont pas d'écart : dit en clair, jamais un delta
+          calculé sur une période à moitié mesurée (§ 3.2). */}
+      {(blocs.vitals || blocs.hero) && (notesComparaison.length > 0 || comparaison.mode === "release") && (
+        <div role="note" data-testid="note-comparaison" className="mb-4 space-y-1 text-xs text-ink-soft">
+          {notesComparaison.map((note) => (
+            <p key={note}>Aucun écart affiché — {note}.</p>
+          ))}
+          {comparaison.mode === "release" && (
+            <p>
+              Comparaison de releases : ces tuiles n&apos;ont pas d&apos;écart par release
+              {blocs.versions
+                ? " ; le tableau des versions compare les releases sur la même fenêtre, sans normalisation de trafic."
+                : "."}
+            </p>
+          )}
+        </div>
+      )}
+
       {blocs.vitals && (
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
         {["LCP", "INP", "CLS", "FCP", "TTFB"].map((name) => (
@@ -141,7 +200,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             median={byName[name]?.p50 ?? null}
             n={byName[name]?.n ?? 0}
             intervalle={byName[name]?.intervalle}
-            prev={prevByName[name]?.p75 ?? null}
+            prev={deltasVitaux.deltas ? (prevByName[name]?.p75 ?? null) : null}
             periodLabel={period.label}
           />
         ))}
@@ -169,12 +228,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <HeroStat
           label={`Sessions · ${period.label}`}
           value={stats.sessions.toLocaleString("fr-FR")}
-          delta={pctOf(stats.sessions, statsPrev.sessions)}
+          delta={pctOf(stats.sessions, statsPrev?.sessions)}
         />
         <HeroStat
           label="Pages vues"
           value={stats.pageviews.toLocaleString("fr-FR")}
-          delta={pctOf(stats.pageviews, statsPrev.pageviews)}
+          delta={pctOf(stats.pageviews, statsPrev?.pageviews)}
         />
         <HeroStat
           label="Taux d'erreur JS / page vue"
@@ -191,8 +250,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <HeroReading>
           Courbe = LCP p75 dans le temps ; pointillé vert = borne «&nbsp;Bon&nbsp;» ({fmtBorne("LCP", THRESHOLDS.LCP[0])}),
           pointillé rouge = borne «&nbsp;Mauvais&nbsp;» ({fmtBorne("LCP", THRESHOLDS.LCP[1])}), seuils web.dev au
-          75ᵉ&nbsp;centile. Les tuiles comparent le volume et la fiabilité à la période
-          précédente. Détail vital par vital ci-dessous, historique 14&nbsp;jours plus bas.
+          75ᵉ&nbsp;centile.{" "}
+          {deltasHero.deltas && "Les tuiles comparent le volume et la fiabilité à la période précédente. "}
+          Détail vital par vital ci-dessous, historique 14&nbsp;jours plus bas.
         </HeroReading>
       </SupervisionHero>
       )}

@@ -12,9 +12,16 @@
 // les mesures affichées ne savent pas appliquer est désactivé avec sa raison, et
 // celui que l'URL porte déjà y est marqué « non appliqué ». Le projet (?app) se
 // choisit en amont (/select) : il est seulement préservé.
+//
+// Comparaison (F06) : `CompareToggle` à droite des presets. La liste des releases
+// dépend de la population et de la plage de l'URL ; le layout qui monte cette barre
+// ne les reçoit pas, elle est donc lue par `GET /api/releases`, une fois par
+// changement de ces paramètres (jamais au rafraîchissement LIVE).
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useId, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import { CompareToggle } from "@/components/CompareToggle";
 import { INPUT_CLASS } from "@/components/forms/Field";
+import { lireComparaison } from "@/lib/view-state";
 import {
   DEVICES,
   DIMENSION_LABELS,
@@ -23,6 +30,7 @@ import {
   PRESET_MS,
   RANGE_PRESETS,
   VALUE_MAX,
+  contextSearchParams,
   isSafeText,
   localInputToUtc,
   parseUtcInstant,
@@ -72,8 +80,12 @@ export function GlobalFilters({
   const [rangeDraft, setRangeDraft] = useState<{ from: string; to: string } | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const surface = surfaceFor(pathname);
+  // Comparer deux périodes n'a de sens que sur un écran qui a une plage.
+  const comparable = !!surface && surface.range !== "none";
+  const releases = useReleases(comparable ? contextSearchParams(sp).toString() : null);
   // Écrans sans filtres globaux (administration…) : rien à proposer.
   if (!surface) return null;
+  const comparaison = lireComparaison(pathname, sp);
 
   const app = sp.get("app");
   const timeZone = (app && timeZones[app]) || defaultTimeZone;
@@ -153,6 +165,15 @@ export function GlobalFilters({
         value={custom ? "custom" : preset}
         onChange={(key) => (key === "custom" ? toggleRangeEditor() : choosePreset(key as RangePreset))}
       />
+      {comparable && (
+        <CompareToggle
+          mode={comparaison.valeur.mode}
+          releases={releases.liste}
+          relA={comparaison.valeur.relA}
+          relB={comparaison.valeur.relB}
+          raison={releases.raison}
+        />
+      )}
       <Segmented
         label="Appareil"
         testid="filter-device"
@@ -209,6 +230,15 @@ export function GlobalFilters({
         />
       ))}
 
+      {/* Un réglage de comparaison illisible ne touche aucun chiffre : il n'est pas
+          refusé comme un filtre, mais ignoré — et on le dit (§ 3.1, règle 3). */}
+      {comparable &&
+        comparaison.ignores.map((ligne) => (
+          <p key={ligne} role="note" className="basis-full text-[11px] text-ink-soft" data-testid="reglage-ignore">
+            {ligne}
+          </p>
+        ))}
+
       {rangeDraft && customAvailability.available && (
         <RangeEditor
           initialFrom={rangeDraft.from}
@@ -244,6 +274,34 @@ export function GlobalFilters({
       )}
     </div>
   );
+}
+
+/**
+ * Releases de la fenêtre, lues pour la clé donnée (paramètres du contrat) ; `null` =
+ * rien à lire. Relue quand la population ou la plage changent, pas au rafraîchissement
+ * LIVE (la clé ne bouge pas). Tant que la réponse n'est pas là, la liste est `null`
+ * avec la raison « en cours de lecture » : le mode release reste désactivé, jamais
+ * proposé sur une liste qu'on n'a pas.
+ */
+function useReleases(cle: string | null): { liste: string[] | null; raison?: string } {
+  const [lu, setLu] = useState<{ cle: string; liste: string[] | null; raison?: string } | null>(null);
+  useEffect(() => {
+    if (cle === null) return;
+    const annulation = new AbortController();
+    fetch(`/api/releases${cle ? `?${cle}` : ""}`, { signal: annulation.signal, headers: { accept: "application/json" } })
+      .then(async (reponse) => {
+        const corps = (await reponse.json().catch(() => null)) as { releases?: unknown; raison?: unknown } | null;
+        const liste = Array.isArray(corps?.releases) ? corps.releases.filter((r): r is string => typeof r === "string") : null;
+        const raison = typeof corps?.raison === "string" ? corps.raison : `lecture refusée (HTTP ${reponse.status})`;
+        setLu({ cle, liste: reponse.ok ? liste : null, raison: liste === null || !reponse.ok ? raison : undefined });
+      })
+      .catch(() => {
+        if (!annulation.signal.aborted) setLu({ cle, liste: null, raison: "lecture des releases en échec" });
+      });
+    return () => annulation.abort();
+  }, [cle]);
+  if (cle === null || lu?.cle !== cle) return { liste: null, raison: "liste des releases en cours de lecture" };
+  return { liste: lu.liste, raison: lu.raison };
 }
 
 function RangeEditor({
@@ -407,7 +465,8 @@ function DimensionDrawer({
   );
 }
 
-function Chip({
+/** Filtre actif supprimable ; barré avec sa raison quand l'écran ne sait pas l'appliquer. */
+export function Chip({
   label,
   availability,
   removeLabel,
@@ -445,7 +504,8 @@ function Chip({
   );
 }
 
-function Segmented({
+/** Groupe de boutons exclusifs (`aria-pressed`) ; un choix indisponible est désactivé avec sa raison. */
+export function Segmented({
   label,
   items,
   value,

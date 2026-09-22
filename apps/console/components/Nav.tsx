@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { contextSearchParams } from "@/lib/query-contract";
+import { contextHref } from "@/lib/view-state";
 import { CATEGORIES, activeCategory, type NavCategory } from "./nav-items";
 import { ICON_PATHS, Icon } from "./icons";
 
@@ -47,8 +47,8 @@ function Pastille({ c, isActive }: { c: NavCategory; isActive: boolean }) {
  */
 export function Nav({ reglages }: { reglages?: Record<string, React.ReactNode> }) {
   const pathname = usePathname();
-  // Contexte global persisté (app, plage, filtres) ; les paramètres propres à l'écran quitté restent derrière.
-  const qs = contextSearchParams(useSearchParams()).toString();
+  // Contexte persisté (app, plage, filtres, comparaison) ; les réglages propres à l'écran quitté restent derrière.
+  const sp = useSearchParams();
   const active = activeCategory(pathname);
 
   return (
@@ -75,7 +75,7 @@ export function Nav({ reglages }: { reglages?: Record<string, React.ReactNode> }
 
         const lien = (
           <Link
-            href={qs ? `${c.href}?${qs}` : c.href}
+            href={contextHref(c.href, sp)}
             className={`${BASE} min-w-0 flex-1 ${
               isActive ? "bg-perf/10 text-ink" : "text-ink-soft hover:bg-panel2 hover:text-ink"
             }`}
