@@ -362,6 +362,10 @@ test.describe("F61 — détail de trace (§ 5.9)", () => {
   // Quatrième trace semée (trois « GET /api/f60/lent », puis le 503).
   const TRACE_503 = `${PREFIXE}${(4).toString(16).padStart(28, "0")}`;
   const FRONT_503 = `${PREFIXE}${(8).toString(16).padStart(12, "0")}`;
+  // Trace E0 à deux appels : identifiants hexadécimaux hors de la plage du semis F60.
+  const TRACE_E0 = `${PREFIXE}${"e0".padStart(28, "0")}`;
+  const CONFIG_E0 = `${PREFIXE}${"e1".padStart(12, "0")}`;
+  const SEARCH_E0 = `${PREFIXE}${"e3".padStart(12, "0")}`;
 
   test.beforeAll(async () => {
     await semerTracesF60(APP_F61, PREFIXE);
@@ -375,6 +379,42 @@ test.describe("F61 — détail de trace (§ 5.9)", () => {
         [`${APP_F61}-err-${i}`, `${APP_F61}-s1`, APP_F61, TRACE_503, FRONT_503, occurrences],
       );
     }
+    // Une page vue, deux appels, UNE trace (E0) : /api/f61/config puis /api/f61/search,
+    // chacun avec sa réponse serveur (parent = son span navigateur).
+    const appels: [string, string, number, string, number, number][] = [
+      [CONFIG_E0, "/api/f61/config", 100, `${PREFIXE}${"e2".padStart(12, "0")}`, 90, 0],
+      [SEARCH_E0, "/api/f61/search", 1000, `${PREFIXE}${"e4".padStart(12, "0")}`, 900, 200],
+    ];
+    for (const [front, url, frontMs, back, backMs, decalageMs] of appels) {
+      await pool.query(
+        `insert into rum_span (span_id, trace_id, tier, app_id, session_id, method, url, status_code, duration_ms, route, name, ts)
+         values ($1, $2, 'front', $3, $4, 'GET', $5, 200, $6, '/f61', $7,
+                 now() - interval '20 minutes' + $8::int * interval '1 millisecond')`,
+        [front, TRACE_E0, APP_F61, `${APP_F61}-s1`, url, frontMs, `GET ${url}`, decalageMs],
+      );
+      await pool.query(
+        `insert into rum_span (span_id, trace_id, parent_span_id, tier, app_id, session_id, method, status_code, duration_ms, route, name, ts)
+         values ($1, $2, $3, 'back', $4, $5, 'GET', 200, $6, $7, $8,
+                 now() - interval '20 minutes' + ($9::int + 5) * interval '1 millisecond')`,
+        [back, TRACE_E0, front, APP_F61, `${APP_F61}-s1`, backMs, url, `GET ${url}`, decalageMs],
+      );
+    }
+  });
+
+  test("une trace à deux appels : `?span=` résume CET appel, pas le premier", async ({ page }) => {
+    await loginConsole(page);
+    await page.goto(`${CONSOLE_F60}/tracing/${TRACE_E0}?app=${APP_F61}&span=${SEARCH_E0}`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("trace-appel")).toContainText("GET /api/f61/search");
+    await expect(page.getByTestId("trace-latence")).toContainText("1,0");
+    await expect(page.getByTestId("trace-plusieurs-appels")).toHaveCount(0);
+    const { rows } = await pool.query(`select ts from rum_span where span_id = $1`, [SEARCH_E0]);
+    const rejeu = new URL((await page.getByTestId("rejeu-appel").getAttribute("href"))!, CONSOLE_F60);
+    expect(rejeu.searchParams.get("at")).toBe(String(new Date(rows[0].ts).getTime()));
+
+    // Sans `span=` : le premier appel, et la page le DIT.
+    await page.goto(`${CONSOLE_F60}/tracing/${TRACE_E0}?app=${APP_F61}`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("trace-appel")).toContainText("GET /api/f61/config");
+    await expect(page.getByTestId("trace-plusieurs-appels")).toContainText("2 appels navigateur");
   });
 
   const ouvrir = async (page: Page, extra = "") => {

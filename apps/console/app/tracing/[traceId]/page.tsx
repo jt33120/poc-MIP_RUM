@@ -133,8 +133,25 @@ export default async function TraceDetail({
   const highlighted = wantedSpan && byId.has(wantedSpan) ? wantedSpan : null;
   const spanState = spanParam === undefined ? null : highlighted ? "found" : "missing";
 
-  const front = spans.find((s) => s.tier === "front");
-  const sessionSpan = spans.find((s) => s.session_id);
+  // L'APPEL RÉSUMÉ. Depuis E0, une trace est celle d'une page vue : elle porte tous
+  // ses appels API. Latence, route, session et instant du rejeu sont ceux de
+  // l'appel désigné par `?span=` (« Traces les plus lentes » le transmet) — ou du
+  // span navigateur dont descend le segment désigné ; à défaut, le premier appel,
+  // et on le dit. Prendre toujours le premier ouvrait « 100 ms, /api/config » sur
+  // un clic sur `/api/search`.
+  const fronts = spans.filter((s) => s.tier === "front");
+  const appelDe = (id: string | null): TraceSpanRow | undefined => {
+    const vus = new Set<string>();
+    let s = id ? byId.get(id) : undefined;
+    while (s && s.tier !== "front" && s.parent_span_id && !vus.has(s.span_id)) {
+      vus.add(s.span_id);
+      s = byId.get(s.parent_span_id);
+    }
+    return s?.tier === "front" ? s : undefined;
+  };
+  const designe = appelDe(highlighted);
+  const front = designe ?? fronts[0];
+  const sessionSpan = front?.session_id ? front : spans.find((s) => s.session_id);
   const hasBackend = spans.some((s) => s.tier === "back" || s.tier === "detail");
   const rootMs = front?.duration_ms ?? total;
   const appsDistinctes = [...new Set(spans.map((s) => s.app_id))].sort();
@@ -191,7 +208,16 @@ export default async function TraceDetail({
       <section aria-label="Identité de l'appel" className="mb-5 flex flex-col gap-3">
         <CopierTrace traceId={traceId} />
         <dl className="flex flex-wrap gap-1.5" data-testid="trace-puces">
-          <Puce label="Latence perçue">{formater("ms", rootMs)}</Puce>
+          {front && (
+            <Puce label="Appel" testId="trace-appel">
+              <span title={`${front.method ?? ""} ${front.url ?? ""}`.trim()}>
+                {`${front.method ?? ""} ${front.url ?? "(sans URL)"}`.trim()}
+              </span>
+            </Puce>
+          )}
+          <Puce label="Latence perçue" testId="trace-latence">
+            {formater("ms", rootMs)}
+          </Puce>
           <Puce label="Segments">{formater("count", spans.length)}</Puce>
           <Puce label="Route">
             <span title={front?.route ?? front?.url ?? undefined}>{front?.route ?? front?.url ?? "—"}</span>
@@ -213,6 +239,13 @@ export default async function TraceDetail({
             </Puce>
           )}
         </dl>
+
+        {fronts.length > 1 && !designe && (
+          <p role="note" className="text-xs text-ink-soft" data-testid="trace-plusieurs-appels">
+            Cette trace est celle d&apos;une page vue : elle porte {fronts.length} appels navigateur. Le premier est
+            résumé ci-dessus ; un clic sur un segment de la chronologie résume son appel.
+          </p>
+        )}
 
         {/* TD3 — rejeu à l'instant de l'appel. */}
         <p className="text-sm" data-testid="trace-rejeu">
