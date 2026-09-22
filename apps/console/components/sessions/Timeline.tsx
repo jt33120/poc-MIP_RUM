@@ -1,11 +1,22 @@
 // Rendu d'une ligne de timeline session (puce + offset + badge + corps typé).
 // Composants présentationnels purs (serveur), extraits de app/sessions/[id]/page.tsx.
+//
+// F45 ajoute DEUX réglages, et rien d'autre : le corps typé de chaque nature est
+// celui de F44, pour qu'une ligne se lise pareil dans la liste plate d'hier et
+// dans le déroulé groupé d'aujourd'hui.
+//   · `lien` — la question suivante de la ligne (« Voir la page », « Voir
+//     l'erreur groupée »…). Le href est PRÉ-CALCULÉ par la page : ce composant
+//     ne construit aucune URL et ne sait pas ce qu'est un périmètre d'app.
+//   · `imbrique` — la ligne est déjà rendue SOUS son action (déroulé groupé) :
+//     le badge causal « ↳ action » ferait doublon avec l'indentation.
+import Link from "next/link";
 import { fmtDate, fmtVital } from "@/lib/format";
 import type { TimelineItem } from "@/lib/queries";
 import { RATING_CLASS, type Rating } from "@/lib/rating";
 import { KIND_ICON, KIND_STYLE } from "@/lib/timeline-constants";
 
-function fmtOffset(ms: number): string {
+/** Décalage depuis le début de la session, même règle pour la ligne et pour l'en-tête de vue (F45). */
+export function fmtOffset(ms: number): string {
   if (ms < 1000) return `+${Math.round(ms)} ms`;
   if (ms < 60_000) return `+${(ms / 1000).toFixed(1).replace(".", ",")} s`;
   return `+${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s`;
@@ -13,7 +24,21 @@ function fmtOffset(ms: number): string {
 
 // `id` : ancre du récit « En bref » (P*.9, `ancreEvenement`) ; la ligne visée
 // s'éclaire (`target:`) pour que le fait cité se voie à l'arrivée.
-export function TimelineRow({ item, t0, id }: { item: TimelineItem; t0: number; id?: string }) {
+export function TimelineRow({
+  item,
+  t0,
+  id,
+  lien = null,
+  imbrique = false,
+}: {
+  item: TimelineItem;
+  t0: number;
+  id?: string;
+  /** Question suivante de la ligne ; href pré-calculé par la page (aucune fonction en prop). */
+  lien?: { href: string; libelle: string } | null;
+  /** La ligne est déjà indentée sous son action : le badge causal ferait doublon. */
+  imbrique?: boolean;
+}) {
   const st = KIND_STYLE[item.kind];
   const offset = new Date(item.ts).getTime() - t0;
   return (
@@ -29,10 +54,19 @@ export function TimelineRow({ item, t0, id }: { item: TimelineItem; t0: number; 
         </span>
         <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${st.badge}`}>{st.label}</span>
         <ItemBody item={item} />
-        {item.action_id && item.kind !== "action" && (
+        {item.action_id && item.kind !== "action" && !imbrique && (
           <span className="rounded-full border border-fuchsia-300 bg-fuchsia-50 px-2 py-0.5 text-[11px] font-medium text-fuchsia-800 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/10 dark:text-fuchsia-300">
             ↳ {item.action_name ?? "action"}
           </span>
+        )}
+        {lien && (
+          <Link
+            href={lien.href}
+            className="rounded text-xs text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+            data-testid="lien-ligne"
+          >
+            {lien.libelle}
+          </Link>
         )}
       </div>
     </li>
