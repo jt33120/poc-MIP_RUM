@@ -194,7 +194,7 @@ export default async function SessionDetail({
           {ignore}
         </p>
       )}
-      <nav aria-label="Onglets de la session" className="mb-4 flex overflow-x-auto border-b border-line" data-testid="session-tabs">
+      <nav aria-label="Onglets de la session" className="relative mb-4 flex overflow-x-auto border-b border-line" data-testid="session-tabs">
         {ONGLETS_SESSION.map((o) => (
           <TabLink key={o} href={hrefOnglet(o)} active={onglet === o} compte={comptes[o]}>
             {LIBELLES_ONGLETS[o]}
@@ -213,7 +213,8 @@ export default async function SessionDetail({
           <section
             id="chronologie"
             aria-label="Chronologie de la session"
-            className={`card min-w-0 scroll-mt-24 p-4 sm:p-6 ${avecRejeu ? "xl:col-span-2 xl:max-h-[48rem] xl:overflow-y-auto" : ""}`}
+            // `relative` : conteneur défilant (xl) — un `sr-only` d'une ligne y reste borné (piège 16).
+            className={`card relative min-w-0 scroll-mt-24 p-4 sm:p-6 ${avecRejeu ? "xl:col-span-2 xl:max-h-[48rem] xl:overflow-y-auto" : ""}`}
           >
             {!avecRejeu && (
               <p className="mb-4 text-xs text-ink-soft" data-testid="deroule-sans-rejeu">
@@ -473,7 +474,15 @@ function OngletTable({
           <EtatSurface compact etat={{ kind: "partiel", raison: `chronologie tronquée à ${LIMITE_CHRONOLOGIE} événements : la table n'en montre que le début` }} />
         </div>
       )}
-      {vide ? <p className="py-8 text-center text-sm text-ink-soft">{vide}</p> : <div className="overflow-x-auto">{children}</div>}
+      {/* `relative` OBLIGATOIRE : la légende et l'en-tête « Lien » sont `sr-only`
+          (position absolue). Sans ancêtre positionné, ils se plaçaient par rapport à
+          la PAGE, à leur position dans la table large, et l'élargissaient (575 px à
+          390 px, e2e « aucun débordement »). */}
+      {vide ? (
+        <p className="py-8 text-center text-sm text-ink-soft">{vide}</p>
+      ) : (
+        <div className="relative overflow-x-auto">{children}</div>
+      )}
     </section>
   );
 }

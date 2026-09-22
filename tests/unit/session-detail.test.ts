@@ -2,6 +2,7 @@
 // chiffré (compte inconnu sur une chronologie tronquée, garde capteur mobile,
 // occurrences sommées), puces sans identité, échantillonnage jamais « 100 % »
 // pour une session d'avant v58.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   DEAD_CLICK_WINDOW_MS,
@@ -206,6 +207,18 @@ describe("tables des onglets", () => {
     const attributs = attributsDeSession({ session_id: "s1", app_id: "a", runtime: null, user_id_hash: "secret" } as never);
     expect(attributs.find((a) => a.cle === "runtime")?.valeur).toBe("Inconnu");
     expect(JSON.stringify(attributs)).not.toContain("secret");
+  });
+});
+
+describe("piège 16 : conteneurs défilants du détail", () => {
+  // Un `sr-only` (position absolue) dans un conteneur `overflow-x-auto` sans ancêtre
+  // positionné se place par rapport à la PAGE et l'élargit : la table des erreurs
+  // portait la page à 575 px sur une fenêtre de 390 (e2e « aucun débordement »).
+  it("tout conteneur overflow-x-auto de la page porte `relative`", () => {
+    const source = readFileSync(new URL("../../apps/console/app/sessions/[id]/page.tsx", import.meta.url), "utf8");
+    const classes = [...source.matchAll(/className=\{?[`"]([^`"]*overflow-x-auto[^`"]*)[`"]/g)].map((m) => m[1]);
+    expect(classes.length).toBeGreaterThanOrEqual(2);
+    for (const c of classes) expect(c.split(/\s+/), c).toContain("relative");
   });
 });
 
