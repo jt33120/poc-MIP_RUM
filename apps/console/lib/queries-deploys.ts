@@ -199,7 +199,7 @@ export interface ComparaisonVersions {
 }
 
 /** Libellé du groupe des mesures qui ne déclarent aucune release. */
-const SANS_RELEASE = "(non renseignée)";
+export const SANS_RELEASE = "(non renseignée)";
 
 /**
  * Comparaison des versions déployées : volume, LCP, INP et erreurs par release.

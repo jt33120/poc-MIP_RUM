@@ -83,7 +83,7 @@ export const EXPLORER_TIMEOUT_MS = 5_000;
 export type ExplorerSource = "raw" | "rollup+raw";
 
 /** Rétention de la purge d'ingestion : au-delà, la fenêtre demandée n'est plus couverte. */
-function retentionDays(): number {
+export function retentionDays(): number {
   const n = Number(process.env.RETENTION_DAYS || 30);
   return Number.isFinite(n) && n > 0 ? n : 30;
 }
@@ -176,12 +176,17 @@ function avertissements(plan: ExplorerPlan): string[] {
   return sorties;
 }
 
-function couverture(query: AnalyticsQuery): ExplorerMeta["coverage"] {
-  const horizon = Date.parse(query.range.to) - retentionDays() * 86_400_000;
+/**
+ * La fenêtre [from, to) tient-elle dans la rétention ? Partagée par l'Explorer et
+ * par la comparaison à la période précédente (lib/comparaison.ts, F06) : une seule
+ * règle de purge, lue au même endroit. `jours` n'est passé que par les tests.
+ */
+export function couvertureRetention(query: AnalyticsQuery, jours = retentionDays()): ExplorerMeta["coverage"] {
+  const horizon = Date.parse(query.range.to) - jours * 86_400_000;
   if (Date.parse(query.range.from) >= horizon) return { status: "complete", reason: null };
   return {
     status: "partial",
-    reason: `La fenêtre demandée remonte au-delà de la rétention (${retentionDays()} jours) : les données les plus anciennes ont été purgées.`,
+    reason: `La fenêtre demandée remonte au-delà de la rétention (${jours} jours) : les données les plus anciennes ont été purgées.`,
   };
 }
 
@@ -370,7 +375,7 @@ function metaCommune(
     counting: definition.population,
     group_by: plan.groupBy,
     visualization: plan.visualization,
-    coverage: couverture(query),
+    coverage: couvertureRetention(query),
     query: canonicalAst(query, plan),
     ...propre,
   };
