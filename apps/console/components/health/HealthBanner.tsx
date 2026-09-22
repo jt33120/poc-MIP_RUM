@@ -122,7 +122,10 @@ export function HealthBanner({ health, periodLabel }: { health: Health; periodLa
           )}
         </div>
       </div>
-      <div className="grid min-w-0 flex-1 grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+      {/* `basis-full` sous sm : avec `flex-1` seul (base 0), la grille restait sur la
+          ligne de l'anneau et se retrouvait large de ~70 px à 390 px — libellés
+          tronqués à une lettre, et « non testable » qui débordait de la page. */}
+      <div className="grid min-w-0 flex-1 basis-full grid-cols-1 gap-x-6 gap-y-3 sm:basis-0 sm:grid-cols-2">
         {health.factors.map((x) => (
           <FactorBar key={x.key} label={x.label} detail={x.detail} earned={x.earned} max={x.max} raisonNull={x.raisonNull} />
         ))}
