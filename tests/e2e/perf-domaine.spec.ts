@@ -155,3 +155,124 @@ test.describe("F18 — Erreurs : KPI, hero, répartition", () => {
     });
   }
 });
+
+test.describe("F22 — Interactions : onglets, Frustration KPI, règles, hero", () => {
+  // Deux apps à ce bloc : une app navigateur (signaux sur deux routes) et une app
+  // aux seules sessions React Native, dont le capteur n'émet aucun signal.
+  const APP = "f22-e2e-web";
+  const APP_MOBILE = "f22-e2e-mobile";
+
+  test.beforeAll(async () => {
+    for (const app of [APP, APP_MOBILE]) {
+      for (const t of ["rum_event", "rum_pageview", "rum_session"]) {
+        await pool.query(`delete from ${t} where app_id = $1`, [app]);
+      }
+      await pool.query(`insert into app_registry (app_id, name) values ($1, $2) on conflict (app_id) do nothing`, [
+        app,
+        `F22 ${app}`,
+      ]);
+    }
+    // [session, app, runtime, routes vues, signaux [route, type, cible]]
+    const sessions: [string, string, string, string[], [string, string, string][]][] = [
+      ["w1", APP, "browser", ["/panier"], [["/panier", "rage", "Payer"], ["/panier", "rage", "Payer"]]],
+      ["w2", APP, "browser", ["/panier", "/"], [["/", "dead", "Logo"]]],
+      ["w3", APP, "browser", ["/"], [["/", "error", "Valider"]]],
+      ["w4", APP, "browser", ["/"], []],
+      ["m1", APP_MOBILE, "react_native", ["Accueil"], []],
+      ["m2", APP_MOBILE, "react_native", ["Panier"], []],
+    ];
+    for (const [i, [nom, app, runtime, routes, signaux]] of sessions.entries()) {
+      const sid = `${app}-${nom}`;
+      const quand = `now() - interval '${30 + i * 10} minutes'`;
+      await pool.query(
+        `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count, runtime)
+         values ($1, $2, $1, 'desktop', false, ${quand}, ${quand}, $3, $4)`,
+        [sid, app, routes.length, runtime],
+      );
+      for (const [k, route] of routes.entries()) {
+        await pool.query(
+          `insert into rum_pageview (span_id, session_id, app_id, route, started_at) values ($1, $2, $3, $4, ${quand})`,
+          [`${sid}-pv${k}`, sid, app, route],
+        );
+      }
+      for (const [k, [route, type, cible]] of signaux.entries()) {
+        await pool.query(
+          `insert into rum_event (span_id, session_id, app_id, route, name, props, ts)
+           values ($1, $2, $3, $4, $5, $6, ${quand})`,
+          [`${sid}-sig${k}`, sid, app, route, `frustration.${type}`, { target: cible, count: 1 }],
+        );
+      }
+    }
+  });
+
+  /** La tuile dont le libellé est exactement `libelle`. */
+  const tuile = (page: Page, libelle: string) =>
+    page.getByTestId("kpi-tile").filter({ has: page.getByText(libelle, { exact: true }) });
+
+  test("onglets Frustration / Actions : les filtres suivent, dans les deux sens", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/ux?app=${APP}&period=7d&device=desktop`);
+    const onglets = page.getByTestId("onglets-interactions");
+    await expect(onglets.getByRole("link", { name: "Frustration" })).toHaveAttribute("aria-current", "page");
+    await onglets.getByRole("link", { name: "Actions" }).click();
+    await expect(page).toHaveURL(/\/actions\?/);
+    const url = new URL(page.url());
+    expect(url.searchParams.get("app")).toBe(APP);
+    expect(url.searchParams.get("period")).toBe("7d");
+    expect(url.searchParams.get("device")).toBe("desktop");
+    const retour = page.getByTestId("onglets-interactions").getByRole("link", { name: "Frustration" });
+    await expect(retour).toHaveAttribute("href", /period=7d/);
+    await expect(retour).toHaveAttribute("href", /device=desktop/);
+  });
+
+  test("tuiles : comptes entiers, sessions en sous-texte, lien vers le hero filtré par type", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/ux?app=${APP}`);
+    await expect(tuile(page, "Rage clicks").getByTestId("kpi-valeur")).toHaveText("2");
+    await expect(tuile(page, "Rage clicks")).toContainText("2 signaux, 1 session");
+    await expect(page.getByTestId("ligne-sdk-desactive")).toContainText("frustration: false");
+    await tuile(page, "Rage clicks").click();
+    await expect(page).toHaveURL(/type=rage/);
+    await expect(page.getByTestId("filtre-type").locator('[aria-current="true"]')).toHaveText("Rage clicks");
+  });
+
+  test("règles de détection écrites depuis les constantes du SDK", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/ux?app=${APP}`);
+    const regles = page.getByTestId("regles-detection");
+    await regles.locator("summary").click();
+    await expect(regles).toContainText(/3 clics sur la même cible en 1\s*s/);
+    await expect(regles).toContainText(/1,5\s*s/);
+  });
+
+  test("hero : routes classées par part de sessions touchées", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/ux?app=${APP}`);
+    const hero = page.locator("#routes-frustrantes");
+    await hero.scrollIntoViewIfNeeded();
+    await expect(hero).toContainText("/panier");
+    await expect(hero).toContainText("Ensemble");
+  });
+
+  test("sessions React Native seules : « Non collecté », et aucun « 0 » de signal", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/ux?app=${APP_MOBILE}`);
+    const rangee = page.getByTestId("kpi-interactions");
+    await expect(rangee.getByTestId("signaux-non-collectes")).toContainText("Non collecté");
+    await expect(tuile(page, "Rage clicks")).toHaveCount(0);
+    await expect(tuile(page, "Dead clicks")).toHaveCount(0);
+    await expect(tuile(page, "Error clicks")).toHaveCount(0);
+    for (const valeur of await rangee.getByTestId("kpi-valeur").allInnerTexts()) expect(valeur.trim()).not.toBe("0");
+    await expect(page.locator("#routes-frustrantes")).toContainText("Non collecté");
+  });
+
+  for (const largeur of LARGEURS) {
+    test(`aucun débordement à ${largeur} px`, async ({ page }) => {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await login(page);
+      await page.goto(`${consoleUrl}/ux?app=${APP}`);
+      await expect(page.getByTestId("kpi-interactions")).toBeVisible();
+      expect(await debordements(page)).toEqual([]);
+    });
+  }
+});

@@ -156,3 +156,69 @@ describe("F18 — referencePeriodePrecedente", () => {
     ).toBe("vs période précédente (22/09 08:00 → 22/09 10:00 UTC)");
   });
 });
+
+// ─────────────────────────────── F22 — Interactions ───────────────────────────────
+import {
+  MANQUE_CAPTEUR_MOBILE,
+  RAISON_RUNTIME_ABSENT,
+  classerRoutesFrustrantes,
+  etatCapteurFrustration,
+} from "../../apps/console/lib/perf-domain";
+
+describe("F22 — etatCapteurFrustration (R-F, CP16)", () => {
+  it("sessions React Native seules → non collecté, comptes masqués (aucun « 0 »)", () => {
+    expect(etatCapteurFrustration({ sessionsCouvertes: 0, sessionsTotal: 3, runtimeLu: true })).toEqual({
+      etat: { kind: "non_collecte", manque: MANQUE_CAPTEUR_MOBILE },
+      masquer: true,
+    });
+  });
+
+  it("population mixte → partiel « N sur M », comptes affichés", () => {
+    expect(etatCapteurFrustration({ sessionsCouvertes: 2, sessionsTotal: 3, runtimeLu: true })).toEqual({
+      etat: { kind: "partiel", raison: "compté sur les sessions navigateur seulement (2 sur 3)" },
+      masquer: false,
+    });
+  });
+
+  it("colonne runtime absente → partiel « capteur non identifiable », comptes affichés", () => {
+    expect(etatCapteurFrustration({ sessionsCouvertes: 5, sessionsTotal: 5, runtimeLu: false })).toEqual({
+      etat: { kind: "partiel", raison: RAISON_RUNTIME_ABSENT },
+      masquer: false,
+    });
+  });
+
+  it("tout couvert, ou aucune session : un 0 est un vide réel", () => {
+    expect(etatCapteurFrustration({ sessionsCouvertes: 4, sessionsTotal: 4, runtimeLu: true })).toEqual({ etat: null, masquer: false });
+    expect(etatCapteurFrustration({ sessionsCouvertes: 0, sessionsTotal: 0, runtimeLu: true })).toEqual({ etat: null, masquer: false });
+  });
+});
+
+describe("F22 — classerRoutesFrustrantes", () => {
+  const route = (r: string | null, touchees: number, sessions: number) => ({
+    route: r,
+    rage: touchees,
+    dead: 0,
+    error: 0,
+    sessionsTouchees: touchees,
+    sessionsRoute: sessions,
+  });
+
+  it("un taux, pas un compte : route à 3 sessions / 3 touchées classée APRÈS route à 400 / 40", () => {
+    const { lignes, faibles } = classerRoutesFrustrantes([route("/petite", 3, 3), route("/checkout", 40, 400)], "gravite");
+    expect(lignes.map((l) => l.route)).toEqual(["/checkout", "/petite"]);
+    expect(lignes[0].taux).toBeCloseTo(0.1);
+    expect(faibles).toBe(1);
+  });
+
+  it("gravité : le plus fort taux d'abord parmi les routes assez vues ; volume : le trafic", () => {
+    const rows = [route("/a", 30, 300), route("/b", 90, 300), route("/c", 10, 1000)];
+    expect(classerRoutesFrustrantes(rows, "gravite").lignes.map((l) => l.route)).toEqual(["/b", "/a", "/c"]);
+    expect(classerRoutesFrustrantes(rows, "volume").lignes.map((l) => l.route)).toEqual(["/c", "/a", "/b"]);
+  });
+
+  it("route sans session de vue (signal seul) → taux null, en dernier, jamais 0 %", () => {
+    const { lignes } = classerRoutesFrustrantes([route(null, 2, 0), route("/a", 1, 100)], "gravite");
+    expect(lignes.map((l) => l.route)).toEqual(["/a", null]);
+    expect(lignes[1].taux).toBeNull();
+  });
+});
