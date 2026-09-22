@@ -1,6 +1,8 @@
 import { parsePagination, type Pagination } from "./api/pagination";
 import { q } from "./db";
 import { type Filters } from "./filters";
+import { plageLue } from "./queries";
+import type { ResolvedRange } from "./query-contract";
 import { sqlContext, type SqlContext } from "./query-sql";
 
 export const ACTIONS_MAX_OFFSET = 10_000;
@@ -19,6 +21,14 @@ export interface TopActionRow {
   resource_ms: number;
   api_ms: number;
   total_ms: number;
+  /**
+   * p75 du temps réseau lié D'UNE action de ce groupe (F24, § 5.4.3) : trois
+   * actions sur quatre ont attendu moins que cette durée. Calculé sur les durées
+   * BRUTES par action (`percentile_cont` en base), jamais agrégé d'un autre
+   * percentile (V5). `total_ms`, lui, est un cumul de visiteurs différents : ce
+   * n'est le temps d'attente de personne.
+   */
+  lie_p75_ms: number | null;
   last_seen: Date;
 }
 
@@ -63,9 +73,14 @@ export async function actionsDisponible(): Promise<boolean> {
   return row?.present === true;
 }
 
-/** CTE des actions filtrées par la requête commune, puis de leurs familles causales. */
-function actionCtes(ctx: SqlContext): string {
-  const where = ctx.where({ dataset: "actions", row: "a", session: "s", time: "a.ts" });
+/**
+ * CTE des actions filtrées par la requête commune, puis de leurs familles causales.
+ * `range` : la fenêtre à lire — celle du contrat, ou la période précédente contiguë
+ * (`cmp=prev`, F24). Les familles enfants sont jointes PAR action, donc bornées par
+ * la même fenêtre que leur racine : aucune n'a besoin de sa propre clause de temps.
+ */
+function actionCtes(ctx: SqlContext, range?: ResolvedRange): string {
+  const where = ctx.where({ dataset: "actions", row: "a", session: "s", time: "a.ts", range });
   return `with recursive filtered_actions as (
        select a.action_id, a.app_id, a.session_id, a.name, a.type, a.route, a.ts,
               coalesce(s.sample_rate, 1)::double precision as sample_rate
@@ -194,6 +209,7 @@ export async function topActions(f: Filters, page: Pagination = { limit: 50, off
             round(coalesce(sum(resource_ms), 0)::numeric, 1)::float as resource_ms,
             round(coalesce(sum(api_ms), 0)::numeric, 1)::float as api_ms,
             round(coalesce(sum(resource_ms + api_ms), 0)::numeric, 1)::float as total_ms,
+            round(percentile_cont(0.75) within group (order by resource_ms + api_ms)::numeric, 1)::float as lie_p75_ms,
             max(ts) as last_seen
        from per_action
       group by app_id, name, type, route
@@ -204,15 +220,18 @@ export async function topActions(f: Filters, page: Pagination = { limit: 50, off
   );
 }
 
-/** Totaux de toute la période filtrée, indépendants de la page affichée. */
-export async function topActionsSummary(f: Filters): Promise<ActionSummary> {
+/**
+ * Totaux de toute la période filtrée, indépendants de la page affichée.
+ * `shift` : lire la période précédente contiguë à la place (F24, `cmp=prev`, § 3.2).
+ */
+export async function topActionsSummary(f: Filters, shift = false): Promise<ActionSummary> {
   if (!(await actionsDisponible())) return {
     actions: 0, sessions: 0, errors: 0, error_clicks: 0,
     resources: 0, api_calls: 0, resource_ms: 0, api_ms: 0, total_ms: 0,
     sampling_notice: null,
   };
   const ctx = await sqlContext(f);
-  const ctes = actionCtes(ctx);
+  const ctes = actionCtes(ctx, plageLue(ctx.query.range, shift));
   const [summary] = await q<Omit<ActionSummary, "sampling_notice"> & { min_sample_rate: number | null }>(
     `${ctes}
      select count(*)::int as actions,
@@ -249,4 +268,21 @@ export function actionSamplingNotice(min: number | null | undefined): ActionSamp
     min_sample_rate: rate,
     message: `Vue de l’échantillon observé (taux minimal ${pct} %). Les volumes ne sont pas extrapolés et les sessions en erreur peuvent être sur-représentées.`,
   };
+}
+
+// ─────────────────────────────── État de l'écran (F24) ───────────────────────────────
+
+/** État d'une surface d'actions, de forme compatible avec `Etat` (components/states). */
+export type EtatActions = { kind: "non_collecte"; manque: string };
+
+export const MANQUE_TABLE_ACTIONS = "la table des actions n'existe pas sur ce déploiement";
+
+/**
+ * Ce que l'écran Actions rend quand la table n'existe pas (F00, § 5.4.3) : un
+ * `non_collecte`, JAMAIS un « 0 action ». La distinction est celle de V3 : un zéro
+ * dit « aucun geste dans la fenêtre », l'absence de table dit « rien n'a jamais été
+ * collecté ici ». Pure et exportée pour que le test unitaire la tienne sans base.
+ */
+export function etatActions(disponible: boolean): EtatActions | null {
+  return disponible ? null : { kind: "non_collecte", manque: MANQUE_TABLE_ACTIONS };
 }
