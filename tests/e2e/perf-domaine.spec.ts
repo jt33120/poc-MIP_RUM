@@ -277,6 +277,122 @@ test.describe("F22 — Interactions : onglets, Frustration KPI, règles, hero", 
   }
 });
 
+test.describe("F26 — Satisfaction", () => {
+  // Deux apps À CE BLOC : l'une a des avis sur quatre pages, dont DEUX seulement ont
+  // au moins 10 avis et un LCP mesuré (le nuage doit alors se taire, « partiel ») et
+  // une qui n'a reçu qu'un commentaire sans note ; l'autre n'a aucun avis (CSAT « — »).
+  const APP_F26 = "f26-e2e-satisfaction";
+  const APP_F26_VIDE = "f26-e2e-sans-avis";
+  const SESSION_F26 = "f26-e2e-session";
+
+  async function nettoyerF26() {
+    for (const table of ["rum_event", "rum_metric", "rum_session"]) {
+      await pool.query(`delete from ${table} where app_id = any($1::text[])`, [[APP_F26, APP_F26_VIDE]]);
+    }
+  }
+
+  test.beforeAll(async () => {
+    await nettoyerF26();
+    await pool.query(
+      `insert into app_registry (app_id, name, active)
+       values ($1, 'Satisfaction E2E', true), ($2, 'Satisfaction E2E (sans avis)', true)
+       on conflict (app_id) do nothing`,
+      [APP_F26, APP_F26_VIDE],
+    );
+    await pool.query(
+      `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at)
+       values ($1, $2, 'desktop', false, now() - interval '40 minutes', now() - interval '5 minutes')`,
+      [SESSION_F26, APP_F26],
+    );
+    // Un LCP mesuré sur trois pages : la jointure LCP × CSAT a de quoi se faire.
+    for (const [route, lcp] of [["/f26-a", 1800], ["/f26-b", 3200], ["/f26-c", 5000]] as const) {
+      await pool.query(
+        `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, ts)
+         values ($1, $2, $3, $4, 'LCP', $5, 'good', now() - interval '20 minutes')`,
+        [`f26-e2e-lcp${route.replace("/", "-")}`, SESSION_F26, APP_F26, route, lcp],
+      );
+    }
+    // 12 avis sur /f26-a, 10 sur /f26-b (éligibles), 4 sur /f26-c (non), un commentaire seul.
+    const avis: [string, number | null][] = [
+      ...Array.from({ length: 12 }, (_v, i): [string, number | null] => ["/f26-a", [5, 4, 2, 5][i % 4]]),
+      ...Array.from({ length: 10 }, (_v, i): [string, number | null] => ["/f26-b", [1, 3, 4, 5, 2][i % 5]]),
+      ...Array.from({ length: 4 }, (_v, i): [string, number | null] => ["/f26-c", [4, 5][i % 2]]),
+      ["/f26-commentaire", null],
+    ];
+    for (const [i, [route, score]] of avis.entries()) {
+      await pool.query(
+        `insert into rum_event (span_id, session_id, app_id, route, name, props, ts)
+         values ($1, $2, $3, $4, 'feedback', $5::jsonb, now() - make_interval(mins => $6::int))`,
+        [
+          `f26-e2e-fb-${i}`,
+          SESSION_F26,
+          APP_F26,
+          route,
+          JSON.stringify({ score, comment: score === null ? "Commentaire sans note (e2e)" : `Avis ${score}/5 (e2e)` }),
+          10 + (i % 30),
+        ],
+      );
+    }
+  });
+
+  test.afterAll(async () => {
+    await nettoyerF26();
+  });
+
+  test("KPI, hero à deux panneaux, nuage partiel sous trois pages éligibles, table sans « 0 % »", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await login(page);
+    await page.goto(`${consoleUrl}/experience?app=${APP_F26}&period=24h`);
+    await expect(page.getByRole("heading", { name: "Satisfaction", level: 1 })).toBeVisible();
+
+    const tuiles = page.getByTestId("satisfaction-kpi").getByTestId("kpi-tile");
+    await expect(tuiles).toHaveCount(4);
+    await expect(tuiles.first()).toContainText("Satisfaction (CSAT)");
+    await expect(tuiles.first().getByTestId("kpi-valeur")).toContainText("%");
+
+    // Hero : deux panneaux sur la MÊME grille (P5 : pas de double axe).
+    const hero = page.locator("#satisfaction-dans-le-temps");
+    await expect(hero.getByTestId("threshold-series")).toHaveCount(2);
+    const seaux = await hero.getByTestId("threshold-series").evaluateAll((els) => els.map((e) => e.getAttribute("data-seaux")));
+    expect(new Set(seaux).size).toBe(1);
+
+    // Moins de trois pages avec au moins 10 avis : pas de nuage, et on le dit.
+    const nuage = page.locator("#ressenti-face-au-lcp");
+    await expect(nuage).toHaveAttribute("data-etat", "partiel");
+    await expect(nuage).toContainText("moins de trois pages avec au moins 10 avis : pas de nuage");
+    await expect(nuage).toContainText("2 page(s) éligible(s)");
+
+    // Page à commentaire seul : pas de CSAT — « — », jamais « 0 % ».
+    const commentaire = page.getByTestId("impact-ligne").filter({ hasText: "/f26-commentaire" });
+    await expect(commentaire).toContainText("commentaires sans note");
+    await expect(commentaire).not.toContainText("%");
+
+    // Chaque verbatim porte sa date ; aucun score composite.
+    await expect(page.locator("#verbatims")).toContainText(/\d{2}\/\d{2} \d{2}:\d{2} UTC/);
+    await expect(page.getByText("/100")).toHaveCount(0);
+  });
+
+  test("sans avis : CSAT « — » et sa raison, carte d'installation, courbe non tracée", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/experience?app=${APP_F26_VIDE}&period=24h`);
+    const csat = page.getByTestId("satisfaction-kpi").getByTestId("kpi-tile").first();
+    await expect(csat.getByTestId("kpi-valeur")).toHaveText("—");
+    await expect(csat).toContainText("aucun avis noté");
+    await expect(page.getByTestId("carte-installation")).toBeVisible();
+    await expect(page.getByTestId("xp-unavailable")).toBeVisible();
+  });
+
+  test("aucun débordement à 390, 768 et 1440 px", async ({ page }) => {
+    await login(page);
+    for (const largeur of LARGEURS) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(`${consoleUrl}/experience?app=${APP_F26}&period=24h`);
+      await expect(page.getByRole("heading", { name: "Satisfaction", level: 1 })).toBeVisible();
+      expect(await debordements(page), `${largeur} px`).toEqual([]);
+    }
+  });
+});
+
 // F14 — Pages : KPI, sélecteur de vital, hero classé (plan § 5.2.1-5.2.2, zones 1-4).
 // Données SYNTHÉTIQUES, ordres LCP et INP OPPOSÉS — sinon « vital=INP re-trie »
 // passerait avec n'importe quel tri :
