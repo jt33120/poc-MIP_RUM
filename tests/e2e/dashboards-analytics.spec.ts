@@ -230,6 +230,10 @@ test("vue enregistrée : enregistrer, rouvrir, renommer, supprimer", async ({ pa
   await page.getByRole("row", { name: new RegExp(VUE) }).getByRole("button", { name: "Renommer" }).click();
   await expect(page.getByRole("link", { name: `${VUE} bis` })).toBeVisible({ timeout: 15_000 });
 
+  // F30 (CE11, P15) : le rouge est réservé à l'état d'une mesure — aucun bouton
+  // rouge sur la liste des vues.
+  await expect(page.getByRole("button", { name: `Supprimer ${VUE} bis` })).not.toHaveClass(/bg-red-600/);
+  expect(await page.locator('[class*="bg-red-600"]').count()).toBe(0);
   await page.getByRole("button", { name: `Supprimer ${VUE} bis` }).click();
   await expect(page.getByRole("link", { name: `${VUE} bis` })).toHaveCount(0, { timeout: 15_000 });
 });

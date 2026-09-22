@@ -28,7 +28,8 @@ export function StackedBars({
   yUnit = "",
   showLegend = true,
 }: {
-  data: Record<string, number | string>[];
+  /** Une valeur `null` ne dessine aucun segment ; l'infobulle l'omet (jamais « 0 »). */
+  data: Record<string, number | string | null>[];
   xKey: string;
   series: StackSeries[];
   height?: number;

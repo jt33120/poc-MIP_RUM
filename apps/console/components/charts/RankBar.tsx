@@ -15,8 +15,12 @@ export interface RankSegment {
 
 export interface RankDatum {
   label: string;
-  /** Valeur pilotant la largeur ET affichée à droite (sauf `display`). */
-  value: number;
+  /**
+   * Valeur pilotant la largeur ET affichée à droite (sauf `display`). `null` :
+   * non calculable — AUCUNE barre (une barre de longueur nulle se lirait « le
+   * meilleur »), « — » à droite.
+   */
+  value: number | null;
   /** Texte de valeur formaté (défaut : `value` brut). */
   display?: ReactNode;
   /** Couleur CSS de la barre (défaut : accent). Ignoré si `segments`. */
@@ -50,13 +54,13 @@ export function RankBar({
   if (!data.length) {
     return <p className="py-10 text-center text-sm text-ink-faint">{emptyLabel}</p>;
   }
-  const base = max ?? Math.max(...data.map((d) => d.value), 1);
+  const base = max ?? Math.max(...data.map((d) => d.value ?? 0), 1);
   const ACCENT = "#f89101";
 
   return (
     <div className="flex flex-col gap-2">
       {data.map((d, i) => {
-        const w = base > 0 ? Math.max(2, (d.value / base) * 100) : 0;
+        const w = d.value === null ? 0 : base > 0 ? Math.max(2, (d.value / base) * 100) : 0;
         const label = (
           <span className="truncate" title={d.label}>
             {d.label}
@@ -92,14 +96,14 @@ export function RankBar({
                     />
                   ))}
                 </div>
-              ) : (
+              ) : d.value === null ? null : (
                 <div
                   className="h-full rounded"
                   style={{ width: `${w}%`, backgroundColor: d.color ?? ACCENT }}
                 />
               )}
               <span className="absolute inset-y-0 right-2 flex items-center text-xs font-semibold tabular-nums text-ink">
-                {d.display ?? d.value.toLocaleString("fr-FR")}
+                {d.display ?? (d.value === null ? "—" : d.value.toLocaleString("fr-FR"))}
               </span>
             </div>
           </div>

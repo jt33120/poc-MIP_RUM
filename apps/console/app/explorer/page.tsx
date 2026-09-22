@@ -67,10 +67,13 @@ export const dynamic = "force-dynamic";
 /**
  * Limites proposées par représentation. Elles restent dans les bornes du contrat
  * (50 combinaisons, 200 lignes) et sont resserrées là où l'affichage l'exige :
- * une série par groupe au-delà de dix cesserait d'être lisible. Une valeur hors
- * de ces listes reste refusée par le registre, pas rabattue.
+ * au-delà de CINQ courbes superposées, une série cesse d'être lisible (P14, CE6 —
+ * l'option « 10 » a disparu). Le registre accepte jusqu'à 50 groupes : une série
+ * demandée par l'URL au-delà de cinq est donc refusée ICI, avant toute lecture
+ * (`SERIES_MAX`), jamais rabattue en silence.
  */
-const LIMITES = { toplist: [5, 10, 20, MAX_GROUPS], timeseries: [1, 3, 5, 10], table: [25, 50, 100, 200] } as const;
+const LIMITES = { toplist: [5, 10, 20, MAX_GROUPS], timeseries: [1, 3, 5], table: [25, 50, 100, 200] } as const;
+const SERIES_MAX = Math.max(...LIMITES.timeseries);
 
 function nombre(valeur: number | null): string {
   return valeur === null ? "—" : valeur.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
@@ -115,7 +118,15 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
 
   let resultat: ExplorerResult | null = null;
   let echec: { titre: string; message: string } | null = null;
-  if (demande && plan.ok) {
+  // CE6 (P14) : une série à plus de cinq groupes n'est pas lancée. Le contrôle du
+  // formulaire ne la propose pas ; une URL qui l'impose est refusée, avec sa raison.
+  const tropDeSeries = plan.ok && plan.value.visualization === "timeseries" && plan.value.limit > SERIES_MAX;
+  if (demande && tropDeSeries) {
+    echec = {
+      titre: "Trop de séries demandées",
+      message: `Une série temporelle superpose au plus ${SERIES_MAX} groupes : au-delà, les courbes cessent d'être lisibles. Choisir 1, 3 ou ${SERIES_MAX} dans « Nombre maximum », ou la représentation « Classement ».`,
+    };
+  } else if (demande && plan.ok) {
     try {
       resultat = await exploreAnalytics({ query: ecran.query, plan: plan.value });
     } catch (e) {

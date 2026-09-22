@@ -7,6 +7,10 @@
 // EMPILER EST UNE AFFIRMATION. On empile quand la mesure s'ADDITIONNE : la hauteur
 // totale est alors le total, et elle veut dire quelque chose. Sinon, une seule
 // courbe par carte — empiler des p95 dessinerait une somme qui n'existe pas.
+//
+// UN SEAU SANS MESURE EST UN TROU (F30, CE1). `null` passe tel quel aux
+// graphiques : la courbe s'interrompt (pas de `connectNulls`), la barre manque.
+// L'ancien `?? 0` dessinait « LCP = 0 ms » sur une heure sans mesure.
 import { LineTrend, type LineTrendPoint } from "@/components/charts/LineTrend";
 import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import type { WidgetData } from "@/lib/widget-data";
@@ -19,9 +23,9 @@ export function WidgetChart({ data, unit = "" }: { data: WidgetData; unit?: stri
   if (!serie || !serie.groups.length) return null;
 
   if (serie.stacked) {
-    const rows: Record<string, number | string>[] = serie.buckets.map((seau, i) => {
-      const ligne: Record<string, number | string> = { seau };
-      for (const [rang, groupe] of serie.groups.entries()) ligne[`g${rang}`] = groupe.values[i] ?? 0;
+    const rows: Record<string, number | string | null>[] = serie.buckets.map((seau, i) => {
+      const ligne: Record<string, number | string | null> = { seau };
+      for (const [rang, groupe] of serie.groups.entries()) ligne[`g${rang}`] = groupe.values[i] ?? null;
       return ligne;
     });
     const series: StackSeries[] = serie.groups.map((groupe, rang) => ({
@@ -41,7 +45,7 @@ export function WidgetChart({ data, unit = "" }: { data: WidgetData; unit?: stri
       {serie.groups.map((groupe, rang) => {
         const points: LineTrendPoint[] = serie.buckets.map((seau, i) => ({
           label: seau,
-          value: groupe.values[i] ?? 0,
+          value: groupe.values[i] ?? null,
         }));
         return (
           <LineTrend

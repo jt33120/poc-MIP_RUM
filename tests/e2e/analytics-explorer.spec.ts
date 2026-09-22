@@ -155,6 +155,21 @@ test("zéro réel, refus explicite et retour à l'invitation après changement d
   expect(new URL(page.url()).searchParams.get("release")).toBe(RELEASE);
 });
 
+// F30 (CE6, P14) : une série temporelle superpose au plus cinq groupes. Le contrôle
+// ne propose plus « 10 », et une URL qui l'impose est refusée avant toute lecture.
+test("série temporelle : au plus 5 groupes, proposés comme exigés", async ({ page }) => {
+  await login(page);
+  await page.goto(`${base}&measure=occurrences:sum&viz=timeseries&g0=route&limit=3`);
+  const options = await page.locator('select[name="limit"] option').allTextContents();
+  expect(options.map((o) => o.trim())).toEqual(["1", "3", "5"]);
+
+  await page.goto(`${base}&measure=occurrences:sum&viz=timeseries&g0=route&limit=10&run=1`);
+  const echec = page.getByTestId("explorer-echec");
+  await expect(echec).toBeVisible({ timeout: 15_000 });
+  await expect(echec).toContainText("au plus 5 groupes");
+  await expect(page.getByTestId("explorer-total")).toHaveCount(0);
+});
+
 test("accès clavier et aucune largeur qui déborde (390 / 768 / 1440 px)", async ({ page }) => {
   await login(page);
   await page.goto(base);
