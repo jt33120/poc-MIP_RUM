@@ -1164,8 +1164,8 @@ export function buildOpenApi(): Record<string, unknown> {
         ApiCallRow: o({ url: str, method: str, n: num, front_p75: num, back_p75: nul(num), err: num }, ["url", "method"]),
         BackRouteRow: o({ route: str, n: num, p75: num, p95: num, err: num }, ["route"]),
 
-        CorrCardRow: o({ app_id: str, route: nul(str), rum_lcp_p75: nul(num), rum_inp_p75: nul(num), rum_sessions: nul(num), syn_latency_avg: nul(num), syn_score_avg: nul(num), syn_state: nul(str), syn_measures: nul(str) }, ["app_id"]),
-        BlindSpotRow: o({ app_id: str, route: nul(str), bucket: dateTime, rum_lcp_p75: num, syn_latency_avg: num, syn_state: str, gap_ms: num }, ["app_id"]),
+        CorrCardRow: o({ app_id: str, route: nul(str), rum_lcp_p75: nul(num), rum_inp_p75: nul(num), rum_sessions: nul(num), rum_lcp_n: nul(num), syn_latency_avg: nul(num), syn_score_avg: nul(num), syn_state: nul(str), syn_measures: nul(str) }, ["app_id"]),
+        BlindSpotRow: o({ app_id: str, route: nul(str), bucket: dateTime, rum_lcp_p75: num, rum_lcp_n: num, syn_latency_avg: num, syn_state: str, syn_measures: nul(str), gap_ms: num }, ["app_id"]),
 
         HealthGridCell: o({ day: str, hour: int, good_w: num, total_w: num }, ["day", "hour"]),
         DailyTraffic: o({ day: str, pageviews: num, errors: num }, ["day"]),

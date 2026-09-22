@@ -491,6 +491,15 @@ le numérateur et le dénominateur d'un taux décriraient deux populations.
 ### `GET /api/v1/correlation` — corrélation front/back
 `data = { cards: CorrCardRow[], blindSpots: BlindSpotRow[] }`.
 
+- `cards[].rum_lcp_n` : nombre de mesures LCP réelles du couple (app, route) sur la plage,
+  `null` quand le couple n'a aucun côté réel. C'est le poids d'une route : les mesures
+  s'additionnent entre routes, les sessions non.
+- `blindSpots` : heures où le robot est `ok` et où le LCP p75 réel dépasse la borne « Bon »
+  de `THRESHOLDS.LCP`, **sur des heures d'au moins 30 mesures LCP** (`rum_lcp_n`) ; en
+  dessous, un p75 horaire tient à quelques visites. `syn_measures` liste les scénarios
+  robot de l'heure. Liste plafonnée à 50 lignes, écart décroissant : ce n'est pas un
+  compte d'angles morts.
+
 ### `GET /api/v1/health-grid` — heatmap santé
 `data = { grid: HealthGridCell[], dailyTraffic: DailyTraffic[] }`
 (cellule = une heure, jour×heure ; + trafic quotidien).
