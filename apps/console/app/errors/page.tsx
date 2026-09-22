@@ -197,9 +197,15 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
     ...(tri !== "statut" ? { tri } : {}),
     ...(nouveauxSeuls ? { nouveaux: "1" } : {}),
   };
+  // Le filtre de statut (F19) fait partie de la liste qu'on parcourt : sans lui,
+  // ouvrir un groupe dé-filtrerait la liste sous le panneau, et « Précédent » /
+  // « Suivant » parcourraient une AUTRE liste que celle où l'on a cliqué.
+  // `reglagesListe` le laisse de côté — il sert aussi à bâtir le formulaire de
+  // filtre et son lien « sans filtre », qui ne doivent pas le porter.
   const lienPanneau = (fp: string | null) =>
     errorsHref("/errors", f, f.app, {
       ...reglagesListe,
+      ...(statut ? { statut } : {}),
       ...(page.offset ? { offset: String(page.offset) } : {}),
       ...(url.get("limit") ? { limit: String(page.limit) } : {}),
       ...(fp ? { panel: ecrirePanel({ type: "error", id: fp }) } : {}),

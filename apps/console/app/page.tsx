@@ -607,11 +607,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       alertes: lien("/alerts"),
       // L'ancre amène l'événement à l'écran ; `evt` le met en évidence (F67).
       alerte: (evt) => `${lien("/alerts", { evt: String(evt) })}#evt-${evt}`,
-      // Le panneau erreur (`panel=error:<fp>`, F20) et le filtre `statut` (F19) ne sont pas
-      // encore lus par `/errors` : la page du groupe, et la liste — où les régressés sont en
-      // tête (ordre CP9). Écart déclaré ; F20 / F19 rebasculeront ces deux liens.
-      erreur: (g) => lien(`/errors/${encodeURIComponent(g.fingerprint)}`, { app: g.app_id }),
-      regresses: lien("/errors"),
+      // F20 a livré le panneau (`panel=error:<fp>`) et F19 le filtre `statut` : les deux
+      // liens quittent leur repli. Le constat ouvre donc le groupe SANS quitter la liste,
+      // et « tous les régressés » filtre vraiment la liste au lieu de compter sur l'ordre.
+      erreur: (g) => lien("/errors", { app: g.app_id, panel: ecrirePanel({ type: "error", id: g.fingerprint }) }),
+      regresses: lien("/errors", { statut: "regressed" }),
     },
   );
 

@@ -244,6 +244,18 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
     expect(r.constats[1].href).toBe("/alerts?app=a");
   });
 
+  it("rien aujourd'hui mais des alertes non acquittées : le constat ne dit pas « et N autres »", () => {
+    // Le cas ORDINAIRE après minuit UTC : `alertFirings(f, 1)` ne voit plus rien,
+    // le total non acquitté, lui, compte encore hier. Écrire « et 3 autres » sans
+    // avoir nommé personne enverrait chercher trois alertes citées qui n'existent pas.
+    const r = constatsVueEnsemble(
+      entrees({ alertes: { ok: true, data: { mode: "evenements", lignes: [], total: 3 } } }),
+      LIENS,
+    );
+    expect(r.constats.map((c) => c.titre)).toEqual(["3 alerte(s) non acquittée(s)"]);
+    expect(r.constats[0].href).toBe("/alerts?app=a");
+  });
+
   it("aucune alerte du jour et aucun total : aucun constat d'alerte (F67)", () => {
     const r = constatsVueEnsemble(
       entrees({ alertes: { ok: true, data: { mode: "evenements", lignes: [], total: 0 } } }),

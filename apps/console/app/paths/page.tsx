@@ -33,7 +33,10 @@ import { formater } from "@/lib/fmt-ids";
 import { lire } from "@/lib/lecture";
 import { fenetreDansPhrase, fenetreLue, noteLectureHistorique, plafondAtteint } from "@/lib/lecture-historique";
 import { pageFilters } from "@/lib/page-filters";
-import { hrefWithQuery } from "@/lib/query-contract";
+import { hrefWithQuery, paramReader } from "@/lib/query-contract";
+// `depuis` est déclaré pour cet écran au registre de l'état de vue, mais son
+// ancrage attend B31 : une URL qui le porte doit le DIRE (V10), pas le taire.
+import { lireEtatDeVue } from "@/lib/view-state";
 import { availableEvents, funnelReport } from "@/lib/queries-funnel";
 import { entryExitRoutes, routeTransitions, type RouteCountRow } from "@/lib/queries-paths";
 import { samplingSessionsHistorique } from "@/lib/queries-sessions";
@@ -68,6 +71,7 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
   const ecran = await pageFilters(sp, "/paths");
   if (!ecran.ok) return <FilterProblemNotice title="Parcours" problem={ecran.problem} />;
   const f = ecran.filters;
+  const { ignores } = lireEtatDeVue("/paths", paramReader(sp));
   // Lot 6c : étapes du funnel depuis s1..s4 (form GET), ordonnées, vides ignorées.
   const steps = [1, 2, 3, 4]
     .map((i) => (typeof sp[`s${i}`] === "string" ? (sp[`s${i}`] as string) : ""))
@@ -116,6 +120,16 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
       <p className="-mt-3 mb-6 text-xs text-ink-soft" data-testid="lecture-non-migree">
         {noteLectureHistorique(f.period, luA)}
       </p>
+
+      {ignores.length > 0 && (
+        <div className="mb-4 space-y-1" data-testid="reglages-ignores">
+          {ignores.map((ligne) => (
+            <p key={ligne} role="note" className="text-xs text-ink-soft" data-testid="reglage-ignore">
+              {ligne}
+            </p>
+          ))}
+        </div>
+      )}
 
       {/* P2 — trois tuiles : les deux bords n°1, et le nombre de transitions lues. */}
       <SectionErreur titre="Chiffres clés">

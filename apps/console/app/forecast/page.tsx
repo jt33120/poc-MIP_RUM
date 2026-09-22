@@ -60,6 +60,7 @@ import { instantDe, jourDans } from "@/lib/series";
 import {
   JOURS_VALIDES_REQUIS_RUPTURE,
   MESURES_MIN_JOUR_RUPTURE,
+  SEUIL_P_RUPTURE,
   REGLE_RUPTURE,
   annotationRupture,
   daterRupture,
@@ -67,6 +68,9 @@ import {
   phraseRupture,
   phraseSansRupture,
 } from "@/lib/stats/rupture";
+// Le seuil publié dans « Méthode » est FORMATÉ par la même fonction que les p des
+// phrases : deux écritures du même nombre finiraient par diverger.
+import { formaterP } from "@/lib/stats/surrepresentation";
 import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 import { ratioPour100 } from "@/lib/perf-domain";
@@ -115,10 +119,10 @@ function Methode() {
       </p>
       <p className="mt-2 leading-relaxed text-ink-soft">
         Datation d&apos;une rupture (P*.7) : test de Pettitt, non paramétrique, une seule rupture —{" "}
-        <code>U</code> cumulé des signes, <code>K = max |U|</code>, <code>p ≈ 2·exp(−6K²/(n³+n²))</code>, retenue sous
-        0,05. Un jour n&apos;entre dans ce test qu&apos;au-dessus de {MESURES_MIN_JOUR_RUPTURE} mesures (minimum
-        d&apos;une p75), et il en faut {JOURS_VALIDES_REQUIS_RUPTURE} ; à dix jours, même une marche parfaite reste
-        au-dessus de 0,05, donc « aucune rupture datée » y veut surtout dire « pas assez de jours ». Les deux niveaux
+        <code>U</code> cumulé des signes, <code>K = max |U|</code>, <code>p ≈ 2·exp(−6K²/(n³+n²))</code>, retenue sous{" "}
+        {formaterP(SEUIL_P_RUPTURE)}. Un jour n&apos;entre dans ce test qu&apos;au-dessus de {MESURES_MIN_JOUR_RUPTURE} mesures (minimum
+        d&apos;une p75), et il en faut {JOURS_VALIDES_REQUIS_RUPTURE} ; à {JOURS_VALIDES_REQUIS_RUPTURE} jours, même une marche
+        parfaite reste au-dessus de {formaterP(SEUIL_P_RUPTURE)}, donc « aucune rupture datée » y veut surtout dire « pas assez de jours ». Les deux niveaux
         comparés sont des médianes de p75 quotidiennes, jamais une p75 de période. Un déploiement à un jour au plus est
         cité comme une coïncidence de date.
       </p>

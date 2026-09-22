@@ -392,9 +392,9 @@ export interface LiensConstats {
   alertes: string;
   /** `/alerts?evt=<id>` — jamais `fired=` (§ 3.1). */
   alerte: (eventId: number) => string;
-  /** Groupe régressé → sa page `/errors/<fp>` (le panneau `panel=error:<fp>` attend F20). */
+  /** Groupe régressé → `/errors` avec son panneau ouvert (`panel=error:<fp>`, F20). */
   erreur: (g: { app_id: string; fingerprint: string }) => string;
-  /** Tous les groupes régressés → `/errors`, régressés en tête (le filtre `statut` attend F19). */
+  /** Tous les groupes régressés → `/errors?statut=regressed` (F19), pas seulement en tête de liste. */
   regresses: string;
 }
 
@@ -468,9 +468,15 @@ function constatsAlertes(
   // pas simultanées).
   const reste = Math.max(0, alertes.total - nommees.length);
   if (reste > 0) {
+    // « et N autres » n'a de sens qu'après des alertes NOMMÉES. Rien ne s'est
+    // déclenché aujourd'hui alors qu'il en reste d'hier — le cas ordinaire après
+    // minuit UTC — donnerait sinon un constat orphelin : « et 3 autres » que quoi ?
     nommees.push({
       type: "alerte",
-      titre: `et ${formater("count", reste)} autre(s) alerte(s) non acquittée(s)`,
+      titre:
+        nommees.length > 0
+          ? `et ${formater("count", reste)} autre(s) alerte(s) non acquittée(s)`
+          : `${formater("count", reste)} alerte(s) non acquittée(s)`,
       regle: REGLE_ALERTES,
       href: liens.alertes,
     });
