@@ -12,7 +12,7 @@
 // D'où trois dispositifs, tous vérifiés par tests/unit/specs.test.ts :
 //
 //   1. Ce qui existe ailleurs est IMPORTÉ, jamais recopié — l'hébergement vient
-//      de lib/legal.ts (les mêmes chaînes que /legal/mentions), l'adresse du
+//      de lib/legal.ts (les mêmes chaînes que /legal/confidentialite), l'adresse du
 //      serveur MCP de lib/mcp-public.ts, les mesures non couvertes de
 //      lib/dashboard-blocs.ts (celles-là mêmes que montre la roue des blocs).
 //   2. Ce qui décrit le dépôt porte le CHEMIN qui le prouve (`preuve`,
@@ -86,10 +86,10 @@ export interface GroupeInfra {
 export const INFRA: GroupeInfra[] = [
   {
     titre: "Hébergement",
-    sous: "Les mêmes chaînes que les mentions légales — elles ne peuvent pas diverger.",
+    sous: "Les mêmes chaînes que la politique de confidentialité (lib/legal.ts) — elles ne peuvent pas diverger.",
     lignes: [
-      // Importées de lib/legal.ts : ce sont littéralement les valeurs servies sur
-      // /legal/mentions et /legal/dpa. Les retaper ici aurait recréé la
+      // Importées de lib/legal.ts, qui alimente aussi /legal/confidentialite : une
+      // seule rédaction de l'hébergement. Les retaper ici aurait recréé la
       // divergence que l'invariant AD-7 existe pour empêcher.
       { k: "Base de données", v: HOSTS.data, s: "partiel" },
       { k: "Console", v: HOSTS.app, s: "partiel" },

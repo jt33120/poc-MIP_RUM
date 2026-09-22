@@ -189,9 +189,9 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
     d: "Le backend a ses images (ingestion et serveur MCP), pas la console. L'argument « déployable chez vous » n'est donc pas livrable de bout en bout.",
   },
   {
-    t: "Aucune certification, mentions légales à compléter",
+    t: "Aucune certification, identité légale à compléter",
     g: "limite",
-    d: "Aucune certification (SOC 2, ISO 27001, CSPN) — souvent éliminatoire en appel d'offres grand compte — et l'identité légale reste à renseigner dans les CGU/CGV/DPA.",
+    d: "Aucune certification (SOC 2, ISO 27001, CSPN) — souvent éliminatoire en appel d'offres grand compte — et l'identité légale reste à renseigner dans les CGU et CGV.",
   },
 ];
 

@@ -18,8 +18,8 @@ export default function Confidentialite() {
       <LegalSection n="1" title="Responsable de traitement et sous-traitant">
         <p>
           Pour les données de mesure collectées sur les sites des clients, {ORG.raisonSociale} agit en qualité de{" "}
-          <strong>sous-traitant</strong> pour le compte du client (responsable de traitement) — cf.{" "}
-          <a href="/legal/dpa" className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">DPA</a>. Pour les
+          <strong>sous-traitant</strong> pour le compte du client (responsable de traitement) — cf. l&apos;accord de
+          traitement (DPA), conclu séparément. Pour les
           données des comptes de la console, {ORG.raisonSociale} agit en qualité de{" "}
           <strong>responsable de traitement</strong>.
         </p>
