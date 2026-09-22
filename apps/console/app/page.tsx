@@ -227,7 +227,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     : [];
   const pointsLcpJour = dailyLcp.ok
     ? alignerSeaux(
-        dailyLcp.data.map((r) => ({ bucket: cleJour(r.bucket), p75: r.p75 == null ? null : Number(r.p75) })),
+        dailyLcp.data.map((r) => ({ bucket: r.jour, p75: r.p75 })),
         debutsJours,
         false,
       ).map((r, i) => ({ t: jours[i], p75: r?.p75 ?? null }))
@@ -520,7 +520,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <SectionErreur titre="p75 LCP par jour">
               {!dailyLcp.ok ? (
                 <EchecLecture titre="p75 LCP par jour" />
-              ) : dailyLcp.data.length ? (
+              ) : dailyLcp.data.some((r) => r.n > 0) ? (
                 <VitalsTimeseries
                   vital="LCP"
                   grille={jours}

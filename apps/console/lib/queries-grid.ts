@@ -14,7 +14,6 @@ import { fuseauDe } from "./fuseau";
 import { compileScope, sessionJoin, type Bind } from "./query-compiler";
 import { conditionsOf, type AnalyticsQuery } from "./query-contract";
 import { sqlContext } from "./query-sql";
-import type { SeriesRow } from "./queries";
 import { CORE_VITALS } from "./rating";
 
 /** Profondeur de l'historique affiché par la heatmap et les courbes. */
@@ -106,18 +105,58 @@ export interface DailyTraffic {
   errors: number;
 }
 
-/** Volume quotidien (pages vues / erreurs JS) sur 14 j, jours vides à zéro. */
-export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
+/** Quels 14 jours lire (§ 5.20.2, F65). */
+export interface OptionsJours {
+  /**
+   * `true` : les 14 jours COMPLETS qui précèdent aujourd'hui dans le fuseau de
+   * l'app, `[début du jour J−14, début du jour J)` — la fenêtre des Tendances.
+   * Défaut `false` : les 14 derniers jours, aujourd'hui (entamé) compris — ce que
+   * lisent la Vue d'ensemble et la carte « Trafic » d'un tableau de bord (W-B7),
+   * inchangé pour eux.
+   */
+  exclureAujourdhui?: boolean;
+}
+
+/**
+ * Les jours d'une lecture quotidienne, et le prédicat de temps de ses lignes.
+ *
+ * AUJOURD'HUI EXCLU, LE PREMIER JOUR COMPLET. L'ancienne borne basse
+ * (`now() − 14 jours`, à l'heure près) coupait le premier jour en son milieu :
+ * une p75 et un compte calculés sur une demi-journée, lus comme une journée.
+ * Exclu, aujourd'hui l'est par une borne haute au début du jour J local ; la
+ * borne basse est le début du jour J−14 local, converti en instant (`at time zone`
+ * sur une heure murale rend un instant). Sans exclusion, la fenêtre d'avant.
+ */
+function fenetreJours(zone: string, exclureAujourdhui: boolean): { jours: string; depuis: (colonne: string) => string } {
+  const jourJ = `date_trunc('day', now() at time zone ${zone})`;
+  if (!exclureAujourdhui) {
+    return {
+      jours: `generate_series(
+            ${jourJ} - interval '${GRID_DAYS - 1} days',
+            ${jourJ},
+            interval '1 day') gs(day)`,
+      depuis: (colonne) => `${colonne} >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'`,
+    };
+  }
+  return {
+    jours: `generate_series(
+            ${jourJ} - interval '${GRID_DAYS} days',
+            ${jourJ} - interval '1 day',
+            interval '1 day') gs(day)`,
+    depuis: (colonne) =>
+      `${colonne} >= (${jourJ} - interval '${GRID_DAYS} days') at time zone ${zone} and ${colonne} < ${jourJ} at time zone ${zone}`,
+  };
+}
+
+/** Volume quotidien (pages vues / occurrences d'erreurs) sur 14 j, jours vides à zéro. */
+export async function dailyTraffic(f: Filters, opts: OptionsJours = {}): Promise<DailyTraffic[]> {
   // Journées découpées dans le fuseau de l'application (finding 2.8) : sinon la
   // journée coupe à 2 h du matin heure locale en été, et le trafic de soirée
   // bascule sur le lendemain.
   const tz = await fuseauRequete(f);
   const sql = await sqlContext(f);
   const zone = sql.bind(tz);
-  const jours = `generate_series(
-            date_trunc('day', now() at time zone ${zone}) - interval '${GRID_DAYS - 1} days',
-            date_trunc('day', now() at time zone ${zone}),
-            interval '1 day') gs(day)`;
+  const { jours, depuis } = fenetreJours(zone, opts.exclureAujourdhui === true);
   if (useRollups() && rollupCompatible(sql.query)) {
     const pv = rollupWhere(sql.query, sql.bind);
     const er = rollupWhere(sql.query, sql.bind);
@@ -129,13 +168,13 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
        left join (
          select date_trunc('day', hour at time zone ${zone}) d, sum(pageviews)::int n
          from rum_rollup_hourly r
-         where hour >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'${pv}
+         where ${depuis("hour")}${pv}
          group by 1
        ) pv on pv.d = gs.day
        left join (
          select date_trunc('day', hour at time zone ${zone}) d, sum(errors)::int n
          from rum_rollup_hourly r
-         where hour >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'${er}
+         where ${depuis("hour")}${er}
          group by 1
        ) er on er.d = gs.day
        order by 1`,
@@ -153,14 +192,14 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
        select date_trunc('day', p.started_at at time zone ${zone}) d, count(*)::int n
        from rum_pageview p
        ${sessionJoin("p", "s")}
-       where p.started_at >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'${pageviews}
+       where ${depuis("p.started_at")}${pageviews}
        group by 1
      ) pv on pv.d = gs.day
      left join (
        select date_trunc('day', e.ts at time zone ${zone}) d, sum(e.occurrences)::int n
        from rum_error e
        ${sessionJoin("e", "s")}
-       where e.ts >= date_trunc('hour', now()) - interval '${GRID_DAYS} days'${errors}
+       where ${depuis("e.ts")}${errors}
        group by 1
      ) er on er.d = gs.day
      order by 1`,
@@ -168,19 +207,47 @@ export async function dailyTraffic(f: Filters): Promise<DailyTraffic[]> {
   );
 }
 
-/** p75 LCP par jour sur 14 j (réutilise VitalsTimeseries, buckets journaliers). */
-export async function dailyLcpSeries(f: Filters): Promise<SeriesRow[]> {
+/** Un jour de LCP : la p75 du jour et son effectif ; un jour sans mesure vaut `p75: null`, `n: 0`. */
+export interface DailyLcp {
+  /** Jour LOCAL (fuseau de l'app), « AAAA-MM-JJ » — du texte, jamais un `Date` à minuit local du serveur. */
+  jour: string;
+  p75: number | null;
+  /** Mesures LCP du jour : un point sous 30 mesures est creux et n'entre pas dans l'ajustement. */
+  n: number;
+}
+
+/**
+ * p75 LCP par jour LOCAL sur 14 jours, jours sans mesure compris (§ 5.20.2).
+ *
+ * LES JOURS VIDES SONT RENDUS. La lecture ne rendait que les jours mesurés : un
+ * graphe relie alors deux jours séparés par un trou, et une droite ajustée sur des
+ * indices qui ne sont plus des jours. Chaque jour de la fenêtre a sa ligne
+ * (`generate_series`), `p75: null` et `n: 0` s'il est vide.
+ *
+ * `exclureAujourdhui` : la fenêtre des Tendances (14 jours complets, aujourd'hui
+ * exclu). Défaut : les 14 derniers jours, aujourd'hui compris — celle de la Vue
+ * d'ensemble, dont l'axe est celui de `dailyTraffic(f)`.
+ */
+export async function dailyLcpSeries(f: Filters, opts: OptionsJours = {}): Promise<DailyLcp[]> {
   const tz = await fuseauRequete(f);
   const sql = await sqlContext(f);
   const zone = sql.bind(tz);
   const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: null });
-  return await q<SeriesRow>(
-    `select date_trunc('day', m.ts at time zone ${zone}) as bucket,
-            percentile_cont(0.75) within group (order by m.value) as p75
-     from rum_metric m
-     ${sessionJoin("m", "s")}
-     where m.name = 'LCP' and m.ts > now() - interval '${GRID_DAYS} days'${where}
-     group by 1 order by 1`,
+  const { jours, depuis } = fenetreJours(zone, opts.exclureAujourdhui === true);
+  const lignes = await q<{ jour: string; p75: number | null; n: number }>(
+    `select to_char(gs.day, 'YYYY-MM-DD') as jour, l.p75, coalesce(l.n, 0)::int as n
+     from ${jours}
+     left join (
+       select date_trunc('day', m.ts at time zone ${zone}) as d,
+              percentile_cont(0.75) within group (order by m.value) as p75,
+              count(*)::int as n
+       from rum_metric m
+       ${sessionJoin("m", "s")}
+       where m.name = 'LCP' and ${depuis("m.ts")}${where}
+       group by 1
+     ) l on l.d = gs.day
+     order by gs.day`,
     sql.params,
   );
+  return lignes.map((l) => ({ jour: l.jour, p75: l.p75 == null ? null : Number(l.p75), n: Number(l.n) }));
 }

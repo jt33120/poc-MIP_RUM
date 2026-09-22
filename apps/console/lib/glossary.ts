@@ -212,12 +212,13 @@ export const GLOSSARY = {
       "Ce que les utilisateurs pensent vraiment, en direct, relié à leur parcours et à la performance qu'ils ont subie. On voit si une lenteur se paie en insatisfaction.",
   },
   forecast: {
-    label: "Prévisions (AIOps)",
-    term: `Projection linéaire (moindres carrés) des indicateurs sur 14 jours ; échéance de franchissement de la borne « Bon » du LCP (${fmtBorne("LCP", THRESHOLDS.LCP[0])}). Les erreurs sont suivies en tendance, sans seuil : aucun n'est publié pour ce ratio.`,
+    // F65 : « Tendances », jamais « Prévisions » (§ 0.5) — une droite prolongée n'est pas une prévision.
+    label: "Tendances",
+    term: `Droite des moindres carrés sur les 14 derniers jours complets ; échéance de franchissement de la borne « Bon » du LCP (${fmtBorne("LCP", THRESHOLDS.LCP[0])}) écrite seulement si la pente dépasse le bruit. Les erreurs sont suivies en tendance, sans seuil : aucun n'est publié pour ce ratio.`,
     stack:
-      "lib/forecast (pur) sur les séries journalières (rum_metric/rum_pageview/rum_error). Régression transparente — aucune boîte noire ; complète les anomalies z-score (réactives) par de l'anticipation.",
+      "lib/forecast (pur) sur les séries journalières (rum_metric/rum_pageview/rum_error), jours découpés dans le fuseau de l'app, journée en cours exclue. Régression transparente, dispersion des résidus affichée ; aucune saisonnalité.",
     business:
-      "On ne se contente plus de réagir : on voit ce qui dérive et QUAND ça franchira le seuil. Le passage du curatif au prédictif — arbitrer avant que l'utilisateur ne subisse.",
+      "On voit ce qui dérive et, si la dérive se distingue du bruit, QUAND elle franchira le seuil. Ce n'est pas une prévision : une extrapolation à surveiller, dite avec son incertitude.",
   },
   experienceMap: {
     label: "Carte d'expérience",
