@@ -5,9 +5,13 @@
 // parallèle et la passe en children, donc son travail serveur — requêtes SVI,
 // appel à la façade xSOM — serait quand même exécuté. Le refus doit précéder
 // la première ligne de la page.
+//
+// État « fermé » du vocabulaire commun (§ 3.8) : même texte qu'avant F02, rendu
+// dans le cadre des états (`CadreEtat`, teinte neutre, rôle `note`).
 import { PageHeader } from "@/components/PageHeader";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { CATEGORIES } from "@/components/nav-items";
+import { CadreEtat } from "@/components/states/EtatSurface";
 
 /** La capacité couvrant ce chemin est-elle fermée ? Même drapeau que la sidebar. */
 export function estFermee(href: string): boolean {
@@ -18,7 +22,7 @@ export function CapaciteFermee({ titre, sujet }: { titre: string; sujet: string 
   return (
     <div className="animate-fade-up">
       <PageHeader title={titre} sub={`${sujet} Capacité annoncée, accès non ouvert.`} />
-      <div className="card flex max-w-2xl flex-col items-start gap-3 p-6">
+      <CadreEtat ton="neutre" role="note" etat="ferme" className="flex max-w-2xl flex-col items-start gap-3">
         <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-panel2 text-ink-faint">
           <Icon paths={ICON_PATHS.lock} className="h-5 w-5" strokeWidth={2.2} />
         </span>
@@ -27,7 +31,7 @@ export function CapaciteFermee({ titre, sujet }: { titre: string; sujet: string 
           Cet espace n&apos;est pas encore ouvert. Le reste de la console — performance,
           sessions, erreurs, objectifs et alertes — fonctionne normalement.
         </p>
-      </div>
+      </CadreEtat>
     </div>
   );
 }
