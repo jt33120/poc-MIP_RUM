@@ -94,7 +94,9 @@ export function RankBar({
         {data.map((d, i) => {
           const w = d.value === null ? 0 : base > 0 ? Math.max(2, (d.value / base) * 100) : 0;
           const label = (
-            <span className="truncate" title={d.label}>
+            // `block` : `truncate` ne coupe pas un élément en ligne — une route longue
+            // sans espace sortait de sa colonne de 7rem et portait la page à 725 px à 390.
+            <span className="block truncate" title={d.label}>
               {d.label}
             </span>
           );
