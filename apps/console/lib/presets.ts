@@ -5,7 +5,7 @@
 // « Dernière release », « Mobile • Chrome • /checkout ». Trois règles la tiennent :
 //
 //   1. UNE VUE NE CHANGE QUE LA POPULATION. Ses paramètres sont ceux du contrat
-//      (`CONTRACT_PARAMS`) et `cmp`, rien d'autre : appliquer « Mobile » pose
+//      (`CONTRACT_PARAMS`), `cmp` et son couple `rel_a` / `rel_b`, rien d'autre : « Mobile » pose
 //      `device=mobile` et laisse la plage, l'app, le segment et la comparaison tels
 //      quels. Un paramètre hors de cette liste est une faute de programmation : il
 //      lève (`verifierParams`), il n'est pas filtré en silence.
@@ -40,14 +40,19 @@ export interface VuePrereglee {
   /** Facettes jointes par « • ». */
   libelle: string;
   origine: "produit" | "personnelle";
-  /** Seuls `CONTRACT_PARAMS` et `cmp` ; `null` retire le paramètre de l'URL. */
+  /** Seuls `CONTRACT_PARAMS`, `cmp`, `rel_a`, `rel_b` ; `null` retire le paramètre de l'URL. */
   params: Record<string, string | null>;
   /** Raison : la vue est affichée désactivée. */
   indisponible?: string;
 }
 
-/** Paramètres qu'une vue a le droit de poser (P13). */
-export const PARAMS_DE_VUE: readonly string[] = [...CONTRACT_PARAMS, "cmp"];
+/**
+ * Paramètres qu'une vue a le droit de poser (P13) : le contrat et la comparaison.
+ * `rel_a` / `rel_b` voyagent avec `cmp` (`VIEW_CONTEXT_PARAMS`) : une vue qui règle
+ * `cmp` doit pouvoir les poser ou les retirer, sinon un couple hérité d'un lien
+ * d'annotation survivrait à la vue.
+ */
+export const PARAMS_DE_VUE: readonly string[] = [...CONTRACT_PARAMS, "cmp", "rel_a", "rel_b"];
 
 /**
  * Paramètres d'une page de résultats : changer la population les invalide (même
@@ -60,7 +65,7 @@ export const PARAMS_DE_PAGINATION = ["cursor", "offset"] as const;
 export function verifierParams(params: Record<string, string | null>): void {
   for (const cle of Object.keys(params)) {
     if (!PARAMS_DE_VUE.includes(cle)) {
-      throw new Error(`vue préréglée : paramètre « ${cle} » hors du contrat (seuls CONTRACT_PARAMS et cmp)`);
+      throw new Error(`vue préréglée : paramètre « ${cle} » hors du contrat (seuls CONTRACT_PARAMS, cmp, rel_a et rel_b)`);
     }
   }
 }
@@ -288,15 +293,38 @@ export function vuesProduit(entrees: EntreesVuesProduit): VuePrereglee[] {
     vues.push(indisponible("p:release-vs-precedente", "Nouvelle release vs précédente", entrees.releases.indisponible));
   } else {
     const choix = entrees.releases.valeur;
+    // Les deux vues s'excluent (§ 3.2) : filtrer sur UNE release et comparer deux
+    // releases « même fenêtre » ne vont pas ensemble — sous `release=B`, la référence
+    // A n'a aucune session. Chaque vue retire donc ce que l'autre pose.
+    //   - « Dernière release » : filtre sur B, retire la comparaison de releases
+    //     (`cmp` revient au défaut de l'écran, `rel_a` / `rel_b` partent) ;
+    //   - « Nouvelle release vs précédente » : retire le filtre `release` et écrit le
+    //     couple choisi, qui écrase un couple hérité (lien d'annotation, sélecteur).
+    // `choisirReleases` doit être calculé par l'appelant SANS le filtre `release` de
+    // l'URL : sous ce filtre, la lecture des versions ne verrait qu'une release.
     vues.push(
       choix.relB === null
         ? indisponible("p:derniere-release", "Dernière release", "aucune release déclarée sur la fenêtre")
-        : produit("p:derniere-release", nommerVue(["Dernière release", choix.relB]), { release: choix.relB }),
+        : produit("p:derniere-release", nommerVue(["Dernière release", choix.relB]), {
+            release: choix.relB,
+            cmp: null,
+            rel_a: null,
+            rel_b: null,
+          }),
     );
     vues.push(
-      choix.indisponible
-        ? indisponible("p:release-vs-precedente", "Nouvelle release vs précédente", choix.indisponible)
-        : produit("p:release-vs-precedente", "Nouvelle release vs précédente", { cmp: "release" }),
+      choix.indisponible || choix.relA === null || choix.relB === null
+        ? indisponible(
+            "p:release-vs-precedente",
+            "Nouvelle release vs précédente",
+            choix.indisponible ?? RAISON_MOINS_DE_DEUX_RELEASES,
+          )
+        : produit("p:release-vs-precedente", "Nouvelle release vs précédente", {
+            cmp: "release",
+            release: null,
+            rel_a: choix.relA,
+            rel_b: choix.relB,
+          }),
     );
   }
 

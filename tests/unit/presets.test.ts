@@ -87,9 +87,36 @@ describe("vues produit", () => {
   });
 
   it("dernière release et comparaison suivent la règle du § 3.2", () => {
-    expect(vue("p:derniere-release").params).toEqual({ release: "1.4.2" });
+    expect(vue("p:derniere-release").params).toEqual({ release: "1.4.2", cmp: null, rel_a: null, rel_b: null });
     expect(vue("p:derniere-release").libelle).toBe("Dernière release • 1.4.2");
-    expect(vue("p:release-vs-precedente").params).toEqual({ cmp: "release" });
+    expect(vue("p:release-vs-precedente").params).toEqual({ cmp: "release", release: null, rel_a: "1.4.1", rel_b: "1.4.2" });
+  });
+
+  it("« Dernière release » puis « Nouvelle release vs précédente » : le filtre release part, le couple choisi est écrit", () => {
+    const depart = new URLSearchParams("period=7d&device=mobile");
+    const apresDerniere = new URL(hrefDeVue("/", depart, vue("p:derniere-release")), "http://x").searchParams;
+    expect(Object.fromEntries(apresDerniere)).toEqual({ period: "7d", device: "mobile", release: "1.4.2" });
+    const apresComparaison = new URL(hrefDeVue("/", apresDerniere, vue("p:release-vs-precedente")), "http://x").searchParams;
+    expect(Object.fromEntries(apresComparaison)).toEqual({
+      period: "7d",
+      device: "mobile",
+      cmp: "release",
+      rel_a: "1.4.1",
+      rel_b: "1.4.2",
+    });
+    expect(vueCorrespond(apresComparaison, vue("p:release-vs-precedente"))).toBe(true);
+    expect(vueCorrespond(apresComparaison, vue("p:derniere-release"))).toBe(false);
+  });
+
+  it("« Nouvelle release vs précédente » puis « Dernière release » : la comparaison part, couple hérité compris", () => {
+    // Un lien d'annotation avait posé un autre couple : la vue l'écrase, puis « Dernière release » le retire.
+    const depart = new URLSearchParams("period=24h&cmp=release&rel_a=1.3.9&rel_b=1.4.1");
+    const apresComparaison = new URL(hrefDeVue("/", depart, vue("p:release-vs-precedente")), "http://x").searchParams;
+    expect(apresComparaison.get("rel_a")).toBe("1.4.1");
+    expect(apresComparaison.get("rel_b")).toBe("1.4.2");
+    const apresDerniere = new URL(hrefDeVue("/", apresComparaison, vue("p:derniere-release")), "http://x").searchParams;
+    expect(Object.fromEntries(apresDerniere)).toEqual({ period: "24h", release: "1.4.2" });
+    expect(vueCorrespond(apresDerniere, vue("p:derniere-release"))).toBe(true);
   });
 
   it("une vue incalculable est affichée désactivée avec sa raison", () => {
