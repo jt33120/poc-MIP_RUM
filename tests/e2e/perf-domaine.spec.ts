@@ -1345,3 +1345,160 @@ test.describe("F23 — Interactions : INP et scripts", () => {
     });
   }
 });
+
+test.describe("F24 — Onglet Actions", () => {
+  // Une app à ce bloc : trois sessions, quatre actions causales, et de quoi
+  // distinguer les trois populations que l'écran nomme — des ACTIONS, des SESSIONS
+  // avec action, et des actions SUIVIES d'une erreur (distinctes des occurrences).
+  const APP_F24 = "f24-e2e-actions";
+  const ACTIONS_F24 = `${consoleUrl}/actions?app=${APP_F24}&period=24h`;
+
+  /** `rum_action` impose 32 caractères hexadécimaux ; 16 pour son `span_id`. */
+  const actionIdF24 = (i: number) => `f24ac${i}`.padEnd(32, "0");
+  const spanIdF24 = (i: number) => `f24${i}`.padEnd(16, "0");
+
+  // [i, session, nom, type, route]
+  const ACTIONS: [number, string, string, "click" | "manual", string][] = [
+    [0, "s0", "Payer", "click", "/panier"],
+    [1, "s1", "Payer", "click", "/panier"],
+    [2, "s0", "Ouvrir le menu", "click", "/"],
+    [3, "s2", "Valider", "manual", "/compte"],
+  ];
+
+  test.beforeAll(async () => {
+    // Enfants d'abord : `rum_resource.session_id` référence `rum_session`.
+    for (const t of ["rum_event", "rum_span", "rum_resource", "rum_error", "rum_action", "rum_pageview", "rum_session"]) {
+      await pool.query(`delete from ${t} where app_id = $1`, [APP_F24]);
+    }
+    await pool.query(
+      `insert into app_registry (app_id, name) values ($1, 'Actions F24 (e2e)') on conflict (app_id) do nothing`,
+      [APP_F24],
+    );
+    for (const nom of ["s0", "s1", "s2"]) {
+      await pool.query(
+        `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count, sample_rate)
+         values ($1, $2, $1, 'desktop', false, now() - interval '3 hours', now() - interval '2 hours', 1, 1)`,
+        [`${APP_F24}-${nom}`, APP_F24],
+      );
+    }
+    for (const [i, session, nom, type, route] of ACTIONS) {
+      await pool.query(
+        `insert into rum_action (action_id, span_id, session_id, app_id, type, name, route, ts)
+         values ($1, $2, $3, $4, $5, $6, $7, now() - interval '150 minutes')`,
+        [actionIdF24(i), spanIdF24(i), `${APP_F24}-${session}`, APP_F24, type, nom, route],
+      );
+    }
+    // Occurrences d'erreurs liées : 3 + 2 sur « Payer », 1 sur « Valider » — six en tout,
+    // pour DEUX actions suivies d'une erreur. Les deux libellés ne comptent pas la même chose.
+    for (const [i, action, occurrences] of [[0, 0, 3], [1, 1, 2], [2, 3, 1]] as const) {
+      await pool.query(
+        `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type, fingerprint, occurrences, error_source, action_id, ts)
+         values ($1, $2, $3, $4, 'error', 'boom F24', 'TypeError', $5, $6, 'browser_js', $7, now() - interval '149 minutes')`,
+        [
+          `${APP_F24}-err${i}`,
+          `${APP_F24}-${ACTIONS[action][1]}`,
+          APP_F24,
+          ACTIONS[action][4],
+          `f24-fp-${i}`,
+          occurrences,
+          actionIdF24(action),
+        ],
+      );
+    }
+    for (const action of [0, 1]) {
+      await pool.query(
+        `insert into rum_event (span_id, session_id, app_id, route, name, props, action_id, ts)
+         values ($1, $2, $3, $4, 'frustration.error', $5, $6, now() - interval '149 minutes')`,
+        [
+          `${APP_F24}-ec${action}`,
+          `${APP_F24}-${ACTIONS[action][1]}`,
+          APP_F24,
+          ACTIONS[action][4],
+          { target: "Payer", count: 1 },
+          actionIdF24(action),
+        ],
+      );
+    }
+    // Un script (jamais dédoublonné avec un appel API) et un appel API front : la p75
+    // du temps lié d'UNE action (420 ms sur a0, 0 sur a1) n'est pas leur cumul.
+    await pool.query(
+      `insert into rum_resource (span_id, session_id, app_id, route, url, type, duration_ms, transfer_size, action_id, ts)
+       values ($1, $2, $3, '/panier', 'https://cdn-f24.example.net/pay.js', 'script', 120, 4096, $4,
+               now() - interval '149 minutes'),
+              ($5, $6, $3, '/', 'https://cdn-f24.example.net/menu.js', 'script', 80, 2048, $7,
+               now() - interval '149 minutes')`,
+      [
+        `${APP_F24}-res0`,
+        `${APP_F24}-s0`,
+        APP_F24,
+        actionIdF24(0),
+        `${APP_F24}-res2`,
+        `${APP_F24}-s0`,
+        actionIdF24(2),
+      ],
+    );
+    await pool.query(
+      `insert into rum_span (span_id, trace_id, tier, session_id, app_id, route, url, method, status_code, duration_ms, action_id, ts)
+       values ($1, $2, 'front', $3, $4, '/panier', 'https://api-f24.example.net/pay', 'POST', 500, 300, $5,
+               now() - interval '149 minutes')`,
+      [`${APP_F24}-api0`, `${APP_F24}-trace0`, `${APP_F24}-s0`, APP_F24, actionIdF24(0)],
+    );
+  });
+
+  /** La tuile dont le libellé commence par `libelle` (le libellé « Actions » porte la plage). */
+  const tuileF24 = (page: Page, libelle: string) =>
+    page.getByTestId("kpi-tile").filter({ hasText: libelle }).first();
+
+  test("KPI : actions, sessions avec action, actions suivies d'une erreur", async ({ page }) => {
+    await login(page);
+    await page.goto(ACTIONS_F24, { waitUntil: "domcontentloaded" });
+    const rangee = page.getByTestId("kpi-actions");
+    await expect(rangee).toBeVisible();
+    await expect(tuileF24(page, "Sessions avec action").getByTestId("kpi-valeur")).toHaveText("3");
+    const erreurs = tuileF24(page, "Actions suivies d’une erreur");
+    await expect(erreurs.getByTestId("kpi-valeur")).toHaveText("2");
+    // Les deux libellés sont écrits : 2 ACTIONS suivies d'une erreur, 6 OCCURRENCES.
+    await expect(erreurs).toContainText("6");
+    await expect(erreurs).toContainText("occurrences d’erreurs liées");
+    // La tuile locale `Stat` et son ton rouge « dès une occurrence » ont disparu (R-S).
+    await expect(rangee.locator(".text-bad-ink")).toHaveCount(0);
+  });
+
+  test("hero : barres NON empilées, libellé vers les erreurs de la route", async ({ page }) => {
+    await login(page);
+    await page.goto(ACTIONS_F24, { waitUntil: "domcontentloaded" });
+    const hero = page.locator("#figure-actions-erreurs");
+    await hero.scrollIntoViewIfNeeded();
+    await expect(hero).toContainText("Payer");
+    // Aucune portion empilée : une barre par ligne, et rien d'autre dedans.
+    expect(await hero.locator("[style*='background-color']").count()).toBe(3);
+    const libelle = hero.getByRole("link", { name: "Payer" }).first();
+    await expect(libelle).toHaveAttribute("href", /\/errors\?/);
+    await expect(libelle).toHaveAttribute("href", /route=/);
+    // « Sessions » du sous-texte ouvre les sessions de la même route.
+    await expect(hero.getByRole("link", { name: /sessions/ }).first()).toHaveAttribute("href", /\/sessions\?/);
+  });
+
+  test("table : le cumul nommé comme tel, ressources et API scindées, p75 par action", async ({ page }) => {
+    await login(page);
+    await page.goto(ACTIONS_F24, { waitUntil: "domcontentloaded" });
+    const table = page.getByTestId("table-actions");
+    await table.scrollIntoViewIfNeeded();
+    await expect(table).toContainText("Temps réseau lié, cumulé (toutes actions)");
+    await expect(table).toContainText("Temps réseau lié (p75 par action)");
+    await expect(table).toContainText("n’est le temps d’attente de personne");
+    // L'ancien titre, qui laissait croire à une attente vécue, n'existe plus.
+    await expect(table.locator("th", { hasText: /^Temps lié$/ })).toHaveCount(0);
+    await expect(table).toContainText("Payer");
+  });
+
+  for (const largeur of LARGEURS) {
+    test(`aucun débordement à ${largeur} px`, async ({ page }) => {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await login(page);
+      await page.goto(ACTIONS_F24, { waitUntil: "domcontentloaded" });
+      await expect(page.getByTestId("kpi-actions")).toBeVisible();
+      expect(await debordements(page)).toEqual([]);
+    });
+  }
+});

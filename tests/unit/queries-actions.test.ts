@@ -11,7 +11,9 @@ vi.mock("@/lib/query-schema", async () => {
 import {
   actionSamplingNotice,
   actionsDisponible,
+  etatActions,
   hasNextActionsPage,
+  MANQUE_TABLE_ACTIONS,
   parseActionsPage,
   topActions,
   topActionsSummary,
@@ -129,5 +131,50 @@ describe("Top Actions", () => {
       app: null, period: "24h", device: null, segment: [],
     })).resolves.toMatchObject({ actions: 0, errors: 0, total_ms: 0 });
     expect(q).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─────────────────────────── F24 — Onglet Actions ───────────────────────────
+
+describe("F24 — état, période précédente et p75 par action", () => {
+  it("table absente : non_collecte nommé, jamais un « 0 action »", () => {
+    expect(etatActions(false)).toEqual({ kind: "non_collecte", manque: MANQUE_TABLE_ACTIONS });
+    expect(MANQUE_TABLE_ACTIONS).toContain("table des actions");
+    // Un zéro dirait « aucun geste dans la fenêtre » : ce n'est pas la même chose (V3).
+    expect(JSON.stringify(etatActions(false))).not.toContain("0");
+  });
+
+  it("table présente : aucun état, l'écran lit et affiche ses chiffres", () => {
+    expect(etatActions(true)).toBeNull();
+  });
+
+  it("cmp=prev : le résumé lit la période précédente CONTIGUË, même durée", async () => {
+    const f = { app: "app-a", period: "7d" as const, device: null, segment: [] };
+    q.mockResolvedValueOnce([{ present: true }]).mockResolvedValueOnce([{ actions: 1, min_sample_rate: 1 }]);
+    await topActionsSummary(f);
+    const courante = q.mock.calls[1][1] as string[];
+
+    q.mockReset();
+    q.mockResolvedValueOnce([{ present: true }]).mockResolvedValueOnce([{ actions: 1, min_sample_rate: 1 }]);
+    await topActionsSummary(f, true);
+    const precedente = q.mock.calls[1][1] as string[];
+
+    // La fenêtre précédente se termine là où la courante commence, et dure autant.
+    expect(precedente[1]).toBe(courante[0]);
+    expect(Date.parse(precedente[1]) - Date.parse(precedente[0])).toBe(7 * 86_400_000);
+    // Rien d'autre ne change : même périmètre, mêmes paramètres liés ensuite.
+    expect(precedente.slice(2)).toEqual(courante.slice(2));
+  });
+
+  it("classement : la p75 du temps lié PAR action, calculée sur les durées brutes", async () => {
+    q.mockResolvedValueOnce([{ present: true }]).mockResolvedValueOnce([]);
+    await topActions({ app: "app-a", period: "24h", device: null, segment: [] });
+    const [sql] = q.mock.calls[1] as [string, unknown[]];
+    expect(sql).toContain("percentile_cont(0.75) within group (order by resource_ms + api_ms)");
+    expect(sql).toContain("as lie_p75_ms");
+    // Le cumul reste lu, à côté : il est nommé « cumulé » par l'écran, pas remplacé.
+    expect(sql).toContain("as total_ms");
+    // Aucun percentile agrégé d'un autre (V5) : un seul `percentile_cont`, sur les lignes.
+    expect(sql.match(/percentile_cont/g)).toHaveLength(1);
   });
 });
