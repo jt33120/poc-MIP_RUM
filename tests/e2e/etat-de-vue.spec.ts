@@ -176,12 +176,17 @@ test("cmp=release survit à un changement d'onglet et de catégorie ; le tri res
   expect(parametres(page).get("rel_b")).toBeNull();
 });
 
+/** Un écart vs la période précédente, sous ses deux formes : badge (établi) ou phrase (non établi). */
+const ECART = '[title="vs période précédente"], [data-testid="trend"]';
+
 test("une plage personnalisée de 30 jours n'affiche aucun delta sur /, et dit pourquoi", async ({ page }) => {
   await login(page);
 
   // Témoin : sous 24 h, la période précédente est complète et mesurée — un écart s'affiche.
+  // Établi ou non (P*.1 : deux intervalles qui se chevauchent donnent un écart écrit
+  // sans flèche ni `title`), c'est toujours un écart : on le repère par `trend`.
   await page.goto(`${consoleUrl}/?app=${APP}&period=24h`, { waitUntil: "domcontentloaded" });
-  await expect(page.locator('[title="vs période précédente"]').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(ECART).first()).toBeVisible({ timeout: 15_000 });
 
   const to = new Date(Math.floor(Date.now() / 60_000) * 60_000 - 60_000);
   const from = new Date(to.getTime() - 30 * 86_400_000);
@@ -190,14 +195,14 @@ test("une plage personnalisée de 30 jours n'affiche aucun delta sur /, et dit p
   });
   await expect(page.getByTestId("p75-LCP")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("note-comparaison")).toContainText("hors rétention (30 jours)");
-  await expect(page.locator('[title="vs période précédente"]')).toHaveCount(0);
+  await expect(page.locator(ECART)).toHaveCount(0);
 });
 
 test("cmp=none : aucun delta, et un réglage illisible est signalé", async ({ page }) => {
   await login(page);
   await page.goto(`${consoleUrl}/?app=${APP}&period=24h&cmp=none`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("p75-LCP")).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator('[title="vs période précédente"]')).toHaveCount(0);
+  await expect(page.locator(ECART)).toHaveCount(0);
 
   await page.goto(`${consoleUrl}/?app=${APP}&period=24h&cmp=hier`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("reglage-ignore")).toContainText("Réglage d'affichage ignoré : cmp=hier");
