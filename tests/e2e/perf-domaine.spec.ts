@@ -293,14 +293,26 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
     await surface.scrollIntoViewIfNeeded();
     const boite = await surface.boundingBox();
     if (!boite) throw new Error("graphique sans boîte");
-    // Le zoom lit `activeLabel` : recharts ne le renseigne qu'une fois le survol
-    // enregistré. Cliquer dans la foulée du `move` partait donc parfois sans seau
-    // actif (vert en local, rouge en CI, plus lente). L'infobulle est le témoin de
-    // cet état : elle n'existe dans le DOM que quand un seau est actif.
-    const x = boite.x + boite.width * 0.6;
+    // Le zoom lit `activeLabel`, que recharts ne renseigne qu'une fois le survol
+    // enregistré. Deux fragilités, l'une et l'autre vues rouges en CI et vertes en
+    // local : un `mouse.move` d'un seul saut ne produit qu'un `mousemove`, que
+    // recharts rate parfois ; et une abscisse donnée peut tomber entre deux seaux
+    // selon la largeur rendue. On déplace donc la souris par pas, et on essaie
+    // plusieurs abscisses jusqu'à ce qu'un seau soit actif. L'infobulle en est le
+    // témoin : elle n'est dans le DOM que si `activeLabel` l'est.
+    const infobulle = page.locator("#hero-LCP .recharts-tooltip-wrapper > *").first();
     const y = boite.y + boite.height * 0.5;
-    await page.mouse.move(x, y);
-    await expect(page.locator("#hero-LCP .recharts-tooltip-wrapper > *").first()).toBeVisible({ timeout: 15_000 });
+    let x = 0;
+    for (const part of [0.6, 0.5, 0.4, 0.7, 0.3, 0.8]) {
+      x = boite.x + boite.width * part;
+      await page.mouse.move(x, y, { steps: 10 });
+      const actif = await infobulle
+        .waitFor({ state: "visible", timeout: 2_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (actif) break;
+    }
+    await expect(infobulle, "aucun seau actif sous la souris").toBeVisible({ timeout: 5_000 });
     await page.mouse.click(x, y);
     await page.waitForURL((u) => u.searchParams.has("from") && u.searchParams.has("to"), { timeout: 15_000 });
     const u = new URL(page.url());
