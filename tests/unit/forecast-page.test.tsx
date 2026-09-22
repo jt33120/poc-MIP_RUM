@@ -13,12 +13,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { dailyTraffic, dailyLcpSeries, getUser } = vi.hoisted(() => ({
+const { dailyTraffic, dailyLcpSeries, getUser, listDeploys } = vi.hoisted(() => ({
   dailyTraffic: vi.fn(),
   dailyLcpSeries: vi.fn(),
   getUser: vi.fn(),
+  listDeploys: vi.fn(),
 }));
 vi.mock("@/lib/queries-grid", () => ({ dailyTraffic, dailyLcpSeries, GRID_DAYS: 14 }));
+// P*.7 : les marqueurs de déploiement, lus seulement pour la coïncidence de date.
+vi.mock("@/lib/queries-deploys", () => ({ listDeploys }));
 vi.mock("@/lib/auth", () => ({ getUser }));
 vi.mock("@/lib/fuseau", async (original) => ({
   ...(await original<typeof import("@/lib/fuseau")>()),
@@ -37,6 +40,7 @@ vi.mock("@/components/charts/ThresholdSeries", () => ({
     ariaLabel: string;
     grille: string[];
     liensSeaux?: Record<string, { href: string; libelle: string }>;
+    annotations?: { t: string; type: string; libelle: string; href?: string }[];
   }) => (
     <div
       data-graphe={p.ariaLabel}
@@ -45,6 +49,8 @@ vi.mock("@/components/charts/ThresholdSeries", () => ({
       data-seaux={p.grille.length}
       data-lien-10={p.liensSeaux?.["2026-09-10"]?.href ?? ""}
       data-libelle-10={p.liensSeaux?.["2026-09-10"]?.libelle ?? ""}
+      // P*.7 : « type|instant|libellé|lien », pour vérifier le jour où tombe la rupture.
+      data-annotations={(p.annotations ?? []).map((a) => `${a.type}|${a.t}|${a.libelle}|${a.href ?? ""}`).join(" ")}
     />
   ),
 }));
@@ -85,6 +91,8 @@ beforeEach(() => {
   dailyLcpSeries.mockReset();
   getUser.mockReset();
   getUser.mockResolvedValue({ email: "a@b", role: "admin", apps: null });
+  listDeploys.mockReset();
+  listDeploys.mockResolvedValue([]);
   couvertureJour.mockReset();
   couvertureJour.mockImplementation(async (_q: unknown, _s: unknown, _j: string, _tz: string, n: number | null) => ({
     etat: "complete",
@@ -231,5 +239,78 @@ describe("/forecast — vérité des libellés et des liens", () => {
     await rendre();
     expect(dailyTraffic).toHaveBeenCalledWith(expect.anything(), { exclureAujourdhui: true });
     expect(dailyLcpSeries).toHaveBeenCalledWith(expect.anything(), { exclureAujourdhui: true });
+  });
+});
+
+describe("/forecast — datation d'une rupture (P*.7)", () => {
+  // Marche d'escalier : six jours à 1,9 s, huit à 2,7 s. La rupture est le 07/09,
+  // PREMIER jour du nouveau niveau (elle s'est produite entre le 06 et le 07).
+  const MARCHE = [...Array(6).fill(1900), ...Array(8).fill(2700)];
+
+  it("marche nette : annotation « rupture » au bon jour, phrase avec p et jours valides", async () => {
+    dailyTraffic.mockResolvedValue(trafic());
+    dailyLcpSeries.mockResolvedValue(lcpDe(MARCHE));
+    const html = await rendre();
+    const annotations = attribut(html, "LCP p75 quotidien", "data-annotations")!.replace(/&amp;/g, "&");
+    // L'instant est le PREMIER du jour local (Europe/Paris, été) : 06/09 22:00 UTC.
+    expect(annotations).toContain("rupture|2026-09-06T22:00:00Z|Rupture à la hausse|");
+    const lien = new URL(annotations.split("|")[3], "http://console.local");
+    expect(lien.pathname).toBe("/");
+    expect(lien.searchParams.get("from")).toBe("2026-09-06T22:00:00Z");
+    expect(html).toContain("a changé de niveau autour du 07/09");
+    expect(html).toContain("médiane des p75 quotidiennes");
+    expect(html).toMatch(/test de Pettitt, p = 0,0\d+, 14 jours valides/);
+  });
+
+  it("série sans marche : aucune annotation, et le p est écrit quand même", async () => {
+    dailyTraffic.mockResolvedValue(trafic());
+    dailyLcpSeries.mockResolvedValue(lcpDe(PLATE_BRUITEE));
+    const html = await rendre();
+    expect(attribut(html, "LCP p75 quotidien", "data-annotations")).toBe("");
+    // Série périodique sans niveau : la séparation n'est jamais meilleure que le hasard, p est borné à 1.
+    expect(html).toContain("Aucune rupture datée (test de Pettitt, p = 1, 14 jours valides)");
+    expect(html).toContain("aucune rupture datée (Pettitt)");
+  });
+
+  it("neuf jours au-dessus de 13 mesures : refus chiffré, aucune datation inventée", async () => {
+    dailyTraffic.mockResolvedValue(trafic());
+    // Cinq jours sous le minimum d'une p75 : ils restent dessinés, ils ne sont pas testés.
+    dailyLcpSeries.mockResolvedValue(JOURS.map((jour, i) => ({ jour, p75: MARCHE[i], n: i < 5 ? 8 : 200 })));
+    const html = await rendre();
+    expect(html).toContain("datation non tentée : 9 jours valides, 10 requis");
+    expect(attribut(html, "LCP p75 quotidien", "data-annotations")).toBe("");
+    expect(html).not.toContain("a changé de niveau");
+  });
+
+  it("déploiement le jour de la rupture : cité, avec la réserve d'interprétation", async () => {
+    dailyTraffic.mockResolvedValue(trafic());
+    dailyLcpSeries.mockResolvedValue(lcpDe(MARCHE));
+    listDeploys.mockResolvedValue([
+      { id: 1, ts: new Date("2026-09-07T09:00:00Z"), version: "1.4.2", env: "prod", source: "ci" },
+    ]);
+    const html = await rendre();
+    expect(html).toContain("Un déploiement (1.4.2) a eu lieu le 07/09 : coïncidence de date.");
+    expect(html).toContain("Coïncidence de date, pas une cause établie.");
+  });
+
+  it("déploiement à deux jours de la rupture : pas cité, et aucune réserve à porter", async () => {
+    dailyTraffic.mockResolvedValue(trafic());
+    dailyLcpSeries.mockResolvedValue(lcpDe(MARCHE));
+    listDeploys.mockResolvedValue([
+      { id: 1, ts: new Date("2026-09-09T09:00:00Z"), version: "1.4.2", env: "prod", source: "ci" },
+    ]);
+    const html = await rendre();
+    expect(html).toContain("a changé de niveau autour du 07/09");
+    expect(html).not.toContain("1.4.2");
+    expect(html).not.toContain("pas une cause établie");
+  });
+
+  it("marqueurs illisibles : la datation tient, seule la coïncidence de date manque", async () => {
+    dailyTraffic.mockResolvedValue(trafic());
+    dailyLcpSeries.mockResolvedValue(lcpDe(MARCHE));
+    listDeploys.mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:5433"));
+    const html = await rendre();
+    expect(html).toContain("a changé de niveau autour du 07/09");
+    expect(html).not.toContain("déploiement (");
   });
 });
