@@ -100,7 +100,7 @@ test("vitrine : aucun débordement à 390 et 1440 px, texte exact de la référe
   // Toutes les largeurs sont PARCOURUES avant d'échouer : s'arrêter à la première
   // cacherait la seconde.
   const fautes: string[] = [];
-  for (const largeur of [390, 1440]) {
+  for (const largeur of [390, 1024, 1440]) {
     await page.setViewportSize({ width: largeur, height: 900 });
     await page.goto(`${consoleUrl}/admin/composants`, { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1").first()).toHaveText(/Vitrine des composants/);

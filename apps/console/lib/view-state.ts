@@ -15,7 +15,7 @@
 // Seuls `cmp`, `rel_a` et `rel_b` suivent la navigation (`VIEW_CONTEXT_PARAMS`) :
 // une comparaison choisie vaut pour toute la console, un tri ou un panneau ouvert
 // n'a de sens que sur l'écran qui l'a posé.
-import { VALUE_MAX, contextSearchParams, isSafeText, type ParamReader } from "./query-contract";
+import { CONTRACT_PARAMS, VALUE_MAX, contextSearchParams, isSafeText, type ParamReader } from "./query-contract";
 import { CORE_VITALS } from "./rating";
 
 // ─────────────────────────────── Comparaison ─────────────────────────────────
@@ -541,4 +541,27 @@ export function contextHref(pathname: string, sp: ParamReader): string {
   for (const name of VIEW_CONTEXT_PARAMS) for (const value of sp.getAll(name)) out.append(name, value);
   const qs = out.toString();
   return qs ? `${pathname}?${qs}` : pathname;
+}
+
+/** Laissés derrière par un zoom : la plage elle-même, et ce qui ne vaut que pour elle. */
+const HORS_ZOOM: ReadonlySet<string> = new Set(["cursor", "panel"]);
+
+/**
+ * Gabarit d'un zoom sur le MÊME écran (§ 3.3, revue de vague 3) : un clic sur une case
+ * ou un seau change la plage, et RIEN d'autre. `hrefContrat` porte les paramètres du
+ * contrat déjà canoniques (population, `from={from}`, `to={to}`, sans `period`) ; on y
+ * rajoute tels quels les réglages de la vue lus dans l'URL brute — comparaison,
+ * releases, tri, découpage, heures ouvrées… Avant, la case de la heatmap perdait
+ * `cmp`/`rel_a`/`rel_b` et le tri, le seau du hero perdait `tri` et `hours`.
+ */
+export function gabaritZoom(hrefContrat: string, brut: Record<string, string | string[] | undefined>): string {
+  const [chemin, qs = ""] = hrefContrat.split("?");
+  const out = new URLSearchParams(qs);
+  const contrat: ReadonlySet<string> = new Set(CONTRACT_PARAMS);
+  for (const [nom, valeur] of Object.entries(brut)) {
+    if (valeur === undefined || contrat.has(nom) || HORS_ZOOM.has(nom) || out.has(nom)) continue;
+    for (const v of Array.isArray(valeur) ? valeur : [valeur]) out.append(nom, v);
+  }
+  const texte = out.toString();
+  return texte ? `${chemin}?${texte}` : chemin;
 }
