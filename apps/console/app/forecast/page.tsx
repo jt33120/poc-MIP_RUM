@@ -39,7 +39,7 @@ import {
   MESURES_MIN_JOUR,
   buildForecastNarrative,
   cleJour,
-  etaToThreshold,
+  echeanceLcp,
   joursComplets,
   pointsTendance,
   projectAt,
@@ -47,6 +47,7 @@ import {
   type Tendance,
 } from "@/lib/forecast";
 import { liensDesJours } from "@/lib/forecast-liens";
+import { SOURCES_TENDANCES, couvertureJour } from "@/lib/forecast-comparaison";
 import { fuseauDe } from "@/lib/fuseau";
 import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
@@ -135,9 +136,20 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
 
   // Échéance (TE1) : contre la dernière valeur RETENUE (≥ 30 mesures) ; un seuil
   // déjà dépassé se dit même sans pente — c'est une mesure, pas une projection.
+  // « Dépassé » au sens de lib/rating.ts : 2 500 ms est encore « Bon » (`echeanceLcp`).
   const courant = [...tLcp.retenues].reverse().find((v) => v !== null) ?? null;
-  const eta = tLcp.fit && courant !== null ? etaToThreshold(tLcp.fit, courant, LCP_BON, true) : courant !== null && courant >= LCP_BON ? 0 : null;
+  const eta = echeanceLcp(tLcp.fit, courant);
   const synthese = buildForecastNarrative([{ label: "LCP p75", thresholdLabel: LCP_BON_TEXTE, eta, tendance: tLcp }]);
+
+  // Jour de référence des tuiles (même jour, semaine précédente) : sa couverture est
+  // LUE (§ 3.2) — une collecte commencée ce jour-là ne donne pas « +1 900 % ».
+  const jourRef = jours[semainePrecedente];
+  const [couvLcp, couvRatio, couvVues] = await Promise.all([
+    jourRef && lcpLu.ok ? couvertureJour(query, SOURCES_TENDANCES.lcp, jourRef, fuseau, mesures[semainePrecedente] ?? 0) : null,
+    jourRef && traficLu.ok ? couvertureJour(query, SOURCES_TENDANCES.ratio, jourRef, fuseau, vues[semainePrecedente] ?? 0) : null,
+    // Un compte de pages vues n'est pas un échantillon : pas de garde d'effectif, seulement la couverture.
+    jourRef && traficLu.ok ? couvertureJour(query, SOURCES_TENDANCES.vues, jourRef, fuseau, null) : null,
+  ]);
 
   // ─────────────── Liens (bornes UTC du jour local, § 3.3) ───────────────
   const gabarit = (chemin: string) => hrefWithQuery(chemin, query, { period: null, from: "{from}", to: "{to}" });
@@ -240,7 +252,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               couverture={{ n: mesures[dernier] ?? 0, unite: "mesures LCP" }}
               precedent={semainePrecedente >= 0 ? (lcp[semainePrecedente] ?? null) : undefined}
               reference={referenceJ7}
-              couverturePrecedente={{ etat: "complete", raison: null, n: mesures[semainePrecedente] ?? 0 }}
+              couverturePrecedente={couvLcp ?? undefined}
               href={hrefWithQuery("/pages", query, { vital: "LCP" })}
             />
           ),
@@ -259,7 +271,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               couverture={{ n: vues[dernier] ?? 0, unite: "pages vues", faibleSous: MESURES_MIN_JOUR }}
               precedent={semainePrecedente >= 0 ? (ratios[semainePrecedente] ?? null) : undefined}
               reference={referenceJ7}
-              couverturePrecedente={{ etat: "complete", raison: null, n: vues[semainePrecedente] ?? 0 }}
+              couverturePrecedente={couvRatio ?? undefined}
               href={hrefWithQuery("/errors", query)}
             />
           ),
@@ -275,6 +287,7 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
               sensMeilleur="neutre"
               precedent={semainePrecedente >= 0 ? (vues[semainePrecedente] ?? null) : undefined}
               reference={referenceJ7}
+              couverturePrecedente={couvVues ?? undefined}
             />
           ),
         )}

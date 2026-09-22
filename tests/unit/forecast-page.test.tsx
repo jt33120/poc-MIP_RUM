@@ -54,6 +54,12 @@ vi.mock("@/components/states/SectionErreur", () => ({
   SectionErreur: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 vi.mock("@/lib/log-forward", () => ({ forwardLog: async () => {} }));
+// Couverture du jour de référence (J−7) : lue en base par l'écran, simulée ici.
+const { couvertureJour } = vi.hoisted(() => ({ couvertureJour: vi.fn() }));
+vi.mock("@/lib/forecast-comparaison", async (original) => ({
+  ...(await original<typeof import("@/lib/forecast-comparaison")>()),
+  couvertureJour,
+}));
 
 const { default: Tendances } = await import("@/app/forecast/page");
 
@@ -79,6 +85,12 @@ beforeEach(() => {
   dailyLcpSeries.mockReset();
   getUser.mockReset();
   getUser.mockResolvedValue({ email: "a@b", role: "admin", apps: null });
+  couvertureJour.mockReset();
+  couvertureJour.mockImplementation(async (_q: unknown, _s: unknown, _j: string, _tz: string, n: number | null) => ({
+    etat: "complete",
+    raison: null,
+    n,
+  }));
   consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(() => consoleError.mockRestore());
@@ -136,6 +148,38 @@ describe("/forecast — tendance et bruit (TE1, TE5)", () => {
     expect(attribut(html, "LCP p75 quotidien", "data-series")).toBe("observe");
     expect(html).toContain("tendance non calculée : 7 jours mesurés requis, 5 disponibles");
     expect(html).toContain("pas assez de jours mesurés (5 sur 14, 7 requis)");
+  });
+});
+
+describe("/forecast — tuiles contre le même jour J−7 (revue de F65)", () => {
+  // Trafic ×20 d'une semaine à l'autre : l'écart serait « +1 900 % » si le jour de référence comptait.
+  const traficCroissant = () => JOURS.map((day, i) => ({ day, pageviews: i === 6 ? 50 : 1000, errors: 2 }));
+
+  it("jour de référence complet : l'écart s'affiche, référence écrite", async () => {
+    dailyTraffic.mockResolvedValue(traficCroissant());
+    dailyLcpSeries.mockResolvedValue(lcpDe(DERIVE));
+    const html = await rendre();
+    expect(html).toContain("vs même jour, semaine précédente (07/09)");
+    expect(html).toMatch(/\+1.?900.?%/);
+    // Chaque tuile a lu SA couverture, sur le jour J−7 et dans le fuseau de l'app.
+    expect(couvertureJour).toHaveBeenCalledTimes(3);
+    for (const appel of couvertureJour.mock.calls) expect(appel.slice(2, 4)).toEqual(["2026-09-07", "Europe/Paris"]);
+  });
+
+  it("collecte commencée pendant le jour de référence : aucune tuile n'affiche d'écart, la raison est écrite", async () => {
+    dailyTraffic.mockResolvedValue(traficCroissant());
+    dailyLcpSeries.mockResolvedValue(lcpDe(DERIVE));
+    couvertureJour.mockImplementation(async (_q: unknown, _s: unknown, _j: string, _tz: string, n: number | null) => ({
+      etat: "partielle",
+      raison: "pages vues collectées depuis le 07/09 16:00 UTC seulement",
+      n,
+    }));
+    const html = await rendre();
+    expect(html).not.toMatch(/1.?900.?%/);
+    // Une ligne visible par tuile (le libellé annoncé de la tuile la répète).
+    expect(
+      html.match(/data-testid="kpi-comparaison">période précédente incomplète : pages vues collectées depuis le 07\/09 16:00 UTC seulement/g),
+    ).toHaveLength(3);
   });
 });
 

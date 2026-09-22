@@ -109,10 +109,12 @@ async function consoleSur(databaseUrl: string) {
   vi.resetModules();
   process.env.DATABASE_URL = databaseUrl;
   const grille = await import("../../apps/console/lib/queries-grid");
+  const comparaison = await import("../../apps/console/lib/forecast-comparaison");
+  const { queryOf } = await import("../../apps/console/lib/filters");
   const { oublierFuseaux } = await import("../../apps/console/lib/fuseau");
   const { pool } = await import("../../apps/console/lib/db");
   oublierFuseaux();
-  return { ...grille, pool };
+  return { ...grille, ...comparaison, queryOf, pool };
 }
 type Console = Awaited<ReturnType<typeof consoleSur>>;
 
@@ -202,6 +204,26 @@ const filtres = (app = A): Filters => ({
       expect(lignes[14 - JOUR_VIDE]).toMatchObject({ pageviews: 0, errors: 0 });
       // Ni aujourd'hui ni la veille de la fenêtre : 13 jours × 2 pages vues.
       expect(lignes.reduce((s, l) => s + l.pageviews, 0)).toBe(26);
+    });
+  });
+
+  // Revue de F65 : les tuiles comparent J−1 à J−8. Le jour de référence n'est
+  // comparable que si la collecte l'a couvert EN ENTIER, lu sur le périmètre d'apps.
+  describe("couvertureJour — le jour de référence des tuiles", () => {
+    it("A, collectée depuis J−15 : J−8 est complet", async () => {
+      const c = await lib.couvertureJour(lib.queryOf(filtres()), lib.SOURCES_TENDANCES.lcp, jours[6], TZ, 3);
+      expect(c).toEqual({ etat: "complete", raison: null, n: 3 });
+    });
+
+    it("B, collectée depuis J−3 seulement : J−8 est partiel, date lue en base ; B n'hérite pas de l'historique de A", async () => {
+      const c = await lib.couvertureJour(lib.queryOf(filtres(B)), lib.SOURCES_TENDANCES.lcp, jours[6], TZ, 0);
+      expect(c.etat).toBe("partielle");
+      expect(c.raison).toMatch(/^mesures de performance collectées depuis le \d{2}\/\d{2} \d{2}:\d{2} UTC seulement$/);
+    });
+
+    it("B : aucune page vue ni erreur collectée → partielle, jamais « complète »", async () => {
+      const c = await lib.couvertureJour(lib.queryOf(filtres(B)), lib.SOURCES_TENDANCES.ratio, jours[6], TZ, 0);
+      expect(c).toMatchObject({ etat: "partielle", raison: "aucune donnée collectée sur le périmètre" });
     });
   });
 });
