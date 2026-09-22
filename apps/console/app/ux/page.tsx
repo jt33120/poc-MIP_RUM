@@ -237,7 +237,7 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
         {!scripts.ok ? (
           <EchecLecture titre="Scripts qui bloquent le fil principal" />
         ) : (
-          <div className="card overflow-x-auto">
+          <div className="card relative overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-panel2">
                 <tr>
@@ -504,7 +504,7 @@ function ElementsInp({ inp, label }: { inp: Lecture<Awaited<ReturnType<typeof in
         yFormat="int"
         ariaLabel={`Éléments responsables de l'INP : ${pts.length} éléments, nombre d'interactions × INP p75, ${label}`}
       />
-      <div className="mt-4 overflow-x-auto">
+      <div className="relative mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <caption className="sr-only">Éléments responsables de l&apos;INP sur {label}</caption>
           <thead className="bg-panel2">
