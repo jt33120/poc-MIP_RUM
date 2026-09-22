@@ -114,7 +114,9 @@ export default async function Dashboards({
       <h2 className="mb-2 text-sm font-semibold text-ink">Tableaux de ce périmètre</h2>
       {/* `overflow-x-auto` : la colonne « Propriétaire » (P6.5) fait cinq colonnes,
           qui ne tiennent pas à 390 px. Les masquer cacherait qui possède quoi. */}
-      <div className="card mb-6 overflow-x-auto">
+      {/* `relative` : la légende `sr-only` (position: absolute) reste dans ce conteneur
+          défilant au lieu d'élargir la page à 390 px (piège 16). */}
+      <div className="card relative mb-6 overflow-x-auto">
         <table className="w-full text-sm" data-testid="tableaux-perimetre">
           <caption className="sr-only">Tableaux de bord lisibles dans ce périmètre</caption>
           <thead>
