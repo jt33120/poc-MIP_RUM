@@ -174,7 +174,7 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
     d: "Le cloisonnement s'arrête à l'application. Aucun niveau au-dessus pour regrouper les applications d'un même client, ni facturer à ce niveau.",
   },
   {
-    t: "Backend sur Railway, à migrer chez un hébergeur souverain",
+    t: "Backend sur Railway, à migrer chez un hébergeur de droit européen",
     g: "bloquant",
     d: "Les travaux planifiés et le serveur MCP ont quitté la console : ce sont des services autonomes, sans framework, déployés sur Railway à Amsterdam depuis le 09/09/2026 ; la collecte, elle, reste une route de la console, sur Vercel à Francfort. Le calcul est donc en UE, au même titre que la donnée. Cela ne change RIEN à la souveraineté — Neon, Vercel et Railway sont trois sociétés de droit américain, et la résidence européenne des données n'est pas la souveraineté : ce point reste bloquant tant que l'hébergeur relève du droit américain, quelle que soit la région. Cible : base, console et backend chez un hébergeur de droit européen, qualifié SecNumCloud pour un acheteur public. Le backend y est prêt : il ne dépend que de Node et de PostgreSQL, et ses images se construisent depuis ce dépôt.",
   },
@@ -186,10 +186,10 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
   {
     t: "Console non conteneurisée",
     g: "limite",
-    d: "Le backend a ses images (ingestion et serveur MCP), pas la console. L'argument « souverain, déployable chez vous » n'est donc pas livrable de bout en bout.",
+    d: "Le backend a ses images (ingestion et serveur MCP), pas la console. L'argument « déployable chez vous » n'est donc pas livrable de bout en bout.",
   },
   {
-    t: "Rien de certifié, mentions légales à compléter",
+    t: "Aucune certification, mentions légales à compléter",
     g: "limite",
     d: "Aucune certification (SOC 2, ISO 27001, CSPN) — souvent éliminatoire en appel d'offres grand compte — et l'identité légale reste à renseigner dans les CGU/CGV/DPA.",
   },
