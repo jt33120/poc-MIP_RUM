@@ -2,6 +2,7 @@
 // anticiper la dérive AVANT l'incident (vs les anomalies z-score, réactives).
 // Logique PURE, testée. Volontairement transparente (moindres carrés), pas de
 // boîte noire : on peut expliquer chaque projection.
+import { THRESHOLDS, rating2026 } from "./rating";
 
 export interface Fit {
   slope: number; // variation par pas (jour)
@@ -91,20 +92,47 @@ export interface NarrativeInput {
   thresholdLabel: string;
   /** Sortie d'etaToThreshold : 0 = déjà dépassé, >0 = pas avant franchissement, null = ok. */
   eta: number | null;
+  /**
+   * F65 (§ 5.20.3, TE1 b) : la tendance d'où vient l'échéance. Une pente dans le
+   * bruit, ou trop peu de jours mesurés, n'annoncent AUCUNE échéance — seul un
+   * seuil déjà dépassé reste dit, c'est une mesure, pas une projection. Absent : le
+   * comportement d'avant.
+   */
+  tendance?: Pick<Tendance, "etat" | "joursValides" | "joursRequis" | "jours">;
 }
 export interface Narrative {
   status: "risk" | "watch" | "ok";
   lines: string[];
 }
 
+/** L'échéance qu'on a le droit d'écrire : aucune projection sans pente établie. */
+function etaEcrite(i: NarrativeInput): number | null {
+  if (!i.tendance || i.tendance.etat === "significative") return i.eta;
+  return i.eta === 0 ? 0 : null;
+}
+
 /** Résume en clair quels indicateurs vont franchir leur seuil et quand. Purement
  * dérivé des projections — explicable, jamais une boîte noire. */
 export function buildForecastNarrative(items: NarrativeInput[]): Narrative {
-  const breached = items.filter((i) => i.eta === 0);
-  const soon = items.filter((i) => i.eta != null && i.eta > 0 && i.eta <= HORIZON_JOURS);
+  const breached = items.filter((i) => etaEcrite(i) === 0);
+  const soon = items.filter((i) => {
+    const eta = etaEcrite(i);
+    return eta != null && eta > 0 && eta <= HORIZON_JOURS;
+  });
   const lines: string[] = [];
   for (const i of breached) lines.push(`${i.label} dépasse déjà son seuil (${i.thresholdLabel}).`);
-  for (const i of soon) lines.push(`${i.label} devrait franchir ${i.thresholdLabel} vers J+${Math.ceil(i.eta as number)}.`);
+  for (const i of soon) lines.push(`${i.label} devrait franchir ${i.thresholdLabel} vers J+${Math.ceil(etaEcrite(i) as number)}.`);
+  // Une tendance muette le DIT : sans cette ligne, « aucun indicateur ne devrait
+  // franchir » se lirait comme une projection rassurante qu'on n'a pas faite.
+  for (const i of items) {
+    const t = i.tendance;
+    if (!t || t.etat === "significative") continue;
+    lines.push(
+      t.etat === "bruit"
+        ? `${i.label} : tendance non distinguable du bruit sur ${t.jours} jours ; aucune échéance n'est écrite.`
+        : `${i.label} : pas assez de jours mesurés (${t.joursValides} sur ${t.jours}, ${t.joursRequis} requis) ; aucune tendance n'est calculée.`,
+    );
+  }
   if (!lines.length) lines.push(`Aucun indicateur ne devrait franchir son seuil sur l'horizon de ${HORIZON_JOURS} jours.`);
   return { status: breached.length ? "risk" : soon.length ? "watch" : "ok", lines };
 }
@@ -117,4 +145,197 @@ export function trendDir(fit: Fit, refMagnitude: number): TrendDir {
   if (rel > 0.02) return "up";
   if (rel < -0.02) return "down";
   return "flat";
+}
+
+// --- Tendance et bruit (F65, § 5.20.3, TE5) ----------------------------------
+//
+// UNE DROITE N'EST PAS UNE TENDANCE. `linfit` trace une droite dès trois points,
+// qu'ils s'alignent ou non : sur quatorze jours qui oscillent, elle a toujours une
+// pente, et l'ancien écran en tirait une échéance. Ici la pente n'est retenue que
+// si la variation qu'elle décrit sur la fenêtre dépasse deux fois la dispersion
+// des points autour de la droite — sinon « tendance non distinguable du bruit »,
+// et aucune échéance. Règle volontairement simple et écrite à l'écran (TE8) ; le
+// test de pente de P*.4 (t de Student, bande de prédiction) la remplacera.
+
+/** Mesures sous lesquelles un jour est creux et n'entre pas dans l'ajustement. */
+export const MESURES_MIN_JOUR = 30;
+
+/** Jours valides (≥ `MESURES_MIN_JOUR` mesures) sous lesquels aucune droite n'est tracée. */
+export const JOURS_VALIDES_REQUIS = 7;
+
+/** Facteur de la règle de pente : variation sur la fenêtre > k × dispersion des résidus. */
+export const K_BRUIT = 2;
+
+/**
+ * Écart type des résidus autour de la droite, sur les points mesurés :
+ * `√(Σ résidus² / (m − 2))` — deux degrés de liberté pris par la droite. `null`
+ * sous trois points (la dispersion d'une droite qui passe par deux points n'existe pas).
+ */
+export function dispersionResidus(fit: Fit, ys: (number | null | undefined)[]): number | null {
+  let somme = 0;
+  let m = 0;
+  ys.forEach((y, i) => {
+    if (y == null || !Number.isFinite(y)) return;
+    const r = y - projectAt(fit, i);
+    somme += r * r;
+    m++;
+  });
+  return m < 3 ? null : Math.sqrt(somme / (m - 2));
+}
+
+/**
+ * La pente se distingue-t-elle du bruit ? Vrai si la variation qu'elle décrit sur
+ * la fenêtre (`|pente| × nombre de jours`) dépasse `k` fois la dispersion des
+ * résidus. Une droite parfaite (dispersion nulle) de pente non nulle l'est ; une
+ * série plate ne l'est jamais.
+ */
+export function penteSignificative(fit: Fit, ys: (number | null | undefined)[], k = K_BRUIT): boolean {
+  const dispersion = dispersionResidus(fit, ys);
+  if (dispersion === null) return false;
+  return Math.abs(fit.slope) * ys.length > k * dispersion;
+}
+
+export interface Tendance {
+  /** `insuffisante` : pas de droite ; `bruit` : droite tracée, aucune échéance ; `significative` : échéance et projection. */
+  etat: "insuffisante" | "bruit" | "significative";
+  /** Jours retenus pour l'ajustement (valeur mesurée et au moins `MESURES_MIN_JOUR` mesures). */
+  joursValides: number;
+  joursRequis: number;
+  /** Longueur de la fenêtre (14 jours). */
+  jours: number;
+  /** Droite ajustée sur les jours valides ; `null` si insuffisante. Indices = rangs de jour de la fenêtre. */
+  fit: Fit | null;
+  dispersion: number | null;
+  /** Les valeurs retenues (les autres à `null`), dans l'ordre de la fenêtre. */
+  retenues: (number | null)[];
+}
+
+/**
+ * Tendance d'une série quotidienne. `effectifs` : mesures par jour ; un jour sous
+ * `min` est exclu de l'ajustement (il reste dessiné, creux). Sans effectifs, toute
+ * valeur mesurée est retenue.
+ */
+export function tendance(
+  ys: (number | null)[],
+  effectifs: (number | null)[] | null = null,
+  { min = MESURES_MIN_JOUR, requis = JOURS_VALIDES_REQUIS }: { min?: number; requis?: number } = {},
+): Tendance {
+  const retenues = ys.map((y, i) => {
+    if (y == null || !Number.isFinite(y)) return null;
+    if (effectifs && !((effectifs[i] ?? 0) >= min)) return null;
+    return y;
+  });
+  const joursValides = retenues.filter((y) => y !== null).length;
+  const base = { joursValides, joursRequis: requis, jours: ys.length, retenues };
+  if (joursValides < requis) return { ...base, etat: "insuffisante", fit: null, dispersion: null };
+  const fit = linfit(retenues);
+  if (!fit) return { ...base, etat: "insuffisante", fit: null, dispersion: null };
+  const dispersion = dispersionResidus(fit, retenues);
+  return { ...base, etat: penteSignificative(fit, retenues) ? "significative" : "bruit", fit, dispersion };
+}
+
+/** Le jour « AAAA-MM-JJ » décalé de `k` jours (calendrier, sans fuseau : c'est une étiquette). */
+export function jourDecale(jour: string, k: number): string {
+  const [a, m, j] = jour.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, j + k)).toISOString().slice(0, 10);
+}
+
+/** « AAAA-MM-JJ » d'un instant dans un fuseau ; un fuseau inconnu retombe sur UTC plutôt que de planter. */
+function jourDansFuseau(ms: number, tz: string): string {
+  const options = { year: "numeric", month: "2-digit", day: "2-digit" } as const;
+  let f: Intl.DateTimeFormat;
+  try {
+    f = new Intl.DateTimeFormat("en-CA", { ...options, timeZone: tz });
+  } catch {
+    f = new Intl.DateTimeFormat("en-CA", { ...options, timeZone: "UTC" });
+  }
+  const parts = f.formatToParts(ms);
+  const v = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  return `${v("year")}-${v("month")}-${v("day")}`;
+}
+
+/**
+ * Les `n` jours COMPLETS de la fenêtre des Tendances dans le fuseau `tz` : de J−n
+ * à J−1, J = aujourd'hui dans ce fuseau. La journée en cours n'y est jamais : un
+ * jour entamé n'a qu'une partie de son trafic, sa p75 et ses comptes ne se
+ * comparent pas aux autres. Axe de repli quand aucune lecture n'a répondu.
+ */
+export function joursComplets(tz: string, maintenantMs: number, n = 14): string[] {
+  const aujourdhui = jourDansFuseau(maintenantMs, tz);
+  return Array.from({ length: n }, (_v, i) => jourDecale(aujourdhui, i - n));
+}
+
+/**
+ * Un point du hero des Tendances (clés lues par `ThresholdSeries`). Un alias de
+ * type, pas une interface : il doit s'affecter à `PointSerie` (signature d'index).
+ */
+export type PointTendance = {
+  t: string;
+  observe: number | null;
+  n: number | null;
+  ajuste: number | null;
+  projection: number | null;
+  bas: number | null;
+  haut: number | null;
+};
+
+/**
+ * Points du hero « LCP p75 quotidien et sa tendance » : les jours observés, la
+ * droite ajustée tracée SUR les jours observés (pour voir si elle colle aux
+ * points), et — seulement si la pente dépasse le bruit — la projection sur
+ * `horizon` jours après le dernier, dans une bande de ± 1 écart type des résidus.
+ * La projection part du dernier jour observé (même valeur que la droite) : le
+ * pointillé prolonge la droite sans saut.
+ */
+export function pointsTendance(
+  jours: string[],
+  ys: (number | null)[],
+  effectifs: (number | null)[] | null,
+  t: Tendance,
+  horizon = HORIZON_JOURS,
+): { grille: string[]; points: PointTendance[] } {
+  const dernier = jours.length - 1;
+  const fit = t.etat === "significative" ? t.fit : null;
+  const d = t.dispersion ?? 0;
+  const points: PointTendance[] = jours.map((jour, i) => {
+    const ajuste = t.fit ? projectAt(t.fit, i) : null;
+    const projection = fit && i === dernier ? ajuste : null;
+    return {
+      t: jour,
+      observe: ys[i] ?? null,
+      n: effectifs ? (effectifs[i] ?? 0) : null,
+      ajuste,
+      projection,
+      bas: projection === null ? null : projection - d,
+      haut: projection === null ? null : projection + d,
+    };
+  });
+  if (fit && dernier >= 0) {
+    for (let k = 1; k <= horizon; k++) {
+      const projection = forecastNext(fit, k);
+      points.push({ t: jourDecale(jours[dernier], k), observe: null, n: null, ajuste: null, projection, bas: projection - d, haut: projection + d });
+    }
+  }
+  return { grille: points.map((p) => p.t), points };
+}
+
+/**
+ * Échéance de franchissement de la borne « Bon » du LCP (TE1), dans les termes de
+ * `lib/rating.ts` : « franchie » veut dire que le verdict n'est plus « Bon »
+ * (`rating2026`), et « Bon » va jusqu'à la borne INCLUSE — 2 500 ms est encore
+ * Bon. `etaToThreshold` compte l'égalité comme franchie (`>=`) : il n'est plus
+ * employé pour ce seuil.
+ *
+ *   - `0` : la dernière valeur retenue n'est déjà plus « Bon » (c'est une mesure) ;
+ *   - `k > 0` : pas (jours) avant que la droite dépasse la borne ; une droite qui
+ *     l'atteint déjà au dernier jour alors que la mesure est encore « Bon » donne
+ *     J+1 (le premier jour projeté) ;
+ *   - `null` : pas de droite, droite plate ou descendante, ou aucune valeur.
+ */
+export function echeanceLcp(fit: Fit | null, courant: number | null): number | null {
+  if (courant === null || !Number.isFinite(courant)) return null;
+  if (rating2026("LCP", courant) !== "good") return 0;
+  if (!fit || !(fit.slope > 0)) return null;
+  const pas = (THRESHOLDS.LCP[0] - fit.intercept) / fit.slope - (fit.n - 1);
+  return Number.isFinite(pas) ? Math.max(pas, 1) : null;
 }

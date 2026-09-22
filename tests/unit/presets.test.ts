@@ -183,10 +183,14 @@ describe("choisirReleases (§ 3.2, CP3)", () => {
     expect(choix.indisponible).toBeUndefined();
   });
 
-  it("dernier marqueur sans mesure sur la fenêtre → release de plus grand volume, et la règle le dit", () => {
+  it("dernier marqueur absent des releases lues → release de plus grand volume, et la règle le dit", () => {
     const choix = choisirReleases([{ version: "2.0.0" }, { version: "1.4.2" }], [V("1.4.1", 5000), V("1.4.2", 200)]);
     expect(choix).toMatchObject({ relB: "1.4.1", relA: "1.4.2" });
-    expect(choix.regle).toMatch(/1.4.1 : release de plus grand volume \(le dernier déploiement déclaré, 2.0.0, n'a aucune mesure/);
+    // La liste lue est plafonnée (12 releases les plus vues, F13) : « aucune mesure »
+    // n'est pas établi — la release peut être simplement hors de ces 12.
+    expect(choix.regle).toMatch(
+      /1.4.1 : release de plus grand volume \(le dernier déploiement déclaré, 2.0.0, n'est pas parmi les releases lues sur la fenêtre : aucune mesure, ou hors des releases les plus vues\)/,
+    );
   });
 
   it("sans marqueur précédent mesuré → deuxième par volume", () => {

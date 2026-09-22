@@ -22,19 +22,32 @@ describe("lireChoix", () => {
     }
   });
 
+  // Catalogue de test : un bloc éteint par défaut. Celui de la Vue d'ensemble n'en a
+  // plus depuis que « Décomposition réseau » est parti sur Pages (F13).
+  const AVEC_ETEINT = {
+    ...APERCU,
+    blocs: [...APERCU.blocs, { id: "optionnel", label: "Optionnel", defaut: false, desc: "Éteint par défaut." }],
+  };
+
   it("respecte un choix explicite, dans les deux sens", () => {
-    const c = lireChoix(APERCU, "vitals:0,reseau:1");
+    const c = lireChoix(AVEC_ETEINT, "vitals:0,optionnel:1");
     expect(c.vitals).toBe(false); // allumé par défaut, éteint par l'utilisateur
-    expect(c.reseau).toBe(true); // éteint par défaut, allumé par l'utilisateur
+    expect(c.optionnel).toBe(true); // éteint par défaut, allumé par l'utilisateur
   });
 
   // Le point qui compte à la prochaine évolution : un bloc AJOUTÉ après coup
   // doit apparaître chez ceux qui ont déjà un cookie, pas rester invisible
   // pour eux seuls.
   it("un bloc absent du cookie retombe sur son défaut", () => {
-    const c = lireChoix(APERCU, "vitals:0");
+    const c = lireChoix(AVEC_ETEINT, "vitals:0");
     expect(c.sante).toBe(true);
-    expect(c.reseau).toBe(false);
+    expect(c.optionnel).toBe(false);
+  });
+
+  it("un bloc retiré (« reseau », F13) encore présent dans un cookie est ignoré", () => {
+    const c = lireChoix(APERCU, "reseau:1,vitals:1");
+    expect("reseau" in c).toBe(false);
+    expect(c.vitals).toBe(true);
   });
 
   it("ignore ce qui n'est pas exploitable plutôt que de tout perdre", () => {

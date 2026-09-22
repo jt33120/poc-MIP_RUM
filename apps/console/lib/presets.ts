@@ -218,7 +218,9 @@ export function choisirReleases(
   const regleB = depuisMarqueur
     ? `${relB} : dernier déploiement déclaré`
     : dernier !== null
-      ? `${relB} : release de plus grand volume (le dernier déploiement déclaré, ${dernier}, n'a aucune mesure sur la fenêtre)`
+      ? // `versions` vient d'une lecture PLAFONNÉE (`comparaisonVersions(f, 12)`) : une release
+        // absente peut n'avoir aucune mesure, ou n'être simplement pas parmi les plus vues.
+        `${relB} : release de plus grand volume (le dernier déploiement déclaré, ${dernier}, n'est pas parmi les releases lues sur la fenêtre : aucune mesure, ou hors des releases les plus vues)`
       : `${relB} : release de plus grand volume (aucun déploiement déclaré)`;
 
   let relA: string | null = null;

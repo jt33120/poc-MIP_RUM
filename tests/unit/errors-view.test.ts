@@ -4,19 +4,17 @@
 // laisse la porte projet du middleware substituer l'app du cookie ; un lien de
 // session émis sans vérification ouvrirait celle d'un autre tenant ; un compteur
 // NULL affiché « 0 » dirait « personne n'est touché » d'une erreur backend dont on
-// ne connaît personne ; et « autres » calculé sur la page ferait mentir la hauteur
-// d'une colonne dès la deuxième page.
+// ne connaît personne.
 import { describe, expect, it } from "vitest";
 import {
   errorGroupHref,
   errorSearchParams,
   errorsHref,
-  errorVolumeChart,
   fmtCount,
   fmtCoverage,
   occurrenceHrefs,
 } from "../../apps/console/components/errors/error-view";
-import type { ErrorFilters, ErrorGroupRow, ErrorOccurrenceRow } from "../../apps/console/lib/queries-errors";
+import type { ErrorFilters, ErrorOccurrenceRow } from "../../apps/console/lib/queries-errors";
 
 const filtres = (over: Partial<ErrorFilters> = {}): ErrorFilters => ({
   app: "p51-app-a",
@@ -38,13 +36,6 @@ const occurrence = (over: Partial<ErrorOccurrenceRow> = {}): ErrorOccurrenceRow 
   env: null, service: null, trace_id: T1, source_parent_span_id: P1,
   links: { session: true, replay: true, trace: true, parent_span: true, action: null },
   ...over,
-});
-
-const groupe = (fingerprint: string, series: number[]): ErrorGroupRow => ({
-  app_id: "p51-app-a", fingerprint, error_type: `Type${fingerprint}`, sample_message: null,
-  occurrences: series.reduce((s, v) => s + v, 0), sessions: 0, users_affected: 0, sessions_affected: null,
-  visitors_affected: null, identified_users_affected: null, session_coverage: 0, identity_coverage: 0,
-  first_seen: TS, last_seen: TS, status: "open", resolved_at: null, regressed: false, series,
 });
 
 const params = (href: string) => new URL(href, "http://console.local").searchParams;
@@ -132,30 +123,5 @@ describe("chiffres affichés", () => {
   });
 });
 
-describe("volume empilé par groupe", () => {
-  const trend = [0, 1, 2].map((i) => ({ bucket: new Date(TS.getTime() + i * 3_600_000), occurrences: [10, 7, 0][i] }));
-
-  it("« autres » = population moins les cinq groupes dessinés, jamais négatif", () => {
-    const groups = ["a", "b", "c", "d", "e", "f"].map((fp) => groupe(fp, [1, 1, 0]));
-    const { data, series } = errorVolumeChart(groups, trend, "24h");
-    expect(data).toHaveLength(trend.length);
-    expect(series.map((s) => s.key)).toEqual(["g0", "g1", "g2", "g3", "g4", "autres"]);
-    expect(data.map((row) => row.autres)).toEqual([5, 2, 0]);
-    // La hauteur d'une colonne est celle de la tendance.
-    for (const [i, row] of data.entries()) {
-      const colonne = series.reduce((s, se) => s + Number(row[se.key]), 0);
-      expect(colonne).toBe(trend[i].occurrences);
-    }
-  });
-
-  it("pas de couche « autres » quand les groupes dessinés couvrent toute la population", () => {
-    const { data, series } = errorVolumeChart([groupe("a", [10, 7, 0])], trend, "24h");
-    expect(series.map((s) => s.key)).toEqual(["g0"]);
-    expect(data.map((row) => row.autres)).toEqual([0, 0, 0]);
-  });
-
-  it("borne à zéro une série qui dépasserait la tendance", () => {
-    const { data } = errorVolumeChart([groupe("a", [12, 7, 0])], trend, "24h");
-    expect(data[0].autres).toBe(0);
-  });
-});
+// Le volume empilé par groupe (« autres » = population moins les groupes dessinés,
+// borné à 0) est passé au hero de F18 : `autresGroupes`, tests/unit/perf-domain.test.ts.

@@ -79,9 +79,9 @@ export const GLOSSARY = {
   },
   health: {
     label: "Score de santé",
-    term: "Score composite 0–100 : 40 % vitals (LCP ×2), 30 % erreurs, 20 % stabilité, 10 % anomalies 24 h.",
+    term: "Score composite 0–100 : 40 % vitals (LCP ×2), 30 % erreurs navigateur, 20 % stabilité, 10 % anomalies 24 h.",
     stack:
-      "Pondération calculée côté console à partir des p75, du taux d'erreur et de la détection d'anomalies (vue SQL v_anomaly).",
+      "Pondération calculée côté console à partir des mesures « Bon », des occurrences d'erreurs navigateur pour 100 pages vues, des sessions sans erreur et de la détection d'anomalies (vue SQL v_anomaly).",
     business:
       "Une note unique pour piloter en un coup d'œil, comme un bulletin de santé du site. Idéal pour un comité de direction : vert = tout va bien, rouge = il faut agir.",
   },
@@ -167,9 +167,9 @@ export const GLOSSARY = {
     label: "Robot vs Réel",
     term: "Comparaison du synthétique (sondes programmées) au RUM (utilisateurs réels) pour une même route.",
     stack:
-      "Vue SQL v_correlation : écart p75 robot ↔ réel ; surligne les routes où le monitoring synthétique ment.",
+      "Chaque côté est agrégé par heure et par route avant d'être rapproché : état du robot (pire état de l'heure) contre verdict du LCP p75 réel. Aucun écart chiffré : les deux ne mesurent pas la même chose.",
     business:
-      "Vos tests automatiques disent « tout va bien » mais les vrais utilisateurs souffrent ? Cet écart le révèle — la mesure terrain prime sur le labo.",
+      "Vos tests automatiques disent « tout va bien » mais les vrais utilisateurs souffrent ? Les heures en angle mort le montrent — la mesure terrain prime sur le labo.",
   },
   otlp: {
     label: "OTLP — OpenTelemetry Protocol",
@@ -196,8 +196,8 @@ export const GLOSSARY = {
       "On mesure ce que vivent les visiteurs réels du site en production, pas une simulation. Ces mesures disent ce qu'ils ont vécu ; seules, elles ne disent pas l'effet sur les ventes.",
   },
   experience: {
-    label: "Expérience",
-    term: "Trois constituants du ressenti montrés côte à côte, sans score composite : LCP p75 et son verdict web.dev, frustration (clics rageurs et morts pour 1 000 sessions), CSAT (part des avis ≥ 4/5).",
+    label: "Satisfaction",
+    term: "Ce que les visiteurs déclarent (CSAT : part des avis ≥ 4/5, part de notes 1-2), à côté de ce qu'ils subissent (LCP p75 par page, frustration pour 1 000 sessions), sans score composite.",
     stack:
       "LCP : percentile_cont(0.75) sur rum_metric ; frustration : rum_event 'frustration.rage' / 'frustration.dead' rapportés aux sessions commencées ; CSAT : rum_event name='feedback'. Aucune pondération entre les trois.",
     business:
@@ -212,12 +212,13 @@ export const GLOSSARY = {
       "Ce que les utilisateurs pensent vraiment, en direct, relié à leur parcours et à la performance qu'ils ont subie. On voit si une lenteur se paie en insatisfaction.",
   },
   forecast: {
-    label: "Prévisions (AIOps)",
-    term: `Projection linéaire (moindres carrés) des indicateurs sur 14 jours ; échéance de franchissement de la borne « Bon » du LCP (${fmtBorne("LCP", THRESHOLDS.LCP[0])}). Les erreurs sont suivies en tendance, sans seuil : aucun n'est publié pour ce ratio.`,
+    // F65 : « Tendances », jamais « Prévisions » (§ 0.5) — une droite prolongée n'est pas une prévision.
+    label: "Tendances",
+    term: `Droite des moindres carrés sur les 14 derniers jours complets ; échéance de franchissement de la borne « Bon » du LCP (${fmtBorne("LCP", THRESHOLDS.LCP[0])}) écrite seulement si la pente dépasse le bruit. Les erreurs sont suivies en tendance, sans seuil : aucun n'est publié pour ce ratio.`,
     stack:
-      "lib/forecast (pur) sur les séries journalières (rum_metric/rum_pageview/rum_error). Régression transparente — aucune boîte noire ; complète les anomalies z-score (réactives) par de l'anticipation.",
+      "lib/forecast (pur) sur les séries journalières (rum_metric/rum_pageview/rum_error), jours découpés dans le fuseau de l'app, journée en cours exclue. Régression transparente, dispersion des résidus affichée ; aucune saisonnalité.",
     business:
-      "On ne se contente plus de réagir : on voit ce qui dérive et QUAND ça franchira le seuil. Le passage du curatif au prédictif — arbitrer avant que l'utilisateur ne subisse.",
+      "On voit ce qui dérive et, si la dérive se distingue du bruit, QUAND elle franchira le seuil. Ce n'est pas une prévision : une extrapolation à surveiller, dite avec son incertitude.",
   },
   experienceMap: {
     label: "Carte d'expérience",

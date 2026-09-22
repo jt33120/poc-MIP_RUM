@@ -19,6 +19,19 @@ vi.mock("@/lib/query-schema", async () => {
 
 import { bandeauRetard, partCouverte, retardRobot, trierSansRobot } from "../../apps/console/lib/correlation";
 import {
+  aucunPassageSurLaGrille,
+  casesFriseRobot,
+  dernierPassage,
+  ETATS_FRISE_ROBOT,
+  grilleHoraire,
+  heuresAngleMort,
+  lignesRetard,
+  pucesAnglesMorts,
+  regleAlerteAngleMort,
+  regleAngleMort,
+  trierRoutes,
+} from "../../apps/console/lib/correlation";
+import {
   blindSpots,
   correlationConcordance,
   correlationSeries,
@@ -208,5 +221,155 @@ describe("trierSansRobot (CR11)", () => {
   it("à verdict égal, le volume départage", () => {
     const tri = trierSansRobot([carte("/a", 3000, 50), carte("/b", 3100, 500)]);
     expect(tri.map((c) => c.route)).toEqual(["/b", "/a"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F58 — écran /correlation : règles pures de la page (§ 5.7 CR1, CR4, CR7, CR7-b,
+// CR9, CR12).
+// ---------------------------------------------------------------------------
+
+describe("F58 — regleAngleMort (CR9)", () => {
+  it("la borne vient de THRESHOLDS au moment de l'appel : changer la borne change le texte", () => {
+    expect(regleAngleMort(30)).toContain("au-dessus de 2,5 s (borne Bon de lib/rating.ts)");
+    expect(regleAngleMort(30)).toContain("heures d'au moins 30 mesures");
+    const avant = THRESHOLDS.LCP;
+    try {
+      THRESHOLDS.LCP = [3000, 4000];
+      expect(regleAngleMort(30)).toContain("au-dessus de 3,0 s");
+      expect(regleAngleMort(30)).not.toContain("2,5 s");
+      expect(regleAlerteAngleMort()).toBe("robot ok et réel au-delà de 3,0 s la même heure");
+    } finally {
+      THRESHOLDS.LCP = avant;
+    }
+  });
+});
+
+describe("F58 — heuresAngleMort (CR4 = cases « angle mort » de CR8)", () => {
+  it("somme des cellules robot ok × réel À améliorer ou Mauvais, rien d'autre", () => {
+    const cellules = [
+      { robot: "ok" as const, reel: "good" as const, heures: 400 },
+      { robot: "ok" as const, reel: "needs-improvement" as const, heures: 38 },
+      { robot: "ok" as const, reel: "poor" as const, heures: 9 },
+      { robot: "warn" as const, reel: "poor" as const, heures: 6 },
+      { robot: "incident" as const, reel: "good" as const, heures: 3 },
+    ];
+    expect(heuresAngleMort(cellules)).toBe(47);
+    expect(heuresAngleMort([])).toBe(0);
+  });
+});
+
+describe("F58 — frise robot (CR7-b)", () => {
+  const grille = ["2026-09-22T10:00:00Z", "2026-09-22T11:00:00Z", "2026-09-22T12:00:00Z", "2026-09-22T13:00:00Z"];
+  const robot = (syn_state: "ok" | "warn" | "incident" | null, syn_latency_avg: number | null, syn_measures: string | null) => ({
+    syn_state,
+    syn_latency_avg,
+    syn_measures,
+  });
+
+  it("heure vide → aucun passage ; réel seul → aucun passage (pas « état inconnu ») ; passage sans état → inconnu", () => {
+    const cases = casesFriseRobot(
+      [robot("incident", 3400, "Parcours"), null, robot(null, null, null), robot(null, 900, "Parcours")],
+      grille,
+    );
+    expect(cases.map((c) => c.etat)).toEqual(["incident", "absent", "absent", "inconnu"]);
+    expect(cases[0]).toEqual({ t: grille[0], etat: "incident", detail: "premier chargement 3,40 s · Parcours" });
+    expect(cases[1].detail).toBe("aucun passage du robot");
+    expect(cases.map((c) => c.t)).toEqual(grille);
+  });
+
+  it("une case par élément de la grille, même si les lignes sont plus courtes", () => {
+    expect(casesFriseRobot([], grille).map((c) => c.etat)).toEqual(["absent", "absent", "absent", "absent"]);
+    expect(aucunPassageSurLaGrille([null, robot(null, null, null)])).toBe(true);
+    expect(aucunPassageSurLaGrille([null, robot("ok", 800, null)])).toBe(false);
+  });
+
+  it("états de la frise : forme et glyphe portent l'état, ok est neutre (pas un verdict)", () => {
+    const parCle = Object.fromEntries(ETATS_FRISE_ROBOT.map((e) => [e.cle, e]));
+    expect(parCle.incident).toMatchObject({ libelle: "incident", forme: "haute", glyphe: "×" });
+    expect(parCle.warn).toMatchObject({ forme: "moyenne", glyphe: "!" });
+    expect(parCle.ok).toMatchObject({ forme: "basse", ton: "neutre" });
+    expect(parCle.absent).toMatchObject({ libelle: "aucun passage", forme: "hachure" });
+    expect(parCle.inconnu).toMatchObject({ forme: "contour" });
+  });
+});
+
+describe("F58 — grilleHoraire (CR7)", () => {
+  it("24 h : seaux d'une heure alignés UTC, non tronquée", () => {
+    const g = grilleHoraire({ from: "2026-09-21T10:30:00.000Z", to: "2026-09-22T10:30:00.000Z" });
+    expect(g.tronque).toBe(false);
+    expect(g.grille[0]).toBe("2026-09-21T10:00:00Z");
+    expect(g.grille[g.grille.length - 1]).toBe("2026-09-22T10:00:00Z");
+    expect(g.grille).toHaveLength(25);
+  });
+
+  it("plage de 20 jours : les 300 dernières heures seulement, tronquée", () => {
+    const g = grilleHoraire({ from: "2026-09-01T00:00:00.000Z", to: "2026-09-21T00:00:00.000Z" });
+    expect(g.tronque).toBe(true);
+    expect(g.grille).toHaveLength(300);
+    expect(g.grille[0]).toBe("2026-09-08T12:00:00Z");
+  });
+});
+
+describe("F58 — sélecteur et tables (CR7-a, CR12)", () => {
+  it("puces : couples aux angles morts les plus nombreux, parmi les options, au plus 5", () => {
+    const options = [
+      { app_id: "a", route: "/x" },
+      { app_id: "a", route: "/y" },
+    ];
+    const am = [
+      { serie: "a:%2Fz", app_id: "a", route: "/z", heures: 40 }, // pas une option du hero
+      { serie: "a:%2Fy", app_id: "a", route: "/y", heures: 12 },
+      { serie: "a:%2Fx", app_id: "a", route: "/x", heures: 3 },
+    ];
+    expect(pucesAnglesMorts(am, options).map((p) => p.route)).toEqual(["/y", "/x"]);
+    expect(pucesAnglesMorts(am, options, 1).map((p) => p.route)).toEqual(["/y"]);
+  });
+
+  it("routes : les deux côtés d'abord, puis LCP p75 décroissant, LCP inconnu en dernier", () => {
+    const tri = trierRoutes([
+      { app_id: "a", route: "/robot-seul", rum_lcp_p75: null, syn_latency_avg: 700 },
+      { app_id: "a", route: "/reel-seul", rum_lcp_p75: 5000, syn_latency_avg: null },
+      { app_id: "a", route: "/lent", rum_lcp_p75: 3200, syn_latency_avg: 900 },
+      { app_id: "a", route: "/rapide", rum_lcp_p75: 1200, syn_latency_avg: 800 },
+    ]);
+    expect(tri.map((c) => c.route)).toEqual(["/lent", "/rapide", "/reel-seul", "/robot-seul"]);
+  });
+});
+
+describe("F58 — bandeau de fraîcheur (CR1, CR6)", () => {
+  const TO = Date.parse("2026-09-22T12:00:00Z");
+  const H = 3_600_000;
+  const espaces = (s: string) => s.replace(/\u00a0/g, " ");
+
+  it("robot arrêté depuis 3 h 12 pour un passage toutes les 15 min : le bandeau le dit", () => {
+    const lignes = lignesRetard(
+      [{ app_id: "demo", dernier: new Date(TO - 3 * H - 12 * 60_000), intervalle_median_s: 900, passages: 40 }],
+      TO,
+    );
+    expect(lignes.map(espaces)).toEqual(["Dernier passage du robot : il y a 3 h 12 min (attendu toutes les 15 min)"]);
+  });
+
+  it("robot à jour : rien ; aucun passage : pas de ligne (« Non collecté » à part) ; plusieurs apps : app nommée", () => {
+    expect(
+      lignesRetard([{ app_id: "demo", dernier: new Date(TO - 10 * 60_000), intervalle_median_s: 900, passages: 40 }], TO),
+    ).toEqual([]);
+    const plusieurs = lignesRetard(
+      [
+        { app_id: "a", dernier: null, intervalle_median_s: null, passages: 0 },
+        { app_id: "b", dernier: new Date(TO - 5 * 60_000), intervalle_median_s: null, passages: 1 },
+      ],
+      TO,
+    );
+    expect(plusieurs.map(espaces)).toEqual([
+      "b — Dernier passage du robot : il y a 5 min (rythme attendu inconnu : moins de deux passages d'un même scénario sur la plage)",
+    ]);
+  });
+
+  it("dernier passage du périmètre : le plus récent, null sans aucun", () => {
+    const d1 = new Date(TO - 2 * H);
+    const d2 = new Date(TO - H);
+    expect(dernierPassage([{ dernier: d1 }, { dernier: null }, { dernier: d2 }])).toBe(d2);
+    expect(dernierPassage([{ dernier: null }])).toBeNull();
   });
 });

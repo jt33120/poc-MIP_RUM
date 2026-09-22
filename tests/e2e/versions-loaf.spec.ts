@@ -147,8 +147,14 @@ test("comparaison par version : les deux releases, leur LCP et leur taux d'erreu
   await loginConsole(page);
   await page.goto(`http://localhost:3000/?app=${APP_ID}&period=24h`);
 
-  const section = page.locator("section", { hasText: "Comparaison par version" }).first();
-  await expect(section).toBeVisible();
+  // F13 : la table des versions vit dans « Toutes les versions » de `ReleaseCompare`,
+  // qui nomme LUI AUSSI les releases comparées — un `section` repéré par son texte, ou
+  // un `tr` cherché dans toute la zone, en trouverait deux. On ouvre le repli, et on
+  // vise la table elle-même.
+  const repli = page.getByText("Toutes les versions", { exact: true });
+  if (await repli.count()) await repli.first().click();
+  const section = page.getByTestId("versions-table");
+  await expect(section).toBeVisible({ timeout: 15_000 });
 
   // La version la plus VUE porte le repère « référence » — pas la plus récente :
   // 1.10 viendrait après 1.9 pour un humain, l'ordre alphabétique dit l'inverse.

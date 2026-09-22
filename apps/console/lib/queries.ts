@@ -640,6 +640,23 @@ export interface SessionMeta {
   last_seen_at: Date;
   page_count: number;
   collection_source: string | null; // 'sdk' (défaut) | 'extension'
+  // F44 — colonnes déjà rendues par `select *`, typées pour l'en-tête du détail.
+  // Optionnelles : absentes d'un schéma antérieur à leur migration.
+  /** v75 : navigateur et système déduits à l'ingestion. */
+  browser?: string | null;
+  browser_version?: string | null;
+  os?: string | null;
+  os_version?: string | null;
+  /** v53 : release à l'OUVERTURE de la session (mutable ; celle des occurrences fait foi). */
+  release?: string | null;
+  /** v82 : runtime de l'émetteur (`react_native` : pas de signaux de frustration). */
+  runtime?: string | null;
+  /** v58 : taux d'échantillonnage ; 1 PAR DÉFAUT sur les sessions d'avant le 09/09/2026. */
+  sample_rate?: number | null;
+  error_sample_rate?: number | null;
+  has_error?: boolean | null;
+  // `user_id_hash` et `account_id_hash` (v66) viennent aussi du `select *` et ne
+  // sont volontairement PAS typés : aucun écran ne doit pouvoir les afficher (S5).
 }
 
 export async function sessionMeta(id: string): Promise<SessionMeta | null> {
@@ -881,4 +898,50 @@ export async function visitStats(f: Filters): Promise<VisitStats> {
     sql.params,
   );
   return row ?? { sessions: 0, visits: 0, returning_count: 0, new_count: 0, unidentified_count: 0 };
+}
+
+// ═══════════════════ F15 — Vues par type de navigation (plan § 4.5, § 5.2.2) ═══════════════════
+
+export interface VuesParNavType {
+  /**
+   * Route normalisée. `rum_pageview.route` est NOT NULL (schema.sql) : jamais `null`
+   * aujourd'hui ; le type garde la signature du plan (§ 4.5), et l'écran rendrait
+   * un `null` en « Inconnu » plutôt que de le perdre.
+   */
+  route: string | null;
+  /** Chargements (`nav_type` navigate / reload / back_forward…) : seuls à porter un LCP. */
+  chargements: number;
+  /** Changements de route SPA (`nav_type = 'spa'`) : des vues sans LCP. */
+  spa: number;
+  /** Vues sans `nav_type` : ni rangées d'office parmi les chargements, ni perdues. */
+  inconnu: number;
+}
+
+/**
+ * Pages vues par route, découpées par classe de navigation : « quelle part des vues
+ * de cette route n'a pas de LCP ? » (Datadog « Initial page load vs SPA route
+ * changes », qui ne donne pas la route). MÊME définition des classes que
+ * `pageviewSeries` (F10) : la ligne « Ensemble » de l'écran se lit sur celle-ci, et
+ * Σ (chargements + spa + inconnu) d'une route = ses pages vues.
+ *
+ * Par volume décroissant, et bornée à `ROUTES_MAX` (garde de cardinalité, comme
+ * `slowRoutes`) : l'écran en montre 12. Un compte additif : une route sans vue n'a
+ * pas de ligne, une classe sans vue vaut 0.
+ */
+export async function vuesParNavType(f: FiltersLike): Promise<VuesParNavType[]> {
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at" });
+  return q<VuesParNavType>(
+    `select p.route,
+            count(*) filter (where p.nav_type is not null and p.nav_type <> 'spa')::int as chargements,
+            count(*) filter (where p.nav_type = 'spa')::int as spa,
+            count(*) filter (where p.nav_type is null)::int as inconnu
+       from rum_pageview p
+       ${sessionJoin("p", "s")}
+      where true${where}
+      group by p.route
+      order by count(*) desc, p.route asc nulls last
+      limit ${ROUTES_MAX}`,
+    sql.params,
+  );
 }

@@ -27,6 +27,7 @@ import {
 import { authorizedAppsOf, intersectApp, resourceScope, type Device, type ResolvedRange } from "./query-contract";
 import { dimensionSchema } from "./query-schema";
 import { sqlContext } from "./query-sql";
+import { bucketStarts } from "./query-contract";
 
 export type ErrorDevice = Device;
 /** Filtres globaux de lib/filters, plus la tablette que le modèle historique ignore. */
@@ -617,8 +618,37 @@ const REGRESSED_SQL = "coalesce(st.status = 'resolved' and g.last_seen > st.reso
 // `nulls last` : un impact INCONNU (backend sans session) n'est pas nul, mais il
 // ne peut pas passer devant un impact mesuré. Le départage final (app, empreinte)
 // rend l'ordre total : deux pages d'offset ne répètent ni ne sautent une ligne.
-/** Groupes de la population, avec `first_seen` et triage ; liste ET détail. */
-function groupsSql(base: ErrorBase): string {
+//
+// C'est l'ordre `statut` (plan § 3.1, `TRIS_PAR_ECRAN`, CP9), le défaut. Deux
+// autres ordres sont proposés (F18) : `sessions` — les groupes qui touchent le plus
+// de sessions, cible de la tuile « Sessions touchées » — et `recent` — vus en
+// dernier. Chacun finit par le même départage total.
+export type OrdreGroupes = "statut" | "sessions" | "recent";
+
+const ORDRES_GROUPES: Record<OrdreGroupes, string> = {
+  statut: `(case
+              when ${REGRESSED_SQL} then 0
+              when coalesce(st.status, 'open') = 'open' then 1
+              when st.status = 'ignored' then 3
+              else 2 end),
+            g.visitors_affected desc nulls last, g.sessions_affected desc nulls last,
+            g.occurrences desc, g.last_seen desc, g.app_id, g.fingerprint`,
+  // Un nombre de sessions INCONNU (erreur backend sans session) n'est pas un zéro :
+  // rangé après les nombres mesurés, jamais parmi les plus petits.
+  sessions: `g.sessions_affected desc nulls last, g.visitors_affected desc nulls last,
+            g.occurrences desc, g.last_seen desc, g.app_id, g.fingerprint`,
+  recent: "g.last_seen desc, g.occurrences desc, g.app_id, g.fingerprint",
+};
+
+/**
+ * Groupes de la population, avec `first_seen` et triage ; liste ET détail.
+ *
+ * `nouveauxDepuis` (paramètre d'écran `nouveaux=1`, F18) : seulement les groupes
+ * dont la première occurrence CONSERVÉE (`origine`, non bornée) tombe dans la
+ * fenêtre — la définition de `nouveauxGroupes`, qui en donne le nombre. Un groupe
+ * de la population a une ligne avant `to` : `first_seen < to` va de soi.
+ */
+function groupsSql(base: ErrorBase, ordre: OrdreGroupes = "statut", nouveauxDepuis?: string): string {
   return `${base.sql}, g as (
     select app_id, fingerprint,
            max(error_type) as error_type, max(message) as sample_message,
@@ -639,14 +669,10 @@ function groupsSql(base: ErrorBase): string {
          g.session_coverage, g.identity_coverage, g.min_inclusion_probability
     from g
     join origine o on o.app_id = g.app_id and o.fingerprint = g.fingerprint
-    left join error_status st on st.app_id = g.app_id and st.fingerprint = g.fingerprint
-   order by (case
-              when ${REGRESSED_SQL} then 0
-              when coalesce(st.status, 'open') = 'open' then 1
-              when st.status = 'ignored' then 3
-              else 2 end),
-            g.visitors_affected desc nulls last, g.sessions_affected desc nulls last,
-            g.occurrences desc, g.last_seen desc, g.app_id, g.fingerprint`;
+    left join error_status st on st.app_id = g.app_id and st.fingerprint = g.fingerprint${
+      nouveauxDepuis ? `\n   where o.first_seen >= ${base.bind(nouveauxDepuis)}::timestamptz` : ""
+    }
+   order by ${ORDRES_GROUPES[ordre]}`;
 }
 
 /**
@@ -829,7 +855,19 @@ function withSeries(groups: ErrorGroupRow[], trend: ErrorTrendPoint[], points: S
 export async function listErrorGroups(
   f: ErrorFilters,
   page: { limit: number; offset: number },
-  opts?: { series?: boolean; apps?: string[] | null },
+  opts?: {
+    series?: boolean;
+    apps?: string[] | null;
+    /** Ordre de la liste (CP9) ; défaut `statut`, l'ordre historique. */
+    tri?: OrdreGroupes;
+    /**
+     * Liste restreinte aux groupes apparus sur la fenêtre (`nouveaux=1`, F18).
+     * Totaux et tendance restent ceux de TOUTE la population : la liste est
+     * filtrée, pas l'écran. `total` compte encore tous les groupes : l'appelant
+     * pagine sur `nouveauxGroupes(f)`.
+     */
+    nouveaux?: boolean;
+  },
 ): Promise<ErrorListResult> {
   const schema = await errorSchema();
   const { v69 } = schema;
@@ -841,7 +879,7 @@ export async function listErrorGroups(
   return snapshot(async (lire) => {
     const groupsBase = errorBase(resolved, schema, restriction);
     const rows = await lire<GroupSqlRow>(
-      `${groupsSql(groupsBase)}
+      `${groupsSql(groupsBase, opts?.tri ?? "statut", opts?.nouveaux ? range.from : undefined)}
        limit ${groupsBase.bind(page.limit)} offset ${groupsBase.bind(page.offset)}`,
       groupsBase.params,
     );
@@ -860,29 +898,33 @@ export async function listErrorGroups(
       groups = withSeries(groups, trend, points);
     }
 
-    const population = totalsRows.find((row) => !row.unfingerprinted_rows);
-    const unfingerprinted = totalsRows.find((row) => row.unfingerprinted_rows)?.occurrences ?? 0;
-    const totals: ErrorTotals = {
-      occurrences: population?.occurrences ?? 0,
-      sessions_affected: population?.sessions_affected ?? null,
-      visitors_affected: population?.visitors_affected ?? null,
-      identified_users_affected: population?.identified_users_affected ?? null,
-      session_coverage: population?.session_coverage ?? null,
-      identity_coverage: population?.identity_coverage ?? null,
-      groups: population?.groups ?? 0,
-      unfingerprinted,
-    };
+    const totals = totauxDe(totalsRows);
     return {
       groups,
-      unfingerprinted,
+      unfingerprinted: totals.unfingerprinted,
       page: { limit: page.limit, offset: page.offset },
       total: totals.groups,
       totals,
       trend,
-      sampling: samplingOf(population?.min_inclusion_probability),
+      sampling: samplingOf(totalsRows.find((row) => !row.unfingerprinted_rows)?.min_inclusion_probability),
       enrichment: enrichmentOf(v69),
     };
   });
+}
+
+/** Les totaux d'une population à partir des deux lignes de `totalsSql` (avec / sans empreinte). */
+function totauxDe(totalsRows: TotalsSqlRow[]): ErrorTotals {
+  const population = totalsRows.find((row) => !row.unfingerprinted_rows);
+  return {
+    occurrences: population?.occurrences ?? 0,
+    sessions_affected: population?.sessions_affected ?? null,
+    visitors_affected: population?.visitors_affected ?? null,
+    identified_users_affected: population?.identified_users_affected ?? null,
+    session_coverage: population?.session_coverage ?? null,
+    identity_coverage: population?.identity_coverage ?? null,
+    groups: population?.groups ?? 0,
+    unfingerprinted: totalsRows.find((row) => row.unfingerprinted_rows)?.occurrences ?? 0,
+  };
 }
 
 /**
@@ -1141,4 +1183,147 @@ export async function partSessionsTouchees(
     sql.params,
   );
   return { base: row?.base ?? 0, touchees: row?.touchees ?? 0, tauxMin: row?.taux_min ?? null };
+}
+
+// ═══════════════════ Erreurs : tuiles et hero de /errors (F18) ═══════════════════
+//
+// Registre : plan § 4.5 et § 5.3.2. Contrairement aux comptes de F10 ci-dessus,
+// ces lectures reprennent la base de la LISTE (`errorBase`) : les tuiles et le hero
+// comptent exactement la population des groupes listés — mêmes prédicats (périmètre,
+// fenêtre, appareil, dimensions, segment, bots), même `origine` pour « Première
+// vue » —, jamais une requête voisine aux conditions recopiées.
+
+/** La même requête, décalée sur la période précédente (`cmp=prev`) : même durée, juste avant. */
+function requeteLue(f: ErrorFilters, shift: boolean): ErrorFilters {
+  const query = queryOf(f);
+  return { ...f, query: { ...query, range: plageLue(query.range, shift) } };
+}
+
+export interface TotauxErreurs {
+  totals: ErrorTotals;
+  /** Occurrences de la population avec empreinte, par seau du contrat, zéros compris. */
+  trend: ErrorTrendPoint[];
+}
+
+/**
+ * Totaux et tendance de la population, sans la liste.
+ *
+ * Deux usages : la période précédente des tuiles (`cmp=prev`) et les tuiles du mode
+ * issues, dont la liste filtre ses propres totaux par statut et par source — deux
+ * réglages de la LISTE, qui ne découpent pas l'écran.
+ *
+ * « Option `shift` de `listErrorGroups`, ou second appel avec requête décalée »
+ * (§ 5.3.2, F18 tranche) : second appel, mais réduit aux deux instructions utiles
+ * — totaux (`totalsSql`) et tendance (`trendSql`) —, dans une photographie. Une
+ * option `shift` de la liste lirait aussi les groupes et leurs séries de la période
+ * précédente pour n'en garder que les totaux.
+ */
+export async function totauxErreurs(f: ErrorFilters, shift = false): Promise<TotauxErreurs> {
+  const schema = await errorSchema();
+  const lue = requeteLue(f, shift);
+  const { range } = queryOf(lue);
+  return snapshot(async (lire) => {
+    const totalsBase = errorBase(lue, schema);
+    const rows = await lire<TotalsSqlRow>(totalsSql(totalsBase), totalsBase.params);
+    const trendBase = errorBase(lue, schema);
+    const trend = await lire<ErrorTrendPoint>(trendSql(trendBase, range), trendBase.params);
+    return { totals: totauxDe(rows), trend };
+  });
+}
+
+/**
+ * Nombre de groupes APPARUS sur la fenêtre (§ 5.3.2) : groupes de la population
+ * dont la première occurrence CONSERVÉE (`origine`, la CTE de la colonne « Première
+ * vue ») tombe dans [from, to). « Conservée » : un groupe plus ancien que la
+ * rétention, dont les premières occurrences ont été purgées, compte comme nouveau
+ * — l'écran l'écrit sous la tuile. Même définition que la liste `nouveaux=1`.
+ *
+ * `shift` (écart au registre, qui n'en déclare pas) : la tuile porte une
+ * comparaison `cmp=prev` (§ 5.3.2, colonne « Cmp ») ; sur la période précédente,
+ * « apparu » veut dire apparu dans CETTE période-là.
+ *
+ * Seules l'app et l'empreinte sont lues : la base en forme antérieure à v69 est
+ * valide sur les deux schémas et évite la sonde d'enveloppe.
+ */
+export async function nouveauxGroupes(f: ErrorFilters, shift = false): Promise<number> {
+  const lue = requeteLue(f, shift);
+  const { range } = queryOf(lue);
+  const base = errorBase(lue, { v69: false, dimensions: await dimensionSchema() });
+  const [row] = await q<{ n: number }>(
+    `${base.sql}, ${base.origine}, presents as (
+       select distinct app_id, fingerprint from filtered_errors where fingerprint is not null
+     )
+     select count(*)::int as n
+       from presents p
+       join origine o on o.app_id = p.app_id and o.fingerprint = p.fingerprint
+      where o.first_seen >= ${base.bind(range.from)}::timestamptz`,
+    base.params,
+  );
+  return row?.n ?? 0;
+}
+
+export interface GroupeFrequent {
+  ref: ErrorGroupRef;
+  message: string | null;
+  error_type: string | null;
+  /** `sum(occurrences)` du groupe sur la fenêtre (V1). */
+  occurrences: number;
+  /** Occurrences par seau, sur la grille du contrat (`bucketStarts`, celle de `trend`), zéros compris. */
+  series: number[];
+}
+
+/**
+ * Les `n` groupes les plus fréquents de la fenêtre, avec leur série (hero « Occurrences
+ * dans le temps, par groupe », § 5.3.2).
+ *
+ * « Plus fréquents » = `order by sum(occurrences) desc` SUR LA FENÊTRE, quel que soit
+ * le statut : pas les premiers de la liste, qui est rangée par triage (CP9) — un
+ * groupe résolu qui revient à 500 occurrences passe devant un groupe régressé à 3.
+ * Départage par (app, empreinte) : deux lectures donnent les mêmes quatre.
+ *
+ * Les séries suivent la grille de `trend` (même zéro-remplissage que `withSeries`) :
+ * l'appelant en tire « Autres groupes » = trend − Σ séries (`autresGroupes`,
+ * lib/perf-domain.ts). Une empreinte partagée par deux apps donne deux groupes.
+ */
+export async function topGroupesSeries(f: ErrorFilters, n: 4): Promise<{ groupes: GroupeFrequent[] }> {
+  const query = queryOf(f);
+  const resolved: ErrorFilters = { ...f, query };
+  const schema = { v69: false, dimensions: await dimensionSchema() };
+  return snapshot(async (lire) => {
+    const teteBase = errorBase(resolved, schema);
+    const tete = await lire<ErrorGroupRef & { message: string | null; error_type: string | null; occurrences: number }>(
+      `${teteBase.sql}
+       select app_id, fingerprint, max(message) as message, max(error_type) as error_type,
+              sum(occurrences)::float8 as occurrences
+         from filtered_errors
+        where fingerprint is not null
+        group by app_id, fingerprint
+        order by sum(occurrences) desc, app_id, fingerprint
+        limit ${teteBase.bind(n)}`,
+      teteBase.params,
+    );
+    if (tete.length === 0) return { groupes: [] };
+
+    const seriesBase = errorBase(resolved, schema, { fingerprints: [...new Set(tete.map((g) => g.fingerprint))] });
+    const points = await lire<SeriesSqlRow>(seriesSql(seriesBase, query.range), seriesBase.params);
+    const debuts = bucketStarts(query.range);
+    const position = new Map(debuts.map((debut, i) => [debut, i]));
+    const cle = (ref: ErrorGroupRef) => JSON.stringify([ref.app_id, ref.fingerprint]);
+    const series = new Map(tete.map((g) => [cle(g), new Array<number>(debuts.length).fill(0)]));
+    for (const point of points) {
+      const valeurs = series.get(cle(point));
+      const i = position.get(new Date(point.bucket).getTime());
+      // Même empreinte dans une autre app que celle du groupe retenu : ignorée.
+      if (valeurs && i !== undefined) valeurs[i] += point.occurrences;
+    }
+    return {
+      groupes: tete.map((g) => ({
+        ref: { app_id: g.app_id, fingerprint: g.fingerprint },
+        message: g.message,
+        error_type: g.error_type,
+        occurrences: g.occurrences,
+        series: series.get(cle(g)) ?? new Array<number>(debuts.length).fill(0),
+      })),
+    };
+  });
 }

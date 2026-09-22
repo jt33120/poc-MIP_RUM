@@ -1,107 +1,145 @@
-// Ligne de tableau d'un SLO : nom/app/route, métrique, objectif, fenêtre,
-// barre d'atteinte + badge de statut (ok/à risque/manqué) et actions
-// activer/désactiver/supprimer. Rendu 100 % serveur. Extrait de app/slo/page.tsx.
-import { etatSlo } from "@/lib/alerting";
-import type { SloRaw, SloStatusRow as SloStatusData } from "@/lib/queries-alerting";
+// Ligne de la table « Définitions et état » de /slo (F63, plan § 5.18 SL5).
+// Rendu serveur.
+//
+// LA MÉTRIQUE EN CLAIR. « Part des mesures LCP notées Bon », « 1 − occurrences
+// d'erreurs par page vue » : la formule de `slo_status()`, pas son identifiant.
+//
+// L'ABSENCE N'EST PAS UN ÉCHEC (V3). Un SLO sans aucune mesure sur sa fenêtre est
+// « non mesurable » : ni atteinte, ni budget consommé, jamais « 0 % » ni « objectif
+// manqué ». Une atteinte négative (`error_rate`) est « non interprétable ».
+//
+// UNE SEULE COULEUR DE VERDICT : « épuisé » (consommé ≥ 100 %, seule définition,
+// R-S). Plus de vert / ambre sous 100 % : le « à risque » à 75 % n'a pas de source.
+//
+// ÉCRITURE RÉSERVÉE. Activer / Désactiver / Supprimer / « Créer une alerte » ne sont
+// RENDUS que pour un administrateur hors session de démonstration (V9) : un viewer
+// ne voit aucun bouton qu'on lui refuserait ensuite.
+import Link from "next/link";
 import { deleteSloAction, toggleSloAction } from "@/app/alerts/actions";
+import { pctBudget, statutBudget } from "@/components/charts/BudgetBars";
+import { formater } from "@/lib/fmt-ids";
+import type { SloRaw, SloStatusRow as SloStatusData } from "@/lib/queries-alerting";
+import { hrefCreerAlerte, metriqueEnClair } from "@/lib/slo-ecran";
 
-/** Classes Tailwind de la barre/statut d'error-budget (ok/at_risk/breached). */
-export const STATUS_STYLE: Record<string, { bar: string; badge: string; label: string }> = {
-  ok: {
-    bar: "bg-good",
-    badge: "bg-good/10 text-good-ink",
-    label: "ok",
-  },
-  at_risk: {
-    bar: "bg-warn",
-    badge: "bg-warn/10 text-warn-ink",
-    label: "à risque",
-  },
-  breached: {
-    bar: "bg-bad",
-    badge: "bg-bad/10 text-bad-ink",
-    label: "objectif manqué",
-  },
-  non_mesurable: {
-    bar: "bg-line",
-    badge: "bg-panel2 text-ink-faint",
-    label: "non mesurable",
-  },
+const TD = "px-3 py-2 align-top";
+
+const VERDICT_BUDGET: Record<ReturnType<typeof statutBudget>, string> = {
+  non_mesurable: "non mesurable",
+  non_interpretable: "non interprétable",
+  dans_budget: "dans le budget",
+  epuise: "épuisé",
 };
 
-/** Formate une fraction [0..1] en pourcentage localisé (fr-FR). */
-export const pct = (v: number) => `${(v * 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} %`;
-
-/** Ligne de tableau d'un SLO avec son statut d'error-budget superposé (si actif). */
-export function SloRow({ raw, status }: { raw: SloRaw; status?: SloStatusData }) {
-  const view = status ? etatSlo(status.attainment, status.objective) : null;
-  const style = (view && STATUS_STYLE[view.status]) ?? STATUS_STYLE.ok;
-  const burned = status ? status.burned_pct ?? (view && "burnedPct" in view ? view.burnedPct : null) : null;
+/** Ligne d'un SLO, avec son état calculé s'il est actif (`slo_status()` ignore les désactivés). */
+export function SloRow({
+  raw,
+  status,
+  alertes7j,
+  admin,
+}: {
+  raw: SloRaw;
+  status?: SloStatusData;
+  /** Déclenchements de ce SLO sur 7 jours ; `null` : lecture en échec ou non faite. */
+  alertes7j: number | null;
+  admin: boolean;
+}) {
+  const statut = status ? statutBudget({ consomme: status.attainment == null ? null : status.burned_pct, atteinte: status.attainment }) : null;
 
   return (
-    <tr data-testid={`slo-${raw.id}`} className={`border-t border-line/60 align-top ${raw.active ? "" : "opacity-60"}`}>
-      <td className="px-4 py-2">
-        <span className="font-medium text-ink">{raw.name}</span>
-        <span className="ml-2 chip-mono text-xs">{raw.app_id}</span>
-        {raw.route && <span className="ml-2 font-mono text-xs text-ink-faint">{raw.route}</span>}
-        {!raw.active && (
-          <span className="ml-2 rounded bg-panel2 px-2 py-0.5 text-xs text-ink-faint">désactivé</span>
-        )}
-        {status?.fast_burn && (
-          <span className="ml-2 rounded-full bg-bad-fond px-2 py-0.5 text-xs font-bold text-white">
-            burn rapide
+    <tr
+      id={`slo-def-${raw.id}`}
+      data-testid={`slo-${raw.id}`}
+      data-statut={statut ?? "desactive"}
+      className={`border-t border-line/60 ${raw.active ? "" : "opacity-60"}`}
+    >
+      <th scope="row" className={`${TD} sticky left-0 bg-panel text-left font-normal`}>
+        <span className="block font-medium text-ink">{raw.name}</span>
+        <span className="chip-mono text-xs">{raw.app_id}</span>
+      </th>
+      <td className={`${TD} text-ink-soft`}>{metriqueEnClair(raw.metric)}</td>
+      <td className={`${TD} font-mono text-xs text-ink-soft`}>{raw.route ?? "toutes"}</td>
+      <td className={`${TD} tabular-nums text-ink-soft`}>{formater("pct", raw.objective)}</td>
+      <td className={`${TD} tabular-nums text-ink-soft`}>{raw.window_days} j</td>
+      <td className={`${TD} tabular-nums`}>
+        {!status ? (
+          <span className="text-ink-soft">—</span>
+        ) : status.attainment == null ? (
+          <span className="text-ink-soft" title="Aucune mesure sur la fenêtre du SLO : ni tenu, ni manqué">
+            non mesurable
           </span>
-        )}
-      </td>
-      <td className="px-4 py-2 text-ink-soft">{raw.metric}</td>
-      <td className="px-4 py-2 tabular-nums text-ink-soft">{pct(raw.objective)}</td>
-      <td className="px-4 py-2 tabular-nums text-ink-soft">{raw.window_days} j</td>
-      <td className="px-4 py-2">
-        {status && status.attainment == null ? (
-          <span className={`rounded px-2 py-0.5 text-xs font-medium ${style.badge}`} title="Aucune mesure sur la fenêtre du SLO : ni tenu, ni manqué">
-            {style.label}
+        ) : status.attainment < 0 ? (
+          <span className="text-ink-soft" title="Plus d'occurrences d'erreurs que de pages vues">
+            non interprétable
           </span>
-        ) : status && status.attainment != null ? (
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 w-28 overflow-hidden rounded-full bg-line">
-              <div className={`h-full ${style.bar}`} style={{ width: `${Math.min(100, status.attainment * 100)}%` }} />
-            </div>
-            <span className="tabular-nums text-xs text-ink-faint">{pct(status.attainment)}</span>
-            <span className={`rounded px-2 py-0.5 text-xs font-medium ${style.badge}`}>{style.label}</span>
-          </div>
         ) : (
-          <span className="text-xs text-ink-faint">—</span>
+          formater("pct", status.attainment)
         )}
       </td>
-      <td className="px-4 py-2 text-right tabular-nums text-ink-soft">
-        {burned == null ? "—" : `${burned.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} %`}
+      <td className={`${TD} whitespace-nowrap tabular-nums`}>
+        {!status || statut === "non_mesurable" ? (
+          <span className="text-ink-soft">—</span>
+        ) : (
+          <>
+            <span className={statut === "epuise" ? "font-semibold text-bad-ink" : "text-ink"}>{pctBudget(status.burned_pct)}</span>{" "}
+            <span className="text-xs text-ink-soft">{VERDICT_BUDGET[statut!]}</span>
+          </>
+        )}
       </td>
-      <td className="px-4 py-2">
-        <div className="flex justify-end gap-2">
-          <form action={toggleSloAction}>
-            <input type="hidden" name="id" value={raw.id} />
-            <button
-              type="submit"
-              data-testid={`toggle-slo-${raw.id}`}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition ${
-                raw.active ? "bg-slate-500 hover:bg-slate-600" : "bg-good-fond hover:bg-good-fond/90"
-              }`}
-            >
-              {raw.active ? "Désactiver" : "Activer"}
-            </button>
-          </form>
-          <form action={deleteSloAction}>
-            <input type="hidden" name="id" value={raw.id} />
-            <button
-              type="submit"
-              data-testid={`delete-slo-${raw.id}`}
-              className="rounded-lg bg-bad-fond px-3 py-1.5 text-xs font-medium text-white transition hover:bg-bad-fond/90"
-            >
-              Supprimer
-            </button>
-          </form>
-        </div>
+      <td className={TD}>
+        {!status ? (
+          <span className="text-ink-soft">—</span>
+        ) : status.fast_burn === true ? (
+          <span className="rounded border border-bad/30 bg-bad/10 px-1.5 py-0.5 text-xs font-medium text-bad-ink">oui</span>
+        ) : status.fast_burn === false ? (
+          <span className="text-ink-soft">non</span>
+        ) : (
+          <span className="text-ink-soft" title="Aucune mesure sur la dernière heure : on ne sait pas">
+            inconnu
+          </span>
+        )}
       </td>
+      <td className={`${TD} tabular-nums`}>
+        {alertes7j == null ? (
+          <span className="text-ink-soft">—</span>
+        ) : (
+          <Link href={`/alerts#slo-${raw.id}`} className="text-brand hover:underline" data-testid="alertes-7j">
+            {alertes7j.toLocaleString("fr-FR")}
+          </Link>
+        )}
+      </td>
+      <td className={`${TD} text-ink-soft`}>{raw.active ? "actif" : "désactivé"}</td>
+      {admin && (
+        <td className={TD}>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Link
+              href={hrefCreerAlerte(raw)}
+              className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink"
+            >
+              Créer une alerte
+            </Link>
+            <form action={toggleSloAction}>
+              <input type="hidden" name="id" value={raw.id} />
+              <button
+                type="submit"
+                data-testid={`toggle-slo-${raw.id}`}
+                className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink-soft transition hover:bg-panel2 hover:text-ink"
+              >
+                {raw.active ? "Désactiver" : "Activer"}
+              </button>
+            </form>
+            <form action={deleteSloAction}>
+              <input type="hidden" name="id" value={raw.id} />
+              <button
+                type="submit"
+                data-testid={`delete-slo-${raw.id}`}
+                className="rounded-lg bg-bad-fond px-3 py-1.5 text-xs font-medium text-white transition hover:bg-bad-fond/90"
+              >
+                Supprimer
+              </button>
+            </form>
+          </div>
+        </td>
+      )}
     </tr>
   );
 }

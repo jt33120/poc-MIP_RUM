@@ -427,3 +427,658 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
     });
   });
 });
+
+// ═══════════════════ F18 — tuiles et hero de /errors ═══════════════════
+//
+// Une app à elle, semée dans le `beforeAll` du bloc : sept groupes, dont un RÉSOLU
+// à 500 occurrences et un RÉGRESSÉ à 3. Le hero doit prendre les 4 plus fréquents
+// de la fenêtre (le résolu en tête), pas les 4 premiers de la liste — rangée par
+// triage, elle met le régressé en premier (CP9).
+(url ? describe : describe.skip)("F18 — tuiles et hero de /errors sur PostgreSQL", () => {
+  const APP_F18 = "f18-perf-a";
+  const c18 = new pg.Client(url ? { connectionString: url } : {});
+  let lib18: Console;
+  const f18 = (qs = "") => lib18.filtersOfQuery(requete(`${FENETRE}&app=${APP_F18}${qs}`));
+  const f18Vide = () => lib18.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${APP_F18}`)));
+  const PAGE = { limit: 100, offset: 0 };
+
+  async function nettoyerF18(): Promise<void> {
+    for (const table of ["rum_error", "rum_pageview", "rum_session", "error_status"]) {
+      await c18.query(`delete from ${table} where app_id = $1`, [APP_F18]);
+    }
+  }
+
+  async function semerF18(): Promise<void> {
+    for (const [id, debut] of [["f18-s1", H(0, 1)], ["f18-s2", H(2, 1)], ["f18-s3", H(5, 1)]] as const) {
+      await c18.query(
+        `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at,
+                                  sample_rate, error_sample_rate, has_error)
+         values ($1, $2, 'desktop', false, $3, $3, 1, 1, true)`,
+        [id, APP_F18, debut],
+      );
+      await c18.query(
+        `insert into rum_pageview (span_id, session_id, app_id, route, url, nav_type, started_at)
+         values ($1, $2, $3, '/', 'https://site.example/', 'navigate', $4)`,
+        [`${id}-pv`, id, APP_F18, debut],
+      );
+    }
+    // [empreinte, session, occurrences, instant]
+    const erreurs: [string, string | null, number, Date][] = [
+      ["fp-resolu", "f18-s1", 500, H(1)],
+      ["fp-regresse", "f18-s2", 3, H(4)],
+      ["fp-g10", "f18-s1", 6, H(0)],
+      ["fp-g10", "f18-s1", 4, H(3)],
+      ["fp-g8", "f18-s2", 8, H(2)],
+      ["fp-g6", "f18-s3", 6, H(5)],
+      ["fp-g4", null, 4, H(5)], // sans session : sessions touchées inconnues pour ce groupe
+      ["fp-ancien", null, 2, H(-3)], // période précédente : apparu À CE MOMENT-LÀ
+      ["fp-ancien", "f18-s1", 1, H(1)],
+    ];
+    let n = 0;
+    for (const [fp, sid, occ, ts] of erreurs) {
+      await c18.query(
+        `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type,
+                                fingerprint, occurrences, error_source, ts)
+         values ($1, $2, $3, '/', 'error', $4, 'Error', $5, $6, 'browser_js', $7)`,
+        [`f18-e-${n++}`, sid, APP_F18, `boom ${fp}`, fp, occ, ts],
+      );
+    }
+    // Résolu APRÈS sa dernière occurrence : il reste résolu. Résolu AVANT : régressé.
+    await c18.query(
+      `insert into error_status (app_id, fingerprint, status, resolved_at) values ($1, 'fp-resolu', 'resolved', now()),
+                                                                                ($1, 'fp-regresse', 'resolved', $2)`,
+      [APP_F18, H(2)],
+    );
+  }
+
+  beforeAll(async () => {
+    await c18.connect();
+    for (const file of fichiersSql()) await c18.query(readFileSync(file, "utf8"));
+    await nettoyerF18();
+    await semerF18();
+    lib18 = await consoleSur(url!);
+  }, 180_000);
+
+  afterAll(async () => {
+    await lib18?.pool.end();
+    await nettoyerF18();
+    await c18.end();
+  });
+
+  describe("topGroupesSeries", () => {
+    it("les 4 plus fréquents de la fenêtre : le résolu à 500 devant le régressé à 3", async () => {
+      const { groupes } = await lib18.topGroupesSeries(f18(), 4);
+      expect(groupes.map((g) => g.ref.fingerprint)).toEqual(["fp-resolu", "fp-g10", "fp-g8", "fp-g6"]);
+      expect(groupes.map((g) => g.occurrences)).toEqual([500, 10, 8, 6]);
+      expect(groupes[0]).toMatchObject({ ref: { app_id: APP_F18 }, message: "boom fp-resolu", error_type: "Error" });
+    });
+
+    it("séries sur la grille du contrat (6 seaux), zéros compris", async () => {
+      const { groupes } = await lib18.topGroupesSeries(f18(), 4);
+      expect(groupes.every((g) => g.series.length === GRILLE.length)).toBe(true);
+      expect(groupes[1].series).toEqual([6, 0, 0, 4, 0, 0]);
+      expect(groupes[0].series).toEqual([0, 500, 0, 0, 0, 0]);
+    });
+
+    it("hero : ≤ 5 séries, et « Autres » = tendance − Σ4 sur la même grille", async () => {
+      const { groupes } = await lib18.topGroupesSeries(f18(), 4);
+      const { trend, totals } = await lib18.totauxErreurs(f18());
+      expect(groupes.length + 1).toBeLessThanOrEqual(5);
+      const { autresGroupes } = await import("../../apps/console/lib/perf-domain");
+      const tendance = trend.map((p) => p.occurrences);
+      expect(tendance).toEqual([6, 501, 8, 4, 3, 10]);
+      expect(tendance.reduce((a, b) => a + b, 0)).toBe(totals.occurrences);
+      expect(autresGroupes(tendance, groupes.map((g) => g.series))).toEqual([0, 1, 0, 0, 3, 4]);
+    });
+
+    it("périmètre vide → aucun groupe", async () => {
+      expect(await lib18.topGroupesSeries(f18Vide(), 4)).toEqual({ groupes: [] });
+    });
+  });
+
+  describe("nouveauxGroupes", () => {
+    it("groupes dont la première occurrence conservée est dans la fenêtre", async () => {
+      expect(await lib18.nouveauxGroupes(f18())).toBe(6); // tous sauf fp-ancien, vu d'abord avant
+    });
+
+    it("shift : fp-ancien est apparu sur la période précédente", async () => {
+      expect(await lib18.nouveauxGroupes(f18(), true)).toBe(1);
+    });
+
+    it("population filtrée (appareil absent) et périmètre vide → 0", async () => {
+      expect(await lib18.nouveauxGroupes(f18("&device=mobile"))).toBe(0);
+      expect(await lib18.nouveauxGroupes(f18Vide())).toBe(0);
+    });
+
+    it("= la liste `nouveaux=1`, qui écarte fp-ancien ; totaux et tendance de TOUTE la population", async () => {
+      const liste = await lib18.listErrorGroups(f18(), PAGE, { nouveaux: true });
+      expect(liste.groups.map((g) => g.fingerprint)).not.toContain("fp-ancien");
+      expect(liste.groups).toHaveLength(await lib18.nouveauxGroupes(f18()));
+      expect(liste.totals.occurrences).toBe(532);
+    });
+  });
+
+  describe("totauxErreurs", () => {
+    it("occurrences = sum(occurrences) ; sessions touchées distinctes", async () => {
+      const { totals } = await lib18.totauxErreurs(f18());
+      expect(totals.occurrences).toBe(532);
+      expect(totals.sessions_affected).toBe(3);
+      expect(totals.groups).toBe(7);
+    });
+
+    it("shift : la période précédente n'a qu'une occurrence sans session → sessions touchées inconnues (null), pas 0", async () => {
+      const { totals, trend } = await lib18.totauxErreurs(f18(), true);
+      expect(totals.occurrences).toBe(2);
+      expect(totals.sessions_affected).toBeNull();
+      expect(trend.map((p) => p.bucket.toISOString().replace(/\.\d{3}Z$/, "Z"))).toEqual(GRILLE_PRECEDENTE);
+    });
+
+    it("mêmes totaux que la liste", async () => {
+      const liste = await lib18.listErrorGroups(f18(), PAGE);
+      expect((await lib18.totauxErreurs(f18())).totals).toEqual(liste.totals);
+    });
+  });
+
+  describe("ordre de la liste (tri)", () => {
+    it("statut (défaut, inchangé) : le régressé d'abord, le résolu en dernier", async () => {
+      const { groups } = await lib18.listErrorGroups(f18(), PAGE);
+      expect(groups[0].fingerprint).toBe("fp-regresse");
+      expect(groups.at(-1)?.fingerprint).toBe("fp-resolu");
+    });
+
+    it("sessions : un nombre de sessions inconnu (fp-g4) en dernier, jamais parmi les zéros", async () => {
+      const { groups } = await lib18.listErrorGroups(f18(), PAGE, { tri: "sessions" });
+      expect(groups.at(-1)?.fingerprint).toBe("fp-g4");
+    });
+
+    it("recent : dernière vue d'abord", async () => {
+      const { groups } = await lib18.listErrorGroups(f18(), PAGE, { tri: "recent" });
+      expect(groups.map((g) => g.fingerprint)).toEqual([
+        "fp-g6",
+        "fp-g4",
+        "fp-regresse",
+        "fp-g10",
+        "fp-g8",
+        "fp-resolu",
+        "fp-ancien",
+      ]);
+    });
+  });
+});
+
+// ═══════════════════ F22 — Interactions : tuiles et hero de /ux ═══════════════════
+//
+// Trois apps à ce bloc : une app navigateur (60 rage clicks sur 60 cibles : plus que
+// les 50 couples de `topFrustrations`), une app aux seules sessions React Native (le
+// capteur n'émet rien : non collecté), une app mixte (2 navigateur + 1 React Native :
+// « 2 sur 3 », et le signal porté par la session React Native n'est pas compté).
+(url ? describe : describe.skip)("F22 — frustrationTotaux et frustrationParRoute sur PostgreSQL", () => {
+  const WEB_F22 = "f22-perf-web";
+  const MOBILE_F22 = "f22-perf-mobile";
+  const MIXTE_F22 = "f22-perf-mixte";
+  const APPS_F22 = [WEB_F22, MOBILE_F22, MIXTE_F22];
+  const c22 = new pg.Client(url ? { connectionString: url } : {});
+  let lib22: Console;
+  let frustration: typeof import("../../apps/console/lib/queries-frustration");
+  const f22 = (app: string) => lib22.filtersOfQuery(requete(`${FENETRE}&app=${app}`));
+
+  async function nettoyerF22(): Promise<void> {
+    for (const table of ["rum_event", "rum_pageview", "rum_session"]) {
+      await c22.query(`delete from ${table} where app_id = any($1::text[])`, [APPS_F22]);
+    }
+  }
+
+  async function semerF22(): Promise<void> {
+    // [session, app, runtime, début, routes vues]
+    const sessions: [string, string, string | null, Date, string[]][] = [
+      ["f22-w0", WEB_F22, "browser", H(-2), ["/panier"]], // période précédente
+      ["f22-w1", WEB_F22, "browser", H(0, 5), ["/panier"]],
+      ["f22-w2", WEB_F22, null, H(1, 5), ["/panier", "/"]], // runtime NULL : navigateur d'avant v82
+      ["f22-w3", WEB_F22, "browser", H(2, 5), ["/"]],
+      ["f22-m1", MOBILE_F22, "react_native", H(0, 5), ["Accueil"]],
+      ["f22-m2", MOBILE_F22, "react_native", H(1, 5), ["Accueil"]],
+      ["f22-m3", MOBILE_F22, "react_native", H(2, 5), ["Panier"]],
+      ["f22-x1", MIXTE_F22, "browser", H(0, 5), ["/"]],
+      ["f22-x2", MIXTE_F22, "browser", H(1, 5), ["/"]],
+      ["f22-x3", MIXTE_F22, "react_native", H(2, 5), ["Accueil"]],
+    ];
+    for (const [id, app, runtime, debut, routes] of sessions) {
+      await c22.query(
+        `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at, runtime)
+         values ($1, $2, 'desktop', false, $3, $3, $4)`,
+        [id, app, debut, runtime],
+      );
+      for (const [i, route] of routes.entries()) {
+        await c22.query(
+          `insert into rum_pageview (span_id, session_id, app_id, route, url, nav_type, started_at)
+           values ($1, $2, $3, $4, 'https://site.example/', 'navigate', $5)`,
+          [`${id}-pv${i}`, id, app, route, new Date(debut.getTime() + i * 60_000)],
+        );
+      }
+    }
+    // [session, app, route, type, cible, instant]
+    const signaux: [string, string, string, "rage" | "dead" | "error", string, Date][] = [
+      ...Array.from({ length: 60 }, (_, i) => ["f22-w1", WEB_F22, "/panier", "rage", `bouton-${i}`, H(0, 20)] as const),
+      ["f22-w2", WEB_F22, "/", "error", "payer", H(1, 20)],
+      ["f22-w3", WEB_F22, "/", "dead", "lien-mort", H(2, 20)],
+      ["f22-w0", WEB_F22, "/panier", "rage", "bouton-0", H(-2, 20)], // période précédente
+      ["f22-x1", MIXTE_F22, "/", "rage", "menu", H(0, 20)],
+      ["f22-x3", MIXTE_F22, "Accueil", "rage", "onglet", H(2, 20)], // porté par une session React Native
+    ];
+    for (const [n, [sid, app, route, type, cible, ts]] of signaux.entries()) {
+      await c22.query(
+        `insert into rum_event (span_id, session_id, app_id, route, name, props, ts)
+         values ($1, $2, $3, $4, $5, $6, $7)`,
+        [`f22-e-${n}`, sid, app, route, `frustration.${type}`, { target: cible, count: 1 }, ts],
+      );
+    }
+  }
+
+  beforeAll(async () => {
+    await c22.connect();
+    for (const file of fichiersSql()) await c22.query(readFileSync(file, "utf8"));
+    await nettoyerF22();
+    await semerF22();
+    lib22 = await consoleSur(url!);
+    frustration = await import("../../apps/console/lib/queries-frustration");
+  }, 180_000);
+
+  afterAll(async () => {
+    await lib22?.pool.end();
+    await nettoyerF22();
+    await c22.end();
+  });
+
+  describe("frustrationTotaux", () => {
+    it("total ENTIER : 60 rage clicks sur 60 cibles, là où `topFrustrations` s'arrête à 50 couples", async () => {
+      const totaux = await frustration.frustrationTotaux(f22(WEB_F22));
+      expect(totaux.parType).toEqual([
+        { kind: "rage", n: 60, sessions: 1 },
+        { kind: "dead", n: 1, sessions: 1 },
+        { kind: "error", n: 1, sessions: 1 },
+      ]);
+      const top = await frustration.topFrustrations(f22(WEB_F22));
+      expect(top.filter((r) => r.kind === "rage").reduce((s, r) => s + r.n, 0)).toBeLessThan(60);
+    });
+
+    it("base = sessions avec vue ; toutes couvertes (runtime browser ou NULL)", async () => {
+      const { capteur } = await frustration.frustrationTotaux(f22(WEB_F22));
+      expect(capteur).toEqual({ sessionsCouvertes: 3, sessionsTotal: 3, runtimeLu: true });
+    });
+
+    it("sessions React Native seules → sessionsCouvertes = 0 (le capteur n'émet pas), aucun signal", async () => {
+      const totaux = await frustration.frustrationTotaux(f22(MOBILE_F22));
+      expect(totaux.capteur).toEqual({ sessionsCouvertes: 0, sessionsTotal: 3, runtimeLu: true });
+      expect(totaux.parType.every((t) => t.n === 0)).toBe(true);
+    });
+
+    it("mixte : 2 sessions couvertes sur 3 ; le signal porté par la session React Native n'est pas compté", async () => {
+      const totaux = await frustration.frustrationTotaux(f22(MIXTE_F22));
+      expect(totaux.capteur).toEqual({ sessionsCouvertes: 2, sessionsTotal: 3, runtimeLu: true });
+      expect(totaux.parType.find((t) => t.kind === "rage")).toEqual({ kind: "rage", n: 1, sessions: 1 });
+    });
+
+    it("shift : la période précédente, sur sa propre base", async () => {
+      const avant = await frustration.frustrationTotaux(f22(WEB_F22), true);
+      expect(avant.parType.find((t) => t.kind === "rage")).toEqual({ kind: "rage", n: 1, sessions: 1 });
+      expect(avant.capteur).toEqual({ sessionsCouvertes: 1, sessionsTotal: 1, runtimeLu: true });
+    });
+  });
+
+  describe("frustrationParRoute", () => {
+    it("par route : comptes par type, sessions de la route et sessions touchées SUR la route", async () => {
+      const lignes = await frustration.frustrationParRoute(f22(WEB_F22));
+      expect(lignes).toEqual([
+        { route: "/", rage: 0, dead: 1, error: 1, sessionsTouchees: 2, sessionsRoute: 2 },
+        { route: "/panier", rage: 60, dead: 0, error: 0, sessionsTouchees: 1, sessionsRoute: 2 },
+      ]);
+    });
+
+    it("numérateur inclus dans le dénominateur : touchées ≤ sessions de la route, partout", async () => {
+      for (const app of APPS_F22) {
+        for (const l of await frustration.frustrationParRoute(f22(app))) {
+          expect(l.sessionsTouchees).toBeLessThanOrEqual(l.sessionsRoute);
+        }
+      }
+    });
+
+    it("type=rage : seules les sessions touchées se restreignent au type ; dead et error restent LUS (jamais un 0 non lu)", async () => {
+      const lignes = await frustration.frustrationParRoute(f22(WEB_F22), "rage");
+      // « / » porte un dead click et un error click, aucun rage : ses colonnes le disent,
+      // et aucune de ses sessions n'est touchée PAR UN RAGE CLICK.
+      expect(lignes.find((l) => l.route === "/")).toEqual({
+        route: "/",
+        rage: 0,
+        dead: 1,
+        error: 1,
+        sessionsTouchees: 0,
+        sessionsRoute: 2,
+      });
+      expect(lignes.find((l) => l.route === "/panier")).toEqual({
+        route: "/panier",
+        rage: 60,
+        dead: 0,
+        error: 0,
+        sessionsTouchees: 1,
+        sessionsRoute: 2,
+      });
+      // Mêmes comptes qu'hors filtre : le filtre ne touche que le pilote.
+      const tous = await frustration.frustrationParRoute(f22(WEB_F22));
+      expect(lignes.map(({ rage, dead, error }) => [rage, dead, error])).toEqual(
+        tous.map(({ rage, dead, error }) => [rage, dead, error]),
+      );
+    });
+
+    it("référence « Ensemble » sur les mêmes couples session × route : Σ touchées / Σ sessions de la route", async () => {
+      const { tauxEnsembleRoutes } = await import("../../apps/console/lib/perf-domain");
+      // « / » : 2 touchées sur 2 ; « /panier » : 1 sur 2 → 3 couples touchés sur 4.
+      expect(tauxEnsembleRoutes(await frustration.frustrationParRoute(f22(WEB_F22)))).toEqual({
+        taux: 0.75,
+        touchees: 3,
+        couples: 4,
+      });
+    });
+
+    it("les sessions React Native sortent des deux côtés : aucune route mobile dans le classement", async () => {
+      expect(await frustration.frustrationParRoute(f22(MOBILE_F22))).toEqual([]);
+      const mixte = await frustration.frustrationParRoute(f22(MIXTE_F22));
+      expect(mixte).toEqual([{ route: "/", rage: 1, dead: 0, error: 0, sessionsTouchees: 1, sessionsRoute: 2 }]);
+    });
+  });
+});
+
+// ─────────────────── F26 — lectures de l'écran Satisfaction (`/experience`) ───────────────────
+//
+// Ses propres apps, ses propres données, sa propre connexion : ce bloc ne dépend pas
+// des données du bloc F10 (il réutilise seulement la fenêtre FIXE et les outils de
+// requête déclarés en tête de fichier). Ce qu'il prouve :
+//   - `feedbackByRoute.detracteurs` compte les notes ≤ 2 ; une page à commentaire
+//     seul rend `count = 0` (l'écran en fait `null`, jamais 0 %) ; `pages` dit la
+//     troncature ;
+//   - `feedbackTrendContrat` rend UN point par seau du contrat : sans avis, CSAT `null`
+//     (un trou) et volume 0 ;
+//   - `feedbackStats(f, true)` lit la période précédente ;
+//   - périmètre : viewer restreint = son app ; `apps = []` → rien.
+(url ? describe : describe.skip)("lectures de l'écran Satisfaction sur PostgreSQL (F26)", () => {
+  const A26 = "f26-sat-a";
+  const B26 = "f26-sat-b";
+  // C26 : une app dont toutes les sessions sont React Native (le SDK mobile n'émet aucun signal de frustration).
+  const C26 = "f26-sat-c";
+  const APPS26 = [A26, B26, C26];
+  const client26 = new pg.Client(url ? { connectionString: url } : {});
+  let lib26: Awaited<ReturnType<typeof chargerF26>>;
+
+  async function chargerF26() {
+    delete (globalThis as { pgPool?: unknown }).pgPool;
+    vi.resetModules();
+    process.env.DATABASE_URL = url!;
+    const experience = await import("../../apps/console/lib/queries-experience");
+    const filters = await import("../../apps/console/lib/filters");
+    const { pool } = await import("../../apps/console/lib/db");
+    return { ...experience, ...filters, pool };
+  }
+
+  async function nettoyerF26(c: pg.Client): Promise<void> {
+    await c.query(`delete from rum_event where app_id = any($1::text[])`, [APPS26]);
+    await c.query(`delete from rum_session where app_id = any($1::text[])`, [APPS26]);
+  }
+
+  async function semerF26(c: pg.Client): Promise<void> {
+    // [id, app, début, robot, runtime]
+    const sessions: [string, string, Date, boolean, string | null][] = [
+      ["f26-s-a1", A26, H(0, 5), false, null],
+      ["f26-s-a2", A26, H(2, 5), false, null],
+      ["f26-s-bot", A26, H(0, 5), true, null],
+      ["f26-s-b1", B26, H(1, 5), false, null],
+      // Frustration (revue) : une session React Native dans A ; une session commencée
+      // AVANT la fenêtre qui s'acharne dedans ; une app entièrement React Native.
+      ["f26-s-rn", A26, H(1, 5), false, "react_native"],
+      ["f26-s-veille", A26, H(-3), false, null],
+      ["f26-s-c1", C26, H(1, 5), false, "react_native"],
+    ];
+    for (const [id, app, debut, bot, runtime] of sessions) {
+      await c.query(
+        `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at, runtime)
+         values ($1, $2, 'desktop', $3, $4, $4, $5)`,
+        [id, app, bot, debut, runtime],
+      );
+    }
+    // [span, session, app, signal, instant]
+    const signaux: [string, string, string, string, Date][] = [
+      ["f26-fr-01", "f26-s-a1", A26, "frustration.rage", H(0, 50)],
+      ["f26-fr-02", "f26-s-a1", A26, "frustration.rage", H(1, 10)],
+      ["f26-fr-03", "f26-s-a2", A26, "frustration.dead", H(2, 45)],
+      ["f26-fr-04", "f26-s-rn", A26, "frustration.rage", H(1, 20)], // session React Native : écartée
+      ["f26-fr-05", "f26-s-bot", A26, "frustration.rage", H(0, 10)], // robot : écarté
+      ["f26-fr-06", "f26-s-a1", A26, "frustration.error", H(0, 15)], // ni rage ni dead
+      // Douze clics rageurs d'une session commencée avant la fenêtre : hors population.
+      ...Array.from({ length: 12 }, (_v, i): [string, string, string, string, Date] => [
+        `f26-fr-v${i}`,
+        "f26-s-veille",
+        A26,
+        "frustration.rage",
+        H(1, 30 + i),
+      ]),
+    ];
+    for (const [span, session, app, nom, ts] of signaux) {
+      await c.query(
+        `insert into rum_event (span_id, session_id, app_id, route, name, ts) values ($1, $2, $3, '/p1', $4, $5)`,
+        [span, session, app, nom, ts],
+      );
+    }
+    // [span, session, app, route, score (null = commentaire seul), instant]
+    const avis: [string, string | null, string, string | null, number | null, Date][] = [
+      ["f26-fb-01", "f26-s-a1", A26, "/p1", 5, H(0)],
+      ["f26-fb-02", "f26-s-a1", A26, "/p1", 4, H(0, 20)],
+      ["f26-fb-03", "f26-s-a1", A26, "/p1", 2, H(0, 30)],
+      ["f26-fb-04", "f26-s-a2", A26, "/p1", 1, H(2)],
+      ["f26-fb-05", "f26-s-a2", A26, "/p2", 3, H(2, 20)],
+      ["f26-fb-06", "f26-s-a2", A26, "/p3", null, H(2, 30)], // commentaire sans note
+      ["f26-fb-07", "f26-s-a1", A26, null, 5, H(0, 40)], // avis « toute l'app »
+      ["f26-fb-08", "f26-s-bot", A26, "/p1", 1, H(0)], // robot : exclu par défaut
+      ["f26-fb-09", "f26-s-a1", A26, "/p1", 4, H(-2)], // période précédente
+      ["f26-fb-10", "f26-s-b1", B26, "/p1", 5, H(1)], // autre app
+    ];
+    for (const [span, session, app, route, score, ts] of avis) {
+      await c.query(
+        `insert into rum_event (span_id, session_id, app_id, route, name, props, ts)
+         values ($1, $2, $3, $4, 'feedback', $5::jsonb, $6)`,
+        [span, session, app, route, JSON.stringify({ score, comment: score === null ? "rien à noter" : "ok" }), ts],
+      );
+    }
+  }
+
+  const f26 = (qs: string, principal: ScopePrincipal = ADMIN) => lib26.filtersOfQuery(requete(`${FENETRE}&${qs}`, principal));
+  const fA26 = () => f26(`app=${A26}`);
+  const fViewer26 = () => f26("", { role: "viewer", apps: [A26] });
+  const fVide26 = () => lib26.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${A26}`)));
+
+  beforeAll(async () => {
+    await client26.connect();
+    // Schéma complet (idempotent) : ce bloc ne suppose pas que le bloc F10 l'a posé.
+    for (const file of fichiersSql()) await client26.query(readFileSync(file, "utf8"));
+    await nettoyerF26(client26);
+    await semerF26(client26);
+    lib26 = await chargerF26();
+  }, 180_000);
+
+  afterAll(async () => {
+    await lib26?.pool.end();
+    await nettoyerF26(client26);
+    await client26.end();
+  });
+
+  describe("feedbackByRoute (colonne detracteurs)", () => {
+    it("detracteurs compte les notes ≤ 2 ; le robot est exclu", async () => {
+      const lignes = await lib26.feedbackByRoute(fA26());
+      const p1 = lignes.find((l) => l.route === "/p1");
+      expect(p1).toMatchObject({ count: 4, positives: 2, detracteurs: 2 });
+    });
+
+    it("page à commentaire seul : count = 0, detracteurs = 0 ; `pages` = pages ayant un avis", async () => {
+      const lignes = await lib26.feedbackByRoute(fA26());
+      expect(lignes.find((l) => l.route === "/p3")).toMatchObject({ count: 0, positives: 0, detracteurs: 0 });
+      expect(lignes.find((l) => l.route === "/p2")).toMatchObject({ count: 1, positives: 0, detracteurs: 0 });
+      expect(lignes.find((l) => l.route === null)).toMatchObject({ count: 1, positives: 1, detracteurs: 0 });
+      expect(lignes).toHaveLength(4);
+      expect(lignes.every((l) => l.pages === 4)).toBe(true);
+    });
+
+    it("périmètre : viewer restreint = son app ; apps = [] → aucune page", async () => {
+      expect(await lib26.feedbackByRoute(fViewer26())).toEqual(await lib26.feedbackByRoute(fA26()));
+      expect(await lib26.feedbackByRoute(fVide26())).toEqual([]);
+      expect((await lib26.feedbackByRoute(f26(`app=${B26}`))).map((l) => l.count)).toEqual([1]);
+    });
+  });
+
+  describe("feedbackTrendContrat", () => {
+    it("un point par seau de la grille ; CSAT = positifs / avis notés", async () => {
+      const serie = await lib26.feedbackTrendContrat(fA26());
+      expect(serie.map((p) => p.bucket)).toEqual(GRILLE);
+      expect(serie[0]).toEqual({ bucket: GRILLE[0], csat: 0.75, avis: 4 }); // 5, 4, 2, 5 ; robot exclu
+      expect(serie[2]).toEqual({ bucket: GRILLE[2], csat: 0, avis: 2 }); // 1 et 3 ; le commentaire seul n'entre pas
+    });
+
+    it("seau sans avis noté = trou : CSAT null, volume 0 — jamais 0 %", async () => {
+      const serie = await lib26.feedbackTrendContrat(fA26());
+      for (const i of [1, 3, 4, 5]) expect(serie[i]).toEqual({ bucket: GRILLE[i], csat: null, avis: 0 });
+    });
+
+    it("périmètre : viewer = A ; apps = [] → grille entière, sans avis", async () => {
+      expect(await lib26.feedbackTrendContrat(fViewer26())).toEqual(await lib26.feedbackTrendContrat(fA26()));
+      const vide = await lib26.feedbackTrendContrat(fVide26());
+      expect(vide).toHaveLength(6);
+      expect(vide.every((p) => p.csat === null && p.avis === 0)).toBe(true);
+    });
+  });
+
+  describe("feedbackStats (paramètre shift)", () => {
+    it("fenêtre, puis période précédente contiguë", async () => {
+      expect(await lib26.feedbackStats(fA26())).toMatchObject({ count: 6, positives: 3, detractors: 2, promoters: 2, passives: 2 });
+      expect(await lib26.feedbackStats(fA26(), true)).toMatchObject({ count: 1, positives: 1, detractors: 0 });
+    });
+
+    it("périmètre : apps = [] → aucun avis (count 0, jamais « toutes »)", async () => {
+      expect(await lib26.feedbackStats(fViewer26())).toEqual(await lib26.feedbackStats(fA26()));
+      expect(await lib26.feedbackStats(fVide26())).toMatchObject({ count: 0, positives: 0 });
+    });
+  });
+
+  describe("frustrationSessionsCommencees (revue : même population, garde de capteur)", () => {
+    it("numérateur = signaux rage/dead des sessions COMMENCÉES couvertes, joints par (app, session)", async () => {
+      // Commencées : a1, a2, rn (robot et session de la veille exclus) ; couvertes : a1, a2.
+      // Signaux : a1 ×2 rage, a2 ×1 dead ; ni la session React Native, ni le robot, ni
+      // les douze clics de la session de la veille, ni `frustration.error`.
+      expect(await lib26.frustrationSessionsCommencees(fA26())).toEqual({
+        sessions: 3,
+        sessionsCouvertes: 2,
+        signaux: 3,
+        runtimeLu: true,
+      });
+    });
+
+    it("app entièrement React Native : aucune session couverte (l'écran dit « Non collecté »)", async () => {
+      expect(await lib26.frustrationSessionsCommencees(f26(`app=${C26}`))).toEqual({
+        sessions: 1,
+        sessionsCouvertes: 0,
+        signaux: 0,
+        runtimeLu: true,
+      });
+    });
+
+    it("périmètre : viewer = A ; apps = [] → zéro session", async () => {
+      expect(await lib26.frustrationSessionsCommencees(fViewer26())).toEqual(await lib26.frustrationSessionsCommencees(fA26()));
+      expect(await lib26.frustrationSessionsCommencees(fVide26())).toMatchObject({ sessions: 0, sessionsCouvertes: 0, signaux: 0 });
+    });
+  });
+});
+
+// ═══════════════ F15 — vuesParNavType (plan § 4.5, § 5.2.2 « Vues par type de navigation ») ═══════════════
+//
+// Sa propre app et ses propres données : ce bloc ne dépend pas du semis de F10.
+(url ? describe : describe.skip)("F15 — vuesParNavType sur PostgreSQL", () => {
+  const APP_F15 = "f15-nav-a";
+  const APP_F15_B = "f15-nav-b";
+  const c = new pg.Client(url ? { connectionString: url } : {});
+  let libF15: Console;
+  const fF15 = (qs: string, principal: ScopePrincipal = ADMIN) => libF15.filtersOfQuery(requete(`${FENETRE}&${qs}`, principal));
+
+  async function nettoyerF15(): Promise<void> {
+    for (const table of ["rum_pageview", "rum_session"]) {
+      await c.query(`delete from ${table} where app_id = any($1::text[])`, [[APP_F15, APP_F15_B]]);
+    }
+  }
+
+  beforeAll(async () => {
+    await c.connect();
+    for (const file of fichiersSql()) await c.query(readFileSync(file, "utf8"));
+    await nettoyerF15();
+    const sessions: [string, string, boolean][] = [
+      ["f15-s1", APP_F15, false],
+      ["f15-robot", APP_F15, true],
+      ["f15-b1", APP_F15_B, false],
+    ];
+    for (const [id, app, bot] of sessions) {
+      await c.query(
+        `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at)
+         values ($1, $2, 'desktop', $3, $4, $5)`,
+        [id, app, bot, H(-2), H(4)],
+      );
+    }
+    // /panier : 3 changements de route SPA + 2 chargements ; /accueil : un rechargement
+    // et une vue SANS nav_type ; /contact : un chargement ; puis ce qui ne doit JAMAIS
+    // compter sous A : un robot, l'app B, la période précédente. (`rum_pageview.route`
+    // est NOT NULL : une vue a toujours une route, contrairement à une mesure.)
+    const vues: [string, string, string, string, string | null, Date][] = [
+      ["f15-pv-1", "f15-s1", APP_F15, "/panier", "spa", H(0)],
+      ["f15-pv-2", "f15-s1", APP_F15, "/panier", "spa", H(0, 20)],
+      ["f15-pv-3", "f15-s1", APP_F15, "/panier", "spa", H(1)],
+      ["f15-pv-4", "f15-s1", APP_F15, "/panier", "navigate", H(1, 20)],
+      ["f15-pv-5", "f15-s1", APP_F15, "/panier", "navigate", H(2)],
+      ["f15-pv-6", "f15-s1", APP_F15, "/accueil", "reload", H(2, 20)],
+      ["f15-pv-7", "f15-s1", APP_F15, "/accueil", null, H(3)],
+      ["f15-pv-8", "f15-s1", APP_F15, "/contact", "navigate", H(3, 20)],
+      ["f15-pv-robot", "f15-robot", APP_F15, "/panier", "navigate", H(0)],
+      ["f15-pv-b", "f15-b1", APP_F15_B, "/panier", "spa", H(0)],
+      ["f15-pv-avant", "f15-s1", APP_F15, "/panier", "navigate", H(-1)],
+    ];
+    for (const [span, sid, app, route, nav, ts] of vues) {
+      await c.query(
+        `insert into rum_pageview (span_id, session_id, app_id, route, url, nav_type, started_at)
+         values ($1, $2, $3, $4, 'https://site.example/', $5, $6)`,
+        [span, sid, app, route, nav, ts],
+      );
+    }
+    libF15 = await consoleSur(url!);
+  }, 180_000);
+
+  afterAll(async () => {
+    await libF15?.pool.end();
+    await nettoyerF15();
+    await c.end();
+  });
+
+  it("3 vues spa + 2 navigate sur une route → segments [2, 3]", async () => {
+    const lignes = await libF15.vuesParNavType(fF15(`app=${APP_F15}`));
+    const panier = lignes.find((l) => l.route === "/panier");
+    expect([panier?.chargements, panier?.spa]).toEqual([2, 3]);
+    expect(panier?.inconnu).toBe(0);
+  });
+
+  it("par volume décroissant ; nav_type nul → « inconnu », jamais un chargement", async () => {
+    const lignes = await libF15.vuesParNavType(fF15(`app=${APP_F15}`));
+    expect(lignes).toEqual([
+      { route: "/panier", chargements: 2, spa: 3, inconnu: 0 },
+      { route: "/accueil", chargements: 1, spa: 0, inconnu: 1 },
+      { route: "/contact", chargements: 1, spa: 0, inconnu: 0 },
+    ]);
+  });
+
+  it("robot, autre app et période précédente exclus ; viewer restreint à B ; apps = [] → aucune ligne", async () => {
+    const b = await libF15.vuesParNavType(fF15(`app=${APP_F15_B}`));
+    expect(b).toEqual([{ route: "/panier", chargements: 0, spa: 1, inconnu: 0 }]);
+    const viewerB: ScopePrincipal = { role: "viewer", apps: [APP_F15_B] };
+    expect(await libF15.vuesParNavType(fF15("", viewerB))).toEqual(b);
+    expect(await libF15.vuesParNavType(libF15.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${APP_F15}`))))).toEqual([]);
+  });
+});
