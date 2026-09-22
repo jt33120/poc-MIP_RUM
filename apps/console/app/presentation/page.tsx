@@ -19,7 +19,7 @@ export default async function Presentation() {
   const user = await getUser();
 
   // Vitrine PUBLIQUE : le layout rend le visiteur non connecté dans une coquille
-  // nue — on habille donc nous-mêmes une page d'accueil complète.
+  // nue — on habille donc nous-mêmes la page d'accueil.
   if (!user) return <Landing />;
 
   const isAdmin = user.role === "admin";
