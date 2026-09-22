@@ -3,6 +3,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { BudgetBars, statutBudget, type BudgetLigne } from "@/components/charts/BudgetBars";
+import type { SloStatusRow } from "@/lib/queries-alerting";
+import { lignesBudget } from "@/lib/slo-ecran";
 
 const texte = (html: string) =>
   html
@@ -96,5 +98,46 @@ describe("BudgetBars", () => {
     expect(statutBudget({ consomme: 50, atteinte: -0.1 })).toBe("non_interpretable");
     expect(statutBudget({ consomme: 100, atteinte: 0.9 })).toBe("epuise");
     expect(statutBudget({ consomme: 99.9, atteinte: 0.9 })).toBe("dans_budget");
+  });
+});
+
+// F63 — le hero de /slo : les lignes viennent de `slo_status()` via `lignesBudget`.
+describe("F63 — hero de /slo : trois SLO (tenu, dépassé, non mesurable)", () => {
+  const statut = (p: Partial<SloStatusRow>): SloStatusRow => ({
+    slo_id: 1,
+    app_id: "demo",
+    name: "LCP tenu",
+    metric: "LCP",
+    route: "/checkout",
+    objective: 0.9,
+    window_days: 7,
+    attainment: 1,
+    budget: 0.1,
+    burned_pct: 0,
+    fast_burn: false,
+    ...p,
+  });
+  const lignes = lignesBudget([
+    statut({}),
+    statut({ slo_id: 3, name: "CLS sans mesure", metric: "CLS", route: null, attainment: null, burned_pct: null, fast_burn: null }),
+    statut({ slo_id: 2, name: "INP dépassé", metric: "INP", objective: 0.95, attainment: 0.6, burned_pct: 800, fast_burn: true }),
+  ]);
+
+  it("tri : consommé décroissant, non mesurable en dernier ; drill vers ce qui consomme", () => {
+    expect(lignes.map((l) => l.libelle)).toEqual(["INP dépassé", "LCP tenu", "CLS sans mesure"]);
+    expect(lignes[0].href).toBe("/pages?app=demo&vital=INP&route=%2Fcheckout");
+    expect(lignes[2].raison).toBe("aucune mesure CLS sur 7 j");
+  });
+
+  it("rendu : dépassé bordé à l'échelle et écrit, tenu neutre à 0 %, non mesurable sans barre ni « 0 % »", () => {
+    const html = renderToStaticMarkup(<BudgetBars lignes={lignes} ariaLabel="Budget" />);
+    expect(texte(ligneDe(html, "epuise"))).toContain("800 %");
+    expect(texte(ligneDe(html, "epuise"))).toContain("brûle vite");
+    // Le trait « épuisé » (repère commun à toutes les lignes) est rouge ; la BARRE, non.
+    expect(ligneDe(html, "dans_budget").match(/<span[^>]*data-barre="dans_budget"[^>]*>/)?.[0]).not.toMatch(/bad/);
+    const sans = ligneDe(html, "non_mesurable");
+    expect(sans).not.toContain("data-barre");
+    expect(texte(sans)).toContain("Non mesurable : aucune mesure CLS sur 7 j");
+    expect(texte(sans)).not.toMatch(/(^|\s)0 %/);
   });
 });
