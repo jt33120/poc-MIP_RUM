@@ -121,9 +121,10 @@ async function consoleSur(databaseUrl: string) {
   vi.resetModules();
   process.env.DATABASE_URL = databaseUrl;
   const sessions = await import("../../apps/console/lib/queries-sessions");
+  const { acquisition } = await import("../../apps/console/lib/queries-acquisition");
   const filters = await import("../../apps/console/lib/filters");
   const { pool } = await import("../../apps/console/lib/db");
-  return { ...sessions, ...filters, pool };
+  return { ...sessions, acquisition, ...filters, pool };
 }
 type Console = Awaited<ReturnType<typeof consoleSur>>;
 
@@ -268,6 +269,14 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
     it("mêmes filtres que la lecture qualifiée : appareil et segment v1", async () => {
       expect((await lib.samplingSessionsHistorique(f(`app=${A}&period=24h&device=mobile`), { lecture: "vues" })).sessions).toBe(0);
       expect((await lib.samplingSessionsHistorique(f(`app=${A}&period=24h&seg=device==desktop`), { lecture: "vues" })).sessions).toBe(2);
+    });
+
+    it("/acquisition sous un segment v1 : la lecture aboutit, sur la même population que « vues »", async () => {
+      // `$3` était déjà `cap` (limit) : le segment, compilé à partir de `$3`, liait sa
+      // valeur au mauvais paramètre et PostgreSQL refusait la requête.
+      expect((await lib.acquisition(f(`app=${A}&period=24h&seg=device==desktop`))).total).toBe(2);
+      expect((await lib.acquisition(f(`app=${A}&period=24h&seg=device==mobile`))).total).toBe(0);
+      expect((await lib.acquisition(f(`app=${A}&period=24h&seg=device==desktop`), 1)).total).toBe(1);
     });
 
     it("une fenêtre de semaines hors bornes est refusée, jamais interpolée", async () => {
