@@ -131,8 +131,9 @@ async function debordements(page: Page): Promise<string[]> {
 test("/ : bande « Bon » visible derrière le LCP p75, avec les données de démo", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await login(page);
-  // Toutes les applications : la démo, plus l'app de ce test (qui garantit des mesures sur 24 h).
-  await page.goto(`${consoleUrl}/?period=24h`, { waitUntil: "domcontentloaded" });
+  // L'app de ce test (qui garantit des mesures sur 24 h) : sans `app`, `/` est le
+  // sélecteur de projet, pas la vue d'ensemble.
+  await page.goto(`${consoleUrl}/?app=${APP_ID}&period=24h`, { waitUntil: "domcontentloaded" });
   const serie = heroLcp(page);
   // recharts dessine après hydratation.
   await expect(serie.locator(".recharts-surface").first()).toBeVisible({ timeout: 15_000 });
@@ -177,6 +178,9 @@ test("/ : un clic sur un seau zoome sur sa plage (from/to, plus de period)", asy
   await page.goto(`${consoleUrl}/?app=${APP_ID}&period=24h`, { waitUntil: "domcontentloaded" });
   const surface = heroLcp(page).locator(".recharts-surface").first();
   await expect(surface).toBeVisible({ timeout: 15_000 });
+  // Le hero est sous le pli à 1280 × 720 : un clic à des coordonnées hors de la
+  // fenêtre ne touche rien.
+  await surface.scrollIntoViewIfNeeded();
   const boite = await surface.boundingBox();
   if (!boite) throw new Error("graphique sans boîte");
   await page.mouse.move(boite.x + boite.width * 0.6, boite.y + boite.height * 0.5);
@@ -212,7 +216,7 @@ test("vitrine : chaque composant de séries et ses états", async ({ page }) => 
   const series = page.locator("section#threshold-series");
   await expect(series.locator(".recharts-surface").first()).toBeVisible({ timeout: 15_000 });
   await expect(series.locator(".recharts-reference-area.bande-bon").first()).toBeVisible();
-  await expect(series.getByTestId("seuil-hors-echelle")).toHaveText(/seuil Mauvais à 4,0\ss, hors échelle/);
+  await expect(series.getByTestId("seuil-hors-echelle").filter({ hasText: "4,0" })).toHaveText(/seuil Mauvais à 4,0\ss, hors échelle/);
   await expect(series.getByTestId("series-non-tracees")).toContainText("1 série non tracée");
   await expect(series.getByTestId("points-hors-grille")).toContainText("1 point hors de la grille");
   await expect(series.getByText(/Annotations non affichées : déploiements non affichés/)).toBeVisible();
@@ -225,7 +229,8 @@ test("vitrine : chaque composant de séries et ses états", async ({ page }) => 
   await expect(annotations).not.toContainText("v1.4.1");
 
   const barres = page.locator("section#stacked-bars");
-  await expect(barres.locator(".recharts-surface")).toHaveCount(3, { timeout: 15_000 });
+  // `.recharts-wrapper` : une par graphique ; `.recharts-surface` compte aussi les icônes de légende.
+  await expect(barres.locator(".recharts-wrapper")).toHaveCount(3, { timeout: 15_000 });
   await expect(barres.getByRole("link", { name: "Critique" })).toHaveAttribute("href", "/alerts");
 
   await expect(page.getByTestId("line-trend-volume")).toBeVisible();
