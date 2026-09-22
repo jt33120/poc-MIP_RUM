@@ -1,6 +1,6 @@
 // Étape unique de la frise « Comment ça fonctionne » de la page Présentation :
 // une carte (icône + titre + texte) avec un chevron de liaison sauf en fin de
-// frise. Rendu 100 % serveur. Extrait de app/presentation/page.tsx.
+// frise. Rendu entièrement côté serveur. Extrait de app/presentation/page.tsx.
 import { ICON_PATHS, Icon } from "@/components/icons";
 import type { PIPELINE } from "@/lib/presentation-content";
 

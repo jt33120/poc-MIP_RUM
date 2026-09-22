@@ -191,9 +191,9 @@ export const GLOSSARY = {
     label: "RUM — Real User Monitoring",
     term: "Mesure de la performance et des erreurs vécues par les utilisateurs réels, en production.",
     stack:
-      "SDK navigateur (Web Vitals, erreurs, traces) → OTLP → Postgres → console Next.js. Souverain UE, OTel-native.",
+      "SDK navigateur (Web Vitals, erreurs, traces) → OTLP → PostgreSQL → console Next.js. Données hébergées en UE, format OpenTelemetry.",
     business:
-      "On mesure le vrai ressenti des clients sur le site live, pas une simulation. C'est la donnée qui compte pour le chiffre d'affaires : un site rapide convertit mieux.",
+      "On mesure ce que vivent les visiteurs réels du site en production, pas une simulation. Ces mesures disent ce qu'ils ont vécu ; seules, elles ne disent pas l'effet sur les ventes.",
   },
   experience: {
     label: "Expérience",

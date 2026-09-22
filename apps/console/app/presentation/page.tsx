@@ -55,8 +55,7 @@ export default async function Presentation() {
           Le <strong>Real User Monitoring</strong> mesure la performance et les erreurs <strong>réellement
           vécues par vos utilisateurs</strong> en production — pas une sonde de laboratoire. On capte ce que
           vivent les vrais visiteurs (vitesse d'affichage, réactivité, bugs JavaScript, parcours), parce que
-          c'est cette expérience-là qui pèse sur la conversion et la satisfaction. Un site rapide convertit
-          mieux : le RUM le prouve avec des chiffres terrain.
+          c'est cette expérience-là qui pèse sur la conversion et la satisfaction.
         </p>
       </section>
 
@@ -67,12 +66,13 @@ export default async function Presentation() {
           {[
             "SDK navigateur (Web Vitals API, rrweb)",
             "OpenTelemetry · OTLP/HTTP",
-            "Backend Node autonome — Railway",
+            "Collecte : route de la console, Vercel (Francfort)",
+            "Travaux planifiés et MCP : Railway (Amsterdam)",
             "PostgreSQL",
             "Console Next.js 15 / React 19",
             // Ce qui est vrai : la donnée est en UE (Neon, Francfort). Ce qui ne
-            // l'est pas : la souveraineté — Neon et Vercel sont de droit
-            // américain, et les fonctions serveur sont servies depuis iad1.
+            // l'est pas : la souveraineté — Neon, Vercel et Railway sont de droit
+            // américain, même si les fonctions serveur tournent en fra1 (vercel.json).
             "Base de données en UE — Francfort",
           ].map((chip) => (
             <span

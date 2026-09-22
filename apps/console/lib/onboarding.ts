@@ -1,6 +1,26 @@
 // Logique pure de l'onboarding clients (v0.5) — validations + dérivation du
 // statut d'intégration. Aucune I/O ici : tout est testé unitairement.
 
+import { ingestPath } from "./ingest-endpoint";
+
+/**
+ * Exemple de snippet du carrousel « Ajouter un client » de la vitrine. L'adresse
+ * d'ingestion est celle que la console sert elle-même (lib/ingest-endpoint.ts), sur
+ * le même hôte que le SDK — pas un service backend à part : la vitrine a longtemps
+ * montré `https://<ingest>/v1/traces`, un hôte qui n'existe pas en production.
+ */
+export const EXAMPLE_SNIPPET = `<!-- MIP RUM -->
+<script src="https://<console>/mip-rum.js"></script>
+<script>
+  MIPRum.init({
+    endpoint: "https://<console>${ingestPath("traces")}",
+    appId: "plateforme-client",
+    clientId: "groupement-it",
+    env: "prod",
+    apiKey: "mip_xxxxxxxx", // affichée une seule fois à la création
+  });
+</script>`;
+
 /** app_id : slug court, minuscule, stable (il finit dans chaque event). */
 export function validateAppId(raw: string): string | null {
   const slug = raw.trim().toLowerCase();

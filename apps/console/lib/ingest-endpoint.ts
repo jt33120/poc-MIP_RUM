@@ -20,6 +20,14 @@ const PATHS = {
 
 export type IngestSignal = keyof typeof PATHS;
 
+/**
+ * Chemin d'un canal, sans hôte : pour un texte qui montre l'adresse à un humain
+ * (`https://<console>/api/ingest/v1/traces`) plutôt que de la résoudre.
+ */
+export function ingestPath(signal: IngestSignal): string {
+  return PATHS[signal];
+}
+
 /** http en local (y compris IPv6 ::1), https partout ailleurs. */
 function protocolFor(host: string): "http" | "https" {
   return /^(localhost|127\.|\[::1\]|0\.0\.0\.0)/.test(host) ? "http" : "https";

@@ -163,7 +163,7 @@ export function Landing() {
       {/* Pied de page ------------------------------------------------------- */}
       <footer className="border-t border-line bg-panel/60 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-4 gap-y-2 px-6 py-5 text-xs text-ink-faint">
-          <span>MIP RUM — POC · OpenTelemetry-natif · données en UE, souveraineté visée</span>
+          <span>MIP RUM — POC · OpenTelemetry · données hébergées en UE, hébergeurs de droit américain</span>
           <Link href="/legal/mentions" className="hover:text-ink">Mentions légales</Link>
           <Link href="/legal/cgu" className="hover:text-ink">CGU</Link>
           <Link href="/legal/cgv" className="hover:text-ink">CGV</Link>
