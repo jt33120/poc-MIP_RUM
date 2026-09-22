@@ -62,12 +62,26 @@ export function ErrorOccurrences({
                     <td className="px-4 py-2 text-xs font-semibold tabular-nums">×{o.occurrences.toLocaleString("fr-FR")}</td>
                     <td className="px-4 py-2">
                       <span className="chip-mono">{o.route ?? "—"}</span>
+                      {/* Vue nommée par le SDK (mobile, routeur applicatif) : elle précise
+                          la route sans la remplacer. Absente : rien n'est deviné. */}
+                      {o.view_name && (
+                        <span className="mt-0.5 block max-w-40 truncate text-[11px] text-ink-faint" title={o.view_name}>
+                          vue {o.view_name}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2 font-mono text-xs text-ink-soft">{o.release ?? "—"}</td>
                     <td className="px-4 py-2 text-xs text-ink-soft">
                       {o.error_source ? ERROR_SOURCE_LABELS[o.error_source] : "Inconnue"}
                       {o.handled !== null && (
                         <span className="block text-ink-faint">{o.handled ? "gérée" : "non gérée"}</span>
+                      )}
+                      {/* `is_fatal` est déclaré par l'émetteur : inconnu (null) n'est pas
+                          « non fatale », et ne s'écrit donc pas. */}
+                      {o.is_fatal === true && (
+                        <span className="block font-semibold text-bad-ink" data-testid="occurrence-fatale">
+                          fatale
+                        </span>
                       )}
                     </td>
                     <td className="max-w-sm truncate px-4 py-2 text-xs text-ink-soft" title={o.message ?? ""}>
