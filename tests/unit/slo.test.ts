@@ -6,6 +6,7 @@
 // consommé à 999 %, pour un SLO que rien n'a mesuré.
 import { describe, expect, it } from "vitest";
 import { etatSlo, sloView } from "../../apps/console/lib/alerting";
+import { statutBudget } from "../../apps/console/components/charts/BudgetBars";
 import {
   alertesParSlo,
   comptesSlo,
@@ -42,7 +43,20 @@ describe("F63 — comptesSlo (SL1, SL2, SL2b, SL2c)", () => {
       // Défensif : une atteinte nulle avec un consommé ne compte pas comme épuisé.
       { attainment: null, burned_pct: 999, fast_burn: true },
     ]);
-    expect(c).toEqual({ actifs: 5, epuises: 2, brulent: 1, nonMesurables: 2, burnInconnu: 1 });
+    expect(c).toEqual({ actifs: 5, epuises: 2, nonInterpretables: 0, brulent: 1, nonMesurables: 2, burnInconnu: 1 });
+  });
+
+  it("atteinte négative (error_rate) : consommé ≥ 100 % mais « non interprétable », compté à part, jamais épuisé", () => {
+    // 300 occurrences pour 200 pages vues sur la fenêtre, objectif 99 % : atteinte
+    // 1 − 300/200 = −0,5 ; slo_status() rend consommé = min(1,5 / 0,01 × 100, 999) = 999.
+    const erreurs = { attainment: -0.5, burned_pct: 999, fast_burn: true };
+    const c = comptesSlo([erreurs, { attainment: 0.6, burned_pct: 800, fast_burn: false }]);
+    expect(c.epuises).toBe(1);
+    expect(c.nonInterpretables).toBe(1);
+    expect(c.nonMesurables).toBe(0);
+    // La tuile et la barre suivent la même règle (statutBudget de BudgetBars).
+    expect(statutBudget({ consomme: erreurs.burned_pct, atteinte: erreurs.attainment })).toBe("non_interpretable");
+    expect(comptesSlo([erreurs])).toMatchObject({ epuises: 0, nonInterpretables: 1 });
   });
 });
 

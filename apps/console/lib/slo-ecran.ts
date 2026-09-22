@@ -11,7 +11,8 @@
 //   - burn rapide : 1 − atteinte sur la DERNIÈRE HEURE ≥ 14,4 × budget ; `null` sans
 //     mesure sur l'heure. Une seule fenêtre : sensible aux pics courts.
 // Un SLO sans aucune mesure rend `attainment = null` : ni tenu ni manqué (V3).
-import type { BudgetLigne } from "../components/charts/BudgetBars";
+// `statutBudget` : la règle des barres, réutilisée par les tuiles (une seule définition).
+import { statutBudget, type BudgetLigne } from "../components/charts/BudgetBars";
 import { formater } from "./fmt-ids";
 import type { SloStatusRow } from "./queries-alerting";
 import type { AlertFiringRow } from "./queries-v2";
@@ -94,25 +95,41 @@ export function lignesBudget(statuts: readonly SloStatusRow[]): BudgetLigne[] {
 
 export interface ComptesSlo {
   actifs: number;
-  /** Consommé ≥ 100 % : seule définition (R-S). */
+  /** Consommé ≥ 100 % d'une atteinte interprétable : seule définition (R-S). */
   epuises: number;
+  /**
+   * Atteinte négative (`error_rate` : plus d'occurrences que de pages vues). Son
+   * `burned_pct` est ≥ 100 (borné à 999), mais il ne mesure rien : compté À PART,
+   * jamais dans « Budget épuisé » — la barre de la même page le dit « non interprétable ».
+   */
+  nonInterpretables: number;
   /** `fast_burn = true`. */
   brulent: number;
-  /** `attainment = null` : aucune mesure sur la fenêtre. */
+  /** Aucune mesure sur la fenêtre (`attainment = null`). */
   nonMesurables: number;
   /** Mesurés sur la fenêtre, mais aucune mesure sur la dernière heure : burn inconnu. */
   burnInconnu: number;
 }
 
-/** Les quatre tuiles (SL1, SL2, SL2b, SL2c) : un SLO non mesurable n'est compté nulle part ailleurs. */
+/**
+ * Les quatre tuiles (SL1, SL2, SL2b, SL2c). Chaque SLO est classé par `statutBudget`,
+ * la règle même des barres (`BudgetBars`) : une tuile ne peut pas dire « épuisé » d'un
+ * SLO que sa barre dit « non interprétable » ou « non mesurable ». Un SLO non
+ * mesurable n'est compté nulle part ailleurs.
+ */
 export function comptesSlo(statuts: readonly Pick<SloStatusRow, "attainment" | "burned_pct" | "fast_burn">[]): ComptesSlo {
-  const mesures = statuts.filter((s) => s.attainment != null);
+  const classes = statuts.map((s) => ({
+    s,
+    statut: statutBudget({ consomme: s.attainment == null ? null : s.burned_pct, atteinte: s.attainment }),
+  }));
+  const mesures = classes.filter((c) => c.statut !== "non_mesurable");
   return {
     actifs: statuts.length,
-    epuises: mesures.filter((s) => s.burned_pct != null && s.burned_pct >= 100).length,
-    brulent: mesures.filter((s) => s.fast_burn === true).length,
+    epuises: classes.filter((c) => c.statut === "epuise").length,
+    nonInterpretables: classes.filter((c) => c.statut === "non_interpretable").length,
+    brulent: mesures.filter((c) => c.s.fast_burn === true).length,
     nonMesurables: statuts.length - mesures.length,
-    burnInconnu: mesures.filter((s) => s.fast_burn == null).length,
+    burnInconnu: mesures.filter((c) => c.s.fast_burn == null).length,
   };
 }
 

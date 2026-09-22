@@ -106,6 +106,11 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
                 format="count"
                 raisonNull="lecture en échec"
                 alerte={{ si: ">", valeur: 0, regle: "consommé ≥ 100 % du budget" }}
+                lecture={
+                  comptes && comptes.nonInterpretables > 0
+                    ? `hors ${comptes.nonInterpretables} non interprétable${comptes.nonInterpretables > 1 ? "s" : ""} : plus d'occurrences d'erreurs que de pages vues`
+                    : undefined
+                }
                 href="#budget"
               />
               <KpiTile
