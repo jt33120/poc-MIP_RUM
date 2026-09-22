@@ -100,3 +100,41 @@ describe("repartitionNotes (F26)", () => {
     expect(repartitionNotes({ count: 0, promoters: 0, passives: 0, detractors: 0 }).every((r) => r.part === null && r.n === 0)).toBe(true);
   });
 });
+
+import { MANQUE_FRUSTRATION_MOBILE, RAISON_CAPTEUR_INCONNU, frustrationPour1000 } from "../../apps/console/lib/experience";
+
+describe("frustrationPour1000 — garde de capteur R-F (F26, revue)", () => {
+  it("app React Native seule → null et « Non collecté », jamais « 0,00 »", () => {
+    const r = frustrationPour1000({ sessions: 600, sessionsCouvertes: 0, signaux: 0, runtimeLu: true }, "24 h");
+    expect(r.valeur).toBeNull();
+    expect(r.etat).toEqual({ kind: "non_collecte", manque: MANQUE_FRUSTRATION_MOBILE });
+    expect(r.raisonNull).toContain("non collecté");
+  });
+
+  it("400 navigateur + 600 React Native → taux sur les 400 seules, partiel « 400 sur 1 000 »", () => {
+    const r = frustrationPour1000({ sessions: 1000, sessionsCouvertes: 400, signaux: 20, runtimeLu: true });
+    expect(r.valeur).toBe(50); // 20 / 400 × 1 000, pas 20 / 1 000 × 1 000
+    expect(r.n).toBe(400);
+    // Séparateur de milliers de `fr-FR` : une espace fine insécable, écrite par le formateur.
+    expect(r.etat).toEqual({
+      kind: "partiel",
+      raison: `compté sur les sessions navigateur seulement (400 sur ${(1000).toLocaleString("fr-FR")})`,
+    });
+  });
+
+  it("colonne runtime absente → taux sur toutes les sessions, partiel « capteur non identifiable »", () => {
+    const r = frustrationPour1000({ sessions: 50, sessionsCouvertes: 50, signaux: 5, runtimeLu: false });
+    expect(r.valeur).toBe(100);
+    expect(r.etat).toEqual({ kind: "partiel", raison: RAISON_CAPTEUR_INCONNU });
+  });
+
+  it("aucune session commencée → null, sans état ; tout navigateur → le taux, sans état", () => {
+    expect(frustrationPour1000({ sessions: 0, sessionsCouvertes: 0, signaux: 0, runtimeLu: true }, "1 h")).toEqual({
+      valeur: null,
+      raisonNull: "aucune session commencée sur 1 h",
+      n: 0,
+      etat: null,
+    });
+    expect(frustrationPour1000({ sessions: 3, sessionsCouvertes: 3, signaux: 0, runtimeLu: true })).toMatchObject({ valeur: 0, etat: null });
+  });
+});

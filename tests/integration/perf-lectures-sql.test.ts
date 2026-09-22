@@ -802,7 +802,9 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
 (url ? describe : describe.skip)("lectures de l'écran Satisfaction sur PostgreSQL (F26)", () => {
   const A26 = "f26-sat-a";
   const B26 = "f26-sat-b";
-  const APPS26 = [A26, B26];
+  // C26 : une app dont toutes les sessions sont React Native (le SDK mobile n'émet aucun signal de frustration).
+  const C26 = "f26-sat-c";
+  const APPS26 = [A26, B26, C26];
   const client26 = new pg.Client(url ? { connectionString: url } : {});
   let lib26: Awaited<ReturnType<typeof chargerF26>>;
 
@@ -822,17 +824,46 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
   }
 
   async function semerF26(c: pg.Client): Promise<void> {
-    const sessions: [string, string, Date, boolean][] = [
-      ["f26-s-a1", A26, H(0, 5), false],
-      ["f26-s-a2", A26, H(2, 5), false],
-      ["f26-s-bot", A26, H(0, 5), true],
-      ["f26-s-b1", B26, H(1, 5), false],
+    // [id, app, début, robot, runtime]
+    const sessions: [string, string, Date, boolean, string | null][] = [
+      ["f26-s-a1", A26, H(0, 5), false, null],
+      ["f26-s-a2", A26, H(2, 5), false, null],
+      ["f26-s-bot", A26, H(0, 5), true, null],
+      ["f26-s-b1", B26, H(1, 5), false, null],
+      // Frustration (revue) : une session React Native dans A ; une session commencée
+      // AVANT la fenêtre qui s'acharne dedans ; une app entièrement React Native.
+      ["f26-s-rn", A26, H(1, 5), false, "react_native"],
+      ["f26-s-veille", A26, H(-3), false, null],
+      ["f26-s-c1", C26, H(1, 5), false, "react_native"],
     ];
-    for (const [id, app, debut, bot] of sessions) {
+    for (const [id, app, debut, bot, runtime] of sessions) {
       await c.query(
-        `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at)
-         values ($1, $2, 'desktop', $3, $4, $4)`,
-        [id, app, bot, debut],
+        `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at, runtime)
+         values ($1, $2, 'desktop', $3, $4, $4, $5)`,
+        [id, app, bot, debut, runtime],
+      );
+    }
+    // [span, session, app, signal, instant]
+    const signaux: [string, string, string, string, Date][] = [
+      ["f26-fr-01", "f26-s-a1", A26, "frustration.rage", H(0, 50)],
+      ["f26-fr-02", "f26-s-a1", A26, "frustration.rage", H(1, 10)],
+      ["f26-fr-03", "f26-s-a2", A26, "frustration.dead", H(2, 45)],
+      ["f26-fr-04", "f26-s-rn", A26, "frustration.rage", H(1, 20)], // session React Native : écartée
+      ["f26-fr-05", "f26-s-bot", A26, "frustration.rage", H(0, 10)], // robot : écarté
+      ["f26-fr-06", "f26-s-a1", A26, "frustration.error", H(0, 15)], // ni rage ni dead
+      // Douze clics rageurs d'une session commencée avant la fenêtre : hors population.
+      ...Array.from({ length: 12 }, (_v, i): [string, string, string, string, Date] => [
+        `f26-fr-v${i}`,
+        "f26-s-veille",
+        A26,
+        "frustration.rage",
+        H(1, 30 + i),
+      ]),
+    ];
+    for (const [span, session, app, nom, ts] of signaux) {
+      await c.query(
+        `insert into rum_event (span_id, session_id, app_id, route, name, ts) values ($1, $2, $3, '/p1', $4, $5)`,
+        [span, session, app, nom, ts],
       );
     }
     // [span, session, app, route, score (null = commentaire seul), instant]
@@ -930,6 +961,34 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
     it("périmètre : apps = [] → aucun avis (count 0, jamais « toutes »)", async () => {
       expect(await lib26.feedbackStats(fViewer26())).toEqual(await lib26.feedbackStats(fA26()));
       expect(await lib26.feedbackStats(fVide26())).toMatchObject({ count: 0, positives: 0 });
+    });
+  });
+
+  describe("frustrationSessionsCommencees (revue : même population, garde de capteur)", () => {
+    it("numérateur = signaux rage/dead des sessions COMMENCÉES couvertes, joints par (app, session)", async () => {
+      // Commencées : a1, a2, rn (robot et session de la veille exclus) ; couvertes : a1, a2.
+      // Signaux : a1 ×2 rage, a2 ×1 dead ; ni la session React Native, ni le robot, ni
+      // les douze clics de la session de la veille, ni `frustration.error`.
+      expect(await lib26.frustrationSessionsCommencees(fA26())).toEqual({
+        sessions: 3,
+        sessionsCouvertes: 2,
+        signaux: 3,
+        runtimeLu: true,
+      });
+    });
+
+    it("app entièrement React Native : aucune session couverte (l'écran dit « Non collecté »)", async () => {
+      expect(await lib26.frustrationSessionsCommencees(f26(`app=${C26}`))).toEqual({
+        sessions: 1,
+        sessionsCouvertes: 0,
+        signaux: 0,
+        runtimeLu: true,
+      });
+    });
+
+    it("périmètre : viewer = A ; apps = [] → zéro session", async () => {
+      expect(await lib26.frustrationSessionsCommencees(fViewer26())).toEqual(await lib26.frustrationSessionsCommencees(fA26()));
+      expect(await lib26.frustrationSessionsCommencees(fVide26())).toMatchObject({ sessions: 0, sessionsCouvertes: 0, signaux: 0 });
     });
   });
 });

@@ -151,3 +151,60 @@ export function nuageRessenti(
   }
   return { points, eligibles: points.length, suffisant: points.length >= PAGES_MIN_NUAGE };
 }
+
+// ─────────────── Frustration pour 1 000 sessions : garde de capteur (R-F) ───────────────
+
+/** Texte `non_collecte` (R-F) : une population entièrement React Native. */
+export const MANQUE_FRUSTRATION_MOBILE = "le SDK mobile n'émet pas de signaux de frustration";
+/** Texte `partiel` (R-F) : colonne `runtime` absente, le capteur n'est pas identifiable. */
+export const RAISON_CAPTEUR_INCONNU = "capteur non identifiable : un 0 peut venir d'un capteur qui n'émet pas";
+
+/**
+ * Taux « pour 1 000 sessions commencées » et sa garde de capteur (R-F, CP16), dans
+ * l'ordre :
+ *   - aucune session commencée → `null`, sans état ;
+ *   - colonne `runtime` absente (avant v82) → taux sur toutes les sessions, `partiel`
+ *     « capteur non identifiable » ;
+ *   - aucune session dont le capteur émet → `null` et `non_collecte` : jamais
+ *     « 0,00 », qui se lirait « personne ne s'acharne » là où personne n'écoute ;
+ *   - population mixte → taux sur les seules sessions navigateur, `partiel`
+ *     « compté sur les sessions navigateur seulement (N sur M) » ;
+ *   - sinon le taux, sans état.
+ * `n` est le dénominateur effectivement employé (règle d'échantillon faible).
+ */
+export function frustrationPour1000(
+  l: { sessions: number; sessionsCouvertes: number; signaux: number; runtimeLu: boolean },
+  plage?: string,
+): {
+  valeur: number | null;
+  raisonNull: string | null;
+  n: number;
+  etat: { kind: "partiel"; raison: string } | { kind: "non_collecte"; manque: string } | null;
+} {
+  if (!(l.sessions > 0)) {
+    return { valeur: null, raisonNull: `aucune session commencée${plage ? ` sur ${plage}` : ""}`, n: 0, etat: null };
+  }
+  if (!l.runtimeLu) {
+    return { valeur: (l.signaux / l.sessions) * 1000, raisonNull: null, n: l.sessions, etat: { kind: "partiel", raison: RAISON_CAPTEUR_INCONNU } };
+  }
+  if (!(l.sessionsCouvertes > 0)) {
+    return {
+      valeur: null,
+      raisonNull: `non collecté : ${MANQUE_FRUSTRATION_MOBILE}`,
+      n: 0,
+      etat: { kind: "non_collecte", manque: MANQUE_FRUSTRATION_MOBILE },
+    };
+  }
+  const valeur = (l.signaux / l.sessionsCouvertes) * 1000;
+  if (l.sessionsCouvertes < l.sessions) {
+    const n = l.sessionsCouvertes.toLocaleString("fr-FR");
+    const m = l.sessions.toLocaleString("fr-FR");
+    return {
+      valeur,
+      raisonNull: null,
+      n: l.sessionsCouvertes,
+      etat: { kind: "partiel", raison: `compté sur les sessions navigateur seulement (${n} sur ${m})` },
+    };
+  }
+  return { valeur, raisonNull: null, n: l.sessionsCouvertes, etat: null };
+}

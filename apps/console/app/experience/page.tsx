@@ -27,6 +27,7 @@ import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar } from "@/components/charts/RankBar";
 import { ScatterPlot } from "@/components/charts/ScatterPlot";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
+import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { annotationsDeploiements } from "@/lib/annotations";
 import {
@@ -38,6 +39,7 @@ import {
 import {
   AVIS_FAIBLE_SOUS,
   AVIS_MIN_NUAGE,
+  frustrationPour1000,
   lignesSatisfactionParPage,
   nuageRessenti,
   partPositive,
@@ -56,8 +58,10 @@ import {
   feedbackByRoute,
   feedbackStats,
   feedbackTrendContrat,
+  frustrationSessionsCommencees,
   recentFeedback,
   type FeedbackRow,
+  type FrustrationSessionsCommencees,
   type FeedbackStats,
   type FeedbackTrendContratPoint,
 } from "@/lib/queries-experience";
@@ -142,11 +146,12 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
 
   // CHAQUE LECTURE EST INDÉPENDANTE (§ 3.8 règle 1) : une lecture en échec ne dit que
   // son propre échec, les autres sections s'affichent.
-  const [stats, statsPrev, contexte, tendance, recents, parPage, lcpPages, deploys, couvPart, couvCompte] =
+  const [stats, statsPrev, contexte, frustration, tendance, recents, parPage, lcpPages, deploys, couvPart, couvCompte] =
     await Promise.all([
       lire(() => feedbackStats(f)),
       prev ? lire(() => feedbackStats(f, true)) : Promise.resolve(null),
       lire(() => experienceContext(f)),
+      lire(() => frustrationSessionsCommencees(f)),
       lire(() => feedbackTrendContrat(f)),
       lire(() => recentFeedback(f)),
       lire(() => feedbackByRoute(f)),
@@ -201,18 +206,10 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
         ) : (
           <TuilesAvis s={s} p={p} reference={reference} couvPart={pire(couvPart)} couvCompte={pire(couvCompte)} label={label} />
         )}
-        {!contexte.ok ? (
+        {!frustration.ok ? (
           <EchecLecture compact titre="Frustration pour 1 000 sessions" />
         ) : (
-          <KpiTile
-            label="Frustration pour 1 000 sessions"
-            valeur={contexte.data.sessions > 0 ? (contexte.data.frustration / contexte.data.sessions) * 1000 : null}
-            raisonNull={`aucune session commencée sur ${label}`}
-            format="ratio"
-            couverture={{ n: contexte.data.sessions, unite: "sessions commencées", faibleSous: 30 }}
-            lecture="Clics rageurs et clics morts seulement (pas les clics suivis d'une erreur), pour 1 000 sessions commencées. Le SDK mobile n'émet pas ces signaux : un 0 peut venir d'un capteur absent."
-            href={hrefWithQuery("/ux", q)}
-          />
+          <TuileFrustration lu={frustration.data} label={label} href={hrefWithQuery("/ux", q)} />
         )}
       </section>
 
@@ -405,6 +402,29 @@ function TuilesAvis({
         lecture="Part des avis notés 1 ou 2 sur 5."
       />
     </>
+  );
+}
+
+/**
+ * « Frustration pour 1 000 sessions » : signaux et sessions de la MÊME population
+ * (sessions commencées dont le capteur émet), et la garde de capteur R-F écrite
+ * sous la tuile — `non_collecte` pour une population React Native, jamais « 0,00 ».
+ */
+function TuileFrustration({ lu, label, href }: { lu: FrustrationSessionsCommencees; label: string; href: string }) {
+  const taux = frustrationPour1000(lu, label);
+  return (
+    <div className="flex min-w-0 flex-col gap-2" data-testid="tuile-frustration">
+      <KpiTile
+        label="Frustration pour 1 000 sessions"
+        valeur={taux.valeur}
+        raisonNull={taux.raisonNull ?? undefined}
+        format="ratio"
+        couverture={taux.n > 0 ? { n: taux.n, unite: "sessions commencées", faibleSous: 30 } : undefined}
+        lecture="Clics rageurs et clics morts (pas les clics suivis d'une erreur) des sessions commencées sur la plage, rapportés à ces mêmes sessions."
+        href={href}
+      />
+      {taux.etat && <EtatSurface compact etat={taux.etat} />}
+    </div>
   );
 }
 

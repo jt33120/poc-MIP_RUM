@@ -8,6 +8,7 @@ import { q } from "./db";
 import { partPositive } from "./experience";
 import { type FiltersLike } from "./filters";
 import { plageLue, surGrille } from "./queries";
+import { MOBILE_RUNTIME, mobileSchema } from "./queries-mobile";
 import { bucketExpr, sessionJoin } from "./query-compiler";
 import { sqlContext } from "./query-sql";
 
@@ -59,7 +60,14 @@ export interface ExperienceContext {
   frustration: number; // rage + dead clicks
 }
 
-/** Contexte perf/frustration affiché à côté du CSAT (LCP p75, sessions, clics rageurs et morts). */
+/**
+ * Contexte perf/frustration affiché à côté du CSAT (LCP p75, sessions, clics rageurs et morts).
+ *
+ * `sessions` (commencées) et `frustration` (signaux datés par `e.ts`, toutes sessions)
+ * ne sont PAS les deux termes d'un même taux : deux populations. L'écran n'en lit
+ * que `lcp_p75` ; le taux « pour 1 000 sessions » vient de
+ * `frustrationSessionsCommencees` (F26, revue).
+ */
 export async function experienceContext(f: FiltersLike): Promise<ExperienceContext> {
   const sql = await sqlContext(f);
   const vitals = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });
@@ -80,6 +88,62 @@ export async function experienceContext(f: FiltersLike): Promise<ExperienceConte
     sql.params,
   );
   return r ?? { lcp_p75: null, sessions: 0, frustration: 0 };
+}
+
+export interface FrustrationSessionsCommencees {
+  /** Sessions commencées dans `[from, to)` sous les filtres de l'écran. */
+  sessions: number;
+  /** Parmi elles, celles dont le capteur émet des signaux de frustration (runtime autre que React Native, ou inconnu). */
+  sessionsCouvertes: number;
+  /** Clics rageurs et morts portés par les sessions COUVERTES, quelle que soit leur date. */
+  signaux: number;
+  /** `false` : colonne `rum_session.runtime` absente (avant v82) — aucune session n'a pu être écartée. */
+  runtimeLu: boolean;
+}
+
+/**
+ * « Frustration pour 1 000 sessions » (F26, revue) : numérateur et dénominateur sur
+ * LA MÊME population, même patron que `erreursParSessionCommencee` (B39).
+ *
+ * Le taux d'avant divisait des signaux datés par `e.ts` — de TOUTES les sessions,
+ * y compris une session ouverte avant la fenêtre qui s'acharne dedans — par les
+ * sessions COMMENCÉES : sous `period=1h`, douze clics d'une session de la veille
+ * donnaient « 4 000 ». Ici :
+ *   - dénominateur : les sessions commencées (`started_at ∈ [from, to)`), restreintes
+ *     à celles dont le capteur émet (R-F, CP16) — le SDK React Native n'émet aucun
+ *     signal de frustration : les compter ferait lire « personne ne s'acharne » là
+ *     où personne n'écoute ;
+ *   - numérateur : les signaux `frustration.rage` / `frustration.dead` joints à CES
+ *     sessions par `(app_id, session_id)`, y compris ceux d'après `to` pour une
+ *     session à cheval sur la borne (ils appartiennent à la session comptée).
+ * Sans la colonne `runtime`, rien n'est écarté ; l'écran le dit (`partiel`).
+ */
+export async function frustrationSessionsCommencees(f: FiltersLike): Promise<FrustrationSessionsCommencees> {
+  const runtimeLu = (await mobileSchema()).runtime;
+  const sql = await sqlContext(f);
+  const commencees = sql.where({ dataset: "sessions", row: "s", session: "s", time: "s.started_at" });
+  // Liée seulement si elle sert : un paramètre sans `$n` fait refuser l'instruction.
+  const couverte = runtimeLu ? `(s.runtime is null or s.runtime <> ${sql.bind(MOBILE_RUNTIME)})` : "true";
+  const [row] = await q<{ sessions: number; sessions_couvertes: number; signaux: number }>(
+    `with commencees as (
+       select s.app_id, s.session_id, ${couverte} as couverte
+         from rum_session s
+        where true${commencees}
+     )
+     select (select count(*) from commencees)::int as sessions,
+            (select count(*) from commencees where couverte)::int as sessions_couvertes,
+            (select count(*)
+               from rum_event e
+               join commencees c on c.app_id = e.app_id and c.session_id = e.session_id
+              where c.couverte and e.name in ('frustration.rage', 'frustration.dead'))::int as signaux`,
+    sql.params,
+  );
+  return {
+    sessions: row?.sessions ?? 0,
+    sessionsCouvertes: row?.sessions_couvertes ?? 0,
+    signaux: row?.signaux ?? 0,
+    runtimeLu,
+  };
 }
 
 export interface FeedbackTrendRow {
