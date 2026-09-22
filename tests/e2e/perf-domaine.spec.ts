@@ -365,7 +365,7 @@ test.describe("F13 — Vue d'ensemble : segments, release, angle mort, historiqu
     }
   });
 
-  test("segments : gravité par défaut, tri=volume sur demande ; une route ouvre son panneau sur /pages", async ({ page }) => {
+  test("segments : gravité par défaut, tri=volume sur demande ; une route ouvre /pages filtré sur elle", async ({ page }) => {
     await login(page);
     await page.goto(`${ACCUEIL_F13}&split=route`, { waitUntil: "domcontentloaded" });
     const table = page.getByTestId("impact-table");
@@ -373,10 +373,12 @@ test.describe("F13 — Vue d'ensemble : segments, release, angle mort, historiqu
     const libelles = () =>
       table.getByTestId("impact-ligne").evaluateAll((els) => els.map((el) => el.querySelector("span")?.textContent?.trim() ?? ""));
     expect(await libelles()).toEqual(["/lent", "/rapide"]);
-    // Une route ouvre son panneau sur /pages (§ 3.3), population et plage gardées.
+    // Une route ouvre /pages filtré sur elle, population et plage gardées. Le panneau
+    // route (`panel=route:<r>`, § 3.3) attend F17 : `/pages` ne le lit pas encore.
     const href = new URL((await table.getByTestId("impact-ligne").first().locator("a").getAttribute("href"))!, consoleUrl);
     expect(href.pathname).toBe("/pages");
-    expect(href.searchParams.get("panel")).toBe("route:%2Flent");
+    expect(href.searchParams.get("route")).toBe("/lent");
+    expect(href.searchParams.get("panel")).toBeNull();
     expect(href.searchParams.get("app")).toBe(APP_F13);
 
     await table.getByTestId("tri-volume").click();

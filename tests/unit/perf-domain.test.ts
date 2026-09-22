@@ -149,7 +149,7 @@ describe("F13 — choisirRelB : la règle du dernier déploiement (CP3)", () => 
   it("dernier marqueur sans mesure sur la fenêtre : la release de plus grand volume, et la règle le dit", () => {
     const choix = choisirRelBF13([{ version: "2.0.0" }], versions);
     expect(choix.relB).toBe("1.4.1");
-    expect(choix.regle).toContain("le dernier déploiement déclaré, 2.0.0, n'a aucune mesure sur la fenêtre");
+    expect(choix.regle).toContain("le dernier déploiement déclaré, 2.0.0, n'est pas parmi les releases lues sur la fenêtre");
   });
 
   it("« (non renseignée) » n'est jamais choisie ; une seule release → indisponible, avec sa raison", () => {

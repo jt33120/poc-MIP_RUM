@@ -55,7 +55,7 @@ import { alertFirings, correlationCards, correlationConcordance, unackedAlertCou
 import { UnsupportedFilterError } from "@/lib/query-compiler";
 import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown, type VitalsBreakdownRow } from "@/lib/queries-breakdowns";
 import { GRID_DAYS, healthGrid } from "@/lib/queries-grid";
-import { comparaisonVersions, latestDeployImpact, listDeploys } from "@/lib/queries-deploys";
+import { comparaisonVersions, latestDeployImpact, listDeploys, type ComparaisonVersions } from "@/lib/queries-deploys";
 import { ecartP75 } from "@/lib/stats/incertitude";
 import {
   couverturePrecedente,
@@ -68,7 +68,7 @@ import { avecCondition, RAISON_AUCUNE_VUE, ratioPour100, serieRatioPour100, spar
 import { choisirReleases, vuesProduit, type Entree } from "@/lib/presets";
 import { annotationsDeploiements } from "@/lib/annotations";
 import { explorerHref } from "@/lib/explorer-page-params";
-import { ecrirePanel, gabaritZoom, lireComparaison, lireEtatDeVue, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
+import { gabaritZoom, lireComparaison, lireEtatDeVue, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
 import {
   ALERTES_PAR_EVENEMENT,
   constatsVueEnsemble,
@@ -336,6 +336,17 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             ]);
             return { b, a };
           }),
+        )
+      : null;
+  // Zone 8 : A et B LUES une à une (lecture intersectée `release=<v>`, même fenêtre, sans
+  // le filtre `release` de l'URL). La liste `versionsFenetre` s'arrête aux 12 releases
+  // les plus vues : une release venue de l'URL (lien d'annotation, constat de
+  // déploiement) hors de ces 12 y aurait « 0 session » alors que les tuiles montrent
+  // ses p75.
+  const releasesLues =
+    blocs.versions && releases.ok
+      ? await Promise.all(
+          [releases.relB, releases.relA].map((v) => lire(() => comparaisonVersions(avecCondition(fToutesReleases, "release", v), 12))),
         )
       : null;
 
@@ -667,10 +678,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           libelle: groupLabel,
           // Une route ouvre son panneau sur `/pages` (§ 3.3) ; toute autre dimension,
           // `/pages` filtré ; « Inconnu », la condition `is_null`.
-          lien: (valeur) =>
-            decoupage === "route" && valeur !== null
-              ? lien("/pages", { panel: ecrirePanel({ type: "route", id: valeur }) })
-              : breakdownDrillHref("/pages", query, decoupage, valeur, schema),
+          // `/pages` filtré sur le groupe (`route=`, `browser=`…, « Inconnu » : `is_null`).
+          // Le panneau route (`panel=route:<r>`, § 3.3) attend F17 : `/pages` ne le lit pas
+          // encore, et le lien filtré est celui qui marchait avant F13 (écart déclaré).
+          lien: (valeur) => breakdownDrillHref("/pages", query, decoupage, valeur, schema),
           description: (valeur, mesures) => groupDescription(decoupage, valeur, mesures, `mesure(s) ${vitalClasse}`),
         })
       : null;
@@ -691,10 +702,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // ─── Zone 8 — nouvelle release face à la précédente (F13) ───
   // Lues sans le filtre `release` de l'URL (`fToutesReleases`) : sous `release=B`, A
   // n'aurait aucune session, et la comparaison ne dirait rien.
-  const statsRelease = (v: string): ReleaseStats => {
-    const ligne = versionsFenetre.ok ? versionsFenetre.data.rows.find((r) => r.version === v) : undefined;
+  // Lue explicitement : aucune ligne pour cette release, c'est réellement aucune session
+  // de cette release sur la fenêtre (et plus « hors des 12 plus vues »).
+  const statsRelease = (v: string, lu: ComparaisonVersions): ReleaseStats => {
+    const ligne = lu.rows.find((r) => r.version === v);
     return ligne ? statsDeVersion(ligne) : { release: v, sessions: 0, lcp_p75: null, inp_p75: null, sessionsEnErreur: null };
   };
+  const [lueB, lueA] = releasesLues ?? [null, null];
   const lienRelease = (v: string) => lien("/", { release: v, cmp: null, rel_a: null, rel_b: null });
 
   return (
@@ -963,21 +977,28 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             Nouvelle release face à la précédente
           </h2>
           <SectionErreur titre="Nouvelle release face à la précédente">
-            {!versionsFenetre.ok ? (
+            {!releases.ok ? (
+              // Sans releases à comparer : leur liste illisible est une panne, pas « moins de deux ».
+              !versionsFenetre.ok ? (
+                <EchecLecture titre="Nouvelle release face à la précédente" />
+              ) : (
+                <div className="card p-4" data-testid="release-indisponible">
+                  <EtatSurface compact etat={{ kind: "partiel", raison: `comparaison désactivée : ${releases.raison}` }} />
+                </div>
+              )
+            ) : !lueB?.ok || !lueA?.ok ? (
               <EchecLecture titre="Nouvelle release face à la précédente" />
-            ) : !releases.ok ? (
-              <div className="card p-4" data-testid="release-indisponible">
-                <EtatSurface compact etat={{ kind: "partiel", raison: `comparaison désactivée : ${releases.raison}` }} />
-              </div>
             ) : (
               <ReleaseCompare
-                a={statsRelease(releases.relA)}
-                b={statsRelease(releases.relB)}
+                a={statsRelease(releases.relA, lueA.data)}
+                b={statsRelease(releases.relB, lueB.data)}
                 plage={period.label}
-                source={versionsFenetre.data.source}
+                source={lueB.data.source}
                 regleChoix={releases.regle}
                 hrefs={{ a: lienRelease(releases.relA), b: lienRelease(releases.relB) }}
-                toutesLesVersions={<VersionsTable comparaison={versionsFenetre.data} periodLabel={period.label} />}
+                toutesLesVersions={
+                  versionsFenetre.ok ? <VersionsTable comparaison={versionsFenetre.data} periodLabel={period.label} /> : undefined
+                }
               />
             )}
           </SectionErreur>
