@@ -178,7 +178,9 @@ describe("/forecast — tuiles contre le même jour J−7 (revue de F65)", () =>
     expect(html).not.toMatch(/1.?900.?%/);
     // Une ligne visible par tuile (le libellé annoncé de la tuile la répète).
     expect(
-      html.match(/data-testid="kpi-comparaison">période précédente incomplète : pages vues collectées depuis le 07\/09 16:00 UTC seulement/g),
+      // F11 ajoute `data-ecart` sur cette ligne : on repère le testid, puis le texte,
+      // sans supposer l'ordre ni le nombre des attributs entre les deux.
+      html.match(/data-testid="kpi-comparaison"[^>]*>période précédente incomplète : pages vues collectées depuis le 07\/09 16:00 UTC seulement/g),
     ).toHaveLength(3);
   });
 });

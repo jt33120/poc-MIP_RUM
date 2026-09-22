@@ -518,41 +518,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       ? etatLectureEchantillonnage({ ok: false, raison: echantillonnage.raison })
       : null;
 
-  // SÉRIES SUR GRILLE (F04, § 3.10). Les lectures ne rendent que les seaux non vides :
-  // posées telles quelles, deux heures mesurées de part et d'autre d'un creux de
-  // trafic seraient reliées par une pente jamais mesurée. Chaque série est donc
-  // alignée sur les seaux attendus — un seau sans mesure reste un trou ; un seau sans
-  // page vue vaut 0 page vue.
-  const debutsSeaux = bucketStarts(ecran.query.range);
-  const grilleContrat = grilleIso(debutsSeaux);
-  const pointsLcp = series.ok
-    ? alignerSeaux(series.data, debutsSeaux, false).map((r, i) => ({
-        t: grilleContrat[i],
-        p75: r && r.p75 != null ? Number(r.p75) : null,
-      }))
-    : [];
-  // L'historique découpe ses JOURS dans le fuseau de l'application (`queries-grid`) :
-  // sa grille est celle de `dailyTraffic` (14 jours, vides compris), ou, s'il n'a pas
-  // pu être lu, les 14 derniers jours de ce fuseau.
-  const jours =
-    traffic.ok && traffic.data.length > 0
-      ? traffic.data.map((t) => cleJour(t.day))
-      : joursLocaux(GRID_DAYS, fuseau, Date.now());
-  const debutsJours = jours.map((j) => Date.parse(j));
-  const pointsTrafic = traffic.ok
-    ? alignerSeaux(
-        traffic.data.map((t) => ({ bucket: cleJour(t.day), pageviews: Number(t.pageviews), errors: Number(t.errors) })),
-        debutsJours,
-        true,
-      ).map((r, i) => ({ t: jours[i], pageviews: r?.pageviews ?? null, errors: r?.errors ?? null }))
-    : [];
-  const pointsLcpJour = dailyLcp.ok
-    ? alignerSeaux(
-        dailyLcp.data.map((r) => ({ bucket: r.jour, p75: r.p75 })),
-        debutsJours,
-        false,
-      ).map((r, i) => ({ t: jours[i], p75: r?.p75 ?? null }))
-    : [];
   // ─── Vues préréglées (zone 1, § 3.6) ───
   const entreeReleases: Entree<ReturnType<typeof choisirReleases>> = choix
     ? { valeur: choix }
@@ -1020,23 +985,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               !versionsFenetre.ok ? (
                 <EchecLecture titre="Nouvelle release face à la précédente" />
               ) : (
-                <p className="py-12 text-center text-sm text-ink-faint">Pas de données.</p>
-              )}
-            </SectionErreur>
-          </div>
-          <div>
-            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-              p75 LCP par jour
-            </h3>
-            <SectionErreur titre="p75 LCP par jour">
-              {!dailyLcp.ok ? (
-                <EchecLecture titre="p75 LCP par jour" />
-              ) : dailyLcp.data.some((r) => r.n > 0) ? (
-                <VitalsTimeseries
-                  vital="LCP"
-                  grille={jours}
-                  points={pointsLcpJour}
-                  seauSecondes={86_400}
                 <div className="card p-4" data-testid="release-indisponible">
                   <EtatSurface compact etat={{ kind: "partiel", raison: `comparaison désactivée : ${releases.raison}` }} />
                 </div>
