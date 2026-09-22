@@ -655,7 +655,7 @@ export function queryToSearchParams(query: AnalyticsQuery): URLSearchParams {
  * Les paramètres propres à l'écran quitté (curseur, pagination, recherche) restent
  * derrière : ils n'ont pas de sens ailleurs.
  */
-export function contextSearchParams(sp: URLSearchParams): URLSearchParams {
+export function contextSearchParams(sp: ParamReader): URLSearchParams {
   const out = new URLSearchParams();
   for (const name of CONTRACT_PARAMS) for (const value of sp.getAll(name)) out.append(name, value);
   return out;
