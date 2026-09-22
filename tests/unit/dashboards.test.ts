@@ -12,6 +12,7 @@ import {
   type AnalyticsWidget,
 } from "../../apps/console/lib/dashboards";
 import { parseExplorerPlan } from "../../apps/console/lib/analytics-schema";
+import { MODELES_TABLEAUX as F35_MODELES, cartesDuModele as f35CartesDuModele, optionsDeClonage as f35OptionsDeClonage, pucesDuTableau as f35PucesDuTableau } from "../../apps/console/lib/dashboard-templates";
 
 /** Une configuration v2 telle qu'elle est stockée en jsonb. */
 const ANALYSE = {
@@ -185,5 +186,77 @@ describe("serializeLayout — chaque widget repart dans SA version", () => {
     expect(Object.keys(json.query as object)).not.toContain("app");
     expect(Object.keys(json.query as object)).not.toContain("range");
     expect(json.rangeOverride).toBeUndefined();
+  });
+});
+
+// F35 (W-D1, § 5.24.5) — chaque carte de chaque modèle est un plan que le registre
+// relit : écrite comme un clone l'écrit, relue comme un tableau relit son jsonb.
+describe("F35 — modèles de tableaux de bord", () => {
+  it("quatre modèles, dans l'ordre de la page", () => {
+    expect(F35_MODELES.map((m) => m.cle)).toEqual(["performance", "erreurs", "usages", "releases"]);
+  });
+
+  for (const modele of F35_MODELES) {
+    it(`« ${modele.titre} » : aller-retour serializeLayout / normalizeLayout sans carte illisible, ≤ ${MAX_WIDGETS} cartes`, () => {
+      const cartes = f35CartesDuModele(modele);
+      expect(cartes.length).toBeGreaterThan(0);
+      expect(cartes.length).toBeLessThanOrEqual(MAX_WIDGETS);
+      const jsonb = serializeLayout(cartes);
+      const relues = normalizeLayout(JSON.parse(JSON.stringify(jsonb)));
+      expect(relues.filter((w) => w.kind === "invalid")).toEqual([]);
+      expect(relues).toHaveLength(cartes.length);
+      // Le jsonb relu se réécrit à l'identique : aucune dérive d'une écriture à l'autre.
+      expect(serializeLayout(relues)).toEqual(jsonb);
+      // Chaque section donne son titre à sa première carte (avant F37), sous 60 caractères.
+      const premieres = modele.sections.map((s) => `${s.titre} — ${s.cartes[0].title}`.slice(0, 60));
+      for (const titre of premieres) expect(relues.map((w) => w.title)).toContain(titre);
+    });
+  }
+
+  it("deux populations, deux cartes (V2) : jamais de sessions et d'occurrences sur une même carte", () => {
+    const erreurs = f35CartesDuModele(F35_MODELES[1]).filter((w) => w.kind === "v2");
+    const champs = erreurs.map((w) => (w.kind === "v2" ? `${w.plan.measure.field}:${w.plan.measure.aggregation}` : ""));
+    expect(champs).toContain("occurrences:sum");
+    expect(champs).toContain("sessions:distinct");
+    const usages = f35CartesDuModele(F35_MODELES[2]);
+    expect(usages.map((w) => w.title)).toEqual(expect.arrayContaining(["Combien — Sessions commencées", "Visiteurs"]));
+  });
+
+  it("puces de type d'une carte (W-D2) : représentation pour une analyse, « v1 : … » pour le catalogue historique", () => {
+    const cartes = f35CartesDuModele(F35_MODELES[1]);
+    expect(f35PucesDuTableau(cartes)).toEqual([
+      { libelle: "Valeur", n: 2 },
+      { libelle: "Série", n: 1 },
+      { libelle: "Classement", n: 2 },
+      { libelle: "v1 : Erreurs principales", n: 1 },
+    ]);
+    expect(f35PucesDuTableau(normalizeLayout([{ type: "vital_p75", metric: "LCP" }, { type: "inconnu" }]))).toEqual([
+      { libelle: "v1 : LCP p75", n: 1 },
+      { libelle: "illisible", n: 1 },
+    ]);
+  });
+
+  it("cloner : jamais en démo, jamais sans app autorisée, et seulement dans les apps permises", () => {
+    const APPS = [
+      { app_id: "app-a", name: "Mini-site A" },
+      { app_id: "app-b", name: "" },
+    ];
+    expect(f35OptionsDeClonage({ email: "d@x", role: "viewer", apps: ["app-a"], demo: true }, APPS)).toEqual({
+      cloner: null,
+      raison: "Session de démonstration : lecture seule.",
+    });
+    expect(f35OptionsDeClonage({ email: "v@x", role: "viewer", apps: [] }, APPS)).toEqual({
+      cloner: null,
+      raison: "Création réservée aux comptes autorisés sur une app.",
+    });
+    expect(f35OptionsDeClonage(null, APPS).cloner).toBeNull();
+    expect(f35OptionsDeClonage({ email: "v@x", role: "viewer", apps: ["app-a"] }, APPS)).toEqual({
+      cloner: { apps: [{ id: "app-a", libelle: "Mini-site A" }] },
+    });
+    // Un nom vide retombe sur l'identifiant ; « toutes les apps » n'est jamais proposé.
+    expect(f35OptionsDeClonage({ email: "a@x", role: "admin", apps: null }, APPS).cloner?.apps).toEqual([
+      { id: "app-a", libelle: "Mini-site A" },
+      { id: "app-b", libelle: "app-b" },
+    ]);
   });
 });

@@ -91,9 +91,12 @@ async function deplier(page: Page, resume: string) {
 /** Crée un tableau de bord vide et rend son identifiant. */
 async function creerTableau(page: Page): Promise<string> {
   await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
-  await deplier(page, "+ Nouveau dashboard");
-  await page.fill('input[name="name"]', TABLEAU);
-  await page.locator('select[name="app_id"]').selectOption("demo-app");
+  // F35 : le panneau s'appelle « + Nouveau tableau de bord », et chaque modèle fourni
+  // porte aussi un sélecteur `app_id` — le formulaire de création est donc désigné.
+  await deplier(page, "+ Nouveau tableau de bord");
+  const creation = page.getByTestId("creer-tableau");
+  await creation.locator('input[name="name"]').fill(TABLEAU);
+  await creation.locator('select[name="app_id"]').selectOption("demo-app");
   await page.getByTestId("create-dashboard").click();
   await page.waitForURL(/\/dashboards\/\d+/, { timeout: 15_000 });
   return new URL(page.url()).pathname.split("/").pop()!;
@@ -296,4 +299,75 @@ test("ordre des cartes au clavier, et aucune largeur qui déborde (390 / 768 / 1
     for (const faute of await debordements(page)) fautes.push(`vues @ ${width} px — ${faute}`);
   }
   expect(fautes, fautes.join("\n")).toEqual([]);
+});
+
+// F35 — modèles de tableaux de bord (plan § 5.24, W-D1 à W-D3). Les clones sont des
+// tableaux du compte dédié de ce fichier : on les retire, et eux seuls, à la fin.
+test.describe("F35 — tableaux de bord : modèles", () => {
+  async function menageF35() {
+    await pool.query(`delete from dashboard where created_by = $1 and name like '% — copie'`, [ADMIN_EMAIL]);
+  }
+  test.beforeAll(menageF35);
+  test.afterAll(menageF35);
+
+  test("quatre modèles visibles ; cloner « Performance » ouvre un tableau à ses cartes", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
+    const modeles = page.getByTestId("modele-carte");
+    await expect(modeles).toHaveCount(4);
+    for (const titre of ["Performance", "Erreurs", "Usages", "Releases"]) {
+      await expect(page.getByRole("heading", { name: titre, exact: true })).toBeVisible();
+    }
+    // Un modèle ne lit rien : aucune figure, aucun chiffre mesuré dans la section.
+    await expect(page.getByTestId("modeles-tableaux").getByTestId("figure")).toHaveCount(0);
+
+    const perf = page.locator('[data-testid="modele-carte"][data-modele="performance"]');
+    await expect(perf.locator('select[name="app_id"]')).toHaveValue("demo-app");
+    await perf.getByRole("button", { name: "Cloner le modèle Performance" }).click();
+    await page.waitForURL(/\/dashboards\/\d+/, { timeout: 15_000 });
+    const sp = new URL(page.url()).searchParams;
+    expect(sp.get("app")).toBe("demo-app");
+    expect(sp.get("period")).toBe("1h");
+    await expect(page.getByRole("heading", { name: "Performance — copie" })).toBeVisible({ timeout: 20_000 });
+    // Avant F37, la question de chaque section titre sa première carte.
+    await expect(page.getByTestId("widget-0").locator("h3")).toHaveText("Seuils — LCP p75", { timeout: 20_000 });
+    await expect(page.getByTestId("widget-6")).toBeVisible();
+    await expect(page.getByTestId("widget-7")).toHaveCount(0);
+
+    // De retour sur la liste : l'app par son NOM, les cartes par leur type.
+    await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
+    const { rows } = await pool.query<{ name: string }>(`select name from app_registry where app_id = 'demo-app'`);
+    const ligne = page.getByRole("row", { name: /Performance — copie/ }).first();
+    await expect(ligne.getByTestId("tableau-app")).toHaveText(rows[0]?.name || "demo-app");
+    await expect(ligne).toContainText("Valeur × 3");
+    await expect(ligne).toContainText("Série × 2");
+    await expect(ligne).toContainText("Classement × 2");
+  });
+
+  test("créer avec un nom vide : le refus est écrit sous le champ", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
+    await deplier(page, "+ Nouveau tableau de bord");
+    const creation = page.getByTestId("creer-tableau");
+    // Des espaces passent l'attribut `required` : c'est le serveur qui refuse, et le dit.
+    await creation.locator('input[name="name"]').fill("   ");
+    await creation.locator('select[name="app_id"]').selectOption("demo-app");
+    await page.getByTestId("create-dashboard").click();
+    await page.waitForURL((u) => u.searchParams.get("creation") === "nom-vide", { timeout: 15_000 });
+    const refus = page.getByTestId("creer-tableau").getByRole("alert");
+    await expect(refus).toHaveText("Le nom est vide : rien n’a été créé.");
+    expect(new URL(page.url()).searchParams.get("period")).toBe("1h");
+  });
+
+  test("aucun débordement de la liste et des modèles (390 / 768 / 1440 px)", async ({ page }) => {
+    await login(page);
+    const fautes: string[] = [];
+    for (const width of [390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
+      await expect(page.getByTestId("modele-carte").first()).toBeVisible({ timeout: 15_000 });
+      for (const faute of await debordements(page)) fautes.push(`liste @ ${width} px — ${faute}`);
+    }
+    expect(fautes, fautes.join("\n")).toEqual([]);
+  });
 });
