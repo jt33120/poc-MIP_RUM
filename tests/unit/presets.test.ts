@@ -17,6 +17,7 @@ import {
   type EntreesVuesProduit,
 } from "../../apps/console/lib/presets";
 import { SANS_RELEASE } from "../../apps/console/lib/queries-deploys";
+import { vuesMobiles } from "../../apps/console/lib/presets";
 
 const V = (version: string, sessions: number) => ({ version, sessions });
 
@@ -205,5 +206,37 @@ describe("choisirReleases (§ 3.2, CP3)", () => {
     const choix = choisirReleases([{ version: null }], [V(SANS_RELEASE, 9000), V("1.4.1", 10)]);
     expect(choix).toMatchObject({ relB: "1.4.1", relA: null, indisponible: RAISON_MOINS_DE_DEUX_RELEASES });
     expect(choisirReleases([], [])).toMatchObject({ relB: null, relA: null });
+  });
+});
+
+// F38 — vues de `/mobile` (§ 3.6) : iOS, Android, dernière release déclarée.
+describe("F38 — vues mobiles", () => {
+  const PLATEFORMES = [
+    { cle: "ios", libelle: "iOS", os: "iOS" },
+    { cle: "android", libelle: "Android", os: "Android" },
+  ];
+
+  it("les vues mobiles ne posent que os / release", () => {
+    const vues = vuesMobiles({ plateformes: PLATEFORMES, derniereRelease: { valeur: "4.2.0" } });
+    expect(vues.map((v) => v.id)).toEqual(["p:ios", "p:android", "p:mobile-derniere-release"]);
+    expect(vues[0].params).toEqual({ os: "iOS" });
+    expect(vues[1].params).toEqual({ os: "Android" });
+    expect(vues[2].params).toEqual({ release: "4.2.0" });
+    expect(vues[2].libelle).toBe("Dernière release déclarée • 4.2.0");
+    for (const v of vues) for (const cle of Object.keys(v.params)) expect(["os", "release"]).toContain(cle);
+  });
+
+  it("appliquer « Android » ne modifie que os ; la release déjà posée reste", () => {
+    const courants = new URLSearchParams("app=demo&period=7d&release=4.2.0&cmp=prev");
+    const vue = vuesMobiles({ plateformes: PLATEFORMES, derniereRelease: { valeur: null } })[1];
+    const apres = new URL(hrefDeVue("/mobile", courants, vue), "http://x").searchParams;
+    expect(Object.fromEntries(apres)).toEqual({ ...Object.fromEntries(courants), os: "Android" });
+  });
+
+  it("sans release déclarée, ou déclarations non lues : la vue est désactivée avec sa raison", () => {
+    const sans = vuesMobiles({ plateformes: PLATEFORMES, derniereRelease: { valeur: null } })[2];
+    expect(sans.indisponible).toMatch(/aucune release/);
+    const nonLue = vuesMobiles({ plateformes: PLATEFORMES, derniereRelease: { indisponible: "déclarations de capacités non lues" } })[2];
+    expect(nonLue.indisponible).toBe("déclarations de capacités non lues");
   });
 });

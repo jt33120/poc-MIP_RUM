@@ -15,7 +15,7 @@
 //      Checkout ») : le nom d'une vue dit ce qu'elle filtre.
 //
 // Les vues mobiles (`p:ios`, `p:android`, `p:mobile-derniere-release`) sont
-// ajoutées par F38 ; ce module n'en pose pas.
+// posées par F38 (`vuesMobiles`, en fin de fichier).
 import {
   CONTRACT_PARAMS,
   DIMENSION_LABELS,
@@ -370,6 +370,40 @@ export function vuesProduit(entrees: EntreesVuesProduit): VuePrereglee[] {
       const seg = serializeSegments([...sansSource, { dimension: "source", operator: "eq", value: "extension" }]);
       vues.push(produit("p:extension", "Capteur extension", { seg }));
     }
+  }
+  return vues;
+}
+
+// ─────────────────────────────── Vues mobiles (F38, § 3.6) ───────────────────────────────
+
+export interface EntreesVuesMobiles {
+  /**
+   * Plateformes d'un runtime React Native, avec la valeur EXACTE de `os` stockée par
+   * l'ingestion (`PLATFORM_OS`, lib/mobile-capabilities.ts) — passée par l'appelant :
+   * ce module est chargé par un composant client et n'importe pas le modèle mobile.
+   */
+  plateformes: readonly { cle: string; libelle: string; os: string }[];
+  /** Release la plus récente des déclarations de capacités, lue SANS le filtre `release` de l'URL. */
+  derniereRelease: Entree<string | null>;
+}
+
+/**
+ * Vues produit de `/mobile` : une par plateforme (`os`), puis « Dernière release
+ * déclarée » (`release`). Ce sont les seules dimensions de cette surface avec
+ * l'appareil (`only`, lib/surfaces.ts) : une vue ne pose que `os` ou `release`, et
+ * remplace le formulaire « Plateforme » (§ 3.1, règle 4 : aucun filtre propre à un
+ * écran). Une vue « iOS » ne retire pas `release`, ni l'inverse : elles se combinent.
+ */
+export function vuesMobiles(entrees: EntreesVuesMobiles): VuePrereglee[] {
+  const vues = entrees.plateformes.map((p) => produit(`p:${p.cle}`, p.libelle, { os: p.os }));
+  const libelle = "Dernière release déclarée";
+  if ("indisponible" in entrees.derniereRelease) {
+    vues.push(indisponible("p:mobile-derniere-release", libelle, entrees.derniereRelease.indisponible));
+  } else if (entrees.derniereRelease.valeur === null) {
+    vues.push(indisponible("p:mobile-derniere-release", libelle, "aucune release ne déclare ses capacités"));
+  } else {
+    const release = entrees.derniereRelease.valeur;
+    vues.push(produit("p:mobile-derniere-release", nommerVue([libelle, release]), { release }));
   }
   return vues;
 }

@@ -10,6 +10,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
 import { compteDedie } from "./helpers/compte-dedie";
+import { debordements } from "./helpers/debordements";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum",
@@ -157,46 +158,48 @@ test("mobile : « Non collecté » au lieu de zéro, filtres, drill-down, clavie
   await expect(page.getByText(/les crashes natifs ne sont pas collect/)).toBeVisible();
 
   // ── 2. Les chiffres, sur la cohorte React Native seule ─────────────────────
-  await expect(page.getByTestId("mobile-sessions")).toHaveText("3");
-  await expect(page.getByTestId("mobile-visiteurs")).toHaveText("3");
+  // F38 : les tuiles sont des `KpiTile` ; la valeur est `kpi-valeur`.
+  const valeur = (id: string) => page.getByTestId(id).getByTestId("kpi-valeur");
+  await expect(valeur("mobile-sessions")).toHaveText("3");
+  await expect(valeur("mobile-visiteurs")).toHaveText("3");
   // 2 occurrences JS ; les 99 de la session web ne comptent pas.
-  await expect(page.getByTestId("mobile-erreurs")).toHaveText("2");
+  await expect(valeur("mobile-erreurs")).toHaveText("2");
   // 1 session touchée sur 3 → 66,7 %. Le libellé porte bien « erreur JS ».
-  await expect(page.getByTestId("mobile-taux-sans-erreur")).toHaveText("66,7 %");
-  await expect(page.getByTestId("mobile-demarrage-froid")).toContainText("ms");
-  // Aucun démarrage à chaud semé : « Non mesuré », pas « 0 ms ».
-  await expect(page.getByTestId("mobile-demarrage-chaud")).toHaveText("Non mesuré");
+  await expect(valeur("mobile-taux-sans-erreur")).toHaveText("66,7 %");
+  // Démarrage : une étendue p50 → p95 ; aucun démarrage à chaud semé : « Non mesuré », pas « 0 ms ».
+  await expect(page.locator("#mobile-demarrage")).toContainText("ms");
+  await expect(page.locator("#mobile-demarrage").getByTestId("etendue-non-mesure")).toHaveText("Non mesuré");
   await expect(page.getByText("/accueil-synthetique").first()).toBeVisible();
   await expect(page.getByText("/paiement", { exact: false }).first()).toBeVisible();
 
   // ── 3. Pas de débordement horizontal à 390 px ──────────────────────────────
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
-  // ── 4. Clavier : le contrôle est labellisé et atteignable ──────────────────
-  const plateforme = page.getByLabel("Plateforme");
-  await plateforme.focus();
-  await expect(plateforme).toBeFocused();
-  await expect(page.getByText("Alternative textuelle de la série")).toBeVisible();
+  // ── 4. Clavier : la vue préréglée est un lien atteignable (F38 : le formulaire
+  //       « Plateforme » a disparu au profit de `PresetBar`) ─────────────────
+  const android = page.locator('[data-testid="preset-vue"][data-vue="p:android"]');
+  await android.focus();
+  await expect(android).toBeFocused();
+  await expect(page.locator("#mobile-ecrans").getByText("Alternative textuelle")).toBeVisible();
 
-  // ── 5. Le filtre de plateforme porte sur la COHORTE ────────────────────────
-  await plateforme.selectOption("android");
-  await page.getByRole("button", { name: "Appliquer" }).click();
-  await expect(page).toHaveURL(/platform=android/, { timeout: 15_000 });
-  await expect(page.getByTestId("mobile-sessions")).toHaveText("1");
+  // ── 5. La vue « Android » porte sur la COHORTE (os=Android) ────────────────
+  await android.click();
+  await expect(page).toHaveURL(/os=Android/, { timeout: 15_000 });
+  await expect(valeur("mobile-sessions")).toHaveText("1");
   // Aucune erreur JS sur Android : le taux vaut 100 %, et c'est un VRAI 100 %,
-  // puisque la capacité est déclarée active sur ce périmètre.
-  await expect(page.getByTestId("mobile-erreurs")).toHaveText("0");
-  await expect(page.getByTestId("mobile-taux-sans-erreur")).toHaveText("100,0 %");
+  // puisque la release 4.2.0 déclare collecter les erreurs JS.
+  await expect(valeur("mobile-erreurs")).toHaveText("0");
+  await expect(valeur("mobile-taux-sans-erreur")).toHaveText("100,0 %");
   await expect(page.getByText("/panier-synthetique").first()).toBeVisible();
   await expect(page.getByText("/accueil-synthetique")).toHaveCount(0);
 
   // ── 6. Données manquantes : une release sans aucun signal ──────────────────
   await page.goto(`${consoleUrl}/mobile?app=${APP}&period=24h&release=0.0.0-inexistante`);
-  await expect(page.getByTestId("mobile-sessions")).toHaveText("0");
+  await expect(valeur("mobile-sessions")).toHaveText("0");
   // Aucune session : le taux n'a pas de dénominateur, et l'écran le DIT — plutôt
   // que d'afficher « 100 % », qui se lirait comme une bonne nouvelle.
-  await expect(page.getByTestId("mobile-taux-sans-erreur")).toHaveText("Non calculable");
-  await expect(page.getByText(/pas de d[ée]nominateur/)).toBeVisible();
+  await expect(valeur("mobile-taux-sans-erreur")).toHaveText("—");
+  await expect(page.getByTestId("mobile-taux-sans-erreur").getByText(/pas de d[ée]nominateur/)).toBeVisible();
   // Et les six capacités redeviennent « Inconnu » : aucune release de ce
   // périmètre n'a rien déclaré.
   await expect(page.getByTestId("capacite-js_errors")).toContainText("Inconnu");
@@ -272,4 +275,180 @@ test("API mobile/summary : périmètre signé, null plutôt que zéro, et pas de
   );
   expect(contradictoire.status()).toBe(200);
   expect((await contradictoire.json()).data.sessions.sessions).toBe(0);
+});
+
+// ═══════════════ F38 — réagencement et stabilité par release ═══════════════════
+//
+// App PROPRE au bloc (`f38-e2e-app`) : 2.1.0 déclare collecter les erreurs JS (3
+// sessions, 1 touchée), 2.0.0 ne déclare rien (2 sessions sans erreur), une session
+// sans release. Même compte dédié que le reste du fichier.
+test.describe("F38 — réagencement et stabilité par release", () => {
+  const APP_F38 = "f38-e2e-app";
+
+  async function nettoyerF38() {
+    for (const table of ["mobile_capabilities", "rum_event", "rum_error", "rum_pageview", "rum_session"]) {
+      await pool.query(`delete from ${table} where app_id = $1`, [APP_F38]);
+    }
+  }
+
+  test.beforeAll(async () => {
+    if (!v82) return;
+    await pool.query(
+      "insert into app_registry (app_id,name,active) values ($1,'F38 e2e',true) on conflict (app_id) do update set active=true",
+      [APP_F38],
+    );
+    await nettoyerF38();
+    const session = (id: string, release: string | null, ageMin: number) =>
+      pool.query(
+        `insert into rum_session (session_id, app_id, device_type, os, runtime, release, visitor_id, started_at, last_seen_at)
+         values ($1,$2,'mobile','iOS','react_native',$3,$1, now() - ($4::int * interval '1 minute'),
+                 now() - ($4::int * interval '1 minute') + interval '2 minutes')
+         on conflict (session_id) do update set release=excluded.release, started_at=excluded.started_at,
+                                                last_seen_at=excluded.last_seen_at`,
+        [id, APP_F38, release, ageMin],
+      );
+    await session("f38-e2e-21a", "2.1.0", 12);
+    await session("f38-e2e-21b", "2.1.0", 11);
+    await session("f38-e2e-21c", "2.1.0", 10);
+    await session("f38-e2e-20a", "2.0.0", 40);
+    await session("f38-e2e-20b", "2.0.0", 35);
+    await session("f38-e2e-sans", null, 20);
+    await pool.query(
+      `insert into rum_error (span_id, session_id, app_id, message, kind, occurrences, error_source, fingerprint, ts)
+       values ('f38-e2e-err','f38-e2e-21a',$1,'Erreur synthétique F38','crash',3,'react_native_js','f38e2efp',
+               now() - interval '11 minutes')
+       on conflict (span_id) do nothing`,
+      [APP_F38],
+    );
+    await pool.query(
+      `insert into rum_event (span_id, session_id, app_id, name, event_type, timing_ms, ts)
+       values ('f38-e2e-t1','f38-e2e-21a',$1,'js_start_to_first_screen_ms','timing',820, now() - interval '12 minutes')
+       on conflict (span_id) do nothing`,
+      [APP_F38],
+    );
+    for (const [capacite, declare] of [
+      ["js_errors", true],
+      ["native_crashes", false],
+      ["anr", false],
+    ] as const) {
+      await pool.query(
+        `insert into mobile_capabilities (app_id, runtime, release, capability, declared)
+         values ($1,'react_native','2.1.0',$2,$3)
+         on conflict (app_id, runtime, release, capability)
+         do update set declared = excluded.declared, last_declared_at = now()`,
+        [APP_F38, capacite, declare],
+      );
+    }
+  });
+
+  test.afterAll(async () => {
+    if (v82) await nettoyerF38();
+    await pool.query("delete from app_registry where app_id = $1", [APP_F38]);
+  });
+
+  /** Connexion UNE fois par test : `/login` d'une session ouverte redirige, le champ e-mail n'apparaît plus. */
+  async function connecter(page: Page) {
+    await login(page);
+    await page.context().addCookies([{ name: "mip-project", value: APP_F38, url: consoleUrl }]);
+  }
+
+  async function aller(page: Page, largeur: number, hauteur: number) {
+    await page.setViewportSize({ width: largeur, height: hauteur });
+    await page.goto(`${consoleUrl}/mobile?app=${APP_F38}&period=24h`);
+    await expect(page.getByRole("heading", { name: "Mobile", level: 1 })).toBeVisible();
+  }
+
+  async function ouvrir(page: Page, largeur: number, hauteur: number) {
+    await connecter(page);
+    await aller(page, largeur, hauteur);
+  }
+
+  test("ordre des zones : angles morts, tuiles, puis le hero « Stabilité par release » au-dessus du pli à 1440", async ({ page }) => {
+    test.skip(!v82, "migration v82 absente de la base e2e");
+    await ouvrir(page, 1440, 900);
+    const zones = await page.locator("[data-zone]").evaluateAll((els) => els.map((e) => e.getAttribute("data-zone")));
+    expect(zones.slice(0, 5)).toEqual(["angles-morts", "bandeaux", "kpi", "stabilite", "demarrage-ecrans"]);
+    expect(zones.at(-2)).toBe("capacites");
+
+    // W-M1 : l'angle mort est lu AVANT le premier chiffre.
+    const angle = await page.getByTestId("mobile-angles-morts").boundingBox();
+    const kpi = await page.getByTestId("mobile-kpi").boundingBox();
+    expect(angle!.y).toBeLessThan(kpi!.y);
+    await expect(page.getByTestId("mobile-angles-morts")).toContainText("Crashes natifs");
+    // Le hero est au-dessus du pli (1440 × 900), sans défilement.
+    const hero = await page.getByRole("heading", { name: "Stabilité par release" }).boundingBox();
+    expect(hero!.y + hero!.height).toBeLessThan(900);
+
+    // Jamais « crash-free », jamais « sans crash » — sur toute la page.
+    await expect(page.locator("body")).not.toContainText(/crash-free/i);
+    await expect(page.locator("body")).not.toContainText(/sans crash/i);
+    // W-M11 : la dernière déclaration est une colonne, en fin d'écran.
+    await expect(page.getByRole("columnheader", { name: "Dernière déclaration" })).toBeVisible();
+    // W-M10 : la série attend B8 ; sa raison est écrite, aucun axe vide n'est dessiné.
+    await expect(page.locator("#mobile-temps")).toContainText("le runtime n'est pas encore une dimension de lecture (B8)");
+    await expect(page.locator("#mobile-temps svg")).toHaveCount(0);
+  });
+
+  test("hero : la release non déclarante n'a pas de pourcentage ; une ligne pose release=", async ({ page }) => {
+    test.skip(!v82, "migration v82 absente de la base e2e");
+    await ouvrir(page, 1440, 900);
+    const hero = page.getByTestId("mobile-stabilite");
+    const ligne = (texte: string) => hero.getByTestId("impact-ligne").filter({ hasText: texte });
+    await expect(ligne("2.1.0")).toContainText("33,3 %");
+    await expect(ligne("2.0.0")).not.toContainText("%");
+    await expect(hero.getByTestId("mobile-stabilite-raison")).toContainText("2.0.0");
+    // Sessions sans release : « Inconnue », et son lien ne pose pas `release=` vide.
+    await expect(ligne("Inconnue").locator("a")).toHaveAttribute("href", /seg=v2%3Arelease%3Ais_null/);
+    // Référence : Σ touchées / Σ sessions des releases déclarantes.
+    await expect(hero.getByTestId("impact-reference")).toContainText("Releases déclarantes");
+    // Tuile « Sessions sans erreur JS » : calculée sur les déclarantes seules (2 sur 3),
+    // les 3 sessions de 2.0.0 et sans release exclues — et elle le dit.
+    await expect(page.getByTestId("mobile-taux-sans-erreur").getByTestId("kpi-valeur")).toHaveText("66,7 %");
+    await expect(page.getByTestId("mobile-taux-sans-erreur")).toContainText("3 sessions de releases non déclarantes exclues");
+
+    await ligne("2.1.0").locator("a").click();
+    await page.waitForURL((u) => u.searchParams.get("release") === "2.1.0", { timeout: 15_000 });
+    await expect(page.getByTestId("mobile-stabilite").getByTestId("impact-ligne")).toHaveCount(1);
+  });
+
+  test("vues préréglées et ordre du hero : ne changent que os / release / tri", async ({ page }) => {
+    test.skip(!v82, "migration v82 absente de la base e2e");
+    await ouvrir(page, 1440, 900);
+    await expect(page.getByRole("button", { name: "Appliquer" })).toHaveCount(0);
+    const derniere = page.locator('[data-testid="preset-vue"][data-vue="p:mobile-derniere-release"]');
+    await expect(derniere).toContainText("2.1.0");
+    const avant = new URL(page.url());
+    await page.locator('[data-testid="preset-vue"][data-vue="p:ios"]').click();
+    await page.waitForURL((u) => u.searchParams.get("os") === "iOS", { timeout: 15_000 });
+    const apres = new URL(page.url());
+    for (const [cle, valeur] of avant.searchParams) expect(apres.searchParams.get(cle)).toBe(valeur);
+    expect([...apres.searchParams.keys()].sort()).toEqual([...avant.searchParams.keys(), "os"].sort());
+
+    // Ordre par défaut : la chronologie ; « Gravité » pose tri=gravite, sans toucher la population.
+    await expect(page.getByTestId("mobile-stabilite").getByTestId("impact-ordre")).toContainText("première session vue");
+    await page.getByTestId("mobile-stabilite").getByTestId("tri-gravite").click();
+    await page.waitForURL((u) => u.searchParams.get("tri") === "gravite", { timeout: 15_000 });
+    await expect(page.getByTestId("mobile-stabilite").getByTestId("impact-ordre")).toContainText("part de sessions touchées");
+    expect(new URL(page.url()).searchParams.get("os")).toBe("iOS");
+  });
+
+  test("390, 768 et 1440 px : aucun débordement ; la matrice devient une liste à 390", async ({ page }) => {
+    test.skip(!v82, "migration v82 absente de la base e2e");
+    await connecter(page);
+    // Toutes les largeurs sont PARCOURUES avant d'échouer : s'arrêter à la première cacherait les autres.
+    const fautes: string[] = [];
+    for (const [largeur, hauteur] of [
+      [390, 844],
+      [768, 1024],
+      [1440, 900],
+    ] as const) {
+      await aller(page, largeur, hauteur);
+      await expect(page.getByTestId("mobile-stabilite")).toBeVisible();
+      for (const faute of await debordements(page)) fautes.push(`/mobile @ ${largeur} px — ${faute}`);
+    }
+    expect(fautes).toEqual([]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole("columnheader", { name: "Dernière déclaration" })).toBeHidden();
+    await expect(page.getByTestId("capacite-js_errors")).toContainText("Dernière déclaration");
+  });
 });

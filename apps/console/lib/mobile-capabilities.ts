@@ -216,3 +216,181 @@ export function parsePlatform(raw: string | null | undefined): Platform | null {
   const value = raw?.trim().toLowerCase();
   return (PLATFORMS as readonly string[]).includes(value ?? "") ? (value as Platform) : null;
 }
+
+// ───────────────────── État et taux PAR RELEASE (F38, CE14) ───────────────────
+//
+// `capabilityStatus` répond à « la capacité existe-t-elle dans le parc ? » : active
+// dès qu'UNE release la déclare. C'est juste pour la matrice, et faux pour un taux.
+// Le taux « sessions sans erreur JS » calculé sur tout le parc comptait au
+// dénominateur les sessions d'une release qui NE déclare PAS collecter les erreurs
+// JS — sessions dont l'absence d'erreur ne prouve rien — et les rangeait « sans
+// erreur ». Le taux était gonflé, et une ligne par release sans garde propre aurait
+// affiché « 0 % touchées » sur une release aveugle. D'où l'état PAR RELEASE, issu
+// de ses seules déclarations, et un taux calculé sur les releases déclarantes.
+
+/** Motif d'une part non calculable faute de `rum_error.error_source` (v69). */
+export const RAISON_SANS_SOURCE_JS =
+  "migration v69 absente : les erreurs JavaScript React Native ne sont pas distinguables";
+
+/**
+ * Une déclaration avec l'app qui l'a émise. Une release n'est un fait que DANS son
+ * app : deux apps React Native en « 1.0.0 » sont deux binaires sans rapport.
+ */
+export type DeclarationApp = CapabilityDeclaration & { app_id: string };
+
+/**
+ * État d'une capacité pour UNE release D'UNE app, issu de ses seules
+ * déclarations. Une release `null` (l'application ne déclare pas de version)
+ * n'hérite pas des déclarations des autres : ses propres lignes `release is null`,
+ * ou `unknown`.
+ *
+ * `app` : sous plusieurs apps (`app=all`), la « 1.0.0 » de A n'emprunte pas les
+ * déclarations de la « 1.0.0 » de B — sinon B, qui ne déclare rien, passerait
+ * « active » et ses sessions entreraient au dénominateur comme non touchées. Une
+ * déclaration sans `app_id` ne correspond alors à aucune app : `unknown`, jamais
+ * l'état d'une autre.
+ */
+export function etatCapaciteParRelease(
+  declarations: readonly (CapabilityDeclaration & { app_id?: string })[],
+  capability: MobileCapability,
+  release: string | null,
+  app?: string,
+): CapabilityState {
+  return capabilityStatus(
+    capability,
+    declarations.filter((d) => d.release === release && (app === undefined || d.app_id === app)),
+  ).state;
+}
+
+/** Pourquoi le taux des releases déclarantes n'est pas calculable. */
+export type RaisonTauxDeclarant = ErrorFreeUnavailable | "source_indisponible";
+
+/** Texte d'une raison de `tauxSansErreurDeclarant`. */
+export function texteRaisonTaux(raison: RaisonTauxDeclarant): string {
+  return raison === "source_indisponible" ? RAISON_SANS_SOURCE_JS : ERROR_FREE_REASONS[raison];
+}
+
+/** Ce que le taux lit d'une ligne de `mobileParRelease` (type structurel : ce module reste sans base). */
+export interface LigneTauxRelease {
+  sessions: number;
+  /** `null` : la source d'erreur n'est pas lisible (v69 absente). */
+  sessions_touchees: number | null;
+  etat_js_errors: CapabilityState;
+}
+
+/**
+ * « Sessions sans erreur JS », calculé sur les releases qui DÉCLARENT collecter
+ * les erreurs JS (W-M5, corrige CE14) : 1 − Σ touchées / Σ sessions des lignes
+ * `active`. Une somme de comptes, jamais une moyenne des parts. `exclues` : les
+ * sessions des releases non déclarantes, sorties du numérateur ET du dénominateur.
+ *
+ * Ordre des raisons : aucune session d'abord (comme `errorFreeSessionRate`), puis
+ * aucune release déclarante — `capability_unavailable` seulement si TOUTES les
+ * releases déclarent ne pas collecter —, puis la source illisible.
+ */
+export function tauxSansErreurDeclarant(lignes: readonly LigneTauxRelease[]): {
+  rate: number | null;
+  reason: RaisonTauxDeclarant | null;
+  sessions: number;
+  touchees: number;
+  exclues: number;
+} {
+  const total = lignes.reduce((s, l) => s + Math.max(0, l.sessions), 0);
+  if (total <= 0) return { rate: null, reason: "no_sessions", sessions: 0, touchees: 0, exclues: 0 };
+  const actives = lignes.filter((l) => l.etat_js_errors === "active" && l.sessions > 0);
+  const sessions = actives.reduce((s, l) => s + l.sessions, 0);
+  const exclues = total - sessions;
+  if (actives.length === 0) {
+    const toutesRefusent = lignes.every((l) => l.sessions <= 0 || l.etat_js_errors === "unavailable");
+    return {
+      rate: null,
+      reason: toutesRefusent ? "capability_unavailable" : "capability_unknown",
+      sessions: 0,
+      touchees: 0,
+      exclues,
+    };
+  }
+  if (actives.some((l) => l.sessions_touchees === null)) {
+    return { rate: null, reason: "source_indisponible", sessions, touchees: 0, exclues };
+  }
+  // Même garde que `errorFreeSessionRate` : plus de sessions touchées que de
+  // sessions (arrivée tardive) ne fait pas descendre le taux sous 0.
+  const touchees = actives.reduce((s, l) => s + Math.min(l.sessions_touchees ?? 0, l.sessions), 0);
+  return { rate: 1 - touchees / sessions, reason: null, sessions, touchees, exclues };
+}
+
+/**
+ * Chaque release contre la PRÉCÉDENTE dans l'ordre de première session vue (W-M6)
+ * — un ordre calculé ici, indépendant de l'ordre d'affichage : la plus récente en
+ * tête. L'écart est en POINTS de part touchée, `null` si l'une des deux parts l'est.
+ * Les sessions sans release ne forment pas une release : elles n'ont pas de
+ * précédente et n'en servent à aucune. La précédente est cherchée DANS LA MÊME APP
+ * (`app_id`) : sous plusieurs apps, la 2.0 de A ne se compare pas à la 1.9 de B.
+ */
+export function chainerReleases<
+  T extends { app_id?: string; release: string | null; premiere_session: string; part_touchee: number | null },
+>(lignes: readonly T[]): (T & { ecart_precedente_pts: number | null; release_precedente: string | null })[] {
+  const triees = [...lignes].sort(
+    (a, b) =>
+      b.premiere_session.localeCompare(a.premiere_session) ||
+      (a.release === null ? 1 : b.release === null ? -1 : b.release.localeCompare(a.release)) ||
+      String(a.app_id ?? "").localeCompare(String(b.app_id ?? "")),
+  );
+  return triees.map((ligne, i) => {
+    if (ligne.release === null) return { ...ligne, ecart_precedente_pts: null, release_precedente: null };
+    const precedente = triees.slice(i + 1).find((l) => l.release !== null && l.app_id === ligne.app_id) ?? null;
+    const ecart =
+      precedente && ligne.part_touchee !== null && precedente.part_touchee !== null
+        ? (ligne.part_touchee - precedente.part_touchee) * 100
+        : null;
+    return { ...ligne, ecart_precedente_pts: ecart, release_precedente: precedente?.release ?? null };
+  });
+}
+
+/**
+ * Release la plus récente des déclarations (vue produit « Dernière release
+ * déclarée », § 3.6) : celle dont la PREMIÈRE déclaration est la plus récente — une
+ * release nouvelle s'annonce la dernière ; une ancienne qui déclare encore n'est pas
+ * « la dernière » pour autant. Les déclarations sans release n'en désignent aucune.
+ */
+export function derniereReleaseDeclaree(declarations: readonly CapabilityDeclaration[]): string | null {
+  let meilleure: { release: string; premiere: string } | null = null;
+  for (const d of declarations) {
+    if (d.release === null || d.release.trim() === "") continue;
+    if (
+      !meilleure ||
+      d.first_declared_at > meilleure.premiere ||
+      (d.first_declared_at === meilleure.premiere && d.release > meilleure.release)
+    ) {
+      meilleure = { release: d.release, premiere: d.first_declared_at };
+    }
+  }
+  return meilleure?.release ?? null;
+}
+
+/**
+ * Zones de `/mobile`, dans l'ordre de rendu (§ 5.6.3). Nominal : la stabilité par
+ * release est le hero, juste sous les tuiles. Repli, décidé À L'EXÉCUTION : si la
+ * lecture par release est `disponible: false` (schéma sans runtime ou sans release
+ * de session), les tuiles puis le démarrage forment le hero et la stabilité descend
+ * sous le démarrage, avec sa raison. Une lecture en ÉCHEC ne déclenche pas le
+ * repli : la section reste en place, en erreur, avec « Réessayer ».
+ */
+export type ZoneMobile =
+  | "angles-morts"
+  | "bandeaux"
+  | "kpi"
+  | "stabilite"
+  | "demarrage-ecrans"
+  | "requetes"
+  | "temps"
+  | "capacites"
+  | "plus-loin";
+
+export function ordreZonesMobile(parRelease: "disponible" | "indisponible" | "erreur"): ZoneMobile[] {
+  const tete: ZoneMobile[] = ["angles-morts", "bandeaux", "kpi"];
+  const fin: ZoneMobile[] = ["requetes", "temps", "capacites", "plus-loin"];
+  return parRelease === "indisponible"
+    ? [...tete, "demarrage-ecrans", "stabilite", ...fin]
+    : [...tete, "stabilite", "demarrage-ecrans", ...fin];
+}

@@ -234,5 +234,8 @@ test("vitrine : les composants de F05 sont rendus", async ({ page }) => {
     await expect(page.locator(`section#${id}`)).toBeVisible();
   }
   await expect(page.locator('[data-testid="contrast-bars"][data-etat="indisponible"]')).toContainText("Non disponible, raison :");
-  await expect(page.locator('[data-testid="impact-table"][data-tri="fourni"]')).toContainText("ordre chronologique");
+  // Portée à la section de F05 : d'autres lots montrent aussi une `ImpactTable` en ordre fourni (F38).
+  await expect(page.locator('section#impact-table [data-testid="impact-table"][data-tri="fourni"]')).toContainText(
+    "ordre chronologique",
+  );
 });
