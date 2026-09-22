@@ -42,7 +42,22 @@ export async function fuseauDe(app: string | null): Promise<string> {
       return FUSEAU_DEFAUT;
     }
   }
-  return cache.get(app) ?? FUSEAU_DEFAUT;
+  const tz = cache.get(app);
+  return tz && fuseauConnu(tz) ? tz : FUSEAU_DEFAUT;
+}
+
+/**
+ * Le fuseau est-il connu de Node (ICU) ? Postgres en accepte que la bibliothèque de
+ * dates de Node ignore : `Intl.DateTimeFormat` lèverait alors hors de toute lecture,
+ * et `/` planterait dès qu'une plage personnalisée s'afficherait (revue de vague 3).
+ */
+export function fuseauConnu(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Vide le cache — pour les tests, et après une modification d'application. */
@@ -74,7 +89,8 @@ function formateur(tz: string): Intl.DateTimeFormat {
   let f = formateurs.get(tz);
   if (!f) {
     f = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
+      // Filet : un fuseau inconnu ne fait pas planter l'écran (fuseauDe le filtre déjà).
+      timeZone: fuseauConnu(tz) ? tz : FUSEAU_DEFAUT,
       hourCycle: "h23",
       year: "numeric",
       month: "2-digit",

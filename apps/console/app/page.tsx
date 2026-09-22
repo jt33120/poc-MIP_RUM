@@ -45,7 +45,7 @@ import {
   type CouverturePrecedente,
   type SourceComparaison,
 } from "@/lib/comparaison";
-import { lireComparaison, lireTri } from "@/lib/view-state";
+import { gabaritZoom, lireComparaison, lireTri } from "@/lib/view-state";
 
 // Sources des deux rangées de tuiles comparées à la période précédente (§ 3.2).
 // Un taux (erreurs / pages vues) n'est pas un compte : le retard d'ingestion
@@ -127,6 +127,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // cet écran), et ses écarts ne s'affichent que si elle est COMPLÈTE — une plage
   // de 30 jours, dont la précédente est purgée, n'en montre donc aucun.
   const comparaison = lireComparaison("/", paramReader(sp)).valeur;
+  // Un seul gabarit de zoom pour l'écran : la heatmap (et le hero, F04) ne changent
+  // que la plage — comparaison, tri, découpage et heures ouvrées restent.
+  const gabaritZoomEcran = gabaritZoom(hrefWithQuery("/", ecran.query, { period: null, from: "{from}", to: "{to}" }), sp);
   const prev = comparaison.mode === "prev";
 
   // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8 règle 1). `lire()` ne lève pas :
@@ -426,12 +429,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               jours={joursLocaux(GRID_DAYS, fuseau)}
               cellules={grid.data}
               fuseau={fuseau}
-              zoomHref={hrefWithQuery("/", ecran.query, {
-                period: null,
-                from: "{from}",
-                to: "{to}",
-                hours: businessHours ? "business" : null,
-              })}
+              zoomHref={gabaritZoomEcran}
               businessOnly={businessHours}
             />
           ) : (

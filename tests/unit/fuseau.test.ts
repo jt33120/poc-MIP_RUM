@@ -141,3 +141,16 @@ describe("joursLocaux — l'axe de la heatmap, dans le repère de ses cases", ()
     expect(jours).toEqual(["2026-10-24", "2026-10-25", "2026-10-26"]);
   });
 });
+
+describe("revue de vague 3 : fuseau inconnu de Node", () => {
+  it("fuseauConnu refuse un nom qu'ICU ignore, sans lever", async () => {
+    const { fuseauConnu } = await import("@/lib/fuseau");
+    expect(fuseauConnu("Europe/Paris")).toBe(true);
+    expect(fuseauConnu("Mars/Olympus_Mons")).toBe(false);
+  });
+
+  it("les bornes se calculent quand même (repli sur le défaut), jamais une exception", async () => {
+    const { bornesJourLocal } = await import("@/lib/fuseau");
+    expect(() => bornesJourLocal("2026-09-10", "Mars/Olympus_Mons")).not.toThrow();
+  });
+});

@@ -269,3 +269,31 @@ describe("module client-sûr", () => {
     expect(imports.sort()).toEqual(["./query-contract", "./rating"]);
   });
 });
+
+describe("gabaritZoom (revue de vague 3)", () => {
+  it("un zoom ne change que la plage : comparaison, releases, tri, découpage et heures ouvrées restent", async () => {
+    const { gabaritZoom } = await import("@/lib/view-state");
+    const href = gabaritZoom("/?app=demo&from=%7Bfrom%7D&to=%7Bto%7D", {
+      app: "demo",
+      period: "24h",
+      cmp: "release",
+      rel_a: "1.4.1",
+      rel_b: "1.4.2",
+      tri: "volume",
+      dim: "browser",
+      hours: "business",
+      cursor: "abc",
+      panel: "route:/x",
+    });
+    const u = new URL(href, "http://x");
+    expect(u.pathname).toBe("/");
+    expect(u.searchParams.get("from")).toBe("{from}");
+    expect(u.searchParams.has("period")).toBe(false);
+    for (const [k, v] of [["cmp", "release"], ["rel_a", "1.4.1"], ["rel_b", "1.4.2"], ["tri", "volume"], ["dim", "browser"], ["hours", "business"]]) {
+      expect(u.searchParams.get(k)).toBe(v);
+    }
+    expect(u.searchParams.has("cursor")).toBe(false);
+    expect(u.searchParams.has("panel")).toBe(false);
+    expect(u.searchParams.getAll("app")).toEqual(["demo"]);
+  });
+});
