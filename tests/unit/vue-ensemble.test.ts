@@ -267,3 +267,64 @@ describe("constatsVueEnsemble (§ 5.1.2, zone 4)", () => {
     expect(r.constats).toHaveLength(1);
   });
 });
+
+// ─────────────── F12 — séries du hero et de « Charge, erreurs et LCP » ───────────────
+import { pointsCharge, pointsRelease, pointsVital, serieVide, sommeLue } from "../../apps/console/lib/vue-ensemble";
+
+describe("F12 — points des séries de la Vue d'ensemble", () => {
+  const GRILLE = ["2026-09-22T10:00:00Z", "2026-09-22T11:00:00Z", "2026-09-22T12:00:00Z"];
+  const lcp = [
+    { bucket: "2026-09-22T10:00:00Z", p75: 2100, n: 40 },
+    { bucket: "2026-09-22T12:00:00Z", p75: 2600, n: 12 },
+  ];
+
+  it("un seau sans mesure reste un TROU (p75 null, n 0), jamais 0 ms", () => {
+    expect(pointsVital(GRILLE, lcp)).toEqual([
+      { t: GRILLE[0], p75: 2100, n: 40 },
+      { t: GRILLE[1], p75: null, n: 0 },
+      { t: GRILLE[2], p75: 2600, n: 12 },
+    ]);
+  });
+
+  it("cmp=prev : la période précédente s'aligne PAR RANG de seau, pas par instant", () => {
+    const precedente = [
+      { bucket: "2026-09-21T10:00:00Z", p75: 1900, n: 30 },
+      { bucket: "2026-09-21T11:00:00Z", p75: null, n: 0 },
+    ];
+    expect(pointsVital(GRILLE, lcp, precedente).map((p) => p.precedent)).toEqual([1900, null, null]);
+  });
+
+  it("cmp=release : B et A sur la même grille, chacune son effectif", () => {
+    const b = [{ bucket: GRILLE[1], p75: 3000, n: 5 }];
+    const a = [{ bucket: GRILLE[1], p75: 2000, n: 50 }, { bucket: GRILLE[2], p75: 2100, n: 45 }];
+    expect(pointsRelease(GRILLE, b, a)).toEqual([
+      { t: GRILLE[0], b: null, nb: 0, a: null, na: 0 },
+      { t: GRILLE[1], b: 3000, nb: 5, a: 2000, na: 50 },
+      { t: GRILLE[2], b: null, nb: 0, a: 2100, na: 45 },
+    ]);
+  });
+
+  it("serieVide : une série sans aucune mesure, pas une série à zéro", () => {
+    expect(serieVide(pointsVital(GRILLE, []), ["p75"])).toBe(true);
+    expect(serieVide(pointsVital(GRILLE, lcp), ["p75"])).toBe(false);
+  });
+
+  it("charge : comptes à 0 hors seau lu, LCP en trou ; les trois panneaux sur UNE grille", () => {
+    const vues = [{ bucket: GRILLE[0], chargements: 8, spa: 3, inconnu: 1 }];
+    const erreurs = [{ bucket: GRILLE[2], navigateur: 4 }];
+    const points = pointsCharge(GRILLE, vues, erreurs, lcp);
+    expect(points.map((p) => p.t)).toEqual(GRILLE);
+    expect(points[0]).toMatchObject({ chargements: 8, spa: 3, inconnu: 1, erreurs: 0, p75: 2100, n: 40 });
+    expect(points[1]).toMatchObject({ chargements: 0, spa: 0, inconnu: 0, erreurs: 0, p75: null, n: 0 });
+    expect(points[2]).toMatchObject({ erreurs: 4, p75: 2600 });
+  });
+
+  it("une lecture en échec (null) reste null dans chaque seau, jamais 0 (V3)", () => {
+    const points = pointsCharge(GRILLE, null, null, null);
+    for (const p of points) {
+      expect(p).toMatchObject({ chargements: null, spa: null, inconnu: null, erreurs: null, sansSource: null, p75: null, n: null });
+    }
+    expect(sommeLue(points.map((p) => p.erreurs))).toBeNull();
+    expect(sommeLue([0, 3, 0])).toBe(3);
+  });
+});

@@ -52,7 +52,9 @@ export const CATALOGUES: readonly Catalogue[] = [
       { id: "trafic", label: "Trafic", defaut: true, desc: "Sessions commencées, pages vues et occurrences d'erreurs navigateur pour 100 pages vues, avec leur évolution." },
       { id: "vitals", label: "Core Web Vitals", defaut: true, desc: "LCP, INP, CLS, FCP et TTFB au p75, face aux seuils Google." },
       { id: "reseau", label: "Décomposition réseau", defaut: false, desc: "D'où vient le TTFB : redirection, DNS, connexion, TLS, requête, réponse." },
-      { id: "hero", label: "Courbe LCP", defaut: true, desc: "LCP p75 dans le temps, sur les zones de seuil." },
+      { id: "hero", label: "Core Web Vitals dans le temps", defaut: true, desc: "LCP, INP et CLS au p75, un petit graphique par vital sur ses zones de seuil, avec les déploiements." },
+      // Bloc ajouté par F12 (zone 6 du § 5.1) : trois panneaux empilés, un axe chacun.
+      { id: "charge", label: "Charge, erreurs et LCP", defaut: true, desc: "Pages vues (chargements et changements de route SPA), occurrences d'erreurs navigateur et LCP p75 sur la même échelle de temps, sans double axe." },
       { id: "decoupage", label: "Découpage des Web Vitals", defaut: true, desc: "LCP, INP et CLS répartis par route, navigateur, système, pays estimé, appareil ou release, avec le nombre de mesures. Chaque groupe ouvre le détail filtré." },
       { id: "historique", label: "Historique de santé 14 jours", defaut: true, desc: "Heatmap jour × heure, avec les courbes de volume et de LCP associées." },
       { id: "anomalies", label: "Anomalies détectées", defaut: true, desc: "Écarts statistiques sur le LCP, sans seuil à régler." },

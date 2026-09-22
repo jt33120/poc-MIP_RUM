@@ -175,6 +175,151 @@ test.describe("F11 — Vue d'ensemble : santé, KPI, constats", () => {
   }
 });
 
+test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »", () => {
+  // Une app à elle : sur les 20 dernières heures, trois sessions par heure paire,
+  // chacune avec un chargement ET un changement de route SPA, un LCP, un INP et un
+  // CLS, sous deux releases ; des erreurs navigateur ; un déploiement dans la fenêtre.
+  const APP_F12 = "e2e-f12-vue-ensemble";
+  const ACCUEIL_F12 = `${consoleUrl}/?app=${APP_F12}&period=24h`;
+
+  test.beforeAll(async () => {
+    for (const t of ["rum_error", "rum_metric", "rum_pageview", "rum_session", "deploy_marker"])
+      await pool.query(`delete from ${t} where app_id = $1`, [APP_F12]);
+    await pool.query(
+      `insert into app_registry (app_id, name) values ($1, 'Vue d''ensemble F12 (e2e)') on conflict (app_id) do nothing`,
+      [APP_F12],
+    );
+    for (let heure = 2; heure <= 20; heure += 2) {
+      for (let k = 0; k < 3; k++) {
+        const sid = `${APP_F12}-h${heure}-s${k}`;
+        const release = heure <= 10 ? "f12-1.1" : "f12-1.0";
+        // Au milieu de l'heure : jamais à cheval sur deux seaux.
+        const quand = `now() - interval '${heure} hours' + interval '${10 + k * 5} minutes'`;
+        await pool.query(
+          `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count, release)
+           values ($1, $2, $1, 'desktop', false, ${quand}, ${quand} + interval '3 minutes', 2, $3)
+           on conflict (session_id) do nothing`,
+          [sid, APP_F12, release],
+        );
+        await pool.query(
+          `insert into rum_pageview (span_id, session_id, app_id, route, nav_type, started_at, release)
+           values ($1, $2, $3, '/catalogue', 'navigate', ${quand}, $4), ($5, $2, $3, '/produit', 'spa', ${quand} + interval '1 minute', $4)
+           on conflict (span_id) do nothing`,
+          [`${sid}-pv0`, sid, APP_F12, release, `${sid}-pv1`],
+        );
+        const mesures: [string, number][] = [
+          ["LCP", (release === "f12-1.1" ? 2900 : 2000) + k * 50],
+          ["INP", 180 + k * 20],
+          ["CLS", 0.05 + k * 0.02],
+        ];
+        for (const [nom, valeur] of mesures) {
+          await pool.query(
+            `insert into rum_metric (span_id, session_id, app_id, route, name, value, ts, release)
+             values ($1, $2, $3, '/catalogue', $4, $5, ${quand}, $6) on conflict (span_id) do nothing`,
+            [`${sid}-${nom}`, sid, APP_F12, nom, valeur, release],
+          );
+        }
+        if (k === 0) {
+          await pool.query(
+            `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type, fingerprint, occurrences, error_source, ts, release)
+             values ($1, $2, $3, '/produit', 'error', 'boom F12', 'TypeError', 'f12-fp', 2, 'browser_js', ${quand}, $4)
+             on conflict (span_id) do nothing`,
+            [`${sid}-err`, sid, APP_F12, release],
+          );
+        }
+      }
+    }
+    await pool.query(
+      `insert into deploy_marker (app_id, version, env, ts)
+       values ($1, 'f12-1.1', 'prod', now() - interval '11 hours'), ($1, 'f12-1.0', 'prod', now() - interval '40 hours')`,
+      [APP_F12],
+    );
+  });
+
+  test("hero : trois petits multiples LCP / INP / CLS, chacun sur ses bandes de seuils", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await login(page);
+    await page.goto(ACCUEIL_F12, { waitUntil: "domcontentloaded" });
+    const hero = page.getByTestId("hero-cwv");
+    await expect(hero).toContainText("Core Web Vitals dans le temps");
+    await expect(hero.locator('[role="img"]')).toHaveCount(3, { timeout: 15_000 });
+    for (const nom of ["LCP", "INP", "CLS"]) {
+      const serie = page.locator(`#hero-${nom} [data-testid="threshold-series"]`);
+      await expect(serie).toHaveAttribute("data-vital", nom);
+      await expect(serie.locator(".recharts-reference-area.bande-bon")).toBeVisible({ timeout: 15_000 });
+    }
+    // Le déploiement de la fenêtre est un repère cliquable : il compare sa release à la précédente.
+    const annotation = page.locator("#hero-LCP").getByTestId("legende-annotations").getByRole("link", { name: /f12-1\.1/ });
+    const href = new URL((await annotation.getAttribute("href"))!, consoleUrl);
+    expect([href.searchParams.get("cmp"), href.searchParams.get("rel_b"), href.searchParams.get("rel_a")]).toEqual([
+      "release",
+      "f12-1.1",
+      "f12-1.0",
+    ]);
+  });
+
+  test("« Charge, erreurs et LCP » : trois panneaux, un axe chacun, le même nombre de seaux que le hero", async ({ page }) => {
+    await login(page);
+    await page.goto(ACCUEIL_F12, { waitUntil: "domcontentloaded" });
+    const figure = page.locator("#charge-erreurs-lcp");
+    await expect(figure.locator('[role="img"]')).toHaveCount(3, { timeout: 15_000 });
+    const panneaux = figure.locator('[data-testid="stacked-bars"], [data-testid="threshold-series"]');
+    await expect(panneaux).toHaveCount(3);
+    const seaux = await panneaux.evaluateAll((els) => els.map((el) => el.getAttribute("data-seaux")));
+    const seauxHero = await page.locator('#hero-LCP [data-testid="threshold-series"]').getAttribute("data-seaux");
+    expect(new Set([...seaux, seauxHero]).size).toBe(1);
+    // P5 : aucun graphique n'a deux axes y.
+    await expect(figure.locator(".recharts-wrapper")).toHaveCount(3, { timeout: 15_000 });
+    const axes = await figure.locator(".recharts-wrapper").evaluateAll((els) => els.map((el) => el.querySelectorAll(".recharts-yAxis").length));
+    expect(axes.filter((n) => n > 1)).toEqual([]);
+    await expect(figure).toContainText("Le LCP n'est mesuré qu'au chargement");
+    await expect(figure.getByTestId("panneau-vues")).toContainText("Changements de route SPA");
+  });
+
+  test("cmp=release : le hero trace deux séries, la release B et la référence A", async ({ page }) => {
+    await login(page);
+    await page.goto(`${ACCUEIL_F12}&cmp=release&rel_a=f12-1.0&rel_b=f12-1.1`, { waitUntil: "domcontentloaded" });
+    const lcp = page.locator("#hero-LCP");
+    await expect(lcp.locator("path.recharts-line-curve")).toHaveCount(2, { timeout: 15_000 });
+    await expect(lcp.getByTestId("legende-serie")).toContainText("Release f12-1.1");
+    await expect(lcp.getByTestId("legende-serie")).toContainText("Release f12-1.0");
+  });
+
+  test("un clic sur un seau du hero zoome sur sa plage (from/to, plus de period)", async ({ page }) => {
+    await login(page);
+    await page.goto(ACCUEIL_F12, { waitUntil: "domcontentloaded" });
+    const surface = page.locator("#hero-LCP .recharts-surface").first();
+    await expect(surface).toBeVisible({ timeout: 15_000 });
+    await surface.scrollIntoViewIfNeeded();
+    const boite = await surface.boundingBox();
+    if (!boite) throw new Error("graphique sans boîte");
+    // Le zoom lit `activeLabel` : recharts ne le renseigne qu'une fois le survol
+    // enregistré. Cliquer dans la foulée du `move` partait donc parfois sans seau
+    // actif (vert en local, rouge en CI, plus lente). L'infobulle est le témoin de
+    // cet état : elle n'existe dans le DOM que quand un seau est actif.
+    const x = boite.x + boite.width * 0.6;
+    const y = boite.y + boite.height * 0.5;
+    await page.mouse.move(x, y);
+    await expect(page.locator("#hero-LCP .recharts-tooltip-wrapper > *").first()).toBeVisible({ timeout: 15_000 });
+    await page.mouse.click(x, y);
+    await page.waitForURL((u) => u.searchParams.has("from") && u.searchParams.has("to"), { timeout: 15_000 });
+    const u = new URL(page.url());
+    expect(u.searchParams.get("app")).toBe(APP_F12);
+    expect(u.searchParams.has("period")).toBe(false);
+    await expect(page.locator("h1").first()).toHaveText(/Vue d'ensemble/);
+  });
+
+  for (const largeur of LARGEURS) {
+    test(`hero et panneaux : aucun débordement à ${largeur} px`, async ({ page }) => {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await login(page);
+      await page.goto(ACCUEIL_F12, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#charge-erreurs-lcp .recharts-surface").first()).toBeVisible({ timeout: 15_000 });
+      expect(await debordements(page), `${largeur} px`).toEqual([]);
+    });
+  }
+});
+
 test.describe("F18 — Erreurs : KPI, hero, répartition", () => {
   // Deux apps à ce bloc : six groupes du MÊME type « Error » (la légende doit les
   // distinguer par leur message), et une app aux seules erreurs backend, sans
