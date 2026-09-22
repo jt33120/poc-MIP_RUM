@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { HealthHeatmap, type HeatCell, dayKey, lastNDayKeys } from "@/components/charts/HealthHeatmap";
+import { HealthHeatmap } from "@/components/charts/HealthHeatmap";
 import { TrafficTimeseries } from "@/components/charts/TrafficTimeseries";
 import { VitalsTimeseries } from "@/components/charts/VitalsTimeseries";
 import { GlossaryTip } from "@/components/GlossaryTip";
@@ -16,7 +16,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { Breakdown } from "@/components/Breakdown";
-import { VITALS_BREAKDOWN_COLUMNS, vitalsBreakdownItems } from "@/components/breakdown-view";
+import { VITALS_BREAKDOWN_COLUMNS, vitalsBreakdownClasse } from "@/components/breakdown-view";
 import { type SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
 import {
@@ -29,7 +29,9 @@ import {
 } from "@/lib/breakdowns";
 import { healthScore } from "@/lib/health";
 import { lire, type Lecture } from "@/lib/lecture";
-import { paramReader } from "@/lib/query-contract";
+import { fuseauDe, joursLocaux, libelleDeuxFuseaux } from "@/lib/fuseau";
+import { formater } from "@/lib/fmt-ids";
+import { hrefWithQuery, paramReader } from "@/lib/query-contract";
 import { dimensionSchema } from "@/lib/query-schema";
 import { overviewStats, vitalSeries, vitalsP75, type OverviewStats } from "@/lib/queries";
 import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown } from "@/lib/queries-breakdowns";
@@ -43,7 +45,7 @@ import {
   type CouverturePrecedente,
   type SourceComparaison,
 } from "@/lib/comparaison";
-import { lireComparaison } from "@/lib/view-state";
+import { lireComparaison, lireTri } from "@/lib/view-state";
 
 // Sources des deux rangées de tuiles comparées à la période précédente (§ 3.2).
 // Un taux (erreurs / pages vues) n'est pas un compte : le retard d'ingestion
@@ -106,6 +108,20 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const decoupage = blocs.decoupage
     ? parseBreakdown(paramReader(sp).get(BREAKDOWN_PARAM), availableBreakdowns(dispoDecoupage))
     : null;
+  // Ordre du découpage (F05, P3) : gravité par défaut, `tri=volume` sur demande.
+  // `tri=impact` attend le compte des mesures « Mauvais » (B2) : ignoré et SIGNALÉ
+  // par `lireTri`, jamais trié au hasard. La bascule garde tous les autres paramètres.
+  const triLu = lireTri("/", paramReader(sp));
+  const triDecoupage = triLu.tri === "volume" ? "volume" : "gravite";
+  const hrefTri = (valeur: "volume" | null) => {
+    const p = new URLSearchParams(baseParams);
+    if (valeur) p.set("tri", valeur);
+    else p.delete("tri");
+    const qs = p.toString();
+    return qs ? `/?${qs}` : "/";
+  };
+  // Fuseau de l'app : celui des jours et des heures de la heatmap, et de ses liens (R-T).
+  const fuseau = await fuseauDe(ecran.query.scope.requestedApp);
 
   // Comparaison (F06) : la période précédente n'est lue qu'en `cmp=prev` (défaut de
   // cet écran), et ses écarts ne s'affichent que si elle est COMPLÈTE — une plage
@@ -134,7 +150,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     couvVitaux,
     couvHero,
   ] = await Promise.all([
-    blocs.vitals || blocs.reseau ? lire(() => vitalsP75(f)) : sansLecture([]),
+    blocs.vitals || blocs.reseau || blocs.decoupage ? lire(() => vitalsP75(f)) : sansLecture([]),
     blocs.vitals && prev ? lire(() => vitalsP75(f, true)) : sansLecture([]),
     lire(() => overviewStats(f)),
     blocs.hero && prev ? lire(() => overviewStats(f, true)) : sansLecture(null),
@@ -175,6 +191,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   return (
     <div className="animate-fade-up">
       <PageHeader title="Vue d'ensemble" help="rum" />
+      {/* Plage personnalisée (case de la heatmap, zoom) : dite dans les DEUX fuseaux
+          (R-T) — « 15/07 09:00-10:00 Europe/Paris (07:00-08:00 UTC) ». */}
+      {ecran.query.range.preset === null && (
+        <p role="note" data-testid="plage-deux-fuseaux" className="-mt-2 mb-4 text-xs text-ink-soft">
+          Plage lue : {libelleDeuxFuseaux(ecran.query.range.from, ecran.query.range.to, fuseau)}
+        </p>
+      )}
 
       {f.app && stats.ok && stats.data.sessions === 0 && (
         <div
@@ -323,17 +346,27 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 title="Web Vitals par dimension"
                 tabs={breakdownTabs("/", ecran.query, decoupage, dispoDecoupage, {
                   hours: businessHours ? "business" : null,
+                  tri: triDecoupage === "volume" ? "volume" : null,
                 })}
                 notice={BREAKDOWN_NOTICES[decoupage]}
-                items={vitalsBreakdownItems(
+                items={vitalsBreakdownClasse(
                   { pathname: "/", query: ecran.query, schema, dimension: decoupage },
                   decoupe.data.rows,
+                  { tri: triDecoupage, ensembleLcp: vitals.ok ? (byName.LCP?.p75 ?? null) : null },
                 )}
-                columns={VITALS_BREAKDOWN_COLUMNS}
+                columns={triDecoupage === "gravite" ? ["Mesures LCP", ...VITALS_BREAKDOWN_COLUMNS] : VITALS_BREAKDOWN_COLUMNS}
                 groups={decoupe.data.groups}
                 truncated={decoupe.data.truncated}
-                measureLabel="Mesures"
+                measureLabel={triDecoupage === "gravite" ? "LCP p75" : "Mesures"}
                 emptyLabel={`Aucune mesure LCP, INP ou CLS sur ${period.label}.`}
+                tri={triDecoupage}
+                triHref={{ gravite: hrefTri(null), volume: hrefTri("volume") }}
+                avertissement={triLu.ignore}
+                reference={
+                  vitals.ok && byName.LCP
+                    ? `Écart au LCP p75 de l'ensemble (toute la population filtrée) : ${formater("ms", byName.LCP.p75)} sur ${byName.LCP.n.toLocaleString("fr-FR")} mesures.`
+                    : null
+                }
               />
             )
           )}
@@ -390,12 +423,15 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <EchecLecture titre="Heatmap de santé" />
           ) : grid.data.length > 0 ? (
             <HealthHeatmap
-              dayKeys={lastNDayKeys(GRID_DAYS)}
-              byKey={
-                new Map<string, HeatCell>(
-                  grid.data.map((c) => [`${dayKey(c.day)}|${c.hour}`, { good_w: c.good_w, total_w: c.total_w }]),
-                )
-              }
+              jours={joursLocaux(GRID_DAYS, fuseau)}
+              cellules={grid.data}
+              fuseau={fuseau}
+              zoomHref={hrefWithQuery("/", ecran.query, {
+                period: null,
+                from: "{from}",
+                to: "{to}",
+                hours: businessHours ? "business" : null,
+              })}
               businessOnly={businessHours}
             />
           ) : (
