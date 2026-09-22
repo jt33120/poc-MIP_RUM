@@ -98,17 +98,27 @@ export function VersionsTable({
                       <>
                         <span className="text-ink">{(taux * 100).toFixed(1)} %</span>
                         {ecart != null && Math.abs(ecart) >= 0.1 && (
-                          etabli?.etabli === false ? (
-                            // P*.1 : l'intervalle de Newcombe de la différence contient 0 —
-                            // l'écart reste écrit, sans couleur, et la règle est dite.
-                            <span className="ml-2 text-xs text-ink-soft" title={etabli.regle} data-testid="version-ecart-non-etabli">
-                              {ecart > 0 ? "+" : ""}
-                              {ecart.toFixed(1)} pt · non établi
-                            </span>
-                          ) : (
-                            <span className={`ml-2 text-xs ${ecart > 0 ? "text-bad-ink" : "text-good-ink"}`}>
+                          // P*.1 : la couleur SEULEMENT pour un écart établi. Non établi
+                          // (Newcombe contient 0) ou non testable (`ecartProportions` rend
+                          // null : numérateur hors de [0 ; n]) : l'écart reste écrit, sans
+                          // couleur, et le texte dit pourquoi.
+                          etabli?.etabli === true ? (
+                            <span
+                              className={`ml-2 text-xs ${ecart > 0 ? "text-bad-ink" : "text-good-ink"}`}
+                              title={etabli.regle}
+                              data-testid="version-ecart-etabli"
+                            >
                               {ecart > 0 ? "+" : ""}
                               {ecart.toFixed(1)} pt
+                            </span>
+                          ) : (
+                            <span
+                              className="ml-2 text-xs text-ink-soft"
+                              title={etabli?.regle ?? "écart non testable : la part de sessions en erreur n'est pas une proportion sur l'une des deux versions"}
+                              data-testid="version-ecart-non-etabli"
+                            >
+                              {ecart > 0 ? "+" : ""}
+                              {ecart.toFixed(1)} pt · {etabli ? "non établi" : "non testable"}
                             </span>
                           )
                         )}

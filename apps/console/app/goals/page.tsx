@@ -82,7 +82,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
               label="Meilleur taux"
               value={best ? pctFmt(best.rate) : "—"}
               tone="good"
-              hint={best ? `${best.name} · ${intervalleConversion(best.conversions) ?? ""}` : undefined}
+              hint={best ? [best.name, intervalleConversion(best.conversions)].filter(Boolean).join(" · ") : undefined}
             />
             <HeroReading>
               Chaque barre = un objectif, longueur = sa part de sessions qui l&apos;atteignent (échelle

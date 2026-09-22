@@ -65,13 +65,13 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   const data = await mobileSummary(filtersOfQuery(query));
   const { sessions, js_errors: erreurs, startup } = data;
   const jsErrors = data.capabilities.find((c) => c.capability === "js_errors");
-  // P*.1 : l'intervalle de Wilson de la part de sessions sans erreur JS. Même
-  // numérateur que le taux (`errorFreeSessionRate` borne les sessions touchées au
-  // total) ; aucun intervalle quand le taux n'est pas calculable.
+  // P*.1 : l'intervalle de Wilson de la part de sessions sans erreur JS, sur le
+  // numérateur BRUT : plus de sessions touchées que de sessions (lues sur deux
+  // sources) n'est pas une proportion, et `intervalleWilson` le dit — le rogner
+  // comme le fait le taux produirait un intervalle d'apparence mesurée. Aucun
+  // intervalle quand le taux n'est pas calculable.
   const sansErreur =
-    data.js_error_free_session_rate == null
-      ? null
-      : sessions.sessions - Math.min(erreurs?.sessions_affected ?? 0, sessions.sessions);
+    data.js_error_free_session_rate == null ? null : sessions.sessions - (erreurs?.sessions_affected ?? 0);
   const intervalleSansErreur =
     sansErreur == null ? null : texteIntervalle(intervalleWilson(sansErreur, sessions.sessions), fmtPct);
   const contexte = queryToSearchParams(ecran.query);
