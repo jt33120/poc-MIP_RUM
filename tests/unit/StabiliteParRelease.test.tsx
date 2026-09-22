@@ -17,6 +17,7 @@ const texte = (html: string) =>
     .replace(/\s+/g, " ");
 
 const ligne = (over: Partial<MobileReleaseRow>): MobileReleaseRow => ({
+  app_id: "app-a",
   release: "1.4",
   sessions: 3,
   sessions_touchees: 1,
@@ -53,11 +54,12 @@ const RESULTAT: Extract<MobileParRelease, { disponible: true }> = {
   disponible: true,
   lignes: LIGNES,
   releases: 3,
+  apps: 1,
   tronque: false,
   declarantes: { rate: 2 / 3, reason: null, sessions: 3, touchees: 1, exclues: 3, occurrences: 2 },
 };
 
-const href = (r: string | null) => (r === null ? "/mobile?seg=v2%3Arelease%3Ais_null" : `/mobile?release=${r}`);
+const href = (r: string | null, _app: string) => (r === null ? "/mobile?seg=v2%3Arelease%3Ais_null" : `/mobile?release=${r}`);
 
 describe("StabiliteParRelease", () => {
   const html = renderToStaticMarkup(
@@ -148,5 +150,37 @@ describe("StabiliteParRelease", () => {
     );
     const ordre = [...g.matchAll(/href="(\/mobile\?(?:release=[^"]+|seg=[^"]+))"/g)].map((m) => m[1]);
     expect(ordre.indexOf("/mobile?release=1.2")).toBe(ordre.length - 1);
+  });
+
+  it("plusieurs apps : deux « 1.0.0 » sont deux lignes, chacune nommée par son app et liée à elle", () => {
+    const hrefApp = (r: string | null, app: string) => `/mobile?app=${app}&release=${r}`;
+    const multi = renderToStaticMarkup(
+      <StabiliteParRelease
+        resultat={{
+          ...RESULTAT,
+          apps: 2,
+          releases: 2,
+          lignes: [
+            ligne({ app_id: "app-a", release: "1.0.0" }),
+            ligne({
+              app_id: "app-b",
+              release: "1.0.0",
+              etat_js_errors: "unknown",
+              part_touchee: null,
+              raison_part: ERROR_FREE_REASONS.capability_unknown,
+            }),
+          ],
+        }}
+        tri="fourni"
+        triHref={{ fourni: "/mobile", gravite: "/mobile?tri=gravite", volume: "/mobile?tri=volume" }}
+        hrefDeRelease={hrefApp}
+        plage="24 h"
+      />,
+    );
+    expect(multi.match(/data-testid="impact-ligne"/g)).toHaveLength(2);
+    expect(texte(multi)).toContain("1.0.0 · app-a");
+    expect(texte(multi)).toContain("1.0.0 · app-b");
+    expect(multi).toContain('href="/mobile?app=app-b&amp;release=1.0.0"');
+    expect(texte(multi)).toContain(`Part « — » pour 1.0.0 · app-b : ${ERROR_FREE_REASONS.capability_unknown}`);
   });
 });

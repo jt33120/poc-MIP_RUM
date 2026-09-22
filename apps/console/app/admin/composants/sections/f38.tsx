@@ -43,6 +43,7 @@ const RELEASES: MobileReleaseRow[] = chainerReleases(
   ].map((r) => {
     const active = r.etat === "active";
     return {
+      app_id: "demo-rn",
       release: r.release,
       sessions: r.sessions,
       sessions_touchees: r.touchees,
@@ -100,6 +101,7 @@ export function SectionF38() {
             disponible: true,
             lignes: RELEASES,
             releases: RELEASES.length,
+            apps: 1,
             tronque: false,
             declarantes: { ...TAUX, occurrences: 95 },
           }}

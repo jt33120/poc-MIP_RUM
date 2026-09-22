@@ -31,6 +31,16 @@ export type TriStabilite = "fourni" | "gravite" | "volume";
 /** Libellé de la ligne d'une release : « Inconnue » pour les sessions sans release. */
 export const libelleRelease = (release: string | null) => release ?? "Inconnue";
 
+/**
+ * Libellé d'une ligne : la release, suivie de son app dès que plusieurs apps sont
+ * lues — deux « 1.0.0 » de deux apps sont deux lignes, et doivent se lire comme telles.
+ */
+export const libelleLigne = (l: Pick<MobileReleaseRow, "release" | "app_id">, avecApp: boolean) =>
+  avecApp ? `${libelleRelease(l.release)} · ${l.app_id}` : libelleRelease(l.release);
+
+/** Lien d'une ligne : l'écran filtré sur la release, et sur son app quand plusieurs sont lues. */
+export type HrefDeRelease = (release: string | null, app: string) => string;
+
 const DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
   timeZone: "UTC",
   day: "2-digit",
@@ -59,10 +69,11 @@ const ORDRES: Record<TriStabilite, string> = {
 
 export function lignesStabilite(
   lignes: readonly MobileReleaseRow[],
-  hrefDeRelease: (release: string | null) => string,
+  hrefDeRelease: HrefDeRelease,
+  avecApp = false,
 ): ImpactLigne[] {
   return lignes.map((l) => {
-    const libelle = libelleRelease(l.release);
+    const libelle = libelleLigne(l, avecApp);
     const connue = l.part_touchee !== null;
     // Une release qui ne déclare pas collecter : aucun zéro affiché. Un compte
     // positif reste écrit — des erreurs reçues sont un fait, même sans déclaration.
@@ -70,9 +81,10 @@ export function lignesStabilite(
     const touchees = connue && l.sessions_touchees !== null ? l.sessions_touchees : null;
     const intervalle = connue && touchees !== null ? texteIntervalle(intervalleWilson(touchees, l.sessions), (v) => formater("pct", v)) : null;
     return {
-      cle: l.release ?? "__inconnue",
+      // Une clé par (app, release) : deux « 1.0.0 » de deux apps sont deux lignes.
+      cle: JSON.stringify([l.app_id, l.release]),
       libelle,
-      href: hrefDeRelease(l.release),
+      href: hrefDeRelease(l.release, l.app_id),
       description: connue
         ? `Release ${libelle} : ${formater("pct", l.part_touchee)} des sessions touchées par une erreur JavaScript, ${nombre(touchees ?? 0)} sessions touchées sur ${nombre(l.sessions)}`
         : `Release ${libelle} : part des sessions touchées non calculable (${l.raison_part ?? "raison non lue"}), ${nombre(l.sessions)} sessions`,
@@ -111,7 +123,7 @@ export function StabiliteParRelease({
   tri: TriStabilite;
   /** Liens de la bascule : chronologie (sans `tri`), gravité, volume. */
   triHref: Record<TriStabilite, string>;
-  hrefDeRelease: (release: string | null) => string;
+  hrefDeRelease: HrefDeRelease;
   /** « 24 h », « du 17/09 10:00 au 17/09 12:00 » : pour l'état vide. */
   plage: string;
 }) {
@@ -126,7 +138,8 @@ export function StabiliteParRelease({
     );
   }
 
-  const construites = lignesStabilite(resultat.lignes, hrefDeRelease);
+  const avecApp = resultat.apps > 1;
+  const construites = lignesStabilite(resultat.lignes, hrefDeRelease, avecApp);
   const classees =
     tri === "fourni"
       ? construites
@@ -136,7 +149,7 @@ export function StabiliteParRelease({
   const sansPart = resultat.lignes.filter((l) => l.part_touchee === null);
   const raisons = [...new Set(sansPart.map((l) => l.raison_part ?? "raison non lue"))].map((raison) => ({
     raison,
-    releases: sansPart.filter((l) => (l.raison_part ?? "raison non lue") === raison).map((l) => libelleRelease(l.release)),
+    releases: sansPart.filter((l) => (l.raison_part ?? "raison non lue") === raison).map((l) => libelleLigne(l, avecApp)),
   }));
 
   return (
@@ -176,7 +189,7 @@ export function StabiliteParRelease({
         volumeLibelle="Sessions"
         groupes={resultat.releases}
         tronque={resultat.tronque}
-        notice="Part des sessions React Native de chaque release touchées par au moins une erreur JavaScript de la fenêtre, même cohorte que les tuiles. Écart : en points, contre la release précédente dans l'ordre de première session vue — même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte."
+        notice="Part des sessions React Native de chaque release touchées par au moins une erreur JavaScript de la fenêtre, même cohorte que les tuiles. Écart : en points, contre la release précédente de la même app dans l'ordre de première session vue — même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte."
       />
       {(raisons.length > 0 || resultat.tronque) && (
         <div className="-mt-4 mb-6 flex flex-col gap-1 px-1 text-xs text-ink-soft" data-testid="mobile-stabilite-notes">

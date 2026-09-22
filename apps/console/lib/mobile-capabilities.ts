@@ -233,18 +233,32 @@ export const RAISON_SANS_SOURCE_JS =
   "migration v69 absente : les erreurs JavaScript React Native ne sont pas distinguables";
 
 /**
- * État d'une capacité pour UNE release, issu de ses seules déclarations. Une
- * release `null` (l'application ne déclare pas de version) n'hérite pas des
- * déclarations des autres : ses propres lignes `release is null`, ou `unknown`.
+ * Une déclaration avec l'app qui l'a émise. Une release n'est un fait que DANS son
+ * app : deux apps React Native en « 1.0.0 » sont deux binaires sans rapport.
+ */
+export type DeclarationApp = CapabilityDeclaration & { app_id: string };
+
+/**
+ * État d'une capacité pour UNE release D'UNE app, issu de ses seules
+ * déclarations. Une release `null` (l'application ne déclare pas de version)
+ * n'hérite pas des déclarations des autres : ses propres lignes `release is null`,
+ * ou `unknown`.
+ *
+ * `app` : sous plusieurs apps (`app=all`), la « 1.0.0 » de A n'emprunte pas les
+ * déclarations de la « 1.0.0 » de B — sinon B, qui ne déclare rien, passerait
+ * « active » et ses sessions entreraient au dénominateur comme non touchées. Une
+ * déclaration sans `app_id` ne correspond alors à aucune app : `unknown`, jamais
+ * l'état d'une autre.
  */
 export function etatCapaciteParRelease(
-  declarations: readonly CapabilityDeclaration[],
+  declarations: readonly (CapabilityDeclaration & { app_id?: string })[],
   capability: MobileCapability,
   release: string | null,
+  app?: string,
 ): CapabilityState {
   return capabilityStatus(
     capability,
-    declarations.filter((d) => d.release === release),
+    declarations.filter((d) => d.release === release && (app === undefined || d.app_id === app)),
   ).state;
 }
 
@@ -310,19 +324,21 @@ export function tauxSansErreurDeclarant(lignes: readonly LigneTauxRelease[]): {
  * — un ordre calculé ici, indépendant de l'ordre d'affichage : la plus récente en
  * tête. L'écart est en POINTS de part touchée, `null` si l'une des deux parts l'est.
  * Les sessions sans release ne forment pas une release : elles n'ont pas de
- * précédente et n'en servent à aucune.
+ * précédente et n'en servent à aucune. La précédente est cherchée DANS LA MÊME APP
+ * (`app_id`) : sous plusieurs apps, la 2.0 de A ne se compare pas à la 1.9 de B.
  */
 export function chainerReleases<
-  T extends { release: string | null; premiere_session: string; part_touchee: number | null },
+  T extends { app_id?: string; release: string | null; premiere_session: string; part_touchee: number | null },
 >(lignes: readonly T[]): (T & { ecart_precedente_pts: number | null; release_precedente: string | null })[] {
   const triees = [...lignes].sort(
     (a, b) =>
       b.premiere_session.localeCompare(a.premiere_session) ||
-      (a.release === null ? 1 : b.release === null ? -1 : b.release.localeCompare(a.release)),
+      (a.release === null ? 1 : b.release === null ? -1 : b.release.localeCompare(a.release)) ||
+      String(a.app_id ?? "").localeCompare(String(b.app_id ?? "")),
   );
   return triees.map((ligne, i) => {
     if (ligne.release === null) return { ...ligne, ecart_precedente_pts: null, release_precedente: null };
-    const precedente = triees.slice(i + 1).find((l) => l.release !== null) ?? null;
+    const precedente = triees.slice(i + 1).find((l) => l.release !== null && l.app_id === ligne.app_id) ?? null;
     const ecart =
       precedente && ligne.part_touchee !== null && precedente.part_touchee !== null
         ? (ligne.part_touchee - precedente.part_touchee) * 100

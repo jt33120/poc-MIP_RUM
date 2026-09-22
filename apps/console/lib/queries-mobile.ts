@@ -34,6 +34,7 @@ import {
   type CapabilityDeclaration,
   type CapabilityState,
   type CapabilityStatus,
+  type DeclarationApp,
   type ErrorFreeUnavailable,
   type MobileCapability,
 } from "./mobile-capabilities";
@@ -398,11 +399,21 @@ export async function mobileSummary(f: FiltersLike, schema?: MobileSchema): Prom
  * collecte la 4.2 ? » n'a pas la même réponse que « que collecte le parc ? ».
  */
 export async function mobileDeclarations(query: AnalyticsQuery): Promise<CapabilityDeclaration[]> {
+  // La forme publique (API v1, `MobileCapabilityDeclaration`) ne porte pas l'app.
+  return (await declarationsParApp(query)).map(({ app_id: _app, ...d }) => d);
+}
+
+/**
+ * Les mêmes déclarations, AVEC l'app qui les a émises (F38) : la stabilité par
+ * release juge l'état de collecte d'une release DANS son app.
+ */
+async function declarationsParApp(query: AnalyticsQuery): Promise<DeclarationApp[]> {
   const params: unknown[] = [];
   const bind = (value: unknown) => `$${params.push(value)}`;
   const perimetre = compileScope(query, "mc.app_id", bind);
   const release = query.filters.release ? ` and mc.release = ${bind(query.filters.release)}` : "";
   const rows = await q<{
+    app_id: string;
     capability: string;
     runtime: string;
     release: string | null;
@@ -412,14 +423,15 @@ export async function mobileDeclarations(query: AnalyticsQuery): Promise<Capabil
     verified_at: Date | null;
     verified_by: string | null;
   }>(
-    `select mc.capability, mc.runtime, mc.release, mc.declared,
+    `select mc.app_id, mc.capability, mc.runtime, mc.release, mc.declared,
             mc.first_declared_at, mc.last_declared_at, mc.verified_at, mc.verified_by
        from mobile_capabilities mc
       where mc.runtime = ${bind(MOBILE_RUNTIME)}${perimetre}${release}
-      order by mc.capability, mc.release nulls first`,
+      order by mc.capability, mc.release nulls first, mc.app_id`,
     params,
   );
   return rows.map((r) => ({
+    app_id: r.app_id,
     capability: r.capability as MobileCapability,
     runtime: r.runtime,
     release: r.release,
@@ -563,11 +575,21 @@ async function lireRequetes(lire: Lecture, query: AnalyticsQuery, schema: Mobile
 // déclare pas collecter les erreurs JS n'a pas « 0 % de sessions touchées » : elle
 // n'a rien observé. Sa part vaut `null`, avec la raison — même quand une autre
 // release du parc, elle, déclare.
+//
+// UNE RELEASE N'EXISTE QUE DANS SON APP. `/mobile` ne se limite pas à une app :
+// sous `app=all`, la « 1.0.0 » de A et la « 1.0.0 » de B sont deux binaires. Les
+// grouper ensemble prêtait à B l'état déclaré par A (ses sessions entraient au
+// dénominateur comme non touchées : part sous-estimée, taux « sans erreur »
+// gonflé) et pouvait donner pour « release précédente » une release de l'autre app.
+// Le groupe est donc `(app_id, release)`, l'état se lit sur les déclarations de
+// cette app, et la précédente se cherche dans la même app.
 
 /** Releases affichées par défaut ; toutes sont agrégées, la référence porte sur toutes. */
 export const RELEASES_AFFICHEES = 12;
 
 export interface MobileReleaseRow {
+  /** App de la release : une release n'est un fait que dans son app. */
+  app_id: string;
   /** `null` : sessions sans release déclarée — ligne « Inconnue ». */
   release: string | null;
   /** Sessions React Native de cette release COMMENCÉES dans la fenêtre. */
@@ -576,12 +598,12 @@ export interface MobileReleaseRow {
   sessions_touchees: number | null;
   /** `sum(occurrences)` (V1) ; `null` sans `error_source`. */
   occurrences: number | null;
-  /** État `js_errors` issu des SEULES déclarations de cette release. */
+  /** État `js_errors` issu des SEULES déclarations de cette release, dans son app. */
   etat_js_errors: CapabilityState;
   /** Part des sessions touchées (0..1) ; `null` si la release ne déclare pas collecter. */
   part_touchee: number | null;
   raison_part: string | null;
-  /** Écart de part touchée, en POINTS, à la release précédente (première session vue). */
+  /** Écart de part touchée, en POINTS, à la release précédente de la même app (première session vue). */
   ecart_precedente_pts: number | null;
   release_precedente: string | null;
   /** p75 du démarrage JS à froid jusqu'au premier écran ; `null` sans mesure. */
@@ -601,8 +623,10 @@ export type MobileParRelease =
   | {
       disponible: true;
       lignes: MobileReleaseRow[];
-      /** Nombre de groupes de release sur la fenêtre (« Inconnue » compris). */
+      /** Nombre de groupes (app, release) sur la fenêtre (« Inconnue » compris). */
       releases: number;
+      /** Apps distinctes lues : au-delà d'une, chaque ligne nomme son app. */
+      apps: number;
       tronque: boolean;
       declarantes: MobileDeclarantes;
     }
@@ -631,13 +655,13 @@ export async function mobileParRelease(
   const query = queryOf(f);
   // Hors transaction et sans fenêtre, comme pour `mobileSummary` : une déclaration
   // n'est pas une occurrence.
-  const declarations = etat.capabilities ? await mobileDeclarations(query) : [];
+  const declarations = etat.capabilities ? await declarationsParApp(query) : [];
 
   const { groupes, demarrages } = await snapshot(async (lire) => {
     // Une base par instruction : ses paramètres liés n'appartiennent qu'à elle.
     const base = cohorte(query, etat);
     const groupes = etat.errorSource
-      ? await lire<{ release: string | null; sessions: number; touchees: number; occurrences: number; premiere: Date }>(
+      ? await lire<{ app_id: string; release: string | null; sessions: number; touchees: number; occurrences: number; premiere: Date }>(
           `with ${base.cte},
            err as (
              select e.app_id, e.session_id, sum(e.occurrences)::float8 as occ
@@ -646,41 +670,41 @@ export async function mobileParRelease(
               where e.error_source = ${base.bind(MOBILE_ERROR_SOURCE)}${compileScope(query, "e.app_id", base.bind)}${fenetre(query, "e.ts", base.bind)}
               group by e.app_id, e.session_id
            )
-           select c.release,
+           select c.app_id, c.release,
                   count(*)::int as sessions,
                   count(err.session_id)::int as touchees,
                   coalesce(sum(err.occ), 0)::float8 as occurrences,
                   min(c.started_at) as premiere
              from cohorte c
              left join err on err.app_id = c.app_id and err.session_id = c.session_id
-            group by c.release`,
+            group by c.app_id, c.release`,
           base.params,
         )
-      : await lire<{ release: string | null; sessions: number; touchees: null; occurrences: null; premiere: Date }>(
+      : await lire<{ app_id: string; release: string | null; sessions: number; touchees: null; occurrences: null; premiere: Date }>(
           `with ${base.cte}
-           select c.release, count(*)::int as sessions, null::int as touchees, null::float8 as occurrences,
+           select c.app_id, c.release, count(*)::int as sessions, null::int as touchees, null::float8 as occurrences,
                   min(c.started_at) as premiere
              from cohorte c
-            group by c.release`,
+            group by c.app_id, c.release`,
           base.params,
         );
     const baseDemarrage = cohorte(query, etat);
-    const demarrages = await lire<{ release: string | null; n: number; p75: number | null }>(
+    const demarrages = await lire<{ app_id: string; release: string | null; n: number; p75: number | null }>(
       `with ${baseDemarrage.cte}
-       select c.release, count(*)::int as n,
+       select c.app_id, c.release, count(*)::int as n,
               percentile_cont(0.75) within group (order by ev.timing_ms)::float8 as p75
          from rum_event ev
          join cohorte c on c.app_id = ev.app_id and c.session_id = ev.session_id
         where ev.event_type = 'timing' and ev.timing_ms is not null
           and ev.name = ${baseDemarrage.bind(STARTUP_COLD)}${compileScope(query, "ev.app_id", baseDemarrage.bind)}${fenetre(query, "ev.ts", baseDemarrage.bind)}
-        group by c.release`,
+        group by c.app_id, c.release`,
       baseDemarrage.params,
     );
     return { groupes, demarrages };
   });
 
   const lignes = groupes.map((g) => {
-    const etatJs = etatCapaciteParRelease(declarations, "js_errors", g.release);
+    const etatJs = etatCapaciteParRelease(declarations, "js_errors", g.release, g.app_id);
     const touchees = g.touchees === null ? null : Number(g.touchees);
     let part: number | null = null;
     let raison: string | null = null;
@@ -691,8 +715,9 @@ export async function mobileParRelease(
       if (rate === null) raison = reason ? ERROR_FREE_REASONS[reason] : null;
       else part = 1 - rate;
     }
-    const demarrage = demarrages.find((d) => d.release === g.release);
+    const demarrage = demarrages.find((d) => d.app_id === g.app_id && d.release === g.release);
     return {
+      app_id: g.app_id,
       release: g.release,
       sessions: g.sessions,
       sessions_touchees: touchees,
@@ -713,6 +738,7 @@ export async function mobileParRelease(
     disponible: true,
     lignes: chainees.slice(0, Math.max(0, limite)),
     releases: chainees.length,
+    apps: new Set(chainees.map((l) => l.app_id)).size,
     tronque: chainees.length > limite,
     declarantes: {
       ...taux,

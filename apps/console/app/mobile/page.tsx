@@ -227,10 +227,18 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   // CE7 : `/errors/issues` n'a pas de page ; la liste des erreurs lit `source` elle-même.
   const lienErreurs = hrefWithQuery("/errors", query, { source: "react_native_js" });
   // Une release `null` ne s'écrit pas `release=` (vide) : `seg=v2:release:is_null` (§ 3.3).
-  const hrefDeRelease = (release: string | null) =>
-    release === null
-      ? hrefWithQuery("/mobile", intersectQuery(query, { conditions: [{ dimension: "release", operator: "is_null", value: null }] }))
-      : hrefWithQuery("/mobile", query, { release });
+  // Sous plusieurs apps, la ligne est celle d'UNE app : le lien la pose aussi (`app`
+  // est un paramètre du contrat), sinon il ouvrirait la même release de toutes les apps.
+  const hrefDeRelease = (release: string | null, app: string) => {
+    const appLigne = query.scope.requestedApp === null ? { app } : {};
+    return release === null
+      ? hrefWithQuery(
+          "/mobile",
+          intersectQuery(query, { conditions: [{ dimension: "release", operator: "is_null", value: null }] }),
+          appLigne,
+        )
+      : hrefWithQuery("/mobile", query, { ...appLigne, release });
+  };
   const hrefTri = (tri: TriStabilite) =>
     hrefWithQuery("/mobile", query, {
       tri: tri === "fourni" ? null : tri,

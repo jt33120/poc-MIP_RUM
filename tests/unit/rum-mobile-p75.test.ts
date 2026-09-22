@@ -509,3 +509,25 @@ describe("F38 — vue « Dernière release déclarée » et ordre des zones", ()
     expect(ordre.indexOf("stabilite")).toBe(ordre.indexOf("demarrage-ecrans") + 1);
   });
 });
+
+describe("F38 — une release n'existe que dans son app (lecture sous plusieurs apps)", () => {
+  it("la « 1.0.0 » de B n'emprunte pas la déclaration de la « 1.0.0 » de A", () => {
+    const declarations = [{ ...decl({ release: "1.0.0", declared: true }), app_id: "a" }];
+    expect(etatCapaciteParRelease(declarations, "js_errors", "1.0.0", "a")).toBe("active");
+    expect(etatCapaciteParRelease(declarations, "js_errors", "1.0.0", "b")).toBe("unknown");
+    // Une déclaration sans app ne correspond à aucune app nommée.
+    expect(etatCapaciteParRelease([decl({ release: "1.0.0" })], "js_errors", "1.0.0", "a")).toBe("unknown");
+  });
+
+  it("la release précédente est cherchée dans la même app", () => {
+    const r = chainerReleases([
+      { app_id: "a", release: "2.0", premiere_session: "2026-09-21T10:00:00.000Z", part_touchee: 0.3 },
+      { app_id: "b", release: "1.9", premiere_session: "2026-09-21T09:00:00.000Z", part_touchee: 0.1 },
+      { app_id: "a", release: "1.8", premiere_session: "2026-09-20T10:00:00.000Z", part_touchee: 0.2 },
+    ]);
+    const a20 = r.find((l) => l.app_id === "a" && l.release === "2.0")!;
+    expect(a20.release_precedente).toBe("1.8");
+    expect(a20.ecart_precedente_pts).toBeCloseTo(10, 6);
+    expect(r.find((l) => l.app_id === "b")).toMatchObject({ release_precedente: null, ecart_precedente_pts: null });
+  });
+});

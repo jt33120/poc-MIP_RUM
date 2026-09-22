@@ -19,6 +19,9 @@ const suite = url ? describe : describe.skip;
 const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
 
 const APP = "f38-par-release";
+/** Seconde app React Native, qui publie AUSSI une « 1.4 » et ne déclare rien. */
+const APP_B = "f38-par-release-b";
+const APPS = [APP, APP_B];
 
 function fichiersSql(): string[] {
   const migrations = readdirSync(SQL_DIR)
@@ -60,8 +63,18 @@ const filtres = (dimensions: Record<string, string> = {}): FiltersLike => ({
 
 async function nettoyer(c: pg.Client) {
   for (const table of ["mobile_capabilities", "rum_event", "rum_error", "rum_pageview", "rum_session"]) {
-    await c.query(`delete from ${table} where app_id = $1`, [APP]);
+    await c.query(`delete from ${table} where app_id = any($1::text[])`, [APPS]);
   }
+}
+
+/** Les deux apps à la fois (`app=all` d'un principal qui les lit toutes deux), 24 h. */
+function filtresDeuxApps(): FiltersLike {
+  const q = requete();
+  return {
+    ...filtres(),
+    app: null,
+    query: { ...q, scope: { requestedApp: null, authorizedApps: APPS, effectiveApps: APPS } },
+  };
 }
 
 /**
@@ -71,17 +84,19 @@ async function nettoyer(c: pg.Client) {
  * robot React Native en 1.4 avec la sienne.
  */
 async function semer(c: pg.Client) {
-  await c.query(
-    "insert into app_registry (app_id,name,active) values ($1,$1,true) on conflict (app_id) do update set active=true",
-    [APP],
-  );
-  const session = (id: string, runtime: string, release: string | null, ageMin: number, bot = false) =>
+  for (const app of APPS) {
+    await c.query(
+      "insert into app_registry (app_id,name,active) values ($1,$1,true) on conflict (app_id) do update set active=true",
+      [app],
+    );
+  }
+  const session = (id: string, runtime: string, release: string | null, ageMin: number, bot = false, app = APP) =>
     c.query(
       `insert into rum_session (session_id, app_id, device_type, os, runtime, release, visitor_id, is_bot,
                                 started_at, last_seen_at)
        values ($1,$2,'mobile','iOS',$3,$4,$1,$5, now() - ($6::int * interval '1 minute'),
                now() - ($6::int * interval '1 minute') + interval '2 minutes')`,
-      [id, APP, runtime, release, bot, ageMin],
+      [id, app, runtime, release, bot, ageMin],
     );
   await session("f38-14-a", "react_native", "1.4", 30);
   await session("f38-14-b", "react_native", "1.4", 20);
@@ -91,17 +106,23 @@ async function semer(c: pg.Client) {
   await session("f38-sans", "react_native", null, 40);
   await session("f38-web", "browser", "1.4", 15);
   await session("f38-bot", "react_native", "1.4", 12, true);
+  // App B : une « 1.4 » homonyme (2 sessions, dont 1 touchée) et une « 1.3 » dont la
+  // première session tombe ENTRE la 1.4 et la 1.2 de A. B ne déclare rien.
+  await session("f38-b-14-a", "react_native", "1.4", 25, false, APP_B);
+  await session("f38-b-14-b", "react_native", "1.4", 24, false, APP_B);
+  await session("f38-b-13-a", "react_native", "1.3", 45, false, APP_B);
 
-  const erreur = (span: string, sessionId: string, source: string, occ: number, ageMin: number) =>
+  const erreur = (span: string, sessionId: string, source: string, occ: number, ageMin: number, app = APP) =>
     c.query(
       `insert into rum_error (span_id, session_id, app_id, message, kind, occurrences, error_source, ts)
        values ($1,$2,$3,'incident','crash',$4,$5, now() - ($6::int * interval '1 minute'))`,
-      [span, sessionId, APP, occ, source, ageMin],
+      [span, sessionId, app, occ, source, ageMin],
     );
   await erreur("f38-e1", "f38-14-a", "react_native_js", 3, 29);
   await erreur("f38-e2", "f38-14-a", "react_native_js", 4, 28);
   await erreur("f38-e3", "f38-web", "browser_js", 50, 14);
   await erreur("f38-e4", "f38-bot", "react_native_js", 60, 11);
+  await erreur("f38-e5", "f38-b-14-a", "react_native_js", 2, 24, APP_B);
 
   await c.query(
     `insert into rum_event (span_id, session_id, app_id, name, event_type, timing_ms, ts) values
@@ -133,7 +154,7 @@ suite("F38 — mobileParRelease sur PostgreSQL", () => {
   afterAll(async () => {
     await lib?.pool.end();
     await nettoyer(c);
-    await c.query("delete from app_registry where app_id = $1", [APP]);
+    await c.query("delete from app_registry where app_id = any($1::text[])", [APPS]);
     await c.end();
   });
 
@@ -208,6 +229,38 @@ suite("F38 — mobileParRelease sur PostgreSQL", () => {
     expect(r.sessions.sessions).toBe(6);
     expect(r.js_errors?.occurrences).toBe(7);
     expect(r.js_errors?.sessions_affected).toBe(1);
+  });
+
+  it("deux apps, même « 1.4 » : deux lignes, l'état de collecte de chacune, la précédente dans la même app", async () => {
+    const r = await disponible(filtresDeuxApps());
+    expect(r.apps).toBe(2);
+    // A : 1.4, 1.2, sans release ; B : 1.4, 1.3 — cinq groupes (app, release), pas quatre.
+    expect(r.releases).toBe(5);
+    const a14 = r.lignes.find((l) => l.app_id === APP && l.release === "1.4")!;
+    const b14 = r.lignes.find((l) => l.app_id === APP_B && l.release === "1.4")!;
+    // A garde SES 3 sessions et SON état déclaré ; B n'hérite pas de la déclaration de A.
+    expect(a14).toMatchObject({ sessions: 3, sessions_touchees: 1, etat_js_errors: "active", occurrences: 7 });
+    expect(a14.part_touchee).toBeCloseTo(1 / 3, 10);
+    expect(b14).toMatchObject({
+      sessions: 2,
+      sessions_touchees: 1,
+      occurrences: 2,
+      etat_js_errors: "unknown",
+      part_touchee: null,
+      raison_part: lib.capacites.ERROR_FREE_REASONS.capability_unknown,
+    });
+    // La précédente de la 1.4 de A est la 1.2 de A, pas la 1.3 de B (plus récente).
+    expect(a14.release_precedente).toBe("1.2");
+    expect(b14.release_precedente).toBe("1.3");
+    // Le taux des déclarantes ne compte QUE les sessions de A 1.4 : 1 touchée sur 3.
+    // Groupées par release seule, les 5 sessions « 1.4 » seraient entrées au
+    // dénominateur (2 touchées sur 5 : 60 % sans erreur au lieu de 66,7 %).
+    expect(r.declarantes).toMatchObject({ sessions: 3, touchees: 1, occurrences: 7 });
+    expect(r.declarantes.rate).toBeCloseTo(2 / 3, 10);
+  });
+
+  it("une seule app lue : apps = 1, la ligne n'a pas à nommer son app", async () => {
+    expect((await disponible(filtres())).apps).toBe(1);
   });
 
   it("schéma sans release de session, ou sans runtime : disponible false, avec la raison", async () => {
