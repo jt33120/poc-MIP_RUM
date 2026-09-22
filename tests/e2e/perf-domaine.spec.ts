@@ -372,7 +372,7 @@ test.describe("F13 — Vue d'ensemble : segments, release, angle mort, historiqu
     }
   });
 
-  test("segments : gravité par défaut, tri=volume sur demande ; une route ouvre /pages filtré sur elle", async ({ page }) => {
+  test("segments : gravité par défaut, tri=volume sur demande ; une route ouvre son panneau sur /pages", async ({ page }) => {
     await login(page);
     await page.goto(`${ACCUEIL_F13}&split=route`, { waitUntil: "domcontentloaded" });
     const table = page.getByTestId("impact-table");
@@ -380,12 +380,12 @@ test.describe("F13 — Vue d'ensemble : segments, release, angle mort, historiqu
     const libelles = () =>
       table.getByTestId("impact-ligne").evaluateAll((els) => els.map((el) => el.querySelector("span")?.textContent?.trim() ?? ""));
     expect(await libelles()).toEqual(["/lent", "/rapide"]);
-    // Une route ouvre /pages filtré sur elle, population et plage gardées. Le panneau
-    // route (`panel=route:<r>`, § 3.3) attend F17 : `/pages` ne le lit pas encore.
+    // Une route ouvre son PANNEAU sur /pages (`panel=route:<r>`, § 3.3, F17),
+    // population et plage gardées ; l'écran n'est PAS filtré sur elle.
     const href = new URL((await table.getByTestId("impact-ligne").first().locator("a").getAttribute("href"))!, consoleUrl);
     expect(href.pathname).toBe("/pages");
-    expect(href.searchParams.get("route")).toBe("/lent");
-    expect(href.searchParams.get("panel")).toBeNull();
+    expect(href.searchParams.get("panel")).toBe("route:%2Flent");
+    expect(href.searchParams.get("route")).toBeNull();
     expect(href.searchParams.get("app")).toBe(APP_F13);
 
     await table.getByTestId("tri-volume").click();
@@ -923,13 +923,18 @@ test.describe("F14 — Pages : KPI, sélecteur de vital, hero classé", () => {
     );
   });
 
-  test("une ligne ouvre la route avec la même plage et le même vital", async ({ page }) => {
+  test("une ligne ouvre le panneau de la route avec la même plage et le même vital", async ({ page }) => {
     await login(page);
     await page.goto(`${consoleUrl}/pages?app=${APP_F14}&period=7d&vital=INP`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("hero-routes").getByTestId("impact-ligne").first().getByRole("link").click();
-    await page.waitForURL((u) => u.searchParams.get("route") === "/f14-inp-lente", { timeout: 15_000 });
+    // F17 : la ligne OUVRE la route à côté du classement (§ 5.2.3) ; elle ne filtre
+    // plus l'écran — c'est « Ouvrir en page », dans le panneau, qui pose `route=`.
+    await page.waitForURL((u) => u.searchParams.get("panel") === "route:%2Ff14-inp-lente", { timeout: 15_000 });
     const sp = new URL(page.url()).searchParams;
     expect([sp.get("app"), sp.get("period"), sp.get("vital")]).toEqual([APP_F14, "7d", "INP"]);
+    await expect(page.getByTestId("hero-routes").getByTestId("impact-ligne")).toHaveCount(ROUTES_F14.length);
+    await page.getByTestId("detail-panel").getByTestId("detail-panel-page").click();
+    await page.waitForURL((u) => u.searchParams.get("route") === "/f14-inp-lente", { timeout: 15_000 });
     await expect(page.getByTestId("hero-routes").getByTestId("impact-ligne")).toHaveCount(1);
   });
 
@@ -1499,6 +1504,227 @@ test.describe("F24 — Onglet Actions", () => {
       await page.goto(ACTIONS_F24, { waitUntil: "domcontentloaded" });
       await expect(page.getByTestId("kpi-actions")).toBeVisible();
       expect(await debordements(page)).toEqual([]);
+    });
+  }
+});
+
+// F17 — Panneau route (§ 5.2.3). Données SYNTHÉTIQUES, dans une app à ce bloc :
+// trois heures CLOSES, deux routes de gravités opposées — `/f17-panier` (30 mesures
+// LCP à 3 200 ms par heure : « Mauvais », et assez d'effectif pour qu'une heure
+// compte dans la concordance) et `/f17-accueil` (120 mesures à 900 ms par heure) —
+// si bien que le p75 de l'ENSEMBLE (≈ 900 ms) diffère de celui de la route : le
+// repère « p75 toutes routes » de la distribution est alors visible et distinct.
+// Le robot passe sur `/f17-panier` à chacune des trois heures et dit « ok » : trois
+// heures en angle mort. Plus trois ressources (une bloquante) et deux groupes
+// d'erreurs sur la route.
+test.describe("F17 — Panneau route", () => {
+  const APP_F17 = "f17-e2e-panneau";
+  const ROUTE_F17 = "/f17-panier";
+  /** `ecrirePanel({ type: "route", id: ROUTE_F17 })` (lib/view-state.ts). */
+  const PANEL_F17 = "route:%2Ff17-panier";
+  const PAGES_F17 = `${consoleUrl}/pages?app=${APP_F17}&period=24h`;
+  const PANNEAU_F17 = `${PAGES_F17}&panel=${encodeURIComponent(PANEL_F17)}`;
+  const HEURES_F17 = [2, 3, 4];
+
+  async function semerF17() {
+    for (const t of ["rum_metric", "rum_pageview", "rum_resource", "rum_error", "syn_snapshot", "rum_session"])
+      await pool.query(`delete from ${t} where app_id = $1`, [APP_F17]);
+    await pool.query(
+      `insert into app_registry (app_id, name) values ($1, 'Panneau route F17 (e2e)') on conflict (app_id) do nothing`,
+      [APP_F17],
+    );
+    for (const heure of HEURES_F17) {
+      // Heure close, en son milieu : jamais à cheval sur deux seaux horaires.
+      const quand = `date_trunc('hour', now()) - interval '${heure} hours' + interval '20 minutes'`;
+      for (const r of [
+        { route: ROUTE_F17, parHeure: 30, lcp: 3200 },
+        { route: "/f17-accueil", parHeure: 120, lcp: 900 },
+      ]) {
+        const sid = `${APP_F17}-h${heure}${r.route.replace(/\//g, "-")}`;
+        await pool.query(
+          `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+           values ($1, $2, $1, 'desktop', false, ${quand}, ${quand} + interval '5 minutes', 1)
+           on conflict (session_id) do nothing`,
+          [sid, APP_F17],
+        );
+        // Une instruction par table (`generate_series`), jamais ligne à ligne.
+        await pool.query(
+          `insert into rum_pageview (span_id, session_id, app_id, route, nav_type, started_at)
+           select $1 || '-pv' || g, $1, $2, $3, 'navigate', ${quand}
+             from generate_series(1, $4::int) g
+           on conflict (span_id) do nothing`,
+          [sid, APP_F17, r.route, r.parHeure],
+        );
+        await pool.query(
+          `insert into rum_metric (span_id, session_id, app_id, route, name, value, ts)
+           select $1 || '-lcp' || g, $1, $2, $3, 'LCP', $4, ${quand} + make_interval(secs => g)
+             from generate_series(1, $5::int) g
+           on conflict (span_id) do nothing`,
+          [sid, APP_F17, r.route, r.lcp, r.parHeure],
+        );
+      }
+      await pool.query(
+        `insert into syn_snapshot (app_id, site, measure_id, measure_name, route_hint, score, state, latency_ms, captured_at)
+         values ($1, 'recette F17', 'Parcours panier', 'Parcours panier', $2, 96, 'ok', 640, ${quand})`,
+        [APP_F17, ROUTE_F17],
+      );
+    }
+    const s0 = `${APP_F17}-h2-f17-panier`;
+    await pool.query(
+      `insert into rum_resource (span_id, session_id, app_id, route, url, type, duration_ms, transfer_size, render_blocking, ts)
+       values ($1 || '-r1', $1, $2, $3, 'https://cdn-f17.example.net/bundle.js', 'script', 1400, 320000, true,
+               now() - interval '2 hours'),
+              ($1 || '-r2', $1, $2, $3, 'https://cdn-f17.example.net/police.woff2', 'font', 900, 90000, false,
+               now() - interval '2 hours'),
+              ($1 || '-r3', $1, $2, $3, 'https://cdn-f17.example.net/photo.jpg', 'img', 500, 210000, false,
+               now() - interval '2 hours')
+       on conflict (span_id) do nothing`,
+      [s0, APP_F17, ROUTE_F17],
+    );
+    await pool.query(
+      `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type, fingerprint, occurrences, error_source, ts)
+       values ($1 || '-e1', $1, $2, $3, 'error', 'panier introuvable', 'TypeError', 'f17-fp-panier', 7, 'browser_js',
+               now() - interval '2 hours'),
+              ($1 || '-e2', $1, $2, $3, 'error', 'paiement refuse', 'RangeError', 'f17-fp-paiement', 3, 'browser_js',
+               now() - interval '2 hours')
+       on conflict (span_id) do nothing`,
+      [s0, APP_F17, ROUTE_F17],
+    );
+  }
+
+  test.beforeAll(async () => {
+    await semerF17();
+  });
+
+  test("une ligne du classement ouvre le panneau : titre, puces et cinq blocs", async ({ page }) => {
+    await login(page);
+    await page.goto(PAGES_F17, { waitUntil: "domcontentloaded" });
+    const ligne = page.getByTestId("hero-routes").getByTestId("impact-ligne").filter({ hasText: ROUTE_F17 }).first();
+    await ligne.getByRole("link").click();
+    await page.waitForURL((u) => u.searchParams.get("panel") === PANEL_F17, { timeout: 15_000 });
+    const panneau = page.getByTestId("detail-panel");
+    await expect(panneau).toHaveAttribute("data-type", "route");
+    await expect(panneau.locator("h2")).toContainText(ROUTE_F17);
+    // Puces SOURCÉES seulement (la « release dominante » du brouillon est retirée).
+    const puces = panneau.getByTestId("detail-panel-puces");
+    await expect(puces).toContainText("Vues");
+    await expect(puces).toContainText("Mesures LCP");
+    for (const bloc of [
+      "panneau-route-serie",
+      "panneau-route-distribution",
+      "panneau-route-robot",
+      "panneau-route-ressources",
+      "panneau-route-erreurs",
+    ]) {
+      await expect(panneau.getByTestId(bloc)).toBeVisible();
+    }
+    // Le panneau qualifie la route : il ne filtre pas l'écran (les deux routes restent).
+    await expect(page.getByTestId("hero-routes").getByTestId("impact-ligne")).toHaveCount(2);
+  });
+
+  test("clavier : le focus va au titre, Échap ferme sans perdre les réglages", async ({ page }) => {
+    await login(page);
+    await page.goto(`${PANNEAU_F17}&vital=LCP&tri=volume`, { waitUntil: "domcontentloaded" });
+    const titre = page.locator("#panneau-detail-titre");
+    await expect(titre).toBeFocused({ timeout: 15_000 });
+    await page.keyboard.press("Escape");
+    await page.waitForURL((u) => u.searchParams.get("panel") === null, { timeout: 15_000 });
+    const sp = new URL(page.url()).searchParams;
+    // La plage, la population ET les réglages de vue survivent à la fermeture.
+    expect([sp.get("app"), sp.get("period"), sp.get("vital"), sp.get("tri")]).toEqual([APP_F17, "24h", "LCP", "volume"]);
+    await expect(page.getByTestId("detail-panel")).toHaveCount(0);
+  });
+
+  test("« Vu par le robot » : des états, aucune valeur robot en millisecondes", async ({ page }) => {
+    await login(page);
+    await page.goto(PANNEAU_F17, { waitUntil: "domcontentloaded" });
+    const robot = page.getByTestId("panneau-route-robot");
+    await expect(robot).toBeVisible({ timeout: 15_000 });
+    const etat = robot.getByTestId("panneau-route-robot-etat");
+    await expect(etat).toContainText("ok (pire état sur la plage)");
+    await expect(etat).toContainText("Heures en angle mort : 3");
+    // DF1 : le robot ne rend que des ÉTATS — aucune latence de sonde à côté d'un LCP.
+    const texteRobot = (await etat.innerText()).replace(/\s+/g, " ");
+    expect(texteRobot).not.toMatch(/\d\s?(ms|s)\b/);
+    // Le « réel », lui, porte bien un LCP p75 et son verdict.
+    await expect(robot.getByTestId("panneau-route-reel")).toContainText("LCP p75");
+    await expect(robot.getByTestId("panneau-route-reel")).toContainText("Mauvais");
+    // « Voir robot et réel » → /correlation?serie=<app>:<route> (clé `ecrireSerie`).
+    const href = new URL((await robot.getByTestId("panneau-route-correlation").getAttribute("href"))!, consoleUrl);
+    expect(href.pathname).toBe("/correlation");
+    expect(href.searchParams.get("serie")).toBe(`${APP_F17}:%2Ff17-panier`);
+  });
+
+  test("la distribution de la route est marquée du p75 de TOUTES les routes", async ({ page }) => {
+    await login(page);
+    await page.goto(PANNEAU_F17, { waitUntil: "domcontentloaded" });
+    const distribution = page.getByTestId("panneau-route-distribution");
+    await expect(distribution).toBeVisible({ timeout: 15_000 });
+    await expect(distribution.getByTestId("panneau-route-population")).toContainText("p75 de TOUTES les routes");
+    // La population de référence est NOMMÉE sur la figure elle-même (§ 3.5).
+    await expect(distribution.getByTestId("distribution-seuils")).toContainText("p75 toutes routes");
+    // La série de la route a sa référence pointillée : deux séries au plus.
+    const serie = page.getByTestId("panneau-route-serie");
+    await expect(serie).toContainText(ROUTE_F17);
+    await expect(serie).toContainText("Ensemble des routes");
+  });
+
+  test("ressources, erreurs, et « Ouvrir en page » qui filtre l'écran", async ({ page }) => {
+    await login(page);
+    await page.goto(PANNEAU_F17, { waitUntil: "domcontentloaded" });
+    const ressources = page.getByTestId("panneau-route-ressources-liste");
+    await expect(ressources.locator("li")).toHaveCount(3, { timeout: 15_000 });
+    // C'est une MOYENNE, et c'est écrit (jamais lue comme un p75).
+    await expect(ressources).toContainText("durée moyenne");
+    await expect(ressources).toContainText("bloque le rendu");
+
+    const erreurs = page.getByTestId("panneau-route-erreurs-liste");
+    await expect(erreurs).toContainText("panier introuvable");
+    // V1 : « Occurrences » ne s'écrit que sur une somme d'occurrences.
+    await expect(erreurs).toContainText("7 occurrences");
+    const versErreurs = new URL((await page.getByTestId("panneau-route-erreurs-lien").getAttribute("href"))!, consoleUrl);
+    expect(versErreurs.pathname).toBe("/errors");
+    expect(versErreurs.searchParams.get("route")).toBe(ROUTE_F17);
+
+    const versSessions = new URL((await page.getByTestId("panneau-route-sessions").getAttribute("href"))!, consoleUrl);
+    expect(versSessions.pathname).toBe("/sessions");
+    expect(versSessions.searchParams.get("route")).toBe(ROUTE_F17);
+
+    await page.getByTestId("detail-panel").getByTestId("detail-panel-page").click();
+    await page.waitForURL((u) => u.searchParams.get("route") === ROUTE_F17, { timeout: 15_000 });
+    expect(new URL(page.url()).searchParams.get("panel")).toBeNull();
+    await expect(page.getByTestId("hero-routes").getByTestId("impact-ligne")).toHaveCount(1);
+  });
+
+  test("une route sans sonde synthétique le dit, sans jamais un « 0 »", async ({ page }) => {
+    await login(page);
+    await page.goto(`${PAGES_F17}&panel=${encodeURIComponent("route:%2Ff17-accueil")}`, { waitUntil: "domcontentloaded" });
+    const robot = page.getByTestId("panneau-route-robot");
+    await expect(robot.getByTestId("panneau-route-robot-etat")).toContainText("Aucune sonde synthétique sur cette route", {
+      timeout: 15_000,
+    });
+    await expect(robot).not.toContainText("Heures en angle mort");
+  });
+
+  test("390 px : le panneau occupe tout l'écran", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await login(page);
+    await page.goto(PANNEAU_F17, { waitUntil: "domcontentloaded" });
+    const panneau = page.getByTestId("detail-panel");
+    await expect(panneau).toBeVisible({ timeout: 15_000 });
+    const boite = (await panneau.boundingBox())!;
+    expect(Math.round(boite.x)).toBe(0);
+    expect(Math.round(boite.width)).toBe(390);
+  });
+
+  for (const largeur of LARGEURS) {
+    test(`panneau ouvert : aucun débordement à ${largeur} px`, async ({ page }) => {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await login(page);
+      await page.goto(PANNEAU_F17, { waitUntil: "domcontentloaded" });
+      await expect(page.getByTestId("detail-panel")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("panneau-route-robot")).toBeVisible();
+      expect(await debordements(page), `${largeur} px`).toEqual([]);
     });
   }
 });
