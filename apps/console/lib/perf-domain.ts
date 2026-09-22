@@ -83,6 +83,94 @@ export function avecCondition<F extends FiltersLike>(f: F, dimension: Dimension,
   };
 }
 
+// ─────────────────────── F25 — Journal : colonnes promues ───────────────────────
+//
+// « Clés communes promues en colonnes » (§ 5.23.2) : une clé d'attribut présente
+// sur au moins 80 % des lignes de la PAGE affichée devient une colonne du journal,
+// pour qu'on lise `props.plan` sur chaque ligne sans ouvrir chaque contexte. Calcul
+// PUR sur les lignes déjà lues : les valeurs affichées sont celles que la vue
+// rendait déjà (props / context nettoyés à l'ingestion) — aucune lecture
+// d'attribut brut de plus.
+
+/** Part des lignes de la page qui doivent porter la clé pour qu'elle soit promue. */
+export const SEUIL_COLONNE_PROMUE = 0.8;
+/**
+ * Au plus quatre colonnes promues : au-delà, la table ne se lit plus à 1 440 px, et
+ * chaque attribut reste lisible dans le panneau de l'événement (P14).
+ */
+export const MAX_COLONNES_PROMUES = 4;
+
+/** Même forme de clé que les facettes d'attributs (`lib/queries-events.ts`). */
+const CLE_ATTRIBUT_PROMUE = /^[A-Za-z][A-Za-z0-9_.-]{0,99}$/;
+
+export interface LigneAttributs {
+  props?: Record<string, unknown> | null;
+  context?: Record<string, unknown> | null;
+}
+
+export interface ColonnePromue {
+  source: "props" | "context";
+  cle: string;
+  /** Lignes de la page qui portent la clé. */
+  presence: number;
+}
+
+function objetAttributs(v: unknown): Record<string, unknown> | null {
+  return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+
+/**
+ * Clés portées par au moins `SEUIL_COLONNE_PROMUE` des lignes (arrondi au-dessus :
+ * 4 lignes sur 5 passent, 3 sur 5 non), triées par présence décroissante, `props`
+ * avant `context`, puis par nom ; au plus `MAX_COLONNES_PROMUES`. Page vide → aucune.
+ */
+export function colonnesPromues(
+  lignes: readonly LigneAttributs[],
+  options: { seuil?: number; max?: number } = {},
+): ColonnePromue[] {
+  if (lignes.length === 0) return [];
+  const seuil = options.seuil ?? SEUIL_COLONNE_PROMUE;
+  const max = options.max ?? MAX_COLONNES_PROMUES;
+  const requis = Math.ceil(seuil * lignes.length);
+  const comptes = new Map<string, ColonnePromue>();
+  for (const ligne of lignes) {
+    for (const source of ["props", "context"] as const) {
+      const objet = objetAttributs(ligne[source]);
+      if (!objet) continue;
+      for (const cle of Object.keys(objet)) {
+        if (!CLE_ATTRIBUT_PROMUE.test(cle)) continue;
+        const id = `${source}.${cle}`;
+        const c = comptes.get(id) ?? { source, cle, presence: 0 };
+        c.presence++;
+        comptes.set(id, c);
+      }
+    }
+  }
+  return [...comptes.values()]
+    .filter((c) => c.presence >= requis)
+    .sort(
+      (a, b) =>
+        b.presence - a.presence ||
+        (a.source === b.source ? 0 : a.source === "props" ? -1 : 1) ||
+        a.cle.localeCompare(b.cle),
+    )
+    .slice(0, max);
+}
+
+/**
+ * Texte d'une cellule promue. Clé absente → `null` (« — ») ; valeur JSON `null` →
+ * « null » (une valeur déclarée, pas une absence) ; objet ou tableau → JSON compact.
+ */
+export function valeurColonnePromue(ligne: LigneAttributs, colonne: Pick<ColonnePromue, "source" | "cle">): string | null {
+  const objet = objetAttributs(ligne[colonne.source]);
+  if (!objet || !Object.prototype.hasOwnProperty.call(objet, colonne.cle)) return null;
+  const v = objet[colonne.cle];
+  if (v === null) return "null";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return JSON.stringify(v) ?? null;
+}
+
 // ─────────────────────────────── Erreurs (F18) ───────────────────────────────
 
 /**

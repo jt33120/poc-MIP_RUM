@@ -92,6 +92,51 @@ describe("avecCondition", () => {
   });
 });
 
+// ─────────────────────── F25 — Journal : colonnes promues ───────────────────────
+import { colonnesPromues, valeurColonnePromue } from "../../apps/console/lib/perf-domain";
+
+describe("colonnesPromues (F25)", () => {
+  /** Cinq lignes : `plan` sur 4 (80 %), `campaign` sur 3 (60 %), `amount` sur 5. */
+  const lignesF25 = [
+    { props: { plan: "pro", amount: 42 }, context: { campaign: "fall" } },
+    { props: { plan: "pro", amount: 12 }, context: { campaign: "fall" } },
+    { props: { plan: "free", amount: 3 }, context: { campaign: "spring" } },
+    { props: { plan: null, amount: 1 }, context: {} },
+    { props: { amount: 7 }, context: null },
+  ];
+
+  it("promotion à 80 % : 4 lignes sur 5 passent, 3 sur 5 non", () => {
+    expect(colonnesPromues(lignesF25)).toEqual([
+      { source: "props", cle: "amount", presence: 5 },
+      { source: "props", cle: "plan", presence: 4 },
+    ]);
+  });
+
+  it("page vide → aucune colonne ; une seule ligne → toutes ses clés (bornées)", () => {
+    expect(colonnesPromues([])).toEqual([]);
+    expect(colonnesPromues([{ props: { a: 1, b: 2, c: 3, d: 4, e: 5 } }]).map((c) => c.cle)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("props avant context à présence égale ; clé hors forme sûre jamais promue ; props non-objet ignorés", () => {
+    const lignes = [
+      { props: { x: 1, "$.secret": 1 }, context: { x: 2 } },
+      { props: ["pas", "un", "objet"] as unknown as Record<string, unknown>, context: { x: 3 } },
+    ];
+    expect(colonnesPromues(lignes, { seuil: 0.5 })).toEqual([
+      { source: "context", cle: "x", presence: 2 },
+      { source: "props", cle: "x", presence: 1 },
+    ]);
+  });
+
+  it("valeur d'une cellule : absente → null (« — »), JSON null → « null », objet → JSON", () => {
+    expect(valeurColonnePromue(lignesF25[4], { source: "props", cle: "plan" })).toBeNull();
+    expect(valeurColonnePromue(lignesF25[3], { source: "props", cle: "plan" })).toBe("null");
+    expect(valeurColonnePromue(lignesF25[0], { source: "props", cle: "amount" })).toBe("42");
+    expect(valeurColonnePromue({ props: { o: { a: 1 } } }, { source: "props", cle: "o" })).toBe('{"a":1}');
+    expect(valeurColonnePromue({ context: null }, { source: "context", cle: "x" })).toBeNull();
+  });
+});
+
 // ─────────────────────────────── F18 — Erreurs ───────────────────────────────
 import { autresGroupes, libelleGroupeErreur, referencePeriodePrecedente } from "../../apps/console/lib/perf-domain";
 
