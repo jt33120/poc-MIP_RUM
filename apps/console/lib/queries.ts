@@ -549,6 +549,22 @@ export interface SessionRow {
   collection_source: string | null; // 'sdk' (défaut) | 'extension'
   /** Position de pagination stable, microsecondes conservées (P6.3). */
   cursor_ts: string;
+  // ── Colonnes rendues par `s.*` et jusqu'ici non typées (F42, plan § 5.11.4).
+  // OPTIONNELLES, comme `geo_source` : la console est publiée AVANT que les
+  // migrations ne tournent, et une colonne absente rend `undefined` — le type le
+  // dit plutôt que de promettre une valeur que la base n'a pas.
+  /** Navigateur COLLECTÉ (migration-v75) ; NULL = inconnu. */
+  browser?: string | null;
+  /** Version majeure du navigateur (migration-v75) ; NULL = inconnue. */
+  browser_version?: string | null;
+  /** Système COLLECTÉ (migration-v75) ; NULL = inconnu ou robot. */
+  os?: string | null;
+  /** PREMIÈRE release vue de la session (migration-v53) : ne décrit pas les occurrences suivantes. */
+  release?: string | null;
+  /** Probabilité d'inclusion de la session (migration-v58) ; 1 = non échantillonnée. */
+  sample_rate?: number | null;
+  /** Environnement d'exécution (migration-v82) : `react_native` n'émet aucun signal de frustration (R-F). */
+  runtime?: string | null;
 }
 
 export interface SessionListPage {
