@@ -26,7 +26,7 @@ if (!url) console.warn("[recit-session-sql] SAUTÉ — définir SQL_TEST_DATABAS
 
 async function nettoyer() {
   await pool.query("delete from replay_chunk where session_id = $1", [SID]);
-  for (const t of ["rum_error", "rum_pageview"]) await pool.query(`delete from ${t} where session_id = $1`, [SID]);
+  for (const t of ["rum_error", "rum_pageview", "rum_event"]) await pool.query(`delete from ${t} where session_id = $1`, [SID]);
   await pool.query("delete from rum_session where session_id = $1", [SID]);
 }
 
@@ -77,11 +77,38 @@ suite("P*.9 récit de session — PostgreSQL", () => {
     const { sessionMeta, sessionTimeline } = await import("../../apps/console/lib/queries");
     const { composerRecit } = await import("../../apps/console/lib/recit-session");
     const meta = await sessionMeta(SID);
-    const timeline = await sessionTimeline(SID);
+    const timeline = await sessionTimeline(SID, APP);
     expect(timeline.find((it) => it.kind === "error")).toMatchObject({ title: "TypeError", value: 3 });
     const r = composerRecit({ timeline, debut: meta!.started_at, fin: meta!.last_seen_at, nowMs: Date.now() });
     if (!r.ok) throw new Error(r.raison);
     expect(r.phrases.map((p) => p.texte)).toContain("3 occurrences de TypeError sur /paiement.");
+  });
+
+  it("deux apps, même session_id : la chronologie de l'une ne contient rien de l'autre", async () => {
+    process.env.DATABASE_URL = url;
+    // Lignes forgées par une autre app qui cite le même identifiant de session.
+    await pool.query(
+      `insert into rum_pageview (span_id, session_id, app_id, route, started_at)
+       values ('ps9pvautre00001', $1, $2, '/autre-app', now() - interval '2 hours')`,
+      [SID, AUTRE],
+    );
+    await pool.query(
+      `insert into rum_error (span_id, session_id, app_id, kind, message, error_type, fingerprint, occurrences, ts)
+       values ('ps9erautre00001', $1, $2, 'error', 'forgée', 'ForgedError', 'ps9-autre', 50, now() - interval '2 hours')`,
+      [SID, AUTRE],
+    );
+    await pool.query(
+      `insert into rum_event (span_id, session_id, app_id, route, name, props, ts)
+       values ('ps9evautre00001', $1, $2, '/autre-app', 'frustration.rage', '{}'::jsonb, now() - interval '2 hours')`,
+      [SID, AUTRE],
+    );
+    const { sessionTimeline } = await import("../../apps/console/lib/queries");
+    const timeline = await sessionTimeline(SID, APP);
+    expect(timeline.map((it) => it.title)).toEqual(["/paiement", "TypeError"]);
+    const autre = await sessionTimeline(SID, AUTRE);
+    expect(autre.map((it) => it.title).sort()).toEqual(["/autre-app", "ForgedError", "frustration.rage"]);
+    for (const t of ["rum_pageview", "rum_error", "rum_event"])
+      await pool.query(`delete from ${t} where session_id = $1 and app_id = $2`, [SID, AUTRE]);
   });
 
   it("rejeu : absent, puis toujours absent pour un segment d'une autre app, puis présent", async () => {

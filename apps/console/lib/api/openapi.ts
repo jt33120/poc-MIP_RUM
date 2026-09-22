@@ -1060,7 +1060,15 @@ export function buildOpenApi(): Record<string, unknown> {
           ["actions", "sessions", "errors", "error_clicks", "resources", "api_calls", "resource_ms", "api_ms", "total_ms", "sampling_notice"],
         ),
         TimelineItem: o(
-          { kind: { type: "string", enum: ["pageview", "vital", "error", "breadcrumb", "longtask", "event", "action", "resource", "api"] }, ts: dateTime, title: nul(str), detail: nul(str), value: nul(num), rating: nul(str), action_id: nul(str), action_name: nul(str) },
+          { kind: { type: "string", enum: ["pageview", "vital", "error", "breadcrumb", "longtask", "event", "action", "resource", "api"] }, ts: dateTime, title: nul(str), detail: nul(str),
+            // Le sens de `value` dépend de `kind` : un client qui additionnerait
+            // les `value` d'une timeline mélangerait des ms, des rangs et des occurrences.
+            value: {
+              ...nul(num),
+              description:
+                "Sens selon `kind` : vital = valeur mesurée (ms, CLS sans unité) ; error = occurrences de la ligne (lot SDK, à sommer ; null sur un schéma antérieur à v67) ; api, resource = durée côté navigateur (ms) ; longtask = durée bloquante (ms) ; breadcrumb = rang dans la session ; pageview, action, event = null.",
+            },
+            rating: nul(str), action_id: nul(str), action_name: nul(str) },
           ["kind", "ts"],
         ),
 

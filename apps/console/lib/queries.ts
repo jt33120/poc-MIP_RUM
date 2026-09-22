@@ -474,8 +474,15 @@ export interface TimelineItem {
   action_name: string | null;
 }
 
-/** Timeline fusionnée chronologique d'une session (toutes tables v0.1 + v0.2). */
-export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
+/**
+ * Timeline fusionnée chronologique d'une session (toutes tables v0.1 + v0.2).
+ *
+ * `appId` = `rum_session.app_id` de la session, lié dans CHAQUE branche : le
+ * `session_id` est émis par le client, et une ligne d'une autre app qui citerait
+ * le même identifiant entrerait sinon dans le détail, le récit (P*.9) et
+ * `GET /api/v1/sessions/{id}` (V7).
+ */
+export async function sessionTimeline(id: string, appId: string): Promise<TimelineItem[]> {
   const [schema] = await q<{ v67: boolean }>(
     "select to_regclass('public.rum_action') is not null as v67",
   );
@@ -488,25 +495,25 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
            select 'pageview' as kind, started_at as ts, route as title, nav_type as detail,
                   null::float as value, null::text as rating, null::text as action_id, null::text as action_name,
                   app_id
-           from rum_pageview where session_id = $1
+           from rum_pageview where session_id = $1 and app_id = $2
            union all
            select 'vital', ts, name, route, value, rating, null, null, app_id
-           from rum_metric where session_id = $1
+           from rum_metric where session_id = $1 and app_id = $2
            union all
            select 'action', ts, name, type || coalesce(' · ' || route, ''), null, null, action_id, name, app_id
-           from rum_action where session_id = $1
+           from rum_action where session_id = $1 and app_id = $2
            union all
            -- value = occurrences (B32, partie « occurrences ») : une ligne peut
            -- porter un lot SDK ; le récit P*.9 les SOMME (V1). Colonne v59, donc
            -- présente dans cette branche v67 ; la branche v66 garde null.
            select 'error', ts, coalesce(error_type, kind), message, occurrences::float, null, action_id, null, app_id
-           from rum_error where session_id = $1
+           from rum_error where session_id = $1 and app_id = $2
            union all
            select 'breadcrumb', ts, type, label, seq::float, null, action_id, null, app_id
-           from rum_breadcrumb where session_id = $1
+           from rum_breadcrumb where session_id = $1 and app_id = $2
            union all
            select 'resource', ts, coalesce(type, 'resource'), url, duration_ms, null, action_id, null, app_id
-           from rum_resource where session_id = $1 and action_id is not null
+           from rum_resource where session_id = $1 and app_id = $2 and action_id is not null
            union all
            select 'longtask', ts,
                   case when script_function is not null and script_function <> ''
@@ -516,10 +523,10 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
                        else 'Long task' end,
                   coalesce(route, '') || coalesce(' · ' || regexp_replace(script_url, '^https?://', ''), ''),
                   coalesce(blocking_ms, duration_ms), null, null, null, app_id
-           from rum_longtask where session_id = $1
+           from rum_longtask where session_id = $1 and app_id = $2
            union all
            select 'event', ts, name, props::text, null, null, action_id, null, app_id
-           from rum_event where session_id = $1 and event_type is distinct from 'action'
+           from rum_event where session_id = $1 and app_id = $2 and event_type is distinct from 'action'
            union all
            select 'api', f.ts,
                   f.method || ' ' || regexp_replace(coalesce(f.url, ''), '^https?://[^/]+', ''),
@@ -538,13 +545,13 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
               order by child.ts asc, child.id asc
               limit 1
            ) b on true
-           where f.session_id = $1 and f.tier = 'front'
+           where f.session_id = $1 and f.app_id = $2 and f.tier = 'front'
          ) t
          left join rum_action a
            on a.action_id = t.action_id and a.app_id = t.app_id and a.session_id = $1
         order by t.ts asc, case when t.kind = 'action' then 0 else 1 end, t.kind
         limit 500`,
-      [id],
+      [id, appId],
     );
   }
   return q<TimelineItem>(
@@ -552,16 +559,16 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
             null::text as action_id, null::text as action_name from (
        select 'pageview' as kind, started_at as ts, route as title, nav_type as detail,
               null::float as value, null::text as rating
-       from rum_pageview where session_id = $1
+       from rum_pageview where session_id = $1 and app_id = $2
        union all
        select 'vital', ts, name, route, value, rating
-       from rum_metric where session_id = $1
+       from rum_metric where session_id = $1 and app_id = $2
        union all
        select 'error', ts, coalesce(error_type, kind), message, null, null
-       from rum_error where session_id = $1
+       from rum_error where session_id = $1 and app_id = $2
        union all
        select 'breadcrumb', ts, type, label, seq::float, null
-       from rum_breadcrumb where session_id = $1
+       from rum_breadcrumb where session_id = $1 and app_id = $2
        union all
        -- Le libellé porte l'ATTRIBUTION quand on l'a (Long Animation Frames) :
        -- « Blocage · recalculerTotal » vaut mieux que « Long task » répété
@@ -575,10 +582,10 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
               coalesce(route, '') ||
                 coalesce(' · ' || regexp_replace(script_url, '^https?://', ''), ''),
               coalesce(blocking_ms, duration_ms), null
-       from rum_longtask where session_id = $1
+       from rum_longtask where session_id = $1 and app_id = $2
        union all
        select 'event', ts, name, props::text, null, null
-       from rum_event where session_id = $1
+       from rum_event where session_id = $1 and app_id = $2
        union all
        -- v0.4 appels API : titre = méthode + chemin, détail = statut + temps serveur corrélé
        select 'api', f.ts,
@@ -597,11 +604,11 @@ export async function sessionTimeline(id: string): Promise<TimelineItem[]> {
           order by child.ts asc, child.id asc
           limit 1
        ) b on true
-       where f.session_id = $1 and f.tier = 'front'
+       where f.session_id = $1 and f.app_id = $2 and f.tier = 'front'
      ) t
      order by ts asc, kind
      limit 500`,
-    [id],
+    [id, appId],
   );
 }
 

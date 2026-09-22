@@ -279,7 +279,7 @@ suite("P3 actions causales — PostgreSQL", () => {
       api_ms: 210,
       total_ms: 390,
     });
-    const otherTimeline = await sessionTimeline("p3-other-session");
+    const otherTimeline = await sessionTimeline("p3-other-session", OTHER_APP);
     expect(otherTimeline.find((item) => item.kind === "error")).toMatchObject({
       action_id: null, action_name: null,
     });
@@ -289,7 +289,7 @@ suite("P3 actions causales — PostgreSQL", () => {
       device: "mobile",
       segment: [],
     })).resolves.toEqual([]);
-    const timeline = await sessionTimeline("p3-actions-session");
+    const timeline = await sessionTimeline("p3-actions-session", APP);
     expect(timeline.find((item) => item.kind === "action")).toMatchObject({
       title: "Payer", action_id: ACTION, action_name: "Payer",
     });

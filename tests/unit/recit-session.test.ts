@@ -95,6 +95,22 @@ describe("composerRecit", () => {
     expect(deux.phrases.map((p) => p.texte)).toContain("4 occurrences de Error sur /.");
   });
 
+  it("erreur horodatée avant son action : aucun délai écrit, l'action reste citée", () => {
+    const r = recit(
+      [
+        ligne("pageview", 0, { title: "/" }),
+        ligne("error", 5, { title: "Error", value: 1, action_id: ACTION, action_name: "Payer" }),
+        ligne("action", 7, { title: "Payer", detail: "click · /", action_id: ACTION, action_name: "Payer" }),
+      ],
+      7,
+    );
+    if (!r.ok) throw new Error(r.raison);
+    const erreur = r.phrases.find((p) => p.texte.includes("Error"));
+    expect(erreur?.texte).toBe("1 occurrence de Error sur /, action rattachée : le clic “Payer”.");
+    expect(erreur?.texte).not.toMatch(/après|moins d'une seconde/);
+    expect(erreur?.action).toEqual({ texte: "le clic “Payer”", ancre: ancreEvenement(2) });
+  });
+
   it("occurrences non renvoyées (schéma v66) : on ne compte pas des lignes en « occurrences »", () => {
     const r = recit([ligne("error", 0, { title: "Error" }), ligne("error", 1, { title: "Error" })], 1);
     if (!r.ok) throw new Error(r.raison);

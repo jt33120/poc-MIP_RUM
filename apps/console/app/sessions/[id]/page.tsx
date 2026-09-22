@@ -29,7 +29,7 @@ export default async function SessionDetail({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
-  const [meta, timeline] = await Promise.all([sessionMeta(id), sessionTimeline(id)]);
+  const meta = await sessionMeta(id);
   if (!meta) notFound();
 
   // scoping viewer : une session d'une app hors périmètre est invisible (404) ;
@@ -43,6 +43,10 @@ export default async function SessionDetail({
   // première valeur, comme la porte projet du middleware.
   const app = Array.isArray(sp.app) ? sp.app[0] : sp.app;
   if (app && app !== "all" && app !== meta.app_id) notFound();
+
+  // Chronologie lue APRÈS la garde de périmètre, et bornée à l'app de la
+  // session : une ligne d'une autre app au même session_id n'y entre pas.
+  const timeline = await sessionTimeline(meta.session_id, meta.app_id);
 
   // Instant de l'erreur (epoch ms) vers lequel positionner le replay. Une valeur
   // non entière est ignorée : le lecteur ne devine pas un instant.

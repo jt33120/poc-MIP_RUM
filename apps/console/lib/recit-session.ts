@@ -187,9 +187,12 @@ function phrasesErreurs(timeline: readonly TimelineItem[], vues: (number | null)
     const rangAction = g.action ? actions.get(g.action) : undefined;
     if (rangAction != null) {
       const act = timeline[rangAction];
-      const delai = Math.max(0, ms(timeline[g.premier].ts) - ms(act.ts));
+      const delai = ms(timeline[g.premier].ts) - ms(act.ts);
       const lib = libelleAction(act);
-      texte += `, ${duree(delai)} après ${lib}`;
+      // Erreur horodatée AVANT son action (horloges, lot différé) : l'ordre
+      // n'est pas établi, on n'écrit aucun délai — ni « après », ni un zéro
+      // qu'un `Math.max` aurait fabriqué. L'action reste citée, avec son lien.
+      texte += delai >= 0 ? `, ${duree(delai)} après ${lib}` : `, action rattachée : ${lib}`;
       phrase.action = { texte: lib, ancre: ancreEvenement(rangAction) };
     } else if (g.action && timeline[g.premier].action_name) {
       texte += `, pendant l'action “${timeline[g.premier].action_name}”`;
