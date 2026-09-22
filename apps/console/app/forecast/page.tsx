@@ -19,6 +19,12 @@
 // séries (`annotations` de `ThresholdSeries`) ; P*.4 (test de pente, bande de
 // prédiction) remplacera `tendance()` sans toucher à la mise en page.
 //
+// P*.7 — « DEPUIS QUAND ? ». La tendance dit si la série DÉRIVE ; elle ne dit pas
+// si elle a changé de NIVEAU à une date. Le test de Pettitt (`lib/stats/rupture.ts`)
+// le date sur les mêmes jours valides, pose son annotation de type « rupture » sur
+// le hero et écrit sa phrase sous la figure — ou refuse en chiffres. Un déploiement
+// à ± 1 jour est cité comme une coïncidence de date ; la réserve est écrite ici.
+//
 // Chaque section lit par `lire()` : une lecture en échec ne fait tomber qu'elle.
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -48,7 +54,19 @@ import {
 } from "@/lib/forecast";
 import { liensDesJours } from "@/lib/forecast-liens";
 import { SOURCES_TENDANCES, couvertureJour } from "@/lib/forecast-comparaison";
-import { fuseauDe } from "@/lib/fuseau";
+import { bornesJourLocal, fuseauDe } from "@/lib/fuseau";
+import { listDeploys } from "@/lib/queries-deploys";
+import { instantDe, jourDans } from "@/lib/series";
+import {
+  JOURS_VALIDES_REQUIS_RUPTURE,
+  MESURES_MIN_JOUR_RUPTURE,
+  REGLE_RUPTURE,
+  annotationRupture,
+  daterRupture,
+  deploiementCoincident,
+  phraseRupture,
+  phraseSansRupture,
+} from "@/lib/stats/rupture";
 import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 import { ratioPour100 } from "@/lib/perf-domain";
@@ -95,6 +113,15 @@ function Methode() {
         tracer une droite. Les journées sont découpées dans le fuseau de l&apos;application ; la journée en cours est
         exclue. Aucun seuil publié n&apos;existe pour le ratio d&apos;erreurs ni pour le trafic : ils se lisent sans verdict.
       </p>
+      <p className="mt-2 leading-relaxed text-ink-soft">
+        Datation d&apos;une rupture (P*.7) : test de Pettitt, non paramétrique, une seule rupture —{" "}
+        <code>U</code> cumulé des signes, <code>K = max |U|</code>, <code>p ≈ 2·exp(−6K²/(n³+n²))</code>, retenue sous
+        0,05. Un jour n&apos;entre dans ce test qu&apos;au-dessus de {MESURES_MIN_JOUR_RUPTURE} mesures (minimum
+        d&apos;une p75), et il en faut {JOURS_VALIDES_REQUIS_RUPTURE} ; à dix jours, même une marche parfaite reste
+        au-dessus de 0,05, donc « aucune rupture datée » y veut surtout dire « pas assez de jours ». Les deux niveaux
+        comparés sont des médianes de p75 quotidiennes, jamais une p75 de période. Un déploiement à un jour au plus est
+        cité comme une coïncidence de date.
+      </p>
     </details>
   );
 }
@@ -104,11 +131,14 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
   if (!ecran.ok) return <FilterProblemNotice title="Tendances" problem={ecran.problem} />;
   const f = ecran.filters;
   const query = ecran.query;
-  const [fuseau, user, traficLu, lcpLu] = await Promise.all([
+  const [fuseau, user, traficLu, lcpLu, deploysLu] = await Promise.all([
     fuseauDe(query.scope.requestedApp),
     getUser(),
     lire(() => dailyTraffic(f, { exclureAujourdhui: true })),
     lire(() => dailyLcpSeries(f, { exclureAujourdhui: true })),
+    // P*.7 : les marqueurs servent UNIQUEMENT à dire qu'un déploiement tombe le
+    // même jour qu'une rupture ; leur absence n'empêche pas la datation.
+    lire(() => listDeploys(f, 20)),
   ]);
 
   // L'AXE : les 14 jours complets rendus par la lecture (même expression SQL pour
@@ -155,6 +185,35 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
   const gabarit = (chemin: string) => hrefWithQuery(chemin, query, { period: null, from: "{from}", to: "{to}" });
   const liensVue = liensDesJours(gabarit("/"), jours, fuseau);
   const liensErreurs = liensDesJours(gabarit("/errors"), jours, fuseau);
+
+  // ─────────────── Datation d'une rupture (P*.7) ───────────────
+  // Même série, mêmes jours, mais une autre question : la tendance dit si le LCP
+  // DÉRIVE, Pettitt dit s'il a changé de NIVEAU à une date. Un jour n'entre dans le
+  // test qu'au-dessus de MESURES_MIN_JOUR_RUPTURE (13, minimum d'une p75, P*.1) :
+  // c'est un seuil PLUS BAS que celui de la droite (30), et les deux sont écrits.
+  const datation = daterRupture(jours.map((jour, i) => ({ jour, valeur: lcp[i], effectif: mesures[i] })));
+  // `deploy_marker` est horodaté en instant ; la rupture est un JOUR de l'app :
+  // on ramène chaque marqueur au jour du fuseau de l'app avant de comparer.
+  const joursDeploys = deploysLu.ok
+    ? deploysLu.data.map((d) => ({ jour: jourDans(instantDe(d.ts), fuseau), version: d.version }))
+    : [];
+  const ruptureDeploiement =
+    datation.ok && datation.rupture ? deploiementCoincident(datation.rupture.jour, joursDeploys) : null;
+  const phraseDatation = !datation.ok
+    ? datation.raison
+    : datation.rupture
+      ? phraseRupture(datation.rupture, "Le LCP p75", (v) => formater("ms", v), ruptureDeploiement)
+      : phraseSansRupture(datation, tLcp.etat === "significative");
+  const annotationsRupture =
+    datation.ok && datation.rupture
+      ? [
+          annotationRupture(
+            datation.rupture,
+            bornesJourLocal(datation.rupture.jour, fuseau).from,
+            liensVue[datation.rupture.jour]?.href,
+          ),
+        ]
+      : [];
   const peutEcrire = user?.role === "admin" && !user.demo;
   const lienAlerte = (() => {
     const p = new URLSearchParams();
@@ -313,6 +372,13 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
                 {tLcp.etat === "significative" && tLcp.dispersion !== null && (
                   <span>bande ± {formater("ms", tLcp.dispersion)}</span>
                 )}
+                <span>
+                  {datation.ok
+                    ? datation.rupture
+                      ? "rupture datée (Pettitt)"
+                      : "aucune rupture datée (Pettitt)"
+                    : "datation non tentée"}
+                </span>
               </>
             )
           }
@@ -325,6 +391,9 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
                 : tLcp.etat === "bruit"
                   ? " La pente ne dépasse pas le bruit : aucune projection, aucune échéance."
                   : ""}{" "}
+              {datation.ok && datation.rupture
+                ? "Le trait vertical « Rupture » marque le premier jour du nouveau niveau ; il ouvre la Vue d'ensemble sur ce jour."
+                : ""}{" "}
               Un point ouvre la Vue d&apos;ensemble sur ce jour (bornes converties en UTC).
             </>
           }
@@ -362,10 +431,23 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
                 des résidus.
               </p>
             )}
+            {/* P*.7 — « depuis quand ? » : la datation, ou son refus chiffré. La réserve
+                d'interprétation est écrite ICI, jamais par le module (RM5). */}
+            <p className="min-w-0 text-xs text-ink-soft" data-testid="datation-rupture">
+              {phraseDatation}
+              {ruptureDeploiement && " Coïncidence de date, pas une cause établie."}
+              {datation.ok &&
+                datation.rupture &&
+                tLcp.etat === "significative" &&
+                " La tendance est par ailleurs établie sur la même fenêtre : une dérive régulière sépare la série aussi nettement qu'une marche, la date est donc un point de bascule et non la preuve d'un saut."}{" "}
+              {/* La règle reste en `ink-soft` : sous 18 px, `ink-faint` ne passe pas le contraste (§ 3.9). */}
+              <span>Règle : {REGLE_RUPTURE}.</span>
+            </p>
             <ThresholdSeries
               grille={hero.grille}
               points={hero.points}
               series={seriesHero}
+              annotations={annotationsRupture}
               format="ms"
               vital="LCP"
               faibleSous={MESURES_MIN_JOUR}
