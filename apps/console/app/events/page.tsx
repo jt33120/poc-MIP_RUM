@@ -36,6 +36,7 @@ import {
   lienJournal,
   lienPanneauJournal,
   paginationJournal,
+  totalJournal,
 } from "@/lib/events-page-params";
 import { type SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
@@ -64,8 +65,6 @@ export const dynamic = "force-dynamic";
 
 const TITRE = "Journal";
 
-/** Diagnostic de `exploreEvents` quand la projection elle-même manque (v65). */
-const SANS_PROJECTION = "migration v65 absente";
 
 const DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
   timeZone: "UTC",
@@ -407,8 +406,10 @@ function ResultatJournal({
   const enrichi = r.enrichment.available;
   const diagnostic = r.enrichment.diagnostic ?? "lecture incomplète";
   // Sans projection (v65), ou sans enrichissements (v68) sous un filtre de nom ou
-  // d'attribut, le total rendu vaut 0 PAR DÉFAUT : ce n'est pas un compte.
-  const totalConnu = enrichi || (!diagnostic.startsWith(SANS_PROJECTION) && !query.name && !query.attribute);
+  // d'attribut, le total rendu vaut 0 PAR DÉFAUT : ce n'est pas un compte. Une seule
+  // décision (`totalJournal`) pour la tuile ET la méta du volume.
+  const total = totalJournal(r, query);
+  const totalConnu = total !== null;
   const range = contexte.range;
   const debuts = bucketStarts(range);
   const grille = grilleIso(debuts);
@@ -447,7 +448,9 @@ function ResultatJournal({
               etat={enrichi ? undefined : { kind: "partiel", raison: diagnostic }}
               meta={
                 <>
-                  <span>{formater("count", r.total)} événements</span>
+                  <span data-testid="volume-total">
+                    {total === null ? "total non calculé" : `${formater("count", total)} événements`}
+                  </span>
                   <span>{label}</span>
                   <span>seaux de {bucketLabel} (UTC)</span>
                   <span>journal indexé depuis la migration v65, sans rattrapage : les événements antérieurs n&apos;y sont pas</span>
@@ -478,13 +481,13 @@ function ResultatJournal({
           <div data-testid="events-total" className="min-w-0">
             <KpiTile
               label="Total observé"
-              valeur={totalConnu ? r.total : null}
+              valeur={total}
               raisonNull={`total non calculé : ${diagnostic}`}
               format="count"
               lecture={
-                !totalConnu
+                total === null
                   ? undefined
-                  : r.total === 0
+                  : total === 0
                     ? "Aucun événement ne correspond à ces filtres."
                     : "Même instantané que la liste, les facettes et le volume."
               }

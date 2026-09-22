@@ -30,6 +30,24 @@ export function eventResetHref(query: AnalyticsQuery): string {
 
 // ─────────────────────────── F25 — liens du Journal ───────────────────────────
 
+/** Diagnostic de `exploreEvents` quand la projection elle-même manque (v65). */
+export const SANS_PROJECTION = "migration v65 absente";
+
+/**
+ * Total du journal, ou `null` s'il n'a pas été CALCULÉ : sans projection (v65),
+ * `exploreEvents` rend 0 par défaut ; sans enrichissements (v68), il rend 0 sous un
+ * filtre de nom ou d'attribut. Ces zéros ne sont pas des comptes (V3) : la tuile
+ * « Total observé » et la méta du volume lisent cette MÊME décision.
+ */
+export function totalJournal(
+  r: { total: number; enrichment: { available: boolean; diagnostic: string | null } },
+  query: { name: string | null; attribute: unknown },
+): number | null {
+  if (r.enrichment.available) return r.total;
+  if ((r.enrichment.diagnostic ?? "").startsWith(SANS_PROJECTION)) return null;
+  return query.name || query.attribute ? null : r.total;
+}
+
 /** Lignes par page du Journal (§ 5.23.2) ; `limit` explicite dans l'URL l'emporte. */
 export const LIGNES_JOURNAL = 50;
 

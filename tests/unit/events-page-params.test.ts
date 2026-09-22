@@ -56,7 +56,13 @@ describe("paramètres de la page Événements", () => {
 });
 
 // ─────────────────────────── F25 — liens du Journal ───────────────────────────
-import { cleSansValeur, lienJournal, lienPanneauJournal, paginationJournal } from "../../apps/console/lib/events-page-params";
+import {
+  cleSansValeur,
+  lienJournal,
+  lienPanneauJournal,
+  paginationJournal,
+  totalJournal,
+} from "../../apps/console/lib/events-page-params";
 
 describe("Journal (F25) : facettes, panneau, pagination", () => {
   const courant = new URLSearchParams("app=demo-app&period=1h&name=checkout&cursor=abc&offset=20&panel=event%3A42&limit=10");
@@ -100,6 +106,20 @@ describe("Journal (F25) : facettes, panneau, pagination", () => {
     expect(cleSansValeur(new URLSearchParams("attr_source=props&attr_key=plan&attr_type=number"))).toBeNull();
     expect(cleSansValeur(new URLSearchParams("attr_source=props"))).toBeNull();
     expect(cleSansValeur(new URLSearchParams(""))).toBeNull();
+  });
+
+  it("total du journal (tuile ET méta du volume) : `null` quand exploreEvents rend un 0 par défaut", () => {
+    const sansFiltre = { name: null, attribute: null };
+    const avecNom = { name: "checkout", attribute: null };
+    const complet = { total: 7, enrichment: { available: true, diagnostic: null } };
+    const sansV65 = { total: 0, enrichment: { available: false, diagnostic: "migration v65 absente : projection d’événements indisponible" } };
+    const sansV68 = { total: 42, enrichment: { available: false, diagnostic: "migration v68 absente : journal P1 disponible, tendances et facettes désactivées" } };
+    expect(totalJournal(complet, avecNom)).toBe(7);
+    expect(totalJournal({ ...complet, total: 0 }, sansFiltre)).toBe(0); // un vrai zéro
+    expect(totalJournal(sansV65, sansFiltre)).toBeNull();
+    expect(totalJournal({ ...sansV68, total: 0 }, avecNom)).toBeNull();
+    expect(totalJournal({ ...sansV68, total: 0 }, { name: null, attribute: { source: "props" } })).toBeNull();
+    expect(totalJournal(sansV68, sansFiltre)).toBe(42); // journal P1 compté sans filtre
   });
 
   it("50 lignes par défaut ; un `limit` explicite l'emporte ; un curseur remet l'offset à 0", () => {
