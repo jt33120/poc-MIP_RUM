@@ -23,6 +23,7 @@ import { compileScope, compileWhereOrThrow, type DimensionSchema } from "./query
 import { conditionsOf, type AnalyticsQuery, type FilterCondition } from "./query-contract";
 import { dimensionSchema } from "./query-schema";
 import {
+  RAISON_SANS_RUNTIME,
   capabilityMatrix,
   errorFreeSessionRate,
   type CapabilityDeclaration,
@@ -302,9 +303,9 @@ export async function mobileSummary(f: FiltersLike, schema?: MobileSchema): Prom
   const unavailable: string[] = [];
 
   if (!etat.runtime) {
-    unavailable.push(
-      "migration v82 absente : le runtime des sessions n'est pas encore collecté, aucune cohorte React Native ne peut être isolée",
-    );
+    // `sessions: 0` ci-dessous n'est pas un compte : l'écran lit ce motif et affiche
+    // « — » (`sessionsCohorte`, F30).
+    unavailable.push(RAISON_SANS_RUNTIME);
     return {
       capabilities: capabilityMatrix([]),
       declarations: [],

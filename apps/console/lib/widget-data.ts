@@ -19,7 +19,10 @@
 import { widgetFiltersLabel, type AnalyticsWidget, type RangeOverride, type Widget } from "./dashboards";
 import type { Filters } from "./filters";
 import { queryOf } from "./filters";
+import { cleJour } from "./forecast";
 import { fmtVital } from "./format";
+import { lire } from "./lecture";
+import { UnsupportedFilterError } from "./query-compiler";
 import { dailyTraffic } from "./queries-grid";
 import { topFrustrations } from "./queries-frustration";
 import { listErrorGroups } from "./queries-errors";
@@ -44,13 +47,19 @@ const WIDGET_CACHE_MAX = 200;
 
 export interface WidgetSeriesGroup {
   label: string;
-  /** Une valeur par seau, dans l'ordre de `buckets`. */
-  values: number[];
+  /**
+   * Une valeur par seau, dans l'ordre de `buckets`. `null` : aucune mesure dans le
+   * seau pour une mesure non additive (percentile, moyenne, distincts) — un trou,
+   * jamais « 0 » (CE1, V3). Une mesure additive absente d'un seau y vaut 0 : là,
+   * zéro est la vérité.
+   */
+  values: (number | null)[];
 }
 
 export interface WidgetRank {
   label: string;
-  value: number;
+  /** `null` : valeur non calculable pour ce groupe — « — », jamais une barre à 0 (CE2). */
+  value: number | null;
   display: string;
   sub?: string;
 }
@@ -202,21 +211,29 @@ function rendre(widget: AnalyticsWidget, resultat: ExplorerResult, timeZone: str
         sub: `${meta.unit} · ${data.samples.toLocaleString("fr-FR")} lignes`,
         ...commun,
       };
-    case "toplist":
+    case "toplist": {
+      // Un groupe dont la valeur n'est pas calculable (percentile sans mesure) garde
+      // `null` et passe en fin de liste : une barre à 0 se lirait « meilleur groupe »
+      // (CE2). L'ordre des autres est celui de l'Explorer.
+      const ranks: WidgetRank[] = data.groups.map((groupe) => ({
+        label: libelleCle(groupe.key),
+        value: groupe.value,
+        display: nombre(groupe.value),
+        sub: `${groupe.samples.toLocaleString("fr-FR")} lignes`,
+      }));
       return {
         kind: "toplist",
         value: `${nombre(data.total)} ${meta.unit}`,
-        ranks: data.groups.map((groupe) => ({
-          label: libelleCle(groupe.key),
-          value: groupe.value ?? 0,
-          display: nombre(groupe.value),
-          sub: `${groupe.samples.toLocaleString("fr-FR")} lignes`,
-        })),
+        ranks: [...ranks.filter((r) => r.value !== null), ...ranks.filter((r) => r.value === null)],
         ...commun,
       };
+    }
     case "timeseries": {
       // Les seaux sont ceux de la fenêtre : un groupe absent d'un seau y vaut
-      // zéro pour une mesure additive, et null (donc aucun point) sinon.
+      // zéro pour une mesure ADDITIVE (rien compté = 0), et `null` sinon — un
+      // percentile sans mesure n'est pas un percentile nul (CE1). La valeur lue,
+      // elle, passe telle quelle : `null` reste `null`.
+      const absent = meta.additive ? 0 : null;
       const buckets: string[] = [];
       const index = new Map<string, number>();
       for (const point of data.series) {
@@ -229,9 +246,11 @@ function rendre(widget: AnalyticsWidget, resultat: ExplorerResult, timeZone: str
       buckets.forEach((iso, rang) => index.set(iso, rang));
       const groupes = new Map<string, WidgetSeriesGroup>();
       for (const point of data.series) {
+        const rang = index.get(point.start);
+        if (rang === undefined) continue; // impossible : chaque début a été indexé ci-dessus
         const cle = libelleCle(point.key);
-        const groupe = groupes.get(cle) ?? { label: cle, values: new Array(buckets.length).fill(0) };
-        groupe.values[index.get(point.start) ?? 0] = point.value ?? 0;
+        const groupe = groupes.get(cle) ?? { label: cle, values: new Array<number | null>(buckets.length).fill(absent) };
+        groupe.values[rang] = point.value;
         groupes.set(cle, groupe);
       }
       const groups = [...groupes.values()];
@@ -271,6 +290,9 @@ function cellule(valeur: unknown): string | number {
   if (typeof valeur === "number") return valeur;
   return String(valeur);
 }
+
+/** Texte d'une carte dont la lecture a échoué : le même pour les cartes v1 et v2. */
+export const RAISON_LECTURE_INDISPONIBLE = "lecture indisponible — réessayer dans un instant";
 
 /**
  * Résout la donnée d'un widget. `ctx.filters` = filtres effectifs de l'écran
@@ -323,78 +345,96 @@ async function resolveAnalytics(w: AnalyticsWidget, ctx: WidgetContext): Promise
     if (e instanceof UnsupportedExplorerDimension) {
       return { kind: "error", reason: e.message, ...(filtersLabel ? { filtersLabel } : {}) };
     }
-    return { kind: "error", reason: "lecture indisponible — réessayer dans un instant" };
+    return { kind: "error", reason: RAISON_LECTURE_INDISPONIBLE };
   }
 }
 
+/**
+ * Carte v1 (lectures historiques). Une lecture qui LÈVE devient une carte
+ * « Mesure indisponible » (`kind: "error"`), journalisée côté serveur par `lire`
+ * (F02) — plus une table vide (CE3) : « pas de ligne » et « base indisponible »
+ * ne se ressemblent plus. Un filtre que la lecture ne sait pas appliquer est un
+ * refus, dit comme tel ; `resolveWidget` ne jette toujours pas.
+ */
 async function resolveLegacy(w: Extract<Widget, { kind: "v1" }>, f: Filters): Promise<WidgetData> {
   try {
-    switch (w.type) {
-      case "vital_p75": {
-        const r = (await vitalsP75(f)).find((x) => x.name === w.metric);
-        return r && r.p75 != null
-          ? { kind: "value", value: fmtVital(w.metric ?? "", Number(r.p75)), sub: `${r.n} mesures` }
-          : { kind: "value", value: "—", sub: "aucune donnée" };
-      }
-      case "traffic": {
-        const rows = await dailyTraffic(f);
-        const pv = rows.reduce((s, r) => s + r.pageviews, 0);
-        const er = rows.reduce((s, r) => s + r.errors, 0);
-        return {
-          kind: "table",
-          value: `${pv.toLocaleString("fr-FR")} vues · ${er.toLocaleString("fr-FR")} erreurs`,
-          columns: ["Jour", "Pages vues", "Erreurs"],
-          rows: rows.map((r) => [String(r.day).slice(0, 10), r.pageviews, r.errors]),
-        };
-      }
-      case "slow_routes": {
-        const rows = (await slowRoutes(f)).slice(0, 8);
-        return {
-          kind: "table",
-          columns: ["Route", "Vues", "LCP p75", "INP p75"],
-          rows: rows.map((r) => [r.route, r.views, num(r.lcp_p75), num(r.inp_p75)]),
-        };
-      }
-      case "top_errors": {
-        // Même lecture que l'écran Erreurs, segment, bots et apps internes compris :
-        // la conversion vers le modèle v2 perdait ces trois filtres, et la tuile
-        // pouvait afficher un autre nombre que la liste qu'elle résume.
-        const { groups: rows } = await listErrorGroups(f, { limit: 8, offset: 0 });
-        return {
-          kind: "table",
-          columns: ["Erreur", "Occurrences", "Sessions"],
-          rows: rows.map((r) => [
-            r.error_type || r.sample_message || r.fingerprint,
-            r.occurrences,
-            r.sessions,
-          ]),
-        };
-      }
-      case "frustration": {
-        const rows = (await topFrustrations(f)).slice(0, 8);
-        return {
-          kind: "table",
-          columns: ["Type", "Cible", "Route", "Occurrences"],
-          rows: rows.map((r) => [r.kind, r.target, r.route, r.n]),
-        };
-      }
-      case "event_count": {
-        if (!w.eventName) return { kind: "value", value: "—", sub: "nom d’événement manquant" };
-        const result = await eventCount(f, w.eventName);
-        if (!result.available || result.count == null) {
-          return { kind: "value", value: "—", sub: result.diagnostic ?? "donnée indisponible" };
-        }
-        return {
-          kind: "value",
-          value: result.count.toLocaleString("fr-FR"),
-          sub: result.sampling_notice?.message ?? `événements « ${w.eventName} » observés`,
-        };
-      }
-      default:
-        return EMPTY;
+    const lecture = await lire(() => lireLegacy(w, f));
+    return lecture.ok ? lecture.data : { kind: "error", reason: RAISON_LECTURE_INDISPONIBLE };
+  } catch (e) {
+    if (e instanceof UnsupportedFilterError) return { kind: "error", reason: e.message };
+    throw e;
+  }
+}
+
+async function lireLegacy(w: Extract<Widget, { kind: "v1" }>, f: Filters): Promise<WidgetData> {
+  switch (w.type) {
+    case "vital_p75": {
+      const r = (await vitalsP75(f)).find((x) => x.name === w.metric);
+      return r && r.p75 != null
+        ? { kind: "value", value: fmtVital(w.metric ?? "", Number(r.p75)), sub: `${r.n} mesures` }
+        : { kind: "value", value: "—", sub: "aucune donnée" };
     }
-  } catch {
-    return EMPTY;
+    case "traffic": {
+      const rows = await dailyTraffic(f);
+      const pv = rows.reduce((s, r) => s + r.pageviews, 0);
+      const er = rows.reduce((s, r) => s + r.errors, 0);
+      return {
+        kind: "table",
+        value: `${pv.toLocaleString("fr-FR")} vues · ${er.toLocaleString("fr-FR")} erreurs`,
+        columns: ["Jour", "Pages vues", "Erreurs"],
+        // `day` arrive en `Date` JS (colonne `date` rendue par node-postgres à minuit
+        // local) : `String(d).slice(0, 10)` rendait « Tue Sep 22 ». `cleJour` lit les
+        // composantes que le pilote a posées (lib/forecast.ts, F55).
+        rows: rows.map((r) => [cleJour(r.day), r.pageviews, r.errors]),
+      };
+    }
+    case "slow_routes": {
+      const rows = (await slowRoutes(f)).slice(0, 8);
+      return {
+        kind: "table",
+        columns: ["Route", "Vues", "LCP p75", "INP p75"],
+        rows: rows.map((r) => [r.route, r.views, num(r.lcp_p75), num(r.inp_p75)]),
+      };
+    }
+    case "top_errors": {
+      // Même lecture que l'écran Erreurs, segment, bots et apps internes compris :
+      // la conversion vers le modèle v2 perdait ces trois filtres, et la tuile
+      // pouvait afficher un autre nombre que la liste qu'elle résume.
+      const { groups: rows } = await listErrorGroups(f, { limit: 8, offset: 0 });
+      return {
+        kind: "table",
+        columns: ["Erreur", "Occurrences", "Sessions"],
+        rows: rows.map((r) => [
+          r.error_type || r.sample_message || r.fingerprint,
+          r.occurrences,
+          r.sessions,
+        ]),
+      };
+    }
+    case "frustration": {
+      const rows = (await topFrustrations(f)).slice(0, 8);
+      return {
+        kind: "table",
+        columns: ["Type", "Cible", "Route", "Occurrences"],
+        rows: rows.map((r) => [r.kind, r.target, r.route, r.n]),
+      };
+    }
+    case "event_count": {
+      if (!w.eventName) return { kind: "value", value: "—", sub: "nom d’événement manquant" };
+      const result = await eventCount(f, w.eventName);
+      if (!result.available || result.count == null) {
+        return { kind: "value", value: "—", sub: result.diagnostic ?? "donnée indisponible" };
+      }
+      return {
+        kind: "value",
+        value: result.count.toLocaleString("fr-FR"),
+        sub: result.sampling_notice?.message ?? `événements « ${w.eventName} » observés`,
+      };
+    }
+    default:
+      // Type inconnu (normalizeLayout ne le laisse pas passer) : une carte illisible,
+      // pas une table vide qu'on lirait comme « aucune ligne ».
+      return { kind: "invalid", reason: "type de carte inconnu" };
   }
 }
 
@@ -476,7 +516,9 @@ export function widgetToCsv(
   } else if (d.series) {
     lines.push(["Seau", ...d.series.groups.map((g) => g.label)].map(csvCell).join(","));
     for (const [i, seau] of d.series.buckets.entries()) {
-      if (!pousser([seau, ...d.series.groups.map((g) => g.values[i] ?? 0)])) break;
+      // Seau sans mesure : cellule VIDE, jamais « 0 » — un tableur en ferait un zéro
+      // dans une moyenne (CE1).
+      if (!pousser([seau, ...d.series.groups.map((g) => g.values[i] ?? "")])) break;
     }
   } else if (d.columns?.length) {
     lines.push(d.columns.map(csvCell).join(","));

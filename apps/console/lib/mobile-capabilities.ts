@@ -189,6 +189,28 @@ export type Platform = (typeof PLATFORMS)[number];
 export const PLATFORM_OS: Record<Platform, string> = { ios: "iOS", android: "Android" };
 export const PLATFORM_LABELS: Record<Platform, string> = { ios: "iOS", android: "Android" };
 
+/**
+ * Motif écrit par `mobileSummary` dans `unavailable` quand la migration v82 manque :
+ * sans colonne `runtime`, aucune cohorte React Native ne peut être isolée.
+ */
+export const RAISON_SANS_RUNTIME =
+  "migration v82 absente : le runtime des sessions n'est pas encore collecté, aucune cohorte React Native ne peut être isolée";
+
+/**
+ * Sessions React Native à AFFICHER (F30, CE9). Sans v82, la lecture rend
+ * `sessions: 0` — ce n'est pas « aucune session », c'est « rien n'a pu être
+ * compté ». L'écran affiche alors « — » avec la raison, jamais « 0 ».
+ */
+export function sessionsCohorte(data: {
+  sessions: { sessions: number };
+  unavailable: readonly string[];
+}): { valeur: number | null; raison: string | null } {
+  if (data.unavailable.includes(RAISON_SANS_RUNTIME)) {
+    return { valeur: null, raison: "runtime non collecté (migration v82) : la cohorte React Native ne peut pas être isolée" };
+  }
+  return { valeur: data.sessions.sessions, raison: null };
+}
+
 /** `?platform=ios` → `ios`, sinon `null` (toutes). Une valeur inconnue vaut « toutes ». */
 export function parsePlatform(raw: string | null | undefined): Platform | null {
   const value = raw?.trim().toLowerCase();

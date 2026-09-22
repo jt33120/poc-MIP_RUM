@@ -10,7 +10,7 @@ vi.mock("@/lib/queries-errors", () => ({ listErrorGroups: vi.fn() }));
 vi.mock("@/lib/queries-events", () => ({ eventCount: vi.fn() }));
 
 import { listErrorGroups, type ErrorListResult } from "@/lib/queries-errors";
-import { resolveWidget } from "@/lib/widget-data";
+import { RAISON_LECTURE_INDISPONIBLE, resolveWidget } from "@/lib/widget-data";
 
 const widget = { kind: "v1" as const, type: "top_errors" as const, title: "Top erreurs" };
 const filters = {
@@ -58,8 +58,10 @@ describe("widget top_errors", () => {
     expect(listErrorGroups).toHaveBeenCalledWith(filters, { limit: 8, offset: 0 });
   });
 
-  it("reste fail-soft si la lecture échoue", async () => {
+  // F30 (CE3) : la carte ne casse pas la grille, mais elle DIT son échec — une
+  // table vide se lisait « aucune erreur » pendant une panne de la base.
+  it("une lecture en échec rend une carte d'erreur, jamais une table vide", async () => {
     vi.mocked(listErrorGroups).mockRejectedValue(new Error("base indisponible"));
-    await expect(resolveWidget(widget, ctx)).resolves.toEqual({ kind: "table", columns: [], rows: [] });
+    await expect(resolveWidget(widget, ctx)).resolves.toEqual({ kind: "error", reason: RAISON_LECTURE_INDISPONIBLE });
   });
 });

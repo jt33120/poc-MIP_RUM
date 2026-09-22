@@ -200,13 +200,29 @@ test("mobile : « Non collecté » au lieu de zéro, filtres, drill-down, clavie
   // périmètre n'a rien déclaré.
   await expect(page.getByTestId("capacite-js_errors")).toContainText("Inconnu");
 
-  // ── 7. Drill-down vers les issues P5, filtres conservés ────────────────────
+  // ── 7. Drill-down vers les erreurs React Native, filtres conservés (F30) ───
+  // CE7 : `/errors/issues` n'a pas de page (seul `/errors/issues/<id>` existe) ;
+  // le lien vise la liste des erreurs, qui lit `source`. CE8 : `device=mobile`
+  // ouvrait les navigateurs mobiles, pas la cohorte React Native — le lien vers
+  // les sessions est désactivé avec sa raison tant que la liste ne filtre pas le
+  // runtime (B8).
   await page.goto(`${consoleUrl}/mobile?app=${APP}&period=24h`);
-  const lien = page.getByTestId("mobile-lien-issues");
+  const lien = page.getByTestId("mobile-lien-erreurs");
+  await expect(lien).toHaveAttribute("href", /^\/errors\?/);
   await expect(lien).toHaveAttribute("href", /source=react_native_js/);
   await expect(lien).toHaveAttribute("href", new RegExp(`app=${APP}`));
+  await expect(page.locator('a[href="/errors/issues"], a[href^="/errors/issues?"]')).toHaveCount(0);
+  const plusLoin = page.getByRole("navigation", { name: "Aller plus loin" });
+  await expect(plusLoin.locator('a[href*="device=mobile"]')).toHaveCount(0);
+  await expect(plusLoin.locator('a[href^="/sessions"]')).toHaveCount(0);
+  await expect(page.getByTestId("mobile-lien-sessions")).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByText("la liste des sessions ne filtre pas encore le runtime (B8)").first()).toBeVisible();
   await lien.click();
-  await page.waitForURL(/\/errors\/issues/, { timeout: 15_000 });
+  await page.waitForURL((u) => u.pathname === "/errors" && u.searchParams.get("source") === "react_native_js", {
+    timeout: 15_000,
+  });
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("could not be found");
 
   // ── 8. Un filtre que l'écran n'applique PAS est refusé, jamais ignoré ──────
   await page.goto(`${consoleUrl}/mobile?app=${APP}&period=24h&route=%2Fpanier-synthetique`);

@@ -32,6 +32,8 @@ import {
   errorFreeSessionRate,
   parsePlatform,
   PLATFORM_OS,
+  RAISON_SANS_RUNTIME,
+  sessionsCohorte,
   type CapabilityDeclaration,
 } from "../../apps/console/lib/mobile-capabilities";
 
@@ -232,6 +234,23 @@ describe("P7.5 — « Non collecté » et « Inconnu » ne sont pas la même cho
 });
 
 // ═════════════ 5. Le taux qui refuse de mentir quand il ne sait pas ══════════
+
+// F30 (CE9) — sans migration v82, `mobileSummary` rend `sessions: 0` : ce zéro
+// n'est pas un compte, c'est l'absence de cohorte. L'écran écrit « — » et pourquoi.
+describe("F30 — sessionsCohorte : « — » quand la cohorte ne peut pas être isolée", () => {
+  it("v82 absente (motif dans `unavailable`) → valeur null et raison, jamais 0", () => {
+    const r = sessionsCohorte({ sessions: { sessions: 0 }, unavailable: [RAISON_SANS_RUNTIME] });
+    expect(r.valeur).toBeNull();
+    expect(r.raison).toMatch(/runtime non collecté \(migration v82\)/);
+  });
+
+  it("v82 présente : le compte lu, 0 compris (un vrai zéro)", () => {
+    expect(sessionsCohorte({ sessions: { sessions: 0 }, unavailable: [] })).toEqual({ valeur: 0, raison: null });
+    expect(
+      sessionsCohorte({ sessions: { sessions: 3 }, unavailable: ["migration v69 absente : autre chose"] }),
+    ).toEqual({ valeur: 3, raison: null });
+  });
+});
 
 describe("P7.5 — js_error_free_session_rate", () => {
   it("vaut null quand la collecte des erreurs JS est déclarée indisponible", () => {

@@ -27,6 +27,7 @@ import {
   PLATFORM_OS,
   STATE_LABELS,
   parsePlatform,
+  sessionsCohorte,
   type CapabilityStatus,
 } from "@/lib/mobile-capabilities";
 import { mobileSummary } from "@/lib/queries-mobile";
@@ -64,8 +65,11 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   const { sessions, js_errors: erreurs, startup } = data;
   const jsErrors = data.capabilities.find((c) => c.capability === "js_errors");
   const contexte = queryToSearchParams(ecran.query);
-  const lienIssues = hrefWithQuery("/errors/issues", ecran.query, { source: "react_native_js" });
-  const lienSessions = hrefWithQuery("/sessions", ecran.query, { device: "mobile" });
+  // CE7 : `/errors/issues` n'a pas de page (seul `/errors/issues/[id]` existe) ;
+  // la liste des erreurs lit `source` elle-même (`parseIssueSource`).
+  const lienErreurs = hrefWithQuery("/errors", ecran.query, { source: "react_native_js" });
+  // CE9 : sans v82, la lecture rend 0 session — l'écran dit « — » et pourquoi.
+  const sessionsLues = sessionsCohorte(data);
 
   return (
     <div className="animate-fade-up">
@@ -110,9 +114,11 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
         <div className="card p-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Sessions observées</div>
           <div data-testid="mobile-sessions" className="mt-1 text-3xl font-bold tabular-nums text-ink">
-            {NOMBRE(sessions.sessions)}
+            {sessionsLues.valeur == null ? "—" : NOMBRE(sessionsLues.valeur)}
           </div>
-          <p className="mt-1 text-xs text-ink-faint">Sessions React Native commencées dans la fenêtre.</p>
+          <p className="mt-1 text-xs text-ink-faint">
+            {sessionsLues.raison ?? "Sessions React Native commencées dans la fenêtre."}
+          </p>
         </div>
         <div className="card p-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Visiteurs observés</div>
@@ -294,13 +300,24 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
         </table>
       </section>
 
-      <nav className="flex flex-wrap gap-3 text-sm" aria-label="Aller plus loin">
-        <Link href={lienIssues} data-testid="mobile-lien-issues" className="btn-ghost">
-          Issues des erreurs React Native
+      <nav className="flex flex-wrap items-center gap-3 text-sm" aria-label="Aller plus loin">
+        <Link href={lienErreurs} data-testid="mobile-lien-erreurs" className="btn-ghost">
+          Erreurs React Native
         </Link>
-        <Link href={lienSessions} data-testid="mobile-lien-sessions" className="btn-ghost">
-          Sessions mobiles
-        </Link>
+        {/* CE8 : `device=mobile` ouvrait les navigateurs mobiles, pas la cohorte React
+            Native. Tant que la liste ne filtre pas le runtime (B8), le lien n'est pas
+            un lien : désactivé, avec sa raison écrite. */}
+        <span
+          data-testid="mobile-lien-sessions"
+          aria-disabled="true"
+          className="btn-ghost cursor-not-allowed opacity-60"
+          title="La liste des sessions ne filtre pas encore le runtime (B8)."
+        >
+          Sessions React Native
+        </span>
+        <span className="text-xs text-ink-soft">
+          Indisponible : la liste des sessions ne filtre pas encore le runtime (B8).
+        </span>
       </nav>
     </div>
   );

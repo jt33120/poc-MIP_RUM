@@ -76,7 +76,8 @@ export function WidgetBody({ data }: { data: WidgetData }) {
                       <td className="py-1">{seau}</td>
                       {data.series!.groups.map((groupe) => (
                         <td key={groupe.label} className="py-1 text-right tabular-nums">
-                          {(groupe.values[i] ?? 0).toLocaleString("fr-FR")}
+                          {/* Seau sans mesure : « — », comme le trou de la courbe (CE1). */}
+                          {groupe.values[i] == null ? "—" : groupe.values[i]!.toLocaleString("fr-FR")}
                         </td>
                       ))}
                     </tr>

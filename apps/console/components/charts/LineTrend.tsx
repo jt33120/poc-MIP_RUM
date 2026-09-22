@@ -16,7 +16,8 @@ import {
 
 export interface LineTrendPoint {
   label: string;
-  value: number;
+  /** `null` : aucune mesure sur ce point — un TROU dans la courbe (pas de `connectNulls`), jamais 0. */
+  value: number | null;
   /** Volume optionnel (barres discrètes, axe droit). */
   volume?: number;
 }

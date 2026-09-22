@@ -134,11 +134,9 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
                           </form>
                           <form action={deleteViewAction}>
                             <input type="hidden" name="id" value={vue.id} />
-                            <button
-                              type="submit"
-                              aria-label={`Supprimer ${vue.name}`}
-                              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700"
-                            >
+                            {/* Bouton neutre (CE11, P15) : le rouge est réservé à l'état
+                                d'une mesure, pas à un geste. */}
+                            <button type="submit" aria-label={`Supprimer ${vue.name}`} className="btn-ghost">
                               Supprimer
                             </button>
                           </form>
