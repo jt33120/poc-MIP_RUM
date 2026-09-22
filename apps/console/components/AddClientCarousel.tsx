@@ -5,22 +5,11 @@
 // optionnel, vérification live, accès scopé. Contenu statique (tutoriel), une
 // seule entrée dynamique : `isAdmin` décide du call-to-action vers l'écran admin.
 import Link from "next/link";
+import { EXAMPLE_SNIPPET } from "@/lib/onboarding";
 import { SDK_POIDS_TEXTE } from "@/lib/sdk-poids";
 import { useState } from "react";
 import { CopyBlock } from "./CopyBlock";
 import { ICON_PATHS, Icon, type IconName } from "./icons";
-
-const EXAMPLE_SNIPPET = `<!-- MIP RUM -->
-<script src="https://<console>/mip-rum.js"></script>
-<script>
-  MIPRum.init({
-    endpoint: "https://<ingest>/v1/traces",
-    appId: "plateforme-client",
-    clientId: "groupement-it",
-    env: "prod",
-    apiKey: "mip_xxxxxxxx", // affichée une seule fois à la création
-  });
-</script>`;
 
 interface Step {
   icon: IconName;
@@ -44,6 +33,10 @@ const STEPS: Step[] = [
         <p className="mt-2 text-ink-faint">
           À la validation, l'outil génère la <strong>clé d'API</strong> (affichée une seule fois !) et
           autorise le domaine — pris en compte en ≤ 60 s, sans redéploiement.
+        </p>
+        <p className="mt-2 text-ink-faint">
+          Tant que l'ingestion n'est pas fermée par défaut, une requête sans clé valide n'est pas
+          forcément refusée.
         </p>
       </>
     ),
@@ -101,7 +94,8 @@ const STEPS: Step[] = [
           (Python, Java, .NET, Go, Node…).
         </p>
         <p className="mt-2 text-ink-faint">
-          Étape facultative : sans elle, le RUM front fonctionne déjà à 100 %.
+          Étape facultative : sans elle, la mesure côté navigateur fonctionne ; seul le lien vers
+          l'exécution serveur manque.
         </p>
       </>
     ),

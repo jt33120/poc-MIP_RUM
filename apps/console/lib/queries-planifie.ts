@@ -15,23 +15,28 @@
 // seulement le bucket horaire, qu'un rattrapage rendrait indiscernable d'un
 // passage récent.
 import { q } from "./db";
+import type { LecturePlanifie } from "./etat-planifie";
 
-/** Date du dernier passage QUOTIDIEN abouti, ou null si aucun n'a jamais eu lieu. */
-export async function dernierPassagePlanifie(): Promise<Date | null> {
+/**
+ * Date du dernier passage QUOTIDIEN abouti (`date: null` s'il n'a jamais eu lieu),
+ * ou `illisible` si la lecture a échoué.
+ */
+export async function dernierPassagePlanifie(): Promise<LecturePlanifie> {
   try {
     const [row] = await q<{ t: string | null }>(
       `select max(metered_at)::text as t from tenant_usage_daily`,
     );
-    return row?.t ? new Date(row.t) : null;
+    return { etat: "lu", date: row?.t ? new Date(row.t) : null };
   } catch {
     // Table absente (base non migrée) ou base injoignable : on ne peut rien
-    // prouver, donc on n'affirme rien — l'appelant traite null comme « inconnu ».
-    return null;
+    // prouver, ni dans un sens ni dans l'autre — surtout pas « jamais exécuté ».
+    return { etat: "illisible" };
   }
 }
 
 /**
- * Date du dernier TICK abouti du scheduler, ou null.
+ * Date du dernier TICK abouti du scheduler (`date: null` s'il n'y en a jamais eu),
+ * ou `illisible` si la lecture a échoué.
  *
  * TÉMOIN : `scheduler_lease`. Le bail d'exclusion des travaux planifiés est
  * relâché en faisant EXPIRER la ligne plutôt qu'en la supprimant, exprès pour
@@ -44,15 +49,15 @@ export async function dernierPassagePlanifie(): Promise<Date | null> {
  * serait devenue fausse en silence — exactement ce qui s'était produit pour la
  * purge de rétention.
  */
-export async function dernierTickScheduler(): Promise<Date | null> {
+export async function dernierTickScheduler(): Promise<LecturePlanifie> {
   try {
     const [row] = await q<{ t: string | null }>(
       `select max(expires_at)::text as t from scheduler_lease where job = 'tick'`,
     );
-    return row?.t ? new Date(row.t) : null;
+    return { etat: "lu", date: row?.t ? new Date(row.t) : null };
   } catch {
     // Table absente (scheduler jamais déployé) ou base injoignable : on ne peut
     // rien prouver, donc on n'affirme rien.
-    return null;
+    return { etat: "illisible" };
   }
 }

@@ -22,9 +22,11 @@
 // porte de quoi la contredire (fichier de preuve, marqueur d'absence, valeurs
 // importées de lib/legal.ts). Ici, il n'y a que du rendu.
 import { ICON_PATHS, Icon } from "@/components/icons";
-import { fmtDate } from "@/lib/format";
+import { fmtBorne } from "@/lib/format";
+import { THRESHOLDS } from "@/lib/rating";
 import { dernierPassagePlanifie, dernierTickScheduler } from "@/lib/queries-planifie";
-import { CADENCE_TICK_MIN, ligneLatence } from "@/lib/etat-latence";
+import { CADENCE_TICK_MIN } from "@/lib/etat-latence";
+import { latenceDepuis, volatiles, type Gravite } from "@/lib/etat-planifie";
 import {
   ANGLES_MORTS,
   INFRA,
@@ -75,13 +77,17 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Seuils Core Web Vitals",
     cible: "Barème Google",
-    reel: "LCP 2,5 / 4 s · INP 200 / 500 ms · CLS 0,1 / 0,25",
+    // Lu dans lib/rating.ts, comme l'écran qui colore les valeurs : recopié à la
+    // main, un seuil finit par diverger (c'est arrivé au glossaire).
+    reel: (["LCP", "INP", "CLS"] as const)
+      .map((n) => `${n} ${fmtBorne(n, THRESHOLDS[n][0])} / ${fmtBorne(n, THRESHOLDS[n][1])}`)
+      .join(" · "),
     s: "atteint",
   },
   {
     c: "Agrégation",
     cible: "p75, comme l'exige le standard CWV",
-    reel: "p75 par route et par appareil, distribution complète",
+    reel: "p75 par route et par appareil, et l'histogramme des mesures par tranche de valeur",
     s: "atteint",
   },
   {
@@ -127,7 +133,8 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
     // Le backend : projet Railway `mip-rum-backend`, services `ingest`,
     // `scheduler` et `mcp`, région `europe-west4-drams3a` (Amsterdam) — relevée
     // le 09/09/2026 dans `multiRegionConfig` des trois services, après leur
-    // déplacement depuis `us-west2`. Cf. DEPLOY.md § 1 bis.
+    // déplacement depuis `us-west2`. Cf. DEPLOY.md § 1 bis. `ingest` a été
+    // supprimé le 21/09/2026 (docs/TOPOLOGIE_BACKEND.md) : restent `scheduler` et `mcp`.
     //
     // « Traitement en UE » est donc désormais VRAI ; « chez un hébergeur de
     // droit européen » reste faux. La ligne dit les deux, parce que ne dire que
@@ -149,8 +156,6 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   },
 ];
 
-type Gravite = "bloquant" | "limite";
-
 /** Ce qui manque, en liste simple. */
 const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
   {
@@ -171,7 +176,7 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
   {
     t: "Backend sur Railway, à migrer chez un hébergeur souverain",
     g: "bloquant",
-    d: "L'ingestion, les travaux planifiés et le serveur MCP ont quitté la console : ce sont des services autonomes, sans framework, déployés sur Railway à Amsterdam depuis le 09/09/2026. Le calcul est donc en UE, au même titre que la donnée. Cela ne change RIEN à la souveraineté — Neon, Vercel et Railway sont trois sociétés de droit américain, et la résidence européenne des données n'est pas la souveraineté : ce point reste bloquant tant que l'hébergeur relève du droit américain, quelle que soit la région. Cible : base, console et backend chez un hébergeur de droit européen, qualifié SecNumCloud pour un acheteur public. Le backend y est prêt : il ne dépend que de Node et de PostgreSQL, et ses images se construisent depuis ce dépôt.",
+    d: "Les travaux planifiés et le serveur MCP ont quitté la console : ce sont des services autonomes, sans framework, déployés sur Railway à Amsterdam depuis le 09/09/2026 ; la collecte, elle, reste une route de la console, sur Vercel à Francfort. Le calcul est donc en UE, au même titre que la donnée. Cela ne change RIEN à la souveraineté — Neon, Vercel et Railway sont trois sociétés de droit américain, et la résidence européenne des données n'est pas la souveraineté : ce point reste bloquant tant que l'hébergeur relève du droit américain, quelle que soit la région. Cible : base, console et backend chez un hébergeur de droit européen, qualifié SecNumCloud pour un acheteur public. Le backend y est prêt : il ne dépend que de Node et de PostgreSQL, et ses images se construisent depuis ce dépôt.",
   },
   {
     t: "SDK non distribuables",
@@ -189,52 +194,6 @@ const A_FAIRE: { t: string; d: string; g: Gravite }[] = [
     d: "Aucune certification (SOC 2, ISO 27001, CSPN) — souvent éliminatoire en appel d'offres grand compte — et l'identité légale reste à renseigner dans les CGU/CGV/DPA.",
   },
 ];
-
-/**
- * La rétention et le déclencheur périodique sont les deux seuls points dont
- * l'état CHANGE sans qu'on touche au code : il suffit que le secret du
- * planificateur soit posé côté hébergeur. Ils sont donc DÉDUITS d'une preuve en
- * base — la dernière exécution aboutie — plutôt qu'écrits en dur. C'est
- * exactement là que la version précédente de cette section a menti : elle
- * affirmait « jamais déclenchée » bien après que le secret ait été posé.
- */
-function volatiles(dernier: Date | null): {
-  retention: { c: string; cible: string; reel: string; s: Statut };
-  planif: { t: string; d: string; g: Gravite } | null;
-} {
-  const frais = dernier != null && Date.now() - dernier.getTime() < 48 * 3600 * 1000;
-
-  if (frais) {
-    return {
-      retention: {
-        c: "Rétention",
-        cible: "Purge à 30 jours, réglable par client",
-        reel: `Purge par client active — dernier passage le ${fmtDate(dernier!)}`,
-        s: "atteint",
-      },
-      planif: null, // plus un manque : le bloc s'exécute
-    };
-  }
-
-  const jamais = dernier == null;
-  return {
-    retention: {
-      c: "Rétention",
-      cible: "Purge à 30 jours, réglable par client",
-      reel: jamais
-        ? "Codée et testée ; aucune exécution constatée en production"
-        : `Codée et testée ; dernier passage le ${fmtDate(dernier!)}, plus de 48 h`,
-      s: jamais ? "manque" : "partiel",
-    },
-    planif: {
-      t: "Tâches planifiées à relancer",
-      g: "bloquant",
-      d: jamais
-        ? "Évaluation des alertes, SLO, sondes uptime, purge de rétention et comptage du volume par client partagent le même déclencheur périodique. Tout ce bloc est écrit et testé ; aucune exécution n'a encore abouti en production."
-        : "Le déclencheur périodique existe et a déjà abouti, mais pas depuis plus de 48 h — alertes, SLO, sondes uptime, purge et comptage du volume sont donc à l'arrêt.",
-    },
-  };
-}
 
 // ─────────────────────────────── les onglets ────────────────────────────────
 // Trois radios masquées, trois étiquettes, trois panneaux — TOUS frères, parce
@@ -272,7 +231,8 @@ export async function Specs() {
 
   // La latence d'alerte est DÉDUITE du battement de cœur du scheduler, pas
   // écrite en dur : elle change sans qu'on touche au code (cf. lib/etat-latence).
-  const latence = ligneLatence(tick, Date.now());
+  // Lecture en échec : « non établi », jamais « aucun passage constaté ».
+  const latence = latenceDepuis(tick, Date.now());
 
   // La rétention se range après le masquage du replay, à sa place d'origine dans
   // la progression « mesure → restitution → exploitation » ; la latence juste

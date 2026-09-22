@@ -23,6 +23,9 @@ import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { CATALOGUES } from "../../apps/console/lib/dashboard-blocs";
+import { NON_ETABLI_PLANIFIE, latenceDepuis, volatiles } from "../../apps/console/lib/etat-planifie";
+import { ingestPath } from "../../apps/console/lib/ingest-endpoint";
+import { EXAMPLE_SNIPPET } from "../../apps/console/lib/onboarding";
 import { HOSTS } from "../../apps/console/lib/legal";
 import { MCP_ORIGINE } from "../../apps/console/lib/mcp-public";
 import {
@@ -38,6 +41,7 @@ import {
   SDK_GZIP_KO,
   mesuresNonCouvertes,
 } from "../../apps/console/lib/specs";
+import { RN_VERSION } from "../../apps/console/lib/versions";
 import { SDK_POIDS_TEXTE } from "../../apps/console/lib/sdk-poids";
 
 const RACINE = join(__dirname, "..", "..");
@@ -73,8 +77,9 @@ describe("onglet infrastructure — chaque ligne porte sa preuve", () => {
     expect(manquants.map((l) => `${l.k} -> ${l.preuve}`)).toEqual([]);
   });
 
-  it("décrit les trois services par leur point d'entrée réel", () => {
-    // Les commandes de démarrage déclarées côté Railway. Si l'un de ces fichiers
+  it("décrit les services par leur point d'entrée réel", () => {
+    // Les commandes de démarrage : scheduler et mcp côté Railway, et le receveur
+    // autonome gardé pour l'hébergement chez le client. Si l'un de ces fichiers
     // disparaît, ce n'est pas la vitrine qui est fausse : c'est le déploiement
     // qui est cassé, et on l'apprend ici plutôt qu'au prochain déploiement.
     for (const f of [
@@ -358,5 +363,42 @@ describe("faits relevés à la main chez l'hébergeur", () => {
     // Deux régions différentes sur deux pages du même site, ce serait la
     // divergence de trop.
     expect(HOSTS.backend).toContain(RAILWAY.region.split("-").slice(0, 2).join("-"));
+  });
+});
+
+describe("vérité de la vitrine (P**.1)", () => {
+  it("la version React Native citée est celle du paquet", () => {
+    const pkg = JSON.parse(readFileSync(join(RACINE, "packages/rum-mobile/package.json"), "utf8"));
+    expect(RN_VERSION).toBe(pkg.version);
+  });
+
+  it("une lecture du planificateur en échec est « non établie », pas « jamais exécutée »", () => {
+    const { retention, planif } = volatiles({ etat: "illisible" });
+    expect(retention.s).toBe("non-mesure");
+    expect(retention.reel).toBe(NON_ETABLI_PLANIFIE);
+    // Rien n'est ajouté à « Ce qui manque » sur la foi d'une inconnue.
+    expect(planif).toBeNull();
+  });
+
+  it("la latence d'alerte suit la même règle : illisible = non établie", () => {
+    const maintenant = Date.parse("2026-09-22T12:00:00Z");
+    expect(latenceDepuis({ etat: "illisible" }, maintenant)).toEqual({ reel: NON_ETABLI_PLANIFIE, s: "non-mesure" });
+    expect(latenceDepuis({ etat: "lu", date: null }, maintenant).s).toBe("manque");
+    expect(latenceDepuis({ etat: "lu", date: new Date(maintenant - 2 * 60_000) }, maintenant).s).toBe("atteint");
+  });
+
+  it("une lecture aboutie sans passage reste « aucune exécution constatée »", () => {
+    const { retention, planif } = volatiles({ etat: "lu", date: null });
+    expect(retention.s).toBe("manque");
+    expect(planif?.t).toBe("Tâches planifiées à relancer");
+    const maintenant = Date.parse("2026-09-22T12:00:00Z");
+    expect(volatiles({ etat: "lu", date: new Date(maintenant - 3_600_000) }, maintenant).retention.s).toBe("atteint");
+    expect(volatiles({ etat: "lu", date: new Date(maintenant - 72 * 3_600_000) }, maintenant).retention.s).toBe("partiel");
+  });
+
+  it("le snippet du carrousel vise la route d'ingestion de la console", () => {
+    expect(EXAMPLE_SNIPPET).toContain(`https://<console>${ingestPath("traces")}`);
+    expect(EXAMPLE_SNIPPET).toContain("/api/ingest/v1/traces");
+    expect(EXAMPLE_SNIPPET).not.toContain("<ingest>");
   });
 });

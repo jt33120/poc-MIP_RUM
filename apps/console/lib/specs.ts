@@ -34,6 +34,7 @@ import {
 } from "./sdk-poids";
 import { HOSTS } from "./legal";
 import { MCP_ORIGINE } from "./mcp-public";
+import { RN_VERSION } from "./versions";
 
 export type Statut = "atteint" | "partiel" | "manque" | "non-mesure";
 
@@ -101,18 +102,21 @@ export const INFRA: GroupeInfra[] = [
     ],
   },
   {
-    titre: "Backend — trois services autonomes",
-    sous: `Projet Railway ${RAILWAY.projet}, environnement production. Ni framework, ni serverless : du Node et du PostgreSQL, dans des images construites depuis ce dépôt.`,
+    titre: "Backend — collecteur sur Vercel, travaux planifiés et MCP sur Railway",
+    sous: `La collecte passe par la route de la console, sur Vercel. Projet Railway ${RAILWAY.projet}, environnement production : deux services, scheduler et mcp (relevé le 22/09/2026 par l'API Railway). Ni framework, ni serverless : du Node et du PostgreSQL, dans des images construites depuis ce dépôt.`,
     lignes: [
       {
         k: "ingest",
-        v: "Réception OTLP (traces, logs, rejeu). Healthcheck /health, redémarrage sur échec. Porte la commande pre-deploy des migrations : le schéma ne peut plus être en retard sur le code.",
-        s: "atteint",
+        // Supprimé de Railway le 21/09/2026 (docs/TOPOLOGIE_BACKEND.md) : aucun domaine
+        // public ne pointait dessus, et son seul rôle réel — les migrations — était
+        // déjà repris par le scheduler. Le receveur reste dans le dépôt.
+        v: "Receveur OTLP autonome (services/ingest/server.mjs), gardé pour l'hébergement chez le client et démarré par la CI. En production, le trafic passe par la route de la console ; le service Railway, qui n'avait aucun domaine public, a été supprimé le 21/09/2026.",
+        s: "partiel",
         preuve: "services/ingest/server.mjs",
       },
       {
         k: "scheduler",
-        v: "Travaux planifiés : évaluation des alertes, SLO, sondes uptime, purge de rétention, comptage du volume. Bail d'exclusion en base (scheduler_lease) pour qu'une seule instance travaille à la fois.",
+        v: "Lance les migrations au pré-déploiement — vérifié le 18/09/2026 sur un vrai déploiement (03850b30 : « migrations à jour », aucune en attente ce jour-là). Puis les travaux planifiés : évaluation des alertes, SLO, sondes uptime, purge de rétention, comptage du volume. Bail d'exclusion en base (scheduler_lease) pour qu'une seule instance travaille à la fois.",
         s: "atteint",
         preuve: "services/scheduler/worker.mjs",
       },
@@ -167,7 +171,7 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "Mobile",
-        v: "React Native seulement, paquet privé en v0.1. Pas de SDK iOS ni Android natif.",
+        v: `React Native seulement, paquet privé en v${RN_VERSION}, jamais exécuté sur un appareil. Pas de SDK iOS ni Android natif.`,
         s: "partiel",
         preuve: "packages/rum-mobile/src/core.ts",
       },
@@ -189,7 +193,7 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "Conteneurisation",
-        v: "Le backend a ses images, pas la console. L'argument « souverain, déployable chez vous » n'est donc pas livrable de bout en bout.",
+        v: "Le backend a ses images, pas la console. L'argument « déployable chez vous » n'est donc pas livrable de bout en bout.",
         s: "manque",
       },
       {

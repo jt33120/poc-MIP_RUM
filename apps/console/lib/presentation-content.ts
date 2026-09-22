@@ -20,12 +20,12 @@ export const PIPELINE: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "gauge",
     title: "3 · Ingestion",
-    body: "Un service Node autonome — sans framework, déployable partout — aplatit le flux OTLP et l'écrit en base, avec garde-fous de charge et idempotence.",
+    body: "La route d'ingestion de la console aplatit le flux OTLP et l'écrit en base. Le même parseur existe en service Node autonome pour l'hébergement chez le client.",
   },
   {
     icon: "list",
     title: "4 · Stockage",
-    body: "PostgreSQL par défaut ; chemin ClickHouse prouvé pour le grand compte (mêmes p75, ×15 plus compact). Rétention RGPD (TTL 30 j).",
+    body: "PostgreSQL par défaut. Pour les gros volumes, un chemin ClickHouse a été mesuré en local le 11/06/2026 : mêmes p75 au milliseconde près, stockage 15 fois plus compact à données identiques. Ce banc n'a pas été rejoué depuis la migration vers Neon. Rétention RGPD (TTL 30 j).",
   },
   {
     icon: "compass",

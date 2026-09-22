@@ -7,9 +7,10 @@
 // Le contenu n'est pas du marketing : il vient de docs/CADRAGE_EXTENSION.md
 // (registre domaine→app, MV3, cible poste géré, non publié au store),
 // docs/LIMITES.md (ce qui manque, assumé) et docs/OFFRE.md (positionnement).
-// Rendu 100 % serveur, aucun JS envoyé au navigateur.
+// Rendu entièrement côté serveur, aucun JS envoyé au navigateur.
 import { ICON_PATHS, Icon, type IconName } from "@/components/icons";
 import { SDK_GZIP_KO, SDK_POIDS_TEXTE, koTexte } from "@/lib/sdk-poids";
+import { RN_VERSION } from "@/lib/versions";
 
 type Capteur = {
   n: string;
@@ -65,7 +66,7 @@ const CAPTEURS: Capteur[] = [
     ],
     fort: "Atteint tout le trafic public, bien au-delà du parc interne — moins les visiteurs qui refusent la mesure (DNT et GPC honorés par défaut) et ceux qu'un bloqueur arrête.",
     limite:
-      "Demande une mise en production côté client. Web et React Native (paquet privé, v0.1) ; pas de SDK iOS ou Android natif.",
+      `Demande une mise en production côté client. Web et React Native (paquet privé, v${RN_VERSION}, jamais exécuté sur un appareil) ; pas de SDK iOS ou Android natif.`,
   },
 ];
 
