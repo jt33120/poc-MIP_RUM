@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Suspense } from "react";
 import { HealthHeatmap, type HeatCell, dayKey, lastNDayKeys } from "@/components/charts/HealthHeatmap";
 import { TrafficTimeseries } from "@/components/charts/TrafficTimeseries";
 import { VitalsTimeseries } from "@/components/charts/VitalsTimeseries";
@@ -14,7 +13,6 @@ import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
 import { VersionsTable } from "@/components/VersionsTable";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
-import { ChargementEcran } from "@/components/states/ChargementEcran";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { Breakdown } from "@/components/Breakdown";
@@ -59,23 +57,16 @@ const SOURCES_HERO: SourceComparaison[] = [
 
 export const dynamic = "force-dynamic";
 
-/**
- * Le chargement de `/` est une `Suspense` LOCALE, pas un `app/loading.tsx` : posé à
- * la racine, celui-ci envelopperait TOUTES les routes — vitrine publique,
- * connexion, administration — et y ferait clignoter un squelette de console.
- */
-export default function Overview({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  return (
-    <Suspense fallback={<ChargementEcran titre="Vue d'ensemble" />}>
-      <VueEnsemble searchParams={searchParams} />
-    </Suspense>
-  );
-}
-
 /** Lecture non lancée (bloc éteint) : une valeur sûre, jamais affichée comme mesure. */
 const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
 
-async function VueEnsemble({ searchParams }: { searchParams: Promise<SearchParams> }) {
+// PAS DE `<Suspense>` AUTOUR DE L'ÉCRAN, ni de `loading.tsx` (F02, correctif). Une
+// frontière de chargement posée au-dessus de TOUTE la page bloquait les
+// navigations qui ne changent que la query (période, comparaison, segment) : la
+// transition de `router.replace` ne se validait plus, l'URL restait l'ancienne
+// (e2e `etat-de-vue`, `navigation-filtres`). Les frontières restent PAR SECTION
+// (`SectionErreur`), où elles ne gênent pas la navigation.
+export default async function Overview({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const ecran = await pageFilters(sp, "/");
   if (!ecran.ok) return <FilterProblemNotice title="Vue d'ensemble" problem={ecran.problem} />;
