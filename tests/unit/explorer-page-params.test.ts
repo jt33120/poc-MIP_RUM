@@ -26,6 +26,7 @@ import {
   pastillesRequete,
   representationDemandee,
 } from "../../apps/console/lib/explorer-page-params";
+import { vitalDeVerdict as f32VitalDeVerdict, phraseSansVerdict as f32PhraseSansVerdict, formatDeMesure as f32FormatDeMesure, titreResultat as f32TitreResultat, referencePrecedente as f32ReferencePrecedente, groupeHref as f32GroupeHref, filtresDuGroupe as f32FiltresDuGroupe } from "../../apps/console/lib/explorer-page-params";
 import {
   encodeExplorerCursor,
   explorerFingerprint,
@@ -333,5 +334,91 @@ describe("F31 — un onglet relit la même requête sous une autre forme", () =>
     expect(representationDemandee(new URLSearchParams("viz=toplist"))).toBe("toplist");
     expect(representationDemandee(new URLSearchParams("viz=camembert"))).toBe("value");
     expect(representationDemandee(new URLSearchParams(""))).toBe("value");
+  });
+});
+
+// F32 — représentations : la règle R-V, les libellés, le drill-down d'un groupe.
+describe("F32 — vitalDeVerdict (règle R-V) et libellés du résultat", () => {
+  it("rend le vital seulement pour le p75 de sa valeur", () => {
+    expect(f32VitalDeVerdict(plan("dataset=vitals&measure=value:p75&variant=LCP&viz=value"))).toBe("LCP");
+    expect(f32VitalDeVerdict(plan("dataset=vitals&measure=value:p75&variant=CLS&viz=value"))).toBe("CLS");
+    expect(f32VitalDeVerdict(plan("dataset=vitals&measure=value:avg&variant=LCP&viz=value"))).toBeNull();
+    expect(f32VitalDeVerdict(plan("dataset=vitals&measure=value:p95&variant=LCP&viz=value"))).toBeNull();
+    expect(f32VitalDeVerdict(plan("dataset=vitals&measure=rows:count&variant=LCP&viz=value"))).toBeNull();
+    // Hors jeu Web Vitals, ou variante hors CORE_VITALS : jamais de verdict.
+    expect(f32VitalDeVerdict(plan("dataset=resources&measure=duration_ms:p75&viz=value"))).toBeNull();
+    expect(
+      f32VitalDeVerdict({ dataset: "vitals", measure: { field: "value", aggregation: "p75" }, variant: "SVI_LATENCE" }),
+    ).toBeNull();
+  });
+
+  it("phrase R-V pour la moyenne et le p95 d'un vital, rien ailleurs", () => {
+    expect(f32PhraseSansVerdict(plan("dataset=vitals&measure=value:avg&variant=LCP&viz=value"))).toBe(
+      "Seuils web.dev définis pour le p75 : aucun verdict n'est donné pour la moyenne.",
+    );
+    expect(f32PhraseSansVerdict(plan("dataset=vitals&measure=value:p95&variant=INP&viz=value"))).toContain("le p95");
+    expect(f32PhraseSansVerdict(plan("dataset=vitals&measure=value:p75&variant=LCP&viz=value"))).toBeNull();
+    expect(f32PhraseSansVerdict(plan("dataset=resources&measure=duration_ms:avg&viz=value"))).toBeNull();
+  });
+
+  it("le format ne dépend pas du verdict : ms pour une durée, cls pour le CLS, compte sinon", () => {
+    expect(f32FormatDeMesure(plan("dataset=vitals&measure=value:avg&variant=LCP&viz=value"))).toBe("ms");
+    expect(f32FormatDeMesure(plan("dataset=vitals&measure=value:p95&variant=CLS&viz=value"))).toBe("cls");
+    expect(f32FormatDeMesure(plan("dataset=resources&measure=transfer_size:sum&viz=value"))).toBe("bytes");
+    expect(f32FormatDeMesure(plan("dataset=errors&measure=occurrences:sum&viz=value"))).toBe("count");
+    expect(f32FormatDeMesure(plan("dataset=sessions&measure=visitors:distinct&viz=value"))).toBe("count");
+  });
+
+  it("titres W-E3 à W-E6", () => {
+    expect(f32TitreResultat(plan("dataset=vitals&measure=value:p75&variant=LCP&viz=value"))).toBe("LCP — p75");
+    expect(f32TitreResultat(plan("dataset=vitals&measure=value:p75&variant=LCP&viz=toplist&g0=route"))).toBe(
+      "LCP — p75 par route",
+    );
+    expect(f32TitreResultat(plan("dataset=errors&measure=occurrences:sum&viz=timeseries&g0=browser&limit=3"))).toBe(
+      "Occurrences — Somme dans le temps, par navigateur",
+    );
+    expect(f32TitreResultat(plan("dataset=errors&measure=occurrences:sum&viz=table&limit=25"))).toBe("Lignes du résultat");
+  });
+
+  it("la référence de cmp=prev écrit la plage précédente en clair, en UTC", () => {
+    const q = requete("app=demo&period=24h");
+    expect(f32ReferencePrecedente(q.range)).toBe("vs 24 h précédentes (15/09 12:00 → 16/09 12:00 UTC)");
+    const perso = requete("app=demo&from=2026-09-17T08:00:00Z&to=2026-09-17T10:00:00Z");
+    expect(f32ReferencePrecedente(perso.range)).toBe("vs période précédente (17/09 06:00 → 17/09 08:00 UTC)");
+  });
+});
+
+describe("F32 — drill-down d'un groupe (P8, § 3.3)", () => {
+  const query = requete("app=demo&period=7d");
+
+  it("paramètre dédié pour une valeur connue, période conservée, exécuté, sans curseur", () => {
+    const p = plan("app=demo&period=7d&dataset=vitals&measure=value:p75&variant=LCP&viz=toplist&g0=route", query);
+    const href = new URLSearchParams(f32GroupeHref(query, p, ["/checkout"], { cmp: "prev" }).split("?")[1]);
+    expect(href.get("route")).toBe("/checkout");
+    expect(href.get("period")).toBe("7d");
+    expect(href.get("run")).toBe("1");
+    expect(href.get("cmp")).toBe("prev");
+    expect(href.has("cursor")).toBe(false);
+  });
+
+  it("groupe « Inconnu » → seg is_null ; paramètre déjà pris → seg eq ; deux dimensions → deux conditions", () => {
+    const inconnu = f32FiltresDuGroupe(query.filters, ["browser"], [null]);
+    expect(inconnu.segments).toEqual([{ dimension: "browser", operator: "is_null", value: null }]);
+    expect(inconnu.browser).toBeUndefined();
+
+    const pris = requete("app=demo&browser=Firefox");
+    const filtres = f32FiltresDuGroupe(pris.filters, ["browser", "device"], ["Chrome", "mobile"]);
+    expect(filtres.browser).toBe("Firefox");
+    expect(filtres.segments).toEqual([{ dimension: "browser", operator: "eq", value: "Chrome" }]);
+    expect(filtres.device).toBe("mobile");
+
+    // Un appareil hors du contrat (« bot ») ne peut pas poser `device=` : il passe par seg.
+    expect(f32FiltresDuGroupe(query.filters, ["device"], ["bot"]).segments).toEqual([
+      { dimension: "device", operator: "eq", value: "bot" },
+    ]);
+    // Une dimension sans paramètre dédié passe toujours par seg.
+    expect(f32FiltresDuGroupe(query.filters, ["source"], ["extension"]).segments).toEqual([
+      { dimension: "source", operator: "eq", value: "extension" },
+    ]);
   });
 });

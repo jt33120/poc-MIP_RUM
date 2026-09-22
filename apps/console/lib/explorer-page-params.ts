@@ -21,6 +21,7 @@ import {
   VISUALIZATIONS,
   VISUALIZATION_LABELS,
   datasetDefinition,
+  fieldDefinition,
   isExplorerDataset,
   parseAstFilters,
   parseExplorerPlan,
@@ -31,17 +32,25 @@ import {
   type Visualization,
 } from "./analytics-schema";
 import {
+  DEVICES,
   DIMENSION_LABELS,
   PARAM_DIMENSIONS,
+  PRESET_LABELS,
   conditionsOf,
   hrefWithQuery,
+  previousRange,
   queryToSearchParams,
   serializeSegments,
   type AnalyticsFilters,
   type AnalyticsQuery,
+  type Device,
+  type Dimension,
   type FilterCondition,
   type ParamReader,
+  type ResolvedRange,
 } from "./query-contract";
+import { estVital, formatDuVital, type FormatId, type VitalName } from "./fmt-ids";
+import { CORE_VITALS } from "./rating";
 
 /** Paramètres propres à l'écran : tout le reste appartient au contrat commun. */
 export const EXPLORER_PARAMS = ["dataset", "measure", "prop", "variant", "g0", "g1", "viz", "limit", "run", "cursor"] as const;
@@ -432,4 +441,161 @@ export function explorerHrefFromAst(ast: unknown): { ok: true; href: string } | 
 /** Libellé lisible d'une clé de groupe : un tuple, « Inconnu » pour une valeur absente. */
 export function libelleCle(key: Array<string | null>): string {
   return key.length ? key.map((valeur) => valeur ?? "Inconnu").join(" · ") : "Ensemble de la population";
+}
+
+// ───────────────────────── F32 — représentations du résultat ─────────────────────────
+//
+// Une seule traduction « résultat Explorer → figure » (`ResultatAnalyse`, § 4.3), pour
+// l'Explorer et les cartes de tableau de bord. Ce qui suit en est la logique PURE.
+
+/**
+ * RÈGLE R-V (§ 1.5, § 5.21.4) — le verdict Web Vitals est réservé au p75. Les seuils
+ * de `lib/rating.ts` sont ceux de web.dev POUR LE P75 : une moyenne ou un p95 de LCP
+ * noté « Bon » serait un verdict inventé (CE13). Cette fonction est la SEULE porte :
+ * la prop `vital` d'une tuile ou d'une série, et la couleur de verdict d'un
+ * classement, ne reçoivent que son résultat — jamais `plan.variant` directement.
+ */
+export function vitalDeVerdict(plan: Pick<ExplorerPlan, "dataset" | "measure" | "variant">): VitalName | null {
+  if (plan.dataset !== "vitals") return null;
+  if (plan.measure.field !== "value" || plan.measure.aggregation !== "p75") return null;
+  const variante = plan.variant;
+  return variante !== null && CORE_VITALS.includes(variante) && estVital(variante) ? variante : null;
+}
+
+/**
+ * Phrase de lecture exigée par R-V quand un vital est mesuré autrement qu'au p75 :
+ * elle dit pourquoi la figure n'a ni badge, ni teinte, ni bande. `null` ailleurs.
+ */
+export function phraseSansVerdict(plan: Pick<ExplorerPlan, "dataset" | "measure" | "variant">): string | null {
+  if (plan.dataset !== "vitals" || plan.measure.field !== "value") return null;
+  const aggregation = plan.measure.aggregation;
+  if (aggregation !== "avg" && aggregation !== "p95") return null;
+  return `Seuils web.dev définis pour le p75 : aucun verdict n'est donné pour ${aggregation === "avg" ? "la moyenne" : "le p95"}.`;
+}
+
+/**
+ * Format d'affichage d'une mesure. Il ne dépend PAS du verdict : un LCP moyen reste
+ * une durée (`ms`), un CLS reste sans unité (`cls`), quelle que soit l'agrégation.
+ * Un dénombrement (lignes, distincts) est un compte ; une propriété déclarée par
+ * l'application n'a pas d'unité connue : deux décimales, jamais un arrondi muet.
+ */
+export function formatDeMesure(plan: Pick<ExplorerPlan, "dataset" | "measure" | "variant">): FormatId {
+  const { aggregation, field } = plan.measure;
+  if (aggregation === "count" || aggregation === "distinct") return "count";
+  if (plan.dataset === "vitals" && field === "value") {
+    return plan.variant !== null && estVital(plan.variant) ? formatDuVital(plan.variant) : "ms";
+  }
+  const champ = fieldDefinition(plan.dataset, field);
+  if (champ?.unit === "ms") return "ms";
+  if (champ?.unit === "octets") return "bytes";
+  if (champ?.kind === "json") return "ratio";
+  return "count";
+}
+
+/**
+ * Nom de la mesure, dans les mots de l'écran : la métrique pour une valeur de Web
+ * Vital (« LCP »), sinon le libellé du champ, suivi de la variante choisie
+ * (« Tâches longues (loaf) »).
+ */
+export function nomMesure(plan: Pick<ExplorerPlan, "dataset" | "measure" | "variant">): string {
+  if (plan.dataset === "vitals" && plan.measure.field === "value" && plan.variant !== null) return plan.variant;
+  const definition = datasetDefinition(plan.dataset);
+  const champ = fieldDefinition(plan.dataset, plan.measure.field);
+  const propriete = plan.measure.property ? ` « ${plan.measure.property} »` : "";
+  const variante = plan.variant !== null && definition.variant ? ` (${plan.variant})` : "";
+  return `${champ?.label ?? plan.measure.field}${propriete}${variante}`;
+}
+
+/** « LCP — p75 », « Occurrences — Somme » : ce qu'une valeur mesure (W-E3). */
+export function libelleMesure(plan: Pick<ExplorerPlan, "dataset" | "measure" | "variant">): string {
+  return `${nomMesure(plan)} — ${AGGREGATION_LABELS[plan.measure.aggregation]}`;
+}
+
+/**
+ * Titre de la figure selon la représentation (§ 5.21.4) : W-E3 « <Mesure> —
+ * <agrégation> », W-E4 « <Mesure> par <dimension> », W-E5 « <Mesure> dans le
+ * temps[, par <dimension>] », W-E6 « Lignes du résultat ».
+ */
+export function titreResultat(plan: ExplorerPlan): string {
+  const dimensions = plan.groupBy.map((d) => DIMENSION_LABELS[d].toLowerCase()).join(" puis ");
+  switch (plan.visualization) {
+    case "value":
+      return libelleMesure(plan);
+    case "toplist":
+      return dimensions ? `${libelleMesure(plan)} par ${dimensions}` : libelleMesure(plan);
+    case "timeseries":
+      return `${libelleMesure(plan)} dans le temps${dimensions ? `, par ${dimensions}` : ""}`;
+    case "table":
+      return "Lignes du résultat";
+  }
+}
+
+/**
+ * Référence d'une comparaison à la période précédente, écrite en clair (P4, § 3.12) :
+ * « vs 24 h précédentes (20/09 14:00 → 21/09 14:00 UTC) ». Les bornes sont celles
+ * de `previousRange`, en UTC — le fuseau des fenêtres du contrat (V6).
+ */
+export function referencePrecedente(range: ResolvedRange): string {
+  const precedente = previousRange(range);
+  const fmt = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const duree = range.preset ? `${PRESET_LABELS[range.preset]} précédentes` : "période précédente";
+  return `vs ${duree} (${fmt.format(new Date(precedente.from))} → ${fmt.format(new Date(precedente.to))} UTC)`;
+}
+
+/**
+ * Filtres qui isolent un groupe du résultat (drill-down P8, § 3.3) : une condition
+ * par dimension du regroupement. Une valeur connue d'une dimension à paramètre
+ * dédié (`route`, `browser`… ou `device` pour un appareil du contrat) le pose, sauf
+ * si ce paramètre est déjà pris — elle passe alors par `seg`, comme toute autre
+ * dimension ; le groupe « Inconnu » devient `seg=v2:<dim>:is_null`, jamais un
+ * paramètre vide.
+ */
+export function filtresDuGroupe(
+  filters: AnalyticsFilters,
+  groupBy: readonly Dimension[],
+  key: readonly (string | null)[],
+): AnalyticsFilters {
+  let out: AnalyticsFilters = { ...filters, segments: [...filters.segments] };
+  groupBy.forEach((dimension, rang) => {
+    const valeur = key[rang] ?? null;
+    if (valeur === null) {
+      out = { ...out, segments: [...out.segments, { dimension, operator: "is_null", value: null }] };
+      return;
+    }
+    if (dimension === "device" && out.device === undefined && estAppareil(valeur)) {
+      out = { ...out, device: valeur };
+      return;
+    }
+    const dediee = PARAM_DIMENSIONS.find((d) => d === dimension);
+    if (dediee && out[dediee] === undefined) {
+      out = { ...out, [dediee]: valeur };
+      return;
+    }
+    out = { ...out, segments: [...out.segments, { dimension, operator: "eq", value: valeur }] };
+  });
+  return out;
+}
+
+function estAppareil(valeur: string): valeur is Device {
+  return (DEVICES as readonly string[]).includes(valeur);
+}
+
+/**
+ * Lien d'un groupe du résultat : le MÊME Explorer, filtré sur ce groupe, exécuté,
+ * sans curseur. La plage (`period` ou `from`/`to`) et la population suivent ; `extra`
+ * porte les réglages de vue (`cmp`…).
+ */
+export function groupeHref(
+  query: AnalyticsQuery,
+  plan: ExplorerPlan,
+  key: readonly (string | null)[],
+  extra: Record<string, string | null> = {},
+): string {
+  return explorerHref({ ...query, filters: filtresDuGroupe(query.filters, plan.groupBy, key) }, plan, extra);
 }
