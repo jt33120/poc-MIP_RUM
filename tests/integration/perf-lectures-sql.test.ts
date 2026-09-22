@@ -427,3 +427,93 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
     });
   });
 });
+
+// ═══════════════ F15 — vuesParNavType (plan § 4.5, § 5.2.2 « Vues par type de navigation ») ═══════════════
+//
+// Sa propre app et ses propres données : ce bloc ne dépend pas du semis de F10.
+(url ? describe : describe.skip)("F15 — vuesParNavType sur PostgreSQL", () => {
+  const APP_F15 = "f15-nav-a";
+  const APP_F15_B = "f15-nav-b";
+  const c = new pg.Client(url ? { connectionString: url } : {});
+  let libF15: Console;
+  const fF15 = (qs: string, principal: ScopePrincipal = ADMIN) => libF15.filtersOfQuery(requete(`${FENETRE}&${qs}`, principal));
+
+  async function nettoyerF15(): Promise<void> {
+    for (const table of ["rum_pageview", "rum_session"]) {
+      await c.query(`delete from ${table} where app_id = any($1::text[])`, [[APP_F15, APP_F15_B]]);
+    }
+  }
+
+  beforeAll(async () => {
+    await c.connect();
+    for (const file of fichiersSql()) await c.query(readFileSync(file, "utf8"));
+    await nettoyerF15();
+    const sessions: [string, string, boolean][] = [
+      ["f15-s1", APP_F15, false],
+      ["f15-robot", APP_F15, true],
+      ["f15-b1", APP_F15_B, false],
+    ];
+    for (const [id, app, bot] of sessions) {
+      await c.query(
+        `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at)
+         values ($1, $2, 'desktop', $3, $4, $5)`,
+        [id, app, bot, H(-2), H(4)],
+      );
+    }
+    // /panier : 3 changements de route SPA + 2 chargements ; /accueil : un rechargement
+    // et une vue SANS nav_type ; /contact : un chargement ; puis ce qui ne doit JAMAIS
+    // compter sous A : un robot, l'app B, la période précédente. (`rum_pageview.route`
+    // est NOT NULL : une vue a toujours une route, contrairement à une mesure.)
+    const vues: [string, string, string, string, string | null, Date][] = [
+      ["f15-pv-1", "f15-s1", APP_F15, "/panier", "spa", H(0)],
+      ["f15-pv-2", "f15-s1", APP_F15, "/panier", "spa", H(0, 20)],
+      ["f15-pv-3", "f15-s1", APP_F15, "/panier", "spa", H(1)],
+      ["f15-pv-4", "f15-s1", APP_F15, "/panier", "navigate", H(1, 20)],
+      ["f15-pv-5", "f15-s1", APP_F15, "/panier", "navigate", H(2)],
+      ["f15-pv-6", "f15-s1", APP_F15, "/accueil", "reload", H(2, 20)],
+      ["f15-pv-7", "f15-s1", APP_F15, "/accueil", null, H(3)],
+      ["f15-pv-8", "f15-s1", APP_F15, "/contact", "navigate", H(3, 20)],
+      ["f15-pv-robot", "f15-robot", APP_F15, "/panier", "navigate", H(0)],
+      ["f15-pv-b", "f15-b1", APP_F15_B, "/panier", "spa", H(0)],
+      ["f15-pv-avant", "f15-s1", APP_F15, "/panier", "navigate", H(-1)],
+    ];
+    for (const [span, sid, app, route, nav, ts] of vues) {
+      await c.query(
+        `insert into rum_pageview (span_id, session_id, app_id, route, url, nav_type, started_at)
+         values ($1, $2, $3, $4, 'https://site.example/', $5, $6)`,
+        [span, sid, app, route, nav, ts],
+      );
+    }
+    libF15 = await consoleSur(url!);
+  }, 180_000);
+
+  afterAll(async () => {
+    await libF15?.pool.end();
+    await nettoyerF15();
+    await c.end();
+  });
+
+  it("3 vues spa + 2 navigate sur une route → segments [2, 3]", async () => {
+    const lignes = await libF15.vuesParNavType(fF15(`app=${APP_F15}`));
+    const panier = lignes.find((l) => l.route === "/panier");
+    expect([panier?.chargements, panier?.spa]).toEqual([2, 3]);
+    expect(panier?.inconnu).toBe(0);
+  });
+
+  it("par volume décroissant ; nav_type nul → « inconnu », jamais un chargement", async () => {
+    const lignes = await libF15.vuesParNavType(fF15(`app=${APP_F15}`));
+    expect(lignes).toEqual([
+      { route: "/panier", chargements: 2, spa: 3, inconnu: 0 },
+      { route: "/accueil", chargements: 1, spa: 0, inconnu: 1 },
+      { route: "/contact", chargements: 1, spa: 0, inconnu: 0 },
+    ]);
+  });
+
+  it("robot, autre app et période précédente exclus ; viewer restreint à B ; apps = [] → aucune ligne", async () => {
+    const b = await libF15.vuesParNavType(fF15(`app=${APP_F15_B}`));
+    expect(b).toEqual([{ route: "/panier", chargements: 0, spa: 1, inconnu: 0 }]);
+    const viewerB: ScopePrincipal = { role: "viewer", apps: [APP_F15_B] };
+    expect(await libF15.vuesParNavType(fF15("", viewerB))).toEqual(b);
+    expect(await libF15.vuesParNavType(libF15.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${APP_F15}`))))).toEqual([]);
+  });
+});

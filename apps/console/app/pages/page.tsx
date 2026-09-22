@@ -7,17 +7,25 @@
 // trois ordres différents : elles fusionnent dans le hero, classé par gravité sur
 // le vital choisi (`vital=`, LCP par défaut).
 //
+// F15 : zones 5 à 7 (hors tâches longues) — trois distributions sur leurs seuils,
+// au plafond d'affichage adaptatif ; percentiles par vital ; vues par type de
+// navigation (combien de vues d'une route n'ont PAS de LCP) ; phases du TTFB en
+// barres séparées, jamais empilées. Et le sommaire d'ancres d'une page longue.
+//
 // PAS DE `<Suspense>` AUTOUR DE L'ÉCRAN, ni de `loading.tsx` (F02) : une frontière
 // au-dessus de la page bloque les navigations qui ne changent que la query
 // (sélecteur de vital, période, comparaison). Les frontières restent par section.
-import { Histogram, PercentileTable } from "@/components/Distribution";
+import Link from "next/link";
+import { PercentileTable } from "@/components/Distribution";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
 import { PageHeader } from "@/components/PageHeader";
 import { PresetBar } from "@/components/PresetBar";
 import { LongtasksView } from "@/components/LongtasksView";
 import { ResourcesView } from "@/components/ResourcesView";
+import { DistributionSeuils, alternativeDistribution, bacsDeHistogramme } from "@/components/charts/DistributionSeuils";
 import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
+import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { SelecteurVital } from "@/components/perf/SelecteurVital";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { EtatSurface } from "@/components/states/EtatSurface";
@@ -29,20 +37,27 @@ import {
   type CouverturePrecedente,
   type SourceComparaison,
 } from "@/lib/comparaison";
-import { HISTO_BUCKETS, VITAL_CAP } from "@/lib/distribution";
+import { DEFAULT_ROWS, EXPLORER_VERSION } from "@/lib/analytics-schema";
+import { HISTO_BUCKETS } from "@/lib/distribution";
 import { etatLectureEchantillonnage } from "@/lib/echantillonnage";
+import { explorerHref } from "@/lib/explorer-page-params";
 import type { Filters, SearchParams } from "@/lib/filters";
 import { estVital, formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
 import { classerParGravite, estFaible } from "@/lib/impact";
 import { lire, type Lecture } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
+import { categorie } from "@/lib/palette";
 import {
   avecCondition,
   classementParRoute,
+  distributionsAffichees,
   ecartAEnsemblePages,
   ecartP75EntreReleases,
+  ecartPhaseTtfb,
   joindreRoutesPages,
   p75DeLaRoute,
+  phasesTtfb,
+  plafondAffichage,
   referencePrecedentePages,
   tuileRoutesAuDelaDeBon,
   type RoutePages,
@@ -50,7 +65,7 @@ import {
 } from "@/lib/perf-domain";
 import { choisirReleases, vuesProduit, type Entree, type LigneNavigateur, type LignePays } from "@/lib/presets";
 import { dimensionSupport } from "@/lib/query-compiler";
-import { hrefWithQuery, paramReader } from "@/lib/query-contract";
+import { hrefWithQuery, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
 import { dimensionSchema } from "@/lib/query-schema";
 import {
   ROUTES_MAX,
@@ -62,7 +77,12 @@ import {
   vitalPercentiles,
   vitalSeriesN,
   vitalsP75,
+  vuesParNavType,
+  type HistoRow,
+  type PageviewSeriesPoint,
   type VitalAgg,
+  type VitalPercentiles,
+  type VuesParNavType,
 } from "@/lib/queries";
 import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown, type BreakdownResult, type VitalsBreakdownRow } from "@/lib/queries-breakdowns";
 import { comparaisonVersions, listDeploys } from "@/lib/queries-deploys";
@@ -80,6 +100,16 @@ const SOURCE_VUES: SourceComparaison = { table: "rum_pageview", colonneTemps: "s
 
 /** Ancre du classement : la tuile « Routes au-delà de Bon » y mène. */
 const ANCRE_HERO = "hero-routes";
+
+/** Sommaire d'ancres d'une page longue (§ 5.2.1), dans l'ordre des zones. */
+const SOMMAIRE = [
+  { ancre: "distribution", libelle: "Distribution" },
+  { ancre: "percentiles", libelle: "Percentiles" },
+  { ancre: "navigation", libelle: "Navigation" },
+  { ancre: "reseau", libelle: "Réseau" },
+  { ancre: "fil-principal", libelle: "Fil principal" },
+  { ancre: "ressources", libelle: "Ressources" },
+] as const;
 
 /** Lecture non lancée (sans objet sous ce réglage) : jamais affichée comme une mesure. */
 const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
@@ -150,9 +180,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
     navigateurs,
     pays,
     pcts,
-    lcpH,
-    inpH,
-    clsH,
+    navigation,
     ressources,
     blocages,
     pires,
@@ -173,13 +201,24 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
     dispoNavigateur.available ? lire(() => vitalsBreakdown(f, "browser", ROUTES_MAX)) : sansLecture(null),
     dispoPays.available ? lire(() => vitalsBreakdown(f, "country", ROUTES_MAX)) : sansLecture(null),
     lire(() => vitalPercentiles(f)),
-    lire(() => vitalHistogram(f, "LCP", VITAL_CAP.LCP, HISTO_BUCKETS)),
-    lire(() => vitalHistogram(f, "INP", VITAL_CAP.INP, HISTO_BUCKETS)),
-    lire(() => vitalHistogram(f, "CLS", VITAL_CAP.CLS, HISTO_BUCKETS)),
+    lire(() => vuesParNavType(f)),
     lire(() => resourcesVue(f)),
     lire(() => longtaskSeries(f)),
     lire(() => worstLongtasks(f)),
   ]);
+
+  // ─── Distributions (§ 5.2.2) : le plafond d'affichage dépend des percentiles ───
+  // D'où une seconde lecture : 20 bacs linéaires jusqu'au plafond RETENU (VITAL_CAP,
+  // ou p99 arrondi quand la population est concentrée très en dessous). Percentiles
+  // illisibles : plafond par défaut, et « percentiles non calculables » sur la figure.
+  const pctsParNom = new Map((pcts.ok ? pcts.data : []).map((r) => [r.name, r] as const));
+  const distributions = distributionsAffichees(vital).map((nom) => {
+    const r = pctsParNom.get(nom);
+    return { nom, pcts: r, ...plafondAffichage(nom, r ? { p95: r.pcts[3] ?? null, p99: r.pcts[4] ?? null } : null) };
+  });
+  const histos = await Promise.all(
+    distributions.map((d) => lire(() => vitalHistogram(f, d.nom, d.plafond, HISTO_BUCKETS))),
+  );
 
   // ─── Vues préréglées (F08, § 3.6) : données lues ici, règles dans lib/presets.ts ───
   const choix = deploys.ok && versions.ok ? choisirReleases(deploys.data, versions.data.rows) : null;
@@ -278,6 +317,20 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
       <div className="-mt-3 mb-4 min-w-0">
         <PresetBar vues={vuesPrereglees} actif={etatVue.etat.vue ? ecrireVue(etatVue.etat.vue) : null} />
       </div>
+
+      {/* Sommaire d'ancres (§ 5.2.1) : une page longue se parcourt sans défiler à
+          l'aveugle. Des ancres, pas des onglets — tout reste sur la page. */}
+      <nav aria-label="Sommaire de la page" className="mb-4 flex flex-wrap gap-x-3 gap-y-1 text-xs" data-testid="sommaire-pages">
+        {SOMMAIRE.map((s) => (
+          <a
+            key={s.ancre}
+            href={`#${s.ancre}`}
+            className="rounded font-medium text-ink-soft underline-offset-2 hover:text-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+          >
+            {s.libelle}
+          </a>
+        ))}
+      </nav>
 
       {ignores.map((ligne) => (
         <p key={ligne} role="note" className="mb-2 text-xs text-ink-soft" data-testid="reglage-ignore">
@@ -443,67 +496,390 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
         </div>
       </SectionErreur>
 
-      {/* Distribution & percentiles (Lot 3) : ce que le p75 seul masque —
-          longue traîne (p90/p95/p99) et forme de la distribution. Chaque figure
-          a sa lecture : un histogramme en échec n'efface pas les deux autres. */}
-      <section className="mb-6 space-y-4">
-        <SectionErreur titre="Percentiles des Web Vitals">
-          {pcts.ok ? <PercentileTable rows={pcts.data} /> : <EchecLecture titre="Percentiles des Web Vitals" />}
-        </SectionErreur>
-        <div className="grid gap-4 md:grid-cols-3">
-          {(
-            [
-              ["LCP", lcpH],
-              ["INP", inpH],
-              ["CLS", clsH],
-            ] as const
-          ).map(([name, histo]) => (
-            <SectionErreur key={name} titre={`Distribution ${name}`}>
-              {histo.ok ? (
-                <Histogram name={name} rows={histo.data} cap={VITAL_CAP[name]} />
-              ) : (
-                <div className="card p-4">
-                  <EchecLecture compact titre={`Distribution ${name}`} />
-                </div>
-              )}
-            </SectionErreur>
-          ))}
-        </div>
+      {/* 5 — Distributions : ce que le p75 seul masque, la FORME de la population.
+          Chaque figure a sa lecture : un histogramme en échec n'efface pas les autres. */}
+      <section id="distribution" aria-label="Distributions" className="mb-6 grid scroll-mt-4 gap-4 md:grid-cols-3">
+        {distributions.map((d, i) => (
+          <SectionErreur key={d.nom} titre={`Distribution ${d.nom}`}>
+            <FigureDistribution
+              vital={d.nom}
+              histo={histos[i]}
+              percentiles={pcts.ok ? (d.pcts ?? null) : null}
+              pctsLus={pcts.ok}
+              plafond={d.plafond}
+              plafondLibelle={d.libelle}
+              plage={period.label}
+              explorer={journalDuVital(ecran.query, d.nom)}
+            />
+          </SectionErreur>
+        ))}
       </section>
 
-      {/* Ressources (P6.3) : ce qui est téléchargé, d'où, à quel coût — avec son
+      {/* 6 — Percentiles par vital : une table, pour comparer des valeurs précises. */}
+      <section id="percentiles" aria-labelledby="percentiles-titre" className="mb-6 min-w-0 scroll-mt-4">
+        <h2 id="percentiles-titre" className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+          Percentiles par vital
+        </h2>
+        <SectionErreur titre="Percentiles par vital">
+          {!pcts.ok ? (
+            <EchecLecture titre="Percentiles par vital" />
+          ) : pcts.data.some((r) => estVital(r.name)) ? (
+            <PercentileTable rows={pcts.data} />
+          ) : (
+            <EtatSurface etat={{ kind: "vide", population: "mesure de Web Vital", plage: period.label }} />
+          )}
+        </SectionErreur>
+      </section>
+
+      {/* 6 bis — Vues par type de navigation : combien de vues d'une route n'ont pas de LCP. */}
+      <div id="navigation" className="mb-6 scroll-mt-4">
+        <SectionErreur titre="Vues par type de navigation">
+          <FigureNavigation navigation={navigation} ensemble={vues} plage={period.label} drill={drillRoute} />
+        </SectionErreur>
+      </div>
+
+      {/* 7 — Réseau (5/12) · fil principal (7/12). */}
+      <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-12">
+        <div id="reseau" className="min-w-0 scroll-mt-4 lg:col-span-5">
+          <SectionErreur titre="D'où vient le TTFB">
+            <FigureTtfb
+              vitaux={vitaux}
+              precedents={
+                prev && vitauxPrev.ok && couvertureDe(couvVitaux).etat === "complete" ? vitauxPrev.data : null
+              }
+              raisonSansEcart={
+                !prev
+                  ? null
+                  : !vitauxPrev.ok
+                    ? "période précédente non lue"
+                    : couvertureDe(couvVitaux).etat !== "complete"
+                      ? `période précédente incomplète : ${couvertureDe(couvVitaux).raison ?? "raison non lue"}`
+                      : null
+              }
+              reference={reference}
+              plage={period.label}
+            />
+          </SectionErreur>
+        </div>
+
+        {/* Blocages du fil principal (P6.3) : la série, et le chemin vers la session.
+            Série et pires cas forment UNE section : l'un sans l'autre se lirait
+            comme un tableau complet. F16 la reprend. */}
+        <div id="fil-principal" className="min-w-0 scroll-mt-4 lg:col-span-7">
+          <SectionErreur titre="Blocages du fil principal">
+            {blocages.ok && pires.ok ? (
+              <LongtasksView
+                series={blocages.data}
+                worst={pires.data}
+                bucketSeconds={ecran.query.range.bucketSeconds}
+                bucketLabel={ecran.bucketLabel}
+                periodLabel={period.label}
+                sessionHref={(id) => hrefWithQuery(`/sessions/${encodeURIComponent(id)}`, ecran.query)}
+              />
+            ) : (
+              <EchecLecture titre="Blocages du fil principal" />
+            )}
+          </SectionErreur>
+        </div>
+      </div>
+
+      {/* 8 — Ressources (P6.3) : ce qui est téléchargé, d'où, à quel coût — avec son
           avertissement de collecte, et un partage première/tierce partie lu sur
           les seules origines déclarées de l'application. */}
-      <SectionErreur titre="Ressources">
-        {ressources.ok ? (
-          <ResourcesView vue={ressources.data} periodLabel={period.label} />
-        ) : (
-          <div className="mt-6">
-            <EchecLecture titre="Ressources" />
-          </div>
-        )}
-      </SectionErreur>
-
-      {/* Blocages du fil principal (P6.3) : la série, et le chemin vers la session.
-          Série et pires cas forment UNE section : l'un sans l'autre se lirait
-          comme un tableau complet. */}
-      <SectionErreur titre="Blocages du fil principal">
-        {blocages.ok && pires.ok ? (
-          <LongtasksView
-            series={blocages.data}
-            worst={pires.data}
-            bucketSeconds={ecran.query.range.bucketSeconds}
-            bucketLabel={ecran.bucketLabel}
-            periodLabel={period.label}
-            sessionHref={(id) => hrefWithQuery(`/sessions/${encodeURIComponent(id)}`, ecran.query)}
-          />
-        ) : (
-          <div className="mt-6">
-            <EchecLecture titre="Blocages du fil principal" />
-          </div>
-        )}
-      </SectionErreur>
+      <div id="ressources" className="scroll-mt-4">
+        <SectionErreur titre="Ressources">
+          {ressources.ok ? (
+            <ResourcesView vue={ressources.data} periodLabel={period.label} />
+          ) : (
+            <div className="mt-6">
+              <EchecLecture titre="Ressources" />
+            </div>
+          )}
+        </SectionErreur>
+      </div>
     </div>
+  );
+}
+
+/**
+ * Lien secondaire d'une distribution : le JOURNAL des mesures du vital dans
+ * l'Explorer (`viz=table`), même population et même plage. Ordonné par date — le
+ * tri par valeur n'existe pas (curseur `(ts, key)`, § 5.21 W-E6) : le lien le dit.
+ */
+function journalDuVital(query: AnalyticsQuery, vital: VitalName): string {
+  return explorerHref(query, {
+    version: EXPLORER_VERSION,
+    dataset: "vitals",
+    measure: { field: "rows", aggregation: "count" },
+    variant: vital,
+    groupBy: [],
+    visualization: "table",
+    limit: DEFAULT_ROWS,
+    cursor: null,
+  });
+}
+
+/**
+ * « Distribution <vital> » (§ 5.2.2) : histogramme SSR coloré par zone de seuil, repères
+ * p50 / p75 / p95 (et la bande d'intervalle du p75, P*.1). Bacs NON cliquables (le
+ * contrat ne filtre pas sur une valeur de mesure) ; le plafond retenu est écrit sous
+ * l'axe et dans l'alternative.
+ */
+function FigureDistribution({
+  vital,
+  histo,
+  percentiles,
+  pctsLus,
+  plafond,
+  plafondLibelle,
+  plage,
+  explorer,
+}: {
+  vital: VitalName;
+  histo: Lecture<HistoRow[]>;
+  percentiles: VitalPercentiles | null;
+  pctsLus: boolean;
+  plafond: number;
+  plafondLibelle: string | null;
+  plage: string;
+  explorer: string;
+}) {
+  const titre = `Distribution ${vital}`;
+  const id = `distribution-${vital.toLowerCase()}`;
+  if (!histo.ok) return <Figure titre={titre} id={id} etat={{ kind: "erreur", titre }} />;
+  const bacs = bacsDeHistogramme(histo.data, plafond, HISTO_BUCKETS);
+  const n = bacs.reduce((s, b) => s + b.n, 0);
+  if (n === 0) return <Figure titre={titre} id={id} etat={{ kind: "vide", population: `mesure ${vital}`, plage }} />;
+  const p = percentiles?.pcts ?? null;
+  const reperes = p ? { p50: p[0] ?? null, p75: p[1] ?? null, p95: p[3] ?? null } : null;
+  const intervalle = percentiles?.intervalle && !("indisponible" in percentiles.intervalle) ? percentiles.intervalle : null;
+  const alternative = alternativeDistribution({ vital, bacs, plafond, percentiles: reperes, n });
+  const plafondTexte = plafondLibelle ?? `plafond d'affichage : ${formater(formatDuVital(vital), plafond)} (par défaut)`;
+  return (
+    <Figure
+      titre={titre}
+      id={id}
+      meta={
+        <>
+          <span>{formater("count", n)} mesures</span>
+          <span>{plage}</span>
+          <span data-testid="distribution-plafond">{plafondTexte}</span>
+        </>
+      }
+      alternative={{ ...alternative, legende: `${alternative.legende} ${plafondTexte[0].toUpperCase()}${plafondTexte.slice(1)}.` }}
+    >
+      {!pctsLus && (
+        <div className="mb-2">
+          <EtatSurface compact etat={{ kind: "partiel", raison: "percentiles non lus : repères absents, plafond par défaut." }} />
+        </div>
+      )}
+      <DistributionSeuils
+        vital={vital}
+        bacs={bacs}
+        plafond={plafond}
+        plafondLibelle={plafondLibelle ?? undefined}
+        percentiles={reperes}
+        n={n}
+        intervalleP75={intervalle ? { bas: intervalle.bas, haut: intervalle.haut } : null}
+        alternative={false}
+      />
+      <Link
+        href={explorer}
+        className="mt-2 inline-block rounded text-xs font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+        data-testid="distribution-explorer"
+      >
+        Voir les mesures dans l&apos;Explorer (ordonnées par date)
+      </Link>
+    </Figure>
+  );
+}
+
+/** Couleurs des classes de navigation : catégorielles (aucune n'est un verdict). */
+const CLASSES_NAVIGATION = [
+  { cle: "chargements", libelle: "Chargement", couleur: categorie(0) },
+  { cle: "spa", libelle: "Changement de route SPA", couleur: categorie(1) },
+  { cle: "inconnu", libelle: "Type inconnu", couleur: categorie(4) },
+] as const;
+
+/** Nombre de routes montrées par « Vues par type de navigation » (§ 5.2.2). */
+const ROUTES_NAVIGATION = 12;
+
+/**
+ * « Vues par type de navigation » (§ 5.2.2) : une barre par route, découpée en deux
+ * segments ADDITIFS — chargements et changements de route SPA — plus les vues sans
+ * `nav_type`, nommées « type inconnu » (jamais versées dans les chargements). Répond
+ * à « quelle part des vues de cette route n'a pas de LCP ? ». Ligne « Ensemble » en
+ * tête (les pages vues de la fenêtre, `pageviewSeries`), puis 12 routes au plus par
+ * volume décroissant.
+ */
+function FigureNavigation({
+  navigation,
+  ensemble,
+  plage,
+  drill,
+}: {
+  navigation: Lecture<VuesParNavType[]>;
+  ensemble: Lecture<PageviewSeriesPoint[]>;
+  plage: string;
+  drill: (route: string | null) => string;
+}) {
+  const titre = "Vues par type de navigation";
+  if (!navigation.ok) return <Figure titre={titre} id="figure-navigation" etat={{ kind: "erreur", titre }} />;
+  if (navigation.data.length === 0) {
+    return <Figure titre={titre} id="figure-navigation" etat={{ kind: "vide", population: "page vue", plage }} />;
+  }
+  const total = (l: { chargements: number; spa: number; inconnu: number }) => l.chargements + l.spa + l.inconnu;
+  const totalEnsemble = ensemble.ok
+    ? ensemble.data.reduce(
+        (s, p) => ({ chargements: s.chargements + p.chargements, spa: s.spa + p.spa, inconnu: s.inconnu + p.inconnu }),
+        { chargements: 0, spa: 0, inconnu: 0 },
+      )
+    : null;
+  const lignes = [
+    ...(totalEnsemble ? [{ route: null as string | null, ensemble: true, ...totalEnsemble }] : []),
+    ...navigation.data.slice(0, ROUTES_NAVIGATION).map((l) => ({ ...l, ensemble: false })),
+  ];
+  const sousTexte = (l: { chargements: number; spa: number; inconnu: number }) =>
+    [
+      `${formater("count", l.chargements)} chargement${l.chargements > 1 ? "s" : ""}`,
+      `${formater("count", l.spa)} SPA`,
+      ...(l.inconnu > 0 ? [`${formater("count", l.inconnu)} type inconnu`] : []),
+    ].join(" · ");
+  const data: RankDatum[] = lignes.map((l) => ({
+    label: l.ensemble ? "Ensemble" : groupLabel(l.route),
+    value: total(l),
+    display: formater("count", total(l)),
+    sub: sousTexte(l),
+    href: l.ensemble ? undefined : drill(l.route),
+    title: `${l.ensemble ? "Ensemble" : groupLabel(l.route)} — ${sousTexte(l)}`,
+    segments: CLASSES_NAVIGATION.map((c) => ({ value: l[c.cle], color: c.couleur, label: `${c.libelle} : ${formater("count", l[c.cle])}` })),
+  }));
+  const autres = navigation.data.length - Math.min(navigation.data.length, ROUTES_NAVIGATION);
+  return (
+    <Figure
+      titre={titre}
+      id="figure-navigation"
+      meta={
+        <>
+          <span>{plage}</span>
+          <span>
+            {Math.min(navigation.data.length, ROUTES_NAVIGATION).toLocaleString("fr-FR")} route(s) par volume décroissant
+            {autres > 0 ? `, ${autres.toLocaleString("fr-FR")} autre(s) non montrée(s)` : ""}
+          </span>
+          {!totalEnsemble && <span>ligne « Ensemble » non lue</span>}
+        </>
+      }
+      lecture={
+        <>
+          Le LCP n&apos;est mesuré qu&apos;au chargement : les changements de route SPA comptent des vues sans LCP.
+          Une vue sans type de navigation déclaré est comptée à part, jamais parmi les chargements.
+        </>
+      }
+      alternative={{
+        legende: `${titre} sur ${plage} : chargements, changements de route SPA et type inconnu, par route`,
+        colonnes: ["Route", "Chargements", "SPA", "Inconnu", "Total"],
+        lignes: lignes.map((l) => [l.ensemble ? "Ensemble" : groupLabel(l.route), l.chargements, l.spa, l.inconnu, total(l)]),
+      }}
+    >
+      <ul className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-soft" aria-label="Légende">
+        {CLASSES_NAVIGATION.map((c) => (
+          <li key={c.cle} className="flex items-center gap-1.5">
+            <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: c.couleur }} />
+            {c.libelle}
+          </li>
+        ))}
+      </ul>
+      <RankBar data={data} labelWidth="13rem" alternative={false} legende={titre} />
+    </Figure>
+  );
+}
+
+/**
+ * « D'où vient le TTFB » (§ 5.2.2) : une barre PAR PHASE, non empilées. Les p75 de
+ * phases ne s'additionnent pas — la somme de six p75 n'est pas le p75 du TTFB —,
+ * des barres séparées répondent à « quelle phase est la plus longue » sans suggérer
+ * une décomposition exacte. Phase absente : « — » et n = 0 ; aucune phase mesurée :
+ * non collecté. En `cmp=prev`, l'écart de chaque p75 (un écart de percentiles) en colonne,
+ * tu sous 100 mesures sur l'une des deux périodes (même garde que les tuiles, § 3.12).
+ */
+function FigureTtfb({
+  vitaux,
+  precedents,
+  raisonSansEcart,
+  reference,
+  plage,
+}: {
+  vitaux: Lecture<VitalAgg[]>;
+  /** p75 de la période précédente COMPLÈTE ; `null` : pas d'écart (raison à part). */
+  precedents: VitalAgg[] | null;
+  raisonSansEcart: string | null;
+  reference: string;
+  plage: string;
+}) {
+  const titre = "D'où vient le TTFB";
+  if (!vitaux.ok) return <Figure titre={titre} id="figure-ttfb" etat={{ kind: "erreur", titre }} />;
+  const phases = phasesTtfb(vitaux.data);
+  if (phases.every((p) => p.n === 0)) {
+    return (
+      <Figure
+        titre={titre}
+        id="figure-ttfb"
+        etat={{ kind: "non_collecte", manque: `aucune phase réseau (DNS, TCP, TLS, requête, réponse) mesurée sur ${plage} : navigateurs ou capteur qui ne les exposent pas.` }}
+      />
+    );
+  }
+  const avant = precedents ? phasesTtfb(precedents) : null;
+  // Même garde d'effectif que les tuiles de l'écran (`ecartPhaseTtfb`) : sous 100
+  // mesures d'un côté ou de l'autre, « échantillon faible », jamais un chiffre.
+  const ecarts = phases.map((p, i) => ecartPhaseTtfb(p, avant?.[i]));
+  /** Cellule de l'alternative (la référence est dans l'en-tête de colonne). */
+  const celluleEcart = (i: number): string | null => {
+    const e = ecarts[i];
+    return !e ? null : e.kind === "ecart" ? e.affichage : e.texte;
+  };
+  /** Sous-texte de la barre : l'écart suivi de sa référence, ou la raison de son absence. */
+  const texteEcart = (i: number): string | null => {
+    const e = ecarts[i];
+    return !e ? null : e.kind === "ecart" ? `${e.affichage} ${reference}` : e.texte;
+  };
+  const data: RankDatum[] = phases.map((p, i) => ({
+    label: p.libelle,
+    value: p.p75,
+    display: formater("ms", p.p75),
+    sub: [`n = ${formater("count", p.n)}`, ...(texteEcart(i) ? [texteEcart(i)] : [])].join(" · "),
+    title: `${p.libelle} — p75 ${formater("ms", p.p75)}, ${formater("count", p.n)} mesures`,
+  }));
+  return (
+    <Figure
+      titre={titre}
+      id="figure-ttfb"
+      meta={
+        <>
+          <span>p75 par phase</span>
+          <span>{plage}</span>
+          {raisonSansEcart && <span>sans écart : {raisonSansEcart}</span>}
+        </>
+      }
+      lecture={
+        <span data-testid="ttfb-phrase">
+          Chaque barre est le p75 d&apos;une phase mesurée à part ; leur somme n&apos;est pas le TTFB.
+        </span>
+      }
+      alternative={{
+        legende: `${titre} : p75 de chaque phase réseau et nombre de mesures sur ${plage} ; phases non additionnées`,
+        colonnes: avant ? ["Phase", "p75", "Mesures", `Écart ${reference}`] : ["Phase", "p75", "Mesures"],
+        lignes: phases.map((p, i) => [
+          p.libelle,
+          formater("ms", p.p75),
+          p.n,
+          ...(avant ? [celluleEcart(i)] : []),
+        ]),
+      }}
+    >
+      <div data-testid="ttfb-phases">
+        <RankBar data={data} labelWidth="8rem" alternative={false} legende={titre} />
+      </div>
+    </Figure>
   );
 }
 
