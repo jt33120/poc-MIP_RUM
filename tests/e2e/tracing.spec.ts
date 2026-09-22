@@ -346,3 +346,92 @@ test.describe("F60 — écran Tracing (§ 5.8)", () => {
     expect(fautes).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Détail de trace (§ 5.9, F61) : même semis que F60, dans SA propre app. La trace
+// n° 4 (« POST /api/f60/panier », 503 côté navigateur et côté serveur) sert de cas :
+//   - le segment 503 porte le ton `erreur` (la couleur dit la sévérité) ;
+//   - l'identifiant COMPLET (32 caractères) se copie ;
+//   - `?span=` inconnu → état `missing`, jamais une mise en évidence silencieuse ;
+//   - « Erreurs liées » somme les occurrences (V1) ; rejeu à l'instant de l'appel.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test.describe("F61 — détail de trace (§ 5.9)", () => {
+  const APP_F61 = "f61-e2e-trace";
+  const PREFIXE = "f61b";
+  // Quatrième trace semée (trois « GET /api/f60/lent », puis le 503).
+  const TRACE_503 = `${PREFIXE}${(4).toString(16).padStart(28, "0")}`;
+  const FRONT_503 = `${PREFIXE}${(8).toString(16).padStart(12, "0")}`;
+
+  test.beforeAll(async () => {
+    await semerTracesF60(APP_F61, PREFIXE);
+    // Deux lignes du même groupe sur la trace 503 : l'écran doit dire 5 occurrences, pas 2 lignes.
+    for (const [i, occurrences] of [2, 3].entries()) {
+      await pool.query(
+        `insert into rum_error (span_id, session_id, app_id, route, kind, error_type, message, fingerprint,
+                                trace_id, source_parent_span_id, occurrences, ts)
+         values ($1, $2, $3, '/f60', 'error', 'TypeError', 'panier indisponible (e2e)', 'f61-e2e-fp',
+                 $4, $5, $6, now() - interval '30 minutes')`,
+        [`${APP_F61}-err-${i}`, `${APP_F61}-s1`, APP_F61, TRACE_503, FRONT_503, occurrences],
+      );
+    }
+  });
+
+  const ouvrir = async (page: Page, extra = "") => {
+    await loginConsole(page);
+    await page.goto(`${CONSOLE_F60}/tracing/${TRACE_503}?app=${APP_F61}${extra}`, { waitUntil: "domcontentloaded" });
+  };
+
+  test("un segment 503 est en ton « erreur » ; la sévérité est aussi écrite", async ({ page }) => {
+    await ouvrir(page);
+    const erreurs = page.locator('#chronologie [data-testid="cascade-element"][data-ton="erreur"]');
+    await expect(erreurs).toHaveCount(2); // navigateur et serveur
+    await expect(erreurs.first()).toContainText("HTTP 503");
+    await expect(erreurs.first()).toContainText("erreur");
+  });
+
+  test("l'identifiant complet (32 caractères) se copie", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: CONSOLE_F60 });
+    await ouvrir(page);
+    await expect(page.getByTestId("trace-id")).toHaveValue(TRACE_503);
+    expect(TRACE_503).toHaveLength(32);
+    await page.getByTestId("copier-trace").click();
+    await expect(page.getByTestId("copier-trace")).toHaveText("Copié");
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(TRACE_503);
+  });
+
+  test("?span= inconnu → état « missing » ; connu → mis en évidence", async ({ page }) => {
+    await ouvrir(page, "&span=ffffffffffffffff");
+    await expect(page.getByTestId("trace-span-state")).toHaveAttribute("data-span-state", "missing");
+    await page.goto(`${CONSOLE_F60}/tracing/${TRACE_503}?app=${APP_F61}&span=${FRONT_503}`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("trace-span-state")).toHaveAttribute("data-span-state", "found");
+    await expect(page.locator('#chronologie [aria-current="true"]')).toHaveCount(1);
+  });
+
+  test("erreurs liées : sum(occurrences) et lien vers le segment parent ; rejeu à l'instant de l'appel", async ({ page }) => {
+    await ouvrir(page);
+    const liees = page.getByTestId("erreurs-liees");
+    await expect(liees).toContainText("panier indisponible (e2e)");
+    await expect(liees).toContainText("5 occurrences");
+    await expect(liees.getByRole("link", { name: "Segment parent" })).toHaveAttribute("href", new RegExp(`span=${FRONT_503}`));
+
+    const { rows } = await pool.query(`select ts from rum_span where span_id = $1`, [FRONT_503]);
+    const href = await page.getByTestId("rejeu-appel").getAttribute("href");
+    const cible = new URL(href!, CONSOLE_F60);
+    expect(cible.pathname).toBe(`/sessions/${APP_F61}-s1`);
+    expect(cible.searchParams.get("tab")).toBe("replay");
+    expect(cible.searchParams.get("at")).toBe(String(new Date(rows[0].ts).getTime()));
+  });
+
+  test("aucun débordement à 390, 768 et 1440 px", async ({ page }) => {
+    await loginConsole(page);
+    const fautes: string[] = [];
+    for (const largeur of LARGEURS) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(`${CONSOLE_F60}/tracing/${TRACE_503}?app=${APP_F61}`, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#chronologie")).toBeVisible();
+      for (const faute of await debordements(page)) fautes.push(`${largeur} px — ${faute}`);
+    }
+    expect(fautes).toEqual([]);
+  });
+});
