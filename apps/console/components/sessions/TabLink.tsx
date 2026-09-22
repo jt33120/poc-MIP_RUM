@@ -16,12 +16,18 @@ export function TabLink({
   href,
   active,
   compte,
+export function TabLink({
+  href,
+  active,
+  className = "",
   children,
 }: {
   href: string;
   active: boolean;
   /** `null` = compte inconnu → « (—) » ; absent = onglet sans compte. */
   compte?: number | null;
+  /** Classes de disposition ajoutées (ex. `flex-1` : onglets pleins à 390 px, F22). */
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -32,6 +38,8 @@ export function TabLink({
         // Inactif en `ink-soft`, pas `ink-faint` (≈ 2,8:1) : un libellé de 14 px reste lisible (§ 3.9).
         active ? "border-accent text-ink" : "border-transparent text-ink-soft hover:text-ink"
       }`}
+        active ? "border-accent text-ink" : "border-transparent text-ink-faint hover:text-ink-soft"
+      } ${className}`}
     >
       {children}
       {compte !== undefined && (

@@ -211,7 +211,10 @@ test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché 
   await expect(ligne.getByTestId("group-occurrences")).toHaveText("38");
   // p51fp004 n'a aucune session de son app : le filtre d'appareil l'exclut.
   await expect(page.locator('[data-testid="error-group-p51fp004"]')).toHaveCount(0);
-  await expect(page.getByText("Occurrences · 24 h", { exact: true }).locator("..")).toContainText("38");
+  // Tuile « Occurrences » de la rangée de F18 : la même population que la liste.
+  await expect(
+    page.getByTestId("kpi-tile").filter({ has: page.getByText("Occurrences", { exact: true }) }).getByTestId("kpi-valeur"),
+  ).toHaveText("38");
   // Un seul lien par ligne, qui garde l'app et les filtres.
   await expect(ligne.getByRole("link")).toHaveCount(1);
   const href = await ligne.getByRole("link").getAttribute("href");

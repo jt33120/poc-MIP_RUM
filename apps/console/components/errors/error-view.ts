@@ -1,15 +1,8 @@
 // Liens, libellés et données de graphique des écrans Erreurs (P5.1). Logique pure :
 // aucune lecture, testée par tests/unit/errors-view.test.ts.
-import type { StackSeries } from "@/components/charts/StackedBars";
 import type { IssueListFilters } from "@/lib/error-issues";
 import { queryOf, type SearchParams } from "@/lib/filters";
-import type {
-  ErrorFilters,
-  ErrorGroupRef,
-  ErrorGroupRow,
-  ErrorOccurrenceRow,
-  ErrorTrendPoint,
-} from "@/lib/queries-errors";
+import type { ErrorFilters, ErrorGroupRef, ErrorOccurrenceRow } from "@/lib/queries-errors";
 import { queryToSearchParams } from "@/lib/query-contract";
 
 /**
@@ -109,40 +102,4 @@ export function bucketTick(bucket: Date, bucketSeconds: number): string {
   return bucketSeconds >= 21_600
     ? bucket.toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit" })
     : bucket.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-}
-
-const PALETTE = ["#ef4444", "#f89101", "#d97706", "#7c3aed", "#2563eb"];
-const TOP_N = 5;
-
-/**
- * Volume par seau, empilé par groupe dominant de la page. « autres » est la
- * population MOINS les groupes dessinés, pas la somme des groupes restants de la
- * page : la tendance couvre aussi les groupes des pages suivantes, et le total
- * d'une colonne reste celui de la tendance. Borné à 0 par prudence : un empilement
- * ne dessine jamais une quantité négative.
- */
-export function errorVolumeChart(
-  groups: Pick<ErrorGroupRow, "error_type" | "series">[],
-  trend: ErrorTrendPoint[],
-  bucketSeconds: number,
-): { data: Record<string, number | string>[]; series: StackSeries[] } {
-  const top = groups.slice(0, TOP_N);
-  const data = trend.map((point, i) => {
-    const row: Record<string, number | string> = { h: bucketTick(point.bucket, bucketSeconds) };
-    let dessine = 0;
-    top.forEach((g, gi) => {
-      const v = g.series?.[i] ?? 0;
-      row[`g${gi}`] = v;
-      dessine += v;
-    });
-    row.autres = Math.max(0, point.occurrences - dessine);
-    return row;
-  });
-  const series: StackSeries[] = top.map((g, gi) => ({
-    key: `g${gi}`,
-    name: (g.error_type ?? "Error").slice(0, 22),
-    color: PALETTE[gi],
-  }));
-  if (data.some((row) => Number(row.autres) > 0)) series.push({ key: "autres", name: "autres", color: "#94a3b8" });
-  return { data, series };
 }
