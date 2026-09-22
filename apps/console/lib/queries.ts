@@ -882,3 +882,49 @@ export async function visitStats(f: Filters): Promise<VisitStats> {
   );
   return row ?? { sessions: 0, visits: 0, returning_count: 0, new_count: 0, unidentified_count: 0 };
 }
+
+// ═══════════════════ F15 — Vues par type de navigation (plan § 4.5, § 5.2.2) ═══════════════════
+
+export interface VuesParNavType {
+  /**
+   * Route normalisée. `rum_pageview.route` est NOT NULL (schema.sql) : jamais `null`
+   * aujourd'hui ; le type garde la signature du plan (§ 4.5), et l'écran rendrait
+   * un `null` en « Inconnu » plutôt que de le perdre.
+   */
+  route: string | null;
+  /** Chargements (`nav_type` navigate / reload / back_forward…) : seuls à porter un LCP. */
+  chargements: number;
+  /** Changements de route SPA (`nav_type = 'spa'`) : des vues sans LCP. */
+  spa: number;
+  /** Vues sans `nav_type` : ni rangées d'office parmi les chargements, ni perdues. */
+  inconnu: number;
+}
+
+/**
+ * Pages vues par route, découpées par classe de navigation : « quelle part des vues
+ * de cette route n'a pas de LCP ? » (Datadog « Initial page load vs SPA route
+ * changes », qui ne donne pas la route). MÊME définition des classes que
+ * `pageviewSeries` (F10) : la ligne « Ensemble » de l'écran se lit sur celle-ci, et
+ * Σ (chargements + spa + inconnu) d'une route = ses pages vues.
+ *
+ * Par volume décroissant, et bornée à `ROUTES_MAX` (garde de cardinalité, comme
+ * `slowRoutes`) : l'écran en montre 12. Un compte additif : une route sans vue n'a
+ * pas de ligne, une classe sans vue vaut 0.
+ */
+export async function vuesParNavType(f: FiltersLike): Promise<VuesParNavType[]> {
+  const sql = await sqlContext(f);
+  const where = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at" });
+  return q<VuesParNavType>(
+    `select p.route,
+            count(*) filter (where p.nav_type is not null and p.nav_type <> 'spa')::int as chargements,
+            count(*) filter (where p.nav_type = 'spa')::int as spa,
+            count(*) filter (where p.nav_type is null)::int as inconnu
+       from rum_pageview p
+       ${sessionJoin("p", "s")}
+      where true${where}
+      group by p.route
+      order by count(*) desc, p.route asc nulls last
+      limit ${ROUTES_MAX}`,
+    sql.params,
+  );
+}
