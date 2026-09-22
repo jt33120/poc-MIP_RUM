@@ -165,8 +165,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
   const byName = Object.fromEntries((vitals.ok ? vitals.data : []).map((v) => [v.name, v]));
   const prevByName = Object.fromEntries((vitalsPrev.ok ? vitalsPrev.data : []).map((v) => [v.name, v]));
+  // La référence s'écrit à côté de l'écart (DeltaBadge, F03, P4) ; son libellé daté
+  // (plage précédente résolue) arrive avec la rangée de KpiTile de F11.
   const pctOf = (cur: number, ref: number | null | undefined) =>
-    deltasHero.deltas && ref != null && ref !== 0 ? { pct: ((cur - ref) / ref) * 100 } : null;
+    deltasHero.deltas && ref != null && ref !== 0
+      ? { pct: ((cur - ref) / ref) * 100, reference: "période précédente" }
+      : null;
 
   return (
     <div className="animate-fade-up">
@@ -482,7 +486,7 @@ function HeroVolume({
   stats: OverviewStats;
   statsPrev: Lecture<OverviewStats | null>;
   periodLabel: string;
-  pctOf: (cur: number, prev: number | null | undefined) => { pct: number } | null;
+  pctOf: (cur: number, prev: number | null | undefined) => { pct: number; reference: string } | null;
 }) {
   const prev = statsPrev.ok ? statsPrev.data : null;
   // Sans page vue, le taux n'a pas de dénominateur : « — », jamais « 0 % » — qui se
