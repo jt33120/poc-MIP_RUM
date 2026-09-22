@@ -90,11 +90,14 @@ describe("la liste des routes est bornée, et le dit", () => {
     // Une liste coupée en silence ferait croire à un catalogue plus petit qu'il
     // n'est — le genre de silence que ce dépôt corrige ailleurs.
     expect(QUERIES).toContain("export async function nombreDeRoutes");
-    // Le total est une lecture à part (`lire`, F02) : lu, il est comparé au
-    // plafond ; illisible, l'écran dit que la liste PEUT être coupée.
-    expect(PAGE).toContain("routesTotal.data > ROUTES_MAX");
-    expect(PAGE).toContain("routes distinctes sur");
-    expect(PAGE).toContain("le nombre total de routes n'a pas pu être lu");
+    // F14 : le classement lit `vitalsBreakdown(f, "route", ROUTES_MAX)`, qui rend le
+    // nombre RÉEL de groupes et `truncated` dans la même lecture — plus de total lu
+    // à part, donc plus de cas « total illisible, liste peut-être coupée » : si la
+    // lecture échoue, il n'y a pas de liste du tout (« Lecture en échec »). La coupe
+    // se fait par VOLUME (CP1) et le bandeau le dit.
+    expect(PAGE).toContain("decoupe.data?.truncated");
+    expect(PAGE).toContain("routes distinctes mesurées sur");
+    expect(PAGE).toContain("moins mesurées, ne le sont pas");
   });
 
   it("et dit d'où vient une cardinalité qui grimpe", () => {
