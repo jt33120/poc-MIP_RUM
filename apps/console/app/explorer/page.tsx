@@ -477,7 +477,14 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
       {/* Zone 5 : la forme du résultat. Un onglet relit la MÊME requête (population,
           mesure, regroupements) sous une autre forme ; il ne la recompose pas.
           À 390 px, la rangée défile plutôt que de pousser la page. */}
-      <nav aria-label="Représentation" data-testid="explorer-representation" className="mb-6 flex overflow-x-auto border-b border-line">
+      {/* `relative` : les raisons `sr-only` des onglets désactivés sont en `position:
+          absolute` ; sans ancêtre positionné, elles se plaçaient par rapport à la PAGE
+          et l'élargissaient à 390 px (piège 16 du brief). */}
+      <nav
+        aria-label="Représentation"
+        data-testid="explorer-representation"
+        className="relative mb-6 flex overflow-x-auto border-b border-line"
+      >
         {VISUALIZATIONS.map((viz) =>
           viz === "timeseries" && serieIndisponible && viz !== vizCourante ? (
             <span

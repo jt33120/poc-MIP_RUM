@@ -450,7 +450,8 @@ function Journal({ plan, data, hrefs }: { plan: ExplorerPlan; data: ExplorerData
   const colonnes = datasetDefinition(plan.dataset).rows;
   return (
     <>
-      <div className="overflow-x-auto">
+      {/* `relative` : la légende `sr-only` (position: absolute) reste dans ce conteneur défilant (piège 16). */}
+      <div className="relative overflow-x-auto">
         <table className="w-full min-w-table text-sm">
           <caption className="sr-only">Journal des lignes correspondant à la requête, ordonnées par date</caption>
           <thead className="bg-panel2">
