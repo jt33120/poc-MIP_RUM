@@ -22,7 +22,8 @@ import { Sparkline } from "./Sparkline";
 import type { CouverturePrecedente } from "@/lib/comparaison";
 import { formater, referenceSansVs, libelleReference, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import { RATING_CLASS, RATING_LABEL, THRESHOLDS } from "@/lib/rating";
-import type { IntervalleP75 } from "@/lib/stats/incertitude";
+import type { Ecart, IntervalleP75 } from "@/lib/stats/incertitude";
+import { GlossaryTip } from "../GlossaryTip";
 import { lireVital, texteVerdict } from "@/lib/vital-lecture";
 
 export type SensMeilleur = "bas" | "haut" | "neutre";
@@ -162,6 +163,7 @@ export function KpiTile({
   lecture,
   alerte,
   intervalle,
+  ecart,
   href,
 }: {
   /** « LCP p75 », « Sessions commencées ». */
@@ -190,6 +192,12 @@ export function KpiTile({
   alerte?: AlerteTuile;
   /** Intervalle à 95 % (P*.1), ou pourquoi il n'est pas calculé. */
   intervalle?: IntervalleP75;
+  /**
+   * L'écart à `precedent` est-il établi (P*.1) ? Newcombe pour une proportion
+   * (`ecartProportions`), intervalles comparés pour une p75 (`ecartP75`). Non
+   * établi : le delta reste écrit, sans flèche ni couleur, avec sa règle.
+   */
+  ecart?: Ecart | null;
   /** La tuile entière est un lien. */
   href?: string;
 }) {
@@ -202,9 +210,12 @@ export function KpiTile({
   const verdict =
     connue && vital ? lireVital(vital, valeur, couverture?.n ?? 0, intervalle).verdict : null;
   const intervalleCalcule = connue && intervalle && !("indisponible" in intervalle) ? intervalle : null;
+  // Un vital sans intervalle calculable l'écrit AUSSI (critère de recette P*.1) :
+  // le verdict « non établi » dit ce qui manque au verdict, cette ligne ce qui
+  // manque à la valeur.
   const texteIntervalle = intervalleCalcule
     ? `entre ${formater(format, intervalleCalcule.bas)} et ${formater(format, intervalleCalcule.haut)} (95 %)`
-    : connue && intervalle && "indisponible" in intervalle && !vital
+    : connue && intervalle && "indisponible" in intervalle
       ? `intervalle non calculable : ${intervalle.indisponible}`
       : null;
 
@@ -216,6 +227,16 @@ export function KpiTile({
     n: couverture?.n,
     faibleSous,
   });
+
+  // Un delta que l'incertitude n'établit pas n'a ni flèche ni couleur : il est
+  // écrit, suivi de la règle qui le laisse ouvert.
+  const deltaNonEtabli = comparaison?.kind === "delta" && ecart != null && !ecart.etabli;
+  const texteComparaison =
+    comparaison?.kind === "delta"
+      ? deltaNonEtabli
+        ? `${texteDelta(comparaison.pct, comparaison.reference)} — ${ecart!.regle}`
+        : texteDelta(comparaison.pct, comparaison.reference)
+      : (comparaison?.texte ?? null);
 
   const enAlerte = connue && alerte != null && alerteVraie(valeur, alerte);
   const echantillonFaible = connue && sousLeSeuil(couverture?.n, faibleSous);
@@ -230,7 +251,8 @@ export function KpiTile({
     `${label} ${texteValeur}`,
     !connue ? raisonNull : null,
     verdict ? texteVerdict(verdict) : null,
-    comparaison?.kind === "delta" ? texteDelta(comparaison.pct, comparaison.reference) : comparaison?.texte,
+    texteIntervalle,
+    texteComparaison,
     enAlerte ? `alerte : ${alerte?.regle}` : null,
     texteEffectif,
     echantillonFaible ? "échantillon faible" : null,
@@ -275,12 +297,20 @@ export function KpiTile({
       )}
 
       {texteIntervalle && (
-        <p className="text-xs text-ink-soft" data-testid="kpi-intervalle">
-          {texteIntervalle}
+        // La bulle OUVRE la ligne (elle s'ouvre vers l'intérieur à 390 px) ; dans une
+        // tuile-lien, pas de bulle : un bouton dans un lien est un HTML invalide.
+        <p className="flex min-w-0 items-start gap-1 text-xs text-ink-soft" data-testid="kpi-intervalle">
+          {!href && <GlossaryTip id="intervalle" />}
+          <span className="min-w-0 break-words">{texteIntervalle}</span>
         </p>
       )}
 
-      {comparaison?.kind === "delta" && (
+      {deltaNonEtabli && (
+        <p className="text-xs text-ink-soft" data-testid="kpi-comparaison">
+          {texteComparaison}
+        </p>
+      )}
+      {comparaison?.kind === "delta" && !deltaNonEtabli && (
         <DeltaBadge pct={comparaison.pct} reference={comparaison.reference} sensMeilleur={sens} />
       )}
       {comparaison?.kind === "silence" && (

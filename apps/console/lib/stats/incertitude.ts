@@ -200,3 +200,80 @@ export function intervalleP75Lu(
   if (bas == null || haut == null) return { indisponible: "bornes de l'intervalle non lues" };
   return { bas: Number(bas), haut: Number(haut), niveau: 0.95, methode: "quantile_normal" };
 }
+
+/**
+ * L'intervalle de Wilson d'une proportion, sous la forme que prennent les tuiles
+ * (`KpiTile.intervalle`). `null` SANS DÉNOMINATEUR : la valeur elle-même est alors
+ * `null` avec sa raison (invariant V3), et il n'y a pas d'intervalle à dire.
+ *
+ * Un numérateur supérieur au dénominateur n'est pas une proportion (ex. des
+ * sessions en erreur comptées sur une table, les sessions sur une autre) : on le
+ * DIT plutôt que de jeter ou de rogner — un intervalle rogné à 100 % aurait l'air
+ * d'une mesure.
+ */
+export function intervalleWilson(k: number | null | undefined, n: number | null | undefined): IntervalleP75 | null {
+  if (n == null || !(n > 0) || k == null || !Number.isFinite(k)) return null;
+  if (k < 0 || k > n) return { indisponible: `numérateur (${k}) hors de [0 ; ${n}] : ce n'est pas une proportion` };
+  const w = wilson(k, n);
+  return w.ok ? { bas: w.bas, haut: w.haut, niveau: 0.95, methode: "wilson" } : { indisponible: w.raison };
+}
+
+/** Sous ce dénominateur, une proportion porte « échantillon faible » à côté de son intervalle (P*.1, P3). */
+export const FAIBLE_SOUS_PROPORTION = 30;
+
+/**
+ * L'intervalle écrit en mots (RM3) : « entre 3,5 % et 25,6 % (95 %) », ou
+ * pourquoi il manque. `null` quand il n'y a rien à dire (pas de dénominateur).
+ */
+export function texteIntervalle(i: IntervalleP75 | null | undefined, fmt: (v: number) => string): string | null {
+  if (!i) return null;
+  if ("indisponible" in i) return `intervalle non calculable : ${i.indisponible}`;
+  return `entre ${fmt(i.bas)} et ${fmt(i.haut)} (95 %)`;
+}
+
+/**
+ * Ce qu'une tuile a le droit de dire d'un écart à la période précédente (P*.1,
+ * règle P4). `etabli: false` : l'écart observé reste écrit, mais sans couleur ni
+ * flèche, avec la règle qui le rend non établi.
+ */
+export type Ecart = { etabli: boolean; regle: string };
+
+/**
+ * Écart de deux PROPORTIONS (courante A, précédente B) : intervalle de Newcombe
+ * sur la différence ; s'il contient 0, l'écart n'est pas établi. `null` quand
+ * l'une des deux n'a pas de dénominateur (rien à comparer).
+ */
+export function ecartProportions(kA: number, nA: number, kB: number, nB: number): Ecart | null {
+  if (!(nA > 0) || !(nB > 0) || kA < 0 || kB < 0 || kA > nA || kB > nB) return null;
+  const d = newcombe(kA, nA, kB, nB);
+  if (!d.ok) return null;
+  const pts = (v: number) => `${v > 0 ? "+" : ""}${(v * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })}`;
+  const bornes = `de ${pts(d.bas)} à ${pts(d.haut)} points (Newcombe, 95 %)`;
+  return d.bas <= 0 && d.haut >= 0
+    ? { etabli: false, regle: `écart non établi : la différence est ${bornes}, zéro compris` }
+    : { etabli: true, regle: `différence ${bornes}` };
+}
+
+/**
+ * Écart de deux p75 : AUCUN TEST (le plan le refuse, faute de loi de la
+ * différence de deux quantiles à ce volume). Les deux intervalles sont comparés :
+ * s'ils se chevauchent, l'écart n'est pas établi. C'est conservateur — un
+ * chevauchement n'établit pas non plus l'ABSENCE d'écart, et le texte ne le
+ * prétend pas. Un intervalle manquant d'un côté suffit à ne rien établir.
+ *
+ * @param fmt formate une borne (« 2,10 s ») pour écrire l'intervalle précédent
+ */
+export function ecartP75(
+  courant: IntervalleP75 | undefined,
+  precedent: IntervalleP75 | undefined,
+  fmt: (v: number) => string = String,
+): Ecart | null {
+  if (!courant || !precedent) return null;
+  if ("indisponible" in courant || "indisponible" in precedent) {
+    return { etabli: false, regle: "écart non établi : intervalle non calculable sur l'une des deux périodes" };
+  }
+  const autre = `période précédente entre ${fmt(precedent.bas)} et ${fmt(precedent.haut)}`;
+  return courant.bas <= precedent.haut && precedent.bas <= courant.haut
+    ? { etabli: false, regle: `écart non établi : intervalles à 95 % qui se chevauchent (${autre})` }
+    : { etabli: true, regle: `intervalles à 95 % disjoints (${autre})` };
+}

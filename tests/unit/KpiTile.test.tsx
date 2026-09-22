@@ -264,3 +264,67 @@ describe("revue de vague 2", () => {
     expect(couleur(a)).toBe(couleur(b));
   });
 });
+
+// P*.1 — l'intervalle sur chaque chiffre clé (plan § 7.2, « Tests » : kpi-tile).
+describe("KpiTile — intervalle et écart (P*.1)", () => {
+  const WILSON = { bas: 0.035, haut: 0.256, niveau: 0.95, methode: "wilson" } as const;
+  const sansComparaison = { precedent: undefined, reference: undefined, couverturePrecedente: undefined };
+
+  it("intervalle qui chevauche 2 500 ms : « verdict incertain », aucun badge coloré", () => {
+    const html = rendu({ valeur: 2400, intervalle: { bas: 2300, haut: 2600, niveau: 0.95, methode: "quantile_exact" } });
+    expect(texte(html)).toContain("verdict incertain : entre Bon et À améliorer");
+    expect(html).not.toMatch(/data-testid="kpi-verdict"[^>]*>(Bon|À améliorer)</);
+  });
+
+  it("vital, intervalle indisponible : aucun badge de verdict, et la ligne « intervalle non calculable »", () => {
+    const html = rendu({ couverture: { n: 7, unite: "mesures" }, intervalle: { indisponible: "7 mesures, 13 requises" } });
+    const t = texte(html);
+    expect(html).not.toMatch(/data-testid="kpi-verdict"[^>]*>(Bon|À améliorer|Mauvais)</);
+    expect(t).toContain("intervalle non calculable : 7 mesures, 13 requises");
+    expect(t).toContain("verdict non établi (7 mesures, 13 requises)");
+  });
+
+  it("proportion : intervalle de Wilson écrit au format de la tuile, sans verdict", () => {
+    const html = rendu({
+      ...sansComparaison,
+      label: "Sessions sans erreur JS",
+      vital: undefined,
+      valeur: 0.1,
+      format: "pct",
+      intervalle: WILSON,
+      couverture: { n: 30, unite: "sessions", faibleSous: 30 },
+    });
+    expect(texte(html)).toMatch(/entre 3,5 % et 25,6 % \(95 %\)/);
+    expect(html).not.toContain('data-testid="kpi-verdict"');
+  });
+
+  it("le lecteur d'écran annonce l'intervalle ; pas de bulle dans une tuile-lien", () => {
+    const html = rendu({
+      ...sansComparaison,
+      valeur: 2400,
+      intervalle: { bas: 2100, haut: 3000, niveau: 0.95, methode: "quantile_normal" },
+      href: "/pages",
+    });
+    const aria = /aria-label="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(texte(aria)).toContain("entre 2,1 s et 3,0 s (95 %)");
+    expect(html).not.toContain("<button");
+  });
+
+  it("écart non établi : le delta est écrit, sans flèche colorée, suivi de sa règle", () => {
+    const html = rendu({ ecart: { etabli: false, regle: "écart non établi : intervalles à 95 % qui se chevauchent" } });
+    expect(aDelta(html)).toBe(false);
+    const t = texte(html);
+    expect(t).toContain("+8 % vs 24 h précédentes");
+    expect(t).toContain("écart non établi : intervalles à 95 % qui se chevauchent");
+  });
+
+  it("écart établi : le delta ordinaire", () => {
+    expect(aDelta(rendu({ ecart: { etabli: true, regle: "intervalles à 95 % disjoints" } }))).toBe(true);
+  });
+
+  it("valeur inconnue : ni intervalle ni écart", () => {
+    const html = rendu({ valeur: null, raisonNull: "aucune session", intervalle: WILSON, ecart: { etabli: false, regle: "x" } });
+    expect(html).not.toContain('data-testid="kpi-intervalle"');
+    expect(texte(html)).not.toContain("écart non établi");
+  });
+});

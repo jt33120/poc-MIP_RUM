@@ -44,6 +44,7 @@ if (!url) console.warn("[vitals-intervalle-sql] SAUTÉ — définir SQL_TEST_DAT
 (url ? describe : describe.skip)("intervalle de la p75 : SQL = JS", () => {
   const c = new pg.Client(url ? { connectionString: url } : {});
   let vitalsP75: typeof import("../../apps/console/lib/queries").vitalsP75;
+  let vitalPercentiles: typeof import("../../apps/console/lib/queries").vitalPercentiles;
   let pool: { end: () => Promise<void> };
 
   beforeAll(async () => {
@@ -72,7 +73,7 @@ if (!url) console.warn("[vitals-intervalle-sql] SAUTÉ — définir SQL_TEST_DAT
     delete (globalThis as { pgPool?: unknown }).pgPool;
     vi.resetModules();
     process.env.DATABASE_URL = url;
-    ({ vitalsP75 } = await import("../../apps/console/lib/queries"));
+    ({ vitalsP75, vitalPercentiles } = await import("../../apps/console/lib/queries"));
     ({ pool } = await import("../../apps/console/lib/db"));
   }, 180_000);
 
@@ -108,6 +109,20 @@ if (!url) console.warn("[vitals-intervalle-sql] SAUTÉ — définir SQL_TEST_DAT
     const { CLS: cls } = await lire();
     expect(cls.intervalle).toEqual({ indisponible: "7 mesures, 13 requises" });
     expect(Object.keys(cls).sort()).toEqual(["intervalle", "n", "name", "p50", "p75"]);
+  });
+
+  // P*.1 : la table des percentiles de `/pages` dit le MÊME intervalle que la tuile
+  // de `/` — une seule requête partagée, vérifiée ici sur les trois régimes.
+  it("vitalPercentiles : même intervalle que vitalsP75, et la même p75, pour 40, 20 et 7 mesures", async () => {
+    const p75 = await lire();
+    const rows = await vitalPercentiles({ app: APP, period: "24h", device: null, segment: [] });
+    const pcts = Object.fromEntries(rows.map((r) => [r.name, r]));
+    for (const nom of ["LCP", "INP", "CLS"]) {
+      expect(pcts[nom].n, nom).toBe(p75[nom].n);
+      expect(pcts[nom].intervalle, nom).toEqual(p75[nom].intervalle);
+      expect(Number(pcts[nom].pcts[1]), nom).toBeCloseTo(Number(p75[nom].p75), 9);
+    }
+    expect(Object.keys(pcts.CLS).sort()).toEqual(["intervalle", "n", "name", "pcts"]);
   });
 
   it("les rangs normaux du SQL sont ceux du JS pour tout n de 30 à 5 000", async () => {

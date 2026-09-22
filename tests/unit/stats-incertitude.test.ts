@@ -5,6 +5,9 @@ import { binomCdf } from "../../apps/console/lib/stats/lois";
 import {
   couvertureRangs,
   ecartDetectable,
+  ecartP75,
+  ecartProportions,
+  intervalleWilson,
   intervalleQuantile,
   mesuresMinimales,
   newcombe,
@@ -109,6 +112,69 @@ describe("RM5 — association n'est pas cause", () => {
   it("aucun texte produit ne parle de cause ni de responsable", () => {
     const textes = [rangsQuantileExact(5), wilson(0, 0), regleDeTrois(0), intervalleQuantile([1, 2])]
       .flatMap((r) => (r.ok ? [] : [r.raison]));
+    for (const t of textes) expect(t).not.toMatch(/cause|responsable/i);
+  });
+});
+
+// P*.1 — ce que les tuiles reçoivent : l'intervalle d'une proportion, et le droit
+// de dire qu'un écart à la période précédente est établi.
+describe("intervalleWilson — la forme `KpiTile.intervalle`", () => {
+  it("wilson(3, 30) = [0,035 ; 0,256], méthode nommée", () => {
+    const i = intervalleWilson(3, 30);
+    expect(i && !("indisponible" in i) && i.methode).toBe("wilson");
+    if (!i || "indisponible" in i) return;
+    expect(i.bas).toBeCloseTo(0.035, 3);
+    expect(i.haut).toBeCloseTo(0.256, 3);
+  });
+  it("sans dénominateur : null (la valeur est null avec sa raison), jamais un intervalle", () => {
+    expect(intervalleWilson(0, 0)).toBeNull();
+    expect(intervalleWilson(0, null)).toBeNull();
+    expect(intervalleWilson(null, 30)).toBeNull();
+  });
+  it("numérateur hors de [0 ; n] : dit, ni jeté ni rogné", () => {
+    expect(intervalleWilson(31, 30)).toEqual({ indisponible: "numérateur (31) hors de [0 ; 30] : ce n'est pas une proportion" });
+  });
+});
+
+describe("ecartProportions — Newcombe : zéro compris → écart non établi", () => {
+  it("10 % contre 12 % sur 100/100 : non établi, bornes écrites", () => {
+    const e = ecartProportions(10, 100, 12, 100);
+    expect(e?.etabli).toBe(false);
+    expect(e?.regle).toMatch(/^écart non établi : la différence est de -\d+(,\d)? à \+\d+(,\d)? points \(Newcombe, 95 %\), zéro compris$/);
+  });
+  it("40 % contre 10 % : établi", () => {
+    expect(ecartProportions(40, 100, 10, 100)?.etabli).toBe(true);
+  });
+  it("un côté sans dénominateur : rien à comparer", () => {
+    expect(ecartProportions(1, 10, 0, 0)).toBeNull();
+    expect(ecartProportions(11, 10, 1, 10)).toBeNull();
+  });
+});
+
+describe("ecartP75 — pas de test, deux intervalles comparés", () => {
+  const iv = (bas: number, haut: number) => ({ bas, haut, niveau: 0.95 as const, methode: "quantile_exact" as const });
+  it("chevauchement → non établi, l'intervalle précédent écrit", () => {
+    const e = ecartP75(iv(2100, 3000), iv(1900, 2200), (v) => `${v} ms`);
+    expect(e).toEqual({
+      etabli: false,
+      regle: "écart non établi : intervalles à 95 % qui se chevauchent (période précédente entre 1900 ms et 2200 ms)",
+    });
+  });
+  it("disjoints → établi", () => {
+    expect(ecartP75(iv(2600, 3000), iv(1900, 2200))?.etabli).toBe(true);
+  });
+  it("un intervalle non calculable d'un côté → non établi", () => {
+    expect(ecartP75(iv(2600, 3000), { indisponible: "7 mesures, 13 requises" })?.etabli).toBe(false);
+  });
+  it("aucun intervalle fourni → rien à dire", () => {
+    expect(ecartP75(undefined, iv(1, 2))).toBeNull();
+  });
+  it("RM5 : aucun texte ne parle de cause", () => {
+    const textes = [
+      ecartP75(iv(2100, 3000), iv(1900, 2200))?.regle,
+      ecartProportions(10, 100, 12, 100)?.regle,
+      ecartProportions(40, 100, 10, 100)?.regle,
+    ];
     for (const t of textes) expect(t).not.toMatch(/cause|responsable/i);
   });
 });
