@@ -69,6 +69,23 @@ describe("règle 1 — rétention", () => {
     expect(evaluer(requete("period=7d"), METRIQUE, new Date(NOW - 20 * JOUR))).toEqual({ etat: "complete", raison: null });
   });
 
+  it("plage PASSÉE : la purge compte depuis maintenant, pas depuis la fin de la plage", async () => {
+    // [J−29, J−27] : sa précédente [J−31, J−29] déborde la purge (J−30). Ancrée sur
+    // `range.to`, la règle la disait dans la rétention, et la raison devenait
+    // « collectées depuis le … seulement » — la date de la purge, pas du début.
+    const passee = requete(`from=${new Date(NOW - 29 * JOUR).toISOString()}&to=${new Date(NOW - 27 * JOUR).toISOString()}`);
+    const horsRetention = {
+      etat: "partielle",
+      raison: "période précédente hors rétention (30 jours) : les données les plus anciennes ont été purgées",
+    };
+    expect(evaluer(passee, METRIQUE, new Date(NOW - 30 * JOUR))).toEqual(horsRetention);
+    expect(await couverturePrecedente(passee, METRIQUE, { nowMs: NOW, retentionJours: 30 })).toEqual(horsRetention);
+    expect(lecture).not.toHaveBeenCalled();
+    // Une plage passée dont la précédente reste dans la purge n'est pas touchée.
+    const recente = requete(`from=${new Date(NOW - 10 * JOUR).toISOString()}&to=${new Date(NOW - 9 * JOUR).toISOString()}`);
+    expect(evaluer(recente, METRIQUE, new Date(NOW - 30 * JOUR))).toEqual({ etat: "complete", raison: null });
+  });
+
   it("la rétention configurée est lue telle quelle (15 jours : 7 j + 7 j tiennent, 8 j + 8 j non)", () => {
     const huit = requete(`from=${new Date(NOW - 8 * JOUR).toISOString()}&to=${new Date(NOW).toISOString()}`);
     expect(evaluerCouverture({ query: requete("period=7d"), source: METRIQUE, debut: new Date(0), nowMs: NOW, retentionJours: 15 }).etat).toBe("complete");

@@ -165,11 +165,13 @@ export interface EntreeCouverture {
 }
 
 /** Règle 1 seule : elle ne demande aucune lecture, et en dispense quand elle s'applique. */
-function regleRetention(query: AnalyticsQuery, retentionJours: number): CouverturePrecedente | null {
-  // Les deux périodes bout à bout : la précédente commence là où la rétention
-  // compte depuis la fin de la courante.
+function regleRetention(query: AnalyticsQuery, retentionJours: number, nowMs: number): CouverturePrecedente | null {
+  // Les deux périodes bout à bout, rapportées à la purge. Celle-ci compte depuis
+  // MAINTENANT, pas depuis la fin de la plage : ancrée sur `range.to`, une plage
+  // passée dont la précédente déborde la purge passait la règle, et la règle 2
+  // affichait la date de la purge comme un « début de collecte ».
   const deuxPeriodes = { ...query, range: { ...query.range, from: previousRange(query.range).from } };
-  if (couvertureRetention(deuxPeriodes, retentionJours).status === "complete") return null;
+  if (couvertureRetention(deuxPeriodes, retentionJours, nowMs).status === "complete") return null;
   return {
     etat: "partielle",
     raison: `période précédente hors rétention (${retentionJours} jours) : les données les plus anciennes ont été purgées`,
@@ -178,7 +180,7 @@ function regleRetention(query: AnalyticsQuery, retentionJours: number): Couvertu
 
 /** Les cinq règles du § 3.2, PURES : testées sans base. */
 export function evaluerCouverture({ query, source, debut, nowMs, retentionJours }: EntreeCouverture): CouverturePrecedente {
-  const retention = regleRetention(query, retentionJours);
+  const retention = regleRetention(query, retentionJours, nowMs);
   if (retention) return retention;
 
   const precedente = previousRange(query.range);
@@ -216,7 +218,7 @@ export async function couverturePrecedente(
   const retentionJours = options.retentionJours ?? retentionDays();
   const nowMs = options.nowMs ?? Date.now();
   // Hors rétention, inutile de lire quoi que ce soit : la réponse est connue.
-  const retention = regleRetention(query, retentionJours);
+  const retention = regleRetention(query, retentionJours, nowMs);
   if (retention) return retention;
   let debut: Date | null | "echec";
   try {
