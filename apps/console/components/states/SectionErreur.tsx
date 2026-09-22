@@ -15,21 +15,20 @@
 //     `SectionErreur` l'attrape. Elle n'affiche alors AUCUNE valeur partielle de
 //     la section — un chiffre sur deux se lirait comme un résultat.
 //
-// La `Suspense` intérieure n'est pas décorative : pendant le rendu serveur, React
-// ne sait pas s'arrêter sur une frontière d'erreur ; une exception y remonte
-// jusqu'à la `Suspense` la plus proche, qui passe la section en rendu client — où
-// la frontière, elle, l'attrape. Sans elle, la panne d'une section ferait échouer
-// le rendu serveur de tout l'écran.
+// PAS DE `<Suspense>` ICI — délibérément. Une première version en posait une
+// autour des enfants (pour qu'une exception au rendu SERVEUR passe la section en
+// rendu client au lieu de remonter). Mesuré : avec ces frontières, une navigation
+// qui ne change que la query (`router.replace` de la barre de filtres, de la
+// comparaison, des segments) restait suspendue par intermittence et l'URL gardait
+// l'ancienne valeur (e2e `etat-de-vue`, `navigation-filtres`). La frontière
+// attrape donc les pannes du rendu CLIENT (hydratation, composant qui casse) ;
+// une exception au rendu serveur remonte à l'`error.tsx` de l'écran.
 import { useRouter } from "next/navigation";
-import { Component, Suspense, useTransition, type ErrorInfo, type ReactNode } from "react";
+import { Component, useTransition, type ErrorInfo, type ReactNode } from "react";
 import { EtatSurface } from "./EtatSurface";
 
 export function SectionErreur({ titre, children }: { titre: string; children: ReactNode }) {
-  return (
-    <Frontiere titre={titre}>
-      <Suspense fallback={<EtatSurface etat={{ kind: "chargement", titre }} />}>{children}</Suspense>
-    </Frontiere>
-  );
+  return <Frontiere titre={titre}>{children}</Frontiere>;
 }
 
 /**
