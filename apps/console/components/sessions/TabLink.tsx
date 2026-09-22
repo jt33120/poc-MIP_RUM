@@ -16,9 +16,6 @@ export function TabLink({
   href,
   active,
   compte,
-export function TabLink({
-  href,
-  active,
   className = "",
   children,
 }: {
@@ -37,8 +34,6 @@ export function TabLink({
       className={`-mb-px shrink-0 whitespace-nowrap rounded-t border-b-2 px-4 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf ${
         // Inactif en `ink-soft`, pas `ink-faint` (≈ 2,8:1) : un libellé de 14 px reste lisible (§ 3.9).
         active ? "border-accent text-ink" : "border-transparent text-ink-soft hover:text-ink"
-      }`}
-        active ? "border-accent text-ink" : "border-transparent text-ink-faint hover:text-ink-soft"
       } ${className}`}
     >
       {children}
