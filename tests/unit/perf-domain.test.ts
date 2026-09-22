@@ -199,3 +199,53 @@ describe("F14 — Pages : classement des routes et tuiles", () => {
     expect(pagesF14.ecartP75EntreReleases({ indisponible: "7 mesures, 13 requises" }, i(1, 2), "1.4.1")?.etabli).toBe(false);
   });
 });
+
+// ─── F15 — Pages : phases du TTFB, plafond d'affichage des distributions ───
+import * as pagesF15 from "../../apps/console/lib/perf-domain";
+
+describe("F15 — Pages : phases du TTFB et distributions", () => {
+  it("phases filtrées sur les 6 noms, dans l'ordre ; vitals et noms inconnus écartés ; phase absente → « — », n = 0", () => {
+    const phases = pagesF15.phasesTtfb([
+      { name: "LCP", p75: 2400, n: 300 },
+      { name: "TTFB", p75: 600, n: 300 },
+      { name: "TLS", p75: 40, n: 120 },
+      { name: "DNS", p75: 12, n: 280 },
+      { name: "SVI_ATTENTE", p75: 9000, n: 4 },
+      { name: "RESPONSE", p75: 80, n: 290 },
+    ]);
+    expect(phases.map((p) => p.cle)).toEqual(["REDIRECT", "DNS", "TCP", "TLS", "REQUEST", "RESPONSE"]);
+    expect(phases.find((p) => p.cle === "DNS")).toMatchObject({ p75: 12, n: 280 });
+    // Absente : une ligne, sans valeur, jamais retirée ni mise à 0 ms.
+    expect(phases.find((p) => p.cle === "TCP")).toMatchObject({ p75: null, n: 0 });
+    expect(phases.find((p) => p.cle === "REDIRECT")).toMatchObject({ p75: null, n: 0 });
+  });
+
+  it("plafond d'affichage : p95 44 ms → p99 arrondi au multiple de 100 ms supérieur, et dit", () => {
+    expect(pagesF15.plafondAffichage("LCP", { p95: 44, p99: 61 })).toEqual({
+      plafond: 100,
+      libelle: expect.stringMatching(/^plafond d'affichage : p99 arrondi \(100\s+ms\)$/),
+    });
+    expect(pagesF15.plafondAffichage("INP", { p95: 40, p99: 230 }).plafond).toBe(300);
+    // Un multiple exact reste lui-même.
+    expect(pagesF15.plafondAffichage("LCP", { p95: 200, p99: 300 }).plafond).toBe(300);
+  });
+
+  it("plafond par défaut (`VITAL_CAP`) quand la population n'est pas concentrée, ou sans percentiles", () => {
+    expect(pagesF15.plafondAffichage("LCP", { p95: 1200, p99: 3000 })).toEqual({ plafond: 6000, libelle: null });
+    expect(pagesF15.plafondAffichage("LCP", null)).toEqual({ plafond: 6000, libelle: null });
+    expect(pagesF15.plafondAffichage("TTFB", { p95: null, p99: 20 })).toEqual({ plafond: 3000, libelle: null });
+  });
+
+  it("CLS : pas de 0,05, sans erreur d'arrondi flottant ; jamais un plafond nul", () => {
+    expect(pagesF15.plafondAffichage("CLS", { p95: 0.004, p99: 0.031 }).plafond).toBe(0.05);
+    expect(pagesF15.plafondAffichage("CLS", { p95: 0.05, p99: 0.12 }).plafond).toBe(0.15);
+    expect(pagesF15.plafondAffichage("LCP", { p95: 0, p99: 0 }).plafond).toBe(100);
+  });
+
+  it("sous vital=FCP ou TTFB, la 3ᵉ distribution est celle du vital choisi", () => {
+    expect(pagesF15.distributionsAffichees("LCP")).toEqual(["LCP", "INP", "CLS"]);
+    expect(pagesF15.distributionsAffichees("CLS")).toEqual(["LCP", "INP", "CLS"]);
+    expect(pagesF15.distributionsAffichees("FCP")).toEqual(["LCP", "INP", "FCP"]);
+    expect(pagesF15.distributionsAffichees("TTFB")).toEqual(["LCP", "INP", "TTFB"]);
+  });
+});

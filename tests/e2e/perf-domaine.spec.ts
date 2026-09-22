@@ -184,3 +184,130 @@ test.describe("F14 — Pages : KPI, sélecteur de vital, hero classé", () => {
     });
   }
 });
+
+// F15 — Pages : distributions, percentiles, TTFB, type de navigation (§ 5.2.2, zones 5-7).
+// Données SYNTHÉTIQUES : un LCP très court (30 à 69 ms, comme la démo) — le plafond
+// d'affichage doit alors passer au p99 arrondi, sans quoi tout tomberait dans le premier
+// bac ; cinq phases réseau (pas de redirection : sa ligne reste « — ») ; sur
+// /f15-produit, 20 chargements et 20 changements de route SPA.
+test.describe("F15 — Pages : distributions, percentiles, TTFB, type de navigation", () => {
+  const APP_F15 = "f15-e2e-pages";
+  const PAGES_F15 = `${consoleUrl}/pages?app=${APP_F15}&period=24h`;
+  const N_F15 = 40;
+
+  async function semerF15() {
+    for (const t of ["rum_metric", "rum_pageview", "rum_longtask", "rum_resource", "rum_error", "rum_session"])
+      await pool.query(`delete from ${t} where app_id = $1`, [APP_F15]);
+    await pool.query(
+      `insert into app_registry (app_id, name) values ($1, 'Pages F15 E2E') on conflict (app_id) do nothing`,
+      [APP_F15],
+    );
+    await pool.query(
+      `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+       select $1 || '-s' || g, $1, $1 || '-v' || g, 'desktop', false,
+              now() - interval '2 hours', now() - interval '110 minutes', 2
+         from generate_series(1, $2::int) g
+       on conflict (session_id) do nothing`,
+      [APP_F15, N_F15],
+    );
+    // Une vue de chargement et un changement de route SPA par session.
+    await pool.query(
+      `insert into rum_pageview (span_id, session_id, app_id, route, nav_type, started_at)
+       select $1 || '-pv' || g || '-' || t, $1 || '-s' || g, $1, '/f15-produit', t, now() - interval '2 hours'
+         from generate_series(1, $2::int) g, unnest(array['navigate', 'spa']) t
+       on conflict (span_id) do nothing`,
+      [APP_F15, N_F15],
+    );
+    // Valeur de la mesure g : LCP 30 + g ms ; phases constantes ; FCP 500 ms.
+    for (const [nom, expr] of [
+      ["LCP", "29 + g"],
+      ["INP", "40"],
+      ["CLS", "0.01"],
+      ["FCP", "500"],
+      ["DNS", "10"],
+      ["TCP", "20"],
+      ["TLS", "30"],
+      ["REQUEST", "50"],
+      ["RESPONSE", "60"],
+    ] as const) {
+      await pool.query(
+        `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, ts)
+         select $1 || '-' || $2 || g, $1 || '-s' || g, $1, '/f15-produit', $2, ${expr}, 'good',
+                now() - interval '2 hours' + interval '1 minute'
+           from generate_series(1, $3::int) g
+         on conflict (span_id) do nothing`,
+        [APP_F15, nom, N_F15],
+      );
+    }
+  }
+
+  test.beforeAll(async () => {
+    await semerF15();
+  });
+
+  test("distributions : repères p50 / p75 / p95 étiquetés, plafond adaptatif dit, bacs non cliquables", async ({ page }) => {
+    await login(page);
+    await page.goto(PAGES_F15, { waitUntil: "domcontentloaded" });
+    const lcp = page.locator("#distribution-lcp");
+    for (const repere of ["p50", "p75", "p95"]) {
+      await expect(lcp.locator(`[data-repere="${repere}"]`)).toHaveCount(1);
+      await expect(lcp.locator(`[data-repere="${repere}"] text`)).toContainText(repere);
+    }
+    // LCP p95 ≈ 67 ms < 6 000 / 10 : le plafond passe au p99 arrondi (100 ms), et le dit.
+    await expect(lcp.getByTestId("distribution-plafond")).toContainText("p99 arrondi");
+    await expect(lcp.locator("svg a, svg [role='link']")).toHaveCount(0);
+    await expect(lcp.getByTestId("distribution-explorer")).toHaveAttribute("href", /\/explorer\?.*viz=table/);
+    await expect(page.locator("#distribution-inp")).toBeVisible();
+    await expect(page.locator("#distribution-cls")).toBeVisible();
+  });
+
+  test("vital=FCP : la troisième distribution est celle du FCP", async ({ page }) => {
+    await login(page);
+    await page.goto(`${PAGES_F15}&vital=FCP`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#distribution-fcp")).toBeVisible();
+    await expect(page.locator("#distribution-cls")).toHaveCount(0);
+  });
+
+  test("TTFB : une barre par phase, non empilées, et la phrase qui interdit la somme", async ({ page }) => {
+    await login(page);
+    await page.goto(PAGES_F15, { waitUntil: "domcontentloaded" });
+    const ttfb = page.locator("#figure-ttfb");
+    await expect(ttfb.getByTestId("ttfb-phrase")).toContainText("leur somme n'est pas le TTFB");
+    const phases = ttfb.getByTestId("ttfb-phases");
+    for (const libelle of ["Redirection", "DNS", "Connexion TCP", "TLS", "Requête", "Réponse"]) await expect(phases).toContainText(libelle);
+    // La redirection n'est pas mesurée : « — », jamais 0 ms.
+    await ttfb.getByText("Alternative textuelle").click();
+    await expect(ttfb.locator("table tr", { hasText: "Redirection" })).toContainText("—");
+  });
+
+  test("vues par type de navigation : « Ensemble » en tête, chargements et SPA séparés", async ({ page }) => {
+    await login(page);
+    await page.goto(PAGES_F15, { waitUntil: "domcontentloaded" });
+    const figure = page.locator("#figure-navigation");
+    await expect(figure).toContainText("Le LCP n'est mesuré qu'au chargement");
+    await figure.getByText("Alternative textuelle").click();
+    const lignes = figure.locator("table tbody tr");
+    await expect(lignes.first()).toContainText("Ensemble");
+    await expect(figure.locator("table tr", { hasText: "/f15-produit" })).toContainText("20");
+  });
+
+  test("sommaire d'ancres : chaque lien mène à une section de la page", async ({ page }) => {
+    await login(page);
+    await page.goto(PAGES_F15, { waitUntil: "domcontentloaded" });
+    const liens = page.getByTestId("sommaire-pages").getByRole("link");
+    await expect(liens).toHaveCount(6);
+    for (const href of await liens.evaluateAll((els) => els.map((el) => el.getAttribute("href") ?? ""))) {
+      await expect(page.locator(href)).toHaveCount(1);
+    }
+  });
+
+  for (const largeur of LARGEURS) {
+    test(`aucun débordement à ${largeur} px`, async ({ page }) => {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await login(page);
+      await page.goto(PAGES_F15, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#figure-ttfb")).toBeVisible();
+      expect(await debordements(page)).toEqual([]);
+    });
+  }
+});

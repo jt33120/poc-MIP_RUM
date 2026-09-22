@@ -274,3 +274,76 @@ export function ecartP75EntreReleases(
     ? { etabli: false, regle: `écart non établi : intervalles à 95 % qui se chevauchent (${autre})` }
     : { etabli: true, regle: `intervalles à 95 % disjoints (${autre})` };
 }
+
+// ═══════════════════ F15 — Pages : distributions, percentiles, TTFB, navigation ═══════════════════
+import { VITAL_CAP } from "./distribution";
+
+/**
+ * Les trois distributions de `/pages` (§ 5.2.2) : LCP, INP, CLS ; sous `vital=FCP` ou
+ * `vital=TTFB`, la troisième laisse sa place au vital choisi (ses plafonds existent,
+ * `VITAL_CAP`) — le vital qui pilote l'écran a toujours sa forme sous les yeux.
+ */
+export function distributionsAffichees(vital: VitalName): [VitalName, VitalName, VitalName] {
+  return vital === "FCP" || vital === "TTFB" ? ["LCP", "INP", vital] : ["LCP", "INP", "CLS"];
+}
+
+/**
+ * Plafond d'affichage d'une distribution (§ 5.2.2). `VITAL_CAP` par défaut ; quand
+ * la population est concentrée TRÈS en dessous (`p95 < VITAL_CAP / 10`), le p99
+ * arrondi au multiple supérieur de 100 ms (0,05 pour le CLS) : sans quoi toute la
+ * démo (LCP p75 44 ms) tombe dans le premier des vingt bacs et la forme disparaît.
+ * Le plafond retenu est DIT (`libelle`) sous l'axe et dans l'alternative ; les
+ * valeurs au-delà rejoignent la barre « ≥ plafond », jamais écartées.
+ */
+export function plafondAffichage(
+  vital: VitalName,
+  p: { p95: number | null; p99: number | null } | null,
+): { plafond: number; libelle: string | null } {
+  const defaut = VITAL_CAP[vital];
+  if (!p || p.p95 == null || p.p99 == null || !Number.isFinite(p.p95) || !Number.isFinite(p.p99) || !(p.p95 < defaut / 10)) {
+    return { plafond: defaut, libelle: null };
+  }
+  const pas = vital === "CLS" ? 0.05 : 100;
+  // Arrondi au millième : 0,05 × 3 ne doit pas s'écrire 0,15000000000000002.
+  const arrondi = Math.max(pas, Math.round(Math.ceil(p.p99 / pas - 1e-9) * pas * 1000) / 1000);
+  if (arrondi >= defaut) return { plafond: defaut, libelle: null };
+  return { plafond: arrondi, libelle: `plafond d'affichage : p99 arrondi (${formater(formatDuVital(vital), arrondi)})` };
+}
+
+/** Les phases réseau qui précèdent le premier octet, dans l'ordre chronologique. */
+export const PHASES_TTFB = [
+  { cle: "REDIRECT", libelle: "Redirection" },
+  { cle: "DNS", libelle: "DNS" },
+  { cle: "TCP", libelle: "Connexion TCP" },
+  { cle: "TLS", libelle: "TLS" },
+  { cle: "REQUEST", libelle: "Requête" },
+  { cle: "RESPONSE", libelle: "Réponse" },
+] as const;
+
+export interface PhaseTtfb {
+  cle: (typeof PHASES_TTFB)[number]["cle"];
+  libelle: string;
+  /** p75 de la phase mesurée à part ; `null` : aucune mesure (navigateur qui ne l'expose pas). */
+  p75: number | null;
+  n: number;
+}
+
+/**
+ * « D'où vient le TTFB » (§ 5.2.2) : les six phases, lues dans `vitalsP75` (son
+ * `group by m.name` rend aussi les phases, qui voyagent sur `rum_metric`). Toujours
+ * six lignes, dans l'ordre : une phase absente est une ligne « — » avec n = 0, pas
+ * une ligne retirée — son absence est une information (navigateur qui ne l'expose
+ * pas). Les Web Vitals et tout autre nom sont écartés.
+ *
+ * Les six p75 NE S'ADDITIONNENT PAS : chacun est le 75ᵉ centile d'une phase mesurée
+ * à part, et la somme de six p75 n'est pas le p75 du TTFB. Aucun total n'est rendu.
+ */
+export function phasesTtfb(lignes: readonly { name: string; p75: number | null; n: number }[]): PhaseTtfb[] {
+  const parNom = new Map(lignes.map((l) => [l.name, l]));
+  return PHASES_TTFB.map(({ cle, libelle }) => {
+    const l = parNom.get(cle);
+    const n = l && Number.isFinite(Number(l.n)) ? Number(l.n) : 0;
+    const p75 = l && n > 0 && l.p75 != null && Number.isFinite(Number(l.p75)) ? Number(l.p75) : null;
+    return { cle, libelle, p75, n };
+  });
+}
