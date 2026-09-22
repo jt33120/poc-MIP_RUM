@@ -54,3 +54,60 @@ describe("paramètres de la page Événements", () => {
     );
   });
 });
+
+// ─────────────────────────── F25 — liens du Journal ───────────────────────────
+import { cleSansValeur, lienJournal, lienPanneauJournal, paginationJournal } from "../../apps/console/lib/events-page-params";
+
+describe("Journal (F25) : facettes, panneau, pagination", () => {
+  const courant = new URLSearchParams("app=demo-app&period=1h&name=checkout&cursor=abc&offset=20&panel=event%3A42&limit=10");
+
+  it("un clic de facette garde population et filtres, repart de la 1re page et ferme le panneau", () => {
+    const href = lienJournal(courant, { attr_source: "props", attr_key: "plan", attr_type: null, attr_value: null });
+    const p = new URLSearchParams(href.split("?")[1]);
+    expect(href.startsWith("/events?")).toBe(true);
+    expect(p.get("app")).toBe("demo-app");
+    expect(p.get("period")).toBe("1h");
+    expect(p.get("name")).toBe("checkout");
+    expect(p.get("attr_source")).toBe("props");
+    expect(p.get("attr_key")).toBe("plan");
+    expect(p.get("limit")).toBe("10");
+    for (const nom of ["cursor", "offset", "panel", "attr_type", "attr_value"]) expect(p.has(nom)).toBe(false);
+  });
+
+  it("clic sur un nom : `?name=<nom>` remplace le nom courant", () => {
+    const p = new URLSearchParams(lienJournal(courant, { name: "signup" }).split("?")[1]);
+    expect(p.getAll("name")).toEqual(["signup"]);
+  });
+
+  it("panneau : même liste (curseur compris), seul `panel` change ; fermer le retire", () => {
+    const ouvrir = new URLSearchParams(lienPanneauJournal(courant, "event:7").split("?")[1]);
+    expect(ouvrir.get("panel")).toBe("event:7");
+    expect(ouvrir.get("cursor")).toBe("abc");
+    const fermer = new URLSearchParams(lienPanneauJournal(courant, null).split("?")[1]);
+    expect(fermer.has("panel")).toBe(false);
+    expect(fermer.get("cursor")).toBe("abc");
+    expect(lienPanneauJournal(new URLSearchParams("panel=event%3A1"), null)).toBe("/events");
+  });
+
+  it("clé choisie sans valeur : reconnue, et retirée de l'URL lue ; filtre complet ou type explicite : non", () => {
+    const choisie = cleSansValeur(new URLSearchParams("app=a&attr_source=props&attr_key=plan"));
+    expect(choisie?.cle).toEqual({ source: "props", key: "plan" });
+    expect(choisie?.sansCle.toString()).toBe("app=a");
+    expect(cleSansValeur(new URLSearchParams("attr_source=props&attr_key=plan&attr_type=string"))?.cle.key).toBe("plan");
+    expect(cleSansValeur(new URLSearchParams("attr_source=props&attr_key=plan&attr_type=string&attr_value=pro"))).toBeNull();
+    // Le formulaire soumet toujours `attr_value`, même vide : c'est un filtre sur « ».
+    expect(cleSansValeur(new URLSearchParams("attr_source=props&attr_key=plan&attr_type=string&attr_value="))).toBeNull();
+    expect(cleSansValeur(new URLSearchParams("attr_source=props&attr_key=plan&attr_type=number"))).toBeNull();
+    expect(cleSansValeur(new URLSearchParams("attr_source=props"))).toBeNull();
+    expect(cleSansValeur(new URLSearchParams(""))).toBeNull();
+  });
+
+  it("50 lignes par défaut ; un `limit` explicite l'emporte ; un curseur remet l'offset à 0", () => {
+    expect(paginationJournal(new URLSearchParams(""), { limit: 100, offset: 0 }, null)).toEqual({ limit: 50, offset: 0 });
+    expect(paginationJournal(new URLSearchParams("limit=1"), { limit: 1, offset: 0 }, null)).toEqual({ limit: 1, offset: 0 });
+    expect(paginationJournal(new URLSearchParams(""), { limit: 100, offset: 30 }, { ts: "x", id: "1" })).toEqual({
+      limit: 50,
+      offset: 0,
+    });
+  });
+});
