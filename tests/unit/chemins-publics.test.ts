@@ -13,7 +13,7 @@ describe("estCheminPublic", () => {
   });
 
   it("ouvre les documents légaux, index compris", () => {
-    for (const p of ["/legal", "/legal/mentions", "/legal/cgu", "/legal/cgv", "/legal/dpa", "/legal/confidentialite"])
+    for (const p of ["/legal", "/legal/cgu", "/legal/cgv", "/legal/confidentialite"])
       expect(estCheminPublic(p), p).toBe(true);
   });
 

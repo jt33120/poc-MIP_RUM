@@ -26,7 +26,7 @@ export default function CGV() {
         <p>
           La souscription résulte d'un bon de commande, d'un devis accepté ou d'une inscription en ligne. Elle
           emporte acceptation des présentes CGV et de l'
-          <a href="/legal/dpa" className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">accord de traitement (DPA)</a>.
+          accord de traitement (DPA).
         </p>
       </LegalSection>
 
@@ -59,7 +59,7 @@ export default function CGV() {
         <p>
           Pour les données traitées pour le compte du Client, l'Éditeur agit en qualité de sous-traitant au sens du
           RGPD&nbsp;; les rôles et obligations sont régis par l'
-          <a href="/legal/dpa" className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">accord de traitement</a>, partie
+          accord de traitement, partie
           intégrante du contrat.
         </p>
       </LegalSection>

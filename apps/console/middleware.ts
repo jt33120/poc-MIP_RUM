@@ -65,7 +65,7 @@ export async function middleware(req: NextRequest) {
     const p = req.nextUrl.pathname;
     // /presentation = vitrine ; /extension-privacy = politique de confidentialité
     // PUBLIQUE de l'extension (URL exigée par le Chrome Web Store) ; /legal/* =
-    // documents légaux publics (mentions, CGU, CGV, confidentialité, DPA).
+    // documents légaux publics (CGU, CGV, confidentialité).
     if (estCheminPublic(p)) return NextResponse.next();
     if (p === "/") return NextResponse.redirect(new URL("/presentation", req.url), 302);
     return NextResponse.redirect(new URL("/login", req.url), 302);

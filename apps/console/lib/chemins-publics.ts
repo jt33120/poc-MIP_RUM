@@ -24,7 +24,7 @@
  *   /presentation       la vitrine — ce qu'on montre avant de connaître le produit
  *   /extension-privacy  politique de confidentialité de l'extension : URL PUBLIQUE
  *                       exigée par le Chrome Web Store, donc jamais derrière un login
- *   /legal/*            mentions, CGU, CGV, confidentialité, DPA — des documents
+ *   /legal/*            CGU, CGV, confidentialité — des documents
  *                       opposables, qui doivent être lisibles par quiconque, y
  *                       compris par un utilisateur connecté qui n'a pas encore
  *                       choisi de projet

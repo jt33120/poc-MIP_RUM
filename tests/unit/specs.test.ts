@@ -91,8 +91,8 @@ describe("onglet infrastructure — chaque ligne porte sa preuve", () => {
     }
   });
 
-  it("ne recopie pas l'hébergement : ce sont les chaînes des mentions légales", () => {
-    // lib/legal.ts est servi publiquement sur /legal/mentions et /legal/dpa. Deux
+  it("ne recopie pas l'hébergement : ce sont les chaînes de lib/legal.ts", () => {
+    // lib/legal.ts est servi publiquement sur /legal/confidentialite. Deux
     // rédactions de la même information finissent par diverger — c'est
     // exactement ce que l'invariant AD-7 existe pour empêcher, et le dépôt l'a
     // déjà payé trois fois.
@@ -358,8 +358,8 @@ describe("faits relevés à la main chez l'hébergeur", () => {
     expect(INFRA.some((g) => g.lignes.some((l) => l.v.includes(RAILWAY.releve)))).toBe(true);
   });
 
-  it("la région annoncée est celle que déclarent les mentions légales", () => {
-    // europe-west4 est nommée dans HOSTS.backend, servi sur /legal/mentions.
+  it("la région annoncée est celle que déclare lib/legal.ts", () => {
+    // europe-west4 est nommée dans HOSTS.backend, servi dans les Specs de la vitrine.
     // Deux régions différentes sur deux pages du même site, ce serait la
     // divergence de trop.
     expect(HOSTS.backend).toContain(RAILWAY.region.split("-").slice(0, 2).join("-"));

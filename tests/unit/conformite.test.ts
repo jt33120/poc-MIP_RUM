@@ -116,7 +116,7 @@ describe("affirmations que le code ne tient pas", () => {
   it("déclare le GeoIP local, sa licence et son attribution — et les dit COMME lib/legal.ts", () => {
     // CC BY 4.0 n'autorise l'usage QU'À CONDITION d'une attribution visible. Le
     // fichier de licence au fond du dépôt ne suffit pas : la mention est servie
-    // publiquement par /legal/mentions, et ce document doit dire la même chose.
+    // publiquement dans le pied de page de la vitrine, et ce document doit dire la même chose.
     // Si les deux divergent, c'est la même faute que la ligne « Supabase »
     // restée douze jours après la migration vers Neon.
     const dbip = DATA_SOURCES.find((s) => s.name.includes("DB-IP"));

@@ -8,7 +8,8 @@
 ## 1. Résidence des données 🇪🇺
 
 > Ces trois lignes sont le reflet de `apps/console/lib/legal.ts` (constantes `HOSTS` et
-> `SUBPROCESSORS`), qui alimente `/legal/mentions` et `/legal/dpa`. `tests/unit/conformite.test.ts`
+> `SUBPROCESSORS`), qui alimente `/legal/confidentialite` et les Specs de la vitrine (les pages
+> `/legal/mentions` et `/legal/dpa` ont été retirées le 22/09/2026). `tests/unit/conformite.test.ts`
 > refuse qu'elles divergent : ce document a déclaré **Supabase / `eu-west-3` (Paris)** pendant des
 > semaines après la migration vers Neon, et omis Railway alors que ce sous-traitant reçoit les
 > mesures. Une pièce d'appel d'offres périmée n'est pas une coquille, c'est une déclaration
@@ -17,8 +18,9 @@
 - Base **PostgreSQL (Neon)** sur infrastructure AWS, région **`aws-eu-central-1` (Francfort)**.
 - Console **Next.js** sur **Vercel**, fonctions serveur en région **`fra1` (Francfort)** ;
   le SDK est servi par la console (auto-hébergeable).
-- Services backend — réception des mesures, travaux planifiés, serveur MCP — sur **Railway**,
-  région **`europe-west4` (Amsterdam)**.
+- La **réception des mesures** passe par la route d'ingestion de la console, sur **Vercel**
+  (`fra1`). Les **travaux planifiés** et le **serveur MCP** tournent sur **Railway**, région
+  **`europe-west4` (Amsterdam)**.
 - **Donnée et traitement sont en UE. La souveraineté, non** : Neon, Vercel et Railway sont trois
   sociétés de droit américain. La résidence européenne des données n'est pas la souveraineté ;
   la cible reste un hébergeur de droit européen (cf. §8).
@@ -139,8 +141,8 @@ exact —, et ce lot n'introduit **aucun stockage d'adresse** qui rendrait un te
 à l'avenir.
 
 **Licence de la base.** DB-IP IP to Country Lite est distribuée sous **CC BY 4.0**, qui exige une
-attribution visible. Elle figure dans les mentions légales publiques (`/legal/mentions`, via
-`apps/console/lib/legal.ts`), dans `apps/ingest/data/LICENCE-DB-IP.txt` et ici :
+attribution visible. Elle figure dans le pied de page de la vitrine publique (`/presentation`,
+via `apps/console/lib/legal.ts`), dans `apps/ingest/data/LICENCE-DB-IP.txt` et ici :
 **IP Geolocation by DB-IP (https://db-ip.com)**. Le fichier est utilisé tel quel, sans
 modification ni redistribution.
 
@@ -182,8 +184,8 @@ modification ni redistribution.
 | Sous-traitant | Rôle | Localisation | Donnée |
 |---|---|---|---|
 | Neon | base PostgreSQL managée | UE (Francfort, `aws-eu-central-1`) — société de droit américain | télémétrie, comptes |
-| Vercel Inc. | hébergement de la console | fonctions serveur en UE (Francfort, `fra1`) — société de droit américain | rendu ; pas de stockage RUM |
-| Railway Corp. | services backend : réception des mesures, travaux planifiés, serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | **télémétrie RUM en transit et en traitement** |
+| Vercel Inc. | hébergement de la console et collecte des mesures | fonctions serveur en UE (Francfort, `fra1`) — société de droit américain | **télémétrie RUM en transit et en traitement** ; pas de stockage RUM |
+| Railway Corp. | travaux planifiés, serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | lecture des agrégats (travaux planifiés), réponses MCP |
 | *[Fournisseur e-mail — à brancher]* | envoi des alertes (si activé) | *[à préciser — UE recommandé]* | adresse de destination |
 
 ## 8. Trajectoire de certification (gap analysis)

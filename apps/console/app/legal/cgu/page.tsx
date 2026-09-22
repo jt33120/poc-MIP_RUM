@@ -58,7 +58,7 @@ export default function CGU() {
           Le traitement des données est décrit dans la{" "}
           <a href="/legal/confidentialite" className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">politique de confidentialité</a>{" "}
           et, pour les données traitées pour le compte du client, dans l'
-          <a href="/legal/dpa" className="text-accent-deep underline-offset-2 hover:underline dark:text-accent">accord de traitement (DPA)</a>. Le
+          accord de traitement (DPA). Le
           service est conçu pour ne pas collecter de donnée directement identifiante côté RUM.
         </p>
       </LegalSection>

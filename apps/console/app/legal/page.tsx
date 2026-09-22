@@ -5,7 +5,7 @@ export const dynamic = "force-static";
 
 export const metadata = {
   title: "MIP RUM — Documents légaux",
-  description: "Mentions légales, CGU, CGV, politique de confidentialité et accord de traitement (DPA).",
+  description: "CGU, CGV et politique de confidentialité.",
 };
 
 export default function LegalHub() {
