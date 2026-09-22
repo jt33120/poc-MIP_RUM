@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { HealthHeatmap } from "@/components/charts/HealthHeatmap";
+import { KpiTile } from "@/components/charts/KpiTile";
 import { TrafficTimeseries } from "@/components/charts/TrafficTimeseries";
 import { VitalsTimeseries } from "@/components/charts/VitalsTimeseries";
 import { GlossaryTip } from "@/components/GlossaryTip";
+import { InsightStrip } from "@/components/InsightStrip";
 import { PageHeader } from "@/components/PageHeader";
-import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
+import { PresetBar } from "@/components/PresetBar";
+import { SupervisionHero, HeroReading } from "@/components/SupervisionHero";
 import { cookies } from "next/headers";
 import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
 import { TousEteints } from "@/components/TousEteints";
@@ -17,7 +20,7 @@ import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { Breakdown } from "@/components/Breakdown";
 import { VITALS_BREAKDOWN_COLUMNS, vitalsBreakdownClasse } from "@/components/breakdown-view";
-import { type SearchParams } from "@/lib/filters";
+import { filtersOfQuery, type SearchParams } from "@/lib/filters";
 import { pageFilters } from "@/lib/page-filters";
 import {
   BREAKDOWN_NOTICES,
@@ -27,19 +30,36 @@ import {
   datasetAvailability,
   parseBreakdown,
 } from "@/lib/breakdowns";
+import { etatLectureEchantillonnage } from "@/lib/echantillonnage";
 import { healthScore } from "@/lib/health";
 import { lire, type Lecture } from "@/lib/lecture";
 import { fuseauDe, joursLocaux, libelleDeuxFuseaux } from "@/lib/fuseau";
-import { formater } from "@/lib/fmt-ids";
+import { formatDuVital, formater, VITAUX, type FormatId } from "@/lib/fmt-ids";
 import { bucketStarts, hrefWithQuery, paramReader } from "@/lib/query-contract";
-import { alignerSeaux, grilleIso } from "@/lib/series";
+import { alignerSeaux, grilleIso, isoSansMs } from "@/lib/series";
 import { cleJour } from "@/lib/forecast";
 import { dimensionSchema } from "@/lib/query-schema";
-import { overviewStats, vitalSeries, vitalsP75, type OverviewStats } from "@/lib/queries";
-import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown } from "@/lib/queries-breakdowns";
+import {
+  overviewStats,
+  pageviewSeries,
+  samplingVitals,
+  vitalSeries,
+  vitalSeriesN,
+  vitalsP75,
+  type VitalAgg,
+} from "@/lib/queries";
+import { errorSeries, erreursNavigateur, listErrorGroups } from "@/lib/queries-errors";
+import { engagementStats, observedVisitorsTrend } from "@/lib/queries-sessions";
+import { alertFirings, unackedAlertCount } from "@/lib/queries-v2";
+import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown, type VitalsBreakdownRow } from "@/lib/queries-breakdowns";
 import { dailyLcpSeries, dailyTraffic, GRID_DAYS, healthGrid } from "@/lib/queries-grid";
-import { comparaisonVersions, type ComparaisonVersions } from "@/lib/queries-deploys";
-import { fmtBorne, fmtVital } from "@/lib/format";
+import {
+  comparaisonVersions,
+  latestDeployImpact,
+  listDeploys,
+  type ComparaisonVersions,
+} from "@/lib/queries-deploys";
+import { fmtBorne } from "@/lib/format";
 import { ecartP75 } from "@/lib/stats/incertitude";
 import { THRESHOLDS } from "@/lib/rating";
 import {
@@ -49,22 +69,49 @@ import {
   type CouverturePrecedente,
   type SourceComparaison,
 } from "@/lib/comparaison";
-import { gabaritZoom, lireComparaison, lireTri } from "@/lib/view-state";
+import { avecCondition, RAISON_AUCUNE_VUE, ratioPour100, serieRatioPour100, sparklineDeCompte } from "@/lib/perf-domain";
+import { choisirReleases, vuesProduit, type Entree } from "@/lib/presets";
+import { ecrirePanel, gabaritZoom, lireComparaison, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
+import {
+  ALERTES_PAR_EVENEMENT,
+  constatsVueEnsemble,
+  FENETRE_CONSTATS,
+  lectureErreursPour100,
+  referencePrecedente,
+  referenceRelease,
+  releasesComparees,
+  sansConditionRelease,
+} from "@/lib/vue-ensemble";
+
+/** La question de l'écran (P1) : le sous-titre de l'en-tête. */
+const QUESTION = "Les vrais visiteurs vont-ils bien sur cette période, et sinon, où et depuis quand ?";
 
 // Sources des deux rangées de tuiles comparées à la période précédente (§ 3.2).
-// Un taux (erreurs / pages vues) n'est pas un compte : le retard d'ingestion
-// touche son numérateur et son dénominateur, il n'est pas traité comme additif.
+// « Sessions commencées » se date par `started_at` (R-P). Le ratio d'erreurs
+// n'est pas un compte : le retard d'ingestion touche son numérateur ET son
+// dénominateur, il n'est pas traité comme additif.
 const SOURCE_VITAUX: SourceComparaison = { table: "rum_metric", colonneTemps: "ts", additive: false };
-const SOURCES_HERO: SourceComparaison[] = [
-  { table: "rum_session", colonneTemps: "last_seen_at", additive: true },
+const SOURCES_TRAFIC: SourceComparaison[] = [
+  { table: "rum_session", colonneTemps: "started_at", additive: true },
   { table: "rum_pageview", colonneTemps: "started_at", additive: true },
   { table: "rum_error", colonneTemps: "ts", additive: false },
 ];
+
+/** Groupes d'erreurs lus pour y chercher les régressés (ordre CP9 : régressés d'abord). */
+const REGRESSES_LUS = 50;
+/** Sous ce nombre de mesures, un vital est « échantillon faible » (§ 3.12). */
+const VITAL_FAIBLE_SOUS = 100;
 
 export const dynamic = "force-dynamic";
 
 /** Lecture non lancée (bloc éteint) : une valeur sûre, jamais affichée comme mesure. */
 const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
+
+/** Une tuile, ou l'échec de sa lecture (jamais un « 0 » ou un « — » pour une fenêtre non lue). */
+type Tuile = { cle: string; titre: string } & (
+  | { props: React.ComponentProps<typeof KpiTile> }
+  | { echec: true }
+);
 
 // PAS DE `<Suspense>` AUTOUR DE L'ÉCRAN, ni de `loading.tsx` (F02, correctif). Une
 // frontière de chargement posée au-dessus de TOUTE la page bloquait les
@@ -77,6 +124,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const ecran = await pageFilters(sp, "/");
   if (!ecran.ok) return <FilterProblemNotice title="Vue d'ensemble" problem={ecran.problem} />;
   const f = ecran.filters;
+  const query = ecran.query;
   const period = { label: ecran.label, bucketLabel: ecran.bucketLabel };
 
   // toggle « heures ouvrées » de la heatmap, porté par l'URL (?hours=business),
@@ -91,6 +139,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     const qs = p.toString();
     return qs ? `/?${qs}` : "/";
   };
+  // Comparaison choisie (`cmp`, `rel_a`, `rel_b`) : elle suit la navigation (§ 3.1),
+  // donc chaque lien vers un autre écran la reporte, avec la population et la plage.
+  const contexte: Record<string, string | null> = {};
+  for (const nom of VIEW_CONTEXT_PARAMS) contexte[nom] = typeof sp[nom] === "string" ? (sp[nom] as string) : null;
+  const lien = (chemin: string, extra: Record<string, string | null> = {}) =>
+    hrefWithQuery(chemin, query, { ...contexte, ...extra });
 
   // Le choix des blocs est lu ICI, AVANT les requêtes : un bloc éteint ne coûte
   // rien. Masquer en CSS aurait laissé tout le travail serveur en place, ce qui
@@ -125,7 +179,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     return qs ? `/?${qs}` : "/";
   };
   // Fuseau de l'app : celui des jours et des heures de la heatmap, et de ses liens (R-T).
-  const fuseau = await fuseauDe(ecran.query.scope.requestedApp);
+  const fuseau = await fuseauDe(query.scope.requestedApp);
 
   // Comparaison (F06) : la période précédente n'est lue qu'en `cmp=prev` (défaut de
   // cet écran), et ses écarts ne s'affichent que si elle est COMPLÈTE — une plage
@@ -133,14 +187,17 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const comparaison = lireComparaison("/", paramReader(sp)).valeur;
   // Un seul gabarit de zoom pour l'écran : la heatmap (et le hero, F04) ne changent
   // que la plage — comparaison, tri, découpage et heures ouvrées restent.
-  const gabaritZoomEcran = gabaritZoom(hrefWithQuery("/", ecran.query, { period: null, from: "{from}", to: "{to}" }), sp);
+  const gabaritZoomEcran = gabaritZoom(hrefWithQuery("/", query, { period: null, from: "{from}", to: "{to}" }), sp);
   const prev = comparaison.mode === "prev";
   // Sous un filtre porté par une colonne récente (`browser`, v75…), la couverture
   // se juge aussi sur CETTE colonne : une source de plus par colonne exigée.
   const couvertures = (sources: readonly SourceComparaison[]) =>
-    Promise.all(
-      sources.flatMap((s) => sourcesSousFiltres(ecran.query, s)).map((s) => couverturePrecedente(ecran.query, s)),
-    );
+    Promise.all(sources.flatMap((s) => sourcesSousFiltres(query, s)).map((s) => couverturePrecedente(query, s)));
+  // Les releases se choisissent sur TOUTES celles de la fenêtre : sous `release=B`,
+  // la lecture des versions n'en verrait qu'une (§ 3.2, `choisirReleases`).
+  const fToutesReleases = filtersOfQuery(sansConditionRelease(query));
+  const dispoNavigateur = dispoDecoupage("browser");
+  const dispoPays = dispoDecoupage("country");
 
   // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8 règle 1). `lire()` ne lève pas :
   // une lecture en échec devient `{ ok: false }`, et seule SA section le dit. Le
@@ -153,6 +210,15 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     vitalsPrev,
     stats,
     statsPrev,
+    engagement,
+    engagementPrev,
+    tendanceSessions,
+    vues,
+    erreurs,
+    erreursPrev,
+    serieErreurs,
+    seriesVitaux,
+    echantillonnage,
     series,
     health,
     grid,
@@ -160,15 +226,35 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     dailyLcp,
     versions,
     decoupe,
+    deploys,
+    versionsFenetre,
+    navigateurs,
+    pays,
+    impact,
+    alertes,
+    groupesErreurs,
     couvVitaux,
-    couvHero,
+    couvTrafic,
   ] = await Promise.all([
-    blocs.vitals || blocs.reseau || blocs.decoupage ? lire(() => vitalsP75(f)) : sansLecture([]),
-    blocs.vitals && prev ? lire(() => vitalsP75(f, true)) : sansLecture([]),
+    blocs.vitals || blocs.reseau || blocs.decoupage ? lire(() => vitalsP75(f)) : sansLecture<VitalAgg[]>([]),
+    blocs.vitals && prev ? lire(() => vitalsP75(f, true)) : sansLecture<VitalAgg[]>([]),
     lire(() => overviewStats(f)),
-    blocs.hero && prev ? lire(() => overviewStats(f, true)) : sansLecture(null),
+    blocs.trafic && prev ? lire(() => overviewStats(f, true)) : sansLecture(null),
+    blocs.trafic ? lire(() => engagementStats(f)) : sansLecture(null),
+    blocs.trafic && prev ? lire(() => engagementStats(f, true)) : sansLecture(null),
+    blocs.trafic ? lire(() => observedVisitorsTrend(f)) : sansLecture([]),
+    blocs.trafic ? lire(() => pageviewSeries(f)) : sansLecture([]),
+    blocs.trafic ? lire(() => erreursNavigateur(f)) : sansLecture(null),
+    blocs.trafic && prev ? lire(() => erreursNavigateur(f, true)) : sansLecture(null),
+    blocs.trafic ? lire(() => errorSeries(f)) : sansLecture(null),
+    // Sparkline de chaque tuile Web Vital : p75 par seau du contrat, sur les mesures brutes (V5).
+    blocs.vitals
+      ? Promise.all(VITAUX.map((nom) => lire(() => vitalSeriesN(f, nom))))
+      : Promise.resolve(VITAUX.map(() => ({ ok: true as const, data: [] }))),
+    blocs.vitals ? lire(() => samplingVitals(f)) : sansLecture(null),
     blocs.hero ? lire(() => vitalSeries(f, "LCP")) : sansLecture([]),
-    blocs.sante || blocs.anomalies ? lire(() => healthScore(f)) : sansLecture(null),
+    // Santé ET constats (anomalies 24 h) : lue même bandeau éteint, les constats en dépendent.
+    lire(() => healthScore(f)),
     blocs.historique ? lire(() => healthGrid(f)) : sansLecture([]),
     blocs.historique ? lire(() => dailyTraffic(f)) : sansLecture([]),
     blocs.historique ? lire(() => dailyLcpSeries(f)) : sansLecture([]),
@@ -176,34 +262,275 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       ? lire(() => comparaisonVersions(f))
       : sansLecture<ComparaisonVersions>({ rows: [], source: "occurrence" }),
     decoupage ? lire(() => vitalsBreakdown(f, decoupage)) : sansLecture(null),
+    // Vues préréglées (§ 3.6) et releases comparées (§ 3.2) : marqueurs de
+    // déploiement et releases de la fenêtre, navigateurs et pays mesurés.
+    lire(() => listDeploys(f, 20)),
+    lire(() => comparaisonVersions(fToutesReleases, 12)),
+    dispoNavigateur.available ? lire(() => vitalsBreakdown(f, "browser", 200)) : sansLecture(null),
+    dispoPays.available ? lire(() => vitalsBreakdown(f, "country", 200)) : sansLecture(null),
+    // Constats (zone 4) : dernier déploiement, alertes non acquittées, erreurs régressées.
+    lire(() => latestDeployImpact(f)),
+    ALERTES_PAR_EVENEMENT
+      ? lire(async () => ({ mode: "evenements" as const, lignes: (await alertFirings(f, 1)).lignes }))
+      : lire(async () => ({ mode: "compte" as const, n: await unackedAlertCount(f) })),
+    lire(() => listErrorGroups(f, { limit: REGRESSES_LUS, offset: 0 })),
     blocs.vitals && prev ? couvertures([SOURCE_VITAUX]) : Promise.resolve<CouverturePrecedente[]>([]),
-    blocs.hero && prev ? couvertures(SOURCES_HERO) : Promise.resolve<CouverturePrecedente[]>([]),
+    blocs.trafic && prev ? couvertures(SOURCES_TRAFIC) : Promise.resolve<CouverturePrecedente[]>([]),
   ]);
+
+  // ─── Releases comparées (§ 3.2) : URL d'abord, sinon la règle du dernier déploiement ───
+  const choix = deploys.ok && versionsFenetre.ok ? choisirReleases(deploys.data, versionsFenetre.data.rows) : null;
+  const releases = releasesComparees({ relA: comparaison.relA, relB: comparaison.relB }, choix);
+  // `cmp=release` : les tuiles Web Vitals lisent la release B et la comparent à A,
+  // même fenêtre (§ 5.1.2). Deux lectures de plus, lancées seulement dans ce mode.
+  const [vitalsB, vitalsA] =
+    comparaison.mode === "release" && blocs.vitals && releases.ok
+      ? await Promise.all([
+          lire(() => vitalsP75(avecCondition(f, "release", releases.relB))),
+          lire(() => vitalsP75(avecCondition(f, "release", releases.relA))),
+        ])
+      : [null, null];
+
   const deltasVitaux = deltasDeLaRangee(comparaison.mode, couvVitaux);
-  const deltasHero = deltasDeLaRangee(comparaison.mode, couvHero);
+  const deltasTrafic = deltasDeLaRangee(comparaison.mode, couvTrafic);
   // Une ligne par raison distincte : la rétention, qui touche toutes les sources, n'est dite qu'une fois.
   const notesComparaison = [
     ...new Set(
-      [blocs.vitals ? deltasVitaux.note : null, blocs.hero ? deltasHero.note : null].filter((n): n is string => n !== null),
+      [blocs.vitals ? deltasVitaux.note : null, blocs.trafic ? deltasTrafic.note : null].filter(
+        (n): n is string => n !== null,
+      ),
     ),
   ];
 
+  // ─── Rangée trafic (zone 2) ───
+  const debutsSeaux = bucketStarts(query.range);
+  const grilleContrat = grilleIso(debutsSeaux);
+  const referencePrev = referencePrecedente(query.range);
+  // La référence n'est posée que si la période précédente est COMPLÈTE : sinon aucun
+  // écart, et la note de rangée dit pourquoi (une fois, pas huit fois).
+  const comparerTrafic = prev && deltasTrafic.deltas;
+  const couvComplete: CouverturePrecedente = { etat: "complete", raison: null };
+  const precedentOu = <T,>(lu: Lecture<T | null>, valeur: (d: T) => number | null) =>
+    !comparerTrafic || !lu.ok || lu.data === null ? undefined : valeur(lu.data);
+  const refTrafic = comparerTrafic ? { reference: referencePrev, couverturePrecedente: couvComplete } : {};
+
+  const tuilesTrafic: Tuile[] = [];
+  if (blocs.trafic) {
+    // Sessions COMMENCÉES (R-P) : la même population que la tuile de tête de
+    // `/sessions`, et la sparkline compte la même (Σ seaux = valeur, sinon retirée).
+    tuilesTrafic.push(
+      !engagement.ok || engagement.data === null
+        ? { cle: "sessions", titre: "Sessions commencées", echec: true }
+        : {
+            cle: "sessions",
+            titre: "Sessions commencées",
+            props: {
+              label: "Sessions commencées",
+              valeur: engagement.data.sessions_started,
+              format: "count",
+              sensMeilleur: "neutre",
+              precedent: precedentOu(engagementPrev, (d) => d.sessions_started),
+              ...refTrafic,
+              serie: tendanceSessions.ok
+                ? (sparklineDeCompte(
+                    tendanceSessions.data.map((b) => ({ bucket: b.bucket, n: b.sessions })),
+                    debutsSeaux,
+                    engagement.data.sessions_started,
+                  ) ?? undefined)
+                : undefined,
+              href: lien("/sessions"),
+            },
+          },
+    );
+    const vuesParSeau = vues.ok ? vues.data.map((v) => ({ bucket: v.bucket, n: v.chargements + v.spa + v.inconnu })) : null;
+    tuilesTrafic.push(
+      !stats.ok
+        ? { cle: "pages-vues", titre: "Pages vues", echec: true }
+        : {
+            cle: "pages-vues",
+            titre: "Pages vues",
+            props: {
+              label: "Pages vues",
+              valeur: stats.data.pageviews,
+              format: "count",
+              sensMeilleur: "neutre",
+              precedent: precedentOu(statsPrev, (d) => d.pageviews),
+              ...refTrafic,
+              serie: vuesParSeau ? (sparklineDeCompte(vuesParSeau, debutsSeaux, stats.data.pageviews) ?? undefined) : undefined,
+              href: lien("/pages"),
+            },
+          },
+    );
+    // Un RATIO de deux comptes (CP14) : format « pour 100 », jamais « % » ; sans vue, `null`.
+    tuilesTrafic.push(
+      !stats.ok || !erreurs.ok || erreurs.data === null
+        ? { cle: "erreurs", titre: "Occurrences d'erreurs pour 100 pages vues", echec: true }
+        : {
+            cle: "erreurs",
+            titre: "Occurrences d'erreurs pour 100 pages vues",
+            props: {
+              label: "Occurrences d'erreurs pour 100 pages vues",
+              valeur: ratioPour100(erreurs.data.navigateur, stats.data.pageviews),
+              raisonNull: RAISON_AUCUNE_VUE,
+              format: "pour100",
+              sensMeilleur: "bas",
+              precedent:
+                comparerTrafic && statsPrev.ok && statsPrev.data && erreursPrev.ok && erreursPrev.data
+                  ? ratioPour100(erreursPrev.data.navigateur, statsPrev.data.pageviews)
+                  : undefined,
+              ...refTrafic,
+              lecture: lectureErreursPour100(erreurs.data),
+              serie:
+                serieErreurs.ok && serieErreurs.data && vues.ok
+                  ? serieRatioPour100(serieErreurs.data.points, vues.data).map((p) => p.ratio)
+                  : undefined,
+              href: lien("/errors"),
+            },
+          },
+    );
+  }
+  // La période précédente illisible (et non incomplète) : les tuiles perdent leur
+  // écart, et le disent — une absence de flèche ne doit pas se lire « stable ».
+  const rangeesIllisibles = [
+    comparerTrafic && (!statsPrev.ok || !engagementPrev.ok || !erreursPrev.ok) ? "le trafic" : null,
+    blocs.vitals && prev && deltasVitaux.deltas && !vitalsPrev.ok ? "les Web Vitals" : null,
+  ].filter((r): r is string => r !== null);
+  const precedenteIllisible = rangeesIllisibles.length
+    ? `la période précédente n'a pas pu être lue : aucune variation n'est affichée sur ${rangeesIllisibles.join(" ni sur ")}.`
+    : null;
+
+  // ─── Rangée Web Vitals (zone 3) ───
   const byName = Object.fromEntries((vitals.ok ? vitals.data : []).map((v) => [v.name, v]));
   const prevByName = Object.fromEntries((vitalsPrev.ok ? vitalsPrev.data : []).map((v) => [v.name, v]));
-  // La référence s'écrit à côté de l'écart (DeltaBadge, F03, P4) ; son libellé daté
-  // (plage précédente résolue) arrive avec la rangée de KpiTile de F11.
-  const pctOf = (cur: number, ref: number | null | undefined) =>
-    deltasHero.deltas && ref != null && ref !== 0
-      ? { pct: ((cur - ref) / ref) * 100, reference: "période précédente" }
+  const modeRelease = comparaison.mode === "release" && releases.ok && vitalsB !== null && vitalsA !== null;
+  const bByName = Object.fromEntries((vitalsB?.ok ? vitalsB.data : []).map((v) => [v.name, v]));
+  const aByName = Object.fromEntries((vitalsA?.ok ? vitalsA.data : []).map((v) => [v.name, v]));
+  // La règle d'`ecartP75` nomme « la période précédente » : en comparaison de
+  // releases, la référence est la release A, et la phrase doit le dire.
+  const ecartDeTuile = (courant: VitalAgg["intervalle"] | undefined, reference: VitalAgg["intervalle"] | undefined, format: FormatId) => {
+    const e = ecartP75(courant, reference, (v) => formater(format, v));
+    return e && modeRelease && releases.ok ? { ...e, regle: e.regle.replace("période précédente", `release ${releases.relA}`) } : e;
+  };
+  const tuilesVitaux: Tuile[] = VITAUX.map((nom, i): Tuile => {
+    const titre = `${nom} p75`;
+    const lecture = modeRelease ? vitalsB : vitals;
+    if (!lecture?.ok) return { cle: nom, titre, echec: true };
+    const format = formatDuVital(nom);
+    const courant: VitalAgg | undefined = modeRelease ? bByName[nom] : byName[nom];
+    const n = courant?.n ?? 0;
+    // Sous 100 mesures, la médiane accompagne le p75 (« échantillon faible · médiane »).
+    const mediane = courant && n < VITAL_FAIBLE_SOUS ? `médiane ${formater(format, courant.p50)}` : null;
+    const reference = modeRelease && releases.ok ? referenceRelease(releases.relA) : prev && deltasVitaux.deltas ? referencePrev : undefined;
+    const precedentLu = modeRelease ? aByName[nom] : prevByName[nom];
+    const serieLue = seriesVitaux[i];
+    return {
+      cle: nom,
+      titre,
+      props: {
+        label: titre,
+        valeur: courant?.p75 ?? null,
+        raisonNull: `aucune mesure ${nom} sur ${modeRelease && releases.ok ? `la release ${releases.relB}, ` : ""}${period.label}`,
+        format,
+        vital: nom,
+        precedent:
+          reference === undefined || (!modeRelease && !vitalsPrev.ok) || (modeRelease && !vitalsA?.ok)
+            ? undefined
+            : (precedentLu?.p75 ?? null),
+        reference,
+        couverturePrecedente: reference ? { etat: "complete", raison: null, n: precedentLu?.n ?? null } : undefined,
+        couverture: { n, unite: "mesures", faibleSous: VITAL_FAIBLE_SOUS },
+        intervalle: courant?.intervalle,
+        // P*.1 : pas de test sur deux p75 ; leurs intervalles comparés disent si
+        // l'écart est établi — contre la période précédente, ou contre la release A.
+        ecart: reference ? ecartDeTuile(courant?.intervalle, precedentLu?.intervalle, format) : null,
+        lecture: [modeRelease && releases.ok ? `release ${releases.relB} seulement` : null, mediane]
+          .filter(Boolean)
+          .join(" · ") || undefined,
+        // La sparkline compte la population de la valeur : sous `cmp=release`, la
+        // valeur est celle de la release B, la courbe de toute la population — retirée.
+        serie: !modeRelease && serieLue.ok ? serieLue.data.map((p) => p.p75) : undefined,
+        href: lien("/pages", { vital: nom }),
+      },
+    };
+  });
+  const etatEchantillon = blocs.vitals && echantillonnage.ok && echantillonnage.data
+    ? etatLectureEchantillonnage({ ok: true, data: echantillonnage.data })
+    : blocs.vitals && !echantillonnage.ok
+      ? etatLectureEchantillonnage({ ok: false, raison: echantillonnage.raison })
       : null;
+
+  // ─── Vues préréglées (zone 1, § 3.6) ───
+  const entreeReleases: Entree<ReturnType<typeof choisirReleases>> = choix
+    ? { valeur: choix }
+    : { indisponible: "lecture des releases de la fenêtre en échec" };
+  // Une dimension absente de la base (colonne d'avant v75) ou illisible : la vue qui
+  // en dépend est affichée désactivée, avec sa raison (§ 3.6).
+  const lignesDecoupage = (
+    lu: typeof navigateurs,
+    dispo: { available: boolean; reason: string | null },
+    quoi: string,
+  ): Entree<VitalsBreakdownRow[]> =>
+    !dispo.available
+      ? { indisponible: dispo.reason ?? `${quoi} non collectés` }
+      : lu.ok && lu.data
+        ? { valeur: lu.data.rows }
+        : { indisponible: `lecture des ${quoi} en échec` };
+  const navLus = lignesDecoupage(navigateurs, dispoNavigateur, "navigateurs");
+  const paysLus = lignesDecoupage(pays, dispoPays, "pays estimés");
+  const vuesPrereglees = vuesProduit({
+    releases: entreeReleases,
+    navigateurs: navLus,
+    pays: "valeur" in paysLus ? { valeur: paysLus.valeur.map((l) => ({ valeur: l.valeur, volume: l.samples })) } : paysLus,
+  });
+
+  // ─── Constats (zone 4) ───
+  const maintenant = Math.floor(Date.now() / 60_000) * 60_000;
+  const versionPrecedente = (version: string | null) =>
+    deploys.ok && version ? (deploys.data.find((d) => d.version && d.version !== version)?.version ?? null) : null;
+  const constats = constatsVueEnsemble(
+    {
+      anomalies: health.ok
+        ? {
+            ok: true,
+            data: {
+              lignes: health.data.anomalies,
+              filtrees: health.data.factors.some((x) => x.key === "anomalies" && x.raisonNull === "sous filtre"),
+            },
+          }
+        : { ok: false },
+      deploiement: impact.ok
+        ? { ok: true, data: impact.data ? { impact: impact.data, versionPrecedente: versionPrecedente(impact.data.version) } : null }
+        : { ok: false },
+      alertes: alertes.ok ? { ok: true, data: alertes.data } : { ok: false },
+      regresses: groupesErreurs.ok
+        ? { ok: true, data: groupesErreurs.data.groups.filter((g) => g.regressed) }
+        : { ok: false },
+    },
+    {
+      // L'heure de l'anomalie, bornée à la minute passée : le contrat refuse un `to` futur.
+      anomalie: (a) => {
+        const debut = new Date(a.bucket).getTime();
+        return lien("/pages", {
+          app: a.app_id,
+          route: a.route,
+          period: null,
+          from: isoSansMs(debut),
+          to: isoSansMs(Math.min(debut + 3_600_000, maintenant)),
+        });
+      },
+      deploiement: (relB, relA) => hrefWithQuery("/", query, { cmp: "release", rel_b: relB, rel_a: relB ? relA : null }),
+      alertes: lien("/alerts"),
+      alerte: (evt) => lien("/alerts", { evt: String(evt) }),
+      erreur: (g) => lien("/errors", { app: g.app_id, panel: ecrirePanel({ type: "error", id: g.fingerprint }) }),
+      regresses: lien("/errors", { statut: "regressed" }),
+    },
+  );
 
   // SÉRIES SUR GRILLE (F04, § 3.10). Les lectures ne rendent que les seaux non vides :
   // posées telles quelles, deux heures mesurées de part et d'autre d'un creux de
   // trafic seraient reliées par une pente jamais mesurée. Chaque série est donc
   // alignée sur les seaux attendus — un seau sans mesure reste un trou ; un seau sans
   // page vue vaut 0 page vue.
-  const debutsSeaux = bucketStarts(ecran.query.range);
-  const grilleContrat = grilleIso(debutsSeaux);
   const pointsLcp = series.ok
     ? alignerSeaux(series.data, debutsSeaux, false).map((r, i) => ({
         t: grilleContrat[i],
@@ -235,12 +562,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title="Vue d'ensemble" help="rum" />
+      <PageHeader title="Vue d'ensemble" sub={QUESTION} help="rum" />
       {/* Plage personnalisée (case de la heatmap, zoom) : dite dans les DEUX fuseaux
           (R-T) — « 15/07 09:00-10:00 Europe/Paris (07:00-08:00 UTC) ». */}
-      {ecran.query.range.preset === null && (
+      {query.range.preset === null && (
         <p role="note" data-testid="plage-deux-fuseaux" className="-mt-2 mb-4 text-xs text-ink-soft">
-          Plage lue : {libelleDeuxFuseaux(ecran.query.range.from, ecran.query.range.to, fuseau)}
+          Plage lue : {libelleDeuxFuseaux(query.range.from, query.range.to, fuseau)}
         </p>
       )}
 
@@ -259,79 +586,97 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </div>
       )}
 
-      {blocs.sante && (
-        <SectionErreur titre="Score de santé">
-          {!health.ok ? (
-            <div className="mb-6">
-              <EchecLecture titre="Score de santé" />
-            </div>
-          ) : (
-            health.data && <HealthBanner health={health.data} periodLabel={period.label} />
-          )}
-        </SectionErreur>
-      )}
+      {/* Zone 1 — vues préréglées (P13) : une vue ne change que la population. */}
+      <div className="mb-4 min-w-0">
+        <PresetBar vues={vuesPrereglees} actif={null} />
+      </div>
 
-      {/* Pourquoi les tuiles n'ont pas d'écart : dit en clair, jamais un delta
-          calculé sur une période à moitié mesurée (§ 3.2). */}
-      {(blocs.vitals || blocs.hero) && (notesComparaison.length > 0 || comparaison.mode === "release") && (
-        <div role="note" data-testid="note-comparaison" className="mb-4 space-y-1 text-xs text-ink-soft">
-          {notesComparaison.map((note) => (
-            <p key={note}>Aucun écart affiché — {note}.</p>
-          ))}
-          {comparaison.mode === "release" && (
-            <p>
-              Comparaison de releases : ces tuiles n&apos;ont pas d&apos;écart par release
-              {blocs.versions
-                ? " ; le tableau des versions compare les releases sur la même fenêtre, sans normalisation de trafic."
-                : "."}
-            </p>
+      {/* Pourquoi les tuiles n'ont pas d'écart : dit en clair, UNE fois par raison,
+          jamais un delta calculé sur une période à moitié mesurée (§ 3.2). */}
+      {(blocs.vitals || blocs.trafic) &&
+        (notesComparaison.length > 0 || precedenteIllisible || comparaison.mode === "release") && (
+          <div role="note" data-testid="note-comparaison" className="mb-4 space-y-1 text-xs text-ink-soft">
+            {notesComparaison.map((note) => (
+              <p key={note}>Aucun écart affiché — {note}.</p>
+            ))}
+            {precedenteIllisible && <p>Aucun écart affiché — {precedenteIllisible}</p>}
+            {comparaison.mode === "release" &&
+              (releases.ok ? (
+                <p>
+                  Comparaison de releases ({releases.regle}) : les tuiles Web Vitals lisent la release{" "}
+                  {releases.relB} face à {releases.relA}, même fenêtre, sans normalisation de trafic : l&apos;écart mêle
+                  le code et le contexte. Les tuiles de trafic n&apos;ont pas d&apos;écart par release.
+                </p>
+              ) : (
+                <p>Comparaison de releases indisponible : {releases.raison}.</p>
+              ))}
+          </div>
+        )}
+
+      {/* Zone 2 — santé (compacte) et trafic, sur une rangée à 1440 px. Le trafic
+          prend 7/12 : ses trois tuiles portent des valeurs « 2,4 pour 100 » qu'une
+          colonne de 5/12 ne loge pas sans déborder (écart au § 5.1.1, dit en PR). */}
+      {(blocs.sante || blocs.trafic) && (
+        <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 min-[1400px]:grid-cols-12">
+          {blocs.sante && (
+            <div className={`min-w-0 ${blocs.trafic ? "min-[1400px]:col-span-5" : "min-[1400px]:col-span-12"}`}>
+              <SectionErreur titre="Santé de la période">
+                {!health.ok ? (
+                  <EchecLecture titre="Santé de la période" />
+                ) : (
+                  <HealthBanner
+                    health={health.data}
+                    periodLabel={period.label}
+                    compact
+                    liens={{
+                      vitals: lien("/pages"),
+                      errors: lien("/errors"),
+                      stability: lien("/sessions"),
+                      anomalies: "#anomalies",
+                    }}
+                  />
+                )}
+              </SectionErreur>
+            </div>
+          )}
+          {blocs.trafic && (
+            <div className={`min-w-0 ${blocs.sante ? "min-[1400px]:col-span-7" : "min-[1400px]:col-span-12"}`}>
+              <SectionErreur titre="Trafic">
+                <RangeeTuiles tuiles={tuilesTrafic} classes="grid-cols-1 sm:grid-cols-3" />
+              </SectionErreur>
+            </div>
           )}
         </div>
       )}
 
+      {/* Zone 3 — Web Vitals au p75, verdict et intervalle (P*.1), sparkline sur la bande « Bon ». */}
       {blocs.vitals && (
         <SectionErreur titre="Web Vitals">
-          {!vitals.ok ? (
-            <div className="mb-6">
-              <EchecLecture titre="Web Vitals" />
-            </div>
-          ) : (
-            <>
-              {/* Période précédente illisible : les cartes s'affichent SANS variation,
-                  et le disent — une absence de flèche ne doit pas se lire « stable ». */}
-              {!vitalsPrev.ok && (
-                <div className="mb-3">
-                  <EtatSurface
-                    compact
-                    etat={{ kind: "partiel", raison: "la période précédente n'a pas pu être lue : aucune variation n'est affichée." }}
-                  />
-                </div>
-              )}
-              <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
-                {["LCP", "INP", "CLS", "FCP", "TTFB"].map((name) => (
-                  <VitalCard
-                    key={name}
-                    name={name}
-                    p75={byName[name]?.p75 ?? null}
-                    median={byName[name]?.p50 ?? null}
-                    n={byName[name]?.n ?? 0}
-                    intervalle={byName[name]?.intervalle}
-                    prev={deltasVitaux.deltas ? (prevByName[name]?.p75 ?? null) : null}
-                    // P*.1 : pas de test sur deux p75 ; leurs intervalles comparés
-                    // disent si l'écart est établi (chevauchement : non établi).
-                    ecart={
-                      deltasVitaux.deltas
-                        ? ecartP75(byName[name]?.intervalle, prevByName[name]?.intervalle, (v) => fmtVital(name, v))
-                        : null
-                    }
-                    periodLabel={period.label}
-                  />
-                ))}
+          <div className="mb-6 min-w-0">
+            <RangeeTuiles tuiles={tuilesVitaux} classes="grid-cols-2 md:grid-cols-3 xl:grid-cols-5" />
+            {etatEchantillon && (
+              <div className="mt-3">
+                <EtatSurface compact etat={etatEchantillon} />
               </div>
-            </>
-          )}
+            )}
+          </div>
         </SectionErreur>
       )}
+
+      {/* Zone 4 — constats automatiques à règle publiée, repliés. */}
+      <div className="mb-6 min-w-0">
+        <SectionErreur titre="Constats">
+          {constats.echecs.length > 0 && (
+            <div className="mb-2">
+              <EtatSurface
+                compact
+                etat={{ kind: "partiel", raison: `constats partiels : lecture en échec de ${constats.echecs.join(", ")}` }}
+              />
+            </div>
+          )}
+          <InsightStrip constats={constats.constats} regles={constats.regles} fenetre={FENETRE_CONSTATS} />
+        </SectionErreur>
+      </div>
 
       {blocs.reseau && (
         <SectionErreur titre="Décomposition réseau du TTFB">
@@ -362,26 +707,18 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                   vital="LCP"
                   grille={grilleContrat}
                   points={pointsLcp}
-                  seauSecondes={ecran.query.range.bucketSeconds}
+                  seauSecondes={query.range.bucketSeconds}
                   fuseau="UTC"
                   zoomHref={gabaritZoomEcran}
                 />
               )
             }
           >
-            {!stats.ok ? (
-              // Aucun chiffre du volume n'est lisible : ni tuile à 0, ni « — » (qui dirait
-              // « pas de mesure » sur une fenêtre qu'on n'a simplement pas pu lire).
-              <EchecLecture compact titre="Sessions, pages vues et taux d'erreur" />
-            ) : (
-              <HeroVolume stats={stats.data} statsPrev={statsPrev} periodLabel={period.label} pctOf={pctOf} />
-            )}
             <HeroReading>
               Courbe = LCP p75 dans le temps, sur les zones «&nbsp;Bon&nbsp;» (jusqu&apos;à {fmtBorne("LCP", THRESHOLDS.LCP[0])}),
               «&nbsp;À améliorer&nbsp;» et «&nbsp;Mauvais&nbsp;» (au-delà de {fmtBorne("LCP", THRESHOLDS.LCP[1])}), seuils web.dev au
               75ᵉ&nbsp;centile. Un seau sans mesure reste un trou ; un clic sur un seau zoome sur sa plage.{" "}
-              {deltasHero.deltas && "Les tuiles comparent le volume et la fiabilité à la période précédente. "}
-              Détail vital par vital ci-dessous, historique 14&nbsp;jours plus bas.
+              Historique 14&nbsp;jours plus bas.
             </HeroReading>
           </SupervisionHero>
         </SectionErreur>
@@ -400,13 +737,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             decoupe.data && (
               <Breakdown
                 title="Web Vitals par dimension"
-                tabs={breakdownTabs("/", ecran.query, decoupage, dispoDecoupage, {
+                tabs={breakdownTabs("/", query, decoupage, dispoDecoupage, {
                   hours: businessHours ? "business" : null,
                   tri: triDecoupage === "volume" ? "volume" : null,
                 })}
                 notice={BREAKDOWN_NOTICES[decoupage]}
                 items={vitalsBreakdownClasse(
-                  { pathname: "/", query: ecran.query, schema, dimension: decoupage },
+                  { pathname: "/", query, schema, dimension: decoupage },
                   decoupe.data.rows,
                   { tri: triDecoupage, ensembleLcp: vitals.ok ? (byName.LCP?.p75 ?? null) : null },
                 )}
@@ -554,7 +891,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {blocs.anomalies && (
         <SectionErreur titre="Anomalies">
           {health.ok ? (
-            health.data && <AnomalyTable health={health.data} />
+            <AnomalyTable health={health.data} />
           ) : (
             <div className="mt-6">
               <EchecLecture titre="Anomalies" />
@@ -568,57 +905,19 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 }
 
 /**
- * Les trois tuiles de volume du hero. La période précédente est une lecture à
- * part : illisible, les tuiles restent justes mais perdent leur variation — et un
- * bandeau « Partiel » le dit, sinon l'absence de flèche se lirait « stable ».
+ * Une rangée de tuiles (§ 3.12 : une rangée = une population). Une tuile dont la
+ * lecture a échoué dit l'échec à SA place : ni « 0 », ni « — », qui se liraient
+ * comme une mesure sur une fenêtre qu'on n'a simplement pas pu lire.
  */
-function HeroVolume({
-  stats,
-  statsPrev,
-  periodLabel,
-  pctOf,
-}: {
-  stats: OverviewStats;
-  statsPrev: Lecture<OverviewStats | null>;
-  periodLabel: string;
-  pctOf: (cur: number, prev: number | null | undefined) => { pct: number; reference: string } | null;
-}) {
-  const prev = statsPrev.ok ? statsPrev.data : null;
-  // Sans page vue, le taux n'a pas de dénominateur : « — », jamais « 0 % » — qui se
-  // lirait « aucune erreur » sur une fenêtre où l'on n'a simplement rien mesuré.
-  const errorRate = stats.pageviews ? (stats.errors / stats.pageviews) * 100 : null;
-  const prevErrorRate = prev?.pageviews ? (prev.errors / prev.pageviews) * 100 : null;
+function RangeeTuiles({ tuiles, classes }: { tuiles: Tuile[]; classes: string }) {
   return (
-    <>
-      {!statsPrev.ok && (
-        <EtatSurface
-          compact
-          etat={{ kind: "partiel", raison: "la période précédente n'a pas pu être lue : aucune variation n'est affichée." }}
-        />
-      )}
-      <HeroStat
-        label={`Sessions · ${periodLabel}`}
-        value={stats.sessions.toLocaleString("fr-FR")}
-        delta={pctOf(stats.sessions, prev?.sessions)}
-      />
-      <HeroStat
-        label="Pages vues"
-        value={stats.pageviews.toLocaleString("fr-FR")}
-        delta={pctOf(stats.pageviews, prev?.pageviews)}
-      />
-      <HeroStat
-        label="Taux d'erreur JS / page vue"
-        value={errorRate == null ? "—" : `${errorRate.toFixed(1)} %`}
-        delta={errorRate == null ? null : (() => {
-          // Même règle que les autres tuiles : sans base (période précédente vide ou
-          // à 0), pas de variation — l'ancien `prev || 1` inventait un pourcentage.
-          const d = pctOf(errorRate, prevErrorRate);
-          return d && { ...d, lowerIsBetter: true };
-        })()}
-        tone={errorRate == null ? "neutral" : errorRate > 2 ? "poor" : errorRate > 1 ? "warn" : "good"}
-        hint={errorRate == null ? "aucune page vue sur la période" : undefined}
-      />
-    </>
+    <div className={`grid min-w-0 gap-3 ${classes}`}>
+      {tuiles.map((t) => (
+        <div key={t.cle} className="flex min-w-0 flex-col" data-testid={`tuile-${t.cle}`}>
+          {"echec" in t ? <EchecLecture compact titre={t.titre} /> : <KpiTile {...t.props} />}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -680,3 +979,4 @@ function PhasesReseau({
     </section>
   );
 }
+

@@ -1,7 +1,10 @@
 // Health score composite v0.3 (chantier B5) — formule documentée, 0-100 :
 //   - 40 % vitals     : part des mesures notées 'good' sur la fenêtre, LCP pondéré x2
 //                       (le LCP est le vital le plus corrélé au ressenti — et au créneau MIP)
-//   - 30 % erreurs    : 1 - (erreurs JS / pages vues), plancher 0
+//   - 30 % erreurs    : 1 - (occurrences d'erreurs NAVIGATEUR / pages vues), plancher 0
+//                       (F11, CP14 : une exception Node ou Python n'a aucune page vue en
+//                       face ; elle n'entre plus au numérateur — même lecture que la tuile
+//                       « Occurrences d'erreurs pour 100 pages vues », `erreursNavigateur`)
 //   - 20 % stabilité  : part des sessions de la fenêtre sans aucune erreur JS
 //   - 10 % anomalies  : 10 pts - 2,5 pts par ligne v_anomaly des dernières 24 h, plancher 0
 //                       (les anomalies sont TOUJOURS sur 24 h fixes, indépendamment de la période)
@@ -10,6 +13,8 @@
 // Libellés : Excellent >= 90 / Bon >= 75 / Dégradé >= 50 / Critique < 50.
 import { q } from "./db";
 import { type Filters } from "./filters";
+import { formater } from "./fmt-ids";
+import { erreursNavigateur } from "./queries-errors";
 import { compileScope, sessionJoin } from "./query-compiler";
 import { conditionsOf } from "./query-contract";
 import { sqlContext } from "./query-sql";
@@ -165,6 +170,35 @@ export function facteurAnomalies(entree: {
   };
 }
 
+/**
+ * La composante « Erreurs navigateur » du score — PURE (F11, CP14).
+ *
+ * Le numérateur ne compte que les occurrences de source `browser_*` : une erreur
+ * serveur n'a aucune page vue en face, et l'ancien facteur « Erreurs JS » la
+ * divisait pourtant par des pages vues. Sans page vue, aucun dénominateur : la
+ * composante sort du score (`earned: null`, « aucune page vue ») — l'ancien calcul
+ * lui donnait 0 point dès qu'une erreur existait, une note inventée.
+ *
+ * `restreint: false` (base sans la colonne de source, v69) : le numérateur porte
+ * toutes les sources, et le détail le dit.
+ */
+export function facteurErreurs(entree: { occurrences: number; pageviews: number; restreint: boolean }): HealthFactor {
+  const base = { key: "errors" as const, label: "Erreurs navigateur", max: 30 };
+  if (!(entree.pageviews > 0)) {
+    // Pas de `raisonNull` : la jauge écrit « n/a », et le détail (visible) dit pourquoi.
+    return { ...base, detail: "aucune page vue : ratio non calculable", earned: null };
+  }
+  const ratio = Math.max(0, 1 - entree.occurrences / entree.pageviews);
+  const pour100 = formater("pour100", (100 * entree.occurrences) / entree.pageviews);
+  return {
+    ...base,
+    detail:
+      `${formater("count", entree.occurrences)} occurrence(s) pour ${formater("count", entree.pageviews)} page(s) vue(s) (${pour100})` +
+      (entree.restreint ? "" : " — toutes sources : colonne de source absente"),
+    earned: round1(30 * ratio),
+  };
+}
+
 export interface AnomalyRow {
   app_id: string;
   route: string | null;
@@ -209,22 +243,21 @@ export async function healthScore(f: Filters): Promise<Health> {
     sql.params,
   );
 
-  // erreurs / pages vues / sessions propres, même plage et mêmes filtres
+  // pages vues / sessions propres, même plage et mêmes filtres
   const comptes = await sqlContext(f);
   const pageviews = comptes.where({ dataset: "views", row: "p", session: "s", time: "p.started_at" });
-  const errors = comptes.where({ dataset: "errors", row: "e", session: "s", time: "e.ts" });
   const sessions = comptes.where({ dataset: "sessions", row: "s", session: "s", time: "s.last_seen_at" });
   const propres = comptes.where({ dataset: "sessions", row: "s", session: "s", time: "s.last_seen_at" });
   const debut = comptes.bind(comptes.query.range.from);
   const fin = comptes.bind(comptes.query.range.to);
-  const [c] = await q<{ pageviews: number; errors: number; sessions: number; clean_sessions: number }>(
+  // Numérateur des erreurs : la MÊME lecture que la tuile « Occurrences d'erreurs pour
+  // 100 pages vues » (CP14) — occurrences navigateur seulement, sources comptées à part.
+  const erreurs = await erreursNavigateur(f);
+  const [c] = await q<{ pageviews: number; sessions: number; clean_sessions: number }>(
     `select
        (select count(*)::int from rum_pageview p
          ${sessionJoin("p", "s")}
          where true${pageviews}) as pageviews,
-       (select coalesce(sum(e.occurrences), 0)::int from rum_error e
-         ${sessionJoin("e", "s")}
-         where true${errors}) as errors,
        (select count(*)::int from rum_session s where true${sessions}) as sessions,
        (select count(*)::int from rum_session s
          where true${propres}
@@ -277,8 +310,7 @@ export async function healthScore(f: Filters): Promise<Health> {
   }
 
   const vitalsRatio = v.total_w > 0 ? v.good_w / v.total_w : null;
-  const errorsRatio =
-    c.pageviews > 0 ? Math.max(0, 1 - c.errors / c.pageviews) : c.errors > 0 ? 0 : null;
+  const facteurErr = facteurErreurs({ occurrences: erreurs.navigateur, pageviews: c.pageviews, restreint: erreurs.restreint });
   const stabilityRatio = c.sessions > 0 ? c.clean_sessions / c.sessions : null;
 
   const factors: HealthFactor[] = [
@@ -292,16 +324,7 @@ export async function healthScore(f: Filters): Promise<Health> {
       earned: vitalsRatio == null ? null : round1(40 * vitalsRatio),
       max: 40,
     },
-    {
-      key: "errors",
-      label: "Erreurs JS",
-      detail:
-        errorsRatio == null
-          ? "aucune page vue"
-          : `${c.errors} erreur(s) / ${c.pageviews} page(s) vue(s)`,
-      earned: errorsRatio == null ? null : round1(30 * errorsRatio),
-      max: 30,
-    },
+    facteurErr,
     {
       key: "stability",
       label: "Stabilité des sessions",
@@ -322,7 +345,7 @@ export async function healthScore(f: Filters): Promise<Health> {
   ];
 
   // toutes les composantes "trafic" vides => pas de score (anomalies seules = pas significatif)
-  if (vitalsRatio == null && errorsRatio == null && stabilityRatio == null) {
+  if (vitalsRatio == null && facteurErr.earned == null && stabilityRatio == null) {
     return { score: null, label: null, factors, anomalies };
   }
 
