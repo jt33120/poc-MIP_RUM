@@ -7,6 +7,7 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
+import { debordements, LARGEURS } from "./helpers/debordements";
 
 // utilisateur DÉDIÉ à ce spec : seed-admin régénère le mdp de julian@ à chaque
 // run, et les spec files tournent en parallèle (course constatée sur rum-flow)
@@ -51,8 +52,12 @@ const PY = pythonBin();
 
 let backend: ChildProcess | null = null;
 
+// Sans FastAPI, seuls les deux tests bout en bout sont sautés (chacun le dit) : un
+// `test.skip` dans ce crochet de fichier sauterait aussi les blocs d'écran (F60),
+// qui sèment leurs spans en base et n'ont pas besoin du backend de démo.
+const SANS_FASTAPI = "fastapi/uvicorn indisponibles (demo/.venv absent et python3 nu)";
+
 test.beforeAll(async () => {
-  test.skip(!PY, "fastapi/uvicorn indisponibles (demo/.venv absent et python3 nu)");
   await pool.query(
     `insert into console_user (email, password_hash, role, apps, active)
      values ($1, $2, 'admin', null, true)
@@ -61,7 +66,8 @@ test.beforeAll(async () => {
     [E2E_EMAIL, bcryptHash(E2E_PASSWORD)],
   );
 
-  backend = spawn(PY!, ["demo/backend.py"], {
+  if (!PY) return;
+  backend = spawn(PY, ["demo/backend.py"], {
     env: {
       ...process.env,
       MIP_RUM_ENDPOINT: "http://localhost:4318/v1/traces",
@@ -112,6 +118,7 @@ async function pollRows(sql: string, params: unknown[], minCount: number, timeou
 }
 
 test("fetch + XHR -> spans front ET back corrélés par trace_id en base", async ({ page }) => {
+  test.skip(!PY, SANS_FASTAPI);
   await page.goto("http://localhost:8080/", { waitUntil: "load" });
   await page.click("#btn-api-fetch");
   await page.click("#btn-api-xhr");
@@ -153,12 +160,15 @@ test("fetch + XHR -> spans front ET back corrélés par trace_id en base", async
 test("console : /tracing affiche la corrélation et la timeline montre l'appel API", async ({
   page,
 }) => {
+  test.skip(!PY, SANS_FASTAPI);
   await loginConsole(page);
 
   await page.goto("http://localhost:3000/tracing", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("back-routes")).toContainText("/api/demo/items/{item_id}");
   await expect(page.getByTestId("api-calls")).toContainText("/api/demo/items/");
-  await expect(page.getByTestId("trace-coverage")).not.toContainText("— %");
+  // F60 : la couverture est la tuile « Appels suivis jusqu'au serveur » ; mesurée, jamais « — ».
+  const couverture = page.getByTestId("kpi-tile").filter({ hasText: "Appels suivis jusqu'au serveur" });
+  await expect(couverture.getByTestId("kpi-valeur")).not.toHaveText("—");
 
   // dernière session de demo-app avec un appel API -> timeline
   const [row] = await pool.query(
@@ -170,4 +180,169 @@ test("console : /tracing affiche la corrélation et la timeline montre l'appel A
   });
   await expect(page.locator("body")).toContainText("Appel API");
   await expect(page.locator("body")).toContainText("serveur");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Écran Tracing refait (§ 5.8, F60) : spans SYNTHÉTIQUES semés dans une app dédiée,
+// sans backend de démo. Ce bloc prouve ce que l'écran promet :
+//   - une barre = le p75 vu du navigateur, et la légende l'écrit (DF2 : plus aucune
+//     barre coupée en « serveur » + « réseau = front_p75 − back_p75 ») ;
+//   - un clic sur une barre du classement mène à SA ligne de « Tous les appels API »,
+//     hors du <details> ; chaque ligne porte `id="appel-<hash>"` ;
+//   - « Traces de cet appel » filtre les traces lentes (`appel=`, `#traces`) ;
+//   - le rejeu s'ouvre à l'instant de l'appel (`at` en ms epoch) ;
+//   - sans déploiement, le panneau dit comment en déclarer un ;
+//   - rien ne déborde à 390, 768 et 1440 px.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CONSOLE_F60 = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
+
+/** Appels semés : méthode, chemin, puis un triplet (ms navigateur, ms serveur | null, statut) par trace. */
+const APPELS_F60: [string, string, [number, number | null, number][]][] = [
+  ["GET", "/api/f60/lent", [[1200, 300, 200], [1100, 250, 200], [900, 200, 200]]],
+  // Un échec serveur (503) : sa trace sert aussi le détail de trace.
+  ["POST", "/api/f60/panier", [[800, 780, 503], [600, 100, 200]]],
+  // Dix appels rapides, non suivis : douze appels distincts, donc deux dans le <details>.
+  ...Array.from({ length: 10 }, (_v, i): [string, string, [number, number | null, number][]] => [
+    "GET",
+    `/api/f60/c${String(i).padStart(2, "0")}`,
+    [[100 + i * 10, null, 200]],
+  ]),
+];
+
+/**
+ * Sème les spans d'une app dédiée : identifiants HEXADÉCIMAUX (le détail de trace
+ * n'accepte `?span=` que sur 16 caractères hexadécimaux), préfixés par app pour
+ * rester uniques dans `rum_span`. Aucun marqueur de déploiement : le panneau T11
+ * doit dire « Non collecté ».
+ */
+async function semerTracesF60(app: string, prefixe: string): Promise<void> {
+  for (const t of ["rum_span", "rum_error", "rum_session", "deploy_marker"]) {
+    await pool.query(`delete from ${t} where app_id = $1`, [app]);
+  }
+  await pool.query(
+    `insert into app_registry (app_id, name) values ($1, $2) on conflict (app_id) do nothing`,
+    [app, `Tracing E2E ${app}`],
+  );
+  const session = `${app}-s1`;
+  await pool.query(
+    `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+     values ($1, $2, $1, 'desktop', false, now() - interval '3 hours', now() - interval '5 minutes', 4)
+     on conflict (session_id) do nothing`,
+    [session, app],
+  );
+  let k = 0;
+  for (const [methode, chemin, traces] of APPELS_F60) {
+    for (const [front, back, statut] of traces) {
+      k++;
+      const trace = `${prefixe}${k.toString(16).padStart(28, "0")}`;
+      const spanFront = `${prefixe}${(k * 2).toString(16).padStart(12, "0")}`;
+      const spanBack = `${prefixe}${(k * 2 + 1).toString(16).padStart(12, "0")}`;
+      const minutes = 10 + k * 7;
+      await pool.query(
+        `insert into rum_span (span_id, trace_id, tier, app_id, session_id, method, url, status_code, duration_ms, route, name, ts)
+         values ($1, $2, 'front', $3, $4, $5, $6, $7, $8, '/f60', $9, now() - $10::int * interval '1 minute')`,
+        [spanFront, trace, app, session, methode, chemin, statut, front, `${methode} ${chemin}`, minutes],
+      );
+      if (back === null) continue;
+      await pool.query(
+        `insert into rum_span (span_id, trace_id, parent_span_id, tier, app_id, session_id, method, url, status_code, duration_ms, route, name, ts)
+         values ($1, $2, $3, 'back', $4, $5, $6, null, $7, $8, $9, $10,
+                 now() - $11::int * interval '1 minute' + interval '5 milliseconds')`,
+        [spanBack, trace, spanFront, app, session, methode, statut, back, chemin, `${methode} ${chemin}`, minutes],
+      );
+    }
+  }
+}
+
+test.describe("F60 — écran Tracing (§ 5.8)", () => {
+  const APP_F60 = "f60-e2e-tracing";
+  const LENT = "GET /api/f60/lent";
+
+  test.beforeAll(async () => {
+    await semerTracesF60(APP_F60, "f60a");
+  });
+
+  const ouvrir = async (page: Page, extra = "") => {
+    await loginConsole(page);
+    await page.goto(`${CONSOLE_F60}/tracing?app=${APP_F60}${extra}`, { waitUntil: "domcontentloaded" });
+  };
+
+  test("hero : une barre = le p75 navigateur, légende écrite ; un clic mène à la ligne de la table", async ({ page }) => {
+    await ouvrir(page);
+    const hero = page.locator("#hero-traces");
+    await expect(hero).toContainText("Barre = durée p75 vue du navigateur");
+    await expect(hero).toContainText("Part serveur = médiane, appel par appel");
+
+    await hero.getByRole("link", { name: LENT, exact: true }).click();
+    const id = `appel-${encodeURIComponent(LENT)}`;
+    // Retrouvée par getElementById (l'identifiant porte des « % ») : présente, visible, hors du <details>.
+    await expect
+      .poll(() =>
+        page.evaluate((i) => {
+          const el = document.getElementById(i);
+          return !!el && !el.closest("details") && el.getClientRects().length > 0;
+        }, id),
+      )
+      .toBe(true);
+    await expect(page.locator(`[id="${id}"]`)).toBeInViewport();
+
+    // T8 : chaque ligne porte son ancre ; douze appels, dont deux repliés.
+    const ids = await page.locator('[data-testid="ligne-appel"]').evaluateAll((els) => els.map((e) => e.id));
+    expect(ids).toHaveLength(12);
+    expect(ids.every((i) => i.startsWith("appel-"))).toBe(true);
+    await expect(page.getByTestId("appels-suivants")).toContainText("Voir les 12 appels");
+  });
+
+  test("« Traces de cet appel » : appel= et #traces ; seules ses traces ; rejeu à l'instant de l'appel", async ({ page }) => {
+    await ouvrir(page);
+    await page.locator("#hero-traces").getByTestId("traces-appel").first().click();
+    await page.waitForURL((u) => u.searchParams.get("appel") === LENT && u.hash === "#traces", { timeout: 15_000 });
+
+    const lignes = page.locator('#traces [data-testid="trace-lente"]');
+    await expect(lignes).toHaveCount(3);
+    expect(await lignes.evaluateAll((els) => els.map((e) => e.getAttribute("data-appel")))).toEqual([LENT, LENT, LENT]);
+    await expect(page.locator("#traces")).toContainText(`Traces les plus lentes — ${LENT}`);
+
+    // La plus lente d'abord ; son rejeu s'ouvre à l'instant de l'appel, en ms epoch.
+    const { rows } = await pool.query(
+      `select ts, span_id from rum_span where app_id = $1 and tier = 'front' and url = '/api/f60/lent' order by duration_ms desc limit 1`,
+      [APP_F60],
+    );
+    const href = await lignes.first().getByTestId("rejeu-instant").getAttribute("href");
+    const cible = new URL(href!, CONSOLE_F60);
+    expect(cible.searchParams.get("tab")).toBe("replay");
+    expect(cible.searchParams.get("at")).toBe(String(new Date(rows[0].ts).getTime()));
+    // Le détail s'ouvre sur CET appel (`span=`) : une trace de page vue en porte plusieurs (E0).
+    const detail = await lignes.first().locator('a[href^="/tracing/"]').getAttribute("href");
+    expect(new URL(detail!, CONSOLE_F60).searchParams.get("span")).toBe(rows[0].span_id);
+  });
+
+  test("?appel= posé : la table des traces ne liste que cet appel, et le filtre se retire", async ({ page }) => {
+    await ouvrir(page, `&appel=${encodeURIComponent("POST /api/f60/panier")}`);
+    const lignes = page.locator('#traces [data-testid="trace-lente"]');
+    await expect(lignes).toHaveCount(2);
+    expect(new Set(await lignes.evaluateAll((els) => els.map((e) => e.getAttribute("data-appel"))))).toEqual(
+      new Set(["POST /api/f60/panier"]),
+    );
+    await expect(page.getByTestId("retirer-appel")).toBeVisible();
+  });
+
+  test("sans déploiement : le panneau reste et nomme POST /api/v1/deploys", async ({ page }) => {
+    await ouvrir(page);
+    await expect(page.locator("#deploiements")).toContainText("Non collecté");
+    await expect(page.locator("#deploiements")).toContainText("POST /api/v1/deploys");
+  });
+
+  test("aucun débordement à 390, 768 et 1440 px", async ({ page }) => {
+    await loginConsole(page);
+    const fautes: string[] = [];
+    for (const largeur of LARGEURS) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(`${CONSOLE_F60}/tracing?app=${APP_F60}`, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("#hero-traces")).toBeVisible();
+      for (const faute of await debordements(page)) fautes.push(`${largeur} px — ${faute}`);
+    }
+    expect(fautes).toEqual([]);
+  });
 });

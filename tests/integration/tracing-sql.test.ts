@@ -21,7 +21,9 @@ const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
 
 const A = "f59-app-a";
 const B = "f59-app-b";
-const APPS = [A, B];
+/** Une page vue, deux appels, UNE trace (E0) : le cas du produit cartésien. */
+const C = "f59-app-c";
+const APPS = [A, B, C];
 
 const trace = (n: number) => n.toString(16).padStart(32, "a");
 const span = (n: number) => n.toString(16).padStart(16, "c");
@@ -38,6 +40,11 @@ interface Span {
   ms: number;
   /** Minutes avant l'instant du semis. */
   avant: number;
+  /**
+   * Span parent. Un span serveur a pour parent l'appel navigateur dont il est la
+   * réponse (`traceparent`) : par défaut, le span navigateur de sa trace dans A.
+   */
+  parent?: string;
 }
 
 // Les appels front de A sont espacés de 7 minutes : chacun tombe dans son propre
@@ -73,6 +80,23 @@ for (let i = 0; i < 30; i++) {
     id: span(1000 + i), trace: trace(1000 + i), tier: "front", app: A, session: "f59-sa",
     method: "GET", url: "/api/volume", status: 200, ms: 10, avant: 50,
   });
+}
+// C : `/api/config` (100 / 90 ms) puis `/api/search` (1 000 / 900 ms), dans la MÊME
+// trace, chacun avec sa réponse serveur (parent = son propre span navigateur).
+const CONFIG = span(501);
+const SEARCH = span(502);
+SPANS.push(
+  { id: CONFIG, trace: trace(500), tier: "front", app: C, session: "f59-sc", method: "GET", url: "/api/config", status: 200, ms: 100, avant: 12 },
+  { id: span(511), trace: trace(500), tier: "back", app: C, session: null, method: "GET", url: null, status: 200, ms: 90, avant: 12, parent: CONFIG },
+  { id: SEARCH, trace: trace(500), tier: "front", app: C, session: "f59-sc", method: "GET", url: "/api/search", status: 200, ms: 1000, avant: 12 },
+  { id: span(512), trace: trace(500), tier: "back", app: C, session: null, method: "GET", url: null, status: 200, ms: 900, avant: 12, parent: SEARCH },
+);
+
+/** Parent d'un span semé : l'explicite, sinon (serveur) le span navigateur de sa trace. */
+function parentDe(s: Span): string | null {
+  if (s.parent) return s.parent;
+  if (s.tier !== "back") return null;
+  return SPANS.find((x) => x.trace === s.trace && x.tier === "front")?.id ?? null;
 }
 
 interface Erreur {
@@ -122,15 +146,16 @@ async function semer(c: pg.Client): Promise<void> {
       `insert into rum_session (session_id, app_id, device_type, is_bot, sample_rate, error_sample_rate)
        values ('f59-sa', $1, 'desktop', false, 1, 1),
               ('f59-sa-bot', $1, 'desktop', true, 1, 1),
-              ('f59-sb', $2, 'desktop', false, 1, 1)`,
-      [A, B],
+              ('f59-sb', $2, 'desktop', false, 1, 1),
+              ('f59-sc', $3, 'desktop', false, 1, 1)`,
+      [A, B, C],
     );
     // Une transaction = une horloge : tous les décalages partent du même now().
     for (const s of SPANS) {
       await c.query(
-        `insert into rum_span (span_id, trace_id, tier, app_id, session_id, method, url, status_code, duration_ms, ts)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now() - $10::int * interval '1 minute')`,
-        [s.id, s.trace, s.tier, s.app, s.session, s.method, s.url, s.status, s.ms, s.avant],
+        `insert into rum_span (span_id, trace_id, parent_span_id, tier, app_id, session_id, method, url, status_code, duration_ms, ts)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() - $11::int * interval '1 minute')`,
+        [s.id, s.trace, parentDe(s), s.tier, s.app, s.session, s.method, s.url, s.status, s.ms, s.avant],
       );
     }
     for (const e of ERREURS) {
@@ -324,6 +349,65 @@ const filtres = (over: Partial<FiltersLike> = {}): FiltersLike => ({
 
     it("trace inconnue → aucune ligne", async () => {
       await expect(lib.errorsOfTrace(trace(999), { apps: null })).resolves.toEqual([]);
+    });
+  });
+
+  // Revue de F60 : depuis E0, tous les appels d'une page vue partagent le trace_id
+  // de la vue. Apparier la réponse serveur par (app, trace) seuls faisait un produit
+  // cartésien : chaque appel prenait les réponses des autres. Le jumeau est le span
+  // serveur ENFANT de l'appel (`parent_span_id = span_id` de l'appel navigateur).
+  describe("une trace, deux appels (E0) : chaque appel garde SA réponse serveur", () => {
+    it("traceCoverage : 2 appels, 2 suivis — pas 4", async () => {
+      const couverture = await lib.traceCoverage(filtres({ app: C }));
+      expect(couverture).toMatchObject({ total: 2, correlated: 2, err: 0, back_total: 2 });
+    });
+
+    it("apiCallsDecomposition : le p75 serveur de /api/config porte sur 90 ms seulement", async () => {
+      const lignes = await lib.apiCallsDecomposition(filtres({ app: C }));
+      expect(lignes.map((l) => [l.url, l.n, l.n_suivis, l.front_p75, l.back_p75, l.reseau_p75])).toEqual([
+        ["/api/search", 1, 1, 1000, 900, 100],
+        ["/api/config", 1, 1, 100, 90, 10],
+      ]);
+    });
+
+    it("slowTraces : une ligne par appel, chacune avec son span navigateur et sa durée serveur", async () => {
+      const lignes = await lib.slowTraces(filtres({ app: C }));
+      expect(lignes.map((l) => [l.trace_id, l.span_id, l.url, l.front_ms, l.back_ms, l.network_ms])).toEqual([
+        [trace(500), SEARCH, "/api/search", 1000, 900, 100],
+        [trace(500), CONFIG, "/api/config", 100, 90, 10],
+      ]);
+    });
+
+    it("spanLatencySeries : 2 appels comptés, le p75 serveur du seau sur les 2 réponses", async () => {
+      const base = filtres({ app: C, period: "1h" });
+      const points = await lib.spanLatencySeries({ ...base, query: queryOf(base) });
+      expect(points.reduce((s, p) => s + p.n, 0)).toBe(2);
+      expect(points.find((p) => p.n === 2)).toMatchObject({ front_p75: 775, back_p75: 697.5 });
+    });
+
+    it("A, dont chaque trace porte un appel : chiffres inchangés par la jointure au parent", async () => {
+      const couverture = await lib.traceCoverage(filtres());
+      expect(couverture).toMatchObject({ total: 36, correlated: 5 });
+    });
+  });
+
+  // F60 : les tuiles de /tracing se comparent à la période précédente (`cmp=prev`).
+  // Des appels tracés depuis une heure seulement ne font pas une période précédente
+  // de 24 h : la tuile doit se taire et dire pourquoi, pas afficher « +100 % ».
+  describe("couverturePrecedente sur rum_span — tuiles de /tracing (F60)", () => {
+    it("appels tracés depuis moins d'une heure : la période précédente de 24 h est partielle, date lue en base", async () => {
+      const { couverturePrecedente } = await import("../../apps/console/lib/comparaison");
+      const couverture = await couverturePrecedente(queryOf(filtres()), { table: "rum_span", colonneTemps: "ts", additive: true });
+      expect(couverture.etat).toBe("partielle");
+      expect(couverture.raison).toMatch(/^appels tracés collectés depuis le \d{2}\/\d{2} \d{2}:\d{2} UTC seulement$/);
+    });
+
+    it("apps = [] : aucune donnée sur le périmètre, jamais « complète »", async () => {
+      const { couverturePrecedente } = await import("../../apps/console/lib/comparaison");
+      const query = queryOf(filtres());
+      const vide = { ...query, scope: { ...query.scope, authorizedApps: [], effectiveApps: [] } };
+      const couverture = await couverturePrecedente(vide, { table: "rum_span", colonneTemps: "ts", additive: false });
+      expect(couverture.etat).not.toBe("complete");
     });
   });
 });

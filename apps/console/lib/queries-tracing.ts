@@ -10,7 +10,7 @@ import type { Appel } from "./tracing-ancres";
 
 export interface TraceCoverage {
   total: number; // appels API vus du navigateur (spans front)
-  correlated: number; // dont jumeau backend trouvé (même trace_id, même app)
+  correlated: number; // dont jumeau backend trouvé (même app, même trace, span serveur enfant de l'appel)
   back_total: number; // spans back reçus (inclut le trafic sans front : robots, curl)
   front_p75: number | null;
   back_p75: number | null;
@@ -23,7 +23,25 @@ export interface TraceCoverage {
   err: number;
 }
 
-const JUMEAU_BACK = "left join rum_span b on b.app_id = fr.app_id and b.trace_id = fr.trace_id and b.tier = 'back'";
+/**
+ * Le jumeau serveur d'UN appel navigateur : même app, même trace, et surtout le
+ * span serveur dont le parent est CET appel (`b.parent_span_id = fr.span_id`).
+ *
+ * POURQUOI LE PARENT. Depuis E0, tous les appels d'une page vue partagent le
+ * `trace_id` de la vue (`packages/rum-sdk/src/index.ts`, `traceId: currentTraceId`) ;
+ * chaque appel garde son propre `spanId` dans `traceparent`, que le middleware
+ * serveur (FastAPI, agent Node, OTel) recopie en `parent_span_id` de son span
+ * (`apps/ingest/…/otlp.mjs`, `spanRow`). Apparier par `trace_id` seul croisait
+ * donc chaque appel avec les réponses serveur de TOUS les appels de la vue :
+ * deux appels comptaient quatre fois, et le p75 serveur de `/api/config`
+ * portait sur la réponse de `/api/search`. La chronologie de session appariait
+ * déjà par le parent (lib/queries.ts, `child.parent_span_id = f.span_id`).
+ *
+ * Limite : un proxy instrumenté qui s'intercalerait (serveur enfant du proxy,
+ * pas de l'appel) laisserait l'appel « non suivi » plutôt que mal apparié.
+ */
+const JUMEAU_BACK =
+  "left join rum_span b on b.app_id = fr.app_id and b.trace_id = fr.trace_id and b.tier = 'back' and b.parent_span_id = fr.span_id";
 
 /**
  * Chemin vu du navigateur, origine retirée. UNE expression pour le regroupement
@@ -98,7 +116,7 @@ export interface ApiCallDecomposition {
   method: string;
   /** Appels vus du navigateur. */
   n: number;
-  /** Dont appels suivis : jumeau serveur trouvé (même trace_id, même app). */
+  /** Dont appels suivis : jumeau serveur trouvé (même app, même trace, enfant de l'appel). */
   n_suivis: number;
   front_p75: number | null;
   /** p75 serveur des seuls appels suivis. */
@@ -232,6 +250,8 @@ export async function backRoutes(f: FiltersLike): Promise<BackRouteRow[]> {
 
 export interface SlowTrace {
   trace_id: string;
+  /** Span navigateur de L'APPEL : une trace de page vue en porte plusieurs (E0), le détail s'ouvre sur celui-ci (`?span=`). */
+  span_id: string;
   session_id: string | null;
   url: string;
   method: string;
@@ -352,7 +372,7 @@ export async function slowTraces(f: FiltersLike, opts?: { appel?: Appel }): Prom
     ? ` and fr.method = ${sql.bind(opts.appel.method)} and ${CHEMIN} = ${sql.bind(opts.appel.url)}`
     : "";
   return q<SlowTrace>(
-    `select fr.trace_id, fr.session_id,
+    `select fr.trace_id, fr.span_id, fr.session_id,
             ${CHEMIN} as url,
             fr.method, fr.status_code as front_status, fr.duration_ms as front_ms,
             b.duration_ms as back_ms,
