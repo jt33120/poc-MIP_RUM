@@ -172,7 +172,6 @@ export function DetailPanel({
           {onglets.map((o) => (
             <TabLink key={o.cle} href={o.href} active={o.actif}>
               <span className="whitespace-nowrap">{libelleOnglet(o)}</span>
-              {o.actif && <span className="sr-only"> — onglet affiché</span>}
             </TabLink>
           ))}
         </nav>

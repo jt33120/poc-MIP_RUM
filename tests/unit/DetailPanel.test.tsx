@@ -80,7 +80,9 @@ describe("DetailPanel", () => {
     expect(t).toContain("Web Vitals (3)");
     expect(t).toContain("Erreurs (—)");
     expect(t).not.toContain("Erreurs (0)");
-    expect(t).toContain("onglet affiché");
+    // L'onglet actif se dit par `aria-current` (TabLink), pas par un texte masqué en plus.
+    expect(html).toMatch(/aria-current="page"[^>]*>(?:<[^>]+>)*Web Vitals/);
+    expect(t).not.toContain("onglet affiché");
   });
 
   it("puces : la provenance d'une valeur estimée est écrite", () => {
