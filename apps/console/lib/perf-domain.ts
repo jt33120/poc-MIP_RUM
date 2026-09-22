@@ -82,3 +82,62 @@ export function avecCondition<F extends FiltersLike>(f: F, dimension: Dimension,
     query: intersectQuery(queryOf(f), { conditions: [{ dimension, operator: "eq", value: valeur }] }),
   };
 }
+
+// ─────────────────────────────── Erreurs (F18) ───────────────────────────────
+
+/**
+ * « Autres groupes (somme) » du hero de `/errors` (§ 5.3.2) : par seau, la tendance
+ * de la population MOINS les groupes dessinés — jamais la somme des groupes
+ * suivants de la liste, qui ne couvre pas la population. Borné à 0 : séries et
+ * tendance viennent de deux lectures, une ingestion concurrente peut les faire
+ * diverger, et un empilement ne dessine jamais une quantité négative. Un seau
+ * absent d'une série compte 0 (des comptes).
+ */
+export function autresGroupes(trend: readonly number[], series: readonly (readonly number[])[]): number[] {
+  return trend.map((total, i) => {
+    const dessine = series.reduce((somme, s) => somme + (Number.isFinite(s[i]) ? s[i] : 0), 0);
+    const reste = (Number.isFinite(total) ? total : 0) - dessine;
+    return reste > 0 ? reste : 0;
+  });
+}
+
+/** Longueur du message dans une légende du hero (§ 5.3.2). */
+export const LEGENDE_MESSAGE_MAX = 40;
+
+/**
+ * Libellé de légende d'un groupe d'erreurs : le MESSAGE, tronqué à 40 caractères,
+ * puis l'empreinte courte — jamais le seul type (« ● Error » ×5 ne distinguait
+ * rien, `console-ecrans-1.md` L191). L'app s'ajoute quand l'écran en lit plusieurs :
+ * une même empreinte peut exister dans deux apps.
+ */
+export function libelleGroupeErreur(g: { message: string | null; fingerprint: string; app_id?: string | null }): string {
+  const brut = (g.message ?? "").replace(/\s+/g, " ").trim();
+  const message =
+    brut === "" ? "(sans message)" : brut.length > LEGENDE_MESSAGE_MAX ? `${brut.slice(0, LEGENDE_MESSAGE_MAX - 1)}…` : brut;
+  return [message, g.fingerprint.slice(0, 8), g.app_id ?? null].filter(Boolean).join(" · ");
+}
+
+const PRECEDENTE_PAR_PRESET: Record<string, string> = {
+  "1h": "vs heure précédente",
+  "24h": "vs 24 h précédentes",
+  "7d": "vs 7 j précédents",
+};
+
+/**
+ * Référence écrite d'une tuile en `cmp=prev` (§ 3.12) : « vs 24 h précédentes
+ * (20/09 14:00 → 21/09 14:00 UTC) ». La plage précédente est DATÉE : un delta
+ * sans période nommée ne dit pas à quoi il se compare (P4).
+ */
+export function referencePeriodePrecedente(range: { from: string; to: string; preset: string | null }): string {
+  const debut = Date.parse(range.from);
+  const duree = Date.parse(range.to) - debut;
+  const fmt = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const tete = (range.preset && PRECEDENTE_PAR_PRESET[range.preset]) || "vs période précédente";
+  return `${tete} (${fmt.format(new Date(debut - duree))} → ${fmt.format(new Date(debut))} UTC)`;
+}

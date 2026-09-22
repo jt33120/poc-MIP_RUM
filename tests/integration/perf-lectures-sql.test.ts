@@ -427,3 +427,181 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
     });
   });
 });
+
+// ═══════════════════ F18 — tuiles et hero de /errors ═══════════════════
+//
+// Une app à elle, semée dans le `beforeAll` du bloc : sept groupes, dont un RÉSOLU
+// à 500 occurrences et un RÉGRESSÉ à 3. Le hero doit prendre les 4 plus fréquents
+// de la fenêtre (le résolu en tête), pas les 4 premiers de la liste — rangée par
+// triage, elle met le régressé en premier (CP9).
+(url ? describe : describe.skip)("F18 — tuiles et hero de /errors sur PostgreSQL", () => {
+  const APP_F18 = "f18-perf-a";
+  const c18 = new pg.Client(url ? { connectionString: url } : {});
+  let lib18: Console;
+  const f18 = (qs = "") => lib18.filtersOfQuery(requete(`${FENETRE}&app=${APP_F18}${qs}`));
+  const f18Vide = () => lib18.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${APP_F18}`)));
+  const PAGE = { limit: 100, offset: 0 };
+
+  async function nettoyerF18(): Promise<void> {
+    for (const table of ["rum_error", "rum_pageview", "rum_session", "error_status"]) {
+      await c18.query(`delete from ${table} where app_id = $1`, [APP_F18]);
+    }
+  }
+
+  async function semerF18(): Promise<void> {
+    for (const [id, debut] of [["f18-s1", H(0, 1)], ["f18-s2", H(2, 1)], ["f18-s3", H(5, 1)]] as const) {
+      await c18.query(
+        `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at,
+                                  sample_rate, error_sample_rate, has_error)
+         values ($1, $2, 'desktop', false, $3, $3, 1, 1, true)`,
+        [id, APP_F18, debut],
+      );
+      await c18.query(
+        `insert into rum_pageview (span_id, session_id, app_id, route, url, nav_type, started_at)
+         values ($1, $2, $3, '/', 'https://site.example/', 'navigate', $4)`,
+        [`${id}-pv`, id, APP_F18, debut],
+      );
+    }
+    // [empreinte, session, occurrences, instant]
+    const erreurs: [string, string | null, number, Date][] = [
+      ["fp-resolu", "f18-s1", 500, H(1)],
+      ["fp-regresse", "f18-s2", 3, H(4)],
+      ["fp-g10", "f18-s1", 6, H(0)],
+      ["fp-g10", "f18-s1", 4, H(3)],
+      ["fp-g8", "f18-s2", 8, H(2)],
+      ["fp-g6", "f18-s3", 6, H(5)],
+      ["fp-g4", null, 4, H(5)], // sans session : sessions touchées inconnues pour ce groupe
+      ["fp-ancien", null, 2, H(-3)], // période précédente : apparu À CE MOMENT-LÀ
+      ["fp-ancien", "f18-s1", 1, H(1)],
+    ];
+    let n = 0;
+    for (const [fp, sid, occ, ts] of erreurs) {
+      await c18.query(
+        `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type,
+                                fingerprint, occurrences, error_source, ts)
+         values ($1, $2, $3, '/', 'error', $4, 'Error', $5, $6, 'browser_js', $7)`,
+        [`f18-e-${n++}`, sid, APP_F18, `boom ${fp}`, fp, occ, ts],
+      );
+    }
+    // Résolu APRÈS sa dernière occurrence : il reste résolu. Résolu AVANT : régressé.
+    await c18.query(
+      `insert into error_status (app_id, fingerprint, status, resolved_at) values ($1, 'fp-resolu', 'resolved', now()),
+                                                                                ($1, 'fp-regresse', 'resolved', $2)`,
+      [APP_F18, H(2)],
+    );
+  }
+
+  beforeAll(async () => {
+    await c18.connect();
+    for (const file of fichiersSql()) await c18.query(readFileSync(file, "utf8"));
+    await nettoyerF18();
+    await semerF18();
+    lib18 = await consoleSur(url!);
+  }, 180_000);
+
+  afterAll(async () => {
+    await lib18?.pool.end();
+    await nettoyerF18();
+    await c18.end();
+  });
+
+  describe("topGroupesSeries", () => {
+    it("les 4 plus fréquents de la fenêtre : le résolu à 500 devant le régressé à 3", async () => {
+      const { groupes } = await lib18.topGroupesSeries(f18(), 4);
+      expect(groupes.map((g) => g.ref.fingerprint)).toEqual(["fp-resolu", "fp-g10", "fp-g8", "fp-g6"]);
+      expect(groupes.map((g) => g.occurrences)).toEqual([500, 10, 8, 6]);
+      expect(groupes[0]).toMatchObject({ ref: { app_id: APP_F18 }, message: "boom fp-resolu", error_type: "Error" });
+    });
+
+    it("séries sur la grille du contrat (6 seaux), zéros compris", async () => {
+      const { groupes } = await lib18.topGroupesSeries(f18(), 4);
+      expect(groupes.every((g) => g.series.length === GRILLE.length)).toBe(true);
+      expect(groupes[1].series).toEqual([6, 0, 0, 4, 0, 0]);
+      expect(groupes[0].series).toEqual([0, 500, 0, 0, 0, 0]);
+    });
+
+    it("hero : ≤ 5 séries, et « Autres » = tendance − Σ4 sur la même grille", async () => {
+      const { groupes } = await lib18.topGroupesSeries(f18(), 4);
+      const { trend, totals } = await lib18.totauxErreurs(f18());
+      expect(groupes.length + 1).toBeLessThanOrEqual(5);
+      const { autresGroupes } = await import("../../apps/console/lib/perf-domain");
+      const tendance = trend.map((p) => p.occurrences);
+      expect(tendance).toEqual([6, 501, 8, 4, 3, 10]);
+      expect(tendance.reduce((a, b) => a + b, 0)).toBe(totals.occurrences);
+      expect(autresGroupes(tendance, groupes.map((g) => g.series))).toEqual([0, 1, 0, 0, 3, 4]);
+    });
+
+    it("périmètre vide → aucun groupe", async () => {
+      expect(await lib18.topGroupesSeries(f18Vide(), 4)).toEqual({ groupes: [] });
+    });
+  });
+
+  describe("nouveauxGroupes", () => {
+    it("groupes dont la première occurrence conservée est dans la fenêtre", async () => {
+      expect(await lib18.nouveauxGroupes(f18())).toBe(6); // tous sauf fp-ancien, vu d'abord avant
+    });
+
+    it("shift : fp-ancien est apparu sur la période précédente", async () => {
+      expect(await lib18.nouveauxGroupes(f18(), true)).toBe(1);
+    });
+
+    it("population filtrée (appareil absent) et périmètre vide → 0", async () => {
+      expect(await lib18.nouveauxGroupes(f18("&device=mobile"))).toBe(0);
+      expect(await lib18.nouveauxGroupes(f18Vide())).toBe(0);
+    });
+
+    it("= la liste `nouveaux=1`, qui écarte fp-ancien ; totaux et tendance de TOUTE la population", async () => {
+      const liste = await lib18.listErrorGroups(f18(), PAGE, { nouveaux: true });
+      expect(liste.groups.map((g) => g.fingerprint)).not.toContain("fp-ancien");
+      expect(liste.groups).toHaveLength(await lib18.nouveauxGroupes(f18()));
+      expect(liste.totals.occurrences).toBe(532);
+    });
+  });
+
+  describe("totauxErreurs", () => {
+    it("occurrences = sum(occurrences) ; sessions touchées distinctes", async () => {
+      const { totals } = await lib18.totauxErreurs(f18());
+      expect(totals.occurrences).toBe(532);
+      expect(totals.sessions_affected).toBe(3);
+      expect(totals.groups).toBe(7);
+    });
+
+    it("shift : la période précédente n'a qu'une occurrence sans session → sessions touchées inconnues (null), pas 0", async () => {
+      const { totals, trend } = await lib18.totauxErreurs(f18(), true);
+      expect(totals.occurrences).toBe(2);
+      expect(totals.sessions_affected).toBeNull();
+      expect(trend.map((p) => p.bucket.toISOString().replace(/\.\d{3}Z$/, "Z"))).toEqual(GRILLE_PRECEDENTE);
+    });
+
+    it("mêmes totaux que la liste", async () => {
+      const liste = await lib18.listErrorGroups(f18(), PAGE);
+      expect((await lib18.totauxErreurs(f18())).totals).toEqual(liste.totals);
+    });
+  });
+
+  describe("ordre de la liste (tri)", () => {
+    it("statut (défaut, inchangé) : le régressé d'abord, le résolu en dernier", async () => {
+      const { groups } = await lib18.listErrorGroups(f18(), PAGE);
+      expect(groups[0].fingerprint).toBe("fp-regresse");
+      expect(groups.at(-1)?.fingerprint).toBe("fp-resolu");
+    });
+
+    it("sessions : un nombre de sessions inconnu (fp-g4) en dernier, jamais parmi les zéros", async () => {
+      const { groups } = await lib18.listErrorGroups(f18(), PAGE, { tri: "sessions" });
+      expect(groups.at(-1)?.fingerprint).toBe("fp-g4");
+    });
+
+    it("recent : dernière vue d'abord", async () => {
+      const { groups } = await lib18.listErrorGroups(f18(), PAGE, { tri: "recent" });
+      expect(groups.map((g) => g.fingerprint)).toEqual([
+        "fp-g6",
+        "fp-g4",
+        "fp-regresse",
+        "fp-g10",
+        "fp-g8",
+        "fp-resolu",
+        "fp-ancien",
+      ]);
+    });
+  });
+});

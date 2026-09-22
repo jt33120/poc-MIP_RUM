@@ -136,19 +136,20 @@ test("les compteurs suivent la fenêtre — et le vieux bug sort de l'écran", a
 test("la tuile d'occurrences dit la vérité sur sa propre fenêtre", async ({ page }) => {
   await loginConsole(page);
 
-  // La tuile entière = le parent du libellé (HeroStat rend libellé + valeur
-  // dans le même bloc). Viser le libellé seul ne prouverait rien : c'est
-  // justement l'écart entre le libellé et LA VALEUR qui était le défaut.
-  const tuile = (p: Page, libelle: string) => p.getByText(libelle, { exact: true }).locator("..");
+  // Depuis F18, la tuile s'appelle « Occurrences » et la fenêtre est écrite en tête
+  // de la rangée (« Occurrences d'erreurs sur 7 j »). On lit LA VALEUR de la tuile
+  // et la fenêtre annoncée : c'est justement l'écart entre les deux qui était le défaut.
+  const valeur = (p: Page) =>
+    p.getByTestId("kpi-tile").filter({ has: p.getByText("Occurrences", { exact: true }) }).getByTestId("kpi-valeur");
 
   await page.goto(`http://localhost:3000/errors?app=${APP_ID}&period=7d`);
-  await expect(tuile(page, "Occurrences · 7 j")).toContainText("410");
+  await expect(page.getByTestId("kpi-erreurs-plage")).toContainText("7 j");
+  await expect(valeur(page)).toHaveText("410");
 
   await page.goto(`http://localhost:3000/errors?app=${APP_ID}&period=24h`);
-  const t24 = tuile(page, "Occurrences · 24 h");
-  // 10, et surtout PAS 410 : le nombre a suivi le libellé.
-  await expect(t24).toContainText("10");
-  await expect(t24).not.toContainText("410");
+  await expect(page.getByTestId("kpi-erreurs-plage")).toContainText("24 h");
+  // 10, et surtout PAS 410 : le nombre a suivi la fenêtre annoncée.
+  await expect(valeur(page)).toHaveText("10");
 });
 
 test("le classement suit l'impact, pas le volume cumulé", async ({ page }) => {

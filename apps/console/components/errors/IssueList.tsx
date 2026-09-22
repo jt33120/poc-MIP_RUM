@@ -5,8 +5,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { HeroReading, HeroStat, SupervisionHero } from "@/components/SupervisionHero";
-import { StackedBars } from "@/components/charts/StackedBars";
 import { ErrorTypeBadge } from "@/components/errors/ErrorBadges";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
 import { ERROR_LINK } from "@/components/errors/ErrorOccurrences";
@@ -18,15 +16,7 @@ import {
   LegacyEntryBadge,
   ReappearedBadge,
 } from "@/components/errors/IssueBadges";
-import {
-  bucketTick,
-  errorGroupHref,
-  errorVolumeChart,
-  errorsHref,
-  fmtCount,
-  issueHref,
-  issueListHref,
-} from "@/components/errors/error-view";
+import { errorGroupHref, errorsHref, fmtCount, issueHref, issueListHref } from "@/components/errors/error-view";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import {
   ISSUE_STATUSES,
@@ -35,7 +25,6 @@ import {
   type IssueListFilters,
   type IssueListResult,
 } from "@/lib/error-issues";
-import { queryOf } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { ERROR_SOURCES, ERROR_SOURCE_LABELS, type ErrorFilters, type ErrorTrendPoint } from "@/lib/queries-errors";
 
@@ -64,16 +53,27 @@ export function IssueList({
   curseur,
   limit,
   label,
-  bucketLabel,
+  sousTitre,
+  avertissements,
+  apercu,
   decoupage,
   vue = {},
 }: {
   f: ErrorFilters;
   filtres: IssueListFilters;
   result: IssueListResult;
-  /** Plage lue (« 24 h », ou dates) et largeur de seau, dans le fuseau de l'app. */
+  /** Plage lue (« 24 h », ou dates), dans le fuseau de l'app. */
   label: string;
-  bucketLabel: string;
+  /** Question de l'écran (P1), la même que la liste historique. */
+  sousTitre: string;
+  /** Lignes « Réglage d'affichage ignoré », rendues sous l'en-tête. */
+  avertissements?: ReactNode;
+  /**
+   * Tuiles et hero de l'écran (F18), rendus par la page : les deux listes montrent
+   * les MÊMES chiffres de la population, que les filtres de statut et de source de
+   * la liste des issues ne découpent pas.
+   */
+  apercu?: ReactNode;
   /** La page affichée suit un curseur. */
   curseur: boolean;
   /** Limite demandée explicitement, qui suit la pagination. */
@@ -89,13 +89,6 @@ export function IssueList({
 }) {
   const { issues, total, coverage, sampling, enrichment } = result;
   const trend = result.trend ?? [];
-  const occurrences = result.totals?.occurrences ?? 0;
-  const { bucketSeconds } = queryOf(f).range;
-  const chart = errorVolumeChart(issues, trend, bucketSeconds);
-  const peak = trend.reduce<ErrorTrendPoint | null>(
-    (best, point) => (point.occurrences > (best?.occurrences ?? 0) ? point : best),
-    null,
-  );
   // La release est un champ visible du formulaire : la cacher aussi la répéterait, et le
   // contrat refuse un paramètre répété.
   const cachees = [...new URLSearchParams(errorsHref("/errors", f, f.app, vue).split("?")[1])].filter(
@@ -106,7 +99,16 @@ export function IssueList({
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title={TITRE} sub={SOUS_TITRE} />
+      <PageHeader title={TITRE} sub={sousTitre} />
+      {avertissements}
+
+      <ErrorNotices sampling={sampling} enrichment={enrichment} />
+      {apercu}
+
+      <h2 id="groupes-erreurs" className="mb-2 text-sm font-semibold text-ink">
+        Issues et groupes historiques ({total.toLocaleString("fr-FR")})
+      </h2>
+      <p className="mb-3 text-xs text-ink-soft">{SOUS_TITRE}</p>
 
       <form method="get" action="/errors" className="card mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Filtres des issues">
         {cachees.map(([nom, valeur]) => (
@@ -150,7 +152,6 @@ export function IssueList({
         </div>
       </form>
 
-      <ErrorNotices sampling={sampling} enrichment={enrichment} />
       {coverage.occurrences_legacy > 0 && (
         <p role="note" className="mb-6 rounded-lg border border-line bg-panel2 px-4 py-3 text-sm text-ink-soft" data-testid="issue-coverage">
           {coverage.occurrences_legacy.toLocaleString("fr-FR")} occurrence(s) restent dans des groupes historiques
@@ -159,58 +160,12 @@ export function IssueList({
         </p>
       )}
 
-      <SupervisionHero
-        chartTitle={`Volume d'erreurs par ${bucketLabel} (${label}) — par issue`}
-        chart={
-          occurrences > 0 ? (
-            <>
-              <StackedBars data={chart.data} xKey="h" series={chart.series} yUnit="" />
-              <details className="mt-3 text-xs text-ink-soft">
-                <summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf">
-                  Alternative textuelle de la série
-                </summary>
-                <table className="mt-2 w-full">
-                  <thead>
-                    <tr>
-                      <th className="py-1 text-left">Période</th>
-                      <th className="py-1 text-right">Occurrences</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trend.map((point) => (
-                      <tr key={point.bucket.toISOString()} className="border-t border-line/60">
-                        <td className="py-1">{fmtDate(point.bucket)}</td>
-                        <td className="py-1 text-right tabular-nums">{point.occurrences.toLocaleString("fr-FR")}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </details>
-            </>
-          ) : (
-            <p className="py-12 text-center text-sm text-ink-faint">Aucune erreur sur cette période</p>
-          )
-        }
-      >
-        <HeroStat
-          label={`Occurrences · ${label}`}
-          value={occurrences.toLocaleString("fr-FR")}
-          tone={occurrences > 0 ? "warn" : "good"}
-        />
-        <HeroStat label="Issues et groupes historiques" value={total.toLocaleString("fr-FR")} />
-        <HeroStat
-          label={`Pic par ${bucketLabel}`}
-          value={(peak?.occurrences ?? 0).toLocaleString("fr-FR")}
-          hint={peak ? `à partir de ${bucketTick(peak.bucket, bucketSeconds)}` : undefined}
-        />
-        <HeroReading>
-          Triées pour le triage : à revoir, réapparitions, ouvertes, résolues, ignorées, puis par impact. « À revoir » :
-          les groupes historiques repris portaient des statuts différents. « Faible confiance » : aucune frame
-          applicative n&apos;a pu identifier l&apos;erreur. Tous les compteurs portent sur {label}, sauf « Première vue ».
-        </HeroReading>
-      </SupervisionHero>
-
-      {decoupage}
+      {/* L'ordre de la liste, écrit (CP9) : il vivait dans la lecture de l'ancien hero. */}
+      <p className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="ordre-liste">
+        Triées pour le triage : à revoir, réapparitions, ouvertes, résolues, ignorées, puis par impact. « À revoir » :
+        les groupes historiques repris portaient des statuts différents. « Faible confiance » : aucune frame
+        applicative n&apos;a pu identifier l&apos;erreur. Tous les compteurs portent sur {label}, sauf « Première vue ».
+      </p>
 
       <div className="card overflow-x-auto">
         <table className="w-full min-w-table text-sm">
@@ -267,6 +222,9 @@ export function IssueList({
           )}
         </nav>
       )}
+
+      {/* Répartition après la liste (§ 5.3.1, zone 5). */}
+      {decoupage && <div className="mt-6">{decoupage}</div>}
     </div>
   );
 }
