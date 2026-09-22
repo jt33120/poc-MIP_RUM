@@ -2,7 +2,7 @@ import Link from "next/link";
 import { fmtVital } from "@/lib/format";
 import { GLOSSARY, type GlossaryId } from "@/lib/glossary";
 import { RATING_BAR, RATING_CLASS, RATING_LABEL, THRESHOLDS, texteSeuils } from "@/lib/rating";
-import type { IntervalleP75 } from "@/lib/stats/incertitude";
+import type { Ecart, IntervalleP75 } from "@/lib/stats/incertitude";
 import { echelleJauge, lireVital, type LectureVital } from "@/lib/vital-lecture";
 import { Sparkline } from "./charts/Sparkline";
 import { DeltaBadge } from "./SupervisionHero";
@@ -13,8 +13,21 @@ import { GlossaryTip } from "./GlossaryTip";
  * que les tuiles (P4) : la référence est ÉCRITE à côté de l'écart, pas seulement
  * dans un `title`. `data-testid="trend"` reste sur l'enveloppe pour les e2e.
  */
-function Trend({ p75, prev }: { p75: number; prev: number | null }) {
+function Trend({ p75, prev, ecart }: { p75: number; prev: number | null; ecart?: Ecart | null }) {
   if (prev == null || prev === 0 || !Number.isFinite(prev)) return null;
+  // P*.1 : deux p75 dont les intervalles se chevauchent n'établissent pas d'écart.
+  // Le delta observé reste écrit, sans flèche ni couleur, avec sa règle et
+  // l'intervalle précédent — sur sa propre ligne, sous la valeur : dans la
+  // rangée du chiffre, la phrase déborderait d'une carte à deux colonnes (390 px).
+  if (ecart && !ecart.etabli) {
+    const pct = Math.round(((p75 - prev) / prev) * 100);
+    return (
+      <div data-testid="trend" data-etabli="non" className="mt-1 break-words text-xs text-ink-soft">
+        {pct > 0 ? "+" : ""}
+        {pct} % vs période précédente — {ecart.regle}
+      </div>
+    );
+  }
   return (
     <span data-testid="trend">
       <DeltaBadge pct={((p75 - prev) / prev) * 100} reference="période précédente" sensMeilleur="bas" />
@@ -92,6 +105,7 @@ export function VitalCard({
   prev = null,
   periodLabel,
   intervalle,
+  ecart,
   serie,
   href,
 }: {
@@ -107,6 +121,8 @@ export function VitalCard({
   periodLabel: string;
   /** Intervalle à 95 % de la p75 (P*.1), ou pourquoi il n'est pas calculé. */
   intervalle?: IntervalleP75;
+  /** L'écart à `prev` est-il établi (P*.1, `ecartP75`) ? Non établi : ni flèche ni couleur. */
+  ecart?: Ecart | null;
   /** Sparkline de la p75 par seau, déjà alignée sur la grille (`null` = trou). */
   serie?: (number | null)[];
   /** La carte entière devient un lien (un seul arrêt de tabulation). */
@@ -114,6 +130,7 @@ export function VitalCard({
 }) {
   const lecture = lireVital(name, p75, n, intervalle);
   const verdict = lecture.verdict;
+  const ecartOuvert = ecart != null && !ecart.etabli;
   const lowSample = n > 0 && n < LOW_SAMPLE;
   const contenu = (
     <>
@@ -146,7 +163,7 @@ export function VitalCard({
         <span className="text-3xl font-bold tabular-nums tracking-tight text-ink" data-testid={`p75-${name}`}>
           {fmtVital(name, p75)}
         </span>
-        {p75 != null && <Trend p75={p75} prev={prev} />}
+        {p75 != null && !ecartOuvert && <Trend p75={p75} prev={prev} />}
       </div>
       {p75 != null && <ThresholdMeter name={name} p75={p75} lecture={lecture} />}
       {lecture.texteIntervalle && (
@@ -160,6 +177,7 @@ export function VitalCard({
           </span>
         </div>
       )}
+      {p75 != null && ecartOuvert && <Trend p75={p75} prev={prev} ecart={ecart} />}
       <div className="mt-1 text-xs text-ink-faint">
         p75 · {n} mesures · {periodLabel}
       </div>

@@ -17,6 +17,8 @@ import { fmtVital } from "@/lib/format";
 import { RATING_HEX } from "@/lib/palette";
 import type { HistoRow, VitalPercentiles } from "@/lib/queries";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
+import type { IntervalleP75 } from "@/lib/stats/incertitude";
+import { lireVital, texteVerdict } from "@/lib/vital-lecture";
 
 const VITAL_ORDER = ["LCP", "INP", "CLS", "FCP", "TTFB"];
 
@@ -27,11 +29,21 @@ const VITAL_ORDER = ["LCP", "INP", "CLS", "FCP", "TTFB"];
  * noter « Mauvais » un p95 ou « Bon » une médiane serait un verdict inventé. Les
  * autres percentiles restent en valeur, sans teinte ; le verdict du p75 est écrit
  * en toutes lettres à côté de sa teinte.
+ *
+ * P*.1 : le verdict du p75 ne se teinte que s'il tient sur TOUT son intervalle à
+ * 95 % (même règle que la tuile de `/`, `lireVital`) ; sinon il est écrit
+ * « incertain » ou « non établi », sans couleur. La colonne « Intervalle p75 »
+ * dit l'intervalle, ou pourquoi il n'est pas calculé.
  */
-export function PercentileTable({ rows }: { rows: VitalPercentiles[] }) {
+export function PercentileTable({
+  rows,
+}: {
+  rows: (Omit<VitalPercentiles, "intervalle"> & { intervalle?: IntervalleP75 })[];
+}) {
   const byName = new Map(rows.map((r) => [r.name, r]));
   const present = VITAL_ORDER.filter((n) => byName.has(n));
   if (!present.length) return null;
+  const avecIntervalle = rows.some((r) => r.intervalle != null);
   return (
     <div className="card overflow-x-auto" data-testid="percentile-table">
       <table className="w-full text-sm">
@@ -48,6 +60,11 @@ export function PercentileTable({ rows }: { rows: VitalPercentiles[] }) {
                 {p}
               </th>
             ))}
+            {avecIntervalle && (
+              <th scope="col" className="th text-ink-soft" title="intervalle à 95 % du p75, par rangs de la loi binomiale">
+                Intervalle p75 (95 %)
+              </th>
+            )}
             <th scope="col" className="th text-ink-soft" title="nombre de mesures sur lesquelles portent les percentiles">
               n
             </th>
@@ -57,16 +74,26 @@ export function PercentileTable({ rows }: { rows: VitalPercentiles[] }) {
           {present.map((name) => {
             const r = byName.get(name)!;
             const cells = labelPercentiles(r.pcts);
+            const p75 = cells.find((c) => c.label === "p75")?.value ?? null;
+            const lecture = lireVital(name, p75, r.n, r.intervalle);
             return (
               <tr key={name} className="border-t border-line/60">
                 <th scope="row" className="px-4 py-2.5 text-left font-semibold text-ink">
                   {name}
                 </th>
                 {cells.map((c) => {
-                  const rating = c.label === "p75" && c.value != null ? rating2026(name, c.value) : null;
+                  const verdict = c.label === "p75" ? lecture.verdict : null;
+                  const rating = verdict?.kind === "etabli" ? verdict.rating : null;
                   return (
                     <td key={c.label} className="px-4 py-2.5">
-                      {rating ? (
+                      {verdict && verdict.kind !== "etabli" ? (
+                        <span className="inline-flex flex-wrap items-center gap-1" data-testid={`p75-incertain-${name}`}>
+                          <span className="rounded border border-line bg-panel2 px-1.5 py-0.5 text-xs font-medium tabular-nums text-ink">
+                            {fmtVital(name, c.value)}
+                          </span>
+                          <span className="text-[10px] text-ink-soft">{texteVerdict(verdict)}</span>
+                        </span>
+                      ) : rating ? (
                         <span className="inline-flex items-center gap-1">
                           <span className={`rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums ${RATING_CLASS[rating]}`}>
                             {fmtVital(name, c.value)}
@@ -81,6 +108,11 @@ export function PercentileTable({ rows }: { rows: VitalPercentiles[] }) {
                     </td>
                   );
                 })}
+                {avecIntervalle && (
+                  <td className="px-4 py-2.5 text-xs text-ink-soft" data-testid={`intervalle-p75-${name}`}>
+                    {lecture.texteIntervalle ?? "—"}
+                  </td>
+                )}
                 <td className="px-4 py-2.5 tabular-nums text-ink-soft">{r.n.toLocaleString("fr-FR")}</td>
               </tr>
             );

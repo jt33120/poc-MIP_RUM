@@ -21,6 +21,7 @@ import {
 } from "@/lib/queries-deploys";
 import { fmtVital } from "@/lib/format";
 import { RATING_CLASS, rating2026 } from "@/lib/rating";
+import { ecartProportions, intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
 
 /** Cellule de vital, colorée au barème web.dev (lib/rating.ts). Vide quand la mesure manque. */
 function VitalCell({ name, v }: { name: "LCP" | "INP"; v: number | null }) {
@@ -65,6 +66,12 @@ export function VersionsTable({
             {rows.map((r) => {
               const taux = tauxErreur(r);
               const ecart = ecartPoints(r, ref);
+              // P*.1 : Wilson sur la part de sessions en erreur, Newcombe sur l'écart
+              // à la référence. Un numérateur au-delà des sessions (erreurs et vues
+              // comptées sur deux tables) n'a pas d'intervalle, et le dit.
+              const intervalle = texteIntervalle(intervalleWilson(r.sessionsEnErreur, r.sessions), (v) => `${(v * 100).toFixed(1)} %`);
+              const etabli =
+                ecart == null ? null : ecartProportions(r.sessionsEnErreur, r.sessions, ref.sessionsEnErreur, ref.sessions);
               return (
                 <tr key={r.version} className="border-t border-line/60 transition hover:bg-panel2/60">
                   <td className="px-4 py-2 font-mono text-xs font-medium text-ink">
@@ -91,9 +98,33 @@ export function VersionsTable({
                       <>
                         <span className="text-ink">{(taux * 100).toFixed(1)} %</span>
                         {ecart != null && Math.abs(ecart) >= 0.1 && (
-                          <span className={`ml-2 text-xs ${ecart > 0 ? "text-bad-ink" : "text-good-ink"}`}>
-                            {ecart > 0 ? "+" : ""}
-                            {ecart.toFixed(1)} pt
+                          // P*.1 : la couleur SEULEMENT pour un écart établi. Non établi
+                          // (Newcombe contient 0) ou non testable (`ecartProportions` rend
+                          // null : numérateur hors de [0 ; n]) : l'écart reste écrit, sans
+                          // couleur, et le texte dit pourquoi.
+                          etabli?.etabli === true ? (
+                            <span
+                              className={`ml-2 text-xs ${ecart > 0 ? "text-bad-ink" : "text-good-ink"}`}
+                              title={etabli.regle}
+                              data-testid="version-ecart-etabli"
+                            >
+                              {ecart > 0 ? "+" : ""}
+                              {ecart.toFixed(1)} pt
+                            </span>
+                          ) : (
+                            <span
+                              className="ml-2 text-xs text-ink-soft"
+                              title={etabli?.regle ?? "écart non testable : la part de sessions en erreur n'est pas une proportion sur l'une des deux versions"}
+                              data-testid="version-ecart-non-etabli"
+                            >
+                              {ecart > 0 ? "+" : ""}
+                              {ecart.toFixed(1)} pt · {etabli ? "non établi" : "non testable"}
+                            </span>
+                          )
+                        )}
+                        {intervalle && (
+                          <span className="block text-[11px] text-ink-soft" data-testid="version-intervalle">
+                            {intervalle}
                           </span>
                         )}
                       </>

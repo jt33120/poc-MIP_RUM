@@ -27,6 +27,7 @@ import { THRESHOLDS, rating2026 } from "@/lib/rating";
 import { SectionPanneau } from "./sections/panneau";
 import { SectionsDistributions } from "./sections/distributions";
 import { SectionsSeries } from "./sections/series";
+import { SectionIntervalles } from "./sections/intervalles";
 
 export const dynamic = "force-dynamic";
 
@@ -604,6 +605,7 @@ export default async function VitrineComposants() {
       </Section>
       <SectionPanneau />
       <SectionsSeries />
+      <SectionIntervalles />
     </div>
   );
 }

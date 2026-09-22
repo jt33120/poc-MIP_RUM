@@ -18,6 +18,7 @@ import { fmtVital } from "@/lib/format";
 import { pageFilters } from "@/lib/page-filters";
 import { hrefWithQuery } from "@/lib/query-contract";
 import { RATING_LABEL, rating2026, texteSeuils } from "@/lib/rating";
+import { FAIBLE_SOUS_PROPORTION, intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
 import {
   experienceContext,
   feedbackByRoute,
@@ -47,6 +48,9 @@ export default async function Experience({
   ]);
 
   const csatVal = stats.count ? stats.positives / stats.count : null;
+  // P*.1 : la part d'avis ≥ 4/5 porte son intervalle de Wilson (population : les
+  // AVIS notés, pas les sessions). Sans avis, ni valeur ni intervalle.
+  const csatIntervalle = texteIntervalle(intervalleWilson(stats.positives, stats.count), (v) => `${Math.round(v * 100)} %`);
   // Sans session, pas de taux : « — », jamais « 0 », qui se lirait « aucune frustration ».
   const frustrationPour1000 = ctx.sessions ? (ctx.frustration / ctx.sessions) * 1000 : null;
   const lcpRating = ctx.lcp_p75 == null ? null : rating2026("LCP", ctx.lcp_p75);
@@ -99,7 +103,16 @@ export default async function Experience({
           label="CSAT"
           value={csatVal == null ? "—" : `${Math.round(csatVal * 100)} %`}
           tone={csatVal != null && csatVal < 0.5 ? "poor" : "neutral"}
-          hint="retours ≥ 4/5"
+          hint={
+            csatIntervalle ? (
+              <span data-testid="xp-csat-intervalle">
+                retours ≥ 4/5 · {csatIntervalle} · {stats.count} avis
+                {stats.count < FAIBLE_SOUS_PROPORTION && <span className="font-medium text-warn-ink"> · échantillon faible</span>}
+              </span>
+            ) : (
+              "retours ≥ 4/5"
+            )
+          }
         />
         <HeroStat
           label="Réponses"

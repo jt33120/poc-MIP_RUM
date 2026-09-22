@@ -59,23 +59,28 @@ export interface VitalAgg {
   intervalle: IntervalleP75;
 }
 
-/** p75 par vital sur la plage courante, ou la période précédente contiguë (shift=true). */
-export async function vitalsP75(f: Filters, shift = false): Promise<VitalAgg[]> {
-  const sql = await sqlContext(f);
-  const where = sql.where({
-    dataset: "vitals",
-    row: "m",
-    session: "s",
-    time: "m.ts",
-    ...(shift ? { range: previousRange(sql.query.range) } : {}),
-  });
-  // L'intervalle de la p75 se lit dans le MÊME balayage : les mesures triées sous
-  // 30 (rangs exacts, calculés en JS), les deux statistiques d'ordre aux rangs
-  // normaux au-delà. Les rangs SQL suivent la formule de `rangsQuantileNormal`
-  // opération par opération, en float8, pour tomber sur les mêmes entiers.
+/**
+ * Agrégats par vital ET intervalle à 95 % de leur p75 (P*.1), dans UN balayage.
+ *
+ * L'intervalle se lit avec la p75 : les mesures triées sous 30 (rangs exacts,
+ * calculés en JS), les deux statistiques d'ordre aux rangs normaux au-delà. Les
+ * rangs SQL suivent la formule de `rangsQuantileNormal` opération par opération,
+ * en float8, pour tomber sur les mêmes entiers (tests/integration/
+ * vitals-intervalle-sql.test.ts). Partagé par `vitalsP75` et `vitalPercentiles` :
+ * la tuile et la table des percentiles disent le MÊME intervalle.
+ *
+ * @param agregats colonnes calculées sur `value` (« percentile_cont(…) … as p75 »)
+ * @param colonnes les mêmes, relues dans l'agrégat (« a.p75 »)
+ */
+async function agregatsAvecIntervalle<T extends { n: number }>(
+  sql: SqlContext,
+  where: string,
+  agregats: string,
+  colonnes: string,
+): Promise<(T & { intervalle: IntervalleP75 })[]> {
   const seuil = sql.bind(SEUIL_RANGS_NORMAUX);
   const rangs = rangsQuantileNormalSql("count(*)", sql.bind(Z95));
-  const rows = await q<Omit<VitalAgg, "intervalle"> & { valeurs: number[] | null; bas: number | null; haut: number | null }>(
+  const rows = await q<T & { valeurs: number[] | null; bas: number | null; haut: number | null }>(
     `with m as (
        select m.name, m.value
        from rum_metric m
@@ -83,8 +88,7 @@ export async function vitalsP75(f: Filters, shift = false): Promise<VitalAgg[]> 
        where true${where}
      ), agg as (
        select name,
-              percentile_cont(0.75) within group (order by value) as p75,
-              percentile_cont(0.5) within group (order by value) as p50,
+              ${agregats},
               count(*)::int as n,
               case when count(*) < ${seuil}::int then array_agg(value order by value) end as valeurs,
               ${rangs.r} as r,
@@ -95,36 +99,56 @@ export async function vitalsP75(f: Filters, shift = false): Promise<VitalAgg[]> 
        select name, value, row_number() over (partition by name order by value) as rang
        from m
      )
-     select a.name, a.p75, a.p50, a.n, a.valeurs,
+     select a.name, ${colonnes}, a.n, a.valeurs,
             max(x.value) filter (where x.rang = a.r) as bas,
             max(x.value) filter (where x.rang = a.s) as haut
      from agg a
      left join rangs x on x.name = a.name and a.n >= ${seuil}::int and x.rang in (a.r, a.s)
-     group by a.name, a.p75, a.p50, a.n, a.valeurs`,
+     group by a.name, ${colonnes}, a.n, a.valeurs`,
     sql.params,
   );
-  return rows.map(({ valeurs, bas, haut, ...v }) => ({ ...v, intervalle: intervalleP75Lu(v.n, valeurs, bas, haut) }));
+  return rows.map(({ valeurs, bas, haut, ...v }) => ({
+    ...(v as unknown as T),
+    intervalle: intervalleP75Lu(v.n, valeurs, bas, haut),
+  }));
+}
+
+/** p75 par vital sur la plage courante, ou la période précédente contiguë (shift=true). */
+export async function vitalsP75(f: Filters, shift = false): Promise<VitalAgg[]> {
+  const sql = await sqlContext(f);
+  const where = sql.where({
+    dataset: "vitals",
+    row: "m",
+    session: "s",
+    time: "m.ts",
+    ...(shift ? { range: previousRange(sql.query.range) } : {}),
+  });
+  return agregatsAvecIntervalle<Omit<VitalAgg, "intervalle">>(
+    sql,
+    where,
+    `percentile_cont(0.75) within group (order by value) as p75,
+              percentile_cont(0.5) within group (order by value) as p50`,
+    "a.p75, a.p50",
+  );
 }
 
 export interface VitalPercentiles {
   name: string;
   pcts: number[]; // [p50, p75, p90, p95, p99] (percentile_cont array, ordre PCTS)
   n: number;
+  /** Intervalle à 95 % du p75 (P*.1), le même que celui de la tuile de `/`. */
+  intervalle: IntervalleP75;
 }
 
 /** p50/p75/p90/p95/p99 par vital — la distribution que le seul p75 masque. */
 export async function vitalPercentiles(f: Filters): Promise<VitalPercentiles[]> {
   const sql = await sqlContext(f);
   const where = sql.where({ dataset: "vitals", row: "m", session: "s", time: "m.ts" });
-  return q<VitalPercentiles>(
-    `select m.name,
-            percentile_cont(array[0.5,0.75,0.9,0.95,0.99]) within group (order by m.value) as pcts,
-            count(*)::int as n
-     from rum_metric m
-     ${sessionJoin("m", "s")}
-     where true${where}
-     group by m.name`,
-    sql.params,
+  return agregatsAvecIntervalle<Omit<VitalPercentiles, "intervalle">>(
+    sql,
+    where,
+    "percentile_cont(array[0.5,0.75,0.9,0.95,0.99]) within group (order by value) as pcts",
+    "a.pcts",
   );
 }
 
