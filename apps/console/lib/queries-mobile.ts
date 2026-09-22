@@ -23,10 +23,16 @@ import { compileScope, compileWhereOrThrow, type DimensionSchema } from "./query
 import { conditionsOf, type AnalyticsQuery, type FilterCondition } from "./query-contract";
 import { dimensionSchema } from "./query-schema";
 import {
+  ERROR_FREE_REASONS,
   RAISON_SANS_RUNTIME,
+  RAISON_SANS_SOURCE_JS,
   capabilityMatrix,
+  chainerReleases,
   errorFreeSessionRate,
+  etatCapaciteParRelease,
+  tauxSansErreurDeclarant,
   type CapabilityDeclaration,
+  type CapabilityState,
   type CapabilityStatus,
   type ErrorFreeUnavailable,
   type MobileCapability,
@@ -240,11 +246,15 @@ function cohorte(query: AnalyticsQuery, schema: MobileSchema): Base {
     schema.dimensions,
     bind,
   );
+  // La release et le début de la session sont projetés pour la lecture par release
+  // (F38). Sans la colonne `release` (schéma antérieur), la projection vaut NULL :
+  // `mobileSummary` ne la lit pas, et `mobileParRelease` refuse avant de l'employer.
+  const release = schema.dimensions.has("rum_session.release") ? "s.release" : "null::text as release";
   return {
     params,
     bind,
     cte: `cohorte as (
-      select s.session_id, s.app_id, s.visitor_id,
+      select s.session_id, s.app_id, s.visitor_id, ${release}, s.started_at,
              coalesce(s.sample_rate, 1) + (1 - coalesce(s.sample_rate, 1)) * coalesce(s.error_sample_rate, 1)
                as inclusion_probability
         from rum_session s
@@ -324,7 +334,7 @@ export async function mobileSummary(f: FiltersLike, schema?: MobileSchema): Prom
     unavailable.push("migration v82 partielle : les capacités déclarées ne sont pas lisibles, toutes sont « Inconnu »");
   }
   if (!etat.errorSource) {
-    unavailable.push("migration v69 absente : les erreurs JavaScript React Native ne sont pas distinguables");
+    unavailable.push(RAISON_SANS_SOURCE_JS);
   }
 
   const declarations = etat.capabilities ? await mobileDeclarations(query) : [];
@@ -539,4 +549,174 @@ async function lireRequetes(lire: Lecture, query: AnalyticsQuery, schema: Mobile
       limit ${TOP_LIMIT}`,
     base.params,
   );
+}
+
+// ─────────────────────── Stabilité par release (F38) ─────────────────────────
+//
+// LA RELEASE EST LA COUPE OÙ NUMÉRATEUR ET DÉNOMINATEUR PARLENT DE LA MÊME
+// POPULATION. Sur mobile, la release est un fait exact de la session (voir
+// `conditionsRelease`) : « sessions de la 4.2 touchées par une erreur JS » sur
+// « sessions de la 4.2 » est un vrai taux. C'est le premier écran de Datadog
+// (« Error Rate by Version ») et d'Ekara pour le mobile.
+//
+// ET CHAQUE RELEASE A SON PROPRE ÉTAT DE COLLECTE (CE14). Une release qui ne
+// déclare pas collecter les erreurs JS n'a pas « 0 % de sessions touchées » : elle
+// n'a rien observé. Sa part vaut `null`, avec la raison — même quand une autre
+// release du parc, elle, déclare.
+
+/** Releases affichées par défaut ; toutes sont agrégées, la référence porte sur toutes. */
+export const RELEASES_AFFICHEES = 12;
+
+export interface MobileReleaseRow {
+  /** `null` : sessions sans release déclarée — ligne « Inconnue ». */
+  release: string | null;
+  /** Sessions React Native de cette release COMMENCÉES dans la fenêtre. */
+  sessions: number;
+  /** Sessions portant au moins une erreur JS de la fenêtre ; `null` sans `error_source` (v69). */
+  sessions_touchees: number | null;
+  /** `sum(occurrences)` (V1) ; `null` sans `error_source`. */
+  occurrences: number | null;
+  /** État `js_errors` issu des SEULES déclarations de cette release. */
+  etat_js_errors: CapabilityState;
+  /** Part des sessions touchées (0..1) ; `null` si la release ne déclare pas collecter. */
+  part_touchee: number | null;
+  raison_part: string | null;
+  /** Écart de part touchée, en POINTS, à la release précédente (première session vue). */
+  ecart_precedente_pts: number | null;
+  release_precedente: string | null;
+  /** p75 du démarrage JS à froid jusqu'au premier écran ; `null` sans mesure. */
+  demarrage_froid_p75_ms: number | null;
+  demarrage_froid_n: number;
+  /** Première session de la release DANS LA FENÊTRE (ISO), pas sa date de publication. */
+  premiere_session: string;
+}
+
+/** Taux des releases déclarantes, sur TOUTES les releases (jamais les 12 affichées seules). */
+export type MobileDeclarantes = ReturnType<typeof tauxSansErreurDeclarant> & {
+  /** Σ occurrences des releases déclarantes ; `null` sans `error_source`. */
+  occurrences: number | null;
+};
+
+export type MobileParRelease =
+  | {
+      disponible: true;
+      lignes: MobileReleaseRow[];
+      /** Nombre de groupes de release sur la fenêtre (« Inconnue » compris). */
+      releases: number;
+      tronque: boolean;
+      declarantes: MobileDeclarantes;
+    }
+  | { disponible: false; raison: string };
+
+export const RAISON_SANS_RELEASE_SESSION =
+  "la release des sessions n'est pas lisible sur ce schéma (colonne rum_session.release absente) : aucune coupe par release possible";
+
+/**
+ * Stabilité par release de la cohorte React Native : même `cohorte()`, même
+ * `snapshot()` que `mobileSummary`. Requête sans migration.
+ *
+ * `disponible: false` quand le schéma ne permet pas la coupe (sans `runtime` —
+ * v82 — ou sans `rum_session.release`) : l'écran applique alors l'ordre de repli.
+ * Une EXCEPTION n'est pas un `disponible: false` : elle remonte, et l'écran rend la
+ * section en erreur à sa place.
+ */
+export async function mobileParRelease(
+  f: FiltersLike,
+  limite = RELEASES_AFFICHEES,
+  schema?: MobileSchema,
+): Promise<MobileParRelease> {
+  const etat = schema ?? (await mobileSchema());
+  if (!etat.runtime) return { disponible: false, raison: RAISON_SANS_RUNTIME };
+  if (!etat.dimensions.has("rum_session.release")) return { disponible: false, raison: RAISON_SANS_RELEASE_SESSION };
+  const query = queryOf(f);
+  // Hors transaction et sans fenêtre, comme pour `mobileSummary` : une déclaration
+  // n'est pas une occurrence.
+  const declarations = etat.capabilities ? await mobileDeclarations(query) : [];
+
+  const { groupes, demarrages } = await snapshot(async (lire) => {
+    // Une base par instruction : ses paramètres liés n'appartiennent qu'à elle.
+    const base = cohorte(query, etat);
+    const groupes = etat.errorSource
+      ? await lire<{ release: string | null; sessions: number; touchees: number; occurrences: number; premiere: Date }>(
+          `with ${base.cte},
+           err as (
+             select e.app_id, e.session_id, sum(e.occurrences)::float8 as occ
+               from rum_error e
+               join cohorte c on c.app_id = e.app_id and c.session_id = e.session_id
+              where e.error_source = ${base.bind(MOBILE_ERROR_SOURCE)}${compileScope(query, "e.app_id", base.bind)}${fenetre(query, "e.ts", base.bind)}
+              group by e.app_id, e.session_id
+           )
+           select c.release,
+                  count(*)::int as sessions,
+                  count(err.session_id)::int as touchees,
+                  coalesce(sum(err.occ), 0)::float8 as occurrences,
+                  min(c.started_at) as premiere
+             from cohorte c
+             left join err on err.app_id = c.app_id and err.session_id = c.session_id
+            group by c.release`,
+          base.params,
+        )
+      : await lire<{ release: string | null; sessions: number; touchees: null; occurrences: null; premiere: Date }>(
+          `with ${base.cte}
+           select c.release, count(*)::int as sessions, null::int as touchees, null::float8 as occurrences,
+                  min(c.started_at) as premiere
+             from cohorte c
+            group by c.release`,
+          base.params,
+        );
+    const baseDemarrage = cohorte(query, etat);
+    const demarrages = await lire<{ release: string | null; n: number; p75: number | null }>(
+      `with ${baseDemarrage.cte}
+       select c.release, count(*)::int as n,
+              percentile_cont(0.75) within group (order by ev.timing_ms)::float8 as p75
+         from rum_event ev
+         join cohorte c on c.app_id = ev.app_id and c.session_id = ev.session_id
+        where ev.event_type = 'timing' and ev.timing_ms is not null
+          and ev.name = ${baseDemarrage.bind(STARTUP_COLD)}${compileScope(query, "ev.app_id", baseDemarrage.bind)}${fenetre(query, "ev.ts", baseDemarrage.bind)}
+        group by c.release`,
+      baseDemarrage.params,
+    );
+    return { groupes, demarrages };
+  });
+
+  const lignes = groupes.map((g) => {
+    const etatJs = etatCapaciteParRelease(declarations, "js_errors", g.release);
+    const touchees = g.touchees === null ? null : Number(g.touchees);
+    let part: number | null = null;
+    let raison: string | null = null;
+    if (touchees === null) {
+      raison = RAISON_SANS_SOURCE_JS;
+    } else {
+      const { rate, reason } = errorFreeSessionRate({ sessions: g.sessions, sessionsWithJsError: touchees, jsErrorsState: etatJs });
+      if (rate === null) raison = reason ? ERROR_FREE_REASONS[reason] : null;
+      else part = 1 - rate;
+    }
+    const demarrage = demarrages.find((d) => d.release === g.release);
+    return {
+      release: g.release,
+      sessions: g.sessions,
+      sessions_touchees: touchees,
+      occurrences: g.occurrences === null ? null : Number(g.occurrences),
+      etat_js_errors: etatJs,
+      part_touchee: part,
+      raison_part: raison,
+      demarrage_froid_p75_ms: demarrage?.p75 == null ? null : Number(demarrage.p75),
+      demarrage_froid_n: demarrage?.n ?? 0,
+      premiere_session: new Date(g.premiere).toISOString(),
+    };
+  });
+
+  const chainees = chainerReleases(lignes);
+  const taux = tauxSansErreurDeclarant(chainees);
+  const actives = chainees.filter((l) => l.etat_js_errors === "active");
+  return {
+    disponible: true,
+    lignes: chainees.slice(0, Math.max(0, limite)),
+    releases: chainees.length,
+    tronque: chainees.length > limite,
+    declarantes: {
+      ...taux,
+      occurrences: etat.errorSource ? actives.reduce((s, l) => s + (l.occurrences ?? 0), 0) : null,
+    },
+  };
 }

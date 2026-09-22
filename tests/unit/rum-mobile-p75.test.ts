@@ -36,6 +36,16 @@ import {
   sessionsCohorte,
   type CapabilityDeclaration,
 } from "../../apps/console/lib/mobile-capabilities";
+import {
+  ERROR_FREE_REASONS,
+  RAISON_SANS_SOURCE_JS,
+  chainerReleases,
+  derniereReleaseDeclaree,
+  etatCapaciteParRelease,
+  ordreZonesMobile,
+  tauxSansErreurDeclarant,
+  texteRaisonTaux,
+} from "../../apps/console/lib/mobile-capabilities";
 
 // ═════════════ 1. Un seul vocabulaire, trois endroits qui le disent ══════════
 
@@ -367,5 +377,135 @@ describe("P7.5 — la déclaration part sur la resource, et suit l'état réel",
       { app_id: "p75", runtime: "react_native", release: "4.2.0", capability: "js_errors", declared: true },
       { app_id: "p75", runtime: "react_native", release: "4.2.0", capability: "screen_tracking", declared: false },
     ]);
+  });
+});
+
+// ═══════════ F38 — état et taux PAR RELEASE, la stabilité en hero (CE14) ═════════
+
+describe("F38 — etatCapaciteParRelease : l'état d'une release vient de SES déclarations", () => {
+  const declarations = [decl({ release: "1.4", declared: true }), decl({ release: "1.1", declared: false })];
+
+  it("deux releases dont une seule déclarante → active pour elle, unknown pour l'autre", () => {
+    expect(etatCapaciteParRelease(declarations, "js_errors", "1.4")).toBe("active");
+    // Le parc est « active » (capabilityStatus) ; la 1.2, elle, n'a rien déclaré.
+    expect(capabilityStatus("js_errors", declarations).state).toBe("active");
+    expect(etatCapaciteParRelease(declarations, "js_errors", "1.2")).toBe("unknown");
+  });
+
+  it("une release qui déclare NE PAS collecter est unavailable, pas unknown", () => {
+    expect(etatCapaciteParRelease(declarations, "js_errors", "1.1")).toBe("unavailable");
+  });
+
+  it("une release null n'hérite pas des déclarations des autres", () => {
+    expect(etatCapaciteParRelease(declarations, "js_errors", null)).toBe("unknown");
+    expect(etatCapaciteParRelease([decl({ release: null })], "js_errors", null)).toBe("active");
+  });
+});
+
+describe("F38 — tauxSansErreurDeclarant : un taux sur les releases déclarantes seulement", () => {
+  it("exemple W-M5 : A (active, 100 sessions, 10 touchées) et B (unknown, 50, 0) → 90 %, 50 exclues", () => {
+    const r = tauxSansErreurDeclarant([
+      { sessions: 100, sessions_touchees: 10, etat_js_errors: "active" },
+      { sessions: 50, sessions_touchees: 0, etat_js_errors: "unknown" },
+    ]);
+    expect(r.rate).toBeCloseTo(0.9, 10);
+    expect(r).toMatchObject({ reason: null, sessions: 100, touchees: 10, exclues: 50 });
+    // Et non 93,3 % : la B, aveugle, gonflerait le dénominateur « sans erreur ».
+    expect(r.rate).not.toBeCloseTo(1 - 10 / 150, 3);
+  });
+
+  it("somme des comptes, jamais moyenne des parts", () => {
+    const r = tauxSansErreurDeclarant([
+      { sessions: 10, sessions_touchees: 5, etat_js_errors: "active" },
+      { sessions: 30, sessions_touchees: 3, etat_js_errors: "active" },
+    ]);
+    // Σ touchées / Σ sessions = 8 / 40 = 20 % touchées ; la moyenne des parts dirait 30 %.
+    expect(r.rate).toBeCloseTo(0.8, 10);
+  });
+
+  it("aucune session → no_sessions, avant toute autre raison", () => {
+    expect(tauxSansErreurDeclarant([]).reason).toBe("no_sessions");
+    expect(tauxSansErreurDeclarant([{ sessions: 0, sessions_touchees: 0, etat_js_errors: "unknown" }]).reason).toBe("no_sessions");
+  });
+
+  it("aucune release déclarante → capability_unknown ; toutes refusent → capability_unavailable", () => {
+    const inconnu = tauxSansErreurDeclarant([
+      { sessions: 20, sessions_touchees: 0, etat_js_errors: "unknown" },
+      { sessions: 5, sessions_touchees: 0, etat_js_errors: "unavailable" },
+    ]);
+    expect(inconnu).toMatchObject({ rate: null, reason: "capability_unknown", exclues: 25 });
+    const refus = tauxSansErreurDeclarant([{ sessions: 5, sessions_touchees: 0, etat_js_errors: "unavailable" }]);
+    expect(refus).toMatchObject({ rate: null, reason: "capability_unavailable" });
+    expect(texteRaisonTaux("capability_unknown")).toBe(ERROR_FREE_REASONS.capability_unknown);
+  });
+
+  it("source d'erreur illisible (v69) → null et sa raison, jamais 100 %", () => {
+    const r = tauxSansErreurDeclarant([{ sessions: 12, sessions_touchees: null, etat_js_errors: "active" }]);
+    expect(r).toMatchObject({ rate: null, reason: "source_indisponible" });
+    expect(texteRaisonTaux("source_indisponible")).toBe(RAISON_SANS_SOURCE_JS);
+  });
+
+  it("plus de sessions touchées que de sessions : le taux ne descend pas sous 0", () => {
+    expect(tauxSansErreurDeclarant([{ sessions: 3, sessions_touchees: 5, etat_js_errors: "active" }]).rate).toBe(0);
+  });
+});
+
+describe("F38 — chainerReleases : chaque release contre la précédente en première session vue", () => {
+  const ligne = (release: string | null, premiere: string, part: number | null) => ({
+    release,
+    premiere_session: premiere,
+    part_touchee: part,
+  });
+
+  it("ordre : la plus récente en tête ; écart en points contre la précédente", () => {
+    const r = chainerReleases([
+      ligne("1.2", "2026-09-20T10:00:00.000Z", 0.1),
+      ligne("1.4", "2026-09-21T10:00:00.000Z", 1 / 3),
+      ligne("1.3", "2026-09-20T18:00:00.000Z", 0.2),
+    ]);
+    expect(r.map((l) => l.release)).toEqual(["1.4", "1.3", "1.2"]);
+    expect(r[0].release_precedente).toBe("1.3");
+    expect(r[0].ecart_precedente_pts).toBeCloseTo(13.333, 2);
+    expect(r[2]).toMatchObject({ release_precedente: null, ecart_precedente_pts: null });
+  });
+
+  it("une part null d'un côté → écart null ; la release « Inconnue » n'entre pas dans la chaîne", () => {
+    const r = chainerReleases([
+      ligne("1.4", "2026-09-21T10:00:00.000Z", 0.3),
+      ligne(null, "2026-09-21T09:00:00.000Z", null),
+      ligne("1.2", "2026-09-20T10:00:00.000Z", null),
+    ]);
+    const v14 = r.find((l) => l.release === "1.4")!;
+    expect(v14.release_precedente).toBe("1.2");
+    expect(v14.ecart_precedente_pts).toBeNull();
+    expect(r.find((l) => l.release === null)).toMatchObject({ release_precedente: null, ecart_precedente_pts: null });
+  });
+});
+
+describe("F38 — vue « Dernière release déclarée » et ordre des zones", () => {
+  it("la dernière release est celle dont la PREMIÈRE déclaration est la plus récente", () => {
+    expect(
+      derniereReleaseDeclaree([
+        decl({ release: "1.2", first_declared_at: "2026-09-01T00:00:00.000Z", last_declared_at: "2026-09-21T00:00:00.000Z" }),
+        decl({ release: "1.4", first_declared_at: "2026-09-15T00:00:00.000Z" }),
+        decl({ release: null, first_declared_at: "2026-09-20T00:00:00.000Z" }),
+      ]),
+    ).toBe("1.4");
+    expect(derniereReleaseDeclaree([decl({ release: null })])).toBeNull();
+  });
+
+  it("nominal : la stabilité par release suit les tuiles ; une lecture en échec reste en place", () => {
+    for (const cas of ["disponible", "erreur"] as const) {
+      const ordre = ordreZonesMobile(cas);
+      expect(ordre.indexOf("stabilite")).toBe(ordre.indexOf("kpi") + 1);
+      expect(ordre.indexOf("angles-morts")).toBeLessThan(ordre.indexOf("kpi"));
+      expect(ordre.at(-2)).toBe("capacites");
+    }
+  });
+
+  it("repli (lecture indisponible sur ce schéma) : tuiles puis démarrage forment le hero, la stabilité descend", () => {
+    const ordre = ordreZonesMobile("indisponible");
+    expect(ordre.indexOf("demarrage-ecrans")).toBe(ordre.indexOf("kpi") + 1);
+    expect(ordre.indexOf("stabilite")).toBe(ordre.indexOf("demarrage-ecrans") + 1);
   });
 });
