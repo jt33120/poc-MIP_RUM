@@ -17,7 +17,7 @@ export type Refus = { ok: false; raison: string; manque: Manque };
 /** Un résultat, ou un refus chiffré. */
 export type Resultat<T extends object> = ({ ok: true } & T) | Refus;
 
-export type MethodeIntervalle = "quantile_exact" | "quantile_normal" | "wilson" | "newcombe";
+export type MethodeIntervalle = "quantile_exact" | "quantile_normal" | "wilson" | "newcombe" | "fisher";
 
 /** Intervalle à 95 %, avec la méthode qui l'a produit (la bulle d'aide la nomme). */
 export interface Intervalle {
