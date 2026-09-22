@@ -27,6 +27,8 @@ import { getUser } from "@/lib/auth";
 import { canCreateDashboard, dashboardPrincipal, getWritableDashboard } from "@/lib/dashboard-access";
 import { deleteDashboard, insertDashboard, updateDashboardMeta, updateLayout } from "@/lib/queries-dashboards";
 import { revalidatePath } from "@/lib/next-cache";
+import { cloneTemplateAction as f35CloneTemplateAction } from "@/app/dashboards/actions";
+import { redirect as f35Redirect } from "next/navigation";
 
 const form = (entries: Record<string, string>) => {
   const fd = new FormData();
@@ -180,5 +182,86 @@ describe("actions dashboards — lecture transverse ≠ écriture", () => {
       owner_id: "12",
       layout: TABLEAU.layout,
     });
+  });
+});
+
+// F35 (W-D1) — cloner un modèle fourni : un tableau à soi, dans une app NOMMÉE où
+// la session peut créer ; jamais pour une session démo ni un viewer sans app.
+describe("F35 — cloner un modèle de tableau de bord", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  /**
+   * Destination d'une action : l'erreur NEXT_REDIRECT porte l'URL dans son `digest`
+   * (« NEXT_REDIRECT;replace;/url;307; ») ; si le mock de `next/navigation` s'applique
+   * au module de l'action, c'est son dernier appel. `null` : aucune redirection.
+   */
+  async function destination(action: (fd: FormData) => Promise<void>, fd: FormData): Promise<string | null> {
+    vi.mocked(f35Redirect).mockClear();
+    try {
+      await action(fd);
+    } catch (e) {
+      const digest = (e as { digest?: unknown }).digest;
+      if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) return digest.split(";")[2] ?? null;
+      throw e;
+    }
+    const appels = vi.mocked(f35Redirect).mock.calls;
+    return appels.length ? String(appels[appels.length - 1][0]) : null;
+  }
+
+  it("session démo ou viewer sans app : rien n'est écrit, le refus est dit", async () => {
+    vi.mocked(getUser).mockResolvedValue({ email: "demo@mip-rum.local", role: "viewer", apps: ["app-a"], demo: true });
+    vi.mocked(dashboardPrincipal).mockResolvedValue({
+      email: "demo@mip-rum.local", role: "viewer", apps: ["app-a"], demo: true, accountId: null,
+    });
+    vi.mocked(canCreateDashboard).mockReturnValue(false);
+    const demo = await destination(f35CloneTemplateAction, form({ modele: "performance", app_id: "app-a" }));
+
+    vi.mocked(dashboardPrincipal).mockResolvedValue({ email: "v@example.test", role: "viewer", apps: [], accountId: "9" });
+    const sansApp = await destination(f35CloneTemplateAction, form({ modele: "performance", app_id: "app-a" }));
+
+    expect(insertDashboard).not.toHaveBeenCalled();
+    expect([demo, sansApp]).toEqual(["/dashboards?creation=refus", "/dashboards?creation=refus"]);
+  });
+
+  it("« toutes les apps » n'est jamais une cible de clonage, même pour un admin transverse", async () => {
+    vi.mocked(dashboardPrincipal).mockResolvedValue({ email: "a@example.test", role: "admin", apps: null, accountId: "7" });
+    vi.mocked(canCreateDashboard).mockReturnValue(true);
+    expect(await destination(f35CloneTemplateAction, form({ modele: "erreurs", app_id: "" }))).toBe("/dashboards?creation=refus");
+    expect(insertDashboard).not.toHaveBeenCalled();
+  });
+
+  it("un modèle inconnu ne clone rien", async () => {
+    vi.mocked(canCreateDashboard).mockReturnValue(true);
+    expect(await destination(f35CloneTemplateAction, form({ modele: "inexistant", app_id: "app-a" }))).toBe(
+      "/dashboards?creation=modele-inconnu",
+    );
+    expect(insertDashboard).not.toHaveBeenCalled();
+  });
+
+  it("cloner « Performance » : « Performance — copie », le cloneur propriétaire, les cartes du modèle", async () => {
+    vi.mocked(getUser).mockResolvedValue({ email: "a@example.test", role: "admin", apps: ["app-a"] });
+    vi.mocked(dashboardPrincipal).mockResolvedValue({ email: "a@example.test", role: "admin", apps: ["app-a"], accountId: "7" });
+    vi.mocked(canCreateDashboard).mockReturnValue(true);
+    vi.mocked(insertDashboard).mockResolvedValue(91);
+
+    const vers = await destination(
+      f35CloneTemplateAction,
+      form({ modele: "performance", app_id: "app-a", ctx: "period=7d&tri=volume" }),
+    );
+
+    const [ecrit] = vi.mocked(insertDashboard).mock.calls[0];
+    expect(ecrit).toMatchObject({ name: "Performance — copie", app_id: "app-a", created_by: "a@example.test", owner_id: "7" });
+    expect(ecrit.layout).toHaveLength(7);
+    expect(ecrit.layout?.[0]).toMatchObject({ kind: "v2", title: "Seuils — LCP p75" });
+    // Seuls les paramètres du contrat voyagent ; l'app du clone devient celle de l'écran.
+    expect(vers).toBe("/dashboards/91?period=7d&app=app-a");
+  });
+
+  it("créer un tableau vide sans nom : refus dit, rien d'écrit", async () => {
+    vi.mocked(canCreateDashboard).mockReturnValue(true);
+    expect(await destination(createDashboardAction, form({ name: "   ", app_id: "app-a" }))).toBe(
+      "/dashboards?creation=nom-vide",
+    );
+    expect(insertDashboard).not.toHaveBeenCalled();
   });
 });
