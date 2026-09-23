@@ -110,4 +110,160 @@ test.describe("P**.2 — ossature : une page, trois parties", () => {
 
 // ─── P**.6 — Annexe et Specs : TP11 (six <details>, toutes les lignes), TP6 (clavier)
 
+test.describe("P**.6 — annexe et Specs", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  /**
+   * L'extraction du document de couverture, que l'annexe reprend ligne pour ligne.
+   * Le nombre de familles et de lignes y est LU, jamais recopié : un nouveau relevé
+   * les change sans toucher à ce test.
+   */
+  const extraction = () =>
+    JSON.parse(readFileSync(join(process.cwd(), "apps/console/lib/couverture.generated.json"), "utf8")) as {
+      releve: string;
+      familles: string[];
+      capacites: { id: string; famille: string; verdict: string }[];
+    };
+
+  test("TP11 — une famille par <details>, et toutes les capacités du document, dans son ordre", async ({ page }) => {
+    const doc = extraction();
+    await page.goto("/presentation");
+    const annexe = page.locator("section#detail");
+    await expect(annexe).toContainText(`Le document de couverture du ${doc.releve}, tel quel`);
+
+    const familles = annexe.getByTestId("annexe-famille");
+    await expect(familles).toHaveCount(doc.familles.length);
+    await expect(annexe.locator("details")).toHaveCount(doc.familles.length);
+    await expect(annexe.getByTestId("annexe-capacite")).toHaveCount(doc.capacites.length);
+
+    for (const [i, famille] of doc.familles.entries()) {
+      const bloc = familles.nth(i);
+      const attendues = doc.capacites.filter((c) => c.famille === famille);
+      await expect(bloc.locator("summary")).toContainText(famille);
+      await expect(bloc.locator("summary")).toContainText(`${attendues.length} capacité`);
+      expect(await bloc.evaluate((d) => (d as HTMLDetailsElement).open), `${famille} : fermée au chargement`).toBe(false);
+      const lignes = await bloc
+        .getByTestId("annexe-capacite")
+        .evaluateAll((trs) => trs.map((tr) => [tr.getAttribute("data-id"), tr.getAttribute("data-verdict")]));
+      expect(lignes, famille).toEqual(attendues.map((c) => [c.id, c.verdict]));
+    }
+
+    // Ouverte, une famille montre ses quatre colonnes nommées et ses lignes.
+    const premiere = familles.first();
+    await premiere.locator("summary").click();
+    expect(await premiere.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(true);
+    for (const nom of ["Identifiant", "Capacité", "Verdict", "Limite"]) {
+      await expect(premiere.getByRole("columnheader", { name: nom, exact: true })).toBeVisible();
+    }
+    const ligne = premiere.getByTestId("annexe-capacite").first();
+    const c0 = doc.capacites.filter((c) => c.famille === doc.familles[0])[0];
+    await expect(ligne.getByRole("rowheader")).toHaveText(c0.id);
+    // Trois cellules non vides : capacité, verdict ÉCRIT (pas seulement une teinte), limite.
+    for (const cellule of await ligne.getByRole("cell").all()) await expect(cellule).not.toBeEmpty();
+
+    // Le Markdown du document est rendu : ni astérisques ni accents graves à l'écran.
+    const brut = await annexe.getByTestId("annexe-couverture").evaluate((el) => el.textContent ?? "");
+    expect(brut).not.toMatch(/\*\*|`/);
+  });
+
+  test("PS11 — familles ouvertes : rien ne dépasse à 390, 768, 1440 px ; sous 1024 px, une ligne s'empile", async ({
+    page,
+  }) => {
+    await page.goto("/presentation");
+    const annexe = page.locator("section#detail");
+    const familles = annexe.getByTestId("annexe-famille");
+    for (const bloc of await familles.all()) await bloc.locator("summary").click();
+    const ligne = familles.first().getByTestId("annexe-capacite").first();
+    const capacite = ligne.getByRole("cell").first();
+    const limite = ligne.getByRole("cell").last();
+
+    for (const largeur of [390, 768, 1440]) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      // Les éléments de l'annexe qui dépassent la fenêtre, NOMMÉS (liste vide : rien ne dépasse).
+      const fautifs = await annexe.evaluate((section) => {
+        const fenetre = document.documentElement.clientWidth;
+        return [...section.querySelectorAll("*")]
+          .filter((el) => el.getBoundingClientRect().right > fenetre + 1)
+          .slice(0, 5)
+          .map((el) => `${el.tagName.toLowerCase()} « ${(el.textContent ?? "").trim().slice(0, 50)} » → ${Math.round(el.getBoundingClientRect().right)} px`);
+      });
+      expect(fautifs, `${largeur} px`).toEqual([]);
+
+      const c = (await capacite.boundingBox())!;
+      const l = (await limite.boundingBox())!;
+      if (largeur < 1024) {
+        expect(l.y, `${largeur} px : la limite passe sous la capacité`).toBeGreaterThanOrEqual(c.y + c.height - 1);
+      } else {
+        expect(l.x, `${largeur} px : la limite est une colonne, à droite de la capacité`).toBeGreaterThanOrEqual(c.x + c.width - 1);
+      }
+    }
+  });
+
+  test("TP6 — au clavier : le sommaire, le focus sur le titre visé, puis les onglets de Specs aux flèches", async ({
+    page,
+  }) => {
+    const doc = extraction();
+    await page.goto("/presentation");
+    const sommaire = page.getByRole("navigation", { name: "Sommaire de la présentation" });
+
+    // 1. Tab depuis le haut de la page atteint le sommaire, par son premier lien.
+    const dansSommaire = () => sommaire.evaluate((nav) => nav.contains(document.activeElement));
+    for (let i = 0; i < 30 && !(await dansSommaire()); i++) await page.keyboard.press("Tab");
+    await expect(sommaire.getByRole("link").first()).toBeFocused();
+
+    // 2. Tab jusqu'à « Ce qui reste », Entrée : le focus passe sur le titre de la partie.
+    const reste = sommaire.getByRole("link", { name: "Ce qui reste", exact: true });
+    for (let i = 0; i < 5 && !(await reste.evaluate((a) => a === document.activeElement)); i++) {
+      await page.keyboard.press("Tab");
+    }
+    await expect(reste).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#reste-titre")).toBeFocused();
+
+    // 3. Même geste vers « Le détail » ; de son titre, Tab parcourt les familles une à
+    //    une, et Entrée ouvre puis referme une famille.
+    await sommaire.getByRole("link", { name: "Le détail", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-titre")).toBeFocused();
+    const familles = page.locator("section#detail").getByTestId("annexe-famille");
+    for (let i = 0; i < doc.familles.length; i++) {
+      await page.keyboard.press("Tab");
+      await expect(familles.nth(i).locator("summary")).toBeFocused();
+    }
+    const derniere = familles.last();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => derniere.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(true);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => derniere.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(false);
+
+    // 4. Les Specs sont arrivées (plus de squelette) ; un seul arrêt de tabulation pour
+    //    leurs onglets : celui qui est choisi.
+    await expect(page.getByTestId("specs-chargement")).toHaveCount(0);
+    await page.keyboard.press("Tab");
+    await expect(page.locator("#specs-infra")).toBeFocused();
+    await expect(page.locator("#specs-infra")).toBeChecked();
+
+    // 5. Les flèches passent d'un onglet à l'autre, en boucle, et le panneau suit.
+    const panneau = (onglet: string) => page.locator(`[data-testid="specs-panneau"][data-onglet="${onglet}"]`);
+    await expect(panneau("infra")).toBeVisible();
+    const parcours = [
+      ["ArrowRight", "mesures"],
+      ["ArrowRight", "ecart"],
+      ["ArrowRight", "infra"],
+      ["ArrowLeft", "ecart"],
+    ] as const;
+    for (const [touche, onglet] of parcours) {
+      await page.keyboard.press(touche);
+      await expect(page.locator(`#specs-${onglet}`), `${touche} → ${onglet}`).toBeFocused();
+      await expect(page.locator(`#specs-${onglet}`)).toBeChecked();
+      for (const o of ["infra", "mesures", "ecart"]) {
+        if (o === onglet) await expect(panneau(o)).toBeVisible();
+        else await expect(panneau(o)).toBeHidden();
+      }
+    }
+    // L'onglet choisi ne passe pas par l'URL : l'adresse est restée celle de l'ancre.
+    await expect(page).toHaveURL(/\/presentation#detail-titre$/);
+  });
+});
+
 // ─── P**.8 — Recette : TP5 (débordements), TP12 (mouvement réduit), TP8 avec P**.7
