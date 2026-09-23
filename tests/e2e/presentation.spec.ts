@@ -17,6 +17,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
+// Pas de `baseURL` dans `playwright.config.ts` : comme tous les specs du dépôt, on écrit
+// l'URL complète. Un `goto("/presentation")` relatif est refusé par le navigateur
+// (« Cannot navigate to invalid URL ») — c'est ce qui faisait échouer tout ce fichier.
+const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
+
 /** Ce que la page doit afficher, relu dans l'extraction du document de couverture. */
 function couverture() {
   const brut = JSON.parse(
@@ -49,7 +54,7 @@ test.describe("P**.2 — ossature : une page, trois parties", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("TP1 — trois titres h2, dans l'ordre, chacun en tête de sa partie", async ({ page }) => {
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const titres = (await page.locator("h2").allInnerTexts()).map((t) => t.trim());
     const attendus: string[] = PARTIES.map((p) => p.titre);
     expect(titres.filter((t) => attendus.includes(t))).toEqual(attendus);
@@ -62,7 +67,7 @@ test.describe("P**.2 — ossature : une page, trois parties", () => {
 
   test("TP2 — la ligne de relevé ne dit que ce que calcule le document de couverture", async ({ page }) => {
     const c = couverture();
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const releve = page.getByTestId("presentation-releve");
     await expect(releve).toContainText(`État relevé le ${c.releve} sur ${c.sha}`);
     await expect(releve).toContainText(
@@ -78,7 +83,7 @@ test.describe("P**.2 — ossature : une page, trois parties", () => {
       Boolean(process.env.DEMO_USER_APPS?.trim()),
       "TP9 suppose une console lancée sans DEMO_USER_APPS, comme en CI",
     );
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     for (const id of ["presentation-demo", "presentation-demo-top"]) {
       await expect(page.getByTestId(id)).toHaveAttribute("aria-disabled", "true");
     }
@@ -89,7 +94,7 @@ test.describe("P**.2 — ossature : une page, trois parties", () => {
   });
 
   test("PS1 — chaque lien du sommaire mène au titre d'une partie", async ({ page }) => {
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const sommaire = page.getByRole("navigation", { name: "Sommaire de la présentation" });
     const liens = sommaire.getByRole("link");
     await expect(liens).toHaveText(["Ce qu'il contient", "Ce qu'il sait faire", "Ce qui reste", "Le détail"]);
@@ -136,7 +141,7 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
       .map((c) => c.id);
     const ids = cartesDuFichier();
 
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const cartes = page.locator("section#sait-faire").getByTestId("capacite");
     await expect(cartes).toHaveCount(ids.length);
     expect(await cartes.evaluateAll((els) => els.map((e) => e.getAttribute("data-carte")))).toEqual(ids);
@@ -166,7 +171,7 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
   });
 
   test("renvoi — « (voir R3) » dans une limite mène au point de « Ce qui reste »", async ({ page }) => {
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const liens = page.locator('section#sait-faire [data-testid="capacite-limite"] a[href^="#reste-"]');
     expect(await liens.count(), "la limite A6 renvoie à R3").toBeGreaterThan(0);
     for (const href of await liens.evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""))) {
@@ -175,7 +180,7 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
   });
 
   test("TP4 — D12 et D14, déployées mais inertes, n'apparaissent pas dans « Ce qu'il sait faire »", async ({ page }) => {
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const partie = page.locator("section#sait-faire");
     await expect(partie).toHaveCount(1);
     for (const id of INERTES) await expect(partie.locator(`[data-id="${id}"]`)).toHaveCount(0);
@@ -185,7 +190,7 @@ test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
   test("V-E — la barre de couverture : une case par capacité, des décomptes écrits", async ({ page }) => {
     const capacites = capacitesDuDocument();
     const deployees = capacites.filter((c) => c.verdict === "deploye_non_eprouve").length;
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const barre = page.locator("section#sait-faire").getByTestId("couverture-barre");
     const dessin = barre.locator('svg[role="img"]');
     await expect(dessin).toHaveAttribute("aria-label", new RegExp(` ${capacites.length} capacités, `));
@@ -211,7 +216,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
 
   test("TP4 — D12 et D14, déployées mais inertes, ont leur pastille dans « Ce qui reste »", async ({ page }) => {
     const verdicts = verdictsDuDocument();
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const reste = page.locator("section#reste");
     for (const id of ["D12", "D14"]) {
       const pastille = reste.locator(`[data-testid="reste-pastille"][data-id="${id}"]`);
@@ -223,7 +228,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
   });
 
   test("neuf points dans l'ordre du plan, chacun avec ce qui manque, ce qui le débloque et qui décide", async ({ page }) => {
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const points = page.locator('section#reste [data-testid="reste-point"]');
     await expect(points).toHaveCount(9);
     expect(await points.evaluateAll((els) => els.map((e) => e.getAttribute("data-id")))).toEqual([
@@ -241,7 +246,7 @@ test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () 
 
   test("chaque pastille est une ligne du document de couverture, avec son verdict", async ({ page }) => {
     const verdicts = verdictsDuDocument();
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const lues = await page
       .locator('section#reste [data-testid="reste-pastille"]')
       .evaluateAll((els) => els.map((e) => [e.getAttribute("data-id") ?? "", e.getAttribute("data-verdict") ?? ""]));
@@ -269,7 +274,7 @@ test.describe("P**.6 — annexe et Specs", () => {
 
   test("TP11 — une famille par <details>, et toutes les capacités du document, dans son ordre", async ({ page }) => {
     const doc = extraction();
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const annexe = page.locator("section#detail");
     await expect(annexe).toContainText(`Le document de couverture du ${doc.releve}, tel quel`);
 
@@ -311,7 +316,7 @@ test.describe("P**.6 — annexe et Specs", () => {
   test("PS11 — familles ouvertes : rien ne dépasse à 390, 768, 1440 px ; sous 1024 px, une ligne s'empile", async ({
     page,
   }) => {
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const annexe = page.locator("section#detail");
     const familles = annexe.getByTestId("annexe-famille");
     for (const bloc of await familles.all()) await bloc.locator("summary").click();
@@ -345,7 +350,7 @@ test.describe("P**.6 — annexe et Specs", () => {
     page,
   }) => {
     const doc = extraction();
-    await page.goto("/presentation");
+    await page.goto(`${consoleUrl}/presentation`);
     const sommaire = page.getByRole("navigation", { name: "Sommaire de la présentation" });
 
     // 1. Tab depuis le haut de la page atteint le sommaire, par son premier lien.
