@@ -29,7 +29,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { OngletsInteractions } from "@/components/perf/OngletsInteractions";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
-import { breakdownDrillHref } from "@/lib/breakdowns";
+import { breakdownDrillHref, sessionsDeLaRouteHref } from "@/lib/breakdowns";
 import {
   couverturePrecedente,
   sourcesSousFiltres,
@@ -145,8 +145,10 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
   // honnête part de sa route. Un lien `?action=` produirait un refus de filtre.
   const versErreurs = (route: string | null) =>
     route === null ? undefined : breakdownDrillHref("/errors", query, "route", route, schema);
-  const versSessions = (route: string | null) =>
-    route === null ? undefined : breakdownDrillHref("/sessions", query, "route", route, schema);
+  // « N sessions » ouvre les sessions passées par la route (§ 5.4.3) — pas un
+  // drill-down : une session ne porte pas de route, et `breakdownDrillHref` menait
+  // ici à `/pages`, un lien « sessions » qui n'en ouvrait aucune.
+  const versSessions = (route: string | null) => (route === null ? undefined : sessionsDeLaRouteHref(query, route));
 
   return (
     <div className="animate-fade-up">

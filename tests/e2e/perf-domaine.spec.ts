@@ -1484,8 +1484,12 @@ test.describe("F24 — Onglet Actions", () => {
     const libelle = hero.getByRole("link", { name: "Payer" }).first();
     await expect(libelle).toHaveAttribute("href", /\/errors\?/);
     await expect(libelle).toHaveAttribute("href", /route=/);
-    // « Sessions » du sous-texte ouvre les sessions de la même route.
-    await expect(hero.getByRole("link", { name: /sessions/ }).first()).toHaveAttribute("href", /\/sessions\?/);
+    // « Sessions » du sous-texte ouvre les sessions de la même route : la recherche
+    // exacte de `/sessions` (`qf=route`) — ni `/pages`, ni `route=`, que l'écran refuse.
+    const versSessions = hero.getByRole("link", { name: /sessions/ }).first();
+    await expect(versSessions).toHaveAttribute("href", /\/sessions\?/);
+    const cible = new URL((await versSessions.getAttribute("href"))!, consoleUrl);
+    expect([cible.searchParams.get("qf"), cible.searchParams.get("q")]).toEqual(["route", "/panier"]);
   });
 
   test("table : le cumul nommé comme tel, ressources et API scindées, p75 par action", async ({ page }) => {
@@ -1690,9 +1694,14 @@ test.describe("F17 — Panneau route", () => {
     expect(versErreurs.pathname).toBe("/errors");
     expect(versErreurs.searchParams.get("route")).toBe(ROUTE_F17);
 
+    // Les sessions passées par la route : la recherche EXACTE de `/sessions` (`qf=route`).
+    // `route=` y serait refusé — une session ne porte pas de route (« Route » est sans
+    // objet pour les sessions) : le lien ouvrait un écran de refus.
     const versSessions = new URL((await page.getByTestId("panneau-route-sessions").getAttribute("href"))!, consoleUrl);
     expect(versSessions.pathname).toBe("/sessions");
-    expect(versSessions.searchParams.get("route")).toBe(ROUTE_F17);
+    expect(versSessions.searchParams.get("qf")).toBe("route");
+    expect(versSessions.searchParams.get("q")).toBe(ROUTE_F17);
+    expect(versSessions.searchParams.has("route")).toBe(false);
 
     await page.getByTestId("detail-panel").getByTestId("detail-panel-page").click();
     await page.waitForURL((u) => u.searchParams.get("route") === ROUTE_F17, { timeout: 15_000 });
