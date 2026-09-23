@@ -101,10 +101,12 @@ export const MIGRATIONS_CONSTATEES = { le: "18/09/2026", deploiement: "03850b30"
 /**
  * Quand la topologie a été relevée par les hébergeurs eux-mêmes : les API Railway et
  * Vercel le 18/09 (RUM_PARITY_STATUS.md:84-87), l'API Railway le 21/09 après la
- * suppression d'`ingest` (TOPOLOGIE_BACKEND.md:77-81). Le relevé de couverture du
- * 23/09 ne l'a pas revérifiée en direct (RUM_PARITY_STATUS.md:80) : d'où les dates.
+ * suppression d'`ingest` (TOPOLOGIE_BACKEND.md:77-81), puis de nouveau le 23/09 après
+ * la vague 8 (TOPOLOGIE_BACKEND.md, « Relevé du 23/09/2026 ») : deux services, et v86
+ * appliquée par le pré-déploiement du `scheduler`. Vercel n'a pas été relevé depuis
+ * le 18/09 : d'où les deux dates.
  */
-export const TOPOLOGIE_RELEVEE = { railwayEtVercel: "18/09/2026", railway: INGEST_SUPPRIME_LE } as const;
+export const TOPOLOGIE_RELEVEE = { railwayEtVercel: "18/09/2026", railway: "23/09/2026" } as const;
 
 export type PieceId = "navigateur" | "console" | "base" | "travaux" | "mcp";
 

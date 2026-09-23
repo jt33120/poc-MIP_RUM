@@ -140,11 +140,12 @@ describe("PS3 — le chemin de la mesure", () => {
     expect(topologie).toContain("migrations à jour");
     const [jour, mois] = MIGRATIONS_CONSTATEES.le.split("/");
     expect(couverture).toContain(`déploiement \`${MIGRATIONS_CONSTATEES.deploiement}\`, ${jour}/${mois}`);
-    // Relevé par les API des hébergeurs : le 18/09 (Railway et Vercel), le 21/09 (Railway).
+    // Relevé par les API des hébergeurs : le 18/09 (Railway et Vercel), puis Railway seul (21/09, 23/09).
     const [j18, m18] = TOPOLOGIE_RELEVEE.railwayEtVercel.split("/");
     expect(couverture).toContain(`le ${j18}/${m18})`);
     expect(topologie).toContain("Vérifié le même jour\n> par l'API Railway");
-    expect(TOPOLOGIE_RELEVEE.railway).toBe(INGEST_SUPPRIME_LE);
+    // Relevé Railway le plus récent : sa section existe dans TOPOLOGIE_BACKEND.md.
+    expect(topologie).toContain(`## Relevé du ${TOPOLOGIE_RELEVEE.railway}`);
   });
 });
 

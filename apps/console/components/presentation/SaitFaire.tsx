@@ -17,6 +17,7 @@
 // à 390 px, deux à 768, trois à 1440.
 import { Fragment, type ReactNode } from "react";
 import { CouvertureBarre, couleurVerdict } from "@/components/presentation/CouvertureBarre";
+import { DeuxEcrans } from "@/components/presentation/DeuxEcrans";
 import { Partie } from "@/components/presentation/Partie";
 import { Positionnement } from "@/components/presentation/Positionnement";
 import { VERDICT_LABEL } from "@/lib/couverture";
@@ -149,6 +150,7 @@ export function SaitFaire() {
         </div>
       </div>
 
+      <DeuxEcrans />
       <Methode />
       <Positionnement />
     </Partie>

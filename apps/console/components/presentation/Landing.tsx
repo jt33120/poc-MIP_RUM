@@ -176,7 +176,7 @@ export function Landing({ user }: { user: SessionUser | null }) {
             <div className="relative aspect-[8/5] overflow-hidden rounded-xl border border-line shadow-pop">
               <Image
                 src="/portail/overview-light.png"
-                alt="Le portail MIP RUM : score de santé, Core Web Vitals au p75, sessions et taux d'erreur."
+                alt="La vue d'ensemble de la console : score de santé, sessions commencées, pages vues, erreurs pour 100 pages vues et Core Web Vitals au p75."
                 fill
                 sizes="(min-width: 1024px) 40rem, 100vw"
                 priority
