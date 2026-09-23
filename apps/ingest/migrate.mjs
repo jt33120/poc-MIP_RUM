@@ -7,7 +7,8 @@
 // une étape du déploiement : le schéma ne peut plus être en retard sur le code.
 //
 // QUI L'APPELLE EN PRODUCTION. Le service Railway `scheduler`, en commande de
-// PRÉ-DÉPLOIEMENT (`node node_modules/ingest/migrate.mjs`). C'est délibérément le
+// PRÉ-DÉPLOIEMENT (`node services/scheduler/migrate.mjs`, un fichier de câblage
+// qui appelle `main()` ci-dessous). C'est délibérément le
 // service dont la disparition se verrait tout de suite : il porte la boucle
 // d'alertes, de SLO et de notifications. Confier les migrations à un service
 // qu'on peut oublier, c'est accepter qu'elles cessent un jour de s'appliquer sans
@@ -255,30 +256,56 @@ export async function migrer(pool, { dossier = DOSSIER_SQL, baseline = null, par
   }
 }
 
+/**
+ * Le programme du migrateur : lit la ligne de commande et l'environnement,
+ * applique ce qui manque, et RENVOIE le code de sortie — sans jamais quitter
+ * le process lui-même.
+ *
+ * POURQUOI UNE FONCTION EXPORTÉE. La garde d'exécution directe, plus bas, ne
+ * s'active que si CE fichier est le point d'entrée du process. Importé par un
+ * autre (le fichier de câblage `services/scheduler/migrate.mjs`, que le
+ * pré-déploiement Railway lance), il ne faisait RIEN — sans erreur, et le
+ * déploiement serait parti avec un schéma en retard. `main()` est ce que ce
+ * câblage appelle : le même programme, quel que soit le chemin de lancement.
+ *
+ *   node <chemin>/migrate.mjs [--baseline <fichier>]
+ *
+ * @param {{ argv?: string[], env?: Record<string, string | undefined> }} [options]
+ * @returns {Promise<number>} 0 = à jour, 1 = une migration a échoué, 2 = pas de base
+ */
+export async function main({ argv = process.argv.slice(2), env = process.env } = {}) {
+  const iBase = argv.indexOf("--baseline");
+  const baseline = iBase !== -1 ? argv[iBase + 1] : (env.MIGRATE_BASELINE || null);
+  const url = env.DATABASE_URL;
+  if (!url) {
+    log.error("DATABASE_URL absent");
+    return 2;
+  }
+  // Une seule connexion suffit et le process est éphémère : pas de pool large,
+  // surtout sur Neon où les connexions sont une ressource comptée.
+  const pool = new pg.Pool({ connectionString: url, max: 1 });
+  try {
+    await migrer(pool, { baseline, par: env.RAILWAY_SERVICE_NAME ?? "migrate" });
+    // Un fichier modifié après application est un AVERTISSEMENT (déjà journalisé
+    // par `migrer`), pas un échec : on rend 0 dans les deux cas.
+    return 0;
+  } catch {
+    return 1; // le détail est déjà journalisé
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}
+
 // --- Exécution directe : node <chemin>/migrate.mjs [--baseline <fichier>] ---
 // La comparaison passe par pathToFileURL plutôt que par une concaténation
 // `file://` + argv[1] : dans l'image du backend le script est lancé par un
 // chemin relatif, et l'encodage d'un espace ou d'un accent dans le chemin
 // suffirait à faire échouer la comparaison naïve — le script ne ferait alors
 // RIEN, sans erreur, et le déploiement partirait avec un schéma en retard.
+//
+// `process.exitCode` et non `process.exit()` : le pool est déjà fermé quand
+// `main()` rend la main, le process s'arrête de lui-même avec ce code, sans
+// couper un journal encore en cours d'écriture.
 if (import.meta.url === pathToFileURL(path.resolve(process.argv[1] ?? "")).href) {
-  const args = process.argv.slice(2);
-  const iBase = args.indexOf("--baseline");
-  const baseline = iBase !== -1 ? args[iBase + 1] : (process.env.MIGRATE_BASELINE || null);
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    log.error("DATABASE_URL absent");
-    process.exit(2);
-  }
-  // Une seule connexion suffit et le process est éphémère : pas de pool large,
-  // surtout sur Neon où les connexions sont une ressource comptée.
-  const pool = new pg.Pool({ connectionString: url, max: 1 });
-  try {
-    const bilan = await migrer(pool, { baseline, par: process.env.RAILWAY_SERVICE_NAME ?? "migrate" });
-    if (bilan.modifies.length) process.exitCode = 0; // avertissement, pas échec
-  } catch {
-    process.exitCode = 1; // le détail est déjà journalisé
-  } finally {
-    await pool.end().catch(() => {});
-  }
+  process.exitCode = await main();
 }

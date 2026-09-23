@@ -96,9 +96,10 @@ pilotable par un modèle de langage ; sans `pg` ni `DATABASE_URL`, une injection
 de prompt réussie ne donne que ce que le jeton de l'appelant permettait déjà de
 lire. Cf. `docs/MCP.md`.
 
-**Les migrations sont une étape du déploiement.** Le service `ingest` porte la
-commande pre-deploy `node node_modules/ingest/migrate.mjs` : le schéma ne peut
-plus être en retard sur le code. Le runner tient un registre `schema_migration`,
+**Les migrations sont une étape du déploiement.** Le service `scheduler` porte la
+commande pre-deploy `node services/scheduler/migrate.mjs` (un fichier de câblage
+à chemin stable, qui appelle `main()` du migrateur) : le schéma ne peut plus être
+en retard sur le code. Le runner tient un registre `schema_migration`,
 applique chaque fichier dans sa propre transaction, et sait adopter une base
 existante sans rien rejouer.
 

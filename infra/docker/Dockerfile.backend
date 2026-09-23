@@ -6,7 +6,9 @@
 #
 #   node services/ingest/server.mjs      receveur OTLP (traces, logs, replay)
 #   node services/scheduler/worker.mjs   déclencheur des travaux planifiés
-#   node node_modules/ingest/migrate.mjs applique les migrations SQL en attente
+#   node services/scheduler/migrate.mjs  applique les migrations SQL en attente
+#                                        (pré-déploiement du scheduler ; câble
+#                                        `main()` de ingest/migrate.mjs)
 #
 # Construire deux images pour deux commandes ferait deux fois le même travail et
 # ouvrirait la porte à ce qu'elles divergent d'une version.

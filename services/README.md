@@ -19,7 +19,7 @@ services/*       les points d'entrée           ← minces par construction
 | `ingest` | réception OTLP : traces, logs, replay ; source maps de CI (`POST /v1/sourcemaps`, jeton dédié) | oui (`PORT`) | `node services/ingest/server.mjs` |
 | `scheduler` | déclenche les travaux planifiés | facultatif | `node services/scheduler/worker.mjs` |
 | `mcp` | expose l'API v1 à un agent IA | oui (`PORT`) | `node services/mcp/http.mjs` |
-| _(migrations)_ | applique le SQL en attente | non | `node node_modules/ingest/migrate.mjs` |
+| _(migrations)_ | applique le SQL en attente — pré-déploiement du `scheduler` | non | `node services/scheduler/migrate.mjs` |
 
 `ingest`, `scheduler` et les migrations partagent **une seule image**
 (`infra/docker/Dockerfile.backend`) : même noyau, mêmes dépendances, seule la
@@ -75,7 +75,7 @@ cd infra/docker && docker compose up -d db
 
 # le schéma, puis ce qui manque
 DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum \
-  node apps/ingest/migrate.mjs
+  node services/scheduler/migrate.mjs
 
 # les services
 DATABASE_URL=... PORT=4318 node services/ingest/server.mjs
