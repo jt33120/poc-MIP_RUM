@@ -48,7 +48,7 @@ flowchart TB
 
 ## Démarrage local
 
-Base, ingestion, démo et console sur le poste, sans secret : les programmes se rabattent sur `postgres://postgres:postgres@localhost:5433/mip_rum` (`apps/console/lib/db.ts`, `packages/backend/lib/serveur.mjs`). Le schéma se monte comme dans la CI (`.github/workflows/ci.yml`, étape « Schéma v0.1 puis toutes les migrations »).
+Base, ingestion, démo et console sur le poste, sans secret : les programmes se rabattent sur `postgres://postgres:postgres@localhost:5433/mip_rum` (`apps/console/lib/db.ts`, `packages/backend/lib/serveur.mjs`). Le schéma se monte comme dans la CI : par le migrateur de production, `DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum node services/scheduler/migrate.mjs` (`.github/workflows/ci.yml`, étape « Schéma par le migrateur »). La base du compose, elle, arrive déjà migrée par `initdb.sh`.
 
 ```bash
 pnpm install --frozen-lockfile
