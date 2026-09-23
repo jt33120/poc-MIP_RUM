@@ -23,14 +23,15 @@ import type { SessionMeta, TimelineItem } from "./queries";
 // ─────────────────────────────── Onglets ─────────────────────────────────────
 
 /**
- * Onglets du détail (§ 5.12.3). `cascade` s'ajoute avec F46 ; d'ici là, sa valeur
- * est un réglage ignoré, dit comme tel.
+ * Onglets du détail (§ 5.12.3), dans l'ordre de la barre. `cascade` (F46) n'a pas
+ * de compte : comme le déroulé, il montre toute la chronologie.
  */
-export const ONGLETS_SESSION = ["deroule", "erreurs", "api", "vitals", "attributs"] as const;
+export const ONGLETS_SESSION = ["deroule", "cascade", "erreurs", "api", "vitals", "attributs"] as const;
 export type OngletSession = (typeof ONGLETS_SESSION)[number];
 
 export const LIBELLES_ONGLETS: Record<OngletSession, string> = {
   deroule: "Déroulé",
+  cascade: "Cascade",
   erreurs: "Erreurs",
   api: "Appels API",
   vitals: "Web Vitals",

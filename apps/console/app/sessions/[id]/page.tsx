@@ -2,13 +2,18 @@
 // dans quel ordre, et qu'a vu le visiteur ? »
 //
 // Y1 en-tête (retour, titre, puces de contexte) · « En bref » (P*.9) · Y2 résumé en
-// cinq tuiles · Y3 onglets COMPTÉS (Déroulé, Erreurs, Appels API, Web Vitals,
-// Attributs) · Y4 contenu de l'onglet.
+// cinq tuiles · Y3 onglets COMPTÉS (Déroulé, Cascade, Erreurs, Appels API, Web
+// Vitals, Attributs) · Y4 contenu de l'onglet.
 //
 // COMPATIBILITÉ. `?tab=replay` et `?tab=timeline` (liens existants, dont
 // components/errors/error-view.ts) ouvrent le Déroulé, qui porte le rejeu ET la
-// chronologie ; `at` reste lu et positionne le lecteur. Cascade et distributions
-// (F46), synchronisation du rejeu (F47) viennent ensuite.
+// chronologie ; `at` reste lu et positionne le lecteur.
+//
+// F46 — la Cascade place la même chronologie sur un axe (`cascadeDeSession`) ;
+// l'onglet Web Vitals SITUE la pire mesure de chaque vital dans la population de
+// sa route, sur une fenêtre ANCRÉE SUR LA SESSION (`fenetreDeSession`, § 3.5) :
+// une session ancienne n'est jamais comparée aux « 7 derniers jours ». Ces
+// lectures ne partent que sur l'onglet Web Vitals.
 //
 // F45 — le Déroulé est GROUPÉ PAR VUE (`Deroule`, `lib/deroule.ts`), filtrable
 // par `voir=` (§ 3.1). Les liens sortants de la chronologie sont PRÉ-CALCULÉS
@@ -32,13 +37,40 @@ import { TabLink } from "@/components/sessions/TabLink";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { SectionErreur } from "@/components/states/SectionErreur";
 import { Deroule } from "@/components/sessions/Deroule";
-import { LIBELLES_NATURES } from "@/lib/deroule";
+import { Cascade, texteDuree } from "@/components/charts/Cascade";
+import { DistributionSeuils, alternativeDistribution, bacsDeHistogramme } from "@/components/charts/DistributionSeuils";
+import { Figure } from "@/components/charts/Figure";
+import {
+  LIBELLES_NATURES,
+  PARTIEL_CASCADE,
+  PISTES_SESSION,
+  cascadeDeSession,
+  fenetreDeSession,
+  jourMoisUtc,
+  libelleFenetre,
+  vitauxDeSession,
+  type PireMesure,
+  type VitauxSession,
+} from "@/lib/deroule";
 import { NATURES_CHRONOLOGIE, ligneIgnoree, lireVoir, type NatureChronologie } from "@/lib/view-state";
-import { formater } from "@/lib/fmt-ids";
-import { fmtDate, fmtVital } from "@/lib/format";
-import { lire } from "@/lib/lecture";
-import { sessionMeta, sessionTimeline, type TimelineItem } from "@/lib/queries";
-import { authorizedAppsOf } from "@/lib/query-contract";
+import { HISTO_BUCKETS } from "@/lib/distribution";
+import { filtersOfQuery } from "@/lib/filters";
+import { formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
+import { fmtDate } from "@/lib/format";
+import { lire, type Lecture } from "@/lib/lecture";
+import { plafondAffichage } from "@/lib/perf-domain";
+import {
+  sessionMeta,
+  sessionTimeline,
+  vitalHistogram,
+  vitalPercentiles,
+  type HistoRow,
+  type TimelineItem,
+  type VitalPercentiles,
+} from "@/lib/queries";
+import { retentionDays } from "@/lib/queries-explorer";
+import { UnsupportedFilterError } from "@/lib/query-compiler";
+import { authorizedAppsOf, paramReader, parseAnalyticsQuery, type ScopePrincipal } from "@/lib/query-contract";
 import { RATING_LABEL, rating2026 } from "@/lib/rating";
 import { LIMITE_CHRONOLOGIE, ancreEvenement, composerRecit } from "@/lib/recit-session";
 import { sessionARejeu } from "@/lib/session-rejeu";
@@ -95,7 +127,8 @@ export default async function SessionDetail({
   // scoping viewer : une session d'une app hors périmètre est invisible (404) ;
   // une liste d'apps vide n'ouvre aucune session.
   const { getUser } = await import("@/lib/auth");
-  const authorized = authorizedAppsOf(await getUser());
+  const utilisateur = await getUser();
+  const authorized = authorizedAppsOf(utilisateur);
   if (authorized !== null && !authorized.includes(meta.app_id)) notFound();
   // Un lien qui annonce son app (erreur, trace — P5.1) ne doit jamais ouvrir la
   // session d'une autre : l'identifiant de session est émis par le client, et une
@@ -177,11 +210,20 @@ export default async function SessionDetail({
 
   const comptes: Record<OngletSession, number | null | undefined> = {
     deroule: undefined,
+    cascade: undefined,
     erreurs: resume.erreursLignes,
     api: resume.apiLignes,
     vitals: resume.vitaux,
     attributs: undefined,
   };
+
+  // F46 — Web Vitals situés, lus SEULEMENT sur leur onglet. La population est
+  // lue avec le principal de la page : elle ne sort jamais de son périmètre.
+  const vitaux = onglet === "vitals" ? vitauxDeSession(timeline) : null;
+  const situations =
+    vitaux && vitaux.pires.length > 0
+      ? await situerPires(vitaux.pires, { app: meta.app_id, principal: utilisateur, debutMs: t0, nowMs })
+      : new Map<VitalName, Situation>();
 
   return (
     <div className="animate-fade-up">
@@ -373,7 +415,30 @@ export default async function SessionDetail({
         </OngletTable>
       )}
 
-      {onglet === "vitals" && <OngletVitaux timeline={timeline} t0={t0} tronquee={resume.tronquee} />}
+      {onglet === "cascade" && (
+        <OngletCascade
+          timeline={timeline}
+          t0={t0}
+          finMs={new Date(meta.last_seen_at).getTime()}
+          liens={liensChronologie}
+          tronquee={resume.tronquee}
+        />
+      )}
+
+      {onglet === "vitals" && vitaux && (
+        <OngletVitaux
+          timeline={timeline}
+          vitaux={vitaux}
+          situations={situations}
+          t0={t0}
+          tronquee={resume.tronquee}
+          // `is_bot` vient du `select *` sans être typé : une session de robot est
+          // exclue de sa propre population (bots exclus par défaut du contrat).
+          robot={(meta as typeof meta & { is_bot?: boolean | null }).is_bot === true}
+          debutConservationMs={nowMs - retentionDays() * 86_400_000}
+          lienDeroule={(rang) => hrefOnglet("deroule", { ancre: ancreEvenement(rang) })}
+        />
+      )}
 
       {onglet === "attributs" && (
         <details className="card p-4 sm:p-6" data-testid="attributs">
@@ -560,56 +625,440 @@ function OngletTable({
   );
 }
 
+// ═══════════════════════════ F46 — Cascade et Web Vitals situés ═══════════════════════════
+
 /**
- * Web Vitals de la session : une ligne par mesure, verdict par `rating2026` (seuils
- * de lib/rating.ts). Les phases réseau (DNS, TCP…) ne sont pas des Web Vitals :
- * elles restent dans le Déroulé. La position dans la distribution de la route
- * (fenêtre ancrée sur la session) vient avec F46.
+ * Cascade de la session (§ 5.12.4) : la chronologie sur un axe — l'ordre et la
+ * durée se lisent d'un coup d'œil, ce que la colonne « +N ms » ne permet pas. Même
+ * lecture que le déroulé (aucune requête de plus), mêmes liens que la chronologie.
+ * La collecte de ressources est volontairement partielle : c'est dit EN TÊTE.
  */
-function OngletVitaux({ timeline, t0, tronquee }: { timeline: TimelineItem[]; t0: number; tronquee: boolean }) {
-  const lignes = timeline.filter(estWebVital);
-  const phases = timeline.filter((it) => it.kind === "vital" && !estWebVital(it)).length;
+function OngletCascade({
+  timeline,
+  t0,
+  finMs,
+  liens,
+  tronquee,
+}: {
+  timeline: TimelineItem[];
+  t0: number;
+  /** `last_seen_at` : la dernière vue s'étend jusque-là, et le dit. */
+  finMs: number;
+  liens: Record<number, string>;
+  tronquee: boolean;
+}) {
+  const titre = "Cascade de la session";
+  const c = cascadeDeSession(timeline, { t0, finMs, liens, tronquee });
+  const assez = c.elements.length >= 2;
   return (
-    <OngletTable
-      titre="Web Vitals de la session"
-      tronquee={tronquee}
-      vide={lignes.length === 0 ? "Aucun Web Vital mesuré dans cette session" : null}
-    >
-      <table className={TABLE} data-testid="table-vitals">
-        <caption className="sr-only">Web Vitals de la session, une ligne par mesure</caption>
-        <thead>
-          <tr>
-            <th scope="col" className={TH}>Instant</th>
-            <th scope="col" className={TH}>Vital</th>
-            <th scope="col" className={`${TH} text-right`}>Valeur</th>
-            <th scope="col" className={TH}>Verdict</th>
-            <th scope="col" className={TH}>Route</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lignes.map((it, i) => {
-            const valeur = it.value == null ? null : Number(it.value);
-            const verdict = valeur == null || it.title == null ? null : rating2026(it.title, valeur);
-            return (
-              <tr key={i}>
-                <td className={`${TD} whitespace-nowrap font-mono text-xs tabular-nums text-ink-soft`} title={fmtDate(it.ts)}>
-                  {decalage(it.ts, t0)}
-                </td>
-                <td className={`${TD} font-medium`}>{it.title}</td>
-                <td className={`${TD} text-right tabular-nums`}>{fmtVital(it.title ?? "", valeur)}</td>
-                <td className={TD}>{verdict ? RATING_LABEL[verdict] : "—"}</td>
-                <td className={`${TD} font-mono text-xs`}>{it.detail ?? "—"}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      {phases > 0 && (
-        <p className="mt-3 text-xs text-ink-soft">
-          {formater("count", phases)} phase(s) réseau (DNS, connexion, TLS…) ne sont pas des Web Vitals : elles restent dans
-          le Déroulé.
-        </p>
+    <SectionErreur titre={titre}>
+      <Figure
+        titre={titre}
+        id="cascade-session"
+        meta={
+          <>
+            <span>{formater("count", c.elements.length)} éléments</span>
+            <span>axe de {texteDuree(c.totalMs)}, de l&apos;ouverture à la dernière observation</span>
+          </>
+        }
+        etat={
+          assez
+            ? undefined
+            : { kind: "vide", population: "cascade à dessiner", plage: "cette session : moins de deux éléments à placer sur l'axe" }
+        }
+        lecture={
+          <>
+            Une page vue est une barre jusqu&apos;à la vue suivante — la dernière, jusqu&apos;à la dernière observation :
+            ce n&apos;est pas un temps de lecture. Actions et erreurs sont des instants ; un effet est rangé sous l&apos;action
+            qui l&apos;a déclenché. Repères FCP et LCP : vues chargées seulement, à l&apos;ouverture de la vue plus leur
+            valeur. Événements, signaux de frustration et phases réseau restent dans le Déroulé.
+          </>
+        }
+      >
+        {tronquee && (
+          <div className="mb-3">
+            <EtatSurface
+              compact
+              etat={{ kind: "partiel", raison: `chronologie tronquée à ${LIMITE_CHRONOLOGIE} événements : la cascade n'en montre que le début` }}
+            />
+          </div>
+        )}
+        {/* Défilement horizontal INTERNE sous 768 px (§ 5.12.3) : la cascade garde un
+            axe lisible. `relative` : un `sr-only` de l'alternative y reste borné (piège 16). */}
+        <div className="relative overflow-x-auto" data-testid="cascade-defilement">
+          <div className="min-w-[36rem] md:min-w-0">
+            <Cascade
+              totalMs={c.totalMs}
+              pistes={PISTES_SESSION}
+              elements={c.elements}
+              marqueurs={c.marqueurs}
+              partiel={PARTIEL_CASCADE}
+            />
+          </div>
+        </div>
+      </Figure>
+    </SectionErreur>
+  );
+}
+
+/** Ce que la page sait de la population d'une pire mesure (§ 5.12.4). */
+type Situation =
+  | { kind: "sans_route" }
+  | { kind: "refus"; code: string }
+  | {
+      kind: "lue";
+      route: string;
+      fenetre: { from: string; to: string };
+      /** La même population sur `/pages` : même app, même route, même fenêtre. */
+      href: string;
+      percentiles: VitalPercentiles | null;
+      pctsLus: boolean;
+      plafond: number;
+      plafondLibelle: string | null;
+      histo: Lecture<HistoRow[]>;
+    };
+
+type Population<T> = { refuse: true; code: string } | { refuse: false; lecture: Lecture<T> };
+
+/**
+ * Lecture d'une population : un filtre que la lecture ne porte pas est un REFUS du
+ * contrat, rendu avec son code — jamais la page entière en erreur (`lire` le
+ * relance, § 3.8). Toute autre panne reste une lecture en échec.
+ */
+async function lirePopulation<T>(fn: () => Promise<T>): Promise<Population<T>> {
+  try {
+    return { refuse: false, lecture: await lire(fn) };
+  } catch (e) {
+    if (e instanceof UnsupportedFilterError) return { refuse: true, code: e.error.code };
+    throw e;
+  }
+}
+
+/**
+ * Situe la pire mesure de chaque vital (§ 5.12.4, § 3.5). Le contrat est résolu par
+ * `parseAnalyticsQuery` avec l'app de la session, la fenêtre ancrée et la route de
+ * la MESURE — rien d'autre : c'est la population de cette route, pas celle des
+ * filtres de la liste d'où l'on vient. Percentiles lus une fois par route, puis
+ * l'histogramme de chaque vital sous son plafond d'affichage (règle de `/pages`).
+ */
+async function situerPires(
+  pires: VitauxSession["pires"],
+  ctx: { app: string; principal: ScopePrincipal | null; debutMs: number; nowMs: number },
+): Promise<Map<VitalName, Situation>> {
+  const fenetre = fenetreDeSession(ctx.debutMs, ctx.nowMs);
+  const routes = [...new Set(pires.flatMap((p) => (p.pire.route ? [p.pire.route] : [])))];
+  const contrats = new Map(
+    routes.map(
+      (route) =>
+        [
+          route,
+          parseAnalyticsQuery(paramReader({ app: ctx.app, from: fenetre.from, to: fenetre.to, route }), {
+            principal: ctx.principal,
+            nowMs: ctx.nowMs,
+          }),
+        ] as const,
+    ),
+  );
+  const percentiles = new Map(
+    await Promise.all(
+      routes.map(async (route) => {
+        const contrat = contrats.get(route)!;
+        return [route, contrat.ok ? await lirePopulation(() => vitalPercentiles(filtersOfQuery(contrat.value))) : null] as const;
+      }),
+    ),
+  );
+  const situations = await Promise.all(
+    pires.map(async (p): Promise<[VitalName, Situation]> => {
+      const route = p.pire.route;
+      if (!route) return [p.vital, { kind: "sans_route" }];
+      const contrat = contrats.get(route)!;
+      if (!contrat.ok) return [p.vital, { kind: "refus", code: contrat.error.code }];
+      const pcts = percentiles.get(route) ?? null;
+      if (pcts && pcts.refuse) return [p.vital, { kind: "refus", code: pcts.code }];
+      const lecturePcts = pcts && !pcts.refuse ? pcts.lecture : null;
+      const ligne = lecturePcts && lecturePcts.ok ? (lecturePcts.data.find((r) => r.name === p.vital) ?? null) : null;
+      const { plafond, libelle } = plafondAffichage(
+        p.vital,
+        ligne ? { p95: ligne.pcts[3] ?? null, p99: ligne.pcts[4] ?? null } : null,
+      );
+      const f = filtersOfQuery(contrat.value);
+      const histo = await lirePopulation(() => vitalHistogram(f, p.vital, plafond, HISTO_BUCKETS));
+      if (histo.refuse) return [p.vital, { kind: "refus", code: histo.code }];
+      const lien = new URLSearchParams({ app: ctx.app, route, vital: p.vital, from: fenetre.from, to: fenetre.to });
+      return [
+        p.vital,
+        {
+          kind: "lue",
+          route,
+          fenetre,
+          href: `/pages?${lien.toString()}`,
+          percentiles: ligne,
+          pctsLus: lecturePcts?.ok === true,
+          plafond,
+          plafondLibelle: libelle,
+          histo: histo.lecture,
+        },
+      ];
+    }),
+  );
+  return new Map(situations);
+}
+
+/**
+ * Web Vitals de la session (§ 5.12.4) : une tuile par vital — sa PIRE vue —, la
+ * position de cette mesure dans la distribution de SA route, puis une ligne par
+ * vue. Zones de seuil lues dans lib/rating.ts. Les phases réseau (DNS, TCP…) ne
+ * sont pas des Web Vitals : elles restent dans le Déroulé.
+ */
+function OngletVitaux({
+  timeline,
+  vitaux,
+  situations,
+  t0,
+  tronquee,
+  robot,
+  debutConservationMs,
+  lienDeroule,
+}: {
+  timeline: TimelineItem[];
+  vitaux: VitauxSession;
+  situations: Map<VitalName, Situation>;
+  t0: number;
+  tronquee: boolean;
+  robot: boolean;
+  /** Plus ancien instant encore conservé (`RETENTION_DAYS`). */
+  debutConservationMs: number;
+  lienDeroule: (rang: number) => string;
+}) {
+  const phases = timeline.filter((it) => it.kind === "vital" && !estWebVital(it)).length;
+  if (vitaux.vitaux.length === 0) {
+    return (
+      <OngletTable titre="Web Vitals de la session" tronquee={tronquee} vide="Aucun Web Vital mesuré dans cette session">
+        {null}
+      </OngletTable>
+    );
+  }
+  return (
+    <div className="space-y-4" data-testid="onglet-vitaux">
+      {tronquee && (
+        <EtatSurface
+          compact
+          etat={{
+            kind: "partiel",
+            raison: `chronologie tronquée à ${LIMITE_CHRONOLOGIE} événements : tuiles et table ne portent que sur les événements lus`,
+          }}
+        />
       )}
-    </OngletTable>
+      <section
+        aria-label="Pire mesure de chaque Web Vital"
+        className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5"
+        data-testid="vitaux-tuiles"
+      >
+        {vitaux.pires.map((p) => {
+          const s = situations.get(p.vital);
+          return (
+            <KpiTile
+              key={p.vital}
+              label={`${p.vital} · pire vue`}
+              valeur={p.pire.valeur}
+              format={formatDuVital(p.vital)}
+              // Zone de seuil de CETTE mesure (lib/rating.ts) ; la lecture dit que ce
+              // n'est pas le verdict d'une page, qui se lit au p75 (R-V).
+              vital={p.vital}
+              href={s?.kind === "lue" ? s.href : undefined}
+              lecture={`${p.n > 1 ? `pire de ${formater("count", p.n)} mesures` : "une mesure"}, à ${decalage(p.pire.ts, t0)} · zone de seuil de la mesure, pas un p75.`}
+            />
+          );
+        })}
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {vitaux.pires.map((p) => (
+          <SectionErreur key={p.vital} titre={`${p.vital} : où se situe la pire vue`}>
+            <FigureSituation
+              pire={p}
+              situation={situations.get(p.vital) ?? { kind: "sans_route" }}
+              robot={robot}
+              debutConservationMs={debutConservationMs}
+            />
+          </SectionErreur>
+        ))}
+      </div>
+
+      <OngletTable titre="Web Vitals par vue" tronquee={false} vide={null}>
+        <table className={TABLE} data-testid="table-vitals">
+          <caption className="sr-only">Web Vitals de la session, une ligne par vue ; la pire mesure quand une vue en a plusieurs</caption>
+          <thead>
+            <tr>
+              <th scope="col" className={TH}>Instant</th>
+              <th scope="col" className={TH}>Vue</th>
+              {vitaux.vitaux.map((v) => (
+                <th key={v} scope="col" className={`${TH} text-right`}>
+                  {v}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {vitaux.lignes.map((l, i) => (
+              <tr key={i}>
+                <td
+                  className={`${TD} whitespace-nowrap font-mono text-xs tabular-nums text-ink-soft`}
+                  title={l.vue ? fmtDate(l.vue.ts) : undefined}
+                >
+                  {l.vue ? decalage(l.vue.ts, t0) : "—"}
+                </td>
+                <td className={`${TD} font-mono text-xs`}>
+                  {l.vue && l.rangVue != null ? (
+                    <Link
+                      href={lienDeroule(l.rangVue)}
+                      className="rounded text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+                    >
+                      {l.vue.title ?? "Route inconnue"}
+                    </Link>
+                  ) : (
+                    "Avant la première vue"
+                  )}
+                </td>
+                {vitaux.vitaux.map((v) => {
+                  const m = l.mesures[v];
+                  const zone = m ? rating2026(v, m.pire.valeur) : null;
+                  return (
+                    <td key={v} className={`${TD} whitespace-nowrap text-right`}>
+                      {m ? (
+                        <>
+                          <span className="tabular-nums">{formater(formatDuVital(v), m.pire.valeur)}</span>
+                          <span className="block text-[11px] text-ink-soft">
+                            {zone ? RATING_LABEL[zone] : "—"}
+                            {m.n > 1 ? ` · pire de ${m.n}` : ""}
+                          </span>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {phases > 0 && (
+          <p className="mt-3 text-xs text-ink-soft">
+            {formater("count", phases)} phase(s) réseau (DNS, connexion, TLS…) ne sont pas des Web Vitals : elles restent
+            dans le Déroulé.
+          </p>
+        )}
+      </OngletTable>
+    </div>
+  );
+}
+
+/**
+ * La pire vue d'un vital, située dans la distribution de SA route (§ 5.12.4). La
+ * population est NOMMÉE en méta — vital, route, fenêtre datée, ce qui en fait
+ * partie ou non — et la mesure y est marquée « cette vue ». Jamais « les 7 derniers
+ * jours » : la fenêtre est celle de la session (`fenetreDeSession`).
+ */
+function FigureSituation({
+  pire,
+  situation,
+  robot,
+  debutConservationMs,
+}: {
+  pire: PireMesure & { vital: VitalName };
+  situation: Situation;
+  robot: boolean;
+  debutConservationMs: number;
+}) {
+  const { vital } = pire;
+  const titre = `${vital} : où se situe la pire vue`;
+  const id = `vitaux-${vital.toLowerCase()}`;
+  if (situation.kind === "sans_route") {
+    return (
+      <Figure titre={titre} id={id} etat={{ kind: "partiel", raison: "route de la mesure inconnue : aucune population comparable" }} />
+    );
+  }
+  if (situation.kind === "refus") {
+    return (
+      <Figure
+        titre={titre}
+        id={id}
+        etat={{ kind: "partiel", raison: `fenêtre refusée par le contrat (${situation.code}) : population non lue` }}
+      />
+    );
+  }
+  const { route, fenetre, histo, plafond, plafondLibelle, percentiles, pctsLus } = situation;
+  if (!histo.ok) return <Figure titre={titre} id={id} etat={{ kind: "erreur", titre }} />;
+
+  const periode = `${libelleFenetre(fenetre.from, fenetre.to)} (UTC)`;
+  const instant = new Date(pire.pire.ts).getTime();
+  const inclusion = robot
+    ? "session classée robot : ses mesures en sont exclues"
+    : instant >= Date.parse(fenetre.from) && instant < Date.parse(fenetre.to)
+      ? "cette mesure comprise"
+      : "cette mesure hors fenêtre (reçue plus de 24 h après le début de la session)";
+  const bacs = bacsDeHistogramme(histo.data, plafond, HISTO_BUCKETS);
+  const n = bacs.reduce((s, b) => s + b.n, 0);
+  const plafondTexte = plafondLibelle ?? `plafond d'affichage : ${formater(formatDuVital(vital), plafond)} (par défaut)`;
+  const p = percentiles?.pcts ?? null;
+  const reperes = p ? { p50: p[0] ?? null, p75: p[1] ?? null, p95: p[3] ?? null } : null;
+  const alternative = alternativeDistribution({ vital, bacs, plafond, percentiles: reperes, n });
+
+  return (
+    <Figure
+      titre={titre}
+      id={id}
+      meta={
+        <>
+          <span className="min-w-0 break-words" data-testid="vitaux-population">
+            mesures {vital} de {route} {periode}, toutes sessions (robots exclus), {inclusion}
+          </span>
+          <span>{formater("count", n)} mesures</span>
+          {n > 0 && <span>{plafondTexte}</span>}
+        </>
+      }
+      lecture={
+        n > 0 ? (
+          <>
+            Trait orange : cette vue ({formater(formatDuVital(vital), pire.pire.valeur)}). Repères p50, p75 et p95 : toute
+            la route sur la fenêtre. La fenêtre est ancrée sur la session — 7 jours avant son début, 1 jour après, jamais
+            au-delà de maintenant — pour que la comparaison porte sur une population qui la contient.
+          </>
+        ) : undefined
+      }
+      alternative={
+        n > 0 ? { ...alternative, legende: `${alternative.legende} ${plafondTexte[0].toUpperCase()}${plafondTexte.slice(1)}.` } : undefined
+      }
+    >
+      <div className="space-y-2">
+        {Date.parse(fenetre.from) < debutConservationMs && (
+          <EtatSurface
+            compact
+            etat={{ kind: "partiel", raison: `mesures conservées depuis le ${jourMoisUtc(debutConservationMs)} seulement` }}
+          />
+        )}
+        {n > 0 && !pctsLus && (
+          <EtatSurface
+            compact
+            etat={{ kind: "partiel", raison: "percentiles de la route non lus : repères absents, plafond par défaut." }}
+          />
+        )}
+        {n === 0 ? (
+          <EtatSurface etat={{ kind: "vide", population: `mesure ${vital} de ${route}`, plage: `la fenêtre ${periode}` }} />
+        ) : (
+          <DistributionSeuils
+            vital={vital}
+            bacs={bacs}
+            plafond={plafond}
+            plafondLibelle={plafondLibelle ?? undefined}
+            percentiles={reperes}
+            n={n}
+            valeurMarquee={{ valeur: pire.pire.valeur, libelle: "cette vue" }}
+            alternative={false}
+          />
+        )}
+      </div>
+    </Figure>
   );
 }
