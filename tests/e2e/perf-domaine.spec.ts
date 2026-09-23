@@ -1525,8 +1525,10 @@ test.describe("F24 — Onglet Actions", () => {
 
 // F17 — Panneau route (§ 5.2.3). Données SYNTHÉTIQUES, dans une app à ce bloc :
 // trois heures CLOSES, deux routes de gravités opposées — `/f17-panier` (30 mesures
-// LCP à 3 200 ms par heure : « Mauvais », et assez d'effectif pour qu'une heure
-// compte dans la concordance) et `/f17-accueil` (120 mesures à 900 ms par heure) —
+// LCP à 3 200 ms par heure : « À améliorer », entre les bornes 2 500 et 4 000 ms de
+// `lib/rating.ts` — donc au-delà de « Bon », ce qui fait l'angle mort —, et assez
+// d'effectif pour qu'une heure compte dans la concordance) et `/f17-accueil` (120
+// mesures à 900 ms par heure, « Bon ») —
 // si bien que le p75 de l'ENSEMBLE (≈ 900 ms) diffère de celui de la route : le
 // repère « p75 toutes routes » de la distribution est alors visible et distinct.
 // Le robot passe sur `/f17-panier` à chacune des trois heures et dit « ok » : trois
@@ -1668,9 +1670,10 @@ test.describe("F17 — Panneau route", () => {
     // DF1 : le robot ne rend que des ÉTATS — aucune latence de sonde à côté d'un LCP.
     const texteRobot = (await etat.innerText()).replace(/\s+/g, " ");
     expect(texteRobot).not.toMatch(/\d\s?(ms|s)\b/);
-    // Le « réel », lui, porte bien un LCP p75 et son verdict.
+    // Le « réel », lui, porte bien un LCP p75 et son verdict, lu dans `lib/rating.ts` :
+    // 3 200 ms est au-delà de « Bon » (≤ 2 500) mais pas « Mauvais » (> 4 000).
     await expect(robot.getByTestId("panneau-route-reel")).toContainText("LCP p75");
-    await expect(robot.getByTestId("panneau-route-reel")).toContainText("Mauvais");
+    await expect(robot.getByTestId("panneau-route-reel")).toContainText("À améliorer");
     // « Voir robot et réel » → /correlation?serie=<app>:<route> (clé `ecrireSerie`).
     const href = new URL((await robot.getByTestId("panneau-route-correlation").getAttribute("href"))!, consoleUrl);
     expect(href.pathname).toBe("/correlation");
