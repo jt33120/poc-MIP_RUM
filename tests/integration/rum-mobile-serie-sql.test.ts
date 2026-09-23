@@ -8,7 +8,8 @@
 // exclus ; que chaque seau attendu existe (zéros compris) ; que la release se lit
 // sur la session ; que le périmètre tient (viewer restreint, `apps = []`) ; et que
 // l'Explorer, sur `seg=v2:runtime:eq:react_native` (B8), rejoue le panneau des
-// sessions seau pour seau.
+// sessions seau pour seau ; enfin que l'écran lit tuiles et série dans UNE
+// photographie (`mobileResumeEtSerie`, revue de fin de vague 8).
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
@@ -223,5 +224,53 @@ suite("F39 — mobileSerie sur PostgreSQL", () => {
     const parSeau = new Map(explore.data.series.map((p) => [Date.parse(p.start), p.value ?? 0]));
     expect(r.seaux.map((s) => parSeau.get(Date.parse(String(s.bucket))) ?? 0)).toEqual(sessionsParSeau(r));
     expect(explore.data.total).toBe(2);
+  });
+
+  // Revue de fin de vague 8, constat 6. `mobileSerie` et `mobileSummary`, lancées
+  // côte à côte, ouvraient DEUX transactions : une session reçue entre les deux
+  // entrait dans l'une et pas dans l'autre, et « la somme des seaux est la tuile »
+  // devenait fausse. On arrête la lecture de l'écran ENTRE les tuiles et la série
+  // (un verrou sur `rum_span`, que seule la dernière instruction du résumé lit), on
+  // valide une session React Native à ce moment-là, puis on relâche.
+  it("tuiles et série dans UNE photographie : une session reçue pendant la lecture n'entre dans aucune des deux", async () => {
+    const q = requete(`app=${APP_F39}`);
+    const verrou = new pg.Client({ connectionString: url });
+    await verrou.connect();
+    try {
+      await verrou.query("begin");
+      await verrou.query("lock table rum_span in access exclusive mode");
+      const lecture = lib.mobileResumeEtSerie(filtres(q));
+      // La photographie est prise (sessions, erreurs, démarrage, écrans lus) quand la
+      // lecture attend le verrou de `rum_span`.
+      await vi.waitFor(
+        async () => {
+          const { rows } = await c.query<{ n: number }>(
+            "select count(*)::int as n from pg_locks where not granted and relation = 'rum_span'::regclass",
+          );
+          if (rows[0].n < 1) throw new Error("lecture pas encore arrêtée sur rum_span");
+        },
+        { timeout: 15_000, interval: 25 },
+      );
+      await c.query(
+        `insert into rum_session (session_id, app_id, device_type, os, runtime, release, visitor_id, is_bot, started_at, last_seen_at)
+         values ('f39-pendant',$1,'mobile','iOS','react_native','4.2','f39-pendant',false,$2::timestamptz,$2::timestamptz + interval '2 minutes')`,
+        [APP_F39, dans(0, 30)],
+      );
+      await verrou.query("commit");
+
+      const { resume, serie: lue } = await lecture;
+      const tuile = lib.valeurDe(resume).sessions.sessions;
+      const s = lib.valeurDe(lue);
+      if (!s.disponible) throw new Error(`indisponible : ${s.raison}`);
+      expect(tuile).toBe(3);
+      expect(s.seaux.reduce((n, x) => n + x.sessions, 0)).toBe(tuile);
+      // Hors de cette photographie, la session est bien là : une série lue dans sa
+      // propre transaction, après, l'aurait comptée (4 contre 3 à la tuile).
+      expect(sessionsParSeau(await serie(q))).toEqual([3, 0, 1]);
+    } finally {
+      await verrou.query("rollback").catch(() => {});
+      await verrou.end();
+      await c.query("delete from rum_session where session_id = 'f39-pendant'");
+    }
   });
 });
