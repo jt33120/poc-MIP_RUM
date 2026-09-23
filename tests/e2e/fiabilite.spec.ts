@@ -513,8 +513,6 @@ test.describe("F65 — Tendances (§ 5.20)", () => {
   });
 
   test("aucun débordement à 390, 768 et 1440 px", async ({ page }) => {
-    // Import local : le helper n'entre pas dans l'en-tête du fichier, que d'autres lots modifient.
-    const { debordements, LARGEURS } = await import("./helpers/debordements");
     await login(page);
     const fautes: string[] = [];
     for (const largeur of LARGEURS) {
