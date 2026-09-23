@@ -441,7 +441,11 @@ function TableEntrees({ rep, query }: { rep: AcquisitionReport; query: Analytics
       <div className="space-y-2 sm:hidden" data-testid="acquisition-entrees-liste">
         {CHANNELS.map((c) => {
           const lignes = rep.entrees.filter((e) => e.parCanal[c] > 0).sort((a, b) => b.parCanal[c] - a.parCanal[c]);
-          const total = rep.entrees.reduce((s, e) => s + e.parCanal[c], 0);
+          // Le résumé porte le total du CANAL, celui de sa barre dans le hero — jamais
+          // la somme des seules routes affichées (540 ici contre 900 là-haut se
+          // contrediraient). La part couverte par les routes affichées est dite dessous.
+          const totalCanal = rep.channels.find((l) => l.channel === c)?.sessions ?? 0;
+          const couvert = rep.entrees.reduce((s, e) => s + e.parCanal[c], 0);
           return (
             <details key={c} className="rounded-lg border border-line px-3 py-2">
               <summary className="flex min-w-0 cursor-pointer items-center justify-between gap-2 text-sm">
@@ -449,25 +453,36 @@ function TableEntrees({ rep, query }: { rep: AcquisitionReport; query: Analytics
                   <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: COULEUR_CANAL[c] }} />
                   <span className="truncate text-ink">{LIBELLE_CANAL[c]}</span>
                 </span>
-                <span className="shrink-0 text-xs tabular-nums text-ink-soft">{compte(total, "session", "sessions")}</span>
+                <span className="shrink-0 text-xs tabular-nums text-ink-soft" data-testid="acquisition-canal-total">
+                  {compte(totalCanal, "session", "sessions")}
+                </span>
               </summary>
               {lignes.length === 0 ? (
                 <p className="mt-2 text-xs text-ink-soft">Aucune des routes affichées n&apos;a reçu d&apos;entrée par ce canal.</p>
               ) : (
-                <ul className="mt-2 space-y-1.5">
-                  {lignes.map((e) => (
-                    <li key={e.route} className="flex min-w-0 items-baseline justify-between gap-2 text-xs">
-                      <Link
-                        href={lienSessions(query, e.route)}
-                        className="block min-w-0 truncate font-mono text-ink hover:text-accent hover:underline"
-                        title={`Sessions passées par ${e.route}`}
-                      >
-                        {e.route}
-                      </Link>
-                      <span className="shrink-0 tabular-nums text-ink">{formater("count", e.parCanal[c])}</span>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  {couvert < totalCanal && (
+                    <p className="mt-2 text-xs text-ink-soft" data-testid="acquisition-canal-couverture">
+                      Routes affichées : {formater("count", couvert)} de ces {formater("count", totalCanal)} sessions (
+                      {formater("pct", partDuTotal(couvert, totalCanal))}) ; les autres sont entrées par une route non affichée ou
+                      inconnue.
+                    </p>
+                  )}
+                  <ul className="mt-2 space-y-1.5">
+                    {lignes.map((e) => (
+                      <li key={e.route} className="flex min-w-0 items-baseline justify-between gap-2 text-xs">
+                        <Link
+                          href={lienSessions(query, e.route)}
+                          className="block min-w-0 truncate font-mono text-ink hover:text-accent hover:underline"
+                          title={`Sessions passées par ${e.route}`}
+                        >
+                          {e.route}
+                        </Link>
+                        <span className="shrink-0 tabular-nums text-ink">{formater("count", e.parCanal[c])}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
               )}
             </details>
           );

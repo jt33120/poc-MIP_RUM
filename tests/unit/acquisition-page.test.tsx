@@ -191,6 +191,26 @@ describe("/acquisition — B31 : table croisée et série", () => {
     expect(texte(html)).not.toContain("série à créer");
   });
 
+  it("revue vague 8 — sous 640 px, le résumé d'un canal porte le total du CANAL (celui du hero), et la part des routes affichées est dite", async () => {
+    // Avant : « 540 sessions » (la somme des seules routes affichées) contre 900 sur la barre du hero.
+    acquisition.mockResolvedValue(
+      report({ direct: 900, search: 100 }, 0, [{ route: "/a", parCanal: { ...zero(), direct: 540, search: 100 }, total: 640 }]),
+    );
+    const html = await rendre();
+    const liste = html.slice(html.indexOf('data-testid="acquisition-entrees-liste"'));
+    // Un <details> par canal, dans l'ordre fixe : direct, recherche, réseaux sociaux…
+    const [direct, recherche, social] = liste.split("<details").slice(1).map(texte);
+    expect(direct).toContain("Direct ou référent masqué 900 sessions ");
+    expect(direct).toContain("Routes affichées : 540 de ces 900 sessions (60,0 %) ; les autres sont entrées par une route non affichée ou inconnue.");
+    expect(direct).not.toContain("540 sessions");
+    // Canal entièrement couvert par les routes affichées : rien à dire de plus.
+    expect(recherche).toContain("Recherche 100 sessions");
+    expect(recherche).not.toContain("Routes affichées :");
+    // Canal vide : 0, et la phrase d'absence.
+    expect(social).toContain("Réseaux sociaux 0 session");
+    expect(social).toContain("Aucune des routes affichées n'a reçu d'entrée par ce canal.");
+  });
+
   it("série : cinq canaux empilés, zoom sur un seau ; somme nulle → vide motivé, jamais un axe vide", async () => {
     acquisition.mockResolvedValue(report({ direct: 1 }));
     const html = await rendre();
