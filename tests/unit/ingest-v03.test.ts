@@ -130,6 +130,26 @@ describe("buildPayload — webhook identique à check_alerts v2 (pg_net)", () =>
     expect(p.route).toBeNull();
     expect(p.text).toBe("[MIP RUM] LCP > 3204.9 (seuil 2500) — app gip-plateforme");
   });
+
+  // B52 (migration-v86) : le seuil d'une règle de release est une hausse EN POUR
+  // CENT ; « LCP > 2600.0 (seuil 20) » se lirait « au-dessus de 20 ms ».
+  it("règle de release : le texte est le message de check_alerts, phrase du plan comprise ; structure inchangée", () => {
+    const message =
+      "LCP p75 en hausse de 30 % d'une release à l'autre : 1.1.0 = 2600 contre 1.0.0 = 2000 (seuil +20 %, 120 et 120 mesures, fenêtre 120 min, app a) — même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte";
+    const p = buildPayload({ ...delivery, value: 2600, threshold: 20, mode: "release", message });
+    expect(p.text).toBe(`[MIP RUM] ${message}`);
+    expect(Object.keys(p)).toEqual(["source", "app_id", "metric", "route", "value", "threshold", "window_minutes", "text"]);
+    // Sans message (ligne incomplète), le gabarit historique plutôt qu'un texte vide.
+    expect(buildPayload({ ...delivery, mode: "release", message: null }).text).toContain("(seuil 2500)");
+    // Les autres modes ne changent pas, même avec un message.
+    expect(buildPayload({ ...delivery, mode: "baseline", message: "m" }).text).toBe(
+      "[MIP RUM] LCP > 3204.9 (seuil 2500) — app gip-plateforme, route /login",
+    );
+  });
+
+  it("la sélection du dispatcher lit le mode de la règle (colonne de v17, présente avant et après v73)", () => {
+    for (const sql of [selectionSql(false), selectionSql(true)]) expect(sql).toContain("r.comparator, r.mode,");
+  });
 });
 
 describe("decideStatus — rejeu borné des livraisons (R5)", () => {

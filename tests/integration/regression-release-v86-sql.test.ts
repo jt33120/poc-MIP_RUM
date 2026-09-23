@@ -18,6 +18,7 @@
 //
 //   SQL_TEST_DATABASE_URL=<base jetable> SQL_TEST_PRE_V86_DATABASE_URL=<autre base jetable> pnpm test:sql
 import { readFileSync, readdirSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -118,6 +119,22 @@ async function consoleSur(databaseUrl: string) {
   return { ...v2, ...filters, pool };
 }
 type Console = Awaited<ReturnType<typeof consoleSur>>;
+
+/** Récepteur de webhooks local (port éphémère, 127.0.0.1), le temps d'un test. */
+async function recepteurF68() {
+  const recus: { url: string; corps: { text: string } }[] = [];
+  const serveur = createServer((req, res) => {
+    let corps = "";
+    req.on("data", (c) => (corps += c));
+    req.on("end", () => {
+      recus.push({ url: req.url ?? "", corps: JSON.parse(corps) });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+    });
+  });
+  await new Promise<void>((ok) => serveur.listen(0, "127.0.0.1", ok));
+  return { serveur, base: `http://127.0.0.1:${(serveur.address() as { port: number }).port}`, recus };
+}
 
 /** Une règle telle que l'action serveur la remet à `insertAlertRule`. */
 const regleConsole = (app_id: string, over: Partial<RuleInput> = {}): RuleInput => ({
@@ -507,12 +524,24 @@ suiteFenetre("fenêtre de déploiement : base restée en v85, puis v86 appliqué
     // Et le mode release est désormais évalué comme tel ; la console le voit sans
     // redémarrer (aucune mise en cache de la détection).
     expect(await lib.releaseRegressionDisponible()).toBe(true);
-    await lib.insertAlertRule(regleConsole(W, { window_minutes: 120 }));
-    const [{ id: release }] = (await poolFenetre.query<{ id: string }>(
-      "select id from alert_rule where app_id = $1 and mode = 'release'",
-      [W],
-    )).rows;
-    await evaluer(poolFenetre);
-    expect(await etat(poolFenetre, Number(release))).toMatchObject({ last_state: "breached", last_value: 2600 });
+    const recepteur = await recepteurF68();
+    try {
+      await lib.insertAlertRule(regleConsole(W, { window_minutes: 120, webhook_url: `${recepteur.base}/release` }));
+      const [{ id: release }] = (await poolFenetre.query<{ id: string }>(
+        "select id from alert_rule where app_id = $1 and mode = 'release'",
+        [W],
+      )).rows;
+      await evaluer(poolFenetre);
+      expect(await etat(poolFenetre, Number(release))).toMatchObject({ last_state: "breached", last_value: 2600 });
+
+      // Le dispatcher du tick poste le MESSAGE de check_alerts — les deux releases et
+      // la phrase du plan —, pas le gabarit « LCP > 2600.0 (seuil 20) » d'un seuil fixe.
+      const [evt] = await evenements(poolFenetre, Number(release));
+      expect(await dispatchOnce(poolFenetre)).toMatchObject({ sent: 1 });
+      expect(recepteur.recus.map((r) => r.corps.text)).toEqual([`[MIP RUM] ${evt.message}`]);
+      expect(recepteur.recus[0].corps.text.endsWith(PHRASE)).toBe(true);
+    } finally {
+      await new Promise((ok) => recepteur.serveur.close(ok));
+    }
   }, 120_000);
 });
