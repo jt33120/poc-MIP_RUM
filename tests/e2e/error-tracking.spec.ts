@@ -202,13 +202,17 @@ const occurrence = (page: Page, nom: string) =>
   occurrences(page).filter({ has: page.getByTitle(`boom ${nom}`, { exact: true }) });
 // `not-found.tsx` en français (F02) : plus le 404 anglais de Next.
 const introuvable = (page: Page) => expect(page.getByTestId("introuvable")).toContainText("introuvable");
+// Depuis F19, une cellule de liste porte aussi son libellé (« Occurrences »), affiché
+// seulement en carte, sous 640 px : on lit le texte RENDU (`innerText`), pas celui du
+// DOM, qui donnait « Occurrences38 ».
+const RENDU = { useInnerText: true } as const;
 
 test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché comme zéro", async ({ page }) => {
   await login(page);
 
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h&device=desktop`);
   const ligne = groupe(page, "p51fp001", A);
-  await expect(ligne.getByTestId("group-occurrences")).toHaveText("38");
+  await expect(ligne.getByTestId("group-occurrences")).toHaveText("38", RENDU);
   // p51fp004 n'a aucune session de son app : le filtre d'appareil l'exclut.
   await expect(page.locator('[data-testid="error-group-p51fp004"]')).toHaveCount(0);
   // Tuile « Occurrences » de la rangée de F18 : la même population que la liste.
@@ -224,9 +228,9 @@ test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché 
 
   // Tous appareils : l'erreur backend sans session garde des personnes INCONNUES.
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h`);
-  await expect(groupe(page, "p51fp001", A).getByTestId("group-occurrences")).toHaveText("47");
+  await expect(groupe(page, "p51fp001", A).getByTestId("group-occurrences")).toHaveText("47", RENDU);
   const croisee = groupe(page, "p51fp004", A);
-  await expect(croisee.getByTestId("group-occurrences")).toHaveText("3");
+  await expect(croisee.getByTestId("group-occurrences")).toHaveText("3", RENDU);
   await expect(croisee.getByRole("cell", { name: "Inconnu", exact: true })).toHaveCount(2);
 
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h&device=desktop`);
@@ -239,7 +243,9 @@ test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché 
   await expect(page.getByTestId("detail-occurrences")).toHaveText("38");
   await expect(page.getByTestId("detail-sessions")).toHaveText("1");
   await expect(page.getByTestId("detail-users")).toHaveText("1");
-  await expect(page.getByText("Alternative textuelle de la série")).toBeVisible();
+  // F20 : la courbe sans axe (`ObservedTrend`) a cédé la place à des barres, dont la
+  // figure porte l'alternative textuelle, seau par seau.
+  await expect(page.locator("#detail-erreur-temps").getByTestId("alternative")).toBeVisible();
   // L'exemplaire est r2, émis sans source : rien n'est deviné.
   await expect(page.getByText("Source inconnue", { exact: true })).toBeVisible();
 
@@ -528,6 +534,9 @@ test.describe("P5.6 — workflow d'une issue", () => {
     await expect(page.getByTestId("issue-status")).toHaveText("Ouverte");
     await expect(page.getByTestId("issue-regression")).toContainText("release 2.1.0 (env prod)");
     await expect(page.getByTestId("issue-activity-regression")).toContainText("Régression confirmée");
+    // F21 : les versions touchées de l'issue le lisent aussi — apparue en 2.0.0, revue en 2.1.0.
+    await expect(page.getByTestId("premiere-release")).toContainText("2.0.0");
+    await expect(page.getByTestId("derniere-release")).toContainText("2.1.0");
 
     // Résolue en 2.1.0, puis un ancien client en 2.0.0 : réapparition à vérifier, l'issue reste résolue.
     await resoudre(page);
@@ -537,6 +546,21 @@ test.describe("P5.6 — workflow d'une issue", () => {
     await expect(page.getByTestId("issue-status")).toHaveText("Résolue");
     await expect(page.getByTestId("issue-reappeared")).toContainText("Réapparition à vérifier");
     await expect(page.getByTestId("issue-regression")).toHaveCount(0);
+  });
+
+  test("F21 — barres de l'issue : le déploiement de la fenêtre y est posé, lien vers les releases comparées", async ({ page }) => {
+    await login(page);
+    await page.goto(`${CONSOLE}${PAGE_ISSUE}`);
+    const temps = page.locator("#detail-erreur-temps");
+    await temps.scrollIntoViewIfNeeded();
+    // 2.1.0, déployée il y a une heure, est dans la fenêtre ; 2.0.0 (il y a 3 jours), non.
+    const lien = temps.getByTestId("legende-annotations").getByRole("link");
+    await expect(lien).toHaveCount(1);
+    await expect(lien).toContainText("2.1.0");
+    await expect(lien).toHaveAttribute(
+      "href",
+      new RegExp(`^/errors/issues/${ISSUE_W}\\?app=${APP_W}&.*cmp=release&rel_b=2\\.1\\.0&rel_a=2\\.0\\.0$`),
+    );
   });
 
   test("commentaire masqué, lien de ticket et triage au clavier", async ({ page }) => {

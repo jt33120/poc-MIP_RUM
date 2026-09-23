@@ -9,7 +9,11 @@
 //     choisir, et le détail historique reste à un lien ;
 //   • une app non activée garde sa liste et ses URL historiques ;
 //   • un retour arrière rend la liste historique sans casser l'URL d'une issue ;
-//   • clavier et absence de débordement à 390/768/1440 px.
+//   • clavier et absence de débordement à 390/768/1440 px ;
+//   • F21 : le détail d'une issue reprend les blocs 2 à 7 du détail d'un groupe —
+//     phrase d'impact avec son dénominateur, quatre tuiles, barres, ce qu'ont en
+//     commun les sessions touchées —, et ses « Versions touchées » sont celles que
+//     l'issue persiste, depuis toujours, que ni la fenêtre ni les filtres ne bornent.
 //
 // Utilisateur admin DÉDIÉ, app explicite dans chaque URL (jamais le cookie projet).
 import { expect, test, type Page } from "@playwright/test";
@@ -47,7 +51,7 @@ function bcryptHash(password: string): string {
 }
 
 async function nettoyer() {
-  for (const table of ["error_issue", "error_grouping_config", "error_status", "rum_error", "rum_session", "app_registry"])
+  for (const table of ["error_issue", "error_grouping_config", "error_status", "rum_error", "rum_pageview", "rum_session", "app_registry"])
     await pool.query(`delete from ${table} where app_id = any($1::text[])`, [APPS]);
 }
 
@@ -64,8 +68,17 @@ async function semer() {
     await client.query(
       `insert into rum_session (session_id, app_id, device_type, is_bot, visitor_id, sample_rate, error_sample_rate)
        values ('p55-e2e-s1', $1, 'desktop', false, 'p55-vis-1', 1, 1),
+              ('p55-e2e-s2', $1, 'desktop', false, 'p55-vis-3', 1, 1),
               ('p55-e2e-off-s1', $2, 'desktop', false, 'p55-vis-2', 1, 1)`,
       [A, OFF],
+    );
+    // F21 : deux sessions de A avec une vue dans la fenêtre — la base de la part des
+    // sessions touchées. s1 porte toutes les erreurs de A, s2 aucune : 50 %.
+    await client.query(
+      `insert into rum_pageview (span_id, session_id, app_id, route, url, nav_type, started_at)
+       values ('p55-e2e-pv1', 'p55-e2e-s1', $1, '/panier', 'https://boutique.test/panier', 'navigate', now() - interval '30 minutes'),
+              ('p55-e2e-pv2', 'p55-e2e-s2', $1, '/panier', 'https://boutique.test/panier', 'navigate', now() - interval '40 minutes')`,
+      [A],
     );
     await client.query(
       `insert into error_issue (id, app_id, grouping_version, grouping_key, grouping_basis, origin, status, status_source,
@@ -152,6 +165,10 @@ async function login(page: Page) {
 }
 
 const entree = (page: Page, testid: string) => page.locator(`[data-testid="${testid}"]`);
+// Depuis F19, une cellule de liste porte aussi son libellé (« Occurrences »), affiché
+// seulement en carte, sous 640 px : on lit le texte RENDU (`innerText`), pas celui du
+// DOM, qui donnait « Occurrences8 ».
+const RENDU = { useInnerText: true } as const;
 // `not-found.tsx` en français (F02) : plus le 404 anglais de Next.
 const introuvable = (page: Page) => expect(page.getByTestId("introuvable")).toContainText("introuvable");
 
@@ -160,12 +177,12 @@ test("liste d'une app activée : issues et groupe historique, chaque occurrence 
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h`);
 
   const i1 = entree(page, `issue-entry-${I1}`);
-  await expect(i1.getByTestId("entry-occurrences")).toHaveText("8");
+  await expect(i1.getByTestId("entry-occurrences")).toHaveText("8", RENDU);
   await expect(i1).toContainText("À revoir");
   await expect(i1).toContainText("reprise de l'historique");
-  await expect(entree(page, `issue-entry-${I2}`).getByTestId("entry-occurrences")).toHaveText("2");
+  await expect(entree(page, `issue-entry-${I2}`).getByTestId("entry-occurrences")).toHaveText("2", RENDU);
   const historique = entree(page, "legacy-entry-p55fp009");
-  await expect(historique.getByTestId("entry-occurrences")).toHaveText("1");
+  await expect(historique.getByTestId("entry-occurrences")).toHaveText("1", RENDU);
   await expect(historique).toContainText("groupe historique");
   // Tuile « Occurrences » de la rangée de F18 : la même population que la liste.
   await expect(
@@ -179,7 +196,7 @@ test("liste d'une app activée : issues et groupe historique, chaque occurrence 
 
   // Filtre de statut : l'entrée, pas ses nombres.
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h&status=open`);
-  await expect(entree(page, `issue-entry-${I2}`).getByTestId("entry-occurrences")).toHaveText("2");
+  await expect(entree(page, `issue-entry-${I2}`).getByTestId("entry-occurrences")).toHaveText("2", RENDU);
   await expect(entree(page, `issue-entry-${I1}`)).toHaveCount(0);
 });
 
@@ -215,7 +232,7 @@ test("empreinte répartie : choix explicite entre les issues, détail historique
 test("app non activée : liste et URL historiques inchangées", async ({ page }) => {
   await login(page);
   await page.goto(`${CONSOLE}/errors?app=${OFF}&period=24h`);
-  await expect(page.locator(`[data-testid="error-group-p55fp101"][data-app-id="${OFF}"]`).getByTestId("group-occurrences")).toHaveText("4");
+  await expect(page.locator(`[data-testid="error-group-p55fp101"][data-app-id="${OFF}"]`).getByTestId("group-occurrences")).toHaveText("4", RENDU);
   await page.goto(`${CONSOLE}/errors/p55fp101?app=${OFF}&period=24h`);
   await expect(page.getByTestId("detail-occurrences")).toHaveText("4");
 });
@@ -239,6 +256,61 @@ test("clavier : une entrée de liste s'ouvre au clavier", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(new RegExp(`/errors/issues/${I2}\\?app=${A}$`));
   await expect(page.getByTestId("issue-occurrences")).toHaveText("2");
+});
+
+test("F21 — détail d'une issue : les blocs 2 à 7 du détail d'un groupe, la part comptée sur SES lignes", async ({ page }) => {
+  await login(page);
+  await page.goto(`${CONSOLE}/errors/issues/${I1}?app=${A}&period=24h`);
+  // Bloc 2 : la phrase d'impact et son dénominateur NOMMÉ. s1 porte l'issue (lignes
+  // propres et alias unique de p55fp001), s2 a une vue et aucune erreur : 1 sur 2.
+  const impact = page.getByTestId("phrase-impact");
+  await expect(impact).toContainText("8 occurrences");
+  await expect(impact).toContainText("1 sessions");
+  await expect(impact).toContainText(/50,0\s%\sdes 2 sessions avec au moins une vue/);
+  // Quatre tuiles au lieu de sept : les dates et « Utilisateurs identifiés » quittent la rangée.
+  await expect(page.getByTestId("kpi-detail-erreur").getByTestId("kpi-tile")).toHaveCount(4);
+  await expect(page.getByTestId("issue-sessions")).toHaveText("1");
+  await expect(page.getByTestId("issue-users")).toHaveText("1");
+  await expect(page.getByText("Utilisateurs identifiés")).toHaveCount(0);
+  await expect(page.getByTestId("issue-vues")).toContainText("depuis toujours");
+  // Bloc 4 : des barres sur la grille du contrat, avec leur alternative — plus la courbe sans axe.
+  await expect(page.locator("#detail-erreur-temps").getByTestId("alternative")).toHaveCount(1);
+  await expect(page.getByText("Alternative textuelle de la série")).toHaveCount(0);
+  // Bloc 5 : le repli tant que B3 manque, sur les occurrences affichées de l'issue.
+  const commun = page.locator("#detail-erreur-commun");
+  await commun.scrollIntoViewIfNeeded();
+  await expect(commun.getByTestId("contrast-bars")).toHaveAttribute("data-etat", "indisponible");
+  await expect(commun.getByTestId("repli-release")).toContainText("1.1.0");
+  // Ce qui reste propre à l'issue : son état, en tête.
+  await expect(page.getByTestId("issue-state")).toBeVisible();
+});
+
+test("F21 — versions touchées d'une issue : celles qu'elle persiste, hors fenêtre et hors filtres", async ({ page }) => {
+  await login(page);
+  // I1 est apparue il y a 3 jours en 1.0.0 ; sur 24 h, toutes ses occurrences portent 1.1.0.
+  await page.goto(`${CONSOLE}/errors/issues/${I1}?app=${A}&period=24h`);
+  const versions = page.getByTestId("versions-touchees");
+  await expect(versions).toHaveAttribute("data-portee", "issue");
+  await expect(versions.getByTestId("premiere-release")).toContainText("1.0.0");
+  await expect(versions.getByTestId("derniere-release")).toContainText("1.1.0");
+  await expect(versions).toContainText("ni la fenêtre ni les filtres de l'écran ne s'y appliquent");
+  // La fenêtre, elle, ne voit que 1.1.0 : la première version ne vient pas d'elle.
+  await expect(page.locator("#detail-erreur-commun").getByTestId("repli-release")).not.toContainText("1.0.0");
+
+  // Un filtre qui vide la fenêtre (aucune session mobile) : l'issue reste lisible, ses
+  // comptes sont des zéros — un compte vide, pas un inconnu —, ses versions ne bougent pas.
+  await page.goto(`${CONSOLE}/errors/issues/${I1}?app=${A}&period=24h&device=mobile`);
+  await expect(page.getByTestId("issue-occurrences")).toHaveText("0");
+  await expect(page.getByTestId("issue-sessions")).toHaveText("0");
+  await expect(page.getByTestId("issue-users")).toHaveText("0");
+  await expect(page.getByTestId("phrase-impact")).not.toContainText("Inconnu");
+  await expect(page.getByTestId("premiere-release")).toContainText("1.0.0");
+  await expect(page.getByTestId("derniere-release")).toContainText("1.1.0");
+
+  // I2 : apparue et vue en 1.1.0 seulement.
+  await page.goto(`${CONSOLE}/errors/issues/${I2}?app=${A}&period=24h`);
+  await expect(page.getByTestId("premiere-release")).toContainText("1.1.0");
+  await expect(page.getByTestId("derniere-release")).toContainText("1.1.0");
 });
 
 /**
@@ -289,7 +361,7 @@ test("retour arrière : liste et anciennes URL historiques, l'issue reste lisibl
   try {
     await login(page);
     await page.goto(`${CONSOLE}/errors?app=${A}&period=24h`);
-    await expect(page.locator(`[data-testid="error-group-p55fp001"][data-app-id="${A}"]`).getByTestId("group-occurrences")).toHaveText("5");
+    await expect(page.locator(`[data-testid="error-group-p55fp001"][data-app-id="${A}"]`).getByTestId("group-occurrences")).toHaveText("5", RENDU);
     await expect(entree(page, `issue-entry-${I1}`)).toHaveCount(0);
 
     await page.goto(`${CONSOLE}/errors/p55fp001?app=${A}&period=24h`);

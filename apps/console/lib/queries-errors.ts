@@ -484,6 +484,9 @@ export interface ErrorBase {
  * périmètre d'apps, et jointe par hachage : chaque ligne reste comptée UNE fois,
  * dans son issue ou dans son groupe historique. Sans migration-v72, les colonnes
  * sont des NULL typés et aucune ligne n'appartient à une issue.
+ *
+ * `lignesDeLIssue` écrit la MÊME règle pour une seule issue, en prédicat : qui
+ * change l'une change l'autre.
  */
 function rattachementIssues(
   r: ErrorRestriction,
@@ -510,6 +513,35 @@ function rattachementIssues(
         ) ua on e.issue_id is null and ua.app_id = e.app_id and ua.legacy_fingerprint = e.fingerprint`,
     filtre: r.issueId ? ` and coalesce(e.issue_id, ua.issue_id) = ${bind(r.issueId)}::uuid` : "",
   };
+}
+
+/** Une issue (P5.5) dans SON app : l'identifiant fait foi, l'app borne la lecture. */
+export interface IssueRef {
+  app_id: string;
+  issue_id: string;
+}
+
+/**
+ * Les lignes d'UNE issue, en prédicat sur la ligne `rum_error` d'alias `e` : celles
+ * qui portent son identifiant, et celles d'une empreinte historique qu'elle est la
+ * SEULE à reprendre (alias unique). Une empreinte reprise par plusieurs issues reste
+ * un groupe historique : ses lignes non rattachées ne vont à aucune d'elles. C'est la
+ * règle de `rattachementIssues`, donc celle d'`issueDetail` : la part d'une issue
+ * (F21) compte les lignes que sa page compte.
+ *
+ * `issue` est un paramètre DÉJÀ lié (`$n`), cité deux fois. Alias internes `ia` / `ib` :
+ * l'appelant peut nommer `b` sa propre base. Exige migration-v72 — un appelant qui
+ * tient une issue l'a résolue (`resolveIssue` ne rend rien sans v72).
+ */
+function lignesDeLIssue(e: string, issue: string): string {
+  return `(${e}.issue_id = ${issue}::uuid or (${e}.issue_id is null and exists (
+             select 1 from error_issue_alias ia
+              where ia.app_id = ${e}.app_id and ia.legacy_fingerprint = ${e}.fingerprint
+                and ia.issue_id = ${issue}::uuid
+                and not exists (
+                  select 1 from error_issue_alias ib
+                   where ib.app_id = ia.app_id and ib.legacy_fingerprint = ia.legacy_fingerprint
+                     and ib.issue_id <> ia.issue_id))))`;
 }
 
 /** Ce que la base filtrée doit savoir du schéma : enveloppe v69 et dimensions présentes. */
@@ -1199,11 +1231,13 @@ export interface PartSessionsTouchees {
  *
  * `ref` (détail d'un groupe, F20) : les occurrences du seul groupe, et la base
  * resserrée sur SON app (`intersectApp` : une app hors du périmètre effectif donne
- * une base vide, jamais un repli sur toutes les apps).
+ * une base vide, jamais un repli sur toutes les apps). Une ISSUE (F21, `IssueRef`) :
+ * ses lignes selon `lignesDeLIssue`, la règle de rattachement de sa page — la BASE,
+ * elle, ne change pas : une seule définition des sessions avec vue.
  */
 export async function partSessionsTouchees(
   f: FiltersLike,
-  ref?: ErrorGroupRef,
+  ref?: ErrorGroupRef | IssueRef,
   shift = false,
 ): Promise<PartSessionsTouchees> {
   const cible = ref ? { ...f, query: intersectApp(queryOf(f), ref.app_id) } : f;
@@ -1211,7 +1245,11 @@ export async function partSessionsTouchees(
   const range = plageLue(sql.query.range, shift);
   const vues = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at", range });
   const erreurs = sql.where({ dataset: "errors", row: "e", session: "se", time: "e.ts", range });
-  const groupe = ref ? ` and e.fingerprint = ${sql.bind(ref.fingerprint)}` : "";
+  const groupe = !ref
+    ? ""
+    : "issue_id" in ref
+      ? ` and ${lignesDeLIssue("e", sql.bind(ref.issue_id))}`
+      : ` and e.fingerprint = ${sql.bind(ref.fingerprint)}`;
   // Même règle que `samplingVitals` (R-E) : une session commencée avant v58 porte
   // `sample_rate = 1` PAR DÉFAUT, pas par mesure — le taux de la base est alors
   // INCONNU (`null`), jamais 100 %.
