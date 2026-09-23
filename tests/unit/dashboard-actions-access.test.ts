@@ -33,6 +33,10 @@ import { redirect as f35Redirect } from "next/navigation";
 import { addSectionAction as f37AddSectionAction } from "@/app/dashboards/actions";
 import { MAX_WIDGETS as F37_MAX_WIDGETS } from "@/lib/dashboards";
 import type { DashboardRow as F37DashboardRow } from "@/lib/queries-dashboards";
+// Revue de fin de vague 7 — une analyse de l'Explorer sur un tableau plein.
+import { redirect as v7Redirect } from "next/navigation";
+import { MAX_WIDGETS as V7_MAX_WIDGETS } from "@/lib/dashboards";
+import type { DashboardRow as V7DashboardRow } from "@/lib/queries-dashboards";
 
 const form = (entries: Record<string, string>) => {
   const fd = new FormData();
@@ -389,5 +393,65 @@ describe("F37 — ajouter une section", () => {
 
     expect(updateLayout).not.toHaveBeenCalled();
     expect([section, carte]).toEqual(["/dashboards/44?plein=1", "/dashboards/44?plein=1"]);
+  });
+});
+
+// Revue de fin de vague 7 (F37) — « Enregistrer cette analyse » (Explorer) ajoutait sa
+// carte sans la garde de `addWidgetAction` : sur un tableau de 24 éléments, l'écriture
+// « réussissait » et `serializeLayout` coupait la 25e carte en silence. Elle est
+// désormais refusée, et le tableau le dit (`plein=1`, V10).
+describe("Revue v7 — une analyse de l'Explorer sur un tableau plein", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getWritableDashboard).mockReset();
+  });
+
+  const ADMIN_V7 = { email: "admin@example.test", role: "admin" as const, apps: null, accountId: "7" };
+  /** Un tableau de `n` cartes « Trafic ». */
+  const tableauV7 = (n: number): V7DashboardRow => ({
+    ...TABLEAU,
+    layout: Array.from({ length: n }, () => ({ kind: "v1" as const, type: "traffic" as const, title: "Trafic" })),
+  });
+
+  /** Destination de l'action (même lecture que les helpers F35 et F37), ou `null`. */
+  async function destinationV7(fd: FormData): Promise<string | null> {
+    vi.mocked(v7Redirect).mockClear();
+    try {
+      await saveAnalysisAction(fd);
+    } catch (e) {
+      const digest = (e as { digest?: unknown }).digest;
+      if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) return digest.split(";")[2] ?? null;
+      throw e;
+    }
+    const appels = vi.mocked(v7Redirect).mock.calls;
+    return appels.length ? String(appels[appels.length - 1][0]) : null;
+  }
+
+  it("24 éléments : la 25e carte est refusée, rien n'est écrit, et le refus est dit", async () => {
+    vi.mocked(dashboardPrincipal).mockResolvedValue(ADMIN_V7);
+    vi.mocked(getWritableDashboard).mockResolvedValue(tableauV7(V7_MAX_WIDGETS));
+
+    const vers = await destinationV7(
+      form({ id: "44", widget: JSON.stringify(ANALYSE), revision_44: "5", ctx: "period=7d&tri=volume" }),
+    );
+
+    expect(updateLayout).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+    // Le tableau l'écrit (`role="alert"`, « Rien n'a été ajouté… ») ; seul le contrat voyage.
+    expect(vers).toBe("/dashboards/44?period=7d&plein=1");
+  });
+
+  it("23 éléments : la 24e carte s'écrit encore, en fin de tableau, sans refus", async () => {
+    vi.mocked(dashboardPrincipal).mockResolvedValue(ADMIN_V7);
+    vi.mocked(getWritableDashboard).mockResolvedValue(tableauV7(V7_MAX_WIDGETS - 1));
+    vi.mocked(updateLayout).mockResolvedValue({ kind: "ok", revision: "6" });
+
+    const vers = await destinationV7(form({ id: "44", widget: JSON.stringify(ANALYSE), revision_44: "5" }));
+
+    expect(vers).toBeNull();
+    const [, layout, revision] = vi.mocked(updateLayout).mock.calls[0];
+    expect(layout).toHaveLength(V7_MAX_WIDGETS);
+    expect(layout[V7_MAX_WIDGETS - 1]).toMatchObject({ kind: "v2", title: "Erreurs par release" });
+    expect(revision).toBe("5");
   });
 });

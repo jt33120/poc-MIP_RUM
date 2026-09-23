@@ -303,6 +303,10 @@ export async function saveAnalysisAction(fd: FormData): Promise<void> {
   if (!widget || widget.kind !== "v2") return;
   const dash = await dashboardAutorise(id, "add_widget");
   if (!dash) return;
+  // F37 — même garde que `addWidgetAction` : sur un tableau de 24 éléments, la carte
+  // venue de l'Explorer est refusée, et le tableau le DIT (`plein=1`, V10). Sans elle,
+  // `serializeLayout` coupait la 25e en silence après une écriture « réussie ».
+  if (layoutPlein(dash.layout)) return redirect(retour(id, ctx, "plein"));
 
   // « Figer » transforme la fenêtre COURANTE de l'écran en fenêtre propre de la
   // carte ; sans cela, la carte suit celle du tableau de bord. Une fenêtre figée
