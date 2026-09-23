@@ -1619,7 +1619,9 @@ test.describe("F17 — Panneau route", () => {
     await page.waitForURL((u) => u.searchParams.get("panel") === PANEL_F17, { timeout: 15_000 });
     const panneau = page.getByTestId("detail-panel");
     await expect(panneau).toHaveAttribute("data-type", "route");
-    await expect(panneau.locator("h2")).toContainText(ROUTE_F17);
+    // Le titre DU PANNEAU, celui qu'annonce son `aria-labelledby` : les figures du panneau
+    // (« LCP sur cette route », « Où se situe cette route ») ont aussi un titre `h2`.
+    await expect(panneau.locator("#panneau-detail-titre")).toContainText(ROUTE_F17);
     // Puces SOURCÉES seulement (la « release dominante » du brouillon est retirée).
     const puces = panneau.getByTestId("detail-panel-puces");
     await expect(puces).toContainText("Vues");
