@@ -51,7 +51,7 @@ jobs:
 
       - name: Attendre le collecteur (healthy)
         run: |
-          for i in $(seq 1 40); do
+          for _ in $(seq 1 40); do
             if curl -fsS http://localhost:4318/health >/dev/null 2>&1; then
               echo "collector up"; exit 0
             fi
@@ -114,7 +114,7 @@ jobs:
           docker run -d --name mcp -p 8080:8080 \
             -e MIP_CONSOLE_URL=http://127.0.0.1:9 \
             mip-service-mcp:ci
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://localhost:8080/health >/dev/null 2>&1; then echo "mcp up"; exit 0; fi
             sleep 2
           done
