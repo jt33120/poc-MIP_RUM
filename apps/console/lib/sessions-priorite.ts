@@ -186,8 +186,9 @@ export function instantPremiereErreur(ts: string | null): number | null {
 
 /**
  * Liens d'une ligne du hero, calculés CÔTÉ SERVEUR (aucune fonction en prop) :
- * `panel` mène au panneau de session — à sa page tant que F43 n'existe pas — et
- * `rejeu` au rejeu calé sur la première erreur (`?tab=replay&at=<ms>`).
+ * `panel` ouvre le panneau de session (`panel=session:<id>`, F43) quand la page en
+ * fournit le lien, sa page sinon ; `rejeu` mène au rejeu calé sur la première
+ * erreur (`?tab=replay&at=<ms>`), sur la page de la session.
  *
  * `rejeu` vaut `null` dès que l'existence du rejeu n'est pas LUE et vraie : le
  * composant rend alors « ▶ — » (non lu) ou rien (lu absent), jamais un lien mort.
@@ -195,6 +196,8 @@ export function instantPremiereErreur(ts: string | null): number | null {
 export function hrefsPriorite(
   lignes: readonly SessionPrioritaire[],
   hrefDePage: Record<string, string>,
+  /** F43 : lien du panneau de chaque session (`lienPanneau` de `/sessions`). */
+  hrefDePanneau: Record<string, string> = {},
 ): Record<string, { panel: string; rejeu: string | null }> {
   const out: Record<string, { panel: string; rejeu: string | null }> = {};
   for (const s of lignes) {
@@ -203,7 +206,7 @@ export function hrefsPriorite(
     const at = instantPremiereErreur(s.premiere_erreur_ts);
     const sep = base.includes("?") ? "&" : "?";
     out[s.session_id] = {
-      panel: base,
+      panel: hrefDePanneau[s.session_id] ?? base,
       rejeu: s.rejeu === true ? `${base}${sep}tab=replay${at === null ? "" : `&at=${at}`}` : null,
     };
   }
