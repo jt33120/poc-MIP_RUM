@@ -16,6 +16,10 @@
 //     lecture sans source que l'écran n'a pas à poser.
 //   - Laisser la période du haut active sans effet : la surface est en
 //     `range: "none"`, la fenêtre se choisit ici en semaines (F40).
+//   - Lire hors du périmètre, ou ignorer la tablette : depuis B31, la lecture lie les
+//     apps EFFECTIVES du principal et applique tous les filtres de session (tablette,
+//     « Inconnu ») ; le refus « une application à la fois » de F40 est levé (F53) et
+//     « Par appareil » compte aussi les tablettes.
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
@@ -38,7 +42,7 @@ import { formater } from "@/lib/fmt-ids";
 import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 import { retentionCohorts } from "@/lib/queries-cohorts";
-import { samplingSessionsHistorique } from "@/lib/queries-sessions";
+import { samplingSessions } from "@/lib/queries-sessions";
 import { hrefWithQuery } from "@/lib/query-contract";
 
 export const dynamic = "force-dynamic";
@@ -47,9 +51,11 @@ export const dynamic = "force-dynamic";
 const FENETRES = [4, 8, 12, 26] as const;
 const FENETRE_DEFAUT = 8;
 
+// B31 : la tablette est lue (lecture sur le contrat) ; trois séries, sous le plafond de cinq.
 const APPAREILS = [
   { cle: "desktop", libelle: "Ordinateurs" },
   { cle: "mobile", libelle: "Mobiles" },
+  { cle: "tablet", libelle: "Tablettes" },
 ] as const;
 
 // Lundi de la cohorte, lu en UTC : les semaines sont des semaines UTC, et un
@@ -89,7 +95,8 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const ecran = await pageFilters(sp, "/retention");
   if (!ecran.ok) return <FilterProblemNotice title="Rétention" problem={ecran.problem} />;
-  const f = ecran.filters;
+  // Façade P4/P5 : la tablette y figure (l'appareil filtré se lit dans `device`).
+  const f = ecran.deviceFilters;
 
   // `weeks` est un réglage de l'écran (§ 3.1) : une valeur hors des fenêtres
   // proposées est ignorée ET signalée, jamais appliquée à moitié.
@@ -109,7 +116,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   const [cohortes, echantillonnage, parAppareil] = await Promise.all([
     lire(() => retentionCohorts(f, weeks)),
     // S7 : sessions identifiées lues par les cohortes sur les N semaines choisies.
-    lire(() => samplingSessionsHistorique(f, { lecture: "cohortes", semaines: weeks })),
+    lire(() => samplingSessions(f, { population: { lecture: "cohortes", semaines: weeks } })),
     appareilFiltre
       ? Promise.resolve(null)
       : lire(() => Promise.all(APPAREILS.map((a) => retentionCohorts(f, weeks, { appareil: a.cle })))),
@@ -234,7 +241,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                         ? { kind: "partiel", raison: "une seule semaine observée : pas encore de recul" }
                         : undefined
                   }
-                  meta={<span>visiteurs identifiés, même calcul que la courbe ; tablette non lue (lecture historique)</span>}
+                  meta={<span>visiteurs identifiés, même calcul que la courbe ; ordinateurs, mobiles et tablettes (appareil inconnu : dans la courbe, pas ici)</span>}
                   lecture="Un visiteur mobile peut être surcompté : son identifiant est tenu en mémoire et renouvelé à chaque lancement (parité C3)."
                   alternative={
                     parAppareil?.ok
@@ -265,8 +272,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                           <LineTrend
                             data={Array.from({ length: colonnes }, (_v, o) => ({
                               label: `S+${o}`,
-                              desktop: enPct(courbes[0][o]?.taux ?? null),
-                              mobile: enPct(courbes[1][o]?.taux ?? null),
+                              ...Object.fromEntries(APPAREILS.map((a, i) => [a.cle, enPct(courbes[i][o]?.taux ?? null)])),
                             }))}
                             valueName="Rétention"
                             valueUnit="%"

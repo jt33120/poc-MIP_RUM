@@ -3,12 +3,13 @@
 // CE QUE CE SPEC EXISTE POUR EMPÊCHER.
 //   - Le retour de l'anneau, qui cachait les canaux à 0 : les CINQ canaux sont
 //     rendus en barres, zéros compris, chacun avec sa part de toutes les sessions.
-//   - Une lecture historique qui tait sa fenêtre : la note « lecture non migrée »
-//     est sous l'en-tête et dans la méta de chaque figure (S3), tant que B31 manque.
+//   - Une fenêtre tue : depuis F53 (B31), la lecture est celle du contrat et la
+//     méta de chaque figure écrit la plage lue ; la note « lecture non migrée » a
+//     disparu.
 //   - Un plafond muet : 20 001 sessions lues → bandeau « plafond de 20 000 sessions
 //     atteint » (S4) ; aucune trace de ce bandeau sous le plafond.
-//   - Une figure dessinée pour un patch absent : la table croisée et la série
-//     attendent B31, en état partiel motivé.
+//   - Une table croisée qui compterait autre chose que les canaux : la route
+//     d'entrée se croise avec les MÊMES sessions que le hero (B31).
 //
 // Données EXPLICITEMENT SYNTHÉTIQUES, dans deux apps dédiées, et un compte admin
 // dédié à ce fichier (jamais le compte de seed-admin).
@@ -126,17 +127,30 @@ test.describe("F48 — Acquisition", () => {
     await expect(page.locator("#acquisition-referents")).toContainText("ref-f48.example");
   });
 
-  test("lecture non migrée dite sous l'en-tête et dans chaque figure ; B31 manquant dit, jamais dessiné", async ({ page }) => {
+  test("sur le contrat (F53) : la méta écrit la plage lue ; table croisée et série dessinées (B31)", async ({ page }) => {
     await login(page);
     await page.goto(`${consoleUrl}/acquisition?app=${APP_F48}&period=7d`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("lecture-non-migree")).toContainText("7 derniers jours glissants, lus à");
-    await expect(page.getByTestId("lecture-non-migree")).toContainText("lecture non migrée");
+    // Plus de note « lecture non migrée » : la lecture est celle du contrat.
+    await expect(page.getByTestId("lecture-non-migree")).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText("lecture non migrée");
     const metas = page.getByTestId("figure-meta");
     await expect(metas).toHaveCount(4);
-    for (const meta of await metas.all()) await expect(meta).toContainText("lecture non migrée");
-    await expect(page.locator("#acquisition-entrees")).toContainText("route d'entrée non lue par cette lecture (à créer)");
-    await expect(page.locator("#acquisition-serie")).toContainText("série à créer : la lecture actuelle n'a pas d'horodatage (B31)");
-    await expect(page.locator("#acquisition-serie .recharts-wrapper")).toHaveCount(0);
+    for (const meta of await metas.all()) await expect(meta).toContainText("7 j");
+    // A4 : la route d'entrée, croisée par canal (au-delà de 640 px, la table) —
+    // 3 directes, 2 recherche, 0 réseau social, 1 site référent, 1 interne ; total 7.
+    const ligne = page.getByTestId("acquisition-entrees-table").getByTestId("acquisition-entree").filter({ hasText: "/f48-entree" });
+    await expect(ligne).toHaveCount(1);
+    await expect(ligne.getByRole("cell")).toHaveText(["3", "2", "0", "1", "1", "7"]);
+    await expect(ligne.getByRole("link", { name: "Sessions passées par cette route" })).toHaveAttribute(
+      "href",
+      /\/sessions\?.*qf=route&q=%2Ff48-entree/,
+    );
+    await expect(page.locator("#acquisition-entrees")).not.toContainText("à créer");
+    // A6 : la série, sur la grille du contrat (un graphique recharts).
+    const serie = page.locator("#acquisition-serie");
+    await serie.scrollIntoViewIfNeeded();
+    await expect(serie).not.toContainText("série à créer");
+    await expect(serie.locator(".recharts-wrapper")).toHaveCount(1);
     const direct = page.getByTestId("acquisition-direct");
     await expect(direct).toContainText(
       "pas de référent reçu : saisie de l'adresse, favori, application, ou site d'origine qui retire son adresse (politique Referrer-Policy)",

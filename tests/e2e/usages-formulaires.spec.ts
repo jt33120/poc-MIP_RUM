@@ -220,8 +220,10 @@ test.describe("F51 — Formulaires", () => {
     await expect(page.getByTestId("forms-garde-mobile")).toContainText(
       "Le SDK React Native n'émet aucun événement de formulaire",
     );
-    // S3 : la fenêtre réellement lue et l'heure de lecture.
-    await expect(page.getByTestId("lecture-non-migree")).toContainText("7 derniers jours glissants, lus à");
+    // F53 (B31) : la lecture est celle du contrat ; la méta écrit la plage lue, la
+    // note « lecture non migrée » a disparu.
+    await expect(page.getByTestId("lecture-non-migree")).toHaveCount(0);
+    await expect(page.locator("#forms-classement").getByTestId("figure-meta")).toContainText("7 j");
     // B34 : dit, jamais dessiné.
     await expect(page.locator("#forms-serie")).toContainText("série à créer (B34)");
     await expect(page.locator("#forms-serie .recharts-wrapper")).toHaveCount(0);

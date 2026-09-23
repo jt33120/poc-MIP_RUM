@@ -14,7 +14,6 @@ import {
   type Dimension,
   type FilterCondition,
   type Parsed,
-  type QueryScope,
 } from "./query-contract";
 
 export type RangeCapability = "custom" | "presets" | "none";
@@ -27,11 +26,12 @@ export interface Surface {
   /** Pourquoi la plage ne s'applique pas ou reste limitée aux presets. */
   rangeNote?: string;
   /**
-   * Lecture historique, pas encore migrée vers le contrat : presets seulement ;
-   * `segments` applique aussi desktop/mobile et le segment v1 (pays, appareil, client,
-   * source en égalité ou différence) ; `period-only` n'applique que l'app et la période.
+   * Lecture historique, pas encore migrée vers le contrat : presets seulement, et
+   * seules l'app et la période s'appliquent. (La variante `segments` — desktop,
+   * mobile et segment v1 — a disparu avec F53 : les écrans d'usage qui la
+   * portaient lisent sur le contrat depuis B31.)
    */
-  legacy?: "segments" | "period-only";
+  legacy?: "period-only";
   /**
    * Liste BLANCHE de dimensions, quand l'écran en applique moins que ses jeux de
    * données ne pourraient. Utile lorsqu'une mesure est un TAUX sur une cohorte :
@@ -42,23 +42,14 @@ export interface Surface {
   only?: readonly Dimension[];
   /** Écran sans mesure filtrable : seuls l'app et, s'il y a lieu, la plage comptent. */
   noFilters?: string;
-  /**
-   * Lecture qui ne sait filtrer qu'UNE app, par la clause `($1::text is null or
-   * app_id = $1)` : sous `app=all`, `$1` vaut null et la clause laisse passer TOUTES
-   * les apps de la base, qu'elles soient ou non dans le périmètre du principal
-   * (R-A, CS1). Tant que ces lectures ne passent pas par `sqlContext` (B31 → F53 ;
-   * F66 pour `/goals`), un principal RESTREINT qui demande toutes ses apps est
-   * refusé (`perimetreAvailability`) : un refus dit, plutôt qu'une lecture hors
-   * périmètre.
-   */
-  appUnique?: true;
 }
 
-// `country_source` (P8.7) accompagne `country` : les écrans qui savent segmenter sur
-// un pays savent segmenter sur sa provenance, puisque c'est la même jointure de
-// session et le même compilateur. Les séparer aurait rendu un pays filtrable
-// sans que son origine le soit — exactement le mélange que ce lot corrige.
-const LEGACY_DIMENSIONS: readonly Dimension[] = ["device", "country", "country_source", "client", "source"];
+// Plus de drapeau « lecture mono-app » (F40, R-A) : `/acquisition`, `/paths`,
+// `/forms` et `/retention` filtraient l'app par « app demandée, ou toutes si elle
+// est nulle », et un principal restreint qui demandait toutes ses apps était refusé
+// (« Cet écran lit une application à la fois »). Leurs lectures passent par
+// `sqlContext` depuis B31 (apps EFFECTIVES liées) : le refus provisoire est levé
+// (F53), comme F66 l'avait fait pour `/goals`.
 
 // Du plus spécifique au plus général : le premier préfixe qui correspond gagne.
 export const SURFACES: Surface[] = [
@@ -127,25 +118,32 @@ export const SURFACES: Surface[] = [
     range: "none",
     noFilters: "La liste des tableaux de bord ne dépend que de l'app sélectionnée.",
   },
-  { path: "/paths", datasets: ["sessions"], range: "presets", legacy: "segments", appUnique: true },
-  { path: "/forms", datasets: ["sessions"], range: "presets", legacy: "segments", appUnique: true },
+  // B31 → F53 : /paths, /forms et /acquisition lisent sur le contrat (`sqlContext`,
+  // apps effectives liées), comme /goals depuis F66 — plus de `legacy` ni de refus
+  // « une application à la fois » ; plage personnalisée, tablette et « Inconnu »
+  // s'appliquent. Jeu `sessions` : leurs chiffres comptent des sessions (ou des
+  // tentatives de formulaire rapportées à elles) ; une dimension d'occurrence
+  // (route, release, env) ne filtrerait qu'une partie des vues ou des événements
+  // d'une session, elle reste refusée avec sa raison.
+  { path: "/paths", datasets: ["sessions"], range: "custom" },
+  { path: "/forms", datasets: ["sessions"], range: "custom" },
   // F66 : /goals lit sur le contrat (`sqlContext`, apps effectives liées) — plus de
   // `legacy` ni de refus « une application à la fois » ; plage personnalisée,
   // tablette et « Inconnu » s'appliquent. Jeu `sessions` : les taux portent sur une
   // cohorte de sessions ; une dimension d'occurrence (route, release) filtrerait le
   // numérateur sans le dénominateur, elle reste refusée avec sa raison.
   { path: "/goals", datasets: ["sessions"], range: "custom" },
-  { path: "/acquisition", datasets: ["sessions"], range: "presets", legacy: "segments", appUnique: true },
+  { path: "/acquisition", datasets: ["sessions"], range: "custom" },
   // La rétention lit N SEMAINES, choisies dans l'écran (`?weeks=`), jamais la
-  // période du haut : lib/queries-cohorts.ts ne lit ni `f.period` ni PERIODS.
+  // période du haut : lib/queries-cohorts.ts ne lit pas la plage du contrat.
   // Proposer 1 h / 24 h / 7 j laisserait croire qu'ils s'appliquent (§ 5.17.5).
+  // Périmètre et filtres, eux, passent par `sqlContext` depuis B31 : plus de
+  // `legacy` ni de refus « une application à la fois » (F53).
   {
     path: "/retention",
     datasets: ["sessions"],
     range: "none",
     rangeNote: "La rétention se lit sur un nombre de semaines choisi dans l'écran ; la période choisie en haut ne s'applique pas.",
-    legacy: "segments",
-    appUnique: true,
   },
   { path: "/logs", datasets: [], range: "presets", legacy: "period-only" },
   { path: "/ai", datasets: [], range: "presets", legacy: "period-only" },
@@ -213,7 +211,6 @@ export function dimensionAvailability(surface: Surface, dimension: Dimension, sc
     };
   }
   if (surface.legacy) {
-    if (surface.legacy === "segments" && LEGACY_DIMENSIONS.includes(dimension)) return { available: true };
     return {
       available: false,
       reason: `« ${DIMENSION_LABELS[dimension]} » n'est pas encore appliqué par cet écran`,
@@ -228,12 +225,9 @@ export function dimensionAvailability(surface: Surface, dimension: Dimension, sc
 
 /** Une condition complète (dimension, opérateur, valeur) est-elle applicable à l'écran ? */
 export function conditionAvailability(surface: Surface, condition: FilterCondition, schema: DimensionSchema): FilterAvailability {
-  const availability = dimensionAvailability(surface, condition.dimension, schema);
-  if (!availability.available) return availability;
-  if (surface.legacy && (condition.operator === "is_null" || condition.value === "tablet")) {
-    return { available: false, reason: "Cet écran n'applique ni « Inconnu » ni la tablette." };
-  }
-  return { available: true };
+  // Une lecture historique (`legacy`) refuse déjà toute dimension : la tablette et
+  // « Inconnu » n'ont plus besoin d'une règle à part.
+  return dimensionAvailability(surface, condition.dimension, schema);
 }
 
 export function rangeAvailability(surface: Surface, custom: boolean): FilterAvailability {
@@ -246,30 +240,6 @@ export function rangeAvailability(surface: Surface, custom: boolean): FilterAvai
   return { available: true };
 }
 
-/** Refus provisoire des écrans à lecture mono-app (F40, R-A) : texte opposable. */
-export const RAISON_APP_UNIQUE =
-  "Cet écran lit une application à la fois : choisissez l'une des applications de votre périmètre.";
-
-/**
- * Le périmètre demandé est-il lisible par l'écran ? Refus quand l'écran ne sait
- * filtrer qu'une app (`appUnique`), que l'URL les demande toutes
- * (`requestedApp === null`) ET que le principal est restreint
- * (`authorizedApps !== null`) : la lecture sortirait de son périmètre. Un
- * principal sans restriction (admin, viewer sans liste) lit de droit toutes les
- * apps : rien à refuser.
- *
- * Défense en profondeur : la porte « projet courant » du middleware réécrit déjà
- * `app=all` en l'app du projet pour un principal restreint (middleware.ts). Ce
- * refus tient même si cette porte change ; il se lève avec la migration des
- * lectures sur `sqlContext` (F53, F66).
- */
-export function perimetreAvailability(surface: Surface, scope: QueryScope): FilterAvailability {
-  if (surface.appUnique && scope.requestedApp === null && scope.authorizedApps !== null) {
-    return { available: false, reason: RAISON_APP_UNIQUE };
-  }
-  return { available: true };
-}
-
 const unsupported = (message: string, extra: Partial<ContractError> = {}): Parsed<never> => ({
   ok: false,
   error: { code: "unsupported_dimension", message, ...extra },
@@ -277,8 +247,8 @@ const unsupported = (message: string, extra: Partial<ContractError> = {}): Parse
 
 /**
  * Une requête résolue est-elle entièrement applicable à l'écran ? Plage
- * personnalisée sur un écran à presets, tablette ou `is_null` sur une lecture
- * historique, dimension absente d'une mesure : refus typé, jamais un oubli.
+ * personnalisée sur un écran à presets, filtre sur une lecture historique,
+ * dimension absente d'une mesure : refus typé, jamais un oubli.
  */
 export function checkSurface(query: AnalyticsQuery, surface: Surface, schema: DimensionSchema): Parsed<true> {
   if (query.range.preset === null) {

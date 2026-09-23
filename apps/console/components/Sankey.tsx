@@ -33,16 +33,17 @@ const XM = (RX0 + X1) / 2;
 
 /**
  * Où mènent les nœuds et les rubans. Calculé par l'appelant (§ 0.3 : un lien
- * porte la query courante, que le composant ne connaît pas). `ancrer` est absent
- * tant que B31 n'a pas livré l'option `depuis` de `routeTransitions` : un lien
- * d'ancrage qui ne filtrerait rien mentirait sur ce que fait le clic.
+ * porte la query courante, que le composant ne connaît pas). `ancrer` n'est fourni
+ * que par un appelant dont la lecture sait filtrer sur une route de départ
+ * (`routeTransitions(f, n, { depuis })`, B31) : un lien d'ancrage qui ne filtrerait
+ * rien mentirait sur ce que fait le clic.
  */
 export interface LiensSankey {
   /** Sessions passées par cette route (cible d'un ruban). */
   sessions?: (route: string) => string;
   /** Détail de la route dans `/pages` (nœud). */
   pages?: (route: string) => string;
-  /** Ancrer le flux « à partir de » cette route (nœud gauche) — après B31. */
+  /** Ancrer le flux « à partir de » cette route (nœud gauche). */
   ancrer?: (route: string) => string;
 }
 
@@ -163,8 +164,8 @@ export function Sankey({
             noeuds.map((n) => {
               const gauche = cote === "l";
               const x = gauche ? X0 : X1;
-              // Un nœud GAUCHE ancre le flux à partir de sa route quand la lecture
-              // sait le faire (B31) ; sinon il ouvre la route dans /pages. Le titre
+              // Un nœud GAUCHE ancre le flux à partir de sa route quand l'appelant
+              // le propose (`liens.ancrer`) ; sinon il ouvre la route dans /pages. Le titre
               // dit toujours où mène le clic — jamais deux gestes sous un seul lien.
               const ancrage = gauche ? liens.ancrer?.(n.route) : undefined;
               const href = ancrage ?? liens.pages?.(n.route);

@@ -148,7 +148,10 @@ test("matrice : chaque case écrit « n / taille », la semaine en cours est hac
 test("par appareil : un lien par série ; sous device= la figure le dit au lieu de comparer", async ({ page }) => {
   await ouvrir(page, 1440, 900);
   const liens = page.getByTestId("retention-appareil-lien");
-  await expect(liens).toHaveCount(2);
+  // F53 (B31) : la lecture est sur le contrat, la tablette est lue — trois séries.
+  await expect(liens).toHaveCount(3);
+  await expect(liens.nth(2)).toContainText("Rétention des tablettes");
+  await expect(liens.nth(2)).toHaveAttribute("href", /device=tablet/);
   await liens.first().click();
   await page.waitForURL((u) => u.searchParams.get("device") === "desktop", { timeout: 15_000 });
   await expect(page.getByTestId("retention-deja-filtre")).toContainText("Déjà filtré sur ordinateurs");
