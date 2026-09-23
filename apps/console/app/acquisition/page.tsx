@@ -287,7 +287,10 @@ function RangeeKpi({ rep, comparaison }: { rep: AcquisitionReport; comparaison: 
     { atteint: prec !== null && plafondAtteint(prec.total, PLAFOND_ACQUISITION), raison: `plafond de ${PLAFOND_TEXTE} sessions atteint sur la période précédente` },
   ];
   const plafondHotes = [
-    { atteint: prec !== null && referentsTronques(prec), raison: `plus de ${TOP_REFERENTS - 1} hôtes sur la période précédente : son compte est un minimum` },
+    {
+      atteint: prec !== null && referentsTronques(prec),
+      raison: `${TOP_REFERENTS} hôtes renvoyés sur la période précédente, le plafond de la lecture : son compte est un minimum`,
+    },
   ];
   /**
    * Props de comparaison d'une tuile : rien hors `cmp=prev` ; une période précédente
