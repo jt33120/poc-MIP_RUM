@@ -164,29 +164,31 @@ export default async function Retention({ searchParams }: { searchParams: Promis
       )}
 
       {/* R2 — une rangée, une population : les visiteurs identifiés (sauf la 4e tuile, dite). */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="retention-kpi">
-        <KpiTile
-          label="Visiteurs identifiés suivis"
-          valeur={cohortes.ok ? totalVisiteurs : null}
-          format="count"
-          raisonNull="lecture des cohortes en échec"
-          sensMeilleur="neutre"
-          lecture={
-            cohortes.ok
-              ? `${nombre(totalVisiteurs)} visiteurs identifiés, en ${nombre(rows.length)} cohorte${rows.length > 1 ? "s" : ""} hebdomadaire${rows.length > 1 ? "s" : ""}, sur ${weeks} semaines.`
-              : undefined
-          }
-        />
-        {tuileRetour(courbe[1], 1, cohortes.ok)}
-        {tuileRetour(courbe[4], 4, cohortes.ok)}
-        <KpiTile
-          label="Sessions sans identifiant, hors matrice"
-          valeur={null}
-          format="count"
-          raisonNull="non lu : la lecture est à créer (B35)"
-          sensMeilleur="neutre"
-        />
-      </div>
+      <SectionErreur titre="Chiffres clés">
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="retention-kpi">
+          <KpiTile
+            label="Visiteurs identifiés suivis"
+            valeur={cohortes.ok ? totalVisiteurs : null}
+            format="count"
+            raisonNull="lecture des cohortes en échec"
+            sensMeilleur="neutre"
+            lecture={
+              cohortes.ok
+                ? `${nombre(totalVisiteurs)} visiteurs identifiés, en ${nombre(rows.length)} cohorte${rows.length > 1 ? "s" : ""} hebdomadaire${rows.length > 1 ? "s" : ""}, sur ${weeks} semaines.`
+                : undefined
+            }
+          />
+          {tuileRetour(courbe[1], 1, cohortes.ok)}
+          {tuileRetour(courbe[4], 4, cohortes.ok)}
+          <KpiTile
+            label="Sessions sans identifiant, hors matrice"
+            valeur={null}
+            format="count"
+            raisonNull="non lu : la lecture est à créer (B35)"
+            sensMeilleur="neutre"
+          />
+        </div>
+      </SectionErreur>
 
       <BandeauEchantillonnage lecture={echantillonnage} />
 
@@ -225,6 +227,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                     valueName="Rétention"
                     valueUnit="%"
                     domain={[0, 100]}
+                    ariaLabel={`Rétention pondérée par semaine depuis l'arrivée, de S+0 à S+${Math.max(0, colonnes - 1)}, fenêtre de ${weeks} semaines UTC ; un point sans cohorte complète est un trou`}
                   />
                 </Figure>
               </SectionErreur>
@@ -278,6 +281,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                             valueUnit="%"
                             domain={[0, 100]}
                             series={APPAREILS.map((a) => ({ cle: a.cle, libelle: a.libelle, role: "categorie" as const }))}
+                            ariaLabel={`Rétention pondérée par appareil (${APPAREILS.map((a) => a.libelle.toLowerCase()).join(", ")}) et par semaine depuis l'arrivée, fenêtre de ${weeks} semaines UTC`}
                           />
                           <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
                             {APPAREILS.map((a, i) => (

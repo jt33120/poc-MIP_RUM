@@ -148,6 +148,17 @@ test.describe("F52 — Carte d'expérience", () => {
     // La série existe (B37 livré) : un graphique recharts, pas un « à créer ».
     await expect(panneau.locator(".recharts-wrapper")).toHaveCount(1);
     await expect(panneau).not.toContainText("série à créer");
+    // F54 (§ 3.9) : la série est une image nommée ET porte son alternative textuelle
+    // (hors d'une `Figure`, rien ne la portait) : une ligne par seau de la grille.
+    await expect(panneau.locator('[data-testid="threshold-series"] [role="img"]').first()).toHaveAttribute(
+      "aria-label",
+      /^Latence p75 et volume d'appels de \/api\/r12 par seau de /,
+    );
+    const alternative = panneau.getByTestId("alternative");
+    await expect(alternative).toHaveCount(1);
+    await expect(alternative.locator("caption")).toContainText("Latence p75 et appels de /api/r12 par seau de");
+    await expect(alternative.locator("thead th")).toHaveText(["Seau (UTC)", "Latence p75", "Appels"]);
+    expect(await alternative.locator("tbody tr").count()).toBeGreaterThan(0);
     await expect(panneau.getByRole("link", { name: "Traces lentes de ce service" })).toBeVisible();
     // Fermer retire le paramètre, sans quitter l'écran.
     await panneau.getByTestId("detail-panel-fermer").click();

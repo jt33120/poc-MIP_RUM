@@ -16,7 +16,12 @@
 // rien de tronqué en silence ; un « top N » est un classement, pas N courbes).
 //
 // L'alternative textuelle est portée par la `Figure` englobante (mêmes lignes).
-import { useId } from "react";
+//
+// ACCESSIBILITÉ (F54, § 3.9). Avec `ariaLabel`, la zone de la courbe est une image
+// nommée (`role="img"`), comme celle de `ThresholdSeries` : sans nom, un lecteur
+// d'écran n'annonçait que des graduations et des points isolés. Optionnel pour ne
+// pas toucher les appelants hors du domaine usages ; tout nouvel appelant le donne.
+import { useId, type ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -68,6 +73,7 @@ export function LineTrend({
   height = 240,
   domain,
   series,
+  ariaLabel,
 }: {
   data: LineTrendPoint[];
   valueName: string;
@@ -80,6 +86,8 @@ export function LineTrend({
   domain?: [number, number];
   /** Séries nommées (≤ 5) à la place de `value` ; `valueName` reste le nom de la mesure. */
   series?: LineTrendSerie[];
+  /** Nom de la courbe pour un lecteur d'écran : la zone de tracé devient `role="img"`. */
+  ariaLabel?: string;
 }) {
   const synchro = `tendance-${useId()}`;
   const hasVolume = data.some((d) => d.volume != null);
@@ -95,47 +103,49 @@ export function LineTrend({
 
   return (
     <div className="min-w-0" data-testid="line-trend">
-      <ResponsiveContainer width="100%" height={hauteurCourbe}>
-        <ComposedChart data={data} margin={marge} syncId={hasVolume ? synchro : undefined}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="label" fontSize={11} tickLine={false} interval="preserveStartEnd" />
-          <YAxis fontSize={11} width={LARGEUR_AXE_Y} tickLine={false} axisLine={false} unit={valueUnit} domain={domain} />
-          <Tooltip
-            formatter={(val: number, name) => [val == null ? "—" : `${val}${valueUnit}`, name]}
-            contentStyle={{ fontSize: 12 }}
-          />
-          {/* Avec un panneau de volume, une barre CACHÉE met l'axe x en bandes, comme
-              celui des barres du dessous : les deux panneaux tombent sur les mêmes x. */}
-          {hasVolume && <Bar dataKey="__bandes" hide isAnimationActive={false} legendType="none" />}
-          {lignes ? (
-            lignes.map((s) => (
-              <Line
-                key={s.cle}
-                type="monotone"
-                dataKey={s.cle}
-                name={s.libelle}
-                stroke={s.couleur}
-                strokeWidth={s.role === "principale" ? 2.5 : 2}
-                strokeDasharray={s.pointille ? "5 4" : undefined}
-                dot={s.pointille ? false : { r: 2.5, fill: s.couleur, strokeWidth: 0 }}
-                activeDot={{ r: 4 }}
-                isAnimationActive={false}
-              />
-            ))
-          ) : (
-            <Line
-              type="monotone"
-              dataKey="value"
-              name={valueName}
-              stroke={color}
-              strokeWidth={2.5}
-              dot={{ r: 2.5, fill: color, strokeWidth: 0 }}
-              activeDot={{ r: 4 }}
+      <ZoneCourbe ariaLabel={ariaLabel}>
+        <ResponsiveContainer width="100%" height={hauteurCourbe}>
+          <ComposedChart data={data} margin={marge} syncId={hasVolume ? synchro : undefined}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="label" fontSize={11} tickLine={false} interval="preserveStartEnd" />
+            <YAxis fontSize={11} width={LARGEUR_AXE_Y} tickLine={false} axisLine={false} unit={valueUnit} domain={domain} />
+            <Tooltip
+              formatter={(val: number, name) => [val == null ? "—" : `${val}${valueUnit}`, name]}
+              contentStyle={{ fontSize: 12 }}
             />
-          )}
-          {lignes && <Legend wrapperStyle={{ fontSize: 11 }} />}
-        </ComposedChart>
-      </ResponsiveContainer>
+            {/* Avec un panneau de volume, une barre CACHÉE met l'axe x en bandes, comme
+                celui des barres du dessous : les deux panneaux tombent sur les mêmes x. */}
+            {hasVolume && <Bar dataKey="__bandes" hide isAnimationActive={false} legendType="none" />}
+            {lignes ? (
+              lignes.map((s) => (
+                <Line
+                  key={s.cle}
+                  type="monotone"
+                  dataKey={s.cle}
+                  name={s.libelle}
+                  stroke={s.couleur}
+                  strokeWidth={s.role === "principale" ? 2.5 : 2}
+                  strokeDasharray={s.pointille ? "5 4" : undefined}
+                  dot={s.pointille ? false : { r: 2.5, fill: s.couleur, strokeWidth: 0 }}
+                  activeDot={{ r: 4 }}
+                  isAnimationActive={false}
+                />
+              ))
+            ) : (
+              <Line
+                type="monotone"
+                dataKey="value"
+                name={valueName}
+                stroke={color}
+                strokeWidth={2.5}
+                dot={{ r: 2.5, fill: color, strokeWidth: 0 }}
+                activeDot={{ r: 4 }}
+              />
+            )}
+            {lignes && <Legend wrapperStyle={{ fontSize: 11 }} />}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </ZoneCourbe>
       {hasVolume && (
         <div className="mt-1 min-w-0" data-testid="line-trend-volume">
           <p className="text-[11px] text-ink-soft">Volume : {volumeName}</p>
@@ -174,6 +184,20 @@ export function LineTrend({
           {MAX_SERIES_TENDANCE} par graphique) : {ecartees.map((s) => s.libelle).join(", ")}.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * La zone de tracé : une image NOMMÉE quand l'appelant donne un nom, rien de plus
+ * sinon (le DOM des appelants sans `ariaLabel` ne change pas). Ce que l'image
+ * dessine (points, graduations, infobulle) est doublé par l'alternative de la `Figure`.
+ */
+function ZoneCourbe({ ariaLabel, children }: { ariaLabel?: string; children: ReactNode }) {
+  if (!ariaLabel) return <>{children}</>;
+  return (
+    <div role="img" aria-label={ariaLabel}>
+      {children}
     </div>
   );
 }
