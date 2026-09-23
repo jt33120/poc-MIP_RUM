@@ -31,6 +31,8 @@ import {
   resolveWidget,
   type WidgetData,
 } from "@/lib/widget-data";
+// F37 — plafond de l'export (import du lot).
+import { CSV_MAX_ROWS as F37_CSV_MAX_ROWS } from "@/lib/widget-data";
 
 const NOW = Date.parse("2026-09-17T12:00:00.000Z");
 
@@ -386,5 +388,43 @@ describe("F36 — export CSV : une absence reste une absence", () => {
     expect(csv).toContain("Chrome,2400,120 lignes");
     expect(csv).toContain("Safari,,0 lignes");
     expect(csv).not.toContain("Safari,0,");
+  });
+});
+
+// F37 (W-B12) — un titre de section ne mesure rien : aucune lecture, aucune
+// connexion prise ; dans l'export, un intertitre qui ne consomme pas le plafond.
+describe("F37 — titre de section : aucune lecture, un intertitre dans l'export", () => {
+  it("resolveWidget d'une section : aucune lecture lancée", async () => {
+    const [section] = normalizeLayout([{ type: "section", title: "Où ?", question: "Où les pages sont-elles lentes ?" }]);
+    expect(await resolveWidget(section, ctx())).toEqual({ kind: "section" });
+    expect(exploreAnalytics).not.toHaveBeenCalled();
+    expect(vitalsP75).not.toHaveBeenCalled();
+    expect(dailyTraffic).not.toHaveBeenCalled();
+  });
+
+  it("export CSV : « # Section : titre — question », à sa place, sans ligne de donnée", () => {
+    const layout = normalizeLayout([
+      { type: "section", title: "Où ?", question: "Où les pages sont-elles lentes ?" },
+      { type: "traffic", title: "Trafic" },
+      { type: "section", title: "Qui ?" },
+    ]);
+    const table: WidgetData = { kind: "table", columns: ["Jour", "Pages vues"], rows: [["2026-09-17", 12]] };
+    const csv = layoutToCsv("Perf", layout, [{ kind: "section" }, table, { kind: "section" }], new Date(NOW));
+    expect(csv).toContain("# Section : Où ? — Où les pages sont-elles lentes ?");
+    // Question vide : le titre seul, sans tiret pendant.
+    expect(csv).toMatch(/^# Section : Qui \?$/m);
+    expect(csv).toContain("2026-09-17,12");
+    expect(csv.indexOf("# Section : Où ?")).toBeLessThan(csv.indexOf("# Trafic"));
+    expect(csv.indexOf("# Trafic")).toBeLessThan(csv.indexOf("# Section : Qui ?"));
+  });
+
+  it("export au plafond : un titre de section restant n'est pas une carte manquante", () => {
+    const pleine: WidgetData = { kind: "table", columns: ["n"], rows: Array.from({ length: F37_CSV_MAX_ROWS }, (_, i) => [i]) };
+    const section = { kind: "section" } as const;
+    const sansCarteApres = normalizeLayout([{ type: "traffic", title: "Trafic" }, { type: "section", title: "Qui ?" }]);
+    expect(layoutToCsv("Perf", sansCarteApres, [pleine, section], new Date(NOW))).not.toMatch(/Export tronqué/);
+    // Une CARTE restante, elle, manque au fichier : la troncature est annoncée.
+    const avecCarteApres = normalizeLayout([{ type: "traffic" }, { type: "section", title: "Qui ?" }, { type: "frustration" }]);
+    expect(layoutToCsv("Perf", avecCarteApres, [pleine, section, pleine], new Date(NOW))).toMatch(/Export tronqué/);
   });
 });

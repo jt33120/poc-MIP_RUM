@@ -13,6 +13,17 @@ import {
 } from "../../apps/console/lib/dashboards";
 import { parseExplorerPlan } from "../../apps/console/lib/analytics-schema";
 import { MODELES_TABLEAUX as F35_MODELES, cartesDuModele as f35CartesDuModele, optionsDeClonage as f35OptionsDeClonage, pucesDuTableau as f35PucesDuTableau } from "../../apps/console/lib/dashboard-templates";
+// F37 — sections de tableau de bord (imports du lot).
+import {
+  ANALYTICS_WIDGET_TYPE,
+  QUESTION_MAX,
+  WIDGET_TYPES,
+  groupesDuLayout,
+  layoutPlein,
+  nombreDeCartes,
+  questionDeSection,
+  sectionDuFormulaire,
+} from "../../apps/console/lib/dashboards";
 
 /** Une configuration v2 telle qu'elle est stockée en jsonb. */
 const ANALYSE = {
@@ -207,9 +218,12 @@ describe("F35 — modèles de tableaux de bord", () => {
       expect(relues).toHaveLength(cartes.length);
       // Le jsonb relu se réécrit à l'identique : aucune dérive d'une écriture à l'autre.
       expect(serializeLayout(relues)).toEqual(jsonb);
-      // Chaque section donne son titre à sa première carte (avant F37), sous 60 caractères.
-      const premieres = modele.sections.map((s) => `${s.titre} — ${s.cartes[0].title}`.slice(0, 60));
-      for (const titre of premieres) expect(relues.map((w) => w.title)).toContain(titre);
+      // F37 : chaque section ouvre sur son titre de section ; ses cartes gardent le leur
+      // (le préfixe « Seuils — LCP p75 » d'avant F37 a disparu).
+      const sections = relues.filter((w) => w.kind === "section");
+      expect(sections.map((s) => s.title)).toEqual(modele.sections.map((s) => s.titre));
+      const titresDesCartes = relues.filter((w) => w.kind !== "section").map((w) => w.title);
+      expect(titresDesCartes).toEqual(modele.sections.flatMap((s) => s.cartes.map((c) => c.title)));
     });
   }
 
@@ -219,7 +233,7 @@ describe("F35 — modèles de tableaux de bord", () => {
     expect(champs).toContain("occurrences:sum");
     expect(champs).toContain("sessions:distinct");
     const usages = f35CartesDuModele(F35_MODELES[2]);
-    expect(usages.map((w) => w.title)).toEqual(expect.arrayContaining(["Combien — Sessions commencées", "Visiteurs"]));
+    expect(usages.map((w) => w.title)).toEqual(expect.arrayContaining(["Sessions commencées", "Visiteurs"]));
   });
 
   it("puces de type d'une carte (W-D2) : représentation pour une analyse, « v1 : … » pour le catalogue historique", () => {
@@ -258,5 +272,172 @@ describe("F35 — modèles de tableaux de bord", () => {
       { id: "app-a", libelle: "Mini-site A" },
       { id: "app-b", libelle: "app-b" },
     ]);
+  });
+});
+
+// F37 (W-B12, § 5.25) — sections de tableau de bord. Un titre de section est un
+// élément du layout : lu et écrit par la même porte que les cartes, compté dans
+// MAX_WIDGETS, et illisible — jamais perdu — pour un lecteur qui ne le connaît pas.
+describe("F37 — sections de tableau de bord", () => {
+  /** Une section telle qu'elle est stockée en jsonb : `type`, jamais `kind`. */
+  const SECTION_F37 = { type: "section", title: "Où ?", question: "Où les pages sont-elles lentes ?" };
+  const vingtQuatreCartesF37 = () => Array.from({ length: MAX_WIDGETS }, () => ({ type: "traffic" }));
+
+  it("aller-retour d'une section : lue, réécrite, relue à l'identique — sans `kind` dans le jsonb", () => {
+    const stocke = [{ type: "traffic", title: "Trafic" }, SECTION_F37, { type: "top_errors", title: "Erreurs" }];
+    const lu = normalizeLayout(stocke);
+    expect(lu[1]).toEqual({ kind: "section", title: "Où ?", question: "Où les pages sont-elles lentes ?" });
+    const jsonb = serializeLayout(lu);
+    expect(jsonb).toEqual(stocke);
+    expect(jsonb[1]).not.toHaveProperty("kind");
+    expect(serializeLayout(normalizeLayout(JSON.parse(JSON.stringify(jsonb))))).toEqual(stocke);
+    // Question vide : non écrite (comme une métrique absente), relue vide.
+    const sansQuestion = { type: "section", title: "Qui ?" };
+    expect(normalizeLayout([sansQuestion])).toEqual([{ kind: "section", title: "Qui ?", question: "" }]);
+    expect(serializeLayout(normalizeLayout([sansQuestion]))).toEqual([sansQuestion]);
+  });
+
+  it("un tableau enregistré avant F37 s'ouvre à l'identique : une grille unique, aucune section inventée, jsonb réécrit tel quel", () => {
+    const avantF37 = [
+      { type: "traffic", title: "Trafic" },
+      ANALYSE,
+      { type: "vital_p75", metric: "LCP", title: "LCP p75" },
+      { type: "venu_du_futur", options: { x: 1 } },
+    ];
+    const lu = normalizeLayout(avantF37);
+    expect(lu.map((w) => w.kind)).toEqual(["v1", "v2", "v1", "invalid"]);
+    const groupes = groupesDuLayout(lu);
+    expect(groupes).toHaveLength(1);
+    expect(groupes[0].section).toBeNull();
+    expect(groupes[0].cartes.map((c) => c.index)).toEqual([0, 1, 2, 3]);
+    expect(serializeLayout(lu)).toEqual(avantF37);
+  });
+
+  it("une section compte dans MAX_WIDGETS : 24 cartes + 1 section → refusée au même titre qu'une 25e carte", () => {
+    const avecSection = normalizeLayout([...vingtQuatreCartesF37(), SECTION_F37]);
+    const avecCarte = normalizeLayout([...vingtQuatreCartesF37(), { type: "traffic" }]);
+    expect(avecSection).toHaveLength(MAX_WIDGETS);
+    expect(avecCarte).toHaveLength(MAX_WIDGETS);
+    expect(avecSection.some((w) => w.kind === "section")).toBe(false);
+    // En écriture aussi : le 25e élément ne part pas, qu'il soit section ou carte.
+    const [section] = normalizeLayout([SECTION_F37]);
+    expect(serializeLayout([...avecCarte, section])).toHaveLength(MAX_WIDGETS);
+    // Une section en tête prend la place d'une carte : la 24e carte tombe, pas la section.
+    const enTete = normalizeLayout([SECTION_F37, ...vingtQuatreCartesF37()]);
+    expect(enTete).toHaveLength(MAX_WIDGETS);
+    expect(enTete[0].kind).toBe("section");
+    expect(nombreDeCartes(enTete)).toBe(MAX_WIDGETS - 1);
+    // Le tableau plein le sait : les actions refusent alors le 25e élément, et le disent.
+    expect(layoutPlein(enTete)).toBe(true);
+    expect(layoutPlein(enTete.slice(1))).toBe(false);
+  });
+
+  it("un lecteur d'avant F37 lit une section comme une carte illisible : rien n'est perdu", () => {
+    const [json] = serializeLayout(normalizeLayout([SECTION_F37])) as Record<string, unknown>[];
+    // Les trois portes du lecteur d'avant F37 (`lireWidget`, commit d99c9ec) :
+    // 1. un objet à `kind` passe TEL QUEL (widget déjà normalisé) — une section stockée n'en porte pas ;
+    expect(json).not.toHaveProperty("kind");
+    // 2. le discriminant d'une analyse v2 — absent ;
+    expect(json.type).not.toBe(ANALYTICS_WIDGET_TYPE);
+    expect(json).not.toHaveProperty("schemaVersion");
+    // 3. le catalogue v1 — « section » n'en fait pas partie : type inconnu.
+    expect(WIDGET_TYPES as readonly string[]).not.toContain(json.type);
+    // Ce que ce lecteur fait d'un type inconnu, rejoué sur un type que le lecteur
+    // d'aujourd'hui ignore aussi : une carte illisible, titrée, réécrite INTACTE.
+    const ignoree = { ...json, type: "section-venue-du-futur" };
+    const [lue] = normalizeLayout([ignoree]);
+    expect(lue).toMatchObject({ kind: "invalid", title: "Où ?", raw: ignoree });
+    expect(lue.kind === "invalid" && lue.reason).toMatch(/type de widget inconnu/);
+    expect(serializeLayout([lue])).toEqual([ignoree]);
+  });
+
+  it("une section que CE lecteur ne sait pas lire (clé plus récente, sans titre) devient une carte illisible, réécrite intacte", () => {
+    const futures = [
+      { ...SECTION_F37, repliee: true },
+      { type: "section", question: "Sans titre ?" },
+      { type: "section", title: "Où ?", question: 42 },
+    ];
+    const lues = normalizeLayout(futures);
+    expect(lues.map((w) => w.kind)).toEqual(["invalid", "invalid", "invalid"]);
+    expect(lues[0]).toMatchObject({ title: "Où ?" });
+    expect(lues[0].kind === "invalid" && lues[0].reason).toMatch(/clé de section inconnue : repliee/);
+    expect(lues[1]).toMatchObject({ title: "Section illisible" });
+    expect(serializeLayout(lues)).toEqual(futures);
+  });
+
+  it("formulaire « Ajouter une section » : même porte que le jsonb ; titre vide refusé, question facultative", () => {
+    expect(sectionDuFormulaire("  Par segment ", " Où ? ")).toEqual({
+      ok: true,
+      value: { kind: "section", title: "Par segment", question: "Où ?" },
+    });
+    expect(sectionDuFormulaire("Qui ?", null)).toEqual({ ok: true, value: { kind: "section", title: "Qui ?", question: "" } });
+    // Des espaces passent l'attribut `required` : c'est ici qu'ils sont refusés.
+    expect(sectionDuFormulaire("   ", "Où ?").ok).toBe(false);
+    expect(sectionDuFormulaire(null, null).ok).toBe(false);
+    // Bornes : celle d'un titre de carte (60), une phrase pour la question.
+    const long = sectionDuFormulaire("x".repeat(200), "y".repeat(500));
+    expect(long.ok && long.value.title.length).toBe(60);
+    expect(long.ok && long.value.question.length).toBe(QUESTION_MAX);
+  });
+
+  it("groupes de la grille : cartes d'avant la 1re section sans titre, section vide conservée, positions du layout gardées", () => {
+    const layout = normalizeLayout([
+      { type: "traffic", title: "Trafic" },
+      SECTION_F37,
+      { type: "top_errors", title: "Erreurs" },
+      { type: "frustration", title: "Frustration" },
+      { type: "section", title: "Vide" },
+    ]);
+    const groupes = groupesDuLayout(layout).map((g) => [
+      g.section?.widget.title ?? null,
+      g.section?.index ?? null,
+      g.cartes.map((c) => c.index),
+    ]);
+    expect(groupes).toEqual([
+      [null, null, [0]],
+      ["Où ?", 1, [2, 3]],
+      ["Vide", 4, []],
+    ]);
+    // Sans section : une seule grille, sans titre — le rendu d'avant F37.
+    const sansSection = groupesDuLayout(normalizeLayout([{ type: "traffic" }, { type: "frustration" }]));
+    expect(sansSection).toHaveLength(1);
+    expect(sansSection[0].section).toBeNull();
+    expect(sansSection[0].cartes.map((c) => c.index)).toEqual([0, 1]);
+    expect(groupesDuLayout([])).toEqual([]);
+  });
+
+  it("question sous le titre : absente, ou identique au titre, elle ne s'écrit pas", () => {
+    expect(questionDeSection({ kind: "section", title: "Seuils", question: "Les vitals tiennent-ils les seuils ?" })).toBe(
+      "Les vitals tiennent-ils les seuils ?",
+    );
+    expect(questionDeSection({ kind: "section", title: "Où ?", question: "" })).toBeNull();
+    expect(questionDeSection({ kind: "section", title: "Où ?", question: " où ? " })).toBeNull();
+  });
+
+  it("tableau cloné depuis un modèle : des sections titrées, chacune avec ses cartes (preuve de fin)", () => {
+    for (const modele of F35_MODELES) {
+      const relu = normalizeLayout(JSON.parse(JSON.stringify(serializeLayout(f35CartesDuModele(modele)))));
+      const groupes = groupesDuLayout(relu);
+      // Aucune carte orpheline : un modèle commence par un titre de section.
+      expect(groupes.every((g) => g.section !== null), modele.cle).toBe(true);
+      expect(groupes.map((g) => g.section?.widget.title)).toEqual(modele.sections.map((s) => s.titre));
+      expect(groupes.map((g) => g.section?.widget.question)).toEqual(modele.sections.map((s) => s.question));
+      expect(groupes.map((g) => g.cartes.map((c) => c.widget.title))).toEqual(
+        modele.sections.map((s) => s.cartes.map((c) => c.title)),
+      );
+      // Le titre ne redit pas la question : chacune des deux lignes apprend quelque chose.
+      for (const g of groupes) expect(questionDeSection(g.section!.widget), g.section!.widget.title).not.toBeNull();
+    }
+  });
+
+  it("liste des tableaux : un titre de section n'est ni une carte comptée, ni une puce", () => {
+    const layout = normalizeLayout([SECTION_F37, { type: "traffic" }, { type: "section", title: "Qui ?" }, ANALYSE]);
+    expect(layout).toHaveLength(4);
+    expect(nombreDeCartes(layout)).toBe(2);
+    expect(f35PucesDuTableau(layout)).toEqual([
+      { libelle: "v1 : Trafic", n: 1 },
+      { libelle: "Classement", n: 1 },
+    ]);
+    expect(nombreDeCartes(normalizeLayout([SECTION_F37]))).toBe(0);
   });
 });
