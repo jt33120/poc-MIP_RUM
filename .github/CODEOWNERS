@@ -1,0 +1,12 @@
+# PROPRIÉTAIRES DES FICHIERS QUI TOUCHENT LA PRODUCTION SANS PASSER PAR LE CODE (P1).
+#
+# `.railway/` décrit l'infrastructure : une ressource ou une variable omise y est
+# SUPPRIMÉE en production au prochain `apply`. `.github/` décide de ce que la CI
+# vérifie et de ce que les workflows ont le droit de faire — dont appliquer
+# `.railway/` avec le jeton de production. Une PR qui modifie l'un ou l'autre
+# demande donc l'avis de leur propriétaire, quel que soit le reste de son contenu.
+#
+# Effectif seulement avec la protection de branche « Require review from Code
+# Owners » sur `master` (réglage GitHub, hors dépôt).
+/.railway/  @jt33120
+/.github/   @jt33120
