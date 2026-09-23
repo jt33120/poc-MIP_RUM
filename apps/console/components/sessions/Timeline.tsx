@@ -34,6 +34,10 @@ export const LIGNE_COURANTE = "aria-[current=time]:bg-perf/10";
 /**
  * Le décalage d'une ligne. Avec un rejeu (`instant`), c'est un lien qui place la tête
  * à l'instant de la ligne (F47) ; sans rejeu, un simple texte.
+ *
+ * LA COULEUR EST CHOISIE ICI, pas par l'appelant : devenu un lien, le décalage est un
+ * CONTRÔLE, et un contrôle de moins de 18 px ne s'écrit pas en `ink-faint` (≈ 2,8:1,
+ * réservé au décoratif, § 3.9) mais en `ink-soft`. Sans rejeu, le texte garde sa teinte.
  */
 export function Decalage({
   texte,
@@ -44,11 +48,12 @@ export function Decalage({
   texte: string;
   ts: Date;
   instant?: string | null;
+  /** Mise en page seulement (largeur, police) : aucune classe de couleur. */
   className: string;
 }) {
   if (!instant) {
     return (
-      <span className={className} title={fmtDate(ts)}>
+      <span className={`${className} text-ink-faint`} title={fmtDate(ts)}>
         {texte}
       </span>
     );
@@ -61,7 +66,7 @@ export function Decalage({
       data-instant=""
       aria-label={`${texte} — placer le rejeu à cet instant`}
       title={`${fmtDate(ts)} — placer le rejeu à cet instant`}
-      className={`${className} rounded hover:text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf`}
+      className={`${className} rounded text-ink-soft hover:text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf`}
     >
       {texte}
     </Link>
@@ -102,7 +107,7 @@ export function TimelineRow({
           texte={fmtOffset(Math.max(0, offset))}
           ts={item.ts}
           instant={instant}
-          className="w-20 shrink-0 font-mono text-xs tabular-nums text-ink-faint"
+          className="w-20 shrink-0 font-mono text-xs tabular-nums"
         />
         <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${st.badge}`}>{st.label}</span>
         <ItemBody item={item} />

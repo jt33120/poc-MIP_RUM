@@ -286,7 +286,7 @@ export default function ReplayPlayer({
         </div>
       )}
       {state === "loading" && (
-        <p className="py-8 text-center text-sm text-ink-faint">Chargement du replay…</p>
+        <p className="py-8 text-center text-sm text-ink-soft">Chargement du replay…</p>
       )}
       {state === "empty" && ignores > 0 && (
         <div className="py-2" data-testid="replay-empty">

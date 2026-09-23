@@ -98,3 +98,40 @@ describe("Deroule — liens d'instant du rejeu", () => {
     expect(html).not.toContain("placer le rejeu");
   });
 });
+
+// Revue de fin de vague 7 (F47) — les liens d'instant et « Chargement du replay… »
+// étaient en `ink-faint` (≈ 2,8:1 sous 18 px), que le § 3.9 réserve au décoratif.
+// Devenus des contrôles (et un état), ils passent en `ink-soft`.
+describe("Revue v7 — contrôles et états du rejeu : jamais en ink-faint (§ 3.9)", () => {
+  const ITEMS_V7 = [item("pageview", 0, { title: "/panier" }), item("error", 12, { title: "TypeError", value: 1 })];
+  const INSTANTS_V7 = { 0: `/sessions/s1?at=${T0}#evt-0`, 1: `/sessions/s1?at=${T0 + 12_000}#evt-1` };
+  const rendu = (instants?: Record<number, string>) =>
+    renderToStaticMarkup(<Deroule items={ITEMS_V7} t0={T0} voir={null} liens={{}} tronque={false} instants={instants} />);
+
+  it("les liens d'instant (en-tête de vue et ligne) sont en ink-soft", () => {
+    const liens = [...rendu(INSTANTS_V7).matchAll(/<a [^>]*data-instant=""[^>]*>/g)].map((m) => m[0]);
+    expect(liens).toHaveLength(2);
+    for (const lien of liens) {
+      expect(lien).toMatch(/class="[^"]*\btext-ink-soft\b/);
+      expect(lien).not.toContain("text-ink-faint");
+    }
+  });
+
+  it("sans rejeu, le décalage n'est pas un contrôle : un texte, qui garde sa teinte", () => {
+    const html = rendu();
+    expect(html).not.toContain("data-instant");
+    expect(html).toMatch(/<span class="[^"]*tabular-nums text-ink-faint" title="[^"]*">\+0 ms<\/span>/);
+  });
+
+  it("« Chargement du replay… » : ink-soft, dans l'îlot comme dans le lecteur", () => {
+    for (const html of [
+      renderToStaticMarkup(<ReplaySynchro sessionId="s1" atMs={T0} items={[]} marqueurs={[]} />),
+      renderToStaticMarkup(<ReplayPlayer sessionId="s1" atMs={null} marqueurs={[]} />),
+    ]) {
+      const classes = html.match(/<p class="([^"]*)">Chargement du replay…<\/p>/)?.[1];
+      expect(classes).toBeDefined();
+      expect(classes).toMatch(/\btext-ink-soft\b/);
+      expect(classes).not.toContain("text-ink-faint");
+    }
+  });
+});

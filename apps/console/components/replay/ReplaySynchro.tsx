@@ -102,7 +102,8 @@ export function ReplaySynchro({
   return (
     <div className="card min-w-0 p-4 sm:p-6" data-testid="replay-attente" data-attente={monte === null ? "decision" : "geste"}>
       <p className="mb-3 text-xs leading-relaxed text-ink-soft">{TEXTE_COUVERTURE}</p>
-      <p className={`py-6 text-center text-sm text-ink-faint ${avecGeste ? "" : "hidden sm:block"}`}>Chargement du replay…</p>
+      {/* Un état, pas une décoration : `ink-soft`, jamais `ink-faint` (≈ 2,8:1, § 3.9). */}
+      <p className={`py-6 text-center text-sm text-ink-soft ${avecGeste ? "" : "hidden sm:block"}`}>Chargement du replay…</p>
       {!avecGeste && (
         <div className="sm:hidden">
           <button type="button" className="btn-accent" onClick={() => setMonte(true)}>

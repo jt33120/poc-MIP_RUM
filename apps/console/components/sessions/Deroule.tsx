@@ -220,7 +220,7 @@ function EnteteVue({
         texte={fmtOffset(Math.max(0, new Date(vue.ts).getTime() - t0))}
         ts={vue.ts}
         instant={instant}
-        className="font-mono text-xs tabular-nums text-ink-faint"
+        className="font-mono text-xs tabular-nums"
       />
       {vitals.length > 0 && <PastillesVitals vitals={vitals} ancre={ancre} />}
     </div>
