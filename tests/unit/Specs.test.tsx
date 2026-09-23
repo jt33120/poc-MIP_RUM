@@ -6,7 +6,9 @@
 //   - un bloc h3 sous le h2 « Le détail », sans conteneur de page à lui ;
 //   - trois onglets qui sont trois radios d'un même groupe : le clavier les parcourt
 //     aux flèches, sans script ni URL (recette e2e TP6) ;
-//   - le groupe backend porte son nouveau nom.
+//   - le groupe backend porte son nouveau nom ;
+//   - la conclusion ne parle des tâches planifiées que si la LECTURE dit qu'elles
+//     sont à relancer ; une lecture en échec n'affirme rien.
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LecturePlanifie } from "@/lib/etat-planifie";
@@ -22,6 +24,7 @@ vi.mock("@/lib/queries-planifie", () => ({
 }));
 
 import { Specs } from "@/components/presentation/Specs";
+import { NON_ETABLI_PLANIFIE } from "@/lib/etat-planifie";
 import { INFRA } from "@/lib/specs";
 
 /** Texte lisible : balises retirées, entités décodées, espaces normalisées. */
@@ -64,6 +67,12 @@ describe("PS11 — Specs, un bloc de la partie « Le détail »", () => {
     expect(t).not.toContain("trois services autonomes");
   });
 
+  it("le chapeau ne promet un fichier de preuve qu'aux lignes qui décrivent le dépôt", async () => {
+    const t = texte(await rendre(ILLISIBLE));
+    expect(t).toContain("les lignes qui décrivent le dépôt portent le fichier qui les prouve");
+    expect(t).not.toContain("chaque ligne porte le fichier");
+  });
+
   it("trois onglets = trois radios d'un même groupe, la première cochée, chacune étiquetée, chaque panneau repérable", async () => {
     const html = await rendre(ILLISIBLE);
     // Attributs lus un à un : React range `name` et `checked` après `class`.
@@ -87,5 +96,31 @@ describe("PS11 — Specs, un bloc de la partie « Le détail »", () => {
 
   it("petits textes en ink-soft, pas ink-faint (§ 8.2)", async () => {
     expect(await rendre(ILLISIBLE)).not.toContain("text-ink-faint");
+  });
+});
+
+describe("PS11 — la conclusion suit la lecture du planificateur", () => {
+  it("lecture en échec : « Non établi », et rien à relancer — une inconnue n'est pas un manque", async () => {
+    const t = texte(await rendre(ILLISIBLE));
+    expect(t).toContain(NON_ETABLI_PLANIFIE);
+    expect(t).not.toContain("Tâches planifiées à relancer");
+    expect(t).not.toContain("relancer les tâches planifiées");
+    expect(t).not.toContain("brancher le déclencheur");
+    expect(t).toContain("pas de la conception : fermer l'ingestion par défaut");
+  });
+
+  it("lu, jamais exécuté : la liste et la conclusion disent toutes deux qu'il faut les relancer", async () => {
+    const t = texte(await rendre({ etat: "lu", date: null }));
+    expect(t).toContain("Tâches planifiées à relancer");
+    expect(t).toContain("pas de la conception : relancer les tâches planifiées, fermer l'ingestion par défaut");
+  });
+
+  it("lu, passage récent : ni la liste ni la conclusion n'en parlent", async () => {
+    const t = texte(await rendre({ etat: "lu", date: new Date() }));
+    expect(t).toContain("Purge par client active");
+    expect(t).not.toContain("Tâches planifiées à relancer");
+    expect(t).not.toContain("relancer les tâches planifiées");
+    expect(t).not.toContain("brancher le déclencheur");
+    expect(t).toContain("pas de la conception : fermer l'ingestion par défaut");
   });
 });

@@ -263,7 +263,7 @@ export async function Specs() {
         <p className="mt-3 leading-relaxed text-ink-soft">
           Où ça tourne, ce que ça mesure, et ce que ça vaut face aux critères d&apos;un vrai RUM.
           Les chiffres viennent du code et des mesures, pas d&apos;un document d&apos;intention —
-          et chaque ligne porte le fichier qui la prouve.
+          et les lignes qui décrivent le dépôt portent le fichier qui les prouve.
         </p>
         <p className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold">
           <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-soft">
@@ -508,11 +508,15 @@ export async function Specs() {
             </ul>
           </div>
 
+          {/* Les tâches planifiées ne figurent dans ce bilan que si la LECTURE dit
+              qu'elles sont à relancer (`planif`, lib/etat-planifie.ts) : une phrase
+              fixe l'affirmait encore alors que la ligne « scheduler » et la liste
+              ci-dessus disaient l'inverse — et une lecture en échec n'affirme rien. */}
           <p className="mt-8 rounded-xl border border-line bg-panel px-5 py-4 text-sm leading-relaxed text-ink-soft">
             <span className="font-semibold text-ink">Ce que ça veut dire.</span> La chaîne de
             mesure — collecte, ingestion, restitution — tient les critères de fond : poids,
             seuils, percentile, anonymat. Ce qui manque relève de l&apos;exploitation, pas de la
-            conception : brancher le déclencheur des tâches planifiées, fermer l&apos;ingestion
+            conception : {planif ? "relancer les tâches planifiées, " : ""}fermer l&apos;ingestion
             par défaut, activer le filet d&apos;isolation en base, rapatrier l&apos;hébergement
             chez un fournisseur de droit européen — le backend, désormais autonome, est prêt à
             être déplacé — et changer de moteur de stockage avant la montée en volume.
