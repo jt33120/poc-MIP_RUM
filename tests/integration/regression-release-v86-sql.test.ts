@@ -28,7 +28,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { parseAnalyticsQuery } from "../../apps/console/lib/query-contract";
 import type { RuleInput } from "../../apps/console/lib/queries-v2";
 // @ts-expect-error module JS partagé sans déclarations
-import { dispatchOnce, selectionSql } from "../../packages/backend/lib/dispatch-alerts.mjs";
+import { dispatchOnce as dispatchOnceProduction, selectionSql } from "../../packages/backend/lib/dispatch-alerts.mjs";
 // @ts-expect-error module JS partagé sans déclarations
 import { travaux } from "../../packages/backend/jobs/planifie.mjs";
 
@@ -38,6 +38,13 @@ const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 const V86 = readFileSync(join(SQL_DIR, "migration-v86.sql"), "utf8");
 const PHRASE = "même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte";
 const muet = { info() {}, warn() {}, error() {} };
+/**
+ * Le dispatcher, avec le `fetch` de la plateforme : le récepteur de ce test
+ * écoute sur 127.0.0.1, que `safeFetch` refuse à dessein (P1). La politique de
+ * sortie a ses propres tests (tests/unit/safe-fetch.test.ts).
+ */
+const dispatchOnce = (p: unknown, options: Record<string, unknown> = {}) =>
+  dispatchOnceProduction(p, { fetchImpl: fetch, ...options });
 
 /** Préfixe des apps de ce fichier : le nettoyage ne touche rien d'autre. */
 const PREFIXE = "b52-";

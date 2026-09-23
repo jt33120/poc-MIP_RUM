@@ -31,6 +31,7 @@
 // montée à deux répliques — avec des verrous de TRANSACTION seulement, puisque le
 // pooler Neon perd un verrou de session.
 import { importerNotesHistoriques } from "../lib/error-issue-workflow.mjs";
+import { ErreurCibleRefusee, safeFetch } from "../lib/net/safe-fetch.mjs";
 
 /**
  * Exécute une série d'étapes SANS qu'un échec annule les suivantes : une purge
@@ -73,54 +74,107 @@ export async function appelerFnSiPresente(pool, signature, fn, migration) {
   return appelerFn(pool, fn);
 }
 
+/** Sondes uptime menées de front, au plus. */
+export const CONCURRENCE_UPTIME = 10;
+/** Pause avant l'essai de confirmation d'une sonde en échec. */
+export const PAUSE_CONFIRMATION_MS = 1_000;
+
+/**
+ * Un essai de sonde. Ne lève jamais : rend le verdict et la raison.
+ *
+ * Par `safeFetch` : l'URL d'un check est saisie dans la console, et une sonde
+ * est une requête que le réseau du scheduler émet pour le compte de celui qui
+ * l'a saisie (cf. `lib/net/safe-fetch.mjs`). On juge le statut FINAL, après au
+ * plus 3 redirections revalidées. Le corps n'est pas lu : il est annulé, ce qui
+ * ferme la socket — sans connexion réutilisée, rien ne reste ouvert.
+ *
+ * `definitif` : un refus de politique ne change pas en une seconde, le
+ * confirmer serait un second refus identique.
+ */
+export async function sonderUneFois(check, { fetchImpl = safeFetch } = {}) {
+  const debut = Date.now();
+  try {
+    const res = await fetchImpl(check.url, {
+      method: check.method ?? "GET",
+      timeoutMs: check.timeout_ms ?? 10_000,
+    });
+    await res.body?.cancel().catch(() => {});
+    const ok = res.status === (check.expect_status ?? 200);
+    return { ok, statut: res.status, erreur: ok ? null : `HTTP ${res.status}`, ms: Date.now() - debut, definitif: false };
+  } catch (e) {
+    return {
+      ok: false,
+      statut: null,
+      erreur: String(e?.message ?? e).slice(0, 200),
+      ms: Date.now() - debut,
+      definitif: e instanceof ErreurCibleRefusee,
+    };
+  }
+}
+
+/** Applique `travail` à chaque élément, `limite` à la fois au plus. */
+async function enParallele(elements, limite, travail) {
+  let suivant = 0;
+  const ouvrier = async () => {
+    while (suivant < elements.length) {
+      const i = suivant++;
+      await travail(elements[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limite, elements.length) }, ouvrier));
+}
+
 /**
  * Sonde les checks actifs et enregistre le résultat.
  *
  * `record_uptime_result` gère l'alerte sur bascule UP -> DOWN : rien de cette
- * logique ne vit ici. On juge le statut FINAL (redirections suivies), et on
- * draine le corps même inutilisé — sans ça les sockets fuient, et un service
- * long finit par ne plus pouvoir sonder du tout.
+ * logique ne vit ici.
+ *
+ * CONCURRENCE BORNÉE (10). Le `Promise.all` d'origine lançait toutes les sondes
+ * d'un coup : autant de sockets et de résolutions DNS simultanées que de checks
+ * configurés, sans plafond — un tenant qui en déclare mille ouvre mille
+ * connexions depuis le scheduler, toutes les 5 minutes.
+ *
+ * CONFIRMATION AVANT DOWN. Un échec isolé (paquet perdu, redémarrage du serveur
+ * sondé, délai de 10 s dépassé une fois) déclenchait une alerte `critical`, puis
+ * une remontée au tick suivant : du bruit, et une disponibilité 24 h qui mentait.
+ * Une sonde en échec est donc rejouée une fois, après une courte pause ; seul le
+ * SECOND verdict est enregistré. Coût dans le pire cas : deux délais par check
+ * en panne, soit ~21 s par vague de 10 checks muets — avant la livraison des
+ * webhooks du même tick, dont l'échéance se mesure depuis le début du tick.
+ *
+ * `sonder` et `pauseMs` sont injectables pour les tests.
  */
-export async function sonderUptime(pool, log = console) {
+export async function sonderUptime(
+  pool,
+  log = console,
+  { sonder = sonderUneFois, concurrence = CONCURRENCE_UPTIME, pauseMs = PAUSE_CONFIRMATION_MS } = {},
+) {
   const { rows: checks } = await pool.query(
     "select id, url, method, expect_status, timeout_ms from uptime_check where enabled",
   );
 
   let lances = 0;
   let tombes = 0;
-  await Promise.all(
-    checks.map(async (c) => {
-      const debut = Date.now();
-      let ok = false;
-      let statut = null;
-      let erreur = null;
-      try {
-        const res = await fetch(c.url, {
-          method: c.method ?? "GET",
-          redirect: "follow",
-          signal: AbortSignal.timeout(c.timeout_ms ?? 10_000),
-        });
-        await res.arrayBuffer().catch(() => {});
-        statut = res.status;
-        ok = res.status === (c.expect_status ?? 200);
-        if (!ok) erreur = `HTTP ${res.status}`;
-      } catch (e) {
-        erreur = String(e?.message ?? e).slice(0, 200);
+  let rattrapes = 0;
+  await enParallele(checks, concurrence, async (c) => {
+    let r = await sonder(c);
+    if (!r.ok && !r.definitif) {
+      await new Promise((fin) => setTimeout(fin, pauseMs));
+      const confirmation = await sonder(c);
+      if (confirmation.ok) {
+        rattrapes++;
+        log.info?.("uptime : échec non confirmé", { check_id: c.id, premier: r.erreur });
       }
-      lances++;
-      if (!ok) tombes++;
-      await pool
-        .query("select record_uptime_result($1, $2, $3, $4, $5)", [
-          c.id,
-          ok,
-          statut,
-          Date.now() - debut,
-          erreur,
-        ])
-        .catch((err) => log.error?.("record_uptime_result failed", { check_id: c.id, err: String(err) }));
-    }),
-  );
-  return { ran: lances, down: tombes };
+      r = confirmation;
+    }
+    lances++;
+    if (!r.ok) tombes++;
+    await pool
+      .query("select record_uptime_result($1, $2, $3, $4, $5)", [c.id, r.ok, r.statut, r.ms, r.erreur])
+      .catch((err) => log.error?.("record_uptime_result failed", { check_id: c.id, err: String(err) }));
+  });
+  return { ran: lances, down: tombes, rattrapes };
 }
 
 /**

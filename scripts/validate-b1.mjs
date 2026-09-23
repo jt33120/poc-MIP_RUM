@@ -84,7 +84,10 @@ async function proofWebhook() {
   let bilanDispatch = null;
   let erreurDispatch = null;
   try {
-    bilanDispatch = await dispatchOnce(pool);
+    // Le récepteur écoute sur localhost, que `safeFetch` refuse à dessein (P1) :
+    // ce script prouve la chaîne de livraison, pas la politique de sortie — il
+    // passe donc le `fetch` de la plateforme. La politique a ses propres tests.
+    bilanDispatch = await dispatchOnce(pool, { fetchImpl: fetch });
   } catch (err) {
     erreurDispatch = err;
   }

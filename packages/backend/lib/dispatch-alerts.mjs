@@ -23,6 +23,14 @@
 // rejoue donc que la livraison en cours, jamais celles déjà marquées. Une passe
 // est bornée en nombre et par une échéance, pour tenir dans la minute de la route
 // cron ; ce qui reste part au passage suivant.
+//
+// SORTIE PAR `safeFetch` (P1). La cible d'une livraison est une URL saisie dans
+// la console — le webhook d'une règle ou un canal. La poster avec un `fetch` nu
+// faisait du dispatcher un relais vers le réseau privé du scheduler
+// (`*.railway.internal`, métadonnées cloud, boucle locale). Une cible refusée par
+// la politique est soldée `skipped`, comme une cible non HTTP : la rejouer cinq
+// fois avec backoff donnerait cinq fois le même refus.
+import { ErreurCibleRefusee, safeFetch } from "./net/safe-fetch.mjs";
 import { createLogger } from "../shared/log.mjs";
 
 const log = createLogger("dispatch-alerts");
@@ -141,34 +149,50 @@ export function selectionSql(v73) {
            for update of d skip locked`;
 }
 
+/** Solde une livraison qui ne partira jamais : état terminal, sans tentative comptée. */
+async function solderSkipped(client, d, motif, bilan) {
+  await client.query(
+    "update alert_delivery set status = 'skipped', response = $1, attempted_at = now() where id = $2",
+    [motif.slice(0, 200), d.id],
+  );
+  bilan.skipped++;
+  log.warn("delivery", { id: d.id, status: "skipped", response: motif });
+}
+
 /**
- * Livre une livraison réservée : cible non HTTP soldée `skipped`, sinon POST borné
- * par le temps restant, puis statut. Le client est celui de la transaction qui
- * tient la réservation.
+ * Livre une livraison réservée : cible non HTTP ou refusée par la politique de
+ * sortie soldée `skipped`, sinon POST borné par le temps restant, puis statut.
+ * Le client est celui de la transaction qui tient la réservation.
  */
-async function livrer(client, d, resteMs, bilan) {
+async function livrer(client, d, resteMs, bilan, fetchImpl) {
   if (!cibleHttp(d.target)) {
-    await client.query(
-      "update alert_delivery set status = 'skipped', response = $1, attempted_at = now() where id = $2",
-      ["cible non HTTP : le dispatcher local ne livre que des webhooks", d.id],
-    );
-    bilan.skipped++;
-    log.warn("delivery", { id: d.id, status: "skipped", response: "cible non HTTP" });
+    await solderSkipped(client, d, "cible non HTTP : le dispatcher local ne livre que des webhooks", bilan);
     return;
   }
   let ok = false;
   let response;
+  const delai = Math.min(TIMEOUT_MS, resteMs);
   try {
-    const res = await fetch(d.target, {
+    const res = await fetchImpl(d.target, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payloadOf(d)),
-      signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, resteMs)),
+      // Les deux : `signal` pour un `fetch` injecté, `timeoutMs` pour `safeFetch`,
+      // dont le délai propre (10 s) couperait sinon un DISPATCH_TIMEOUT_MS plus long.
+      signal: AbortSignal.timeout(delai),
+      timeoutMs: delai,
     });
     response = `http ${res.status}`;
     ok = res.ok;
+    // Seul le statut compte : le corps est annulé, ce qui ferme la connexion.
+    await res.body?.cancel().catch(() => {});
   } catch (err) {
-    response = String(err.cause?.code ?? err.message).slice(0, 200);
+    if (err instanceof ErreurCibleRefusee) {
+      await solderSkipped(client, d, err.message, bilan);
+      return;
+    }
+    // `fetch` range le code système dans `cause`, `node:http` sur l'erreur même.
+    response = String(err.cause?.code ?? err.code ?? err.message).slice(0, 200);
   }
   const status = decideStatus(ok, d.attempts ?? 0);
   await client.query(
@@ -191,9 +215,15 @@ async function livrer(client, d, resteMs, bilan) {
  * Traite une passe de livraisons en attente, une transaction par livraison.
  * `echeance` (ms epoch) : aucune livraison n'est entamée au-delà ; par défaut
  * `budgetMs` après l'appel. Le tick passe la sienne, mesurée depuis son début.
+ * `fetchImpl` : `safeFetch` en production. Un test qui livre à un récepteur sur
+ * 127.0.0.1 — que la politique refuse, à dessein — passe le `fetch` de la
+ * plateforme ; la politique elle-même est testée à part (safe-fetch.test.ts).
  * @returns {Promise<{sent:number, failed:number, dead:number, skipped:number}>}
  */
-export async function dispatchOnce(pool, { lot = LOT, budgetMs = BUDGET_MS, echeance = Date.now() + budgetMs } = {}) {
+export async function dispatchOnce(
+  pool,
+  { lot = LOT, budgetMs = BUDGET_MS, echeance = Date.now() + budgetMs, fetchImpl = safeFetch } = {},
+) {
   const bilan = { sent: 0, failed: 0, dead: 0, skipped: 0 };
   const { rows: [schema] } = await pool.query(
     "select to_regclass('public.error_issue_notification') is not null as v73",
@@ -210,7 +240,7 @@ export async function dispatchOnce(pool, { lot = LOT, budgetMs = BUDGET_MS, eche
         await client.query("commit");
         break;
       }
-      await livrer(client, d, reste, bilan);
+      await livrer(client, d, reste, bilan, fetchImpl);
       await client.query("commit");
     } catch (err) {
       await client.query("rollback").catch(() => {});

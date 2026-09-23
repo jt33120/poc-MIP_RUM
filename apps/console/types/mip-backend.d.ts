@@ -508,11 +508,75 @@ declare module "@mip/backend/lib/dispatch-alerts.mjs" {
     maxAttempts?: number,
   ): "delivered" | "failed" | "dead";
 
-  /** Poste les livraisons 'queued' + les 'failed' rééligibles ; met à jour leur statut. */
+  /**
+   * Poste les livraisons 'queued' + les 'failed' rééligibles ; met à jour leur
+   * statut. `fetchImpl` vaut `safeFetch` : une cible refusée est soldée `skipped`.
+   */
   export function dispatchOnce(
     pool: Pool,
-    opts?: { lot?: number; budgetMs?: number; echeance?: number },
+    opts?: { lot?: number; budgetMs?: number; echeance?: number; fetchImpl?: typeof fetch },
   ): Promise<{ sent: number; failed: number; dead: number; skipped: number }>;
+}
+
+// P1 — sorties HTTP vers une URL saisie par un utilisateur (uptime, webhooks).
+// La console n'en appelle que la partie SANS RÉSEAU, à l'écriture : un message
+// clair au lieu d'un refus muet au premier tick du scheduler.
+declare module "@mip/backend/lib/net/safe-fetch.mjs" {
+  export type CodeRefus =
+    | "url_invalide"
+    | "protocole"
+    | "identifiants"
+    | "ip_litterale"
+    | "hote_interne"
+    | "adresse_interdite"
+    | "redirections";
+
+  export const MAX_REDIRECTIONS: number;
+  export const TIMEOUT_DEFAUT_MS: number;
+  export const CORPS_MAX_OCTETS: number;
+  export const MOTIFS_REFUS: Readonly<Record<CodeRefus, string>>;
+
+  /** Le texte d'un code de refus ; null pour un code inconnu (jamais d'écho brut). */
+  export function motifDeRefus(code: unknown): string | null;
+
+  export class ErreurCibleRefusee extends Error {
+    readonly code: CodeRefus;
+    readonly detail: string | null;
+    constructor(code: CodeRefus, detail?: string | null);
+  }
+
+  /** Pourquoi une adresse IP est interdite comme destination, ou null si elle est publique. */
+  export function motifAdresseInterdite(adresse: string): string | null;
+
+  /** Contrôle SANS RÉSEAU d'une URL sortante (celui de l'écriture). */
+  export function verifierUrlSortante(
+    texte: unknown,
+  ): { ok: true; url: URL } | { ok: false; code: CodeRefus; message: string };
+
+  export interface OptionsResolution {
+    resoudre?: (nom: string) => Promise<Array<{ address: string; family?: number } | string>>;
+    adresseRefusee?: (adresse: string) => string | null;
+    signal?: AbortSignal;
+  }
+
+  /** Contrôle complet : l'URL, puis chaque adresse résolue. */
+  export function verifierCible(
+    texte: string | URL,
+    options?: OptionsResolution,
+  ): Promise<{ url: URL; adresses: Array<{ address: string; family: 4 | 6 }> }>;
+
+  /** `fetch` restreint aux destinations publiques, connexion épinglée, 3 redirections revalidées. */
+  export function safeFetch(
+    entree: string | URL,
+    options?: OptionsResolution & {
+      method?: string;
+      headers?: HeadersInit;
+      body?: string | Uint8Array | ArrayBuffer | URLSearchParams | null;
+      timeoutMs?: number;
+      redirect?: "follow" | "manual";
+      maxCorpsOctets?: number;
+    },
+  ): Promise<Response>;
 }
 
 declare module "@mip/backend/lib/error-issue-workflow.mjs" {
@@ -564,7 +628,31 @@ declare module "@mip/backend/jobs/planifie.mjs" {
 
   export function appelerFn(pool: Pool, fn: string): Promise<unknown>;
 
-  export function sonderUptime(pool: Pool, log?: unknown): Promise<{ ran: number; down: number }>;
+  /** Sondes uptime menées de front, au plus. */
+  export const CONCURRENCE_UPTIME: number;
+  /** Pause avant l'essai de confirmation d'une sonde en échec. */
+  export const PAUSE_CONFIRMATION_MS: number;
+
+  export interface VerdictSonde {
+    ok: boolean;
+    statut: number | null;
+    erreur: string | null;
+    ms: number;
+    /** Refus de politique : pas de second essai. */
+    definitif: boolean;
+  }
+
+  export function sonderUneFois(
+    check: { url: string; method?: string | null; expect_status?: number | null; timeout_ms?: number | null },
+    opts?: { fetchImpl?: (url: string, init: { method: string; timeoutMs: number }) => Promise<Response> },
+  ): Promise<VerdictSonde>;
+
+  /** Concurrence bornée ; une sonde en échec est confirmée par un second essai avant DOWN. */
+  export function sonderUptime(
+    pool: Pool,
+    log?: unknown,
+    opts?: { sonder?: (check: unknown) => Promise<VerdictSonde>; concurrence?: number; pauseMs?: number },
+  ): Promise<{ ran: number; down: number; rattrapes: number }>;
 
   /** Délai, depuis le début d'un tick, au-delà duquel aucune livraison n'est entamée. */
   export const ECHEANCE_LIVRAISON_MS: number;
