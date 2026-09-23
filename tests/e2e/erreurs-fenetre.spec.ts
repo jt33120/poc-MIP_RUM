@@ -114,6 +114,10 @@ async function loginConsole(page: Page) {
 
 const occurrencesDe = (page: Page, fp: string) =>
   page.locator(`[data-testid="error-group-${fp}"] [data-testid="group-occurrences"]`);
+// Depuis F19, une cellule de liste porte aussi son libellé (« Occurrences »), affiché
+// seulement en carte, sous 640 px : on lit le texte RENDU (`innerText`), pas celui du
+// DOM, qui donnait « Occurrences400 » (même lecture que error-tracking et error-issues).
+const RENDU = { useInnerText: true } as const;
 
 test("les compteurs suivent la fenêtre — et le vieux bug sort de l'écran", async ({ page }) => {
   await loginConsole(page);
@@ -121,8 +125,8 @@ test("les compteurs suivent la fenêtre — et le vieux bug sort de l'écran", a
   // ── 7 jours : tout est là ────────────────────────────────────────────────
   await page.goto(`http://localhost:3000/errors?app=${APP_ID}&period=7d`);
   await expect(page.locator(`[data-testid="error-group-${FP_VIEUX}"]`)).toBeVisible();
-  await expect(occurrencesDe(page, FP_VIEUX)).toHaveText("400");
-  await expect(occurrencesDe(page, FP_JOUR)).toHaveText("10");
+  await expect(occurrencesDe(page, FP_VIEUX)).toHaveText("400", RENDU);
+  await expect(occurrencesDe(page, FP_JOUR)).toHaveText("10", RENDU);
 
   // ── 24 heures : le bug d'il y a 5 jours DISPARAÎT ────────────────────────
   // C'est le cœur du finding. Avant, il restait là avec ses 400 occurrences,
@@ -130,7 +134,7 @@ test("les compteurs suivent la fenêtre — et le vieux bug sort de l'écran", a
   await page.goto(`http://localhost:3000/errors?app=${APP_ID}&period=24h`);
   await expect(page.locator(`[data-testid="error-group-${FP_JOUR}"]`)).toBeVisible();
   await expect(page.locator(`[data-testid="error-group-${FP_VIEUX}"]`)).toHaveCount(0);
-  await expect(occurrencesDe(page, FP_JOUR)).toHaveText("10");
+  await expect(occurrencesDe(page, FP_JOUR)).toHaveText("10", RENDU);
 });
 
 test("la tuile d'occurrences dit la vérité sur sa propre fenêtre", async ({ page }) => {
