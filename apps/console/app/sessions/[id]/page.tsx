@@ -276,21 +276,23 @@ export default async function SessionDetail({
       </SectionErreur>
 
       {/* Y2 — résumé chiffré. */}
-      <Resume
-        resume={resume}
-        dureeMs={dureeObservee(meta.started_at, meta.last_seen_at)}
-        active={encoreActive(meta.last_seen_at, nowMs)}
-        pages={meta.page_count}
-        occurrencesParLigne={occurrencesLisibles(timeline)}
-        mobile={meta.runtime === RUNTIME_MOBILE}
-        hrefs={{
-          // Chaque tuile ouvre le Déroulé filtré sur SA nature (§ 5.12.4).
-          vues: hrefOnglet("deroule", { ancre: "chronologie", voir: ["vue"] }),
-          frustration: hrefOnglet("deroule", { ancre: "chronologie", voir: ["frustration"] }),
-          erreurs: hrefOnglet("erreurs"),
-          api: hrefOnglet("api"),
-        }}
-      />
+      <SectionErreur titre="Résumé de la session">
+        <Resume
+          resume={resume}
+          dureeMs={dureeObservee(meta.started_at, meta.last_seen_at)}
+          active={encoreActive(meta.last_seen_at, nowMs)}
+          pages={meta.page_count}
+          occurrencesParLigne={occurrencesLisibles(timeline)}
+          mobile={meta.runtime === RUNTIME_MOBILE}
+          hrefs={{
+            // Chaque tuile ouvre le Déroulé filtré sur SA nature (§ 5.12.4).
+            vues: hrefOnglet("deroule", { ancre: "chronologie", voir: ["vue"] }),
+            frustration: hrefOnglet("deroule", { ancre: "chronologie", voir: ["frustration"] }),
+            erreurs: hrefOnglet("erreurs"),
+            api: hrefOnglet("api"),
+          }}
+        />
+      </SectionErreur>
 
       {/* Y3 — onglets comptés ; un compte inconnu s'écrit « (—) », jamais « (0) ». */}
       {[ignore, ignoreVoir].filter(Boolean).map((ligne) => (
@@ -311,13 +313,17 @@ export default async function SessionDetail({
         <div className={`grid gap-4 ${avecRejeu ? "xl:grid-cols-5" : ""}`} data-testid="deroule">
           {avecRejeu && (
             <div className="min-w-0 xl:col-span-3">
-              <ReplaySynchro
-                sessionId={meta.session_id}
-                atMs={at}
-                items={lignesSynchro(timeline, ancreEvenement, (it) => lignesVisibles.has(it))}
-                marqueurs={marqueursDeSession(timeline)}
-                demande={premier(sp.tab) === "replay"}
-              />
+              {/* F54 : un îlot client qui casse (lecteur rrweb) n'emporte plus l'écran —
+                  la chronologie, les tuiles et les onglets restent lisibles. */}
+              <SectionErreur titre="Rejeu de la session">
+                <ReplaySynchro
+                  sessionId={meta.session_id}
+                  atMs={at}
+                  items={lignesSynchro(timeline, ancreEvenement, (it) => lignesVisibles.has(it))}
+                  marqueurs={marqueursDeSession(timeline)}
+                  demande={premier(sp.tab) === "replay"}
+                />
+              </SectionErreur>
             </div>
           )}
           <section
@@ -338,14 +344,16 @@ export default async function SessionDetail({
                 ni l&apos;identifiant de trace. Les onglets Erreurs et Appels API listent les mêmes lignes.
               </p>
             )}
-            <Deroule
-              items={timeline}
-              t0={t0}
-              voir={voir}
-              liens={liensChronologie}
-              tronque={resume.tronquee}
-              instants={avecRejeu ? instantsChronologie : undefined}
-            />
+            <SectionErreur titre="Chronologie de la session">
+              <Deroule
+                items={timeline}
+                t0={t0}
+                voir={voir}
+                liens={liensChronologie}
+                tronque={resume.tronquee}
+                instants={avecRejeu ? instantsChronologie : undefined}
+              />
+            </SectionErreur>
           </section>
         </div>
       )}
@@ -869,28 +877,30 @@ function OngletVitaux({
           }}
         />
       )}
-      <section
-        aria-label="Pire mesure de chaque Web Vital"
-        className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5"
-        data-testid="vitaux-tuiles"
-      >
-        {vitaux.pires.map((p) => {
-          const s = situations.get(p.vital);
-          return (
-            <KpiTile
-              key={p.vital}
-              label={`${p.vital} · pire vue`}
-              valeur={p.pire.valeur}
-              format={formatDuVital(p.vital)}
-              // Zone de seuil de CETTE mesure (lib/rating.ts) ; la lecture dit que ce
-              // n'est pas le verdict d'une page, qui se lit au p75 (R-V).
-              vital={p.vital}
-              href={s?.kind === "lue" ? s.href : undefined}
-              lecture={`${p.n > 1 ? `pire de ${formater("count", p.n)} mesures` : "une mesure"}, à ${decalage(p.pire.ts, t0)} · zone de seuil de la mesure, pas un p75.`}
-            />
-          );
-        })}
-      </section>
+      <SectionErreur titre="Pire mesure de chaque Web Vital">
+        <section
+          aria-label="Pire mesure de chaque Web Vital"
+          className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5"
+          data-testid="vitaux-tuiles"
+        >
+          {vitaux.pires.map((p) => {
+            const s = situations.get(p.vital);
+            return (
+              <KpiTile
+                key={p.vital}
+                label={`${p.vital} · pire vue`}
+                valeur={p.pire.valeur}
+                format={formatDuVital(p.vital)}
+                // Zone de seuil de CETTE mesure (lib/rating.ts) ; la lecture dit que ce
+                // n'est pas le verdict d'une page, qui se lit au p75 (R-V).
+                vital={p.vital}
+                href={s?.kind === "lue" ? s.href : undefined}
+                lecture={`${p.n > 1 ? `pire de ${formater("count", p.n)} mesures` : "une mesure"}, à ${decalage(p.pire.ts, t0)} · zone de seuil de la mesure, pas un p75.`}
+              />
+            );
+          })}
+        </section>
+      </SectionErreur>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {vitaux.pires.map((p) => (

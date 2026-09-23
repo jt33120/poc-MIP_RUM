@@ -307,13 +307,17 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
         </SectionErreur>
       </div>
 
-      {/* Fm5 — attend B34 : la lecture ne renvoie ni `ts` ni `session_id`. */}
-      <Figure
-        id="forms-serie"
-        titre="Abandons dans le temps"
-        meta={meta()}
-        etat={{ kind: "partiel", raison: "série à créer (B34) : la lecture actuelle ne renvoie pas l'horodatage des événements" }}
-      />
+      {/* Fm5 — attend B34 : la lecture ne renvoie ni `ts` ni `session_id`. Sa frontière
+          est posée comme autour de chaque figure (F54, § 3.8) : la série, quand B34 la
+          livrera, ne pourra pas faire tomber l'écran. */}
+      <SectionErreur titre="Abandons dans le temps">
+        <Figure
+          id="forms-serie"
+          titre="Abandons dans le temps"
+          meta={meta()}
+          etat={{ kind: "partiel", raison: "série à créer (B34) : la lecture actuelle ne renvoie pas l'horodatage des événements" }}
+        />
+      </SectionErreur>
     </div>
   );
 }

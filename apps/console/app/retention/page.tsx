@@ -164,29 +164,31 @@ export default async function Retention({ searchParams }: { searchParams: Promis
       )}
 
       {/* R2 — une rangée, une population : les visiteurs identifiés (sauf la 4e tuile, dite). */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="retention-kpi">
-        <KpiTile
-          label="Visiteurs identifiés suivis"
-          valeur={cohortes.ok ? totalVisiteurs : null}
-          format="count"
-          raisonNull="lecture des cohortes en échec"
-          sensMeilleur="neutre"
-          lecture={
-            cohortes.ok
-              ? `${nombre(totalVisiteurs)} visiteurs identifiés, en ${nombre(rows.length)} cohorte${rows.length > 1 ? "s" : ""} hebdomadaire${rows.length > 1 ? "s" : ""}, sur ${weeks} semaines.`
-              : undefined
-          }
-        />
-        {tuileRetour(courbe[1], 1, cohortes.ok)}
-        {tuileRetour(courbe[4], 4, cohortes.ok)}
-        <KpiTile
-          label="Sessions sans identifiant, hors matrice"
-          valeur={null}
-          format="count"
-          raisonNull="non lu : la lecture est à créer (B35)"
-          sensMeilleur="neutre"
-        />
-      </div>
+      <SectionErreur titre="Chiffres clés">
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="retention-kpi">
+          <KpiTile
+            label="Visiteurs identifiés suivis"
+            valeur={cohortes.ok ? totalVisiteurs : null}
+            format="count"
+            raisonNull="lecture des cohortes en échec"
+            sensMeilleur="neutre"
+            lecture={
+              cohortes.ok
+                ? `${nombre(totalVisiteurs)} visiteurs identifiés, en ${nombre(rows.length)} cohorte${rows.length > 1 ? "s" : ""} hebdomadaire${rows.length > 1 ? "s" : ""}, sur ${weeks} semaines.`
+                : undefined
+            }
+          />
+          {tuileRetour(courbe[1], 1, cohortes.ok)}
+          {tuileRetour(courbe[4], 4, cohortes.ok)}
+          <KpiTile
+            label="Sessions sans identifiant, hors matrice"
+            valeur={null}
+            format="count"
+            raisonNull="non lu : la lecture est à créer (B35)"
+            sensMeilleur="neutre"
+          />
+        </div>
+      </SectionErreur>
 
       <BandeauEchantillonnage lecture={echantillonnage} />
 
