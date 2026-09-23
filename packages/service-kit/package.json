@@ -1,0 +1,25 @@
+{
+  "name": "@mip/service-kit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Le kit commun des services Railway de MIP RUM : configuration à échec immédiat, journal JSON, serveur HTTP avec sondes, arrêt propre, pool Postgres, métriques Prometheus, boucle de travail, adaptateur Request/Response. Des fonctions, pas un framework — et ZÉRO dépendance : `pg` est passé en paramètre.",
+  "type": "module",
+  "exports": {
+    "./config.mjs": "./config.mjs",
+    "./context.mjs": "./context.mjs",
+    "./http.mjs": "./http.mjs",
+    "./lifecycle.mjs": "./lifecycle.mjs",
+    "./log.mjs": "./log.mjs",
+    "./loop.mjs": "./loop.mjs",
+    "./metrics.mjs": "./metrics.mjs",
+    "./pg.mjs": "./pg.mjs",
+    "./web.mjs": "./web.mjs"
+  },
+  "files": [
+    "*.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  }
+}
