@@ -89,7 +89,11 @@ async function principal() {
   await mkdir(DOSSIER, { recursive: true });
   const url = `${BASE_URL}/${version}.csv.gz`;
   process.stderr.write(`téléchargement ${url}\n`);
-  const reponse = await fetch(url);
+  // Borné : l'image collector appelle ce script à la construction
+  // (services/collector/Dockerfile). Un db-ip.com qui accepte la connexion et
+  // ne répond plus tiendrait sinon le déploiement entier en otage, pour une
+  // base qui reste optionnelle.
+  const reponse = await fetch(url, { signal: AbortSignal.timeout(120_000) });
   if (!reponse.ok) sortie(1, `téléchargement refusé : HTTP ${reponse.status}`);
   const octets = Buffer.from(await reponse.arrayBuffer());
   const mesure = mesurer(octets, version);

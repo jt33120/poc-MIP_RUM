@@ -1,5 +1,6 @@
-# Contexte de build Docker = racine du repo (cf. infra/docker/docker-compose.yml).
-# On exclut tout ce qui alourdit le contexte sans être copié par un Dockerfile.
+# Contexte de build Docker = racine du dépôt (services/<x>/Dockerfile, compose
+# d'infra/docker, Railway). Ce qui suit n'entre jamais dans le contexte : soit
+# c'est lourd et reconstruit dans l'image, soit ça n'a rien à y faire.
 **/node_modules
 **/.next
 **/dist
@@ -7,9 +8,31 @@
 **/.turbo
 .git
 **/*.log
-**/.env
-**/.env.*
-!**/.env.example
 **/playwright-report
 **/test-results
 scratchpad
+
+# SECRETS. `.env` porte le DATABASE_URL de production : il ne doit atteindre
+# aucune étape d'aucune image, pas même celle de construction qu'on jette.
+**/.env
+**/.env.*
+!**/.env.example
+.secrets-*
+**/*.pem
+
+# L'outillage local des agents : `.claude/worktrees/` héberge des copies
+# COMPLÈTES du dépôt, qui multiplieraient le contexte sans rien apporter.
+.claude
+.agents
+.codex
+_bmad
+_bmad-output
+graft
+.mcp.json
+
+# UNE BASE GEOIP DÉPOSÉE À LA MAIN (`node scripts/fetch-geoip-db.mjs`) reste sur
+# le poste. L'image collector télécharge et vérifie la sienne contre le
+# manifeste ; sans cette ligne, le contenu de l'image dépendrait de ce qui
+# traîne dans le dossier de celui qui construit.
+packages/backend/data/dbip-country-lite-*.csv
+packages/backend/data/dbip-country-lite-*.csv.gz
