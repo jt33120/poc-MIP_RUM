@@ -197,14 +197,20 @@ test("scripts bloquants : classés par blocage CUMULÉ, pas par pire cas", async
   await loginConsole(page);
   await page.goto(`http://localhost:3000/ux?app=${APP_ID}&period=24h`);
 
-  const table = page.locator("table", { hasText: "Fonction / invocation" });
-  await expect(table).toBeVisible();
+  // F23 (§ 5.4.2) : la table d'avant est devenue un classement en BARRES (`RankBar`),
+  // une barre par couple script × fonction, dans l'ordre du classement ; ses cinq
+  // colonnes vivent dans l'alternative textuelle, repliée. On lit les barres.
+  const figure = page.locator("#scripts-bloquants");
+  await figure.scrollIntoViewIfNeeded();
+  await expect(figure).toContainText("classement par blocage cumulé");
+  const barres = figure.getByRole("img", { name: /Blocage cumulé/ });
+  await expect(barres).toBeVisible();
 
   // widget-tiers : 8 × 60 = 480 ms cumulés, pire cas 60.
   // panier      : 1 × 300 = 300 ms cumulés, pire cas 300.
-  // Un classement par PIRE CAS mettrait panier.js en tête ; le tableau annonce
+  // Un classement par PIRE CAS mettrait panier.js en tête ; la figure annonce
   // le cumul, donc widget-tiers doit passer devant. C'est tout l'objet du choix.
-  const lignes = table.locator("tbody tr");
+  const lignes = barres.locator(":scope > div");
   await expect(lignes.first()).toContainText("widget-tiers.js");
   await expect(lignes.first()).toContainText("app.e2e.fr"); // l'hôte, sous le fichier
   await expect(lignes.first()).toContainText("480 ms");
