@@ -79,8 +79,22 @@ function verifierSource(source: SourceComparaison): void {
  * release, environnement, service ; v85 : provenance du pays). Les lignes plus
  * anciennes les portent à NULL : sous un filtre sur l'une d'elles, la période
  * précédente n'est mesurée que depuis que CETTE colonne est collectée.
+ *
+ * B8 : les dimensions de lecture de la session suivent la même règle — `runtime`
+ * (v82), `browser_version` et `os_version` (v75), `net_type` (v53).
  */
-const COLONNES_RECENTES: ReadonlySet<string> = new Set(["browser", "os", "release", "env", "service", "geo_source"]);
+const COLONNES_RECENTES: ReadonlySet<string> = new Set([
+  "browser",
+  "os",
+  "release",
+  "env",
+  "service",
+  "geo_source",
+  "runtime",
+  "browser_version",
+  "os_version",
+  "net_type",
+]);
 
 /**
  * Sources à évaluer pour une rangée sous les filtres actifs : la source elle-même,

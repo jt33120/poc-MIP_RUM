@@ -63,6 +63,16 @@ const SESSION_DIMENSIONS: Partial<Record<Dimension, DimensionColumn>> = {
   source: sessionColumn("collection_source"),
   browser: sessionColumn("browser"),
   os: sessionColumn("os"),
+  // B8 : colonnes déjà collectées sur la session, devenues dimensions de lecture.
+  // `runtime` (v82) est la population de l'écran /mobile ; NULL = émetteur non
+  // reconnu, « Inconnu », jamais « web ». `browser_version` / `os_version` (v75)
+  // sont des versions MAJEURES. `net_type` (v53) est une estimation du navigateur,
+  // NULL hors Chromium. Une base où la colonne manque la déclare « pas encore
+  // collectée » (sonde de schéma) : le filtre est refusé, jamais ignoré.
+  runtime: sessionColumn("runtime"),
+  browser_version: sessionColumn("browser_version"),
+  os_version: sessionColumn("os_version"),
+  net_type: sessionColumn("net_type"),
 };
 
 // Release et env sont des instantanés PAR OCCURRENCE (la release de la session est

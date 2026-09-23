@@ -252,3 +252,24 @@ describe("releasesComparables", () => {
     expect(releasesComparables(rows)).toEqual(["1.4.2", "1.4.1"]);
   });
 });
+
+describe("B8 — dimensions de lecture de la session sous comparaison", () => {
+  const SESSIONS_B8: Source = { table: "rum_session", colonneTemps: "started_at", additive: true };
+  const ERREURS_B8: Source = { table: "rum_error", colonneTemps: "ts", additive: true };
+
+  it("runtime (v82), versions (v75), type de réseau (v53) : le début de collecte de LEUR colonne décide", () => {
+    for (const dimension of ["runtime", "browser_version", "os_version", "net_type"]) {
+      expect(sourcesSousFiltres(requete(`period=7d&seg=v2:${dimension}:eq:x`), SESSIONS_B8), dimension).toEqual([
+        SESSIONS_B8,
+        { ...SESSIONS_B8, colonneRequise: dimension },
+      ]);
+    }
+    // Sous une table d'occurrences, la colonne de session se juge sur rum_session.
+    expect(sourcesSousFiltres(requete("period=7d&seg=v2:runtime:eq:react_native"), ERREURS_B8)).toEqual([
+      ERREURS_B8,
+      { table: "rum_session", colonneTemps: "started_at", colonneRequise: "runtime", additive: true },
+    ]);
+    // « Inconnu » n'exige pas la colonne : l'historique NULL en fait partie.
+    expect(sourcesSousFiltres(requete("period=7d&seg=v2:runtime:is_null"), SESSIONS_B8)).toEqual([SESSIONS_B8]);
+  });
+});
