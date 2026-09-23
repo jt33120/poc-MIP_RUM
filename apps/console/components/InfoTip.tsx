@@ -19,7 +19,8 @@
 // ÉCHAP LA FERME (F69, WCAG 1.4.13). Ouverte au focus, elle restait ouverte tant
 // que le focus restait sur l'icône : rien ne la masquait sans quitter l'icône.
 // L'îlot `InfoTipEchap` pose `data-ferme` sur le groupe à l'appui d'Échap
-// (`group-data-[ferme]:!hidden`) et le retire quand le focus ou le pointeur s'en va.
+// (`group-data-[ferme]:!hidden`) et le retire quand le groupe n'est plus NI survolé
+// NI focalisé (le pointeur qui sort ne rouvre pas une bulle dont l'icône garde le focus).
 import { ICON_PATHS, Icon, type IconName } from "./icons";
 import { InfoTipEchap } from "./InfoTipEchap";
 

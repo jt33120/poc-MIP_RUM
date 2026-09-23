@@ -46,13 +46,17 @@ export function annotationsIndisponibles(range: Pick<ResolvedRange, "preset">): 
   return range.preset === null ? RAISON_B1 : null;
 }
 
+/** Ce qu'une annotation lit d'un marqueur ; `app_id` quand la lecture le porte. */
+type MarqueurDeploiement = Pick<DeployRow, "ts" | "version"> & { app_id?: string };
+
 export interface OptionsDeploiements {
   /**
    * Lien d'une annotation de déploiement (§ 3.3) : écran courant avec
    * `cmp=release&rel_b=<version>&rel_a=<version précédente>` — calculé par
-   * l'appelant (`hrefWithQuery`), qui connaît l'écran et la requête.
+   * l'appelant (`hrefWithQuery`), qui connaît l'écran et la requête. `app` : l'app
+   * du marqueur, quand la lecture la porte (une release n'existe que dans son app).
    */
-  lien: (relB: string, relA: string | null) => string;
+  lien: (relB: string, relA: string | null, app?: string) => string;
   /** Destination de l'annotation regroupée : la liste des déploiements (ancre, panneau…). */
   lienListe?: string;
 }
@@ -76,7 +80,7 @@ export interface AnnotationsDeploiements {
  * le déploiement d'avant peut précéder la plage affichée.
  */
 export function annotationsDeploiements(
-  deploys: readonly Pick<DeployRow, "ts" | "version">[],
+  deploys: readonly MarqueurDeploiement[],
   range: Pick<ResolvedRange, "from" | "to" | "preset">,
   options: OptionsDeploiements,
 ): AnnotationsDeploiements {
@@ -85,7 +89,7 @@ export function annotationsDeploiements(
 
   const tries = deploys
     .map((d) => ({ d, ms: instant(d.ts) }))
-    .filter((x): x is { d: Pick<DeployRow, "ts" | "version">; ms: number } => x.ms !== null)
+    .filter((x): x is { d: MarqueurDeploiement; ms: number } => x.ms !== null)
     .sort((a, b) => b.ms - a.ms);
 
   const liste: Annotation[] = [];
@@ -97,7 +101,7 @@ export function annotationsDeploiements(
       return;
     }
     const precedente = tries.slice(i + 1).find((x) => x.d.version && x.d.version !== d.version)?.d.version ?? null;
-    liste.push({ t, libelle: d.version, type: "deploiement", href: options.lien(d.version, precedente) });
+    liste.push({ t, libelle: d.version, type: "deploiement", href: options.lien(d.version, precedente, d.app_id) });
   });
   liste.reverse();
 

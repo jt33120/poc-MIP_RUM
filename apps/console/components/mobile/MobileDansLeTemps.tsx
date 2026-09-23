@@ -2,11 +2,12 @@
 // Rendu serveur : le cadre (`Figure`), les états et l'alternative ; les deux
 // panneaux sont des `ThresholdSeries` (client) qui partagent l'axe x.
 //
-// LA MÊME COHORTE QUE LES TUILES. Les seaux viennent de `mobileSerie`, qui découpe
-// la cohorte de l'écran (runtime déclaré `react_native`, sessions COMMENCÉES dans
-// la fenêtre, release lue sur la session) dans la même photographie que le résumé :
-// la somme des barres du premier panneau est la tuile « Sessions React Native
-// commencées », celle du second la tuile « Occurrences d'erreurs JS ».
+// LA MÊME COHORTE QUE LES TUILES. Les seaux viennent de `mobileResumeEtSerie`, qui
+// découpe la cohorte de l'écran (runtime déclaré `react_native`, sessions COMMENCÉES
+// dans la fenêtre, release lue sur la session) dans la MÊME transaction que le
+// résumé : la somme des barres du premier panneau est la tuile « Sessions React
+// Native commencées », celle du second la tuile « Occurrences d'erreurs JS » — le
+// texte de lecture l'affirme, et c'est cette transaction commune qui le garantit.
 //
 // DEUX PANNEAUX, UN AXE CHACUN (P5). Des sessions et des occurrences ne se lisent
 // pas sur la même échelle : le croisement de deux courbes sur deux axes dépendrait

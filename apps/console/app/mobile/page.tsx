@@ -22,14 +22,15 @@
 // fait exact de la session mobile).
 //
 // Toutes les mesures portent sur la même cohorte (`runtime = 'react_native'`,
-// sessions COMMENCÉES dans la fenêtre) et la même photographie en lecture
-// répétable (lib/queries-mobile.ts). Seuls `device`, `os` et `release`
+// sessions COMMENCÉES dans la fenêtre), chaque lecture dans une photographie en
+// lecture répétable (lib/queries-mobile.ts). Seuls `device`, `os` et `release`
 // s'appliquent (lib/surfaces.ts) ; les vues préréglées ne posent que `os` ou
 // `release` — le formulaire « Plateforme » a disparu (§ 3.1, règle 4).
 //
 // DANS LE TEMPS, ET AILLEURS (F39, après B8). La série « Sessions et erreurs JS
-// dans le temps » découpe la même cohorte, seau par seau (`mobileSerie`) : la somme
-// des barres est la tuile. Depuis que le runtime est une dimension de lecture
+// dans le temps » découpe la même cohorte, seau par seau, et se lit dans la MÊME
+// photographie que les tuiles (`mobileResumeEtSerie`, revue de fin de vague 8) :
+// la somme des barres est la tuile. Depuis que le runtime est une dimension de lecture
 // (`seg=v2:runtime:eq:react_native`, B8), la cohorte s'ouvre aussi sur /sessions,
 // sur /pages et dans l'Explorer — seulement là où l'écran cible applique le filtre
 // de bout en bout ; sinon la raison est écrite à la place du lien.
@@ -89,11 +90,11 @@ import {
 } from "@/lib/query-contract";
 import { ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
 import { lireComparaison, lireTri } from "@/lib/view-state";
-import { annotationsDeploiements } from "@/lib/annotations";
 import { explorerPlanParams } from "@/lib/explorer-page-params";
 import { lienCohorte } from "@/lib/mobile-capabilities";
-import { mobileSerie } from "@/lib/queries-mobile";
-import { listDeploys } from "@/lib/queries-deploys";
+import { annotationsDeploiementsCohorte } from "@/lib/mobile-capabilities";
+import { mobileResumeEtSerie, valeurDe } from "@/lib/queries-mobile";
+import { mobileDeploiements } from "@/lib/queries-mobile";
 import { PLAN_SESSIONS_COMMENCEES } from "@/lib/queries-sessions";
 import { bucketStarts } from "@/lib/query-contract";
 import { gabaritZoom } from "@/lib/view-state";
@@ -205,10 +206,14 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   const schema = schemaLu.ok ? schemaLu.data : undefined;
   const filtreRelease = query.filters.release !== undefined || query.filters.segments.some((c) => c.dimension === "release");
 
+  // Les tuiles et la série « dans le temps » dans UNE photographie : la somme des
+  // seaux est la tuile, même si des sessions arrivent pendant la lecture (revue de
+  // fin de vague 8). Chaque partie garde son `lire()` : F02 tient toujours.
+  const photo = mobileResumeEtSerie(f, schema);
   // CHAQUE LECTURE EST INDÉPENDANTE (F02) : une lecture en échec n'efface que sa section.
   const [resume, parRelease, resumePrec, parReleasePrec, couvSessions, couvErreurs, declarationsToutes, serieLue, deploysLus] =
     await Promise.all([
-      lire(() => mobileSummary(f, schema)),
+      lire(async () => valeurDe((await photo).resume)),
       lire(() => mobileParRelease(f, RELEASES_AFFICHEES, schema)),
       fPrecedent ? lire(() => mobileSummary(fPrecedent, schema)) : sansLecture(null),
       fPrecedent ? lire(() => mobileParRelease(fPrecedent, RELEASES_AFFICHEES, schema)) : sansLecture(null),
@@ -218,8 +223,9 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
         ? lire(() => mobileDeclarations(sansRelease(query)))
         : sansLecture(null),
       // F39 : la même cohorte, seau par seau ; les déploiements de la fenêtre en annotations.
-      lire(() => mobileSerie(f, schema)),
-      lire(() => listDeploys(f, 20)),
+      lire(async () => valeurDe((await photo).serie)),
+      // Les 20 derniers marqueurs du périmètre, chacun rattaché ou non à la cohorte (revue v8).
+      lire(() => mobileDeploiements(f, schema, 20)),
     ]);
 
   const data: MobileSummary | null = resume.ok ? resume.data : null;
@@ -268,8 +274,14 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   const lienExplorer = lienCohorte(query, "/explorer", runtimeLu, { ...explorerPlanParams(PLAN_SESSIONS_COMMENCEES), cursor: null });
   // Annotations de déploiement de la série (§ 3.7) : une annotation ouvre cet écran
   // filtré sur la release déployée — /mobile ne compare pas deux releases en série.
+  // Seuls les marqueurs dont la version est une release de la cohorte, dans leur app,
+  // sont posés : un déploiement web n'a rien à faire sur la série React Native, et son
+  // lien ouvrirait une cohorte vide. Les écartés sont comptés sous la figure (revue v8).
+  // Sous plusieurs apps, le lien pose l'app du marqueur, comme `hrefDeRelease`.
   const deploiements = deploysLus.ok
-    ? annotationsDeploiements(deploysLus.data, query.range, { lien: (relB) => hrefWithQuery("/mobile", query, { release: relB }) })
+    ? annotationsDeploiementsCohorte(deploysLus.data, query.range, (release, app) =>
+        hrefWithQuery("/mobile", query, { ...(query.scope.requestedApp === null ? { app } : {}), release }),
+      )
     : { annotations: [], liste: [], indisponible: "lecture des marqueurs de déploiement en échec" };
   const hrefTri = (tri: TriStabilite) =>
     hrefWithQuery("/mobile", query, {

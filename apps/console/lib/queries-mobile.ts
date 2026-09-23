@@ -23,6 +23,7 @@ import { compileScope, compileWhereOrThrow, type DimensionSchema } from "./query
 import { bucketExpr, bucketSeriesSql } from "./query-compiler";
 import { conditionsOf, type AnalyticsQuery, type FilterCondition } from "./query-contract";
 import { dimensionSchema } from "./query-schema";
+import type { DeployRow } from "./queries-deploys";
 import {
   ERROR_FREE_REASONS,
   RAISON_SANS_RUNTIME,
@@ -311,27 +312,47 @@ export function samplingOf(p: number | null | undefined): MobileSampling {
  */
 export async function mobileSummary(f: FiltersLike, schema?: MobileSchema): Promise<MobileSummary> {
   const etat = schema ?? (await mobileSchema());
+  if (!etat.runtime) return resumeSansCohorte();
   const query = queryOf(f);
-  const unavailable: string[] = [];
+  const avant = await preparerResume(query, etat);
+  return snapshot((lire) => lireResume(lire, query, etat, avant));
+}
 
-  if (!etat.runtime) {
-    // `sessions: 0` ci-dessous n'est pas un compte : l'écran lit ce motif et affiche
-    // « — » (`sessionsCohorte`, F30).
-    unavailable.push(RAISON_SANS_RUNTIME);
-    return {
-      capabilities: capabilityMatrix([]),
-      declarations: [],
-      sessions: { sessions: 0, visitors: null, sessions_without_visitor: 0 },
-      js_errors: null,
-      js_error_free_session_rate: null,
-      js_error_free_unavailable_reason: "capability_unknown",
-      startup: { cold: null, warm: null },
-      screens: [],
-      resources: [],
-      sampling: { min_inclusion_probability: null, message: null },
-      unavailable,
-    };
-  }
+/**
+ * Schéma sans `runtime` (v82) : aucune cohorte n'est identifiable. `sessions: 0`
+ * n'est pas un compte : l'écran lit le motif et affiche « — » (`sessionsCohorte`, F30).
+ */
+function resumeSansCohorte(): MobileSummary {
+  return {
+    capabilities: capabilityMatrix([]),
+    declarations: [],
+    sessions: { sessions: 0, visitors: null, sessions_without_visitor: 0 },
+    js_errors: null,
+    js_error_free_session_rate: null,
+    js_error_free_unavailable_reason: "capability_unknown",
+    startup: { cold: null, warm: null },
+    screens: [],
+    resources: [],
+    sampling: { min_inclusion_probability: null, message: null },
+    unavailable: [RAISON_SANS_RUNTIME],
+  };
+}
+
+/** Ce que le résumé lit HORS de la transaction de mesure. */
+interface AvantResume {
+  capabilities: CapabilityStatus[];
+  declarations: CapabilityDeclaration[];
+  jsErrorsState: CapabilityState;
+  unavailable: string[];
+}
+
+/**
+ * Ce qui se lit avant la photographie (schéma AVEC `runtime`) : les déclarations
+ * de capacités, hors transaction et sans fenêtre (voir `mobileDeclarations`), et
+ * les motifs d'indisponibilité du schéma.
+ */
+async function preparerResume(query: AnalyticsQuery, etat: MobileSchema): Promise<AvantResume> {
+  const unavailable: string[] = [];
   if (!etat.capabilities) {
     unavailable.push("migration v82 partielle : les capacités déclarées ne sont pas lisibles, toutes sont « Inconnu »");
   }
@@ -342,49 +363,56 @@ export async function mobileSummary(f: FiltersLike, schema?: MobileSchema): Prom
   const declarations = etat.capabilities ? await mobileDeclarations(query) : [];
   const capabilities = capabilityMatrix(declarations);
   const jsErrorsState = capabilities.find((c) => c.capability === "js_errors")?.state ?? "unknown";
+  return { capabilities, declarations, jsErrorsState, unavailable };
+}
 
-  return snapshot(async (lire) => {
-    const base = cohorte(query, etat);
+/** Les mesures du résumé, dans la photographie qu'on lui donne. */
+async function lireResume(
+  lire: Lecture,
+  query: AnalyticsQuery,
+  etat: MobileSchema,
+  { capabilities, declarations, jsErrorsState, unavailable }: AvantResume,
+): Promise<MobileSummary> {
+  const base = cohorte(query, etat);
 
-    const [compte] = await lire<{ sessions: number; visitors: number; sans_visiteur: number; p_min: number | null }>(
-      `with ${base.cte} ${SQL_SESSIONS}`,
-      base.params,
-    );
-    const sessions: MobileSessions = {
-      sessions: compte?.sessions ?? 0,
-      // Aucune session porteuse d'identifiant : « inconnu », pas 0 visiteur.
-      visitors: compte && compte.visitors > 0 ? compte.visitors : null,
-      sessions_without_visitor: compte?.sans_visiteur ?? 0,
-    };
+  const [compte] = await lire<{ sessions: number; visitors: number; sans_visiteur: number; p_min: number | null }>(
+    `with ${base.cte} ${SQL_SESSIONS}`,
+    base.params,
+  );
+  const sessions: MobileSessions = {
+    sessions: compte?.sessions ?? 0,
+    // Aucune session porteuse d'identifiant : « inconnu », pas 0 visiteur.
+    visitors: compte && compte.visitors > 0 ? compte.visitors : null,
+    sessions_without_visitor: compte?.sans_visiteur ?? 0,
+  };
 
-    const jsErrors = etat.errorSource ? await lireErreursJs(lire, query, etat) : null;
-    const { rate, reason } = errorFreeSessionRate({
-      sessions: sessions.sessions,
-      sessionsWithJsError: jsErrors?.sessions_affected ?? 0,
-      jsErrorsState,
-    });
-
-    // Séquentiel, et non `Promise.all` : une transaction tient UNE connexion, et
-    // paralléliser dessus ne gagne rien tout en rendant l'ordre des instructions
-    // imprévisible en cas d'erreur.
-    const startup = await lireDemarrage(lire, query, etat);
-    const screens = await lireEcrans(lire, query, etat);
-    const resources = await lireRequetes(lire, query, etat);
-
-    return {
-      capabilities,
-      declarations,
-      sessions,
-      js_errors: jsErrors,
-      js_error_free_session_rate: rate,
-      js_error_free_unavailable_reason: reason,
-      startup,
-      screens,
-      resources,
-      sampling: samplingOf(compte?.p_min ?? null),
-      unavailable,
-    };
+  const jsErrors = etat.errorSource ? await lireErreursJs(lire, query, etat) : null;
+  const { rate, reason } = errorFreeSessionRate({
+    sessions: sessions.sessions,
+    sessionsWithJsError: jsErrors?.sessions_affected ?? 0,
+    jsErrorsState,
   });
+
+  // Séquentiel, et non `Promise.all` : une transaction tient UNE connexion, et
+  // paralléliser dessus ne gagne rien tout en rendant l'ordre des instructions
+  // imprévisible en cas d'erreur.
+  const startup = await lireDemarrage(lire, query, etat);
+  const screens = await lireEcrans(lire, query, etat);
+  const resources = await lireRequetes(lire, query, etat);
+
+  return {
+    capabilities,
+    declarations,
+    sessions,
+    js_errors: jsErrors,
+    js_error_free_session_rate: rate,
+    js_error_free_unavailable_reason: reason,
+    startup,
+    screens,
+    resources,
+    sampling: samplingOf(compte?.p_min ?? null),
+    unavailable,
+  };
 }
 
 /**
@@ -637,8 +665,9 @@ export const RAISON_SANS_RELEASE_SESSION =
   "la release des sessions n'est pas lisible sur ce schéma (colonne rum_session.release absente) : aucune coupe par release possible";
 
 /**
- * Stabilité par release de la cohorte React Native : même `cohorte()`, même
- * `snapshot()` que `mobileSummary`. Requête sans migration.
+ * Stabilité par release de la cohorte React Native : même `cohorte()` que
+ * `mobileSummary`, lue dans SA photographie (`snapshot()` ouvre une transaction par
+ * appel : rien n'égale ici un chiffre du résumé à l'unité près). Requête sans migration.
  *
  * `disponible: false` quand le schéma ne permet pas la coupe (sans `runtime` —
  * v82 — ou sans `rum_session.release`) : l'écran applique alors l'ordre de repli.
@@ -753,9 +782,14 @@ export async function mobileParRelease(
 // LES TUILES, SEAU PAR SEAU. « Sessions et erreurs JS dans le temps » découpe la
 // MÊME cohorte (`cohorte()`, runtime déclaré `react_native` — la condition que B8
 // écrit `seg=v2:runtime:eq:react_native` —, sessions COMMENCÉES dans la fenêtre,
-// release lue sur la session) dans la MÊME photographie que `mobileSummary` : la
-// somme des seaux de sessions est la tuile « Sessions React Native commencées »,
-// celle des occurrences est la tuile « Occurrences d'erreurs JS ».
+// release lue sur la session). La somme des seaux de sessions est la tuile
+// « Sessions React Native commencées », celle des occurrences la tuile
+// « Occurrences d'erreurs JS » — À UNE CONDITION : que série et tuiles soient lues
+// dans la MÊME photographie. `mobileSerie` seule ouvre la sienne ; lancée à côté de
+// `mobileSummary` (deux transactions, deux connexions), une session reçue entre les
+// deux entrait dans l'une et pas dans l'autre, et l'égalité affichée à l'écran ne
+// tenait plus (revue de fin de vague 8). L'écran lit donc les deux par
+// `mobileResumeEtSerie`, dans une seule transaction en lecture répétable.
 //
 // POURQUOI PAS L'EXPLORER. Le plan (§ 5.6.4, W-M10) citait `exploreAnalytics` sur
 // `seg=v2:runtime:eq:react_native`. Deux choses l'en empêchent sans changer la
@@ -790,53 +824,182 @@ export type MobileSerie =
  * seau du contrat. Requête sans migration. `disponible: false` sans `runtime`
  * (v82) : aucune cohorte n'est isolable. Une EXCEPTION remonte : l'écran rend la
  * section en erreur, jamais une série de zéros.
+ *
+ * Seule, elle lit SA photographie : rien ne garantit alors que la somme de ses
+ * seaux égale un `mobileSummary` lu à côté. L'écran passe par `mobileResumeEtSerie`.
  */
 export async function mobileSerie(f: FiltersLike, schema?: MobileSchema): Promise<MobileSerie> {
   const etat = schema ?? (await mobileSchema());
   if (!etat.runtime) return { disponible: false, raison: RAISON_SANS_RUNTIME };
   const query = queryOf(f);
+  return snapshot((lire) => lireSerie(lire, query, etat));
+}
+
+/** Les seaux de la série, dans la photographie qu'on lui donne (schéma avec `runtime`). */
+async function lireSerie(lire: Lecture, query: AnalyticsQuery, etat: MobileSchema): Promise<MobileSerie> {
   const range = query.range;
+  // Une base par instruction : ses paramètres liés n'appartiennent qu'à elle.
+  const base = cohorte(query, etat);
+  const sessions = await lire<{ bucket: Date; sessions: number }>(
+    `with ${base.cte},
+     agrege as (
+       select ${bucketExpr("c.started_at", range)} as bucket, count(*)::int as sessions
+         from cohorte c
+        group by 1
+     )
+     select g.bucket, coalesce(a.sessions, 0)::int as sessions
+       from ${bucketSeriesSql(range, base.bind)} as g(bucket)
+       left join agrege a on a.bucket = g.bucket
+      order by 1`,
+    base.params,
+  );
+
+  let occurrences: Map<number, number> | null = null;
+  if (etat.errorSource) {
+    const baseErreurs = cohorte(query, etat);
+    const lignes = await lire<{ bucket: Date; occurrences: number }>(
+      `with ${baseErreurs.cte}
+       select ${bucketExpr("e.ts", range)} as bucket, coalesce(sum(e.occurrences), 0)::float8 as occurrences
+         from rum_error e
+         join cohorte c on c.app_id = e.app_id and c.session_id = e.session_id
+        where e.error_source = ${baseErreurs.bind(MOBILE_ERROR_SOURCE)}${compileScope(query, "e.app_id", baseErreurs.bind)}${fenetre(query, "e.ts", baseErreurs.bind)}
+        group by 1`,
+      baseErreurs.params,
+    );
+    occurrences = new Map(lignes.map((l) => [new Date(l.bucket).getTime(), Number(l.occurrences)]));
+  }
+
+  return {
+    disponible: true,
+    seaux: sessions.map((s) => ({
+      bucket: new Date(s.bucket).toISOString(),
+      sessions: Number(s.sessions),
+      occurrences: occurrences === null ? null : (occurrences.get(new Date(s.bucket).getTime()) ?? 0),
+    })),
+    raisonErreurs: etat.errorSource ? null : RAISON_SANS_SOURCE_JS,
+  };
+}
+
+// ───────────── Tuiles et série dans une photographie (revue de fin de vague 8) ─────────────
+//
+// UNE TRANSACTION, DEUX SECTIONS. Le résumé (tuiles) et la série se lisent dans la
+// même transaction en lecture répétable : la somme des seaux EST la tuile, même si
+// des sessions arrivent pendant la lecture. Mais l'écran garde la règle F02 — une
+// lecture en échec n'efface que SA section : chaque partie tourne sous son propre
+// point de reprise (`savepoint`). Une instruction qui échoue annule sa partie
+// (`rollback to savepoint`) sans avorter la transaction, et l'autre partie se lit
+// quand même, dans la même photographie.
+
+/** Une partie de la photographie : sa valeur, ou l'exception telle quelle (à relancer dans `lire()`). */
+export type PartieLue<T> = { ok: true; data: T } | { ok: false; erreur: unknown };
+
+/** La valeur d'une partie, ou son exception relancée : à appeler DANS `lire()`, qui la journalise. */
+export function valeurDe<T>(partie: PartieLue<T>): T {
+  if (partie.ok) return partie.data;
+  throw partie.erreur;
+}
+
+async function partieCapturee<T>(fn: () => Promise<T>): Promise<PartieLue<T>> {
+  try {
+    return { ok: true, data: await fn() };
+  } catch (erreur) {
+    return { ok: false, erreur };
+  }
+}
+
+/** `fn` sous un point de reprise : son échec n'avorte pas la transaction qui la porte. */
+async function sousPointDeReprise<T>(lire: Lecture, nom: string, fn: () => Promise<T>): Promise<PartieLue<T>> {
+  await lire(`savepoint ${nom}`, []);
+  const partie = await partieCapturee(fn);
+  await lire(partie.ok ? `release savepoint ${nom}` : `rollback to savepoint ${nom}`, []);
+  return partie;
+}
+
+/**
+ * Le résumé de `/mobile` et sa série « dans le temps », dans UNE photographie.
+ *
+ * Le résumé d'abord (ses déclarations de capacités se lisent avant, hors
+ * transaction, comme dans `mobileSummary`), la série ensuite. Seules la sonde de
+ * schéma et l'ouverture de la transaction font échouer les deux parties ensemble.
+ */
+export async function mobileResumeEtSerie(
+  f: FiltersLike,
+  schema?: MobileSchema,
+): Promise<{ resume: PartieLue<MobileSummary>; serie: PartieLue<MobileSerie> }> {
+  const etat = schema ?? (await mobileSchema());
+  // Sans `runtime` (v82), aucune cohorte : rien à photographier.
+  if (!etat.runtime) {
+    return {
+      resume: { ok: true, data: resumeSansCohorte() },
+      serie: { ok: true, data: { disponible: false, raison: RAISON_SANS_RUNTIME } },
+    };
+  }
+  const query = queryOf(f);
+  const avant = await partieCapturee(() => preparerResume(query, etat));
 
   return snapshot(async (lire) => {
-    // Une base par instruction : ses paramètres liés n'appartiennent qu'à elle.
-    const base = cohorte(query, etat);
-    const sessions = await lire<{ bucket: Date; sessions: number }>(
-      `with ${base.cte},
-       agrege as (
-         select ${bucketExpr("c.started_at", range)} as bucket, count(*)::int as sessions
-           from cohorte c
-          group by 1
-       )
-       select g.bucket, coalesce(a.sessions, 0)::int as sessions
-         from ${bucketSeriesSql(range, base.bind)} as g(bucket)
-         left join agrege a on a.bucket = g.bucket
-        order by 1`,
-      base.params,
-    );
-
-    let occurrences: Map<number, number> | null = null;
-    if (etat.errorSource) {
-      const baseErreurs = cohorte(query, etat);
-      const lignes = await lire<{ bucket: Date; occurrences: number }>(
-        `with ${baseErreurs.cte}
-         select ${bucketExpr("e.ts", range)} as bucket, coalesce(sum(e.occurrences), 0)::float8 as occurrences
-           from rum_error e
-           join cohorte c on c.app_id = e.app_id and c.session_id = e.session_id
-          where e.error_source = ${baseErreurs.bind(MOBILE_ERROR_SOURCE)}${compileScope(query, "e.app_id", baseErreurs.bind)}${fenetre(query, "e.ts", baseErreurs.bind)}
-          group by 1`,
-        baseErreurs.params,
-      );
-      occurrences = new Map(lignes.map((l) => [new Date(l.bucket).getTime(), Number(l.occurrences)]));
-    }
-
-    return {
-      disponible: true,
-      seaux: sessions.map((s) => ({
-        bucket: new Date(s.bucket).toISOString(),
-        sessions: Number(s.sessions),
-        occurrences: occurrences === null ? null : (occurrences.get(new Date(s.bucket).getTime()) ?? 0),
-      })),
-      raisonErreurs: etat.errorSource ? null : RAISON_SANS_SOURCE_JS,
-    };
+    const resume = avant.ok
+      ? await sousPointDeReprise(lire, "resume_mobile", () => lireResume(lire, query, etat, avant.data))
+      : avant;
+    const serie = await sousPointDeReprise(lire, "serie_mobile", () => lireSerie(lire, query, etat));
+    return { resume, serie };
   });
+}
+
+// ───────────── Déploiements de la cohorte (revue de fin de vague 8, point 7) ─────────────
+//
+// UN MARQUEUR DE DÉPLOIEMENT NE DIT PAS SON RUNTIME. `deploy_marker` (v32) porte
+// une app et une version, rien d'autre. `/mobile` posait sur sa série React Native
+// les 20 derniers marqueurs de TOUT le périmètre (`listDeploys`) : sous plusieurs
+// apps, ceux des apps web ; dans une app qui émet des deux runtimes, ceux de sa
+// version web. Chaque trait menait à `/mobile?release=<version>` — la cohorte
+// React Native d'une version qu'aucune session mobile ne porte, donc vide, sans
+// que rien ne dise pourquoi.
+//
+// Un marqueur n'est rattaché à la cohorte que si sa version est une release
+// qu'au moins une session de la cohorte AFFICHÉE porte, DANS L'APP du marqueur
+// (une release n'existe que dans son app, F38). Les autres sont lus quand même :
+// l'écran dit combien il en écarte, au lieu de les taire.
+
+/** Un marqueur du périmètre, et s'il est rattaché à la cohorte React Native affichée. */
+export interface MobileDeploiement extends DeployRow {
+  app_id: string;
+  /** Sa version est une release portée par une session de la cohorte, dans son app. */
+  de_la_cohorte: boolean;
+}
+
+export type MobileDeploiements =
+  | { disponible: true; marqueurs: MobileDeploiement[] }
+  | { disponible: false; raison: string };
+
+/**
+ * Les `limite` derniers marqueurs du périmètre — la même lecture que `listDeploys`,
+ * sans borne de temps (la fenêtre s'applique dans `annotationsDeploiements`) —,
+ * chacun marqué `de_la_cohorte`. Requête sans migration.
+ */
+export async function mobileDeploiements(f: FiltersLike, schema?: MobileSchema, limite = 20): Promise<MobileDeploiements> {
+  const etat = schema ?? (await mobileSchema());
+  if (!etat.runtime) return { disponible: false, raison: RAISON_SANS_RUNTIME };
+  if (!etat.dimensions.has("rum_session.release")) return { disponible: false, raison: RAISON_SANS_RELEASE_SESSION };
+  const query = queryOf(f);
+  const base = cohorte(query, etat);
+  const marqueurs = await q<MobileDeploiement>(
+    `with ${base.cte},
+     releases as (
+       select distinct c.app_id, c.release from cohorte c where c.release is not null
+     ),
+     marqueurs as (
+       select dm.id, dm.ts, dm.version, dm.env, dm.source, dm.app_id
+         from deploy_marker dm
+        where true${compileScope(query, "dm.app_id", base.bind)}
+        order by dm.ts desc
+        limit ${Math.max(0, Math.trunc(limite))}
+     )
+     select m.id, m.ts, m.version, m.env, m.source, m.app_id, r.app_id is not null as de_la_cohorte
+       from marqueurs m
+       left join releases r on r.app_id = m.app_id and r.release = m.version
+      order by m.ts desc, m.id desc`,
+    base.params,
+  );
+  return { disponible: true, marqueurs };
 }

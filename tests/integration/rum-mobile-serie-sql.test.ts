@@ -8,7 +8,8 @@
 // exclus ; que chaque seau attendu existe (zéros compris) ; que la release se lit
 // sur la session ; que le périmètre tient (viewer restreint, `apps = []`) ; et que
 // l'Explorer, sur `seg=v2:runtime:eq:react_native` (B8), rejoue le panneau des
-// sessions seau pour seau.
+// sessions seau pour seau ; enfin que l'écran lit tuiles et série dans UNE
+// photographie (`mobileResumeEtSerie`, revue de fin de vague 8).
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
@@ -223,5 +224,119 @@ suite("F39 — mobileSerie sur PostgreSQL", () => {
     const parSeau = new Map(explore.data.series.map((p) => [Date.parse(p.start), p.value ?? 0]));
     expect(r.seaux.map((s) => parSeau.get(Date.parse(String(s.bucket))) ?? 0)).toEqual(sessionsParSeau(r));
     expect(explore.data.total).toBe(2);
+  });
+
+  // Revue de fin de vague 8, constat 6. `mobileSerie` et `mobileSummary`, lancées
+  // côte à côte, ouvraient DEUX transactions : une session reçue entre les deux
+  // entrait dans l'une et pas dans l'autre, et « la somme des seaux est la tuile »
+  // devenait fausse. On arrête la lecture de l'écran ENTRE les tuiles et la série
+  // (un verrou sur `rum_span`, que seule la dernière instruction du résumé lit), on
+  // valide une session React Native à ce moment-là, puis on relâche.
+  it("tuiles et série dans UNE photographie : une session reçue pendant la lecture n'entre dans aucune des deux", async () => {
+    const q = requete(`app=${APP_F39}`);
+    const verrou = new pg.Client({ connectionString: url });
+    await verrou.connect();
+    try {
+      await verrou.query("begin");
+      await verrou.query("lock table rum_span in access exclusive mode");
+      const lecture = lib.mobileResumeEtSerie(filtres(q));
+      // La photographie est prise (sessions, erreurs, démarrage, écrans lus) quand la
+      // lecture attend le verrou de `rum_span`.
+      await vi.waitFor(
+        async () => {
+          const { rows } = await c.query<{ n: number }>(
+            "select count(*)::int as n from pg_locks where not granted and relation = 'rum_span'::regclass",
+          );
+          if (rows[0].n < 1) throw new Error("lecture pas encore arrêtée sur rum_span");
+        },
+        { timeout: 15_000, interval: 25 },
+      );
+      await c.query(
+        `insert into rum_session (session_id, app_id, device_type, os, runtime, release, visitor_id, is_bot, started_at, last_seen_at)
+         values ('f39-pendant',$1,'mobile','iOS','react_native','4.2','f39-pendant',false,$2::timestamptz,$2::timestamptz + interval '2 minutes')`,
+        [APP_F39, dans(0, 30)],
+      );
+      await verrou.query("commit");
+
+      const { resume, serie: lue } = await lecture;
+      const tuile = lib.valeurDe(resume).sessions.sessions;
+      const s = lib.valeurDe(lue);
+      if (!s.disponible) throw new Error(`indisponible : ${s.raison}`);
+      expect(tuile).toBe(3);
+      expect(s.seaux.reduce((n, x) => n + x.sessions, 0)).toBe(tuile);
+      // Hors de cette photographie, la session est bien là : une série lue dans sa
+      // propre transaction, après, l'aurait comptée (4 contre 3 à la tuile).
+      expect(sessionsParSeau(await serie(q))).toEqual([3, 0, 1]);
+    } finally {
+      await verrou.query("rollback").catch(() => {});
+      await verrou.end();
+      await c.query("delete from rum_session where session_id = 'f39-pendant'");
+    }
+  });
+
+  // Revue de fin de vague 8, point 7. Un marqueur de déploiement ne dit pas son
+  // runtime : sur la série React Native, seul est posé celui dont la version est une
+  // release portée par une session de la cohorte AFFICHÉE, dans l'app du marqueur.
+  describe("déploiements rattachés à la cohorte (mobileDeploiements)", () => {
+    const marqueurs = async (q: AnalyticsQuery, schema?: Parameters<Console["mobileDeploiements"]>[1]) => {
+      const r = await lib.mobileDeploiements(filtres(q), schema);
+      if (!r.disponible) throw new Error(`indisponible : ${r.raison}`);
+      return r.marqueurs.map((m) => `${m.app_id}/${m.version ?? "∅"}:${m.de_la_cohorte ? "oui" : "non"}`);
+    };
+
+    beforeAll(async () => {
+      const deploiement = (app: string, version: string | null, ts: Date) =>
+        c.query("insert into deploy_marker (app_id, version, env, source, ts) values ($1,$2,'prod','ci',$3)", [app, version, ts]);
+      await deploiement(APP_F39, null, dans(0, 15));
+      await deploiement(APP_F39_B, "4.2", dans(0, 50));
+      await deploiement(APP_F39, "4.2", dans(1, 0));
+      await deploiement(APP_F39, "web-7.3", dans(1, 30)); // la version web de l'app : aucune session mobile ne la porte
+      await deploiement(APP_F39, "4.1", dans(2, 0));
+      await deploiement(APP_F39_B, "4.1", dans(2, 30)); // 4.1 est une release de A, pas de B
+    });
+    afterAll(async () => {
+      await c.query("delete from deploy_marker where app_id = any($1::text[])", [APPS_F39]);
+    });
+
+    it("une app : la version web et le marqueur sans version ne sont pas de la cohorte", async () => {
+      expect(await marqueurs(requete(`app=${APP_F39}`))).toEqual([
+        `${APP_F39}/4.1:oui`,
+        `${APP_F39}/web-7.3:non`,
+        `${APP_F39}/4.2:oui`,
+        `${APP_F39}/∅:non`,
+      ]);
+    });
+
+    it("deux apps : une release n'est de la cohorte que dans SON app", async () => {
+      const r = await marqueurs(requete("", { role: "viewer", apps: APPS_F39 }));
+      expect(r).toContain(`${APP_F39_B}/4.1:non`);
+      expect(r).toContain(`${APP_F39_B}/4.2:oui`);
+      expect(r).toHaveLength(6);
+    });
+
+    it("la cohorte AFFICHÉE : sous `release=4.1` ou `os=Android`, la 4.2 n'en est plus", async () => {
+      for (const qs of [`app=${APP_F39}&release=4.1`, `app=${APP_F39}&os=Android`]) {
+        expect(await marqueurs(requete(qs)), qs).toEqual([
+          `${APP_F39}/4.1:oui`,
+          `${APP_F39}/web-7.3:non`,
+          `${APP_F39}/4.2:non`,
+          `${APP_F39}/∅:non`,
+        ]);
+      }
+    });
+
+    it("la limite de lecture tient (les plus récents d'abord)", async () => {
+      const r = await lib.mobileDeploiements(filtres(requete(`app=${APP_F39}`)), undefined, 2);
+      expect(r.disponible && r.marqueurs.map((m) => m.version)).toEqual(["4.1", "web-7.3"]);
+    });
+
+    it("schéma sans `rum_session.release` : non rattachable, et dit", async () => {
+      const etat = await lib.mobileSchema();
+      const sansRelease = { ...etat, dimensions: new Set([...etat.dimensions].filter((d) => d !== "rum_session.release")) };
+      expect(await lib.mobileDeploiements(filtres(requete(`app=${APP_F39}`)), sansRelease)).toEqual({
+        disponible: false,
+        raison: lib.RAISON_SANS_RELEASE_SESSION,
+      });
+    });
   });
 });

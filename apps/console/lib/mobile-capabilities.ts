@@ -17,6 +17,8 @@
 // d'opérateur, la seule à écrire cette colonne (cf. migration-v82).
 import { MOBILE_CAPABILITIES } from "ingest/shared/mobile-capabilities.mjs";
 import { conditionsOf, hrefWithQuery, intersectQuery, type AnalyticsQuery, type FilterCondition } from "./query-contract";
+import { annotationsDeploiements, dansLaFenetre, type AnnotationsDeploiements } from "./annotations";
+import type { ResolvedRange } from "./query-contract";
 
 export type MobileCapability = (typeof MOBILE_CAPABILITIES)[number];
 
@@ -491,4 +493,51 @@ export function pointsMobileTemps(
     totalOccurrences: erreursLues ? points.reduce((s, p) => s + (p.occurrences ?? 0), 0) : null,
     ignores,
   };
+}
+
+// ───────────── Déploiements sur la série (revue de fin de vague 8, point 7) ─────────────
+//
+// Un marqueur de déploiement ne dit pas son runtime (`deploy_marker`, v32). Sur la
+// série React Native, seuls sont posés les marqueurs dont la version est une release
+// de la cohorte AFFICHÉE, dans leur app (`mobileDeploiements`) : un déploiement web
+// n'y a pas sa place, et son lien `release=` ouvrirait une cohorte vide. Ceux de la
+// fenêtre qu'on écarte sont COMPTÉS et dits sous la figure, jamais tus.
+
+/** Ce que la série lit d'un marqueur de `mobileDeploiements` (type structurel : ce module reste sans base). */
+export interface MarqueurCohorte {
+  ts: Date;
+  version: string | null;
+  app_id: string;
+  de_la_cohorte: boolean;
+}
+
+export type LectureDeploiementsCohorte =
+  | { disponible: true; marqueurs: readonly MarqueurCohorte[] }
+  | { disponible: false; raison: string };
+
+/** Ce que la légende dit des marqueurs de la fenêtre écartés (« Annotations non affichées : … »). */
+export function raisonDeploiementsEcartes(n: number): string {
+  return n === 1
+    ? "1 déploiement de la fenêtre : sa version n'est pas une release React Native de la cohorte affichée (déploiement web, ou version sans session mobile)"
+    : `${n} déploiements de la fenêtre : leur version n'est pas une release React Native de la cohorte affichée (déploiements web, ou versions sans session mobile)`;
+}
+
+/**
+ * Annotations de déploiement de la série « dans le temps » de /mobile. `lien(release,
+ * app)` ouvre /mobile filtré sur la release déployée, dans l'app du marqueur.
+ */
+export function annotationsDeploiementsCohorte(
+  lecture: LectureDeploiementsCohorte,
+  range: Pick<ResolvedRange, "from" | "to" | "preset">,
+  lien: (release: string, app: string) => string,
+): AnnotationsDeploiements {
+  if (!lecture.disponible) {
+    return { annotations: [], liste: [], indisponible: `déploiements non rattachables à la cohorte React Native (${lecture.raison})` };
+  }
+  const retenus = lecture.marqueurs.filter((m) => m.de_la_cohorte);
+  const posees = annotationsDeploiements(retenus, range, { lien: (release, _precedente, app) => lien(release, app ?? "") });
+  // Plage personnalisée (B1) : aucun marqueur n'est posé, la raison B1 suffit.
+  if (posees.indisponible) return posees;
+  const ecartes = lecture.marqueurs.filter((m) => !m.de_la_cohorte && dansLaFenetre(m.ts, range)).length;
+  return ecartes > 0 ? { ...posees, indisponible: raisonDeploiementsEcartes(ecartes) } : posees;
 }
