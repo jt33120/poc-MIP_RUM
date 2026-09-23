@@ -17,10 +17,15 @@
 // au rejeu » des onglets pointent des rangs, et le groupement ne les déplace pas.
 // Une chronologie tronquée à 500 lignes le déclare (`tronque`), et un filtre
 // `voir=` qui ne laisse rien le dit aussi, plutôt que de rendre une liste vide.
+//
+// F47 — `instants` (optionnel, pré-calculé par la page quand un rejeu existe) : le
+// décalage de chaque ligne et de chaque vue devient un lien `?at=` qui place le
+// lecteur ; l'îlot `ReplaySynchro` le fait sans recharger et surligne la ligne
+// courante (`data-ligne`, `aria-current="time"`). Écart au § 4.3 : une prop de plus.
 import Link from "next/link";
 import { Fragment } from "react";
 import { EtatSurface } from "@/components/states/EtatSurface";
-import { TimelineRow, fmtOffset } from "@/components/sessions/Timeline";
+import { Decalage, LIGNE_COURANTE, TimelineRow, fmtOffset } from "@/components/sessions/Timeline";
 import { elementsDuGroupe, filtrerParNature, grouperParVue } from "@/lib/deroule";
 import { fmtVital } from "@/lib/format";
 import type { TimelineItem } from "@/lib/queries";
@@ -35,6 +40,7 @@ export function Deroule({
   voir,
   liens,
   tronque,
+  instants,
 }: {
   items: TimelineItem[];
   /** Début de la session (epoch ms) : origine des décalages affichés. */
@@ -44,6 +50,8 @@ export function Deroule({
   /** Rang de la ligne dans la chronologie LUE → href de sa question suivante. */
   liens: Record<number, string>;
   tronque: boolean;
+  /** Rang → lien d'instant du rejeu (`?at=`) ; absent sans rejeu (F47). */
+  instants?: Record<number, string>;
 }) {
   // Rang d'origine : l'ancre d'une ligne ne dépend ni du groupe ni du filtre.
   const rangs = new Map<TimelineItem, number>();
@@ -54,6 +62,7 @@ export function Deroule({
     const href = liens[rang(it)];
     return href ? { href, libelle: LIBELLE_LIEN[it.kind] ?? "Voir" } : null;
   };
+  const instantDe = (it: TimelineItem) => instants?.[rang(it)] ?? null;
 
   const visibles = filtrerParNature(items, voir);
   const groupes = grouperParVue(visibles);
@@ -84,7 +93,14 @@ export function Deroule({
               data-testid="groupe-vue"
             >
               {g.vue ? (
-                <EnteteVue vue={g.vue} vitals={g.vitals} t0={t0} ancre={ancre} lien={lienDe(g.vue)} />
+                <EnteteVue
+                  vue={g.vue}
+                  vitals={g.vitals}
+                  t0={t0}
+                  ancre={ancre}
+                  lien={lienDe(g.vue)}
+                  instant={instantDe(g.vue)}
+                />
               ) : (
                 // Vitals rapportés sans vue connue : ils restent visibles, sans
                 // titre à porter — jamais escamotés parce qu'on n'a pas de vue.
@@ -95,10 +111,22 @@ export function Deroule({
                 <ol className="relative ml-2 mt-3 border-l-2 border-line">
                   {elementsDuGroupe(g).map((e, ei) =>
                     e.type === "ligne" ? (
-                      <TimelineRow key={ei} id={ancreEvenement(rang(e.item))} item={e.item} t0={t0} lien={lienDe(e.item)} />
+                      <TimelineRow
+                        key={ei}
+                        id={ancreEvenement(rang(e.item))}
+                        item={e.item}
+                        t0={t0}
+                        lien={lienDe(e.item)}
+                        instant={instantDe(e.item)}
+                      />
                     ) : (
                       <Fragment key={ei}>
-                        <TimelineRow id={ancreEvenement(rang(e.entree.action))} item={e.entree.action} t0={t0} />
+                        <TimelineRow
+                          id={ancreEvenement(rang(e.entree.action))}
+                          item={e.entree.action}
+                          t0={t0}
+                          instant={instantDe(e.entree.action)}
+                        />
                         {e.entree.effets.length > 0 && (
                           <li className="mb-4 ml-6 min-w-0" data-testid="effets-action">
                             <p className="mb-1 text-[11px] uppercase tracking-wider text-ink-faint">
@@ -112,6 +140,7 @@ export function Deroule({
                                   item={effet}
                                   t0={t0}
                                   lien={lienDe(effet)}
+                                  instant={instantDe(effet)}
                                   imbrique
                                 />
                               ))}
@@ -148,6 +177,7 @@ function EnteteVue({
   t0,
   ancre,
   lien,
+  instant,
 }: {
   vue: TimelineItem;
   vitals: TimelineItem[];
@@ -155,10 +185,15 @@ function EnteteVue({
   /** Ancre d'une ligne LUE : les pastilles en portent une, le récit y mène. */
   ancre: (item: TimelineItem) => string;
   lien: { href: string; libelle: string } | null;
+  /** Lien d'instant du rejeu (F47) ; `null` sans rejeu. */
+  instant: string | null;
 }) {
   return (
     <div
-      className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-line pb-2"
+      // L'ancre `evt-N` reste sur le `li` du groupe (récit P*.9) ; la LIGNE que la tête
+      // de lecture désigne est ce titre, pas toute la section.
+      data-ligne={ancre(vue)}
+      className={`flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 rounded-t border-b border-line pb-2 ${LIGNE_COURANTE}`}
       data-testid="entete-vue"
     >
       <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${KIND_STYLE.pageview.badge}`}>
@@ -181,9 +216,12 @@ function EnteteVue({
         )}
       </h3>
       {vue.detail && <span className="text-xs text-ink-faint">{vue.detail}</span>}
-      <span className="font-mono text-xs tabular-nums text-ink-faint">
-        {fmtOffset(Math.max(0, new Date(vue.ts).getTime() - t0))}
-      </span>
+      <Decalage
+        texte={fmtOffset(Math.max(0, new Date(vue.ts).getTime() - t0))}
+        ts={vue.ts}
+        instant={instant}
+        className="font-mono text-xs tabular-nums text-ink-faint"
+      />
       {vitals.length > 0 && <PastillesVitals vitals={vitals} ancre={ancre} />}
     </div>
   );

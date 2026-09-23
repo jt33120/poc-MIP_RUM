@@ -532,9 +532,16 @@ test.describe("F18 — Erreurs : KPI, hero, répartition", () => {
     expect(textes).not.toContain("Error");
     expect(textes[0]).toContain("Échec du paiement, étape 1");
     expect(textes.at(-1)).toBe("Autres groupes (somme)");
-    // Un groupe mène à son groupe ; « Autres » n'est pas un groupe, pas un lien.
-    await expect(hero.getByTestId("legende-serie").getByRole("link")).toHaveCount(4);
-    await expect(hero.getByTestId("legende-serie").getByRole("link").first()).toHaveAttribute("href", /^\/errors\/f18fp0/);
+    // Un groupe mène à son groupe ; « Autres » n'est pas un groupe, pas un lien. Depuis
+    // F20 (§ 3.3 : « Groupe d'erreurs → panneau `panel=error:<empreinte>` »), il ouvre
+    // SON PANNEAU sur l'écran ; la page du groupe est derrière « Ouvrir en page ».
+    const liens = hero.getByTestId("legende-serie").getByRole("link");
+    await expect(liens).toHaveCount(4);
+    const premier = new URL((await liens.first().getAttribute("href"))!, consoleUrl);
+    expect(premier.pathname).toBe("/errors");
+    expect(premier.searchParams.get("app")).toBe(APP);
+    // Le premier de la légende est le plus fréquent : « Échec du paiement, étape 1 ».
+    expect(premier.searchParams.get("panel")).toBe("error:f18fp0aaaaaaaa");
     await expect(hero).toContainText("4 groupes les plus fréquents sur 24 h");
   });
 
@@ -1484,8 +1491,12 @@ test.describe("F24 — Onglet Actions", () => {
     const libelle = hero.getByRole("link", { name: "Payer" }).first();
     await expect(libelle).toHaveAttribute("href", /\/errors\?/);
     await expect(libelle).toHaveAttribute("href", /route=/);
-    // « Sessions » du sous-texte ouvre les sessions de la même route.
-    await expect(hero.getByRole("link", { name: /sessions/ }).first()).toHaveAttribute("href", /\/sessions\?/);
+    // « Sessions » du sous-texte ouvre les sessions de la même route : la recherche
+    // exacte de `/sessions` (`qf=route`) — ni `/pages`, ni `route=`, que l'écran refuse.
+    const versSessions = hero.getByRole("link", { name: /sessions/ }).first();
+    await expect(versSessions).toHaveAttribute("href", /\/sessions\?/);
+    const cible = new URL((await versSessions.getAttribute("href"))!, consoleUrl);
+    expect([cible.searchParams.get("qf"), cible.searchParams.get("q")]).toEqual(["route", "/panier"]);
   });
 
   test("table : le cumul nommé comme tel, ressources et API scindées, p75 par action", async ({ page }) => {
@@ -1514,8 +1525,10 @@ test.describe("F24 — Onglet Actions", () => {
 
 // F17 — Panneau route (§ 5.2.3). Données SYNTHÉTIQUES, dans une app à ce bloc :
 // trois heures CLOSES, deux routes de gravités opposées — `/f17-panier` (30 mesures
-// LCP à 3 200 ms par heure : « Mauvais », et assez d'effectif pour qu'une heure
-// compte dans la concordance) et `/f17-accueil` (120 mesures à 900 ms par heure) —
+// LCP à 3 200 ms par heure : « À améliorer », entre les bornes 2 500 et 4 000 ms de
+// `lib/rating.ts` — donc au-delà de « Bon », ce qui fait l'angle mort —, et assez
+// d'effectif pour qu'une heure compte dans la concordance) et `/f17-accueil` (120
+// mesures à 900 ms par heure, « Bon ») —
 // si bien que le p75 de l'ENSEMBLE (≈ 900 ms) diffère de celui de la route : le
 // repère « p75 toutes routes » de la distribution est alors visible et distinct.
 // Le robot passe sur `/f17-panier` à chacune des trois heures et dit « ok » : trois
@@ -1608,7 +1621,9 @@ test.describe("F17 — Panneau route", () => {
     await page.waitForURL((u) => u.searchParams.get("panel") === PANEL_F17, { timeout: 15_000 });
     const panneau = page.getByTestId("detail-panel");
     await expect(panneau).toHaveAttribute("data-type", "route");
-    await expect(panneau.locator("h2")).toContainText(ROUTE_F17);
+    // Le titre DU PANNEAU, celui qu'annonce son `aria-labelledby` : les figures du panneau
+    // (« LCP sur cette route », « Où se situe cette route ») ont aussi un titre `h2`.
+    await expect(panneau.locator("#panneau-detail-titre")).toContainText(ROUTE_F17);
     // Puces SOURCÉES seulement (la « release dominante » du brouillon est retirée).
     const puces = panneau.getByTestId("detail-panel-puces");
     await expect(puces).toContainText("Vues");
@@ -1628,14 +1643,19 @@ test.describe("F17 — Panneau route", () => {
 
   test("clavier : le focus va au titre, Échap ferme sans perdre les réglages", async ({ page }) => {
     await login(page);
-    await page.goto(`${PANNEAU_F17}&vital=LCP&tri=volume`, { waitUntil: "domcontentloaded" });
+    // Une plage qui n'est PAS celle par défaut : les liens n'écrivent pas `period=24h`,
+    // le défaut (§ 3.1) — son absence après fermeture ne prouverait rien de la plage.
+    await page.goto(
+      `${consoleUrl}/pages?app=${APP_F17}&period=7d&panel=${encodeURIComponent(PANEL_F17)}&vital=LCP&tri=volume`,
+      { waitUntil: "domcontentloaded" },
+    );
     const titre = page.locator("#panneau-detail-titre");
     await expect(titre).toBeFocused({ timeout: 15_000 });
     await page.keyboard.press("Escape");
     await page.waitForURL((u) => u.searchParams.get("panel") === null, { timeout: 15_000 });
     const sp = new URL(page.url()).searchParams;
     // La plage, la population ET les réglages de vue survivent à la fermeture.
-    expect([sp.get("app"), sp.get("period"), sp.get("vital"), sp.get("tri")]).toEqual([APP_F17, "24h", "LCP", "volume"]);
+    expect([sp.get("app"), sp.get("period"), sp.get("vital"), sp.get("tri")]).toEqual([APP_F17, "7d", "LCP", "volume"]);
     await expect(page.getByTestId("detail-panel")).toHaveCount(0);
   });
 
@@ -1650,9 +1670,10 @@ test.describe("F17 — Panneau route", () => {
     // DF1 : le robot ne rend que des ÉTATS — aucune latence de sonde à côté d'un LCP.
     const texteRobot = (await etat.innerText()).replace(/\s+/g, " ");
     expect(texteRobot).not.toMatch(/\d\s?(ms|s)\b/);
-    // Le « réel », lui, porte bien un LCP p75 et son verdict.
+    // Le « réel », lui, porte bien un LCP p75 et son verdict, lu dans `lib/rating.ts` :
+    // 3 200 ms est au-delà de « Bon » (≤ 2 500) mais pas « Mauvais » (> 4 000).
     await expect(robot.getByTestId("panneau-route-reel")).toContainText("LCP p75");
-    await expect(robot.getByTestId("panneau-route-reel")).toContainText("Mauvais");
+    await expect(robot.getByTestId("panneau-route-reel")).toContainText("À améliorer");
     // « Voir robot et réel » → /correlation?serie=<app>:<route> (clé `ecrireSerie`).
     const href = new URL((await robot.getByTestId("panneau-route-correlation").getAttribute("href"))!, consoleUrl);
     expect(href.pathname).toBe("/correlation");
@@ -1690,9 +1711,14 @@ test.describe("F17 — Panneau route", () => {
     expect(versErreurs.pathname).toBe("/errors");
     expect(versErreurs.searchParams.get("route")).toBe(ROUTE_F17);
 
+    // Les sessions passées par la route : la recherche EXACTE de `/sessions` (`qf=route`).
+    // `route=` y serait refusé — une session ne porte pas de route (« Route » est sans
+    // objet pour les sessions) : le lien ouvrait un écran de refus.
     const versSessions = new URL((await page.getByTestId("panneau-route-sessions").getAttribute("href"))!, consoleUrl);
     expect(versSessions.pathname).toBe("/sessions");
-    expect(versSessions.searchParams.get("route")).toBe(ROUTE_F17);
+    expect(versSessions.searchParams.get("qf")).toBe("route");
+    expect(versSessions.searchParams.get("q")).toBe(ROUTE_F17);
+    expect(versSessions.searchParams.has("route")).toBe(false);
 
     await page.getByTestId("detail-panel").getByTestId("detail-panel-page").click();
     await page.waitForURL((u) => u.searchParams.get("route") === ROUTE_F17, { timeout: 15_000 });
@@ -1711,6 +1737,11 @@ test.describe("F17 — Panneau route", () => {
   });
 
   test("390 px : le panneau occupe tout l'écran", async ({ page }) => {
+    // Sans mouvement, comme la recette du panneau (panneau.spec.ts, F07) : pendant le
+    // fondu d'entrée de l'écran (0,3 s), son `transform` fait de lui le bloc conteneur
+    // du panneau `fixed`, décalé de la marge de `main` — la mesure prise à ce moment-là
+    // lisait x = 16. La position de repos, elle, est celle que ce test vérifie.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width: 390, height: 844 });
     await login(page);
     await page.goto(PANNEAU_F17, { waitUntil: "domcontentloaded" });

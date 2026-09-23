@@ -31,6 +31,8 @@ import {
   type PointReste,
 } from "../../apps/console/lib/couverture-controle";
 import { GLOSSARY } from "../../apps/console/lib/glossary";
+import { POINTS_RESTE } from "../../apps/console/lib/presentation-reste";
+import { CARTES } from "../../apps/console/lib/presentation-sait-faire";
 import {
   DOCUMENT,
   SORTIE,
@@ -143,11 +145,11 @@ function lignesDe(chemin: string): number | null {
 const CTX: ContexteControle = { capacites: CAPACITES, lignesDocument: DOC.split("\n").length, lignesDe };
 
 // Cartes de fixture sur les VRAIES lignes du document : la répartition du § 8.2
-// (K1–K14), réduite à ses identifiants. Les cartes réelles arrivent avec P**.4.
-// K15 n'est pas dans le plan : le relevé du 23/09/2026 (P**.10) a fait passer F2
-// (« Vérifier les types ») à « déployé, non éprouvé », et la règle 1 du § 8.0 veut
-// alors une carte pour elle. Sa rédaction revient à P**.4 ; ici, seul son
-// identifiant compte.
+// (K1–K14), réduite à ses identifiants ; les cartes réelles (P**.4) passent le même
+// contrôle à la fin de ce bloc. K15 n'est pas dans le plan : le relevé du 23/09/2026
+// (P**.10) a fait passer F2 (« Vérifier les types ») à « déployé, non éprouvé », et
+// la règle 1 du § 8.0 veut alors une carte pour elle ; ici, seul son identifiant
+// compte.
 const REPARTITION: Record<string, string[]> = {
   K1: ["A1"], K2: ["A2"], K3: ["A7", "A8", "A9", "A10"], K4: ["A3"], K5: ["A5", "A6"],
   K6: ["B1", "B2", "B3", "B4"], K7: ["B5", "B6", "B7", "B8"], K8: ["B9"],
@@ -247,7 +249,15 @@ describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le doc
     }
   });
 
-  it.todo("3 — sur les vraies cartes de lib/presentation-sait-faire.ts (livrées par P**.4)");
+  it("3 — sur les vraies cartes (P**.4) et les vrais points de « Ce qui reste » (P**.5)", () => {
+    // Les trois contrôles d'un coup : identifiants (dont D12 et D14 dans
+    // lib/presentation-reste.ts, et nulle part dans une carte), provenance de
+    // chaque source, une puce par identifiant.
+    expect(verifierCartes(CARTES, POINTS_RESTE, CTX)).toEqual([]);
+    const puces = CARTES.flatMap((c) => c.limites.map((l) => l.id));
+    expect(puces).toContain("A4");
+    expect(puces.length).toBe(compte("deploye_non_eprouve") - 2); // toutes, sauf D12 et D14
+  });
 });
 
 describe("4 — chaque point de « Ce qui reste » cite une source qui existe", () => {
@@ -273,7 +283,14 @@ describe("4 — chaque point de « Ce qui reste » cite une source qui existe", 
     ]);
   });
 
-  it.todo("4 — sur les vrais points de lib/presentation-reste.ts (livrés par P**.5)");
+  it("sur les vrais points de lib/presentation-reste.ts (P**.5) : R1 à R9, et chaque source existe", () => {
+    expect(POINTS_RESTE.map((p) => p.id)).toEqual(["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9"]);
+    expect(verifierReste(POINTS_RESTE, CTX)).toEqual([]);
+    // Côté « Ce qui reste » du contrôle 3a : les déployées inertes y figurent. Sans
+    // cartes, verifierCartes ne rend alors, pour elles, aucune erreur de ce genre.
+    const inertesAbsentes = verifierCartes([], POINTS_RESTE, CTX).filter((e) => e.includes("doit figurer dans « Ce qui reste »"));
+    expect(inertesAbsentes).toEqual([]);
+  });
 });
 
 // Fichiers dont le texte est la vitrine : ses composants, ses contenus, la page

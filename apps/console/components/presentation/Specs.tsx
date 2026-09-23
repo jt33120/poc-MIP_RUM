@@ -1,5 +1,5 @@
-// Quatrième section de la vitrine : les SPÉCIFICATIONS du POC, en trois onglets
-// — l'infrastructure, les mesures, l'écart au marché.
+// Second bloc de l'annexe de la vitrine (Annexe.tsx) : les SPÉCIFICATIONS du POC,
+// en trois onglets — l'infrastructure, les mesures, l'écart au marché.
 //
 // POURQUOI TROIS ONGLETS. Cette section n'était qu'un tableau cible/réel. Il
 // disait honnêtement OÙ ON EN EST, mais pas CE QU'ON A CODÉ : un lecteur y
@@ -14,9 +14,9 @@
 // section, hors des onglets, avant tout clic.
 //
 // SANS JAVASCRIPT. Les onglets sont trois boutons radio masqués et leurs
-// étiquettes ; `peer-checked` fait le reste en CSS. La vitrine publique
-// n'envoie donc toujours aucun script au navigateur, et le composant reste un
-// Server Component qui lit la base.
+// étiquettes ; `peer-checked` fait le reste en CSS : ni script ni URL, et les
+// flèches du clavier passent d'un onglet à l'autre (radios natives). Le composant
+// reste un Server Component qui lit la base, rendu sous <Suspense> par l'annexe.
 //
 // Le CONTENU des deux premiers onglets vit dans lib/specs.ts, où chaque ligne
 // porte de quoi la contredire (fichier de preuve, marqueur d'absence, valeurs
@@ -48,7 +48,7 @@ const TON: Record<Statut, string> = {
   atteint: "border-good/40 bg-good/10 text-good-ink",
   partiel: "border-warn/40 bg-warn/10 text-warn-ink",
   manque: "border-bad/40 bg-bad/10 text-bad-ink",
-  "non-mesure": "border-line bg-panel2 text-ink-faint",
+  "non-mesure": "border-line bg-panel2 text-ink-soft",
 };
 
 /** Pastille d'état, la même dans les trois onglets. */
@@ -220,7 +220,7 @@ function Onglet({
       className={`cursor-pointer select-none rounded-xl border border-line bg-panel px-4 py-2.5 transition hover:border-ink-faint/40 ${sel}`}
     >
       <span className="block text-sm font-bold text-ink">{titre}</span>
-      <span className="block text-[11px] text-ink-faint">{sous}</span>
+      <span className="block text-[11px] text-ink-soft">{sous}</span>
     </label>
   );
 }
@@ -248,274 +248,279 @@ export async function Specs() {
   const compte = (s: Statut) => criteres.filter((c) => c.s === s).length;
   const nonCouvertes = mesuresNonCouvertes();
 
+  // Un bloc de la partie « Le détail » (Annexe.tsx), pas une section de page : son
+  // titre est un h3 sous le h2 de la partie, et il n'a plus son propre conteneur.
+  // `specs-titre` le nomme ; `#specs` reste une ancre.
   return (
-    <section id="specs" className="scroll-mt-16 border-y border-line">
-      <div className="mx-auto max-w-6xl px-6 py-16 lg:py-20">
-        <header className="max-w-3xl">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-perf">
-            Ce qu&apos;on a codé, sans le maquiller
+    <section id="specs" aria-labelledby="specs-titre" className="mt-16 scroll-mt-6 border-t border-line pt-12">
+      <header className="max-w-3xl">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-perf">
+          Ce qu&apos;on a codé, sans le maquiller
+        </span>
+        <h3 id="specs-titre" className="mt-2 text-xl font-bold tracking-tight text-ink sm:text-2xl">
+          Specs / Capacité technique
+        </h3>
+        <p className="mt-3 leading-relaxed text-ink-soft">
+          Où ça tourne, ce que ça mesure, et ce que ça vaut face aux critères d&apos;un vrai RUM.
+          Les chiffres viennent du code et des mesures, pas d&apos;un document d&apos;intention —
+          et les lignes qui décrivent le dépôt portent le fichier qui les prouve.
+        </p>
+        <p className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-soft">
+            Face au marché
           </span>
-          <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            Specs / Capacité technique
-          </h2>
-          <p className="mt-3 leading-relaxed text-ink-soft">
-            Où ça tourne, ce que ça mesure, et ce que ça vaut face aux critères d&apos;un vrai RUM.
-            Les chiffres viennent du code et des mesures, pas d&apos;un document d&apos;intention —
-            et chaque ligne porte le fichier qui la prouve.
-          </p>
-          <p className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold">
-            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-faint">
-              Face au marché
-            </span>
-            <span className="rounded-full border border-good/40 bg-good/10 px-3 py-1 text-good-ink">
-              {compte("atteint")} atteints
-            </span>
-            <span className="rounded-full border border-warn/40 bg-warn/10 px-3 py-1 text-warn-ink">
-              {compte("partiel")} partiels
-            </span>
-            <span className="rounded-full border border-bad/40 bg-bad/10 px-3 py-1 text-bad-ink">
-              {compte("manque")} non atteints
-            </span>
-            <span className="rounded-full border border-line bg-panel2 px-3 py-1 text-ink-faint">
-              {compte("non-mesure")} non mesuré
-            </span>
-          </p>
-        </header>
+          <span className="rounded-full border border-good/40 bg-good/10 px-3 py-1 text-good-ink">
+            {compte("atteint")} atteints
+          </span>
+          <span className="rounded-full border border-warn/40 bg-warn/10 px-3 py-1 text-warn-ink">
+            {compte("partiel")} partiels
+          </span>
+          <span className="rounded-full border border-bad/40 bg-bad/10 px-3 py-1 text-bad-ink">
+            {compte("manque")} non atteints
+          </span>
+          <span className="rounded-full border border-line bg-panel2 px-3 py-1 text-ink-soft">
+            {compte("non-mesure")} non mesuré
+          </span>
+        </p>
+      </header>
 
-        <div className="mt-10 flex flex-wrap items-stretch gap-2">
-          {/* Les trois commandes. `sr-only` les sort du flux sans les sortir de
-              l'arbre d'accessibilité : le clavier les atteint, les flèches
-              passent de l'une à l'autre, et l'étiquette porte l'anneau de focus. */}
-          <input
-            id="specs-infra"
-            type="radio"
-            name="specs-onglet"
-            defaultChecked
-            className="peer/infra sr-only"
-          />
-          <input id="specs-mesures" type="radio" name="specs-onglet" className="peer/mesures sr-only" />
-          <input id="specs-ecart" type="radio" name="specs-onglet" className="peer/ecart sr-only" />
+      <div className="mt-10 flex flex-wrap items-stretch gap-2">
+        {/* Les trois commandes. `sr-only` les sort du flux sans les sortir de
+            l'arbre d'accessibilité : le clavier les atteint, les flèches
+            passent de l'une à l'autre, et l'étiquette porte l'anneau de focus. */}
+        <input
+          id="specs-infra"
+          type="radio"
+          name="specs-onglet"
+          defaultChecked
+          className="peer/infra sr-only"
+        />
+        <input id="specs-mesures" type="radio" name="specs-onglet" className="peer/mesures sr-only" />
+        <input id="specs-ecart" type="radio" name="specs-onglet" className="peer/ecart sr-only" />
 
-          <Onglet
-            id="specs-infra"
-            titre="Infrastructure"
-            sous="Où ça tourne"
-            sel="peer-checked/infra:border-accent peer-checked/infra:bg-accent/[0.06] peer-checked/infra:ring-2 peer-checked/infra:ring-accent/20 peer-focus-visible/infra:ring-2 peer-focus-visible/infra:ring-accent"
-          />
-          <Onglet
-            id="specs-mesures"
-            titre="Mesures"
-            sous={`${MESURES.length} captées · ${ANGLES_MORTS.length + nonCouvertes.length} absentes`}
-            sel="peer-checked/mesures:border-accent peer-checked/mesures:bg-accent/[0.06] peer-checked/mesures:ring-2 peer-checked/mesures:ring-accent/20 peer-focus-visible/mesures:ring-2 peer-focus-visible/mesures:ring-accent"
-          />
-          <Onglet
-            id="specs-ecart"
-            titre="Écart au marché"
-            sous={`${compte("partiel") + compte("manque") + compte("non-mesure")} points ouverts`}
-            sel="peer-checked/ecart:border-accent peer-checked/ecart:bg-accent/[0.06] peer-checked/ecart:ring-2 peer-checked/ecart:ring-accent/20 peer-focus-visible/ecart:ring-2 peer-focus-visible/ecart:ring-accent"
-          />
+        <Onglet
+          id="specs-infra"
+          titre="Infrastructure"
+          sous="Où ça tourne"
+          sel="peer-checked/infra:border-accent peer-checked/infra:bg-accent/[0.06] peer-checked/infra:ring-2 peer-checked/infra:ring-accent/20 peer-focus-visible/infra:ring-2 peer-focus-visible/infra:ring-accent"
+        />
+        <Onglet
+          id="specs-mesures"
+          titre="Mesures"
+          sous={`${MESURES.length} captées · ${ANGLES_MORTS.length + nonCouvertes.length} absentes`}
+          sel="peer-checked/mesures:border-accent peer-checked/mesures:bg-accent/[0.06] peer-checked/mesures:ring-2 peer-checked/mesures:ring-accent/20 peer-focus-visible/mesures:ring-2 peer-focus-visible/mesures:ring-accent"
+        />
+        <Onglet
+          id="specs-ecart"
+          titre="Écart au marché"
+          sous={`${compte("partiel") + compte("manque") + compte("non-mesure")} points ouverts`}
+          sel="peer-checked/ecart:border-accent peer-checked/ecart:bg-accent/[0.06] peer-checked/ecart:ring-2 peer-checked/ecart:ring-accent/20 peer-focus-visible/ecart:ring-2 peer-focus-visible/ecart:ring-accent"
+        />
 
-          {/* ═══════════════ Onglet 1 — infrastructure ═══════════════ */}
-          <div className="hidden w-full pt-6 peer-checked/infra:block">
-            <div className="grid gap-5">
-              {INFRA.map((g) => (
-                <div key={g.titre} className="overflow-hidden rounded-2xl border border-line bg-panel">
-                  <div className="border-b border-line bg-panel2 px-5 py-3">
-                    <h3 className="text-sm font-bold text-ink">{g.titre}</h3>
-                    <p className="mt-0.5 text-[12px] leading-relaxed text-ink-faint">{g.sous}</p>
-                  </div>
-                  <ul className="divide-y divide-line">
-                    {g.lignes.map((l) => (
-                      <li
-                        key={l.k}
-                        className="grid gap-x-5 gap-y-1.5 px-5 py-4 lg:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_minmax(0,7rem)] lg:items-baseline"
-                      >
-                        <span className="text-sm font-semibold text-ink">{l.k}</span>
-                        <span className="min-w-0 text-[13px] leading-relaxed text-ink">
-                          {l.v}
-                          {l.preuve && (
-                            <span className="mt-1 block font-mono text-[11px] text-ink-faint">
-                              {l.preuve}
-                            </span>
-                          )}
-                        </span>
-                        <span className="lg:text-right">
-                          <Etiquette s={l.s} />
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+        {/* ═══════════════ Onglet 1 — infrastructure ═══════════════ */}
+        <div data-testid="specs-panneau" data-onglet="infra" className="hidden w-full pt-6 peer-checked/infra:block">
+          <div className="grid gap-5">
+            {INFRA.map((g) => (
+              <div key={g.titre} className="overflow-hidden rounded-2xl border border-line bg-panel">
+                <div className="border-b border-line bg-panel2 px-5 py-3">
+                  <h4 className="text-sm font-bold text-ink">{g.titre}</h4>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-ink-soft">{g.sous}</p>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ═══════════════ Onglet 2 — mesures ═══════════════ */}
-          <div className="hidden w-full pt-6 peer-checked/mesures:block">
-            <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-              <div className="border-b border-line bg-panel2 px-5 py-3">
-                <h3 className="text-sm font-bold text-ink">
-                  Ce qu&apos;on capte — {MESURES.length} familles de mesures
-                </h3>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-ink-faint">
-                  Chaque ligne dit ce qui voyage sur le fil, où ça atterrit en base, et quel module
-                  l&apos;émet. Rien ici n&apos;est déclaratif : les trois se vérifient dans le dépôt.
-                </p>
+                <ul className="divide-y divide-line">
+                  {g.lignes.map((l) => (
+                    <li
+                      key={l.k}
+                      className="grid gap-x-5 gap-y-1.5 px-5 py-4 lg:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_minmax(0,7rem)] lg:items-baseline"
+                    >
+                      <span className="text-sm font-semibold text-ink">{l.k}</span>
+                      <span className="min-w-0 text-[13px] leading-relaxed text-ink">
+                        {l.v}
+                        {l.preuve && (
+                          <span className="mt-1 block font-mono text-[11px] text-ink-soft">
+                            {l.preuve}
+                          </span>
+                        )}
+                      </span>
+                      <span className="lg:text-right">
+                        <Etiquette s={l.s} />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <ul className="divide-y divide-line">
-                {MESURES.map((m) => (
-                  <li
-                    key={`${m.quoi}-${m.module}`}
-                    className="grid gap-x-5 gap-y-1.5 px-5 py-4 lg:grid-cols-[minmax(0,13rem)_minmax(0,1fr)_minmax(0,13rem)] lg:items-baseline"
-                  >
-                    <span className="text-sm font-semibold text-ink">{m.quoi}</span>
-                    <span className="text-[13px] leading-relaxed text-ink-soft">{m.detail}</span>
-                    <span className="min-w-0 font-mono text-[11px] leading-relaxed text-ink-faint lg:text-right">
-                      <span className="block">{m.otlp ? `${m.otlp} →` : "canal séparé →"}</span>
-                      <span className="block text-ink-soft">{m.table}</span>
-                      <span className="block break-all">{m.module.replace(/^packages\//, "")}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <p className="border-t border-line bg-panel2 px-5 py-3 text-[12px] leading-relaxed text-ink-soft">
-                <span className="font-semibold text-ink">Couverture par navigateur.</span>{" "}
-                {NOTE_NAVIGATEURS}
+            ))}
+          </div>
+        </div>
+
+        {/* ═══════════════ Onglet 2 — mesures ═══════════════ */}
+        <div data-testid="specs-panneau" data-onglet="mesures" className="hidden w-full pt-6 peer-checked/mesures:block">
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+            <div className="border-b border-line bg-panel2 px-5 py-3">
+              <h4 className="text-sm font-bold text-ink">
+                Ce qu&apos;on capte — {MESURES.length} familles de mesures
+              </h4>
+              <p className="mt-0.5 text-[12px] leading-relaxed text-ink-soft">
+                Chaque ligne dit ce qui voyage sur le fil, où ça atterrit en base, et quel module
+                l&apos;émet. Rien ici n&apos;est déclaratif : les trois se vérifient dans le dépôt.
               </p>
             </div>
-
-            {/* Ce qu'on ne mesure pas ------------------------------------- */}
-            <div className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel">
-              <div className="border-b border-line bg-panel2 px-5 py-3">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-warn-ink">
-                  <Icon paths={ICON_PATHS.alert} className="h-4 w-4" strokeWidth={2.4} />
-                  Ce qu&apos;on ne mesure pas
-                </h3>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-ink-faint">
-                  Avec le motif à chaque fois : plusieurs de ces lignes ne seront jamais tenables,
-                  et une liste grisée sans raison se lirait comme une feuille de route.
-                </p>
-              </div>
-              <ul className="divide-y divide-line">
-                {/* D'abord les angles morts : ce qu'un RUM du marché fait et qu'on
-                    devrait faire. Un test échoue le jour où le code apparaît. */}
-                {ANGLES_MORTS.map((a) => (
-                  <li key={a.label} className="px-5 py-4">
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-sm font-semibold text-ink">{a.label}</span>
-                      <Etiquette s="manque" texte="pas encore codé" />
-                    </span>
-                    <span className="mt-1 block text-[13px] leading-relaxed text-ink-soft">
-                      {a.raison}
-                    </span>
-                  </li>
-                ))}
-                {/* Puis celles que la console déclare déjà, écran par écran, dans
-                    la roue des blocs — reprises telles quelles, pas réécrites. */}
-                {nonCouvertes.map((i) => (
-                  <li key={i.label} className="px-5 py-4">
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-sm font-semibold text-ink">{i.label}</span>
-                      <span className="rounded-full border border-line bg-panel2 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-faint">
-                        {i.ecran}
-                      </span>
-                    </span>
-                    <span className="mt-1 block text-[13px] leading-relaxed text-ink-soft">
-                      {i.raison}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          {/* ═══════════════ Onglet 3 — écart au marché ═══════════════ */}
-          <div className="hidden w-full pt-6 peer-checked/ecart:block">
-            <div className="overflow-hidden rounded-2xl border border-line bg-panel">
-              {/* En-têtes : desktop seulement — en mobile chaque cellule porte son
-                  propre libellé, une ligne de titres n'aurait rien à surmonter. */}
-              <div className="hidden border-b border-line bg-panel2 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint lg:grid lg:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,7rem)] lg:gap-5">
-                <span>Critère</span>
-                <span>Cible</span>
-                <span>Réel</span>
-                <span className="text-right">Statut</span>
-              </div>
-
-              <ul className="divide-y divide-line">
-                {criteres.map((c) => (
-                  <li
-                    key={c.c}
-                    className="grid gap-x-5 gap-y-2 px-5 py-4 lg:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,7rem)] lg:items-baseline"
-                  >
-                    <span className="text-sm font-semibold text-ink">{c.c}</span>
-
-                    <span className="text-[13px] leading-relaxed text-ink-soft">
-                      <span className="mr-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-faint lg:hidden">
-                        Cible
-                      </span>
-                      {c.cible}
-                    </span>
-
-                    <span className="text-[13px] leading-relaxed text-ink">
-                      <span className="mr-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-faint lg:hidden">
-                        Réel
-                      </span>
-                      {c.reel}
-                    </span>
-
-                    <span className="lg:text-right">
-                      <Etiquette s={c.s} />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Ce qui manque, en liste simple ----------------------------- */}
-            <div className="mt-8">
-              <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.14em] text-warn-ink">
-                <Icon paths={ICON_PATHS.alert} className="h-4 w-4" strokeWidth={2.4} />
-                Ce qui manque
-              </h3>
-              <ul className="mt-5 grid gap-4 sm:grid-cols-2">
-                {aFaire.map((a) => (
-                  <li key={a.t} className="flex gap-3">
-                    <span
-                      aria-hidden
-                      className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${
-                        a.g === "bloquant" ? "bg-bad" : "bg-warn"
-                      }`}
-                    />
-                    <span className="min-w-0">
-                      <span className="flex flex-wrap items-center gap-x-2">
-                        <span className="text-sm font-semibold text-ink">{a.t}</span>
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] ${
-                            a.g === "bloquant" ? "bg-bad/10 text-bad-ink" : "bg-warn/10 text-warn-ink"
-                          }`}
-                        >
-                          {a.g === "bloquant" ? "bloque la vente" : "limite connue"}
-                        </span>
-                      </span>
-                      <span className="mt-0.5 block text-[13px] leading-relaxed text-ink-soft">
-                        {a.d}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <p className="mt-8 rounded-xl border border-line bg-panel px-5 py-4 text-sm leading-relaxed text-ink-soft">
-              <span className="font-semibold text-ink">Ce que ça veut dire.</span> La chaîne de
-              mesure — collecte, ingestion, restitution — tient les critères de fond : poids,
-              seuils, percentile, anonymat. Ce qui manque relève de l&apos;exploitation, pas de la
-              conception : brancher le déclencheur des tâches planifiées, fermer l&apos;ingestion
-              par défaut, activer le filet d&apos;isolation en base, rapatrier l&apos;hébergement
-              chez un fournisseur de droit européen — le backend, désormais autonome, est prêt à
-              être déplacé — et changer de moteur de stockage avant la montée en volume.
+            <ul className="divide-y divide-line">
+              {MESURES.map((m) => (
+                <li
+                  key={`${m.quoi}-${m.module}`}
+                  className="grid gap-x-5 gap-y-1.5 px-5 py-4 lg:grid-cols-[minmax(0,13rem)_minmax(0,1fr)_minmax(0,13rem)] lg:items-baseline"
+                >
+                  <span className="text-sm font-semibold text-ink">{m.quoi}</span>
+                  <span className="text-[13px] leading-relaxed text-ink-soft">{m.detail}</span>
+                  <span className="min-w-0 font-mono text-[11px] leading-relaxed text-ink-soft lg:text-right">
+                    <span className="block">{m.otlp ? `${m.otlp} →` : "canal séparé →"}</span>
+                    <span className="block text-ink">{m.table}</span>
+                    <span className="block break-all">{m.module.replace(/^packages\//, "")}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="border-t border-line bg-panel2 px-5 py-3 text-[12px] leading-relaxed text-ink-soft">
+              <span className="font-semibold text-ink">Couverture par navigateur.</span>{" "}
+              {NOTE_NAVIGATEURS}
             </p>
           </div>
+
+          {/* Ce qu'on ne mesure pas ------------------------------------- */}
+          <div className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel">
+            <div className="border-b border-line bg-panel2 px-5 py-3">
+              <h4 className="flex items-center gap-2 text-sm font-bold text-warn-ink">
+                <Icon paths={ICON_PATHS.alert} className="h-4 w-4" strokeWidth={2.4} />
+                Ce qu&apos;on ne mesure pas
+              </h4>
+              <p className="mt-0.5 text-[12px] leading-relaxed text-ink-soft">
+                Avec le motif à chaque fois : plusieurs de ces lignes ne seront jamais tenables,
+                et une liste grisée sans raison se lirait comme une feuille de route.
+              </p>
+            </div>
+            <ul className="divide-y divide-line">
+              {/* D'abord les angles morts : ce qu'un RUM du marché fait et qu'on
+                  devrait faire. Un test échoue le jour où le code apparaît. */}
+              {ANGLES_MORTS.map((a) => (
+                <li key={a.label} className="px-5 py-4">
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-sm font-semibold text-ink">{a.label}</span>
+                    <Etiquette s="manque" texte="pas encore codé" />
+                  </span>
+                  <span className="mt-1 block text-[13px] leading-relaxed text-ink-soft">
+                    {a.raison}
+                  </span>
+                </li>
+              ))}
+              {/* Puis celles que la console déclare déjà, écran par écran, dans
+                  la roue des blocs — reprises telles quelles, pas réécrites. */}
+              {nonCouvertes.map((i) => (
+                <li key={i.label} className="px-5 py-4">
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-sm font-semibold text-ink">{i.label}</span>
+                    <span className="rounded-full border border-line bg-panel2 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-soft">
+                      {i.ecran}
+                    </span>
+                  </span>
+                  <span className="mt-1 block text-[13px] leading-relaxed text-ink-soft">
+                    {i.raison}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {/* ═══════════════ Onglet 3 — écart au marché ═══════════════ */}
+        <div data-testid="specs-panneau" data-onglet="ecart" className="hidden w-full pt-6 peer-checked/ecart:block">
+          <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+            {/* En-têtes : desktop seulement — en mobile chaque cellule porte son
+                propre libellé, une ligne de titres n'aurait rien à surmonter. */}
+            <div className="hidden border-b border-line bg-panel2 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft lg:grid lg:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,7rem)] lg:gap-5">
+              <span>Critère</span>
+              <span>Cible</span>
+              <span>Réel</span>
+              <span className="text-right">Statut</span>
+            </div>
+
+            <ul className="divide-y divide-line">
+              {criteres.map((c) => (
+                <li
+                  key={c.c}
+                  className="grid gap-x-5 gap-y-2 px-5 py-4 lg:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,7rem)] lg:items-baseline"
+                >
+                  <span className="text-sm font-semibold text-ink">{c.c}</span>
+
+                  <span className="text-[13px] leading-relaxed text-ink-soft">
+                    <span className="mr-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-soft lg:hidden">
+                      Cible
+                    </span>
+                    {c.cible}
+                  </span>
+
+                  <span className="text-[13px] leading-relaxed text-ink">
+                    <span className="mr-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-soft lg:hidden">
+                      Réel
+                    </span>
+                    {c.reel}
+                  </span>
+
+                  <span className="lg:text-right">
+                    <Etiquette s={c.s} />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Ce qui manque, en liste simple ----------------------------- */}
+          <div className="mt-8">
+            <h4 className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.14em] text-warn-ink">
+              <Icon paths={ICON_PATHS.alert} className="h-4 w-4" strokeWidth={2.4} />
+              Ce qui manque
+            </h4>
+            <ul className="mt-5 grid gap-4 sm:grid-cols-2">
+              {aFaire.map((a) => (
+                <li key={a.t} className="flex gap-3">
+                  <span
+                    aria-hidden
+                    className={`mt-[7px] h-2 w-2 shrink-0 rounded-full ${
+                      a.g === "bloquant" ? "bg-bad" : "bg-warn"
+                    }`}
+                  />
+                  <span className="min-w-0">
+                    <span className="flex flex-wrap items-center gap-x-2">
+                      <span className="text-sm font-semibold text-ink">{a.t}</span>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] ${
+                          a.g === "bloquant" ? "bg-bad/10 text-bad-ink" : "bg-warn/10 text-warn-ink"
+                        }`}
+                      >
+                        {a.g === "bloquant" ? "bloque la vente" : "limite connue"}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block text-[13px] leading-relaxed text-ink-soft">
+                      {a.d}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Les tâches planifiées ne figurent dans ce bilan que si la LECTURE dit
+              qu'elles sont à relancer (`planif`, lib/etat-planifie.ts) : une phrase
+              fixe l'affirmait encore alors que la ligne « scheduler » et la liste
+              ci-dessus disaient l'inverse — et une lecture en échec n'affirme rien. */}
+          <p className="mt-8 rounded-xl border border-line bg-panel px-5 py-4 text-sm leading-relaxed text-ink-soft">
+            <span className="font-semibold text-ink">Ce que ça veut dire.</span> La chaîne de
+            mesure — collecte, ingestion, restitution — tient les critères de fond : poids,
+            seuils, percentile, anonymat. Ce qui manque relève de l&apos;exploitation, pas de la
+            conception : {planif ? "relancer les tâches planifiées, " : ""}fermer l&apos;ingestion
+            par défaut, activer le filet d&apos;isolation en base, rapatrier l&apos;hébergement
+            chez un fournisseur de droit européen — le backend, désormais autonome, est prêt à
+            être déplacé — et changer de moteur de stockage avant la montée en volume.
+          </p>
         </div>
       </div>
     </section>

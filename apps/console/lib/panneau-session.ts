@@ -13,12 +13,10 @@
 //   - les 15 PREMIERS ÉVÉNEMENTS : une mesure (Web Vital, phase réseau) n'est pas
 //     un événement — le déroulé la porte en pastille ou en repli sur SA vue ;
 //   - la mini-CASCADE : où est passé le temps, piste par piste, sur l'axe de la
-//     session (du début à la dernière observation).
-import type { ElementCascade, PisteCascade, TonCascade } from "@/components/charts/Cascade";
+//     session (du début à la dernière observation) — la conversion de
+//     `lib/deroule.ts`, partagée avec l'onglet Cascade de la page (F46).
 import { grouperParVue } from "./deroule";
 import type { TimelineItem } from "./queries";
-import { LIMITE_CHRONOLOGIE } from "./recit-session";
-import { statutAppel } from "./session-detail";
 
 // ─────────────────────────────── Périmètre ───────────────────────────────────
 
@@ -90,130 +88,13 @@ export function premiersEvenements(
 }
 
 // ─────────────────────────────── Mini-cascade ────────────────────────────────
-
-/** Pistes de la cascade d'une session (§ 5.12.4), dans l'ordre d'affichage. */
-export const PISTES_SESSION: PisteCascade[] = [
-  { cle: "vues", libelle: "Pages vues" },
-  { cle: "actions", libelle: "Actions" },
-  { cle: "api", libelle: "Appels API" },
-  { cle: "ressources", libelle: "Ressources liées" },
-  { cle: "taches", libelle: "Tâches longues" },
-  { cle: "erreurs", libelle: "Erreurs" },
-];
-
-/**
- * La collecte des ressources est VOLONTAIREMENT partielle, et la cascade le dit en
- * tête : la chronologie ne lit que celles rattachées à une action (`sessionTimeline`,
- * lib/queries.ts), et le SDK n'émet que les lentes (300 ms par défaut,
- * `DEFAULT_SLOW_RESOURCE_MS`) ou bloquant le rendu, 20 par page au plus
- * (`RESOURCE_CAP_PER_PAGE`, packages/rum-sdk/src/resources.ts).
- */
-export const PARTIEL_RESSOURCES =
-  "ressources rattachées à une action seulement, lentes (300 ms et plus par défaut) ou bloquant le rendu, 20 par vue au plus";
-
-export interface CascadeDeSession {
-  totalMs: number;
-  pistes: PisteCascade[];
-  elements: ElementCascade[];
-  partiel: string;
-}
-
-const ms = (d: Date | string) => new Date(d).getTime();
-
-/** Une durée lue en base (float, parfois `numeric` rendu en chaîne) ; illisible ou négative → `null`. */
-function duree(v: unknown): number | null {
-  if (v == null) return null;
-  const n = Number(v);
-  return Number.isFinite(n) && n >= 0 ? n : null;
-}
-
-/**
- * Chronologie → éléments de la cascade de la session, sur l'axe [début ; dernière
- * observation]. Les pages vues sont des BARRES « jusqu'à la vue suivante » (la
- * dernière, jusqu'à la dernière observation) — pas une « durée de vue », que le
- * schéma refuse de calculer ; actions et erreurs sont des INSTANTS. Les mesures
- * (vitals, phases), les événements métier et le fil d'Ariane ne sont pas placés :
- * le déroulé les porte.
- *
- * LA COULEUR DIT LA SÉVÉRITÉ, PAS LA NATURE : une erreur et un appel en échec
- * (statut 400 ou plus, ou réseau) sont « erreur » ; tout le reste est neutre —
- * aucune tâche longue ni ressource n'a de seuil publié qui la rendrait « mauvaise ».
- */
-export function cascadeDeSession(
-  items: readonly TimelineItem[],
-  debut: Date | string,
-  fin: Date | string,
-  tronquee = items.length >= LIMITE_CHRONOLOGIE,
-): CascadeDeSession {
-  const t0 = ms(debut);
-  const tFin = ms(fin);
-  const decale = (ts: Date) => ms(ts) - t0;
-  const vues = items.filter((it) => it.kind === "pageview");
-  const elements: ElementCascade[] = [];
-
-  items.forEach((it, i) => {
-    const id = `${it.kind}-${i}`;
-    const debutMs = decale(it.ts);
-    const element = (piste: string, libelle: string, dureeMs: number | null, ton: TonCascade, detail?: string) =>
-      elements.push({ id, piste, libelle, debutMs, dureeMs, ton, ...(detail ? { detail } : {}) });
-
-    switch (it.kind) {
-      case "pageview": {
-        const rang = vues.indexOf(it);
-        const suivante = vues[rang + 1];
-        const jusque = suivante ? ms(suivante.ts) : tFin;
-        element(
-          "vues",
-          it.title ?? "Route inconnue",
-          Math.max(0, jusque - ms(it.ts)),
-          "neutre",
-          suivante ? "jusqu'à la vue suivante" : "jusqu'à la dernière observation",
-        );
-        break;
-      }
-      case "action":
-        element("actions", it.title ?? "Action", null, "neutre", it.detail ?? undefined);
-        break;
-      case "api": {
-        const d = duree(it.value);
-        const { statut } = statutAppel(it.detail);
-        element(
-          "api",
-          it.title ?? "Appel",
-          d,
-          it.rating === "poor" ? "erreur" : "neutre",
-          d === null ? `${statut} · durée non mesurée` : statut,
-        );
-        break;
-      }
-      case "resource":
-        element("ressources", it.detail ?? it.title ?? "Ressource", duree(it.value), "neutre", it.title ?? undefined);
-        break;
-      case "longtask":
-        element("taches", it.title ?? "Tâche longue", duree(it.value), "neutre", it.detail || undefined);
-        break;
-      case "error": {
-        const occurrences = duree(it.value);
-        element(
-          "erreurs",
-          it.title ?? "Erreur",
-          null,
-          "erreur",
-          occurrences !== null && occurrences > 1 ? `${occurrences.toLocaleString("fr-FR")} occurrences` : undefined,
-        );
-        break;
-      }
-      default:
-        break;
-    }
-  });
-
-  return {
-    totalMs: Math.max(0, tFin - t0),
-    pistes: PISTES_SESSION,
-    elements,
-    partiel: tronquee
-      ? `${PARTIEL_RESSOURCES} ; chronologie lue limitée à ${LIMITE_CHRONOLOGIE} événements : la suite de la session n'est pas placée`
-      : PARTIEL_RESSOURCES,
-  };
-}
+//
+// UNE SEULE CONVERSION de la chronologie vers `Cascade`, celle de `lib/deroule.ts`
+// (F46, plan § 4.4) : le panneau et l'onglet Cascade de la page de session placent
+// les mêmes lignes de la même façon. Réexportée ici pour les appelants du panneau.
+export {
+  PARTIEL_RESSOURCES,
+  PISTES_SESSION,
+  cascadeDeSession,
+  type CascadeDeSession,
+} from "./deroule";

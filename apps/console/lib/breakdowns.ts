@@ -26,6 +26,7 @@ import {
 import { GEO_NOTICE } from "./geo";
 import { dimensionSupport, type DatasetId, type DimensionSchema } from "./query-compiler";
 import { dimensionAvailability, surfaceFor } from "./surfaces";
+import { SESSION_SEARCH_FIELD_PARAM, SESSION_SEARCH_PARAM } from "./sessions-search";
 
 /** Les six découpages proposés, dans l'ordre des onglets. */
 export const BREAKDOWN_DIMENSIONS = ["route", "browser", "os", "country", "device", "release"] as const;
@@ -192,4 +193,19 @@ export function groupLabel(value: string | null): string {
  */
 export function groupDescription(dimension: BreakdownDimension, value: string | null, samples: number, unit: string): string {
   return `${BREAKDOWN_LABELS[dimension]} ${groupLabel(value)} — ${samples.toLocaleString("fr-FR")} ${unit}`;
+}
+
+// ─────────────── « Les sessions de cette route » : jamais un drill-down ───────────────
+//
+// UNE SESSION NE PORTE PAS DE ROUTE. `breakdownDrillHref("/sessions", …, "route", …)`
+// se replie donc sur `/pages` (`breakdownTarget`), et `/sessions?route=<r>` est refusé
+// par l'écran (« Route » est sans objet pour les sessions) : deux liens « sessions »
+// qui n'ouvraient aucune session. La destination honnête est la recherche EXACTE par
+// route de `/sessions`, que l'écran résume « Sessions ayant vu la route « <r> » » —
+// ce que le plan désigne par « `/sessions?route=` » (§ 5.2.3, § 5.4.3), et ce que
+// Parcours fait déjà (F50).
+
+/** Les sessions passées par `route`, sur la même plage et la même population. */
+export function sessionsDeLaRouteHref(query: AnalyticsQuery, route: string): string {
+  return hrefWithQuery("/sessions", query, { [SESSION_SEARCH_FIELD_PARAM]: "route", [SESSION_SEARCH_PARAM]: route });
 }

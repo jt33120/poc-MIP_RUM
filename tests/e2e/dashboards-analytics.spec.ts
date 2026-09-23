@@ -588,8 +588,10 @@ test.describe("F37 — tableau de bord : sections", () => {
     const sections = page.locator('details[data-testid^="section-"]');
     await expect(sections).toHaveCount(3);
     await expect(sections.locator("summary h2")).toHaveText(["Volume", "Dans le temps", "Par segment"]);
-    await expect(sections.nth(0).locator("summary")).toContainText("Combien, et qui ?");
-    await expect(sections.nth(2).locator("summary")).toContainText("Où ?");
+    // `:scope > summary` : une section CONTIENT d'autres `<details>` (les alternatives
+    // textuelles de ses cartes), donc `locator("summary")` en trouvait cinq.
+    await expect(sections.nth(0).locator(":scope > summary")).toContainText("Combien, et qui ?");
+    await expect(sections.nth(2).locator(":scope > summary")).toContainText("Où ?");
     // Chaque section porte SES cartes, sous leur propre titre.
     await expect(sections.nth(0).locator("h3")).toHaveText(["Occurrences", "Sessions touchées"]);
     await expect(sections.nth(1).locator("h3")).toHaveText(["Occurrences dans le temps"]);
@@ -701,7 +703,12 @@ test.describe("F37 — tableau de bord : sections", () => {
     await expect(page.getByTestId("ajouter-section")).toHaveCount(0);
     await expect(page.getByTestId("sections-edition")).toHaveCount(0);
     await expect(page.getByTestId("edit-panel")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /Ajouter une section|Monter|Descendre|Retirer/ })).toHaveCount(0);
+    // Les gestes d'ÉCRITURE seulement : « Retirer le filtre Release » (la puce de la
+    // barre de filtres, rendue par `release=` du contexte) retire un réglage de VUE,
+    // légitime en démo — l'ancienne expression le comptait comme une écriture.
+    await expect(
+      page.getByRole("button", { name: /^(Ajouter une section|Monter|Descendre|Retirer —|Retirer la section)/ }),
+    ).toHaveCount(0);
   });
 
   test("aucun débordement d'un tableau à sections, panneau d'édition ouvert (390 / 768 / 1440 px)", async ({ page }) => {

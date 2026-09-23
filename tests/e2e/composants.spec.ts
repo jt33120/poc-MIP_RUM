@@ -125,9 +125,12 @@ test("vitrine : chaque composant F03 est rendu, avec ses états", async ({ page 
   for (const id of ["formats", "kpi-tile", "kpi-libelle", "sparkline", "figure", "scatter", "line-trend", "rank-bar", "donut", "vital-card", "delta"]) {
     await expect(page.locator(`section#${id}`)).toBeVisible();
   }
-  // Les états de Figure, un par un (§ 3.8).
+  // Les états de Figure, un par un (§ 3.8), dans la section de F03. Les sections que les
+  // lots suivants ajoutent à la vitrine montrent aussi des figures dans un état (F42 : le
+  // hero « À regarder d'abord » en `partiel`) : elles ne comptent pas ici.
+  const figure = page.locator("section#figure");
   for (const etat of ["vide", "partiel", "erreur", "non_collecte", "echantillonne", "chargement"]) {
-    await expect(page.locator(`[data-testid="figure"][data-etat="${etat}"]`)).toHaveCount(1);
+    await expect(figure.locator(`[data-testid="figure"][data-etat="${etat}"]`)).toHaveCount(1);
   }
   await expect(page.getByTestId("kpi-tile").filter({ hasText: "personne n'est prévenu" })).toHaveAttribute("data-ton", "bad");
   await expect(page.getByTestId("series-ecartees")).toContainText("1 série non tracée");
