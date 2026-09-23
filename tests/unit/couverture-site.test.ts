@@ -428,12 +428,36 @@ describe("5 — le lexique de la vitrine", () => {
   });
 });
 
+// Les décomptes de couverture que la vitrine affiche — le total des capacités et le
+// nombre de chaque verdict — LUS dans lib/couverture.ts : un nouveau relevé met le
+// motif à jour. (Revue de fin de vague 7 : il interdisait encore les littéraux 49 et
+// 34, alors que la page affiche 35 capacités déployées.) Un décompte d'un seul chiffre
+// ne se cherche pas dans du code — `mt-2`, `h-4`, `{1.5}` en contiennent partout — :
+// seuls ceux de deux chiffres ou plus sont gardés. Un nombre collé à un tiret, à un
+// point ou à une lettre (`py-14`, `0.35`, `12px`) est une classe ou une mesure, pas un
+// décompte ; un point final de phrase ne l'excuse pas.
+const DECOMPTES_GARDES = [...new Set([CAPACITES.length, ...VERDICTS.map((v) => compte(v))])]
+  .filter((n) => n >= 10)
+  .sort((a, b) => b - a);
+const DECOMPTE_TAPE = new RegExp(`(?<![\\w.-])(?:${DECOMPTES_GARDES.join("|")})(?!\\w|\\.\\d)`);
+
 describe("6 — aucun décompte de couverture tapé en dur", () => {
-  it("ni 49 ni 34 dans les composants de la vitrine : ils viennent de lib/couverture.ts", () => {
+  it("le motif vient du document : le total et le décompte de chaque verdict, lus dans lib/couverture.ts", () => {
+    expect(DECOMPTES_GARDES).toContain(CAPACITES.length);
+    expect(DECOMPTES_GARDES).toContain(compte("deploye_non_eprouve"));
+    // Il attrape un décompte écrit en toutes lettres, en fin de phrase comprise…
+    expect(DECOMPTE_TAPE.test(`<p>${compte("deploye_non_eprouve")} capacités déployées</p>`)).toBe(true);
+    expect(DECOMPTE_TAPE.test(`recensées : ${CAPACITES.length}.`)).toBe(true);
+    // … pas une classe de mise en page, ni une décimale.
+    expect(DECOMPTE_TAPE.test(`className="mt-${CAPACITES.length}"`)).toBe(false);
+    expect(DECOMPTE_TAPE.test(`opacity={0.${compte("deploye_non_eprouve")}}`)).toBe(false);
+  });
+
+  it("aucun de ces décomptes dans les composants de la vitrine : ils viennent de lib/couverture.ts", () => {
     const trouves = fichiersVitrine()
       .filter((f) => f.includes("/components/presentation/"))
       .flatMap((f) =>
-        lire(f).split("\n").flatMap((l, i) => (/\b(49|34)\b/.test(l) ? [`${f}:${i + 1} ${l.trim().slice(0, 90)}`] : [])),
+        lire(f).split("\n").flatMap((l, i) => (DECOMPTE_TAPE.test(l) ? [`${f}:${i + 1} ${l.trim().slice(0, 90)}`] : [])),
       );
     expect(trouves).toEqual([]);
   });
