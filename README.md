@@ -48,11 +48,11 @@ flowchart TB
 
 ## Démarrage local
 
-Base, ingestion, démo et console sur le poste, sans secret : les programmes se rabattent sur `postgres://postgres:postgres@localhost:5433/mip_rum` (`apps/console/lib/db.ts`, `packages/backend/lib/serveur.mjs`). Le schéma se monte comme dans la CI : par le migrateur de production, `DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum node services/scheduler/migrate.mjs` (`.github/workflows/ci.yml`, étape « Schéma par le migrateur »). La base du compose, elle, arrive déjà migrée par `initdb.sh`.
+Base, ingestion, démo et console sur le poste, sans secret : les programmes se rabattent sur `postgres://postgres:postgres@localhost:5433/mip_rum` (`apps/console/lib/db.ts`, `packages/backend/lib/serveur.mjs`). Le schéma se monte comme dans la CI : par le migrateur de production, `DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum node services/scheduler/migrate.mjs` (`.github/workflows/ci.yml`, étape « Schéma par le migrateur »). La base du compose passe par ce même programme : son service one-shot `migrate` lance `node services/scheduler/migrate.mjs` dans l'image du scheduler.
 
 ```bash
 pnpm install --frozen-lockfile
-docker compose -f infra/docker/docker-compose.yml up -d --wait db   # Postgres 17 sur :5433, base mip_rum : schema.sql puis toutes les migrations (infra/docker/db/initdb.sh)
+docker compose -f infra/docker/docker-compose.yml run --rm migrate  # Postgres 17 sur :5433, base mip_rum migrée par le migrateur de production
 pnpm build:sdk                                                  # SDK web, React Native, agent Node
 node scripts/seed-admin.mjs                                     # compte admin local : mot de passe affiché une fois, régénéré à chaque appel
 node services/collector/dev-server.mjs                          # ingestion locale :4318

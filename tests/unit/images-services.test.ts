@@ -126,6 +126,52 @@ describe("images — un Dockerfile par service", () => {
   });
 });
 
+describe("images — le compose et la fumée", () => {
+  // Le compose est lu par blocs d'indentation : pas de dépendance YAML ajoutée
+  // pour un test, et le fichier garde une forme simple, que ce découpage exige.
+  // Sans ses commentaires : ils NOMMENT ce qui est absent (« ni DATABASE_URL »,
+  // « initdb.sh appliquait… »), et c'est la configuration qu'on juge.
+  const compose = instructions(lire("infra/docker/docker-compose.yml")) + "\n";
+  const services = compose.slice(compose.indexOf("\nservices:\n"), compose.indexOf("\nvolumes:\n"));
+  const bloc = (nom: string) => {
+    const m = services.match(new RegExp(`\\n  ${nom}:\\n((?:    .*\\n|\\s*\\n)*)`));
+    return m?.[1] ?? "";
+  };
+
+  it.each(SERVICES)("compose : %s a son profil, son image de production", (svc) => {
+    const b = bloc(svc);
+    expect(b, `service compose « ${svc} »`).not.toBe("");
+    expect(b).toContain(`profiles: ["${svc}", "tout"]`);
+    expect(b).toContain(`dockerfile: services/${svc}/Dockerfile`);
+  });
+
+  it("compose : `migrate` est un one-shot du scheduler, dont dépendent les services qui ont une base", () => {
+    const migrate = bloc("migrate");
+    expect(migrate).toContain("dockerfile: services/scheduler/Dockerfile");
+    expect(migrate).toContain('command: ["node", "services/scheduler/migrate.mjs"]');
+    expect(migrate).toContain('restart: "no"');
+    expect(migrate).not.toContain("profiles:");
+    for (const svc of ["collector", "scheduler"]) expect(bloc(svc)).toContain("depends_on: *apres-migration");
+    expect(compose).toMatch(/x-apres-migration: &apres-migration\n\s+migrate:\n\s+condition: service_completed_successfully/);
+    // Le schéma n'est plus posé par un script d'initialisation de Postgres.
+    expect(compose).not.toContain("docker-entrypoint-initdb.d");
+    expect(compose).not.toContain("initdb.sh");
+  });
+
+  it("compose : mcp n'a ni base, ni dépendance à la migration", () => {
+    const mcp = bloc("mcp");
+    expect(mcp).not.toContain("DATABASE_URL");
+    expect(mcp).not.toContain("depends_on");
+  });
+
+  it("la fumée couvre chaque service, en matrice", () => {
+    const wf = lire(".github/workflows/docker-smoke.yml");
+    const matrice = [...wf.matchAll(/- service: ([a-z-]+)/g)].map((m) => m[1]).sort();
+    expect(matrice).toEqual(SERVICES);
+    expect(wf).toContain("COMPOSE_PROFILES: ${{ matrix.service }}");
+  });
+});
+
 // ─── scripts/ci/deploy-fidele.mjs ───────────────────────────────────────────
 const LOCK_DEPOT = `lockfileVersion: '9.0'
 
