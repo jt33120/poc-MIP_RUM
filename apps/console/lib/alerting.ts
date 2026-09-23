@@ -1,6 +1,29 @@
 // Helpers purs (testables) de l'alerting mature (P1). Pas d'accès base ici.
 
-export const ALERT_MODES = ["threshold", "baseline"] as const;
+/**
+ * Modes d'évaluation de `check_alerts`. `release` (B52, migration-v86) : p75 d'un Web
+ * Vital de la release la plus récente contre la précédente, même fenêtre. La console
+ * ne l'écrit que si la base porte v86 (`releaseRegressionDisponible`) : sans elle, le
+ * check_alerts de v73 lirait la règle comme un seuil fixe.
+ */
+export const ALERT_MODES = ["threshold", "baseline", "release"] as const;
+
+/** Métriques d'une règle de release : le p75 n'a de sens que pour les Web Vitals. */
+export const RELEASE_METRICS = ["LCP", "INP", "CLS", "FCP", "TTFB"] as const;
+
+/**
+ * Hausse tolérée par défaut d'une règle de release, EN POUR CENT (§ 3.2) : +20 %,
+ * la règle de `assessRegression` (ratio 1,2, `lib/queries-deploys.ts`). Stockée
+ * telle quelle dans `alert_rule.threshold`.
+ */
+export const SEUIL_REGRESSION_DEFAUT = 20;
+
+/**
+ * Mesures exigées de CHAQUE release avant tout verdict (migration-v86) : le seuil
+ * sous lequel la console refuse déjà un écart entre deux p75 (`KpiTile`,
+ * `FAIBLE_SOUS_DEFAUT`, § 3.12). Recopié en SQL ; un test unitaire lie les trois.
+ */
+export const MESURES_MIN_RELEASE = 100;
 export const ALERT_SEVERITIES = ["info", "warning", "critical"] as const;
 export const CHANNEL_KINDS = ["webhook", "slack", "email"] as const;
 
@@ -45,5 +68,5 @@ export function etatSlo(attainment: number | null, objective: number): SloView |
 }
 
 export function ruleModeLabel(mode: string): string {
-  return mode === "baseline" ? "anomalie (baseline)" : "seuil";
+  return mode === "baseline" ? "anomalie (baseline)" : mode === "release" ? "régression de release" : "seuil";
 }

@@ -754,9 +754,9 @@ test.describe("F64 — Écran Alertes", () => {
     await formulaire.getByTestId("mode-baseline").check();
     await expect(baseline).toBeVisible();
     await expect(seuil).toBeHidden();
-    // « Régression de release » est présentée, désactivée, avec sa raison (B52).
-    await expect(formulaire.getByTestId("mode-release")).toBeDisabled();
-    await expect(formulaire.getByTestId("raison-release")).toContainText("check_alerts");
+    // « Régression de release » est présentée ; son état (activée avec v86, sinon
+    // désactivée avec sa raison) est l'objet du bloc F68, en fin de fichier.
+    await expect(formulaire.getByTestId("mode-release")).toHaveCount(1);
   });
 
   test("aucun débordement à 390, 768 et 1440 px", async ({ page }) => {
@@ -1241,5 +1241,159 @@ test.describe("F69 — Recette du domaine fiabilité et robot (§ 6.5)", () => {
     await barre.getByRole("button", { name: "Annuler", exact: true }).click();
     await expect(valeur).toHaveCount(0);
     await expect(ajout).toBeFocused();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F68 — « Régression de release » (plan § 5.19 A8, § 3.2 ; évaluateur B52,
+// migration-v86). La base e2e de la CI applique TOUTES les migrations (étape
+// « Schéma v0.1 puis toutes les migrations », glob `migration-v*.sql`) : v86 y est.
+//
+//   - SANS B52 : la fonction que la console détecte (`alert_release_p75`) est
+//     RENOMMÉE le temps d'un test, puis rétablie (dans le test ET en `afterAll`).
+//     Aucune règle de release n'existe alors en base (nettoyées au `beforeAll`) :
+//     un `check_alerts` d'un autre fichier n'appelle donc jamais la fonction absente.
+//   - AVEC B52 : création par le formulaire, puis affichage — réglage, évaluation
+//     (« Évaluer maintenant ») et ce que la règle a comparé.
+//
+// Données EXPLICITEMENT SYNTHÉTIQUES, dans une app à part : deux déploiements
+// déclarés (1.0.0 il y a 3 h, 1.1.0 il y a 1 h) et 120 mesures LCP de chaque
+// release dans les 50 dernières minutes, à 2 000 et 2 600 ms (+30 %). 120 ≥ 100 :
+// la règle a de quoi juger (en dessous, elle rendrait « données insuffisantes »).
+// ---------------------------------------------------------------------------
+test.describe("F68 — Règle de régression de release", () => {
+  const APP_F68 = "f68-e2e-app";
+  const FONCTION_F68 = "alert_release_p75(text,text,text,integer)";
+  const MASQUEE_F68 = "alert_release_p75_f68_masquee";
+  const PHRASE_F68 = "même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte";
+  const ecranF68 = () => `${consoleUrl}/alerts?app=${APP_F68}`;
+
+  /** Rétablit la fonction si un test l'a laissée renommée (idempotent). */
+  const retablirF68 = () =>
+    pool.query(
+      `do $$ begin
+         if to_regprocedure('public.${MASQUEE_F68}(text,text,text,integer)') is not null then
+           alter function public.${MASQUEE_F68}(text,text,text,integer) rename to alert_release_p75;
+         end if;
+       end $$`,
+    );
+
+  /** Le formulaire « Nouvelle règle », ouvert (il l'est déjà si l'app n'a aucune règle). */
+  const formulaireF68 = async (page: Page) => {
+    const formulaire = page.locator("#nouvelle-regle");
+    await expect(formulaire).toBeVisible();
+    if ((await formulaire.getAttribute("open")) === null) await formulaire.locator("summary").click();
+    await expect(formulaire).toHaveAttribute("open", "");
+    return formulaire;
+  };
+
+  test.beforeAll(async () => {
+    await retablirF68();
+    // `alert_event` et `alert_delivery` partent en cascade avec leur règle.
+    await pool.query("delete from alert_rule where app_id = $1", [APP_F68]);
+    await pool.query("delete from deploy_marker where app_id = $1", [APP_F68]);
+    await pool.query("delete from rum_metric where app_id = $1", [APP_F68]);
+    await pool.query(
+      `insert into app_registry (app_id, name) values ($1, 'Régression de release E2E') on conflict (app_id) do nothing`,
+      [APP_F68],
+    );
+    await pool.query(
+      `insert into deploy_marker (app_id, ts, version, env, source)
+       values ($1, now() - interval '3 hours', '1.0.0', 'prod', 'ci'), ($1, now() - interval '1 hour', '1.1.0', 'prod', 'ci')`,
+      [APP_F68],
+    );
+    // Une instruction par release (piège 18), toutes dans les 50 dernières minutes.
+    for (const [release, valeur] of [["1.0.0", 2000], ["1.1.0", 2600]] as const) {
+      await pool.query(
+        `insert into rum_metric (span_id, app_id, route, name, value, rating, ts, release)
+         select $1 || g, $2, '/', 'LCP', $3, 'good', now() - make_interval(mins => 1 + (g % 50)), $4
+           from generate_series(1, 120) g`,
+        [`${APP_F68}-${release}-`, APP_F68, valeur, release],
+      );
+    }
+  });
+
+  test.afterAll(async () => {
+    await retablirF68();
+  });
+
+  test("sans B52 (fonction de v86 absente) : l'option est désactivée, avec sa raison, et sans champ", async ({ page }) => {
+    await login(page);
+    await pool.query(`alter function public.${FONCTION_F68} rename to ${MASQUEE_F68}`);
+    try {
+      await page.goto(ecranF68(), { waitUntil: "domcontentloaded" });
+      const formulaire = await formulaireF68(page);
+      await expect(formulaire.getByTestId("mode-release")).toBeDisabled();
+      await expect(formulaire.getByTestId("raison-release")).toContainText("migration-v86");
+      await expect(formulaire.getByTestId("raison-release")).toContainText("check_alerts");
+      await expect(formulaire.getByTestId("champs-release")).toHaveCount(0);
+    } finally {
+      await retablirF68();
+    }
+  });
+
+  test("avec B52 : création par le formulaire, puis affichage du réglage, de l'évaluation et de ce qui a été comparé", async ({
+    page,
+  }) => {
+    await login(page);
+    await page.goto(ecranF68(), { waitUntil: "domcontentloaded" });
+    const formulaire = await formulaireF68(page);
+    const release = formulaire.getByTestId("mode-release");
+    await expect(release).toBeEnabled();
+    await expect(formulaire.getByTestId("raison-release")).toHaveCount(0);
+    await release.check();
+    // Un fieldset par mode : en release, ni seuil ni baseline.
+    await expect(formulaire.getByTestId("champs-release")).toBeVisible();
+    await expect(formulaire.getByTestId("champs-seuil")).toBeHidden();
+    await expect(formulaire.getByTestId("champs-baseline")).toBeHidden();
+    await expect(formulaire.getByTestId("champ-hausse")).toHaveValue("20");
+    await expect(formulaire.getByTestId("phrase-release")).toContainText(PHRASE_F68);
+    await expect(formulaire.getByTestId("champ-metrique")).toHaveValue("LCP");
+    await formulaire.locator('input[name="window_minutes"]').fill("120");
+    await formulaire.getByTestId("create-rule").click();
+
+    // La règle est écrite, dans SON app, avec son mode et sa hausse en pour cent.
+    await expect
+      .poll(
+        async () =>
+          (await pool.query("select mode, metric, threshold, window_minutes from alert_rule where app_id = $1", [APP_F68]))
+            .rows,
+        { timeout: 15_000 },
+      )
+      .toEqual([{ mode: "release", metric: "LCP", threshold: 20, window_minutes: 120 }]);
+    const id = Number((await pool.query("select id from alert_rule where app_id = $1", [APP_F68])).rows[0].id);
+
+    await page.goto(ecranF68(), { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId(`rule-reglage-${id}`)).toContainText(
+      "régression de release : p75 en hausse de +20 % ou plus contre la release précédente",
+    );
+    await expect(page.getByTestId(`rule-reglage-${id}`)).toContainText(PHRASE_F68);
+    await expect(page.getByTestId(`rule-state-${id}`)).toHaveText("Jamais évaluée");
+
+    await page.getByTestId("evaluate-now").click();
+    await expect(page.getByTestId("fired-banner")).toBeVisible({ timeout: 15_000 });
+    const etat = page.getByTestId(`rule-state-${id}`);
+    await expect(etat).toHaveAttribute("data-etat", "breached");
+    await expect(etat).toContainText(
+      "Franchie — 1.1.0 : p75 2600 (120 mesures) contre 1.0.0 : p75 2000 (120 mesures), +30 % pour +20 % tolérés",
+    );
+    // Le déclenchement du flux porte la phrase du § 3.2.
+    const evt = Number((await pool.query("select id from alert_event where rule_id = $1", [id])).rows[0].id);
+    await expect(page.getByTestId(`alert-event-${evt}`)).toContainText("d'une release à l'autre : 1.1.0 = 2600 contre 1.0.0 = 2000");
+    await expect(page.getByTestId(`alert-event-${evt}`)).toContainText(PHRASE_F68);
+  });
+
+  test("formulaire en mode release : aucun débordement à 390, 768 et 1440 px", async ({ page }) => {
+    await login(page);
+    const fautes: string[] = [];
+    for (const largeur of LARGEURS) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(ecranF68(), { waitUntil: "domcontentloaded" });
+      const formulaire = await formulaireF68(page);
+      await formulaire.getByTestId("mode-release").check();
+      await expect(formulaire.getByTestId("phrase-release")).toBeVisible();
+      for (const faute of await debordements(page)) fautes.push(`${largeur} px — ${faute}`);
+    }
+    expect(fautes).toEqual([]);
   });
 });

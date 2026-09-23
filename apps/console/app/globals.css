@@ -220,6 +220,11 @@
 /* le repli déclaré par le plan.                                       */
 /* ------------------------------------------------------------------ */
 .regle-modes:has(.regle-mode-seuil:checked) .regle-champs-baseline,
-.regle-modes:has(.regle-mode-baseline:checked) .regle-champs-seuil {
+.regle-modes:has(.regle-mode-baseline:checked) .regle-champs-seuil,
+/* F68 : le fieldset « Régression de release » n'existe que si la base porte v86. */
+.regle-modes:has(.regle-mode-seuil:checked) .regle-champs-release,
+.regle-modes:has(.regle-mode-baseline:checked) .regle-champs-release,
+.regle-modes:has(.regle-mode-release:checked) .regle-champs-seuil,
+.regle-modes:has(.regle-mode-release:checked) .regle-champs-baseline {
   display: none;
 }

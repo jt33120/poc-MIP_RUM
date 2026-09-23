@@ -30,6 +30,7 @@ import { CadreEtat, EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { ChannelsSection } from "@/components/alerts/ChannelsSection";
 import { RuleFields } from "@/components/alerts/RuleFields";
+import { RAISON_DETECTION_RELEASE, RAISON_REGRESSION_RELEASE, type ModeRelease } from "@/components/alerts/RuleFields";
 import { RuleRow } from "@/components/alerts/RuleRow";
 import { SeverityBadge } from "@/components/alerts/SeverityBadge";
 import { getUser } from "@/lib/auth";
@@ -47,6 +48,7 @@ import {
   alertFirings,
   alertRules,
   isAlertMetric,
+  releaseRegressionDisponible,
   totalNonLivres,
   unackedAlertCount,
   type AlertDayRow,
@@ -96,7 +98,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
   const utilisateur = await getUser();
   const admin = utilisateur?.role === "admin" && !utilisateur.demo;
 
-  const [regles, evenements, nonAcquittees, apps, canaux, parJour, declenchements] = await Promise.all([
+  const [regles, evenements, nonAcquittees, apps, canaux, parJour, declenchements, releaseDetectee] = await Promise.all([
     lire(() => alertRules(f)),
     lire(() => alertEvents(f)),
     lire(() => unackedAlertCount(f)),
@@ -104,7 +106,15 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
     lire(() => listChannels(f)),
     lire(() => alertEventsByDay(f, JOURS_DECLENCHEMENTS)),
     lire(() => alertFirings(f, JOURS_DECLENCHEMENTS, PLAFOND_DECLENCHEMENTS)),
+    // F68 : le formulaire n'existe que pour un administrateur ; lui seul a besoin de
+    // savoir si l'évaluateur connaît le mode release (B52, migration-v86).
+    admin ? lire(() => releaseRegressionDisponible()) : sansLecture(false),
   ]);
+  const modeRelease: ModeRelease = !releaseDetectee.ok
+    ? { disponible: false, raison: RAISON_DETECTION_RELEASE }
+    : releaseDetectee.data
+      ? { disponible: true }
+      : { disponible: false, raison: RAISON_REGRESSION_RELEASE };
 
   const listeRegles: AlertRuleRow[] = regles.ok ? regles.data : [];
   const listeEvenements: AlertEventRow[] = evenements.ok ? evenements.data : [];
@@ -441,7 +451,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
         ) : (
           <div className="flex min-w-0 flex-col gap-3">
             {listeRegles.map((r) => (
-              <RuleRow key={r.id} rule={r} apps={apps.ok ? apps.data : []} admin={admin} />
+              <RuleRow key={r.id} rule={r} apps={apps.ok ? apps.data : []} admin={admin} modeRelease={modeRelease} />
             ))}
             {listeRegles.length === 0 && (
               <p className="py-4 text-center text-sm text-ink-soft">
@@ -470,6 +480,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                 defaultApp={f.app ?? undefined}
                 defaultIssue={defaultIssue}
                 regle={vue.regle}
+                modeRelease={modeRelease}
               />
               <button type="submit" data-testid="create-rule" className="btn-accent">
                 Créer
