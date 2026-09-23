@@ -11,6 +11,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
 import { compteDedie } from "./helpers/compte-dedie";
+// F37 — jeton d'une session de démonstration (même format que `signJwt`).
+import { createHmac as f37Hmac } from "node:crypto";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum",
@@ -330,10 +332,12 @@ test.describe("F35 — tableaux de bord : modèles", () => {
     expect(sp.get("app")).toBe("demo-app");
     expect(sp.get("period")).toBe("1h");
     await expect(page.getByRole("heading", { name: "Performance — copie" })).toBeVisible({ timeout: 20_000 });
-    // Avant F37, la question de chaque section titre sa première carte.
-    await expect(page.getByTestId("widget-0").locator("h3")).toHaveText("Seuils — LCP p75", { timeout: 20_000 });
-    await expect(page.getByTestId("widget-6")).toBeVisible();
-    await expect(page.getByTestId("widget-7")).toHaveCount(0);
+    // F37 : le clone s'affiche en sections titrées (trois titres + sept cartes, positions
+    // 0 à 9) ; la première carte garde son propre titre, sans préfixe de section.
+    await expect(page.getByTestId("section-0").locator("summary h2")).toHaveText("Seuils", { timeout: 20_000 });
+    await expect(page.getByTestId("widget-1").locator("h3")).toHaveText("LCP p75");
+    await expect(page.getByTestId("widget-9")).toBeVisible();
+    await expect(page.getByTestId("widget-10")).toHaveCount(0);
 
     // De retour sur la liste : l'app par son NOM, les cartes par leur type.
     await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
@@ -523,6 +527,201 @@ test.describe("F36 — tableau de bord : cartes", () => {
       await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
       await expect(page.getByTestId("widget-8")).toBeVisible({ timeout: 20_000 });
       for (const faute of await debordements(page)) fautes.push(`cartes F36 @ ${width} px — ${faute}`);
+    }
+    expect(fautes, fautes.join("\n")).toEqual([]);
+  });
+});
+
+// F37 — sections de tableau de bord (plan § 5.25.3, W-B12). Preuve de fin : un
+// tableau cloné depuis un modèle s'affiche en sections titrées. S'y ajoutent le
+// repli au clavier (le `<summary>` est le seul contrôle d'une section), l'ajout
+// d'une section à la position choisie, l'absence de tout formulaire d'écriture en
+// session démo (V9), et aucune largeur qui déborde.
+test.describe("F37 — tableau de bord : sections", () => {
+  const TABLEAU_F37 = "P65 F37 sections";
+  const DEMO_EMAIL_F37 = "e2e-dashboards-sections-demo@mip-rum.local";
+
+  /**
+   * Une grille à sections, telle que F37 l'écrit (`type: "section"`, jamais `kind`) :
+   * une carte AVANT toute section, une section et ses deux cartes, une section vide.
+   */
+  const GRILLE_F37 = [
+    { type: "traffic", title: "Trafic" },
+    { type: "section", title: "Volume", question: "Combien, et qui ?" },
+    { type: "vital_p75", metric: "LCP", title: "LCP p75" },
+    { type: "top_errors", title: "Erreurs principales" },
+    { type: "section", title: "Vide" },
+  ];
+
+  async function menageF37() {
+    await pool.query(`delete from dashboard where name = $1`, [TABLEAU_F37]);
+    await pool.query(`delete from dashboard where created_by = $1 and name = 'Erreurs — copie'`, [ADMIN_EMAIL]);
+  }
+  test.beforeAll(menageF37);
+  test.afterAll(menageF37);
+
+  /** Crée le tableau à sections et rend son identifiant. */
+  async function tableauF37(page: Page): Promise<string> {
+    const id = await creerTableau(page);
+    await pool.query(`update dashboard set name = $2, layout = $3::jsonb where id = $1`, [
+      Number(id),
+      TABLEAU_F37,
+      JSON.stringify(GRILLE_F37),
+    ]);
+    return id;
+  }
+
+  /** La section est-elle ouverte ? Lu sur l'élément, pas déduit d'une classe. */
+  const ouverte = (section: ReturnType<Page["getByTestId"]>) =>
+    section.evaluate((e) => (e as HTMLDetailsElement).open);
+
+  test("cloner « Erreurs » : le tableau s'affiche en sections titrées, chacune avec ses cartes", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);
+    const modele = page.locator('[data-testid="modele-carte"][data-modele="erreurs"]');
+    await expect(modele.locator('select[name="app_id"]')).toHaveValue("demo-app");
+    await modele.getByRole("button", { name: "Cloner le modèle Erreurs" }).click();
+    await page.waitForURL(/\/dashboards\/\d+/, { timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: "Erreurs — copie" })).toBeVisible({ timeout: 20_000 });
+
+    // Trois sections, dans l'ordre du modèle : le titre en h2, la question dessous.
+    const sections = page.locator('details[data-testid^="section-"]');
+    await expect(sections).toHaveCount(3);
+    await expect(sections.locator("summary h2")).toHaveText(["Volume", "Dans le temps", "Par segment"]);
+    // `:scope > summary` : une section CONTIENT d'autres `<details>` (les alternatives
+    // textuelles de ses cartes), donc `locator("summary")` en trouvait cinq.
+    await expect(sections.nth(0).locator(":scope > summary")).toContainText("Combien, et qui ?");
+    await expect(sections.nth(2).locator(":scope > summary")).toContainText("Où ?");
+    // Chaque section porte SES cartes, sous leur propre titre.
+    await expect(sections.nth(0).locator("h3")).toHaveText(["Occurrences", "Sessions touchées"]);
+    await expect(sections.nth(1).locator("h3")).toHaveText(["Occurrences dans le temps"]);
+    await expect(sections.nth(2).locator("h3")).toHaveText([
+      "Occurrences par route",
+      "Occurrences par release",
+      "Erreurs principales",
+    ]);
+    // Ouvertes par défaut : une section repliée d'office cacherait des chiffres.
+    for (const i of [0, 1, 2]) expect(await ouverte(sections.nth(i))).toBe(true);
+  });
+
+  test("une section se replie et se rouvre au clavier ; ses cartes suivent", async ({ page }) => {
+    await login(page);
+    const id = await tableauF37(page);
+    await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
+    const section = page.getByTestId("section-1");
+    await expect(section.locator("summary h2")).toHaveText("Volume", { timeout: 20_000 });
+    await expect(section.locator("summary")).toContainText("Combien, et qui ?");
+    // La carte posée avant toute section reste hors section ; les deux suivantes y sont.
+    await expect(page.getByTestId("widget-0")).toBeVisible();
+    await expect(section.getByTestId("widget-0")).toHaveCount(0);
+    await expect(section.getByTestId("widget-2")).toBeVisible();
+    await expect(section.getByTestId("widget-3")).toBeVisible();
+
+    // Au clavier seul : le titre prend le focus, Entrée replie, Espace rouvre.
+    const titre = section.locator("summary");
+    await titre.focus();
+    await expect(titre).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => ouverte(section)).toBe(false);
+    await expect(section.getByTestId("widget-2")).toBeHidden();
+    await page.keyboard.press("Space");
+    await expect.poll(() => ouverte(section)).toBe(true);
+    await expect(section.getByTestId("widget-2")).toBeVisible();
+
+    // Une section vide le dit, plutôt qu'une grille muette.
+    await expect(page.getByTestId("section-4")).toContainText("Aucune carte dans cette section.");
+  });
+
+  test("« Ajouter une section » la pose à la position choisie, et l'écrit sans `kind`", async ({ page }) => {
+    await login(page);
+    const id = await tableauF37(page);
+    await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
+    await expect(page.getByTestId("section-1")).toBeVisible({ timeout: 20_000 });
+    await deplier(page, "Éditer le tableau de bord");
+    const formulaire = page.getByTestId("ajouter-section");
+    await formulaire.locator('input[name="title"]').fill("Tendance");
+    await formulaire.locator('input[name="question"]').fill("Depuis quand ?");
+    // Avant la première carte : le trafic entre dans la nouvelle section.
+    await formulaire.locator('select[name="position"]').selectOption("0");
+    await page.getByTestId("add-section").click();
+
+    const nouvelle = page.getByTestId("section-0");
+    await expect(nouvelle.locator("summary h2")).toHaveText("Tendance", { timeout: 20_000 });
+    await expect(nouvelle.locator("summary")).toContainText("Depuis quand ?");
+    await expect(nouvelle.getByTestId("widget-1")).toContainText("Trafic");
+    const { rows } = await pool.query<{ layout: Record<string, unknown>[] }>("select layout from dashboard where id = $1", [
+      Number(id),
+    ]);
+    expect(rows[0].layout).toHaveLength(GRILLE_F37.length + 1);
+    expect(rows[0].layout[0]).toEqual({ type: "section", title: "Tendance", question: "Depuis quand ?" });
+  });
+
+  test("session de démonstration : les sections se lisent, aucun formulaire d'écriture (V9)", async ({ page }) => {
+    await login(page);
+    const id = await tableauF37(page);
+    // Jeton de session au format de `signJwt` (lib/auth.ts), `demo: true` — même
+    // approche que la recette F34 : le secret est celui de la console de test
+    // (playwright.config.ts), à défaut celui de dev.
+    const jeton = (secret: string) => {
+      const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
+      const maintenant = Math.floor(Date.now() / 1000);
+      const corps = `${b64({ alg: "HS256" })}.${b64({
+        email: DEMO_EMAIL_F37,
+        role: "viewer",
+        apps: ["demo-app"],
+        demo: true,
+        iat: maintenant,
+        exp: maintenant + 3600,
+      })}`;
+      return `${corps}.${f37Hmac("sha256", secret).update(corps).digest("base64url")}`;
+    };
+    const secrets = [process.env.E2E_AUTH_SECRET, "e2e-secret-local-jetable-non-production", "dev-secret-mip-rum"].filter(
+      (s): s is string => !!s,
+    );
+    let connecte = false;
+    for (const secret of secrets) {
+      await page.context().clearCookies();
+      await page.context().addCookies([
+        { name: "mip_session", value: jeton(secret), url: consoleUrl },
+        { name: "mip-project", value: "demo-app", url: consoleUrl },
+      ]);
+      await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
+      if (new URL(page.url()).pathname !== "/login") {
+        connecte = true;
+        break;
+      }
+    }
+    expect(connecte, "aucun secret de session connu n'est accepté par la console (AUTH_SECRET)").toBe(true);
+
+    // La démo LIT le tableau, sections comprises, et peut les replier…
+    const section = page.getByTestId("section-1");
+    await expect(section.locator("summary h2")).toHaveText("Volume", { timeout: 20_000 });
+    await section.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => ouverte(section)).toBe(false);
+    // … mais aucun geste d'écriture n'est RENDU : ni formulaire, ni bouton d'ordre.
+    await expect(page.getByTestId("ajouter-section")).toHaveCount(0);
+    await expect(page.getByTestId("sections-edition")).toHaveCount(0);
+    await expect(page.getByTestId("edit-panel")).toHaveCount(0);
+    // Les gestes d'ÉCRITURE seulement : « Retirer le filtre Release » (la puce de la
+    // barre de filtres, rendue par `release=` du contexte) retire un réglage de VUE,
+    // légitime en démo — l'ancienne expression le comptait comme une écriture.
+    await expect(
+      page.getByRole("button", { name: /^(Ajouter une section|Monter|Descendre|Retirer —|Retirer la section)/ }),
+    ).toHaveCount(0);
+  });
+
+  test("aucun débordement d'un tableau à sections, panneau d'édition ouvert (390 / 768 / 1440 px)", async ({ page }) => {
+    await login(page);
+    const id = await tableauF37(page);
+    const fautes: string[] = [];
+    for (const width of [390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${consoleUrl}/dashboards/${id}?${CONTEXTE}`);
+      await expect(page.getByTestId("section-1")).toBeVisible({ timeout: 20_000 });
+      await deplier(page, "Éditer le tableau de bord");
+      await expect(page.getByTestId("ajouter-section")).toBeVisible();
+      for (const faute of await debordements(page)) fautes.push(`sections F37 @ ${width} px — ${faute}`);
     }
     expect(fautes, fautes.join("\n")).toEqual([]);
   });

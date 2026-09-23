@@ -1,15 +1,24 @@
-// Section publique « deux capteurs » de la vitrine. Extension navigateur à
-// gauche, SDK embarqué à droite ; sous chacun, dans cet ordre : une phrase en
-// français courant pour un lecteur non technique, les spécifications qui
-// situent le capteur sur le marché, puis à qui il s'adresse avec son point fort
-// et sa limite.
+// PS2 — Les capteurs (plan § 8.2), premier bloc de « Ce qu'il contient ». Extension
+// navigateur à gauche, SDK embarqué à droite ; sous chacun, dans cet ordre : une
+// phrase en français courant pour un lecteur non technique, les spécifications qui
+// situent le capteur sur le marché, puis à qui il s'adresse avec son point fort et
+// sa limite. Sous les deux cartes, les agents côté serveur.
+//
+// Titres : la partie porte le `h2` (Partie.tsx), ce bloc le `h3`, chaque carte un
+// `h4` et ses rubriques un `h5`. Texte de moins de 18 px en `ink-soft`, jamais
+// `ink-faint` (§ 3.9 : ≈ 2,8:1 en clair).
 //
 // Le contenu n'est pas du marketing : il vient de docs/CADRAGE_EXTENSION.md
 // (registre domaine→app, MV3, cible poste géré, non publié au store),
 // docs/LIMITES.md (ce qui manque, assumé) et docs/OFFRE.md (positionnement).
+// Les versions sont celles des paquets (tests/unit/specs.test.ts les compare au
+// manifeste de l'extension et au package.json de React Native) ; les réserves
+// viennent du document de couverture (C1, C10 ; C5, C6 pour le côté serveur).
 // Rendu entièrement côté serveur, aucun JS envoyé au navigateur.
 import { ICON_PATHS, Icon, type IconName } from "@/components/icons";
+import { SousPartie } from "@/components/presentation/SousPartie";
 import { SDK_GZIP_KO, SDK_POIDS_TEXTE, koTexte } from "@/lib/sdk-poids";
+import { EXT_VERSION } from "@/lib/specs";
 import { RN_VERSION } from "@/lib/versions";
 
 type Capteur = {
@@ -38,6 +47,7 @@ const CAPTEURS: Capteur[] = [
       { k: "Portée", v: "Registre domaine → app, jamais <all_urls>" },
       { k: "Périmètre", v: "Chrome / Edge, Manifest V3" },
       { k: "Moteur", v: "Recharge le même SDK, même pipeline" },
+      { k: "Version", v: `${EXT_VERSION}, non publiée au Chrome Web Store` },
     ],
     pourQui: [
       "Usage interne : parc de postes gérés, applications métier",
@@ -62,11 +72,13 @@ const CAPTEURS: Capteur[] = [
     ],
     pourQui: [
       "Monitoring de masse : trafic public, portails, e-commerce",
-      "Corrélation front → back par traceparent (un saut, FastAPI)",
+      // Node ET FastAPI, comme la ligne « Côté serveur » sous les cartes (C5, C6).
+      "Corrélation front → back par traceparent (un saut, Node ou FastAPI)",
     ],
     fort: "Atteint tout le trafic public, bien au-delà du parc interne — moins les visiteurs qui refusent la mesure (DNT et GPC honorés par défaut) et ceux qu'un bloqueur arrête.",
-    limite:
-      `Demande une mise en production côté client. Web et React Native (paquet privé, v${RN_VERSION}, jamais exécuté sur un appareil) ; pas de SDK iOS ou Android natif.`,
+    // Texte exact du plan (PS2). « ni un simulateur » : C1 (« Aucun appareil, aucun
+    // simulateur, aucun bundle Metro »), RUM_PARITY_STATUS.md:169.
+    limite: `Demande une mise en production côté client. Web ; React Native en paquet privé (v${RN_VERSION}), jamais exécuté sur un appareil ni un simulateur ; pas de SDK iOS ou Android natif.`,
   },
 ];
 
@@ -110,10 +122,11 @@ function CarteCapteur({ c }: { c: Capteur }) {
         </span>
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">
-            <span className="font-mono text-[11px] font-bold text-accent">{c.n}</span>
-            <h3 className="text-lg font-bold tracking-tight text-ink">{c.titre}</h3>
+            {/* accent-ink et non accent : l'orange de marque ne tient que 2,3:1 en texte (F01). */}
+            <span className="font-mono text-[11px] font-bold text-accent-ink">{c.n}</span>
+            <h4 className="text-lg font-bold tracking-tight text-ink">{c.titre}</h4>
           </div>
-          <p className="text-xs font-medium uppercase tracking-[0.12em] text-ink-faint">
+          <p className="text-xs font-medium uppercase tracking-[0.12em] text-ink-soft">
             {c.accroche}
           </p>
         </div>
@@ -125,13 +138,13 @@ function CarteCapteur({ c }: { c: Capteur }) {
 
       {/* les spécifications qui le situent */}
       <div className="mt-6">
-        <h4 className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-faint">
+        <h5 className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-soft">
           Spécifications
-        </h4>
+        </h5>
         <dl className="mt-2 divide-y divide-line/70">
           {c.specs.map((s) => (
             <div key={s.k} className="flex flex-wrap items-baseline gap-x-3 py-2">
-              <dt className="w-28 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+              <dt className="w-28 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
                 {s.k}
               </dt>
               <dd className="min-w-0 flex-1 font-mono text-xs leading-relaxed text-ink-soft">
@@ -144,9 +157,9 @@ function CarteCapteur({ c }: { c: Capteur }) {
 
       {/* 3 — à qui ça s'adresse, ce qu'il vaut, ce qu'il ne fait pas */}
       <div className="mt-6 flex flex-1 flex-col">
-        <h4 className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-faint">
+        <h5 className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-soft">
           À qui ça s&apos;adresse
-        </h4>
+        </h5>
         <ul className="mt-2 space-y-1.5">
           {c.pourQui.map((p) => (
             <li key={p} className="flex gap-2 text-[13px] leading-relaxed text-ink-soft">
@@ -177,43 +190,45 @@ function CarteCapteur({ c }: { c: Capteur }) {
   );
 }
 
+const CODE = "rounded bg-app/70 px-1.5 py-0.5 font-mono text-[12.5px] text-ink";
+
 export function Capteurs() {
   return (
-    <section id="capteurs" className="mip-bande-claire scroll-mt-16 border-y border-line">
-      <div className="mx-auto max-w-6xl px-6 py-16 lg:py-20">
-        <header className="max-w-2xl">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-perf">
-            Deux points d&apos;entrée
-          </span>
-          <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            Extension navigateur ou SDK embarqué
-          </h2>
-          <p className="mt-3 leading-relaxed text-ink-soft">
-            Même moteur de collecte, même console. Chrome et Edge pour l&apos;extension ; une
-            balise <code className="rounded bg-app/70 px-1.5 py-0.5 font-mono text-[13px] text-ink">
-              {"<script>"}
-            </code>{" "}
-            pour le SDK, sur n&apos;importe quel site.
-          </p>
-        </header>
-
-        <div className="mt-10 grid items-stretch gap-6 lg:grid-cols-2">
-          {CAPTEURS.map((c) => (
-            <CarteCapteur key={c.n} c={c} />
-          ))}
-        </div>
-
-        {/* Ce qui réunit les deux — la raison pour laquelle ce n'est pas deux produits */}
-        <p className="mt-6 rounded-xl border border-line bg-panel/60 px-5 py-4 text-sm leading-relaxed text-ink-soft backdrop-blur-sm">
-          <span className="font-semibold text-ink">Même pipeline, même console.</span> Les deux
-          capteurs écrivent avec le même identifiant d&apos;application ; un attribut{" "}
-          <code className="rounded bg-app/70 px-1.5 py-0.5 font-mono text-[11.5px] text-ink">
-            collection_source
-          </code>{" "}
-          distingue l&apos;extension du SDK. Toutes les pages existantes — sessions, pages lentes,
-          erreurs, alertes — fonctionnent sur les deux, et se comparent l&apos;une à l&apos;autre.
-        </p>
+    <SousPartie
+      id="contient-capteurs"
+      surtitre="Deux points d'entrée"
+      titre="Extension navigateur ou SDK embarqué"
+      chapeau={
+        <>
+          Même moteur de collecte, même console. Chrome et Edge pour l&apos;extension ; une balise{" "}
+          <code className={CODE}>{"<script>"}</code> pour le SDK, sur n&apos;importe quel site.
+        </>
+      }
+    >
+      <div className="mt-6 grid items-stretch gap-6 lg:grid-cols-2">
+        {CAPTEURS.map((c) => (
+          <CarteCapteur key={c.n} c={c} />
+        ))}
       </div>
-    </section>
+
+      {/* Ce qui réunit les deux — la raison pour laquelle ce n'est pas deux produits.
+          « pages lentes » est devenu « Pages » (F09) ; le filtre est la dimension
+          `source` du contrat, libellée « Source de collecte » (lib/query-contract.ts). */}
+      <p className="mt-6 rounded-xl border border-line bg-panel/60 px-5 py-4 text-sm leading-relaxed text-ink-soft backdrop-blur-sm">
+        <span className="font-semibold text-ink">Même pipeline, même console.</span> Les deux capteurs
+        écrivent avec le même identifiant d&apos;application ; un attribut{" "}
+        <code className={CODE}>collection_source</code> distingue l&apos;extension du SDK. Sessions,
+        pages, erreurs et alertes fonctionnent sur les deux, et le filtre « Source de collecte » les
+        compare l&apos;un à l&apos;autre.
+      </p>
+
+      {/* Texte exact du plan (PS2). Sources : C5, C6 (RUM_PARITY_STATUS.md:173-174) —
+          un seul saut de trace, ni propagation d'un service à l'autre. */}
+      <p className="mt-3 text-sm leading-relaxed text-ink-soft" data-testid="capteurs-serveur">
+        Côté serveur : un agent Node (<code className={CODE}>packages/agent-node</code>) et un middleware
+        FastAPI (<code className={CODE}>integrations/fastapi</code>) relient un appel du navigateur à son
+        exécution serveur, sur un seul saut.
+      </p>
+    </SousPartie>
   );
 }

@@ -4,7 +4,15 @@
 // réel (admin → Clients → fiche client) : création + clé, snippet front, backend
 // optionnel, vérification live, accès scopé. Contenu statique (tutoriel), une
 // seule entrée dynamique : `isAdmin` décide du call-to-action vers l'écran admin.
-import Link from "next/link";
+//
+// Monté sur la vitrine (/presentation, partie « Ce qu'il contient », connecté
+// seulement) : un chemin PUBLIC, hors coquille de la console. Son lien vers
+// l'administration est donc un <a> (même raison que « Ouvrir la console »,
+// components/presentation/Landing.tsx), et son texte ne promet rien que la page
+// démente : plus d'accès « en toute étanchéité », quand l'onglet « Écart au
+// marché » dit que l'isolation repose encore sur le code (Specs.tsx). Texte de
+// moins de 18 px en `ink-soft`, jamais `ink-faint` (§ 3.9) : la réserve sur la clé
+// d'ingestion doit se lire.
 import { EXAMPLE_SNIPPET } from "@/lib/onboarding";
 import { SDK_POIDS_TEXTE } from "@/lib/sdk-poids";
 import { useState } from "react";
@@ -30,11 +38,11 @@ const STEPS: Step[] = [
           et tirets — ex. <code className="chip-mono">plateforme-client</code>) et les{" "}
           <strong>domaines du site</strong> (les origines autorisées pour le CORS).
         </p>
-        <p className="mt-2 text-ink-faint">
+        <p className="mt-2 text-ink-soft">
           À la validation, l'outil génère la <strong>clé d'API</strong> (affichée une seule fois !) et
           autorise le domaine — pris en compte en ≤ 60 s, sans redéploiement.
         </p>
-        <p className="mt-2 text-ink-faint">
+        <p className="mt-2 text-ink-soft">
           Tant que l'ingestion n'est pas fermée par défaut, une requête sans clé valide n'est pas
           forcément refusée.
         </p>
@@ -93,7 +101,7 @@ const STEPS: Step[] = [
           <strong>Express</strong>) ou lancer l'app sous l'<strong>auto-instrumentation OpenTelemetry</strong>{" "}
           (Python, Java, .NET, Go, Node…).
         </p>
-        <p className="mt-2 text-ink-faint">
+        <p className="mt-2 text-ink-soft">
           Étape facultative : sans elle, la mesure côté navigateur fonctionne ; seul le lien vers
           l'exécution serveur manque.
         </p>
@@ -125,7 +133,7 @@ const STEPS: Step[] = [
       <p>
         Créer un compte <strong>viewer scopé</strong> : il ne voit que cette app (dashboards, sessions,
         erreurs, tracing), rien d'autre. Pratique pour offrir au client un accès en lecture à ses propres
-        données, en toute étanchéité.
+        données.
       </p>
     ),
   },
@@ -152,13 +160,14 @@ export function AddClientCarousel({ isAdmin }: { isAdmin: boolean }) {
           <Icon paths={ICON_PATHS[step.icon]} className="h-5 w-5" strokeWidth={2.2} />
         </span>
         <div className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-soft">
             Ajouter un client · étape {i + 1} / {STEPS.length}
-            {step.optional && <span className="ml-1.5 text-ink-faint/70">(optionnel)</span>}
+            {step.optional && <span className="ml-1.5 text-ink-soft">(optionnel)</span>}
           </div>
-          <h3 className="truncate text-base font-bold tracking-tight text-ink">
+          {/* h4 : le carrousel vit sous le h3 « Brancher une application » de la vitrine. */}
+          <h4 className="truncate text-base font-bold tracking-tight text-ink">
             {i + 1}. {step.title}
-          </h3>
+          </h4>
         </div>
       </header>
 
@@ -179,15 +188,15 @@ export function AddClientCarousel({ isAdmin }: { isAdmin: boolean }) {
 
       <div className="flex items-center justify-between gap-2 px-5 py-4">
         {isAdmin ? (
-          <Link
+          <a
             href="/admin/customers"
             className="flex items-center gap-1.5 text-xs font-semibold text-accent-ink transition hover:underline"
           >
             Ouvrir l'écran Clients
             <Icon paths={ICON_PATHS.chevronRight} className="h-3.5 w-3.5" />
-          </Link>
+          </a>
         ) : (
-          <span className="text-xs text-ink-faint">
+          <span className="text-xs text-ink-soft">
             Demandez à un administrateur de créer le client.
           </span>
         )}

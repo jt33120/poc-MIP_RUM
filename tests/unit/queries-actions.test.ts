@@ -149,21 +149,29 @@ describe("F24 — état, période précédente et p75 par action", () => {
   });
 
   it("cmp=prev : le résumé lit la période précédente CONTIGUË, même durée", async () => {
-    const f = { app: "app-a", period: "7d" as const, device: null, segment: [] };
-    q.mockResolvedValueOnce([{ present: true }]).mockResolvedValueOnce([{ actions: 1, min_sample_rate: 1 }]);
-    await topActionsSummary(f);
-    const courante = q.mock.calls[1][1] as string[];
+    // Horloge FIGÉE : les deux lectures calculent chacune « maintenant ». Sans cela,
+    // une milliseconde qui passe entre les deux appels décale la borne commune — le
+    // test échouait par intermittence (« …44.190Z » contre « …44.189Z », en CI aussi).
+    vi.useFakeTimers({ now: new Date("2026-09-16T09:37:44.189Z"), toFake: ["Date"] });
+    try {
+      const f = { app: "app-a", period: "7d" as const, device: null, segment: [] };
+      q.mockResolvedValueOnce([{ present: true }]).mockResolvedValueOnce([{ actions: 1, min_sample_rate: 1 }]);
+      await topActionsSummary(f);
+      const courante = q.mock.calls[1][1] as string[];
 
-    q.mockReset();
-    q.mockResolvedValueOnce([{ present: true }]).mockResolvedValueOnce([{ actions: 1, min_sample_rate: 1 }]);
-    await topActionsSummary(f, true);
-    const precedente = q.mock.calls[1][1] as string[];
+      q.mockReset();
+      q.mockResolvedValueOnce([{ present: true }]).mockResolvedValueOnce([{ actions: 1, min_sample_rate: 1 }]);
+      await topActionsSummary(f, true);
+      const precedente = q.mock.calls[1][1] as string[];
 
-    // La fenêtre précédente se termine là où la courante commence, et dure autant.
-    expect(precedente[1]).toBe(courante[0]);
-    expect(Date.parse(precedente[1]) - Date.parse(precedente[0])).toBe(7 * 86_400_000);
-    // Rien d'autre ne change : même périmètre, mêmes paramètres liés ensuite.
-    expect(precedente.slice(2)).toEqual(courante.slice(2));
+      // La fenêtre précédente se termine là où la courante commence, et dure autant.
+      expect(precedente[1]).toBe(courante[0]);
+      expect(Date.parse(precedente[1]) - Date.parse(precedente[0])).toBe(7 * 86_400_000);
+      // Rien d'autre ne change : même périmètre, mêmes paramètres liés ensuite.
+      expect(precedente.slice(2)).toEqual(courante.slice(2));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("classement : la p75 du temps lié PAR action, calculée sur les durées brutes", async () => {

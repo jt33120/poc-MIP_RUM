@@ -63,6 +63,8 @@ describe("lireOnglet et lireInstant", () => {
   it("onglets déclarés lus tels quels ; valeur inconnue → Déroulé et ligne d'avertissement", () => {
     expect(lireOnglet("erreurs").onglet).toBe("erreurs");
     expect(lireOnglet("attributs").onglet).toBe("attributs");
+    // F46 : la cascade est un onglet, plus un réglage ignoré.
+    expect(lireOnglet("cascade")).toEqual({ onglet: "cascade", ignore: null });
     const inconnu = lireOnglet("photo");
     expect(inconnu.onglet).toBe("deroule");
     expect(inconnu.ignore).toContain("Réglage d'affichage ignoré : tab=photo");

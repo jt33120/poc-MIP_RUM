@@ -235,11 +235,13 @@ test.describe("F42 — Sessions : priorité et table", () => {
       [APP_F42],
     );
     await menageF42();
-    // Une instruction par table (`generate_series`), jamais ligne à ligne.
+    // Une instruction par table (`generate_series`), jamais ligne à ligne. La provenance
+    // du pays est l'une de celles que la base admet (`geoip`, `timezone`, `cdn` :
+    // contrainte `rum_session_geo_v85`) — « ip » était refusée, et tout le bloc avec.
     await poolF42.query(
       `insert into rum_session (session_id, app_id, device_type, geo_country, geo_source, browser, os,
                                 visitor_id, started_at, last_seen_at, page_count, collection_source)
-       select 'f42e2e-s' || lpad(i::text, 3, '0'), $1, 'desktop', 'FR', 'ip', 'Chrome', 'Windows',
+       select 'f42e2e-s' || lpad(i::text, 3, '0'), $1, 'desktop', 'FR', 'geoip', 'Chrome', 'Windows',
               $2, now() - make_interval(mins => i + 1), now() - make_interval(mins => i),
               2, case when i = 1 then 'extension' else 'sdk' end
          from generate_series(0, $3::int - 1) as i`,
@@ -308,13 +310,23 @@ test.describe("F42 — Sessions : priorité et table", () => {
     // La page suivante reprend APRÈS le curseur : les identifiants de la première
     // page n'y reviennent pas (comparaison d'ensembles, pas de la première ligne :
     // une pagination qui décale d'un rang passerait un test sur la seule tête).
+    // L'écran n'écrit que 8 caractères d'un identifiant (« f42e2e-s… » pour les 52) :
+    // l'identité d'une ligne se lit dans son lien, qui ouvre SON panneau (F43,
+    // `panel=session:<id>`), identifiant complet.
     const lienSession = page.getByTestId("ligne-session").getByTestId("session-link");
-    const page1 = await lienSession.allInnerTexts();
+    const identifiants = async () =>
+      (await lienSession.evaluateAll((liens) => liens.map((a) => a.getAttribute("href") ?? ""))).map((href) =>
+        new URL(href, consoleUrl).searchParams.get("panel"),
+      );
+    const page1 = await identifiants();
     expect(page1).toHaveLength(50);
+    expect(new Set(page1).size).toBe(50);
+    expect(page1).not.toContain(null);
     await page.getByTestId("sessions-suivantes").click();
     await page.waitForURL((u) => u.searchParams.has("cursor"), { timeout: 15_000 });
     await expect(page.getByTestId("ligne-session")).toHaveCount(SEMEES - 50);
-    const page2 = await lienSession.allInnerTexts();
+    const page2 = await identifiants();
+    expect(page2).toHaveLength(SEMEES - 50);
     expect(page2.filter((id) => page1.includes(id))).toEqual([]);
   });
 

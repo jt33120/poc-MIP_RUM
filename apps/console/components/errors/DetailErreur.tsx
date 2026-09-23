@@ -15,6 +15,13 @@
 // `partSessionsTouchees(f, ref)` (sessions DE LA BASE portant l'erreur, base =
 // sessions avec au moins une vue). Les écrire dans la même fraction ferait lire
 // S / T, qui n'est pas la part : ils restent dans deux propositions séparées.
+//
+// UN TROISIÈME SUPPORT (F21). La page d'une issue v2 (`/errors/issues/[id]`) reprend
+// les blocs 2 à 7 avec CES composants : l'impact d'une issue est un `ErrorImpact`
+// comme celui d'un groupe, et ses versions touchées sont celles que l'issue
+// persiste (`VersionsTouchees` en variante `issue`). Une issue reste lisible quand
+// elle se tait sur la fenêtre : zéro occurrence, c'est zéro session et zéro
+// visiteur touchés — un compte vide, pas un inconnu.
 import Link from "next/link";
 import { ContrastBars } from "@/components/charts/ContrastBars";
 import { Figure } from "@/components/charts/Figure";
@@ -27,12 +34,14 @@ import { formater } from "@/lib/fmt-ids";
 import { fmtDate } from "@/lib/format";
 import type { Lecture } from "@/lib/lecture";
 import { partTouchees } from "@/lib/perf-domain";
+import type { IssueRecord } from "@/lib/error-issues";
 import type {
-  ErrorGroupRow,
+  ErrorImpact,
   ErrorOccurrenceRow,
   ErrorTrendPoint,
   PartSessionsTouchees,
   ReleasesDuGroupe,
+  ReleaseVue,
 } from "@/lib/queries-errors";
 import type { Annotation, PointSerie, SerieDef } from "@/lib/series";
 import { libelleSeauComplet } from "@/lib/series";
@@ -49,6 +58,43 @@ export type PartGroupe = { lu: PartSessionsTouchees } | { refus: string };
 const pct = (v: number | null) => formater("pct", v);
 const compte = (v: number | null) => formater("count", v);
 
+/**
+ * Sessions et visiteurs touchés d'un impact. `ErrorImpact` rend NULL un compte de
+ * distincts nul (`nullif`) : avec des occurrences, NULL veut dire « aucune rattachée
+ * à une session / un visiteur » (Inconnu, V3) ; SANS occurrence — une issue qui se
+ * tait sur la fenêtre —, rien n'a été touché, et le compte vide vaut 0.
+ */
+export function comptesTouches(impact: ErrorImpact): { sessions: number | null; visiteurs: number | null } {
+  return impact.occurrences === 0
+    ? { sessions: 0, visiteurs: 0 }
+    : { sessions: impact.sessions_affected, visiteurs: impact.visitors_affected };
+}
+
+// ─────────────── Portée des occurrences affichées (blocs 1 et 5) ───────────────
+
+/**
+ * Ce que couvrent les occurrences AFFICHÉES — les seules que lisent le bouton de
+ * rejeu (bloc 1) et le repli du bloc 5 :
+ *   · `fenetre` : toutes celles de la fenêtre (une page, sans suite) ;
+ *   · `recentes` : les plus récentes, première page d'une liste qui continue ;
+ *   · `page` : une page SUIVANTE (curseur) — ni les plus récentes, ni la fenêtre.
+ * Une phrase qui porte sur « la fenêtre » ou « les plus récentes » ne s'écrit que
+ * lorsque les occurrences lues le sont vraiment (revue de fin de vague 7).
+ */
+export type PorteeOccurrences = "fenetre" | "recentes" | "page";
+
+/** `curseur` : la page affichée vient d'un curseur ; `suite` : une page suivante existe. */
+export function porteeOccurrences({ curseur, suite }: { curseur: boolean; suite: boolean }): PorteeOccurrences {
+  if (curseur) return "page";
+  return suite ? "recentes" : "fenetre";
+}
+
+/** Les occurrences sur lesquelles porte le repli du bloc 5, nommées pour ce qu'elles sont. */
+export function occurrencesDuRepli(portee: PorteeOccurrences, n: number): string {
+  if (portee === "page") return n > 1 ? `des ${compte(n)} occurrences de cette page` : "de l'occurrence de cette page";
+  return n > 1 ? `des ${compte(n)} dernières occurrences affichées` : "de la dernière occurrence affichée";
+}
+
 // ───────────────────────────── Bloc 1 : « Voir le rejeu » ─────────────────────────────
 
 /**
@@ -60,12 +106,35 @@ export function premiereAvecRejeu(occurrences: readonly ErrorOccurrenceRow[]): E
   return occurrences.find((o) => o.links.replay && o.session_id) ?? null;
 }
 
-export function BoutonRejeu({ occurrences, appId }: { occurrences: readonly ErrorOccurrenceRow[]; appId: string }) {
+/**
+ * Pourquoi aucun bouton : la phrase ne vaut que pour les occurrences LUES. « De la
+ * fenêtre » quand elles y sont toutes ; sinon les plus récentes, ou cette page.
+ */
+export function texteSansRejeu(portee: PorteeOccurrences, lues: number): string {
+  if (portee === "page") return "Aucune occurrence de cette page n'a de rejeu.";
+  if (portee === "recentes") {
+    return lues > 1
+      ? `Aucune des ${compte(lues)} occurrences les plus récentes n'a de rejeu.`
+      : "L'occurrence la plus récente n'a pas de rejeu.";
+  }
+  return "Aucune occurrence de la fenêtre n'a de rejeu.";
+}
+
+export function BoutonRejeu({
+  occurrences,
+  appId,
+  portee,
+}: {
+  occurrences: readonly ErrorOccurrenceRow[];
+  appId: string;
+  /** Ce que couvrent `occurrences` : la phrase d'absence n'en dit pas plus. */
+  portee: PorteeOccurrences;
+}) {
   const premiere = premiereAvecRejeu(occurrences);
   if (!premiere) {
     return (
-      <p className="text-xs text-ink-soft" data-testid="rejeu-absent">
-        Aucune occurrence de la fenêtre n&apos;a de rejeu.
+      <p className="text-xs text-ink-soft" data-testid="rejeu-absent" data-portee={portee}>
+        {texteSansRejeu(portee, occurrences.length)}
       </p>
     );
   }
@@ -87,14 +156,16 @@ export function BoutonRejeu({ occurrences, appId }: { occurrences: readonly Erro
  * Inconnu reste « Inconnu » (V3), jamais 0 : une erreur backend ne touche pas zéro
  * session, elle n'en touche AUCUNE CONNUE. Une part non calculable est remplacée
  * par sa raison, jamais par « 0 % ».
+ *
+ * `impact` : celui d'un groupe historique (`ErrorGroupRow`) ou d'une issue (F21).
  */
 export function PhraseImpact({
-  group,
+  impact,
   plage,
   part,
   hrefSessions,
 }: {
-  group: ErrorGroupRow;
+  impact: ErrorImpact;
   plage: string;
   part: Lecture<PartGroupe>;
   /** Sessions de la fenêtre portant cette erreur (`/sessions?...`) ; `null` : pas de destination. */
@@ -106,12 +177,12 @@ export function PhraseImpact({
     : "refus" in part.data
       ? { valeur: null, raison: `part non calculable : ${part.data.refus}` }
       : partTouchees(part.data.lu, plage);
-  const sessions = group.occurrences === 0 ? 0 : group.sessions_affected;
+  const { sessions, visiteurs } = comptesTouches(impact);
   const nombre = (v: number | null) => (v === null ? "Inconnu" : compte(v));
 
   return (
     <p className="mb-3 text-sm leading-relaxed text-ink" data-testid="phrase-impact">
-      <strong className="font-semibold">{compte(group.occurrences)} occurrences</strong> sur {plage}, touchant{" "}
+      <strong className="font-semibold">{compte(impact.occurrences)} occurrences</strong> sur {plage}, touchant{" "}
       <strong className="font-semibold">
         {hrefSessions && sessions !== null ? (
           <Link href={hrefSessions} className={ERROR_LINK}>
@@ -121,7 +192,7 @@ export function PhraseImpact({
           `${nombre(sessions)} sessions`
         )}
       </strong>{" "}
-      et <strong className="font-semibold">{nombre(group.visitors_affected)} visiteurs</strong>
+      et <strong className="font-semibold">{nombre(visiteurs)} visiteurs</strong>
       {valeur.valeur !== null && lu ? (
         <>
           {" ; "}
@@ -142,18 +213,28 @@ export function PhraseImpact({
  *
  * Les `testid` des trois premières sont ceux que la console porte depuis P5.1 :
  * les e2e du suivi d'erreurs les désignent, et le détail ne change pas d'adresse
- * parce qu'il change de tuile.
+ * parce qu'il change de tuile. Même règle pour la page d'une issue (F21), qui
+ * désignait ses tuiles `issue-occurrences` et `issue-sessions` : `prefixe="issue"`.
  */
-export function TuilesDetailErreur({ group, plage }: { group: ErrorGroupRow; plage: string }) {
-  const sessions = group.occurrences === 0 ? 0 : group.sessions_affected;
+export function TuilesDetailErreur({
+  impact,
+  plage,
+  prefixe = "detail",
+}: {
+  impact: ErrorImpact;
+  plage: string;
+  /** Préfixe des `testid` de valeur : `detail` (groupe, panneau) ou `issue` (page d'une issue). */
+  prefixe?: "detail" | "issue";
+}) {
+  const { sessions, visiteurs } = comptesTouches(impact);
   return (
     <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="kpi-detail-erreur">
       <KpiTile
         label={`Occurrences · ${plage}`}
-        valeur={group.occurrences}
+        valeur={impact.occurrences}
         format="count"
         sensMeilleur="bas"
-        testid="detail-occurrences"
+        testid={`${prefixe}-occurrences`}
         lecture="somme des occurrences : une erreur répétée compte chaque fois"
       />
       <KpiTile
@@ -162,23 +243,23 @@ export function TuilesDetailErreur({ group, plage }: { group: ErrorGroupRow; pla
         raisonNull="Inconnu : aucune occurrence rattachée à une session (erreurs backend, par exemple)"
         format="count"
         sensMeilleur="bas"
-        testid="detail-sessions"
+        testid={`${prefixe}-sessions`}
       />
       <KpiTile
         label="Visiteurs touchés"
-        valeur={group.visitors_affected}
+        valeur={visiteurs}
         raisonNull="Inconnu : aucune occurrence rattachée à un visiteur connu"
         format="count"
         sensMeilleur="bas"
-        testid="detail-users"
+        testid={`${prefixe}-users`}
       />
       <KpiTile
         label="Couverture identité"
-        valeur={group.identity_coverage}
+        valeur={impact.identity_coverage}
         raisonNull="Inconnue : aucune occurrence sur la fenêtre"
         format="pct"
         sensMeilleur="haut"
-        testid="detail-couverture"
+        testid={`${prefixe}-couverture`}
         lecture="part des occurrences rattachées à un visiteur ou à une identité"
       />
     </div>
@@ -187,22 +268,65 @@ export function TuilesDetailErreur({ group, plage }: { group: ErrorGroupRow; pla
 
 // ─────────────────────────── Bloc 3 : versions touchées ───────────────────────────
 
+/** Versions touchées d'une issue (F21) : celles que l'issue PERSISTE, pas une lecture de la fenêtre. */
+export interface VersionsIssue {
+  premiere: ReleaseVue | null;
+  derniere: ReleaseVue | null;
+}
+
+/**
+ * Bloc 3 d'une issue (§ 5.3.3 : « issue : `first_release`, `last_release` ») : la
+ * release de sa PREMIÈRE occurrence et celle de sa DERNIÈRE, datées de ces
+ * occurrences (`first_seen`, `last_seen`) — depuis toujours, groupes historiques
+ * repris compris (l'ingestion les tient à jour, `finaliserIssues`). Une occurrence
+ * qui ne déclarait pas de version rend `null`, que le bloc écrit « release non
+ * déclarée » : jamais la version d'une autre occurrence, jamais une version devinée.
+ */
+export function versionsDeLIssue(
+  issue: Pick<IssueRecord, "first_release" | "first_seen" | "last_release" | "last_seen">,
+): VersionsIssue {
+  return {
+    premiere: issue.first_release ? { release: issue.first_release, ts: issue.first_seen } : null,
+    derniere: issue.last_release ? { release: issue.last_release, ts: issue.last_seen } : null,
+  };
+}
+
 /**
  * « Première release vue » / « Dernière » : ce qui distingue une RÉGRESSION (le
  * groupe est apparu avec une version récente) d'une DETTE (il traîne depuis une
  * version ancienne). Les deux dates sont NON BORNÉES par la fenêtre, comme
  * « Première vue » : sur 24 h, toute erreur serait « apparue hier ».
+ *
+ * Deux sources, un même bloc. Un groupe historique LIT ses versions
+ * (`releasesDuGroupe` : première et dernière occurrence PORTANT une release, et
+ * leur nombre, filtres de l'écran appliqués). Une issue (F21) donne ce qu'elle
+ * persiste (`versionsDeLIssue`) : ni le nombre de versions distinctes, qu'elle ne
+ * garde pas — le bloc ne l'écrit donc pas —, ni les filtres de l'écran, qu'il dit
+ * non appliqués (V10).
  */
-export function VersionsTouchees({ releases }: { releases: Lecture<ReleasesDuGroupe> }) {
-  if (!releases.ok) return <EchecLecture compact titre="Versions touchées" />;
-  const { premiere, derniere, distinctes } = releases.data;
+export function VersionsTouchees(props: { releases: Lecture<ReleasesDuGroupe> } | { issue: VersionsIssue }) {
+  let lu: VersionsIssue & { distinctes: number | null };
+  if ("issue" in props) lu = { ...props.issue, distinctes: null };
+  else if (props.releases.ok) lu = props.releases.data;
+  else return <EchecLecture compact titre="Versions touchées" />;
+  const { premiere, derniere, distinctes } = lu;
+  const issue = "issue" in props;
   return (
-    <section className="card mb-4 p-4" aria-labelledby="versions-touchees" data-testid="versions-touchees">
+    <section
+      className="card mb-4 p-4"
+      aria-labelledby="versions-touchees"
+      data-testid="versions-touchees"
+      data-portee={issue ? "issue" : "groupe"}
+    >
       <h2 id="versions-touchees" className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
         Versions touchées
       </h2>
       {premiere === null && derniere === null ? (
-        <p className="mt-2 text-sm text-ink-soft">Release non déclarée : aucune occurrence de ce groupe ne porte de version.</p>
+        <p className="mt-2 text-sm text-ink-soft">
+          {issue
+            ? "Release non déclarée : ni la première ni la dernière occurrence de l'issue ne porte de version."
+            : "Release non déclarée : aucune occurrence de ce groupe ne porte de version."}
+        </p>
       ) : (
         <>
           <dl className="mt-2 flex flex-col gap-1 text-sm">
@@ -219,12 +343,15 @@ export function VersionsTouchees({ releases }: { releases: Lecture<ReleasesDuGro
               </dd>
             </div>
           </dl>
-          <p className="mt-2 text-xs text-ink-soft">
-            {distinctes > 1
-              ? `${compte(distinctes)} versions distinctes ont porté ce groupe`
-              : "une seule version a porté ce groupe"}{" "}
-            — depuis toujours, hors fenêtre. Une première release récente se lit comme une régression, une première
-            release ancienne comme une dette.
+          <p className="mt-2 text-xs text-ink-soft" data-testid="versions-portee">
+            {distinctes === null
+              ? "Releases de la première et de la dernière occurrence de l'issue — depuis toujours, groupes historiques repris compris ; ni la fenêtre ni les filtres de l'écran ne s'y appliquent."
+              : `${
+                  distinctes > 1
+                    ? `${compte(distinctes)} versions distinctes ont porté ce groupe`
+                    : "une seule version a porté ce groupe"
+                } — depuis toujours, hors fenêtre.`}{" "}
+            Une première release récente se lit comme une régression, une première release ancienne comme une dette.
           </p>
         </>
       )}
@@ -347,12 +474,17 @@ export function repartitionOccurrences(
  * Le test de P*.6 est publié ici même à l'état « pas de test », avec sa règle et
  * ses volumes minimaux : l'utilisateur sait ce qui sera cherché, et pourquoi ça ne
  * l'est pas encore.
+ *
+ * EN PAGINANT (`portee="page"`), les occurrences affichées ne sont plus « les
+ * dernières », ni « les plus récentes » : le titre dit « des N occurrences de cette
+ * page », et la lecture ne prétend rien d'autre.
  */
 export function QuOntEnCommun({
   occurrences,
   plage,
   touchees,
   hrefValeur,
+  portee,
 }: {
   /** Les occurrences affichées (≤ 100), pas la population. */
   occurrences: readonly ErrorOccurrenceRow[];
@@ -361,9 +493,12 @@ export function QuOntEnCommun({
   touchees: number | null;
   /** Filtrer l'écran sur une valeur ; `null` : pas de destination pour cette dimension. */
   hrefValeur: (cle: (typeof DIMENSIONS_REPLI)[number]["cle"], valeur: string) => string | null;
+  /** Ce que couvrent `occurrences` : première page (les plus récentes) ou page suivante. */
+  portee: PorteeOccurrences;
 }) {
   const titre = "Qu'ont en commun les sessions touchées ?";
   const total = occurrences.reduce((s, o) => s + o.occurrences, 0);
+  const lues = occurrencesDuRepli(portee, occurrences.length);
   const manqueTest =
     touchees === null
       ? `pas de test : sessions touchées inconnues, ${TOUCHES_MIN_TEST} requises`
@@ -379,15 +514,18 @@ export function QuOntEnCommun({
       id="detail-erreur-commun"
       meta={
         <>
-          <span data-testid="commun-titre-repli">
-            Répartition des {compte(occurrences.length)} dernières occurrences affichées (pas de la population)
+          <span data-testid="commun-titre-repli" data-portee={portee}>
+            Répartition {lues} (pas de la population)
           </span>
           <span>{compte(total)} occurrences comptées</span>
         </>
       }
       lecture={
         <>
-          Ces parts sont celles des occurrences AFFICHÉES, les plus récentes : elles ne disent pas ce que la population
+          {portee === "page"
+            ? "Ces parts sont celles des occurrences de CETTE PAGE"
+            : "Ces parts sont celles des occurrences AFFICHÉES, les plus récentes"}{" "}
+          : elles ne disent pas ce que la population
           de la fenêtre a en commun. Comparer les touchés à une base exige, par valeur, le nombre de sessions de la
           population de base, que les lectures ne rendent pas encore (B3) : aucune barre de base n&apos;est dessinée
           plutôt qu&apos;une barre à zéro. Une répartition est une observation, pas une cause.
@@ -424,7 +562,7 @@ export function QuOntEnCommun({
                 data={data}
                 max={total}
                 labelWidth="8rem"
-                legende={`${dim.libelle} des ${compte(occurrences.length)} dernières occurrences affichées`}
+                legende={`${dim.libelle} ${lues}`}
                 emptyLabel="Aucune occurrence affichée."
               />
             </div>

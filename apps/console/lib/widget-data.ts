@@ -16,7 +16,13 @@
 // CACHE COURT, PORTÉ AU PÉRIMÈTRE. Deux cartes qui posent la même question, ou
 // l'export CSV qui suit l'affichage, ne la posent qu'une fois. La clé contient le
 // périmètre EFFECTIF : une réponse calculée pour A ne peut pas servir à B.
-import { widgetFiltersLabel, type AnalyticsWidget, type RangeOverride, type Widget } from "./dashboards";
+import {
+  questionDeSection,
+  widgetFiltersLabel,
+  type AnalyticsWidget,
+  type RangeOverride,
+  type Widget,
+} from "./dashboards";
 import type { Filters } from "./filters";
 import { queryOf } from "./filters";
 import { cleJour } from "./forecast";
@@ -124,7 +130,8 @@ export interface WidgetErreur {
 }
 
 export interface WidgetData {
-  kind: "value" | "table" | "timeseries" | "toplist" | "invalid" | "error";
+  /** `section` : un titre de section (F37) — aucune lecture, aucune donnée ; il garde sa place dans l'ordre. */
+  kind: "value" | "table" | "timeseries" | "toplist" | "invalid" | "error" | "section";
   /**
    * Total lu, en NOMBRE (W-B2) : le formatage se fait au rendu, jamais ici. `null`
    * = non calculable, et `raisonNull` dit pourquoi (V3) ; absent = la carte n'a
@@ -420,6 +427,8 @@ export const RAISON_LECTURE_INDISPONIBLE = "lecture indisponible — réessayer 
  * lecture en échec devient une carte de diagnostic, pas une page cassée.
  */
 export async function resolveWidget(w: Widget, ctx: WidgetContext): Promise<WidgetData> {
+  // Un titre de section (F37) ne mesure rien : aucune lecture, aucune connexion prise.
+  if (w.kind === "section") return { kind: "section" };
   if (w.kind === "invalid") {
     return {
       kind: "invalid",
@@ -796,12 +805,20 @@ export function layoutToCsv(name: string, widgets: Widget[], data: WidgetData[],
   let budget = CSV_MAX_ROWS;
   let tronque = false;
   for (const [i, widget] of widgets.entries()) {
+    // Un titre de section (F37) devient un intertitre : aucune ligne de donnée, il
+    // ne consomme pas le plafond — et le lecteur du fichier retrouve les groupes.
+    if (widget.kind === "section") {
+      const question = questionDeSection(widget);
+      blocks.push(`# ${csvCell(`Section : ${widget.title}${question ? ` — ${question}` : ""}`)}`);
+      continue;
+    }
     const bloc = widgetToCsv(widget.title, data[i] ?? EMPTY, budget);
     budget -= bloc.used;
     blocks.push(bloc.csv);
     tronque ||= bloc.truncated;
     if (budget <= 0) {
-      tronque ||= i < widgets.length - 1;
+      // Seules des CARTES peuvent manquer : un titre de section restant n'a pas de ligne.
+      tronque ||= widgets.slice(i + 1).some((w) => w.kind !== "section");
       break;
     }
   }

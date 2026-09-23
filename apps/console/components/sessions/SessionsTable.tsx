@@ -34,8 +34,14 @@ const TD = "px-3 py-2 align-top text-xs";
 
 export interface SessionsTableProps {
   lignes: LigneSessions[];
-  /** `panel=session:<id>` par ligne. Absent tant que le panneau n'existe pas (F43) : la ligne mène alors à la page. */
+  /** `panel=session:<id>` par ligne (F43). Sans entrée pour une ligne, elle mène à la page de session. */
   panelHrefs: Record<string, string>;
+  /**
+   * Session ouverte en panneau (F43, ajout au § 4.3) : sa ligne est marquée
+   * (`aria-current`, fond) — à 1280 px et plus, la liste reste lisible à gauche du
+   * panneau, et ↑ / ↓ la parcourent : on doit y voir où l'on est.
+   */
+  ouvert?: string | null;
   /** `/sessions/<id>`, filtres conservés. */
   pageHrefs: Record<string, string>;
   /** `breakdownDrillHref` d'une route du parcours (§ 3.3). */
@@ -127,13 +133,26 @@ function Parcours({ routes, hrefs }: { routes: string[] | null; hrefs: Record<st
   );
 }
 
-function LienSession({ s, panelHrefs, pageHrefs }: { s: LigneSessions; panelHrefs: Record<string, string>; pageHrefs: Record<string, string> }) {
-  // Le panneau (F43) n'existe pas encore : sans href de panneau, la ligne mène à
-  // la page de session plutôt qu'à une URL qui n'ouvrirait rien.
-  const href = panelHrefs[s.session_id] ?? pageHrefs[s.session_id] ?? "#";
+function LienSession({
+  s,
+  panelHrefs,
+  pageHrefs,
+  ouvert,
+}: {
+  s: LigneSessions;
+  panelHrefs: Record<string, string>;
+  pageHrefs: Record<string, string>;
+  ouvert: boolean;
+}) {
+  const panneau = panelHrefs[s.session_id];
+  // Le panneau (F43) s'ouvre SANS remonter en haut de l'écran : la liste reste où
+  // elle était, et « Fermer » y ramène. Sans href de panneau, la ligne mène à la
+  // page de session plutôt qu'à une URL qui n'ouvrirait rien.
   return (
     <Link
-      href={href}
+      href={panneau ?? pageHrefs[s.session_id] ?? "#"}
+      scroll={panneau ? false : undefined}
+      aria-current={ouvert ? "true" : undefined}
       data-testid="session-link"
       className="rounded font-mono text-xs font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
     >
@@ -143,12 +162,17 @@ function LienSession({ s, panelHrefs, pageHrefs }: { s: LigneSessions; panelHref
 }
 
 function Rangee(props: SessionsTableProps & { s: LigneSessions }) {
-  const { s, panelHrefs, pageHrefs, routeHrefs = {}, rejeuHrefs = {} } = props;
+  const { s, panelHrefs, pageHrefs, routeHrefs = {}, rejeuHrefs = {}, ouvert = null } = props;
   const navigateur = navigateurDeSession(s);
+  const estOuverte = ouvert !== null && ouvert === s.session_id;
   return (
-    <tr className="border-t border-line/60" data-testid="ligne-session">
+    <tr
+      className={`border-t border-line/60 ${estOuverte ? "bg-accent/5" : ""}`}
+      data-testid="ligne-session"
+      data-ouvert={estOuverte ? "1" : undefined}
+    >
       <th scope="row" className="px-3 py-2 text-left align-top font-normal">
-        <LienSession s={s} panelHrefs={panelHrefs} pageHrefs={pageHrefs} />
+        <LienSession s={s} panelHrefs={panelHrefs} pageHrefs={pageHrefs} ouvert={estOuverte} />
       </th>
       <td className={`${TD} whitespace-nowrap tabular-nums`}>{instantUtc(s.last_seen_at)}</td>
       <td className={`${TD} whitespace-nowrap tabular-nums text-ink-soft`}>{instantUtc(s.started_at)}</td>
@@ -180,12 +204,17 @@ function Rangee(props: SessionsTableProps & { s: LigneSessions }) {
 
 /** Carte compacte (390 px) : trois lignes par session, les mêmes valeurs que la table. */
 function Carte(props: SessionsTableProps & { s: LigneSessions }) {
-  const { s, panelHrefs, pageHrefs, routeHrefs = {}, rejeuHrefs = {} } = props;
+  const { s, panelHrefs, pageHrefs, routeHrefs = {}, rejeuHrefs = {}, ouvert = null } = props;
   const navigateur = navigateurDeSession(s);
+  const estOuverte = ouvert !== null && ouvert === s.session_id;
   return (
-    <li className="min-w-0 border-t border-line/60 py-2.5 first:border-0 first:pt-0" data-testid="carte-session">
+    <li
+      className="min-w-0 border-t border-line/60 py-2.5 first:border-0 first:pt-0"
+      data-testid="carte-session"
+      data-ouvert={estOuverte ? "1" : undefined}
+    >
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <LienSession s={s} panelHrefs={panelHrefs} pageHrefs={pageHrefs} />
+        <LienSession s={s} panelHrefs={panelHrefs} pageHrefs={pageHrefs} ouvert={estOuverte} />
         <span className="text-xs tabular-nums text-ink-faint">
           {instantUtc(s.last_seen_at)} UTC · {formater("s-auto", dureeObservee(s))}
         </span>

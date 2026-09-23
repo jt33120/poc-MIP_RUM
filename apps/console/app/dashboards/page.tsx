@@ -25,6 +25,7 @@ import { registeredApps } from "@/lib/queries";
 import { getUser } from "@/lib/auth";
 import { canCreateDashboard, dashboardApps, dashboardPrincipal, ownerLabel } from "@/lib/dashboard-access";
 import { MODELES_TABLEAUX, apercuDuModele, optionsDeClonage, pucesDuTableau } from "@/lib/dashboard-templates";
+import { nombreDeCartes } from "@/lib/dashboards";
 import { CONTRACT_PARAMS, hrefWithQuery, queryToSearchParams } from "@/lib/query-contract";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { createDashboardAction } from "./actions";
@@ -141,10 +142,11 @@ export default async function Dashboards({
                 </td>
                 <td className="px-3 py-2 text-ink-soft">{ownerLabel(d, user)}</td>
                 <td className="px-3 py-2">
-                  {d.layout.length === 0 ? (
+                  {/* F37 : un titre de section n'est pas une carte — ni compté, ni en puce. */}
+                  {nombreDeCartes(d.layout) === 0 ? (
                     <span className="text-xs text-ink-soft">aucune carte</span>
                   ) : (
-                    <ul className="flex min-w-48 flex-wrap gap-1" aria-label={`${d.layout.length} cartes`}>
+                    <ul className="flex min-w-48 flex-wrap gap-1" aria-label={`${nombreDeCartes(d.layout)} cartes`}>
                       {pucesDuTableau(d.layout).map((p) => (
                         <li key={p.libelle} className="rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-soft">
                           {p.libelle}

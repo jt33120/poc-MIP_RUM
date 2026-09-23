@@ -8,7 +8,7 @@ Un ancien journal cité, au même format, ne doit pas être pris pour le relevé
 |---|---|
 | `pnpm exec vitest run tests/unit` | **12 fichiers, 1 234 tests verts, 0 ignoré** |
 
-SQL : **3 fichiers** et **45 tests** au total.
+SQL : **vert** — **3 fichiers** et **45 tests** au total, dont 1 fichier et 4 tests ignorés : un banc.
 
 ## 4. Les capacités
 

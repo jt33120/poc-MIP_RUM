@@ -1352,3 +1352,172 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
     expect(recent.groups.map((g) => g.fingerprint)).toEqual(["f19-ouvert-b", "f19-ouvert-a"]);
   });
 });
+
+// ═══════════════════ F21 — part des sessions touchées d'une issue ═══════════════════
+//
+// La page d'une issue v2 (`/errors/issues/[id]`) écrit la phrase d'impact du détail
+// d'un groupe : « x % des T sessions avec au moins une vue ». Pour une issue, le
+// numérateur compte SES lignes (`partSessionsTouchees` sur une `IssueRef`). Ce que
+// seule la base peut dire :
+//   - ses lignes sont celles de sa page (`issueDetail`) : son identifiant propre, ou
+//     l'alias UNIQUE d'une empreinte historique — une empreinte reprise par deux
+//     issues n'est comptée pour aucune, et une ligne qui porte une AUTRE issue ne
+//     revient pas à celle de son empreinte ;
+//   - la base ne change pas (sessions avec vue) : une session touchée sans vue dans
+//     la fenêtre compte dans l'impact de l'issue, jamais au numérateur de la part ;
+//   - périmètre : l'app de l'issue borne tout, viewer restreint, `apps = []` = zéro.
+(url ? describe : describe.skip)("F21 — part des sessions touchées d'une issue sur PostgreSQL", () => {
+  const APP_F21 = "f21-issue-a";
+  const APP_F21_B = "f21-issue-b";
+  const ISSUE_F21_I = "f2100000-0000-4000-8000-000000000001";
+  const ISSUE_F21_J = "f2100000-0000-4000-8000-000000000002";
+  const ISSUE_F21_K = "f2100000-0000-4000-8000-000000000003";
+  const CLE_F21: Record<string, string> = {
+    [ISSUE_F21_I]: "f2100000000000000000000000000001",
+    [ISSUE_F21_J]: "f2100000000000000000000000000002",
+    [ISSUE_F21_K]: "f2100000000000000000000000000003",
+  };
+  const c21 = new pg.Client(url ? { connectionString: url } : {});
+  let lib21: Console;
+  let issues21: typeof import("../../apps/console/lib/error-issues");
+  const f21 = (qs = `app=${APP_F21}`, principal: ScopePrincipal = ADMIN) =>
+    lib21.filtersOfQuery(requete(`${FENETRE}&${qs}`, principal));
+  const refI = { app_id: APP_F21, issue_id: ISSUE_F21_I };
+  const refJ = { app_id: APP_F21, issue_id: ISSUE_F21_J };
+
+  async function nettoyerF21(): Promise<void> {
+    // `error_issue` d'abord : ses alias suivent (clé étrangère `on delete cascade`).
+    for (const table of ["error_issue", "rum_error", "rum_pageview", "rum_session"]) {
+      await c21.query(`delete from ${table} where app_id = any($1::text[])`, [[APP_F21, APP_F21_B]]);
+    }
+  }
+
+  async function semerF21(): Promise<void> {
+    // [session, app, instant de sa seule vue] : s1 à s4 et b1 ont une vue DANS la
+    // fenêtre (la base) ; s5 n'en a qu'une dans la période précédente.
+    for (const [id, app, vue] of [
+      ["f21-s1", APP_F21, H(0, 1)],
+      ["f21-s2", APP_F21, H(1, 1)],
+      ["f21-s3", APP_F21, H(2, 1)],
+      ["f21-s4", APP_F21, H(3, 1)],
+      ["f21-s5", APP_F21, H(-2, 1)],
+      ["f21-b1", APP_F21_B, H(1, 1)],
+    ] as const) {
+      await c21.query(
+        `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at,
+                                  sample_rate, error_sample_rate, has_error)
+         values ($1, $2, 'desktop', false, $3, $3, 1, 1, true)`,
+        [id, app, vue],
+      );
+      await c21.query(
+        `insert into rum_pageview (span_id, session_id, app_id, route, url, nav_type, started_at)
+         values ($1, $2, $3, '/panier', 'https://site.example/', 'navigate', $4)`,
+        [`${id}-pv`, id, app, vue],
+      );
+    }
+    for (const [id, app] of [
+      [ISSUE_F21_I, APP_F21],
+      [ISSUE_F21_J, APP_F21],
+      [ISSUE_F21_K, APP_F21_B],
+    ] as const) {
+      await c21.query(
+        `insert into error_issue (id, app_id, grouping_version, grouping_key, grouping_basis, origin, status,
+                                  status_source, first_seen, last_seen, first_release, last_release)
+         values ($1, $2, 2, $3, 'normalized_frame', 'migration', 'open', 'system', $4, $5, '1.0.0', '1.1.0')`,
+        [id, app, CLE_F21[id], H(-4), H(5)],
+      );
+    }
+    // Une empreinte reprise par I SEULE (ses lignes historiques sont à I), une autre
+    // reprise par I ET J (ses lignes historiques ne sont à aucune).
+    await c21.query(
+      `insert into error_issue_alias (app_id, legacy_fingerprint, issue_id)
+       values ($1, 'f21fp-unique', $2), ($1, 'f21fp-partagee', $2), ($1, 'f21fp-partagee', $3)`,
+      [APP_F21, ISSUE_F21_I, ISSUE_F21_J],
+    );
+    // [session, app, empreinte, issue portée par la ligne, occurrences, instant]
+    const erreurs: [string, string, string, string | null, number, Date][] = [
+      ["f21-s1", APP_F21, "f21fp-propre", ISSUE_F21_I, 2, H(0, 30)], // identifiant propre → I
+      ["f21-s2", APP_F21, "f21fp-unique", null, 3, H(1, 30)], // alias unique → I
+      ["f21-s3", APP_F21, "f21fp-partagee", null, 4, H(2, 30)], // alias partagé → aucune
+      ["f21-s4", APP_F21, "f21fp-unique", ISSUE_F21_J, 1, H(3, 30)], // porte J : jamais à I par son empreinte
+      ["f21-s5", APP_F21, "f21fp-propre", ISSUE_F21_I, 5, H(3, 40)], // touchée, mais sans vue dans la fenêtre
+      ["f21-b1", APP_F21_B, "f21fp-b", ISSUE_F21_K, 6, H(1, 30)],
+    ];
+    let n = 0;
+    for (const [sid, app, fp, issue, occ, ts] of erreurs) {
+      await c21.query(
+        `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type, fingerprint,
+                                occurrences, release, error_source, ts,
+                                grouping_version, grouping_key, grouping_basis, issue_id)
+         values ($1, $2, $3, '/panier', 'error', $4, 'TypeError', $5, $6, '1.1.0', 'browser_js', $7,
+                 $8, $9, $10, $11)`,
+        [
+          `f21-e-${n++}`, sid, app, `boom ${fp}`, fp, occ, ts,
+          issue ? 2 : null, issue ? CLE_F21[issue] : null, issue ? "normalized_frame" : null, issue,
+        ],
+      );
+    }
+  }
+
+  beforeAll(async () => {
+    await c21.connect();
+    for (const file of fichiersSql()) await c21.query(readFileSync(file, "utf8"));
+    await nettoyerF21();
+    await semerF21();
+    lib21 = await consoleSur(url!);
+    // Après `consoleSur` : même registre de modules, donc même pool (`lib/db`).
+    issues21 = await import("../../apps/console/lib/error-issues");
+  }, 180_000);
+
+  afterAll(async () => {
+    await lib21?.pool.end();
+    await nettoyerF21();
+    await c21.end();
+  });
+
+  it("les lignes de l'issue : identifiant propre et alias unique ; ni alias partagé, ni ligne d'une autre issue", async () => {
+    // Base : s1 à s4 (s5 n'a de vue que dans la période précédente).
+    expect(await lib21.partSessionsTouchees(f21(), refI)).toEqual({ base: 4, touchees: 2, tauxMin: 1 });
+    expect(await lib21.partSessionsTouchees(f21(), refJ)).toEqual({ base: 4, touchees: 1, tauxMin: 1 });
+  });
+
+  it("même rattachement que la page : le numérateur = sessions de l'issue (`issueDetail`) ∩ base", async () => {
+    const issue = await issues21.resolveIssue(ISSUE_F21_I, null);
+    expect(issue).not.toBeNull();
+    const detail = await issues21.issueDetail(issue!, f21(), { limit: 100, cursor: null });
+    // L'impact de la page compte s5, touchée sans vue dans la fenêtre ; la part, non.
+    expect(detail.impact.occurrences).toBe(10);
+    expect(detail.impact.sessions_affected).toBe(3);
+    const sessionsDeLaPage = new Set(detail.occurrences.map((o) => o.session_id));
+    expect([...sessionsDeLaPage].sort()).toEqual(["f21-s1", "f21-s2", "f21-s5"]);
+    const base = new Set(["f21-s1", "f21-s2", "f21-s3", "f21-s4"]);
+    const attendu = [...sessionsDeLaPage].filter((s) => s !== null && base.has(s)).length;
+    expect((await lib21.partSessionsTouchees(f21(), refI)).touchees).toBe(attendu);
+
+    const issueJ = await issues21.resolveIssue(ISSUE_F21_J, null);
+    const detailJ = await issues21.issueDetail(issueJ!, f21(), { limit: 100, cursor: null });
+    expect(detailJ.occurrences.map((o) => o.session_id)).toEqual(["f21-s4"]);
+  });
+
+  it("part ≤ 100 % pour toute issue seedée ; jamais au-delà de la part de l'app", async () => {
+    const toutes = await lib21.partSessionsTouchees(f21());
+    for (const ref of [refI, refJ]) {
+      const lu = await lib21.partSessionsTouchees(f21(), ref);
+      expect(lu.touchees).toBeLessThanOrEqual(lu.base);
+      expect(lu.touchees).toBeLessThanOrEqual(toutes.touchees);
+    }
+  });
+
+  it("périmètre : l'app de l'issue borne la base ; viewer d'une autre app et apps = [] → zéro", async () => {
+    // Sous « toutes les apps », l'issue K reste lue dans SON app : une session de base, touchée.
+    expect(await lib21.partSessionsTouchees(f21("app=all"), { app_id: APP_F21_B, issue_id: ISSUE_F21_K })).toEqual({
+      base: 1,
+      touchees: 1,
+      tauxMin: 1,
+    });
+    const viewerB: ScopePrincipal = { role: "viewer", apps: [APP_F21_B] };
+    expect(await lib21.partSessionsTouchees(f21("", viewerB), refI)).toEqual({ base: 0, touchees: 0, tauxMin: null });
+    const vide = lib21.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${APP_F21}`)));
+    expect(await lib21.partSessionsTouchees(vide, refI)).toEqual({ base: 0, touchees: 0, tauxMin: null });
+  });
+});

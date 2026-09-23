@@ -11,6 +11,7 @@
 // LE VERDICT RÉEL EST ÉCRIT. « À améliorer » ou « Mauvais », lu par `rating2026` :
 // plus le mot unique « poor » pour tout LCP au-dessus de 2,5 s.
 import Link from "next/link";
+import type { LienSessionsRoute } from "@/lib/breakdowns";
 import { LIBELLE_ETAT_ROBOT } from "@/lib/correlation";
 import { fmtLatency } from "@/lib/format";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
@@ -28,7 +29,8 @@ export interface LigneAngleMort {
   lcpReel: number;
   mesures: number;
   ecartMs: number;
-  liens: { heure: string; sessions: string; pages: string };
+  /** `sessions` : la recherche exacte par route de `/sessions`, ou la raison écrite de son absence. */
+  liens: { heure: string; sessions: LienSessionsRoute; pages: string };
 }
 
 const TH = "whitespace-nowrap px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-soft";
@@ -110,9 +112,17 @@ export function TableAnglesMorts({ lignes, avecApp }: { lignes: LigneAngleMort[]
                     <Link href={l.liens.heure} className="font-medium text-brand hover:underline">
                       Voir l&apos;heure
                     </Link>
-                    <Link href={l.liens.sessions} className="font-medium text-brand hover:underline">
-                      Sessions de cette heure
-                    </Link>
+                    {l.liens.sessions.href !== null ? (
+                      <Link href={l.liens.sessions.href} className="font-medium text-brand hover:underline">
+                        Sessions de cette heure
+                      </Link>
+                    ) : (
+                      // Pas de lien vers un écran de refus : le libellé reste, en texte, avec sa raison.
+                      <span className="relative text-ink-soft" title={l.liens.sessions.raison} data-testid="angle-mort-sessions-indisponible">
+                        Sessions de cette heure : non proposées
+                        <span className="sr-only"> — {l.liens.sessions.raison}</span>
+                      </span>
+                    )}
                     <Link href={l.liens.pages} className="font-medium text-brand hover:underline">
                       Pages
                     </Link>

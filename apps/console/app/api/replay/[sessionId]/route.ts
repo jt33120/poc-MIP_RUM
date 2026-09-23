@@ -1,6 +1,12 @@
 // GET /api/replay/[sessionId] — reconstruit le replay : chunks bytea gzip
 // (replay_chunk) -> gunzip -> concat -> JSON des events rrweb pour le player.
 // Auth : protégée par le middleware global (B3, JWT cookie) ; périmètre d'apps vérifié ici.
+//
+// B36 (plan § 6.3) — un segment ILLISIBLE (gzip ou JSON corrompu, ou JSON qui n'est
+// pas une liste d'événements) reste ignoré, pour que le reste du rejeu se lise ;
+// mais il est désormais COMPTÉ (`ignores`) : le lecteur dit « N segments illisibles
+// ignorés » au lieu de rendre un rejeu troué sans rien en dire. Aucune requête ni
+// migration nouvelle : la lecture des segments et la garde de périmètre sont inchangées.
 import { NextResponse } from "next/server";
 import { gunzipSync } from "node:zlib";
 import { q } from "@/lib/db";
@@ -42,14 +48,16 @@ export async function GET(
     );
 
     const events: unknown[] = [];
+    let ignores = 0;
     for (const c of chunks) {
       try {
         const parsed: unknown = JSON.parse(gunzipSync(c.body).toString("utf8"));
         if (Array.isArray(parsed)) events.push(...parsed);
+        else ignores += 1; // lisible, mais pas une liste d'événements rrweb
       } catch {
-        /* chunk corrompu : ignoré, le reste du replay reste lisible */
+        ignores += 1; // chunk corrompu : ignoré, le reste du replay reste lisible — et compté (B36)
       }
     }
-    return NextResponse.json({ sessionId, chunks: chunks.length, events });
+    return NextResponse.json({ sessionId, chunks: chunks.length, events, ignores });
   });
 }

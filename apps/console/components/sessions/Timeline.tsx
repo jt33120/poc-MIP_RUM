@@ -9,6 +9,12 @@
 //     ne construit aucune URL et ne sait pas ce qu'est un périmètre d'app.
 //   · `imbrique` — la ligne est déjà rendue SOUS son action (déroulé groupé) :
 //     le badge causal « ↳ action » ferait doublon avec l'indentation.
+//
+// F47 ajoute le rejeu synchronisé, sans rien changer au corps d'une ligne :
+//   · `data-ligne` — la ligne que l'îlot `ReplaySynchro` désigne (`aria-current="time"`
+//     quand la tête de lecture l'a atteinte, surligné) ;
+//   · `instant` — le décalage devient un lien `?tab=deroule&at=<t>#<ancre>` : sans
+//     JavaScript, il positionne le lecteur ; avec, l'îlot place la tête sans recharger.
 import Link from "next/link";
 import { fmtDate, fmtVital } from "@/lib/format";
 import type { TimelineItem } from "@/lib/queries";
@@ -22,6 +28,51 @@ export function fmtOffset(ms: number): string {
   return `+${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s`;
 }
 
+/** Surlignage de la ligne que la tête de lecture a atteinte (`ReplaySynchro`, F47). */
+export const LIGNE_COURANTE = "aria-[current=time]:bg-perf/10";
+
+/**
+ * Le décalage d'une ligne. Avec un rejeu (`instant`), c'est un lien qui place la tête
+ * à l'instant de la ligne (F47) ; sans rejeu, un simple texte.
+ *
+ * LA COULEUR EST CHOISIE ICI, pas par l'appelant : devenu un lien, le décalage est un
+ * CONTRÔLE, et un contrôle de moins de 18 px ne s'écrit pas en `ink-faint` (≈ 2,8:1,
+ * réservé au décoratif, § 3.9) mais en `ink-soft`. Sans rejeu, le texte garde sa teinte.
+ */
+export function Decalage({
+  texte,
+  ts,
+  instant = null,
+  className,
+}: {
+  texte: string;
+  ts: Date;
+  instant?: string | null;
+  /** Mise en page seulement (largeur, police) : aucune classe de couleur. */
+  className: string;
+}) {
+  if (!instant) {
+    return (
+      <span className={`${className} text-ink-faint`} title={fmtDate(ts)}>
+        {texte}
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={instant}
+      // Même page, autre instant : rien à précharger (une chronologie en a des centaines).
+      prefetch={false}
+      data-instant=""
+      aria-label={`${texte} — placer le rejeu à cet instant`}
+      title={`${fmtDate(ts)} — placer le rejeu à cet instant`}
+      className={`${className} rounded text-ink-soft hover:text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf`}
+    >
+      {texte}
+    </Link>
+  );
+}
+
 // `id` : ancre du récit « En bref » (P*.9, `ancreEvenement`) ; la ligne visée
 // s'éclaire (`target:`) pour que le fait cité se voie à l'arrivée.
 export function TimelineRow({
@@ -30,6 +81,7 @@ export function TimelineRow({
   id,
   lien = null,
   imbrique = false,
+  instant = null,
 }: {
   item: TimelineItem;
   t0: number;
@@ -38,20 +90,25 @@ export function TimelineRow({
   lien?: { href: string; libelle: string } | null;
   /** La ligne est déjà indentée sous son action : le badge causal ferait doublon. */
   imbrique?: boolean;
+  /** Lien d'instant du rejeu (`?at=`), pré-calculé par la page ; absent sans rejeu (F47). */
+  instant?: string | null;
 }) {
   const st = KIND_STYLE[item.kind];
   const offset = new Date(item.ts).getTime() - t0;
   return (
-    <li id={id} className="relative scroll-mt-24 rounded-r pb-4 pl-6 last:pb-0 target:bg-brand/10">
+    <li id={id} data-ligne={id} className={`relative scroll-mt-24 rounded-r pb-4 pl-6 last:pb-0 target:bg-brand/10 ${LIGNE_COURANTE}`}>
       <span
         className={`absolute -left-[9px] top-1 flex h-4 w-4 items-center justify-center rounded-full text-white ${st.dot}`}
       >
         {KIND_ICON[item.kind]}
       </span>
       <div className="flex flex-wrap items-baseline gap-2 text-sm">
-        <span className="w-20 shrink-0 font-mono text-xs tabular-nums text-ink-faint" title={fmtDate(item.ts)}>
-          {fmtOffset(Math.max(0, offset))}
-        </span>
+        <Decalage
+          texte={fmtOffset(Math.max(0, offset))}
+          ts={item.ts}
+          instant={instant}
+          className="w-20 shrink-0 font-mono text-xs tabular-nums"
+        />
         <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${st.badge}`}>{st.label}</span>
         <ItemBody item={item} />
         {item.action_id && item.kind !== "action" && !imbrique && (

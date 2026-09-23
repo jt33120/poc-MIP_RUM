@@ -6,26 +6,60 @@
 // et commentaires en fin de page ; les formulaires ne sont rendus qu'à un admin hors
 // démo, et l'API applique la même règle. L'URL reste valide après un retour arrière
 // du regroupement v2, et quand le bug se tait sur la période.
+//
+// ALIGNÉE SUR LE DÉTAIL D'UN GROUPE (F21, plan § 5.3.3). Les blocs 2 à 7 sont ceux
+// de `/errors/[fingerprint]`, rendus par LES MÊMES composants
+// (`components/errors/DetailErreur.tsx`) : phrase d'impact et quatre tuiles,
+// versions touchées, occurrences dans le temps en barres avec les déploiements, ce
+// qu'ont en commun les sessions touchées (repli tant que B3 manque), pile du dernier
+// exemplaire, occurrences. La rangée de sept tuiles `ErrorStat` et la courbe sans axe
+// `ObservedTrend` disparaissent (§ 5.3.4). Du bloc 1, l'en-tête reprend « Voir le
+// rejeu » (`BoutonRejeu`, revue de fin de vague 7). Reste propre à l'issue : son
+// en-tête, son état, triage et assignation, tickets, activité.
+//
+// DEUX SOURCES PROPRES À L'ISSUE, dites à l'écran. La part des sessions touchées
+// compte les lignes DE L'ISSUE (`partSessionsTouchees` sur une `IssueRef`, même
+// rattachement qu'`issueDetail`) ; les versions touchées sont celles que l'issue
+// persiste (`first_release`, `last_release`), que ni la fenêtre ni les filtres ne
+// bornent.
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import { ObservedTrend } from "@/components/charts/ObservedTrend";
 import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
+import {
+  BoutonRejeu,
+  OccurrencesDansLeTemps,
+  PhraseImpact,
+  QuOntEnCommun,
+  TuilesDetailErreur,
+  VersionsTouchees,
+  comptesTouches,
+  porteeOccurrences,
+  versionsDeLIssue,
+  type PartGroupe,
+} from "@/components/errors/DetailErreur";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { ERROR_LINK, ErrorOccurrences } from "@/components/errors/ErrorOccurrences";
 import { ErrorStackCard } from "@/components/errors/ErrorStackCard";
-import { ErrorStat } from "@/components/errors/ErrorStat";
 import { GroupingBasisBadge, IssueOriginBadge, IssueStatusBadge, ReappearedBadge } from "@/components/errors/IssueBadges";
 import { IssueActivitySection, IssueTriageCard } from "@/components/errors/IssueWorkflow";
 import { IssueTicketCard } from "@/components/errors/IssueTickets";
-import { errorGroupHref, errorSearchParams, errorsHref, fmtCount, fmtCoverage, issueHref } from "@/components/errors/error-view";
+import { errorGroupHref, errorSearchParams, errorsHref, issueHref } from "@/components/errors/error-view";
+import { SectionErreur } from "@/components/states/SectionErreur";
+import { annotationsDeploiements } from "@/lib/annotations";
 import { getUser } from "@/lib/auth";
 import { issueWorkflowView, listIssueActivity } from "@/lib/error-issue-workflow";
 import { ISSUE_STATUS_LABELS, isIssueId, issueDetail, resolveIssue, type IssueDetailResult } from "@/lib/error-issues";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
+import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
+import { listDeploys } from "@/lib/queries-deploys";
+import { UnsupportedFilterError } from "@/lib/query-compiler";
+import { bucketStarts } from "@/lib/query-contract";
+import { grilleIso } from "@/lib/series";
+import { gabaritZoom } from "@/lib/view-state";
 import {
   apercuTicket,
   integrationsUtilisables,
@@ -36,6 +70,7 @@ import {
   errorScopeFor,
   parseErrorCursor,
   parseOccurrencesPage,
+  partSessionsTouchees,
   scopeApps,
   type ErrorFilters,
 } from "@/lib/queries-errors";
@@ -62,7 +97,8 @@ export default async function IssuePage({
   const ecran = await pageFilters(sp, `/errors/issues/${id}`);
   if (!ecran.ok) return <FilterProblemNotice title="Erreurs JS" problem={ecran.problem} />;
   const f = ecran.deviceFilters;
-  const { label, bucketLabel } = ecran;
+  const { label, bucketLabel, query } = ecran;
+  const { range } = query;
   const url = errorSearchParams(sp);
   const cursor = parseErrorCursor(url.get("cursor"));
 
@@ -86,8 +122,27 @@ export default async function IssuePage({
     );
   }
 
-  const detail = await issueDetail(issue, f, { limit: parseOccurrencesPage(url).limit, cursor });
+  // CHAQUE LECTURE EST INDÉPENDANTE (§ 3.8), comme sur la page d'un groupe : la part
+  // et les déploiements sont deux sections, lues avec le détail, et l'échec de l'une
+  // n'efface pas les autres. La part divise par des sessions avec VUE : un filtre que
+  // les pages vues ne portent pas (`service`) la refuse — un refus de contrat pour
+  // CETTE phrase, pas une panne de l'écran (V10).
+  const [detail, part, deploys] = await Promise.all([
+    issueDetail(issue, f, { limit: parseOccurrencesPage(url).limit, cursor }),
+    lire<PartGroupe>(async () => {
+      try {
+        return { lu: await partSessionsTouchees(f, { app_id: issue.app_id, issue_id: issue.id }) };
+      } catch (e) {
+        if (e instanceof UnsupportedFilterError) return { refus: e.message };
+        throw e;
+      }
+    }),
+    lire(() => listDeploys({ ...ecran.filters, app: issue.app_id }, 20)),
+  ]);
   const { impact, trend, last_sample: last, occurrences, sampling, enrichment } = detail;
+  // Ce que couvrent les occurrences affichées (blocs 1 et 5) : en paginant, ni « la
+  // fenêtre » ni « les plus récentes » — cette page seulement.
+  const portee = porteeOccurrences({ curseur: cursor !== null, suite: detail.next_cursor !== null });
   // Workflow P5.6 : null avant migration-v73. Un curseur d'historique illisible rend la page la plus récente.
   // Les adresses des comptes (acteurs, assignés) ne sont lues que pour un admin.
   const admin = user?.role === "admin" && !user.demo;
@@ -108,6 +163,18 @@ export default async function IssuePage({
       ? await apercuTicket(issue.id, scopeApps(errorScopeFor(user)), origineConsole(await headers()))
       : null;
 
+  // Zoom sur un seau : la plage change, et rien d'autre (§ 3.3) ; la pagination des
+  // occurrences repart du début (`cursor` est laissé derrière par `gabaritZoom`).
+  const contratZoom = new URLSearchParams(issueHref(issue, f).split("?")[1]);
+  contratZoom.delete("period");
+  contratZoom.set("from", "{from}");
+  contratZoom.set("to", "{to}");
+  const zoomHref = gabaritZoom(`/errors/issues/${encodeURIComponent(issue.id)}?${contratZoom}`, sp);
+  // Un déploiement mène à l'écran courant, releases comparées (§ 3.3), comme sur la page d'un groupe.
+  const annotations = annotationsDeploiements(deploys.ok ? deploys.data : [], range, {
+    lien: (relB, relA) => issueHref(issue, f, { cmp: "release", rel_b: relB, ...(relA ? { rel_a: relA } : {}) }),
+  });
+
   return (
     <div className="animate-fade-up">
       <BackLink f={f} />
@@ -117,8 +184,8 @@ export default async function IssuePage({
           {detail.sample_message ?? "(aucune occurrence sur cette période)"}
         </span>
       </h1>
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <span className="break-all font-mono text-xs text-ink-faint">
+      <div className="mb-6 flex min-w-0 flex-wrap items-center gap-2">
+        <span className="min-w-0 break-all font-mono text-xs text-ink-faint">
           issue {issue.id} · app {issue.app_id}
         </span>
         <IssueStatusBadge status={issue.status} testid="issue-status" />
@@ -127,6 +194,12 @@ export default async function IssuePage({
         <GroupingBasisBadge basis={issue.grouping_basis} />
         <ErrorSourceBadge source={last?.error_source ?? null} />
         <HandledBadge handled={last?.handled ?? null} />
+        {/* Le rejeu au premier niveau, comme sur la page d'un groupe (bloc 1, § 5.3.3) :
+            une ancienne URL de groupe d'une app en regroupement v2 mène ICI, et sans
+            ce bouton le rejeu ne s'ouvrait qu'occurrence par occurrence. */}
+        <span className="basis-full sm:ml-auto sm:basis-auto">
+          <BoutonRejeu occurrences={occurrences} appId={issue.app_id} portee={portee} />
+        </span>
       </div>
 
       <IssueState detail={detail} f={f} />
@@ -148,38 +221,62 @@ export default async function IssuePage({
 
       <ErrorNotices sampling={sampling} enrichment={enrichment} />
 
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7">
-        <ErrorStat label={`Occurrences · ${label}`} value={impact.occurrences.toLocaleString("fr-FR")} testid="issue-occurrences" />
-        <ErrorStat label="Sessions touchées" value={fmtCount(impact.sessions_affected)} testid="issue-sessions" />
-        <ErrorStat label="Visiteurs touchés" value={fmtCount(impact.visitors_affected)} />
-        <ErrorStat label="Utilisateurs identifiés" value={fmtCount(impact.identified_users_affected)} />
-        <ErrorStat
-          label="Couverture identité"
-          value={fmtCoverage(impact.identity_coverage)}
-          hint="part des occurrences rattachées à un visiteur ou à une identité"
-        />
-        <ErrorStat
-          label="Première vue"
-          value={fmtDate(issue.first_seen)}
-          hint={issue.first_release ? `release ${issue.first_release}` : "depuis toujours, groupes historiques compris"}
-        />
-        <ErrorStat
-          label="Dernière vue"
-          value={fmtDate(issue.last_seen)}
-          hint={issue.last_release ? `release ${issue.last_release}` : undefined}
-        />
+      {/* ── Bloc 2 : phrase d'impact, puis quatre tuiles ── */}
+      <SectionErreur titre="Impact de cette issue">
+        <PhraseImpact impact={impact} plage={label} part={part} hrefSessions={null} />
+        <TuilesDetailErreur impact={impact} plage={label} prefixe="issue" />
+        <p className="mb-6 text-xs text-ink-soft" data-testid="issue-vues">
+          Première vue {fmtDate(issue.first_seen)} · Dernière vue {fmtDate(issue.last_seen)} — dates de l&apos;issue,
+          depuis toujours, groupes historiques repris compris : elles ne suivent pas la fenêtre.
+        </p>
+      </SectionErreur>
+
+      {/* ── Bloc 3 : versions touchées, celles que l'issue persiste ── */}
+      <SectionErreur titre="Versions touchées">
+        <VersionsTouchees issue={versionsDeLIssue(issue)} />
+      </SectionErreur>
+
+      {/* ── Bloc 4 : occurrences dans le temps ── */}
+      <div className="mb-4">
+        <SectionErreur titre="Occurrences dans le temps">
+          <OccurrencesDansLeTemps
+            trend={trend}
+            grille={grilleIso(bucketStarts(range))}
+            plage={label}
+            bucketLabel={bucketLabel}
+            seauSecondes={range.bucketSeconds}
+            annotations={annotations.annotations}
+            annotationsIndisponibles={
+              deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement non lus"
+            }
+            zoomHref={zoomHref}
+          />
+        </SectionErreur>
       </div>
 
-      <div className="mb-6">
-        <ObservedTrend
-          title={`Occurrences par ${bucketLabel} sur ${label}`}
-          rows={trend.map((point) => ({ bucket: point.bucket, value: point.occurrences }))}
-          valueLabel="Occurrences"
-        />
+      {/* ── Bloc 5 : ce que les sessions touchées ont en commun (repli tant que B3 manque) ── */}
+      <div className="mb-4">
+        <SectionErreur titre="Qu'ont en commun les sessions touchées ?">
+          <QuOntEnCommun
+            occurrences={occurrences}
+            plage={label}
+            touchees={comptesTouches(impact).sessions}
+            hrefValeur={(cle, valeur) =>
+              cle === "route"
+                ? errorsHref("/errors", f, issue.app_id, { route: valeur })
+                : cle === "release"
+                  ? errorsHref("/errors", f, issue.app_id, { release: valeur })
+                  : null
+            }
+            portee={portee}
+          />
+        </SectionErreur>
       </div>
 
+      {/* ── Bloc 6 : pile du dernier exemplaire ── */}
       <ErrorStackCard appId={issue.app_id} last={last} admin={admin} />
 
+      {/* ── Bloc 7 : occurrences ── */}
       <ErrorOccurrences
         appId={issue.app_id}
         occurrences={occurrences}

@@ -18,6 +18,7 @@ import {
   RELEVE,
   SHA,
   TESTS_SQL,
+  TESTS_SQL_VERTS,
   TESTS_UNITAIRES,
   VERDICTS,
   compte,
@@ -31,6 +32,8 @@ import {
   type PointReste,
 } from "../../apps/console/lib/couverture-controle";
 import { GLOSSARY } from "../../apps/console/lib/glossary";
+import { POINTS_RESTE } from "../../apps/console/lib/presentation-reste";
+import { CARTES } from "../../apps/console/lib/presentation-sait-faire";
 import {
   DOCUMENT,
   SORTIE,
@@ -60,7 +63,7 @@ describe("0 — l'extracteur découpe les cellules comme le document les écrit"
     expect(x.releve).toBe("03/03/2026");
     expect(x.sha).toBe("abc1234");
     expect(x.testsUnitaires).toEqual({ fichiers: 12, tests: 1234 });
-    expect(x.testsSql).toEqual({ fichiers: 3, tests: 45 });
+    expect(x.testsSql).toEqual({ fichiers: 3, tests: 45, ignores: { fichiers: 1, tests: 4 } });
     expect(x.capacites.map((c: { id: string }) => c.id)).toEqual(["A1", "A2"]);
     const numeroA1 = FIXTURE.split("\n").findIndex((l) => l.startsWith("| A1 ")) + 1;
     expect(x.capacites[0]).toMatchObject({ famille: "Cellules piégées", verdict: "deploye_non_eprouve", ligne: numeroA1 });
@@ -69,6 +72,19 @@ describe("0 — l'extracteur découpe les cellules comme le document les écrit"
   it("le décompte unitaire vient de la ligne de la commande vitest, pas d'un journal cité", () => {
     // La fixture cite d'abord « **22 fichiers, 314 tests verts » : il ne doit pas être retenu.
     expect(extraireCouverture(FIXTURE).testsUnitaires).toEqual({ fichiers: 12, tests: 1234 });
+  });
+
+  it("les tests SQL ignorés sont lus sur la ligne du total ; sans eux, ou sans suite verte, l'extraction échoue", () => {
+    const numeroSql = FIXTURE.split("\n").findIndex((l) => l.includes("au total")) + 1;
+    // Ne rien dire des ignorés n'est pas en déclarer zéro.
+    const sansIgnores = FIXTURE.replace(", dont 1 fichier et 4 tests ignorés : un banc", "");
+    expect(() => extraireCouverture(sansIgnores)).toThrow(`${DOCUMENT}:${numeroSql} — décompte des tests SQL ignorés introuvable`);
+    // Une suite qui n'est pas dite verte : ses verts ne se déduisent pas du total.
+    const rouge = FIXTURE.replace("**vert** —", "**rouge** —");
+    expect(() => extraireCouverture(rouge)).toThrow(`${DOCUMENT}:${numeroSql} — la suite SQL n'y est pas dite **vert**`);
+    // Le pluriel se lit aussi.
+    const pluriel = FIXTURE.replace("dont 1 fichier et 4 tests", "dont 2 fichiers et 13 tests");
+    expect(extraireCouverture(pluriel).testsSql.ignores).toEqual({ fichiers: 2, tests: 13 });
   });
 
   it("une ligne à six cellules fait échouer l'extraction avec son numéro", () => {
@@ -105,7 +121,7 @@ describe("2 — les décomptes calculés sont ceux que le document écrit", () =
   it("le nombre de capacités", () => {
     const total = Number(/\*\*(\d+) capacités\*\*/.exec(section4)![1]);
     expect(CAPACITES.length).toBe(total);
-    expect(CAPACITES.length).toBe(49); // relevé du 18/09/2026 ; un nouveau relevé met à jour ce repère
+    expect(CAPACITES.length).toBe(49); // relevé du 23/09/2026 ; un nouveau relevé met à jour ce repère
   });
 
   it("la répartition des verdicts", () => {
@@ -122,9 +138,14 @@ describe("2 — les décomptes calculés sont ceux que le document écrit", () =
 
   it("date, commit et nombres de tests viennent du relevé", () => {
     expect(DOC.split("\n")[2]).toContain(SHA);
-    expect(RELEVE).toBe("18/09/2026");
-    expect(TESTS_UNITAIRES).toEqual({ fichiers: 168, tests: 2436 });
-    expect(TESTS_SQL).toEqual({ fichiers: 28, tests: 413 });
+    // Repères du relevé du 23/09/2026 sur 8a5f3d1 (P**.10) : ils ne changent qu'avec un nouveau relevé.
+    expect(RELEVE).toBe("23/09/2026");
+    expect(SHA).toBe("8a5f3d1");
+    expect(TESTS_UNITAIRES).toEqual({ fichiers: 266, tests: 3815 });
+    expect(TESTS_SQL).toEqual({ fichiers: 45, tests: 637, ignores: { fichiers: 2, tests: 13 } });
+    // Revue de fin de vague 7 : les verts sont le total moins les ignorés (les deux bancs).
+    expect(TESTS_SQL_VERTS).toBe(624);
+    expect(compte("deploye_non_eprouve")).toBe(35); // 34 au 18/09 : F2 est passée « déployé, non éprouvé »
   });
 });
 
@@ -140,12 +161,17 @@ function lignesDe(chemin: string): number | null {
 const CTX: ContexteControle = { capacites: CAPACITES, lignesDocument: DOC.split("\n").length, lignesDe };
 
 // Cartes de fixture sur les VRAIES lignes du document : la répartition du § 8.2
-// (K1–K14), réduite à ses identifiants. Les cartes réelles arrivent avec P**.4.
+// (K1–K14), réduite à ses identifiants ; les cartes réelles (P**.4) passent le même
+// contrôle à la fin de ce bloc. K15 n'est pas dans le plan : le relevé du 23/09/2026
+// (P**.10) a fait passer F2 (« Vérifier les types ») à « déployé, non éprouvé », et
+// la règle 1 du § 8.0 veut alors une carte pour elle ; ici, seul son identifiant
+// compte.
 const REPARTITION: Record<string, string[]> = {
   K1: ["A1"], K2: ["A2"], K3: ["A7", "A8", "A9", "A10"], K4: ["A3"], K5: ["A5", "A6"],
   K6: ["B1", "B2", "B3", "B4"], K7: ["B5", "B6", "B7", "B8"], K8: ["B9"],
   K9: ["A4", "C5", "C6"], K10: ["C7", "C8"], K11: ["D1", "D2", "D3", "D4"], K12: ["D5"], K13: ["D6"],
   K14: ["E1", "E2", "E3"],
+  K15: ["F2"],
 };
 function cartesFixture(): CarteCapacite[] {
   return Object.entries(REPARTITION).map(([id, ids]) => ({
@@ -162,7 +188,7 @@ const RESTE: PointReste[] = [
 const carte = (cartes: CarteCapacite[], id: string) => cartes.find((c) => c.id === id)!;
 
 describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le document", () => {
-  it("la répartition du plan couvre exactement les 34 lignes « déployé, non éprouvé »", () => {
+  it("la répartition du plan, plus K15, couvre exactement les lignes « déployé, non éprouvé »", () => {
     expect(verifierCartes(cartesFixture(), RESTE, CTX)).toEqual([]);
   });
 
@@ -239,7 +265,15 @@ describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le doc
     }
   });
 
-  it.todo("3 — sur les vraies cartes de lib/presentation-sait-faire.ts (livrées par P**.4)");
+  it("3 — sur les vraies cartes (P**.4) et les vrais points de « Ce qui reste » (P**.5)", () => {
+    // Les trois contrôles d'un coup : identifiants (dont D12 et D14 dans
+    // lib/presentation-reste.ts, et nulle part dans une carte), provenance de
+    // chaque source, une puce par identifiant.
+    expect(verifierCartes(CARTES, POINTS_RESTE, CTX)).toEqual([]);
+    const puces = CARTES.flatMap((c) => c.limites.map((l) => l.id));
+    expect(puces).toContain("A4");
+    expect(puces.length).toBe(compte("deploye_non_eprouve") - 2); // toutes, sauf D12 et D14
+  });
 });
 
 describe("4 — chaque point de « Ce qui reste » cite une source qui existe", () => {
@@ -265,7 +299,14 @@ describe("4 — chaque point de « Ce qui reste » cite une source qui existe", 
     ]);
   });
 
-  it.todo("4 — sur les vrais points de lib/presentation-reste.ts (livrés par P**.5)");
+  it("sur les vrais points de lib/presentation-reste.ts (P**.5) : R1 à R9, et chaque source existe", () => {
+    expect(POINTS_RESTE.map((p) => p.id)).toEqual(["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9"]);
+    expect(verifierReste(POINTS_RESTE, CTX)).toEqual([]);
+    // Côté « Ce qui reste » du contrôle 3a : les déployées inertes y figurent. Sans
+    // cartes, verifierCartes ne rend alors, pour elles, aucune erreur de ce genre.
+    const inertesAbsentes = verifierCartes([], POINTS_RESTE, CTX).filter((e) => e.includes("doit figurer dans « Ce qui reste »"));
+    expect(inertesAbsentes).toEqual([]);
+  });
 });
 
 // Fichiers dont le texte est la vitrine : ses composants, ses contenus, la page
@@ -300,6 +341,12 @@ export function normaliser(texte: string): string {
 
 // « souveraine » n'est admis que dans la phrase exacte de PS4 (§ 8.2).
 const PHRASE_ADMISE = "Ce POC n'est pas une offre souveraine.";
+// « anonyme » ne l'est que dans la puce D3 de K11, qui le dit comme une LIMITE de sa
+// ligne : un événement totalement anonyme n'est rattachable à personne. Ailleurs, le
+// mot promettait ce que le document refuse : le `visitor_id` est « un pseudonyme, pas
+// une donnée anonyme » (RUM_PARITY_STATUS.md:266). Revue de fin de vague 7 : les Specs
+// disaient « Sessions anonymes » et comptaient l'anonymat parmi les critères tenus.
+const LIMITE_ANONYME_D3 = "un événement totalement anonyme n'est rattachable à personne.";
 const INTERDITS: RegExp[] = [
   /\brobuste/i,
   /\bcompl[eè]t(e|s|es)?\b/i,
@@ -311,6 +358,7 @@ const INTERDITS: RegExp[] = [
   /\bconverti(t|r|ssent)?\b/i,
   /\bconversion\b/i,
   /chiffre d'affaires/i,
+  /\banonym/i,
 ];
 
 /**
@@ -325,7 +373,7 @@ function fautes(nom: string, texte: string): string[] {
     debuts.push(plat.length);
     plat += `${normaliser(ligne).trim()} `;
   }
-  plat = plat.split(PHRASE_ADMISE).join(" ".repeat(PHRASE_ADMISE.length));
+  for (const admise of [PHRASE_ADMISE, LIMITE_ANONYME_D3]) plat = plat.split(admise).join(" ".repeat(admise.length));
   const ligneDe = (i: number) => debuts.filter((d) => d <= i).length;
   const sortie: string[] = [];
   for (const motif of INTERDITS) {
@@ -356,6 +404,8 @@ describe("5 — le lexique de la vitrine", () => {
       "Une mesure en temps\n        réel.",
       "Un relevé complet.",
       "Des hébergeurs souverains.",
+      "Sessions anonymes",
+      "poids, seuils, percentile, anonymat.",
     ];
     for (const p of pieges) expect(fautes("piège", p).length, p).toBeGreaterThan(0);
     // La phrase admise, écrite en JSX avec son entité, reste admise.
@@ -363,14 +413,51 @@ describe("5 — le lexique de la vitrine", () => {
     // « souveraineté », « compléter » et « complètement » ne sont pas visés.
     expect(fautes("ok", "Rien ne change à la souveraineté ; mentions à compléter ; complètement.")).toEqual([]);
   });
+
+  it("« anonyme » n'est admis que dans la puce D3, qui le dit comme une limite de sa ligne", () => {
+    // La ligne D3 du document le dit en LIMITE : un tel événement n'est pas rattachable.
+    const d3 = CAPACITES.find((c) => c.id === "D3")!;
+    expect(d3.limite).toContain("Un événement totalement anonyme");
+    expect(d3.limite).toContain("n'est pas rattachable");
+    // La puce D3 de la vitrine reprend cette limite, mot pour mot sur ce point.
+    const puce = CARTES.flatMap((c) => c.limites).find((l) => l.id === "D3")!;
+    expect(puce.texte).toContain(LIMITE_ANONYME_D3);
+    expect(fautes("K11", puce.texte)).toEqual([]);
+    // Hors de cette phrase, le mot reste une faute, même dans la même puce.
+    expect(fautes("piège", puce.texte.replace("totalement anonyme n'est", "anonyme est"))).not.toEqual([]);
+  });
 });
 
+// Les décomptes de couverture que la vitrine affiche — le total des capacités et le
+// nombre de chaque verdict — LUS dans lib/couverture.ts : un nouveau relevé met le
+// motif à jour. (Revue de fin de vague 7 : il interdisait encore les littéraux 49 et
+// 34, alors que la page affiche 35 capacités déployées.) Un décompte d'un seul chiffre
+// ne se cherche pas dans du code — `mt-2`, `h-4`, `{1.5}` en contiennent partout — :
+// seuls ceux de deux chiffres ou plus sont gardés. Un nombre collé à un tiret, à un
+// point ou à une lettre (`py-14`, `0.35`, `12px`) est une classe ou une mesure, pas un
+// décompte ; un point final de phrase ne l'excuse pas.
+const DECOMPTES_GARDES = [...new Set([CAPACITES.length, ...VERDICTS.map((v) => compte(v))])]
+  .filter((n) => n >= 10)
+  .sort((a, b) => b - a);
+const DECOMPTE_TAPE = new RegExp(`(?<![\\w.-])(?:${DECOMPTES_GARDES.join("|")})(?!\\w|\\.\\d)`);
+
 describe("6 — aucun décompte de couverture tapé en dur", () => {
-  it("ni 49 ni 34 dans les composants de la vitrine : ils viennent de lib/couverture.ts", () => {
+  it("le motif vient du document : le total et le décompte de chaque verdict, lus dans lib/couverture.ts", () => {
+    expect(DECOMPTES_GARDES).toContain(CAPACITES.length);
+    expect(DECOMPTES_GARDES).toContain(compte("deploye_non_eprouve"));
+    // Il attrape un décompte écrit en toutes lettres, en fin de phrase comprise…
+    expect(DECOMPTE_TAPE.test(`<p>${compte("deploye_non_eprouve")} capacités déployées</p>`)).toBe(true);
+    expect(DECOMPTE_TAPE.test(`recensées : ${CAPACITES.length}.`)).toBe(true);
+    // … pas une classe de mise en page, ni une décimale.
+    expect(DECOMPTE_TAPE.test(`className="mt-${CAPACITES.length}"`)).toBe(false);
+    expect(DECOMPTE_TAPE.test(`opacity={0.${compte("deploye_non_eprouve")}}`)).toBe(false);
+  });
+
+  it("aucun de ces décomptes dans les composants de la vitrine : ils viennent de lib/couverture.ts", () => {
     const trouves = fichiersVitrine()
       .filter((f) => f.includes("/components/presentation/"))
       .flatMap((f) =>
-        lire(f).split("\n").flatMap((l, i) => (/\b(49|34)\b/.test(l) ? [`${f}:${i + 1} ${l.trim().slice(0, 90)}`] : [])),
+        lire(f).split("\n").flatMap((l, i) => (DECOMPTE_TAPE.test(l) ? [`${f}:${i + 1} ${l.trim().slice(0, 90)}`] : [])),
       );
     expect(trouves).toEqual([]);
   });

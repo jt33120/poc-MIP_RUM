@@ -1,14 +1,18 @@
 {
   "source": "docs/RUM_PARITY_STATUS.md",
-  "releve": "18/09/2026",
-  "sha": "2f216cb",
+  "releve": "23/09/2026",
+  "sha": "8a5f3d1",
   "testsUnitaires": {
-    "fichiers": 168,
-    "tests": 2436
+    "fichiers": 266,
+    "tests": 3815
   },
   "testsSql": {
-    "fichiers": 28,
-    "tests": 413
+    "fichiers": 45,
+    "tests": 637,
+    "ignores": {
+      "fichiers": 2,
+      "tests": 13
+    }
   },
   "familles": [
     "Suivi des erreurs",
@@ -70,7 +74,7 @@
       "capacite": "Déposer des source maps depuis une CI (jeton dédié, CLI, port direct)",
       "verdict": "deploye_non_eprouve",
       "preuve": "`scripts/upload-sourcemaps.mjs`, `apps/ingest/lib/sourcemap-upload.mjs`, `/admin/sourcemaps`, table `sourcemap_upload_token`",
-      "limite": "Le port backend direct vit sur le service Railway **sans domaine public** (§ 3) : en l'état, seule la route console est joignable, avec ses lots ≤ 3 Mio. Le branchement dans une CI cliente est `D10`.",
+      "limite": "Le port backend direct n'est servi par **aucun** service de production depuis la suppression d'`ingest`, le 21/09/2026 (§ 3) : seule la route console est joignable, avec ses lots ≤ 3 Mio. Le branchement dans une CI cliente est `D10`.",
       "ligne": 145
     },
     {
@@ -105,7 +109,7 @@
       "famille": "Suivi des erreurs",
       "capacite": "Alerter sur une nouvelle issue ou un pic par issue",
       "verdict": "deploye_non_eprouve",
-      "preuve": "outbox transactionnelle v73, règles `issue:<uuid>` réutilisant `route_alert` ; `pnpm test:alerting` vert le 18/09",
+      "preuve": "outbox transactionnelle v73, règles `issue:<uuid>` réutilisant `route_alert` ; `pnpm test:alerting` vert le 23/09, sur base jetable",
       "limite": "Hors données suffisantes, la règle rend `no_data`, jamais un zéro silencieux. Les alertes « nouvelle erreur » **historiques** restent fondées sur l'empreinte, pas sur l'issue.",
       "ligne": 149
     },
@@ -159,8 +163,8 @@
       "famille": "Analyse et exploration",
       "capacite": "Construire un tableau de bord graphique et en être propriétaire",
       "verdict": "deploye_non_eprouve",
-      "preuve": "migration v79, `dashboard.owner_id`, `DASHBOARD_ACTIONS` ; `tests/integration/saved-views-v79-sql.test.ts`, `tests/e2e/dashboards-analytics.spec.ts` ; PR #195",
-      "limite": "24 cartes par tableau, 4 lectures simultanées, aucun rafraîchissement automatique. Une carte invalide reste **visible** avec son diagnostic ; elle n'est pas supprimée pour faire de la place.",
+      "preuve": "migration v79, `dashboard.owner_id`, `DASHBOARD_ACTIONS` ; `tests/integration/saved-views-v79-sql.test.ts`, `tests/e2e/dashboards-analytics.spec.ts` ; PR #195 ; borne : `MAX_WIDGETS` et `layoutPlein` (`apps/console/lib/dashboards.ts:525-532`), `tests/unit/dashboards.test.ts:316-333`",
+      "limite": "24 éléments par tableau, **sections comprises** : depuis F37 (vague 7, après ce relevé), un titre de section compte dans `MAX_WIDGETS` comme une carte, et un tableau plein refuse le 25e élément en le disant (`layoutPlein`, `tests/unit/dashboard-actions-access.test.ts:376-392`). 4 lectures simultanées, aucun rafraîchissement automatique. Une carte invalide reste **visible** avec son diagnostic ; elle n'est pas supprimée pour faire de la place.",
       "ligne": 160
     },
     {
@@ -330,7 +334,7 @@
       "famille": "Exploitation, vie privée et conformité",
       "capacite": "Isoler les locataires en base",
       "verdict": "deploye_non_eprouve",
-      "preuve": "`scripts/verify-tenant-isolation.mjs`, rejoué vert le 18/09 sur base dédiée : requêtes **sans aucun `WHERE app_id`**, jouées sous le rôle `console_ro`",
+      "preuve": "`scripts/verify-tenant-isolation.mjs`, rejoué vert le 23/09 sur base jetable : requêtes **sans aucun `WHERE app_id`**, jouées sous le rôle `console_ro`",
       "limite": "Un périmètre `[]` vaut **zéro accès**, plus « sans restriction » (corrigé en P6.2). L'isolation est prouvée en base ; elle ne dispense pas les lectures applicatives de lier `app_id`.",
       "ligne": 189
     },
@@ -348,8 +352,8 @@
       "famille": "Exploitation, vie privée et conformité",
       "capacite": "Préparer une reprise d'historique (plan, dry-run, vérification)",
       "verdict": "livre_non_deploye",
-      "preuve": "migration **v83 non appliquée en production** ; `scripts/backfill-rum.mjs` (6 sous-commandes, 4 reconstructions), `apps/ingest/lib/backfills/` ; `tests/integration/backfill-idempotency-sql.test.ts` (52 tests), `tests/unit/backfill-p82.test.ts` ; PR #208",
-      "limite": "L'outil lit `BACKFILL_DATABASE_URL`, **jamais** `DATABASE_URL`. `--app all` est refusé. Aucun écran de console : le journal se lit par CLI et par SQL. **3 de ses 52 tests — la fenêtre de déploiement v82→v83 — ne tournent jamais en CI** (§ 8.2).",
+      "preuve": "`scripts/backfill-rum.mjs` (6 sous-commandes, 4 reconstructions), `apps/ingest/lib/backfills/` ; `tests/integration/backfill-idempotency-sql.test.ts` (52 tests, 52 verts le 23/09 avec la fenêtre v82→v83), `tests/unit/backfill-p82.test.ts` ; PR #208. Migration **v83 appliquée en production** le 18/09 — déduit des journaux du runner, pas lu en base ; le relevé du 18/09 la disait non appliquée (§ 12.2)",
+      "limite": "**Aucun environnement ne lance l'outil** : c'est une ligne de commande, et son exécution en production a été écartée (`D9`). L'outil lit `BACKFILL_DATABASE_URL`, **jamais** `DATABASE_URL`. `--app all` est refusé. Aucun écran de console : le journal se lit par CLI et par SQL. La fenêtre de déploiement v82→v83 (3 de ses 52 tests) est jouée par la CI depuis #213.",
       "ligne": 191
     },
     {
@@ -403,7 +407,7 @@
       "capacite": "Préciser le pays par une base IP→pays",
       "verdict": "deploye_non_eprouve",
       "preuve": "**PR #210 fusionnée le 18/09 à 12:52**, CI verte ; migration **v85 appliquée en production** (déduite du journal de pré-déploiement : `total 80 · appliquées 1`, la seule étant v84) ; `apps/ingest/lib/geoip-db.mjs`, `_shared/geoip.mjs`, `infra/docker/Dockerfile.backend` ; `tests/unit/geoip-db.test.ts` (193 l.), `tests/integration/geoip-v85-sql.test.ts`",
-      "limite": "**Le GeoIP ne résout aucun pays sur le trafic actuel, et la fusion n'y change rien.** La base est embarquée dans l'**image Railway**, et le service `ingest` n'a pas de domaine public (§ 3) ; la route Vercel, qui reçoit tout le trafic, **n'appelle délibérément pas** la résolution locale — un commentaire du code l'explique — et ne pose que la provenance `cdn`. La base elle-même n'est pas versionnée : elle reste **à déposer**. Pays seulement : ni ville, ni région, ni coordonnées ; la base « City Lite » est refusée par le chargeur. **Aucun enrichissement rétrospectif n'est possible** : l'adresse des visites passées n'a jamais été stockée, et ce lot ne commence pas à la stocker.",
+      "limite": "**Le GeoIP ne résout aucun pays sur le trafic actuel, et la fusion n'y change rien.** La résolution est embarquée dans l'**image backend Railway**, qui ne reçoit aucun trafic : `ingest`, sans domaine public, a été supprimé le 21/09/2026 (§ 3) ; la route Vercel, qui reçoit tout le trafic, **n'appelle délibérément pas** la résolution locale — un commentaire du code l'explique — et ne pose que la provenance `cdn`. La base elle-même n'est pas versionnée : elle reste **à déposer**. Pays seulement : ni ville, ni région, ni coordonnées ; la base « City Lite » est refusée par le chargeur. **Aucun enrichissement rétrospectif n'est possible** : l'adresse des visites passées n'a jamais été stockée, et ce lot ne commence pas à la stocker.",
       "ligne": 197
     },
     {
@@ -420,7 +424,7 @@
       "famille": "Surfaces d'accès",
       "capacite": "Lire par MCP",
       "verdict": "deploye_non_eprouve",
-      "preuve": "`apps/mcp/lib/catalogue.mjs` — **16 outils** comptés le 18/09 (`mip_rum_list_apps` … `mip_rum_mobile_summary`) ; job CI `mcp-smoke` qui compare ce nombre en dur ; service Railway `mcp` sur `6485f45`, avec domaine public",
+      "preuve": "`apps/mcp/lib/catalogue.mjs` — **16 outils**, recomptés le 23/09 (`mip_rum_list_apps` … `mip_rum_mobile_summary`) ; job CI `mcp-smoke` qui compare ce nombre en dur ; service Railway `mcp` (sur `6485f45` le 18/09, non relevé depuis), avec domaine public",
       "limite": "Read-only par construction. Le catalogue n'expose **pas encore les dimensions** de P6 : les outils P4/P5 restent sur app, période et appareil.",
       "ligne": 204
     },
@@ -429,8 +433,8 @@
       "famille": "Surfaces d'accès",
       "capacite": "Écrire par API (triage, tableaux de bord, vues enregistrées)",
       "verdict": "deploye_non_eprouve",
-      "preuve": "contrôle de session admin + Origin, `expectedRevision` et `409` ; `dashboard-access.ts`, `tests/unit/dashboards.test.ts`",
-      "limite": "Viewer et demo ne gagnent **aucun** droit d'écriture. Un administrateur scopé n'est plus transverse : c'est un écart assumé de P6.5 par rapport au modèle « admin global ».",
+      "preuve": "contrôle de session + Origin (`guardSession` ; `guardAdmin` pour le triage), `expectedRevision` et `409` ; `dashboard-access.ts`, `tests/unit/dashboards.test.ts`, `tests/unit/dashboard-access.test.ts`, `tests/unit/api-v1-issue-workflow-routes.test.ts`",
+      "limite": "**La session démo n'écrit rien** : le middleware refuse ses requêtes d'écriture (`apps/console/middleware.ts:88-96`), `handleMutation` aussi sur `/api/v1`, et les gardes des tableaux de bord la refusent (`tests/unit/dashboard-access.test.ts:96-102`). **Un viewer écrit ce qui est à lui, dans son périmètre** : il crée un tableau de bord lié à une app de son périmètre, jamais un transverse, et ne modifie que les siens (`apps/console/lib/dashboard-access.ts:117-135`, `tests/unit/dashboard-access.test.ts:104-120`) ; il enregistre ses propres vues d'Explorer (`role: \"session\"`, `apps/console/app/api/v1/explorer/views/route.ts:45-47`) ; depuis F37 (vague 7, après ce relevé), « Ajouter une section » suit la même garde (`tests/unit/dashboard-actions-access.test.ts:295`, `:338-359`). **Le triage d'une issue** (`A8`) reste réservé aux administrateurs : `handleMutation` exige le rôle `admin` par défaut (`apps/console/lib/api/handle.ts:284-290`) et refuse viewer et démo (`tests/unit/api-v1-issue-workflow-routes.test.ts:89-95`). Un administrateur scopé n'est plus transverse : c'est un écart assumé de P6.5 par rapport au modèle « admin global ».",
       "ligne": 205
     },
     {
@@ -438,17 +442,17 @@
       "famille": "Chaîne de livraison",
       "capacite": "Construire le dépôt de bout en bout",
       "verdict": "livre_avec_defaut_connu",
-      "preuve": "`pnpm -r build` vert **après** `pnpm build:sdk` : 13 paquets, `apps/console` incluse",
-      "limite": "**Défaut : `pnpm -r build` échoue sur un dépôt fraîchement installé** (§ 8.3). `apps/extension` ne déclare aucune dépendance d'espace de travail vers `@mip/rum-sdk` : rien n'ordonne les deux builds. La CI ne voit pas le défaut parce qu'elle construit les SDK d'abord.",
+      "preuve": "`pnpm -r build` vert **après** `pnpm build:sdk` : les 12 projets de l'espace de travail, `apps/console` incluse (rejoué le 23/09)",
+      "limite": "**Défaut : `pnpm -r build` échoue sur un dépôt fraîchement installé** (§ 8.3) — rejoué le 23/09 sur un worktree neuf : même erreur. `apps/extension` ne déclare aucune dépendance d'espace de travail vers `@mip/rum-sdk` : rien n'ordonne les deux builds. La CI ne voit pas le défaut parce qu'elle construit les SDK d'abord.",
       "ligne": 211
     },
     {
       "id": "F2",
       "famille": "Chaîne de livraison",
       "capacite": "Vérifier les types",
-      "verdict": "livre_avec_defaut_connu",
-      "preuve": "`pnpm --filter console exec tsc --noEmit` **vert** ; `pnpm --filter @mip/rum-sdk exec tsc --noEmit` **en échec** sur `packages/rum-sdk/src/replay.ts(242,11)` : `Uint8Array<ArrayBufferLike>` n'est pas assignable à `BodyInit`",
-      "limite": "**Défaut : aucun workflow de CI ne joue `tsc --noEmit`** — vérifié par `grep -rn 'tsc' .github/workflows/` : aucune occurrence, pour aucun paquet. L'échec du SDK web est donc invisible de la CI, et le restera. Il est antérieur à P7 et n'a été corrigé par aucun lot.",
+      "verdict": "deploye_non_eprouve",
+      "preuve": "étape « Typage des paquets publiés » de `.github/workflows/ci.yml` (PR #213, 18/09) : `tsc --noEmit` de `@mip/rum-core`, `@mip/rum-sdk`, `@mip/rum-mobile` et `@mip/agent-node`, puis `pnpm --filter console typecheck` (script posé par F00, #217) ; les cinq verts sur ce poste le 23/09, et l'étape verte dans le passage CI `35833662207` sur `8a5f3d1` (§ 12.3). L'échec de `replay.ts:242` est corrigé (§ 8.4)",
+      "limite": "L'extension navigateur (`apps/extension`, en TypeScript) n'est **pas** typée par la CI : verte à la main le 23/09, rien ne le garantit à sa prochaine modification. La vérification n'arrête une fusion que si l'on attend le verdict de la CI du commit de fusion (§ 7).",
       "ligne": 212
     },
     {
@@ -456,8 +460,8 @@
       "famille": "Chaîne de livraison",
       "capacite": "Rejouer la recette SQL complète en CI",
       "verdict": "livre_avec_defaut_connu",
-      "preuve": "job « E2E Playwright (Postgres service) » : `test:sql`, `test:isolation`, `test:alerting`, `test:svi`",
-      "limite": "**Défaut : deux suites ne tournent jamais en CI**, faute de la variable qui les déclenche — les bancs de mesure (`BENCH_DATABASE_URL`) et la fenêtre de déploiement v82→v83 (`SQL_TEST_PRE_V83_DATABASE_URL`). Elles passent quand on la fournit (§ 8.2).",
+      "preuve": "job « E2E Playwright (Postgres service) » : `test:sql` (7 bases depuis #213), `test:isolation`, `test:alerting`, `test:svi` ; étapes vertes dans le passage CI `35833662207` sur `8a5f3d1` (§ 12.3)",
+      "limite": "**Défaut : les deux bancs de mesure ne tournent jamais en CI**, faute de `BENCH_DATABASE_URL`, absente de `ci.yml` (vérifié le 23/09) : `explorer-bench-p66` et `rum-mobile-bench-p75`, qui lisent une base préparée à part. Les temps publiés (`B9`) ne sont donc jamais revérifiés, et ce relevé ne les a pas rejoués. La fenêtre v82→v83, second trou du 18/09, est jouée par la CI depuis #213, et passe (§ 8.2).",
       "ligne": 213
     }
   ]
