@@ -19,6 +19,7 @@ import Link from "next/link";
 import { Ancres } from "@/components/presentation/Ancres";
 import { Annexe } from "@/components/presentation/Annexe";
 import { Contient } from "@/components/presentation/Contient";
+import { LegendeCapture } from "@/components/presentation/LegendeCapture";
 import { Releve } from "@/components/presentation/Releve";
 import { Reste } from "@/components/presentation/Reste";
 import { SaitFaire } from "@/components/presentation/SaitFaire";
@@ -27,6 +28,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import type { SessionUser } from "@/lib/auth";
 import { demoConfig } from "@/lib/demo";
 import { DATA_SOURCES } from "@/lib/legal";
+import { CAPTURES_VUE_ENSEMBLE, dateDesCaptures, lireManifestePortail } from "@/lib/portail-manifeste";
 
 /** Marque MIP RUM — pouls sur carré orange + wordmark. */
 function BrandMark() {
@@ -163,12 +165,13 @@ export function Landing({ user }: { user: SessionUser | null }) {
             </div>
           </div>
 
-          {/* Capture réelle du portail (vue d'ensemble), une par thème.
-              Le cadre reste DANS sa colonne — le ratio 8/5 fait que le cadrage
-              s'arrête toujours à 1056 px de la capture, pile dans la gouttière
-              après la carte CLS, quelle que soit la largeur rendue. La légende ne
-              porte pas de date : celle des captures actuelles n'est pas établie
-              (elle viendra du manifeste des captures, lot P**.7). */}
+          {/* Capture réelle du portail (vue d'ensemble, V-A), une par thème.
+              Le cadre reste DANS sa colonne, au ratio 8/5 des captures 1440 × 900
+              de scripts/captures-portail.mjs : elles y entrent entières. Une
+              capture plus large (celles d'avant P**.7) est recadrée depuis son
+              coin haut gauche. La légende n'est datée que par le manifeste des
+              captures (lib/portail-manifeste.ts) : sans lui, la date n'est pas
+              établie, et la légende n'en porte aucune. */}
           <div className="min-w-0 animate-fade-up">
             <div className="relative aspect-[8/5] overflow-hidden rounded-xl border border-line shadow-pop">
               <Image
@@ -188,10 +191,7 @@ export function Landing({ user }: { user: SessionUser | null }) {
                 className="hidden object-cover object-left-top dark:block"
               />
             </div>
-            <p className="mt-3 text-xs text-ink-soft">
-              Capture réelle de la console. Les chiffres affichés viennent d&apos;un jeu de
-              démonstration, pas d&apos;un client en production.
-            </p>
+            <LegendeCapture date={dateDesCaptures(lireManifestePortail(), CAPTURES_VUE_ENSEMBLE)} />
           </div>
         </div>
 
