@@ -9,21 +9,42 @@ Démontré en production le 10/06/2026 sur `plateforme.groupement-it.com` : sur 
 ## Pourquoi celui-là
 
 - **OTel-native, vérifiable sur le fil** : le SDK émet de l'OTLP/HTTP JSON standard (`POST /v1/traces`). Aucun format propriétaire — le backend est remplaçable par un Collector OTel + ClickHouse sans toucher au SDK (chemin documenté dans `infra/`).
-- **Souverain** : données hébergées en UE (Supabase eu-west-3, Paris) et architecture on-prem-ready. Pas de dépendance à un SaaS US d'observabilité.
+- **Hébergement** : Données hébergées en UE ; hébergeurs de droit américain ; ce POC n'est pas une offre souveraine. Aucune adresse IP n'est stockée, sous aucune forme (`docs/RUM_PARITY_STATUS.md`, § 6.4). Détail dans la section [Architecture](#architecture), lu dans `apps/console/lib/legal.ts`.
 - **Corrélation synthétique↔RUM** : le différenciateur MIP. Vue côte à côte robot vs réel par route, écarts surlignés, détection d'« angles morts » (robot ok / utilisateurs en souffrance).
 
 ## Architecture
 
-```
-[App web cliente] -> [MIP RUM SDK 22,0 KB gzip] --OTLP/HTTP JSON--> [Ingestion /v1/traces] --> [Postgres]
-                                                                                                 ^    |
-[Synthétique DEM (mippoc ou seed)] --> [sync-synthetic] ---------------------------------------/     v
-                                                                          [Console RUM Live (Next.js)]
+<!-- genere:readme-architecture -->
+<!-- Zone écrite par `node scripts/readme-sections.mjs` depuis apps/console/lib/presentation-topologie.ts, qui lit les hébergeurs dans apps/console/lib/legal.ts. Ne pas la modifier à la main : tests/unit/readme.test.ts la régénère et compare. -->
+
+Le chemin de la mesure, tel que le dessine la vitrine de la console (`/presentation`) :
+
+```mermaid
+flowchart TB
+  navigateur["Navigateur du visiteur<br/>SDK web ou extension"]
+  console["Console — Vercel<br/>fra1 · Francfort<br/>collecteur /api/ingest/v1<br/>API de lecture /api/v1"]
+  base["PostgreSQL — Neon<br/>aws-eu-central-1 · Francfort"]
+  travaux["Travaux planifiés — Railway<br/>europe-west4 · Amsterdam<br/>migrations, alertes, SLO,<br/>sondes, purge"]
+  mcp["Serveur MCP — Railway<br/>europe-west4 · Amsterdam<br/>lecture seule, par /api/v1"]
+  navigateur -->|"OTLP/HTTP JSON"| console
+  console -->|"écrit et lit"| base
+  travaux --> base
+  mcp --> console
 ```
 
-- SDK Web lean (OTel sdk-trace-web + web-vitals, sans instrumentation contrib) : Core Web Vitals (seuils 2026), erreurs JS, routes SPA normalisées, sessions anonymisées. v0.2 : resource timings, long tasks, breadcrumbs, consent mode RGPD, file de retry, clé d'API.
-- Ingestion : parser OTLP partagé (`_shared/otlp.mjs`) entre l'edge function Deno (prod Supabase) et le dev-server Node (local/CI). Scrub PII à l'ingestion, idempotence par `span_id`.
-- Backend Postgres par défaut ; ClickHouse = cible grand volume (cf. `infra/clickhouse.notes.md`).
+| Pièce | Hébergeur | Région | Rôle |
+|---|---|---|---|
+| Navigateur du visiteur | poste du visiteur | — | mesure et envoie en OTLP/HTTP JSON |
+| Console — Vercel | Vercel Inc. | fra1 — Francfort, Allemagne | reçoit les mesures, sert la console et l'API |
+| PostgreSQL — Neon | Neon (sur AWS) | aws-eu-central-1 — Francfort, Allemagne | stocke les mesures |
+| Travaux planifiés — Railway | Railway Corp. | europe-west4 — Amsterdam, Pays-Bas | migrations au pré-déploiement, alertes, SLO, sondes, purge |
+| Serveur MCP — Railway | Railway Corp. | europe-west4 — Amsterdam, Pays-Bas | lit par l'API /api/v1, sans accès à la base |
+
+- Régions : Francfort, Allemagne ; Amsterdam, Pays-Bas. Droit des trois hébergeurs (Neon, Vercel Inc. et Railway Corp.) : américain.
+- Le collecteur est une route de la console : c'est l'adresse que visent les SDK. Le même parseur existe en service Node autonome (`services/ingest/server.mjs`), construit et démarré par la CI (`docker-smoke`), pour un hébergement chez le client ; en production, il ne tourne nulle part : le service Railway `ingest`, qui l'exécutait sans domaine public, a été supprimé le 21/09/2026.
+- Le `scheduler` applique les migrations au pré-déploiement : constaté le 18/09/2026 dans les journaux du déploiement `03850b30`.
+- Topologie relevée par les API Railway et Vercel le 18/09/2026, puis par l'API Railway le 21/09/2026 : [docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md).
+<!-- /genere -->
 
 ## Démarrage local (100 % local, aucun secret)
 
@@ -66,6 +87,8 @@ pnpm test:e2e           # playwright — lance lui-même ingest/démo/console (P
 
 La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) rejoue tout ça sur un Postgres de service : build SDK + unitaires, puis E2E Chromium avec schéma + migration appliqués au démarrage.
 
+Les zones générées de ce README se régénèrent par `node scripts/readme-sections.mjs` ; `tests/unit/readme.test.ts` échoue si elles ne sont plus à jour.
+
 ## Workspaces
 
 | Workspace | Rôle |
@@ -99,6 +122,22 @@ La CI GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) re
 
 ## Statut
 
-- **v0.1** : POC terminé et **déployé en production** (ingestion Supabase Paris, console Vercel, snippet live sur la plateforme G-IT). DoD 1-4 vérifiés en live, tests 36 unitaires + 5 E2E verts.
-- **v0.2** : livrée (sprint nuit du 10→11/06/2026) — resource timings, breadcrumbs, consent RGPD, clés d'API, filtres globaux, sessions détaillées, erreurs groupées, alerting, CI. Voir [docs/archive/ROADMAP_V02.md](docs/archive/ROADMAP_V02.md) et [CHANGELOG.md](CHANGELOG.md).
-- **v0.3** : sprint nuit 2 — session replay (rrweb, module séparé), RBAC console (rôles admin/viewer), webhooks d'alerte sortants, géo par timezone (zéro IP), rate limit durable, détection d'anomalies (z-score) + **health score** en Overview, chemin ClickHouse bench-é en local. Voir [docs/archive/ROADMAP_V03.md](docs/archive/ROADMAP_V03.md).
+<!-- genere:readme-statut -->
+<!-- Zone écrite par `node scripts/readme-sections.mjs` depuis apps/console/lib/couverture.generated.json, l'extraction de docs/RUM_PARITY_STATUS.md. Ne pas la modifier à la main : tests/unit/readme.test.ts la régénère et compare. -->
+
+État relevé le **23/09/2026** sur `8a5f3d1` par le document de couverture [docs/RUM_PARITY_STATUS.md](docs/RUM_PARITY_STATUS.md) : **49** capacités recensées, **35** déployées, **aucune** éprouvée sur des données réellement ingérées — le vocabulaire du document n'a pas de verdict au-dessus de `deploye_non_eprouve`.
+
+| Verdict | Capacités |
+|---|--:|
+| `deploye_non_eprouve` | 35 |
+| `livre_non_deploye` | 5 |
+| `livre_avec_defaut_connu` | 2 |
+| `en_revue` | 0 |
+| `bloque_acces_externe` | 4 |
+| `non_retenu` | 1 |
+| `non_commence` | 2 |
+
+Le document ne recense que les capacités des lots P5 à P8 : les écrans plus anciens de la console n'y ont pas de verdict, et ce README ne leur en donne pas. La vitrine (`/presentation`) reprend les mêmes verdicts, ligne par ligne.
+
+Tests comptés au relevé, pas aujourd'hui : 3815 tests unitaires verts (266 fichiers) ; suite SQL verte, 637 tests (45 fichiers) dont 13 ignorés (2 fichiers).
+<!-- /genere -->
