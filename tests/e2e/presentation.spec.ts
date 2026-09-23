@@ -106,6 +106,96 @@ test.describe("P**.2 — ossature : une page, trois parties", () => {
 
 // ─── P**.4 — Partie 2 : TP3 (cartes et puces de limite), TP4 côté « Ce qu'il sait faire »
 
+test.describe("P**.4 — Partie 2 : ce qu'il sait faire", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  /** Déployées mais inertes : elles vont dans « Ce qui reste », jamais dans une carte (§ 8.0, règle 3). */
+  const INERTES = ["D12", "D14"];
+
+  /** Les capacités du document, relues dans son extraction versionnée. */
+  function capacitesDuDocument(): { id: string; verdict: string }[] {
+    const brut = JSON.parse(
+      readFileSync(join(process.cwd(), "apps/console/lib/couverture.generated.json"), "utf8"),
+    ) as { capacites: { id: string; verdict: string }[] };
+    return brut.capacites;
+  }
+
+  /**
+   * Les cartes de lib/presentation-sait-faire.ts, dans l'ordre, lues dans le source :
+   * l'e2e n'importe pas le code de l'application. Une ligne `id: "K…",` par carte —
+   * tests/unit/presentation-sait-faire.test.ts vérifie que cette lecture est juste.
+   */
+  function cartesDuFichier(): string[] {
+    const source = readFileSync(join(process.cwd(), "apps/console/lib/presentation-sait-faire.ts"), "utf8");
+    return [...source.matchAll(/^\s+id: "(K\d+)",$/gm)].map((m) => m[1]);
+  }
+
+  test("TP3 — une carte par entrée, au verdict du document, une puce de limite par identifiant", async ({ page }) => {
+    const attendus = capacitesDuDocument()
+      .filter((c) => c.verdict === "deploye_non_eprouve" && !INERTES.includes(c.id))
+      .map((c) => c.id);
+    const ids = cartesDuFichier();
+
+    await page.goto("/presentation");
+    const cartes = page.locator("section#sait-faire").getByTestId("capacite");
+    await expect(cartes).toHaveCount(ids.length);
+    expect(await cartes.evaluateAll((els) => els.map((e) => e.getAttribute("data-carte")))).toEqual(ids);
+
+    const vus: string[] = [];
+    for (const carte of await cartes.all()) {
+      const nom = (await carte.getAttribute("data-carte")) ?? "?";
+      await expect(carte, nom).toHaveAttribute("data-verdict", "deploye_non_eprouve");
+      await expect(carte.getByTestId("capacite-verdict"), nom).toHaveText("Déployé, non éprouvé");
+      const puces = carte.getByTestId("capacite-limite");
+      expect(await puces.count(), `${nom} : au moins une puce`).toBeGreaterThan(0);
+      for (const puce of await puces.all()) {
+        const id = (await puce.getAttribute("data-id")) ?? "";
+        // La puce COMMENCE par sa pastille, et une phrase la suit.
+        const pastille = (await puce.locator(":scope > :first-child").innerText()).trim();
+        expect(pastille, `${nom} : pastille de ${id}`).toBe(id);
+        const lu = (await puce.innerText()).trim();
+        expect(lu.startsWith(id), `${nom} : ${id} en tête`).toBe(true);
+        expect(lu.slice(id.length).trim().length, `${nom} : une phrase suit ${id}`).toBeGreaterThan(0);
+        vus.push(id);
+      }
+    }
+    // Chaque ligne « déployé, non éprouvé » hors inertes, une fois et une seule.
+    expect(new Set(vus).size, "un identifiant n'a qu'une puce").toBe(vus.length);
+    expect([...vus].sort()).toEqual([...attendus].sort());
+    expect(vus).toContain("A4");
+  });
+
+  test("renvoi — « (voir R3) » dans une limite mène au point de « Ce qui reste »", async ({ page }) => {
+    await page.goto("/presentation");
+    const liens = page.locator('section#sait-faire [data-testid="capacite-limite"] a[href^="#reste-"]');
+    expect(await liens.count(), "la limite A6 renvoie à R3").toBeGreaterThan(0);
+    for (const href of await liens.evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""))) {
+      await expect(page.locator(`section#reste ${href}`), href).toHaveCount(1);
+    }
+  });
+
+  test("TP4 — D12 et D14, déployées mais inertes, n'apparaissent pas dans « Ce qu'il sait faire »", async ({ page }) => {
+    await page.goto("/presentation");
+    const partie = page.locator("section#sait-faire");
+    await expect(partie).toHaveCount(1);
+    for (const id of INERTES) await expect(partie.locator(`[data-id="${id}"]`)).toHaveCount(0);
+    expect(await partie.innerText()).not.toMatch(/\bD1[24]\b/);
+  });
+
+  test("V-E — la barre de couverture : une case par capacité, des décomptes écrits", async ({ page }) => {
+    const capacites = capacitesDuDocument();
+    const deployees = capacites.filter((c) => c.verdict === "deploye_non_eprouve").length;
+    await page.goto("/presentation");
+    const barre = page.locator("section#sait-faire").getByTestId("couverture-barre");
+    const dessin = barre.locator('svg[role="img"]');
+    await expect(dessin).toHaveAttribute("aria-label", new RegExp(` ${capacites.length} capacités, `));
+    await expect(dessin.locator("rect")).toHaveCount(capacites.length);
+    await expect(barre.getByTestId("couverture-legende").locator("li").first()).toHaveText(
+      `${deployees} déployées, non éprouvées`,
+    );
+  });
+});
+
 // ─── P**.5 — Partie 3 : TP4 côté « Ce qui reste » ───────────────────────────────
 
 test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () => {
