@@ -146,7 +146,10 @@ export function startLoop(options) {
       }
     }).finally(() => {
       tourEnCours = null;
-      armer(delaiSuivant());
+      // Arrêtée pendant le tour (drainage) : ne pas calculer de prochain délai.
+      // Avec `nextDelay`, ce calcul journalise souvent (« prochain passage ») :
+      // une ligne qui annoncerait un passage qui n'aura jamais lieu.
+      if (!arretee) armer(delaiSuivant());
     });
     return tourEnCours;
   }

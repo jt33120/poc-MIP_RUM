@@ -214,6 +214,31 @@ describe("service-kit/loop — jitter et validation", () => {
     }
   });
 
+  // Au drainage, le tour en cours finit ; il ne doit pas annoncer (ni armer)
+  // un prochain passage qui n'aura jamais lieu.
+  it("nextDelay : arrêtée pendant un tour, la boucle ne calcule plus de prochain délai", async () => {
+    const { log } = journal();
+    let appels = 0;
+    let liberer = () => {};
+    const boucle = startLoop({
+      name: "grille-arret",
+      nextDelay: () => {
+        appels += 1;
+        return 10_000;
+      },
+      immediate: true,
+      log,
+      run: () => new Promise<void>((r) => (liberer = r)),
+    });
+    await attendre(5);
+    expect(boucle.running).toBe(true);
+    const arret = boucle.stop();
+    liberer();
+    await arret;
+    await attendre(5);
+    expect(appels).toBe(0);
+  });
+
   it("nextDelay : refuse une valeur non finie plutôt que d'armer une boucle serrée", () => {
     const { log } = journal();
     expect(() => startLoop({ name: "nan", nextDelay: () => Number.NaN, log, run: () => {} })).toThrow(RangeError);
