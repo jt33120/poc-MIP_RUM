@@ -210,8 +210,8 @@ export default async function ErrorGroup({
 
       {/* ── Bloc 2 : phrase d'impact, puis quatre tuiles ── */}
       <SectionErreur titre="Impact de ce groupe">
-        <PhraseImpact group={group} plage={label} part={part} hrefSessions={null} />
-        <TuilesDetailErreur group={group} plage={label} />
+        <PhraseImpact impact={group} plage={label} part={part} hrefSessions={null} />
+        <TuilesDetailErreur impact={group} plage={label} />
         <p className="mb-6 text-xs text-ink-soft" data-testid="detail-vues">
           Première vue {fmtDate(group.first_seen)} (depuis toujours, hors fenêtre) · Dernière vue{" "}
           {fmtDate(group.last_seen)}

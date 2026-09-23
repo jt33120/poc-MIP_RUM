@@ -150,3 +150,23 @@ describe("SessionsTable — mises en page, liens et vide", () => {
     expect(rendu([ligne("s1")], { suivantHref: "/sessions?cursor=x" })).toContain("Sessions suivantes");
   });
 });
+
+describe("SessionsTable — session ouverte en panneau (F43)", () => {
+  const panneaux = { s1: "/sessions?panel=session%3As1", s2: "/sessions?panel=session%3As2" };
+
+  it("la session ouverte est marquée (`aria-current`, `data-ouvert`), et elle seule", () => {
+    const html = rendu([ligne("s1"), ligne("s2")], { panelHrefs: panneaux, ouvert: "s2" });
+    // La rangée de la table et la carte de 390 px : les deux rendus du même balisage.
+    expect(html.match(/data-ouvert="1"/g)).toHaveLength(2);
+    expect(html.match(/aria-current="true"/g)).toHaveLength(2);
+    for (const lien of html.match(/<a [^>]*aria-current="true"[^>]*>/g) ?? []) {
+      expect(lien).toContain('href="/sessions?panel=session%3As2"');
+    }
+  });
+
+  it("aucun panneau ouvert : aucune ligne marquée", () => {
+    const html = rendu([ligne("s1"), ligne("s2")], { panelHrefs: panneaux });
+    expect(html).not.toContain("data-ouvert");
+    expect(html).not.toContain('aria-current="true"');
+  });
+});

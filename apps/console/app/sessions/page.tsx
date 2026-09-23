@@ -16,8 +16,13 @@
 // 390 px), les filtres rapides et le hero « À regarder d'abord ». Le CLASSEMENT du
 // hero attend B30 (§ 6.3) : tant qu'il manque, le hero dit sa raison et ne classe
 // rien — trier les 50 lignes de la page courante donnerait « les plus graves »
-// d'un échantillon arbitraire, pas de la fenêtre (§ 5.11.6). Le panneau de session
-// (`panel=session:<id>`) vient avec F43 : d'ici là, une ligne mène à sa page.
+// d'un échantillon arbitraire, pas de la fenêtre (§ 5.11.6).
+//
+// F43 ouvre le PANNEAU de session (`panel=session:<id>`, § 3.5) : une ligne de la
+// liste le pose dans l'URL, « Précédent » / « Suivant » (↑ / ↓) parcourent la page
+// de liste affichée, « Fermer » (Échap) le retire. Sa lecture part AVEC celles de
+// l'écran, et sa garde est celle de la page de session : hors périmètre, aucun
+// panneau, une ligne le dit.
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
@@ -117,6 +122,10 @@ import {
   visiteursDuSeau,
   type DimensionRepartition,
 } from "@/lib/sessions-kpi";
+// F43 — panneau de session.
+import { PanneauSession, lirePanneauSession } from "@/components/sessions/PanneauSession";
+import { SESSION_INTROUVABLE, voisinsDansLaListe } from "@/lib/panneau-session";
+import { ecrirePanel, ligneIgnoree } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
 
@@ -144,7 +153,9 @@ const LIBELLES_AVEC: Record<(typeof AVEC_SESSIONS)[number], string> = {
 /**
  * Hero « À regarder d'abord ». B30 (§ 6.3, `sessionsAPrioriser`) n'est pas livré :
  * cette fonction rend l'ABSENCE DE LECTURE. Le jour où B30 arrive, seul son corps
- * change — la figure, son alternative et ses liens sont déjà écrits en face.
+ * change — la figure, son alternative et ses liens sont déjà écrits en face : une
+ * ligne ouvre le panneau (F43), `hrefsPriorite(lignes, pages, panneaux)` avec les
+ * liens `lienPanneau(id)` de l'écran.
  */
 type LecturePriorite =
   | { lignes: SessionPrioritaire[]; hrefs: Record<string, HrefsPriorite> }
@@ -191,6 +202,21 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
   const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
   const liste = blocs.liste && !refus;
 
+  // Réglages de vue (§ 3.1) : filtre rapide de la liste (F42) et panneau (F43).
+  // Seul le panneau d'une SESSION s'ouvre ici ; un autre type, ou une valeur
+  // illisible, n'est pas lu à moitié : il est ignoré, et la page le dit (V10).
+  const etatVue = lireEtatDeVue("/sessions", url).etat;
+  const idPanneau = etatVue.panel?.type === "session" ? etatVue.panel.id : null;
+  const panelBrut = url.get("panel");
+  const panneauIgnore =
+    idPanneau !== null || panelBrut === null || panelBrut === ""
+      ? null
+      : ligneIgnoree(
+          "panel",
+          panelBrut,
+          etatVue.panel ? "seul le panneau d'une session s'ouvre sur cet écran" : "forme attendue session:<identifiant>",
+        );
+
   // Comparaison (F06) : aucune par défaut sur un écran d'usage ; `cmp=prev` relit
   // la période précédente, et ses écarts ne s'affichent que si elle est COMPLÈTE.
   const comparaison = lireComparaison("/sessions", url).valeur;
@@ -226,6 +252,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     couvTaux,
     couvErreurs,
     couvVisiteurs,
+    panneauLu,
   ] = await Promise.all([
     // Une ligne de plus que la page : c'est ainsi qu'on sait s'il en reste, sans
     // compter toute la population à chaque affichage.
@@ -258,6 +285,9 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     prev ? couvertures(SOURCE_SESSIONS_TAUX) : aucuneCouverture,
     prev ? couvertures(SOURCE_ERREURS) : aucuneCouverture,
     prev ? couvertures(SOURCE_VISITEURS) : aucuneCouverture,
+    // Panneau (F43) : lu en même temps que l'écran, garde comprise — rien de la
+    // session n'est lu si son app n'est pas dans ce que l'écran lit.
+    idPanneau ? lirePanneauSession(idPanneau, query.scope.effectiveApps) : Promise.resolve(null),
   ]);
 
   const engagement = engagementLu.ok ? engagementLu.data : null;
@@ -335,6 +365,17 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
   const lignes = rows.ok ? rows.data : [];
   const page = lignes.slice(0, SESSION_PAGE_SIZE);
   const suivante = lignes.length > SESSION_PAGE_SIZE ? page[page.length - 1] : null;
+
+  // Panneau de session (F43). L'URL porte tout : ouvrir, parcourir et fermer gardent
+  // la plage, les filtres, la recherche, le curseur et les réglages de l'écran — la
+  // liste sous le panneau ne bouge pas. Précédent / suivant : dans la page de liste
+  // AFFICHÉE ; une session hors de cette page (lien partagé, hero) s'ouvre sans
+  // parcours plutôt qu'avec des voisins inventés.
+  const lienPanneau = (id: string | null) =>
+    lienEcran({ panel: id === null ? null : ecrirePanel({ type: "session", id }) });
+  const voisins = idPanneau === null ? null : voisinsDansLaListe(page.map((s) => s.session_id), idPanneau);
+  const panneauOuvert = panneauLu !== null && panneauLu.etat !== "introuvable" ? panneauLu : null;
+  const notePanneau = panneauLu?.etat === "introuvable" ? SESSION_INTROUVABLE : panneauIgnore;
   // Hero : classement de la FENÊTRE, lu à part de la liste (B30). Aujourd'hui, son
   // absence motivée — et aucune ligne dessinée.
   const priorite = lirePriorite();
@@ -342,7 +383,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
   // (option `avec` de `listSessions`) est B30. Tant qu'elle manque, les bascules
   // sont désactivées avec leur raison et une URL qui porte `avec` est déclarée NON
   // APPLIQUÉE (V10) — jamais ignorée en silence, jamais appliquée à moitié.
-  const avecDemande = lireEtatDeVue("/sessions", url).etat.avec;
+  const avecDemande = etatVue.avec;
   const rechercheParams = recherche
     ? { [SESSION_SEARCH_FIELD_PARAM]: recherche.field, [SESSION_SEARCH_PARAM]: recherche.value }
     : {};
@@ -363,6 +404,14 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
         title="Sessions"
         sub="Quelles sessions regarder en premier, et qui sont les visiteurs de cette période ?"
       />
+
+      {/* Un panneau demandé qui ne s'ouvre pas le dit, en tête (F43) : hors périmètre
+          ou absente, la session n'est ni nommée ni décrite — les deux se disent pareil. */}
+      {notePanneau && (
+        <p role="note" className="mb-4 text-xs text-ink-soft" data-testid="panneau-session-absent">
+          {notePanneau}
+        </p>
+      )}
 
       {/* Z2 — rangée de KPI : cinq tuiles, UNE population chacune, nommée. */}
       <section aria-label="Chiffres clés des sessions" className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" data-testid="kpi-sessions">
@@ -758,9 +807,10 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
             <div className="mt-3">
               <SessionsTable
                 lignes={page.map((s) => ({ ...s, frustration: null, rejeu: null }))}
-                // F43 ouvrira `panel=session:<id>` : d'ici là, aucune entrée, et la
-                // ligne mène à la page de session (un lien qui n'ouvre rien serait pire).
-                panelHrefs={{}}
+                // Une ligne ouvre le panneau (F43) ; la page de session est à un clic,
+                // « Ouvrir en page » dans l'en-tête du panneau.
+                panelHrefs={Object.fromEntries(page.map((s) => [s.session_id, lienPanneau(s.session_id)]))}
+                ouvert={panneauOuvert && voisins ? idPanneau : null}
                 pageHrefs={Object.fromEntries(
                   page.map((s) => [s.session_id, hrefWithQuery(`/sessions/${encodeURIComponent(s.session_id)}`, query)]),
                 )}
@@ -787,6 +837,20 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
 
       {!blocs.priorite && !blocs.repartition && !blocs.visiteurs && !blocs.engagement && !blocs.resume && !blocs.liste && (
         <TousEteints />
+      )}
+
+      {/* Z7 — panneau de la session ouverte (F43, § 5.11.4) : moitié droite dès 1280 px,
+          la liste reste lisible à gauche ; plein écran en dessous. */}
+      {panneauOuvert && idPanneau !== null && (
+        <PanneauSession
+          lecture={panneauOuvert}
+          plage={ecran.label}
+          avecApp={query.scope.effectiveApps === null || query.scope.effectiveApps.length > 1}
+          fermerHref={lienPanneau(null)}
+          pageHref={hrefWithQuery(`/sessions/${encodeURIComponent(idPanneau)}`, query)}
+          precedentHref={voisins === null ? undefined : voisins.precedent === null ? null : lienPanneau(voisins.precedent)}
+          suivantHref={voisins === null ? undefined : voisins.suivant === null ? null : lienPanneau(voisins.suivant)}
+        />
       )}
     </div>
   );

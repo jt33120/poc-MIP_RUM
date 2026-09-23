@@ -177,3 +177,20 @@ describe("F42 — hrefsPriorite", () => {
     expect(instantPremiereErreur("jamais")).toBeNull();
   });
 });
+
+describe("F43 — hrefsPriorite ouvre le panneau de session", () => {
+  const page = (id: string) => `/sessions/${id}?app=a&period=24h`;
+  const panneau = (id: string) => `/sessions?app=a&period=24h&panel=session%3A${id}`;
+
+  it("avec le lien du panneau, la ligne ouvre `panel=session:` ; ▶ reste sur la page de session", () => {
+    const s = prioritaire("s1", { rejeu: true, premiere: new Date(T0 + 5_000).toISOString() });
+    const liens = hrefsPriorite([s], { s1: page("s1") }, { s1: panneau("s1") });
+    expect(liens.s1.panel).toBe(panneau("s1"));
+    expect(liens.s1.rejeu).toBe(`${page("s1")}&tab=replay&at=${T0 + 5_000}`);
+  });
+
+  it("sans lien de panneau pour une ligne, elle mène à la page (jamais à un lien vide)", () => {
+    const liens = hrefsPriorite([prioritaire("s2", {})], { s2: page("s2") }, {});
+    expect(liens.s2.panel).toBe(page("s2"));
+  });
+});
