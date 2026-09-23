@@ -1,4 +1,4 @@
-// P7.5 — banc de mesure de l'écran `/mobile`, reproductible et HORS CI.
+// P7.5 — banc de mesure de l'écran `/mobile`, reproductible, joué par la CI (P1).
 //
 // POURQUOI UN BANC. La règle du plan est « index app/plage selon besoin réel
 // MESURÉ ». Ajouter un index « parce que ça semble utile » se paie à chaque
@@ -6,14 +6,16 @@
 // remarque jamais. La seule façon honnête de conclure est de construire le
 // candidat, de le mesurer, et de le retirer s'il n'est pas choisi.
 //
-// POURQUOI IL NE TOURNE PAS EN CI. Il exige une base de 120 000 sessions et
-// 250 000 erreurs que ni la CI ni un poste ne doivent reconstruire à chaque
-// commit : sans `BENCH_DATABASE_URL`, il est ignoré. Il NE SÈME RIEN et
-// N'EFFACE RIEN d'autre que son propre index candidat ; le semis est décrit
-// dans l'en-tête de `migration-v82.sql`, et se rejoue par `generate_series`
-// seul — aucune donnée client n'entre dans un banc.
+// SA BASE EST PRÉPARÉE À PART. Il exige 120 000 sessions et 250 000 erreurs que
+// `test:sql` ne doit pas reconstruire à chaque fichier : sans
+// `BENCH_DATABASE_URL`, il est ignoré. Il NE SÈME RIEN et N'EFFACE RIEN d'autre
+// que son propre index candidat ; la base est semée par
+// `scripts/bench/semer-bancs.mjs`, qui exécute la recette de l'en-tête de
+// `migration-v82.sql` par `generate_series` seul — aucune donnée client n'entre
+// dans un banc. Le job « Bancs de mesure » de ci.yml l'enchaîne avec le semis ;
+// en local, sur une base migrée puis semée :
 //
-//   BENCH_DATABASE_URL=postgres://postgres:postgres@localhost:5433/p75_bench \
+//   BENCH_DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum_bench \
 //     pnpm exec vitest run tests/integration/rum-mobile-bench-p75.test.ts
 //
 // Ce qu'il imprime : le plan `EXPLAIN (ANALYZE, BUFFERS)` de chaque lecture, sans

@@ -382,3 +382,75 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  # R9 — LES BANCS DE MESURE, ENFIN JOUÉS. `explorer-bench-p66` et
+  # `rum-mobile-bench-p75` lisent une base préparée à part, gouvernée par
+  # BENCH_DATABASE_URL : absente de ci.yml, elle les faisait IGNORER en silence à
+  # chaque passage de `test:sql` (`F3` de docs/RUM_PARITY_STATUS.md). Les temps
+  # publiés dans les en-têtes de migration-v80 et v82 n'étaient donc jamais
+  # revérifiés, et l'index de v82 pouvait cesser d'être choisi sans que rien ne
+  # rougisse.
+  #
+  # Sur le modèle des bases `pre_v*` — une base jetable nommée, une variable —,
+  # mais dans un job À PART : le semis (≈ 3,3 M de lignes) et les mesures
+  # prennent plusieurs minutes, qui n'ont rien à faire sur le chemin critique de
+  # l'E2E, et une mesure ne se prend pas sur un runner qui joue autre chose en
+  # même temps. Dans le job `e2e`, BENCH_DATABASE_URL reste absente : les deux
+  # fichiers y sont ignorés, par construction, puisqu'ils tournent ici.
+  #
+  # Ce qui fait échouer ce job : le semis, une lecture qui échoue, ou l'index de
+  # v82 qui n'est plus choisi par le planificateur. Aucun seuil de LATENCE : un
+  # seuil sur un runner partagé deviendrait un test instable (en-tête du banc
+  # P7.5). Les temps sont IMPRIMÉS dans le journal du job, pour comparaison.
+  bancs:
+    name: Bancs de mesure (Explorer P6.6, /mobile P7.5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BENCH_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_bench
+    services:
+      # Même moteur que la production et que le job e2e.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mip_rum_bench
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mip_rum_bench"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install (lockfile gelé)
+        run: pnpm install --frozen-lockfile
+
+      # Le schéma par le migrateur de production, comme partout ailleurs.
+      - name: Schéma de la base de banc (migrateur)
+        env:
+          DATABASE_URL: ${{ env.BENCH_DATABASE_URL }}
+        run: node services/scheduler/migrate.mjs
+
+      # La recette des en-têtes de migration-v80 (P6.6) et v82 (P7.5), en code :
+      # `generate_series` seul, aucune donnée client. ≈ 3,5 min sur un poste.
+      - name: Semis de la base de banc
+        run: node scripts/bench/semer-bancs.mjs
+
+      # `--reporter=verbose --silent=false` : les plans et les temps que les bancs
+      # impriment SONT le résultat ; sans eux, un passage vert ne dit rien.
+      - name: Bancs de mesure
+        run: >-
+          pnpm exec vitest run
+          tests/integration/explorer-bench-p66.test.ts
+          tests/integration/rum-mobile-bench-p75.test.ts
+          --no-file-parallelism --reporter=verbose --silent=false

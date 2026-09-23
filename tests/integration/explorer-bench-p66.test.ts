@@ -1,17 +1,21 @@
-// P6.6 — banc de mesure de l'Explorer, reproductible et HORS CI.
+// P6.6 — banc de mesure de l'Explorer, reproductible, joué par la CI (P1).
 //
 // POURQUOI UN TEST, ET PAS UN SCRIPT. Le banc doit mesurer le SQL RÉELLEMENT
 // exécuté en production, pas une transcription à la main qui dériverait au
 // premier changement du compilateur. Il passe donc par `analytics-compiler.ts` et
 // `exploreAnalytics` — le même chemin que l'API et l'écran.
 //
-// POURQUOI IL NE TOURNE PAS EN CI. Il exige une base de 1,2 M de lignes que ni la
-// CI ni un poste de développement ne doivent construire à chaque commit : sans
-// `BENCH_DATABASE_URL`, il est ignoré. Ce fichier NE SÈME RIEN et N'EFFACE RIEN :
-// il lit une base préparée à part (voir l'en-tête de `migration-v80.sql` pour la
-// recette de semis et les chiffres obtenus).
+// SA BASE EST PRÉPARÉE À PART. Il exige 1,2 M d'événements que `test:sql` ne doit
+// pas construire à chaque fichier : sans `BENCH_DATABASE_URL`, il est ignoré. Ce
+// fichier NE SÈME RIEN et N'EFFACE RIEN : il lit une base semée par
+// `scripts/bench/semer-bancs.mjs`, qui exécute la recette de l'en-tête de
+// `migration-v80.sql` (où sont aussi les chiffres obtenus). Le job « Bancs de
+// mesure » de ci.yml enchaîne migrateur, semis et banc sur une base jetable
+// `mip_rum_bench` ; en local :
 //
-//   BENCH_DATABASE_URL=postgres://postgres:postgres@localhost:5433/p66_bench \
+//   BENCH_DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum_bench \
+//     node scripts/bench/semer-bancs.mjs      # après migration de la base
+//   BENCH_DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum_bench \
 //     pnpm exec vitest run tests/integration/explorer-bench-p66.test.ts
 //
 // Ce qu'il imprime : le plan `EXPLAIN (ANALYZE, BUFFERS)` de chaque lecture, puis
