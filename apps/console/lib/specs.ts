@@ -34,6 +34,7 @@ import {
 } from "./sdk-poids";
 import { HOSTS } from "./legal";
 import { MCP_ORIGINE } from "./mcp-public";
+import { TOPOLOGIE_RELEVEE } from "./presentation-topologie";
 import { RN_VERSION } from "./versions";
 
 export type Statut = "atteint" | "partiel" | "manque" | "non-mesure";
@@ -103,7 +104,11 @@ export const INFRA: GroupeInfra[] = [
   },
   {
     titre: "Backend — collecteur sur Vercel, travaux planifiés et MCP sur Railway",
-    sous: `La collecte passe par la route de la console, sur Vercel. Projet Railway ${RAILWAY.projet}, environnement production : deux services, scheduler et mcp (relevé le 22/09/2026 par l'API Railway). Ni framework, ni serverless : du Node et du PostgreSQL, dans des images construites depuis ce dépôt.`,
+    // La date est celle du relevé que portent docs/TOPOLOGIE_BACKEND.md et le document
+    // de couverture (API Railway, le jour de la suppression d'`ingest`), lue dans la
+    // même constante que la légende du chemin de la mesure : tests/unit/presentation-
+    // topologie.test.ts vérifie qu'elle se lit dans les deux documents.
+    sous: `La collecte passe par la route de la console, sur Vercel. Projet Railway ${RAILWAY.projet}, environnement production : deux services, scheduler et mcp (relevé le ${TOPOLOGIE_RELEVEE.railway} par l'API Railway). Ni framework, ni serverless : du Node et du PostgreSQL, dans des images construites depuis ce dépôt.`,
     lignes: [
       {
         k: "ingest",
