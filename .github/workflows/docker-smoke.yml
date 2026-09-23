@@ -17,16 +17,16 @@ on:
   pull_request:
     paths:
       - "infra/docker/**"
-      - "apps/ingest/**"
-      - "apps/mcp/**"
+      - "packages/backend/**"
+      - "packages/mcp-tools/**"
       - "services/**"
       - ".github/workflows/docker-smoke.yml"
   push:
     branches: [master]
     paths:
       - "infra/docker/**"
-      - "apps/ingest/**"
-      - "apps/mcp/**"
+      - "packages/backend/**"
+      - "packages/mcp-tools/**"
       - "services/**"
   workflow_dispatch:
 

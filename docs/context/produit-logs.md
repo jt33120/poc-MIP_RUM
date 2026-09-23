@@ -28,9 +28,9 @@ L'implémentation est sérieuse, et c'est ce qui rend le diagnostic frustrant.
 
 | Brique | Fichier | État |
 |---|---|---|
-| Endpoint d'ingestion | `apps/ingest/supabase/functions/v1-logs/index.ts` (188 l.) | Écrit, miroir exact de `v1-traces` |
-| Jumeau auto-hébergé | `apps/ingest/dev-server.mjs:271-299` | Écrit |
-| Parseur OTLP | `_shared/otlp.mjs:543+` — `flattenOtlpLogs()` | Écrit, teste les `resourceLogs` sans app |
+| Endpoint d'ingestion | `packages/backend/supabase/functions/v1-logs/index.ts` (188 l.) | Écrit, miroir exact de `v1-traces` |
+| Jumeau auto-hébergé | `services/collector/dev-server.mjs:271-299` | Écrit |
+| Parseur OTLP | `shared/otlp.mjs:543+` — `flattenOtlpLogs()` | Écrit, teste les `resourceLogs` sans app |
 | Schéma | `migration-v29.sql` — table `rum_log` + 3 index | Appliqué |
 | Rétention & DSAR | `migration-v30.sql` | Appliqué — purge, effacement app, effacement personne |
 | Détection d'anomalie | `migration-v37.sql` — vue `v_log_anomaly` (score z) | Appliqué |

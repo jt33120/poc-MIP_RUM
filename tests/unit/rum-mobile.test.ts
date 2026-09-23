@@ -21,9 +21,9 @@ import {
 } from "../../packages/rum-mobile/src/core";
 import { EventContextStore } from "../../packages/rum-sdk/src/event-context";
 // @ts-expect-error module JS partagé sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { secureOtlpIdentities } from "../../apps/ingest/lib/identity-hash.mjs";
+import { secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.mjs";
 
 const cfg: MobileConfig = {
   endpoint: "https://i/v1/traces",

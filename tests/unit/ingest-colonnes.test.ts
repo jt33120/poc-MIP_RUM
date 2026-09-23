@@ -11,7 +11,7 @@ import {
   colonnesInsert,
   colonnesLongtask,
   // @ts-expect-error — module JS sans types, importé tel quel par la route d'ingestion
-} from "../../apps/ingest/lib/pg-ingest.mjs";
+} from "../../packages/backend/lib/pg-ingest.mjs";
 
 const TOUTES = new Set(["collection_source", "release", "net_type"]);
 const AUCUNE = new Set<string>();

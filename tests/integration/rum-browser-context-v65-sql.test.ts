@@ -5,16 +5,16 @@ import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error module JS partagé sans déclarations
-import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { deposerLot, drainerIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
+import { deposerLot, drainerIngestRaw } from "../../packages/backend/lib/ingest-differe.mjs";
 
 const url = process.env.SQL_TEST_V65_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 const pool = new pg.Pool(url ? { connectionString: url } : {});
 const APP = "p2-v65-compat";
 const ACTION = "11111111-2222-4333-8444-555555555555";
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 async function clean() {
   await pool.query("delete from ingest_raw where app_id=$1", [APP]);

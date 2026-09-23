@@ -16,11 +16,11 @@ import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 // @ts-expect-error module JS sans déclarations
-import { secureOtlpIdentities } from "../../apps/ingest/lib/identity-hash.mjs";
+import { secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.mjs";
 // @ts-expect-error module JS sans déclarations
-import { writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -29,7 +29,7 @@ const APP = "p71-mobile-app";
 const AUTRE = "p71-mobile-autre";
 const BRUT = "alice@example.test";
 const SECRET = "test-only-identity-secret";
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 type Lot = Record<string, any>;
 

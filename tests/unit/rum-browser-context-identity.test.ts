@@ -8,9 +8,9 @@ import {
 import { serializeSpan } from "../../packages/rum-sdk/src/retry";
 import { applyBeforeSend } from "../../packages/rum-sdk/src/index";
 // @ts-expect-error module JS partagé sans déclarations
-import { hashIdentity, secureOtlpIdentities } from "../../apps/ingest/lib/identity-hash.mjs";
+import { hashIdentity, secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const SECRET = "secret";
 

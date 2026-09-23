@@ -19,7 +19,7 @@ import {
   resoudreTraceOrigins,
 } from "../../packages/rum-mobile/src/trace";
 // @ts-expect-error module JS partagé sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const ENDPOINT = "https://ingest.test/v1/traces";
 const API = "https://api.exemple.fr";

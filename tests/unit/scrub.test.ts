@@ -7,8 +7,8 @@ import {
   scrubProps,
   scrubText,
   scrubUrl,
-} from "../../apps/ingest/supabase/functions/_shared/scrub.mjs";
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+} from "../../packages/backend/shared/scrub.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 describe("scrubText — masque secrets et données personnelles", () => {
   it("emails", () => {

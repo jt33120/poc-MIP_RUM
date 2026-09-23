@@ -35,11 +35,11 @@ describe("1 — les nombres des accès programmatiques sont lus dans le document
   });
 
   it("un nombre qui disparaît de sa cellule est tu, pas gardé", () => {
-    const sansNombre = avec("E2", { preuve: "`apps/mcp/lib/catalogue.mjs`, service Railway `mcp`" });
+    const sansNombre = avec("E2", { preuve: "`packages/mcp-tools/lib/catalogue.mjs`, service Railway `mcp`" });
     expect(nombreDansPreuve("E2", /\*\*(\d+) outils\*\*/, sansNombre)).toBeNull();
     expect(nombreDansPreuve("Z9", /(\d+)/)).toBeNull();
     // Un nouveau relevé qui recompte suit, sans toucher la vitrine.
-    const recompte = avec("E2", { preuve: "`apps/mcp/lib/catalogue.mjs` — **17 outils**, recomptés" });
+    const recompte = avec("E2", { preuve: "`packages/mcp-tools/lib/catalogue.mjs` — **17 outils**, recomptés" });
     expect(nombreDansPreuve("E2", /\*\*(\d+) outils\*\*/, recompte)).toBe(17);
   });
 });

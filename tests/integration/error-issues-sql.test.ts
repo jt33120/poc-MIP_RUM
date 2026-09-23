@@ -43,26 +43,26 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { buildResourceSpans, msToHr, type EmitSpan } from "../../packages/rum-sdk/src/otlp-encode";
 import type { ErrorFilters } from "../../apps/console/lib/queries-errors";
 // @ts-expect-error module JS partagé sans déclarations
-import { dispatchOnce } from "../../apps/ingest/dispatch-alerts.mjs";
+import { dispatchOnce } from "../../packages/backend/lib/dispatch-alerts.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { travaux } from "../../apps/ingest/jobs/planifie.mjs";
+import { travaux } from "../../packages/backend/jobs/planifie.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { importerNotesHistoriques } from "../../apps/ingest/lib/error-issue-workflow.mjs";
+import { importerNotesHistoriques } from "../../packages/backend/lib/error-issue-workflow.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { deposerLot, drainerIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
+import { deposerLot, drainerIngestRaw } from "../../packages/backend/lib/ingest-differe.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { MAX_GROUPES_HISTORIQUES_PAR_LOT } from "../../apps/ingest/lib/error-grouping.mjs";
+import { MAX_GROUPES_HISTORIQUES_PAR_LOT } from "../../packages/backend/lib/error-grouping.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { errorGrouping } from "../../apps/ingest/supabase/functions/_shared/error-normalize.mjs";
+import { errorGrouping } from "../../packages/backend/shared/error-normalize.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const urlFenetre = process.env.SQL_TEST_V68_DATABASE_URL;
 const RACINE = join(__dirname, "..", "..");
-const SQL_DIR = join(RACINE, "apps", "ingest", "sql");
+const SQL_DIR = join(RACINE, "packages", "db", "sql");
 // esbuild est déjà une dépendance du SDK : aucun paquet ajouté pour la recette.
 const esbuild = createRequire(join(RACINE, "packages", "rum-sdk", "package.json"))("esbuild");
 const pool = new pg.Pool(url ? { connectionString: url, max: 6 } : { max: 6 });

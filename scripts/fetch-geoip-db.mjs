@@ -24,16 +24,16 @@
 // Le téléchargement est un fichier statique public : aucun compte, aucune clef,
 // et surtout AUCUNE adresse IP de visiteur n'est envoyée nulle part. C'est un
 // approvisionnement, pas un appel de géolocalisation — la résolution, elle, est
-// entièrement locale (cf. _shared/geoip.mjs).
+// entièrement locale (cf. shared/geoip.mjs).
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
-import { chargerBase } from "../apps/ingest/supabase/functions/_shared/geoip.mjs";
+import { chargerBase } from "../packages/backend/shared/geoip.mjs";
 
 const ICI = path.dirname(fileURLToPath(import.meta.url));
-const DOSSIER = path.join(ICI, "..", "apps", "ingest", "data");
+const DOSSIER = path.join(ICI, "..", "packages", "backend", "data");
 const MANIFESTE = path.join(DOSSIER, "dbip-country-lite.manifest.json");
 const BASE_URL = "https://download.db-ip.com/free";
 

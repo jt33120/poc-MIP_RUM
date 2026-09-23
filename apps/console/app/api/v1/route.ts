@@ -18,7 +18,7 @@
 import { handle } from "@/lib/api/handle";
 import { endpointsDeclares } from "@/lib/api/openapi";
 import { preflight } from "@/lib/api/respond";
-import { OUTILS } from "../../../../mcp/lib/catalogue.mjs";
+import { OUTILS } from "@mip/mcp-tools/lib/catalogue.mjs";
 
 export const dynamic = "force-dynamic";
 

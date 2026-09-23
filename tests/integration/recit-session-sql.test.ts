@@ -20,7 +20,7 @@ const pool = new pg.Pool(url ? { connectionString: url } : {});
 const APP = "ps9-recit";
 const AUTRE = "ps9-recit-autre";
 const SID = "ps9-recit-session";
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 if (!url) console.warn("[recit-session-sql] SAUTÉ — définir SQL_TEST_DATABASE_URL (base jetable) pour l'exécuter.");
 

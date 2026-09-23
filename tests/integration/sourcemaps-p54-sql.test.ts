@@ -27,9 +27,9 @@ import vm from "node:vm";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildResourceSpans, msToHr } from "../../packages/rum-sdk/src/otlp-encode";
-import { creerSymbolicateur } from "../../apps/ingest/lib/error-symbolication.mjs";
-import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
-import { creerReceveur } from "../../apps/ingest/lib/receiver.mjs";
+import { creerSymbolicateur } from "../../packages/backend/lib/error-symbolication.mjs";
+import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
+import { creerReceveur } from "../../packages/backend/lib/receiver.mjs";
 import {
   empreinteContenu,
   empreinteManifeste,
@@ -37,13 +37,13 @@ import {
   genererJetonUpload,
   lireRequeteUpload,
   verifierJetonUpload,
-} from "../../apps/ingest/lib/sourcemap-upload.mjs";
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+} from "../../packages/backend/lib/sourcemap-upload.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const urlPreV71 = process.env.SQL_TEST_PRE_V71_DATABASE_URL;
 const RACINE = join(__dirname, "..", "..");
-const SQL_DIR = join(RACINE, "apps", "ingest", "sql");
+const SQL_DIR = join(RACINE, "packages", "db", "sql");
 // esbuild est déjà une dépendance du SDK : aucun paquet ajouté pour la recette.
 const esbuild = createRequire(join(RACINE, "packages", "rum-sdk", "package.json"))("esbuild");
 const executerFichier = promisify(execFile);
@@ -610,9 +610,9 @@ const compter = async (db: pg.Pool, app: string, release: string) =>
     expect(data.last.stack).toContain(r.bundle);
     expect(JSON.stringify(data)).not.toContain("throw new TypeError"); // aucun code source dans l'API
 
-    const { executer } = await import("../../apps/mcp/serveur.mjs");
-    const { creerClient } = await import("../../apps/mcp/lib/client.mjs");
-    const { outilParNom } = await import("../../apps/mcp/lib/catalogue.mjs");
+    const { executer } = await import("../../packages/mcp-tools/serveur.mjs");
+    const { creerClient } = await import("../../packages/mcp-tools/lib/client.mjs");
+    const { outilParNom } = await import("../../packages/mcp-tools/lib/catalogue.mjs");
     const client = creerClient({
       base: "https://console.test",
       jeton: LECTURE,

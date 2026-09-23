@@ -124,8 +124,8 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/schema.sql
-          for f in apps/ingest/sql/migration-v*.sql; do
+          psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f packages/db/sql/schema.sql
+          for f in packages/db/sql/migration-v*.sql; do
             echo "-- applying $f"
             psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f "$f"
           done

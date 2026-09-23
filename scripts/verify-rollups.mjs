@@ -10,8 +10,8 @@
 import { readFile } from "node:fs/promises";
 import pg from "pg";
 
-const SCHEMA = new URL("../apps/ingest/sql/schema.sql", import.meta.url);
-const MIGRATION = new URL("../apps/ingest/sql/migration-v12.sql", import.meta.url);
+const SCHEMA = new URL("../packages/db/sql/schema.sql", import.meta.url);
+const MIGRATION = new URL("../packages/db/sql/migration-v12.sql", import.meta.url);
 
 // --- requêtes console : BRUT vs ROLLUP (mêmes paramètres $1=app, $2=device) ----
 const RAW_GRID = `

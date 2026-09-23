@@ -9,14 +9,14 @@ hébergeur.
 
 ```
 apps/console     le front  (Next.js, Vercel)   ← consomme, ne décide pas
-apps/ingest      LE NOYAU  (sans framework)    ← la matière, réutilisable
-apps/mcp         le noyau MCP                  ← client de l'API, sans base
+packages/backend      LE NOYAU  (sans framework)    ← la matière, réutilisable
+packages/mcp-tools         le noyau MCP                  ← client de l'API, sans base
 services/*       les points d'entrée           ← minces par construction
 ```
 
 | Service | Rôle | Écoute | Commande |
 |---|---|---|---|
-| `ingest` | réception OTLP : traces, logs, replay ; source maps de CI (`POST /v1/sourcemaps`, jeton dédié) | oui (`PORT`) | `node services/ingest/server.mjs` |
+| `ingest` | réception OTLP : traces, logs, replay ; source maps de CI (`POST /v1/sourcemaps`, jeton dédié) | oui (`PORT`) | `node services/collector/server.mjs` |
 | `scheduler` | déclenche les travaux planifiés | facultatif | `node services/scheduler/worker.mjs` |
 | `mcp` | expose l'API v1 à un agent IA | oui (`PORT`) | `node services/mcp/http.mjs` |
 | _(migrations)_ | applique le SQL en attente — pré-déploiement du `scheduler` | non | `node services/scheduler/migrate.mjs` |
@@ -78,7 +78,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum \
   node services/scheduler/migrate.mjs
 
 # les services
-DATABASE_URL=... PORT=4318 node services/ingest/server.mjs
+DATABASE_URL=... PORT=4318 node services/collector/server.mjs
 DATABASE_URL=... PORT=4320 node services/scheduler/worker.mjs
 
 # le serveur MCP : pas de base, mais l'origine de la console

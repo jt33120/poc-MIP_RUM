@@ -3,11 +3,11 @@
 // Distincts des jetons de lecture (`read_tokens`, CONSOLE_API_TOKENS) : un seul
 // privilège, `sourcemaps:write`, une app, une date d'expiration. Le secret n'est
 // rendu qu'à la création ; la base n'en garde que le hash, et la vérification
-// (commune aux deux ports d'upload) vit dans `ingest/lib/sourcemap-upload.mjs`.
+// (commune aux deux ports d'upload) vit dans `@mip/backend/lib/sourcemap-upload.mjs`.
 // Rotation : créer un nouveau jeton, basculer la CI, révoquer l'ancien — jamais
 // prolonger un jeton existant.
-import { EXPIRATION_JETON, genererJetonUpload, PRIVILEGE_JETON } from "ingest/lib/sourcemap-upload.mjs";
-import { hasControlCharacters } from "ingest/shared/sourcemap.mjs";
+import { EXPIRATION_JETON, genererJetonUpload, PRIVILEGE_JETON } from "@mip/backend/lib/sourcemap-upload.mjs";
+import { hasControlCharacters } from "@mip/backend/shared/sourcemap.mjs";
 import { q, tx } from "./db";
 
 /** Ce que l'admin voit d'un jeton : jamais son secret ni son hash. */

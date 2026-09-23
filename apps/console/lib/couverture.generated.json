@@ -55,7 +55,7 @@
       "famille": "Suivi des erreurs",
       "capacite": "Capter les erreurs d'un service Node ou Python sans inventer de session",
       "verdict": "deploye_non_eprouve",
-      "preuve": "migration v70, `_shared/error-normalize.mjs` ; `tests/integration/error-backend-otel-sql.test.ts`, `tests/integration/agent-node-backend-events-sql.test.ts` ; PR #185",
+      "preuve": "migration v70, `shared/error-normalize.mjs` ; `tests/integration/error-backend-otel-sql.test.ts`, `tests/integration/agent-node-backend-events-sql.test.ts` ; PR #185",
       "limite": "Aucun émetteur backend ne tourne en production. Une double instrumentation log + span **sans** `mip.exception_id` commun n'est pas fusionnée, et n'est pas signalée à l'écran.",
       "ligne": 143
     },
@@ -64,7 +64,7 @@
       "famille": "Suivi des erreurs",
       "capacite": "Dé-minifier une pile avec une source map",
       "verdict": "deploye_non_eprouve",
-      "preuve": "migration v71, `apps/ingest/lib/error-symbolication.mjs` ; `tests/integration/sourcemaps-p54-sql.test.ts` ; PR #186",
+      "preuve": "migration v71, `packages/backend/lib/error-symbolication.mjs` ; `tests/integration/sourcemaps-p54-sql.test.ts` ; PR #186",
       "limite": "Aucune map n'a jamais été déposée par une application réelle. Une map arrivée **après** les premières occurrences améliore l'affichage sans changer l'identité de l'issue — et peut donc ouvrir une seconde issue.",
       "ligne": 144
     },
@@ -73,7 +73,7 @@
       "famille": "Suivi des erreurs",
       "capacite": "Déposer des source maps depuis une CI (jeton dédié, CLI, port direct)",
       "verdict": "deploye_non_eprouve",
-      "preuve": "`scripts/upload-sourcemaps.mjs`, `apps/ingest/lib/sourcemap-upload.mjs`, `/admin/sourcemaps`, table `sourcemap_upload_token`",
+      "preuve": "`scripts/upload-sourcemaps.mjs`, `packages/backend/lib/sourcemap-upload.mjs`, `/admin/sourcemaps`, table `sourcemap_upload_token`",
       "limite": "Le port backend direct n'est servi par **aucun** service de production depuis la suppression d'`ingest`, le 21/09/2026 (§ 3) : seule la route console est joignable, avec ses lots ≤ 3 Mio. Le branchement dans une CI cliente est `D10`.",
       "ligne": 145
     },
@@ -127,7 +127,7 @@
       "famille": "Analyse et exploration",
       "capacite": "Découper par navigateur, système, appareil, pays estimé, release, route",
       "verdict": "deploye_non_eprouve",
-      "preuve": "migration v75, `_shared/dimensions.mjs` ; `tests/unit/dimensions.test.ts`, `tests/integration/dimensions-v75-sql.test.ts` ; PR #191/#193",
+      "preuve": "migration v75, `shared/dimensions.mjs` ; `tests/unit/dimensions.test.ts`, `tests/integration/dimensions-v75-sql.test.ts` ; PR #191/#193",
       "limite": "**Tout ce qui précède v75 a ses dimensions à `NULL`**, affichées « Inconnu ». Un iPad sous iPadOS 13+ est compté *desktop*. Pas de groupe « Autres » : additionner des p75 n'a pas de sens.",
       "ligne": 156
     },
@@ -289,7 +289,7 @@
       "famille": "Exploitation, vie privée et conformité",
       "capacite": "Effacer les données d'une personne sans qu'un writer les recrée",
       "verdict": "deploye_non_eprouve",
-      "preuve": "migration v81, `apps/ingest/lib/privacy-barriere.mjs` (`withAppIngestTransaction`, `pg_advisory_xact_lock`) ; `tests/integration/dsar-concurrency-sql.test.ts` — **17 tests, dix interleavings**, attente lue dans `pg_locks`, aucun `sleep` ; PR #205",
+      "preuve": "migration v81, `packages/backend/lib/privacy-barriere.mjs` (`withAppIngestTransaction`, `pg_advisory_xact_lock`) ; `tests/integration/dsar-concurrency-sql.test.ts` — **17 tests, dix interleavings**, attente lue dans `pg_locks`, aucun `sleep` ; PR #205",
       "limite": "**Aucun effacement réel n'a été demandé depuis l'activation.** Le protocole est prouvé par 17 tests de concurrence, pas par la production. Aucun mécanisme automatique ne refuse un writer antérieur à v81 : c'est à l'exploitant de vérifier.",
       "ligne": 184
     },
@@ -325,7 +325,7 @@
       "famille": "Exploitation, vie privée et conformité",
       "capacite": "Purger selon la rétention",
       "verdict": "deploye_non_eprouve",
-      "preuve": "`purge_rum_app` / `purge_rum_tenants`, travail planifié `apps/ingest/jobs/planifie.mjs`",
+      "preuve": "`purge_rum_app` / `purge_rum_tenants`, travail planifié `packages/backend/jobs/planifie.mjs`",
       "limite": "**La rétention ne couvre toujours pas les tables SVI.** Vérifié en base le 18/09 : `purge_rum_app` ne cite pas `svi_call`, alors que `erase_app_data` le fait. Écart préexistant, non corrigé.",
       "ligne": 188
     },
@@ -352,7 +352,7 @@
       "famille": "Exploitation, vie privée et conformité",
       "capacite": "Préparer une reprise d'historique (plan, dry-run, vérification)",
       "verdict": "livre_non_deploye",
-      "preuve": "`scripts/backfill-rum.mjs` (6 sous-commandes, 4 reconstructions), `apps/ingest/lib/backfills/` ; `tests/integration/backfill-idempotency-sql.test.ts` (52 tests, 52 verts le 23/09 avec la fenêtre v82→v83), `tests/unit/backfill-p82.test.ts` ; PR #208. Migration **v83 appliquée en production** le 18/09 — déduit des journaux du runner, pas lu en base ; le relevé du 18/09 la disait non appliquée (§ 12.2)",
+      "preuve": "`scripts/backfill-rum.mjs` (6 sous-commandes, 4 reconstructions), `packages/backend/lib/backfills/` ; `tests/integration/backfill-idempotency-sql.test.ts` (52 tests, 52 verts le 23/09 avec la fenêtre v82→v83), `tests/unit/backfill-p82.test.ts` ; PR #208. Migration **v83 appliquée en production** le 18/09 — déduit des journaux du runner, pas lu en base ; le relevé du 18/09 la disait non appliquée (§ 12.2)",
       "limite": "**Aucun environnement ne lance l'outil** : c'est une ligne de commande, et son exécution en production a été écartée (`D9`). L'outil lit `BACKFILL_DATABASE_URL`, **jamais** `DATABASE_URL`. `--app all` est refusé. Aucun écran de console : le journal se lit par CLI et par SQL. La fenêtre de déploiement v82→v83 (3 de ses 52 tests) est jouée par la CI depuis #213.",
       "ligne": 191
     },
@@ -388,7 +388,7 @@
       "famille": "Exploitation, vie privée et conformité",
       "capacite": "Créer un ticket chez un fournisseur depuis une issue",
       "verdict": "deploye_non_eprouve",
-      "preuve": "**PR #211 fusionnée le 18/09 à 12:59**, CI verte (6 contrôles) ; migration **v84 appliquée en production à 13:30:35 UTC** (journal de pré-déploiement `ingest`) ; `apps/ingest/lib/integrations/tickets/{adapter,dispatcher}.mjs`, tables `ticket_integration` / `ticket_outbox` / `ticket_webhook_event`, écrans `/admin/ticket-integrations`. **Un vrai ticket a été créé** dans un dépôt bac à sable — c'est la seule ligne de P5 à P8 qui ait touché un système externe réel",
+      "preuve": "**PR #211 fusionnée le 18/09 à 12:59**, CI verte (6 contrôles) ; migration **v84 appliquée en production à 13:30:35 UTC** (journal de pré-déploiement `ingest`) ; `packages/backend/lib/integrations/tickets/{adapter,dispatcher}.mjs`, tables `ticket_integration` / `ticket_outbox` / `ticket_webhook_event`, écrans `/admin/ticket-integrations`. **Un vrai ticket a été créé** dans un dépôt bac à sable — c'est la seule ligne de P5 à P8 qui ait touché un système externe réel",
       "limite": "**Déployé et inerte** : aucune intégration n'est configurée, `TICKET_INTEGRATIONS` n'est pas posé, et l'interface d'administration reste cachée tant qu'aucun fournisseur n'est branché **et testé**. Un seul fournisseur (GitHub Issues), présenté dans le produit comme une étape vers l'ITSM de MIP — « ServiceNow, **sous réserve de confirmation** », et personne n'a confirmé. Aucune écriture MIP → fournisseur après la création : résoudre une issue ne ferme pas le ticket. Le lien manuel de P5.6 continue de fonctionner **sans** connecteur, et un test le prouve.",
       "ligne": 195
     },
@@ -406,7 +406,7 @@
       "famille": "Exploitation, vie privée et conformité",
       "capacite": "Préciser le pays par une base IP→pays",
       "verdict": "deploye_non_eprouve",
-      "preuve": "**PR #210 fusionnée le 18/09 à 12:52**, CI verte ; migration **v85 appliquée en production** (déduite du journal de pré-déploiement : `total 80 · appliquées 1`, la seule étant v84) ; `apps/ingest/lib/geoip-db.mjs`, `_shared/geoip.mjs`, `infra/docker/Dockerfile.backend` ; `tests/unit/geoip-db.test.ts` (193 l.), `tests/integration/geoip-v85-sql.test.ts`",
+      "preuve": "**PR #210 fusionnée le 18/09 à 12:52**, CI verte ; migration **v85 appliquée en production** (déduite du journal de pré-déploiement : `total 80 · appliquées 1`, la seule étant v84) ; `packages/backend/lib/geoip-db.mjs`, `shared/geoip.mjs`, `infra/docker/Dockerfile.backend` ; `tests/unit/geoip-db.test.ts` (193 l.), `tests/integration/geoip-v85-sql.test.ts`",
       "limite": "**Le GeoIP ne résout aucun pays sur le trafic actuel, et la fusion n'y change rien.** La résolution est embarquée dans l'**image backend Railway**, qui ne reçoit aucun trafic : `ingest`, sans domaine public, a été supprimé le 21/09/2026 (§ 3) ; la route Vercel, qui reçoit tout le trafic, **n'appelle délibérément pas** la résolution locale — un commentaire du code l'explique — et ne pose que la provenance `cdn`. La base elle-même n'est pas versionnée : elle reste **à déposer**. Pays seulement : ni ville, ni région, ni coordonnées ; la base « City Lite » est refusée par le chargeur. **Aucun enrichissement rétrospectif n'est possible** : l'adresse des visites passées n'a jamais été stockée, et ce lot ne commence pas à la stocker.",
       "ligne": 197
     },
@@ -424,7 +424,7 @@
       "famille": "Surfaces d'accès",
       "capacite": "Lire par MCP",
       "verdict": "deploye_non_eprouve",
-      "preuve": "`apps/mcp/lib/catalogue.mjs` — **16 outils**, recomptés le 23/09 (`mip_rum_list_apps` … `mip_rum_mobile_summary`) ; job CI `mcp-smoke` qui compare ce nombre en dur ; service Railway `mcp` (sur `6485f45` le 18/09, non relevé depuis), avec domaine public",
+      "preuve": "`packages/mcp-tools/lib/catalogue.mjs` — **16 outils**, recomptés le 23/09 (`mip_rum_list_apps` … `mip_rum_mobile_summary`) ; job CI `mcp-smoke` qui compare ce nombre en dur ; service Railway `mcp` (sur `6485f45` le 18/09, non relevé depuis), avec domaine public",
       "limite": "Read-only par construction. Le catalogue n'expose **pas encore les dimensions** de P6 : les outils P4/P5 restent sur app, période et appareil.",
       "ligne": 204
     },

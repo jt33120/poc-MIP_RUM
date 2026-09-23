@@ -14,7 +14,7 @@ utile — c'est ce qui est arrivé à `ingest`, décrit plus bas.
 La console **écrit** donc en base autant qu'elle la lit. Ce n'est pas un accident
 de conception : une fonction serverless au plus près du navigateur reçoit les
 beacons avec la latence la plus basse, et le parseur est le même des deux côtés
-(`apps/ingest/lib/receiver.mjs`, `_shared/otlp.mjs`) — il n'existe pas deux
+(`packages/backend/lib/receiver.mjs`, `shared/otlp.mjs`) — il n'existe pas deux
 implémentations à tenir alignées.
 
 ## Les services Railway
@@ -57,11 +57,11 @@ schéma d'avant **et** d'après sa propre migration.
 
 Chaque service ne se reconstruit que sur ce qui le concerne :
 
-- `scheduler` : `apps/ingest/**`, `services/scheduler/**`, `infra/docker/Dockerfile.backend` ;
-- `mcp` : `apps/mcp/**`, `services/mcp/**`, `infra/docker/Dockerfile.mcp`.
+- `scheduler` : `packages/backend/**`, `services/scheduler/**`, `infra/docker/Dockerfile.backend` ;
+- `mcp` : `packages/mcp-tools/**`, `services/mcp/**`, `infra/docker/Dockerfile.mcp`.
 
 Auparavant les deux services backend surveillaient `services/**` en entier :
-déposer une base GeoIP sous `apps/ingest/data/` redéployait le scheduler, et
+déposer une base GeoIP sous `packages/backend/data/` redéployait le scheduler, et
 modifier le serveur MCP redéployait l'ingestion. Un redéploiement inutile n'est
 pas gratuit — il remet à zéro des caches chauds et ouvre une fenêtre pendant
 laquelle deux versions coexistent.
@@ -87,7 +87,7 @@ laquelle deux versions coexistent.
 > taire demanderait de ré-étalonner cette seule ligne du registre, décision à
 > prendre en connaissance de cause, pas un correctif.
 
-Il exécutait `services/ingest/server.mjs`, un receveur OTLP complet — et **aucun
+Il exécutait `services/collector/server.mjs`, un receveur OTLP complet — et **aucun
 domaine public ne pointait dessus**. Rien ne pouvait donc l'atteindre. Son drain
 de la file différée était désactivé (`INGEST_DEFERRED` absent de ses variables),
 et `ingest_raw` était vide. Son seul rôle réel était de lancer les migrations au
@@ -103,7 +103,7 @@ l'auto-hébergement dans [infra/docker/](../infra/docker/). Le produit garde don
 son chemin souverain : ce qui disparaît, c'est une copie qui tournait à vide.
 
 **Ce qu'il faudrait pour le faire revenir.** Recréer un service sur
-`infra/docker/Dockerfile.backend` avec `node services/ingest/server.mjs`, lui
+`infra/docker/Dockerfile.backend` avec `node services/collector/server.mjs`, lui
 rendre ses quatre variables, **et lui donner un domaine public** — faute de quoi
 on reproduirait exactement la situation qu'on vient de défaire. À ce moment-là,
 deux chemins d'ingestion coexisteraient et devraient rester alignés : c'est le

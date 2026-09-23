@@ -14,7 +14,7 @@
 //   railway run --service scheduler node scripts/ops/releve-p0.mjs
 //   DATABASE_URL=… node scripts/ops/releve-p0.mjs
 import pg from "pg";
-import { creerPool, cible } from "../../apps/ingest/lib/serveur.mjs";
+import { creerPool, cible } from "../../packages/backend/lib/serveur.mjs";
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL absent — passer par `railway run --service scheduler`.");

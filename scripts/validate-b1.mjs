@@ -76,7 +76,7 @@ async function proofWebhook() {
   );
 
   // dispatch local (pendant pg_net) en sous-process, --once
-  const dispatch = spawn("node", ["apps/ingest/dispatch-alerts.mjs", "--once"], {
+  const dispatch = spawn("node", ["packages/backend/lib/dispatch-alerts.mjs", "--once"], {
     cwd: ROOT,
     env: { ...process.env, DATABASE_URL, DISPATCH_TIMEOUT_MS: "5000" },
     stdio: ["ignore", "pipe", "inherit"],
@@ -136,7 +136,7 @@ function otlpGeoPayload(sessionId) {
 }
 
 async function proofGeo() {
-  const server = spawn("node", ["apps/ingest/dev-server.mjs"], {
+  const server = spawn("node", ["services/collector/dev-server.mjs"], {
     cwd: ROOT,
     env: { ...process.env, DATABASE_URL, INGEST_PORT: String(INGEST_PORT) },
     stdio: ["ignore", "pipe", "inherit"],

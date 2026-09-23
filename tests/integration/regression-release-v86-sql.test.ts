@@ -28,13 +28,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { parseAnalyticsQuery } from "../../apps/console/lib/query-contract";
 import type { RuleInput } from "../../apps/console/lib/queries-v2";
 // @ts-expect-error module JS partagé sans déclarations
-import { dispatchOnce, selectionSql } from "../../apps/ingest/dispatch-alerts.mjs";
+import { dispatchOnce, selectionSql } from "../../packages/backend/lib/dispatch-alerts.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { travaux } from "../../apps/ingest/jobs/planifie.mjs";
+import { travaux } from "../../packages/backend/jobs/planifie.mjs";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const urlFenetre = process.env.SQL_TEST_PRE_V86_DATABASE_URL;
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 const V86 = readFileSync(join(SQL_DIR, "migration-v86.sql"), "utf8");
 const PHRASE = "même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte";
 const muet = { info() {}, warn() {}, error() {} };

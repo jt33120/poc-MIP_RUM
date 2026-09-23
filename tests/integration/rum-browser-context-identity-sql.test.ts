@@ -3,13 +3,13 @@ import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error module JS sans déclarations
-import { hashIdentity, secureOtlpIdentities } from "../../apps/ingest/lib/identity-hash.mjs";
+import { hashIdentity, secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.mjs";
 // @ts-expect-error module JS sans déclarations
-import { deposerLot, drainerIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
+import { deposerLot, drainerIngestRaw } from "../../packages/backend/lib/ingest-differe.mjs";
 // @ts-expect-error module JS sans déclarations
-import { writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 import {
   dsarIdentityCounts,
   dsarIdentityErase,
@@ -24,7 +24,7 @@ const APP = "p2-context-app";
 const OTHER_APP = "p2-context-other";
 const RAW = "alice@example.test";
 const SECRET = "test-only-identity-secret";
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 function attributes(values: Record<string, string | number>) {
   return Object.entries(values).map(([key, value]) => ({

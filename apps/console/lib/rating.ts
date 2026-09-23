@@ -1,5 +1,5 @@
 // Seuils Core Web Vitals alignés sur la référence web.dev (E0) — miroir de
-// apps/ingest/.../_shared/otlp.mjs, utilisé pour noter les agrégats p75 au rendu.
+// packages/backend/.../shared/otlp.mjs, utilisé pour noter les agrégats p75 au rendu.
 // Relus le 22/09/2026 sur web.dev/articles/{lcp,inp,cls,fcp,ttfb} : « bon » est
 // inclusif (« 2.5 seconds or less »), « mauvais » strict (« greater than 4.0
 // seconds »), les deux lus au 75ᵉ centile — c'est exactement `rating2026`.

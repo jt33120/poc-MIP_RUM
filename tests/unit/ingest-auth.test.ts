@@ -1,9 +1,9 @@
-// Auth d'ingestion partagée (_shared/auth.mjs) — utilisée par v1-traces ET
+// Auth d'ingestion partagée (shared/auth.mjs) — utilisée par v1-traces ET
 // v1-replay. On teste le modèle de vérif de clé (keyless toléré, app inconnue
 // rejetée, fail-open si registre jamais chargé) et le rate limit (fenêtre + RPC
 // durable + fallback), avec un faux client supabase piloté par les tests.
 import { describe, expect, it } from "vitest";
-import { createAuth } from "../../apps/ingest/supabase/functions/_shared/auth.mjs";
+import { createAuth } from "../../packages/backend/shared/auth.mjs";
 
 // SHA-256 hex (parité avec l'implémentation) pour fabriquer des hash de clés.
 async function sha256(s: string): Promise<string> {

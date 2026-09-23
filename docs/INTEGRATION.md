@@ -281,7 +281,7 @@ Collecté (par session) :
 > même valeur) et il était réidentifiant par recoupement, puisque entièrement dérivé
 > de caractéristiques du terminal. Il est remplacé par un tirage aléatoire, qu'un
 > visiteur peut effacer en vidant le stockage local de son navigateur. Voir
-> `apps/ingest/sql/migration-v57.sql`.
+> `packages/db/sql/migration-v57.sql`.
 
 Garanties :
 - **Aucune PII par construction** : pas de nom, email, IP stockée ; pas de cookie (session en `localStorage`, TTL 30 min d'inactivité) ; l'identifiant de visiteur est un tirage aléatoire, sans lien avec le terminal ni avec un compte.

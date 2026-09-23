@@ -16,11 +16,11 @@ import {
   flattenOtlpLogs,
   MAX_EXCEPTION_EVENTS_PER_SPAN,
   // @ts-expect-error module JS partagé sans déclarations
-} from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+} from "../../packages/backend/shared/otlp.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { _resetColonnesCache, writeLogs, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeLogs, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { createSchemaCompatibleWriter } from "../../apps/ingest/supabase/functions/_shared/write-causal.mjs";
+import { createSchemaCompatibleWriter } from "../../packages/backend/shared/write-causal.mjs";
 
 type Attrs = Record<string, unknown>;
 type Row = Record<string, unknown>;

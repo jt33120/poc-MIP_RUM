@@ -1,4 +1,4 @@
-import { hashIdentity } from "ingest/lib/identity-hash.mjs";
+import { hashIdentity } from "@mip/backend/lib/identity-hash.mjs";
 import type { DsarIdentityKind } from "./dsar";
 
 export type IdentityActionError = "app" | "kind" | "empty" | "secret" | "confirm";

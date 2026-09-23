@@ -9,8 +9,8 @@
 // Droits : la stack symboliquée est scrubbed et suit les droits RUM existants.
 // Le contexte de code (±3 lignes tirées de `sourcesContent`) est réservé à
 // l'admin et n'est jamais exposé par l'API.
-import { creerSymbolicateur, type SymbolicationStatus } from "ingest/lib/error-symbolication.mjs";
-import { createLogger } from "ingest/shared/log.mjs";
+import { creerSymbolicateur, type SymbolicationStatus } from "@mip/backend/lib/error-symbolication.mjs";
+import { createLogger } from "@mip/backend/shared/log.mjs";
 import { pool, q } from "./db";
 import { type CodeContext, codeContext, type RawSourceMap, type ResolvedFrame } from "./sourcemap";
 

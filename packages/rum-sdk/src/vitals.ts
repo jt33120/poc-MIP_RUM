@@ -13,7 +13,7 @@ import type { VitalName } from "./types";
 // ALIGNÉS sur la référence web.dev (E0) : le LCP était noté [2000, 2500], ce qui
 // classait « à améliorer » des pages que Google classe « bonnes ». Toute
 // divergence ici rend nos notes inexplicables face à PageSpeed/CrUX.
-// Miroir strict de _shared/otlp.mjs (ingestion) et lib/rating.ts (console).
+// Miroir strict de shared/otlp.mjs (ingestion) et lib/rating.ts (console).
 const THRESHOLDS: Record<VitalName, [number, number]> = {
   LCP: [2500, 4000],
   INP: [200, 500],

@@ -31,7 +31,7 @@ export interface TraceCoverage {
  * `trace_id` de la vue (`packages/rum-sdk/src/index.ts`, `traceId: currentTraceId`) ;
  * chaque appel garde son propre `spanId` dans `traceparent`, que le middleware
  * serveur (FastAPI, agent Node, OTel) recopie en `parent_span_id` de son span
- * (`apps/ingest/…/otlp.mjs`, `spanRow`). Apparier par `trace_id` seul croisait
+ * (`packages/backend/…/otlp.mjs`, `spanRow`). Apparier par `trace_id` seul croisait
  * donc chaque appel avec les réponses serveur de TOUS les appels de la vue :
  * deux appels comptaient quatre fois, et le p75 serveur de `/api/config`
  * portait sur la réponse de `/api/search`. La chronologie de session appariait

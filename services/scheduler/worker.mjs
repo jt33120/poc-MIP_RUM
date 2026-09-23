@@ -24,13 +24,13 @@
 // d'aucune propriété de session. Cf. ingest/jobs/bail.mjs.
 import http from "node:http";
 import pg from "pg";
-import { dispatchOnce } from "ingest/dispatch-alerts.mjs";
+import { dispatchOnce } from "@mip/backend/lib/dispatch-alerts.mjs";
 import { randomUUID } from "node:crypto";
-import { DUREES, SQL_TABLE, prendreBail, rendreBail } from "ingest/jobs/bail.mjs";
-import { CADENCES, prochainDelai } from "ingest/jobs/cadence.mjs";
-import { travaux } from "ingest/jobs/planifie.mjs";
-import { creerPool, cible } from "ingest/lib/serveur.mjs";
-import { createLogger } from "ingest/shared/log.mjs";
+import { DUREES, SQL_TABLE, prendreBail, rendreBail } from "@mip/backend/jobs/bail.mjs";
+import { CADENCES, prochainDelai } from "@mip/backend/jobs/cadence.mjs";
+import { travaux } from "@mip/backend/jobs/planifie.mjs";
+import { creerPool, cible } from "@mip/backend/lib/serveur.mjs";
+import { createLogger } from "@mip/backend/shared/log.mjs";
 
 const log = createLogger("scheduler");
 

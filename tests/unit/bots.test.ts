@@ -1,6 +1,6 @@
-// Détection de bots à l'ingestion — classifieur pur (_shared/bots.mjs).
+// Détection de bots à l'ingestion — classifieur pur (shared/bots.mjs).
 import { describe, expect, it } from "vitest";
-import { isBot } from "../../apps/ingest/supabase/functions/_shared/bots.mjs";
+import { isBot } from "../../packages/backend/shared/bots.mjs";
 
 const REAL_CHROME =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";

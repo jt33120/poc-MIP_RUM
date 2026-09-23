@@ -27,7 +27,7 @@ import {
   referenceMip,
   statutPropose,
   urlConsole,
-} from "../../apps/ingest/lib/integrations/tickets/adapter.mjs";
+} from "../../packages/backend/lib/integrations/tickets/adapter.mjs";
 // @ts-expect-error module JS sans déclarations
 import {
   WEBHOOK_MAX_OCTETS,
@@ -36,11 +36,11 @@ import {
   getIssue,
   normalizeWebhook,
   validateWebhook,
-} from "../../apps/ingest/lib/integrations/tickets/github.mjs";
+} from "../../packages/backend/lib/integrations/tickets/github.mjs";
 // @ts-expect-error module JS sans déclarations
-import { adaptateurDe } from "../../apps/ingest/lib/integrations/tickets/dispatcher.mjs";
+import { adaptateurDe } from "../../packages/backend/lib/integrations/tickets/dispatcher.mjs";
 // @ts-expect-error module JS sans déclarations
-import { ErreurSecret, chiffrer, decrire, referenceValide, resoudre } from "../../apps/ingest/lib/integrations/tickets/secrets.mjs";
+import { ErreurSecret, chiffrer, decrire, referenceValide, resoudre } from "../../packages/backend/lib/integrations/tickets/secrets.mjs";
 import { parseDemandeTicket, parseIntegrationPatch, parseIntegrationRequest } from "../../apps/console/lib/queries-ticket-integrations";
 
 const CONSOLE = "https://console.exemple.fr";

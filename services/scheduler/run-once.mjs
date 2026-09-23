@@ -18,11 +18,11 @@
 // 3 bail tenu ailleurs (rien n'a été fait) · 4 le travail a rendu un échec.
 import pg from "pg";
 import { randomUUID } from "node:crypto";
-import { dispatchOnce } from "ingest/dispatch-alerts.mjs";
-import { DUREES, SQL_TABLE, prendreBail, rendreBail } from "ingest/jobs/bail.mjs";
-import { travaux } from "ingest/jobs/planifie.mjs";
-import { creerPool, cible } from "ingest/lib/serveur.mjs";
-import { createLogger } from "ingest/shared/log.mjs";
+import { dispatchOnce } from "@mip/backend/lib/dispatch-alerts.mjs";
+import { DUREES, SQL_TABLE, prendreBail, rendreBail } from "@mip/backend/jobs/bail.mjs";
+import { travaux } from "@mip/backend/jobs/planifie.mjs";
+import { creerPool, cible } from "@mip/backend/lib/serveur.mjs";
+import { createLogger } from "@mip/backend/shared/log.mjs";
 
 const log = createLogger("run-once");
 

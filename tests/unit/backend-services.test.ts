@@ -6,11 +6,11 @@
 // migrations qui se trompe touche la base de production.
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { aFaire, empreinte, jusquaInclus, main } from "../../apps/ingest/migrate.mjs";
-import { CADENCES, prochainDelai } from "../../apps/ingest/jobs/cadence.mjs";
-import { ECHEANCE_LIVRAISON_MS, executerEtapes, travaux } from "../../apps/ingest/jobs/planifie.mjs";
-import { optionsSsl } from "../../apps/ingest/lib/serveur.mjs";
-import { DUREES, SQL_TABLE, prendreBail, rendreBail } from "../../apps/ingest/jobs/bail.mjs";
+import { aFaire, empreinte, jusquaInclus, main } from "../../packages/db/migrate.mjs";
+import { CADENCES, prochainDelai } from "../../packages/backend/jobs/cadence.mjs";
+import { ECHEANCE_LIVRAISON_MS, executerEtapes, travaux } from "../../packages/backend/jobs/planifie.mjs";
+import { optionsSsl } from "../../packages/backend/lib/serveur.mjs";
+import { DUREES, SQL_TABLE, prendreBail, rendreBail } from "../../packages/backend/jobs/bail.mjs";
 
 const muet = { info() {}, warn() {}, error() {} };
 
@@ -395,7 +395,7 @@ describe("bail d'exclusion des travaux planifiés", () => {
 // migration ne casserait rien à l'exécution (la table existe déjà, le `create
 // if not exists` est un no-op) — elle manquerait simplement en base, en silence.
 describe("scheduler_lease — le code et le schéma décrivent la même table", () => {
-  const migration = readFileSync("apps/ingest/sql/migration-v54.sql", "utf8");
+  const migration = readFileSync("packages/db/sql/migration-v54.sql", "utf8");
   const normaliser = (s: string) => s.replace(/\s+/g, " ").replace(/\s*\(\s*/g, "(").trim();
 
   it("la migration contient la DDL exacte de SQL_TABLE", () => {

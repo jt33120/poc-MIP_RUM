@@ -51,7 +51,7 @@ code console** (le code référençait déjà ces tables).
 
 1. `check_alerts()` (réécrit v17) tourne via pg_cron. `route_alert()` livre aux canaux
    par sévérité (webhook via `pg_net` en cloud, ou file `alert_delivery` + runner
-   `apps/ingest/dispatch-alerts.mjs --loop` en secours).
+   `packages/backend/lib/dispatch-alerts.mjs --loop` en secours).
 2. **Règles de départ** créées pour `gip-plateforme** (modifiables dans `/alerts`) :
    - LCP p75 > 2500 ms (warning), INP p75 > 200 ms (warning), taux d'erreur > 1 % (critical).
 3. **Notifications** : créer un `notify_channel` (webhook Slack/Discord) — *fournir l'URL*.

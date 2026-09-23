@@ -21,25 +21,25 @@ import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 // @ts-expect-error module JS sans déclarations
-import { hashIdentity, secureOtlpIdentities } from "../../apps/ingest/lib/identity-hash.mjs";
+import { hashIdentity, secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.mjs";
 // @ts-expect-error module JS sans déclarations
-import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 // @ts-expect-error module JS sans déclarations
-import { VERROU_INGESTION_NS, _resetPresenceBarrieres } from "../../apps/ingest/lib/privacy-barriere.mjs";
+import { VERROU_INGESTION_NS, _resetPresenceBarrieres } from "../../packages/backend/lib/privacy-barriere.mjs";
 // @ts-expect-error module JS sans déclarations
-import { ErreurPlan, KINDS, empreinteCode, planifier } from "../../apps/ingest/lib/backfills/planner.mjs";
+import { ErreurPlan, KINDS, empreinteCode, planifier } from "../../packages/backend/lib/backfills/planner.mjs";
 // @ts-expect-error module JS sans déclarations
-import { etat, executer, inscrirePlan, mettreEnPause, verifier } from "../../apps/ingest/lib/backfills/runner.mjs";
+import { etat, executer, inscrirePlan, mettreEnPause, verifier } from "../../packages/backend/lib/backfills/runner.mjs";
 // @ts-expect-error module JS sans déclarations
-import { fusionHistogrammesPossible, fusionnerHistogrammes } from "../../apps/ingest/lib/backfills/rollups.mjs";
+import { fusionHistogrammesPossible, fusionnerHistogrammes } from "../../packages/backend/lib/backfills/rollups.mjs";
 import { dsarIdentityErase, type IdentityDsarIo } from "../../apps/console/lib/queries-dsar";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 const pool = new pg.Pool(url ? { connectionString: url, max: 10 } : { max: 10 });
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 const APP = "p82-reprise";
 const AUTRE = "p82-reprise-autre";

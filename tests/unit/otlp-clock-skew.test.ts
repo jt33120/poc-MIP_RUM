@@ -2,7 +2,7 @@
 // clients hors fenêtre [now-7j, now+5min] retombent sur l'heure de réception.
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module .mjs sans types
-import { nanosToDate } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { nanosToDate } from "../../packages/backend/shared/otlp.mjs";
 
 const NOW = 1_700_000_000_000; // référence fixe (ms)
 const nanos = (ms: number | bigint) => (BigInt(ms) * 1_000_000n).toString();

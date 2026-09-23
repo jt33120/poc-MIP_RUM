@@ -13,7 +13,7 @@
 // ne propose pas de créer de ticket avec cette intégration : un bouton qui ne
 // marche pas est pire que pas de bouton.
 import { type NextRequest, NextResponse } from "next/server";
-import { ErreurUpload, lireCorpsLimite } from "ingest/lib/sourcemap-upload.mjs";
+import { ErreurUpload, lireCorpsLimite } from "@mip/backend/lib/sourcemap-upload.mjs";
 import { guardAdmin } from "@/lib/api/admin";
 import { workflowApps } from "@/lib/api/issue-workflow";
 import { SESSION_COOKIE } from "@/lib/auth";

@@ -20,8 +20,8 @@ import {
   PROVIDERS,
   construireCharge,
   referenceMip,
-} from "ingest/lib/integrations/tickets/adapter.mjs";
-import { decrire, referenceValide } from "ingest/lib/integrations/tickets/secrets.mjs";
+} from "@mip/backend/lib/integrations/tickets/adapter.mjs";
+import { decrire, referenceValide } from "@mip/backend/lib/integrations/tickets/secrets.mjs";
 import { q, tx } from "./db";
 import { isIssueId } from "./error-issues";
 import { hasSqlControlCharacters, type WorkflowResult } from "./error-issue-workflow";

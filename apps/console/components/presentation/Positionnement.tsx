@@ -42,7 +42,7 @@ export const POSITIONNEMENT: readonly LignePositionnement[] = [
       poc: [
         "docs/RUM_PARITY_STATUS.md:156",
         "apps/console/lib/dashboard-blocs.ts:73-77",
-        "apps/ingest/sql/migration-v53.sql:14-21",
+        "packages/db/sql/migration-v53.sql:14-21",
       ],
     },
   },

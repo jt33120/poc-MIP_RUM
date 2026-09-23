@@ -8,9 +8,9 @@
 // RIEN NE DOIT SORTIR SUR STDOUT. Le transport stdio y écrit le JSON-RPC ; un
 // console.log s'y insérerait au milieu d'une trame et casserait la session sans
 // message d'erreur lisible. Les diagnostics vont donc sur stderr, toujours.
-import { creerClient } from "mip-mcp/lib/client.mjs";
-import { StdioServerTransport } from "mip-mcp/lib/transports.mjs";
-import { creerServeur } from "mip-mcp/serveur.mjs";
+import { creerClient } from "@mip/mcp-tools/lib/client.mjs";
+import { StdioServerTransport } from "@mip/mcp-tools/lib/transports.mjs";
+import { creerServeur } from "@mip/mcp-tools/serveur.mjs";
 
 const base = process.env.MIP_CONSOLE_URL;
 const jeton = process.env.MIP_API_TOKEN;

@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error module JS partagé sans déclarations
-import { flattenOtlp, flattenOtlpLogs } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp, flattenOtlpLogs } from "../../packages/backend/shared/otlp.mjs";
 
 type Attribut = { key: string; value: Record<string, unknown> };
 type Payload = {

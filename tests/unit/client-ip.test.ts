@@ -8,7 +8,7 @@
 // aucune adresse du tout.
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module ESM partagé, sans déclarations
-import { ipClient, MAX_HOPS, parseSourceIp } from "../../apps/ingest/supabase/functions/_shared/client-ip.mjs";
+import { ipClient, MAX_HOPS, parseSourceIp } from "../../packages/backend/shared/client-ip.mjs";
 
 /** Requête Node : en-têtes déjà en minuscules, socket éventuelle. */
 const req = (headers: Record<string, string | string[]> = {}, remoteAddress?: string) =>

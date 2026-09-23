@@ -7,7 +7,7 @@ import pg from "pg";
 // rating, et ce script en dérive. Il en portait sa propre copie, restée à l'ancienne
 // borne LCP [2000, 2500] après la correction E0 — donc il validait la console contre
 // un barème que le produit n'utilisait plus (cf. invariant AD-12 du spine).
-import { rating2026 } from "../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { rating2026 } from "../packages/backend/shared/otlp.mjs";
 
 const CONSOLE = "http://localhost:3000";
 const pool = new pg.Pool({

@@ -26,7 +26,7 @@
 // écart qui expire seul aurait coûté plus que le problème.
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — module .mjs sans déclaration de types
-import { errorFingerprint, firstStackFrame, normalizeModulePath } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { errorFingerprint, firstStackFrame, normalizeModulePath } from "../../packages/backend/shared/otlp.mjs";
 
 /** Une pile réaliste de bundle haché, paramétrée par l'empreinte du déploiement. */
 const pile = (hash: string, fn = "handleClick") =>

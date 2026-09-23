@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module ESM partagé, sans déclarations
-import { AGE_MAX_JOURS_DEFAUT, chargerGeoip, cheminBase, creerGeoip, DOSSIER_DONNEES } from "../../apps/ingest/lib/geoip-db.mjs";
+import { AGE_MAX_JOURS_DEFAUT, chargerGeoip, cheminBase, creerGeoip, DOSSIER_DONNEES } from "../../packages/backend/lib/geoip-db.mjs";
 
 const FIXTURES = join(__dirname, "..", "fixtures");
 const FIXTURE = join(FIXTURES, "dbip-country-lite-2026-09.csv");

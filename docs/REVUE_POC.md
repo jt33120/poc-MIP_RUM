@@ -12,7 +12,7 @@ sont des recommandations priorisées.
 
 Le POC est **nettement au-dessus de l'état de l'art d'un POC**. Points forts réels :
 
-- **Architecture saine et lisible** : un seul parser OTLP (`_shared/otlp.mjs`)
+- **Architecture saine et lisible** : un seul parser OTLP (`shared/otlp.mjs`)
   partagé entre l'edge function Deno (prod) et le dev-server Node (local/CI) —
   zéro divergence de comportement, c'est la bonne décision.
 - **OTel-natif et sans enfermement** : format OTLP standard de bout en bout, le
@@ -33,9 +33,9 @@ pour la prod ».
 | # | Défaut constaté | Risque | Correctif livré |
 |---|---|---|---|
 | D1 | **L'edge function renvoyait `400` pour TOUTE erreur**, y compris une panne Postgres (`catch ⇒ 400 "bad request"`). | Un incident serveur était signalé au client comme « requête invalide » → le beacon ne rejoue pas → **perte de données silencieuse**. | ✅ Séparation stricte **400 (validation, non rejouable)** / **500 (incident, rejouable)** via `BadRequestError`. |
-| D2 | **Aucun garde-fou de taille** : `await req.json()` / concaténation du corps sans borne. | Un POST de plusieurs centaines de Mo fait exploser la mémoire de l'isolat (DoS, même accidentel). | ✅ `_shared/limits.mjs` : rejet **413** sur `Content-Length`, coupure du flux côté dev-server, plafond `maxSpans` dans le parser. |
-| D3 | **Pas de retry sur erreur Postgres transitoire** (failover du pooler, recyclage de connexion, `too_many_connections`). | Une micro-coupure DB = des lots perdus alors qu'un simple rejeu aurait réussi. | ✅ `_shared/retry.mjs` : backoff exponentiel + jitter, **rejoue uniquement les erreurs transitoires** (codes réseau + SQLSTATE), laisse remonter les fautes déterministes. |
-| D4 | **Logs en texte libre** (`console.log("[ingest] …")`). | Non requêtables, non filtrables par niveau, non corrélables en prod. | ✅ `_shared/log.mjs` : **JSON lines** (`ts/level/service/msg/…`), niveaux via `LOG_LEVEL`, **redaction des secrets**, warn/error sur stderr. |
+| D2 | **Aucun garde-fou de taille** : `await req.json()` / concaténation du corps sans borne. | Un POST de plusieurs centaines de Mo fait exploser la mémoire de l'isolat (DoS, même accidentel). | ✅ `shared/limits.mjs` : rejet **413** sur `Content-Length`, coupure du flux côté dev-server, plafond `maxSpans` dans le parser. |
+| D3 | **Pas de retry sur erreur Postgres transitoire** (failover du pooler, recyclage de connexion, `too_many_connections`). | Une micro-coupure DB = des lots perdus alors qu'un simple rejeu aurait réussi. | ✅ `shared/retry.mjs` : backoff exponentiel + jitter, **rejoue uniquement les erreurs transitoires** (codes réseau + SQLSTATE), laisse remonter les fautes déterministes. |
+| D4 | **Logs en texte libre** (`console.log("[ingest] …")`). | Non requêtables, non filtrables par niveau, non corrélables en prod. | ✅ `shared/log.mjs` : **JSON lines** (`ts/level/service/msg/…`), niveaux via `LOG_LEVEL`, **redaction des secrets**, warn/error sur stderr. |
 | D5 | **Pas de sonde de santé** sur le dev-server. | Un orchestrateur ne peut pas savoir si le service est vivant / prêt à recevoir du trafic. | ✅ `GET /health` (liveness) et `GET /ready` (ping DB) ; `GET /health` aussi sur l'edge function. |
 | D6 | **Pas d'arrêt propre** (dev-server, dispatcher). | Au redéploiement, connexions Postgres orphelines, requêtes en vol coupées. | ✅ `SIGTERM`/`SIGINT` : on draine puis on ferme le pool, avec filet de sécurité. |
 | D7 | **Le middleware FastAPI jetait des spans en silence** quand la file était pleine. | Perte de données invisible : impossible de savoir que l'ingestion ne suit pas. | ✅ Compteur observable `_dropped`. |
@@ -105,7 +105,7 @@ atteint. Logique de décision extraite en `decideStatus()` (testée en unitaire)
 l'edge function (Deno) et le dev-server (Node), avec des socles d'origines déjà
 différents — exactement le type de divergence que R6 pointe. Plutôt qu'ajouter un
 runtime Deno en CI, on **supprime la divergence à la source** : extraction dans
-`_shared/cors.mjs`, **importé par les deux** (même patron que `otlp.mjs`) et
+`shared/cors.mjs`, **importé par les deux** (même patron que `otlp.mjs`) et
 **testé en vitest**. C'est l'option « extraire en module testable » de la reco,
 à la bonne granularité.
 
@@ -123,7 +123,7 @@ comportement voulu) ; les en-têtes de préflight restent présents.
 **ordonnée enfants→parents** (FK respectées), qui renvoie le **détail des
 suppressions** (jsonb observable). Planification : **pg_cron** en cloud si
 l'extension est présente (bloc gardé, sauté en CI/local comme pg_net/RLS),
-sinon le CLI **`apps/ingest/purge.mjs`** (même patron que `dispatch-alerts.mjs` :
+sinon le CLI **`packages/backend/purge.mjs`** (même patron que `dispatch-alerts.mjs` :
 logs structurés, `--loop`, arrêt propre). `audit_log`/`console_user` **exclus**
 (conformité/comptes).
 *Vérifié sur Postgres réel* : seules les lignes entièrement anciennes sont
@@ -174,9 +174,9 @@ manques d'expérience** étaient criants pour un POC commercial — **traités i
 
 ## 6. Ce que cette itération a changé (récapitulatif)
 
-**Backend (`apps/ingest`, `integrations/fastapi`)**
-- Nouveaux modules partagés runtime-agnostic : `_shared/log.mjs`,
-  `_shared/retry.mjs`, `_shared/limits.mjs`.
+**Backend (`packages/backend`, `integrations/fastapi`)**
+- Nouveaux modules partagés runtime-agnostic : `shared/log.mjs`,
+  `shared/retry.mjs`, `shared/limits.mjs`.
 - `v1-traces` (edge) et `dev-server.mjs` : 400/500, 413, retries, logs
   structurés, health/ready, arrêt propre, plafond de spans.
 - **`migration-v07.sql`** : `page_count` idempotent (dérivé de `rum_pageview`),
@@ -184,7 +184,7 @@ manques d'expérience** étaient criants pour un POC commercial — **traités i
 - **R4** : fail-open des clés d'API si le registre n'a jamais chargé (edge + dev-server).
 - **`migration-v08.sql`** + `dispatch-alerts` : rejeu borné des alertes `failed`
   (`attempts`, backoff, état `dead`, `decideStatus` testé) (R5).
-- **`_shared/cors.mjs`** : règles CORS partagées edge/dev-server + ACAO strict (R6+R7).
+- **`shared/cors.mjs`** : règles CORS partagées edge/dev-server + ACAO strict (R6+R7).
 - **`migration-v09.sql`** + `purge.mjs` : rétention `purge_rum` (pg_cron/CLI), FK-safe (R8).
 - `dispatch-alerts.mjs` : logs structurés + arrêt propre du `--loop`.
 - Middleware FastAPI : compteur de spans perdus.

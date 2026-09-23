@@ -14,7 +14,7 @@ import type {
   StorageAdapter,
 } from "../../packages/rum-mobile/src/adapters";
 // @ts-expect-error module JS partagé sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const ENDPOINT = "https://ingest.test/v1/traces";
 const BASE = 1_760_000_000_000;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { prepareIdentityErase, prepareIdentitySearch } from "../../apps/console/lib/dsar-identity-actions";
 // @ts-expect-error module JS partagé sans déclarations
-import { hashIdentity } from "../../apps/ingest/lib/identity-hash.mjs";
+import { hashIdentity } from "../../packages/backend/lib/identity-hash.mjs";
 
 const RAW = "alice@example.test";
 const APP = "identity-action-app";

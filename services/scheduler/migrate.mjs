@@ -2,8 +2,8 @@
 //
 // POURQUOI UN FICHIER DE CÂBLAGE ICI, et pas `node node_modules/ingest/migrate.mjs`
 // directement dans la commande Railway. La commande de pré-déploiement vit dans
-// `.railway/railway.ts` ; le migrateur, lui, va déménager (P1 : `apps/ingest` →
-// `packages/db`, spécificateur `ingest/migrate.mjs` → `@mip/db/migrate.mjs`). Si
+// `.railway/railway.ts` ; le migrateur, lui, va déménager (P1 : `packages/backend` →
+// `packages/db`, spécificateur `@mip/db/migrate.mjs` → `@mip/db/migrate.mjs`). Si
 // la commande pointait sur le fichier du noyau, le renommage changerait À LA
 // FOIS le code et l'infrastructure, dans deux systèmes qui ne se déploient pas
 // ensemble — et une commande de pré-déploiement qui pointe dans le vide fait
@@ -13,8 +13,8 @@
 // Seul le scheduler migre (contrat de service, règle 8) : c'est le service dont
 // la disparition se verrait tout de suite. Le programme lui-même — registre,
 // verrou de transaction, étalonnage — est dans `main()` du migrateur.
-import { main } from "ingest/migrate.mjs";
-import { createLogger } from "ingest/shared/log.mjs";
+import { main } from "@mip/db/migrate.mjs";
+import { createLogger } from "@mip/backend/shared/log.mjs";
 
 const log = createLogger("migrate");
 

@@ -15,7 +15,7 @@ import {
   resolveLogLevel,
   SEVERITY,
 } from "../../packages/agent-node/src/core";
-import { flattenOtlpLogs } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlpLogs } from "../../packages/backend/shared/otlp.mjs";
 
 const cfg = {
   enabled: true,

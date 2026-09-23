@@ -6,7 +6,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
-const dir = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const dir = join(__dirname, "..", "..", "packages", "db", "sql");
 const c = new pg.Client(url ? { connectionString: url } : {});
 const suite = url ? describe : describe.skip;
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module JS partagé avec le receiver Supabase/Deno
-import { createSchemaCompatibleWriter } from "../../apps/ingest/supabase/functions/_shared/write-causal.mjs";
+import { createSchemaCompatibleWriter } from "../../packages/backend/shared/write-causal.mjs";
 
 const ACTION = "11111111-2222-4333-8444-555555555555";
 const retry = async <T>(fn: () => Promise<T>) => fn();

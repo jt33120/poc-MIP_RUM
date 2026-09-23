@@ -9,7 +9,7 @@
 // la même URL. Le commentaire de `lib/cron.ts` affirmait l'inverse ; il était faux.
 //
 // Le déclencheur unique est désormais le service `scheduler`, qui prend un bail
-// par cadence (`apps/ingest/jobs/bail.mjs`). Pour rejouer une cadence à la main :
+// par cadence (`packages/backend/jobs/bail.mjs`). Pour rejouer une cadence à la main :
 //   railway run --service scheduler node services/scheduler/run-once.mjs tick
 //
 // La route répond 410 au lieu de disparaître : un appelant resté branché — un cron

@@ -1,4 +1,4 @@
-// P6.1 — dimensions normalisées à l'ingestion (_shared/dimensions.mjs).
+// P6.1 — dimensions normalisées à l'ingestion (shared/dimensions.mjs).
 //
 // Ce corpus verrouille ce que le parseur NOMME et, surtout, ce qu'il REFUSE de
 // nommer : un robot, un user-agent inconnu, une version figée par le navigateur
@@ -12,7 +12,7 @@ import {
   boundedDimension,
   boundedRelease,
   clientDimensions,
-} from "../../apps/ingest/supabase/functions/_shared/dimensions.mjs";
+} from "../../packages/backend/shared/dimensions.mjs";
 
 type Dimensions = {
   browser: string | null;
@@ -199,7 +199,7 @@ describe("boundedRelease — la release bornée à l'ingestion (suivi P5)", () =
 
 describe("bornes partagées avec migration-v75", () => {
   it("les contraintes SQL reprennent exactement les bornes de l'ingestion", () => {
-    const v75 = readFileSync(join(__dirname, "..", "..", "apps", "ingest", "sql", "migration-v75.sql"), "utf8");
+    const v75 = readFileSync(join(__dirname, "..", "..", "packages", "db", "sql", "migration-v75.sql"), "utf8");
     expect(DIMENSION_BOUNDS).toEqual({ family: 80, version: 120, declared: 120 });
     for (const famille of ["browser", "os"]) {
       expect(v75).toContain(`(${famille} is null or char_length(${famille}) between 1 and ${DIMENSION_BOUNDS.family})`);

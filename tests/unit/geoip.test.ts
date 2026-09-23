@@ -21,7 +21,7 @@ import {
   paysDe,
   PROVENANCES,
   versionDepuisNom,
-} from "../../apps/ingest/supabase/functions/_shared/geoip.mjs";
+} from "../../packages/backend/shared/geoip.mjs";
 
 const FIXTURE = join(__dirname, "..", "fixtures", "dbip-country-lite-2026-09.csv");
 const csv = readFileSync(FIXTURE, "utf8");

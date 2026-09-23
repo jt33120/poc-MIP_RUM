@@ -91,7 +91,7 @@ pages successives ne peuvent ni répéter ni sauter une ligne.
 | Limite d'origine | Ce qui est livré en v0.8 |
 |---|---|
 | **Tables exposées via l'API publique** (alerte Supabase : `rls_disabled_in_public`, `console_user.password_hash` accessible) | RLS activé sur **toutes** les tables du schéma `public` (API `anon`/`authenticated` fermée ; ingestion via `service_role` et console via le rôle propriétaire continuent de fonctionner) ; vues retirées de l'API ; fonctions `SECURITY DEFINER` fermées à l'API et `search_path` figé. Migrations `v10`/`v11` idempotentes |
-| **Scrub PII dépendant du seul `beforeSend` client** | Défense en profondeur **côté serveur** (A2) : `_shared/scrub.mjs` nettoie emails, jetons (Bearer/Basic/JWT/clés `sk-`/`mip_`), affectations sensibles (`password=…`), IP et longues suites de chiffres dans `message`/`stack`/`url`/`referrer`/`source` et les `props` d'événements — front **et** back, avant écriture. Appliqué dans le parser partagé (parité dev-server ↔ edge) |
+| **Scrub PII dépendant du seul `beforeSend` client** | Défense en profondeur **côté serveur** (A2) : `shared/scrub.mjs` nettoie emails, jetons (Bearer/Basic/JWT/clés `sk-`/`mip_`), affectations sensibles (`password=…`), IP et longues suites de chiffres dans `message`/`stack`/`url`/`referrer`/`source` et les `props` d'événements — front **et** back, avant écriture. Appliqué dans le parser partagé (parité dev-server ↔ edge) |
 
 ## Mise à jour v0.4 (11/06/2026 — tracing distribué)
 

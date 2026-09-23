@@ -9,7 +9,7 @@
 // parser — la redéclarer ici en dur créerait une seconde source de vérité qui
 // dériverait en silence.
 
-declare module "ingest/lib/pg-ingest.mjs" {
+declare module "@mip/backend/lib/pg-ingest.mjs" {
   import type { Pool, PoolClient } from "pg";
 
   export type IngestRow = Record<string, unknown>;
@@ -57,7 +57,7 @@ declare module "ingest/lib/pg-ingest.mjs" {
     pool: Pool,
     rows: FlattenedRows,
     opts?: {
-      symbolicateur?: import("ingest/lib/error-symbolication.mjs").Symbolicateur | null;
+      symbolicateur?: import("@mip/backend/lib/error-symbolication.mjs").Symbolicateur | null;
       client?: PoolClient | null;
     },
   ): Promise<{ erreurs: EcritureErreurs; refuses?: RefusBarriere }>;
@@ -114,7 +114,7 @@ declare module "ingest/lib/pg-ingest.mjs" {
   export function appliquerSymbolication(
     client: PoolClient,
     errors: IngestRow[],
-    symbolicateur?: import("ingest/lib/error-symbolication.mjs").Symbolicateur | null,
+    symbolicateur?: import("@mip/backend/lib/error-symbolication.mjs").Symbolicateur | null,
   ): Promise<IngestRow[]>;
 
   export interface PgAuth {
@@ -132,7 +132,7 @@ declare module "ingest/lib/pg-ingest.mjs" {
       requireApiKey?: boolean;
       rateLimitPerMin?: number;
       /** Partiel : le module n'appelle que warn/error, en optional-chaining. */
-      log?: Partial<import("ingest/shared/log.mjs").Logger>;
+      log?: Partial<import("@mip/backend/shared/log.mjs").Logger>;
       now?: () => number;
     },
   ): PgAuth;
@@ -143,7 +143,7 @@ declare module "ingest/lib/pg-ingest.mjs" {
 // MÊME verrou : une constante recopiée à la main dériverait en silence, et
 // chacun se croirait seul.
 
-declare module "ingest/lib/privacy-barriere.mjs" {
+declare module "@mip/backend/lib/privacy-barriere.mjs" {
   import type { Pool, PoolClient } from "pg";
 
   export const VERROU_INGESTION_NS: number;
@@ -206,9 +206,9 @@ declare module "ingest/lib/privacy-barriere.mjs" {
   ): Promise<number>;
 }
 
-declare module "ingest/lib/ingest-differe.mjs" {
+declare module "@mip/backend/lib/ingest-differe.mjs" {
   import type { Pool } from "pg";
-  import type { FlattenedRows } from "ingest/lib/pg-ingest.mjs";
+  import type { FlattenedRows } from "@mip/backend/lib/pg-ingest.mjs";
 
   export const MAX_TENTATIVES: number;
   export function scinderParApp(
@@ -229,8 +229,8 @@ declare module "ingest/lib/ingest-differe.mjs" {
   ): Promise<{ en_attente: number; bloques: number; age_max_s: number }>;
 }
 
-declare module "ingest/shared/otlp.mjs" {
-  import type { FlattenedRows } from "ingest/lib/pg-ingest.mjs";
+declare module "@mip/backend/shared/otlp.mjs" {
+  import type { FlattenedRows } from "@mip/backend/lib/pg-ingest.mjs";
 
   export interface ApiKeyRef {
     app_id: string;
@@ -257,7 +257,7 @@ declare module "ingest/shared/otlp.mjs" {
 // P8.7 — pays et PROVENANCE du pays. La console ne résout aucune adresse : elle
 // n'utilise de ce module que le geste qui pose la provenance sur les sessions
 // d'un lot, pour que son filet d'ingestion écrive la même chose que le service.
-declare module "ingest/shared/geoip.mjs" {
+declare module "@mip/backend/shared/geoip.mjs" {
   export const PROVENANCES: readonly ["geoip", "timezone", "cdn"];
   export function appliquerGeo(
     sessions: Record<string, unknown>[],
@@ -269,7 +269,7 @@ declare module "ingest/shared/geoip.mjs" {
 // Un moteur, un contrat d'upload, un symbolicateur : partagés par l'ingestion,
 // les deux ports d'upload, le CLI de CI et la console.
 
-declare module "ingest/shared/sourcemap.mjs" {
+declare module "@mip/backend/shared/sourcemap.mjs" {
   /** Source map v3 telle que parsée depuis son JSON. */
   export interface RawSourceMap {
     version: number;
@@ -328,8 +328,8 @@ declare module "ingest/shared/sourcemap.mjs" {
   export function codeContext(map: RawSourceMap, source: string, line: number, radius?: number): CodeContext | null;
 }
 
-declare module "ingest/lib/error-symbolication.mjs" {
-  import type { ResolvedFrame } from "ingest/shared/sourcemap.mjs";
+declare module "@mip/backend/lib/error-symbolication.mjs" {
+  import type { ResolvedFrame } from "@mip/backend/shared/sourcemap.mjs";
 
   export type SymbolicationStatus = "pending" | "resolved" | "unavailable" | "failed";
 
@@ -354,11 +354,11 @@ declare module "ingest/lib/error-symbolication.mjs" {
   export function creerSymbolicateur(options?: {
     limites?: Record<string, number>;
     maintenant?: () => number;
-    log?: Partial<import("ingest/shared/log.mjs").Logger>;
+    log?: Partial<import("@mip/backend/shared/log.mjs").Logger>;
   }): Symbolicateur;
 }
 
-declare module "ingest/lib/sourcemap-upload.mjs" {
+declare module "@mip/backend/lib/sourcemap-upload.mjs" {
   import type { Pool } from "pg";
 
   export const LIMITES_UPLOAD: Readonly<{
@@ -425,7 +425,7 @@ declare module "ingest/lib/sourcemap-upload.mjs" {
   ): Promise<{ statut: number; corps: Record<string, unknown> }>;
 }
 
-declare module "ingest/shared/cors.mjs" {
+declare module "@mip/backend/shared/cors.mjs" {
   export const STATIC_ALLOWED_ORIGINS: string[];
   export const REPLAY_ALLOW_HEADERS: string;
   export function isAllowedOrigin(origin: string, extraOrigins?: string[]): boolean;
@@ -437,7 +437,7 @@ declare module "ingest/shared/cors.mjs" {
   export function originsFromRegistry(registryValues: Iterable<unknown>): string[];
 }
 
-declare module "ingest/shared/limits.mjs" {
+declare module "@mip/backend/shared/limits.mjs" {
   export const MAX_BODY_BYTES: number;
   export const MAX_SPANS_PER_REQUEST: number;
   export const MAX_REPLAY_INFLATED_BYTES: number;
@@ -450,7 +450,7 @@ declare module "ingest/shared/limits.mjs" {
 // P7.5 — vocabulaire FERMÉ des capacités mobiles. Le module serveur fait
 // autorité à réception ; la console le lit tel quel plutôt que d'en recopier la
 // liste, qui dériverait.
-declare module "ingest/shared/mobile-capabilities.mjs" {
+declare module "@mip/backend/shared/mobile-capabilities.mjs" {
   export const MOBILE_CAPABILITIES: readonly [
     "js_errors",
     "native_crashes",
@@ -477,7 +477,7 @@ declare module "ingest/shared/mobile-capabilities.mjs" {
   }): { app_id: string; runtime: string; release: string | null; capability: string; declared: boolean }[];
 }
 
-declare module "ingest/shared/log.mjs" {
+declare module "@mip/backend/shared/log.mjs" {
   export interface Logger {
     debug(msg: string, fields?: Record<string, unknown>): void;
     info(msg: string, fields?: Record<string, unknown>): void;
@@ -487,7 +487,7 @@ declare module "ingest/shared/log.mjs" {
   export function createLogger(service: string): Logger;
 }
 
-declare module "ingest/shared/retry.mjs" {
+declare module "@mip/backend/shared/retry.mjs" {
   export function withRetry<T>(
     fn: () => Promise<T>,
     opts?: {
@@ -497,7 +497,7 @@ declare module "ingest/shared/retry.mjs" {
   ): Promise<T>;
 }
 
-declare module "ingest/dispatch-alerts.mjs" {
+declare module "@mip/backend/lib/dispatch-alerts.mjs" {
   import type { Pool } from "pg";
 
   /** Statut résultant d'une tentative de livraison (logique pure). */
@@ -514,7 +514,7 @@ declare module "ingest/dispatch-alerts.mjs" {
   ): Promise<{ sent: number; failed: number; dead: number; skipped: number }>;
 }
 
-declare module "ingest/lib/error-issue-workflow.mjs" {
+declare module "@mip/backend/lib/error-issue-workflow.mjs" {
   import type { Pool, PoolClient } from "pg";
 
   export const COMMENTAIRE_MAX: number;
@@ -541,13 +541,13 @@ declare module "ingest/lib/error-issue-workflow.mjs" {
   ): Promise<{ importees: number; heritees: number } | { absent: string }>;
 }
 
-// --- Travaux planifiés (apps/ingest/jobs) ------------------------------------
+// --- Travaux planifiés (packages/backend/jobs) ------------------------------------
 // Ils vivaient dans les route handlers `app/api/cron/*` ; ils sont descendus
 // dans le noyau pour que le service `scheduler` (Railway) et ces routes
 // exécutent LE MÊME code. Une divergence entre les deux ne serait pas visible :
 // les deux « marchent », mais ne font pas la même chose.
 
-declare module "ingest/jobs/planifie.mjs" {
+declare module "@mip/backend/jobs/planifie.mjs" {
   import type { Pool } from "pg";
 
   export interface BilanEtapes {
@@ -578,7 +578,7 @@ declare module "ingest/jobs/planifie.mjs" {
   };
 }
 
-declare module "ingest/jobs/cadence.mjs" {
+declare module "@mip/backend/jobs/cadence.mjs" {
   export const CADENCES: Record<"tick" | "horaire" | "quotidien", string>;
   export function prochainDelai(
     nom: "tick" | "horaire" | "quotidien",
@@ -586,7 +586,7 @@ declare module "ingest/jobs/cadence.mjs" {
   ): number;
 }
 
-declare module "ingest/migrate.mjs" {
+declare module "@mip/db/migrate.mjs" {
   import type { Pool } from "pg";
 
   export const DOSSIER_SQL: string;
@@ -603,13 +603,13 @@ declare module "ingest/migrate.mjs" {
   ): Promise<{ appliquees: string[]; modifies: string[]; total: number }>;
 }
 
-declare module "ingest/lib/serveur.mjs" {
+declare module "@mip/backend/lib/serveur.mjs" {
   /** undefined = pas de TLS imposé ; sinon TLS vérifié contre le magasin CA système. */
   export function optionsSsl(connectionString: string): undefined | { rejectUnauthorized: true };
   export function cible(connectionString?: string): Record<string, string>;
 }
 
-declare module "ingest/jobs/bail.mjs" {
+declare module "@mip/backend/jobs/bail.mjs" {
   /** Bail d'exclusion : une ligne à date d'expiration, pooler-safe. */
   export const SQL_TABLE: string;
   export const DUREES: Record<"tick" | "horaire" | "quotidien", number>;
@@ -629,7 +629,7 @@ declare module "ingest/jobs/bail.mjs" {
 // implémentation de ce lot ; la cible reste l'outil ITSM de MIP (ServiceNow,
 // sous réserve de confirmation).
 
-declare module "ingest/lib/integrations/tickets/adapter.mjs" {
+declare module "@mip/backend/lib/integrations/tickets/adapter.mjs" {
   export const PROVIDERS: string[];
   export const TITRE_MAX: number;
   export const DESCRIPTION_MAX: number;
@@ -691,8 +691,8 @@ declare module "ingest/lib/integrations/tickets/adapter.mjs" {
   export function mappingStatut(config: unknown): { closed: string | null; reopened: string | null };
 }
 
-declare module "ingest/lib/integrations/tickets/github.mjs" {
-  import type { ChargeTicket } from "ingest/lib/integrations/tickets/adapter.mjs";
+declare module "@mip/backend/lib/integrations/tickets/github.mjs" {
+  import type { ChargeTicket } from "@mip/backend/lib/integrations/tickets/adapter.mjs";
 
   export const PROVIDER: string;
   export const WEBHOOK_MAX_OCTETS: number;
@@ -761,7 +761,7 @@ declare module "ingest/lib/integrations/tickets/github.mjs" {
   export default adaptateur;
 }
 
-declare module "ingest/lib/integrations/tickets/secrets.mjs" {
+declare module "@mip/backend/lib/integrations/tickets/secrets.mjs" {
   export class ErreurSecret extends Error {
     constructor(code: string);
     code: string;
@@ -773,9 +773,9 @@ declare module "ingest/lib/integrations/tickets/secrets.mjs" {
   export function resoudre(ref: string, env?: NodeJS.ProcessEnv): string;
 }
 
-declare module "ingest/lib/integrations/tickets/dispatcher.mjs" {
+declare module "@mip/backend/lib/integrations/tickets/dispatcher.mjs" {
   import type { Pool, PoolClient } from "pg";
-  import type { EvenementNormalise, adaptateur } from "ingest/lib/integrations/tickets/github.mjs";
+  import type { EvenementNormalise, adaptateur } from "@mip/backend/lib/integrations/tickets/github.mjs";
 
   export function adaptateurDe(provider: string): typeof adaptateur | null;
   export function schemaPresent(pool: Pool): Promise<boolean>;

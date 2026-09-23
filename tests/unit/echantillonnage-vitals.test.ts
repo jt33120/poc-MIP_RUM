@@ -7,14 +7,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — module .mjs sans déclaration de types
-import { tauxErreurs, tauxPrincipal } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { tauxErreurs, tauxPrincipal } from "../../packages/backend/shared/otlp.mjs";
 import { noticeEchantillonnage } from "../../apps/console/lib/queries-summary";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(join(RACINE, rel), "utf8");
-const V58 = lire("apps/ingest/sql/migration-v58.sql");
-const PG = lire("apps/ingest/lib/pg-ingest.mjs");
-const OTLP = lire("apps/ingest/supabase/functions/_shared/otlp.mjs");
+const V58 = lire("packages/db/sql/migration-v58.sql");
+const PG = lire("packages/backend/lib/pg-ingest.mjs");
+const OTLP = lire("packages/backend/shared/otlp.mjs");
 const SUMMARY = lire("apps/console/lib/queries-summary.ts");
 
 /** La probabilité d'inclusion, telle que le SQL de v58 la calcule. */

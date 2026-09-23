@@ -1,7 +1,7 @@
 # Backend MIP RUM self-host (souverain) — alternative CONTENEURISÉE au serverless
 # de prod (Supabase Edge Functions + Postgres managé). But : maîtriser l'infra,
 # tourner hors Cloud Act, et disposer de LOGS DE CONTENEUR (le serveur émet déjà
-# des JSON lines sur stdout — cf. _shared/log.mjs — collectés ici par le driver
+# des JSON lines sur stdout — cf. shared/log.mjs — collectés ici par le driver
 # json-file : `docker compose logs -f ingest`).
 #
 #   navigateur / SDK ──(OTLP /v1/traces)──▶ ingest (Node) ──▶ db (Postgres)
@@ -26,7 +26,7 @@ services:
       CONSOLE_RO_PASSWORD: ${CONSOLE_RO_PASSWORD:-console_ro}
     volumes:
       # schema.sql + migrations montés en lecture seule, appliqués par initdb.sh.
-      - ../../apps/ingest/sql:/sql:ro
+      - ../../packages/db/sql:/sql:ro
       - ./db/initdb.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
       - db-data:/var/lib/postgresql/data
     ports:

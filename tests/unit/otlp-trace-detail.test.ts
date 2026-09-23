@@ -3,7 +3,7 @@
 // vers rum_span tier='detail', SANS confondre avec les spans navigateur (qui
 // portent toujours mip.session_id) ni avec les spans SERVER (déjà routés 'back').
 import { describe, expect, it } from "vitest";
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const sv = (s: string) => ({ stringValue: s });
 const iv = (n: number) => ({ intValue: String(n) });

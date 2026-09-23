@@ -15,9 +15,9 @@ import { PLAFONDS_PAR_VOIE } from "../../packages/rum-sdk/src/errors";
 import { buildResourceSpans, type EmitSpan } from "../../packages/rum-sdk/src/otlp-encode";
 import type { ErrorCategory, MIPRumConfig } from "../../packages/rum-sdk/src/types";
 // @ts-expect-error module JS partagé sans déclarations
-import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { errorFingerprint, flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { errorFingerprint, flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const etat = vi.hoisted(() => ({
   spans: [] as EmitSpan[],

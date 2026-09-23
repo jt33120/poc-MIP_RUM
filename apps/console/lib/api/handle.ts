@@ -4,8 +4,8 @@
 // CORS pour que chaque route ne décrive que sa donnée. Importe next/server (non testé
 // unitairement ; les briques pures — auth/params/cors/ratelimit/etag — le sont).
 import { NextResponse, type NextRequest, after } from "next/server";
-import { ErreurUpload, lireCorpsLimite } from "ingest/lib/sourcemap-upload.mjs";
-import { bodyTooLarge } from "ingest/shared/limits.mjs";
+import { ErreurUpload, lireCorpsLimite } from "@mip/backend/lib/sourcemap-upload.mjs";
+import { bodyTooLarge } from "@mip/backend/shared/limits.mjs";
 import { SESSION_COOKIE, type SessionUser } from "../auth";
 import { forwardLog } from "../log-forward";
 import { traceFields } from "../server-trace-core";

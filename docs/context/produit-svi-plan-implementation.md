@@ -51,7 +51,7 @@
 Le cadrage promettait « un appel fictif affiché dans la cascade existante, sans code d'interface nouveau ». Je refuse cette porte, pour quatre raisons vérifiées :
 
 1. `rum_span.duration_ms` est `not null` et `ins()` fait `ignoreDuplicates: true` : un span ne peut être ni ouvert ni mis à jour. Un miroir en deux temps (début puis fin) resterait **figé sur la première version** — divergence garantie entre la cascade et le tableau de bord, pas accidentelle.
-2. Il n'y a **aucune transaction** dans `v1-traces` (PostgREST). La double écriture « dans la même transaction » n'est réalisable qu'en local (`dev-server.mjs`, pool `pg`) : ce serait précisément la divergence prod/local que `_shared/*.mjs` existe pour éliminer.
+2. Il n'y a **aucune transaction** dans `v1-traces` (PostgREST). La double écriture « dans la même transaction » n'est réalisable qu'en local (`dev-server.mjs`, pool `pg`) : ce serait précisément la divergence prod/local que `shared/*.mjs` existe pour éliminer.
 3. `app/tracing/[traceId]/page.tsx` code en dur `TIER_DEPTH = {front:0, back:1, detail:2}`, `barColor`/`tierLabel` ne connaissent que navigateur/serveur/base/interne, `rootMs = front?.duration_ms ?? total`, et le sous-titre dit « du navigateur à la cause backend ». Un appel s'y afficherait en gris, étiqueté « interne », sous un texte parlant de navigateur : la porte passe à la lettre et échoue en esprit.
 4. Le miroir double le volume d'écriture et contamine 9 lecteurs de `rum_span` (dont `queries-map.ts:26-37`, `group by tier, route` **sans filtre de tier** : chaque nœud de menu apparaîtrait comme service dans la Carte d'expérience web).
 
@@ -63,7 +63,7 @@ C'est le seul levier de réutilisation dont j'ai vérifié qu'il tient :
 - `slo_status()` branche générique = part de `rating='good'` sur `rum_metric where name = s.metric`. Un SLO « part d'appels établis dans les temps » ou « part d'appels à voix bonne » est **de la configuration, zéro SQL neuf**.
 - `check_alerts()` mode threshold et `metric_baseline()` (dow+heure, MAD) lisent la même table.
 
-Contrainte de direction : `rating2026()` est `value <= t[0] ? "good"` (lower-better) et `THRESHOLDS` est **tripliqué** (`_shared/otlp.mjs`, `packages/rum-sdk/src/vitals.ts`, `apps/console/lib/rating.ts`). Plutôt que d'inverser la fonction dans trois fichiers — modification silencieusement fausse si un miroir diverge — **on stocke une métrique déjà orientée** :
+Contrainte de direction : `rating2026()` est `value <= t[0] ? "good"` (lower-better) et `THRESHOLDS` est **tripliqué** (`shared/otlp.mjs`, `packages/rum-sdk/src/vitals.ts`, `apps/console/lib/rating.ts`). Plutôt que d'inverser la fonction dans trois fichiers — modification silencieusement fausse si un miroir diverge — **on stocke une métrique déjà orientée** :
 
 ```
 svi.mos_inv = 5 − MOS_p05      seuils [1.0, 1.4]  ⇔  MOS 4,0 / 3,6 (seuils du cadrage)
@@ -145,7 +145,7 @@ Livrables associés, budgétés en I1 et non « gratuits » : image OCI + unité
 
 ### 2.5 Pseudonymisation : clé chez le client, pas de sel dans le dépôt
 
-Aucun mécanisme de sel n'existe dans mip-rum (`grep salt/sel` sur `sql/` et `_shared/` : zéro). Un SHA-256 salé sur ~10⁹ numéros E.164 s'inverse par force brute en secondes si le sel fuit — et la console **devrait** détenir le sel pour instruire un DSAR par numéro. Arbitrage retenu :
+Aucun mécanisme de sel n'existe dans mip-rum (`grep salt/sel` sur `sql/` et `shared/` : zéro). Un SHA-256 salé sur ~10⁹ numéros E.164 s'inverse par force brute en secondes si le sel fuit — et la console **devrait** détenir le sel pour instruire un DSAR par numéro. Arbitrage retenu :
 
 - `caller_hash = HMAC-SHA256(clé_client, e164_normalisé)`, calculé **dans l'adaptateur**, la clé n'est **jamais** transmise à MIP ;
 - `svi_call.caller_key_id` (identifiant de clé, pas la clé) permet la rotation sans casser le rappel 7 j (fenêtre de rotation ≥ 8 jours, une requête de rappel accepte `key_id` courant et précédent) ;
@@ -169,7 +169,7 @@ La contrainte « une seule touche par ligne » est du théâtre : `string_agg(dt
 
 ## 3. Modèle de données
 
-`apps/ingest/sql/migration-v48.sql` — idempotente, rejouable par tout `scripts/verify-*.mjs`.
+`packages/db/sql/migration-v48.sql` — idempotente, rejouable par tout `scripts/verify-*.mjs`.
 
 ```sql
 -- migration-v48 — Supervision SVI : le modèle d'appel.
@@ -423,7 +423,7 @@ set search_path = public, pg_temp as $$ /* corps en I6 */ begin return '{}'::jso
 
 ### I0 — Le modèle, l'ingestion, et une fiche d'appel qui s'affiche — **L**
 
-**Périmètre.** `migration-v48.sql` (§3, avec RLS explicite). Branche `svi.*` dans `_shared/otlp.mjs`, insérée **en tête** du parcours de spans (D4) : `svi.call` → `svi_call` via RPC `upsert_svi_call`, `svi.step.*` → `svi_step`, `svi.leg` → `svi_leg`. Extension additive d'`otlp-encode.ts` (`parentSpanId`, `kind`) + cas de test round-trip. Écriture des tables `svi_*` dans `v1-traces/index.ts` **et** `dev-server.mjs` (le helper `ins()` impose `onConflict: "span_id"` : `svi_call` passe par `supabase.rpc()`, `svi_step` par un upsert sur `step_id` — c'est une modification réelle du writer, pas une ligne de bullet). Règle de masquage SVI dans `scrub.mjs` (§2.6, sans toucher `RE_LONG_NUM`). `WEB_VITAL_NAMES` + patch des 4 lecteurs `rum_metric` contaminables + garde source en CI. `scripts/gen-svi-traffic.mjs` (générateur OTLP neuf — `gen-traffic.mjs` fait 26 lignes et pilote Chromium, il n'y a **aucun** patron à copier). Pages `/svi/appels` (liste filtrable) et `/svi/appels/[callId]` (chronologie sur `svi_step`, patron visuel de `components/sessions/Timeline.tsx`). Entrées `nav-items.tsx` + `glossary.ts`. **`svi_call.platform` est affiché sur la fiche et dans la liste** : `replay` est visible à l'écran, jamais caché.
+**Périmètre.** `migration-v48.sql` (§3, avec RLS explicite). Branche `svi.*` dans `shared/otlp.mjs`, insérée **en tête** du parcours de spans (D4) : `svi.call` → `svi_call` via RPC `upsert_svi_call`, `svi.step.*` → `svi_step`, `svi.leg` → `svi_leg`. Extension additive d'`otlp-encode.ts` (`parentSpanId`, `kind`) + cas de test round-trip. Écriture des tables `svi_*` dans `v1-traces/index.ts` **et** `dev-server.mjs` (le helper `ins()` impose `onConflict: "span_id"` : `svi_call` passe par `supabase.rpc()`, `svi_step` par un upsert sur `step_id` — c'est une modification réelle du writer, pas une ligne de bullet). Règle de masquage SVI dans `scrub.mjs` (§2.6, sans toucher `RE_LONG_NUM`). `WEB_VITAL_NAMES` + patch des 4 lecteurs `rum_metric` contaminables + garde source en CI. `scripts/gen-svi-traffic.mjs` (générateur OTLP neuf — `gen-traffic.mjs` fait 26 lignes et pilote Chromium, il n'y a **aucun** patron à copier). Pages `/svi/appels` (liste filtrable) et `/svi/appels/[callId]` (chronologie sur `svi_step`, patron visuel de `components/sessions/Timeline.tsx`). Entrées `nav-items.tsx` + `glossary.ts`. **`svi_call.platform` est affiché sur la fiche et dans la liste** : `replay` est visible à l'écran, jamais caché.
 
 **Preuve** — `pg_virtualenv node scripts/verify-svi-modele.mjs` :
 1. un appel complet (accueil → menu → saisie → file → transfert) encodé par `otlp-encode`, passé dans `flattenOtlp`, inséré → 1 `svi_call` clos, 7 `svi_step` ordonnés ;

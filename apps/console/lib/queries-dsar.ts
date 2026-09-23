@@ -27,7 +27,7 @@ import {
   type EtatBarriere,
 } from "./dsar";
 import type { PoolClient } from "pg";
-import { VERROU_INGESTION_NS } from "ingest/lib/privacy-barriere.mjs";
+import { VERROU_INGESTION_NS } from "@mip/backend/lib/privacy-barriere.mjs";
 import { q, tx } from "./db";
 
 // ═══════════════ P8.1 — l'effacement est SÉRIALISÉ avec l'ingestion ══════════
@@ -39,7 +39,7 @@ import { q, tx } from "./db";
 // seule erreur ne le signale.
 //
 // La correction n'est pas locale à ce fichier : elle est LA MÊME primitive que
-// celle des writers (`ingest/lib/privacy-barriere.mjs`). L'effacement prend le
+// celle des writers (`@mip/backend/lib/privacy-barriere.mjs`). L'effacement prend le
 // verrou consultatif de l'application, puis lit, puis supprime — et inscrit, si
 // l'application a activé la protection, une barrière durable que tous les
 // writers consultent.

@@ -5,7 +5,7 @@
 // troncature `::int`, et `filtered_errors` citée une seule fois par instruction.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 // @ts-expect-error — module .mjs sans déclaration de types
-import { ERROR_SOURCES as SOURCES_INGESTION } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { ERROR_SOURCES as SOURCES_INGESTION } from "../../packages/backend/shared/otlp.mjs";
 
 type Client = { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> };
 

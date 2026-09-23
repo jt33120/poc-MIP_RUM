@@ -21,11 +21,11 @@
 // `(integration_id, delivery_id)` en base — une livraison rejouée est reconnue,
 // journalisée `duplicate`, et n'applique rien.
 import { type NextRequest, NextResponse } from "next/server";
-import { ErreurUpload, lireCorpsLimite } from "ingest/lib/sourcemap-upload.mjs";
-import { bodyTooLarge } from "ingest/shared/limits.mjs";
-import { WEBHOOK_MAX_OCTETS } from "ingest/lib/integrations/tickets/github.mjs";
-import { adaptateurDe, appliquerEvenement } from "ingest/lib/integrations/tickets/dispatcher.mjs";
-import { ErreurSecret, resoudre } from "ingest/lib/integrations/tickets/secrets.mjs";
+import { ErreurUpload, lireCorpsLimite } from "@mip/backend/lib/sourcemap-upload.mjs";
+import { bodyTooLarge } from "@mip/backend/shared/limits.mjs";
+import { WEBHOOK_MAX_OCTETS } from "@mip/backend/lib/integrations/tickets/github.mjs";
+import { adaptateurDe, appliquerEvenement } from "@mip/backend/lib/integrations/tickets/dispatcher.mjs";
+import { ErreurSecret, resoudre } from "@mip/backend/lib/integrations/tickets/secrets.mjs";
 import { SESSION_COOKIE } from "@/lib/auth";
 import { pool, tx } from "@/lib/db";
 

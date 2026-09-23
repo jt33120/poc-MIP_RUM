@@ -22,9 +22,9 @@
 // survivrait ni à un redéploiement ni à une seconde instance ; le mode sans
 // session rend chaque requête autonome, donc scalable et redémarrable.
 import http from "node:http";
-import { creerClient } from "mip-mcp/lib/client.mjs";
-import { StreamableHTTPServerTransport } from "mip-mcp/lib/transports.mjs";
-import { NOM, VERSION, creerServeur } from "mip-mcp/serveur.mjs";
+import { creerClient } from "@mip/mcp-tools/lib/client.mjs";
+import { StreamableHTTPServerTransport } from "@mip/mcp-tools/lib/transports.mjs";
+import { NOM, VERSION, creerServeur } from "@mip/mcp-tools/serveur.mjs";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const BASE = process.env.MIP_CONSOLE_URL;

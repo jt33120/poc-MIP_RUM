@@ -61,7 +61,7 @@ les brouillons qui l'ont précédé. Il se suffit à lui-même :
 | `reads/*.md Lnn`, `console-ecrans-*.md`, `iplabel.md`, `datadog-*.md`, `grafana.md` | notes de lecture qui ont fondé une décision, versionnées à côté de ce plan dans [`plan-frontend-notes/`](plan-frontend-notes/) (un renvoi `reads/x.md Lnn` désigne `plan-frontend-notes/x.md`, ligne nn) ; la décision et sa preuve dans le code sont reformulées ici | rien : ces renvois disent d'où vient un constat, ils ne sont pas nécessaires pour implémenter |
 | `NN-nom.png` (ex. `01-overview.png`) | capture de travail de la console, régénérable (§ 0.6, § 9.1) | la régénérer pour comparer avant / après |
 
-Chemins : `app/…`, `components/…`, `lib/…` sont relatifs à `apps/console/` ; `packages/…`, `apps/ingest/…`,
+Chemins : `app/…`, `components/…`, `lib/…` sont relatifs à `apps/console/` ; `packages/…`, `packages/backend/…`,
 `apps/extension/…`, `tests/…`, `scripts/…`, `docs/…` sont relatifs à la racine du dépôt.
 
 **Identifiants.** Pour qu'aucun identifiant ne désigne deux choses :
@@ -398,7 +398,7 @@ retenue ; comptes observés, non extrapolés. » Sources : vitals `samplingVital
 **biaisé vers les erreurs** (une session tirée « biaisée-erreurs » n'envoie que ses erreurs, puis passe
 en collecte complète à la première erreur, `packages/rum-sdk/src/sampling.ts:L10, L46-74`) et les
 sessions antérieures au 09/09/2026 portent `sample_rate = 1` **par défaut, pas par mesure**
-(`apps/ingest/sql/migration-v58.sql:L65, L81-83`) : elles rendent `probaMin: null` (« probabilité
+(`packages/db/sql/migration-v58.sql:L65, L81-83`) : elles rendent `probaMin: null` (« probabilité
 d'inclusion non enregistrée »). Une part de sessions touchées vaut `null` dès que `tauxMin < 1` (CP15).
 
 **R-F — Garde capteur des signaux de frustration.** Le SDK navigateur et l'extension (même bundle,
@@ -514,7 +514,7 @@ Relus au commit `322c9a7`. Chaque constat est repris dans l'écran ou le lot qui
   de bas de page.
 - **CS6 —** **Nos comptes de sessions sont observés, et l'échantillonnage peut les réduire sans qu'aucun écran
   d'usage le dise.** `rum_session.sample_rate` et `error_sample_rate` existent depuis v58
-  (`apps/ingest/sql/migration-v58.sql:L65-66`). L'échantillonnage du SDK est **biaisé vers les
+  (`packages/db/sql/migration-v58.sql:L65-66`). L'échantillonnage du SDK est **biaisé vers les
   erreurs** : une session tirée en mode « biaisé-erreurs » qui n'a pas d'erreur n'émet rien et n'est
   pas stockée ; la probabilité d'inclusion vaut `sr` pour une session sans erreur et
   `sr + (1 − sr) × esr` pour une session avec erreur (`migration-v58.sql:L41-57`, colonne `has_error`
@@ -580,7 +580,7 @@ revue ne la compte donc pas comme un oubli.
 | Corrélation erreurs ↔ Web Vitals **dans le temps** (pas seulement par release) | IP-Label, idée n° 5 (`iplabel.md` L379) | **Reprise** | « Charge, erreurs et LCP » (§ 5.1) : trois panneaux empilés, axe x partagé, mêmes annotations, aucun axe secondaire | `pageviewSeries`, `errorSeries` (F10) |
 | Chargements initiaux vs changements de route SPA | Datadog « Initial page load vs SPA route changes » (`newrumperformanceimage.png`, `datadog-images-1.md` L87-95) | **Reprise, et mieux** | panneau (1) de « Charge, erreurs et LCP » (§ 5.1) et classement **par route** « Vues par type de navigation » (§ 5.2), avec la phrase « le LCP n'est mesuré qu'au chargement » (Datadog ne donne pas la route) ; population du LCP à revérifier dans le SDK au début de F15 (`packages/rum-sdk/src/vitals.ts:L5, L59`) | `vuesParNavType` (F15) |
 | SLO et alerte au niveau d'un **parcours** (« journey-level ») | IP-Label (`iplabel.md` L166, L383) | **Reportée** | `slo_status()` ne connaît qu'une métrique × une route (`migration-v64.sql:247-295`) ; un SLO de parcours demande une métrique composée (étapes d'entonnoir) évaluée en base, et un entonnoir à étapes typées qui n'existe pas encore (B33) | B54 (migration), après B33 |
-| Découpage par **type de réseau** (3G / 4G / 5G / Wi-Fi) | IP-Label (`iplabel.md` L326, L376) | **Reportée** | `rum_session.net_type` existe (`apps/ingest/sql/migration-v53.sql:L22`, `navigator.connection.effectiveType`, Chromium seulement) mais n'est ni une dimension du contrat ni de `vitalsBreakdown` | B8 (étendu à `net_type`) |
+| Découpage par **type de réseau** (3G / 4G / 5G / Wi-Fi) | IP-Label (`iplabel.md` L326, L376) | **Reportée** | `rum_session.net_type` existe (`packages/db/sql/migration-v53.sql:L22`, `navigator.connection.effectiveType`, Chromium seulement) mais n'est ni une dimension du contrat ni de `vitalsBreakdown` | B8 (étendu à `net_type`) |
 | Découpage par **opérateur / FAI** | IP-Label (`iplabel.md` L326, L376) | **Écartée par principe** | aucune adresse IP n'est stockée, sous aucune forme | — |
 | **Click maps / scroll maps** | Datadog Heatmaps (`datadog-docs-product-analytics-mobile.md` L164-180) | **Écartée** | le SDK ne collecte ni coordonnées de clic ni profondeur de défilement hors rejeu (`grep -rln "clientX\|pageX\|scrollY" packages/rum-sdk/src` vide) ; dériver une carte des événements rrweb du rejeu échantillonné serait biaisé et hors de portée | — (collecte SDK à concevoir) |
 | **Une bonne et une mauvaise session côte à côte** | Datadog « View sample » (`datadog-images-2.md` L398) | **Reportée** | le hero « À regarder d'abord » et le panneau session (§ 5.11) choisissent la session à lire ; une comparaison de deux rejeux n'a pas de question d'écran dans ce chantier, et l'échantillonnage biaisé-erreurs ne garantit pas une « bonne » session de la même route | — |
@@ -1950,7 +1950,7 @@ export interface DeployImpact {
 }
 export async function latestDeployImpact(f: Filters): Promise<DeployImpact | null>;
   // CTE `d` inchangée. Quatre sous-requêtes ajoutées sur `rum_pageview p, d`
-  // (p.app_id = d.app_id ; colonne de temps `started_at`, apps/ingest/sql/schema.sql:241, pas `ts`),
+  // (p.app_id = d.app_id ; colonne de temps `started_at`, packages/db/sql/schema.sql:241, pas `ts`),
   // coalesce(…, 0)::int. Les erreurs gardent leur coalesce(…, 0) en SQL ; la règle null est
   // appliquée en TypeScript sur la ligne rendue (testable avec `q` simulé) :
   // errors_before = pageviews_before === 0 ? null : errors_before (symétrique pour after).
@@ -2060,7 +2060,7 @@ Abréviations : **Src** = source ; **Cmp** = comparaison ; « ex. » = existante
   le temps » (une queue qui s'allonge sans que le p75 bouge) — reportée : il faudrait un histogramme
   par seau (`vitalHistogram` n'a pas de dimension temps, `queries.ts:L96`) ; à rouvrir comme demande
   backend si le hero ne suffit pas. Type de réseau : `rum_session.net_type` existe
-  (`apps/ingest/sql/migration-v53.sql`) mais n'est pas une dimension de `vitalsBreakdown` : onglet non ajouté, noté pour B8 (§ 6.3).
+  (`packages/db/sql/migration-v53.sql`) mais n'est pas une dimension de `vitalsBreakdown` : onglet non ajouté, noté pour B8 (§ 6.3).
 
 ### 5.2 Pages `/pages` (+ panneau route)
 
@@ -2103,7 +2103,7 @@ répond à « page longue sans ancre » (`console-ecrans-1.md` L143).
 | **Routes classées par <vital>** (hero) | `ImpactTable` : un classement est un classement (barres), jamais N courbes (P14) | pilote = p75 du vital par route ; volume = n mesures du vital ; colonnes : LCP, INP, CLS p75 (pastilles), vues, tâches longues ; écart à l'ensemble | écart de p75 à l'ensemble | ex. `vitalsBreakdown(f,"route",200)` pour p75 + n (CP1) ; `slowRoutes(f)` `queries.ts:L207` pour vues et tâches longues (jointure côté serveur sur `route`) ; troncature : `nombreDeRoutes` | `ImpactTable` (onglets absents : une seule dimension ici) ; sous-texte par ligne « 1 ressource bloquante » depuis `slowResourcesByRoute` `queries.ts:L278` | ligne → `panel=route:<route>` ; « Ouvrir en page » → `/pages?route=` | FCP/TTFB → « classement non disponible » (CP2) ; n < 30 en fin ; ligne « Ensemble » en tête | une seule liste de routes sur l'écran (les trois listes actuelles fusionnent) ; clic ligne ouvre le panneau (e2e) |
 | Distribution LCP · INP · CLS | histogramme SSR coloré par zone + repères p50/p75/p95 : la forme se montre (P7) | 20 bacs linéaires sur [0, plafond] (`VITAL_CAP` LCP 6000, INP 1000, CLS 1) ; n | — (une distribution ne se compare pas bac à bac entre fenêtres de volumes différents : non spécifié) | ex. `vitalHistogram(f,name,cap,20)` `queries.ts:L96` + `vitalPercentiles(f)` L75 | `DistributionSeuils` | bacs non cliquables ; lien secondaire « Voir les mesures dans l'Explorer » (journal `viz=table`, **ordonné par date** : le tri par valeur n'existe pas, § 5.21 W-E6) | n = 0 → vide ; barre « ≥ plafond » dite ; plafond d'affichage : `VITAL_CAP` par défaut, et `p99` arrondi au multiple de 100 ms supérieur (0,05 pour CLS) quand `p95 < VITAL_CAP / 10`, sans quoi toute la démo (LCP p75 44 ms) tombe dans le premier bac ; le plafond retenu est écrit sous l'axe et dans l'alternative ; `vital=FCP/TTFB` : 3ᵉ graphique remplacé par la distribution du vital choisi (plafonds FCP 6000, TTFB 3000 existent, `lib/distribution.ts:L16-17`) | repères p50/p75/p95 visibles et étiquetés ; alternative = bacs, bornes, n |
 | Percentiles par vital | table (comparaison précise de valeurs) | p50, p75, p90, p95, p99 + n par vital | — | ex. `vitalPercentiles(f)` | `PercentileTable` (`scope`, colonne n, § 4.1) | — | cellule `null` → « — » | `<th scope>` présents |
-| Vues par type de navigation | classement en barres par route, chaque barre découpée en deux segments additifs « chargement » (`nav_type` ∈ `navigate`, `reload`, `back_forward`) et « changement de route SPA » (`nav_type = 'spa'`) ; répond à « quelle part des vues de cette route n'a pas de LCP ? » (Datadog « Initial page load vs SPA route changes », qui ne donne pas la route) | par route : vues par classe de navigation, `count` ; ligne « Ensemble » en tête ; 12 routes au plus, par volume décroissant | — | à créer `vuesParNavType(f): Promise<{ route: string \| null; chargements: number; spa: number; inconnu: number }[]>` dans `lib/queries.ts` (sur `sqlContext`, `rum_pageview.nav_type`, colonne du schéma initial `apps/ingest/sql/schema.sql:31`, valeurs `navigate/reload/back_forward/spa`) | `RankBar` avec `segments` (couleurs `CATEGORIELLE`) + phrase fixe « Le LCP n'est mesuré qu'au chargement : les changements de route SPA comptent des vues sans LCP (`packages/rum-sdk/src/vitals.ts:L5, L59`, `index.ts:L502-522` ; à revérifier dans le SDK au début de F15) » | barre → `panel=route:<r>` | `nav_type` nul → segment « type inconnu » nommé, jamais versé dans « chargement » ; aucune vue → vide | alternative : route, chargements, SPA, inconnu ; `tests/integration/perf-lectures-sql.test.ts` : 3 vues `spa` + 2 `navigate` sur une route → segments `[2, 3]` |
+| Vues par type de navigation | classement en barres par route, chaque barre découpée en deux segments additifs « chargement » (`nav_type` ∈ `navigate`, `reload`, `back_forward`) et « changement de route SPA » (`nav_type = 'spa'`) ; répond à « quelle part des vues de cette route n'a pas de LCP ? » (Datadog « Initial page load vs SPA route changes », qui ne donne pas la route) | par route : vues par classe de navigation, `count` ; ligne « Ensemble » en tête ; 12 routes au plus, par volume décroissant | — | à créer `vuesParNavType(f): Promise<{ route: string \| null; chargements: number; spa: number; inconnu: number }[]>` dans `lib/queries.ts` (sur `sqlContext`, `rum_pageview.nav_type`, colonne du schéma initial `packages/db/sql/schema.sql:31`, valeurs `navigate/reload/back_forward/spa`) | `RankBar` avec `segments` (couleurs `CATEGORIELLE`) + phrase fixe « Le LCP n'est mesuré qu'au chargement : les changements de route SPA comptent des vues sans LCP (`packages/rum-sdk/src/vitals.ts:L5, L59`, `index.ts:L502-522` ; à revérifier dans le SDK au début de F15) » | barre → `panel=route:<r>` | `nav_type` nul → segment « type inconnu » nommé, jamais versé dans « chargement » ; aucune vue → vide | alternative : route, chargements, SPA, inconnu ; `tests/integration/perf-lectures-sql.test.ts` : 3 vues `spa` + 2 `navigate` sur une route → segments `[2, 3]` |
 | D'où vient le TTFB | barres horizontales **non empilées**, une par phase (REDIRECT, DNS, TCP, TLS, REQUEST, RESPONSE) ; **pas d'empilement** : les p75 de phases ne s'additionnent pas — la somme de six p75 n'est pas le p75 du TTFB. Des barres séparées répondent à « quelle phase est la plus longue » sans suggérer une décomposition exacte | p75 de chaque phase + n | `cmp=prev` : écart par phase en colonne | ex. `vitalsP75(f)` (le `group by m.name` renvoie aussi les phases, `queries.ts:L46-66`, `rating.ts` commentaire L14-33) | `RankBar` (sans `segments`) + phrase « chaque barre est le p75 d'une phase mesurée à part ; leur somme n'est pas le TTFB » | — | phase absente (navigateur qui ne l'expose pas) → ligne « — » avec n = 0 ; aucune phase → `non_collecte` | aucune barre empilée ; phrase présente |
 | Tâches longues dans le temps | 2 panneaux empilés, axe x partagé : barres LoAF / Long Tasks / non distinguées (comptes, **jamais additionnés** entre API), puis ligne p75 du blocage | comptes par seau et API ; p75 blocage par seau | — | ex. `longtaskSeries(f)` `queries-longtasks.ts:L31` (`p75_ms` L27) | `LongtasksView` conservé ; ajout d'une `ThresholdSeries` sans vital pour `p75_ms` | seau → zoom ; annotations de déploiement sur les deux panneaux (P9) | vide → « Aucun blocage mesuré… Chromium » (existant) | le p75 par seau n'est plus seulement dans la table repliée |
 | Pires blocages | table | 10 pires | — | ex. `worstLongtasks(f)` L81 | table existante | ligne → `panel=session:<id>` | « sans session rattachée » | inchangé hors panneau |
@@ -3987,14 +3987,14 @@ Conséquences qui structurent l'épique :
 | Id | Constat | Preuve | Correction proposée |
 |---|---|---|---|
 | VM1 | La narration des tendances annonce « l'horizon de 3 jours » alors qu'elle signale les franchissements jusqu'à J+7 | `apps/console/lib/forecast.ts:78` (`eta <= 7`) vs `:82` (« horizon de 3 jours ») | Phrase dérivée de la même constante `HORIZON_JOURS = 7` ; test unitaire qui compare le texte et le filtre. Repris par P*.4. |
-| VM2 | La composante « Anomalies » du score de santé vaut 10/10 (« aucune anomalie détectée ») quand `v_anomaly` ne peut rien tester : aucune route n'atteint 5 heures d'historique ou l'écart-type est nul, et la vue ne rend alors aucune ligne | `apps/ingest/sql/migration-v03.sql:80` (garde `count(*) >= 5 and stddev_samp(p75) > 0`) ; `apps/console/lib/health.ts:207` (`anomaliesRatio` = 1 sans ligne), `:247` (« aucune anomalie détectée »), `:198-200` (bloc `catch` qui avale la vue absente, commentaire `:199`) | `earned: null` et « non testable : 0 route avec 5 heures de mesures » quand aucune route n'est éligible ; la composante est alors exclue et renormalisée comme les autres (`health.ts:259-262`, `available = factors.filter(x => x.earned != null)` ; le cas `filtree` y passe déjà, `:248`). Repris par P*.3. |
+| VM2 | La composante « Anomalies » du score de santé vaut 10/10 (« aucune anomalie détectée ») quand `v_anomaly` ne peut rien tester : aucune route n'atteint 5 heures d'historique ou l'écart-type est nul, et la vue ne rend alors aucune ligne | `packages/db/sql/migration-v03.sql:80` (garde `count(*) >= 5 and stddev_samp(p75) > 0`) ; `apps/console/lib/health.ts:207` (`anomaliesRatio` = 1 sans ligne), `:247` (« aucune anomalie détectée »), `:198-200` (bloc `catch` qui avale la vue absente, commentaire `:199`) | `earned: null` et « non testable : 0 route avec 5 heures de mesures » quand aucune route n'est éligible ; la composante est alors exclue et renormalisée comme les autres (`health.ts:259-262`, `available = factors.filter(x => x.earned != null)` ; le cas `filtree` y passe déjà, `:248`). Repris par P*.3. |
 | VM3 | Sur `/forecast`, « Taux d'erreur JS » est aidé par « Part de pages vues avec au moins une erreur » mais calculé comme occurrences / pages vues × 100 (peut dépasser 100 %) | `apps/console/app/forecast/page.tsx:48` vs `:65` ; `dailyTraffic` somme bien `occurrences` (`lib/queries-grid.ts`, requête L125-168) | Libellé « Occurrences d'erreurs pour 100 pages vues », seuil d'alerte revu en conséquence. |
 | VM4 | L'impact du dernier déploiement compte les occurrences ±2 h sans dénominateur : 0 occurrence sans aucune page vue s'affiche « 0 », et `assessRegression` ne peut jamais conclure à une régression quand l'avant vaut 0 | `apps/console/lib/queries-deploys.ts:83-88` (`coalesce(…, 0)`), `:103-110` (`before <= 0` → pas de régression) | F00 (10) : `pageviews_*`, `sessions_*` ajoutés et `errors_*` à `null` si 0 page vue, signature au § 4.5 (« lib/queries-deploys.ts — F00 ») ; verdict statistique de P*.5. |
 
 Constat de périmètre : `reads/ml-paysage.md` L70 écrit « aucune » détection médiane/MAD chez nous.
 C'est inexact : les règles d'alerte en mode `baseline` emploient déjà une médiane et un MAD
 saisonniers (même jour de semaine, même heure, `baseline_weeks` = 4 par défaut), avec une garde
-`n >= 4` (`apps/ingest/sql/migration-v17.sql:17-19` pour les colonnes ; fonction courante
+`n >= 4` (`packages/db/sql/migration-v17.sql:17-19` pour les colonnes ; fonction courante
 `metric_baseline`, `migration-v68.sql:51`, garde `:232`). À 30 sessions par jour, cette garde n'est
 atteinte que si la même heure du même jour a eu du trafic quatre semaines de suite : P*.3 l'affiche.
 
@@ -4731,7 +4731,7 @@ trouvée dans le dépôt (non établi) : le lot ne crée pas de fusion, il point
 
 **Signal d'entrée.** `error_issue` ouvertes d'une même app (`migration-v72.sql:83-113` : `status`,
 `grouping_basis`, `first_seen`, `last_seen`) ; message du dernier exemplaire (`rum_error.message`) ;
-`messageTemplate` (`apps/ingest/supabase/functions/_shared/error-normalize.mjs:380`).
+`messageTemplate` (`packages/backend/shared/error-normalize.mjs:380`).
 
 **Méthode.** Pour chaque paire d'issues ouvertes de la même app et du même `error_type` : indice de
 Jaccard sur les jetons de `messageTemplate(message)` ; suggestion si ≥ 0,8 **et** au moins une des
@@ -4746,7 +4746,7 @@ constat attendu).
 fusion. » Bouton « Écarter la suggestion » pour les rôles d'écriture seulement (RM9).
 
 **Où ça tourne et coût.** Étape `suggest_issue_duplicates` ajoutée à la cadence **horaire** du scheduler
-Railway (`apps/ingest/jobs/planifie.mjs:181-196`), idempotente sous concurrence (verrou de transaction,
+Railway (`packages/backend/jobs/planifie.mjs:181-196`), idempotente sous concurrence (verrou de transaction,
 `planifie.mjs:23-26`) ; table `error_issue_suggestion (app_id, issue_a, issue_b, jaccard, mots,
 created_at, dismissed_by, dismissed_at)` avec RLS par app (migration nouvelle : **B60**, § 6.3). Coût : O(k²) paires
 pour k issues ouvertes par app, négligeable sous quelques centaines. Pas de temps réel : cadence
@@ -4755,8 +4755,8 @@ horaire écrite à l'écran.
 **Invariants.** Jamais de fusion automatique ; `app_id` lié (pas de paire inter-app) ; aucun contenu
 d'une autre app ; viewer / démo / jeton API en lecture seule.
 
-**Fichiers.** `apps/ingest/lib/suggestions-issues.mjs` ; `apps/ingest/jobs/planifie.mjs` ;
-`apps/ingest/sql/migration-v86.sql` (numéro à confirmer au moment du lot) ; `apps/console/lib/error-issues.ts` ;
+**Fichiers.** `packages/backend/lib/suggestions-issues.mjs` ; `packages/backend/jobs/planifie.mjs` ;
+`packages/db/sql/migration-v86.sql` (numéro à confirmer au moment du lot) ; `apps/console/lib/error-issues.ts` ;
 `app/errors/issues/[id]/page.tsx`.
 
 **Tests.** Jaccard sur paires connues ; paire inter-app jamais produite
@@ -4997,7 +4997,7 @@ Schéma à cinq boîtes, données dans `lib/presentation-topologie.ts` :
   Région · Rôle), mêmes lignes que le dessin (§ 3.9).
 - **Légende (texte exact)** :
   > Le collecteur est une route de la console : c'est l'adresse que visent les SDK. Le même parseur
-  > existe en service Node autonome (`services/ingest/server.mjs`), construit et démarré par la CI,
+  > existe en service Node autonome (`services/collector/server.mjs`), construit et démarré par la CI,
   > pour un hébergement chez le client ; en production, il n'est pas sur le chemin du trafic.
   > Topologie relevée le 18/09/2026 par les API Railway et Vercel.
 
@@ -5209,7 +5209,7 @@ viennent du document qui dit lui-même ne pas les avoir recontrôlés (`:303-304
 - **`Specs.tsx` conservé** (onglets Infrastructure / Mesures / Écart au marché), avec :
   - le groupe « Backend — trois services autonomes » (`lib/specs.ts:104`) renommé « Backend — collecteur
     sur Vercel, travaux planifiés et MCP sur Railway » ; ligne `ingest` réécrite (texte exact) :
-    > Receveur OTLP autonome (`services/ingest/server.mjs`), gardé pour l'hébergement chez le client et
+    > Receveur OTLP autonome (`services/collector/server.mjs`), gardé pour l'hébergement chez le client et
     > démarré par la CI. En production, aucun domaine public ne pointe dessus et le trafic passe par la
     > route de la console ; sa suppression est proposée, pas actée au 18/09/2026.
 
@@ -5772,7 +5772,7 @@ https://blog.sentry.io/enhancing-issue-grouping/ ·
 https://help.fullstory.com/hc/en-us/articles/360020624154-Rage-Clicks-Error-Clicks-Dead-Clicks-and-Thrashed-Cursor-Frustration-Signals
 
 **Dépôt** (commit `322c9a7`) : `apps/console/**`, `packages/rum-sdk/src/**`, `packages/rum-mobile/src/**`,
-`apps/extension/**`, `apps/ingest/sql/**`, `docs/RUM_PARITY_STATUS.md`, `docs/TOPOLOGIE_BACKEND.md`,
+`apps/extension/**`, `packages/db/sql/**`, `docs/RUM_PARITY_STATUS.md`, `docs/TOPOLOGIE_BACKEND.md`,
 `docs/FRUSTRATION.md`, `docs/API_CONSOLE.md`, `tests/**`, `scripts/**`.
 
 ### 9.4 Non établi (consolidé)
@@ -5819,7 +5819,7 @@ Corrections portées après relecture (lecture du code à `322c9a7`, sans modifi
 1. **F00 (10) et § 4.5 — impact du dernier déploiement.** Signature exacte de `DeployImpact`
    ajoutée au registre (§ 4.5, « lib/queries-deploys.ts — F00 ») : `pageviews_*`, `sessions_*`,
    `errors_*` à `null` sans page vue. Écart avec la proposition de relecture : la colonne de temps de
-   `rum_pageview` est `started_at` (`apps/ingest/sql/schema.sql:241`), pas `ts` ; la règle `null`
+   `rum_pageview` est `started_at` (`packages/db/sql/schema.sql:241`), pas `ts` ; la règle `null`
    est appliquée en TypeScript et non par `case` SQL, pour que `tests/unit/deploys.test.ts` (qui ne
    teste aujourd'hui que `assessRegression`, fonction pure) la vérifie avec `q` simulé. VM4 renvoie à F00.
    L'ancien test « `assessRegression` avec 0 page vue → `null` » était incohérent (la fonction ne

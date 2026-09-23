@@ -17,17 +17,17 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildResourceSpans, msToHr, type EmitSpan } from "../../packages/rum-sdk/src/otlp-encode";
 // @ts-expect-error module JS partagé sans déclarations
-import { hashIdentity, secureOtlpIdentities } from "../../apps/ingest/lib/identity-hash.mjs";
+import { hashIdentity, secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { deposerLot, drainerIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
+import { deposerLot, drainerIngestRaw } from "../../packages/backend/lib/ingest-differe.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const urlV68 = process.env.SQL_TEST_V68_DATABASE_URL;
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 const pool = new pg.Pool(url ? { connectionString: url, max: 4 } : { max: 4 });
 const poolV68 = new pg.Pool(urlV68 ? { connectionString: urlV68, max: 4 } : { max: 4 });
 

@@ -10,7 +10,7 @@ au lieu d'enchaîner à la main une dizaine d'appels REST.
 Le serveur vit dans ce dépôt :
 
 ```
-apps/mcp/         LE NOYAU — catalogue d'outils, client HTTP, rendu
+packages/mcp-tools/         LE NOYAU — catalogue d'outils, client HTTP, rendu
 services/mcp/     les deux points d'entrée : stdio (local), HTTP (Railway)
 ```
 

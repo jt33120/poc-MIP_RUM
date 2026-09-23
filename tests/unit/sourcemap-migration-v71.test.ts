@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const SQL = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL = join(__dirname, "..", "..", "packages", "db", "sql");
 const V71 = readFileSync(join(SQL, "migration-v71.sql"), "utf8");
 const version = (f: string) => Number(f.match(/\d+/)![0]);
 

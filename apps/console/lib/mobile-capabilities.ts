@@ -15,7 +15,7 @@
 // déclarée active dit ce que le SDK croit avoir installé. Elle ne dit pas qu'un
 // signal a été reçu, écrit et affiché — cela s'établit par une recette
 // d'opérateur, la seule à écrire cette colonne (cf. migration-v82).
-import { MOBILE_CAPABILITIES } from "ingest/shared/mobile-capabilities.mjs";
+import { MOBILE_CAPABILITIES } from "@mip/backend/shared/mobile-capabilities.mjs";
 import { conditionsOf, hrefWithQuery, intersectQuery, type AnalyticsQuery, type FilterCondition } from "./query-contract";
 import { annotationsDeploiements, dansLaFenetre, type AnnotationsDeploiements } from "./annotations";
 import type { ResolvedRange } from "./query-contract";

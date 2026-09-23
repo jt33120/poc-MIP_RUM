@@ -1,10 +1,10 @@
 # Image du backend MIP RUM — ingestion, travaux planifiés, migrations.
 #
 # UNE image pour TOUS les services backend : ils partagent le même noyau
-# (`apps/ingest`) et les mêmes dépendances. Ce qui les distingue est la commande
+# (`packages/backend`) et les mêmes dépendances. Ce qui les distingue est la commande
 # de démarrage, choisie par le service qui la lance :
 #
-#   node services/ingest/server.mjs      receveur OTLP (traces, logs, replay)
+#   node services/collector/server.mjs      receveur OTLP (traces, logs, replay)
 #   node services/scheduler/worker.mjs   déclencheur des travaux planifiés
 #   node services/scheduler/migrate.mjs  applique les migrations SQL en attente
 #                                        (pré-déploiement du scheduler ; câble
@@ -26,31 +26,31 @@ WORKDIR /app
 
 # 1) La seule dépendance runtime. Installée d'abord : cette couche ne change
 #    qu'à un changement de version de pg, donc elle reste en cache.
-COPY apps/ingest/package.json ./package.json
+COPY packages/backend/package.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 # 2) Le noyau, placé là où Node résout le specifier nu `ingest/...`. C'est ce
-#    qui permet aux services d'écrire `import … from "ingest/lib/receiver.mjs"`
+#    qui permet aux services d'écrire `import … from "@mip/backend/lib/receiver.mjs"`
 #    exactement comme en développement, où pnpm pose le même lien symbolique.
 #    `pg` reste résolu en remontant à /app/node_modules.
-COPY apps/ingest/package.json   ./node_modules/ingest/package.json
-COPY apps/ingest/lib            ./node_modules/ingest/lib
-COPY apps/ingest/jobs           ./node_modules/ingest/jobs
-COPY apps/ingest/migrate.mjs    ./node_modules/ingest/migrate.mjs
-COPY apps/ingest/dispatch-alerts.mjs ./node_modules/ingest/dispatch-alerts.mjs
-COPY apps/ingest/purge.mjs      ./node_modules/ingest/purge.mjs
+COPY packages/backend/package.json   ./node_modules/ingest/package.json
+COPY packages/backend/lib            ./node_modules/ingest/lib
+COPY packages/backend/jobs           ./node_modules/ingest/jobs
+COPY packages/db/migrate.mjs    ./node_modules/ingest/migrate.mjs
+COPY packages/backend/lib/dispatch-alerts.mjs ./node_modules/ingest/dispatch-alerts.mjs
+COPY packages/backend/purge.mjs      ./node_modules/ingest/purge.mjs
 # Les modules partagés (parser OTLP, CORS, limites, scrub, retry, journal). Le
 # chemin `supabase/functions/_shared` est un vestige des edge functions : le
 # fournisseur a disparu en août 2026, le code non. Il est exposé sous
-# `ingest/shared/*` par la carte `exports` du manifeste — c'est ce nom-là que le
+# `@mip/backend/shared/*` par la carte `exports` du manifeste — c'est ce nom-là que le
 # code utilise, jamais le chemin physique.
-COPY apps/ingest/supabase/functions/_shared ./node_modules/ingest/supabase/functions/_shared
+COPY packages/backend/shared ./node_modules/ingest/supabase/functions/_shared
 # Le SQL : nécessaire au runner de migrations, qui lit le dossier au démarrage.
-COPY apps/ingest/sql            ./node_modules/ingest/sql
+COPY packages/db/sql            ./node_modules/ingest/sql
 # Le dossier de données du GeoIP optionnel (P8.7) : licence, attribution et
 # manifeste. La base elle-même n'est PAS dans le dépôt — 4,5 Mio renouvelés tous
 # les mois —, elle est déposée juste en dessous.
-COPY apps/ingest/data           ./node_modules/ingest/data
+COPY packages/backend/data           ./node_modules/ingest/data
 
 # 2 bis) La base IP→pays, OPTIONNELLE de bout en bout.
 #
@@ -90,4 +90,4 @@ EXPOSE 4318
 USER node
 
 # Défaut = l'ingestion. Le service `scheduler` remplace cette commande.
-CMD ["node", "services/ingest/server.mjs"]
+CMD ["node", "services/collector/server.mjs"]

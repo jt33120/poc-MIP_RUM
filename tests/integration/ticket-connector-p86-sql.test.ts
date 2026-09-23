@@ -19,23 +19,23 @@ import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 // @ts-expect-error module JS sans déclarations
-import { livrerTickets } from "../../apps/ingest/lib/integrations/tickets/dispatcher.mjs";
+import { livrerTickets } from "../../packages/backend/lib/integrations/tickets/dispatcher.mjs";
 // @ts-expect-error module JS sans déclarations
-import { construireCharge, referenceMip } from "../../apps/ingest/lib/integrations/tickets/adapter.mjs";
+import { construireCharge, referenceMip } from "../../packages/backend/lib/integrations/tickets/adapter.mjs";
 // @ts-expect-error module JS sans déclarations
-import { chiffrer } from "../../apps/ingest/lib/integrations/tickets/secrets.mjs";
+import { chiffrer } from "../../packages/backend/lib/integrations/tickets/secrets.mjs";
 // @ts-expect-error module JS sans déclarations
-import { writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS sans déclarations
-import { secureOtlpIdentities } from "../../apps/ingest/lib/identity-hash.mjs";
+import { secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.mjs";
 // @ts-expect-error module JS sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 import { DSAR_CHILD_TABLES } from "../../apps/console/lib/dsar";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 const pool = new pg.Pool(url ? { connectionString: url, max: 8 } : { max: 8 });
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 const APP = "p86-tickets";
 const AUTRE = "p86-tickets-autre";
@@ -634,11 +634,11 @@ suite("P8.6 — webhooks : rejeu, mapping explicite et autorité de MIP", () => 
   ) {
     const { validateWebhook, normalizeWebhook } = await import(
       // @ts-expect-error module JS sans déclarations
-      "../../apps/ingest/lib/integrations/tickets/github.mjs"
+      "../../packages/backend/lib/integrations/tickets/github.mjs"
     );
     const { appliquerEvenement } = await import(
       // @ts-expect-error module JS sans déclarations
-      "../../apps/ingest/lib/integrations/tickets/dispatcher.mjs"
+      "../../packages/backend/lib/integrations/tickets/dispatcher.mjs"
     );
     const brut = Buffer.from(JSON.stringify(corps), "utf8");
     const entetes = new Headers({
@@ -782,7 +782,7 @@ suite("P8.6 — webhooks : rejeu, mapping explicite et autorité de MIP", () => 
   it("une signature invalide n'écrit rien du tout, pas même au journal", async () => {
     const { integ } = await issueAvecTicket({ closed: "resolved" });
     // @ts-expect-error module JS sans déclarations
-    const { validateWebhook } = await import("../../apps/ingest/lib/integrations/tickets/github.mjs");
+    const { validateWebhook } = await import("../../packages/backend/lib/integrations/tickets/github.mjs");
     const brut = Buffer.from(JSON.stringify(FERMETURE), "utf8");
     const verdict = validateWebhook({
       secret: SECRET,

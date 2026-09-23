@@ -11,7 +11,7 @@ navigateur / SDK ──(OTLP /v1/traces)──▶  ingest (Node)  ──▶  db 
                                           └▶ docker compose logs -f ingest
 ```
 
-C'est **le même code** que l'edge function Deno de prod : `apps/ingest/dev-server.mjs`
+C'est **le même code** que l'edge function Deno de prod : `services/collector/dev-server.mjs`
 est un vrai serveur HTTP (OTLP → Postgres) avec `/health`, `/ready`, rate-limit,
 vérif de clé d'API et arrêt propre. On l'empaquette juste pour tourner en conteneur.
 
@@ -60,7 +60,7 @@ docker compose exec db psql -U postgres -d mip_rum \
 ## Les logs (le but de la conteneurisation)
 
 Le serveur émet **une ligne JSON par événement** sur stdout (`{ts,level,service,msg,…}`,
-secrets redacted — cf. `_shared/log.mjs`). Le driver `json-file` (rotation 10 Mo × 5)
+secrets redacted — cf. `shared/log.mjs`). Le driver `json-file` (rotation 10 Mo × 5)
 les capture :
 
 ```bash
@@ -97,7 +97,7 @@ DATABASE_URL=postgres://console_ro:console_ro@localhost:5433/mip_rum
 
 `db/initdb.sh` (lancé une fois par l'entrypoint postgres, sur volume vierge) :
 1. crée le rôle `console_ro` ;
-2. applique `apps/ingest/sql/schema.sql` ;
+2. applique `packages/db/sql/schema.sql` ;
 3. applique `migration-v02…v28` dans l'ordre.
 
 Les blocs **cloud** (pg_cron, rôles d'API Supabase `anon`/`authenticated`/`service_role`)

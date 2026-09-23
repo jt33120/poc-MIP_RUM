@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const SQL = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL = join(__dirname, "..", "..", "packages", "db", "sql");
 const V73 = readFileSync(join(SQL, "migration-v73.sql"), "utf8");
 
 /** Corps d'une fonction, de son `create or replace` jusqu'à la fin de son bloc dollar. */

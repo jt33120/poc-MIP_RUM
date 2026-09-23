@@ -12,7 +12,7 @@ import {
   flattenOtlp,
   flattenOtlpLogs,
   // @ts-expect-error module JS partagé sans déclarations
-} from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+} from "../../packages/backend/shared/otlp.mjs";
 
 type Attrs = Record<string, unknown>;
 type Row = Record<string, unknown>;

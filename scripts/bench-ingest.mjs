@@ -20,10 +20,10 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 import pg from "pg";
-import { creerReceveur } from "../apps/ingest/lib/receiver.mjs";
-import { drainerIngestRaw } from "../apps/ingest/lib/ingest-differe.mjs";
+import { creerReceveur } from "../packages/backend/lib/receiver.mjs";
+import { drainerIngestRaw } from "../packages/backend/lib/ingest-differe.mjs";
 
-const SQL_DIR = new URL("../apps/ingest/sql/", import.meta.url).pathname;
+const SQL_DIR = new URL("../packages/db/sql/", import.meta.url).pathname;
 const APP = "bench-ingest";
 const REQUETES = Number(process.env.BENCH_REQUETES ?? 400);
 const CONCURRENCE = Number(process.env.BENCH_CONCURRENCE ?? 12);

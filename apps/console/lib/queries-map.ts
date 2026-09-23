@@ -59,7 +59,7 @@ export interface MapEdgeRow {
  * Depuis E0, tous les appels d'une page vue partagent le `trace_id` de la vue
  * (`packages/rum-sdk/src/index.ts`, `traceId: currentTraceId`) ; chaque appel garde
  * son `spanId` dans `traceparent`, que le middleware serveur recopie en
- * `parent_span_id` de son span (`apps/ingest/…/otlp.mjs`). Joindre par `trace_id`
+ * `parent_span_id` de son span (`packages/backend/…/otlp.mjs`). Joindre par `trace_id`
  * SEUL faisait donc le produit cartésien des appels et des réponses d'une même
  * trace : une vue à trois appels et trois réponses pesait neuf arêtes au lieu de
  * trois. Pire, le `route` d'un span front est la route de la page AU MOMENT DE

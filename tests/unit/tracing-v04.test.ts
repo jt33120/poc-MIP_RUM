@@ -7,7 +7,7 @@ import {
   traceparent,
   type ApiSpanOptions,
 } from "../../packages/rum-sdk/src/apispans";
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 describe("resolveTarget — qui instrumente-t-on ?", () => {
   beforeEach(() => {

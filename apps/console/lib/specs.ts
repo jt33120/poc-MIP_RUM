@@ -115,9 +115,9 @@ export const INFRA: GroupeInfra[] = [
         // Supprimé de Railway (INGEST_SUPPRIME_LE, docs/TOPOLOGIE_BACKEND.md) : aucun domaine
         // public ne pointait dessus, et son seul rôle réel — les migrations — était
         // déjà repris par le scheduler. Le receveur reste dans le dépôt.
-        v: `Receveur OTLP autonome (services/ingest/server.mjs), gardé pour l'hébergement chez le client et démarré par la CI. En production, le trafic passe par la route de la console ; le service Railway, qui n'avait aucun domaine public, a été supprimé le ${INGEST_SUPPRIME_LE}.`,
+        v: `Receveur OTLP autonome (services/collector/server.mjs), gardé pour l'hébergement chez le client et démarré par la CI. En production, le trafic passe par la route de la console ; le service Railway, qui n'avait aucun domaine public, a été supprimé le ${INGEST_SUPPRIME_LE}.`,
         s: "partiel",
-        preuve: "services/ingest/server.mjs",
+        preuve: "services/collector/server.mjs",
       },
       {
         k: "scheduler",
@@ -205,7 +205,7 @@ export const INFRA: GroupeInfra[] = [
         k: "Migrations",
         v: "Registre schema_migration à empreintes, chaque fichier dans sa propre transaction, adoption d'une base existante sans rejeu. Rejouées en CI contre un PostgreSQL vierge.",
         s: "atteint",
-        preuve: "apps/ingest/migrate.mjs",
+        preuve: "packages/db/migrate.mjs",
       },
       {
         k: "API et MCP",

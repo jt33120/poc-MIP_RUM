@@ -20,7 +20,7 @@ import type { ErrorFilters } from "../../apps/console/lib/queries-errors";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const urlV68 = process.env.SQL_TEST_V68_DATABASE_URL;
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 const A = "p51-app-a";
 const B = "p51-app-b";

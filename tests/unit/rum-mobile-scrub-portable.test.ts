@@ -17,7 +17,7 @@ import {
   scrubText as scrubTextServeur,
   scrubUrl as scrubUrlServeur,
   // @ts-expect-error module JS partagé sans déclarations
-} from "../../apps/ingest/supabase/functions/_shared/scrub.mjs";
+} from "../../packages/backend/shared/scrub.mjs";
 
 const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N";
 

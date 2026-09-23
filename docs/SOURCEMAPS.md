@@ -5,7 +5,7 @@
 > (`at e (src/panier.ts:3:11)`). Depuis P5.4, les maps s'envoient **depuis la CI** avec un
 > jeton dédié, la symbolication a lieu **à l'ingestion** (et à la lecture si la map arrive
 > après l'erreur), et un seul moteur sert partout : ingestion, upload, CLI et console
-> (`apps/ingest/supabase/functions/_shared/sourcemap.mjs`, réexporté par `apps/console/lib/sourcemap.ts`).
+> (`packages/backend/shared/sourcemap.mjs`, réexporté par `apps/console/lib/sourcemap.ts`).
 
 ## En 4 étapes
 
@@ -160,7 +160,7 @@ Routes de session admin (hors API publique v1, auth dans le handler, 401/403 en 
 
 `writeRows` symbolise les erreurs **avant** sa transaction (lecture des maps hors verrou), sur les
 trois chemins d'écriture (receveur Railway, route Vercel, file différée). Bornes par défaut
-(`LIMITES_SYMBOLICATION`, `apps/ingest/lib/error-symbolication.mjs`), à ajuster sur mesure :
+(`LIMITES_SYMBOLICATION`, `packages/backend/lib/error-symbolication.mjs`), à ajuster sur mesure :
 
 | Borne | Défaut | Au-delà |
 |---|---|---|

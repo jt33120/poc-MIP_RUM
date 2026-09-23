@@ -89,13 +89,13 @@ Config producteur (backend UTI) : `MIP_RUM_ENDPOINT`, `MIP_RUM_APP_ID`, `MIP_RUM
 
 ### 2.2 Ingestion — edge function Deno `v1-traces`
 
-- Fichier : `apps/ingest/supabase/functions/v1-traces/index.ts` (endpoint
+- Fichier : `packages/backend/supabase/functions/v1-traces/index.ts` (endpoint
   `POST /functions/v1/v1-traces`, OTLP/HTTP JSON).
-- Détection + extraction IA : `apps/ingest/supabase/functions/_shared/otlp.mjs`,
+- Détection + extraction IA : `packages/backend/shared/otlp.mjs`,
   fonction `flattenOtlp()`, **branche `gen_ai` lignes 316-366** (verbatim en §3.1).
 - Un span est reconnu « IA » si `name==="gen_ai"` **ou** `name` commence par `gen_ai.`
   **ou** l'attribut `gen_ai.request.model` **ou** `gen_ai.system` est présent.
-- Estimation de coût : `apps/ingest/supabase/functions/_shared/ai-pricing.mjs`,
+- Estimation de coût : `packages/backend/shared/ai-pricing.mjs`,
   `aiCostUsd(provider, model, promptTokens, completionTokens)` (table de prix par
   préfixe, USD / 1M tokens ; `openrouter` ⇒ 0 car le coût réel `gen_ai.usage.cost` est
   attendu inline ; le coût réel prime toujours).
@@ -109,12 +109,12 @@ car les beacons n'ont pas de header `Authorization`) :
 - Identité = attribut ressource **`mip.app_id`** (requis ; absent ⇒ ligne rejetée), lu dans
   la table **`app_registry`** (cache 60 s).
 - Clé API optionnelle **`mip.api_key`** hachée SHA-256 vs `app_registry.api_key_hash`
-  (`_shared/auth.mjs` `checkApiKey` ; gouverné par env `REQUIRE_API_KEY`, **défaut `false` =
-  fail-open**). ⚠️ `v1-logs` **duplique** cette logique au lieu d'importer `_shared/auth.mjs`
+  (`shared/auth.mjs` `checkApiKey` ; gouverné par env `REQUIRE_API_KEY`, **défaut `false` =
+  fail-open**). ⚠️ `v1-logs` **duplique** cette logique au lieu d'importer `shared/auth.mjs`
   → à unifier lors de l'extraction.
-- CORS : `_shared/cors.mjs`, allowlist statique **∪** `app_registry.allowed_origins` des apps
+- CORS : `shared/cors.mjs`, allowlist statique **∪** `app_registry.allowed_origins` des apps
   actives (membership exacte ; origine non listée ⇒ pas de header CORS).
-- Rate limit : `rateLimitedDurable(appId)` (`_shared/auth.mjs`), fenêtre glissante in-isolate
+- Rate limit : `rateLimitedDurable(appId)` (`shared/auth.mjs`), fenêtre glissante in-isolate
   + RPC durable `rate_check` (défaut `RATE_LIMIT_PER_MIN=600`, fail-open si la DB tombe).
 
 **Env de l'edge** : `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (auto-injectés, writes en
@@ -127,7 +127,7 @@ Objets **dédiés IA** :
 
 | Objet | Type | Fichier (migration) | Rôle |
 |---|---|---|---|
-| `rum_ai` | table | `apps/ingest/sql/migration-v20.sql:7` | 1 ligne = 1 appel LLM (cœur) |
+| `rum_ai` | table | `packages/db/sql/migration-v20.sql:7` | 1 ligne = 1 appel LLM (cœur) |
 | `v_ai_op_anomaly` | vue | `migration-v39.sql:16` | anomalie de coût z-score par fonction×route |
 | `check_ai_op_anomalies()` | fonction (SECURITY DEFINER) | `migration-v39.sql:57` | émet un `alert_event` par anomalie |
 | cron `mip-ai-op-anomaly` | pg_cron | `migration-v39.sql:102` | `*/30 * * * *` → `check_ai_op_anomalies()` |
@@ -232,7 +232,7 @@ catalogue de 6 routes en dur — stopgap en attendant émission `data_class` à 
 
 ### 3.1 Attributs OTLP `gen_ai.*` (producteur → ingestion) et branche d'extraction
 
-`apps/ingest/supabase/functions/_shared/otlp.mjs:316-366` :
+`packages/backend/shared/otlp.mjs:316-366` :
 
 ```js
 // v0.8 : appel LLM (conventions OTel GenAI `gen_ai.*`, émis par le back —
@@ -476,11 +476,11 @@ Types read secondaire (`queries-ai.ts`) : `AiOverview`, `AiModelRow`, `AiRouteRo
 
 ### 5.3 Code d'ingestion à porter
 
-- `_shared/otlp.mjs` — **seulement la branche `gen_ai`** (§3.1) + helpers utilisés
+- `shared/otlp.mjs` — **seulement la branche `gen_ai`** (§3.1) + helpers utilisés
   (`sessionFromTraceState`, `normalizeRouteTemplate`, `durationMsBetween`, `nanosToDate`
   avec la garde anti-dérive d'horloge).
-- `_shared/ai-pricing.mjs` — table de prix + `aiCostUsd()`.
-- `_shared/{auth,cors,limits}.mjs` + table `app_registry` + RPC `rate_check` (auth/CORS/rate).
+- `shared/ai-pricing.mjs` — table de prix + `aiCostUsd()`.
+- `shared/{auth,cors,limits}.mjs` + table `app_registry` + RPC `rate_check` (auth/CORS/rate).
 - Env : `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `REQUIRE_API_KEY`, `RATE_LIMIT_PER_MIN`,
   `MAX_BODY_BYTES`, `MAX_SPANS_PER_REQUEST`. Déploiement **`--no-verify-jwt`**.
 
@@ -582,7 +582,7 @@ d'alerte + prérequis `rum_session`/`rum_event` + ingestion `gen_ai` (`otlp.mjs`
 `/ai/credits`) + types §3.4 comme schéma de référence.
 
 **À corriger au passage (dette) :** rétention/effacement de `rum_ai` (RGPD) ; unifier l'auth
-`v1-logs` sur `_shared/auth.mjs` ; rate-limit in-memory → store partagé si multi-instance ;
+`v1-logs` sur `shared/auth.mjs` ; rate-limit in-memory → store partagé si multi-instance ;
 ajouter un test de forme sur la réponse `/ai/summary` (absent aujourd'hui).
 
 **Décisions produit à trancher (elles fixent l'archi) :**
@@ -600,9 +600,9 @@ ajouter un test de forme sur la réponse `/ai/summary` (absent aujourd'hui).
 
 ## 8. Références fichiers (index rapide)
 
-- Ingestion IA : `apps/ingest/supabase/functions/_shared/otlp.mjs:316-366`,
-  `.../_shared/ai-pricing.mjs`, `.../v1-traces/index.ts:151`.
-- DB : `apps/ingest/sql/migration-v20.sql` (`rum_ai`), `-v24` (`openrouter_balance`),
+- Ingestion IA : `packages/backend/shared/otlp.mjs:316-366`,
+  `.../shared/ai-pricing.mjs`, `.../v1-traces/index.ts:151`.
+- DB : `packages/db/sql/migration-v20.sql` (`rum_ai`), `-v24` (`openrouter_balance`),
   `-v28` (`ai_briefing`), `-v38` (branches `ai_cost`), `-v39` (`v_ai_op_anomaly`,
   `check_ai_op_anomalies`, cron), `-v02/-v03/-v17` (backbone d'alerte).
 - Read-API : `apps/console/app/api/rum/summary/route.ts`, `apps/console/lib/queries-summary.ts`,

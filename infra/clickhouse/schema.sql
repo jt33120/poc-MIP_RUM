@@ -1,6 +1,6 @@
 -- Schéma ClickHouse MIP RUM — sous-ensemble des tables Postgres suffisant
 -- pour les agrégats console (p75 par route, séries horaires, top routes/sessions).
--- Colonnes alignées sur apps/ingest/sql/schema.sql (mêmes noms, types CH).
+-- Colonnes alignées sur packages/db/sql/schema.sql (mêmes noms, types CH).
 -- Appliqué par writer.mjs / bench.mjs via l'interface HTTP (multi-statements interdits :
 -- une requête par statement, séparateur ';' géré côté client).
 

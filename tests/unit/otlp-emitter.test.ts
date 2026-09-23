@@ -11,7 +11,7 @@ import {
   msToHr,
   toAnyValue,
 } from "../../packages/rum-sdk/src/otlp-encode";
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const resourceAttrs = {
   "service.name": "mip-rum-web",

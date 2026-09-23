@@ -1,5 +1,5 @@
 import { Pool, type PoolClient } from "pg";
-import { optionsSsl } from "ingest/lib/serveur.mjs";
+import { optionsSsl } from "@mip/backend/lib/serveur.mjs";
 import { recordDbSpan } from "./server-trace-core";
 
 // pool unique survivant au hot-reload de next dev
@@ -9,7 +9,7 @@ const connectionString =
   process.env.DATABASE_URL ??
   "postgres://postgres:postgres@localhost:5433/mip_rum";
 
-// La décision TLS vient du noyau (`ingest/lib/serveur.mjs`), partagée avec les
+// La décision TLS vient du noyau (`@mip/backend/lib/serveur.mjs`), partagée avec les
 // services backend. Elle vivait ici en double, et les deux copies avaient déjà
 // divergé sur un cas réel : un hôte de docker-compose (`db`, sans point) n'est
 // pas `localhost` mais n'a pas de TLS non plus — la copie du noyau exigeait

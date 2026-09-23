@@ -19,7 +19,7 @@ import {
   COMMENTAIRE_MAX,
   referenceResolution as referenceResolutionPartagee,
   texteActivite,
-} from "ingest/lib/error-issue-workflow.mjs";
+} from "@mip/backend/lib/error-issue-workflow.mjs";
 import { q, tx } from "./db";
 import { ISSUE_STATUSES, isIssueId, type IssueStatus } from "./error-issues";
 import { encodeErrorCursor } from "./queries-errors";
@@ -456,7 +456,7 @@ async function nouvelleRevision(client: PoolClient, issue: LockedIssue): Promise
 
 /**
  * Référence d'une résolution : la release et l'env de la dernière occurrence
- * rattachée. La requête vit dans `ingest/lib/error-issue-workflow.mjs` depuis
+ * rattachée. La requête vit dans `@mip/backend/lib/error-issue-workflow.mjs` depuis
  * P8.6 : un fournisseur de tickets peut résoudre une issue par webhook, et deux
  * copies auraient donné deux références — donc deux verdicts de régression pour
  * la même issue selon qui l'a fermée. Son commentaire y explique le détail.

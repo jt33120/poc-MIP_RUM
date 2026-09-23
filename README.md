@@ -41,24 +41,24 @@ flowchart TB
 | Serveur MCP — Railway | Railway Corp. | europe-west4 — Amsterdam, Pays-Bas | lit par l'API /api/v1, sans accès à la base |
 
 - Régions : Francfort, Allemagne ; Amsterdam, Pays-Bas. Droit des trois hébergeurs (Neon, Vercel Inc. et Railway Corp.) : américain.
-- Le collecteur est une route de la console : c'est l'adresse que visent les SDK. Le même parseur existe en service Node autonome (`services/ingest/server.mjs`), construit et démarré par la CI (`docker-smoke`), pour un hébergement chez le client ; en production, il ne tourne nulle part : le service Railway `ingest`, qui l'exécutait sans domaine public, a été supprimé le 21/09/2026.
+- Le collecteur est une route de la console : c'est l'adresse que visent les SDK. Le même parseur existe en service Node autonome (`services/collector/server.mjs`), construit et démarré par la CI (`docker-smoke`), pour un hébergement chez le client ; en production, il ne tourne nulle part : le service Railway `ingest`, qui l'exécutait sans domaine public, a été supprimé le 21/09/2026.
 - Le `scheduler` applique les migrations au pré-déploiement : constaté le 18/09/2026 dans les journaux du déploiement `03850b30`.
 - Topologie relevée par les API Railway et Vercel le 18/09/2026, puis par l'API Railway le 23/09/2026 : [docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md).
 <!-- /genere -->
 
 ## Démarrage local
 
-Base, ingestion, démo et console sur le poste, sans secret : les programmes se rabattent sur `postgres://postgres:postgres@localhost:5433/mip_rum` (`apps/console/lib/db.ts`, `apps/ingest/lib/serveur.mjs`). Le schéma se monte comme dans la CI (`.github/workflows/ci.yml`, étape « Schéma v0.1 puis toutes les migrations »).
+Base, ingestion, démo et console sur le poste, sans secret : les programmes se rabattent sur `postgres://postgres:postgres@localhost:5433/mip_rum` (`apps/console/lib/db.ts`, `packages/backend/lib/serveur.mjs`). Le schéma se monte comme dans la CI (`.github/workflows/ci.yml`, étape « Schéma v0.1 puis toutes les migrations »).
 
 ```bash
 pnpm install --frozen-lockfile
-docker compose -f apps/ingest/docker-compose.yml up -d --wait   # Postgres 15 sur :5433, base mip_rum, schema.sql
-for f in apps/ingest/sql/migration-v*.sql; do                   # puis toutes les migrations, dans l'ordre
+docker compose -f packages/backend/docker-compose.yml up -d --wait   # Postgres 15 sur :5433, base mip_rum, schema.sql
+for f in packages/db/sql/migration-v*.sql; do                   # puis toutes les migrations, dans l'ordre
   docker exec -i mip-rum-db psql -U postgres -d mip_rum -v ON_ERROR_STOP=1 < "$f"
 done
 pnpm build:sdk                                                  # SDK web, React Native, agent Node
 node scripts/seed-admin.mjs                                     # compte admin local : mot de passe affiché une fois, régénéré à chaque appel
-node apps/ingest/dev-server.mjs                                 # ingestion locale :4318
+node services/collector/dev-server.mjs                                 # ingestion locale :4318
 node demo/serve.mjs                                             # mini-site de démo :8080
 pnpm --filter console dev                                       # console :3000
 node apps/sync-synthetic/src/sync.mjs seed                      # passages robot pour /correlation
@@ -109,8 +109,8 @@ Les zones générées de ce README se régénèrent par `node scripts/readme-sec
 | `packages/rum-sdk` | SDK Web (émetteur OTLP + web-vitals), build esbuild IIFE `mip-rum.js` ; poids gzip remesuré par `tests/unit/specs.test.ts` (`apps/console/lib/sdk-poids.ts`) |
 | `packages/agent-node` | Agent backend Node.js (`node -r @mip/agent-node/register`) : span `http.server` sans changement de code, plus une API publique (`track`, `captureException`, `withContext`, `flush`) ; aucun service Node n'émet vers la production (document de couverture, `C5`) |
 | `packages/rum-mobile` | SDK **React Native** : crashes, écrans, réseau (traceparent), événements → mêmes tables (`device_type=mobile`) ; livré, jamais lancé dans une application React Native (document de couverture, `C1` et `C10`) |
-| `apps/ingest` | Noyau backend sans framework : parseur OTLP, receveur (`/v1/traces`, `/v1/logs`, `/v1/replay`, `/v1/sourcemaps`), SQL (schéma, migrations), runner de migrations, travaux planifiés. Importé par la console comme par les services. **En production, le collecteur actif est la route de la console** ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
-| `apps/mcp` | Noyau MCP : catalogue d'outils, client HTTP de l'API v1 ; sans base de données |
+| `packages/backend` | Noyau backend sans framework : parseur OTLP, receveur (`/v1/traces`, `/v1/logs`, `/v1/replay`, `/v1/sourcemaps`), SQL (schéma, migrations), runner de migrations, travaux planifiés. Importé par la console comme par les services. **En production, le collecteur actif est la route de la console** ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
+| `packages/mcp-tools` | Noyau MCP : catalogue d'outils, client HTTP de l'API v1 ; sans base de données |
 | `services/*` | Points d'entrée minces au-dessus des noyaux : `scheduler` et `mcp` (Railway), `ingest` (receveur autonome pour l'auto-hébergement, voir [infra/docker/](infra/docker/)) — [services/README.md](services/README.md) |
 | `apps/sync-synthetic` | Synchro synthétique → `syn_snapshot` (interface `SyntheticSource` : seed ou export mippoc) |
 | `apps/extension` | Extension navigateur MV3 (injection du SDK par domaine enregistré) |
