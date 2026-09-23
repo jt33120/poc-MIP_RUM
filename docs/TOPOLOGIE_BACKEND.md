@@ -121,3 +121,21 @@ et non « fuseau », pour ne pas affirmer une provenance qu'on n'a pas.
 Le rendre effectif demande de choisir : soit un receveur backend public qui
 devient le collecteur, soit un moyen de résoudre le pays depuis la console. Aucun
 des deux n'a été tranché.
+
+## Relevé du 23/09/2026
+
+Relevé en direct par l'API Railway (lecture seule), après la fusion de la vague 8
+(#277, commit `5f809cb`, 23/09 14:07 UTC) :
+
+- projet `mip-rum-backend`, environnement `production` : **deux services**, `mcp`
+  et `scheduler` — rien d'autre ; `ingest` reste absent ;
+- `mcp` : un domaine généré par Railway, aucun domaine personnalisé ;
+  `scheduler` : aucun domaine ;
+- la fusion a déclenché un vrai déploiement du `scheduler` (`29833b5b`, SUCCESS à
+  14:09) ; ses journaux portent à 14:08:52 `migration appliquée`
+  (`migration-v86.sql`, 85 ms) puis `migrations à jour` (`total 81, appliquées 1,
+  modifiées 1`). Le `mcp`, dont aucun chemin surveillé n'avait changé, a été sauté.
+
+Le pré-déploiement du `scheduler` applique donc toujours les migrations ; le
+« modifiées 1 » est toujours `schema.sql` (voir plus haut). Vercel n'a pas été
+relevé ce jour-là.

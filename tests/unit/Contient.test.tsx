@@ -173,7 +173,7 @@ describe("PS3 — le chemin de la mesure (TP7, côté SSR)", () => {
     expect(texte).toContain(
       "Le scheduler applique les migrations au pré-déploiement : constaté le 18/09/2026 dans les journaux du déploiement 03850b30.",
     );
-    expect(texte).toContain("Topologie relevée par les API Railway et Vercel le 18/09/2026, puis par l'API Railway le 21/09/2026.");
+    expect(texte).toContain("Topologie relevée par les API Railway et Vercel le 18/09/2026, puis par l'API Railway le 23/09/2026.");
   });
 });
 
