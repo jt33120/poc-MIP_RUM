@@ -105,7 +105,7 @@ describe("2 — les décomptes calculés sont ceux que le document écrit", () =
   it("le nombre de capacités", () => {
     const total = Number(/\*\*(\d+) capacités\*\*/.exec(section4)![1]);
     expect(CAPACITES.length).toBe(total);
-    expect(CAPACITES.length).toBe(49); // relevé du 18/09/2026 ; un nouveau relevé met à jour ce repère
+    expect(CAPACITES.length).toBe(49); // relevé du 23/09/2026 ; un nouveau relevé met à jour ce repère
   });
 
   it("la répartition des verdicts", () => {
@@ -122,9 +122,12 @@ describe("2 — les décomptes calculés sont ceux que le document écrit", () =
 
   it("date, commit et nombres de tests viennent du relevé", () => {
     expect(DOC.split("\n")[2]).toContain(SHA);
-    expect(RELEVE).toBe("18/09/2026");
-    expect(TESTS_UNITAIRES).toEqual({ fichiers: 168, tests: 2436 });
-    expect(TESTS_SQL).toEqual({ fichiers: 28, tests: 413 });
+    // Repères du relevé du 23/09/2026 sur 8a5f3d1 (P**.10) : ils ne changent qu'avec un nouveau relevé.
+    expect(RELEVE).toBe("23/09/2026");
+    expect(SHA).toBe("8a5f3d1");
+    expect(TESTS_UNITAIRES).toEqual({ fichiers: 266, tests: 3815 });
+    expect(TESTS_SQL).toEqual({ fichiers: 45, tests: 637 });
+    expect(compte("deploye_non_eprouve")).toBe(35); // 34 au 18/09 : F2 est passée « déployé, non éprouvé »
   });
 });
 
@@ -141,11 +144,16 @@ const CTX: ContexteControle = { capacites: CAPACITES, lignesDocument: DOC.split(
 
 // Cartes de fixture sur les VRAIES lignes du document : la répartition du § 8.2
 // (K1–K14), réduite à ses identifiants. Les cartes réelles arrivent avec P**.4.
+// K15 n'est pas dans le plan : le relevé du 23/09/2026 (P**.10) a fait passer F2
+// (« Vérifier les types ») à « déployé, non éprouvé », et la règle 1 du § 8.0 veut
+// alors une carte pour elle. Sa rédaction revient à P**.4 ; ici, seul son
+// identifiant compte.
 const REPARTITION: Record<string, string[]> = {
   K1: ["A1"], K2: ["A2"], K3: ["A7", "A8", "A9", "A10"], K4: ["A3"], K5: ["A5", "A6"],
   K6: ["B1", "B2", "B3", "B4"], K7: ["B5", "B6", "B7", "B8"], K8: ["B9"],
   K9: ["A4", "C5", "C6"], K10: ["C7", "C8"], K11: ["D1", "D2", "D3", "D4"], K12: ["D5"], K13: ["D6"],
   K14: ["E1", "E2", "E3"],
+  K15: ["F2"],
 };
 function cartesFixture(): CarteCapacite[] {
   return Object.entries(REPARTITION).map(([id, ids]) => ({
@@ -162,7 +170,7 @@ const RESTE: PointReste[] = [
 const carte = (cartes: CarteCapacite[], id: string) => cartes.find((c) => c.id === id)!;
 
 describe("3 — les cartes de « Ce qu'il sait faire » ne dépassent pas le document", () => {
-  it("la répartition du plan couvre exactement les 34 lignes « déployé, non éprouvé »", () => {
+  it("la répartition du plan, plus K15, couvre exactement les lignes « déployé, non éprouvé »", () => {
     expect(verifierCartes(cartesFixture(), RESTE, CTX)).toEqual([]);
   });
 
