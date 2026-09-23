@@ -187,8 +187,15 @@ export function RuleFields({
               <label className="flex min-w-0 items-baseline gap-1.5 text-xs text-ink-faint" title={modeRelease.raison}>
                 {/* Une règle de release existante, détection en échec : son mode reste
                     envoyé, et l'action la refuse au lieu de la convertir en seuil fixe
-                    (un radio désactivé n'est jamais envoyé). */}
-                {mode === "release" && <input type="hidden" name="mode" value="release" />}
+                    (un radio désactivé n'est jamais envoyé). Sa hausse tolérée part
+                    avec lui : sans `release_pct`, l'action retomberait sur +20 % et
+                    une hausse de 35 % serait réécrite en silence (V10). */}
+                {mode === "release" && (
+                  <>
+                    <input type="hidden" name="mode" value="release" />
+                    <input type="hidden" name="release_pct" value={hausse} />
+                  </>
+                )}
                 <input type="radio" name="mode" value="release" disabled className="shrink-0" data-testid="mode-release" />
                 <span className="min-w-0">
                   <span className="font-medium">Régression de release</span>{" "}

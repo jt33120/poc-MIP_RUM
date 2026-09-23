@@ -149,6 +149,25 @@ describe("F68 — RuleFields : « Régression de release » quand la base porte 
     expect(texte(edition)).toContain(RAISON_DETECTION_RELEASE);
     expect(/<input[^>]*value="threshold"[^>]*>/.exec(edition)?.[0] ?? "").not.toContain("checked");
   });
+
+  it("détection en échec sur une règle de release : sa hausse tolérée part avec son mode, jamais ramenée à +20 % (V10)", () => {
+    const edition = renderToStaticMarkup(
+      <RuleFields
+        apps={APPS}
+        rule={{ ...REGLE, mode: "release", threshold: 35 }}
+        modeRelease={{ disponible: false, raison: RAISON_DETECTION_RELEASE }}
+      />,
+    );
+    // Sans ce champ, `hausseTolereeDe` (actions.ts) retombe sur +20 % : un
+    // enregistrement réécrirait 35 % en 20 % sans rien dire.
+    expect(edition).toMatch(/<input type="hidden" name="release_pct" value="35"\/>/);
+    expect(edition.match(/name="release_pct"/g)).toHaveLength(1);
+    // Une règle d'un autre mode n'envoie aucune hausse de release.
+    const seuil = renderToStaticMarkup(
+      <RuleFields apps={APPS} rule={REGLE} modeRelease={{ disponible: false, raison: RAISON_DETECTION_RELEASE }} />,
+    );
+    expect(seuil).not.toContain('name="release_pct"');
+  });
 });
 
 describe("F68 — RuleRow d'une règle de release : ce qu'elle a comparé", () => {
