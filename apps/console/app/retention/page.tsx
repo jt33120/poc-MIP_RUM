@@ -227,6 +227,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                     valueName="Rétention"
                     valueUnit="%"
                     domain={[0, 100]}
+                    ariaLabel={`Rétention pondérée par semaine depuis l'arrivée, de S+0 à S+${Math.max(0, colonnes - 1)}, fenêtre de ${weeks} semaines UTC ; un point sans cohorte complète est un trou`}
                   />
                 </Figure>
               </SectionErreur>
@@ -280,6 +281,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                             valueUnit="%"
                             domain={[0, 100]}
                             series={APPAREILS.map((a) => ({ cle: a.cle, libelle: a.libelle, role: "categorie" as const }))}
+                            ariaLabel={`Rétention pondérée par appareil (${APPAREILS.map((a) => a.libelle.toLowerCase()).join(", ")}) et par semaine depuis l'arrivée, fenêtre de ${weeks} semaines UTC`}
                           />
                           <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
                             {APPAREILS.map((a, i) => (

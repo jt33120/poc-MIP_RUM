@@ -26,7 +26,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { DetailPanel, type OngletDetail, type PuceDetail } from "@/components/DetailPanel";
 import { ExperienceMap } from "@/components/map/ExperienceMap";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
-import { Figure } from "@/components/charts/Figure";
+import { Figure, TableAlternative } from "@/components/charts/Figure";
 import { KpiLibelle } from "@/components/charts/KpiLibelle";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
@@ -59,7 +59,7 @@ import { mapEdges, mapNodeSerie, mapNodes, mapPages, type MapNodeRow } from "@/l
 import { traceCoverage } from "@/lib/queries-tracing";
 import { samplingSessions } from "@/lib/queries-sessions";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
-import { grilleIso, type PointSerie } from "@/lib/series";
+import { grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, lireEtatDeVue, ligneIgnoree } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
@@ -674,21 +674,37 @@ function PanneauNoeud({
           ) : points.every((p) => p.appels === 0) ? (
             <EtatSurface etat={{ kind: "vide", population: "mesure sur ce nœud", plage }} compact />
           ) : (
-            <ThresholdSeries
-              grille={grille}
-              points={points}
-              series={[
-                { cle: "p75", libelle: "Latence p75", role: "principale", effectifCle: "appels" },
-                { cle: "appels", libelle: "Appels", role: "categorie", categorieIndex: 0, forme: "barres", additive: true },
-              ]}
-              format="ms"
-              faibleSous={5}
-              seauSecondes={seauSecondes}
-              fuseau="UTC"
-              zoomHref={zoom}
-              hauteur={180}
-              ariaLabel={`Latence p75 et volume d'appels de ${panneau.route} par seau de ${bucketLabel}, ${plage}`}
-            />
+            // F54 (§ 3.9) : la série avait son nom (`role="img"`) mais pas son
+            // alternative — hors d'une `Figure`, rien ne la portait. Mêmes lignes que
+            // le dessin : un seau de la grille par ligne, zéros d'appels compris.
+            <SectionErreur titre="Série du nœud">
+              <ThresholdSeries
+                grille={grille}
+                points={points}
+                series={[
+                  { cle: "p75", libelle: "Latence p75", role: "principale", effectifCle: "appels" },
+                  { cle: "appels", libelle: "Appels", role: "categorie", categorieIndex: 0, forme: "barres", additive: true },
+                ]}
+                format="ms"
+                faibleSous={5}
+                seauSecondes={seauSecondes}
+                fuseau="UTC"
+                zoomHref={zoom}
+                hauteur={180}
+                ariaLabel={`Latence p75 et volume d'appels de ${panneau.route} par seau de ${bucketLabel}, ${plage}`}
+              />
+              <TableAlternative
+                alternative={{
+                  legende: `Latence p75 et appels de ${panneau.route} par seau de ${bucketLabel} (UTC), ${plage}`,
+                  colonnes: ["Seau (UTC)", "Latence p75", "Appels"],
+                  lignes: serie.data.map((p) => [
+                    libelleSeauComplet(p.t, seauSecondes, "UTC"),
+                    formater("ms", p.p75),
+                    formater("count", p.appels),
+                  ]),
+                }}
+              />
+            </SectionErreur>
           )}
         </section>
 
