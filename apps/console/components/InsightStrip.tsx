@@ -12,8 +12,9 @@
 //   3. LES STATUTS DES DÉTECTEURS (P*.3) SONT TOUJOURS VISIBLES. Un détecteur qui n'a
 //      pas pu tester (trop peu d'historique) le dit, même quand la liste est repliée.
 //
-// Aucun lien ne porte `fired=` : c'est le NOMBRE d'alertes émises par « Évaluer
-// maintenant », pas un identifiant (§ 3.1). Une alerte précise se désigne par `evt`.
+// Aucun lien ne porte le paramètre `fired` : c'est le NOMBRE d'alertes émises par
+// « Évaluer maintenant », pas un identifiant (§ 3.1). Une alerte précise se désigne
+// par `evt`.
 import Link from "next/link";
 
 export type TypeConstat = "anomalie" | "regression" | "alerte" | "erreur_nouvelle" | "surrepresentation" | "rupture";
