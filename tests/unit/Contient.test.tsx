@@ -2,8 +2,10 @@
 // en rendu SSR réel (`renderToStaticMarkup`).
 //
 // Ce que ces tests tiennent :
-//   - les capteurs ne sont plus un `h2` : la partie le porte, ils sont un bloc `h3` ;
-//   - les textes exacts du plan, avec des versions LUES dans les paquets ;
+//   - la hiérarchie : la partie porte le seul `h2`, ses blocs des `h3`, dans l'ordre
+//     du plan ; les capteurs ne sont plus un `h2` ;
+//   - les textes exacts du plan, et ceux qu'il a fallu réécrire parce que le relevé
+//     du 23/09/2026 les avait rendus faux, avec des valeurs CALCULÉES ;
 //   - la topologie : `role="img"`, libellé, alternative textuelle (TP7, côté SSR) ;
 //   - l'hébergement : une ligne par hébergeur de lib/legal.ts, et la phrase du plan ;
 //   - les écrans : la liste de la navigation, du texte pour un visiteur, des liens
@@ -17,8 +19,10 @@ import { Contient } from "@/components/presentation/Contient";
 import { EcransConsole, categoriesMontrees } from "@/components/presentation/EcransConsole";
 import { Topologie } from "@/components/presentation/Topologie";
 import type { SessionUser } from "@/lib/auth";
-import { RELEVE } from "@/lib/couverture";
+import { RELEVE, TESTS_SQL, TESTS_UNITAIRES } from "@/lib/couverture";
+import { FAMILLES_API_V1, OUTILS_MCP, RESERVES_CHAINE } from "@/lib/presentation-contient";
 import { ARIA_TOPOLOGIE, HEBERGEMENT, PIECES } from "@/lib/presentation-topologie";
+import { REPLAY_GZIP_KO, SDK_POIDS_TEXTE, koTexte } from "@/lib/sdk-poids";
 import { EXT_VERSION } from "@/lib/specs";
 import { RN_VERSION } from "@/lib/versions";
 
@@ -41,6 +45,9 @@ const lisible = (html: string) =>
 /** Les cellules d'une rangée de tableau, une par une. */
 const cellules = (rangee: string) => [...rangee.matchAll(/<t[hd][^>]*>(.*?)<\/t[hd]>/gs)].map((m) => lisible(m[1]).trim());
 
+/** Un nombre tel que la page l'écrit, espaces fines normalisées. */
+const nombre = (n: number) => n.toLocaleString("fr-FR").replace(/[\u00a0\u202f]/g, " ");
+
 const ADMIN: SessionUser = { email: "a@mip.test", role: "admin", apps: null };
 const VIEWER: SessionUser = { ...ADMIN, role: "viewer" };
 
@@ -51,6 +58,38 @@ const connecte = renderToStaticMarkup(<Contient user={ADMIN} />);
 function titres(html: string): [number, string][] {
   return [...html.matchAll(/<h([2-5])[^>]*>(.*?)<\/h\1>/g)].map((m) => [Number(m[1]), lisible(m[2]).trim()]);
 }
+
+describe("la partie : un h2, ses blocs en h3, dans l'ordre du plan", () => {
+  it("visiteur : capteurs, chemin, hébergement, écrans, état de la chaîne", () => {
+    const t = titres(visiteur);
+    expect(t.filter(([n]) => n === 2)).toEqual([[2, "Ce qu'il contient"]]);
+    expect(t.filter(([n]) => n === 3).map(([, x]) => x)).toEqual([
+      "Extension navigateur ou SDK embarqué",
+      "Le chemin de la mesure",
+      "Où sont les données, et sous quel droit",
+      "Les écrans de la console",
+      "Autour de la console, et l'état de la chaîne",
+    ]);
+  });
+
+  it("connecté : « Brancher une application » sous les écrans, avant l'état de la chaîne", () => {
+    const h3 = titres(connecte)
+      .filter(([n]) => n === 3)
+      .map(([, x]) => x);
+    expect(h3.slice(3, 6)).toEqual([
+      "Les écrans de la console",
+      "Brancher une application",
+      "Autour de la console, et l'état de la chaîne",
+    ]);
+  });
+
+  it("chaque bloc est une section nommée par son titre", () => {
+    for (const id of ["contient-capteurs", "contient-topologie", "contient-hebergement", "contient-ecrans", "contient-chaine"]) {
+      expect(visiteur, id).toContain(`<section id="${id}" aria-labelledby="${id}-titre"`);
+      expect(visiteur, id).toMatch(new RegExp(`<h3 id="${id}-titre"`));
+    }
+  });
+});
 
 describe("PS2 — les capteurs", () => {
   const html = renderToStaticMarkup(<Capteurs />);
@@ -214,5 +253,41 @@ describe("« Brancher une application » : connecté seulement", () => {
     expect(html).toContain('aria-label="Tutoriel : ajouter un client"');
     expect(html).not.toContain("/admin/customers");
     expect(lisible(html)).toContain("Demandez à un administrateur de créer le client.");
+  });
+});
+
+describe("PS6 — autour de la console, et l'état de la chaîne", () => {
+  const texte = lisible(visiteur);
+
+  it("accès programmatiques : les nombres de E1 et E2", () => {
+    expect(texte).toContain(
+      `Une API publique en lecture (${FAMILLES_API_V1} familles de routes, description OpenAPI servie sur /api-docs) et un serveur MCP en lecture seule (${OUTILS_MCP} outils). Les jetons d'API ne donnent aucun droit d'écriture.`,
+    );
+  });
+
+  it("l'état de la chaîne : daté du relevé, décomptes du document, poids mesurés", () => {
+    expect(texte).toContain(`L'état de la chaîne, relevé le ${RELEVE}`);
+    expect(texte).toContain(
+      `${nombre(TESTS_UNITAIRES.tests)} tests unitaires (${nombre(TESTS_UNITAIRES.fichiers)} fichiers) et ${nombre(TESTS_SQL.tests)} tests SQL (${nombre(TESTS_SQL.fichiers)} fichiers), verts sur un poste de développement ; seuls les deux bancs de mesure de la suite SQL, qui lisent une base préparée à part, n'y ont pas été joués.`,
+    );
+    expect(texte).toContain(
+      `SDK cœur : ${SDK_POIDS_TEXTE} ; le module de rejeu (${koTexte(REPLAY_GZIP_KO)} ko gzip) n'est chargé que si le rejeu est activé.`,
+    );
+  });
+
+  it("ce que ces chiffres ne disent pas : les réserves de F1 à F3, et plus celles du 18/09", () => {
+    expect(texte).toContain(
+      `Ce que ces chiffres ne disent pas : ${RESERVES_CHAINE.map((r) => r.texte).join(" ; ")}. Tester sur un poste ne dit rien du comportement sur du trafic réel.`,
+    );
+    // Faux depuis le relevé du 23/09 : la CI type la console et les paquets publiés,
+    // et la fenêtre v82→v83 y tourne.
+    expect(texte).not.toContain("la CI ne vérifie pas les types,");
+    expect(texte).not.toContain("un test SQL échoue");
+  });
+
+  it("le banc ClickHouse, daté et situé", () => {
+    expect(texte).toContain(
+      "Pour les gros volumes, un chemin ClickHouse a été mesuré en local le 11/06/2026 : mêmes p75 à la milliseconde près, stockage 15 fois plus compact à données identiques. Ce banc n'a pas été rejoué depuis la migration vers Neon.",
+    );
   });
 });

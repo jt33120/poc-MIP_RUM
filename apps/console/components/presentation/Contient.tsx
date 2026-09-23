@@ -4,7 +4,12 @@
 // capteurs (Capteurs.tsx, PS2), le chemin de la mesure (Topologie.tsx, PS3),
 // l'hébergement et son droit (PS4, ici), les écrans de la console
 // (EcransConsole.tsx, PS5), puis, pour un connecté seulement, « Brancher une
-// application ».
+// application », et enfin les accès programmatiques et l'état de la chaîne (PS6, ici).
+//
+// RÈGLE DE LA PARTIE : contenir n'est pas savoir faire. Rien ici n'est présenté
+// comme une capacité (c'est la partie 2) ; chaque chiffre vient du document de
+// couverture (lib/couverture.ts, lib/presentation-contient.ts) ou d'un fichier du
+// dépôt qui le mesure (lib/sdk-poids.ts), avec sa date. Aucun n'est tapé ici.
 //
 // `user` ne change que deux choses : les écrans deviennent des liens, et le
 // carrousel « Brancher une application » apparaît. Landing le transmet ; la partie
@@ -16,9 +21,22 @@ import { Partie } from "@/components/presentation/Partie";
 import { SousPartie } from "@/components/presentation/SousPartie";
 import { Topologie } from "@/components/presentation/Topologie";
 import type { SessionUser } from "@/lib/auth";
+import { RELEVE, TESTS_SQL, TESTS_UNITAIRES } from "@/lib/couverture";
+import {
+  BANC_CLICKHOUSE,
+  FAMILLES_API_V1,
+  OUTILS_MCP,
+  RESERVES_CHAINE,
+} from "@/lib/presentation-contient";
 import { HEBERGEMENT } from "@/lib/presentation-topologie";
+import { REPLAY_GZIP_KO, SDK_POIDS_TEXTE, koTexte } from "@/lib/sdk-poids";
 
+const CODE = "rounded bg-app/70 px-1 py-0.5 font-mono text-[12.5px] text-ink";
+const TITRE_CARTE = "text-sm font-semibold text-ink";
 const CELLULE = "px-2 py-2.5 align-top sm:px-4";
+
+/** Un nombre écrit à la française : 3815 → « 3 815 ». */
+const nombre = (n: number) => n.toLocaleString("fr-FR");
 
 /**
  * PS4 — Où sont les données, et sous quel droit. Société, région et lieu sont LUS
@@ -66,6 +84,66 @@ function Hebergement() {
   );
 }
 
+/**
+ * PS6 — Autour de la console, et l'état de la chaîne. Deux colonnes, une seule
+ * sous `md`.
+ *
+ * Accès programmatiques : E1, E2 (RUM_PARITY_STATUS.md:203-204) ; les deux nombres
+ * sont lus dans leurs cellules « Preuve », et tus s'ils n'y sont plus.
+ * État de la chaîne : décomptes du relevé (§ 2 du document, lib/couverture.ts),
+ * poids mesurés (lib/sdk-poids.ts), et réserves tirées des lignes F1 à F3 — chacune
+ * gardée par le verdict qu'elle suppose (lib/presentation-contient.ts).
+ * Stockage : banc ClickHouse local, infra/clickhouse.notes.md:7, :14-15, :25-26.
+ */
+function Chaine() {
+  return (
+    <SousPartie id="contient-chaine" titre="Autour de la console, et l'état de la chaîne">
+      <div className="mt-6 grid gap-6 md:grid-cols-2">
+        <div className="min-w-0 space-y-6">
+          <div className="card p-5" data-testid="acces-programmatiques">
+            <h4 className={TITRE_CARTE}>Accès programmatiques</h4>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              Une API publique en lecture (
+              {FAMILLES_API_V1 != null && <>{FAMILLES_API_V1} familles de routes, </>}
+              description OpenAPI servie sur <code className={CODE}>/api-docs</code>) et un serveur MCP
+              en lecture seule{OUTILS_MCP != null && <> ({OUTILS_MCP} outils)</>}. Les jetons
+              d&apos;API ne donnent aucun droit d&apos;écriture.
+            </p>
+          </div>
+          <div className="card p-5" data-testid="stockage">
+            <h4 className={TITRE_CARTE}>Stockage</h4>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              Pour les gros volumes, un chemin ClickHouse a été mesuré en local le {BANC_CLICKHOUSE.le} :
+              mêmes p75 à la milliseconde près, stockage {BANC_CLICKHOUSE.compacite} fois plus compact à
+              données identiques. Ce banc n&apos;a pas été rejoué depuis la migration vers Neon.
+            </p>
+          </div>
+        </div>
+
+        <div className="card min-w-0 p-5" data-testid="etat-chaine">
+          <h4 className={TITRE_CARTE}>L&apos;état de la chaîne, relevé le {RELEVE}</h4>
+          <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-relaxed text-ink-soft">
+            <li>
+              {nombre(TESTS_UNITAIRES.tests)} tests unitaires ({nombre(TESTS_UNITAIRES.fichiers)} fichiers)
+              et {nombre(TESTS_SQL.tests)} tests SQL ({nombre(TESTS_SQL.fichiers)} fichiers), verts sur
+              un poste de développement ; seuls les deux bancs de mesure de la suite SQL, qui lisent une
+              base préparée à part, n&apos;y ont pas été joués.
+            </li>
+            <li>
+              SDK cœur : {SDK_POIDS_TEXTE} ; le module de rejeu ({koTexte(REPLAY_GZIP_KO)} ko gzip)
+              n&apos;est chargé que si le rejeu est activé.
+            </li>
+            <li data-testid="etat-chaine-reserves">
+              Ce que ces chiffres ne disent pas : {RESERVES_CHAINE.map((r) => r.texte).join(" ; ")}.
+              Tester sur un poste ne dit rien du comportement sur du trafic réel.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </SousPartie>
+  );
+}
+
 export function Contient({ user }: { user: SessionUser | null }) {
   return (
     <Partie
@@ -92,6 +170,7 @@ export function Contient({ user }: { user: SessionUser | null }) {
             </div>
           </SousPartie>
         )}
+        <Chaine />
       </div>
     </Partie>
   );
