@@ -1641,14 +1641,19 @@ test.describe("F17 — Panneau route", () => {
 
   test("clavier : le focus va au titre, Échap ferme sans perdre les réglages", async ({ page }) => {
     await login(page);
-    await page.goto(`${PANNEAU_F17}&vital=LCP&tri=volume`, { waitUntil: "domcontentloaded" });
+    // Une plage qui n'est PAS celle par défaut : les liens n'écrivent pas `period=24h`,
+    // le défaut (§ 3.1) — son absence après fermeture ne prouverait rien de la plage.
+    await page.goto(
+      `${consoleUrl}/pages?app=${APP_F17}&period=7d&panel=${encodeURIComponent(PANEL_F17)}&vital=LCP&tri=volume`,
+      { waitUntil: "domcontentloaded" },
+    );
     const titre = page.locator("#panneau-detail-titre");
     await expect(titre).toBeFocused({ timeout: 15_000 });
     await page.keyboard.press("Escape");
     await page.waitForURL((u) => u.searchParams.get("panel") === null, { timeout: 15_000 });
     const sp = new URL(page.url()).searchParams;
     // La plage, la population ET les réglages de vue survivent à la fermeture.
-    expect([sp.get("app"), sp.get("period"), sp.get("vital"), sp.get("tri")]).toEqual([APP_F17, "24h", "LCP", "volume"]);
+    expect([sp.get("app"), sp.get("period"), sp.get("vital"), sp.get("tri")]).toEqual([APP_F17, "7d", "LCP", "volume"]);
     await expect(page.getByTestId("detail-panel")).toHaveCount(0);
   });
 
