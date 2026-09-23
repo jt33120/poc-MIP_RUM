@@ -116,7 +116,8 @@ import pgPss3 from "pg";
 import { compteDedie as compteDediePss3 } from "./helpers/compte-dedie";
 
 test.describe("P**.3 — Partie 1 : ce qu'il contient", () => {
-  const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
+  // Toute navigation passe par `consoleUrl`, la constante de tête du fichier : pas de
+  // `baseURL` dans playwright.config.ts, un chemin relatif serait refusé.
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("TP7 — la topologie est une image nommée, doublée d'une alternative textuelle", async ({ page }) => {
