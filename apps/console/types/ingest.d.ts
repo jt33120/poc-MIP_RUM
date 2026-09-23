@@ -440,6 +440,7 @@ declare module "ingest/shared/cors.mjs" {
 declare module "ingest/shared/limits.mjs" {
   export const MAX_BODY_BYTES: number;
   export const MAX_SPANS_PER_REQUEST: number;
+  export const MAX_REPLAY_INFLATED_BYTES: number;
   export function bodyTooLarge(
     contentLength: string | number | null | undefined,
     max?: number,

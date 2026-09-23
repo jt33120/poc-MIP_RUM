@@ -1,6 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["fra1"],
-  "crons": [{ "path": "/api/cron/daily", "schedule": "17 3 * * *" }],
   "ignoreCommand": "git rev-parse HEAD^ >/dev/null 2>&1 || exit 1; git diff --quiet HEAD^ HEAD -- ':(top)' ':(top,exclude)docs/**' ':(top,exclude)_bmad-output/**' ':(top,exclude)_bmad/**' ':(top,exclude).claude/**' ':(top,exclude)*.md'"
 }

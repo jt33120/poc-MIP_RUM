@@ -21,10 +21,15 @@
 //
 // Les fonctions SQL, elles, ne bougent pas. Ce qui change est le DÉCLENCHEUR.
 //
-// DEUX DÉCLENCHEURS À LA FOIS. Le scheduler Railway et le cron GitHub (via la
-// route /api/cron) peuvent lancer la même cadence au même instant : chaque étape
-// reste idempotente sous concurrence, avec des verrous de TRANSACTION seulement
-// (le pooler Neon perd un verrou de session), et tient dans la minute de la route.
+// UN SEUL DÉCLENCHEUR depuis le 23/09/2026 : le service `scheduler`, qui prend un
+// bail par cadence. Le cron GitHub et Vercel Cron passaient par `/api/cron/*`,
+// sans bail, et pouvaient lancer la même cadence au même instant ; ces routes
+// répondent 410 et le rejeu manuel passe par `services/scheduler/run-once.mjs`,
+// qui prend le même bail.
+//
+// L'idempotence des étapes reste exigée — un redéploiement qui chevauche, une
+// montée à deux répliques — avec des verrous de TRANSACTION seulement, puisque le
+// pooler Neon perd un verrou de session.
 import { importerNotesHistoriques } from "../lib/error-issue-workflow.mjs";
 
 /**

@@ -6,10 +6,15 @@
 // `scheduler` déployé sur Railway. Deux copies auraient divergé sans que rien
 // ne le signale — les deux auraient « marché ».
 //
-// POURQUOI CES ROUTES SUBSISTENT alors que le scheduler les remplace : elles
-// sont le filet. Tant que le scheduler n'a pas fait ses preuves, un
-// déclenchement manuel (workflow_dispatch) ou Vercel Cron reste possible, et
-// le verrou consultatif côté scheduler empêche un double passage simultané.
+// CE MODULE N'EST PLUS APPELÉ (23/09/2026). Les routes `/api/cron/*` répondent
+// 410 : elles appelaient `travaux()` SANS prendre de bail, et le commentaire qui
+// tenait ici affirmait le contraire — « le verrou consultatif côté scheduler
+// empêche un double passage ». C'était faux dans les deux sens : le scheduler
+// utilise un bail (une ligne avec expiration), pas un verrou consultatif, et ce
+// bail ne protège que ceux qui le demandent. Ces routes ne le demandaient pas.
+//
+// Le déclenchement manuel passe par `services/scheduler/run-once.mjs`, qui prend
+// le bail. Ce fichier disparaît avec les routes.
 import { travaux } from "ingest/jobs/planifie.mjs";
 import { createLogger } from "ingest/shared/log.mjs";
 import { pool } from "./db";

@@ -8,6 +8,7 @@
 // rejetée, clé exigée selon REQUIRE_API_KEY, rate limit par app.
 import { gunzipSync } from "node:zlib";
 import { writeReplayChunk } from "ingest/lib/pg-ingest.mjs";
+import { MAX_REPLAY_INFLATED_BYTES } from "ingest/shared/limits.mjs";
 import { REPLAY_ALLOW_HEADERS } from "ingest/shared/cors.mjs";
 import { withRetry } from "ingest/shared/retry.mjs";
 import { pool } from "@/lib/db";
@@ -52,9 +53,14 @@ export async function POST(req: Request) {
     }
 
     // gunzip de contrôle : compte les events et rejette les corps invalides.
+    // La borne de SORTIE est obligatoire : le plafond d'entrée (2 Mio) ne dit rien
+    // de la taille décompressée, et l'inflation est synchrone. Au-delà, RangeError
+    // → 400, comme un corps mal formé.
     let eventsCount: number;
     try {
-      const events = JSON.parse(gunzipSync(body).toString("utf8"));
+      const events = JSON.parse(
+        gunzipSync(body, { maxOutputLength: MAX_REPLAY_INFLATED_BYTES }).toString("utf8"),
+      );
       eventsCount = Array.isArray(events) ? events.length : 0;
     } catch {
       return json({ error: "body must be gzipped JSON" }, 400, cors);
