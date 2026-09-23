@@ -6,7 +6,7 @@ Cloud Act** (sur ton hébergement / OVH), et disposer de **logs de conteneur**
 pour le dogfooding.
 
 ```
-navigateur / SDK ──(OTLP /v1/traces)──▶  collector (Node)  ──▶  db (Postgres 15)
+navigateur / SDK ──(OTLP /v1/traces)──▶  collector (Node)  ──▶  db (Postgres 17)
                                           │ JSON logs stdout
                                           └▶ docker compose logs -f collector
 ```
@@ -26,7 +26,7 @@ propre. On l'empaquette juste pour tourner en conteneur.
 > ⚠️ **Seul l'emballage Docker reste à confirmer** (build de l'image + orchestration
 > compose : healthchecks, `depends_on`, volumes) — **non exécuté** ici car le daemon
 > Docker est indisponible dans l'environnement de dev. Versions **épinglées**
-> (`postgres:15`, `node:24-bookworm-slim`, `pg` 8.21.0). Signale-moi toute erreur au premier `up`.
+> (`postgres:17`, `node:24-bookworm-slim`, `pg` 8.21.0). Signale-moi toute erreur au premier `up`.
 
 ---
 
@@ -109,7 +109,7 @@ sur un Postgres local. `ON_ERROR_STOP=1` → pas de schéma partiel silencieux.
 
 ## Rétention (TTL)
 
-`pg_cron` n'est pas présent sur `postgres:15` → la purge automatique est sautée.
+`pg_cron` n'est pas présent sur `postgres:17` → la purge automatique est sautée.
 C'est le travail quotidien du `scheduler`, qui partage l'image du collecteur ;
 pour une passe ponctuelle, sous bail :
 

@@ -52,7 +52,7 @@ Base, ingestion, démo et console sur le poste, sans secret : les programmes se 
 
 ```bash
 pnpm install --frozen-lockfile
-docker compose -f infra/docker/docker-compose.yml up -d --wait db   # Postgres 15 sur :5433, base mip_rum : schema.sql puis toutes les migrations (infra/docker/db/initdb.sh)
+docker compose -f infra/docker/docker-compose.yml up -d --wait db   # Postgres 17 sur :5433, base mip_rum : schema.sql puis toutes les migrations (infra/docker/db/initdb.sh)
 pnpm build:sdk                                                  # SDK web, React Native, agent Node
 node scripts/seed-admin.mjs                                     # compte admin local : mot de passe affiché une fois, régénéré à chaque appel
 node services/collector/dev-server.mjs                          # ingestion locale :4318

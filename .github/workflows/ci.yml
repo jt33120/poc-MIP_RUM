@@ -96,8 +96,13 @@ jobs:
       # même URL que les défauts locaux (dev-server, tests, console) : host 5433 -> conteneur 5432
       DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum
     services:
+      # POSTGRES 17, LA VERSION DE PRODUCTION (Neon, 17.11 au 23/09/2026). La CI
+      # tournait sous 15 : ce que 16 et 17 ont changé au planificateur et au
+      # moteur n'y était pas exercé, et une migration « rejouable de 15 à 17 »
+      # n'était prouvée que sur la plus ancienne des deux bornes. L'étiquette
+      # majeure suffit : c'est le moteur qu'on aligne, pas le correctif mineur.
       postgres:
-        image: postgres:15
+        image: postgres:17
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: mip_rum

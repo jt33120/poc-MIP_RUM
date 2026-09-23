@@ -23,7 +23,10 @@ x-logging: &jsonlog
 
 services:
   db:
-    image: postgres:15
+    # 17, comme la production (Neon 17.11) et la CI (P1). Un volume `db-data`
+    # initialisé par une version antérieure ne démarre PAS sous 17 (format de
+    # répertoire incompatible) : `docker compose down -v` puis `up` le recrée.
+    image: postgres:17
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
