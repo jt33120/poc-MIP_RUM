@@ -87,6 +87,9 @@ importers:
 
   apps/extension:
     devDependencies:
+      '@mip/rum-sdk':
+        specifier: workspace:*
+        version: link:../../packages/rum-sdk
       '@types/chrome':
         specifier: ^0.0.280
         version: 0.0.280

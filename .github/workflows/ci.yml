@@ -73,13 +73,21 @@ jobs:
       # compilé faux pendant plusieurs lots sans qu'aucun contrôle ne rougisse, et
       # seul un lancement manuel l'a révélé. Un type faux ne casse pas le bundle
       # esbuild, qui efface les types — il casse l'application cliente qui l'importe.
-      - name: Typage des paquets publiés
+      #
+      # P1 — l'extension y entre (R9, `F2` de docs/RUM_PARITY_STATUS.md) : écrite en
+      # TypeScript, elle n'était typée par AUCUN workflow — verte à la main le
+      # 23/09, rien ne le garantissait à sa modification suivante.
+      # Reste HORS typage, et c'est connu : le JavaScript du backend
+      # (`packages/backend`, `packages/db`, `packages/mcp-tools`, `services/*`),
+      # en `.mjs` sans tsconfig ni `checkJs`. Ses JSDoc ne sont vérifiés par rien.
+      - name: Typage des paquets publiés et de l'extension
         run: |
           pnpm --filter @mip/rum-core exec tsc --noEmit
           pnpm --filter @mip/rum-sdk exec tsc --noEmit
           pnpm --filter @mip/rum-mobile exec tsc --noEmit
           pnpm --filter @mip/agent-node exec tsc --noEmit
           pnpm --filter console typecheck
+          pnpm --filter extension typecheck
 
       - name: Tests unitaires (vitest)
         run: pnpm test:unit
@@ -87,6 +95,48 @@ jobs:
       # v0.4 — middleware FastAPI de tracing (stdlib pur : aucun pip install requis)
       - name: Tests middleware Python (unittest)
         run: python3 -m unittest discover -s examples/integrations/fastapi -v
+
+  # R9 — CONSTRUIRE LE DÉPÔT COMME UN NOUVEL ARRIVANT LE FERAIT.
+  #
+  # `pnpm -r build` (le script racine `build`) échouait sur un dépôt fraîchement
+  # installé : `apps/extension` copie `packages/rum-sdk/dist/mip-rum.js` sans
+  # déclarer de dépendance vers `@mip/rum-sdk`, donc pnpm n'avait aucune raison
+  # de construire le SDK d'abord (`ENOENT … rum-sdk/dist/mip-rum.js`, § 8.3 de
+  # docs/RUM_PARITY_STATUS.md). Le job `unit` ne pouvait pas le voir : il appelle
+  # `pnpm build:sdk` AVANT tout le reste, et masquait ainsi l'ordre manquant.
+  # La dépendance est désormais déclarée (`apps/extension/package.json`) ; ce
+  # job garde la correction en jouant la séquence d'un clone neuf, SANS
+  # `pnpm build:sdk` préalable — l'ajouter ici annulerait le job.
+  build-propre:
+    name: Construction depuis un dépôt propre
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install (lockfile gelé)
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm -r build, sans build:sdk préalable
+        run: pnpm -r build
+
+      # Une construction propre doit REPRODUIRE ce qui est versionné, pas le
+      # réécrire : `apps/extension/vendor/` est committé (l'extension se charge
+      # « unpacked »), et la console sert des copies du SDK depuis `public/`.
+      # Un fichier modifié ici est un artefact committé qui dérive de sa source.
+      - name: Rien de versionné n'a changé
+        run: |
+          if ! git diff --exit-code --stat; then
+            echo "::error::pnpm -r build a modifié des fichiers versionnés : un artefact committé dérive de sa source"
+            exit 1
+          fi
 
   e2e:
     name: E2E Playwright (Postgres service)
