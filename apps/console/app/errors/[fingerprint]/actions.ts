@@ -1,8 +1,11 @@
 "use server";
 // Server action — triage d'un groupe d'erreurs (résolu / ignoré / rouvert).
-// Accessible à tout utilisateur connecté ayant accès à l'app du groupe (pas
-// réservé admin) ; tracé dans audit_log.
-import { revalidatePath } from "next/cache";
+// Réservée à une session d'ADMINISTRATION hors démo, dans le périmètre de l'app du
+// groupe ; tracée dans audit_log. Elle était ouverte à tout connecté (choix P1),
+// alors que depuis F20 l'écran ne rend plus ses boutons à un viewer ni à la démo
+// (V9) : la protection n'était plus que visuelle, et une session de démonstration
+// — publique — pouvait écrire par un POST direct. Même prédicat que la page.
+import { revalidatePath } from "@/lib/next-cache";
 import { getUser } from "@/lib/auth";
 import { q } from "@/lib/db";
 import { authorizedAppsOf } from "@/lib/query-contract";
@@ -10,7 +13,7 @@ import { ERROR_STATUSES, setErrorStatus, type ErrorStatus } from "@/lib/queries-
 
 export async function setErrorStatusAction(fd: FormData): Promise<void> {
   const user = await getUser();
-  if (!user) return;
+  if (!user || user.role !== "admin" || user.demo) return;
 
   const appId = String(fd.get("app_id") ?? "").trim();
   const fingerprint = String(fd.get("fingerprint") ?? "").trim();
