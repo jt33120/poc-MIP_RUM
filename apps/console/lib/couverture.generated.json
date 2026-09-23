@@ -8,7 +8,11 @@
   },
   "testsSql": {
     "fichiers": 45,
-    "tests": 637
+    "tests": 637,
+    "ignores": {
+      "fichiers": 2,
+      "tests": 13
+    }
   },
   "familles": [
     "Suivi des erreurs",

@@ -18,6 +18,7 @@ import {
   RELEVE,
   SHA,
   TESTS_SQL,
+  TESTS_SQL_VERTS,
   TESTS_UNITAIRES,
   VERDICTS,
   compte,
@@ -62,7 +63,7 @@ describe("0 — l'extracteur découpe les cellules comme le document les écrit"
     expect(x.releve).toBe("03/03/2026");
     expect(x.sha).toBe("abc1234");
     expect(x.testsUnitaires).toEqual({ fichiers: 12, tests: 1234 });
-    expect(x.testsSql).toEqual({ fichiers: 3, tests: 45 });
+    expect(x.testsSql).toEqual({ fichiers: 3, tests: 45, ignores: { fichiers: 1, tests: 4 } });
     expect(x.capacites.map((c: { id: string }) => c.id)).toEqual(["A1", "A2"]);
     const numeroA1 = FIXTURE.split("\n").findIndex((l) => l.startsWith("| A1 ")) + 1;
     expect(x.capacites[0]).toMatchObject({ famille: "Cellules piégées", verdict: "deploye_non_eprouve", ligne: numeroA1 });
@@ -71,6 +72,19 @@ describe("0 — l'extracteur découpe les cellules comme le document les écrit"
   it("le décompte unitaire vient de la ligne de la commande vitest, pas d'un journal cité", () => {
     // La fixture cite d'abord « **22 fichiers, 314 tests verts » : il ne doit pas être retenu.
     expect(extraireCouverture(FIXTURE).testsUnitaires).toEqual({ fichiers: 12, tests: 1234 });
+  });
+
+  it("les tests SQL ignorés sont lus sur la ligne du total ; sans eux, ou sans suite verte, l'extraction échoue", () => {
+    const numeroSql = FIXTURE.split("\n").findIndex((l) => l.includes("au total")) + 1;
+    // Ne rien dire des ignorés n'est pas en déclarer zéro.
+    const sansIgnores = FIXTURE.replace(", dont 1 fichier et 4 tests ignorés : un banc", "");
+    expect(() => extraireCouverture(sansIgnores)).toThrow(`${DOCUMENT}:${numeroSql} — décompte des tests SQL ignorés introuvable`);
+    // Une suite qui n'est pas dite verte : ses verts ne se déduisent pas du total.
+    const rouge = FIXTURE.replace("**vert** —", "**rouge** —");
+    expect(() => extraireCouverture(rouge)).toThrow(`${DOCUMENT}:${numeroSql} — la suite SQL n'y est pas dite **vert**`);
+    // Le pluriel se lit aussi.
+    const pluriel = FIXTURE.replace("dont 1 fichier et 4 tests", "dont 2 fichiers et 13 tests");
+    expect(extraireCouverture(pluriel).testsSql.ignores).toEqual({ fichiers: 2, tests: 13 });
   });
 
   it("une ligne à six cellules fait échouer l'extraction avec son numéro", () => {
@@ -128,7 +142,9 @@ describe("2 — les décomptes calculés sont ceux que le document écrit", () =
     expect(RELEVE).toBe("23/09/2026");
     expect(SHA).toBe("8a5f3d1");
     expect(TESTS_UNITAIRES).toEqual({ fichiers: 266, tests: 3815 });
-    expect(TESTS_SQL).toEqual({ fichiers: 45, tests: 637 });
+    expect(TESTS_SQL).toEqual({ fichiers: 45, tests: 637, ignores: { fichiers: 2, tests: 13 } });
+    // Revue de fin de vague 7 : les verts sont le total moins les ignorés (les deux bancs).
+    expect(TESTS_SQL_VERTS).toBe(624);
     expect(compte("deploye_non_eprouve")).toBe(35); // 34 au 18/09 : F2 est passée « déployé, non éprouvé »
   });
 });
