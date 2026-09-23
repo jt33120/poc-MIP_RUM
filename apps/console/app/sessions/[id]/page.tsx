@@ -15,6 +15,11 @@
 // une session ancienne n'est jamais comparée aux « 7 derniers jours ». Ces
 // lectures ne partent que sur l'onglet Web Vitals.
 //
+// F47 — le rejeu est SYNCHRONISÉ à la chronologie (`ReplaySynchro`) : la ligne que
+// la tête a atteinte est surlignée, le focus ou le clic d'une ligne place la tête,
+// et chaque ligne garde un lien `?at=` qui suffit sans JavaScript. Sous 640 px, le
+// lecteur ne se charge pas sans geste ; un lien « Replay » suivi en est un.
+//
 // F45 — le Déroulé est GROUPÉ PAR VUE (`Deroule`, `lib/deroule.ts`), filtrable
 // par `voir=` (§ 3.1). Les liens sortants de la chronologie sont PRÉ-CALCULÉS
 // ici, jamais par le composant : seule la page connaît le périmètre d'app.
@@ -30,7 +35,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import ReplayPlayer from "@/components/replay/ReplayPlayer";
+import { ReplaySynchro } from "@/components/replay/ReplaySynchro";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RecitSession } from "@/components/sessions/RecitSession";
 import { TabLink } from "@/components/sessions/TabLink";
@@ -44,6 +49,7 @@ import {
   LIBELLES_NATURES,
   cascadeDeSession,
   fenetreDeSession,
+  filtrerParNature,
   jourMoisUtc,
   libelleFenetre,
   reperesDeSession,
@@ -51,6 +57,7 @@ import {
   type PireMesure,
   type VitauxSession,
 } from "@/lib/deroule";
+import { lignesSynchro, marqueursDeSession } from "@/lib/replay-synchro";
 import { NATURES_CHRONOLOGIE, ligneIgnoree, lireVoir, type NatureChronologie } from "@/lib/view-state";
 import { HISTO_BUCKETS } from "@/lib/distribution";
 import { filtersOfQuery } from "@/lib/filters";
@@ -207,6 +214,19 @@ export default async function SessionDetail({
   });
   const liensSortantsManquants = timeline.some((it) => it.kind === "error" || it.kind === "api");
 
+  // F47 — rejeu synchronisé. Chaque ligne du déroulé (sauf une mesure, rapportée
+  // après coup) reçoit un lien d'instant `?tab=deroule&at=<t>#evt-<rang>` : sans
+  // JavaScript, il positionne le lecteur ; avec, l'îlot `ReplaySynchro` place la tête
+  // sans recharger. Le filtre `voir=` suit le lien ; l'îlot ne vise que les lignes
+  // affichées.
+  const instantsChronologie: Record<number, string> = {};
+  timeline.forEach((it, i) => {
+    if (it.kind !== "vital") {
+      instantsChronologie[i] = hrefOnglet("deroule", { at: new Date(it.ts).getTime(), ancre: ancreEvenement(i), voir });
+    }
+  });
+  const lignesVisibles = new Set(filtrerParNature(timeline, voir));
+
   const comptes: Record<OngletSession, number | null | undefined> = {
     deroule: undefined,
     cascade: undefined,
@@ -291,7 +311,13 @@ export default async function SessionDetail({
         <div className={`grid gap-4 ${avecRejeu ? "xl:grid-cols-5" : ""}`} data-testid="deroule">
           {avecRejeu && (
             <div className="min-w-0 xl:col-span-3">
-              <ReplayPlayer sessionId={meta.session_id} atMs={at} />
+              <ReplaySynchro
+                sessionId={meta.session_id}
+                atMs={at}
+                items={lignesSynchro(timeline, ancreEvenement, (it) => lignesVisibles.has(it))}
+                marqueurs={marqueursDeSession(timeline)}
+                demande={premier(sp.tab) === "replay"}
+              />
             </div>
           )}
           <section
@@ -312,7 +338,14 @@ export default async function SessionDetail({
                 ni l&apos;identifiant de trace. Les onglets Erreurs et Appels API listent les mêmes lignes.
               </p>
             )}
-            <Deroule items={timeline} t0={t0} voir={voir} liens={liensChronologie} tronque={resume.tronquee} />
+            <Deroule
+              items={timeline}
+              t0={t0}
+              voir={voir}
+              liens={liensChronologie}
+              tronque={resume.tronquee}
+              instants={avecRejeu ? instantsChronologie : undefined}
+            />
           </section>
         </div>
       )}
