@@ -34,6 +34,7 @@ import {
   TuilesDetailErreur,
   VersionsTouchees,
   comptesTouches,
+  porteeOccurrences,
   versionsDeLIssue,
   type PartGroupe,
 } from "@/components/errors/DetailErreur";
@@ -139,6 +140,9 @@ export default async function IssuePage({
     lire(() => listDeploys({ ...ecran.filters, app: issue.app_id }, 20)),
   ]);
   const { impact, trend, last_sample: last, occurrences, sampling, enrichment } = detail;
+  // Ce que couvrent les occurrences affichées (blocs 1 et 5) : en paginant, ni « la
+  // fenêtre » ni « les plus récentes » — cette page seulement.
+  const portee = porteeOccurrences({ curseur: cursor !== null, suite: detail.next_cursor !== null });
   // Workflow P5.6 : null avant migration-v73. Un curseur d'historique illisible rend la page la plus récente.
   // Les adresses des comptes (acteurs, assignés) ne sont lues que pour un admin.
   const admin = user?.role === "admin" && !user.demo;
@@ -194,7 +198,7 @@ export default async function IssuePage({
             une ancienne URL de groupe d'une app en regroupement v2 mène ICI, et sans
             ce bouton le rejeu ne s'ouvrait qu'occurrence par occurrence. */}
         <span className="basis-full sm:ml-auto sm:basis-auto">
-          <BoutonRejeu occurrences={occurrences} appId={issue.app_id} />
+          <BoutonRejeu occurrences={occurrences} appId={issue.app_id} portee={portee} />
         </span>
       </div>
 
@@ -264,6 +268,7 @@ export default async function IssuePage({
                   ? errorsHref("/errors", f, issue.app_id, { release: valeur })
                   : null
             }
+            portee={portee}
           />
         </SectionErreur>
       </div>

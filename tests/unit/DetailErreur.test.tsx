@@ -23,6 +23,16 @@ import {
 } from "@/components/errors/DetailErreur";
 import { fmtDate } from "@/lib/format";
 import type { ErrorImpact } from "@/lib/queries-errors";
+// Revue de fin de vague 7 — portée des occurrences affichées (blocs 1 et 5).
+import {
+  BoutonRejeu as BoutonRejeuV7,
+  QuOntEnCommun as QuOntEnCommunV7,
+  occurrencesDuRepli as occurrencesDuRepliV7,
+  porteeOccurrences as porteeOccurrencesV7,
+  texteSansRejeu as texteSansRejeuV7,
+  type PorteeOccurrences as PorteeOccurrencesV7,
+} from "@/components/errors/DetailErreur";
+import type { ErrorOccurrenceRow as ErrorOccurrenceRowV7 } from "@/lib/queries-errors";
 
 // Un bloc en échec rend « Réessayer » (SectionErreur, client), qui lit le routeur de
 // Next : hors application, un routeur inerte (même montage que TuilesErreurs.test.tsx).
@@ -223,5 +233,91 @@ describe("F21 — VersionsTouchees", () => {
     const html = renderToStaticMarkup(<VersionsTouchees releases={{ ok: false, raison: "panne" }} />);
     expect(html).not.toContain('data-testid="versions-touchees"');
     expect(texte(html)).toContain("Versions touchées");
+  });
+});
+
+// Revue de fin de vague 7 (F20/F21) — le bloc 5 écrivait « dernières occurrences
+// affichées… les plus récentes » et le bloc 1 « Aucune occurrence de la fenêtre n'a de
+// rejeu » MÊME EN PAGINANT : les occurrences lues sont alors celles de la page
+// affichée, ni les plus récentes, ni toute la fenêtre.
+describe("Revue v7 — portée des occurrences affichées : fenêtre, plus récentes, cette page", () => {
+  /** Une occurrence de la route `route`, avec ou sans rejeu enregistré. */
+  const occurrenceV7 = (id: number, route: string, rejeu = false): ErrorOccurrenceRowV7 => ({
+    id,
+    ts: new Date(Date.parse("2026-09-17T10:00:00Z") - id * 60_000),
+    route,
+    session_id: `s${id}`,
+    kind: "error",
+    message: "boom",
+    device_type: "desktop",
+    occurrences: 1,
+    release: "1.4.2",
+    error_source: "browser_js",
+    handled: false,
+    is_fatal: null,
+    view_name: null,
+    env: null,
+    service: null,
+    trace_id: null,
+    source_parent_span_id: null,
+    links: { session: true, replay: rejeu, trace: false, parent_span: false, action: null },
+  });
+  const SANS_REJEU = [occurrenceV7(1, "/panier"), occurrenceV7(2, "/panier"), occurrenceV7(3, "/compte")];
+  const repli = (portee: PorteeOccurrencesV7) =>
+    renderToStaticMarkup(
+      <QuOntEnCommunV7 occurrences={SANS_REJEU} plage="24 h" touchees={3} hrefValeur={() => null} portee={portee} />,
+    );
+
+  it("la portée se déduit du curseur et de la page suivante", () => {
+    expect(porteeOccurrencesV7({ curseur: false, suite: false })).toBe("fenetre");
+    expect(porteeOccurrencesV7({ curseur: false, suite: true })).toBe("recentes");
+    // Une page atteinte par curseur : « cette page », qu'une suite existe ou non.
+    expect(porteeOccurrencesV7({ curseur: true, suite: true })).toBe("page");
+    expect(porteeOccurrencesV7({ curseur: true, suite: false })).toBe("page");
+  });
+
+  it("bloc 5 en paginant : « des N occurrences de cette page », jamais « dernières » ni « les plus récentes »", () => {
+    const html = texte(repli("page"));
+    expect(html).toContain("Répartition des 3 occurrences de cette page (pas de la population)");
+    expect(html).toContain("Ces parts sont celles des occurrences de CETTE PAGE : elles ne disent pas");
+    expect(html).not.toContain("dernières occurrences");
+    expect(html).not.toContain("les plus récentes");
+    // L'alternative de chaque répartition porte la même population.
+    expect(html).toContain("Route des 3 occurrences de cette page");
+  });
+
+  it("bloc 5 en première page : les dernières occurrences affichées, les plus récentes (texte d'avant)", () => {
+    for (const portee of ["fenetre", "recentes"] as const) {
+      const html = texte(repli(portee));
+      expect(html, portee).toContain("Répartition des 3 dernières occurrences affichées (pas de la population)");
+      expect(html, portee).toContain("Ces parts sont celles des occurrences AFFICHÉES, les plus récentes : elles ne disent pas");
+      expect(html, portee).not.toContain("cette page");
+    }
+  });
+
+  it("une seule occurrence lue : au singulier, jamais « des 1 occurrences »", () => {
+    expect(occurrencesDuRepliV7("page", 1)).toBe("de l'occurrence de cette page");
+    expect(occurrencesDuRepliV7("recentes", 1)).toBe("de la dernière occurrence affichée");
+    expect(occurrencesDuRepliV7("page", 2)).toBe("des 2 occurrences de cette page");
+  });
+
+  it("bloc 1 sans rejeu : la phrase ne porte que sur les occurrences LUES", () => {
+    const absent = (portee: PorteeOccurrencesV7, occurrences = SANS_REJEU) =>
+      texte(renderToStaticMarkup(<BoutonRejeuV7 occurrences={occurrences} appId="a" portee={portee} />)).trim();
+    expect(absent("fenetre")).toBe("Aucune occurrence de la fenêtre n'a de rejeu.");
+    expect(absent("recentes")).toBe("Aucune des 3 occurrences les plus récentes n'a de rejeu.");
+    expect(absent("recentes", [occurrenceV7(1, "/panier")])).toBe("L'occurrence la plus récente n'a pas de rejeu.");
+    expect(absent("page")).toBe("Aucune occurrence de cette page n'a de rejeu.");
+    expect(texteSansRejeuV7("page", 3)).not.toContain("fenêtre");
+  });
+
+  it("bloc 1 avec un rejeu : le même bouton, quelle que soit la page", () => {
+    const avec = [occurrenceV7(1, "/panier"), occurrenceV7(2, "/panier", true)];
+    for (const portee of ["fenetre", "recentes", "page"] as const) {
+      const html = renderToStaticMarkup(<BoutonRejeuV7 occurrences={avec} appId="a" portee={portee} />);
+      expect(html, portee).toContain('data-testid="voir-le-rejeu"');
+      expect(html, portee).toContain(`href="/sessions/s2?app=a&amp;tab=replay&amp;at=${avec[1].ts.getTime()}"`);
+      expect(html, portee).not.toContain("rejeu-absent");
+    }
   });
 });

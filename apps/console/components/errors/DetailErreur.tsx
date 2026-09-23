@@ -70,6 +70,31 @@ export function comptesTouches(impact: ErrorImpact): { sessions: number | null; 
     : { sessions: impact.sessions_affected, visiteurs: impact.visitors_affected };
 }
 
+// ─────────────── Portée des occurrences affichées (blocs 1 et 5) ───────────────
+
+/**
+ * Ce que couvrent les occurrences AFFICHÉES — les seules que lisent le bouton de
+ * rejeu (bloc 1) et le repli du bloc 5 :
+ *   · `fenetre` : toutes celles de la fenêtre (une page, sans suite) ;
+ *   · `recentes` : les plus récentes, première page d'une liste qui continue ;
+ *   · `page` : une page SUIVANTE (curseur) — ni les plus récentes, ni la fenêtre.
+ * Une phrase qui porte sur « la fenêtre » ou « les plus récentes » ne s'écrit que
+ * lorsque les occurrences lues le sont vraiment (revue de fin de vague 7).
+ */
+export type PorteeOccurrences = "fenetre" | "recentes" | "page";
+
+/** `curseur` : la page affichée vient d'un curseur ; `suite` : une page suivante existe. */
+export function porteeOccurrences({ curseur, suite }: { curseur: boolean; suite: boolean }): PorteeOccurrences {
+  if (curseur) return "page";
+  return suite ? "recentes" : "fenetre";
+}
+
+/** Les occurrences sur lesquelles porte le repli du bloc 5, nommées pour ce qu'elles sont. */
+export function occurrencesDuRepli(portee: PorteeOccurrences, n: number): string {
+  if (portee === "page") return n > 1 ? `des ${compte(n)} occurrences de cette page` : "de l'occurrence de cette page";
+  return n > 1 ? `des ${compte(n)} dernières occurrences affichées` : "de la dernière occurrence affichée";
+}
+
 // ───────────────────────────── Bloc 1 : « Voir le rejeu » ─────────────────────────────
 
 /**
@@ -81,12 +106,35 @@ export function premiereAvecRejeu(occurrences: readonly ErrorOccurrenceRow[]): E
   return occurrences.find((o) => o.links.replay && o.session_id) ?? null;
 }
 
-export function BoutonRejeu({ occurrences, appId }: { occurrences: readonly ErrorOccurrenceRow[]; appId: string }) {
+/**
+ * Pourquoi aucun bouton : la phrase ne vaut que pour les occurrences LUES. « De la
+ * fenêtre » quand elles y sont toutes ; sinon les plus récentes, ou cette page.
+ */
+export function texteSansRejeu(portee: PorteeOccurrences, lues: number): string {
+  if (portee === "page") return "Aucune occurrence de cette page n'a de rejeu.";
+  if (portee === "recentes") {
+    return lues > 1
+      ? `Aucune des ${compte(lues)} occurrences les plus récentes n'a de rejeu.`
+      : "L'occurrence la plus récente n'a pas de rejeu.";
+  }
+  return "Aucune occurrence de la fenêtre n'a de rejeu.";
+}
+
+export function BoutonRejeu({
+  occurrences,
+  appId,
+  portee,
+}: {
+  occurrences: readonly ErrorOccurrenceRow[];
+  appId: string;
+  /** Ce que couvrent `occurrences` : la phrase d'absence n'en dit pas plus. */
+  portee: PorteeOccurrences;
+}) {
   const premiere = premiereAvecRejeu(occurrences);
   if (!premiere) {
     return (
-      <p className="text-xs text-ink-soft" data-testid="rejeu-absent">
-        Aucune occurrence de la fenêtre n&apos;a de rejeu.
+      <p className="text-xs text-ink-soft" data-testid="rejeu-absent" data-portee={portee}>
+        {texteSansRejeu(portee, occurrences.length)}
       </p>
     );
   }
@@ -426,12 +474,17 @@ export function repartitionOccurrences(
  * Le test de P*.6 est publié ici même à l'état « pas de test », avec sa règle et
  * ses volumes minimaux : l'utilisateur sait ce qui sera cherché, et pourquoi ça ne
  * l'est pas encore.
+ *
+ * EN PAGINANT (`portee="page"`), les occurrences affichées ne sont plus « les
+ * dernières », ni « les plus récentes » : le titre dit « des N occurrences de cette
+ * page », et la lecture ne prétend rien d'autre.
  */
 export function QuOntEnCommun({
   occurrences,
   plage,
   touchees,
   hrefValeur,
+  portee,
 }: {
   /** Les occurrences affichées (≤ 100), pas la population. */
   occurrences: readonly ErrorOccurrenceRow[];
@@ -440,9 +493,12 @@ export function QuOntEnCommun({
   touchees: number | null;
   /** Filtrer l'écran sur une valeur ; `null` : pas de destination pour cette dimension. */
   hrefValeur: (cle: (typeof DIMENSIONS_REPLI)[number]["cle"], valeur: string) => string | null;
+  /** Ce que couvrent `occurrences` : première page (les plus récentes) ou page suivante. */
+  portee: PorteeOccurrences;
 }) {
   const titre = "Qu'ont en commun les sessions touchées ?";
   const total = occurrences.reduce((s, o) => s + o.occurrences, 0);
+  const lues = occurrencesDuRepli(portee, occurrences.length);
   const manqueTest =
     touchees === null
       ? `pas de test : sessions touchées inconnues, ${TOUCHES_MIN_TEST} requises`
@@ -458,15 +514,18 @@ export function QuOntEnCommun({
       id="detail-erreur-commun"
       meta={
         <>
-          <span data-testid="commun-titre-repli">
-            Répartition des {compte(occurrences.length)} dernières occurrences affichées (pas de la population)
+          <span data-testid="commun-titre-repli" data-portee={portee}>
+            Répartition {lues} (pas de la population)
           </span>
           <span>{compte(total)} occurrences comptées</span>
         </>
       }
       lecture={
         <>
-          Ces parts sont celles des occurrences AFFICHÉES, les plus récentes : elles ne disent pas ce que la population
+          {portee === "page"
+            ? "Ces parts sont celles des occurrences de CETTE PAGE"
+            : "Ces parts sont celles des occurrences AFFICHÉES, les plus récentes"}{" "}
+          : elles ne disent pas ce que la population
           de la fenêtre a en commun. Comparer les touchés à une base exige, par valeur, le nombre de sessions de la
           population de base, que les lectures ne rendent pas encore (B3) : aucune barre de base n&apos;est dessinée
           plutôt qu&apos;une barre à zéro. Une répartition est une observation, pas une cause.
@@ -503,7 +562,7 @@ export function QuOntEnCommun({
                 data={data}
                 max={total}
                 labelWidth="8rem"
-                legende={`${dim.libelle} des ${compte(occurrences.length)} dernières occurrences affichées`}
+                legende={`${dim.libelle} ${lues}`}
                 emptyLabel="Aucune occurrence affichée."
               />
             </div>

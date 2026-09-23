@@ -24,6 +24,7 @@ import {
   QuOntEnCommun,
   TuilesDetailErreur,
   VersionsTouchees,
+  porteeOccurrences,
   type PartGroupe,
 } from "@/components/errors/DetailErreur";
 import { ERROR_LINK } from "@/components/errors/ErrorOccurrences";
@@ -113,7 +114,9 @@ export async function PanneauErreur({
     );
   }
 
-  const { group, last, occurrences, trend } = detail.data;
+  const { group, last, occurrences, trend, page } = detail.data;
+  // Le panneau lit la première page (les plus récentes), jamais une page suivante.
+  const portee = porteeOccurrences({ curseur: false, suite: page.next_cursor !== null });
   const puces: PuceDetail[] = [
     { label: "Empreinte", valeur: group.fingerprint },
     { label: "App", valeur: group.app_id },
@@ -140,7 +143,7 @@ export async function PanneauErreur({
         <ErrorSourceBadge source={last?.error_source ?? null} />
         <HandledBadge handled={last?.handled ?? null} />
         <span className="basis-full sm:ml-auto sm:basis-auto">
-          <BoutonRejeu occurrences={occurrences} appId={group.app_id} />
+          <BoutonRejeu occurrences={occurrences} appId={group.app_id} portee={portee} />
         </span>
       </div>
 
@@ -180,6 +183,7 @@ export async function PanneauErreur({
             plage={label}
             touchees={group.occurrences === 0 ? 0 : group.sessions_affected}
             hrefValeur={hrefValeur}
+            portee={portee}
           />
         </SectionErreur>
       </div>

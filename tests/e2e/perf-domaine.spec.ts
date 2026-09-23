@@ -1932,6 +1932,26 @@ test.describe("F20 — Détail d'erreur (panneau et page)", () => {
     await expect(commun.getByTestId("repli-release")).toContainText("1.4.2");
   });
 
+  test("en paginant, les blocs 1 et 5 ne parlent que de la page affichée (revue v7)", async ({ page }) => {
+    await login(page);
+    // Une occurrence par page. La plus récente (f20-s2, sans rejeu) ouvre une liste qui continue.
+    await page.goto(`${consoleUrl}/errors/${FP}?app=${APP}&limit=1`);
+    await expect(page.getByTestId("rejeu-absent")).toHaveText("L'occurrence la plus récente n'a pas de rejeu.");
+    const titre = page.locator("#detail-erreur-commun").getByTestId("commun-titre-repli");
+    await expect(titre).toHaveAttribute("data-portee", "recentes");
+    await expect(titre).toContainText("de la dernière occurrence affichée");
+
+    // Page suivante, par curseur : ni « la fenêtre », ni « les plus récentes ».
+    await page.getByRole("link", { name: "Occurrences suivantes" }).click();
+    await page.waitForURL((u) => u.searchParams.has("cursor"), { timeout: 15_000 });
+    await expect(titre).toHaveAttribute("data-portee", "page");
+    await expect(titre).toContainText("de l'occurrence de cette page");
+    await expect(page.locator("#detail-erreur-commun")).not.toContainText("les plus récentes");
+    // Cette page porte l'occurrence de f20-s1, qui a un rejeu : le bouton, pas la phrase.
+    await expect(page.getByTestId("voir-le-rejeu")).toHaveAttribute("href", new RegExp(`^/sessions/${SESSION_REJEU}\\?`));
+    await expect(page.getByTestId("rejeu-absent")).toHaveCount(0);
+  });
+
   test("empreinte inconnue : page « introuvable » en français, avec le retour à la liste", async ({ page }) => {
     await login(page);
     await page.goto(`${consoleUrl}/errors/f20fp-inexistante?app=${APP}`);

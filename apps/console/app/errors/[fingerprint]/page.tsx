@@ -13,6 +13,7 @@ import {
   QuOntEnCommun,
   TuilesDetailErreur,
   VersionsTouchees,
+  porteeOccurrences,
   type PartGroupe,
 } from "@/components/errors/DetailErreur";
 import { SectionErreur } from "@/components/states/SectionErreur";
@@ -182,6 +183,9 @@ export default async function ErrorGroup({
   });
   // Écriture : viewer et compte de démonstration sont en lecture seule (V9).
   const lectureSeule = !(user?.role === "admin" && !user.demo);
+  // Ce que couvrent les occurrences affichées (blocs 1 et 5) : en paginant, ni « la
+  // fenêtre » ni « les plus récentes » — cette page seulement.
+  const portee = porteeOccurrences({ curseur: cursor !== null, suite: page.next_cursor !== null });
 
   return (
     <div className="animate-fade-up">
@@ -202,7 +206,7 @@ export default async function ErrorGroup({
         <ErrorSourceBadge source={last?.error_source ?? null} />
         <HandledBadge handled={last?.handled ?? null} />
         <span className="basis-full sm:ml-auto sm:basis-auto">
-          <BoutonRejeu occurrences={occurrences} appId={group.app_id} />
+          <BoutonRejeu occurrences={occurrences} appId={group.app_id} portee={portee} />
         </span>
       </div>
 
@@ -255,6 +259,7 @@ export default async function ErrorGroup({
                   ? errorsHref("/errors", f, ref.app_id, { release: valeur })
                   : null
             }
+            portee={portee}
           />
         </SectionErreur>
       </div>
