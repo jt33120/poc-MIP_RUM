@@ -1,0 +1,184 @@
+# L'INFRASTRUCTURE RAILWAY PASSE PAR LA REVUE, COMME LE CODE (P1).
+#
+# `.railway/railway.ts` décrit les services Railway. Jusqu'ici, `railway config
+# apply` se lançait depuis un poste : ce qui changeait en production n'avait été
+# relu par personne, et aucune trace ne liait un changement d'infrastructure au
+# commit qui le décrivait. Ce workflow ferme la boucle :
+#
+#   PR     → `plan` : ce que la fusion appliquerait, commenté sur la PR, et
+#            ÉPINGLÉ (artefact `railway-plan`) ;
+#   master → `apply` de CE plan-là, et d'aucun autre, dans l'environnement
+#            GitHub protégé `railway-production` (relecteur requis).
+#
+# La fusion ne re-planifie pas : si l'environnement a dérivé ou si `.railway/` a
+# changé entre-temps, l'apply ÉCHOUE au lieu d'appliquer un écart non relu
+# (garantie de `railwayapp/config`, épinglé ci-dessous par SHA).
+#
+# LA RÈGLE QUI COMPTE LE PLUS : OMETTRE UNE RESSOURCE OU UNE VARIABLE LA SUPPRIME
+# (en-tête de `.railway/railway.ts`). Une ligne oubliée dans une PR anodine
+# détruirait un service ou un secret de production. D'où deux verrous :
+#   1. le job `plan` ÉCHOUE sur toute destruction, sauf label `allow-destroy`
+#      posé sur la PR — une décision humaine, visible, datée ;
+#   2. l'apply ne passe `--confirm-destructive` QUE si la PR fusionnée portait
+#      ce label : sans lui, la CLI refuse d'elle-même un plan destructif, même
+#      si la PR a été fusionnée malgré un `plan` rouge.
+#
+# JAMAIS `--include-variables` (ni `--decrypt-variables`, ni `--show-values`) :
+# ces options écrivent ou affichent des secrets de production en clair — dans
+# un fichier, un journal d'Actions, un artefact. Les secrets restent sur Railway,
+# déclarés en `preserve()`.
+#
+# ACTIONS MANUELLES AVANT LA PREMIÈRE PR (hors dépôt, réglages GitHub) :
+#   - secret de dépôt `RAILWAY_PLAN_TOKEN` : jeton de projet Railway, pour `plan` ;
+#   - environnement `railway-production` : relecteur requis, déploiement limité
+#     à la branche `master`, et le secret d'environnement `RAILWAY_TOKEN` ;
+#   - le label `allow-destroy`.
+name: Railway IaC
+
+on:
+  pull_request:
+    # `labeled`/`unlabeled` : poser ou retirer `allow-destroy` rejoue le verdict.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - ".railway/**"
+      # Le SDK `railway/iac` qui évalue le fichier vient du package.json racine.
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/railway-config.yml"
+  push:
+    branches: [master]
+    # MÊMES chemins que ci-dessus : l'apply cherche l'artefact du `plan` de la PR
+    # fusionnée. Un chemin surveillé ici et pas là ferait chercher un plan qui
+    # n'a jamais été produit.
+    paths:
+      - ".railway/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/railway-config.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan IaC (sans destruction)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Le commentaire du plan sur la PR (repli `github-token` de l'action).
+      pull-requests: write
+    concurrency:
+      group: railway-plan-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+
+      # Sans jeton, l'action échouerait plus loin avec un message obscur — ou un
+      # jour, réécrite, sauterait le plan en silence. Un plan IaC qui ne tourne
+      # pas n'est pas un plan vert : on le dit ici, en clair.
+      - name: Jeton Railway présent
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_PLAN_TOKEN }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::error::secret RAILWAY_PLAN_TOKEN absent : aucun plan IaC possible (voir l'en-tête de ce workflow)"
+            exit 1
+          fi
+
+      # railwayapp/config v1.2.0, épinglé par SHA : une étiquette se déplace, un
+      # SHA non. CLI épinglée aussi (défaut de l'action : `latest`).
+      - name: railway config plan (épinglé)
+        uses: railwayapp/config@9e17d413dbe219f19d62538d9c06b5dbb5e9abf8 # v1.2.0
+        with:
+          command: plan
+          railway-token: ${{ secrets.RAILWAY_PLAN_TOKEN }}
+          cli-version: "5.61.0"
+          plan-path: railway-plan.json
+
+      # Le verdict se lit dans le plan ÉPINGLÉ — le JSON que `railway config plan`
+      # écrit par `--out`, exactement ce que la fusion appliquera —, et non dans
+      # un second `plan --json`, qui pourrait différer du premier.
+      # Double lecture : le drapeau `destructive` de la CLI, et les lignes de
+      # suppression du diff (`-` pour une ressource, `~ delete|remove|unset` pour
+      # une variable). Un plan dont le format ne porte pas `destructive` est un
+      # ÉCHEC : on ne conclut pas « rien à détruire » d'un champ absent.
+      - name: Refuser toute destruction sans label allow-destroy
+        env:
+          AUTORISE: ${{ contains(github.event.pull_request.labels.*.name, 'allow-destroy') }}
+        # (Les `${…}` ci-dessous sont des gabarits JavaScript, pas du shell.)
+        run: |
+          # shellcheck disable=SC2016
+          node -e '
+            const plan = JSON.parse(require("node:fs").readFileSync("railway-plan.json", "utf8"));
+            if (typeof plan.destructive !== "boolean") {
+              console.error("::error::plan illisible : pas de champ booléen « destructive » — refus par prudence");
+              process.exit(1);
+            }
+            const suppressions = String(plan.diff ?? "").split("\n")
+              .filter((l) => /^- /.test(l) || /^~ (delete|remove|unset)\b/i.test(l));
+            const n = Array.isArray(plan.changeSet?.changes) ? plan.changeSet.changes.length : 0;
+            console.log(`plan : ${n} changement(s), destructive=${plan.destructive}`);
+            if (!plan.destructive && suppressions.length === 0) {
+              console.log("aucune destruction");
+              process.exit(0);
+            }
+            for (const l of suppressions) console.log(`  ${l}`);
+            if (process.env.AUTORISE === "true") {
+              console.log("::warning::destruction AUTORISÉE par le label allow-destroy : relire le plan avant de fusionner");
+              process.exit(0);
+            }
+            console.error("::error::le plan DÉTRUIT des ressources ou des variables de production. " +
+              "Déclarer ce qui manque dans .railway/railway.ts (preserve() pour un secret), " +
+              "ou poser le label allow-destroy si la suppression est voulue.");
+            process.exit(1);
+          '
+
+  apply:
+    name: Apply IaC (plan relu, environnement protégé)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Relecteur requis et branche `master` seule : réglés sur l'environnement,
+    # dans GitHub (voir l'en-tête). C'est aussi lui qui détient RAILWAY_TOKEN.
+    environment: railway-production
+    permissions:
+      contents: read
+      # Télécharger l'artefact du plan produit par le run de la PR.
+      actions: read
+      # Retrouver la PR fusionnée de ce commit, et ses labels.
+      pull-requests: read
+    # Un apply ne s'interrompt JAMAIS à mi-course, et deux ne se croisent pas.
+    concurrency:
+      group: railway-apply-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+
+      # Le label se lit sur la PR FUSIONNÉE dont ce commit provient — la même
+      # que celle dont l'action ira chercher le plan.
+      - name: La PR fusionnée autorisait-elle une destruction ?
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          labels=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+            --jq '[.[] | select(.merged_at != null)] | first | [(.labels // [])[].name] | join(",")')
+          if [[ ",$labels," == *",allow-destroy,"* ]]; then
+            echo "::warning::label allow-destroy présent : --confirm-destructive sera passé"
+            echo "destruction=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "destruction=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: railway config apply (plan épinglé de la PR)
+        uses: railwayapp/config@9e17d413dbe219f19d62538d9c06b5dbb5e9abf8 # v1.2.0
+        with:
+          command: apply
+          railway-token: ${{ secrets.RAILWAY_TOKEN }}
+          cli-version: "5.61.0"
+          plan-path: railway-plan.json
+          # Défaut de l'action : "true" (« la fusion vaut approbation »). Pas ici :
+          # sans label, la CLI refuse elle-même un plan destructif.
+          confirm-destructive: ${{ steps.pr.outputs.destruction }}
