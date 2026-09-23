@@ -5,12 +5,19 @@
 //   - les capteurs ne sont plus un `h2` : la partie le porte, ils sont un bloc `h3` ;
 //   - les textes exacts du plan, avec des versions LUES dans les paquets ;
 //   - la topologie : `role="img"`, libellé, alternative textuelle (TP7, côté SSR) ;
-//   - l'hébergement : une ligne par hébergeur de lib/legal.ts, et la phrase du plan.
+//   - l'hébergement : une ligne par hébergeur de lib/legal.ts, et la phrase du plan ;
+//   - les écrans : la liste de la navigation, du texte pour un visiteur, des liens
+//     pour un connecté, rien des catégories fermées ;
+//   - le carrousel : connecté seulement, bouton d'administration pour un admin seulement.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { CATEGORIES, sousOnglets } from "@/components/nav-items";
 import { Capteurs } from "@/components/presentation/Capteurs";
 import { Contient } from "@/components/presentation/Contient";
+import { EcransConsole, categoriesMontrees } from "@/components/presentation/EcransConsole";
 import { Topologie } from "@/components/presentation/Topologie";
+import type { SessionUser } from "@/lib/auth";
+import { RELEVE } from "@/lib/couverture";
 import { ARIA_TOPOLOGIE, HEBERGEMENT, PIECES } from "@/lib/presentation-topologie";
 import { EXT_VERSION } from "@/lib/specs";
 import { RN_VERSION } from "@/lib/versions";
@@ -34,7 +41,11 @@ const lisible = (html: string) =>
 /** Les cellules d'une rangée de tableau, une par une. */
 const cellules = (rangee: string) => [...rangee.matchAll(/<t[hd][^>]*>(.*?)<\/t[hd]>/gs)].map((m) => lisible(m[1]).trim());
 
+const ADMIN: SessionUser = { email: "a@mip.test", role: "admin", apps: null };
+const VIEWER: SessionUser = { ...ADMIN, role: "viewer" };
+
 const visiteur = renderToStaticMarkup(<Contient user={null} />);
+const connecte = renderToStaticMarkup(<Contient user={ADMIN} />);
 
 /** Les titres `hN` d'un rendu, dans l'ordre : [niveau, texte]. */
 function titres(html: string): [number, string][] {
@@ -145,5 +156,63 @@ describe("PS4 — où sont les données, et sous quel droit", () => {
 
   it("la table défile dans un conteneur positionné, jamais la page", () => {
     expect(visiteur).toMatch(/<div class="card relative [^"]*overflow-x-auto"><table aria-labelledby="contient-hebergement-titre"/);
+  });
+});
+
+describe("PS5 — les écrans de la console", () => {
+  const liste = (html: string) => /<ul [^>]*data-testid="ecrans-console".*?<\/ul><\/li><\/ul>/s.exec(html)?.[0] ?? "";
+
+  it("la liste de la navigation, sans rien recopier ni les catégories fermées", () => {
+    const montrees = categoriesMontrees();
+    expect(montrees.map((m) => m.categorie.label)).toEqual(CATEGORIES.filter((c) => !c.verrouille).map((c) => c.label));
+    for (const ferme of CATEGORIES.filter((c) => c.verrouille)) {
+      expect(lisible(liste(visiteur))).not.toContain(ferme.label);
+    }
+    // L'onglet interne « Actions » (sousOnglet: false) reste dans « Interactions ».
+    const performance = montrees.find((m) => m.categorie.href === "/")!;
+    expect(performance.ecrans).toEqual(sousOnglets(performance.categorie));
+    expect(performance.ecrans.some((e) => e.href === "/actions")).toBe(false);
+  });
+
+  it("visiteur : du texte, aucun lien (ces écrans demandent une session)", () => {
+    const html = renderToStaticMarkup(<EcransConsole user={null} />);
+    expect(liste(html)).not.toContain("<a ");
+    for (const { ecrans } of categoriesMontrees()) {
+      for (const e of ecrans) expect(lisible(liste(html))).toContain(e.label);
+    }
+  });
+
+  it("connecté : chaque écran est un lien vers sa route, en navigation document", () => {
+    const html = renderToStaticMarkup(<EcransConsole user={VIEWER} />);
+    const liens = [...liste(html).matchAll(/<a href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map((m) => [m[1], lisible(m[2]).trim()]);
+    expect(liens).toEqual(categoriesMontrees().flatMap(({ ecrans }) => ecrans.map((e) => [e.href, e.label])));
+  });
+
+  it("chapeau exact ; méthodes d'analyse datées par le relevé, sans compte figé", () => {
+    const texte = lisible(visiteur);
+    expect(texte).toContain(
+      "Les écrans qui existent dans la console. Ils ont été construits et testés sur des jeux de démonstration ; aucun n'a encore été relu sur le trafic d'une vraie application.",
+    );
+    expect(texte).toContain(`Le relevé du ${RELEVE} ne couvre ni le score de santé, ni les anomalies, ni les tendances.`);
+    expect(texte).not.toMatch(/Trois analyses|AIOps|prédictif/);
+  });
+});
+
+describe("« Brancher une application » : connecté seulement", () => {
+  it("absent pour un visiteur", () => {
+    expect(visiteur).not.toContain("Tutoriel : ajouter un client");
+    expect(lisible(visiteur)).not.toContain("Brancher une application");
+  });
+
+  it("admin : le tutoriel et le lien vers l'écran Clients, en navigation document", () => {
+    expect(connecte).toContain('aria-label="Tutoriel : ajouter un client"');
+    expect(connecte).toMatch(/<a href="\/admin\/customers"/);
+  });
+
+  it("viewer (et session démo) : le tutoriel, sans bouton d'administration", () => {
+    const html = renderToStaticMarkup(<Contient user={VIEWER} />);
+    expect(html).toContain('aria-label="Tutoriel : ajouter un client"');
+    expect(html).not.toContain("/admin/customers");
+    expect(lisible(html)).toContain("Demandez à un administrateur de créer le client.");
   });
 });

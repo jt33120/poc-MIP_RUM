@@ -1,13 +1,17 @@
 // Partie 1 de la vitrine — « Ce qu'il contient » (plan § 8.2, PS2 à PS6 ; lot P**.3).
 //
-// Ce que le dépôt contient et ce qui tourne, pièce par pièce, en blocs `h3` sous le
-// `h2` de la partie : les capteurs (Capteurs.tsx, PS2), le chemin de la mesure
-// (Topologie.tsx, PS3), l'hébergement et son droit (PS4, ici).
+// Ce que le dépôt contient et ce qui tourne, pièce par pièce, dans cet ordre : les
+// capteurs (Capteurs.tsx, PS2), le chemin de la mesure (Topologie.tsx, PS3),
+// l'hébergement et son droit (PS4, ici), les écrans de la console
+// (EcransConsole.tsx, PS5), puis, pour un connecté seulement, « Brancher une
+// application ».
 //
-// `user` est là pour la suite du lot : c'est la seule partie qui diffère pour un
-// connecté (écrans cliquables, carrousel « Brancher une application » sous PS5).
-// Landing le transmet ; la partie n'a donc pas à relire la session.
+// `user` ne change que deux choses : les écrans deviennent des liens, et le
+// carrousel « Brancher une application » apparaît. Landing le transmet ; la partie
+// ne relit pas la session.
+import { AddClientCarousel } from "@/components/AddClientCarousel";
 import { Capteurs } from "@/components/presentation/Capteurs";
+import { EcransConsole } from "@/components/presentation/EcransConsole";
 import { Partie } from "@/components/presentation/Partie";
 import { SousPartie } from "@/components/presentation/SousPartie";
 import { Topologie } from "@/components/presentation/Topologie";
@@ -62,7 +66,7 @@ function Hebergement() {
   );
 }
 
-export function Contient({ user: _user }: { user: SessionUser | null }) {
+export function Contient({ user }: { user: SessionUser | null }) {
   return (
     <Partie
       id="contient"
@@ -77,6 +81,17 @@ export function Contient({ user: _user }: { user: SessionUser | null }) {
         <Capteurs />
         <Topologie />
         <Hebergement />
+        <EcransConsole user={user} />
+        {user && (
+          // Connecté seulement (plan § 8.2, PS5) : le tutoriel pas-à-pas. Le bouton
+          // vers l'écran Clients n'est rendu qu'à un administrateur ; la session
+          // démo est un viewer (app/demo/route.ts).
+          <SousPartie id="contient-brancher" titre="Brancher une application">
+            <div className="mt-6">
+              <AddClientCarousel isAdmin={user.role === "admin"} />
+            </div>
+          </SousPartie>
+        )}
       </div>
     </Partie>
   );
