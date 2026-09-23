@@ -187,6 +187,9 @@ jobs:
       # un schéma v83 — sans les colonnes de provenance du pays — avant de l'y
       # appliquer. Sans elle, la suite se SKIPPE en silence, ce qui reviendrait à
       # ne pas tester la fenêtre du tout.
+      # SQL_TEST_PRE_V86_DATABASE_URL : fenêtre de déploiement B52, tick du
+      # scheduler et dispatcher en service sur un schéma v85 — sans le mode release
+      # de check_alerts — avant et après l'application de migration-v86.
       - name: P0 safety and truth SQL (base dédiée)
         env:
           PGPASSWORD: postgres
@@ -197,6 +200,7 @@ jobs:
           SQL_TEST_PRE_V81_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v81
           SQL_TEST_PRE_V83_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v83
           SQL_TEST_PRE_V85_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v85
+          SQL_TEST_PRE_V86_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_pre_v86
         run: |
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -c 'create database mip_rum_p0'
@@ -212,6 +216,8 @@ jobs:
             -c 'create database mip_rum_pre_v83'
           psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -c 'create database mip_rum_pre_v85'
+          psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'create database mip_rum_pre_v86'
           pnpm test:sql
 
       # `...` entraîne `@mip/rum-core`, dont le SDK web inline les primitives.
