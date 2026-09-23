@@ -155,9 +155,13 @@ test("W-E2 : le volume accompagne un classement, avec une ligne d'alternative pa
   await expect(volume).toBeVisible({ timeout: 15_000 });
 
   // L'alternative textuelle dit exactement ce que les barres dessinent : un seau
-  // par ligne, la légende annonçant leur nombre.
-  const legende = (await volume.locator("caption").innerText()).trim();
-  const annonces = Number(legende.match(/—\s*(\d+)\s*seaux/)![1]);
+  // par ligne, la légende annonçant leur nombre. Elle est REPLIÉE (`<details>` fermé) :
+  // son texte n'est pas rendu, et `innerText` ne l'a pas rendu non plus en CI (run
+  // 35833662207) — on lit le texte du DOM, comme `toContainText` et `toHaveCount`.
+  const legende = ((await volume.locator("caption").textContent()) ?? "").trim();
+  const seaux = legende.match(/—\s*(\d+)\s*seaux/);
+  expect(seaux, `légende de l'alternative : « ${legende} »`).not.toBeNull();
+  const annonces = Number(seaux![1]);
   expect(annonces).toBeGreaterThan(0);
   await expect(volume.locator("tbody tr")).toHaveCount(annonces);
   // Un volume ne se juge pas : aucun verdict de seuil sur cette figure.
