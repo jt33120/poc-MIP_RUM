@@ -152,6 +152,10 @@ async function login(page: Page) {
 }
 
 const entree = (page: Page, testid: string) => page.locator(`[data-testid="${testid}"]`);
+// Depuis F19, une cellule de liste porte aussi son libellé (« Occurrences »), affiché
+// seulement en carte, sous 640 px : on lit le texte RENDU (`innerText`), pas celui du
+// DOM, qui donnait « Occurrences8 ».
+const RENDU = { useInnerText: true } as const;
 // `not-found.tsx` en français (F02) : plus le 404 anglais de Next.
 const introuvable = (page: Page) => expect(page.getByTestId("introuvable")).toContainText("introuvable");
 
@@ -160,12 +164,12 @@ test("liste d'une app activée : issues et groupe historique, chaque occurrence 
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h`);
 
   const i1 = entree(page, `issue-entry-${I1}`);
-  await expect(i1.getByTestId("entry-occurrences")).toHaveText("8");
+  await expect(i1.getByTestId("entry-occurrences")).toHaveText("8", RENDU);
   await expect(i1).toContainText("À revoir");
   await expect(i1).toContainText("reprise de l'historique");
-  await expect(entree(page, `issue-entry-${I2}`).getByTestId("entry-occurrences")).toHaveText("2");
+  await expect(entree(page, `issue-entry-${I2}`).getByTestId("entry-occurrences")).toHaveText("2", RENDU);
   const historique = entree(page, "legacy-entry-p55fp009");
-  await expect(historique.getByTestId("entry-occurrences")).toHaveText("1");
+  await expect(historique.getByTestId("entry-occurrences")).toHaveText("1", RENDU);
   await expect(historique).toContainText("groupe historique");
   // Tuile « Occurrences » de la rangée de F18 : la même population que la liste.
   await expect(
@@ -179,7 +183,7 @@ test("liste d'une app activée : issues et groupe historique, chaque occurrence 
 
   // Filtre de statut : l'entrée, pas ses nombres.
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h&status=open`);
-  await expect(entree(page, `issue-entry-${I2}`).getByTestId("entry-occurrences")).toHaveText("2");
+  await expect(entree(page, `issue-entry-${I2}`).getByTestId("entry-occurrences")).toHaveText("2", RENDU);
   await expect(entree(page, `issue-entry-${I1}`)).toHaveCount(0);
 });
 
@@ -215,7 +219,7 @@ test("empreinte répartie : choix explicite entre les issues, détail historique
 test("app non activée : liste et URL historiques inchangées", async ({ page }) => {
   await login(page);
   await page.goto(`${CONSOLE}/errors?app=${OFF}&period=24h`);
-  await expect(page.locator(`[data-testid="error-group-p55fp101"][data-app-id="${OFF}"]`).getByTestId("group-occurrences")).toHaveText("4");
+  await expect(page.locator(`[data-testid="error-group-p55fp101"][data-app-id="${OFF}"]`).getByTestId("group-occurrences")).toHaveText("4", RENDU);
   await page.goto(`${CONSOLE}/errors/p55fp101?app=${OFF}&period=24h`);
   await expect(page.getByTestId("detail-occurrences")).toHaveText("4");
 });
@@ -289,7 +293,7 @@ test("retour arrière : liste et anciennes URL historiques, l'issue reste lisibl
   try {
     await login(page);
     await page.goto(`${CONSOLE}/errors?app=${A}&period=24h`);
-    await expect(page.locator(`[data-testid="error-group-p55fp001"][data-app-id="${A}"]`).getByTestId("group-occurrences")).toHaveText("5");
+    await expect(page.locator(`[data-testid="error-group-p55fp001"][data-app-id="${A}"]`).getByTestId("group-occurrences")).toHaveText("5", RENDU);
     await expect(entree(page, `issue-entry-${I1}`)).toHaveCount(0);
 
     await page.goto(`${CONSOLE}/errors/p55fp001?app=${A}&period=24h`);

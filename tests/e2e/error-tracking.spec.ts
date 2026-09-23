@@ -202,13 +202,17 @@ const occurrence = (page: Page, nom: string) =>
   occurrences(page).filter({ has: page.getByTitle(`boom ${nom}`, { exact: true }) });
 // `not-found.tsx` en français (F02) : plus le 404 anglais de Next.
 const introuvable = (page: Page) => expect(page.getByTestId("introuvable")).toContainText("introuvable");
+// Depuis F19, une cellule de liste porte aussi son libellé (« Occurrences »), affiché
+// seulement en carte, sous 640 px : on lit le texte RENDU (`innerText`), pas celui du
+// DOM, qui donnait « Occurrences38 ».
+const RENDU = { useInnerText: true } as const;
 
 test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché comme zéro", async ({ page }) => {
   await login(page);
 
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h&device=desktop`);
   const ligne = groupe(page, "p51fp001", A);
-  await expect(ligne.getByTestId("group-occurrences")).toHaveText("38");
+  await expect(ligne.getByTestId("group-occurrences")).toHaveText("38", RENDU);
   // p51fp004 n'a aucune session de son app : le filtre d'appareil l'exclut.
   await expect(page.locator('[data-testid="error-group-p51fp004"]')).toHaveCount(0);
   // Tuile « Occurrences » de la rangée de F18 : la même population que la liste.
@@ -224,9 +228,9 @@ test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché 
 
   // Tous appareils : l'erreur backend sans session garde des personnes INCONNUES.
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h`);
-  await expect(groupe(page, "p51fp001", A).getByTestId("group-occurrences")).toHaveText("47");
+  await expect(groupe(page, "p51fp001", A).getByTestId("group-occurrences")).toHaveText("47", RENDU);
   const croisee = groupe(page, "p51fp004", A);
-  await expect(croisee.getByTestId("group-occurrences")).toHaveText("3");
+  await expect(croisee.getByTestId("group-occurrences")).toHaveText("3", RENDU);
   await expect(croisee.getByRole("cell", { name: "Inconnu", exact: true })).toHaveCount(2);
 
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h&device=desktop`);
@@ -239,7 +243,9 @@ test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché 
   await expect(page.getByTestId("detail-occurrences")).toHaveText("38");
   await expect(page.getByTestId("detail-sessions")).toHaveText("1");
   await expect(page.getByTestId("detail-users")).toHaveText("1");
-  await expect(page.getByText("Alternative textuelle de la série")).toBeVisible();
+  // F20 : la courbe sans axe (`ObservedTrend`) a cédé la place à des barres, dont la
+  // figure porte l'alternative textuelle, seau par seau.
+  await expect(page.locator("#detail-erreur-temps").getByTestId("alternative")).toBeVisible();
   // L'exemplaire est r2, émis sans source : rien n'est deviné.
   await expect(page.getByText("Source inconnue", { exact: true })).toBeVisible();
 
