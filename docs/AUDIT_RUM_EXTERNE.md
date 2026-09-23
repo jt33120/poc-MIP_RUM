@@ -1141,7 +1141,7 @@ Plus, immédiatement : `LIMIT 200` et suppression des sous-requêtes corrélées
 
 ## Ce qu'il ne faut pas faire dans cet ordre
 
-Ne pas commencer par ClickHouse. Le chemin est prouvé et le bench de `infra/clickhouse.notes.md`
+Ne pas commencer par ClickHouse. Le chemin est prouvé et le bench de `labs/clickhouse/NOTES.md`
 est honnête, mais migrer un modèle qui compte des rapports au lieu de pages vues, qui mélange les
 fenêtres et qui ignore le poids d'échantillonnage ne ferait que **rendre les mêmes chiffres faux
 plus vite**. Les lots 0 à 3 fixent la sémantique ; la migration de moteur vient après.

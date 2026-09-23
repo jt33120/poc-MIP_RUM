@@ -10,7 +10,7 @@
   vs Postgres 15.18 (conteneur `mip-rum-db` :5433, table unlogged + 2 indexes alignés prod). Même machine (Mac, Docker).
 - **Dataset** : 100 000 `rum_metric` déterministes (seed fixe) — 4 routes pondérées (dont `/login` lente ×1,4,
   cf. POC G-IT), 5 vitals (LCP/INP/CLS/FCP/TTFB), valeurs log-normales, 6 674 sessions, 20 000 pageviews
-  répartis sur 7 jours. Reproductible : `node infra/clickhouse/bench.mjs`.
+  répartis sur 7 jours. Reproductible : `node labs/clickhouse/bench.mjs`.
 - **Protocole** : 1 warm-up + 3 runs par requête, **médiane** retenue. Égalité des résultats vérifiée
   ligne à ligne (tolérance 1 ms sur les p75, stricte sur les comptages).
 
@@ -36,7 +36,7 @@
 - **L'égalité p75 est exacte (Δ = 0)**, pas seulement « dans la tolérance » : `quantileExactInclusive`
   implémente la même interpolation que `percentile_cont`. La console peut migrer sans renuméroter ses graphes.
 
-## Schéma appliqué (infra/clickhouse/schema.sql)
+## Schéma appliqué (labs/clickhouse/schema.sql)
 
 Sous-ensemble des colonnes Postgres suffisant pour tous les agrégats console :
 
@@ -55,13 +55,13 @@ ORDER BY (app_id, name, route, ts);
 -- + rum_pageview_ch (url, nav_type), rum_error_ch (kind, message, error_type, fingerprint)
 ```
 
-> **Schéma PRODUCTION** : `infra/clickhouse/schema.prod.sql` (jeu de tables complet,
+> **Schéma PRODUCTION** : `labs/clickhouse/schema.prod.sql` (jeu de tables complet,
 > `device_type` dénormalisé, **TTL 30 j** RGPD, codecs colonne, **MV AggregatingMergeTree
 > `quantileTDigestState` horaire** pour le multi-milliards). `schema.sql` ci-dessus reste
 > le schéma **minimal du bench** (repro Δ=0). Runbook de bascule complet (topologie,
-> dialecte console, conformité, hébergement) : `infra/clickhouse/DEPLOY.md`.
+> dialecte console, conformité, hébergement) : `labs/clickhouse/DEPLOY.md`.
 
-Écriture : `infra/clickhouse/writer.mjs` — interface HTTP native (`fetch` node 26, JSONEachRow,
+Écriture : `labs/clickhouse/writer.mjs` — interface HTTP native (`fetch` node 26, JSONEachRow,
 batchs 10 000), **zéro dépendance**. Prêt à brancher derrière `STORE=clickhouse|both` dans le dev-server.
 
 ## Chemin de migration (1 cran à la fois, rien ne change côté client)
@@ -108,9 +108,9 @@ Une couche « dialecte » de ~50 lignes dans la console suffit pour basculer sto
 ## Reproduire le bench
 
 ```bash
-docker compose -f infra/clickhouse/docker-compose.clickhouse.yml up -d   # CH :8123, volume éphémère
-node infra/clickhouse/bench.mjs                                          # exit 0 = égalité vérifiée
-docker compose -f infra/clickhouse/docker-compose.clickhouse.yml down    # rien ne persiste (tmpfs)
+docker compose -f labs/clickhouse/docker-compose.clickhouse.yml up -d   # CH :8123, volume éphémère
+node labs/clickhouse/bench.mjs                                          # exit 0 = égalité vérifiée
+docker compose -f labs/clickhouse/docker-compose.clickhouse.yml down    # rien ne persiste (tmpfs)
 ```
 
 Piège rencontré : dans le conteneur alpine, `localhost` résout en `::1` alors que CH écoute en IPv4 →

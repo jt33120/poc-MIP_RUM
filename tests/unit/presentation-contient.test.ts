@@ -79,7 +79,7 @@ describe("2 — « Ce que ces chiffres ne disent pas » suit le verdict de F1, F
 
 describe("3 — le banc ClickHouse cité est celui des notes d'infrastructure", () => {
   it("date, égalité des p75 à 1 ms près, ×15 à données identiques", () => {
-    const notes = lire("infra/clickhouse.notes.md");
+    const notes = lire("labs/clickhouse/NOTES.md");
     expect(notes).toContain(`## Bench réel (${BANC_CLICKHOUSE.le}, local)`);
     expect(notes).toContain("tolérance 1 ms sur les p75");
     expect(notes).toContain(`**×${BANC_CLICKHOUSE.compacite}** plus compact à données identiques`);

@@ -97,12 +97,6 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  apps/sync-synthetic:
-    dependencies:
-      pg:
-        specifier: 8.21.0
-        version: 8.21.0
-
   packages/agent-node:
     dependencies:
       '@mip/rum-core':
@@ -207,6 +201,12 @@ importers:
       '@mip/db':
         specifier: workspace:*
         version: link:../../packages/db
+      pg:
+        specifier: 8.21.0
+        version: 8.21.0
+
+  tools/sync-synthetic:
+    dependencies:
       pg:
         specifier: 8.21.0
         version: 8.21.0

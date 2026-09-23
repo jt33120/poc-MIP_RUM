@@ -25,7 +25,7 @@
   sociétés de droit américain. La résidence européenne des données n'est pas la souveraineté ;
   la cible reste un hébergeur de droit européen (cf. §8).
 - Le jour de la bascule **ClickHouse**, l'hébergement reste **souverain** (auto-géré
-  Scaleway/OVH/Clever Cloud ou on-prem — cf. `infra/clickhouse/DEPLOY.md`).
+  Scaleway/OVH/Clever Cloud ou on-prem — cf. `labs/clickhouse/DEPLOY.md`).
 - Le **flux OTLP** va du navigateur directement à l'ingestion MIP : pas d'intermédiaire US.
 
 ## 2. Données collectées & classification (minimisation)

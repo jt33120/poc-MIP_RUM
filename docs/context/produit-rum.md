@@ -32,7 +32,7 @@ module `uptime` existe mais reste marginal (1 sonde configurée).
 | SDK web | `packages/rum-sdk/src/` — 21 modules | Complet, en production |
 | SDK mobile | `packages/rum-mobile/src/` (React Native) | Écrit, adoption inconnue |
 | Agent serveur Node | `packages/agent-node/src/` — HTTP + `pg` par hook `require` | Écrit, profondeur DB récente |
-| Intégration Python | `integrations/fastapi/mip_rum_middleware.py` | Écrite, testée unitairement |
+| Intégration Python | `examples/integrations/fastapi/mip_rum_middleware.py` | Écrite, testée unitairement |
 | Extension navigateur | `apps/extension/` | Déployable sans toucher au site cible |
 
 Le SDK web couvre : Web Vitals, erreurs, ressources, tâches longues, formulaires,

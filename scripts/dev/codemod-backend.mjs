@@ -56,6 +56,15 @@ const DEPLACEMENTS = [
   ["apps/ingest/dispatch-alerts.mjs", "packages/backend/lib/dispatch-alerts.mjs"], // 5
   ["apps/ingest/", "packages/backend/"], // 6
   ["apps/mcp/", "packages/mcp-tools/"], // 10
+  // ARBRE LISIBLE (plan, « Structure du repo cible ») : ce qui n'est ni une app,
+  // ni un service, ni un paquet sort des trois dossiers qui portent la règle.
+  // `demo/` et `scripts/` restent en place : l'E2E et la CI les lancent par
+  // leur chemin, et les déplacer n'apporterait rien à la lecture.
+  ["apps/sync-synthetic/", "tools/sync-synthetic/"],
+  ["integrations/fastapi/", "examples/integrations/fastapi/"],
+  ["poc/network-logs/", "labs/network-logs/"],
+  ["infra/clickhouse.notes.md", "labs/clickhouse/NOTES.md"],
+  ["infra/clickhouse/", "labs/clickhouse/"],
 ];
 
 /** Où va ce chemin (fichier ou dossier) ? Identité s'il ne bouge pas. */
@@ -133,6 +142,15 @@ const REGLES_TEXTE = [
   ["9 spécificateur", /(["'`])ingest\/migrate\.mjs/g, "$1@mip/db/migrate.mjs"],
   ["10 mcp-tools", /apps\/mcp\b/g, "packages/mcp-tools"],
   ["10 spécificateur", /\bmip-mcp\//g, "@mip/mcp-tools/"],
+  // Arbre lisible. Les notes AVANT le dossier : `infra/clickhouse\b` couvrirait
+  // aussi `infra/clickhouse.notes.md`. `(?<!examples\/)` rend la règle fastapi
+  // idempotente : son résultat contient encore `integrations/fastapi`.
+  ["arbre tools", /apps\/sync-synthetic\b/g, "tools/sync-synthetic"],
+  ["arbre examples", /(?<!examples\/)integrations\/fastapi\b/g, "examples/integrations/fastapi"],
+  ["arbre examples (segments)", /(["'])\.\.\1(\s*,\s*)\1integrations\1/g, "$1..$1$2$1examples$1$2$1integrations$1"],
+  ["arbre labs", /poc\/network-logs\b/g, "labs/network-logs"],
+  ["arbre labs", /infra\/clickhouse\.notes\.md/g, "labs/clickhouse/NOTES.md"],
+  ["arbre labs", /infra\/clickhouse\b/g, "labs/clickhouse"],
 ];
 // 11 : les deux imports relatifs du catalogue MCP depuis la console.
 const REGLE_CATALOGUE = [

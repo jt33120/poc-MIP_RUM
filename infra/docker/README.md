@@ -128,7 +128,7 @@ docker compose exec collector node services/scheduler/run-once.mjs daily
 Aujourd'hui les logs sont accessibles en **CLI** (`docker compose logs`). Pour les
 afficher **dans la console** :
 1. **Collecte** : un OTel Collector (filelog receiver sur les logs json-file, ou
-   réception directe) — la brique est prototypée dans `poc/network-logs/`.
+   réception directe) — la brique est prototypée dans `labs/network-logs/`.
 2. **Stockage** : table `otel_logs` en Postgres (comme les traces), ou ClickHouse
    au-delà d'un certain volume (l'arbitrage coût est justement l'objet du POC).
 3. **Ingestion** : ajouter le signal *logs* OTel (`resourceLogs`) au parser, en

@@ -6,7 +6,7 @@
 //
 // Prérequis : docker compose -f docker-compose.clickhouse.yml up -d  (CH :8123)
 //             conteneur mip-rum-db up (PG :5433)
-// Usage     : node infra/clickhouse/bench.mjs
+// Usage     : node labs/clickhouse/bench.mjs
 import { performance } from "node:perf_hooks";
 import pg from "pg";
 import { createChWriter } from "./writer.mjs";
@@ -268,7 +268,7 @@ async function main() {
 
   const ch = createChWriter();
   if (!(await ch.ping())) {
-    console.error("[bench] ClickHouse injoignable sur :8123 — lance d'abord : docker compose -f infra/clickhouse/docker-compose.clickhouse.yml up -d");
+    console.error("[bench] ClickHouse injoignable sur :8123 — lance d'abord : docker compose -f labs/clickhouse/docker-compose.clickhouse.yml up -d");
     process.exit(1);
   }
   const chVersion = (await ch.query("SELECT version() AS v"))[0].v;

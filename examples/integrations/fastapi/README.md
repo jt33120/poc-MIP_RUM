@@ -104,5 +104,5 @@ fond, et le code instrumenté reste appelable depuis un test.
 ## Tests
 
 ```bash
-python3 -m unittest discover integrations/fastapi -v
+python3 -m unittest discover examples/integrations/fastapi -v
 ```

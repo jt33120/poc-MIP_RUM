@@ -308,10 +308,10 @@ vercel --prod
 
 ```bash
 # seed aligné sur l'app du vrai site (routes clés G-IT) — ou brancher l'API mippoc via l'adapter
-DATABASE_URL="$DATABASE_URL" node apps/sync-synthetic/src/sync.mjs seed gip-plateforme
+DATABASE_URL="$DATABASE_URL" node tools/sync-synthetic/src/sync.mjs seed gip-plateforme
 ```
 
-(Adapter les routes de `SEED_MEASURES` dans `apps/sync-synthetic/src/sync.mjs` aux routes réelles de la plateforme si besoin. La source réelle mippoc se branche en implémentant `fetchSnapshots()` — interface `SyntheticSource`, cf. BUILD_LOG S5.)
+(Adapter les routes de `SEED_MEASURES` dans `tools/sync-synthetic/src/sync.mjs` aux routes réelles de la plateforme si besoin. La source réelle mippoc se branche en implémentant `fetchSnapshots()` — interface `SyntheticSource`, cf. BUILD_LOG S5.)
 
 ## 4. Snippet à coller dans le `<head>` de plateforme.groupement-it.com
 

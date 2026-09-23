@@ -93,7 +93,7 @@ function Hebergement() {
  * État de la chaîne : décomptes du relevé (§ 2 du document, lib/couverture.ts),
  * poids mesurés (lib/sdk-poids.ts), et réserves tirées des lignes F1 à F3 — chacune
  * gardée par le verdict qu'elle suppose (lib/presentation-contient.ts).
- * Stockage : banc ClickHouse local, infra/clickhouse.notes.md:7, :14-15, :25-26.
+ * Stockage : banc ClickHouse local, labs/clickhouse/NOTES.md:7, :14-15, :25-26.
  */
 function Chaine() {
   return (

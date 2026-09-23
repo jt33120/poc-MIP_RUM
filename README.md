@@ -8,7 +8,7 @@ La vitrine de la console (`/presentation`) dit ce que le POC contient, ce qu'il 
 
 ## Pourquoi celui-là
 
-- **Format OpenTelemetry** : le SDK web émet de l'OTLP/HTTP JSON vers la route `/api/ingest/v1/traces` de la console (`apps/console/lib/ingest-endpoint.ts`). La structure des spans est vérifiée, mais ils partent avec une durée nulle et une partie du vocabulaire reste propre à MIP : un collecteur tiers en dessinerait un waterfall plat (vitrine, onglet Specs, ligne « Format sur le fil » : `apps/console/components/presentation/Specs.tsx`). Pour les gros volumes, un chemin ClickHouse a été mesuré en local le 11/06/2026 — mêmes p75, stockage 15 fois plus compact (`infra/clickhouse.notes.md`) ; ce banc n'a pas été rejoué depuis la migration vers Neon.
+- **Format OpenTelemetry** : le SDK web émet de l'OTLP/HTTP JSON vers la route `/api/ingest/v1/traces` de la console (`apps/console/lib/ingest-endpoint.ts`). La structure des spans est vérifiée, mais ils partent avec une durée nulle et une partie du vocabulaire reste propre à MIP : un collecteur tiers en dessinerait un waterfall plat (vitrine, onglet Specs, ligne « Format sur le fil » : `apps/console/components/presentation/Specs.tsx`). Pour les gros volumes, un chemin ClickHouse a été mesuré en local le 11/06/2026 — mêmes p75, stockage 15 fois plus compact (`labs/clickhouse/NOTES.md`) ; ce banc n'a pas été rejoué depuis la migration vers Neon.
 - **Hébergement** : Données hébergées en UE ; hébergeurs de droit américain ; ce POC n'est pas une offre souveraine. Aucune adresse IP n'est stockée, sous aucune forme (`docs/RUM_PARITY_STATUS.md`, § 6.4). Détail dans la section [Architecture](#architecture), lu dans `apps/console/lib/legal.ts`.
 - **Robot et réel** : l'écran `/correlation` confronte, route par route et heure par heure, l'état d'un robot de monitoring synthétique au LCP p75 des visiteurs réels, et compte les heures où l'un voit ce que l'autre ne voit pas (angle mort) — sans jamais soustraire une mesure de robot à un LCP de visiteur (`apps/console/app/correlation/page.tsx`). Cet écran est hors du document de couverture : il n'y a pas de verdict.
 
@@ -58,7 +58,7 @@ node scripts/seed-admin.mjs                                     # compte admin l
 node services/collector/dev-server.mjs                          # ingestion locale :4318
 node demo/serve.mjs                                             # mini-site de démo :8080
 pnpm --filter console dev                                       # console :3000
-node apps/sync-synthetic/src/sync.mjs seed                      # passages robot pour /correlation
+node tools/sync-synthetic/src/sync.mjs seed                      # passages robot pour /correlation
 ```
 
 ## Outillage IA — local, non versionné
@@ -110,7 +110,8 @@ Les zones générées de ce README se régénèrent par `node scripts/readme-sec
 | `packages/db` | `@mip/db` — le schéma (`sql/` : `schema.sql`, migrations numérotées, index de pré-déploiement) et son migrateur, que seul le `scheduler` lance |
 | `packages/mcp-tools` | `@mip/mcp-tools` — noyau MCP : catalogue d'outils, client HTTP de l'API v1 ; sans base de données |
 | `services/*` | Points d'entrée minces au-dessus des paquets, un par service Railway : `scheduler` et `mcp` (déployés), `collector` (receveur autonome pour l'auto-hébergement, voir [infra/docker/](infra/docker/)) — [services/README.md](services/README.md) |
-| `apps/sync-synthetic` | Synchro synthétique → `syn_snapshot` (interface `SyntheticSource` : seed ou export mippoc) |
+| `tools/sync-synthetic` | Synchro synthétique → `syn_snapshot` (interface `SyntheticSource` : seed ou export mippoc) |
+| _(hors workspaces)_ | `examples/integrations/fastapi` (middleware FastAPI, testé en CI) · `labs/clickhouse` et `labs/network-logs` (bancs et prototypes, non déployés) · `demo/` et `scripts/` restent à la racine : l'E2E et la CI les lancent par leur chemin |
 | `apps/extension` | Extension navigateur MV3 (injection du SDK par domaine enregistré) |
 | `apps/console` | Console (Next.js 15) et collecteur `/api/ingest/v1` ; les écrans sont listés dans `apps/console/components/nav-items.tsx`, la vitrine publique est `/presentation` |
 

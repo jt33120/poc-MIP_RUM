@@ -244,7 +244,7 @@
       "famille": "Runtimes instrumentés",
       "capacite": "Instrumenter un service FastAPI",
       "verdict": "deploye_non_eprouve",
-      "preuve": "`integrations/fastapi/mip_rum_middleware.py` (ContextVar) ; `python3 -m unittest discover -s integrations/fastapi` en CI",
+      "preuve": "`examples/integrations/fastapi/mip_rum_middleware.py` (ContextVar) ; `python3 -m unittest discover -s examples/integrations/fastapi` en CI",
       "limite": "Un seul framework (FastAPI/Starlette), un seul saut : ni propagation backend→backend, ni span DB.",
       "ligne": 174
     },

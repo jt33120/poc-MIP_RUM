@@ -1,4 +1,4 @@
-"""Tests stdlib du middleware (python3 -m unittest discover integrations/fastapi).
+"""Tests stdlib du middleware (python3 -m unittest discover examples/integrations/fastapi).
 
 Pas de FastAPI requis : le middleware est ASGI pur, on le pilote avec des dicts.
 L'envoi réseau est intercepté en monkeypatchant mip_rum_middleware._post.

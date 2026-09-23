@@ -25,7 +25,7 @@ OTLP externe (cloud/app) ─┤→  otel-collector  ─┬→  ClickHouse   → 
 
 ## Démarrer
 ```bash
-cd poc/network-logs
+cd labs/network-logs
 docker compose up -d
 # ~30-60 s le temps qu'OpenSearch et ClickHouse soient "healthy"
 docker compose ps

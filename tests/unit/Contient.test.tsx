@@ -122,7 +122,7 @@ describe("PS2 — les capteurs", () => {
 
   it("sous les cartes, les agents côté serveur (texte exact du plan)", () => {
     expect(texte).toContain(
-      "Côté serveur : un agent Node (packages/agent-node) et un middleware FastAPI (integrations/fastapi) relient un appel du navigateur à son exécution serveur, sur un seul saut.",
+      "Côté serveur : un agent Node (packages/agent-node) et un middleware FastAPI (examples/integrations/fastapi) relient un appel du navigateur à son exécution serveur, sur un seul saut.",
     );
   });
 

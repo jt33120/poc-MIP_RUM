@@ -80,7 +80,7 @@ jobs:
 
       # v0.4 — middleware FastAPI de tracing (stdlib pur : aucun pip install requis)
       - name: Tests middleware Python (unittest)
-        run: python3 -m unittest discover -s integrations/fastapi -v
+        run: python3 -m unittest discover -s examples/integrations/fastapi -v
 
   e2e:
     name: E2E Playwright (Postgres service)
@@ -226,7 +226,7 @@ jobs:
 
       # le test corrélation attend des runs robot en face des données RUM générées par le test
       - name: Seed synthétique (app demo-app, 24 h de runs)
-        run: node apps/sync-synthetic/src/sync.mjs seed
+        run: node tools/sync-synthetic/src/sync.mjs seed
 
       # v0.4 — backend FastAPI de démo (cible du tracing distribué, spawné par l'E2E)
       - name: Dépendances Python du backend démo

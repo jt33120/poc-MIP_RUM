@@ -4894,7 +4894,7 @@ Relevé sur les fichiers, le 21/09/2026. Source de synthèse : `plan/reads/site-
 | VS9 | `components/AddClientCarousel.tsx:44-47` | la clé d'API est présentée comme l'étape qui sécurise | « le refus n'est pas encore le comportement par défaut » | `components/presentation/Specs.tsx:157-159` |
 | VS10 | `components/AddClientCarousel.tsx:104` | « le RUM front fonctionne déjà à 100 % » | seul superlatif chiffré du site ; aucune mesure ne le fonde | `plan/reads/site-presentation.md:200-204` |
 | VS11 | `lib/presentation-content.ts:38-116` (11 cartes « Les statistiques montrées ») | présent simple sans réserve : « triées par impact réel », « Chaque appel API relié à son exécution serveur », « sans seuil à régler » | ces écrans n'ont **aucun** verdict dans le document de couverture ; le tracing est « un seul saut, front → back » | `RUM_PARITY_STATUS.md:340-341` ; `lib/specs.ts:317` |
-| VS12 | `lib/presentation-content.ts:28` | « chemin ClickHouse prouvé […] (mêmes p75, ×15 plus compact) » | exact, mais le banc est local, du 11/06/2026, avant P5–P8, et non rejoué depuis Neon | `infra/clickhouse.notes.md:7`, `:19-26` |
+| VS12 | `lib/presentation-content.ts:28` | « chemin ClickHouse prouvé […] (mêmes p75, ×15 plus compact) » | exact, mais le banc est local, du 11/06/2026, avant P5–P8, et non rejoué depuis Neon | `labs/clickhouse/NOTES.md:7`, `:19-26` |
 | VS13 | `lib/queries-planifie.ts:26-29` et `:53-56` | une lecture en échec rend `null`, que `Specs.tsx:201-240` affiche « aucune exécution constatée en production » | une panne de lecture est une **inconnue**, pas un fait « jamais exécuté » | invariant « Inconnu = null / « Inconnu » » |
 | VS14 | `public/portail/console-tour.mp4` (1,7 Mo) + poster | présents, référencés nulle part | actif mort ; les écrans filmés vont changer (F04, F09) | `plan/reads/site-presentation.md:215-218` |
 | VS15 | `app/presentation/page.tsx:1-5` (commentaire) | connecté → « rappel DANS la coquille console » | `/presentation` est un chemin public que le layout n'enveloppe pas, connecté ou non ; la capture `40-presentation.png` le montre sans barre latérale | `lib/chemins-publics.ts:4-12`, `:32-38` |
@@ -4974,7 +4974,7 @@ Garder les deux cartes. Changements :
   (`lib/specs.ts:56`). La limite existante (`Capteurs.tsx:46-47`) est juste : la garder.
 - Ajouter, sous les deux cartes, une ligne (texte exact) :
   > Côté serveur : un agent Node (`packages/agent-node`) et un middleware FastAPI
-  > (`integrations/fastapi`) relient un appel du navigateur à son exécution serveur, sur un seul saut.
+  > (`examples/integrations/fastapi`) relient un appel du navigateur à son exécution serveur, sur un seul saut.
 
   Source : `RUM_PARITY_STATUS.md:173-174` (C5, C6).
 
@@ -5072,7 +5072,7 @@ dépôt) avec leur date : ils ne changent qu'avec un nouveau relevé.
 > milliseconde près, stockage 15 fois plus compact à données identiques. Ce banc n'a pas été rejoué
 > depuis la migration vers Neon.
 
-Source : `infra/clickhouse.notes.md:7`, `:19-26`.
+Source : `labs/clickhouse/NOTES.md:7`, `:19-26`.
 
 ---
 

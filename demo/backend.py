@@ -12,7 +12,7 @@ import asyncio
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "integrations", "fastapi"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "examples", "integrations", "fastapi"))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware

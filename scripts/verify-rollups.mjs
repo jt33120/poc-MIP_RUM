@@ -1,7 +1,7 @@
 // Vérifie que les rollups de migration-v12 produisent EXACTEMENT les mêmes
 // résultats que les requêtes sur lignes brutes (Δ=0), pour les vues que la console
 // bascule sur le rollup : heatmap santé (healthGrid) et trafic quotidien (dailyTraffic).
-// Esprit identique à infra/clickhouse/bench.mjs (preuve d'équivalence).
+// Esprit identique à labs/clickhouse/bench.mjs (preuve d'équivalence).
 //
 // Usage (Postgres éphémère) :
 //   pg_virtualenv node scripts/verify-rollups.mjs

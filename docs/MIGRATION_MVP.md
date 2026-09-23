@@ -79,9 +79,9 @@ En 2 temps pour ne pas casser le flux actuel (snippet sans clé) :
 chunks partent vers `v1-replay` (déjà ACTIVE) ; lecture dans `/sessions/[id]`.
 
 **Synthetic** (robot → `/correlation`) : relancer le runner
-`apps/sync-synthetic/src/sync.mjs` (adapters `seed` = données déterministes, `mippoc-json`
+`tools/sync-synthetic/src/sync.mjs` (adapters `seed` = données déterministes, `mippoc-json`
 = exports DEM réels). Nécessite `DATABASE_URL`. Pour un flux continu : cron toutes les 15 min
-(`*/15 * * * * DATABASE_URL=… node apps/sync-synthetic/src/sync.mjs seed`). Tant que le
+(`*/15 * * * * DATABASE_URL=… node tools/sync-synthetic/src/sync.mjs seed`). Tant que le
 runner ne tourne pas, `/correlation` affiche honnêtement « pas de donnée robot récente ».
 
 ## 6. Phase 5 — Snippet dans uti-platform

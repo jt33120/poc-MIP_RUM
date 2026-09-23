@@ -1,5 +1,5 @@
 -- Schéma ClickHouse PRODUCTION — MIP RUM (C2, P0 « scale grand compte »).
--- Différences vs infra/clickhouse/schema.sql (qui reste le schéma du bench local,
+-- Différences vs labs/clickhouse/schema.sql (qui reste le schéma du bench local,
 -- volontairement minimal pour la repro Δ=0) :
 --   • jeu de tables COMPLET (metric/pageview/error/resource/longtask/session)
 --     couvrant tous les agrégats de la console ;

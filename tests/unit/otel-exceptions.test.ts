@@ -440,7 +440,7 @@ describe.skipIf(!PYTHON)("middleware FastAPI réel -> ingestion", () => {
   it("l'exception d'une requête ASGI devient une erreur python rattachée à son span, sans session inventée", () => {
     const script = `
 import asyncio, json, sys
-sys.path.insert(0, ${JSON.stringify(join(__dirname, "..", "..", "integrations", "fastapi"))})
+sys.path.insert(0, ${JSON.stringify(join(__dirname, "..", "..", "examples", "integrations", "fastapi"))})
 import mip_rum_middleware as mrm
 
 class Boom:
