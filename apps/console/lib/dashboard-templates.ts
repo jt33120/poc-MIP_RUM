@@ -20,7 +20,15 @@
 // commencées et visiteurs : jamais additionnés, jamais sur une même carte.
 import type { ExplorerPlan } from "./analytics-schema";
 import { canCreateDashboard, type DashboardPrincipal } from "./dashboard-access";
-import { MAX_WIDGETS, WIDGET_META, widgetFromPlan, type AnalyticsWidget, type LegacyWidget, type Widget } from "./dashboards";
+import {
+  MAX_WIDGETS,
+  WIDGET_META,
+  widgetFromPlan,
+  type AnalyticsWidget,
+  type CarteWidget,
+  type LegacyWidget,
+  type Widget,
+} from "./dashboards";
 import type { AppItem } from "./queries";
 
 export type CleModele = "performance" | "erreurs" | "usages" | "releases";
@@ -233,7 +241,7 @@ const V1_COURT: Record<LegacyWidget["type"], string> = {
   frustration: "Frustration",
   event_count: "Événement",
 };
-export function puceDeCarte(widget: Widget): string {
+export function puceDeCarte(widget: CarteWidget): string {
   if (widget.kind === "v2") return REPRESENTATIONS[widget.plan.visualization];
   if (widget.kind === "v1") {
     return `v1 : ${widget.type === "vital_p75" && widget.metric ? `${widget.metric} p75` : (V1_COURT[widget.type] ?? WIDGET_META[widget.type].label)}`;
@@ -241,10 +249,14 @@ export function puceDeCarte(widget: Widget): string {
   return "illisible";
 }
 
-/** Les puces d'un tableau, regroupées par type dans l'ordre d'apparition : « Valeur × 3 ». */
+/**
+ * Les puces d'un tableau, regroupées par type dans l'ordre d'apparition : « Valeur × 3 ».
+ * Un titre de section (F37) n'est pas une carte : il n'a pas de puce.
+ */
 export function pucesDuTableau(layout: Widget[]): { libelle: string; n: number }[] {
   const comptes = new Map<string, number>();
   for (const w of layout) {
+    if (w.kind === "section") continue;
     const p = puceDeCarte(w);
     comptes.set(p, (comptes.get(p) ?? 0) + 1);
   }

@@ -17,6 +17,16 @@
 // perdait ses cartes à la première écriture. Une entrée illisible devient
 // désormais un widget `invalid` qui porte sa raison et son JSON d'origine —
 // affiché en carte de diagnostic, réécrit intact, corrigible par un admin.
+//
+// LES SECTIONS SONT DES ÉLÉMENTS DU LAYOUT (F37, W-B12). Un titre de section
+// (`kind: "section"`) ouvre un groupe : les cartes qui le suivent, jusqu'à la
+// section suivante, sont les siennes. Aucune migration : la colonne `layout` est
+// déjà une liste. Le jsonb d'une section ne porte PAS `kind` (un lecteur d'avant
+// F37 prendrait un objet à `kind` pour un widget déjà normalisé et le passerait
+// tel quel au rendu) mais `type: "section"`, hors du catalogue v1 : ce lecteur-là
+// la lit comme une carte illisible et la réécrit intacte — rien n'est perdu en
+// cas de retour arrière. Une section compte dans `MAX_WIDGETS`, comme une carte :
+// la borne de lecture d'un tableau ne change pas.
 import {
   EXPLORER_VERSION,
   VISUALIZATIONS,
@@ -52,9 +62,14 @@ export const WIDGET_VITALS = ["LCP", "INP", "CLS", "FCP", "TTFB"] as const;
 export const WIDGET_SCHEMA_VERSION = 2 as const;
 /** Discriminant des widgets v2 dans le jsonb : un lecteur v1 l'ignore comme un type inconnu. */
 export const ANALYTICS_WIDGET_TYPE = "analytics" as const;
+/** Discriminant d'un titre de section dans le jsonb (F37) : hors du catalogue v1, comme `analytics`. */
+export const SECTION_WIDGET_TYPE = "section" as const;
 
+/** Éléments d'un tableau, SECTIONS COMPRISES (F37) : la borne de lecture d'un tableau. */
 export const MAX_WIDGETS = 24;
 const TITLE_MAX = 60;
+/** Longueur d'une question de section : une phrase, pas un paragraphe. */
+export const QUESTION_MAX = 120;
 
 /** Widget v1 : un type du catalogue, sa métrique ou son nom d'événement. */
 export interface LegacyWidget {
@@ -103,7 +118,21 @@ export interface InvalidWidget {
   raw: unknown;
 }
 
-export type Widget = LegacyWidget | AnalyticsWidget | InvalidWidget;
+/**
+ * Titre de section (F37, W-B12) : un `h2` et la question à laquelle répondent les
+ * cartes qui le suivent. Il ne lit rien. `question` peut être vide : le titre est
+ * alors lui-même la question (« Où ? »).
+ */
+export interface SectionWidget {
+  kind: "section";
+  title: string;
+  question: string;
+}
+
+export type Widget = LegacyWidget | AnalyticsWidget | SectionWidget | InvalidWidget;
+
+/** Ce qui se dessine dans une grille : tout élément du layout sauf un titre de section. */
+export type CarteWidget = Exclude<Widget, SectionWidget>;
 
 /** Métadonnées d'affichage/édition par type de widget v1. */
 export const WIDGET_META: Record<WidgetType, { label: string; needsMetric: boolean; needsEventName?: boolean }> = {
@@ -309,6 +338,12 @@ function lireWidget(item: unknown): Widget {
   if (!estObjet(item)) {
     return { kind: "invalid", title: "Widget illisible", reason: "la configuration n'est pas un objet", raw: item };
   }
+  if (item.type === SECTION_WIDGET_TYPE) {
+    const section = lireSection(item);
+    return section.ok
+      ? section.value
+      : { kind: "invalid", title: titreDe(item.title, "Section illisible"), reason: section.reason, raw: item };
+  }
   if (item.type === ANALYTICS_WIDGET_TYPE || item.schemaVersion === WIDGET_SCHEMA_VERSION) {
     const analytique = parseAnalyticsWidget(item);
     return analytique.ok
@@ -319,6 +354,42 @@ function lireWidget(item: unknown): Widget {
   return legacy.ok
     ? legacy.value
     : { kind: "invalid", title: titreDe(item.title, "Widget illisible"), reason: legacy.reason, raw: item };
+}
+
+const CLES_SECTION = ["type", "title", "question"] as const;
+
+/**
+ * Titre de section stocké (ou soumis par le formulaire) → section validée. Les clés
+ * sont fermées, comme celles d'une analyse : une section écrite par une version
+ * plus récente (une clé que celle-ci ignore) devient une carte illisible — son
+ * JSON est conservé et réécrit intact —, jamais une section amputée en silence.
+ */
+function lireSection(item: Record<string, unknown>): WidgetParsed<SectionWidget> {
+  const inconnue = clesInconnues(item, CLES_SECTION);
+  if (inconnue) return refus(`clé de section inconnue : ${inconnue}`);
+  const titre = typeof item.title === "string" ? item.title.trim() : "";
+  if (!titre) return refus("une section porte un titre");
+  if (item.question !== undefined && typeof item.question !== "string") {
+    return refus("la question d’une section est un texte");
+  }
+  return lu({
+    kind: "section",
+    title: titre.slice(0, TITLE_MAX),
+    question: (item.question ?? "").trim().slice(0, QUESTION_MAX),
+  });
+}
+
+/**
+ * Section soumise par le formulaire « Ajouter une section » (F37). Même porte que
+ * le jsonb stocké : une section enregistrée est relue exactement comme elle a été
+ * acceptée. Titre vide (des espaces passent l'attribut `required`) → refus dit.
+ */
+export function sectionDuFormulaire(title: unknown, question: unknown): WidgetParsed<SectionWidget> {
+  return lireSection({
+    type: SECTION_WIDGET_TYPE,
+    title: typeof title === "string" ? title : "",
+    question: typeof question === "string" ? question : "",
+  });
 }
 
 function lireWidgetV1(w: Record<string, unknown>): WidgetParsed<LegacyWidget> {
@@ -378,6 +449,11 @@ function conditionJson(c: FilterCondition): Record<string, unknown> {
 export function serializeLayout(widgets: Widget[]): unknown[] {
   return widgets.slice(0, MAX_WIDGETS).map((w) => {
     if (w.kind === "invalid") return w.raw;
+    // Jamais de `kind` dans le jsonb d'une section : voir l'en-tête (lecteur d'avant F37).
+    // Une question vide n'est pas écrite, comme une métrique ou une fenêtre absentes.
+    if (w.kind === "section") {
+      return { type: SECTION_WIDGET_TYPE, title: w.title, ...(w.question ? { question: w.question } : {}) };
+    }
     if (w.kind === "v1") {
       return {
         type: w.type,
@@ -411,4 +487,62 @@ export function widgetFiltersLabel(widget: AnalyticsWidget): string | null {
         : `${DIMENSION_LABELS[c.dimension]} ${OPERATEURS[c.operator]} ${c.value}`,
     )
     .join(" · ");
+}
+
+// ─────────────────────────── Sections (F37, W-B12) ───────────────────────────
+
+/**
+ * Un groupe de la grille : le titre de section qui l'ouvre, et ses cartes. Chaque
+ * élément garde sa POSITION dans le layout : les formulaires d'ordre et de retrait
+ * la citent, et la donnée résolue (`resolveWidgets`) est rangée dans le même ordre.
+ */
+export interface GroupeDeCartes {
+  /** `null` : cartes posées avant toute section (ou tableau sans section — une grille unique). */
+  section: { index: number; widget: SectionWidget } | null;
+  cartes: { index: number; widget: CarteWidget }[];
+}
+
+/**
+ * Le layout découpé en groupes, dans l'ordre. Une section vide reste un groupe (son
+ * titre s'affiche, avec « aucune carte ») ; les cartes d'avant la première section
+ * forment un groupe sans titre. Sans aucune section : un seul groupe, sans titre.
+ */
+export function groupesDuLayout(layout: Widget[]): GroupeDeCartes[] {
+  const groupes: GroupeDeCartes[] = [];
+  let courant: GroupeDeCartes = { section: null, cartes: [] };
+  layout.forEach((widget, index) => {
+    if (widget.kind === "section") {
+      if (courant.section !== null || courant.cartes.length) groupes.push(courant);
+      courant = { section: { index, widget }, cartes: [] };
+      return;
+    }
+    courant.cartes.push({ index, widget });
+  });
+  if (courant.section !== null || courant.cartes.length) groupes.push(courant);
+  return groupes;
+}
+
+/**
+ * Le tableau a-t-il atteint `MAX_WIDGETS` éléments, sections comprises ? Alors une
+ * carte ou une section de plus est REFUSÉE, et le refus est dit : `serializeLayout`
+ * couperait le 25e élément sans rien dire.
+ */
+export function layoutPlein(layout: Widget[]): boolean {
+  return layout.length >= MAX_WIDGETS;
+}
+
+/** Nombre de cartes d'un layout : un titre de section n'en est pas une. */
+export function nombreDeCartes(layout: Widget[]): number {
+  return layout.filter((w) => w.kind !== "section").length;
+}
+
+/**
+ * La question à écrire sous le titre d'une section, ou `null` : absente, ou
+ * identique au titre (un titre déjà formulé en question ne se répète pas). Une
+ * seule règle pour la page et pour l'export CSV.
+ */
+export function questionDeSection(section: SectionWidget): string | null {
+  const question = section.question.trim();
+  if (!question) return null;
+  return question.toLocaleLowerCase("fr") === section.title.trim().toLocaleLowerCase("fr") ? null : question;
 }
