@@ -90,11 +90,11 @@ import {
 } from "@/lib/query-contract";
 import { ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
 import { lireComparaison, lireTri } from "@/lib/view-state";
-import { annotationsDeploiements } from "@/lib/annotations";
 import { explorerPlanParams } from "@/lib/explorer-page-params";
 import { lienCohorte } from "@/lib/mobile-capabilities";
+import { annotationsDeploiementsCohorte } from "@/lib/mobile-capabilities";
 import { mobileResumeEtSerie, valeurDe } from "@/lib/queries-mobile";
-import { listDeploys } from "@/lib/queries-deploys";
+import { mobileDeploiements } from "@/lib/queries-mobile";
 import { PLAN_SESSIONS_COMMENCEES } from "@/lib/queries-sessions";
 import { bucketStarts } from "@/lib/query-contract";
 import { gabaritZoom } from "@/lib/view-state";
@@ -224,7 +224,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
         : sansLecture(null),
       // F39 : la même cohorte, seau par seau ; les déploiements de la fenêtre en annotations.
       lire(async () => valeurDe((await photo).serie)),
-      lire(() => listDeploys(f, 20)),
+      // Les 20 derniers marqueurs du périmètre, chacun rattaché ou non à la cohorte (revue v8).
+      lire(() => mobileDeploiements(f, schema, 20)),
     ]);
 
   const data: MobileSummary | null = resume.ok ? resume.data : null;
@@ -273,8 +274,14 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   const lienExplorer = lienCohorte(query, "/explorer", runtimeLu, { ...explorerPlanParams(PLAN_SESSIONS_COMMENCEES), cursor: null });
   // Annotations de déploiement de la série (§ 3.7) : une annotation ouvre cet écran
   // filtré sur la release déployée — /mobile ne compare pas deux releases en série.
+  // Seuls les marqueurs dont la version est une release de la cohorte, dans leur app,
+  // sont posés : un déploiement web n'a rien à faire sur la série React Native, et son
+  // lien ouvrirait une cohorte vide. Les écartés sont comptés sous la figure (revue v8).
+  // Sous plusieurs apps, le lien pose l'app du marqueur, comme `hrefDeRelease`.
   const deploiements = deploysLus.ok
-    ? annotationsDeploiements(deploysLus.data, query.range, { lien: (relB) => hrefWithQuery("/mobile", query, { release: relB }) })
+    ? annotationsDeploiementsCohorte(deploysLus.data, query.range, (release, app) =>
+        hrefWithQuery("/mobile", query, { ...(query.scope.requestedApp === null ? { app } : {}), release }),
+      )
     : { annotations: [], liste: [], indisponible: "lecture des marqueurs de déploiement en échec" };
   const hrefTri = (tri: TriStabilite) =>
     hrefWithQuery("/mobile", query, {

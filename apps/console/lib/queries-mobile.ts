@@ -23,6 +23,7 @@ import { compileScope, compileWhereOrThrow, type DimensionSchema } from "./query
 import { bucketExpr, bucketSeriesSql } from "./query-compiler";
 import { conditionsOf, type AnalyticsQuery, type FilterCondition } from "./query-contract";
 import { dimensionSchema } from "./query-schema";
+import type { DeployRow } from "./queries-deploys";
 import {
   ERROR_FREE_REASONS,
   RAISON_SANS_RUNTIME,
@@ -943,4 +944,62 @@ export async function mobileResumeEtSerie(
     const serie = await sousPointDeReprise(lire, "serie_mobile", () => lireSerie(lire, query, etat));
     return { resume, serie };
   });
+}
+
+// ───────────── Déploiements de la cohorte (revue de fin de vague 8, point 7) ─────────────
+//
+// UN MARQUEUR DE DÉPLOIEMENT NE DIT PAS SON RUNTIME. `deploy_marker` (v32) porte
+// une app et une version, rien d'autre. `/mobile` posait sur sa série React Native
+// les 20 derniers marqueurs de TOUT le périmètre (`listDeploys`) : sous plusieurs
+// apps, ceux des apps web ; dans une app qui émet des deux runtimes, ceux de sa
+// version web. Chaque trait menait à `/mobile?release=<version>` — la cohorte
+// React Native d'une version qu'aucune session mobile ne porte, donc vide, sans
+// que rien ne dise pourquoi.
+//
+// Un marqueur n'est rattaché à la cohorte que si sa version est une release
+// qu'au moins une session de la cohorte AFFICHÉE porte, DANS L'APP du marqueur
+// (une release n'existe que dans son app, F38). Les autres sont lus quand même :
+// l'écran dit combien il en écarte, au lieu de les taire.
+
+/** Un marqueur du périmètre, et s'il est rattaché à la cohorte React Native affichée. */
+export interface MobileDeploiement extends DeployRow {
+  app_id: string;
+  /** Sa version est une release portée par une session de la cohorte, dans son app. */
+  de_la_cohorte: boolean;
+}
+
+export type MobileDeploiements =
+  | { disponible: true; marqueurs: MobileDeploiement[] }
+  | { disponible: false; raison: string };
+
+/**
+ * Les `limite` derniers marqueurs du périmètre — la même lecture que `listDeploys`,
+ * sans borne de temps (la fenêtre s'applique dans `annotationsDeploiements`) —,
+ * chacun marqué `de_la_cohorte`. Requête sans migration.
+ */
+export async function mobileDeploiements(f: FiltersLike, schema?: MobileSchema, limite = 20): Promise<MobileDeploiements> {
+  const etat = schema ?? (await mobileSchema());
+  if (!etat.runtime) return { disponible: false, raison: RAISON_SANS_RUNTIME };
+  if (!etat.dimensions.has("rum_session.release")) return { disponible: false, raison: RAISON_SANS_RELEASE_SESSION };
+  const query = queryOf(f);
+  const base = cohorte(query, etat);
+  const marqueurs = await q<MobileDeploiement>(
+    `with ${base.cte},
+     releases as (
+       select distinct c.app_id, c.release from cohorte c where c.release is not null
+     ),
+     marqueurs as (
+       select dm.id, dm.ts, dm.version, dm.env, dm.source, dm.app_id
+         from deploy_marker dm
+        where true${compileScope(query, "dm.app_id", base.bind)}
+        order by dm.ts desc
+        limit ${Math.max(0, Math.trunc(limite))}
+     )
+     select m.id, m.ts, m.version, m.env, m.source, m.app_id, r.app_id is not null as de_la_cohorte
+       from marqueurs m
+       left join releases r on r.app_id = m.app_id and r.release = m.version
+      order by m.ts desc, m.id desc`,
+    base.params,
+  );
+  return { disponible: true, marqueurs };
 }

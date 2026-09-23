@@ -273,4 +273,70 @@ suite("F39 — mobileSerie sur PostgreSQL", () => {
       await c.query("delete from rum_session where session_id = 'f39-pendant'");
     }
   });
+
+  // Revue de fin de vague 8, point 7. Un marqueur de déploiement ne dit pas son
+  // runtime : sur la série React Native, seul est posé celui dont la version est une
+  // release portée par une session de la cohorte AFFICHÉE, dans l'app du marqueur.
+  describe("déploiements rattachés à la cohorte (mobileDeploiements)", () => {
+    const marqueurs = async (q: AnalyticsQuery, schema?: Parameters<Console["mobileDeploiements"]>[1]) => {
+      const r = await lib.mobileDeploiements(filtres(q), schema);
+      if (!r.disponible) throw new Error(`indisponible : ${r.raison}`);
+      return r.marqueurs.map((m) => `${m.app_id}/${m.version ?? "∅"}:${m.de_la_cohorte ? "oui" : "non"}`);
+    };
+
+    beforeAll(async () => {
+      const deploiement = (app: string, version: string | null, ts: Date) =>
+        c.query("insert into deploy_marker (app_id, version, env, source, ts) values ($1,$2,'prod','ci',$3)", [app, version, ts]);
+      await deploiement(APP_F39, null, dans(0, 15));
+      await deploiement(APP_F39_B, "4.2", dans(0, 50));
+      await deploiement(APP_F39, "4.2", dans(1, 0));
+      await deploiement(APP_F39, "web-7.3", dans(1, 30)); // la version web de l'app : aucune session mobile ne la porte
+      await deploiement(APP_F39, "4.1", dans(2, 0));
+      await deploiement(APP_F39_B, "4.1", dans(2, 30)); // 4.1 est une release de A, pas de B
+    });
+    afterAll(async () => {
+      await c.query("delete from deploy_marker where app_id = any($1::text[])", [APPS_F39]);
+    });
+
+    it("une app : la version web et le marqueur sans version ne sont pas de la cohorte", async () => {
+      expect(await marqueurs(requete(`app=${APP_F39}`))).toEqual([
+        `${APP_F39}/4.1:oui`,
+        `${APP_F39}/web-7.3:non`,
+        `${APP_F39}/4.2:oui`,
+        `${APP_F39}/∅:non`,
+      ]);
+    });
+
+    it("deux apps : une release n'est de la cohorte que dans SON app", async () => {
+      const r = await marqueurs(requete("", { role: "viewer", apps: APPS_F39 }));
+      expect(r).toContain(`${APP_F39_B}/4.1:non`);
+      expect(r).toContain(`${APP_F39_B}/4.2:oui`);
+      expect(r).toHaveLength(6);
+    });
+
+    it("la cohorte AFFICHÉE : sous `release=4.1` ou `os=Android`, la 4.2 n'en est plus", async () => {
+      for (const qs of [`app=${APP_F39}&release=4.1`, `app=${APP_F39}&os=Android`]) {
+        expect(await marqueurs(requete(qs)), qs).toEqual([
+          `${APP_F39}/4.1:oui`,
+          `${APP_F39}/web-7.3:non`,
+          `${APP_F39}/4.2:non`,
+          `${APP_F39}/∅:non`,
+        ]);
+      }
+    });
+
+    it("la limite de lecture tient (les plus récents d'abord)", async () => {
+      const r = await lib.mobileDeploiements(filtres(requete(`app=${APP_F39}`)), undefined, 2);
+      expect(r.disponible && r.marqueurs.map((m) => m.version)).toEqual(["4.1", "web-7.3"]);
+    });
+
+    it("schéma sans `rum_session.release` : non rattachable, et dit", async () => {
+      const etat = await lib.mobileSchema();
+      const sansRelease = { ...etat, dimensions: new Set([...etat.dimensions].filter((d) => d !== "rum_session.release")) };
+      expect(await lib.mobileDeploiements(filtres(requete(`app=${APP_F39}`)), sansRelease)).toEqual({
+        disponible: false,
+        raison: lib.RAISON_SANS_RELEASE_SESSION,
+      });
+    });
+  });
 });
