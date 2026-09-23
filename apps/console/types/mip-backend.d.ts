@@ -678,9 +678,31 @@ declare module "@mip/backend/jobs/cadence.mjs" {
 declare module "@mip/db/migrate.mjs" {
   import type { Pool } from "pg";
 
+  type Delais = {
+    lockTimeoutMs: number;
+    indexLockTimeoutMs: number;
+    tentatives: number;
+    attenteMs: number;
+    verrouEssais: number;
+    verrouPauseMs: number;
+  };
+  type Journal = {
+    info(msg: string, champs?: Record<string, unknown>): void;
+    warn(msg: string, champs?: Record<string, unknown>): void;
+    error(msg: string, champs?: Record<string, unknown>): void;
+  };
+
   export const DOSSIER_SQL: string;
+  export const DELAIS: Readonly<Delais>;
   export function empreinte(sql: string): string;
+  export function estAttenteDeVerrou(err: unknown): boolean;
+  export function numeroMigration(nom: string): number | null;
+  export function trierMigrations(noms: string[]): string[];
   export function fichiersMigration(dossier?: string): Promise<string[]>;
+  export function fichiersPredeploiement(dossier?: string): Promise<Map<number, string[]>>;
+  export function decouperSql(sql: string): string[];
+  export function indexConcurrent(instruction: string): { nom: string; cite: string } | null;
+  export function estPooler(url: string): boolean;
   export function aFaire(
     fichiers: Array<{ nom: string; checksum: string }>,
     dejaApplique: Array<{ filename: string; checksum: string }>,
@@ -688,11 +710,20 @@ declare module "@mip/db/migrate.mjs" {
   export function jusquaInclus<T extends { nom: string }>(fichiers: T[], jusqua: string): T[] | null;
   export function migrer(
     pool: Pool,
-    opts?: { dossier?: string; baseline?: string | null; par?: string },
-  ): Promise<{ appliquees: string[]; modifies: string[]; total: number }>;
+    opts?: {
+      dossier?: string;
+      baseline?: string | null;
+      par?: string;
+      ouvrirDirecte?: null | (() => Promise<unknown>);
+      delais?: Partial<Delais>;
+      journal?: Journal;
+      attendre?: (ms: number) => Promise<unknown>;
+    },
+  ): Promise<{ appliquees: string[]; modifies: string[]; total: number; predeployes: string[] }>;
   export function main(options?: {
     argv?: string[];
     env?: Record<string, string | undefined>;
+    dossier?: string;
   }): Promise<number>;
 }
 
