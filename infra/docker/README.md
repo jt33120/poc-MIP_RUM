@@ -110,10 +110,11 @@ sur un Postgres local. `ON_ERROR_STOP=1` → pas de schéma partiel silencieux.
 ## Rétention (TTL)
 
 `pg_cron` n'est pas présent sur `postgres:15` → la purge automatique est sautée.
-La lancer via le CLI Node (cron système ou boucle) :
+C'est le travail quotidien du `scheduler`, qui partage l'image du collecteur ;
+pour une passe ponctuelle, sous bail :
 
 ```bash
-docker compose exec collector node node_modules/@mip/backend/purge.mjs --once   # ou --loop
+docker compose exec collector node services/scheduler/run-once.mjs daily
 ```
 
 ## Ce que ce lot ne couvre pas (encore)

@@ -28,7 +28,7 @@ L'implémentation est sérieuse, et c'est ce qui rend le diagnostic frustrant.
 
 | Brique | Fichier | État |
 |---|---|---|
-| Endpoint d'ingestion | `packages/backend/supabase/functions/v1-logs/index.ts` (188 l.) | Écrit, miroir exact de `v1-traces` |
+| Endpoint d'ingestion | `supabase/functions/v1-logs/index.ts` (fonction Deno retirée en P1, lisible au tag `pre-reorg`) (188 l.) | Écrit, miroir exact de `v1-traces` |
 | Jumeau auto-hébergé | `services/collector/dev-server.mjs:271-299` | Écrit |
 | Parseur OTLP | `shared/otlp.mjs:543+` — `flattenOtlpLogs()` | Écrit, teste les `resourceLogs` sans app |
 | Schéma | `migration-v29.sql` — table `rum_log` + 3 index | Appliqué |

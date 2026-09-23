@@ -20,7 +20,6 @@ import {
 // @ts-expect-error module JS partagé sans déclarations
 import { _resetColonnesCache, writeLogs, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { createSchemaCompatibleWriter } from "../../packages/backend/shared/write-causal.mjs";
 
 type Attrs = Record<string, unknown>;
 type Row = Record<string, unknown>;
@@ -423,45 +422,6 @@ describe("écrivain PostgreSQL — erreurs dérivées", () => {
     };
     await expect(writeLogs(panne.pool, parsed.logs, parsed.errors)).rejects.toThrow("panne");
     expect(panne.appels.at(-1)?.sql).toBe("rollback");
-  });
-});
-
-// ─────────────────────── Receveur Supabase historique ─────────────────────────
-
-describe("receveur Supabase — erreurs dérivées", () => {
-  function fakeSupabase(avecV70: boolean) {
-    const ecrits: Array<{ table: string; batch: Row[] }> = [];
-    const client = {
-      from(table: string) {
-        return {
-          async upsert(batch: Row[]) {
-            if (table === "rum_error" && !avecV70 && batch.some((row) => "origin_signal" in row)) {
-              return { error: { code: "PGRST204", message: "could not find origin_signal column" } };
-            }
-            ecrits.push({ table, batch });
-            return { error: null };
-          },
-        };
-      },
-    };
-    return { ecrits, writer: createSchemaCompatibleWriter(client, { retry: async <T>(fn: () => Promise<T>) => fn(), onRetry() {} }) };
-  }
-
-  it("v70 : la dérivée part avec son origine et sans session revendiquée ; v69 : ignorée, le navigateur part", async () => {
-    const v70 = fakeSupabase(true);
-    await v70.writer.writeTraceCollections(lotMixte());
-    const erreursV70 = v70.ecrits.filter((e) => e.table === "rum_error").flatMap((e) => e.batch);
-    expect(erreursV70.map((r) => [r.origin_signal ?? null, r.session_id ?? null])).toEqual([
-      [null, "connue"],
-      ["span_event", null],
-      ["span_event", null],
-    ]);
-    expect(erreursV70.every((r) => !("session_claim" in r))).toBe(true);
-
-    const v69 = fakeSupabase(false);
-    await v69.writer.writeTraceCollections(lotMixte());
-    expect(v69.ecrits.filter((e) => e.table === "rum_error").flatMap((e) => e.batch).map((r) => r.span_id))
-      .toEqual(["00f067aa0ba902ba"]);
   });
 });
 

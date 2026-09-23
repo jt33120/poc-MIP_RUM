@@ -123,8 +123,9 @@ comportement voulu) ; les en-têtes de préflight restent présents.
 **ordonnée enfants→parents** (FK respectées), qui renvoie le **détail des
 suppressions** (jsonb observable). Planification : **pg_cron** en cloud si
 l'extension est présente (bloc gardé, sauté en CI/local comme pg_net/RLS),
-sinon le CLI **`packages/backend/purge.mjs`** (même patron que `dispatch-alerts.mjs` :
-logs structurés, `--loop`, arrêt propre). `audit_log`/`console_user` **exclus**
+sinon le CLI **`purge.mjs`** (même patron que `dispatch-alerts.mjs` :
+logs structurés, `--loop`, arrêt propre ; retiré en P1, la purge étant devenue le
+travail quotidien du `scheduler`, `packages/backend/jobs/planifie.mjs`). `audit_log`/`console_user` **exclus**
 (conformité/comptes).
 *Vérifié sur Postgres réel* : seules les lignes entièrement anciennes sont
 purgées ; une **vieille pageview avec une métrique récente survit** (FK protégée),

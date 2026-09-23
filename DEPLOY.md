@@ -390,12 +390,18 @@ psql "$DATABASE_URL" -c "select purge_rum_tenants(30)"   # {app: lignes supprim�
 psql "$DATABASE_URL" -c "select check_alerts()"
 ```
 
-Hors Vercel (self-host), les runners Node historiques restent valables :
+Hors Vercel (self-host), c'est le service `scheduler` qui porte la purge et la
+livraison des alertes — en continu, ou pour une passe ponctuelle, sous le même
+bail que le worker :
 
 ```bash
-RETENTION_DAYS=30 node packages/backend/purge.mjs --loop
-node packages/backend/lib/dispatch-alerts.mjs --loop
+node services/scheduler/worker.mjs            # en continu (tick, horaire, quotidien)
+node services/scheduler/run-once.mjs daily    # une passe : purge de rétention, comptage
+node services/scheduler/run-once.mjs tick     # une passe : alertes, SLO, uptime, livraisons
 ```
+
+Les runners Node historiques (`purge.mjs --loop`, `dispatch-alerts.mjs --loop`)
+ont été retirés en P1 : ils tournaient hors bail, en concurrence du scheduler.
 
 ## Dépannage
 

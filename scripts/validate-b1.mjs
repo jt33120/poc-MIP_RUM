@@ -1,5 +1,5 @@
 // Validation B1 (ROADMAP v0.3) — 3 preuves :
-//  (a) alerte test -> check_alerts() -> alert_delivery 'queued' -> dispatch-alerts.mjs
+//  (a) alerte test -> check_alerts() -> alert_delivery 'queued' -> dispatchOnce() (dispatch-alerts.mjs)
 //      -> POST reçu par un receveur local :9999 + statut 'sent'
 //  (b) payload OTLP avec mip.tz='Europe/Paris' -> rum_session.geo_country='FR'
 //  (c) rate_check() partagé entre 2 connexions pg distinctes (2 « isolats ») :
@@ -75,15 +75,19 @@ async function proofWebhook() {
     [rule.id],
   );
 
-  // dispatch local (pendant pg_net) en sous-process, --once
-  const dispatch = spawn("node", ["packages/backend/lib/dispatch-alerts.mjs", "--once"], {
-    cwd: ROOT,
-    env: { ...process.env, DATABASE_URL, DISPATCH_TIMEOUT_MS: "5000" },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  let dispatchOut = "";
-  dispatch.stdout.on("data", (c) => (dispatchOut += c));
-  const code = await new Promise((r) => dispatch.on("exit", r));
+  // Livraison par LA fonction que le scheduler appelle à chaque tick. Ce script
+  // lançait `dispatch-alerts.mjs --once` en sous-process : ce mode CLI a été
+  // retiré en P1 (une seconde boucle livrerait en concurrence du scheduler).
+  // L'échéance d'un POST est lue au chargement du module : posée AVANT l'import.
+  process.env.DISPATCH_TIMEOUT_MS = "5000";
+  const { dispatchOnce } = await import("../packages/backend/lib/dispatch-alerts.mjs");
+  let bilanDispatch = null;
+  let erreurDispatch = null;
+  try {
+    bilanDispatch = await dispatchOnce(pool);
+  } catch (err) {
+    erreurDispatch = err;
+  }
 
   const { rows: [delivery] } = await pool.query(
     `select d.status, d.response from alert_delivery d
@@ -98,7 +102,11 @@ async function proofWebhook() {
   checks.push(
     ["(a) check_alerts() déclenche ≥1 alerte", fired >= 1, `fired=${fired}`],
     ["(a) alert_delivery 'queued' créée", queued.length >= 1 && queued[0].status === "queued", `deliveries=${queued.length}`],
-    ["(a) dispatch-alerts.mjs --once sort en 0", code === 0, dispatchOut.trim().split("\n").pop() ?? ""],
+    [
+      "(a) dispatchOnce() passe sans erreur",
+      erreurDispatch === null,
+      erreurDispatch ? String(erreurDispatch.message ?? erreurDispatch) : JSON.stringify(bilanDispatch),
+    ],
     [
       "(a) POST reçu par le receveur :9999 (payload Slack-compatible)",
       payload?.source === "mip-rum" && payload?.app_id === APP_WEBHOOK && /\[MIP RUM\] LCP > /.test(payload?.text ?? ""),

@@ -1,9 +1,14 @@
 // Dispatch des webhooks d'alerte — pendant LOCAL de pg_net (ROADMAP v0.3 B1).
 // check_alerts() v2 insère une ligne alert_delivery 'queued' par règle avec
-// webhook_url ; en cloud pg_net poste directement, en local ce script prend
-// le relais : POST du même payload JSON (champ `text` compatible Slack), puis
-// statut sent/failed + code http dans `response`.
-// Usage : node packages/backend/lib/dispatch-alerts.mjs [--once|--loop]  (--loop : poll 30 s)
+// webhook_url ; `dispatchOnce` prend le relais : POST du même payload JSON
+// (champ `text` compatible Slack), puis statut sent/failed + code http dans
+// `response`.
+//
+// UNE FONCTION, PAS UN PROGRAMME. Ce fichier avait un mode CLI (`--once`,
+// `--loop`), hérité du temps où rien ne planifiait la livraison. Le scheduler
+// l'appelle à chaque tick (`travaux(pool, { dispatch: dispatchOnce })`) : une
+// seconde boucle lancée à la main livrerait en concurrence de lui, sans bail.
+// Retiré en P1 ; pour une passe ponctuelle : `node services/scheduler/run-once.mjs tick`.
 //
 // ÉVÉNEMENTS SANS RÈGLE (migration-v73). La sélection joignait `alert_rule` en
 // jointure interne : nouvelles erreurs, SLO, uptime et notifications d'issue
@@ -18,15 +23,10 @@
 // rejoue donc que la livraison en cours, jamais celles déjà marquées. Une passe
 // est bornée en nombre et par une échéance, pour tenir dans la minute de la route
 // cron ; ce qui reste part au passage suivant.
-import pg from "pg";
 import { createLogger } from "../shared/log.mjs";
 
 const log = createLogger("dispatch-alerts");
 
-const DATABASE_URL =
-  process.env.DATABASE_URL ||
-  "postgres://postgres:postgres@localhost:5433/mip_rum";
-const POLL_MS = Number(process.env.DISPATCH_POLL_MS || 30_000);
 const TIMEOUT_MS = Number(process.env.DISPATCH_TIMEOUT_MS || 10_000);
 /** Livraisons réservées par passe. */
 const LOT = Number(process.env.DISPATCH_BATCH || 50);
@@ -220,24 +220,4 @@ export async function dispatchOnce(pool, { lot = LOT, budgetMs = BUDGET_MS, eche
     }
   }
   return bilan;
-}
-
-// Exécution CLI uniquement (le module reste importable par les tests)
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop())) {
-  const loop = process.argv.includes("--loop");
-  const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 2 });
-  let running = true;
-  // arrêt propre du --loop : on termine la passe courante puis on ferme le pool
-  for (const sig of ["SIGTERM", "SIGINT"]) {
-    process.on(sig, () => {
-      log.info("stopping", { signal: sig });
-      running = false;
-    });
-  }
-  do {
-    const { sent, failed, dead, skipped } = await dispatchOnce(pool);
-    log.info("pass", { sent, failed, dead, skipped });
-    if (loop && running) await new Promise((r) => setTimeout(r, POLL_MS));
-  } while (loop && running);
-  await pool.end();
 }

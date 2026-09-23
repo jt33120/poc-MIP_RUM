@@ -44,7 +44,7 @@ point est une vraie maturité d'ingénierie, pas une case cochée.
 ### 2.2 Ingestion
 
 `POST /v1/traces` en OTLP/HTTP JSON, en double implémentation : une *edge function*
-Deno (`packages/backend/supabase/functions/v1-traces/`, actuellement en **v16** en
+Deno (`supabase/functions/v1-traces/` (fonction Deno retirée en P1, lisible au tag `pre-reorg`), actuellement en **v16** en
 production) et un jumeau Node portable (`dev-server.mjs`) pour l'auto-hébergement.
 Gardes en place : clé d'API (403), limitation de débit (429), taille de corps (413),
 séparation stricte 4xx/5xx, rejeu des écritures.

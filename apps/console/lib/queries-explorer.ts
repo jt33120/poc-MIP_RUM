@@ -182,7 +182,8 @@ function avertissements(plan: ExplorerPlan): string[] {
  * règle de purge, lue au même endroit. `jours` n'est passé que par les tests.
  *
  * `ancreMs` : l'instant depuis lequel la purge compte. La purge part de MAINTENANT
- * (`packages/backend/purge.mjs`) ; la comparaison passe donc son horloge. Par défaut
+ * (travail quotidien du scheduler, `packages/backend/jobs/planifie.mjs`) ; la
+ * comparaison passe donc son horloge. Par défaut
  * `range.to`, le comportement historique de l'Explorer (inchangé ici).
  */
 export function couvertureRetention(

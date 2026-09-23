@@ -44,7 +44,6 @@ COPY packages/backend/package.json ./node_modules/@mip/backend/package.json
 COPY packages/backend/lib          ./node_modules/@mip/backend/lib
 COPY packages/backend/jobs         ./node_modules/@mip/backend/jobs
 COPY packages/backend/shared       ./node_modules/@mip/backend/shared
-COPY packages/backend/purge.mjs    ./node_modules/@mip/backend/purge.mjs
 # Le dossier de données du GeoIP optionnel (P8.7) : licence, attribution et
 # manifeste. La base elle-même n'est PAS dans le dépôt — 4,5 Mio renouvelés tous
 # les mois —, elle est déposée juste en dessous. `lib/geoip-db.mjs` la cherche

@@ -89,7 +89,7 @@ Config producteur (backend UTI) : `MIP_RUM_ENDPOINT`, `MIP_RUM_APP_ID`, `MIP_RUM
 
 ### 2.2 Ingestion — edge function Deno `v1-traces`
 
-- Fichier : `packages/backend/supabase/functions/v1-traces/index.ts` (endpoint
+- Fichier : `supabase/functions/v1-traces/index.ts` (fonction Deno retirée en P1, lisible au tag `pre-reorg`) (endpoint
   `POST /functions/v1/v1-traces`, OTLP/HTTP JSON).
 - Détection + extraction IA : `packages/backend/shared/otlp.mjs`,
   fonction `flattenOtlp()`, **branche `gen_ai` lignes 316-366** (verbatim en §3.1).
