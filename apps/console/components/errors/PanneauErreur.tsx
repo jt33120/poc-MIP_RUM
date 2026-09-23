@@ -146,8 +146,8 @@ export async function PanneauErreur({
 
       {/* ── Bloc 2 : phrase d'impact, puis quatre tuiles ── */}
       <SectionErreur titre="Impact de ce groupe">
-        <PhraseImpact group={group} plage={label} part={part} hrefSessions={null} />
-        <TuilesDetailErreur group={group} plage={label} />
+        <PhraseImpact impact={group} plage={label} part={part} hrefSessions={null} />
+        <TuilesDetailErreur impact={group} plage={label} />
       </SectionErreur>
 
       {/* ── Bloc 3 ── */}
