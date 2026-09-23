@@ -51,7 +51,8 @@ function bcryptHash(password: string): string {
 }
 
 async function nettoyer() {
-  for (const table of ["error_issue", "error_grouping_config", "error_status", "rum_error", "rum_pageview", "rum_session", "app_registry"])
+  // `replay_chunk` d'abord : il référence `rum_session` (test « Voir le rejeu » de F21).
+  for (const table of ["replay_chunk", "error_issue", "error_grouping_config", "error_status", "rum_error", "rum_pageview", "rum_session", "app_registry"])
     await pool.query(`delete from ${table} where app_id = any($1::text[])`, [APPS]);
 }
 
@@ -311,6 +312,35 @@ test("F21 — versions touchées d'une issue : celles qu'elle persiste, hors fen
   await page.goto(`${CONSOLE}/errors/issues/${I2}?app=${A}&period=24h`);
   await expect(page.getByTestId("premiere-release")).toContainText("1.1.0");
   await expect(page.getByTestId("derniere-release")).toContainText("1.1.0");
+});
+
+test("F21 (revue v7) — l'en-tête d'une issue porte « Voir le rejeu », comme celui d'un groupe", async ({ page }) => {
+  await login(page);
+  // Sans enregistrement : pas de bouton mort, la phrase qui le dit.
+  await page.goto(`${CONSOLE}/errors/issues/${I1}?app=${A}&period=24h`);
+  await expect(page.getByTestId("voir-le-rejeu")).toHaveCount(0);
+  await expect(page.getByTestId("rejeu-absent")).toBeVisible();
+
+  // s1 porte les occurrences de I1 : un segment de rejeu lui suffit pour que la plus
+  // récente d'entre elles ouvre sa session, positionnée à l'instant de l'erreur.
+  await pool.query(
+    `insert into replay_chunk (session_id, app_id, seq, events_count, body)
+     values ('p55-e2e-s1', $1, 0, 0, $2) on conflict (session_id, seq) do nothing`,
+    [A, Buffer.from("rejeu e2e p55")],
+  );
+  try {
+    // Une ancienne URL de groupe d'une app en regroupement v2 mène à l'issue : le
+    // rejeu y est au premier niveau, et plus seulement occurrence par occurrence.
+    await page.goto(`${CONSOLE}/errors/p55fp001?app=${A}&period=24h`);
+    await expect(page).toHaveURL(new RegExp(`/errors/issues/${I1}\\?app=${A}$`));
+    await expect(page.getByTestId("voir-le-rejeu")).toHaveAttribute(
+      "href",
+      new RegExp(`^/sessions/p55-e2e-s1\\?app=${A}&tab=replay&at=\\d+$`),
+    );
+    await expect(page.getByTestId("rejeu-absent")).toHaveCount(0);
+  } finally {
+    await pool.query("delete from replay_chunk where app_id = $1", [A]);
+  }
 });
 
 /**

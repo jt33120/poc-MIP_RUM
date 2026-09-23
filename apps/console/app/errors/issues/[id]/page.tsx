@@ -13,8 +13,9 @@
 // versions touchées, occurrences dans le temps en barres avec les déploiements, ce
 // qu'ont en commun les sessions touchées (repli tant que B3 manque), pile du dernier
 // exemplaire, occurrences. La rangée de sept tuiles `ErrorStat` et la courbe sans axe
-// `ObservedTrend` disparaissent (§ 5.3.4). Reste propre à l'issue : son en-tête, son
-// état, triage et assignation, tickets, activité.
+// `ObservedTrend` disparaissent (§ 5.3.4). Du bloc 1, l'en-tête reprend « Voir le
+// rejeu » (`BoutonRejeu`, revue de fin de vague 7). Reste propre à l'issue : son
+// en-tête, son état, triage et assignation, tickets, activité.
 //
 // DEUX SOURCES PROPRES À L'ISSUE, dites à l'écran. La part des sessions touchées
 // compte les lignes DE L'ISSUE (`partSessionsTouchees` sur une `IssueRef`, même
@@ -26,6 +27,7 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
 import {
+  BoutonRejeu,
   OccurrencesDansLeTemps,
   PhraseImpact,
   QuOntEnCommun,
@@ -178,8 +180,8 @@ export default async function IssuePage({
           {detail.sample_message ?? "(aucune occurrence sur cette période)"}
         </span>
       </h1>
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <span className="break-all font-mono text-xs text-ink-faint">
+      <div className="mb-6 flex min-w-0 flex-wrap items-center gap-2">
+        <span className="min-w-0 break-all font-mono text-xs text-ink-faint">
           issue {issue.id} · app {issue.app_id}
         </span>
         <IssueStatusBadge status={issue.status} testid="issue-status" />
@@ -188,6 +190,12 @@ export default async function IssuePage({
         <GroupingBasisBadge basis={issue.grouping_basis} />
         <ErrorSourceBadge source={last?.error_source ?? null} />
         <HandledBadge handled={last?.handled ?? null} />
+        {/* Le rejeu au premier niveau, comme sur la page d'un groupe (bloc 1, § 5.3.3) :
+            une ancienne URL de groupe d'une app en regroupement v2 mène ICI, et sans
+            ce bouton le rejeu ne s'ouvrait qu'occurrence par occurrence. */}
+        <span className="basis-full sm:ml-auto sm:basis-auto">
+          <BoutonRejeu occurrences={occurrences} appId={issue.app_id} />
+        </span>
       </div>
 
       <IssueState detail={detail} f={f} />
