@@ -167,14 +167,18 @@ describe("exécution des travaux planifiés", () => {
   });
 });
 
+/** Le texte d'une requête : une chaîne, ou la forme objet `{ text, query_timeout }`
+ *  que prennent les étapes SQL bornées par un délai (P1). */
+const texteDe = (q: string | { text: string }) => (typeof q === "string" ? q : q.text);
+
 describe("cadences et fonctions SQL appelées", () => {
   /** Pool factice : retient les requêtes au lieu de parler à Postgres. */
   function poolFactice() {
     const requetes: string[] = [];
     return {
       requetes,
-      query: vi.fn(async (sql: string) => {
-        requetes.push(sql);
+      query: vi.fn(async (sql: string | { text: string }) => {
+        requetes.push(texteDe(sql));
         return { rows: [{ result: 0 }] };
       }),
     };
@@ -214,7 +218,8 @@ describe("cadences et fonctions SQL appelées", () => {
   it("sans migration-v73, le routage des notifications d'issue rend son absence, sans échec", async () => {
     const pool = {
       requetes: [] as string[],
-      query: vi.fn(async (sql: string) => {
+      query: vi.fn(async (q: string | { text: string }) => {
+        const sql = texteDe(q);
         pool.requetes.push(sql);
         return { rows: [sql.includes("to_regprocedure") ? { present: false } : { result: 0 }] };
       }),
@@ -228,7 +233,8 @@ describe("cadences et fonctions SQL appelées", () => {
 
     const present = {
       requetes: [] as string[],
-      query: vi.fn(async (sql: string) => {
+      query: vi.fn(async (q: string | { text: string }) => {
+        const sql = texteDe(q);
         present.requetes.push(sql);
         return { rows: [sql.includes("to_regprocedure") ? { present: true } : { result: 2 }] };
       }),

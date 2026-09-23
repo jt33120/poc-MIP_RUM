@@ -38,9 +38,19 @@ import { ErreurCibleRefusee, safeFetch } from "../lib/net/safe-fetch.mjs";
  * qui casse ne doit pas emporter le comptage du même tick. Chaque résultat est
  * rapporté séparément.
  *
+ * LA PILE COMPLÈTE part au journal. Jusqu'en P1, l'erreur y était réduite à
+ * `String(err)` : « Connection terminated unexpectedly » ou « canceling
+ * statement due to statement timeout », sans dire quelle requête, depuis quel
+ * appel. L'objet Error est désormais remis au journal, qui en sérialise la pile
+ * et la cause (`@mip/service-kit/log.mjs`) ; le bilan, lui, garde le message
+ * court — il est journalisé en entier à chaque passage.
+ *
+ * @param {{name: string, run: () => unknown, delaiMs?: number}[]} etapes
+ * @param {{error?: Function}} [log]
+ * @param {{ job?: string }} [contexte]  nom de la cadence, repris dans le journal
  * @returns {Promise<{ok: boolean, echecs: number, resultats: Record<string, unknown>}>}
  */
-export async function executerEtapes(etapes, log = console) {
+export async function executerEtapes(etapes, log = console, { job } = {}) {
   const resultats = {};
   let echecs = 0;
   for (const etape of etapes) {
@@ -50,28 +60,107 @@ export async function executerEtapes(etapes, log = console) {
     } catch (err) {
       echecs++;
       resultats[etape.name] = { ok: false, error: String(err), ms: Date.now() - debut };
-      log.error?.("étape planifiée en échec", { step: etape.name, err: String(err) });
+      log.error?.("étape planifiée en échec", {
+        ...(job ? { job } : {}),
+        step: etape.name,
+        ms: Date.now() - debut,
+        ...(etape.delaiMs ? { delai_ms: etape.delaiMs } : {}),
+        err,
+      });
     }
   }
   return { ok: echecs === 0, echecs, resultats };
 }
 
-/** Appelle une fonction SQL sans argument et renvoie sa valeur. */
-export async function appelerFn(pool, fn) {
-  const { rows } = await pool.query(`select ${fn} as result`);
-  return rows[0]?.result ?? null;
+/**
+ * DÉLAI PAR ÉTAPE (`statement_timeout`), en ms. Sans lui, une fonction SQL qui
+ * dérape (un plan qui bascule en parcours séquentiel, un verrou attendu)
+ * tiendrait sa connexion, puis le bail, jusqu'à l'expiration de celui-ci — et
+ * les passages suivants avec. Les valeurs sont prises LARGES devant le temps
+ * observé (un tick complet prend ~20 ms en production) : le délai coupe un
+ * dérapage, il ne doit jamais couper un passage normal.
+ *
+ * La somme des délais d'une cadence reste sous la durée de son bail
+ * (`bail.mjs:DUREES`) : un travail qui atteint tous ses délais rend encore son
+ * bail avant l'expiration, donc avant qu'une autre instance ne démarre la même
+ * cadence. Un test le vérifie.
+ *
+ * Seules les étapes qui appellent UNE fonction SQL portent ce délai. Celles qui
+ * sortent sur le réseau (uptime, dispatch_alerts, dispatch_tickets) ont déjà
+ * les leurs — délai par sonde, échéance de livraison ; comme
+ * import_legacy_issue_notes, elles enchaînent des requêtes courtes, chacune
+ * bornée par le `query_timeout` du pool (30 s, `@mip/service-kit/pg.mjs`).
+ */
+export const DELAI_ETAPE_DEFAUT_MS = 60_000;
+export const DELAIS_ETAPES_MS = Object.freeze({
+  refresh_rum_rollups: 5 * 60_000,
+  refresh_metric_histogram: 5 * 60_000,
+  meter_tenant_usage: 5 * 60_000,
+  // La purge efface des jours entiers de lignes brutes, client par client :
+  // c'est l'étape longue par nature. 30 min, la moitié du bail quotidien.
+  purge_rum_tenants: 30 * 60_000,
+});
+
+/** Le délai d'une étape SQL, par son nom. */
+export function delaiEtape(nom) {
+  return DELAIS_ETAPES_MS[nom] ?? DELAI_ETAPE_DEFAUT_MS;
+}
+
+/**
+ * Marge du délai CÔTÉ CLIENT (`query_timeout`) sur le délai serveur : c'est
+ * Postgres qui doit couper le premier — il annule la requête proprement et rend
+ * un 57014 lisible. Le délai client n'est qu'un filet, pour le cas où le réseau
+ * avale la réponse.
+ */
+export const MARGE_CLIENT_MS = 5_000;
+
+/**
+ * Appelle une fonction SQL sans argument et renvoie sa valeur.
+ *
+ * Avec `delaiMs`, l'appel est borné côté serveur : `set_config('statement_timeout',
+ * …, true)` puis l'appel, dans UNE chaîne multi-instructions. Postgres exécute
+ * une telle chaîne en une seule transaction implicite : le réglage LOCAL vaut
+ * pour l'appel qui suit, puis disparaît avec la transaction — rien ne reste sur
+ * la connexion rendue au pool (vérifié sur Postgres 17 : 57014 au délai, puis
+ * `statement_timeout` revenu à 0). C'est la forme qu'exige le pooler Neon en
+ * mode transaction, où un `SET` de session serait perdu ou laissé à la requête
+ * d'un autre ; et elle ne coûte qu'un aller-retour, sans BEGIN/COMMIT ni client
+ * emprunté. La fonction s'exécute dans une transaction, exactement comme avant
+ * (une instruction seule en est une aussi).
+ *
+ * Le délai est interpolé dans le texte (une chaîne multi-instructions passe par
+ * le protocole simple, qui n'accepte pas de paramètres) : c'est un ENTIER
+ * validé ici, jamais une entrée extérieure. `fn` est une constante du code.
+ */
+export async function appelerFn(pool, fn, { delaiMs } = {}) {
+  if (delaiMs == null) {
+    const { rows } = await pool.query(`select ${fn} as result`);
+    return rows[0]?.result ?? null;
+  }
+  if (!Number.isSafeInteger(delaiMs) || delaiMs <= 0) {
+    throw new RangeError(`appelerFn : délai invalide (${delaiMs})`);
+  }
+  const res = await pool.query({
+    text: `select set_config('statement_timeout', '${delaiMs}', true); select ${fn} as result`,
+    query_timeout: delaiMs + MARGE_CLIENT_MS,
+  });
+  // `pg` rend un tableau de résultats pour une chaîne multi-instructions ; le
+  // dernier est celui de l'appel.
+  const dernier = Array.isArray(res) ? res[res.length - 1] : res;
+  return dernier?.rows?.[0]?.result ?? null;
 }
 
 /**
  * Appelle une fonction SQL apportée par une migration récente, si elle existe.
  * Le code peut précéder sa migration sur un déploiement : l'étape rend alors la
  * raison de son absence au lieu d'échouer — un 207 à chaque tick masquerait les
- * vrais échecs. `signature` est la forme regprocedure, `fn` l'appel.
+ * vrais échecs. `signature` est la forme regprocedure, `fn` l'appel, `options`
+ * celles d'`appelerFn` (le délai).
  */
-export async function appelerFnSiPresente(pool, signature, fn, migration) {
+export async function appelerFnSiPresente(pool, signature, fn, migration, options) {
   const { rows } = await pool.query("select to_regprocedure($1) is not null as present", [signature]);
   if (!rows[0]?.present) return { absent: `${migration} non appliquée` };
-  return appelerFn(pool, fn);
+  return appelerFn(pool, fn, options);
 }
 
 /** Sondes uptime menées de front, au plus. */
@@ -191,7 +280,12 @@ export const ECHEANCE_LIVRAISON_MS = 45_000;
  * (un test, un environnement sans réseau sortant) doit pouvoir le neutraliser.
  */
 export function travaux(pool, { log = console, dispatch = null } = {}) {
-  const fn = (nom) => () => appelerFn(pool, nom);
+  /** Une étape SQL : l'appel `appel`, borné par le délai de l'étape `nom`. */
+  const sql = (nom, appel) => {
+    const delaiMs = delaiEtape(nom);
+    return { name: nom, delaiMs, run: () => appelerFn(pool, appel, { delaiMs }) };
+  };
+  const delaiRoutage = delaiEtape("route_error_issue_notifications");
 
   return {
     /** Toutes les 5 minutes : ce qui doit réagir vite. */
@@ -200,20 +294,22 @@ export function travaux(pool, { log = console, dispatch = null } = {}) {
       return executerEtapes(
         [
           // Évaluation des règles : insère les alert_event + livraisons 'queued'.
-          { name: "check_alerts", run: fn("check_alerts()") },
+          sql("check_alerts", "check_alerts()"),
           // Notifications d'issue (nouvelle, régression, pic de l'évaluation
           // ci-dessus) remises à route_alert, AVANT la livraison du même tick.
           {
             name: "route_error_issue_notifications",
+            delaiMs: delaiRoutage,
             run: () =>
               appelerFnSiPresente(
                 pool,
                 "route_error_issue_notifications(integer)",
                 "route_error_issue_notifications()",
                 "migration-v73",
+                { delaiMs: delaiRoutage },
               ),
           },
-          { name: "check_slo_burn", run: fn("check_slo_burn()") },
+          sql("check_slo_burn", "check_slo_burn()"),
           { name: "uptime", run: () => sonderUptime(pool, log) },
           // Livraison effective des webhooks en attente (remplace pg_net).
           ...(dispatch ? [{ name: "dispatch_alerts", run: () => dispatch(pool, { echeance }) }] : []),
@@ -231,9 +327,10 @@ export function travaux(pool, { log = console, dispatch = null } = {}) {
           // Réconciliation des livraisons 'sent' héritées de l'ère pg_net :
           // sans pg_net la fonction ne trouve rien, mais elle reste correcte et
           // bon marché — la garder évite des lignes 'sent' éternelles.
-          { name: "reconcile_deliveries", run: fn("reconcile_alert_deliveries()") },
+          sql("reconcile_deliveries", "reconcile_alert_deliveries()"),
         ],
         log,
+        { job: "tick" },
       );
     },
 
@@ -241,18 +338,19 @@ export function travaux(pool, { log = console, dispatch = null } = {}) {
     horaire: () =>
       executerEtapes(
         [
-          { name: "refresh_rum_rollups", run: fn("refresh_rum_rollups(26)") },
+          sql("refresh_rum_rollups", "refresh_rum_rollups(26)"),
           // 26 h comme les rollups, et pour la même raison : une heure en cours
           // est incomplète, et un passage manqué doit être rattrapé au suivant
           // sans double-compter (`on conflict do update`, pas `+=`).
-          { name: "refresh_metric_histogram", run: fn("refresh_metric_histogram(26)") },
-          { name: "check_new_errors", run: fn("check_new_errors()") },
-          { name: "check_ai_op_anomalies", run: fn("check_ai_op_anomalies()") },
+          sql("refresh_metric_histogram", "refresh_metric_histogram(26)"),
+          sql("check_new_errors", "check_new_errors()"),
+          sql("check_ai_op_anomalies", "check_ai_op_anomalies()"),
           // Notes de triage des groupes historiques devenus alias d'une issue,
           // importées une fois en activité (clé d'événement unique).
           { name: "import_legacy_issue_notes", run: () => importerNotesHistoriques(pool) },
         ],
         log,
+        { job: "horaire" },
       ),
 
     /**
@@ -264,10 +362,11 @@ export function travaux(pool, { log = console, dispatch = null } = {}) {
     quotidien: () =>
       executerEtapes(
         [
-          { name: "purge_rum_tenants", run: fn("purge_rum_tenants(30)") },
-          { name: "meter_tenant_usage", run: fn("meter_tenant_usage()") },
+          sql("purge_rum_tenants", "purge_rum_tenants(30)"),
+          sql("meter_tenant_usage", "meter_tenant_usage()"),
         ],
         log,
+        { job: "quotidien" },
       ),
   };
 }
