@@ -255,8 +255,10 @@ describe("F35 — cloner un modèle de tableau de bord", () => {
 
     const [ecrit] = vi.mocked(insertDashboard).mock.calls[0];
     expect(ecrit).toMatchObject({ name: "Performance — copie", app_id: "app-a", created_by: "a@example.test", owner_id: "7" });
-    expect(ecrit.layout).toHaveLength(7);
-    expect(ecrit.layout?.[0]).toMatchObject({ kind: "v2", title: "Seuils — LCP p75" });
+    // F37 : sept cartes et trois titres de section ; la première carte garde son titre.
+    expect(ecrit.layout).toHaveLength(10);
+    expect(ecrit.layout?.[0]).toEqual({ kind: "section", title: "Seuils", question: "Les vitals tiennent-ils les seuils ?" });
+    expect(ecrit.layout?.[1]).toMatchObject({ kind: "v2", title: "LCP p75" });
     // Seuls les paramètres du contrat voyagent ; l'app du clone devient celle de l'écran.
     expect(vers).toBe("/dashboards/91?period=7d&app=app-a");
   });

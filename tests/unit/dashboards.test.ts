@@ -218,9 +218,12 @@ describe("F35 — modèles de tableaux de bord", () => {
       expect(relues).toHaveLength(cartes.length);
       // Le jsonb relu se réécrit à l'identique : aucune dérive d'une écriture à l'autre.
       expect(serializeLayout(relues)).toEqual(jsonb);
-      // Chaque section donne son titre à sa première carte (avant F37), sous 60 caractères.
-      const premieres = modele.sections.map((s) => `${s.titre} — ${s.cartes[0].title}`.slice(0, 60));
-      for (const titre of premieres) expect(relues.map((w) => w.title)).toContain(titre);
+      // F37 : chaque section ouvre sur son titre de section ; ses cartes gardent le leur
+      // (le préfixe « Seuils — LCP p75 » d'avant F37 a disparu).
+      const sections = relues.filter((w) => w.kind === "section");
+      expect(sections.map((s) => s.title)).toEqual(modele.sections.map((s) => s.titre));
+      const titresDesCartes = relues.filter((w) => w.kind !== "section").map((w) => w.title);
+      expect(titresDesCartes).toEqual(modele.sections.flatMap((s) => s.cartes.map((c) => c.title)));
     });
   }
 
@@ -230,7 +233,7 @@ describe("F35 — modèles de tableaux de bord", () => {
     expect(champs).toContain("occurrences:sum");
     expect(champs).toContain("sessions:distinct");
     const usages = f35CartesDuModele(F35_MODELES[2]);
-    expect(usages.map((w) => w.title)).toEqual(expect.arrayContaining(["Combien — Sessions commencées", "Visiteurs"]));
+    expect(usages.map((w) => w.title)).toEqual(expect.arrayContaining(["Sessions commencées", "Visiteurs"]));
   });
 
   it("puces de type d'une carte (W-D2) : représentation pour une analyse, « v1 : … » pour le catalogue historique", () => {
@@ -409,6 +412,22 @@ describe("F37 — sections de tableau de bord", () => {
     );
     expect(questionDeSection({ kind: "section", title: "Où ?", question: "" })).toBeNull();
     expect(questionDeSection({ kind: "section", title: "Où ?", question: " où ? " })).toBeNull();
+  });
+
+  it("tableau cloné depuis un modèle : des sections titrées, chacune avec ses cartes (preuve de fin)", () => {
+    for (const modele of F35_MODELES) {
+      const relu = normalizeLayout(JSON.parse(JSON.stringify(serializeLayout(f35CartesDuModele(modele)))));
+      const groupes = groupesDuLayout(relu);
+      // Aucune carte orpheline : un modèle commence par un titre de section.
+      expect(groupes.every((g) => g.section !== null), modele.cle).toBe(true);
+      expect(groupes.map((g) => g.section?.widget.title)).toEqual(modele.sections.map((s) => s.titre));
+      expect(groupes.map((g) => g.section?.widget.question)).toEqual(modele.sections.map((s) => s.question));
+      expect(groupes.map((g) => g.cartes.map((c) => c.widget.title))).toEqual(
+        modele.sections.map((s) => s.cartes.map((c) => c.title)),
+      );
+      // Le titre ne redit pas la question : chacune des deux lignes apprend quelque chose.
+      for (const g of groupes) expect(questionDeSection(g.section!.widget), g.section!.widget.title).not.toBeNull();
+    }
   });
 
   it("liste des tableaux : un titre de section n'est ni une carte comptée, ni une puce", () => {

@@ -330,10 +330,12 @@ test.describe("F35 — tableaux de bord : modèles", () => {
     expect(sp.get("app")).toBe("demo-app");
     expect(sp.get("period")).toBe("1h");
     await expect(page.getByRole("heading", { name: "Performance — copie" })).toBeVisible({ timeout: 20_000 });
-    // Avant F37, la question de chaque section titre sa première carte.
-    await expect(page.getByTestId("widget-0").locator("h3")).toHaveText("Seuils — LCP p75", { timeout: 20_000 });
-    await expect(page.getByTestId("widget-6")).toBeVisible();
-    await expect(page.getByTestId("widget-7")).toHaveCount(0);
+    // F37 : le clone s'affiche en sections titrées (trois titres + sept cartes, positions
+    // 0 à 9) ; la première carte garde son propre titre, sans préfixe de section.
+    await expect(page.getByTestId("section-0").locator("summary h2")).toHaveText("Seuils", { timeout: 20_000 });
+    await expect(page.getByTestId("widget-1").locator("h3")).toHaveText("LCP p75");
+    await expect(page.getByTestId("widget-9")).toBeVisible();
+    await expect(page.getByTestId("widget-10")).toHaveCount(0);
 
     // De retour sur la liste : l'app par son NOM, les cartes par leur type.
     await page.goto(`${consoleUrl}/dashboards?${CONTEXTE}`);

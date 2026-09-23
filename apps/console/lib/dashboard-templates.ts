@@ -11,10 +11,11 @@
 // contournée (§ 5.24.5). Aucune mesure ici n'est composable ailleurs sans elle.
 //
 // UNE HISTOIRE PAR MODÈLE (Grafana). Chaque modèle est écrit en sections titrées
-// par une question. Tant que la carte « section » n'existe pas (F37), les cartes
-// sont posées dans l'ordre, et le titre court de la section préfixe le titre de sa
-// PREMIÈRE carte (« Où ? — LCP p75 par route ») : la question reste lisible sur le
-// tableau cloné.
+// par une question. Depuis F37, un clone les écrit comme telles : chaque section
+// ouvre sur un titre de section (`kind: "section"`, rendu en `h2` repliable), puis
+// viennent ses cartes, sous leur propre titre. Avant F37, le titre de la section
+// préfixait celui de sa première carte (« Où ? — LCP p75 par route ») : ce
+// palliatif a disparu. Les sections comptent dans `MAX_WIDGETS`, comme les cartes.
 //
 // DEUX POPULATIONS, DEUX CARTES (V2). Occurrences et sessions touchées, sessions
 // commencées et visiteurs : jamais additionnés, jamais sur une même carte.
@@ -34,9 +35,12 @@ import type { AppItem } from "./queries";
 export type CleModele = "performance" | "erreurs" | "usages" | "releases";
 
 export interface SectionModele {
-  /** Titre court, repris en tête de la première carte tant que F37 n'est pas livré. */
+  /**
+   * Titre de la section, rendu en `h2` au-dessus de ses cartes (F37). Un nom, pas la
+   * question redite : titre et question s'affichent l'un sous l'autre.
+   */
   titre: string;
-  /** La question à laquelle la section répond. */
+  /** La question à laquelle la section répond, écrite sous son titre. */
   question: string;
   /** Cartes v2 (plans Explorer) ; une carte v1 quand aucun plan ne l'exprime (« Erreurs principales »). */
   cartes: (AnalyticsWidget | LegacyWidget)[];
@@ -94,7 +98,7 @@ export const MODELES_TABLEAUX: ModeleTableau[] = [
         ],
       },
       {
-        titre: "Depuis quand ?",
+        titre: "Dans le temps",
         question: "Depuis quand ?",
         cartes: [
           carte("LCP p75 dans le temps", vitalP75("LCP", "timeseries")),
@@ -102,7 +106,7 @@ export const MODELES_TABLEAUX: ModeleTableau[] = [
         ],
       },
       {
-        titre: "Où ?",
+        titre: "Par segment",
         question: "Où ?",
         cartes: [
           carte("LCP p75 par route", vitalP75("LCP", "toplist", ["route"])),
@@ -117,7 +121,7 @@ export const MODELES_TABLEAUX: ModeleTableau[] = [
     question: "Combien d'erreurs, pour qui, depuis quand, et où ?",
     sections: [
       {
-        titre: "Combien",
+        titre: "Volume",
         question: "Combien, et qui ?",
         cartes: [
           carte("Occurrences", plan("errors", "occurrences", "sum", "value")),
@@ -126,12 +130,12 @@ export const MODELES_TABLEAUX: ModeleTableau[] = [
         ],
       },
       {
-        titre: "Depuis quand ?",
+        titre: "Dans le temps",
         question: "Depuis quand ?",
         cartes: [carte("Occurrences dans le temps", plan("errors", "occurrences", "sum", "timeseries"))],
       },
       {
-        titre: "Où ?",
+        titre: "Par segment",
         question: "Où ?",
         cartes: [
           carte("Occurrences par route", plan("errors", "occurrences", "sum", "toplist", { groupBy: ["route"] })),
@@ -148,7 +152,7 @@ export const MODELES_TABLEAUX: ModeleTableau[] = [
     question: "Combien de sessions, quand, et de qui ?",
     sections: [
       {
-        titre: "Combien",
+        titre: "Volume",
         question: "Combien ?",
         cartes: [
           carte("Sessions commencées", plan("sessions", "started", "count", "value")),
@@ -157,12 +161,12 @@ export const MODELES_TABLEAUX: ModeleTableau[] = [
         ],
       },
       {
-        titre: "Quand ?",
+        titre: "Dans le temps",
         question: "Quand ?",
         cartes: [carte("Sessions commencées dans le temps", plan("sessions", "started", "count", "timeseries"))],
       },
       {
-        titre: "Qui ?",
+        titre: "Audience",
         question: "Qui ?",
         cartes: [
           carte("Sessions par appareil", plan("sessions", "started", "count", "toplist", { groupBy: ["device"] })),
@@ -178,7 +182,7 @@ export const MODELES_TABLEAUX: ModeleTableau[] = [
     question: "La dernière release dégrade-t-elle l'expérience ?",
     sections: [
       {
-        titre: "Releases",
+        titre: "Par release",
         question: "La dernière release dégrade-t-elle l'expérience ?",
         cartes: [
           carte("LCP p75 par release", vitalP75("LCP", "toplist", ["release"])),
@@ -205,16 +209,18 @@ export function modeleTableau(cle: string): ModeleTableau | null {
 }
 
 /**
- * Les cartes d'un modèle, dans l'ordre, telles qu'un clone les écrit. Avant F37, le
- * titre court de chaque section préfixe sa première carte (« Où ? — LCP p75 par
- * route ») ; les titres restent sous 60 caractères (borne de `widgetFromPlan`).
- * Jamais plus de `MAX_WIDGETS` cartes : le test l'exige de chaque modèle.
+ * Le layout d'un modèle, dans l'ordre, tel qu'un clone l'écrit (F37) : chaque
+ * section ouvre sur son titre de section (`kind: "section"` : son titre et sa
+ * question), puis viennent ses cartes, sous leur propre titre. Les sections
+ * comptent dans `MAX_WIDGETS` comme les cartes : jamais plus de 24 éléments, le
+ * test l'exige de chaque modèle.
  */
 export function cartesDuModele(modele: ModeleTableau): Widget[] {
-  const cartes = modele.sections.flatMap((section) =>
-    section.cartes.map((c, rang): Widget => (rang === 0 ? { ...c, title: `${section.titre} — ${c.title}`.slice(0, 60) } : c)),
-  );
-  return cartes.slice(0, MAX_WIDGETS);
+  const layout = modele.sections.flatMap((section): Widget[] => [
+    { kind: "section", title: section.titre, question: section.question },
+    ...section.cartes,
+  ]);
+  return layout.slice(0, MAX_WIDGETS);
 }
 
 /** Libellés des cartes d'une section, pour l'aperçu d'un modèle (`ModeleCarte`). */
