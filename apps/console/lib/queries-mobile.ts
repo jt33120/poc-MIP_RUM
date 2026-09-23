@@ -20,6 +20,7 @@
 import { q, tx } from "./db";
 import { queryOf, type FiltersLike } from "./filters";
 import { compileScope, compileWhereOrThrow, type DimensionSchema } from "./query-compiler";
+import { bucketExpr, bucketSeriesSql } from "./query-compiler";
 import { conditionsOf, type AnalyticsQuery, type FilterCondition } from "./query-contract";
 import { dimensionSchema } from "./query-schema";
 import {
@@ -745,4 +746,97 @@ export async function mobileParRelease(
       occurrences: etat.errorSource ? actives.reduce((s, l) => s + (l.occurrences ?? 0), 0) : null,
     },
   };
+}
+
+// ──────────────────────── Dans le temps (F39, W-M10) ─────────────────────────
+//
+// LES TUILES, SEAU PAR SEAU. « Sessions et erreurs JS dans le temps » découpe la
+// MÊME cohorte (`cohorte()`, runtime déclaré `react_native` — la condition que B8
+// écrit `seg=v2:runtime:eq:react_native` —, sessions COMMENCÉES dans la fenêtre,
+// release lue sur la session) dans la MÊME photographie que `mobileSummary` : la
+// somme des seaux de sessions est la tuile « Sessions React Native commencées »,
+// celle des occurrences est la tuile « Occurrences d'erreurs JS ».
+//
+// POURQUOI PAS L'EXPLORER. Le plan (§ 5.6.4, W-M10) citait `exploreAnalytics` sur
+// `seg=v2:runtime:eq:react_native`. Deux choses l'en empêchent sans changer la
+// mesure : l'Explorer n'a pas de dimension de source d'erreur (il compterait aussi
+// les erreurs backend ou OTel rattachées à une session mobile, et celles de
+// sessions commencées AVANT la fenêtre), et son jeu `sessions` refuse la release,
+// dimension d'occurrence — la vue « Dernière release déclarée » aurait cassé la
+// série. L'Explorer rejoue le panneau des sessions quand aucune release n'est
+// filtrée (lien d'en-tête de la figure).
+
+export interface MobileSeau {
+  /** Début du seau, aligné UTC sur la grille du contrat. */
+  bucket: string | Date;
+  /** Sessions de la cohorte COMMENCÉES dans le seau. */
+  sessions: number;
+  /** Σ occurrences (V1) des erreurs JS de la cohorte reçues dans le seau ; `null` sans `error_source` (v69). */
+  occurrences: number | null;
+}
+
+export type MobileSerie =
+  | {
+      disponible: true;
+      /** Un seau par début attendu (`generate_series`), zéros compris. */
+      seaux: MobileSeau[];
+      /** Pourquoi les occurrences ne sont pas lues (schéma sans `error_source`), sinon `null`. */
+      raisonErreurs: string | null;
+    }
+  | { disponible: false; raison: string };
+
+/**
+ * Sessions commencées et occurrences d'erreurs JS de la cohorte React Native, par
+ * seau du contrat. Requête sans migration. `disponible: false` sans `runtime`
+ * (v82) : aucune cohorte n'est isolable. Une EXCEPTION remonte : l'écran rend la
+ * section en erreur, jamais une série de zéros.
+ */
+export async function mobileSerie(f: FiltersLike, schema?: MobileSchema): Promise<MobileSerie> {
+  const etat = schema ?? (await mobileSchema());
+  if (!etat.runtime) return { disponible: false, raison: RAISON_SANS_RUNTIME };
+  const query = queryOf(f);
+  const range = query.range;
+
+  return snapshot(async (lire) => {
+    // Une base par instruction : ses paramètres liés n'appartiennent qu'à elle.
+    const base = cohorte(query, etat);
+    const sessions = await lire<{ bucket: Date; sessions: number }>(
+      `with ${base.cte},
+       agrege as (
+         select ${bucketExpr("c.started_at", range)} as bucket, count(*)::int as sessions
+           from cohorte c
+          group by 1
+       )
+       select g.bucket, coalesce(a.sessions, 0)::int as sessions
+         from ${bucketSeriesSql(range, base.bind)} as g(bucket)
+         left join agrege a on a.bucket = g.bucket
+        order by 1`,
+      base.params,
+    );
+
+    let occurrences: Map<number, number> | null = null;
+    if (etat.errorSource) {
+      const baseErreurs = cohorte(query, etat);
+      const lignes = await lire<{ bucket: Date; occurrences: number }>(
+        `with ${baseErreurs.cte}
+         select ${bucketExpr("e.ts", range)} as bucket, coalesce(sum(e.occurrences), 0)::float8 as occurrences
+           from rum_error e
+           join cohorte c on c.app_id = e.app_id and c.session_id = e.session_id
+          where e.error_source = ${baseErreurs.bind(MOBILE_ERROR_SOURCE)}${compileScope(query, "e.app_id", baseErreurs.bind)}${fenetre(query, "e.ts", baseErreurs.bind)}
+          group by 1`,
+        baseErreurs.params,
+      );
+      occurrences = new Map(lignes.map((l) => [new Date(l.bucket).getTime(), Number(l.occurrences)]));
+    }
+
+    return {
+      disponible: true,
+      seaux: sessions.map((s) => ({
+        bucket: new Date(s.bucket).toISOString(),
+        sessions: Number(s.sessions),
+        occurrences: occurrences === null ? null : (occurrences.get(new Date(s.bucket).getTime()) ?? 0),
+      })),
+      raisonErreurs: etat.errorSource ? null : RAISON_SANS_SOURCE_JS,
+    };
+  });
 }

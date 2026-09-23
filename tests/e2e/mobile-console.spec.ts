@@ -203,13 +203,17 @@ test("mobile : « Non collecté » au lieu de zéro, filtres, drill-down, clavie
   // Et les six capacités redeviennent « Inconnu » : aucune release de ce
   // périmètre n'a rien déclaré.
   await expect(page.getByTestId("capacite-js_errors")).toContainText("Inconnu");
+  // F39 : sous un filtre de release (lu ici sur la SESSION), la cohorte ne s'ouvre pas
+  // sur /sessions — qui ne filtre pas la release d'une session : lien désactivé, raison écrite.
+  await expect(page.getByTestId("mobile-lien-sessions")).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByTestId("mobile-lien-sessions-raison")).toContainText("filtre de release");
 
   // ── 7. Drill-down vers les erreurs React Native, filtres conservés (F30) ───
   // CE7 : `/errors/issues` n'a pas de page (seul `/errors/issues/<id>` existe) ;
   // le lien vise la liste des erreurs, qui lit `source`. CE8 : `device=mobile`
-  // ouvrait les navigateurs mobiles, pas la cohorte React Native — le lien vers
-  // les sessions est désactivé avec sa raison tant que la liste ne filtre pas le
-  // runtime (B8).
+  // ouvrait les navigateurs mobiles, pas la cohorte React Native. Depuis B8, la
+  // liste des sessions lit `seg=v2:runtime:eq:react_native` : le lien existe, et
+  // il porte la cohorte, pas l'appareil.
   await page.goto(`${consoleUrl}/mobile?app=${APP}&period=24h`);
   const lien = page.getByTestId("mobile-lien-erreurs");
   await expect(lien).toHaveAttribute("href", /^\/errors\?/);
@@ -218,9 +222,11 @@ test("mobile : « Non collecté » au lieu de zéro, filtres, drill-down, clavie
   await expect(page.locator('a[href="/errors/issues"], a[href^="/errors/issues?"]')).toHaveCount(0);
   const plusLoin = page.getByRole("navigation", { name: "Aller plus loin" });
   await expect(plusLoin.locator('a[href*="device=mobile"]')).toHaveCount(0);
-  await expect(plusLoin.locator('a[href^="/sessions"]')).toHaveCount(0);
-  await expect(page.getByTestId("mobile-lien-sessions")).toHaveAttribute("aria-disabled", "true");
-  await expect(page.getByText("la liste des sessions ne filtre pas encore le runtime (B8)").first()).toBeVisible();
+  const sessionsRn = page.getByTestId("mobile-lien-sessions");
+  await expect(sessionsRn).toHaveAttribute("href", /^\/sessions\?/);
+  await expect(sessionsRn).toHaveAttribute("href", /seg=v2%3Aruntime%3Aeq%3Areact_native/);
+  await expect(sessionsRn).toHaveAttribute("href", new RegExp(`app=${APP}`));
+  await expect(page.locator("body")).not.toContainText("(B8)");
   await lien.click();
   await page.waitForURL((u) => u.pathname === "/errors" && u.searchParams.get("source") === "react_native_js", {
     timeout: 15_000,
@@ -384,9 +390,9 @@ test.describe("F38 — réagencement et stabilité par release", () => {
     await expect(page.locator("body")).not.toContainText(/sans crash/i);
     // W-M11 : la dernière déclaration est une colonne, en fin d'écran.
     await expect(page.getByRole("columnheader", { name: "Dernière déclaration" })).toBeVisible();
-    // W-M10 : la série attend B8 ; sa raison est écrite, aucun axe vide n'est dessiné.
-    await expect(page.locator("#mobile-temps")).toContainText("le runtime n'est pas encore une dimension de lecture (B8)");
-    await expect(page.locator("#mobile-temps svg")).toHaveCount(0);
+    // W-M10 (F39, après B8) : la série est rendue — deux panneaux —, plus aucune raison « B8 ».
+    await expect(page.locator("#mobile-temps")).not.toContainText("dimension de lecture (B8)");
+    await expect(page.locator("#mobile-temps").getByTestId("mobile-temps-panneaux")).toBeVisible();
   });
 
   test("hero : la release non déclarante n'a pas de pourcentage ; une ligne pose release=", async ({ page }) => {
@@ -450,5 +456,151 @@ test.describe("F38 — réagencement et stabilité par release", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole("columnheader", { name: "Dernière déclaration" })).toBeHidden();
     await expect(page.getByTestId("capacite-js_errors")).toContainText("Dernière déclaration");
+  });
+});
+
+// ═══════════════ F39 — dans le temps, et la cohorte ouverte ailleurs (B8) ═══════════════
+//
+// Deux apps PROPRES au bloc. `f39-e2e-app` : trois sessions React Native (5.0.0,
+// déclarante), une erreur JS de 2 occurrences, une session web sur la MÊME route
+// (elle ne doit entrer ni dans la série, ni dans /sessions, ni dans /pages une fois la
+// cohorte ouverte). `f39-e2e-web` : une session web seulement — aucune donnée React
+// Native. Même compte dédié que le reste du fichier.
+test.describe("F39 — dans le temps, et la cohorte ouverte ailleurs (B8)", () => {
+  const APP_F39 = "f39-e2e-app";
+  const APP_F39_WEB = "f39-e2e-web";
+  const APPS_F39 = [APP_F39, APP_F39_WEB];
+  const ROUTE_F39 = "/accueil-f39";
+
+  async function nettoyerF39() {
+    for (const table of ["mobile_capabilities", "rum_error", "rum_pageview", "rum_session"]) {
+      await pool.query(`delete from ${table} where app_id = any($1::text[])`, [APPS_F39]);
+    }
+  }
+
+  test.beforeAll(async () => {
+    if (!v82) return;
+    for (const app of APPS_F39) {
+      await pool.query(
+        "insert into app_registry (app_id,name,active) values ($1,$1,true) on conflict (app_id) do update set active=true",
+        [app],
+      );
+    }
+    await nettoyerF39();
+    const session = (id: string, app: string, runtime: string, os: string, ageMin: number) =>
+      pool.query(
+        `insert into rum_session (session_id, app_id, device_type, os, runtime, release, visitor_id, started_at, last_seen_at)
+         values ($1,$2,'mobile',$3,$4,'5.0.0',$1, now() - ($5::int * interval '1 minute'),
+                 now() - ($5::int * interval '1 minute') + interval '2 minutes')`,
+        [id, app, os, runtime, ageMin],
+      );
+    await session("f39-e2e-rn-a", APP_F39, "react_native", "iOS", 50);
+    await session("f39-e2e-rn-b", APP_F39, "react_native", "iOS", 30);
+    await session("f39-e2e-rn-c", APP_F39, "react_native", "Android", 10);
+    await session("f39-e2e-web-a", APP_F39, "browser", "Windows", 20);
+    await session("f39-e2e-web-seule", APP_F39_WEB, "browser", "Windows", 20);
+    // Une page vue par session, TOUTES sur la même route : web compris.
+    await pool.query(
+      `insert into rum_pageview (span_id, session_id, app_id, route, started_at) values
+         ('f39-e2e-p1','f39-e2e-rn-a',$1,$3, now() - interval '50 minutes'),
+         ('f39-e2e-p2','f39-e2e-rn-b',$1,$3, now() - interval '30 minutes'),
+         ('f39-e2e-p3','f39-e2e-rn-c',$1,$3, now() - interval '10 minutes'),
+         ('f39-e2e-p4','f39-e2e-web-a',$1,$3, now() - interval '20 minutes'),
+         ('f39-e2e-p5','f39-e2e-web-seule',$2,$3, now() - interval '20 minutes')`,
+      [APP_F39, APP_F39_WEB, ROUTE_F39],
+    );
+    await pool.query(
+      `insert into rum_error (span_id, session_id, app_id, message, kind, occurrences, error_source, fingerprint, ts) values
+         ('f39-e2e-err-rn','f39-e2e-rn-a',$1,'Erreur synthétique F39','crash',2,'react_native_js','f39e2efp', now() - interval '49 minutes'),
+         ('f39-e2e-err-web','f39-e2e-web-a',$1,'Erreur web synthétique F39','crash',9,'browser_js','f39e2efpw', now() - interval '19 minutes')`,
+      [APP_F39],
+    );
+    await pool.query(
+      `insert into mobile_capabilities (app_id, runtime, release, capability, declared)
+       values ($1,'react_native','5.0.0','js_errors',true)
+       on conflict (app_id, runtime, release, capability) do update set declared = excluded.declared, last_declared_at = now()`,
+      [APP_F39],
+    );
+  });
+
+  test.afterAll(async () => {
+    if (v82) await nettoyerF39();
+    await pool.query("delete from app_registry where app_id = any($1::text[])", [APPS_F39]);
+  });
+
+  /** Connexion UNE fois par test : `/login` d'une session ouverte redirige, le champ e-mail n'apparaît plus. */
+  async function ouvrirF39(page: Page, app: string) {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await login(page);
+    await page.context().addCookies([{ name: "mip-project", value: app, url: consoleUrl }]);
+    await page.goto(`${consoleUrl}/mobile?app=${app}&period=24h`);
+    await expect(page.getByRole("heading", { name: "Mobile", level: 1 })).toBeVisible();
+  }
+
+  test("W-M10 : deux panneaux empilés, avec alternative ; la somme des seaux est la tuile", async ({ page }) => {
+    test.skip(!v82, "migration v82 absente de la base e2e");
+    await ouvrirF39(page, APP_F39);
+    const temps = page.locator("#mobile-temps");
+    await temps.scrollIntoViewIfNeeded();
+    // Deux graphiques recharts (`.recharts-wrapper` : `.recharts-surface` compterait aussi les icônes de légende).
+    await expect(temps.locator(".recharts-wrapper")).toHaveCount(2);
+    await expect(temps.getByTestId("panneau-sessions")).toContainText("Sessions React Native commencées");
+    await expect(temps.getByTestId("panneau-erreurs")).toContainText("Occurrences d'erreurs JS");
+    // La cohorte seule : la session web et ses 9 occurrences n'entrent pas ; la somme des seaux est la tuile.
+    await expect(temps.getByTestId("figure-meta")).toContainText("3 sessions commencées");
+    await expect(temps.getByTestId("figure-meta")).toContainText("2 occurrences d'erreurs JS");
+    await expect(page.getByTestId("mobile-sessions").getByTestId("kpi-valeur")).toHaveText("3");
+    await expect(page.getByTestId("mobile-erreurs").getByTestId("kpi-valeur")).toHaveText("2");
+    // L'alternative textuelle : une ligne par seau, la même grille que le dessin.
+    const alternative = temps.getByTestId("alternative");
+    await alternative.locator("summary").click();
+    expect(await alternative.locator("tbody tr").count()).toBeGreaterThanOrEqual(24);
+    // L'Explorer rejoue le panneau des sessions sur `seg=v2:runtime:eq:react_native` (B8).
+    const explorer = temps.getByRole("link", { name: "Ouvrir dans l'Explorer" });
+    await expect(explorer).toHaveAttribute("href", /dataset=sessions/);
+    await expect(explorer).toHaveAttribute("href", /seg=v2%3Aruntime%3Aeq%3Areact_native/);
+    await expect(page.locator("body")).not.toContainText("(B8)");
+  });
+
+  test("sans donnée React Native : l'état vide motivé, aucun axe dessiné", async ({ page }) => {
+    test.skip(!v82, "migration v82 absente de la base e2e");
+    await ouvrirF39(page, APP_F39_WEB);
+    const temps = page.locator("#mobile-temps");
+    await temps.scrollIntoViewIfNeeded();
+    await expect(temps).toHaveAttribute("data-etat", "vide");
+    await expect(temps).toContainText("Aucune session React Native commencée");
+    await expect(temps).toContainText("un axe plat se lirait comme une période calme");
+    await expect(temps.locator(".recharts-wrapper")).toHaveCount(0);
+    await expect(temps.locator("svg")).toHaveCount(0);
+  });
+
+  test("la cohorte s'ouvre sur /sessions et sur /pages, filtre appliqué de bout en bout", async ({ page }) => {
+    test.skip(!v82, "migration v82 absente de la base e2e");
+    await ouvrirF39(page, APP_F39);
+
+    // /sessions : la liste et ses tuiles lisent `seg=v2:runtime:eq:react_native` — 3 sessions, pas 4.
+    await page.getByTestId("mobile-lien-sessions").click();
+    await page.waitForURL(
+      (u) => u.pathname === "/sessions" && u.searchParams.get("seg") === "v2:runtime:eq:react_native" && u.searchParams.get("app") === APP_F39,
+      { timeout: 15_000 },
+    );
+    await expect(page.getByTestId("filter-problem")).toHaveCount(0);
+    await expect(page.getByTestId("segment-chip").filter({ hasText: "Runtime = react_native" })).toBeVisible();
+    await expect(
+      page.getByTestId("kpi-sessions").locator('[data-testid="kpi-tile"][aria-label^="Sessions commencées"]').getByTestId("kpi-valeur"),
+    ).toHaveText("3");
+
+    // /pages : un écran consulté ouvre sa route ET la cohorte — la page vue web de même route n'y entre pas.
+    await page.goto(`${consoleUrl}/mobile?app=${APP_F39}&period=24h`);
+    const ecran = page.locator('#mobile-ecrans a[href^="/pages?"]').first();
+    await expect(ecran).toHaveAttribute("href", /seg=v2%3Aruntime%3Aeq%3Areact_native/);
+    await ecran.click();
+    await page.waitForURL(
+      (u) => u.pathname === "/pages" && u.searchParams.get("route") === ROUTE_F39 && u.searchParams.get("seg") === "v2:runtime:eq:react_native",
+      { timeout: 15_000 },
+    );
+    await expect(page.getByTestId("filter-problem")).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByTestId("segment-chip").filter({ hasText: "Runtime = react_native" })).toBeVisible();
   });
 });

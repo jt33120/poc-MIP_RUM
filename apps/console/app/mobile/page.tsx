@@ -26,6 +26,13 @@
 // répétable (lib/queries-mobile.ts). Seuls `device`, `os` et `release`
 // s'appliquent (lib/surfaces.ts) ; les vues préréglées ne posent que `os` ou
 // `release` — le formulaire « Plateforme » a disparu (§ 3.1, règle 4).
+//
+// DANS LE TEMPS, ET AILLEURS (F39, après B8). La série « Sessions et erreurs JS
+// dans le temps » découpe la même cohorte, seau par seau (`mobileSerie`) : la somme
+// des barres est la tuile. Depuis que le runtime est une dimension de lecture
+// (`seg=v2:runtime:eq:react_native`, B8), la cohorte s'ouvre aussi sur /sessions,
+// sur /pages et dans l'Explorer — seulement là où l'écran cible applique le filtre
+// de bout en bout ; sinon la raison est écrite à la place du lien.
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
@@ -37,6 +44,7 @@ import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar } from "@/components/charts/RankBar";
 import { StabiliteParRelease, type TriStabilite } from "@/components/mobile/StabiliteParRelease";
+import { MobileDansLeTemps } from "@/components/mobile/MobileDansLeTemps";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
@@ -81,6 +89,14 @@ import {
 } from "@/lib/query-contract";
 import { ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
 import { lireComparaison, lireTri } from "@/lib/view-state";
+import { annotationsDeploiements } from "@/lib/annotations";
+import { explorerPlanParams } from "@/lib/explorer-page-params";
+import { lienCohorte } from "@/lib/mobile-capabilities";
+import { mobileSerie } from "@/lib/queries-mobile";
+import { listDeploys } from "@/lib/queries-deploys";
+import { PLAN_SESSIONS_COMMENCEES } from "@/lib/queries-sessions";
+import { bucketStarts } from "@/lib/query-contract";
+import { gabaritZoom } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
 
@@ -190,7 +206,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   const filtreRelease = query.filters.release !== undefined || query.filters.segments.some((c) => c.dimension === "release");
 
   // CHAQUE LECTURE EST INDÉPENDANTE (F02) : une lecture en échec n'efface que sa section.
-  const [resume, parRelease, resumePrec, parReleasePrec, couvSessions, couvErreurs, declarationsToutes] =
+  const [resume, parRelease, resumePrec, parReleasePrec, couvSessions, couvErreurs, declarationsToutes, serieLue, deploysLus] =
     await Promise.all([
       lire(() => mobileSummary(f, schema)),
       lire(() => mobileParRelease(f, RELEASES_AFFICHEES, schema)),
@@ -201,6 +217,9 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
       filtreRelease && schema?.capabilities !== false
         ? lire(() => mobileDeclarations(sansRelease(query)))
         : sansLecture(null),
+      // F39 : la même cohorte, seau par seau ; les déploiements de la fenêtre en annotations.
+      lire(() => mobileSerie(f, schema)),
+      lire(() => listDeploys(f, 20)),
     ]);
 
   const data: MobileSummary | null = resume.ok ? resume.data : null;
@@ -239,6 +258,19 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
         )
       : hrefWithQuery("/mobile", query, { ...appLigne, release });
   };
+  // B8 : la cohorte React Native sur un autre écran du contrat, seulement s'il applique
+  // `seg=v2:runtime:eq:react_native` de bout en bout (périmètre compris) ; sinon la raison.
+  const runtimeLu = schema ? schema.runtime : null;
+  const lienSessions = lienCohorte(query, "/sessions", runtimeLu);
+  const raisonLienEcrans = lienCohorte(query, "/pages", runtimeLu).raison;
+  const lienEcran = (route: string) => lienCohorte(query, "/pages", runtimeLu, { route }).href ?? undefined;
+  // L'Explorer rejoue le panneau des sessions de la série (même définition que la tuile).
+  const lienExplorer = lienCohorte(query, "/explorer", runtimeLu, { ...explorerPlanParams(PLAN_SESSIONS_COMMENCEES), cursor: null });
+  // Annotations de déploiement de la série (§ 3.7) : une annotation ouvre cet écran
+  // filtré sur la release déployée — /mobile ne compare pas deux releases en série.
+  const deploiements = deploysLus.ok
+    ? annotationsDeploiements(deploysLus.data, query.range, { lien: (relB) => hrefWithQuery("/mobile", query, { release: relB }) })
+    : { annotations: [], liste: [], indisponible: "lecture des marqueurs de déploiement en échec" };
   const hrefTri = (tri: TriStabilite) =>
     hrefWithQuery("/mobile", query, {
       tri: tri === "fourni" ? null : tri,
@@ -304,6 +336,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
           format="count"
           raisonNull={sessionsLues.raison ?? undefined}
           sensMeilleur="neutre"
+          // B8 : la tuile ouvre la liste des sessions de la cohorte, quand /sessions sait la lire.
+          href={lienSessions.href ?? undefined}
           precedent={prev ? sessionsPrec : undefined}
           reference={reference}
           couverturePrecedente={couvSessions}
@@ -509,7 +543,11 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             id="mobile-ecrans"
             etat={data ? undefined : { kind: "erreur", titre: "Écrans les plus consultés" }}
             meta={data ? <span>{ecran.label} · 10 écrans au plus, par consultations</span> : undefined}
-            lecture="Une consultation par écran déclaré. Pas de lien vers un écran filtré : le filtre de route de /pages mélangerait web et React Native tant que le runtime n'est pas une dimension de lecture (B8)."
+            lecture={
+              raisonLienEcrans === null
+                ? "Une consultation par écran déclaré. Chaque écran ouvre /pages filtré sur sa route et sur la cohorte React Native (runtime = react_native) : les pages web de même route n'y entrent pas."
+                : `Une consultation par écran déclaré. Pas de lien vers /pages : ${raisonLienEcrans}.`
+            }
           >
             {data &&
               (() => {
@@ -518,6 +556,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
                   <RankBar
                     data={data.screens.map((s) => ({
                       label: s.route ?? "Inconnu",
+                      href: s.route === null ? undefined : lienEcran(s.route),
                       value: s.views,
                       display: `${nombre(s.views)}${total > 0 ? ` · ${formater("pct", s.views / total)}` : ""}`,
                       sub: `${nombre(s.sessions)} session(s)`,
@@ -579,11 +618,19 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
     ),
     temps: (
       <div className="mb-6">
-        <Figure
-          titre="Sessions et erreurs JS dans le temps"
-          id="mobile-temps"
-          etat={{ kind: "partiel", raison: "Série non disponible : le runtime n'est pas encore une dimension de lecture (B8)." }}
-        />
+        <SectionErreur titre="Sessions et erreurs JS dans le temps">
+          <MobileDansLeTemps
+            lecture={serieLue}
+            starts={bucketStarts(query.range)}
+            seauSecondes={query.range.bucketSeconds}
+            plage={ecran.label}
+            zoomHref={gabaritZoom(hrefWithQuery("/mobile", query, { period: null, from: "{from}", to: "{to}" }), sp)}
+            annotations={deploiements.annotations}
+            annotationsIndisponibles={deploiements.indisponible}
+            capaciteJs={capaciteJs}
+            explorer={lienExplorer.href ?? undefined}
+          />
+        </SectionErreur>
       </div>
     ),
     capacites: (
@@ -667,19 +714,28 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
           Erreurs React Native
         </Link>
         {/* CE8 : `device=mobile` ouvrait les navigateurs mobiles, pas la cohorte React
-            Native. Tant que la liste ne filtre pas le runtime (B8), le lien n'est pas
-            un lien : désactivé, avec sa raison écrite. */}
-        <span
-          data-testid="mobile-lien-sessions"
-          aria-disabled="true"
-          className="btn-ghost cursor-not-allowed opacity-60"
-          title="La liste des sessions ne filtre pas encore le runtime (B8)."
-        >
-          Sessions React Native
-        </span>
-        <span className="min-w-0 text-xs text-ink-soft">
-          Indisponible : la liste des sessions ne filtre pas encore le runtime (B8).
-        </span>
+            Native. Depuis B8, la liste lit `seg=v2:runtime:eq:react_native` ; là où elle
+            ne le peut pas (release filtrée, runtime non collecté), le lien n'est pas un
+            lien : désactivé, avec sa raison écrite. */}
+        {lienSessions.href !== null ? (
+          <Link href={lienSessions.href} data-testid="mobile-lien-sessions" className="btn-ghost">
+            Sessions React Native
+          </Link>
+        ) : (
+          <>
+            <span
+              data-testid="mobile-lien-sessions"
+              aria-disabled="true"
+              className="btn-ghost cursor-not-allowed opacity-60"
+              title={`Indisponible : ${lienSessions.raison}.`}
+            >
+              Sessions React Native
+            </span>
+            <span className="min-w-0 basis-full text-xs text-ink-soft sm:basis-auto" data-testid="mobile-lien-sessions-raison">
+              Indisponible : {lienSessions.raison}.
+            </span>
+          </>
+        )}
       </nav>
     ),
   };
