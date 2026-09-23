@@ -235,11 +235,13 @@ test.describe("F42 — Sessions : priorité et table", () => {
       [APP_F42],
     );
     await menageF42();
-    // Une instruction par table (`generate_series`), jamais ligne à ligne.
+    // Une instruction par table (`generate_series`), jamais ligne à ligne. La provenance
+    // du pays est l'une de celles que la base admet (`geoip`, `timezone`, `cdn` :
+    // contrainte `rum_session_geo_v85`) — « ip » était refusée, et tout le bloc avec.
     await poolF42.query(
       `insert into rum_session (session_id, app_id, device_type, geo_country, geo_source, browser, os,
                                 visitor_id, started_at, last_seen_at, page_count, collection_source)
-       select 'f42e2e-s' || lpad(i::text, 3, '0'), $1, 'desktop', 'FR', 'ip', 'Chrome', 'Windows',
+       select 'f42e2e-s' || lpad(i::text, 3, '0'), $1, 'desktop', 'FR', 'geoip', 'Chrome', 'Windows',
               $2, now() - make_interval(mins => i + 1), now() - make_interval(mins => i),
               2, case when i = 1 then 'extension' else 'sdk' end
          from generate_series(0, $3::int - 1) as i`,
