@@ -9,16 +9,22 @@
 // et une écriture inter-tenant (aucun contrôle de l'app_id du formulaire) — le
 // tout adossé à une primitive de requête sortante, donc utilisable comme relais.
 //
-// `requireAdmin()` redirige (/login si anonyme, / si viewer) : posé en première
-// ligne, il coupe l'action avant toute lecture du formulaire.
+// `ecrivain()` — `requireAdmin()` (redirige : /login si anonyme, / si viewer), puis
+// refus d'une session de démonstration — est posé en première ligne : il coupe
+// l'action avant toute lecture du formulaire. La démo était déjà arrêtée par le
+// middleware (non-GET refusés) ; l'action ne s'en remet plus à lui (V9, piège 20).
+// Une règle est de plus bornée au périmètre d'apps du principal (`authorizedAppsOf`).
 import { redirect } from "next/navigation";
 import { revalidatePath } from "@/lib/next-cache";
 import { ALERT_MODES, ALERT_SEVERITIES, CHANNEL_KINDS } from "@/lib/alerting";
-import { requireAdmin } from "@/lib/auth";
+import { RELEASE_METRICS, SEUIL_REGRESSION_DEFAUT } from "@/lib/alerting";
+import { requireAdmin, type SessionUser } from "@/lib/auth";
+import { authorizedAppsOf } from "@/lib/query-contract";
 import { hasSqlControlCharacters } from "@/lib/error-issue-workflow";
 import {
   acknowledgeAlertEvent,
   ALERT_COMPARATORS,
+  appDeRegle,
   isAlertMetric,
   insertAlertRule,
   runCheckAlerts,
@@ -40,6 +46,37 @@ import {
   type SloInput,
 } from "@/lib/queries-alerting";
 
+/** Écriture réservée à un administrateur HORS démonstration (V9). */
+async function ecrivain(): Promise<SessionUser> {
+  const user = await requireAdmin();
+  if (user.demo) throw new Error("session de démonstration : lecture seule");
+  return user;
+}
+
+/** Une règle ne s'écrit que sur une app du périmètre du principal (V7). */
+function dansLePerimetre(user: SessionUser, appId: string | null): void {
+  const autorisees = authorizedAppsOf(user);
+  if (autorisees !== null && (appId === null || !autorisees.includes(appId))) {
+    throw new Error(`app hors périmètre : ${appId ?? "règle inconnue"}`);
+  }
+}
+
+/**
+ * Hausse tolérée d'une règle de release, en pour cent. Absente du formulaire : la
+ * valeur par défaut (+20 %). Saisie vide, nulle, négative ou démesurée : refusée —
+ * jamais remplacée en silence.
+ */
+function hausseTolereeDe(fd: FormData): number {
+  const brute = fd.get("release_pct");
+  if (brute === null) return SEUIL_REGRESSION_DEFAUT;
+  const texte = String(brute).trim();
+  const pct = texte === "" ? Number.NaN : Number(texte);
+  if (!Number.isFinite(pct) || pct <= 0 || pct > 1000) {
+    throw new Error("hausse tolérée invalide : un pourcentage strictement positif, 1 000 au plus");
+  }
+  return pct;
+}
+
 function ruleFromForm(fd: FormData): RuleInput {
   const selectedMetric = String(fd.get("metric") ?? "");
   const eventName = String(fd.get("event_name") ?? "").trim();
@@ -55,11 +92,21 @@ function ruleFromForm(fd: FormData): RuleInput {
   if (env && (!metric.startsWith("issue:") || env.length > 120 || hasSqlControlCharacters(env))) {
     throw new Error("env invalide : réservé aux alertes d'issue, 120 caractères au plus");
   }
-  const comparator = String(fd.get("comparator") ?? ">");
+  // P1 : mode (threshold|baseline) ; B52 : release (p75 d'un vital, release la plus
+  // récente contre la précédente). Lu d'abord : il décide d'où vient le seuil.
+  const mode = String(fd.get("mode") ?? "threshold");
+  if (!(ALERT_MODES as readonly string[]).includes(mode)) throw new Error(`mode invalide : ${mode}`);
+  const release = mode === "release";
+  if (release && !(RELEASE_METRICS as readonly string[]).includes(metric)) {
+    throw new Error("régression de release : réservée aux Web Vitals (LCP, INP, CLS, FCP, TTFB)");
+  }
+  // En mode release, le champ « Seuil » (masqué) n'a pas d'effet : la hausse
+  // tolérée vient de son propre champ, et une hausse se compare toujours par « > ».
+  const comparator = release ? ">" : String(fd.get("comparator") ?? ">");
   if (!(ALERT_COMPARATORS as readonly string[]).includes(comparator)) {
     throw new Error(`comparateur invalide : ${comparator}`);
   }
-  const threshold = Number(fd.get("threshold"));
+  const threshold = release ? hausseTolereeDe(fd) : Number(fd.get("threshold"));
   if (!Number.isFinite(threshold)) throw new Error("seuil invalide");
   const window_minutes = Math.min(
     Math.max(Math.trunc(Number(fd.get("window_minutes")) || 15), 1),
@@ -72,9 +119,7 @@ function ruleFromForm(fd: FormData): RuleInput {
   }
   const app_id = String(fd.get("app_id") ?? "").trim();
   if (!app_id) throw new Error("app_id requis");
-  // P1 : mode (threshold|baseline), sévérité, paramètres baseline.
-  const mode = String(fd.get("mode") ?? "threshold");
-  if (!(ALERT_MODES as readonly string[]).includes(mode)) throw new Error(`mode invalide : ${mode}`);
+  // P1 : sévérité, paramètres baseline.
   const severity = String(fd.get("severity") ?? "warning");
   if (!(ALERT_SEVERITIES as readonly string[]).includes(severity)) {
     throw new Error(`sévérité invalide : ${severity}`);
@@ -92,21 +137,29 @@ function ruleFromForm(fd: FormData): RuleInput {
 }
 
 export async function createRuleAction(fd: FormData): Promise<void> {
-  await requireAdmin();
-  await insertAlertRule(ruleFromForm(fd));
+  const user = await ecrivain();
+  const regle = ruleFromForm(fd);
+  dansLePerimetre(user, regle.app_id);
+  await insertAlertRule(regle);
   revalidatePath("/alerts");
 }
 
 export async function updateRuleAction(fd: FormData): Promise<void> {
-  await requireAdmin();
+  const user = await ecrivain();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
-  await updateAlertRule(id, ruleFromForm(fd));
+  const regle = ruleFromForm(fd);
+  dansLePerimetre(user, regle.app_id);
+  // La règle existante aussi : sans cela, un principal restreint déplacerait vers
+  // son app la règle d'une autre. Un administrateur voit toutes les apps (V7) :
+  // aucune lecture de plus dans ce cas.
+  if (authorizedAppsOf(user) !== null) dansLePerimetre(user, await appDeRegle(id));
+  await updateAlertRule(id, regle);
   revalidatePath("/alerts");
 }
 
 export async function toggleRuleAction(fd: FormData): Promise<void> {
-  await requireAdmin();
+  await ecrivain();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await toggleAlertRuleActive(id);
@@ -114,7 +167,7 @@ export async function toggleRuleAction(fd: FormData): Promise<void> {
 }
 
 export async function ackEventAction(fd: FormData): Promise<void> {
-  await requireAdmin();
+  await ecrivain();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await acknowledgeAlertEvent(id);
@@ -127,7 +180,7 @@ export async function ackEventAction(fd: FormData): Promise<void> {
  * comme au tick, pour apparaître dans le flux affiché.
  */
 export async function evaluateNowAction(fd: FormData): Promise<void> {
-  await requireAdmin();
+  await ecrivain();
   const a = await runCheckAlerts();
   await runRouteIssueNotifications();
   const b = await runCheckSloBurn();
@@ -162,13 +215,13 @@ function sloFromForm(fd: FormData): SloInput {
 }
 
 export async function createSloAction(fd: FormData): Promise<void> {
-  await requireAdmin();
+  await ecrivain();
   await insertSlo(sloFromForm(fd));
   revalidatePath("/slo");
 }
 
 export async function toggleSloAction(fd: FormData): Promise<void> {
-  await requireAdmin();
+  await ecrivain();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await toggleSlo(id);
@@ -176,7 +229,7 @@ export async function toggleSloAction(fd: FormData): Promise<void> {
 }
 
 export async function deleteSloAction(fd: FormData): Promise<void> {
-  await requireAdmin();
+  await ecrivain();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await deleteSlo(id);
@@ -205,13 +258,13 @@ function channelFromForm(fd: FormData): ChannelInput {
 }
 
 export async function createChannelAction(fd: FormData): Promise<void> {
-  await requireAdmin();
+  await ecrivain();
   await insertChannel(channelFromForm(fd));
   revalidatePath("/alerts");
 }
 
 export async function toggleChannelAction(fd: FormData): Promise<void> {
-  await requireAdmin();
+  await ecrivain();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await toggleChannel(id);
@@ -219,7 +272,7 @@ export async function toggleChannelAction(fd: FormData): Promise<void> {
 }
 
 export async function deleteChannelAction(fd: FormData): Promise<void> {
-  await requireAdmin();
+  await ecrivain();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id)) return;
   await deleteChannel(id);

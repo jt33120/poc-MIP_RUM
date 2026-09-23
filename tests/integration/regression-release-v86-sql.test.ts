@@ -20,7 +20,9 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { parseAnalyticsQuery } from "../../apps/console/lib/query-contract";
+import type { RuleInput } from "../../apps/console/lib/queries-v2";
 // @ts-expect-error module JS partagé sans déclarations
 import { dispatchOnce, selectionSql } from "../../apps/ingest/dispatch-alerts.mjs";
 // @ts-expect-error module JS partagé sans déclarations
@@ -104,6 +106,24 @@ const etat = async (db: pg.Pool, id: number): Promise<Etat> =>
 const evenements = async (db: pg.Pool, id: number) =>
   (await db.query<{ value: number; message: string }>("select value, message from alert_event where rule_id = $1", [id])).rows;
 const evaluer = async (db: pg.Pool): Promise<number> => Number((await db.query("select check_alerts() as n")).rows[0].n);
+
+/** Modules console branchés sur une base jetable (même patron qu'alertes-sql). */
+async function consoleSur(databaseUrl: string) {
+  delete (globalThis as { pgPool?: unknown }).pgPool;
+  vi.resetModules();
+  process.env.DATABASE_URL = databaseUrl;
+  const v2 = await import("../../apps/console/lib/queries-v2");
+  const filters = await import("../../apps/console/lib/filters");
+  const { pool } = await import("../../apps/console/lib/db");
+  return { ...v2, ...filters, pool };
+}
+type Console = Awaited<ReturnType<typeof consoleSur>>;
+
+/** Une règle telle que l'action serveur la remet à `insertAlertRule`. */
+const regleConsole = (app_id: string, over: Partial<RuleInput> = {}): RuleInput => ({
+  app_id, metric: "LCP", route: null, comparator: ">", threshold: 20, window_minutes: 1440, webhook_url: null,
+  mode: "release", severity: "warning", sensitivity: 3, baseline_weeks: 4, env: null, ...over,
+});
 
 const suite = url ? describe : describe.skip;
 const suiteFenetre = urlFenetre ? describe : describe.skip;
@@ -386,11 +406,40 @@ suite("migration-v86 — régression de release dans check_alerts (PostgreSQL)",
       expect(evt.message).toBe(`LCP > 3000.0 (seuil 2500, fenêtre 120 min, app ${A})`);
     });
   });
+
+  describe("F68 — la console sur une base v86", () => {
+    let lib: Console;
+    beforeAll(async () => {
+      lib = await consoleSur(url!);
+    });
+    afterAll(async () => {
+      await lib?.pool.end();
+    });
+
+    it("détecte B52, écrit une règle de release sur un vital, la relit avec son mode et sa hausse", async () => {
+      const A = `${PREFIXE}console`;
+      await app(pool, A);
+      expect(await lib.releaseRegressionDisponible()).toBe(true);
+      await lib.insertAlertRule(regleConsole(A, { threshold: 25 }));
+      const parsed = parseAnalyticsQuery(new URLSearchParams(`app=${A}`), {
+        principal: { role: "admin", apps: null },
+        nowMs: Date.now(),
+      });
+      if (!parsed.ok) throw new Error(parsed.error.message);
+      const [lue, ...autres] = await lib.alertRules(lib.filtersOfQuery(parsed.value));
+      expect(autres).toEqual([]);
+      expect(lue).toMatchObject({ app_id: A, metric: "LCP", mode: "release", threshold: 25, comparator: ">" });
+      // La console refuse avant la contrainte : message lisible, rien d'écrit.
+      await expect(lib.insertAlertRule(regleConsole(A, { metric: "error_rate" }))).rejects.toThrow(/Web Vitals/);
+      expect((await pool.query("select count(*)::int as n from alert_rule where app_id = $1", [A])).rows[0].n).toBe(1);
+    });
+  });
 });
 
 suiteFenetre("fenêtre de déploiement : base restée en v85, puis v86 appliquée sous le code en service", () => {
   const poolFenetre = new pg.Pool(urlFenetre ? { connectionString: urlFenetre, max: 2 } : { max: 2 });
   const W = `${PREFIXE}fenetre`;
+  let lib: Console;
 
   beforeAll(async () => {
     await poolFenetre.query("drop schema public cascade; create schema public;");
@@ -400,11 +449,22 @@ suiteFenetre("fenêtre de déploiement : base restée en v85, puis v86 appliqué
     await deploiement(poolFenetre, W, "1.1.0", "1 hour");
     await mesures(poolFenetre, W, "1.0.0", 2000, 120);
     await mesures(poolFenetre, W, "1.1.0", 2600, 120);
+    lib = await consoleSur(urlFenetre!);
   }, 300_000);
 
   afterAll(async () => {
+    await lib?.pool.end();
     await nettoyer(poolFenetre);
     await poolFenetre.end();
+  });
+
+  it("F68 — la nouvelle console sur la base v85 : option indisponible, écriture d'une règle de release REFUSÉE", async () => {
+    expect(await lib.releaseRegressionDisponible()).toBe(false);
+    await expect(lib.insertAlertRule(regleConsole(W))).rejects.toThrow(/migration-v86 non appliquée/);
+    expect((await poolFenetre.query("select count(*)::int as n from alert_rule where mode = 'release'")).rows[0].n).toBe(0);
+    // Les autres modes s'écrivent comme avant.
+    await lib.insertAlertRule(regleConsole(W, { mode: "threshold", threshold: 9000 }));
+    await poolFenetre.query("delete from alert_rule where app_id = $1", [W]);
   });
 
   it("sans v86, une règle « release » serait lue comme un SEUIL FIXE (LCP > 20 ms) : la console doit la refuser", async () => {
@@ -444,9 +504,15 @@ suiteFenetre("fenêtre de déploiement : base restée en v85, puis v86 appliqué
     // Déjà déclenchée et non acquittée : pas de second événement.
     expect(await evenements(poolFenetre, seuil)).toHaveLength(1);
 
-    // Et le mode release est désormais évalué comme tel.
-    const release = await regle(poolFenetre, W, { mode: "release", seuil: 20 });
+    // Et le mode release est désormais évalué comme tel ; la console le voit sans
+    // redémarrer (aucune mise en cache de la détection).
+    expect(await lib.releaseRegressionDisponible()).toBe(true);
+    await lib.insertAlertRule(regleConsole(W, { window_minutes: 120 }));
+    const [{ id: release }] = (await poolFenetre.query<{ id: string }>(
+      "select id from alert_rule where app_id = $1 and mode = 'release'",
+      [W],
+    )).rows;
     await evaluer(poolFenetre);
-    expect(await etat(poolFenetre, release)).toMatchObject({ last_state: "breached", last_value: 2600 });
+    expect(await etat(poolFenetre, Number(release))).toMatchObject({ last_state: "breached", last_value: 2600 });
   }, 120_000);
 });

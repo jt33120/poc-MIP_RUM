@@ -12,7 +12,7 @@ import { fmtDate } from "@/lib/format";
 import { libelleDeRegle, reglageDeRegle } from "@/lib/alertes-ecran";
 import { type AlertRuleRow, type RuleState } from "@/lib/queries-v2";
 import { toggleRuleAction, updateRuleAction } from "@/app/alerts/actions";
-import { RuleFields } from "./RuleFields";
+import { RuleFields, type ModeRelease } from "./RuleFields";
 
 const ETATS: Record<RuleState, { label: string; cls: string }> = {
   ok: { label: "Normale", cls: "bg-panel2 text-ink-soft" },
@@ -44,7 +44,12 @@ function RuleEvaluation({ rule }: { rule: AlertRuleRow }) {
     >
       {etat.label}
       {rule.last_state === "no_data" && rule.last_reason ? ` — ${rule.last_reason}` : ""}
-      {rule.last_state !== "no_data" && rule.last_value !== null ? ` (${rule.last_value.toLocaleString("fr-FR")})` : ""}
+      {/* Une règle de release dit CE QU'ELLE A COMPARÉ (v86 : releases, p75, effectifs,
+          écart) ; une valeur seule ne dirait pas contre quelle release. */}
+      {rule.last_state !== "no_data" && rule.mode === "release" && rule.last_reason ? ` — ${rule.last_reason}` : ""}
+      {rule.last_state !== "no_data" && !(rule.mode === "release" && rule.last_reason) && rule.last_value !== null
+        ? ` (${rule.last_value.toLocaleString("fr-FR")})`
+        : ""}
       <span className="ml-1 text-ink-faint">· évaluée {fmtDate(rule.last_evaluated_at)}</span>
     </span>
   );
@@ -54,11 +59,14 @@ export function RuleRow({
   rule,
   apps,
   admin = false,
+  modeRelease,
 }: {
   rule: AlertRuleRow;
   apps: { app_id: string; name: string }[];
   /** V9 : sans droit d'écriture, ni formulaire ni bouton dans le DOM. */
   admin?: boolean;
+  /** F68 : l'option « Régression de release » du formulaire d'édition (B52). */
+  modeRelease?: ModeRelease;
 }) {
   return (
     <div
@@ -94,7 +102,7 @@ export function RuleRow({
           </summary>
           <form action={updateRuleAction} className="mt-3 flex min-w-0 flex-wrap items-end gap-3 border-t border-line pt-3">
             <input type="hidden" name="id" value={rule.id} />
-            <RuleFields apps={apps} rule={rule} />
+            <RuleFields apps={apps} rule={rule} modeRelease={modeRelease} />
             <div className="ml-auto flex shrink-0 gap-2">
               <button type="submit" className="btn-ghost">
                 Enregistrer

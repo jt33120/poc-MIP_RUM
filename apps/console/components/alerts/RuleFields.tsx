@@ -9,23 +9,44 @@
 // aucun JavaScript. SANS support de `:has()`, aucune règle ne s'applique et les deux
 // fieldsets restent visibles AVEC leur légende : le repli déclaré par le plan.
 //
-// « Régression de release » est présentée et DÉSACTIVÉE, avec sa raison : l'évaluateur
-// `check_alerts` ne connaît pas ce mode (dépendance B52, § 6.3). Le seuil prévu (+20 %)
-// est écrit, aligné sur `assessRegression` (`queries-deploys.ts`, ratio 1,2).
+// « Régression de release » (F68) : activée quand la base porte migration-v86 (B52,
+// détectée par `releaseRegressionDisponible`, lue par la page) ; sinon présentée
+// DÉSACTIVÉE, avec sa raison. Son fieldset porte la hausse tolérée — +20 % par défaut,
+// aligné sur `assessRegression` (`queries-deploys.ts`, ratio 1,2) — et la phrase
+// obligatoire du § 3.2 : même fenêtre, sans normalisation de trafic.
 import { ALERT_MODES, ALERT_SEVERITIES } from "@/lib/alerting";
+import { MESURES_MIN_RELEASE, SEUIL_REGRESSION_DEFAUT } from "@/lib/alerting";
 import { ALERT_COMPARATORS, ALERT_METRICS, metricLabel, type AlertRuleRow } from "@/lib/queries-v2";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
+import { PHRASE_FENETRE } from "@/components/ReleaseCompare";
 
 /** Seuil par défaut de la régression de release (§ 3.2) : +20 %, comme `assessRegression`. */
-export const SEUIL_REGRESSION_DEFAUT = 20;
+export { SEUIL_REGRESSION_DEFAUT };
 
 export const RAISON_REGRESSION_RELEASE =
-  "Mode indisponible : l'évaluateur check_alerts ne sait pas comparer deux releases (dépendance B52). Seuil prévu quand il le saura : +20 %, aligné sur le verdict de déploiement de /tracing.";
+  "Mode indisponible sur cette base : l'évaluateur check_alerts ne sait comparer deux releases qu'avec migration-v86 (B52). Seuil prévu : +20 %, aligné sur le verdict de déploiement de /tracing.";
+
+/** La détection de v86 a échoué : on ne sait pas, donc on n'écrit pas. */
+export const RAISON_DETECTION_RELEASE =
+  "Mode indisponible : la présence de migration-v86 (B52) n'a pas pu être lue. Sans elle, une règle de release serait évaluée comme un seuil fixe.";
+
+/** Ce que compare le mode, écrit sous son champ (phrase obligatoire du § 3.2). */
+export const PHRASE_REGLE_RELEASE = `Compare le p75 d'un Web Vital de la release la plus récente à celui de la précédente, dans l'ordre des déploiements déclarés (POST /api/v1/deploys) : ${PHRASE_FENETRE}. Sans deux releases déclarées, ou sous ${MESURES_MIN_RELEASE} mesures de chacune sur la fenêtre, la règle n'évalue pas et le dit : choisissez une fenêtre assez longue (jusqu'à 1 440 min).`;
+
+/** L'option « Régression de release » : utilisable, ou désactivée avec sa raison. */
+export type ModeRelease = { disponible: true } | { disponible: false; raison: string };
 
 const MODES: { valeur: string; libelle: string; aide: string }[] = [
   { valeur: "threshold", libelle: "Seuil fixe", aide: "la valeur franchit une borne que vous posez" },
   { valeur: "baseline", libelle: "Écart à l'habitude (baseline)", aide: "la valeur s'écarte de ses semaines passées" },
 ];
+
+/** Classe du bouton radio d'un mode : c'est elle que lit le masquage `:has()`. */
+const CLASSE_MODE: Record<string, string> = {
+  threshold: "regle-mode-seuil",
+  baseline: "regle-mode-baseline",
+  release: "regle-mode-release",
+};
 
 /**
  * Champs partagés création/édition (composant serveur, formulaires HTML purs).
@@ -39,12 +60,15 @@ export function RuleFields({
   defaultApp,
   defaultIssue,
   regle,
+  modeRelease = { disponible: false, raison: RAISON_REGRESSION_RELEASE },
 }: {
   apps: { app_id: string; name: string }[];
   rule?: AlertRuleRow;
   defaultApp?: string;
   defaultIssue?: string;
   regle?: { metrique: string | null; route: string | null; seuil: number | null };
+  /** B52 : l'évaluateur connaît-il ce mode ? Par défaut, non — l'option reste désactivée. */
+  modeRelease?: ModeRelease;
 }) {
   const metriqueProposee = regle?.metrique ?? null;
   const familleProposee = metriqueProposee?.startsWith("event:")
@@ -62,6 +86,8 @@ export function RuleFields({
   const seuil = rule?.threshold ?? regle?.seuil ?? "";
   const route = rule?.route ?? regle?.route ?? "";
   const mode = rule?.mode && (ALERT_MODES as readonly string[]).includes(rule.mode) ? rule.mode : "threshold";
+  // Hausse tolérée d'une règle de release existante (son `threshold`, en %), sinon +20 %.
+  const hausse = rule?.mode === "release" ? rule.threshold : SEUIL_REGRESSION_DEFAUT;
 
   return (
     <>
@@ -133,7 +159,7 @@ export function RuleFields({
                   name="mode"
                   value={m.valeur}
                   defaultChecked={mode === m.valeur}
-                  className={`regle-mode-${m.valeur === "threshold" ? "seuil" : "baseline"} shrink-0`}
+                  className={`${CLASSE_MODE[m.valeur]} shrink-0`}
                   data-testid={`mode-${m.valeur}`}
                 />
                 <span className="min-w-0">
@@ -142,17 +168,40 @@ export function RuleFields({
                 </span>
               </label>
             ))}
-            <label className="flex min-w-0 items-baseline gap-1.5 text-xs text-ink-faint" title={RAISON_REGRESSION_RELEASE}>
-              <input type="radio" name="mode" value="release_regression" disabled className="shrink-0" data-testid="mode-release" />
-              <span className="min-w-0">
-                <span className="font-medium">Régression de release</span>{" "}
-                <span>— indisponible ({SEUIL_REGRESSION_DEFAUT} % prévu, B52)</span>
-              </span>
-            </label>
+            {modeRelease.disponible ? (
+              <label className="flex min-w-0 items-baseline gap-1.5 text-xs text-ink">
+                <input
+                  type="radio"
+                  name="mode"
+                  value="release"
+                  defaultChecked={mode === "release"}
+                  className={`${CLASSE_MODE.release} shrink-0`}
+                  data-testid="mode-release"
+                />
+                <span className="min-w-0">
+                  <span className="font-medium">Régression de release</span>{" "}
+                  <span className="text-ink-soft">— le p75 monte d&apos;une release à la suivante</span>
+                </span>
+              </label>
+            ) : (
+              <label className="flex min-w-0 items-baseline gap-1.5 text-xs text-ink-faint" title={modeRelease.raison}>
+                {/* Une règle de release existante, détection en échec : son mode reste
+                    envoyé, et l'action la refuse au lieu de la convertir en seuil fixe
+                    (un radio désactivé n'est jamais envoyé). */}
+                {mode === "release" && <input type="hidden" name="mode" value="release" />}
+                <input type="radio" name="mode" value="release" disabled className="shrink-0" data-testid="mode-release" />
+                <span className="min-w-0">
+                  <span className="font-medium">Régression de release</span>{" "}
+                  <span>— indisponible ({SEUIL_REGRESSION_DEFAUT} % prévu, B52)</span>
+                </span>
+              </label>
+            )}
           </div>
-          <p className="mt-1 text-[11px] text-ink-faint" data-testid="raison-release">
-            {RAISON_REGRESSION_RELEASE}
-          </p>
+          {!modeRelease.disponible && (
+            <p className="mt-1 min-w-0 break-words text-[11px] text-ink-faint" data-testid="raison-release">
+              {modeRelease.raison}
+            </p>
+          )}
 
           <div className="regle-champs-seuil mt-3 flex flex-wrap items-end gap-3" data-testid="champs-seuil">
             <span className="basis-full text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
@@ -210,6 +259,30 @@ export function RuleFields({
               />
             </Field>
           </div>
+
+          {modeRelease.disponible && (
+            <div className="regle-champs-release mt-3 flex min-w-0 flex-wrap items-end gap-3" data-testid="champs-release">
+              <span className="basis-full text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+                Régression de release
+              </span>
+              <Field label="Hausse tolérée du p75 (%)">
+                {/* Sans `required` ni bornes : masqué dans les autres modes, un champ
+                    invalide bloquerait l'envoi sans rien montrer. La validation est
+                    côté serveur (`ruleFromForm` : strictement positif, 1 000 au plus). */}
+                <input
+                  name="release_pct"
+                  type="number"
+                  step="any"
+                  defaultValue={hausse}
+                  className={`${INPUT_CLASS} w-24`}
+                  data-testid="champ-hausse"
+                />
+              </Field>
+              <p className="basis-full min-w-0 break-words text-[11px] text-ink-soft" data-testid="phrase-release">
+                {PHRASE_REGLE_RELEASE}
+              </p>
+            </div>
+          )}
         </fieldset>
       </div>
 
