@@ -24,9 +24,13 @@ const APP_DIR = join(__dirname, "..", "..", "apps", "console", "app");
 const NOW = Date.parse("2026-09-17T12:00:00.000Z");
 
 // Schéma v74 (avant P6.1) : navigateur, système, env et release des signaux absents.
+// B8 : ni les versions (v75) ni le runtime (v82) n'y existent ; `net_type` (v53), si.
 const V74 = schemaSans(
   "rum_session.browser",
   "rum_session.os",
+  "rum_session.browser_version",
+  "rum_session.os_version",
+  "rum_session.runtime",
   ...["rum_pageview", "rum_metric", "rum_action", "rum_resource", "rum_longtask", "rum_event", "rum_span", "rum_event_index"].flatMap(
     (table) => [`${table}.env`, `${table}.release`],
   ),
@@ -85,7 +89,20 @@ describe("chaque écran branché sur le contrat déclare ses capacités", () => 
 describe("matrice écran × filtre", () => {
   it("écrans de mesures, schéma migré : ce que TOUTES leurs mesures appliquent", () => {
     // P8.7 : `country_source` accompagne `country` partout où il est disponible.
-    const SESSION = ["device", "browser", "os", "country", "country_source", "source", "client"];
+    // B8 : runtime, versions et type de réseau sont des dimensions de session.
+    const SESSION = [
+      "device",
+      "browser",
+      "os",
+      "country",
+      "country_source",
+      "source",
+      "client",
+      "runtime",
+      "browser_version",
+      "os_version",
+      "net_type",
+    ];
     expect(disponibles("/errors")).toEqual([...DIMENSIONS]);
     expect(disponibles("/errors/fp")).toEqual([...DIMENSIONS]);
     expect(disponibles("/events")).toEqual([...DIMENSIONS]);
@@ -104,8 +121,10 @@ describe("matrice écran × filtre", () => {
   });
 
   it("schéma v74 (console publiée avant P6.1) : navigateur et système « pas encore collectés »", () => {
-    expect(disponibles("/errors", V74).sort()).toEqual(["client", "country", "country_source", "device", "env", "release", "route", "service", "source"]);
-    expect(disponibles("/pages", V74).sort()).toEqual(["client", "country", "country_source", "device", "route", "source"]);
+    expect(disponibles("/errors", V74).sort()).toEqual([
+      "client", "country", "country_source", "device", "env", "net_type", "release", "route", "service", "source",
+    ]);
+    expect(disponibles("/pages", V74).sort()).toEqual(["client", "country", "country_source", "device", "net_type", "route", "source"]);
     expect(dimensionAvailability(surface("/pages"), "browser", V74)).toEqual({
       available: false,
       reason: "« Navigateur » n'est pas encore collecté pour les pages vues",
@@ -310,7 +329,9 @@ describe("/goals sur le contrat (F66)", () => {
   });
 
   it("dimensions de session seulement ; tablette et « Inconnu » acceptés", () => {
-    expect(disponibles("/goals").sort()).toEqual(["browser", "client", "country", "country_source", "device", "os", "source"]);
+    expect(disponibles("/goals").sort()).toEqual([
+      "browser", "browser_version", "client", "country", "country_source", "device", "net_type", "os", "os_version", "runtime", "source",
+    ]);
     expect(conditionAvailability(goals(), { dimension: "device", operator: "eq", value: "tablet" }, schemaComplet()).available).toBe(true);
     expect(conditionAvailability(goals(), { dimension: "device", operator: "is_null", value: null }, schemaComplet()).available).toBe(true);
     expect(checkSurface(requete("from=2026-09-17T10:00:00Z&to=2026-09-17T11:00:00Z&device=tablet"), goals(), schemaComplet())).toEqual({
@@ -320,6 +341,39 @@ describe("/goals sur le contrat (F66)", () => {
     expect(checkSurface(requete("route=/merci"), goals(), schemaComplet())).toMatchObject({
       ok: false,
       error: { dimension: "route", message: "« Route » est sans objet pour les sessions" },
+    });
+  });
+});
+
+describe("B8 — le runtime et les versions sur chaque écran", () => {
+  const B8: Dimension[] = ["runtime", "browser_version", "os_version", "net_type"];
+
+  it("écrans du contrat qui lisent des sessions : applicables ; /mobile, corrélation et écrans historiques : refusés avec leur raison", () => {
+    for (const path of ["/sessions", "/pages", "/errors", "/", "/goals", "/explorer"]) {
+      for (const dimension of B8) {
+        expect(dimensionAvailability(surface(path), dimension, schemaComplet()), `${path} × ${dimension}`).toEqual({ available: true });
+      }
+    }
+    // /mobile est DÉJÀ la cohorte React Native : il n'applique que device, os et release.
+    expect(dimensionAvailability(surface("/mobile"), "runtime", schemaComplet())).toMatchObject({ available: false });
+    expect(dimensionAvailability(surface("/correlation"), "runtime", schemaComplet())).toMatchObject({ available: false });
+    expect(dimensionAvailability(surface("/paths"), "runtime", schemaComplet())).toEqual({
+      available: false,
+      reason: "« Runtime » n'est pas encore appliqué par cet écran",
+    });
+  });
+
+  it("URL de /sessions filtrée sur la cohorte React Native : acceptée ; sur une base sans v82 : refus typé", () => {
+    const rn = requete("seg=v2:runtime:eq:react_native");
+    expect(checkSurface(rn, surface("/sessions"), schemaComplet())).toEqual({ ok: true, value: true });
+    expect(checkSurface(rn, surface("/sessions"), schemaSans("rum_session.runtime"))).toMatchObject({
+      ok: false,
+      error: { code: "unsupported_dimension", dimension: "runtime" },
+    });
+    // La release reste une dimension d'OCCURRENCE : /sessions la refuse (lien de /mobile sous `release=`).
+    expect(checkSurface(requete("release=4.2.0&seg=v2:runtime:eq:react_native"), surface("/sessions"), schemaComplet())).toMatchObject({
+      ok: false,
+      error: { dimension: "release" },
     });
   });
 });

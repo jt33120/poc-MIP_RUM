@@ -36,7 +36,20 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
   return parsed.value;
 }
 
-const SESSION: Dimension[] = ["device", "browser", "os", "country", "country_source", "source", "client"];
+// B8 : `runtime`, `browser_version`, `os_version` et `net_type` sont des dimensions de session.
+const SESSION: Dimension[] = [
+  "device",
+  "browser",
+  "os",
+  "country",
+  "country_source",
+  "source",
+  "client",
+  "runtime",
+  "browser_version",
+  "os_version",
+  "net_type",
+];
 const OCCURRENCE: Dimension[] = ["route", "release", "env"];
 
 /** Matrice attendue, schéma migré (P6.1 compris) : ce qui est applicable, et rien d'autre. */
@@ -254,5 +267,72 @@ describe("seaux UTC", () => {
     expect(() => bucketExpr("m.ts", { ...range, bucketSeconds: 0 })).toThrow();
     expect(() => bucketExpr("m.ts", { ...range, bucketSeconds: 1.5 })).toThrow();
     expect(() => bucketExpr("m.ts); drop table x; --", range)).toThrow();
+  });
+});
+
+describe("B8 — runtime, versions et type de réseau : dimensions de lecture de la session", () => {
+  const sessionsB8: CompileTarget = { dataset: "sessions", row: "s", session: "s", time: "s.started_at" };
+  const erreursB8: CompileTarget = { dataset: "errors", row: "e", session: "s", time: "e.ts" };
+  const B8 = ["runtime", "browser_version", "os_version", "net_type"];
+
+  it("seg v2 seulement : aucun paramètre d'URL dédié, donc aucun paramètre de population nouveau", async () => {
+    const { CONTRACT_PARAMS, PARAM_DIMENSIONS } = await import("../../apps/console/lib/query-contract");
+    for (const dimension of B8) {
+      expect(DIMENSIONS as readonly string[], dimension).toContain(dimension);
+      expect(CONTRACT_PARAMS as readonly string[], dimension).not.toContain(dimension);
+      expect(PARAM_DIMENSIONS as readonly string[], dimension).not.toContain(dimension);
+    }
+    expect(requete("seg=v2:runtime:eq:react_native;net_type:is_null;browser_version:neq:139;os_version:eq:17").filters.segments).toEqual([
+      { dimension: "runtime", operator: "eq", value: "react_native" },
+      { dimension: "net_type", operator: "is_null", value: null },
+      { dimension: "browser_version", operator: "neq", value: "139" },
+      { dimension: "os_version", operator: "eq", value: "17" },
+    ]);
+  });
+
+  it("compilées sur la session jointe, valeurs liées, « Inconnu » en `is null`", () => {
+    const query = requete("app=a&seg=v2:runtime:eq:react_native;net_type:is_null;browser_version:neq:139;os_version:eq:17");
+    const { params, bind } = binder();
+    expect(compileWhere(query, sessionsB8, schemaComplet(), bind)).toEqual({
+      ok: true,
+      value:
+        " and s.started_at >= $1::timestamptz and s.started_at < $2::timestamptz" +
+        " and s.app_id = any($3::text[])" +
+        " and s.runtime = $4 and s.net_type is null and s.browser_version <> $5 and s.os_version = $6" +
+        " and not coalesce(s.is_bot, false)",
+    });
+    expect(params).toEqual([query.range.from, query.range.to, ["a"], "react_native", "139", "17"]);
+    // Sur une table d'occurrences, la même condition porte sur la SESSION jointe.
+    const occ = binder();
+    const compiled = compileWhere(requete("seg=v2:runtime:eq:react_native"), erreursB8, schemaComplet(), occ.bind);
+    expect(compiled.ok && compiled.value).toContain(" and s.runtime = $");
+    expect(occ.params).toContain("react_native");
+  });
+
+  it("colonne absente (base antérieure à v82) : « pas encore collecté », refusé et jamais ignoré", () => {
+    const avantV82 = schemaSans("rum_session.runtime");
+    expect(dimensionSupport("sessions", "runtime", avantV82)).toEqual({
+      supported: false,
+      reason: "not_collected",
+      message: "« Runtime » n'est pas encore collecté pour les sessions",
+    });
+    expect(() => compileWhereOrThrow(requete("seg=v2:runtime:eq:react_native"), sessionsB8, avantV82, binder().bind)).toThrow(
+      UnsupportedFilterError,
+    );
+    // Le robot synthétique n'a pas de session : sans objet.
+    expect(dimensionSupport("synthetic", "runtime", schemaComplet())).toMatchObject({ supported: false, reason: "not_applicable" });
+  });
+
+  it("la sonde de schéma interroge les quatre colonnes", () => {
+    expect(registryColumns().columns).toEqual(expect.arrayContaining(B8));
+  });
+
+  it("périmètre : `apps = []` se compile en liste vide liée, jamais en « toutes les apps »", () => {
+    const query = requete("seg=v2:runtime:eq:react_native", { role: "viewer", apps: ["a"] });
+    const vide: AnalyticsQuery = { ...query, scope: { ...query.scope, effectiveApps: [] } };
+    const { params, bind } = binder();
+    const compiled = compileWhere(vide, sessionsB8, schemaComplet(), bind);
+    expect(compiled.ok && compiled.value).toContain(" and s.app_id = any($3::text[])");
+    expect(params[2]).toEqual([]);
   });
 });
