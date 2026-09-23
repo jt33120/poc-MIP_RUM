@@ -60,6 +60,7 @@ continu n'a aucune de ces limites.
 | Variable | Service | Obligatoire | Rôle |
 |---|---|---|---|
 | `DATABASE_URL` | `collector`, `scheduler` | **oui** | Postgres. TLS vérifié dès que l'hôte n'est pas local — jamais de `rejectUnauthorized: false`. |
+| `MIGRATION_DATABASE_URL` | `scheduler` (pré-déploiement) | non | la **même** base par une connexion **directe**, hors pooler : les `predeploy-vNN-*.sql` (index `CONCURRENTLY`) y passent sous verrou de session, juste avant leur migration. Absente, ou pointée sur un pooler, ils sont sautés avec un avertissement et chaque migration garde son garde-fou de taille. Une autre base que `DATABASE_URL` est refusée. |
 | `PORT` | `collector` | fourni par l'hébergeur | port d'écoute (défaut local : 4318) |
 | `PORT` | `scheduler` | facultatif | expose `/health` et `/status` ; sans lui, le worker n'écoute rien |
 | `REQUIRE_API_KEY` | `collector` | non | `true` = rejeter toute app inconnue ou sans clé |

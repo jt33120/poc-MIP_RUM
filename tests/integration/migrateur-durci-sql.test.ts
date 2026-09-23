@@ -11,7 +11,8 @@
 //   · qu'un index INVALIDE laissé par un CREATE INDEX CONCURRENTLY interrompu
 //     est supprimé puis reconstruit, au lieu d'être pris pour fait ;
 //   · qu'un échec définitif du pré-déploiement ne laisse ni index invalide ni
-//     migration appliquée ;
+//     migration appliquée ; et que, le script SAUTÉ faute de connexion
+//     directe, un index invalide qu'il nomme bloque quand même la migration ;
 //   · qu'une attente de verrou expirée est reprise, et qu'un verrou des
 //     migrations tenu ailleurs arrête le pré-déploiement au bout des essais ;
 //   · qu'une MIGRATION_DATABASE_URL qui désigne une autre base est refusée.
@@ -226,6 +227,28 @@ suite("P1 — migrateur : pré-déploiement", () => {
     const { journal } = journalEspion();
     const r = await migrer(pool, { dossier: tmp, journal, ouvrirDirecte: directeVers(URL_BASE) });
     expect(r.appliquees).toEqual(["migration-v1003.sql"]);
+  });
+
+  // Sans connexion directe (pooler), le script est sauté — mais un index
+  // invalide qu'il nomme ne doit pas laisser passer la migration : sa garde
+  // `to_regclass(...) is null` le prendrait pour prêt.
+  it("script sauté faute de connexion directe : un index invalide bloque quand même la migration", async () => {
+    await expect(q("create unique index concurrently idx_migrateur_v1006 on migrateur_t (v)")).rejects.toThrow();
+    writeFileSync(
+      join(tmp, "predeploy-v1006-indexes.sql"),
+      "create index concurrently if not exists idx_migrateur_v1006 on migrateur_t (v);",
+    );
+    writeFileSync(join(tmp, "migration-v1006.sql"), "create index if not exists idx_migrateur_v1006 on migrateur_t (v);");
+    const { journal, lignes } = journalEspion();
+    await expect(migrer(pool, { dossier: tmp, journal, ouvrirDirecte: null })).rejects.toThrow(
+      /index invalide idx_migrateur_v1006/,
+    );
+    expect(lignes.some((l) => l.msg.startsWith("pré-déploiement sauté"))).toBe(true);
+    expect(await appliquee("migration-v1006.sql")).toBe(false);
+    // Avec une connexion directe, la même course répare et passe.
+    const r = await migrer(pool, { dossier: tmp, journal, ouvrirDirecte: directeVers(URL_BASE) });
+    expect(r.appliquees).toEqual(["migration-v1006.sql"]);
+    expect(await etatIndex("idx_migrateur_v1006")).toEqual([{ valide: true, pret: true }]);
   });
 
   it("refuse une connexion directe qui désigne une AUTRE base", async () => {
