@@ -118,7 +118,7 @@ Environnement de build : macOS (Darwin 25.1.0), Node v26.0.0, pnpm 9.15.9, Docke
   - **Playwright : 5/5 verts** — flux bout-en-bout (démo → erreur → flush → base → console, assertions par session_id sans purge), corrélation, CORS (préflight 204 + headers pour l'origine G-IT, non-reflet d'une origine inconnue, POST OTLP 200).
 - **Charge légère (PLAN §12)** : 1 000 events OTLP scriptés (10 POST concurrents par vague) → **1 000/1 000 insérés en 0,3 s (~3 975 events/s)** sur le dev-server Node + Postgres local. Sanity OK, large pour la démo.
 - **Chemin de migration prod livré** : `infra/otel-collector.example.yaml` (receiver OTLP/HTTP + CORS → exporter ClickHouse ; remplace l'ingestion serverless sans toucher au SDK) et `infra/clickhouse.notes.md` (schéma MergeTree cible, vues p75 `quantileTDigest`, étapes de migration, ce qui ne change pas).
-- **Matière rapport** : captures des 5 vues console + démo (`docs/captures/`), brouillon du rapport client rempli (`docs/RAPPORT_CLIENT.md`, trame PLAN §15).
+- **Matière rapport** : captures des 5 vues console + démo (`docs/captures/`), brouillon du rapport client rempli (`docs/RAPPORT_CLIENT.md` — hors dépôt, cf. `docs/DOCUMENTS-HORS-DEPOT.md` ; trame PLAN §15).
 - **Décision** : Vitest 4.x au lieu de ^1.x du PLAN (tooling de test uniquement, aucune incidence produit ; 1.x daté de 2024 ne gère pas node 26 proprement).
 
 ---

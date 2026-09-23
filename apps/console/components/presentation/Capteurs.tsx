@@ -10,7 +10,8 @@
 //
 // Le contenu n'est pas du marketing : il vient de docs/CADRAGE_EXTENSION.md
 // (registre domaine→app, MV3, cible poste géré, non publié au store),
-// docs/LIMITES.md (ce qui manque, assumé) et docs/OFFRE.md (positionnement).
+// docs/LIMITES.md (ce qui manque, assumé) et docs/OFFRE.md (positionnement — document
+// commercial hors dépôt, cf. docs/DOCUMENTS-HORS-DEPOT.md).
 // Les versions sont celles des paquets (tests/unit/specs.test.ts les compare au
 // manifeste de l'extension et au package.json de React Native) ; les réserves
 // viennent du document de couverture (C1, C10 ; C5, C6 pour le côté serveur).

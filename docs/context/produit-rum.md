@@ -95,7 +95,7 @@ n'ont **pas de clé d'API**.
 ## 4. Standards du secteur, et où nous en sommes
 
 L'état du marché est traité en profondeur dans
-[`../MARKET_SCAN_BMAD.md`](../MARKET_SCAN_BMAD.md). Retenons ici les quatre points
+`../MARKET_SCAN_BMAD.md` ([hors dépôt](../DOCUMENTS-HORS-DEPOT.md)). Retenons ici les quatre points
 qui pèsent sur la note de maturité.
 
 **① OpenTelemetry côté client n'est pas encore stable.** Le RUM navigateur reste le

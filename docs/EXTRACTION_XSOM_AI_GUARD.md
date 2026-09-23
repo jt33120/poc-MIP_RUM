@@ -66,6 +66,9 @@ n'émettent que des spans `http.server` — **pas d'IA**.
 Le « contrat producteur » vit dans les **docs** (ce sont littéralement des prompts destinés à
 une session Claude sur `uti-platform`) :
 
+> Les documents `*_UTI.md` cités ci-dessous sont écrits pour un client nommé et ne sont **pas
+> dans le dépôt** — voir [DOCUMENTS-HORS-DEPOT.md](DOCUMENTS-HORS-DEPOT.md).
+
 - `docs/AI_UTI.md` — contrat des spans `gen_ai` + squelette Python `record_ai_call(...)`
   (corps `...`, à implémenter côté UTI). Champs : `provider`, `model`, `operation`
   (`chat`/`embeddings`), `input_tokens`, `output_tokens`, `cost` (optionnel), `route`,

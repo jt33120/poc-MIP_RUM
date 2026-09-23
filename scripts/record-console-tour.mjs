@@ -3,7 +3,8 @@
 // parcours sur une vraie base — il n'y a pas de montage, et refaire la vidéo
 // après une refonte d'écran se résume à relancer ce script.
 //
-// Prérequis (cf. docs/DEMO_SCRIPT.md, « Plan B hors-ligne ») : Postgres migré,
+// Prérequis (cf. docs/DEMO_SCRIPT.md — document commercial hors dépôt, voir
+// docs/DOCUMENTS-HORS-DEPOT.md —, « Plan B hors-ligne ») : Postgres migré,
 // l'ingestion sur :4318, le mini-site de démo sur :8080, du trafic généré avec
 // scripts/gen-traffic.mjs, et la console servie en build de PRODUCTION sur
 // :3000 — pas `next dev`, dont les compilations à la demande se voient à

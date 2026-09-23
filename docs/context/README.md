@@ -186,7 +186,7 @@ comme tels lors d'une mise en production client.
   preuves, et le **produit** sur son seul contrat public + un sondage réseau. Ses
   angles morts sont listés explicitement dans la fiche.
 - **Le positionnement marché** n'est pas repris ici : il fait l'objet de
-  [`../MARKET_SCAN_BMAD.md`](../MARKET_SCAN_BMAD.md) (95 sources), auquel les
+  `../MARKET_SCAN_BMAD.md` ([hors dépôt](../DOCUMENTS-HORS-DEPOT.md), 95 sources), auquel les
   fiches renvoient plutôt que de le dupliquer.
 
 ---
@@ -195,8 +195,8 @@ comme tels lors d'une mise en production client.
 
 | Document | Rôle |
 |---|---|
-| [`../PRODUCT_REVIEW_BMAD.md`](../PRODUCT_REVIEW_BMAD.md) | Revue interne A→Z, épics E0–E7 |
-| [`../MARKET_SCAN_BMAD.md`](../MARKET_SCAN_BMAD.md) | Scan concurrentiel, standards, positionnement |
+| `../PRODUCT_REVIEW_BMAD.md` ([hors dépôt](../DOCUMENTS-HORS-DEPOT.md)) | Revue interne A→Z, épics E0–E7 |
+| `../MARKET_SCAN_BMAD.md` ([hors dépôt](../DOCUMENTS-HORS-DEPOT.md)) | Scan concurrentiel, standards, positionnement |
 | [`../ADR-0001-supervision-ia-xsom.md`](../ADR-0001-supervision-ia-xsom.md) | Décision d'architecture : l'IA sort de `mip-rum` |
 | [`../EXTRACTION_XSOM_AI_GUARD.md`](../EXTRACTION_XSOM_AI_GUARD.md) | Spécification de ce qui a été transféré à xSOM |
 

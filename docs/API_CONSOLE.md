@@ -30,7 +30,8 @@ Deux modes (le handler tranche, le middleware ne redirige pas `/api/v1`) :
      UTI c'est `gip-plateforme` (vérifiable via `GET /api/v1/apps`), **pas** `uti`.
      Un mauvais `app_id` de scope ne provoque **aucune erreur** : le jeton fonctionne
      mais filtre sur une app vide → tout s'affiche à zéro côté partenaire. Voir
-     `docs/HANDOVER_UTI.md`.
+     `docs/HANDOVER_UTI.md` (document client, hors dépôt : voir
+     [DOCUMENTS-HORS-DEPOT.md](DOCUMENTS-HORS-DEPOT.md)).
    - `token@` (sans app) → périmètre **vide** : toutes les lectures répondent `403`
      `no_app_access`. Une configuration incomplète ne vaut jamais « toutes les apps ».
 2. **Cookie de session** — le cookie JWT `mip_session` de la console. Respecte le

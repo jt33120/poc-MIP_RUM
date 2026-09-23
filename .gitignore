@@ -52,3 +52,12 @@ apps/extension/*-key*.b64
 _bmad/
 _bmad-output/
 .mcp.json
+
+# DOCUMENTS COMMERCIAUX ET CLIENT — présents sur le poste, absents du dépôt.
+# Voir docs/DOCUMENTS-HORS-DEPOT.md, qui dit lesquels et pourquoi.
+docs/OFFRE.md
+docs/MARKET_SCAN_BMAD.md
+docs/PRODUCT_REVIEW_BMAD.md
+docs/RAPPORT_CLIENT.md
+docs/DEMO_SCRIPT.md
+docs/*_UTI.md

@@ -71,16 +71,11 @@ employée, ni affichée ; ni base de production, ni Railway, ni Vercel n'ont ét
 échoue (`Could not resolve "@mip/rum-core"`) et ses 10 tests sont perdus. La CI fait le build avant ;
 un relevé local qui l'oublie mesure 10 tests de moins et croit avoir trouvé un défaut.
 
-**Une PR de documentation déclenchait la CI, et ce n'est plus vrai — corrigé le 23/09/2026.** `ci.yml`
-portait un `paths-ignore` sur `docs/**`, `_bmad-output/**` et `**.md`, avec son miroir Vercel dans
-`apps/console/vercel.json` (`ignoreCommand`). C'était tenable tant que ce document était inerte ; il ne
-l'est plus : il est analysé par `scripts/couverture-extraire.mjs`, figé dans
-`apps/console/lib/couverture.generated.json`, gardé par `tests/unit/couverture-site.test.ts` et affiché
-par `/presentation`. Une PR « de documentation seule » pouvait donc casser la vitrine publique sans
-qu'aucun test ne tourne. Les deux filtres ont été retirés. `docker-smoke.yml`, lui, n'a jamais eu de
-`paths-ignore` : il travaille sur une liste blanche de chemins. Les chiffres ci-dessus viennent de ce
-poste ; le passage de la CI sur le commit relevé (job unitaire vert, job e2e rouge sur un test instable
-qu'aucune ligne ne cite) est au § 12.3.
+**Une PR de documentation déclenche la CI depuis le 23/09/2026.** `ci.yml` portait un `paths-ignore` sur `docs/**`
+et `**.md` (miroir Vercel : `ignoreCommand`), retiré : ce document est analysé, figé dans `couverture.generated.json`,
+gardé par `couverture-site.test.ts` et affiché par `/presentation` — une PR « de doc seule » cassait la vitrine sans
+test. Les chiffres ci-dessus viennent de ce poste ; le passage de la CI sur le commit relevé (job unitaire vert, job
+e2e rouge sur un test instable qu'aucune ligne ne cite) est au § 12.3.
 
 **Déploiements : non relevés en direct le 23/09** (ni API Railway, ni API Vercel) ; état connu par `docs/TOPOLOGIE_BACKEND.md` :
 

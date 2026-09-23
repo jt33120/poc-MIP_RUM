@@ -423,7 +423,7 @@ function originHost(origin: string): string | null {
 // docs/DEPLOY_EXTENSION.md). Référencé tel quel par la policy d'entreprise.
 const EXT_ID = "gglpcalhlkfhgipfmemfiedjomifefba";
 const EXT_ZIP = "/downloads/mip-rum-extension.zip";
-const GH_DOC = "https://github.com/jt33120/mip-rum/blob/master/docs/DEPLOY_EXTENSION.md";
+const GH_DOC = "https://github.com/jt33120/poc-MIP_RUM/blob/master/docs/DEPLOY_EXTENSION.md";
 
 /**
  * Étape 2 — mode extension. Deux VOIES d'installation, tout dans la console
