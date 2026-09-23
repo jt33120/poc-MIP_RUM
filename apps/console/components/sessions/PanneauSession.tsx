@@ -35,7 +35,8 @@ import { Deroule } from "@/components/sessions/Deroule";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { formater } from "@/lib/fmt-ids";
 import { lire, type Lecture } from "@/lib/lecture";
-import { cascadeDeSession, premiersEvenements, sessionDansLePerimetre } from "@/lib/panneau-session";
+import { cascadeDeSession } from "@/lib/deroule";
+import { premiersEvenements, sessionDansLePerimetre } from "@/lib/panneau-session";
 import { sessionMeta, sessionTimeline, type SessionMeta, type TimelineItem } from "@/lib/queries";
 import { LIMITE_CHRONOLOGIE } from "@/lib/recit-session";
 import {

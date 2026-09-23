@@ -42,12 +42,11 @@ import { DistributionSeuils, alternativeDistribution, bacsDeHistogramme } from "
 import { Figure } from "@/components/charts/Figure";
 import {
   LIBELLES_NATURES,
-  PARTIEL_CASCADE,
-  PISTES_SESSION,
   cascadeDeSession,
   fenetreDeSession,
   jourMoisUtc,
   libelleFenetre,
+  reperesDeSession,
   vitauxDeSession,
   type PireMesure,
   type VitauxSession,
@@ -648,7 +647,8 @@ function OngletCascade({
   tronquee: boolean;
 }) {
   const titre = "Cascade de la session";
-  const c = cascadeDeSession(timeline, { t0, finMs, liens, tronquee });
+  // La conversion du panneau de session (F43) : une seule, dans lib/deroule.ts.
+  const c = cascadeDeSession(timeline, t0, finMs, tronquee, liens);
   const assez = c.elements.length >= 2;
   return (
     <SectionErreur titre={titre}>
@@ -675,25 +675,12 @@ function OngletCascade({
           </>
         }
       >
-        {tronquee && (
-          <div className="mb-3">
-            <EtatSurface
-              compact
-              etat={{ kind: "partiel", raison: `chronologie tronquée à ${LIMITE_CHRONOLOGIE} événements : la cascade n'en montre que le début` }}
-            />
-          </div>
-        )}
         {/* Défilement horizontal INTERNE sous 768 px (§ 5.12.3) : la cascade garde un
-            axe lisible. `relative` : un `sr-only` de l'alternative y reste borné (piège 16). */}
+            axe lisible. `relative` : un `sr-only` de l'alternative y reste borné (piège 16).
+            La collecte partielle ET la troncature éventuelle sont dites en tête (`partiel`). */}
         <div className="relative overflow-x-auto" data-testid="cascade-defilement">
           <div className="min-w-[36rem] md:min-w-0">
-            <Cascade
-              totalMs={c.totalMs}
-              pistes={PISTES_SESSION}
-              elements={c.elements}
-              marqueurs={c.marqueurs}
-              partiel={PARTIEL_CASCADE}
-            />
+            <Cascade {...c} marqueurs={reperesDeSession(timeline, t0)} />
           </div>
         </div>
       </Figure>

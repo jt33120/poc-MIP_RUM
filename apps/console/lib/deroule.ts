@@ -180,16 +180,18 @@ export const LIBELLES_NATURES: Record<NatureChronologie, string> = {
 
 // ═══════════════════ F46 — cascade de la session et Web Vitals situés ═══════════════════
 //
-// TROIS FONCTIONS PURES, qui lisent la même chronologie que le déroulé.
+// QUATRE FONCTIONS PURES, qui lisent la même chronologie que le déroulé.
 //
-//   · `cascadeDeSession` place la chronologie sur l'axe de `Cascade` (F07). Une
-//     page vue y est une BARRE « jusqu'à la vue suivante », jamais une « durée de
-//     vue » : la console ne sait pas combien de temps le visiteur a regardé la
-//     page (le temps passé est refusé, `lib/analytics-schema.ts`), elle sait
-//     seulement quand la suivante s'est ouverte. La dernière vue s'étend jusqu'à
-//     la dernière observation de la session — et le dit, dans le détail de sa
-//     barre. Une chronologie tronquée ne connaît pas sa fin : la dernière vue
-//     s'arrête alors au dernier événement lu, et le dit aussi.
+//   · `cascadeDeSession` place la chronologie sur l'axe de `Cascade` (F07). C'est la
+//     SEULE conversion du dépôt : le panneau de session (F43, hauteur réduite) et
+//     l'onglet Cascade de la page (F46) l'emploient tous deux. Une page vue y est
+//     une BARRE « jusqu'à la vue suivante », jamais une « durée de vue » : la
+//     console ne sait pas combien de temps le visiteur a regardé la page (le temps
+//     passé est refusé, `lib/analytics-schema.ts`), elle sait seulement quand la
+//     suivante s'est ouverte. La dernière vue s'étend jusqu'à la dernière
+//     observation — et le dit. Une chronologie tronquée ne connaît pas sa fin : la
+//     dernière vue LUE s'arrête au dernier événement lu, et le dit aussi.
+//   · `reperesDeSession` rend les repères FCP / LCP de la cascade pleine page.
 //   · `vitauxDeSession` rend une ligne par vue et la PIRE mesure de chaque Web
 //     Vital : c'est elle qu'on situe dans la population de sa route.
 //   · `fenetreDeSession` rend la fenêtre de cette population, ANCRÉE SUR LA
@@ -199,7 +201,7 @@ export const LIBELLES_NATURES: Record<NatureChronologie, string> = {
 import type { ElementCascade, MarqueurCascade, PisteCascade, TonCascade } from "../components/charts/Cascade";
 import type { VitalName } from "./fmt-ids";
 import { CORE_VITALS } from "./rating";
-import { ancreEvenement } from "./recit-session";
+import { LIMITE_CHRONOLOGIE, ancreEvenement } from "./recit-session";
 import { isoSansMs } from "./series";
 import { statutAppel } from "./session-detail";
 
@@ -230,16 +232,7 @@ export function libelleFenetre(from: string, to: string): string {
   return `du ${jourMoisUtc(from)} au ${jourMoisUtc(to)}`;
 }
 
-/**
- * La cascade est PARTIELLE par construction, et le dit en tête (§ 5.12.4) : la
- * chronologie ne lit que les ressources rattachées à une action, et le SDK
- * n'envoie que celles qui dépassent son seuil de lenteur ou bloquent le rendu,
- * au plus vingt par page (`packages/rum-sdk/src/resources.ts`, vérifié par test).
- */
-export const PARTIEL_CASCADE =
-  "ressources rattachées à une action seulement ; le SDK n'envoie que celles de 300 ms ou plus (seuil par défaut) ou qui bloquent le rendu, 20 par page au plus";
-
-/** Pistes de la cascade d'une session (§ 5.12.4), dans l'ordre du dessin. */
+/** Pistes de la cascade d'une session (§ 5.12.4), dans l'ordre d'affichage. */
 export const PISTES_SESSION: PisteCascade[] = [
   { cle: "vues", libelle: "Pages vues" },
   { cle: "actions", libelle: "Actions" },
@@ -249,18 +242,30 @@ export const PISTES_SESSION: PisteCascade[] = [
   { cle: "erreurs", libelle: "Erreurs" },
 ];
 
+/**
+ * La collecte des ressources est VOLONTAIREMENT partielle, et la cascade le dit en
+ * tête (§ 5.12.4) : la chronologie ne lit que celles rattachées à une action
+ * (`sessionTimeline`, lib/queries.ts), et le SDK n'émet que les lentes (300 ms par
+ * défaut, `DEFAULT_SLOW_RESOURCE_MS`) ou bloquant le rendu, 20 par page au plus
+ * (`RESOURCE_CAP_PER_PAGE`, remis à zéro à chaque vue, packages/rum-sdk/src/resources.ts)
+ * — vérifié par test contre les constantes du SDK.
+ */
+export const PARTIEL_RESSOURCES =
+  "ressources rattachées à une action seulement, lentes (300 ms et plus par défaut) ou bloquant le rendu, 20 par vue au plus";
+
 /** Ce que mesure la barre d'une vue : l'écart jusqu'à la suivante, pas un temps de lecture. */
 export const VUE_JUSQU_A_SUIVANTE = "jusqu'à la vue suivante";
 /** La dernière vue s'arrête à la dernière observation de la session. */
-export const VUE_JUSQU_A_LA_FIN = "jusqu'à la dernière observation de la session";
-/** Chronologie tronquée : la suite n'est pas lue, la fin de la dernière vue non plus. */
+export const VUE_JUSQU_A_LA_FIN = "jusqu'à la dernière observation";
+/** Chronologie tronquée : la suite n'est pas lue, la fin de la dernière vue lue non plus. */
 export const VUE_FIN_INCONNUE = "fin inconnue : chronologie tronquée, arrêtée au dernier événement lu";
 
 /**
  * Sévérité d'un appel d'après son statut, lu en tête du détail (« 500 · serveur
- * 45 ms ») — la règle du détail de trace (F07) : 5xx = erreur, 4xx = à surveiller,
- * le reste sans alerte. Le statut 0 est un appel qui n'a pas abouti (réseau) : une
- * erreur. Une durée n'a pas de seuil publié : elle ne colore rien (R-S).
+ * 45 ms ») — la règle du détail de trace (F07) : 5xx = erreur, 4xx = à surveiller
+ * (un 404 attendu n'est pas « rouge » par nature), le reste sans alerte. Le statut 0
+ * est un appel qui n'a pas abouti (réseau) : une erreur. Une durée n'a pas de seuil
+ * publié : elle ne colore rien (R-S).
  */
 export function tonAppel(detail: string | null): TonCascade {
   const tete = (detail ?? "").split(" · ")[0];
@@ -270,47 +275,44 @@ export function tonAppel(detail: string | null): TonCascade {
   return statut >= 400 ? "warn" : "neutre";
 }
 
-export interface CascadeSession {
-  /** Longueur de l'axe : de l'ouverture à la dernière observation. */
+/** Les props de `Cascade` pour une session : à étaler (`<Cascade {...cascadeDeSession(…)} />`). */
+export interface CascadeDeSession {
+  /** Longueur de l'axe : du début de la session à sa dernière observation. */
   totalMs: number;
+  pistes: PisteCascade[];
   elements: ElementCascade[];
-  /** Repères FCP / LCP des vues chargées. */
-  marqueurs: MarqueurCascade[];
+  /** Écrit EN TÊTE de la cascade : la collecte partielle, et la troncature s'il y a lieu. */
+  partiel: string;
 }
 
-/** Durée lisible d'une ligne (`value`) : un nombre fini et positif, sinon un instant. */
-function dureeDe(v: number | null): number | null {
-  const n = v == null ? Number.NaN : Number(v);
+/** Une durée lue en base (float, parfois `numeric` rendu en chaîne) ; illisible ou négative → `null` (un instant). */
+function dureeDe(v: unknown): number | null {
+  if (v == null) return null;
+  const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** Chemin d'une URL de ressource, sans son origine (l'hôte reste dans l'alternative). */
-function cheminDe(url: string | null): string | null {
-  if (!url) return null;
-  return url.replace(/^https?:\/\/[^/]+/, "") || url;
-}
-
 /**
- * La chronologie sur l'axe de `Cascade` : pistes Pages vues (barres jusqu'à la vue
- * suivante), Actions (instants), Appels API (durée navigateur, ton = statut),
- * Ressources liées, Tâches longues (barres), Erreurs (instants). Un effet est
- * l'ENFANT de son action (`action_id`), comme dans le déroulé ; un effet dont
- * l'action n'a pas été lue reste une racine. Chaque élément garde l'ancre de sa
- * ligne (`evt-<rang>`) et le lien que la chronologie lui donne (`liens`).
- *
- * Repères : le FCP et le LCP d'une vue CHARGÉE, à son ouverture + leur valeur
- * (web-vitals les mesure depuis le début du chargement du document). Une vue
- * « spa » n'a pas de FCP ni de LCP propres : un vital que le groupement lui
- * rattache (même route) appartient au chargement d'origine, il n'est pas placé.
- * Événements, fils d'Ariane, signaux et phases réseau restent dans le déroulé.
+ * La chronologie sur l'axe de `Cascade`, de `debut` à `fin` (`started_at`,
+ * `last_seen_at`) : pistes Pages vues (barres jusqu'à la vue suivante), Actions
+ * (instants), Appels API (durée navigateur ; sans durée, un instant qui le dit),
+ * Ressources liées et Tâches longues (barres neutres : aucun seuil publié), Erreurs
+ * (instants ; une ligne répétée dit ses occurrences, V1). Un effet est l'ENFANT de
+ * son action (`action_id`), comme dans le déroulé ; un effet dont l'action n'a pas
+ * été lue reste une racine. Chaque élément garde l'ancre de sa ligne (`evt-<rang>`)
+ * et le lien que la chronologie lui donne (`liens`, pré-calculés par la page).
+ * Mesures, événements et fil d'Ariane ne sont pas placés : le déroulé les porte.
  */
 export function cascadeDeSession(
   items: readonly TimelineItem[],
-  opts: { t0: number; finMs: number; liens?: Record<number, string>; tronquee?: boolean },
-): CascadeSession {
-  const { t0, finMs, liens = {}, tronquee = false } = opts;
+  debut: Date | string | number,
+  fin: Date | string | number,
+  tronquee = items.length >= LIMITE_CHRONOLOGIE,
+  liens: Readonly<Record<number, string>> = {},
+): CascadeDeSession {
+  const t0 = new Date(debut).getTime();
+  const finMs = new Date(fin).getTime();
   const instant = (it: TimelineItem) => new Date(it.ts).getTime();
-  const debut = (it: TimelineItem) => Math.max(0, instant(it) - t0);
   const actions = new Map<string, string>();
   items.forEach((it, i) => {
     if (it.kind === "action" && it.action_id && !actions.has(it.action_id)) actions.set(it.action_id, ancreEvenement(i));
@@ -321,44 +323,46 @@ export function cascadeDeSession(
 
   const elements: ElementCascade[] = [];
   items.forEach((it, i) => {
-    const base = { id: ancreEvenement(i), debutMs: debut(it), ...(liens[i] ? { href: liens[i] } : {}) };
+    const base = {
+      id: ancreEvenement(i),
+      debutMs: Math.max(0, instant(it) - t0),
+      ...(liens[i] ? { href: liens[i] } : {}),
+    };
     switch (it.kind) {
       case "pageview": {
         const suivante = vues.find((j) => j > i);
-        const fin = suivante !== undefined ? instant(items[suivante]) : tronquee ? dernierInstant : finMs;
-        const mesure = suivante !== undefined ? VUE_JUSQU_A_SUIVANTE : tronquee ? VUE_FIN_INCONNUE : VUE_JUSQU_A_LA_FIN;
+        const jusque = suivante !== undefined ? instant(items[suivante]) : tronquee ? dernierInstant : finMs;
         elements.push({
           ...base,
           piste: "vues",
           libelle: it.title ?? "Route inconnue",
-          dureeMs: Math.max(0, fin - instant(it)),
+          dureeMs: Math.max(0, jusque - instant(it)),
           ton: "neutre",
-          detail: [it.detail, mesure].filter(Boolean).join(" · "),
+          detail: suivante !== undefined ? VUE_JUSQU_A_SUIVANTE : tronquee ? VUE_FIN_INCONNUE : VUE_JUSQU_A_LA_FIN,
         });
         return;
       }
-      case "action": {
-        const type = (it.detail ?? "").split(" · ")[0];
+      case "action":
         elements.push({
           ...base,
           piste: "actions",
           libelle: it.title ?? it.action_name ?? "Action sans nom",
           dureeMs: null,
           ton: "neutre",
-          ...(type ? { detail: type } : {}),
+          ...(it.detail ? { detail: it.detail } : {}),
         });
         return;
-      }
       case "api": {
+        const d = dureeDe(it.value);
         const { statut } = statutAppel(it.detail);
         elements.push({
           ...base,
           piste: "api",
           libelle: it.title ?? "Appel API",
-          dureeMs: dureeDe(it.value),
+          dureeMs: d,
           ton: tonAppel(it.detail),
           parentId: parentDe(it),
-          detail: /^\d+$/.test(statut) ? `HTTP ${statut}` : statut === "—" ? "statut inconnu" : statut,
+          detail: d === null ? `${statut} · durée non mesurée` : statut,
         });
         return;
       }
@@ -366,7 +370,7 @@ export function cascadeDeSession(
         elements.push({
           ...base,
           piste: "ressources",
-          libelle: cheminDe(it.detail) ?? it.title ?? "Ressource",
+          libelle: it.detail ?? it.title ?? "Ressource",
           dureeMs: dureeDe(it.value),
           ton: "neutre",
           parentId: parentDe(it),
@@ -381,9 +385,11 @@ export function cascadeDeSession(
           dureeMs: dureeDe(it.value),
           ton: "neutre",
           parentId: parentDe(it),
+          ...(it.detail ? { detail: it.detail } : {}),
         });
         return;
-      case "error":
+      case "error": {
+        const occurrences = dureeDe(it.value);
         elements.push({
           ...base,
           piste: "erreurs",
@@ -391,31 +397,54 @@ export function cascadeDeSession(
           dureeMs: null,
           ton: "erreur",
           parentId: parentDe(it),
-          ...(it.detail ? { detail: it.detail } : {}),
+          ...(occurrences !== null && occurrences > 1
+            ? { detail: `${occurrences.toLocaleString("fr-FR")} occurrences` }
+            : {}),
         });
         return;
+      }
       default:
         return;
     }
   });
 
-  const marqueurs: MarqueurCascade[] = [];
+  return {
+    totalMs: Math.max(0, finMs - t0),
+    pistes: PISTES_SESSION,
+    elements,
+    partiel: tronquee
+      ? `${PARTIEL_RESSOURCES} ; chronologie lue limitée à ${LIMITE_CHRONOLOGIE} événements : la suite de la session n'est pas placée`
+      : PARTIEL_RESSOURCES,
+  };
+}
+
+/**
+ * Repères FCP et LCP d'une vue CHARGÉE, à son ouverture + leur valeur (web-vitals les
+ * mesure depuis le début du chargement du document). Une vue « spa » n'a pas de FCP
+ * ni de LCP propres : un vital que le groupement lui rattache (même route) appartient
+ * au chargement d'origine, il n'est pas placé. Réservés à la cascade pleine page : le
+ * panneau de session (hauteur réduite) n'en porte pas.
+ */
+export function reperesDeSession(items: readonly TimelineItem[], debut: Date | string | number): MarqueurCascade[] {
+  const t0 = new Date(debut).getTime();
+  const plusieursVues = items.filter((it) => it.kind === "pageview").length > 1;
+  const reperes: MarqueurCascade[] = [];
   for (const g of grouperParVue(items)) {
     if (!g.vue || g.vue.detail === "spa") continue;
+    const ouverture = Math.max(0, new Date(g.vue.ts).getTime() - t0);
     for (const v of g.vitals) {
       if (v.title !== "FCP" && v.title !== "LCP") continue;
       const valeur = dureeDe(v.value);
       if (valeur === null) continue;
-      marqueurs.push({
-        t: debut(g.vue) + valeur,
-        libelle: vues.length > 1 ? `${v.title} ${g.vue.title ?? "route inconnue"}` : v.title,
+      reperes.push({
+        t: ouverture + valeur,
+        libelle: plusieursVues ? `${v.title} ${g.vue.title ?? "route inconnue"}` : v.title,
         vital: v.title,
         valeur,
       });
     }
   }
-
-  return { totalMs: Math.max(0, finMs - t0), elements, marqueurs };
+  return reperes;
 }
 
 /** Une mesure de Web Vital de la session, avec son rang (ancre) et SA route (`rum_metric.route`). */

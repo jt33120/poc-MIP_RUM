@@ -171,16 +171,23 @@ describe("natureDe et filtrerParNature", () => {
 
 // ═══════════════════ F46 — fenêtre ancrée, cascade, Web Vitals par vue ═══════════════════
 import {
-  PARTIEL_CASCADE,
+  PARTIEL_RESSOURCES,
+  PISTES_SESSION,
   VUE_FIN_INCONNUE,
   VUE_JUSQU_A_LA_FIN,
   VUE_JUSQU_A_SUIVANTE,
   cascadeDeSession,
   fenetreDeSession,
   libelleFenetre,
+  reperesDeSession,
   tonAppel,
   vitauxDeSession,
 } from "@/lib/deroule";
+import {
+  PARTIEL_RESSOURCES as PARTIEL_PANNEAU,
+  PISTES_SESSION as PISTES_PANNEAU,
+  cascadeDeSession as cascadePanneau,
+} from "@/lib/panneau-session";
 import { DEFAULT_SLOW_RESOURCE_MS, RESOURCE_CAP_PER_PAGE } from "../../packages/rum-sdk/src/resources";
 
 describe("F46 — fenetreDeSession : la fenêtre est ancrée sur la session, pas sur aujourd'hui", () => {
@@ -229,29 +236,33 @@ describe("F46 — cascadeDeSession : la chronologie sur l'axe de `Cascade`", () 
     item("api", 71, { title: "GET /api/prix", detail: "404", value: 20, rating: "poor" }),
     item("api", 72, { title: "GET /api/ok", detail: "200", value: 25 }),
   ];
-  const c = cascadeDeSession(ITEMS, { t0: T0, finMs: FIN, liens: { 0: "/pages?app=a&route=%2F" } });
+  const c = cascadeDeSession(ITEMS, new Date(T0), new Date(FIN), false, { 0: "/pages?app=a&route=%2F" });
   const par = (id: string) => c.elements.find((e) => e.id === id)!;
 
   it("une vue est une barre JUSQU'À LA VUE SUIVANTE ; la dernière, jusqu'à la dernière observation — et c'est dit", () => {
-    expect(par("evt-0")).toMatchObject({ piste: "vues", debutMs: 0, dureeMs: 60_000 });
-    expect(par("evt-0").detail).toContain(VUE_JUSQU_A_SUIVANTE);
-    expect(par("evt-10")).toMatchObject({ piste: "vues", debutMs: 60_000, dureeMs: 240_000 });
-    expect(par("evt-10").detail).toContain(VUE_JUSQU_A_LA_FIN);
+    expect(par("evt-0")).toMatchObject({ piste: "vues", debutMs: 0, dureeMs: 60_000, detail: VUE_JUSQU_A_SUIVANTE });
+    expect(par("evt-10")).toMatchObject({ piste: "vues", debutMs: 60_000, dureeMs: 240_000, detail: VUE_JUSQU_A_LA_FIN });
     // Jamais une « durée de vue » : la console ne sait pas combien de temps la page a été lue.
     expect(JSON.stringify(c.elements)).not.toMatch(/durée de (la )?vue/i);
     expect(c.totalMs).toBe(300_000);
+    expect(c.pistes).toBe(PISTES_SESSION);
+    expect(c.partiel).toBe(PARTIEL_RESSOURCES);
   });
 
-  it("chronologie tronquée : la dernière vue s'arrête au dernier événement LU, et le dit", () => {
-    const t = cascadeDeSession(ITEMS, { t0: T0, finMs: FIN, tronquee: true });
-    expect(t.elements.find((e) => e.id === "evt-10")).toMatchObject({ dureeMs: 12_000, detail: expect.stringContaining(VUE_FIN_INCONNUE) });
+  it("chronologie tronquée : la dernière vue LUE s'arrête au dernier événement lu, et le partiel le dit", () => {
+    const t = cascadeDeSession(ITEMS, T0, FIN, true);
+    expect(t.elements.find((e) => e.id === "evt-10")).toMatchObject({ dureeMs: 12_000, detail: VUE_FIN_INCONNUE });
+    expect(t.partiel).toContain("limitée à 500 événements");
+    // Par défaut, la troncature se lit sur la chronologie elle-même (500 lignes).
+    expect(cascadeDeSession(ITEMS, T0, FIN).partiel).toBe(PARTIEL_RESSOURCES);
   });
 
   it("actions et erreurs sont des instants ; appels, ressources et tâches longues des barres", () => {
-    expect(par("evt-4")).toMatchObject({ piste: "actions", dureeMs: null, detail: "click" });
-    expect(par("evt-6")).toMatchObject({ piste: "erreurs", dureeMs: null, ton: "erreur" });
+    expect(par("evt-4")).toMatchObject({ piste: "actions", dureeMs: null, detail: "click · /" });
+    // Une ligne d'erreur répétée dit ses occurrences (V1).
+    expect(par("evt-6")).toMatchObject({ piste: "erreurs", dureeMs: null, ton: "erreur", detail: "3 occurrences" });
     expect(par("evt-5")).toMatchObject({ piste: "api", debutMs: 21_000, dureeMs: 180 });
-    expect(par("evt-7")).toMatchObject({ piste: "ressources", dureeMs: 450, libelle: "/app.js", detail: "script" });
+    expect(par("evt-7")).toMatchObject({ piste: "ressources", dureeMs: 450, libelle: "https://cdn.example/app.js", detail: "script" });
     expect(par("evt-8")).toMatchObject({ piste: "taches", dureeMs: 220, ton: "neutre" });
   });
 
@@ -262,17 +273,17 @@ describe("F46 — cascadeDeSession : la chronologie sur l'axe de `Cascade`", () 
     expect(c.elements.map((e) => e.id)).not.toContain("evt-3");
   });
 
-  it("ton d'un appel = son statut (règle du détail de trace) ; 0 = réseau, une erreur", () => {
-    expect(par("evt-5")).toMatchObject({ ton: "erreur", detail: "HTTP 500" });
+  it("ton d'un appel = sa sévérité (règle du détail de trace) : 5xx et réseau en erreur, 4xx à surveiller", () => {
+    expect(par("evt-5")).toMatchObject({ ton: "erreur", detail: "500" });
     expect(par("evt-12")).toMatchObject({ ton: "erreur", detail: "réseau (statut 0)" });
-    expect(par("evt-13")).toMatchObject({ ton: "warn", detail: "HTTP 404" });
-    expect(par("evt-14")).toMatchObject({ ton: "neutre", detail: "HTTP 200" });
+    expect(par("evt-13")).toMatchObject({ ton: "warn", detail: "404" });
+    expect(par("evt-14")).toMatchObject({ ton: "neutre", detail: "200" });
     expect(tonAppel("—")).toBe("neutre");
     expect(tonAppel(null)).toBe("neutre");
   });
 
   it("repères FCP / LCP à l'ouverture de leur vue CHARGÉE ; une vue « spa » n'en a pas", () => {
-    expect(c.marqueurs).toEqual([
+    expect(reperesDeSession(ITEMS, T0)).toEqual([
       { t: 800, libelle: "FCP /", vital: "FCP", valeur: 800 },
       { t: 2100, libelle: "LCP /", vital: "LCP", valeur: 2100 },
     ]);
@@ -284,11 +295,18 @@ describe("F46 — cascadeDeSession : la chronologie sur l'axe de `Cascade`", () 
   });
 
   it("la raison « partiel » écrite en tête suit les règles de collecte du SDK", () => {
-    expect(PARTIEL_CASCADE).toContain(`${DEFAULT_SLOW_RESOURCE_MS} ms ou plus`);
-    expect(PARTIEL_CASCADE).toContain(`${RESOURCE_CAP_PER_PAGE} par page`);
-    expect(PARTIEL_CASCADE).toContain("rattachées à une action");
+    expect(PARTIEL_RESSOURCES).toContain(`${DEFAULT_SLOW_RESOURCE_MS} ms et plus`);
+    expect(PARTIEL_RESSOURCES).toContain(`${RESOURCE_CAP_PER_PAGE} par vue`);
+    expect(PARTIEL_RESSOURCES).toContain("rattachées à une action");
+  });
+
+  it("une seule conversion : le panneau de session (F43) réexporte celle de lib/deroule.ts", () => {
+    expect(cascadePanneau).toBe(cascadeDeSession);
+    expect(PISTES_PANNEAU).toBe(PISTES_SESSION);
+    expect(PARTIEL_PANNEAU).toBe(PARTIEL_RESSOURCES);
   });
 });
+
 
 describe("F46 — vitauxDeSession : une ligne par vue, la pire mesure de chaque vital", () => {
   it("rattache chaque mesure à sa vue ; la pire de la session garde SA route", () => {
