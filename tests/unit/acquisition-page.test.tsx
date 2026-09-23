@@ -143,8 +143,26 @@ describe("/acquisition — plafonds (S4)", () => {
     acquisition.mockResolvedValue(report({ direct: 20_000 }));
     const t = texte(await rendre());
     expect(t).toContain(
-      "plafond de 20 000 sessions atteint : les canaux portent sur les 20 000 premières sessions par identifiant, pas les plus récentes",
+      "plafond de 20 000 sessions atteint : canaux, pages d'entrée et référents portent sur les 20 000 premières sessions, prises d'abord par application puis par identifiant de session, pas les plus récentes ; sur plusieurs applications, elles peuvent toutes venir d'une seule",
     );
+  });
+
+  it("revue vague 8 : au plafond, CHAQUE figure qui compte ces sessions le dit dans sa méta — pages d'entrée et référents compris", async () => {
+    const entree = { route: "/", parCanal: { ...zero(), direct: 20_000 }, total: 20_000 };
+    acquisition.mockResolvedValue(report({ direct: 20_000 }, 1, [entree]));
+    const html = await rendre();
+    const metaDe = (id: string) => {
+      const debut = html.indexOf(`id="${id}"`);
+      expect(debut, `#${id} rendue`).toBeGreaterThan(-1);
+      return html.slice(debut).match(/data-testid="figure-meta"[^]*?<\/div>/)?.[0] ?? "";
+    };
+    for (const id of ["acquisition-canaux", "acquisition-entrees", "acquisition-referents", "acquisition-serie"]) {
+      const meta = texte(metaDe(id));
+      expect(meta, id).toContain("plafond atteint : 20 000 premières sessions seulement, par application puis par identifiant");
+    }
+    // Sous le plafond : aucune méta ne le dit.
+    acquisition.mockResolvedValue(report({ direct: 19_999 }, 1, [{ ...entree, parCanal: { ...zero(), direct: 19_999 }, total: 19_999 }]));
+    expect(await rendre()).not.toContain('data-testid="acquisition-plafond-meta"');
   });
 
   it("20 référents renvoyés : « ≥ 20 », jamais « 20 » ; 19 : le compte exact", async () => {

@@ -8,9 +8,12 @@
 //   - Une fenêtre qui n'est pas la sienne : depuis B31, la lecture est celle du
 //     contrat (`[from, to)`, apps effectives, tablette et « Inconnu » compris) ; la
 //     méta de chaque figure écrit la plage lue (S1, S3).
-//   - Un plafond muet : au-delà de 20 000 sessions, les canaux portent sur les
-//     20 000 PREMIÈRES par identifiant ; c'est dit à côté du chiffre (S4), et un
-//     écart à la période précédente se tait (il mesurerait le plafond).
+//   - Un plafond muet : au-delà de 20 000 sessions, les canaux, les pages d'entrée,
+//     les référents et la série portent sur les 20 000 PREMIÈRES, prises d'abord
+//     par application puis par identifiant (sous « toutes les apps », elles peuvent
+//     toutes venir d'une seule) ; c'est dit dans la méta de CHAQUE figure qui les
+//     compte et dans le bandeau des tuiles (S4), et un écart à la période
+//     précédente se tait (il mesurerait le plafond).
 //   - Un geste qui ne mène nulle part : le canal n'est pas un filtre de la console,
 //     ses barres ne sont pas cliquables ; la route d'entrée, elle, ouvre les
 //     sessions PASSÉES par cette route (la recherche porte sur toute la session).
@@ -80,7 +83,11 @@ const SOURCE_VUES: SourceComparaison = { table: "rum_pageview", colonneTemps: "s
 const NON_CLIQUABLE = "barres non cliquables : le canal d'entrée n'est pas un filtre de la console";
 
 const PLAFOND_TEXTE = formater("count", PLAFOND_ACQUISITION);
-const TEXTE_PLAFOND = `plafond de ${PLAFOND_TEXTE} sessions atteint : les canaux portent sur les ${PLAFOND_TEXTE} premières sessions par identifiant, pas les plus récentes`;
+// L'ordre de sélection est celui de la lecture (`order by p.app_id, p.session_id`,
+// lib/queries-acquisition.ts) : d'abord l'application, puis l'identifiant de session.
+const TEXTE_PLAFOND = `plafond de ${PLAFOND_TEXTE} sessions atteint : canaux, pages d'entrée et référents portent sur les ${PLAFOND_TEXTE} premières sessions, prises d'abord par application puis par identifiant de session, pas les plus récentes ; sur plusieurs applications, elles peuvent toutes venir d'une seule`;
+/** Le même plafond, dans la méta de chaque figure qui compte ces sessions (S4 : à côté du chiffre). */
+const META_PLAFOND = `plafond atteint : ${PLAFOND_TEXTE} premières sessions seulement, par application puis par identifiant`;
 
 /** « 1 session lue », « 20 000 sessions lues ». */
 const compte = (n: number, un: string, plusieurs: string) => `${formater("count", n)} ${n > 1 ? plusieurs : un}`;
@@ -133,9 +140,17 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
 
   const plage = ecran.label;
   const dansPhrase = plageDansPhrase(query.range, plage);
+  // Au plafond, TOUTES les figures ci-dessous portent sur le même sous-ensemble de
+  // sessions : chacune le dit dans sa méta, pas seulement la rangée de tuiles.
+  const auPlafond = lecture.ok && plafondAtteint(lecture.data.total, PLAFOND_ACQUISITION);
   const meta = (extra?: string) => (
     <>
       {extra && <span>{extra}</span>}
+      {auPlafond && (
+        <span className="font-medium text-warn-ink" data-testid="acquisition-plafond-meta">
+          {META_PLAFOND}
+        </span>
+      )}
       <span>Population : {POPULATION}</span>
       <span>{plage}</span>
     </>
@@ -267,7 +282,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
           query={query}
           meta={meta(`seau de ${ecran.bucketLabel} (UTC)`)}
           dansPhrase={dansPhrase}
-          plafond={lecture.ok && plafondAtteint(lecture.data.total, PLAFOND_ACQUISITION)}
+          plafond={auPlafond}
           zoomHref={gabaritZoom(hrefWithQuery("/acquisition", query, { period: null, from: "{from}", to: "{to}" }), sp)}
         />
       </SectionErreur>
@@ -543,7 +558,9 @@ function SerieCanaux({
       meta={meta}
       etat={total === 0 ? { kind: "vide", population: "session", plage: dansPhrase } : undefined}
       lecture={`Chaque session compte une fois, dans le seau de sa 1re vue ; la pile d'un seau vaut ses sessions entrées. Un clic sur un seau restreint l'écran à ce seau.${
-        plafond ? ` Plafond atteint : la série porte sur les mêmes ${PLAFOND_TEXTE} premières sessions par identifiant que les canaux.` : ""
+        plafond
+          ? ` Plafond atteint : la série porte sur les mêmes ${PLAFOND_TEXTE} premières sessions que les canaux (par application, puis par identifiant).`
+          : ""
       }`}
       alternative={{
         legende: "Sessions entrées par canal et par seau (UTC)",

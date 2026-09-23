@@ -33,7 +33,8 @@ interface EntreeLue {
 
 /**
  * Entrées de session sur une plage : la 1re vue de chaque session dans `[from, to)`,
- * au plus `cap` sessions, les PREMIÈRES par identifiant (pas les plus récentes).
+ * au plus `cap` sessions, les PREMIÈRES par application puis par identifiant (pas
+ * les plus récentes) : sur plusieurs apps, le plafond peut n'en couvrir qu'une.
  * Un contexte SQL par lecture : ses paramètres liés ne servent qu'à elle.
  */
 async function entreesDeSession(f: FiltersLike, cap: number, shift: boolean): Promise<{ rows: EntreeLue[]; range: ResolvedRange }> {
