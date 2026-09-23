@@ -1737,6 +1737,11 @@ test.describe("F17 — Panneau route", () => {
   });
 
   test("390 px : le panneau occupe tout l'écran", async ({ page }) => {
+    // Sans mouvement, comme la recette du panneau (panneau.spec.ts, F07) : pendant le
+    // fondu d'entrée de l'écran (0,3 s), son `transform` fait de lui le bloc conteneur
+    // du panneau `fixed`, décalé de la marge de `main` — la mesure prise à ce moment-là
+    // lisait x = 16. La position de repos, elle, est celle que ce test vérifie.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width: 390, height: 844 });
     await login(page);
     await page.goto(PANNEAU_F17, { waitUntil: "domcontentloaded" });
