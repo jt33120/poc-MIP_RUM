@@ -8,7 +8,11 @@
   },
   "testsSql": {
     "fichiers": 45,
-    "tests": 637
+    "tests": 637,
+    "ignores": {
+      "fichiers": 2,
+      "tests": 13
+    }
   },
   "familles": [
     "Suivi des erreurs",
@@ -159,8 +163,8 @@
       "famille": "Analyse et exploration",
       "capacite": "Construire un tableau de bord graphique et en être propriétaire",
       "verdict": "deploye_non_eprouve",
-      "preuve": "migration v79, `dashboard.owner_id`, `DASHBOARD_ACTIONS` ; `tests/integration/saved-views-v79-sql.test.ts`, `tests/e2e/dashboards-analytics.spec.ts` ; PR #195",
-      "limite": "24 cartes par tableau, 4 lectures simultanées, aucun rafraîchissement automatique. Une carte invalide reste **visible** avec son diagnostic ; elle n'est pas supprimée pour faire de la place.",
+      "preuve": "migration v79, `dashboard.owner_id`, `DASHBOARD_ACTIONS` ; `tests/integration/saved-views-v79-sql.test.ts`, `tests/e2e/dashboards-analytics.spec.ts` ; PR #195 ; borne : `MAX_WIDGETS` et `layoutPlein` (`apps/console/lib/dashboards.ts:525-532`), `tests/unit/dashboards.test.ts:316-333`",
+      "limite": "24 éléments par tableau, **sections comprises** : depuis F37 (vague 7, après ce relevé), un titre de section compte dans `MAX_WIDGETS` comme une carte, et un tableau plein refuse le 25e élément en le disant (`layoutPlein`, `tests/unit/dashboard-actions-access.test.ts:376-392`). 4 lectures simultanées, aucun rafraîchissement automatique. Une carte invalide reste **visible** avec son diagnostic ; elle n'est pas supprimée pour faire de la place.",
       "ligne": 160
     },
     {
@@ -429,8 +433,8 @@
       "famille": "Surfaces d'accès",
       "capacite": "Écrire par API (triage, tableaux de bord, vues enregistrées)",
       "verdict": "deploye_non_eprouve",
-      "preuve": "contrôle de session admin + Origin, `expectedRevision` et `409` ; `dashboard-access.ts`, `tests/unit/dashboards.test.ts`",
-      "limite": "Viewer et demo ne gagnent **aucun** droit d'écriture. Un administrateur scopé n'est plus transverse : c'est un écart assumé de P6.5 par rapport au modèle « admin global ».",
+      "preuve": "contrôle de session + Origin (`guardSession` ; `guardAdmin` pour le triage), `expectedRevision` et `409` ; `dashboard-access.ts`, `tests/unit/dashboards.test.ts`, `tests/unit/dashboard-access.test.ts`, `tests/unit/api-v1-issue-workflow-routes.test.ts`",
+      "limite": "**La session démo n'écrit rien** : le middleware refuse ses requêtes d'écriture (`apps/console/middleware.ts:88-96`), `handleMutation` aussi sur `/api/v1`, et les gardes des tableaux de bord la refusent (`tests/unit/dashboard-access.test.ts:96-102`). **Un viewer écrit ce qui est à lui, dans son périmètre** : il crée un tableau de bord lié à une app de son périmètre, jamais un transverse, et ne modifie que les siens (`apps/console/lib/dashboard-access.ts:117-135`, `tests/unit/dashboard-access.test.ts:104-120`) ; il enregistre ses propres vues d'Explorer (`role: \"session\"`, `apps/console/app/api/v1/explorer/views/route.ts:45-47`) ; depuis F37 (vague 7, après ce relevé), « Ajouter une section » suit la même garde (`tests/unit/dashboard-actions-access.test.ts:295`, `:338-359`). **Le triage d'une issue** (`A8`) reste réservé aux administrateurs : `handleMutation` exige le rôle `admin` par défaut (`apps/console/lib/api/handle.ts:284-290`) et refuse viewer et démo (`tests/unit/api-v1-issue-workflow-routes.test.ts:89-95`). Un administrateur scopé n'est plus transverse : c'est un écart assumé de P6.5 par rapport au modèle « admin global ».",
       "ligne": 205
     },
     {

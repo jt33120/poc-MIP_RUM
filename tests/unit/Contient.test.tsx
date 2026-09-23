@@ -19,7 +19,7 @@ import { Contient } from "@/components/presentation/Contient";
 import { EcransConsole, categoriesMontrees } from "@/components/presentation/EcransConsole";
 import { Topologie } from "@/components/presentation/Topologie";
 import type { SessionUser } from "@/lib/auth";
-import { RELEVE, TESTS_SQL, TESTS_UNITAIRES } from "@/lib/couverture";
+import { RELEVE, TESTS_SQL, TESTS_SQL_VERTS, TESTS_UNITAIRES } from "@/lib/couverture";
 import { FAMILLES_API_V1, OUTILS_MCP, RESERVES_CHAINE } from "@/lib/presentation-contient";
 import { ARIA_TOPOLOGIE, HEBERGEMENT, PIECES } from "@/lib/presentation-topologie";
 import { REPLAY_GZIP_KO, SDK_POIDS_TEXTE, koTexte } from "@/lib/sdk-poids";
@@ -268,11 +268,23 @@ describe("PS6 — autour de la console, et l'état de la chaîne", () => {
   it("l'état de la chaîne : daté du relevé, décomptes du document, poids mesurés", () => {
     expect(texte).toContain(`L'état de la chaîne, relevé le ${RELEVE}`);
     expect(texte).toContain(
-      `${nombre(TESTS_UNITAIRES.tests)} tests unitaires (${nombre(TESTS_UNITAIRES.fichiers)} fichiers) et ${nombre(TESTS_SQL.tests)} tests SQL (${nombre(TESTS_SQL.fichiers)} fichiers), verts sur un poste de développement ; seuls les deux bancs de mesure de la suite SQL, qui lisent une base préparée à part, n'y ont pas été joués.`,
+      `Sur un poste de développement : ${nombre(TESTS_UNITAIRES.tests)} tests unitaires verts (${nombre(TESTS_UNITAIRES.fichiers)} fichiers) ; ${nombre(TESTS_SQL.tests)} tests SQL (${nombre(TESTS_SQL.fichiers)} fichiers), dont ${nombre(TESTS_SQL_VERTS)} verts et ${nombre(TESTS_SQL.ignores.tests)} ignorés (les deux bancs de mesure, qui lisent une base préparée à part).`,
     );
     expect(texte).toContain(
       `SDK cœur : ${SDK_POIDS_TEXTE} ; le module de rejeu (${koTexte(REPLAY_GZIP_KO)} ko gzip) n'est chargé que si le rejeu est activé.`,
     );
+  });
+
+  it("revue de fin de vague 7 : les tests SQL ignorés ne sont pas comptés verts", () => {
+    // Le fait, tel que le document l'écrit (§ 2) : le total, dont 2 fichiers et 13
+    // tests ignorés — les deux bancs. Les nombres affichés sont LUS dans l'extraction.
+    expect(TESTS_SQL.ignores).toEqual({ fichiers: 2, tests: 13 });
+    expect(TESTS_SQL_VERTS).toBe(TESTS_SQL.tests - TESTS_SQL.ignores.tests);
+    // « les deux bancs » : deux fichiers ignorés, et pas un de plus.
+    expect(TESTS_SQL.ignores.fichiers).toBe(2);
+    // Le total n'est plus présenté comme vert.
+    expect(texte).not.toContain(`${nombre(TESTS_SQL.tests)} tests SQL (${nombre(TESTS_SQL.fichiers)} fichiers), verts`);
+    expect(texte).toContain(`dont ${nombre(TESTS_SQL_VERTS)} verts et ${nombre(TESTS_SQL.ignores.tests)} ignorés`);
   });
 
   it("ce que ces chiffres ne disent pas : les réserves de F1 à F3, et plus celles du 18/09", () => {

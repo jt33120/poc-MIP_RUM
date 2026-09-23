@@ -16,7 +16,8 @@
 //     c'est à un humain de décider de ce que le site en dit ;
 //   - une ligne de capacité qui ne donne pas exactement cinq cellules ;
 //   - un identifiant en double, un en-tête de relevé ou un décompte de tests
-//     introuvable.
+//     introuvable — dont celui des tests SQL ignorés, et une suite SQL qui n'est
+//     pas dite verte (ses verts ne se déduiraient plus du total).
 //
 // Usage :
 //   node scripts/couverture-extraire.mjs            écrit le JSON
@@ -107,6 +108,20 @@ export function extraireCouverture(texte) {
   if (!unitaires) throw erreur(0, "décompte des tests unitaires introuvable (ligne « | `pnpm exec vitest run tests/unit…` | **N fichiers, N tests verts »)");
   const sql = /\*\*(\d+) fichiers\*\* et \*\*([\d\s\u00a0\u202f]+) tests\*\* au total/.exec(texte);
   if (!sql) throw erreur(0, "décompte des tests SQL introuvable (« **N fichiers** et **N tests** au total »)");
+  // Les IGNORÉS, lus sur la même ligne que le total. Un test ignoré n'a pas été joué :
+  // afficher le total comme « verts » comptait les deux bancs, que la suite saute
+  // faute de leur base (revue de fin de vague 7). Les verts se DÉDUISENT (total moins
+  // ignorés) seulement si la ligne dit la suite **vert**e ; sans décompte d'ignorés,
+  // on échoue plutôt que d'en supposer zéro.
+  const numeroSql = texte.slice(0, sql.index).split("\n").length;
+  const ligneSql = lignes[numeroSql - 1];
+  if (!ligneSql.includes("**vert**")) {
+    throw erreur(numeroSql, "la suite SQL n'y est pas dite **vert** : ses tests verts ne se déduisent pas du total");
+  }
+  const ignores = /au total, dont (\d+) fichiers? et ([\d\s\u00a0\u202f]+) tests? ignorés?/.exec(ligneSql);
+  if (!ignores) {
+    throw erreur(numeroSql, "décompte des tests SQL ignorés introuvable (« au total, dont N fichiers et N tests ignorés »)");
+  }
 
   const debut = lignes.findIndex((l) => /^## 4\. /.test(l));
   if (debut < 0) throw erreur(0, "section « ## 4. » introuvable");
@@ -153,7 +168,11 @@ export function extraireCouverture(texte) {
     releve,
     sha: entete[4],
     testsUnitaires: { fichiers: entier(unitaires[1]), tests: entier(unitaires[2]) },
-    testsSql: { fichiers: entier(sql[1]), tests: entier(sql[2]) },
+    testsSql: {
+      fichiers: entier(sql[1]),
+      tests: entier(sql[2]),
+      ignores: { fichiers: entier(ignores[1]), tests: entier(ignores[2]) },
+    },
     familles,
     capacites,
   };

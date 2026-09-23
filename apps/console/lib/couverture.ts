@@ -64,8 +64,21 @@ export const RELEVE: string = donnees.releve;
 export const SHA: string = donnees.sha;
 /** Tests unitaires comptés par le relevé — pas par le dépôt d'aujourd'hui. */
 export const TESTS_UNITAIRES: { fichiers: number; tests: number } = donnees.testsUnitaires;
-/** Tests SQL comptés par le relevé. */
-export const TESTS_SQL: { fichiers: number; tests: number } = donnees.testsSql;
+/**
+ * Tests SQL comptés par le relevé : le total, et dont ignorés — les deux bancs, qui
+ * lisent une base préparée à part (§ 8.2 du document). Un ignoré n'a pas été joué :
+ * il n'est pas vert.
+ */
+export const TESTS_SQL: {
+  fichiers: number;
+  tests: number;
+  ignores: { fichiers: number; tests: number };
+} = donnees.testsSql;
+/**
+ * Tests SQL joués et verts au relevé : le total moins les ignorés, deux nombres LUS
+ * dans le document (l'extraction échoue si la suite n'y est pas dite verte).
+ */
+export const TESTS_SQL_VERTS: number = TESTS_SQL.tests - TESTS_SQL.ignores.tests;
 
 export const CAPACITES: readonly Capacite[] = donnees.capacites as Capacite[];
 

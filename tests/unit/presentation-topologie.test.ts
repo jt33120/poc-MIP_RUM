@@ -147,3 +147,30 @@ describe("PS3 — le chemin de la mesure", () => {
     expect(TOPOLOGIE_RELEVEE.railway).toBe(INGEST_SUPPRIME_LE);
   });
 });
+
+// Revue de fin de vague 7 : la page a porté deux dates pour un même relevé Railway
+// (21/09 dans la légende du chemin de la mesure, 22/09 dans les Specs). Les Specs
+// lisent désormais chaque fait d'exploitation daté dans CES constantes, les mêmes que
+// la légende — et que le test ci-dessus retrouve dans les deux documents.
+describe("une seule source pour les dates d'exploitation Railway", () => {
+  const backend = INFRA.find((g) => g.titre.startsWith("Backend"))!;
+  const ligne = (k: string) => backend.lignes.find((l) => l.k === k)!;
+
+  it("les Specs disent les dates de la légende : relevé, suppression d'ingest, migrations constatées", () => {
+    expect(backend.sous).toContain(`relevé le ${TOPOLOGIE_RELEVEE.railway} par l'API Railway`);
+    expect(ligne("ingest").v).toContain(`a été supprimé le ${INGEST_SUPPRIME_LE}.`);
+    expect(ligne("scheduler").v).toContain(
+      `vérifié le ${MIGRATIONS_CONSTATEES.le} sur un vrai déploiement (${MIGRATIONS_CONSTATEES.deploiement} :`,
+    );
+  });
+
+  it("aucune de ces dates n'est retapée dans lib/specs.ts, hors commentaires", () => {
+    const code = lire("apps/console/lib/specs.ts")
+      .split("\n")
+      .filter((l) => !/^\s*(\/\/|\*|\/\*\*)/.test(l))
+      .join("\n");
+    const dates = [INGEST_SUPPRIME_LE, MIGRATIONS_CONSTATEES.le, TOPOLOGIE_RELEVEE.railwayEtVercel, "22/09/2026"];
+    for (const d of dates) expect(code, d).not.toContain(d);
+    expect(code).not.toContain(MIGRATIONS_CONSTATEES.deploiement);
+  });
+});

@@ -21,7 +21,7 @@ import { Partie } from "@/components/presentation/Partie";
 import { SousPartie } from "@/components/presentation/SousPartie";
 import { Topologie } from "@/components/presentation/Topologie";
 import type { SessionUser } from "@/lib/auth";
-import { RELEVE, TESTS_SQL, TESTS_UNITAIRES } from "@/lib/couverture";
+import { RELEVE, TESTS_SQL, TESTS_SQL_VERTS, TESTS_UNITAIRES } from "@/lib/couverture";
 import {
   BANC_CLICKHOUSE,
   FAMILLES_API_V1,
@@ -123,11 +123,14 @@ function Chaine() {
         <div className="card min-w-0 p-5" data-testid="etat-chaine">
           <h4 className={TITRE_CARTE}>L&apos;état de la chaîne, relevé le {RELEVE}</h4>
           <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-relaxed text-ink-soft">
+            {/* Verts ET ignorés, tous deux lus dans le document (lib/couverture.ts) : le total
+                SQL présenté comme « verts » comptait les deux bancs, que la suite saute. */}
             <li>
-              {nombre(TESTS_UNITAIRES.tests)} tests unitaires ({nombre(TESTS_UNITAIRES.fichiers)} fichiers)
-              et {nombre(TESTS_SQL.tests)} tests SQL ({nombre(TESTS_SQL.fichiers)} fichiers), verts sur
-              un poste de développement ; seuls les deux bancs de mesure de la suite SQL, qui lisent une
-              base préparée à part, n&apos;y ont pas été joués.
+              Sur un poste de développement : {nombre(TESTS_UNITAIRES.tests)} tests unitaires verts
+              ({nombre(TESTS_UNITAIRES.fichiers)} fichiers) ; {nombre(TESTS_SQL.tests)} tests SQL
+              ({nombre(TESTS_SQL.fichiers)} fichiers), dont {nombre(TESTS_SQL_VERTS)} verts et{" "}
+              {nombre(TESTS_SQL.ignores.tests)} ignorés (les deux bancs de mesure, qui lisent une
+              base préparée à part).
             </li>
             <li>
               SDK cœur : {SDK_POIDS_TEXTE} ; le module de rejeu ({koTexte(REPLAY_GZIP_KO)} ko gzip)

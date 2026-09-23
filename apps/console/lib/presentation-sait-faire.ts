@@ -14,7 +14,13 @@
 // identifiants, provenance de chaque source, une puce par identifiant.
 //
 // TEXTES. K1 à K14 : textes exacts du tableau PS7 du plan, qu'aucun fait du relevé
-// du 23/09/2026 ne contredit. K15 n'est pas dans le plan : ce relevé a fait passer
+// du 23/09/2026 ne contredit, sauf ceux que la revue de fin de vague 7 a réécrits
+// depuis leur ligne corrigée : K14 (« écritures […] réservées aux sessions
+// d'administration », « Viewer et démo n'ont aucun droit d'écriture ») suit la ligne
+// E3, relue dans le code — un viewer crée et modifie ses propres tableaux de bord et
+// vues, la démo n'écrit rien, le triage reste aux administrateurs ; la puce B6 de K7
+// (« 24 cartes par tableau ») suit la ligne B6 : depuis F37, les sections comptent
+// dans la borne. K15 n'est pas dans le plan : ce relevé a fait passer
 // F2 (« Vérifier les types ») à « déployé, non éprouvé », et la règle veut alors une
 // carte pour elle. Elle est écrite depuis la ligne F2 et le § 8.4 du document, dans
 // la forme des autres.
@@ -185,7 +191,7 @@ export const CARTES: readonly CarteCapacite[] = [
       },
       {
         id: "B6",
-        texte: "24 cartes par tableau, 4 lectures simultanées, aucun rafraîchissement automatique.",
+        texte: "24 éléments par tableau, sections comprises ; 4 lectures simultanées, aucun rafraîchissement automatique.",
       },
       {
         id: "B7",
@@ -326,7 +332,7 @@ export const CARTES: readonly CarteCapacite[] = [
     id: "K14",
     titre: "Lire par API et par MCP, écrire depuis la console",
     faitQuoi:
-      "API publique en lecture, serveur MCP en lecture seule, écritures (triage, tableaux de bord, vues) réservées aux sessions d'administration.",
+      "API publique en lecture, serveur MCP en lecture seule ; depuis une session de la console, trier les issues, composer des tableaux de bord et enregistrer des vues.",
     limites: [
       {
         id: "E1",
@@ -341,7 +347,7 @@ export const CARTES: readonly CarteCapacite[] = [
       {
         id: "E3",
         texte:
-          "Viewer et démo n'ont aucun droit d'écriture ; un administrateur est limité à son périmètre d'applications.",
+          "La session de démonstration n'écrit rien ; un viewer ne crée et ne modifie que ses propres tableaux de bord et vues, liés à une application de son périmètre ; le triage des issues est réservé aux administrateurs, et un administrateur reste limité à son périmètre d'applications.",
       },
     ],
     sources: [{ ligne: "E1" }, { ligne: "E2" }, { ligne: "E3" }],

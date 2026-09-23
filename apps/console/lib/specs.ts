@@ -34,7 +34,7 @@ import {
 } from "./sdk-poids";
 import { HOSTS } from "./legal";
 import { MCP_ORIGINE } from "./mcp-public";
-import { TOPOLOGIE_RELEVEE } from "./presentation-topologie";
+import { INGEST_SUPPRIME_LE, MIGRATIONS_CONSTATEES, TOPOLOGIE_RELEVEE } from "./presentation-topologie";
 import { RN_VERSION } from "./versions";
 
 export type Statut = "atteint" | "partiel" | "manque" | "non-mesure";
@@ -112,16 +112,16 @@ export const INFRA: GroupeInfra[] = [
     lignes: [
       {
         k: "ingest",
-        // Supprimé de Railway le 21/09/2026 (docs/TOPOLOGIE_BACKEND.md) : aucun domaine
+        // Supprimé de Railway (INGEST_SUPPRIME_LE, docs/TOPOLOGIE_BACKEND.md) : aucun domaine
         // public ne pointait dessus, et son seul rôle réel — les migrations — était
         // déjà repris par le scheduler. Le receveur reste dans le dépôt.
-        v: "Receveur OTLP autonome (services/ingest/server.mjs), gardé pour l'hébergement chez le client et démarré par la CI. En production, le trafic passe par la route de la console ; le service Railway, qui n'avait aucun domaine public, a été supprimé le 21/09/2026.",
+        v: `Receveur OTLP autonome (services/ingest/server.mjs), gardé pour l'hébergement chez le client et démarré par la CI. En production, le trafic passe par la route de la console ; le service Railway, qui n'avait aucun domaine public, a été supprimé le ${INGEST_SUPPRIME_LE}.`,
         s: "partiel",
         preuve: "services/ingest/server.mjs",
       },
       {
         k: "scheduler",
-        v: "Lance les migrations au pré-déploiement — vérifié le 18/09/2026 sur un vrai déploiement (03850b30 : « migrations à jour », aucune en attente ce jour-là). Puis les travaux planifiés : évaluation des alertes, SLO, sondes uptime, purge de rétention, comptage du volume. Bail d'exclusion en base (scheduler_lease) pour qu'une seule instance travaille à la fois.",
+        v: `Lance les migrations au pré-déploiement — vérifié le ${MIGRATIONS_CONSTATEES.le} sur un vrai déploiement (${MIGRATIONS_CONSTATEES.deploiement} : « migrations à jour », aucune en attente ce jour-là). Puis les travaux planifiés : évaluation des alertes, SLO, sondes uptime, purge de rétention, comptage du volume. Bail d'exclusion en base (scheduler_lease) pour qu'une seule instance travaille à la fois.`,
         s: "atteint",
         preuve: "services/scheduler/worker.mjs",
       },
@@ -262,7 +262,7 @@ export const MESURES: Mesure[] = [
       "Route normalisée (les identifiants deviennent :id, sinon chaque page produirait sa propre statistique), navigations SPA comprises — pushState, replaceState et retour arrière. La normalisation du SDK ne couvre que les entiers, les UUID et les hexadécimaux longs : depuis le 10/09/2026 chaque application peut ajouter ses propres règles (`route_pattern`, expressions POSIX), appliquées EN BASE — donc quel que soit le chemin d'ingestion — et rejouables sur l'historique pour que la série d'une route ne se coupe pas en deux le jour où la règle est écrite. Au-delà de 2 000 routes distinctes par application, les routes inédites sont regroupées sous `(other)` et /admin/health le signale : la dimension cesse de croître, et la perte de détail est visible.",
   },
   {
-    quoi: "Sessions anonymes",
+    quoi: "Sessions pseudonymes",
     otlp: "mip.session_id",
     table: "rum_session",
     module: "packages/rum-sdk/src/index.ts",

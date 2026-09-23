@@ -19,6 +19,8 @@ import { describe, expect, it } from "vitest";
 import { CAPACITES, VERDICTS, compte, type Capacite } from "../../apps/console/lib/couverture";
 import { DEPLOYEES_INERTES, VERDICT_MONTRABLE, lireFichierCite } from "../../apps/console/lib/couverture-controle";
 import { CARTES, METHODE, repartitionCouverture, verdictCarte } from "../../apps/console/lib/presentation-sait-faire";
+// Revue de fin de vague 7 (B6) : la borne d'un tableau, lue dans le code.
+import { MAX_WIDGETS, layoutPlein, normalizeLayout } from "../../apps/console/lib/dashboards";
 
 const RACINE = join(__dirname, "..", "..");
 const DOC = readFileSync(join(RACINE, "docs/RUM_PARITY_STATUS.md"), "utf8");
@@ -191,5 +193,52 @@ describe("PS8 — une façon de compter", () => {
         }
       }
     }
+  });
+});
+
+// Revue de fin de vague 7 : des cartes disaient plus, ou autre chose, que le code. Le
+// document a été corrigé d'abord, la carte suit ; chaque test pose le FAIT tel que la
+// ligne l'écrit, puis le texte de la carte — un nouveau relevé qui change la ligne
+// rougit ici, et quelqu'un relit la carte.
+describe("revue de fin de vague 7 — les cartes suivent leurs lignes corrigées", () => {
+  const ligneDe = (id: string) => CAPACITES.find((c) => c.id === id)!;
+  const carte = (id: string) => CARTES.find((c) => c.id === id)!;
+  const puce = (id: string) => CARTES.flatMap((c) => c.limites).find((l) => l.id === id)!;
+
+  it("K14 suit E3 : la démo n'écrit rien, un viewer écrit le sien, le triage reste aux administrateurs", () => {
+    const e3 = ligneDe("E3");
+    expect(e3.verdict).toBe(VERDICT_MONTRABLE);
+    expect(e3.limite).toContain("**La session démo n'écrit rien**");
+    expect(e3.limite).toContain("**Un viewer écrit ce qui est à lui, dans son périmètre**");
+    expect(e3.limite).toContain("`apps/console/lib/dashboard-access.ts:117-135`");
+    expect(e3.limite).toContain("`apps/console/app/api/v1/explorer/views/route.ts:45-47`");
+    expect(e3.limite).toContain("**Le triage d'une issue** (`A8`) reste réservé aux administrateurs");
+    // L'ancienne limite, que le code contredisait déjà sur le commit relevé.
+    expect(e3.limite).not.toContain("ne gagnent **aucun** droit d'écriture");
+
+    const k14 = carte("K14");
+    expect(k14.faitQuoi).not.toContain("réservées aux sessions d'administration");
+    expect(puce("E3").texte).toContain("La session de démonstration n'écrit rien");
+    expect(puce("E3").texte).toContain("un viewer ne crée et ne modifie que ses propres tableaux de bord et vues");
+    expect(puce("E3").texte).toContain("le triage des issues est réservé aux administrateurs");
+    expect(puce("E3").texte).not.toMatch(/aucun droit d'écriture/);
+  });
+
+  it("la puce B6 de K7 suit B6 : 24 éléments par tableau, sections comprises, depuis F37", () => {
+    const b6 = ligneDe("B6");
+    expect(b6.verdict).toBe(VERDICT_MONTRABLE);
+    expect(b6.limite).toContain(`${MAX_WIDGETS} éléments par tableau, **sections comprises**`);
+    expect(b6.preuve).toContain("`layoutPlein`");
+    expect(b6.limite).not.toContain("24 cartes par tableau");
+    // Le code : une section prend la place d'une carte, et le tableau est plein à la borne.
+    const section = { type: "section", title: "Où ?" };
+    const cartes = Array.from({ length: MAX_WIDGETS - 1 }, () => ({ type: "traffic" }));
+    expect(layoutPlein(normalizeLayout([section, ...cartes]))).toBe(true);
+    expect(layoutPlein(normalizeLayout(cartes))).toBe(false);
+
+    const texte = puce("B6").texte;
+    expect(texte).toContain(`${MAX_WIDGETS} éléments par tableau, sections comprises`);
+    expect(texte).not.toContain("cartes par tableau");
+    expect(carte("K7").limites.map((l) => l.id)).toContain("B6");
   });
 });

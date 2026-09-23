@@ -106,13 +106,25 @@ describe("PS11 — la conclusion suit la lecture du planificateur", () => {
     expect(t).not.toContain("Tâches planifiées à relancer");
     expect(t).not.toContain("relancer les tâches planifiées");
     expect(t).not.toContain("brancher le déclencheur");
-    expect(t).toContain("pas de la conception : fermer l'ingestion par défaut");
+    expect(t).toContain("il faut au moins fermer l'ingestion par défaut");
   });
 
   it("lu, jamais exécuté : la liste et la conclusion disent toutes deux qu'il faut les relancer", async () => {
     const t = texte(await rendre({ etat: "lu", date: null }));
     expect(t).toContain("Tâches planifiées à relancer");
-    expect(t).toContain("pas de la conception : relancer les tâches planifiées, fermer l'ingestion par défaut");
+    expect(t).toContain("il faut au moins relancer les tâches planifiées, fermer l'ingestion par défaut");
+  });
+
+  it("revue de fin de vague 7 : l'écart au marché ne dit rien que le document de couverture refuse", async () => {
+    const t = texte(await rendre(ILLISIBLE));
+    // Le pays est estimé (RUM_PARITY_STATUS.md:319-320), et le visiteur est un
+    // pseudonyme, « pas une donnée anonyme » (:266).
+    expect(t).toContain("Pays estimé, scrub PII côté client et serveur");
+    expect(t).not.toMatch(/géolocalisation|anonym/i);
+    // Tous les manques ne sont pas d'exploitation (C3, § 10) : la conclusion renvoie à
+    // la partie qui les reprend, au lieu de les ranger sous un seul mot.
+    expect(t).not.toContain("relève de l'exploitation");
+    expect(t).toContain("Ce n'est pas tout : « Ce qui reste » reprend, point par point, ce qui manque encore");
   });
 
   it("lu, passage récent : ni la liste ni la conclusion n'en parlent", async () => {
@@ -121,6 +133,6 @@ describe("PS11 — la conclusion suit la lecture du planificateur", () => {
     expect(t).not.toContain("Tâches planifiées à relancer");
     expect(t).not.toContain("relancer les tâches planifiées");
     expect(t).not.toContain("brancher le déclencheur");
-    expect(t).toContain("pas de la conception : fermer l'ingestion par défaut");
+    expect(t).toContain("il faut au moins fermer l'ingestion par défaut");
   });
 });
