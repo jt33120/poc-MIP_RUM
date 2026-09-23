@@ -622,11 +622,19 @@ declare module "@mip/backend/jobs/planifie.mjs" {
   }
 
   export function executerEtapes(
-    etapes: Array<{ name: string; run: () => Promise<unknown> }>,
+    etapes: Array<{ name: string; run: () => Promise<unknown>; delaiMs?: number }>,
     log?: unknown,
+    contexte?: { job?: string },
   ): Promise<BilanEtapes>;
 
-  export function appelerFn(pool: Pool, fn: string): Promise<unknown>;
+  /** Délai serveur (statement_timeout) par étape SQL, en ms (P1). */
+  export const DELAI_ETAPE_DEFAUT_MS: number;
+  export const DELAIS_ETAPES_MS: Readonly<Record<string, number>>;
+  export const MARGE_CLIENT_MS: number;
+  export function delaiEtape(nom: string): number;
+
+  /** Avec `delaiMs` : set_config('statement_timeout', …, true) puis l'appel, en une transaction. */
+  export function appelerFn(pool: Pool, fn: string, opts?: { delaiMs?: number }): Promise<unknown>;
 
   /** Sondes uptime menées de front, au plus. */
   export const CONCURRENCE_UPTIME: number;
@@ -669,6 +677,8 @@ declare module "@mip/backend/jobs/planifie.mjs" {
 
 declare module "@mip/backend/jobs/cadence.mjs" {
   export const CADENCES: Record<"tick" | "horaire" | "quotidien", string>;
+  /** Silence au-delà duquel une cadence est en retard (/ready, /metrics — jamais /health). */
+  export const TOLERANCES_MS: Readonly<Record<"tick" | "horaire" | "quotidien", number>>;
   export function prochainDelai(
     nom: "tick" | "horaire" | "quotidien",
     maintenant: number | Date,
@@ -741,9 +751,20 @@ declare module "@mip/backend/jobs/bail.mjs" {
     client: unknown,
     opts: { job: string; porteur: string; secondes: number },
   ): Promise<boolean>;
+  /** La prise, plus le battement qu'elle remplace (pour `abandonnerBail`). */
+  export function prendreBailDetaille(
+    client: unknown,
+    opts: { job: string; porteur: string; secondes: number },
+  ): Promise<{ tenu: boolean; battementPrecedent: Date | null }>;
+  /** Reddition sur SUCCÈS : la ligne expire à now(), c'est le battement. */
   export function rendreBail(
     client: unknown,
     opts: { job: string; porteur: string },
+  ): Promise<void>;
+  /** Reddition après un ÉCHEC : l'ancien battement est remis (ou la ligne supprimée). */
+  export function abandonnerBail(
+    client: unknown,
+    opts: { job: string; porteur: string; battement: Date | null },
   ): Promise<void>;
 }
 

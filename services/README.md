@@ -19,7 +19,7 @@ Un service, une ligne :
 | Service | Rôle | Écoute | Commande | Déployé |
 |---|---|---|---|---|
 | `collector` | collecte OTLP : traces, logs, replay ; source maps de CI (`POST /v1/sourcemaps`, jeton dédié) | oui (`PORT`) | `node services/collector/server.mjs` | non — image d'auto-hébergement, démarrée par la CI ; en production la collecte passe par la route de la console |
-| `scheduler` | déclenche les travaux planifiés, et **seul** applique les migrations (pré-déploiement) | facultatif | `node services/scheduler/worker.mjs` · pré-déploiement `node services/scheduler/migrate.mjs` | Railway |
+| `scheduler` | déclenche les travaux planifiés sous bail, et **seul** applique les migrations (pré-déploiement) — détail : [`scheduler/README.md`](scheduler/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/scheduler/worker.mjs` · pré-déploiement `node services/scheduler/migrate.mjs` | Railway |
 | `mcp` | expose l'API v1 à un agent IA, sans accès à la base | oui (`PORT`) | `node services/mcp/http.mjs` | Railway |
 
 `services/collector/` porte aussi les deux serveurs de **développement** que
@@ -62,7 +62,10 @@ continu n'a aucune de ces limites.
 | `DATABASE_URL` | `collector`, `scheduler` | **oui** | Postgres. TLS vérifié dès que l'hôte n'est pas local — jamais de `rejectUnauthorized: false`. |
 | `MIGRATION_DATABASE_URL` | `scheduler` (pré-déploiement) | non | la **même** base par une connexion **directe**, hors pooler : les `predeploy-vNN-*.sql` (index `CONCURRENTLY`) y passent sous verrou de session, juste avant leur migration. Absente, ou pointée sur un pooler, ils sont sautés avec un avertissement et chaque migration garde son garde-fou de taille. Une autre base que `DATABASE_URL` est refusée. |
 | `PORT` | `collector` | fourni par l'hébergeur | port d'écoute (défaut local : 4318) |
-| `PORT` | `scheduler` | facultatif | expose `/health` et `/status` ; sans lui, le worker n'écoute rien |
+| `PORT` | `scheduler` | fourni par l'hébergeur (défaut 8080) | `/health` (sonde Railway : processus + base ; « jamais exécuté » et « bail tenu ailleurs » y sont sains), `/ready` et `/metrics` (fraîcheur, arriéré ; jeton) |
+| `METRICS_TOKEN` | `scheduler` | non (secret, ≥ 32 caractères) | jeton de `/ready` et `/metrics` ; absent, les deux répondent 404 |
+| `DEADMAN_URL` | `scheduler` | non (secret, `https:`) | dead-man's switch externe, signalé après chaque tick abouti ; absent, aucun signal |
+| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `scheduler` | **à poser** (15 à 30) | délai SIGTERM → SIGKILL ; défaut Railway 0, soit aucun arrêt propre |
 | `REQUIRE_API_KEY` | `collector` | non | `true` = rejeter toute app inconnue ou sans clé |
 | `RATE_LIMIT_PER_MIN` | `collector` | non | défaut 600, par app |
 | `PGPOOL_MAX` | `collector`, `scheduler` | non | taille du pool (défauts : 8 et 4) |

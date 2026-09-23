@@ -33,8 +33,9 @@
 // À INSTALLER AVANT TOUT `await` DE PREMIER NIVEAU. Un SIGTERM qui arrive pendant
 // un `await` de démarrage (migration, première requête) doit trouver son
 // gestionnaire en place : sans lui, Node applique le comportement par défaut
-// (mort immédiate) — c'est le défaut relevé sur `worker.mjs:159-171`, dont les
-// gestionnaires s'enregistrent APRÈS `await sousVerrou(...)`. `installLifecycle`
+// (mort immédiate) — c'est le défaut relevé sur l'ancien `worker.mjs:159-171`
+// (réécrit sur le kit en P1), dont les gestionnaires s'enregistraient APRÈS
+// `await sousVerrou(...)`. `installLifecycle`
 // est donc synchrone, et les ressources s'enregistrent après coup : un pool
 // créé APRÈS le début de l'arrêt est fermé aussitôt.
 //

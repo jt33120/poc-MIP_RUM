@@ -39,7 +39,7 @@
 // la connexion passe par le pooler Neon en mode TRANSACTION : un `SET` est pris
 // sur un backend et perdu au suivant — ou, pire, laissé à la requête d'un
 // autre. C'est exactement ce qui a cassé le verrou de session du scheduler
-// (voir `services/scheduler/worker.mjs`). Un délai par étape se pose DANS la
+// (voir `@mip/backend/jobs/bail.mjs`). Un délai par étape se pose DANS la
 // transaction : `select set_config('statement_timeout', '30s', true)`. Et pas
 // de `statement_timeout` en paramètre de démarrage non plus : le pooler n'en
 // garantit pas la transmission.

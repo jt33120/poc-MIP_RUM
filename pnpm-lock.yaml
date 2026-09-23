@@ -209,6 +209,9 @@ importers:
       '@mip/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@mip/service-kit':
+        specifier: workspace:*
+        version: link:../../packages/service-kit
       pg:
         specifier: 8.21.0
         version: 8.21.0

@@ -83,7 +83,7 @@ Projet `mip-rum-backend`, environnement `production`. Trois services.
 | Service | Image | Commande | Écoute | Redémarrage |
 |---|---|---|---|---|
 | `ingest` | `Dockerfile.backend` | `node services/collector/server.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
-| `scheduler` | `Dockerfile.backend` | `node services/scheduler/worker.mjs` | facultatif (`/health`, `/status`) | `ALWAYS` |
+| `scheduler` | `Dockerfile.backend` | `node services/scheduler/worker.mjs` | oui, healthcheck `/health` (sain sans exécution ni bail) ; `/ready`, `/metrics` sous `METRICS_TOKEN` — cf. `services/scheduler/README.md` | `ALWAYS` |
 | `mcp` | **`Dockerfile.mcp`** | `node services/mcp/http.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
 
 Domaine public du serveur MCP : `https://mcp-production-201c.up.railway.app`

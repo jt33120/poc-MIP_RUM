@@ -132,7 +132,7 @@ startService({
 
 - `@mip/backend/shared/log.mjs` **réexporte** `createLogger` et `LOG_LEVELS` du kit : tous les services, le noyau, le migrateur et la console écrivent déjà avec ce journal. Rien n'a changé pour eux, sinon ce qu'il ajoute (version, réplique, contexte, pile complète) et ce qu'il retire (adresses IP, e-mails).
 - `@mip/backend/lib/serveur.mjs` **réexporte** `optionsSsl` : une seule décision TLS pour tout le dépôt.
-- Aucun service n'est encore câblé sur `startService`, `installLifecycle`, `createPool` ou `startLoop` : c'est la phase suivante du plan (P1, « scheduler sur le kit », puis chaque service).
+- `services/scheduler/worker.mjs` est le premier service câblé de bout en bout : `installLifecycle` (avant tout le reste), `defineConfig`, `createPool`, trois `startLoop` sur la grille de l'horloge (`nextDelay`) et `startService` sans route, `/ready` rendant la fraîcheur des cadences (P1, « scheduler sur le kit »). `run-once.mjs` prend son pool au kit. Les autres services suivent.
 
 ## Tests
 

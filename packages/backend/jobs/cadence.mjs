@@ -48,3 +48,19 @@ export function prochainDelai(nom, maintenant) {
   // donnerait 0 et la minuterie repartirait en boucle serrée.
   return Math.max(1000, suivant.getTime() - d.getTime());
 }
+
+/**
+ * Au-delà de quel silence une cadence est EN RETARD, en ms — pour /ready et
+ * /metrics, jamais pour la sonde Railway (/health).
+ *
+ * Le tick tolère trois passages manqués, comme la vitrine
+ * (`apps/console/lib/etat-latence.ts`, TOLERANCE_MIN) : un redéploiement, un
+ * bail tenu par l'instance sortante, une coupure de la base font sauter un
+ * passage sans que rien ne soit cassé. L'horaire en tolère un ; le quotidien
+ * a deux heures de marge sur sa journée.
+ */
+export const TOLERANCES_MS = Object.freeze({
+  tick: 15 * 60_000,
+  horaire: 2 * 3_600_000,
+  quotidien: 26 * 3_600_000,
+});
