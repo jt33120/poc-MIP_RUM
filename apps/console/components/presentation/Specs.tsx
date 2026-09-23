@@ -93,7 +93,7 @@ const CRITERES: { c: string; cible: string; reel: string; s: Statut }[] = [
   {
     c: "Donnée identifiante",
     cible: "Aucune adresse IP stockée",
-    reel: "Géolocalisation par fuseau, scrub PII côté client et serveur",
+    reel: "Pays estimé, scrub PII côté client et serveur",
     s: "atteint",
   },
   {
@@ -511,15 +511,20 @@ export async function Specs() {
           {/* Les tâches planifiées ne figurent dans ce bilan que si la LECTURE dit
               qu'elles sont à relancer (`planif`, lib/etat-planifie.ts) : une phrase
               fixe l'affirmait encore alors que la ligne « scheduler » et la liste
-              ci-dessus disaient l'inverse — et une lecture en échec n'affirme rien. */}
+              ci-dessus disaient l'inverse — et une lecture en échec n'affirme rien.
+              La conclusion ne range pas non plus tous les manques sous
+              l'exploitation : le document de couverture en nomme de conception (C3,
+              § 10). Elle cite ceux de cet onglet, puis renvoie à « Ce qui reste ». */}
           <p className="mt-8 rounded-xl border border-line bg-panel px-5 py-4 text-sm leading-relaxed text-ink-soft">
             <span className="font-semibold text-ink">Ce que ça veut dire.</span> La chaîne de
             mesure — collecte, ingestion, restitution — tient les critères de fond : poids,
-            seuils, percentile, anonymat. Ce qui manque relève de l&apos;exploitation, pas de la
-            conception : {planif ? "relancer les tâches planifiées, " : ""}fermer l&apos;ingestion
+            seuils, percentile. Pour la mettre en service, il faut au moins{" "}
+            {planif ? "relancer les tâches planifiées, " : ""}fermer l&apos;ingestion
             par défaut, activer le filet d&apos;isolation en base, rapatrier l&apos;hébergement
             chez un fournisseur de droit européen — le backend, désormais autonome, est prêt à
-            être déplacé — et changer de moteur de stockage avant la montée en volume.
+            être déplacé — et changer de moteur de stockage avant la montée en volume. Ce
+            n&apos;est pas tout : « Ce qui reste » reprend, point par point, ce qui manque encore,
+            ce qui le débloquerait et qui décide.
           </p>
         </div>
       </div>

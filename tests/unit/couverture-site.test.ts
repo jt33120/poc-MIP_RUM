@@ -325,6 +325,12 @@ export function normaliser(texte: string): string {
 
 // « souveraine » n'est admis que dans la phrase exacte de PS4 (§ 8.2).
 const PHRASE_ADMISE = "Ce POC n'est pas une offre souveraine.";
+// « anonyme » ne l'est que dans la puce D3 de K11, qui le dit comme une LIMITE de sa
+// ligne : un événement totalement anonyme n'est rattachable à personne. Ailleurs, le
+// mot promettait ce que le document refuse : le `visitor_id` est « un pseudonyme, pas
+// une donnée anonyme » (RUM_PARITY_STATUS.md:266). Revue de fin de vague 7 : les Specs
+// disaient « Sessions anonymes » et comptaient l'anonymat parmi les critères tenus.
+const LIMITE_ANONYME_D3 = "un événement totalement anonyme n'est rattachable à personne.";
 const INTERDITS: RegExp[] = [
   /\brobuste/i,
   /\bcompl[eè]t(e|s|es)?\b/i,
@@ -336,6 +342,7 @@ const INTERDITS: RegExp[] = [
   /\bconverti(t|r|ssent)?\b/i,
   /\bconversion\b/i,
   /chiffre d'affaires/i,
+  /\banonym/i,
 ];
 
 /**
@@ -350,7 +357,7 @@ function fautes(nom: string, texte: string): string[] {
     debuts.push(plat.length);
     plat += `${normaliser(ligne).trim()} `;
   }
-  plat = plat.split(PHRASE_ADMISE).join(" ".repeat(PHRASE_ADMISE.length));
+  for (const admise of [PHRASE_ADMISE, LIMITE_ANONYME_D3]) plat = plat.split(admise).join(" ".repeat(admise.length));
   const ligneDe = (i: number) => debuts.filter((d) => d <= i).length;
   const sortie: string[] = [];
   for (const motif of INTERDITS) {
@@ -381,12 +388,27 @@ describe("5 — le lexique de la vitrine", () => {
       "Une mesure en temps\n        réel.",
       "Un relevé complet.",
       "Des hébergeurs souverains.",
+      "Sessions anonymes",
+      "poids, seuils, percentile, anonymat.",
     ];
     for (const p of pieges) expect(fautes("piège", p).length, p).toBeGreaterThan(0);
     // La phrase admise, écrite en JSX avec son entité, reste admise.
     expect(fautes("PS4", "<p>Ce POC n&apos;est pas une offre souveraine.</p>")).toEqual([]);
     // « souveraineté », « compléter » et « complètement » ne sont pas visés.
     expect(fautes("ok", "Rien ne change à la souveraineté ; mentions à compléter ; complètement.")).toEqual([]);
+  });
+
+  it("« anonyme » n'est admis que dans la puce D3, qui le dit comme une limite de sa ligne", () => {
+    // La ligne D3 du document le dit en LIMITE : un tel événement n'est pas rattachable.
+    const d3 = CAPACITES.find((c) => c.id === "D3")!;
+    expect(d3.limite).toContain("Un événement totalement anonyme");
+    expect(d3.limite).toContain("n'est pas rattachable");
+    // La puce D3 de la vitrine reprend cette limite, mot pour mot sur ce point.
+    const puce = CARTES.flatMap((c) => c.limites).find((l) => l.id === "D3")!;
+    expect(puce.texte).toContain(LIMITE_ANONYME_D3);
+    expect(fautes("K11", puce.texte)).toEqual([]);
+    // Hors de cette phrase, le mot reste une faute, même dans la même puce.
+    expect(fautes("piège", puce.texte.replace("totalement anonyme n'est", "anonyme est"))).not.toEqual([]);
   });
 });
 
