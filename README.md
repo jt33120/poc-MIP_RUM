@@ -64,23 +64,29 @@ pnpm --filter console dev                                       # console :3000
 node apps/sync-synthetic/src/sync.mjs seed                      # passages robot pour /correlation
 ```
 
-## Outillage IA (BMAD + graft)
+## Outillage IA — local, non versionné
 
-Le dépôt est câblé pour deux outils d'assistance, versionnés mais **non installés par le clone** :
+Une partie de ce produit a été écrite avec des agents. Leurs réglages et leurs
+artefacts (`.claude/`, `.agents/`, `.codex/`, `_bmad/`, `_bmad-output/`, `.mcp.json`)
+**ne sont pas dans le dépôt** : ils ne décrivent pas le produit, et ils pesaient un tiers
+des fichiers suivis. Un clone neuf n'en a pas besoin et ne les verra pas.
+
+Ce qui devait survivre à ce retrait a été déplacé dans `docs/` : le plan de la refonte
+frontend ([docs/product/plan-frontend-dashboard.md](docs/product/plan-frontend-dashboard.md)),
+les quatre journaux de livraison ([docs/archive/delivery/](docs/archive/delivery/)) et les
+notes de lecture qui servent de source à la vitrine
+([docs/product/notes-lecture-ekara.md](docs/product/notes-lecture-ekara.md)).
+
+Le seul outil que le dépôt suppose installé est **graft**, et seulement pour qui travaille
+avec un agent :
 
 ```bash
-npm install -g @nanonets/graft   # requis : .mcp.json et les hooks de .claude/settings.json appellent le binaire `graft`
+npm install -g @nanonets/graft   # le binaire `graft`, appelé par l'outillage local
 graft build                      # (re)génère le graphe de code dans graft/ — local, gitignoré
 ```
 
-- **graft** (paquet npm `@nanonets/graft`) indexe le monorepo en un graphe de code (`graft ask`, `graft callers`,
-  `graft skeleton`, `graft blast`) que l'agent interroge au lieu de tout relire. Le graphe vit dans `graft/`,
-  **jamais commité** : chaque poste régénère le sien. `.ignore` le garde greppable malgré le gitignore.
-  Sans l'installation globale ci-dessus, le serveur MCP déclaré dans `.mcp.json` ne démarre pas.
-- **[BMAD](https://github.com/bmad-code-org/bmad-method)** (module `bmm`) fournit les skills `bmad-*` de
-  `.claude/skills/` — configuration dans `_bmad/`, artefacts produits dans `_bmad-output/`. Nécessite
-  [`uv`](https://docs.astral.sh/uv/) : les skills lancent leurs scripts Python via `uv run`.
-  Point d'entrée : le skill `bmad-help`.
+Le graphe vit dans `graft/`, **jamais commité** : chaque poste régénère le sien. `.ignore` le
+garde greppable malgré le gitignore.
 
 ## Tests
 

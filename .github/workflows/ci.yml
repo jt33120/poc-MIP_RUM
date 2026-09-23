@@ -3,21 +3,21 @@
 # playwright (qui lance lui-même dev-server :4318, démo :8080, console :3000 via webServer).
 name: CI
 
-# Un commit qui ne touche que de la documentation ou des artefacts de planification
-# ne rebuild pas le SDK et ne rejoue pas Postgres + Chromium : c'est ~3 min de CI et
-# un déploiement Vercel économisés par commit de doc. Le filtre miroir côté Vercel
-# vit dans apps/console/vercel.json ("ignoreCommand").
+# PLUS DE FILTRE PAR CHEMIN, ET C'EST DÉLIBÉRÉ. Le `paths-ignore` d'avant sautait
+# la CI sur `docs/**`, `**.md` et l'outillage de planification, pour économiser
+# ~3 min par commit de documentation. Deux choses l'ont rendu dangereux :
+#   - `_bmad-output/**`, `_bmad/**` et `.claude/**` ne sont plus dans le dépôt ;
+#   - `docs/RUM_PARITY_STATUS.md` n'est plus un document inerte : il est analysé
+#     par `scripts/couverture-extraire.mjs`, figé dans
+#     `apps/console/lib/couverture.generated.json`, gardé par
+#     `tests/unit/couverture-site.test.ts` et AFFICHÉ par `/presentation`.
+# Une PR « de documentation seule » pouvait donc casser la vitrine publique sans
+# qu'aucun test ne tourne. Le miroir Vercel ("ignoreCommand") est retiré pour la
+# même raison : ce commit de doc-là doit redéployer.
 on:
   push:
     branches: [master]
-    paths-ignore: &docs-only
-      - 'docs/**'
-      - '_bmad-output/**'
-      - '_bmad/**'
-      - '.claude/**'
-      - '**.md'
   pull_request:
-    paths-ignore: *docs-only
 
 permissions:
   contents: read
