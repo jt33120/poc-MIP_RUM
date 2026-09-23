@@ -105,16 +105,18 @@ create or replace function alert_release_p75(
 ) returns table (rang integer, version text, deploye_le timestamptz, p75 double precision, mesures integer)
 language sql stable set search_path = public, pg_temp as $$
   with deploiements as (
-    select m.version, min(m.ts) as deploye_le
+    select m.version, min(m.ts) as deploye_le, max(m.id) as declare_en
       from deploy_marker m
      where m.app_id = p_app_id and m.ts <= now()
        and m.version is not null and btrim(m.version) <> ''
      group by m.version
   ), deux as (
+    -- Deux versions déclarées au même instant : la dernière déclarée l'emporte
+    -- (identifiant du marqueur), jamais l'ordre lexical (« 1.9.0 » > « 1.10.0 »).
     select d.version, d.deploye_le,
-           (row_number() over (order by d.deploye_le desc, d.version desc))::int as rang
+           (row_number() over (order by d.deploye_le desc, d.declare_en desc))::int as rang
       from deploiements d
-     order by d.deploye_le desc, d.version desc
+     order by d.deploye_le desc, d.declare_en desc
      limit 2
   )
   select deux.rang, deux.version, deux.deploye_le, x.p75, x.mesures

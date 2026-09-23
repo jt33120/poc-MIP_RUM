@@ -268,6 +268,31 @@ suite("migration-v86 — régression de release dans check_alerts (PostgreSQL)",
       expect((await etat(pool, juste)).last_state).toBe("ok");
     });
 
+    it("deux versions déclarées au même instant : la dernière déclarée l'emporte, jamais l'ordre lexical (1.9.0 < 1.10.0)", async () => {
+      const A = `${PREFIXE}meme-instant`;
+      await app(pool, A);
+      // Le même instant pour les deux, 1.9.0 déclarée d'abord (identifiant plus
+      // petit). En ordre lexical, « 1.9.0 » passerait devant « 1.10.0 ».
+      const instant = new Date(Date.now() - 3_600_000);
+      for (const version of ["1.9.0", "1.10.0"]) {
+        await pool.query(
+          "insert into deploy_marker (app_id, ts, version, env, source) values ($1, $2, $3, 'prod', 'ci')",
+          [A, instant, version],
+        );
+      }
+      await mesures(pool, A, "1.9.0", 2000, 120);
+      await mesures(pool, A, "1.10.0", 2600, 120);
+      const id = await regle(pool, A);
+
+      await evaluer(pool);
+
+      expect(await etat(pool, id)).toEqual({
+        last_state: "breached",
+        last_value: 2600,
+        last_reason: "1.10.0 : p75 2600 (120 mesures) contre 1.9.0 : p75 2000 (120 mesures), +30 % pour +20 % tolérés",
+      });
+    });
+
     it("une seule release déclarée : pas d'évaluation, la raison le dit, aucune valeur", async () => {
       const A = `${PREFIXE}seule`;
       await app(pool, A);
