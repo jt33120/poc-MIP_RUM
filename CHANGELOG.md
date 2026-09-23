@@ -249,7 +249,7 @@ Périmètre : [ROADMAP_V02.md](docs/archive/ROADMAP_V02.md). Contrat de données
 
 ## v0.1 — 2026-06-10 (POC, déployé en production)
 
-En bref, ex-README : POC terminé et **déployé en production** (ingestion Supabase Paris, console Vercel, snippet live sur la plateforme G-IT). DoD 1-4 vérifiés en live, tests 36 unitaires + 5 E2E verts.
+En bref, ex-README : POC terminé et **déployé en production** (ingestion Supabase Paris, console Vercel, snippet live sur la plateforme G-IT). DoD 1-4 vérifiés en live, tests 36 unitaires + 5 E2E verts. Le README s'ouvrait aussi sur le chiffre du 10/06/2026 (« Chiffre clé en live », plus bas) ; l'écran `/correlation` d'aujourd'hui refuse cette soustraction d'une mesure de robot à un LCP de visiteur (`apps/console/app/correlation/page.tsx`).
 
 POC complet construit en une journée, déployé en cloud **et en production** sur `plateforme.groupement-it.com` (PR [uti-platform#36](https://github.com/jt33120/uti-platform/pull/36)), DoD 1-4 vérifiés en live.
 
