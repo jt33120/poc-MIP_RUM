@@ -2,6 +2,8 @@
 import { describe, expect, it } from "vitest";
 import { SEMAINE_S, buildCohorts, lundiDeSemaine } from "../../apps/console/lib/cohorts";
 import { cellulesDeCohorte, courbeRetention, indexSemaine, type CohortRow } from "../../apps/console/lib/cohorts";
+import { filtreAppareil } from "../../apps/console/lib/cohorts";
+import { parseFilterParams } from "../../apps/console/lib/query-contract";
 
 // F40 — l'étiquette d'une cohorte est le LUNDI de sa semaine. L'index vient du SQL :
 // `floor(extract(epoch from date_trunc('week', started_at)) / 604800)`, où
@@ -158,5 +160,37 @@ describe("F49 — cellulesDeCohorte", () => {
       [2, 0, false],
       [3, 0, true],
     ]);
+  });
+});
+
+describe("filtreAppareil — toute condition d'appareil, paramètre OU segment (revue vague 8)", () => {
+  const filtresDe = (qs: string) => {
+    const parsed = parseFilterParams(new URLSearchParams(qs));
+    if (!parsed.ok) throw new Error(parsed.error.code);
+    return parsed.value;
+  };
+
+  it("aucune condition d'appareil : null (la comparaison par appareil s'applique)", () => {
+    expect(filtreAppareil(filtresDe(""))).toBeNull();
+    expect(filtreAppareil(filtresDe("seg=v2:browser:is_null;route:eq:%2Fa"))).toBeNull();
+  });
+
+  it("device= : le libellé historique (« ordinateurs ») ; retiré de `sans`", () => {
+    const r = filtreAppareil(filtresDe("device=desktop&route=/a"));
+    expect(r?.libelle).toBe("ordinateurs");
+    expect(r?.sans.device).toBeUndefined();
+    expect(r?.sans.route).toBe("/a");
+  });
+
+  it("seg=v2:device:is_null : vu, alors que `device` est absent (le défaut d'avant)", () => {
+    const f = filtresDe("seg=v2:device:is_null");
+    expect(f.device).toBeUndefined();
+    expect(filtreAppareil(f)?.libelle).toBe("appareil inconnu");
+  });
+
+  it("seg eq / neq : nommés ; `sans` retire TOUTES les conditions d'appareil, garde les autres", () => {
+    const r = filtreAppareil(filtresDe("seg=v2:device:eq:tablet;browser:eq:Firefox;device:neq:mobile"));
+    expect(r?.libelle).toBe("tablettes et tout sauf les mobiles");
+    expect(r?.sans.segments).toEqual([{ dimension: "browser", operator: "eq", value: "Firefox" }]);
   });
 });

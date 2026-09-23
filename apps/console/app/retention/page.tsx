@@ -32,6 +32,7 @@ import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import {
   cellulesDeCohorte,
   courbeRetention,
+  filtreAppareil,
   indexSemaine,
   lundiDeSemaine,
   type CohortRow,
@@ -110,7 +111,9 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   /** La fenêtre retenue, telle qu'un lien la reporte (le défaut ne s'écrit pas). */
   const weeksParam = weeks === FENETRE_DEFAUT ? null : String(weeks);
   const semaineCourante = indexSemaine(Date.now());
-  const appareilFiltre = APPAREILS.find((a) => a.cle === f.device) ?? null;
+  // Toute condition d'appareil, `device=` OU segment (`seg=v2:device:is_null`…) :
+  // une condition de segment se cumulerait avec chaque série et la viderait.
+  const appareilFiltre = filtreAppareil(ecran.query.filters);
 
   // Chaque lecture est indépendante (F02) : une lecture en échec n'efface que ses sections.
   const [cohortes, echantillonnage, parAppareil] = await Promise.all([
@@ -261,9 +264,12 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                 >
                   {appareilFiltre ? (
                     <p className="py-8 text-center text-sm text-ink-soft" data-testid="retention-deja-filtre">
-                      Déjà filtré sur {appareilFiltre.libelle.toLowerCase()} : la comparaison par appareil ne
+                      Déjà filtré sur {appareilFiltre.libelle} : la comparaison par appareil ne
                       s&apos;applique pas.{" "}
-                      <Link className="font-medium text-brand hover:underline" href={hrefWithQuery("/retention", ecran.query, { device: null, weeks: weeksParam })}>
+                      <Link
+                        className="font-medium text-brand hover:underline"
+                        href={hrefWithQuery("/retention", { ...ecran.query, filters: appareilFiltre.sans }, { weeks: weeksParam })}
+                      >
                         Retirer le filtre
                       </Link>
                     </p>

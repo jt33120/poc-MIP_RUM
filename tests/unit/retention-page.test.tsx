@@ -26,22 +26,31 @@ vi.mock("@/components/states/SectionErreur", () => ({
   SectionErreur: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-const QUERY = (() => {
-  const parsed = parseAnalyticsQuery(new URLSearchParams("app=demo"), { principal: { role: "admin", apps: null }, nowMs: Date.now() });
+const requete = (qs: string) => {
+  const parsed = parseAnalyticsQuery(new URLSearchParams(qs), { principal: { role: "admin", apps: null }, nowMs: Date.now() });
   if (!parsed.ok) throw new Error(parsed.error.code);
   return parsed.value;
-})();
+};
 
-/** L'écran tel que `pageFilters` le rend ; `device` : l'appareil posé par la barre de filtres. */
-const ecran = (device: string | null = null) => ({
-  ok: true,
-  filters: { app: "demo", period: "24h", device, segment: [], includeBots: false, query: QUERY },
-  deviceFilters: { app: "demo", period: "24h", device, segment: [], includeBots: false, query: QUERY },
-  query: QUERY,
-  label: "24 h",
-  bucketLabel: "1 h",
-  notApplied: null,
-});
+/**
+ * L'écran tel que `pageFilters` le rend, pour la query string `qs` : `device=` (la
+ * barre de filtres) ou `seg=` (le segment) arrivent dans la requête résolue.
+ */
+const ecranDe = (qs: string) => {
+  const query = requete(`app=demo&${qs}`);
+  const device = query.filters.device ?? null;
+  return {
+    ok: true,
+    filters: { app: "demo", period: "24h", device, segment: [], includeBots: false, query },
+    deviceFilters: { app: "demo", period: "24h", device, segment: [], includeBots: false, query },
+    query,
+    label: "24 h",
+    bucketLabel: "1 h",
+    notApplied: null,
+  };
+};
+/** `device` : l'appareil posé par la barre de filtres. */
+const ecran = (device: string | null = null) => ecranDe(device ? `device=${device}` : "");
 
 const { default: Retention } = await import("@/app/retention/page");
 
@@ -96,6 +105,48 @@ describe("/retention — les courbes sont des images nommées (F54, § 3.9)", ()
     pageFilters.mockResolvedValue(ecran("mobile"));
     const appareils = bloc(await rendre(), "retention-appareils");
     expect(appareils).toContain('data-testid="retention-deja-filtre"');
+    expect(appareils).toContain("Déjà filtré sur mobiles");
     expect(appareils).not.toContain('role="img"');
+  });
+});
+
+describe("/retention — « Par appareil » sous une condition d'appareil portée par le SEGMENT (revue vague 8)", () => {
+  /** Le texte visible, sans balises ni entités. */
+  const texte = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
+  /** Le href du lien « Retirer le filtre ». */
+  const retirer = (html: string) => (html.match(/href="([^"]*)"[^>]*>Retirer le filtre/)?.[1] ?? "").replace(/&amp;/g, "&");
+
+  it("seg=v2:device:is_null : « Déjà filtré », aucune série relue, aucun lien vers un écran vide", async () => {
+    // Avant : trois séries vides (ET avec device IS NULL) et « Rétention des ordinateurs (0 visiteurs) ».
+    pageFilters.mockResolvedValue(ecranDe("seg=v2%3Adevice%3Ais_null"));
+    const appareils = bloc(await rendre(), "retention-appareils");
+    expect(texte(appareils)).toContain("Déjà filtré sur appareil inconnu : la comparaison par appareil ne s'applique pas.");
+    expect(appareils).not.toContain('data-testid="retention-appareil-lien"');
+    expect(appareils).not.toContain('role="img"');
+    // Une seule lecture de cohortes : celle de la courbe, pas une par appareil.
+    expect(retentionCohorts).toHaveBeenCalledTimes(1);
+    // « Retirer le filtre » retire la condition du segment.
+    const href = new URL(retirer(appareils), "http://x");
+    expect(href.pathname).toBe("/retention");
+    expect(href.searchParams.get("app")).toBe("demo");
+    expect(href.searchParams.has("seg")).toBe(false);
+  });
+
+  it("seg=v2:device:eq:tablet;browser:eq:Firefox : « Déjà filtré sur tablettes » ; retirer ne touche que l'appareil", async () => {
+    pageFilters.mockResolvedValue(ecranDe("seg=v2%3Adevice%3Aeq%3Atablet%3Bbrowser%3Aeq%3AFirefox"));
+    const appareils = bloc(await rendre({ weeks: "12" }), "retention-appareils");
+    expect(texte(appareils)).toContain("Déjà filtré sur tablettes");
+    const href = new URL(retirer(appareils), "http://x");
+    expect(href.searchParams.get("seg")).toBe("v2:browser:eq:Firefox");
+    expect(href.searchParams.has("device")).toBe(false);
+    expect(href.searchParams.get("weeks")).toBe("12");
+  });
+
+  it("sans condition d'appareil (segment sur une autre dimension) : la comparaison s'applique, une lecture par appareil", async () => {
+    pageFilters.mockResolvedValue(ecranDe("seg=v2%3Abrowser%3Ais_null"));
+    const appareils = bloc(await rendre(), "retention-appareils");
+    expect(appareils).not.toContain('data-testid="retention-deja-filtre"');
+    expect(appareils).toContain('data-testid="retention-appareil-lien"');
+    expect(retentionCohorts).toHaveBeenCalledTimes(4);
   });
 });

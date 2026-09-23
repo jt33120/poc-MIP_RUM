@@ -126,7 +126,7 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
   const ligneSelectionnee = forms.find((r) => r.form === selectionne);
 
   const formHref = (nom: string) => hrefWithQuery("/forms", query, { form: nom });
-  const elargir = gesteElargir("/forms", query);
+  const elargir = gesteElargir("/forms", query, Date.now());
 
   const entames = forms.reduce((a, r) => a + r.starters, 0);
   const soumissions = forms.reduce((a, r) => a + r.submits, 0);

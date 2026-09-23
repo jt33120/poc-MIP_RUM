@@ -162,9 +162,16 @@ test.describe("F48 — Acquisition", () => {
     await login(page);
     await page.goto(`${consoleUrl}/acquisition?app=${APP_F48_PLAFOND}&period=24h`, { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("acquisition-plafond")).toContainText(
-      "plafond de 20 000 sessions atteint : les canaux portent sur les 20 000 premières sessions par identifiant, pas les plus récentes",
+      "plafond de 20 000 sessions atteint : canaux, pages d'entrée et référents portent sur les 20 000 premières sessions, prises d'abord par application puis par identifiant de session, pas les plus récentes",
     );
     await expect(page.getByTestId("kpi-libelle").filter({ hasText: "Référents externes distincts" })).toContainText("≥ 20");
+    // Revue vague 8 : les pages d'entrée et les référents portent sur le même sous-ensemble,
+    // et le disent à côté de leurs chiffres (pas seulement la rangée de tuiles).
+    for (const id of ["#acquisition-canaux", "#acquisition-entrees", "#acquisition-referents", "#acquisition-serie"]) {
+      await expect(page.locator(`${id} [data-testid="acquisition-plafond-meta"]`), id).toHaveText(
+        "plafond atteint : 20 000 premières sessions seulement, par application puis par identifiant",
+      );
+    }
   });
 
   test("aucun débordement à 390, 768 et 1440 px", async ({ page }) => {

@@ -488,6 +488,24 @@ test.describe("F53 — écrans d'usage sur le contrat : plage personnalisée, ta
     await expect(corps(page)).toContainText("1 visiteurs identifiés");
   });
 
+  test("revue vague 8 — appareil porté par le SEGMENT : « Par appareil » dit « Déjà filtré », aucun lien vers un écran vide", async ({ page }) => {
+    await login(page, ADMIN_F53, mdpAdminF53);
+    // Avant : trois séries recoupées avec device = tablet (deux vides) et des liens
+    // « Rétention des ordinateurs (0 visiteurs) ». La session tablette de A n'a pas de navigateur.
+    await page.goto(`${consoleUrl}/retention?app=${APP_A_F53}&seg=v2%3Adevice%3Aeq%3Atablet%3Bbrowser%3Ais_null`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId("filter-problem")).toHaveCount(0);
+    await expect(corps(page)).toContainText("1 visiteurs identifiés");
+    const dejaFiltre = page.getByTestId("retention-deja-filtre");
+    await expect(dejaFiltre).toContainText("Déjà filtré sur tablettes");
+    await expect(page.getByTestId("retention-appareil-lien")).toHaveCount(0);
+    // « Retirer le filtre » ne retire que la condition d'appareil : celle du navigateur reste.
+    const retirer = dejaFiltre.getByRole("link", { name: "Retirer le filtre", exact: true });
+    await expect(retirer).toHaveAttribute("href", /seg=v2%3Abrowser%3Ais_null/);
+    await expect(retirer).not.toHaveAttribute("href", /device/);
+  });
+
   test("aucun débordement à 390, 768 et 1440 px sur une plage personnalisée", async ({ page }) => {
     await login(page, ADMIN_F53, mdpAdminF53);
     const to = new Date(Date.now() - 60_000).toISOString();

@@ -4,6 +4,7 @@
 // combien reviennent aux semaines suivantes -> matrice triangulaire cohorte × offset.
 // Les semaines sont des index entiers (semaines depuis l'epoch) : l'arithmétique
 // d'offset reste exacte ; l'étiquetage en date se fait côté page.
+import { conditionsOf, type AnalyticsFilters } from "./query-contract";
 
 /** Secondes par semaine : l'index de semaine vaut `floor(epoch(lundi) / SEMAINE_S)`. */
 export const SEMAINE_S = 604_800;
@@ -171,4 +172,36 @@ export function courbeRetention(rows: readonly CohortRow[], semaineCourante: num
     }
     return { offset, taux: cohortes > 0 && taille > 0 ? retenus / taille : null, cohortes, taille, exclues };
   });
+}
+
+// ─────────── « Par appareil » : la requête filtre-t-elle déjà l'appareil ? ───────────
+
+/** Nom pluriel d'un type d'appareil, dans « Déjà filtré sur ordinateurs ». */
+const APPAREIL_PLURIEL: Record<string, string> = { desktop: "ordinateurs", mobile: "mobiles", tablet: "tablettes" };
+
+/**
+ * Condition d'appareil que porte la requête, d'où qu'elle vienne : le paramètre
+ * dédié (`device=tablet`) OU le segment (`seg=v2:device:eq:tablet`,
+ * `seg=v2:device:is_null`, `…:neq:…`) — F53 accepte les deux.
+ *
+ * POURQUOI. La figure « Par appareil » relit la rétention restreinte à chaque type
+ * (`retentionCohorts(f, weeks, { appareil })`) : l'appareil REMPLACE `device`, mais
+ * une condition de segment reste et se CUMULE (ET). Sous `seg=v2:device:is_null`,
+ * les trois séries étaient vides et leurs liens « Rétention des ordinateurs
+ * (0 visiteurs) » menaient à des écrans vides. Toute condition sur l'appareil rend
+ * donc la comparaison sans objet : l'écran le dit, et `sans` donne les filtres
+ * privés de TOUTES les conditions d'appareil (le lien « Retirer le filtre »).
+ * `null` : aucune condition d'appareil, la comparaison s'applique.
+ */
+export function filtreAppareil(filters: AnalyticsFilters): { libelle: string; sans: AnalyticsFilters } | null {
+  const conditions = conditionsOf(filters).filter((c) => c.dimension === "device");
+  if (conditions.length === 0) return null;
+  const nom = (v: string | null) => (v === null ? "appareil inconnu" : (APPAREIL_PLURIEL[v] ?? v));
+  const libelle = conditions
+    .map((c) => (c.operator === "is_null" ? "appareil inconnu" : c.operator === "neq" ? `tout sauf les ${nom(c.value)}` : nom(c.value)))
+    .join(" et ");
+  return {
+    libelle,
+    sans: { ...filters, device: undefined, segments: filters.segments.filter((c) => c.dimension !== "device") },
+  };
 }

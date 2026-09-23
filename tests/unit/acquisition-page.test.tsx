@@ -143,8 +143,26 @@ describe("/acquisition — plafonds (S4)", () => {
     acquisition.mockResolvedValue(report({ direct: 20_000 }));
     const t = texte(await rendre());
     expect(t).toContain(
-      "plafond de 20 000 sessions atteint : les canaux portent sur les 20 000 premières sessions par identifiant, pas les plus récentes",
+      "plafond de 20 000 sessions atteint : canaux, pages d'entrée et référents portent sur les 20 000 premières sessions, prises d'abord par application puis par identifiant de session, pas les plus récentes ; sur plusieurs applications, elles peuvent toutes venir d'une seule",
     );
+  });
+
+  it("revue vague 8 : au plafond, CHAQUE figure qui compte ces sessions le dit dans sa méta — pages d'entrée et référents compris", async () => {
+    const entree = { route: "/", parCanal: { ...zero(), direct: 20_000 }, total: 20_000 };
+    acquisition.mockResolvedValue(report({ direct: 20_000 }, 1, [entree]));
+    const html = await rendre();
+    const metaDe = (id: string) => {
+      const debut = html.indexOf(`id="${id}"`);
+      expect(debut, `#${id} rendue`).toBeGreaterThan(-1);
+      return html.slice(debut).match(/data-testid="figure-meta"[^]*?<\/div>/)?.[0] ?? "";
+    };
+    for (const id of ["acquisition-canaux", "acquisition-entrees", "acquisition-referents", "acquisition-serie"]) {
+      const meta = texte(metaDe(id));
+      expect(meta, id).toContain("plafond atteint : 20 000 premières sessions seulement, par application puis par identifiant");
+    }
+    // Sous le plafond : aucune méta ne le dit.
+    acquisition.mockResolvedValue(report({ direct: 19_999 }, 1, [{ ...entree, parCanal: { ...zero(), direct: 19_999 }, total: 19_999 }]));
+    expect(await rendre()).not.toContain('data-testid="acquisition-plafond-meta"');
   });
 
   it("20 référents renvoyés : « ≥ 20 », jamais « 20 » ; 19 : le compte exact", async () => {
@@ -171,6 +189,26 @@ describe("/acquisition — B31 : table croisée et série", () => {
     // Plus d'état « à créer » : la route est lue.
     expect(texte(html)).not.toContain("route d'entrée non lue par cette lecture (à créer)");
     expect(texte(html)).not.toContain("série à créer");
+  });
+
+  it("revue vague 8 — sous 640 px, le résumé d'un canal porte le total du CANAL (celui du hero), et la part des routes affichées est dite", async () => {
+    // Avant : « 540 sessions » (la somme des seules routes affichées) contre 900 sur la barre du hero.
+    acquisition.mockResolvedValue(
+      report({ direct: 900, search: 100 }, 0, [{ route: "/a", parCanal: { ...zero(), direct: 540, search: 100 }, total: 640 }]),
+    );
+    const html = await rendre();
+    const liste = html.slice(html.indexOf('data-testid="acquisition-entrees-liste"'));
+    // Un <details> par canal, dans l'ordre fixe : direct, recherche, réseaux sociaux…
+    const [direct, recherche, social] = liste.split("<details").slice(1).map(texte);
+    expect(direct).toContain("Direct ou référent masqué 900 sessions ");
+    expect(direct).toContain("Routes affichées : 540 de ces 900 sessions (60,0 %) ; les autres sont entrées par une route non affichée ou inconnue.");
+    expect(direct).not.toContain("540 sessions");
+    // Canal entièrement couvert par les routes affichées : rien à dire de plus.
+    expect(recherche).toContain("Recherche 100 sessions");
+    expect(recherche).not.toContain("Routes affichées :");
+    // Canal vide : 0, et la phrase d'absence.
+    expect(social).toContain("Réseaux sociaux 0 session");
+    expect(social).toContain("Aucune des routes affichées n'a reçu d'entrée par ce canal.");
   });
 
   it("série : cinq canaux empilés, zoom sur un seau ; somme nulle → vide motivé, jamais un axe vide", async () => {

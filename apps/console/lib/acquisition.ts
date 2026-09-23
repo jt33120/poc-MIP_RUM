@@ -54,8 +54,9 @@ export const TOP_REFERENTS = 20;
 
 /**
  * Plafond de sessions lues par `acquisition` (lib/queries-acquisition.ts) : les
- * sessions retenues sont les PREMIÈRES par identifiant (`order by p.app_id,
- * p.session_id`), pas les plus récentes. Atteint, il est dit à côté du chiffre (S4).
+ * sessions retenues sont les PREMIÈRES par application puis par identifiant
+ * (`order by p.app_id, p.session_id`), pas les plus récentes : sur plusieurs apps,
+ * elles peuvent toutes venir d'une seule. Atteint, il est dit à côté du chiffre (S4).
  */
 export const PLAFOND_ACQUISITION = 20_000;
 
