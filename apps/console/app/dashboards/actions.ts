@@ -11,8 +11,10 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "@/lib/next-cache";
 import {
   defaultTitle,
+  layoutPlein,
   normalizeLayout,
   parseRangeOverride,
+  sectionDuFormulaire,
   WIDGET_META,
   WIDGET_TYPES,
   WIDGET_VITALS,
@@ -63,7 +65,17 @@ function contexteFromForm(fd: FormData): URLSearchParams {
   return sortie;
 }
 
-function retour(id: number, ctx: URLSearchParams, etat?: "conflit" | "refus"): string {
+/**
+ * États de retour vers le tableau, chacun écrit par la page (`role="alert"`) :
+ * `conflit` (révision dépassée), `refus` (valeur de carte inapplicable), `plein`
+ * (24 éléments, sections comprises), `section-refusee` (titre vide, position
+ * disparue). Aucun ne s'écrit sans que rien n'ait été enregistré.
+ */
+function retour(
+  id: number,
+  ctx: URLSearchParams,
+  etat?: "conflit" | "refus" | "plein" | "section-refusee",
+): string {
   const p = new URLSearchParams(ctx);
   if (etat) p.set(etat, "1");
   const qs = p.toString();
@@ -223,6 +235,9 @@ export async function addWidgetAction(fd: FormData): Promise<void> {
   }
   const dash = await dashboardAutorise(id, "add_widget");
   if (!dash) return;
+  // F37 — 24 éléments, sections comprises : la 25e carte est refusée, et le refus est
+  // dit. Sans cette garde, `serializeLayout` la coupait sans un mot.
+  if (layoutPlein(dash.layout)) return redirect(retour(id, ctx, "plein"));
   const widget: Widget = {
     kind: "v1",
     type: wtype,
@@ -231,6 +246,41 @@ export async function addWidgetAction(fd: FormData): Promise<void> {
     ...(eventName ? { eventName } : {}),
   };
   apres(id, ctx, await updateLayout(id, [...dash.layout, widget], revisionFromForm(fd)));
+}
+
+/**
+ * Position d'insertion d'une section : un entier de 0 (avant le premier élément) à
+ * `longueur` (en fin de tableau). Champ absent : en fin de tableau. Toute autre
+ * valeur est refusée — on ne devine pas où l'utilisateur voulait la poser.
+ */
+function positionDuFormulaire(brut: FormDataEntryValue | null, longueur: number): number | null {
+  if (brut === null || String(brut).trim() === "") return longueur;
+  const texte = String(brut).trim();
+  if (!/^[0-9]{1,3}$/.test(texte)) return null;
+  const position = Number(texte);
+  return position <= longueur ? position : null;
+}
+
+/**
+ * Ajoute un titre de section (F37, W-B12). Une section est un ÉLÉMENT du layout :
+ * même geste que l'ajout d'une carte (`add_widget`), donc même garde —
+ * `canMutateDashboard` : jamais un viewer non propriétaire, jamais une session
+ * démo (V9). La page ne rend le formulaire qu'à qui passe cette même garde ; l'action
+ * la refait, parce qu'un formulaire se rejoue. Elle compte dans `MAX_WIDGETS` : un
+ * tableau plein la refuse comme il refuse une 25e carte, et le dit.
+ */
+export async function addSectionAction(fd: FormData): Promise<void> {
+  const id = Number(fd.get("id"));
+  if (!Number.isInteger(id)) return;
+  const ctx = contexteFromForm(fd);
+  const dash = await dashboardAutorise(id, "add_widget");
+  if (!dash) return;
+  const section = sectionDuFormulaire(fd.get("title"), fd.get("question"));
+  const position = positionDuFormulaire(fd.get("position"), dash.layout.length);
+  if (!section.ok || position === null) return redirect(retour(id, ctx, "section-refusee"));
+  if (layoutPlein(dash.layout)) return redirect(retour(id, ctx, "plein"));
+  const layout: Widget[] = [...dash.layout.slice(0, position), section.value, ...dash.layout.slice(position)];
+  apres(id, ctx, await updateLayout(id, layout, revisionFromForm(fd)));
 }
 
 /**

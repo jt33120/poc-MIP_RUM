@@ -29,6 +29,10 @@ import { deleteDashboard, insertDashboard, updateDashboardMeta, updateLayout } f
 import { revalidatePath } from "@/lib/next-cache";
 import { cloneTemplateAction as f35CloneTemplateAction } from "@/app/dashboards/actions";
 import { redirect as f35Redirect } from "next/navigation";
+// F37 — sections de tableau de bord (imports du lot).
+import { addSectionAction as f37AddSectionAction } from "@/app/dashboards/actions";
+import { MAX_WIDGETS as F37_MAX_WIDGETS } from "@/lib/dashboards";
+import type { DashboardRow as F37DashboardRow } from "@/lib/queries-dashboards";
 
 const form = (entries: Record<string, string>) => {
   const fd = new FormData();
@@ -263,5 +267,125 @@ describe("F35 — cloner un modèle de tableau de bord", () => {
       "/dashboards?creation=nom-vide",
     );
     expect(insertDashboard).not.toHaveBeenCalled();
+  });
+});
+
+// F37 (W-B12) — « Ajouter une section ». La garde n'est pas un mock complaisant :
+// `getWritableDashboard` y rejoue la VRAIE décision d'écriture
+// (`canDashboardAction(…, "add_widget")`, soit `canMutateDashboard`) sur un tableau
+// réel. Une section compte dans MAX_WIDGETS : un tableau plein la refuse comme une
+// 25e carte, et le dit.
+describe("F37 — ajouter une section", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getWritableDashboard).mockReset();
+  });
+
+  /** Tableau de l'app A, propriété du compte 7 : deux cartes, révision 5. */
+  const TABLEAU_F37: F37DashboardRow = {
+    ...TABLEAU,
+    owner_id: "7",
+    layout: [
+      { kind: "v1", type: "traffic", title: "Trafic" },
+      { kind: "v1", type: "top_errors", title: "Erreurs principales" },
+    ],
+  };
+  const PROPRIETAIRE_F37 = { email: "a@example.test", role: "viewer" as const, apps: ["app-a"], accountId: "7" };
+
+  /** `getWritableDashboard` rejoue la garde RÉELLE de `lib/dashboard-access` sur `tableau`. */
+  async function gardeReelleF37(tableau: F37DashboardRow): Promise<void> {
+    const reel = await vi.importActual<typeof import("@/lib/dashboard-access")>("@/lib/dashboard-access");
+    vi.mocked(getWritableDashboard).mockImplementation(async (_id, principal, action) =>
+      reel.canDashboardAction(principal, tableau, action ?? "rename") ? tableau : null,
+    );
+  }
+
+  /**
+   * Destination d'une action, ou `null` : aucune redirection. Même lecture que le
+   * helper F35 : l'URL est dans le `digest` de l'erreur NEXT_REDIRECT, ou dans le
+   * dernier appel du mock quand il s'applique au module de l'action.
+   */
+  async function destinationF37(action: (fd: FormData) => Promise<void>, fd: FormData): Promise<string | null> {
+    vi.mocked(f35Redirect).mockClear();
+    try {
+      await action(fd);
+    } catch (e) {
+      const digest = (e as { digest?: unknown }).digest;
+      if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) return digest.split(";")[2] ?? null;
+      throw e;
+    }
+    const appels = vi.mocked(f35Redirect).mock.calls;
+    return appels.length ? String(appels[appels.length - 1][0]) : null;
+  }
+
+  it("un viewer non propriétaire et une session démo : rien n'est écrit", async () => {
+    await gardeReelleF37(TABLEAU_F37);
+    const refuses = [
+      { email: "b@example.test", role: "viewer" as const, apps: ["app-a"], accountId: "9" },
+      { email: "demo@mip-rum.local", role: "viewer" as const, apps: ["app-a"], demo: true, accountId: null },
+    ];
+    for (const principal of refuses) {
+      vi.mocked(dashboardPrincipal).mockResolvedValue(principal);
+      await appeler(f37AddSectionAction, form({ id: "44", title: "Où ?", position: "0", revision: "5" }));
+    }
+    expect(updateLayout).not.toHaveBeenCalled();
+    // La garde demandée est celle de l'ajout d'une carte — celle qui conditionne aussi le formulaire.
+    expect(vi.mocked(getWritableDashboard).mock.calls.map((appel) => appel[2])).toEqual(["add_widget", "add_widget"]);
+  });
+
+  it("le propriétaire pose la section à la position choisie, en citant sa révision", async () => {
+    await gardeReelleF37(TABLEAU_F37);
+    vi.mocked(dashboardPrincipal).mockResolvedValue(PROPRIETAIRE_F37);
+    vi.mocked(updateLayout).mockResolvedValue({ kind: "ok", revision: "6" });
+
+    await appeler(
+      f37AddSectionAction,
+      form({ id: "44", title: " Où ? ", question: "Où les pages sont-elles lentes ?", position: "1", revision: "5" }),
+    );
+    // Sans position : en fin de tableau.
+    await appeler(f37AddSectionAction, form({ id: "44", title: "Qui ?", revision: "5" }));
+
+    const [[, avant], [, fin]] = vi.mocked(updateLayout).mock.calls;
+    expect(avant).toEqual([
+      TABLEAU_F37.layout[0],
+      { kind: "section", title: "Où ?", question: "Où les pages sont-elles lentes ?" },
+      TABLEAU_F37.layout[1],
+    ]);
+    expect(fin).toEqual([...TABLEAU_F37.layout, { kind: "section", title: "Qui ?", question: "" }]);
+    expect(vi.mocked(updateLayout).mock.calls.map((appel) => appel[2])).toEqual(["5", "5"]);
+    expect(revalidatePath).toHaveBeenCalledWith("/dashboards/44");
+  });
+
+  it("titre vide (des espaces passent `required`) ou position disparue : refus dit, rien d'écrit", async () => {
+    await gardeReelleF37(TABLEAU_F37);
+    vi.mocked(dashboardPrincipal).mockResolvedValue(PROPRIETAIRE_F37);
+
+    const vide = await destinationF37(
+      f37AddSectionAction,
+      form({ id: "44", title: "   ", position: "0", revision: "5", ctx: "period=7d&tri=volume" }),
+    );
+    const horsTableau = await destinationF37(f37AddSectionAction, form({ id: "44", title: "Où ?", position: "3", revision: "5" }));
+
+    expect(updateLayout).not.toHaveBeenCalled();
+    // Seuls les paramètres du contrat voyagent avec le refus.
+    expect([vide, horsTableau]).toEqual(["/dashboards/44?period=7d&section-refusee=1", "/dashboards/44?section-refusee=1"]);
+  });
+
+  it("24 éléments, sections comprises : la section est refusée comme une 25e carte, et le refus est dit", async () => {
+    const plein: F37DashboardRow = {
+      ...TABLEAU_F37,
+      layout: [
+        { kind: "section", title: "Seuils", question: "" },
+        ...Array.from({ length: F37_MAX_WIDGETS - 1 }, () => ({ kind: "v1" as const, type: "traffic" as const, title: "Trafic" })),
+      ],
+    };
+    await gardeReelleF37(plein);
+    vi.mocked(dashboardPrincipal).mockResolvedValue(PROPRIETAIRE_F37);
+
+    const section = await destinationF37(f37AddSectionAction, form({ id: "44", title: "Où ?", revision: "5" }));
+    const carte = await destinationF37(addWidgetAction, form({ id: "44", type: "traffic", revision: "5" }));
+
+    expect(updateLayout).not.toHaveBeenCalled();
+    expect([section, carte]).toEqual(["/dashboards/44?plein=1", "/dashboards/44?plein=1"]);
   });
 });
