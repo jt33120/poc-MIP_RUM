@@ -19,8 +19,9 @@
 # des centaines de mégaoctets dont le backend n'a aucun usage. La seule
 # dépendance runtime est `pg`. On l'installe depuis le manifeste du noyau, ce
 # qui en fige la version (8.21.0), et on recompose l'arborescence à la main.
-# (Pas depuis celui de @mip/db : il déclare `@mip/backend: workspace:*`, un
-# protocole que npm ne connaît pas.)
+# Le manifeste du noyau déclare aussi `@mip/service-kit: workspace:*`, un
+# protocole que npm ne connaît pas : ces entrées-là sont retirées avant
+# `npm install` — le paquet correspondant est COPIÉ plus bas, comme les autres.
 #
 # Contexte de build = RACINE du dépôt (Railway le fait par défaut).
 FROM node:22-alpine
@@ -30,7 +31,8 @@ WORKDIR /app
 # 1) La seule dépendance runtime. Installée d'abord : cette couche ne change
 #    qu'à un changement de version de pg, donc elle reste en cache.
 COPY packages/backend/package.json ./package.json
-RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
+RUN node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const k of Object.keys(p.dependencies||{}))if(String(p.dependencies[k]).startsWith('workspace:'))delete p.dependencies[k];fs.writeFileSync('package.json',JSON.stringify(p))" \
+ && npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 # 2) Les paquets, placés là où Node résout leurs noms (`@mip/backend/...`,
 #    `@mip/db/...`) — exactement comme en développement, où pnpm pose les mêmes
@@ -49,6 +51,10 @@ COPY packages/backend/shared       ./node_modules/@mip/backend/shared
 # les mois —, elle est déposée juste en dessous. `lib/geoip-db.mjs` la cherche
 # en `../data`, d'où ce chemin.
 COPY packages/backend/data         ./node_modules/@mip/backend/data
+#    @mip/service-kit : le journal (et la décision TLS) que le noyau réexporte.
+#    Zéro dépendance : ses seuls fichiers suffisent.
+COPY packages/service-kit/package.json ./node_modules/@mip/service-kit/package.json
+COPY packages/service-kit/*.mjs        ./node_modules/@mip/service-kit/
 #    @mip/db : le migrateur et le SQL qu'il lit À CÔTÉ DE LUI (`sql/`).
 COPY packages/db/package.json      ./node_modules/@mip/db/package.json
 COPY packages/db/migrate.mjs       ./node_modules/@mip/db/migrate.mjs

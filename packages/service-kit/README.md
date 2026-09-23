@@ -129,6 +129,8 @@ startService({
 
 ## Qui l'utilise
 
+- `@mip/backend/shared/log.mjs` **réexporte** `createLogger` et `LOG_LEVELS` du kit : tous les services, le noyau, le migrateur et la console écrivent déjà avec ce journal. Rien n'a changé pour eux, sinon ce qu'il ajoute (version, réplique, contexte, pile complète) et ce qu'il retire (adresses IP, e-mails).
+- `@mip/backend/lib/serveur.mjs` **réexporte** `optionsSsl` : une seule décision TLS pour tout le dépôt.
 - Aucun service n'est encore câblé sur `startService`, `installLifecycle`, `createPool` ou `startLoop` : c'est la phase suivante du plan (P1, « scheduler sur le kit », puis chaque service).
 
 ## Tests

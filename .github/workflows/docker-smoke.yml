@@ -20,6 +20,7 @@ on:
       - "packages/backend/**"
       - "packages/db/**"
       - "packages/mcp-tools/**"
+      - "packages/service-kit/**"
       - "services/**"
       - ".github/workflows/docker-smoke.yml"
   push:
@@ -29,6 +30,7 @@ on:
       - "packages/backend/**"
       - "packages/db/**"
       - "packages/mcp-tools/**"
+      - "packages/service-kit/**"
       - "services/**"
   workflow_dispatch:
 

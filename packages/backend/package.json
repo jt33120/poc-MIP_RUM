@@ -10,6 +10,7 @@
     "./shared/*": "./shared/*"
   },
   "dependencies": {
+    "@mip/service-kit": "workspace:*",
     "pg": "8.21.0"
   }
 }

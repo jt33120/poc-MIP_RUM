@@ -6,6 +6,7 @@ import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPool, describeTarget, optionsSsl, ping } from "../../packages/service-kit/pg.mjs";
 import { createMetrics } from "../../packages/service-kit/metrics.mjs";
+import { optionsSsl as optionsSslDuNoyau } from "../../packages/backend/lib/serveur.mjs";
 
 /** Un faux module `pg` : un Pool qui note sa configuration et ses requêtes. */
 function fauxPg() {
@@ -139,7 +140,8 @@ describe("service-kit/pg — ping", () => {
 });
 
 describe("service-kit/pg — TLS et cible", () => {
-  it("optionsSsl : TLS vérifié hors réseau privé, jamais désactivé", () => {
+  it("optionsSsl : une seule décision, que le noyau réexporte", () => {
+    expect(optionsSslDuNoyau).toBe(optionsSsl);
     expect(optionsSsl("postgres://u:p@db:5432/mip")).toBeUndefined();
     expect(optionsSsl("postgres://u:p@ep-x.neon.tech/neondb")).toEqual({ rejectUnauthorized: true });
     expect(optionsSsl("pas une url")).toEqual({ rejectUnauthorized: true });

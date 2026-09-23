@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createLogger, LOG_LEVELS, setLogContextProvider } from "../../packages/service-kit/log.mjs";
 import { currentContext, withContext } from "../../packages/service-kit/context.mjs";
+import * as relais from "../../packages/backend/shared/log.mjs";
 
 /** Un logger qui écrit dans des tableaux plutôt que sur la console. */
 function capturer(options: Record<string, unknown> = {}) {
@@ -163,5 +164,12 @@ describe("service-kit/log — contexte (request_id, run_id)", () => {
     const { log, lignes } = capturer();
     log.child({ app_id: "demo" }).child({ job: "tick" }).warn("x", { n: 1 });
     expect(lignes()[0]).toMatchObject({ app_id: "demo", job: "tick", n: 1, level: "warn" });
+  });
+});
+
+describe("@mip/backend/shared/log.mjs — relais du kit", () => {
+  it("réexporte le même logger : un seul endroit décide de l'expurgation", () => {
+    expect(relais.createLogger).toBe(createLogger);
+    expect(relais.LOG_LEVELS).toBe(LOG_LEVELS);
   });
 });

@@ -6,6 +6,7 @@
 // chaque déploiement laisse des connexions Postgres orphelines — et sur Neon
 // les connexions sont une ressource comptée, pas un détail.
 import http from "node:http";
+import { optionsSsl } from "@mip/service-kit/pg.mjs";
 
 /**
  * @param {(req, res) => Promise<void>} handler
@@ -42,50 +43,14 @@ export function demarrerServeur(handler, opts) {
 }
 
 /**
- * Faut-il chiffrer la connexion Postgres, et comment ?
- *
- * SÛR PAR DÉFAUT, mais pas au point de casser un déploiement auto-hébergé.
- * L'heuristique « TLS sauf si l'hôte est localhost » ne suffit pas : en
- * docker-compose l'hôte s'appelle `db`, et exiger TLS d'un Postgres de
- * conteneur donne « The server does not support SSL connections » — c'est
- * exactement ce qui a cassé le smoke-test du conteneur.
- *
- * L'ordre de décision :
- *   1. `sslmode` dans l'URL, ou PGSSLMODE : c'est le réglage standard, il fait
- *      autorité. `require`/`verify-ca`/`verify-full` chiffrent ; `disable`,
- *      `allow` et `prefer` laissent faire le pilote.
- *   2. Sinon, chiffrer SAUF si l'hôte ne peut pas être public : loopback, ou
- *      un nom SANS POINT. Un nom sans point n'est jamais un domaine public —
- *      c'est un service de compose, de Kubernetes, ou un alias /etc/hosts.
- *      La règle ne peut donc pas déchiffrer une connexion vers l'extérieur.
- *
- * Ne JAMAIS renvoyer `rejectUnauthorized: false` : ça rendrait une
- * interception silencieuse.
- *
- * @returns {undefined | {rejectUnauthorized: true}}
+ * Faut-il chiffrer la connexion Postgres, et comment ? La décision (sûre par
+ * défaut, jamais `rejectUnauthorized: false`) vit dans `@mip/service-kit/pg.mjs`
+ * avec sa justification ; ce module la RÉEXPORTE pour ses appelants actuels
+ * (`creerPool` ci-dessous, la console via `lib/db.ts`, les tests). Une seule
+ * décision TLS pour tout le dépôt : deux copies d'une règle de sécurité
+ * finissent toujours par diverger.
  */
-export function optionsSsl(connectionString) {
-  let hote = "";
-  let modeUrl = null;
-  try {
-    const u = new URL(connectionString);
-    hote = u.hostname;
-    modeUrl = u.searchParams.get("sslmode");
-  } catch {
-    // Chaîne non parsable : on ne devine pas, on chiffre.
-    return { rejectUnauthorized: true };
-  }
-
-  const mode = modeUrl ?? process.env.PGSSLMODE ?? null;
-  if (mode) {
-    return ["require", "verify-ca", "verify-full"].includes(mode)
-      ? { rejectUnauthorized: true }
-      : undefined;
-  }
-
-  const prive = hote === "localhost" || hote === "127.0.0.1" || hote === "::1" || !hote.includes(".");
-  return prive ? undefined : { rejectUnauthorized: true };
-}
+export { optionsSsl };
 
 /**
  * Pool Postgres d'un service backend. Le certificat Neon chaîne à une autorité
