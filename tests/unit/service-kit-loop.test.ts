@@ -188,6 +188,38 @@ describe("service-kit/loop — jitter et validation", () => {
     }
   });
 
+  // Le scheduler vise une GRILLE (:00, :05… ; 03:17 UTC), pas un intervalle :
+  // le délai est recalculé à chaque armement, sans jitter.
+  it("nextDelay : le délai est recalculé à chaque armement et remplace intervalle et jitter", async () => {
+    const { log } = journal();
+    const espion = vi.spyOn(globalThis, "setTimeout");
+    try {
+      const demandes = [30, 10];
+      let appels = 0;
+      let tours = 0;
+      const boucle = startLoop({
+        name: "grille",
+        nextDelay: () => demandes[Math.min(appels++, demandes.length - 1)],
+        jitter: 0.5,
+        random: () => 0.999,
+        log,
+        run: () => void (tours += 1),
+      });
+      expect(Number(espion.mock.calls.at(-1)?.[1])).toBe(30); // ni 30 × 1,5, ni intervalle
+      await vi.waitFor(() => expect(tours).toBeGreaterThanOrEqual(2), { timeout: 3000 });
+      await boucle.stop();
+      expect(appels).toBeGreaterThanOrEqual(2);
+    } finally {
+      espion.mockRestore();
+    }
+  });
+
+  it("nextDelay : refuse une valeur non finie plutôt que d'armer une boucle serrée", () => {
+    const { log } = journal();
+    expect(() => startLoop({ name: "nan", nextDelay: () => Number.NaN, log, run: () => {} })).toThrow(RangeError);
+    expect(() => startLoop({ name: "pas-fn", nextDelay: 5 as any, log, run: () => {} })).toThrow(TypeError);
+  });
+
   it("refuse un intervalle nul, un jitter hors [0,1), un run manquant", () => {
     const { log } = journal();
     expect(() => startLoop({ name: "x", intervalMs: 0, run: () => {}, log })).toThrow(RangeError);
