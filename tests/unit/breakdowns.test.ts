@@ -17,6 +17,9 @@ import {
 import { ERRORS_BREAKDOWN_DATASETS, VITALS_BREAKDOWN_DATASETS } from "../../apps/console/lib/queries-breakdowns";
 import type { DimensionSchema } from "../../apps/console/lib/query-compiler";
 import { parseAnalyticsQuery, type AnalyticsQuery } from "../../apps/console/lib/query-contract";
+import { sessionsDeLaRouteHref } from "../../apps/console/lib/breakdowns";
+import { parseSessionSearch } from "../../apps/console/lib/sessions-search";
+import { checkSurface, surfaceFor } from "../../apps/console/lib/surfaces";
 
 const NOW = Date.parse("2026-09-17T12:00:00.000Z");
 
@@ -192,5 +195,27 @@ describe("libellés", () => {
     expect(texte).toContain("Navigateur");
     expect(texte).toContain("Inconnu");
     expect(texte).toContain((1234).toLocaleString("fr-FR"));
+  });
+});
+
+describe("les sessions d'une route (hero des Actions, panneau route)", () => {
+  const sessions = surfaceFor("/sessions");
+  const lue = (href: string) => requete(new URL(href, "https://x").searchParams.toString());
+
+  it("ouvrent la recherche EXACTE par route de /sessions, plage et population gardées", () => {
+    const href = sessionsDeLaRouteHref(requete("period=7d&device=mobile"), "/panier");
+    expect(href).toBe("/sessions?period=7d&device=mobile&qf=route&q=%2Fpanier");
+    const params = new URL(href, "https://x").searchParams;
+    // La recherche que l'écran applique : « Sessions ayant vu la route « /panier » ».
+    expect(parseSessionSearch(params.get("qf"), params.get("q"))).toEqual({ field: "route", value: "/panier" });
+    // Et l'écran l'accepte : aucune condition de population qu'il ne sache appliquer.
+    expect(sessions && checkSurface(lue(href), sessions, V75).ok).toBe(true);
+  });
+
+  it("jamais `route=`, que /sessions refuse, ni le repli d'un drill-down, qui mène à /pages", () => {
+    // Ce que construisaient le panneau route (F17) et le hero des Actions (F24).
+    expect(sessions && checkSurface(requete("route=%2Fpanier"), sessions, V75).ok).toBe(false);
+    expect(breakdownDrillHref("/sessions", requete(), "route", "/panier", V75)).toBe("/pages?route=%2Fpanier");
+    expect(new URL(sessionsDeLaRouteHref(requete(), "/panier"), "https://x").searchParams.has("route")).toBe(false);
   });
 });

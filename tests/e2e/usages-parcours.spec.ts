@@ -146,7 +146,14 @@ test.describe("F50 — Parcours", () => {
       // Aucun pourcentage nulle part dans la table.
       expect(await table.innerText(), id).not.toMatch(/\d+(,\d+)?\s?%/);
     }
-    await expect(page.locator("#paths-entrees")).toContainText("/f50-panier");
+    // Le semis (en tête du fichier) : les dix sessions COMMENCENT par « / » — c'est
+    // l'unique page d'entrée ; « /f50-panier » n'est la première route d'aucune. Elles
+    // finissent sur « /f50-panier » (6) ou « /f50-paiement » (4).
+    const entrees = page.locator("#paths-entrees tbody tr");
+    await expect(entrees).toHaveCount(1);
+    await expect(entrees.getByRole("link", { name: "/", exact: true })).toBeVisible();
+    await expect(entrees.getByRole("cell").first()).toHaveText("10");
+    await expect(page.locator("#paths-sorties tbody tr")).toHaveCount(2);
     await expect(page.locator("#paths-sorties")).toContainText("/f50-paiement");
     // Les tuiles disent la route et son compte, sans part.
     const tuiles = page.getByTestId("kpi-libelle");

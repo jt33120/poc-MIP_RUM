@@ -223,8 +223,13 @@ test("liste puis détail : 38 sur le même périmètre, inconnu jamais affiché 
   // PANNEAU du groupe (`panel=error:`) plutôt que sa page : on qualifie sans quitter
   // la liste, et « Ouvrir en page » est dans l'en-tête du panneau.
   await expect(ligne.getByRole("link")).toHaveCount(1);
-  const href = await ligne.getByRole("link").getAttribute("href");
-  expect(href).toMatch(new RegExp(`^/errors\\?app=${A}&device=desktop&panel=error%3Ap51fp001$`));
+  // Lu paramètre par paramètre : l'écran y écrit aussi ses réglages de vue (l'onglet
+  // de découpage par défaut, `split=route`), qui ne touchent ni la population ni le groupe.
+  const cible = new URL((await ligne.getByRole("link").getAttribute("href"))!, CONSOLE);
+  expect(cible.pathname).toBe("/errors");
+  expect(cible.searchParams.get("app")).toBe(A);
+  expect(cible.searchParams.get("device")).toBe("desktop");
+  expect(cible.searchParams.get("panel")).toBe("error:p51fp001");
 
   // Tous appareils : l'erreur backend sans session garde des personnes INCONNUES.
   await page.goto(`${CONSOLE}/errors?app=${A}&period=24h`);

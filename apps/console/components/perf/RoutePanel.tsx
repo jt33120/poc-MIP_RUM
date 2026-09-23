@@ -25,6 +25,7 @@ import { Figure } from "@/components/charts/Figure";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
+import { sessionsDeLaRouteHref } from "@/lib/breakdowns";
 import { LIBELLE_ETAT_ROBOT, regleAngleMort } from "@/lib/correlation";
 import { ecrireSerie } from "@/lib/correlation-serie";
 import { HISTO_BUCKETS } from "@/lib/distribution";
@@ -142,7 +143,9 @@ export async function RoutePanel({
   const ici = (extra: Record<string, string | null>) => hrefWithQuery("/pages", query, { ...reglages, ...extra });
   const fermerHref = ici({ panel: null });
   const pageHref = ici({ panel: null, route });
-  const sessionsHref = hrefWithQuery("/sessions", query, { route });
+  // Les sessions passées par la route : la recherche exacte de `/sessions`, pas
+  // `route=`, que l'écran refuse (une session ne porte pas de route).
+  const sessionsHref = sessionsDeLaRouteHref(query, route);
   const erreursHref = hrefWithQuery("/errors", query, { route });
 
   // Toutes les lectures du panneau, en parallèle, chacune derrière `lire()`.
