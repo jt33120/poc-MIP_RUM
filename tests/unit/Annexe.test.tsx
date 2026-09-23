@@ -1,17 +1,28 @@
-// P**.6 — L'annexe de la vitrine : le document de couverture tel quel (plan § 8.2,
-// PS11).
+// P**.6 — L'annexe de la vitrine : le document de couverture tel quel, puis les Specs
+// sous <Suspense> (plan § 8.2, PS11).
 //
 // Ce que ces tests tiennent, en rendu SSR réel (`renderToStaticMarkup`) :
 //   - une famille du document par `<details>`, toutes ses capacités, dans son ordre,
 //     avec leur verdict ÉCRIT et leur limite — rien de tapé, tout lu dans
 //     lib/couverture.ts ;
 //   - le Markdown des cellules est rendu (gras, code), jamais montré brut, et une
-//     balise dans une cellule reste du texte.
+//     balise dans une cellule reste du texte ;
+//   - Specs est derrière une frontière <Suspense> dont le repli est le squelette
+//     `aria-busy` : le composant Specs est remplacé ici par un composant qui reste
+//     suspendu, et c'est le squelette qui s'affiche à sa place.
 // Le comportement dans le navigateur (ouverture, clavier, largeurs) est la recette
 // e2e TP11 / TP6 (tests/e2e/presentation.spec.ts).
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { Annexe, DetailCouverture } from "@/components/presentation/Annexe";
+import { describe, expect, it, vi } from "vitest";
+
+// Specs lit la base : ici, il reste suspendu pour toujours, comme une lecture lente.
+vi.mock("@/components/presentation/Specs", () => ({
+  Specs: () => {
+    throw new Promise(() => {});
+  },
+}));
+
+import { Annexe, DetailCouverture, SpecsChargement } from "@/components/presentation/Annexe";
 import { CAPACITES, RELEVE, VERDICT_LABEL, parFamille, type Capacite } from "@/lib/couverture";
 import { lireEnLigne, texteDe } from "@/lib/markdown-en-ligne";
 
@@ -117,13 +128,26 @@ describe("PS11 — le document de couverture, tel quel", () => {
   });
 });
 
-describe("PS11 — la partie « Le détail »", () => {
-  it("chapeau daté du relevé, puis les familles", () => {
+describe("PS11 — les Specs derrière une frontière <Suspense>", () => {
+  it("la partie « Le détail » : chapeau daté du relevé, les familles, puis le squelette tant que Specs lit", () => {
     const html = renderToStaticMarkup(<Annexe />);
     expect(html).toContain('<section id="detail" aria-labelledby="detail-titre"');
     expect(texte(html)).toContain(
       `Le document de couverture du ${RELEVE}, tel quel : une ligne par capacité, son verdict et sa limite.`,
     );
-    expect(html).toContain('data-testid="annexe-couverture"');
+    const familles = html.indexOf('data-testid="annexe-couverture"');
+    const squelette = html.indexOf('data-testid="specs-chargement"');
+    expect(familles).toBeGreaterThan(-1);
+    expect(squelette).toBeGreaterThan(familles);
+    expect(texte(html)).toContain("Chargement du détail technique");
+  });
+
+  it("le squelette est annoncé occupé, et ne s'anime pas si le mouvement est réduit", () => {
+    const html = renderToStaticMarkup(<SpecsChargement />);
+    expect(html).toMatch(/^<div role="status" aria-busy="true" data-testid="specs-chargement"/);
+    expect(texte(html)).toBe("Chargement du détail technique");
+    const animes = html.match(/animate-pulse/g) ?? [];
+    expect(animes.length).toBeGreaterThan(0);
+    expect((html.match(/motion-reduce:animate-none/g) ?? []).length).toBe(animes.length);
   });
 });

@@ -1,12 +1,23 @@
 // Dernière partie de la vitrine — « Le détail, ligne par ligne » (plan § 8.2, PS11).
 //
-// LE DOCUMENT DE COUVERTURE, TEL QUEL : toutes ses capacités, une famille par
-// `<details>` (les titres « ### 4.x » du document), colonnes « # · Capacité ·
-// Verdict · Limite ». Tout vient de lib/couverture.ts, l'extraction versionnée du
-// document : aucune ligne, aucun verdict, aucun décompte n'est écrit ici, et un
-// nouveau relevé change l'annexe au build suivant. Les cellules sont du Markdown
-// brut ; lib/markdown-en-ligne.ts en lit le code, le gras et l'italique, et le
-// rendu ne produit que des éléments React — jamais de HTML injecté.
+// Deux blocs, dans cet ordre.
+//
+// 1. LE DOCUMENT DE COUVERTURE, TEL QUEL : toutes ses capacités, une famille par
+//    `<details>` (les titres « ### 4.x » du document), colonnes « # · Capacité ·
+//    Verdict · Limite ». Tout vient de lib/couverture.ts, l'extraction versionnée du
+//    document : aucune ligne, aucun verdict, aucun décompte n'est écrit ici, et un
+//    nouveau relevé change l'annexe au build suivant. Les cellules sont du Markdown
+//    brut ; lib/markdown-en-ligne.ts en lit le code, le gras et l'italique, et le
+//    rendu ne produit que des éléments React — jamais de HTML injecté.
+//
+// 2. LES SPECS (Specs.tsx), sous une frontière <Suspense> : c'est la seule partie
+//    de la page qui lit la base (l'état du planificateur). Le reste de la page part
+//    sans l'attendre — le pool `pg` n'a pas de délai de connexion : sans frontière,
+//    une base lente retiendrait toute la vitrine — et Specs suit dans la même
+//    réponse. Cette frontière ne rejoue pas le piège des écrans de la console (une
+//    Suspense au-dessus d'un écran casse la navigation par query, `router.replace`) :
+//    les onglets de Specs sont des radios CSS, sans URL ni script, et la vitrine ne
+//    navigue par query nulle part.
 //
 // La date du chapeau est CELLE DU RELEVÉ (lib/couverture.ts), jamais tapée ici.
 //
@@ -15,9 +26,10 @@
 // (identifiant et capacité, puis verdict, puis limite). La table garde des rôles
 // ARIA explicites : changer le `display` d'une table en efface la sémantique dans
 // certains navigateurs (WebKit), et les rôles la rétablissent.
-import { Fragment } from "react";
+import { Fragment, Suspense } from "react";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { Partie } from "@/components/presentation/Partie";
+import { Specs } from "@/components/presentation/Specs";
 import { RELEVE, VERDICT_LABEL, parFamille, type Capacite } from "@/lib/couverture";
 import { lireEnLigne, type Noeud } from "@/lib/markdown-en-ligne";
 
@@ -173,6 +185,35 @@ export function DetailCouverture({
   );
 }
 
+/**
+ * Ce qui tient la place des Specs pendant leur lecture en base (plan § 8.2, PS11) :
+ * annoncé comme occupé (`aria-busy`), à peu près de leur taille pour que la page ne
+ * saute pas quand elles arrivent. Sans animation si le mouvement est réduit.
+ */
+export function SpecsChargement() {
+  const bloc = "animate-pulse bg-panel2 motion-reduce:animate-none";
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      data-testid="specs-chargement"
+      className="mt-16 border-t border-line pt-12"
+    >
+      <p className="text-sm text-ink-soft">Chargement du détail technique</p>
+      <div aria-hidden="true" className="mt-5 space-y-3">
+        <div className={`h-7 w-72 max-w-full rounded-lg ${bloc}`} />
+        <div className={`h-4 w-full max-w-2xl rounded ${bloc}`} />
+        <div className="flex flex-wrap gap-2 pt-7">
+          {["w-36", "w-32", "w-40"].map((w) => (
+            <div key={w} className={`h-14 ${w} rounded-xl ${bloc}`} />
+          ))}
+        </div>
+        <div className={`h-64 w-full rounded-2xl ${bloc}`} />
+      </div>
+    </div>
+  );
+}
+
 export function Annexe() {
   return (
     <Partie
@@ -185,6 +226,9 @@ export function Annexe() {
       }
     >
       <DetailCouverture />
+      <Suspense fallback={<SpecsChargement />}>
+        <Specs />
+      </Suspense>
     </Partie>
   );
 }
