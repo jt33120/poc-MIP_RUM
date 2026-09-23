@@ -16,6 +16,9 @@
 // signal a été reçu, écrit et affiché — cela s'établit par une recette
 // d'opérateur, la seule à écrire cette colonne (cf. migration-v82).
 import { MOBILE_CAPABILITIES } from "ingest/shared/mobile-capabilities.mjs";
+import { conditionsOf, hrefWithQuery, intersectQuery, type AnalyticsQuery, type FilterCondition } from "./query-contract";
+import { annotationsDeploiements, dansLaFenetre, type AnnotationsDeploiements } from "./annotations";
+import type { ResolvedRange } from "./query-contract";
 
 export type MobileCapability = (typeof MOBILE_CAPABILITIES)[number];
 
@@ -393,4 +396,148 @@ export function ordreZonesMobile(parRelease: "disponible" | "indisponible" | "er
   return parRelease === "indisponible"
     ? [...tete, "demarrage-ecrans", "stabilite", ...fin]
     : [...tete, "stabilite", "demarrage-ecrans", ...fin];
+}
+
+// ───────────────────── F39 — dans le temps, et liens de la cohorte ─────────────────────
+
+/**
+ * B8 : la cohorte React Native, telle qu'un AUTRE écran du contrat la lit
+ * (`seg=v2:runtime:eq:react_native`). /mobile, lui, la construit dans sa lecture.
+ */
+export const CONDITION_REACT_NATIVE: FilterCondition = { dimension: "runtime", operator: "eq", value: "react_native" };
+
+/** Un lien vers la cohorte sur un autre écran, ou la raison pour laquelle il n'est pas rendu. */
+export type LienCohorte = { href: string; raison: null } | { href: null; raison: string };
+
+export const RAISON_LIEN_SANS_RUNTIME =
+  "runtime non collecté (migration v82) : l'écran cible ne peut pas isoler la cohorte React Native";
+export const RAISON_LIEN_SCHEMA_NON_LU = "schéma non lu : impossible de savoir si l'écran cible sait isoler la cohorte React Native";
+export const RAISON_LIEN_RELEASE =
+  "sous un filtre de release, ici lu sur la session : /sessions et l'Explorer ne filtrent pas la release d'une session, /pages la lit sur chaque page vue — retirez le filtre de release pour ouvrir la cohorte";
+
+/**
+ * Liens de /mobile vers la cohorte React Native sur /sessions (tuile W-M2, W-M12),
+ * /pages (W-M8) et l'Explorer (W-M10) — levés par B8. Un lien n'est rendu que si
+ * l'écran cible applique le filtre DE BOUT EN BOUT, périmètre compris : conditions
+ * de /mobile (appareil, système), `seg=v2:runtime:eq:react_native`, apps du contrat.
+ * Sinon, la raison est écrite à sa place — jamais un lien vers un refus.
+ *
+ * La release est l'exception : /mobile la lit sur la SESSION (fait exact d'un
+ * binaire mobile), /sessions et le jeu `sessions` de l'Explorer la refusent, /pages
+ * la lit sur chaque page vue. Sous un filtre de release, aucun lien n'est rendu.
+ *
+ * `runtimeLu` : `rum_session.runtime` présente (sonde de schéma) ; `null` = sonde en échec.
+ */
+export function lienCohorte(
+  query: AnalyticsQuery,
+  cible: "/sessions" | "/pages" | "/explorer",
+  runtimeLu: boolean | null,
+  extra: Record<string, string | null> = {},
+): LienCohorte {
+  if (runtimeLu === null) return { href: null, raison: RAISON_LIEN_SCHEMA_NON_LU };
+  if (!runtimeLu) return { href: null, raison: RAISON_LIEN_SANS_RUNTIME };
+  if (conditionsOf(query.filters).some((c) => c.dimension === "release")) return { href: null, raison: RAISON_LIEN_RELEASE };
+  return { href: hrefWithQuery(cible, intersectQuery(query, { conditions: [CONDITION_REACT_NATIVE] }), extra), raison: null };
+}
+
+/** Un seau de la série W-M10, tel que `mobileSerie` le rend (type structurel : ce module reste sans base). */
+export interface SeauMobileTemps {
+  bucket: string | Date;
+  sessions: number;
+  occurrences: number | null;
+}
+
+export interface PointsMobileTemps {
+  /** Un point par seau attendu, dans l'ordre de la grille. */
+  points: { t: string; sessions: number; occurrences: number | null }[];
+  /** Σ sessions commencées : la tuile W-M2. */
+  totalSessions: number;
+  /** Σ occurrences d'erreurs JS : la tuile W-M4 ; `null` si elles ne sont pas lues. */
+  totalOccurrences: number | null;
+  /** Lignes hors grille (ou en double), écartées et comptées — jamais redistribuées. */
+  ignores: number;
+}
+
+/**
+ * Pose les seaux de `mobileSerie` sur la grille du contrat (`bucketStarts`). Un seau
+ * attendu sans ligne vaut 0 session et, si les occurrences sont lues, 0 occurrence :
+ * ce sont des comptes (§ 3.10). Occurrences non lues : `null` partout, jamais 0.
+ */
+export function pointsMobileTemps(
+  starts: readonly number[],
+  seaux: readonly SeauMobileTemps[],
+  erreursLues: boolean,
+): PointsMobileTemps {
+  const attendus = new Set(starts);
+  const parInstant = new Map<number, SeauMobileTemps>();
+  let ignores = 0;
+  for (const seau of seaux) {
+    const ms = new Date(seau.bucket).getTime();
+    if (!attendus.has(ms) || parInstant.has(ms)) {
+      ignores++;
+      continue;
+    }
+    parInstant.set(ms, seau);
+  }
+  const points = starts.map((ms) => {
+    const seau = parInstant.get(ms);
+    return {
+      t: new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z"),
+      sessions: seau?.sessions ?? 0,
+      occurrences: erreursLues ? (seau?.occurrences ?? 0) : null,
+    };
+  });
+  return {
+    points,
+    totalSessions: points.reduce((s, p) => s + p.sessions, 0),
+    totalOccurrences: erreursLues ? points.reduce((s, p) => s + (p.occurrences ?? 0), 0) : null,
+    ignores,
+  };
+}
+
+// ───────────── Déploiements sur la série (revue de fin de vague 8, point 7) ─────────────
+//
+// Un marqueur de déploiement ne dit pas son runtime (`deploy_marker`, v32). Sur la
+// série React Native, seuls sont posés les marqueurs dont la version est une release
+// de la cohorte AFFICHÉE, dans leur app (`mobileDeploiements`) : un déploiement web
+// n'y a pas sa place, et son lien `release=` ouvrirait une cohorte vide. Ceux de la
+// fenêtre qu'on écarte sont COMPTÉS et dits sous la figure, jamais tus.
+
+/** Ce que la série lit d'un marqueur de `mobileDeploiements` (type structurel : ce module reste sans base). */
+export interface MarqueurCohorte {
+  ts: Date;
+  version: string | null;
+  app_id: string;
+  de_la_cohorte: boolean;
+}
+
+export type LectureDeploiementsCohorte =
+  | { disponible: true; marqueurs: readonly MarqueurCohorte[] }
+  | { disponible: false; raison: string };
+
+/** Ce que la légende dit des marqueurs de la fenêtre écartés (« Annotations non affichées : … »). */
+export function raisonDeploiementsEcartes(n: number): string {
+  return n === 1
+    ? "1 déploiement de la fenêtre : sa version n'est pas une release React Native de la cohorte affichée (déploiement web, ou version sans session mobile)"
+    : `${n} déploiements de la fenêtre : leur version n'est pas une release React Native de la cohorte affichée (déploiements web, ou versions sans session mobile)`;
+}
+
+/**
+ * Annotations de déploiement de la série « dans le temps » de /mobile. `lien(release,
+ * app)` ouvre /mobile filtré sur la release déployée, dans l'app du marqueur.
+ */
+export function annotationsDeploiementsCohorte(
+  lecture: LectureDeploiementsCohorte,
+  range: Pick<ResolvedRange, "from" | "to" | "preset">,
+  lien: (release: string, app: string) => string,
+): AnnotationsDeploiements {
+  if (!lecture.disponible) {
+    return { annotations: [], liste: [], indisponible: `déploiements non rattachables à la cohorte React Native (${lecture.raison})` };
+  }
+  const retenus = lecture.marqueurs.filter((m) => m.de_la_cohorte);
+  const posees = annotationsDeploiements(retenus, range, { lien: (release, _precedente, app) => lien(release, app ?? "") });
+  // Plage personnalisée (B1) : aucun marqueur n'est posé, la raison B1 suffit.
+  if (posees.indisponible) return posees;
+  const ecartes = lecture.marqueurs.filter((m) => !m.de_la_cohorte && dansLaFenetre(m.ts, range)).length;
+  return ecartes > 0 ? { ...posees, indisponible: raisonDeploiementsEcartes(ecartes) } : posees;
 }

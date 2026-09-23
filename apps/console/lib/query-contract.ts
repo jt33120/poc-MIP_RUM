@@ -45,6 +45,15 @@ export const DIMENSIONS = [
   "country_source",
   "source",
   "client",
+  // B8 : dimensions de LECTURE portées par la session, collectées bien avant
+  // d'être lisibles — `runtime` (v82), `browser_version` et `os_version` (v75),
+  // `net_type` (v53). Aucune n'a de paramètre d'URL dédié : elles passent par
+  // `seg` (`seg=v2:runtime:eq:react_native`), comme `country_source`, pour ne pas
+  // ajouter de paramètre de population au contrat (§ 3.1).
+  "runtime",
+  "browser_version",
+  "os_version",
+  "net_type",
 ] as const;
 export type Dimension = (typeof DIMENSIONS)[number];
 
@@ -66,6 +75,13 @@ export const DIMENSION_LABELS: Record<Dimension, string> = {
   country_source: "Provenance du pays",
   source: "Source de collecte",
   client: "Client",
+  // L'émetteur DÉCLARÉ (`react_native`, `browser`), jamais déduit de l'user-agent.
+  runtime: "Runtime",
+  browser_version: "Version du navigateur",
+  os_version: "Version du système",
+  // Une ESTIMATION du navigateur (`navigator.connection`, Chromium seulement),
+  // jamais l'opérateur : « estimé », comme le pays.
+  net_type: "Type de réseau estimé",
 };
 
 export const DEVICES = ["desktop", "mobile", "tablet"] as const;

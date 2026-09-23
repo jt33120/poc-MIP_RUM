@@ -42,7 +42,8 @@ function round1(v) {
  * Payload JSON identique à celui posté par check_alerts v2 via pg_net
  * (migration-v03.sql) — `text` lisible tel quel par un webhook Slack.
  * @param {{app_id: string, metric: string, route: string|null, value: number,
- *          threshold: number, window_minutes: number, comparator: string}} d
+ *          threshold: number, window_minutes: number, comparator: string,
+ *          mode?: string, message?: string|null}} d
  */
 export function buildPayload(d) {
   return {
@@ -53,8 +54,21 @@ export function buildPayload(d) {
     value: Number(round1(d.value)),
     threshold: d.threshold,
     window_minutes: d.window_minutes,
-    text: `[MIP RUM] ${d.metric} ${d.comparator} ${round1(d.value)} (seuil ${d.threshold}) — app ${d.app_id}${d.route ? `, route ${d.route}` : ""}`,
+    text: texteDeRegle(d),
   };
+}
+
+/**
+ * Texte d'une alerte de règle. B52 (migration-v86) : une règle de RELEASE n'a pas
+ * de seuil au sens de ce gabarit — `threshold` y est une hausse tolérée EN POUR
+ * CENT —, et « LCP > 2600.0 (seuil 20) » se lirait « LCP au-dessus de 20 ms ». Son
+ * texte est donc le message écrit par check_alerts, qui dit les deux releases
+ * comparées et porte la phrase du plan (« même fenêtre, sans normalisation de
+ * trafic : l'écart mêle le code et le contexte »). Les autres modes sont inchangés.
+ */
+function texteDeRegle(d) {
+  if (d.mode === "release" && d.message) return `[MIP RUM] ${d.message}`;
+  return `[MIP RUM] ${d.metric} ${d.comparator} ${round1(d.value)} (seuil ${d.threshold}) — app ${d.app_id}${d.route ? `, route ${d.route}` : ""}`;
 }
 
 /**
@@ -112,7 +126,7 @@ export function selectionSql(v73) {
        left join alert_config c on c.singleton`
     : "join alert_rule r on r.id = e.rule_id";
   return `select d.id, d.target, d.attempts, e.value, e.message, e.severity,
-                 r.app_id, r.metric, r.route, r.threshold, r.window_minutes, r.comparator,
+                 r.app_id, r.metric, r.route, r.threshold, r.window_minutes, r.comparator, r.mode,
                  ${v73 ? "n.payload" : "null::jsonb"} as notification
             from alert_delivery d
             join alert_event e on e.id = d.alert_event_id

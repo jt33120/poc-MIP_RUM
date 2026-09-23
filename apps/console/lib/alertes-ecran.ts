@@ -17,6 +17,7 @@ import { formater } from "./fmt-ids";
 import { metricLabel, type AlertDayRow, type AlertEventRow, type AlertFiringRow, type AlertRuleRow } from "./queries-v2";
 import type { PisteDeclenchements, Severite } from "../components/charts/FriseDeclenchements";
 import type { PointSerie } from "./series";
+import { PHRASE_FENETRE } from "../components/ReleaseCompare";
 
 /** Fenêtre fixe du hero (barres par jour et frise), en jours calendaires UTC. */
 export const JOURS_DECLENCHEMENTS = 30;
@@ -234,6 +235,12 @@ export function libelleDeRegle(r: Pick<AlertRuleRow, "metric" | "route">): strin
 export function reglageDeRegle(
   r: Pick<AlertRuleRow, "mode" | "comparator" | "threshold" | "sensitivity" | "window_minutes" | "severity" | "env">,
 ): string {
+  // B52 : une règle de release compare deux p75 ; son seuil est une hausse EN POUR
+  // CENT (décimales gardées : « +12,5 % » n'est pas « +13 % »), et la phrase du
+  // § 3.2 l'accompagne partout où elle s'affiche.
+  if (r.mode === "release") {
+    return `${ruleModeLabel(r.mode)} : p75 en hausse de +${r.threshold.toLocaleString("fr-FR")} % ou plus contre la release précédente, sur ${formater("count", r.window_minutes)} min · sévérité ${r.severity} · ${PHRASE_FENETRE}`;
+  }
   const declenche =
     r.mode === "baseline"
       ? `écart à l'habitude au-delà de ${formater("count", r.sensitivity)} sigma`

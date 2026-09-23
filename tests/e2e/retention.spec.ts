@@ -143,12 +143,27 @@ test("matrice : chaque case écrit « n / taille », la semaine en cours est hac
   // Courbe et comparaison par appareil : deux graphiques recharts.
   await page.locator("#retention-appareils").scrollIntoViewIfNeeded();
   await expect(page.locator(".recharts-wrapper")).toHaveCount(2);
+  // F54 (§ 3.9) : ce sont des images NOMMÉES, et chacune garde son alternative textuelle.
+  await expect(page.locator('#retention-courbe [role="img"]').first()).toHaveAttribute(
+    "aria-label",
+    /^Rétention pondérée par semaine depuis l'arrivée, de S\+0 à S\+2, fenêtre de 8 semaines UTC/,
+  );
+  await expect(page.locator('#retention-appareils [role="img"]').first()).toHaveAttribute(
+    "aria-label",
+    /^Rétention pondérée par appareil \(ordinateurs, mobiles, tablettes\)/,
+  );
+  for (const id of ["#retention-courbe", "#retention-appareils"]) {
+    await expect(page.locator(`${id} [data-testid="alternative"] tbody tr`).first(), id).toBeAttached();
+  }
 });
 
 test("par appareil : un lien par série ; sous device= la figure le dit au lieu de comparer", async ({ page }) => {
   await ouvrir(page, 1440, 900);
   const liens = page.getByTestId("retention-appareil-lien");
-  await expect(liens).toHaveCount(2);
+  // F53 (B31) : la lecture est sur le contrat, la tablette est lue — trois séries.
+  await expect(liens).toHaveCount(3);
+  await expect(liens.nth(2)).toContainText("Rétention des tablettes");
+  await expect(liens.nth(2)).toHaveAttribute("href", /device=tablet/);
   await liens.first().click();
   await page.waitForURL((u) => u.searchParams.get("device") === "desktop", { timeout: 15_000 });
   await expect(page.getByTestId("retention-deja-filtre")).toContainText("Déjà filtré sur ordinateurs");

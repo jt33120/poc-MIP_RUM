@@ -54,27 +54,60 @@ export const TOP_REFERENTS = 20;
 
 /**
  * Plafond de sessions lues par `acquisition` (lib/queries-acquisition.ts) : les
- * sessions retenues sont les PREMIÈRES par identifiant (`order by p.session_id`),
- * pas les plus récentes. Atteint, il est dit à côté du chiffre (S4).
+ * sessions retenues sont les PREMIÈRES par application puis par identifiant
+ * (`order by p.app_id, p.session_id`), pas les plus récentes : sur plusieurs apps,
+ * elles peuvent toutes venir d'une seule. Atteint, il est dit à côté du chiffre (S4).
  */
 export const PLAFOND_ACQUISITION = 20_000;
+
+/** Routes d'entrée gardées par la table croisée route × canal (§ 5.16.4, A4). */
+export const TOP_ENTREES = 10;
+
+/** Une route d'entrée : ses sessions par canal, zéros compris, et leur somme. */
+export interface EntreeParCanal {
+  route: string;
+  parCanal: Record<Channel, number>;
+  /** Somme des cinq cellules : les sessions entrées par cette route. */
+  total: number;
+}
 
 export interface AcquisitionReport {
   channels: ChannelCount[]; // ordre CHANNELS, comptes >= 0
   referrers: ReferrerCount[]; // top hôtes externes (hors interne/direct), tri desc
   total: number;
+  /**
+   * B31 : routes d'entrée croisées par canal, les `TOP_ENTREES` plus fréquentes
+   * (total décroissant, puis route). Vide si les entrées lues ne portent pas de route.
+   */
+  entrees: EntreeParCanal[];
+  /** Routes d'entrée DISTINCTES lues : au-delà de `entrees.length`, la table est tronquée (S4). */
+  routesEntree: number;
 }
+
+/** L'entrée d'une session : référent, URL et route de sa 1re vue sur la fenêtre. */
+export interface EntreeSession {
+  referrer: string | null;
+  url: string | null;
+  /** Absente chez un appelant qui ne la lit pas : l'entrée ne compte alors dans aucune ligne de la table croisée. */
+  route?: string | null;
+}
+
+const zeroParCanal = (): Record<Channel, number> =>
+  Object.fromEntries(CHANNELS.map((c) => [c, 0])) as Record<Channel, number>;
 
 /**
  * Agrège les entrées de session (referrer + url de la 1re page vue) en report
- * d'acquisition : répartition par canal + top hôtes référents externes.
+ * d'acquisition : répartition par canal, top hôtes référents externes et (B31)
+ * routes d'entrée croisées par canal.
  */
 export function acquisitionReport(
-  entries: { referrer: string | null; url: string | null }[],
+  entries: EntreeSession[],
   topReferrers = TOP_REFERENTS,
+  topEntrees = TOP_ENTREES,
 ): AcquisitionReport {
   const chan = new Map<Channel, number>(CHANNELS.map((c) => [c, 0]));
   const refs = new Map<string, { channel: Channel; sessions: number }>();
+  const routes = new Map<string, Record<Channel, number>>();
   for (const e of entries) {
     const c = classifyChannel(e.referrer, e.url);
     chan.set(c, (chan.get(c) ?? 0) + 1);
@@ -86,6 +119,11 @@ export function acquisitionReport(
         refs.set(host, r);
       }
     }
+    if (e.route) {
+      const ligne = routes.get(e.route) ?? zeroParCanal();
+      ligne[c]++;
+      routes.set(e.route, ligne);
+    }
   }
   return {
     channels: CHANNELS.map((channel) => ({ channel, sessions: chan.get(channel) ?? 0 })),
@@ -94,7 +132,44 @@ export function acquisitionReport(
       .sort((a, b) => b.sessions - a.sessions || (a.host < b.host ? -1 : 1))
       .slice(0, topReferrers),
     total: entries.length,
+    entrees: [...routes.entries()]
+      .map(([route, parCanal]) => ({ route, parCanal, total: CHANNELS.reduce((s, c) => s + parCanal[c], 0) }))
+      .sort((a, b) => b.total - a.total || (a.route < b.route ? -1 : a.route > b.route ? 1 : 0))
+      .slice(0, topEntrees),
+    routesEntree: routes.size,
   };
+}
+
+/** Un seau de la série « Canaux dans le temps » : sessions entrées par canal (B31, A6). */
+export interface PointCanaux {
+  /** Début du seau, ISO UTC (grille du contrat, `bucketStarts`). */
+  t: string;
+  canaux: Record<Channel, number>;
+}
+
+/**
+ * Série par seau, zéros compris : chaque entrée de session tombe dans le seau de
+ * sa 1re vue (`t`, début du seau en ms). La grille est celle du contrat
+ * (`debuts`) : un seau sans session vaut 0 session, un vrai zéro puisque la
+ * lecture couvre toute la fenêtre. Une entrée hors grille (seau non aligné) n'est
+ * rangée dans aucun seau voisin : `horsGrille` la compte.
+ */
+export function serieCanaux(
+  entries: (Pick<EntreeSession, "referrer" | "url"> & { t: number })[],
+  debuts: readonly number[],
+): { points: PointCanaux[]; horsGrille: number } {
+  const index = new Map(debuts.map((t, i) => [t, i]));
+  const points: PointCanaux[] = debuts.map((t) => ({ t: new Date(t).toISOString(), canaux: zeroParCanal() }));
+  let horsGrille = 0;
+  for (const e of entries) {
+    const i = index.get(e.t);
+    if (i === undefined) {
+      horsGrille++;
+      continue;
+    }
+    points[i].canaux[classifyChannel(e.referrer, e.url)]++;
+  }
+  return { points, horsGrille };
 }
 
 // ═══════════════════════ Lecture de l'écran (F48, § 5.16) ═══════════════════════

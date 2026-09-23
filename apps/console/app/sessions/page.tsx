@@ -414,72 +414,74 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
       )}
 
       {/* Z2 — rangée de KPI : cinq tuiles, UNE population chacune, nommée. */}
-      <section aria-label="Chiffres clés des sessions" className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" data-testid="kpi-sessions">
-        {engagementLu.ok ? (
+      <SectionErreur titre="Chiffres clés">
+        <section aria-label="Chiffres clés des sessions" className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" data-testid="kpi-sessions">
+          {engagementLu.ok ? (
+            <KpiTile
+              label="Sessions commencées"
+              valeur={commencees}
+              format="count"
+              sensMeilleur="neutre"
+              serie={tendance.ok ? sessionsParSeau : undefined}
+              couverture={{ n: commencees, unite: "sessions commencées", faibleSous: FAIBLE_SOUS }}
+              lecture={commencees === 0 ? `Aucune session commencée sur ${ecran.label}.` : undefined}
+              href={explorerHref(query, PLAN_SESSIONS_COMMENCEES)}
+              {...comparer(engagementPrec, precEngagement?.sessions_started ?? null, couvSessions)}
+            />
+          ) : (
+            <TuileEnEchec titre="Sessions commencées" />
+          )}
+          {visiteursLu.ok && visiteurs ? (
+            <KpiTile
+              label="Visiteurs distincts (identifiant aléatoire)"
+              valeur={visiteurs.valeur}
+              raisonNull={visiteurs.raisonNull}
+              format="count"
+              sensMeilleur="neutre"
+              lecture="identifiant aléatoire seulement ; ne s'additionne pas aux sessions."
+              href={explorerHref(query, PLAN_VISITEURS_DISTINCTS)}
+              {...comparer(visiteursPrec, visiteursPrec.ok ? visiteursPrec.data : null, couvVisiteurs)}
+            />
+          ) : (
+            <TuileEnEchec titre="Visiteurs distincts" />
+          )}
+          {tendance.ok ? (
+            <KpiTile
+              label="Sessions sans identifiant"
+              valeur={sansIdentifiant}
+              format="count"
+              sensMeilleur="neutre"
+              lecture="hors du compte des visiteurs : ni nouvelles ni revenantes."
+            />
+          ) : (
+            <TuileEnEchec titre="Sessions sans identifiant" />
+          )}
+          {erreursLu.ok ? (
+            <KpiTile
+              label="Occurrences d'erreur par session commencée"
+              valeur={taux.valeur}
+              raisonNull={taux.raisonNull}
+              format="ratio"
+              sensMeilleur="bas"
+              couverture={{ n: erreurs?.sessions ?? null, unite: "sessions commencées", faibleSous: FAIBLE_SOUS }}
+              lecture={lectureOccurrences(erreurs, engagement?.still_active ?? null)}
+              href={contextHref("/errors", url)}
+              {...comparer(erreursPrec, tauxPrec, [...couvTaux, ...couvErreurs])}
+            />
+          ) : (
+            <TuileEnEchec titre="Occurrences d'erreur par session commencée" />
+          )}
+          {/* B30 manque : la tuile n'affiche AUCUN nombre. Ce n'est pas « Non collecté » :
+              les événements `frustration.*` existent, c'est leur lecture par session qui manque. */}
           <KpiTile
-            label="Sessions commencées"
-            valeur={commencees}
-            format="count"
-            sensMeilleur="neutre"
-            serie={tendance.ok ? sessionsParSeau : undefined}
-            couverture={{ n: commencees, unite: "sessions commencées", faibleSous: FAIBLE_SOUS }}
-            lecture={commencees === 0 ? `Aucune session commencée sur ${ecran.label}.` : undefined}
-            href={explorerHref(query, PLAN_SESSIONS_COMMENCEES)}
-            {...comparer(engagementPrec, precEngagement?.sessions_started ?? null, couvSessions)}
+            label="Sessions avec frustration"
+            valeur={null}
+            raisonNull="lecture à créer (B30)"
+            format="pct"
+            href={contextHref("/ux", url)}
           />
-        ) : (
-          <TuileEnEchec titre="Sessions commencées" />
-        )}
-        {visiteursLu.ok && visiteurs ? (
-          <KpiTile
-            label="Visiteurs distincts (identifiant aléatoire)"
-            valeur={visiteurs.valeur}
-            raisonNull={visiteurs.raisonNull}
-            format="count"
-            sensMeilleur="neutre"
-            lecture="identifiant aléatoire seulement ; ne s'additionne pas aux sessions."
-            href={explorerHref(query, PLAN_VISITEURS_DISTINCTS)}
-            {...comparer(visiteursPrec, visiteursPrec.ok ? visiteursPrec.data : null, couvVisiteurs)}
-          />
-        ) : (
-          <TuileEnEchec titre="Visiteurs distincts" />
-        )}
-        {tendance.ok ? (
-          <KpiTile
-            label="Sessions sans identifiant"
-            valeur={sansIdentifiant}
-            format="count"
-            sensMeilleur="neutre"
-            lecture="hors du compte des visiteurs : ni nouvelles ni revenantes."
-          />
-        ) : (
-          <TuileEnEchec titre="Sessions sans identifiant" />
-        )}
-        {erreursLu.ok ? (
-          <KpiTile
-            label="Occurrences d'erreur par session commencée"
-            valeur={taux.valeur}
-            raisonNull={taux.raisonNull}
-            format="ratio"
-            sensMeilleur="bas"
-            couverture={{ n: erreurs?.sessions ?? null, unite: "sessions commencées", faibleSous: FAIBLE_SOUS }}
-            lecture={lectureOccurrences(erreurs, engagement?.still_active ?? null)}
-            href={contextHref("/errors", url)}
-            {...comparer(erreursPrec, tauxPrec, [...couvTaux, ...couvErreurs])}
-          />
-        ) : (
-          <TuileEnEchec titre="Occurrences d'erreur par session commencée" />
-        )}
-        {/* B30 manque : la tuile n'affiche AUCUN nombre. Ce n'est pas « Non collecté » :
-            les événements `frustration.*` existent, c'est leur lecture par session qui manque. */}
-        <KpiTile
-          label="Sessions avec frustration"
-          valeur={null}
-          raisonNull="lecture à créer (B30)"
-          format="pct"
-          href={contextHref("/ux", url)}
-        />
-      </section>
+        </section>
+      </SectionErreur>
 
       {(precIllisible || comparaison.mode === "release") && (
         <div role="note" data-testid="note-comparaison" className="mb-4 space-y-1 text-xs text-ink-soft">
@@ -503,36 +505,38 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
             <div className={`min-w-0 ${blocs.repartition ? "xl:col-span-8" : "xl:col-span-12"}`}>
               {/* Avant B30, le hero le dit, et rien d'autre : trier les 50 lignes de la
                   liste produirait un faux classement de la fenêtre (§ 5.11.6). */}
-              <Figure
-                titre="À regarder d'abord"
-                id="a-regarder-d-abord"
-                etat={"raison" in priorite ? { kind: "partiel", raison: priorite.raison } : undefined}
-                meta={
-                  "raison" in priorite ? undefined : (
-                    <>
-                      <span>{formater("count", priorite.lignes.length)} session(s) sur 10 au plus</span>
-                      <span>sessions actives (dernière activité dans la fenêtre)</span>
-                      <span>{ecran.label}</span>
-                    </>
-                  )
-                }
-                lecture={
-                  // Décrire l'ordre d'un classement absent le ferait croire rendu :
-                  // sans lecture, la figure ne dit que ce qui lui manque.
-                  "raison" in priorite ? undefined : (
-                    <>
-                      Ordre : occurrences d&apos;erreur, puis signaux de frustration, puis appels API en échec, puis
-                      dernière activité. <strong>Ce n&apos;est pas un tri de la liste</strong> : la liste reste
-                      chronologique, et ce classement porte sur la fenêtre entière, borné à dix lignes.
-                    </>
-                  )
-                }
-                alternative={"raison" in priorite ? undefined : alternativePriorite(priorite.lignes, ecran.label)}
-              >
-                {"raison" in priorite ? null : (
-                  <PrioriteSessions lignes={priorite.lignes} hrefs={priorite.hrefs} plage={ecran.label} />
-                )}
-              </Figure>
+              <SectionErreur titre="À regarder d'abord">
+                <Figure
+                  titre="À regarder d'abord"
+                  id="a-regarder-d-abord"
+                  etat={"raison" in priorite ? { kind: "partiel", raison: priorite.raison } : undefined}
+                  meta={
+                    "raison" in priorite ? undefined : (
+                      <>
+                        <span>{formater("count", priorite.lignes.length)} session(s) sur 10 au plus</span>
+                        <span>sessions actives (dernière activité dans la fenêtre)</span>
+                        <span>{ecran.label}</span>
+                      </>
+                    )
+                  }
+                  lecture={
+                    // Décrire l'ordre d'un classement absent le ferait croire rendu :
+                    // sans lecture, la figure ne dit que ce qui lui manque.
+                    "raison" in priorite ? undefined : (
+                      <>
+                        Ordre : occurrences d&apos;erreur, puis signaux de frustration, puis appels API en échec, puis
+                        dernière activité. <strong>Ce n&apos;est pas un tri de la liste</strong> : la liste reste
+                        chronologique, et ce classement porte sur la fenêtre entière, borné à dix lignes.
+                      </>
+                    )
+                  }
+                  alternative={"raison" in priorite ? undefined : alternativePriorite(priorite.lignes, ecran.label)}
+                >
+                  {"raison" in priorite ? null : (
+                    <PrioriteSessions lignes={priorite.lignes} hrefs={priorite.hrefs} plage={ecran.label} />
+                  )}
+                </Figure>
+              </SectionErreur>
             </div>
           )}
           {blocs.repartition && (

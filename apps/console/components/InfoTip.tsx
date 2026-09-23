@@ -15,7 +15,14 @@
 //     bas), là où aucune position de l'icône ne peut la faire sortir de l'écran ;
 //   · au-delà, `align` l'accroche au bord de l'icône (`start` : elle s'étend vers
 //     la droite ; `end` : vers la gauche) plutôt qu'au centre.
+//
+// ÉCHAP LA FERME (F69, WCAG 1.4.13). Ouverte au focus, elle restait ouverte tant
+// que le focus restait sur l'icône : rien ne la masquait sans quitter l'icône.
+// L'îlot `InfoTipEchap` pose `data-ferme` sur le groupe à l'appui d'Échap
+// (`group-data-[ferme]:!hidden`) et le retire quand le groupe n'est plus NI survolé
+// NI focalisé (le pointeur qui sort ne rouvre pas une bulle dont l'icône garde le focus).
 import { ICON_PATHS, Icon, type IconName } from "./icons";
+import { InfoTipEchap } from "./InfoTipEchap";
 
 const ALIGN = {
   center: "sm:left-1/2 sm:-translate-x-1/2",
@@ -51,10 +58,11 @@ export function InfoTip({
       </button>
       <span
         role="tooltip"
-        className={`pointer-events-none fixed inset-x-4 bottom-4 z-50 hidden max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-panel p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-ink-soft shadow-pop group-hover:block group-focus-within:block sm:absolute sm:inset-x-auto sm:w-72 ${pos} ${ALIGN[align]}`}
+        className={`pointer-events-none fixed inset-x-4 bottom-4 z-50 hidden max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-panel p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-ink-soft shadow-pop group-hover:block group-focus-within:block group-data-[ferme]:!hidden sm:absolute sm:inset-x-auto sm:w-72 ${pos} ${ALIGN[align]}`}
       >
         {children}
       </span>
+      <InfoTipEchap />
     </span>
   );
 }

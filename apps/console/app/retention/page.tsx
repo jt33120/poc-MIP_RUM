@@ -16,6 +16,10 @@
 //     lecture sans source que l'écran n'a pas à poser.
 //   - Laisser la période du haut active sans effet : la surface est en
 //     `range: "none"`, la fenêtre se choisit ici en semaines (F40).
+//   - Lire hors du périmètre, ou ignorer la tablette : depuis B31, la lecture lie les
+//     apps EFFECTIVES du principal et applique tous les filtres de session (tablette,
+//     « Inconnu ») ; le refus « une application à la fois » de F40 est levé (F53) et
+//     « Par appareil » compte aussi les tablettes.
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
@@ -28,6 +32,7 @@ import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import {
   cellulesDeCohorte,
   courbeRetention,
+  filtreAppareil,
   indexSemaine,
   lundiDeSemaine,
   type CohortRow,
@@ -38,7 +43,7 @@ import { formater } from "@/lib/fmt-ids";
 import { lire } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 import { retentionCohorts } from "@/lib/queries-cohorts";
-import { samplingSessionsHistorique } from "@/lib/queries-sessions";
+import { samplingSessions } from "@/lib/queries-sessions";
 import { hrefWithQuery } from "@/lib/query-contract";
 
 export const dynamic = "force-dynamic";
@@ -47,9 +52,11 @@ export const dynamic = "force-dynamic";
 const FENETRES = [4, 8, 12, 26] as const;
 const FENETRE_DEFAUT = 8;
 
+// B31 : la tablette est lue (lecture sur le contrat) ; trois séries, sous le plafond de cinq.
 const APPAREILS = [
   { cle: "desktop", libelle: "Ordinateurs" },
   { cle: "mobile", libelle: "Mobiles" },
+  { cle: "tablet", libelle: "Tablettes" },
 ] as const;
 
 // Lundi de la cohorte, lu en UTC : les semaines sont des semaines UTC, et un
@@ -89,7 +96,8 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const ecran = await pageFilters(sp, "/retention");
   if (!ecran.ok) return <FilterProblemNotice title="Rétention" problem={ecran.problem} />;
-  const f = ecran.filters;
+  // Façade P4/P5 : la tablette y figure (l'appareil filtré se lit dans `device`).
+  const f = ecran.deviceFilters;
 
   // `weeks` est un réglage de l'écran (§ 3.1) : une valeur hors des fenêtres
   // proposées est ignorée ET signalée, jamais appliquée à moitié.
@@ -103,16 +111,18 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   /** La fenêtre retenue, telle qu'un lien la reporte (le défaut ne s'écrit pas). */
   const weeksParam = weeks === FENETRE_DEFAUT ? null : String(weeks);
   const semaineCourante = indexSemaine(Date.now());
-  const appareilFiltre = APPAREILS.find((a) => a.cle === f.device) ?? null;
+  // Toute condition d'appareil, `device=` OU segment (`seg=v2:device:is_null`…) :
+  // une condition de segment se cumulerait avec chaque série et la viderait.
+  const appareilFiltre = filtreAppareil(ecran.query.filters);
 
   // Chaque lecture est indépendante (F02) : une lecture en échec n'efface que ses sections.
   const [cohortes, echantillonnage, parAppareil] = await Promise.all([
     lire(() => retentionCohorts(f, weeks)),
     // S7 : sessions identifiées lues par les cohortes sur les N semaines choisies.
-    lire(() => samplingSessionsHistorique(f, { lecture: "cohortes", semaines: weeks })),
+    lire(() => samplingSessions(f, { population: { lecture: "cohortes", semaines: weeks } })),
     appareilFiltre
       ? Promise.resolve(null)
-      : lire(() => Promise.all(APPAREILS.map((a) => retentionCohorts({ ...f, device: a.cle }, weeks)))),
+      : lire(() => Promise.all(APPAREILS.map((a) => retentionCohorts(f, weeks, { appareil: a.cle })))),
   ]);
 
   const rows: CohortRow[] = cohortes.ok ? cohortes.data : [];
@@ -157,29 +167,31 @@ export default async function Retention({ searchParams }: { searchParams: Promis
       )}
 
       {/* R2 — une rangée, une population : les visiteurs identifiés (sauf la 4e tuile, dite). */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="retention-kpi">
-        <KpiTile
-          label="Visiteurs identifiés suivis"
-          valeur={cohortes.ok ? totalVisiteurs : null}
-          format="count"
-          raisonNull="lecture des cohortes en échec"
-          sensMeilleur="neutre"
-          lecture={
-            cohortes.ok
-              ? `${nombre(totalVisiteurs)} visiteurs identifiés, en ${nombre(rows.length)} cohorte${rows.length > 1 ? "s" : ""} hebdomadaire${rows.length > 1 ? "s" : ""}, sur ${weeks} semaines.`
-              : undefined
-          }
-        />
-        {tuileRetour(courbe[1], 1, cohortes.ok)}
-        {tuileRetour(courbe[4], 4, cohortes.ok)}
-        <KpiTile
-          label="Sessions sans identifiant, hors matrice"
-          valeur={null}
-          format="count"
-          raisonNull="non lu : la lecture est à créer (B35)"
-          sensMeilleur="neutre"
-        />
-      </div>
+      <SectionErreur titre="Chiffres clés">
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="retention-kpi">
+          <KpiTile
+            label="Visiteurs identifiés suivis"
+            valeur={cohortes.ok ? totalVisiteurs : null}
+            format="count"
+            raisonNull="lecture des cohortes en échec"
+            sensMeilleur="neutre"
+            lecture={
+              cohortes.ok
+                ? `${nombre(totalVisiteurs)} visiteurs identifiés, en ${nombre(rows.length)} cohorte${rows.length > 1 ? "s" : ""} hebdomadaire${rows.length > 1 ? "s" : ""}, sur ${weeks} semaines.`
+                : undefined
+            }
+          />
+          {tuileRetour(courbe[1], 1, cohortes.ok)}
+          {tuileRetour(courbe[4], 4, cohortes.ok)}
+          <KpiTile
+            label="Sessions sans identifiant, hors matrice"
+            valeur={null}
+            format="count"
+            raisonNull="non lu : la lecture est à créer (B35)"
+            sensMeilleur="neutre"
+          />
+        </div>
+      </SectionErreur>
 
       <BandeauEchantillonnage lecture={echantillonnage} />
 
@@ -218,6 +230,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                     valueName="Rétention"
                     valueUnit="%"
                     domain={[0, 100]}
+                    ariaLabel={`Rétention pondérée par semaine depuis l'arrivée, de S+0 à S+${Math.max(0, colonnes - 1)}, fenêtre de ${weeks} semaines UTC ; un point sans cohorte complète est un trou`}
                   />
                 </Figure>
               </SectionErreur>
@@ -234,7 +247,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                         ? { kind: "partiel", raison: "une seule semaine observée : pas encore de recul" }
                         : undefined
                   }
-                  meta={<span>visiteurs identifiés, même calcul que la courbe ; tablette non lue (lecture historique)</span>}
+                  meta={<span>visiteurs identifiés, même calcul que la courbe ; ordinateurs, mobiles et tablettes (appareil inconnu : dans la courbe, pas ici)</span>}
                   lecture="Un visiteur mobile peut être surcompté : son identifiant est tenu en mémoire et renouvelé à chaque lancement (parité C3)."
                   alternative={
                     parAppareil?.ok
@@ -251,9 +264,12 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                 >
                   {appareilFiltre ? (
                     <p className="py-8 text-center text-sm text-ink-soft" data-testid="retention-deja-filtre">
-                      Déjà filtré sur {appareilFiltre.libelle.toLowerCase()} : la comparaison par appareil ne
+                      Déjà filtré sur {appareilFiltre.libelle} : la comparaison par appareil ne
                       s&apos;applique pas.{" "}
-                      <Link className="font-medium text-brand hover:underline" href={hrefWithQuery("/retention", ecran.query, { device: null, weeks: weeksParam })}>
+                      <Link
+                        className="font-medium text-brand hover:underline"
+                        href={hrefWithQuery("/retention", { ...ecran.query, filters: appareilFiltre.sans }, { weeks: weeksParam })}
+                      >
                         Retirer le filtre
                       </Link>
                     </p>
@@ -265,13 +281,13 @@ export default async function Retention({ searchParams }: { searchParams: Promis
                           <LineTrend
                             data={Array.from({ length: colonnes }, (_v, o) => ({
                               label: `S+${o}`,
-                              desktop: enPct(courbes[0][o]?.taux ?? null),
-                              mobile: enPct(courbes[1][o]?.taux ?? null),
+                              ...Object.fromEntries(APPAREILS.map((a, i) => [a.cle, enPct(courbes[i][o]?.taux ?? null)])),
                             }))}
                             valueName="Rétention"
                             valueUnit="%"
                             domain={[0, 100]}
                             series={APPAREILS.map((a) => ({ cle: a.cle, libelle: a.libelle, role: "categorie" as const }))}
+                            ariaLabel={`Rétention pondérée par appareil (${APPAREILS.map((a) => a.libelle.toLowerCase()).join(", ")}) et par semaine depuis l'arrivée, fenêtre de ${weeks} semaines UTC`}
                           />
                           <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
                             {APPAREILS.map((a, i) => (

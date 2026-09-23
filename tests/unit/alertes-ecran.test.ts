@@ -289,3 +289,21 @@ describe("F64 — « Voir la mesure » sur la fenêtre ÉVALUÉE (§ 5.19.1)", (
     expect(cibleMesure({ ...base, metric: null }, 15)).toBeNull();
   });
 });
+
+// F68 — une règle de release (B52) se lit sans son formulaire : une hausse EN POUR
+// CENT contre la release précédente, jamais « > 20 » (qui se lirait 20 ms), et la
+// phrase du § 3.2 partout où elle s'affiche.
+describe("F68 — réglage d'une règle de release", () => {
+  const sansFineF68 = (texte: string) => texte.replace(/[\u202f\u00a0]/g, " ");
+
+  it("dit la hausse tolérée, la fenêtre et la phrase obligatoire", () => {
+    expect(sansFineF68(reglageDeRegle(regle({ mode: "release", threshold: 20, window_minutes: 1440 })))).toBe(
+      "régression de release : p75 en hausse de +20 % ou plus contre la release précédente, sur 1 440 min · sévérité warning · " +
+        "même fenêtre, sans normalisation de trafic : l'écart mêle le code et le contexte",
+    );
+  });
+
+  it("garde les décimales de la hausse : +12,5 % n'est pas +13 %", () => {
+    expect(reglageDeRegle(regle({ mode: "release", threshold: 12.5 }))).toContain("+12,5 % ou plus");
+  });
+});

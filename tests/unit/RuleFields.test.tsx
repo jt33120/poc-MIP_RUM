@@ -19,6 +19,8 @@ vi.mock("@/app/alerts/actions", () => ({
 }));
 
 import { RuleFields, RAISON_REGRESSION_RELEASE, SEUIL_REGRESSION_DEFAUT } from "@/components/alerts/RuleFields";
+import { PHRASE_REGLE_RELEASE, RAISON_DETECTION_RELEASE } from "@/components/alerts/RuleFields";
+import { PHRASE_FENETRE } from "@/components/ReleaseCompare";
 import { RuleRow } from "@/components/alerts/RuleRow";
 import type { AlertRuleRow } from "@/lib/queries-v2";
 
@@ -83,11 +85,14 @@ describe("F64 — RuleFields : un fieldset par mode", () => {
     }
   });
 
-  it("« Régression de release » est présentée, DÉSACTIVÉE, avec sa raison et son seuil prévu", () => {
-    const balise = /<input[^>]*value="release_regression"[^>]*>/.exec(html)?.[0] ?? "";
+  it("« Régression de release » est présentée, DÉSACTIVÉE par défaut (base sans v86), avec sa raison et son seuil prévu", () => {
+    const balise = /<input[^>]*value="release"[^>]*>/.exec(html)?.[0] ?? "";
     expect(balise).toContain("disabled");
     expect(texte(html)).toContain(RAISON_REGRESSION_RELEASE);
     expect(texte(html)).toContain(`${SEUIL_REGRESSION_DEFAUT} % prévu`);
+    // Aucun champ d'un mode qu'on ne peut pas choisir.
+    expect(html).not.toContain("regle-champs-release");
+    expect(html).not.toContain('name="release_pct"');
   });
 
   it("le pré-remplissage `regle_*` (§ 3.1) remplit métrique, route et seuil", () => {
@@ -97,6 +102,103 @@ describe("F64 — RuleFields : un fieldset par mode", () => {
     expect(rempli).toMatch(/name="route"[^>]*value="\/checkout"/);
     expect(rempli).toMatch(/name="threshold"[^>]*value="300"/);
     expect(rempli).toMatch(/<option selected[^>]*value="INP"|value="INP"[^>]*selected/);
+  });
+});
+
+describe("F68 — RuleFields : « Régression de release » quand la base porte v86 (B52)", () => {
+  const DISPONIBLE = { disponible: true } as const;
+  const html = renderToStaticMarkup(<RuleFields apps={APPS} modeRelease={DISPONIBLE} />);
+
+  it("l'option est un vrai mode : activée, valeur `release`, classe du masquage, non cochée par défaut", () => {
+    const balise = /<input[^>]*value="release"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(balise).not.toContain("disabled");
+    expect(balise).not.toContain("checked");
+    expect(balise).toContain("regle-mode-release");
+    expect(html).not.toContain('data-testid="raison-release"');
+  });
+
+  it("son fieldset porte la hausse tolérée (+20 % par défaut, sans `required`) et la phrase obligatoire", () => {
+    expect(html).toContain("regle-champs-release");
+    const hausse = /<input[^>]*name="release_pct"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(hausse).toContain(`value="${SEUIL_REGRESSION_DEFAUT}"`);
+    expect(hausse).not.toContain("required");
+    expect(texte(html)).toContain(PHRASE_REGLE_RELEASE);
+    expect(PHRASE_REGLE_RELEASE).toContain(PHRASE_FENETRE);
+    expect(PHRASE_REGLE_RELEASE).toContain("100 mesures");
+    // L'évaluateur ne lit que les marqueurs en prod (v86 § 1) : le formulaire le dit.
+    expect(PHRASE_REGLE_RELEASE).toContain("déploiements déclarés en « prod »");
+  });
+
+  it("une règle de release existante : mode coché, sa hausse relue dans `threshold`", () => {
+    const edition = renderToStaticMarkup(
+      <RuleFields apps={APPS} rule={{ ...REGLE, mode: "release", threshold: 35 }} modeRelease={DISPONIBLE} />,
+    );
+    expect(/<input[^>]*value="release"[^>]*>/.exec(edition)?.[0] ?? "").toContain("checked");
+    expect(edition).toMatch(/name="release_pct"[^>]*value="35"/);
+  });
+
+  it("détection en échec sur une règle de release : son mode reste envoyé (refusé par l'action, jamais converti en seuil)", () => {
+    const edition = renderToStaticMarkup(
+      <RuleFields
+        apps={APPS}
+        rule={{ ...REGLE, mode: "release", threshold: 20 }}
+        modeRelease={{ disponible: false, raison: RAISON_DETECTION_RELEASE }}
+      />,
+    );
+    expect(edition).toMatch(/<input type="hidden" name="mode" value="release"\/>/);
+    expect(texte(edition)).toContain(RAISON_DETECTION_RELEASE);
+    expect(/<input[^>]*value="threshold"[^>]*>/.exec(edition)?.[0] ?? "").not.toContain("checked");
+  });
+
+  it("détection en échec sur une règle de release : sa hausse tolérée part avec son mode, jamais ramenée à +20 % (V10)", () => {
+    const edition = renderToStaticMarkup(
+      <RuleFields
+        apps={APPS}
+        rule={{ ...REGLE, mode: "release", threshold: 35 }}
+        modeRelease={{ disponible: false, raison: RAISON_DETECTION_RELEASE }}
+      />,
+    );
+    // Sans ce champ, `hausseTolereeDe` (actions.ts) retombe sur +20 % : un
+    // enregistrement réécrirait 35 % en 20 % sans rien dire.
+    expect(edition).toMatch(/<input type="hidden" name="release_pct" value="35"\/>/);
+    expect(edition.match(/name="release_pct"/g)).toHaveLength(1);
+    // Une règle d'un autre mode n'envoie aucune hausse de release.
+    const seuil = renderToStaticMarkup(
+      <RuleFields apps={APPS} rule={REGLE} modeRelease={{ disponible: false, raison: RAISON_DETECTION_RELEASE }} />,
+    );
+    expect(seuil).not.toContain('name="release_pct"');
+  });
+});
+
+describe("F68 — RuleRow d'une règle de release : ce qu'elle a comparé", () => {
+  const RELEASE: AlertRuleRow = {
+    ...REGLE,
+    mode: "release",
+    threshold: 20,
+    window_minutes: 1440,
+    last_state: "breached",
+    last_value: 3100,
+    last_reason: "1.4.2 : p75 3100 (240 mesures) contre 1.4.1 : p75 2500 (800 mesures), +24 % pour +20 % tolérés",
+  };
+
+  it("l'état porte le détail de la comparaison (releases, effectifs, écart), pas une valeur nue", () => {
+    const html = texte(renderToStaticMarkup(<RuleRow rule={RELEASE} apps={APPS} />));
+    expect(html).toContain(`Franchie — ${RELEASE.last_reason}`);
+    expect(html).not.toContain("(3 100)");
+    expect(html).toContain("régression de release : p75 en hausse de +20 % ou plus contre la release précédente");
+    expect(html).toContain(PHRASE_FENETRE);
+  });
+
+  it("sans données : la raison du `no_data`, comme les autres modes", () => {
+    const html = texte(
+      renderToStaticMarkup(
+        <RuleRow
+          rule={{ ...RELEASE, last_state: "no_data", last_value: null, last_reason: "une seule release déclarée (1.4.2) : il en faut deux pour comparer" }}
+          apps={APPS}
+        />,
+      ),
+    );
+    expect(html).toContain("Données insuffisantes — une seule release déclarée (1.4.2) : il en faut deux pour comparer");
   });
 });
 

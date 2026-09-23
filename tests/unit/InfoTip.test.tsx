@@ -33,4 +33,12 @@ describe("InfoTip", () => {
     expect(c).toContain("sm:bottom-full");
     expect(c).not.toContain("sm:bottom-auto");
   });
+
+  it("Échap la masque (F69, WCAG 1.4.13) : groupe marqué `data-ferme`, îlot rendu dans le groupe", () => {
+    const html = renderToStaticMarkup(<InfoTip>Aide</InfoTip>);
+    // `!` : l'état fermé l'emporte sur l'ouverture au survol et au focus.
+    expect(bulle(html)).toContain("group-data-[ferme]:!hidden");
+    // L'îlot se repère à son parent : il doit être un enfant DIRECT du groupe.
+    expect(html).toMatch(/^<span class="group [^"]*">.*<span hidden=""><\/span><\/span>$/);
+  });
 });

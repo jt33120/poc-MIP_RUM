@@ -10,6 +10,7 @@ import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
 import { compteDedie } from "./helpers/compte-dedie";
 import { debordements, LARGEURS } from "./helpers/debordements";
+import { APP_F27, FP_F27, semerF27 } from "./helpers/recette-perf-f27";
 
 const ADMIN_EMAIL = "e2e-perf-domaine-admin@mip-rum.local";
 const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
@@ -2099,6 +2100,285 @@ test.describe("F19 — Erreurs : liste et filtre de statut", () => {
       await expect(page.getByTestId("filtre-statut")).toBeVisible();
       await expect(page.getByTestId("error-group-f19fpouvert")).toBeVisible();
       expect(await debordements(page)).toEqual([]);
+    });
+  }
+});
+
+// F27 — Recette transverse du domaine performance (plan § 6.1 et § 6.5), close le
+// fichier. Elle ne refait pas les recettes des lots F11 à F26 : elle passe les HUIT
+// routes du domaine au même crible —
+//   - P8 : le premier élément de chaque figure mène au niveau suivant, avec l'app,
+//     la plage et la condition ajoutée ;
+//   - « aucun débordement » à 390, 768 et 1440 px ;
+//   - P2 (les séries et distributions d'un vital portent leurs zones de seuil), P5
+//     (un seul axe y par graphique), P10 (un dessin a son alternative textuelle) ;
+//   - la garde `fired=` (§ 3.1 : `fired` compte les alertes émises, `evt` désigne un
+//     déclenchement), sur les liens RENDUS — les gardes de code (`grep`) sont dans
+//     tests/unit/perf-domaine-gardes.test.ts.
+// Données : une app à elle, semée par tests/e2e/helpers/recette-perf-f27.ts (60
+// sessions sur ≈ 4 jours, trois routes, deux releases, erreurs, signaux, actions,
+// avis, événements custom, tâches longues). Plage `7d` : elle n'est PAS la plage par
+// défaut, donc tout lien la réécrit (`period=7d`) — sous `24h`, son absence ne
+// prouverait rien (§ 3.1).
+test.describe("F27 — Recette transverse du domaine performance", () => {
+  const PLAGE_F27 = "7d";
+  const REQUETE_F27 = `app=${APP_F27}&period=${PLAGE_F27}`;
+  type LocatorF27 = ReturnType<Page["locator"]>;
+  /** Les huit routes du domaine, et l'élément qui dit que l'écran est rendu. */
+  const ECRANS_F27: { chemin: string; temoin: (page: Page) => LocatorF27 }[] = [
+    { chemin: "/", temoin: (p) => p.getByTestId("tuile-LCP") },
+    { chemin: "/pages", temoin: (p) => p.getByTestId("kpi-pages") },
+    { chemin: "/errors", temoin: (p) => p.getByTestId("kpi-erreurs") },
+    { chemin: `/errors/${FP_F27}`, temoin: (p) => p.getByTestId("phrase-impact") },
+    { chemin: "/ux", temoin: (p) => p.getByTestId("kpi-interactions") },
+    { chemin: "/actions", temoin: (p) => p.getByTestId("kpi-actions") },
+    { chemin: "/events", temoin: (p) => p.getByRole("heading", { name: "Journal", level: 1 }) },
+    { chemin: "/experience", temoin: (p) => p.getByTestId("satisfaction-kpi") },
+  ];
+  const urlF27 = (chemin: string) => `${consoleUrl}${chemin}?${REQUETE_F27}`;
+
+  test.beforeAll(async () => {
+    await semerF27(pool);
+  });
+
+  /** Ouvre un écran de la recette et attend son témoin de rendu. */
+  async function ouvrirF27(page: Page, chemin: string) {
+    const ecran = ECRANS_F27.find((e) => e.chemin === chemin)!;
+    await page.goto(urlF27(chemin), { waitUntil: "domcontentloaded" });
+    await expect(ecran.temoin(page)).toBeVisible({ timeout: 15_000 });
+  }
+
+  /** L'URL d'un élément de figure, telle que le serveur l'a écrite. */
+  async function urlDeF27(element: LocatorF27, figure: string): Promise<URL> {
+    await expect(element, `${figure} : premier élément`).toBeAttached({ timeout: 15_000 });
+    const href = await element.getAttribute("href");
+    expect(href, `${figure} : le premier élément est un lien`).toBeTruthy();
+    return new URL(href!, consoleUrl);
+  }
+
+  /**
+   * P8 : la destination, l'app et la plage de l'écran (ou, pour un zoom, les bornes
+   * `from` / `to` d'un seau au plus, `period` retiré), et la condition ajoutée.
+   */
+  function verifierP8(
+    figure: string,
+    u: URL,
+    chemin: string | RegExp,
+    condition: [string, string | RegExp] | null,
+    plage: "period" | "zoom" = "period",
+  ) {
+    if (typeof chemin === "string") expect(u.pathname, `${figure} : destination`).toBe(chemin);
+    else expect(u.pathname, `${figure} : destination`).toMatch(chemin);
+    expect(u.searchParams.get("app"), `${figure} : app gardée`).toBe(APP_F27);
+    if (plage === "period") {
+      expect(u.searchParams.get("period"), `${figure} : plage gardée`).toBe(PLAGE_F27);
+    } else {
+      expect(u.searchParams.has("period"), `${figure} : period retiré par le zoom`).toBe(false);
+      const de = Date.parse(u.searchParams.get("from") ?? "");
+      const a = Date.parse(u.searchParams.get("to") ?? "");
+      // Un seau de la plage `7d` fait 6 h ; une case de l'historique, une heure.
+      const unSeau = Number.isFinite(de) && Number.isFinite(a) && de < a && a - de <= 6 * 3_600_000;
+      expect(unSeau, `${figure} : from/to bornent un seau (${u.searchParams.get("from")} → ${u.searchParams.get("to")})`).toBe(true);
+    }
+    if (condition) {
+      const [nom, attendu] = condition;
+      const valeur = u.searchParams.get(nom) ?? "";
+      if (typeof attendu === "string") expect(valeur, `${figure} : condition ${nom}`).toBe(attendu);
+      else expect(valeur, `${figure} : condition ${nom}`).toMatch(attendu);
+    }
+  }
+
+  // ——— P8 : les éléments-liens, lus tels que le serveur les écrit ———
+
+  test("P8 — / : tuile, segments, release et historique mènent au niveau suivant", async ({ page }) => {
+    await login(page);
+    await ouvrirF27(page, "/");
+    const tuile = page.getByTestId("tuile-LCP").locator("a").first();
+    verifierP8("tuile LCP p75", await urlDeF27(tuile, "tuile LCP"), "/pages", ["vital", "LCP"]);
+    // Une route ouvre son PANNEAU sur /pages (§ 3.3, F17), `panel=route:<route encodée>`.
+    const segment = page.getByTestId("impact-table").getByTestId("impact-ligne").first().locator("a");
+    verifierP8("segments les plus dégradés", await urlDeF27(segment, "segments"), "/pages", ["panel", /^route:%2Ff27-/]);
+    // En-tête de la release A : la Vue d'ensemble filtrée sur elle.
+    const release = page.getByTestId("release-compare").locator("a").first();
+    verifierP8("nouvelle release face à la précédente", await urlDeF27(release, "release"), "/", ["release", /^f27-1\.[01]$/]);
+    // Une case de l'historique : son heure locale, convertie en instants UTC par le serveur.
+    const cas = page.locator('#historique a[data-testid="heatmap-case"]').first();
+    verifierP8("historique 14 jours", await urlDeF27(cas, "historique"), "/", ["from", /Z$/], "zoom");
+  });
+
+  test("P8 — /pages : classement, navigation, distribution et tâches longues mènent au niveau suivant", async ({ page }) => {
+    await login(page);
+    await ouvrirF27(page, "/pages");
+    const route = page.getByTestId("hero-routes").getByTestId("impact-ligne").first().locator("a");
+    verifierP8("routes classées", await urlDeF27(route, "routes classées"), "/pages", ["panel", /^route:%2Ff27-/]);
+    // La ligne « Ensemble » n'est pas un lien : le premier lien est la première route.
+    const navigation = page.locator('#figure-navigation [role="listitem"] a').first();
+    verifierP8("vues par type de navigation", await urlDeF27(navigation, "navigation"), "/pages", ["route", /^\/f27-/]);
+    // Les bacs d'un histogramme ne sont pas des liens (le contrat ne filtre pas sur une
+    // valeur de mesure, § 3.3) : le lien secondaire ouvre le journal des mesures.
+    await expect(page.locator("#distribution-lcp svg a")).toHaveCount(0);
+    const journal = page.locator("#distribution-lcp").getByTestId("distribution-explorer");
+    verifierP8("distribution LCP", await urlDeF27(journal, "distribution LCP"), "/explorer", ["variant", "LCP"]);
+    const session = page.getByTestId("longtasks").locator('a[href*="/sessions/"]').first();
+    verifierP8("blocages les plus longs", await urlDeF27(session, "blocages"), /^\/sessions\/f27-e2e-recette-s\d+$/, null);
+  });
+
+  test("P8 — /errors : hero, liste et répartition ouvrent le groupe ou filtrent l'écran", async ({ page }) => {
+    await login(page);
+    await ouvrirF27(page, "/errors");
+    const legende = page.locator("#hero-erreurs").getByTestId("legende-serie").locator("a").first();
+    verifierP8("occurrences par groupe", await urlDeF27(legende, "hero"), "/errors", ["panel", /^error:f27fp-/]);
+    const groupe = page.locator('[data-testid^="error-group-"] a').first();
+    verifierP8("liste des groupes", await urlDeF27(groupe, "liste"), "/errors", ["panel", /^error:f27fp-/]);
+    const repartition = page.getByTestId("breakdown").getByTestId("breakdown-row").first();
+    verifierP8("répartition des occurrences", await urlDeF27(repartition, "répartition"), "/errors", ["route", /^\/f27-/]);
+  });
+
+  test("P8 — détail d'erreur : route et release du repli filtrent la liste", async ({ page }) => {
+    await login(page);
+    await ouvrirF27(page, `/errors/${FP_F27}`);
+    const commun = page.locator("#detail-erreur-commun");
+    const route = commun.getByTestId("repli-route").locator("a").first();
+    verifierP8("repli par route", await urlDeF27(route, "repli route"), "/errors", ["route", "/f27-panier"]);
+    const release = commun.getByTestId("repli-release").locator("a").first();
+    verifierP8("repli par release", await urlDeF27(release, "repli release"), "/errors", ["release", /^f27-1\.[01]$/]);
+  });
+
+  test("P8 — /ux : tuile de signal et routes frustrantes mènent au niveau suivant", async ({ page }) => {
+    await login(page);
+    await ouvrirF27(page, "/ux");
+    const rage = page
+      .getByTestId("kpi-interactions")
+      .getByTestId("kpi-tile")
+      .filter({ has: page.getByText("Rage clicks", { exact: true }) });
+    verifierP8("tuile Rage clicks", await urlDeF27(rage, "tuile Rage clicks"), "/ux", ["type", "rage"]);
+    const route = page.locator("#routes-frustrantes").getByTestId("impact-ligne").first().locator("a");
+    verifierP8("routes les plus frustrantes", await urlDeF27(route, "routes frustrantes"), "/pages", ["panel", /^route:%2Ff27-/]);
+  });
+
+  test("P8 — /actions : le libellé d'une action ouvre les erreurs de sa route", async ({ page }) => {
+    await login(page);
+    await ouvrirF27(page, "/actions");
+    const action = page.locator('#figure-actions-erreurs [role="listitem"] a').first();
+    verifierP8("actions classées par erreurs liées", await urlDeF27(action, "actions"), "/errors", ["route", /^\/f27-/]);
+  });
+
+  test("P8 — /events : facette de nom et ligne du journal", async ({ page }) => {
+    await login(page);
+    await ouvrirF27(page, "/events");
+    const nom = page.getByTestId("facettes").locator('a[href*="name="]').first();
+    verifierP8("événements par nom", await urlDeF27(nom, "facette de nom"), "/events", ["name", "f27-achat"]);
+    const ligne = page.getByTestId("journal-ligne").first().locator('a[href*="panel="]');
+    verifierP8("journal", await urlDeF27(ligne, "ligne du journal"), "/events", ["panel", /^event:\d+$/]);
+  });
+
+  test("P8 — /experience : une page ouvre son panneau, un verbatim sa session", async ({ page }) => {
+    await login(page);
+    await ouvrirF27(page, "/experience");
+    const pageRoute = page.getByTestId("impact-table").getByTestId("impact-ligne").first().locator("a");
+    verifierP8("satisfaction par page", await urlDeF27(pageRoute, "satisfaction par page"), "/pages", ["panel", /^route:%2Ff27-/]);
+    const verbatim = page.locator("#verbatims a").first();
+    verifierP8("derniers verbatims", await urlDeF27(verbatim, "verbatims"), /^\/sessions\/f27-e2e-recette-s\d+$/, null);
+  });
+
+  // ——— P8 : le zoom au clic sur un seau (séries recharts) ———
+  // Même geste que le zoom du hero (F12) : un point RÉELLEMENT dessiné, mesuré au
+  // dernier moment, cliqué à la souris en son centre — recharts calcule le seau à
+  // partir de l'événement de clic lui-même ; `locator.click()` échouerait sur le
+  // point actif que recharts pose par-dessus au survol.
+  const ZOOMS_F27 = [
+    { chemin: "/", serie: '#charge-erreurs-lcp [data-testid="panneau-lcp"]', figure: "Charge, erreurs et LCP (panneau LCP)" },
+    { chemin: "/pages", serie: '#figure-taches-longues [data-testid="threshold-series"]', figure: "tâches longues (blocage p75)" },
+    { chemin: "/ux", serie: "#figure-inp-dans-le-temps", figure: "INP p75 dans le temps" },
+    { chemin: "/experience", serie: '#satisfaction-dans-le-temps [data-testid="threshold-series"]', figure: "satisfaction dans le temps" },
+  ];
+  for (const zoom of ZOOMS_F27) {
+    test(`P8 — ${zoom.chemin} : un point de « ${zoom.figure} » zoome sur son seau`, async ({ page }) => {
+      await login(page);
+      await ouvrirF27(page, zoom.chemin);
+      const point = page.locator(`${zoom.serie} .recharts-line-dots circle`).first();
+      await expect(point).toBeVisible({ timeout: 15_000 });
+      await point.scrollIntoViewIfNeeded();
+      await point.hover({ trial: true });
+      const boite = await point.boundingBox();
+      if (!boite) throw new Error(`${zoom.figure} : point de série sans boîte`);
+      await page.mouse.click(boite.x + boite.width / 2, boite.y + boite.height / 2);
+      await page.waitForURL((u) => u.searchParams.has("from") && u.searchParams.has("to"), { timeout: 15_000 });
+      verifierP8(zoom.figure, new URL(page.url()), zoom.chemin, null, "zoom");
+    });
+  }
+
+  // ——— P2, P5, P10 et la garde `fired=`, écran par écran ———
+
+  for (const ecran of ECRANS_F27) {
+    test(`${ecran.chemin} : zones de seuil (P2), un axe y par graphique (P5), alternative de chaque dessin (P10), aucun fired=`, async ({
+      page,
+    }) => {
+      await login(page);
+      await ouvrirF27(page, ecran.chemin);
+      const fautes: string[] = [];
+      const figures = page.locator('[data-testid="figure"]:not([data-etat])');
+      expect(await figures.count(), "l'écran dessine au moins une figure").toBeGreaterThan(0);
+
+      // P5 — chaque graphique recharts est rendu (après hydratation), puis aucun n'a
+      // deux axes y : deux grandeurs se lisent en panneaux empilés.
+      const graphiques = page.locator('[data-testid="threshold-series"], [data-testid="stacked-bars"], [data-testid="scatter-plot"]');
+      for (const graphique of await graphiques.all()) {
+        await expect(graphique.locator(".recharts-wrapper").first()).toBeAttached({ timeout: 15_000 });
+      }
+      for (const wrapper of await page.locator(".recharts-wrapper").all()) {
+        const axes = await wrapper.locator(".recharts-yAxis").count();
+        if (axes > 1) fautes.push(`P5 : « ${(await wrapper.getAttribute("aria-label")) ?? "graphique"} » a ${axes} axes y`);
+      }
+
+      // P2 — une série d'un vital porte ses trois zones (bande « Bon » dessinée, trois
+      // entrées de légende) ; une distribution, ses zones pleines en fond.
+      for (const serie of await page.locator('[data-testid="threshold-series"][data-vital]').all()) {
+        const vital = await serie.getAttribute("data-vital");
+        await expect(serie.locator(".recharts-reference-area.bande-bon").first(), `P2 : bande « Bon » de ${vital}`).toBeAttached({
+          timeout: 15_000,
+        });
+        const zones = await serie.locator("[data-bande-legende]").count();
+        if (zones !== 3) fautes.push(`P2 : série ${vital} — ${zones} zone(s) de seuil en légende au lieu de 3`);
+      }
+      for (const distribution of await page.getByTestId("distribution-seuils").all()) {
+        const zones = await distribution.locator('svg[role="img"] > rect[opacity="0.07"]').count();
+        if (zones === 0) {
+          fautes.push(`P2 : « ${await distribution.locator('svg[role="img"]').getAttribute("aria-label")} » sans zone de seuil`);
+        }
+      }
+
+      // P10 — une figure qui DESSINE (image, graphique) porte une table aux mêmes lignes
+      // (alternative repliée, ou table jumelle) ; une liste de texte est son propre texte.
+      for (const figure of await figures.all()) {
+        const dessin = await figure.locator('[role="figure"] [role="img"], [role="figure"] .recharts-wrapper').count();
+        if (dessin === 0) continue;
+        if ((await figure.locator("table tbody tr").count()) === 0) {
+          fautes.push(`P10 : « ${(await figure.locator("h2").first().innerText()).trim()} » dessine sans alternative textuelle`);
+        }
+      }
+
+      // Garde `fired=` : aucun lien rendu ne désigne un déclenchement par le compte d'alertes.
+      const fired = await page.locator('a[href*="fired="]').count();
+      if (fired > 0) fautes.push(`${fired} lien(s) portent fired= (§ 3.1 : un déclenchement se désigne par evt)`);
+
+      expect(fautes, ecran.chemin).toEqual([]);
+    });
+  }
+
+  // ——— Aucun débordement, sur les huit routes, aux trois largeurs ———
+
+  for (const largeur of LARGEURS) {
+    test(`aucun débordement sur les huit routes du domaine à ${largeur} px`, async ({ page }) => {
+      test.setTimeout(180_000);
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await login(page);
+      const fautes: string[] = [];
+      for (const ecran of ECRANS_F27) {
+        await ouvrirF27(page, ecran.chemin);
+        for (const faute of await debordements(page)) fautes.push(`${ecran.chemin} @ ${largeur} px — ${faute}`);
+      }
+      expect(fautes).toEqual([]);
     });
   }
 });

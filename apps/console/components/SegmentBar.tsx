@@ -16,8 +16,14 @@
 //
 // Bascules « Bots » et « Interne » : texte seul, sans émoji (F08) — l'état se lit
 // dans le mot (« exclus » / « inclus »), pas dans une image.
+//
+// FOCUS RENDU (F69). Fermer un éditeur en ligne — Échap, « × », condition ajoutée,
+// segment enregistré — démonte le champ qui portait le focus : il tombait sur
+// <body>, et le clavier repartait du haut de la page. Il revient désormais au bouton
+// qui a ouvert l'éditeur (« + Filtre », « Enregistrer »). Échap ferme depuis
+// n'importe quel champ de l'éditeur, plus seulement depuis la valeur.
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   EVENEMENT_SEGMENTS,
   ajouterSegment,
@@ -72,6 +78,20 @@ export function SegmentBar({ schema }: { schema: string[] }) {
   const [dropped, setDropped] = useState(0);
   /** Nom en cours de saisie ; `null` = champ fermé. */
   const [nom, setNom] = useState<string | null>(null);
+  // Bouton qui recevra le focus quand son éditeur se referme (voir l'en-tête).
+  const boutonAjout = useRef<HTMLButtonElement>(null);
+  const boutonEnregistrer = useRef<HTMLButtonElement>(null);
+  const focusARendre = useRef<"ajout" | "enregistrer" | null>(null);
+  useEffect(() => {
+    if (focusARendre.current !== "ajout" || adding) return;
+    focusARendre.current = null;
+    boutonAjout.current?.focus();
+  }, [adding]);
+  useEffect(() => {
+    if (focusARendre.current !== "enregistrer" || nom !== null) return;
+    focusARendre.current = null;
+    boutonEnregistrer.current?.focus();
+  }, [nom]);
 
   // localStorage n'est lu qu'au montage client (évite le mismatch d'hydratation) ;
   // `PresetBar` prévient quand elle enregistre une vue.
@@ -137,8 +157,20 @@ export function SegmentBar({ schema }: { schema: string[] }) {
     // dédup exact ; conjonction (ET) sinon
     if (!conditions.some((c) => sameCondition(c, condition))) apply([...conditions, condition]);
     setValue("");
-    setAddError(null);
+    fermerEditeur();
+  }
+
+  /** Ferme l'éditeur de condition ; le focus revient à « + Filtre ». */
+  function fermerEditeur() {
+    focusARendre.current = "ajout";
     setAdding(false);
+    setAddError(null);
+  }
+
+  /** Ferme le champ de nom ; le focus revient à « Enregistrer ». */
+  function fermerNom() {
+    focusARendre.current = "enregistrer";
+    setNom(null);
   }
 
   function saveCurrent() {
@@ -147,7 +179,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
     const list = ajouterSegment(saved, nom, seg);
     setSaved(list);
     ecrireSegmentsEnregistres(list);
-    setNom(null);
+    fermerNom();
   }
 
   return (
@@ -209,7 +241,14 @@ export function SegmentBar({ schema }: { schema: string[] }) {
       })}
 
       {adding ? (
-        <span className="flex flex-wrap items-center gap-1 rounded-lg border border-line bg-panel2 px-1.5 py-1">
+        <span
+          className="flex flex-wrap items-center gap-1 rounded-lg border border-line bg-panel2 px-1.5 py-1"
+          onKeyDown={(e) => {
+            if (e.key !== "Escape") return;
+            e.preventDefault();
+            fermerEditeur();
+          }}
+        >
           <select
             value={dimension}
             onChange={(e) => {
@@ -259,7 +298,6 @@ export function SegmentBar({ schema }: { schema: string[] }) {
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") addCondition();
-                if (e.key === "Escape") setAdding(false);
               }}
               placeholder="valeur exacte"
               maxLength={500}
@@ -278,10 +316,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setAdding(false);
-              setAddError(null);
-            }}
+            onClick={fermerEditeur}
             className="px-1 text-xs text-ink-faint hover:text-ink"
             aria-label="Annuler"
           >
@@ -295,6 +330,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
         </span>
       ) : (
         <button
+          ref={boutonAjout}
           type="button"
           onClick={() => setAdding(true)}
           className="rounded-lg border border-dashed border-line px-2 py-0.5 text-xs font-medium text-ink-soft transition hover:border-perf/40 hover:text-perf"
@@ -350,6 +386,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
           <>
             {nom === null ? (
               <button
+                ref={boutonEnregistrer}
                 type="button"
                 onClick={() => setNom(conditions.map(describeCondition).join(", ").slice(0, 100))}
                 className="text-xs font-medium text-ink-soft hover:text-perf"
@@ -365,15 +402,17 @@ export function SegmentBar({ schema }: { schema: string[] }) {
                   e.preventDefault();
                   saveCurrent();
                 }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Escape") return;
+                  e.preventDefault();
+                  fermerNom();
+                }}
               >
                 <input
                   autoFocus
                   value={nom}
                   maxLength={100}
                   onChange={(e) => setNom(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") setNom(null);
-                  }}
                   aria-label="Nom du segment"
                   className="w-36 rounded bg-app px-1.5 py-0.5 text-xs text-ink outline-none ring-1 ring-line focus:ring-perf/40"
                   data-testid="segment-save-name"
@@ -383,7 +422,7 @@ export function SegmentBar({ schema }: { schema: string[] }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setNom(null)}
+                  onClick={fermerNom}
                   className="px-1 text-xs text-ink-soft hover:text-ink"
                   aria-label="Annuler l'enregistrement"
                 >

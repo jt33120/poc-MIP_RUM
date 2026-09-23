@@ -1,5 +1,6 @@
 // Requêtes SQL v0.3 (chantier A4) : triage des erreurs, alerting, corrélation v2.
 import { ALERT_SEVERITIES } from "./alerting";
+import { RELEASE_METRICS } from "./alerting";
 import { q } from "./db";
 import { periodOf, queryOf, type FiltersLike } from "./filters";
 import { isValidEventName } from "./queries-events";
@@ -485,7 +486,41 @@ async function regleV73(r: RuleInput): Promise<boolean> {
   return v73;
 }
 
+/**
+ * B52 (migration-v86) : `check_alerts` sait-il évaluer une règle `release` ? Détecté
+ * par la fonction que v86 crée — comme v73 par sa table : la console peut précéder
+ * sa migration sur un déploiement. Aucune mise en cache : une lecture de catalogue.
+ */
+export async function releaseRegressionDisponible(): Promise<boolean> {
+  const [schema] = await q<{ v86: boolean }>(
+    "select to_regprocedure('public.alert_release_p75(text,text,text,integer)') is not null as v86",
+  );
+  return schema?.v86 === true;
+}
+
+/**
+ * Une règle `release` n'est écrite que si la base l'évalue ET qu'elle porte sur un
+ * Web Vital. Sans v86, le check_alerts de v73 la lirait comme un SEUIL FIXE (un
+ * « +20 % » deviendrait « LCP > 20 ms ») : refusée plutôt qu'écrite fausse.
+ */
+async function regleRelease(r: RuleInput): Promise<void> {
+  if (r.mode !== "release") return;
+  if (!(RELEASE_METRICS as readonly string[]).includes(r.metric)) {
+    throw new Error(`régression de release réservée aux Web Vitals : ${r.metric}`);
+  }
+  if (!(await releaseRegressionDisponible())) {
+    throw new Error("régression de release indisponible : migration-v86 non appliquée");
+  }
+}
+
+/** App d'une règle existante (null si elle n'existe pas) : le périmètre d'une édition. */
+export async function appDeRegle(id: number): Promise<string | null> {
+  const [r] = await q<{ app_id: string }>("select app_id from alert_rule where id = $1", [id]);
+  return r?.app_id ?? null;
+}
+
 export async function insertAlertRule(r: RuleInput): Promise<void> {
+  await regleRelease(r);
   const v73 = await regleV73(r);
   await q(
     `insert into alert_rule (app_id, metric, route, comparator, threshold, window_minutes,
@@ -497,6 +532,7 @@ export async function insertAlertRule(r: RuleInput): Promise<void> {
 }
 
 export async function updateAlertRule(id: number, r: RuleInput): Promise<void> {
+  await regleRelease(r);
   const v73 = await regleV73(r);
   await q(
     `update alert_rule

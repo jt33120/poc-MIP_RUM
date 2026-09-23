@@ -6,11 +6,10 @@
 import { q } from "./db";
 import { DEBUT_SAMPLE_RATE, type EchantillonnageSessions } from "./echantillonnage";
 import { ENGAGEMENT_VIDE, STILL_ACTIVE_MINUTES, type EngagementStats } from "./engagement";
-import { PERIODS, queryOf, type Filters, type FiltersLike } from "./filters";
+import type { FiltersLike } from "./filters";
 import { bucketExpr, bucketSeriesSql, sessionJoin } from "./query-compiler";
 import { previousRange } from "./query-contract";
-import { sqlContext } from "./query-sql";
-import { buildSegment } from "./segments";
+import { sqlContext, type SqlContext } from "./query-sql";
 // F41 : tuiles et répartition lues par l'Explorer (une seule définition des mesures).
 import { EXPLORER_VERSION, type ExplorerPlan } from "./analytics-schema";
 import { exploreAnalytics } from "./queries-explorer";
@@ -144,33 +143,52 @@ export function echantillonnageDe(row: LigneEchantillonnage | undefined): Echant
 }
 
 /**
- * Échantillonnage de la population d'un écran SUR LE CONTRAT (`/sessions`, `/map`).
+ * Population d'un écran d'usage (`/acquisition`, `/paths`, `/forms`, `/retention`),
+ * pour que le bandeau qualifie EXACTEMENT ce que l'écran lit (règle S7) : les
+ * mêmes prédicats que la lecture qu'il qualifie, sur le contrat depuis B31.
+ */
+export type PopulationUsage =
+  /** Sessions ayant une page vue dans `[from, to)` : `/acquisition`, `/paths`. */
+  | { lecture: "vues" }
+  /** Sessions ayant émis `form.submit` / `form.abandon` dans `[from, to)` : `/forms`. */
+  | { lecture: "formulaires" }
+  /** Sessions identifiées (`visitor_id`) commencées sur les `semaines` dernières semaines : `/retention`. */
+  | { lecture: "cohortes"; semaines: number };
+
+/**
+ * Échantillonnage de la population d'un écran SUR LE CONTRAT.
  *
- * Sans option : sessions COMMENCÉES ou ACTIVES dans `[from, to)` — l'union des deux
- * populations de `/sessions` (tuiles sur `started_at`, liste et anneau sur
- * `last_seen_at`) : le minimum de l'union borne chacune. Le prédicat de temps est
- * écrit ici (un `or` de deux fenêtres, bornes liées) ; le reste — périmètre d'apps,
- * conditions, bots — est compilé par le contrat, SANS fenêtre (`time: null`).
+ * Sans option (`/sessions`) : sessions COMMENCÉES ou ACTIVES dans `[from, to)` —
+ * l'union des deux populations de `/sessions` (tuiles sur `started_at`, liste et
+ * anneau sur `last_seen_at`) : le minimum de l'union borne chacune. Le prédicat de
+ * temps est écrit ici (un `or` de deux fenêtres, bornes liées) ; le reste —
+ * périmètre d'apps, conditions, bots — est compilé par le contrat, SANS fenêtre
+ * (`time: null`).
  *
  * `avecSpans` (`/map`) : sessions portant au moins un span FRONT dans `[from, to)`,
  * filtré comme les lectures de la carte (jeu `spans`). Une session « biaisée-erreurs »
  * sans erreur n'émet aucun span : elle n'est pas dans cette population.
+ *
+ * `population` (écrans d'usage, F53) : remplace `samplingSessionsHistorique`, qui
+ * reproduisait la fenêtre glissante et le segment v1 des lectures d'avant B31. Les
+ * cibles compilées sont celles des lectures qualifiées (lib/queries-{acquisition,
+ * paths,form-analytics,cohorts}.ts) : `views` sur `p.started_at`, `custom_events` sur
+ * `e.ts`, `sessions` sans fenêtre du contrat pour les N semaines de la rétention.
+ *
+ * Toute jointure à la session se fait sur `(app_id, session_id)` : `session_id` seul
+ * ne désigne pas une session, et une ligne de A qui citerait l'identifiant d'une
+ * session de B ferait entrer B (et son taux) dans la population de A.
  */
 export async function samplingSessions(
   f: FiltersLike,
-  opts: { avecSpans?: boolean } = {},
+  opts: { avecSpans?: boolean; population?: PopulationUsage } = {},
 ): Promise<EchantillonnageSessions> {
   const sql = await sqlContext(f);
   const debut = sql.bind(DEBUT_SAMPLE_RATE);
-  if (opts.avecSpans) {
-    const where = sql.where({ dataset: "spans", row: "sp", session: "s", time: "sp.ts" });
+  const population = opts.avecSpans ? populationSpans(sql) : opts.population ? populationUsage(sql, opts.population) : null;
+  if (population) {
     const [row] = await q<LigneEchantillonnage>(
-      `with population as (
-         select distinct sp.app_id, sp.session_id
-           from rum_span sp
-           ${sessionJoin("sp", "s")}
-          where sp.tier = 'front' and sp.session_id is not null${where}
-       )
+      `with population as (${population})
        select ${agregatEchantillonnage(debut)}
          from population p
          join rum_session s on s.app_id = p.app_id and s.session_id = p.session_id`,
@@ -191,86 +209,38 @@ export async function samplingSessions(
   return echantillonnageDe(row);
 }
 
-/**
- * Population d'un écran d'usage HISTORIQUE (lecture `now() - intervalle`, non
- * migrée sur le contrat), pour que le bandeau qualifie EXACTEMENT ce que l'écran
- * lit (règle S2 : jamais une population du contrat sous une figure historique).
- */
-export type PopulationHistorique =
-  /** Sessions ayant une page vue sur `PERIODS[f.period]` : `/acquisition`, `/paths`. */
-  | { lecture: "vues" }
-  /** Sessions ayant émis `form.submit` / `form.abandon` sur `PERIODS[f.period]` : `/forms`. */
-  | { lecture: "formulaires" }
-  /** Sessions identifiées (`visitor_id`) commencées sur les `semaines` dernières semaines : `/retention`. */
-  | { lecture: "cohortes"; semaines: number };
+/** Sessions portant un span FRONT dans la fenêtre (`/map`). */
+function populationSpans(sql: SqlContext): string {
+  const where = sql.where({ dataset: "spans", row: "sp", session: "s", time: "sp.ts" });
+  return `select distinct sp.app_id, sp.session_id
+            from rum_span sp
+            ${sessionJoin("sp", "s")}
+           where sp.tier = 'front' and sp.session_id is not null${where}`;
+}
 
-/**
- * Échantillonnage d'une population d'écran historique (`/acquisition`, `/paths`,
- * `/forms`, `/retention`) : mêmes prédicats que la lecture qu'il qualifie
- * (lib/queries-{acquisition,paths,form-analytics,cohorts}.ts) — fenêtre
- * `now() - intervalle`, appareil, segment v1, bots.
- *
- * Seule différence, voulue : le périmètre d'apps est lié par les apps EFFECTIVES
- * (`= any($1)`), jamais par `($1::text is null or app_id = $1)` (R-A, § 0.3). Sur
- * tout chemin que l'écran accepte, c'est la même population : app nommée → [app] ;
- * admin sous `app=all` → toutes les apps (null) ; principal restreint sous
- * `app=all` → l'écran est refusé avant toute lecture (`perimetreAvailability`).
- * Retiré par F53 quand ces écrans passeront sur le contrat (`samplingSessions`).
- *
- * Toute jointure à la session se fait sur `(app_id, session_id)`, comme
- * `samplingSessions` : `session_id` seul ne désigne pas une session, et une ligne
- * de A qui citerait l'identifiant d'une session de B ferait entrer B (et son taux)
- * dans la population de A.
- */
-export async function samplingSessionsHistorique(
-  f: Filters,
-  population: PopulationHistorique,
-): Promise<EchantillonnageSessions> {
-  const apps = queryOf(f).scope.effectiveApps;
-  const bots = f.includeBots ? "" : " and not coalesce(s.is_bot, false)";
-  let pop: string;
-  let params: unknown[];
+/** La population d'un écran d'usage, `(app_id, session_id)` distincts. */
+function populationUsage(sql: SqlContext, population: PopulationUsage): string {
   if (population.lecture === "cohortes") {
     const semaines = population.semaines;
     if (!Number.isSafeInteger(semaines) || semaines < 1 || semaines > 53) throw new Error("fenêtre de rétention invalide");
-    const seg = buildSegment(f.segment, 4);
-    pop = `select s.app_id, s.session_id
-             from rum_session s
-            where s.visitor_id is not null
-              and s.started_at > now() - $3::int * interval '1 week'
-              and ($1::text[] is null or s.app_id = any($1::text[]))
-              and ($2::text is null or s.device_type = $2)${seg.where("s")}${bots}`;
-    params = [apps, f.device, semaines, ...seg.params];
-  } else {
-    // Intervalle lu dans PERIODS (constantes de code), comme les lectures qualifiées.
-    const itv = PERIODS[f.period].interval;
-    const seg = buildSegment(f.segment, 3);
-    pop =
-      population.lecture === "vues"
-        ? `select distinct p.app_id, p.session_id
-             from rum_pageview p
-             join rum_session s on s.app_id = p.app_id and s.session_id = p.session_id
-            where p.started_at > now() - interval '${itv}'
-              and ($1::text[] is null or p.app_id = any($1::text[]))
-              and ($2::text is null or s.device_type = $2)${seg.where("s")}${bots}`
-        : `select distinct e.app_id, e.session_id
-             from rum_event e
-             join rum_session s on s.app_id = e.app_id and s.session_id = e.session_id
-            where e.ts > now() - interval '${itv}'
-              and e.name in ('form.submit', 'form.abandon')
-              and ($1::text[] is null or e.app_id = any($1::text[]))
-              and ($2::text is null or s.device_type = $2)${seg.where("s")}${bots}`;
-    params = [apps, f.device, ...seg.params];
+    const where = sql.where({ dataset: "sessions", row: "s", session: "s", time: null });
+    return `select s.app_id, s.session_id
+              from rum_session s
+             where s.visitor_id is not null
+               and s.started_at > now() - ${sql.bind(semaines)}::int * interval '1 week'${where}`;
   }
-  const debut = `$${params.push(DEBUT_SAMPLE_RATE)}`;
-  const [row] = await q<LigneEchantillonnage>(
-    `with population as (${pop})
-     select ${agregatEchantillonnage(debut)}
-       from population p
-       join rum_session s on s.app_id = p.app_id and s.session_id = p.session_id`,
-    params,
-  );
-  return echantillonnageDe(row);
+  if (population.lecture === "vues") {
+    const where = sql.where({ dataset: "views", row: "p", session: "s", time: "p.started_at" });
+    return `select distinct p.app_id, p.session_id
+              from rum_pageview p
+              ${sessionJoin("p", "s")}
+             where p.session_id is not null${where}`;
+  }
+  const where = sql.where({ dataset: "custom_events", row: "e", session: "s", time: "e.ts" });
+  return `select distinct e.app_id, e.session_id
+            from rum_event e
+            ${sessionJoin("e", "s")}
+           where e.session_id is not null and e.name in ('form.submit', 'form.abandon')${where}`;
 }
 
 // ═══════════════ Rangée KPI et répartition de /sessions (F41) ═══════════════

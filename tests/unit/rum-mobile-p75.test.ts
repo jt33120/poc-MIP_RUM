@@ -531,3 +531,95 @@ describe("F38 — une release n'existe que dans son app (lecture sous plusieurs 
     expect(r.find((l) => l.app_id === "b")).toMatchObject({ release_precedente: null, ecart_precedente_pts: null });
   });
 });
+
+// F39 : imports propres au bloc, sur leurs propres lignes (fichier partagé entre lots).
+import {
+  RAISON_LIEN_RELEASE,
+  RAISON_LIEN_SANS_RUNTIME,
+  RAISON_LIEN_SCHEMA_NON_LU,
+  lienCohorte,
+  pointsMobileTemps,
+} from "../../apps/console/lib/mobile-capabilities";
+import { parseAnalyticsQuery as parseAnalyticsQueryF39 } from "../../apps/console/lib/query-contract";
+
+describe("F39 — dans le temps, et la cohorte ouverte ailleurs (B8)", () => {
+  const requeteF39 = (qs: string) => {
+    const r = parseAnalyticsQueryF39(new URLSearchParams(qs), {
+      principal: { role: "viewer", apps: ["app-rn"] },
+      nowMs: Date.parse("2026-09-22T12:00:00Z"),
+    });
+    if (!r.ok) throw new Error(r.error.code);
+    return r.value;
+  };
+  const H = 3_600_000;
+  const T0 = Date.parse("2026-09-22T10:00:00Z");
+
+  it("seaux posés sur la grille : absents = 0 (des comptes), totaux = les tuiles", () => {
+    const r = pointsMobileTemps(
+      [T0, T0 + H, T0 + 2 * H],
+      [
+        { bucket: new Date(T0), sessions: 3, occurrences: 2 },
+        { bucket: new Date(T0 + 2 * H).toISOString(), sessions: 1, occurrences: 0 },
+      ],
+      true,
+    );
+    expect(r.points).toEqual([
+      { t: "2026-09-22T10:00:00Z", sessions: 3, occurrences: 2 },
+      { t: "2026-09-22T11:00:00Z", sessions: 0, occurrences: 0 },
+      { t: "2026-09-22T12:00:00Z", sessions: 1, occurrences: 0 },
+    ]);
+    expect(r.totalSessions).toBe(4);
+    expect(r.totalOccurrences).toBe(2);
+    expect(r.ignores).toBe(0);
+  });
+
+  it("occurrences non lues (schéma sans error_source) : `null` partout, jamais 0 ; ligne hors grille écartée et comptée", () => {
+    const r = pointsMobileTemps(
+      [T0, T0 + H],
+      [
+        { bucket: new Date(T0), sessions: 2, occurrences: null },
+        { bucket: new Date(T0 + 30 * 60_000), sessions: 9, occurrences: null },
+      ],
+      false,
+    );
+    expect(r.points.map((p) => p.occurrences)).toEqual([null, null]);
+    expect(r.totalOccurrences).toBeNull();
+    expect(r.totalSessions).toBe(2);
+    expect(r.ignores).toBe(1);
+  });
+
+  it("lien vers /sessions : la cohorte en `seg`, les conditions de l'écran et l'app conservées", () => {
+    const lien = lienCohorte(requeteF39("app=app-rn&period=7d&os=iOS&device=mobile"), "/sessions", true);
+    expect(lien.raison).toBeNull();
+    const url = new URL(lien.href!, "http://x");
+    expect(url.pathname).toBe("/sessions");
+    expect(url.searchParams.get("seg")).toBe("v2:runtime:eq:react_native");
+    expect(url.searchParams.get("app")).toBe("app-rn");
+    expect(url.searchParams.get("os")).toBe("iOS");
+    expect(url.searchParams.get("device")).toBe("mobile");
+    expect(url.searchParams.get("period")).toBe("7d");
+  });
+
+  it("lien vers /pages : la route de l'écran en plus ; vers l'Explorer : le plan en plus", () => {
+    const pages = new URL(lienCohorte(requeteF39("app=app-rn"), "/pages", true, { route: "/panier" }).href!, "http://x");
+    expect(pages.pathname).toBe("/pages");
+    expect(pages.searchParams.get("route")).toBe("/panier");
+    expect(pages.searchParams.get("seg")).toBe("v2:runtime:eq:react_native");
+    const explorer = new URL(
+      lienCohorte(requeteF39("app=app-rn"), "/explorer", true, { dataset: "sessions", measure: "started:count", cursor: null }).href!,
+      "http://x",
+    );
+    expect(explorer.searchParams.get("dataset")).toBe("sessions");
+    expect(explorer.searchParams.has("cursor")).toBe(false);
+  });
+
+  it("jamais un lien vers un refus : release filtrée, runtime non collecté, schéma non lu", () => {
+    for (const qs of ["app=app-rn&release=4.2.0", "app=app-rn&seg=v2:release:is_null"]) {
+      for (const cible of ["/sessions", "/pages", "/explorer"] as const) {
+        expect(lienCohorte(requeteF39(qs), cible, true), `${qs} → ${cible}`).toEqual({ href: null, raison: RAISON_LIEN_RELEASE });
+      }
+    }
+    expect(lienCohorte(requeteF39("app=app-rn"), "/sessions", false)).toEqual({ href: null, raison: RAISON_LIEN_SANS_RUNTIME });
+    expect(lienCohorte(requeteF39("app=app-rn"), "/sessions", null)).toEqual({ href: null, raison: RAISON_LIEN_SCHEMA_NON_LU });
+  });
+});

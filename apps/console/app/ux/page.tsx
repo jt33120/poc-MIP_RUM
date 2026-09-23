@@ -2,7 +2,7 @@
 // restent sans réponse ou font attendre ? »
 //
 // ZONES 5 ET 6 (F23). La question « qui fait attendre » se répond en trois temps, et
-// chacun a sa figure : QUAND (l'INP p75 dans le temps, sur ses bandes 200 / 500 ms de
+// chacun a sa figure : QUAND (l'INP p75 dans le temps, sur ses bandes de seuil lues dans
 // `lib/rating.ts`), SUR QUOI l'utilisateur a cliqué (le nuage fréquence × latence, dont
 // les cinq points les plus hauts sont étiquetés : ce sont ceux qu'on cherche), et QUEL
 // CODE a tenu le fil principal pendant ce temps-là (les scripts bloquants, classés par
@@ -480,7 +480,7 @@ function HeroRoutes({
 
 /**
  * « INP p75 dans le temps » (§ 5.4.2) : un p75 par seau du contrat, sur les bandes
- * Bon / À améliorer / Mauvais de `lib/rating.ts` (200 / 500 ms, jamais recopiées ici).
+ * Bon / À améliorer / Mauvais de `lib/rating.ts` (bornes de l'INP, jamais recopiées ici).
  *
  * UN SEAU SANS MESURE EST UN TROU. `vitalSeriesN` rend déjà toute la grille ; un seau
  * sans mesure y vaut `p75: null, n: 0`, et `ThresholdSeries` coupe la ligne au lieu de

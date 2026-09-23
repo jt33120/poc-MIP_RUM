@@ -2,16 +2,16 @@
 //
 // CE QUE CE SPEC EXISTE POUR EMPÊCHER.
 //   - Le retour d'une part calculée sur un top N : les deux cartes de bords
-//     divisaient chaque route par la somme des 15 routes AFFICHÉES. La colonne
-//     « Part de toutes les sessions » reste vide et motivée tant que B31 n'a pas
-//     livré le dénominateur ; aucun pourcentage n'apparaît dans les deux tables.
+//     divisaient chaque route par la somme des 15 routes AFFICHÉES. Depuis F53
+//     (B31), la part se lit sur les sessions avec vue de la même plage
+//     (`sessionsAvecVue`) — 10 ici, quel que soit le nombre de routes affichées.
 //   - Un ruban qui ne mène nulle part : cliquer un ruban ouvre les sessions
 //     passées par la route d'arrivée (`/sessions?qf=route&q=…`).
 //   - Une épaisseur sans nombre : chaque nœud porte son total.
 //   - Deux conventions de pourcentage anonymes dans l'entonnoir : les deux taux
 //     sont nommés, et la marche la plus perdante est désignée.
-//   - Un geste inerte : l'ancrage (B31) et les étapes typées (B33) sont annoncés
-//     absents.
+//   - Un ancrage qui changerait les chiffres : `depuis` ne restreint que le dessin
+//     du flux ; les étapes typées (B33) restent annoncées absentes.
 //
 // Données EXPLICITEMENT SYNTHÉTIQUES, dans une app dédiée, et un compte admin
 // dédié à ce fichier (jamais le compte de seed-admin).
@@ -118,7 +118,7 @@ test.describe("F50 — Parcours", () => {
     expect(url.searchParams.get("app")).toBe(APP_F50);
   });
 
-  test("chaque nœud porte son total ; l'ancrage (B31) est annoncé absent", async ({ page }) => {
+  test("chaque nœud porte son total ; un nœud de gauche propose l'ancrage (B31)", async ({ page }) => {
     await login(page);
     await page.goto(`${BASE}`, { waitUntil: "domcontentloaded" });
     const flux = page.locator("#paths-flux");
@@ -127,40 +127,66 @@ test.describe("F50 — Parcours", () => {
     await expect(flux).toContainText("/f50-panier · 4");
     await expect(flux).toContainText("/f50-paiement · 4");
     await expect(flux.getByTestId("figure-meta")).toContainText("14 / 14 passages représentés");
-    await expect(page.getByTestId("paths-ancrage")).toContainText(
-      "ancrage « à partir de » à créer : la lecture des transitions ne filtre pas sur une route de départ (B31)",
+    // Le nœud SOURCE « /f50-panier » (4 passages sortants) ancre le flux à partir de lui.
+    await expect(flux.locator('[data-testid="sankey-noeud"]').filter({ hasText: "/f50-panier · 4" })).toHaveAttribute(
+      "href",
+      /depuis=%2Ff50-panier/,
     );
+    await expect(page.locator("body")).not.toContainText("ancrage « à partir de » à créer");
     // L'alternative textuelle porte les mêmes lignes que les rubans.
     await expect(flux.getByTestId("alternative")).toContainText("De");
   });
 
-  test("aucune part calculée sur un top N : colonne vide et motivée dans les deux tables", async ({ page }) => {
+  test("ancrage « à partir de » : le flux ne dessine que les départs de la route, les tuiles ne changent pas", async ({ page }) => {
+    await login(page);
+    await page.goto(`${BASE}`, { waitUntil: "domcontentloaded" });
+    const ancrage = page.getByTestId("paths-ancrage");
+    await expect(ancrage).toContainText("À partir de :");
+    await ancrage.getByRole("link", { name: "/f50-panier", exact: true }).click();
+    await page.waitForURL((u) => u.searchParams.get("depuis") === "/f50-panier", { timeout: 15_000 });
+    await expect(page.getByTestId("sankey-ancre")).toContainText("Flux à partir de /f50-panier");
+    const rubans = page.locator('#paths-flux [data-testid="sankey-ruban"]');
+    await expect(rubans).toHaveCount(1);
+    await expect(rubans.first()).toHaveAttribute("data-vers", "/f50-paiement");
+    // Réglage d'écran : les tuiles et les tables portent toujours sur toutes les routes.
+    await expect(page.getByTestId("kpi-tile").filter({ hasText: "Transitions distinctes" }).getByTestId("kpi-valeur")).toHaveText("2");
+    await expect(page.locator("#paths-sorties tbody tr")).toHaveCount(2);
+    // « Toutes les routes » retire l'ancrage.
+    await page.getByTestId("paths-ancrage-toutes").click();
+    await page.waitForURL((u) => !u.searchParams.has("depuis"), { timeout: 15_000 });
+    await expect(page.locator('#paths-flux [data-testid="sankey-ruban"]')).toHaveCount(2);
+  });
+
+  test("parts sur les sessions avec vue (B31) : jamais sur la somme des routes affichées", async ({ page }) => {
     await login(page);
     await page.goto(`${BASE}`, { waitUntil: "domcontentloaded" });
     for (const id of ["#paths-entrees", "#paths-sorties"]) {
-      const table = page.locator(id);
-      await expect(table.locator('th[scope="col"]')).toHaveText(["Route", "Sessions", "Part de toutes les sessions"]);
-      await expect(table).toContainText(
-        "Part de toutes les sessions : non calculée tant que le dénominateur (les sessions avec vue, sur la même fenêtre) n'est pas lu sur le contrat (B31).",
-      );
-      // Aucun pourcentage nulle part dans la table.
-      expect(await table.innerText(), id).not.toMatch(/\d+(,\d+)?\s?%/);
+      await expect(page.locator(id).locator('th[scope="col"]')).toHaveText([
+        "Route",
+        "Sessions",
+        "Part de toutes les sessions",
+        "Sessions à une vue",
+        "LCP p75 de la route",
+      ]);
     }
     // Le semis (en tête du fichier) : les dix sessions COMMENCENT par « / » — c'est
     // l'unique page d'entrée ; « /f50-panier » n'est la première route d'aucune. Elles
-    // finissent sur « /f50-panier » (6) ou « /f50-paiement » (4).
+    // finissent sur « /f50-panier » (6) ou « /f50-paiement » (4). Chacune a au moins
+    // deux vues (aucune « à une vue »), et aucune mesure LCP n'est semée (« — »).
     const entrees = page.locator("#paths-entrees tbody tr");
     await expect(entrees).toHaveCount(1);
     await expect(entrees.getByRole("link", { name: "/", exact: true })).toBeVisible();
-    await expect(entrees.getByRole("cell").first()).toHaveText("10");
-    await expect(page.locator("#paths-sorties tbody tr")).toHaveCount(2);
-    await expect(page.locator("#paths-sorties")).toContainText("/f50-paiement");
-    // Les tuiles disent la route et son compte, sans part.
+    await expect(entrees.first().getByRole("cell")).toHaveText(["10", /100,0\s%/, "0", "—"]);
+    const sorties = page.locator("#paths-sorties tbody tr");
+    await expect(sorties).toHaveCount(2);
+    await expect(sorties.filter({ hasText: "/f50-panier" }).getByRole("cell")).toHaveText(["6", /60,0\s%/, "0", "—"]);
+    await expect(sorties.filter({ hasText: "/f50-paiement" }).getByRole("cell")).toHaveText(["4", /40,0\s%/, "0", "—"]);
+    // Les tuiles disent la route, son compte et sa part de TOUTES les sessions avec vue.
     const tuiles = page.getByTestId("kpi-libelle");
-    await expect(tuiles.filter({ hasText: "Page d'entrée n°1" })).toContainText("/ · 10 sessions y démarrent");
-    await expect(tuiles.filter({ hasText: "Page de sortie n°1" })).toContainText(
-      "part de l'ensemble non calculée (dénominateur à créer)",
-    );
+    await expect(tuiles.filter({ hasText: "Page d'entrée n°1" })).toContainText("/ · 10 sessions sur 10");
+    await expect(tuiles.filter({ hasText: "Page d'entrée n°1" })).toContainText(/100,0\s% des sessions avec vue y démarrent/);
+    await expect(tuiles.filter({ hasText: "Page de sortie n°1" })).toContainText("/f50-panier · 6 sessions sur 10");
+    await expect(page.locator("body")).not.toContainText("dénominateur à créer");
     // La carte « Transitions les plus fréquentes » a disparu (doublon du flux).
     await expect(page.locator("body")).not.toContainText("Transitions les plus fréquentes");
   });

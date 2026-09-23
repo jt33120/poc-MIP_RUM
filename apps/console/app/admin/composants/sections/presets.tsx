@@ -49,7 +49,7 @@ function Exemple({ etat, children }: { etat: string; children: ReactNode }) {
 const VERSIONS: VersionRow[] = [
   { version: "1.4.1", sessions: 5210, lcp: 2380, inp: 190, erreurs: 212, sessionsEnErreur: 148 },
   { version: "1.4.2", sessions: 1840, lcp: 2710, inp: 240, erreurs: 96, sessionsEnErreur: 71 },
-  { version: "(non renseignée)", sessions: 420, lcp: 2500, inp: 200, erreurs: 12, sessionsEnErreur: 9 },
+  { version: "(non renseignée)", sessions: 420, lcp: 2460, inp: 185, erreurs: 12, sessionsEnErreur: 9 },
   { version: "1.3.9", sessions: 210, lcp: 2290, inp: 170, erreurs: 4, sessionsEnErreur: 4 },
 ];
 /** Du plus récent au plus ancien, comme `listDeploys` ; un redéploiement de 1.4.2. */

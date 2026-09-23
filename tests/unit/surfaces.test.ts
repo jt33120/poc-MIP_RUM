@@ -6,13 +6,11 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DIMENSIONS, parseAnalyticsQuery, type Dimension } from "../../apps/console/lib/query-contract";
 import {
-  RAISON_APP_UNIQUE,
   SANS_RAFRAICHISSEMENT,
   SURFACES,
   checkSurface,
   conditionAvailability,
   dimensionAvailability,
-  perimetreAvailability,
   rangeAvailability,
   sansRafraichissement,
   surfaceFor,
@@ -24,9 +22,13 @@ const APP_DIR = join(__dirname, "..", "..", "apps", "console", "app");
 const NOW = Date.parse("2026-09-17T12:00:00.000Z");
 
 // Schéma v74 (avant P6.1) : navigateur, système, env et release des signaux absents.
+// B8 : ni les versions (v75) ni le runtime (v82) n'y existent ; `net_type` (v53), si.
 const V74 = schemaSans(
   "rum_session.browser",
   "rum_session.os",
+  "rum_session.browser_version",
+  "rum_session.os_version",
+  "rum_session.runtime",
   ...["rum_pageview", "rum_metric", "rum_action", "rum_resource", "rum_longtask", "rum_event", "rum_span", "rum_event_index"].flatMap(
     (table) => [`${table}.env`, `${table}.release`],
   ),
@@ -85,7 +87,20 @@ describe("chaque écran branché sur le contrat déclare ses capacités", () => 
 describe("matrice écran × filtre", () => {
   it("écrans de mesures, schéma migré : ce que TOUTES leurs mesures appliquent", () => {
     // P8.7 : `country_source` accompagne `country` partout où il est disponible.
-    const SESSION = ["device", "browser", "os", "country", "country_source", "source", "client"];
+    // B8 : runtime, versions et type de réseau sont des dimensions de session.
+    const SESSION = [
+      "device",
+      "browser",
+      "os",
+      "country",
+      "country_source",
+      "source",
+      "client",
+      "runtime",
+      "browser_version",
+      "os_version",
+      "net_type",
+    ];
     expect(disponibles("/errors")).toEqual([...DIMENSIONS]);
     expect(disponibles("/errors/fp")).toEqual([...DIMENSIONS]);
     expect(disponibles("/events")).toEqual([...DIMENSIONS]);
@@ -104,8 +119,10 @@ describe("matrice écran × filtre", () => {
   });
 
   it("schéma v74 (console publiée avant P6.1) : navigateur et système « pas encore collectés »", () => {
-    expect(disponibles("/errors", V74).sort()).toEqual(["client", "country", "country_source", "device", "env", "release", "route", "service", "source"]);
-    expect(disponibles("/pages", V74).sort()).toEqual(["client", "country", "country_source", "device", "route", "source"]);
+    expect(disponibles("/errors", V74).sort()).toEqual([
+      "client", "country", "country_source", "device", "env", "net_type", "release", "route", "service", "source",
+    ]);
+    expect(disponibles("/pages", V74).sort()).toEqual(["client", "country", "country_source", "device", "net_type", "route", "source"]);
     expect(dimensionAvailability(surface("/pages"), "browser", V74)).toEqual({
       available: false,
       reason: "« Navigateur » n'est pas encore collecté pour les pages vues",
@@ -116,25 +133,52 @@ describe("matrice écran × filtre", () => {
     });
   });
 
-  it("écrans historiques : segment v1 et presets seulement, ni tablette ni « inconnu »", () => {
+  // F53 (B31) : les écrans d'usage lisent sur le contrat. Plus de segment v1 seul :
+  // toutes les dimensions de SESSION, tablette et « Inconnu » compris ; une
+  // dimension d'occurrence (route, release, env, service) reste refusée avec sa raison.
+  it("écrans d'usage sur le contrat : dimensions de session, tablette et « Inconnu », plage personnalisée", () => {
+    // Les dimensions de session, B8 comprises (runtime, versions, type de réseau) :
+    // l'écran les lit par le même `sqlContext` que le navigateur ou l'OS.
+    const SESSION = [
+      "browser",
+      "browser_version",
+      "client",
+      "country",
+      "country_source",
+      "device",
+      "net_type",
+      "os",
+      "os_version",
+      "runtime",
+      "source",
+    ];
     for (const path of ["/paths", "/forms", "/acquisition", "/retention"]) {
       const s = surface(path);
-      expect(disponibles(path).sort(), path).toEqual(["client", "country", "country_source", "device", "source"]);
-      expect(dimensionAvailability(s, "browser", schemaComplet())).toEqual({
+      expect(s.legacy, path).toBeUndefined();
+      expect(disponibles(path).sort(), path).toEqual(SESSION);
+      expect(conditionAvailability(s, { dimension: "device", operator: "eq", value: "tablet" }, schemaComplet()).available, path).toBe(true);
+      expect(conditionAvailability(s, { dimension: "browser", operator: "is_null", value: null }, schemaComplet()).available, path).toBe(true);
+      expect(dimensionAvailability(s, "route", schemaComplet())).toEqual({
         available: false,
-        reason: "« Navigateur » n'est pas encore appliqué par cet écran",
+        reason: "« Route » est sans objet pour les sessions",
       });
-      expect(conditionAvailability(s, { dimension: "device", operator: "eq", value: "tablet" }, schemaComplet()).available).toBe(false);
-      expect(conditionAvailability(s, { dimension: "country", operator: "is_null", value: null }, schemaComplet()).available).toBe(false);
-      expect(conditionAvailability(s, { dimension: "device", operator: "neq", value: "mobile" }, schemaComplet()).available).toBe(true);
       if (path === "/retention") continue; // fenêtre en semaines, voir le test suivant
-      expect(rangeAvailability(s, true)).toEqual({
-        available: false,
-        reason: "Cet écran n'accepte encore que les périodes 1 h, 24 h et 7 j.",
-      });
-      expect(rangeAvailability(s, false).available).toBe(true);
+      expect(rangeAvailability(s, true), path).toEqual({ available: true });
+      expect(
+        checkSurface(requete("from=2026-09-17T10:00:00Z&to=2026-09-17T11:00:00Z&device=tablet&seg=v2:browser:is_null"), s, schemaComplet()),
+        path,
+      ).toEqual({ ok: true, value: true });
     }
-    for (const path of ["/logs", "/ai", "/forecast", "/svi", "/svi/appels/1"]) expect(disponibles(path), path).toEqual([]);
+  });
+
+  it("lectures historiques restantes (`period-only`) : aucune dimension, tablette comprise", () => {
+    for (const path of ["/logs", "/ai", "/forecast", "/svi", "/svi/appels/1"]) {
+      expect(disponibles(path), path).toEqual([]);
+      expect(conditionAvailability(surface(path), { dimension: "device", operator: "eq", value: "tablet" }, schemaComplet())).toEqual({
+        available: false,
+        reason: "« Appareil » n'est pas encore appliqué par cet écran",
+      });
+    }
   });
 
   // F40 (§ 5.17.5) : la rétention lit N semaines choisies dans l'écran. La période
@@ -150,8 +194,9 @@ describe("matrice écran × filtre", () => {
       ok: false,
       error: { code: "unsupported_dimension", parameter: "from", message: raison },
     });
-    // Les segments historiques, eux, s'appliquent toujours.
+    // Les filtres de population, eux, s'appliquent (B31) : segment v1, tablette, « Inconnu ».
     expect(checkSurface(requete("seg=geo==FR;device!=mobile"), s, schemaComplet()).ok).toBe(true);
+    expect(checkSurface(requete("device=tablet&seg=v2:browser:is_null"), s, schemaComplet()).ok).toBe(true);
   });
 
   it("/forecast lit une fenêtre fixe : la période est désactivée avec sa raison, jamais ignorée", () => {
@@ -186,13 +231,13 @@ describe("checkSurface : une URL entièrement applicable, ou un refus typé", ()
   });
 
   it("refuse plage personnalisée sur un écran à presets, tablette sur un écran historique, dimension absente", () => {
-    expect(checkSurface(requete("from=2026-09-17T10:00:00Z&to=2026-09-17T11:00:00Z"), surface("/paths"), schemaComplet())).toMatchObject({
+    expect(checkSurface(requete("from=2026-09-17T10:00:00Z&to=2026-09-17T11:00:00Z"), surface("/logs"), schemaComplet())).toMatchObject({
       ok: false,
-      error: { code: "unsupported_dimension", parameter: "from" },
+      error: { code: "unsupported_dimension", parameter: "from", message: "Cet écran n'accepte encore que les périodes 1 h, 24 h et 7 j." },
     });
-    expect(checkSurface(requete("device=tablet"), surface("/paths"), schemaComplet())).toMatchObject({
+    expect(checkSurface(requete("device=tablet"), surface("/logs"), schemaComplet())).toMatchObject({
       ok: false,
-      error: { code: "unsupported_dimension", dimension: "device", message: "Cet écran n'applique ni « Inconnu » ni la tablette." },
+      error: { code: "unsupported_dimension", dimension: "device", message: "« Appareil » n'est pas encore appliqué par cet écran" },
     });
     expect(checkSurface(requete("browser=Firefox"), surface("/pages"), V74)).toMatchObject({
       ok: false,
@@ -235,41 +280,14 @@ describe("/mobile — la liste blanche de dimensions", () => {
   });
 });
 
-// F40 (R-A, CS1) — les lectures de ces écrans filtrent l'app par
-// `($1::text is null or app_id = $1)` : sous `app=all`, elles liraient TOUTES les
-// apps de la base. Un principal restreint qui demande toutes ses apps est refusé.
-describe("perimetreAvailability — écrans à lecture mono-app", () => {
-  // `/goals` en est sorti avec F66 (lectures sur `sqlContext`) : voir le bloc F66.
-  const MONO_APP = ["/acquisition", "/paths", "/forms", "/retention"];
-  const scope = (requestedApp: string | null, authorizedApps: string[] | null) => ({
-    requestedApp,
-    authorizedApps,
-    effectiveApps: requestedApp ? [requestedApp] : authorizedApps,
-  });
-
-  it("exactement les écrans historiques d'usage encore non migrés sont marqués", () => {
-    expect(SURFACES.filter((s) => s.appUnique).map((s) => s.path).sort()).toEqual([...MONO_APP].sort());
-  });
-
-  it("principal restreint + toutes les apps → refus typé, texte opposable", () => {
-    for (const path of MONO_APP) {
-      expect(perimetreAvailability(surface(path), scope(null, ["a"])), path).toEqual({ available: false, reason: RAISON_APP_UNIQUE });
-      expect(perimetreAvailability(surface(path), scope(null, ["a", "b"])), path).toEqual({ available: false, reason: RAISON_APP_UNIQUE });
-    }
-    expect(RAISON_APP_UNIQUE.startsWith("Cet écran lit une application à la fois")).toBe(true);
-  });
-
-  it("une app nommée, ou un principal sans restriction : rien à refuser", () => {
-    for (const path of MONO_APP) {
-      expect(perimetreAvailability(surface(path), scope("a", ["a", "b"])).available, path).toBe(true);
-      expect(perimetreAvailability(surface(path), scope(null, null)).available, path).toBe(true);
-    }
-  });
-
-  it("un écran sur le contrat lie ses apps effectives : jamais refusé sous « toutes »", () => {
-    for (const path of ["/sessions", "/map", "/pages", "/errors", "/"]) {
-      expect(perimetreAvailability(surface(path), scope(null, ["a", "b"])).available, path).toBe(true);
-    }
+// F40 (R-A, CS1) avait marqué `/acquisition`, `/paths`, `/forms` et `/retention` d'un
+// refus provisoire « une application à la fois » : leurs lectures filtraient l'app
+// par « app demandée, ou toutes si elle est nulle ». B31 les a passées sur
+// `sqlContext` (apps EFFECTIVES liées) ; F53 lève le refus. Le drapeau et la porte
+// ont disparu : aucune surface ne sait plus refuser « toutes mes apps ».
+describe("F53 — plus de lecture mono-app", () => {
+  it("aucune surface ne porte plus le drapeau de lecture mono-app", () => {
+    for (const s of SURFACES) expect(Object.keys(s), s.path).not.toContain("appUnique");
   });
 });
 
@@ -301,16 +319,14 @@ describe("/goals sur le contrat (F66)", () => {
 
   it("plus de lecture historique ni de refus de périmètre ; plage personnalisée acceptée", () => {
     expect(goals().legacy).toBeUndefined();
-    expect(goals().appUnique).toBeUndefined();
     expect(goals().rangeNote).toBeUndefined();
     expect(rangeAvailability(goals(), true)).toEqual({ available: true });
-    expect(perimetreAvailability(goals(), { requestedApp: null, authorizedApps: ["a", "b"], effectiveApps: ["a", "b"] })).toEqual({
-      available: true,
-    });
   });
 
   it("dimensions de session seulement ; tablette et « Inconnu » acceptés", () => {
-    expect(disponibles("/goals").sort()).toEqual(["browser", "client", "country", "country_source", "device", "os", "source"]);
+    expect(disponibles("/goals").sort()).toEqual([
+      "browser", "browser_version", "client", "country", "country_source", "device", "net_type", "os", "os_version", "runtime", "source",
+    ]);
     expect(conditionAvailability(goals(), { dimension: "device", operator: "eq", value: "tablet" }, schemaComplet()).available).toBe(true);
     expect(conditionAvailability(goals(), { dimension: "device", operator: "is_null", value: null }, schemaComplet()).available).toBe(true);
     expect(checkSurface(requete("from=2026-09-17T10:00:00Z&to=2026-09-17T11:00:00Z&device=tablet"), goals(), schemaComplet())).toEqual({
@@ -320,6 +336,40 @@ describe("/goals sur le contrat (F66)", () => {
     expect(checkSurface(requete("route=/merci"), goals(), schemaComplet())).toMatchObject({
       ok: false,
       error: { dimension: "route", message: "« Route » est sans objet pour les sessions" },
+    });
+  });
+});
+
+describe("B8 — le runtime et les versions sur chaque écran", () => {
+  const B8: Dimension[] = ["runtime", "browser_version", "os_version", "net_type"];
+
+  it("écrans du contrat qui lisent des sessions : applicables ; /mobile, corrélation et écrans historiques : refusés avec leur raison", () => {
+    // /paths, /forms, /acquisition, /retention : passés au contrat par F53 (B31).
+    for (const path of ["/sessions", "/pages", "/errors", "/", "/goals", "/explorer", "/paths", "/forms", "/acquisition", "/retention"]) {
+      for (const dimension of B8) {
+        expect(dimensionAvailability(surface(path), dimension, schemaComplet()), `${path} × ${dimension}`).toEqual({ available: true });
+      }
+    }
+    // /mobile est DÉJÀ la cohorte React Native : il n'applique que device, os et release.
+    expect(dimensionAvailability(surface("/mobile"), "runtime", schemaComplet())).toMatchObject({ available: false });
+    expect(dimensionAvailability(surface("/correlation"), "runtime", schemaComplet())).toMatchObject({ available: false });
+    expect(dimensionAvailability(surface("/forecast"), "runtime", schemaComplet())).toEqual({
+      available: false,
+      reason: "« Runtime » n'est pas encore appliqué par cet écran",
+    });
+  });
+
+  it("URL de /sessions filtrée sur la cohorte React Native : acceptée ; sur une base sans v82 : refus typé", () => {
+    const rn = requete("seg=v2:runtime:eq:react_native");
+    expect(checkSurface(rn, surface("/sessions"), schemaComplet())).toEqual({ ok: true, value: true });
+    expect(checkSurface(rn, surface("/sessions"), schemaSans("rum_session.runtime"))).toMatchObject({
+      ok: false,
+      error: { code: "unsupported_dimension", dimension: "runtime" },
+    });
+    // La release reste une dimension d'OCCURRENCE : /sessions la refuse (lien de /mobile sous `release=`).
+    expect(checkSurface(requete("release=4.2.0&seg=v2:runtime:eq:react_native"), surface("/sessions"), schemaComplet())).toMatchObject({
+      ok: false,
+      error: { dimension: "release" },
     });
   });
 });
