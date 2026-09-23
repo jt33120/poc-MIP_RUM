@@ -2,6 +2,8 @@
 
 Historique des versions. Détail factuel (valeurs mesurées, pièges, décisions) dans [BUILD_LOG.md](BUILD_LOG.md).
 
+Le README ne porte plus d'historique depuis le 23/09/2026 : il dit l'état relevé par le document de couverture ([docs/RUM_PARITY_STATUS.md](docs/RUM_PARITY_STATUS.md)). Les résumés v0.1 à v0.3 qu'il portait sont repris en tête de leur version, ci-dessous, tels qu'ils étaient écrits (« En bref, ex-README »).
+
 ## v0.14 — 2026-06-18 (P1 — auto-observabilité : /metrics + santé interne)
 
 Périmètre : opérer MIP RUM comme un produit **supervisé**. **Lecture seule**, aucune migration de données. Endpoint `GET /api/metrics` + page admin `/admin/health`. Détail : [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
@@ -185,6 +187,8 @@ Périmètre : tracing front→back (décision Julian : ClickHouse prod abandonn�
 
 ## v0.3 — 2026-06-11 (sprint nuit 2, livré et déployé)
 
+En bref, ex-README : sprint nuit 2 — session replay (rrweb, module séparé), RBAC console (rôles admin/viewer), webhooks d'alerte sortants, géo par timezone (zéro IP), rate limit durable, détection d'anomalies (z-score) + **health score** en Overview, chemin ClickHouse bench-é en local.
+
 Périmètre : [ROADMAP_V03.md](docs/archive/ROADMAP_V03.md). Contrat de données verrouillé avant build (`apps/ingest/sql/migration-v03.sql` : `replay_chunk`, `console_user`, `audit_log`, `alert_delivery`, `rate_counter` + `rate_check()`, vue `v_anomaly`, `check_alerts()` v2 avec garde pg_net). Dépendances épinglées : rrweb 2.0.1, rrweb-player 2.0.1, bcryptjs 3.0.3, jose 6.2.3.
 
 ### Alerting sortant, géo, rate limit durable (B1)
@@ -209,6 +213,8 @@ Périmètre : [ROADMAP_V03.md](docs/archive/ROADMAP_V03.md). Contrat de données
 - [docs/LIMITES.md](docs/LIMITES.md) : section v0.3 — résolu cette nuit vs vraies barrières enterprise restantes (mobile natif, mapping auto route↔mesure, ML, multi-région, certifications, support 24/7).
 
 ## v0.2 — 2026-06-11 (sprint nuit, livré)
+
+En bref, ex-README : livrée (sprint nuit du 10→11/06/2026) — resource timings, breadcrumbs, consent RGPD, clés d'API, filtres globaux, sessions détaillées, erreurs groupées, alerting, CI.
 
 Périmètre : [ROADMAP_V02.md](docs/archive/ROADMAP_V02.md). Contrat de données verrouillé avant build (`apps/ingest/sql/migration-v02.sql`). Traite les limites n° 1-4, 7-11, 14-18, 23, 24-25 de [docs/LIMITES.md](docs/LIMITES.md). Statut par chantier dans le rapport du matin (`docs/archive/RAPPORT_NUIT.md`).
 
@@ -242,6 +248,8 @@ Périmètre : [ROADMAP_V02.md](docs/archive/ROADMAP_V02.md). Contrat de données
 - README produit, guide d'intégration client ([docs/INTEGRATION.md](docs/INTEGRATION.md)), ce CHANGELOG.
 
 ## v0.1 — 2026-06-10 (POC, déployé en production)
+
+En bref, ex-README : POC terminé et **déployé en production** (ingestion Supabase Paris, console Vercel, snippet live sur la plateforme G-IT). DoD 1-4 vérifiés en live, tests 36 unitaires + 5 E2E verts. Le README s'ouvrait aussi sur le chiffre du 10/06/2026 (« Chiffre clé en live », plus bas) ; l'écran `/correlation` d'aujourd'hui refuse cette soustraction d'une mesure de robot à un LCP de visiteur (`apps/console/app/correlation/page.tsx`).
 
 POC complet construit en une journée, déployé en cloud **et en production** sur `plateforme.groupement-it.com` (PR [uti-platform#36](https://github.com/jt33120/uti-platform/pull/36)), DoD 1-4 vérifiés en live.
 
