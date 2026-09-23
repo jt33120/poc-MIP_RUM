@@ -890,7 +890,9 @@ declare module "@mip/backend/lib/integrations/tickets/secrets.mjs" {
     constructor(code: string);
     code: string;
   }
-  /** `env:NOM` ou `enc:v1:…` — jamais un secret en clair. */
+  /** Préfixe obligatoire d'une variable référencée : `env:TICKET_…`. */
+  export const PREFIXE_VARIABLE: "TICKET_";
+  /** `env:TICKET_NOM` (hors noms réservés) ou `enc:v1:…` — jamais un secret en clair. */
   export function referenceValide(ref: unknown): boolean;
   export function decrire(ref: unknown): { kind: "env"; name: string } | { kind: "encrypted" } | { kind: "invalid" };
   export function chiffrer(secret: string, env?: NodeJS.ProcessEnv): string;

@@ -515,8 +515,8 @@ describe("P8.6 — retrouver un ticket par sa référence MIP, après une incert
 describe("P8.6 — les secrets ne sont jamais en clair, ni en base ni en réponse", () => {
   const CLE = randomBytes(32).toString("base64");
 
-  it("n'accepte pour référence que `env:NOM` ou `enc:v1:…`", () => {
-    expect(referenceValide("env:GITHUB_TICKETS_TOKEN")).toBe(true);
+  it("n'accepte pour référence que `env:TICKET_NOM` ou `enc:v1:…`", () => {
+    expect(referenceValide("env:TICKET_GITHUB_TOKEN")).toBe(true);
     expect(referenceValide("enc:v1:" + "A".repeat(32))).toBe(true);
     // Un vrai jeton, une URL signée, un mot de passe : tout est refusé.
     expect(referenceValide("ghp_0123456789abcdefghijklmnopqrstuvwxyz")).toBe(false);
@@ -527,7 +527,7 @@ describe("P8.6 — les secrets ne sont jamais en clair, ni en base ni en répons
   });
 
   it("décrit une référence sans jamais rendre sa valeur", () => {
-    expect(decrire("env:GITHUB_TICKETS_TOKEN")).toEqual({ kind: "env", name: "GITHUB_TICKETS_TOKEN" });
+    expect(decrire("env:TICKET_GITHUB_TOKEN")).toEqual({ kind: "env", name: "TICKET_GITHUB_TOKEN" });
     const chiffre = chiffrer("jeton-tres-secret", { TICKET_SECRET_KEY: CLE });
     expect(decrire(chiffre)).toEqual({ kind: "encrypted" });
     expect(JSON.stringify(decrire(chiffre))).not.toContain("jeton-tres-secret");
@@ -557,14 +557,57 @@ describe("P8.6 — les secrets ne sont jamais en clair, ni en base ni en répons
     // diagnostic FAUX « jeton révoqué » au lieu de « jamais fourni ».
     const err = (() => {
       try {
-        resoudre("env:ABSENTE", {});
+        resoudre("env:TICKET_ABSENTE", {});
       } catch (e) {
         return e;
       }
     })() as ErreurSecret;
     expect(err).toBeInstanceOf(ErreurSecret);
     expect(err.code).toBe("variable_absente");
-    expect(() => resoudre("env:PRESENTE", { PRESENTE: "v" })).not.toThrow();
+    expect(() => resoudre("env:TICKET_PRESENTE", { TICKET_PRESENTE: "v" })).not.toThrow();
+  });
+
+  // P1 — la valeur résolue part en jeton porteur chez le fournisseur : une
+  // référence à `env:DATABASE_URL` enverrait la chaîne de connexion à un tiers.
+  // Seules les variables écrites pour le connecteur (`TICKET_…`) sont lisibles.
+  it("n'accepte que des variables préfixées TICKET_, hors noms réservés", () => {
+    for (const ref of ["env:TICKET_GITHUB_TOKEN", "env:TICKET_A", "env:TICKET_9", `env:TICKET_${"X".repeat(57)}`]) {
+      expect(referenceValide(ref), ref).toBe(true);
+    }
+    for (const ref of [
+      "env:DATABASE_URL",
+      "env:AUTH_SECRET",
+      "env:IDENTITY_HASH_SECRET",
+      "env:GITHUB_TICKETS_TOKEN",
+      "env:TICKET_",
+      "env:TICKET_minuscules",
+      "env:TICKET-TIRET",
+      `env:TICKET_${"X".repeat(58)}`,
+      // La clé qui déchiffre TOUTES les références `enc:` : jamais un jeton.
+      "env:TICKET_SECRET_KEY",
+      "env:TICKET_SECRET_KEY_PRECEDENTE",
+      "env:TICKET_INTEGRATIONS",
+    ]) {
+      expect(referenceValide(ref), ref).toBe(false);
+      expect(decrire(ref), ref).toEqual({ kind: "invalid" });
+    }
+    // Un préfixe proche n'est pas le préfixe réservé.
+    expect(referenceValide("env:TICKET_INTEGRATIONS_GITHUB")).toBe(true);
+  });
+
+  it("à la résolution, une variable hors préfixe n'est jamais lue, même présente", () => {
+    const env = { DATABASE_URL: "postgres://prod", TICKET_SECRET_KEY: CLE, AUTH_SECRET: "s" };
+    for (const ref of ["env:DATABASE_URL", "env:AUTH_SECRET", "env:TICKET_SECRET_KEY"]) {
+      let err: unknown;
+      try {
+        resoudre(ref, env);
+      } catch (e) {
+        err = e;
+      }
+      expect(err, ref).toBeInstanceOf(ErreurSecret);
+      expect((err as ErreurSecret).code, ref).toBe("variable_hors_perimetre");
+    }
+    expect(resoudre("env:TICKET_GITHUB_TOKEN", { TICKET_GITHUB_TOKEN: "jeton" })).toBe("jeton");
   });
 
   it("sans clé serveur, on chiffre et déchiffre rien du tout", () => {
@@ -579,7 +622,7 @@ describe("P8.6 — validation des requêtes d'administration", () => {
     app: "app-a",
     provider: "github",
     target: "moi/bac",
-    credentialRef: "env:GITHUB_TICKETS_TOKEN",
+    credentialRef: "env:TICKET_GITHUB_TOKEN",
   };
 
   it("accepte une configuration minimale, sans mapping", () => {
@@ -595,6 +638,15 @@ describe("P8.6 — validation des requêtes d'administration", () => {
     const r = parseIntegrationRequest({ ...valide, credentialRef: "ghp_0123456789abcdefghijklmnop" });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toContain("jamais le jeton lui-même");
+  });
+
+  it("REFUSE une référence à une variable de la plateforme, jeton comme secret de webhook", () => {
+    for (const ref of ["env:DATABASE_URL", "env:TICKET_SECRET_KEY"]) {
+      const r = parseIntegrationRequest({ ...valide, credentialRef: ref });
+      expect(r.ok, ref).toBe(false);
+      if (!r.ok) expect(r.error).toContain("env:TICKET_NOM");
+      expect(parseIntegrationRequest({ ...valide, webhookSecretRef: ref }).ok, ref).toBe(false);
+    }
   });
 
   it("exige une cible explicite : rien n'est déduit d'un remote git", () => {

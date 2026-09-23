@@ -43,6 +43,7 @@ const RAISONS: Record<string, string> = {
   reponse_illisible: "réponse du fournisseur illisible",
   fournisseur_inconnu: "aucun adaptateur pour ce fournisseur",
   variable_absente: "le secret référencé n'est pas fourni au runtime",
+  variable_hors_perimetre: "la variable référencée n'est pas dédiée au connecteur (préfixe TICKET_ exigé)",
   cle_serveur_absente: "la clé serveur de déchiffrement n'est pas configurée",
   dechiffrement_refuse: "le secret chiffré n'a pas pu être déchiffré",
 };

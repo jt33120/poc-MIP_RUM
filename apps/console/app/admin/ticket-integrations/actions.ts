@@ -3,7 +3,8 @@
 // tickets, l'activer, marquer sa recette jouée, le sortir de `degraded`.
 //
 // AUCUN SECRET NE TRANSITE PAR CE FORMULAIRE. Le champ attendu est une
-// RÉFÉRENCE : `env:NOM_DE_VARIABLE` (le gestionnaire de secrets du runtime) ou
+// RÉFÉRENCE : `env:TICKET_NOM` (le gestionnaire de secrets du runtime, une
+// variable dédiée au connecteur et jamais une variable de la plateforme) ou
 // `enc:v1:…` (chiffré par une clé serveur séparée). Un jeton collé là est refusé
 // avant toute écriture, et la contrainte de base le refuserait de toute façon.
 //

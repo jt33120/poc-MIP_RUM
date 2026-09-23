@@ -144,9 +144,12 @@ type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 /**
  * `{app, provider, target, credentialRef, webhookSecretRef?, statusMapping?}`.
  *
- * `credentialRef` est une RÉFÉRENCE, pas un secret : `env:NOM` ou `enc:v1:…`.
- * Un jeton collé ici est refusé en 400, et la contrainte de base le refuserait
- * de toute façon — deux barrières, parce que celle-ci donne un message utile.
+ * `credentialRef` est une RÉFÉRENCE, pas un secret : `env:TICKET_NOM` ou
+ * `enc:v1:…`. Un jeton collé ici est refusé en 400, et la contrainte de base le
+ * refuserait de toute façon — deux barrières, parce que celle-ci donne un
+ * message utile. Le préfixe `TICKET_` empêche de désigner une variable de la
+ * plateforme (`env:DATABASE_URL`…), dont la valeur partirait chez le
+ * fournisseur en jeton porteur (cf. `secrets.mjs`).
  *
  * `target` est obligatoire et confirmé par l'opérateur. RIEN n'est déduit du
  * remote git de MIP : ouvrir les tickets d'un client dans le dépôt du produit
@@ -173,15 +176,17 @@ export function parseIntegrationRequest(body: unknown): Parsed<IntegrationReques
     return {
       ok: false,
       error:
-        "credentialRef doit être une RÉFÉRENCE au secret (« env:NOM_DE_VARIABLE » ou « enc:v1:… »), " +
-        "jamais le jeton lui-même",
+        "credentialRef doit être une RÉFÉRENCE au secret (« env:TICKET_NOM », une variable dédiée au " +
+        "connecteur, ou « enc:v1:… »), jamais le jeton lui-même",
     };
   }
   const webhookBrut = champs.webhookSecretRef;
   let webhookSecretRef: string | null = null;
   if (webhookBrut !== undefined && webhookBrut !== null && webhookBrut !== "") {
     const ref = typeof webhookBrut === "string" ? webhookBrut.trim() : "";
-    if (!referenceValide(ref)) return { ok: false, error: "webhookSecretRef doit être une référence au secret" };
+    if (!referenceValide(ref)) {
+      return { ok: false, error: "webhookSecretRef doit être une référence au secret (« env:TICKET_NOM » ou « enc:v1:… »)" };
+    }
     webhookSecretRef = ref;
   }
   const mapping = parseMapping(champs.statusMapping);
