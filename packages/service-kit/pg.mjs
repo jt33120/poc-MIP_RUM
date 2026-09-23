@@ -14,6 +14,15 @@
 //     simplement ouvert une nouvelle connexion à la requête suivante.
 //     (`packages/backend/lib/serveur.mjs:creerPool` n'en pose pas : c'est le
 //     défaut vivant relevé par le plan.)
+//   - un écouteur 'error' sur chaque client EMPRUNTÉ. `pool.on('error')` ne
+//     couvre que les clients au repos : au prêt (`pool.connect()`), pg-pool
+//     RETIRE son propre écouteur du client. Un `pg_terminate_backend` qui
+//     tombe pendant un emprunt — une transaction qui attend un webhook dans le
+//     dispatcher, une étape planifiée — fait alors émettre 'error' à un client
+//     sans écouteur : exception non capturée, processus arrêté. La requête en
+//     cours échoue de toute façon, et pg-pool écarte le client à sa
+//     restitution ; l'écouteur ne fait que TRACER. Posé sur l'événement
+//     'connect' (une fois par connexion), il n'envoie rien au serveur.
 //   - `connectionTimeoutMillis` : sans lui, `pool.connect()` attend
 //     indéfiniment une base qui ne répond pas, et la requête HTTP avec.
 //   - `idleTimeoutMillis` : rend au pooler les connexions qui ne servent plus.
@@ -163,6 +172,19 @@ export function createPool(pg, options) {
     // un autre à la demande. On TRACE, et c'est tout.
     erreurs?.inc();
     log?.warn("pg : connexion inactive perdue — le pool la remplacera", { err });
+  });
+
+  // Clients prêtés en ce moment : au repos, c'est l'écouteur du pool (ci-dessus)
+  // qui trace ; une seule ligne par coupure.
+  const empruntes = new WeakSet();
+  pool.on("acquire", (client) => empruntes.add(client));
+  pool.on("release", (_err, client) => empruntes.delete(client));
+  pool.on("connect", (client) => {
+    client.on?.("error", (err) => {
+      if (!empruntes.has(client)) return;
+      erreurs?.inc();
+      log?.warn("pg : connexion empruntée coupée — la requête en cours échoue, le client sera écarté", { err });
+    });
   });
 
   if (metrics) {

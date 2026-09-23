@@ -15,9 +15,9 @@ Le kit met en œuvre les points 2 à 7 du **contrat de service** (plan backend, 
 | `context.mjs` | `withContext`, `currentContext` | AsyncLocalStorage branché sur le journal : une ligne émise au fond du noyau porte l'identifiant de la requête ou du tour en cours. |
 | `http.mjs` | `startService`, `readBody`, `DEFAULT_TIMEOUTS`, `DEFAULT_MAX_BODY_BYTES` | `/health`, `/ready`, `/metrics` ; délais serveur ; plafond de corps (413) ; journal d'accès sans IP ; `X-Request-Id`. |
 | `lifecycle.mjs` | `installLifecycle` | SIGTERM → `/ready` à 503 → drainage → fermeture (`pool.end()`) → sortie ; sortie forcée avant SIGKILL ; gardes `unhandledRejection` / `uncaughtException`. Synchrone : à installer avant tout `await`. |
-| `pg.mjs` | `createPool`, `ping`, `optionsSsl`, `describeTarget` | `pool.on('error')`, `connectionTimeoutMillis`, `idleTimeoutMillis`, `query_timeout`, `application_name`, keepalive TCP. **Aucun `SET` de session.** TLS vérifié hors réseau privé. |
+| `pg.mjs` | `createPool`, `ping`, `optionsSsl`, `describeTarget` | `pool.on('error')` et un écouteur `error` sur chaque client **emprunté** (pg-pool retire le sien au prêt), `connectionTimeoutMillis`, `idleTimeoutMillis`, `query_timeout`, `application_name`, keepalive TCP. **Aucun `SET` de session.** TLS vérifié hors réseau privé. |
 | `metrics.mjs` | `createMetrics`, `registerProcessMetrics` | Compteurs et jauges au format texte Prometheus, jauges calculées au rendu, plafond de séries par métrique. |
-| `loop.mjs` | `startLoop` | Boucle à intervalle, jitter ±10 %, **jamais deux tours en parallèle**, un échec ne l'arrête pas, `stop()` attend le tour en cours. |
+| `loop.mjs` | `startLoop` | Boucle à intervalle, jitter ±10 %, ou cadence alignée sur l'horloge (`nextDelay`, le scheduler) ; **jamais deux tours en parallèle**, un échec ne l'arrête pas, `stop()` attend le tour en cours. |
 | `web.mjs` | `toNodeHandler`, `createWebRequest`, `writeWebResponse`, `sendJson`, `BodyTooLargeError` | Adaptateur `node:http` ↔ `Request`/`Response`, plafond de corps appliqué au flux même sans `Content-Length`. |
 
 ## Routes que `startService` pose
@@ -89,6 +89,7 @@ Le kit garantit l'exclusion **dans un processus** : `startLoop` n'arme la minute
 | configuration invalide | refus de démarrer, code 2 | une ligne `configuration invalide` qui liste tout |
 | base injoignable | `/health` à 503 au plus tard 2,5 s après la sonde ; le processus vit | `santé dégradée`, une fois, puis `santé rétablie` |
 | client inactif coupé (pooler, `pg_terminate_backend`) | le pool le remplace à la demande | `pg : connexion inactive perdue`, `pg_pool_errors_total` |
+| client **emprunté** coupé (transaction en cours, attente réseau) | la requête en cours échoue, le client est écarté à sa restitution ; le processus vit | `pg : connexion empruntée coupée`, `pg_pool_errors_total` |
 | en-têtes trop lents (slowloris) | 408 et fermeture à `headersTimeout` (10 s) | rien au journal d'accès : la requête n'a jamais existé |
 | corps qui n'arrive pas | 408 et fermeture à `requestTimeout` (30 s) | idem |
 | corps trop gros | 413 et `Connection: close`, avant d'appeler le gestionnaire si `Content-Length` le dit, au premier octet de trop sinon | `status: 413` au journal d'accès |

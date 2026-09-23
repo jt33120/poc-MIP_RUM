@@ -54,13 +54,39 @@ describe("service-kit/pg — createPool", () => {
     });
   });
 
-  it("aucun SET de session : ni requête à la création, ni écouteur 'connect', ni statement_timeout", () => {
+  // L'écouteur 'connect' existe (il protège les clients empruntés, test
+  // suivant), mais il n'envoie RIEN au serveur : ni SET, ni requête.
+  it("aucun SET de session : ni requête à la création, ni requête sur 'connect', ni statement_timeout", () => {
     const pg = fauxPg();
     const pool = createPool(pg, { connectionString: CS, applicationName: "x" });
     expect(pool.requetes).toHaveLength(0);
-    expect(pool.listenerCount("connect")).toBe(0);
-    expect(pool.listenerCount("acquire")).toBe(0);
+    const client = Object.assign(new EventEmitter(), { requetes: [] as unknown[], query(q: unknown) { this.requetes.push(q); } });
+    pool.emit("connect", client);
+    pool.emit("acquire", client);
+    expect(client.requetes).toHaveLength(0);
     expect(JSON.stringify(pool.config)).not.toMatch(/statement_timeout|options/);
+  });
+
+  // pg-pool RETIRE son écouteur 'error' d'un client au moment du prêt. Un
+  // pg_terminate_backend pendant l'emprunt (transaction qui attend un webhook)
+  // ferait alors lever EventEmitter : exception non capturée, processus arrêté.
+  it("un client EMPRUNTÉ coupé est tracé, sans lever ; au repos, c'est l'écouteur du pool qui trace", () => {
+    const pg = fauxPg();
+    const log = { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const metrics = createMetrics();
+    const pool = createPool(pg, { connectionString: CS, applicationName: "x", log: log as any, metrics });
+    const client = new EventEmitter();
+    pool.emit("connect", client);
+    pool.emit("acquire", client);
+    const coupure = Object.assign(new Error("terminating connection due to administrator command"), { code: "57P01" });
+    expect(() => client.emit("error", coupure)).not.toThrow();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("connexion empruntée coupée"), { err: coupure });
+    // Restitué : l'écouteur du client se tait (pg-pool remet le sien, qui
+    // relaie au pool) — une coupure, une ligne.
+    pool.emit("release", undefined, client);
+    log.warn.mockClear();
+    client.emit("error", coupure);
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
   it("pose on('error') : un client inactif coupé est journalisé et compté, le processus vit", () => {
