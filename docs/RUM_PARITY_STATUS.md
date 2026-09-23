@@ -1,11 +1,11 @@
 # État de couverture RUM — P5 à P8
 
-Relevé le **18 septembre 2026**, sur `master` à **`2f216cb`** (fusion de la PR #211).
+Relevé le **23 septembre 2026**, sur `master` à **`8a5f3d1`** (fusion de la PR #275, vague 6).
 
-> Les PR **#210** (P8.7, GeoIP, v85) et **#211** (P8.6, connecteur de tickets, v84) étaient **ouvertes
-> et non fusionnées** au début de ce relevé ; elles ont été **fusionnées pendant sa rédaction**, à
-> 12:52 et 12:59 UTC. Leurs verdicts (`D12`, `D13`, `D14`) et l'état des déploiements ont été repris
-> après fusion, et les suites rejouées sur le résultat.
+> Ce relevé **remplace** celui du 18/09/2026 sur `2f216cb`. Les commandes du § 2 ont été rejouées, et
+> les douze lignes aux verdicts `livre_non_deploye`, `livre_avec_defaut_connu` et `bloque_acces_externe`
+> revues une à une ; l'hébergement est repris de `docs/TOPOLOGIE_BACKEND.md`, sans interroger Railway
+> ni Vercel. Un seul verdict change (`F2`). Ce qui a changé, et ce qui n'a pas pu être revu : § 12.
 
 Ce document répond à une seule question, capacité par capacité : **est-ce que le produit sait faire
 X, et qu'est-ce qui le prouve ?** Il est écrit pour la personne qui reprend le produit sans avoir
@@ -48,24 +48,24 @@ Deux règles de lecture, posées une fois :
 
 ## 2. Comment les preuves de ce document ont été relevées
 
-Toutes les commandes ci-dessous ont été rejouées le 18/09/2026 dans un worktree propre de `2f216cb`,
-sur PostgreSQL 15.18 en conteneur (port 5433), bases jetables `p88_*` créées puis supprimées.
-**`DATABASE_URL` n'a été ni lue, ni employée, ni affichée ; aucune base de production n'a été
-touchée.**
+Toutes les commandes ci-dessous ont été rejouées le 23/09/2026 dans un worktree neuf (ni `node_modules`
+ni `dist`) de `8a5f3d1`, plus `d99c9ec` qui ne touche qu'un test e2e ; PostgreSQL 15.18 en conteneur
+(port 5433), bases jetables `v7p10_*` créées puis supprimées. **`DATABASE_URL` n'a été ni lue, ni
+employée, ni affichée ; ni base de production, ni Railway, ni Vercel n'ont été interrogés** (§ 12.4).
 
 | Commande | Résultat mesuré |
 |---|---|
 | `pnpm install --frozen-lockfile` | vert |
 | `pnpm build:sdk` | vert |
-| `pnpm exec vitest run tests/unit --exclude '**/.claude/**'` | **168 fichiers, 2 436 tests verts, 0 ignoré** |
-| `pnpm test:sql` **tel que la CI le joue** (6 bases dédiées) | vert — voir la ligne suivante pour ce que cela cache |
-| `pnpm test:sql` **avec les 7 bases** (dont `SQL_TEST_PRE_V83_DATABASE_URL`) | **1 ÉCHEC** sur 413 tests — `backfill-idempotency-sql.test.ts` › « P8.2 — code publié AVANT migration-v83 » (§ 8.2) |
-| `pnpm test:isolation` | vert — « isolation multi-tenant PROUVÉE EN BASE » |
-| `pnpm test:alerting` | vert — « alerting mature (3 piliers) VÉRIFIÉ » |
+| `pnpm exec vitest run tests/unit --exclude '**/.claude/**'` | **266 fichiers, 3 815 tests verts, 0 ignoré** (et 2 `todo`, § 12.4) |
+| `pnpm test:sql` **tel que la CI le joue** (7 bases dédiées depuis #213) | **vert** — **45 fichiers** et **637 tests** au total, dont 2 fichiers et 13 tests ignorés : les deux bancs (§ 8.2) |
+| `backfill-idempotency-sql.test.ts` **avec** `SQL_TEST_PRE_V83_DATABASE_URL` | **52 verts sur 52** — la fenêtre v82→v83 passe (1 échec sur 52 le 18/09, § 8.2) |
+| `pnpm test:isolation` | vert — 70 contrôles, « isolation multi-tenant PROUVÉE EN BASE » |
+| `pnpm test:alerting` | vert — 25 contrôles, « alerting mature (3 piliers) VÉRIFIÉ » |
 | `pnpm --filter console exec tsc --noEmit` | vert |
-| `pnpm --filter @mip/rum-sdk exec tsc --noEmit` | **ÉCHEC** — `packages/rum-sdk/src/replay.ts(242,11): error TS2322` |
-| `pnpm -r build` sur dépôt fraîchement installé | **ÉCHEC** — `apps/extension` (§ 8.3) |
-| `pnpm -r build` après `pnpm build:sdk` | vert, 13 paquets, console incluse |
+| `pnpm --filter @mip/rum-sdk exec tsc --noEmit` | **vert** — l'échec du 18/09 sur `replay.ts:242` est corrigé par #213 (§ 8.4) |
+| `pnpm -r build` sur dépôt fraîchement installé | **ÉCHEC** — `apps/extension`, même erreur qu'au 18/09 (§ 8.3) |
+| `pnpm -r build` après `pnpm build:sdk` | vert — les 12 projets de l'espace de travail (hors racine), console incluse |
 
 **L'ordre des tests unitaires compte.** Sans `pnpm build:sdk` préalable, `tests/unit/agent-node-process.test.ts`
 échoue (`Could not resolve "@mip/rum-core"`) et ses 10 tests sont perdus. La CI fait le build avant ;
@@ -73,51 +73,51 @@ un relevé local qui l'oublie mesure 10 tests de moins et croit avoir trouvé un
 
 **Une PR de documentation ne déclenche pas la CI, et c'est voulu.** `ci.yml` et `docker-smoke.yml`
 portent un `paths-ignore` sur `docs/**`, `_bmad-output/**` et `**.md`, avec son miroir Vercel dans
-`apps/console/vercel.json`. Sur la PR qui porte ce document, « CI verte » signifie donc : les
-contrôles Vercel passent, et les workflows GitHub Actions sont **sautés par filtre de chemins**, pas
-joués. Les chiffres du tableau ci-dessus viennent de ce poste, pas d'un job distant.
+`apps/console/vercel.json`. Ce relevé part avec la PR de la vague 7, qui touche aussi du code : la CI y
+sera jouée. Les chiffres ci-dessus viennent de ce poste ; le passage de la CI sur le commit relevé (job
+unitaire vert, job e2e rouge sur un test instable qu'aucune ligne ne cite) est au § 12.3.
 
-**Déploiements constatés le 18/09/2026** (API Railway et API Vercel, pas un journal) :
+**Déploiements : non relevés en direct le 23/09** (ni API Railway, ni API Vercel) ; état connu par `docs/TOPOLOGIE_BACKEND.md` :
 
 | Cible | SHA | État | Domaine public |
 |---|---|---|---|
-| Console Vercel `mip-rum-console` | `2f216cb` | READY, cible `production` | oui |
-| Railway `ingest` | `2f216cb` | SUCCESS, `node services/ingest/server.mjs`, healthcheck `/health` | **aucun** (ni domaine Railway, ni domaine personnalisé) |
-| Railway `scheduler` | `2f216cb` | SUCCESS | aucun |
-| Railway `mcp` | `6485f45` | SUCCESS | `mcp-production-201c.up.railway.app` |
+| Console Vercel `mip-rum-console` | non relevé (`2f216cb` le 18/09) | porte la console **et** le seul collecteur actif, `/api/ingest/v1/…` (`TOPOLOGIE_BACKEND.md:11`) | oui |
+| Railway `ingest` | — | **supprimé le 21/09/2026** par l'opérateur ; le projet ne compte plus que `mcp` et `scheduler` (API Railway, 21/09 — `TOPOLOGIE_BACKEND.md:77-81`) | aucun, jusqu'à sa suppression |
+| Railway `scheduler` | non relevé (`2f216cb` le 18/09) | applique les migrations au pré-déploiement : déploiement `03850b30`, 18/09 à 15:29:18 UTC, « migrations à jour » (`TOPOLOGIE_BACKEND.md:71-75`) | aucun |
+| Railway `mcp` | non relevé (`6485f45` le 18/09) | client mince de `/api/v1`, ne touche pas la base (`TOPOLOGIE_BACKEND.md:25`) | oui (`mcp-production-201c.up.railway.app` le 18/09) |
 
-**Les migrations v84 et v85 sont appliquées en production**, et cela se lit sans toucher la base : le
-journal de pré-déploiement du service `ingest` (`node node_modules/ingest/migrate.mjs`) rend, le
-18/09 à **13:30:35 UTC**, `migration appliquée · migration-v84.sql · 113 ms`, puis `migrations à jour ·
-total 80 · appliquées 1 · modifiées 0`. Une seule appliquée : v85 était donc **déjà** enregistrée —
-ce que le journal de P8.7 date de 13:27.
+**Les migrations v83, v84 et v85 sont appliquées en production**, et cela se lit sans toucher la base :
+le journal de pré-déploiement d'`ingest` (`node node_modules/ingest/migrate.mjs`) rend, le 18/09 à
+**13:30:35 UTC**, `migration appliquée · migration-v84.sql · 113 ms`, puis `migrations à jour · total
+80 · appliquées 1 · modifiées 0`. Une seule appliquée : v83 et v85 étaient donc **déjà** enregistrées,
+et l'étalonnage s'arrête à v51 (§ 12.2). Aucun fichier de migration n'a été ajouté depuis (v85 est le dernier).
 
-Cela **contredit `delivery-p8.md`**, qui porte encore « v84 (non appliquée en production) ». Le
-journal a été écrit avant la fusion ; la fusion l'a démenti une demi-heure plus tard. C'est une bonne
-illustration de ce que vaut une ligne d'état recopiée plutôt que relevée.
+Cela **contredit `delivery-p8.md`**, qui porte encore v83 et v84 « non appliquée(s) en production » —
+et, pour v83, le relevé du 18/09 lui-même (ligne `D8`, § 12.2). Le journal a été écrit avant les
+fusions et n'a pas été relu après : c'est ce que vaut une ligne d'état recopiée plutôt que relevée.
 
 ---
 
 ## 3. Le fait d'exploitation qui change la lecture de tout le reste
 
-**Le service Railway `ingest` n'a aucun domaine public.** Il est vivant, il a un healthcheck, il
-migre la base au démarrage — et rien ne l'atteint depuis l'internet. Vérifié par `list-domains` et
-`describe-service` : `serviceDomains: []`, `customDomains: []`. Le service `mcp`, lui, en a un ; la
-différence n'est donc pas une limite de la plateforme.
+**Le service Railway `ingest` n'existe plus.** Le 18/09, il était vivant, avec un healthcheck, et
+migrait la base au démarrage — sans aucun domaine public (`serviceDomains: []`, `customDomains: []`) :
+rien ne l'atteignait. Il a été **supprimé le 21/09/2026**, une fois prouvé que le `scheduler` applique
+les migrations à sa place (`docs/TOPOLOGIE_BACKEND.md:69-81`) ; ce relevé ne l'a pas revérifié en direct.
 
 **Le trafic de production entre par Vercel**, sur `apps/console/app/api/ingest/v1/traces/route.ts`,
 qui importe exactement le même parseur et le même writer que le backend (`flattenOtlp`,
-`secureOtlpIdentities`, `writeRows` depuis `ingest/`). Les deux chemins écrivent la même chose ; un
-seul est joignable.
+`secureOtlpIdentities`, `writeRows` depuis `ingest/`). Le receveur autonome reste dans le dépôt,
+démarré par la CI (`docker-smoke`) pour l'hébergement chez le client ; en production, il ne tourne nulle part.
 
 Conséquences, à lire avant les lignes `D14`, `A6` et `C*` :
 
-1. **Tout ce qui n'existe que dans l'image Railway ne s'exécute pas sur le trafic réel.** C'est le cas
-   de la base GeoIP de P8.7 (§ 4.4, `D14`).
+1. **Tout ce qui n'existe que dans l'image backend ne s'exécute pas sur le trafic réel.** C'est le cas
+   de la résolution GeoIP de P8.7 (§ 4.4, `D14`) : l'image backend la porte, et son seul service, le `scheduler`, ne reçoit aucun trafic.
 2. **Le port d'ingestion direct `POST /v1/sourcemaps`** (`apps/ingest/lib/receiver.mjs`, P5.4) n'est
-   atteignable par aucune CI cliente en l'état. Le port console `POST /api/sourcemaps` l'est.
-3. Ouvrir un domaine sur `ingest` est une opération d'une minute ; elle n'a pas été faite, et rien
-   dans le dépôt ne la documente comme décidée.
+   servi par aucun service de production. Le port console `POST /api/sourcemaps` l'est.
+3. Le faire revenir demande de recréer un service **et de lui donner un domaine public** ; deux
+   chemins d'ingestion devraient alors rester alignés (`TOPOLOGIE_BACKEND.md:105-110`). Rien n'est décidé.
 
 ---
 
@@ -125,12 +125,12 @@ Conséquences, à lire avant les lignes `D14`, `A6` et `C*` :
 
 **49 capacités**, en six familles : suivi des erreurs (10), analyse et exploration (9), runtimes
 instrumentés (10), exploitation et conformité (14), surfaces d'accès (3), chaîne de livraison (3).
-Répartition des verdicts : `deploye_non_eprouve` **34** · `livre_non_deploye` **5** ·
-`bloque_acces_externe` **4** · `livre_avec_defaut_connu` **3** · `non_commence` **2** ·
-`non_retenu` **1**. Le verdict `en_revue` ne sert plus : les deux lignes qui le portaient (`D12`,
-`D14`) ont été fusionnées pendant la rédaction.
+Répartition des verdicts : `deploye_non_eprouve` **35** · `livre_non_deploye` **5** ·
+`bloque_acces_externe` **4** · `livre_avec_defaut_connu` **2** · `non_commence` **2** ·
+`non_retenu` **1**. Le verdict `en_revue` ne sert plus depuis le 18/09 (`D12`, `D14` fusionnées).
+Au 18/09 : 34 et 3 — `F2` est passée à `deploye_non_eprouve` le 23/09 (§ 4.6, § 12.1).
 
-**Zéro capacité éprouvée sur donnée réelle.** Les 34 lignes `deploye_non_eprouve` sont le meilleur
+**Zéro capacité éprouvée sur donnée réelle.** Les 35 lignes `deploye_non_eprouve` sont le meilleur
 résultat de ce document, et il s'arrête avant la production.
 
 ### 4.1 Suivi des erreurs
@@ -142,11 +142,11 @@ résultat de ce document, et il s'arrête avant la production.
 | A3 | Capter les erreurs du navigateur au-delà des exceptions (console, ressources, CSP, réseau) | `deploye_non_eprouve` | `packages/rum-sdk/src/errors.ts`, config `captureErrors` ; `tests/unit/error-collection.test.ts` ; PR #184 | **Les quatre catégories sont opt-in et activées pour aucune app.** Le navigateur ne fournit pas toujours le statut HTTP d'une ressource : il reste `null`, jamais inféré. |
 | A4 | Capter les erreurs d'un service Node ou Python sans inventer de session | `deploye_non_eprouve` | migration v70, `_shared/error-normalize.mjs` ; `tests/integration/error-backend-otel-sql.test.ts`, `tests/integration/agent-node-backend-events-sql.test.ts` ; PR #185 | Aucun émetteur backend ne tourne en production. Une double instrumentation log + span **sans** `mip.exception_id` commun n'est pas fusionnée, et n'est pas signalée à l'écran. |
 | A5 | Dé-minifier une pile avec une source map | `deploye_non_eprouve` | migration v71, `apps/ingest/lib/error-symbolication.mjs` ; `tests/integration/sourcemaps-p54-sql.test.ts` ; PR #186 | Aucune map n'a jamais été déposée par une application réelle. Une map arrivée **après** les premières occurrences améliore l'affichage sans changer l'identité de l'issue — et peut donc ouvrir une seconde issue. |
-| A6 | Déposer des source maps depuis une CI (jeton dédié, CLI, port direct) | `deploye_non_eprouve` | `scripts/upload-sourcemaps.mjs`, `apps/ingest/lib/sourcemap-upload.mjs`, `/admin/sourcemaps`, table `sourcemap_upload_token` | Le port backend direct vit sur le service Railway **sans domaine public** (§ 3) : en l'état, seule la route console est joignable, avec ses lots ≤ 3 Mio. Le branchement dans une CI cliente est `D10`. |
+| A6 | Déposer des source maps depuis une CI (jeton dédié, CLI, port direct) | `deploye_non_eprouve` | `scripts/upload-sourcemaps.mjs`, `apps/ingest/lib/sourcemap-upload.mjs`, `/admin/sourcemaps`, table `sourcemap_upload_token` | Le port backend direct n'est servi par **aucun** service de production depuis la suppression d'`ingest`, le 21/09/2026 (§ 3) : seule la route console est joignable, avec ses lots ≤ 3 Mio. Le branchement dans une CI cliente est `D10`. |
 | A7 | Regrouper les occurrences en issues stables et versionnées | `deploye_non_eprouve` | migration v72, `error_issue` / `error_issue_alias` / `error_grouping_config` ; `tests/unit/error-grouping-v2.test.ts`, `tests/integration/error-issues-sql.test.ts` ; PR #187 | **Le regroupement v2 n'est activé pour aucune application.** Un « Script error. » sans contexte reste explicitement peu discriminant, et la clé retombe sur un repli marqué `low_confidence`. |
 | A8 | Trier une issue : statut, assignation, commentaire, lien de ticket manuel | `deploye_non_eprouve` | migrations v73/v74, `POST /api/v1/issues/:id/{triage,comments,links}` avec `expectedRevision` (409) ; `tests/unit/error-triage.test.ts` ; PR #188/#189 | Le commentaire libre d'un opérateur **n'est pas scrubé** lorsque l'issue survit à un effacement : MIP ne peut pas savoir s'il cite une donnée personnelle. Une revue humaine reste nécessaire (`delivery-p8.md`, écarts P8.1). |
 | A9 | Distinguer une régression d'une réapparition | `deploye_non_eprouve` | ordre des marqueurs de déploiement dans la transaction d'ingestion ; `error-issues-sql.test.ts` | Sans marqueur de déploiement comparable (même release, release absente, ordre inconnu), l'écran affiche « Réapparition à vérifier » et **ne rouvre pas** l'issue. Une issue `ignored` reste `ignored`. |
-| A10 | Alerter sur une nouvelle issue ou un pic par issue | `deploye_non_eprouve` | outbox transactionnelle v73, règles `issue:<uuid>` réutilisant `route_alert` ; `pnpm test:alerting` vert le 18/09 | Hors données suffisantes, la règle rend `no_data`, jamais un zéro silencieux. Les alertes « nouvelle erreur » **historiques** restent fondées sur l'empreinte, pas sur l'issue. |
+| A10 | Alerter sur une nouvelle issue ou un pic par issue | `deploye_non_eprouve` | outbox transactionnelle v73, règles `issue:<uuid>` réutilisant `route_alert` ; `pnpm test:alerting` vert le 23/09, sur base jetable | Hors données suffisantes, la règle rend `no_data`, jamais un zéro silencieux. Les alertes « nouvelle erreur » **historiques** restent fondées sur l'empreinte, pas sur l'issue. |
 
 ### 4.2 Analyse et exploration
 
@@ -186,31 +186,31 @@ résultat de ce document, et il s'arrête avant la production.
 | D3 | Exporter les données d'une personne (art. 15) | `deploye_non_eprouve` | `/admin/privacy`, `apps/console/lib/{dsar,queries-dsar}.ts` ; export en `repeatable read, read only`, sans verrou d'ingestion | Un export **refuse** de s'exécuter sur `id_kind = 'device_class'` (ancien `user_hash`), pour ne pas joindre les données d'un tiers. Un événement totalement anonyme, nouvelle session et sans identifiant commun, **n'est pas rattachable** à une personne. |
 | D4 | Effacer toutes les données d'une application | `deploye_non_eprouve` | `erase_app_data` (v81), qui **suspend l'ingestion dans le registre** sous la même transaction ; vérifié en base le 18/09 : `analytics_saved_view`, `dashboard`, `backfill_run`, `error_status`, `svi_*`, `rum_log`, `rum_ai`, `mobile_capabilities` sont bien couverts | La configuration d'exploitation (`slo`, `goal`, `notify_channel`, `uptime_check`, `read_tokens`, `deploy_marker`, `extension_scope`…) **n'est pas supprimée** : objets d'exploitation, pas données de personnes. `tenant_usage_daily` et `app_registry` survivent volontairement. |
 | D5 | Purger selon la rétention | `deploye_non_eprouve` | `purge_rum_app` / `purge_rum_tenants`, travail planifié `apps/ingest/jobs/planifie.mjs` | **La rétention ne couvre toujours pas les tables SVI.** Vérifié en base le 18/09 : `purge_rum_app` ne cite pas `svi_call`, alors que `erase_app_data` le fait. Écart préexistant, non corrigé. |
-| D6 | Isoler les locataires en base | `deploye_non_eprouve` | `scripts/verify-tenant-isolation.mjs`, rejoué vert le 18/09 sur base dédiée : requêtes **sans aucun `WHERE app_id`**, jouées sous le rôle `console_ro` | Un périmètre `[]` vaut **zéro accès**, plus « sans restriction » (corrigé en P6.2). L'isolation est prouvée en base ; elle ne dispense pas les lectures applicatives de lier `app_id`. |
+| D6 | Isoler les locataires en base | `deploye_non_eprouve` | `scripts/verify-tenant-isolation.mjs`, rejoué vert le 23/09 sur base jetable : requêtes **sans aucun `WHERE app_id`**, jouées sous le rôle `console_ro` | Un périmètre `[]` vaut **zéro accès**, plus « sans restriction » (corrigé en P6.2). L'isolation est prouvée en base ; elle ne dispense pas les lectures applicatives de lier `app_id`. |
 | D7 | Restaurer une sauvegarde sans ressusciter des données effacées | `non_commence` | — (rien dans le dépôt) | **La garantie d'effacement ne porte pas sur les sauvegardes.** Une restauration PITR antérieure à un effacement devrait rejouer les barrières avant de rouvrir lectures et ingestion ; cette procédure n'est ni écrite, ni éprouvée. C'est écrit tel quel dans `docs/CONFORMITE.md` § 3.1. |
-| D8 | Préparer une reprise d'historique (plan, dry-run, vérification) | `livre_non_deploye` | migration **v83 non appliquée en production** ; `scripts/backfill-rum.mjs` (6 sous-commandes, 4 reconstructions), `apps/ingest/lib/backfills/` ; `tests/integration/backfill-idempotency-sql.test.ts` (52 tests), `tests/unit/backfill-p82.test.ts` ; PR #208 | L'outil lit `BACKFILL_DATABASE_URL`, **jamais** `DATABASE_URL`. `--app all` est refusé. Aucun écran de console : le journal se lit par CLI et par SQL. **3 de ses 52 tests — la fenêtre de déploiement v82→v83 — ne tournent jamais en CI** (§ 8.2). |
+| D8 | Préparer une reprise d'historique (plan, dry-run, vérification) | `livre_non_deploye` | `scripts/backfill-rum.mjs` (6 sous-commandes, 4 reconstructions), `apps/ingest/lib/backfills/` ; `tests/integration/backfill-idempotency-sql.test.ts` (52 tests, 52 verts le 23/09 avec la fenêtre v82→v83), `tests/unit/backfill-p82.test.ts` ; PR #208. Migration **v83 appliquée en production** le 18/09 — déduit des journaux du runner, pas lu en base ; le relevé du 18/09 la disait non appliquée (§ 12.2) | **Aucun environnement ne lance l'outil** : c'est une ligne de commande, et son exécution en production a été écartée (`D9`). L'outil lit `BACKFILL_DATABASE_URL`, **jamais** `DATABASE_URL`. `--app all` est refusé. Aucun écran de console : le journal se lit par CLI et par SQL. La fenêtre de déploiement v82→v83 (3 de ses 52 tests) est jouée par la CI depuis #213. |
 | D9 | Exécuter une reprise d'historique en production | `non_retenu` | **Décision de l'utilisateur du 18/09/2026 : ne pas exécuter.** Périmètre mesuré en production et rapporté avec la décision : ≈ **97 lignes** de `rum_event` sans projection dans `rum_event_index` — 90 sur `gip-plateforme` (19/08 → 15/09), 7 sur `mip-rum-console` (08/09 → 15/09) — sur 4 046 lignes indexées | **Ces chiffres n'ont pas été recontrôlés pour ce document** : aucune base de production n'a été interrogée (§ 2), et ils n'apparaissent dans aucun fichier du dépôt. Ils sont repris tels que la décision les énonce. Obstacle pratique complémentaire : le port 5432 est refusé depuis le poste de livraison (`ECONNREFUSED`). L'outillage, ses tests et son dry-run sont livrés (`D8`) ; **seule l'exécution manque.** |
 | D10 | Brancher l'upload de source maps dans la CI du client | `bloque_acces_externe` | côté MIP, tout existe : CLI, port console, port backend, jetons app-scopés expirants (`A6`) | Manquent : accès au dépôt et au build du client, `app_id` MIP, convention de release, destination d'ingestion, jeton d'upload dans les secrets CI. **Jamais entamé.** Les accès du dépôt MIP ne valent pas accès au dépôt client. |
 | D11 | Recevoir les crashes natifs iOS/Android, les symboliser, les rattacher à un appareil | `non_commence` | — | **Rien n'est livré**, et c'est délibéré : P7.5 n'a créé **aucune table de crash natif**, parce qu'une table vide se lirait comme un zéro. Manquent un choix de moteur ou de fournisseur, une application native, des builds signés, des symboles et des appareils. Un `ErrorUtils` JS **n'est pas** un crash natif. |
 | D12 | Créer un ticket chez un fournisseur depuis une issue | `deploye_non_eprouve` | **PR #211 fusionnée le 18/09 à 12:59**, CI verte (6 contrôles) ; migration **v84 appliquée en production à 13:30:35 UTC** (journal de pré-déploiement `ingest`) ; `apps/ingest/lib/integrations/tickets/{adapter,dispatcher}.mjs`, tables `ticket_integration` / `ticket_outbox` / `ticket_webhook_event`, écrans `/admin/ticket-integrations`. **Un vrai ticket a été créé** dans un dépôt bac à sable — c'est la seule ligne de P5 à P8 qui ait touché un système externe réel | **Déployé et inerte** : aucune intégration n'est configurée, `TICKET_INTEGRATIONS` n'est pas posé, et l'interface d'administration reste cachée tant qu'aucun fournisseur n'est branché **et testé**. Un seul fournisseur (GitHub Issues), présenté dans le produit comme une étape vers l'ITSM de MIP — « ServiceNow, **sous réserve de confirmation** », et personne n'a confirmé. Aucune écriture MIP → fournisseur après la création : résoudre une issue ne ferme pas le ticket. Le lien manuel de P5.6 continue de fonctionner **sans** connecteur, et un test le prouve. |
 | D13 | Recevoir les changements d'état du fournisseur (webhook) | `bloque_acces_externe` | route `apps/console/app/api/webhooks/tickets/[integrationId]/route.ts` déployée sur Vercel avec `2f216cb` ; signature HMAC-SHA256 sur corps brut, comparaison à temps constant, identifiant de livraison unique en base ; tests contre un double fidèle (corps modifié, secret tiers, signature tronquée, non hexadécimale, absente) — PR #211 | **Le webhook n'a jamais reçu de livraison d'un vrai fournisseur.** L'URL est désormais publique, mais aucune intégration n'existe : toute livraison reçoit le même `404` qu'une intégration inconnue. Manquent un espace cible et ses droits, un secret de webhook, et la politique de synchronisation — cinq décisions, pas cinq tickets. Aucune synchronisation de statut n'a été observée en vrai. |
-| D14 | Préciser le pays par une base IP→pays | `deploye_non_eprouve` | **PR #210 fusionnée le 18/09 à 12:52**, CI verte ; migration **v85 appliquée en production** (déduite du journal de pré-déploiement : `total 80 · appliquées 1`, la seule étant v84) ; `apps/ingest/lib/geoip-db.mjs`, `_shared/geoip.mjs`, `infra/docker/Dockerfile.backend` ; `tests/unit/geoip-db.test.ts` (193 l.), `tests/integration/geoip-v85-sql.test.ts` | **Le GeoIP ne résout aucun pays sur le trafic actuel, et la fusion n'y change rien.** La base est embarquée dans l'**image Railway**, et le service `ingest` n'a pas de domaine public (§ 3) ; la route Vercel, qui reçoit tout le trafic, **n'appelle délibérément pas** la résolution locale — un commentaire du code l'explique — et ne pose que la provenance `cdn`. La base elle-même n'est pas versionnée : elle reste **à déposer**. Pays seulement : ni ville, ni région, ni coordonnées ; la base « City Lite » est refusée par le chargeur. **Aucun enrichissement rétrospectif n'est possible** : l'adresse des visites passées n'a jamais été stockée, et ce lot ne commence pas à la stocker. |
+| D14 | Préciser le pays par une base IP→pays | `deploye_non_eprouve` | **PR #210 fusionnée le 18/09 à 12:52**, CI verte ; migration **v85 appliquée en production** (déduite du journal de pré-déploiement : `total 80 · appliquées 1`, la seule étant v84) ; `apps/ingest/lib/geoip-db.mjs`, `_shared/geoip.mjs`, `infra/docker/Dockerfile.backend` ; `tests/unit/geoip-db.test.ts` (193 l.), `tests/integration/geoip-v85-sql.test.ts` | **Le GeoIP ne résout aucun pays sur le trafic actuel, et la fusion n'y change rien.** La résolution est embarquée dans l'**image backend Railway**, qui ne reçoit aucun trafic : `ingest`, sans domaine public, a été supprimé le 21/09/2026 (§ 3) ; la route Vercel, qui reçoit tout le trafic, **n'appelle délibérément pas** la résolution locale — un commentaire du code l'explique — et ne pose que la provenance `cdn`. La base elle-même n'est pas versionnée : elle reste **à déposer**. Pays seulement : ni ville, ni région, ni coordonnées ; la base « City Lite » est refusée par le chargeur. **Aucun enrichissement rétrospectif n'est possible** : l'adresse des visites passées n'a jamais été stockée, et ce lot ne commence pas à la stocker. |
 
 ### 4.5 Surfaces d'accès
 
 | # | Capacité | Verdict | Preuve | Limite |
 |---|---|---|---|---|
 | E1 | Lire par l'API publique v1 | `deploye_non_eprouve` | `apps/console/app/api/v1/` — 18 familles de routes, enveloppe `{meta,data}` ; `tests/unit/api-v1-contract.test.ts`, OpenAPI servi par `/api-docs` | Les jetons `CONSOLE_API_TOKENS` sont **strictement en lecture** : aucun droit d'écriture, aucun droit d'upload, quelle que soit la route. Aucune de ces routes n'a été appelée sur de la donnée réellement ingérée. |
-| E2 | Lire par MCP | `deploye_non_eprouve` | `apps/mcp/lib/catalogue.mjs` — **16 outils** comptés le 18/09 (`mip_rum_list_apps` … `mip_rum_mobile_summary`) ; job CI `mcp-smoke` qui compare ce nombre en dur ; service Railway `mcp` sur `6485f45`, avec domaine public | Read-only par construction. Le catalogue n'expose **pas encore les dimensions** de P6 : les outils P4/P5 restent sur app, période et appareil. |
+| E2 | Lire par MCP | `deploye_non_eprouve` | `apps/mcp/lib/catalogue.mjs` — **16 outils**, recomptés le 23/09 (`mip_rum_list_apps` … `mip_rum_mobile_summary`) ; job CI `mcp-smoke` qui compare ce nombre en dur ; service Railway `mcp` (sur `6485f45` le 18/09, non relevé depuis), avec domaine public | Read-only par construction. Le catalogue n'expose **pas encore les dimensions** de P6 : les outils P4/P5 restent sur app, période et appareil. |
 | E3 | Écrire par API (triage, tableaux de bord, vues enregistrées) | `deploye_non_eprouve` | contrôle de session admin + Origin, `expectedRevision` et `409` ; `dashboard-access.ts`, `tests/unit/dashboards.test.ts` | Viewer et demo ne gagnent **aucun** droit d'écriture. Un administrateur scopé n'est plus transverse : c'est un écart assumé de P6.5 par rapport au modèle « admin global ». |
 
 ### 4.6 Chaîne de livraison
 
 | # | Capacité | Verdict | Preuve | Limite |
 |---|---|---|---|---|
-| F1 | Construire le dépôt de bout en bout | `livre_avec_defaut_connu` | `pnpm -r build` vert **après** `pnpm build:sdk` : 13 paquets, `apps/console` incluse | **Défaut : `pnpm -r build` échoue sur un dépôt fraîchement installé** (§ 8.3). `apps/extension` ne déclare aucune dépendance d'espace de travail vers `@mip/rum-sdk` : rien n'ordonne les deux builds. La CI ne voit pas le défaut parce qu'elle construit les SDK d'abord. |
-| F2 | Vérifier les types | `livre_avec_defaut_connu` | `pnpm --filter console exec tsc --noEmit` **vert** ; `pnpm --filter @mip/rum-sdk exec tsc --noEmit` **en échec** sur `packages/rum-sdk/src/replay.ts(242,11)` : `Uint8Array<ArrayBufferLike>` n'est pas assignable à `BodyInit` | **Défaut : aucun workflow de CI ne joue `tsc --noEmit`** — vérifié par `grep -rn 'tsc' .github/workflows/` : aucune occurrence, pour aucun paquet. L'échec du SDK web est donc invisible de la CI, et le restera. Il est antérieur à P7 et n'a été corrigé par aucun lot. |
-| F3 | Rejouer la recette SQL complète en CI | `livre_avec_defaut_connu` | job « E2E Playwright (Postgres service) » : `test:sql`, `test:isolation`, `test:alerting`, `test:svi` | **Défaut : deux suites ne tournent jamais en CI**, faute de la variable qui les déclenche — les bancs de mesure (`BENCH_DATABASE_URL`) et la fenêtre de déploiement v82→v83 (`SQL_TEST_PRE_V83_DATABASE_URL`). Elles passent quand on la fournit (§ 8.2). |
+| F1 | Construire le dépôt de bout en bout | `livre_avec_defaut_connu` | `pnpm -r build` vert **après** `pnpm build:sdk` : les 12 projets de l'espace de travail, `apps/console` incluse (rejoué le 23/09) | **Défaut : `pnpm -r build` échoue sur un dépôt fraîchement installé** (§ 8.3) — rejoué le 23/09 sur un worktree neuf : même erreur. `apps/extension` ne déclare aucune dépendance d'espace de travail vers `@mip/rum-sdk` : rien n'ordonne les deux builds. La CI ne voit pas le défaut parce qu'elle construit les SDK d'abord. |
+| F2 | Vérifier les types | `deploye_non_eprouve` | étape « Typage des paquets publiés » de `.github/workflows/ci.yml` (PR #213, 18/09) : `tsc --noEmit` de `@mip/rum-core`, `@mip/rum-sdk`, `@mip/rum-mobile` et `@mip/agent-node`, puis `pnpm --filter console typecheck` (script posé par F00, #217) ; les cinq verts sur ce poste le 23/09, et l'étape verte dans le passage CI `35833662207` sur `8a5f3d1` (§ 12.3). L'échec de `replay.ts:242` est corrigé (§ 8.4) | L'extension navigateur (`apps/extension`, en TypeScript) n'est **pas** typée par la CI : verte à la main le 23/09, rien ne le garantit à sa prochaine modification. La vérification n'arrête une fusion que si l'on attend le verdict de la CI du commit de fusion (§ 7). |
+| F3 | Rejouer la recette SQL complète en CI | `livre_avec_defaut_connu` | job « E2E Playwright (Postgres service) » : `test:sql` (7 bases depuis #213), `test:isolation`, `test:alerting`, `test:svi` ; étapes vertes dans le passage CI `35833662207` sur `8a5f3d1` (§ 12.3) | **Défaut : les deux bancs de mesure ne tournent jamais en CI**, faute de `BENCH_DATABASE_URL`, absente de `ci.yml` (vérifié le 23/09) : `explorer-bench-p66` et `rum-mobile-bench-p75`, qui lisent une base préparée à part. Les temps publiés (`B9`) ne sont donc jamais revérifiés, et ce relevé ne les a pas rejoués. La fenêtre v82→v83, second trou du 18/09, est jouée par la CI depuis #213, et passe (§ 8.2). |
 
 ---
 
@@ -240,7 +240,7 @@ journal.
 ### 5.2 Périmètre d'application — **fermé, et prouvé sans filtre applicatif**
 
 `pnpm test:isolation` rejoue le schéma complet sur base dédiée, se met dans la peau du rôle
-`console_ro` et lit **sans aucun `WHERE app_id`**. Verdict du 18/09 : « isolation multi-tenant
+`console_ro` et lit **sans aucun `WHERE app_id`**. Verdict du 23/09, comme du 18/09 : « isolation multi-tenant
 PROUVÉE EN BASE ». Côté applicatif, un périmètre `[]` vaut zéro accès depuis P6.2, une app hors
 périmètre est refusée plutôt que rabattue, et une session enregistrée sous A ne peut plus être mise à
 jour par B (`ErreurPorteeApp`, 409).
@@ -375,7 +375,7 @@ trois sont vérifiées dans l'historique de ce dépôt.
 | 1 | **`master` rouge une heure, Vercel en échec** — une borne de points compilée contre un plan sans fenêtre | `delivery-p6.md` : CI verte sur `6dc0363`, **rouge sur `ae9d171`** ; « la console ne compile pas : `./lib/analytics-schema.ts:977:54 — Type error: 'query' is possibly 'null'` » ; production restée sur `05a58d0` ; corrigé par la PR #197 | `git` n'a signalé **aucun** conflit sur la ligne fautive. La PR a été fusionnée **49 secondes après son démarrage**, avant que sa CI n'ait de verdict. |
 | 2 | **`master` non installable** — `pnpm-lock.yaml` recousu entre deux paquets voisins | commit `4b9516e` : « `@types/node` est passé de `packages/agent-node` … à `packages/rum-core`, qui ne le déclare précisément pas. **Aucun des deux parents ne portait cette ligne à cet endroit : c'est le texte du merge, pas une intention.** `pnpm install --frozen-lockfile` échoue donc sur master, et avec lui toute la CI et tout déploiement. » | Le verrou est un fichier que personne ne relit. L'échec est total et immédiat, mais il n'apparaît qu'à la première installation propre. |
 | 3 | **Effacement client incomplet, et silencieux** — `erase_app_data` a perdu `analytics_saved_view` et `dashboard` entre v79 et v80 | `delivery-p8.md` : « v79 (P6.5) et v80 (P6.6) ont été écrites en parallèle et fusionnées sans conflit déclaré : v80 a repris la définition d'avant v79 » ; vérifié en base avant v81 : `prosrc like '%analytics_saved_view%'` → `f` | **Le test de v79 ne le voyait pas** : le test *précédent* rejoue `migration-v79.sql`, ce qui restaure la définition juste avant l'assertion. Un client effacé gardait ses vues et ses tableaux de bord. |
-| **4** | **La fenêtre de déploiement de P8.2 est rouge** — `geo_source`, colonne ajoutée par v85 (P8.7), fait échouer une suite de P8.2 | mesuré sur `2f216cb`, § 8.2 : `column "geo_source" of relation "rum_session" does not exist` | **La CI ne joue pas cette suite** : sa variable `SQL_TEST_PRE_V83_DATABASE_URL` n'est pas dans `ci.yml`. P8.7 a ajouté **la sienne** et protégé **sa** suite par `_resetColonnesCache()` ; celle qu'elle cassait était hors de son champ de vision. **Encore ouvert.** |
+| **4** | **La fenêtre de déploiement de P8.2 est rouge** — `geo_source`, colonne ajoutée par v85 (P8.7), fait échouer une suite de P8.2 | mesuré sur `2f216cb`, § 8.2 : `column "geo_source" of relation "rum_session" does not exist` | **La CI ne joue pas cette suite** : sa variable `SQL_TEST_PRE_V83_DATABASE_URL` n'est pas dans `ci.yml`. P8.7 a ajouté **la sienne** et protégé **sa** suite par `_resetColonnesCache()` ; celle qu'elle cassait était hors de son champ de vision. **Fermé le 18/09 par #213** (cache vidé avant chaque cas, base déclarée dans `ci.yml`) : 52 verts sur 52 le 23/09. |
 
 **La cause est commune aux quatre : une PR fusionnée avant que la CI du *commit de fusion* ait rendu
 son verdict — et, pour la quatrième, une CI qui ne joue même pas le test concerné.** Une branche
@@ -411,7 +411,7 @@ non « le banc P6.6 et la fenêtre v65 ».
 Même journal, section P8.1 : « 23 fichiers, 276 tests verts, 12 ignorés ». Les deux relevés du même
 fichier ne sont pas cohérents entre eux sur le nombre d'ignorés.
 
-Après fusion de #210 et #211, sur `2f216cb` : **28 fichiers** et **413 tests** au total.
+Après fusion de #210 et #211, sur `2f216cb` : 28 fichiers et 413 tests au total (sur `8a5f3d1` : § 2).
 
 ### 8.1 bis `delivery-p8.md` dit v84 « non appliquée » ; elle l'est
 
@@ -420,31 +420,31 @@ Le tableau d'état du journal porte « v84 (non appliquée en production) ». El
 heure après la fusion (§ 2). Le journal n'a pas menti : il a été écrit avant, et n'a pas été relu
 après. C'est la raison d'être de ce document.
 
-### 8.2 Deux suites ne tournent jamais en CI — et l'une d'elles est maintenant rouge
+### 8.2 Les bancs ne tournent toujours pas en CI ; la fenêtre v82→v83 y tourne, et passe
 
 Comparaison des variables consommées par les tests et de celles fournies par `ci.yml`, sur
-`2f216cb` :
+`8a5f3d1` (le 18/09, sur `2f216cb`, `SQL_TEST_PRE_V83…` manquait aussi aux fournies) :
 
 ```
 consommées : SQL_TEST_DATABASE_URL, SQL_TEST_V65…, SQL_TEST_V68…, SQL_TEST_PRE_V71…,
              SQL_TEST_PRE_V81…, SQL_TEST_PRE_V83…, SQL_TEST_PRE_V85…, BENCH_DATABASE_URL
 fournies   : SQL_TEST_DATABASE_URL, SQL_TEST_V65…, SQL_TEST_V68…, SQL_TEST_PRE_V71…,
-             SQL_TEST_PRE_V81…, SQL_TEST_PRE_V85…
+             SQL_TEST_PRE_V81…, SQL_TEST_PRE_V83…, SQL_TEST_PRE_V85…
 ```
 
-Deux manquent, et leurs suites sont `describe.skip`-ées **en silence**. Le détail est parlant :
-**P8.7 a ajouté sa propre variable de fenêtre (`SQL_TEST_PRE_V85_DATABASE_URL`) à `ci.yml`, et celle
-de P8.2 est toujours absente.** L'omission est donc un oubli, pas une politique.
+Une seule manque désormais, et ses suites sont `describe.skip`-ées **en silence**. Le 18/09, il en
+manquait deux : **P8.7 avait ajouté sa propre variable de fenêtre à `ci.yml`, et celle de P8.2 restait
+absente** — un oubli, pas une politique. #213 l'a réparé le jour même (commit `42f9fe5`).
 
 **`SQL_TEST_PRE_V83_DATABASE_URL`** — la fenêtre de déploiement « code publié **avant**
-migration-v83 » de P8.2, 3 tests. Mesuré sur `2f216cb` :
+migration-v83 » de P8.2, 3 tests. Mesuré sur `2f216cb` (18/09), puis sur `8a5f3d1` (23/09) :
 
 | Comment on le joue | Résultat |
 |---|---|
-| Comme la CI le joue (6 bases, sans `PRE_V83`) | **26 fichiers verts, 2 ignorés (28) ; 397 tests verts, 16 ignorés (413)** — vert |
-| Avec les 7 bases (`PRE_V83` fournie, base au schéma v82) | **1 ÉCHEC** sur 413 : `backfill-idempotency-sql.test.ts` › « P8.2 — code publié AVANT migration-v83 » › « le dry-run fonctionne SANS la migration » |
+| 18/09 — comme la CI le jouait (6 bases, sans `PRE_V83`) | **26 fichiers verts, 2 ignorés (28) ; 397 tests verts, 16 ignorés (413)** — vert |
+| 18/09 — avec les 7 bases (`PRE_V83` fournie) ; 23/09 — les 7 bases que la CI fournit désormais | 18/09 : **1 ÉCHEC** sur 413 (`backfill-idempotency-sql.test.ts` › « le dry-run fonctionne SANS la migration ») ; 23/09 : **0 échec**, 52 verts sur 52 dans ce fichier |
 
-L'erreur exacte :
+L'erreur exacte, au 18/09 :
 
 ```
 error: column "geo_source" of relation "rum_session" does not exist
@@ -452,30 +452,30 @@ error: column "geo_source" of relation "rum_session" does not exist
  ❯ withAppIngestTransaction apps/ingest/lib/privacy-barriere.mjs:183
 ```
 
-**C'est le même défaut que P7.5 avait déjà payé une fois**, et il est revenu par la même porte. Le
-cache de colonnes de `pg-ingest.mjs` est indexé **par table, pas par base** (`colonnesCache`, TTL de
-60 s). La suite écrit dans une **seconde** base au schéma plus ancien depuis le même processus : elle
-reprend la liste relevée sur la base complète, y trouve `geo_source` — ajoutée par **v85, donc par
-P8.7** — et cite une colonne que la base cible ne peut pas accepter. `_resetColonnesCache()` existe
-et neuf suites SQL l'appellent, **dont `geoip-v85-sql.test.ts`, écrite par P8.7 elle-même** ;
-`backfill-idempotency-sql.test.ts` ne l'appelle pas.
+**C'était le même défaut que P7.5 avait déjà payé une fois**, revenu par la même porte. Le cache de
+colonnes de `pg-ingest.mjs` est indexé **par table, pas par base** (`colonnesCache`, TTL de 60 s). La
+suite écrit dans une **seconde** base au schéma plus ancien depuis le même processus : elle reprenait
+la liste relevée sur la base complète, y trouvait `geo_source` — ajoutée par **v85, donc par P8.7** —
+et citait une colonne que la base cible ne peut pas accepter. `_resetColonnesCache()` existait, et
+neuf suites SQL l'appelaient, **dont `geoip-v85-sql.test.ts`, écrite par P8.7 elle-même** ;
+`backfill-idempotency-sql.test.ts` ne l'appelait pas.
 
 Autrement dit : **P8.7 connaissait le piège, a protégé sa propre suite, et a cassé celle qu'elle ne
-pouvait pas voir — parce que la CI ne la joue pas.** C'est le quatrième exemplaire du schéma du § 7,
-et le seul encore ouvert au moment où ce document est écrit.
+pouvait pas voir — parce que la CI ne la jouait pas.** C'était le quatrième exemplaire du schéma du § 7.
+**Il est fermé** : #213 vide le cache avant chaque cas et en sortant, et déclare la base dans la CI.
 
-**Ce défaut n'est pas corrigé ici** : ce sous-lot ne modifie ni code ni test. Il se reproduit avec une
-base jetable au schéma v82 :
+La reproduction du 18/09 rend désormais l'inverse. Le 23/09, jouée sur la base jetable `v7p10_pre_v83`,
+créée vide comme en CI (la suite la monte elle-même au schéma v82) :
 
 ```sh
 SQL_TEST_DATABASE_URL=<base complète> SQL_TEST_PRE_V83_DATABASE_URL=<base v82> \
   pnpm exec vitest run tests/integration/backfill-idempotency-sql.test.ts --no-file-parallelism
-# 1 failed | 51 passed (52)
+# 18/09 : 1 failed | 51 passed (52) — 23/09 : 52 passed (52)
 ```
 
-**`BENCH_DATABASE_URL`** — les deux bancs de mesure (Explorer P6.6, mobile P7.5). Les chiffres de
-performance publiés dans `delivery-p6.md` et `delivery-p7.md` ne sont **jamais** revérifiés par la
-CI. Une régression de performance passerait sans un mot.
+**`BENCH_DATABASE_URL`** — les deux bancs de mesure (Explorer P6.6, mobile P7.5). **Toujours absente
+de `ci.yml` au 23/09** : les chiffres de performance publiés dans `delivery-p6.md` et `delivery-p7.md`
+ne sont **jamais** revérifiés par la CI, et ce relevé ne les a pas rejoués (base préparée à part).
 
 ### 8.3 `pnpm build` ne fonctionne pas depuis un dépôt propre
 
@@ -492,87 +492,173 @@ aucune raison d'ordonner les deux. Après `pnpm build:sdk`, `pnpm -r build` est 
 rien parce qu'elle appelle `pnpm build:sdk` en premier — et `delivery-p8.md` annonce « `pnpm -r build`
 : vert » sans préciser cette condition.
 
-**Non corrigé : ce travail ne modifie aucun code.**
+**Non corrigé au 23/09** : rejoué sur un worktree neuf de `8a5f3d1`, même erreur, même cause.
 
-### 8.4 `tsc --noEmit` du SDK web — l'écart est réel, et la CI ne le verra jamais
+### 8.4 `tsc --noEmit` du SDK web — corrigé, et joué par la CI depuis #213
 
-`pnpm --filter @mip/rum-sdk exec tsc --noEmit` échoue sur
+Le 18/09, `pnpm --filter @mip/rum-sdk exec tsc --noEmit` échouait sur
 `packages/rum-sdk/src/replay.ts(242,11): error TS2322` — `Uint8Array<ArrayBufferLike>` n'est pas
-assignable à `BodyInit`. `delivery-p7.md` le consigne comme « échec PRÉ-EXISTANT non joué par la CI ».
-**Confirmé, et aggravé d'un cran** : `grep -rn 'tsc' .github/workflows/` ne rend **aucune**
-occurrence. Aucun workflow ne joue `tsc --noEmit`, pour aucun paquet — pas même pour la console, qui
-passe pourtant. La vérification des types n'est couverte par la CI d'aucune façon.
+assignable à `BodyInit` — et `grep -rn 'tsc' .github/workflows/` ne rendait **aucune** occurrence.
+#213 (`42f9fe5`, 18/09) corrige le type sans assertion et ajoute à `ci.yml` l'étape « Typage des
+paquets publiés » : quatre paquets et la console. Au 23/09, les cinq sont verts ici et dans la CI
+(§ 12.3) ; seule l'extension, verte à la main, n'est typée par aucun workflow. D'où le verdict de `F2`.
 
 ### 8.5 Ce que je n'ai pas pu vérifier
 
 - **Le contenu réel de la base de production** : nombre de lignes, date de la dernière ingestion,
-  périmètre chiffré de `D9`, état des barrières d'effacement. `DATABASE_URL` était interdite pour ce
-  travail et n'a pas été employée. Tout cela est **attribué** à sa source (journal de livraison, ou
+  périmètre chiffré de `D9`, état des barrières d'effacement. `DATABASE_URL` était interdite pour les
+  deux relevés et n'a pas été employée. Tout cela est **attribué** à sa source (journal de livraison, ou
   décision du 18/09/2026) et non recontrôlé.
   **Exception : les migrations appliquées**, que les journaux de pré-déploiement Railway donnent sans
   qu'on ait à ouvrir la base (§ 2) — et c'est par là qu'on a vu que le journal était périmé.
-- **Le comportement de la façade Railway sur `X-Real-IP`** (`D14`) : il n'existe aucun déploiement
-  exposé sur lequel le sonder, puisque `ingest` n'a pas de domaine.
-- **La date de la dernière ingestion** (« 17/09 17:23 », `delivery-p8.md`) : reprise telle quelle.
+- **Le comportement de la façade Railway sur `X-Real-IP`** (`D14`) : aucun déploiement exposé sur
+  lequel le sonder — `ingest` n'avait pas de domaine, et il est supprimé.
+- **La date de la dernière ingestion** (« 17/09 17:23 », `delivery-p8.md`) : reprise telle quelle. Ce que le relevé du 23/09 n'a pas pu revoir de plus : § 12.4.
 
 ---
 
 ## 9. Reliquat à nettoyer
 
-**Le dépôt bac à sable `jt33120/mip-rum-tickets-sandbox` existe toujours.** Vérifié le 18/09 par
-`gh api` : privé, créé le 18/09/2026 à 12:44 UTC, non archivé. Il a été ouvert pour éprouver le
-connecteur de tickets de `D12` et n'a pas pu être supprimé — le jeton de la session `gh` ne porte pas
-le droit `delete_repo`. **À supprimer avec un jeton qui en dispose**, ou à archiver si son unique
-ticket doit rester consultable comme preuve.
+**Le dépôt bac à sable `jt33120/mip-rum-tickets-sandbox` existait toujours le 18/09**, vérifié par
+`gh api` : privé, créé le 18/09/2026 à 12:44 UTC, non archivé ; non revérifié le 23/09. Il a été ouvert
+pour éprouver le connecteur de tickets de `D12` et n'a pas pu être supprimé — le jeton de la session
+`gh` ne porte pas le droit `delete_repo`. **À supprimer avec un jeton qui en dispose**, ou à archiver
+si son unique ticket doit rester consultable comme preuve.
 
 ---
 
 ## 10. Pourquoi il n'y a pas de verdict global « fini »
 
-La spec § 9 l'interdit tant que des points obligatoires restent ouverts. Ils sont cinq, et aucun n'est
-une affaire de rédaction :
+La spec § 9 l'interdit tant que des points obligatoires restent ouverts. Ils sont cinq au 23/09, et
+aucun n'est une affaire de rédaction :
 
 1. **Aucune recette sur vraie application** (§ 6.2). Aucune capacité de ce document n'a franchi la
    colonne « éprouvé sur donnée réelle ». C'est le point le plus lourd, et le moins cher à lever.
 2. **P8.4 — source maps dans la CI du client** (`D10`) : jamais entamé, bloqué sur des accès externes.
 3. **P8.5 — crashes natifs, symboles, appareils** (`D11`) : jamais entamé, et volontairement sans
    table, pour qu'aucun écran ne montre un faux zéro.
-4. **Un test rouge, que la CI ne joue pas** (§ 8.2, § 7 n° 4) : la fenêtre de déploiement de P8.2
-   échoue depuis que v85 a ajouté `geo_source`. Déclarer « CI verte » sans le dire serait exactement
-   le genre de vérité partielle que ce document existe pour empêcher.
-5. **Deux défauts connus, non corrigés** : `tsc --noEmit` du SDK web en échec sans qu'aucun workflow
-   ne le joue (§ 8.4), et `pnpm -r build` inopérant depuis un dépôt propre (§ 8.3).
+4. **Deux bancs que la CI ne joue pas** (§ 8.2, `F3`) : les temps publiés ne sont jamais revérifiés.
+   Le test rouge du 18/09 (fenêtre v82→v83, § 7 n° 4) est réparé et joué par la CI depuis #213 ;
+   déclarer « CI verte » sans dire ce qu'elle saute resterait une vérité partielle.
+5. **Un défaut connu, non corrigé** : `pnpm -r build` inopérant depuis un dépôt propre (§ 8.3, `F1`).
+   Le second défaut du 18/09, le typage du SDK web hors CI, est corrigé (§ 8.4, `F2`).
 
 **P8.3 (`D9`) est le seul point fermé par une décision plutôt que par une livraison** : ne pas
 exécuter, le 18/09/2026, périmètre mesuré à ≈ 97 lignes. Cette décision ne rouvre rien, mais elle ne
 referme pas non plus les cinq autres.
 
-**P8.6 et P8.7 ne sont plus ouverts** : fusionnés pendant ce relevé, migrations v84 et v85 appliquées,
-code déployé. Ils ne bloquent plus rien — ils s'ajoutent simplement aux 34 capacités livrées, déployées
-et jamais éprouvées sur du trafic.
+**P8.6 et P8.7 ne sont plus ouverts** : fusionnés pendant le relevé du 18/09, migrations v84 et v85
+appliquées, code déployé. Ils s'ajoutent aux capacités livrées, déployées et jamais éprouvées sur du
+trafic — 35 au 23/09, `F2` comprise.
 
 ---
 
 ## 11. Par où commencer, si l'on reprend le produit
 
-Dans cet ordre, parce que chaque étape éclaire la suivante.
+Dans cet ordre, parce que chaque étape éclaire la suivante (liste revue le 23/09).
 
 1. **Faire arriver du trafic, puis regarder.** Réactiver un émetteur sur une application de recette,
    attendre quelques centaines d'événements, et ouvrir `/errors`, `/explorer`, un tableau de bord et
    `/mobile` sur ces données. C'est l'étape qui manque à **toutes** les lignes de ce document, et
    c'est la moins chère.
-2. **Décider du sort de `ingest`.** Soit on lui ouvre un domaine — et `D14` et le port direct de `A6`
-   deviennent atteignables —, soit on acte que Vercel est le seul chemin, et on déplace ce qui en
-   dépend. En l'état, une capacité livrée ne s'exécute nulle part sans que rien ne l'annonce.
-3. **Réparer la fenêtre de déploiement de P8.2, puis la mettre dans la CI** (§ 8.2). Une ligne dans
-   `ci.yml` et un `_resetColonnesCache()` dans la suite. Tant que ce n'est pas fait, personne ne sait
-   si le code publié survit à la prochaine migration — et c'est justement ce que cette suite existe
-   pour dire.
-4. **Mettre `tsc --noEmit` et les bancs dans la CI** (§ 8.2, § 8.4), puis corriger `replay.ts:242` et
-   l'ordre de build de `apps/extension`. Quatre corrections courtes, qui rendent vraie la phrase
-   « la CI est verte ».
+2. **Décider où résoudre le pays.** `ingest` est supprimé depuis le 21/09 : Vercel est le seul chemin.
+   `D14` et le port direct de `A6` n'y sont pas ; il faut soit un receveur backend public, soit une
+   résolution depuis la console (`TOPOLOGIE_BACKEND.md:121-123`). Aucun des deux n'est tranché.
+3. **Jouer les bancs de mesure** (§ 8.2), dans la CI ou à chaque relevé, sur une base préparée. La
+   fenêtre de déploiement de P8.2 est réparée et jouée par la CI depuis #213 ; les bancs restent le
+   seul morceau de la recette SQL que personne ne rejoue, et ce sont eux qui fondent les temps publiés
+   de `B9`.
+4. **Ordonner le build de `apps/extension` et la typer en CI** (§ 8.3, § 8.4) : déclarer sa dépendance
+   envers `@mip/rum-sdk`, et ajouter une ligne à l'étape « Typage des paquets publiés ». Deux
+   corrections courtes ; `tsc --noEmit` des paquets et `replay.ts:242` sont faits (#213).
 5. **Écrire la procédure de restauration** (`D7`). C'est le seul trou de ce document qui touche une
    garantie déjà annoncée à un client dans `docs/CONFORMITE.md`.
+
+---
+
+## 12. Le relevé du 23/09/2026 : ce qui a été revu, et ce qui a changé
+
+Relevé de la vague 7 (lot P\*\*.10 du plan frontend), sur `8a5f3d1`. Méthode : les commandes du § 2,
+rejouées sur bases jetables ; les douze lignes aux verdicts `livre_non_deploye`,
+`livre_avec_defaut_connu` et `bloque_acces_externe` revues une à une ; un verdict ne change que sur
+une preuve nommée dans sa ligne. **Les §§ 1 à 11 ont gardé leur numérotation du 18/09, ligne pour
+ligne** : une citation `RUM_PARITY_STATUS.md:NNN` faite depuis (la vitrine, le plan) désigne toujours
+le même passage. Ce qui est neuf et ne tenait pas en place est ici.
+
+### 12.1 Les douze lignes revues
+
+| # | 18/09 | 23/09 | Ce qui a été revu |
+|---|---|---|---|
+| `C1` | `livre_non_deploye` | inchangé | `packages/rum-mobile` : aucun commit depuis `2f216cb` ; `rum-mobile-p73.test.ts` 65 verts sur 65 ; toujours ni appareil, ni simulateur |
+| `C2` | `livre_non_deploye` | inchangé | même paquet ; `rum-mobile-p72.test.ts` 44 verts sur 44 ; `offline.persistent` toujours désactivé par défaut |
+| `C3` | `livre_non_deploye` | inchangé | même paquet : le visiteur mobile reste un tirage mémoire |
+| `C4` | `livre_non_deploye` | inchangé | même paquet |
+| `C9` | `bloque_acces_externe` | inchangé | `private: true` ; `node scripts/verify-sdk-packaging.mjs` : 36 contrôles verts ; aucune publication |
+| `C10` | `bloque_acces_externe` | inchangé | `MATRICE-RUNTIME.md` sans commit depuis `2f216cb` : toujours vide |
+| `D8` | `livre_non_deploye` | inchangé, **preuve corrigée** | v83 est appliquée en production (§ 12.2) ; le verdict tient parce qu'aucun environnement ne lance l'outil. La fenêtre v82→v83 passe, et la CI la joue |
+| `D10` | `bloque_acces_externe` | inchangé | `scripts/upload-sourcemaps.mjs` sans commit depuis `2f216cb` ; rien n'est entamé côté client |
+| `D13` | `bloque_acces_externe` | inchangé | route et adaptateurs sans commit depuis `2f216cb` ; une livraison réelle ne se prouverait que par les journaux de Vercel ou du fournisseur, que ce relevé s'est interdits |
+| `F1` | `livre_avec_defaut_connu` | inchangé | `pnpm -r build` rejoué sur un worktree neuf : même `ENOENT` sur `packages/rum-sdk/dist/mip-rum.js` ; `apps/extension/package.json` ne déclare toujours pas `@mip/rum-sdk` |
+| `F2` | `livre_avec_defaut_connu` | **`deploye_non_eprouve`** | le défaut nommé est levé : #213 ajoute l'étape « Typage des paquets publiés » à `ci.yml` et corrige `replay.ts:242` ; cinq `tsc --noEmit` verts ici, étape verte dans la CI de `8a5f3d1` (§ 12.3). Reste une limite, pas un défaut : l'extension, verte à la main, n'est pas typée par la CI |
+| `F3` | `livre_avec_defaut_connu` | inchangé, **défaut réduit** | `SQL_TEST_PRE_V83_DATABASE_URL` est dans `ci.yml` depuis #213 et la suite passe (§ 8.2) ; `BENCH_DATABASE_URL` n'y est toujours pas : les deux bancs ne tournent jamais en CI |
+
+`D7`, `D11` (`non_commence`) et `D9` (`non_retenu`) n'ont pas été revues une à une : aucune migration
+n'a été ajoutée depuis le 18/09, `docs/CONFORMITE.md` n'a reçu que la mise à jour de l'hébergement
+(#221), et la décision du 18/09 n'a pas été rouverte. Parmi les lignes `deploye_non_eprouve`, cinq
+ont vu leur texte suivre les faits sans changer de verdict : `A6` et `D14` (suppression d'`ingest`,
+§ 3), `A10`, `D6` et `E2` (commandes rejouées, outils recomptés le 23/09).
+
+### 12.2 v83 est appliquée en production — le relevé du 18/09 disait l'inverse
+
+La ligne `D8` du 18/09 portait « migration v83 non appliquée en production », reprise de
+`delivery-p8.md`. Quatre faits du dépôt la contredisent :
+
+1. `migration-v83.sql` est dans `apps/ingest/sql/`, que lit le runner — pas dans `sql/pending/`, qu'il
+   ignore (`apps/ingest/migrate.mjs`, `fichiersMigration`). Elle y est depuis la fusion de #208, le
+   18/09 à 11:46 UTC.
+2. Le runner compte en « total » tous les fichiers qu'il lit, `schema.sql` et les 79 migrations :
+   80, v83 comprise. Aucun fichier n'a été ajouté depuis.
+3. Le passage d'`ingest` du 18/09 à 13:30:35 UTC rend « total 80 · appliquées 1 », la seule étant v84
+   (§ 2) ; celui du `scheduler` à 15:29:18 UTC rend « total 80, appliquées 0 »
+   (`TOPOLOGIE_BACKEND.md:71-75`). Le registre de production contenait donc les 80 fichiers.
+4. L'étalonnage, qui inscrit un fichier sans l'exécuter, s'arrête à `migration-v51.sql`
+   (`MIGRATE_BASELINE`, `DEPLOY.md:117`, `:178-184`) : il n'a pas pu inscrire v83.
+
+v83 a donc été **exécutée** en production le 18/09, entre 11:46 et 13:30 UTC, par le pré-déploiement
+qui a suivi l'une des fusions de ce jour-là. C'est une déduction de journaux, pas une lecture de la
+base. Elle ne change pas le verdict de `D8` : l'outil de reprise est une ligne de commande qu'aucun
+environnement ne lance, et son exécution a été écartée (`D9`). Elle change ce qu'une reprise
+demanderait : rien côté schéma, seulement lancer l'outil.
+
+### 12.3 La CI du commit relevé
+
+Lue le 23/09 par l'API publique de GitHub (dépôt public, sans jeton) : passage `35833662207`, push
+sur `master` à `8a5f3d1`, le 23/09 à 07:48 UTC.
+
+| Job | Verdict | Détail |
+|---|---|---|
+| Build SDK + tests unitaires | **vert** | dont « Typage des paquets publiés » (`F2`) et « Empaquetage SDK » (`C9`) |
+| E2E Playwright (Postgres service) | **rouge** | isolation, alerting, SVI et SQL à 7 bases verts (`F3`) ; seule l'étape « Tests E2E » échoue |
+
+L'échec vient d'un test instable du zoom du hero (`tests/e2e/perf-domaine.spec.ts`, « aucun seau
+actif sous la souris ») : rouge sur `master` après #274, vert sur la PR, corrigé par `d99c9ec` sur la
+branche de la vague 7 et pas encore sur `master` (message de ce commit). Aucune ligne de ce document ne
+cite ce test ; la CI de `master` n'en est pas moins rouge au commit relevé, et ce relevé le dit.
+
+### 12.4 Ce que ce relevé n'a pas pu revoir
+
+- **Les déploiements** : ni l'API Railway ni l'API Vercel n'ont été appelées. Les SHA déployés sont
+  ceux du 18/09 ; la suppression d'`ingest` et le rôle du `scheduler` viennent de
+  `docs/TOPOLOGIE_BACKEND.md`, relevé par l'API Railway le 21/09, pas d'une observation de ce relevé.
+- **`D13`** : aucune livraison réelle du webhook n'est observable sans les journaux de Vercel ou du
+  fournisseur ; le verdict reste, pour la raison que donne sa ligne.
+- **Les bancs** (`F3`) : non rejoués, faute d'une base préparée à part.
+- **Le dépôt bac à sable du § 9** : privé, donc invisible sans jeton ; non revérifié.
+- **Tout ce que le § 8.5 énumérait déjà**, qui reste vrai.
+
+Les 2 `todo` de la suite unitaire (§ 2) sont les contrôles 3 et 4 de `tests/unit/couverture-site.test.ts`
+sur les vraies cartes de la vitrine, que ses lots suivants brancheront ; ce ne sont pas des tests
+ignorés.
 
 ---
 
