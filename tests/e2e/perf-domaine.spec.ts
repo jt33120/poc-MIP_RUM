@@ -288,32 +288,24 @@ test.describe("F12 — Vue d'ensemble : hero CWV et « Charge, erreurs et LCP »
   test("un clic sur un seau du hero zoome sur sa plage (from/to, plus de period)", async ({ page }) => {
     await login(page);
     await page.goto(ACCUEIL_F12, { waitUntil: "domcontentloaded" });
-    const surface = page.locator("#hero-LCP .recharts-surface").first();
-    await expect(surface).toBeVisible({ timeout: 15_000 });
-    await surface.scrollIntoViewIfNeeded();
-    const boite = await surface.boundingBox();
-    if (!boite) throw new Error("graphique sans boîte");
-    // Le zoom lit `activeLabel`, que recharts ne renseigne qu'une fois le survol
-    // enregistré. Deux fragilités, l'une et l'autre vues rouges en CI et vertes en
-    // local : un `mouse.move` d'un seul saut ne produit qu'un `mousemove`, que
-    // recharts rate parfois ; et une abscisse donnée peut tomber entre deux seaux
-    // selon la largeur rendue. On déplace donc la souris par pas, et on essaie
-    // plusieurs abscisses jusqu'à ce qu'un seau soit actif. L'infobulle en est le
-    // témoin : elle n'est dans le DOM que si `activeLabel` l'est.
-    const infobulle = page.locator("#hero-LCP .recharts-tooltip-wrapper > *").first();
-    const y = boite.y + boite.height * 0.5;
-    let x = 0;
-    for (const part of [0.6, 0.5, 0.4, 0.7, 0.3, 0.8]) {
-      x = boite.x + boite.width * part;
-      await page.mouse.move(x, y, { steps: 10 });
-      const actif = await infobulle
-        .waitFor({ state: "visible", timeout: 2_000 })
-        .then(() => true)
-        .catch(() => false);
-      if (actif) break;
-    }
-    await expect(infobulle, "aucun seau actif sous la souris").toBeVisible({ timeout: 5_000 });
-    await page.mouse.click(x, y);
+    // On clique un POINT de la série, pas une abscisse calculée. recharts 2 calcule
+    // le seau du clic à partir de l'événement lui-même (`handleClick` →
+    // `getMouseInfo(e)`), sans survol préalable — mais il ne rend rien si le clic
+    // tombe hors de la zone de tracé. Or une abscisse lue sur `boundingBox()` peut
+    // être périmée : le conteneur responsive se redimensionne encore après le
+    // premier rendu (vert en local, rouge une fois sur deux en CI). `locator.click()`
+    // n'est pas fiable pour autant : au survol, recharts pose son point actif PAR-DESSUS
+    // le point visé, et Playwright refuse alors le clic (« intercepts pointer events »).
+    // D'où : vérifications d'action SANS survol (`trial`), mesure fraîche du point,
+    // puis clic souris à son centre — le point actif qui apparaît au passage est dans
+    // le même graphique, le clic remonte au même gestionnaire. Le premier point est le
+    // plus ancien seau mesuré, jamais le seau en cours, dont le zoom peut être vide.
+    const point = page.locator("#hero-LCP .recharts-line-dots circle").first();
+    await expect(point).toBeVisible({ timeout: 15_000 });
+    await point.hover({ trial: true });
+    const boite = await point.boundingBox();
+    if (!boite) throw new Error("point de série sans boîte");
+    await page.mouse.click(boite.x + boite.width / 2, boite.y + boite.height / 2);
     await page.waitForURL((u) => u.searchParams.has("from") && u.searchParams.has("to"), { timeout: 15_000 });
     const u = new URL(page.url());
     expect(u.searchParams.get("app")).toBe(APP_F12);
