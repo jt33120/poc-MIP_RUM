@@ -532,9 +532,16 @@ test.describe("F18 — Erreurs : KPI, hero, répartition", () => {
     expect(textes).not.toContain("Error");
     expect(textes[0]).toContain("Échec du paiement, étape 1");
     expect(textes.at(-1)).toBe("Autres groupes (somme)");
-    // Un groupe mène à son groupe ; « Autres » n'est pas un groupe, pas un lien.
-    await expect(hero.getByTestId("legende-serie").getByRole("link")).toHaveCount(4);
-    await expect(hero.getByTestId("legende-serie").getByRole("link").first()).toHaveAttribute("href", /^\/errors\/f18fp0/);
+    // Un groupe mène à son groupe ; « Autres » n'est pas un groupe, pas un lien. Depuis
+    // F20 (§ 3.3 : « Groupe d'erreurs → panneau `panel=error:<empreinte>` »), il ouvre
+    // SON PANNEAU sur l'écran ; la page du groupe est derrière « Ouvrir en page ».
+    const liens = hero.getByTestId("legende-serie").getByRole("link");
+    await expect(liens).toHaveCount(4);
+    const premier = new URL((await liens.first().getAttribute("href"))!, consoleUrl);
+    expect(premier.pathname).toBe("/errors");
+    expect(premier.searchParams.get("app")).toBe(APP);
+    // Le premier de la légende est le plus fréquent : « Échec du paiement, étape 1 ».
+    expect(premier.searchParams.get("panel")).toBe("error:f18fp0aaaaaaaa");
     await expect(hero).toContainText("4 groupes les plus fréquents sur 24 h");
   });
 
