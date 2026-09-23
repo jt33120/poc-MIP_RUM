@@ -1,0 +1,52 @@
+[
+  {
+    "fichier": "overview-light.png",
+    "route": "/?app=demo-app",
+    "theme": "light",
+    "largeur": 1440,
+    "hauteur": 900,
+    "date": "2026-09-23",
+    "sha": "5c2e796",
+    "jeu": "scripts/gen-traffic.mjs"
+  },
+  {
+    "fichier": "issue-light.png",
+    "route": "/errors/issues/93fd2201-9cc1-4ace-b601-999e97cf643e?app=demo-app",
+    "theme": "light",
+    "largeur": 1440,
+    "hauteur": 900,
+    "date": "2026-09-23",
+    "sha": "5c2e796",
+    "jeu": "scripts/gen-traffic.mjs"
+  },
+  {
+    "fichier": "mobile-light.png",
+    "route": "/mobile?app=demo-app",
+    "theme": "light",
+    "largeur": 1440,
+    "hauteur": 900,
+    "date": "2026-09-23",
+    "sha": "5c2e796",
+    "jeu": "scripts/gen-traffic.mjs"
+  },
+  {
+    "fichier": "overview-dark.png",
+    "route": "/?app=demo-app",
+    "theme": "dark",
+    "largeur": 1440,
+    "hauteur": 900,
+    "date": "2026-09-23",
+    "sha": "5c2e796",
+    "jeu": "scripts/gen-traffic.mjs"
+  },
+  {
+    "fichier": "issue-dark.png",
+    "route": "/errors/issues/93fd2201-9cc1-4ace-b601-999e97cf643e?app=demo-app",
+    "theme": "dark",
+    "largeur": 1440,
+    "hauteur": 900,
+    "date": "2026-09-23",
+    "sha": "5c2e796",
+    "jeu": "scripts/gen-traffic.mjs"
+  }
+]
