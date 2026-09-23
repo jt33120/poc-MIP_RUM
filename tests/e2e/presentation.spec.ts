@@ -497,4 +497,151 @@ test.describe("P**.6 — annexe et Specs", () => {
   });
 });
 
-// ─── P**.8 — Recette : TP5 (débordements), TP12 (mouvement réduit), TP8 avec P**.7
+// ─── P**.8 — Recette : TP5 (débordements), TP8 (images et légende), TP12 (mouvement réduit)
+//
+// Les trois tests du § 8.5 qu'aucun lot n'avait écrits ; les neuf autres sont dans
+// les blocs ci-dessus (TP1, TP2, TP9 : P**.2 ; TP7, TP10 : P**.3 ; TP3 et TP4 :
+// P**.4 ; TP4 : P**.5 ; TP6, TP11 : P**.6). La bascule vers master attend les douze.
+//
+// TP8 est ici, pas avec P**.7 : sa règle de date (« une date si et seulement si
+// public/portail/manifest.json existe ») le rend vrai avant les nouvelles captures
+// comme après. P**.7 le rejoue ; il n'a pas à l'écrire.
+
+// Imports DE CE BLOC, même convention que P**.3 : sous le repère, noms suffixés.
+import { existsSync as existsSyncPss8 } from "node:fs";
+import type { Locator as LocatorPss8 } from "@playwright/test";
+import { LARGEURS as LARGEURS_PSS8, debordements as debordementsPss8 } from "./helpers/debordements";
+
+test.describe("P**.8 — recette de la page : largeurs, images, mouvement réduit", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  /** Colonnes d'une grille de cartes : le nombre de bords gauches distincts, au pixel près. */
+  const colonnes = (cartes: LocatorPss8) =>
+    cartes.evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().left))).size);
+
+  /** Cartes de capacité par rangée (PS7) : une à 390 px, deux à 768, trois à 1440. */
+  const COLONNES_CAPACITES: Record<(typeof LARGEURS_PSS8)[number], number> = { 390: 1, 768: 2, 1440: 3 };
+
+  test("TP5 — rien ne dépasse à 390, 768 et 1440 px, même tout déplié ; à 390 px, les cartes sur une colonne", async ({
+    page,
+  }) => {
+    const fautes: string[] = [];
+    for (const largeur of LARGEURS_PSS8) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(`${consoleUrl}/presentation`);
+      // Les Specs arrivent sous <Suspense> : on mesure la page finie, pas son squelette.
+      await expect(page.locator("#specs-infra")).toBeAttached();
+      await expect(page.getByTestId("specs-chargement")).toHaveCount(0);
+      for (const f of await debordementsPss8(page)) fautes.push(`${largeur} px, au chargement — ${f}`);
+
+      // Puis tout ce qu'un visiteur peut déplier : chaque <details> (alternatives
+      // textuelles, familles de l'annexe), et chacun des trois onglets des Specs — un
+      // panneau caché n'a pas de largeur, il ne déborde qu'une fois ouvert.
+      await page.evaluate(() =>
+        document.querySelectorAll("details").forEach((d) => {
+          d.open = true;
+        }),
+      );
+      for (const onglet of ["infra", "mesures", "ecart"]) {
+        await page.locator(`label[for="specs-${onglet}"]`).click();
+        await expect(page.locator(`[data-testid="specs-panneau"][data-onglet="${onglet}"]`)).toBeVisible();
+        for (const f of await debordementsPss8(page)) fautes.push(`${largeur} px, tout déplié, onglet ${onglet} — ${f}`);
+      }
+
+      const capacites = page.locator("section#sait-faire").getByTestId("capacite");
+      expect(await colonnes(capacites), `${largeur} px : cartes de capacité par rangée`).toBe(COLONNES_CAPACITES[largeur]);
+      if (largeur === 390) {
+        const autres = [
+          ["écrans de la console", page.getByTestId("ecrans-categorie")],
+          ["points de « Ce qui reste »", page.locator("section#reste").getByTestId("reste-point")],
+        ] as const;
+        for (const [nom, cartes] of autres) {
+          expect(await cartes.count(), nom).toBeGreaterThan(0);
+          expect(await colonnes(cartes), `390 px : ${nom} sur une colonne`).toBe(1);
+        }
+      }
+    }
+    expect(fautes).toEqual([]);
+  });
+
+  test("TP8 — une image dit ce qu'elle montre ou se tait ; la légende dit « jeu de démonstration », datée par le seul manifeste", async ({
+    page,
+  }) => {
+    await page.goto(`${consoleUrl}/presentation`);
+    const images = await page.locator("img").evaluateAll((imgs) =>
+      imgs.map((img) => ({
+        src: img.getAttribute("src") ?? "",
+        alt: (img.getAttribute("alt") ?? "").trim(),
+        masquee: img.getAttribute("aria-hidden") === "true",
+      })),
+    );
+    expect(images.length, "la capture de la console").toBeGreaterThan(0);
+    for (const i of images) expect(i.alt !== "" || i.masquee, `${i.src} : ni alt ni aria-hidden`).toBe(true);
+
+    // Thème clair (celui du contexte) : la capture claire se voit, la sombre non.
+    await expect(page.locator('img[src*="overview-light"]')).toBeVisible();
+    await expect(page.locator('img[src*="overview-dark"]')).toBeHidden();
+
+    const legende = page.locator("main p", { hasText: "Capture réelle de la console" });
+    await expect(legende).toHaveCount(1);
+    await expect(legende).toContainText("jeu de démonstration");
+    // La date d'une capture vient du manifeste des captures (P**.7) ; sans lui, elle
+    // n'est pas établie, et la légende n'en invente pas.
+    const manifeste = existsSyncPss8(join(process.cwd(), "apps/console/public/portail/manifest.json"));
+    const datee = /\b\d{2}\/\d{2}\/\d{4}\b|\b\d{4}-\d{2}-\d{2}\b/.test(await legende.innerText());
+    expect(datee, manifeste ? "manifeste présent : la légende porte une date" : "sans manifeste : aucune date").toBe(
+      manifeste,
+    );
+  });
+
+  test.describe("TP8 — thème sombre émulé", () => {
+    test.use({ colorScheme: "dark" });
+
+    test("TP8 — la capture sombre est visible, la claire masquée", async ({ page }) => {
+      await page.goto(`${consoleUrl}/presentation`);
+      // Sans choix enregistré, le script anti-flash du layout suit prefers-color-scheme.
+      await expect(page.locator("html")).toHaveClass(/(^|\s)dark(\s|$)/);
+      await expect(page.locator('img[src*="overview-dark"]')).toBeVisible();
+      await expect(page.locator('img[src*="overview-light"]')).toBeHidden();
+    });
+  });
+
+  test("TP12 — mouvement réduit : les flèches du chemin de la mesure s'arrêtent, et rien d'autre ne bouge", async ({
+    page,
+  }) => {
+    const fleches = page.locator(".mip-fleche");
+    const etat = () =>
+      fleches.evaluateAll((els) =>
+        els.map((el) => ({ nom: getComputedStyle(el).animationName, animations: el.getAnimations().length })),
+      );
+
+    // Témoin : sans préférence, les flèches dérivent (Capteurs.tsx, globals.css). Sans
+    // lui, une classe renommée ferait passer le test à vide.
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto(`${consoleUrl}/presentation`);
+    const libres = await etat();
+    expect(libres.length, "des flèches dans le chemin de la mesure").toBeGreaterThan(0);
+    for (const f of libres) {
+      expect(f.nom).toBe("mip-derive");
+      expect(f.animations).toBeGreaterThan(0);
+    }
+
+    // Mouvement réduit demandé : aucune animation sur les flèches…
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`${consoleUrl}/presentation`);
+    const reduites = await etat();
+    expect(reduites.length).toBe(libres.length);
+    for (const f of reduites) {
+      expect(f.nom).toBe("none");
+      expect(f.animations).toBe(0);
+    }
+    // … ni ailleurs dans la page (§ 3.9) : les entrées en fondu y durent 0,01 ms.
+    await expect
+      .poll(() =>
+        page
+          .locator("main")
+          .evaluate((m) => m.getAnimations({ subtree: true }).filter((a) => a.playState === "running").length),
+      )
+      .toBe(0);
+  });
+});
