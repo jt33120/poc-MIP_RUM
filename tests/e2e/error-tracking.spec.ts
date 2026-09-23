@@ -534,6 +534,9 @@ test.describe("P5.6 — workflow d'une issue", () => {
     await expect(page.getByTestId("issue-status")).toHaveText("Ouverte");
     await expect(page.getByTestId("issue-regression")).toContainText("release 2.1.0 (env prod)");
     await expect(page.getByTestId("issue-activity-regression")).toContainText("Régression confirmée");
+    // F21 : les versions touchées de l'issue le lisent aussi — apparue en 2.0.0, revue en 2.1.0.
+    await expect(page.getByTestId("premiere-release")).toContainText("2.0.0");
+    await expect(page.getByTestId("derniere-release")).toContainText("2.1.0");
 
     // Résolue en 2.1.0, puis un ancien client en 2.0.0 : réapparition à vérifier, l'issue reste résolue.
     await resoudre(page);
@@ -543,6 +546,21 @@ test.describe("P5.6 — workflow d'une issue", () => {
     await expect(page.getByTestId("issue-status")).toHaveText("Résolue");
     await expect(page.getByTestId("issue-reappeared")).toContainText("Réapparition à vérifier");
     await expect(page.getByTestId("issue-regression")).toHaveCount(0);
+  });
+
+  test("F21 — barres de l'issue : le déploiement de la fenêtre y est posé, lien vers les releases comparées", async ({ page }) => {
+    await login(page);
+    await page.goto(`${CONSOLE}${PAGE_ISSUE}`);
+    const temps = page.locator("#detail-erreur-temps");
+    await temps.scrollIntoViewIfNeeded();
+    // 2.1.0, déployée il y a une heure, est dans la fenêtre ; 2.0.0 (il y a 3 jours), non.
+    const lien = temps.getByTestId("legende-annotations").getByRole("link");
+    await expect(lien).toHaveCount(1);
+    await expect(lien).toContainText("2.1.0");
+    await expect(lien).toHaveAttribute(
+      "href",
+      new RegExp(`^/errors/issues/${ISSUE_W}\\?app=${APP_W}&.*cmp=release&rel_b=2\\.1\\.0&rel_a=2\\.0\\.0$`),
+    );
   });
 
   test("commentaire masqué, lien de ticket et triage au clavier", async ({ page }) => {
