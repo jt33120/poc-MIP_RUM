@@ -1082,9 +1082,9 @@ un CDN qui posait déjà son en-tête pays.
 ## P8.8 — recette finale et document de couverture
 
 Branche `docs/rum-parity-status-p8-8`. **Aucune migration, aucun code, aucun test modifié** : ce
-sous-lot vérifie et rédige. Produit : [`docs/RUM_PARITY_STATUS.md`](../../docs/RUM_PARITY_STATUS.md),
+sous-lot vérifie et rédige. Produit : [`docs/RUM_PARITY_STATUS.md`](../../RUM_PARITY_STATUS.md),
 **49 capacités**, une par ligne, avec verdict dans un vocabulaire fermé, preuve nommée et limite ;
-plus une section P8.8 dans [`docs/LIMITES.md`](../../docs/LIMITES.md).
+plus une section P8.8 dans [`docs/LIMITES.md`](../../LIMITES.md).
 
 Le relevé a commencé sur `ed33e27`, avec #210 et #211 **ouvertes**. Elles ont été fusionnées pendant
 la rédaction (12:52 et 12:59 UTC). Le document a été repris sur `2f216cb` : verdicts, déploiements et
@@ -1182,4 +1182,4 @@ jeton qui en dispose, ou à archiver si son ticket doit rester consultable.
 **Aucun verdict global « fini ».** Cinq points obligatoires restent ouverts : aucune recette sur vraie
 application nulle part, P8.4 et P8.5 jamais entamés, un test rouge que la CI ne joue pas, et deux
 défauts connus non corrigés (`tsc --noEmit` du SDK web, `pnpm -r build` depuis un dépôt propre). Le
-détail, capacité par capacité, est dans [`docs/RUM_PARITY_STATUS.md`](../../docs/RUM_PARITY_STATUS.md).
+détail, capacité par capacité, est dans [`docs/RUM_PARITY_STATUS.md`](../../RUM_PARITY_STATUS.md).

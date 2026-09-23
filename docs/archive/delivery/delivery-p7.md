@@ -316,7 +316,7 @@ routeur), `interactions.ts` (instrumentation d'appui), `causal.ts` (fenêtre cau
 >
 > **Désormais**, une liste vide ne propage vers rien. Un client qui utilisait la corrélation
 > mobile → backend doit déclarer ses origines. La migration est documentée dans
-> [le README du paquet](../../packages/rum-mobile/README.md#migration-v02--v03--traceorigins-est-une-liste-fermée),
+> [le README du paquet](../../../packages/rum-mobile/README.md#migration-v02--v03--traceorigins-est-une-liste-fermée),
 > en tête de fichier, avec le `diff` à appliquer. Le paquet passe en **0.3.0** pour que la
 > version le signale.
 >
@@ -662,7 +662,7 @@ peu : il dit exactement le contraire de la vérité, avec l'autorité d'un chiff
   `erase_app_data` au catalogue des tables portant `app_id`) l'aurait de toute
   façon imposé : c'est lui qui rend l'oubli impossible, et il passe.
 - **Aucune matrice de compatibilité n'est déclarée**, et c'est le résultat
-  demandé plutôt qu'un manque : [MATRICE-RUNTIME.md](../../packages/rum-mobile/MATRICE-RUNTIME.md)
+  demandé plutôt qu'un manque : [MATRICE-RUNTIME.md](../../../packages/rum-mobile/MATRICE-RUNTIME.md)
   liste ce qui a été exécuté (Node 26, PostgreSQL 15.18, Chromium, le paquet
   construit installé dans un consommateur isolé) et ce qui ne l'a pas été —
   React Native, React, Hermes, JSC, Metro, iOS, Android, Fabric, Paper, React
@@ -866,7 +866,7 @@ d'une session, et un endroit où ranger ce qu'un SDK déclare collecter.
    P7 n'a tourné sur un téléphone. C'est le suivi le plus important de cette
    liste : il conditionne les quatre suivants.
 2. **Matrice de compatibilité (P8.5).**
-   [MATRICE-RUNTIME.md](../../packages/rum-mobile/MATRICE-RUNTIME.md) attend ses
+   [MATRICE-RUNTIME.md](../../../packages/rum-mobile/MATRICE-RUNTIME.md) attend ses
    cellules : version de React Native, de React, moteur et sa version, OS,
    routeur, architecture native. Aucune n'est remplie, et aucune ne peut l'être
    depuis ce dépôt.

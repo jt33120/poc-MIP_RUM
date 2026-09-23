@@ -2,7 +2,7 @@
 //
 // UNE TABLE FACTUELLE, SANS SUPERLATIF. La colonne « IP-Label Ekara » n'admet que
 // des éléments étiquetés « documenté » dans les notes de lecture
-// (_bmad-output/implementation-artifacts/plan-frontend-notes/iplabel.md), jamais un
+// (docs/product/notes-lecture-ekara.md), jamais un
 // élément « rapporté (prudence) » : ceux-là viennent d'un résumé d'outil non recoupé.
 // Le SDK mobile natif n'y figure donc pas (sa seule source est de cette sorte), et
 // rien sur Datadog : les comparaisons Datadog appartiennent aux écrans de la
@@ -24,7 +24,7 @@ export interface LignePositionnement {
   sources: { ekara: string; poc: string[] };
 }
 
-const NOTES_IPLABEL = "_bmad-output/implementation-artifacts/plan-frontend-notes/iplabel.md";
+const NOTES_IPLABEL = "docs/product/notes-lecture-ekara.md";
 
 /** En-tête de la colonne Ekara, texte exact du plan : ce qui a été lu, et quand. */
 export const EN_TETE_EKARA = "IP-Label Ekara, d'après ses pages publiques consultées en septembre 2026";

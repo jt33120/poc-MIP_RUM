@@ -11,10 +11,10 @@ Ce document répond à une seule question, capacité par capacité : **est-ce qu
 X, et qu'est-ce qui le prouve ?** Il est écrit pour la personne qui reprend le produit sans avoir
 suivi les livraisons. Une ligne sans preuve nommée n'y figure pas.
 
-Il ne remplace pas les journaux de livraison ([delivery-p5](../_bmad-output/implementation-artifacts/delivery-p5.md),
-[p6](../_bmad-output/implementation-artifacts/delivery-p6.md),
-[p7](../_bmad-output/implementation-artifacts/delivery-p7.md),
-[p8](../_bmad-output/implementation-artifacts/delivery-p8.md)) : il les **recoupe**. Là où un chiffre
+Il ne remplace pas les journaux de livraison ([delivery-p5](archive/delivery/delivery-p5.md),
+[p6](archive/delivery/delivery-p6.md),
+[p7](archive/delivery/delivery-p7.md),
+[p8](archive/delivery/delivery-p8.md)) : il les **recoupe**. Là où un chiffre
 annoncé ne se retrouve pas, c'est la mesure qui est écrite, et l'écart est signalé au § 8.
 
 ---
