@@ -1,28 +1,34 @@
-// Acquisition (F48, plan § 5.16) — « D'où arrivent les sessions, et par quelles
-// pages entrent-elles ? »
+// Acquisition (F48, plan § 5.16 ; sur le contrat depuis B31 → F53) — « D'où
+// arrivent les sessions, et par quelles pages entrent-elles ? »
 //
 // CE QUE L'ÉCRAN REFUSE D'AFFIRMER.
 //   - Une part cachée : l'anneau d'avant filtrait les canaux à 0 (`Donut`), et
 //     l'absence de recherche disparaissait. Les CINQ canaux sont toujours rendus,
 //     dans un ordre fixe, zéros compris, avec leur part de TOUTES les sessions lues.
-//   - Une fenêtre qui n'est pas la sienne : la lecture est historique
-//     (`now() - interval`, CS1) ; la fenêtre réellement lue et l'heure de lecture
-//     sont écrites sous l'en-tête et dans la méta de chaque figure (S3).
+//   - Une fenêtre qui n'est pas la sienne : depuis B31, la lecture est celle du
+//     contrat (`[from, to)`, apps effectives, tablette et « Inconnu » compris) ; la
+//     méta de chaque figure écrit la plage lue (S1, S3).
 //   - Un plafond muet : au-delà de 20 000 sessions, les canaux portent sur les
-//     20 000 PREMIÈRES par identifiant ; c'est dit à côté du chiffre (S4).
-//   - Une figure vide dessinée pour un patch absent : la table croisée et la série
-//     attendent B31, et le disent (§ 0.5), sans axe ni zéro.
+//     20 000 PREMIÈRES par identifiant ; c'est dit à côté du chiffre (S4), et un
+//     écart à la période précédente se tait (il mesurerait le plafond).
+//   - Un geste qui ne mène nulle part : le canal n'est pas un filtre de la console,
+//     ses barres ne sont pas cliquables ; la route d'entrée, elle, ouvre les
+//     sessions PASSÉES par cette route (la recherche porte sur toute la session).
+import Link from "next/link";
+import type { ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { HeroReading } from "@/components/SupervisionHero";
 import { Figure } from "@/components/charts/Figure";
 import { KpiLibelle } from "@/components/charts/KpiLibelle";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
+import { StackedBars } from "@/components/charts/StackedBars";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import {
+  CHANNELS,
   LIBELLE_CANAL,
   PLAFOND_ACQUISITION,
   TOP_REFERENTS,
@@ -32,40 +38,49 @@ import {
   referentsTronques,
   type AcquisitionReport,
   type Channel,
+  type EntreeParCanal,
+  type PointCanaux,
 } from "@/lib/acquisition";
+import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import { lire } from "@/lib/lecture";
-import { fenetreDansPhrase, fenetreLue, noteLectureHistorique, plafondAtteint } from "@/lib/lecture-historique";
+import { lire, type Lecture } from "@/lib/lecture";
+import { couvertureDeTuile, gesteElargir, plafondAtteint, plageDansPhrase } from "@/lib/lecture-usages";
 import { categorie } from "@/lib/palette";
 import { pageFilters } from "@/lib/page-filters";
-import { hrefWithQuery } from "@/lib/query-contract";
-import { acquisition } from "@/lib/queries-acquisition";
-import { samplingSessionsHistorique } from "@/lib/queries-sessions";
+import { hrefWithQuery, paramReader, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
+import { acquisition, acquisitionSerie } from "@/lib/queries-acquisition";
+import { samplingSessions } from "@/lib/queries-sessions";
+import { libelleSeauComplet } from "@/lib/series";
+import { referencePrecedente } from "@/lib/sessions-kpi";
+import { ecartProportions } from "@/lib/stats/incertitude";
+import { gabaritZoom, lireComparaison } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
 
 // Un canal est une catégorie, pas un verdict : couleurs de CATEGORIELLE, dans
 // l'ordre fixe des canaux (le « Site référent » n'est pas « bon », l'« Interne »
-// pas « à surveiller »).
+// pas « à surveiller »). Le même index sert aux barres et à la série.
+const INDEX_CANAL: Record<Channel, number> = { direct: 4, search: 0, social: 2, referral: 1, internal: 6 };
 const COULEUR_CANAL: Record<Channel, string> = {
-  direct: categorie(4),
-  search: categorie(0),
-  social: categorie(2),
-  referral: categorie(1),
-  internal: categorie(6),
+  direct: categorie(INDEX_CANAL.direct),
+  search: categorie(INDEX_CANAL.search),
+  social: categorie(INDEX_CANAL.social),
+  referral: categorie(INDEX_CANAL.referral),
+  internal: categorie(INDEX_CANAL.internal),
 };
 
 /** La population de l'écran, nommée dans chaque méta (S1, R-P). */
 const POPULATION = "sessions ayant au moins une vue sur la fenêtre";
 
+/** Les écarts se comparent sur les pages vues : c'est d'elles que chaque session est lue. */
+const SOURCE_VUES: SourceComparaison = { table: "rum_pageview", colonneTemps: "started_at", additive: true };
+
 /** Pourquoi une barre de canal ne mène nulle part (title, alternative, lecture). */
 const NON_CLIQUABLE = "barres non cliquables : le canal d'entrée n'est pas un filtre de la console";
 
-const TEXTE_PLAFOND = `plafond de ${formater("count", PLAFOND_ACQUISITION)} sessions atteint : les canaux portent sur les ${formater(
-  "count",
-  PLAFOND_ACQUISITION,
-)} premières sessions par identifiant, pas les plus récentes`;
+const PLAFOND_TEXTE = formater("count", PLAFOND_ACQUISITION);
+const TEXTE_PLAFOND = `plafond de ${PLAFOND_TEXTE} sessions atteint : les canaux portent sur les ${PLAFOND_TEXTE} premières sessions par identifiant, pas les plus récentes`;
 
 /** « 1 session lue », « 20 000 sessions lues ». */
 const compte = (n: number, un: string, plusieurs: string) => `${formater("count", n)} ${n > 1 ? plusieurs : un}`;
@@ -74,43 +89,67 @@ const compte = (n: number, un: string, plusieurs: string) => `${formater("count"
 const compteEtPart = (sessions: number, total: number) =>
   `${formater("count", sessions)} · ${formater("pct", partDuTotal(sessions, total))}`;
 
+/** Sessions hors direct et hors interne : le numérateur de « Part hors direct ». */
+const horsDirect = (r: AcquisitionReport) =>
+  r.total - (r.channels.find((c) => c.channel === "direct")?.sessions ?? 0) - (r.channels.find((c) => c.channel === "internal")?.sessions ?? 0);
+
+/** Ce que la rangée de tuiles sait de la période précédente (`cmp=prev`, F53). */
+interface Comparaison {
+  precedent: AcquisitionReport | null;
+  reference: string;
+  /** Couverture des SOURCES (rétention, début de collecte…), ou pourquoi la période précédente manque. */
+  sources: CouverturePrecedente[];
+}
+
 export default async function Acquisition({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const ecran = await pageFilters(await searchParams, "/acquisition");
+  const sp = await searchParams;
+  const ecran = await pageFilters(sp, "/acquisition");
   if (!ecran.ok) return <FilterProblemNotice title="Acquisition" problem={ecran.problem} />;
-  const f = ecran.filters;
-  // S7 : même population que la lecture (sessions ayant une vue sur la fenêtre
-  // glissante), lue à part : son échec ne masque pas les canaux, il est dit.
-  const [lecture, echantillonnage] = await Promise.all([
+  const f = ecran.deviceFilters;
+  const query = ecran.query;
+  // Comparaison (F06, F53) : `cmp=prev` compare les tuiles à la période précédente,
+  // seulement si celle-ci est COMPLÈTE (§ 3.2) ; défaut de l'écran : aucune.
+  const prev = lireComparaison("/acquisition", paramReader(sp)).valeur.mode === "prev";
+  // Chaque lecture est indépendante (F02) : une panne n'efface que ses sections.
+  // S7 : même population que la lecture (sessions ayant une vue sur la fenêtre).
+  const [lecture, lecturePrev, serie, echantillonnage, couvertures] = await Promise.all([
     lire(() => acquisition(f)),
-    lire(() => samplingSessionsHistorique(f, { lecture: "vues" })),
+    prev ? lire(() => acquisition(f, PLAFOND_ACQUISITION, true)) : Promise.resolve(null),
+    lire(() => acquisitionSerie(f)),
+    lire(() => samplingSessions(f, { population: { lecture: "vues" } })),
+    prev
+      ? Promise.all(sourcesSousFiltres(query, SOURCE_VUES).map((s) => couverturePrecedente(query, s)))
+      : Promise.resolve<CouverturePrecedente[]>([]),
   ]);
-  // Heure de la lecture : la fenêtre glissante finit ici, pas à la borne `to`.
-  const luA = new Date();
-  const fenetre = fenetreLue(f.period, luA);
-  const dansPhrase = fenetreDansPhrase(f.period);
+  const comparaison: Comparaison | null =
+    prev && lecturePrev
+      ? {
+          precedent: lecturePrev.ok ? lecturePrev.data : null,
+          reference: referencePrecedente(previousRange(query.range)),
+          // Une lecture en échec n'est pas « aucune mesure » : la tuile dit pourquoi elle se tait.
+          sources: lecturePrev.ok ? couvertures : [{ etat: "inconnue", raison: "la période précédente n'a pas pu être lue" }],
+        }
+      : null;
+
+  const plage = ecran.label;
+  const dansPhrase = plageDansPhrase(query.range, plage);
   const meta = (extra?: string) => (
     <>
       {extra && <span>{extra}</span>}
       <span>Population : {POPULATION}</span>
-      <span>{fenetre}</span>
-      <span>lecture non migrée</span>
+      <span>{plage}</span>
     </>
   );
   // Élargir la fenêtre est le seul geste utile devant un vide (le canal n'est pas un filtre).
-  const elargir =
-    f.period === "7d" ? undefined : { libelle: "Élargir à 7 jours", href: hrefWithQuery("/acquisition", ecran.query, { period: "7d" }) };
+  const elargir = gesteElargir("/acquisition", query);
 
   return (
     <div className="animate-fade-up">
       <PageHeader title="Acquisition" domain="usages" sub="D'où arrivent les sessions, et par quelles pages entrent-elles ?" />
 
-      <p className="-mt-3 mb-6 text-xs text-ink-soft" data-testid="lecture-non-migree">
-        {noteLectureHistorique(f.period, luA)}
-      </p>
-
       <SectionErreur titre="Chiffres clés">
         {lecture.ok ? (
-          <RangeeKpi rep={lecture.data} />
+          <RangeeKpi rep={lecture.data} comparaison={comparaison} />
         ) : (
           <div className="mb-6">
             <EchecLecture titre="Chiffres clés" />
@@ -137,7 +176,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
               }
               lecture="Longueur = part de toutes les sessions lues ; ordre fixe des canaux, zéros compris. Barres non cliquables : le canal d'entrée n'est pas un filtre de la console."
             >
-              {lecture.ok && <BarresCanaux rep={lecture.data} fenetre={fenetre} />}
+              {lecture.ok && <BarresCanaux rep={lecture.data} plage={plage} />}
             </Figure>
           </SectionErreur>
         </div>
@@ -176,14 +215,33 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
         </section>
       </div>
 
-      {/* A4 — attend B31 : la lecture ne sélectionne pas la route d'entrée. */}
+      {/* A4 — B31 : la route d'entrée est lue, croisée par canal. */}
       <div className="mb-6">
-        <Figure
-          id="acquisition-entrees"
-          titre="Pages d'entrée par canal"
-          meta={meta()}
-          etat={{ kind: "partiel", raison: "route d'entrée non lue par cette lecture (à créer)" }}
-        />
+        <SectionErreur titre="Pages d'entrée par canal">
+          <Figure
+            id="acquisition-entrees"
+            titre="Pages d'entrée par canal"
+            meta={meta(
+              lecture.ok
+                ? `${compte(lecture.data.entrees.length, "route affichée", "routes affichées")} sur ${compte(
+                    lecture.data.routesEntree,
+                    "route d'entrée",
+                    "routes d'entrée",
+                  )}`
+                : undefined,
+            )}
+            etat={
+              !lecture.ok
+                ? { kind: "erreur", titre: "Pages d'entrée par canal" }
+                : lecture.data.entrees.length === 0
+                  ? { kind: "vide", population: "page d'entrée", plage: dansPhrase, geste: elargir }
+                  : undefined
+            }
+            lecture="Une ligne par route d'entrée (1re page vue de la session sur la fenêtre), les plus fréquentes d'abord ; fond d'une cellule = part de la ligne. « Sessions passées par cette route » ouvre les sessions qui ont vu la route, à n'importe quel moment : la recherche de sessions ne sait pas se limiter à l'entrée."
+          >
+            {lecture.ok && <TableEntrees rep={lecture.data} query={query} />}
+          </Figure>
+        </SectionErreur>
       </div>
 
       <div className="mb-6">
@@ -197,26 +255,54 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
             etat={!lecture.ok ? { kind: "erreur", titre: "Sites référents" } : undefined}
             lecture="Part calculée sur toutes les sessions lues, pas sur les hôtes affichés ; longueur relative au premier hôte. Non cliquables : le référent n'est pas un filtre de la console."
           >
-            {lecture.ok && <BarresReferents rep={lecture.data} dansPhrase={dansPhrase} fenetre={fenetre} />}
+            {lecture.ok && <BarresReferents rep={lecture.data} dansPhrase={dansPhrase} plage={plage} />}
           </Figure>
         </SectionErreur>
       </div>
 
-      {/* A6 — attend B31 : la lecture n'a pas d'horodatage par session. */}
-      <Figure
-        id="acquisition-serie"
-        titre="Canaux dans le temps"
-        meta={meta()}
-        etat={{ kind: "partiel", raison: "série à créer : la lecture actuelle n'a pas d'horodatage (B31)" }}
-      />
+      {/* A6 — B31 : chaque session dans le seau de sa 1re vue. */}
+      <SectionErreur titre="Canaux dans le temps">
+        <SerieCanaux
+          serie={serie}
+          query={query}
+          meta={meta(`seau de ${ecran.bucketLabel} (UTC)`)}
+          dansPhrase={dansPhrase}
+          plafond={lecture.ok && plafondAtteint(lecture.data.total, PLAFOND_ACQUISITION)}
+          zoomHref={gabaritZoom(hrefWithQuery("/acquisition", query, { period: null, from: "{from}", to: "{to}" }), sp)}
+        />
+      </SectionErreur>
     </div>
   );
 }
 
 /** A2 — trois tuiles, une population (sessions lues) ; puis le plafond, s'il est atteint (S4). */
-function RangeeKpi({ rep }: { rep: AcquisitionReport }) {
+function RangeeKpi({ rep, comparaison }: { rep: AcquisitionReport; comparaison: Comparaison | null }) {
   const tronques = referentsTronques(rep);
-  const horsDirect = partHorsDirect(rep);
+  const part = partHorsDirect(rep);
+  const prec = comparaison?.precedent ?? null;
+  // Deux plafonds bornent les comptes : les sessions (20 000) et les hôtes (20). Un
+  // compte borné d'un côté ou de l'autre ne se compare pas.
+  const plafondSessions = [
+    { atteint: plafondAtteint(rep.total, PLAFOND_ACQUISITION), raison: `plafond de ${PLAFOND_TEXTE} sessions atteint sur la période lue` },
+    { atteint: prec !== null && plafondAtteint(prec.total, PLAFOND_ACQUISITION), raison: `plafond de ${PLAFOND_TEXTE} sessions atteint sur la période précédente` },
+  ];
+  const plafondHotes = [
+    { atteint: prec !== null && referentsTronques(prec), raison: `plus de ${TOP_REFERENTS - 1} hôtes sur la période précédente : son compte est un minimum` },
+  ];
+  /**
+   * Props de comparaison d'une tuile : rien hors `cmp=prev` ; une période précédente
+   * illisible rend `precedent: null` et la couverture dit pourquoi (jamais « pas de
+   * mesure », qui affirmerait un vide qu'on n'a pas lu). L'effectif précédent
+   * (`n`) porte la règle d'échantillon faible.
+   */
+  const comparer = (precedent: (p: AcquisitionReport) => number | null, plafonds: { atteint: boolean; raison: string }[]) =>
+    comparaison
+      ? {
+          precedent: prec ? precedent(prec) : null,
+          reference: comparaison.reference,
+          couverturePrecedente: couvertureDeTuile(comparaison.sources, plafonds, prec?.total ?? null),
+        }
+      : {};
   return (
     <div className="mb-6">
       <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3">
@@ -224,14 +310,17 @@ function RangeeKpi({ rep }: { rep: AcquisitionReport }) {
           label="Sessions lues"
           valeur={rep.total}
           format="count"
-          lecture={`Première vue de chaque session sur la fenêtre ; ${formater("count", PLAFOND_ACQUISITION)} au plus.`}
+          lecture={`Première vue de chaque session sur la fenêtre ; ${PLAFOND_TEXTE} au plus.`}
+          {...comparer((p) => p.total, plafondSessions)}
         />
         <KpiTile
           label="Part hors direct"
-          valeur={horsDirect}
+          valeur={part}
           format="pct"
           raisonNull="aucune session lue sur la fenêtre : pas de part à calculer"
           lecture="Ni direct, ni interne : recherche, réseaux sociaux et sites référents."
+          {...comparer(partHorsDirect, plafondSessions)}
+          ecart={prec && rep.total > 0 ? ecartProportions(horsDirect(rep), rep.total, horsDirect(prec), prec.total) : undefined}
         />
         {tronques ? (
           // « 20 » serait faux : la lecture n'en renvoie que 20, il peut y en avoir plus.
@@ -246,6 +335,7 @@ function RangeeKpi({ rep }: { rep: AcquisitionReport }) {
             valeur={rep.referrers.length}
             format="count"
             lecture="Hôtes externes distincts (recherche, réseaux sociaux, sites référents)."
+            {...comparer((p) => p.referrers.length, [...plafondSessions, ...plafondHotes])}
           />
         )}
       </div>
@@ -259,7 +349,7 @@ function RangeeKpi({ rep }: { rep: AcquisitionReport }) {
 }
 
 /** Le hero : les cinq canaux, zéros compris. Un segment unique par barre : un 0 n'a AUCUNE largeur. */
-function BarresCanaux({ rep, fenetre }: { rep: AcquisitionReport; fenetre: string }) {
+function BarresCanaux({ rep, plage }: { rep: AcquisitionReport; plage: string }) {
   const data: RankDatum[] = lignesCanaux(rep).map((l) => {
     const libelle = LIBELLE_CANAL[l.channel];
     return {
@@ -275,13 +365,123 @@ function BarresCanaux({ rep, fenetre }: { rep: AcquisitionReport; fenetre: strin
       data={data}
       max={rep.total}
       labelWidth="12rem"
-      legende={`Sessions par canal d'entrée (compte · part des sessions lues), ${fenetre} — ${NON_CLIQUABLE}`}
+      legende={`Sessions par canal d'entrée (compte · part des sessions lues), ${plage} — ${NON_CLIQUABLE}`}
     />
   );
 }
 
+/** « Sessions passées par cette route » : la recherche exacte de `/sessions` (qf=route). */
+const lienSessions = (query: AnalyticsQuery, route: string) => hrefWithQuery("/sessions", query, { qf: "route", q: route });
+
+/**
+ * A4 — route d'entrée × canal. Au-delà de 640 px, une table (défilement interne) ;
+ * en dessous, une liste par canal repliable (§ 5.16.3) : cinq colonnes de comptes
+ * ne tiennent pas à 390 px.
+ */
+function TableEntrees({ rep, query }: { rep: AcquisitionReport; query: AnalyticsQuery }) {
+  return (
+    <>
+      <div className="relative hidden overflow-x-auto sm:block" data-testid="acquisition-entrees-table">
+        <table className="w-full min-w-[40rem] text-sm">
+          <caption className="sr-only">Pages d&apos;entrée par canal : route, sessions par canal, total</caption>
+          <thead>
+            <tr className="border-b border-line text-left">
+              <th scope="col" className="py-1 pr-3 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+                Route d&apos;entrée
+              </th>
+              {CHANNELS.map((c) => (
+                <th key={c} scope="col" className="px-1 py-1 text-right text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+                  {LIBELLE_CANAL[c]}
+                </th>
+              ))}
+              <th scope="col" className="py-1 pl-2 text-right text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+                Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rep.entrees.map((e) => (
+              <tr key={e.route} className="border-b border-line/60 last:border-0" data-testid="acquisition-entree">
+                <th scope="row" className="max-w-0 py-1.5 pr-3 font-normal">
+                  {/* `truncate` ne coupe qu'un élément `block`. */}
+                  <span className="block truncate font-mono text-xs text-ink" title={e.route}>
+                    {e.route}
+                  </span>
+                  <Link href={lienSessions(query, e.route)} className="text-[10px] text-ink-soft hover:text-accent hover:underline">
+                    Sessions passées par cette route
+                  </Link>
+                </th>
+                {CHANNELS.map((c) => (
+                  <CelluleCanal key={c} entree={e} canal={c} />
+                ))}
+                <td className="py-1.5 pl-2 text-right text-xs font-semibold tabular-nums text-ink">{formater("count", e.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="space-y-2 sm:hidden" data-testid="acquisition-entrees-liste">
+        {CHANNELS.map((c) => {
+          const lignes = rep.entrees.filter((e) => e.parCanal[c] > 0).sort((a, b) => b.parCanal[c] - a.parCanal[c]);
+          const total = rep.entrees.reduce((s, e) => s + e.parCanal[c], 0);
+          return (
+            <details key={c} className="rounded-lg border border-line px-3 py-2">
+              <summary className="flex min-w-0 cursor-pointer items-center justify-between gap-2 text-sm">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: COULEUR_CANAL[c] }} />
+                  <span className="truncate text-ink">{LIBELLE_CANAL[c]}</span>
+                </span>
+                <span className="shrink-0 text-xs tabular-nums text-ink-soft">{compte(total, "session", "sessions")}</span>
+              </summary>
+              {lignes.length === 0 ? (
+                <p className="mt-2 text-xs text-ink-soft">Aucune des routes affichées n&apos;a reçu d&apos;entrée par ce canal.</p>
+              ) : (
+                <ul className="mt-2 space-y-1.5">
+                  {lignes.map((e) => (
+                    <li key={e.route} className="flex min-w-0 items-baseline justify-between gap-2 text-xs">
+                      <Link
+                        href={lienSessions(query, e.route)}
+                        className="block min-w-0 truncate font-mono text-ink hover:text-accent hover:underline"
+                        title={`Sessions passées par ${e.route}`}
+                      >
+                        {e.route}
+                      </Link>
+                      <span className="shrink-0 tabular-nums text-ink">{formater("count", e.parCanal[c])}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </details>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+/** Une cellule : le compte, et un fond proportionnel à sa part de la ligne (jamais 0 % dessiné). */
+function CelluleCanal({ entree, canal }: { entree: EntreeParCanal; canal: Channel }) {
+  const n = entree.parCanal[canal];
+  const part = entree.total > 0 ? n / entree.total : 0;
+  return (
+    <td
+      className="relative px-1 py-1.5 text-right text-xs tabular-nums"
+      title={`${entree.route} · ${LIBELLE_CANAL[canal]} : ${formater("count", n)} sur ${formater("count", entree.total)} sessions entrées par cette route`}
+    >
+      {n > 0 && (
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-1 right-1 rounded-sm opacity-20"
+          style={{ width: `calc(${(part * 100).toFixed(1)}% - 0.5rem)`, backgroundColor: COULEUR_CANAL[canal] }}
+        />
+      )}
+      <span className={`relative ${n > 0 ? "text-ink" : "text-ink-faint"}`}>{formater("count", n)}</span>
+    </td>
+  );
+}
+
 /** A5 — les hôtes référents externes, avec leur canal en badge et leur part de TOUTES les sessions. */
-function BarresReferents({ rep, dansPhrase, fenetre }: { rep: AcquisitionReport; dansPhrase: string; fenetre: string }) {
+function BarresReferents({ rep, dansPhrase, plage }: { rep: AcquisitionReport; dansPhrase: string; plage: string }) {
   const data: RankDatum[] = rep.referrers.map((r) => ({
     label: r.host,
     value: r.sessions,
@@ -303,7 +503,65 @@ function BarresReferents({ rep, dansPhrase, fenetre }: { rep: AcquisitionReport;
       data={data}
       labelWidth="14rem"
       emptyLabel={`Aucun site référent externe sur ${dansPhrase} (trafic direct ou interne).`}
-      legende={`Sites référents (compte · part des sessions lues ; canal), ${fenetre}`}
+      legende={`Sites référents (compte · part des sessions lues ; canal), ${plage}`}
     />
+  );
+}
+
+/**
+ * A6 — canaux dans le temps : barres empilées (des sessions s'additionnent), sur la
+ * grille du contrat, zéros compris. Mêmes sessions que les canaux du hero : au
+ * plafond, la série porte sur les mêmes 20 000 premières et le dit.
+ */
+function SerieCanaux({
+  serie,
+  query,
+  meta,
+  dansPhrase,
+  plafond,
+  zoomHref,
+}: {
+  serie: Lecture<PointCanaux[]>;
+  query: AnalyticsQuery;
+  meta: ReactNode;
+  dansPhrase: string;
+  plafond: boolean;
+  zoomHref: string;
+}) {
+  const titre = "Canaux dans le temps";
+  if (!serie.ok) return <Figure id="acquisition-serie" titre={titre} meta={meta} etat={{ kind: "erreur", titre }} />;
+  const points = serie.data;
+  const total = points.reduce((s, p) => s + CHANNELS.reduce((t, c) => t + p.canaux[c], 0), 0);
+  const seau = query.range.bucketSeconds;
+  return (
+    <Figure
+      id="acquisition-serie"
+      titre={titre}
+      meta={meta}
+      etat={total === 0 ? { kind: "vide", population: "session", plage: dansPhrase } : undefined}
+      lecture={`Chaque session compte une fois, dans le seau de sa 1re vue ; la pile d'un seau vaut ses sessions entrées. Un clic sur un seau restreint l'écran à ce seau.${
+        plafond ? ` Plafond atteint : la série porte sur les mêmes ${PLAFOND_TEXTE} premières sessions par identifiant que les canaux.` : ""
+      }`}
+      alternative={{
+        legende: "Sessions entrées par canal et par seau (UTC)",
+        colonnes: ["Seau", ...CHANNELS.map((c) => LIBELLE_CANAL[c]), "Total"],
+        lignes: points.map((p) => [
+          libelleSeauComplet(p.t, seau, "UTC"),
+          ...CHANNELS.map((c) => p.canaux[c]),
+          CHANNELS.reduce((t, c) => t + p.canaux[c], 0),
+        ]),
+      }}
+    >
+      <StackedBars
+        grille={points.map((p) => p.t)}
+        points={points.map((p) => ({ t: p.t, ...p.canaux }))}
+        series={CHANNELS.map((c) => ({ cle: c, libelle: LIBELLE_CANAL[c], categorieIndex: INDEX_CANAL[c] }))}
+        format="count"
+        seauSecondes={seau}
+        fuseau="UTC"
+        zoomHref={zoomHref}
+        ariaLabel={`Sessions entrées par canal, par seau, ${dansPhrase}`}
+      />
+    </Figure>
   );
 }

@@ -200,9 +200,12 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
     });
   });
 
-  describe("samplingSessionsHistorique (écrans non migrés)", () => {
-    it("vues (/acquisition, /paths) : sessions ayant une page vue sur la période glissante", async () => {
-      expect(await lib.samplingSessionsHistorique(f(`app=${A}&period=24h`), { lecture: "vues" })).toEqual({
+  // F53 : `samplingSessionsHistorique` (fenêtre glissante, segment v1) a disparu avec
+  // les lectures historiques ; la population d'un écran d'usage est une option de
+  // `samplingSessions`, compilée par le contrat comme la lecture qu'elle qualifie.
+  describe("samplingSessions — populations des écrans d'usage (F53, sur le contrat)", () => {
+    it("vues (/acquisition, /paths) : sessions ayant une page vue dans [from, to)", async () => {
+      expect(await lib.samplingSessions(f(`app=${A}&period=24h`), { population: { lecture: "vues" } })).toEqual({
         probaMin: 0.5,
         sessions: 2, // a1, a3 ; le robot a4 exclu
         sansTaux: 1,
@@ -211,7 +214,7 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
     });
 
     it("formulaires (/forms) : a2 seule, en erreur donc p = 1 — rien d'échantillonné pour cette population", async () => {
-      expect(await lib.samplingSessionsHistorique(f(`app=${A}&period=24h`), { lecture: "formulaires" })).toEqual({
+      expect(await lib.samplingSessions(f(`app=${A}&period=24h`), { population: { lecture: "formulaires" } })).toEqual({
         probaMin: 1,
         sessions: 1,
         sansTaux: 0,
@@ -221,7 +224,7 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
 
     it("cohortes (/retention) : sessions identifiées des N dernières semaines", async () => {
       // a1 (identifiée, récente) ; a2 sans identifiant ; a3 commencée en août, hors 4 semaines.
-      expect(await lib.samplingSessionsHistorique(f(`app=${A}`), { lecture: "cohortes", semaines: 4 })).toMatchObject({
+      expect(await lib.samplingSessions(f(`app=${A}`), { population: { lecture: "cohortes", semaines: 4 } })).toMatchObject({
         probaMin: 0.5,
         sessions: 1,
         sansTaux: 0,
@@ -229,11 +232,11 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
     });
 
     it("le périmètre d'apps est lié par les apps effectives : B n'entre jamais sous app=A", async () => {
-      const a = await lib.samplingSessionsHistorique(f(`app=${A}&period=24h`), { lecture: "vues" });
+      const a = await lib.samplingSessions(f(`app=${A}&period=24h`), { population: { lecture: "vues" } });
       expect(a.probaMin).toBe(0.5);
-      const tout = await lib.samplingSessionsHistorique(f("period=24h"), { lecture: "vues" });
+      const tout = await lib.samplingSessions(f("period=24h"), { population: { lecture: "vues" } });
       expect(tout.probaMin).toBeLessThanOrEqual(0.1);
-      const viewer = await lib.samplingSessionsHistorique(f("period=24h", VIEWER_A), { lecture: "vues" });
+      const viewer = await lib.samplingSessions(f("period=24h", VIEWER_A), { population: { lecture: "vues" } });
       expect(viewer).toMatchObject({ probaMin: 0.5, sessions: 2 });
     });
 
@@ -252,11 +255,11 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
         [A, IL_Y_A(HEURE / 4)],
       );
       try {
-        expect(await lib.samplingSessionsHistorique(f(`app=${A}&period=24h`), { lecture: "vues" })).toMatchObject({
+        expect(await lib.samplingSessions(f(`app=${A}&period=24h`), { population: { lecture: "vues" } })).toMatchObject({
           probaMin: 0.5,
           sessions: 2,
         });
-        expect(await lib.samplingSessionsHistorique(f(`app=${A}&period=24h`), { lecture: "formulaires" })).toMatchObject({
+        expect(await lib.samplingSessions(f(`app=${A}&period=24h`), { population: { lecture: "formulaires" } })).toMatchObject({
           probaMin: 1,
           sessions: 1,
         });
@@ -267,8 +270,21 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
     });
 
     it("mêmes filtres que la lecture qualifiée : appareil et segment v1", async () => {
-      expect((await lib.samplingSessionsHistorique(f(`app=${A}&period=24h&device=mobile`), { lecture: "vues" })).sessions).toBe(0);
-      expect((await lib.samplingSessionsHistorique(f(`app=${A}&period=24h&seg=device==desktop`), { lecture: "vues" })).sessions).toBe(2);
+      expect((await lib.samplingSessions(f(`app=${A}&period=24h&device=mobile`), { population: { lecture: "vues" } })).sessions).toBe(0);
+      expect((await lib.samplingSessions(f(`app=${A}&period=24h&seg=device==desktop`), { population: { lecture: "vues" } })).sessions).toBe(2);
+    });
+
+    it("plage personnalisée, tablette et « Inconnu » : la population suit la lecture du contrat", async () => {
+      const plage = (de: number, a: number) => `from=${IL_Y_A(de).toISOString()}&to=${IL_Y_A(a).toISOString()}`;
+      // Les pages vues de a1 et a3 datent d'il y a 30 min.
+      expect((await lib.samplingSessions(f(`app=${A}&${plage(HEURE, HEURE / 4)}`), { population: { lecture: "vues" } })).sessions).toBe(2);
+      expect((await lib.samplingSessions(f(`app=${A}&${plage(3 * HEURE, 2 * HEURE)}`), { population: { lecture: "vues" } })).sessions).toBe(0);
+      expect((await lib.samplingSessions(f(`app=${A}&period=24h&device=tablet`), { population: { lecture: "vues" } })).sessions).toBe(0);
+      expect(
+        (await lib.samplingSessions(f(`app=${A}&period=24h&seg=v2:device:is_null`), { population: { lecture: "formulaires" } })).sessions,
+      ).toBe(0);
+      // Les cohortes ignorent la plage du contrat : leur fenêtre est celle des N semaines.
+      expect((await lib.samplingSessions(f(`app=${A}&${plage(3 * HEURE, 2 * HEURE)}`), { population: { lecture: "cohortes", semaines: 4 } })).sessions).toBe(1);
     });
 
     it("/acquisition sous un segment v1 : la lecture aboutit, sur la même population que « vues »", async () => {
@@ -280,7 +296,7 @@ function requete(qs: string, principal: ScopePrincipal = ADMIN): AnalyticsQuery 
     });
 
     it("une fenêtre de semaines hors bornes est refusée, jamais interpolée", async () => {
-      await expect(lib.samplingSessionsHistorique(f(`app=${A}`), { lecture: "cohortes", semaines: 0 })).rejects.toThrow(
+      await expect(lib.samplingSessions(f(`app=${A}`), { population: { lecture: "cohortes", semaines: 0 } })).rejects.toThrow(
         "fenêtre de rétention invalide",
       );
     });

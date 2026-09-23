@@ -1,27 +1,45 @@
-// Écran /acquisition (F48, § 5.16), rendu côté serveur avec des lectures simulées.
+// Écran /acquisition (F48, § 5.16 ; sur le contrat depuis F53), rendu côté serveur
+// avec des lectures simulées.
 //
 // Ce que ces tests verrouillent (en plus de l'e2e `usages-acquisition.spec.ts`) :
 //   · les cinq canaux sont rendus, zéros compris, sans anneau ;
 //   · le bandeau de plafond s'affiche SI ET SEULEMENT SI total === 20 000 (S4) ;
 //   · 20 référents renvoyés s'écrivent « ≥ 20 » ;
-//   · la table croisée et la série attendent B31 en état partiel motivé, même
-//     quand la lecture des canaux échoue (une panne n'efface pas les autres blocs).
+//   · F53 : plus de « lecture non migrée » ; la méta écrit la plage du contrat ; la
+//     table croisée et la série sont dessinées (B31), et une panne des canaux
+//     n'efface pas la série ;
+//   · `cmp=prev` : les tuiles portent la référence, et un plafond atteint tait l'écart.
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AcquisitionReport } from "@/lib/acquisition";
+import type { AcquisitionReport, PointCanaux } from "@/lib/acquisition";
+import { parseAnalyticsQuery } from "@/lib/query-contract";
 
-const { acquisition, samplingSessionsHistorique } = vi.hoisted(() => ({
+const { acquisition, acquisitionSerie, samplingSessions, couverturePrecedente } = vi.hoisted(() => ({
   acquisition: vi.fn(),
-  samplingSessionsHistorique: vi.fn(),
+  acquisitionSerie: vi.fn(),
+  samplingSessions: vi.fn(),
+  couverturePrecedente: vi.fn(),
 }));
-vi.mock("@/lib/queries-acquisition", () => ({ acquisition }));
-vi.mock("@/lib/queries-sessions", () => ({ samplingSessionsHistorique }));
+vi.mock("@/lib/queries-acquisition", () => ({ acquisition, acquisitionSerie }));
+vi.mock("@/lib/queries-sessions", () => ({ samplingSessions }));
+vi.mock("@/lib/comparaison", () => ({ couverturePrecedente, sourcesSousFiltres: (_q: unknown, s: unknown) => [s] }));
+
+const NOW = Date.parse("2026-09-22T12:00:00.000Z");
+const QUERY = (() => {
+  const parsed = parseAnalyticsQuery(new URLSearchParams("app=demo&period=7d"), { principal: { role: "admin", apps: null }, nowMs: NOW });
+  if (!parsed.ok) throw new Error(parsed.error.code);
+  return parsed.value;
+})();
 vi.mock("@/lib/page-filters", () => ({
   pageFilters: async () => ({
     ok: true,
-    filters: { app: "demo", period: "7d", device: null, segment: [], includeBots: false },
-    query: {},
+    filters: { app: "demo", period: "7d", device: null, segment: [], includeBots: false, query: QUERY },
+    deviceFilters: { app: "demo", period: "7d", device: null, segment: [], includeBots: false, query: QUERY },
+    query: QUERY,
+    label: "7 j",
+    bucketLabel: "6 h",
+    notApplied: null,
   }),
 }));
 // « Réessayer » exige le routeur de l'app, absent d'un rendu isolé : l'état « erreur »
@@ -31,23 +49,34 @@ vi.mock("@/components/states/SectionErreur", () => ({
   SectionErreur: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 vi.mock("@/lib/log-forward", () => ({ forwardLog: async () => {} }));
+// La série (client, recharts) est remplacée par une trace de ses props.
+vi.mock("@/components/charts/StackedBars", () => ({
+  StackedBars: (p: { series: unknown; points: unknown; zoomHref?: string }) => (
+    <div data-testid="temoin-stacked" data-series={JSON.stringify(p.series)} data-points={JSON.stringify(p.points)} data-zoom={p.zoomHref} />
+  ),
+}));
 
 const { default: Acquisition } = await import("@/app/acquisition/page");
 
-function report(canaux: Partial<Record<string, number>>, referents = 0): AcquisitionReport {
-  const channels = (["direct", "search", "social", "referral", "internal"] as const).map((channel) => ({
-    channel,
-    sessions: canaux[channel] ?? 0,
-  }));
+const CANAUX = ["direct", "search", "social", "referral", "internal"] as const;
+
+function report(canaux: Partial<Record<string, number>>, referents = 0, entrees: AcquisitionReport["entrees"] = []): AcquisitionReport {
+  const channels = CANAUX.map((channel) => ({ channel, sessions: canaux[channel] ?? 0 }));
   return {
     channels,
     referrers: Array.from({ length: referents }, (_, i) => ({ host: `ref${i}.example`, channel: "referral" as const, sessions: 1 })),
     total: channels.reduce((s, c) => s + c.sessions, 0),
+    entrees,
+    routesEntree: entrees.length,
   };
 }
 
-async function rendre(): Promise<string> {
-  return renderToStaticMarkup(await Acquisition({ searchParams: Promise.resolve({}) }));
+const zero = () => ({ direct: 0, search: 0, social: 0, referral: 0, internal: 0 });
+const serie = (n: number): PointCanaux[] =>
+  Array.from({ length: 3 }, (_, i) => ({ t: new Date(NOW - (3 - i) * 21_600_000).toISOString(), canaux: { ...zero(), direct: i === 0 ? n : 0 } }));
+
+async function rendre(sp: Record<string, string> = {}): Promise<string> {
+  return renderToStaticMarkup(await Acquisition({ searchParams: Promise.resolve(sp) }));
 }
 
 /** Le texte visible, sans balises ni entités d'espace. */
@@ -56,8 +85,12 @@ const texte = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g,
 let consoleError: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   acquisition.mockReset();
-  samplingSessionsHistorique.mockReset();
-  samplingSessionsHistorique.mockResolvedValue({ probaMin: 1, sessions: 10, sansTaux: 0, biaiseErreurs: false });
+  acquisitionSerie.mockReset();
+  acquisitionSerie.mockResolvedValue(serie(1));
+  samplingSessions.mockReset();
+  samplingSessions.mockResolvedValue({ probaMin: 1, sessions: 10, sansTaux: 0, biaiseErreurs: false });
+  couverturePrecedente.mockReset();
+  couverturePrecedente.mockResolvedValue({ etat: "complete", raison: null });
   consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(() => consoleError.mockRestore());
@@ -80,21 +113,26 @@ describe("/acquisition — canaux", () => {
     expect(html).not.toContain('data-testid="acquisition-plafond"');
   });
 
-  it("lecture non migrée : sous l'en-tête et dans la méta des quatre figures (S3)", async () => {
-    acquisition.mockResolvedValue(report({ direct: 1 }));
+  it("F53 : plus de « lecture non migrée » ; la méta des quatre figures écrit la plage du contrat", async () => {
+    acquisition.mockResolvedValue(report({ direct: 1 }, 0, [{ route: "/", parCanal: { ...zero(), direct: 1 }, total: 1 }]));
     const html = await rendre();
-    expect(texte(html)).toMatch(/7 derniers jours glissants, lus à \d\d:\d\d UTC \(lecture non migrée : ni plage personnalisée, ni tablette, ni « Inconnu »\)/);
+    expect(html).not.toContain("lecture non migrée");
+    expect(html).not.toContain('data-testid="lecture-non-migree"');
+    expect(texte(html)).not.toContain("glissant");
     const metas = html.match(/data-testid="figure-meta"[^]*?<\/div>/g) ?? [];
     expect(metas).toHaveLength(4);
-    for (const m of metas) expect(m).toContain("lecture non migrée");
+    for (const m of metas) expect(m).toContain("7 j");
+    // Le sondage d'échantillonnage lit la population de l'écran, sur le contrat.
+    expect(samplingSessions).toHaveBeenCalledWith(expect.anything(), { population: { lecture: "vues" } });
   });
 
   it("aucune session : hero vide motivé, part hors direct inconnue (jamais « 0 % »)", async () => {
     acquisition.mockResolvedValue(report({}));
+    acquisitionSerie.mockResolvedValue(serie(0));
     const t = texte(await rendre());
-    expect(t).toContain("Aucune session sur les 7 derniers jours glissants.");
+    expect(t).toContain("Aucune session sur les 7 derniers jours.");
     expect(t).toMatch(/Part hors direct\s+—\s+aucune session lue sur la fenêtre/);
-    expect(t).toContain("Aucun site référent externe sur les 7 derniers jours glissants");
+    expect(t).toContain("Aucun site référent externe sur les 7 derniers jours");
   });
 });
 
@@ -119,22 +157,68 @@ describe("/acquisition — plafonds (S4)", () => {
   });
 });
 
-describe("/acquisition — B31 absent et lecture en échec", () => {
-  it("table croisée et série : état partiel motivé, aucune figure dessinée", async () => {
-    acquisition.mockResolvedValue(report({ direct: 3 }));
-    const t = texte(await rendre());
-    expect(t).toContain("route d'entrée non lue par cette lecture (à créer)");
-    expect(t).toContain("série à créer : la lecture actuelle n'a pas d'horodatage (B31)");
+describe("/acquisition — B31 : table croisée et série", () => {
+  it("table route × canal : cinq canaux, total de ligne, lien « sessions passées par cette route »", async () => {
+    acquisition.mockResolvedValue(
+      report({ direct: 2, search: 1 }, 0, [
+        { route: "/accueil", parCanal: { ...zero(), direct: 2, search: 1 }, total: 3 },
+      ]),
+    );
+    const html = await rendre();
+    const table = html.slice(html.indexOf('data-testid="acquisition-entrees-table"'), html.indexOf('data-testid="acquisition-entrees-liste"'));
+    expect(texte(table)).toMatch(/\/accueil Sessions passées par cette route 2 1 0 0 0 3/);
+    expect(table).toContain("/sessions?app=demo&amp;period=7d&amp;qf=route&amp;q=%2Faccueil");
+    // Plus d'état « à créer » : la route est lue.
+    expect(texte(html)).not.toContain("route d'entrée non lue par cette lecture (à créer)");
+    expect(texte(html)).not.toContain("série à créer");
   });
 
-  it("lecture des canaux en échec : chaque bloc qui en dépend le dit, les autres restent", async () => {
+  it("série : cinq canaux empilés, zoom sur un seau ; somme nulle → vide motivé, jamais un axe vide", async () => {
+    acquisition.mockResolvedValue(report({ direct: 1 }));
+    const html = await rendre();
+    const temoin = html.match(/data-testid="temoin-stacked"[^>]*/)?.[0] ?? "";
+    expect(temoin).toContain("&quot;cle&quot;:&quot;search&quot;");
+    expect(temoin).toContain("from=%7Bfrom%7D&amp;to=%7Bto%7D");
+    acquisitionSerie.mockResolvedValue(serie(0));
+    const vide = await rendre();
+    expect(vide).not.toContain('data-testid="temoin-stacked"');
+  });
+
+  it("lecture des canaux en échec : chaque bloc qui en dépend le dit ; la série, lue à part, reste", async () => {
     acquisition.mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:5433"));
     const html = await rendre();
     expect(html).toContain('data-echec="Chiffres clés"');
     expect(html).toContain("Sessions par canal d&#x27;entrée");
-    expect(texte(html)).toContain("route d'entrée non lue par cette lecture (à créer)");
     expect(texte(html)).toContain("Ce que « direct » recouvre");
+    expect(html).toContain('data-testid="temoin-stacked"');
     // Rien n'est chiffré sur une lecture qu'on n'a pas faite.
     expect(html).not.toContain('data-testid="kpi-tile"');
+  });
+});
+
+describe("/acquisition — cmp=prev (F53)", () => {
+  it("les tuiles se comparent à la période précédente, référence écrite", async () => {
+    acquisition.mockImplementation(async (_f: unknown, _cap: unknown, shift?: boolean) =>
+      shift ? report({ direct: 100, search: 100 }) : report({ direct: 150, search: 150 }),
+    );
+    const t = texte(await rendre({ cmp: "prev" }));
+    expect(acquisition).toHaveBeenCalledWith(expect.anything(), 20_000, true);
+    expect(t).toMatch(/\+50 % vs 7 jours précédents \(/);
+  });
+
+  it("un plafond atteint d'un côté tait l'écart, avec sa raison", async () => {
+    acquisition.mockImplementation(async (_f: unknown, _cap: unknown, shift?: boolean) =>
+      shift ? report({ direct: 20_000 }) : report({ direct: 150 }),
+    );
+    const t = texte(await rendre({ cmp: "prev" }));
+    expect(t).toContain("période précédente incomplète : plafond de 20 000 sessions atteint sur la période précédente");
+    expect(t).not.toMatch(/% vs 7 jours précédents/);
+  });
+
+  it("sans cmp : aucune lecture de la période précédente", async () => {
+    acquisition.mockResolvedValue(report({ direct: 1 }));
+    await rendre();
+    expect(acquisition).toHaveBeenCalledTimes(1);
+    expect(couverturePrecedente).not.toHaveBeenCalled();
   });
 });

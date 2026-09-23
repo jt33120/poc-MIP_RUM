@@ -1,7 +1,12 @@
-// Formulaires (F51, plan § 5.15) — « Quels formulaires perdent leurs visiteurs,
-// et sur quel champ ? »
+// Formulaires (F51, plan § 5.15 ; sur le contrat depuis B31 → F53) — « Quels
+// formulaires perdent leurs visiteurs, et sur quel champ ? »
 //
 // CE QUE L'ÉCRAN REFUSE D'AFFIRMER.
+//   - Une fenêtre qui n'est pas la sienne : depuis B31, la lecture est celle du
+//     contrat (`[from, to)`, apps effectives, tablette et « Inconnu » compris) ; la
+//     méta de chaque figure écrit la plage lue.
+//   - Un écart qui mesurerait le plafond : sous `cmp=prev`, une période (courante
+//     ou précédente) qui atteint 5 000 événements ne se compare pas.
 //   - Un classement par volume : les formulaires sont classés par ABANDONS
 //     (gravité, P3), et un formulaire sous 30 entamés ne passe pas devant.
 //   - Une moyenne de temps : la tuile porte la MÉDIANE du temps jusqu'à la
@@ -38,12 +43,16 @@ import {
   type FormEvent,
   type FormReportRow,
 } from "@/lib/form-analytics";
+import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
 import { lire } from "@/lib/lecture";
-import { fenetreDansPhrase, fenetreLue, noteLectureHistorique, plafondAtteint } from "@/lib/lecture-historique";
+import { couvertureDeTuile, gesteElargir, plafondAtteint, plageDansPhrase } from "@/lib/lecture-usages";
 import { pageFilters } from "@/lib/page-filters";
-import { hrefWithQuery } from "@/lib/query-contract";
+import { hrefWithQuery, paramReader, previousRange } from "@/lib/query-contract";
 import { formEvents } from "@/lib/queries-form-analytics";
-import { samplingSessionsHistorique } from "@/lib/queries-sessions";
+import { samplingSessions } from "@/lib/queries-sessions";
+import { referencePrecedente } from "@/lib/sessions-kpi";
+import { ecartProportions } from "@/lib/stats/incertitude";
+import { lireComparaison } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +61,9 @@ const PLAFOND_EVENEMENTS = 5000;
 
 /** La population de l'écran, nommée dans chaque méta (S1). */
 const POPULATION = "tentatives de formulaire (un événement form.submit ou form.abandon par tentative, pas une session)";
+
+/** Les tuiles se comparent sur les événements custom : c'est d'eux que les tentatives sont lues. */
+const SOURCE_FORMULAIRES: SourceComparaison = { table: "rum_event", colonneTemps: "ts", additive: true };
 
 // Jetons de F01 : l'abandon est le segment `bad`, le reste est neutre. Les deux
 // suivent le mode sombre (variables CSS), aucune couleur n'est figée ici.
@@ -79,23 +91,28 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
   const sp = await searchParams;
   const ecran = await pageFilters(sp, "/forms");
   if (!ecran.ok) return <FilterProblemNotice title="Formulaires" problem={ecran.problem} />;
-  const f = ecran.filters;
+  const f = ecran.deviceFilters;
+  const query = ecran.query;
+  // Comparaison (F06, F53) : `cmp=prev` compare les tuiles à la période précédente,
+  // seulement si celle-ci est COMPLÈTE (§ 3.2) ; défaut de l'écran : aucune.
+  const prev = lireComparaison("/forms", paramReader(sp)).valeur.mode === "prev";
   // S7 : sessions des événements `form.*` lus (une session « biaisée-erreurs »
   // n'émet que ses erreurs : ses formulaires ne sont jamais lus).
-  const [lecture, echantillonnage] = await Promise.all([
+  const [lecture, lecturePrev, echantillonnage, couvertures] = await Promise.all([
     lire(() => formEvents(f, PLAFOND_EVENEMENTS)),
-    lire(() => samplingSessionsHistorique(f, { lecture: "formulaires" })),
+    prev ? lire(() => formEvents(f, PLAFOND_EVENEMENTS, true)) : Promise.resolve(null),
+    lire(() => samplingSessions(f, { population: { lecture: "formulaires" } })),
+    prev
+      ? Promise.all(sourcesSousFiltres(query, SOURCE_FORMULAIRES).map((s) => couverturePrecedente(query, s)))
+      : Promise.resolve<CouverturePrecedente[]>([]),
   ]);
-  // Heure de la lecture : la fenêtre glissante finit ici, pas à la borne `to` (S3).
-  const luA = new Date();
-  const fenetre = fenetreLue(f.period, luA);
-  const dansPhrase = fenetreDansPhrase(f.period);
+  const fenetre = ecran.label;
+  const dansPhrase = plageDansPhrase(query.range, fenetre);
   const meta = (extra?: string) => (
     <>
       {extra && <span>{extra}</span>}
       <span>Population : {POPULATION}</span>
       <span>{fenetre}</span>
-      <span>lecture non migrée</span>
     </>
   );
 
@@ -108,9 +125,8 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
   const champs: FieldReport | null = selectionne ? fieldReport(events, selectionne) : null;
   const ligneSelectionnee = forms.find((r) => r.form === selectionne);
 
-  const formHref = (nom: string) => hrefWithQuery("/forms", ecran.query, { form: nom });
-  const elargir =
-    f.period === "7d" ? undefined : { libelle: "Élargir à 7 jours", href: hrefWithQuery("/forms", ecran.query, { period: "7d" }) };
+  const formHref = (nom: string) => hrefWithQuery("/forms", query, { form: nom });
+  const elargir = gesteElargir("/forms", query);
 
   const entames = forms.reduce((a, r) => a + r.starters, 0);
   const soumissions = forms.reduce((a, r) => a + r.submits, 0);
@@ -120,6 +136,30 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
   const raisonEchec = "lecture en échec : aucun événement n'a pu être lu";
   const raisonNull = lecture.ok ? raisonVide : raisonEchec;
 
+  // `cmp=prev` (F53) : la même lecture sur la période précédente. Un plafond de 5 000
+  // événements atteint d'un côté ou de l'autre tait l'écart (il mesurerait le plafond).
+  const precEvents = lecturePrev?.ok ? lecturePrev.data : null;
+  const precForms = precEvents ? formReport(precEvents) : null;
+  const precEntames = precForms ? precForms.reduce((a, r) => a + r.starters, 0) : null;
+  const precSoumissions = precForms ? precForms.reduce((a, r) => a + r.submits, 0) : null;
+  const plafonds = [
+    { atteint: lecture.ok && plafondAtteint(events.length, PLAFOND_EVENEMENTS), raison: `plafond de ${formater("count", PLAFOND_EVENEMENTS)} événements atteint sur la période lue` },
+    { atteint: precEvents !== null && plafondAtteint(precEvents.length, PLAFOND_EVENEMENTS), raison: `plafond de ${formater("count", PLAFOND_EVENEMENTS)} événements atteint sur la période précédente` },
+  ];
+  /** Props de comparaison d'une tuile ; rien hors `cmp=prev`. L'effectif précédent (entamés) porte l'échantillon faible. */
+  const comparer = (precedent: number | null) =>
+    lecturePrev
+      ? {
+          precedent: precEvents ? precedent : null,
+          reference: referencePrecedente(previousRange(query.range)),
+          couverturePrecedente: couvertureDeTuile(
+            lecturePrev.ok ? couvertures : [{ etat: "inconnue", raison: "la période précédente n'a pas pu être lue" }],
+            plafonds,
+            precEntames,
+          ),
+        }
+      : {};
+
   return (
     <div className="animate-fade-up">
       <PageHeader
@@ -127,10 +167,6 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
         domain="usages"
         sub="Quels formulaires perdent leurs visiteurs, et sur quel champ ? Aucune valeur saisie n'est collectée."
       />
-
-      <p className="-mt-3 mb-6 text-xs text-ink-soft" data-testid="lecture-non-migree">
-        {noteLectureHistorique(f.period, luA)}
-      </p>
 
       {/* Fm2 — quatre tuiles sur une seule population : les tentatives lues. */}
       <SectionErreur titre="Chiffres clés">
@@ -141,6 +177,7 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
             format="count"
             raisonNull={raisonNull}
             lecture="Soumissions + abandons : une tentative entamée est une tentative qui a touché au moins un champ."
+            {...comparer(precEntames)}
           />
           <KpiTile
             label="Soumissions"
@@ -148,6 +185,7 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
             format="count"
             raisonNull={raisonNull}
             lecture="Événements form.submit lus sur la fenêtre."
+            {...comparer(precSoumissions)}
           />
           {/* Sans verdict coloré (S6, R-S) : aucun seuil publié n'existe pour une
               conversion de formulaire ; les paliers 0,6 / 0,3 n'avaient pas de source. */}
@@ -158,6 +196,10 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
             raisonNull={lecture.ok ? "aucun formulaire entamé : pas de dénominateur" : raisonEchec}
             couverture={{ n: entames, unite: "formulaires entamés", faibleSous: SEUIL_ECHANTILLON_FAIBLE }}
             lecture="Soumis / entamés. Aucun seuil publié n'existe pour une conversion de formulaire : aucun verdict coloré."
+            {...comparer(precEntames ? (precSoumissions ?? 0) / precEntames : null)}
+            ecart={
+              precEntames && entames > 0 ? ecartProportions(soumissions, entames, precSoumissions ?? 0, precEntames) : undefined
+            }
           />
           <KpiTile
             label="Temps médian jusqu'à la soumission"
@@ -172,6 +214,7 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
             }
             couverture={{ n: soumissions, unite: "soumissions", faibleSous: SEUIL_ECHANTILLON_FAIBLE }}
             lecture="Médiane, jamais une moyenne : un abandon rapide raccourcirait le temps de remplissage sans que personne n'aille plus vite."
+            {...comparer(precEvents ? medianeSoumissionMs(precEvents) : null)}
           />
         </div>
       </SectionErreur>

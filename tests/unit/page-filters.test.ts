@@ -62,13 +62,18 @@ describe("pageFilters", () => {
       ok: false,
       problem: { code: "unsupported_dimension", message: "« Navigateur » n'est pas encore collecté pour les pages vues" },
     });
-    expect(await pageFilters({ app: "a", device: "tablet" }, "/paths")).toMatchObject({
+    expect(await pageFilters({ app: "a", device: "tablet" }, "/logs")).toMatchObject({
       ok: false,
-      problem: { message: "Cet écran n'applique ni « Inconnu » ni la tablette.", resetHref: "/paths?app=a" },
+      problem: { message: "« Appareil » n'est pas encore appliqué par cet écran", resetHref: "/logs?app=a" },
     });
     expect(
-      await pageFilters({ app: "a", from: "2026-09-16T10:00:00Z", to: "2026-09-16T11:00:00Z" }, "/acquisition"),
+      await pageFilters({ app: "a", from: "2026-09-16T10:00:00Z", to: "2026-09-16T11:00:00Z" }, "/logs"),
     ).toMatchObject({ ok: false, problem: { message: "Cet écran n'accepte encore que les périodes 1 h, 24 h et 7 j." } });
+    // Une route filtrerait une partie des vues d'une session : refusée sur les écrans d'usage.
+    expect(await pageFilters({ app: "a", route: "/panier" }, "/paths")).toMatchObject({
+      ok: false,
+      problem: { message: "« Route » est sans objet pour les sessions", resetHref: "/paths?app=a" },
+    });
     // F40 : la rétention lit ses propres semaines ; une plage est refusée avec cette raison.
     expect(
       await pageFilters({ app: "a", from: "2026-09-16T10:00:00Z", to: "2026-09-16T11:00:00Z" }, "/retention"),
@@ -80,33 +85,30 @@ describe("pageFilters", () => {
     });
   });
 
-  // F40 (R-A) — refus provisoire : une lecture mono-app sous `app=all` sortirait du
-  // périmètre d'un principal restreint. Refus de périmètre, reprise vers /select.
-  it("écran à lecture mono-app, principal restreint, toutes les apps : refus « une application à la fois »", async () => {
-    // `/goals` en est sorti avec F66 (lectures sur le contrat) : voir le test F66 plus bas.
+  // F53 (R-A) — le refus provisoire de F40 (« une application à la fois ») est levé :
+  // depuis B31, les lectures des écrans d'usage lient les apps EFFECTIVES du principal.
+  // Un viewer restreint qui demande toutes ses apps voit l'écran, sur SES apps.
+  it("écrans d'usage, principal restreint, toutes les apps : l'écran s'affiche sur les apps effectives", async () => {
     for (const path of ["/acquisition", "/paths", "/forms", "/retention"]) {
       for (const sp of [{ app: "all" }, {}]) {
-        expect(await pageFilters(sp, path), `${path} ${JSON.stringify(sp)}`).toEqual({
-          ok: false,
-          problem: {
-            code: "forbidden_app",
-            message: "Cet écran lit une application à la fois : choisissez l'une des applications de votre périmètre.",
-            resetHref: "/select",
-            resetLabel: "Choisir un projet autorisé",
-          },
-        });
+        const ecran = await pageFilters(sp, path);
+        expect(ecran.ok, `${path} ${JSON.stringify(sp)}`).toBe(true);
+        if (ecran.ok) expect(ecran.query.scope).toEqual({ requestedApp: null, authorizedApps: ["a", "b"], effectiveApps: ["a", "b"] });
       }
-      // Une app nommée du périmètre : l'écran s'affiche.
-      expect((await pageFilters({ app: "a" }, path)).ok, path).toBe(true);
+      // Une app hors périmètre reste refusée (le contrat, pas l'écran).
+      expect(await pageFilters({ app: "z" }, path)).toMatchObject({ ok: false, problem: { code: "forbidden_app", resetHref: "/select" } });
     }
-    // Viewer sans liste d'apps (= toutes) et admin : lecture de droit sur toutes les apps.
-    simul.user = viewer(null);
-    expect((await pageFilters({ app: "all" }, "/acquisition")).ok).toBe(true);
-    simul.user = { email: "admin@mip", role: "admin" as const, apps: null };
-    expect((await pageFilters({ app: "all" }, "/goals")).ok).toBe(true);
-    // Un écran sur le contrat lie ses apps effectives : pas de refus.
-    simul.user = viewer(["a", "b"]);
-    expect((await pageFilters({ app: "all" }, "/sessions")).ok).toBe(true);
+  });
+
+  it("écrans d'usage sur le contrat : plage personnalisée, tablette et « Inconnu » acceptés", async () => {
+    for (const path of ["/acquisition", "/paths", "/forms"]) {
+      const ecran = await pageFilters(
+        { app: "a", from: "2026-09-16T10:00:00Z", to: "2026-09-16T11:00:00Z", device: "tablet", seg: "v2:browser:is_null" },
+        path,
+      );
+      expect(ecran.ok, path).toBe(true);
+      if (ecran.ok) expect(ecran.deviceFilters.device, path).toBe("tablet");
+    }
   });
 
   it("écran migré : requête résolue, façade historique et tablette pour les lectures P4/P5", async () => {
