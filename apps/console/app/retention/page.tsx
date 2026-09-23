@@ -112,7 +112,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
     lire(() => samplingSessionsHistorique(f, { lecture: "cohortes", semaines: weeks })),
     appareilFiltre
       ? Promise.resolve(null)
-      : lire(() => Promise.all(APPAREILS.map((a) => retentionCohorts({ ...f, device: a.cle }, weeks)))),
+      : lire(() => Promise.all(APPAREILS.map((a) => retentionCohorts(f, weeks, { appareil: a.cle })))),
   ]);
 
   const rows: CohortRow[] = cohortes.ok ? cohortes.data : [];

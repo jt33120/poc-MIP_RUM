@@ -1,6 +1,7 @@
 // Acquisition — classification de canal + agrégat. Logique pure.
 import { describe, expect, it } from "vitest";
 import { acquisitionReport, classifyChannel, hostOf } from "../../apps/console/lib/acquisition";
+import { serieCanaux, TOP_ENTREES } from "../../apps/console/lib/acquisition";
 import {
   CHANNELS,
   LIBELLE_CANAL,
@@ -132,5 +133,65 @@ describe("partDuTotal et référents tronqués", () => {
   });
   it("« Direct » dit ce qu'il recouvre", () => {
     expect(LIBELLE_CANAL.direct).toBe("Direct ou référent masqué");
+  });
+});
+
+// B31 (§ 5.16.4, A4 et A6) — la route d'entrée et le seau de la 1re vue arrivent
+// avec la lecture sur le contrat : la table croisée et la série se calculent ici,
+// purs, sur les MÊMES entrées que les canaux.
+describe("acquisitionReport — routes d'entrée par canal (B31)", () => {
+  it("une ligne par route, cinq canaux zéros compris ; somme des cellules = total de la ligne", () => {
+    const r = acquisitionReport([
+      { referrer: null, url: "https://s.fr/a", route: "/" },
+      { referrer: "https://google.com/", url: "https://s.fr/a", route: "/" },
+      { referrer: "https://google.com/", url: "https://s.fr/p", route: "/produit" },
+      { referrer: "https://s.fr/x", url: "https://s.fr/b", route: "/blog" },
+      { referrer: "https://google.com/", url: "https://s.fr/a", route: "/" },
+    ]);
+    expect(r.entrees[0]).toEqual({ route: "/", parCanal: { direct: 1, search: 2, social: 0, referral: 0, internal: 0 }, total: 3 });
+    for (const ligne of r.entrees) {
+      expect(CHANNELS.reduce((s, c) => s + ligne.parCanal[c], 0)).toBe(ligne.total);
+    }
+    // Égalité de total : ordre alphabétique des routes.
+    expect(r.entrees.map((e) => e.route)).toEqual(["/", "/blog", "/produit"]);
+    expect(r.routesEntree).toBe(3);
+  });
+
+  it("top 10 routes, le nombre de routes distinctes dit la troncature ; entrée sans route : dans les canaux, dans aucune ligne", () => {
+    const r = acquisitionReport([
+      ...Array.from({ length: 12 }, (_, i) => ({ referrer: null, url: "https://s.fr/", route: `/r${String(i).padStart(2, "0")}` })),
+      { referrer: null, url: "https://s.fr/" },
+    ]);
+    expect(r.entrees).toHaveLength(TOP_ENTREES);
+    expect(r.routesEntree).toBe(12);
+    expect(r.total).toBe(13);
+    expect(r.entrees.reduce((s, e) => s + e.total, 0)).toBe(10);
+  });
+});
+
+describe("serieCanaux (B31, A6)", () => {
+  const H = 3_600_000;
+  const debuts = [0, H, 2 * H];
+
+  it("chaque entrée dans le seau de sa 1re vue ; seaux vides à 0 ; grille conservée", () => {
+    const { points, horsGrille } = serieCanaux(
+      [
+        { referrer: null, url: "https://s.fr/", t: 0 },
+        { referrer: "https://google.com/", url: "https://s.fr/", t: 0 },
+        { referrer: "https://t.co/x", url: "https://s.fr/", t: 2 * H },
+      ],
+      debuts,
+    );
+    expect(points.map((p) => p.t)).toEqual(debuts.map((t) => new Date(t).toISOString()));
+    expect(points[0].canaux).toEqual({ direct: 1, search: 1, social: 0, referral: 0, internal: 0 });
+    expect(points[1].canaux).toEqual({ direct: 0, search: 0, social: 0, referral: 0, internal: 0 });
+    expect(points[2].canaux.social).toBe(1);
+    expect(horsGrille).toBe(0);
+  });
+
+  it("une entrée hors grille n'est rangée dans aucun seau voisin : elle est comptée à part", () => {
+    const { points, horsGrille } = serieCanaux([{ referrer: null, url: "https://s.fr/", t: H / 2 }], debuts);
+    expect(points.every((p) => Object.values(p.canaux).every((n) => n === 0))).toBe(true);
+    expect(horsGrille).toBe(1);
   });
 });
