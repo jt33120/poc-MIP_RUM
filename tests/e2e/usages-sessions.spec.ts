@@ -310,13 +310,23 @@ test.describe("F42 — Sessions : priorité et table", () => {
     // La page suivante reprend APRÈS le curseur : les identifiants de la première
     // page n'y reviennent pas (comparaison d'ensembles, pas de la première ligne :
     // une pagination qui décale d'un rang passerait un test sur la seule tête).
+    // L'écran n'écrit que 8 caractères d'un identifiant (« f42e2e-s… » pour les 52) :
+    // l'identité d'une ligne se lit dans son lien, qui ouvre SON panneau (F43,
+    // `panel=session:<id>`), identifiant complet.
     const lienSession = page.getByTestId("ligne-session").getByTestId("session-link");
-    const page1 = await lienSession.allInnerTexts();
+    const identifiants = async () =>
+      (await lienSession.evaluateAll((liens) => liens.map((a) => a.getAttribute("href") ?? ""))).map((href) =>
+        new URL(href, consoleUrl).searchParams.get("panel"),
+      );
+    const page1 = await identifiants();
     expect(page1).toHaveLength(50);
+    expect(new Set(page1).size).toBe(50);
+    expect(page1).not.toContain(null);
     await page.getByTestId("sessions-suivantes").click();
     await page.waitForURL((u) => u.searchParams.has("cursor"), { timeout: 15_000 });
     await expect(page.getByTestId("ligne-session")).toHaveCount(SEMEES - 50);
-    const page2 = await lienSession.allInnerTexts();
+    const page2 = await identifiants();
+    expect(page2).toHaveLength(SEMEES - 50);
     expect(page2.filter((id) => page1.includes(id))).toEqual([]);
   });
 
