@@ -1,3 +1,14 @@
+# OBSOLÈTE — NE PLUS MODIFIER NI RÉFÉRENCER ; À SUPPRIMER APRÈS L'APPLY DE L'IAC.
+# Remplacé par `services/mcp/Dockerfile` (P1, contrat de service § 9).
+# Plus rien DANS LE DÉPÔT ne construit ce fichier : ni `.railway/railway.ts`,
+# ni le compose, ni la fumée. Il reste pour UNE raison : le tableau de bord
+# Railway le désigne encore comme Dockerfile du service `mcp`, jusqu'à ce
+# que le workflow « Railway IaC » applique le nouveau `dockerfilePath`. Railway
+# construisant sur chaque push (`checkSuites: false`), le supprimer dans la même
+# fusion ferait échouer la construction de `mcp` entre la fusion et l'apply
+# relu. Une fois l'apply fait et un déploiement de `mcp` vert sur la
+# nouvelle image : supprimer ce fichier, et ses chemins surveillés dans l'IaC.
+#
 # Image du serveur MCP MIP RUM — l'API v1 de lecture, exposée à un agent IA.
 #
 # POURQUOI UNE IMAGE À PART, alors que Dockerfile.backend en fait une seule pour

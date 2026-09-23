@@ -291,7 +291,7 @@ Service `mcp` dans le projet `mip-rum-backend`, à côté de `ingest` et
 
 | Réglage | Valeur |
 |---|---|
-| Dockerfile | `infra/docker/Dockerfile.mcp` (**pas** `Dockerfile.backend`) |
+| Dockerfile | `services/mcp/Dockerfile` (le sien, comme chaque service depuis P1) |
 | Variables | `MIP_CONSOLE_URL`, `PORT=8080`, `NODE_ENV=production` |
 | Healthcheck | `/health` |
 | Région | `europe-west4-drams3a` (Amsterdam) |
@@ -306,11 +306,13 @@ https://mcp-production-201c.up.railway.app/mcp
 
 avec un en-tête `Authorization: Bearer <jeton>`. Sans jeton, `401`.
 
-**Image séparée, à dessein.** Les autres services partagent
-`Dockerfile.backend` parce qu'ils ont le même noyau et les mêmes dépendances.
-Le serveur MCP n'a ni l'un ni l'autre — et surtout, il ne doit pas pouvoir
-atteindre la base. L'empaqueter avec eux annulerait cette garantie pour
-économiser une couche de cache.
+**Image séparée, à dessein.** Chaque service a désormais la sienne
+(`services/<x>/Dockerfile`), mais le serveur MCP l'avait avant les autres, et
+pour une raison plus forte que la propreté : il ne doit pas pouvoir atteindre la
+base. Son image ne contient que la fermeture des dépendances de
+`@mip/service-mcp` (posée par `pnpm deploy`) : ni `pg`, ni `DATABASE_URL`. Le job
+de fumée (`docker-smoke.yml`, ligne `mcp` de la matrice) échoue si `pg` y
+réapparaît.
 
 ---
 

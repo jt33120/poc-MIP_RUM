@@ -82,15 +82,15 @@ Projet `mip-rum-backend`, environnement `production`. Trois services.
 
 | Service | Image | Commande | Écoute | Redémarrage |
 |---|---|---|---|---|
-| `ingest` | `Dockerfile.backend` | `node services/collector/server.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
-| `scheduler` | `Dockerfile.backend` | `node services/scheduler/worker.mjs` | oui, healthcheck `/health` (sain sans exécution ni bail) ; `/ready`, `/metrics` sous `METRICS_TOKEN` — cf. `services/scheduler/README.md` | `ALWAYS` |
-| `mcp` | **`Dockerfile.mcp`** | `node services/mcp/http.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
+| `ingest` (supprimé le 21/09/2026) | `services/collector/Dockerfile` | `node services/collector/server.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
+| `scheduler` | `services/scheduler/Dockerfile` | `node services/scheduler/worker.mjs` | oui, healthcheck `/health` (sain sans exécution ni bail) ; `/ready`, `/metrics` sous `METRICS_TOKEN` — cf. `services/scheduler/README.md` | `ALWAYS` |
+| `mcp` | **`services/mcp/Dockerfile`** | `node services/mcp/http.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
 
 Domaine public du serveur MCP : `https://mcp-production-201c.up.railway.app`
 (`POST /mcp`, jeton porteur exigé — cf. `docs/MCP.md`).
 
-`ingest` et `scheduler` partagent une image : même noyau, mêmes dépendances,
-seule la commande change. `mcp` a la sienne — non par exception, mais parce
+Une image par service (P1), et un `CMD` explicite : chacune ne sait démarrer que son service (les anciennes `infra/docker/Dockerfile.{backend,mcp}`, marquées OBSOLÈTE, restent jusqu'à l'apply de l'IaC, que le tableau de bord attend encore).
+`mcp` a toujours eu la sienne — non par exception, mais parce
 qu'**il ne doit pas pouvoir atteindre la base**. C'est le seul service
 pilotable par un modèle de langage ; sans `pg` ni `DATABASE_URL`, une injection
 de prompt réussie ne donne que ce que le jeton de l'appelant permettait déjà de
@@ -145,7 +145,7 @@ comportement voulu, pas une panne.
 > souverain —, là où aucun CDN ne fournit d'en-tête pays.
 >
 > **La base n'est pas dans le dépôt** (4,5 Mio, renouvelée tous les mois).
-> `Dockerfile.backend` la télécharge à la construction et vérifie son empreinte ;
+> L'image collector la télécharge à la construction, contre le manifeste ;
 > un échec n'arrête PAS la construction, l'image part alors sans base et
 > l'ingestion fonctionne comme avant. `--build-arg GEOIP_FETCH=0` pour une
 > construction sans sortie réseau ; la base se monte alors sur un volume via

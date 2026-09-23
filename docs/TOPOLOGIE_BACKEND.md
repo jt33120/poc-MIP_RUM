@@ -103,7 +103,7 @@ l'auto-hébergement dans [infra/docker/](../infra/docker/). Le produit garde don
 son chemin souverain : ce qui disparaît, c'est une copie qui tournait à vide.
 
 **Ce qu'il faudrait pour le faire revenir.** Recréer un service sur
-`infra/docker/Dockerfile.backend` avec `node services/collector/server.mjs`, lui
+`services/collector/Dockerfile` (son `CMD` est `services/collector/server.mjs`), lui
 rendre ses quatre variables, **et lui donner un domaine public** — faute de quoi
 on reproduirait exactement la situation qu'on vient de défaire. À ce moment-là,
 deux chemins d'ingestion coexisteraient et devraient rester alignés : c'est le

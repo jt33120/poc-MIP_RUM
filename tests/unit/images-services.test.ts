@@ -172,6 +172,37 @@ describe("images — le compose et la fumée", () => {
   });
 });
 
+describe("images — l'IaC Railway, et la sortie des images communes", () => {
+  it("chaque service déclaré dans .railway/railway.ts construit SON Dockerfile", () => {
+    const iac = lire(".railway/railway.ts");
+    const declares = [...iac.matchAll(/service\("([a-z-]+)",[\s\S]*?dockerfilePath: "([^"]+)"/g)];
+    expect(declares.length).toBeGreaterThan(0);
+    for (const [, nom, chemin] of declares) {
+      expect(chemin).toBe(`services/${nom}/Dockerfile`);
+      expect(existsSync(chemin)).toBe(true);
+    }
+    // Plus aucun service ne construit l'ancienne image commune (les chemins
+    // surveillés peuvent encore la nommer : ils sont l'union ancien ∪ nouveau).
+    expect(iac).not.toMatch(/dockerfilePath: "infra\/docker\//);
+  });
+
+  it("l'initialisation par psql a disparu ; plus rien ne construit les images communes", () => {
+    expect(existsSync("infra/docker/db/initdb.sh")).toBe(false);
+    // Les deux anciennes images RESTENT le temps de l'apply de l'IaC : le
+    // tableau de bord Railway les désigne encore, et Railway construit à chaque
+    // push. Marquées obsolètes, et construites par AUCUN fichier du dépôt ; les
+    // supprimer est l'étape d'après (voir leur en-tête).
+    const compose = instructions(lire("infra/docker/docker-compose.yml"));
+    const fumee = lire(".github/workflows/docker-smoke.yml");
+    for (const ancien of ["infra/docker/Dockerfile.backend", "infra/docker/Dockerfile.mcp"]) {
+      if (existsSync(ancien)) expect(lire(ancien).split("\n")[0], ancien).toMatch(/^# OBSOLÈTE/);
+      const nom = ancien.split("/").pop()!;
+      expect(compose).not.toContain(nom);
+      expect(fumee).not.toContain(nom);
+    }
+  });
+});
+
 // ─── scripts/ci/deploy-fidele.mjs ───────────────────────────────────────────
 const LOCK_DEPOT = `lockfileVersion: '9.0'
 

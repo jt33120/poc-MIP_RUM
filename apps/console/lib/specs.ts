@@ -133,9 +133,9 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "Images",
-        v: "Deux Dockerfiles : un pour ingest et scheduler (même noyau, seule la commande change), un pour mcp. Un test de CI vérifie que « pg » est bien absent de la seconde.",
+        v: "Un Dockerfile par service (collector, scheduler, mcp), chacun avec sa commande de démarrage explicite, sur un Node épinglé par empreinte et sans droits root. Un test de CI démarre chaque image, et vérifie que « pg » est absent de celle du serveur MCP.",
         s: "atteint",
-        preuve: "infra/docker/Dockerfile.mcp",
+        preuve: "services/mcp/Dockerfile",
       },
       {
         k: "Déploiement",

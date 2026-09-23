@@ -57,12 +57,20 @@ const SURVEILLE_MCP = [
   "packages/mcp-tools/**", "packages/service-kit/**", "infra/docker/**", "pnpm-lock.yaml",
 ];
 
+// UN DOCKERFILE PAR SERVICE, À CÔTÉ DE SON POINT D'ENTRÉE (contrat de service
+// § 9) : `services/<nom>/Dockerfile`. L'ancienne image commune
+// (`infra/docker/Dockerfile.backend`) démarrait par défaut un receveur OTLP ; si
+// `start` venait à se perdre, le scheduler démarrerait désormais… le scheduler.
+// Le chemin est couvert par `services/<nom>/**`, déjà surveillé.
+// Les anciennes images (`infra/docker/Dockerfile.{backend,mcp}`) restent dans le
+// dépôt, marquées OBSOLÈTE, jusqu'à l'apply de ce fichier : d'ici là, c'est
+// elles que le tableau de bord construit à chaque push sur `master`.
 export default defineRailway(() => {
   const pocMIP_RUM = github("jt33120/poc-MIP_RUM", { branch: "master", checkSuites: false });
 
   const scheduler = service("scheduler", {
     source: pocMIP_RUM,
-    build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "infra/docker/Dockerfile.backend", watchPatterns: SURVEILLE_SCHEDULER },
+    build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/scheduler/Dockerfile", watchPatterns: SURVEILLE_SCHEDULER },
     start: "node services/scheduler/worker.mjs",
     healthcheck: "/health",
     healthcheckTimeout: 120,
@@ -75,7 +83,7 @@ export default defineRailway(() => {
   });
   const mcp = service("mcp", {
     source: pocMIP_RUM,
-    build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "infra/docker/Dockerfile.mcp", watchPatterns: SURVEILLE_MCP },
+    build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/mcp/Dockerfile", watchPatterns: SURVEILLE_MCP },
     start: "node services/mcp/http.mjs",
     healthcheck: "/health",
     healthcheckTimeout: 120,
