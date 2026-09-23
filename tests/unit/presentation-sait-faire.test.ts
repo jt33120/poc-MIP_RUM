@@ -193,3 +193,32 @@ describe("PS8 — une façon de compter", () => {
     }
   });
 });
+
+// Revue de fin de vague 7 : des cartes disaient plus, ou autre chose, que le code. Le
+// document a été corrigé d'abord, la carte suit ; chaque test pose le FAIT tel que la
+// ligne l'écrit, puis le texte de la carte — un nouveau relevé qui change la ligne
+// rougit ici, et quelqu'un relit la carte.
+describe("revue de fin de vague 7 — les cartes suivent leurs lignes corrigées", () => {
+  const ligneDe = (id: string) => CAPACITES.find((c) => c.id === id)!;
+  const carte = (id: string) => CARTES.find((c) => c.id === id)!;
+  const puce = (id: string) => CARTES.flatMap((c) => c.limites).find((l) => l.id === id)!;
+
+  it("K14 suit E3 : la démo n'écrit rien, un viewer écrit le sien, le triage reste aux administrateurs", () => {
+    const e3 = ligneDe("E3");
+    expect(e3.verdict).toBe(VERDICT_MONTRABLE);
+    expect(e3.limite).toContain("**La session démo n'écrit rien**");
+    expect(e3.limite).toContain("**Un viewer écrit ce qui est à lui, dans son périmètre**");
+    expect(e3.limite).toContain("`apps/console/lib/dashboard-access.ts:117-135`");
+    expect(e3.limite).toContain("`apps/console/app/api/v1/explorer/views/route.ts:45-47`");
+    expect(e3.limite).toContain("**Le triage d'une issue** (`A8`) reste réservé aux administrateurs");
+    // L'ancienne limite, que le code contredisait déjà sur le commit relevé.
+    expect(e3.limite).not.toContain("ne gagnent **aucun** droit d'écriture");
+
+    const k14 = carte("K14");
+    expect(k14.faitQuoi).not.toContain("réservées aux sessions d'administration");
+    expect(puce("E3").texte).toContain("La session de démonstration n'écrit rien");
+    expect(puce("E3").texte).toContain("un viewer ne crée et ne modifie que ses propres tableaux de bord et vues");
+    expect(puce("E3").texte).toContain("le triage des issues est réservé aux administrateurs");
+    expect(puce("E3").texte).not.toMatch(/aucun droit d'écriture/);
+  });
+});

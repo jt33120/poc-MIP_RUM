@@ -429,8 +429,8 @@
       "famille": "Surfaces d'accès",
       "capacite": "Écrire par API (triage, tableaux de bord, vues enregistrées)",
       "verdict": "deploye_non_eprouve",
-      "preuve": "contrôle de session admin + Origin, `expectedRevision` et `409` ; `dashboard-access.ts`, `tests/unit/dashboards.test.ts`",
-      "limite": "Viewer et demo ne gagnent **aucun** droit d'écriture. Un administrateur scopé n'est plus transverse : c'est un écart assumé de P6.5 par rapport au modèle « admin global ».",
+      "preuve": "contrôle de session + Origin (`guardSession` ; `guardAdmin` pour le triage), `expectedRevision` et `409` ; `dashboard-access.ts`, `tests/unit/dashboards.test.ts`, `tests/unit/dashboard-access.test.ts`, `tests/unit/api-v1-issue-workflow-routes.test.ts`",
+      "limite": "**La session démo n'écrit rien** : le middleware refuse ses requêtes d'écriture (`apps/console/middleware.ts:88-96`), `handleMutation` aussi sur `/api/v1`, et les gardes des tableaux de bord la refusent (`tests/unit/dashboard-access.test.ts:96-102`). **Un viewer écrit ce qui est à lui, dans son périmètre** : il crée un tableau de bord lié à une app de son périmètre, jamais un transverse, et ne modifie que les siens (`apps/console/lib/dashboard-access.ts:117-135`, `tests/unit/dashboard-access.test.ts:104-120`) ; il enregistre ses propres vues d'Explorer (`role: \"session\"`, `apps/console/app/api/v1/explorer/views/route.ts:45-47`) ; depuis F37 (vague 7, après ce relevé), « Ajouter une section » suit la même garde (`tests/unit/dashboard-actions-access.test.ts:295`, `:338-359`). **Le triage d'une issue** (`A8`) reste réservé aux administrateurs : `handleMutation` exige le rôle `admin` par défaut (`apps/console/lib/api/handle.ts:284-290`) et refuse viewer et démo (`tests/unit/api-v1-issue-workflow-routes.test.ts:89-95`). Un administrateur scopé n'est plus transverse : c'est un écart assumé de P6.5 par rapport au modèle « admin global ».",
       "ligne": 205
     },
     {
