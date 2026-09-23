@@ -37,9 +37,15 @@ jobs:
       # version pnpm lue depuis "packageManager" (pnpm@9.15.9) du package.json racine
       - uses: pnpm/action-setup@v6
 
+      # UN SEUL RUNTIME, LU DANS `.nvmrc` (P1). La CI testait sous Node 26 alors
+      # que les images Railway tournaient sous Node 22 et la console Vercel sous
+      # Node 24 (« nodeVersion: 24.x » du projet) : trois versions, et aucun test
+      # ne tournait sur celle de la production. Tous les jobs lisent désormais le
+      # même fichier que `engines.node` du package.json racine et que le `FROM`
+      # des images — changer de version, c'est changer ces trois lignes ensemble.
       - uses: actions/setup-node@v6
         with:
-          node-version: 26
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install (lockfile gelé)
@@ -107,9 +113,10 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
+      # Même runtime que le job `unit` : `.nvmrc` (Node 24).
       - uses: actions/setup-node@v6
         with:
-          node-version: 26
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install (lockfile gelé)

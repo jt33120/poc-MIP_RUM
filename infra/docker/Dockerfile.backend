@@ -24,7 +24,17 @@
 # `npm install` — le paquet correspondant est COPIÉ plus bas, comme les autres.
 #
 # Contexte de build = RACINE du dépôt (Railway le fait par défaut).
-FROM node:22-alpine
+#
+# NODE 24 SUR DEBIAN, COMME LE RESTE (P1). L'image tournait sous Node 22 alors
+# que la CI testait sous Node 26 et la console sous Node 24 : ce qui tournait en
+# production n'était testé nulle part. La version suit `.nvmrc` à la racine.
+# Debian (glibc) et non Alpine (musl) : les binaires musl de Node sont au niveau
+# « expérimental » de sa matrice de support, et la CI (Ubuntu) comme Vercel
+# tournent sur glibc — un module natif ou une résolution DNS qui diffère entre
+# musl et glibc se verrait en production sans s'être vu en test.
+# ÉPINGLÉE PAR ÉTIQUETTE SEULEMENT : le digest (`@sha256:…`) arrive avec les
+# Dockerfiles par service (P1, PR-C, contrat de service § 9).
+FROM node:24-bookworm-slim
 
 WORKDIR /app
 
@@ -72,12 +82,21 @@ COPY packages/db/sql               ./node_modules/@mip/db/sql
 # CE TÉLÉCHARGEMENT N'EST PAS UN APPEL DE GÉOLOCALISATION : c'est un fichier
 # statique public, tiré une fois à la construction. Aucune adresse de visiteur
 # n'est envoyée nulle part, ni ici ni à l'exécution.
+#
+# Téléchargé par `fetch` de Node et non par `wget` : l'image Debian « slim » n'a
+# ni wget ni curl, et le `|| true` ci-dessous aurait transformé leur absence en
+# une image SANS base, sans une ligne d'erreur. Node, lui, est là par définition.
 ARG GEOIP_FETCH=1
 ARG GEOIP_VERSION=dbip-country-lite-2026-09
 ARG GEOIP_SHA256=a32bb3c384bd3de60ad9024596aa5b395a6dd5beaa27a7223407cc2edc681d0b
 RUN if [ "$GEOIP_FETCH" = "1" ]; then \
       cible="./node_modules/@mip/backend/data/${GEOIP_VERSION}.csv.gz"; \
-      wget -q -O "$cible" "https://download.db-ip.com/free/${GEOIP_VERSION}.csv.gz" \
+      node -e 'const [url, cible] = process.argv.slice(1); \
+        fetch(url, { signal: AbortSignal.timeout(120000) }) \
+          .then(async (r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); \
+            require("node:fs").writeFileSync(cible, Buffer.from(await r.arrayBuffer())); }) \
+          .catch((e) => { console.error(`geoip: ${e.message}`); process.exit(1); });' \
+        "https://download.db-ip.com/free/${GEOIP_VERSION}.csv.gz" "$cible" \
         && echo "${GEOIP_SHA256}  ${cible}" | sha256sum -c - \
         || { echo "geoip: base non déposée, l'ingestion fonctionnera sans"; rm -f "$cible"; }; \
     fi; \

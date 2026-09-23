@@ -19,7 +19,11 @@
 # PAS DE pnpm ICI, comme pour le backend : `npm install` depuis le manifeste du
 # noyau fige les versions du SDK MCP et de zod, et l'arborescence est recomposée
 # à la main. Contexte de build = RACINE du dépôt.
-FROM node:22-alpine
+#
+# Node 24 sur Debian, comme `Dockerfile.backend` et pour les mêmes raisons (un
+# seul runtime, celui de `.nvmrc` ; glibc comme la CI) — voir son en-tête.
+# Épinglée par étiquette seulement ; le digest arrive avec PR-C.
+FROM node:24-bookworm-slim
 
 WORKDIR /app
 

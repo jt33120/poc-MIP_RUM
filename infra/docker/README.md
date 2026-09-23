@@ -26,7 +26,7 @@ propre. On l'empaquette juste pour tourner en conteneur.
 > ⚠️ **Seul l'emballage Docker reste à confirmer** (build de l'image + orchestration
 > compose : healthchecks, `depends_on`, volumes) — **non exécuté** ici car le daemon
 > Docker est indisponible dans l'environnement de dev. Versions **épinglées**
-> (`postgres:15`, `node:22-alpine`, `pg` 8.21.0). Signale-moi toute erreur au premier `up`.
+> (`postgres:15`, `node:24-bookworm-slim`, `pg` 8.21.0). Signale-moi toute erreur au premier `up`.
 
 ---
 

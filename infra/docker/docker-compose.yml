@@ -69,8 +69,9 @@ services:
     ports:
       - "${INGEST_PORT:-4318}:4318"
     healthcheck:
-      # /ready sonde la base (503 tant que la DB ne répond pas).
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4318/ready || exit 1"]
+      # /ready sonde la base (503 tant que la DB ne répond pas). Par `fetch` de
+      # Node : l'image Debian « slim » n'a ni wget ni curl (P1, Node 24).
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4318/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 10
