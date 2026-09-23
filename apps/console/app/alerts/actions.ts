@@ -14,7 +14,18 @@
 // l'action avant toute lecture du formulaire. La démo était déjà arrêtée par le
 // middleware (non-GET refusés) ; l'action ne s'en remet plus à lui (V9, piège 20).
 // Une règle est de plus bornée au périmètre d'apps du principal (`authorizedAppsOf`).
+//
+// LES URL SORTANTES SONT JUGÉES À L'ÉCRITURE (P1). Le webhook d'une règle et la
+// cible d'un canal webhook/Slack sont postés par le scheduler, depuis le réseau
+// privé Railway. `refuserUrlSortante` applique le contrôle sans réseau de
+// `safe-fetch` (IP littérale, `*.railway.internal`, `localhost`, nom sans
+// domaine, identifiants, protocole) et renvoie sur /alerts avec le CODE du motif,
+// que la page traduit. Pas d'exception : en production, Next la remplacerait par
+// l'écran d'erreur générique, et l'administrateur ne saurait pas quoi corriger.
+// Ce contrôle ne fait pas foi — le DNS peut changer après l'écriture : à chaque
+// livraison, `safeFetch` rejuge la cible et solde `skipped` ce qu'il refuse.
 import { redirect } from "next/navigation";
+import { verifierUrlSortante } from "@mip/backend/lib/net/safe-fetch.mjs";
 import { revalidatePath } from "@/lib/next-cache";
 import { ALERT_MODES, ALERT_SEVERITIES, CHANNEL_KINDS } from "@/lib/alerting";
 import { RELEASE_METRICS, SEUIL_REGRESSION_DEFAUT } from "@/lib/alerting";
@@ -51,6 +62,12 @@ async function ecrivain(): Promise<SessionUser> {
   const user = await requireAdmin();
   if (user.demo) throw new Error("session de démonstration : lecture seule");
   return user;
+}
+
+/** URL sortante refusée : retour sur /alerts avec le code du motif (lu par la page). */
+function refuserUrlSortante(texte: string): void {
+  const verdict = verifierUrlSortante(texte);
+  if (!verdict.ok) redirect(`/alerts?url_refusee=${verdict.code}`);
 }
 
 /** Une règle ne s'écrit que sur une app du périmètre du principal (V7). */
@@ -114,9 +131,7 @@ function ruleFromForm(fd: FormData): RuleInput {
   );
   const route = String(fd.get("route") ?? "").trim() || null;
   const webhook_url = String(fd.get("webhook_url") ?? "").trim() || null;
-  if (webhook_url && !/^https?:\/\//.test(webhook_url)) {
-    throw new Error("webhook_url doit être une URL http(s)");
-  }
+  if (webhook_url) refuserUrlSortante(webhook_url);
   const app_id = String(fd.get("app_id") ?? "").trim();
   if (!app_id) throw new Error("app_id requis");
   // P1 : sévérité, paramètres baseline.
@@ -245,10 +260,8 @@ function channelFromForm(fd: FormData): ChannelInput {
   if (!(CHANNEL_KINDS as readonly string[]).includes(kind)) throw new Error(`type invalide : ${kind}`);
   const target = String(fd.get("target") ?? "").trim();
   if (!target) throw new Error("cible requise");
-  // webhook/slack = URL http(s) ; email réservé (cible = adresse, non validée comme URL)
-  if ((kind === "webhook" || kind === "slack") && !/^https?:\/\//.test(target)) {
-    throw new Error("la cible doit être une URL http(s)");
-  }
+  // webhook/slack = URL http(s) publique ; email réservé (cible = adresse, non validée comme URL)
+  if (kind === "webhook" || kind === "slack") refuserUrlSortante(target);
   const severity_min = String(fd.get("severity_min") ?? "warning");
   if (!(ALERT_SEVERITIES as readonly string[]).includes(severity_min)) {
     throw new Error(`sévérité invalide : ${severity_min}`);

@@ -1,3 +1,4 @@
+import { motifDeRefus } from "@mip/backend/lib/net/safe-fetch.mjs";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAdmin } from "@/lib/auth";
 import type { SearchParams } from "@/lib/filters";
@@ -18,6 +19,10 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const [apps, checks] = await Promise.all([listApps(), listUptimeStatus()]);
   const error = typeof sp.error === "string";
+  // Refus d'URL à l'écriture (P1) : un CODE dans l'URL, un texte relu côté
+  // serveur — jamais le texte d'un paramètre affiché tel quel.
+  const urlRefusee =
+    typeof sp.url_refusee === "string" ? (motifDeRefus(sp.url_refusee) ?? "URL refusée.") : null;
 
   return (
     <div className="animate-fade-up">
@@ -25,9 +30,11 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
         title="Uptime (monitoring synthétique)"
         sub={
           <>
-            Checks HTTP <strong>actifs</strong> exécutés toutes les 5 min (edge function{" "}
-            <code className="chip-mono">uptime</code>) — répond à « le site est-il debout même sans
-            visiteur ? ». Une bascule UP→DOWN déclenche une alerte <code className="chip-mono">critical</code>.
+            Checks HTTP <strong>actifs</strong> exécutés toutes les 5 min par le service{" "}
+            <code className="chip-mono">scheduler</code> — répond à « le site est-il debout même sans
+            visiteur ? ». Un échec est confirmé par un second essai ; une bascule UP→DOWN déclenche
+            une alerte <code className="chip-mono">critical</code>. Seules les URL publiques sont
+            sondées : IP littérales, réseaux privés et noms internes sont refusés.
           </>
         }
       />
@@ -35,6 +42,15 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
       {error && (
         <div className="mb-6 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink">
           Domaine, nom et URL (http/https) requis.
+        </div>
+      )}
+      {urlRefusee && (
+        <div
+          role="alert"
+          data-testid="url-refusee"
+          className="mb-6 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad-ink"
+        >
+          URL non enregistrée — {urlRefusee}
         </div>
       )}
 

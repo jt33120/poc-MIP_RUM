@@ -20,6 +20,7 @@
 // lecture en échec n'efface pas les autres. AUCUNE frontière `<Suspense>` ni
 // `loading.tsx` au-dessus de l'écran (écart F02 : elles cassent `router.replace`).
 import Link from "next/link";
+import { motifDeRefus } from "@mip/backend/lib/net/safe-fetch.mjs";
 import { Figure } from "@/components/charts/Figure";
 import { FriseDeclenchements } from "@/components/charts/FriseDeclenchements";
 import { KpiTile } from "@/components/charts/KpiTile";
@@ -136,6 +137,10 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
 
   const firedRaw = Array.isArray(sp.fired) ? sp.fired[0] : sp.fired;
   const fired = firedRaw != null && /^\d+$/.test(firedRaw) ? Number(firedRaw) : null;
+  // Refus d'une URL sortante à l'écriture (P1) : l'action renvoie un CODE, le
+  // texte est relu ici — jamais le contenu d'un paramètre affiché tel quel.
+  const urlRefuseeRaw = Array.isArray(sp.url_refusee) ? sp.url_refusee[0] : sp.url_refusee;
+  const urlRefusee = urlRefuseeRaw != null ? (motifDeRefus(urlRefuseeRaw) ?? "URL refusée.") : null;
   // « Créer une alerte de pic » depuis une issue : `?issue=<uuid>` préremplit le formulaire.
   const issueRaw = Array.isArray(sp.issue) ? sp.issue[0] : sp.issue;
   const defaultIssue = issueRaw && isAlertMetric(`issue:${issueRaw}`) ? issueRaw : undefined;
@@ -192,6 +197,15 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
           }`}
         >
           check_alerts() exécutée : {formater("count", fired)} alerte(s) déclenchée(s).
+        </div>
+      )}
+      {urlRefusee && (
+        <div
+          role="alert"
+          data-testid="url-refusee"
+          className="mb-6 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-sm font-medium text-bad-ink"
+        >
+          URL de webhook non enregistrée — {urlRefusee}
         </div>
       )}
 
