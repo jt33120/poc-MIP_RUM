@@ -26,12 +26,28 @@
 // période précédente pour une valeur ou une série sans groupe ; une série porte les
 // déploiements de la fenêtre. L'onglet « Distribution » est visible, désactivé avec
 // sa raison (B5).
+//
+// F33 — LE CONTEXTE DU RÉSULTAT (§ 5.21.3 zone 8, W-E2 et W-E7). Sous le résultat,
+// deux lectures de plus disent sur QUOI il porte : le volume de la population seau
+// par seau, et sa répartition selon la dimension de `split`. Elles comptent la MÊME
+// population que la figure principale (`planDeVolume`, `planDeRepartition`) — ce
+// n'est pas `dimensionValues`, qui compte autre chose (CE12). Trois règles :
+//   - elles partent EN MÊME TEMPS que le résultat : un contexte ne le retarde pas ;
+//   - leur budget est plus court (`BUDGET_CONTEXTE_MS`) : si la base est prise, le
+//     contexte renonce le premier et le résultat garde le sien ;
+//   - leur échec est LOCAL (`SectionErreur`, bandeau « Partiel ») : le résultat reste
+//     affiché, et aucune barre à zéro ne remplace ce qui n'a pas été lu.
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { ModelesDepart } from "@/components/explorer/ModelesDepart";
 import { QueryPills } from "@/components/explorer/QueryPills";
 import { ResultatAnalyse, type HrefsResultat, type PrecedentResultat } from "@/components/explorer/ResultatAnalyse";
+// F33 — contexte du résultat (W-E2, W-E7).
+import { RepartitionResultat, VolumeResultat, type LectureContexte, type OngletRepartition } from "@/components/explorer/ContexteResultat";
+import { SectionErreur } from "@/components/states/SectionErreur";
+import { BREAKDOWN_DIMENSIONS, BREAKDOWN_LABELS, BREAKDOWN_NOTICES, BREAKDOWN_PARAM, type BreakdownDimension } from "@/lib/breakdowns";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { CopyBlock } from "@/components/CopyBlock";
@@ -82,6 +98,8 @@ import {
   referencePrecedente,
   representationDemandee,
 } from "@/lib/explorer-page-params";
+// F33 — plans dérivés du contexte et filtre d'une valeur de la répartition.
+import { LIMITE_REPARTITION, filtresDuGroupe, mesureDeVolume, planDeRepartition, planDeVolume } from "@/lib/explorer-page-params";
 import { modelesDeDepart } from "@/lib/explorer-modeles";
 import { exploreAnalytics, type ExplorerMeta, type ExplorerResult } from "@/lib/queries-explorer";
 import { ExplorerBudgetError, UnsupportedExplorerDimension } from "@/lib/analytics-schema";
@@ -96,6 +114,8 @@ import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente } f
 import { lire } from "@/lib/lecture";
 import type { Annotation } from "@/lib/series";
 import { VIEW_CONTEXT_PARAMS, contextHref, gabaritZoom, lireComparaison, lireTri } from "@/lib/view-state";
+// F33 — un `split` que le jeu ne porte pas est ignoré ET dit (§ 3.1).
+import { ligneIgnoree } from "@/lib/view-state";
 import { saveAnalysisAction } from "@/app/dashboards/actions";
 import { saveViewAction } from "./actions";
 
@@ -115,6 +135,41 @@ const ONGLETS: Record<Visualization, string> = LIBELLES_REPRESENTATION;
  */
 const RAISON_DISTRIBUTION =
   "représentation non disponible : la lecture en distribution n'est pas encore exposée par l'Explorer (B5)";
+
+/**
+ * W-E7 — dimension de répartition par défaut (§ 5.21.4) : l'appareil. C'est la seule
+ * dimension que TOUS les jeux portent par la session, et la plus lisible sans
+ * connaître le site ; `split` en choisit une autre.
+ */
+const REPARTITION_DEFAUT: BreakdownDimension = "device";
+
+/**
+ * Budget des lectures de CONTEXTE (W-E2, W-E7), plus court que celui du résultat
+ * (`EXPLORER_TIMEOUT_MS`, 5 s) — délibérément. Un contexte n'est pas la réponse : s'il
+ * ne tient pas dans ce budget, il se tait et le dit, plutôt que de retarder ou de
+ * faire échouer la figure qu'il accompagne.
+ */
+const BUDGET_CONTEXTE_MS = 1_500;
+
+/**
+ * Une lecture de contexte. Le budget dépassé n'est pas une panne mais une RÉPONSE
+ * (« pas lu dans le temps imparti ») : il est converti avant `lire`, pour que la
+ * section propose de réduire la requête au lieu de « Réessayer » ce qui échouera
+ * pareil. Une vraie panne reste une panne — journalisée par `lire`, locale à sa
+ * section.
+ */
+async function lireContexte(lecture: () => Promise<ExplorerResult>): Promise<LectureContexte> {
+  const lu = await lire(async () => {
+    try {
+      return await lecture();
+    } catch (e) {
+      if (e instanceof ExplorerBudgetError) return null;
+      throw e;
+    }
+  });
+  if (!lu.ok) return { etat: "echec" };
+  return lu.data === null ? { etat: "budget" } : { etat: "ok", resultat: lu.data };
+}
 
 /** Tables dont `lib/comparaison.ts` sait lire le début de collecte (sa liste blanche). */
 function sourceDeCollecte(plan: ExplorerPlan) {
@@ -176,6 +231,27 @@ function lienTri(query: AnalyticsQuery, plan: ExplorerPlan, vue: Record<string, 
 }
 
 /**
+ * W-E7 — les onglets de dimension : un lien par dimension que le jeu porte, la
+ * raison écrite pour les autres. Un onglet garde TOUTE la requête (population,
+ * mesure, représentation) et ne change que `split` : c'est un geste de lecture.
+ */
+function ongletsRepartition(
+  query: AnalyticsQuery,
+  plan: ExplorerPlan,
+  dimensions: { dimension: BreakdownDimension; label: string; disponible: boolean; raison: string | null }[],
+  courante: BreakdownDimension | null,
+  vue: Record<string, string | null>,
+): OngletRepartition[] {
+  return dimensions.map((d) => ({
+    dimension: d.dimension,
+    label: d.label,
+    courant: d.dimension === courante,
+    href: d.disponible ? explorerHref(query, plan, { ...vue, [BREAKDOWN_PARAM]: d.dimension }) : null,
+    raison: d.raison,
+  }));
+}
+
+/**
  * Gabarit du zoom sur un seau (§ 3.3) : même analyse, exécutée, sur les bornes UTC
  * du seau ; `period` retiré, réglages de vue conservés (`gabaritZoom`).
  */
@@ -229,8 +305,48 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
     };
   });
 
+  // W-E7 — dimensions de la répartition : les six onglets de découpage, chacun avec
+  // sa disponibilité RÉELLE sur ce jeu (`dimensionSupport`). Une dimension que le jeu
+  // ne porte pas reste proposée, désactivée, avec sa raison écrite.
+  const dimensionsRepartition = BREAKDOWN_DIMENSIONS.map((dimension) => {
+    const support = dimensionSupport(definition.dataset, dimension, schema);
+    return {
+      dimension,
+      label: BREAKDOWN_LABELS[dimension],
+      disponible: support.supported,
+      raison: support.supported ? null : support.message,
+    };
+  });
+  const repartitionPortees = dimensionsRepartition.filter((d) => d.disponible).map((d) => d.dimension);
+  const splitDemande = reader.get(BREAKDOWN_PARAM)?.trim() || null;
+  const splitConnu = BREAKDOWN_DIMENSIONS.find((d) => d === splitDemande) ?? null;
+  const dimensionRepartition: BreakdownDimension | null =
+    splitConnu !== null && repartitionPortees.includes(splitConnu)
+      ? splitConnu
+      : repartitionPortees.includes(REPARTITION_DEFAUT)
+        ? REPARTITION_DEFAUT
+        : (repartitionPortees[0] ?? null);
+  // Un `split` demandé mais non appliqué ne disparaît pas en silence (V10) : il est
+  // ignoré ET dit, comme tout réglage d'affichage illisible.
+  const splitIgnore =
+    splitDemande !== null && splitDemande !== dimensionRepartition
+      ? ligneIgnoree(
+          BREAKDOWN_PARAM,
+          splitDemande,
+          splitConnu === null
+            ? "dimension de découpage inconnue"
+            : (dimensionsRepartition.find((d) => d.dimension === splitConnu)?.raison ??
+              "dimension non portée par ce jeu de données"),
+        )
+      : null;
+
   let resultat: ExplorerResult | null = null;
   let echec: { titre: string; message: string } | null = null;
+  // Zone 8 : plans DÉRIVÉS du contexte, et ce que chaque lecture a donné.
+  let planVolume: ExplorerPlan | null = null;
+  let planRepartition: ExplorerPlan | null = null;
+  let contexteVolume: LectureContexte | null = null;
+  let contexteRepartition: LectureContexte | null = null;
   // CE6 (P14) : une série à plus de cinq groupes n'est pas lancée. Le contrôle du
   // formulaire ne la propose pas ; une URL qui l'impose est refusée, avec sa raison.
   const tropDeSeries = plan.ok && plan.value.visualization === "timeseries" && plan.value.limit > SERIES_MAX;
@@ -240,8 +356,25 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
       message: `Une série temporelle superpose au plus ${SERIES_MAX} groupes : au-delà, les courbes cessent d'être lisibles. Choisir 1, 3 ou ${SERIES_MAX} dans « Nombre maximum », ou la représentation « Classement ».`,
     };
   } else if (demande && plan.ok) {
+    const p = plan.value;
+    // W-E2 : le volume n'est pas affiché sous une série — le résultat dit déjà le
+    // temps, et deux séries d'échelles différentes se liraient l'une pour l'autre.
+    const pourVolume = p.visualization === "timeseries" ? null : planDeVolume(p);
+    const pourRepartition = dimensionRepartition ? planDeRepartition(p, dimensionRepartition) : null;
+    planVolume = pourVolume;
+    planRepartition = pourRepartition;
+    // Les trois lectures PARTENT ensemble : le contexte n'ajoute pas son temps à
+    // celui du résultat, et son budget plus court le fait renoncer le premier.
+    const volumeLu = pourVolume
+      ? lireContexte(() => exploreAnalytics({ query: ecran.query, plan: pourVolume }, { timeoutMs: BUDGET_CONTEXTE_MS }))
+      : null;
+    const repartitionLue = pourRepartition
+      ? lireContexte(() =>
+          exploreAnalytics({ query: ecran.query, plan: pourRepartition }, { timeoutMs: BUDGET_CONTEXTE_MS }),
+        )
+      : null;
     try {
-      resultat = await exploreAnalytics({ query: ecran.query, plan: plan.value });
+      resultat = await exploreAnalytics({ query: ecran.query, plan: p });
     } catch (e) {
       if (e instanceof ExplorerBudgetError) {
         echec = {
@@ -254,6 +387,10 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
         throw e;
       }
     }
+    // Toujours attendues, même quand le résultat a échoué : une promesse laissée
+    // derrière rejetterait hors de tout rendu (`lireContexte` ne lève jamais).
+    contexteVolume = volumeLu ? await volumeLu : null;
+    contexteRepartition = repartitionLue ? await repartitionLue : null;
   }
 
   const mesures = mesuresDe(dataset);
@@ -266,15 +403,24 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
   const limiteCourante = limitePour(vizCourante, plan.ok ? plan.value.limit : null);
 
   // Paramètres de vue qui suivent la navigation (§ 3.1, `cmp`…) : ils ne changent
-  // pas la population, mais un onglet ou une pastille ne doit pas les perdre.
-  const vue: Record<string, string | null> = Object.fromEntries(VIEW_CONTEXT_PARAMS.map((nom) => [nom, reader.get(nom)]));
+  // pas la population, mais un onglet ou une pastille ne doit pas les perdre. `split`
+  // (F33) en fait partie : changer de représentation ou retirer une condition ne doit
+  // pas ramener la répartition à la dimension par défaut.
+  const vue: Record<string, string | null> = {
+    ...Object.fromEntries(VIEW_CONTEXT_PARAMS.map((nom) => [nom, reader.get(nom)])),
+    [BREAKDOWN_PARAM]: splitDemande,
+  };
 
   // Réglages d'affichage (§ 3.1) : comparaison (défaut « aucune » hors Performance)
   // et ordre du classement. Une valeur illisible est ignorée ET dite.
   const comparaison = lireComparaison("/explorer", reader);
   const triLu = lireTri("/explorer", reader);
   const tri = triLu.tri === "volume" ? "volume" : "gravite";
-  const reglagesIgnores = [...comparaison.ignores, ...(triLu.ignore ? [triLu.ignore] : [])];
+  const reglagesIgnores = [
+    ...comparaison.ignores,
+    ...(triLu.ignore ? [triLu.ignore] : []),
+    ...(splitIgnore ? [splitIgnore] : []),
+  ];
 
   // cmp=prev (W-E3, W-E5) : la MÊME analyse relue sur la période précédente, pour une
   // valeur ou une série sans groupe. Un classement ne se compare pas (deux ordres côte
@@ -330,7 +476,56 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
     queryToSearchParams(ecran.query).toString(),
     ...EXPLORER_PARAMS.map((nom) => reader.get(nom) ?? ""),
     ...VIEW_CONTEXT_PARAMS.map((nom) => reader.get(nom) ?? ""),
+    splitDemande ?? "",
   ].join("|");
+
+  // Zone 8 (W-E2, W-E7) : le contexte du résultat, en deux colonnes à partir de
+  // 1024 px (volume 1/3, répartition 2/3) et l'une sous l'autre en dessous. Chaque
+  // figure est derrière sa propre frontière : une panne de contexte ne coûte que le
+  // contexte. (Aucun `<Suspense>` : une frontière au-dessus d'un écran suspend la
+  // navigation par query — écart F02 validé, documenté dans `SectionErreur`.)
+  const contexteResultat =
+    plan.ok && resultat && (planVolume || planRepartition) ? (
+      <div className="mb-6 grid min-w-0 gap-4 lg:grid-cols-3" data-testid="explorer-contexte">
+        {planVolume && contexteVolume && (
+          <div className="min-w-0">
+            <SectionErreur titre="Volume du résultat">
+              <VolumeResultat
+                plan={planVolume}
+                unite={mesureDeVolume(plan.value.dataset)?.unite ?? "lignes"}
+                lecture={contexteVolume}
+                zoomHref={gabaritZoomExplorer(ecran.query, plan.value, sp)}
+              />
+            </SectionErreur>
+          </div>
+        )}
+        {planRepartition && contexteRepartition && dimensionRepartition && (
+          <div className={`min-w-0 ${planVolume ? "lg:col-span-2" : "lg:col-span-3"}`}>
+            <SectionErreur titre={`Répartition par ${BREAKDOWN_LABELS[dimensionRepartition].toLowerCase()}`}>
+              <RepartitionResultat
+                plan={planRepartition}
+                dimensionLabel={BREAKDOWN_LABELS[dimensionRepartition]}
+                unite={mesureDeVolume(plan.value.dataset)?.unite ?? "lignes"}
+                notice={BREAKDOWN_NOTICES[dimensionRepartition]}
+                onglets={ongletsRepartition(ecran.query, plan.value, dimensionsRepartition, dimensionRepartition, vue)}
+                lecture={contexteRepartition}
+                lienValeur={(valeur) =>
+                  explorerHref(
+                    {
+                      ...ecran.query,
+                      filters: filtresDuGroupe(ecran.query.filters, [dimensionRepartition], [valeur]),
+                    },
+                    plan.value,
+                    { ...vue, [BREAKDOWN_PARAM]: dimensionRepartition },
+                  )
+                }
+                limite={LIMITE_REPARTITION}
+              />
+            </SectionErreur>
+          </div>
+        )}
+      </div>
+    ) : null;
 
   return (
     <div data-testid="explorer-racine" className="animate-fade-up">
@@ -615,6 +810,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
           contexte={queryToSearchParams(ecran.query).toString()}
           appDemandee={app}
           query={ecran.query}
+          contexteResultat={contexteResultat}
         />
       )}
     </div>
@@ -633,6 +829,7 @@ function Resultat({
   contexte,
   appDemandee,
   query,
+  contexteResultat,
 }: {
   plan: ExplorerPlan;
   resultat: ExplorerResult;
@@ -648,6 +845,8 @@ function Resultat({
   contexte: string;
   appDemandee: string | null;
   query: AnalyticsQuery;
+  /** Zone 8 : volume et répartition (W-E2, W-E7), déjà lus par la page. */
+  contexteResultat: ReactNode;
 }) {
   const { meta, data } = resultat;
   const definition = datasetDefinition(plan.dataset);
@@ -673,6 +872,9 @@ function Resultat({
         taille="page"
         tri={tri}
       />
+
+      {/* Zone 8 : sur quoi ce résultat porte — volume de la population et répartition. */}
+      {contexteResultat}
 
       <section className="card mt-6 p-4">
         <h2 className="text-sm font-semibold text-ink">Enregistrer cette analyse</h2>

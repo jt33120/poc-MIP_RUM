@@ -13,13 +13,16 @@ export function ChannelsSection({
   channels,
   apps,
   defaultApp,
+  admin = false,
 }: {
   channels: { id: number; app_id: string | null; kind: string; target: string; severity_min: string; active: boolean }[];
   apps: { app_id: string; name: string }[];
   defaultApp?: string;
+  /** V9 : sans droit d'écriture, ni formulaire ni bouton dans le DOM (F64). */
+  admin?: boolean;
 }) {
   return (
-    <div className="mt-10">
+    <div className="mt-10" id="canaux">
       <h2 className="mb-1 text-base font-bold tracking-tight">Canaux de notification</h2>
       <p className="mb-3 text-sm text-ink-soft">
         Routent les alertes (en plus du webhook de la règle) vers N destinations, filtrées par
@@ -29,6 +32,7 @@ export function ChannelsSection({
         qu&apos;elle part).
       </p>
 
+      {admin && (
       <details className="card mb-6" open={!channels.length}>
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-soft transition hover:text-ink">
           + Nouveau canal
@@ -78,6 +82,7 @@ export function ChannelsSection({
           </button>
         </form>
       </details>
+      )}
 
       <div className="flex flex-col gap-3">
         {channels.map((c) => (
@@ -107,6 +112,7 @@ export function ChannelsSection({
                 {c.active ? "actif" : "désactivé"}
               </span>
             )}
+            {admin && (
             <div className="ml-auto flex gap-2">
               <form action={toggleChannelAction}>
                 <input type="hidden" name="id" value={c.id} />
@@ -131,11 +137,14 @@ export function ChannelsSection({
                 </button>
               </form>
             </div>
+            )}
           </div>
         ))}
         {!channels.length && (
           <p className="py-4 text-center text-sm text-ink-faint">
-            Aucun canal — ajoute-en un ci-dessus pour router les alertes.
+            {admin
+              ? "Aucun canal — ajoute-en un ci-dessus pour router les alertes."
+              : "Aucun canal de notification : aucune alerte n'est routée. Demandez à un administrateur d'en ajouter un."}
           </p>
         )}
       </div>

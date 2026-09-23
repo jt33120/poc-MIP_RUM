@@ -93,7 +93,11 @@ export function DetailPanel({
   children,
 }: {
   type: TypePanneau;
-  titre: string;
+  /**
+   * Texte du titre, ou son rendu : une route s'écrit en `chip-mono` (§ 5.2.3, F17).
+   * Le contenu reste du TEXTE — c'est lui qu'`aria-labelledby` annonce.
+   */
+  titre: ReactNode;
   puces?: PuceDetail[];
   fermerHref: string;
   /** « Ouvrir en page ». */

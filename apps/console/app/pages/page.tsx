@@ -12,6 +12,10 @@
 // navigation (combien de vues d'une route n'ont PAS de LCP) ; phases du TTFB en
 // barres séparées, jamais empilées. Et le sommaire d'ancres d'une page longue.
 //
+// F17 : le panneau route (`panel=route:<r>`, § 5.2.3). Une ligne du hero ne filtre
+// plus l'écran — elle OUVRE la route à côté du classement, qui reste lisible ;
+// « Ouvrir en page » (dans le panneau) garde le drill-down d'avant.
+//
 // PAS DE `<Suspense>` AUTOUR DE L'ÉCRAN, ni de `loading.tsx` (F02) : une frontière
 // au-dessus de la page bloque les navigations qui ne changent que la query
 // (sélecteur de vital, période, comparaison). Les frontières restent par section.
@@ -27,6 +31,7 @@ import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { SelecteurVital } from "@/components/perf/SelecteurVital";
+import { RoutePanel } from "@/components/perf/RoutePanel";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
@@ -89,7 +94,7 @@ import { comparaisonVersions, listDeploys } from "@/lib/queries-deploys";
 import { longtaskSeries, worstLongtasks } from "@/lib/queries-longtasks";
 import { resourcesVue } from "@/lib/queries-resources";
 import { ecartP75, mesuresMinimales } from "@/lib/stats/incertitude";
-import { ecrireVue, gabaritZoom, lireComparaison, lireEtatDeVue, lireTri } from "@/lib/view-state";
+import { ecrirePanel, ecrireVue, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue, lireTri } from "@/lib/view-state";
 import { annotationsDeploiements, type AnnotationsDeploiements } from "@/lib/annotations";
 
 export const dynamic = "force-dynamic";
@@ -146,7 +151,14 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
   // illisible est ignoré et SIGNALÉ ; la comparaison l'est déjà par la barre de filtres.
   const etatVue = lireEtatDeVue("/pages", lecteur);
   const comparaison = lireComparaison("/pages", lecteur);
-  const ignores = etatVue.ignores.filter((ligne) => !comparaison.ignores.includes(ligne));
+  const ignores = [
+    ...etatVue.ignores.filter((ligne) => !comparaison.ignores.includes(ligne)),
+    // Cet écran n'ouvre qu'un panneau de route (F17) : un autre type est ignoré et DIT,
+    // jamais avalé en silence (§ 3.1).
+    ...(etatVue.etat.panel && etatVue.etat.panel.type !== "route"
+      ? [ligneIgnoree("panel", ecrirePanel(etatVue.etat.panel), "cet écran n'ouvre que le panneau d'une route")]
+      : []),
+  ];
   const vital: VitalName = etatVue.etat.vital && estVital(etatVue.etat.vital) ? etatVue.etat.vital : "LCP";
   const tri = lireTri("/pages", lecteur).tri === "volume" ? "volume" : "gravite";
   const classement = classementParRoute(vital);
@@ -302,6 +314,25 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
     const texte = p.toString();
     return texte ? `${chemin}?${texte}` : chemin;
   };
+  /**
+   * F17 — une ligne de route OUVRE son panneau (§ 5.2.2, § 5.2.3) au lieu de filtrer
+   * l'écran : le classement reste à gauche, et « Ouvrir en page » (dans le panneau)
+   * refait le drill-down. « Inconnu » (route nulle) n'a pas de panneau — `panel=route:`
+   * porte une valeur — : il garde le drill-down `is_null`.
+   */
+  const panneauRoute = (route: string | null) =>
+    route === null ? drillRoute(null) : hrefCourant({ panel: ecrirePanel({ type: "route", id: route }) });
+  /**
+   * Réglages de vue de l'écran (§ 3.1) : ils ne sont pas portés par la requête du
+   * contrat, et « Fermer » doit rendre l'écran tel qu'il était (même vital, même
+   * tri, même comparaison). Écart assumé au § 5.2.3, qui fixe une signature à
+   * quatre props pour `RoutePanel`.
+   */
+  const reglagesVue: Record<string, string | null> = Object.fromEntries(
+    ["vital", "cmp", "rel_a", "rel_b", "tri", "vue"].map((nom) => [nom, lecteur.get(nom) ?? null]),
+  );
+  /** Panneau demandé : seul `panel=route:<r>` est lu par cet écran. */
+  const panneau = etatVue.etat.panel?.type === "route" ? etatVue.etat.panel.id : null;
 
   // Annotations de déploiement (§ 3.7, P9) sur les deux panneaux des tâches longues :
   // un marqueur ouvre la comparaison de sa version à la précédente, sur cet écran.
@@ -499,7 +530,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
               plage={period.label}
               routesLues={routes.ok}
               ressourcesLues={ressourcesRoutes.ok}
-              drill={drillRoute}
+              drill={panneauRoute}
             />
           )}
         </div>
@@ -606,6 +637,15 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
           )}
         </SectionErreur>
       </div>
+
+      {/* Panneau route (F17, § 5.2.3) : ouvert par l'URL, il lit ses propres blocs.
+          Rendu APRÈS l'écran pour que l'ordre de tabulation aille de la liste au
+          panneau ; il se place lui-même (`fixed`). */}
+      {panneau !== null && (
+        <SectionErreur titre={`Route ${panneau}`}>
+          <RoutePanel route={panneau} f={f} query={ecran.query} vital={vital} reglages={reglagesVue} />
+        </SectionErreur>
+      )}
     </div>
   );
 }

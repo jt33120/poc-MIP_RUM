@@ -373,3 +373,74 @@ describe("F58 — bandeau de fraîcheur (CR1, CR6)", () => {
     expect(dernierPassage([{ dernier: null }])).toBeNull();
   });
 });
+
+// ── P*.8 — concordance quotidienne robot ↔ réel (B61) ────────────────────────
+import { concordanceAbsente, concordanceParCouple } from "../../apps/console/lib/correlation";
+import { correlationQuotidienne, type CorrJourRow } from "../../apps/console/lib/queries-v2";
+
+describe("P*.8 — correlationQuotidienne et concordanceParCouple", () => {
+  const JOUR_MS = 86_400_000;
+  const jourP8 = (n: number): Date => new Date(Date.UTC(2026, 0, 1) + n * JOUR_MS);
+
+  /** `n` jours d'un couple, robot et réel qui montent ensemble. */
+  const lignesP8 = (app: string, route: string, n: number, mesures = 40): CorrJourRow[] =>
+    Array.from({ length: n }, (_, i) => ({
+      app_id: app,
+      route,
+      jour: jourP8(i),
+      syn_latency_avg: 800 + i * 10,
+      rum_lcp_p75: 2000 + i * 25,
+      rum_lcp_n: mesures,
+    }));
+
+  it("seau QUOTIDIEN (86 400 s), route obligatoire, et périmètre du contexte", async () => {
+    q.mockResolvedValueOnce([]);
+    await correlationQuotidienne(null, null, F);
+    const [sql, params] = q.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("interval '86400 seconds'");
+    expect(sql).not.toContain("interval '3600 seconds'");
+    expect(sql).toContain("where route is not null");
+    expect(sql).toContain("full outer join");
+    // Aucun couple demandé : aucun paramètre d'app ni de route en plus du périmètre.
+    expect(sql).not.toMatch(/and app_id = \$/);
+    unContexteParRequete(sql, params);
+  });
+
+  it("un couple demandé : app ET route liés en paramètres, des deux côtés de la jointure", async () => {
+    q.mockResolvedValueOnce([]);
+    await correlationQuotidienne("app-a", "/partners/:id", F);
+    const [sql, params] = q.mock.calls[0] as [string, unknown[]];
+    expect(lie(sql, params, /and app_id = /)).toBe("app-a");
+    expect(lie(sql, params, /and route = /)).toBe("/partners/:id");
+    // Les deux sous-requêtes (rum et syn) portent le même filtre.
+    expect([...sql.matchAll(/and app_id = \$\d+ and route = \$\d+/g)]).toHaveLength(2);
+    unContexteParRequete(sql, params);
+  });
+
+  it("un ρ par couple : deux apps ayant /checkout ne sont jamais mélangées (V7)", () => {
+    const rhos = concordanceParCouple([...lignesP8("a", "/checkout", 12), ...lignesP8("b", "/checkout", 11)]);
+    expect([...rhos.keys()].sort()).toEqual(["a:%2Fcheckout", "b:%2Fcheckout"]);
+    const a = rhos.get("a:%2Fcheckout")!;
+    expect(a.ok && a.n).toBe(12);
+    expect(a.ok && a.issue).toBe("suit");
+    expect(rhos.get("b:%2Fcheckout")!.ok).toBe(true);
+  });
+
+  it("les jours incomplets ne comptent pas : le refus dit combien il en reste", () => {
+    const lignes = lignesP8("a", "/lent", 12);
+    lignes[0].syn_latency_avg = null; // aucun passage du robot ce jour-là
+    lignes[1].rum_lcp_n = 12; // sous le minimum de la p75
+    lignes[2].rum_lcp_p75 = null; // aucune mesure réelle
+    const res = concordanceParCouple(lignes).get("a:%2Flent")!;
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.raison).toBe("9 jours communs, 10 requis");
+  });
+
+  it("un couple sans aucun jour lu refuse en chiffrant, jamais une case vide", () => {
+    const res = concordanceAbsente();
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.manque).toEqual({ requis: 10, observe: 0, unite: "jours communs" });
+  });
+});

@@ -12,8 +12,12 @@
 // dans l'anneau à trois parts) et `ObservedTrend`, courbe sans axe, remplacée par
 // deux `ThresholdSeries` sur grille, datées, zoomables.
 //
-// La table dense, le hero « À regarder d'abord » alimenté et le panneau de session
-// viennent avec F42 et F43 : la liste de cartes reste en place jusque-là.
+// F42 pose la table dense « Toutes les sessions » (cartes de trois lignes à
+// 390 px), les filtres rapides et le hero « À regarder d'abord ». Le CLASSEMENT du
+// hero attend B30 (§ 6.3) : tant qu'il manque, le hero dit sa raison et ne classe
+// rien — trier les 50 lignes de la page courante donnerait « les plus graves »
+// d'un échantillon arbitraire, pas de la fenêtre (§ 5.11.6). Le panneau de session
+// (`panel=session:<id>`) vient avec F43 : d'ici là, une ligne mène à sa page.
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
@@ -23,8 +27,6 @@ import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { INPUT_CLASS } from "@/components/forms/Field";
-import { browserFromUA, fmtDate } from "@/lib/format";
-import { geoSourceLabel } from "@/lib/geo";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
@@ -87,7 +89,15 @@ import { CATEGORIELLE } from "@/lib/palette";
 import { alignerSeaux, grilleIso, libelleSeauComplet } from "@/lib/series";
 import { annotationsDeploiements } from "@/lib/annotations";
 import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
-import { VIEW_CONTEXT_PARAMS, contextHref, gabaritZoom, lireComparaison } from "@/lib/view-state";
+import { AVEC_SESSIONS, VIEW_CONTEXT_PARAMS, contextHref, gabaritZoom, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
+import {
+  ANCRE_TOUTES_SESSIONS,
+  PrioriteSessions,
+  alternativePriorite,
+  type HrefsPriorite,
+} from "@/components/sessions/PrioriteSessions";
+import { SessionsTable } from "@/components/sessions/SessionsTable";
+import { RAISON_PRIORITE, SIGNAUX_A_CREER, type SessionPrioritaire } from "@/lib/sessions-priorite";
 import {
   DIMENSIONS_REPARTITION,
   LIBELLES_REPARTITION,
@@ -124,8 +134,25 @@ const SOURCE_ERREURS: SourceComparaison = { table: "rum_error", colonneTemps: "t
 /** Sous ce nombre de sessions, un delta se tait : le seuil d'engagement du domaine (S6, `lib/engagement.ts`). */
 const FAIBLE_SOUS = ENGAGEMENT_MIN_SESSIONS;
 
-/** Texte du hero avant B30 (§ 5.11.4) : trier les 50 lignes de la liste produirait un faux classement. */
-const RAISON_PRIORITE = "classement indisponible : lecture à créer (B30)";
+/** Libellés des filtres rapides de la liste (§ 5.11.4) ; leur lecture est B30. */
+const LIBELLES_AVEC: Record<(typeof AVEC_SESSIONS)[number], string> = {
+  erreurs: "Avec erreurs",
+  frustration: "Avec frustration",
+  rejeu: "Avec rejeu",
+};
+
+/**
+ * Hero « À regarder d'abord ». B30 (§ 6.3, `sessionsAPrioriser`) n'est pas livré :
+ * cette fonction rend l'ABSENCE DE LECTURE. Le jour où B30 arrive, seul son corps
+ * change — la figure, son alternative et ses liens sont déjà écrits en face.
+ */
+type LecturePriorite =
+  | { lignes: SessionPrioritaire[]; hrefs: Record<string, HrefsPriorite> }
+  | { raison: string };
+
+function lirePriorite(): LecturePriorite {
+  return { raison: RAISON_PRIORITE };
+}
 
 const NOTICE_CAPTEUR =
   "Capteur de la session : le SDK intégré au site, ou l'extension navigateur (même capteur, posé par l'extension sur des postes gérés).";
@@ -308,6 +335,14 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
   const lignes = rows.ok ? rows.data : [];
   const page = lignes.slice(0, SESSION_PAGE_SIZE);
   const suivante = lignes.length > SESSION_PAGE_SIZE ? page[page.length - 1] : null;
+  // Hero : classement de la FENÊTRE, lu à part de la liste (B30). Aujourd'hui, son
+  // absence motivée — et aucune ligne dessinée.
+  const priorite = lirePriorite();
+  // Filtres rapides : `avec` est déjà un paramètre d'écran (F06) ; sa LECTURE
+  // (option `avec` de `listSessions`) est B30. Tant qu'elle manque, les bascules
+  // sont désactivées avec leur raison et une URL qui porte `avec` est déclarée NON
+  // APPLIQUÉE (V10) — jamais ignorée en silence, jamais appliquée à moitié.
+  const avecDemande = lireEtatDeVue("/sessions", url).etat.avec;
   const rechercheParams = recherche
     ? { [SESSION_SEARCH_FIELD_PARAM]: recherche.field, [SESSION_SEARCH_PARAM]: recherche.value }
     : {};
@@ -418,8 +453,37 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
           {blocs.priorite && (
             <div className={`min-w-0 ${blocs.repartition ? "xl:col-span-8" : "xl:col-span-12"}`}>
               {/* Avant B30, le hero le dit, et rien d'autre : trier les 50 lignes de la
-                  liste produirait un faux classement de la fenêtre (F42 l'alimente). */}
-              <Figure titre="À regarder d'abord" id="a-regarder-d-abord" etat={{ kind: "partiel", raison: RAISON_PRIORITE }} />
+                  liste produirait un faux classement de la fenêtre (§ 5.11.6). */}
+              <Figure
+                titre="À regarder d'abord"
+                id="a-regarder-d-abord"
+                etat={"raison" in priorite ? { kind: "partiel", raison: priorite.raison } : undefined}
+                meta={
+                  "raison" in priorite ? undefined : (
+                    <>
+                      <span>{formater("count", priorite.lignes.length)} session(s) sur 10 au plus</span>
+                      <span>sessions actives (dernière activité dans la fenêtre)</span>
+                      <span>{ecran.label}</span>
+                    </>
+                  )
+                }
+                lecture={
+                  // Décrire l'ordre d'un classement absent le ferait croire rendu :
+                  // sans lecture, la figure ne dit que ce qui lui manque.
+                  "raison" in priorite ? undefined : (
+                    <>
+                      Ordre : occurrences d&apos;erreur, puis signaux de frustration, puis appels API en échec, puis
+                      dernière activité. <strong>Ce n&apos;est pas un tri de la liste</strong> : la liste reste
+                      chronologique, et ce classement porte sur la fenêtre entière, borné à dix lignes.
+                    </>
+                  )
+                }
+                alternative={"raison" in priorite ? undefined : alternativePriorite(priorite.lignes, ecran.label)}
+              >
+                {"raison" in priorite ? null : (
+                  <PrioriteSessions lignes={priorite.lignes} hrefs={priorite.hrefs} plage={ecran.label} />
+                )}
+              </Figure>
             </div>
           )}
           {blocs.repartition && (
@@ -660,96 +724,63 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
       {!refus && !rows.ok && <EchecLecture titre="Liste des sessions" />}
       {!refus && rows.ok && (
         <SectionErreur titre="Liste des sessions">
-        <div className="flex flex-col gap-3">
-          {page.map((s) => (
-            <div key={s.session_id} className="card p-4 transition hover:shadow-pop">
-              <div className="flex flex-wrap items-center gap-3 text-sm">
-                <Link
-                  href={hrefWithQuery(`/sessions/${encodeURIComponent(s.session_id)}`, query)}
-                  className="rounded font-mono text-xs font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
-                  data-testid="session-link"
+          <section id={ANCRE_TOUTES_SESSIONS} className="card min-w-0 scroll-mt-20 p-4" aria-labelledby="toutes-les-sessions-titre">
+            <h2 id="toutes-les-sessions-titre" className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+              Toutes les sessions
+            </h2>
+            {/* Filtres rapides : ils restreindront LA LISTE SEULE, jamais les tuiles.
+                Désactivés tant que leur lecture manque — une bascule qui ne filtre
+                rien est pire qu'une bascule qui dit pourquoi elle ne peut pas. */}
+            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2" role="group" aria-label="Filtres rapides de la liste" data-testid="filtres-rapides">
+              {AVEC_SESSIONS.map((cle) => (
+                <button
+                  key={cle}
+                  type="button"
+                  disabled
+                  data-testid={`filtre-${cle}`}
+                  data-applied="false"
+                  title={SIGNAUX_A_CREER}
+                  className="max-w-full rounded-full border border-warn/40 bg-warn/10 px-2 py-0.5 text-xs font-medium text-ink-soft"
                 >
-                  {s.session_id.slice(0, 8)}…
-                </Link>
-                <Badge>{s.device_type ?? "?"}</Badge>
-                <Badge>{browserFromUA(s.user_agent)}</Badge>
-                {/* P8.7 : le badge porte sa provenance en alternative textuelle
-                    ET en infobulle — un lecteur d'écran l'entend, une souris la
-                    voit, et personne ne lit un pays comme une position. */}
-                {s.geo_country && (
-                  <Badge>
-                    <span title={`Pays estimé · ${geoSourceLabel(s.geo_source)}`}>
-                      {s.geo_country}
-                      <span className="sr-only"> — pays estimé, provenance : {geoSourceLabel(s.geo_source)}</span>
-                    </span>
-                  </Badge>
-                )}
-                {s.collection_source === "extension" && (
-                  <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent-ink">
-                    extension
-                  </span>
-                )}
-                <span className="text-ink-soft">{s.page_count} page(s)</span>
-                {s.err_count > 0 && (
-                  <span className="rounded-full border border-bad/30 bg-bad/10 px-2 py-0.5 text-xs font-medium text-bad-ink">
-                    {s.err_count} erreur(s)
-                  </span>
-                )}
-                <span className="ml-auto text-xs tabular-nums text-ink-faint">
-                  {fmtDate(s.started_at)} → {fmtDate(s.last_seen_at)}
-                </span>
-              </div>
-              {/* Parcours utilisateur : la lecture « analytics produit » de la session.
-                  Chaque route ouvre `/pages` filtré sur elle — cet écran compte des
-                  sessions, qui ne portent pas de route. */}
-              {s.routes?.length ? (
-                <div className="mt-2.5 flex flex-wrap items-center gap-1 font-mono text-xs text-ink-soft">
-                  {s.routes.map((r, i) => (
-                    <span key={i}>
-                      {i > 0 && <span className="mx-1 text-accent/70">→</span>}
-                      <Link
-                        href={breakdownDrillHref("/sessions", query, "route", r, schema)}
-                        aria-label={`Route ${r} — ouvrir les mesures de cette route`}
-                        className="chip-mono rounded hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
-                      >
-                        {r}
-                      </Link>
-                    </span>
-                  ))}
-                </div>
-              ) : null}
+                  <span className="block truncate">{LIBELLES_AVEC[cle]}</span>
+                </button>
+              ))}
+              <span className="min-w-0 text-xs text-ink-faint">
+                Ces bascules ne restreindront que cette liste, jamais les tuiles — {SIGNAUX_A_CREER}.
+              </span>
             </div>
-          ))}
-          {!page.length && (
-            <p className="py-8 text-center text-ink-faint">
-              {recherche
-                ? `Aucune session ne correspond à cette recherche sur ${ecran.label}`
-                : `Aucune session sur ${ecran.label}`}
-            </p>
-          )}
-        </div>
+            {avecDemande !== null && (
+              <p role="note" data-testid="avec-non-applique" className="mt-2 text-xs text-ink-soft">
+                Filtre rapide « {LIBELLES_AVEC[avecDemande]} » NON APPLIQUÉ : {SIGNAUX_A_CREER}. La liste ci-dessous
+                porte donc sur toutes les sessions de la fenêtre.
+              </p>
+            )}
+            <div className="mt-3">
+              <SessionsTable
+                lignes={page.map((s) => ({ ...s, frustration: null, rejeu: null }))}
+                // F43 ouvrira `panel=session:<id>` : d'ici là, aucune entrée, et la
+                // ligne mène à la page de session (un lien qui n'ouvre rien serait pire).
+                panelHrefs={{}}
+                pageHrefs={Object.fromEntries(
+                  page.map((s) => [s.session_id, hrefWithQuery(`/sessions/${encodeURIComponent(s.session_id)}`, query)]),
+                )}
+                routeHrefs={Object.fromEntries(
+                  [...new Set(page.flatMap((s) => s.routes ?? []))].map((r) => [
+                    r,
+                    breakdownDrillHref("/sessions", query, "route", r, schema),
+                  ]),
+                )}
+                suivantHref={suivante ? lienPage(encodeSessionCursor(suivante)) : null}
+                debutHref={curseur ? lienPage(null) : null}
+                vide={
+                  recherche
+                    ? `Aucune session ne correspond à cette recherche sur ${ecran.label}`
+                    : `Aucune session sur ${ecran.label}`
+                }
+              />
+            </div>
+          </section>
         </SectionErreur>
-      )}
-
-      {!refus && rows.ok && (page.length > 0 || curseur) && (curseur || suivante) && (
-        <nav className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm" aria-label="Pagination des sessions">
-          <span className="text-xs text-ink-faint">
-            {page.length.toLocaleString("fr-FR")} session(s) affichée(s) · pagination par clé stable
-            (dernière vue, identifiant) : aucune ligne n&apos;est répétée ni sautée entre deux pages.
-          </span>
-          <span className="flex gap-4">
-            {curseur && (
-              <Link href={lienPage(null)} className="text-brand hover:underline">
-                Retour au début
-              </Link>
-            )}
-            {suivante && (
-              <Link href={lienPage(encodeSessionCursor(suivante))} className="text-brand hover:underline">
-                Sessions suivantes
-              </Link>
-            )}
-          </span>
-        </nav>
       )}
       </>
       )}
@@ -960,10 +991,3 @@ function AnneauVisiteurs({ lu, plage }: { lu: Lecture<VisitStats | null>; plage:
   );
 }
 
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-full border border-line bg-panel2 px-2 py-0.5 text-xs text-ink-soft">
-      {children}
-    </span>
-  );
-}

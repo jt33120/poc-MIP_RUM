@@ -11,6 +11,11 @@
 //     ressentie) ;
 //   - les tables listent ce qu'on ouvre ligne par ligne.
 //
+// P*.8 AJOUTE LA SEULE COMPARAISON QUI RESTE HONNÊTE : une corrélation de RANG
+// (Spearman) entre les deux séries QUOTIDIENNES, avec son intervalle et son refus
+// chiffré sous 10 jours communs. Elle répond à « le robot suit-il le réel dans le
+// temps ? » sans jamais soustraire une latence de sonde à un LCP de visiteur.
+//
 // SI LE ROBOT S'EST ARRÊTÉ, « robot ok » ne veut plus rien dire : le bandeau de
 // fraîcheur passe avant tout chiffre, et sans aucun passage les zones robot sont
 // remplacées par « Non collecté ».
@@ -34,6 +39,7 @@ import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import Link from "next/link";
 import { annotationsDeploiements } from "@/lib/annotations";
+import { annotationsAlertes, fusionnerAnnotations, raisonsAnnotations } from "@/lib/annotations";
 import { getUser } from "@/lib/auth";
 import { couverturePrecedente } from "@/lib/comparaison";
 import {
@@ -52,6 +58,9 @@ import {
   trierRoutes,
   trierSansRobot,
 } from "@/lib/correlation";
+// P*.8 — concordance robot ↔ réel, mesurée sur les jours communs.
+import { concordanceAbsente, concordanceParCouple, type ResultatConcordance } from "@/lib/correlation";
+import { LIBELLE_ISSUE, MENTION_RHO, phraseConcordance, regleConcordance, texteConcordanceCourt } from "@/lib/stats/concordance";
 import { ecrireSerie, libelleSerie, lireSerie, serieParDefaut } from "@/lib/correlation-serie";
 import { explorerHref } from "@/lib/explorer-page-params";
 import type { SearchParams } from "@/lib/filters";
@@ -63,9 +72,11 @@ import { RATING_HEX } from "@/lib/palette";
 import { hrefWithQuery, paramReader, previousRange, queryToSearchParams, rangeLabel } from "@/lib/query-contract";
 import { listDeploys } from "@/lib/queries-deploys";
 import {
+  alertEvents,
   blindSpots,
   correlationCards,
   correlationConcordance,
+  correlationQuotidienne,
   correlationRoutes,
   correlationSeries,
   EFFECTIF_MIN_HEURE,
@@ -112,7 +123,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
   const lienPages = (app: string, route: string, extra: Record<string, string | null> = {}) =>
     hrefWithQuery("/pages", query, { app, route, panel: ecrirePanel({ type: "route", id: route }), ...extra });
 
-  const [utilisateur, cartes, couples, concordance, concordancePrec, couverturePrec, spots, fraicheurs, deploys] =
+  const [utilisateur, cartes, couples, concordance, concordancePrec, couverturePrec, spots, fraicheurs, deploys, alertes, quotidien] =
     await Promise.all([
       getUser(),
       lire(() => correlationCards(f)),
@@ -125,7 +136,29 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
       lire(() => blindSpots(f)),
       lire(() => syntheticFreshness(f)),
       lire(() => listDeploys(f, 20)),
+      // Annotations d'alerte (F67) : les 100 derniers déclenchements du périmètre ;
+      // la fenêtre et le couple app × route sont appliqués par `annotationsAlertes`.
+      lire(() => alertEvents(f)),
+      // P*.8 : une seule lecture quotidienne pour TOUS les couples (≤ 30 jours par
+      // couple, plage bornée par le contrat) ; le ρ de chaque route s'en déduit.
+      lire(() => correlationQuotidienne(null, null, f)),
     ]);
+
+  // ── Concordance robot ↔ réel (P*.8) ───────────────────────────────────────────
+  // Corrélation de RANG entre le premier chargement du robot et le LCP p75 réel,
+  // jour par jour : elle dit si les deux montent et descendent ensemble, jamais si
+  // leurs valeurs sont égales. Sous 10 jours communs, refus chiffré ; lecture en
+  // échec, la raison — jamais une case vide ni un « 0 ».
+  const concordances = quotidien.ok ? concordanceParCouple(quotidien.data) : null;
+  const rhoDuCouple = (cle: string | null): ResultatConcordance | null =>
+    concordances === null ? null : cle === null ? concordanceAbsente() : (concordances.get(cle) ?? concordanceAbsente());
+  const celluleRho = (cle: string) => {
+    const res = rhoDuCouple(cle);
+    if (res === null) return { texte: "Concordance non lue : lecture quotidienne en échec", issue: null, jours: null };
+    return res.ok
+      ? { texte: texteConcordanceCourt(res), issue: LIBELLE_ISSUE[res.issue], jours: res.n }
+      : { texte: texteConcordanceCourt(res), issue: null, jours: null };
+  };
 
   // ── Robot présent ? ───────────────────────────────────────────────────────────
   // Sans AUCUN passage sur le périmètre, les zones robot deviennent « Non collecté »
@@ -145,6 +178,12 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
     serieParDefaut(options, { route: query.filters.route ?? null, anglesMorts: anglesMortsParRoute });
   const serieChoisie = choisi ? ecrireSerie(choisi.app_id, choisi.route) : null;
   const libelleChoisi = choisi ? libelleSerie(choisi, options) : null;
+  // La phrase du hero (P*.8) : « Sur 12 jours communs, le robot et le réel évoluent
+  // ensemble (ρ de Spearman = 0,71, entre 0,21 et 0,92). ρ mesure si les deux montent
+  // et descendent ensemble, pas si leurs valeurs sont égales. »
+  const rhoHero = rhoDuCouple(serieChoisie);
+  const phraseConcordanceHero =
+    rhoHero === null ? "Concordance non lue : lecture quotidienne en échec." : phraseConcordance(rhoHero);
 
   const { starts, grille, tronque } = grilleHoraire(query.range);
   const grillePrec = prev ? grilleHoraire(rangePrec) : null;
@@ -183,6 +222,28 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
   const annotations = annotationsDeploiements(deploys.ok ? deploys.data : [], query.range, {
     lien: (relB, relA) => lienEcran({ cmp: "release", rel_b: relB, rel_a: relA }),
   });
+  // Déclenchements d'alerte du couple app × route du hero (F67, § 3.7) : chaque
+  // trait mène à SON événement sur `/alerts` (`evt`, § 3.1), jamais à `fired=`.
+  const lienAlertes = hrefWithQuery("/alerts", query);
+  const alertesHero = annotationsAlertes(alertes.ok ? alertes.data : [], query.range, {
+    lien: (id) => `${hrefWithQuery("/alerts", query, { evt: String(id) })}#evt-${id}`,
+    lienListe: lienAlertes,
+    app: choisi?.app_id ?? null,
+    route: choisi?.route ?? null,
+  });
+  const familles = [
+    { ...annotations, lienListe: undefined },
+    { ...alertesHero, lienListe: lienAlertes },
+  ];
+  const annotationsHero = fusionnerAnnotations(familles);
+  const raisonFamilles = raisonsAnnotations(familles);
+  // Une lecture en échec n'est pas « aucune annotation » : la figure la nomme.
+  const annotationsAbsentes =
+    [
+      ...(deploys.ok ? [] : ["lecture des déploiements en échec"]),
+      ...(alertes.ok ? [] : ["lecture des alertes en échec"]),
+      ...(raisonFamilles ? [raisonFamilles] : []),
+    ].join(" ; ") || undefined;
 
   // ── KPI ───────────────────────────────────────────────────────────────────────
   const heuresAM = concordance.ok ? heuresAngleMort(concordance.data.cellules) : null;
@@ -239,6 +300,10 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
         reel: c.rum_lcp_n != null || c.rum_sessions != null,
         hrefHero: estOption(c.app_id, c.route) ? `${lienEcran({ serie: ecrireSerie(c.app_id, c.route!) })}#hero` : null,
         hrefPages: c.route !== null ? lienPages(c.app_id, c.route) : null,
+        concordance:
+          c.route !== null
+            ? celluleRho(ecrireSerie(c.app_id, c.route))
+            : { texte: "Concordance non calculée : route inconnue", issue: null, jours: null },
       }))
     : [];
   const sansRobot = cartes.ok ? trierSansRobot(cartes.data, EFFECTIF_MIN_HEURE) : [];
@@ -361,6 +426,12 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                       <span>{plage}</span>
                     </>
                   }
+                  lecture={
+                    <span data-testid="concordance-hero">
+                      {phraseConcordanceHero}{" "}
+                      <span className="text-ink-soft">{regleConcordance()}</span>
+                    </span>
+                  }
                   etat={
                     !couples.ok
                       ? { kind: "erreur", titre: "Robot face au réel" }
@@ -445,8 +516,8 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                     faibleSous={EFFECTIF_MIN_HEURE}
                     seauSecondes={3600}
                     fuseau="UTC"
-                    annotations={annotations.annotations}
-                    annotationsIndisponibles={annotations.indisponible ?? undefined}
+                    annotations={annotationsHero}
+                    annotationsIndisponibles={annotationsAbsentes}
                     zoomHref={zoomHref}
                     hauteur={180}
                     ariaLabel={`LCP p75 réel par heure, ${libelleChoisi ?? ""}, ${plage}, 3 zones de seuil`}
@@ -685,7 +756,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
                   ? { kind: "vide", population: "route mesurée par le robot ou le réel", plage, geste: elargir }
                   : undefined
             }
-            lecture="L'état robot est le PIRE état de la plage, le score une MOYENNE : un score de 92 peut côtoyer un état incident. Les deux mesures sont posées côte à côte, jamais divisées l'une par l'autre."
+            lecture={`L'état robot est le PIRE état de la plage, le score une MOYENNE : un score de 92 peut côtoyer un état incident. Les deux mesures sont posées côte à côte, jamais divisées l'une par l'autre. ${regleConcordance()} ${MENTION_RHO}`}
           >
             <TableRoutes lignes={lignesRoutes} avecApp={plusieursApps(lignesRoutes)} />
           </Figure>

@@ -1,23 +1,31 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ObservedTrend } from "@/components/charts/ObservedTrend";
 import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { ERROR_LINK, ErrorOccurrences } from "@/components/errors/ErrorOccurrences";
 import { ErrorStackCard } from "@/components/errors/ErrorStackCard";
-import { ErrorStat } from "@/components/errors/ErrorStat";
 import { ErrorTriage } from "@/components/errors/ErrorTriage";
-import { GroupingBasisBadge, IssueStatusBadge } from "@/components/errors/IssueBadges";
 import {
-  errorGroupHref,
-  errorSearchParams,
-  errorsHref,
-  fmtCount,
-  fmtCoverage,
-  issueHref,
-} from "@/components/errors/error-view";
+  BoutonRejeu,
+  OccurrencesDansLeTemps,
+  PhraseImpact,
+  QuOntEnCommun,
+  TuilesDetailErreur,
+  VersionsTouchees,
+  type PartGroupe,
+} from "@/components/errors/DetailErreur";
+import { SectionErreur } from "@/components/states/SectionErreur";
+import { GroupingBasisBadge, IssueStatusBadge } from "@/components/errors/IssueBadges";
+import { errorGroupHref, errorSearchParams, errorsHref, issueHref } from "@/components/errors/error-view";
+import { annotationsDeploiements } from "@/lib/annotations";
 import { getUser } from "@/lib/auth";
+import { lire } from "@/lib/lecture";
+import { listDeploys } from "@/lib/queries-deploys";
+import { UnsupportedFilterError } from "@/lib/query-compiler";
+import { bucketStarts } from "@/lib/query-contract";
+import { grilleIso } from "@/lib/series";
+import { gabaritZoom } from "@/lib/view-state";
 import { legacyIssueTargets, type LegacyIssueTarget } from "@/lib/error-issues";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
@@ -29,6 +37,8 @@ import {
   isFingerprintParam,
   parseErrorCursor,
   parseOccurrencesPage,
+  partSessionsTouchees,
+  releasesDuGroupe,
   resolveErrorGroup,
   scopeApps,
   type ErrorFilters,
@@ -57,7 +67,8 @@ export default async function ErrorGroup({
   const ecran = await pageFilters(sp, `/errors/${encodeURIComponent(fingerprint)}`);
   if (!ecran.ok) return <FilterProblemNotice title="Erreurs JS" problem={ecran.problem} />;
   const f = ecran.deviceFilters;
-  const { label, bucketLabel } = ecran;
+  const { label, bucketLabel, query } = ecran;
+  const { range } = query;
   const url = errorSearchParams(sp);
   // `legacy=1` : le détail historique lui-même, même quand des issues le reprennent.
   const historique = url.get("legacy") === "1";
@@ -133,64 +144,125 @@ export default async function ErrorGroup({
   // Résolue puis disparue entre les deux lectures (rétention, purge) : introuvable.
   if (!detail) notFound();
   const { group, last, occurrences, trend, page, sampling, enrichment } = detail;
+  const fGroupe: ErrorFilters = { ...f, app: ref.app_id };
+
+  // CHAQUE LECTURE EST INDÉPENDANTE (§ 3.8) : la part, les versions et les
+  // déploiements sont trois sections, et l'échec de l'une n'efface pas les autres.
+  // La part du groupe divise par des sessions avec VUE : un filtre que les pages
+  // vues ne portent pas (`service`) la refuse — c'est un refus de contrat pour
+  // CETTE phrase, pas une panne de l'écran (V10).
+  const [part, releases, deploys] = await Promise.all([
+    lire<PartGroupe>(async () => {
+      try {
+        return { lu: await partSessionsTouchees(fGroupe, ref) };
+      } catch (e) {
+        if (e instanceof UnsupportedFilterError) return { refus: e.message };
+        throw e;
+      }
+    }),
+    lire(() => releasesDuGroupe(ref, fGroupe)),
+    lire(() => listDeploys({ ...ecran.filters, app: ref.app_id }, 20)),
+  ]);
 
   // La limite demandée suit la pagination ; le curseur ne suit jamais un changement de filtre.
   const pageExtra = {
     ...(url.has("limit") ? { limit: String(page.limit) } : {}),
     ...(historique ? { legacy: "1" } : {}),
   };
+  // Zoom sur un seau : la plage change, et rien d'autre (§ 3.3) ; la pagination des
+  // occurrences repart du début.
+  const contratZoom = new URLSearchParams(errorGroupHref(group, f).split("?")[1]);
+  contratZoom.delete("period");
+  contratZoom.set("from", "{from}");
+  contratZoom.set("to", "{to}");
+  const { cursor: _curseur, ...spSansCurseur } = sp;
+  const zoomHref = gabaritZoom(`/errors/${encodeURIComponent(group.fingerprint)}?${contratZoom}`, spSansCurseur);
+  const annotations = annotationsDeploiements(deploys.ok ? deploys.data : [], range, {
+    lien: (relB, relA) => errorGroupHref(group, f, { cmp: "release", rel_b: relB, ...(relA ? { rel_a: relA } : {}) }),
+  });
+  // Écriture : viewer et compte de démonstration sont en lecture seule (V9).
+  const lectureSeule = !(user?.role === "admin" && !user.demo);
 
   return (
     <div className="animate-fade-up">
       <BackLink f={f} />
+
+      {/* ── Bloc 1 : en-tête, et le rejeu au premier niveau ── */}
       <h1 className="mb-1 flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight">
         <ErrorTypeBadge type={group.error_type} large />
         <span className="min-w-0 truncate" title={group.sample_message ?? ""}>
           {group.sample_message ?? "(sans message)"}
         </span>
       </h1>
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <span className="break-all font-mono text-xs text-ink-faint">
+      <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2">
+        <span className="min-w-0 break-all font-mono text-xs text-ink-faint">
           fingerprint {group.fingerprint} · app {group.app_id}
         </span>
         {/* Source et caractère géré sont ceux du dernier exemplaire, pas une moyenne du groupe. */}
         <ErrorSourceBadge source={last?.error_source ?? null} />
         <HandledBadge handled={last?.handled ?? null} />
+        <span className="basis-full sm:ml-auto sm:basis-auto">
+          <BoutonRejeu occurrences={occurrences} appId={group.app_id} />
+        </span>
       </div>
-
-      <ErrorTriage
-        appId={group.app_id}
-        fingerprint={group.fingerprint}
-        status={group.status}
-        regressed={group.regressed}
-      />
 
       <ErrorNotices sampling={sampling} enrichment={enrichment} />
 
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7">
-        <ErrorStat label={`Occurrences · ${label}`} value={group.occurrences.toLocaleString("fr-FR")} testid="detail-occurrences" />
-        <ErrorStat label="Sessions touchées" value={fmtCount(group.sessions_affected)} testid="detail-sessions" />
-        <ErrorStat label="Visiteurs touchés" value={fmtCount(group.visitors_affected)} testid="detail-users" />
-        <ErrorStat label="Utilisateurs identifiés" value={fmtCount(group.identified_users_affected)} />
-        <ErrorStat
-          label="Couverture identité"
-          value={fmtCoverage(group.identity_coverage)}
-          hint="part des occurrences rattachées à un visiteur ou à une identité"
-        />
-        <ErrorStat label="Première vue" value={fmtDate(group.first_seen)} hint="depuis toujours, hors fenêtre" />
-        <ErrorStat label="Dernière vue" value={fmtDate(group.last_seen)} />
+      {/* ── Bloc 2 : phrase d'impact, puis quatre tuiles ── */}
+      <SectionErreur titre="Impact de ce groupe">
+        <PhraseImpact group={group} plage={label} part={part} hrefSessions={null} />
+        <TuilesDetailErreur group={group} plage={label} />
+        <p className="mb-6 text-xs text-ink-soft" data-testid="detail-vues">
+          Première vue {fmtDate(group.first_seen)} (depuis toujours, hors fenêtre) · Dernière vue{" "}
+          {fmtDate(group.last_seen)}
+        </p>
+      </SectionErreur>
+
+      {/* ── Bloc 3 : versions touchées ── */}
+      <SectionErreur titre="Versions touchées">
+        <VersionsTouchees releases={releases} />
+      </SectionErreur>
+
+      {/* ── Bloc 4 : occurrences dans le temps ── */}
+      <div className="mb-4">
+        <SectionErreur titre="Occurrences dans le temps">
+          <OccurrencesDansLeTemps
+            trend={trend}
+            grille={grilleIso(bucketStarts(range))}
+            plage={label}
+            bucketLabel={bucketLabel}
+            seauSecondes={range.bucketSeconds}
+            annotations={annotations.annotations}
+            annotationsIndisponibles={
+              deploys.ok ? (annotations.indisponible ?? undefined) : "marqueurs de déploiement non lus"
+            }
+            zoomHref={zoomHref}
+          />
+        </SectionErreur>
       </div>
 
-      <div className="mb-6">
-        <ObservedTrend
-          title={`Occurrences par ${bucketLabel} sur ${label}`}
-          rows={trend.map((point) => ({ bucket: point.bucket, value: point.occurrences }))}
-          valueLabel="Occurrences"
-        />
+      {/* ── Bloc 5 : ce que les sessions touchées ont en commun (repli tant que B3 manque) ── */}
+      <div className="mb-4">
+        <SectionErreur titre="Qu'ont en commun les sessions touchées ?">
+          <QuOntEnCommun
+            occurrences={occurrences}
+            plage={label}
+            touchees={group.occurrences === 0 ? 0 : group.sessions_affected}
+            hrefValeur={(cle, valeur) =>
+              cle === "route"
+                ? errorsHref("/errors", f, ref.app_id, { route: valeur })
+                : cle === "release"
+                  ? errorsHref("/errors", f, ref.app_id, { release: valeur })
+                  : null
+            }
+          />
+        </SectionErreur>
       </div>
 
+      {/* ── Bloc 6 : pile du dernier exemplaire ── */}
       <ErrorStackCard appId={group.app_id} last={last} admin={user?.role === "admin" && !user.demo} />
 
+      {/* ── Bloc 7 : occurrences ── */}
       <ErrorOccurrences
         appId={group.app_id}
         occurrences={occurrences}
@@ -198,6 +270,18 @@ export default async function ErrorGroup({
         firstHref={cursor ? errorGroupHref(group, f, pageExtra) : null}
         nextHref={page.next_cursor ? errorGroupHref(group, f, { ...pageExtra, cursor: page.next_cursor }) : null}
       />
+
+      {/* ── Bloc 8 : triage ── */}
+      <div className="mt-4">
+        <ErrorTriage
+          appId={group.app_id}
+          fingerprint={group.fingerprint}
+          status={group.status}
+          regressed={group.regressed}
+          resolvedAt={group.resolved_at}
+          lectureSeule={lectureSeule}
+        />
+      </div>
     </div>
   );
 }

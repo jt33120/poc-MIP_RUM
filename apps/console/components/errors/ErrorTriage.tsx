@@ -1,4 +1,5 @@
 import { setErrorStatusAction } from "@/app/errors/[fingerprint]/actions";
+import { fmtDate } from "@/lib/format";
 import type { ErrorStatus } from "@/lib/queries-v2";
 
 const STATUS_META: Record<ErrorStatus, { label: string; cls: string }> = {
@@ -49,17 +50,25 @@ function StatusButton({
 }
 
 /** Barre de triage d'un groupe d'erreurs : statut courant, alerte de régression,
- *  et boutons de transition (résolu / ignoré / rouvrir). */
+ *  date de résolution, et boutons de transition (résolu / ignoré / rouvrir).
+ *
+ *  V9 (F20) : pour un viewer, un compte de démonstration ou un jeton API, les
+ *  boutons ne sont pas RENDUS — plutôt que rendus puis refusés par l'action. */
 export function ErrorTriage({
   appId,
   fingerprint,
   status,
   regressed,
+  resolvedAt,
+  lectureSeule = false,
 }: {
   appId: string;
   fingerprint: string;
   status: ErrorStatus;
   regressed: boolean;
+  /** Date de passage en « résolue » (`error_status.resolved_at`) ; `null` : jamais résolue. */
+  resolvedAt?: Date | null;
+  lectureSeule?: boolean;
 }) {
   const meta = STATUS_META[status];
   return (
@@ -73,14 +82,24 @@ export function ErrorTriage({
           ⚠ Régression — réapparue après résolution
         </span>
       )}
+      {resolvedAt && (
+        <span className="text-xs text-ink-soft" data-testid="error-resolue-le">
+          Résolue le {fmtDate(resolvedAt)}
+        </span>
+      )}
       <div className="ml-auto flex flex-wrap gap-2">
-        {(status !== "resolved" || regressed) && (
+        {lectureSeule && (
+          <span className="text-xs text-ink-soft" data-testid="triage-lecture-seule">
+            Lecture seule : le triage demande un compte administrateur.
+          </span>
+        )}
+        {!lectureSeule && (status !== "resolved" || regressed) && (
           <StatusButton appId={appId} fingerprint={fingerprint} status="resolved" label="Marquer résolu" accent />
         )}
-        {status !== "ignored" && (
+        {!lectureSeule && status !== "ignored" && (
           <StatusButton appId={appId} fingerprint={fingerprint} status="ignored" label="Ignorer" />
         )}
-        {status !== "open" && (
+        {!lectureSeule && status !== "open" && (
           <StatusButton appId={appId} fingerprint={fingerprint} status="open" label="Rouvrir" />
         )}
       </div>

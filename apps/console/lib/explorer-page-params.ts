@@ -31,6 +31,8 @@ import {
   type ExplorerPlanSource,
   type Visualization,
 } from "./analytics-schema";
+// F33 — le contexte du résultat dérive sa mesure du registre : il en lit le type.
+import type { ExplorerMeasure } from "./analytics-schema";
 import {
   DEVICES,
   DIMENSION_LABELS,
@@ -661,4 +663,126 @@ export function resumeVue(ast: unknown): { ok: true; texte: string } | { ok: fal
   ];
   if (plan.groupBy.length) morceaux.push(`par ${plan.groupBy.map((d) => DIMENSION_LABELS[d]).join(" puis ")}`);
   return { ok: true, texte: morceaux.join(" · ") };
+}
+
+// ───────────────────── F33 — contexte du résultat (W-E2, W-E7) ─────────────────────
+//
+// Deux lectures de CONTEXTE accompagnent le résultat : combien de lignes composent
+// la population lue (« Volume du résultat »), et comment elles se répartissent
+// (« Répartition par … »). Toutes deux portent sur la MÊME population que la figure
+// principale — même jeu, même variante, mêmes conditions, même fenêtre : seule la
+// mesure change, pour un dénombrement. Un contexte calculé sur une autre population
+// répondrait à une autre question que celle posée juste au-dessus.
+//
+// LE DÉNOMBREMENT N'EST PAS LE MÊME PARTOUT (V1). Un jeu se compte en lignes
+// (`rows:count`) ; les sessions se comptent à leur DÉBUT (`started:count` — les
+// sessions actives n'ont pas de découpage temporel honnête) ; les erreurs se comptent
+// en occurrences (`occurrences:sum`), parce qu'une ligne d'erreur en tait plusieurs.
+// Ces trois cas sont DÉRIVÉS du registre, jamais écrits en dur jeu par jeu : un jeu
+// ajouté demain hérite de la même règle, ou n'a pas de contexte du tout.
+
+/** Champs de dénombrement, dans l'ordre de préférence (le premier que le jeu porte gagne). */
+const CHAMPS_VOLUME = ["rows", "started", "occurrences"] as const;
+
+/** Agrégations qui dénombrent ; l'ordre départage un champ qui accepterait les deux. */
+const AGREGATIONS_VOLUME = ["count", "sum"] as const;
+
+/** Classement de la répartition (W-E7) : dix valeurs, comme les facettes comptées. */
+export const LIMITE_REPARTITION = 10;
+
+export interface MesureVolume {
+  measure: ExplorerMeasure;
+  /** Libellé du champ compté (« Occurrences », « Sessions commencées dans la fenêtre »). */
+  label: string;
+  /** Unité de la population (« vues », « occurrences », « sessions ») : l'axe la porte. */
+  unite: string;
+}
+
+/**
+ * Ce qu'on compte quand on compte la population d'un jeu. `null` : aucun champ du
+ * jeu ne dénombre — le contexte n'est alors pas affiché, plutôt que compté avec une
+ * mesure qui ne s'additionne pas.
+ */
+export function mesureDeVolume(dataset: ExplorerDatasetId): MesureVolume | null {
+  const fields = datasetDefinition(dataset).fields;
+  for (const field of CHAMPS_VOLUME) {
+    const champ = Object.hasOwn(fields, field) ? fields[field] : undefined;
+    if (!champ) continue;
+    const aggregation = AGREGATIONS_VOLUME.find((a) => champ.aggregations.includes(a));
+    if (aggregation) return { measure: { field, aggregation }, label: champ.label, unite: champ.unit };
+  }
+  return null;
+}
+
+/**
+ * W-E2 — le plan du volume : la même analyse, comptée par seau, sans regroupement.
+ * `limit` ne borne rien ici (une série sans groupe n'a qu'une courbe) : elle reste à
+ * 1 pour que le plan dise ce qu'il lit. Le curseur du journal ne le suit pas.
+ */
+export function planDeVolume(plan: ExplorerPlan): ExplorerPlan | null {
+  const volume = mesureDeVolume(plan.dataset);
+  if (!volume) return null;
+  return { ...plan, measure: volume.measure, groupBy: [], visualization: "timeseries", limit: 1, cursor: null };
+}
+
+/**
+ * W-E7 — le plan de la répartition : le même dénombrement, groupé par la dimension
+ * de `split`, classé sur la fenêtre entière. La part de chaque valeur n'a de sens
+ * que parce que la mesure s'additionne (`estAdditive`) : c'est pourquoi la
+ * répartition COMPTE, au lieu de reprendre la mesure du résultat — une part de p75
+ * n'existe pas.
+ */
+export function planDeRepartition(
+  plan: ExplorerPlan,
+  dimension: Dimension,
+  limite: number = LIMITE_REPARTITION,
+): ExplorerPlan | null {
+  const volume = mesureDeVolume(plan.dataset);
+  if (!volume) return null;
+  return { ...plan, measure: volume.measure, groupBy: [dimension], visualization: "toplist", limit: limite, cursor: null };
+}
+
+// ───────────────────────── F36 — barre de population (W-B1) ─────────────────────────
+//
+// Une carte de tableau de bord hérite de la population de l'écran : elle doit se
+// lire au-dessus de la grille, Y COMPRIS à « toutes les apps » — sans quoi trois
+// chiffres se comparent sans qu'on sache sur quoi ils portent (Datadog garde sa
+// barre de variables visible en permanence, `datadog-images-2.md` § 2.4).
+
+/**
+ * W-B1 — la population lue, en toutes lettres : apps effectives, appareil, chaque
+ * condition de filtre, robots et apps internes, puis le fuseau dans lequel les
+ * lectures à découpe locale rendent leurs jours (R-T). La PLAGE et le fuseau
+ * d'axe (UTC) ne sont pas dans cette liste : ce sont les props dédiées `plage` et
+ * `fuseau` de `PopulationBar` (§ 4.2), qui ne les écrit donc pas deux fois.
+ *
+ * Sans aucune condition, la liste dit « Tous les visiteurs · Robots exclus » : une
+ * population non restreinte reste une population, elle ne se tait pas.
+ */
+export function resumePopulation(query: AnalyticsQuery, timeZone: string): string[] {
+  const apps = query.scope.effectiveApps;
+  const puces: string[] = [apps === null ? "Toutes les apps autorisées" : `Apps : ${apps.join(", ")}`];
+  const conditions = conditionsRetirables(query.filters);
+  if (conditions.length === 0) puces.push("Tous les visiteurs");
+  for (const { condition } of conditions) puces.push(libelleCondition(condition));
+  puces.push(query.filters.includeBots ? "Robots inclus" : "Robots exclus");
+  if (query.filters.includeInternal) puces.push("Applications internes incluses");
+  puces.push(`Jours et heures locales lus en ${timeZone}`);
+  return puces;
+}
+
+/**
+ * W-B1 — le lien qui RETIRE chaque condition, indexé par le libellé que
+ * `resumePopulation` a écrit pour elle. Deux conditions identiques partagent une
+ * entrée : retirer l'une retire bien une seule occurrence.
+ */
+export function retraitsDePopulation(
+  query: AnalyticsQuery,
+  lien: (sans: AnalyticsQuery) => string,
+): Record<string, string> {
+  const sorties: Record<string, string> = {};
+  for (const { condition, sans } of conditionsRetirables(query.filters)) {
+    sorties[libelleCondition(condition)] = lien({ ...query, filters: sans });
+  }
+  return sorties;
 }

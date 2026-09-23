@@ -239,16 +239,24 @@ test("découpage : onglets, drill-down, clavier et alternative textuelle", async
   await expect(decoupageDe(page)).not.toContainText("Firefox");
 });
 
-test("une route du classement ouvre le détail avec la même plage", async ({ page }) => {
+test("une route du classement ouvre son panneau, puis la page filtrée, avec la même plage", async ({ page }) => {
   await loginConsole(page);
   // Période 7 j, et non le défaut 24 h : une plage conservée doit rester VISIBLE
-  // dans l'URL du drill-down, ce que le défaut ne prouverait pas. La table « Par
-  // route » a fusionné dans le hero classé (F14) : c'est sa ligne qu'on ouvre.
+  // dans l'URL, ce que le défaut ne prouverait pas. La table « Par route » a fusionné
+  // dans le hero classé (F14) ; depuis F17, sa ligne OUVRE LE PANNEAU de la route
+  // (§ 5.2.3) au lieu de filtrer l'écran, et c'est « Ouvrir en page » qui filtre.
   await page.goto(`${BASE}/pages?app=${APP_ID}&period=7d`);
   const lignes = page.getByTestId("hero-routes").getByTestId("impact-ligne");
   const lien = lignes.filter({ hasText: "/panier" }).first().getByRole("link");
   await expect(lien).toBeVisible();
   await lien.click();
+  await page.waitForURL((u) => u.searchParams.get("panel") === "route:%2Fpanier", { timeout: 15_000 });
+  expect(new URL(page.url()).searchParams.get("period")).toBe("7d");
+  // Le panneau qualifie la route sans filtrer l'écran ; « Ouvrir en page », lui, filtre.
+  const panneau = page.getByTestId("detail-panel");
+  await expect(panneau).toHaveAttribute("data-type", "route");
+  await expect(panneau).toContainText("/panier");
+  await panneau.getByTestId("detail-panel-page").click();
   await page.waitForURL((u) => u.searchParams.get("route") === "/panier", { timeout: 15_000 });
   expect(new URL(page.url()).searchParams.get("period")).toBe("7d");
   await expect(page.getByTestId("hero-routes").getByTestId("impact-ligne")).toHaveCount(1);

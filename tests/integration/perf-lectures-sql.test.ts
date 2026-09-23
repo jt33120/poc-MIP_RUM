@@ -1082,3 +1082,273 @@ function sansApp(query: AnalyticsQuery): AnalyticsQuery {
     expect(await libF15.vuesParNavType(libF15.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${APP_F15}`))))).toEqual([]);
   });
 });
+
+// ═══════════════════ F20 — détail d'un groupe d'erreurs ═══════════════════
+//
+// Ce que seule la base peut dire, pour le panneau et la page d'un groupe :
+//   - `releasesDuGroupe` rend la PREMIÈRE et la DERNIÈRE version vues, NON BORNÉES
+//     par la fenêtre (comme `first_seen`) : sur 6 heures, tout groupe serait sinon
+//     « apparu avec la version d'hier », et la régression ne se distinguerait plus
+//     de la dette ;
+//   - un groupe dont aucune occurrence ne déclare de release rend `null`, jamais
+//     une version devinée ni une chaîne vide ;
+//   - `partSessionsTouchees(f, ref)` reste ≤ 100 % pour TOUT groupe : le numérateur
+//     est une jointure sur la base, pas un second comptage ;
+//   - périmètre : viewer restreint, `apps = []` = zéro, autre app jamais lue.
+(url ? describe : describe.skip)("F20 — détail d'un groupe d'erreurs sur PostgreSQL", () => {
+  const APP_F20 = "f20-detail-a";
+  const APP_F20_B = "f20-detail-b";
+  const c20 = new pg.Client(url ? { connectionString: url } : {});
+  let lib20: Console;
+  const f20 = (qs = `app=${APP_F20}`, principal: ScopePrincipal = ADMIN) =>
+    lib20.filtersOfQuery(requete(`${FENETRE}&${qs}`, principal));
+  const refA = { app_id: APP_F20, fingerprint: "f20fp-releases" };
+
+  async function nettoyerF20(): Promise<void> {
+    for (const table of ["rum_error", "rum_pageview", "rum_session", "error_status"]) {
+      await c20.query(`delete from ${table} where app_id = any($1::text[])`, [[APP_F20, APP_F20_B]]);
+    }
+  }
+
+  async function semerF20(): Promise<void> {
+    // Quatre sessions avec vue dans la fenêtre : la base de la part.
+    for (const [id, app, debut] of [
+      ["f20-s1", APP_F20, H(0, 1)],
+      ["f20-s2", APP_F20, H(2, 1)],
+      ["f20-s3", APP_F20, H(4, 1)],
+      ["f20-b1", APP_F20_B, H(1, 1)],
+    ] as const) {
+      await c20.query(
+        `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at,
+                                  sample_rate, error_sample_rate, has_error)
+         values ($1, $2, 'desktop', false, $3, $3, 1, 1, true)`,
+        [id, app, debut],
+      );
+      await c20.query(
+        `insert into rum_pageview (span_id, session_id, app_id, route, url, nav_type, started_at)
+         values ($1, $2, $3, '/panier', 'https://site.example/', 'navigate', $4)`,
+        [`${id}-pv`, id, app, debut],
+      );
+    }
+    // [empreinte, session, app, release, occurrences, instant]
+    const erreurs: [string, string | null, string, string | null, number, Date][] = [
+      // Le groupe à releases : sa PREMIÈRE version est hors fenêtre (période précédente).
+      ["f20fp-releases", "f20-s1", APP_F20, "1.0.0", 2, H(-4)],
+      ["f20fp-releases", "f20-s1", APP_F20, "1.4.2", 5, H(1)],
+      ["f20fp-releases", "f20-s2", APP_F20, "1.5.0", 3, H(3)],
+      // Une occurrence SANS release : elle ne doit ni devenir la première, ni la dernière.
+      ["f20fp-releases", "f20-s3", APP_F20, null, 1, H(5)],
+      // Un groupe dont aucune occurrence ne déclare de version.
+      ["f20fp-sansrel", "f20-s3", APP_F20, null, 4, H(4)],
+      // Une même empreinte dans une AUTRE app, avec une autre version : jamais lue sous A.
+      ["f20fp-releases", "f20-b1", APP_F20_B, "9.9.9", 7, H(1)],
+    ];
+    let n = 0;
+    for (const [fp, sid, app, release, occ, ts] of erreurs) {
+      await c20.query(
+        `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type,
+                                fingerprint, occurrences, release, error_source, ts)
+         values ($1, $2, $3, '/panier', 'error', $4, 'Error', $5, $6, $7, 'browser_js', $8)`,
+        [`f20-e-${n++}`, sid, app, `boom ${fp}`, fp, occ, release, ts],
+      );
+    }
+  }
+
+  beforeAll(async () => {
+    await c20.connect();
+    for (const file of fichiersSql()) await c20.query(readFileSync(file, "utf8"));
+    await nettoyerF20();
+    await semerF20();
+    lib20 = await consoleSur(url!);
+  }, 180_000);
+
+  afterAll(async () => {
+    await lib20?.pool.end();
+    await nettoyerF20();
+    await c20.end();
+  });
+
+  describe("releasesDuGroupe", () => {
+    it("première et dernière release VUES, non bornées par la fenêtre", async () => {
+      const r = await lib20.releasesDuGroupe(refA, f20());
+      expect(r.premiere?.release).toBe("1.0.0");
+      expect(r.derniere?.release).toBe("1.5.0");
+      // La première est HORS fenêtre : une lecture bornée aurait rendu « 1.4.2 ».
+      expect(r.premiere!.ts.getTime()).toBeLessThan(DEBUT);
+      expect(r.distinctes).toBe(3);
+    });
+
+    it("une occurrence sans release n'est ni la première ni la dernière version", async () => {
+      const r = await lib20.releasesDuGroupe(refA, f20());
+      // La dernière occurrence du groupe (H(5)) ne porte pas de release : la dernière
+      // VERSION reste 1.5.0, datée de son occurrence à elle.
+      expect(r.derniere!.ts.getTime()).toBeLessThan(DEBUT + 5 * HEURE);
+    });
+
+    it("aucune occurrence ne déclare de version → null, jamais une version devinée", async () => {
+      const r = await lib20.releasesDuGroupe({ app_id: APP_F20, fingerprint: "f20fp-sansrel" }, f20());
+      expect(r).toEqual({ premiere: null, derniere: null, distinctes: 0 });
+    });
+
+    it("l'app du groupe borne la lecture : la même empreinte dans une autre app n'y entre pas", async () => {
+      const b = await lib20.releasesDuGroupe(
+        { app_id: APP_F20_B, fingerprint: "f20fp-releases" },
+        f20(`app=${APP_F20_B}`),
+      );
+      expect([b.premiere?.release, b.derniere?.release]).toEqual(["9.9.9", "9.9.9"]);
+      // Sous « toutes les apps », le groupe reste celui de SON app (intersectApp).
+      const sousToutes = await lib20.releasesDuGroupe(refA, f20("app=all"));
+      expect(sousToutes.derniere?.release).toBe("1.5.0");
+    });
+
+    it("viewer restreint : ses apps seulement ; apps = [] → aucune version", async () => {
+      const viewerB: ScopePrincipal = { role: "viewer", apps: [APP_F20_B] };
+      const vu = await lib20.releasesDuGroupe({ app_id: APP_F20_B, fingerprint: "f20fp-releases" }, f20("", viewerB));
+      expect(vu.derniere?.release).toBe("9.9.9");
+      // Une app hors du périmètre d'un viewer : rien, jamais un repli sur toutes les apps.
+      const refuse = await lib20.releasesDuGroupe(refA, f20("", viewerB));
+      expect(refuse).toEqual({ premiere: null, derniere: null, distinctes: 0 });
+      const vide = lib20.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${APP_F20}`)));
+      expect(await lib20.releasesDuGroupe(refA, vide)).toEqual({ premiere: null, derniere: null, distinctes: 0 });
+    });
+  });
+
+  describe("partSessionsTouchees par groupe", () => {
+    it("part ≤ 100 % pour TOUT groupe seedé, numérateur inclus dans le dénominateur", async () => {
+      for (const fp of ["f20fp-releases", "f20fp-sansrel"]) {
+        const lu = await lib20.partSessionsTouchees(f20(), { app_id: APP_F20, fingerprint: fp });
+        expect(lu.touchees).toBeLessThanOrEqual(lu.base);
+        expect(lu.base).toBe(3); // les trois sessions avec vue de l'app A
+        expect(lu.touchees / lu.base).toBeLessThanOrEqual(1);
+      }
+    });
+
+    it("le groupe restreint le numérateur, et jamais au-delà de celui de l'app", async () => {
+      const releases = await lib20.partSessionsTouchees(f20(), refA);
+      expect(releases.touchees).toBe(3); // s1, s2 et s3 portent une occurrence du groupe
+      const sansRel = await lib20.partSessionsTouchees(f20(), { app_id: APP_F20, fingerprint: "f20fp-sansrel" });
+      expect(sansRel.touchees).toBe(1);
+      const toutes = await lib20.partSessionsTouchees(f20());
+      expect(sansRel.touchees).toBeLessThanOrEqual(toutes.touchees);
+    });
+
+    it("l'app du groupe borne la base : une empreinte partagée ne mélange pas deux apps", async () => {
+      const b = await lib20.partSessionsTouchees(f20("app=all"), { app_id: APP_F20_B, fingerprint: "f20fp-releases" });
+      expect(b.base).toBe(1);
+      expect(b.touchees).toBe(1);
+    });
+  });
+});
+
+// ═══════════════════ F19 — filtre de statut de la liste /errors ═══════════════════
+//
+// Une app à elle : cinq groupes couvrant les quatre états AFFICHÉS (ouvert, résolu,
+// régressé, ignoré), dont deux ouverts pour que « Ouverts » ne soit pas une liste
+// d'un seul. Ce que seule la base peut dire : que le filtre porte sur l'état
+// affiché (un « résolu » qui réapparaît répond à `regressed`, pas à `resolved`),
+// qu'il filtre la LISTE sans toucher aux totaux ni à la tendance de l'écran, et que
+// le compte retenu (`totalFiltre`) survit à la pagination.
+(url ? describe : describe.skip)("F19 — liste /errors filtrée par statut sur PostgreSQL", () => {
+  const APP_F19 = "f19-perf-a";
+  const c19 = new pg.Client(url ? { connectionString: url } : {});
+  let lib19: Console;
+  const f19 = (qs = "") => lib19.filtersOfQuery(requete(`${FENETRE}&app=${APP_F19}${qs}`));
+  const f19Vide = () => lib19.filtersOfQuery(sansApp(requete(`${FENETRE}&app=${APP_F19}`)));
+  const PAGE19 = { limit: 100, offset: 0 };
+
+  async function nettoyerF19(): Promise<void> {
+    for (const table of ["rum_error", "rum_pageview", "rum_session", "error_status"]) {
+      await c19.query(`delete from ${table} where app_id = $1`, [APP_F19]);
+    }
+  }
+
+  async function semerF19(): Promise<void> {
+    await c19.query(
+      `insert into rum_session (session_id, app_id, device_type, is_bot, started_at, last_seen_at,
+                                sample_rate, error_sample_rate, has_error)
+       values ($1, $2, 'desktop', false, $3, $3, 1, 1, true)`,
+      ["f19-s1", APP_F19, H(0, 1)],
+    );
+    // [empreinte, occurrences, instant de l'occurrence]
+    const erreurs: [string, number, Date][] = [
+      ["f19-ouvert-a", 10, H(1)],
+      ["f19-ouvert-b", 5, H(2)],
+      ["f19-resolu", 8, H(1)],
+      ["f19-regresse", 3, H(4)],
+      ["f19-ignore", 2, H(3)],
+    ];
+    let n = 0;
+    for (const [fp, occ, ts] of erreurs) {
+      await c19.query(
+        `insert into rum_error (span_id, session_id, app_id, route, kind, message, error_type,
+                                fingerprint, occurrences, error_source, ts)
+         values ($1, 'f19-s1', $2, '/', 'error', $3, 'Error', $4, $5, 'browser_js', $6)`,
+        [`f19-e-${n++}`, APP_F19, `boom ${fp}`, fp, occ, ts],
+      );
+    }
+    // Résolu APRÈS sa dernière occurrence : il reste résolu. Résolu AVANT : régressé.
+    await c19.query(
+      `insert into error_status (app_id, fingerprint, status, resolved_at)
+       values ($1, 'f19-resolu', 'resolved', $2), ($1, 'f19-regresse', 'resolved', $3),
+              ($1, 'f19-ignore', 'ignored', null)`,
+      [APP_F19, H(5), H(2)],
+    );
+  }
+
+  beforeAll(async () => {
+    await c19.connect();
+    for (const file of fichiersSql()) await c19.query(readFileSync(file, "utf8"));
+    await nettoyerF19();
+    await semerF19();
+    lib19 = await consoleSur(url!);
+  }, 180_000);
+
+  afterAll(async () => {
+    await lib19?.pool.end();
+    await nettoyerF19();
+    await c19.end();
+  });
+
+  const empreintes = async (statut?: "open" | "resolved" | "ignored" | "regressed") =>
+    (await lib19.listErrorGroups(f19(), PAGE19, { statut })).groups.map((g) => g.fingerprint).sort();
+
+  it("sans filtre : les cinq groupes", async () => {
+    expect(await empreintes()).toEqual(["f19-ignore", "f19-ouvert-a", "f19-ouvert-b", "f19-regresse", "f19-resolu"]);
+  });
+
+  it("le filtre porte sur l'état AFFICHÉ : le régressé répond à « regressed », jamais à « resolved »", async () => {
+    expect(await empreintes("regressed")).toEqual(["f19-regresse"]);
+    expect(await empreintes("resolved")).toEqual(["f19-resolu"]);
+  });
+
+  it("« ouverts » = aucune ligne de triage ; « ignorés » = les ignorés seuls", async () => {
+    expect(await empreintes("open")).toEqual(["f19-ouvert-a", "f19-ouvert-b"]);
+    expect(await empreintes("ignored")).toEqual(["f19-ignore"]);
+  });
+
+  it("filtre la LISTE, pas l'écran : totaux, nombre de groupes et tendance inchangés", async () => {
+    const tous = await lib19.listErrorGroups(f19(), PAGE19);
+    const ouverts = await lib19.listErrorGroups(f19(), PAGE19, { statut: "open" });
+    expect(ouverts.totals).toEqual(tous.totals);
+    expect(ouverts.total).toBe(5);
+    expect(ouverts.trend.map((p) => p.occurrences)).toEqual(tous.trend.map((p) => p.occurrences));
+    expect(tous.totals.occurrences).toBe(28);
+  });
+
+  it("totalFiltre : les groupes retenus, page par page ; absent sans filtre", async () => {
+    const page1 = await lib19.listErrorGroups(f19(), { limit: 1, offset: 0 }, { statut: "open" });
+    expect([page1.groups.length, page1.totalFiltre]).toEqual([1, 2]);
+    const page2 = await lib19.listErrorGroups(f19(), { limit: 1, offset: 1 }, { statut: "open" });
+    expect([page2.groups.length, page2.totalFiltre]).toEqual([1, 2]);
+    expect(page2.groups[0].fingerprint).not.toBe(page1.groups[0].fingerprint);
+    // Page au-delà de la population : rien à paginer, et aucun total inventé.
+    expect((await lib19.listErrorGroups(f19(), { limit: 1, offset: 9 }, { statut: "open" })).totalFiltre).toBeNull();
+    expect((await lib19.listErrorGroups(f19(), PAGE19)).totalFiltre).toBeUndefined();
+  });
+
+  it("le filtre respecte le périmètre et l'ordre demandé", async () => {
+    expect((await lib19.listErrorGroups(f19Vide(), PAGE19, { statut: "open" })).groups).toEqual([]);
+    const recent = await lib19.listErrorGroups(f19(), PAGE19, { statut: "open", tri: "recent" });
+    expect(recent.groups.map((g) => g.fingerprint)).toEqual(["f19-ouvert-b", "f19-ouvert-a"]);
+  });
+});

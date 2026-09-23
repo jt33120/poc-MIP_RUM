@@ -3,9 +3,18 @@ import { PageHeader } from "@/components/PageHeader";
 import { ErrorStatusBadges, ErrorTypeBadge } from "@/components/errors/ErrorBadges";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
-import { GroupSparkline } from "@/components/errors/GroupSparkline";
+import { Sparkline } from "@/components/charts/Sparkline";
 import { IssueList, IssueListInvalid } from "@/components/errors/IssueList";
+import {
+  CELLULE_GROUPE,
+  CelluleGroupe,
+  FiltreStatut,
+  STATUT_LABELS,
+  echelleCommune,
+  noteEchelle,
+} from "@/components/errors/ListeErreurs";
 import { GROUPES_DU_HERO, HeroGroupesErreurs, TuilesErreurs, type PartLue } from "@/components/errors/ApercuErreurs";
+import { PanneauErreur } from "@/components/errors/PanneauErreur";
 import { SectionErreur } from "@/components/states/SectionErreur";
 import { errorGroupHref, errorSearchParams, errorsHref, fmtCount } from "@/components/errors/error-view";
 import {
@@ -42,6 +51,7 @@ import {
   topGroupesSeries,
   totauxErreurs,
   type ErrorFilters,
+  type ErrorGroupRef,
   type OrdreGroupes,
 } from "@/lib/queries-errors";
 import { listDeploys } from "@/lib/queries-deploys";
@@ -52,7 +62,7 @@ import { referencePeriodePrecedente } from "@/lib/perf-domain";
 import { UnsupportedFilterError } from "@/lib/query-compiler";
 import { bucketStarts, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
 import { grilleIso } from "@/lib/series";
-import { gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
+import { ecrirePanel, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
 
@@ -112,8 +122,12 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   const { etat: vue, ignores } = lireEtatDeVue("/errors", lecteur);
   const dejaDites = new Set(lireComparaison("/errors", lecteur).ignores);
   const avertissements = ignores.filter((ligne) => !dejaDites.has(ligne));
-  if (vue.statut) {
-    avertissements.push(ligneIgnoree("statut", vue.statut, "le filtre de statut de la liste historique n'est pas encore disponible"));
+  // Panneau (F20) : seul celui d'un groupe d'erreurs s'ouvre ici. Un `panel=issue:`
+  // ou `panel=session:` n'est pas lu à moitié — il est ignoré, et dit (V10).
+  if (vue.panel && vue.panel.type !== "error") {
+    avertissements.push(
+      ligneIgnoree("panel", url.get("panel") ?? "", "seul le panneau d'un groupe d'erreurs s'ouvre sur cet écran"),
+    );
   }
 
   // Découpage (P6.3) : les MÊMES onglets que l'accueil et `/pages`, limités aux
@@ -129,7 +143,9 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   // au défaut. La pagination, elle, repart du début — la population a changé.
   const vueEcran: Record<string, string> = dimension ? { [BREAKDOWN_PARAM]: dimension } : {};
   const filtresEcran = Object.fromEntries(
-    ["status", "source", "limit", "tri", "nouveaux"].flatMap((nom) => (url.get(nom) ? [[nom, url.get(nom) as string]] : [])),
+    ["status", "source", "limit", "tri", "nouveaux", "statut"].flatMap((nom) =>
+      url.get(nom) ? [[nom, url.get(nom) as string]] : [],
+    ),
   );
   const decoupage =
     dimension && decoupe ? (
@@ -156,8 +172,44 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   if (modeIssues && vue.nouveaux) {
     avertissements.push(ligneIgnoree("nouveaux", "1", "la liste des issues ne se restreint pas encore aux groupes apparus"));
   }
+  if (modeIssues && vue.panel?.type === "error") {
+    avertissements.push(
+      ligneIgnoree("panel", url.get("panel") ?? "", "la liste des issues n'ouvre pas le panneau d'un groupe historique"),
+    );
+  }
+  // La liste des issues a SON filtre de statut (`status`, quatre valeurs dont « à
+  // revoir »), posé par son propre formulaire : `statut` — celui de la liste
+  // historique — n'y est pas appliqué, et le dire vaut mieux que le taire (V10).
+  if (modeIssues && vue.statut) {
+    avertissements.push(ligneIgnoree("statut", vue.statut, "la liste des issues filtre par son propre champ « Statut »"));
+  }
   const tri: OrdreGroupes = !modeIssues && (vue.tri === "sessions" || vue.tri === "recent") ? vue.tri : "statut";
   const nouveauxSeuls = !modeIssues && vue.nouveaux;
+  const statut = modeIssues ? null : vue.statut;
+  const panneau = !modeIssues && vue.panel?.type === "error" ? vue.panel.id : null;
+
+  // Réglages de la liste et lien d'ouverture du panneau (F20) : l'URL porte tout —
+  // « Fermer », « Précédent » et « Suivant » sont de vrais liens, qui gardent la
+  // position dans la liste, son ordre et son découpage.
+  const page = parseErrorListPage(url);
+  const reglagesListe: Record<string, string> = {
+    ...vueEcran,
+    ...(tri !== "statut" ? { tri } : {}),
+    ...(nouveauxSeuls ? { nouveaux: "1" } : {}),
+  };
+  // Le filtre de statut (F19) fait partie de la liste qu'on parcourt : sans lui,
+  // ouvrir un groupe dé-filtrerait la liste sous le panneau, et « Précédent » /
+  // « Suivant » parcourraient une AUTRE liste que celle où l'on a cliqué.
+  // `reglagesListe` le laisse de côté — il sert aussi à bâtir le formulaire de
+  // filtre et son lien « sans filtre », qui ne doivent pas le porter.
+  const lienPanneau = (fp: string | null) =>
+    errorsHref("/errors", f, f.app, {
+      ...reglagesListe,
+      ...(statut ? { statut } : {}),
+      ...(page.offset ? { offset: String(page.offset) } : {}),
+      ...(url.get("limit") ? { limit: String(page.limit) } : {}),
+      ...(fp ? { panel: ecrirePanel({ type: "error", id: fp }) } : {}),
+    });
 
   // ── Tuiles et hero (F18) ─────────────────────────────────────────────────
   // CHAQUE LECTURE EST INDÉPENDANTE (§ 3.8) : une tuile en échec dit « lecture en
@@ -181,7 +233,9 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   // Liens de l'écran vers lui-même : l'app TOUJOURS explicite (`errorsHref`, « all »
   // sous toutes les apps), sans quoi la porte projet substituerait l'app du cookie.
   // Les liens des tuiles ne changent que l'ordre ou la restriction de la LISTE
-  // (paramètres d'écran), jamais la population.
+  // (paramètres d'écran), jamais la population. Ils ne portent PAS le filtre de
+  // statut : une tuile compte toute la population, et mener à une liste filtrée
+  // ferait mentir son nombre.
   const lienListe = (extra: Record<string, string>) => `${errorsHref("/errors", f, f.app, { ...vueEcran, ...extra })}#groupes-erreurs`;
   // Zoom sur un seau : la plage change, et rien d'autre (§ 3.3) ; la position dans la
   // liste repart du début.
@@ -228,8 +282,9 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
           grille={grilleIso(bucketStarts(range))}
           totaux={totaux}
           top={top}
-          // Le panneau `panel=error:` arrive avec F20 : d'ici là, la page du groupe.
-          hrefGroupe={(g) => errorGroupHref(g.ref, f)}
+          // Un segment ouvre le PANNEAU du groupe (F20, § 5.3.2) ; en mode issues,
+          // où le panneau historique ne s'ouvre pas, il ouvre sa page.
+          hrefGroupe={(g) => (modeIssues ? errorGroupHref(g.ref, f) : lienPanneau(g.ref.fingerprint))}
           plusieursApps={query.scope.requestedApp === null}
           annotations={annotations.annotations}
           annotationsIndisponibles={deploys.ok ? annotations.indisponible : "marqueurs de déploiement non lus"}
@@ -270,6 +325,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
         curseur={cursor !== null}
         limit={url.get("limit")}
         label={label}
+        bucketLabel={bucketLabel}
         sousTitre={QUESTION}
         avertissements={notes}
         apercu={apercu}
@@ -279,23 +335,61 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
     );
   }
 
-  const page = parseErrorListPage(url);
-  const { groups, total, trend, sampling, enrichment, unfingerprinted } = await listErrorGroups(f, page, {
+  const { groups, total, totalFiltre, trend, sampling, enrichment, unfingerprinted } = await listErrorGroups(f, page, {
     series: true,
     tri,
     nouveaux: nouveauxSeuls,
+    statut: statut ?? undefined,
   });
-  // Liste restreinte aux groupes apparus : elle se pagine sur LEUR nombre, pas sur
-  // celui de tous les groupes (les totaux de l'écran, eux, ne changent pas).
-  const totalListe = nouveauxSeuls ? (nouveaux.ok ? nouveaux.data : groups.length + page.offset) : total;
-  const reglagesListe: Record<string, string> = {
-    ...vueEcran,
-    ...(tri !== "statut" ? { tri } : {}),
-    ...(nouveauxSeuls ? { nouveaux: "1" } : {}),
-  };
+  // Liste restreinte (groupes apparus, statut de triage) : elle se pagine sur LEUR
+  // nombre, pas sur celui de tous les groupes (les totaux de l'écran, eux, ne
+  // changent pas). Sous filtre de statut, la lecture rend le compte retenu ;
+  // `null` (page vide) → ce que la page voit, pour ne pas inventer un total.
+  const totalListe = statut
+    ? (totalFiltre ?? page.offset + groups.length)
+    : nouveauxSeuls
+      ? nouveaux.ok
+        ? nouveaux.data
+        : groups.length + page.offset
+      : total;
+  const hrefSansStatut = `${errorsHref("/errors", f, f.app, reglagesListe)}#groupes-erreurs`;
+  /** Un autre ordre, mêmes restrictions de liste (groupes apparus, statut). */
+  const lienTri = (extra: Record<string, string>) =>
+    `${errorsHref("/errors", f, f.app, {
+      ...vueEcran,
+      ...(nouveauxSeuls ? { nouveaux: "1" } : {}),
+      ...(statut ? { statut } : {}),
+      ...extra,
+    })}#groupes-erreurs`;
+  // Champs cachés du formulaire : tout ce qui n'est pas le statut lui-même, et
+  // jamais l'`offset` — filtrer repart du premier groupe.
+  const cachesFiltre = [...new URLSearchParams(errorsHref("/errors", f, f.app, reglagesListe).split("?")[1])];
   const pageHref = (offset: number) =>
-    errorsHref("/errors", f, f.app, { ...reglagesListe, offset: String(offset), limit: String(page.limit) });
+    errorsHref("/errors", f, f.app, {
+      ...reglagesListe,
+      ...(statut ? { statut } : {}),
+      offset: String(offset),
+      limit: String(page.limit),
+    });
+  // Échelle commune des sparklines de la page (F03 `Sparkline.max`, § 5.3.2).
+  const echelle = echelleCommune(groups);
+  const noteTendances = noteEchelle(echelle, bucketLabel);
   const hasNext = totalListe > page.offset + page.limit && page.offset + page.limit <= ERROR_LIST_MAX_OFFSET;
+
+  // ── Groupe ouvert en panneau (F20, § 3.5) ───────────────────────────────────
+  // Le groupe de la page affichée donne SON app et la liste à parcourir. Hors de
+  // cette page (lien partagé, clic sur un segment du hero), l'app de l'écran suffit
+  // à ouvrir le panneau — sans « Précédent » ni « Suivant », puisqu'il n'y a pas de
+  // liste à parcourir. Sans app explicite, une empreinte peut désigner deux groupes :
+  // on ne tire pas au sort, on le dit.
+  const positionPanneau = panneau === null ? -1 : groups.findIndex((g) => g.fingerprint === panneau);
+  const ouvert: ErrorGroupRef | null =
+    positionPanneau >= 0
+      ? { app_id: groups[positionPanneau].app_id, fingerprint: groups[positionPanneau].fingerprint }
+      : panneau !== null && f.app
+        ? { app_id: f.app, fingerprint: panneau }
+        : null;
+  const pasDansLaPage = panneau !== null && ouvert === null;
   const ordreLu =
     tri === "sessions"
       ? "par sessions touchées (inconnues en dernier), puis visiteurs, puis occurrences"
@@ -312,9 +406,16 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
 
       {apercu}
 
+      {pasDansLaPage && (
+        <p role="note" className="mb-3 text-xs text-ink-soft" data-testid="panneau-hors-page">
+          {ligneIgnoree("panel", url.get("panel") ?? "", "ce groupe n'est pas sur la page affichée de la liste")}
+        </p>
+      )}
+
       <h2 id="groupes-erreurs" className="mb-2 text-sm font-semibold text-ink">
         Groupes ({totalListe.toLocaleString("fr-FR")}
-        {nouveauxSeuls ? " apparus sur la période" : ""})
+        {nouveauxSeuls ? " apparus sur la période" : ""}
+        {statut ? ` ${STATUT_LABELS[statut].toLowerCase()}` : ""})
       </h2>
       <p className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="ordre-liste">
         Une ligne = une cause récurrente (type + message + frame, dans son application). Ordre : {ordreLu}.
@@ -327,29 +428,42 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
             </Link>
           </>
         )}{" "}
+        {statut && (
+          <>
+            Liste restreinte aux groupes dont le triage est « {STATUT_LABELS[statut].toLowerCase()} » : les tuiles, le
+            graphique et la répartition, eux, portent sur toute la population.{" "}
+          </>
+        )}
         Tous les compteurs portent sur {label} — sauf « Première vue », qui remonte à la première apparition connue.
         « Inconnu » : aucune occurrence du groupe n&apos;est rattachée à une session ou à un visiteur connu (une erreur
-        backend sans session, par exemple) — ce n&apos;est pas zéro personne.
+        backend sans session, par exemple) — ce n&apos;est pas zéro personne. {noteTendances}
       </p>
       <div className="mb-3">
+        {/* Changer d'ordre GARDE le filtre de statut : trier n'est pas dé-filtrer
+            (à la différence d'une tuile, qui repart de toute la population). */}
         <BasculeTri
           courant={tri}
           options={[
-            { id: "statut", libelle: "Triage", href: lienListe(nouveauxSeuls ? { nouveaux: "1" } : {}) },
-            { id: "sessions", libelle: "Sessions touchées", href: lienListe({ tri: "sessions", ...(nouveauxSeuls ? { nouveaux: "1" } : {}) }) },
-            { id: "recent", libelle: "Vus récemment", href: lienListe({ tri: "recent", ...(nouveauxSeuls ? { nouveaux: "1" } : {}) }) },
+            { id: "statut", libelle: "Triage", href: lienTri({}) },
+            { id: "sessions", libelle: "Sessions touchées", href: lienTri({ tri: "sessions" }) },
+            { id: "recent", libelle: "Vus récemment", href: lienTri({ tri: "recent" }) },
           ]}
         />
       </div>
 
+      <FiltreStatut caches={cachesFiltre} statut={statut} hrefSansFiltre={hrefSansStatut} />
+
       {/* `relative` : la légende sr-only (position absolue) se place dans CE conteneur
-          défilant, pas dans la page qu'elle élargirait à 390 px (piège de la vague 5). */}
-      <div className="card relative overflow-x-auto">
-        <table className="w-full min-w-table text-sm">
+          défilant, pas dans la page qu'elle élargirait à 390 px (piège de la vague 5).
+          Sous 640 px la table devient une pile de CARTES (`block`) : plus de défilement
+          horizontal, occurrences et sessions lisibles à 390 px (§ 5.3.2). */}
+      <div className="card relative min-w-0 sm:overflow-x-auto" data-testid="liste-groupes">
+        <table className="block w-full text-sm sm:table sm:min-w-table">
           <caption className="sr-only">
-            Groupes d&apos;erreurs sur {label}, ordre : {ordreLu}
+            Groupes d&apos;erreurs sur {label}
+            {statut ? `, triage « ${STATUT_LABELS[statut].toLowerCase()} »` : ""}, ordre : {ordreLu}. {noteTendances}
           </caption>
-          <thead className="bg-panel2">
+          <thead className="hidden bg-panel2 sm:table-header-group">
             <tr>
               <th scope="col" className="th">Groupe</th>
               <th scope="col" className="th">Occurrences</th>
@@ -366,21 +480,28 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
               <th scope="col" className="th">Dernière vue</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="block sm:table-row-group">
             {groups.map((g) => {
               const dim = g.status !== "open" && !g.regressed;
               const message = g.sample_message ?? "(sans message)";
               return (
                 <tr
                   key={`${g.app_id}|${g.fingerprint}`}
-                  className={`border-t border-line/60 align-top transition hover:bg-panel2/60 ${dim ? "opacity-60" : ""}`}
+                  className={`block border-t border-line/60 px-4 py-3 align-top transition first:border-t-0 hover:bg-panel2/60 sm:table-row sm:p-0 ${
+                    dim ? "opacity-60" : ""
+                  }`}
                   data-testid={`error-group-${g.fingerprint}`}
                   data-app-id={g.app_id}
+                  data-ouvert={ouvert?.fingerprint === g.fingerprint ? "1" : undefined}
                 >
-                  <td className="max-w-md px-4 py-3">
-                    {/* Un seul lien par ligne : une tabulation par groupe au clavier. */}
+                  <td className={`block min-w-0 sm:max-w-md ${CELLULE_GROUPE}`}>
+                    {/* Un seul lien par ligne : une tabulation par groupe au clavier. Il
+                        ouvre le PANNEAU (F20, § 5.3.2) — qualifier sans quitter la liste ;
+                        « Ouvrir en page » est dans l'en-tête du panneau. */}
                     <Link
-                      href={errorGroupHref(g, f)}
+                      href={lienPanneau(g.fingerprint)}
+                      scroll={false}
+                      aria-current={ouvert?.fingerprint === g.fingerprint ? "true" : undefined}
                       className="block rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
                     >
                       <ErrorTypeBadge type={g.error_type} />
@@ -393,30 +514,41 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
                       </span>
                     </Link>
                   </td>
-                  <td className="px-4 py-3 font-bold tabular-nums" data-testid="group-occurrences">
-                    {g.occurrences.toLocaleString("fr-FR")}
-                  </td>
-                  <td className="px-4 py-3 tabular-nums">{fmtCount(g.sessions_affected)}</td>
-                  <td className="px-4 py-3 tabular-nums">{fmtCount(g.visitors_affected)}</td>
-                  <td className="px-4 py-3">
-                    <GroupSparkline
-                      values={g.series ?? trend.map(() => 0)}
+                  <CelluleGroupe libelle="Occurrences" className="sm:text-sm" testId="group-occurrences">
+                    <span className="font-bold tabular-nums text-ink">{g.occurrences.toLocaleString("fr-FR")}</span>
+                  </CelluleGroupe>
+                  <CelluleGroupe libelle="Sessions" className="sm:text-sm">
+                    <span className="tabular-nums">{fmtCount(g.sessions_affected)}</span>
+                  </CelluleGroupe>
+                  <CelluleGroupe libelle="Visiteurs" className="sm:text-sm">
+                    <span className="tabular-nums">{fmtCount(g.visitors_affected)}</span>
+                  </CelluleGroupe>
+                  <CelluleGroupe libelle="Tendance">
+                    <Sparkline
+                      valeurs={g.series ?? trend.map(() => 0)}
+                      max={echelle}
                       label={`${g.occurrences.toLocaleString("fr-FR")} occurrence(s) sur ${label}`}
                     />
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs text-ink-soft">{fmtDate(g.first_seen)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs text-ink-soft">{fmtDate(g.last_seen)}</td>
+                  </CelluleGroupe>
+                  <CelluleGroupe libelle="Première vue" className="text-ink-soft sm:whitespace-nowrap">
+                    {fmtDate(g.first_seen)}
+                  </CelluleGroupe>
+                  <CelluleGroupe libelle="Dernière vue" className="text-ink-soft sm:whitespace-nowrap">
+                    {fmtDate(g.last_seen)}
+                  </CelluleGroupe>
                 </tr>
               );
             })}
             {!groups.length && (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-ink-faint">
+              <tr className="block sm:table-row">
+                <td colSpan={7} className="block px-4 py-8 text-center text-ink-faint sm:table-cell">
                   {totalListe > 0 ? (
                     // Offset au-delà de la population (lien ancien, erreurs résolues entre-temps).
                     <Link href={pageHref(0)} className="text-brand hover:underline">
                       Aucun groupe à cette position — revenir au début de la liste
                     </Link>
+                  ) : statut ? (
+                    `Aucun groupe « ${STATUT_LABELS[statut].toLowerCase()} » sur ${label}`
                   ) : nouveauxSeuls ? (
                     `Aucun groupe apparu sur ${label}`
                   ) : (
@@ -462,6 +594,37 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
 
       {/* Répartition après la liste (§ 5.3.1, zone 5). */}
       {decoupage && <div className="mt-6">{decoupage}</div>}
+
+      {/* Panneau du groupe ouvert (F20, § 5.3.3) : blocs 1 à 5, sur la plage de l'écran. */}
+      {ouvert && (
+        <PanneauErreur
+          groupe={ouvert}
+          f={f}
+          filtres={ecran.filters}
+          range={range}
+          label={label}
+          bucketLabel={bucketLabel}
+          fermerHref={lienPanneau(null)}
+          pageHref={errorGroupHref(ouvert, f)}
+          precedentHref={
+            positionPanneau < 0 ? undefined : positionPanneau > 0 ? lienPanneau(groups[positionPanneau - 1].fingerprint) : null
+          }
+          suivantHref={
+            positionPanneau < 0
+              ? undefined
+              : positionPanneau < groups.length - 1
+                ? lienPanneau(groups[positionPanneau + 1].fingerprint)
+                : null
+          }
+          hrefValeur={(cle, valeur) =>
+            cle === "route"
+              ? errorsHref("/errors", f, ouvert.app_id, { ...vueEcran, route: valeur })
+              : cle === "release"
+                ? errorsHref("/errors", f, ouvert.app_id, { ...vueEcran, release: valeur })
+                : null
+          }
+        />
+      )}
     </div>
   );
 }

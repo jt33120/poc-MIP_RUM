@@ -165,6 +165,7 @@ export function KpiTile({
   intervalle,
   ecart,
   href,
+  testid,
 }: {
   /** « LCP p75 », « Sessions commencées ». */
   label: string;
@@ -200,6 +201,12 @@ export function KpiTile({
   ecart?: Ecart | null;
   /** La tuile entière est un lien. */
   href?: string;
+  /**
+   * Repère de test posé sur la VALEUR (ajout F20) : un écran qui remplace une
+   * ancienne tuile par celle-ci garde l'adresse que ses e2e désignent, sans
+   * l'attacher au cadre (dont le texte porte aussi le libellé et la lecture).
+   */
+  testid?: string;
 }) {
   const connue = valeur != null && Number.isFinite(valeur);
   const faibleSous = couverture?.faibleSous ?? FAIBLE_SOUS_DEFAUT;
@@ -278,7 +285,7 @@ export function KpiTile({
 
       <span
         className={`text-2xl font-bold tabular-nums tracking-tight ${enAlerte ? "text-bad-ink" : "text-ink"}`}
-        data-testid="kpi-valeur"
+        data-testid={testid ?? "kpi-valeur"}
       >
         {texteValeur}
       </span>

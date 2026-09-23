@@ -27,6 +27,9 @@ import {
   representationDemandee,
 } from "../../apps/console/lib/explorer-page-params";
 import { resumeVue as f34ResumeVue, explorerHrefFromAst as f34ExplorerHrefFromAst } from "../../apps/console/lib/explorer-page-params";
+import { mesureDeVolume as f33MesureDeVolume, planDeVolume as f33PlanDeVolume, planDeRepartition as f33PlanDeRepartition, LIMITE_REPARTITION as f33LimiteRepartition } from "../../apps/console/lib/explorer-page-params";
+import { EXPLORER_DATASET_IDS as f33DatasetIds, datasetDefinition as f33DatasetDefinition } from "../../apps/console/lib/analytics-schema";
+import { resumePopulation as f36ResumePopulation, retraitsDePopulation as f36RetraitsDePopulation } from "../../apps/console/lib/explorer-page-params";
 import { vitalDeVerdict as f32VitalDeVerdict, phraseSansVerdict as f32PhraseSansVerdict, formatDeMesure as f32FormatDeMesure, titreResultat as f32TitreResultat, referencePrecedente as f32ReferencePrecedente, groupeHref as f32GroupeHref, filtresDuGroupe as f32FiltresDuGroupe } from "../../apps/console/lib/explorer-page-params";
 import {
   encodeExplorerCursor,
@@ -485,5 +488,151 @@ describe("F34 — resumeVue (W-V2)", () => {
       expect(sp.get("run")).toBe("1");
       expect(sp.has("period")).toBe(false);
     }
+  });
+});
+
+describe("F33 — plans dérivés du contexte (W-E2, W-E7)", () => {
+  /**
+   * Ce que chaque jeu COMPTE, jeu par jeu et sans exception : `rows:count` partout,
+   * sauf les sessions (comptées à leur début) et les erreurs (comptées en
+   * occurrences, V1 — une ligne d'erreur en tait plusieurs). Ce tableau est écrit
+   * à la main : c'est lui, et non le code, qui dit ce qui est attendu.
+   */
+  const ATTENDU: Record<string, { field: string; aggregation: string; unite: string }> = {
+    custom_events: { field: "rows", aggregation: "count", unite: "événements" },
+    errors: { field: "occurrences", aggregation: "sum", unite: "occurrences" },
+    views: { field: "rows", aggregation: "count", unite: "vues" },
+    sessions: { field: "started", aggregation: "count", unite: "sessions" },
+    vitals: { field: "rows", aggregation: "count", unite: "mesures" },
+    resources: { field: "rows", aggregation: "count", unite: "ressources" },
+    longtasks: { field: "rows", aggregation: "count", unite: "tâches" },
+    actions: { field: "rows", aggregation: "count", unite: "actions" },
+    spans: { field: "rows", aggregation: "count", unite: "segments" },
+  };
+
+  /** Le plan de départ d'un jeu : sa première mesure, et sa variante si elle est exigée. */
+  function f33PlanSource(dataset: string) {
+    const definition = f33DatasetDefinition(dataset as never);
+    const variante = definition.variant?.required ? `&variant=${definition.variant.values[0]}` : "";
+    return plan(`app=demo&dataset=${dataset}&measure=${mesureDefaut(dataset as never)}&viz=value${variante}`);
+  }
+
+  /** Un plan dérivé reste un plan que le REGISTRE accepte — pas seulement un objet. */
+  function f33Revalide(p: ExplorerPlan) {
+    return parseExplorerPlan(
+      {
+        dataset: p.dataset,
+        measure: p.measure,
+        variant: p.variant,
+        visualization: p.visualization,
+        groupBy: p.groupBy,
+        limit: p.limit,
+      },
+      requete("app=demo"),
+    );
+  }
+
+  it("chaque jeu dit ce qu'il compte : rows, started (sessions) ou occurrences (erreurs)", () => {
+    expect(Object.keys(ATTENDU).sort()).toEqual([...f33DatasetIds].sort());
+    for (const dataset of f33DatasetIds) {
+      const volume = f33MesureDeVolume(dataset);
+      expect(volume, dataset).not.toBeNull();
+      expect({ ...volume!.measure, unite: volume!.unite }, dataset).toEqual(ATTENDU[dataset]);
+    }
+  });
+
+  it("le plan de volume : même population, comptée par seau, sans regroupement — et valide", () => {
+    for (const dataset of f33DatasetIds) {
+      const source = f33PlanSource(dataset);
+      const volume = f33PlanDeVolume(source);
+      expect(volume, dataset).not.toBeNull();
+      expect(volume!.dataset, dataset).toBe(source.dataset);
+      // Même variante : le contexte compte la MÊME sous-population que le résultat.
+      expect(volume!.variant, dataset).toBe(source.variant);
+      expect(volume!.measure, dataset).toEqual({ field: ATTENDU[dataset].field, aggregation: ATTENDU[dataset].aggregation });
+      expect(volume!.groupBy, dataset).toEqual([]);
+      expect(volume!.visualization, dataset).toBe("timeseries");
+      expect(volume!.limit, dataset).toBe(1);
+      expect(volume!.cursor, dataset).toBeNull();
+      expect(f33Revalide(volume!).ok, dataset).toBe(true);
+    }
+  });
+
+  it("le plan de répartition : le même dénombrement, groupé par la dimension, classement 10", () => {
+    for (const dataset of f33DatasetIds) {
+      const repartition = f33PlanDeRepartition(f33PlanSource(dataset), "device");
+      expect(repartition, dataset).not.toBeNull();
+      expect(repartition!.measure, dataset).toEqual({ field: ATTENDU[dataset].field, aggregation: ATTENDU[dataset].aggregation });
+      expect(repartition!.groupBy, dataset).toEqual(["device"]);
+      expect(repartition!.visualization, dataset).toBe("toplist");
+      expect(repartition!.limit, dataset).toBe(f33LimiteRepartition);
+      expect(f33Revalide(repartition!).ok, dataset).toBe(true);
+    }
+  });
+
+  it("sessions actives : le volume repart des sessions COMMENCÉES, seules à avoir un seau honnête", () => {
+    const actives = plan("app=demo&dataset=sessions&measure=active:count&viz=value");
+    const volume = f33PlanDeVolume(actives)!;
+    expect(volume.measure).toEqual({ field: "started", aggregation: "count" });
+    // La série d'une mesure sans découpage temporel est refusée par le registre :
+    // c'est bien que le contexte ne la demande jamais.
+    expect(f33Revalide(volume).ok).toBe(true);
+    expect(f33Revalide({ ...actives, visualization: "timeseries" }).ok).toBe(false);
+  });
+
+  it("le curseur du journal ne suit pas le contexte", () => {
+    const journal = plan("app=demo&dataset=views&measure=rows:count&viz=table&limit=25");
+    const avecCurseur: ExplorerPlan = { ...journal, cursor: { fingerprint: "x", ts: "2026-09-17T11:00:00.000Z", key: "1" } };
+    expect(f33PlanDeVolume(avecCurseur)!.cursor).toBeNull();
+    expect(f33PlanDeRepartition(avecCurseur, "browser")!.cursor).toBeNull();
+  });
+});
+
+// F36 — W-B1 : la population lue, écrite au-dessus d'une grille de cartes. Ce que
+// ces tests empêchent : qu'une population non restreinte se taise (« rien d'écrit »
+// se lit « rien de filtré »… ou « je ne sais pas »), et qu'une condition affichée
+// n'offre pas le geste qui la retire.
+describe("F36 — résumé de la population lue (W-B1)", () => {
+  it("sans aucune condition : « Tous les visiteurs · Robots exclus », et les apps effectives", () => {
+    const puces = f36ResumePopulation(requete("app=demo-app"), "Europe/Paris");
+    expect(puces[0]).toBe("Apps : demo-app");
+    expect(puces.join(" · ")).toContain("Tous les visiteurs · Robots exclus");
+    // Le fuseau des découpes locales est dit : un jour n'est pas le même partout (R-T).
+    expect(puces.at(-1)).toBe("Jours et heures locales lus en Europe/Paris");
+    // La plage et le fuseau d'axe sont les props dédiées de `PopulationBar` : pas ici.
+    expect(puces.join(" · ")).not.toContain("24 h");
+  });
+
+  it("à « toutes les apps », la barre parle quand même — l'absence de filtre est une information", () => {
+    const puces = f36ResumePopulation(requete(""), "UTC");
+    expect(puces[0]).toBe("Toutes les apps autorisées");
+  });
+
+  it("chaque condition est écrite, et robots inclus se dit comme tel", () => {
+    const puces = f36ResumePopulation(requete("app=demo-app&device=mobile&seg=v2:browser:eq:Firefox&bots=1"), "UTC");
+    expect(puces).toContain("Appareil = mobile");
+    expect(puces).toContain("Navigateur = Firefox");
+    expect(puces).toContain("Robots inclus");
+    expect(puces).not.toContain("Tous les visiteurs");
+  });
+
+  it("chaque condition porte le lien de la MÊME page sans elle ; le reste n'est pas un lien", () => {
+    const query = requete("app=demo-app&device=mobile&seg=v2:browser:eq:Firefox");
+    const retraits = f36RetraitsDePopulation(query, (sans) =>
+      `/dashboards/7?${new URLSearchParams(
+        Object.entries({
+          app: sans.scope.requestedApp ?? "",
+          device: sans.filters.device ?? "",
+          browser: sans.filters.browser ?? "",
+          seg: sans.filters.segments.map((c) => c.dimension).join(","),
+        }).filter(([, v]) => v !== ""),
+      ).toString()}`,
+    );
+    // Un libellé par condition retirable, et le lien ne la porte plus.
+    expect(Object.keys(retraits).sort()).toEqual(["Appareil = mobile", "Navigateur = Firefox"]);
+    expect(retraits["Appareil = mobile"]).not.toContain("device=mobile");
+    expect(retraits["Navigateur = Firefox"]).not.toContain("seg=browser");
+    // « Robots exclus » n'est pas retirable : il n'y a pas de geste à faire croire.
+    expect(retraits["Robots exclus"]).toBeUndefined();
   });
 });

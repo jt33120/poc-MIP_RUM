@@ -67,8 +67,22 @@ import {
 import { avecCondition, RAISON_AUCUNE_VUE, ratioPour100, serieRatioPour100, sparklineDeCompte } from "@/lib/perf-domain";
 import { choisirReleases, vuesProduit, type Entree } from "@/lib/presets";
 import { annotationsDeploiements } from "@/lib/annotations";
+// P*.7 — datation d'une rupture : fenêtre fixe de 14 jours, à part de la plage de l'écran.
+import { fusionnerAnnotations } from "@/lib/annotations";
+import { dailyLcpSeries, type DailyLcp } from "@/lib/queries-grid";
+import { bornesJourLocal } from "@/lib/fuseau";
+import { instantDe, jourDans } from "@/lib/series";
+import { tendance } from "@/lib/forecast";
+import {
+  REGLE_RUPTURE,
+  annotationRupture,
+  daterRupture,
+  deploiementCoincident,
+  phraseRupture,
+  phraseSansRupture,
+} from "@/lib/stats/rupture";
 import { explorerHref } from "@/lib/explorer-page-params";
-import { gabaritZoom, lireComparaison, lireEtatDeVue, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
+import { ecrirePanel, gabaritZoom, lireComparaison, lireEtatDeVue, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
 import {
   ALERTES_PAR_EVENEMENT,
   constatsVueEnsemble,
@@ -261,6 +275,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     groupesErreurs,
     couvVitaux,
     couvTrafic,
+    lcpQuotidienP7,
   ] = await Promise.all([
     blocs.vitals || blocs.decoupage ? lire(() => vitalsP75(f)) : sansLecture<VitalAgg[]>([]),
     blocs.vitals && prev ? lire(() => vitalsP75(f, true)) : sansLecture<VitalAgg[]>([]),
@@ -304,13 +319,24 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     // Constats (zone 4) : dernier déploiement, alertes non acquittées, erreurs régressées.
     lire(() => latestDeployImpact(f)),
     ALERTES_PAR_EVENEMENT
-      ? lire(async () => ({ mode: "evenements" as const, lignes: (await alertFirings(f, 1)).lignes }))
+      ? // Les lignes NOMMÉES viennent du jour UTC en cours (`alertFirings(f, 1)`,
+        // § 5.1.2) ; le « et N autres » se compte sur le total non acquitté, sans
+        // quoi une alerte d'avant-hier disparaîtrait des constats à minuit UTC.
+        lire(async () => {
+          const [declenchements, total] = await Promise.all([alertFirings(f, 1), unackedAlertCount(f)]);
+          return { mode: "evenements" as const, lignes: declenchements.lignes, total };
+        })
       : lire(async () => ({ mode: "compte" as const, n: await unackedAlertCount(f) })),
     lire(() => listErrorGroups(f, { limit: REGRESSES_LUS, offset: 0 })),
     (blocs.vitals || blocs.hero || blocs.charge) && prev
       ? couvertures([SOURCE_VITAUX])
       : Promise.resolve<CouverturePrecedente[]>([]),
     blocs.trafic && prev ? couvertures(SOURCES_TRAFIC) : Promise.resolve<CouverturePrecedente[]>([]),
+    // P*.7 — « depuis quand ? ». La datation d'une rupture demande au moins dix
+    // JOURS ; la plage de l'écran en compte souvent moins d'un. Elle se lit donc
+    // sur la fenêtre FIXE de 14 jours complets, découpés dans le fuseau de l'app,
+    // et la phrase le dit — comme le fait déjà l'historique de la zone 9.
+    blocs.hero ? lire(() => dailyLcpSeries(f, { exclureAujourdhui: true })) : sansLecture<DailyLcp[]>([]),
   ]);
 
   // ─── Releases comparées (§ 3.2) : URL d'abord, sinon la règle du dernier déploiement ───
@@ -579,12 +605,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       },
       deploiement: (relB, relA) => hrefWithQuery("/", query, { cmp: "release", rel_b: relB, rel_a: relB ? relA : null }),
       alertes: lien("/alerts"),
-      alerte: (evt) => lien("/alerts", { evt: String(evt) }),
-      // Le panneau erreur (`panel=error:<fp>`, F20) et le filtre `statut` (F19) ne sont pas
-      // encore lus par `/errors` : la page du groupe, et la liste — où les régressés sont en
-      // tête (ordre CP9). Écart déclaré ; F20 / F19 rebasculeront ces deux liens.
-      erreur: (g) => lien(`/errors/${encodeURIComponent(g.fingerprint)}`, { app: g.app_id }),
-      regresses: lien("/errors"),
+      // L'ancre amène l'événement à l'écran ; `evt` le met en évidence (F67).
+      alerte: (evt) => `${lien("/alerts", { evt: String(evt) })}#evt-${evt}`,
+      // F20 a livré le panneau (`panel=error:<fp>`) et F19 le filtre `statut` : les deux
+      // liens quittent leur repli. Le constat ouvre donc le groupe SANS quitter la liste,
+      // et « tous les régressés » filtre vraiment la liste au lieu de compter sur l'ordre.
+      erreur: (g) => lien("/errors", { app: g.app_id, panel: ecrirePanel({ type: "error", id: g.fingerprint }) }),
+      regresses: lien("/errors", { statut: "regressed" }),
     },
   );
 
@@ -610,9 +637,65 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         lien: (relB, relA) => hrefWithQuery("/", query, { cmp: "release", rel_b: relB, rel_a: relA }),
       })
     : null;
+  // ─── P*.7 — « et depuis quand ? » : datation d'une rupture du LCP ───
+  // La question de l'écran se termine par « depuis quand ? » (§ 5.1) ; y répondre
+  // demande des JOURS, pas des seaux de la plage courante. Le test de Pettitt tourne
+  // donc sur la fenêtre fixe de 14 jours complets (fuseau de l'app), et la phrase du
+  // hero écrit cette fenêtre pour qu'on ne la lise pas comme la plage choisie.
+  const jourDeploy = (ts: Date | string) => jourDans(instantDe(ts), fuseau);
+  const datationP7 = daterRupture(
+    (lcpQuotidienP7.ok ? lcpQuotidienP7.data : []).map((r) => ({ jour: r.jour, valeur: r.p75, effectif: r.n })),
+  );
+  const ruptureDeploiementP7 =
+    datationP7.ok && datationP7.rupture
+      ? deploiementCoincident(
+          datationP7.rupture.jour,
+          deploys.ok ? deploys.data.map((d) => ({ jour: jourDeploy(d.ts), version: d.version })) : [],
+        )
+      : null;
+  // La tendance de la même fenêtre (F65) : sans rupture, elle distingue « ça dérive »
+  // de « il ne se passe rien » ; avec une rupture, elle rappelle qu'une dérive
+  // régulière sépare la série aussi nettement qu'une marche.
+  const tendanceP7 = tendance(
+    (lcpQuotidienP7.ok ? lcpQuotidienP7.data : []).map((r) => r.p75),
+    (lcpQuotidienP7.ok ? lcpQuotidienP7.data : []).map((r) => r.n),
+  );
+  const phraseDatationP7 = !lcpQuotidienP7.ok
+    ? "Datation d'une rupture : LCP quotidien non lu."
+    : !datationP7.ok
+      ? datationP7.raison
+      : datationP7.rupture
+        ? phraseRupture(datationP7.rupture, "Le LCP p75", (v) => formater("ms", v), ruptureDeploiementP7) +
+          (ruptureDeploiementP7 ? " Coïncidence de date, pas une cause établie." : "") +
+          (tendanceP7.etat === "significative"
+            ? " La tendance est par ailleurs établie sur la même fenêtre : une dérive régulière sépare la série aussi nettement qu'une marche."
+            : "")
+        : phraseSansRupture(datationP7, tendanceP7.etat === "significative");
+  // Le clic ouvre la PLAGE DU JOUR de la rupture (§ 3.7), bornes UTC du jour local.
+  const bornesRuptureP7 =
+    datationP7.ok && datationP7.rupture ? bornesJourLocal(datationP7.rupture.jour, fuseau) : null;
+  const annotationsRuptureP7 =
+    datationP7.ok && datationP7.rupture && bornesRuptureP7
+      ? [
+          annotationRupture(
+            datationP7.rupture,
+            bornesRuptureP7.from,
+            hrefWithQuery("/", query, { period: null, from: bornesRuptureP7.from, to: bornesRuptureP7.to }),
+          ),
+        ]
+      : [];
   const annotations: AnnotationsFigure = deploiements
-    ? { annotations: deploiements.annotations, indisponible: deploiements.indisponible }
-    : { annotations: [], indisponible: "lecture des marqueurs de déploiement en échec" };
+    ? {
+        annotations: fusionnerAnnotations([
+          { annotations: deploiements.annotations, liste: deploiements.liste },
+          { annotations: annotationsRuptureP7, liste: annotationsRuptureP7 },
+        ]),
+        indisponible: deploiements.indisponible,
+      }
+    : {
+        annotations: annotationsRuptureP7,
+        indisponible: "lecture des marqueurs de déploiement en échec",
+      };
   const communSeries = {
     grille: grilleContrat,
     seauSecondes: query.range.bucketSeconds,
@@ -639,6 +722,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 ? ` Aucune série de référence : ${deltasVitaux.note}.`
                 : ""
           }`;
+  // P*.7 : la phrase de datation complète la lecture du hero, avec SA fenêtre (elle
+  // n'est pas celle de la plage choisie) et SA règle (RM4). `blocs.hero` éteint : rien.
+  const lectureHeroP7 = !blocs.hero
+    ? null
+    : `${phraseDatationP7} Fenêtre de cette datation : ${GRID_DAYS} jours complets, fuseau de l'app (${fuseau}), journée en cours exclue ; la plage choisie en haut ne s'y applique pas. Règle : ${REGLE_RUPTURE}.`;
   // ─── Zone 6 — heures × route en angle mort (F13, F57) ───
   const etatAngle: EtatAngleMort | null = !blocs.angles
     ? null
@@ -676,12 +764,14 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           tri: triDecoupage,
           ensemble: vitals.ok ? (byName[vitalClasse]?.p75 ?? null) : null,
           libelle: groupLabel,
-          // Une route ouvre son panneau sur `/pages` (§ 3.3) ; toute autre dimension,
-          // `/pages` filtré ; « Inconnu », la condition `is_null`.
-          // `/pages` filtré sur le groupe (`route=`, `browser=`…, « Inconnu » : `is_null`).
-          // Le panneau route (`panel=route:<r>`, § 3.3) attend F17 : `/pages` ne le lit pas
-          // encore, et le lien filtré est celui qui marchait avant F13 (écart déclaré).
-          lien: (valeur) => breakdownDrillHref("/pages", query, decoupage, valeur, schema),
+          // Une route ouvre son PANNEAU sur `/pages` (§ 3.3, F17) : la route se
+          // qualifie sans quitter le classement. Toute autre dimension — et
+          // « Inconnu », qui n'a pas d'identifiant de panneau — reste un `/pages`
+          // filtré sur le groupe (`browser=`…, ou la condition `is_null`).
+          lien: (valeur) =>
+            decoupage === "route" && valeur !== null
+              ? lien("/pages", { panel: ecrirePanel({ type: "route", id: valeur }), vital: vitalClasse })
+              : breakdownDrillHref("/pages", query, decoupage, valeur, schema),
           description: (valeur, mesures) => groupDescription(decoupage, valeur, mesures, `mesure(s) ${vitalClasse}`),
         })
       : null;
@@ -836,7 +926,17 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           <HeroCwv
             {...communSeries}
             mode={modeSeries}
-            lecture={lectureHero}
+            lecture={
+              <>
+                {lectureHero}
+                {lectureHeroP7 && (
+                  <>
+                    {" "}
+                    <span data-testid="datation-rupture">{lectureHeroP7}</span>
+                  </>
+                )}
+              </>
+            }
             vitaux={VITAUX_HERO.map((nom, i) => ({
               vital: nom,
               courant: serieDe(nom),

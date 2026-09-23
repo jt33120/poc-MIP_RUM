@@ -211,6 +211,12 @@ export interface ErrorListResult {
   unfingerprinted: number;
   page: { limit: number; offset: number };
   total: number;
+  /**
+   * Groupes retenus par le filtre de statut (F19), pour la pagination de la LISTE :
+   * `total` reste le nombre de groupes de toute la population. Absent hors filtre ;
+   * `null` quand la page demandée est vide (l'appelant n'a alors rien à paginer).
+   */
+  totalFiltre?: number | null;
   totals: ErrorTotals;
   trend: ErrorTrendPoint[];
   sampling: ErrorSampling;
@@ -641,14 +647,49 @@ const ORDRES_GROUPES: Record<OrdreGroupes, string> = {
 };
 
 /**
+ * Statut de triage filtrable dans la liste historique (`statut=…`, F19, § 5.3.2).
+ *
+ * C'est l'état AFFICHÉ par les badges, pas la colonne brute : une erreur marquée
+ * « résolue » qui réapparaît est une RÉGRESSION (`ErrorStatusBadges` la montre
+ * ainsi, et l'ordre de triage la place en tête). Elle répond donc à
+ * `statut=regressed` et non à `statut=resolved` — sans quoi « Résolues » listerait
+ * des groupes que l'écran affiche comme régressés.
+ */
+export type StatutGroupe = "open" | "resolved" | "ignored" | "regressed";
+
+const FILTRES_STATUT: Record<StatutGroupe, string> = {
+  regressed: REGRESSED_SQL,
+  // Aucune ligne de triage = ouverte (le défaut de `coalesce`, comme partout ici).
+  open: "coalesce(st.status, 'open') = 'open'",
+  resolved: `st.status = 'resolved' and not ${REGRESSED_SQL}`,
+  ignored: "st.status = 'ignored'",
+};
+
+/**
  * Groupes de la population, avec `first_seen` et triage ; liste ET détail.
  *
  * `nouveauxDepuis` (paramètre d'écran `nouveaux=1`, F18) : seulement les groupes
  * dont la première occurrence CONSERVÉE (`origine`, non bornée) tombe dans la
  * fenêtre — la définition de `nouveauxGroupes`, qui en donne le nombre. Un groupe
  * de la population a une ligne avant `to` : `first_seen < to` va de soi.
+ *
+ * `statut` (F19) restreint la liste au statut de triage demandé. Il s'ajoute au
+ * filtre précédent : les deux restreignent la LISTE, jamais les totaux ni la
+ * tendance de l'écran. `count(*) over ()` donne le nombre de groupes retenus dans
+ * la même instruction (la pagination en a besoin, et `total` compte toute la
+ * population) : écrit SEULEMENT sous filtre, pour ne pas matérialiser tous les
+ * groupes de la liste par défaut.
  */
-function groupsSql(base: ErrorBase, ordre: OrdreGroupes = "statut", nouveauxDepuis?: string): string {
+function groupsSql(
+  base: ErrorBase,
+  ordre: OrdreGroupes = "statut",
+  nouveauxDepuis?: string,
+  statut?: StatutGroupe,
+): string {
+  const conditions = [
+    ...(nouveauxDepuis ? [`o.first_seen >= ${base.bind(nouveauxDepuis)}::timestamptz`] : []),
+    ...(statut ? [FILTRES_STATUT[statut]] : []),
+  ];
   return `${base.sql}, g as (
     select app_id, fingerprint,
            max(error_type) as error_type, max(message) as sample_message,
@@ -666,11 +707,13 @@ function groupsSql(base: ErrorBase, ordre: OrdreGroupes = "statut", nouveauxDepu
          coalesce(st.status, 'open') as status, st.resolved_at,
          ${REGRESSED_SQL} as regressed,
          g.sessions_affected, g.visitors_affected, g.identified_users_affected,
-         g.session_coverage, g.identity_coverage, g.min_inclusion_probability
+         g.session_coverage, g.identity_coverage, g.min_inclusion_probability${
+           statut ? ",\n         count(*) over ()::float8 as total_filtre" : ""
+         }
     from g
     join origine o on o.app_id = g.app_id and o.fingerprint = g.fingerprint
     left join error_status st on st.app_id = g.app_id and st.fingerprint = g.fingerprint${
-      nouveauxDepuis ? `\n   where o.first_seen >= ${base.bind(nouveauxDepuis)}::timestamptz` : ""
+      conditions.length ? `\n   where ${conditions.join("\n     and ")}` : ""
     }
    order by ${ORDRES_GROUPES[ordre]}`;
 }
@@ -782,7 +825,11 @@ export function occurrencesSql(base: ErrorBase): string {
    order by fe.ts desc, fe.id desc`;
 }
 
-type GroupSqlRow = Omit<ErrorGroupRow, "series"> & { min_inclusion_probability: number | null };
+type GroupSqlRow = Omit<ErrorGroupRow, "series"> & {
+  min_inclusion_probability: number | null;
+  /** Sous filtre de statut seulement (F19) : groupes retenus, avant `limit`. */
+  total_filtre?: number;
+};
 
 export interface TotalsSqlRow extends ErrorImpact {
   unfingerprinted_rows: boolean;
@@ -807,7 +854,7 @@ export type OccurrenceSqlRow = Omit<ErrorOccurrenceRow, "links"> & {
   cursor_ts: string;
 };
 
-function toGroupRow({ min_inclusion_probability: _sampling, ...group }: GroupSqlRow): ErrorGroupRow {
+function toGroupRow({ min_inclusion_probability: _sampling, total_filtre: _filtre, ...group }: GroupSqlRow): ErrorGroupRow {
   return group;
 }
 
@@ -867,6 +914,12 @@ export async function listErrorGroups(
      * pagine sur `nouveauxGroupes(f)`.
      */
     nouveaux?: boolean;
+    /**
+     * Statut de triage de la liste (`statut=…`, F19). Comme `nouveaux`, il filtre
+     * la LISTE et rien d'autre : totaux, tendance et découpage restent ceux de la
+     * population. Le nombre de groupes retenus revient dans `totalFiltre`.
+     */
+    statut?: StatutGroupe;
   },
 ): Promise<ErrorListResult> {
   const schema = await errorSchema();
@@ -879,7 +932,7 @@ export async function listErrorGroups(
   return snapshot(async (lire) => {
     const groupsBase = errorBase(resolved, schema, restriction);
     const rows = await lire<GroupSqlRow>(
-      `${groupsSql(groupsBase, opts?.tri ?? "statut", opts?.nouveaux ? range.from : undefined)}
+      `${groupsSql(groupsBase, opts?.tri ?? "statut", opts?.nouveaux ? range.from : undefined, opts?.statut)}
        limit ${groupsBase.bind(page.limit)} offset ${groupsBase.bind(page.offset)}`,
       groupsBase.params,
     );
@@ -904,6 +957,7 @@ export async function listErrorGroups(
       unfingerprinted: totals.unfingerprinted,
       page: { limit: page.limit, offset: page.offset },
       total: totals.groups,
+      ...(opts?.statut ? { totalFiltre: rows[0]?.total_filtre ?? null } : {}),
       totals,
       trend,
       sampling: samplingOf(totalsRows.find((row) => !row.unfingerprinted_rows)?.min_inclusion_probability),
@@ -1326,4 +1380,67 @@ export async function topGroupesSeries(f: ErrorFilters, n: 4): Promise<{ groupes
       })),
     };
   });
+}
+
+// ═════════════════ Détail d'un groupe : versions touchées (F20) ═════════════════
+
+export interface ReleaseVue {
+  release: string;
+  ts: Date;
+}
+
+export interface ReleasesDuGroupe {
+  /** Première occurrence du groupe PORTANT une release ; `null` si aucune n'en porte. */
+  premiere: ReleaseVue | null;
+  derniere: ReleaseVue | null;
+  /** Releases distinctes portées par le groupe (plafonné) : « apparue puis restée ». */
+  distinctes: number;
+}
+
+/**
+ * « Versions touchées » du bloc 3 du détail (§ 5.3.3) : première et dernière
+ * release vues pour ce groupe, avec leur date.
+ *
+ * NON BORNÉ PAR LA FENÊTRE, délibérément — comme `origine.first_seen` : la question
+ * est « depuis quelle version ? », qui distingue une RÉGRESSION (première release
+ * récente) d'une DETTE (première release ancienne). Une fenêtre de 24 h répondrait
+ * toujours « la release d'hier ». L'écran le libelle « depuis toujours ».
+ * Le périmètre d'apps reste lié (`sqlContext` + `intersectApp` sur l'app du groupe :
+ * une app hors périmètre effectif ne rend rien, jamais un repli sur toutes les apps).
+ *
+ * Seules les occurrences qui DÉCLARENT une release entrent : un groupe dont aucune
+ * occurrence n'en porte rend `null`, que l'écran écrit « release non déclarée » —
+ * jamais une version devinée, jamais « — » confondu avec une release vide.
+ */
+export async function releasesDuGroupe(ref: ErrorGroupRef, f: ErrorFilters): Promise<ReleasesDuGroupe> {
+  const sql = await sqlContext({ ...f, query: intersectApp(queryOf(f), ref.app_id) });
+  // `time: null` : aucune fenêtre (cf. `origine`). Les autres prédicats du contrat
+  // (appareil, dimensions, segment, bots) restent appliqués : le détail affiche la
+  // même population que ses autres chiffres.
+  const where = sql.where({ dataset: "errors", row: "e", session: "s", time: null });
+  const empreinte = sql.bind(ref.fingerprint);
+  const [row] = await q<{
+    premiere_release: string | null;
+    premiere_ts: Date | null;
+    derniere_release: string | null;
+    derniere_ts: Date | null;
+    distinctes: number;
+  }>(
+    `select (array_agg(e.release order by e.ts asc, e.id asc))[1] as premiere_release,
+            min(e.ts) as premiere_ts,
+            (array_agg(e.release order by e.ts desc, e.id desc))[1] as derniere_release,
+            max(e.ts) as derniere_ts,
+            count(distinct e.release)::int as distinctes
+       from rum_error e
+       ${sessionJoin("e", "s")}
+      where e.fingerprint = ${empreinte} and e.release is not null${where}`,
+    sql.params,
+  );
+  const vue = (release: string | null, ts: Date | null): ReleaseVue | null =>
+    release === null || ts === null ? null : { release, ts };
+  return {
+    premiere: vue(row?.premiere_release ?? null, row?.premiere_ts ?? null),
+    derniere: vue(row?.derniere_release ?? null, row?.derniere_ts ?? null),
+    distinctes: row?.distinctes ?? 0,
+  };
 }
