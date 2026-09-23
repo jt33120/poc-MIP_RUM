@@ -22,6 +22,17 @@ export async function POST(req: Request) {
     );
   }
 
+  // ÉCRITURE RÉSERVÉE AUX MACHINES. C'est le seul point d'écriture de /api/v1
+  // ouvert à un jeton ; aucun écran ne l'appelle. Une session — y compris la
+  // session DÉMO, distribuée à quiconque ouvre /demo — n'a rien à faire ici :
+  // un marqueur de déploiement fabriqué décale la lecture des régressions.
+  if (principal.kind === "session") {
+    return NextResponse.json(
+      { error: "réservé à un jeton d'intégration (Authorization: Bearer <token>)" },
+      { status: 403 },
+    );
+  }
+
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;

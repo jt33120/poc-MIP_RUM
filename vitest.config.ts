@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 // Alias `@/` → apps/console (aligné sur le tsconfig de la console) pour permettre
 // aux tests d'importer les route handlers Next qui utilisent `@/...`. Les
@@ -35,6 +35,15 @@ const depuisConsole = createRequire(`${process.cwd()}/apps/console/package.json`
 const REACT = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/server"];
 
 export default defineConfig({
+  // LES WORKTREES DES AGENTS NE SONT PAS DES TESTS. `.claude/worktrees/` héberge
+  // des copies complètes du dépôt (47 au 23/09/2026) : sans cette exclusion,
+  // `pnpm test:unit` ramasse 13 069 fichiers de test au lieu de ~400, met dix
+  // minutes, et rend des centaines d'échecs qui ne disent rien du code — des
+  // copies dont les dépendances ne sont pas installées. Un résultat illisible
+  // équivaut à pas de résultat du tout.
+  test: {
+    exclude: [...configDefaults.exclude, "**/.claude/**", "**/.git/**"],
+  },
   oxc: {
     jsx: { runtime: "automatic", importSource: "react" },
   },

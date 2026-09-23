@@ -12,6 +12,22 @@ export const MAX_BODY_BYTES = numEnv("MAX_BODY_BYTES", 2_000_000); // 2 Mo
 /** Nombre max de spans traités par requête (au-delà : comptés `rejected`). */
 export const MAX_SPANS_PER_REQUEST = numEnv("MAX_SPANS_PER_REQUEST", 20_000);
 
+/**
+ * Borne de SORTIE de la décompression d'un chunk de rejeu (octets).
+ *
+ * POURQUOI ELLE EXISTE. Le plafond d'ENTRÉE (2 Mo) ne borne pas la sortie : un
+ * gzip de 2 Mo peut rendre ~2 Go, et les trois sites qui décompriment un chunk le
+ * font SYNCHRONEMENT (`gunzipSync`). Sans borne, un seul corps bien formé bloque
+ * la boucle d'événements le temps de l'inflation, ou tue le processus sur la
+ * mémoire. La clé d'API n'est pas une barrière : elle est publique par
+ * construction, puisqu'elle est dans le snippet.
+ *
+ * 32 Mo laisse passer très largement un enregistrement réel — le SDK plafonne un
+ * chunk à 1 Mo gzip — tout en gardant l'inflation bornée. Au-delà, `gunzipSync`
+ * lève un `RangeError`, que les appelants traitent comme un corps invalide (400).
+ */
+export const MAX_REPLAY_INFLATED_BYTES = numEnv("MAX_REPLAY_INFLATED_BYTES", 32 * 1024 * 1024);
+
 function numEnv(name, fallback) {
   const raw = readEnv(name);
   const n = raw == null ? NaN : Number(raw);

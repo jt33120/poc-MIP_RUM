@@ -30,3 +30,34 @@ apps/extension/*-key*.b64
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# OUTILLAGE IA LOCAL — présent sur le poste, absent du dépôt.
+#
+# Ces répertoires ne décrivent pas le produit : ce sont les réglages et les
+# artefacts des agents qui l'ont écrit (863 fichiers, un tiers du dépôt). Un
+# lecteur qui clone MIP RUM n'a rien à en faire, et leur présence brouillait la
+# lecture de l'arbre. Ils restent sur le poste ; seul le suivi git est retiré.
+#
+# EXCLUSION PAR SOUS-CHEMIN, JAMAIS `.claude/` EN BLOC : `.claude/worktrees/`
+# héberge des copies de travail complètes du dépôt. Un `git clean -x` les
+# effacerait, y compris du travail non fusionné. Ne pas lancer `git clean -x`
+# tant que ces répertoires vivent.
+.claude/helpers/
+.claude/settings.json
+.claude/settings.local.json
+.claude/skills/
+.claude/worktrees/
+.agents/
+.codex/
+_bmad/
+_bmad-output/
+.mcp.json
+
+# DOCUMENTS COMMERCIAUX ET CLIENT — présents sur le poste, absents du dépôt.
+# Voir docs/DOCUMENTS-HORS-DEPOT.md, qui dit lesquels et pourquoi.
+docs/OFFRE.md
+docs/MARKET_SCAN_BMAD.md
+docs/PRODUCT_REVIEW_BMAD.md
+docs/RAPPORT_CLIENT.md
+docs/DEMO_SCRIPT.md
+docs/*_UTI.md

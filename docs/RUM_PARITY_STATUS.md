@@ -11,10 +11,10 @@ Ce document répond à une seule question, capacité par capacité : **est-ce qu
 X, et qu'est-ce qui le prouve ?** Il est écrit pour la personne qui reprend le produit sans avoir
 suivi les livraisons. Une ligne sans preuve nommée n'y figure pas.
 
-Il ne remplace pas les journaux de livraison ([delivery-p5](../_bmad-output/implementation-artifacts/delivery-p5.md),
-[p6](../_bmad-output/implementation-artifacts/delivery-p6.md),
-[p7](../_bmad-output/implementation-artifacts/delivery-p7.md),
-[p8](../_bmad-output/implementation-artifacts/delivery-p8.md)) : il les **recoupe**. Là où un chiffre
+Il ne remplace pas les journaux de livraison ([delivery-p5](archive/delivery/delivery-p5.md),
+[p6](archive/delivery/delivery-p6.md),
+[p7](archive/delivery/delivery-p7.md),
+[p8](archive/delivery/delivery-p8.md)) : il les **recoupe**. Là où un chiffre
 annoncé ne se retrouve pas, c'est la mesure qui est écrite, et l'écart est signalé au § 8.
 
 ---
@@ -71,11 +71,11 @@ employée, ni affichée ; ni base de production, ni Railway, ni Vercel n'ont ét
 échoue (`Could not resolve "@mip/rum-core"`) et ses 10 tests sont perdus. La CI fait le build avant ;
 un relevé local qui l'oublie mesure 10 tests de moins et croit avoir trouvé un défaut.
 
-**Une PR de documentation ne déclenche pas la CI, et c'est voulu.** `ci.yml` et `docker-smoke.yml`
-portent un `paths-ignore` sur `docs/**`, `_bmad-output/**` et `**.md`, avec son miroir Vercel dans
-`apps/console/vercel.json`. Ce relevé part avec la PR de la vague 7, qui touche aussi du code : la CI y
-sera jouée. Les chiffres ci-dessus viennent de ce poste ; le passage de la CI sur le commit relevé (job
-unitaire vert, job e2e rouge sur un test instable qu'aucune ligne ne cite) est au § 12.3.
+**Une PR de documentation déclenche la CI depuis le 23/09/2026.** `ci.yml` portait un `paths-ignore` sur `docs/**`
+et `**.md` (miroir Vercel : `ignoreCommand`), retiré : ce document est analysé, figé dans `couverture.generated.json`,
+gardé par `couverture-site.test.ts` et affiché par `/presentation` — une PR « de doc seule » cassait la vitrine sans
+test. Les chiffres ci-dessus viennent de ce poste ; le passage de la CI sur le commit relevé (job unitaire vert, job
+e2e rouge sur un test instable qu'aucune ligne ne cite) est au § 12.3.
 
 **Déploiements : non relevés en direct le 23/09** (ni API Railway, ni API Vercel) ; état connu par `docs/TOPOLOGIE_BACKEND.md` :
 

@@ -1,6 +1,6 @@
 # MIP RUM
 
-[![CI](https://github.com/jt33120/mip-rum/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/jt33120/mip-rum/actions/workflows/ci.yml)
+[![CI](https://github.com/jt33120/poc-MIP_RUM/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/jt33120/poc-MIP_RUM/actions/workflows/ci.yml)
 
 **POC** de Real User Monitoring : mesure de l'expérience vécue par les visiteurs réels d'un site ou d'une application — vitesse d'affichage, réactivité, erreurs, parcours. Collecte au format OpenTelemetry, données hébergées en Union européenne.
 
@@ -64,23 +64,29 @@ pnpm --filter console dev                                       # console :3000
 node apps/sync-synthetic/src/sync.mjs seed                      # passages robot pour /correlation
 ```
 
-## Outillage IA (BMAD + graft)
+## Outillage IA — local, non versionné
 
-Le dépôt est câblé pour deux outils d'assistance, versionnés mais **non installés par le clone** :
+Une partie de ce produit a été écrite avec des agents. Leurs réglages et leurs
+artefacts (`.claude/`, `.agents/`, `.codex/`, `_bmad/`, `_bmad-output/`, `.mcp.json`)
+**ne sont pas dans le dépôt** : ils ne décrivent pas le produit, et ils pesaient un tiers
+des fichiers suivis. Un clone neuf n'en a pas besoin et ne les verra pas.
+
+Ce qui devait survivre à ce retrait a été déplacé dans `docs/` : le plan de la refonte
+frontend ([docs/product/plan-frontend-dashboard.md](docs/product/plan-frontend-dashboard.md)),
+les quatre journaux de livraison ([docs/archive/delivery/](docs/archive/delivery/)) et les
+notes de lecture qui servent de source à la vitrine
+([docs/product/notes-lecture-ekara.md](docs/product/notes-lecture-ekara.md)).
+
+Le seul outil que le dépôt suppose installé est **graft**, et seulement pour qui travaille
+avec un agent :
 
 ```bash
-npm install -g @nanonets/graft   # requis : .mcp.json et les hooks de .claude/settings.json appellent le binaire `graft`
+npm install -g @nanonets/graft   # le binaire `graft`, appelé par l'outillage local
 graft build                      # (re)génère le graphe de code dans graft/ — local, gitignoré
 ```
 
-- **graft** (paquet npm `@nanonets/graft`) indexe le monorepo en un graphe de code (`graft ask`, `graft callers`,
-  `graft skeleton`, `graft blast`) que l'agent interroge au lieu de tout relire. Le graphe vit dans `graft/`,
-  **jamais commité** : chaque poste régénère le sien. `.ignore` le garde greppable malgré le gitignore.
-  Sans l'installation globale ci-dessus, le serveur MCP déclaré dans `.mcp.json` ne démarre pas.
-- **[BMAD](https://github.com/bmad-code-org/bmad-method)** (module `bmm`) fournit les skills `bmad-*` de
-  `.claude/skills/` — configuration dans `_bmad/`, artefacts produits dans `_bmad-output/`. Nécessite
-  [`uv`](https://docs.astral.sh/uv/) : les skills lancent leurs scripts Python via `uv run`.
-  Point d'entrée : le skill `bmad-help`.
+Le graphe vit dans `graft/`, **jamais commité** : chaque poste régénère le sien. `.ignore` le
+garde greppable malgré le gitignore.
 
 ## Tests
 
@@ -125,8 +131,7 @@ En cas de désaccord entre ces documents, [docs/RUM_PARITY_STATUS.md](docs/RUM_P
 | [docs/API_CONSOLE.md](docs/API_CONSOLE.md) · [docs/RUM_READ_API.md](docs/RUM_READ_API.md) | API de lecture v1 (ITSM/CI-CD) + résumé partenaire |
 | [docs/MULTITENANT.md](docs/MULTITENANT.md) · [docs/ALERTING.md](docs/ALERTING.md) | Multi-tenant / RBAC · alerting (webhook/Slack ; e-mail à brancher) |
 | [docs/CONFORMITE.md](docs/CONFORMITE.md) · [docs/DPA.md](docs/DPA.md) | Conformité RGPD (résidence UE, DSAR, scrub PII) · modèle de DPA (art. 28) |
-| [docs/OFFRE.md](docs/OFFRE.md) | Positionnement commercial : brouillon interne daté de la v0.3, antérieur au document de couverture |
-| [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) | Déroulé de démo 10 min : checklist, plan B hors-ligne, objections/réponses ; bâti sur le chiffre du 10/06/2026 (voir [CHANGELOG.md](CHANGELOG.md), v0.1) |
+| [docs/DOCUMENTS-HORS-DEPOT.md](docs/DOCUMENTS-HORS-DEPOT.md) | **Ce qui n'est pas ici** : documents commerciaux (offre, démo, scan marché) et documents d'un client nommé. Présents sur le poste, hors dépôt, et listés avec leur contenu |
 | [docs/LIMITES.md](docs/LIMITES.md) | Limites du produit : liste du 10/06/2026 (v0.1 à v0.3), mise à jour P8.8 du 18/09/2026 |
 | [DEPLOY.md](DEPLOY.md) | Déploiement (Neon + Railway + Vercel), snippet et recette — **en partie périmé** : décrit encore le service Railway `ingest`, supprimé le 21/09/2026, et lui attribue les migrations, reprises par le `scheduler` ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
 | [BUILD_LOG.md](BUILD_LOG.md) | Journal factuel du build (valeurs réelles mesurées, pièges, décisions) |

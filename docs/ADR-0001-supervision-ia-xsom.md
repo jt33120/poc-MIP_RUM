@@ -77,4 +77,5 @@ Conservé (feature RUM, hors périmètre IA) : le **copilote console** (`ai_brie
 retrait endpoints IA + libs mortes + OpenAPI. 4. `C4` retrait métrique `ai_cost`.
 **[Gate B]** `C5` façade sans fallback + `ai_status`. **[Gate A]** `C6` retrait
 ingestion `gen_ai`. **[Gates A+B]** `C7` migration `v43` de dépréciation. `C8` docs (ce
-fichier + `RUM_READ_API.md` + `HANDOVER_UTI.md`).
+fichier + `RUM_READ_API.md` + `HANDOVER_UTI.md`, ce dernier hors dépôt —
+[DOCUMENTS-HORS-DEPOT.md](DOCUMENTS-HORS-DEPOT.md)).

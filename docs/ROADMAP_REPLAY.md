@@ -26,7 +26,8 @@ enregistrement n'existe.
 | Lecture | `/api/replay/[sessionId]` (gunzip + concat) → `rrweb-player` dans la console | ✅ codé |
 
 ## Étapes pour activer (le jour où on le veut)
-1. **Consentement front** sur le site suivi (bannière + `requireConsent:true`) — voir `docs/CONSENT_UTI.md`.
+1. **Consentement front** sur le site suivi (bannière + `requireConsent:true`) — voir
+   `docs/CONSENT_UTI.md`, document client hors dépôt ([DOCUMENTS-HORS-DEPOT.md](DOCUMENTS-HORS-DEPOT.md)).
 2. Snippet : `replay: 0.1` (10 % des sessions consenties).
 3. Registre : `update app_registry set replay_sample_rate = 0.1 where app_id = '<app>'`.
 4. **Cible scale** : basculer le stockage `bytea` → object storage + règle de cycle de vie (TTL 30 j).

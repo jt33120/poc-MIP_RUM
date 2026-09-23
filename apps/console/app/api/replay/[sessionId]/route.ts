@@ -9,6 +9,7 @@
 // migration nouvelle : la lecture des segments et la garde de périmètre sont inchangées.
 import { NextResponse } from "next/server";
 import { gunzipSync } from "node:zlib";
+import { MAX_REPLAY_INFLATED_BYTES } from "ingest/shared/limits.mjs";
 import { q } from "@/lib/db";
 import { authorizedAppsOf } from "@/lib/query-contract";
 import { withServerTrace } from "@/lib/server-trace";
@@ -51,7 +52,12 @@ export async function GET(
     let ignores = 0;
     for (const c of chunks) {
       try {
-        const parsed: unknown = JSON.parse(gunzipSync(c.body).toString("utf8"));
+        // Borne de sortie : un chunk stocké reste un gzip d'origine cliente, et
+        // rien ne garantit qu'il n'a pas été fabriqué pour gonfler à la lecture.
+        // Au-delà, RangeError → segment compté comme illisible, comme un corrompu.
+        const parsed: unknown = JSON.parse(
+          gunzipSync(c.body, { maxOutputLength: MAX_REPLAY_INFLATED_BYTES }).toString("utf8"),
+        );
         if (Array.isArray(parsed)) events.push(...parsed);
         else ignores += 1; // lisible, mais pas une liste d'événements rrweb
       } catch {

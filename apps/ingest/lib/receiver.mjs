@@ -32,7 +32,12 @@ import { ipClient, parseSourceIp } from "../supabase/functions/_shared/client-ip
 import { appliquerGeo } from "../supabase/functions/_shared/geoip.mjs";
 import { corsHeaders as buildCors, originsFromRegistry, REPLAY_ALLOW_HEADERS } from "../supabase/functions/_shared/cors.mjs";
 import { createLogger } from "../supabase/functions/_shared/log.mjs";
-import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "../supabase/functions/_shared/limits.mjs";
+import {
+  bodyTooLarge,
+  MAX_BODY_BYTES,
+  MAX_REPLAY_INFLATED_BYTES,
+  MAX_SPANS_PER_REQUEST,
+} from "../supabase/functions/_shared/limits.mjs";
 import { flattenOtlp, flattenOtlpLogs } from "../supabase/functions/_shared/otlp.mjs";
 import { withRetry } from "../supabase/functions/_shared/retry.mjs";
 import { secureOtlpIdentities } from "./identity-hash.mjs";
@@ -266,7 +271,15 @@ export function creerReceveur(pool, opts = {}) {
     try {
       // gunzip de contrôle : compte les events ET rejette un corps mal formé,
       // qu'on ne veut pas stocker (il serait illisible au rejeu).
-      const events = JSON.parse(gunzipSync(body).toString("utf8"));
+      //
+      // BORNE DE SORTIE OBLIGATOIRE. Le plafond d'entrée (2 Mio) ne dit rien de la
+      // taille décompressée : un gzip de 2 Mio peut rendre ~2 Gio, décompressés
+      // SYNCHRONEMENT ici. Sur un service à deux répliques, cela bloque la boucle
+      // d'événements ou tue la réplique sur la mémoire — et les clés d'API sont
+      // publiques par construction (elles sont dans le snippet), donc
+      // l'authentification n'est pas une barrière. `maxOutputLength` fait lever un
+      // RangeError, traité comme un corps invalide.
+      const events = JSON.parse(gunzipSync(body, { maxOutputLength: MAX_REPLAY_INFLATED_BYTES }).toString("utf8"));
       eventsCount = Array.isArray(events) ? events.length : 0;
     } catch {
       return repondre(res, 400, { error: "body must be gzipped JSON" }, entetes);

@@ -50,6 +50,15 @@ export const pool =
     // en mode transaction (Neon comme Supabase).
     max: Number(process.env.PGPOOL_MAX ?? 10),
     ssl: optionsSsl(connectionString),
+    // QUI EST CONNECTÉ, LISIBLE DANS `pg_stat_activity`. La console, le scheduler
+    // et un poste de dev se connectent tous en `neondb_owner` : sans nom
+    // d'application, leurs connexions sont indiscernables. Un rôle de login dédié
+    // aurait réglé la question, mais il est impossible à droits égaux sur Neon
+    // (PG 17 interdit au propriétaire d'accorder son propre rôle ; un rôle créé
+    // par l'API n'exécute aucune des 21 fonctions réservées, dont `rate_check`
+    // et `slo_status`) — répété le 23/09/2026 sur une branche Neon. Le nom
+    // traverse le pooler : vérifié par `current_setting('application_name')`.
+    application_name: "mip-console-vercel",
   });
 
 if (!globalForPg.pgPool) {
