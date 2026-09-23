@@ -4,9 +4,12 @@
 //
 //   · que v86 se rejoue sans effet et sans toucher une ligne : aucune table, aucun
 //     index, une contrainte NOT VALID, les règles et événements existants intacts ;
-//   · qu'une règle de release compare le p75 de la release LA PLUS RÉCENTE (premier
-//     déploiement déclaré) à celui de la PRÉCÉDENTE, sur la même fenêtre, et se
-//     franchit à +20 % exactement — la règle de `assessRegression` ;
+//   · qu'une règle de release compare le p75 de la release EN SERVICE (dernier
+//     marqueur déclaré en prod) à celui de la release qu'elle a REMPLACÉE (dernier
+//     marqueur antérieur d'une autre version), sur la même fenêtre, et se franchit
+//     à +20 % exactement — la règle de `assessRegression` ; qu'un passage en
+//     recette ne date pas une release, et qu'un retour arrière compte comme un
+//     déploiement ;
 //   · qu'elle n'évalue pas, et le dit, sans deux releases déclarées, sous 100
 //     mesures de l'une des deux, ou sur un p75 précédent nul — jamais un zéro,
 //     jamais une valeur écrite ;
@@ -61,11 +64,11 @@ async function app(db: pg.Pool, id: string): Promise<void> {
   await db.query("insert into rum_session (session_id, app_id) values ($1, $2) on conflict do nothing", [`${id}-s`, id]);
 }
 
-/** Un déploiement déclaré, `ilYA` avant maintenant (intervalle SQL ; négatif = futur). */
-async function deploiement(db: pg.Pool, id: string, version: string, ilYA: string): Promise<void> {
+/** Un déploiement déclaré, `ilYA` avant maintenant (intervalle SQL ; négatif = futur), en prod par défaut. */
+async function deploiement(db: pg.Pool, id: string, version: string, ilYA: string, env = "prod"): Promise<void> {
   await db.query(
-    "insert into deploy_marker (app_id, ts, version, env, source) values ($1, now() - $2::interval, $3, 'prod', 'ci')",
-    [id, ilYA, version],
+    "insert into deploy_marker (app_id, ts, version, env, source) values ($1, now() - $2::interval, $3, $4, 'ci')",
+    [id, ilYA, version, env],
   );
 }
 
@@ -206,8 +209,8 @@ suite("migration-v86 — régression de release dans check_alerts (PostgreSQL)",
       await deploiement(pool, A, "1.1.0", "1 hour");
       // Un marqueur FUTUR n'est pas une release déployée.
       await deploiement(pool, A, "2.0.0", "-1 hour");
-      // Redéployer une version ne la rajeunit pas : c'est son PREMIER déploiement qui compte.
-      await deploiement(pool, A, "1.0.0", "30 minutes");
+      // Redéployer la release en service ne change pas celle qu'elle a remplacée.
+      await deploiement(pool, A, "1.1.0", "30 minutes");
       await mesures(pool, A, "1.0.0", 2000, 120);
       await mesures(pool, A, "1.1.0", 2600, 120);
       // Des mesures sans release ne sont d'aucune des deux.
@@ -293,13 +296,99 @@ suite("migration-v86 — régression de release dans check_alerts (PostgreSQL)",
       });
     });
 
-    it("une seule release déclarée : pas d'évaluation, la raison le dit, aucune valeur", async () => {
-      const A = `${PREFIXE}seule`;
+    it("recette puis correctif puis prod : la release promue se compare à celle qu'elle remplace EN PROD", async () => {
+      // 3.1.0 passe en recette il y a 10 jours ; 3.0.9, un correctif, part en prod
+      // il y a 5 jours ; 3.1.0 est promue en prod il y a 1 h. Dater 3.1.0 de son
+      // passage en recette la ferait passer pour la PRÉCÉDENTE de 3.0.9.
+      const scenario = async (A: string, p75Promue: number) => {
+        await app(pool, A);
+        await deploiement(pool, A, "3.1.0", "10 days", "staging");
+        await deploiement(pool, A, "3.0.9", "5 days");
+        await deploiement(pool, A, "3.1.0", "1 hour");
+        await mesures(pool, A, "3.0.9", 2000, 150);
+        await mesures(pool, A, "3.1.0", p75Promue, 150);
+        return regle(pool, A, { fenetre: 180 });
+      };
+      const hausse = await scenario(`${PREFIXE}recette-hausse`, 2600);
+      const baisse = await scenario(`${PREFIXE}recette-baisse`, 1500);
+
+      await evaluer(pool);
+
+      // +30 % sur la release promue : régression, et c'est 3.1.0 qui est nommée.
+      expect(await etat(pool, hausse)).toEqual({
+        last_state: "breached",
+        last_value: 2600,
+        last_reason: "3.1.0 : p75 2600 (150 mesures) contre 3.0.9 : p75 2000 (150 mesures), +30 % pour +20 % tolérés",
+      });
+      expect((await evenements(pool, hausse))[0].message).toContain(
+        "LCP p75 en hausse de 30 % d'une release à l'autre : 3.1.0 = 2600 contre 3.0.9 = 2000",
+      );
+      // −25 % : une amélioration, pas une alerte qui accuserait l'ancienne release.
+      expect(await etat(pool, baisse)).toEqual({
+        last_state: "ok",
+        last_value: 1500,
+        last_reason: "3.1.0 : p75 1500 (150 mesures) contre 3.0.9 : p75 2000 (150 mesures), -25 % pour +20 % tolérés",
+      });
+      expect(await evenements(pool, baisse)).toEqual([]);
+
+      // Une release suivante partie en recette ne détourne pas la règle de la prod.
+      await deploiement(pool, `${PREFIXE}recette-hausse`, "3.2.0", "10 minutes", "staging");
+      await mesures(pool, `${PREFIXE}recette-hausse`, "3.2.0", 9000, 150);
+      await evaluer(pool);
+      expect((await etat(pool, hausse)).last_reason).toBe(
+        "3.1.0 : p75 2600 (150 mesures) contre 3.0.9 : p75 2000 (150 mesures), +30 % pour +20 % tolérés",
+      );
+    });
+
+    it("retour arrière puis correctif : la release du correctif se compare à celle en service juste avant, pas à la release retirée", async () => {
+      // 1.0 ; 1.1 à +30 % ; retour à 1.0 ; puis 1.1.1, toujours à +30 %. La 1.1
+      // retirée a le même p75 que 1.1.1 : comparer à elle masquerait la régression.
+      const A = `${PREFIXE}retour-correctif`;
       await app(pool, A);
-      await deploiement(pool, A, "1.0.0", "2 hours");
-      await mesures(pool, A, "1.0.0", 2000, 300);
-      // Une release MESURÉE mais jamais déclarée ne compte pas : son ordre est inconnu.
-      await mesures(pool, A, "0.9.9", 1500, 300);
+      await deploiement(pool, A, "1.0", "4 hours");
+      await deploiement(pool, A, "1.1", "3 hours");
+      await deploiement(pool, A, "1.0", "2 hours");
+      await deploiement(pool, A, "1.1.1", "1 hour");
+      await mesures(pool, A, "1.0", 2000, 150);
+      await mesures(pool, A, "1.1", 2600, 150);
+      await mesures(pool, A, "1.1.1", 2600, 150);
+      const id = await regle(pool, A, { fenetre: 300 });
+
+      await evaluer(pool);
+
+      expect(await etat(pool, id)).toEqual({
+        last_state: "breached",
+        last_value: 2600,
+        last_reason: "1.1.1 : p75 2600 (150 mesures) contre 1.0 : p75 2000 (150 mesures), +30 % pour +20 % tolérés",
+      });
+
+      // Et le retour arrière lui-même est un déploiement : 1.0 revenue se compare à 1.1.
+      const B = `${PREFIXE}retour-seul`;
+      await app(pool, B);
+      await deploiement(pool, B, "1.0", "3 hours");
+      await deploiement(pool, B, "1.1", "2 hours");
+      await deploiement(pool, B, "1.0", "1 hour");
+      await mesures(pool, B, "1.0", 2000, 150);
+      await mesures(pool, B, "1.1", 2600, 150);
+      const retour = await regle(pool, B, { fenetre: 300 });
+
+      await evaluer(pool);
+
+      expect(await etat(pool, retour)).toEqual({
+        last_state: "ok",
+        last_value: 2000,
+        last_reason: "1.0 : p75 2000 (150 mesures) contre 1.1 : p75 2600 (150 mesures), -23 % pour +20 % tolérés",
+      });
+    });
+
+    it("marqueurs hors prod seulement : pas de verdict, la raison nomme l'env attendu et ceux trouvés", async () => {
+      const A = `${PREFIXE}hors-prod`;
+      await app(pool, A);
+      await deploiement(pool, A, "2.0", "3 hours", "production");
+      await deploiement(pool, A, "2.1", "1 hour", "production");
+      await deploiement(pool, A, "2.2", "30 minutes", "staging");
+      await mesures(pool, A, "2.0", 2000, 150);
+      await mesures(pool, A, "2.1", 2600, 150);
       const id = await regle(pool, A);
 
       await evaluer(pool);
@@ -307,7 +396,30 @@ suite("migration-v86 — régression de release dans check_alerts (PostgreSQL)",
       expect(await etat(pool, id)).toEqual({
         last_state: "no_data",
         last_value: null,
-        last_reason: "une seule release déclarée (1.0.0) : il en faut deux pour comparer",
+        last_reason:
+          "aucune release déclarée en prod par un marqueur de déploiement (POST /api/v1/deploys, env « prod ») : rien à comparer ; marqueurs d'autres env, non comparés : production, staging",
+      });
+      expect(await evenements(pool, id)).toEqual([]);
+    });
+
+    it("une seule release déclarée : pas d'évaluation, la raison le dit, aucune valeur", async () => {
+      const A = `${PREFIXE}seule`;
+      await app(pool, A);
+      await deploiement(pool, A, "1.0.0", "2 hours");
+      await mesures(pool, A, "1.0.0", 2000, 300);
+      // Une release MESURÉE mais jamais déclarée ne compte pas : son ordre est inconnu.
+      await mesures(pool, A, "0.9.9", 1500, 300);
+      // Une release déclarée en recette seulement n'a jamais été en service en prod.
+      await deploiement(pool, A, "1.1.0", "1 hour", "staging");
+      await mesures(pool, A, "1.1.0", 2600, 300);
+      const id = await regle(pool, A);
+
+      await evaluer(pool);
+
+      expect(await etat(pool, id)).toEqual({
+        last_state: "no_data",
+        last_value: null,
+        last_reason: "une seule release déclarée en prod (1.0.0) : il en faut deux pour comparer",
       });
       expect(await evenements(pool, id)).toEqual([]);
     });

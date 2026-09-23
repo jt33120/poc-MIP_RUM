@@ -31,7 +31,7 @@ export const RAISON_DETECTION_RELEASE =
   "Mode indisponible : la présence de migration-v86 (B52) n'a pas pu être lue. Sans elle, une règle de release serait évaluée comme un seuil fixe.";
 
 /** Ce que compare le mode, écrit sous son champ (phrase obligatoire du § 3.2). */
-export const PHRASE_REGLE_RELEASE = `Compare le p75 d'un Web Vital de la release la plus récente à celui de la précédente, dans l'ordre des déploiements déclarés (POST /api/v1/deploys) : ${PHRASE_FENETRE}. Sans deux releases déclarées, ou sous ${MESURES_MIN_RELEASE} mesures de chacune sur la fenêtre, la règle n'évalue pas et le dit : choisissez une fenêtre assez longue (jusqu'à 1 440 min).`;
+export const PHRASE_REGLE_RELEASE = `Compare le p75 d'un Web Vital de la release en service en production à celui de la release qu'elle a remplacée, d'après les déploiements déclarés en « prod » (POST /api/v1/deploys ; un retour arrière compte comme un déploiement) : ${PHRASE_FENETRE}. Sans deux releases déclarées en prod, ou sous ${MESURES_MIN_RELEASE} mesures de chacune sur la fenêtre, la règle n'évalue pas et le dit : choisissez une fenêtre assez longue (jusqu'à 1 440 min).`;
 
 /** L'option « Régression de release » : utilisable, ou désactivée avec sa raison. */
 export type ModeRelease = { disponible: true } | { disponible: false; raison: string };

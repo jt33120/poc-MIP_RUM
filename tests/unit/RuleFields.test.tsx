@@ -125,6 +125,8 @@ describe("F68 — RuleFields : « Régression de release » quand la base porte 
     expect(texte(html)).toContain(PHRASE_REGLE_RELEASE);
     expect(PHRASE_REGLE_RELEASE).toContain(PHRASE_FENETRE);
     expect(PHRASE_REGLE_RELEASE).toContain("100 mesures");
+    // L'évaluateur ne lit que les marqueurs en prod (v86 § 1) : le formulaire le dit.
+    expect(PHRASE_REGLE_RELEASE).toContain("déploiements déclarés en « prod »");
   });
 
   it("une règle de release existante : mode coché, sa hausse relue dans `threshold`", () => {

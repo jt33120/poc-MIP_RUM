@@ -16,20 +16,36 @@
 -- est stocké EN POUR CENT dans `alert_rule.threshold` : 20 veut dire +20 %, la
 -- valeur par défaut de la console (plan § 3.2).
 --
--- QUELLE RELEASE EST « LA PLUS RÉCENTE ». Celle dont le PREMIER marqueur de
--- déploiement déclaré (`deploy_marker`, POST /api/v1/deploys) est le plus récent ;
--- la précédente est la suivante dans cet ordre. C'est l'ordre que v74 applique
--- déjà pour distinguer une régression d'une réapparition d'issue. L'ordre de
--- première mesure vue a été écarté : sur une fenêtre courte, deux releases
--- présentes dès son début s'y départagent au hasard, et un onglet resté ouvert
--- sur une vieille version passerait pour la nouvelle. Sans marqueur, l'ordre des
--- releases n'est pas connu : la règle le dit au lieu de le deviner.
+-- QUELLE RELEASE EST « LA PLUS RÉCENTE ». Celle du DERNIER marqueur de
+-- déploiement déclaré en prod (`deploy_marker`, POST /api/v1/deploys) : la
+-- release en service. La PRÉCÉDENTE est celle du dernier marqueur antérieur qui
+-- porte une AUTRE version : la release en service juste avant. Un retour arrière
+-- est donc un déploiement comme un autre — 1.0, 1.1, retour à 1.0, puis 1.1.1 :
+-- 1.1.1 se compare à 1.0, pas à la 1.1 retirée — et redéployer la release en
+-- service ne change pas la précédente. Deux marqueurs au même instant se
+-- départagent par leur identifiant (le dernier déclaré), jamais par l'ordre
+-- lexical des versions (« 1.9.0 » > « 1.10.0 »).
+--
+-- UN SEUL ENVIRONNEMENT : 'prod', la valeur par défaut de `deploy_marker.env`
+-- (POST /api/v1/deploys sans `env`). Mêler les environnements daterait une
+-- release de son passage en recette : 3.1.0 en recette, 3.0.9 (un correctif) en
+-- prod, puis 3.1.0 promue en prod — 3.1.0 se compare à 3.0.9, et non l'inverse.
+-- 'prod' plutôt que l'env du dernier marqueur : un déploiement en recette ne
+-- détourne pas la règle de la production le temps de sa promotion. Une app qui
+-- déclare ses mises en production sous un autre nom (« production ») n'est pas
+-- devinée : la règle rend no_data, et sa raison nomme les env trouvés.
+--
+-- L'ordre suit les MARQUEURS, jamais les mesures : l'ordre de première mesure vue
+-- a été écarté, car sur une fenêtre courte deux releases présentes dès son début
+-- s'y départagent au hasard, et un onglet resté ouvert sur une vieille version
+-- ne la rajeunit pas. Sans marqueur en prod, l'ordre des releases n'est pas
+-- connu : la règle le dit au lieu de le deviner.
 --
 -- ═══════════════════════ 2. JAMAIS DE VERDICT SANS EFFECTIF ══════════════════
 --
 -- La règle rend `no_data`, avec sa raison, et n'écrit aucune valeur quand :
 --   · la métrique n'est pas un Web Vital (le p75 n'a de sens que pour eux) ;
---   · moins de deux releases sont déclarées ;
+--   · moins de deux releases sont déclarées en prod ;
 --   · l'une des deux compte moins de 100 mesures sur la fenêtre — le seuil sous
 --     lequel la console refuse déjà tout écart entre deux p75 (`KpiTile`,
 --     `FAIBLE_SOUS_DEFAUT`, plan § 3.12) ; un test unitaire lie les deux nombres ;
@@ -42,9 +58,12 @@
 -- d'un déclenchement finit par la phrase du plan (§ 3.2) : « même fenêtre, sans
 -- normalisation de trafic : l'écart mêle le code et le contexte ».
 --
--- LIMITES DITES. Aucun filtre d'environnement (la colonne `env` d'une règle est
--- réservée aux issues depuis v73) : une release déployée en recette puis en
--- production compte toutes ses mesures. Aucune pondération par route ni appareil.
+-- LIMITES DITES. Seuls les MARQUEURS sont lus en prod ; les MESURES ne sont pas
+-- filtrées par environnement (l'env du SDK, `rum_metric.env`, ne porte pas
+-- forcément le nom de celui des marqueurs, et la colonne `env` d'une règle est
+-- réservée aux issues depuis v73) : une release encore servie en recette pendant
+-- la fenêtre y compte aussi ses mesures de recette. Aucune pondération par route
+-- ni appareil.
 --
 -- ═════════════════════════ 3. FENÊTRE DE DÉPLOIEMENT ════════════════════════
 --
@@ -96,28 +115,38 @@ comment on column alert_rule.threshold is
 comment on column alert_rule.last_reason is
   'Raison du dernier no_data ; en mode release (v86), aussi le détail de la comparaison quand la règle a pu juger';
 
--- ── 2. Les deux dernières releases déclarées, et leur p75 sur la fenêtre ────
--- Rang 1 = la release dont le premier déploiement déclaré est le plus récent ;
--- rang 2 = la précédente. Marqueurs futurs et versions vides ignorés. `mesures`
--- vaut 0 — et `p75` NULL — pour une release sans mesure sur la fenêtre.
+-- ── 2. La release en service en prod, celle d'avant, et leur p75 ─────────────
+-- Rang 1 = la version du dernier marqueur déclaré en prod ; rang 2 = la version du
+-- dernier marqueur antérieur qui en porte une autre (§ 1). `deploye_le` est
+-- l'instant du marqueur retenu. Ordre (ts, id) : à instant égal, le dernier
+-- déclaré. Marqueurs futurs, hors prod et versions vides ignorés. `mesures` vaut
+-- 0 — et `p75` NULL — pour une release sans mesure sur la fenêtre.
 create or replace function alert_release_p75(
   p_app_id text, p_metric text, p_route text, p_window_minutes integer
 ) returns table (rang integer, version text, deploye_le timestamptz, p75 double precision, mesures integer)
 language sql stable set search_path = public, pg_temp as $$
-  with deploiements as (
-    select m.version, min(m.ts) as deploye_le, max(m.id) as declare_en
+  with marqueurs as (
+    select m.id, m.ts, m.version
       from deploy_marker m
-     where m.app_id = p_app_id and m.ts <= now()
+     where m.app_id = p_app_id and m.env = 'prod' and m.ts <= now()
        and m.version is not null and btrim(m.version) <> ''
-     group by m.version
+  ), en_service as (
+    select k.version, k.ts
+      from marqueurs k
+     order by k.ts desc, k.id desc
+     limit 1
+  ), remplacee as (
+    -- Tout autre marqueur est antérieur au dernier dans l'ordre (ts, id) : il
+    -- suffit de prendre le plus récent qui porte une autre version.
+    select k.version, k.ts
+      from marqueurs k, en_service s
+     where k.version <> s.version
+     order by k.ts desc, k.id desc
+     limit 1
   ), deux as (
-    -- Deux versions déclarées au même instant : la dernière déclarée l'emporte
-    -- (identifiant du marqueur), jamais l'ordre lexical (« 1.9.0 » > « 1.10.0 »).
-    select d.version, d.deploye_le,
-           (row_number() over (order by d.deploye_le desc, d.declare_en desc))::int as rang
-      from deploiements d
-     order by d.deploye_le desc, d.declare_en desc
-     limit 2
+    select 1 as rang, s.version, s.ts as deploye_le from en_service s
+    union all
+    select 2, p.version, p.ts from remplacee p
   )
   select deux.rang, deux.version, deux.deploye_le, x.p75, x.mesures
     from deux
@@ -132,7 +161,7 @@ language sql stable set search_path = public, pg_temp as $$
 $$;
 
 comment on function alert_release_p75(text, text, text, integer) is
-  'B52 (v86) : les deux dernières releases déclarées d''une app (ordre du premier déploiement) et le p75 d''un vital de chacune sur la fenêtre';
+  'B52 (v86) : la release en service en prod (dernier marqueur) et celle qu''elle a remplacée (dernier marqueur antérieur d''une autre version), avec le p75 d''un vital de chacune sur la fenêtre';
 
 do $$
 begin
@@ -161,7 +190,7 @@ declare r record; v double precision; fired int := 0; ev_id bigint; req_id bigin
         event_sample_rate double precision;
         issue uuid; observable timestamptz; no_data text; inserees int;
         rel_b text; rel_a text; p75_b double precision; p75_a double precision;
-        n_b integer; n_a integer; ecart numeric; rel_detail text;
+        n_b integer; n_a integer; ecart numeric; rel_detail text; autres_env text;
 begin
   for r in select * from alert_rule where active order by id loop
     -- Sérialise deux schedulers concurrents règle par règle. L'ordre par id
@@ -169,11 +198,12 @@ begin
     perform pg_advisory_xact_lock(r.id);
     v := null; event_sample_rate := null; no_data := null; issue := null;
     rel_b := null; rel_a := null; p75_b := null; p75_a := null; n_b := 0; n_a := 0;
-    ecart := null; rel_detail := null;
+    ecart := null; rel_detail := null; autres_env := null;
     if r.mode = 'release' then
-      -- v86 (B52) : p75 de la release la plus récente contre la précédente, même
-      -- fenêtre et mêmes prédicats que le mode seuil d'un vital. Aucun verdict
-      -- sans deux releases déclarées ni sans 100 mesures de chaque côté.
+      -- v86 (B52) : p75 de la release en service en prod contre celle qu'elle a
+      -- remplacée, même fenêtre et mêmes prédicats que le mode seuil d'un vital.
+      -- Aucun verdict sans deux releases déclarées en prod ni sans 100 mesures de
+      -- chaque côté.
       if r.metric not in ('LCP', 'INP', 'CLS', 'FCP', 'TTFB') then
         no_data := 'régression de release : réservée aux Web Vitals (p75 de LCP, INP, CLS, FCP ou TTFB)';
       elsif coalesce(r.threshold, 0) <= 0 then
@@ -186,9 +216,16 @@ begin
           into rel_b, p75_b, n_b, rel_a, p75_a, n_a
           from alert_release_p75(r.app_id, r.metric, r.route, r.window_minutes) x;
         if rel_b is null then
-          no_data := 'aucune release déclarée par un marqueur de déploiement (POST /api/v1/deploys) : rien à comparer';
+          -- Des marqueurs sous un autre env (« production ») ne sont pas devinés :
+          -- la raison les nomme, pour que le geste soit évident.
+          select string_agg(e.env, ', ' order by e.env) into autres_env
+            from (select distinct left(m.env, 40) as env from deploy_marker m
+                   where m.app_id = r.app_id and m.env <> 'prod' and m.ts <= now()
+                     and m.version is not null and btrim(m.version) <> '') e;
+          no_data := 'aucune release déclarée en prod par un marqueur de déploiement (POST /api/v1/deploys, env « prod ») : rien à comparer'
+                     || coalesce(' ; marqueurs d''autres env, non comparés : ' || left(autres_env, 120), '');
         elsif rel_a is null then
-          no_data := format('une seule release déclarée (%s) : il en faut deux pour comparer', left(rel_b, 120));
+          no_data := format('une seule release déclarée en prod (%s) : il en faut deux pour comparer', left(rel_b, 120));
         elsif n_b < 100 or n_a < 100 then
           no_data := format('effectif insuffisant sur la fenêtre : %s mesure(s) %s pour %s, %s pour %s ; 100 requises par release',
                             n_b, r.metric, left(rel_b, 60), n_a, left(rel_a, 60));
