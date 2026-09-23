@@ -76,6 +76,18 @@
 --     `alert_release_p75` (`to_regprocedure`) et garde l'option désactivée avec
 --     sa raison ; son action serveur REFUSE d'écrire une règle `release` — sans
 --     quoi le check_alerts de v73 la prendrait pour un seuil fixe (LCP > 20 ms).
+--   · RETOUR ARRIÈRE vers une console antérieure à F68 (celle de master avant ce
+--     lot), la base restant en v86 : cette console relit une règle `release`
+--     comme un SEUIL — sa ligne affiche « seuil : > 20 », et son formulaire
+--     d'édition coche « Seuil fixe » avec 20 pour seuil. Un admin qui
+--     l'enregistre depuis cette console en fait un seuil fixe « LCP > 20 » (en
+--     ms), franchi à chaque fenêtre. Avant de revenir à une console antérieure à
+--     F68, DÉSACTIVER les règles release :
+--       update alert_rule set active = false where mode = 'release';
+--     et ne les réactiver qu'une fois une console F68 revenue. Tant qu'elles
+--     restent actives, le check_alerts de v86 continue de les évaluer comme des
+--     règles de release ; seul l'enregistrement depuis l'ancienne console les
+--     convertit.
 --
 -- ══════════════════════════ 4. VERROUS, INDEX, DONNÉES ══════════════════════
 --
