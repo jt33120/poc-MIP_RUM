@@ -139,6 +139,39 @@ jobs:
             exit 1
           fi
 
+  # P1 — UNE MIGRATION FUSIONNÉE EST FIGÉE. Le migrateur ne rejoue pas un
+  # fichier modifié après application : il le signale dans un journal de
+  # pré-déploiement, et la production cesse en silence d'avoir le schéma
+  # qu'aurait une base neuve. La seule parade est d'arrêter la modification
+  # AVANT la fusion. Les règles (ajout au-delà du dernier numéro, déménagement à
+  # contenu identique, rien d'autre) sont dans le script, testées par
+  # `tests/unit/migrations-figees.test.ts`.
+  #
+  # Sur les PR seulement : un push sur master n'a rien à comparer. Historique
+  # COMPLET (`fetch-depth: 0`) : le script calcule la base de fusion, et rend 2
+  # — jamais 0 — sur un clone superficiel. Aucune dépendance npm : pas d'install.
+  migrations-figees:
+    name: Migrations fusionnées inchangées
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      # La branche cible passe par l'environnement, pas par une interpolation
+      # dans le script shell : une expression `${{ }}` au milieu d'un `run:` est
+      # du texte injecté tel quel.
+      - name: Aucune migration fusionnée n'est modifiée
+        env:
+          BASE: ${{ github.base_ref || 'master' }}
+        run: node scripts/ci/migrations-figees.mjs "origin/$BASE"
+
   e2e:
     name: E2E Playwright (Postgres service)
     runs-on: ubuntu-latest
