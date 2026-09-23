@@ -137,7 +137,21 @@ describe("matrice écran × filtre", () => {
   // toutes les dimensions de SESSION, tablette et « Inconnu » compris ; une
   // dimension d'occurrence (route, release, env, service) reste refusée avec sa raison.
   it("écrans d'usage sur le contrat : dimensions de session, tablette et « Inconnu », plage personnalisée", () => {
-    const SESSION = ["browser", "client", "country", "country_source", "device", "os", "source"];
+    // Les dimensions de session, B8 comprises (runtime, versions, type de réseau) :
+    // l'écran les lit par le même `sqlContext` que le navigateur ou l'OS.
+    const SESSION = [
+      "browser",
+      "browser_version",
+      "client",
+      "country",
+      "country_source",
+      "device",
+      "net_type",
+      "os",
+      "os_version",
+      "runtime",
+      "source",
+    ];
     for (const path of ["/paths", "/forms", "/acquisition", "/retention"]) {
       const s = surface(path);
       expect(s.legacy, path).toBeUndefined();
@@ -330,7 +344,8 @@ describe("B8 — le runtime et les versions sur chaque écran", () => {
   const B8: Dimension[] = ["runtime", "browser_version", "os_version", "net_type"];
 
   it("écrans du contrat qui lisent des sessions : applicables ; /mobile, corrélation et écrans historiques : refusés avec leur raison", () => {
-    for (const path of ["/sessions", "/pages", "/errors", "/", "/goals", "/explorer"]) {
+    // /paths, /forms, /acquisition, /retention : passés au contrat par F53 (B31).
+    for (const path of ["/sessions", "/pages", "/errors", "/", "/goals", "/explorer", "/paths", "/forms", "/acquisition", "/retention"]) {
       for (const dimension of B8) {
         expect(dimensionAvailability(surface(path), dimension, schemaComplet()), `${path} × ${dimension}`).toEqual({ available: true });
       }
@@ -338,7 +353,7 @@ describe("B8 — le runtime et les versions sur chaque écran", () => {
     // /mobile est DÉJÀ la cohorte React Native : il n'applique que device, os et release.
     expect(dimensionAvailability(surface("/mobile"), "runtime", schemaComplet())).toMatchObject({ available: false });
     expect(dimensionAvailability(surface("/correlation"), "runtime", schemaComplet())).toMatchObject({ available: false });
-    expect(dimensionAvailability(surface("/paths"), "runtime", schemaComplet())).toEqual({
+    expect(dimensionAvailability(surface("/forecast"), "runtime", schemaComplet())).toEqual({
       available: false,
       reason: "« Runtime » n'est pas encore appliqué par cet écran",
     });
