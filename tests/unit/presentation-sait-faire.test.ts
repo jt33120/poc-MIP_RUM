@@ -19,6 +19,8 @@ import { describe, expect, it } from "vitest";
 import { CAPACITES, VERDICTS, compte, type Capacite } from "../../apps/console/lib/couverture";
 import { DEPLOYEES_INERTES, VERDICT_MONTRABLE, lireFichierCite } from "../../apps/console/lib/couverture-controle";
 import { CARTES, METHODE, repartitionCouverture, verdictCarte } from "../../apps/console/lib/presentation-sait-faire";
+// Revue de fin de vague 7 (B6) : la borne d'un tableau, lue dans le code.
+import { MAX_WIDGETS, layoutPlein, normalizeLayout } from "../../apps/console/lib/dashboards";
 
 const RACINE = join(__dirname, "..", "..");
 const DOC = readFileSync(join(RACINE, "docs/RUM_PARITY_STATUS.md"), "utf8");
@@ -220,5 +222,23 @@ describe("revue de fin de vague 7 — les cartes suivent leurs lignes corrigées
     expect(puce("E3").texte).toContain("un viewer ne crée et ne modifie que ses propres tableaux de bord et vues");
     expect(puce("E3").texte).toContain("le triage des issues est réservé aux administrateurs");
     expect(puce("E3").texte).not.toMatch(/aucun droit d'écriture/);
+  });
+
+  it("la puce B6 de K7 suit B6 : 24 éléments par tableau, sections comprises, depuis F37", () => {
+    const b6 = ligneDe("B6");
+    expect(b6.verdict).toBe(VERDICT_MONTRABLE);
+    expect(b6.limite).toContain(`${MAX_WIDGETS} éléments par tableau, **sections comprises**`);
+    expect(b6.preuve).toContain("`layoutPlein`");
+    expect(b6.limite).not.toContain("24 cartes par tableau");
+    // Le code : une section prend la place d'une carte, et le tableau est plein à la borne.
+    const section = { type: "section", title: "Où ?" };
+    const cartes = Array.from({ length: MAX_WIDGETS - 1 }, () => ({ type: "traffic" }));
+    expect(layoutPlein(normalizeLayout([section, ...cartes]))).toBe(true);
+    expect(layoutPlein(normalizeLayout(cartes))).toBe(false);
+
+    const texte = puce("B6").texte;
+    expect(texte).toContain(`${MAX_WIDGETS} éléments par tableau, sections comprises`);
+    expect(texte).not.toContain("cartes par tableau");
+    expect(carte("K7").limites.map((l) => l.id)).toContain("B6");
   });
 });

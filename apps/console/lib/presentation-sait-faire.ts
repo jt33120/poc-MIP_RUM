@@ -18,8 +18,9 @@
 // depuis leur ligne corrigée : K14 (« écritures […] réservées aux sessions
 // d'administration », « Viewer et démo n'ont aucun droit d'écriture ») suit la ligne
 // E3, relue dans le code — un viewer crée et modifie ses propres tableaux de bord et
-// vues, la démo n'écrit rien, le triage reste aux administrateurs. K15 n'est pas
-// dans le plan : ce relevé a fait passer
+// vues, la démo n'écrit rien, le triage reste aux administrateurs ; la puce B6 de K7
+// (« 24 cartes par tableau ») suit la ligne B6 : depuis F37, les sections comptent
+// dans la borne. K15 n'est pas dans le plan : ce relevé a fait passer
 // F2 (« Vérifier les types ») à « déployé, non éprouvé », et la règle veut alors une
 // carte pour elle. Elle est écrite depuis la ligne F2 et le § 8.4 du document, dans
 // la forme des autres.
@@ -190,7 +191,7 @@ export const CARTES: readonly CarteCapacite[] = [
       },
       {
         id: "B6",
-        texte: "24 cartes par tableau, 4 lectures simultanées, aucun rafraîchissement automatique.",
+        texte: "24 éléments par tableau, sections comprises ; 4 lectures simultanées, aucun rafraîchissement automatique.",
       },
       {
         id: "B7",

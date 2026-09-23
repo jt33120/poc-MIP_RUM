@@ -163,8 +163,8 @@
       "famille": "Analyse et exploration",
       "capacite": "Construire un tableau de bord graphique et en être propriétaire",
       "verdict": "deploye_non_eprouve",
-      "preuve": "migration v79, `dashboard.owner_id`, `DASHBOARD_ACTIONS` ; `tests/integration/saved-views-v79-sql.test.ts`, `tests/e2e/dashboards-analytics.spec.ts` ; PR #195",
-      "limite": "24 cartes par tableau, 4 lectures simultanées, aucun rafraîchissement automatique. Une carte invalide reste **visible** avec son diagnostic ; elle n'est pas supprimée pour faire de la place.",
+      "preuve": "migration v79, `dashboard.owner_id`, `DASHBOARD_ACTIONS` ; `tests/integration/saved-views-v79-sql.test.ts`, `tests/e2e/dashboards-analytics.spec.ts` ; PR #195 ; borne : `MAX_WIDGETS` et `layoutPlein` (`apps/console/lib/dashboards.ts:525-532`), `tests/unit/dashboards.test.ts:316-333`",
+      "limite": "24 éléments par tableau, **sections comprises** : depuis F37 (vague 7, après ce relevé), un titre de section compte dans `MAX_WIDGETS` comme une carte, et un tableau plein refuse le 25e élément en le disant (`layoutPlein`, `tests/unit/dashboard-actions-access.test.ts:376-392`). 4 lectures simultanées, aucun rafraîchissement automatique. Une carte invalide reste **visible** avec son diagnostic ; elle n'est pas supprimée pour faire de la place.",
       "ligne": 160
     },
     {
