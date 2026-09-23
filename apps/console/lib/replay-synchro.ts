@@ -125,6 +125,52 @@ export function positionSurBarre(t: number, debut: number, fin: number): number 
   return ((t - debut) / (fin - debut)) * 100;
 }
 
+/** Repères que la barre ne peut pas placer, comptés de chaque côté de l'enregistrement. */
+export interface ReperesHorsBarre {
+  /** Avant son début. */
+  avant: number;
+  /** Après sa fin. */
+  apres: number;
+}
+
+/**
+ * Les repères hors de l'enregistrement, AVANT et APRÈS comptés à part : ce ne sont
+ * pas les mêmes causes. Avant : le SDK émet la page vue initiale dès son init, puis
+ * charge le module de rejeu à part (`packages/rum-sdk/src/index.ts`, `replayArm`) —
+ * la première vue d'une vraie session précède presque toujours le début de
+ * l'enregistrement. Après : l'enregistrement s'arrête après 2 minutes ou 1 Mo
+ * compressé. Les dire tous « après l'enregistrement » faisait passer une vue
+ * initiale pour une coupure.
+ */
+export function reperesHorsBarre(marqueurs: readonly Marqueur[], debut: number, fin: number): ReperesHorsBarre {
+  const compte: ReperesHorsBarre = { avant: 0, apres: 0 };
+  for (const m of marqueurs) {
+    if (positionSurBarre(m.t, debut, fin) !== null) continue;
+    if (m.t < debut) compte.avant += 1;
+    else compte.apres += 1;
+  }
+  return compte;
+}
+
+/** Une phrase par côté concerné, avant d'abord ; aucune quand la barre place tout. */
+export function textesReperesHorsBarre({ avant, apres }: ReperesHorsBarre): string[] {
+  const reperes = (n: number) => `${formater("count", n)} repère${n > 1 ? "s" : ""}`;
+  const textes: string[] = [];
+  if (avant > 0) {
+    textes.push(
+      `${reperes(avant)} avant le début de l'enregistrement : il démarre une fois le module de rejeu chargé, ` +
+        "souvent après la première page vue",
+    );
+  }
+  if (apres > 0) {
+    textes.push(
+      `${reperes(apres)} après la fin de l'enregistrement, limité aux ${REJEU_MAX_MS / 60_000} premières minutes ` +
+        `ou à ${REJEU_MAX_OCTETS / (1024 * 1024)} Mo compressé`,
+    );
+  }
+  return textes;
+}
+
 /** D'où vient une demande de positionnement. */
 export type SourcePosition = "url" | "ligne" | "marqueur";
 

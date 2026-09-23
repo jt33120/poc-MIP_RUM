@@ -25,7 +25,9 @@ import {
   messagePosition,
   positionSurBarre,
   texteIgnores,
+  type Marqueur,
 } from "@/lib/replay-synchro";
+import { reperesHorsBarre, textesReperesHorsBarre } from "@/lib/replay-synchro";
 
 const T0 = Date.parse("2026-09-22T10:00:00Z");
 
@@ -148,5 +150,55 @@ describe("F47 — l'en-tête du lecteur dit ce que le SDK fait, rien de plus", (
     expect(TEXTE_COUVERTURE).toContain("Saisies toujours masquées");
     expect(TEXTE_COUVERTURE).toMatch(/texte et médias aussi, au réglage par défaut du SDK/);
     expect(TEXTE_COUVERTURE).toContain("une application peut les démasquer");
+  });
+});
+
+// Revue de fin de vague 7 (F47) — le lecteur disait « N repère(s) après
+// l'enregistrement » de TOUT repère hors de la barre. Or le SDK émet la page vue
+// initiale dès son init et charge le module de rejeu à part : sur une vraie session,
+// la première vue précède presque toujours le début de l'enregistrement. Avant et
+// après se comptent à part, chacun avec sa phrase.
+describe("Revue v7 — repères hors de la barre : avant le début, après la fin", () => {
+  // Enregistrement de T0 + 5 s à T0 + 65 s : la vue initiale (T0) le précède.
+  const DEBUT = T0 + 5_000;
+  const FIN = T0 + 65_000;
+  const repere = (s: number, ton: Marqueur["ton"] = "vue"): Marqueur => ({ t: T0 + s * 1000, ton, libelle: `à ${s} s` });
+
+  it("la vue initiale émise avant le chargement du module de rejeu : AVANT, jamais « après »", () => {
+    const compte = reperesHorsBarre([repere(0), repere(20, "action"), repere(21, "erreur")], DEBUT, FIN);
+    expect(compte).toEqual({ avant: 1, apres: 0 });
+    const textes = textesReperesHorsBarre(compte);
+    expect(textes).toEqual([
+      "1 repère avant le début de l'enregistrement : il démarre une fois le module de rejeu chargé, souvent après la première page vue",
+    ]);
+    expect(textes.join(" ")).not.toMatch(/après la fin|premières minutes/);
+  });
+
+  it("au-delà de la fin : APRÈS, avec les bornes du SDK (2 minutes, 1 Mo compressé)", () => {
+    const compte = reperesHorsBarre([repere(30), repere(66, "erreur"), repere(200, "frustration")], DEBUT, FIN);
+    expect(compte).toEqual({ avant: 0, apres: 2 });
+    expect(textesReperesHorsBarre(compte)).toEqual([
+      `2 repères après la fin de l'enregistrement, limité aux ${REPLAY_MAX_MS / 60_000} premières minutes ou à ` +
+        `${REPLAY_MAX_COMPRESSED_BYTES / (1024 * 1024)} Mo compressé`,
+    ]);
+  });
+
+  it("cas mixte : deux phrases, AVANT d'abord ; les bornes elles-mêmes sont sur la barre", () => {
+    const marqueurs = [repere(0), repere(2, "action"), repere(5), repere(65, "erreur"), repere(70), repere(90, "action")];
+    const compte = reperesHorsBarre(marqueurs, DEBUT, FIN);
+    expect(compte).toEqual({ avant: 2, apres: 2 });
+    // Chaque repère est compté une fois : sur la barre, avant, ou après.
+    const surLaBarre = marqueurs.filter((m) => positionSurBarre(m.t, DEBUT, FIN) !== null).length;
+    expect(surLaBarre + compte.avant + compte.apres).toBe(marqueurs.length);
+    const textes = textesReperesHorsBarre(compte);
+    expect(textes).toHaveLength(2);
+    expect(textes[0]).toMatch(/^2 repères avant le début de l'enregistrement/);
+    expect(textes[1]).toMatch(/^2 repères après la fin de l'enregistrement/);
+  });
+
+  it("tout tient sur la barre : aucune phrase ; un enregistrement d'un instant garde ses deux côtés", () => {
+    expect(textesReperesHorsBarre(reperesHorsBarre([repere(10), repere(60)], DEBUT, FIN))).toEqual([]);
+    // Début = fin : l'instant même est placé, le reste se range de part et d'autre.
+    expect(reperesHorsBarre([repere(4), repere(5), repere(6)], DEBUT, DEBUT)).toEqual({ avant: 1, apres: 1 });
   });
 });

@@ -30,13 +30,14 @@ import "@rrweb/replay/dist/style.css";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { formater } from "@/lib/fmt-ids";
 import {
-  REJEU_MAX_MS,
   TEXTE_COUVERTURE,
   VITESSES,
   lireIgnores,
   messagePosition,
   positionSurBarre,
+  reperesHorsBarre,
   texteIgnores,
+  textesReperesHorsBarre,
   type Marqueur,
   type SourcePosition,
   type TonMarqueur,
@@ -264,7 +265,9 @@ export default function ReplayPlayer({
         return p === null ? [] : [{ m, p }];
       })
     : [];
-  const horsEnregistrement = marqueurs.length - reperes.length;
+  // Hors de la barre, AVANT et APRÈS se disent à part : une vue initiale émise avant
+  // le chargement du module de rejeu n'est pas une coupure à 2 minutes ou 1 Mo.
+  const horsBarre = bornes ? textesReperesHorsBarre(reperesHorsBarre(marqueurs, bornes.debut, bornes.fin)) : [];
 
   return (
     <div
@@ -402,12 +405,11 @@ export default function ReplayPlayer({
                 </span>
               ) : null;
             })}
-            {horsEnregistrement > 0 && (
-              <span>
-                {formater("count", horsEnregistrement)} repère(s) après l&apos;enregistrement, limité aux{" "}
-                {REJEU_MAX_MS / 60_000} premières minutes
+            {horsBarre.map((texte) => (
+              <span key={texte} data-testid="replay-reperes-hors-barre">
+                {texte}
               </span>
-            )}
+            ))}
           </p>
         </div>
       )}
