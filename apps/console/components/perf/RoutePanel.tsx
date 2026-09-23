@@ -25,7 +25,7 @@ import { Figure } from "@/components/charts/Figure";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
-import { sessionsDeLaRouteHref } from "@/lib/breakdowns";
+import { sessionsDeLaRoute } from "@/lib/breakdowns";
 import { LIBELLE_ETAT_ROBOT, regleAngleMort } from "@/lib/correlation";
 import { ecrireSerie } from "@/lib/correlation-serie";
 import { HISTO_BUCKETS } from "@/lib/distribution";
@@ -36,6 +36,7 @@ import { lire, type Lecture } from "@/lib/lecture";
 import { avecCondition, plafondAffichage } from "@/lib/perf-domain";
 import { UnsupportedFilterError } from "@/lib/query-compiler";
 import { bucketLabel, bucketStarts, hrefWithQuery, rangeLabel, type AnalyticsQuery } from "@/lib/query-contract";
+import { dimensionSchema } from "@/lib/query-schema";
 import {
   pageviewSeries,
   slowResourcesByRoute,
@@ -143,9 +144,11 @@ export async function RoutePanel({
   const ici = (extra: Record<string, string | null>) => hrefWithQuery("/pages", query, { ...reglages, ...extra });
   const fermerHref = ici({ panel: null });
   const pageHref = ici({ panel: null, route });
-  // Les sessions passées par la route : la recherche exacte de `/sessions`, pas
-  // `route=`, que l'écran refuse (une session ne porte pas de route).
-  const sessionsHref = sessionsDeLaRouteHref(query, route);
+  // Les sessions passées par la route : la recherche exacte de `/sessions`, jamais
+  // `route=`, que l'écran refuse (une session ne porte pas de route) — même quand la
+  // page le porte, après « Ouvrir en page ». Sous un filtre que `/sessions` refuse
+  // aussi (release, env…), pas de lien : la raison est écrite à sa place (V10).
+  const sessions = sessionsDeLaRoute(query, route, await dimensionSchema());
   const erreursHref = hrefWithQuery("/errors", query, { route });
 
   // Toutes les lectures du panneau, en parallèle, chacune derrière `lire()`.
@@ -240,12 +243,19 @@ export async function RoutePanel({
         </Bloc>
 
         <nav aria-label="Poursuivre depuis cette route" className="flex flex-wrap gap-x-4 gap-y-2 border-t border-line pt-4">
-          <Link href={sessionsHref} className={LIEN_BLOC} data-testid="panneau-route-sessions">
-            Sessions sur cette route
-          </Link>
+          {sessions.href !== null && (
+            <Link href={sessions.href} className={LIEN_BLOC} data-testid="panneau-route-sessions">
+              Sessions sur cette route
+            </Link>
+          )}
           <Link href={pageHref} className={LIEN_BLOC} data-testid="panneau-route-page">
             Ouvrir en page
           </Link>
+          {sessions.href === null && (
+            <p className="basis-full text-xs text-ink-soft" title={sessions.raison} data-testid="panneau-route-sessions-indisponible">
+              {sessions.raison}
+            </p>
+          )}
         </nav>
       </div>
     </DetailPanel>

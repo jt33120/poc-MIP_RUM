@@ -70,6 +70,8 @@ import { lire, type Lecture } from "@/lib/lecture";
 import { pageFilters } from "@/lib/page-filters";
 import { RATING_HEX } from "@/lib/palette";
 import { hrefWithQuery, paramReader, previousRange, queryToSearchParams, rangeLabel } from "@/lib/query-contract";
+import { dimensionSchema } from "@/lib/query-schema";
+import { sessionsDeLaRoute } from "@/lib/breakdowns";
 import { listDeploys } from "@/lib/queries-deploys";
 import {
   alertEvents,
@@ -105,6 +107,8 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
   const query = ecran.query;
   const lecteur = paramReader(sp);
   const toMs = Date.parse(query.range.to);
+  // Colonnes présentes : ce que `/sessions` sait appliquer (lien « Sessions de cette heure »).
+  const schema = await dimensionSchema();
 
   // Comparaison (§ 3.2) : `none` par défaut sur cet écran. En `prev`, seules la tuile
   // « Heures en angle mort » et la série réelle ont une référence. `release` n'a pas
@@ -274,7 +278,10 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
           ecartMs: Number(s.gap_ms),
           liens: {
             heure: lienHeure(serieLigne, heure),
-            sessions: hrefWithQuery("/sessions", query, { app: s.app_id, route, period: null, from: heure, to: fin }),
+            // La recherche exacte par route de `/sessions` sur cette heure : `route=`, que
+            // l'écran des sessions refuse (une session ne porte pas de route), menait à
+            // son écran de refus.
+            sessions: sessionsDeLaRoute(query, route, schema, { app: s.app_id, period: null, from: heure, to: fin }),
             pages: lienPages(s.app_id, route, { period: null, from: heure, to: fin }),
           },
         };

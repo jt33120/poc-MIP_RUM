@@ -1491,12 +1491,30 @@ test.describe("F24 — Onglet Actions", () => {
     const libelle = hero.getByRole("link", { name: "Payer" }).first();
     await expect(libelle).toHaveAttribute("href", /\/errors\?/);
     await expect(libelle).toHaveAttribute("href", /route=/);
-    // « Sessions » du sous-texte ouvre les sessions de la même route : la recherche
+    // « N sessions » compte les sessions qui ont FAIT l'action : un nombre, jamais un
+    // lien — la liste ouverte montrerait TOUTES les sessions passées par la route.
+    await expect(hero.getByRole("link", { name: /^\d+ sessions?$/ })).toHaveCount(0);
+    // Le lien vers les sessions de la route porte son propre libellé : la recherche
     // exacte de `/sessions` (`qf=route`) — ni `/pages`, ni `route=`, que l'écran refuse.
-    const versSessions = hero.getByRole("link", { name: /sessions/ }).first();
+    const versSessions = hero.getByRole("link", { name: "Sessions passées par la route" }).first();
     await expect(versSessions).toHaveAttribute("href", /\/sessions\?/);
     const cible = new URL((await versSessions.getAttribute("href"))!, consoleUrl);
     expect([cible.searchParams.get("qf"), cible.searchParams.get("q")]).toEqual(["route", "/panier"]);
+    expect(cible.searchParams.has("route")).toBe(false);
+    await expect(hero).toContainText("qu’elles l’aient faite ou non");
+  });
+
+  test("sous un filtre que /sessions refuse (release), aucun lien vers les sessions : la raison écrite une fois", async ({
+    page,
+  }) => {
+    await login(page);
+    // « Release inconnue » : les actions semées n'en déclarent pas, le hero garde ses lignes.
+    await page.goto(`${ACTIONS_F24}&seg=${encodeURIComponent("v2:release:is_null")}`, { waitUntil: "domcontentloaded" });
+    const hero = page.locator("#figure-actions-erreurs");
+    await hero.scrollIntoViewIfNeeded();
+    await expect(hero).toContainText("Payer");
+    await expect(hero.getByRole("link", { name: "Sessions passées par la route" })).toHaveCount(0);
+    await expect(hero.getByTestId("actions-sessions-refus")).toContainText("« Release » est sans objet pour les sessions");
   });
 
   test("table : le cumul nommé comme tel, ressources et API scindées, p75 par action", async ({ page }) => {
@@ -1724,6 +1742,29 @@ test.describe("F17 — Panneau route", () => {
     await page.waitForURL((u) => u.searchParams.get("route") === ROUTE_F17, { timeout: 15_000 });
     expect(new URL(page.url()).searchParams.get("panel")).toBeNull();
     await expect(page.getByTestId("hero-routes").getByTestId("impact-ligne")).toHaveCount(1);
+  });
+
+  test("sessions de la route depuis une page filtrée : `route=` remplacé, release refusée et dite", async ({ page }) => {
+    await login(page);
+    // « Ouvrir en page » garde `route=` ; un clic sur la ligne rouvre le panneau par-dessus.
+    await page.goto(`${PANNEAU_F17}&route=${encodeURIComponent(ROUTE_F17)}`, { waitUntil: "domcontentloaded" });
+    const lien = page.getByTestId("panneau-route-sessions");
+    await expect(lien).toBeVisible({ timeout: 15_000 });
+    const versSessions = new URL((await lien.getAttribute("href"))!, consoleUrl);
+    expect(versSessions.searchParams.has("route")).toBe(false);
+    expect([versSessions.searchParams.get("qf"), versSessions.searchParams.get("q")]).toEqual(["route", ROUTE_F17]);
+    // Suivi, il ouvre la liste des sessions de la route — pas l'écran de refus d'avant.
+    await page.goto(versSessions.toString(), { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("recherche-resume")).toContainText(`Sessions ayant vu la route « ${ROUTE_F17} »`);
+    await expect(page.getByTestId("filter-problem")).toHaveCount(0);
+
+    // Sous `release=`, que /sessions refuse aussi : aucun lien, la raison à sa place.
+    await page.goto(`${PANNEAU_F17}&release=f17-1.0.0`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("panneau-route-page")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("panneau-route-sessions")).toHaveCount(0);
+    await expect(page.getByTestId("panneau-route-sessions-indisponible")).toContainText(
+      "« Release » est sans objet pour les sessions",
+    );
   });
 
   test("une route sans sonde synthétique le dit, sans jamais un « 0 »", async ({ page }) => {

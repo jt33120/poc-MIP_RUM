@@ -25,8 +25,13 @@ import {
 } from "./query-contract";
 import { GEO_NOTICE } from "./geo";
 import { dimensionSupport, type DatasetId, type DimensionSchema } from "./query-compiler";
-import { dimensionAvailability, surfaceFor } from "./surfaces";
-import { SESSION_SEARCH_FIELD_PARAM, SESSION_SEARCH_PARAM } from "./sessions-search";
+import { checkSurface, dimensionAvailability, surfaceFor } from "./surfaces";
+import {
+  SESSION_SEARCH_FIELD_PARAM,
+  SESSION_SEARCH_PARAM,
+  SESSION_SEARCH_PROBLEMS,
+  parseSessionSearch,
+} from "./sessions-search";
 
 /** Les six découpages proposés, dans l'ordre des onglets. */
 export const BREAKDOWN_DIMENSIONS = ["route", "browser", "os", "country", "device", "release"] as const;
@@ -204,8 +209,77 @@ export function groupDescription(dimension: BreakdownDimension, value: string | 
 // route de `/sessions`, que l'écran résume « Sessions ayant vu la route « <r> » » —
 // ce que le plan désigne par « `/sessions?route=` » (§ 5.2.3, § 5.4.3), et ce que
 // Parcours fait déjà (F50).
+//
+// LA POPULATION DE LA SOURCE N'EST PAS TOUJOURS CELLE DES SESSIONS. Recopier la
+// requête de l'écran source recopiait aussi ses conditions d'OCCURRENCE : sous
+// `/pages?release=…`, `/actions?env=…`, ou un panneau ouvert après « Ouvrir en
+// page » (`route=` gardé), le lien menait encore à l'écran de refus. D'où deux
+// règles, et aucune liste écrite de mémoire :
+//   · `route=` est TOUJOURS retiré : c'est la recherche exacte qui le remplace ;
+//   · toute autre condition que `/sessions` refuse — ce qu'en dit son contrat
+//     (`checkSurface` sur la surface `/sessions`, le contrôle même de son écran) —
+//     rend le lien IMPOSSIBLE : il n'est pas rendu, et la raison est écrite.
+//     Retirer la condition en silence ouvrirait les sessions d'une autre population.
 
-/** Les sessions passées par `route`, sur la même plage et la même population. */
-export function sessionsDeLaRouteHref(query: AnalyticsQuery, route: string): string {
-  return hrefWithQuery("/sessions", query, { [SESSION_SEARCH_FIELD_PARAM]: "route", [SESSION_SEARCH_PARAM]: route });
+/** Lien vers les sessions d'une route, ou la raison écrite de son absence. */
+export type LienSessionsRoute = { href: string; raison: null } | { href: null; raison: string };
+
+/** Début de la raison écrite quand le lien n'est pas proposé. */
+export const SESSIONS_ROUTE_NON_PROPOSEES = "Liste des sessions de la route non proposée";
+
+/** La population de la source, `route=` retiré : la recherche exacte le remplace. */
+function sansRoute(query: AnalyticsQuery): AnalyticsQuery {
+  const { route: _remplacee, ...filtres } = query.filters;
+  return { ...query, filters: filtres };
+}
+
+/**
+ * Pourquoi `/sessions` refuserait la population de `query` — `route=` mis à part —,
+ * ou `null` s'il sait l'appliquer. C'est le contrôle de l'écran des sessions lui-même
+ * (`checkSurface` sur sa surface) : la raison écrite est celle de son écran de refus.
+ * La même pour toutes les routes d'un écran : un écran qui liste plusieurs routes
+ * peut la dire une fois.
+ */
+export function refusDesSessions(query: AnalyticsQuery, schema: DimensionSchema): string | null {
+  const sessions = surfaceFor("/sessions");
+  if (!sessions) return `${SESSIONS_ROUTE_NON_PROPOSEES} : l'écran des sessions ne déclare pas ses capacités.`;
+  const verdict = checkSurface(sansRoute(query), sessions, schema);
+  return verdict.ok ? null : `${SESSIONS_ROUTE_NON_PROPOSEES} sous ces filtres : ${verdict.error.message}.`;
+}
+
+/**
+ * Les sessions passées par `route`, sur la même plage et la même population —
+ * quand `/sessions` sait appliquer cette population, et elle seule.
+ *
+ * `extra` porte les réglages PROPRES au lien (l'app et l'heure d'une ligne) : ils
+ * remplacent ceux de la source dans l'URL, sans ajouter de condition. `schema` est
+ * celui des colonnes présentes : une dimension non collectée pour les sessions est
+ * refusée par `/sessions` comme une dimension sans objet.
+ */
+export function sessionsDeLaRoute(
+  query: AnalyticsQuery,
+  route: string,
+  schema: DimensionSchema,
+  extra: Record<string, string | null> = {},
+): LienSessionsRoute {
+  const refus = refusDesSessions(query, schema);
+  if (refus !== null) return { href: null, raison: refus };
+  // La recherche exacte refuserait la valeur (« saisie refusée » près du champ, une
+  // route d'écran mobile sans « / » par exemple) : un lien vers une liste qui ne
+  // s'affiche pas n'en est pas un.
+  if (!parseSessionSearch("route", route)) {
+    const probleme = SESSION_SEARCH_PROBLEMS.route;
+    return {
+      href: null,
+      raison: `${SESSIONS_ROUTE_NON_PROPOSEES} : ${probleme[0].toLowerCase()}${probleme.slice(1)}`,
+    };
+  }
+  return {
+    href: hrefWithQuery("/sessions", sansRoute(query), {
+      ...extra,
+      [SESSION_SEARCH_FIELD_PARAM]: "route",
+      [SESSION_SEARCH_PARAM]: route,
+    }),
+    raison: null,
+  };
 }

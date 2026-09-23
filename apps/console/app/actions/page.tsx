@@ -29,7 +29,7 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { OngletsInteractions } from "@/components/perf/OngletsInteractions";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
-import { breakdownDrillHref, sessionsDeLaRouteHref } from "@/lib/breakdowns";
+import { breakdownDrillHref, refusDesSessions, sessionsDeLaRoute, type LienSessionsRoute } from "@/lib/breakdowns";
 import {
   couverturePrecedente,
   sourcesSousFiltres,
@@ -145,10 +145,15 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
   // honnête part de sa route. Un lien `?action=` produirait un refus de filtre.
   const versErreurs = (route: string | null) =>
     route === null ? undefined : breakdownDrillHref("/errors", query, "route", route, schema);
-  // « N sessions » ouvre les sessions passées par la route (§ 5.4.3) — pas un
-  // drill-down : une session ne porte pas de route, et `breakdownDrillHref` menait
-  // ici à `/pages`, un lien « sessions » qui n'en ouvrait aucune.
-  const versSessions = (route: string | null) => (route === null ? undefined : sessionsDeLaRouteHref(query, route));
+  // Les sessions passées par la route (§ 5.4.3) — pas un drill-down : une session ne
+  // porte pas de route, et `breakdownDrillHref` menait ici à `/pages`. Ce lien n'est
+  // PAS le nombre « N sessions » : celui-là compte les sessions qui ont FAIT l'action,
+  // la liste ouverte montre TOUTES celles passées par la route ; il porte donc son
+  // propre libellé. Sous un filtre que `/sessions` refuse (release, env…), aucun
+  // lien, et la raison est écrite une fois sous le hero (V10).
+  const refusSessions = refusDesSessions(query, schema);
+  const versSessions = (route: string | null): LienSessionsRoute | null =>
+    route === null || refusSessions !== null ? null : sessionsDeLaRoute(query, route, schema);
 
   return (
     <div className="animate-fade-up">
@@ -212,6 +217,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
             label={label}
             versErreurs={versErreurs}
             versSessions={versSessions}
+            refusSessions={refusSessions}
           />
         </div>
       </SectionErreur>
@@ -369,17 +375,24 @@ function TuilesActions({
   );
 }
 
+/** Libellé du lien vers les sessions de la route : il dit ce qu'il ouvre (ce n'est pas « N sessions »). */
+const LIEN_SESSIONS_ROUTE = "Sessions passées par la route";
+
 /** Hero : barres NON empilées, longueur = erreurs liées (§ 5.4.3). */
 function HeroActions({
   hero,
   label,
   versErreurs,
   versSessions,
+  refusSessions,
 }: {
   hero: Lecture<TopActionRow[]> | null;
   label: string;
   versErreurs: (route: string | null) => string | undefined;
-  versSessions: (route: string | null) => string | undefined;
+  /** Sessions de la route d'une ligne ; `null` : route inconnue, ou refus commun (`refusSessions`). */
+  versSessions: (route: string | null) => LienSessionsRoute | null;
+  /** Pourquoi AUCUNE ligne n'ouvre les sessions de sa route (filtre que `/sessions` refuse) : dit une fois. */
+  refusSessions: string | null;
 }) {
   const titre = "Actions classées par erreurs liées";
   if (hero === null || !hero.ok) {
@@ -405,15 +418,26 @@ function HeroActions({
       title: `${row.name} — ${row.route ?? "route inconnue"}`,
       sub: (
         <>
-          {formater("count", row.actions)} actions ·{" "}
-          {sessions ? (
-            <Link href={sessions} className="underline-offset-2 hover:text-accent hover:underline">
-              {formater("count", row.sessions)} sessions
+          {/* « N sessions » : celles qui ont FAIT l'action. Un nombre, jamais un lien. */}
+          <span className="block truncate">
+            {formater("count", row.actions)} actions · {formater("count", row.sessions)} sessions ·{" "}
+            {formater("count", row.resources)} ressources · {formater("count", row.api_calls)} API
+          </span>
+          {sessions === null ? null : sessions.href !== null ? (
+            <Link
+              href={sessions.href}
+              title={`Toutes les sessions passées par ${row.route}, qu’elles aient fait « ${row.name} » ou non`}
+              className="block truncate rounded text-ink-soft underline-offset-2 hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf"
+              data-testid="actions-sessions-route"
+            >
+              {LIEN_SESSIONS_ROUTE}
             </Link>
           ) : (
-            `${formater("count", row.sessions)} sessions`
-          )}{" "}
-          · {formater("count", row.resources)} ressources · {formater("count", row.api_calls)} API
+            // Route que la recherche exacte refuserait : le libellé reste, en texte, avec sa raison.
+            <span className="relative block truncate text-ink-soft" title={sessions.raison}>
+              Sessions de la route non proposées<span className="sr-only"> — {sessions.raison}</span>
+            </span>
+          )}
         </>
       ),
     };
@@ -434,7 +458,14 @@ function HeroActions({
         <>
           La longueur d’une barre ne porte QUE les erreurs liées : ressources et appels API sont des colonnes de la
           table, pas des portions empilées — un temps réseau n’est pas un échec. Le libellé ouvre les erreurs de la
-          route de l’action ; le nom de l’action n’est pas une dimension du contrat, il ne filtre rien.
+          route de l’action ; le nom de l’action n’est pas une dimension du contrat, il ne filtre rien. « N sessions »
+          compte les sessions qui ont fait l’action ; « {LIEN_SESSIONS_ROUTE} » ouvre toutes celles de sa route,
+          qu’elles l’aient faite ou non.
+          {refusSessions !== null && (
+            <span className="mt-1 block" data-testid="actions-sessions-refus">
+              {refusSessions}
+            </span>
+          )}
         </>
       }
     >

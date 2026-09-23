@@ -17,7 +17,11 @@ import {
 import { ERRORS_BREAKDOWN_DATASETS, VITALS_BREAKDOWN_DATASETS } from "../../apps/console/lib/queries-breakdowns";
 import type { DimensionSchema } from "../../apps/console/lib/query-compiler";
 import { parseAnalyticsQuery, type AnalyticsQuery } from "../../apps/console/lib/query-contract";
-import { sessionsDeLaRouteHref } from "../../apps/console/lib/breakdowns";
+import {
+  SESSIONS_ROUTE_NON_PROPOSEES,
+  refusDesSessions,
+  sessionsDeLaRoute,
+} from "../../apps/console/lib/breakdowns";
 import { parseSessionSearch } from "../../apps/console/lib/sessions-search";
 import { checkSurface, surfaceFor } from "../../apps/console/lib/surfaces";
 
@@ -198,12 +202,18 @@ describe("libellés", () => {
   });
 });
 
-describe("les sessions d'une route (hero des Actions, panneau route)", () => {
+describe("les sessions d'une route (hero des Actions, panneau route, angles morts)", () => {
   const sessions = surfaceFor("/sessions");
   const lue = (href: string) => requete(new URL(href, "https://x").searchParams.toString());
+  /** Le lien rendu, ou l'échec du test avec la raison donnée. */
+  const lien = (qs: string, route: string, schema: DimensionSchema = V75) => {
+    const l = sessionsDeLaRoute(requete(qs), route, schema);
+    if (l.href === null) throw new Error(`lien attendu, raison rendue : ${l.raison}`);
+    return l.href;
+  };
 
   it("ouvrent la recherche EXACTE par route de /sessions, plage et population gardées", () => {
-    const href = sessionsDeLaRouteHref(requete("period=7d&device=mobile"), "/panier");
+    const href = lien("period=7d&device=mobile", "/panier");
     expect(href).toBe("/sessions?period=7d&device=mobile&qf=route&q=%2Fpanier");
     const params = new URL(href, "https://x").searchParams;
     // La recherche que l'écran applique : « Sessions ayant vu la route « /panier » ».
@@ -216,6 +226,77 @@ describe("les sessions d'une route (hero des Actions, panneau route)", () => {
     // Ce que construisaient le panneau route (F17) et le hero des Actions (F24).
     expect(sessions && checkSurface(requete("route=%2Fpanier"), sessions, V75).ok).toBe(false);
     expect(breakdownDrillHref("/sessions", requete(), "route", "/panier", V75)).toBe("/pages?route=%2Fpanier");
-    expect(new URL(sessionsDeLaRouteHref(requete(), "/panier"), "https://x").searchParams.has("route")).toBe(false);
+    expect(new URL(lien("", "/panier"), "https://x").searchParams.has("route")).toBe(false);
+  });
+
+  it("source filtrée sur une route (« Ouvrir en page », puis une ligne) : `route=` retiré, remplacé par la recherche", () => {
+    const href = lien("period=24h&route=%2Fpanier&browser=Firefox", "/compte");
+    const params = new URL(href, "https://x").searchParams;
+    expect(params.has("route")).toBe(false);
+    expect([params.get("qf"), params.get("q")]).toEqual(["route", "/compte"]);
+    // Le reste de la population suit : c'est une dimension de SESSION.
+    expect(params.get("browser")).toBe("Firefox");
+    expect(sessions && checkSurface(lue(href), sessions, V75).ok).toBe(true);
+  });
+
+  it("source filtrée sur une release, un environnement ou un service : AUCUN lien, la raison du contrat écrite", () => {
+    for (const [qs, libelle] of [
+      ["release=1.4.2", "« Release » est sans objet pour les sessions"],
+      ["env=production", "« Environnement » est sans objet pour les sessions"],
+      ["service=api", "« Service » est sans objet pour les sessions"],
+      // `route=` ET release : retirer la route ne suffit pas.
+      ["route=%2Fpanier&release=1.4.2", "« Release » est sans objet pour les sessions"],
+    ] as const) {
+      const l = sessionsDeLaRoute(requete(`period=7d&${qs}`), "/panier", V75);
+      expect(l.href, qs).toBeNull();
+      expect(l.raison, qs).toBe(`${SESSIONS_ROUTE_NON_PROPOSEES} sous ces filtres : ${libelle}.`);
+      // La même raison que l'écran de refus de /sessions (le lien d'avant y menait).
+      expect(sessions && checkSurface(requete(`period=7d&${qs}`), sessions, V75)).toMatchObject({ ok: false });
+      expect(refusDesSessions(requete(`period=7d&${qs}`), V75)).toBe(l.raison);
+    }
+  });
+
+  it("une condition de segment que /sessions refuse (route exclue, release inconnue) : aucun lien non plus", () => {
+    // Seul le PARAMÈTRE `route=` est remplacé par la recherche : une exclusion de route
+    // ou un « Inconnu » de release ne se traduit pas en recherche exacte.
+    for (const seg of ["v2:route:neq:%252Fpanier", "v2:release:is_null"]) {
+      const l = sessionsDeLaRoute(requete(`seg=${seg}`), "/compte", V75);
+      expect(l.href, seg).toBeNull();
+      expect(l.raison, seg).toContain("est sans objet pour les sessions");
+    }
+  });
+
+  it("une dimension de session non collectée : refusée par /sessions, donc pas de lien", () => {
+    const l = sessionsDeLaRoute(requete("browser=Firefox"), "/panier", AVANT_V75);
+    expect(l.href).toBeNull();
+    expect(l.raison).toContain("« Navigateur » n'est pas encore collecté pour les sessions");
+    // Et collectée, le même filtre suit le lien.
+    expect(new URL(lien("browser=Firefox", "/panier"), "https://x").searchParams.get("browser")).toBe("Firefox");
+  });
+
+  it("une route que la recherche exacte refuserait (écran mobile sans « / ») : pas de lien, la règle écrite", () => {
+    const l = sessionsDeLaRoute(requete(), "Accueil", V75);
+    expect(l.href).toBeNull();
+    expect(l.raison).toContain("une route normalisée commence par « / »");
+    // Ce n'est pas un refus de population : l'écran pourrait dire la raison ligne par ligne.
+    expect(refusDesSessions(requete(), V75)).toBeNull();
+  });
+
+  it("les réglages propres au lien (app, heure d'une ligne d'angle mort) remplacent ceux de la source", () => {
+    const l = sessionsDeLaRoute(requete("app=a&period=7d"), "/panier", V75, {
+      app: "b",
+      period: null,
+      from: "2026-09-17T09:00:00.000Z",
+      to: "2026-09-17T10:00:00.000Z",
+    });
+    expect(l.href).not.toBeNull();
+    const params = new URL(l.href!, "https://x").searchParams;
+    expect(Object.fromEntries(params)).toEqual({
+      app: "b",
+      from: "2026-09-17T09:00:00.000Z",
+      to: "2026-09-17T10:00:00.000Z",
+      qf: "route",
+      q: "/panier",
+    });
   });
 });
