@@ -70,7 +70,7 @@ export const POSITIONNEMENT: readonly LignePositionnement[] = [
     poc: "Données en UE, hébergeurs de droit américain",
     sources: {
       ekara: `${NOTES_IPLABEL}:219-229`,
-      poc: ["apps/console/lib/specs.ts:97-100"],
+      poc: ["apps/console/lib/specs.ts:98-101"],
     },
   },
 ];

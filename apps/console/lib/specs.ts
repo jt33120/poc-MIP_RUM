@@ -139,7 +139,7 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "Déploiement",
-        v: `Branche ${RAILWAY.branche}, région ${RAILWAY.region} (Amsterdam), un replica par service — relevé le ${RAILWAY.releve} dans la console Railway.`,
+        v: `Branche ${RAILWAY.branche}, région ${RAILWAY.region} (Amsterdam) — relevé le ${RAILWAY.releve} dans la console Railway (DEPLOY.md, « Région et branche »).`,
         s: "atteint",
       },
     ],

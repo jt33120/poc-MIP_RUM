@@ -132,8 +132,8 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // dépôt qui le disent. Droit des hébergeurs ; console sans image ; clé exigée
     // seulement si REQUIRE_API_KEY vaut « true » ; aucune certification acquise.
     sources: [
-      "apps/console/lib/specs.ts:97-101",
-      "apps/console/lib/specs.ts:194-198",
+      "apps/console/lib/specs.ts:98-102",
+      "apps/console/lib/specs.ts:199-203",
       "apps/console/components/presentation/Specs.tsx:161-165",
       "apps/console/components/presentation/Specs.tsx:186-195",
       "apps/console/lib/ingest.ts:16",
