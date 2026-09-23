@@ -104,6 +104,89 @@ test.describe("P**.2 — ossature : une page, trois parties", () => {
 
 // ─── P**.3 — Partie 1 : TP7 (topologie accessible), TP10 (connecté) ─────────────
 
+// Imports DE CE BLOC, ici plutôt qu'en tête : chaque lot n'écrit que sous son
+// repère (une déclaration `import` vaut au niveau du module, où qu'elle soit). Noms
+// suffixés : deux lots qui importeraient `pg` sous le même nom ne compileraient plus.
+import pgPss3 from "pg";
+import { compteDedie as compteDediePss3 } from "./helpers/compte-dedie";
+
+test.describe("P**.3 — Partie 1 : ce qu'il contient", () => {
+  const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("TP7 — la topologie est une image nommée, doublée d'une alternative textuelle", async ({ page }) => {
+    await page.goto(`${consoleUrl}/presentation`);
+    const partie = page.locator("section#contient");
+    const dessin = partie.getByRole("img", { name: /^Chemin de la mesure :/ });
+    await expect(dessin).toBeVisible();
+    await expect(dessin).toHaveAttribute("aria-label", /\S/);
+    const alternative = partie.getByTestId("topologie").locator("details");
+    await alternative.locator("summary").click();
+    const table = alternative.locator("table");
+    await expect(table).toBeVisible();
+    for (const mot of ["Vercel", "fra1", "Neon", "Railway"]) await expect(table).toContainText(mot);
+    // Visiteur : les écrans sont du texte (ils demandent une session), pas de carrousel.
+    await expect(partie.getByTestId("ecrans-console").locator("a")).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Tutoriel : ajouter un client" })).toHaveCount(0);
+  });
+
+  test.describe("TP10 — connecté", () => {
+    // Compte DÉDIÉ à ce bloc (jamais scripts/seed-admin.mjs) ; la base est celle de la
+    // console locale ou de la CI, comme dans les autres specs à compte dédié.
+    const email = "e2e-presentation-pss3@mip-rum.local";
+    let pool: pgPss3.Pool | null = null;
+    let motDePasse = "";
+
+    test.beforeAll(async () => {
+      pool = new pgPss3.Pool({
+        connectionString: process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum",
+      });
+      motDePasse = await compteDediePss3(pool, email);
+    });
+
+    test.afterAll(async () => {
+      await pool?.end();
+    });
+
+    test("TP10 — « Ouvrir la console », écrans cliquables, carrousel et snippet d'ingestion", async ({ page }) => {
+      await page.goto(`${consoleUrl}/login`);
+      await page.fill('input[name="email"]', email);
+      await page.fill('input[name="password"]', motDePasse);
+      await page.click('button[type="submit"]');
+      await page.waitForURL((u) => u.pathname !== "/login", { timeout: 15_000 });
+
+      await page.goto(`${consoleUrl}/presentation`);
+      await expect(page.getByTestId("presentation-console")).toBeVisible();
+      await expect(page.getByTestId("presentation-demo")).toHaveCount(0);
+
+      // Chaque écran listé est un lien vers sa route.
+      const ecrans = page.getByTestId("ecrans-console");
+      const nbEcrans = await ecrans.locator("li li").count();
+      expect(nbEcrans).toBeGreaterThan(0);
+      const liens = ecrans.locator("li li a");
+      await expect(liens).toHaveCount(nbEcrans);
+      for (const href of await liens.evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""))) {
+        expect(href).toMatch(/^\//);
+      }
+
+      // Le carrousel « Brancher une application », et son snippet vers la route de la console.
+      // Composant client : un clic parti avant l'hydratation serait perdu, on le rejoue.
+      const carrousel = page.getByRole("region", { name: "Tutoriel : ajouter un client" });
+      await expect(carrousel).toBeVisible();
+      const etape2 = carrousel.getByRole("button", { name: "Aller à l'étape 2" });
+      await expect(async () => {
+        await etape2.click();
+        await expect(carrousel.locator("pre code")).toContainText("/api/ingest/v1/traces", { timeout: 1_000 });
+      }).toPass({ timeout: 15_000 });
+
+      // Un écran s'ouvre vraiment : navigation document, sans retour à la connexion.
+      await liens.first().click();
+      await page.waitForURL((u) => u.pathname !== "/presentation", { timeout: 15_000 });
+      expect(new URL(page.url()).pathname).not.toBe("/login");
+    });
+  });
+});
+
 // ─── P**.4 — Partie 2 : TP3 (cartes et puces de limite), TP4 côté « Ce qu'il sait faire »
 
 // ─── P**.5 — Partie 3 : TP4 côté « Ce qui reste » ───────────────────────────────
