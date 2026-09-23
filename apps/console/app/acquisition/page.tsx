@@ -141,7 +141,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
     </>
   );
   // Élargir la fenêtre est le seul geste utile devant un vide (le canal n'est pas un filtre).
-  const elargir = gesteElargir("/acquisition", query);
+  const elargir = gesteElargir("/acquisition", query, Date.now());
 
   return (
     <div className="animate-fade-up">

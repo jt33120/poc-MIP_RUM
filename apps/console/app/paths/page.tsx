@@ -122,7 +122,7 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
       <span>{plage}</span>
     </>
   );
-  const elargir = gesteElargir("/paths", query);
+  const elargir = gesteElargir("/paths", query, Date.now());
   /** Même écran, mêmes réglages de vue (étapes, comparaison…), un paramètre changé. */
   const lienEcran = (extra: Record<string, string | null>) =>
     gabaritZoom(hrefWithQuery("/paths", query, extra), Object.fromEntries(Object.entries(sp).filter(([k]) => !(k in extra))));
