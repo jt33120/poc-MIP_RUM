@@ -187,7 +187,16 @@ test("W-E7 : `split=browser` — la 1re barre ajoute sa condition à la requête
   await expect(repartition).toContainText("Chrome");
   await expect(repartition).toContainText("% du total");
 
-  const premiere = repartition.getByRole("link").first();
+  // La 1re BARRE, pas le 1er lien : les onglets de dimension, au-dessus du classement,
+  // sont eux aussi des liens. Un classement à liens est une liste (`RankBar`) ; les
+  // raisons d'onglet indisponible sont aussi des éléments de liste, mais sans lien.
+  const premiere = repartition
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("link") })
+    .first()
+    .getByRole("link");
+  // Le plus gros groupe en tête : Chrome, 6 occurrences sur 8.
+  await expect(premiere).toHaveText("Chrome");
   const href = (await premiere.getAttribute("href")) ?? "";
   expect(new URL(href, consoleUrl).searchParams.get("browser")).toBe("Chrome");
 
