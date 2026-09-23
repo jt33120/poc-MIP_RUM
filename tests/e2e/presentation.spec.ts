@@ -108,6 +108,58 @@ test.describe("P**.2 — ossature : une page, trois parties", () => {
 
 // ─── P**.5 — Partie 3 : TP4 côté « Ce qui reste » ───────────────────────────────
 
+test.describe("P**.5 — Partie 3 : ce qui reste pour un vrai outil de RUM", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  /** Verdict de chaque ligne de capacité, relu dans l'extraction du document de couverture. */
+  const verdictsDuDocument = (): Map<string, string> => {
+    const brut = JSON.parse(
+      readFileSync(join(process.cwd(), "apps/console/lib/couverture.generated.json"), "utf8"),
+    ) as { capacites: { id: string; verdict: string }[] };
+    return new Map(brut.capacites.map((c) => [c.id, c.verdict]));
+  };
+
+  test("TP4 — D12 et D14, déployées mais inertes, ont leur pastille dans « Ce qui reste »", async ({ page }) => {
+    const verdicts = verdictsDuDocument();
+    await page.goto("/presentation");
+    const reste = page.locator("section#reste");
+    for (const id of ["D12", "D14"]) {
+      const pastille = reste.locator(`[data-testid="reste-pastille"][data-id="${id}"]`);
+      await expect(pastille, id).toHaveCount(1);
+      await expect(pastille, id).toBeVisible();
+      await expect(pastille, id).toHaveText(id);
+      await expect(pastille, id).toHaveAttribute("data-verdict", verdicts.get(id) ?? "absente du document");
+    }
+  });
+
+  test("neuf points dans l'ordre du plan, chacun avec ce qui manque, ce qui le débloque et qui décide", async ({ page }) => {
+    await page.goto("/presentation");
+    const points = page.locator('section#reste [data-testid="reste-point"]');
+    await expect(points).toHaveCount(9);
+    expect(await points.evaluateAll((els) => els.map((e) => e.getAttribute("data-id")))).toEqual([
+      "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9",
+    ]);
+    for (const point of await points.all()) {
+      await expect(point.getByRole("heading", { level: 3 })).toHaveCount(1);
+      await expect(point.locator("dt")).toHaveText(["Ce qui manque", "Ce qui le débloque", "Qui décide"]);
+      for (const valeur of await point.locator("dd").all()) await expect(valeur).not.toBeEmpty();
+    }
+    // Chiffres repris du document, qui dit ne pas les avoir recontrôlés : la mention est obligatoire.
+    await expect(points.nth(0)).toContainText("non recontrôlé");
+    await expect(points.nth(1)).toContainText("non recontrôlé");
+  });
+
+  test("chaque pastille est une ligne du document de couverture, avec son verdict", async ({ page }) => {
+    const verdicts = verdictsDuDocument();
+    await page.goto("/presentation");
+    const lues = await page
+      .locator('section#reste [data-testid="reste-pastille"]')
+      .evaluateAll((els) => els.map((e) => [e.getAttribute("data-id") ?? "", e.getAttribute("data-verdict") ?? ""]));
+    expect(lues.length).toBeGreaterThan(0);
+    for (const [id, verdict] of lues) expect(verdict, id).toBe(verdicts.get(id));
+  });
+});
+
 // ─── P**.6 — Annexe et Specs : TP11 (six <details>, toutes les lignes), TP6 (clavier)
 
 // ─── P**.8 — Recette : TP5 (débordements), TP12 (mouvement réduit), TP8 avec P**.7
