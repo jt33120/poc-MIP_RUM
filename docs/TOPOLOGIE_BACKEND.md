@@ -57,8 +57,8 @@ schéma d'avant **et** d'après sa propre migration.
 
 Chaque service ne se reconstruit que sur ce qui le concerne :
 
-- `scheduler` : `packages/backend/**`, `services/scheduler/**`, `infra/docker/Dockerfile.backend` ;
-- `mcp` : `packages/mcp-tools/**`, `services/mcp/**`, `infra/docker/Dockerfile.mcp`.
+- `scheduler` : la liste `SURVEILLE_SCHEDULER` de `.railway/railway.ts` (noyau, migrations, kit, son dossier, lockfile) ;
+- `mcp` : la liste `SURVEILLE_MCP` du même fichier. La source fait foi : ne pas la recopier ici.
 
 Auparavant les deux services backend surveillaient `services/**` en entier :
 déposer une base GeoIP sous `packages/backend/data/` redéployait le scheduler, et

@@ -949,7 +949,7 @@ export async function main({ argv = process.argv.slice(2), env = process.env, do
     // Le détail d'une migration échouée est déjà journalisé par `migrer` ; une
     // erreur survenue avant (dossier illisible, numéro en double, connexion
     // refusée) ne l'est pas encore.
-    log.error("migrateur arrêté", { err: String(err?.message ?? err), code: err?.code });
+    log.error("migrateur arrêté", { err, code: err?.code }); // l'objet, pas son message : le journal du kit garde la pile
     return 1;
   } finally {
     await pool.end().catch(() => {});

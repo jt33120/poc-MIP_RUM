@@ -82,7 +82,7 @@ Projet `mip-rum-backend`, environnement `production`. Trois services.
 
 | Service | Image | Commande | Écoute | Redémarrage |
 |---|---|---|---|---|
-| `ingest` (supprimé le 21/09/2026) | `services/collector/Dockerfile` | `node services/collector/server.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
+| `ingest` (supprimé le 21/09/2026) | `infra/docker/Dockerfile.backend` (à l'époque) | `node services/ingest/server.mjs` (aujourd'hui `services/collector/`) | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
 | `scheduler` | `services/scheduler/Dockerfile` | `node services/scheduler/worker.mjs` | oui, healthcheck `/health` (sain sans exécution ni bail) ; `/ready`, `/metrics` sous `METRICS_TOKEN` — cf. `services/scheduler/README.md` | `ALWAYS` |
 | `mcp` | **`services/mcp/Dockerfile`** | `node services/mcp/http.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
 

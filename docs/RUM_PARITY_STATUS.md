@@ -448,8 +448,8 @@ L'erreur exacte, au 18/09 :
 
 ```
 error: column "geo_source" of relation "rum_session" does not exist
- ❯ writeRowsWithClient packages/backend/lib/pg-ingest.mjs:620
- ❯ withAppIngestTransaction packages/backend/lib/privacy-barriere.mjs:183
+ ❯ writeRowsWithClient apps/ingest/lib/pg-ingest.mjs:620
+ ❯ withAppIngestTransaction apps/ingest/lib/privacy-barriere.mjs:183
 ```
 
 **C'était le même défaut que P7.5 avait déjà payé une fois**, revenu par la même porte. Le cache de

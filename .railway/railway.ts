@@ -78,7 +78,10 @@ export default defineRailway(() => {
     // du migrateur ne change que son import, jamais cette commande.
     preDeploy: "node services/scheduler/migrate.mjs",
     replicas: { "europe-west4-drams3a": 1 },
-    deploy: { restartPolicyType: "ALWAYS" },
+    // DRAINAGE EXPLICITE (contrat § 4). Railway vaut 0 s par défaut : SIGKILL suit
+    // SIGTERM, le passage en cours meurt et son bail reste posé jusqu'à expiration
+    // (jusqu'à 10 min de ticks sautés par la nouvelle instance). 20 s couvrent un tick.
+    deploy: { restartPolicyType: "ALWAYS", drainingSeconds: 20 },
     env: { DATABASE_URL: preserve(), LOG_LEVEL: preserve(), NODE_ENV: preserve(), PGPOOL_MAX: preserve(), PORT: preserve() },
   });
   const mcp = service("mcp", {
