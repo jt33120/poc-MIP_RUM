@@ -303,7 +303,14 @@ test("sessions : recherche bornée, refus récupérable et pagination stable", a
   await page.getByRole("button", { name: "Rechercher" }).click();
   await page.waitForURL((u) => u.searchParams.get("q") === SESSIONS[0].id, { timeout: 15_000 });
   await expect(page.getByTestId("recherche-resume")).toContainText("identifiant");
-  await expect(page.getByTestId("session-link")).toHaveCount(1);
+  // Depuis F42, chaque session est rendue DEUX fois : une rangée de la table (à partir
+  // de 640 px) et une carte (en dessous), l'une masquée selon la largeur. On compte
+  // donc les rangées, et la seule trouvée est bien la session cherchée : son lien
+  // ouvre SON panneau (F43, `panel=session:<id>`) — l'écran n'en affiche que 8 caractères.
+  const lignes = page.getByTestId("ligne-session");
+  await expect(lignes).toHaveCount(1);
+  const lien = new URL((await lignes.getByTestId("session-link").getAttribute("href"))!, BASE);
+  expect(lien.searchParams.get("panel")).toBe(`session:${SESSIONS[0].id}`);
 
   // Une saisie refusée le dit près du champ, sans vider l'écran ni mentir.
   await page.goto(`${BASE}/sessions?app=${APP_ID}&period=24h&qf=route&q=pas-une-route`);
@@ -311,7 +318,7 @@ test("sessions : recherche bornée, refus récupérable et pagination stable", a
   await expect(page.getByTestId("session-link")).toHaveCount(0);
   await page.getByRole("link", { name: "Réinitialiser" }).click();
   await page.waitForURL((u) => u.searchParams.get("q") === null, { timeout: 15_000 });
-  await expect(page.getByTestId("session-link").first()).toBeVisible();
+  await expect(page.getByTestId("ligne-session").first().getByTestId("session-link")).toBeVisible();
 
   // Une recherche par identité n'est pas proposée : trois champs, et c'est tout.
   await expect(page.locator('select[name="qf"] option')).toHaveCount(3);
