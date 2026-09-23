@@ -1,14 +1,15 @@
 {
-  "name": "@mip/service-ingest",
+  "name": "@mip/service-collector",
   "version": "0.1.0",
   "private": true,
-  "description": "Service d'ingestion OTLP (traces, logs, replay) — déployé sur Railway",
+  "description": "Collecteur OTLP autonome (traces, logs, replay, source maps de CI) — l'image auto-hébergeable ; en production, la collecte passe encore par la route de la console. Plus les deux serveurs de développement que lancent l'E2E et les scripts de validation.",
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "dev": "node dev-server.mjs"
   },
   "dependencies": {
-    "ingest": "workspace:*",
+    "@mip/backend": "workspace:*",
     "pg": "8.21.0"
   }
 }

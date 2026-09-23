@@ -235,7 +235,7 @@ jobs:
       - name: Installer Chromium (+ dépendances système)
         run: pnpm exec playwright install chromium --with-deps
 
-      # playwright.config.ts lance/attend les 3 serveurs (ingest :4318, démo :8080, console :3000)
+      # playwright.config.ts lance/attend les 3 serveurs (collecteur de dev :4318, démo :8080, console :3000)
       - name: Tests E2E
         run: pnpm exec playwright test
 

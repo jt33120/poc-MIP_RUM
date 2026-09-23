@@ -312,8 +312,8 @@ describe("onglet mesures — ce qu'on annonce absent l'est vraiment", () => {
   }
 
   it.each(ANGLES_MORTS)("« $label » : le code annoncé absent ne s'est pas glissé dans le dépôt", (a) => {
-    const [cible, fragment] = a.marqueur;
-    const trouves = present(cible, fragment);
+    const [cibles, fragment] = a.marqueur;
+    const trouves = [cibles].flat().flatMap((cible) => present(cible, fragment));
     // Si ce test échoue, la vitrine ment PAR EXCÈS DE MODESTIE : la capacité a
     // été codée depuis. Retirer la ligne de ANGLES_MORTS, et l'ajouter à MESURES.
     expect(trouves, `« ${a.label} » : ${fragment} trouvé dans ${trouves.join(", ")}`).toEqual([]);

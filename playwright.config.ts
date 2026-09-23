@@ -1,6 +1,6 @@
 import { defineConfig } from "@playwright/test";
 
-// Prérequis : Postgres up (docker compose -f packages/backend/docker-compose.yml up -d).
+// Prérequis : Postgres up (docker compose -f infra/docker/docker-compose.yml up -d --wait db).
 // Les 3 serveurs (ingestion, démo, console) sont lancés/réutilisés automatiquement.
 export default defineConfig({
   testDir: "./tests/e2e",

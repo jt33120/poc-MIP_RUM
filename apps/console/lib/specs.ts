@@ -386,8 +386,8 @@ export const MESURES: Mesure[] = [
 export interface AngleMort {
   label: string;
   raison: string;
-  /** [fichier ou dossier à fouiller, fragment qui ne doit PAS s'y trouver] */
-  marqueur: [string, string];
+  /** [fichier(s) ou dossier(s) à fouiller, fragment qui ne doit PAS s'y trouver] */
+  marqueur: [string | string[], string];
 }
 
 export const ANGLES_MORTS: AngleMort[] = [
@@ -410,7 +410,12 @@ export const ANGLES_MORTS: AngleMort[] = [
     label: "Supervision d'un serveur vocal (SVI)",
     raison:
       "La chaîne d'ingestion, le schéma et les écrans existent ; aucun capteur de ce dépôt n'émet cette télémétrie. Elle doit venir de la plateforme vocale du client — rien ne se mesure tout seul aujourd'hui.",
-    marqueur: ["packages", "svi."],
+    // Les CAPTEURS seulement. Le marqueur fouillait tout `packages/` quand ce
+    // dossier ne contenait qu'eux ; depuis le remodelage P1, le noyau backend y
+    // vit aussi (`packages/backend`), et lui SAIT lire `svi.*` — c'est la chaîne
+    // d'ingestion que la raison ci-dessus dit exister. Ce qui doit rester absent,
+    // c'est un émetteur.
+    marqueur: [["packages/rum-core", "packages/rum-sdk", "packages/rum-mobile", "packages/agent-node"], "svi."],
   },
 ];
 

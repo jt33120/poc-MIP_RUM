@@ -1,23 +1,26 @@
-# Image du backend MIP RUM — ingestion, travaux planifiés, migrations.
+# Image du backend MIP RUM — collecte, travaux planifiés, migrations.
 #
 # UNE image pour TOUS les services backend : ils partagent le même noyau
-# (`packages/backend`) et les mêmes dépendances. Ce qui les distingue est la commande
-# de démarrage, choisie par le service qui la lance :
+# (`@mip/backend`, plus le schéma `@mip/db`) et les mêmes dépendances. Ce qui
+# les distingue est la commande de démarrage, choisie par le service :
 #
-#   node services/collector/server.mjs      receveur OTLP (traces, logs, replay)
+#   node services/collector/server.mjs   collecteur OTLP (traces, logs, replay)
 #   node services/scheduler/worker.mjs   déclencheur des travaux planifiés
 #   node services/scheduler/migrate.mjs  applique les migrations SQL en attente
 #                                        (pré-déploiement du scheduler ; câble
-#                                        `main()` de ingest/migrate.mjs)
+#                                        `main()` de @mip/db/migrate.mjs)
 #
 # Construire deux images pour deux commandes ferait deux fois le même travail et
-# ouvrirait la porte à ce qu'elles divergent d'une version.
+# ouvrirait la porte à ce qu'elles divergent d'une version. (P1, PR-C : chaque
+# service aura son Dockerfile sous services/<x>/ ; celui-ci reste d'ici là.)
 #
 # PAS DE pnpm ICI, À DESSEIN. Le dépôt est un monorepo pnpm, mais faire un
 # `pnpm install` à la racine tirerait Next.js, React, Recharts et Playwright —
 # des centaines de mégaoctets dont le backend n'a aucun usage. La seule
 # dépendance runtime est `pg`. On l'installe depuis le manifeste du noyau, ce
 # qui en fige la version (8.21.0), et on recompose l'arborescence à la main.
+# (Pas depuis celui de @mip/db : il déclare `@mip/backend: workspace:*`, un
+# protocole que npm ne connaît pas.)
 #
 # Contexte de build = RACINE du dépôt (Railway le fait par défaut).
 FROM node:22-alpine
@@ -29,28 +32,28 @@ WORKDIR /app
 COPY packages/backend/package.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
-# 2) Le noyau, placé là où Node résout le specifier nu `ingest/...`. C'est ce
-#    qui permet aux services d'écrire `import … from "@mip/backend/lib/receiver.mjs"`
-#    exactement comme en développement, où pnpm pose le même lien symbolique.
+# 2) Les paquets, placés là où Node résout leurs noms (`@mip/backend/...`,
+#    `@mip/db/...`) — exactement comme en développement, où pnpm pose les mêmes
+#    liens symboliques. C'est ce qui permet aux services d'écrire
+#    `import … from "@mip/backend/lib/receiver.mjs"` sans chemin relatif.
 #    `pg` reste résolu en remontant à /app/node_modules.
-COPY packages/backend/package.json   ./node_modules/ingest/package.json
-COPY packages/backend/lib            ./node_modules/ingest/lib
-COPY packages/backend/jobs           ./node_modules/ingest/jobs
-COPY packages/db/migrate.mjs    ./node_modules/ingest/migrate.mjs
-COPY packages/backend/lib/dispatch-alerts.mjs ./node_modules/ingest/dispatch-alerts.mjs
-COPY packages/backend/purge.mjs      ./node_modules/ingest/purge.mjs
-# Les modules partagés (parser OTLP, CORS, limites, scrub, retry, journal). Le
-# chemin `supabase/functions/_shared` est un vestige des edge functions : le
-# fournisseur a disparu en août 2026, le code non. Il est exposé sous
-# `@mip/backend/shared/*` par la carte `exports` du manifeste — c'est ce nom-là que le
-# code utilise, jamais le chemin physique.
-COPY packages/backend/shared ./node_modules/ingest/supabase/functions/_shared
-# Le SQL : nécessaire au runner de migrations, qui lit le dossier au démarrage.
-COPY packages/db/sql            ./node_modules/ingest/sql
+#
+#    @mip/backend : pipeline d'ingestion, travaux, modules partagés (parser OTLP,
+#    CORS, limites, scrub, retry, journal), livraison des alertes.
+COPY packages/backend/package.json ./node_modules/@mip/backend/package.json
+COPY packages/backend/lib          ./node_modules/@mip/backend/lib
+COPY packages/backend/jobs         ./node_modules/@mip/backend/jobs
+COPY packages/backend/shared       ./node_modules/@mip/backend/shared
+COPY packages/backend/purge.mjs    ./node_modules/@mip/backend/purge.mjs
 # Le dossier de données du GeoIP optionnel (P8.7) : licence, attribution et
 # manifeste. La base elle-même n'est PAS dans le dépôt — 4,5 Mio renouvelés tous
-# les mois —, elle est déposée juste en dessous.
-COPY packages/backend/data           ./node_modules/ingest/data
+# les mois —, elle est déposée juste en dessous. `lib/geoip-db.mjs` la cherche
+# en `../data`, d'où ce chemin.
+COPY packages/backend/data         ./node_modules/@mip/backend/data
+#    @mip/db : le migrateur et le SQL qu'il lit À CÔTÉ DE LUI (`sql/`).
+COPY packages/db/package.json      ./node_modules/@mip/db/package.json
+COPY packages/db/migrate.mjs       ./node_modules/@mip/db/migrate.mjs
+COPY packages/db/sql               ./node_modules/@mip/db/sql
 
 # 2 bis) La base IP→pays, OPTIONNELLE de bout en bout.
 #
@@ -68,7 +71,7 @@ ARG GEOIP_FETCH=1
 ARG GEOIP_VERSION=dbip-country-lite-2026-09
 ARG GEOIP_SHA256=a32bb3c384bd3de60ad9024596aa5b395a6dd5beaa27a7223407cc2edc681d0b
 RUN if [ "$GEOIP_FETCH" = "1" ]; then \
-      cible="./node_modules/ingest/data/${GEOIP_VERSION}.csv.gz"; \
+      cible="./node_modules/@mip/backend/data/${GEOIP_VERSION}.csv.gz"; \
       wget -q -O "$cible" "https://download.db-ip.com/free/${GEOIP_VERSION}.csv.gz" \
         && echo "${GEOIP_SHA256}  ${cible}" | sha256sum -c - \
         || { echo "geoip: base non déposée, l'ingestion fonctionnera sans"; rm -f "$cible"; }; \

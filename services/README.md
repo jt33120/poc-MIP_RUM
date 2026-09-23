@@ -2,27 +2,32 @@
 
 Une règle : **ces fichiers câblent, ils n'implémentent pas.**
 
-Toute la logique vit dans les noyaux `apps/*` — parser OTLP, écritures Postgres,
-authentification, travaux planifiés, migrations, catalogue d'outils MCP. Aucun
-framework, donc rien à réécrire pour déplacer l'ensemble chez un autre
-hébergeur.
+Toute la logique vit dans les paquets `packages/*` — parser OTLP, écritures
+Postgres, authentification, travaux planifiés, schéma et migrations, catalogue
+d'outils MCP. Aucun framework, donc rien à réécrire pour déplacer l'ensemble
+chez un autre hébergeur.
 
 ```
-apps/console     le front  (Next.js, Vercel)   ← consomme, ne décide pas
-packages/backend      LE NOYAU  (sans framework)    ← la matière, réutilisable
-packages/mcp-tools         le noyau MCP                  ← client de l'API, sans base
-services/*       les points d'entrée           ← minces par construction
+apps/        ce que les gens utilisent      console (Next.js, Vercel), extension MV3
+services/    ce que Railway lance           un dossier par service, minces par construction
+packages/    ce que les deux importent      @mip/backend (le noyau), @mip/db (schéma +
+                                            migrateur), @mip/mcp-tools (noyau MCP, sans base)
 ```
 
-| Service | Rôle | Écoute | Commande |
-|---|---|---|---|
-| `ingest` | réception OTLP : traces, logs, replay ; source maps de CI (`POST /v1/sourcemaps`, jeton dédié) | oui (`PORT`) | `node services/collector/server.mjs` |
-| `scheduler` | déclenche les travaux planifiés | facultatif | `node services/scheduler/worker.mjs` |
-| `mcp` | expose l'API v1 à un agent IA | oui (`PORT`) | `node services/mcp/http.mjs` |
-| _(migrations)_ | applique le SQL en attente — pré-déploiement du `scheduler` | non | `node services/scheduler/migrate.mjs` |
+Un service, une ligne :
 
-`ingest`, `scheduler` et les migrations partagent **une seule image**
-(`infra/docker/Dockerfile.backend`) : même noyau, mêmes dépendances, seule la
+| Service | Rôle | Écoute | Commande | Déployé |
+|---|---|---|---|---|
+| `collector` | collecte OTLP : traces, logs, replay ; source maps de CI (`POST /v1/sourcemaps`, jeton dédié) | oui (`PORT`) | `node services/collector/server.mjs` | non — image d'auto-hébergement, démarrée par la CI ; en production la collecte passe par la route de la console |
+| `scheduler` | déclenche les travaux planifiés, et **seul** applique les migrations (pré-déploiement) | facultatif | `node services/scheduler/worker.mjs` · pré-déploiement `node services/scheduler/migrate.mjs` | Railway |
+| `mcp` | expose l'API v1 à un agent IA, sans accès à la base | oui (`PORT`) | `node services/mcp/http.mjs` | Railway |
+
+`services/collector/` porte aussi les deux serveurs de **développement** que
+lancent l'E2E et les scripts de validation (`dev-server.mjs` :4318,
+`replay-dev-server.mjs` :4319).
+
+`collector`, `scheduler` et les migrations partagent **une seule image**
+(`infra/docker/Dockerfile.backend`) : mêmes paquets, mêmes dépendances, seule la
 commande change.
 
 `mcp` a **la sienne** (`infra/docker/Dockerfile.mcp`), et ce n'est pas une
@@ -54,13 +59,13 @@ continu n'a aucune de ces limites.
 
 | Variable | Service | Obligatoire | Rôle |
 |---|---|---|---|
-| `DATABASE_URL` | `ingest`, `scheduler` | **oui** | Postgres. TLS vérifié dès que l'hôte n'est pas local — jamais de `rejectUnauthorized: false`. |
-| `PORT` | `ingest` | fourni par l'hébergeur | port d'écoute (défaut local : 4318) |
+| `DATABASE_URL` | `collector`, `scheduler` | **oui** | Postgres. TLS vérifié dès que l'hôte n'est pas local — jamais de `rejectUnauthorized: false`. |
+| `PORT` | `collector` | fourni par l'hébergeur | port d'écoute (défaut local : 4318) |
 | `PORT` | `scheduler` | facultatif | expose `/health` et `/status` ; sans lui, le worker n'écoute rien |
-| `REQUIRE_API_KEY` | `ingest` | non | `true` = rejeter toute app inconnue ou sans clé |
-| `RATE_LIMIT_PER_MIN` | `ingest` | non | défaut 600, par app |
-| `PGPOOL_MAX` | `ingest`, `scheduler` | non | taille du pool (défauts : 8 et 4) |
-| `LOG_LEVEL` | `ingest`, `scheduler` | non | défaut `info` |
+| `REQUIRE_API_KEY` | `collector` | non | `true` = rejeter toute app inconnue ou sans clé |
+| `RATE_LIMIT_PER_MIN` | `collector` | non | défaut 600, par app |
+| `PGPOOL_MAX` | `collector`, `scheduler` | non | taille du pool (défauts : 8 et 4) |
+| `LOG_LEVEL` | `collector`, `scheduler` | non | défaut `info` |
 | `MIP_CONSOLE_URL` | `mcp` | **oui** | origine de la console dont il consomme l'API v1 |
 | `MCP_PATH` | `mcp` | non | chemin du point MCP (défaut `/mcp`) |
 

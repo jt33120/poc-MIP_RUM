@@ -6,14 +6,15 @@ Cloud Act** (sur ton hébergement / OVH), et disposer de **logs de conteneur**
 pour le dogfooding.
 
 ```
-navigateur / SDK ──(OTLP /v1/traces)──▶  ingest (Node)  ──▶  db (Postgres 15)
+navigateur / SDK ──(OTLP /v1/traces)──▶  collector (Node)  ──▶  db (Postgres 15)
                                           │ JSON logs stdout
-                                          └▶ docker compose logs -f ingest
+                                          └▶ docker compose logs -f collector
 ```
 
-C'est **le même code** que l'edge function Deno de prod : `services/collector/dev-server.mjs`
-est un vrai serveur HTTP (OTLP → Postgres) avec `/health`, `/ready`, rate-limit,
-vérif de clé d'API et arrêt propre. On l'empaquette juste pour tourner en conteneur.
+C'est **le même code** que la route de collecte de la console : `services/collector/server.mjs`
+câble le receveur de `@mip/backend` (`lib/receiver.mjs`) en vrai serveur HTTP
+(OTLP → Postgres) avec `/health`, `/ready`, rate-limit, vérif de clé d'API et arrêt
+propre. On l'empaquette juste pour tourner en conteneur.
 
 > ✅ **Substance validée sur Postgres réel** (Postgres 16 local, hors Docker) : la
 > séquence `schema.sql` + les 28 migrations s'applique proprement (`ON_ERROR_STOP=1`,
@@ -35,7 +36,7 @@ vérif de clé d'API et arrêt propre. On l'empaquette juste pour tourner en con
 cd infra/docker
 cp .env.example .env          # adapter les mots de passe hors local
 docker compose up -d --build
-docker compose ps             # db healthy, ingest healthy
+docker compose ps             # db healthy, collector healthy
 ```
 
 - **Endpoint OTLP** : `http://localhost:4318/v1/traces`
@@ -64,9 +65,9 @@ secrets redacted — cf. `shared/log.mjs`). Le driver `json-file` (rotation 10 M
 les capture :
 
 ```bash
-docker compose logs -f ingest            # flux structuré (ingested, rate limited, db retry…)
-docker compose logs -f ingest | jq .     # filtrable/greppable : jq 'select(.level=="error")'
-LOG_LEVEL=debug docker compose up -d ingest   # plus verbeux
+docker compose logs -f collector            # flux structuré (ingested, rate limited, db retry…)
+docker compose logs -f collector | jq .     # filtrable/greppable : jq 'select(.level=="error")'
+LOG_LEVEL=debug docker compose up -d collector   # plus verbeux
 ```
 
 C'est le **substrat de logs** requis pour le dogfooding. Les remonter **dans une
@@ -112,7 +113,7 @@ sur un Postgres local. `ON_ERROR_STOP=1` → pas de schéma partiel silencieux.
 La lancer via le CLI Node (cron système ou boucle) :
 
 ```bash
-docker compose exec ingest node purge.mjs --once   # ou --loop
+docker compose exec collector node node_modules/@mip/backend/purge.mjs --once   # ou --loop
 ```
 
 ## Ce que ce lot ne couvre pas (encore)

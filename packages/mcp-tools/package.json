@@ -1,5 +1,5 @@
 {
-  "name": "mip-mcp",
+  "name": "@mip/mcp-tools",
   "version": "0.1.0",
   "private": true,
   "description": "Noyau MCP MIP RUM — catalogue d'outils, client HTTP vers l'API v1, rendu. Sans base de données : ce serveur ne parle qu'à l'API, jamais à Postgres.",

@@ -52,13 +52,10 @@ Base, ingestion, démo et console sur le poste, sans secret : les programmes se 
 
 ```bash
 pnpm install --frozen-lockfile
-docker compose -f packages/backend/docker-compose.yml up -d --wait   # Postgres 15 sur :5433, base mip_rum, schema.sql
-for f in packages/db/sql/migration-v*.sql; do                   # puis toutes les migrations, dans l'ordre
-  docker exec -i mip-rum-db psql -U postgres -d mip_rum -v ON_ERROR_STOP=1 < "$f"
-done
+docker compose -f infra/docker/docker-compose.yml up -d --wait db   # Postgres 15 sur :5433, base mip_rum : schema.sql puis toutes les migrations (infra/docker/db/initdb.sh)
 pnpm build:sdk                                                  # SDK web, React Native, agent Node
 node scripts/seed-admin.mjs                                     # compte admin local : mot de passe affiché une fois, régénéré à chaque appel
-node services/collector/dev-server.mjs                                 # ingestion locale :4318
+node services/collector/dev-server.mjs                          # ingestion locale :4318
 node demo/serve.mjs                                             # mini-site de démo :8080
 pnpm --filter console dev                                       # console :3000
 node apps/sync-synthetic/src/sync.mjs seed                      # passages robot pour /correlation
@@ -109,9 +106,10 @@ Les zones générées de ce README se régénèrent par `node scripts/readme-sec
 | `packages/rum-sdk` | SDK Web (émetteur OTLP + web-vitals), build esbuild IIFE `mip-rum.js` ; poids gzip remesuré par `tests/unit/specs.test.ts` (`apps/console/lib/sdk-poids.ts`) |
 | `packages/agent-node` | Agent backend Node.js (`node -r @mip/agent-node/register`) : span `http.server` sans changement de code, plus une API publique (`track`, `captureException`, `withContext`, `flush`) ; aucun service Node n'émet vers la production (document de couverture, `C5`) |
 | `packages/rum-mobile` | SDK **React Native** : crashes, écrans, réseau (traceparent), événements → mêmes tables (`device_type=mobile`) ; livré, jamais lancé dans une application React Native (document de couverture, `C1` et `C10`) |
-| `packages/backend` | Noyau backend sans framework : parseur OTLP, receveur (`/v1/traces`, `/v1/logs`, `/v1/replay`, `/v1/sourcemaps`), SQL (schéma, migrations), runner de migrations, travaux planifiés. Importé par la console comme par les services. **En production, le collecteur actif est la route de la console** ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
-| `packages/mcp-tools` | Noyau MCP : catalogue d'outils, client HTTP de l'API v1 ; sans base de données |
-| `services/*` | Points d'entrée minces au-dessus des noyaux : `scheduler` et `mcp` (Railway), `ingest` (receveur autonome pour l'auto-hébergement, voir [infra/docker/](infra/docker/)) — [services/README.md](services/README.md) |
+| `packages/backend` | `@mip/backend` — noyau backend sans framework : parseur OTLP, receveur (`/v1/traces`, `/v1/logs`, `/v1/replay`, `/v1/sourcemaps`), écritures Postgres, travaux planifiés, livraison des alertes, connecteur de tickets. Importé par la console comme par les services. **En production, le collecteur actif est la route de la console** ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
+| `packages/db` | `@mip/db` — le schéma (`sql/` : `schema.sql`, migrations numérotées, index de pré-déploiement) et son migrateur, que seul le `scheduler` lance |
+| `packages/mcp-tools` | `@mip/mcp-tools` — noyau MCP : catalogue d'outils, client HTTP de l'API v1 ; sans base de données |
+| `services/*` | Points d'entrée minces au-dessus des paquets, un par service Railway : `scheduler` et `mcp` (déployés), `collector` (receveur autonome pour l'auto-hébergement, voir [infra/docker/](infra/docker/)) — [services/README.md](services/README.md) |
 | `apps/sync-synthetic` | Synchro synthétique → `syn_snapshot` (interface `SyntheticSource` : seed ou export mippoc) |
 | `apps/extension` | Extension navigateur MV3 (injection du SDK par domaine enregistré) |
 | `apps/console` | Console (Next.js 15) et collecteur `/api/ingest/v1` ; les écrans sont listés dans `apps/console/components/nav-items.tsx`, la vitrine publique est `/presentation` |

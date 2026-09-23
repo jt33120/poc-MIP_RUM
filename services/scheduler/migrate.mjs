@@ -1,14 +1,15 @@
 // Pré-déploiement du service `scheduler` : applique les migrations SQL en attente.
 //
-// POURQUOI UN FICHIER DE CÂBLAGE ICI, et pas `node node_modules/ingest/migrate.mjs`
-// directement dans la commande Railway. La commande de pré-déploiement vit dans
-// `.railway/railway.ts` ; le migrateur, lui, va déménager (P1 : `packages/backend` →
-// `packages/db`, spécificateur `@mip/db/migrate.mjs` → `@mip/db/migrate.mjs`). Si
-// la commande pointait sur le fichier du noyau, le renommage changerait À LA
-// FOIS le code et l'infrastructure, dans deux systèmes qui ne se déploient pas
+// POURQUOI UN FICHIER DE CÂBLAGE ICI, et pas le fichier du migrateur directement
+// dans la commande Railway. La commande de pré-déploiement vit dans
+// `.railway/railway.ts` ; le migrateur, lui, déménage au gré du code (P1 : de
+// l'ancien paquet « ingest » vers `packages/db/migrate.mjs`, spécificateur
+// `@mip/db/migrate.mjs`). Si la
+// commande pointait sur le fichier du noyau, un renommage changerait À LA FOIS
+// le code et l'infrastructure, dans deux systèmes qui ne se déploient pas
 // ensemble — et une commande de pré-déploiement qui pointe dans le vide fait
-// échouer chaque déploiement du scheduler. Ce chemin-ci, lui, est STABLE : un
-// renommage ne change que l'import ci-dessous, jamais la commande.
+// échouer chaque déploiement du scheduler. Ce chemin-ci, lui, est STABLE : le
+// renommage n'a changé que l'import ci-dessous, jamais la commande.
 //
 // Seul le scheduler migre (contrat de service, règle 8) : c'est le service dont
 // la disparition se verrait tout de suite. Le programme lui-même — registre,

@@ -1,20 +1,14 @@
 {
-  "name": "ingest",
+  "name": "@mip/backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Noyau backend MIP RUM — réception OTLP, écritures Postgres, travaux planifiés, migrations. Sans framework : importable par la console Next.js comme par les services Railway.",
+  "description": "Noyau backend MIP RUM — pipeline d'ingestion OTLP, écritures Postgres, travaux planifiés, livraison des alertes, intégrations. Sans framework : importable par la console Next.js comme par les services Railway. Le schéma et le migrateur vivent à côté, dans @mip/db.",
   "type": "module",
   "exports": {
     "./lib/*": "./lib/*",
     "./jobs/*": "./jobs/*",
-    "./migrate.mjs": "./migrate.mjs",
-    "./dispatch-alerts.mjs": "./dispatch-alerts.mjs",
-    "./purge.mjs": "./purge.mjs",
-    "./shared/*": "./shared/*"
-  },
-  "scripts": {
-    "dev": "node dev-server.mjs",
-    "migrate": "node migrate.mjs"
+    "./shared/*": "./shared/*",
+    "./purge.mjs": "./purge.mjs"
   },
   "dependencies": {
     "pg": "8.21.0"

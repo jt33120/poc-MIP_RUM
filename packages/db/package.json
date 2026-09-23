@@ -1,0 +1,22 @@
+{
+  "name": "@mip/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Schéma Postgres de MIP RUM (sql/ : schema.sql, migrations numérotées, index de pré-déploiement) et son migrateur. Le paquet EMBARQUE sql/ : le migrateur lit le dossier à côté de lui, où qu'il soit installé.",
+  "type": "module",
+  "exports": {
+    "./migrate.mjs": "./migrate.mjs",
+    "./sql/*": "./sql/*"
+  },
+  "files": [
+    "migrate.mjs",
+    "sql"
+  ],
+  "scripts": {
+    "migrate": "node migrate.mjs"
+  },
+  "dependencies": {
+    "@mip/backend": "workspace:*",
+    "pg": "8.21.0"
+  }
+}

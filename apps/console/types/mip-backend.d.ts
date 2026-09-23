@@ -1,5 +1,6 @@
-// Types du paquet `ingest` (JS pur, volontairement non typé : il est partagé
-// avec le dev-server Node et, historiquement, un runtime Deno). On les déclare
+// Types des paquets `@mip/backend` et `@mip/db` (JS pur, volontairement non
+// typé : il est partagé avec les services Node et, historiquement, un runtime
+// Deno). Ce fichier s'appelait `ingest.d.ts`, du nom de l'ancien paquet. On les déclare
 // ici plutôt que de parsemer les routes de `as any` : le contrat est ainsi
 // écrit UNE fois, et une évolution incompatible du module casse la compilation
 // au lieu de passer inaperçue.
@@ -601,6 +602,10 @@ declare module "@mip/db/migrate.mjs" {
     pool: Pool,
     opts?: { dossier?: string; baseline?: string | null; par?: string },
   ): Promise<{ appliquees: string[]; modifies: string[]; total: number }>;
+  export function main(options?: {
+    argv?: string[];
+    env?: Record<string, string | undefined>;
+  }): Promise<number>;
 }
 
 declare module "@mip/backend/lib/serveur.mjs" {

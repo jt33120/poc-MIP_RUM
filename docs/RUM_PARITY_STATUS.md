@@ -107,7 +107,7 @@ les migrations à sa place (`docs/TOPOLOGIE_BACKEND.md:69-81`) ; ce relevé ne l
 
 **Le trafic de production entre par Vercel**, sur `apps/console/app/api/ingest/v1/traces/route.ts`,
 qui importe exactement le même parseur et le même writer que le backend (`flattenOtlp`,
-`secureOtlpIdentities`, `writeRows` depuis `ingest/`). Le receveur autonome reste dans le dépôt,
+`secureOtlpIdentities`, `writeRows` depuis `@mip/backend`). Le receveur autonome reste dans le dépôt,
 démarré par la CI (`docker-smoke`) pour l'hébergement chez le client ; en production, il ne tourne nulle part.
 
 Conséquences, à lire avant les lignes `D14`, `A6` et `C*` :
