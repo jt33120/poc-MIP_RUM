@@ -13,6 +13,7 @@ import { execFileSync } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
 import { debordements, LARGEURS } from "./helpers/debordements";
+import AxeBuilder from "@axe-core/playwright";
 
 const APP_ID = "f55-e2e-app";
 const E2E_EMAIL = "e2e-fiabilite@mip-rum.local";
@@ -513,8 +514,6 @@ test.describe("F65 — Tendances (§ 5.20)", () => {
   });
 
   test("aucun débordement à 390, 768 et 1440 px", async ({ page }) => {
-    // Import local : le helper n'entre pas dans l'en-tête du fichier, que d'autres lots modifient.
-    const { debordements, LARGEURS } = await import("./helpers/debordements");
     await login(page);
     const fautes: string[] = [];
     for (const largeur of LARGEURS) {
@@ -770,5 +769,477 @@ test.describe("F64 — Écran Alertes", () => {
       for (const faute of await debordements(page)) fautes.push(`${largeur} px — ${faute}`);
     }
     expect(fautes).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F69 — Recette du domaine fiabilité et robot (plan § 6.5, vague 8) : les SEPT
+// écrans du domaine — /correlation, /tracing, /tracing/[traceId], /slo, /alerts,
+// /forecast, /goals — lus sur UNE app semée ici, où chaque figure a des données.
+//
+// CE QUE CE BLOC EXISTE POUR EMPÊCHER.
+//   - Un écran qui déborde à 390, 768 ou 1440 px, en clair comme en sombre. Les
+//     captures (7 écrans × 3 largeurs × 2 thèmes) sont écrites dans le dossier de
+//     sortie du test, jamais versionnées.
+//   - Une figure dessinée sans alternative textuelle, ou dont l'alternative est
+//     vide : qui ne voit pas le dessin n'a alors rien.
+//   - Un titre de figure, une méta ou une légende sous 4,5:1 (axe, `color-contrast`).
+//   - Un arrêt de tabulation invisible, ou un contenu d'écran hors d'atteinte du
+//     clavier.
+//   - Une frise d'états qui coûte un arrêt de tabulation par heure, ou dont les
+//     flèches perdent le focus.
+//   - Une bulle d'aide qu'Échap ne ferme pas ; un éditeur de segment qui, refermé,
+//     jette le focus sur <body>.
+//
+// Données EXPLICITEMENT SYNTHÉTIQUES, fuseau de l'app UTC :
+//   - robot et réel, heure par heure (k = 2 à 13 heures pleines avant l'heure
+//     courante) : /checkout robot ok, réel à 3 000 ms sur 3 heures (angles morts),
+//     1 500 ms ailleurs ; /panier robot ok (incident à k = 4), réel à 1 800 ms ;
+//     /sans-robot du réel seul ;
+//   - 14 jours complets de LCP, de pages vues et d'erreurs (Tendances) ;
+//   - 3 SLO : tenu (LCP), dépassé (INP : 60 Bon, 40 Mauvais), sans mesure (CLS) ;
+//   - 7 traces dans la dernière heure, dont un 503 de bout en bout (détail de trace) ;
+//   - 2 règles d'alerte, 3 déclenchements sur 30 jours (non livré, livré, en attente) ;
+//   - 40 sessions de la journée et 2 objectifs de conversion (12 et 3 conversions).
+// Le semis a été rejoué sur une base jetable avant d'écrire ce bloc : chaque figure
+// de `ECRANS_F69` y lit des données, aucune ne tombe dans un état vide.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe("F69 — Recette du domaine fiabilité et robot (§ 6.5)", () => {
+  const APP_F69 = "f69-e2e-fiabilite";
+  const H_F69 = 3_600_000;
+  /** Quatrième trace semée : « POST /api/f69/panier », 503 côté navigateur et côté serveur. */
+  const TRACE_F69 = `f69a${(4).toString(16).padStart(28, "0")}`;
+
+  /** Les sept écrans (§ 5.7, 5.8, 5.9, 5.14, 5.18, 5.19, 5.20) : repère, figures qui ont des données. */
+  const ECRANS_F69 = [
+    { slug: "correlation", chemin: `/correlation?app=${APP_F69}`, repere: "#hero", figures: ["hero", "nuage", "sans-robot"] },
+    { slug: "tracing", chemin: `/tracing?app=${APP_F69}`, repere: "#hero-traces", figures: ["hero-traces", "latence-appels"] },
+    { slug: "trace", chemin: `/tracing/${TRACE_F69}?app=${APP_F69}`, repere: "#chronologie", figures: ["chronologie"] },
+    { slug: "slo", chemin: `/slo?app=${APP_F69}`, repere: "#budget", figures: ["budget"] },
+    { slug: "alerts", chemin: `/alerts?app=${APP_F69}`, repere: "#declenchements", figures: ["declenchements"] },
+    {
+      slug: "forecast",
+      chemin: `/forecast?app=${APP_F69}`,
+      repere: "#tendance-lcp",
+      figures: ["tendance-lcp", "tendance-erreurs", "pages-vues-jour"],
+    },
+    { slug: "goals", chemin: `/goals?app=${APP_F69}`, repere: "#conversions-taux", figures: ["conversions-taux", "conversions-appareils"] },
+  ];
+
+  /**
+   * Ce que § 3.9 fait passer de `ink-faint` à `ink-soft` : titres de figure, métas,
+   * légendes des séries et des frises, axe du budget, légendes de tableau, repli
+   * « Alternative textuelle ». Seuls les sélecteurs présents sont passés à axe (un
+   * `include` qui ne trouve rien le fait échouer).
+   */
+  const LEGENDES_F69 = [
+    'main [data-testid="figure"] h2',
+    'main [data-testid="figure-meta"]',
+    'main [data-testid="legende-serie"]',
+    'main [data-testid="legende-annotations"]',
+    'main [data-testid="frise-etats-legende"]',
+    'main [data-testid="frise-legende"]',
+    'main [data-testid="budget-axe"]',
+    'main [data-testid="alternative"] summary',
+    "main caption",
+  ];
+
+  async function contrasteDesLegendesF69(page: Page): Promise<string[]> {
+    let axe = new AxeBuilder({ page }).withRules(["color-contrast"]);
+    let presentes = 0;
+    for (const selecteur of LEGENDES_F69) {
+      if ((await page.locator(selecteur).count()) === 0) continue;
+      axe = axe.include(selecteur);
+      presentes++;
+    }
+    if (presentes === 0) return ["aucune légende trouvée sur l'écran"];
+    const resultat = await axe.analyze();
+    return resultat.violations.flatMap((v) => v.nodes.map((n) => `${n.target.join(" ")} — ${n.any[0]?.message ?? v.help}`));
+  }
+
+  /**
+   * Figures fautives : un DESSIN (série, image, liste de barres, frise) sans
+   * alternative, ou une alternative sans légende ou sans ligne. Une figure dans un
+   * état (`data-etat`) ne dessine rien ; une table est sa propre alternative.
+   */
+  const alternativesFautivesF69 = (page: Page): Promise<string[]> =>
+    page.evaluate(() => {
+      const DESSIN = '.recharts-wrapper, [role="img"], [role="list"], svg[role="group"]';
+      const fautes: string[] = [];
+      for (const figure of document.querySelectorAll('main [data-testid="figure"]:not([data-etat])')) {
+        const nom = figure.id || figure.querySelector("h2")?.textContent?.trim() || "figure sans titre";
+        const dessins = [...figure.querySelectorAll(DESSIN)].filter((el) => !el.closest('[data-testid="kpi-tile"]'));
+        const alternatives = [...figure.querySelectorAll('[data-testid="alternative"]')];
+        if (dessins.length > 0 && alternatives.length === 0) fautes.push(`${nom} : dessin sans alternative textuelle`);
+        for (const alternative of alternatives) {
+          const legende = alternative.querySelector("caption")?.textContent?.trim() ?? "";
+          const lignes = alternative.querySelectorAll("tbody tr").length;
+          if (legende === "" || lignes === 0) fautes.push(`${nom} : alternative vide (légende « ${legende} », ${lignes} ligne(s))`);
+        }
+      }
+      return fautes;
+    });
+
+  async function semerF69() {
+    // Les déclenchements et leurs livraisons partent en cascade avec leur règle.
+    for (const t of ["rum_span", "rum_error", "rum_metric", "rum_pageview", "syn_snapshot", "goal", "alert_rule", "slo", "rum_session"])
+      await pool.query(`delete from ${t} where app_id = $1`, [APP_F69]);
+    await pool.query(
+      `insert into app_registry (app_id, name, timezone) values ($1, 'Fiabilité F69', 'UTC')
+       on conflict (app_id) do update set timezone = excluded.timezone`,
+      [APP_F69],
+    );
+    const heureCourante = Math.floor(Date.now() / H_F69) * H_F69;
+    const debutHeure = (k: number) => new Date(heureCourante - k * H_F69);
+    const SESSION = `${APP_F69}-h`;
+    await pool.query(
+      `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+       values ($1, $2, $1, 'desktop', false, $3, $4, 1)`,
+      [SESSION, APP_F69, debutHeure(21), new Date(heureCourante)],
+    );
+
+    // Robot et réel, heure par heure : 30 mesures LCP à la 10ᵉ minute, un passage à la 20ᵉ.
+    let lot = 0;
+    const reel = async (route: string, k: number, valeur: number, n = 30) => {
+      await pool.query(
+        `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, ts)
+         select $1 || '-' || g, $2, $3, $4, 'LCP', $5::float8,
+                case when $5::float8 <= 2500 then 'good' when $5::float8 <= 4000 then 'needs-improvement' else 'poor' end,
+                $6::timestamptz + make_interval(secs => g)
+           from generate_series(1, $7) g`,
+        [`${APP_F69}-m${(lot += 1)}`, SESSION, APP_F69, route, valeur, new Date(debutHeure(k).getTime() + 10 * 60_000), n],
+      );
+    };
+    const robot = async (route: string, k: number, etat: string, scenario: string) => {
+      await pool.query(
+        `insert into syn_snapshot (app_id, site, measure_id, measure_name, route_hint, score, state, latency_ms, captured_at)
+         values ($1, 'recette F69', $2, $2, $3, 90, $4, 900, $5)`,
+        [APP_F69, scenario, route, etat, new Date(debutHeure(k).getTime() + 20 * 60_000)],
+      );
+    };
+    for (let k = 2; k <= 13; k++) {
+      await robot("/checkout", k, "ok", "Parcours paiement");
+      await reel("/checkout", k, k >= 3 && k <= 5 ? 3000 : 1500);
+    }
+    for (let k = 2; k <= 9; k++) {
+      await robot("/panier", k, k === 4 ? "incident" : "ok", "Parcours panier");
+      await reel("/panier", k, 1800);
+    }
+    for (const k of [2, 3]) await reel("/sans-robot", k, 4500, 40);
+
+    // Quatorze jours complets pour les Tendances : midi UTC du jour J−k.
+    const midi = "(date_trunc('day', now() at time zone 'UTC') - k * interval '1 day' + interval '12 hours') at time zone 'UTC'";
+    await pool.query(
+      `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+       select $1 || '-j' || k, $1, $1 || '-j' || k, 'desktop', false, ${midi}, ${midi}, 50 from generate_series(1, 14) k`,
+      [APP_F69],
+    );
+    await pool.query(
+      `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, ts)
+       select $1 || '-lcp-' || k || '-' || j, $1 || '-j' || k, $1, '/', 'LCP', 1600 + 40 * (14 - k) + (j % 5) * 20, 'good', ${midi}
+         from generate_series(1, 14) k, generate_series(1, 40) j`,
+      [APP_F69],
+    );
+    await pool.query(
+      `insert into rum_pageview (span_id, session_id, app_id, route, started_at)
+       select $1 || '-pv-' || k || '-' || j, $1 || '-j' || k, $1, '/', ${midi}
+         from generate_series(1, 14) k, generate_series(1, 50) j`,
+      [APP_F69],
+    );
+    await pool.query(
+      `insert into rum_error (span_id, session_id, app_id, route, kind, message, occurrences, ts)
+       select $1 || '-err-' || k, $1 || '-j' || k, $1, '/', 'error', 'f69', 2, ${midi} from generate_series(1, 14) k`,
+      [APP_F69],
+    );
+
+    // SLO : tenu (LCP, ≈ 82 % de Bon pour 75 %), dépassé (INP, 60 % pour 95 %), sans mesure (CLS).
+    await pool.query(
+      `insert into rum_metric (span_id, session_id, app_id, route, name, value, rating, ts)
+       select $1 || '-inp-' || g, $2, $1, '/checkout', 'INP', case when g <= 60 then 120 else 900 end,
+              case when g <= 60 then 'good' else 'poor' end, now() - interval '2 hours' + make_interval(secs => g)
+         from generate_series(1, 100) g`,
+      [APP_F69, SESSION],
+    );
+    for (const [nom, metrique, objectif] of [
+      ["LCP tenu (F69)", "LCP", 0.75],
+      ["INP dépassé (F69)", "INP", 0.95],
+      ["CLS sans mesure (F69)", "CLS", 0.9],
+    ] as const) {
+      await pool.query(`insert into slo (app_id, name, metric, objective, window_days) values ($1, $2, $3, $4, 7)`, [
+        APP_F69,
+        nom,
+        metrique,
+        objectif,
+      ]);
+    }
+
+    // Tracing : (ms navigateur, ms serveur | null, statut) par trace ; identifiants hexadécimaux.
+    const appels: [string, string, [number, number | null, number][]][] = [
+      ["GET", "/api/f69/lent", [[1200, 300, 200], [1100, 250, 200], [900, 200, 200]]],
+      ["POST", "/api/f69/panier", [[800, 780, 503], [600, 100, 200]]],
+      ["GET", "/api/f69/rapide", [[120, null, 200], [140, null, 200]]],
+    ];
+    let n = 0;
+    for (const [methode, chemin, traces] of appels) {
+      for (const [front, back, statut] of traces) {
+        n++;
+        const trace = `f69a${n.toString(16).padStart(28, "0")}`;
+        const spanFront = `f69a${(n * 2).toString(16).padStart(12, "0")}`;
+        const spanBack = `f69a${(n * 2 + 1).toString(16).padStart(12, "0")}`;
+        const minutes = 10 + n * 7;
+        await pool.query(
+          `insert into rum_span (span_id, trace_id, tier, app_id, session_id, method, url, status_code, duration_ms, route, name, ts)
+           values ($1, $2, 'front', $3, $4, $5, $6, $7, $8, '/checkout', $9, now() - $10::int * interval '1 minute')`,
+          [spanFront, trace, APP_F69, SESSION, methode, chemin, statut, front, `${methode} ${chemin}`, minutes],
+        );
+        if (back === null) continue;
+        await pool.query(
+          `insert into rum_span (span_id, trace_id, parent_span_id, tier, app_id, session_id, method, url, status_code, duration_ms, route, name, ts)
+           values ($1, $2, $3, 'back', $4, $5, $6, null, $7, $8, $9, $10,
+                   now() - $11::int * interval '1 minute' + interval '5 milliseconds')`,
+          [spanBack, trace, spanFront, APP_F69, SESSION, methode, statut, back, chemin, `${methode} ${chemin}`, minutes],
+        );
+      }
+    }
+
+    // Alertes : une règle franchie (LCP /checkout), une sans données (INP /panier).
+    const regle = async (metric: string, route: string, seuil: number, severite: string, etat: string, valeur: number | null) =>
+      Number(
+        (
+          await pool.query(
+            `insert into alert_rule (app_id, metric, route, comparator, threshold, window_minutes, active, mode, severity,
+                                     sensitivity, baseline_weeks, last_evaluated_at, last_state, last_value, last_reason)
+             values ($1, $2, $3, '>', $4, 15, true, 'threshold', $5, 3, 4, now() - interval '10 minutes', $6::text, $7::float8,
+                     case when $6::text = 'no_data' then 'aucune mesure sur la fenêtre' end)
+             returning id`,
+            [APP_F69, metric, route, seuil, severite, etat, valeur],
+          )
+        ).rows[0].id,
+      );
+    const declenchement = async (rule: number, ilYA: string, severite: string, message: string, acquitte: boolean, livraison: string | null) => {
+      const { rows } = await pool.query(
+        `insert into alert_event (rule_id, fired_at, value, message, acknowledged, severity)
+         values ($1, now() - $2::interval, 1, $3, $4, $5) returning id`,
+        [rule, ilYA, message, acquitte, severite],
+      );
+      if (livraison) {
+        await pool.query(`insert into alert_delivery (alert_event_id, target, status) values ($1, 'http://hook.local/f69', $2)`, [
+          Number(rows[0].id),
+          livraison,
+        ]);
+      }
+    };
+    const lcp = await regle("LCP", "/checkout", 2500, "critical", "breached", 3000);
+    const inp = await regle("INP", "/panier", 500, "warning", "no_data", null);
+    await declenchement(lcp, "2 hours", "critical", "LCP p75 au-dessus du seuil sur /checkout", false, null);
+    await declenchement(inp, "1 day", "warning", "INP p75 au-dessus du seuil sur /panier", true, "delivered");
+    await declenchement(lcp, "5 days", "critical", "LCP p75 au-dessus du seuil sur /checkout", true, "sent");
+
+    // Conversions : 40 sessions (moitié mobile) vues il y a 3 h ; 12 atteignent /f69-merci, 3 /f69-inscription.
+    await pool.query(
+      `insert into rum_session (session_id, app_id, visitor_id, device_type, is_bot, started_at, last_seen_at, page_count)
+       select $1 || '-g' || i, $1, $1 || '-g' || i, case when i % 2 = 0 then 'mobile' else 'desktop' end, false,
+              now() - interval '3 hours', now() - interval '2 hours', 2
+         from generate_series(1, 40) i`,
+      [APP_F69],
+    );
+    await pool.query(
+      `insert into rum_pageview (span_id, session_id, app_id, route, started_at)
+       select $1 || '-g' || i || '-pv', $1 || '-g' || i, $1, '/f69-accueil', now() - interval '3 hours' from generate_series(1, 40) i
+       union all
+       select $1 || '-g' || i || '-merci', $1 || '-g' || i, $1, '/f69-merci', now() - interval '150 minutes' from generate_series(1, 12) i
+       union all
+       select $1 || '-g' || i || '-inscr', $1 || '-g' || i, $1, '/f69-inscription', now() - interval '140 minutes'
+         from generate_series(1, 3) i`,
+      [APP_F69],
+    );
+    for (const [nom, motif] of [
+      ["Commande validée (F69)", "/f69-merci"],
+      ["Inscription (F69)", "/f69-inscription"],
+    ]) {
+      await pool.query(
+        `insert into goal (app_id, name, kind, pattern, match_type, active) values ($1, $2, 'pageview', $3, 'exact', true)`,
+        [APP_F69, nom, motif],
+      );
+    }
+  }
+
+  test.beforeAll(async () => {
+    await semerF69();
+  });
+
+  for (const ecran of ECRANS_F69) {
+    test(`${ecran.slug} — débordements à 390, 768 et 1440 px, contraste des légendes, captures claires et sombres`, async ({
+      page,
+    }, testInfo) => {
+      test.slow();
+      await login(page);
+      const debords: string[] = [];
+      const contrastes: string[] = [];
+      for (const schema of ["light", "dark"] as const) {
+        const theme = schema === "light" ? "clair" : "sombre";
+        // Mouvement réduit : les écrans entrent en fondu ; une capture ou une mesure de
+        // contraste prise à mi-opacité serait fausse.
+        await page.emulateMedia({ colorScheme: schema, reducedMotion: "reduce" });
+        for (const largeur of LARGEURS) {
+          await page.setViewportSize({ width: largeur, height: 900 });
+          await page.goto(`${consoleUrl}${ecran.chemin}`, { waitUntil: "domcontentloaded" });
+          await expect(page.locator(ecran.repere)).toBeVisible();
+          expect(await page.evaluate(() => document.documentElement.classList.contains("dark")), theme).toBe(schema === "dark");
+          for (const faute of await debordements(page)) debords.push(`${theme}, ${largeur} px — ${faute}`);
+          if (largeur === 1440) for (const faute of await contrasteDesLegendesF69(page)) contrastes.push(`${theme} — ${faute}`);
+          await page.screenshot({ path: testInfo.outputPath(`f69-${ecran.slug}-${largeur}-${theme}.png`), fullPage: true });
+        }
+      }
+      expect.soft(debords, "aucun débordement horizontal").toEqual([]);
+      expect.soft(contrastes, "titres, métas et légendes à 4,5:1 au moins").toEqual([]);
+    });
+
+    test(`${ecran.slug} — chaque figure dessinée porte une alternative textuelle non vide`, async ({ page }) => {
+      await login(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(`${consoleUrl}${ecran.chemin}`, { waitUntil: "domcontentloaded" });
+      await expect(page.locator(ecran.repere)).toBeVisible();
+      // Les figures que le semis remplit : aucune dans un état, chacune avec des lignes.
+      for (const id of ecran.figures) {
+        const figure = page.locator(`[id="${id}"]`);
+        await expect(figure, id).toHaveAttribute("data-testid", "figure");
+        await expect(figure, id).not.toHaveAttribute("data-etat", /.*/);
+        const lignes = await figure.locator('[data-testid="alternative"] tbody tr').count();
+        expect(lignes, `#${id} : lignes de l'alternative textuelle`).toBeGreaterThan(0);
+      }
+      // Toutes les figures de l'écran, listées ou non.
+      expect(await alternativesFautivesF69(page)).toEqual([]);
+    });
+
+    test(`${ecran.slug} — tabulation à 390 px : chaque arrêt est visible, le contenu est atteint`, async ({ page }) => {
+      await login(page);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`${consoleUrl}${ecran.chemin}`, { waitUntil: "domcontentloaded" });
+      await expect(page.locator(ecran.repere)).toBeVisible();
+      const invisibles: string[] = [];
+      let dansLeContenu = 0;
+      for (let i = 0; i < 90 && dansLeContenu < 15; i++) {
+        await page.keyboard.press("Tab");
+        const arret = await page.evaluate(() => {
+          const el = document.activeElement;
+          if (!el || el === document.body || el === document.documentElement) return null;
+          const boite = el.getBoundingClientRect();
+          const libelle = (el.getAttribute("aria-label") ?? el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 60);
+          return {
+            visible: boite.width > 0 && boite.height > 0 && getComputedStyle(el).visibility !== "hidden",
+            contenu: el.closest("main") !== null,
+            nom: `${el.tagName.toLowerCase()} « ${libelle} »`,
+          };
+        });
+        // Focus sur <body> : fin du document (ou focus perdu, que l'assertion finale dira).
+        if (arret === null) break;
+        if (!arret.visible) invisibles.push(arret.nom);
+        if (arret.contenu) dansLeContenu++;
+      }
+      expect(invisibles, "arrêts de tabulation invisibles").toEqual([]);
+      expect(dansLeContenu, "le contenu de l'écran est atteint au clavier").toBeGreaterThan(0);
+    });
+  }
+
+  test("/correlation — frise robot : un arrêt de tabulation, flèches et Début / Fin, cadre de focus, sortie par Tab", async ({
+    page,
+  }) => {
+    await login(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${consoleUrl}/correlation?app=${APP_F69}`, { waitUntil: "domcontentloaded" });
+    const frise = page.locator('#hero [data-testid="frise-etats"]');
+    // À 1440 px la couche détaillée est affichée : une case par heure.
+    const cases = frise.locator('[data-couche="detail"] [data-case]');
+    await expect(cases.first()).toBeVisible();
+    const n = await cases.count();
+    expect(n, "une case par heure de la plage").toBeGreaterThan(3);
+    // UN seul arrêt de tabulation pour toute la frise : la première case.
+    await expect(frise.locator('[data-couche="detail"] [data-case][tabindex="0"]')).toHaveCount(1);
+    await expect(cases.first()).toHaveAttribute("tabindex", "0");
+
+    // Flèche droite : la case suivante prend le focus et l'arrêt de tabulation.
+    // Réessayé tant que l'îlot clavier n'est pas hydraté (avant, la flèche ne fait rien).
+    await expect(async () => {
+      await cases.first().focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(cases.nth(1)).toBeFocused({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+    await expect(cases.nth(1)).toHaveAttribute("tabindex", "0");
+    await expect(cases.first()).toHaveAttribute("tabindex", "-1");
+    // La ligne active écrit la case (l'infobulle du clavier) ; le cadre de focus se voit.
+    const libelle = await cases.nth(1).getAttribute("aria-label");
+    expect(libelle).toBeTruthy();
+    await expect(frise.getByTestId("frise-etats-active")).toHaveText(libelle!);
+    await expect(cases.nth(1).locator(".fe-focus")).toHaveCSS("visibility", "visible");
+    await expect(cases.first().locator(".fe-focus")).toHaveCSS("visibility", "hidden");
+
+    await page.keyboard.press("End");
+    await expect(cases.nth(n - 1)).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect(cases.first()).toBeFocused();
+
+    // Tab quitte la frise d'un coup, vers son alternative ; Maj+Tab revient sur la case active.
+    await page.keyboard.press("Tab");
+    await expect(frise.locator('[data-testid="alternative"] summary')).toBeFocused();
+    await expect(frise.getByTestId("frise-etats-active")).toBeEmpty();
+    await page.keyboard.press("Shift+Tab");
+    await expect(cases.first()).toBeFocused();
+  });
+
+  test("/correlation — Échap ferme la bulle d'aide du hero sans déplacer le focus ; elle se rouvre au retour", async ({
+    page,
+  }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/correlation?app=${APP_F69}`, { waitUntil: "domcontentloaded" });
+    // Le pointeur est resté où la connexion l'a laissé : on l'écarte de toute bulle.
+    await page.mouse.move(0, 0);
+    const aide = page.locator("#hero-titre button");
+    const bulle = page.locator('#hero-titre [role="tooltip"]');
+    await expect(bulle).toBeHidden();
+    await aide.focus();
+    await expect(bulle).toBeVisible();
+    // Réessayé tant que l'îlot n'est pas hydraté : avant, Échap ne fait rien.
+    await expect(async () => {
+      await page.keyboard.press("Escape");
+      await expect(bulle).toBeHidden({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+    await expect(aide).toBeFocused();
+    // Le focus s'en va puis revient : la bulle se rouvre.
+    await page.keyboard.press("Tab");
+    await expect(aide).not.toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(aide).toBeFocused();
+    await expect(bulle).toBeVisible();
+  });
+
+  test("/goals — refermer l'éditeur de segment (Échap, « × ») rend le focus à « + Filtre »", async ({ page }) => {
+    await login(page);
+    await page.goto(`${consoleUrl}/goals?app=${APP_F69}`, { waitUntil: "domcontentloaded" });
+    const barre = page.getByTestId("segment-bar");
+    const ajout = barre.getByTestId("segment-add");
+    const valeur = barre.getByTestId("segment-value");
+    // Réessayé tant que la barre n'est pas hydratée (avant, le clic ne fait rien).
+    await expect(async () => {
+      await ajout.click();
+      await expect(valeur).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+    await expect(valeur).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(valeur).toHaveCount(0);
+    await expect(ajout).toBeFocused();
+
+    // Échap depuis la liste des dimensions, pas seulement depuis la valeur.
+    await page.keyboard.press("Enter");
+    await expect(valeur).toBeFocused();
+    await barre.getByTestId("segment-dimension").focus();
+    await page.keyboard.press("Escape");
+    await expect(ajout).toBeFocused();
+
+    // Le bouton « × » (Annuler) aussi.
+    await ajout.click();
+    await barre.getByRole("button", { name: "Annuler", exact: true }).click();
+    await expect(valeur).toHaveCount(0);
+    await expect(ajout).toBeFocused();
   });
 });
