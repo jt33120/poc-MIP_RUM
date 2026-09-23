@@ -65,7 +65,9 @@ rejouer ne coûte rien : le second passage dit « migrations à jour », 0 appli
 ```bash
 curl -s http://localhost:4318/health   # {"status":"ok","service":"ingest",…,"geoip":{…}}
 curl -s http://localhost:4318/ready    # {"status":"ready"} (la base répond)
-curl -s http://localhost:4320/status   # dernier passage de chaque travail du scheduler
+curl -s http://localhost:4320/health   # scheduler : processus + base
+# fraîcheur de chaque cadence et arriéré de livraisons (METRICS_TOKEN posé dans .env)
+curl -s -H "authorization: Bearer $METRICS_TOKEN" http://localhost:4320/ready
 
 # envoyer un payload OTLP d'exemple -> attendu {"partialSuccess":{}}
 curl -s http://localhost:4318/v1/traces -H 'content-type: application/json' \

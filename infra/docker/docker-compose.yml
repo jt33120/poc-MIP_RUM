@@ -128,9 +128,14 @@ services:
     environment:
       DATABASE_URL: *db-url
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Jeton de /ready et /metrics (≥ 32 caractères). Vide : les deux répondent
+      # 404 — `/health`, la sonde de l'image, n'en dépend pas.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Dead-man's switch (https) : vide en local, aucun signal ne part.
+      DEADMAN_URL: ${DEADMAN_URL:-}
     depends_on: *apres-migration
     ports:
-      # /health et /status (dernier passage de chaque travail).
+      # /health (processus + base), /ready et /metrics (fraîcheur, arriéré ; jeton).
       - "${SCHEDULER_PORT:-4320}:8080"
     restart: unless-stopped
     logging: *jsonlog

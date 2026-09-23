@@ -82,6 +82,9 @@ jobs:
       # Le profil du service : `up` et `down` voient ainsi le même périmètre.
       COMPOSE_PROFILES: ${{ matrix.service }}
       IDENTITY_HASH_SECRET: docker-smoke-test-only-secret
+      # Jeton de /ready et /metrics du scheduler (≥ 32 caractères) : sans lui,
+      # les deux répondent 404 et la référence ne pourrait rien lire.
+      METRICS_TOKEN: docker-smoke-metrics-token-only-for-ci
       # Le collecteur lit l'adresse sur la socket : c'est ce qui allume le
       # GeoIP, et permet de vérifier que la base est bien dans l'image.
       GEOIP_IP_SOURCE: socket
@@ -169,14 +172,20 @@ jobs:
       - name: "Référence scheduler : un premier tick réussi"
         if: matrix.service == 'scheduler'
         run: |
-          # Le worker lance un tick dès le démarrage ; /status en garde le bilan.
+          # Le worker lance un tick dès le démarrage ; /ready (sous jeton) en
+          # garde le bilan local, `cadences.tick.local`. Pas de `curl -f` : /ready
+          # rend 503 tant qu'une cadence est en retard, et c'est le CORPS qu'on juge.
+          # Sans jeton : 404, pas 401 (le kit ne révèle pas que la route existe).
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${{ matrix.port }}/ready")
+          echo "GET /ready sans jeton -> $code"
+          test "$code" = "404"
           for _ in $(seq 1 20); do
-            status=$(curl -fsS "http://localhost:${{ matrix.port }}/status")
-            if echo "$status" | grep -q '"tick":{'; then break; fi
+            ready=$(curl -sS -H "authorization: Bearer $METRICS_TOKEN" "http://localhost:${{ matrix.port }}/ready")
+            if echo "$ready" | jq -e '.cadences.tick.local != null' >/dev/null 2>&1; then break; fi
             sleep 1
           done
-          echo "GET /status -> $status"
-          echo "$status" | grep -q '"tick":{[^}]*"ok":true'
+          echo "GET /ready -> $ready"
+          echo "$ready" | jq -e '.cadences.tick.local.statut == "fait"' >/dev/null
 
       - name: "Référence mcp : 401 sans jeton, 16 outils avec"
         if: matrix.service == 'mcp'

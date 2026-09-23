@@ -170,6 +170,19 @@ describe("images — le compose et la fumée", () => {
     expect(matrice).toEqual(SERVICES);
     expect(wf).toContain("COMPOSE_PROFILES: ${{ matrix.service }}");
   });
+
+  // JONCTION des deux lots P1 : le scheduler passé sur le kit n'a plus de
+  // `/status` (sans jeton) ; son bilan vit dans `/ready`, derrière METRICS_TOKEN.
+  // Une fumée qui interrogerait encore `/status` recevrait 404 — et le compose
+  // doit transmettre le jeton, sinon `/ready` répond 404 lui aussi.
+  it("scheduler : le compose passe METRICS_TOKEN, la fumée lit /ready sous jeton, plus /status", () => {
+    expect(bloc("scheduler")).toMatch(/METRICS_TOKEN: \$\{METRICS_TOKEN:-\}/);
+    const wf = instructions(lire(".github/workflows/docker-smoke.yml"));
+    expect(wf).not.toMatch(/\/status\b/);
+    expect(wf).toMatch(/METRICS_TOKEN: \S{32,}/);
+    expect(wf).toContain('-H "authorization: Bearer $METRICS_TOKEN"');
+    expect(wf).toContain("/ready");
+  });
 });
 
 describe("images — l'IaC Railway, et la sortie des images communes", () => {
