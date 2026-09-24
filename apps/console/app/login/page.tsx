@@ -15,6 +15,8 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
   if (await getUser()) redirect("/");
   const sp = await searchParams;
   const error = sp.error != null;
+  // C1 : console-api injoignable n'est pas un mot de passe faux — le dire.
+  const indisponible = sp.error === "indisponible";
   const ssoEnabled = isOidcEnabled();
 
   return (
@@ -68,7 +70,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
                   data-testid="login-error"
                   className="rounded-lg border border-bad/30 bg-bad/10 px-3 py-2 text-sm text-bad-ink"
                 >
-                  Identifiants invalides.
+                  {indisponible ? "Service de connexion indisponible : réessayer dans un instant." : "Identifiants invalides."}
                 </p>
               )}
               <LoginSubmitButton />

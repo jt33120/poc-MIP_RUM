@@ -9,7 +9,7 @@
 //
 // PUR : en-têtes et valeur du cookie en entrée, aucun import next/* — testable
 // sans runtime Next.
-import { type SessionUser, verifyJwt } from "../auth";
+import { principalDeJeton, type SessionUser } from "../auth";
 
 export type AdminGuard = { ok: true; user: SessionUser } | { ok: false; status: 401 | 403; error: string };
 
@@ -40,7 +40,7 @@ export async function guardSession(
   sessionCookie: string | null,
   { mutation }: { mutation: boolean },
 ): Promise<AdminGuard> {
-  const user = sessionCookie ? await verifyJwt(sessionCookie) : null;
+  const user = sessionCookie ? await principalDeJeton(sessionCookie) : null;
   if (!user) return { ok: false, status: 401, error: "session requise" };
   if (user.demo) return { ok: false, status: 403, error: "session de démonstration : lecture seule" };
   if (mutation && !sameOrigin(headers)) return { ok: false, status: 403, error: "origine de la requête refusée" };
