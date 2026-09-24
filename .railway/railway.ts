@@ -32,7 +32,10 @@
 //                                fusion de la PR de conformité Resend (#288) ;
 //   · ALERT_EMAIL_TEST_RECIPIENTS  les destinataires de test : une adresse
 //                                personnelle n'a rien à faire dans un dépôt public ;
-//   · WEBHOOK_SIGNING_SECRET     ≥ 32 caractères, signe les webhooks d'alerte.
+//   · WEBHOOK_SIGNING_SECRET     ≥ 32 caractères, signe les webhooks d'alerte ;
+//   · CONSOLE_API_TOKENS         les jetons machine de l'API v1 — la MÊME valeur
+//                                que sur Vercel (le service `api` authentifie) ;
+//   · CONSOLE_API_ALLOWED_ORIGINS  les origines CORS, la même valeur que Vercel.
 //
 // Ce que `config pull` rend réellement, vérifié ici : `dockerfilePath` et
 // `watchPatterns` sortent dans un objet `build`, `preDeploy` en champ de premier
@@ -115,6 +118,15 @@ const SURVEILLE_NOTIFIER = [
   "pnpm-lock.yaml", "/pnpm-workspace.yaml", "/package.json", "/.dockerignore",
   "scripts/ci/deploy-fidele.mjs",
 ];
+// L'API COMPILE LES ROUTES DE LA CONSOLE (`services/api/build.mjs`) : ses
+// chemins surveillés sont ceux de son image, sources de la console comprises.
+const SURVEILLE_API = [
+  "services/api/**", "apps/console/app/api/**", "apps/console/lib/**", "apps/console/types/**",
+  "packages/backend/**", "packages/service-kit/**", "packages/mcp-tools/**",
+  "pnpm-lock.yaml", "/pnpm-workspace.yaml", "/package.json", "/.dockerignore",
+  "scripts/ci/deploy-fidele.mjs",
+];
+
 // 20 s, comme le scheduler : une passe n'entame plus de livraison après 10 s
 // (`BUDGET_PASSE_MS`), chaque envoi est borné à 10 s ; 20 s couvrent la passe
 // en cours. Posé deux fois, pour la même raison que le collector.
@@ -212,6 +224,28 @@ export default defineRailway((ctx) => {
   });
 
   // ─── 2 · Restitution ───────────────────────────────────────────────────────
+  // P4 — L'API DE LECTURE v1 POUR LES MACHINES, en lecture seule, sans session
+  // (README du service). Deux répliques sans état. Base : la chaîne propriétaire
+  // en attendant `mip_api` (v89, lecture seule) ; le service ne sert de toute façon
+  // aucune écriture (405). Domaine généré à la main après le premier déploiement.
+  const api = service("api", {
+    source: pocMIP_RUM,
+    build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/api/Dockerfile", watchPatterns: SURVEILLE_API },
+    start: "node services/api/dist/server.mjs",
+    healthcheck: "/health",
+    healthcheckTimeout: 120,
+    replicas: { [REGION]: 2 },
+    deploy: { restartPolicyType: "ALWAYS", drainingSeconds: 15 },
+    env: {
+      DATABASE_URL: ctx.shared.DATABASE_URL,
+      CONSOLE_API_TOKENS: ctx.shared.CONSOLE_API_TOKENS,
+      CONSOLE_API_ALLOWED_ORIGINS: ctx.shared.CONSOLE_API_ALLOWED_ORIGINS,
+      METRICS_TOKEN: ctx.shared.METRICS_TOKEN,
+      PGPOOL_MAX: "6",
+      NODE_ENV: "production",
+      RAILWAY_DEPLOYMENT_DRAINING_SECONDS: "15",
+    },
+  });
   const mcp = service("mcp", {
     source: pocMIP_RUM,
     build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/mcp/Dockerfile", watchPatterns: SURVEILLE_MCP },
@@ -290,12 +324,12 @@ export default defineRailway((ctx) => {
 
   // LE CANEVAS DIT L'ARCHITECTURE : Capteurs → Collecte → Restitution →
   // Traitements. Un groupe n'est qu'un cadre sur le canevas — il ne change ni
-  // le réseau, ni les variables, ni le déploiement d'un service. `api` et
-  // `console-api` rejoindront leur groupe en naissant.
+  // le réseau, ni les variables, ni le déploiement d'un service. `console-api`
+  // rejoindra le sien en naissant.
   return project("mip-rum-backend", {
     resources: [
       group("1 · Collecte", [collector]),
-      group("2 · Restitution", [mcp]),
+      group("2 · Restitution", [api, mcp]),
       group("3 · Traitements", [scheduler, notifier]),
     ],
   });
