@@ -29,6 +29,9 @@ importers:
       '@mip/backend':
         specifier: workspace:*
         version: link:../../packages/backend
+      '@mip/console-contract':
+        specifier: workspace:*
+        version: link:../../packages/console-contract
       '@mip/mcp-tools':
         specifier: workspace:*
         version: link:../../packages/mcp-tools
