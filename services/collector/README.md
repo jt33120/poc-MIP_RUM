@@ -100,7 +100,9 @@ En P3, la console attend le collector 8 s au plus ; au-delà, elle ne sait pas s
 
 Prouvé sur Docker : verrou de `gip-plateforme` tenu par une autre session → `503` en 3,16 s avec `retry-after: 2` ; verrou rendu → 200 en 48 ms.
 
-Limite connue : une instruction bloquée *au milieu* d'une écriture n'est bornée que par le `query_timeout` du kit (30 s), au-delà des 8 s du relais. Le cas relevé est l'attente du verrou, qui est bornée ; le banc de P2 dira s'il faut resserrer.
+Limite connue : une instruction bloquée *au milieu* d'une écriture n'est bornée que par le `query_timeout` du kit (30 s), au-delà des 8 s du relais. Le cas relevé est l'attente du verrou, qui est bornée.
+
+**Capacité par app (banc local du 24/09, [`docs/operations/banc-collecteur-2026-09-24.md`](../../docs/operations/banc-collecteur-2026-09-24.md)).** Un lot tient le verrou de son app pendant 15 allers-retours SQL : ≈ 150–170 ms à ~10 ms par aller-retour (Amsterdam ↔ Francfort). Une app atteint 30 % d'utilisation vers 1,75 lot/s et sature vers 6,5 lots/s, sans aucun 503 jusque-là. Le plafond est par app, pas global. Le repli chiffré est une fonction SQL en un aller-retour. Sur staging, l'utilisation se lit sans toucher au service, par `scripts/bench/echantillonner-verrou.mjs` (`pg_locks`).
 
 ## Sûreté multi-réplique
 
