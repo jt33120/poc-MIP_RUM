@@ -17,7 +17,7 @@ import { TrafficTimeseries } from "@/components/charts/TrafficTimeseries";
 import { VitalsTimeseries } from "@/components/charts/VitalsTimeseries";
 import { formater } from "@/lib/fmt-ids";
 import { CATEGORIELLE } from "@/lib/palette";
-import { joursLocaux } from "@/lib/fuseau";
+import { joursLocaux } from "@/lib/fuseau-local";
 import { grilleIso, libelleSeauComplet, type Annotation, type PointSerie } from "@/lib/series";
 
 const HEURE = 3_600_000;
