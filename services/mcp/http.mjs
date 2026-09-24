@@ -22,26 +22,29 @@
 // survivrait ni à un redéploiement ni à une seconde instance ; le mode sans
 // session rend chaque requête autonome, donc scalable et redémarrable.
 import http from "node:http";
-import { creerClient } from "@mip/mcp-tools/lib/client.mjs";
+import { creerClient, origineApi } from "@mip/mcp-tools/lib/client.mjs";
 import { StreamableHTTPServerTransport } from "@mip/mcp-tools/lib/transports.mjs";
 import { NOM, VERSION, creerServeur } from "@mip/mcp-tools/serveur.mjs";
 
 const PORT = Number(process.env.PORT ?? 8080);
-const BASE = process.env.MIP_CONSOLE_URL;
+// L'API v1 : le service `api` par le réseau privé si `MIP_API_HOST` est posé,
+// sinon la console (`MIP_CONSOLE_URL`). Règles et raisons : `origineApi`.
+const ORIGINE = origineApi(process.env);
 const CHEMIN = process.env.MCP_PATH ?? "/mcp";
 /** Taille maximale d'un corps JSON-RPC. Une requête MCP fait quelques kilo-octets. */
 const MAX_CORPS = 1024 * 1024;
 
-if (!BASE) {
+if ("erreur" in ORIGINE) {
   console.error(
     JSON.stringify({
       service: "mcp",
       level: "error",
-      msg: "MIP_CONSOLE_URL absent — le serveur MCP refuse de démarrer",
+      msg: `${ORIGINE.erreur} — le serveur MCP refuse de démarrer`,
     }),
   );
   process.exit(2);
 }
+const BASE = ORIGINE.base;
 
 function json(res, statut, corps, entetes = {}) {
   const texte = JSON.stringify(corps);
@@ -156,6 +159,7 @@ serveurHttp.listen(PORT, () => {
       port: PORT,
       chemin: CHEMIN,
       api: `${String(BASE).replace(/\/+$/, "")}/api/v1`,
+      via: ORIGINE.via,
     }),
   );
 });
