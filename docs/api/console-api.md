@@ -27,6 +27,10 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | Opération | Méthode et chemin | Authentification | Portée | Démo | Secret client | Audit |
 |---|---|---|---|---|---|---|
 | `ops.jwks` | `GET /v1/.well-known/jwks.json` | aucune session | — | lecture | **non exigé** | — |
+| `auth.demo` | `POST /v1/auth/demo-sessions` | aucune session | — | **refusée** | exigé | `auth.demo` |
+| `auth.login` | `POST /v1/auth/sessions` | aucune session | — | **refusée** | exigé | `auth.login` |
+| `auth.logout` | `DELETE /v1/auth/sessions/current` | session | — | lecture | exigé | `auth.logout` |
+| `auth.me` | `GET /v1/me` | session | — | lecture | exigé | — |
 | `public.platformStatus` | `GET /v1/public/platform-status` | aucune session | — | lecture | exigé | — |
 | `ops.version` | `GET /v1/version` | aucune session | — | lecture | **non exigé** | — |
 
@@ -40,6 +44,7 @@ Un code est un contrat : on en ajoute, on n'en renomme pas. Le corps d'un refus 
 | `filtre_non_supporte` | 400 |
 | `session_requise` | 401 |
 | `session_invalide` | 401 |
+| `identifiants_refuses` | 401 |
 | `origine_refusee` | 403 |
 | `demo_refusee` | 403 |
 | `role_insuffisant` | 403 |

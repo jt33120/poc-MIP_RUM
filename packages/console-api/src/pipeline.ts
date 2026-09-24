@@ -27,6 +27,7 @@
 import {
   ENTETE_CLIENT,
   ENTETE_ECHEANCE,
+  ENTETE_IP_VISITEUR,
   ENTETE_REQUETE,
   ENTETE_SERVICE,
   type Probleme,
@@ -65,6 +66,8 @@ const ID_REQUETE = /^[A-Za-z0-9._-]{8,64}$/;
 const APP = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ENTIER = /^[1-9][0-9]{0,17}$/;
+/** Une adresse IPv4 ou IPv6 (forme, pas validité) : rien d'autre n'entre dans une clé de débit. */
+const IP = /^[0-9A-Fa-f.:]{2,45}$/;
 const METHODES_A_CORPS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const ENTETES_COMMUNS = { "cache-control": "no-store", "x-content-type-options": "nosniff" } as const;
@@ -290,7 +293,9 @@ export function creerConsoleApi(options: OptionsConsoleApi): (req: Request) => P
       }
 
       // 9. Le traitement, sous l'échéance.
-      const ctx: Contexte = { requestId, principal, params, requete, corps, echeance, apps, journal };
+      const ipBrute = req.headers.get(ENTETE_IP_VISITEUR)?.trim() ?? "";
+      const ipVisiteur = IP.test(ipBrute) ? ipBrute.toLowerCase() : null;
+      const ctx: Contexte = { requestId, principal, params, requete, corps, echeance, apps, ipVisiteur, journal };
       const reste = echeance - horloge();
       let minuterie: ReturnType<typeof setTimeout> | undefined;
       const delai = new Promise<never>((_, rejeter) => {

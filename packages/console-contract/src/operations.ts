@@ -71,8 +71,45 @@ export const ETAT_PLATEFORME = operation<Aucun, Aucun, never, EtatPlateforme>(
   "/v1/public/platform-status",
 );
 
+// ─── Identité (C1) ───────────────────────────────────────────────────────────
+
+/**
+ * Une session ouverte : le jeton à poser dans le cookie de la console, et son
+ * expiration. Le jeton ne porte qu'un identifiant de session (ES256) ; rôle et
+ * périmètre se relisent par `MOI` à chaque rendu.
+ */
+export interface SessionOuverte {
+  readonly jeton: string;
+  /** ISO 8601. */
+  readonly expire_le: string;
+  /** La connexion PRÉCÉDENTE du compte (ISO 8601), pour le briefing d'accueil ; `null` à la première, et pour une démo. */
+  readonly connexion_precedente: string | null;
+}
+
+/** Ce que la console sait du principal : relu en base à chaque vérification. */
+export interface Moi {
+  readonly email: string;
+  readonly role: "admin" | "viewer";
+  /** `null` = toutes les applications. */
+  readonly apps: readonly string[] | null;
+  readonly demo: boolean;
+}
+
+export interface Identifiants {
+  readonly email: string;
+  readonly mot_de_passe: string;
+}
+
+/** Connexion par mot de passe. Refus générique (`identifiants_refuses`) : ni le message ni le temps ne disent si le compte existe. */
+export const CONNEXION = operation<Aucun, Aucun, Identifiants, SessionOuverte>("auth.login", "POST", "/v1/auth/sessions");
+/** Session de démonstration : lecture seule, périmètre fixé par le service (`DEMO_USER_APPS`). 404 si la démo est fermée. */
+export const DEMO = operation<Aucun, Aucun, never, SessionOuverte>("auth.demo", "POST", "/v1/auth/demo-sessions");
+/** Déconnexion : la session est RÉVOQUÉE en base — le jeton ne vaut plus rien, même avant son expiration. */
+export const DECONNEXION = operation<Aucun, Aucun, never, { readonly revoquee: boolean }>("auth.logout", "DELETE", "/v1/auth/sessions/current");
+export const MOI = operation<Aucun, Aucun, never, Moi>("auth.me", "GET", "/v1/me");
+
 /** Toutes les opérations du contrat, dans l'ordre de la doc. */
-export const OPERATIONS = Object.freeze([VERSION, JWKS, ETAT_PLATEFORME]);
+export const OPERATIONS = Object.freeze([VERSION, JWKS, ETAT_PLATEFORME, CONNEXION, DEMO, DECONNEXION, MOI]);
 
 /**
  * La forme canonique de la table (une ligne par opération, triée) : chaque côté

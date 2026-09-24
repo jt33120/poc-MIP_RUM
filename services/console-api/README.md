@@ -43,6 +43,8 @@ La table des opérations, leurs politiques et les codes d'erreur sont dans **[do
 | `CONSOLE_API_CLIENT_SECRETS` | **oui** (secret) | le secret client : `nouvelle` ou `nouvelle,ancienne` pendant une rotation, 32 caractères au moins chacune |
 | `SESSION_SIGNING_KEYS` | **oui** (secret) | jeu JWKS **privé** ES256, 1 ou 2 clés (la première signe) : `node scripts/ops/generer-cles-session.mjs --nouvelle \| pbcopy`. Un `kid` qui dit « test » ou « dev » est refusé hors poste de travail |
 | `CONSOLE_API_RATE_LIMIT` | non | appels par minute et par principal, par réplique (défaut 600 ; la console rejoue ses écrans toutes les 5 s) |
+| `DEMO_USER_APPS` | non | applications visibles en démo, séparées par des virgules. Vide : **pas de démo** (`POST /v1/auth/demo-sessions` → 404). Le rôle n'est pas réglable : une démo est `viewer` |
+| `DEMO_USER_EMAIL` | non | étiquette de la session de démo dans le journal (défaut `demo@mip-rum.local`) |
 | `PGPOOL_MAX`, `PORT`, `LOG_LEVEL`, `METRICS_TOKEN`, `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non | voir le kit |
 
 Côté Vercel (C0b) : `CONSOLE_API_URL` (le domaine généré, en https), `CONSOLE_API_CLIENT_SECRET` (une valeur) et `SESSION_PUBLIC_JWKS`, qui n'est pas secrète (`--publique`). Les trois vont ensemble : une configuration partielle, ou une clé PRIVÉE posée sur Vercel, est refusée et journalisée, et la console reste sur la base. Avant d'envoyer son secret à un hôte, la console vérifie la poignée de main (valable 10 minutes par instance) ; un hôte qui ne la prouve pas ne reçoit jamais le secret.
@@ -53,6 +55,26 @@ Côté Vercel (C0b) : `CONSOLE_API_URL` (le domaine généré, en https), `CONSO
 3. retirer `ancienne` du service.
 
 **Rotation des clés de session** : `--rotation`, `--promouvoir` puis `--retirer` (en-tête du script), en publiant la nouvelle clé publique sur Vercel avant de la faire signer.
+
+## L'identité (C1)
+
+| Opération | Ce qu'elle fait |
+|---|---|
+| `POST /v1/auth/sessions` | connexion par mot de passe : une **ligne** `console_session` et un jeton ES256 qui ne porte que son identifiant. Refus générique `identifiants_refuses` (un compte inconnu coûte le même bcrypt, contre un hachage factice) |
+| `POST /v1/auth/demo-sessions` | session de démonstration : `viewer`, périmètre `DEMO_USER_APPS`, **5 par heure et par IP** ; jamais l'IP au journal |
+| `DELETE /v1/auth/sessions/current` | déconnexion : la session est **révoquée** en base, le jeton ne vaut plus rien, tout de suite sur cette réplique, en 30 s sur l'autre |
+| `GET /v1/me` | le principal, relu en base : rôle et périmètre du compte, jamais du jeton |
+
+**Le débit d'authentification** vit en base (`auth_throttle`, migration-v90), pour toutes les répliques, et se vérifie **avant bcrypt** :
+- IP + e-mail : 8 échecs par 10 min ;
+- IP seule : 30 échecs par 10 min ;
+- e-mail : 20 échecs par heure, puis un délai qui double (1 min → 1 h).
+
+Les clés sont des HMAC : ni IP ni e-mail en clair. La clé HMAC est dérivée du secret client (HKDF) ; une rotation du secret remet les compteurs à zéro.
+
+L'adresse du visiteur arrive par `x-mip-visitor-ip`, posée par le serveur de la console. Elle n'est crue que parce que seul le détenteur du secret client peut la poser. bcrypt tourne 4 à la fois au plus par réplique.
+
+Chaque écriture laisse sa ligne `audit_log` (`auth.login`, `auth.login_failed`, `auth.login_blocked`, `auth.demo`, `auth.logout`) avec le `request_id` et `actor_kind`, dans la **même transaction**.
 
 ## Sûreté multi-réplique
 

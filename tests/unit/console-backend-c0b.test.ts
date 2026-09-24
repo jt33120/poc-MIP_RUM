@@ -14,7 +14,7 @@
 //     pour une réponse du service ; une lecture est retentée une fois, jamais une écriture.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ETAT_PLATEFORME, messageDePoignee, operation, VERSION } from "@mip/console-contract";
-import { chargerTrousseau, creerConsoleApi, creerTable, signer, type Lecteur } from "@mip/console-api";
+import { chargerTrousseau, creerConsoleApi, creerDebitAuth, creerTable, signer, type Lecteur } from "@mip/console-api";
 import { cheminDe, creerBackend, lireConfigBackend } from "../../apps/console/lib/backend";
 
 const planifie = vi.hoisted(() => ({
@@ -42,6 +42,16 @@ async function jeu(kid: string) {
 }
 const publique = ({ d: _d, ...k }: Awaited<ReturnType<typeof jeu>>) => k;
 
+/** Les dépendances de l'identité (C1), inertes : la table réelle les exige. */
+const identite = async () => ({
+  transacteur: { transaction: <T,>(fn: (c: Lecteur) => Promise<T>) => fn(base) },
+  debit: await creerDebitAuth("i".repeat(40)),
+  verifierMotDePasse: async () => false,
+  hachageFactice: "",
+  demo: null,
+  oublierSession: () => {},
+});
+
 const base: Lecteur = {
   async query(texte: string) {
     if (texte.includes("tenant_usage_daily")) return { rows: [{ t: "2026-09-23 03:00:00+00" }] as never[] };
@@ -54,7 +64,7 @@ const base: Lecteur = {
 async function monter(opts: { cle?: Awaited<ReturnType<typeof jeu>>; env?: Record<string, string> } = {}) {
   const cle = opts.cle ?? (await jeu("session-20260924-aaaa"));
   const trousseau = await chargerTrousseau(JSON.stringify({ keys: [cle] }), { production: false });
-  const { table } = await creerTable({ trousseau, version: "abc123", db: base });
+  const { table } = await creerTable({ trousseau, version: "abc123", db: base, identite: await identite() });
   const service = creerConsoleApi({ table, secretsClient: [SECRET], journal: { info() {}, warn() {}, error() {} } });
   const appels: { url: string; entetes: Headers; methode: string }[] = [];
   const fetchService = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -158,7 +168,7 @@ describe("C0b — la poignée de main, avant tout secret", () => {
   it("un contrat différent est signalé une fois, sans bloquer (N et N−1)", async () => {
     const cle = await jeu("session-20260924-cccc");
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [cle] }), { production: false });
-    const { table } = await creerTable({ trousseau, version: "abc", db: base });
+    const { table } = await creerTable({ trousseau, version: "abc", db: base, identite: await identite() });
     // Le service annonce un contrat que la console ne connaît pas (une opération
     // ajoutée côté service, déployé d'abord) : la poignée de main est re-signée
     // avec cette empreinte, comme le ferait un vrai service plus récent.
@@ -186,7 +196,7 @@ describe("C0b — ce qui n'est pas une réponse du service", () => {
   async function avecReponses(reponses: (() => Response | Promise<Response>)[], methode: "GET" | "POST" = "GET") {
     const cle = await jeu("session-20260924-dddd");
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [cle] }), { production: false });
-    const { table } = await creerTable({ trousseau, version: "v", db: base });
+    const { table } = await creerTable({ trousseau, version: "v", db: base, identite: await identite() });
     const vrai = creerConsoleApi({ table, secretsClient: [SECRET], journal: { info() {}, warn() {}, error() {} } });
     let i = 0;
     const journal = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };

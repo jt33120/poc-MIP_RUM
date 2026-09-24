@@ -23,6 +23,7 @@ import { operation } from "@mip/console-contract";
 import {
   chargerTrousseau,
   creerConsoleApi,
+  creerDebitAuth,
   creerTable,
   creerVerificateurSession,
   emettreJetonSession,
@@ -61,6 +62,17 @@ const BANC: Enregistrement[] = [
 const EXEMPLES: Record<string, string> = {
   "ops.version": "?nonce=authz-nonce-000000000000000000",
 };
+
+/**
+ * C1 — les opérations d'identité PUBLIQUES rendent autre chose que 200 à tout le
+ * monde, et c'est leur contrat : une connexion aux identifiants inconnus est
+ * refusée (401) quelle que soit la session présentée, et la démo est fermée ici
+ * (404). La politique (publique) est la même pour tous ; le statut fixe le dit.
+ */
+const STATUT_FIXE: Record<string, number> = { "auth.login": 401, "auth.demo": 404 };
+const CORPS: Record<string, unknown> = { "auth.login": { email: "authz-inconnu@test.local", mot_de_passe: "pas-le-bon" } };
+/** Hors de la boucle : la déconnexion RÉVOQUE la session du profil — testée à part, en dernier. */
+const HORS_MATRICE = new Set(["auth.logout"]);
 
 // ─── Les profils ─────────────────────────────────────────────────────────────
 type Profil = "anonyme" | "invalide" | "revoquee" | "desactive" | "demo" | "viewer" | "admin" | "plateforme";
@@ -174,7 +186,35 @@ function cibles(p: Politique): Cible[] {
     for (const p of ["revoquee", "desactive", "demo", "viewer", "admin", "plateforme"] as const) jetons[p] = await emettre(trousseau, sessions[p]);
 
     const verificateur = await creerVerificateurSession({ trousseau, db: pool, horloge: () => maintenant });
-    const reel = await creerTable({ trousseau, version: "authz", db: pool });
+    const transacteur = {
+      async transaction<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+        const c = await pool.connect();
+        try {
+          await c.query("begin");
+          const r = await fn(c);
+          await c.query("commit");
+          return r;
+        } catch (e) {
+          await c.query("rollback").catch(() => {});
+          throw e;
+        } finally {
+          c.release();
+        }
+      },
+    };
+    const reel = await creerTable({
+      trousseau,
+      version: "authz",
+      db: pool,
+      identite: {
+        transacteur,
+        debit: await creerDebitAuth(SECRET),
+        verifierMotDePasse: async () => false,
+        hachageFactice: "",
+        demo: null,
+        oublierSession: (sid) => verificateur.oublier(sid),
+      },
+    });
     table = [...reel.table, ...BANC];
     servirRequete = creerConsoleApi({
       table,
@@ -196,9 +236,13 @@ function cibles(p: Politique): Cible[] {
     let chemin = e.operation.chemin;
     if (cible.vue) chemin = chemin.replace("{id}", vues[cible.vue]);
     const q = cible.app ? `?app=${encodeURIComponent(cible.app)}` : EXEMPLES[e.operation.id] ?? "";
-    const entetes: Record<string, string> = { "x-mip-client": SECRET };
+    // Une adresse de visiteur par profil : les échecs de connexion de la matrice ne
+    // s'additionnent pas sur un seul compteur.
+    const entetes: Record<string, string> = { "x-mip-client": SECRET, "x-mip-visitor-ip": `198.51.100.${PROFILS.indexOf(profil) + 1}` };
     if (jetons[profil]) entetes.authorization = `Bearer ${jetons[profil]}`;
-    return new Request(`https://console-api.test${chemin}${q}`, { method: e.operation.methode, headers: entetes });
+    const corps = CORPS[e.operation.id];
+    if (corps !== undefined) entetes["content-type"] = "application/json";
+    return new Request(`https://console-api.test${chemin}${q}`, { method: e.operation.methode, headers: entetes, body: corps === undefined ? undefined : JSON.stringify(corps) });
   }
 
   it("chaque opération réelle a un exemple d'appel, ou n'en demande pas", () => {
@@ -209,12 +253,12 @@ function cibles(p: Politique): Cible[] {
   it("la matrice : chaque opération × chaque profil × chaque cible rend le statut de l'oracle", async () => {
     const ecarts: string[] = [];
     let cases = 0;
-    for (const e of table) {
+    for (const e of table.filter((x) => !HORS_MATRICE.has(x.operation.id))) {
       for (const profil of PROFILS) {
         for (const cible of cibles(e.politique)) {
           cases++;
           const res = await servirRequete(requete(e, profil, cible));
-          const voulu = attendu(e.politique, profil, cible);
+          const voulu = STATUT_FIXE[e.operation.id] ?? attendu(e.politique, profil, cible);
           if (res.status !== voulu) {
             ecarts.push(`${e.operation.id} · ${profil} · ${cible.nom} : ${res.status} au lieu de ${voulu} (${await res.text()})`);
             continue;
@@ -234,8 +278,8 @@ function cibles(p: Politique): Cible[] {
       }
     }
     expect(ecarts).toEqual([]);
-    // Par profil : 3 opérations réelles, 3 du banc à portée globale, 6 à trois cibles.
-    expect(cases).toBeGreaterThanOrEqual(PROFILS.length * (3 + 3 + 6 * 3));
+    // Par profil : 6 opérations réelles (logout à part), 3 du banc à portée globale, 6 à trois cibles.
+    expect(cases).toBeGreaterThanOrEqual(PROFILS.length * (6 + 3 + 6 * 3));
   });
 
   it("une vue d'une autre application est indiscernable d'une vue qui n'existe pas", async () => {
@@ -270,5 +314,18 @@ function cibles(p: Politique): Cible[] {
     await pool.query("update console_user set role = 'viewer' where email = $1", [EMAILS.viewer]);
     maintenant += 30_001;
     expect((await servirRequete(requete(e, "viewer", { nom: "" }))).status).toBe(403);
+  });
+  it("déconnexion (C1) : une session la ferme, une démo aussi — et le jeton ne vaut plus rien ; sans session, 401", async () => {
+    const e = table.find((x) => x.operation.id === "auth.logout")!;
+    const moi = table.find((x) => x.operation.id === "auth.me")!;
+    for (const profil of ["anonyme", "invalide"] as const) {
+      expect((await servirRequete(requete(e, profil, { nom: "" }))).status, profil).toBe(401);
+    }
+    for (const profil of ["demo", "viewer"] as const) {
+      expect((await servirRequete(requete(moi, profil, { nom: "" }))).status, `${profil} avant`).toBe(200);
+      expect((await servirRequete(requete(e, profil, { nom: "" }))).status, profil).toBe(200);
+      // Révoquée par CETTE réplique : refusée tout de suite, sans attendre le cache.
+      expect((await servirRequete(requete(moi, profil, { nom: "" }))).status, `${profil} après`).toBe(401);
+    }
   });
 });

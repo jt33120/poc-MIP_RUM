@@ -12,6 +12,7 @@ export const CODES_ERREUR = Object.freeze({
   filtre_non_supporte: 400,
   session_requise: 401,
   session_invalide: 401,
+  identifiants_refuses: 401,
   origine_refusee: 403,
   demo_refusee: 403,
   role_insuffisant: 403,
@@ -54,3 +55,9 @@ export const ENTETE_CLIENT = "x-mip-client";
 /** Le budget restant de l'appelant, en millisecondes. */
 export const ENTETE_ECHEANCE = "x-mip-deadline-ms";
 export const ENTETE_REQUETE = "x-request-id";
+/**
+ * L'adresse IP du VISITEUR, que le serveur de la console transmet pour le débit
+ * d'authentification (C1). Crue parce que seul le détenteur du secret client
+ * peut la poser ; jamais écrite en clair — le service n'en garde qu'un HMAC.
+ */
+export const ENTETE_IP_VISITEUR = "x-mip-visitor-ip";
