@@ -26,7 +26,19 @@ Dockerfile. `services/collector/server.mjs` câble le receveur de `@mip/backend`
 | `migrate` | — (toujours) | `services/scheduler/Dockerfile` | — | `db` sain |
 | `collector` | `collector`, `tout` | `services/collector/Dockerfile` | `COLLECTOR_PORT` (4318) | `migrate` **sorti en 0** |
 | `scheduler` | `scheduler`, `tout` | `services/scheduler/Dockerfile` | `SCHEDULER_PORT` (4320) | `migrate` **sorti en 0** |
+| `notifier` | `notifier`, `tout` | `services/notifier/Dockerfile` | `NOTIFIER_PORT` (4321) | `migrate` **sorti en 0** |
 | `mcp` | `mcp`, `tout` | `services/mcp/Dockerfile` | `MCP_PORT` (4322) | rien : **aucune base** |
+| `api` | `api`, `tout` | `services/api/Dockerfile` | `API_PORT` (4323) | `migrate` **sorti en 0** |
+| `console-api` | `console-api`, `tout` | `services/console-api/Dockerfile` | `CONSOLE_API_PORT` (4324) | `migrate` **sorti en 0** |
+
+`console-api` exige deux secrets, **sans valeur par défaut** (un secret n'a pas de
+valeur « de développement » dans un fichier versionné) ; vides, il refuse de
+démarrer et dit lequel manque. À poser dans `infra/docker/.env` :
+
+```bash
+echo "CONSOLE_API_CLIENT_SECRETS=$(openssl rand -hex 32)" >> .env
+echo "SESSION_SIGNING_KEYS=$(node ../../scripts/ops/generer-cles-session.mjs --nouvelle 2>/dev/null)" >> .env
+```
 
 `migrate` lance la commande exacte du pré-déploiement Railway,
 `node services/scheduler/migrate.mjs`, avec l'image du scheduler. Un migrateur
