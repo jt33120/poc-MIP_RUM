@@ -50,6 +50,7 @@ const suite = ENV.url ? describe : describe.skip;
 const A = "parite-api-a";
 const B = "parite-api-b";
 const C = "parite-api-c"; // hors du périmètre du jeton scopé
+const JETON_BASE = "jeton-parite-base-0123456789";
 
 /** Un lot OTLP réaliste : pages vues, Web Vitals, une erreur, une action. */
 function lot(app: string, session: string, decalageMin: number) {
@@ -104,9 +105,11 @@ function normaliser(corps: unknown): unknown {
   if (!corps || typeof corps !== "object") return corps;
   const c = structuredClone(corps) as {
     generatedAt?: unknown;
+    generated_at?: unknown;
     meta?: { generatedAt?: unknown; range?: { from?: unknown; to?: unknown; preset?: unknown } };
   };
   delete c.generatedAt; // /api/v1/health le porte à la racine
+  delete c.generated_at; // /api/rum/summary aussi, en snake_case
   if (c.meta) {
     delete c.meta.generatedAt;
     // Fenêtre glissante : ses bornes avancent à chaque appel, son preset non.
@@ -120,6 +123,8 @@ function normaliser(corps: unknown): unknown {
 
 suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
   const pool = new pg.Pool({ connectionString: ENV.url ?? undefined, max: 2 });
+  /** Le service se connecte en `mip_api` (migration-v89), comme en production. */
+  const motDePasseApi = randomBytes(18).toString("base64url");
   let service: ChildProcess;
   let base = "";
   let routeurConsole: (p: string) => { entree: { module: Record<string, (...a: unknown[]) => Promise<Response>> }; params: Record<string, string> } | null;
@@ -160,18 +165,34 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
       `insert into app_registry (app_id, name) select a, a from unnest($1::text[]) a on conflict (app_id) do nothing`,
       [[A, B, C]],
     );
+    // A regroupe ses erreurs en issues (v72) : les routes `/issues/{id}` ont un identifiant à lire.
+    await pool.query("select error_grouping_activate($1, 'parite@test')", [A]);
     for (const [app, s, d] of [[A, "pa-1", 5], [A, "pa-2", 40], [B, "pb-1", 12], [C, "pc-1", 8]] as const) {
       await writeRows(pool, lot(app, s, d));
     }
+    // Un jeton de lecture EN BASE (écran « Jetons de lecture ») : celui de `/api/rum/summary`.
+    await pool.query(
+      `insert into read_tokens (token_hash, app_id, label)
+       values (encode(sha256(convert_to($1, 'utf8')), 'hex'), $2, 'parite')
+       on conflict (token_hash) do nothing`,
+      [JETON_BASE, A],
+    );
 
-    // Le service, construit et lancé comme dans son image.
+    // Le service, construit et lancé comme dans son image, SOUS SON RÔLE : une
+    // table que la liste blanche de `mip_api` oublie se voit ici comme un écart
+    // avec la console (qui lit en propriétaire) — un 500, ou une liste vide.
+    // Le rôle est global à l'instance : ouvert le temps du fichier, refermé après.
+    await pool.query(`alter role mip_api login password '${motDePasseApi}'`);
+    const urlApi = new URL(ENV.url!);
+    urlApi.username = "mip_api";
+    urlApi.password = motDePasseApi;
     await construire({ ecrire: true });
     const port = await portLibre();
     base = `http://127.0.0.1:${port}`;
     service = spawn(process.execPath, ["services/api/dist/server.mjs"], {
       env: {
         PATH: process.env.PATH,
-        DATABASE_URL: ENV.url!,
+        DATABASE_URL: urlApi.toString(),
         PORT: String(port),
         CONSOLE_API_TOKENS: process.env.CONSOLE_API_TOKENS!,
         CONSOLE_API_RATE_LIMIT: "0",
@@ -197,6 +218,7 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
 
   afterAll(async () => {
     service?.kill("SIGTERM");
+    await pool.query("alter role mip_api nologin password null").catch(() => {});
     await pool.end();
     const { pool: poolConsole } = await import("../../apps/console/lib/db");
     await poolConsole.end().catch(() => {});
@@ -232,6 +254,33 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
     expect(api.statut, JSON.stringify(api.corps).slice(0, 300)).toBe(console_.statut);
     expect(normaliser(api.corps)).toEqual(normaliser(console_.corps));
     if (console_.statut === 200) expect(api.etag).toBe(console_.etag);
+  });
+
+  // Les routes à identifiant, et les GET que la liste ci-dessus ne couvre pas :
+  // sous `mip_api`, chacune prouve que sa lecture est dans la liste blanche.
+  it("les lectures à identifiant et les autres GET : même statut, même corps, même ETag", async () => {
+    const erreurs = await appelerConsole(`/api/v1/errors?app=${A}`, auth());
+    const fp = (erreurs.corps as { data: { groups: { fingerprint: string }[] } }).data.groups[0]?.fingerprint;
+    const issues = await appelerConsole(`/api/v1/issues?app=${A}`, auth());
+    const id = (issues.corps as { data: { issues: { id?: string }[] } }).data.issues.find((i) => i.id)?.id;
+    expect(fp).toBeTruthy();
+    expect(id).toBeTruthy();
+    for (const [chemin, init, attendu] of [
+      [`/api/v1/errors/${fp}?app=${A}`, auth(), 200],
+      [`/api/v1/sessions/pa-1?app=${A}`, auth(), 200],
+      [`/api/v1/issues/${id}?app=${A}`, auth(), 200],
+      [`/api/v1/issues/${id}/activity?app=${A}`, auth(), 200],
+      [`/api/v1/issues/${id}/tickets?app=${A}`, auth(), 200],
+      [`/api/v1/explorer/views?app=${A}`, auth(), 403], // personnelles : aucun jeton n'en a
+      ["/api/v1/openapi", auth(), 200],
+      ["/api/rum/summary?window=7d", auth(JETON_BASE), 200],
+    ] as const) {
+      const [console_, api] = await Promise.all([appelerConsole(chemin, init), appelerService(chemin, init)]);
+      expect(console_.statut, `${chemin} — ${JSON.stringify(console_.corps).slice(0, 300)}`).toBe(attendu);
+      expect(api.statut, `${chemin} — ${JSON.stringify(api.corps).slice(0, 300)}`).toBe(console_.statut);
+      expect(normaliser(api.corps), chemin).toEqual(normaliser(console_.corps));
+      if (console_.statut === 200) expect(api.etag, chemin).toBe(console_.etag);
+    }
   });
 
   it("les refus sont les mêmes : sans jeton 401, app hors périmètre 403, filtre invalide 400", async () => {
