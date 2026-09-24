@@ -108,8 +108,40 @@ export const DEMO = operation<Aucun, Aucun, never, SessionOuverte>("auth.demo", 
 export const DECONNEXION = operation<Aucun, Aucun, never, { readonly revoquee: boolean }>("auth.logout", "DELETE", "/v1/auth/sessions/current");
 export const MOI = operation<Aucun, Aucun, never, Moi>("auth.me", "GET", "/v1/me");
 
+/**
+ * Les moyens de se connecter que le service offre : l'écran de connexion et la
+ * vitrine montrent ou cachent leurs boutons (SSO, démo) sans que la console
+ * détienne la moindre configuration d'identité.
+ */
+export interface MethodesConnexion {
+  readonly mot_de_passe: true;
+  readonly sso: boolean;
+  readonly demo: boolean;
+}
+export const METHODES = operation<Aucun, Aucun, never, MethodesConnexion>("auth.methods", "GET", "/v1/auth/methods");
+
+/**
+ * Le début d'une connexion SSO (OIDC, code + PKCE) : l'adresse de l'IdP où
+ * envoyer le navigateur, et la TRANSACTION scellée (JWE) que la console garde en
+ * cookie le temps de l'aller-retour — état, nonce et vérificateur PKCE y sont
+ * chiffrés : la console ne les lit pas, le navigateur non plus.
+ */
+export interface DebutSso {
+  readonly url: string;
+  readonly transaction: string;
+}
+export const DEBUT_SSO = operation<Aucun, Aucun, never, DebutSso>("auth.oidcStart", "GET", "/v1/auth/oidc/authorization");
+
+export interface RetourSso {
+  readonly code: string;
+  readonly state: string;
+  readonly transaction: string;
+}
+/** La fin d'une connexion SSO : le service échange le code, vérifie l'ID token, lie le compte par (émetteur, sujet). */
+export const FIN_SSO = operation<Aucun, Aucun, RetourSso, SessionOuverte>("auth.oidc", "POST", "/v1/auth/oidc-sessions");
+
 /** Toutes les opérations du contrat, dans l'ordre de la doc. */
-export const OPERATIONS = Object.freeze([VERSION, JWKS, ETAT_PLATEFORME, CONNEXION, DEMO, DECONNEXION, MOI]);
+export const OPERATIONS = Object.freeze([VERSION, JWKS, ETAT_PLATEFORME, CONNEXION, DEMO, DECONNEXION, MOI, METHODES, DEBUT_SSO, FIN_SSO]);
 
 /**
  * La forme canonique de la table (une ligne par opération, triée) : chaque côté

@@ -5,7 +5,7 @@ import { LoginSubmitButton } from "@/components/LoginSubmitButton";
 import { PasswordField } from "@/components/PasswordField";
 import { getUser } from "@/lib/auth";
 import type { SearchParams } from "@/lib/filters";
-import { isOidcEnabled } from "@/lib/oidc";
+import { methodesConnexion } from "@/lib/methodes-connexion";
 import { loginAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
   const error = sp.error != null;
   // C1 : console-api injoignable n'est pas un mot de passe faux — le dire.
   const indisponible = sp.error === "indisponible";
-  const ssoEnabled = isOidcEnabled();
+  const ssoEnabled = (await methodesConnexion()).sso;
 
   return (
     // écran clair, épuré : léger halo accent, la carte porte toute l'attention

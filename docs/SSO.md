@@ -6,6 +6,35 @@
 > disponible en repli. Provisioning **JIT** (le compte console est créé/mis à jour
 > à la 1ʳᵉ connexion). Implémentation **OIDC standard** → tout IdP conforme.
 
+## Depuis C1c : le SSO passe par `console-api`
+
+> Ce qui suit décrit le flux **de la console branchée sur `console-api`** (piste C). Tant que la console n'y est pas branchée, le flux historique décrit plus bas reste en service, avec ses défauts.
+
+**Où vit la configuration.** Sur le service `console-api`, plus sur Vercel :
+- `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` (toujours la route de la console, `/api/auth/oidc/callback`) ;
+- `OIDC_TX_KEY` : 32 octets en base64url ;
+- en option : `OIDC_ROLE_CLAIM`, `OIDC_ADMIN_VALUES`, `OIDC_APPS_CLAIM`, `OIDC_ALLOWED_DOMAINS`.
+
+C'est tout ou rien : une configuration partielle refuse le démarrage.
+
+**Le flux.** La console appelle `GET /v1/auth/oidc/authorization`. Le service découvre l'IdP, dont l'émetteur est **épinglé** : il doit être celui de la configuration. Il prépare le PKCE, l'état et le nonce, et les **scelle** dans une transaction JWE (`dir` + A256GCM). La console garde cette transaction en cookie 10 minutes, sans pouvoir la lire.
+
+Au retour de l'IdP, `POST /v1/auth/oidc-sessions` reçoit le code, l'état et la transaction. Le service échange le code (le secret client OIDC ne quitte pas `console-api`), vérifie l'ID token (émetteur, audience, nonce), puis lie le compte.
+
+**Le lien au compte (migration-v91).**
+
+| Cas | Avant (flux historique) | Depuis C1c |
+|---|---|---|
+| Retrouver un compte | par l'**e-mail**, ou `preferred_username` à défaut | par **(émetteur, sujet)** une fois lié ; jamais plus par l'e-mail |
+| Premier lien avec un compte existant | toujours | seulement si le compte est **pré-provisionné** (`password_hash = 'sso:oidc'`), ou si l'IdP **atteste** l'adresse (`email_verified`) dans un domaine d'`OIDC_ALLOWED_DOMAINS` |
+| Compte inconnu (JIT) | créé | créé aux mêmes conditions, **sans aucune application** tant qu'un administrateur ou le claim d'applications n'en donne pas |
+| Compte désactivé | **réactivé** | refusé, et il le reste |
+| Portée donnée par l'IdP | `apps` nul possible (toutes les apps) | jamais nul : l'IdP ne donne pas la portée plateforme |
+
+Chaque refus rend le même « Identifiants invalides » au navigateur. Sa raison (`email_non_verifie`, `domaine_non_autorise`, `compte_desactive`, `compte_lie_a_un_autre_sujet`, `nonce_different`…) est inscrite au journal d'audit (`auth.oidc_refused`).
+
+**Ce qui le prouve.** `tests/integration/console-api-sso-sql.test.ts` joue contre un faux IdP qui vérifie le PKCE, avec la vraie base : chaque cas du tableau, et chaque mensonge (état, transaction, nonce, émetteur, audience).
+
 ## Activation
 
 Définir ces variables d'environnement sur la console (vides ⇒ SSO **désactivé**, le

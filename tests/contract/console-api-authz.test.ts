@@ -69,7 +69,7 @@ const EXEMPLES: Record<string, string> = {
  * refusée (401) quelle que soit la session présentée, et la démo est fermée ici
  * (404). La politique (publique) est la même pour tous ; le statut fixe le dit.
  */
-const STATUT_FIXE: Record<string, number> = { "auth.login": 401, "auth.demo": 404 };
+const STATUT_FIXE: Record<string, number> = { "auth.login": 401, "auth.demo": 404, "auth.oidcStart": 404, "auth.oidc": 400 };
 const CORPS: Record<string, unknown> = { "auth.login": { email: "authz-inconnu@test.local", mot_de_passe: "pas-le-bon" } };
 /** Hors de la boucle : la déconnexion RÉVOQUE la session du profil — testée à part, en dernier. */
 const HORS_MATRICE = new Set(["auth.logout"]);
@@ -280,8 +280,8 @@ function cibles(p: Politique): Cible[] {
       }
     }
     expect(ecarts).toEqual([]);
-    // Par profil : 6 opérations réelles (logout à part), 3 du banc à portée globale, 6 à trois cibles.
-    expect(cases).toBeGreaterThanOrEqual(PROFILS.length * (6 + 3 + 6 * 3));
+    // Par profil : 9 opérations réelles (logout à part), 3 du banc à portée globale, 6 à trois cibles.
+    expect(cases).toBeGreaterThanOrEqual(PROFILS.length * (9 + 3 + 6 * 3));
   });
 
   it("une vue d'une autre application est indiscernable d'une vue qui n'existe pas", async () => {

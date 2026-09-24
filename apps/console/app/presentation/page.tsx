@@ -11,10 +11,11 @@
 // (Releve.tsx) calcule l'âge du document de couverture au jour de la visite.
 import { Landing } from "@/components/presentation/Landing";
 import { getUser } from "@/lib/auth";
+import { methodesConnexion } from "@/lib/methodes-connexion";
 
 export const dynamic = "force-dynamic";
 
 export default async function Presentation() {
-  const user = await getUser();
-  return <Landing user={user} />;
+  const [user, methodes] = await Promise.all([getUser(), methodesConnexion()]);
+  return <Landing user={user} demoOuverte={methodes.demo} />;
 }

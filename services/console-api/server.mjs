@@ -23,7 +23,7 @@ import { installLifecycle } from "@mip/service-kit/lifecycle.mjs";
 import { createPool, describeTarget } from "@mip/service-kit/pg.mjs";
 import { createMetrics } from "@mip/service-kit/metrics.mjs";
 import { startService } from "@mip/service-kit/http.mjs";
-import { chargerTrousseau, creerConsoleApi, creerDebitAuth, creerTable, creerVerificateurSession } from "@mip/console-api";
+import { chargerTrousseau, creerConsoleApi, creerDebitAuth, creerOidc, creerTable, creerVerificateurSession } from "@mip/console-api";
 
 const log = createLogger("console-api");
 const lifecycle = installLifecycle({ log });
@@ -67,6 +67,18 @@ const config = defineConfig(
       description: "Applications visibles en démo, séparées par des virgules. Vide : pas de démo.",
     },
     DEMO_USER_EMAIL: { type: "string", default: "demo@mip-rum.local", description: "Étiquette de la session de démo dans le journal d'audit." },
+    // C1c — LE SSO (OIDC). Tout ou rien : l'émetteur, le client, l'adresse de
+    // retour (la route de la console) et la clé de transaction ensemble, ou aucun.
+    OIDC_ISSUER: { type: "string", description: "Émetteur OIDC, ÉPINGLÉ : vérifié dans la découverte et dans chaque ID token." },
+    OIDC_CLIENT_ID: { type: "string", description: "Identifiant du client OIDC." },
+    OIDC_CLIENT_SECRET: { type: "string", secret: true, description: "Secret du client OIDC (échange du code) : sur ce service seulement, plus sur Vercel." },
+    OIDC_REDIRECT_URI: { type: "string", description: "Adresse de retour enregistrée chez l'IdP : `https://<console>/api/auth/oidc/callback`." },
+    OIDC_SCOPES: { type: "string", default: "openid email profile", description: "Portées demandées." },
+    OIDC_ROLE_CLAIM: { type: "string", description: "Claim des rôles ou groupes. Absent : le rôle géré dans la console est préservé." },
+    OIDC_ADMIN_VALUES: { type: "list", description: "Valeurs du claim de rôle qui donnent le rôle admin." },
+    OIDC_APPS_CLAIM: { type: "string", description: "Claim de la liste d'applications. Absent : le périmètre géré dans la console est préservé." },
+    OIDC_ALLOWED_DOMAINS: { type: "list", description: "Domaines dont une adresse ATTESTÉE (email_verified) peut créer ou lier un compte. Vide : seuls les comptes pré-provisionnés pour le SSO." },
+    OIDC_TX_KEY: { type: "string", secret: true, description: "32 octets en base64url : scelle la transaction OIDC (JWE). `openssl rand 32 | basenc --base64url | tr -d =`." },
     RAILWAY_GIT_COMMIT_SHA: { type: "string", description: "Posée par Railway : la version qu'annonce la poignée de main." },
     RAILWAY_ENVIRONMENT: { type: "string", description: "Posée par Railway : en sa présence, une clé de test est refusée." },
   },
@@ -119,6 +131,35 @@ const transacteur = {
 };
 
 const demoApps = (config.DEMO_USER_APPS ?? []).filter(Boolean);
+
+// Le SSO : tout ou rien. Une configuration partielle refuse le démarrage — un
+// SSO à moitié configuré ne doit pas se découvrir à la première connexion.
+const CHAMPS_OIDC = ["OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI", "OIDC_TX_KEY"];
+const posesOidc = CHAMPS_OIDC.filter((k) => config[k]);
+let oidc = null;
+if (posesOidc.length > 0) {
+  const manquants = CHAMPS_OIDC.filter((k) => !config[k]);
+  const cleTx = config.OIDC_TX_KEY ? Buffer.from(config.OIDC_TX_KEY, "base64url") : null;
+  if (manquants.length || !cleTx || cleTx.length !== 32) {
+    log.error("refus de démarrer", {
+      raison: manquants.length ? `SSO partiellement configuré : manque ${manquants.join(", ")}` : "OIDC_TX_KEY : 32 octets en base64url attendus",
+    });
+    process.exit(2);
+  }
+  const configOidc = {
+    issuer: config.OIDC_ISSUER,
+    clientId: config.OIDC_CLIENT_ID,
+    clientSecret: config.OIDC_CLIENT_SECRET,
+    redirectUri: config.OIDC_REDIRECT_URI,
+    scopes: config.OIDC_SCOPES,
+    roleClaim: config.OIDC_ROLE_CLAIM ?? null,
+    adminValues: config.OIDC_ADMIN_VALUES ?? [],
+    appsClaim: config.OIDC_APPS_CLAIM ?? null,
+    domainesAutorises: (config.OIDC_ALLOWED_DOMAINS ?? []).map((d) => d.toLowerCase()),
+    cleTransaction: new Uint8Array(cleTx),
+  };
+  oidc = { client: creerOidc(configOidc), config: configOidc };
+}
 const { table, contrat } = await creerTable({
   trousseau,
   version,
@@ -133,6 +174,7 @@ const { table, contrat } = await creerTable({
     hachageFactice: bcrypt.hashSync(randomBytes(16).toString("hex"), 10),
     demo: demoApps.length ? { email: config.DEMO_USER_EMAIL.trim().toLowerCase(), apps: demoApps } : null,
     oublierSession: (sid) => sessions.oublier(sid),
+    oidc,
   },
 });
 
@@ -171,4 +213,5 @@ log.info("console-api démarré", {
   cles: trousseau.toutes.length,
   secrets_client: config.CONSOLE_API_CLIENT_SECRETS.length,
   demo: demoApps.length ? demoApps.length : "fermée",
+  sso: oidc ? oidc.config.issuer : "non configuré",
 });

@@ -21,4 +21,5 @@ export { lireEtatPlateforme } from "./operations/plateforme";
 export { rendreDoc } from "./doc";
 export { creerDebitAuth, REGLES as REGLES_DEBIT_AUTH, type DebitAuth, type Compteur, type Regle } from "./debit-auth";
 export { operationsIdentite, DUREE_SESSION_S, type DependancesIdentite } from "./operations/identite";
+export { creerOidc, identiteDesClaims, domaineAutorise, RefusSso, type ConfigOidc, type IdentiteSso, type Oidc } from "./oidc";
 export type { Contexte, Principal, Journal, Lecteur, Transacteur } from "./contexte";

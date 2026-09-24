@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mip/console-contract": "workspace:*"
+    "@mip/console-contract": "workspace:*",
+    "jose": "6.2.3"
   },
   "devDependencies": {
     "typescript": "5.9.3"

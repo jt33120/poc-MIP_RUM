@@ -12,11 +12,12 @@
 // existe) et hachage systématique (un e-mail inconnu coûte le même bcrypt qu'un
 // mauvais mot de passe, contre un hachage factice) — ni le texte ni le temps ne
 // permettent d'énumérer les comptes.
-import { chaine, CONNEXION, DECONNEXION, DEMO, MOI, objet, type SessionOuverte } from "@mip/console-contract";
+import { chaine, CONNEXION, DEBUT_SSO, DECONNEXION, DEMO, FIN_SSO, METHODES, MOI, objet, type SessionOuverte } from "@mip/console-contract";
 import type { Trousseau } from "../cles";
 import type { Contexte, Lecteur, Transacteur } from "../contexte";
 import type { DebitAuth } from "../debit-auth";
 import { ErreurContrat } from "../erreurs";
+import { domaineAutorise, RefusSso, type ConfigOidc, type IdentiteSso, type Oidc } from "../oidc";
 import { servir, type Enregistrement } from "../politique";
 import { emettreJetonSession } from "../session";
 
@@ -38,6 +39,8 @@ export interface DependancesIdentite {
   readonly oublierSession: (sid: string) => void;
   /** Hachages bcrypt simultanés au plus (défaut 4) : au-delà, on attend son tour. */
   readonly bcryptSimultanes?: number;
+  /** Le SSO (C1c) : `null` s'il n'est pas configuré sur le service. */
+  readonly oidc?: { readonly client: Oidc; readonly config: ConfigOidc } | null;
 }
 
 /** Un sémaphore minimal : bcrypt est coûteux, une rafale ne doit pas saturer la réplique. */
@@ -90,6 +93,64 @@ async function auditer(c: Lecteur, ctx: Contexte, a: { email: string | null; act
     "insert into audit_log (user_email, action, detail, request_id, actor_kind) values ($1, $2, $3, $4, $5)",
     [a.email, a.action, a.detail ?? null, ctx.requestId, a.acteur],
   );
+}
+
+interface CompteSso {
+  id: string;
+  email: string;
+  active: boolean;
+  role: "admin" | "viewer";
+  apps: string[] | null;
+  last_login_at: Date | null;
+}
+
+/**
+ * Le compte d'une identité SSO, dans la transaction de la connexion.
+ *   1. Déjà lié : retrouvé par (émetteur, sujet), jamais plus par l'e-mail.
+ *   2. Un compte porte cette adresse : lié seulement s'il a été pré-provisionné
+ *      pour le SSO (`password_hash = 'sso:oidc'`, les comptes créés par le SSO
+ *      d'avant), ou si l'IdP ATTESTE l'adresse dans un domaine autorisé.
+ *   3. Personne : créé (JIT) aux mêmes conditions, sans aucune application tant
+ *      qu'un administrateur ou le claim d'applications n'en donne pas.
+ * Un compte désactivé LE RESTE (le SSO d'avant le réactivait). L'IdP peut fixer
+ * le rôle et la liste d'applications, jamais la portée plateforme (`apps` nul).
+ */
+async function compteSso(c: Lecteur, id: IdentiteSso, cfg: ConfigOidc): Promise<CompteSso & { lien: "sujet" | "existant" | "cree" }> {
+  const colonnes = "id::text, email, active, role, apps, last_login_at";
+  const parSujet = await c.query<CompteSso>(`select ${colonnes} from console_user where oidc_iss = $1 and oidc_sub = $2 for update`, [id.iss, id.sub]);
+  let compte = parSujet.rows[0];
+  let lien: "sujet" | "existant" | "cree" = "sujet";
+  if (!compte) {
+    if (!id.email) throw new RefusSso("email_absent");
+    const atteste = id.emailVerifie && domaineAutorise(id.email, cfg);
+    const raisonNonAtteste = id.emailVerifie ? "domaine_non_autorise" : "email_non_verifie";
+    const parEmail = await c.query<CompteSso & { pour_sso: boolean; oidc_iss: string | null }>(
+      `select ${colonnes}, password_hash = 'sso:oidc' as pour_sso, oidc_iss from console_user where email = $1 for update`,
+      [id.email],
+    );
+    const existant = parEmail.rows[0];
+    if (existant) {
+      if (existant.oidc_iss !== null) throw new RefusSso("compte_lie_a_un_autre_sujet");
+      if (!existant.pour_sso && !atteste) throw new RefusSso(raisonNonAtteste);
+      await c.query("update console_user set oidc_iss = $2, oidc_sub = $3 where id = $1", [existant.id, id.iss, id.sub]);
+      compte = existant;
+      lien = "existant";
+    } else {
+      if (!atteste) throw new RefusSso(raisonNonAtteste);
+      const cree = await c.query<CompteSso>(
+        `insert into console_user (email, password_hash, role, apps, active, oidc_iss, oidc_sub)
+         values ($1, 'sso:oidc', $2, $3, true, $4, $5) returning ${colonnes}`,
+        [id.email, id.role ?? "viewer", id.apps ? [...id.apps] : [], id.iss, id.sub],
+      );
+      compte = cree.rows[0];
+      lien = "cree";
+    }
+  }
+  if (compte.active !== true) throw new RefusSso("compte_desactive");
+  const role = id.role ?? compte.role;
+  const apps = id.apps !== undefined ? [...id.apps] : compte.apps;
+  await c.query("update console_user set role = $2, apps = $3, last_login_at = now() where id = $1", [compte.id, role, apps]);
+  return { ...compte, role, apps, lien };
 }
 
 export function operationsIdentite(d: DependancesIdentite): Enregistrement[] {
@@ -195,5 +256,79 @@ export function operationsIdentite(d: DependancesIdentite): Enregistrement[] {
       if (p.kind !== "session") throw new ErreurContrat("session_requise", "session requise");
       return { email: p.email, role: p.role, apps: p.apps, demo: p.demo };
     }),
+
+    servir(METHODES, { auth: "public", portee: "globale", demo: "lecture" }, async () => ({
+      mot_de_passe: true as const,
+      sso: Boolean(d.oidc),
+      demo: d.demo !== null,
+    })),
+
+    servir(DEBUT_SSO, { auth: "public", portee: "globale", demo: "lecture" }, async () => {
+      if (!d.oidc) throw new ErreurContrat("route_inconnue", "opération inconnue");
+      try {
+        return await d.oidc.client.debut();
+      } catch {
+        // Découverte injoignable ou détournée : ce n'est pas au visiteur d'en savoir plus.
+        throw new ErreurContrat("indisponible", "fournisseur d'identité injoignable");
+      }
+    }),
+
+    servir(
+      FIN_SSO,
+      {
+        auth: "public",
+        portee: "globale",
+        demo: "refus",
+        audit: "auth.oidc",
+        corpsMax: 8192,
+        entree: {
+          corps: objet({
+            code: chaine({ min: 1, max: 2048 }),
+            state: chaine({ min: 1, max: 128 }),
+            transaction: chaine({ min: 1, max: 4096 }),
+          }),
+        },
+      },
+      async (ctx) => {
+        if (!d.oidc) throw new ErreurContrat("route_inconnue", "opération inconnue");
+        const { client, config } = d.oidc;
+        const refuser = async (raison: string, email: string | null): Promise<never> => {
+          // La raison au journal d'audit ; au navigateur, le refus générique.
+          await d.transacteur.transaction((c) =>
+            auditer(c, ctx, { email, action: "auth.oidc_refused", acteur: "user", detail: JSON.stringify({ raison, fournisseur: config.issuer }) }),
+          );
+          throw new ErreurContrat("identifiants_refuses", "connexion SSO refusée");
+        };
+        let identite: IdentiteSso;
+        try {
+          identite = await client.fin(ctx.corps);
+        } catch (e) {
+          return refuser(e instanceof RefusSso ? e.raison : "echec_idp", null);
+        }
+        let ouverte: { s: { id: string; iat: number; exp: number }; compte: CompteSso };
+        try {
+          ouverte = await d.transacteur.transaction(async (c) => {
+            const compte = await compteSso(c, identite, config);
+            const s = await ouvrir(c, { user_id: compte.id, demo_email: null, demo_apps: null });
+            await auditer(c, ctx, {
+              email: compte.email,
+              action: "auth.oidc",
+              acteur: "user",
+              detail: JSON.stringify({ fournisseur: identite.iss, lien: compte.lien }),
+            });
+            return { s, compte };
+          });
+        } catch (e) {
+          if (e instanceof RefusSso) return refuser(e.raison, identite.email);
+          throw e;
+        }
+        const reponse: SessionOuverte = {
+          jeton: await emettreJetonSession(d.trousseau, { sid: ouverte.s.id, iat: ouverte.s.iat, exp: ouverte.s.exp }),
+          expire_le: new Date(ouverte.s.exp * 1000).toISOString(),
+          connexion_precedente: ouverte.compte.last_login_at ? new Date(ouverte.compte.last_login_at).toISOString() : null,
+        };
+        return reponse;
+      },
+    ),
   ];
 }

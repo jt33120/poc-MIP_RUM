@@ -38,6 +38,9 @@ export function oidcConfig(): OidcConfig | null {
 
 export const isOidcEnabled = (): boolean => oidcConfig() !== null;
 
+/** Le cookie de la transaction OIDC scellée par console-api (C1c) : illisible par la console, 10 min. */
+export const COOKIE_TRANSACTION_SSO = "oidc_tx";
+
 // --- PKCE (RFC 7636) + état/nonce -------------------------------------------
 const b64url = (b: Buffer): string =>
   b.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");

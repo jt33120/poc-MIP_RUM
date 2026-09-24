@@ -28,6 +28,9 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 |---|---|---|---|---|---|---|
 | `ops.jwks` | `GET /v1/.well-known/jwks.json` | aucune session | — | lecture | **non exigé** | — |
 | `auth.demo` | `POST /v1/auth/demo-sessions` | aucune session | — | **refusée** | exigé | `auth.demo` |
+| `auth.methods` | `GET /v1/auth/methods` | aucune session | — | lecture | exigé | — |
+| `auth.oidc` | `POST /v1/auth/oidc-sessions` | aucune session | — | **refusée** | exigé | `auth.oidc` |
+| `auth.oidcStart` | `GET /v1/auth/oidc/authorization` | aucune session | — | lecture | exigé | — |
 | `auth.login` | `POST /v1/auth/sessions` | aucune session | — | **refusée** | exigé | `auth.login` |
 | `auth.logout` | `DELETE /v1/auth/sessions/current` | session | — | lecture | exigé | `auth.logout` |
 | `auth.me` | `GET /v1/me` | session | — | lecture | exigé | — |

@@ -30,13 +30,10 @@ import { ipVisiteur } from "@/lib/ip-visiteur";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request): Promise<NextResponse> {
-  const demo = demoConfig();
-  if (!demo) return NextResponse.redirect(new URL("/login", req.url), 302);
-
   // C1 — branchée sur console-api, la démo s'y ouvre : une LIGNE de session
   // (révocable), viewer au périmètre du SERVICE (`DEMO_USER_APPS` de console-api),
-  // 5 par heure et par IP comptées en base, et jamais l'IP au journal. La
-  // variable de Vercel ne sert plus alors qu'à montrer ou cacher le bouton.
+  // 5 par heure et par IP comptées en base, et jamais l'IP au journal. Fermée
+  // chez lui (404) : vers /login, comme aujourd'hui sans la variable.
   if (backend().estBranche()) {
     const h = await headers();
     const r = await backend().appeler(DEMO, {}, { ipVisiteur: ipVisiteur(h), requestId: h.get("x-request-id") ?? undefined });
@@ -51,6 +48,9 @@ export async function GET(req: Request): Promise<NextResponse> {
     });
     return res;
   }
+
+  const demo = demoConfig();
+  if (!demo) return NextResponse.redirect(new URL("/login", req.url), 302);
 
   // `role` et `demo` ne viennent PAS de la configuration : une session démo est
   // une session viewer en lecture seule, quoi qu'on mette dans l'environnement.

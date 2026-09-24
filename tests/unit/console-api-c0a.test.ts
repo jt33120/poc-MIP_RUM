@@ -415,7 +415,8 @@ describe("C0a — la matrice d'autorisations, sur la VRAIE table", () => {
     if (profil === "navigateur") return 403;
     // C1 : la connexion sans corps (ni adresse du visiteur) est une entrée invalide,
     // la démo fermée n'existe pas — leur contrat, pas une panne.
-    if (pol.auth === "public") return ({ "auth.login": 400, "auth.demo": 404 } as Record<string, number>)[o.id] ?? 200;
+    // C1c : le SSO non configuré n'existe pas (404) ; son retour sans corps est une entrée invalide.
+    if (pol.auth === "public") return ({ "auth.login": 400, "auth.demo": 404, "auth.oidcStart": 404, "auth.oidc": 400 } as Record<string, number>)[o.id] ?? 200;
     if (profil === "anonyme") return 401;
     return 401; // C0a : aucune session servie (vérificateur absent) — la matrice complète arrive en C0c
   }
