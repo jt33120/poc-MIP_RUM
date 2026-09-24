@@ -8,7 +8,7 @@
 | Point d'entrée | `node services/api/dist/server.mjs`, construit par `node services/api/build.mjs` depuis `server.mjs` (câblage seul, sur `@mip/service-kit`) |
 | Logique | **les routes de la console** (`apps/console/app/api/v1/**/route.ts`, `app/api/rum/summary`) et ce qu'elles lisent (`apps/console/lib/…`), compilées dans le bundle |
 | Exposition | public (domaine généré) et privé (le serveur MCP, par le réseau privé Railway) |
-| Rôle BDD | aujourd'hui la chaîne de connexion propriétaire ; cible : `mip_api`, lecture seule (migration v89, [ADR-0003](../../docs/architecture/adr/0003-roles-et-tenancy.md)) ; pool de 6 par réplique, `application_name = mip-api` |
+| Rôle BDD | **`mip_api`**, lecture seule (migration v89, [ADR-0003](../../docs/architecture/adr/0003-roles-et-tenancy.md)) : liste blanche de [`packages/db/roles/mip-api.mjs`](../../packages/db/roles/mip-api.mjs), vérifiée en CI contre la base et contre ce bundle (`scripts/ci/verify-db-roles.mjs`) ; pool de 6 par réplique, `application_name = mip-api` |
 | Réplicas | 2 (sans état : le débit par principal est compté par réplique) |
 | Image | `services/api/Dockerfile` — `dist/server.mjs` et `pg`, rien d'autre |
 
@@ -46,12 +46,23 @@ Réponses : l'enveloppe de la console (`{ meta, data }`, ETag faible, `Cache-Con
 
 | Variable | Obligatoire | Rôle |
 |---|---|---|
-| `DATABASE_URL` | **oui** (secret) | Postgres ; cible `mip_api` en lecture seule |
+| `DATABASE_URL` | **oui** (secret) | Postgres, **en `mip_api`** — la variable partagée `API_DATABASE_URL` ([runbook](../../docs/operations/runbook.md#le-rôle-de-lapi--mip_api)). Le service fonctionne aussi en propriétaire, mais perd ce qui suit. |
 | `CONSOLE_API_TOKENS` | non (secret) | jetons machine, `jeton` ou `jeton@app1;app2` — **la même valeur que la console**. Les jetons en base (écran « Jetons de lecture ») valent aussi. |
 | `CONSOLE_API_ALLOWED_ORIGINS` | non | origines CORS, **la même valeur que la console** |
 | `CONSOLE_API_RATE_LIMIT` | non | requêtes par minute et par principal, par réplique (défaut 120) |
 | `XSOM_AI_URL`, `XSOM_AI_TOKEN` | non | la moitié IA de `/api/rum/summary` (xSOM AI Guard) |
 | `PGPOOL_MAX`, `PORT`, `LOG_LEVEL`, `METRICS_TOKEN`, `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non | voir le kit |
+
+## Ce que le rôle `mip_api` interdit, même au code du service
+
+Le service est en lecture seule **par construction** (les écritures répondent 405) ; le rôle l'est **en base**, pour le jour où le code se tromperait :
+
+- aucun INSERT, UPDATE, DELETE, TRUNCATE, sur aucune table ; aucun privilège par défaut, donc aucun droit sur une table créée demain ;
+- ni `console_user.email` ni `password_hash`, ni le contenu d'un rejeu (`replay_chunk.body`), ni la référence de secret d'un connecteur de tickets ;
+- aucune fonction à droits de propriétaire qui écrit — les quatre que `PUBLIC` exécutait lui sont fermées ;
+- transaction en lecture seule par défaut, requête bornée à 15 s, 20 connexions.
+
+Ce qu'il **n'**interdit **pas** encore : lire un autre client. Les policies de `mip_api` sont `using (true)` ; le périmètre du jeton est appliqué par les requêtes (`app_id = any($1)`), comme dans la console. Le contrat de parité tourne sous ce rôle : une table oubliée dans la liste blanche s'y voit comme un écart.
 
 ## Sûreté multi-réplique
 

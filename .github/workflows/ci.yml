@@ -374,7 +374,11 @@ jobs:
       # règle : sans RELAY_TEST_DATABASE_URL, il refuse de s'ignorer en CI.
       #
       # P4 — LA LECTURE, console ↔ service api (`tests/contract/api-parity.test.ts`) :
-      # une quatrième base ; elle ne fait que lire ce que le test y a semé.
+      # une quatrième base ; elle ne fait que lire ce que le test y a semé. Le
+      # service s'y connecte en `mip_api` (migration-v89), comme en production.
+      # Avant lui, `verify-db-roles.mjs` confronte les droits de `mip_api` à sa
+      # liste blanche ET au bundle du service : une lecture v1 ajoutée à la
+      # console sur une table non accordée échoue ICI, pas en production.
       - name: Contrats de parité console ↔ collector et console ↔ api, relais P3 (bases migrées)
         env:
           PGPASSWORD: postgres
@@ -389,6 +393,8 @@ jobs:
             DATABASE_URL="postgres://postgres:postgres@localhost:5433/$base" \
               node services/scheduler/migrate.mjs
           done
+          node services/api/build.mjs
+          DATABASE_URL="$CONTRACT_API_DATABASE_URL" node scripts/ci/verify-db-roles.mjs
           pnpm test:contract
 
       # `...` entraîne `@mip/rum-core`, dont le SDK web inline les primitives.

@@ -31,6 +31,7 @@ import { secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.m
 // @ts-expect-error module JS sans déclarations
 import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 import { DSAR_CHILD_TABLES } from "../../apps/console/lib/dsar";
+import { effacerAudit } from "../fixtures/effacer-audit";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -135,7 +136,7 @@ async function nettoyer() {
     [[APP, AUTRE]],
   );
   for (const s of sessions) await pool.query("select erase_session($1)", [s.session_id]);
-  await pool.query("delete from audit_log where user_email = $1", [ADMIN]);
+  await effacerAudit(pool, "user_email = $1", [ADMIN]);
 }
 
 beforeAll(async () => {
@@ -910,6 +911,8 @@ suite("P8.6 — effacement, rétention et périmètre", () => {
       "ticket_outbox", "ticket_webhook_event",
       "slo", "goal", "notify_channel", "uptime_check", "read_tokens", "deploy_marker",
       "ai_briefing", "extension_scope", "extension_install_app",
+      // v90 : journal d'audit en ajout seul.
+      "audit_log",
     ];
     const { rows } = await pool.query<{ table_name: string }>(
       `select c.table_name from information_schema.columns c
@@ -945,7 +948,9 @@ suite("P8.6 — effacement, rétention et périmètre", () => {
       `select c.relname || '.' || p.polname as pol
          from pg_policy p join pg_class c on c.oid = p.polrelid
         where c.relname in ('ticket_integration','ticket_outbox','ticket_webhook_event')
-          and pg_get_expr(p.polqual, p.polrelid) = 'true'`,
+          and pg_get_expr(p.polqual, p.polrelid) = 'true'
+          -- la lecture de mip_api (v89) ne s'applique qu'à lui : le OU des policies joue par rôle
+          and not exists (select 1 from pg_roles r where r.oid = any(p.polroles) and r.rolname = 'mip_api')`,
     );
     expect(rows).toEqual([]);
   });

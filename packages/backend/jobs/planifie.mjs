@@ -386,12 +386,16 @@ export function travaux(pool, { log = console, dispatch = null, livraison = true
      * respecte la rétention PAR CLIENT (app_registry.retention_days), la
      * seconde applique un délai global. `meter_tenant_usage()` porte sur la
      * veille, complète à 03:17 UTC contrairement au jour courant.
+     * `purge_console_sessions()` (migration-v90) efface les sessions de la
+     * console expirées ou révoquées depuis 7 jours, et les compteurs d'échecs
+     * de connexion éteints.
      */
     quotidien: () =>
       executerEtapes(
         [
           sql("purge_rum_tenants", "purge_rum_tenants(30)"),
           sql("meter_tenant_usage", "meter_tenant_usage()"),
+          sql("purge_console_sessions", "purge_console_sessions()"),
         ],
         log,
         { job: "quotidien" },

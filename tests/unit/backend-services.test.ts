@@ -261,6 +261,15 @@ describe("cadences et fonctions SQL appelées", () => {
     expect(pool.requetes.some((q) => /purge_rum\(/.test(q))).toBe(false);
   });
 
+  it("le quotidien purge aussi les sessions de la console et les compteurs d'échecs (v90)", async () => {
+    const pool = poolFactice();
+    const bilan = await travaux(pool as never, { log: muet }).quotidien();
+    expect(pool.requetes.some((q) => q.includes("purge_console_sessions()"))).toBe(true);
+    // Après les deux étapes existantes : une purge de sessions qui casse n'emporte
+    // ni la rétention des clients, ni le comptage de la veille.
+    expect(Object.keys(bilan.resultats)).toEqual(["purge_rum_tenants", "meter_tenant_usage", "purge_console_sessions"]);
+  });
+
   it("l'horaire rafraîchit les DEUX pré-agrégats, les deux détections et reprend les notes historiques", async () => {
     // Les histogrammes de percentiles (migration-v61) sont un pré-agrégat au
     // même titre que les rollups, et sur la même cadence : oublier de les
