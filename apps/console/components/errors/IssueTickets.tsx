@@ -12,7 +12,9 @@
 // non dégradée pour cette application, rien de tout ceci n'est rendu : le
 // formulaire « Lier un ticket » de P5.6 reste la seule voie, et il fonctionne
 // sans connecteur — c'était le cas avant ce lot, ça l'est encore.
-import { MENTION_ETAPE } from "@/lib/queries-ticket-integrations";
+// La mention vient de l'adaptateur lui-même (aucun import) : passer par
+// queries-ticket-integrations.ts ferait atteindre la base à ce composant.
+import { MENTION_ETAPE } from "@mip/backend/lib/integrations/tickets/adapter.mjs";
 import type { TicketApercu, TicketIntegration, TicketLivraison } from "@/lib/queries-ticket-integrations";
 import { IssueTicketForm } from "@/components/errors/IssueWorkflowForms";
 import type { IssueRecord } from "@/lib/error-issues";

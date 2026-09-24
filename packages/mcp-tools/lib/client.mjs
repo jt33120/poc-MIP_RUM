@@ -21,6 +21,53 @@
 /** Au-delà, on rend la main : une IA qui attend est une IA qui ne dit rien. */
 export const DELAI_MS = 20_000;
 
+/** Port du service `api` sur le réseau privé, s'il n'est pas précisé. */
+export const PORT_API_DEFAUT = 8080;
+
+/**
+ * OÙ EST L'API v1, et par quel chemin le serveur MCP distant la joint.
+ *
+ * Deux formes ; la première l'emporte :
+ *
+ *   · `MIP_API_HOST` (+ `MIP_API_PORT`, 8080 par défaut) : le service `api`
+ *     (P4) par le RÉSEAU PRIVÉ Railway — `api.railway.internal`, la référence
+ *     `RAILWAY_PRIVATE_DOMAIN` du service. En HTTP clair : Railway n'offre pas
+ *     de TLS entre services, et le trafic ne quitte pas le réseau du projet.
+ *     C'est pourquoi l'hôte DOIT être privé — `*.railway.internal`, un nom sans
+ *     point (un service compose), ou `localhost`. Un hôte public en HTTP clair
+ *     ferait voyager le jeton de l'appelant en clair sur Internet : refusé au
+ *     démarrage, pas découvert en production.
+ *   · `MIP_CONSOLE_URL` : l'API v1 de la console Vercel, comme avant P4. Reste
+ *     le repli tant que le service `api` n'est pas déployé.
+ *
+ * Le chemin privé retire un saut public (Railway → Vercel → Neon devient
+ * Railway → Neon) et ne dépend plus de la console pour qu'une IA lise.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {{ base: string, via: "reseau-prive" | "console" } | { erreur: string }}
+ */
+export function origineApi(env) {
+  const hote = env.MIP_API_HOST?.trim();
+  if (hote) {
+    if (!/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/i.test(hote)) {
+      return { erreur: "MIP_API_HOST : nom d'hôte invalide" };
+    }
+    const prive = hote.endsWith(".railway.internal") || !hote.includes(".") || hote === "localhost";
+    if (!prive) {
+      return {
+        erreur: `MIP_API_HOST : « ${hote} » n'est pas un hôte privé (*.railway.internal) — le jeton de l'appelant y partirait en clair`,
+      };
+    }
+    const brut = env.MIP_API_PORT?.trim() || String(PORT_API_DEFAUT);
+    const port = /^\d{1,5}$/.test(brut) ? Number(brut) : Number.NaN;
+    if (!(port >= 1 && port <= 65535)) return { erreur: `MIP_API_PORT : port invalide (${brut})` };
+    return { base: `http://${hote}:${port}`, via: "reseau-prive" };
+  }
+  const console_ = env.MIP_CONSOLE_URL?.trim();
+  if (console_) return { base: console_, via: "console" };
+  return { erreur: "ni MIP_API_HOST (service api, réseau privé) ni MIP_CONSOLE_URL (console)" };
+}
+
 /** Erreur portant un statut HTTP et un message déjà rédigé pour l'appelant. */
 export class ErreurApi extends Error {
   constructor(message, statut) {
@@ -52,7 +99,7 @@ function messagePour(statut, corps) {
       }
       return `L'API MIP RUM est indisponible (503)${detail}. C'est une panne côté serveur, pas une erreur d'appel.`;
     case 401:
-      return `Jeton refusé par l'API MIP RUM${detail}. Ce n'est pas un problème de paramètre : réessayer la même requête donnera le même résultat. Le jeton doit figurer dans CONSOLE_API_TOKENS côté console.`;
+      return `Jeton refusé par l'API MIP RUM${detail}. Ce n'est pas un problème de paramètre : réessayer la même requête donnera le même résultat. Le jeton doit figurer dans CONSOLE_API_TOKENS (la même valeur sur la console et le service api), ou parmi les jetons de lecture en base.`;
     case 403:
       return `Accès refusé à cette ressource${detail}. Le jeton est valide mais son périmètre ne couvre pas l'app demandée — utiliser mip_rum_list_apps pour connaître les apps réellement accessibles.`;
     case 404:
@@ -118,7 +165,7 @@ export function creerClient({ base, jeton, fetchImpl = fetch, delaiMs = DELAI_MS
         // il contient l'URL, donc l'hôte interne, dans certaines implémentations.
         const cause = e?.name === "TimeoutError" ? `délai de ${delaiMs} ms dépassé` : "réseau injoignable";
         throw new ErreurApi(
-          `Impossible de joindre l'API MIP RUM (${cause}). Vérifier que la console est en ligne ; réessayer une fois, puis abandonner.`,
+          `Impossible de joindre l'API MIP RUM (${cause}). Vérifier que l'API est en ligne ; réessayer une fois, puis abandonner.`,
           0,
         );
       }

@@ -23,6 +23,7 @@ Un service, une ligne :
 | `notifier` | livre ce que la plateforme a décidé de dire — webhooks signés, e-mails Resend, tickets — et seul détient les secrets sortants — détail : [`notifier/README.md`](notifier/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/notifier/worker.mjs` | pas encore (P5) — en production, le scheduler livre à chaque tick |
 | `api` | l'API de lecture v1 pour les machines, **en lecture seule** : les routes de la console compilées en un bundle, sans Next ni session — détail : [`api/README.md`](api/README.md) | oui (`PORT`) : `/api/v1/*`, `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/api/dist/server.mjs` (construit par `build.mjs`) | pas encore (P4) — l'API v1 est servie par la console |
 | `mcp` | expose l'API v1 à un agent IA, sans accès à la base | oui (`PORT`) | `node services/mcp/http.mjs` | Railway |
+| `console-api` | le backend de la console (piste C) : seul client, le serveur Vercel, gardé par un secret client ; poignée de main signée ES256 — détail : [`console-api/README.md`](console-api/README.md) | oui (`PORT`) : `/v1/*` sous secret client, `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/console-api/dist/server.mjs` (construit par `build.mjs`) | pas encore (C0) |
 
 `services/collector/` porte aussi les deux serveurs de **développement** que
 lancent l'E2E et les scripts de validation (`dev-server.mjs` :4318,
@@ -58,6 +59,7 @@ déployés en vert sur leur nouvelle image.
 | `notifier/Dockerfile` | `@mip/backend`, `pg` — ni `@mip/db` (seul le scheduler migre), ni base GeoIP | `node services/notifier/worker.mjs` |
 | `api/Dockerfile` | `dist/server.mjs` (les routes v1 de la console, compilées à la construction) et `pg` — ni Next, ni la vérification des sessions | `node services/api/dist/server.mjs` |
 | `mcp/Dockerfile` | `@mip/mcp-tools`, le SDK MCP, zod — **ni `pg` ni `DATABASE_URL`** | `node services/mcp/http.mjs` |
+| `console-api/Dockerfile` | un bundle (`@mip/console-api`, `@mip/console-contract`, le kit) et `pg` — **aucune source de la console** (garde du build) | `node services/console-api/dist/server.mjs` |
 
 Chaque arbre déployé est posé sous `/app/services/<x>` : les commandes écrites
 ailleurs (`.railway/railway.ts`, le compose) sont celles du développement.
@@ -109,7 +111,8 @@ continu n'a aucune de ces limites.
 | `RATE_LIMIT_PER_MIN` | `collector` | non | défaut 600, par app |
 | `PGPOOL_MAX` | `collector`, `scheduler`, `notifier` | non | taille du pool (défauts : 8, 4 et 2) |
 | `LOG_LEVEL` | `collector`, `scheduler`, `notifier` | non | défaut `info` |
-| `MIP_CONSOLE_URL` | `mcp` | **oui** | origine de la console dont il consomme l'API v1 |
+| `MIP_API_HOST`, `MIP_API_PORT` | `mcp` | non | le service `api` par le réseau privé (`api.railway.internal`, port 8080 par défaut) ; **l'emporte** sur `MIP_CONSOLE_URL`. Hôte privé exigé : HTTP clair, le jeton de l'appelant y passe |
+| `MIP_CONSOLE_URL` | `mcp` | oui, sans `MIP_API_HOST` | origine de la console dont il consomme l'API v1 (repli, et le chemin d'avant P4) |
 | `MCP_PATH` | `mcp` | non | chemin du point MCP (défaut `/mcp`) |
 
 `mcp` ne prend **pas** `DATABASE_URL` ni de jeton d'API : il relaie celui de

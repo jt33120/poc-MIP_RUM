@@ -1,0 +1,17 @@
+{
+  "name": "@mip/console-contract",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Le contrat entre la console (Vercel) et console-api (Railway) : descripteurs d'opérations, types sur le fil, enveloppes, codes d'erreur, validateurs. Aucune dépendance, aucun import Node : la console et le service le lisent tel quel.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

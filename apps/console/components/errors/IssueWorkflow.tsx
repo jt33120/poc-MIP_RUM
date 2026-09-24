@@ -8,7 +8,8 @@ import Link from "next/link";
 import { ERROR_LINK } from "@/components/errors/ErrorOccurrences";
 import { IssueCommentForm, IssueLinkForm, IssueTriageForm } from "@/components/errors/IssueWorkflowForms";
 import type { IssueActivity, IssueUserRef, IssueWorkflowView } from "@/lib/error-issue-workflow";
-import { ISSUE_STATUSES, ISSUE_STATUS_LABELS, type IssueRecord, type IssueStatus } from "@/lib/error-issues";
+import type { IssueRecord } from "@/lib/error-issues";
+import { ISSUE_STATUSES, ISSUE_STATUS_LABELS, type IssueStatus } from "@/lib/issues-libelles";
 import { fmtDate } from "@/lib/format";
 
 const CARTE_TITRE = "text-[11px] font-semibold uppercase tracking-wider text-ink-faint";

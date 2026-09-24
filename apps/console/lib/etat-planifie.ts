@@ -15,14 +15,16 @@
 // Logique PURE — ni base, ni horloge implicite : `maintenant` est un paramètre.
 import { ligneLatence } from "./etat-latence";
 import { fmtDate } from "./format";
+import type { LecturePlanifie } from "@mip/console-contract";
 import type { Statut } from "./specs";
 
-/** Résultat d'une lecture de l'état du planificateur. */
 /**
- * `cadenceMin` : la cadence EFFECTIVE du tick, publiée par le scheduler
- * (`platform_flag.scheduler_tick_min`) ; absente avant sa première publication.
+ * Résultat d'une lecture de l'état du planificateur. `cadenceMin` : la cadence
+ * EFFECTIVE du tick, publiée par le scheduler (`platform_flag.scheduler_tick_min`) ;
+ * absente avant sa première publication. Défini dans le contrat de console-api,
+ * qui la lit (C0b) ; la console l'affiche.
  */
-export type LecturePlanifie = { etat: "lu"; date: Date | null; cadenceMin?: number | null } | { etat: "illisible" };
+export type { LecturePlanifie };
 
 export type Gravite = "bloquant" | "limite";
 

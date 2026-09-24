@@ -267,11 +267,20 @@ MIP_CONSOLE_URL=http://localhost:3000 MIP_API_TOKEN=xxx \
 
 | Variable | Obligatoire | Rôle |
 |---|---|---|
-| `MIP_CONSOLE_URL` | **oui** | origine de la console, ex. `https://mip-rum-console.vercel.app` |
+| `MIP_API_HOST` | non | le service `api` (P4) par le **réseau privé** Railway, ex. `api.railway.internal` ; l'emporte sur `MIP_CONSOLE_URL`. HTTP clair : l'hôte doit être privé (`*.railway.internal`, un service compose, `localhost`), sinon le serveur refuse de démarrer — le jeton de l'appelant y partirait en clair |
+| `MIP_API_PORT` | non | port du service `api` (défaut 8080) |
+| `MIP_CONSOLE_URL` | oui, sans `MIP_API_HOST` | origine de la console, ex. `https://mip-rum-console.vercel.app` |
 | `PORT` | fourni par l'hébergeur | port d'écoute (défaut 8080) |
 | `MCP_PATH` | non | chemin du point MCP (défaut `/mcp`) |
 
 Pas de `MIP_API_TOKEN` : le serveur relaie celui de l'appelant.
+
+**Par le réseau privé (P4).** Avec `MIP_API_HOST`, un appel d'outil ne quitte
+plus Railway : `mcp` → `api` → Neon, au lieu de `mcp` → Internet → console
+Vercel → Neon. Le service `api` sert les mêmes routes v1, compilées depuis la
+console, en lecture seule sous le rôle `mip_api` ; les outils du catalogue ne
+font que lire, le POST de l'Explorer compris. Le journal de démarrage dit le
+chemin retenu (`"via": "reseau-prive"` ou `"console"`).
 
 ```
 POST /mcp     JSON-RPC MCP — exige Authorization: Bearer <jeton>
@@ -292,7 +301,7 @@ Service `mcp` dans le projet `mip-rum-backend`, à côté de `ingest` et
 | Réglage | Valeur |
 |---|---|
 | Dockerfile | `services/mcp/Dockerfile` (le sien, comme chaque service depuis P1) |
-| Variables | `MIP_CONSOLE_URL`, `PORT=8080`, `NODE_ENV=production` |
+| Variables | `MIP_CONSOLE_URL`, `PORT=8080`, `NODE_ENV=production` ; puis `MIP_API_HOST` = référence `RAILWAY_PRIVATE_DOMAIN` du service `api` (IaC, une fois `api` déployé) |
 | Healthcheck | `/health` |
 | Région | `europe-west4-drams3a` (Amsterdam) |
 | Branche | `master` |

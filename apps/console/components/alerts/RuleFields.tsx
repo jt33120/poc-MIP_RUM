@@ -16,7 +16,8 @@
 // obligatoire du § 3.2 : même fenêtre, sans normalisation de trafic.
 import { ALERT_MODES, ALERT_SEVERITIES } from "@/lib/alerting";
 import { MESURES_MIN_RELEASE, SEUIL_REGRESSION_DEFAUT } from "@/lib/alerting";
-import { ALERT_COMPARATORS, ALERT_METRICS, metricLabel, type AlertRuleRow } from "@/lib/queries-v2";
+import { ALERT_COMPARATORS, ALERT_METRICS, metricLabel } from "@/lib/alertes-metriques";
+import type { AlertRuleRow } from "@/lib/queries-v2";
 import { Field, INPUT_CLASS } from "@/components/forms/Field";
 import { PHRASE_FENETRE } from "@/components/ReleaseCompare";
 
