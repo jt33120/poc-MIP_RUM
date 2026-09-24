@@ -6,7 +6,7 @@
 // migrations qui se trompe touche la base de production.
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { aFaire, empreinte, jusquaInclus } from "../../apps/ingest/migrate.mjs";
+import { aFaire, empreinte, jusquaInclus, main } from "../../apps/ingest/migrate.mjs";
 import { CADENCES, prochainDelai } from "../../apps/ingest/jobs/cadence.mjs";
 import { ECHEANCE_LIVRAISON_MS, executerEtapes, travaux } from "../../apps/ingest/jobs/planifie.mjs";
 import { optionsSsl } from "../../apps/ingest/lib/serveur.mjs";
@@ -58,6 +58,39 @@ describe("migrate — étalonnage d'une base existante", () => {
 
   it("renvoie null sur un repère inconnu plutôt que de tout marquer", () => {
     expect(jusquaInclus(fichiers, "migration-v99.sql")).toBeNull();
+  });
+});
+
+// Le pré-déploiement Railway lance `services/scheduler/migrate.mjs`, un fichier
+// de câblage qui IMPORTE le migrateur. La garde d'exécution directe du migrateur
+// est inerte à l'import : sans `main()` exporté et appelé, le pré-déploiement
+// réussirait sans avoir rien migré. Ces tests tiennent les trois bouts ensemble.
+describe("migrate — point d'entrée du pré-déploiement", () => {
+  it("main() sans DATABASE_URL rend 2 sans ouvrir de connexion", async () => {
+    // Le journal d'erreur part sur console.error : on le fait taire, et on
+    // vérifie au passage qu'il dit POURQUOI le migrateur refuse.
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await main({ argv: [], env: {} })).toBe(2);
+      expect(String(log.mock.calls[0]?.[0])).toContain("DATABASE_URL absent");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("le fichier de câblage du scheduler appelle main() et refuse de partir sans base", () => {
+    const cablage = readFileSync("services/scheduler/migrate.mjs", "utf8");
+    expect(cablage).toMatch(/import \{ main \} from "[^"]+\/migrate\.mjs";/);
+    expect(cablage).toMatch(/process\.exitCode = await main\(\);/);
+    expect(cablage).toMatch(/if \(!process\.env\.DATABASE_URL\)[\s\S]*?process\.exit\(2\)/);
+  });
+
+  // La commande de pré-déploiement pointe sur le chemin STABLE du câblage, et
+  // jamais sur le fichier du noyau, qui déménage (P1).
+  it("l'IaC lance le câblage en pré-déploiement du scheduler", () => {
+    const iac = readFileSync(".railway/railway.ts", "utf8");
+    expect(iac).toContain('preDeploy: "node services/scheduler/migrate.mjs"');
+    expect(iac).not.toMatch(/preDeploy: "node node_modules\//);
   });
 });
 
