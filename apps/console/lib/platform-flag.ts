@@ -22,8 +22,14 @@
 // L'échec lui aussi est mis en cache 30 s : une base coupée ne doit pas être
 // relancée à chaque beacon (ni rallonger chaque beacon du délai de connexion).
 // Et la lecture est bornée (`DELAI_LECTURE_MS`) : au-delà, défaut.
+import { createLogger } from "@mip/backend/shared/log.mjs";
 import { pool } from "./db";
-import { log } from "./ingest";
+
+// Son propre journal, pas celui de `lib/ingest.ts` : depuis P4, l'API de lecture
+// lit aussi ce module (relais de l'API v1), et importer l'ingestion de la console
+// pour une ligne de journal ferait entrer tout son module — et son pool
+// d'authentification — dans le service `api`, qui compile ces routes.
+const log = createLogger("platform-flag");
 
 /** Durée de vie d'une valeur lue (ou d'un échec de lecture). */
 export const TTL_DRAPEAU_MS = 30_000;
