@@ -30,6 +30,8 @@ on:
       - "packages/db/**"
       - "packages/mcp-tools/**"
       - "packages/service-kit/**"
+      - "packages/console-api/**"
+      - "packages/console-contract/**"
       # Ce que les images lisent en dehors des paquets : le lockfile (pnpm
       # fetch), le workspace, la version de pnpm, le contexte de build, et les
       # deux scripts exécutés à la construction.
@@ -49,6 +51,8 @@ on:
       - "packages/db/**"
       - "packages/mcp-tools/**"
       - "packages/service-kit/**"
+      - "packages/console-api/**"
+      - "packages/console-contract/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - "package.json"
@@ -80,6 +84,8 @@ jobs:
             port: 4321
           - service: mcp
             port: 4322
+          - service: console-api
+            port: 4324
     env:
       # Le profil du service : `up` et `down` voient ainsi le même périmètre.
       COMPOSE_PROFILES: ${{ matrix.service }}
@@ -96,6 +102,9 @@ jobs:
       # Le notifier passe toutes les 5 s (le plancher) : la référence n'attend
       # pas 15 s sa livraison.
       NOTIFIER_INTERVAL_MS: "5000"
+      # Le secret client de console-api (≥ 32 caractères) ; ses clés de session
+      # sont FABRIQUÉES à l'étape suivante, par l'outil d'exploitation.
+      CONSOLE_API_CLIENT_SECRETS: docker-smoke-console-api-client-secret-only-for-ci
     defaults:
       run:
         working-directory: infra/docker
@@ -107,6 +116,16 @@ jobs:
       # `--wait` rend la main quand la sonde de l'image dit « healthy ».
       - name: Empreinte du secret d'identité (outil scripts/ops)
         run: echo "IDENTITY_HASH_FINGERPRINT=$(printf %s "$IDENTITY_HASH_SECRET" | node ../../scripts/ops/empreinte-identite.mjs)" >> "$GITHUB_ENV"
+
+      - name: Clés de session neuves (console-api, outil scripts/ops)
+        if: matrix.service == 'console-api'
+        run: |
+          # Un jeu privé fabriqué pour ce passage, jamais écrit sur disque ; masqué
+          # dans le journal du job. Sa partie publique sert à vérifier la poignée de main.
+          prive=$(node ../../scripts/ops/generer-cles-session.mjs --nouvelle 2>/dev/null)
+          echo "::add-mask::$prive"
+          echo "SESSION_SIGNING_KEYS=$prive" >> "$GITHUB_ENV"
+          echo "SESSION_PUBLIC_JWKS=$(printf %s "$prive" | node ../../scripts/ops/generer-cles-session.mjs --publique 2>/dev/null)" >> "$GITHUB_ENV"
 
       - name: Construire et démarrer (${{ matrix.service }})
         run: docker compose up -d --build --wait --wait-timeout 300 "${{ matrix.service }}"
@@ -250,6 +269,38 @@ jobs:
           n=$(grep -o 'mip_rum_[a-z_]*' /tmp/tools.json | sort -u | wc -l | tr -d ' ')
           echo "outils exposés : $n"
           test "$n" = "16"
+
+      - name: "Référence console-api : 404 sans secret client, l'état de la plateforme avec, la poignée de main signée"
+        if: matrix.service == 'console-api'
+        run: |
+          # Sans secret client : 404 NU, indiscernable d'un chemin inconnu.
+          code=$(curl -s -o /tmp/nu -w '%{http_code}' "http://localhost:${{ matrix.port }}/v1/public/platform-status")
+          echo "sans secret -> $code"
+          test "$code" = "404"
+          test ! -s /tmp/nu
+          # Avec : la lecture que fait la vitrine, sur la base migrée.
+          curl -fsS -H "x-mip-client: $CONSOLE_API_CLIENT_SECRETS" "http://localhost:${{ matrix.port }}/v1/public/platform-status" > /tmp/etat.json
+          echo "état -> $(cat /tmp/etat.json)"
+          jq -e '.data.quotidien.etat == "lu" and .data.tick.etat == "lu" and (.meta.request_id | length) > 0' /tmp/etat.json >/dev/null
+          # Un navigateur est refusé.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "x-mip-client: $CONSOLE_API_CLIENT_SECRETS" -H 'origin: https://ailleurs.test' \
+            "http://localhost:${{ matrix.port }}/v1/public/platform-status")
+          test "$code" = "403"
+          # La poignée de main, vérifiée avec la clé PUBLIQUE seule — ce que fera la console.
+          nonce=$(node -e 'console.log(require("node:crypto").randomBytes(24).toString("base64url"))')
+          curl -fsS "http://localhost:${{ matrix.port }}/v1/version?nonce=$nonce" > /tmp/version.json
+          NONCE="$nonce" node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const v = JSON.parse(readFileSync("/tmp/version.json", "utf8")).data;
+            const cle = JSON.parse(process.env.SESSION_PUBLIC_JWKS).keys.find((k) => k.kid === v.kid);
+            if (!cle || v.nonce !== process.env.NONCE) { console.error("kid ou nonce inattendu", v); process.exit(1); }
+            const pub = await crypto.subtle.importKey("jwk", cle, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+            const message = ["mip-console-api/poignee/1", v.nonce, v.contrat, v.version, v.kid].join("\n");
+            const sig = Buffer.from(v.signature, "base64url");
+            const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, pub, sig, new TextEncoder().encode(message));
+            if (!ok) { console.error("signature de la poignée de main invalide"); process.exit(1); }
+            console.log("poignée de main vérifiée, contrat", v.contrat.slice(0, 12));
+          '
 
       - name: Non-root
         run: |

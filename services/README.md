@@ -22,6 +22,7 @@ Un service, une ligne :
 | `scheduler` | déclenche les travaux planifiés sous bail, et **seul** applique les migrations (pré-déploiement) — détail : [`scheduler/README.md`](scheduler/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/scheduler/worker.mjs` · pré-déploiement `node services/scheduler/migrate.mjs` | Railway |
 | `notifier` | livre ce que la plateforme a décidé de dire — webhooks signés, e-mails Resend, tickets — et seul détient les secrets sortants — détail : [`notifier/README.md`](notifier/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/notifier/worker.mjs` | pas encore (P5) — en production, le scheduler livre à chaque tick |
 | `mcp` | expose l'API v1 à un agent IA, sans accès à la base | oui (`PORT`) | `node services/mcp/http.mjs` | Railway |
+| `console-api` | le backend de la console (piste C) : seul client, le serveur Vercel, gardé par un secret client ; poignée de main signée ES256 — détail : [`console-api/README.md`](console-api/README.md) | oui (`PORT`) : `/v1/*` sous secret client, `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/console-api/dist/server.mjs` (construit par `build.mjs`) | pas encore (C0) |
 
 `services/collector/` porte aussi les deux serveurs de **développement** que
 lancent l'E2E et les scripts de validation (`dev-server.mjs` :4318,
@@ -56,6 +57,7 @@ déployés en vert sur leur nouvelle image.
 | `scheduler/Dockerfile` | `@mip/backend`, `@mip/db` et son `sql/`, `pg` | `node services/scheduler/worker.mjs` ; le migrateur (`migrate.mjs`) part au pré-déploiement, jamais par défaut |
 | `notifier/Dockerfile` | `@mip/backend`, `pg` — ni `@mip/db` (seul le scheduler migre), ni base GeoIP | `node services/notifier/worker.mjs` |
 | `mcp/Dockerfile` | `@mip/mcp-tools`, le SDK MCP, zod — **ni `pg` ni `DATABASE_URL`** | `node services/mcp/http.mjs` |
+| `console-api/Dockerfile` | un bundle (`@mip/console-api`, `@mip/console-contract`, le kit) et `pg` — **aucune source de la console** (garde du build) | `node services/console-api/dist/server.mjs` |
 
 Chaque arbre déployé est posé sous `/app/services/<x>` : les commandes écrites
 ailleurs (`.railway/railway.ts`, le compose) sont celles du développement.

@@ -27,10 +27,18 @@ const SERVICES = readdirSync("services", { withFileTypes: true })
 /** Le point d'entrée que chaque image démarre. */
 const ENTREE: Record<string, string> = {
   collector: "server.mjs",
+  "console-api": "dist/server.mjs",
   scheduler: "worker.mjs",
   notifier: "worker.mjs",
   mcp: "http.mjs",
 };
+
+/**
+ * Le fichier SOURCE du point d'entrée, quand l'image démarre un fichier construit :
+ * `console-api` compile ses paquets TypeScript en un bundle (`dist/`, hors dépôt)
+ * à partir de `server.mjs`.
+ */
+const SOURCE: Record<string, string> = { "console-api": "server.mjs" };
 
 const dockerfile = (svc: string) => lire(join("services", svc, "Dockerfile"));
 /** Les instructions, sans les commentaires ni les lignes vides. */
@@ -97,7 +105,7 @@ describe("images — un Dockerfile par service", () => {
     const cmd = `CMD ["node", "services/${svc}/${ENTREE[svc]}"]`;
     expect(finale).toContain(cmd);
     expect(finale.match(/^CMD /gm)).toHaveLength(1);
-    expect(existsSync(join("services", svc, ENTREE[svc]))).toBe(true);
+    expect(existsSync(join("services", svc, SOURCE[svc] ?? ENTREE[svc]))).toBe(true);
     expect(finale).not.toMatch(/^ENTRYPOINT /m);
   });
 
@@ -152,7 +160,7 @@ describe("images — le compose et la fumée", () => {
     expect(migrate).toContain('command: ["node", "services/scheduler/migrate.mjs"]');
     expect(migrate).toContain('restart: "no"');
     expect(migrate).not.toContain("profiles:");
-    for (const svc of ["collector", "scheduler", "notifier"]) expect(bloc(svc)).toContain("depends_on: *apres-migration");
+    for (const svc of ["collector", "console-api", "scheduler", "notifier"]) expect(bloc(svc)).toContain("depends_on: *apres-migration");
     expect(compose).toMatch(/x-apres-migration: &apres-migration\n\s+migrate:\n\s+condition: service_completed_successfully/);
     // Le schéma n'est plus posé par un script d'initialisation de Postgres.
     expect(compose).not.toContain("docker-entrypoint-initdb.d");

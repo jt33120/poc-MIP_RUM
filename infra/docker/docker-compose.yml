@@ -180,6 +180,29 @@ services:
     restart: unless-stopped
     logging: *jsonlog
 
+  console-api:
+    profiles: ["console-api", "tout"]
+    build:
+      context: ../..
+      dockerfile: services/console-api/Dockerfile
+    image: mip-rum/console-api:local
+    environment:
+      DATABASE_URL: *db-url
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # OBLIGATOIRES, et sans valeur par défaut : un secret n'a pas de valeur « de
+      # développement » dans un fichier versionné. Vides, le service refuse de
+      # démarrer et dit laquelle manque (infra/docker/README.md, « console-api »).
+      CONSOLE_API_CLIENT_SECRETS: ${CONSOLE_API_CLIENT_SECRETS:-}
+      SESSION_SIGNING_KEYS: ${SESSION_SIGNING_KEYS:-}
+    depends_on: *apres-migration
+    ports:
+      # /v1/* sous secret client (x-mip-client) ; /health et /live publics ;
+      # /ready et /metrics sous jeton.
+      - "${CONSOLE_API_PORT:-4324}:8080"
+    restart: unless-stopped
+    logging: *jsonlog
+
   mcp:
     profiles: ["mcp", "tout"]
     build:
