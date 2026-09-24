@@ -8,9 +8,19 @@ import { withRetry } from "@mip/backend/shared/retry.mjs";
 import { secureOtlpIdentities } from "@mip/backend/lib/identity-hash.mjs";
 import { pool } from "@/lib/db";
 import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
+import { relayer } from "@/lib/ingest-relay";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// PLAFOND EXPLICITE de la fonction : 30 s. La chaîne des délais doit rester
+// croissante — collector 4 s (budget dur, 503) < relais 8 s (`DELAIS.relaisMs`)
+// < fonction 30 s. Au pire, une requête enchaîne drapeau (1,5 s), sonde /health
+// (2 s), relais (8 s) puis, sur un repli tardif, l'écriture locale (reprises,
+// verrou) : ~27 s. Sans ce plafond, le défaut du projet (10 s en Hobby, 15 s
+// en Pro hors Fluid) tuerait la fonction AVANT le 503 du relais — un 504
+// FUNCTION_INVOCATION_TIMEOUT muet, sans « relay timeout » au journal.
+// Voir docs/operations/relais-ingestion.md.
+export const maxDuration = 30;
 
 class BadRequestError extends Error {}
 
@@ -47,6 +57,13 @@ export async function POST(req: Request) {
       log.warn("payload too large", { max: MAX_BODY_BYTES });
       return json({ error: "payload too large" }, 413, cors);
     }
+    // P3 — RELAIS vers le collector, pour la part tirée au sort. Les MÊMES
+    // octets servent au relais et, si le relais rend la main (`null` : relais
+    // éteint, non tiré, ou repli), au chemin local ci-dessous : le corps n'est
+    // lu qu'une fois. Les refus de taille restent locaux (aucune base, aucun
+    // appel réseau pour un corps qu'on refuserait de toute façon).
+    const relayee = await relayer("logs", req, brut, cors);
+    if (relayee) return relayee;
     let payload: unknown;
     try {
       payload = JSON.parse(brut.toString("utf8"));
