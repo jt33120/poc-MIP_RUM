@@ -30,15 +30,20 @@ describe("le compromis de durabilité est écrit, pas sous-entendu", () => {
   it("le mode est ÉTEINT par défaut", () => {
     // Un compromis de durabilité se choisit ; il ne s'hérite pas d'une mise à
     // jour. Le défaut reste l'écriture synchrone dans les tables finales.
-    // Le receveur lit l'environnement injecté (process.env par défaut).
+    // Le receveur lit l'environnement injecté (process.env par défaut) ; le
+    // service, sa configuration stricte, dont le défaut est écrit dans le schéma.
     expect(RECEVEUR).toContain('env.INGEST_DEFERRED === "true"');
-    expect(SERVICE).toContain('process.env.INGEST_DEFERRED === "true"');
+    expect(SERVICE).toContain('INGEST_DEFERRED: { type: "bool", default: false');
   });
 
   it("l'état du mode est annoncé sur /health", () => {
     // Un opérateur doit pouvoir lire, sans fouiller les variables d'un
     // hébergeur, si ce déploiement acquitte avant d'avoir écrit.
-    expect(SERVICE).toContain("ingest_deferred: DIFFERE");
+    // Deux fois : dans /health (champ du receveur, repris par le kit) et dans
+    // la ligne de démarrage du service.
+    expect(RECEVEUR).toContain("ingest_deferred: differe");
+    expect(SERVICE).toContain("details: receveur.infosSante");
+    expect(SERVICE).toContain("ingest_deferred: config.INGEST_DEFERRED");
   });
 
   it("la documentation d'intégration porte le même avertissement", () => {

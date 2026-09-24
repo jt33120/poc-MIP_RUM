@@ -81,7 +81,10 @@ jobs:
     env:
       # Le profil du service : `up` et `down` voient ainsi le même périmètre.
       COMPOSE_PROFILES: ${{ matrix.service }}
-      IDENTITY_HASH_SECRET: docker-smoke-test-only-secret
+      # ≥ 32 caractères (refusé sinon par la config du collector), et son
+      # empreinte calculée par l'outil d'exploitation à l'étape suivante : le
+      # collector refuse un secret sans empreinte (P2).
+      IDENTITY_HASH_SECRET: docker-smoke-identity-secret-only-for-ci
       # Jeton de /ready et /metrics du scheduler (≥ 32 caractères) : sans lui,
       # les deux répondent 404 et la référence ne pourrait rien lire.
       METRICS_TOKEN: docker-smoke-metrics-token-only-for-ci
@@ -97,6 +100,9 @@ jobs:
       # `up <service>` : le service et ses dépendances, rien d'autre. Pour
       # collector et scheduler : db → migrate (sorti en 0) → le service.
       # `--wait` rend la main quand la sonde de l'image dit « healthy ».
+      - name: Empreinte du secret d'identité (outil scripts/ops)
+        run: echo "IDENTITY_HASH_FINGERPRINT=$(printf %s "$IDENTITY_HASH_SECRET" | node ../../scripts/ops/empreinte-identite.mjs)" >> "$GITHUB_ENV"
+
       - name: Construire et démarrer (${{ matrix.service }})
         run: docker compose up -d --build --wait --wait-timeout 300 "${{ matrix.service }}"
 
@@ -157,6 +163,14 @@ jobs:
             sleep 1
           done
           echo "$health" | grep -q '"identity_hash":{"configured":true}'
+          # P2 : le service se nomme, annonce son protocole de bord et
+          # l'empreinte (jamais le secret) de l'identité active.
+          echo "$health" | jq -e --arg fp "$IDENTITY_HASH_FINGERPRINT" \
+            '.service == "collector" and .edge_protocol == "mip-edge/1" and .identity == "active" and .id_fp == $fp' >/dev/null
+          # /ready sous jeton : registre d'apps chargé, identité concordante.
+          ready=$(curl -sS -H "authorization: Bearer $METRICS_TOKEN" "http://localhost:${{ matrix.port }}/ready")
+          echo "GET /ready -> $ready"
+          echo "$ready" | jq -e '.status == "ready" and .registry_loaded == true' >/dev/null
           # GeoIP : optionnel PAR CONTRAT (un db-ip.com indisponible donne une
           # image sans base, et c'est un avertissement). Une base PRÉSENTE dans
           # l'image mais non chargée, elle, est un défaut de l'image.

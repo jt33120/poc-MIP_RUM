@@ -109,6 +109,14 @@ services:
       RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-600}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       IDENTITY_HASH_SECRET: ${IDENTITY_HASH_SECRET:-}
+      # Obligatoire avec le secret (sinon refus de démarrer) ; calcul :
+      # printf %s "$IDENTITY_HASH_SECRET" | node scripts/ops/empreinte-identite.mjs
+      IDENTITY_HASH_FINGERPRINT: ${IDENTITY_HASH_FINGERPRINT:-}
+      # Jeton de /ready et /metrics (≥ 32 caractères). Vide : les deux → 404.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Secret du relais de la console (bord de confiance). Vide : tout le
+      # trafic est direct, et un en-tête x-mip-edge-* est retiré sans effet.
+      EDGE_PROXY_SECRET: ${EDGE_PROXY_SECRET:-}
       # GeoIP : la base est DANS l'image ; sans source d'adresse déclarée, elle
       # reste inerte (`none`). `socket` derrière aucun proxy, `xff:<n>` derrière n.
       GEOIP_IP_SOURCE: ${GEOIP_IP_SOURCE:-none}
