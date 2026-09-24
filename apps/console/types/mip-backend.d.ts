@@ -461,6 +461,9 @@ declare module "@mip/backend/shared/limits.mjs" {
   export const MAX_BODY_BYTES: number;
   export const MAX_SPANS_PER_REQUEST: number;
   export const MAX_REPLAY_INFLATED_BYTES: number;
+  export const MAX_REPLAY_BYTES: number;
+  /** `x-mip-seq` → entier ≥ 0 dans l'int4 de la colonne, sinon null (400). */
+  export function lireSequenceReplay(brut: string | null | undefined): number | null;
   export function bodyTooLarge(
     contentLength: string | number | null | undefined,
     max?: number,

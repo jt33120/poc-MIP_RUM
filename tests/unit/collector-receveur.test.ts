@@ -15,6 +15,7 @@
 //      GeoIP ; direct = GeoIP, en-têtes pays de CDN ignorés ; signature fausse
 //      = ni l'un ni l'autre.
 import { createServer } from "node:http";
+import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BUDGET_REQUETE,
@@ -25,6 +26,8 @@ import {
 } from "../../packages/backend/lib/receiver.mjs";
 // @ts-expect-error module ESM partagé, sans déclarations
 import { empreinteIdentite } from "../../packages/backend/lib/identity-hash.mjs";
+// @ts-expect-error module ESM partagé, sans déclarations
+import { lireSequenceReplay } from "../../packages/backend/shared/limits.mjs";
 
 type Requete = { text: string; params?: unknown[] };
 type Panne = (text: string) => unknown;
@@ -351,6 +354,29 @@ describe("échéance DURE : rien ne part, rien n'est commis après le budget", (
     expect((await posterTraces(base)).status).toBe(500);
     expect(f.requetes.some((q) => q.text === "rollback")).toBe(true);
     expect(f.liberations).toEqual([undefined]);
+  });
+});
+
+describe("replay : x-mip-seq obligatoire et décimal (plus « Number(null) === 0 »)", () => {
+  it("lireSequenceReplay : chiffres décimaux dans l'int4 de la colonne, sinon null", () => {
+    expect(lireSequenceReplay("0")).toBe(0);
+    expect(lireSequenceReplay("42")).toBe(42);
+    expect(lireSequenceReplay("2147483647")).toBe(2_147_483_647);
+    for (const v of [null, undefined, "", " 5", "5 ", "-1", "1e3", "0x10", "1.0", "2147483648", "99999999999"]) {
+      expect(lireSequenceReplay(v as string), String(v)).toBeNull();
+    }
+  });
+
+  it("collector : chunk sans x-mip-seq → 400, rien d'écrit", async () => {
+    const { pool, requetes } = fauxPool();
+    const { base } = await servir(pool);
+    const r = await fetch(`${base}/v1/replay`, {
+      method: "POST",
+      headers: { "x-mip-session": "s", "x-mip-app": "p2-app" },
+      body: gzipSync(Buffer.from("[]")),
+    });
+    expect(r.status).toBe(400);
+    expect(requetes.some((q) => /replay_chunk/.test(q.text))).toBe(false);
   });
 });
 

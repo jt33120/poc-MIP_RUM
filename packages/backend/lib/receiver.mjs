@@ -35,7 +35,9 @@ import { createLogger } from "../shared/log.mjs";
 import {
   bodyTooLarge,
   lireCorpsBorne,
+  lireSequenceReplay,
   MAX_BODY_BYTES,
+  MAX_REPLAY_BYTES,
   MAX_REPLAY_INFLATED_BYTES,
   MAX_SPANS_PER_REQUEST,
 } from "../shared/limits.mjs";
@@ -65,8 +67,8 @@ export function environnementDeploye(env) {
   return env.NODE_ENV === "production" || VARIABLES_DEPLOIEMENT.some((cle) => env[cle] !== undefined);
 }
 
-/** Garde-fou replay : > au plafond du SDK (1 Mo gzip par session). */
-export const MAX_REPLAY_BYTES = 2 * 1024 * 1024;
+/** Garde-fou replay (défini dans `shared/limits.mjs`, partagé avec la console). */
+export { MAX_REPLAY_BYTES };
 
 /**
  * BUDGET DE REQUÊTE (P2). En P3, la console relaie chaque beacon avec un délai
@@ -461,8 +463,9 @@ export function creerReceveur(pool, opts = {}) {
   async function traiterReplay(req, res, entetes, echeance) {
     const sessionId = entete(req, "x-mip-session");
     const appId = entete(req, "x-mip-app");
-    const seq = Number(entete(req, "x-mip-seq"));
-    if (!sessionId || !appId || !Number.isInteger(seq) || seq < 0) {
+    // Séquence ABSENTE = 400, plus séquence 0 (`lireSequenceReplay`, partagé).
+    const seq = lireSequenceReplay(entete(req, "x-mip-seq"));
+    if (!sessionId || !appId || seq === null) {
       return repondre(res, 400, { error: "missing x-mip-session/x-mip-app/x-mip-seq" }, entetes);
     }
 

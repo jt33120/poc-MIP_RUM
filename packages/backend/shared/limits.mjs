@@ -28,6 +28,35 @@ export const MAX_SPANS_PER_REQUEST = numEnv("MAX_SPANS_PER_REQUEST", 20_000);
  */
 export const MAX_REPLAY_INFLATED_BYTES = numEnv("MAX_REPLAY_INFLATED_BYTES", 32 * 1024 * 1024);
 
+/**
+ * Plafond d'un chunk de rejeu reçu (octets gzip) : > au plafond du SDK (1 Mo
+ * par chunk). Ici, UNE fois : la console et le collector en avaient chacun
+ * une copie.
+ */
+export const MAX_REPLAY_BYTES = 2 * 1024 * 1024;
+
+/** Plus grand `seq` stockable : `replay_chunk.seq` est un `int` (int4). */
+const SEQ_MAX = 2_147_483_647;
+
+/**
+ * `x-mip-seq` d'un chunk de rejeu → entier ≥ 0, ou null (→ 400).
+ *
+ * POURQUOI PAS `Number(v)`. `Number(null) === 0` et `Number("") === 0` : un
+ * chunk SANS séquence partait en séquence 0 sur les deux ports, et
+ * `on conflict (session_id, seq) do nothing` jetait alors en silence le vrai
+ * chunk 0 arrivé après. `Number` acceptait aussi « 1e3 », « 0x10 », « 5 » avec
+ * espaces, et des entiers au-delà de l'int4 de la colonne (erreur SQL, 500).
+ * Seuls des chiffres décimaux, dans la plage de la colonne. Le SDK envoie
+ * `String(chunk.seq)`.
+ * @param {string | null | undefined} brut
+ * @returns {number | null}
+ */
+export function lireSequenceReplay(brut) {
+  if (typeof brut !== "string" || !/^\d{1,10}$/.test(brut)) return null;
+  const n = Number(brut);
+  return n <= SEQ_MAX ? n : null;
+}
+
 function numEnv(name, fallback) {
   const raw = readEnv(name);
   const n = raw == null ? NaN : Number(raw);

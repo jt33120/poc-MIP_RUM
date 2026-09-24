@@ -55,6 +55,10 @@
 //     collector → prédicat partagé (`shared/retry.mjs`, `estIndisponibilite`),
 //     branché dans `refusIngestion` (`apps/console/lib/ingest.ts`).
 //
+// DÉFAUT COMMUN CORRIGÉ DES DEUX CÔTÉS : un chunk de rejeu sans `x-mip-seq`
+// partait en séquence 0 (`Number(null) === 0`) → 400 partout, par le même
+// `lireSequenceReplay` ; et la console lit le corps du rejeu borné.
+//
 // LANCEMENT (Docker, jamais la production — le test REFUSE un hôte non local) :
 //   docker run -d --rm --name mip-parite -e POSTGRES_PASSWORD=postgres -p 55451:5432 postgres:17
 //   psql … -c 'create database parite_next' -c 'create database parite_collector'
@@ -701,14 +705,40 @@ const CAS: Cas[] = [
     statut: 400,
   },
   {
-    // N.B. un `x-mip-seq` ABSENT n'est PAS refusé, ni ici ni là : `Number(null)`
-    // vaut 0 sur les deux ports, et le chunk part en séquence 0. Comportement
-    // COMMUN (donc hors parité), relevé au passage ; seul un en-tête de session
-    // ou d'app manquant rend 400.
     nom: "replay sans x-mip-session → 400",
     envoi: {
       chemin: "/api/ingest/v1/replay",
       entetes: { "x-mip-app": APP.a.id, "x-mip-seq": "9", "x-mip-key": APP.a.cle },
+      corps: chunk(),
+    },
+    statut: 400,
+  },
+  {
+    // Corrigé des DEUX côtés (`lireSequenceReplay`, shared/limits.mjs) :
+    // `Number(null)` valait 0, et un chunk sans séquence partait en séquence 0
+    // — prenant la place du vrai chunk 0, jeté ensuite par `on conflict`.
+    nom: "replay sans x-mip-seq → 400 (plus « séquence 0 »)",
+    envoi: {
+      chemin: "/api/ingest/v1/replay",
+      entetes: { "x-mip-session": SESSION(1), "x-mip-app": APP.a.id, "x-mip-key": APP.a.cle },
+      corps: chunk(),
+    },
+    statut: 400,
+  },
+  {
+    nom: "replay dont x-mip-seq n'est pas décimal (« 1e3 ») → 400",
+    envoi: {
+      chemin: "/api/ingest/v1/replay",
+      entetes: { "x-mip-session": SESSION(1), "x-mip-app": APP.a.id, "x-mip-seq": "1e3", "x-mip-key": APP.a.cle },
+      corps: chunk(),
+    },
+    statut: 400,
+  },
+  {
+    nom: "replay dont x-mip-seq dépasse l'int4 de la colonne → 400 (plus 500)",
+    envoi: {
+      chemin: "/api/ingest/v1/replay",
+      entetes: { "x-mip-session": SESSION(1), "x-mip-app": APP.a.id, "x-mip-seq": "2147483648", "x-mip-key": APP.a.cle },
       corps: chunk(),
     },
     statut: 400,
@@ -801,6 +831,13 @@ const CAS: Cas[] = [
   {
     nom: "replay à 2 Mio + 1 octet → 413",
     envoi: { chemin: "/api/ingest/v1/replay", entetes: rejeu(SESSION(1), APP.a, 6), corps: chunkExact(2 * 1024 * 1024 + 1) },
+    statut: 413,
+  },
+  {
+    // La console lisait `req.arrayBuffer()` en entier AVANT de mesurer ; elle
+    // lit désormais bornée, comme le collector (`lireCorpsBorne`).
+    nom: "replay à 2 Mio + 1 octet, en flux SANS longueur annoncée → 413",
+    envoi: { chemin: "/api/ingest/v1/replay", entetes: rejeu(SESSION(1), APP.a, 9), corps: chunkExact(2 * 1024 * 1024 + 1), sansLongueur: true },
     statut: 413,
   },
   {
