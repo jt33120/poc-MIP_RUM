@@ -809,9 +809,13 @@ export async function writeRowsWithClient(client, {
  *
  * `opts.client` permet à un appelant qui tient DÉJÀ une transaction verrouillée
  * de réutiliser ce chemin sans en rouvrir une seconde.
+ *
+ * `opts.verrou` ({ delaiVerrouMs, tentatives }) borne l'attente du verrou
+ * d'application ; absent, la stratégie par défaut (`STRATEGIE_VERROU`). Le
+ * collector la resserre pour tenir son budget de requête (P2).
  * @returns {Promise<{erreurs: {recues: number, inserees: number, ignorees: number}, refuses?: object}>}
  */
-export async function writeRows(pool, rows, { symbolicateur = symbolicateurIngestion, client: fourni = null } = {}) {
+export async function writeRows(pool, rows, { symbolicateur = symbolicateurIngestion, client: fourni = null, verrou = {} } = {}) {
   const client = fourni ?? (await pool.connect());
   try {
     // Client fourni : il est déjà dans une transaction verrouillée par son
@@ -825,7 +829,7 @@ export async function writeRows(pool, rows, { symbolicateur = symbolicateurInges
       return filtre.total ? { ...bilan, refuses: filtre.refuses } : bilan;
     };
     if (fourni) return await travail(client);
-    return await withAppIngestTransaction(pool, appsDuLot(symbolisees), travail, { client });
+    return await withAppIngestTransaction(pool, appsDuLot(symbolisees), travail, { ...verrou, client });
   } finally {
     if (!fourni) client.release();
   }
@@ -854,7 +858,7 @@ export async function writeLogsWithClient(client, logs, errors = []) {
 }
 
 /** Wrapper compatible de `writeLogsWithClient` : transaction, verrou, barrières. */
-export async function writeLogs(pool, logs, errors = [], { client: fourni = null } = {}) {
+export async function writeLogs(pool, logs, errors = [], { client: fourni = null, verrou = {} } = {}) {
   if (!logs.length && !errors.length) return { logs: 0, erreurs: { recues: 0, inserees: 0, ignorees: 0 } };
   const travail = async (c) => {
     // Un log et une exception portent app_id, session_id et, pour l'exception,
@@ -864,7 +868,7 @@ export async function writeLogs(pool, logs, errors = [], { client: fourni = null
     return filtre.total ? { ...bilan, refuses: filtre.refuses } : bilan;
   };
   if (fourni) return travail(fourni);
-  return withAppIngestTransaction(pool, appsDuLot({ logs, errors }), travail);
+  return withAppIngestTransaction(pool, appsDuLot({ logs, errors }), travail, verrou);
 }
 
 /**
@@ -919,9 +923,9 @@ export async function writeReplayChunkWithClient(client, { sessionId, appId, seq
 }
 
 /** Wrapper compatible : transaction, verrou d'application, puis délégation. */
-export function writeReplayChunk(pool, chunk, { client: fourni = null } = {}) {
+export function writeReplayChunk(pool, chunk, { client: fourni = null, verrou = {} } = {}) {
   if (fourni) return writeReplayChunkWithClient(fourni, chunk);
-  return withAppIngestTransaction(pool, chunk.appId, (c) => writeReplayChunkWithClient(c, chunk));
+  return withAppIngestTransaction(pool, chunk.appId, (c) => writeReplayChunkWithClient(c, chunk), verrou);
 }
 
 // ───────────────────────── Auth / registre / débit ─────────────────────────
@@ -1069,5 +1073,16 @@ export function createPgAuth(pool, opts = {}) {
     }
   }
 
-  return { getAppRegistry, checkApiKey, rateLimitedDurable, plafondRepli };
+  /**
+   * Le registre a-t-il été chargé AU MOINS UNE FOIS ? C'est la question de
+   * `/ready` (P2) : tant qu'il ne l'a pas été, `checkApiKey` est en fail-open —
+   * une instance qui démarre sur une base injoignable accepterait tout. Une
+   * fois chargé, un échec de rafraîchissement garde l'ancien registre : l'état
+   * reste sain, et c'est voulu.
+   */
+  function registryLoaded() {
+    return registryEverLoaded;
+  }
+
+  return { getAppRegistry, checkApiKey, rateLimitedDurable, registryLoaded, plafondRepli };
 }

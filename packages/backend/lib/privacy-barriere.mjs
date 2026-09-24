@@ -65,8 +65,10 @@ const SQLSTATE_VERROU = "55P03";
 
 /** Attente bornée par le verrou d'application : l'appelant peut rejouer. */
 export class ErreurVerrouIngestion extends Error {
-  constructor(appIds) {
-    super(`verrou d'ingestion indisponible après ${STRATEGIE_VERROU.tentatives} tentatives (${appIds.join(", ")})`);
+  // `tentatives` : celles de l'appelant — le collector en fait 2 (budget de
+  // requête, P2), la console 3 ; le message doit dire la vérité sur les deux.
+  constructor(appIds, tentatives = STRATEGIE_VERROU.tentatives) {
+    super(`verrou d'ingestion indisponible après ${tentatives} tentatives (${appIds.join(", ")})`);
     this.name = "ErreurVerrouIngestion";
     this.code = SQLSTATE_VERROU;
     this.apps = appIds;
@@ -173,7 +175,7 @@ export async function withAppIngestTransaction(pool, appId, travail, opts = {}) 
       } catch (err) {
         await client.query("rollback").catch(() => {});
         if (err?.code !== SQLSTATE_VERROU || essai >= tentatives) {
-          if (err?.code === SQLSTATE_VERROU) throw new ErreurVerrouIngestion(apps);
+          if (err?.code === SQLSTATE_VERROU) throw new ErreurVerrouIngestion(apps, tentatives);
           throw err;
         }
         await dormir(STRATEGIE_VERROU.reculMs[Math.min(essai - 1, STRATEGIE_VERROU.reculMs.length - 1)]);

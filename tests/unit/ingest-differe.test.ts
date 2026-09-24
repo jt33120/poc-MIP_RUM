@@ -30,7 +30,8 @@ describe("le compromis de durabilité est écrit, pas sous-entendu", () => {
   it("le mode est ÉTEINT par défaut", () => {
     // Un compromis de durabilité se choisit ; il ne s'hérite pas d'une mise à
     // jour. Le défaut reste l'écriture synchrone dans les tables finales.
-    expect(RECEVEUR).toContain('process.env.INGEST_DEFERRED === "true"');
+    // Le receveur lit l'environnement injecté (process.env par défaut).
+    expect(RECEVEUR).toContain('env.INGEST_DEFERRED === "true"');
     expect(SERVICE).toContain('process.env.INGEST_DEFERRED === "true"');
   });
 
@@ -51,7 +52,7 @@ describe("la file ne peut pas devenir une porte ouverte", () => {
     // file amplifierait l'abus au lieu de découpler le travail : n'importe qui
     // pourrait remplir une table UNLOGGED.
     const i = RECEVEUR.indexOf("const refus = await gardes(rows.apiKeys");
-    const j = RECEVEUR.indexOf("deposerLot(pool, appId, rows)");
+    const j = RECEVEUR.indexOf("deposerLot(pool, appId, rows, o)");
     expect(i).toBeGreaterThan(0);
     expect(j).toBeGreaterThan(i);
   });

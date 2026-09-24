@@ -28,7 +28,7 @@ import {
   verifierJetonUpload,
 } from "./sourcemap-upload.mjs";
 import { creerGeoip } from "./geoip-db.mjs";
-import { ipClient, parseSourceIp } from "../shared/client-ip.mjs";
+import { creerBordDeConfiance, EDGE_PROTOCOL, ipClient, parseSourceIp } from "../shared/client-ip.mjs";
 import { appliquerGeo } from "../shared/geoip.mjs";
 import { corsHeaders as buildCors, originsFromRegistry, REPLAY_ALLOW_HEADERS } from "../shared/cors.mjs";
 import { createLogger } from "../shared/log.mjs";
@@ -39,11 +39,73 @@ import {
   MAX_SPANS_PER_REQUEST,
 } from "../shared/limits.mjs";
 import { flattenOtlp, flattenOtlpLogs } from "../shared/otlp.mjs";
-import { withRetry } from "../shared/retry.mjs";
-import { secureOtlpIdentities } from "./identity-hash.mjs";
+import { isTransient, withRetry } from "../shared/retry.mjs";
+import { etatIdentite, secureOtlpIdentities } from "./identity-hash.mjs";
 
 /** Garde-fou replay : > au plafond du SDK (1 Mo gzip par session). */
 export const MAX_REPLAY_BYTES = 2 * 1024 * 1024;
+
+/**
+ * BUDGET DE REQUÊTE (P2). En P3, la console relaie chaque beacon avec un délai
+ * de 8 s ; au-delà, elle répond 503 sans savoir si le collector a écrit. Le
+ * collector doit donc TOUJOURS répondre avant : ≈ 4 s au pire, puis un 503
+ * explicite avec `retry-after`, qui dit au SDK « rien n'est écrit, rejoue ».
+ *
+ *   - verrou d'application : 1,5 s × 2 essais (+ 120 ms de recul) ≈ 3,1 s, au
+ *     lieu des 5 s × 3 (≈ 15,6 s) de la stratégie par défaut, que la console
+ *     garde pour elle ;
+ *   - reprises sur erreur transitoire (`withRetry`) : 2 au plus, recul plafonné
+ *     à 400 ms, et AUCUNE reprise qui partirait après l'échéance ;
+ *   - au-delà : 503 + `retry-after: 2`, jamais un 500 qui ferait croire à un
+ *     incident, jamais une réponse PENDANT l'écriture (le client rejouerait un
+ *     lot en cours de commit — les logs ne sont pas idempotents).
+ */
+export const BUDGET_REQUETE = Object.freeze({
+  totalMs: 4_000,
+  verrou: Object.freeze({ delaiVerrouMs: 1_500, tentatives: 2 }),
+  reprises: 2,
+  repriseMaxMs: 400,
+});
+
+/**
+ * Alias historiques → chemins canoniques, AVANT tout routage.
+ *
+ * POURQUOI ICI. Le SDK, l'extension et la CI des clients visent aujourd'hui les
+ * routes de la console (`/api/ingest/v1/*`, `/api/sourcemaps`). Le jour où l'on
+ * pointe un domaine vers le collector, ces chemins doivent y arriver tels
+ * quels. La normalisation passe AVANT `estReplay` : sinon un préflight sur
+ * `/api/ingest/v1/replay` n'annoncerait pas les en-têtes `x-mip-*`, et le
+ * navigateur bloquerait le POST. `/api/sourcemaps` ne mène qu'à la branche
+ * JETON : la lecture admin (GET, cookie) reste l'affaire de la console.
+ */
+export function normaliserChemin(url) {
+  const chemin = String(url ?? "/").split("?")[0];
+  if (chemin === "/api/sourcemaps") return "/v1/sourcemaps";
+  if (chemin.startsWith("/api/ingest/v1/")) return chemin.slice("/api/ingest".length);
+  return chemin;
+}
+
+/**
+ * Plafond de corps du receveur pour un chemin (déjà normalisé ou non). Exporté
+ * pour que le service donne au kit une borne EXTÉRIEURE cohérente.
+ */
+export function plafondCorps(url) {
+  const chemin = normaliserChemin(url);
+  if (chemin === "/v1/sourcemaps") return LIMITES_UPLOAD.corpsDirect;
+  if (chemin.startsWith("/v1/replay")) return MAX_REPLAY_BYTES;
+  return MAX_BODY_BYTES;
+}
+
+/**
+ * Une panne de base qui vaut « rejoue plus tard » : erreur transitoire connue,
+ * ou délai du pool (`pg-pool` lève une erreur sans code quand il n'obtient pas
+ * de connexion à temps), ou délai de requête côté client.
+ */
+function estIndisponibilite(err) {
+  if (isTransient(err)) return true;
+  const m = String(err?.message ?? "");
+  return /timeout exceeded when trying to connect|Query read timeout|Connection terminated/i.test(m);
+}
 
 /** En-tête normalisé (Node donne string | string[] | undefined). */
 function entete(req, nom) {
@@ -78,21 +140,57 @@ async function lireCorps(req, max) {
  *   aliasSante?: string[],   // chemins supplémentaires répondant comme /health
  *   nom?: string,            // nom du service, renvoyé par /health
  *   identityHashSecret?: string, // injection explicite du secret HMAC (tests/self-host)
+ *   identityFingerprint?: string, // empreinte déclarée (IDENTITY_HASH_FINGERPRINT) ; écart = identité retirée, /ready refusé
+ *   edgeSecrets?: readonly string[], // EDGE_PROXY_SECRET (1 ou 2 valeurs) : bord de confiance du relais
+ *   budget?: Partial<typeof BUDGET_REQUETE>,
+ *   env?: Record<string, string|undefined>, // injectable pour les tests
  * }} opts
  */
 export function creerReceveur(pool, opts = {}) {
   const log = opts.log ?? createLogger("ingest");
-  const rateLimitPerMin = opts.rateLimitPerMin ?? Number(process.env.RATE_LIMIT_PER_MIN ?? 600);
-  const requireApiKey = opts.requireApiKey ?? process.env.REQUIRE_API_KEY === "true";
+  const env = opts.env ?? process.env;
+  const rateLimitPerMin = opts.rateLimitPerMin ?? Number(env.RATE_LIMIT_PER_MIN ?? 600);
+  const requireApiKey = opts.requireApiKey ?? env.REQUIRE_API_KEY === "true";
   const signaux = new Set(opts.signaux ?? ["traces", "logs", "replay", "sourcemaps"]);
   const aliasSante = opts.aliasSante ?? [];
   const nom = opts.nom ?? "ingest";
-  const identityHashSecret = opts.identityHashSecret ?? process.env.IDENTITY_HASH_SECRET;
+
+  // LE TAMPON /__recent NE DÉMARRE PAS EN PRODUCTION. Il retient les derniers
+  // payloads EN CLAIR (URL visitées, attributs, messages d'erreur, identifiants
+  // de session) et les rend à quiconque fait un GET, sans authentification. C'est un outil
+  // d'assertion E2E ; un `tampon: true` recopié dans un point d'entrée déployé
+  // serait une fuite. Refus au démarrage — pas un avertissement qu'on lit trop
+  // tard — dès que l'environnement ressemble à un déploiement.
+  if (opts.tampon && (env.NODE_ENV === "production" || env.RAILWAY_ENVIRONMENT)) {
+    throw new Error(
+      "receveur : le tampon /__recent est interdit en production (NODE_ENV=production ou RAILWAY_ENVIRONMENT défini)",
+    );
+  }
+
+  // Identité : le secret n'est utilisé QUE si son empreinte concorde (ou si
+  // aucune n'est déclarée — serveurs de développement, tests). Discordante :
+  // `identite.secret` vaut null, et `secureOtlpIdentities` RETIRE l'identité.
+  const identite = etatIdentite(
+    opts.identityHashSecret ?? env.IDENTITY_HASH_SECRET,
+    opts.identityFingerprint ?? null,
+  );
+  const identityHashSecret = identite.secret ?? undefined;
+  if (identite.etat === "discordante") {
+    log.error("empreinte du secret d'identité DISCORDANTE — identité retirée, readiness refusée", {
+      id_fp: identite.id_fp,
+      attendue: identite.attendue,
+      remede: "reposer le secret d'origine, ou déclarer la nouvelle empreinte en connaissance de cause (rupture de user_id_hash)",
+    });
+  }
+
+  const bord = creerBordDeConfiance(opts.edgeSecrets);
+  const budget = { ...BUDGET_REQUETE, ...(opts.budget ?? {}) };
+  let dernierAvisBord = 0;
   // Ingestion DIFFÉRÉE (migration-v63) : le lot est débarqué dans une table
   // UNLOGGED et écrit plus tard par un travailleur. ÉTEINTE par défaut — la
   // table est vidée par PostgreSQL après un arrêt brutal, donc ce compromis se
   // choisit explicitement. Le gain mesuré est dans docs/BUILD_LOG.md.
-  const differe = opts.differe ?? process.env.INGEST_DEFERRED === "true";
+  const differe = opts.differe ?? env.INGEST_DEFERRED === "true";
 
   const auth = createPgAuth(pool, { requireApiKey, rateLimitPerMin, log });
   const limiteurSourcemaps = creerLimiteurUpload();
@@ -105,7 +203,7 @@ export function creerReceveur(pool, opts = {}) {
   // LE CHARGEMENT NE BLOQUE PAS : `creerGeoip` rend tout de suite un résolveur
   // qui répond `null` tant que la base n'est pas indexée. Les lots reçus pendant
   // ce temps gardent leur pays de fuseau — jamais une attente, jamais un rejet.
-  const sourceIp = opts.sourceIp ?? parseSourceIp(process.env.GEOIP_IP_SOURCE);
+  const sourceIp = opts.sourceIp ?? parseSourceIp(env.GEOIP_IP_SOURCE);
   if (sourceIp.mode === "invalide") {
     log.warn("GEOIP_IP_SOURCE ignoré", { valeur: sourceIp.brut, attendu: "none|socket|railway|xff:<n>" });
   }
@@ -134,6 +232,93 @@ export function creerReceveur(pool, opts = {}) {
     res.end(JSON.stringify(corps));
   };
 
+  /**
+   * Écriture sous budget : verrou resserré, reprises bornées par l'échéance de
+   * la requête. Ce qui dépasse remonte au `catch` du gestionnaire, qui en fait
+   * un 503 + retry-after.
+   */
+  function sousBudget(echeance, ecrire, etiquette) {
+    return withRetry(() => ecrire({ verrou: budget.verrou }), {
+      retries: budget.reprises,
+      baseMs: 100,
+      maxMs: budget.repriseMaxMs,
+      shouldRetry: (e) => isTransient(e) && Date.now() + budget.repriseMaxMs < echeance,
+      onRetry: (e, n) => log.warn(`db retry (${etiquette})`, { attempt: n, code: e?.code }),
+    });
+  }
+
+  /**
+   * Lit le bord de confiance UNE fois, à l'entrée de la requête, pour TOUTES
+   * les routes : les en-têtes `x-mip-edge-*` sont retirés avant que quoi que ce
+   * soit d'autre ne lise la requête — aucune branche (logs, replay, source
+   * maps, et celles qui viendront) ne peut relire un en-tête de bord non
+   * vérifié, ni le secret lui-même.
+   */
+  function lireBord(req) {
+    const lu = bord.lire(req);
+    if (lu.mode === "refuse" || lu.forges > 0) {
+      // Une ligne par minute au plus : un client qui forge à chaque beacon ne
+      // doit pas noyer le journal, et l'opérateur doit quand même le voir —
+      // c'est aussi le symptôme d'un secret de relais désaccordé.
+      const t = Date.now();
+      if (t - dernierAvisBord > 60_000) {
+        dernierAvisBord = t;
+        log.warn("en-têtes de bord non authentifiés retirés", { mode: lu.mode, entetes: lu.forges });
+      }
+    }
+    return lu;
+  }
+
+  /**
+   * Provenance géographique d'une requête OTLP, selon le bord de confiance.
+   * Relayée : le pays du relais, SANS GeoIP (aucune adresse n'a traversé).
+   * Directe : le GeoIP sur l'adresse déclarée, aucun en-tête pays de CDN.
+   * Signature fausse : rien (ni GeoIP sur l'adresse d'un relais, ni pays).
+   */
+  function geoDe(req, lu) {
+    if (lu.mode === "relaye") return { geoip: null, cdn: lu.pays };
+    if (lu.mode === "refuse") return { geoip: null, cdn: null };
+    return { geoip: geoip ? geoip.resoudre(ipClient(req, sourceIp)) : null, cdn: null };
+  }
+
+  /**
+   * Ce que `/health` dit du receveur, au-delà du statut : jamais un secret,
+   * jamais une adresse, jamais un message d'erreur.
+   */
+  function infosSante() {
+    return {
+      service: nom,
+      edge_protocol: EDGE_PROTOCOL,
+      edge_trust: bord.actif,
+      identity: identite.etat,
+      id_fp: identite.id_fp,
+      identity_hash: { configured: identityHashSecret != null },
+      // Un opérateur doit pouvoir lire, sans fouiller les variables, si ce
+      // déploiement acquitte AVANT d'avoir écrit (table UNLOGGED, migration-v63).
+      ingest_deferred: differe,
+      // P8.7 : un exploitant doit pouvoir lire, sans fouiller les variables,
+      // si le pays est résolu localement et avec QUELLE livraison. `etat`
+      // vaut `eteint` par défaut, et c'est un état normal, pas une panne.
+      geoip: {
+        source_ip: sourceIp.mode,
+        etat: geoip?.etat() ?? "eteint",
+        version: geoip?.version() ?? null,
+        raison: geoip?.raison() ?? null,
+      },
+    };
+  }
+
+  /**
+   * Readiness : le registre d'apps a été chargé au moins une fois (sinon la
+   * vérification de clé est en fail-open), et l'identité n'est pas discordante.
+   */
+  async function pret() {
+    await auth.getAppRegistry();
+    const registre = auth.registryLoaded();
+    const identiteOk = identite.etat !== "discordante";
+    return { ok: registre && identiteOk, registry_loaded: registre, identity: identite.etat };
+  }
+
   /** Clé d'API (403) puis débit (429), une fois par app du lot. */
   async function gardes(apiKeys, entetes) {
     for (const { app_id, api_key } of apiKeys) {
@@ -156,7 +341,7 @@ export function creerReceveur(pool, opts = {}) {
     return null;
   }
 
-  async function traiterOtlp(req, res, entetes, estLogs) {
+  async function traiterOtlp(req, res, entetes, estLogs, echeance, lu) {
     if (bodyTooLarge(entete(req, "content-length"))) {
       log.warn("payload too large", { content_length: entete(req, "content-length"), max: MAX_BODY_BYTES });
       return repondre(res, 413, { error: "payload too large" }, entetes);
@@ -188,9 +373,7 @@ export function creerReceveur(pool, opts = {}) {
       const parsed = flattenOtlpLogs(payload, { maxLogs: MAX_SPANS_PER_REQUEST });
       const refus = await gardes(parsed.apiKeys, entetes);
       if (refus) return repondre(res, refus.statut, refus.corps, refus.entetes);
-      const ecrit = await withRetry(() => writeLogs(pool, parsed.logs, parsed.errors), {
-        onRetry: (e, n) => log.warn("db retry (logs)", { attempt: n, code: e?.code }),
-      });
+      const ecrit = await sousBudget(echeance, (o) => writeLogs(pool, parsed.logs, parsed.errors, o), "logs");
       log.info("ingested logs", {
         logs: parsed.logs.length,
         // Exceptions RÉELLEMENT insérées (RETURNING), pas la taille du lot.
@@ -208,13 +391,10 @@ export function creerReceveur(pool, opts = {}) {
     // elle n'est pas écrite, pas journalisée, pas mise en cache, pas attachée à
     // une clef d'erreur. Seuls sortent d'ici un code pays et sa provenance.
     //
-    // Ordre : GeoIP local (si une base est chargée et une façade déclarée), sinon
-    // le fuseau déjà posé par flattenOtlp, sinon l'en-tête pays d'un CDN.
-    const resolu = geoip ? geoip.resoudre(ipClient(req, sourceIp)) : null;
-    appliquerGeo(rows.sessions, {
-      geoip: resolu,
-      cdn: entete(req, "x-vercel-ip-country") ?? entete(req, "cf-ipcountry"),
-    });
+    // Ordre : GeoIP local (trafic DIRECT seulement, si une base est chargée et
+    // une façade déclarée), sinon le fuseau déjà posé par flattenOtlp, sinon le
+    // pays d'un relais AUTHENTIFIÉ (bord de confiance, `geoDe`).
+    appliquerGeo(rows.sessions, geoDe(req, lu));
 
     // Erreurs RÉELLEMENT insérées (RETURNING) ; inconnues tant qu'un lot différé
     // n'est pas drainé.
@@ -224,13 +404,9 @@ export function creerReceveur(pool, opts = {}) {
       // débarque que ce qui a le droit d'entrer. Une file derrière une porte
       // ouverte serait un amplificateur, pas un découplage.
       const appId = rows.apiKeys[0]?.app_id ?? rows.sessions[0]?.app_id ?? "inconnu";
-      await withRetry(() => deposerLot(pool, appId, rows), {
-        onRetry: (e, n) => log.warn("db retry (differe)", { attempt: n, code: e?.code }),
-      });
+      await sousBudget(echeance, (o) => deposerLot(pool, appId, rows, o), "differe");
     } else {
-      const ecrit = await withRetry(() => writeRows(pool, rows), {
-        onRetry: (e, n) => log.warn("db retry", { attempt: n, code: e?.code }),
-      });
+      const ecrit = await sousBudget(echeance, (o) => writeRows(pool, rows, o), "traces");
       erreursInserees = ecrit.erreurs.inserees;
     }
     log.info("ingested", {
@@ -249,7 +425,7 @@ export function creerReceveur(pool, opts = {}) {
     return repondre(res, 200, { partialSuccess: {} }, entetes);
   }
 
-  async function traiterReplay(req, res, entetes) {
+  async function traiterReplay(req, res, entetes, echeance) {
     const sessionId = entete(req, "x-mip-session");
     const appId = entete(req, "x-mip-app");
     const seq = Number(entete(req, "x-mip-seq"));
@@ -285,9 +461,11 @@ export function creerReceveur(pool, opts = {}) {
       return repondre(res, 400, { error: "body must be gzipped JSON" }, entetes);
     }
 
-    const issue = await withRetry(() => writeReplayChunk(pool, { sessionId, appId, seq, body, eventsCount }), {
-      onRetry: (e, n) => log.warn("db retry (replay)", { attempt: n, code: e?.code }),
-    });
+    const issue = await sousBudget(
+      echeance,
+      (o) => writeReplayChunk(pool, { sessionId, appId, seq, body, eventsCount }, o),
+      "replay",
+    );
     // Le corps n'est persisté dans AUCUN de ces deux refus : un chunk refusé ne
     // doit pas rester lisible « en attendant ».
     if (issue?.etat === "refus_barriere") {
@@ -356,8 +534,10 @@ export function creerReceveur(pool, opts = {}) {
 
   /** Le gestionnaire à passer à http.createServer. */
   async function handler(req, res) {
+    const echeance = Date.now() + budget.totalMs;
+    const lu = lireBord(req);
     const origin = entete(req, "origin") ?? "";
-    const chemin = (req.url ?? "/").split("?")[0];
+    const chemin = normaliserChemin(req.url);
     const estReplay = chemin.startsWith("/v1/replay");
     // Le préflight replay doit annoncer les en-têtes x-mip-* sinon le navigateur
     // bloque le POST cross-origin des clients à clé.
@@ -369,29 +549,20 @@ export function creerReceveur(pool, opts = {}) {
         return res.end();
       }
       if (req.method === "GET" && (chemin === "/health" || aliasSante.includes(chemin))) {
-        return repondre(res, 200, {
-          status: "ok",
-          service: nom,
-          identity_hash: { configured: typeof identityHashSecret === "string" && identityHashSecret.length > 0 },
-          // P8.7 : un exploitant doit pouvoir lire, sans fouiller les variables,
-          // si le pays est résolu localement et avec QUELLE livraison. `etat`
-          // vaut `eteint` par défaut, et c'est un état normal, pas une panne.
-          geoip: {
-            source_ip: sourceIp.mode,
-            etat: geoip?.etat() ?? "eteint",
-            version: geoip?.version() ?? null,
-            raison: geoip?.raison() ?? null,
-          },
-        }, entetes);
+        // Sous le service `collector`, le kit intercepte /health et /ready
+        // AVANT ce gestionnaire et y reprend `infosSante()` et `pret()` ; ces
+        // deux branches servent les serveurs de développement.
+        return repondre(res, 200, { status: "ok", ...infosSante() }, entetes);
       }
-      // Readiness : la base répond. Distincte de /health à dessein — un
-      // orchestrateur doit pouvoir cesser de router du trafic sans tuer le
-      // process, et redémarrer un service dont seule la base est absente
-      // n'arrange rien.
+      // Readiness : la base répond ET le registre est chargé. Distincte de
+      // /health à dessein — un orchestrateur doit pouvoir cesser de router du
+      // trafic sans tuer le process, et redémarrer un service dont seule la
+      // base est absente n'arrange rien.
       if (req.method === "GET" && chemin === "/ready") {
         try {
           await pool.query("select 1");
-          return repondre(res, 200, { status: "ready" }, entetes);
+          const verdict = await pret();
+          return repondre(res, verdict.ok ? 200 : 503, { ...verdict, status: verdict.ok ? "ready" : "unready" }, entetes);
         } catch (err) {
           log.error("readiness check failed", { err: String(err) });
           return repondre(res, 503, { status: "unready" }, entetes);
@@ -400,18 +571,23 @@ export function creerReceveur(pool, opts = {}) {
       if (opts.tampon && req.method === "GET" && chemin === "/__recent") {
         return repondre(res, 200, recents, entetes);
       }
+      // Parité avec les routes Vercel : un GET de diagnostic répond 200 sur
+      // les deux signaux OTLP (un outil de vérification d'intégration s'en sert).
       if (req.method === "GET" && chemin === "/v1/traces") {
         return repondre(res, 200, { status: "ok", service: "v1-traces" }, entetes);
       }
+      if (req.method === "GET" && chemin === "/v1/logs") {
+        return repondre(res, 200, { status: "ok", service: "v1-logs" }, entetes);
+      }
 
       if (req.method === "POST" && estReplay && signaux.has("replay")) {
-        return await traiterReplay(req, res, entetes);
+        return await traiterReplay(req, res, entetes, echeance);
       }
       if (req.method === "POST" && chemin.startsWith("/v1/traces") && signaux.has("traces")) {
-        return await traiterOtlp(req, res, entetes, false);
+        return await traiterOtlp(req, res, entetes, false, echeance, lu);
       }
       if (req.method === "POST" && chemin.startsWith("/v1/logs") && signaux.has("logs")) {
-        return await traiterOtlp(req, res, entetes, true);
+        return await traiterOtlp(req, res, entetes, true, echeance, lu);
       }
       if (req.method === "POST" && chemin === "/v1/sourcemaps" && signaux.has("sourcemaps")) {
         return await traiterSourcemaps(req, res, entetes);
@@ -437,6 +613,14 @@ export function creerReceveur(pool, opts = {}) {
         return repondre(res, 503, { error: "ingestion busy, retry", retry: true },
           { ...entetes, "retry-after": "2" });
       }
+      // Base indisponible au-delà du budget (reprises épuisées ou échéance
+      // atteinte) : rien n'a été écrit — la transaction a été annulée —, et
+      // rejouer plus tard réussira. 503 + Retry-After, comme le verrou.
+      if (estIndisponibilite(err) && !res.headersSent) {
+        log.warn("busy: database unavailable within budget", { code: err?.code ?? null });
+        return repondre(res, 503, { error: "ingestion unavailable, retry", retry: true },
+          { ...entetes, "retry-after": "2" });
+      }
       // Ici on n'est plus dans un cas client : un corps illisible a déjà été
       // traité en 400 plus haut. Tout ce qui remonte est un incident serveur,
       // et le client PEUT rejouer — sa file de retry le fera.
@@ -446,5 +630,5 @@ export function creerReceveur(pool, opts = {}) {
     }
   }
 
-  return { handler, auth, recents };
+  return { handler, auth, recents, infosSante, pret, identite };
 }

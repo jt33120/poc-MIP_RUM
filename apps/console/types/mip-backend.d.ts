@@ -60,6 +60,8 @@ declare module "@mip/backend/lib/pg-ingest.mjs" {
     opts?: {
       symbolicateur?: import("@mip/backend/lib/error-symbolication.mjs").Symbolicateur | null;
       client?: PoolClient | null;
+      /** Attente bornée du verrou d'application (défaut : STRATEGIE_VERROU). */
+      verrou?: { delaiVerrouMs?: number; tentatives?: number };
     },
   ): Promise<{ erreurs: EcritureErreurs; refuses?: RefusBarriere }>;
 
@@ -74,7 +76,7 @@ declare module "@mip/backend/lib/pg-ingest.mjs" {
     pool: Pool,
     logs: IngestRow[],
     errors?: IngestRow[],
-    opts?: { client?: PoolClient | null },
+    opts?: { client?: PoolClient | null; verrou?: { delaiVerrouMs?: number; tentatives?: number } },
   ): Promise<{ logs: number; erreurs: EcritureErreurs; refuses?: RefusBarriere }>;
 
   export function writeLogsWithClient(
@@ -104,7 +106,7 @@ declare module "@mip/backend/lib/pg-ingest.mjs" {
   export function writeReplayChunk(
     pool: Pool,
     chunk: ChunkReplay,
-    opts?: { client?: PoolClient | null },
+    opts?: { client?: PoolClient | null; verrou?: { delaiVerrouMs?: number; tentatives?: number } },
   ): Promise<ResultatReplay>;
 
   export function writeReplayChunkWithClient(
@@ -125,6 +127,8 @@ declare module "@mip/backend/lib/pg-ingest.mjs" {
     /** null si accepté, sinon la raison du 403. */
     checkApiKey(appId: string, apiKey: string | null): Promise<string | null>;
     rateLimitedDurable(appId: string): Promise<boolean>;
+    /** Le registre a-t-il été chargé au moins une fois ? (sinon checkApiKey est en fail-open) */
+    registryLoaded(): boolean;
   }
 
   export function createPgAuth(
