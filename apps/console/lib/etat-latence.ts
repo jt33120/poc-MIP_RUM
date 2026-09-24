@@ -18,6 +18,16 @@
 export const CADENCE_TICK_MIN = 5;
 
 /**
+ * LA CADENCE RÉELLE PEUT ÊTRE PLUS LENTE, ET LA VITRINE LE DIT (24/09/2026). La
+ * base tourne sur l'offre gratuite de Neon (100 heures de calcul par mois) ; un
+ * tick toutes les 5 minutes la gardait éveillée en permanence et a épuisé le
+ * quota. Le scheduler passe donc toutes les 15 minutes, et PUBLIE sa cadence en
+ * base (`platform_flag.scheduler_tick_min`) : la ligne dit ce qui tourne, pas la
+ * valeur d'usine. Plus lente que la cible, elle est « partielle », avec la raison.
+ */
+export const RAISON_CADENCE_LENTE = "base en offre gratuite : cadence ralentie pour tenir son quota de calcul";
+
+/**
  * Au-delà de ce délai sans passage, on cesse de dire que la latence est tenue.
  *
  * Trois cadences ratées, pas une : un redéploiement, une coupure réseau ou un
@@ -25,6 +35,15 @@ export const CADENCE_TICK_MIN = 5;
  * l'arrêt » au premier retard ferait clignoter la vitrine pour du bruit.
  */
 export const TOLERANCE_MIN = CADENCE_TICK_MIN * 3;
+
+/** Une cadence publiée n'est crue que si elle est sur la grille du scheduler. */
+const CADENCES_ADMISES = [5, 10, 15, 20, 30];
+
+/** La valeur publiée, lue telle quelle en base ; `null` si absente ou hors grille. */
+export function cadencePubliee(brut: unknown): number | null {
+  const n = typeof brut === "string" && /^\d{1,2}$/.test(brut) ? Number(brut) : NaN;
+  return CADENCES_ADMISES.includes(n) ? n : null;
+}
 
 export type StatutLatence = "atteint" | "partiel" | "manque";
 
@@ -38,8 +57,9 @@ export interface LigneLatence {
 /**
  * @param dernierTick fin du dernier tick abouti (scheduler_lease), ou null
  * @param maintenant  horloge, injectée
+ * @param cadenceMin  cadence effective publiée par le scheduler (défaut : la cible)
  */
-export function ligneLatence(dernierTick: Date | null, maintenant: number): LigneLatence {
+export function ligneLatence(dernierTick: Date | null, maintenant: number, cadenceMin: number = CADENCE_TICK_MIN): LigneLatence {
   if (dernierTick == null) {
     // Aucune trace : soit le scheduler n'a jamais tourné, soit la base est
     // injoignable. Dans les deux cas on ne peut RIEN prouver, donc on n'affirme
@@ -53,9 +73,16 @@ export function ligneLatence(dernierTick: Date | null, maintenant: number): Lign
 
   const depuisMin = Math.max(0, Math.round((maintenant - dernierTick.getTime()) / 60_000));
 
-  if (depuisMin <= TOLERANCE_MIN) {
+  if (depuisMin <= cadenceMin * 3) {
+    if (cadenceMin > CADENCE_TICK_MIN) {
+      return {
+        reel: `${cadenceMin} minutes — ${RAISON_CADENCE_LENTE} ; dernier passage il y a ${depuisMin} min`,
+        s: "partiel",
+        depuisMin,
+      };
+    }
     return {
-      reel: `${CADENCE_TICK_MIN} minutes — déclencheur dédié, dernier passage il y a ${depuisMin} min`,
+      reel: `${cadenceMin} minutes — déclencheur dédié, dernier passage il y a ${depuisMin} min`,
       s: "atteint",
       depuisMin,
     };

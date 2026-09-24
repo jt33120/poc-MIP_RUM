@@ -5,6 +5,8 @@ import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { listApps } from "@/lib/queries";
 import { listUptimeStatus } from "@/lib/queries-uptime";
+import { cadenceTickPubliee } from "@/lib/queries-planifie";
+import { CADENCE_TICK_MIN } from "@/lib/etat-latence";
 import {
   createUptimeCheckAction,
   deleteUptimeCheckAction,
@@ -17,7 +19,7 @@ export const dynamic = "force-dynamic";
 export default async function UptimePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   await requireAdmin();
   const sp = await searchParams;
-  const [apps, checks] = await Promise.all([listApps(), listUptimeStatus()]);
+  const [apps, checks, cadence] = await Promise.all([listApps(), listUptimeStatus(), cadenceTickPubliee()]);
   const error = typeof sp.error === "string";
   // Refus d'URL à l'écriture (P1) : un CODE dans l'URL, un texte relu côté
   // serveur — jamais le texte d'un paramètre affiché tel quel.
@@ -30,7 +32,7 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
         title="Uptime (monitoring synthétique)"
         sub={
           <>
-            Checks HTTP <strong>actifs</strong> exécutés toutes les 5 min par le service{" "}
+            Checks HTTP <strong>actifs</strong> exécutés toutes les {cadence ?? CADENCE_TICK_MIN} min par le service{" "}
             <code className="chip-mono">scheduler</code> — répond à « le site est-il debout même sans
             visiteur ? ». Un échec est confirmé par un second essai ; une bascule UP→DOWN déclenche
             une alerte <code className="chip-mono">critical</code>. Seules les URL publiques sont

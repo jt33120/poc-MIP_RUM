@@ -1,5 +1,5 @@
 // Partie 3 de la vitrine — « Ce qui reste pour un vrai outil de RUM » (plan § 8.2,
-// points R1 à R9 ; rendu par components/presentation/Reste.tsx).
+// points R1 à R9, puis R10 le 24/09/2026 ; rendu par components/presentation/Reste.tsx).
 //
 // /presentation est un chemin PUBLIC, et cette partie dit ce que le POC ne fait pas
 // encore. Elle doit être exacte dans les deux sens : ne pas minimiser une limite,
@@ -41,7 +41,7 @@ import type { PointReste } from "./couverture-controle";
 /** Le document de couverture, tel que les sources le citent. */
 const DOC = "docs/RUM_PARITY_STATUS.md";
 
-/** Les neuf points, dans l'ordre fixe du plan. */
+/** Les dix points, dans l'ordre fixe du plan (R10 ajouté le 24/09/2026). */
 export const POINTS_RESTE: readonly PointReste[] = [
   {
     id: "R1",
@@ -153,6 +153,26 @@ export const POINTS_RESTE: readonly PointReste[] = [
     // 23/09, limite = l'extension), F3 (bancs hors CI), D7 (restauration) ; § 11,
     // étapes 3 à 5.
     sources: ["F1", "F2", "F3", "D7", `${DOC}:567-575`],
+  },
+  {
+    // AJOUTÉ LE 24/09/2026, décision du responsable du produit : la base reste sur
+    // l'offre gratuite, en mode dégradé, et la vitrine doit le dire. Ce n'est pas
+    // un manque du document de couverture (qui ne couvre que P5 à P8) : les
+    // sources sont les fichiers qui règlent et expliquent la cadence ralentie.
+    id: "R10",
+    titre: "Une base dimensionnée pour un vrai produit",
+    manque:
+      "La base tourne sur l'offre gratuite de Neon : 100 heures de calcul par mois. Son épuisement a coupé la production du 24 septembre au 1er octobre 2026 : passé le quota, le calcul reste suspendu jusqu'au mois suivant. Pour tenir, les tâches planifiées et la livraison des alertes passent toutes les 15 minutes au lieu de 5 : une alerte part jusqu'à 15 minutes après sa cause. La collecte continue d'un vrai site suffirait à épuiser le quota.",
+    debloque:
+      "Passer la base sur une offre payante (de l'ordre de 20 à 40 $ par mois avec tous les services), puis remettre les cadences à 5 minutes et la livraison à 15 secondes : deux variables, sans changement de code.",
+    decide: "Le responsable du produit : c'est une ligne de budget.",
+    // Le calcul (quota, veille à 5 min, CU-h par cadence) et le réglage ; la
+    // vitrine lit la cadence effective publiée par le scheduler (etat-latence).
+    sources: [
+      "services/scheduler/README.md:28-39",
+      "packages/backend/jobs/cadence.mjs:6-26",
+      "apps/console/lib/etat-latence.ts:20-28",
+    ],
   },
 ];
 

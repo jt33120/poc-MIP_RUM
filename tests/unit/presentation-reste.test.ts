@@ -1,4 +1,4 @@
-// P**.5 — « Ce qui reste pour un vrai outil de RUM » : les neuf points de la vitrine
+// P**.5 — « Ce qui reste pour un vrai outil de RUM » : les points de la vitrine (neuf, puis R10 le 24/09/2026)
 // (apps/console/lib/presentation-reste.ts) disent ce que dit le relevé, ni moins ni plus.
 //
 // Que chaque source EXISTE est le contrôle n° 4 de couverture-site.test.ts. Ici, ce
@@ -28,8 +28,8 @@ function ligne(id: string): Capacite {
   return c;
 }
 
-describe("les neuf points, dans l'ordre fixe du plan", () => {
-  it("titres exacts, R1 à R9", () => {
+describe("les dix points, dans l'ordre fixe du plan", () => {
+  it("titres exacts, R1 à R10", () => {
     expect(POINTS_RESTE.map((p) => [p.id, p.titre])).toEqual([
       ["R1", "Une recette sur une vraie application"],
       ["R2", "P8.3 — Reprise de l'historique"],
@@ -40,6 +40,7 @@ describe("les neuf points, dans l'ordre fixe du plan", () => {
       ["R7", "Tickets : le connecteur existe, la cible ITSM n'est pas confirmée"],
       ["R8", "Souveraineté et mise en service chez un client"],
       ["R9", "Une chaîne de livraison qui dit vrai"],
+      ["R10", "Une base dimensionnée pour un vrai produit"],
     ]);
   });
 
@@ -53,6 +54,21 @@ describe("les neuf points, dans l'ordre fixe du plan", () => {
     expect(ligne("D9").limite).toContain("n'ont pas été recontrôlés");
     expect(point("R1").manque).toContain("(non recontrôlé)");
     expect(point("R2").manque).toContain("(chiffre non recontrôlé)");
+  });
+});
+
+// R10 (24/09/2026) : la base reste sur l'offre gratuite, décision du responsable
+// du produit, et la vitrine le dit. Ce qui compte : le chiffre du quota, la
+// coupure, la conséquence pour une alerte, et qu'en sortir est une affaire de
+// budget, pas de code.
+describe("R10 — la base gratuite, une limite dite", () => {
+  it("dit le quota, la coupure, la latence qui en découle, et que le déblocage est un budget", () => {
+    const r10 = point("R10");
+    expect(r10.manque).toContain("100 heures de calcul par mois");
+    expect(r10.manque).toContain("1er octobre 2026");
+    expect(r10.manque).toContain("jusqu'à 15 minutes après sa cause");
+    expect(r10.debloque).toContain("sans changement de code");
+    expect(r10.decide).toMatch(/budget/);
   });
 });
 
