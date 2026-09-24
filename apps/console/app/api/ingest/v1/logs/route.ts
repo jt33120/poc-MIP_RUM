@@ -12,6 +12,15 @@ import { relayer } from "@/lib/ingest-relay";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// PLAFOND EXPLICITE de la fonction : 30 s. La chaîne des délais doit rester
+// croissante — collector 4 s (budget dur, 503) < relais 8 s (`DELAIS.relaisMs`)
+// < fonction 30 s. Au pire, une requête enchaîne drapeau (1,5 s), sonde /health
+// (2 s), relais (8 s) puis, sur un repli tardif, l'écriture locale (reprises,
+// verrou) : ~27 s. Sans ce plafond, le défaut du projet (10 s en Hobby, 15 s
+// en Pro hors Fluid) tuerait la fonction AVANT le 503 du relais — un 504
+// FUNCTION_INVOCATION_TIMEOUT muet, sans « relay timeout » au journal.
+// Voir docs/operations/relais-ingestion.md.
+export const maxDuration = 30;
 
 class BadRequestError extends Error {}
 
