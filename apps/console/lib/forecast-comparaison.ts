@@ -21,7 +21,7 @@ import {
   type SourceComparaison,
 } from "./comparaison";
 import { filtersOfQuery } from "./filters";
-import { bornesJourLocal } from "./fuseau";
+import { bornesJourLocal } from "./fuseau-local";
 import { retentionDays } from "./queries-explorer";
 import type { AnalyticsQuery } from "./query-contract";
 
