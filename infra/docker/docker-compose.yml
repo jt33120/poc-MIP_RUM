@@ -1,8 +1,9 @@
-# Backend MIP RUM auto-hébergé — les TROIS services Railway, sur un poste ou un
+# Backend MIP RUM auto-hébergé — les QUATRE services Railway, sur un poste ou un
 # serveur, avec leurs images de production (`services/<x>/Dockerfile`).
 #
 #   db (Postgres 17) ◀── migrate (one-shot) ◀── collector   (profil `collector`)
 #                                            ◀── scheduler   (profil `scheduler`)
+#                                            ◀── notifier    (profil `notifier`)
 #   mcp (profil `mcp`) ──▶ API v1 de la console — jamais la base
 #
 # UN PROFIL PAR SERVICE. `db` et `migrate` n'en ont pas : ils suivent tout
@@ -10,7 +11,10 @@
 #
 #   docker compose run --rm migrate                     la base de dev, migrée
 #   docker compose up -d --build --wait collector       + le collecteur
-#   docker compose --profile tout up -d --build --wait  les trois services
+#   docker compose --profile tout up -d --build --wait  les quatre services
+#
+# SCHEDULER ET NOTIFIER ENSEMBLE (`tout`) : poser SCHEDULER_DELIVERY=off. Sinon
+# le scheduler livre aussi, sans clé Resend, et solde les e-mails `skipped`.
 #
 # LE SCHÉMA EST POSÉ PAR LE MIGRATEUR DE PRODUCTION, plus par un script
 # d'initialisation de Postgres. `initdb.sh` appliquait schema.sql puis chaque
@@ -23,7 +27,7 @@
 # lance ici la commande exacte du pré-déploiement Railway
 # (`node services/scheduler/migrate.mjs`), avec l'image du scheduler ; les
 # autres services ne démarrent qu'après sa sortie EN SUCCÈS. C'est l'ordre que
-# Railway donne au scheduler — et que ce fichier donne aux trois.
+# Railway donne au scheduler — et que ce fichier donne aux autres services.
 #
 # C'EST AUSSI LA BASE DE DÉVELOPPEMENT (README, « Démarrage local » ; l'E2E) :
 # `run --rm migrate`, puis `postgres://postgres:postgres@localhost:5433/mip_rum`.
@@ -141,10 +145,38 @@ services:
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       # Dead-man's switch (https) : vide en local, aucun signal ne part.
       DEADMAN_URL: ${DEADMAN_URL:-}
+      # `off` quand le notifier tourne aussi (voir l'en-tête).
+      SCHEDULER_DELIVERY: ${SCHEDULER_DELIVERY:-on}
     depends_on: *apres-migration
     ports:
       # /health (processus + base), /ready et /metrics (fraîcheur, arriéré ; jeton).
       - "${SCHEDULER_PORT:-4320}:8080"
+    restart: unless-stopped
+    logging: *jsonlog
+
+  notifier:
+    profiles: ["notifier", "tout"]
+    build:
+      context: ../..
+      dockerfile: services/notifier/Dockerfile
+    image: mip-rum/notifier:local
+    environment:
+      DATABASE_URL: *db-url
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Jeton de /ready et /metrics (≥ 32 caractères). Vide : les deux → 404.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      NOTIFIER_INTERVAL_MS: ${NOTIFIER_INTERVAL_MS:-15000}
+      # Vides en local : les e-mails sont soldés `skipped` avec la raison, les
+      # webhooks partent avec leur seul identifiant de livraison.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
+      ALERT_EMAIL_TEST_RECIPIENTS: ${ALERT_EMAIL_TEST_RECIPIENTS:-}
+      WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET:-}
+      TICKET_SECRET_KEY: ${TICKET_SECRET_KEY:-}
+    depends_on: *apres-migration
+    ports:
+      # /health (processus + base), /ready et /metrics (fraîcheur, arriéré ; jeton).
+      - "${NOTIFIER_PORT:-4321}:8080"
     restart: unless-stopped
     logging: *jsonlog
 

@@ -1,0 +1,15 @@
+{
+  "name": "@mip/service-notifier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Livreur des alertes (webhooks signés, e-mail Resend, tickets) — déployé sur Railway",
+  "type": "module",
+  "scripts": {
+    "start": "node worker.mjs"
+  },
+  "dependencies": {
+    "@mip/backend": "workspace:*",
+    "@mip/service-kit": "workspace:*",
+    "pg": "8.21.0"
+  }
+}
