@@ -35,7 +35,10 @@
 //   · WEBHOOK_SIGNING_SECRET     ≥ 32 caractères, signe les webhooks d'alerte ;
 //   · CONSOLE_API_TOKENS         les jetons machine de l'API v1 — la MÊME valeur
 //                                que sur Vercel (le service `api` authentifie) ;
-//   · CONSOLE_API_ALLOWED_ORIGINS  les origines CORS, la même valeur que Vercel.
+//   · CONSOLE_API_ALLOWED_ORIGINS  les origines CORS, la même valeur que Vercel ;
+//   · API_DATABASE_URL           le pooler Neon, rôle `mip_api` (migration v89,
+//                                lecture seule) : mot de passe posé par
+//                                `\password mip_api` (runbook, « Le rôle de l'API »).
 //
 // Ce que `config pull` rend réellement, vérifié ici : `dockerfilePath` et
 // `watchPatterns` sortent dans un objet `build`, `preDeploy` en champ de premier
@@ -126,6 +129,10 @@ const SURVEILLE_API = [
   "pnpm-lock.yaml", "/pnpm-workspace.yaml", "/package.json", "/.dockerignore",
   "scripts/ci/deploy-fidele.mjs",
 ];
+
+// Le port d'écoute du service `api`, fixé : `mcp` le joint par le réseau privé,
+// où Railway ne publie que le nom (`RAILWAY_PRIVATE_DOMAIN`), pas le port.
+const PORT_API = 8080;
 
 // 20 s, comme le scheduler : une passe n'entame plus de livraison après 10 s
 // (`BUDGET_PASSE_MS`), chaque envoi est borné à 10 s ; 20 s couvrent la passe
@@ -225,9 +232,11 @@ export default defineRailway((ctx) => {
 
   // ─── 2 · Restitution ───────────────────────────────────────────────────────
   // P4 — L'API DE LECTURE v1 POUR LES MACHINES, en lecture seule, sans session
-  // (README du service). Deux répliques sans état. Base : la chaîne propriétaire
-  // en attendant `mip_api` (v89, lecture seule) ; le service ne sert de toute façon
-  // aucune écriture (405). Domaine généré à la main après le premier déploiement.
+  // (README du service). Deux répliques sans état. Base : le rôle `mip_api`
+  // (v89) — aucune écriture possible, ni aucun secret lisible, même si le code
+  // se trompait ; le service, lui, répond 405 à toute écriture. Port FIXE :
+  // `mcp` le joint par le réseau privé. Domaine généré à la main après le
+  // premier déploiement (le relais de la console, #292, en a besoin).
   const api = service("api", {
     source: pocMIP_RUM,
     build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/api/Dockerfile", watchPatterns: SURVEILLE_API },
@@ -237,7 +246,8 @@ export default defineRailway((ctx) => {
     replicas: { [REGION]: 2 },
     deploy: { restartPolicyType: "ALWAYS", drainingSeconds: 15 },
     env: {
-      DATABASE_URL: ctx.shared.DATABASE_URL,
+      DATABASE_URL: ctx.shared.API_DATABASE_URL,
+      PORT: String(PORT_API),
       CONSOLE_API_TOKENS: ctx.shared.CONSOLE_API_TOKENS,
       CONSOLE_API_ALLOWED_ORIGINS: ctx.shared.CONSOLE_API_ALLOWED_ORIGINS,
       METRICS_TOKEN: ctx.shared.METRICS_TOKEN,
@@ -253,7 +263,18 @@ export default defineRailway((ctx) => {
     healthcheck: "/health",
     healthcheckTimeout: 120,
     replicas: { [REGION]: 1 },
-    env: { MIP_CONSOLE_URL: preserve(), NODE_ENV: preserve(), PORT: preserve() },
+    env: {
+      // P4 — L'API PAR LE RÉSEAU PRIVÉ : `api.railway.internal`, en HTTP (pas de
+      // TLS entre services Railway, le trafic ne quitte pas le projet). Un appel
+      // d'outil ne passe plus par Internet ni par la console. `mcp` refuse de
+      // démarrer si l'hôte n'est pas privé (`origineApi`, packages/mcp-tools).
+      MIP_API_HOST: api.env.RAILWAY_PRIVATE_DOMAIN,
+      MIP_API_PORT: String(PORT_API),
+      // Le repli, et le chemin d'avant P4 : sans MIP_API_HOST, `mcp` appelle la console.
+      MIP_CONSOLE_URL: preserve(),
+      NODE_ENV: preserve(),
+      PORT: preserve(),
+    },
   });
 
   // ─── 3 · Traitements ───────────────────────────────────────────────────────
