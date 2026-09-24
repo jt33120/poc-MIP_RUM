@@ -4,17 +4,20 @@
 // POURQUOI UN BUNDLE. Les lectures de l'API v1 vivent dans la console
 // (`apps/console/lib/queries*`, en TypeScript, avec l'alias `@/`). Les déplacer
 // dans un paquet est le travail de la piste C ; en attendant, esbuild compile ce
-// graphe tel quel, avec trois substitutions (`shims/`) :
+// graphe tel quel, avec quatre substitutions (`shims/`) :
 //   next/server, next/headers   → NextRequest/NextResponse/after, sans Next ;
 //   lib/auth.ts                 → aucune session : l'API publique est au jeton ;
-//   lib/db.ts, lib/log-forward.ts → le pool du kit (`mip-api`), le journal du service.
+//   lib/db.ts, lib/log-forward.ts → le pool du kit (`mip-api`), le journal du service ;
+//   lib/api-relay.ts            → aucun relais : ce service EST la cible du relais.
 // Seul `pg` reste externe (installé dans l'image).
 //
 // LES GARDES, APRÈS CONSTRUCTION — un bundle qui les viole n'est pas écrit :
 //   · ni `apps/console/lib/auth.ts`, ni `jose` dans le métafichier : le secret et
 //     la vérification des sessions de la console ne doivent pas pouvoir entrer ici ;
 //   · ni `dev-secret-mip-rum` (le secret de session de développement) dans le code ;
-//   · aucun module `next/…` réel.
+//   · aucun module `next/…` réel ;
+//   · ni le relais de la console, ni `lib/platform-flag.ts` : le service ne
+//     relaie pas, et `mip_api` n'a pas à lire `platform_flag`.
 import { build } from "esbuild";
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -45,6 +48,7 @@ const SUBSTITUTIONS = new Map([
   [path.join(CONSOLE, "lib", "auth"), path.join(ICI, "shims", "auth.mjs")],
   [path.join(CONSOLE, "lib", "db"), path.join(ICI, "shims", "db.mjs")],
   [path.join(CONSOLE, "lib", "log-forward"), path.join(ICI, "shims", "log-forward.mjs")],
+  [path.join(CONSOLE, "lib", "api-relay"), path.join(ICI, "shims", "api-relay.mjs")],
 ]);
 
 const substitutions = {
@@ -52,7 +56,7 @@ const substitutions = {
   setup(b) {
     b.onResolve({ filter: /^next\/server$/ }, () => ({ path: path.join(ICI, "shims", "next-server.mjs") }));
     b.onResolve({ filter: /^next\/headers$/ }, () => ({ path: path.join(ICI, "shims", "next-headers.mjs") }));
-    b.onResolve({ filter: /(^|\/)(auth|db|log-forward)(\.ts)?$/ }, (args) => {
+    b.onResolve({ filter: /(^|\/)(auth|db|log-forward|api-relay)(\.ts)?$/ }, (args) => {
       if (!args.importer.startsWith(CONSOLE)) return undefined;
       const brut = args.path.replace(/\.ts$/, "");
       const absolu = brut.startsWith("@/") ? path.join(CONSOLE, brut.slice(2)) : path.resolve(args.resolveDir, brut);
@@ -82,6 +86,9 @@ export function fautesDuBundle(entrees, code) {
   if (normalisees.some((e) => /node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?jose\//.test(e))) fautes.push("jose est dans le bundle");
   if (normalisees.some((e) => /node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?next\//.test(e))) fautes.push("un module next/ réel est dans le bundle");
   if (code.includes("dev-secret-mip-rum")) fautes.push("le secret de session de développement est dans le bundle");
+  if (normalisees.some((e) => /apps\/console\/lib\/(api-relay|platform-flag)\.ts$/.test(e))) {
+    fautes.push("le relais de la console (ou sa lecture de platform_flag) est dans le bundle : le service est la cible du relais");
+  }
   return fautes;
 }
 

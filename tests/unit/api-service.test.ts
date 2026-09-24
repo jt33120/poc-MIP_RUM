@@ -138,6 +138,9 @@ describe("le bundle — ce qu'il ne doit jamais contenir", () => {
     expect(fautesDuBundle(["node_modules/.pnpm/jose@6.0.0/node_modules/jose/dist/index.js"], "")).toHaveLength(1);
     expect(fautesDuBundle(["node_modules/next/dist/server/web/exports.js"], "")).toHaveLength(1);
     expect(fautesDuBundle([], 'const s = "dev-secret-mip-rum";')).toHaveLength(1);
+    // Le service est la CIBLE du relais : ni le relais, ni sa lecture du drapeau.
+    expect(fautesDuBundle(["apps/console/lib/api-relay.ts"], "")).toHaveLength(1);
+    expect(fautesDuBundle(["apps/console/lib/platform-flag.ts"], "")).toHaveLength(1);
   });
 
   it("le vrai bundle se construit, sans aucune de ces pièces", async () => {
