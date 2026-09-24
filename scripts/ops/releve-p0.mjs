@@ -92,6 +92,19 @@ const RELEVES = [
             group by 1, 2 order by 3 desc`,
   },
   {
+    titre: "Taille de la base, et des objets volumineux",
+    decide: "ADR-0009 / ADR-0014 — sortir le rejeu de Postgres au-delà de la moitié du stockage (0,5 Go sur l'offre gratuite).",
+    sql: `select pg_size_pretty(pg_database_size(current_database())) as base,
+                 pg_size_pretty(pg_total_relation_size('replay_chunk')) as rejeu,
+                 pg_size_pretty(pg_total_relation_size('sourcemap')) as source_maps,
+                 pg_size_pretty(pg_total_relation_size('rum_event')) as evenements`,
+  },
+  {
+    titre: "Cadence publiée par le scheduler",
+    decide: "ADR-0014 — la vitrine lit cette valeur ; absente avant le premier tick d'un scheduler à jour.",
+    sql: `select key, value, updated_at, updated_by from platform_flag order by key`,
+  },
+  {
     titre: "Plafond de connexions",
     decide: "C0 — la somme des pools doit rester sous ce chiffre.",
     sql: `select setting as max_connections from pg_settings where name = 'max_connections'`,

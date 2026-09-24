@@ -123,16 +123,19 @@ En cas de désaccord entre ces documents, [docs/RUM_PARITY_STATUS.md](docs/RUM_P
 |---|---|
 | [docs/RUM_PARITY_STATUS.md](docs/RUM_PARITY_STATUS.md) | **Document de couverture** : capacité par capacité, son verdict, sa preuve et sa limite (lots P5 à P8) |
 | [docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md) | Ce que chaque service exécute en production, et pourquoi il existe |
+| [docs/architecture/overview.md](docs/architecture/overview.md) · [data-flow.md](docs/architecture/data-flow.md) | **Architecture du backend** : la cible (services Railway par responsabilité, console sans base à M4), l'état de chaque service, qui détient quel secret ; le trajet d'une mesure et celui d'une alerte |
+| [docs/architecture/adr/](docs/architecture/adr/README.md) | **Décisions d'architecture** : rôles, migrations, relais, MCP sans base, IaC, scheduler unique, blobs en base, base gratuite |
+| [docs/operations/runbook.md](docs/operations/runbook.md) | **Exploitation** : déployer, revenir en arrière, rejouer un travail, tenir le quota de la base gratuite, tourner un secret, rafraîchir le GeoIP, restaurer sans ressusciter des données effacées |
 | [docs/context/](docs/context/) | **Contexte produit** : maturité par service (RUM, supervision IA, Logs), grille d'évaluation, écarts et critères de sortie |
-| [docs/INTEGRATION.md](docs/INTEGRATION.md) | Guide d'intégration client : snippet, options, consent mode, CSP, RGPD, dépannage |
+| [docs/INTEGRATION.md](docs/INTEGRATION.md) · [docs/integration/sourcemaps-ci.md](docs/integration/sourcemaps-ci.md) | Guide d'intégration client : snippet, options, consent mode, CSP, RGPD, dépannage · envoyer ses source maps depuis GitHub Actions ou GitLab CI |
 | [packages/agent-node/README.md](packages/agent-node/README.md) | Agent backend Node.js (`node -r @mip/agent-node/register`) |
 | [packages/rum-mobile/README.md](packages/rum-mobile/README.md) | SDK React Native (crashes, écrans, réseau, événements) |
 | [docs/API_CONSOLE.md](docs/API_CONSOLE.md) · [docs/RUM_READ_API.md](docs/RUM_READ_API.md) | API de lecture v1 (ITSM/CI-CD) + résumé partenaire |
-| [docs/MULTITENANT.md](docs/MULTITENANT.md) · [docs/ALERTING.md](docs/ALERTING.md) | Multi-tenant / RBAC · alerting (webhook/Slack ; e-mail à brancher) |
+| [docs/MULTITENANT.md](docs/MULTITENANT.md) · [docs/ALERTING.md](docs/ALERTING.md) | Multi-tenant / RBAC · alerting (webhook/Slack ; e-mail par le service `notifier`, Resend en mode test — [services/notifier/README.md](services/notifier/README.md)) |
 | [docs/CONFORMITE.md](docs/CONFORMITE.md) · [docs/DPA.md](docs/DPA.md) | Conformité RGPD (résidence UE, DSAR, scrub PII) · modèle de DPA (art. 28) |
 | [docs/DOCUMENTS-HORS-DEPOT.md](docs/DOCUMENTS-HORS-DEPOT.md) | **Ce qui n'est pas ici** : documents commerciaux (offre, démo, scan marché) et documents d'un client nommé. Présents sur le poste, hors dépôt, et listés avec leur contenu |
 | [docs/LIMITES.md](docs/LIMITES.md) | Limites du produit : liste du 10/06/2026 (v0.1 à v0.3), mise à jour P8.8 du 18/09/2026 |
-| [DEPLOY.md](DEPLOY.md) | Déploiement (Neon + Railway + Vercel), snippet et recette — **en partie périmé** : décrit encore le service Railway `ingest`, supprimé le 21/09/2026, et lui attribue les migrations, reprises par le `scheduler` ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
+| [DEPLOY.md](DEPLOY.md) | Déploiement (Neon + Railway + Vercel), snippet et recette — **en partie périmé** : décrit encore le service Railway `ingest`, supprimé le 21/09/2026, et lui attribue les migrations, reprises par le `scheduler`. L'exploitation est dans le [runbook](docs/operations/runbook.md) |
 | [BUILD_LOG.md](BUILD_LOG.md) | Journal factuel du build (valeurs réelles mesurées, pièges, décisions) |
 | [CHANGELOG.md](CHANGELOG.md) | Historique des versions |
 | [docs/archive/](docs/archive/) | Rapports de sprint & plans historiques (PLAN, ROADMAP_V02/V03, RAPPORT_NUIT/V04/V05) — non maintenus, valeur d'archive |
