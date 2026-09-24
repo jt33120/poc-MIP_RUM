@@ -39,6 +39,7 @@ import {
   verifierJetonUpload,
 } from "../../packages/backend/lib/sourcemap-upload.mjs";
 import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
+import { effacerAudit } from "../fixtures/effacer-audit";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const urlPreV71 = process.env.SQL_TEST_PRE_V71_DATABASE_URL;
@@ -66,7 +67,7 @@ function migrations(maxVersion = Number.POSITIVE_INFINITY): string[] {
 }
 
 async function nettoyer(db: pg.Pool) {
-  await db.query("delete from audit_log where action like 'sourcemap%' and detail like '%p54-app-%'");
+  await effacerAudit(db, "action like 'sourcemap%' and detail like '%p54-app-%'");
   const tables = ["sourcemap_upload_token", "sourcemap", "rum_error", "rum_pageview", "rum_session"];
   for (const table of tables) {
     if ((await db.query("select to_regclass($1) is not null as present", [`public.${table}`])).rows[0].present) {

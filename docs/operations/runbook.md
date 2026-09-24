@@ -13,6 +13,7 @@
 | Journaux d'un service | `railway logs --service <scheduler\|mcp\|collector\|notifier> --lines 200` (build : `--build`) |
 | État d'un service | `curl https://<domaine>/live` (processus) · `/health` (processus + base — ne pas le sonder de l'extérieur, il réveille la base) · `/ready` et `/metrics` sous `Authorization: Bearer $METRICS_TOKEN` |
 | Déploiements Railway | `railway deployment list --service <nom>` |
+| Qui a fait quoi dans la console | table `audit_log` (écran `/admin/audit`) — **en ajout seul** depuis migration-v90 : un `update`, un `delete` ou un `truncate` y rend 42501. Rien ne l'efface, pas même l'effacement d'un client. |
 | Déploiements et journaux Vercel | tableau de bord Vercel, projet `mip-rum-console` (ou le MCP Vercel) |
 | Les applies d'infrastructure | GitHub → Actions → « Railway IaC » (environnement `railway-production`, relecteur requis) |
 

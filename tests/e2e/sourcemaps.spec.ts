@@ -11,6 +11,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import pg from "pg";
+import { effacerAudit } from "../fixtures/effacer-audit";
 
 const CONSOLE = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
 const INGEST = process.env.PLAYWRIGHT_INGEST_URL ?? "http://localhost:4318";
@@ -51,7 +52,7 @@ function bcryptHash(password: string): string {
 }
 
 async function nettoyer() {
-  await pool.query("delete from audit_log where detail like $1", [`%${APP}%`]);
+  await effacerAudit(pool, "detail like $1", [`%${APP}%`]);
   for (const table of ["sourcemap_upload_token", "sourcemap", "rum_error", "rum_session"]) {
     await pool.query(`delete from ${table} where app_id = $1`, [APP]);
   }
