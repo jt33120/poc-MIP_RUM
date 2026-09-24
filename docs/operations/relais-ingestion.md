@@ -31,7 +31,10 @@ le collector, contrat de parité `tests/contract/ingest-parity.test.ts`) :
   là où `req.json()` lisait jusqu'au plafond Vercel. `fetch` et `sendBeacon` annoncent une
   longueur : le SDK n'est pas concerné ;
 - un JSON précédé d'une **BOM UTF-8** rend **400** (`req.json()` la retirait). Le SDK n'en
-  envoie pas ; la tolérer serait à faire sur les DEUX ports à la fois (cas de parité dédié).
+  envoie pas ; la tolérer serait à faire sur les DEUX ports à la fois (cas de parité dédié) ;
+- un **rejeu** sans en-tête `x-mip-seq`, ou avec une valeur qui n'est pas un entier décimal,
+  rend **400**. Il était accepté comme séquence 0 (`Number(null) === 0`) et pouvait écraser
+  en silence le vrai premier morceau. Le SDK envoie toujours `x-mip-seq`.
 
 ## Avant de monter le pourcentage
 
@@ -149,8 +152,13 @@ update platform_flag set value = '0', updated_by = '<prénom>' where key = 'inge
 
 **collector 4 s < relais 8 s < fonction 30 s.**
 
-- Le collector a un budget **dur** de 4 s par requête : au-delà, il rend 503 sans rien
-  committer.
+- Le collector a un budget **dur** de 4 s par requête : au-delà, il rend 503, et presque
+  toujours **rien n'est commité**. Une exception, irréductible : un COMMIT déjà arrivé au
+  serveur dont la réponse se perd en route. Personne ne sait alors s'il a validé ; le
+  collector rend 503 `ingestion outcome unknown` et journalise en erreur
+  `deadline: commit outcome unknown, replay may duplicate`. C'est la **seule** source
+  possible de doublons de logs, et elle se compte dans les journaux (1 à 2 cas sur 42 au
+  banc, sous 10 s de latence injectée : `scripts/bench/preuve-echeance-collecteur.mjs`).
 - Le relais attend 8 s (`DELAIS.relaisMs`) : le collector répond donc toujours avant, 503
   compris. Au-delà, 503 + `retry-after: 5`.
 - Les quatre routes d'ingestion déclarent `export const maxDuration = 30`. Au pire, une
@@ -204,7 +212,10 @@ compte le beacon deux fois.
 - 5 échecs en 30 s font contourner le relais pendant 60 s. Comptent comme échecs : délai
   dépassé, erreur réseau, réponse **non signée** 404, 405 ou ≥ 500.
 - Une réponse **signée** du collector (400, 403, 404, 429, 500, 503…) n'est **pas** un
-  échec : il a répondu, vite, et le disjoncteur ne protège que de l'attente.
+  échec : il a répondu, et le disjoncteur ne protège que de l'attente. Conséquence à
+  connaître : si la **base** du collector tombe, le disjoncteur ne s'ouvre jamais —
+  chaque beacon attend le 503 signé du collector (au plus ≈ 4,75 s, budget + grâce du
+  COMMIT). Le geste, dans ce cas, c'est `platform_flag` à `0`.
 - L'état vit **en mémoire d'instance**. Chaque instance serverless Vercel a le sien, qui
   naît fermé et meurt avec elle. Il protège une instance contre 8 s d'attente par beacon.
   **Ce n'est pas un coupe-circuit global** : le coupe-circuit global, c'est
