@@ -234,8 +234,11 @@ export async function withAppIngestTransaction(pool, appId, travail, opts = {}) 
 /**
  * Délai laissé au COMMIT, au-delà de l'échéance, pour rendre son verdict.
  * Budget de 4 s + 0,75 s : la réponse part toujours avant 5 s, loin des 8 s du
- * relais. Le serveur, lui, a déjà tué toute transaction plus vieille que le
- * budget (`transaction_timeout`) : un COMMIT tardif échoue au lieu de valider.
+ * relais. Le serveur coupe lui aussi une transaction trop longue
+ * (`transaction_timeout`), mais PEU APRÈS l'échéance, pas exactement à elle : le
+ * délai part du SET, qui arrive au serveur une latence aller après l'échéance
+ * calculée ici (vérifié sur PG 17 le 24/09). D'où cette grâce côté client, et le
+ * cas « issue inconnue » quand la réponse d'un COMMIT déjà arrivé se perd.
  */
 export const GRACE_COMMIT_MS = 750;
 
