@@ -1,0 +1,23 @@
+{
+  "name": "@mip/service-console-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "console-api : le backend de la console (piste C). Point d'entrée mince sur le kit ; la logique vit dans @mip/console-api, compilée dans un bundle.",
+  "type": "module",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/server.mjs"
+  },
+  "dependencies": {
+    "pg": "8.21.0"
+  },
+  "devDependencies": {
+    "@mip/console-api": "workspace:*",
+    "@mip/console-contract": "workspace:*",
+    "@mip/service-kit": "workspace:*",
+    "esbuild": "0.28.0"
+  }
+}

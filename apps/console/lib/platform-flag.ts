@@ -22,8 +22,14 @@
 // L'échec lui aussi est mis en cache 30 s : une base coupée ne doit pas être
 // relancée à chaque beacon (ni rallonger chaque beacon du délai de connexion).
 // Et la lecture est bornée (`DELAI_LECTURE_MS`) : au-delà, défaut.
+import { createLogger } from "@mip/backend/shared/log.mjs";
 import { pool } from "./db";
-import { log } from "./ingest";
+
+// Son propre journal, pas celui de `lib/ingest.ts` : depuis P4, l'API de lecture
+// lit aussi ce module (relais de l'API v1), et importer l'ingestion de la console
+// pour une ligne de journal ferait entrer tout son module — et son pool
+// d'authentification — dans le service `api`, qui compile ces routes.
+const log = createLogger("platform-flag");
 
 /** Durée de vie d'une valeur lue (ou d'un échec de lecture). */
 export const TTL_DRAPEAU_MS = 30_000;
@@ -32,6 +38,8 @@ export const DELAI_LECTURE_MS = 1_500;
 
 /** Clé du pourcentage de relais d'ingestion (P3). */
 export const CLE_RELAIS = "ingest_relay_pct";
+/** Clé du pourcentage de relais de l'API de lecture v1 vers le service `api` (P4). */
+export const CLE_RELAIS_API = "api_relay_pct";
 
 type Requeteur = (sql: string, params: unknown[]) => Promise<{ rows: Array<{ value: unknown }> }>;
 
@@ -155,6 +163,16 @@ export async function pourcentageRelais(): Promise<number> {
     log.warn("platform_flag : valeur de pourcentage invalide, défaut d'environnement", { key: CLE_RELAIS });
   }
   return pct ?? pourcentageParDefaut();
+}
+
+/**
+ * Pourcentage de relais de l'API v1 (P4) : la base si elle répond avec une valeur
+ * valide, sinon `API_RELAY_PCT`, sinon 0. Ne lève jamais. Même lecteur, même
+ * cache de 30 s que la collecte : un coupe-circuit par signal, un geste chacun.
+ */
+export async function pourcentageRelaisApi(): Promise<number> {
+  const pct = lirePourcentage(await lecteur.lire(CLE_RELAIS_API));
+  return pct ?? lirePourcentage(process.env.API_RELAY_PCT) ?? 0;
 }
 
 /** Tests seulement : oublie les valeurs en cache. */
