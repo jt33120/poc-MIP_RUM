@@ -18,7 +18,11 @@ import { fmtDate } from "./format";
 import type { Statut } from "./specs";
 
 /** Résultat d'une lecture de l'état du planificateur. */
-export type LecturePlanifie = { etat: "lu"; date: Date | null } | { etat: "illisible" };
+/**
+ * `cadenceMin` : la cadence EFFECTIVE du tick, publiée par le scheduler
+ * (`platform_flag.scheduler_tick_min`) ; absente avant sa première publication.
+ */
+export type LecturePlanifie = { etat: "lu"; date: Date | null; cadenceMin?: number | null } | { etat: "illisible" };
 
 export type Gravite = "bloquant" | "limite";
 
@@ -75,6 +79,6 @@ export function volatiles(lecture: LecturePlanifie, maintenant: number = Date.no
  */
 export function latenceDepuis(lecture: LecturePlanifie, maintenant: number): { reel: string; s: Statut } {
   if (lecture.etat === "illisible") return { reel: NON_ETABLI_PLANIFIE, s: "non-mesure" };
-  const { reel, s } = ligneLatence(lecture.date, maintenant);
+  const { reel, s } = ligneLatence(lecture.date, maintenant, lecture.cadenceMin ?? undefined);
   return { reel, s };
 }

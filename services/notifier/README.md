@@ -18,8 +18,8 @@
 
 | Boucle | Quand | Étapes |
 |---|---|---|
-| `livraison` | toutes les 15 s (`NOTIFIER_INTERVAL_MS`), la première au démarrage | `route_error_issue_notifications` (outbox des issues → `alert_event` + livraisons), `dispatch_alerts` (webhooks, e-mails), `dispatch_tickets` (P8.6) |
-| `reconciliation` | toutes les heures | `reconcile_alert_deliveries` (livraisons `sent` de l'ère pg_net) |
+| `livraison` | toutes les 15 s (`NOTIFIER_INTERVAL_MS`) — sur la base gratuite, toutes les 15 min alignées 45 s après le tick —, la première au démarrage | `route_error_issue_notifications` (outbox des issues → `alert_event` + livraisons), `dispatch_alerts` (webhooks, e-mails), `dispatch_tickets` (P8.6) |
+| `reconciliation` | à HH:00:50 | `reconcile_alert_deliveries` (livraisons `sent` de l'ère pg_net) |
 
 Une passe n'entame plus de livraison au-delà de 10 s (`BUDGET_PASSE_MS`) : ce qui reste part 15 s plus tard, et le drainage d'un redéploiement couvre toujours la passe en cours.
 
@@ -48,7 +48,7 @@ Toute autre route : 404.
 |---|---|---|---|
 | `DATABASE_URL` | **oui** (secret) | — | Postgres. Pas de repli sur un Postgres local. |
 | `PGPOOL_MAX` | non | 2 | une livraison à la fois, plus les sondes |
-| `NOTIFIER_INTERVAL_MS` | non | 15000 | délai entre deux passes (5 000 à 3 600 000) — voir « Coût » |
+| `NOTIFIER_INTERVAL_MS` | non | 15000 | délai entre deux passes (5 000 à 3 600 000) ; dès 300 000, passes alignées sur le tick, un diviseur de l'heure — **900000 sur la base gratuite**, voir « Coût » |
 | `RESEND_API_KEY` | non (secret) | — | clé Resend, droit « Sending access » seul ; absente : e-mails soldés `skipped` |
 | `ALERT_EMAIL_FROM` | avec la clé | — | expéditeur ; `@resend.dev` exige la liste de test |
 | `ALERT_EMAIL_TEST_RECIPIENTS` | avec `@resend.dev` | — | seuls destinataires servis, séparés par des virgules |
@@ -61,7 +61,11 @@ Toute autre route : 404.
 
 ## Coût
 
-Quatre passes par minute gardent le compute Neon éveillé en permanence (veille après 5 min sans requête) : ~180 CU-h par mois à 0,25 CU, au-delà des 100 CU-h du plan Free **à lui seul** — l'incident du 24/09/2026. Sur Launch, ~19 $ par mois, dont l'essentiel est déjà payé par le tick du scheduler. `NOTIFIER_INTERVAL_MS=300000` rend la latence du scheduler et laisse la base dormir entre deux ticks.
+Quatre passes par minute gardent le compute Neon éveillé en permanence (veille après 5 min sans requête) : ~180 CU-h par mois à 0,25 CU, au-delà des 100 CU-h de l'offre gratuite **à lui seul** — l'incident du 24/09/2026.
+
+**Sur la base gratuite (décision du 24/09/2026) : `NOTIFIER_INTERVAL_MS=900000`.** Dès 5 minutes d'intervalle, les passes s'**alignent** sur la grille du scheduler, 45 s après son tick (`prochainePasseAlignee`) : le tick réveille la base à :00 et met les livraisons en file, le notifier les envoie à :00:45, dans la même fenêtre d'éveil. La réconciliation horaire tombe à HH:00:50, pour la même raison. Un intervalle aligné doit diviser l'heure (sinon refus de démarrer). Calcul et limites : README du scheduler, « Base gratuite ».
+
+Sur une offre payante (Neon Launch), 15 s coûtent ~19 $ par mois, dont l'essentiel est déjà payé par le reste de la plateforme.
 
 ## Sûreté multi-réplique
 

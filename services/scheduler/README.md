@@ -17,7 +17,7 @@
 
 | Cadence | Quand (UTC) | Étapes | Bail |
 |---|---|---|---|
-| `tick` | :00, :05, :10… (+ un passage au démarrage) | `check_alerts`, `route_error_issue_notifications`, `check_slo_burn`, uptime, `dispatch_alerts`, `dispatch_tickets`, `reconcile_deliveries` — avec `SCHEDULER_DELIVERY=off` : `check_alerts`, `check_slo_burn`, uptime seulement | 600 s |
+| `tick` | :00, :05, :10… — ou :00, :15, :30, :45 avec `SCHEDULER_TICK_MIN=15` (+ un passage au démarrage) | `check_alerts`, `route_error_issue_notifications`, `check_slo_burn`, uptime, `dispatch_alerts`, `dispatch_tickets`, `reconcile_deliveries` — avec `SCHEDULER_DELIVERY=off` : `check_alerts`, `check_slo_burn`, uptime seulement | 600 s |
 | `horaire` | HH:05 | `refresh_rum_rollups(26)`, `refresh_metric_histogram(26)`, `check_new_errors`, `check_ai_op_anomalies`, notes historiques | 900 s |
 | `quotidien` | 03:17 | `purge_rum_tenants(30)`, `meter_tenant_usage` | 3 600 s |
 
@@ -25,12 +25,27 @@
 
 Chaque étape SQL est bornée par un `statement_timeout` posé **dans sa transaction** (`set_config(…, true)`, jamais en `SET` de session : le pooler Neon le perdrait) — 60 s par défaut, 5 min pour les pré-agrégats et le comptage, **30 min pour la purge** (`DELAIS_ETAPES_MS`, `packages/backend/jobs/planifie.mjs`). La somme des délais d'une cadence reste sous la durée de son bail. Une étape en échec n'annule pas les suivantes ; elle part au journal en `error` **avec sa pile complète**.
 
+## Base gratuite : la cadence ralentie
+
+**Décision du 24/09/2026 : la base reste sur l'offre gratuite de Neon, en mode dégradé.** Cette offre donne 100 heures de calcul (CU-h) par mois, et Neon n'endort le calcul qu'après 5 minutes sans requête. Un tick toutes les 5 minutes le gardait donc éveillé en permanence : 110 CU-h consommées au 24/09, calcul suspendu jusqu'au 1er du mois suivant, production à l'arrêt.
+
+| Tick | Base éveillée | Calcul par mois (0,25 CU) | Latence d'alerte |
+|---|---|---|---|
+| 5 min (visé) | en permanence | ~180 CU-h — **au-delà du quota** | ≤ 5 min |
+| **15 min (base gratuite)** | ~5,5 min par passage, soit ~37 % du temps | **~65 CU-h**, le reste pour la collecte et la console | ≤ 15 min |
+
+`SCHEDULER_TICK_MIN=15`, et le notifier sur la même grille (`NOTIFIER_INTERVAL_MS=900000`, 45 s après le tick) : un seul réveil de la base pour les deux services. Le passage horaire (HH:05) et le quotidien (03:17) tombent dans la fenêtre où le tick de :00 ou de :15 l'a déjà réveillée. Le scheduler **publie** sa cadence (`platform_flag.scheduler_tick_min`) : la vitrine affiche « 15 minutes » et dit pourquoi, au lieu de la cible.
+
+L'offre gratuite a une seconde limite, que la cadence ne règle pas : **0,5 Go de stockage**. Relevé par l'API Neon le 24/09/2026 : 307 Mio occupés sur 512 (60 %). La purge de rétention (30 jours, quotidienne) borne la télémétrie ; le rejeu des sessions, stocké en base (ADR-0009), est ce qui la remplirait le premier.
+
+Ce que ça coûte, à dire : une alerte part jusqu'à 15 minutes après sa cause ; une règle dont la fenêtre est plus courte que le tick n'évalue qu'une partie du temps ; les sondes uptime passent toutes les 15 minutes. Et la collecte d'un vrai site, qui réveille la base dès qu'un visiteur arrive, suffit à épuiser le quota. **Pour un vrai produit RUM : offre payante** (Neon Launch, ~0,11 $ par CU-h sans minimum, 20 à 40 $ par mois avec tous les services), `SCHEDULER_TICK_MIN=5`, `NOTIFIER_INTERVAL_MS=15000` — deux variables, aucun code.
+
 ## Routes et sondes
 
 | Route | Exposition | Sens |
 |---|---|---|
 | `GET /health` | réseau privé | processus vivant **et** base joignable (`select 1`, 2 s). **C'est la sonde Railway.** « Jamais exécuté » et « bail tenu ailleurs » y sont **sains** : pendant un redéploiement, l'instance sortante tient encore le bail, et une sonde de fraîcheur ferait échouer le déploiement qui doit la remplacer. |
-| `GET /ready` | jeton `METRICS_TOKEN` (sinon 404) | 503 dès SIGTERM ; sinon **fraîcheur** de chaque cadence (battement en base, tolérances : tick 15 min, horaire 2 h, quotidien 26 h, comptées depuis le démarrage pour une cadence jamais exécutée) et **arriéré** de livraisons (`queued` plus vieilles que 15 min = bloquées). Supervision seulement. |
+| `GET /ready` | jeton `METRICS_TOKEN` (sinon 404) | 503 dès SIGTERM ; sinon **fraîcheur** de chaque cadence (battement en base, tolérances : tick trois passages — 15 min, 45 à 15 min de cadence —, horaire 2 h, quotidien 26 h, comptées depuis le démarrage pour une cadence jamais exécutée) et **arriéré** de livraisons (`queued` plus vieilles que 15 min = bloquées). Supervision seulement. |
 | `GET /metrics` | jeton `METRICS_TOKEN` (sinon 404) | Prometheus : `scheduler_job_runs_total{job,result}`, `scheduler_step_failures_total{job,step}`, `scheduler_heartbeat_age_seconds{job}`, `scheduler_backlog_deliveries`, `scheduler_job_last_duration_seconds{job}`, pool, mémoire. |
 
 Toute autre route : 404. (`/status`, sans jeton, a disparu : son contenu est dans `/ready`.)
@@ -52,6 +67,7 @@ Toute autre route : 404. (`/status`, sans jeton, a disparu : son contenu est dan
 | `METRICS_TOKEN` | non (secret, ≥ 32 car.) | — | jeton de `/ready` et `/metrics` ; absent : 404 |
 | `DEADMAN_URL` | non (secret, `https:`) | — | dead-man's switch ; absent : aucun signal |
 | `SCHEDULER_DELIVERY` | non | `on` | `off` : le tick ne livre plus (notifier). Retour arrière : `on` |
+| `SCHEDULER_TICK_MIN` | non | `5` | cadence du tick : 5, 10, 15, 20 ou 30 ; **15 sur la base gratuite** (voir plus haut) |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non, **à poser** | 10 hors Railway, **0 sur Railway** | délai SIGTERM → SIGKILL ; 15 à 30 |
 | `RAILWAY_DEPLOYMENT_ID`, `RAILWAY_REPLICA_ID` | fournies par Railway | — | titulaire du bail : `${RAILWAY_DEPLOYMENT_ID}:${RAILWAY_REPLICA_ID}` |
 | `MIGRATION_DATABASE_URL` | non | — | pré-déploiement seulement (connexion directe pour les `predeploy-vNN`) |

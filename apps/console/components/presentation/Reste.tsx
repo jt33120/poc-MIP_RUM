@@ -1,6 +1,6 @@
 // Partie 3 de la vitrine — « Ce qui reste pour un vrai outil de RUM » (plan § 8.2, PS10).
 //
-// Une carte par point de lib/presentation-reste.ts (R1 à R9), dans l'ordre fixe du
+// Une carte par point de lib/presentation-reste.ts (R1 à R10), dans l'ordre fixe du
 // plan : titre, puis trois lignes étiquetées « Ce qui manque », « Ce qui le
 // débloque », « Qui décide », puis les pastilles des lignes du document de
 // couverture que le point cite. Aucun texte n'est écrit ici : tout vient des

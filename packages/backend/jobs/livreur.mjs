@@ -20,9 +20,16 @@
 // lignes sans jamais en livrer une deux fois. Un bail n'ajouterait rien.
 //
 // LE COÛT, À CONNAÎTRE. Quatre passes par minute, chacune interroge la base : le
-// compute Neon ne s'endort plus (veille après 5 min sans requête). À 0,25 CU, c'est ~180 CU-h par mois — au-delà des 100 du plan Free à
-// lui seul, ~19 $ par mois sur Launch. `NOTIFIER_INTERVAL_MS` règle ce compromis :
-// 300 000 rend la latence du scheduler, et laisse la base dormir entre deux ticks.
+// compute Neon ne s'endort plus (veille après 5 min sans requête). À 0,25 CU,
+// c'est ~180 CU-h par mois — au-delà des 100 du plan Free à lui seul, ~19 $ par
+// mois sur Launch. `NOTIFIER_INTERVAL_MS` règle ce compromis.
+//
+// SUR LA BASE GRATUITE (décision du 24/09/2026) : même intervalle que le tick du
+// scheduler (15 min), et passes ALIGNÉES sur sa grille, 45 s après lui. Le tick
+// réveille la base à :00, décide, met les livraisons en file ; le notifier les
+// envoie à :00:45, dans la même fenêtre d'éveil. Deux services, un seul réveil.
+// Sans alignement, deux cadences de 15 min décalées réveilleraient la base deux
+// fois plus souvent. Dès 5 min d'intervalle, l'alignement s'applique.
 import { dispatchOnce } from "../lib/dispatch-alerts.mjs";
 import { etapesLivraison, executerEtapes } from "./planifie.mjs";
 
@@ -33,8 +40,35 @@ export const INTERVALLE_DEFAUT_MS = 15_000;
  * drainage d'un redéploiement (20 s) doit couvrir la passe en cours.
  */
 export const BUDGET_PASSE_MS = 10_000;
-/** Au-delà, une livraison `queued` ne partira pas toute seule : /ready le dit. */
+/**
+ * Au-delà, une livraison `queued` ne partira pas toute seule : /ready le dit.
+ * Deux intervalles au moins : sur la base gratuite, une livraison mise en file
+ * juste après une passe attend légitimement la suivante, 15 min plus tard.
+ */
 export const ARRIERE_BLOQUE_S = 15 * 60;
+/** À partir de cet intervalle, les passes s'alignent sur la grille de l'horloge. */
+export const SEUIL_ALIGNEMENT_MS = 300_000;
+/** Décalage derrière le tick du scheduler : le temps qu'il décide et mette en file. */
+export const DECALAGE_ALIGNEMENT_MS = 45_000;
+
+/**
+ * Délai avant la prochaine passe ALIGNÉE : le prochain multiple de l'intervalle
+ * (depuis l'époque, donc sur :00, :15, :30, :45 pour 15 min) plus le décalage.
+ * Pure, comme `prochainDelai` du scheduler ; jamais moins d'une seconde.
+ */
+export function prochainePasseAlignee(intervalleMs, maintenant, decalageMs = DECALAGE_ALIGNEMENT_MS) {
+  const t = Number(maintenant);
+  const prochaine = Math.floor((t - decalageMs) / intervalleMs) * intervalleMs + intervalleMs + decalageMs;
+  return Math.max(1_000, prochaine - t);
+}
+
+/** Un intervalle qui s'aligne doit diviser l'heure, comme le tick du scheduler. */
+export function erreurIntervalle(intervalleMs) {
+  if (intervalleMs >= SEUIL_ALIGNEMENT_MS && 3_600_000 % intervalleMs !== 0) {
+    return "à partir de 300000, un diviseur de l'heure (300000, 600000, 900000, 1200000, 1800000, 3600000) : les passes s'alignent sur la grille du scheduler";
+  }
+  return null;
+}
 
 /**
  * @param {{ pool: { query: Function, connect: Function }, log: any, metrics?: any,
@@ -132,7 +166,7 @@ export function creerLivreur({
   /**
    * Verdict de /ready. Frais si une passe a ABOUTI depuis moins de quatre
    * intervalles (ou, jamais aboutie, si le démarrage est plus récent que ça) ; et
-   * aucune livraison bloquée depuis plus de 15 min.
+   * aucune livraison en attente depuis plus de 15 min ou deux intervalles.
    */
   async function etat() {
     const a = await arriere();
@@ -140,7 +174,7 @@ export function creerLivreur({
     const reference = Math.max(Date.parse(local.passe?.dernier_succes ?? "") || 0, demarrage);
     const silenceS = Math.round((t - reference) / 1000);
     const toleranceS = Math.round(Math.max(60_000, 4 * intervalleMs) / 1000);
-    const bloque = (a.plus_ancienne_s ?? 0) > ARRIERE_BLOQUE_S;
+    const bloque = (a.plus_ancienne_s ?? 0) > Math.max(ARRIERE_BLOQUE_S, (2 * intervalleMs) / 1000);
     return {
       ok: silenceS <= toleranceS && !bloque,
       depuis: new Date(demarrage).toISOString(),

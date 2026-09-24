@@ -33,7 +33,13 @@ import { startService } from "@mip/service-kit/http.mjs";
 import { startLoop } from "@mip/service-kit/loop.mjs";
 import { configEmail, erreursConfigEmail } from "@mip/backend/lib/net/resend.mjs";
 import { secretsDeSignature } from "@mip/backend/lib/net/signature-webhook.mjs";
-import { creerLivreur, INTERVALLE_DEFAUT_MS } from "@mip/backend/jobs/livreur.mjs";
+import {
+  INTERVALLE_DEFAUT_MS,
+  SEUIL_ALIGNEMENT_MS,
+  creerLivreur,
+  erreurIntervalle,
+  prochainePasseAlignee,
+} from "@mip/backend/jobs/livreur.mjs";
 
 const log = createLogger("notifier");
 
@@ -58,7 +64,8 @@ const config = defineConfig(
       default: INTERVALLE_DEFAUT_MS,
       min: 5_000,
       max: 3_600_000,
-      description: "Délai entre deux passes. 15 s par défaut ; 300000 laisse le compute Neon s'endormir entre deux ticks du scheduler.",
+      validate: erreurIntervalle,
+      description: "Délai entre deux passes. 15 s par défaut. Dès 300000, passes ALIGNÉES 45 s après le tick du scheduler : sur la base gratuite, la même cadence que SCHEDULER_TICK_MIN (900000 pour 15 min).",
     },
     RESEND_API_KEY: { type: "string", secret: true, validate: reglesEmail("RESEND_API_KEY"), description: "Clé d'API Resend (droit « Sending access » seul). Absente : les livraisons e-mail sont soldées skipped, avec la raison." },
     ALERT_EMAIL_FROM: { type: "string", validate: reglesEmail("ALERT_EMAIL_FROM"), example: "onboarding@resend.dev", description: "Expéditeur des alertes. `@resend.dev` = domaine non vérifié, mode test obligatoire." },
@@ -112,16 +119,30 @@ const livreur = creerLivreur({
 });
 
 // Première passe IMMÉDIATE : ce qui attendait pendant le redéploiement part tout de suite.
+// Dès 5 min d'intervalle, les suivantes s'alignent sur la grille du scheduler
+// (45 s après son tick) : un seul réveil de la base pour les deux services.
+const aligne = config.NOTIFIER_INTERVAL_MS >= SEUIL_ALIGNEMENT_MS;
 startLoop({
   name: "livraison",
-  intervalMs: config.NOTIFIER_INTERVAL_MS,
+  ...(aligne
+    ? { nextDelay: () => prochainePasseAlignee(config.NOTIFIER_INTERVAL_MS, Date.now()) }
+    : { intervalMs: config.NOTIFIER_INTERVAL_MS }),
   run: () => livreur.passe(),
   log,
   lifecycle,
   metrics,
   immediate: true,
 });
-startLoop({ name: "reconciliation", intervalMs: 3_600_000, run: () => livreur.reconcilier(), log, lifecycle, metrics });
+// La réconciliation, à l'heure pile + 50 s : dans la fenêtre d'éveil du tick de :00,
+// jamais un réveil de la base pour elle seule.
+startLoop({
+  name: "reconciliation",
+  nextDelay: () => prochainePasseAlignee(3_600_000, Date.now(), 50_000),
+  run: () => livreur.reconcilier(),
+  log,
+  lifecycle,
+  metrics,
+});
 
 // Sans domaine généré, ce serveur n'est joignable que par le réseau privé du
 // projet. Aucune route hors sondes : tout le reste répond 404.
@@ -139,6 +160,7 @@ startService({
 log.info("notifier démarré", {
   db: describeTarget(config.DATABASE_URL),
   intervalle_ms: config.NOTIFIER_INTERVAL_MS,
+  aligne_sur_le_tick: aligne,
   // Ni la clé, ni les adresses : combien, et en quel mode.
   email: email ? { expediteur: email.from, mode_test: Boolean(email.destinatairesTest), destinataires_test: email.destinatairesTest?.size ?? 0 } : "non configuré",
   signature: Boolean(config.WEBHOOK_SIGNING_SECRET),
