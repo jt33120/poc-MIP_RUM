@@ -9,6 +9,10 @@ import type { AnalyticsQuery } from "./query-contract";
 import { sqlContext, type SqlContext } from "./query-sql";
 import { ecrireSerie } from "./correlation-serie";
 import { THRESHOLDS, type Rating } from "./rating";
+import { ALERT_METRICS, ISSUE_METRIC, metricLabel } from "./alertes-metriques";
+// Métriques d'alerte et de SLO, comparateurs et libellés : `alertes-metriques.ts`,
+// SANS la base ; réexportés ici.
+export * from "./alertes-metriques";
 
 // ---------------------------------------------------------------------------
 // Filtres globaux — FAÇADE « v2 » du contrat commun (lib/query-contract.ts)
@@ -50,7 +54,6 @@ export function periodLabel(f: Filters): string {
   return PERIODS[f.period].label;
 }
 
-
 // ---------------------------------------------------------------------------
 // Triage des groupes d'erreurs (error_status). Les LECTURES de groupes —
 // compteurs, tendance, détail, occurrences — vivent dans ./queries-errors.ts
@@ -85,43 +88,9 @@ export async function setErrorStatus(
 // Alerting (alert_rule / alert_event / check_alerts)
 // ---------------------------------------------------------------------------
 
-// Métriques éligibles comme CIBLE DE SLO : uniquement celles qui ont un sens
-// « % de mesures conformes » (vitals + taux d'erreur). Un coût/compte absolu
-// n'entre pas dans ce modèle -> exclu des SLO.
-export const SLO_METRICS = ["LCP", "INP", "CLS", "FCP", "TTFB", "error_rate"] as const;
-
-// Métriques éligibles comme RÈGLE D'ALERTE : les métriques SLO + deux métriques
-// opérationnelles absolues (budget IA, pics d'erreurs applicatives) évaluées par
-// check_alerts (migration-v38), puis les familles paramétrées `event:<nom>` (P4)
-// et `issue:<uuid>` (P5.6, occurrences d'une issue d'erreurs).
-export const ALERT_METRICS = [...SLO_METRICS, "log_errors", "event", "issue"] as const;
-export const ALERT_COMPARATORS = [">", "<"] as const;
-
-const ISSUE_METRIC = /^issue:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
 /** Dernière évaluation d'une règle par check_alerts (migration-v73). */
 export const RULE_STATES = ["ok", "breached", "no_data"] as const;
 export type RuleState = (typeof RULE_STATES)[number];
-
-/** Libellé lisible + unité d'une métrique d'alerte/SLO (dropdowns, feed d'événements). */
-export const METRIC_LABELS: Record<string, string> = {
-  LCP: "LCP (ms)",
-  INP: "INP (ms)",
-  CLS: "CLS",
-  FCP: "FCP (ms)",
-  TTFB: "TTFB (ms)",
-  error_rate: "Taux d'erreur JS",
-  log_errors: "Logs ERROR (nombre)",
-  event: "Événement custom (nombre)",
-  issue: "Issue d'erreurs (occurrences)",
-};
-
-/** Libellé d'une métrique (repli : la clé brute si inconnue). */
-export function metricLabel(metric: string): string {
-  if (metric.startsWith("event:")) return `Événement « ${metric.slice(6)} » (nombre)`;
-  if (ISSUE_METRIC.test(metric)) return `Issue ${metric.slice(6, 14)} (occurrences)`;
-  return METRIC_LABELS[metric] ?? metric;
-}
 
 export function isAlertMetric(metric: string): boolean {
   if (metric !== "event" && metric !== "issue" && (ALERT_METRICS as readonly string[]).includes(metric)) return true;
@@ -451,7 +420,6 @@ export async function alertFirings(
   return { lignes, tronque: rows.length > plafond };
 }
 
-
 export interface RuleInput {
   app_id: string;
   metric: string;
@@ -573,7 +541,6 @@ export async function runCheckSloBurn(): Promise<number> {
   const [r] = await q<{ fired: number }>(`select check_slo_burn() as fired`);
   return r?.fired ?? 0;
 }
-
 
 // ---------------------------------------------------------------------------
 // Corrélation v2 (cartes + série historisée + angles morts)

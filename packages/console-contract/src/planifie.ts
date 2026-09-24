@@ -1,9 +1,8 @@
 // L'ÉTAT DES TRAVAUX PLANIFIÉS, tel que la vitrine le montre.
 //
-// Repris de la console (`lib/etat-planifie.ts`, `lib/etat-latence.ts`) pour que
-// console-api et la console partagent LA MÊME définition : `console-api` lit, la
-// console affiche. Tant que la console garde sa copie (jusqu'à C0b), un test
-// compare les deux (`tests/unit/console-api-c0a.test.ts`).
+// Venu de la console (`lib/etat-planifie.ts`, `lib/etat-latence.ts`), qui le
+// réexporte depuis C0b : console-api et la console partagent LA MÊME définition —
+// `console-api` lit, la console affiche.
 
 /** Une lecture de l'état du planificateur : une date (ou aucune), ou l'aveu que la lecture a échoué. */
 export type LecturePlanifie = { etat: "lu"; date: Date | null; cadenceMin?: number | null } | { etat: "illisible" };

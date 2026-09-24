@@ -5,7 +5,6 @@
     "/acquisition",
     "/actions",
     "/admin/audit",
-    "/admin/composants",
     "/admin/customers",
     "/admin/customers/[appId]",
     "/admin/extension-installs",
@@ -121,32 +120,20 @@
     "/logout"
   ],
   "composants": [
-    "apps/console/components/VersionsTable.tsx",
     "apps/console/components/alerts/ChannelsSection.tsx",
-    "apps/console/components/alerts/RuleFields.tsx",
     "apps/console/components/alerts/RuleRow.tsx",
     "apps/console/components/dashboards/ModeleCarte.tsx",
     "apps/console/components/dashboards/WidgetCard.tsx",
-    "apps/console/components/errors/DetailErreur.tsx",
-    "apps/console/components/errors/ErrorBadges.tsx",
-    "apps/console/components/errors/ErrorOccurrences.tsx",
     "apps/console/components/errors/ErrorStackCard.tsx",
     "apps/console/components/errors/ErrorTriage.tsx",
-    "apps/console/components/errors/IssueBadges.tsx",
-    "apps/console/components/errors/IssueList.tsx",
-    "apps/console/components/errors/IssueTickets.tsx",
-    "apps/console/components/errors/IssueWorkflow.tsx",
     "apps/console/components/errors/PanneauErreur.tsx",
     "apps/console/components/explorer/ActionsVue.tsx",
-    "apps/console/components/health/HealthBanner.tsx",
     "apps/console/components/perf/RoutePanel.tsx",
     "apps/console/components/presentation/Annexe.tsx",
     "apps/console/components/presentation/Landing.tsx",
     "apps/console/components/presentation/Specs.tsx",
     "apps/console/components/sessions/PanneauSession.tsx",
-    "apps/console/components/slo/SloStatusRow.tsx",
-    "apps/console/components/tracing/DeployPanel.tsx",
-    "apps/console/components/vue-ensemble/SeriesVueEnsemble.tsx"
+    "apps/console/components/slo/SloStatusRow.tsx"
   ],
   "layout": true
 }
