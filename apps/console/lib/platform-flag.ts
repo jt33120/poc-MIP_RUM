@@ -32,6 +32,8 @@ export const DELAI_LECTURE_MS = 1_500;
 
 /** Clé du pourcentage de relais d'ingestion (P3). */
 export const CLE_RELAIS = "ingest_relay_pct";
+/** Clé du pourcentage de relais de l'API de lecture v1 vers le service `api` (P4). */
+export const CLE_RELAIS_API = "api_relay_pct";
 
 type Requeteur = (sql: string, params: unknown[]) => Promise<{ rows: Array<{ value: unknown }> }>;
 
@@ -155,6 +157,16 @@ export async function pourcentageRelais(): Promise<number> {
     log.warn("platform_flag : valeur de pourcentage invalide, défaut d'environnement", { key: CLE_RELAIS });
   }
   return pct ?? pourcentageParDefaut();
+}
+
+/**
+ * Pourcentage de relais de l'API v1 (P4) : la base si elle répond avec une valeur
+ * valide, sinon `API_RELAY_PCT`, sinon 0. Ne lève jamais. Même lecteur, même
+ * cache de 30 s que la collecte : un coupe-circuit par signal, un geste chacun.
+ */
+export async function pourcentageRelaisApi(): Promise<number> {
+  const pct = lirePourcentage(await lecteur.lire(CLE_RELAIS_API));
+  return pct ?? lirePourcentage(process.env.API_RELAY_PCT) ?? 0;
 }
 
 /** Tests seulement : oublie les valeurs en cache. */
