@@ -27,7 +27,12 @@
 //   · IDENTITY_HASH_FINGERPRINT  son empreinte (`empreinteIdentite`) ;
 //   · EDGE_PROXY_SECRET          ≥ 32 caractères, la même valeur que Vercel ;
 //   · METRICS_TOKEN              ≥ 32 caractères : sans lui, /ready et /metrics
-//                                répondent 404 et la fumée ne lit pas /ready.
+//                                répondent 404 et la fumée ne lit pas /ready ;
+//   · RESEND_API_KEY             clé Resend « Sending access » seule — APRÈS la
+//                                fusion de la PR de conformité Resend (#288) ;
+//   · ALERT_EMAIL_TEST_RECIPIENTS  les destinataires de test : une adresse
+//                                personnelle n'a rien à faire dans un dépôt public ;
+//   · WEBHOOK_SIGNING_SECRET     ≥ 32 caractères, signe les webhooks d'alerte.
 //
 // Ce que `config pull` rend réellement, vérifié ici : `dockerfilePath` et
 // `watchPatterns` sortent dans un objet `build`, `preDeploy` en champ de premier
@@ -101,6 +106,19 @@ const SURVEILLE_COLLECTOR = [
 // l'utilisateur », pas parmi celles qu'il injecte : sans elle, le kit
 // supposerait 10 s et avertirait au démarrage.
 const DRAINAGE_COLLECTOR_S = 15;
+
+// LE NOTIFIER NAÎT APRÈS LE REMODELAGE, comme le collector : exactement ce que lit
+// `services/notifier/Dockerfile`. Ni `packages/db/**` (seul le scheduler migre),
+// ni le téléchargeur GeoIP (l'image n'embarque pas la base).
+const SURVEILLE_NOTIFIER = [
+  "services/notifier/**", "packages/backend/**", "packages/service-kit/**",
+  "pnpm-lock.yaml", "/pnpm-workspace.yaml", "/package.json", "/.dockerignore",
+  "scripts/ci/deploy-fidele.mjs",
+];
+// 20 s, comme le scheduler : une passe n'entame plus de livraison après 10 s
+// (`BUDGET_PASSE_MS`), chaque envoi est borné à 10 s ; 20 s couvrent la passe
+// en cours. Posé deux fois, pour la même raison que le collector.
+const DRAINAGE_NOTIFIER_S = 20;
 
 // UN DOCKERFILE PAR SERVICE, À CÔTÉ DE SON POINT D'ENTRÉE (contrat de service
 // § 9) : `services/<nom>/Dockerfile`. L'ancienne image commune
@@ -227,18 +245,57 @@ export default defineRailway((ctx) => {
       // vrai produit RUM, offre payante et « 5 » ici (README du scheduler,
       // « Base gratuite »). La vitrine lit la cadence publiée, pas cette ligne.
       SCHEDULER_TICK_MIN: "15",
+      // P5 — LE TICK NE LIVRE PLUS : le notifier, déclaré juste en dessous et
+      // créé dans le MÊME apply, s'en charge. Le scheduler n'a pas la clé
+      // Resend : s'il livrait encore, il solderait les e-mails `skipped`. Entre
+      // les deux démarrages, les livraisons attendent `queued` ; rien ne se perd.
+      // Retour arrière : « on » ici, et le notifier à 0 réplique.
+      SCHEDULER_DELIVERY: "off",
+    },
+  });
+
+  // P5 — LIVRER CE QUE LA PLATEFORME A DÉCIDÉ DE DIRE : webhooks signés, e-mails
+  // Resend, tickets, toutes les 15 s. Seul service à détenir les secrets
+  // sortants ; tous viennent de variables PARTAGÉES (règle 2), à créer avant
+  // l'apply (liste en tête).
+  const notifier = service("notifier", {
+    source: pocMIP_RUM,
+    build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/notifier/Dockerfile", watchPatterns: SURVEILLE_NOTIFIER },
+    start: "node services/notifier/worker.mjs",
+    healthcheck: "/health",
+    healthcheckTimeout: 120,
+    // UNE réplique : deux seraient sûres (`skip locked` sur chaque file, README
+    // du notifier), mais n'apporteraient rien au volume d'un POC.
+    replicas: { [REGION]: 1 },
+    deploy: { restartPolicyType: "ALWAYS", drainingSeconds: DRAINAGE_NOTIFIER_S },
+    env: {
+      DATABASE_URL: ctx.shared.DATABASE_URL,
+      METRICS_TOKEN: ctx.shared.METRICS_TOKEN,
+      // MODE TEST RESEND : domaine d'envoi non vérifié. L'expéditeur de test
+      // n'écrit qu'au titulaire du compte ; tout autre destinataire est soldé
+      // `skipped` avant l'appel. Le notifier refuse de démarrer si la liste manque.
+      RESEND_API_KEY: ctx.shared.RESEND_API_KEY,
+      ALERT_EMAIL_FROM: "onboarding@resend.dev",
+      ALERT_EMAIL_TEST_RECIPIENTS: ctx.shared.ALERT_EMAIL_TEST_RECIPIENTS,
+      WEBHOOK_SIGNING_SECRET: ctx.shared.WEBHOOK_SIGNING_SECRET,
+      // 15 s : le compute Neon ne s'endort plus (README du notifier, « Coût »).
+      // Sur le plan Free, 300000 rend la latence du scheduler et la veille.
+      NOTIFIER_INTERVAL_MS: "15000",
+      PGPOOL_MAX: "2",
+      NODE_ENV: "production",
+      RAILWAY_DEPLOYMENT_DRAINING_SECONDS: String(DRAINAGE_NOTIFIER_S),
     },
   });
 
   // LE CANEVAS DIT L'ARCHITECTURE : Capteurs → Collecte → Restitution →
   // Traitements. Un groupe n'est qu'un cadre sur le canevas — il ne change ni
-  // le réseau, ni les variables, ni le déploiement d'un service. `api`,
-  // `console-api` et `notifier` rejoindront leur groupe en naissant.
+  // le réseau, ni les variables, ni le déploiement d'un service. `api` et
+  // `console-api` rejoindront leur groupe en naissant.
   return project("mip-rum-backend", {
     resources: [
       group("1 · Collecte", [collector]),
       group("2 · Restitution", [mcp]),
-      group("3 · Traitements", [scheduler]),
+      group("3 · Traitements", [scheduler, notifier]),
     ],
   });
 });
