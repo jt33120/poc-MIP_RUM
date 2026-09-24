@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // Web standard : Request, Response, Headers, crypto.subtle, AbortSignal. Pas
+    // de types Node : le paquet ne touche ni au disque ni aux modules natifs — la
+    // base lui est PASSÉE (un `query`), le processus appartient au service.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src"]
+}
