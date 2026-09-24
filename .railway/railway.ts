@@ -278,9 +278,10 @@ export default defineRailway((ctx) => {
       ALERT_EMAIL_FROM: "onboarding@resend.dev",
       ALERT_EMAIL_TEST_RECIPIENTS: ctx.shared.ALERT_EMAIL_TEST_RECIPIENTS,
       WEBHOOK_SIGNING_SECRET: ctx.shared.WEBHOOK_SIGNING_SECRET,
-      // 15 s : le compute Neon ne s'endort plus (README du notifier, « Coût »).
-      // Sur le plan Free, 300000 rend la latence du scheduler et la veille.
-      NOTIFIER_INTERVAL_MS: "15000",
+      // BASE GRATUITE (décision du 24/09/2026) : 15 min, la cadence du tick, et
+      // passes ALIGNÉES 45 s derrière lui — un seul réveil de la base pour les
+      // deux services (README du notifier, « Coût »). Offre payante : « 15000 ».
+      NOTIFIER_INTERVAL_MS: "900000",
       PGPOOL_MAX: "2",
       NODE_ENV: "production",
       RAILWAY_DEPLOYMENT_DRAINING_SECONDS: String(DRAINAGE_NOTIFIER_S),
