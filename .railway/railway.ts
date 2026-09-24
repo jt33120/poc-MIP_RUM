@@ -20,6 +20,15 @@
 //      valeur à préserver. Ses secrets passent par des variables PARTAGÉES de
 //      l'environnement, créées AVANT le service (`ctx.shared.X`).
 //
+// VARIABLES PARTAGÉES À CRÉER AVANT L'APPLY (environnement production ; le
+// plan ne vérifie pas qu'elles existent) :
+//   · DATABASE_URL               le pooler Neon, rôle propriétaire ;
+//   · IDENTITY_HASH_SECRET       ≥ 32 caractères aléatoires, NEUF ;
+//   · IDENTITY_HASH_FINGERPRINT  son empreinte (`empreinteIdentite`) ;
+//   · EDGE_PROXY_SECRET          ≥ 32 caractères, la même valeur que Vercel ;
+//   · METRICS_TOKEN              ≥ 32 caractères : sans lui, /ready et /metrics
+//                                répondent 404 et la fumée ne lit pas /ready.
+//
 // Ce que `config pull` rend réellement, vérifié ici : `dockerfilePath` et
 // `watchPatterns` sortent dans un objet `build`, `preDeploy` en champ de premier
 // niveau, la politique de redémarrage dans `deploy`, et `checkSuites` sur la
@@ -29,7 +38,12 @@
 // `railway config plan --detailed-exit-code` doit rendre 0 sur `master`.
 // Toute dérive est soit un changement à écrire ici, soit une modification faite
 // dans le tableau de bord qu'il faut défaire.
-import { defineRailway, github, preserve, project, service } from "railway/iac";
+import { defineRailway, github, group, preserve, project, service } from "railway/iac";
+
+// LA RÉGION DU PROJET, clé exacte rendue par `config pull` (Amsterdam). Une
+// seule source : un service déclaré dans une autre région paierait un aller-
+// retour transfrontalier vers Neon (Francfort) à chaque requête.
+const REGION = "europe-west4-drams3a";
 
 // CHEMINS SURVEILLÉS : L'UNION DES CHEMINS D'AUJOURD'HUI ET DE CEUX DE DEMAIN.
 // Le remodelage P1 déplace le code (`apps/ingest` → `packages/backend` et
@@ -56,6 +70,37 @@ const SURVEILLE_MCP = [
   // après le remodelage
   "packages/mcp-tools/**", "packages/service-kit/**", "infra/docker/**", "pnpm-lock.yaml",
 ];
+// LE COLLECTOR NAÎT APRÈS LE REMODELAGE : aucun ancien chemin à porter. Sa liste
+// est exactement ce que lit `services/collector/Dockerfile`, pas un de plus :
+//   - son dossier, puis la FERMETURE de ses dépendances de workspace —
+//     `@mip/backend` → `@mip/service-kit`. PAS `packages/db/**` : le collector
+//     n'importe pas le migrateur, et une migration se déploie avec le scheduler
+//     (seul migrateur, schéma N/N+1) ; la surveiller ici redéploierait deux
+//     répliques de collecte pour un fichier SQL qu'elles n'embarquent pas ;
+//   - ce que copie la recette commune : lockfile, workspace, `package.json`
+//     racine (la version de pnpm y est LUE, `packageManager`), le vérificateur
+//     de `pnpm deploy`, le téléchargeur GeoIP (seule image à le lancer), et
+//     `.dockerignore`, qui décide de ce qui entre dans le contexte ;
+//   - PAS `infra/docker/**` : plus aucune image du collector n'y vit.
+// Les motifs suivent la syntaxe gitignore : SANS `/` initial, un nom nu vaut à
+// toute profondeur. `/package.json` est donc ancré — il y en a quatorze autres
+// dans le dépôt, et celui de la console ne doit pas redéployer la collecte.
+const SURVEILLE_COLLECTOR = [
+  "services/collector/**", "packages/backend/**", "packages/service-kit/**",
+  "pnpm-lock.yaml", "/pnpm-workspace.yaml", "/package.json", "/.dockerignore",
+  "scripts/ci/deploy-fidele.mjs", "scripts/fetch-geoip-db.mjs",
+];
+
+// DRAINAGE DU COLLECTOR : 15 s (contrat § 4). Le budget de requête du receveur
+// est de ≈ 4 s ; 15 s laissent finir toute écriture en vol avec de la marge,
+// sans retarder chaque déploiement de deux répliques. Posé DEUX FOIS, d'une
+// seule constante : `deploy.drainingSeconds` est le réglage que Railway
+// applique et affiche ; `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` est la variable
+// que LIT le kit (`lifecycle.mjs`) pour caler sa sortie forcée juste avant
+// SIGKILL. La documentation Railway la range parmi les variables « fournies par
+// l'utilisateur », pas parmi celles qu'il injecte : sans elle, le kit
+// supposerait 10 s et avertirait au démarrage.
+const DRAINAGE_COLLECTOR_S = 15;
 
 // UN DOCKERFILE PAR SERVICE, À CÔTÉ DE SON POINT D'ENTRÉE (contrat de service
 // § 9) : `services/<nom>/Dockerfile`. L'ancienne image commune
@@ -65,9 +110,101 @@ const SURVEILLE_MCP = [
 // Les anciennes images (`infra/docker/Dockerfile.{backend,mcp}`) restent dans le
 // dépôt, marquées OBSOLÈTE, jusqu'à l'apply de ce fichier : d'ici là, c'est
 // elles que le tableau de bord construit à chaque push sur `master`.
-export default defineRailway(() => {
+export default defineRailway((ctx) => {
   const pocMIP_RUM = github("jt33120/poc-MIP_RUM", { branch: "master", checkSuites: false });
 
+  // ─── 1 · Collecte ──────────────────────────────────────────────────────────
+  // P2 : LANCEMENT À BLANC. Le service se déploie, répond, et ne reçoit rien :
+  // les capteurs visent toujours la console, qui relaiera en P3. Aucun
+  // `preserve()` possible (règle 2) : chaque secret vient d'une variable
+  // PARTAGÉE de l'environnement, qui doit exister AVANT l'apply. D'où l'ordre :
+  // variables partagées → apply → vrai déploiement → domaine généré (à la main,
+  // hors IaC) → fumée `/health`.
+  // LE PLAN NE LE VÉRIFIE PAS (constaté le 24/09 : `config plan` classe la
+  // création « safe » sans qu'aucune des variables partagées n'existe ; liste
+  // en tête du fichier). Ce que devient une référence manquante, la
+  // documentation Railway ne le dit pas ; si elle arrive VIDE, le kit traite
+  // le vide comme l'absence : `DATABASE_URL` →
+  // refus de démarrer (bruyant, le déploiement échoue) ; secret d'identité ou
+  // de relais → service DÉGRADÉ EN SILENCE (`identity: "absente"`,
+  // `edge_trust: false` sur `/health`). La fumée lit donc ces deux champs.
+  const collector = service("collector", {
+    source: pocMIP_RUM,
+    build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/collector/Dockerfile", watchPatterns: SURVEILLE_COLLECTOR },
+    // EXPLICITE, comme le `CMD` de l'image : si l'un des deux se perd, l'autre
+    // démarre encore le bon processus — jamais un autre service.
+    start: "node services/collector/server.mjs",
+    // Processus vivant ET base joignable (`select 1`, 2 s). Railway ne sonde
+    // qu'au déploiement : une base injoignable fait ÉCHOUER le déploiement, et
+    // l'ancien reste en service — ce qu'on veut, plutôt qu'un collecteur qui
+    // perdrait tout en répondant 200.
+    healthcheck: "/health",
+    healthcheckTimeout: 120,
+    // DEUX RÉPLIQUES, dans la région du projet. Sûres sans coordination (README
+    // du collector, « Sûreté multi-réplique ») : verrou consultatif par app,
+    // idempotence `on conflict`, débit compté en base. Deux répliques, c'est
+    // aussi 2 × PGPOOL_MAX connexions : 16 sur les 112 de Neon.
+    replicas: { [REGION]: 2 },
+    // ALWAYS : le kit transforme un crash (`uncaughtException`, rejet non
+    // traité) en arrêt propre code 1 et compte sur Railway pour relancer un
+    // processus sain (en-tête de `lifecycle.mjs`) — même politique que le
+    // scheduler.
+    deploy: { restartPolicyType: "ALWAYS", drainingSeconds: DRAINAGE_COLLECTOR_S },
+    env: {
+      // Le pooler Neon, rôle propriétaire (moindre privilège après M4).
+      DATABASE_URL: ctx.shared.DATABASE_URL,
+      // Le secret NEUF d'identité (vide sur Vercel : aucun `user_id_hash`
+      // historique à préserver) et son empreinte. Tous deux PARTAGÉS : en C0,
+      // `console-api` devra hacher avec le MÊME secret, et l'empreinte rend
+      // bruyant tout écart (readiness refusée, identité retirée).
+      IDENTITY_HASH_SECRET: ctx.shared.IDENTITY_HASH_SECRET,
+      IDENTITY_HASH_FINGERPRINT: ctx.shared.IDENTITY_HASH_FINGERPRINT,
+      // Le secret du relais de la console (bord de confiance `mip-edge/1`,
+      // P3). Une valeur, ou deux séparées par une virgule pendant une rotation.
+      EDGE_PROXY_SECRET: ctx.shared.EDGE_PROXY_SECRET,
+      // R8a — « false » TANT QUE LES CLÉS NE SONT PAS PROVISIONNÉES. Relevé du
+      // 23/09 : 6 apps sur 7 n'ont AUCUNE clé d'ingestion, dont celle du client
+      // (`gip-plateforme`). « true » les couperait toutes en 403, et le repli du
+      // relais de P3 ne se déclenche pas sur un 403 : leurs beacons seraient
+      // perdus. Ordre : `scripts/ops/provisionner-cles.mjs --appliquer`, clé
+      // posée dans chaque snippet, 200 vérifiés, ALORS « true » — ici, en PR :
+      // basculé dans le tableau de bord, le prochain apply le remettrait à false.
+      REQUIRE_API_KEY: "false",
+      // Jeton de /ready et /metrics (kit, ≥ 32 caractères). Partagé : la
+      // supervision le porte pour tous les services du kit.
+      METRICS_TOKEN: ctx.shared.METRICS_TOKEN,
+      // GEOIP ÉTEINT, et c'est voulu. La géolocalisation par adresse du trafic
+      // DIRECT est réservée à P6b.G (collecte directe, à une date annoncée et
+      // datée par un `deploy_marker`) ; jusque-là les textes de conformité
+      // disent « code pays seul, sans adresse IP », et le trafic relayé (P3)
+      // porte le pays de Vercel sans jamais d'adresse. « railway » l'allumait
+      // dès P2, pour tout ce qui viserait le domaine du collector.
+      // AVANT DE L'ALLUMER : prouver sur staging que la façade Railway ÉCRASE
+      // un `X-Real-IP` forgé par le client (non constaté, `client-ip.mjs`) —
+      // sinon n'importe qui choisit le pays de ses propres beacons.
+      GEOIP_IP_SOURCE: "none",
+      // Par réplique. Le défaut du schéma (8), écrit ici pour que le calcul des
+      // connexions se lise sans ouvrir le code.
+      PGPOOL_MAX: "8",
+      // Déjà dans l'image ; écrit ici pour que le refus du tampon `/__recent`
+      // (payloads en clair) ne dépende pas de la seule image.
+      NODE_ENV: "production",
+      RAILWAY_DEPLOYMENT_DRAINING_SECONDS: String(DRAINAGE_COLLECTOR_S),
+    },
+  });
+
+  // ─── 2 · Restitution ───────────────────────────────────────────────────────
+  const mcp = service("mcp", {
+    source: pocMIP_RUM,
+    build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/mcp/Dockerfile", watchPatterns: SURVEILLE_MCP },
+    start: "node services/mcp/http.mjs",
+    healthcheck: "/health",
+    healthcheckTimeout: 120,
+    replicas: { [REGION]: 1 },
+    env: { MIP_CONSOLE_URL: preserve(), NODE_ENV: preserve(), PORT: preserve() },
+  });
+
+  // ─── 3 · Traitements ───────────────────────────────────────────────────────
   const scheduler = service("scheduler", {
     source: pocMIP_RUM,
     build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/scheduler/Dockerfile", watchPatterns: SURVEILLE_SCHEDULER },
@@ -77,24 +214,23 @@ export default defineRailway(() => {
     // Un fichier de câblage à chemin STABLE (voir son en-tête) : le déménagement
     // du migrateur ne change que son import, jamais cette commande.
     preDeploy: "node services/scheduler/migrate.mjs",
-    replicas: { "europe-west4-drams3a": 1 },
+    replicas: { [REGION]: 1 },
     // DRAINAGE EXPLICITE (contrat § 4). Railway vaut 0 s par défaut : SIGKILL suit
     // SIGTERM, le passage en cours meurt et son bail reste posé jusqu'à expiration
     // (jusqu'à 10 min de ticks sautés par la nouvelle instance). 20 s couvrent un tick.
     deploy: { restartPolicyType: "ALWAYS", drainingSeconds: 20 },
     env: { DATABASE_URL: preserve(), LOG_LEVEL: preserve(), NODE_ENV: preserve(), PGPOOL_MAX: preserve(), PORT: preserve() },
   });
-  const mcp = service("mcp", {
-    source: pocMIP_RUM,
-    build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/mcp/Dockerfile", watchPatterns: SURVEILLE_MCP },
-    start: "node services/mcp/http.mjs",
-    healthcheck: "/health",
-    healthcheckTimeout: 120,
-    replicas: { "europe-west4-drams3a": 1 },
-    env: { MIP_CONSOLE_URL: preserve(), NODE_ENV: preserve(), PORT: preserve() },
-  });
 
+  // LE CANEVAS DIT L'ARCHITECTURE : Capteurs → Collecte → Restitution →
+  // Traitements. Un groupe n'est qu'un cadre sur le canevas — il ne change ni
+  // le réseau, ni les variables, ni le déploiement d'un service. `api`,
+  // `console-api` et `notifier` rejoindront leur groupe en naissant.
   return project("mip-rum-backend", {
-    resources: [scheduler, mcp],
+    resources: [
+      group("1 · Collecte", [collector]),
+      group("2 · Restitution", [mcp]),
+      group("3 · Traitements", [scheduler]),
+    ],
   });
 });
