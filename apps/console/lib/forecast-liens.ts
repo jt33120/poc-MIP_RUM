@@ -7,7 +7,7 @@
 // deux heures de la veille et perd les deux dernières heures du jour cliqué. La
 // conversion est faite ICI, côté serveur (`bornesJourLocal`, F05), jamais par le
 // composant client ; l'infobulle écrit les deux fuseaux (`libelleDeuxFuseaux`).
-import { bornesJourLocal, libelleDeuxFuseaux } from "./fuseau";
+import { bornesJourLocal, libelleDeuxFuseaux } from "./fuseau-local";
 
 export interface LienJour {
   href: string;

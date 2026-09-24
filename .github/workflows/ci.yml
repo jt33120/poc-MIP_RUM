@@ -370,14 +370,18 @@ jobs:
       # ligne en base. Une troisième base, à lui : il sème et supprime ses
       # propres lignes, et le contrat de parité veut les siennes vierges. Même
       # règle : sans RELAY_TEST_DATABASE_URL, il refuse de s'ignorer en CI.
-      - name: Contrat de parité console ↔ collector, et relais P3 (bases migrées)
+      #
+      # P4 — LA LECTURE, console ↔ service api (`tests/contract/api-parity.test.ts`) :
+      # une quatrième base ; elle ne fait que lire ce que le test y a semé.
+      - name: Contrats de parité console ↔ collector et console ↔ api, relais P3 (bases migrées)
         env:
           PGPASSWORD: postgres
           CONTRACT_NEXT_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_parite_next
           CONTRACT_COLLECTOR_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_parite_collector
           RELAY_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_relais
+          CONTRACT_API_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_parite_api
         run: |
-          for base in mip_rum_parite_next mip_rum_parite_collector mip_rum_relais; do
+          for base in mip_rum_parite_next mip_rum_parite_collector mip_rum_relais mip_rum_parite_api; do
             psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
               -c "create database $base"
             DATABASE_URL="postgres://postgres:postgres@localhost:5433/$base" \

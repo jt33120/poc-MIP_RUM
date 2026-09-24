@@ -25,7 +25,7 @@ import Link from "next/link";
 import { TableAlternative } from "./Figure";
 import { formater } from "@/lib/fmt-ids";
 import { cleJour } from "@/lib/forecast";
-import { bornesHeureLocale, libelleDeuxFuseaux } from "@/lib/fuseau";
+import { bornesHeureLocale, libelleDeuxFuseaux } from "@/lib/fuseau-local";
 import { PALIERS_SEQUENTIELLE, SEQUENTIELLE } from "@/lib/palette";
 
 /** Une case telle que la rend `healthGrid` : jour et heure LOCAUX (fuseau de l'app). */
