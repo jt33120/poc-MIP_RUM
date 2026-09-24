@@ -364,13 +364,15 @@ jobs:
       # contrat veut deux bases fraîches à lui, pas une base partagée avec les
       # fenêtres de déploiement. Sans ses deux variables, le fichier REFUSE de
       # s'ignorer en CI (pas de skip silencieux).
-      - name: Contrat de parité console ↔ collector (deux bases migrées)
+      - name: Contrats de parité console ↔ collector et console ↔ api (bases migrées)
         env:
           PGPASSWORD: postgres
           CONTRACT_NEXT_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_parite_next
           CONTRACT_COLLECTOR_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_parite_collector
+          # P4 : la lecture, console ↔ service api, sur UNE base (elle ne fait que lire).
+          CONTRACT_API_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_parite_api
         run: |
-          for base in mip_rum_parite_next mip_rum_parite_collector; do
+          for base in mip_rum_parite_next mip_rum_parite_collector mip_rum_parite_api; do
             psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
               -c "create database $base"
             DATABASE_URL="postgres://postgres:postgres@localhost:5433/$base" \
