@@ -8,6 +8,7 @@ import { withRetry } from "@mip/backend/shared/retry.mjs";
 import { secureOtlpIdentities } from "@mip/backend/lib/identity-hash.mjs";
 import { pool } from "@/lib/db";
 import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
+import { relayer } from "@/lib/ingest-relay";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -47,6 +48,13 @@ export async function POST(req: Request) {
       log.warn("payload too large", { max: MAX_BODY_BYTES });
       return json({ error: "payload too large" }, 413, cors);
     }
+    // P3 — RELAIS vers le collector, pour la part tirée au sort. Les MÊMES
+    // octets servent au relais et, si le relais rend la main (`null` : relais
+    // éteint, non tiré, ou repli), au chemin local ci-dessous : le corps n'est
+    // lu qu'une fois. Les refus de taille restent locaux (aucune base, aucun
+    // appel réseau pour un corps qu'on refuserait de toute façon).
+    const relayee = await relayer("logs", req, brut, cors);
+    if (relayee) return relayee;
     let payload: unknown;
     try {
       payload = JSON.parse(brut.toString("utf8"));
