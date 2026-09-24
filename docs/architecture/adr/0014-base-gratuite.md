@@ -15,7 +15,7 @@ L'offre payante (Launch, ~0,11 $ par CU-h, sans minimum) coûterait ~15 à 20 $ 
 ## Décision
 
 1. **La base reste sur l'offre gratuite**, en mode dégradé : les cadences ralentissent pour que le calcul dorme entre deux passages.
-   - `SCHEDULER_TICK_MIN=15` : la base est éveillée ~5,5 min par passage, ~37 % du temps, **~65 CU-h par mois** ; le reste du quota pour la collecte et la console. La grille n'admet que des diviseurs de l'heure : le passage horaire (HH:05) et le quotidien (03:17) tombent dans la fenêtre d'éveil d'un tick.
+   - `SCHEDULER_TICK_MIN=15`, et c'est aussi le **défaut du service** depuis le 24/09 (un déploiement sans le réglage ne revient plus à 5) : la base est éveillée ~5,5 min par passage, ~37 % du temps, **~65 CU-h par mois** ; le reste du quota pour la collecte et la console. La grille n'admet que des diviseurs de l'heure : le passage horaire (HH:05) et le quotidien (03:17) tombent dans la fenêtre d'éveil d'un tick.
    - `NOTIFIER_INTERVAL_MS=900000`, passes **alignées 45 s après le tick** : un seul réveil pour deux services. La réconciliation horaire à HH:00:50.
    - Jamais `INGEST_DEFERRED` sur le collector (son drain interroge la base toutes les 250 ms), et les supervisions externes visent `/live`, jamais `/health`.
 2. **La limite est affichée, pas cachée** :

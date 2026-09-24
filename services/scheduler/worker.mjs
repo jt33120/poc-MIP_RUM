@@ -44,7 +44,7 @@ import { createMetrics } from "@mip/service-kit/metrics.mjs";
 import { startService } from "@mip/service-kit/http.mjs";
 import { startLoop } from "@mip/service-kit/loop.mjs";
 import { dispatchOnce } from "@mip/backend/lib/dispatch-alerts.mjs";
-import { TICKS_ADMIS_MIN, TICK_VISE_MIN, decrireCadences, prochainDelai, tolerancesMs } from "@mip/backend/jobs/cadence.mjs";
+import { TICKS_ADMIS_MIN, TICK_DEFAUT_MIN, decrireCadences, prochainDelai, tolerancesMs } from "@mip/backend/jobs/cadence.mjs";
 import { travaux } from "@mip/backend/jobs/planifie.mjs";
 import {
   CADENCES_PLANIFIEES,
@@ -75,8 +75,8 @@ const config = defineConfig(
     SCHEDULER_TICK_MIN: {
       type: "enum",
       values: TICKS_ADMIS_MIN.map(String),
-      default: String(TICK_VISE_MIN),
-      description: "Cadence du tick, en minutes (diviseur de l'heure). 5 visé ; 15 sur l'offre gratuite de Neon, pour que la base s'endorme entre deux passages.",
+      default: String(TICK_DEFAUT_MIN),
+      description: "Cadence du tick, en minutes (diviseur de l'heure). 15 par défaut : l'offre gratuite de Neon, pour que la base s'endorme entre deux passages. Un vrai produit pose 5.",
     },
     SCHEDULER_DELIVERY: {
       type: "enum",
