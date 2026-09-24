@@ -202,6 +202,25 @@ importers:
 
   packages/service-kit: {}
 
+  services/api:
+    dependencies:
+      pg:
+        specifier: 8.21.0
+        version: 8.21.0
+    devDependencies:
+      '@mip/backend':
+        specifier: workspace:*
+        version: link:../../packages/backend
+      '@mip/mcp-tools':
+        specifier: workspace:*
+        version: link:../../packages/mcp-tools
+      '@mip/service-kit':
+        specifier: workspace:*
+        version: link:../../packages/service-kit
+      esbuild:
+        specifier: 0.28.0
+        version: 0.28.0
+
   services/collector:
     dependencies:
       '@mip/backend':
