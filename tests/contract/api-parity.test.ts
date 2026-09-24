@@ -275,6 +275,10 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
     expect(triage.statut).toBe(405);
     const vue = await appelerService("/api/v1/explorer/views", { method: "POST", ...auth() });
     expect(vue.statut).toBe(405);
-    expect((await fetch(`${base}/api/v1/explorer/views`, { method: "POST", ...auth() })).headers.get("allow")).toBe("GET, HEAD, OPTIONS");
+    const refusee = await fetch(`${base}/api/v1/explorer/views`, { method: "POST", ...auth() });
+    expect(refusee.headers.get("allow")).toBe("GET, HEAD, OPTIONS");
+    // Signée, comme toute réponse du service : 405, 404 et sondes compris.
+    expect(refusee.headers.get("x-mip-api")).toBe("1");
+    expect((await fetch(`${base}/api/v1/nexiste-pas`)).headers.get("x-mip-api")).toBe("1");
   });
 });

@@ -98,6 +98,10 @@ startService({
   lifecycle,
   // L'Explorer envoie un AST, jamais plus de quelques Kio ; 256 Kio suffisent.
   maxBodyBytes: 256 * 1024,
+  // SIGNÉE, comme le collector : le relais de la console distingue ainsi une
+  // réponse du service (rendue telle quelle, 404 et 401 compris) d'une réponse
+  // du routeur Railway devant lui (service absent : repli local).
+  responseHeaders: { "x-mip-api": "1" },
   fetch: servir,
 });
 

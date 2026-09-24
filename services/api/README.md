@@ -36,6 +36,8 @@ Les chemins sont **ceux de la console**, calculés depuis l'arborescence (`route
 | `POST /api/v1/explorer/query` | oui | une **lecture** : sa requête porte un AST, qui ne tient pas dans une query string |
 | toute autre écriture (triage, commentaires, liens, tickets, vues enregistrées, marqueurs de déploiement) | **405** | elles s'authentifient par session et restent à la console jusqu'à `console-api` |
 
+**Toute réponse est signée `x-mip-api: 1`** (en-tête posé par le kit, jusque sur les 404 et 405) : le relais de la console distinguera une réponse du service d'une réponse du routeur Railway, comme pour le collector.
+
 Réponses : l'enveloppe de la console (`{ meta, data }`, ETag faible, `Cache-Control: private, max-age=15`, en-têtes `RateLimit-*`), 401 sans jeton valide, 403 hors périmètre, 400 pour un filtre que la lecture ne sait pas appliquer. Sondes du kit : `/health` (processus + base, **la sonde Railway**), `/live`, `/ready` et `/metrics` sous `METRICS_TOKEN` (`api_requests_total{route,status}`).
 
 ## Configuration
