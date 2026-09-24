@@ -253,7 +253,16 @@ async function fauxIdp(opts: { emetteurAnnonce?: string } = {}) {
     const claims = { sub: "sujet-1", email: `${PREFIXE}nouveau@${DOMAINE}`, email_verified: true };
     const cas: [string, Parameters<typeof sso>[1]][] = [
       ["etat_different", { alterer: (r) => (r.state = "etat-forge") }],
-      ["transaction_illisible", { alterer: (r) => (r.transaction = r.transaction.replace(/.$/, (x) => (x === "A" ? "B" : "A"))) }],
+      // Un caractère du CHIFFRÉ (4ᵉ segment), pas le dernier du jeton : le dernier
+      // caractère base64url d'une étiquette de 16 octets ne porte que des bits de
+      // bourrage, et le changer ne change parfois rien (ce test était instable).
+      ["transaction_illisible", {
+        alterer: (r) => {
+          const p = r.transaction.split(".");
+          p[3] = (p[3][0] === "A" ? "B" : "A") + p[3].slice(1);
+          r.transaction = p.join(".");
+        },
+      }],
       ["nonce_different", { signe: { nonce: "nonce-forge" } }],
       ["id_token_invalide", { signe: { iss: "https://idp-pirate.test" } }],
       ["id_token_invalide", { signe: { aud: "autre-client" } }],
