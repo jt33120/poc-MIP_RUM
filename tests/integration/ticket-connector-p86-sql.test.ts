@@ -945,7 +945,9 @@ suite("P8.6 — effacement, rétention et périmètre", () => {
       `select c.relname || '.' || p.polname as pol
          from pg_policy p join pg_class c on c.oid = p.polrelid
         where c.relname in ('ticket_integration','ticket_outbox','ticket_webhook_event')
-          and pg_get_expr(p.polqual, p.polrelid) = 'true'`,
+          and pg_get_expr(p.polqual, p.polrelid) = 'true'
+          -- la lecture de mip_api (v89) ne s'applique qu'à lui : le OU des policies joue par rôle
+          and not exists (select 1 from pg_roles r where r.oid = any(p.polroles) and r.rolname = 'mip_api')`,
     );
     expect(rows).toEqual([]);
   });

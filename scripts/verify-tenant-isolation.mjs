@@ -131,17 +131,28 @@ async function main() {
   // laissée sur une table scopée annule le filtrage sans que rien ne le dise.
   // C'est exactement ce qui s'est produit en développant v47 (cro_all_alert_event,
   // cro_sel_delivery, cro_sel_uptime_result), d'où cette assertion.
+  // Le OU ne joue qu'entre policies du MÊME rôle : la garde vise celles qui
+  // s'appliquent à console_ro (ou à PUBLIC). `mip_api` (v89) a les siennes,
+  // en lecture seule, vérifiées plus bas.
   const leftovers = (await c.query(
     `select c.relname || '.' || p.polname as pol
        from pg_policy p join pg_class c on c.oid = p.polrelid
        join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public' and pg_get_expr(p.polqual, p.polrelid) = 'true'
+        and (0::oid = any(p.polroles) or 'console_ro'::regrole = any(p.polroles))
         and (exists (select 1 from pg_attribute a where a.attrelid = c.oid
                       and a.attname = 'app_id' and a.attnum > 0 and not a.attisdropped)
              or c.relname in ('alert_event','alert_delivery','uptime_result'))
       order by 1`)).rows.map((r) => r.pol);
   assert(`aucune policy \`using (true)\` sur une table scopée${leftovers.length ? ` — restantes : ${leftovers.join(", ")}` : ""}`,
     leftovers.length === 0);
+  // v89 — les policies de `mip_api` sont des LECTURES, et aucune ne vise un autre rôle.
+  const apiEcrit = (await c.query(
+    `select c.relname || '.' || p.polname as pol from pg_policy p join pg_class c on c.oid = p.polrelid
+      where p.polname = 'mip_api_lecture'
+        and (p.polcmd <> 'r' or p.polroles <> array['mip_api'::regrole::oid])`)).rows.map((r) => r.pol);
+  assert(`mip_api : ses policies sont en lecture et pour lui seul${apiEcrit.length ? ` — fautives : ${apiEcrit.join(", ")}` : ""}`,
+    apiEcrit.length === 0);
 
   // ── Le propriétaire voit tout (l'exploitation garde sa portée) ──────────────
   assert("propriétaire : voit les 2 tenants de fixture (purge/alerting non cassés)", (await seenFixture(c, "rum_metric")) === 2);
