@@ -107,7 +107,8 @@ continu n'a aucune de ces limites.
 | `RATE_LIMIT_PER_MIN` | `collector` | non | défaut 600, par app |
 | `PGPOOL_MAX` | `collector`, `scheduler`, `notifier` | non | taille du pool (défauts : 8, 4 et 2) |
 | `LOG_LEVEL` | `collector`, `scheduler`, `notifier` | non | défaut `info` |
-| `MIP_CONSOLE_URL` | `mcp` | **oui** | origine de la console dont il consomme l'API v1 |
+| `MIP_API_HOST`, `MIP_API_PORT` | `mcp` | non | le service `api` par le réseau privé (`api.railway.internal`, port 8080 par défaut) ; **l'emporte** sur `MIP_CONSOLE_URL`. Hôte privé exigé : HTTP clair, le jeton de l'appelant y passe |
+| `MIP_CONSOLE_URL` | `mcp` | oui, sans `MIP_API_HOST` | origine de la console dont il consomme l'API v1 (repli, et le chemin d'avant P4) |
 | `MCP_PATH` | `mcp` | non | chemin du point MCP (défaut `/mcp`) |
 
 `mcp` ne prend **pas** `DATABASE_URL` ni de jeton d'API : il relaie celui de

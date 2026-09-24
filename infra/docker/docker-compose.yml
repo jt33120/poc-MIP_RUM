@@ -188,8 +188,12 @@ services:
     image: mip-rum/mcp:local
     # NI DATABASE_URL NI DÉPENDANCE À `migrate` : ce service n'atteint pas la
     # base, et le faire attendre une migration lui donnerait un lien avec elle
-    # qu'il ne doit pas avoir. Il ne parle qu'à l'API v1 de la console.
+    # qu'il ne doit pas avoir. Il ne parle qu'à l'API v1 : celle du service
+    # `api` si MIP_API_HOST est posé (réseau privé, comme sur Railway :
+    # `MIP_API_HOST=api MIP_API_PORT=8080` avec le profil `api`), sinon la console.
     environment:
+      MIP_API_HOST: ${MIP_API_HOST:-}
+      MIP_API_PORT: ${MIP_API_PORT:-8080}
       # La console du poste par défaut (`pnpm dev` sur :3000), vue depuis le
       # conteneur. Un appel d'outil sans console joignable échoue proprement ;
       # le service, lui, démarre et répond à `tools/list`.
