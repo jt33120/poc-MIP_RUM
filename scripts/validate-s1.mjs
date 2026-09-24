@@ -1,5 +1,7 @@
 // Validation S1 : ouvre la démo en headless, finalise le LCP (clic), flush,
 // puis vérifie qu'un payload OTLP JSON contenant un span webvital.LCP est arrivé.
+// Prérequis : `MIP_E2E_TAMPON=1 node services/collector/dev-server.mjs` (le
+// tampon /__recent lu plus bas est éteint sans cet opt-in).
 import { chromium } from "@playwright/test";
 
 const INGEST = "http://localhost:4318";

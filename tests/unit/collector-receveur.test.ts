@@ -356,20 +356,47 @@ describe("échéance DURE : rien ne part, rien n'est commis après le budget", (
 
 // ──────────────────────────── 3. Tampon /__recent ────────────────────────────
 
-describe("le tampon /__recent ne démarre pas en production", () => {
+describe("le tampon /__recent ne démarre pas en production, et jamais sans opt-in", () => {
   const pool = fauxPool().pool;
+  const OPT_IN = { MIP_E2E_TAMPON: "1" };
 
-  it("NODE_ENV=production : refus au démarrage", () => {
-    expect(() => creerReceveur(pool, { tampon: true, env: { NODE_ENV: "production" } })).toThrow(/tampon \/__recent est interdit/);
+  it("NODE_ENV=production : refus au démarrage, même avec l'opt-in", () => {
+    expect(() => creerReceveur(pool, { tampon: true, env: { NODE_ENV: "production", ...OPT_IN } })).toThrow(/tampon \/__recent est interdit/);
   });
 
-  it("RAILWAY_ENVIRONMENT défini (même « staging ») : refus au démarrage", () => {
-    expect(() => creerReceveur(pool, { tampon: true, env: { RAILWAY_ENVIRONMENT: "staging" } })).toThrow(/interdit en production/);
+  it.each(["RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID"])(
+    "%s défini (même vide) : refus au démarrage, même avec l'opt-in",
+    (cle) => {
+      expect(() => creerReceveur(pool, { tampon: true, env: { [cle]: "staging", ...OPT_IN } })).toThrow(/interdit en production/);
+      expect(() => creerReceveur(pool, { tampon: true, env: { [cle]: "", ...OPT_IN } })).toThrow(/interdit en production/);
+    },
+  );
+
+  it("sans tampon, un déploiement démarre (l'opt-in seul n'allume rien)", () => {
+    expect(() => creerReceveur(pool, { tampon: false, env: { NODE_ENV: "production", RAILWAY_ENVIRONMENT: "production", RAILWAY_PROJECT_ID: "p", ...OPT_IN } })).not.toThrow();
   });
 
-  it("en développement : permis ; et sans tampon, la production démarre", () => {
-    expect(() => creerReceveur(pool, { tampon: true, env: { NODE_ENV: "development" } })).not.toThrow();
-    expect(() => creerReceveur(pool, { tampon: false, env: { NODE_ENV: "production", RAILWAY_ENVIRONMENT: "production" } })).not.toThrow();
+  it("hors déploiement, SANS MIP_E2E_TAMPON=1 : démarre, mais /__recent répond 404 et rien n'est retenu", async () => {
+    const { base, receveur, lignes } = await servir(fauxPool().pool, { tampon: true, env: { NODE_ENV: "development" } });
+    expect((await posterTraces(base)).status).toBe(200);
+    expect((await fetch(`${base}/__recent`)).status).toBe(404);
+    expect(receveur.recents).toHaveLength(0);
+    expect(lignes.some((l) => /MIP_E2E_TAMPON=1 absent/.test(l.msg))).toBe(true);
+  });
+
+  it("hors déploiement, AVEC MIP_E2E_TAMPON=1 : /__recent rend le dernier lot", async () => {
+    const { base } = await servir(fauxPool().pool, { tampon: true, env: { NODE_ENV: "development", ...OPT_IN } });
+    expect((await posterTraces(base)).status).toBe(200);
+    const r = await fetch(`${base}/__recent`);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toHaveLength(1);
+  });
+
+  it("l'opt-in n'est QUE « 1 » : « true », « yes » ne l'allument pas", async () => {
+    for (const valeur of ["true", "yes", "0", ""]) {
+      const { base } = await servir(fauxPool().pool, { tampon: true, env: { MIP_E2E_TAMPON: valeur } });
+      expect((await fetch(`${base}/__recent`)).status, valeur).toBe(404);
+    }
   });
 });
 

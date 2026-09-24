@@ -78,7 +78,7 @@ const receveur = creerReceveur(pool, {
   log,
   nom: "collector",
   // /__recent retient des payloads en clair : jamais ici (et le receveur
-  // refuserait de démarrer avec, sous NODE_ENV=production).
+  // refuserait de démarrer avec, sous NODE_ENV=production ou sur Railway).
   tampon: false,
   signaux: ["traces", "logs", "replay", "sourcemaps"],
   requireApiKey: config.REQUIRE_API_KEY,

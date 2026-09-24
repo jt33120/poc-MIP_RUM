@@ -32,7 +32,8 @@ async function isUp(url) {
 }
 async function ensureServer(url, cmd, args) {
   if (await isUp(url)) return;
-  const child = spawn(cmd, args, { cwd: ROOT, stdio: "ignore" });
+  // MIP_E2E_TAMPON=1 : opt-in du tampon /__recent du dev-server (lu ci-dessous).
+  const child = spawn(cmd, args, { cwd: ROOT, stdio: "ignore", env: { ...process.env, MIP_E2E_TAMPON: "1" } });
   children.push(child);
   for (let i = 0; i < 20; i++) {
     if (await isUp(url)) return;

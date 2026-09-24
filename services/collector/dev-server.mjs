@@ -10,9 +10,11 @@
 //
 // Deux différences assumées avec la production, et elles ne concernent que le
 // développement :
-//   • `tampon` allumé : GET /__recent renvoie les derniers payloads reçus,
+//   • `tampon` demandé : GET /__recent renvoie les derniers payloads reçus,
 //     ce sur quoi les tests de bout en bout s'appuient pour affirmer que le
-//     navigateur a bien émis ce qu'on croit ;
+//     navigateur a bien émis ce qu'on croit. Demandé ne veut pas dire allumé :
+//     il faut AUSSI `MIP_E2E_TAMPON=1` dans l'environnement (playwright.config.ts
+//     et les scripts/validate-* le posent), sinon /__recent répond 404 ;
 //   • le port par défaut, 4318, celui qu'attend playwright.config.ts.
 import pg from "pg";
 import { creerReceveur } from "@mip/backend/lib/receiver.mjs";

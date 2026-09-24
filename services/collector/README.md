@@ -134,7 +134,7 @@ Deux réplicas écrivent en même temps sans se coordonner, et c'est sûr :
 | client qui forge `x-mip-edge-*` ou un pays de CDN | ignoré et retiré | même ligne, `mode: "direct"` |
 | `REQUIRE_API_KEY=true` sur une app sans clé | 403 | `rejected: api key` |
 | SIGTERM | `/ready` 503, `Connection: close` ; requêtes en vol finies ; boucle de drain finie ; `pool.end()` ; sortie 0 | `arrêt demandé`, `ressource fermée`, `arrêt terminé` |
-| `tampon: true` recopié dans un point d'entrée déployé | **refus de démarrer** si `NODE_ENV=production` ou `RAILWAY_ENVIRONMENT` est défini (`/__recent` rend des payloads en clair) | exception au démarrage |
+| `tampon: true` recopié dans un point d'entrée déployé | **refus de démarrer** si `NODE_ENV=production` ou si l'une de `RAILWAY_ENVIRONMENT`, `RAILWAY_ENVIRONMENT_NAME`, `RAILWAY_PROJECT_ID` est définie (`/__recent` rend des payloads en clair) ; hors déploiement, tampon **éteint** sans l'opt-in `MIP_E2E_TAMPON=1` | exception au démarrage ; sinon `tampon /__recent demandé mais éteint` |
 
 ## Lancement local
 
@@ -154,4 +154,4 @@ curl -s -H "authorization: Bearer $METRICS_TOKEN" localhost:4318/ready
 kill -TERM %1                                             # sortie 0, en quelques ms à vide
 ```
 
-Ou l'image, par son profil compose : `docker compose -f infra/docker/docker-compose.yml up -d --build --wait collector` (db → migrate → collector). Les serveurs de **développement** (`dev-server.mjs` :4318, `replay-dev-server.mjs` :4319) partagent le receveur, avec le tampon `/__recent` allumé pour l'E2E ; ils ne sont pas ce service.
+Ou l'image, par son profil compose : `docker compose -f infra/docker/docker-compose.yml up -d --build --wait collector` (db → migrate → collector). Les serveurs de **développement** (`dev-server.mjs` :4318, `replay-dev-server.mjs` :4319) partagent le receveur, avec le tampon `/__recent` demandé pour l'E2E (et allumé seulement sous `MIP_E2E_TAMPON=1`, que posent `playwright.config.ts` et les `scripts/validate-*`) ; ils ne sont pas ce service.

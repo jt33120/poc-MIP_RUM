@@ -149,7 +149,8 @@ function otlpGeoPayload(sessionId) {
 async function proofGeo() {
   const server = spawn("node", ["services/collector/dev-server.mjs"], {
     cwd: ROOT,
-    env: { ...process.env, DATABASE_URL, INGEST_PORT: String(INGEST_PORT) },
+    // MIP_E2E_TAMPON=1 : opt-in du tampon /__recent, dont ce script attend la réponse.
+    env: { ...process.env, DATABASE_URL, INGEST_PORT: String(INGEST_PORT), MIP_E2E_TAMPON: "1" },
     stdio: ["ignore", "pipe", "inherit"],
   });
   try {

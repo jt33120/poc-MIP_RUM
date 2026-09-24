@@ -20,6 +20,9 @@ export default defineConfig({
       command: "node services/collector/dev-server.mjs",
       url: "http://localhost:4318/__recent",
       reuseExistingServer: true,
+      // Opt-in EXPLICITE du tampon /__recent (payloads en clair) : sans lui, le
+      // receveur le laisse éteint et cette URL de disponibilité répond 404.
+      env: { MIP_E2E_TAMPON: "1" },
     },
     {
       command: "node demo/serve.mjs",

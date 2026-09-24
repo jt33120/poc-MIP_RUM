@@ -53,6 +53,18 @@ import { ErreurEcheance, sousEcheance } from "./privacy-barriere.mjs";
  */
 export const ENTETE_COLLECTOR = "x-mip-collector";
 
+/**
+ * Variables que Railway pose sur TOUT déploiement (et qu'un poste de
+ * développement n'a pas). Une seule suffit : `RAILWAY_ENVIRONMENT` seule
+ * laissait passer un service dont l'environnement ne la porterait pas.
+ */
+export const VARIABLES_DEPLOIEMENT = Object.freeze(["RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID"]);
+
+/** L'environnement ressemble-t-il à un déploiement ? (variable DÉFINIE, même vide) */
+export function environnementDeploye(env) {
+  return env.NODE_ENV === "production" || VARIABLES_DEPLOIEMENT.some((cle) => env[cle] !== undefined);
+}
+
 /** Garde-fou replay : > au plafond du SDK (1 Mo gzip par session). */
 export const MAX_REPLAY_BYTES = 2 * 1024 * 1024;
 
@@ -134,7 +146,7 @@ function entete(req, nom) {
  *   requireApiKey?: boolean,
  *   rateLimitPerMin?: number,
  *   log?: object,
- *   tampon?: boolean,        // expose GET /__recent (assertions E2E) — JAMAIS en production
+ *   tampon?: boolean,        // expose GET /__recent (assertions E2E) — JAMAIS en production, et seulement avec MIP_E2E_TAMPON=1
  *   signaux?: ("traces"|"logs"|"replay"|"sourcemaps")[],
  *   aliasSante?: string[],   // chemins supplémentaires répondant comme /health
  *   nom?: string,            // nom du service, renvoyé par /health
@@ -158,12 +170,21 @@ export function creerReceveur(pool, opts = {}) {
   // payloads EN CLAIR (URL visitées, attributs, messages d'erreur, identifiants
   // de session) et les rend à quiconque fait un GET, sans authentification. C'est un outil
   // d'assertion E2E ; un `tampon: true` recopié dans un point d'entrée déployé
-  // serait une fuite. Refus au démarrage — pas un avertissement qu'on lit trop
-  // tard — dès que l'environnement ressemble à un déploiement.
-  if (opts.tampon && (env.NODE_ENV === "production" || env.RAILWAY_ENVIRONMENT)) {
+  // serait une fuite. Deux verrous, parce qu'un seul a déjà failli :
+  //   1. refus au DÉMARRAGE — pas un avertissement qu'on lit trop tard — dès que
+  //      l'environnement ressemble à un déploiement (`environnementDeploye`) ;
+  //   2. même hors déploiement, le tampon reste ÉTEINT sans l'opt-in explicite
+  //      `MIP_E2E_TAMPON=1` : `tampon: true` dans le code ne suffit plus, il faut
+  //      que le LANCEUR de l'E2E (playwright.config.ts, scripts/validate-*) le
+  //      demande. Un dev-server lancé à la main n'expose rien.
+  if (opts.tampon && environnementDeploye(env)) {
     throw new Error(
-      "receveur : le tampon /__recent est interdit en production (NODE_ENV=production ou RAILWAY_ENVIRONMENT défini)",
+      `receveur : le tampon /__recent est interdit en production (NODE_ENV=production ou ${VARIABLES_DEPLOIEMENT.join("/")} défini)`,
     );
+  }
+  const tampon = Boolean(opts.tampon) && env.MIP_E2E_TAMPON === "1";
+  if (opts.tampon && !tampon) {
+    log.info?.("tampon /__recent demandé mais éteint : opt-in MIP_E2E_TAMPON=1 absent");
   }
 
   // Identité : le secret n'est utilisé QUE si son empreinte concorde (ou si
@@ -376,7 +397,7 @@ export function creerReceveur(pool, opts = {}) {
       identityHashSecret,
     );
     payload = secured.payload;
-    if (opts.tampon) {
+    if (tampon) {
       recents.push(payload);
       if (recents.length > TAILLE_TAMPON) recents.shift();
     }
@@ -582,7 +603,7 @@ export function creerReceveur(pool, opts = {}) {
           return repondre(res, 503, { status: "unready" }, entetes);
         }
       }
-      if (opts.tampon && req.method === "GET" && chemin === "/__recent") {
+      if (tampon && req.method === "GET" && chemin === "/__recent") {
         return repondre(res, 200, recents, entetes);
       }
       // Parité avec les routes Vercel : un GET de diagnostic répond 200 sur
