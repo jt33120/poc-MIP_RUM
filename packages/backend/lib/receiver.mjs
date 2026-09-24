@@ -44,6 +44,15 @@ import { estIndisponibilite, isTransient, withRetry } from "../shared/retry.mjs"
 import { etatIdentite, secureOtlpIdentities } from "./identity-hash.mjs";
 import { ErreurEcheance, sousEcheance } from "./privacy-barriere.mjs";
 
+/**
+ * Signature des réponses du SERVICE collector (`x-mip-collector: 1`), posée par
+ * le kit sur toutes ses réponses. Le relais de la console (P3) la lit pour
+ * distinguer un 404 du collector d'un 404 du routeur Railway. Ici et non dans
+ * `services/collector/server.mjs` : le relais l'importe, et un point d'entrée
+ * ne s'importe pas (il démarre le service).
+ */
+export const ENTETE_COLLECTOR = "x-mip-collector";
+
 /** Garde-fou replay : > au plafond du SDK (1 Mo gzip par session). */
 export const MAX_REPLAY_BYTES = 2 * 1024 * 1024;
 

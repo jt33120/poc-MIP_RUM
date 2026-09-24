@@ -271,6 +271,78 @@ describe("service-kit/http — routes, plafond de corps, erreurs", () => {
   });
 });
 
+describe("service-kit/http — responseHeaders : la signature du service sur TOUTES ses réponses", () => {
+  // Le relais de la console (P3) distingue ainsi un 404 du collector d'un 404
+  // du routeur Railway : l'en-tête doit être là jusque sur les erreurs.
+  const SIGNE = { "x-mip-collector": "1" };
+
+  it("routes, 404, 413, 500, /health (200 et 503), /ready et /metrics refusés", async () => {
+    const pool = fauxPool();
+    const { base } = await demarrer({
+      pool,
+      responseHeaders: SIGNE,
+      maxBodyBytes: 10,
+      handler: (req: any, res: any) => {
+        if (req.url === "/leve") throw new Error("boum");
+        if (req.url === "/absente") {
+          res.writeHead(404, { "content-type": "application/json" });
+          return res.end("{}");
+        }
+        res.writeHead(200, { "x-autre": "a" });
+        res.end("ok");
+      },
+    });
+    const reponses = {
+      route: await fetch(`${base}/x`),
+      metier404: await fetch(`${base}/absente`),
+      trop: await fetch(`${base}/x`, { method: "POST", body: "x".repeat(50) }),
+      leve: await fetch(`${base}/leve`),
+      sante: await fetch(`${base}/health`),
+      ready: await fetch(`${base}/ready`),
+      metrics: await fetch(`${base}/metrics`),
+      methode: await fetch(`${base}/health`, { method: "POST" }),
+    };
+    pool.etat = "ko";
+    const santeKo = await fetch(`${base}/health`);
+    expect([reponses.metier404.status, reponses.trop.status, reponses.leve.status, santeKo.status]).toEqual([404, 413, 500, 503]);
+    for (const [nom, r] of Object.entries({ ...reponses, santeKo })) {
+      expect(r.headers.get("x-mip-collector"), nom).toBe("1");
+    }
+    // Fusion, pas remplacement : les en-têtes de la route restent.
+    expect(reponses.route.headers.get("x-autre")).toBe("a");
+  });
+
+  it("sans routes (scheduler) : le 404 du kit est signé aussi", async () => {
+    const { base } = await demarrer({ responseHeaders: SIGNE });
+    const r = await fetch(`${base}/nulle-part`);
+    expect(r.status).toBe(404);
+    expect(r.headers.get("x-mip-collector")).toBe("1");
+  });
+
+  it("jusqu'aux réponses que Node rend seul : 400 (requête illisible), 408 (headersTimeout)", async () => {
+    const { port } = await demarrer({
+      responseHeaders: SIGNE,
+      timeouts: { headersTimeout: 300, requestTimeout: 600, connectionsCheckingInterval: 100 },
+    });
+    const illisible = await socketBrute(port, (s) => s.write("n'importe quoi\r\n\r\n"));
+    expect(illisible.recu).toMatch(/^HTTP\/1\.1 400 /);
+    expect(illisible.recu.toLowerCase()).toContain("x-mip-collector: 1");
+    const lent = await socketBrute(port, (s) => s.write("GET /x HTTP/1.1\r\nHost: a\r\n"));
+    expect(lent.recu).toMatch(/^HTTP\/1\.1 408 /);
+    expect(lent.recu.toLowerCase()).toContain("x-mip-collector: 1");
+    expect(lent.ferme).toBe(true);
+  });
+
+  it("sans responseHeaders : aucun en-tête ajouté (les autres services ne signent rien)", async () => {
+    const { base } = await demarrer();
+    expect((await fetch(`${base}/health`)).headers.get("x-mip-collector")).toBeNull();
+  });
+
+  it("un en-tête invalide est refusé au DÉMARRAGE, pas à chaque réponse", () => {
+    expect(() => startService({ name: "t", log: journal().log, port: 0, responseHeaders: { "x bad": "1" } } as any)).toThrow();
+  });
+});
+
 describe("service-kit/http — journal d'accès sans IP, request_id propagé", () => {
   it("méthode, chemin sans query, statut, durée, request_id ; aucune adresse IP", async () => {
     const { base, lignes } = await demarrer({

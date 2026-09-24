@@ -28,6 +28,8 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `OPTIONS *` | préflight CORS (origines du registre d'apps) | 204 |
 | `GET /health`, `/ready`, `/metrics` | sondes du kit, ci-dessous | |
 
+**Toute réponse du collector porte `x-mip-collector: 1`** — routes, 404 métier, erreurs 4xx/5xx, sondes, et jusqu'aux 400/408/431 que Node rend seul (option `responseHeaders` du kit). Le relais de la console (P3) s'en sert pour distinguer un 404 **du collector** (route inconnue : ne pas rejouer ailleurs) d'un 404 **du routeur Railway** (service absent ou mal routé : repli). L'en-tête ne dit rien d'autre que « c'est moi ».
+
 ## Sondes
 
 | Route | Exposition | Sens |

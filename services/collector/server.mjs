@@ -18,7 +18,7 @@ import { createPool, describeTarget } from "@mip/service-kit/pg.mjs";
 import { createMetrics } from "@mip/service-kit/metrics.mjs";
 import { startService } from "@mip/service-kit/http.mjs";
 import { startLoop } from "@mip/service-kit/loop.mjs";
-import { BUDGET_REQUETE, creerReceveur, plafondCorps } from "@mip/backend/lib/receiver.mjs";
+import { BUDGET_REQUETE, creerReceveur, ENTETE_COLLECTOR, plafondCorps } from "@mip/backend/lib/receiver.mjs";
 import { drainerIngestRaw } from "@mip/backend/lib/ingest-differe.mjs";
 import { IDENTITY_FINGERPRINT_PATTERN, verifierConfigIdentite } from "@mip/backend/lib/identity-hash.mjs";
 import { parseSourceIp, verifierSecretsBord } from "@mip/backend/shared/client-ip.mjs";
@@ -128,6 +128,11 @@ startService({
   details: receveur.infosSante,
   // /ready (jeton) : registre d'apps chargé au moins une fois, identité concordante.
   ready: receveur.pret,
+  // Sur TOUTES les réponses (erreurs, 404 métier, sondes comprises) : le relais
+  // de la console distingue ainsi un 404 du collector (route inconnue, à ne
+  // pas rejouer ailleurs) d'un 404 du routeur Railway (service absent ou mal
+  // routé, qui appelle le repli). Aucune information : juste « c'est moi ».
+  responseHeaders: { [ENTETE_COLLECTOR]: "1" },
 });
 
 log.info("collector démarré", {

@@ -160,6 +160,11 @@ function avecDelai(promesse, ms, message) {
  *   donne une borne par route (les source maps en veulent plus)
  * @property {Partial<typeof DEFAULT_TIMEOUTS>} [timeouts]
  * @property {number} [healthTimeoutMs]         défaut 2 s
+ * @property {Record<string, string>} [responseHeaders]  en-têtes posés sur
+ *   CHAQUE réponse — routes, sondes, 404, 413, 500, et jusqu'aux 400/408/431
+ *   que Node rend seul (requête illisible, délais). Pour qu'un appelant
+ *   reconnaisse une réponse du SERVICE d'une réponse de l'infrastructure
+ *   devant lui (le 404 du routeur Railway n'est pas celui du collector).
  * @property {ReturnType<import("./lifecycle.mjs").installLifecycle>} [lifecycle]
  *   si fourni : /ready suit le drainage, et la fermeture du serveur est
  *   enregistrée en phase de drainage
@@ -188,6 +193,7 @@ export function startService(options) {
     maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
     healthTimeoutMs = 2_000,
     lifecycle,
+    responseHeaders = {},
   } = options ?? {};
   if (!name) throw new TypeError("startService : name obligatoire");
   if (!log) throw new TypeError("startService : log obligatoire");
@@ -196,6 +202,13 @@ export function startService(options) {
   const delais = { ...DEFAULT_TIMEOUTS, ...(options.timeouts ?? {}) };
   if (delais.headersTimeout > delais.requestTimeout) {
     throw new RangeError("startService : headersTimeout doit rester ≤ requestTimeout");
+  }
+
+  const entetesFixes = Object.entries(responseHeaders ?? {});
+  for (const [nom, valeur] of entetesFixes) {
+    // Validé au démarrage : un en-tête invalide ferait lever CHAQUE réponse.
+    http.validateHeaderName(nom);
+    http.validateHeaderValue(nom, valeur);
   }
 
   const limiteDe = (req) => (typeof maxBodyBytes === "function" ? maxBodyBytes(req) : maxBodyBytes);
@@ -297,6 +310,7 @@ export function startService(options) {
     const chemin = cheminSeul(req.url);
     const sonde = SONDES.has(chemin);
     res.setHeader("x-request-id", requestId);
+    for (const [nom, valeur] of entetesFixes) res.setHeader(nom, valeur);
     if (lifecycle?.draining) res.setHeader("connection", "close");
     enVol.add(res);
 
@@ -351,6 +365,22 @@ export function startService(options) {
   // Propriété et non option : l'option du constructeur n'existe pas sur toutes
   // les versions de Node que nous faisons tourner (images en 22, CI en 26).
   serveur.keepAliveTimeout = delais.keepAliveTimeout;
+
+  // Les réponses que Node rend SANS passer par `traiter` (requête illisible,
+  // en-têtes trop gros, headersTimeout/requestTimeout) : même réponse que le
+  // défaut de Node (`socketOnError`), en-têtes fixes en plus. Sans en-têtes
+  // fixes, on laisse Node faire.
+  if (entetesFixes.length) {
+    const lignesFixes = entetesFixes.map(([n, v]) => `${n}: ${v}\r\n`).join("");
+    serveur.on("clientError", (err, socket) => {
+      if (socket.writable && socket.bytesWritten === 0) {
+        const statut = { HPE_HEADER_OVERFLOW: "431 Request Header Fields Too Large", ERR_HTTP_REQUEST_TIMEOUT: "408 Request Timeout" }[err?.code]
+          ?? "400 Bad Request";
+        socket.write(`HTTP/1.1 ${statut}\r\nConnection: close\r\n${lignesFixes}\r\n`);
+      }
+      socket.destroy(err);
+    });
+  }
 
   const listening = new Promise((resoudre, rejeter) => {
     serveur.once("error", rejeter);
