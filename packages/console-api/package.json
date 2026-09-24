@@ -1,0 +1,20 @@
+{
+  "name": "@mip/console-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Le backend de la console (piste C) : routeur, pipeline de sécurité, politiques par opération, traitements. Web standard seulement (Request, Response, WebCrypto) : le service le monte sur le kit, les tests l'appellent directement.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mip/console-contract": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

@@ -1,6 +1,6 @@
 # Inventaire de la console, pour la piste C
 
-> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-09-24, sur `d1f2444 + scissions`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
+> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-09-24, sur `93f2e10 + scissions`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
 
 ## En chiffres
 
@@ -183,9 +183,9 @@
 | `components/errors/PanneauErreur.tsx` | `lib/queries-deploys.ts` → `lib/db.ts` |
 | `components/explorer/ActionsVue.tsx` | `app/explorer/actions.ts` → `lib/queries-saved-views.ts` → `lib/db.ts` |
 | `components/perf/RoutePanel.tsx` | `lib/fuseau.ts` → `lib/db.ts` |
-| `components/presentation/Annexe.tsx` | `components/presentation/Specs.tsx` → `lib/queries-planifie.ts` → `lib/db.ts` |
-| `components/presentation/Landing.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/queries-planifie.ts` → `lib/db.ts` |
-| `components/presentation/Specs.tsx` | `lib/queries-planifie.ts` → `lib/db.ts` |
+| `components/presentation/Annexe.tsx` | `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
+| `components/presentation/Landing.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
+| `components/presentation/Specs.tsx` | `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/sessions/PanneauSession.tsx` | `lib/queries.ts` → `lib/db.ts` |
 | `components/slo/SloStatusRow.tsx` | `app/alerts/actions.ts` → `lib/error-issue-workflow.ts` → `lib/db.ts` |
 

@@ -36,14 +36,10 @@ export const RAISON_CADENCE_LENTE = "base en offre gratuite : cadence ralentie p
  */
 export const TOLERANCE_MIN = CADENCE_TICK_MIN * 3;
 
-/** Une cadence publiée n'est crue que si elle est sur la grille du scheduler. */
-const CADENCES_ADMISES = [5, 10, 15, 20, 30];
-
-/** La valeur publiée, lue telle quelle en base ; `null` si absente ou hors grille. */
-export function cadencePubliee(brut: unknown): number | null {
-  const n = typeof brut === "string" && /^\d{1,2}$/.test(brut) ? Number(brut) : NaN;
-  return CADENCES_ADMISES.includes(n) ? n : null;
-}
+// Une cadence publiée n'est crue que si elle est sur la grille du scheduler. Sa
+// lecture vit dans le contrat de console-api : la console et console-api la
+// partagent (C0b), au lieu d'en tenir chacune une copie.
+export { cadencePubliee } from "@mip/console-contract";
 
 export type StatutLatence = "atteint" | "partiel" | "manque";
 

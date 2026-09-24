@@ -29,6 +29,9 @@ importers:
       '@mip/backend':
         specifier: workspace:*
         version: link:../../packages/backend
+      '@mip/console-contract':
+        specifier: workspace:*
+        version: link:../../packages/console-contract
       '@mip/mcp-tools':
         specifier: workspace:*
         version: link:../../packages/mcp-tools
@@ -125,6 +128,22 @@ importers:
         specifier: 8.21.0
         version: 8.21.0
 
+  packages/console-api:
+    dependencies:
+      '@mip/console-contract':
+        specifier: workspace:*
+        version: link:../console-contract
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/console-contract:
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   packages/db:
     dependencies:
       '@mip/backend':
@@ -216,6 +235,25 @@ importers:
       pg:
         specifier: 8.21.0
         version: 8.21.0
+
+  services/console-api:
+    dependencies:
+      pg:
+        specifier: 8.21.0
+        version: 8.21.0
+    devDependencies:
+      '@mip/console-api':
+        specifier: workspace:*
+        version: link:../../packages/console-api
+      '@mip/console-contract':
+        specifier: workspace:*
+        version: link:../../packages/console-contract
+      '@mip/service-kit':
+        specifier: workspace:*
+        version: link:../../packages/service-kit
+      esbuild:
+        specifier: 0.28.0
+        version: 0.28.0
 
   services/mcp:
     dependencies:
