@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import * as agent from "../../packages/agent-node/src/index";
-import { flattenOtlp, flattenOtlpLogs } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp, flattenOtlpLogs } from "../../packages/backend/shared/otlp.mjs";
 
 type Attribut = { key: string; value: Record<string, unknown> };
 type Lot = { url: string; corps: any };

@@ -32,7 +32,7 @@ import { percentileDepuisSeaux, seau } from "../../apps/console/lib/histogramme"
 
 const URL_TEST = process.env.SQL_TEST_DATABASE_URL;
 const RACINE = join(__dirname, "..", "..");
-const SQL_DIR = join(RACINE, "apps", "ingest", "sql");
+const SQL_DIR = join(RACINE, "packages", "db", "sql");
 
 /** Le schéma puis TOUTES les migrations, dans l'ordre NUMÉRIQUE — `sort()`
  *  alphabétique placerait v10 avant v2 et casserait des dépendances. */

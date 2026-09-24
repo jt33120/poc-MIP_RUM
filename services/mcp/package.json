@@ -9,6 +9,6 @@
     "start:stdio": "node stdio.mjs"
   },
   "dependencies": {
-    "mip-mcp": "workspace:*"
+    "@mip/mcp-tools": "workspace:*"
   }
 }

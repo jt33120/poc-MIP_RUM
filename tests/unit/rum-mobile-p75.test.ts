@@ -15,7 +15,7 @@ import {
   capabilityRows,
   formatCapabilityDeclaration,
   parseCapabilityDeclaration,
-} from "../../apps/ingest/supabase/functions/_shared/mobile-capabilities.mjs";
+} from "../../packages/backend/shared/mobile-capabilities.mjs";
 import {
   CAPACITES_MOBILES,
   RAISON_CAPACITES_NATIVES,

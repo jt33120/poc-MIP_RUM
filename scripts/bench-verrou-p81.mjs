@@ -28,12 +28,12 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { flattenOtlp } from "../apps/ingest/supabase/functions/_shared/otlp.mjs";
-import { writeRows } from "../apps/ingest/lib/pg-ingest.mjs";
-import { STRATEGIE_VERROU, withAppIngestTransaction } from "../apps/ingest/lib/privacy-barriere.mjs";
+import { flattenOtlp } from "../packages/backend/shared/otlp.mjs";
+import { writeRows } from "../packages/backend/lib/pg-ingest.mjs";
+import { STRATEGIE_VERROU, withAppIngestTransaction } from "../packages/backend/lib/privacy-barriere.mjs";
 
 const ICI = dirname(fileURLToPath(import.meta.url));
-const SQL_DIR = join(ICI, "..", "apps", "ingest", "sql");
+const SQL_DIR = join(ICI, "..", "packages", "db", "sql");
 
 const URL_BASE = process.env.BENCH_DATABASE_URL ?? process.env.SQL_TEST_DATABASE_URL;
 if (!URL_BASE) {

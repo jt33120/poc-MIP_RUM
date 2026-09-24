@@ -1,11 +1,11 @@
 // POST /api/ingest/v1/logs — OTLP/HTTP JSON (signal LOGS) -> rum_log.
 // Remplaçant de l'edge function Supabase `v1-logs`. Miroir de la route traces :
 // mêmes gardes (413/403/429, 400 vs 500), parser partagé flattenOtlpLogs.
-import { writeLogs } from "ingest/lib/pg-ingest.mjs";
-import { flattenOtlpLogs } from "ingest/shared/otlp.mjs";
-import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "ingest/shared/limits.mjs";
-import { withRetry } from "ingest/shared/retry.mjs";
-import { secureOtlpIdentities } from "ingest/lib/identity-hash.mjs";
+import { writeLogs } from "@mip/backend/lib/pg-ingest.mjs";
+import { flattenOtlpLogs } from "@mip/backend/shared/otlp.mjs";
+import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "@mip/backend/shared/limits.mjs";
+import { withRetry } from "@mip/backend/shared/retry.mjs";
+import { secureOtlpIdentities } from "@mip/backend/lib/identity-hash.mjs";
 import { pool } from "@/lib/db";
 import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
 

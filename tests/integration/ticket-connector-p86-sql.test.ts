@@ -19,23 +19,23 @@ import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 // @ts-expect-error module JS sans déclarations
-import { livrerTickets } from "../../apps/ingest/lib/integrations/tickets/dispatcher.mjs";
+import { livrerTickets } from "../../packages/backend/lib/integrations/tickets/dispatcher.mjs";
 // @ts-expect-error module JS sans déclarations
-import { construireCharge, referenceMip } from "../../apps/ingest/lib/integrations/tickets/adapter.mjs";
+import { construireCharge, referenceMip } from "../../packages/backend/lib/integrations/tickets/adapter.mjs";
 // @ts-expect-error module JS sans déclarations
-import { chiffrer } from "../../apps/ingest/lib/integrations/tickets/secrets.mjs";
+import { chiffrer } from "../../packages/backend/lib/integrations/tickets/secrets.mjs";
 // @ts-expect-error module JS sans déclarations
-import { writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS sans déclarations
-import { secureOtlpIdentities } from "../../apps/ingest/lib/identity-hash.mjs";
+import { secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.mjs";
 // @ts-expect-error module JS sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 import { DSAR_CHILD_TABLES } from "../../apps/console/lib/dsar";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 const pool = new pg.Pool(url ? { connectionString: url, max: 8 } : { max: 8 });
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 const APP = "p86-tickets";
 const AUTRE = "p86-tickets-autre";
@@ -43,7 +43,7 @@ const ADMIN = "p86-admin@test.local";
 const CIBLE = "moi/bac-a-sable";
 const CONSOLE = "https://console.test.local";
 const CLE_SERVEUR = randomBytes(32).toString("base64");
-const ENV = { TICKET_SECRET_KEY: CLE_SERVEUR, GITHUB_TICKETS_TOKEN: "jeton-de-test" };
+const ENV = { TICKET_SECRET_KEY: CLE_SERVEUR, TICKET_GITHUB_TOKEN: "jeton-de-test" };
 
 let compteurSpan = 0;
 const spanId = () => (0x8600_0000_0000_0000n + BigInt(++compteurSpan)).toString(16);
@@ -177,7 +177,7 @@ beforeEach(async () => {
 async function integration(
   app = APP,
   {
-    credential = "env:GITHUB_TICKETS_TOKEN",
+    credential = "env:TICKET_GITHUB_TOKEN",
     webhook = null as string | null,
     mapping = null as Record<string, string | null> | null,
     enabled = true,
@@ -288,7 +288,7 @@ suite("P8.6 — le schéma refuse ce qui ne doit pas exister", () => {
       ).rejects.toThrow(/ticket_integration_credential_v84/);
     }
     // Les deux formes acceptées, elles, passent.
-    await expect(integration(APP, { credential: "env:GITHUB_TICKETS_TOKEN" })).resolves.toBeTruthy();
+    await expect(integration(APP, { credential: "env:TICKET_GITHUB_TOKEN" })).resolves.toBeTruthy();
     await pool.query("delete from ticket_integration where app_id = $1", [APP]);
     await expect(integration(APP, { credential: chiffrer("jeton", ENV) })).resolves.toBeTruthy();
   });
@@ -296,14 +296,14 @@ suite("P8.6 — le schéma refuse ce qui ne doit pas exister", () => {
   it("refuse un fournisseur non implémenté et une cible qui n'est pas « owner/repo »", async () => {
     await expect(
       pool.query(
-        `insert into ticket_integration (app_id, provider, target, credential_ref) values ($1, 'jira', $2, 'env:X')`,
+        `insert into ticket_integration (app_id, provider, target, credential_ref) values ($1, 'jira', $2, 'env:TICKET_X')`,
         [APP, CIBLE],
       ),
     ).rejects.toThrow(/ticket_integration_v84/);
     await expect(
       pool.query(
         `insert into ticket_integration (app_id, provider, target, credential_ref)
-         values ($1, 'github', 'https://github.com/moi/bac', 'env:X')`,
+         values ($1, 'github', 'https://github.com/moi/bac', 'env:TICKET_X')`,
         [APP],
       ),
     ).rejects.toThrow(/ticket_integration_v84/);
@@ -594,7 +594,7 @@ suite("P8.6 — révocation de jeton : dégradation, jamais un blocage de la col
   });
 
   it("un secret référencé mais absent du runtime dégrade SANS perdre la demande", async () => {
-    const integ = await integration(APP, { credential: "env:JETON_JAMAIS_FOURNI" });
+    const integ = await integration(APP, { credential: "env:TICKET_JETON_JAMAIS_FOURNI" });
     const iss = await issue();
     const { jobId } = await demander(integ, iss.id);
     const f = espion([() => CREE_OK()]);
@@ -603,6 +603,23 @@ suite("P8.6 — révocation de jeton : dégradation, jamais un blocage de la col
     const { rows } = await pool.query("select state, last_error from ticket_integration where id = $1", [integ]);
     expect(rows[0]).toEqual({ state: "degraded", last_error: "variable_absente" });
     // La demande reste rejouable après correction : elle n'est pas en échec.
+    expect((await ligne(jobId!)).state).toBe("pending");
+  });
+
+  // P1 — la contrainte v84 accepte encore `env:` suivi de n'importe quelle
+  // variable : une ligne écrite avant le resserrement, ou directement en base,
+  // peut désigner une variable de la PLATEFORME. La résolution la refuse, même
+  // présente dans le runtime, et rien ne part chez le fournisseur.
+  it("une référence à une variable de la plateforme n'est jamais résolue, même présente", async () => {
+    const integ = await integration(APP, { credential: "env:DATABASE_URL" });
+    const iss = await issue();
+    const { jobId } = await demander(integ, iss.id);
+    const f = espion([() => CREE_OK()]);
+    await livrerTickets(pool, { fetchImpl: f.impl, env: { ...ENV, DATABASE_URL: "postgres://ne-doit-pas-sortir" } });
+    // Pas un seul appel sortant, pas même une recherche.
+    expect(f.appels).toHaveLength(0);
+    const { rows } = await pool.query("select state, last_error from ticket_integration where id = $1", [integ]);
+    expect(rows[0]).toEqual({ state: "degraded", last_error: "variable_hors_perimetre" });
     expect((await ligne(jobId!)).state).toBe("pending");
   });
 
@@ -634,11 +651,11 @@ suite("P8.6 — webhooks : rejeu, mapping explicite et autorité de MIP", () => 
   ) {
     const { validateWebhook, normalizeWebhook } = await import(
       // @ts-expect-error module JS sans déclarations
-      "../../apps/ingest/lib/integrations/tickets/github.mjs"
+      "../../packages/backend/lib/integrations/tickets/github.mjs"
     );
     const { appliquerEvenement } = await import(
       // @ts-expect-error module JS sans déclarations
-      "../../apps/ingest/lib/integrations/tickets/dispatcher.mjs"
+      "../../packages/backend/lib/integrations/tickets/dispatcher.mjs"
     );
     const brut = Buffer.from(JSON.stringify(corps), "utf8");
     const entetes = new Headers({
@@ -682,7 +699,7 @@ suite("P8.6 — webhooks : rejeu, mapping explicite et autorité de MIP", () => 
 
   /** Une issue avec son ticket déjà créé par le connecteur. */
   async function issueAvecTicket(mapping: Record<string, string | null> | null, statut = "open") {
-    const integ = await integration(APP, { webhook: "env:WH", mapping: mapping ?? undefined });
+    const integ = await integration(APP, { webhook: "env:TICKET_WH", mapping: mapping ?? undefined });
     const iss = await issue(APP, { statut });
     await pool.query(
       `insert into error_issue_ticket (app_id, issue_id, url, label, provider, external_id, integration_id, origin, provider_state)
@@ -769,7 +786,7 @@ suite("P8.6 — webhooks : rejeu, mapping explicite et autorité de MIP", () => 
   });
 
   it("un ticket inconnu de MIP n'ouvre aucun oracle : rien n'est écrit", async () => {
-    const integ = await integration(APP, { webhook: "env:WH", mapping: { closed: "resolved" } });
+    const integ = await integration(APP, { webhook: "env:TICKET_WH", mapping: { closed: "resolved" } });
     const r = await livraison(integ, { ...FERMETURE, issue: { number: 999, state: "closed" } }, "d-7");
     expect(r).toMatchObject({ status: "unknown_ticket" });
     const { rows } = await pool.query(
@@ -782,7 +799,7 @@ suite("P8.6 — webhooks : rejeu, mapping explicite et autorité de MIP", () => 
   it("une signature invalide n'écrit rien du tout, pas même au journal", async () => {
     const { integ } = await issueAvecTicket({ closed: "resolved" });
     // @ts-expect-error module JS sans déclarations
-    const { validateWebhook } = await import("../../apps/ingest/lib/integrations/tickets/github.mjs");
+    const { validateWebhook } = await import("../../packages/backend/lib/integrations/tickets/github.mjs");
     const brut = Buffer.from(JSON.stringify(FERMETURE), "utf8");
     const verdict = validateWebhook({
       secret: SECRET,

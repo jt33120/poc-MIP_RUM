@@ -8,7 +8,7 @@ import {
   eventsInPayload,
   percentile,
 } from "../../scripts/load-bench.mjs";
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 describe("percentile", () => {
   it("p50/p95/p100 et tableau vide", () => {

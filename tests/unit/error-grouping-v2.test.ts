@@ -29,9 +29,9 @@ import {
   semanticCodes,
   validateVendorPaths,
   // @ts-expect-error — module .mjs sans déclaration de types
-} from "../../apps/ingest/supabase/functions/_shared/error-normalize.mjs";
+} from "../../packages/backend/shared/error-normalize.mjs";
 // @ts-expect-error — module .mjs sans déclaration de types
-import { errorFingerprint, flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { errorFingerprint, flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 type Position = { index: number; source: string; line: number };
 
@@ -419,7 +419,7 @@ describe("taxonomies partagées avec la console, la migration et l'OpenAPI", () 
 // Ce que seul le TEXTE garantit, et qu'une migration ultérieure pourrait défaire
 // sans qu'aucun test d'exécution ne le remarque.
 
-const SQL = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL = join(__dirname, "..", "..", "packages", "db", "sql");
 const V72 = readFileSync(join(SQL, "migration-v72.sql"), "utf8");
 
 /**

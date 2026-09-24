@@ -125,7 +125,7 @@ couverture tracing reste à 0 %.
 
 ### 7.1 Le volume dépend des **pages vues/jour**, pas du nombre de collaborateurs
 Le coût technique est piloté par le trafic, pas la taille de l'entreprise. Repère
-mesuré (cf. `infra/clickhouse.notes.md`) pour **1 M pages vues/jour** :
+mesuré (cf. `labs/clickhouse/NOTES.md`) pour **1 M pages vues/jour** :
 
 | Table | Lignes/jour | Disque/jour (ClickHouse) |
 |---|---|---|
@@ -217,4 +217,4 @@ Pour le **multi-milliards** : Materialized View `AggregatingMergeTree`
 | **Vrai facteur limitant** | Pas l'architecture : le **store de démo** + l'**infra de prod** (HA, multi-région, certifs) à financer |
 
 *Références internes : `docs/LIMITES.md` (limites détaillées), `docs/REVUE_POC.md`
-(revue d'ingénierie), `infra/clickhouse.notes.md` (bench reproductible).*
+(revue d'ingénierie), `labs/clickhouse/NOTES.md` (bench reproductible).*

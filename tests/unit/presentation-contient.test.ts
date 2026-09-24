@@ -35,11 +35,11 @@ describe("1 — les nombres des accès programmatiques sont lus dans le document
   });
 
   it("un nombre qui disparaît de sa cellule est tu, pas gardé", () => {
-    const sansNombre = avec("E2", { preuve: "`apps/mcp/lib/catalogue.mjs`, service Railway `mcp`" });
+    const sansNombre = avec("E2", { preuve: "`packages/mcp-tools/lib/catalogue.mjs`, service Railway `mcp`" });
     expect(nombreDansPreuve("E2", /\*\*(\d+) outils\*\*/, sansNombre)).toBeNull();
     expect(nombreDansPreuve("Z9", /(\d+)/)).toBeNull();
     // Un nouveau relevé qui recompte suit, sans toucher la vitrine.
-    const recompte = avec("E2", { preuve: "`apps/mcp/lib/catalogue.mjs` — **17 outils**, recomptés" });
+    const recompte = avec("E2", { preuve: "`packages/mcp-tools/lib/catalogue.mjs` — **17 outils**, recomptés" });
     expect(nombreDansPreuve("E2", /\*\*(\d+) outils\*\*/, recompte)).toBe(17);
   });
 });
@@ -79,7 +79,7 @@ describe("2 — « Ce que ces chiffres ne disent pas » suit le verdict de F1, F
 
 describe("3 — le banc ClickHouse cité est celui des notes d'infrastructure", () => {
   it("date, égalité des p75 à 1 ms près, ×15 à données identiques", () => {
-    const notes = lire("infra/clickhouse.notes.md");
+    const notes = lire("labs/clickhouse/NOTES.md");
     expect(notes).toContain(`## Bench réel (${BANC_CLICKHOUSE.le}, local)`);
     expect(notes).toContain("tolérance 1 ms sur les p75");
     expect(notes).toContain(`**×${BANC_CLICKHOUSE.compacite}** plus compact à données identiques`);

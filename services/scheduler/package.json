@@ -8,7 +8,9 @@
     "start": "node worker.mjs"
   },
   "dependencies": {
-    "ingest": "workspace:*",
+    "@mip/backend": "workspace:*",
+    "@mip/db": "workspace:*",
+    "@mip/service-kit": "workspace:*",
     "pg": "8.21.0"
   }
 }

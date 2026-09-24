@@ -10,9 +10,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { buildResourceSpans, msToHr, type EmitSpan } from "../../packages/rum-sdk/src/otlp-encode";
 import { buildExceptionSpan, buildPayload, type Ctx, type MobileConfig } from "../../packages/rum-mobile/src/core";
 // @ts-expect-error module JS partagé sans déclarations
-import { drainerIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
+import { drainerIngestRaw } from "../../packages/backend/lib/ingest-differe.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 import {
   ERROR_SOURCES,
   boundedErrorType,
@@ -23,7 +23,7 @@ import {
   nativeTraceId,
   sansNul,
   // @ts-expect-error module JS partagé sans déclarations
-} from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+} from "../../packages/backend/shared/otlp.mjs";
 
 const NOW = Date.parse("2026-09-16T08:00:00.000Z");
 const NUL = String.fromCharCode(0);

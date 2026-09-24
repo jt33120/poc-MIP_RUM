@@ -1,7 +1,7 @@
 // Vérifie que les rollups de migration-v12 produisent EXACTEMENT les mêmes
 // résultats que les requêtes sur lignes brutes (Δ=0), pour les vues que la console
 // bascule sur le rollup : heatmap santé (healthGrid) et trafic quotidien (dailyTraffic).
-// Esprit identique à infra/clickhouse/bench.mjs (preuve d'équivalence).
+// Esprit identique à labs/clickhouse/bench.mjs (preuve d'équivalence).
 //
 // Usage (Postgres éphémère) :
 //   pg_virtualenv node scripts/verify-rollups.mjs
@@ -10,8 +10,8 @@
 import { readFile } from "node:fs/promises";
 import pg from "pg";
 
-const SCHEMA = new URL("../apps/ingest/sql/schema.sql", import.meta.url);
-const MIGRATION = new URL("../apps/ingest/sql/migration-v12.sql", import.meta.url);
+const SCHEMA = new URL("../packages/db/sql/schema.sql", import.meta.url);
+const MIGRATION = new URL("../packages/db/sql/migration-v12.sql", import.meta.url);
 
 // --- requêtes console : BRUT vs ROLLUP (mêmes paramètres $1=app, $2=device) ----
 const RAW_GRID = `

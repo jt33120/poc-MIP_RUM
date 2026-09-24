@@ -1,3 +1,14 @@
+# OBSOLÈTE — NE PLUS MODIFIER NI RÉFÉRENCER ; À SUPPRIMER APRÈS L'APPLY DE L'IAC.
+# Remplacé par `services/mcp/Dockerfile` (P1, contrat de service § 9).
+# Plus rien DANS LE DÉPÔT ne construit ce fichier : ni `.railway/railway.ts`,
+# ni le compose, ni la fumée. Il reste pour UNE raison : le tableau de bord
+# Railway le désigne encore comme Dockerfile du service `mcp`, jusqu'à ce
+# que le workflow « Railway IaC » applique le nouveau `dockerfilePath`. Railway
+# construisant sur chaque push (`checkSuites: false`), le supprimer dans la même
+# fusion ferait échouer la construction de `mcp` entre la fusion et l'apply
+# relu. Une fois l'apply fait et un déploiement de `mcp` vert sur la
+# nouvelle image : supprimer ce fichier, et ses chemins surveillés dans l'IaC.
+#
 # Image du serveur MCP MIP RUM — l'API v1 de lecture, exposée à un agent IA.
 #
 # POURQUOI UNE IMAGE À PART, alors que Dockerfile.backend en fait une seule pour
@@ -19,20 +30,24 @@
 # PAS DE pnpm ICI, comme pour le backend : `npm install` depuis le manifeste du
 # noyau fige les versions du SDK MCP et de zod, et l'arborescence est recomposée
 # à la main. Contexte de build = RACINE du dépôt.
-FROM node:22-alpine
+#
+# Node 24 sur Debian, comme `Dockerfile.backend` et pour les mêmes raisons (un
+# seul runtime, celui de `.nvmrc` ; glibc comme la CI) — voir son en-tête.
+# Épinglée par étiquette seulement ; le digest arrive avec PR-C.
+FROM node:24-bookworm-slim
 
 WORKDIR /app
 
 # 1) Les dépendances runtime : le SDK MCP et zod, rien d'autre. Couche mise en
 #    cache tant que ces deux versions ne bougent pas.
-COPY apps/mcp/package.json ./package.json
+COPY packages/mcp-tools/package.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
-# 2) Le noyau MCP, placé là où Node résout le specifier nu `mip-mcp/...` —
+# 2) Le noyau MCP, placé là où Node résout le specifier nu `@mip/mcp-tools/...` —
 #    exactement comme en développement, où pnpm pose le même lien.
-COPY apps/mcp/package.json ./node_modules/mip-mcp/package.json
-COPY apps/mcp/serveur.mjs  ./node_modules/mip-mcp/serveur.mjs
-COPY apps/mcp/lib          ./node_modules/mip-mcp/lib
+COPY packages/mcp-tools/package.json ./node_modules/@mip/mcp-tools/package.json
+COPY packages/mcp-tools/serveur.mjs  ./node_modules/@mip/mcp-tools/serveur.mjs
+COPY packages/mcp-tools/lib          ./node_modules/@mip/mcp-tools/lib
 
 # 3) Les points d'entrée. Minces par construction.
 COPY services/mcp ./services/mcp

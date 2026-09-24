@@ -1,7 +1,7 @@
 // POST /api/ingest/v1/traces — OTLP/HTTP JSON -> Postgres.
 //
 // Remplaçant de l'edge function Supabase `v1-traces` (disparue avec le projet).
-// Même parser partagé (_shared/otlp.mjs), mêmes gardes (413 taille, 403 clé,
+// Même parser partagé (shared/otlp.mjs), mêmes gardes (413 taille, 403 clé,
 // 429 débit, séparation stricte 400/500), même écriture idempotente — la
 // logique vient du paquet `ingest`, pas d'une réécriture.
 //
@@ -9,12 +9,12 @@
 // replay en remplaçant "/v1/traces" par "/v1/replay" (packages/rum-sdk/src/
 // replay.ts). Changer ce suffixe casserait le replay chez les clients qui ne
 // surchargent pas `replayEndpoint`.
-import { writeRows } from "ingest/lib/pg-ingest.mjs";
-import { secureOtlpIdentities } from "ingest/lib/identity-hash.mjs";
-import { flattenOtlp } from "ingest/shared/otlp.mjs";
-import { appliquerGeo } from "ingest/shared/geoip.mjs";
-import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "ingest/shared/limits.mjs";
-import { withRetry } from "ingest/shared/retry.mjs";
+import { writeRows } from "@mip/backend/lib/pg-ingest.mjs";
+import { secureOtlpIdentities } from "@mip/backend/lib/identity-hash.mjs";
+import { flattenOtlp } from "@mip/backend/shared/otlp.mjs";
+import { appliquerGeo } from "@mip/backend/shared/geoip.mjs";
+import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "@mip/backend/shared/limits.mjs";
+import { withRetry } from "@mip/backend/shared/retry.mjs";
 import { pool } from "@/lib/db";
 import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
 

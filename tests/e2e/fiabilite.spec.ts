@@ -1247,7 +1247,7 @@ test.describe("F69 — Recette du domaine fiabilité et robot (§ 6.5)", () => {
 // ---------------------------------------------------------------------------
 // F68 — « Régression de release » (plan § 5.19 A8, § 3.2 ; évaluateur B52,
 // migration-v86). La base e2e de la CI applique TOUTES les migrations (étape
-// « Schéma v0.1 puis toutes les migrations », glob `migration-v*.sql`) : v86 y est.
+// « Schéma par le migrateur », `node services/scheduler/migrate.mjs`) : v86 y est.
 //
 //   - SANS B52 : la fonction que la console détecte (`alert_release_p75`) est
 //     RENOMMÉE le temps d'un test, puis rétablie (dans le test ET en `afterAll`).

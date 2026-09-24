@@ -4,7 +4,7 @@
 //   - dead click  : clic sur un élément qui SEMBLE actionnable mais ne produit
 //     AUCUNE réaction (mutation DOM, navigation, scroll) dans le délai imparti.
 // Émis comme span 'frustration' (kind/target/count) ; stocké côté serveur dans
-// rum_event sous le nom réservé 'frustration.<kind>' (cf. _shared/otlp.mjs).
+// rum_event sous le nom réservé 'frustration.<kind>' (cf. shared/otlp.mjs).
 import { formatClickLabel, MIP_UI_ATTR } from "./breadcrumbs";
 import { makeCap, type PageCap } from "./caps";
 import type { Emit } from "./errors";

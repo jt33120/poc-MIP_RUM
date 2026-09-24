@@ -35,7 +35,7 @@ vi.mock("@/lib/ingest", () => ({
 
 import { POST } from "../../apps/console/app/api/ingest/v1/traces/route";
 // @ts-expect-error module JS partagé sans déclarations
-import { creerReceveur } from "../../apps/ingest/lib/receiver.mjs";
+import { creerReceveur } from "../../packages/backend/lib/receiver.mjs";
 
 const RAW = "alice@example.test";
 const SECRET = "identity-port-test-secret";

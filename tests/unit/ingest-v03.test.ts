@@ -2,9 +2,9 @@
 // geo_country dans flattenOtlp, payload webhook du dispatcher (pendant pg_net).
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module ESM hors rootDir ts
-import { buildPayload, cibleHttp, decideStatus, payloadOf, selectionSql } from "../../apps/ingest/dispatch-alerts.mjs";
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
-import { tzToCountry } from "../../apps/ingest/supabase/functions/_shared/tz-country.mjs";
+import { buildPayload, cibleHttp, decideStatus, payloadOf, selectionSql } from "../../packages/backend/lib/dispatch-alerts.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
+import { tzToCountry } from "../../packages/backend/shared/tz-country.mjs";
 
 describe("tzToCountry — mapping IANA timezone -> code ISO pays", () => {
   it("zones majeures Europe/Amériques/Asie/Afrique", () => {

@@ -26,8 +26,8 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, writeFi
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { empreinteContenu, empreinteManifeste, LIMITES_UPLOAD } from "../apps/ingest/lib/sourcemap-upload.mjs";
-import { SourceMapError, validateSourceMap } from "../apps/ingest/supabase/functions/_shared/sourcemap.mjs";
+import { empreinteContenu, empreinteManifeste, LIMITES_UPLOAD } from "../packages/backend/lib/sourcemap-upload.mjs";
+import { SourceMapError, validateSourceMap } from "../packages/backend/shared/sourcemap.mjs";
 
 const MIO = 1024 * 1024;
 export const SORTIE = Object.freeze({ succes: 0, incomplet: 1, usage: 2 });

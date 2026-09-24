@@ -103,7 +103,7 @@ export function zoneArchitecture(t) {
     "",
     `- Régions : ${lieux.join(" ; ")}. Droit des trois hébergeurs (${enumeration(hebergeurs.map((h) => h.societe))}) : ${DROIT_HEBERGEURS}.`,
     "- Le collecteur est une route de la console : c'est l'adresse que visent les SDK. Le même parseur existe en " +
-      "service Node autonome (`services/ingest/server.mjs`), construit et démarré par la CI (`docker-smoke`), pour un " +
+      "service Node autonome (`services/collector/server.mjs`), construit et démarré par la CI (`docker-smoke`), pour un " +
       "hébergement chez le client ; en production, il ne tourne nulle part : le service Railway `ingest`, qui " +
       `l'exécutait sans domaine public, a été supprimé le ${INGEST_SUPPRIME_LE}.`,
     `- Le \`scheduler\` applique les migrations au pré-déploiement : constaté le ${MIGRATIONS_CONSTATEES.le} dans les ` +

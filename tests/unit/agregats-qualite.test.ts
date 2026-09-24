@@ -31,7 +31,7 @@ import { CORE_VITALS, THRESHOLDS } from "../../apps/console/lib/rating";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(join(RACINE, rel), "utf8");
-const V56 = lire("apps/ingest/sql/migration-v56.sql");
+const V56 = lire("packages/db/sql/migration-v56.sql");
 
 describe("la liste des vitals notables — une seule, des deux côtés", () => {
   it("est DÉRIVÉE des seuils, pas retapée à côté", () => {

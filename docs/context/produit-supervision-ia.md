@@ -41,7 +41,7 @@ source de vérité**. Aucun recalcul local, en aucune circonstance.
 MIP ne stocke plus aucune donnée IA. La migration v43 a **déprécié sans détruire**
 la table `rum_ai` — 1 067 lignes conservées, cron d'anomalie retiré, objets
 commentés `DÉPRÉCIÉ (v43)`. La suppression définitive attend dans
-`apps/ingest/sql/pending/migration-v44-drop-deprecated-ai.sql`, volontairement hors
+`packages/db/sql/pending/migration-v44-drop-deprecated-ai.sql`, volontairement hors
 du glob de la CI, activable par un simple `git mv` après période de recuit.
 
 ---

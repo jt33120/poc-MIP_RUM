@@ -36,7 +36,7 @@ describe("facteurAnomalies", () => {
 describe("la garde d'éligibilité est celle de v_anomaly", () => {
   it("≥ 5 heures et écart-type non nul, des deux côtés", () => {
     const garde = "having count(*) >= 5 and stddev_samp(p75) > 0";
-    const vue = readFileSync(join(__dirname, "../../apps/ingest/sql/migration-v03.sql"), "utf8");
+    const vue = readFileSync(join(__dirname, "../../packages/db/sql/migration-v03.sql"), "utf8");
     const console_ = readFileSync(join(__dirname, "../../apps/console/lib/health.ts"), "utf8");
     expect(vue).toContain(garde);
     expect(console_).toContain(garde);

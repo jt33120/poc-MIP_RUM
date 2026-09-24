@@ -227,7 +227,7 @@ export function Capteurs() {
           un seul saut de trace, ni propagation d'un service à l'autre. */}
       <p className="mt-3 text-sm leading-relaxed text-ink-soft" data-testid="capteurs-serveur">
         Côté serveur : un agent Node (<code className={CODE}>packages/agent-node</code>) et un middleware
-        FastAPI (<code className={CODE}>integrations/fastapi</code>) relient un appel du navigateur à son
+        FastAPI (<code className={CODE}>examples/integrations/fastapi</code>) relient un appel du navigateur à son
         exécution serveur, sur un seul saut.
       </p>
     </SousPartie>

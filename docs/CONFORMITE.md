@@ -25,7 +25,7 @@
   sociétés de droit américain. La résidence européenne des données n'est pas la souveraineté ;
   la cible reste un hébergeur de droit européen (cf. §8).
 - Le jour de la bascule **ClickHouse**, l'hébergement reste **souverain** (auto-géré
-  Scaleway/OVH/Clever Cloud ou on-prem — cf. `infra/clickhouse/DEPLOY.md`).
+  Scaleway/OVH/Clever Cloud ou on-prem — cf. `labs/clickhouse/DEPLOY.md`).
 - Le **flux OTLP** va du navigateur directement à l'ingestion MIP : pas d'intermédiaire US.
 
 ## 2. Données collectées & classification (minimisation)
@@ -33,11 +33,11 @@
 |---|---|---|
 | Core Web Vitals, timings, longtasks | technique, non personnelle | — |
 | Route / URL | technique | **query string & fragment retirés**, scrub PII du chemin |
-| Erreurs (message, stack) | technique, **PII possible** | **scrub serveur** (`_shared/scrub.mjs`) avant écriture |
+| Erreurs (message, stack) | technique, **PII possible** | **scrub serveur** (`shared/scrub.mjs`) avant écriture |
 | Événements `track.*` | défini par le client | scrub récursif des `props` |
 | Adresse IP | **jamais stockée**, sous aucune forme (ni en clair, ni hachée, ni tronquée, ni temporairement) | Elle sert, dans la mémoire du processus qui reçoit la requête et pour la durée de cette requête seule, à déduire un **code pays**. Trois provenances possibles, tracées ligne par ligne dans `rum_session.geo_source` (migration-v85) : **`timezone`** — déduit de `mip.tz`, aucune adresse lue ; **`geoip`** — résolu dans une base **DB-IP Lite embarquée**, chargée en mémoire, **sans aucun appel réseau et sans qu'aucun tiers reçoive l'adresse** ; **`cdn`** — en-tête pays d'un CDN en façade (`x-vercel-ip-country`, `cf-ipcountry`), la résolution ayant alors lieu chez le CDN. Aucune coordonnée, aucune ville, aucune région n'est ni lue ni stockée |
 | Identifiant de visiteur | **pseudonyme** | `visitor_id` : tirage ALÉATOIRE du SDK (UUID v4), persisté dans le stockage local du navigateur, sans lien avec le terminal ni avec un compte. Effaçable par le visiteur en vidant le stockage local. Reste une donnée à caractère personnel au sens du RGPD — un pseudonyme, pas une donnée anonyme |
-| `user_hash` (héritage, ≤ 09/09/2026) | **ni anonyme, ni identifiant de personne** | Ancienne empreinte dérivée du user-agent, de la langue, de la résolution et du décalage horaire, sans aléa : sur un parc homogène, plusieurs personnes partagent la même valeur. Le SDK ne l'émet plus. Un export ou un effacement RGPD **refuse** de s'exécuter dessus (`id_kind = 'device_class'`), parce qu'il porterait sur les données de tiers. Ces lignes s'éteignent à l'échéance de rétention (30 j). Voir `apps/ingest/sql/migration-v57.sql` |
+| `user_hash` (héritage, ≤ 09/09/2026) | **ni anonyme, ni identifiant de personne** | Ancienne empreinte dérivée du user-agent, de la langue, de la résolution et du décalage horaire, sans aléa : sur un parc homogène, plusieurs personnes partagent la même valeur. Le SDK ne l'émet plus. Un export ou un effacement RGPD **refuse** de s'exécuter dessus (`id_kind = 'device_class'`), parce qu'il porterait sur les données de tiers. Ces lignes s'éteignent à l'échéance de rétention (30 j). Voir `packages/db/sql/migration-v57.sql` |
 | Session replay (opt-in) | rejouée | **masquage par défaut des saisies, du texte et des médias** (réglable par app via `replayMask`), opt-in par app, consent requis |
 
 **Défense en profondeur PII** : `beforeSend` côté client **+** scrub côté serveur (parité
@@ -142,7 +142,7 @@ exact —, et ce lot n'introduit **aucun stockage d'adresse** qui rendrait un te
 
 **Licence de la base.** DB-IP IP to Country Lite est distribuée sous **CC BY 4.0**, qui exige une
 attribution visible. Elle figure dans le pied de page de la vitrine publique (`/presentation`,
-via `apps/console/lib/legal.ts`), dans `apps/ingest/data/LICENCE-DB-IP.txt` et ici :
+via `apps/console/lib/legal.ts`), dans `packages/backend/data/LICENCE-DB-IP.txt` et ici :
 **IP Geolocation by DB-IP (https://db-ip.com)**. Le fichier est utilisé tel quel, sans
 modification ni redistribution.
 

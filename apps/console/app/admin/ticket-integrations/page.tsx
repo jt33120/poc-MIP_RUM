@@ -115,7 +115,7 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
             <input
               name="credentialRef"
               required
-              placeholder="env:GITHUB_TICKETS_TOKEN"
+              placeholder="env:TICKET_GITHUB_TOKEN"
               maxLength={4200}
               className={`${INPUT_CLASS} mt-1 block w-64`}
             />
@@ -124,7 +124,7 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
             Référence du secret de webhook
             <input
               name="webhookSecretRef"
-              placeholder="env:GITHUB_TICKETS_WEBHOOK"
+              placeholder="env:TICKET_GITHUB_WEBHOOK"
               maxLength={4200}
               className={`${INPUT_CLASS} mt-1 block w-64`}
             />

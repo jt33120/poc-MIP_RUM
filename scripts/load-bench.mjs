@@ -7,7 +7,7 @@
 //
 // IMPORTANT (B2) : à lancer contre une base TYPE-PROD (pas le free tier). Rien
 // n'est exécuté automatiquement en CI ; c'est un outil opérateur. Voir la doc
-// d'usage en tête de fichier et infra/clickhouse.notes.md.
+// d'usage en tête de fichier et labs/clickhouse/NOTES.md.
 //
 // Usage :
 //   ENDPOINT=https://<ingest>/v1/traces \
@@ -32,7 +32,7 @@
 //   CLICKHOUSE_DB   [mip_rum]                 (si STORE=clickhouse)
 import pg from "pg";
 import { pathToFileURL } from "node:url";
-import { createChWriter } from "../infra/clickhouse/writer.mjs";
+import { createChWriter } from "../labs/clickhouse/writer.mjs";
 
 // --- config ----------------------------------------------------------------
 const num = (k, d) => Number(process.env[k] ?? d);
@@ -51,7 +51,7 @@ export const CONFIG = {
 
 // --- générateur réaliste (déterministe via index) ---------------------------
 // Routes pondérées, dont une lente (/login ×1,4) — même profil que le bench
-// ClickHouse (infra/clickhouse/bench.mjs), pour des chiffres comparables.
+// ClickHouse (labs/clickhouse/bench.mjs), pour des chiffres comparables.
 const ROUTES = [
   { route: "/", w: 5, slow: 1 },
   { route: "/partners", w: 3, slow: 1 },
@@ -162,7 +162,7 @@ export function percentile(values, p) {
 // autonome du build Next. Deux dialectes, MÊMES requêtes logiques :
 //   • postgres : percentile_cont / date_trunc / count(distinct), param $1 = app_id.
 //   • clickhouse : quantileTDigest (approx, multi-milliards) / toStartOfHour /
-//     uniqExact, binding serveur {app:String} (cf. infra/clickhouse.notes.md, Δ=0
+//     uniqExact, binding serveur {app:String} (cf. labs/clickhouse/NOTES.md, Δ=0
 //     prouvé sur les idiomes). Tables suffixées _ch (schema.prod.sql).
 const HEAVY_QUERIES_PG = {
   vitals_p75_24h:

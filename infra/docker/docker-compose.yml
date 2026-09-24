@@ -1,72 +1,166 @@
-# Backend MIP RUM self-host (souverain) — alternative CONTENEURISÉE au serverless
-# de prod (Supabase Edge Functions + Postgres managé). But : maîtriser l'infra,
-# tourner hors Cloud Act, et disposer de LOGS DE CONTENEUR (le serveur émet déjà
-# des JSON lines sur stdout — cf. _shared/log.mjs — collectés ici par le driver
-# json-file : `docker compose logs -f ingest`).
+# Backend MIP RUM auto-hébergé — les TROIS services Railway, sur un poste ou un
+# serveur, avec leurs images de production (`services/<x>/Dockerfile`).
 #
-#   navigateur / SDK ──(OTLP /v1/traces)──▶ ingest (Node) ──▶ db (Postgres)
+#   db (Postgres 17) ◀── migrate (one-shot) ◀── collector   (profil `collector`)
+#                                            ◀── scheduler   (profil `scheduler`)
+#   mcp (profil `mcp`) ──▶ API v1 de la console — jamais la base
 #
-# Versions ÉPINGLÉES. NON exécuté en CI (pas de Docker dans l'env de dev) : la
-# structure/les configs sont revues, pas un `up` réel. Cf. README.md.
+# UN PROFIL PAR SERVICE. `db` et `migrate` n'en ont pas : ils suivent tout
+# service qui les demande. Un service se démarre seul, avec ce dont il dépend :
+#
+#   docker compose run --rm migrate                     la base de dev, migrée
+#   docker compose up -d --build --wait collector       + le collecteur
+#   docker compose --profile tout up -d --build --wait  les trois services
+#
+# LE SCHÉMA EST POSÉ PAR LE MIGRATEUR DE PRODUCTION, plus par un script
+# d'initialisation de Postgres. `initdb.sh` appliquait schema.sql puis chaque
+# migration par psql, dans l'ordre lexical : il prouvait que les FICHIERS
+# s'enchaînent, rien du programme qui les applique réellement au
+# pré-déploiement du scheduler — registre `schema_migration`, transaction par
+# fichier, index de pré-déploiement. Pire, une base montée par lui n'avait pas
+# de registre : sans étalonnage (`--baseline`), le premier passage du vrai
+# migrateur y aurait tout rejoué (en-tête de `@mip/db/migrate.mjs`). `migrate`
+# lance ici la commande exacte du pré-déploiement Railway
+# (`node services/scheduler/migrate.mjs`), avec l'image du scheduler ; les
+# autres services ne démarrent qu'après sa sortie EN SUCCÈS. C'est l'ordre que
+# Railway donne au scheduler — et que ce fichier donne aux trois.
+#
+# C'EST AUSSI LA BASE DE DÉVELOPPEMENT (README, « Démarrage local » ; l'E2E) :
+# `run --rm migrate`, puis `postgres://postgres:postgres@localhost:5433/mip_rum`.
+# `run`, et non `up --wait db migrate` : `--wait` rend la main dès que
+# `migrate` DÉMARRE (sans sonde, un conteneur qui tourne passe pour sain) ;
+# `run` attend sa sortie et rend son code — constaté en construisant ce fichier.
+#
+# Les images de service sont épinglées par digest dans leur Dockerfile ;
+# `postgres:17` suit la majeure de production (Neon 17) comme la CI.
 name: mip-rum-backend
 
 x-logging: &jsonlog
   driver: json-file
   options: { max-size: "10m", max-file: "5" }
 
+# La chaîne de connexion des services qui parlent à la base, par le réseau du
+# compose (`db:5432`, pas le port publié sur l'hôte).
+x-db-url: &db-url postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-mip_rum}
+
+# Démarrer APRÈS une migration réussie. `service_completed_successfully` : un
+# migrateur en échec (code ≠ 0) bloque le démarrage, exactement comme un
+# pré-déploiement en échec garde l'ancien déploiement en service sur Railway.
+x-apres-migration: &apres-migration
+  migrate:
+    condition: service_completed_successfully
+
 services:
   db:
-    image: postgres:15
+    # 17, comme la production (Neon 17.11) et la CI. Un volume `db-data`
+    # initialisé par une version antérieure ne démarre PAS sous 17 (format de
+    # répertoire incompatible) : `docker compose down -v` puis `up` le recrée.
+    image: postgres:17
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-mip_rum}
-      # Mot de passe du rôle restreint de la console (moindre-privilège). Vide =>
-      # rôle non créé (cf. initdb.sh).
-      CONSOLE_RO_PASSWORD: ${CONSOLE_RO_PASSWORD:-console_ro}
     volumes:
-      # schema.sql + migrations montés en lecture seule, appliqués par initdb.sh.
-      - ../../apps/ingest/sql:/sql:ro
-      - ./db/initdb.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
       - db-data:/var/lib/postgresql/data
     ports:
       - "${DB_PORT:-5433}:5432"
     healthcheck:
-      # -h localhost force le TCP : pendant l'initdb (schema + migrations) Postgres
-      # n'écoute que sur le socket -> healthy SEULEMENT une fois les migrations
-      # appliquées, donc ingest ne démarre pas sur une base sans tables.
+      # -h localhost force le TCP : pendant l'initialisation du volume, Postgres
+      # n'écoute que sur le socket.
       test: ["CMD-SHELL", "pg_isready -h localhost -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 3s
       retries: 30
     logging: *jsonlog
 
-  ingest:
+  migrate:
+    # L'image du SCHEDULER : le migrateur est son outil (seul le scheduler
+    # migre, contrat de service § 8), il n'est embarqué nulle part ailleurs.
     build:
       context: ../..
-      # MÊME image que les services Railway : ce que ce compose démarre en
-      # local est, à la commande près, ce qui tourne en production.
-      dockerfile: infra/docker/Dockerfile.backend
+      dockerfile: services/scheduler/Dockerfile
+    image: mip-rum/scheduler:local
+    command: ["node", "services/scheduler/migrate.mjs"]
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-mip_rum}
-      INGEST_PORT: "4318"
+      DATABASE_URL: *db-url
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      db:
+        condition: service_healthy
+    # One-shot : il applique ce qui manque, le dit (« migrations à jour »), et
+    # sort. Rejoué à chaque `up`, il n'a rien à faire la seconde fois.
+    restart: "no"
+    # La sonde de l'image vise le WORKER ; ce conteneur n'écoute rien.
+    healthcheck:
+      disable: true
+    logging: *jsonlog
+
+  collector:
+    profiles: ["collector", "tout"]
+    build:
+      context: ../..
+      dockerfile: services/collector/Dockerfile
+    image: mip-rum/collector:local
+    environment:
+      DATABASE_URL: *db-url
       # true = rejeter (403) tout app_id inconnu/sans clé. false (défaut POC) =
       # fail-open. À passer true une fois toutes les apps porteuses d'une clé.
       REQUIRE_API_KEY: ${REQUIRE_API_KEY:-false}
       RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-600}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       IDENTITY_HASH_SECRET: ${IDENTITY_HASH_SECRET:-}
-    depends_on:
-      db:
-        condition: service_healthy
+      # GeoIP : la base est DANS l'image ; sans source d'adresse déclarée, elle
+      # reste inerte (`none`). `socket` derrière aucun proxy, `xff:<n>` derrière n.
+      GEOIP_IP_SOURCE: ${GEOIP_IP_SOURCE:-none}
+    depends_on: *apres-migration
     ports:
-      - "${INGEST_PORT:-4318}:4318"
-    healthcheck:
-      # /ready sonde la base (503 tant que la DB ne répond pas).
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4318/ready || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
+      - "${COLLECTOR_PORT:-4318}:4318"
+    # La sonde vient de l'image (HEALTHCHECK sur /health) : une seule définition.
+    restart: unless-stopped
+    logging: *jsonlog
+
+  scheduler:
+    profiles: ["scheduler", "tout"]
+    build:
+      context: ../..
+      dockerfile: services/scheduler/Dockerfile
+    image: mip-rum/scheduler:local
+    environment:
+      DATABASE_URL: *db-url
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Jeton de /ready et /metrics (≥ 32 caractères). Vide : les deux répondent
+      # 404 — `/health`, la sonde de l'image, n'en dépend pas.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Dead-man's switch (https) : vide en local, aucun signal ne part.
+      DEADMAN_URL: ${DEADMAN_URL:-}
+    depends_on: *apres-migration
+    ports:
+      # /health (processus + base), /ready et /metrics (fraîcheur, arriéré ; jeton).
+      - "${SCHEDULER_PORT:-4320}:8080"
+    restart: unless-stopped
+    logging: *jsonlog
+
+  mcp:
+    profiles: ["mcp", "tout"]
+    build:
+      context: ../..
+      dockerfile: services/mcp/Dockerfile
+    image: mip-rum/mcp:local
+    # NI DATABASE_URL NI DÉPENDANCE À `migrate` : ce service n'atteint pas la
+    # base, et le faire attendre une migration lui donnerait un lien avec elle
+    # qu'il ne doit pas avoir. Il ne parle qu'à l'API v1 de la console.
+    environment:
+      # La console du poste par défaut (`pnpm dev` sur :3000), vue depuis le
+      # conteneur. Un appel d'outil sans console joignable échoue proprement ;
+      # le service, lui, démarre et répond à `tools/list`.
+      MIP_CONSOLE_URL: ${MIP_CONSOLE_URL:-http://host.docker.internal:3000}
+      MCP_PATH: ${MCP_PATH:-/mcp}
+    extra_hosts:
+      # `host.docker.internal` existe d'office sous Docker Desktop, pas sous Linux.
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${MCP_PORT:-4322}:8080"
+    restart: unless-stopped
     logging: *jsonlog
 
 volumes:

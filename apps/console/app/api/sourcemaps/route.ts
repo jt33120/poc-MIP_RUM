@@ -6,7 +6,7 @@
 // console. Un jeton CONSOLE_API_TOKENS n'a pas le format d'un jeton d'upload : il
 // est refusé. Le contrat — bornes, validation de TOUTES les maps avant la première
 // écriture, transaction, 409 sur contenu différent — est celui du backend direct
-// (`ingest/lib/sourcemap-upload.mjs`).
+// (`@mip/backend/lib/sourcemap-upload.mjs`).
 //
 // Corps limité à 4 Mio : le plafond publié de Vercel est 4,5 Mo par requête. Les
 // maps plus lourdes passent par POST /v1/sourcemaps du backend d'ingestion
@@ -20,8 +20,8 @@ import {
   lireCorpsLimite,
   lireRequeteUpload,
   verifierJetonUpload,
-} from "ingest/lib/sourcemap-upload.mjs";
-import { bodyTooLarge } from "ingest/shared/limits.mjs";
+} from "@mip/backend/lib/sourcemap-upload.mjs";
+import { bodyTooLarge } from "@mip/backend/shared/limits.mjs";
 import { guardAdmin } from "@/lib/api/admin";
 import { SESSION_COOKIE } from "@/lib/auth";
 import { pool } from "@/lib/db";

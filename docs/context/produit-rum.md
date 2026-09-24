@@ -32,7 +32,7 @@ module `uptime` existe mais reste marginal (1 sonde configurée).
 | SDK web | `packages/rum-sdk/src/` — 21 modules | Complet, en production |
 | SDK mobile | `packages/rum-mobile/src/` (React Native) | Écrit, adoption inconnue |
 | Agent serveur Node | `packages/agent-node/src/` — HTTP + `pg` par hook `require` | Écrit, profondeur DB récente |
-| Intégration Python | `integrations/fastapi/mip_rum_middleware.py` | Écrite, testée unitairement |
+| Intégration Python | `examples/integrations/fastapi/mip_rum_middleware.py` | Écrite, testée unitairement |
 | Extension navigateur | `apps/extension/` | Déployable sans toucher au site cible |
 
 Le SDK web couvre : Web Vitals, erreurs, ressources, tâches longues, formulaires,
@@ -44,7 +44,7 @@ point est une vraie maturité d'ingénierie, pas une case cochée.
 ### 2.2 Ingestion
 
 `POST /v1/traces` en OTLP/HTTP JSON, en double implémentation : une *edge function*
-Deno (`apps/ingest/supabase/functions/v1-traces/`, actuellement en **v16** en
+Deno (`supabase/functions/v1-traces/` (fonction Deno retirée en P1, lisible au tag `pre-reorg`), actuellement en **v16** en
 production) et un jumeau Node portable (`dev-server.mjs`) pour l'auto-hébergement.
 Gardes en place : clé d'API (403), limitation de débit (429), taille de corps (413),
 séparation stricte 4xx/5xx, rejeu des écritures.
@@ -120,7 +120,7 @@ promesse « OTel-native, donc réversible et corrélable ».
 
 **③ Les seuils Core Web Vitals ne sont pas ceux de web.dev.** Trois fichiers portent
 la même valeur erronée pour le LCP — `packages/rum-sdk/src/vitals.ts:14`,
-`apps/ingest/supabase/functions/_shared/otlp.mjs:13`,
+`packages/backend/shared/otlp.mjs:13`,
 `apps/console/lib/rating.ts:6` :
 
 ```ts

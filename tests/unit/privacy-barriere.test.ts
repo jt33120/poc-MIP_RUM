@@ -15,14 +15,14 @@ import {
   sujetsDuLot,
   VERROU_INGESTION_NS,
   // @ts-expect-error module .mjs sans déclaration de types
-} from "../../apps/ingest/lib/privacy-barriere.mjs";
+} from "../../packages/backend/lib/privacy-barriere.mjs";
 import { DSAR_BARRIERE_MESSAGES, DSAR_LIMITES } from "../../apps/console/lib/dsar";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(join(RACINE, rel), "utf8");
-const V81 = lire("apps/ingest/sql/migration-v81.sql");
-const PRIMITIVE = lire("apps/ingest/lib/privacy-barriere.mjs");
-const PG = lire("apps/ingest/lib/pg-ingest.mjs");
+const V81 = lire("packages/db/sql/migration-v81.sql");
+const PRIMITIVE = lire("packages/backend/lib/privacy-barriere.mjs");
+const PG = lire("packages/backend/lib/pg-ingest.mjs");
 
 type Sujets = { session: Set<string>; visitor: Set<string>; user: Set<string>; account: Set<string> };
 const bloquer = (valeurs: Partial<Record<keyof Sujets, string[]>>): Sujets => ({

@@ -12,7 +12,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 const AVEC_VUES = "f11-sante-vues";
 const SANS_VUE = "f11-sante-sans-vue";
 const APPS = [AVEC_VUES, SANS_VUE];

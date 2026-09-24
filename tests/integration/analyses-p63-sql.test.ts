@@ -21,7 +21,7 @@ import type { Filters } from "../../apps/console/lib/filters";
 import { parseAnalyticsQuery, type AnalyticsQuery } from "../../apps/console/lib/query-contract";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 const A = "p63-app-a";
 const B = "p63-app-b";

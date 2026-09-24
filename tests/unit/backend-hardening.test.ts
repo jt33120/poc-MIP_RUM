@@ -2,16 +2,16 @@
 // de charge. Logique pure (aucune base) — exécutée par vitest dans les deux
 // runtimes ciblés (les modules _shared sont runtime-agnostic Node/Deno).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createLogger } from "../../apps/ingest/supabase/functions/_shared/log.mjs";
-import { isTransient, withRetry } from "../../apps/ingest/supabase/functions/_shared/retry.mjs";
-import { bodyTooLarge, MAX_BODY_BYTES } from "../../apps/ingest/supabase/functions/_shared/limits.mjs";
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { createLogger } from "../../packages/backend/shared/log.mjs";
+import { isTransient, withRetry } from "../../packages/backend/shared/retry.mjs";
+import { bodyTooLarge, MAX_BODY_BYTES } from "../../packages/backend/shared/limits.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 import {
   corsHeaders,
   isAllowedOrigin,
   originsFromRegistry,
   STATIC_ALLOWED_ORIGINS,
-} from "../../apps/ingest/supabase/functions/_shared/cors.mjs";
+} from "../../packages/backend/shared/cors.mjs";
 
 // --- log.mjs ----------------------------------------------------------------
 describe("createLogger — logs structurés JSON", () => {

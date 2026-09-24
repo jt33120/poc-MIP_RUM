@@ -22,17 +22,17 @@ import { dimensionValuesRequest, type DimensionValuesInput } from "../../apps/co
 import type { DimensionValues } from "../../apps/console/lib/dimensions";
 import type { IdentityDsarIo } from "../../apps/console/lib/queries-dsar";
 // @ts-expect-error module JS partagé sans déclarations
-import { hashIdentity, secureOtlpIdentities } from "../../apps/ingest/lib/identity-hash.mjs";
+import { hashIdentity, secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { deposerLot, drainerIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
+import { deposerLot, drainerIngestRaw } from "../../packages/backend/lib/ingest-differe.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { _resetColonnesCache, writeLogs, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeLogs, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { flattenOtlp, flattenOtlpLogs } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp, flattenOtlpLogs } from "../../packages/backend/shared/otlp.mjs";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const urlFenetre = process.env.SQL_TEST_V68_DATABASE_URL;
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 const pool = new pg.Pool(url ? { connectionString: url, max: 4 } : { max: 4 });
 const poolFenetre = new pg.Pool(urlFenetre ? { connectionString: urlFenetre, max: 4 } : { max: 4 });
 

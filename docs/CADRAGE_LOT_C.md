@@ -83,7 +83,7 @@ n'est pas React-spécifique mais son montage l'est.
 ### Objectif
 Passer le stockage analytique de Postgres (POC) à ClickHouse pour le grand
 compte. **Le chemin est déjà prouvé en local** (bench Δ=0 sur les p75, ×15 plus
-compact, ~88 k lignes/s sans tuning — cf. `infra/clickhouse.notes.md`).
+compact, ~88 k lignes/s sans tuning — cf. `labs/clickhouse/NOTES.md`).
 
 ### Topologie cible
 `SDK navigateur → OTel Collector (on-prem/cloud souverain) → ClickHouse`, console

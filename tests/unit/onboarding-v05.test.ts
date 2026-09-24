@@ -11,7 +11,7 @@ import {
   parseOrigins,
   validateAppId,
 } from "../../apps/console/lib/onboarding";
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import mipRum = require("../../apps/console/public/integrations/mip-rum-express.js");
 

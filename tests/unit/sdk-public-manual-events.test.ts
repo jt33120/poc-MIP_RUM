@@ -72,7 +72,7 @@ import {
 } from "../../packages/rum-sdk/src/index";
 import { buildResourceSpans } from "../../packages/rum-sdk/src/otlp-encode";
 // @ts-expect-error module JS partagé sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 beforeEach(() => {
   spans.length = 0;

@@ -47,7 +47,7 @@ import { assessRegression } from "../../apps/console/lib/queries-deploys";
 import { VITAUX } from "../../apps/console/lib/fmt-ids";
 
 describe("règle de release : constantes liées à la console et au SQL", () => {
-  const v86 = readFileSync(join(__dirname, "..", "..", "apps", "ingest", "sql", "migration-v86.sql"), "utf8");
+  const v86 = readFileSync(join(__dirname, "..", "..", "packages", "db", "sql", "migration-v86.sql"), "utf8");
 
   it("100 mesures par release : le seuil sous lequel une tuile refuse déjà un écart de p75", () => {
     expect(alerting.MESURES_MIN_RELEASE).toBe(FAIBLE_SOUS_DEFAUT);

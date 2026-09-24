@@ -3,7 +3,7 @@
 // le round-trip décodage + résolution de position, puis la réécriture de stack
 // minifiée → stack source.
 //
-// Depuis P5.4 le moteur vit dans `apps/ingest/supabase/functions/_shared/sourcemap.mjs`,
+// Depuis P5.4 le moteur vit dans `packages/backend/shared/sourcemap.mjs`,
 // partagé par l'ingestion, l'upload, le CLI et la console. Les premiers blocs
 // passent par la réexportation console (importateurs historiques) ; les suivants
 // prouvent ce que P5.4 ajoute : validation stricte, index à points de reprise,
@@ -28,7 +28,7 @@ import {
   symbolicateStackWith,
   validateSourceMap,
   virtualSourcePath,
-} from "../../apps/ingest/supabase/functions/_shared/sourcemap.mjs";
+} from "../../packages/backend/shared/sourcemap.mjs";
 
 // --- encodeur VLQ de test (implémentation distincte du décodeur du module) -----
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -350,7 +350,7 @@ describe("P5.4 — séparateurs et noms : coût et contenu bornés", () => {
 
   it("le consommateur ne retient pas la map d'origine (sourcesContent compris)", () => {
     // Processus dédié : seul `--expose-gc` permet d'observer la libération.
-    const moteur = pathToFileURL(join(__dirname, "..", "..", "apps/ingest/supabase/functions/_shared/sourcemap.mjs")).href;
+    const moteur = pathToFileURL(join(__dirname, "..", "..", "packages/backend/shared/sourcemap.mjs")).href;
     const script = `
       const { createConsumer } = await import(${JSON.stringify(moteur)});
       let map = { version: 3, sources: ["src/a.ts"], names: ["f"], mappings: "AAAAA", sourcesContent: ["x".repeat(4 * 1024 * 1024)] };

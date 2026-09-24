@@ -1,73 +1,146 @@
-# E2-S1 (revue BMAD) — PROUVER les conteneurs backend self-host.
+# FUMÉE DES IMAGES DE SERVICE — une par service, en matrice (contrat de service § 10).
 #
-# `ingest` : build `Dockerfile.backend` + `docker compose up` (Postgres + ingest, avec
-# schema.sql + toutes les migrations appliquées par initdb.sh), puis smoke-test :
-#   /health -> 200, POST /v1/traces {"resourceSpans":[]} -> 200 partialSuccess.
+# Chaque service a SON image (`services/<x>/Dockerfile`) et SON profil compose
+# (`infra/docker/docker-compose.yml`). Chaque ligne de la matrice construit
+# l'image de production du service, la démarre avec ce dont elle dépend — et
+# rien d'autre — puis vérifie :
 #
-# `mcp` : build `Dockerfile.mcp` (image SÉPARÉE, sans pg ni DATABASE_URL — cf.
-# docs/MCP.md) puis smoke-test du protocole. `tools/list` n'appelle pas l'API,
-# donc le test est complet sans console : il prouve que l'image démarre, qu'elle
-# refuse un appel sans jeton, et qu'elle sert bien ses quinze outils.
+#   1. la base est posée par le MIGRATEUR de production (service `migrate`,
+#      `node services/scheduler/migrate.mjs`), sorti en 0 avant le service ;
+#   2. `/health` rend 200 ;
+#   3. une requête de référence, propre au service ;
+#   4. le processus ne tourne pas en root ;
+#   5. SIGTERM → sortie 0 en moins de 10 s (ce que Railway envoie à chaque
+#      redéploiement, avant SIGKILL).
 #
-# Rend le « backend dockerisé/intégrable » VÉRIFIÉ à chaque PR (les runners GitHub
-# fournissent Docker ; l'env de dev n'a pas de démon). Isolé de ci.yml.
-name: Docker smoke (backend self-host)
+# Un service ajouté = une ligne de matrice, un profil compose et, au besoin, un
+# bloc « référence ». `mcp` ne dépend ni de la base ni de `migrate` : c'est sa
+# garantie centrale (aucun accès à Postgres), et la fumée la vérifie aussi.
+#
+# Les runners GitHub fournissent Docker ; la même preuve se rejoue sur un poste
+# (infra/docker/README.md, « Fumée en local »).
+name: Docker smoke (images de service)
 
 on:
   pull_request:
     paths:
       - "infra/docker/**"
-      - "apps/ingest/**"
-      - "apps/mcp/**"
       - "services/**"
+      - "packages/backend/**"
+      - "packages/db/**"
+      - "packages/mcp-tools/**"
+      - "packages/service-kit/**"
+      # Ce que les images lisent en dehors des paquets : le lockfile (pnpm
+      # fetch), le workspace, la version de pnpm, le contexte de build, et les
+      # deux scripts exécutés à la construction.
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".dockerignore"
+      - "scripts/ci/deploy-fidele.mjs"
+      - "scripts/fetch-geoip-db.mjs"
       - ".github/workflows/docker-smoke.yml"
   push:
     branches: [master]
     paths:
       - "infra/docker/**"
-      - "apps/ingest/**"
-      - "apps/mcp/**"
       - "services/**"
+      - "packages/backend/**"
+      - "packages/db/**"
+      - "packages/mcp-tools/**"
+      - "packages/service-kit/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".dockerignore"
+      - "scripts/ci/deploy-fidele.mjs"
+      - "scripts/fetch-geoip-db.mjs"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  docker-smoke:
+  fumee:
+    name: Fumée ${{ matrix.service }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    strategy:
+      # Chaque service a son verdict : un collecteur rouge ne doit pas masquer
+      # l'état du scheduler.
+      fail-fast: false
+      matrix:
+        include:
+          # `port` : port publié sur l'hôte (défauts du compose).
+          - service: collector
+            port: 4318
+          - service: scheduler
+            port: 4320
+          - service: mcp
+            port: 4322
     env:
+      # Le profil du service : `up` et `down` voient ainsi le même périmètre.
+      COMPOSE_PROFILES: ${{ matrix.service }}
       IDENTITY_HASH_SECRET: docker-smoke-test-only-secret
+      # Jeton de /ready et /metrics du scheduler (≥ 32 caractères) : sans lui,
+      # les deux répondent 404 et la référence ne pourrait rien lire.
+      METRICS_TOKEN: docker-smoke-metrics-token-only-for-ci
+      # Le collecteur lit l'adresse sur la socket : c'est ce qui allume le
+      # GeoIP, et permet de vérifier que la base est bien dans l'image.
+      GEOIP_IP_SOURCE: socket
     defaults:
       run:
         working-directory: infra/docker
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Build & up (ingest + db)
-        run: docker compose up -d --build
+      # `up <service>` : le service et ses dépendances, rien d'autre. Pour
+      # collector et scheduler : db → migrate (sorti en 0) → le service.
+      # `--wait` rend la main quand la sonde de l'image dit « healthy ».
+      - name: Construire et démarrer (${{ matrix.service }})
+        run: docker compose up -d --build --wait --wait-timeout 300 "${{ matrix.service }}"
 
-      - name: Attendre l'ingestion (healthy)
+      - name: La base est posée par le migrateur
+        if: matrix.service != 'mcp'
         run: |
-          for i in $(seq 1 40); do
-            if curl -fsS http://localhost:4318/health >/dev/null 2>&1; then
-              echo "ingest up"; exit 0
-            fi
-            sleep 3
-          done
-          echo "::error::ingest n'est jamais devenu healthy"; exit 1
+          code=$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps -a -q migrate)")
+          echo "migrate -> code de sortie $code"
+          test "$code" = "0"
+          # Journal capturé d'abord : un `grep -q` en bout de tube peut couper
+          # l'écrivain (SIGPIPE), et `pipefail` en ferait un faux échec.
+          docker compose logs --no-color migrate > /tmp/migrate.log
+          grep '"msg":"migrations à jour"' /tmp/migrate.log
 
-      - name: Smoke /health
+      - name: Aucune base pour mcp
+        if: matrix.service == 'mcp'
         run: |
-          body=$(curl -fsS http://localhost:4318/health)
+          # Ni conteneur `db` ni `migrate` : mcp ne doit rien attendre d'eux.
+          if [ -n "$(docker compose ps -a -q db migrate)" ]; then
+            echo "::error::mcp a démarré db ou migrate — il ne doit dépendre d'aucune base"
+            exit 1
+          fi
+          # Ni `pg` dans l'arbre déployé : si le paquet réapparaît dans le graphe
+          # de @mip/service-mcp, la garantie tombe sans que rien d'autre n'échoue.
+          magasin=$(docker compose exec -T mcp ls /app/services/mcp/node_modules/.pnpm)
+          if grep -q '^pg@' <<< "$magasin"; then
+            echo "::error::pg est présent dans l'image MCP — ce service ne doit pas pouvoir joindre Postgres"
+            exit 1
+          fi
+          echo "ni base ni pg — conforme"
+
+      - name: /health -> 200
+        run: |
+          body=$(curl -fsS "http://localhost:${{ matrix.port }}/health")
           echo "GET /health -> $body"
-          echo "$body" | grep -q '"status"'
-          echo "$body" | grep -q '"identity_hash":{"configured":true}'
+          echo "$body" | grep -q '"status":"ok"'
 
-      - name: Smoke identité brute -> HMAC persisté
+      - name: "Référence collector : identité brute -> HMAC persisté, GeoIP embarqué"
+        if: matrix.service == 'collector'
         run: |
           code=$(curl -s -o /tmp/out -w '%{http_code}' -X POST \
             -H 'content-type: application/json' \
             -d '{"resourceSpans":[{"resource":{"attributes":[{"key":"mip.app_id","value":{"stringValue":"docker-smoke"}}]},"scopeSpans":[{"spans":[{"name":"rum.action","traceId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","spanId":"bbbbbbbbbbbbbbbb","startTimeUnixNano":"1800000000000000000","endTimeUnixNano":"1800000000010000000","attributes":[{"key":"mip.session_id","value":{"stringValue":"docker-identity-session"}},{"key":"mip.event_type","value":{"stringValue":"action"}},{"key":"mip.event_name","value":{"stringValue":"checkout"}},{"key":"mip.action_id","value":{"stringValue":"docker-action"}},{"key":"mip.identity.user_id","value":{"stringValue":"raw-user-must-not-persist"}}]}]}]}]}' \
-            http://localhost:4318/v1/traces)
+            "http://localhost:${{ matrix.port }}/v1/traces")
           echo "POST /v1/traces -> $code ($(cat /tmp/out))"
           test "$code" = "200"
           stored=$(docker compose exec -T db psql -U postgres -d mip_rum -tAc \
@@ -76,6 +149,84 @@ jobs:
           leaked=$(docker compose exec -T db psql -U postgres -d mip_rum -tAc \
             "select count(*) from rum_session where row_to_json(rum_session)::text like '%raw-user-must-not-persist%'")
           test "$leaked" = "0"
+          # L'indexation de la base GeoIP ne bloque pas le démarrage : on laisse
+          # passer l'état `chargement` avant de juger.
+          for _ in $(seq 1 15); do
+            health=$(curl -fsS "http://localhost:${{ matrix.port }}/health")
+            if ! echo "$health" | grep -q '"etat":"chargement"'; then break; fi
+            sleep 1
+          done
+          echo "$health" | grep -q '"identity_hash":{"configured":true}'
+          # GeoIP : optionnel PAR CONTRAT (un db-ip.com indisponible donne une
+          # image sans base, et c'est un avertissement). Une base PRÉSENTE dans
+          # l'image mais non chargée, elle, est un défaut de l'image.
+          if echo "$health" | grep -q '"etat":"actif"'; then
+            echo "geoip actif : $(echo "$health" | grep -o '"version":"[^"]*"')"
+          elif docker compose exec -T collector sh -c 'ls services/collector/node_modules/@mip/backend/data/*.csv.gz' >/dev/null 2>&1; then
+            echo "::error::base GeoIP présente dans l'image mais non chargée : $health"
+            exit 1
+          else
+            echo "::warning::image construite sans base GeoIP (téléchargement db-ip.com en échec ?) — la collecte fonctionne sans"
+          fi
+
+      - name: "Référence scheduler : un premier tick réussi"
+        if: matrix.service == 'scheduler'
+        run: |
+          # Le worker lance un tick dès le démarrage ; /ready (sous jeton) en
+          # garde le bilan local, `cadences.tick.local`. Pas de `curl -f` : /ready
+          # rend 503 tant qu'une cadence est en retard, et c'est le CORPS qu'on juge.
+          # Sans jeton : 404, pas 401 (le kit ne révèle pas que la route existe).
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${{ matrix.port }}/ready")
+          echo "GET /ready sans jeton -> $code"
+          test "$code" = "404"
+          for _ in $(seq 1 20); do
+            ready=$(curl -sS -H "authorization: Bearer $METRICS_TOKEN" "http://localhost:${{ matrix.port }}/ready")
+            if echo "$ready" | jq -e '.cadences.tick.local != null' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          echo "GET /ready -> $ready"
+          echo "$ready" | jq -e '.cadences.tick.local.statut == "fait"' >/dev/null
+
+      - name: "Référence mcp : 401 sans jeton, 16 outils avec"
+        if: matrix.service == 'mcp'
+        run: |
+          code=$(curl -s -o /tmp/out -w '%{http_code}' -X POST "http://localhost:${{ matrix.port }}/mcp" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+          echo "sans jeton -> $code ($(cat /tmp/out))"
+          test "$code" = "401"
+          # Sans session : chaque POST est autonome, `tools/list` n'appelle pas
+          # l'API — le test est complet sans console.
+          curl -fsS -X POST "http://localhost:${{ matrix.port }}/mcp" \
+            -H 'authorization: Bearer jeton-ci' \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' > /tmp/tools.json
+          # `tr` : le `wc` de macOS cadre le nombre à droite ; le rejeu local
+          # de ce workflow doit rendre le même verdict que le runner.
+          n=$(grep -o 'mip_rum_[a-z_]*' /tmp/tools.json | sort -u | wc -l | tr -d ' ')
+          echo "outils exposés : $n"
+          test "$n" = "16"
+
+      - name: Non-root
+        run: |
+          uid=$(docker compose exec -T "${{ matrix.service }}" id -u)
+          echo "uid = $uid"
+          test "$uid" != "0"
+
+      - name: SIGTERM -> sortie 0 en moins de 10 s
+        run: |
+          # `stop -t 10` : SIGTERM, puis SIGKILL au bout de 10 s. Un code 0
+          # prouve que le processus est sorti de lui-même, avant le SIGKILL
+          # (qui rendrait 137).
+          debut=$(date +%s)
+          docker compose stop -t 10 "${{ matrix.service }}"
+          duree=$(( $(date +%s) - debut ))
+          code=$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps -a -q "${{ matrix.service }}")")
+          echo "arrêt en ${duree} s, code de sortie $code"
+          test "$code" = "0"
+          test "$duree" -lt 10
 
       - name: Logs conteneurs (si échec)
         if: failure()
@@ -84,77 +235,3 @@ jobs:
       - name: Teardown
         if: always()
         run: docker compose down -v
-
-  mcp-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build l'image MCP
-        run: docker build -f infra/docker/Dockerfile.mcp -t mip-mcp:ci .
-
-      # La garantie centrale de ce service : il ne peut pas atteindre la base.
-      # Si `pg` réapparaît dans l'image, c'est que quelqu'un a fusionné les deux
-      # Dockerfiles — et la garantie tombe sans que rien d'autre n'échoue.
-      - name: Vérifier l'absence de pg dans l'image
-        run: |
-          if docker run --rm --entrypoint sh mip-mcp:ci -c 'ls /app/node_modules | grep -qx pg'; then
-            echo "::error::pg est présent dans l'image MCP — ce service ne doit pas pouvoir joindre Postgres"
-            exit 1
-          fi
-          echo "pg absent — conforme"
-
-      - name: Démarrer le service
-        run: |
-          docker run -d --name mcp -p 8080:8080 \
-            -e MIP_CONSOLE_URL=http://127.0.0.1:9 \
-            mip-mcp:ci
-          for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8080/health >/dev/null 2>&1; then echo "mcp up"; exit 0; fi
-            sleep 2
-          done
-          echo "::error::le serveur MCP n'a jamais répondu"; exit 1
-
-      - name: Smoke /health
-        run: |
-          body=$(curl -fsS http://localhost:8080/health)
-          echo "GET /health -> $body"
-          echo "$body" | grep -q '"name":"mip-rum-mcp-server"'
-
-      - name: POST /mcp sans jeton -> 401
-        run: |
-          code=$(curl -s -o /tmp/out -w '%{http_code}' -X POST http://localhost:8080/mcp \
-            -H 'content-type: application/json' \
-            -H 'accept: application/json, text/event-stream' \
-            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
-          echo "-> $code ($(cat /tmp/out))"
-          test "$code" = "401"
-
-      - name: POST /mcp avec jeton -> initialize puis 16 outils
-        run: |
-          init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
-          curl -fsS -X POST http://localhost:8080/mcp \
-            -H 'authorization: Bearer jeton-ci' \
-            -H 'content-type: application/json' \
-            -H 'accept: application/json, text/event-stream' \
-            -d "$init" > /tmp/init.json
-          grep -q 'mip-rum-mcp-server' /tmp/init.json
-          # Note : le serveur est SANS SESSION, chaque POST est autonome — d'où
-          # une seconde initialisation dans la même requête n'est pas nécessaire.
-          curl -fsS -X POST http://localhost:8080/mcp \
-            -H 'authorization: Bearer jeton-ci' \
-            -H 'content-type: application/json' \
-            -H 'accept: application/json, text/event-stream' \
-            -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' > /tmp/tools.json
-          n=$(grep -o 'mip_rum_[a-z_]*' /tmp/tools.json | sort -u | wc -l)
-          echo "outils exposés : $n"
-          test "$n" = "16"
-
-      - name: Logs (si échec)
-        if: failure()
-        run: docker logs mcp || true
-
-      - name: Teardown
-        if: always()
-        run: docker rm -f mcp || true

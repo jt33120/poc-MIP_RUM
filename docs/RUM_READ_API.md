@@ -200,4 +200,4 @@ section « Non exposé » de `docs/API_CONSOLE.md`) — nous les ouvrons sur dem
 `/admin/read-tokens` (admin only) : générer un token pour un `app_id` (affiché **une
 seule fois** — seul le hash est stocké) et révoquer. Chaque action est tracée dans
 `audit_log`. Table : `read_tokens (token_hash, app_id, label, created_at, revoked_at)`
-— cf. `apps/ingest/sql/migration-v26.sql`.
+— cf. `packages/db/sql/migration-v26.sql`.

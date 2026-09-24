@@ -82,7 +82,7 @@ export function reservesPerimees(
 }
 
 /**
- * Banc ClickHouse (plan § 8.2, PS6) : infra/clickhouse.notes.md:7 (date, local),
+ * Banc ClickHouse (plan § 8.2, PS6) : labs/clickhouse/NOTES.md:7 (date, local),
  * :14-15 (égalité des p75 à 1 ms près), :25-26 (×15 à données identiques). Mesuré
  * avant la migration vers Neon, jamais rejoué depuis.
  */

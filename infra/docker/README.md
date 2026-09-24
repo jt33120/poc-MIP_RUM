@@ -1,52 +1,73 @@
-# Backend MIP RUM self-host (souverain, conteneurisé)
+# Backend MIP RUM auto-hébergé (souverain, conteneurisé)
 
-Alternative **conteneurisée** au backend serverless de prod (Supabase Edge
-Functions + Postgres managé). Objectif : **maîtriser l'infra**, tourner **hors
-Cloud Act** (sur ton hébergement / OVH), et disposer de **logs de conteneur**
-pour le dogfooding.
+Les **trois services Railway**, sur un poste ou un serveur, avec leurs **images de
+production** (`services/<x>/Dockerfile`). Objectif : maîtriser l'infra, tourner
+**hors Cloud Act** (sur ton hébergement / OVH), et disposer de **logs de
+conteneur** pour le dogfooding.
 
 ```
-navigateur / SDK ──(OTLP /v1/traces)──▶  ingest (Node)  ──▶  db (Postgres 15)
-                                          │ JSON logs stdout
-                                          └▶ docker compose logs -f ingest
+navigateur / SDK ──(OTLP)──▶ collector ──▶ db (Postgres 17) ◀── migrate (one-shot)
+                                               ▲
+                              scheduler ───────┘   (travaux planifiés)
+agent IA ──(MCP)──▶ mcp ──▶ API v1 de la console   (jamais la base)
 ```
 
-C'est **le même code** que l'edge function Deno de prod : `apps/ingest/dev-server.mjs`
-est un vrai serveur HTTP (OTLP → Postgres) avec `/health`, `/ready`, rate-limit,
-vérif de clé d'API et arrêt propre. On l'empaquette juste pour tourner en conteneur.
+C'est **le même code et la même image** qu'en production : ce que ce compose
+démarre est, octet pour octet, ce que Railway construit depuis le même
+Dockerfile. `services/collector/server.mjs` câble le receveur de `@mip/backend`
+(`lib/receiver.mjs`) en vrai serveur HTTP (OTLP → Postgres) avec `/health`,
+`/ready`, rate-limit, vérif de clé d'API et arrêt propre.
 
-> ✅ **Substance validée sur Postgres réel** (Postgres 16 local, hors Docker) : la
-> séquence `schema.sql` + les 28 migrations s'applique proprement (`ON_ERROR_STOP=1`,
-> 36 tables, blocs cloud auto-sautés) ; le rôle `console_ro` obtient bien SELECT sur
-> 34 tables + 28 policies (parité v16) ; le serveur ingère un payload OTLP réel
-> (`200 {"partialSuccess":{}}`, lignes en base, lecture OK sous `console_ro`) et émet
-> ses logs JSON sans warn/error. C'est **exactement ce que le conteneur exécute**.
->
-> ⚠️ **Seul l'emballage Docker reste à confirmer** (build de l'image + orchestration
-> compose : healthchecks, `depends_on`, volumes) — **non exécuté** ici car le daemon
-> Docker est indisponible dans l'environnement de dev. Versions **épinglées**
-> (`postgres:15`, `node:22-alpine`, `pg` 8.21.0). Signale-moi toute erreur au premier `up`.
+## Un profil par service
 
----
+| Service | Profil | Image | Port hôte (défaut) | Dépend de |
+|---|---|---|---|---|
+| `db` | — (toujours) | `postgres:17` | `DB_PORT` (5433) | — |
+| `migrate` | — (toujours) | `services/scheduler/Dockerfile` | — | `db` sain |
+| `collector` | `collector`, `tout` | `services/collector/Dockerfile` | `COLLECTOR_PORT` (4318) | `migrate` **sorti en 0** |
+| `scheduler` | `scheduler`, `tout` | `services/scheduler/Dockerfile` | `SCHEDULER_PORT` (4320) | `migrate` **sorti en 0** |
+| `mcp` | `mcp`, `tout` | `services/mcp/Dockerfile` | `MCP_PORT` (4322) | rien : **aucune base** |
+
+`migrate` lance la commande exacte du pré-déploiement Railway,
+`node services/scheduler/migrate.mjs`, avec l'image du scheduler. Un migrateur
+en échec bloque le démarrage des services, comme un pré-déploiement en échec
+garde l'ancien déploiement en service sur Railway.
 
 ## Démarrer
 
 ```bash
 cd infra/docker
-cp .env.example .env          # adapter les mots de passe hors local
-docker compose up -d --build
-docker compose ps             # db healthy, ingest healthy
+cp .env.example .env                              # adapter les mots de passe hors local
+
+docker compose up -d --build --wait collector     # db → migrate → collector
+docker compose --profile tout up -d --build --wait   # les trois services
+docker compose ps -a                              # migrate « Exited (0) », les autres « healthy »
 ```
 
 - **Endpoint OTLP** : `http://localhost:4318/v1/traces`
 - **Postgres** : `localhost:5433` (user `postgres`, db `mip_rum`)
+- **MCP** : `http://localhost:4322/mcp` (jeton porteur exigé ; il relaie l'API v1
+  de `MIP_CONSOLE_URL`, par défaut la console du poste sur `:3000`)
+
+### La base de développement seule
+
+```bash
+docker compose -f infra/docker/docker-compose.yml run --rm migrate
+```
+
+`run` démarre `db`, attend qu'elle soit saine, migre, et rend le code du
+migrateur : quand la commande rend la main, la base est migrée. (`up --wait db
+migrate` n'attendrait pas la FIN de `migrate`, seulement son démarrage.) La
+rejouer ne coûte rien : le second passage dit « migrations à jour », 0 appliquée.
 
 ### Vérifier
 
 ```bash
-# santé
-curl -s http://localhost:4318/health   # {"status":"ok","service":"ingest"}
-curl -s http://localhost:4318/ready     # {"status":"ready"} (la base répond)
+curl -s http://localhost:4318/health   # {"status":"ok","service":"ingest",…,"geoip":{…}}
+curl -s http://localhost:4318/ready    # {"status":"ready"} (la base répond)
+curl -s http://localhost:4320/health   # scheduler : processus + base
+# fraîcheur de chaque cadence et arriéré de livraisons (METRICS_TOKEN posé dans .env)
+curl -s -H "authorization: Bearer $METRICS_TOKEN" http://localhost:4320/ready
 
 # envoyer un payload OTLP d'exemple -> attendu {"partialSuccess":{}}
 curl -s http://localhost:4318/v1/traces -H 'content-type: application/json' \
@@ -57,68 +78,81 @@ docker compose exec db psql -U postgres -d mip_rum \
   -c "select app_id, name, value from rum_metric order by id desc limit 5;"
 ```
 
+### Fumée en local
+
+La même preuve que la CI (`.github/workflows/docker-smoke.yml`, une ligne de
+matrice par service) : démarrer le service, `/health` à 200, une requête de
+référence, puis `docker compose stop -t 10 <service>` — le code de sortie doit
+être 0 (sorti de lui-même sur SIGTERM, avant le SIGKILL), et
+`docker compose exec <service> id -u` ne doit pas rendre 0.
+
 ## Les logs (le but de la conteneurisation)
 
-Le serveur émet **une ligne JSON par événement** sur stdout (`{ts,level,service,msg,…}`,
-secrets redacted — cf. `_shared/log.mjs`). Le driver `json-file` (rotation 10 Mo × 5)
-les capture :
+Les services émettent **une ligne JSON par événement** sur stdout
+(`{ts,level,service,msg,…}`, secrets expurgés). Le driver `json-file` (rotation
+10 Mo × 5) les capture :
 
 ```bash
-docker compose logs -f ingest            # flux structuré (ingested, rate limited, db retry…)
-docker compose logs -f ingest | jq .     # filtrable/greppable : jq 'select(.level=="error")'
-LOG_LEVEL=debug docker compose up -d ingest   # plus verbeux
+docker compose logs -f collector            # flux structuré (ingested, rate limited, db retry…)
+docker compose logs -f collector | jq .     # filtrable : jq 'select(.level=="error")'
+docker compose logs migrate                 # ce que le migrateur a appliqué
+LOG_LEVEL=debug docker compose up -d collector
 ```
 
-C'est le **substrat de logs** requis pour le dogfooding. Les remonter **dans une
-page « supervision logs » de la console** est le lot suivant (voir Feuille de route).
-
 ## Brancher la console / le SDK dessus
-
-Pointer l'ingestion et la base sur ce backend local au lieu du cloud :
 
 ```bash
 # SDK / console : endpoint d'ingestion
 NEXT_PUBLIC_RUM_ENDPOINT=http://localhost:4318/v1/traces
-# console : lecture base via le rôle restreint console_ro
-DATABASE_URL=postgres://console_ro:console_ro@localhost:5433/mip_rum
+# console : la base du compose
+DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum
 ```
 
 ## Sécurité
 
-- **`console_ro`** : la console se connecte sous ce rôle restreint (RLS + policies
-  `cro_*`), pas `postgres` — parité avec la prod. Créé par `db/initdb.sh` avant les
-  migrations pour que les policies gardées de `migration-v16` s'appliquent.
+- **Non-root** : chaque image tourne sous l'utilisateur `node` (uid 1000), et
+  son code appartient à root — le processus ne peut pas le réécrire.
+- **Images épinglées par digest** (Node 24, `.nvmrc`), identiques pour les trois
+  services ; chaque paquet posé est vérifié contre le lockfile à la construction
+  (`scripts/ci/deploy-fidele.mjs`).
+- **`mcp` n'a ni `pg` ni `DATABASE_URL`**, et ne dépend ni de `db` ni de
+  `migrate` : il ne parle qu'à l'API v1.
 - **`REQUIRE_API_KEY=true`** : rejette (403) tout `app_id` inconnu/sans clé. Défaut
   `false` (fail-open POC) — passer `true` une fois toutes les apps porteuses d'une clé.
-- **Mots de passe** : changer `POSTGRES_PASSWORD` et `CONSOLE_RO_PASSWORD` hors local.
-- Ingest tourne **non-root** (utilisateur `node`).
+- **Mots de passe** : changer `POSTGRES_PASSWORD` hors local.
+- **Rôle restreint `console_ro`** (parité avec la production, RLS + policies
+  `cro_*`) : il n'est plus créé d'office — c'était le travail de l'ancien
+  `initdb.sh`, disparu avec lui. Les blocs de `migration-v16` qui le concernent
+  sont gardés par son existence : il doit donc exister AVANT la première
+  migration, sur un volume vierge.
 
-## Comment la base est initialisée
+  ```bash
+  docker compose up -d --wait db
+  docker compose exec -T db psql -U postgres -d mip_rum -v ON_ERROR_STOP=1 -v pw="$CONSOLE_RO_PASSWORD" <<'SQL'
+  create role console_ro login;
+  alter role console_ro password :'pw';
+  grant connect on database mip_rum to console_ro;
+  grant usage on schema public to console_ro;
+  SQL
+  docker compose run --rm migrate
+  ```
 
-`db/initdb.sh` (lancé une fois par l'entrypoint postgres, sur volume vierge) :
-1. crée le rôle `console_ro` ;
-2. applique `apps/ingest/sql/schema.sql` ;
-3. applique `migration-v02…v28` dans l'ordre.
-
-Les blocs **cloud** (pg_cron, rôles d'API Supabase `anon`/`authenticated`/`service_role`)
-s'**auto-sautent** : chaque migration teste `if exists (…)` et journalise « bloc sauté »
-sur un Postgres local. `ON_ERROR_STOP=1` → pas de schéma partiel silencieux.
-
-> Rejouer l'init de zéro : `docker compose down -v` (⚠️ supprime les données) puis `up`.
+  Sans lui, les blocs sont sautés, exactement comme en CI.
 
 ## Rétention (TTL)
 
-`pg_cron` n'est pas présent sur `postgres:15` → la purge automatique est sautée.
-La lancer via le CLI Node (cron système ou boucle) :
+`pg_cron` n'est pas présent sur `postgres:17` → la purge automatique passe par
+le travail quotidien du `scheduler` (profil `scheduler`). Pour une passe
+ponctuelle, sous bail :
 
 ```bash
-docker compose exec ingest node purge.mjs --once   # ou --loop
+docker compose exec scheduler node services/scheduler/run-once.mjs daily
 ```
 
-## Ce que ce lot ne couvre pas (encore)
+## Ce que ce compose ne couvre pas (encore)
 
-- **Dockerisation de la console** (Next.js) : elle reste sur Vercel. Conteneuriser
-  demande `output: 'standalone'` + un build pnpm multi-stage — lot séparé.
+- **La console** (Next.js) : elle reste sur Vercel. La conteneuriser demande
+  `output: 'standalone'` et sa propre image — lot C12b du plan.
 - **Page supervision logs** : voir ci-dessous.
 
 ## Feuille de route « supervision logs »
@@ -126,17 +160,19 @@ docker compose exec ingest node purge.mjs --once   # ou --loop
 Aujourd'hui les logs sont accessibles en **CLI** (`docker compose logs`). Pour les
 afficher **dans la console** :
 1. **Collecte** : un OTel Collector (filelog receiver sur les logs json-file, ou
-   réception directe) — la brique est prototypée dans `poc/network-logs/`.
+   réception directe) — la brique est prototypée dans `labs/network-logs/`.
 2. **Stockage** : table `otel_logs` en Postgres (comme les traces), ou ClickHouse
    au-delà d'un certain volume (l'arbitrage coût est justement l'objet du POC).
-3. **Ingestion** : ajouter le signal *logs* OTel (`resourceLogs`) au parser, en
-   miroir des traces (`resourceSpans`).
+3. **Ingestion** : le signal *logs* OTel (`resourceLogs`) est déjà reçu sur `/v1/logs`.
 4. **UI** : page « Logs » (filtres sévérité/source/app, timeline, corrélation
    trace↔log) sur les primitives dataviz existantes.
 
 ## Nettoyer
 
 ```bash
-docker compose down       # arrêt (garde les données)
-docker compose down -v    # + supprime le volume db-data
+docker compose --profile tout down       # arrêt (garde les données)
+docker compose --profile tout down -v    # + supprime le volume db-data
 ```
+
+`--profile tout` : sans lui, `down` ignore les services des profils inactifs et
+laisse leurs conteneurs derrière lui.

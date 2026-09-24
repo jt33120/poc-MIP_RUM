@@ -11,7 +11,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import pg from "pg";
 
-const DIR = new URL("../apps/ingest/sql/", import.meta.url);
+const DIR = new URL("../packages/db/sql/", import.meta.url);
 let failures = 0;
 function assert(label, cond) {
   console.log(`${cond ? "✓" : "✗"} ${label}`);
@@ -103,7 +103,7 @@ async function main() {
     // doit même pas pouvoir lire.
     const integ = (await c.query(
       `insert into ticket_integration (app_id,provider,target,credential_ref,enabled,verified_at)
-       values ($1,'github','moi/bac','env:GITHUB_TICKETS_TOKEN',true,now()) returning id`, [app])).rows[0].id;
+       values ($1,'github','moi/bac','env:TICKET_GITHUB_TOKEN',true,now()) returning id`, [app])).rows[0].id;
     await c.query(
       `insert into ticket_outbox (app_id,integration_id,issue_id,idempotency_key,payload)
        values ($1,$2,$3,$4,'{"titre":"t","description":"d","url":"https://c/","reference":"r"}'::jsonb)`,

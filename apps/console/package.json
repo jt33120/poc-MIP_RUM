@@ -10,9 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mip/backend": "workspace:*",
+    "@mip/mcp-tools": "workspace:*",
     "@rrweb/replay": "2.0.1",
     "bcryptjs": "3.0.3",
-    "ingest": "workspace:*",
     "jose": "6.2.3",
     "next": "15.5.19",
     "pg": "8.21.0",

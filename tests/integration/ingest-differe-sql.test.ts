@@ -12,12 +12,12 @@ import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error — module .mjs sans déclaration de types
-import { MAX_TENTATIVES, deposerLot, drainerIngestRaw, etatIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
+import { MAX_TENTATIVES, deposerLot, drainerIngestRaw, etatIngestRaw } from "../../packages/backend/lib/ingest-differe.mjs";
 // @ts-expect-error — module .mjs sans déclaration de types
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const URL_TEST = process.env.SQL_TEST_DATABASE_URL;
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 const APP = "differe-app";
 // Seconde application : elle sert à prouver que le verrou de P8.1 est PAR
 // application, et non global — deux apps se drainent bien de front.

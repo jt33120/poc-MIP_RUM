@@ -22,17 +22,17 @@ import {
   fenetre,
   tailleLot,
   // @ts-expect-error module JS sans déclarations
-} from "../../apps/ingest/lib/backfills/planner.mjs";
+} from "../../packages/backend/lib/backfills/planner.mjs";
 // @ts-expect-error module JS sans déclarations
-import { ETATS, avancer, codeErreur } from "../../apps/ingest/lib/backfills/runner.mjs";
+import { ETATS, avancer, codeErreur } from "../../packages/backend/lib/backfills/runner.mjs";
 // @ts-expect-error module JS sans déclarations
-import { ErreurBackfill, fusionnerSkips, totalSkips } from "../../apps/ingest/lib/backfills/commun.mjs";
+import { ErreurBackfill, fusionnerSkips, totalSkips } from "../../packages/backend/lib/backfills/commun.mjs";
 // @ts-expect-error module JS sans déclarations
-import { fusionHistogrammesPossible, fusionnerHistogrammes } from "../../apps/ingest/lib/backfills/rollups.mjs";
+import { fusionHistogrammesPossible, fusionnerHistogrammes } from "../../packages/backend/lib/backfills/rollups.mjs";
 // @ts-expect-error module JS sans déclarations
-import { CARTE_RENDUE_MAX, ECHANTILLON_CARTE_MAX } from "../../apps/ingest/lib/backfills/error-groups.mjs";
+import { CARTE_RENDUE_MAX, ECHANTILLON_CARTE_MAX } from "../../packages/backend/lib/backfills/error-groups.mjs";
 // @ts-expect-error module JS sans déclarations
-import { ENTETE_HERITEE } from "../../apps/ingest/lib/error-issue-workflow.mjs";
+import { ENTETE_HERITEE } from "../../packages/backend/lib/error-issue-workflow.mjs";
 // @ts-expect-error module JS sans déclarations
 import { analyserArgs, exiger } from "../../scripts/backfill-rum.mjs";
 
@@ -123,13 +123,13 @@ describe("P8.2 — empreinte de code", () => {
     expect(empreinteCode()).toMatch(/^[0-9a-f]{64}$/);
     expect(empreinteCode()).toBe(empreinteCode());
     for (const rel of FICHIERS_CODE) {
-      expect(existsSync(join(RACINE, "apps", "ingest", rel))).toBe(true);
+      expect(existsSync(join(RACINE, "packages", "backend", rel))).toBe(true);
     }
     // Les normalisateurs SONT dans l'empreinte : leur évolution change la règle
     // de reconstruction, donc doit interdire une reprise à mi-fenêtre.
-    expect(FICHIERS_CODE).toContain("supabase/functions/_shared/otlp.mjs");
-    expect(FICHIERS_CODE).toContain("supabase/functions/_shared/dimensions.mjs");
-    expect(FICHIERS_CODE).toContain("supabase/functions/_shared/error-normalize.mjs");
+    expect(FICHIERS_CODE).toContain("shared/otlp.mjs");
+    expect(FICHIERS_CODE).toContain("shared/dimensions.mjs");
+    expect(FICHIERS_CODE).toContain("shared/error-normalize.mjs");
   });
 
   it("contient le module de CHAQUE `kind` — un oubli rendrait l'empreinte aveugle", () => {

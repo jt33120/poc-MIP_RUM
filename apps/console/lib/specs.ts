@@ -115,9 +115,9 @@ export const INFRA: GroupeInfra[] = [
         // Supprimé de Railway (INGEST_SUPPRIME_LE, docs/TOPOLOGIE_BACKEND.md) : aucun domaine
         // public ne pointait dessus, et son seul rôle réel — les migrations — était
         // déjà repris par le scheduler. Le receveur reste dans le dépôt.
-        v: `Receveur OTLP autonome (services/ingest/server.mjs), gardé pour l'hébergement chez le client et démarré par la CI. En production, le trafic passe par la route de la console ; le service Railway, qui n'avait aucun domaine public, a été supprimé le ${INGEST_SUPPRIME_LE}.`,
+        v: `Receveur OTLP autonome (services/collector/server.mjs), gardé pour l'hébergement chez le client et démarré par la CI. En production, le trafic passe par la route de la console ; le service Railway, qui n'avait aucun domaine public, a été supprimé le ${INGEST_SUPPRIME_LE}.`,
         s: "partiel",
-        preuve: "services/ingest/server.mjs",
+        preuve: "services/collector/server.mjs",
       },
       {
         k: "scheduler",
@@ -133,9 +133,9 @@ export const INFRA: GroupeInfra[] = [
       },
       {
         k: "Images",
-        v: "Deux Dockerfiles : un pour ingest et scheduler (même noyau, seule la commande change), un pour mcp. Un test de CI vérifie que « pg » est bien absent de la seconde.",
+        v: "Un Dockerfile par service (collector, scheduler, mcp), chacun avec sa commande de démarrage explicite, sur un Node épinglé par empreinte et sans droits root. Un test de CI démarre chaque image, et vérifie que « pg » est absent de celle du serveur MCP.",
         s: "atteint",
-        preuve: "infra/docker/Dockerfile.mcp",
+        preuve: "services/mcp/Dockerfile",
       },
       {
         k: "Déploiement",
@@ -205,7 +205,7 @@ export const INFRA: GroupeInfra[] = [
         k: "Migrations",
         v: "Registre schema_migration à empreintes, chaque fichier dans sa propre transaction, adoption d'une base existante sans rejeu. Rejouées en CI contre un PostgreSQL vierge.",
         s: "atteint",
-        preuve: "apps/ingest/migrate.mjs",
+        preuve: "packages/db/migrate.mjs",
       },
       {
         k: "API et MCP",
@@ -386,8 +386,8 @@ export const MESURES: Mesure[] = [
 export interface AngleMort {
   label: string;
   raison: string;
-  /** [fichier ou dossier à fouiller, fragment qui ne doit PAS s'y trouver] */
-  marqueur: [string, string];
+  /** [fichier(s) ou dossier(s) à fouiller, fragment qui ne doit PAS s'y trouver] */
+  marqueur: [string | string[], string];
 }
 
 export const ANGLES_MORTS: AngleMort[] = [
@@ -410,7 +410,12 @@ export const ANGLES_MORTS: AngleMort[] = [
     label: "Supervision d'un serveur vocal (SVI)",
     raison:
       "La chaîne d'ingestion, le schéma et les écrans existent ; aucun capteur de ce dépôt n'émet cette télémétrie. Elle doit venir de la plateforme vocale du client — rien ne se mesure tout seul aujourd'hui.",
-    marqueur: ["packages", "svi."],
+    // Les CAPTEURS seulement. Le marqueur fouillait tout `packages/` quand ce
+    // dossier ne contenait qu'eux ; depuis le remodelage P1, le noyau backend y
+    // vit aussi (`packages/backend`), et lui SAIT lire `svi.*` — c'est la chaîne
+    // d'ingestion que la raison ci-dessus dit exister. Ce qui doit rester absent,
+    // c'est un émetteur.
+    marqueur: [["packages/rum-core", "packages/rum-sdk", "packages/rum-mobile", "packages/agent-node"], "svi."],
   },
 ];
 

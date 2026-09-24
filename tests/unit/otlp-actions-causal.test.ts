@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module JS partagé sans déclarations
-import { causalActionId, flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { causalActionId, flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const ACTION = "11111111-2222-4333-8444-555555555555";
 const NOW = Date.parse("2026-09-16T08:00:00.000Z");

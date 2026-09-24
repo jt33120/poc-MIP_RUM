@@ -26,15 +26,18 @@ importers:
 
   apps/console:
     dependencies:
+      '@mip/backend':
+        specifier: workspace:*
+        version: link:../../packages/backend
+      '@mip/mcp-tools':
+        specifier: workspace:*
+        version: link:../../packages/mcp-tools
       '@rrweb/replay':
         specifier: 2.0.1
         version: 2.0.1
       bcryptjs:
         specifier: 3.0.3
         version: 3.0.3
-      ingest:
-        specifier: workspace:*
-        version: link:../ingest
       jose:
         specifier: 6.2.3
         version: 6.2.3
@@ -84,6 +87,9 @@ importers:
 
   apps/extension:
     devDependencies:
+      '@mip/rum-sdk':
+        specifier: workspace:*
+        version: link:../../packages/rum-sdk
       '@types/chrome':
         specifier: ^0.0.280
         version: 0.0.280
@@ -93,27 +99,6 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
-
-  apps/ingest:
-    dependencies:
-      pg:
-        specifier: 8.21.0
-        version: 8.21.0
-
-  apps/mcp:
-    dependencies:
-      '@modelcontextprotocol/sdk':
-        specifier: 1.30.0
-        version: 1.30.0(zod@4.5.4)
-      zod:
-        specifier: 4.5.4
-        version: 4.5.4
-
-  apps/sync-synthetic:
-    dependencies:
-      pg:
-        specifier: 8.21.0
-        version: 8.21.0
 
   packages/agent-node:
     dependencies:
@@ -130,6 +115,33 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+
+  packages/backend:
+    dependencies:
+      '@mip/service-kit':
+        specifier: workspace:*
+        version: link:../service-kit
+      pg:
+        specifier: 8.21.0
+        version: 8.21.0
+
+  packages/db:
+    dependencies:
+      '@mip/backend':
+        specifier: workspace:*
+        version: link:../backend
+      pg:
+        specifier: 8.21.0
+        version: 8.21.0
+
+  packages/mcp-tools:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.30.0
+        version: 1.30.0(zod@4.5.4)
+      zod:
+        specifier: 4.5.4
+        version: 4.5.4
 
   packages/rum-core:
     devDependencies:
@@ -172,26 +184,40 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  services/ingest:
+  packages/service-kit: {}
+
+  services/collector:
     dependencies:
-      ingest:
+      '@mip/backend':
         specifier: workspace:*
-        version: link:../../apps/ingest
+        version: link:../../packages/backend
       pg:
         specifier: 8.21.0
         version: 8.21.0
 
   services/mcp:
     dependencies:
-      mip-mcp:
+      '@mip/mcp-tools':
         specifier: workspace:*
-        version: link:../../apps/mcp
+        version: link:../../packages/mcp-tools
 
   services/scheduler:
     dependencies:
-      ingest:
+      '@mip/backend':
         specifier: workspace:*
-        version: link:../../apps/ingest
+        version: link:../../packages/backend
+      '@mip/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@mip/service-kit':
+        specifier: workspace:*
+        version: link:../../packages/service-kit
+      pg:
+        specifier: 8.21.0
+        version: 8.21.0
+
+  tools/sync-synthetic:
+    dependencies:
       pg:
         specifier: 8.21.0
         version: 8.21.0

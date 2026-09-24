@@ -19,11 +19,11 @@ import { gzipSync } from "node:zlib";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 // @ts-expect-error module JS sans déclarations
-import { hashIdentity, secureOtlpIdentities } from "../../apps/ingest/lib/identity-hash.mjs";
+import { hashIdentity, secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.mjs";
 // @ts-expect-error module JS sans déclarations
-import { deposerLot, drainerIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
+import { deposerLot, drainerIngestRaw } from "../../packages/backend/lib/ingest-differe.mjs";
 // @ts-expect-error module JS sans déclarations
-import { _resetColonnesCache, writeLogs, writeReplayChunk, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeLogs, writeReplayChunk, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS sans déclarations
 import {
   ErreurVerrouIngestion,
@@ -31,16 +31,16 @@ import {
   _resetPresenceBarrieres,
   withAppIngestTransaction,
   // @ts-expect-error module JS sans déclarations
-} from "../../apps/ingest/lib/privacy-barriere.mjs";
+} from "../../packages/backend/lib/privacy-barriere.mjs";
 // @ts-expect-error module JS sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 import { DSAR_ANCHOR, DSAR_CHILD_TABLES } from "../../apps/console/lib/dsar";
 import { dsarIdentityCounts, dsarIdentityErase, type IdentityDsarIo } from "../../apps/console/lib/queries-dsar";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 const pool = new pg.Pool(url ? { connectionString: url, max: 8 } : { max: 8 });
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 const APP = "p81-course";
 const AUTRE = "p81-course-autre";

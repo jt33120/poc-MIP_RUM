@@ -8,8 +8,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   creerSymbolicateur,
   LIMITES_SYMBOLICATION,
-} from "../../apps/ingest/lib/error-symbolication.mjs";
-import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+} from "../../packages/backend/lib/error-symbolication.mjs";
+import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 function vlq(n: number): string {

@@ -1,7 +1,7 @@
 # Alerting mature — baselines, SLO/error-budget, routing (P1)
 
 > Passer de l'alerting **statique** (seuil fixe) à un alerting **mature** attendu au
-> niveau grand compte. Contrat SQL : `apps/ingest/sql/migration-v17.sql`. Console :
+> niveau grand compte. Contrat SQL : `packages/db/sql/migration-v17.sql`. Console :
 > `/alerts` (règles + canaux) et `/slo`.
 
 ## Pilier 1 — Baselines dynamiques (anomalie saisonnière)
@@ -58,7 +58,7 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
   `webhook_url` historique de la règle (rétro-compatible).
 - Canaux livrés : **`webhook`** (JSON complet) et **`slack`** (payload `{text}` pour les
   *incoming webhooks* — gratuit). Envoi via `pg_net` (asynchrone) ; en local sans
-  l'extension, la livraison reste `queued` et part via `apps/ingest/dispatch-alerts.mjs`.
+  l'extension, la livraison reste `queued` et part via `packages/backend/lib/dispatch-alerts.mjs`.
 - **E-mail / SMS** : `kind='email'` est **tracé `skipped`** (hook prêt) mais **non livré**
   — nécessite un service externe **payant** (Resend/SES/Postmark). À brancher sur décision.
 

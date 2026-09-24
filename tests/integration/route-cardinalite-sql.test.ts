@@ -19,7 +19,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const URL_TEST = process.env.SQL_TEST_DATABASE_URL;
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 function fichiersSql(): string[] {
   const migrations = readdirSync(SQL_DIR)

@@ -21,7 +21,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
 
-const SQL_DIR = new URL("../apps/ingest/sql/", import.meta.url).pathname;
+const SQL_DIR = new URL("../packages/db/sql/", import.meta.url).pathname;
 const APP = "bench-app";
 const TABLES = ["rum_metric", "rum_pageview", "rum_error", "rum_longtask",
                 "rum_resource", "rum_event", "rum_span", "rum_log", "rum_ai"];

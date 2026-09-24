@@ -22,7 +22,7 @@ import {
   curlVerification,
 } from "@/lib/mcp-public";
 import { sonderMcp } from "@/lib/mcp-sonde";
-import { OUTILS } from "../../../mcp/lib/catalogue.mjs";
+import { OUTILS } from "@mip/mcp-tools/lib/catalogue.mjs";
 
 export const dynamic = "force-dynamic";
 

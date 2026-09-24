@@ -8,7 +8,7 @@ import { ROUTES_MAX } from "../../apps/console/lib/queries";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(join(RACINE, rel), "utf8");
-const V60 = lire("apps/ingest/sql/migration-v60.sql");
+const V60 = lire("packages/db/sql/migration-v60.sql");
 const GRID = lire("apps/console/lib/queries-grid.ts");
 const SUMMARY = lire("apps/console/lib/queries-summary.ts");
 const QUERIES = lire("apps/console/lib/queries.ts");

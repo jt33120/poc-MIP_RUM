@@ -64,9 +64,9 @@ en remplaçant `/v1/traces` par `/v1/replay`
 changer dans son snippet (`endpoint`), et le replay suit tout seul.
 
 **Pas de réécriture de la logique** : les inserts et l'auth vivent dans
-`apps/ingest/lib/pg-ingest.mjs`, importé à la fois par le dev-server Node et par
+`packages/backend/lib/pg-ingest.mjs`, importé à la fois par le dev-server Node et par
 les routes Next.js — une seule implémentation, dans le même esprit que
-`_shared/otlp.mjs` pour le parsing. Les gardes de prod sont conservées à
+`shared/otlp.mjs` pour le parsing. Les gardes de prod sont conservées à
 l'identique : 413 sur la taille, 403 sur la clé d'API, 429 sur le débit
 (compteur durable `rate_check`), séparation stricte 400 (requête fautive) /
 500 (incident rejouable), écriture idempotente (`on conflict do nothing`).
@@ -206,7 +206,7 @@ alerte. Si c'est trop, les sortir dans leur propre route planifiée.
 `create extension pg_net` est refusé sur Neon (*"not in the allowed extensions
 list"*) : les alertes qui postaient via `net.http_post` **ne pouvaient plus
 partir**. La livraison passe désormais par `dispatchOnce()`
-(`apps/ingest/dispatch-alerts.mjs`, déjà écrit pour le cas local), appelé à
+(`packages/backend/lib/dispatch-alerts.mjs`, déjà écrit pour le cas local), appelé à
 chaque tick de 5 min. Le rejeu borné avec backoff exponentiel et le passage en
 `dead` au plafond sont conservés tels quels.
 

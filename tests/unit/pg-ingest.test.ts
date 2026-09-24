@@ -1,8 +1,8 @@
-// Cœur d'ingestion Postgres nu (apps/ingest/lib/pg-ingest.mjs) — partagé par le
+// Cœur d'ingestion Postgres nu (packages/backend/lib/pg-ingest.mjs) — partagé par le
 // dev-server Node et les routes Next.js de prod (/api/ingest/v1/*), depuis que
 // l'ingestion a quitté les edge functions Supabase.
 //
-// Ce qui est testé ici est la PARITÉ avec _shared/auth.mjs (le modèle de
+// Ce qui est testé ici est la PARITÉ avec shared/auth.mjs (le modèle de
 // décision qui tournait en prod) : keyless REJETÉ sous REQUIRE_API_KEY
 // (durcissement E1-S1), app inconnue rejetée, fail-open si le registre n'a
 // jamais pu être chargé, rate limit mémoire + durable avec repli. Une
@@ -10,7 +10,7 @@
 // que le module partagé existe pour empêcher.
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { createPgAuth } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { createPgAuth } from "../../packages/backend/lib/pg-ingest.mjs";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 

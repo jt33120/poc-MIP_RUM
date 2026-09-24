@@ -7,7 +7,7 @@ import {
   errorFingerprint,
   flattenOtlp,
   fnv1a,
-} from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+} from "../../packages/backend/shared/otlp.mjs";
 
 const fixture = JSON.parse(
   readFileSync(join(__dirname, "../fixtures/otlp-sample-v2.json"), "utf8"),

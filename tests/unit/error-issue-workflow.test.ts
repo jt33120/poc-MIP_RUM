@@ -10,7 +10,7 @@ import {
   COMMENTAIRE_MAX,
   texteActivite,
   tronquerCaracteres,
-} from "../../apps/ingest/lib/error-issue-workflow.mjs";
+} from "../../packages/backend/lib/error-issue-workflow.mjs";
 import {
   COMMENT_MAX_CHARS,
   hasSqlControlCharacters,

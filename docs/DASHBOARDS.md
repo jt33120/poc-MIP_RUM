@@ -1,7 +1,7 @@
 # Tableaux de bord configurables + export (P1, étendu P6.5)
 
 > Laisser chaque équipe composer ses propres vues (COPIL, run, perf) et les exporter
-> (CSV / PDF). Contrat SQL : `apps/ingest/sql/migration-v18.sql`, puis `migration-v79.sql`
+> (CSV / PDF). Contrat SQL : `packages/db/sql/migration-v18.sql`, puis `migration-v79.sql`
 > (propriétaire, révision, vues enregistrées). Console : `/dashboards`, `/explorer/views`.
 
 ## Modèle

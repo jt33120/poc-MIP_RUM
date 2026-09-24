@@ -1,7 +1,7 @@
 // Source maps côté console (P5.4) : releases et fichiers d'une app, sans jamais
 // relire le contenu. L'écriture passe par le contrat partagé
-// `ingest/lib/sourcemap-upload.mjs`, le même pour la console et le backend direct.
-import { empreinteManifeste } from "ingest/lib/sourcemap-upload.mjs";
+// `@mip/backend/lib/sourcemap-upload.mjs`, le même pour la console et le backend direct.
+import { empreinteManifeste } from "@mip/backend/lib/sourcemap-upload.mjs";
 import { q } from "./db";
 
 export interface SourcemapRelease {

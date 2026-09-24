@@ -1,6 +1,6 @@
 import { defineConfig } from "@playwright/test";
 
-// Prérequis : Postgres up (docker compose -f apps/ingest/docker-compose.yml up -d).
+// Prérequis : Postgres up ET migré (docker compose -f infra/docker/docker-compose.yml run --rm migrate).
 // Les 3 serveurs (ingestion, démo, console) sont lancés/réutilisés automatiquement.
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -17,7 +17,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "node apps/ingest/dev-server.mjs",
+      command: "node services/collector/dev-server.mjs",
       url: "http://localhost:4318/__recent",
       reuseExistingServer: true,
     },
@@ -27,7 +27,7 @@ export default defineConfig({
       reuseExistingServer: true,
     },
     {
-      command: "node apps/ingest/replay-dev-server.mjs",
+      command: "node services/collector/replay-dev-server.mjs",
       url: "http://localhost:4319/__health",
       reuseExistingServer: true,
     },

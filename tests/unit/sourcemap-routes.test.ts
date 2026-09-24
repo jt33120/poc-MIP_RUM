@@ -18,7 +18,7 @@ const simul = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db", () => ({ pool: { simule: true }, q: vi.fn(), tx: vi.fn() }));
-vi.mock("../../apps/ingest/lib/sourcemap-upload.mjs", async (original) => ({
+vi.mock("../../packages/backend/lib/sourcemap-upload.mjs", async (original) => ({
   ...(await original<object>()),
   verifierJetonUpload: simul.verifierJetonUpload,
   enregistrerMaps: simul.enregistrerMaps,
@@ -112,8 +112,8 @@ describe("POST /api/sourcemaps — port console", () => {
 
   it("un jeton de lecture CONSOLE_API_TOKENS n'écrit jamais : 401, sans toucher la base", async () => {
     // Vérificateur RÉEL : c'est lui qui doit refuser le format, pas la simulation.
-    const reel = await vi.importActual<typeof import("../../apps/ingest/lib/sourcemap-upload.mjs")>(
-      "../../apps/ingest/lib/sourcemap-upload.mjs",
+    const reel = await vi.importActual<typeof import("../../packages/backend/lib/sourcemap-upload.mjs")>(
+      "../../packages/backend/lib/sourcemap-upload.mjs",
     );
     const db = { query: vi.fn() };
     simul.verifierJetonUpload.mockImplementation((_pool: unknown, authorization: string | null) =>

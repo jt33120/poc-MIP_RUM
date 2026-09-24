@@ -13,7 +13,7 @@
 //
 //   1. Postgres local migré (postgres://postgres:postgres@localhost:5433/mip_rum),
 //      l'ingestion sur :4318 et le mini-site de démo sur :8080 — la pile que
-//      playwright.config.ts démarre (`node apps/ingest/dev-server.mjs`,
+//      playwright.config.ts démarre (`node services/collector/dev-server.mjs`,
 //      `node demo/serve.mjs`).
 //   2. Du trafic de démonstration RÉCENT (fenêtre par défaut des écrans : 24 h) :
 //        node scripts/gen-traffic.mjs 12        # une session sur deux lève une erreur

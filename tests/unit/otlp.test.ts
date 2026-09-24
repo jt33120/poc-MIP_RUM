@@ -7,7 +7,7 @@ import {
   anyValue,
   flattenOtlp,
   rating2026,
-} from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+} from "../../packages/backend/shared/otlp.mjs";
 
 const fixture = JSON.parse(
   readFileSync(join(__dirname, "../fixtures/otlp-sample.json"), "utf8"),

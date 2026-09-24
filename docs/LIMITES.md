@@ -91,7 +91,7 @@ pages successives ne peuvent ni répéter ni sauter une ligne.
 | Limite d'origine | Ce qui est livré en v0.8 |
 |---|---|
 | **Tables exposées via l'API publique** (alerte Supabase : `rls_disabled_in_public`, `console_user.password_hash` accessible) | RLS activé sur **toutes** les tables du schéma `public` (API `anon`/`authenticated` fermée ; ingestion via `service_role` et console via le rôle propriétaire continuent de fonctionner) ; vues retirées de l'API ; fonctions `SECURITY DEFINER` fermées à l'API et `search_path` figé. Migrations `v10`/`v11` idempotentes |
-| **Scrub PII dépendant du seul `beforeSend` client** | Défense en profondeur **côté serveur** (A2) : `_shared/scrub.mjs` nettoie emails, jetons (Bearer/Basic/JWT/clés `sk-`/`mip_`), affectations sensibles (`password=…`), IP et longues suites de chiffres dans `message`/`stack`/`url`/`referrer`/`source` et les `props` d'événements — front **et** back, avant écriture. Appliqué dans le parser partagé (parité dev-server ↔ edge) |
+| **Scrub PII dépendant du seul `beforeSend` client** | Défense en profondeur **côté serveur** (A2) : `shared/scrub.mjs` nettoie emails, jetons (Bearer/Basic/JWT/clés `sk-`/`mip_`), affectations sensibles (`password=…`), IP et longues suites de chiffres dans `message`/`stack`/`url`/`referrer`/`source` et les `props` d'événements — front **et** back, avant écriture. Appliqué dans le parser partagé (parité dev-server ↔ edge) |
 
 ## Mise à jour v0.4 (11/06/2026 — tracing distribué)
 
@@ -109,7 +109,7 @@ pages successives ne peuvent ni répéter ni sauter une ligne.
 | 1 | Pas de session replay | Replay rrweb : module SDK **séparé lazy-chargé** (le bundle cœur ne bouge pas), opt-in par app (`replay_sample_rate`), masquage des saisies par défaut, respect du consent, caps 2 min / 1 Mo par session ; player dans la vue session |
 | 9 | Rate limiting basique (mémoire, par isolat) | Rate limit **durable** : compteur SQL `rate_counter` + `rate_check()`, partagé entre isolats edge, fallback mémoire si SQL indisponible |
 | 12 | `geo_country` vide | Géo **par timezone** (attribut `mip.tz` du SDK → mapping tz→pays à l'ingestion) — granularité pays, **zéro adresse IP stockée** |
-| 13 | Backend Postgres, pas ClickHouse | Chemin ClickHouse **prouvé en local** : docker-compose, schéma MergeTree, writer derrière `STORE=clickhouse\|both`, bench 100 k events PG vs CH (`infra/clickhouse.notes.md`). Reste : déploiement prod réel |
+| 13 | Backend Postgres, pas ClickHouse | Chemin ClickHouse **prouvé en local** : docker-compose, schéma MergeTree, writer derrière `STORE=clickhouse\|both`, bench 100 k events PG vs CH (`labs/clickhouse/NOTES.md`). Reste : déploiement prod réel |
 | 17 (reliquat) | Alerting sans notification sortante fiable | Webhooks sortants : pg_net (cloud) + dispatcher node (local), payload JSON compatible Slack, traçabilité `alert_delivery` |
 | 19 | Pas de RBAC / multi-utilisateurs | Login email+mot de passe (bcrypt, JWT cookie httpOnly), rôles admin/viewer, viewer scopé par liste d'apps, gestion des utilisateurs, `audit_log` des actions sensibles |
 | 23 (reliquat) | Pas de détection automatique | Vue `v_anomaly` (z-score du LCP p75 horaire vs 7 j glissants, \|z\| > 3) + badge anomalies et **health score** composite en Overview (formule documentée dans `apps/console/lib/health.ts`) |

@@ -62,8 +62,8 @@ try {
   ko("bundle replay séparé absent (pnpm --filter @mip/rum-sdk build)");
 }
 
-await ensureServer(`${INGEST}/__recent`, "node", ["apps/ingest/dev-server.mjs"]);
-await ensureServer(`${REPLAY}/__health`, "node", ["apps/ingest/replay-dev-server.mjs"]);
+await ensureServer(`${INGEST}/__recent`, "node", ["services/collector/dev-server.mjs"]);
+await ensureServer(`${REPLAY}/__health`, "node", ["services/collector/replay-dev-server.mjs"]);
 await ensureServer(DEMO, "node", ["demo/serve.mjs"]);
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 2 });

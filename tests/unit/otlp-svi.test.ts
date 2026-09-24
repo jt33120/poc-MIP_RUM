@@ -7,7 +7,7 @@
 // l'autre côté : router le SVI ne doit rien changer aux spans existants.
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — module .mjs sans types (partagé avec les edge functions)
-import { flattenOtlp, numOrNull } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp, numOrNull } from "../../packages/backend/shared/otlp.mjs";
 
 const NS = (ms: number) => String(ms * 1_000_000);
 const kv = (k: string, v: unknown) => ({

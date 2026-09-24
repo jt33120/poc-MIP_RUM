@@ -17,7 +17,7 @@ import {
   lireJetonUpload,
   lireRequeteUpload,
   verifierJetonUpload,
-} from "../../apps/ingest/lib/sourcemap-upload.mjs";
+} from "../../packages/backend/lib/sourcemap-upload.mjs";
 
 const MAP = { version: 3, sources: ["src/panier.ts"], names: ["valider"], mappings: "AAAAA" };
 const corps = (objet: unknown) => Buffer.from(JSON.stringify(objet));

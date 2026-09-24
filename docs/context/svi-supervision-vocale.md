@@ -55,7 +55,7 @@ sur l'issue réelle de l'appel, pas seulement sur son déroulé.
 ## 2. Ce que nous en faisons aujourd'hui : rien
 
 Recensement du dépôt : aucune brique SIP, RTP, RTCP, WebRTC ou téléphonie. Le module
-`uptime` (`apps/ingest/supabase/functions/uptime/`, 1 sonde configurée, 2 657
+`uptime` (`supabase/functions/uptime/` (fonction Deno retirée en P1, lisible au tag `pre-reorg`), 1 sonde configurée, 2 657
 résultats) fait de la sonde HTTP — pas de l'appel de test.
 
 **Niveau : N0.** Sans nuance.

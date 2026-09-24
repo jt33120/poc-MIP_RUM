@@ -12,7 +12,7 @@ import { healthToMetrics } from "../../apps/console/lib/metrics-format";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(join(RACINE, rel), "utf8");
-const V62 = lire("apps/ingest/sql/migration-v62.sql");
+const V62 = lire("packages/db/sql/migration-v62.sql");
 
 /** Les tables de DONNÉES portant une route, telles que la migration les énumère. */
 const TABLES = [

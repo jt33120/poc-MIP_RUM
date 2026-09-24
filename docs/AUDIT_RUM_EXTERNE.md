@@ -65,7 +65,7 @@ faisant autorité, nom de colonne) et ce que le code fait réellement.
 période sélectionnée : `apps/console/app/errors/page.tsx:86` — ``label={`Occurrences · ${periodLabel(f)}`}``.
 La valeur vient de `apps/console/app/errors/page.tsx:73` : `groups.reduce((s, g) => s + g.occurrences, 0)`.
 `g.occurrences` est lu dans la vue `v_error_group_ext` (`apps/console/lib/queries-v2.ts:100-109`),
-dont la définition est `apps/ingest/sql/migration-v40.sql:50-63` :
+dont la définition est `packages/db/sql/migration-v40.sql:50-63` :
 
 ```sql
 select e.app_id, e.fingerprint, ..., count(*) as occurrences,
@@ -109,7 +109,7 @@ navigation **sur le canal des vitals** : `packages/rum-sdk/src/navtiming.ts:126`
 pour `REDIRECT`, `DNS`, `TCP`, `TLS`, `REQUEST`, `RESPONSE` (`navtiming.ts:38-45`) plus `RTT` et
 `DOWNLINK` (`navtiming.ts:87-91`). Le commentaire d'en-tête assume le choix et explique que
 `rating2026()` rendra `null` pour ces noms (`navtiming.ts:10-13`), ce que confirme
-`apps/ingest/supabase/functions/_shared/otlp.mjs:24-28`. Ces lignes atterrissent donc dans
+`packages/backend/shared/otlp.mjs:24-28`. Ces lignes atterrissent donc dans
 `rum_metric` avec `rating = null` (`otlp.mjs:586-598`).
 
 Or le score de santé compte **toutes** les lignes de `rum_metric`, sans filtrer sur `m.name` :
@@ -135,7 +135,7 @@ Pire pour la comparabilité : la dilution dépend du **navigateur** et de la **p
 interaction** (INP n'est émis que s'il y en a une). Deux apps identiques dont les parcs
 navigateurs diffèrent auront des scores différents pour des raisons qui n'ont rien à voir avec
 leur performance. Le même défaut affecte la heatmap 14 jours (`apps/console/lib/queries-grid.ts:46-58`)
-et le pré-agrégat horaire (`apps/ingest/sql/migration-v12.sql:60-61`), donc les deux chemins
+et le pré-agrégat horaire (`packages/db/sql/migration-v12.sql:60-61`), donc les deux chemins
 « brut » et « rollup » sont faux **de la même façon** — ce qui explique que la vérification
 d'équivalence Δ=0 n'ait rien détecté.
 
@@ -182,7 +182,7 @@ Ce n'est pas une collision de hachage improbable : c'est le comportement nominal
 | « Utilisateurs uniques » de l'API v1 `/summary` | `apps/console/lib/queries-summary.ts:148` — `count(distinct s.user_hash) as users` |
 | Nouveaux vs revenants | `apps/console/lib/queries.ts:430-434` |
 | Cohortes de rétention hebdomadaires | `apps/console/lib/queries-cohorts.ts:20-23` |
-| « Utilisateurs » touchés par un groupe d'erreurs | `apps/ingest/sql/migration-v40.sql:57` |
+| « Utilisateurs » touchés par un groupe d'erreurs | `packages/db/sql/migration-v40.sql:57` |
 | **Export et effacement RGPD (DSAR)** | `apps/console/lib/queries-dsar.ts:16`, `:63`, `:88` |
 
 **Pourquoi c'est un problème, concrètement.**
@@ -204,7 +204,7 @@ Ce n'est pas une collision de hachage improbable : c'est le comportement nominal
    l'outil censé assurer la conformité.
 4. *Le qualificatif « anonyme » est faux.* `dashboard-blocs.ts:88` (« un `user_hash` anonyme »),
    `docs/CONFORMITE.md:29` (« `user_hash` **anonymisé** côté client (pas de PII) »),
-   `apps/ingest/sql/schema.sql:11` (« fingerprint ANONYMISÉ »), `app/retention/page.tsx:33`.
+   `packages/db/sql/schema.sql:11` (« fingerprint ANONYMISÉ »), `app/retention/page.tsx:33`.
    Techniquement, c'est un **fingerprinting de terminal** : le RGPD et la doctrine CNIL sur le
    suivi sans cookie le traitent comme une donnée personnelle et comme un traceur soumis à
    consentement. L'anonymat au sens du considérant 26 supposerait l'impossibilité de
@@ -250,7 +250,7 @@ span=http.client  durée_OTLP=0ms  attributs de durée: ["http.duration_ms"]   �
 ```
 
 La durée réelle ne voyage que dans l'attribut propriétaire `http.duration_ms`, lu par notre propre
-ingestion (`apps/ingest/supabase/functions/_shared/otlp.mjs:243-246` : `if (… typeof durationMs
+ingestion (`packages/backend/shared/otlp.mjs:243-246` : `if (… typeof durationMs
 !== "number") return null`).
 
 **Pourquoi c'est un problème.** Trois affirmations du dépôt tombent :
@@ -334,8 +334,8 @@ La console n'a qu'un libellé — `METRIC_LABELS.error_rate = "Taux d'erreur JS"
 | Où | Formule | Dénominateur |
 |---|---|---|
 | API v1 `/summary`, KPI console | `error_sessions / sessions` | **sessions** (`apps/console/lib/queries-summary.ts:161`, `:219`) |
-| Moteur d'alerte `check_alerts()` | `count(rum_error) / greatest(count(rum_pageview), 1)` | **pages vues** (`apps/ingest/sql/migration-v38.sql:35-40`) |
-| SLO `slo_status()` | `1 - count(rum_error) / greatest(count(rum_pageview), 1)` | **pages vues** (`apps/ingest/sql/migration-v17.sql:123-129`) |
+| Moteur d'alerte `check_alerts()` | `count(rum_error) / greatest(count(rum_pageview), 1)` | **pages vues** (`packages/db/sql/migration-v38.sql:35-40`) |
+| SLO `slo_status()` | `1 - count(rum_error) / greatest(count(rum_pageview), 1)` | **pages vues** (`packages/db/sql/migration-v17.sql:123-129`) |
 | Carte d'expérience | `count(*) filter (status_code >= 400) / count(*)` | **spans HTTP** (`apps/console/lib/queries-map.ts:28`) |
 
 **Pourquoi c'est un problème.** Un exploitant règle une alerte « taux d'erreur > 2 % » en regardant
@@ -360,7 +360,7 @@ explicitement à l'une des deux, avec un défaut conservateur.
 ## 1.7 — Le regroupement d'erreurs se réinitialise à chaque déploiement — CONFIRMÉ (exécuté) — sérieux
 
 **Ce qui est en place.** L'empreinte est `fnv1a(type | message normalisé | première frame de stack)`
-(`apps/ingest/supabase/functions/_shared/otlp.mjs:131-135`). `normalizeMessage`
+(`packages/backend/shared/otlp.mjs:131-135`). `normalizeMessage`
 (`otlp.mjs:108-114`) remplace URL, UUID et chiffres par `#` **dans le message**.
 `firstStackFrame` (`otlp.mjs:117-124`) ne fait que retirer `:ligne:colonne` : **l'URL du bundle,
 avec son empreinte de contenu, reste dans l'empreinte**.
@@ -402,7 +402,7 @@ pilote client, sinon l'historique produit pendant le pilote sera inexploitable.
 ## 1.8 — Le trafic robot est exclu de certains écrans et compté dans d'autres — CONFIRMÉ — sérieux
 
 **Ce qui est en place.** Le schéma affirme la règle : `rum_session.is_bot` — « trafic non humain
-(**exclu par défaut côté console**) » (`apps/ingest/sql/schema.sql:15`). Le filtre existe
+(**exclu par défaut côté console**) » (`packages/db/sql/schema.sql:15`). Le filtre existe
 (`apps/console/lib/queries.ts:10-11`, `botClause`) et est appliqué dans 9 modules de requêtes sur
 une trentaine. Il est **absent** de :
 
@@ -410,11 +410,11 @@ une trentaine. Il est **absent** de :
 |---|---|
 | Score de santé (les 4 composantes) | `apps/console/lib/health.ts:69-91` |
 | Heatmap 14 j, trafic quotidien, courbe LCP 14 j | `apps/console/lib/queries-grid.ts:46-60`, `:105-127`, `:134-147` |
-| Groupes d'erreurs et leurs compteurs | `apps/ingest/sql/migration-v40.sql:50-63` |
-| Moteur d'alerte | `apps/ingest/sql/migration-v38.sql:33-56` |
-| SLO et budget d'erreur | `apps/ingest/sql/migration-v17.sql:118-153` |
+| Groupes d'erreurs et leurs compteurs | `packages/db/sql/migration-v40.sql:50-63` |
+| Moteur d'alerte | `packages/db/sql/migration-v38.sql:33-56` |
+| SLO et budget d'erreur | `packages/db/sql/migration-v17.sql:118-153` |
 | Signaux de frustration, tracing, carte | `queries-frustration.ts`, `queries-tracing.ts`, `queries-map.ts` |
-| Pré-agrégat horaire | `apps/ingest/sql/migration-v12.sql:58-64` |
+| Pré-agrégat horaire | `packages/db/sql/migration-v12.sql:58-64` |
 
 **Pourquoi c'est un problème.** Sur la **même page** (Vue d'ensemble), la tuile « Core Web Vitals »
 exclut les robots et la tuile « Score de santé » les inclut : deux nombres pour la même
@@ -436,7 +436,7 @@ les tables filles, posée à l'ingestion), soit il disparaît. La dénormalisati
 
 **Ce qui est en place.** L'atteinte d'un SLO sur un vital vaut
 `count(*) filter (where m.rating = 'good') / greatest(count(*), 1)`
-(`apps/ingest/sql/migration-v17.sql:130-134`, et `:143-148` pour la fenêtre 1 h). Sur une heure
+(`packages/db/sql/migration-v17.sql:130-134`, et `:143-148` pour la fenêtre 1 h). Sur une heure
 **sans aucune mesure**, l'agrégat rend `0 / 1 = 0` : `attainment = 0`, pas `null`.
 
 `fast_burn` vaut `(1 - att1h.attainment) >= 14.4 * (1 - s.objective)`
@@ -541,7 +541,7 @@ pouvoir effacer ce qui est déjà parti. Effort : 1 journée SDK + 2 heures back
 **Ce qui est en place.** Les deux chemins d'ingestion lisent l'en-tête pays du CDN en repli :
 
 ```
-apps/ingest/lib/receiver.mjs:156
+packages/backend/lib/receiver.mjs:156
   const pays = entete(req, "x-vercel-ip-country") ?? entete(req, "cf-ipcountry");
   if (pays) for (const s of rows.sessions) s.geo_country = s.geo_country ?? pays;
 
@@ -602,12 +602,12 @@ dans un `setInterval` produit des centaines d'exceptions par seconde. Chacune :
    complète (`sampling.ts:73-78`) ;
 2. remplit le tampon de 64 spans, qui déclenche un `POST` immédiat (`otel.ts:206`) ;
 3. si l'ingestion répond 429 — ce qui arrivera, la limite est de 600 requêtes/minute/app
-   (`services/ingest/server.mjs:54`) — l'exporteur marque `FAILED` (`otel.ts:119`) et le lot part
+   (`services/collector/server.mjs:54`) — l'exporteur marque `FAILED` (`otel.ts:119`) et le lot part
    en `localStorage` (`retry.ts:124-135`) pour être **rejoué au prochain chargement de page**.
 
 Un seul client avec une boucle d'erreur sature donc sa propre limite de débit, puis rejoue son
 retard à chaque navigation. Comme l'écriture est synchrone sur un pool de 8 connexions
-(`services/ingest/server.mjs:34`) vers une base **partagée par tous les locataires**, la pression
+(`services/collector/server.mjs:34`) vers une base **partagée par tous les locataires**, la pression
 n'est pas isolée : la limite est par app, la contention est globale.
 
 **Ce que fait un RUM du marché** (mon expérience) : plafond d'événements par vue et par session,
@@ -638,7 +638,7 @@ invalide), 403 (clé refusée), 413 (charge trop grosse), 429 (débit dépassé)
   simultané à la reprise, sans dispersion ni retrait exponentiel : le retour de service reçoit un
   pic supérieur au trafic nominal ;
 - l'en-tête `retry-after: 60` que l'ingestion prend soin de renvoyer sur un 429
-  (`apps/ingest/lib/receiver.mjs:109`) **n'est lu par personne**.
+  (`packages/backend/lib/receiver.mjs:109`) **n'est lu par personne**.
 
 Le commentaire de `retry.ts:5-9` assume les doublons (« assumé pour un POC ») mais ne dit rien de
 l'amplification, qui est le vrai risque.
@@ -652,11 +652,11 @@ l'amplification, qui est le vrai risque.
 
 ## 2.3 — Ingestion synchrone, sans file ni contre-pression — CONFIRMÉ — bloquant en production
 
-**Ce qui est en place.** `traiterOtlp` (`apps/ingest/lib/receiver.mjs:116-175`) fait tout dans la
+**Ce qui est en place.** `traiterOtlp` (`packages/backend/lib/receiver.mjs:116-175`) fait tout dans la
 requête : lecture du corps, `JSON.parse`, aplatissement, gardes (deux allers-retours SQL par app —
 `checkApiKey` puis `rate_check`, `pg-ingest.mjs:392-412`), puis `writeRows` — une **transaction**
 de 12 `INSERT` plus un `UPDATE` corrélé (`pg-ingest.mjs:151-283`). Pool de 8 connexions
-(`services/ingest/server.mjs:34`). Aucun tampon, aucune file, aucun découplage.
+(`services/collector/server.mjs:34`). Aucun tampon, aucune file, aucun découplage.
 
 **Le mécanisme.** Quand la base ralentit (verrou, autovacuum, bascule du pooler Neon), les
 requêtes s'accumulent dans l'event loop de Node, les délais d'attente client expirent, l'exporteur
@@ -812,7 +812,7 @@ déclarée et refuser d'activer le tracing tant qu'elle ne l'autorise pas. Effor
 ## 2.8 — Toutes les fenêtres de temps sont en UTC, tous les écrans sont en français — CONFIRMÉ — sérieux
 
 **Ce qui est en place.** 30 usages de `date_trunc` / `date_bin` dans `apps/console/lib/` et aucun
-`at time zone` — vérifié par recherche sur `apps/console/lib/*.ts` et `apps/ingest/sql/*.sql`. La
+`at time zone` — vérifié par recherche sur `apps/console/lib/*.ts` et `packages/db/sql/*.sql`. La
 connexion ne fixe aucun fuseau (`apps/console/lib/db.ts:43-52`). Les bornes sont donc celles du
 fuseau par défaut du serveur PostgreSQL, en pratique UTC chez un hébergeur managé.
 
@@ -835,10 +835,10 @@ grain) ; seul le regroupement journalier bascule. Effort : 1 journée, plus la r
 ## 2.9 — Rien ne distingue le temps de l'événement du temps d'arrivée — CONFIRMÉ — notable
 
 **Ce qui est en place.** La garde anti-dérive d'horloge existe et elle est bien faite
-(`apps/ingest/supabase/functions/_shared/otlp.mjs:71-82`) : hors de la fenêtre `[maintenant − 7 j,
+(`packages/backend/shared/otlp.mjs:71-82`) : hors de la fenêtre `[maintenant − 7 j,
 maintenant + 5 min]`, l'horodatage client est remplacé par l'heure de réception. Mais **aucune
 table ne conserve l'heure de réception** : `rum_metric`, `rum_error`, `rum_pageview` n'ont qu'une
-colonne `ts` (`apps/ingest/sql/schema.sql:33-45`, `:47-58`, `:21-31`).
+colonne `ts` (`packages/db/sql/schema.sql:33-45`, `:47-58`, `:21-31`).
 
 **Le mécanisme.** Un poste dont l'horloge retarde de deux jours — cas banal sur des terminaux
 d'entreprise mal synchronisés — voit ses mesures acceptées telles quelles et déposées deux jours
@@ -882,12 +882,12 @@ percentiles pré-agrégés (§3.8). Effort : 2 heures pour les index, 2 jours po
 
 ## 2.11 — Le signal LOGS n'a aucune idempotence — CONFIRMÉ — notable
 
-`writeLogs` (`apps/ingest/lib/pg-ingest.mjs:296-309`) insère sans clause `on conflict`, sur une
+`writeLogs` (`packages/backend/lib/pg-ingest.mjs:296-309`) insère sans clause `on conflict`, sur une
 table à clé `bigserial` — le commentaire l'assume : « bigserial : pas de contrainte
 d'idempotence ». Or le même `withRetry` que les traces enveloppe l'appel
-(`apps/ingest/lib/receiver.mjs:143-145`). Un rejeu après un échec transitoire **duplique** les
+(`packages/backend/lib/receiver.mjs:143-145`). Un rejeu après un échec transitoire **duplique** les
 lignes. Ces lignes alimentent la métrique d'alerte `log_errors`
-(`apps/ingest/sql/migration-v38.sql:48-53`) : un incident réseau pendant un pic de logs gonfle le
+(`packages/db/sql/migration-v38.sql:48-53`) : un incident réseau pendant un pic de logs gonfle le
 compte et peut déclencher l'alerte que l'incident n'aurait pas justifiée.
 
 **À construire.** Une clé naturelle `(app_id, trace_id, span_id, ts, hash(body))` en index unique
@@ -926,14 +926,14 @@ fusionner. Effort : ½ journée.
 **Ce qui est en place.** Le SDK décide du type d'appareil avec
 `/mobile|tablet/i.test(navigator.userAgent)` (`packages/rum-sdk/src/index.ts:105-107`). Le repli
 serveur, lui, connaît le sujet — `/mobile|tablet|iphone|ipad|android|silk|kindle/i`
-(`apps/ingest/supabase/functions/_shared/otlp.mjs:34`) — mais il n'est consulté **que si**
+(`packages/backend/shared/otlp.mjs:34`) — mais il n'est consulté **que si**
 l'attribut du SDK est absent (`otlp.mjs:549` et `:572`, `a["mip.device_type"] ?? deviceFromUa(…)`).
 
 **Le mécanisme.** Une tablette Android annonce « Android » sans « Mobile » : elle tombe dans
 `desktop`. Un iPad sous iPadOS 13 ou plus récent s'annonce « Macintosh » par défaut : `desktop`
-aussi. Le commentaire de `apps/ingest/sql/schema.sql:13` annonce pourtant
+aussi. Le commentaire de `packages/db/sql/schema.sql:13` annonce pourtant
 « mobile/desktop/tablet », le serveur MCP expose la valeur `tablet`
-(`apps/mcp/serveur.mjs:44`) — qui ne correspondra jamais à aucune ligne — et le filtre de la
+(`packages/mcp-tools/serveur.mjs:44`) — qui ne correspondra jamais à aucune ligne — et le filtre de la
 console ne connaît que deux valeurs (`apps/console/lib/filters.ts:42`).
 
 **Pourquoi ça compte.** Le segment tablette est celui dont les performances divergent le plus du
@@ -954,11 +954,11 @@ Trois observations sérieuses dont je n'ai pas pu fermer la démonstration. Elle
 comptées dans les findings.
 
 1. **`pageview_id` est une clé étrangère morte.** `rum_metric.pageview_id` et
-   `rum_error.pageview_id` existent au schéma (`apps/ingest/sql/schema.sql:37`, `:51`) mais ne
-   figurent dans aucune liste de colonnes d'insertion (`apps/ingest/lib/pg-ingest.mjs:196-206`) :
+   `rum_error.pageview_id` existent au schéma (`packages/db/sql/schema.sql:37`, `:51`) mais ne
+   figurent dans aucune liste de colonnes d'insertion (`packages/backend/lib/pg-ingest.mjs:196-206`) :
    elles valent toujours `NULL`. Conséquence probable : les gardes de la purge de rétention
    `not exists (select 1 from rum_metric m where m.pageview_id = p.id)`
-   (`apps/ingest/sql/migration-v14.sql:33-34`, repris en `migration-v30.sql:25-26`) sont
+   (`packages/db/sql/migration-v14.sql:33-34`, repris en `migration-v30.sql:25-26`) sont
    **toujours vraies**, donc sans effet. Je n'ai pas vérifié si cela produit une suppression
    indésirable ou seulement du code mort ; à trancher avant de s'appuyer dessus. Le rattachement
    métrique → page vue serait par ailleurs la clé d'un p75 « par page vue » conforme au standard
@@ -971,7 +971,7 @@ comptées dans les findings.
    `Timing-Allow-Origin`, le navigateur rend `0`, indiscernable d'une vraie taille nulle —
    exactement les scripts tiers qu'on cherche à incriminer.
 3. **Le pré-agrégat ne couvre pas la profondeur de l'écran qui le lit.** `refresh_rum_rollups`
-   recalcule 26 heures par défaut (`apps/ingest/sql/migration-v12.sql:51`) alors que la heatmap lit
+   recalcule 26 heures par défaut (`packages/db/sql/migration-v12.sql:51`) alors que la heatmap lit
    14 jours dans la même table quand `RUM_USE_ROLLUPS=1` (`apps/console/lib/queries-grid.ts:13`,
    `GRID_DAYS = 14`, et la branche rollup en `:35-45`). Tant que le job tourne sans interruption, le remplissage est progressif et
    l'écran est juste. Après une coupure de plus de 26 heures, la heatmap devrait présenter un trou
@@ -1141,7 +1141,7 @@ Plus, immédiatement : `LIMIT 200` et suppression des sous-requêtes corrélées
 
 ## Ce qu'il ne faut pas faire dans cet ordre
 
-Ne pas commencer par ClickHouse. Le chemin est prouvé et le bench de `infra/clickhouse.notes.md`
+Ne pas commencer par ClickHouse. Le chemin est prouvé et le bench de `labs/clickhouse/NOTES.md`
 est honnête, mais migrer un modèle qui compte des rapports au lieu de pages vues, qui mélange les
 fenêtres et qui ignore le poids d'échantillonnage ne ferait que **rendre les mêmes chiffres faux
 plus vite**. Les lots 0 à 3 fixent la sémantique ; la migration de moteur vient après.

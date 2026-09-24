@@ -9,7 +9,7 @@
 // migration nouvelle : la lecture des segments et la garde de périmètre sont inchangées.
 import { NextResponse } from "next/server";
 import { gunzipSync } from "node:zlib";
-import { MAX_REPLAY_INFLATED_BYTES } from "ingest/shared/limits.mjs";
+import { MAX_REPLAY_INFLATED_BYTES } from "@mip/backend/shared/limits.mjs";
 import { q } from "@/lib/db";
 import { authorizedAppsOf } from "@/lib/query-contract";
 import { withServerTrace } from "@/lib/server-trace";

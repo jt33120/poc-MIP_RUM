@@ -1,6 +1,9 @@
+# Une règle lisible dans l'arbre : `apps/` = ce qu'on utilise (console,
+# extension), `services/` = ce que Railway lance (des points d'entrée minces),
+# `packages/` = ce que les deux importent (@mip/backend, @mip/db, @mip/mcp-tools,
+# les SDK). `tools/` porte les outils internes lancés à la main.
 packages:
   - "packages/*"
   - "apps/*"
-  # Les déployables backend (Railway) : des points d'entrée minces au-dessus
-  # du noyau `ingest`. Séparés des apps pour que la frontière soit lisible.
   - "services/*"
+  - "tools/*"

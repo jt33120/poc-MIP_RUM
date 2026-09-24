@@ -2,7 +2,7 @@
 // écriture durable de la file mobile.
 //
 // POURQUOI UNE SECONDE IMPLÉMENTATION. Le scrub serveur
-// (`apps/ingest/supabase/functions/_shared/scrub.mjs`) reste obligatoire et
+// (`packages/backend/shared/scrub.mjs`) reste obligatoire et
 // autoritaire à réception : il n'est pas remplacé ici. Mais entre le moment où
 // un événement est mis en file et celui où il part, il peut dormir 24 h sur le
 // disque d'un téléphone — un support que nous ne contrôlons pas, que l'OS

@@ -50,8 +50,9 @@ code console** (le code référençait déjà ces tables).
 ## 3. Phase 2 — Alerting actionnable (MVP)
 
 1. `check_alerts()` (réécrit v17) tourne via pg_cron. `route_alert()` livre aux canaux
-   par sévérité (webhook via `pg_net` en cloud, ou file `alert_delivery` + runner
-   `apps/ingest/dispatch-alerts.mjs --loop` en secours).
+   par sévérité (webhook via `pg_net` en cloud, ou file `alert_delivery` livrée par
+   `dispatchOnce` — `packages/backend/lib/dispatch-alerts.mjs` —, que le `scheduler`
+   appelle à chaque tick).
 2. **Règles de départ** créées pour `gip-plateforme** (modifiables dans `/alerts`) :
    - LCP p75 > 2500 ms (warning), INP p75 > 200 ms (warning), taux d'erreur > 1 % (critical).
 3. **Notifications** : créer un `notify_channel` (webhook Slack/Discord) — *fournir l'URL*.
@@ -78,9 +79,9 @@ En 2 temps pour ne pas casser le flux actuel (snippet sans clé) :
 chunks partent vers `v1-replay` (déjà ACTIVE) ; lecture dans `/sessions/[id]`.
 
 **Synthetic** (robot → `/correlation`) : relancer le runner
-`apps/sync-synthetic/src/sync.mjs` (adapters `seed` = données déterministes, `mippoc-json`
+`tools/sync-synthetic/src/sync.mjs` (adapters `seed` = données déterministes, `mippoc-json`
 = exports DEM réels). Nécessite `DATABASE_URL`. Pour un flux continu : cron toutes les 15 min
-(`*/15 * * * * DATABASE_URL=… node apps/sync-synthetic/src/sync.mjs seed`). Tant que le
+(`*/15 * * * * DATABASE_URL=… node tools/sync-synthetic/src/sync.mjs seed`). Tant que le
 runner ne tourne pas, `/correlation` affiche honnêtement « pas de donnée robot récente ».
 
 ## 6. Phase 5 — Snippet dans uti-platform

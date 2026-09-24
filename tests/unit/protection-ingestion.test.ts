@@ -13,9 +13,9 @@
 // Chaque maillon corrigé casse la boucle ; les trois la rendent impossible.
 import { describe, expect, it, vi } from "vitest";
 // @ts-expect-error — module .mjs sans déclaration de types
-import { createPgAuth } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { createPgAuth } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error — module .mjs sans déclaration de types
-import { occurrencesDe } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { occurrencesDe } from "../../packages/backend/shared/otlp.mjs";
 import {
   ERREURS_PAR_PAGE,
   FENETRE_SILENCE_MS,

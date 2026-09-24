@@ -6,7 +6,7 @@
 // création, d'expiration, de dernière utilisation et de révocation : ni secret,
 // ni hash. Chaque création est tracée dans audit_log.
 import { type NextRequest, NextResponse } from "next/server";
-import { ErreurUpload, lireCorpsLimite } from "ingest/lib/sourcemap-upload.mjs";
+import { ErreurUpload, lireCorpsLimite } from "@mip/backend/lib/sourcemap-upload.mjs";
 import { guardAdmin } from "@/lib/api/admin";
 import { SESSION_COOKIE } from "@/lib/auth";
 import { schemaSourcemapAbsent } from "@/lib/queries-sourcemap";

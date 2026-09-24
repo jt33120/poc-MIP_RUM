@@ -2,7 +2,7 @@
 // rollback les tables sources déjà disponibles.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 // @ts-expect-error module .mjs partagé avec l'ingestion Node
-import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 
 const query = vi.fn();
 const pool = { connect: async () => ({ query, release() {} }) };

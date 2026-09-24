@@ -8,7 +8,7 @@ La vitrine de la console (`/presentation`) dit ce que le POC contient, ce qu'il 
 
 ## Pourquoi celui-là
 
-- **Format OpenTelemetry** : le SDK web émet de l'OTLP/HTTP JSON vers la route `/api/ingest/v1/traces` de la console (`apps/console/lib/ingest-endpoint.ts`). La structure des spans est vérifiée, mais ils partent avec une durée nulle et une partie du vocabulaire reste propre à MIP : un collecteur tiers en dessinerait un waterfall plat (vitrine, onglet Specs, ligne « Format sur le fil » : `apps/console/components/presentation/Specs.tsx`). Pour les gros volumes, un chemin ClickHouse a été mesuré en local le 11/06/2026 — mêmes p75, stockage 15 fois plus compact (`infra/clickhouse.notes.md`) ; ce banc n'a pas été rejoué depuis la migration vers Neon.
+- **Format OpenTelemetry** : le SDK web émet de l'OTLP/HTTP JSON vers la route `/api/ingest/v1/traces` de la console (`apps/console/lib/ingest-endpoint.ts`). La structure des spans est vérifiée, mais ils partent avec une durée nulle et une partie du vocabulaire reste propre à MIP : un collecteur tiers en dessinerait un waterfall plat (vitrine, onglet Specs, ligne « Format sur le fil » : `apps/console/components/presentation/Specs.tsx`). Pour les gros volumes, un chemin ClickHouse a été mesuré en local le 11/06/2026 — mêmes p75, stockage 15 fois plus compact (`labs/clickhouse/NOTES.md`) ; ce banc n'a pas été rejoué depuis la migration vers Neon.
 - **Hébergement** : Données hébergées en UE ; hébergeurs de droit américain ; ce POC n'est pas une offre souveraine. Aucune adresse IP n'est stockée, sous aucune forme (`docs/RUM_PARITY_STATUS.md`, § 6.4). Détail dans la section [Architecture](#architecture), lu dans `apps/console/lib/legal.ts`.
 - **Robot et réel** : l'écran `/correlation` confronte, route par route et heure par heure, l'état d'un robot de monitoring synthétique au LCP p75 des visiteurs réels, et compte les heures où l'un voit ce que l'autre ne voit pas (angle mort) — sans jamais soustraire une mesure de robot à un LCP de visiteur (`apps/console/app/correlation/page.tsx`). Cet écran est hors du document de couverture : il n'y a pas de verdict.
 
@@ -41,27 +41,24 @@ flowchart TB
 | Serveur MCP — Railway | Railway Corp. | europe-west4 — Amsterdam, Pays-Bas | lit par l'API /api/v1, sans accès à la base |
 
 - Régions : Francfort, Allemagne ; Amsterdam, Pays-Bas. Droit des trois hébergeurs (Neon, Vercel Inc. et Railway Corp.) : américain.
-- Le collecteur est une route de la console : c'est l'adresse que visent les SDK. Le même parseur existe en service Node autonome (`services/ingest/server.mjs`), construit et démarré par la CI (`docker-smoke`), pour un hébergement chez le client ; en production, il ne tourne nulle part : le service Railway `ingest`, qui l'exécutait sans domaine public, a été supprimé le 21/09/2026.
+- Le collecteur est une route de la console : c'est l'adresse que visent les SDK. Le même parseur existe en service Node autonome (`services/collector/server.mjs`), construit et démarré par la CI (`docker-smoke`), pour un hébergement chez le client ; en production, il ne tourne nulle part : le service Railway `ingest`, qui l'exécutait sans domaine public, a été supprimé le 21/09/2026.
 - Le `scheduler` applique les migrations au pré-déploiement : constaté le 18/09/2026 dans les journaux du déploiement `03850b30`.
 - Topologie relevée par les API Railway et Vercel le 18/09/2026, puis par l'API Railway le 23/09/2026 : [docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md).
 <!-- /genere -->
 
 ## Démarrage local
 
-Base, ingestion, démo et console sur le poste, sans secret : les programmes se rabattent sur `postgres://postgres:postgres@localhost:5433/mip_rum` (`apps/console/lib/db.ts`, `apps/ingest/lib/serveur.mjs`). Le schéma se monte comme dans la CI (`.github/workflows/ci.yml`, étape « Schéma v0.1 puis toutes les migrations »).
+Base, ingestion, démo et console sur le poste, sans secret : les programmes se rabattent sur `postgres://postgres:postgres@localhost:5433/mip_rum` (`apps/console/lib/db.ts`, `packages/backend/lib/serveur.mjs`). Le schéma se monte comme dans la CI : par le migrateur de production, `DATABASE_URL=postgres://postgres:postgres@localhost:5433/mip_rum node services/scheduler/migrate.mjs` (`.github/workflows/ci.yml`, étape « Schéma par le migrateur »). La base du compose passe par ce même programme : son service one-shot `migrate` lance `node services/scheduler/migrate.mjs` dans l'image du scheduler.
 
 ```bash
 pnpm install --frozen-lockfile
-docker compose -f apps/ingest/docker-compose.yml up -d --wait   # Postgres 15 sur :5433, base mip_rum, schema.sql
-for f in apps/ingest/sql/migration-v*.sql; do                   # puis toutes les migrations, dans l'ordre
-  docker exec -i mip-rum-db psql -U postgres -d mip_rum -v ON_ERROR_STOP=1 < "$f"
-done
+docker compose -f infra/docker/docker-compose.yml run --rm migrate  # Postgres 17 sur :5433, base mip_rum migrée par le migrateur de production
 pnpm build:sdk                                                  # SDK web, React Native, agent Node
 node scripts/seed-admin.mjs                                     # compte admin local : mot de passe affiché une fois, régénéré à chaque appel
-node apps/ingest/dev-server.mjs                                 # ingestion locale :4318
+node services/collector/dev-server.mjs                          # ingestion locale :4318
 node demo/serve.mjs                                             # mini-site de démo :8080
 pnpm --filter console dev                                       # console :3000
-node apps/sync-synthetic/src/sync.mjs seed                      # passages robot pour /correlation
+node tools/sync-synthetic/src/sync.mjs seed                      # passages robot pour /correlation
 ```
 
 ## Outillage IA — local, non versionné
@@ -109,10 +106,12 @@ Les zones générées de ce README se régénèrent par `node scripts/readme-sec
 | `packages/rum-sdk` | SDK Web (émetteur OTLP + web-vitals), build esbuild IIFE `mip-rum.js` ; poids gzip remesuré par `tests/unit/specs.test.ts` (`apps/console/lib/sdk-poids.ts`) |
 | `packages/agent-node` | Agent backend Node.js (`node -r @mip/agent-node/register`) : span `http.server` sans changement de code, plus une API publique (`track`, `captureException`, `withContext`, `flush`) ; aucun service Node n'émet vers la production (document de couverture, `C5`) |
 | `packages/rum-mobile` | SDK **React Native** : crashes, écrans, réseau (traceparent), événements → mêmes tables (`device_type=mobile`) ; livré, jamais lancé dans une application React Native (document de couverture, `C1` et `C10`) |
-| `apps/ingest` | Noyau backend sans framework : parseur OTLP, receveur (`/v1/traces`, `/v1/logs`, `/v1/replay`, `/v1/sourcemaps`), SQL (schéma, migrations), runner de migrations, travaux planifiés. Importé par la console comme par les services. **En production, le collecteur actif est la route de la console** ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
-| `apps/mcp` | Noyau MCP : catalogue d'outils, client HTTP de l'API v1 ; sans base de données |
-| `services/*` | Points d'entrée minces au-dessus des noyaux : `scheduler` et `mcp` (Railway), `ingest` (receveur autonome pour l'auto-hébergement, voir [infra/docker/](infra/docker/)) — [services/README.md](services/README.md) |
-| `apps/sync-synthetic` | Synchro synthétique → `syn_snapshot` (interface `SyntheticSource` : seed ou export mippoc) |
+| `packages/backend` | `@mip/backend` — noyau backend sans framework : parseur OTLP, receveur (`/v1/traces`, `/v1/logs`, `/v1/replay`, `/v1/sourcemaps`), écritures Postgres, travaux planifiés, livraison des alertes, connecteur de tickets. Importé par la console comme par les services. **En production, le collecteur actif est la route de la console** ([docs/TOPOLOGIE_BACKEND.md](docs/TOPOLOGIE_BACKEND.md)) |
+| `packages/db` | `@mip/db` — le schéma (`sql/` : `schema.sql`, migrations numérotées, index de pré-déploiement) et son migrateur, que seul le `scheduler` lance |
+| `packages/mcp-tools` | `@mip/mcp-tools` — noyau MCP : catalogue d'outils, client HTTP de l'API v1 ; sans base de données |
+| `services/*` | Points d'entrée minces au-dessus des paquets, un par service Railway : `scheduler` et `mcp` (déployés), `collector` (receveur autonome pour l'auto-hébergement, voir [infra/docker/](infra/docker/)) — [services/README.md](services/README.md) |
+| `tools/sync-synthetic` | Synchro synthétique → `syn_snapshot` (interface `SyntheticSource` : seed ou export mippoc) |
+| _(hors workspaces)_ | `examples/integrations/fastapi` (middleware FastAPI, testé en CI) · `labs/clickhouse` et `labs/network-logs` (bancs et prototypes, non déployés) · `demo/` et `scripts/` restent à la racine : l'E2E et la CI les lancent par leur chemin |
 | `apps/extension` | Extension navigateur MV3 (injection du SDK par domaine enregistré) |
 | `apps/console` | Console (Next.js 15) et collecteur `/api/ingest/v1` ; les écrans sont listés dans `apps/console/components/nav-items.tsx`, la vitrine publique est `/presentation` |
 

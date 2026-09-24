@@ -60,7 +60,7 @@ function chercher(motif: string, ...cibles: string[]): string {
   }
 }
 
-const V57 = lire("apps/ingest/sql/migration-v57.sql");
+const V57 = lire("packages/db/sql/migration-v57.sql");
 const QUERIES = lire("apps/console/lib/queries.ts");
 const SUMMARY = lire("apps/console/lib/queries-summary.ts");
 const COHORTS = lire("apps/console/lib/queries-cohorts.ts");

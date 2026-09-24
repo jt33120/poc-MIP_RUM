@@ -12,10 +12,10 @@
 //      présentés comme ceux de l'app demandée) ;
 //   3. le rendu (un champ perdu se lit comme un zéro).
 import { describe, expect, it } from "vitest";
-import { OUTILS, PARAMS, construireChemin, construireCorps, outilParNom } from "../../apps/mcp/lib/catalogue.mjs";
-import { ErreurApi, creerClient } from "../../apps/mcp/lib/client.mjs";
-import { avertissementPerimetre, enMarkdown, indicesPage } from "../../apps/mcp/lib/rendu.mjs";
-import { INSTRUCTIONS, executer, schemaEntree } from "../../apps/mcp/serveur.mjs";
+import { OUTILS, PARAMS, construireChemin, construireCorps, outilParNom } from "../../packages/mcp-tools/lib/catalogue.mjs";
+import { ErreurApi, creerClient } from "../../packages/mcp-tools/lib/client.mjs";
+import { avertissementPerimetre, enMarkdown, indicesPage } from "../../packages/mcp-tools/lib/rendu.mjs";
+import { INSTRUCTIONS, executer, schemaEntree } from "../../packages/mcp-tools/serveur.mjs";
 
 const outil = (nom: string) => {
   const o = outilParNom(nom);

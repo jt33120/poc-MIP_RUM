@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { boundedEventProps, flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { boundedEventProps, flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 import {
   EVENT_INDEX_KINDS,
   EVENT_INDEX_MAX_OFFSET,

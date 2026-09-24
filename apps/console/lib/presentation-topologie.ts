@@ -130,7 +130,7 @@ const regionAlt = (h: Hebergeur): string => (h.lieu ? `${h.lieu.region} — ${h.
 
 // Rôles : TOPOLOGIE_BACKEND.md:9-12 (collecteur de la console), :24 (scheduler),
 // :25 (mcp, client mince de /api/v1, ne touche pas la base) ; E1 (API /api/v1) ;
-// travaux planifiés : services/scheduler/worker.mjs:10-12 ; D5 (purge de rétention).
+// travaux planifiés : services/scheduler/worker.mjs:8-10 ; D5 (purge de rétention).
 export const PIECES: readonly Piece[] = [
   {
     id: "navigateur",

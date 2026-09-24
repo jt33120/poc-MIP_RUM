@@ -1,6 +1,7 @@
 # CI MIP RUM — build SDK + tests unitaires, puis E2E Playwright sur Postgres de service.
-# Reproduit le flux local : schema.sql + migration-v02.sql -> seed synthétique ->
-# playwright (qui lance lui-même dev-server :4318, démo :8080, console :3000 via webServer).
+# Reproduit le flux local : schéma par le migrateur (schema.sql puis toutes les
+# migrations) -> seed synthétique -> playwright (qui lance lui-même dev-server
+# :4318, démo :8080, console :3000 via webServer).
 name: CI
 
 # PLUS DE FILTRE PAR CHEMIN, ET C'EST DÉLIBÉRÉ. Le `paths-ignore` d'avant sautait
@@ -37,9 +38,15 @@ jobs:
       # version pnpm lue depuis "packageManager" (pnpm@9.15.9) du package.json racine
       - uses: pnpm/action-setup@v6
 
+      # UN SEUL RUNTIME, LU DANS `.nvmrc` (P1). La CI testait sous Node 26 alors
+      # que les images Railway tournaient sous Node 22 et la console Vercel sous
+      # Node 24 (« nodeVersion: 24.x » du projet) : trois versions, et aucun test
+      # ne tournait sur celle de la production. Tous les jobs lisent désormais le
+      # même fichier que `engines.node` du package.json racine et que le `FROM`
+      # des images — changer de version, c'est changer ces trois lignes ensemble.
       - uses: actions/setup-node@v6
         with:
-          node-version: 26
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install (lockfile gelé)
@@ -67,20 +74,103 @@ jobs:
       # compilé faux pendant plusieurs lots sans qu'aucun contrôle ne rougisse, et
       # seul un lancement manuel l'a révélé. Un type faux ne casse pas le bundle
       # esbuild, qui efface les types — il casse l'application cliente qui l'importe.
-      - name: Typage des paquets publiés
+      #
+      # P1 — l'extension y entre (R9, `F2` de docs/RUM_PARITY_STATUS.md) : écrite en
+      # TypeScript, elle n'était typée par AUCUN workflow — verte à la main le
+      # 23/09, rien ne le garantissait à sa modification suivante.
+      # Reste HORS typage, et c'est connu : le JavaScript du backend
+      # (`packages/backend`, `packages/db`, `packages/mcp-tools`, `services/*`),
+      # en `.mjs` sans tsconfig ni `checkJs`. Ses JSDoc ne sont vérifiés par rien.
+      - name: Typage des paquets publiés et de l'extension
         run: |
           pnpm --filter @mip/rum-core exec tsc --noEmit
           pnpm --filter @mip/rum-sdk exec tsc --noEmit
           pnpm --filter @mip/rum-mobile exec tsc --noEmit
           pnpm --filter @mip/agent-node exec tsc --noEmit
           pnpm --filter console typecheck
+          pnpm --filter extension typecheck
 
       - name: Tests unitaires (vitest)
         run: pnpm test:unit
 
       # v0.4 — middleware FastAPI de tracing (stdlib pur : aucun pip install requis)
       - name: Tests middleware Python (unittest)
-        run: python3 -m unittest discover -s integrations/fastapi -v
+        run: python3 -m unittest discover -s examples/integrations/fastapi -v
+
+  # R9 — CONSTRUIRE LE DÉPÔT COMME UN NOUVEL ARRIVANT LE FERAIT.
+  #
+  # `pnpm -r build` (le script racine `build`) échouait sur un dépôt fraîchement
+  # installé : `apps/extension` copie `packages/rum-sdk/dist/mip-rum.js` sans
+  # déclarer de dépendance vers `@mip/rum-sdk`, donc pnpm n'avait aucune raison
+  # de construire le SDK d'abord (`ENOENT … rum-sdk/dist/mip-rum.js`, § 8.3 de
+  # docs/RUM_PARITY_STATUS.md). Le job `unit` ne pouvait pas le voir : il appelle
+  # `pnpm build:sdk` AVANT tout le reste, et masquait ainsi l'ordre manquant.
+  # La dépendance est désormais déclarée (`apps/extension/package.json`) ; ce
+  # job garde la correction en jouant la séquence d'un clone neuf, SANS
+  # `pnpm build:sdk` préalable — l'ajouter ici annulerait le job.
+  build-propre:
+    name: Construction depuis un dépôt propre
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install (lockfile gelé)
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm -r build, sans build:sdk préalable
+        run: pnpm -r build
+
+      # Une construction propre doit REPRODUIRE ce qui est versionné, pas le
+      # réécrire : `apps/extension/vendor/` est committé (l'extension se charge
+      # « unpacked »), et la console sert des copies du SDK depuis `public/`.
+      # Un fichier modifié ici est un artefact committé qui dérive de sa source.
+      - name: Rien de versionné n'a changé
+        run: |
+          if ! git diff --exit-code --stat; then
+            echo "::error::pnpm -r build a modifié des fichiers versionnés : un artefact committé dérive de sa source"
+            exit 1
+          fi
+
+  # P1 — UNE MIGRATION FUSIONNÉE EST FIGÉE. Le migrateur ne rejoue pas un
+  # fichier modifié après application : il le signale dans un journal de
+  # pré-déploiement, et la production cesse en silence d'avoir le schéma
+  # qu'aurait une base neuve. La seule parade est d'arrêter la modification
+  # AVANT la fusion. Les règles (ajout au-delà du dernier numéro, déménagement à
+  # contenu identique, rien d'autre) sont dans le script, testées par
+  # `tests/unit/migrations-figees.test.ts`.
+  #
+  # Sur les PR seulement : un push sur master n'a rien à comparer. Historique
+  # COMPLET (`fetch-depth: 0`) : le script calcule la base de fusion, et rend 2
+  # — jamais 0 — sur un clone superficiel. Aucune dépendance npm : pas d'install.
+  migrations-figees:
+    name: Migrations fusionnées inchangées
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      # La branche cible passe par l'environnement, pas par une interpolation
+      # dans le script shell : une expression `${{ }}` au milieu d'un `run:` est
+      # du texte injecté tel quel.
+      - name: Aucune migration fusionnée n'est modifiée
+        env:
+          BASE: ${{ github.base_ref || 'master' }}
+        run: node scripts/ci/migrations-figees.mjs "origin/$BASE"
 
   e2e:
     name: E2E Playwright (Postgres service)
@@ -90,8 +180,13 @@ jobs:
       # même URL que les défauts locaux (dev-server, tests, console) : host 5433 -> conteneur 5432
       DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum
     services:
+      # POSTGRES 17, LA VERSION DE PRODUCTION (Neon, 17.11 au 23/09/2026). La CI
+      # tournait sous 15 : ce que 16 et 17 ont changé au planificateur et au
+      # moteur n'y était pas exercé, et une migration « rejouable de 15 à 17 »
+      # n'était prouvée que sur la plus ancienne des deux bornes. L'étiquette
+      # majeure suffit : c'est le moteur qu'on aligne, pas le correctif mineur.
       postgres:
-        image: postgres:15
+        image: postgres:17
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: mip_rum
@@ -107,28 +202,68 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
+      # Même runtime que le job `unit` : `.nvmrc` (Node 24).
       - uses: actions/setup-node@v6
         with:
-          node-version: 26
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install (lockfile gelé)
         run: pnpm install --frozen-lockfile
 
-      # psql (client) est préinstallé sur ubuntu-latest ; ON_ERROR_STOP pour fail fast
-      # schéma de base puis TOUTES les migrations dans l'ordre (le glob shell est
-      # trié : v02, v03, v04, v05, … — ajouter une migration n'exige plus de
-      # toucher ce workflow). console_ro (cloud) absent en CI -> blocs grant/RLS
-      # sautés par leur garde `if exists (pg_roles)`.
-      - name: Schéma v0.1 puis toutes les migrations
+      # P1 — LE SCHÉMA SE MONTE PAR LE MIGRATEUR DE PRODUCTION, plus par une
+      # boucle psql. La boucle prouvait que les FICHIERS s'enchaînent ; elle ne
+      # prouvait rien du programme qui les applique réellement au pré-déploiement
+      # du scheduler (`services/scheduler/migrate.mjs` → `main()` de
+      # `@mip/db/migrate.mjs`) : son ordre, son registre `schema_migration`, sa
+      # transaction par fichier. Une base vierge exerce tout cela d'un coup.
+      #
+      # DEUX PASSAGES, et le second doit n'avoir RIEN à faire. Un fichier que le
+      # registre oublierait, ou dont l'empreinte changerait d'un passage à l'autre,
+      # serait rejoué à CHAQUE déploiement de production. On l'exige deux fois :
+      # le migrateur doit le DIRE (« migrations à jour », 0 appliquée) et le
+      # registre ne doit pas avoir bougé.
+      #
+      # console_ro (cloud) absent en CI -> blocs grant/RLS sautés par leur garde
+      # `if exists (pg_roles)`.
+      - name: Schéma par le migrateur (deux passages, le second à vide)
         env:
           PGPASSWORD: postgres
         run: |
-          psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f apps/ingest/sql/schema.sql
-          for f in apps/ingest/sql/migration-v*.sql; do
-            echo "-- applying $f"
-            psql -h localhost -p 5433 -U postgres -d mip_rum -v ON_ERROR_STOP=1 -f "$f"
-          done
+          node services/scheduler/migrate.mjs
+          avant=$(psql -h localhost -p 5433 -U postgres -d mip_rum -tAc 'select count(*) from schema_migration')
+          echo "premier passage : $avant fichiers au registre"
+
+          # Sortie capturée pour être relue ; `if !` pour l'afficher AUSSI quand
+          # le passage échoue (le shell par défaut s'arrêterait sans la montrer).
+          if ! node services/scheduler/migrate.mjs > /tmp/migrate-2.log 2>&1; then
+            cat /tmp/migrate-2.log
+            echo "::error::le second passage du migrateur a échoué"
+            exit 1
+          fi
+          cat /tmp/migrate-2.log
+          apres=$(psql -h localhost -p 5433 -U postgres -d mip_rum -tAc 'select count(*) from schema_migration')
+
+          # Ce que le migrateur DIT : sa dernière ligne « migrations à jour ».
+          # (Les `${…}` ci-dessous sont des gabarits JavaScript, pas du shell.)
+          # shellcheck disable=SC2016
+          node -e '
+            const lignes = require("node:fs").readFileSync("/tmp/migrate-2.log", "utf8").split("\n");
+            const bilans = lignes.flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } })
+              .filter((j) => j.msg === "migrations à jour");
+            const bilan = bilans.at(-1);
+            if (!bilan) { console.error("::error::second passage : aucune ligne « migrations à jour »"); process.exit(1); }
+            if (bilan.appliquees !== 0) {
+              console.error(`::error::second passage : ${bilan.appliquees} migration(s) en attente au lieu de 0`);
+              process.exit(1);
+            }
+            console.log("second passage : 0 en attente");
+          '
+          # Ce que le REGISTRE montre, indépendamment du format des journaux.
+          if [ "$avant" != "$apres" ]; then
+            echo "::error::le registre est passé de $avant à $apres fichiers au second passage"
+            exit 1
+          fi
 
       # E1-S3 — une isolation non testée n'est pas une isolation. Le script rejoue
       # le schéma sur une base DÉDIÉE (ne perturbe ni le seed ni l'E2E), se met dans
@@ -226,7 +361,7 @@ jobs:
 
       # le test corrélation attend des runs robot en face des données RUM générées par le test
       - name: Seed synthétique (app demo-app, 24 h de runs)
-        run: node apps/sync-synthetic/src/sync.mjs seed
+        run: node tools/sync-synthetic/src/sync.mjs seed
 
       # v0.4 — backend FastAPI de démo (cible du tracing distribué, spawné par l'E2E)
       - name: Dépendances Python du backend démo
@@ -235,7 +370,7 @@ jobs:
       - name: Installer Chromium (+ dépendances système)
         run: pnpm exec playwright install chromium --with-deps
 
-      # playwright.config.ts lance/attend les 3 serveurs (ingest :4318, démo :8080, console :3000)
+      # playwright.config.ts lance/attend les 3 serveurs (collecteur de dev :4318, démo :8080, console :3000)
       - name: Tests E2E
         run: pnpm exec playwright test
 
@@ -247,3 +382,75 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  # R9 — LES BANCS DE MESURE, ENFIN JOUÉS. `explorer-bench-p66` et
+  # `rum-mobile-bench-p75` lisent une base préparée à part, gouvernée par
+  # BENCH_DATABASE_URL : absente de ci.yml, elle les faisait IGNORER en silence à
+  # chaque passage de `test:sql` (`F3` de docs/RUM_PARITY_STATUS.md). Les temps
+  # publiés dans les en-têtes de migration-v80 et v82 n'étaient donc jamais
+  # revérifiés, et l'index de v82 pouvait cesser d'être choisi sans que rien ne
+  # rougisse.
+  #
+  # Sur le modèle des bases `pre_v*` — une base jetable nommée, une variable —,
+  # mais dans un job À PART : le semis (≈ 3,3 M de lignes) et les mesures
+  # prennent plusieurs minutes, qui n'ont rien à faire sur le chemin critique de
+  # l'E2E, et une mesure ne se prend pas sur un runner qui joue autre chose en
+  # même temps. Dans le job `e2e`, BENCH_DATABASE_URL reste absente : les deux
+  # fichiers y sont ignorés, par construction, puisqu'ils tournent ici.
+  #
+  # Ce qui fait échouer ce job : le semis, une lecture qui échoue, ou l'index de
+  # v82 qui n'est plus choisi par le planificateur. Aucun seuil de LATENCE : un
+  # seuil sur un runner partagé deviendrait un test instable (en-tête du banc
+  # P7.5). Les temps sont IMPRIMÉS dans le journal du job, pour comparaison.
+  bancs:
+    name: Bancs de mesure (Explorer P6.6, /mobile P7.5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BENCH_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_bench
+    services:
+      # Même moteur que la production et que le job e2e.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mip_rum_bench
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mip_rum_bench"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install (lockfile gelé)
+        run: pnpm install --frozen-lockfile
+
+      # Le schéma par le migrateur de production, comme partout ailleurs.
+      - name: Schéma de la base de banc (migrateur)
+        env:
+          DATABASE_URL: ${{ env.BENCH_DATABASE_URL }}
+        run: node services/scheduler/migrate.mjs
+
+      # La recette des en-têtes de migration-v80 (P6.6) et v82 (P7.5), en code :
+      # `generate_series` seul, aucune donnée client. ≈ 3,5 min sur un poste.
+      - name: Semis de la base de banc
+        run: node scripts/bench/semer-bancs.mjs
+
+      # `--reporter=verbose --silent=false` : les plans et les temps que les bancs
+      # impriment SONT le résultat ; sans eux, un passage vert ne dit rien.
+      - name: Bancs de mesure
+        run: >-
+          pnpm exec vitest run
+          tests/integration/explorer-bench-p66.test.ts
+          tests/integration/rum-mobile-bench-p75.test.ts
+          --no-file-parallelism --reporter=verbose --silent=false

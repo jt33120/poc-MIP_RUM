@@ -1,7 +1,7 @@
 // Socle HTTP des routes planifiées (/api/cron/*).
 //
 // CE QUI RESTE ICI : l'authentification et la traduction en Response. Le TRAVAIL
-// lui-même est descendu dans le noyau (`ingest/jobs/planifie.mjs`), parce qu'il
+// lui-même est descendu dans le noyau (`@mip/backend/jobs/planifie.mjs`), parce qu'il
 // est désormais exécuté par deux déclencheurs : ces routes, et le service
 // `scheduler` déployé sur Railway. Deux copies auraient divergé sans que rien
 // ne le signale — les deux auraient « marché ».
@@ -15,8 +15,8 @@
 //
 // Le déclenchement manuel passe par `services/scheduler/run-once.mjs`, qui prend
 // le bail. Ce fichier disparaît avec les routes.
-import { travaux } from "ingest/jobs/planifie.mjs";
-import { createLogger } from "ingest/shared/log.mjs";
+import { travaux } from "@mip/backend/jobs/planifie.mjs";
+import { createLogger } from "@mip/backend/shared/log.mjs";
 import { pool } from "./db";
 
 export const log = createLogger("cron");
@@ -49,7 +49,7 @@ export function assertCronAuth(req: Request): Response | null {
  * route qui ne l'appelle pas.
  */
 async function jobs() {
-  const { dispatchOnce } = await import("ingest/dispatch-alerts.mjs");
+  const { dispatchOnce } = await import("@mip/backend/lib/dispatch-alerts.mjs");
   return travaux(pool, { log, dispatch: dispatchOnce });
 }
 

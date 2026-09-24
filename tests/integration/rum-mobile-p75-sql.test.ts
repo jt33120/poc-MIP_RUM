@@ -16,7 +16,7 @@ import { parseAnalyticsQuery, type AnalyticsQuery } from "../../apps/console/lib
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 const A = "p75-app-a";
 const B = "p75-app-b";
@@ -219,7 +219,7 @@ suite("P7.5 — v82, capacités et lectures /mobile sur PostgreSQL", () => {
         where app_id=$1 and release='4.2.0' and capability='js_errors'`,
       [A],
     );
-    const { writeRows } = await import("../../apps/ingest/lib/pg-ingest.mjs");
+    const { writeRows } = await import("../../packages/backend/lib/pg-ingest.mjs");
     const pool = new pg.Pool({ connectionString: url });
     await writeRows(pool, {
       sessions: [], pageviews: [], metrics: [], errors: [], resources: [], longtasks: [],

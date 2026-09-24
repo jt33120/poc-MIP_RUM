@@ -1,171 +1,126 @@
 // Service « scheduler » — le déclencheur des travaux planifiés de MIP RUM.
 //
-// CE QU'IL REMPLACE. Trois planificateurs empilés, chacun choisi par défaut et
-// non par intérêt : pg_cron (refusé sur Neon), Vercel Cron (plan Hobby : crons
-// quotidiens uniquement) et GitHub Actions (facturé à la minute entamée sur un
-// dépôt privé, d'où la cadence rabaissée de 5 min à 1 h). Un processus qui
-// tourne en continu n'a aucune de ces limites : la cadence redevient un choix
-// technique, pas la conséquence d'un plan tarifaire.
+// CÂBLAGE SEUL. Les travaux vivent dans `@mip/backend/jobs/planifie.mjs`, le bail,
+// le battement et l'état dans `@mip/backend/jobs/ordonnanceur.mjs`, la grille
+// dans `@mip/backend/jobs/cadence.mjs` ; le processus (configuration, arrêt
+// propre, pool, sondes, boucles) dans `@mip/service-kit`.
 //
-//   tick        toutes les 5 min   alertes, SLO, sondes uptime, webhooks
-//   horaire     à HH:05            rollups, nouvelles erreurs, anomalies
+//   tick        toutes les 5 min   alertes, SLO, sondes uptime, webhooks, tickets
+//   horaire     à HH:05            rollups, histogrammes, nouvelles erreurs, anomalies
 //   quotidien   à 03:17 UTC        purge de rétention, comptage du volume
 //
-// EXCLUSION. Deux instances (un redéploiement qui chevauche, une montée à deux
-// répliques) ne doivent pas lancer le même travail en parallèle. Les fonctions
-// SQL sont idempotentes, mais compter là-dessus pour des sondes réseau et des
-// webhooks serait un pari : un client recevrait l'alerte en double.
+// CE QU'IL REMPLACE. Trois planificateurs empilés, chacun choisi par défaut et
+// non par intérêt : pg_cron (refusé sur Neon), Vercel Cron (plan Hobby : crons
+// quotidiens uniquement) et GitHub Actions (facturé à la minute entamée). Un
+// processus qui tourne en continu n'a aucune de ces limites.
 //
-// La première version prenait un verrou consultatif de session. Elle ne tenait
-// pas : la connexion de production passe par le pooler Neon (PgBouncer en mode
-// TRANSACTION), où un verrou de session est pris sur un backend et perdu au
-// suivant. Deux instances se seraient crues seules toutes les deux. On passe
-// donc par un BAIL — une ligne avec une date d'expiration, qui ne dépend
-// d'aucune propriété de session. Cf. ingest/jobs/bail.mjs.
-import http from "node:http";
+// EXCLUSION. Deux instances (un redéploiement qui chevauche, deux répliques, un
+// `run-once.mjs` lancé à la main) ne doivent pas lancer la même cadence en
+// parallèle : un client recevrait l'alerte en double. D'où un BAIL par cadence
+// (une ligne à expiration, qui traverse le pooler Neon en mode transaction, là
+// où un verrou de session se perdait) — cf. `@mip/backend/jobs/bail.mjs`.
+//
+// LES SONDES, ET POURQUOI CE PARTAGE :
+//   /health   processus vivant + base joignable. C'est LA sonde Railway. « Jamais
+//             exécuté » et « bail tenu ailleurs » y sont SAINS : pendant un
+//             redéploiement, l'instance sortante tient encore le bail ; une sonde
+//             de fraîcheur ferait échouer le déploiement qui doit la remplacer.
+//   /ready    fraîcheur de chaque cadence (battement en base) et arriéré de
+//   /metrics  livraisons — pour la supervision seulement, derrière METRICS_TOKEN.
 import pg from "pg";
-import { dispatchOnce } from "ingest/dispatch-alerts.mjs";
-import { randomUUID } from "node:crypto";
-import { DUREES, SQL_TABLE, prendreBail, rendreBail } from "ingest/jobs/bail.mjs";
-import { CADENCES, prochainDelai } from "ingest/jobs/cadence.mjs";
-import { travaux } from "ingest/jobs/planifie.mjs";
-import { creerPool, cible } from "ingest/lib/serveur.mjs";
-import { createLogger } from "ingest/shared/log.mjs";
+import { COMMON_ENV, defineConfig } from "@mip/service-kit/config.mjs";
+import { createLogger } from "@mip/service-kit/log.mjs";
+import { installLifecycle } from "@mip/service-kit/lifecycle.mjs";
+import { createPool, describeTarget } from "@mip/service-kit/pg.mjs";
+import { createMetrics } from "@mip/service-kit/metrics.mjs";
+import { startService } from "@mip/service-kit/http.mjs";
+import { startLoop } from "@mip/service-kit/loop.mjs";
+import { dispatchOnce } from "@mip/backend/lib/dispatch-alerts.mjs";
+import { CADENCES, prochainDelai } from "@mip/backend/jobs/cadence.mjs";
+import { travaux } from "@mip/backend/jobs/planifie.mjs";
+import {
+  CADENCES_PLANIFIEES,
+  creerOrdonnanceur,
+  creerSignalDeadman,
+  titulaireBail,
+} from "@mip/backend/jobs/ordonnanceur.mjs";
 
 const log = createLogger("scheduler");
 
-// Fail-fast, comme le migrateur. Sans DATABASE_URL, `creerPool` retombe sur le
-// Postgres LOCAL de développement : le worker tournerait alors indéfiniment en
-// tapant dans le vide toutes les 5 minutes, en ayant l'air de vivre. Mieux vaut
-// un déploiement qui refuse de partir et le dit.
-if (!process.env.DATABASE_URL) {
-  log.error("DATABASE_URL absent — le scheduler refuse de démarrer");
-  process.exit(2);
-}
+// AVANT TOUT `await` : un SIGTERM reçu pendant le premier tick (qui attend la
+// base) doit trouver son gestionnaire. L'ancien worker les enregistrait APRÈS
+// `await sousVerrou("tick")` : un redéploiement pendant ce premier passage
+// tuait le processus sur place, bail compris, au lieu de le laisser finir.
+const lifecycle = installLifecycle({ log });
 
-const pool = creerPool(pg, { max: 4 });
-const jobs = travaux(pool, { log, dispatch: dispatchOnce });
+const config = defineConfig(
+  {
+    ...COMMON_ENV,
+    // Obligatoire, SANS repli : l'ancien `creerPool` retombait sur un Postgres
+    // local, et un DATABASE_URL oublié donnait un worker « vivant » qui tapait
+    // dans le vide toutes les 5 minutes.
+    DATABASE_URL: { type: "url", required: true, secret: true, protocols: ["postgres:", "postgresql:"], description: "Postgres (pooler Neon en production)." },
+    PGPOOL_MAX: { type: "int", default: 4, min: 2, max: 20, description: "Taille du pool. Neon plafonne à max_connections = 112 pour tous les services." },
+    // L'URL d'un dead-man's switch EST son secret : qui la connaît simule un battement.
+    DEADMAN_URL: { type: "url", secret: true, protocols: ["https:"], description: "Dead-man's switch externe, signalé après chaque tick abouti. Absent : aucun signal." },
+  },
+  { service: "scheduler", log },
+);
 
-/** Qui tient les baux : une identité par PROCESS, pas par cadence. Railway
- *  fournit l'identifiant du déploiement ; sinon un UUID fait l'affaire. */
-const PORTEUR = process.env.RAILWAY_DEPLOYMENT_ID ?? `local-${randomUUID()}`;
-
-/** Dernier passage de chaque travail, pour /status. */
-const dernier = {};
-const demarre = new Date().toISOString();
-
-/**
- * Lance un travail sous verrou. Le verrou est pris sur UNE connexion dédiée et
- * relâché sur la même : un verrou de session pris via le pool serait relâché
- * par n'importe quelle connexion rendue, ce qui ne verrouille rien.
- */
-async function sousVerrou(nom, executer) {
-  // `pool.connect()` est DANS le try. Il y était à côté, et c'est ce qui a tué
-  // le premier déploiement : une base injoignable faisait remonter le rejet
-  // hors de cette fonction, donc en rejet non capturé, donc en arrêt du
-  // process — exactement ce que le commentaire ci-dessous prétendait éviter.
-  let client = null;
-  let tenu = false;
-  try {
-    client = await pool.connect();
-    // Ceinture, pas bretelle : depuis migration-v54 la table vient du schéma.
-    // On garde l'appel (`if not exists`, donc gratuit) pour que le scheduler
-    // reste déployable seul sur une base qu'on n'aurait pas migrée.
-    await client.query(SQL_TABLE);
-    tenu = await prendreBail(client, { job: nom, porteur: PORTEUR, secondes: DUREES[nom] });
-    if (!tenu) {
-      log.warn("travail déjà en cours ailleurs — passage sauté", { job: nom });
-      return null;
-    }
-    const debut = Date.now();
-    try {
-      const bilan = await executer();
-      dernier[nom] = { at: new Date().toISOString(), ms: Date.now() - debut, ok: bilan.ok, echecs: bilan.echecs };
-      log[bilan.ok ? "info" : "error"]("travail terminé", {
-        job: nom,
-        ok: bilan.ok,
-        echecs: bilan.echecs,
-        ms: Date.now() - debut,
-        resultats: bilan.resultats,
-      });
-      return bilan;
-    } finally {
-      await rendreBail(client, { job: nom, porteur: PORTEUR }).catch(() => {});
-    }
-  } catch (err) {
-    // Une erreur ICI (connexion perdue, base injoignable) ne doit PAS tuer le
-    // process : le passage suivant retentera. Un scheduler qui meurt à la
-    // première coupure réseau est pire que pas de scheduler du tout, parce
-    // qu'il donne l'illusion d'avoir tourné.
-    dernier[nom] = { at: new Date().toISOString(), ok: false, error: String(err?.message ?? err) };
-    log.error("travail en échec", { job: nom, err: String(err?.stack ?? err) });
-    return null;
-  } finally {
-    client?.release();
-  }
-}
-
-function planifier(nom, executer) {
-  const armer = () => {
-    const delai = prochainDelai(nom, Date.now());
-    log.info("prochain passage", { job: nom, dans_s: Math.round(delai / 1000) });
-    // PAS de .unref() : ces minuteries sont la seule chose qui maintient le
-    // process en vie quand aucune sonde HTTP n'écoute. Les unref'er ferait
-    // sortir le worker juste après son premier tick, en silence.
-    setTimeout(async () => {
-      await sousVerrou(nom, executer);
-      armer(); // ré-armé APRÈS coup : un travail lent ne s'empile pas sur lui-même
-    }, delai);
-  };
-  armer();
-}
-
-// --- Sonde HTTP -------------------------------------------------------------
-// TOUJOURS active, même sans PORT fourni : un worker sans écoute n'a rien à
-// offrir au healthcheck de l'hébergeur, qui déclare alors le déploiement en
-// échec sans que rien ne soit cassé. Sans domaine généré, ce serveur n'est
-// joignable que par le réseau privé du projet.
-// Aucune donnée client n'y transite : des dates et des compteurs.
-{
-  const port = process.env.PORT ?? 8080;
-  http
-    .createServer((req, res) => {
-      const chemin = (req.url ?? "/").split("?")[0];
-      if (chemin === "/health") {
-        res.writeHead(200, { "content-type": "application/json" });
-        return res.end(JSON.stringify({ status: "ok", service: "scheduler" }));
-      }
-      if (chemin === "/status") {
-        res.writeHead(200, { "content-type": "application/json" });
-        return res.end(JSON.stringify({ service: "scheduler", depuis: demarre, dernier }));
-      }
-      res.writeHead(404);
-      res.end();
-    })
-    .listen(port, () => log.info("sonde http", { port: Number(port) }));
-}
-
-log.info("scheduler démarré", {
-  db: cible(),
-  cadences: CADENCES,
+const metrics = createMetrics();
+const pool = createPool(pg, {
+  connectionString: config.DATABASE_URL,
+  applicationName: "mip-scheduler",
+  max: config.PGPOOL_MAX,
+  log,
+  metrics,
+  lifecycle,
 });
 
-planifier("tick", jobs.tick);
-planifier("horaire", jobs.horaire);
-planifier("quotidien", jobs.quotidien);
+const ordonnanceur = creerOrdonnanceur({
+  pool,
+  jobs: travaux(pool, { log, dispatch: dispatchOnce }),
+  porteur: titulaireBail(process.env),
+  log,
+  metrics,
+  signalDeadman: creerSignalDeadman(config.DEADMAN_URL, { log }),
+});
 
-// Un premier tick immédiat : sans lui, un redéploiement juste après :00 laisse
-// jusqu'à 5 minutes sans évaluation d'alerte, en silence.
-await sousVerrou("tick", jobs.tick);
-
-async function arreter(signal) {
-  log.info("arrêt", { signal });
-  try {
-    await pool.end();
-  } catch {
-    /* rien à sauver ici */
-  }
-  process.exit(0);
+// Une boucle par cadence, sur la grille de l'horloge (UTC). La boucle du kit ne
+// lance jamais deux passages de front et, au SIGTERM, attend la fin du passage
+// en cours avant que le pool ne ferme. Premier tick IMMÉDIAT : sans lui, un
+// redéploiement juste après :00 laisse jusqu'à 5 minutes sans évaluation d'alerte.
+for (const job of CADENCES_PLANIFIEES) {
+  startLoop({
+    name: job,
+    log,
+    lifecycle,
+    immediate: job === "tick",
+    nextDelay: () => {
+      const delai = prochainDelai(job, Date.now());
+      log.info("prochain passage", { job, dans_s: Math.round(delai / 1000) });
+      return delai;
+    },
+    run: () => ordonnanceur.executer(job),
+  });
 }
-process.on("SIGTERM", () => arreter("SIGTERM"));
-process.on("SIGINT", () => arreter("SIGINT"));
+
+// Sans domaine généré, ce serveur n'est joignable que par le réseau privé du
+// projet. Aucune route hors sondes : tout le reste répond 404.
+startService({
+  name: "scheduler",
+  port: config.PORT,
+  log,
+  pool,
+  metrics,
+  metricsToken: config.METRICS_TOKEN,
+  lifecycle,
+  ready: () => ordonnanceur.etat(),
+});
+
+log.info("scheduler démarré", {
+  db: describeTarget(config.DATABASE_URL),
+  porteur: ordonnanceur.porteur,
+  cadences: CADENCES,
+  deadman: Boolean(config.DEADMAN_URL),
+});

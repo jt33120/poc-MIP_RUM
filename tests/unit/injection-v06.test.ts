@@ -3,7 +3,7 @@
 // codeless via agent + Collector, sans middleware ni code applicatif).
 import { describe, expect, it } from "vitest";
 import { buildInjectionArtifacts, mergeCsp } from "../../apps/console/lib/onboarding";
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const SDK = "https://mip-rum-console.vercel.app/mip-rum.js";
 const ENDPOINT = "https://ingest.example/functions/v1/v1-traces";

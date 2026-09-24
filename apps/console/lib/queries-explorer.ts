@@ -70,7 +70,7 @@ import { dimensionSchema } from "./query-schema";
  * 987 ms au p95 — sous l'objectif de test de 2 s. Les autres scénarios vont de
  * 29 ms (fenêtre de 24 h avec filtre sélectif) à 356 ms. Protocole et chiffres
  * complets : `tests/integration/explorer-bench-p66.test.ts` et l'en-tête de
- * `apps/ingest/sql/migration-v80.sql`.
+ * `packages/db/sql/migration-v80.sql`.
  *
  * Le budget RESTE à 5 s après mesure, et ce n'est pas un oubli : il laisse un
  * facteur cinq pour un cache froid, un hôte plus lent ou un parc plus gros. Le
@@ -182,7 +182,8 @@ function avertissements(plan: ExplorerPlan): string[] {
  * règle de purge, lue au même endroit. `jours` n'est passé que par les tests.
  *
  * `ancreMs` : l'instant depuis lequel la purge compte. La purge part de MAINTENANT
- * (`apps/ingest/purge.mjs`) ; la comparaison passe donc son horloge. Par défaut
+ * (travail quotidien du scheduler, `packages/backend/jobs/planifie.mjs`) ; la
+ * comparaison passe donc son horloge. Par défaut
  * `range.to`, le comportement historique de l'Explorer (inchangé ici).
  */
 export function couvertureRetention(

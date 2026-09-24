@@ -12,10 +12,10 @@ import { healthToMetrics } from "../../apps/console/lib/metrics-format";
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(join(RACINE, rel), "utf8");
-const V63 = lire("apps/ingest/sql/migration-v63.sql");
-const LIB = lire("apps/ingest/lib/ingest-differe.mjs");
-const RECEVEUR = lire("apps/ingest/lib/receiver.mjs");
-const SERVICE = lire("services/ingest/server.mjs");
+const V63 = lire("packages/db/sql/migration-v63.sql");
+const LIB = lire("packages/backend/lib/ingest-differe.mjs");
+const RECEVEUR = lire("packages/backend/lib/receiver.mjs");
+const SERVICE = lire("services/collector/server.mjs");
 
 describe("le compromis de durabilité est écrit, pas sous-entendu", () => {
   it("la migration dit que la table est vidée après un arrêt brutal", () => {
@@ -171,7 +171,7 @@ describe("l'effacement d'un client et la santé interne", () => {
     // Drainer toutes les cinq minutes rendrait la console aveugle cinq minutes
     // et ferait grossir une table qu'un redémarrage vide.
     expect(SERVICE).toContain("drainerIngestRaw");
-    expect(lire("apps/ingest/jobs/planifie.mjs")).not.toContain("drainerIngestRaw");
+    expect(lire("packages/backend/jobs/planifie.mjs")).not.toContain("drainerIngestRaw");
   });
 });
 

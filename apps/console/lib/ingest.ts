@@ -8,9 +8,9 @@
 //
 // Le pool `pg` est celui de la console (lib/db.ts) : même base, même
 // plafond de connexions, un seul pool par instance serverless.
-import { createPgAuth } from "ingest/lib/pg-ingest.mjs";
-import { corsHeaders as buildCors, originsFromRegistry } from "ingest/shared/cors.mjs";
-import { createLogger } from "ingest/shared/log.mjs";
+import { createPgAuth } from "@mip/backend/lib/pg-ingest.mjs";
+import { corsHeaders as buildCors, originsFromRegistry } from "@mip/backend/shared/cors.mjs";
+import { createLogger } from "@mip/backend/shared/log.mjs";
 import { pool } from "./db";
 
 export const REQUIRE_API_KEY = process.env.REQUIRE_API_KEY === "true";

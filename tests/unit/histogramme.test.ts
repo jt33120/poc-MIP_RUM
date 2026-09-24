@@ -30,7 +30,7 @@ import {
 
 const RACINE = join(__dirname, "..", "..");
 const lire = (rel: string) => readFileSync(join(RACINE, rel), "utf8");
-const V61 = lire("apps/ingest/sql/migration-v61.sql");
+const V61 = lire("packages/db/sql/migration-v61.sql");
 
 // ═════════════════════ 1. Les propriétés du découpage ════════════════════════
 

@@ -26,7 +26,7 @@ import {
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 
 const APP_B8_A = "b8-dims-a";
 const APP_B8_B = "b8-dims-b";

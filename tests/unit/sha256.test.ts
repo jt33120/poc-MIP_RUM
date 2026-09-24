@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error module JS partagé sans déclarations
-import { sha256Hex } from "../../apps/ingest/supabase/functions/_shared/sha256.mjs";
+import { sha256Hex } from "../../packages/backend/shared/sha256.mjs";
 
 const reference = (texte: string) => createHash("sha256").update(texte, "utf8").digest("hex");
 

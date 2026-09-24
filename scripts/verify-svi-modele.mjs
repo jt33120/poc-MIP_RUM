@@ -14,7 +14,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import pg from "pg";
 
-const DIR = new URL("../apps/ingest/sql/", import.meta.url);
+const DIR = new URL("../packages/db/sql/", import.meta.url);
 let failures = 0;
 function assert(label, cond) {
   console.log(`${cond ? "✓" : "✗"} ${label}`);

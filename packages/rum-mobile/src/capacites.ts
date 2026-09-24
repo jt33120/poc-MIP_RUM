@@ -13,7 +13,7 @@
 // écrit `verified_at` côté serveur. Aucun booléen produit ici ne peut y toucher.
 //
 // COPIE ASSUMÉE DU VOCABULAIRE SERVEUR. La liste et les états vivent aussi dans
-// `apps/ingest/supabase/functions/_shared/mobile-capabilities.mjs`, qui fait
+// `packages/backend/shared/mobile-capabilities.mjs`, qui fait
 // autorité à réception. Ce paquet ne peut pas importer un module Node ; comme
 // pour `ERROR_SOURCES` (otlp.mjs / queries-errors.ts), les deux listes sont
 // comparées par `tests/unit/rum-mobile-p75.test.ts` — une divergence devient un

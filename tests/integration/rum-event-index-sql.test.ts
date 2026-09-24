@@ -5,12 +5,12 @@ import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error — module .mjs sans déclaration de types
-import { writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error — module .mjs sans déclaration de types
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
-const dir = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const dir = join(__dirname, "..", "..", "packages", "db", "sql");
 const pool = new pg.Pool(url ? { connectionString: url, max: 4 } : { max: 4 });
 const suite = url ? describe : describe.skip;
 const APP = "p1-index-a";

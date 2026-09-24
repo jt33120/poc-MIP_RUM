@@ -7,7 +7,7 @@
 // identité. Le test passait au vert en vérifiant le défaut. Il est remplacé ici
 // par son contraire : deux navigateurs qui ne partagent pas de stockage doivent
 // obtenir deux identifiants DIFFÉRENTS, quelles que soient leurs
-// caractéristiques matérielles. Voir apps/ingest/sql/migration-v57.sql.
+// caractéristiques matérielles. Voir packages/db/sql/migration-v57.sql.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Un « navigateur » : son stockage local, isolé des autres. */

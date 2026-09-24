@@ -23,7 +23,7 @@ import {
   validateGlobalContext,
   validateRequestContext,
 } from "../../packages/agent-node/src/core";
-import { flattenOtlp, flattenOtlpLogs } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp, flattenOtlpLogs } from "../../packages/backend/shared/otlp.mjs";
 
 describe("agent-node — config", () => {
   it("désactivé sans endpoint/app_id", () => {

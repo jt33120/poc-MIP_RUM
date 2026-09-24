@@ -58,7 +58,7 @@ const attendrePoidsGzip = (rel: string, annonce: number) => {
 
 /** Tout le DDL du dépôt : le schéma initial ET les migrations qui l'ont suivi. */
 function toutLeDdl(): string {
-  const dir = join(RACINE, "apps/ingest/sql");
+  const dir = join(RACINE, "packages/db/sql");
   return readdirSync(dir)
     .filter((f) => f.endsWith(".sql"))
     .map((f) => readFileSync(join(dir, f), "utf8"))
@@ -83,7 +83,7 @@ describe("onglet infrastructure — chaque ligne porte sa preuve", () => {
     // disparaît, ce n'est pas la vitrine qui est fausse : c'est le déploiement
     // qui est cassé, et on l'apprend ici plutôt qu'au prochain déploiement.
     for (const f of [
-      "services/ingest/server.mjs",
+      "services/collector/server.mjs",
       "services/scheduler/worker.mjs",
       "services/mcp/http.mjs",
     ]) {
@@ -204,8 +204,8 @@ describe("onglet mesures — ce qu'on capte est routé et stocké pour de vrai",
   // Le parseur OTLP est L'AIGUILLAGE : c'est lui qui décide, par le nom du span,
   // dans quelle table une mesure atterrit. Une famille annoncée sur la vitrine
   // dont le nom n'y figure pas n'est pas mesurée — elle est espérée.
-  const parseur = lire("apps/ingest/supabase/functions/_shared/otlp.mjs");
-  const inserts = lire("apps/ingest/lib/pg-ingest.mjs");
+  const parseur = lire("packages/backend/shared/otlp.mjs");
+  const inserts = lire("packages/backend/lib/pg-ingest.mjs");
 
   /**
    * L'aiguillage route par PRÉFIXE (`span.name.startsWith("track.")`). Un signal
@@ -312,8 +312,8 @@ describe("onglet mesures — ce qu'on annonce absent l'est vraiment", () => {
   }
 
   it.each(ANGLES_MORTS)("« $label » : le code annoncé absent ne s'est pas glissé dans le dépôt", (a) => {
-    const [cible, fragment] = a.marqueur;
-    const trouves = present(cible, fragment);
+    const [cibles, fragment] = a.marqueur;
+    const trouves = [cibles].flat().flatMap((cible) => present(cible, fragment));
     // Si ce test échoue, la vitrine ment PAR EXCÈS DE MODESTIE : la capacité a
     // été codée depuis. Retirer la ligne de ANGLES_MORTS, et l'ajouter à MESURES.
     expect(trouves, `« ${a.label} » : ${fragment} trouvé dans ${trouves.join(", ")}`).toEqual([]);

@@ -28,15 +28,15 @@ import { writeFileSync } from "node:fs";
 import process from "node:process";
 import pg from "pg";
 
-import { ErreurPlan, KINDS, planifier } from "../apps/ingest/lib/backfills/planner.mjs";
+import { ErreurPlan, KINDS, planifier } from "../packages/backend/lib/backfills/planner.mjs";
 import {
   etat,
   executer,
   inscrirePlan,
   mettreEnPause,
   verifier,
-} from "../apps/ingest/lib/backfills/runner.mjs";
-import { ErreurBackfill } from "../apps/ingest/lib/backfills/commun.mjs";
+} from "../packages/backend/lib/backfills/runner.mjs";
+import { ErreurBackfill } from "../packages/backend/lib/backfills/commun.mjs";
 
 const USAGE = `
 Reprise d'historique RUM (P8.2). --app et les bornes sont obligatoires.

@@ -70,7 +70,7 @@ const gzKb = gzipSync(bundle).length / 1024;
 if (gzKb <= 35) ok("bundle ≤ 35 KB gzip", `${gzKb.toFixed(1)} KB`);
 else ko("bundle ≤ 35 KB gzip", `${gzKb.toFixed(1)} KB`);
 
-await ensureServer(`${INGEST}/__recent`, "node", ["apps/ingest/dev-server.mjs"]);
+await ensureServer(`${INGEST}/__recent`, "node", ["services/collector/dev-server.mjs"]);
 await ensureServer(DEMO, "node", ["demo/serve.mjs"]);
 
 const browser = await chromium.launch();

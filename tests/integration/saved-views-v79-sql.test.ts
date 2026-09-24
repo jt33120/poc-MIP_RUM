@@ -13,7 +13,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const urlFenetre = process.env.SQL_TEST_V68_DATABASE_URL;
-const SQL_DIR = join(__dirname, "..", "..", "apps", "ingest", "sql");
+const SQL_DIR = join(__dirname, "..", "..", "packages", "db", "sql");
 const pool = new pg.Pool(url ? { connectionString: url, max: 4 } : { max: 4 });
 const poolFenetre = new pg.Pool(urlFenetre ? { connectionString: urlFenetre, max: 4 } : { max: 4 });
 

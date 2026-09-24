@@ -4,13 +4,13 @@
 // corps stocké COMPRESSÉ, gunzip de contrôle pour compter les events.
 //
 // Parité d'auth avec la route traces (un endpoint durci et l'autre ouvert serait
-// exactement le trou que _shared/auth.mjs avait fermé) : app inconnue/inactive
+// exactement le trou que shared/auth.mjs avait fermé) : app inconnue/inactive
 // rejetée, clé exigée selon REQUIRE_API_KEY, rate limit par app.
 import { gunzipSync } from "node:zlib";
-import { writeReplayChunk } from "ingest/lib/pg-ingest.mjs";
-import { MAX_REPLAY_INFLATED_BYTES } from "ingest/shared/limits.mjs";
-import { REPLAY_ALLOW_HEADERS } from "ingest/shared/cors.mjs";
-import { withRetry } from "ingest/shared/retry.mjs";
+import { writeReplayChunk } from "@mip/backend/lib/pg-ingest.mjs";
+import { MAX_REPLAY_INFLATED_BYTES } from "@mip/backend/shared/limits.mjs";
+import { REPLAY_ALLOW_HEADERS } from "@mip/backend/shared/cors.mjs";
+import { withRetry } from "@mip/backend/shared/retry.mjs";
 import { pool } from "@/lib/db";
 import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
 

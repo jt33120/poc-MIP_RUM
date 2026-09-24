@@ -15,7 +15,7 @@
 // MIP (ServiceNow, sous réserve de confirmation). L'interface visuelle de cette
 // configuration reste masquée tant qu'aucun fournisseur n'est branché et testé.
 import { type NextRequest, NextResponse } from "next/server";
-import { ErreurUpload, lireCorpsLimite } from "ingest/lib/sourcemap-upload.mjs";
+import { ErreurUpload, lireCorpsLimite } from "@mip/backend/lib/sourcemap-upload.mjs";
 import { guardAdmin } from "@/lib/api/admin";
 import { SESSION_COOKIE } from "@/lib/auth";
 import { workflowApps } from "@/lib/api/issue-workflow";

@@ -43,26 +43,36 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { buildResourceSpans, msToHr, type EmitSpan } from "../../packages/rum-sdk/src/otlp-encode";
 import type { ErrorFilters } from "../../apps/console/lib/queries-errors";
 // @ts-expect-error module JS partagé sans déclarations
-import { dispatchOnce } from "../../apps/ingest/dispatch-alerts.mjs";
+import { dispatchOnce as dispatchOnceProduction } from "../../packages/backend/lib/dispatch-alerts.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { travaux } from "../../apps/ingest/jobs/planifie.mjs";
+import { travaux } from "../../packages/backend/jobs/planifie.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { importerNotesHistoriques } from "../../apps/ingest/lib/error-issue-workflow.mjs";
+import { importerNotesHistoriques } from "../../packages/backend/lib/error-issue-workflow.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { deposerLot, drainerIngestRaw } from "../../apps/ingest/lib/ingest-differe.mjs";
+import { deposerLot, drainerIngestRaw } from "../../packages/backend/lib/ingest-differe.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { MAX_GROUPES_HISTORIQUES_PAR_LOT } from "../../apps/ingest/lib/error-grouping.mjs";
+import { MAX_GROUPES_HISTORIQUES_PAR_LOT } from "../../packages/backend/lib/error-grouping.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { _resetColonnesCache, writeRows } from "../../apps/ingest/lib/pg-ingest.mjs";
+import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-ingest.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { errorGrouping } from "../../apps/ingest/supabase/functions/_shared/error-normalize.mjs";
+import { errorGrouping } from "../../packages/backend/shared/error-normalize.mjs";
 // @ts-expect-error module JS partagé sans déclarations
-import { flattenOtlp } from "../../apps/ingest/supabase/functions/_shared/otlp.mjs";
+import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const urlFenetre = process.env.SQL_TEST_V68_DATABASE_URL;
 const RACINE = join(__dirname, "..", "..");
-const SQL_DIR = join(RACINE, "apps", "ingest", "sql");
+
+/**
+ * Le dispatcher, avec le `fetch` de la plateforme. Le récepteur de ces tests
+ * écoute sur 127.0.0.1, que `safeFetch` refuse à dessein (P1) : ce qui se prouve
+ * ici est la réservation, les statuts et les rejeux, pas la politique de sortie
+ * — elle a ses propres tests (tests/unit/safe-fetch.test.ts), et un test plus bas
+ * vérifie que, SANS cette substitution, une cible en boucle locale est soldée.
+ */
+const dispatchOnce = (p: unknown, options: Record<string, unknown> = {}) =>
+  dispatchOnceProduction(p, { fetchImpl: fetch, ...options });
+const SQL_DIR = join(RACINE, "packages", "db", "sql");
 // esbuild est déjà une dépendance du SDK : aucun paquet ajouté pour la recette.
 const esbuild = createRequire(join(RACINE, "packages", "rum-sdk", "package.json"))("esbuild");
 const pool = new pg.Pool(url ? { connectionString: url, max: 6 } : { max: 6 });
@@ -1794,6 +1804,31 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
         const bilan = await travaux(pool, { log: muet, dispatch: dispatchOnce }).tick();
         expect(bilan.resultats.route_error_issue_notifications).toMatchObject({ ok: true, result: 1 });
         expect(recepteur.recus.map((r) => r.url)).toEqual(["/tick"]);
+      });
+
+      // P1 — le dispatcher de PRODUCTION (sans substitution de `fetch`) ne poste
+      // ni vers la boucle locale ni vers les métadonnées cloud : il solde, sans
+      // tentative comptée ni rejeu, et dit pourquoi dans `response`.
+      it("sans substitution, une cible en boucle locale ou de métadonnées est soldée skipped sans être postée", async () => {
+        recepteur.recus.length = 0;
+        const regle = (await pool.query(
+          "insert into alert_rule (app_id, metric, threshold, webhook_url) values ($1, 'LCP', 1, $2) returning id",
+          [A, `${recepteur.base}/ssrf`],
+        )).rows[0].id;
+        const evenement = (await pool.query("insert into alert_event (rule_id, value, message) values ($1, 3, 'LCP p56-app-a') returning id", [regle])).rows[0].id;
+        await pool.query(
+          "insert into alert_delivery (alert_event_id, target) values ($1, $2), ($1, 'http://169.254.169.254/latest/meta-data/')",
+          [evenement, `${recepteur.base}/ssrf`],
+        );
+        const bilan = await dispatchOnceProduction(pool);
+        expect(bilan.skipped).toBeGreaterThanOrEqual(2);
+        expect(recepteur.recus).toHaveLength(0);
+        const livraisons = (await pool.query("select status, response, attempts from alert_delivery where alert_event_id = $1", [evenement])).rows;
+        expect(livraisons).toHaveLength(2);
+        for (const l of livraisons) {
+          expect(l).toMatchObject({ status: "skipped", attempts: 0 });
+          expect(l.response).toMatch(/^cible refusée : Adresse IP littérale refusée/);
+        }
       });
     });
 

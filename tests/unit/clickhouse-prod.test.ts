@@ -5,7 +5,7 @@
 //     vs CH idioms) selon STORE.
 // (Le schéma prod et l'égalité Δ=0 sont validés contre une instance CH live, pas en CI.)
 import { describe, expect, it } from "vitest";
-import { chSearchParams } from "../../infra/clickhouse/writer.mjs";
+import { chSearchParams } from "../../labs/clickhouse/writer.mjs";
 import { heavyQueries } from "../../scripts/load-bench.mjs";
 
 describe("chSearchParams — binding serveur ClickHouse", () => {

@@ -5,7 +5,7 @@
 > section **1 bis**. La console reste sur Vercel et devient un client de ces
 > services. Les routes `/api/ingest/*` et `/api/cron/*` de la console
 > subsistent comme filet le temps de la bascule ; elles appellent exactement le
-> même code (`apps/ingest`), donc les deux chemins ne peuvent pas diverger.
+> même code (`packages/backend`), donc les deux chemins ne peuvent pas diverger.
 
 > **⚠ Le projet Supabase `mip-rum-poc` n'existe plus** (constaté le 14/08/2026 :
 > plus aucun enregistrement DNS, API de gestion `"Resource has been removed"`).
@@ -40,8 +40,8 @@ NEON_API_KEY=<clé> npx neonctl@latest projects create \
 
 # 1.2 Appliquer le schéma puis TOUTES les migrations, dans l'ordre (identique
 #     à ce que rejoue la CI contre un Postgres vierge).
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/ingest/sql/schema.sql
-for f in apps/ingest/sql/migration-v*.sql; do
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f packages/db/sql/schema.sql
+for f in packages/db/sql/migration-v*.sql; do
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
 done
 
@@ -82,15 +82,15 @@ Projet `mip-rum-backend`, environnement `production`. Trois services.
 
 | Service | Image | Commande | Écoute | Redémarrage |
 |---|---|---|---|---|
-| `ingest` | `Dockerfile.backend` | `node services/ingest/server.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
-| `scheduler` | `Dockerfile.backend` | `node services/scheduler/worker.mjs` | facultatif (`/health`, `/status`) | `ALWAYS` |
-| `mcp` | **`Dockerfile.mcp`** | `node services/mcp/http.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
+| `ingest` (supprimé le 21/09/2026) | `infra/docker/Dockerfile.backend` (à l'époque) | `node services/ingest/server.mjs` (aujourd'hui `services/collector/`) | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
+| `scheduler` | `services/scheduler/Dockerfile` | `node services/scheduler/worker.mjs` | oui, healthcheck `/health` (sain sans exécution ni bail) ; `/ready`, `/metrics` sous `METRICS_TOKEN` — cf. `services/scheduler/README.md` | `ALWAYS` |
+| `mcp` | **`services/mcp/Dockerfile`** | `node services/mcp/http.mjs` | oui, healthcheck `/health` | `ON_FAILURE`, 10 essais |
 
 Domaine public du serveur MCP : `https://mcp-production-201c.up.railway.app`
 (`POST /mcp`, jeton porteur exigé — cf. `docs/MCP.md`).
 
-`ingest` et `scheduler` partagent une image : même noyau, mêmes dépendances,
-seule la commande change. `mcp` a la sienne — non par exception, mais parce
+Une image par service (P1), et un `CMD` explicite : chacune ne sait démarrer que son service (les anciennes `infra/docker/Dockerfile.{backend,mcp}`, marquées OBSOLÈTE, restent jusqu'à l'apply de l'IaC, que le tableau de bord attend encore).
+`mcp` a toujours eu la sienne — non par exception, mais parce
 qu'**il ne doit pas pouvoir atteindre la base**. C'est le seul service
 pilotable par un modèle de langage ; sans `pg` ni `DATABASE_URL`, une injection
 de prompt réussie ne donne que ce que le jeton de l'appelant permettait déjà de
@@ -145,11 +145,11 @@ comportement voulu, pas une panne.
 > souverain —, là où aucun CDN ne fournit d'en-tête pays.
 >
 > **La base n'est pas dans le dépôt** (4,5 Mio, renouvelée tous les mois).
-> `Dockerfile.backend` la télécharge à la construction et vérifie son empreinte ;
+> L'image collector la télécharge à la construction, contre le manifeste ;
 > un échec n'arrête PAS la construction, l'image part alors sans base et
 > l'ingestion fonctionne comme avant. `--build-arg GEOIP_FETCH=0` pour une
 > construction sans sortie réseau ; la base se monte alors sur un volume via
-> `GEOIP_DB_PATH`. Voir `apps/ingest/data/README.md`.
+> `GEOIP_DB_PATH`. Voir `packages/backend/data/README.md`.
 >
 > `GET /health` du service `ingest` annonce l'état réel :
 > `{"geoip":{"source_ip":"railway","etat":"actif","version":"dbip-country-lite-2026-09","raison":null}}`.
@@ -308,10 +308,10 @@ vercel --prod
 
 ```bash
 # seed aligné sur l'app du vrai site (routes clés G-IT) — ou brancher l'API mippoc via l'adapter
-DATABASE_URL="$DATABASE_URL" node apps/sync-synthetic/src/sync.mjs seed gip-plateforme
+DATABASE_URL="$DATABASE_URL" node tools/sync-synthetic/src/sync.mjs seed gip-plateforme
 ```
 
-(Adapter les routes de `SEED_MEASURES` dans `apps/sync-synthetic/src/sync.mjs` aux routes réelles de la plateforme si besoin. La source réelle mippoc se branche en implémentant `fetchSnapshots()` — interface `SyntheticSource`, cf. BUILD_LOG S5.)
+(Adapter les routes de `SEED_MEASURES` dans `tools/sync-synthetic/src/sync.mjs` aux routes réelles de la plateforme si besoin. La source réelle mippoc se branche en implémentant `fetchSnapshots()` — interface `SyntheticSource`, cf. BUILD_LOG S5.)
 
 ## 4. Snippet à coller dans le `<head>` de plateforme.groupement-it.com
 
@@ -390,18 +390,24 @@ psql "$DATABASE_URL" -c "select purge_rum_tenants(30)"   # {app: lignes supprim�
 psql "$DATABASE_URL" -c "select check_alerts()"
 ```
 
-Hors Vercel (self-host), les runners Node historiques restent valables :
+Hors Vercel (self-host), c'est le service `scheduler` qui porte la purge et la
+livraison des alertes — en continu, ou pour une passe ponctuelle, sous le même
+bail que le worker :
 
 ```bash
-RETENTION_DAYS=30 node apps/ingest/purge.mjs --loop
-node apps/ingest/dispatch-alerts.mjs --loop
+node services/scheduler/worker.mjs            # en continu (tick, horaire, quotidien)
+node services/scheduler/run-once.mjs daily    # une passe : purge de rétention, comptage
+node services/scheduler/run-once.mjs tick     # une passe : alertes, SLO, uptime, livraisons
 ```
+
+Les runners Node historiques (`purge.mjs --loop`, `dispatch-alerts.mjs --loop`)
+ont été retirés en P1 : ils tournaient hors bail, en concurrence du scheduler.
 
 ## Dépannage
 
 | Symptôme | Cause probable | Fix |
 |---|---|---|
-| Erreur CORS dans la console navigateur | origine absente de la whitelist | socle statique dans `apps/ingest/supabase/functions/_shared/cors.mjs`, ou `app_registry.allowed_origins` de l'app (pris en compte sans redéploiement, cache 60 s) |
+| Erreur CORS dans la console navigateur | origine absente de la whitelist | socle statique dans `packages/backend/shared/cors.mjs`, ou `app_registry.allowed_origins` de l'app (pris en compte sans redéploiement, cache 60 s) |
 | **302 vers `/login` sur le POST d'ingestion** | `/api/ingest/*` ne contourne plus le middleware d'auth | vérifier le bypass en tête de `apps/console/middleware.ts` — sans lui, TOUTE l'ingestion tombe en silence |
 | 403 sur le POST | `REQUIRE_API_KEY=true` et l'app n'a pas de clé (ou clé fausse) | donner une clé à l'app (`app_registry.api_key_hash`) **avant** d'activer le flag, ou repasser à `false` |
 | Rien en base mais POST 200 | `mip.app_id` manquant (payload rejeté) | vérifier `appId` dans `MIPRum.init` |

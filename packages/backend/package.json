@@ -1,0 +1,16 @@
+{
+  "name": "@mip/backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Noyau backend MIP RUM — pipeline d'ingestion OTLP, écritures Postgres, travaux planifiés, livraison des alertes, intégrations. Sans framework : importable par la console Next.js comme par les services Railway. Le schéma et le migrateur vivent à côté, dans @mip/db.",
+  "type": "module",
+  "exports": {
+    "./lib/*": "./lib/*",
+    "./jobs/*": "./jobs/*",
+    "./shared/*": "./shared/*"
+  },
+  "dependencies": {
+    "@mip/service-kit": "workspace:*",
+    "pg": "8.21.0"
+  }
+}

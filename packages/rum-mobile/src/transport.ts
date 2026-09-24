@@ -30,7 +30,7 @@ export const RETRY_MAX_MS = 5 * 60_000;
 export const RETRY_AFTER_MAX_MS = 15 * 60_000;
 /**
  * Taille maximale du corps HTTP réellement acceptée par l'ingestion
- * (`MAX_BODY_BYTES`, apps/ingest/.../limits.mjs). Le lot est mesuré APRÈS
+ * (`MAX_BODY_BYTES`, packages/backend/.../limits.mjs). Le lot est mesuré APRÈS
  * encodage OTLP, parce que l'encodage multiplie la taille des attributs par
  * deux à trois : un plafond appliqué à la forme aplatie serait une estimation,
  * pas le plafond réel.
