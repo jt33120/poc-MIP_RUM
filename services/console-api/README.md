@@ -79,6 +79,16 @@ L'adresse du visiteur arrive par `x-mip-visitor-ip`, posée par le serveur de la
 
 Chaque écriture laisse sa ligne `audit_log` (`auth.login`, `auth.login_failed`, `auth.login_blocked`, `auth.demo`, `auth.logout`) avec le `request_id` et `actor_kind`, dans la **même transaction**.
 
+## Les écrans (C2 → C5)
+
+Les données de chaque écran sont chargées par un **chargeur** qui vit dans la console (`apps/console/lib/chargeurs/`). La console l'appelle aujourd'hui en local. Ce service l'**embarque tel quel** dans son bundle, sur son propre pool, et le sert (`GET /v1/shell` pour la coquille, C2). La parité n'est donc pas un test : c'est le même code.
+
+Une lecture en échec devient une **section** `{ ok: false, code: "lecture_en_echec" }`. Sa raison part au journal avec le `request_id`, jamais dans la réponse.
+
+La garde du build n'accepte de la console que sa couche de données : ni écran (`app/`), ni composant, ni `lib/auth.ts`, `lib/session-console.ts` ou `lib/backend.ts`, ni Next ou React réels. L'image ne copie que `apps/console/lib`.
+
+**Mise en service décidée à la fin, après P6b.** D'ici là, la console lit en local. Une PR par écran la branchera ensuite sur ce service et retirera sa lecture directe.
+
 ## Sûreté multi-réplique
 
 Le service est sans état : chaque requête lit la base. Le débit par principal est compté par réplique : avec deux répliques, un principal peut atteindre le double de la limite. Les écritures (C6 et suivants) se feront chacune dans sa transaction, avec la ligne d'audit dans la même transaction.

@@ -139,11 +139,12 @@ const SURVEILLE_API = [
 ];
 
 // CONSOLE-API EST UN BUNDLE (`services/console-api/build.mjs`) de ses deux paquets
-// TypeScript et du kit : la fermeture exacte de `@mip/service-console-api`. PAS
-// `apps/console/**` — la garde du build refuse toute source de la console, et
-// c'est la console qui l'appelle, pas l'inverse.
+// TypeScript, du kit, et de la COUCHE DE DONNÉES de la console (`apps/console/lib`,
+// où vivent les chargeurs d'écrans, C2 → C5) : la fermeture de son image. Ni les
+// écrans ni les composants — la garde du build les refuse.
 const SURVEILLE_CONSOLE_API = [
   "services/console-api/**", "packages/console-api/**", "packages/console-contract/**", "packages/service-kit/**",
+  "packages/backend/**", "apps/console/lib/**",
   "pnpm-lock.yaml", "/pnpm-workspace.yaml", "/package.json", "/.dockerignore",
   "scripts/ci/deploy-fidele.mjs",
 ];

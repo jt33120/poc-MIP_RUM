@@ -141,6 +141,7 @@ async function fauxIdp(opts: { emetteurAnnonce?: string } = {}) {
         oublierSession: (sid) => sessions.oublier(sid),
         oidc: { client: creerOidc(config, { fetch: fetchIdp }), config },
       },
+      ecrans: { coquille: async () => ({ projets: { ok: true as const, data: [] }, schema: { ok: true as const, data: [] }, fuseaux: {}, tickets: null }) },
     });
     return creerConsoleApi({ table, secretsClient: [SECRET], journal, verifierSession: sessions.verifier, lecteur: pool, debitParMinute: 0 });
   }

@@ -5,20 +5,12 @@
 // middleware réconcilie les deux : cookie -> URL, et redirige vers /select quand
 // aucun projet n'est choisi.
 import { cookies } from "next/headers";
-import type { AppItem } from "./queries";
-import { listApps } from "./queries";
-import type { SessionUser } from "./auth";
-import { authorizedAppsOf } from "./query-contract";
+
+// La liste des projets d'un principal, sans rien de Next : `project-liste.ts`.
+export { projectsForUser } from "./project-liste";
 
 export const PROJECT_COOKIE = "mip-project";
 export const PROJECT_COOKIE_MAX_AGE = 180 * 24 * 3600; // 180 j
-
-/** Projets visibles par l'utilisateur (RBAC : viewer scopé à ses apps ; liste vide = aucun). */
-export async function projectsForUser(user: SessionUser): Promise<AppItem[]> {
-  const all = await listApps();
-  const authorized = authorizedAppsOf(user);
-  return authorized === null ? all : all.filter((a) => authorized.includes(a.app_id));
-}
 
 /** Id du projet courant (cookie), ou null si aucun n'est sélectionné. */
 export async function selectedProjectId(): Promise<string | null> {

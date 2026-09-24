@@ -188,6 +188,9 @@ function cibles(p: Politique): Cible[] {
     for (const p of ["revoquee", "desactive", "demo", "viewer", "admin", "plateforme"] as const) jetons[p] = await emettre(trousseau, sessions[p], p === "demo");
 
     const verificateur = await creerVerificateurSession({ trousseau, db: pool, horloge: () => maintenant });
+    // La couche de données de la console lit `DATABASE_URL` : la base de la matrice.
+    process.env.DATABASE_URL = url!;
+    const { chargerCoquille } = await import("../../apps/console/lib/chargeurs/coquille");
     const transacteur = {
       async transaction<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
         const c = await pool.connect();
@@ -216,6 +219,8 @@ function cibles(p: Politique): Cible[] {
         demo: null,
         oublierSession: (sid) => verificateur.oublier(sid),
       },
+      // C2 — le VRAI chargeur de la coquille, celui de la console, sur la base de la matrice.
+      ecrans: { coquille: (p) => chargerCoquille({ role: p.role, apps: p.apps === null ? null : [...p.apps] }) },
     });
     table = [...reel.table, ...BANC];
     servirRequete = creerConsoleApi({
@@ -292,6 +297,26 @@ function cibles(p: Politique): Cible[] {
     ]);
     expect(ailleurs.status).toBe(404);
     expect((await ailleurs.json()).error).toEqual((await absente.json()).error);
+  });
+
+  it("la coquille (C2) : les projets du PÉRIMÈTRE relu en base, les connecteurs pour l'administrateur seulement", async () => {
+    const e = table.find((x) => x.operation.id === "console.shell")!;
+    const lire = async (profil: Profil) => {
+      const r = await servirRequete(requete(e, profil, { nom: "" }));
+      expect(r.status, profil).toBe(200);
+      const { data } = (await r.json()) as { data: { projets: { ok: boolean; data?: { app_id: string }[] }; tickets: unknown } };
+      expect(data.projets.ok, profil).toBe(true);
+      return { apps: (data.projets.data ?? []).map((p) => p.app_id).filter((x) => x === A || x === B).sort(), tickets: data.tickets === null ? null : "section" };
+    };
+    expect(await lire("demo")).toEqual({ apps: [A], tickets: null });
+    expect(await lire("viewer")).toEqual({ apps: [A], tickets: null });
+    // Un administrateur AVEC une liste voit aujourd'hui tous les projets : c'est la
+    // règle de la console (`authorizedAppsOf` : admin ⇒ toutes les apps), que le
+    // chargeur partage à l'identique. Le pipeline, lui, confronte déjà `app` à la
+    // liste. C9 alignera la console (« un admin avec une liste n'administre que
+    // ces apps ») ; relevé P0 : aucun administrateur restreint en production.
+    expect(await lire("admin")).toEqual({ apps: [A, B], tickets: "section" });
+    expect(await lire("plateforme")).toEqual({ apps: [A, B], tickets: "section" });
   });
 
   it("révoquer une session, désactiver un compte : refusé en 30 s au plus, sans nouveau jeton", async () => {

@@ -245,6 +245,9 @@ importers:
         specifier: 8.21.0
         version: 8.21.0
     devDependencies:
+      '@mip/backend':
+        specifier: workspace:*
+        version: link:../../packages/backend
       '@mip/console-api':
         specifier: workspace:*
         version: link:../../packages/console-api

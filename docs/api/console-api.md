@@ -35,6 +35,7 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `auth.logout` | `DELETE /v1/auth/sessions/current` | session | — | lecture | exigé | `auth.logout` |
 | `auth.me` | `GET /v1/me` | session | — | lecture | exigé | — |
 | `public.platformStatus` | `GET /v1/public/platform-status` | aucune session | — | lecture | exigé | — |
+| `console.shell` | `GET /v1/shell` | session | — | lecture | exigé | — |
 | `ops.version` | `GET /v1/version` | aucune session | — | lecture | **non exigé** | — |
 
 ## Les codes d'erreur

@@ -17,11 +17,9 @@ import { dogfoodingEndpoint } from "@/lib/ingest-endpoint";
 import { DashboardSettings } from "@/components/DashboardSettings";
 import { CATALOGUES, lireChoix } from "@/lib/dashboard-blocs";
 import { reglerBlocsAction } from "./actions-dashboard";
-import { FUSEAU_DEFAUT, fuseauDe } from "@/lib/fuseau";
-import { lire } from "@/lib/lecture";
-import { describeProject, projectsForUser, selectedProjectId } from "@/lib/project";
-import { dimensionSchema } from "@/lib/query-schema";
-import { surfaceTicketsOuverte } from "@/lib/queries-ticket-integrations";
+import { chargerCoquille } from "@/lib/chargeurs/coquille";
+import { FUSEAU_DEFAUT } from "@/lib/fuseau";
+import { describeProject, selectedProjectId } from "@/lib/project";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -187,17 +185,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     );
   }
 
-  // LA COQUILLE NE TOMBE PAS AVEC LA BASE (F02). La sonde des colonnes et les
-  // connecteurs de tickets levaient jusqu'au layout racine, qu'aucune frontière
-  // d'écran ne couvre : une base injoignable donnait le message anglais de Next à
-  // la place de TOUTE la console. Les lectures de la coquille passent par `lire()` :
-  // en échec, elle s'affiche sans elles et LE DIT (bandeau « Partiel » ci-dessous),
-  // et l'écran rend sa propre « Lecture en échec ». (`listApps`, sous
-  // `projectsForUser`, se rabat encore lui-même sur une liste vide : hors F02.)
-  //
-  // RBAC : on ne considère que les apps autorisées (viewer scopé ; liste vide = aucune)
-  const appsLues = await lire(() => projectsForUser(user));
-  const apps = appsLues.ok ? appsLues.data : [];
+  // LA COQUILLE NE TOMBE PAS AVEC LA BASE (F02). Ses lectures passent par `lire()`
+  // (dans `chargerCoquille`) : en échec, elle s'affiche sans elles et LE DIT
+  // (bandeau « Partiel » ci-dessous), et l'écran rend sa propre « Lecture en
+  // échec ». Le chargeur est celui que console-api sert (`GET /v1/shell`, piste C).
+  const coquille = await chargerCoquille(user);
+  const apps = coquille.projets.ok ? coquille.projets.data : [];
 
   // Projet courant (cookie posé par /select ou le middleware). Absent -> le
   // middleware a déjà renvoyé vers /select ; on garde un repli défensif.
@@ -208,18 +201,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   // Capacités des barres de filtres : colonnes de dimensions réellement présentes
   // (la console peut précéder une migration) et fuseau d'affichage de chaque app.
-  const [schemaLu, timeZones] = await Promise.all([
-    lire(() => dimensionSchema().then((columns) => [...columns].sort())),
-    Promise.all(apps.map(async (a) => [a.app_id, await fuseauDe(a.app_id)] as const)).then(Object.fromEntries),
-  ]);
-  const schema = schemaLu.ok ? schemaLu.data : [];
+  const schema = coquille.schema.ok ? coquille.schema.data : [];
+  const timeZones = coquille.fuseaux;
 
   // P8.6 : l'entrée « Connecteurs de tickets » n'apparaît que lorsqu'un
   // fournisseur est branché et testé. La page applique la MÊME décision et rend
   // un 404 sinon : un lien caché n'est pas une autorisation.
-  const ticketsLu = user.role === "admin" ? await lire(surfaceTicketsOuverte) : null;
-  const tickets = ticketsLu?.ok === true && ticketsLu.data;
-  const coquilleDegradee = !appsLues.ok || !schemaLu.ok || ticketsLu?.ok === false;
+  const tickets = coquille.tickets?.ok === true && coquille.tickets.data;
+  const coquilleDegradee = !coquille.projets.ok || !coquille.schema.ok || coquille.tickets?.ok === false;
 
   return (
     <html lang="fr" suppressHydrationWarning>
