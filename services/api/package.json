@@ -1,0 +1,23 @@
+{
+  "name": "@mip/service-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API de lecture v1 de MIP RUM pour les machines (partenaires, CI, MCP) — les routes de la console, compilées en un service Railway",
+  "type": "module",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/server.mjs"
+  },
+  "dependencies": {
+    "pg": "8.21.0"
+  },
+  "devDependencies": {
+    "@mip/backend": "workspace:*",
+    "@mip/mcp-tools": "workspace:*",
+    "@mip/service-kit": "workspace:*",
+    "esbuild": "0.28.0"
+  }
+}
