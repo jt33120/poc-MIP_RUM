@@ -6,10 +6,10 @@
 
 | | Total | Atteignent la base |
 |---|---|---|
-| Écrans | 57 | **51** |
+| Écrans | 57 | **50** (51 au ré-inventaire) |
 | Fichiers d'actions serveur | 17 (53 actions) | **16** |
 | Routes | 54 | **47** |
-| Composants serveur | — | **26** (27 avant la scission de `lib/fuseau.ts`, dans cette PR) |
+| Composants serveur | — | **14** (27 au ré-inventaire, avant les scissions ci-dessous) |
 | Layout racine | 1 | **oui** : projets, fuseau (C2 le remplace par `GET /v1/shell`) |
 
 « Atteindre la base », c'est avoir `lib/db.ts` ou `pg` dans son graphe d'import **à l'exécution** (les `import type` ne comptent pas). La piste C doit amener ces quatre nombres à zéro (jalon M4).
@@ -25,12 +25,22 @@ Le plan prévoyait ce cliquet en C0. Il est posé dès C-R, parce que le script 
 1. **`app=all` n'est refusé nulle part.** Le plan décrivait quatre surfaces « une application à la fois » (`/paths`, `/forms`, `/acquisition`, `/retention`), refusées à un principal restreint par `perimetreAvailability()`.
    - Ce refus a été **levé par F53**. Toutes les lectures lient les apps **effectives** du principal (`sqlContext`), et `perimetreAvailability` n'existe plus.
    - Conséquence pour le contrat : `console-api` accepte `app=all` pour tout principal et le résout en périmètre effectif signé. Il n'y a **pas** de refus typé « app unique » à porter.
-2. **27 composants serveur**, pas « une poignée » (26 après cette PR). La plupart n'atteignent la base que par **un seul maillon**, que l'inventaire nomme (colonne « chemin »). Trois familles :
-   - un **module de `lib/` qui mêle un calcul pur et une requête**, importé pour le calcul :
-     - `lib/fuseau.ts` faisait entrer la base dans `HealthHeatmap`, seulement pour découper des heures. **Scindé dans cette PR** (`lib/fuseau-local.ts`, sans base) : le composant sort du cliquet ;
-     - `lib/error-issues.ts` (statuts et libellés, pour `IssueBadges`, `IssueList`, `IssueWorkflow`) et `lib/health.ts` (classes et facteurs dominants, pour `HealthBanner`) sont les suivants ;
-   - un **fichier d'actions serveur importé pour être passé à un formulaire** : `app/alerts/actions.ts`, `app/dashboards/actions.ts`, `app/explorer/actions.ts`. Le composant ne lit rien : c'est l'action qui écrit ;
-   - un **composant qui lit vraiment** : il importe un module de requêtes (`queries-deploys`, `queries-errors`, `queries-planifie`) ou une lecture (`fuseauDe` dans `RoutePanel`, la symbolication dans `ErrorStackCard`). Sa lecture ira dans le loader de son écran.
+2. **27 composants serveur**, pas « une poignée ». La plupart n'atteignaient la base que par **un seul maillon**, que l'inventaire nomme (colonne « chemin »). Trois familles :
+   - un **module de `lib/` qui mêle un calcul pur et une requête**, importé pour le calcul. **Famille vidée** : chaque module mixte a été scindé en un module pur et un module de requêtes qui le réexporte (les autres appelants n'ont rien changé), et les composants importent le module pur :
+
+     | Module mixte | Partie pure, sans base | Composants libérés |
+     |---|---|---|
+     | `lib/fuseau.ts` | `lib/fuseau-local.ts` | `HealthHeatmap` |
+     | `lib/error-issues.ts` | `lib/issues-libelles.ts` (statuts, bases de regroupement, libellés) | `IssueBadges`, `IssueWorkflow`, `IssueList` (avec la ligne suivante) |
+     | `lib/queries-errors.ts` | `lib/erreurs-sources.ts` (sources, libellés, `stackSymbolisable`) | `ErrorBadges`, `ErrorOccurrences`, `DetailErreur` |
+     | `lib/health.ts` | `lib/health-libelles.ts` (libellés, classes, `dominantFactors`) | `HealthBanner` |
+     | `lib/queries-v2.ts` | `lib/alertes-metriques.ts` (métriques, comparateurs, libellés) | `RuleFields` |
+     | `lib/queries-deploys.ts` | `lib/deploys-verdict.ts` (verdict de régression, référence, taux, écarts) | `DeployPanel`, `VersionsTable`, `SeriesVueEnsemble` ; et l'écran `/admin/composants` |
+     | `lib/queries-ticket-integrations.ts` | l'adaptateur de `@mip/backend`, qui n'importe rien | `IssueTickets` |
+
+     `DeployPanel` était classé plus bas, « lit vraiment » : il n'importait de `queries-deploys` que le verdict, un calcul. Le chemin nommé par l'inventaire n'en dit pas plus : c'est la liste des symboles importés qui tranche ;
+   - un **fichier d'actions serveur importé pour être passé à un formulaire** : `app/alerts/actions.ts`, `app/dashboards/actions.ts`, `app/explorer/actions.ts`, `app/errors/[fingerprint]/actions.ts` — 7 composants (`ChannelsSection`, `RuleRow`, `SloStatusRow`, `ModeleCarte`, `WidgetCard`, `ActionsVue`, `ErrorTriage`). Le composant ne lit rien : c'est l'action qui écrit ;
+   - un **composant qui lit vraiment**, 7 composants : `PanneauErreur`, `PanneauSession` et `RoutePanel` (les panneaux, qui lisent leurs sections), `ErrorStackCard` (la symbolication), et `Specs`, qui entraîne `Annexe` et `Landing` (la vitrine lit le dernier passage planifié). Leur lecture ira dans le loader de leur écran ; pour la vitrine, dans `console-api` (C0b) puis hors du cliquet une fois le repli local retiré.
 
    Seule la **première famille** se libère sans attendre `console-api`, en scindant le module : ce sont les premiers pas du cliquet. La deuxième ne se libère que quand l'action elle-même passe par `console-api` (C6 → C9). Déplacer l'import vers l'écran ne ferait que maquiller le compte : l'écran atteint déjà la base.
 3. **261 appels `lire()`**, pas 222. C'est l'unité de découpage des loaders : un écran rend un **résultat par section**.
@@ -63,7 +73,7 @@ Ces règles ne sont pas des choix nouveaux. Ce sont les invariants du frontend l
 
 ## Ordre proposé pour libérer le cliquet
 
-1. **Sans `console-api`**, dès maintenant : scinder les modules mixtes (famille 1). `lib/fuseau.ts` est fait ; `lib/error-issues.ts` et `lib/health.ts` suivent. Le cliquet descend, et C0 démarre sur une base plus petite.
+1. **Sans `console-api`** : scinder les modules mixtes (famille 1). **Fait** : 13 composants et un écran sortis du cliquet (27 → 14 composants, 51 → 50 écrans). C0 démarre sur une base plus petite.
 2. **C0** : fondations (`console-api`, session, pipeline, v90). Le cliquet ne bouge pas.
 3. **C2** : `GET /v1/shell`. Le layout racine sort du cliquet, ce qui est le plus gros gain unitaire : il pèse sur les 57 écrans.
 4. **C3 → C5** : les écrans, par lots (colonne « Lot » de l'inventaire). Chaque PR resserre le cliquet.

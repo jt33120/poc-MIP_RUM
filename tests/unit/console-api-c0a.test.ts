@@ -162,10 +162,9 @@ describe("C0a — le contrat", () => {
     expect(v({ n: "3", mode: "a", intrus: "1" }, "q")).toMatchObject({ ok: false, error: { champ: "intrus", message: "champ inconnu" } });
   });
 
-  it("la cadence publiée se lit comme dans la console (copie jusqu'à C0b)", () => {
-    for (const brut of ["5", "10", "15", "20", "30", "7", "05", "150", "", "abc", undefined, null, 15]) {
-      expect(cadencePubliee(brut), String(brut)).toBe(cadenceConsole(brut));
-    }
+  it("la cadence publiée : la console lit la MÊME fonction que console-api (C0b)", () => {
+    expect(cadenceConsole).toBe(cadencePubliee);
+    expect(["5", "15", "30", "7", "05", "150", "", undefined, 15].map(cadencePubliee)).toEqual([5, 15, 30, null, 5, null, null, null, null]);
   });
 });
 

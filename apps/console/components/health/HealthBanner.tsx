@@ -10,7 +10,7 @@
 // stabilité → Sessions, anomalies → leur table).
 import Link from "next/link";
 import { GlossaryTip } from "@/components/GlossaryTip";
-import { dominantFactors, type Health, type HealthFactor, HEALTH_CLASS, type HealthLabel } from "@/lib/health";
+import { dominantFactors, type Health, type HealthFactor, HEALTH_CLASS, type HealthLabel } from "@/lib/health-libelles";
 import { RATING_HEX } from "@/lib/palette";
 
 const RING_STROKE: Record<HealthLabel, string> = {

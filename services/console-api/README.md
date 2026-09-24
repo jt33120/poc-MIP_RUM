@@ -12,7 +12,7 @@
 | Réplicas | 2 (sans état ; le débit par principal est compté par réplique) |
 | Image | `services/console-api/Dockerfile` : `dist/server.mjs` et `pg`, aucune source de la console |
 
-État au 24/09/2026 : **C0a et C0c, pas encore déployé.** Trois opérations : la poignée de main, les clés publiques, l'état de la plateforme que lit la vitrine. La console ne l'appelle pas encore (C0b). Le service **vérifie** déjà les sessions et résout les ressources du chemin (C0c) ; il les **ouvrira** en C1.
+État au 24/09/2026 : **pas encore déployé.** Trois opérations : la poignée de main, les clés publiques, l'état de la plateforme que lit la vitrine. La console sait l'appeler (`apps/console/lib/backend.ts`, C0b) **dès que ses trois variables sont posées sur Vercel** ; sans elles, elle lit la base comme avant. Le service **vérifie** déjà les sessions et résout les ressources du chemin (C0c) ; il les **ouvrira** en C1.
 
 ## Un seul client, et comment il s'annonce
 
@@ -45,7 +45,7 @@ La table des opérations, leurs politiques et les codes d'erreur sont dans **[do
 | `CONSOLE_API_RATE_LIMIT` | non | appels par minute et par principal, par réplique (défaut 600 ; la console rejoue ses écrans toutes les 5 s) |
 | `PGPOOL_MAX`, `PORT`, `LOG_LEVEL`, `METRICS_TOKEN`, `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non | voir le kit |
 
-Côté Vercel (C0b) : `CONSOLE_API_URL` (le domaine généré), `CONSOLE_API_CLIENT_SECRET` (une valeur) et `SESSION_PUBLIC_JWKS`, qui n'est pas secrète (`--publique`).
+Côté Vercel (C0b) : `CONSOLE_API_URL` (le domaine généré, en https), `CONSOLE_API_CLIENT_SECRET` (une valeur) et `SESSION_PUBLIC_JWKS`, qui n'est pas secrète (`--publique`). Les trois vont ensemble : une configuration partielle, ou une clé PRIVÉE posée sur Vercel, est refusée et journalisée, et la console reste sur la base. Avant d'envoyer son secret à un hôte, la console vérifie la poignée de main (valable 10 minutes par instance) ; un hôte qui ne la prouve pas ne reçoit jamais le secret.
 
 **Rotation du secret client** :
 1. poser `nouvelle,ancienne` sur le service ;
