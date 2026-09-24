@@ -12,7 +12,7 @@
 | Réplicas | 2 (sans état ; le débit par principal est compté par réplique) |
 | Image | `services/console-api/Dockerfile` : `dist/server.mjs` et `pg`, aucune source de la console |
 
-État au 24/09/2026 : **C0a, pas encore déployé.** Trois opérations : la poignée de main, les clés publiques, l'état de la plateforme que lit la vitrine. La console ne l'appelle pas encore (C0b).
+État au 24/09/2026 : **C0a et C0c, pas encore déployé.** Trois opérations : la poignée de main, les clés publiques, l'état de la plateforme que lit la vitrine. La console ne l'appelle pas encore (C0b). Le service **vérifie** déjà les sessions et résout les ressources du chemin (C0c) ; il les **ouvrira** en C1.
 
 ## Un seul client, et comment il s'annonce
 
@@ -20,9 +20,12 @@
 |---|---|---|
 | secret client `x-mip-client` | le serveur de la console (1 valeur, 2 pendant une rotation), comparé en temps constant | **404 nu**, indiscernable d'un chemin inconnu : le service ne se révèle pas |
 | pas d'`Origin` | un appel serveur à serveur | 403 : un navigateur en pose toujours un en cross-origin. Aucun en-tête CORS n'est émis |
-| session `Authorization: Bearer` | C1 : un jeton ES256 **et** sa ligne `console_session` (rôle et périmètre lus en base) | 401 |
+| session `Authorization: Bearer` | un jeton ES256 de ce service **et** sa ligne `console_session` (migration-v90), jointe au compte : rôle et périmètre lus en base | 401 ; 503 si la base ne répond pas |
+| ressource du chemin (portée « ressource ») | une ressource dont l'application est dans le périmètre | 404 `ressource_inconnue`, **le même** que pour une ressource qui n'existe pas |
 
 **La poignée de main.** Le domaine généré d'un service Railway peut être réattribué si le service est recréé. Avant d'envoyer son secret client, la console appelle donc `GET /v1/version?nonce=<aléa>` sans secret. Le service signe (ES256) le nonce, l'empreinte du contrat servi, la version et le `kid`. La console vérifie avec la clé **publique** (`SESSION_PUBLIC_JWKS`) : seul le vrai service a la clé privée.
+
+**Les sessions** (`packages/console-api/src/session.ts`). Le jeton ne porte que `{ iss, aud, sid, iat, exp }` : ni rôle, ni périmètre, ni e-mail. Ce qu'un jeton porte, il le porte jusqu'à son expiration, même quand la base a changé d'avis. Le service vérifie d'abord la signature, puis relit la ligne de session et le compte, avec un cache de **30 s** par réplique. C'est le délai maximal d'une révocation, d'un compte désactivé ou d'un rôle retiré. Un en-tête qui désigne une clé ailleurs (`jku`, `jwk`, `x5u`) est refusé, comme tout algorithme autre qu'ES256. La matrice d'autorisations (`tests/contract/console-api-authz.test.ts`) appelle chaque opération avec 8 profils réels, sur PostgreSQL.
 
 La table des opérations, leurs politiques et les codes d'erreur sont dans **[docs/api/console-api.md](../../docs/api/console-api.md)**. Ce fichier est généré depuis la table : il ne peut pas diverger du code.
 
@@ -61,7 +64,7 @@ Le service est sans état : chaque requête lit la base. Le débit par principal
 |---|---|
 | Configuration ou clés invalides | refus de démarrer, code 2, la liste des erreurs au journal, jamais une valeur de secret |
 | Table des opérations qui viole une règle (écriture sans audit, ouverte à la démo…) | refus de démarrer : la faute est au code, pas à la production |
-| Base injoignable | `/health` en 503 (Railway ne bascule pas le trafic) ; une lecture en échec rend « illisible », jamais une fausse absence |
+| Base injoignable | `/health` en 503 (Railway ne bascule pas le trafic) ; une lecture en échec rend « illisible », jamais une fausse absence ; une session invérifiable rend **503 `indisponible`**, pas 401 : la console ne renvoie pas l'utilisateur à la connexion parce que la base dort |
 | Traitement plus long que l'échéance | 503 `echeance_depassee` : la console a déjà abandonné, inutile de la faire attendre |
 | Panne dans un traitement | 500 `erreur_interne` avec le `request_id` ; la cause reste au journal |
 

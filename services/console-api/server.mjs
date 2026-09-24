@@ -21,7 +21,7 @@ import { installLifecycle } from "@mip/service-kit/lifecycle.mjs";
 import { createPool, describeTarget } from "@mip/service-kit/pg.mjs";
 import { createMetrics } from "@mip/service-kit/metrics.mjs";
 import { startService } from "@mip/service-kit/http.mjs";
-import { chargerTrousseau, creerConsoleApi, creerTable } from "@mip/console-api";
+import { chargerTrousseau, creerConsoleApi, creerTable, creerVerificateurSession } from "@mip/console-api";
 
 const log = createLogger("console-api");
 const lifecycle = installLifecycle({ log });
@@ -91,9 +91,15 @@ const requetes = metrics.counter("console_api_requests_total", "Appels de la con
   labels: ["operation", "status"],
 });
 
+// Les sessions : signature ES256 PUIS ligne `console_session` (migration-v90),
+// jointe au compte, en cache 30 s par réplique — le délai maximal d'une révocation.
+const sessions = await creerVerificateurSession({ trousseau, db: pool });
+
 const servir = creerConsoleApi({
   table,
   secretsClient: config.CONSOLE_API_CLIENT_SECRETS,
+  verifierSession: sessions.verifier,
+  lecteur: pool,
   journal: log,
   debitParMinute: config.CONSOLE_API_RATE_LIMIT,
   surReponse: ({ operation, statut }) => requetes.inc({ operation, status: String(statut) }),
