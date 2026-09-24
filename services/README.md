@@ -20,6 +20,7 @@ Un service, une ligne :
 |---|---|---|---|---|
 | `collector` | point d'entrée unique des capteurs : OTLP traces et logs, replay, source maps de CI (jeton dédié) ; chemins historiques de la console acceptés ; bord de confiance du relais, identité hachée ici — détail : [`collector/README.md`](collector/README.md) | oui (`PORT`, défaut 4318) : `/health` (sonde Railway : processus + base, décrit service, protocole de bord et empreinte d'identité), `/ready` et `/metrics` (jeton) | `node services/collector/server.mjs` | pas encore (P2 : lancement à blanc) — en production, la collecte passe par la route de la console jusqu'au relais de P3 |
 | `scheduler` | déclenche les travaux planifiés sous bail, et **seul** applique les migrations (pré-déploiement) — détail : [`scheduler/README.md`](scheduler/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/scheduler/worker.mjs` · pré-déploiement `node services/scheduler/migrate.mjs` | Railway |
+| `notifier` | livre ce que la plateforme a décidé de dire — webhooks signés, e-mails Resend, tickets — et seul détient les secrets sortants — détail : [`notifier/README.md`](notifier/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/notifier/worker.mjs` | pas encore (P5) — en production, le scheduler livre à chaque tick |
 | `mcp` | expose l'API v1 à un agent IA, sans accès à la base | oui (`PORT`) | `node services/mcp/http.mjs` | Railway |
 
 `services/collector/` porte aussi les deux serveurs de **développement** que
@@ -29,7 +30,7 @@ lancent l'E2E et les scripts de validation (`dev-server.mjs` :4318,
 ## Les images
 
 **Une image par service**, à côté de son point d'entrée : `services/<x>/Dockerfile`
-(contrat de service § 9). Même recette pour les trois — `pnpm fetch` →
+(contrat de service § 9). Même recette pour toutes — `pnpm fetch` →
 `pnpm install --offline` → build → `pnpm deploy --prod`, Node épinglé par
 digest, utilisateur non-root, `HEALTHCHECK` pour l'auto-hébergement — et un
 `CMD` **explicite** : une image ne sait démarrer que son service. L'ancienne
@@ -53,6 +54,7 @@ déployés en vert sur leur nouvelle image.
 |---|---|---|
 | `collector/Dockerfile` | `@mip/backend`, `pg`, **la base GeoIP** (seule image à la porter, vérifiée contre `packages/backend/data/*.manifest.json`) | `node services/collector/server.mjs` |
 | `scheduler/Dockerfile` | `@mip/backend`, `@mip/db` et son `sql/`, `pg` | `node services/scheduler/worker.mjs` ; le migrateur (`migrate.mjs`) part au pré-déploiement, jamais par défaut |
+| `notifier/Dockerfile` | `@mip/backend`, `pg` — ni `@mip/db` (seul le scheduler migre), ni base GeoIP | `node services/notifier/worker.mjs` |
 | `mcp/Dockerfile` | `@mip/mcp-tools`, le SDK MCP, zod — **ni `pg` ni `DATABASE_URL`** | `node services/mcp/http.mjs` |
 
 Chaque arbre déployé est posé sous `/app/services/<x>` : les commandes écrites
@@ -87,19 +89,24 @@ continu n'a aucune de ces limites.
 
 | Variable | Service | Obligatoire | Rôle |
 |---|---|---|---|
-| `DATABASE_URL` | `collector`, `scheduler` | **oui** | Postgres. TLS vérifié dès que l'hôte n'est pas local — jamais de `rejectUnauthorized: false`. |
+| `DATABASE_URL` | `collector`, `scheduler`, `notifier` | **oui** | Postgres. TLS vérifié dès que l'hôte n'est pas local — jamais de `rejectUnauthorized: false`. |
 | `MIGRATION_DATABASE_URL` | `scheduler` (pré-déploiement) | non | la **même** base par une connexion **directe**, hors pooler : les `predeploy-vNN-*.sql` (index `CONCURRENTLY`) y passent sous verrou de session, juste avant leur migration. Absente, ou pointée sur un pooler, ils sont sautés avec un avertissement et chaque migration garde son garde-fou de taille. Une autre base que `DATABASE_URL` est refusée. |
 | `PORT` | `collector` | fourni par l'hébergeur (défaut 4318) | `/health` (sonde Railway), `/ready` et `/metrics` (jeton), routes OTLP |
 | `PORT` | `scheduler` | fourni par l'hébergeur (défaut 8080) | `/health` (sonde Railway : processus + base ; « jamais exécuté » et « bail tenu ailleurs » y sont sains), `/ready` et `/metrics` (fraîcheur, arriéré ; jeton) |
-| `METRICS_TOKEN` | `collector`, `scheduler` | non (secret, ≥ 32 caractères) | jeton de `/ready` et `/metrics` ; absent, les deux répondent 404 |
+| `METRICS_TOKEN` | `collector`, `scheduler`, `notifier` | non (secret, ≥ 32 caractères) | jeton de `/ready` et `/metrics` ; absent, les deux répondent 404 |
 | `DEADMAN_URL` | `scheduler` | non (secret, `https:`) | dead-man's switch externe, signalé après chaque tick abouti ; absent, aucun signal |
-| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `collector`, `scheduler` | **à poser** (15 à 30) | délai SIGTERM → SIGKILL ; défaut Railway 0, soit aucun arrêt propre |
+| `SCHEDULER_DELIVERY` | `scheduler` | non (`on`/`off`, défaut `on`) | `off` : le tick ne livre plus, le notifier s'en charge — à poser au plus tard quand il démarre |
+| `NOTIFIER_INTERVAL_MS` | `notifier` | non (défaut 15000) | délai entre deux passes de livraison ; 300000 laisse le compute Neon dormir |
+| `RESEND_API_KEY`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TEST_RECIPIENTS` | `notifier` | non (la clé est un secret) | e-mail des alertes ; `@resend.dev` exige la liste de test ; sans clé, e-mails soldés `skipped` avec la raison |
+| `WEBHOOK_SIGNING_SECRET` | `notifier` | non (secret, ≥ 32 caractères, deux valeurs pendant une rotation) | signe les webhooks (`x-mip-signature`) |
+| `TICKET_SECRET_KEY`, `TICKET_*` | `notifier` (et `scheduler` tant que `SCHEDULER_DELIVERY=on`) | selon les intégrations | clé des références `enc:v1:`, jetons `env:TICKET_…` |
+| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `collector`, `scheduler`, `notifier` | **à poser** (15 à 30) | délai SIGTERM → SIGKILL ; défaut Railway 0, soit aucun arrêt propre |
 | `REQUIRE_API_KEY` | `collector` | non | `true` = rejeter toute app inconnue ou sans clé — provisionner d'abord : `scripts/ops/provisionner-cles.mjs` |
 | `IDENTITY_HASH_SECRET` + `IDENTITY_HASH_FINGERPRINT` | `collector` | non ; l'empreinte **oui** dès que le secret est posé | HMAC des identités ; empreinte par `scripts/ops/empreinte-identite.mjs` (écart : identité retirée, `/ready` refusé) |
 | `EDGE_PROXY_SECRET` | `collector` | non (secret, 1 ou 2 valeurs) | secret du relais de la console (bord de confiance `mip-edge/1`) |
 | `RATE_LIMIT_PER_MIN` | `collector` | non | défaut 600, par app |
-| `PGPOOL_MAX` | `collector`, `scheduler` | non | taille du pool (défauts : 8 et 4) |
-| `LOG_LEVEL` | `collector`, `scheduler` | non | défaut `info` |
+| `PGPOOL_MAX` | `collector`, `scheduler`, `notifier` | non | taille du pool (défauts : 8, 4 et 2) |
+| `LOG_LEVEL` | `collector`, `scheduler`, `notifier` | non | défaut `info` |
 | `MIP_CONSOLE_URL` | `mcp` | **oui** | origine de la console dont il consomme l'API v1 |
 | `MCP_PATH` | `mcp` | non | chemin du point MCP (défaut `/mcp`) |
 
@@ -115,6 +122,7 @@ docker compose -f infra/docker/docker-compose.yml run --rm migrate
 # les services
 DATABASE_URL=... PORT=4318 node services/collector/server.mjs
 DATABASE_URL=... PORT=4320 node services/scheduler/worker.mjs
+DATABASE_URL=... PORT=4321 node services/notifier/worker.mjs
 
 # le serveur MCP : pas de base, mais l'origine de la console
 MIP_CONSOLE_URL=http://localhost:3000 PORT=4322 node services/mcp/http.mjs
@@ -127,8 +135,8 @@ docker compose -f infra/docker/docker-compose.yml up -d --build --wait collector
 docker compose -f infra/docker/docker-compose.yml --profile tout up -d --build --wait
 ```
 
-`GET /health` (collector, scheduler) dit processus vivant **et** base
+`GET /health` (collector, scheduler, notifier) dit processus vivant **et** base
 joignable : c'est la sonde Railway. `GET /ready`, sous jeton, dit fraîcheur ou
 disponibilité métier (registre d'apps chargé pour le collector, cadences pour
-le scheduler) : supervision seulement. `mcp` n'expose que `/health` — n'ayant
+le scheduler, dernière passe et arriéré pour le notifier) : supervision seulement. `mcp` n'expose que `/health` — n'ayant
 aucune dépendance à chaud, vivant et prêt y sont la même chose.

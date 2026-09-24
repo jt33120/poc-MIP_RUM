@@ -56,11 +56,21 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
   déclenchement, **`route_alert()`** notifie **tous** les canaux éligibles (sévérité ≥
   `severity_min`, app correspondante ou globale `app_id null`), **en plus** du
   `webhook_url` historique de la règle (rétro-compatible).
-- Canaux livrés : **`webhook`** (JSON complet) et **`slack`** (payload `{text}` pour les
-  *incoming webhooks* — gratuit). Envoi via `pg_net` (asynchrone) ; en local sans
-  l'extension, la livraison reste `queued` et part via `packages/backend/lib/dispatch-alerts.mjs`.
-- **E-mail / SMS** : `kind='email'` est **tracé `skipped`** (hook prêt) mais **non livré**
-  — nécessite un service externe **payant** (Resend/SES/Postmark). À brancher sur décision.
+- Canaux livrés : **`webhook`** (JSON complet, champ `text` lisible par Slack) et **`slack`**
+  (*incoming webhooks*). Depuis la migration v88, `route_alert` ne fait que **mettre en file**
+  une livraison `queued` par canal éligible ; l'envoi appartient au livreur
+  (`packages/backend/lib/dispatch-alerts.mjs`) : le service **`notifier`**, ou le tick du
+  scheduler tant que `SCHEDULER_DELIVERY` vaut `on`. pg_net n'existe pas sur Neon.
+- Chaque webhook porte `x-mip-delivery-id` ; avec `WEBHOOK_SIGNING_SECRET`, aussi
+  `x-mip-timestamp` et `x-mip-signature: sha256=HMAC(secret, "<timestamp>.<corps>")`
+  (vérification de référence : `verifierSignature`, `packages/backend/lib/net/signature-webhook.mjs`).
+- **E-mail** (`kind='email'`, cible = adresse) : envoyé par **Resend** depuis le notifier,
+  seul détenteur de la clé, avec une clé d'idempotence par livraison. **Mode test** tant que
+  le domaine d'envoi n'est pas vérifié : expéditeur `onboarding@resend.dev`, seuls les
+  destinataires de `ALERT_EMAIL_TEST_RECIPIENTS` sont servis, les autres soldés `skipped`
+  avec la raison. Sans clé (le scheduler), `skipped` avec la raison. **Avant v88, aucun
+  e-mail d'alerte n'était jamais parti** : `route_alert` les soldait `skipped` en SQL.
+- **SMS** : non livré.
 
 ## Pilier 4 — Issues d'erreurs : nouvelle, régression, pic (P5.6, migrations v73 et v74)
 
@@ -106,8 +116,8 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
   l'arriéré antérieur a été soldé `skipped` par la migration. Chaque livraison est réservée
   (`for update skip locked`), postée et marquée dans **sa** transaction : une passe coupée
   ne reposte que la livraison en cours. Passe bornée à 50 livraisons et par une échéance
-  mesurée depuis le début du tick (45 s, la route cron coupe à 60) ; une cible non HTTP
-  (adresse e-mail) est `skipped` au lieu d'échouer cinq fois.
+  (10 s dans le notifier, 45 s dans le tick) ; une cible ni HTTP ni adresse e-mail est
+  `skipped` au lieu d'échouer cinq fois.
 
 ## Sécurité / exploitation
 
@@ -126,6 +136,8 @@ Table `slo(app_id, name, metric, objective ∈ ]0,1[, window_days, route?)`.
 
 ## Suivi (non bloquant)
 
-- Canal e-mail/SMS (service payant) — décision commerciale.
+- Canal e-mail : vérifier un domaine d'envoi chez Resend (région UE `eu-west-1`) pour sortir
+  du mode test ; SMS non prévu.
+- Latence : 15 min tant que la base reste sur l'offre gratuite (ADR-0014).
 - Baseline multi-fenêtres (court + long) pour les alertes de tendance lente.
 - Silencing / maintenance windows (suppression programmée des alertes).

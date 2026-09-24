@@ -204,6 +204,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/mcp-tools
 
+  services/notifier:
+    dependencies:
+      '@mip/backend':
+        specifier: workspace:*
+        version: link:../../packages/backend
+      '@mip/service-kit':
+        specifier: workspace:*
+        version: link:../../packages/service-kit
+      pg:
+        specifier: 8.21.0
+        version: 8.21.0
+
   services/scheduler:
     dependencies:
       '@mip/backend':

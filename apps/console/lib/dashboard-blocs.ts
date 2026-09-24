@@ -146,7 +146,10 @@ export const CATALOGUES: readonly Catalogue[] = [
         // phrase est restée fausse le temps que quelqu'un la relise. D'où le
         // nombre IMPORTÉ, et non retapé : la vitrine mesure déjà cette cadence
         // (lib/etat-latence), les deux ne peuvent plus se contredire.
-        raison: `Le déclencheur des tâches planifiées passe toutes les ${CADENCE_TICK_MIN} minutes : un budget peut donc être consommé jusqu'à ${CADENCE_TICK_MIN} minutes avant que l'alerte ne parte. C'est une cadence, pas du temps réel — évaluer le SLO à chaque mesure écrite demanderait un déclencheur en base, pas un passage périodique.`,
+        // Le NOMBRE réel vit en base depuis le 24/09/2026 (cadence publiée par le
+        // scheduler, plus lente sur l'offre gratuite de Neon) : ce catalogue
+        // statique dit la cible et renvoie à la ligne qui lit la vraie valeur.
+        raison: `Le déclencheur des tâches planifiées passe à cadence fixe — ${CADENCE_TICK_MIN} minutes visées, davantage tant que la base reste sur son offre gratuite (la ligne « Latence d'alerte » de la présentation dit la cadence réelle) : un budget peut donc être consommé pendant tout un intervalle avant que l'alerte ne parte. C'est une cadence, pas du temps réel — évaluer le SLO à chaque mesure écrite demanderait un déclencheur en base, pas un passage périodique.`,
       },
       {
         label: "Politique d'escalade",

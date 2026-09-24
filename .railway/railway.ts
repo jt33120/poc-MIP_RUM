@@ -219,7 +219,15 @@ export default defineRailway((ctx) => {
     // SIGTERM, le passage en cours meurt et son bail reste posé jusqu'à expiration
     // (jusqu'à 10 min de ticks sautés par la nouvelle instance). 20 s couvrent un tick.
     deploy: { restartPolicyType: "ALWAYS", drainingSeconds: 20 },
-    env: { DATABASE_URL: preserve(), LOG_LEVEL: preserve(), NODE_ENV: preserve(), PGPOOL_MAX: preserve(), PORT: preserve() },
+    env: {
+      DATABASE_URL: preserve(), LOG_LEVEL: preserve(), NODE_ENV: preserve(), PGPOOL_MAX: preserve(), PORT: preserve(),
+      // BASE GRATUITE (décision du 24/09/2026) : un tick toutes les 5 minutes
+      // gardait le calcul Neon éveillé en permanence et a épuisé les 100 CU-h
+      // du mois. À 15 minutes, la base dort ~63 % du temps (~65 CU-h). Pour un
+      // vrai produit RUM, offre payante et « 5 » ici (README du scheduler,
+      // « Base gratuite »). La vitrine lit la cadence publiée, pas cette ligne.
+      SCHEDULER_TICK_MIN: "15",
+    },
   });
 
   // LE CANEVAS DIT L'ARCHITECTURE : Capteurs → Collecte → Restitution →

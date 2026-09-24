@@ -76,6 +76,8 @@ jobs:
             port: 4318
           - service: scheduler
             port: 4320
+          - service: notifier
+            port: 4321
           - service: mcp
             port: 4322
     env:
@@ -91,6 +93,9 @@ jobs:
       # Le collecteur lit l'adresse sur la socket : c'est ce qui allume le
       # GeoIP, et permet de vérifier que la base est bien dans l'image.
       GEOIP_IP_SOURCE: socket
+      # Le notifier passe toutes les 5 s (le plancher) : la référence n'attend
+      # pas 15 s sa livraison.
+      NOTIFIER_INTERVAL_MS: "5000"
     defaults:
       run:
         working-directory: infra/docker
@@ -200,6 +205,29 @@ jobs:
           done
           echo "GET /ready -> $ready"
           echo "$ready" | jq -e '.cadences.tick.local.statut == "fait"' >/dev/null
+
+      - name: "Référence notifier : une livraison e-mail soldée, avec sa raison"
+        if: matrix.service == 'notifier'
+        run: |
+          # Sans clé Resend (aucun secret en CI), une livraison e-mail doit être
+          # SOLDÉE `skipped` avec la raison, jamais laissée `queued` ni comptée
+          # comme livrée : c'est la preuve que la boucle tourne sur la vraie base,
+          # et qu'elle ne ment pas sur ce qu'elle n'a pas pu faire.
+          docker compose exec -T db psql -U postgres -d mip_rum -v ON_ERROR_STOP=1 -tAc \
+            "with e as (insert into alert_event (rule_id, value, message, severity) values (null, 1, 'fumee-notifier', 'warning') returning id)
+             insert into alert_delivery (alert_event_id, target) select id, 'ops@example.com' from e"
+          for _ in $(seq 1 30); do
+            ligne=$(docker compose exec -T db psql -U postgres -d mip_rum -tAc \
+              "select status || '|' || coalesce(response, '') from alert_delivery where target = 'ops@example.com'")
+            case "$ligne" in skipped*) break ;; esac
+            sleep 1
+          done
+          echo "livraison -> $ligne"
+          case "$ligne" in skipped*RESEND_API_KEY*) ;; *) echo "::error::livraison non soldée par le notifier : $ligne"; exit 1 ;; esac
+          # /ready sous jeton : une passe aboutie, pas d'arriéré bloqué.
+          ready=$(curl -sS -H "authorization: Bearer $METRICS_TOKEN" "http://localhost:${{ matrix.port }}/ready")
+          echo "GET /ready -> $ready"
+          echo "$ready" | jq -e '.status == "ready" and .passe.statut == "fait" and .email == false' >/dev/null
 
       - name: "Référence mcp : 401 sans jeton, 16 outils avec"
         if: matrix.service == 'mcp'

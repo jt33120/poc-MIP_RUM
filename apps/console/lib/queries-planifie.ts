@@ -15,6 +15,7 @@
 // seulement le bucket horaire, qu'un rattrapage rendrait indiscernable d'un
 // passage récent.
 import { q } from "./db";
+import { cadencePubliee } from "./etat-latence";
 import type { LecturePlanifie } from "./etat-planifie";
 
 /**
@@ -50,14 +51,31 @@ export async function dernierPassagePlanifie(): Promise<LecturePlanifie> {
  * purge de rétention.
  */
 export async function dernierTickScheduler(): Promise<LecturePlanifie> {
+  let date: Date | null;
   try {
     const [row] = await q<{ t: string | null }>(
       `select max(expires_at)::text as t from scheduler_lease where job = 'tick'`,
     );
-    return { etat: "lu", date: row?.t ? new Date(row.t) : null };
+    date = row?.t ? new Date(row.t) : null;
   } catch {
     // Table absente (scheduler jamais déployé) ou base injoignable : on ne peut
     // rien prouver, donc on n'affirme rien.
     return { etat: "illisible" };
+  }
+  return { etat: "lu", date, cadenceMin: await cadenceTickPubliee() };
+}
+
+/**
+ * La cadence EFFECTIVE du tick, publiée par le scheduler
+ * (`platform_flag.scheduler_tick_min`), ou `null` : pas encore publiée, hors
+ * grille, ou illisible. Lecture À PART du battement : avant migration-v87,
+ * `platform_flag` n'existe pas, et ce n'est pas une raison de perdre le reste.
+ */
+export async function cadenceTickPubliee(): Promise<number | null> {
+  try {
+    const [row] = await q<{ value: string }>(`select value from platform_flag where key = 'scheduler_tick_min'`);
+    return cadencePubliee(row?.value);
+  } catch {
+    return null;
   }
 }

@@ -275,59 +275,87 @@ export async function sonderUptime(
 export const ECHEANCE_LIVRAISON_MS = 45_000;
 
 /**
- * Les trois cadences. `dispatch` est injecté plutôt qu'importé : le dispatcher
- * de webhooks est le seul morceau qui sort vers l'extérieur, et un appelant
- * (un test, un environnement sans réseau sortant) doit pouvoir le neutraliser.
+ * Les étapes de LIVRAISON — ce qui sort vers l'extérieur ou y prépare : routage des
+ * notifications d'issue, webhooks et e-mails, tickets, réconciliation. Le tick du
+ * scheduler les exécute tant que sa livraison n'est pas coupée ; le notifier (P5)
+ * les exécute seul ensuite, toutes les 15 s, avec la réconciliation à l'heure.
+ *
+ * `dispatch` est injecté plutôt qu'importé : c'est le morceau qui sort vers
+ * l'extérieur, et un appelant (un test, un environnement sans réseau sortant)
+ * doit pouvoir le neutraliser. `echeance` borne les sorties réseau de la passe.
+ *
+ * @returns {{ route: object, dispatch: object | null, tickets: object, reconcile: object }}
  */
-export function travaux(pool, { log = console, dispatch = null } = {}) {
+export function etapesLivraison(pool, { log = console, dispatch = null, echeance }) {
+  const delaiRoutage = delaiEtape("route_error_issue_notifications");
+  const delaiReconciliation = delaiEtape("reconcile_deliveries");
+  return {
+    // Notifications d'issue (nouvelle, régression, pic) remises à route_alert :
+    // alert_event + livraisons `queued`, AVANT la livraison de la même passe.
+    route: {
+      name: "route_error_issue_notifications",
+      delaiMs: delaiRoutage,
+      run: () =>
+        appelerFnSiPresente(
+          pool,
+          "route_error_issue_notifications(integer)",
+          "route_error_issue_notifications()",
+          "migration-v73",
+          { delaiMs: delaiRoutage },
+        ),
+    },
+    // Livraison effective des webhooks et e-mails en attente (remplace pg_net).
+    dispatch: dispatch ? { name: "dispatch_alerts", run: () => dispatch(pool, { echeance }) } : null,
+    // P8.6 : la file de sortie des tickets suit la MÊME passe que l'outbox de
+    // notifications, à dessein — un second planificateur aurait sa propre
+    // cadence, son propre verrou et ses propres régressions.
+    // Chargé à la demande : ce module sort vers l'extérieur.
+    tickets: {
+      name: "dispatch_tickets",
+      run: async () => {
+        const { livrerTickets } = await import("../lib/integrations/tickets/dispatcher.mjs");
+        return livrerTickets(pool, { echeance, log });
+      },
+    },
+    // Réconciliation des livraisons 'sent' héritées de l'ère pg_net : sans pg_net
+    // la fonction ne trouve rien, mais elle reste correcte et bon marché — la
+    // garder évite des lignes 'sent' éternelles.
+    reconcile: {
+      name: "reconcile_deliveries",
+      delaiMs: delaiReconciliation,
+      run: () => appelerFn(pool, "reconcile_alert_deliveries()", { delaiMs: delaiReconciliation }),
+    },
+  };
+}
+
+/**
+ * Les trois cadences.
+ *
+ * `livraison` (défaut vrai) : le tick exécute aussi les étapes de livraison. Le
+ * scheduler la coupe (`SCHEDULER_DELIVERY=off`) quand le notifier prend le relais ;
+ * le tick ne fait plus alors que DÉCIDER (alertes, SLO, uptime) — il écrit des
+ * livraisons `queued`, le notifier les envoie.
+ */
+export function travaux(pool, { log = console, dispatch = null, livraison = true } = {}) {
   /** Une étape SQL : l'appel `appel`, borné par le délai de l'étape `nom`. */
   const sql = (nom, appel) => {
     const delaiMs = delaiEtape(nom);
     return { name: nom, delaiMs, run: () => appelerFn(pool, appel, { delaiMs }) };
   };
-  const delaiRoutage = delaiEtape("route_error_issue_notifications");
 
   return {
     /** Toutes les 5 minutes : ce qui doit réagir vite. */
     tick: () => {
       const echeance = Date.now() + ECHEANCE_LIVRAISON_MS;
+      const l = etapesLivraison(pool, { log, dispatch, echeance });
       return executerEtapes(
         [
           // Évaluation des règles : insère les alert_event + livraisons 'queued'.
           sql("check_alerts", "check_alerts()"),
-          // Notifications d'issue (nouvelle, régression, pic de l'évaluation
-          // ci-dessus) remises à route_alert, AVANT la livraison du même tick.
-          {
-            name: "route_error_issue_notifications",
-            delaiMs: delaiRoutage,
-            run: () =>
-              appelerFnSiPresente(
-                pool,
-                "route_error_issue_notifications(integer)",
-                "route_error_issue_notifications()",
-                "migration-v73",
-                { delaiMs: delaiRoutage },
-              ),
-          },
+          ...(livraison ? [l.route] : []),
           sql("check_slo_burn", "check_slo_burn()"),
           { name: "uptime", run: () => sonderUptime(pool, log) },
-          // Livraison effective des webhooks en attente (remplace pg_net).
-          ...(dispatch ? [{ name: "dispatch_alerts", run: () => dispatch(pool, { echeance }) }] : []),
-          // P8.6 : la file de sortie des tickets suit le MÊME tick que l'outbox
-          // de notifications, à dessein — un second planificateur aurait sa
-          // propre cadence, son propre verrou et ses propres régressions.
-          // Chargé à la demande : ce module sort vers l'extérieur.
-          {
-            name: "dispatch_tickets",
-            run: async () => {
-              const { livrerTickets } = await import("../lib/integrations/tickets/dispatcher.mjs");
-              return livrerTickets(pool, { echeance, log });
-            },
-          },
-          // Réconciliation des livraisons 'sent' héritées de l'ère pg_net :
-          // sans pg_net la fonction ne trouve rien, mais elle reste correcte et
-          // bon marché — la garder évite des lignes 'sent' éternelles.
-          sql("reconcile_deliveries", "reconcile_alert_deliveries()"),
+          ...(livraison ? [l.dispatch, l.tickets, l.reconcile].filter(Boolean) : []),
         ],
         log,
         { job: "tick" },

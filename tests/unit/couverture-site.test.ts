@@ -299,8 +299,8 @@ describe("4 — chaque point de « Ce qui reste » cite une source qui existe", 
     ]);
   });
 
-  it("sur les vrais points de lib/presentation-reste.ts (P**.5) : R1 à R9, et chaque source existe", () => {
-    expect(POINTS_RESTE.map((p) => p.id)).toEqual(["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9"]);
+  it("sur les vrais points de lib/presentation-reste.ts (P**.5) : R1 à R10, et chaque source existe", () => {
+    expect(POINTS_RESTE.map((p) => p.id)).toEqual(["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10"]);
     expect(verifierReste(POINTS_RESTE, CTX)).toEqual([]);
     // Côté « Ce qui reste » du contrôle 3a : les déployées inertes y figurent. Sans
     // cartes, verifierCartes ne rend alors, pour elles, aucune erreur de ce genre.

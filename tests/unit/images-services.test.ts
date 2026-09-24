@@ -28,6 +28,7 @@ const SERVICES = readdirSync("services", { withFileTypes: true })
 const ENTREE: Record<string, string> = {
   collector: "server.mjs",
   scheduler: "worker.mjs",
+  notifier: "worker.mjs",
   mcp: "http.mjs",
 };
 
@@ -43,8 +44,8 @@ const etapeFinale = (texte: string) => {
 const FROM = /^FROM (\S+)/gm;
 
 describe("images — un Dockerfile par service", () => {
-  it("les trois services, et eux seuls, sont ceux qu'on attend", () => {
-    // Un quatrième service (api, notifier…) doit s'ajouter ici EN CONNAISSANCE
+  it("les services, et eux seuls, sont ceux qu'on attend", () => {
+    // Un service de plus (api, console-api…) doit s'ajouter ici EN CONNAISSANCE
     // DE CAUSE : son entrée, puis le reste de ce fichier s'appliquera à lui.
     expect(SERVICES).toEqual(Object.keys(ENTREE).sort());
   });
@@ -53,7 +54,7 @@ describe("images — un Dockerfile par service", () => {
     expect(existsSync(join("services", svc, "Dockerfile"))).toBe(true);
   });
 
-  it("chaque FROM est épinglé par digest, et les trois images épinglent LE MÊME", () => {
+  it("chaque FROM est épinglé par digest, et toutes les images épinglent LE MÊME", () => {
     const refs = SERVICES.flatMap((svc) => [...instructions(dockerfile(svc)).matchAll(FROM)].map((m) => m[1]));
     expect(refs.length).toBe(SERVICES.length * 2); // construction + exécution
     for (const ref of refs) expect(ref).toMatch(/^node:[\w.-]+@sha256:[0-9a-f]{64}$/);
@@ -151,7 +152,7 @@ describe("images — le compose et la fumée", () => {
     expect(migrate).toContain('command: ["node", "services/scheduler/migrate.mjs"]');
     expect(migrate).toContain('restart: "no"');
     expect(migrate).not.toContain("profiles:");
-    for (const svc of ["collector", "scheduler"]) expect(bloc(svc)).toContain("depends_on: *apres-migration");
+    for (const svc of ["collector", "scheduler", "notifier"]) expect(bloc(svc)).toContain("depends_on: *apres-migration");
     expect(compose).toMatch(/x-apres-migration: &apres-migration\n\s+migrate:\n\s+condition: service_completed_successfully/);
     // Le schéma n'est plus posé par un script d'initialisation de Postgres.
     expect(compose).not.toContain("docker-entrypoint-initdb.d");

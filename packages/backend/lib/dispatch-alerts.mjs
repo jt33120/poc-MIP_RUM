@@ -1,14 +1,15 @@
-// Dispatch des webhooks d'alerte — pendant LOCAL de pg_net (ROADMAP v0.3 B1).
-// check_alerts() v2 insère une ligne alert_delivery 'queued' par règle avec
-// webhook_url ; `dispatchOnce` prend le relais : POST du même payload JSON
-// (champ `text` compatible Slack), puis statut sent/failed + code http dans
-// `response`.
+// Livraison des alertes — pendant LOCAL de pg_net (ROADMAP v0.3 B1).
+// check_alerts() et route_alert() insèrent une ligne alert_delivery 'queued' par
+// cible ; `dispatchOnce` prend le relais : POST du payload JSON (champ `text`
+// compatible Slack) vers un webhook, ou e-mail par Resend vers une adresse, puis
+// statut delivered/failed/dead/skipped et trace dans `response`.
 //
 // UNE FONCTION, PAS UN PROGRAMME. Ce fichier avait un mode CLI (`--once`,
-// `--loop`), hérité du temps où rien ne planifiait la livraison. Le scheduler
-// l'appelle à chaque tick (`travaux(pool, { dispatch: dispatchOnce })`) : une
-// seconde boucle lancée à la main livrerait en concurrence de lui, sans bail.
-// Retiré en P1 ; pour une passe ponctuelle : `node services/scheduler/run-once.mjs tick`.
+// `--loop`), hérité du temps où rien ne planifiait la livraison. Deux services
+// l'appellent : le notifier, toutes les 15 s (P5), et le scheduler à chaque tick
+// tant que `SCHEDULER_DELIVERY` n'est pas `off`. Une seconde boucle lancée à la
+// main livrerait en concurrence d'eux ; pour une passe ponctuelle :
+// `node services/scheduler/run-once.mjs tick`.
 //
 // ÉVÉNEMENTS SANS RÈGLE (migration-v73). La sélection joignait `alert_rule` en
 // jointure interne : nouvelles erreurs, SLO, uptime et notifications d'issue
@@ -16,21 +17,32 @@
 // déclenchés depuis `alert_config.rule_less_dispatch_since`, l'arriéré ayant été
 // soldé par la migration. Avant v73, la sélection historique est conservée.
 //
-// DEUX DÉCLENCHEURS. Le tick tourne depuis le scheduler Railway ET depuis la route
-// cron appelée par GitHub : chaque livraison est réservée par `for update skip
-// locked`, postée et marquée dans SA transaction, la passe concurrente prend les
-// suivantes. Une passe interrompue (fonction coupée à 60 s, requête en échec) ne
-// rejoue donc que la livraison en cours, jamais celles déjà marquées. Une passe
-// est bornée en nombre et par une échéance, pour tenir dans la minute de la route
-// cron ; ce qui reste part au passage suivant.
+// PLUSIEURS LIVREURS À LA FOIS. Pendant la bascule vers le notifier, le scheduler
+// et le notifier livrent ensemble ; deux répliques du notifier aussi. Chaque
+// livraison est réservée par `for update skip locked`, postée et marquée dans SA
+// transaction : la passe concurrente prend les suivantes. Une passe interrompue
+// ne rejoue donc que la livraison en cours, jamais celles déjà marquées. Une
+// passe est bornée en nombre et par une échéance ; ce qui reste part au passage
+// suivant.
 //
 // SORTIE PAR `safeFetch` (P1). La cible d'une livraison est une URL saisie dans
 // la console — le webhook d'une règle ou un canal. La poster avec un `fetch` nu
-// faisait du dispatcher un relais vers le réseau privé du scheduler
+// faisait du dispatcher un relais vers le réseau privé du livreur
 // (`*.railway.internal`, métadonnées cloud, boucle locale). Une cible refusée par
-// la politique est soldée `skipped`, comme une cible non HTTP : la rejouer cinq
-// fois avec backoff donnerait cinq fois le même refus.
+// la politique est soldée `skipped`, comme une cible ni HTTP ni e-mail : la
+// rejouer cinq fois avec backoff donnerait cinq fois le même refus.
+//
+// E-MAIL (P5, migration-v88). Une cible qui est une adresse part chez Resend
+// (`net/resend.mjs`) si le livreur en a la configuration — le notifier, seul
+// détenteur de la clé. Sans elle, la ligne est soldée `skipped` avec la raison :
+// c'est ce que fait le scheduler s'il en rencontre une, d'où la bascule qui coupe
+// sa livraison (`SCHEDULER_DELIVERY=off`) AVANT que le notifier ne démarre.
+//
+// SIGNATURE (P5). Chaque webhook porte `x-mip-delivery-id` ; avec un secret de
+// signature, `x-mip-timestamp` et `x-mip-signature` en plus (`net/signature-webhook.mjs`).
 import { ErreurCibleRefusee, safeFetch } from "./net/safe-fetch.mjs";
+import { construireMail, envoyerMail, estAdresseMail, refusDestinataire } from "./net/resend.mjs";
+import { entetesDeLivraison } from "./net/signature-webhook.mjs";
 import { createLogger } from "../shared/log.mjs";
 
 const log = createLogger("dispatch-alerts");
@@ -159,24 +171,89 @@ async function solderSkipped(client, d, motif, bilan) {
   log.warn("delivery", { id: d.id, status: "skipped", response: motif });
 }
 
+/** Écrit l'issue d'une tentative réelle (tentative comptée). */
+async function marquer(client, d, status, response, bilan) {
+  await client.query(
+    "update alert_delivery set status = $1, response = $2, attempts = attempts + 1, attempted_at = now() where id = $3",
+    [status, response, d.id],
+  );
+  if (status === "delivered") bilan.sent++;
+  else if (status === "dead") bilan.dead++;
+  else bilan.failed++;
+}
+
 /**
- * Livre une livraison réservée : cible non HTTP ou refusée par la politique de
- * sortie soldée `skipped`, sinon POST borné par le temps restant, puis statut.
- * Le client est celui de la transaction qui tient la réservation.
+ * E-mail : adresse admise et configuration présente, sinon `skipped` avec la
+ * raison ; puis envoi idempotent. Un refus 4xx de Resend est terminal (`dead`),
+ * une panne est rejouable comme un webhook.
  */
-async function livrer(client, d, resteMs, bilan, fetchImpl) {
+async function livrerMail(client, d, resteMs, bilan, { email, fetchMail }) {
+  if (!email) {
+    await solderSkipped(
+      client,
+      d,
+      "e-mail non configuré : RESEND_API_KEY et ALERT_EMAIL_FROM absents de ce livreur (ils se posent sur le service notifier)",
+      bilan,
+    );
+    return "skipped";
+  }
+  const refus = refusDestinataire(d.target, email);
+  if (refus) {
+    await solderSkipped(client, d, refus, bilan);
+    return "skipped";
+  }
+  const charge = payloadOf(d);
+  const mail = construireMail({ to: d.target, severity: d.severity, text: charge.text, payload: charge });
+  if (!mail) {
+    await solderSkipped(client, d, "alerte sans texte : aucun e-mail à envoyer", bilan);
+    return "skipped";
+  }
+  const { issue, reponse } = await envoyerMail(mail, email, {
+    cleIdempotence: `mip-delivery-${d.id}`,
+    delaiMs: Math.min(TIMEOUT_MS, resteMs),
+    ...(fetchMail ? { fetchImpl: fetchMail } : {}),
+  });
+  const status = issue === "livre" ? "delivered" : issue === "terminal" ? "dead" : decideStatus(false, d.attempts ?? 0);
+  await marquer(client, d, status, reponse, bilan);
+  // Jamais le destinataire au journal : une adresse e-mail est une donnée personnelle.
+  log[status === "delivered" ? "info" : "warn"]("delivery", {
+    id: d.id,
+    canal: "email",
+    status,
+    attempt: (d.attempts ?? 0) + 1,
+    response: reponse,
+  });
+  return status;
+}
+
+/**
+ * Livre une livraison réservée : e-mail pour une adresse, webhook pour une URL
+ * HTTP(S), `skipped` pour tout le reste ou une cible refusée par la politique de
+ * sortie ; POST borné par le temps restant, puis statut. Le client est celui de
+ * la transaction qui tient la réservation.
+ * @returns {Promise<{ canal: "email"|"webhook"|"autre", status: string }>}
+ */
+async function livrer(client, d, resteMs, bilan, { fetchImpl, email, fetchMail, secretSignature }) {
+  if (estAdresseMail(d.target)) {
+    return { canal: "email", status: await livrerMail(client, d, resteMs, bilan, { email, fetchMail }) };
+  }
   if (!cibleHttp(d.target)) {
-    await solderSkipped(client, d, "cible non HTTP : le dispatcher local ne livre que des webhooks", bilan);
-    return;
+    await solderSkipped(client, d, "cible ni HTTP(S) ni adresse e-mail : rien ne sait la livrer", bilan);
+    return { canal: "autre", status: "skipped" };
   }
   let ok = false;
   let response;
   const delai = Math.min(TIMEOUT_MS, resteMs);
+  // Le corps est sérialisé UNE fois : c'est lui que la signature couvre, octet pour octet.
+  const corps = JSON.stringify(payloadOf(d));
   try {
     const res = await fetchImpl(d.target, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payloadOf(d)),
+      headers: {
+        "content-type": "application/json",
+        ...entetesDeLivraison({ id: d.id, corps, secret: secretSignature }),
+      },
+      body: corps,
       // Les deux : `signal` pour un `fetch` injecté, `timeoutMs` pour `safeFetch`,
       // dont le délai propre (10 s) couperait sinon un DISPATCH_TIMEOUT_MS plus long.
       signal: AbortSignal.timeout(delai),
@@ -189,19 +266,13 @@ async function livrer(client, d, resteMs, bilan, fetchImpl) {
   } catch (err) {
     if (err instanceof ErreurCibleRefusee) {
       await solderSkipped(client, d, err.message, bilan);
-      return;
+      return { canal: "webhook", status: "skipped" };
     }
     // `fetch` range le code système dans `cause`, `node:http` sur l'erreur même.
     response = String(err.cause?.code ?? err.code ?? err.message).slice(0, 200);
   }
   const status = decideStatus(ok, d.attempts ?? 0);
-  await client.query(
-    "update alert_delivery set status = $1, response = $2, attempts = attempts + 1, attempted_at = now() where id = $3",
-    [status, response, d.id],
-  );
-  if (status === "delivered") bilan.sent++;
-  else if (status === "dead") bilan.dead++;
-  else bilan.failed++;
+  await marquer(client, d, status, response, bilan);
   log[ok ? "info" : "warn"]("delivery", {
     id: d.id,
     target: d.target,
@@ -209,6 +280,7 @@ async function livrer(client, d, resteMs, bilan, fetchImpl) {
     attempt: (d.attempts ?? 0) + 1,
     response,
   });
+  return { canal: "webhook", status };
 }
 
 /**
@@ -218,11 +290,25 @@ async function livrer(client, d, resteMs, bilan, fetchImpl) {
  * `fetchImpl` : `safeFetch` en production. Un test qui livre à un récepteur sur
  * 127.0.0.1 — que la politique refuse, à dessein — passe le `fetch` de la
  * plateforme ; la politique elle-même est testée à part (safe-fetch.test.ts).
+ * `email` : la configuration Resend du livreur (`configEmail()`), `null` sans elle ;
+ * `fetchMail` la remplace par un faux dans les tests (Resend est public, la
+ * politique de sortie ne le refuse pas). `secretSignature` : la valeur qui signe
+ * les webhooks, `null` pour n'envoyer que l'identifiant. `onLivraison` reçoit
+ * `{ canal, status }` après chaque livraison soldée : de quoi compter par canal.
  * @returns {Promise<{sent:number, failed:number, dead:number, skipped:number}>}
  */
 export async function dispatchOnce(
   pool,
-  { lot = LOT, budgetMs = BUDGET_MS, echeance = Date.now() + budgetMs, fetchImpl = safeFetch } = {},
+  {
+    lot = LOT,
+    budgetMs = BUDGET_MS,
+    echeance = Date.now() + budgetMs,
+    fetchImpl = safeFetch,
+    email = null,
+    fetchMail = null,
+    secretSignature = null,
+    onLivraison = null,
+  } = {},
 ) {
   const bilan = { sent: 0, failed: 0, dead: 0, skipped: 0 };
   const { rows: [schema] } = await pool.query(
@@ -240,8 +326,9 @@ export async function dispatchOnce(
         await client.query("commit");
         break;
       }
-      await livrer(client, d, reste, bilan, fetchImpl);
+      const issue = await livrer(client, d, reste, bilan, { fetchImpl, email, fetchMail, secretSignature });
       await client.query("commit");
+      onLivraison?.(issue);
     } catch (err) {
       await client.query("rollback").catch(() => {});
       throw err;
