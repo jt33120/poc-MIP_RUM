@@ -179,11 +179,13 @@ function cibles(p: Politique): Cible[] {
     trousseau = await chargerTrousseau(await jeu("session-authz-a"), { production: false });
     const etranger = await chargerTrousseau(await jeu("session-authz-z"), { production: false });
     const s0 = Math.floor(maintenant / 1000);
-    const emettre = (t: Trousseau, sid: string) => emettreJetonSession(t, { sid, iat: s0, exp: s0 + 8 * 3600 });
+    // La démo porte `demo: true` dans son jeton (immuable, vérifié contre la ligne).
+    const emettre = (t: Trousseau, sid: string, demo = false) =>
+      emettreJetonSession(t, { sid, iat: s0, exp: s0 + 8 * 3600, ...(demo ? { demo: true as const } : {}) });
     jetons.anonyme = null;
     // Une signature valide… d'une AUTRE clé, pour une session qui existe.
     jetons.invalide = await emettre(etranger, sessions.viewer);
-    for (const p of ["revoquee", "desactive", "demo", "viewer", "admin", "plateforme"] as const) jetons[p] = await emettre(trousseau, sessions[p]);
+    for (const p of ["revoquee", "desactive", "demo", "viewer", "admin", "plateforme"] as const) jetons[p] = await emettre(trousseau, sessions[p], p === "demo");
 
     const verificateur = await creerVerificateurSession({ trousseau, db: pool, horloge: () => maintenant });
     const transacteur = {

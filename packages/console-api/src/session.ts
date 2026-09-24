@@ -2,11 +2,15 @@
 // identifiant, et une ligne en base qui dit tout le reste.
 //
 // LE JETON. Un JWT compact ES256, signé par ce service avec la clé courante de
-// `SESSION_SIGNING_KEYS` : `{ iss, aud, sid, iat, exp }`, et rien d'autre. Ni
-// rôle, ni périmètre, ni e-mail : ce qu'un jeton porte, il le porte jusqu'à son
-// expiration, même quand la base a changé d'avis. La console (Vercel) le vérifie
-// avec la clé PUBLIQUE (`SESSION_PUBLIC_JWKS`, C1) pour savoir qu'il vient d'ici ;
-// ce service, lui, ne s'arrête pas à la signature.
+// `SESSION_SIGNING_KEYS` : `{ iss, aud, sid, iat, exp }`, plus `demo: true` pour
+// une session de démonstration, et rien d'autre. Ni rôle, ni périmètre, ni
+// e-mail : ce qu'un jeton porte, il le porte jusqu'à son expiration, même quand la
+// base a changé d'avis. `demo` est l'exception parce qu'il ne CHANGE jamais (une
+// session naît démo ou non, migration-v90) : le middleware de la console le lit
+// pour refuser toute écriture à une démo sans appeler ce service, et ce service
+// exige qu'il concorde avec la ligne. La console (Vercel) vérifie le jeton avec
+// la clé PUBLIQUE (`SESSION_PUBLIC_JWKS`) ; ce service ne s'arrête pas à la
+// signature.
 //
 // LA LIGNE. `console_session` (migration-v90), jointe à `console_user` : une
 // session révoquée, expirée en base, ou dont le compte est désactivé, est
@@ -42,7 +46,7 @@ const TOLERANCE_HORLOGE_S = 60;
 const SID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PARTIE = /^[A-Za-z0-9_-]+$/;
 const EN_TETE_PERMIS = new Set(["alg", "typ", "kid"]);
-const REVENDICATIONS_PERMISES = new Set(["iss", "aud", "sid", "iat", "exp"]);
+const REVENDICATIONS_PERMISES = new Set(["iss", "aud", "sid", "iat", "exp", "demo"]);
 
 export interface RevendicationsSession {
   readonly sid: string;
@@ -50,6 +54,8 @@ export interface RevendicationsSession {
   readonly iat: number;
   /** Secondes epoch. */
   readonly exp: number;
+  /** Session de démonstration : immuable, et vérifiée contre la ligne. */
+  readonly demo?: true;
 }
 
 function encoderJson(valeur: unknown): string {
@@ -81,6 +87,7 @@ export async function emettreJetonSession(trousseau: Trousseau, r: Revendication
     sid: r.sid,
     iat: r.iat,
     exp: r.exp,
+    ...(r.demo === true ? { demo: true } : {}),
   })}`;
   return `${corps}.${await signer(cle, corps)}`;
 }
@@ -127,7 +134,9 @@ export async function lireJetonSession(
   const iat = r.iat as number;
   const exp = r.exp as number;
   if (exp <= maintenantS || iat > maintenantS + TOLERANCE_HORLOGE_S || exp <= iat || exp - iat > DUREE_MAX_SESSION_S) return null;
-  return { sid: r.sid, iat, exp };
+  // `demo` : présent, il vaut `true` et rien d'autre.
+  if ("demo" in r && r.demo !== true) return null;
+  return r.demo === true ? { sid: r.sid, iat, exp, demo: true } : { sid: r.sid, iat, exp };
 }
 
 interface LigneSession {
@@ -216,14 +225,17 @@ export async function creerVerificateurSession(o: OptionsVerificateur): Promise<
       const maintenant = horloge();
       const r = await lireJetonSession(jeton, cles, Math.floor(maintenant / 1000));
       if (!r) return null;
+      // Le jeton et la ligne disent la même chose de la démo, ou rien ne vaut.
+      const concorde = (p: Principal | null) => (p && p.kind === "session" && p.demo === (r.demo === true) ? p : null);
       const connu = cache.get(r.sid);
-      if (connu && connu.jusqua > maintenant) return connu.principal;
+      if (connu && connu.jusqua > maintenant) return concorde(connu.principal);
       cache.delete(r.sid);
-      const deja = enVol.get(r.sid);
-      if (deja) return deja;
-      const lecture = lireEnBase(r.sid).finally(() => enVol.delete(r.sid));
-      enVol.set(r.sid, lecture);
-      return lecture;
+      let lecture = enVol.get(r.sid);
+      if (!lecture) {
+        lecture = lireEnBase(r.sid).finally(() => enVol.delete(r.sid));
+        enVol.set(r.sid, lecture);
+      }
+      return concorde(await lecture);
     },
     oublier(sid) {
       cache.delete(sid);

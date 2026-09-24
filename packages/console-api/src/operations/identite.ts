@@ -167,7 +167,9 @@ export function operationsIdentite(d: DependancesIdentite): Enregistrement[] {
         return ouverte;
       });
       const reponse: SessionOuverte = {
-        jeton: await emettreJetonSession(d.trousseau, { sid: s.id, iat: s.iat, exp: s.exp }),
+        // `demo: true` dans le jeton : le middleware de la console refuse toute
+        // écriture à cette session sans avoir à appeler le service.
+        jeton: await emettreJetonSession(d.trousseau, { sid: s.id, iat: s.iat, exp: s.exp, demo: true }),
         expire_le: new Date(s.exp * 1000).toISOString(),
         connexion_precedente: null,
       };
