@@ -39,6 +39,14 @@
 //   · API_DATABASE_URL           le pooler Neon, rôle `mip_api` (migration v89,
 //                                lecture seule) : mot de passe posé par
 //                                `\password mip_api` (runbook, « Le rôle de l'API »).
+//   · CONSOLE_API_CLIENT_SECRETS le secret client de `console-api` (≥ 32 caractères,
+//                                `openssl rand -hex 32`) ; deux valeurs séparées
+//                                par une virgule pendant une rotation. Vercel en
+//                                porte UNE, sous `CONSOLE_API_CLIENT_SECRET` ;
+//   · SESSION_SIGNING_KEYS       le trousseau PRIVÉ ES256 de `console-api`
+//                                (`scripts/ops/generer-cles-session.mjs --nouvelle`) ;
+//                                Vercel n'en porte que la partie publique,
+//                                `SESSION_PUBLIC_JWKS` (`--publique`).
 //
 // Ce que `config pull` rend réellement, vérifié ici : `dockerfilePath` et
 // `watchPatterns` sortent dans un objet `build`, `preDeploy` en champ de premier
@@ -126,6 +134,16 @@ const SURVEILLE_NOTIFIER = [
 const SURVEILLE_API = [
   "services/api/**", "apps/console/app/api/**", "apps/console/lib/**", "apps/console/types/**",
   "packages/backend/**", "packages/service-kit/**", "packages/mcp-tools/**",
+  "pnpm-lock.yaml", "/pnpm-workspace.yaml", "/package.json", "/.dockerignore",
+  "scripts/ci/deploy-fidele.mjs",
+];
+
+// CONSOLE-API EST UN BUNDLE (`services/console-api/build.mjs`) de ses deux paquets
+// TypeScript et du kit : la fermeture exacte de `@mip/service-console-api`. PAS
+// `apps/console/**` — la garde du build refuse toute source de la console, et
+// c'est la console qui l'appelle, pas l'inverse.
+const SURVEILLE_CONSOLE_API = [
+  "services/console-api/**", "packages/console-api/**", "packages/console-contract/**", "packages/service-kit/**",
   "pnpm-lock.yaml", "/pnpm-workspace.yaml", "/package.json", "/.dockerignore",
   "scripts/ci/deploy-fidele.mjs",
 ];
@@ -256,6 +274,40 @@ export default defineRailway((ctx) => {
       RAILWAY_DEPLOYMENT_DRAINING_SECONDS: "15",
     },
   });
+  // C0 — LE BACKEND DE LA CONSOLE (piste C), README du service. Seul client : le
+  // serveur Vercel, qui présente le secret client ; sans lui, tout chemin rend
+  // un 404 nu. Avant d'envoyer ce secret, la console vérifie la poignée de main
+  // signée (`GET /v1/version?nonce=`) avec la clé PUBLIQUE : un domaine généré
+  // réattribué ne recevrait rien. Domaine généré à la main après le premier
+  // déploiement, puis les trois variables Vercel (#299) : `CONSOLE_API_URL`,
+  // `CONSOLE_API_CLIENT_SECRET`, `SESSION_PUBLIC_JWKS`.
+  // Base : le rôle propriétaire jusqu'en C13 (`mip_console` + `mip_identity`).
+  const consoleApi = service("console-api", {
+    source: pocMIP_RUM,
+    build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/console-api/Dockerfile", watchPatterns: SURVEILLE_CONSOLE_API },
+    start: "node services/console-api/dist/server.mjs",
+    healthcheck: "/health",
+    healthcheckTimeout: 120,
+    // DEUX RÉPLIQUES sans état partagé en mémoire, sauf deux choses qui restent
+    // justes à deux : la poignée de main (chacune signe avec le même trousseau)
+    // et le débit par principal, compté PAR RÉPLIQUE — la limite effective est
+    // donc au plus le double de `CONSOLE_API_RATE_LIMIT` (README, « Sûreté
+    // multi-réplique »).
+    replicas: { [REGION]: 2 },
+    deploy: { restartPolicyType: "ALWAYS", drainingSeconds: 15 },
+    env: {
+      DATABASE_URL: ctx.shared.DATABASE_URL,
+      CONSOLE_API_CLIENT_SECRETS: ctx.shared.CONSOLE_API_CLIENT_SECRETS,
+      SESSION_SIGNING_KEYS: ctx.shared.SESSION_SIGNING_KEYS,
+      METRICS_TOKEN: ctx.shared.METRICS_TOKEN,
+      // Requêtes par minute et par principal. Le régime réel est un sondage :
+      // `AutoRefresh` rejoue 12 rendus par minute et par onglet (README de la piste C).
+      CONSOLE_API_RATE_LIMIT: "600",
+      PGPOOL_MAX: "6",
+      NODE_ENV: "production",
+      RAILWAY_DEPLOYMENT_DRAINING_SECONDS: "15",
+    },
+  });
   const mcp = service("mcp", {
     source: pocMIP_RUM,
     build: { buildEnvironment: "V3", builder: "DOCKERFILE", dockerfilePath: "services/mcp/Dockerfile", watchPatterns: SURVEILLE_MCP },
@@ -345,12 +397,11 @@ export default defineRailway((ctx) => {
 
   // LE CANEVAS DIT L'ARCHITECTURE : Capteurs → Collecte → Restitution →
   // Traitements. Un groupe n'est qu'un cadre sur le canevas — il ne change ni
-  // le réseau, ni les variables, ni le déploiement d'un service. `console-api`
-  // rejoindra le sien en naissant.
+  // le réseau, ni les variables, ni le déploiement d'un service.
   return project("mip-rum-backend", {
     resources: [
       group("1 · Collecte", [collector]),
-      group("2 · Restitution", [api, mcp]),
+      group("2 · Restitution", [api, consoleApi, mcp]),
       group("3 · Traitements", [scheduler, notifier]),
     ],
   });

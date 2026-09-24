@@ -64,6 +64,8 @@ Où ils vivent : [architecture, « Qui détient quel secret »](../architecture/
 | `EDGE_PROXY_SECRET` | poser `nouveau,ancien` sur le collector → poser `nouveau` sur Vercel → retirer `ancien` du collector. Aucune coupure. |
 | `WEBHOOK_SIGNING_SECRET` | poser `nouveau,ancien` sur le notifier (il signe avec le premier) → prévenir les destinataires → retirer `ancien`. |
 | `METRICS_TOKEN` | changer la variable partagée → mettre à jour la supervision. |
+| `CONSOLE_API_CLIENT_SECRETS` | poser `nouvelle,ancienne` (variable partagée) → poser `nouvelle` sur Vercel (`CONSOLE_API_CLIENT_SECRET`) → retirer `ancienne`. Aucune coupure. |
+| `SESSION_SIGNING_KEYS` | `scripts/ops/generer-cles-session.mjs --rotation` → publier la nouvelle clé publique sur Vercel (`SESSION_PUBLIC_JWKS`) **avant** `--promouvoir` → `--retirer` une fois les sessions de l'ancienne expirées (README de `console-api`). |
 | `RESEND_API_KEY` | créer une clé « Sending access » chez Resend → la poser → révoquer l'ancienne. **La clé du 23/09 a circulé en clair : à révoquer au premier branchement.** |
 | `IDENTITY_HASH_SECRET` | **ne se tourne pas sans rupture** : les `user_id_hash` écrits avant ne correspondent plus. Si une fuite l'impose : nouveau secret + nouvelle empreinte (`scripts/ops/empreinte-identite.mjs`), dater la rupture par un marqueur de déploiement, et la dire dans la recherche RGPD. |
 | `DATABASE_URL` (`neondb_owner`) | rotation du mot de passe par l'API Neon (`reset_password`), puis mise à jour de la variable partagée et des variables de service `preserve()`. Coupe aussi tout ancien déploiement Vercel (prévu en C12). |

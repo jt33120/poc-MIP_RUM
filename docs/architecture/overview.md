@@ -100,6 +100,7 @@ La règle : un service ne porte que les secrets dont il se sert. Ceux des nouvea
 | `METRICS_TOKEN` | — | oui | oui | oui | oui |
 | `DEADMAN_URL` | — | — | oui | — | — |
 | `AUTH_SECRET`, `OIDC_*` | oui, **jusqu'à C1** | — | — | — | `console-api` |
+| `CONSOLE_API_CLIENT_SECRETS`, `SESSION_SIGNING_KEYS` | une valeur du secret client (`CONSOLE_API_CLIENT_SECRET`) et la clé **publique** seule (`SESSION_PUBLIC_JWKS`, non secrète) | — | — | — | `console-api` **seul** (le trousseau privé ne quitte pas le service) |
 
 ## Réseau et régions
 
