@@ -355,6 +355,29 @@ jobs:
             -c 'create database mip_rum_pre_v86'
           pnpm test:sql
 
+      # P2 — CONTRAT DE PARITÉ DE LA COLLECTE. Les routes Next de la console et le
+      # receveur du collector (`creerReceveur`) doivent rendre le même statut et
+      # écrire les mêmes lignes pour la même requête : en P3, une requête tombe
+      # sur l'un OU l'autre selon le pourcentage de relais. UNE BASE PAR CÔTÉ,
+      # vierges, migrées par le migrateur de production (celui du pré-déploiement
+      # du scheduler), comme le schéma de ce job. Hors `test:sql` à dessein : ce
+      # contrat veut deux bases fraîches à lui, pas une base partagée avec les
+      # fenêtres de déploiement. Sans ses deux variables, le fichier REFUSE de
+      # s'ignorer en CI (pas de skip silencieux).
+      - name: Contrat de parité console ↔ collector (deux bases migrées)
+        env:
+          PGPASSWORD: postgres
+          CONTRACT_NEXT_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_parite_next
+          CONTRACT_COLLECTOR_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_parite_collector
+        run: |
+          for base in mip_rum_parite_next mip_rum_parite_collector; do
+            psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+              -c "create database $base"
+            DATABASE_URL="postgres://postgres:postgres@localhost:5433/$base" \
+              node services/scheduler/migrate.mjs
+          done
+          pnpm test:contract
+
       # `...` entraîne `@mip/rum-core`, dont le SDK web inline les primitives.
       - name: Build SDK (servi par demo/serve.mjs et la console)
         run: pnpm --filter "@mip/rum-sdk..." build
