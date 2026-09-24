@@ -162,14 +162,14 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R10",
     titre: "Une base dimensionnée pour un vrai produit",
     manque:
-      "La base tourne sur l'offre gratuite de Neon : 100 heures de calcul par mois. Son épuisement a coupé la production du 24 septembre au 1er octobre 2026 : passé le quota, le calcul reste suspendu jusqu'au mois suivant. Pour tenir, les tâches planifiées et la livraison des alertes passent toutes les 15 minutes au lieu de 5 : une alerte part jusqu'à 15 minutes après sa cause. La collecte continue d'un vrai site suffirait à épuiser le quota.",
+      "La base tourne sur l'offre gratuite de Neon : 100 heures de calcul par mois. Son épuisement a coupé la production du 24 septembre au 1er octobre 2026 : passé le quota, le calcul reste suspendu jusqu'au mois suivant. Pour tenir, les tâches planifiées et la livraison des alertes passent toutes les 15 minutes au lieu de 5 : une alerte part jusqu'à 15 minutes après sa cause. La collecte continue d'un vrai site suffirait à épuiser le quota, et l'offre plafonne aussi le stockage à 0,5 Go, déjà occupés à 63 % le 24/09/2026.",
     debloque:
       "Passer la base sur une offre payante (de l'ordre de 20 à 40 $ par mois avec tous les services), puis remettre les cadences à 5 minutes et la livraison à 15 secondes : deux variables, sans changement de code.",
     decide: "Le responsable du produit : c'est une ligne de budget.",
     // Le calcul (quota, veille à 5 min, CU-h par cadence) et le réglage ; la
     // vitrine lit la cadence effective publiée par le scheduler (etat-latence).
     sources: [
-      "services/scheduler/README.md:28-39",
+      "services/scheduler/README.md:28-41",
       "packages/backend/jobs/cadence.mjs:6-26",
       "apps/console/lib/etat-latence.ts:20-28",
     ],

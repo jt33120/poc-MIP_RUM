@@ -36,6 +36,8 @@ Chaque étape SQL est bornée par un `statement_timeout` posé **dans sa transac
 
 `SCHEDULER_TICK_MIN=15`, et le notifier sur la même grille (`NOTIFIER_INTERVAL_MS=900000`, 45 s après le tick) : un seul réveil de la base pour les deux services. Le passage horaire (HH:05) et le quotidien (03:17) tombent dans la fenêtre où le tick de :00 ou de :15 l'a déjà réveillée. Le scheduler **publie** sa cadence (`platform_flag.scheduler_tick_min`) : la vitrine affiche « 15 minutes » et dit pourquoi, au lieu de la cible.
 
+L'offre gratuite a une seconde limite, que la cadence ne règle pas : **0,5 Go de stockage**. Relevé par l'API Neon le 24/09/2026 : 322 Mo occupés (63 %). La purge de rétention (30 jours, quotidienne) borne la télémétrie ; le rejeu des sessions, stocké en base (ADR-0009), est ce qui la remplirait le premier.
+
 Ce que ça coûte, à dire : une alerte part jusqu'à 15 minutes après sa cause ; une règle dont la fenêtre est plus courte que le tick n'évalue qu'une partie du temps ; les sondes uptime passent toutes les 15 minutes. Et la collecte d'un vrai site, qui réveille la base dès qu'un visiteur arrive, suffit à épuiser le quota. **Pour un vrai produit RUM : offre payante** (Neon Launch, ~0,11 $ par CU-h sans minimum, 20 à 40 $ par mois avec tous les services), `SCHEDULER_TICK_MIN=5`, `NOTIFIER_INTERVAL_MS=15000` — deux variables, aucun code.
 
 ## Routes et sondes
