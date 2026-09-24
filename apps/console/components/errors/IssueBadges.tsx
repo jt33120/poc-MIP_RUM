@@ -7,7 +7,7 @@ import {
   type GroupingBasis,
   type IssueOrigin,
   type IssueStatus,
-} from "@/lib/error-issues";
+} from "@/lib/issues-libelles";
 
 const PASTILLE = "mr-2 inline-block rounded-full border px-1.5 py-0.5 text-[10px] font-semibold";
 

@@ -8,7 +8,7 @@ import { formater } from "./fmt-ids";
 import { classerParGravite, ecartALaReference, estFaible } from "./impact";
 import type { AnomalyRow } from "./health";
 import type { AlertFiringRow } from "./queries-v2";
-import { verdictDeploiement, type DeployImpact } from "./queries-deploys";
+import { verdictDeploiement, type DeployImpact } from "./deploys-verdict";
 import { RAISON_MOINS_DE_DEUX_RELEASES, type ChoixReleases } from "./presets";
 import type { AnalyticsQuery, ResolvedRange } from "./query-contract";
 
