@@ -419,9 +419,22 @@ jobs:
       - name: Installer Chromium (+ dépendances système)
         run: pnpm exec playwright install chromium --with-deps
 
-      # playwright.config.ts lance/attend les 3 serveurs (collecteur de dev :4318, démo :8080, console :3000)
+      # playwright.config.ts lance/attend les 5 serveurs (collecteur de dev :4318,
+      # démo :8080, rejeu :4319, console-api :4324, console :3000 branchée dessus).
       - name: Tests E2E
         run: pnpm exec playwright test
+
+      # C0 — LE RELEVÉ DU CRAWL (tests/e2e/crawl.spec.ts), vert ou rouge : chaque
+      # écran × administrateur, viewer, démo — statut, adresse finale, sections en
+      # échec de lecture. C'est la ligne de base que les PR de C3 → C5 comparent.
+      - name: Relevé du crawl (ligne de base de la piste C)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: crawl-console
+          path: test-results/crawl/
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Artefacts de débogage (traces/screenshots)
         if: failure()
