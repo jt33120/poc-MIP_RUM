@@ -6,6 +6,19 @@ import { authorizedAppsOf } from "@/lib/query-contract";
 // Auth v0.3 (B3) : JWT cookie httpOnly signé AUTH_SECRET — remplace le basic auth v0.2.
 // PUBLICS sans auth (matcher) : /login, /mip-rum.js, /mip-rum-replay.js, /_next/*, /favicon*.
 // Le SDK reste TOUJOURS public (snippet chargé par les sites clients).
+/**
+ * L'identifiant de la requête (piste C) : repris par chaque appel à console-api
+ * (`lib/backend.ts`), inscrit dans son journal et, en C0c, dans `audit_log` ; c'est
+ * la « réf. » qu'affichera un écran d'erreur. Un identifiant entrant bien formé
+ * est gardé (un proxy devant la console peut l'avoir posé), sinon on en tire un.
+ */
+function avecIdentifiantDeRequete(req: NextRequest): Headers {
+  const h = new Headers(req.headers);
+  const recu = h.get("x-request-id");
+  if (!recu || !/^[A-Za-z0-9._-]{8,64}$/.test(recu)) h.set("x-request-id", crypto.randomUUID());
+  return h;
+}
+
 export async function middleware(req: NextRequest) {
   // Flux SSO/OIDC : login + callback doivent s'exécuter SANS session (sinon
   // redirection /login en boucle). L'auth se fait dans le handler de callback.
@@ -66,7 +79,7 @@ export async function middleware(req: NextRequest) {
     // /presentation = vitrine ; /extension-privacy = politique de confidentialité
     // PUBLIQUE de l'extension (URL exigée par le Chrome Web Store) ; /legal/* =
     // documents légaux publics (CGU, CGV, confidentialité).
-    if (estCheminPublic(p)) return NextResponse.next();
+    if (estCheminPublic(p)) return NextResponse.next({ request: { headers: avecIdentifiantDeRequete(req) } });
     if (p === "/") return NextResponse.redirect(new URL("/presentation", req.url), 302);
     return NextResponse.redirect(new URL("/login", req.url), 302);
   }
@@ -108,7 +121,7 @@ export async function middleware(req: NextRequest) {
   // Le layout serveur ne reçoit pas le pathname : on le lui passe par en-tête pour
   // qu'il rende /select en plein écran (sans la coquille sidebar).
   const pass = () => {
-    const h = new Headers(req.headers);
+    const h = avecIdentifiantDeRequete(req);
     h.set("x-pathname", pathname);
     return NextResponse.next({ request: { headers: h } });
   };

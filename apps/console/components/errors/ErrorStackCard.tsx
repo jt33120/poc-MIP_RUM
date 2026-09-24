@@ -2,7 +2,8 @@
 // release, son environnement déclaré, sa vue et sa position source. Rendu serveur.
 import { adminCodeContext, exemplarSymbolication, type StackSymbolication } from "@/lib/error-symbolication";
 import { fmtDate } from "@/lib/format";
-import { stackSymbolisable, type ErrorExemplar } from "@/lib/queries-errors";
+import { stackSymbolisable } from "@/lib/erreurs-sources";
+import type { ErrorExemplar } from "@/lib/queries-errors";
 import type { CodeContext } from "@/lib/sourcemap";
 
 export async function ErrorStackCard({

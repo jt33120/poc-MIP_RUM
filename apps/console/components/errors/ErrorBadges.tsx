@@ -1,7 +1,7 @@
 // Badges des écrans Erreurs : type, statut de triage, source et caractère géré.
 // Rendu serveur. Une valeur inconnue (NULL) n'est jamais habillée en valeur
 // connue : pas de badge « gérée » deviné, pas de source supposée.
-import { ERROR_SOURCE_LABELS, type ErrorSource } from "@/lib/queries-errors";
+import { ERROR_SOURCE_LABELS, type ErrorSource } from "@/lib/erreurs-sources";
 import type { ErrorStatus } from "@/lib/queries-v2";
 
 export function ErrorTypeBadge({ type, large = false }: { type: string | null; large?: boolean }) {

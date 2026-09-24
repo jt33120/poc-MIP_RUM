@@ -87,6 +87,8 @@ jobs:
           pnpm --filter @mip/rum-sdk exec tsc --noEmit
           pnpm --filter @mip/rum-mobile exec tsc --noEmit
           pnpm --filter @mip/agent-node exec tsc --noEmit
+          pnpm --filter @mip/console-contract exec tsc --noEmit
+          pnpm --filter @mip/console-api exec tsc --noEmit
           pnpm --filter console typecheck
           pnpm --filter extension typecheck
 
