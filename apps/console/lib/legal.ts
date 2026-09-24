@@ -30,12 +30,35 @@ export const ORG = {
 // appel sortant vers un tiers qui reçoit des données doit être répercuté ICI dans la même
 // modification que le code qui l'introduit (cf. invariant AD-7 du spine d'architecture).
 
-/** Hébergement — factuel, vérifié le 08/09/2026 contre docs/NEON_MIGRATION.md et DEPLOY.md. */
+/**
+ * Hébergement — factuel. Sociétés et régions vérifiées le 08/09/2026 contre
+ * docs/NEON_MIGRATION.md et DEPLOY.md ; RÔLES réécrits pour l'état « relais
+ * actif » de P3 (`platform_flag.ingest_relay_pct` > 0).
+ *
+ * POURQUOI LES RÔLES ONT CHANGÉ. Avant la bascule, la route de la console
+ * (Vercel) recevait ET écrivait les mesures ; Railway ne faisait que LIRE la
+ * base (travaux planifiés) et servir le MCP. Dès qu'une part des beacons part au
+ * relais, le sens s'inverse : Vercel reçoit et relaie — corps tel quel, code
+ * pays seul, jamais l'adresse (liste d'en-têtes exacte, `lib/ingest-relay.ts`) —,
+ * le `collector` Railway hache l'identité et ÉCRIT, Neon stocke. Garder
+ * « Vercel collecte, Railway lit » aurait tu le sous-traitant qui écrit : des
+ * deux défauts, le plus coûteux (tests/unit/conformite.test.ts).
+ *
+ * « SANS QUE LA CONSOLE CONSERVE NI TRANSMETTE L'ADRESSE IP » : le sujet est la
+ * console, pas Vercel. Ce que NOTRE code fait de l'adresse, on le prouve (aucun
+ * en-tête d'adresse relayé, aucune écriture) ; ce que la plateforme Vercel garde
+ * dans ses propres journaux de requêtes relève de son contrat, pas de ce fichier.
+ *
+ * FORME IMPOSÉE. `lib/presentation-topologie.ts` DÉCOUPE ces phrases : la société
+ * avant la première parenthèse, puis « région <id> — Ville, Pays) » ou
+ * « région <id>, Ville, Pays) » EN FIN de phrase. Le mot « région » n'y paraît
+ * donc qu'une fois, là ; tests/unit/presentation-topologie.test.ts rougit sinon.
+ */
 export const HOSTS = {
   data: "Neon (base de données PostgreSQL sur infrastructure AWS, région aws-eu-central-1 — Francfort, Allemagne)",
-  app: "Vercel Inc. (hébergement de l'application console et de la collecte des mesures ; fonctions serveur exécutées en région fra1 — Francfort, Allemagne)",
+  app: "Vercel Inc. (hébergement de l'application console ; réception des mesures envoyées par les navigateurs et relais vers le collecteur, sans que la console conserve ni transmette l'adresse IP — seul le code pays est transmis ; fonctions serveur exécutées en région fra1 — Francfort, Allemagne)",
   backend:
-    "Railway Corp. (hébergement des travaux planifiés et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
+    "Railway Corp. (hébergement du collecteur, qui reçoit les mesures relayées par la console, les pseudonymise et les écrit en base, ainsi que des travaux planifiés et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
 } as const;
 
 /**
@@ -52,17 +75,32 @@ export const HOSTS = {
  */
 export const SUBPROCESSORS: { name: string; role: string; location: string }[] = [
   { name: "Neon", role: "Hébergement de la base de données (RUM, comptes)", location: "UE (Francfort, aws-eu-central-1)" },
-  { name: "Vercel Inc.", role: "Hébergement de l'application console et collecte des mesures RUM envoyées par les navigateurs", location: "États-Unis (société) — fonctions serveur exécutées en UE (Francfort, région fra1)" },
+  // RELAIS ACTIF (P3). Vercel REÇOIT toujours tout — SDK, extension et CI visent
+  // la console, aucune URL n'a changé chez les clients — et relaie au collector la
+  // part tirée au sort : corps octet pour octet, code pays seul, AUCUNE adresse
+  // (ni `x-forwarded-for`, ni `x-real-ip` : `lib/ingest-relay.ts`).
+  // POURQUOI LE REPLI EST NOMMÉ. Le chemin d'écriture local n'est PAS retiré (il
+  // le sera en C11/C12) : la part non tirée pendant la montée (10 % → 50 % →
+  // 100 %) et le repli (collector injoignable, 502/504, disjoncteur ouvert…) sont
+  // encore écrits en base par la console, identité RETIRÉE puisqu'aucun secret
+  // d'identité n'est posé sur Vercel. Le taire ferait de « relais » une
+  // demi-vérité : un DPO en conclurait qu'aucune fonction Vercel n'écrit en base.
+  { name: "Vercel Inc.", role: "Hébergement de l'application console ; réception des mesures RUM envoyées par les navigateurs et relais vers le collecteur Railway avec le seul code pays — la console ne conserve ni ne transmet l'adresse IP ; écriture directe en base, identité retirée, de la part non relayée et en repli si le collecteur est indisponible", location: "États-Unis (société) — fonctions serveur exécutées en UE (Francfort, région fra1)" },
   // Ajouté le 08/09/2026, dans la MÊME modification que l'extraction du backend
-  // vers des services autonomes. La réception des mesures n'y a en fait jamais
-  // tourné en production (le service `ingest` n'avait aucun domaine public, et il
-  // a été supprimé le 21/09/2026) : c'est la route de la console, sur Vercel, qui
-  // les reçoit. Railway héberge les travaux planifiés — qui LISENT la base — et le MCP.
+  // vers des services autonomes. Le premier receveur Railway (`ingest`) n'a
+  // jamais reçu une mesure de production — aucun domaine public, supprimé le
+  // 21/09/2026 — et Railway n'a d'abord fait que LIRE la base (travaux
+  // planifiés) et servir le MCP. Avec le relais P3, le `collector`
+  // (europe-west4) reçoit ce que la console lui transmet, hache l'identité
+  // (HMAC ; le secret n'existe que sur Railway) et ÉCRIT : c'est désormais son
+  // premier rôle, d'où l'ordre de la phrase. « Collecteur déployé dans la même
+  // région » n'est pas un relevé daté comme celui du 09/09 : c'est la région que
+  // `.railway/railway.ts` lui impose, à revérifier le jour de la bascule.
   // Le serveur MCP (09/09/2026) tourne sur le même hébergeur et sert les mêmes
   // agrégats, à un agent IA cette fois. Il ne fait PAS entrer de tiers
   // supplémentaire dans la liste : il ne parle qu'à la console, et le modèle qui
   // l'interroge est l'outil de son utilisateur, pas un sous-traitant de MIP.
-  { name: "Railway Corp.", role: "Hébergement des travaux planifiés et du serveur MCP de lecture", location: "États-Unis (société) — services déployés en UE (europe-west4, Amsterdam, Pays-Bas), relevé le 09/09/2026" },
+  { name: "Railway Corp.", role: "Hébergement du collecteur des mesures RUM (réception des mesures relayées par la console, pseudonymisation de l'identité, écriture en base), des travaux planifiés et du serveur MCP de lecture", location: "États-Unis (société) — services déployés en UE (europe-west4, Amsterdam, Pays-Bas), relevé le 09/09/2026 ; collecteur déployé dans la même région" },
   { name: "[Fournisseur e-mail — à brancher]", role: "Envoi des alertes e-mail (si activé)", location: "[à préciser — UE recommandé]" },
 ];
 

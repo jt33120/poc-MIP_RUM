@@ -18,9 +18,9 @@
 - Base **PostgreSQL (Neon)** sur infrastructure AWS, région **`aws-eu-central-1` (Francfort)**.
 - Console **Next.js** sur **Vercel**, fonctions serveur en région **`fra1` (Francfort)** ;
   le SDK est servi par la console (auto-hébergeable).
-- La **réception des mesures** passe par la route d'ingestion de la console, sur **Vercel**
-  (`fra1`). Les **travaux planifiés** et le **serveur MCP** tournent sur **Railway**, région
-  **`europe-west4` (Amsterdam)**.
+- Les **mesures** arrivent sur la route d'ingestion de la console (**Vercel**, `fra1`), qui les **relaie**,
+  code pays seul et jamais l'adresse IP, au **collecteur** de **Railway** (région **`europe-west4`, Amsterdam**) :
+  il les pseudonymise et les écrit (repli sur la console, cf. §7), à côté des travaux planifiés et du MCP.
 - **Donnée et traitement sont en UE. La souveraineté, non** : Neon, Vercel et Railway sont trois
   sociétés de droit américain. La résidence européenne des données n'est pas la souveraineté ;
   la cible reste un hébergeur de droit européen (cf. §8).
@@ -184,8 +184,8 @@ modification ni redistribution.
 | Sous-traitant | Rôle | Localisation | Donnée |
 |---|---|---|---|
 | Neon | base PostgreSQL managée | UE (Francfort, `aws-eu-central-1`) — société de droit américain | télémétrie, comptes |
-| Vercel Inc. | hébergement de la console et collecte des mesures | fonctions serveur en UE (Francfort, `fra1`) — société de droit américain | **télémétrie RUM en transit et en traitement** ; pas de stockage RUM |
-| Railway Corp. | travaux planifiés, serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | lecture des agrégats (travaux planifiés), réponses MCP |
+| Vercel Inc. | hébergement de la console ; réception des mesures et relais vers le collecteur | fonctions serveur en UE (Francfort, `fra1`) — société de droit américain | **télémétrie RUM en transit**, relayée telle quelle avec le **code pays seul** : la console ne conserve ni ne transmet l'adresse IP ; **en traitement** (scrub, identité retirée, écriture en base) pour la part non relayée et en repli si le collecteur est indisponible ; pas de stockage RUM |
+| Railway Corp. | collecteur (`collector`) : réception des mesures relayées, pseudonymisation, écriture en base ; travaux planifiés, serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | **télémétrie RUM en traitement**, sans adresse IP (code pays seul) : scrub, identité hachée (HMAC, secret posé sur Railway seul), écriture en base ; lecture des agrégats (travaux planifiés), réponses MCP ; pas de stockage RUM |
 | *[Fournisseur e-mail — à brancher]* | envoi des alertes (si activé) | *[à préciser — UE recommandé]* | adresse de destination |
 
 ## 8. Trajectoire de certification (gap analysis)
