@@ -34,8 +34,10 @@ export const ORG = {
 export const HOSTS = {
   data: "Neon (base de données PostgreSQL sur infrastructure AWS, région aws-eu-central-1 — Francfort, Allemagne)",
   app: "Vercel Inc. (hébergement de l'application console et de la collecte des mesures ; fonctions serveur exécutées en région fra1 — Francfort, Allemagne)",
+  // P4 : l'API de lecture v1 est aussi servie depuis Railway (service `api`),
+  // aux machines porteuses d'un jeton — voir SUBPROCESSORS.
   backend:
-    "Railway Corp. (hébergement des travaux planifiés et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
+    "Railway Corp. (hébergement des travaux planifiés, de l'API de lecture servie aux machines sur jeton et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
 } as const;
 
 /**
@@ -60,9 +62,16 @@ export const SUBPROCESSORS: { name: string; role: string; location: string }[] =
   // les reçoit. Railway héberge les travaux planifiés — qui LISENT la base — et le MCP.
   // Le serveur MCP (09/09/2026) tourne sur le même hébergeur et sert les mêmes
   // agrégats, à un agent IA cette fois. Il ne fait PAS entrer de tiers
-  // supplémentaire dans la liste : il ne parle qu'à la console, et le modèle qui
-  // l'interroge est l'outil de son utilisateur, pas un sous-traitant de MIP.
-  { name: "Railway Corp.", role: "Hébergement des travaux planifiés et du serveur MCP de lecture", location: "États-Unis (société) — services déployés en UE (europe-west4, Amsterdam, Pays-Bas), relevé le 09/09/2026" },
+  // supplémentaire dans la liste : il ne parle qu'à l'API v1 de MIP, et le modèle
+  // qui l'interroge est l'outil de son utilisateur, pas un sous-traitant de MIP.
+  // API DE LECTURE (P4). Le service `api` sert depuis Railway les MÊMES agrégats
+  // que l'API v1 de la console, aux mêmes porteurs de jeton — partenaires, CI,
+  // le serveur MCP par le réseau privé —, et la console lui relaie ses lectures
+  // sur jeton (`lib/api-relay.ts` : jeton, en-têtes d'acceptation et de cache,
+  // origine ; aucune adresse). Même donnée, même destinataire : ce qui change est
+  // l'hébergeur qui la SERT, et c'est ce qu'il faut déclarer. Lecture seule, sous
+  // un rôle de base sans aucun droit d'écriture (migration-v89).
+  { name: "Railway Corp.", role: "Hébergement des travaux planifiés, de l'API de lecture v1 (agrégats RUM servis aux machines porteuses d'un jeton, en lecture seule) et du serveur MCP de lecture", location: "États-Unis (société) — services déployés en UE (europe-west4, Amsterdam, Pays-Bas), relevé le 09/09/2026" },
   { name: "[Fournisseur e-mail — à brancher]", role: "Envoi des alertes e-mail (si activé)", location: "[à préciser — UE recommandé]" },
 ];
 
