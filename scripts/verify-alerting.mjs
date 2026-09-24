@@ -191,23 +191,13 @@ async function main() {
   assert("sans pg_net : la livraison reste 'queued' (contrat du dispatcher local)",
     statutsWeb.length === 1 && statutsWeb[0] === "queued");
 
-  // E-mail sans relais configuré : `skipped` explicite. Surtout PAS un statut
-  // qui laisserait croire à un envoi.
-  await c.query("update alert_config set email_relay_url = null where singleton");
+  // Un canal e-mail (compté ci-dessous par console_ro). Son routage ne se juge
+  // plus ici : ce script rejoue les migrations jusqu'à v68, et depuis v88
+  // `route_alert` laisse la ligne `queued` pour le notifier, qui l'envoie par
+  // Resend ou la solde `skipped` avec sa raison. Cette chaîne est vérifiée sur le
+  // schéma COMPLET par tests/integration/livraison-v88-sql.test.ts.
   await c.query(`insert into notify_channel (app_id, kind, target, severity_min)
                  values ('app-a','email','ops@example.com','warning')`);
-  const ev2 = (await c.query(`insert into alert_event (rule_id, value, message, severity)
-                              values (null, 1, 'test email', 'warning') returning id`)).rows[0].id;
-  await c.query("select route_alert($1,'app-a','warning','[t] test mail', '{}'::jsonb)", [ev2]);
-  const mail = (await c.query(
-    "select status, response from alert_delivery where alert_event_id=$1 and target='ops@example.com'",
-    [ev2])).rows[0];
-  assert("e-mail sans relais : statut 'skipped', pas un faux succès", mail?.status === "skipped");
-  // La raison doit nommer LES DEUX voies possibles, sinon on renvoie l'exploitant
-  // chercher une configuration dont il ignore l'existence.
-  const raison = mail?.response ?? "";
-  assert("e-mail non configuré : la raison nomme le coffre ET le relais",
-    /alert_email_api_key/.test(raison) && /email_relay_url/.test(raison));
 
   // Réconciliation : une livraison 'sent' sans réponse depuis plus d'une heure
   // est un ÉCHEC, pas un suspens. C'est le cœur du correctif : « sent » ne peut
