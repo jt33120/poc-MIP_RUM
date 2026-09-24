@@ -12,10 +12,11 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 2. **secret client** `x-mip-client`, comparé en temps constant (deux valeurs pendant une rotation) : absent ou faux, **404 nu**, indiscernable d'un chemin inconnu ;
 3. un en-tête `Origin` est refusé (403) : aucun navigateur, et aucun en-tête CORS n'est jamais émis ;
 4. la route (404, ou 405 avec `allow`) ;
-5. la **session** (`Authorization: Bearer`), dont le rôle et le périmètre viennent de la base, jamais du jeton seul ;
+5. la **session** (`Authorization: Bearer`) : un jeton ES256 qui ne porte qu'un identifiant, vérifié par signature PUIS relu en base (`console_session` jointe au compte) — rôle et périmètre viennent de la base, jamais du jeton ; une session révoquée ou un compte désactivé est refusé en 30 s au plus (cache par réplique) ; base injoignable : 503, pas 401 ;
 6. la **démo** (toute écriture refusée), le **rôle**, la **portée** : l'application demandée est confrontée au périmètre AVANT le traitement ;
 7. l'**entrée** : paramètres et corps validés, champ inconnu ou répété refusé (400), corps JSON sous plafond (413) ;
 8. le **débit** par principal (429 avec `retry-after`) ;
+   - 8 bis. la **ressource du chemin** (portée « ressource ») : son application est lue en base et confrontée au périmètre ; absente OU hors périmètre, c'est le même 404 `ressource_inconnue` — un identifiant deviné ne dit pas s'il existe ailleurs ;
 9. le **traitement**, sous l'échéance (503 au-delà) ;
 10. l'enveloppe `{ meta: { request_id }, data }`, `cache-control: no-store`, signée `x-mip-console-api: 1`. Une panne rend 500 et un message générique ; sa cause reste au journal, avec le `request_id`.
 

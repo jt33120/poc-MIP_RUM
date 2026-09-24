@@ -30,9 +30,29 @@ export type Portee =
   /** Une ressource identifiée dans le chemin, résolue DANS l'application du principal (404 si elle est ailleurs). */
   | "ressource";
 
+/**
+ * Comment une ressource du chemin se rattache à une application : le pipeline lit
+ * `select app_id from <table> where <colonne> = <paramètre>` AVANT le traitement,
+ * et répond 404 si elle n'existe pas OU si elle appartient à une application hors
+ * du périmètre — les deux cas sont indiscernables, à dessein : un identifiant
+ * deviné ne dit pas s'il existe ailleurs.
+ */
+export interface RessourceDuChemin {
+  /** La table qui porte la ressource et sa colonne `app_id`. */
+  readonly table: string;
+  /** Le paramètre du chemin qui l'identifie (`{id}` → `"id"`). */
+  readonly parametre: string;
+  /** La colonne que ce paramètre désigne (défaut : `id`). */
+  readonly colonne?: string;
+  /** Sa forme : un identifiant mal formé ne peut désigner aucune ligne (404, sans requête). */
+  readonly format: "uuid" | "entier";
+}
+
 export interface Politique {
   readonly auth: Authentification;
   readonly portee: Portee;
+  /** Portée `ressource` seulement : où lire l'application de la ressource. */
+  readonly ressource?: RessourceDuChemin;
   /** Une session de démo peut-elle appeler ? Toute écriture est `refus`. */
   readonly demo: "lecture" | "refus";
   /** Écriture : l'action inscrite dans `audit_log`, ou une exemption MOTIVÉE. */
@@ -79,6 +99,7 @@ export function servir<P, Q, B, R>(
 export const ECRITURES_DE_DEMO = Object.freeze(["auth.logout"]);
 
 const ACTION_AUDIT = /^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/;
+const IDENTIFIANT_SQL = /^[a-z_][a-z0-9_]{0,62}$/;
 
 /** Les règles de la table. Rend la liste des violations : vide, le service peut démarrer. */
 export function verifierTable(table: readonly Enregistrement[]): string[] {
@@ -110,6 +131,17 @@ export function verifierTable(table: readonly Enregistrement[]): string[] {
     }
     if (p.auth === "public" && p.portee !== "globale") fautes.push(`${nom} : une opération publique n'a pas de portée`);
     if (p.portee === "ressource" && !/\{[^}]+\}/.test(o.chemin)) fautes.push(`${nom} : portée « ressource » sans identifiant dans le chemin`);
+    if (p.portee === "ressource" && !p.ressource) fautes.push(`${nom} : portée « ressource » sans résolveur (table, paramètre, format)`);
+    if (p.portee !== "ressource" && p.ressource) fautes.push(`${nom} : un résolveur de ressource sans portée « ressource »`);
+    if (p.ressource) {
+      const r = p.ressource;
+      // Table et colonne entrent TELLES QUELLES dans la requête du pipeline : des
+      // identifiants SQL simples, jamais une expression.
+      if (!IDENTIFIANT_SQL.test(r.table)) fautes.push(`${nom} : table de ressource « ${r.table} » invalide`);
+      if (r.colonne !== undefined && !IDENTIFIANT_SQL.test(r.colonne)) fautes.push(`${nom} : colonne de ressource « ${r.colonne} » invalide`);
+      if (!o.chemin.includes(`{${r.parametre}}`)) fautes.push(`${nom} : le paramètre « ${r.parametre} » n'est pas dans le chemin`);
+      if (r.format !== "uuid" && r.format !== "entier") fautes.push(`${nom} : format de ressource inconnu`);
+    }
   }
   return fautes;
 }

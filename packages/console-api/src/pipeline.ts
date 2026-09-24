@@ -14,6 +14,10 @@
 //      au périmètre, `app=all` résolu en périmètre effectif ;
 //   7. entrée : requête et corps validés, champ inconnu ou répété refusé (400) ;
 //   8. débit par principal (429) ;
+//   8 bis. RESSOURCE du chemin (portée `ressource`) : son application lue en
+//      base, confrontée au périmètre — 404 si elle n'existe pas OU si elle est
+//      ailleurs, indiscernables. Après le débit : c'est la seule garde qui
+//      interroge la base pour une requête déjà authentifiée ;
 //   9. traitement, sous l'échéance ;
 //  10. enveloppe `{ meta: { request_id }, data }`, `no-store`, signée `x-mip-console-api`.
 //
@@ -29,7 +33,7 @@ import {
   type Succes,
 } from "@mip/console-contract";
 import { egaliteConstante } from "./cles";
-import type { Contexte, Journal, Principal } from "./contexte";
+import type { Contexte, Journal, Lecteur, Principal } from "./contexte";
 import { creerDebit } from "./debit";
 import { ErreurContrat } from "./erreurs";
 import { verifierTable, type Enregistrement } from "./politique";
@@ -40,8 +44,10 @@ export interface OptionsConsoleApi {
   /** Le secret client : 1 valeur, ou 2 pendant une rotation. Chacune ≥ 32 caractères. */
   readonly secretsClient: readonly string[];
   readonly journal: Journal;
-  /** Vérifie un jeton de session et rend son principal (C0c). Absent : aucune opération à session n'est servie. */
+  /** Vérifie un jeton de session et rend son principal (`creerVerificateurSession`). Absent : aucune opération à session n'est servie. */
   readonly verifierSession?: (jeton: string) => Promise<Principal | null>;
+  /** La base, pour résoudre les ressources du chemin (portée `ressource`). Exigée si la table en déclare une. */
+  readonly lecteur?: Lecteur;
   /** Appels par minute et par principal, par réplique (défaut 600 ; 0 = sans limite). */
   readonly debitParMinute?: number;
   /** Plafond de corps par défaut, en octets (défaut 64 Kio). */
@@ -57,6 +63,8 @@ export const ECHEANCE_MIN_MS = 200;
 export const ECHEANCE_MAX_MS = 15_000;
 const ID_REQUETE = /^[A-Za-z0-9._-]{8,64}$/;
 const APP = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const ENTIER = /^[1-9][0-9]{0,17}$/;
 const METHODES_A_CORPS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const ENTETES_COMMUNS = { "cache-control": "no-store", "x-content-type-options": "nosniff" } as const;
@@ -133,6 +141,10 @@ export function creerConsoleApi(options: OptionsConsoleApi): (req: Request) => P
   const secrets = options.secretsClient;
   if (secrets.length < 1 || secrets.length > 2 || secrets.some((s) => s.length < 32)) {
     throw new Error("secret client : 1 ou 2 valeurs de 32 caractères au moins");
+  }
+  const lecteur = options.lecteur;
+  if (!lecteur && options.table.some((e) => e.politique.portee === "ressource")) {
+    throw new Error("la table déclare des ressources du chemin : le pipeline exige `lecteur` pour les résoudre");
   }
   const horloge = options.horloge ?? (() => Date.now());
   const routeur = creerRouteur(options.table);
@@ -260,6 +272,22 @@ export function creerConsoleApi(options: OptionsConsoleApi): (req: Request) => P
       const cleDebit = principal.kind === "session" ? `session:${principal.sessionId}` : sansSecret ? "sans-secret" : "client";
       const attente = debit.consommer(cleDebit);
       if (attente !== null) throw new ErreurContrat("debit_depasse", "trop d'appels, réessayer plus tard", { entetes: { "retry-after": String(attente) } });
+
+      // 8 bis. La ressource du chemin : son application, AVANT le traitement.
+      if (politique.portee === "ressource" && politique.ressource && lecteur) {
+        const r = politique.ressource;
+        const id = (params as Record<string, string>)[r.parametre] ?? "";
+        const inconnue = () => new ErreurContrat("ressource_inconnue", "ressource inconnue");
+        if (!(r.format === "uuid" ? UUID.test(id) : ENTIER.test(id))) throw inconnue();
+        const { rows } = await lecteur.query<{ app_id: string | null }>(
+          `select app_id from ${r.table} where ${r.colonne ?? "id"} = $1 limit 1`,
+          [id],
+        );
+        const app = rows[0]?.app_id;
+        const perimetre = principal.kind === "session" ? principal.apps : [];
+        if (!app || (perimetre !== null && !perimetre.includes(app))) throw inconnue();
+        apps = [app];
+      }
 
       // 9. Le traitement, sous l'échéance.
       const ctx: Contexte = { requestId, principal, params, requete, corps, echeance, apps, journal };

@@ -92,7 +92,11 @@ const TABLE: Enregistrement[] = [
     { auth: "session", portee: "globale", demo: "refus", audit: "essai.creer", corpsMax: 64, entree: { corps: objet({ nom: chaine({ max: 20 }) }) } },
     async ({ corps }) => ({ cree: corps.nom }),
   ),
-  servir(LIRE_OBJET, { auth: "session", portee: "ressource", demo: "lecture" }, async ({ params }) => ({ id: params.id })),
+  servir(
+    LIRE_OBJET,
+    { auth: "session", portee: "ressource", demo: "lecture", ressource: { table: "essai_objet", parametre: "id", format: "entier" } },
+    async ({ params, apps }) => ({ id: params.id, apps }),
+  ),
   servir(LIRE_FIXE, { auth: "session", portee: "globale", demo: "lecture" }, async () => ({ fixe: true })),
   servir(LENT, { auth: "public", portee: "globale", demo: "lecture" }, () => new Promise((r) => setTimeout(() => r({ tard: true }), 400))),
   servir(PANNE, { auth: "public", portee: "globale", demo: "lecture" }, async () => {
@@ -115,6 +119,12 @@ function api(opts: Partial<Parameters<typeof creerConsoleApi>[0]> = {}) {
     secretsClient: [SECRET],
     journal,
     verifierSession: async (jeton) => PROFILS[jeton.replace(/^jeton-de-session-/, "")] ?? null,
+    // L'objet 42 appartient à app-a ; tout autre identifiant n'existe pas.
+    lecteur: {
+      async query(texte: string, valeurs?: readonly unknown[]) {
+        return { rows: (texte.includes("from essai_objet") && valeurs?.[0] === "42" ? [{ app_id: "app-a" }] : []) as never[] };
+      },
+    },
     ...opts,
   });
 }
@@ -187,7 +197,25 @@ describe("C0a — les règles de la table, vérifiées au démarrage", () => {
     expect(faute([servir(op("a.b", "GET", "/v1/x/{id}"), P, t), servir(op("a.c", "GET", "/v1/x/{nom}"), P, t)])).toEqual([expect.stringContaining("déjà servis")]);
     expect(faute([servir(op("a.b", "GET", "/v1/a"), { ...P, secretClient: "aucun" }, t)])).toEqual([expect.stringContaining("secret client")]);
     expect(faute([servir(op("a.b", "GET", "/v1/a"), { ...P, auth: "public", portee: "app" }, t)])).toEqual([expect.stringContaining("pas de portée")]);
-    expect(faute([servir(op("a.b", "GET", "/v1/a"), { ...P, portee: "ressource" }, t)])).toEqual([expect.stringContaining("sans identifiant")]);
+    expect(faute([servir(op("a.b", "GET", "/v1/a"), { ...P, portee: "ressource" }, t)])).toEqual([
+      expect.stringContaining("sans identifiant"),
+      expect.stringContaining("sans résolveur"),
+    ]);
+  });
+
+  it("une ressource du chemin déclare sa table, son paramètre et sa forme — en identifiants SQL simples", () => {
+    const R = { table: "dashboard", parametre: "id", format: "uuid" } as const;
+    expect(faute([servir(op("a.b", "GET", "/v1/d/{id}"), { ...P, portee: "ressource", ressource: R }, t)])).toEqual([]);
+    expect(faute([servir(op("a.b", "GET", "/v1/d/{id}"), { ...P, portee: "globale", ressource: R }, t)])).toEqual([expect.stringContaining("sans portée « ressource »")]);
+    expect(faute([servir(op("a.b", "GET", "/v1/d/{nom}"), { ...P, portee: "ressource", ressource: R }, t)])).toEqual([expect.stringContaining("pas dans le chemin")]);
+    for (const table of ["dashboard; drop table x", "Dashboard", "public.dashboard", ""]) {
+      expect(faute([servir(op("a.b", "GET", "/v1/d/{id}"), { ...P, portee: "ressource", ressource: { ...R, table } }, t)]), table).toEqual([expect.stringContaining("table de ressource")]);
+    }
+    expect(faute([servir(op("a.b", "GET", "/v1/d/{id}"), { ...P, portee: "ressource", ressource: { ...R, colonne: "id = id or true" } }, t)])).toEqual([expect.stringContaining("colonne de ressource")]);
+  });
+
+  it("une table qui déclare des ressources exige un lecteur pour les résoudre", () => {
+    expect(() => creerConsoleApi({ table: TABLE, secretsClient: [SECRET], journal })).toThrow(/exige `lecteur`/);
   });
 
   it("un service dont la table viole une règle ne démarre pas", () => {

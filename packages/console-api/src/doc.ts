@@ -35,10 +35,11 @@ export function rendreDoc(table: readonly Enregistrement[]): string {
   L.push("2. **secret client** `x-mip-client`, comparé en temps constant (deux valeurs pendant une rotation) : absent ou faux, **404 nu**, indiscernable d'un chemin inconnu ;");
   L.push("3. un en-tête `Origin` est refusé (403) : aucun navigateur, et aucun en-tête CORS n'est jamais émis ;");
   L.push("4. la route (404, ou 405 avec `allow`) ;");
-  L.push("5. la **session** (`Authorization: Bearer`), dont le rôle et le périmètre viennent de la base, jamais du jeton seul ;");
+  L.push("5. la **session** (`Authorization: Bearer`) : un jeton ES256 qui ne porte qu'un identifiant, vérifié par signature PUIS relu en base (`console_session` jointe au compte) — rôle et périmètre viennent de la base, jamais du jeton ; une session révoquée ou un compte désactivé est refusé en 30 s au plus (cache par réplique) ; base injoignable : 503, pas 401 ;");
   L.push("6. la **démo** (toute écriture refusée), le **rôle**, la **portée** : l'application demandée est confrontée au périmètre AVANT le traitement ;");
   L.push("7. l'**entrée** : paramètres et corps validés, champ inconnu ou répété refusé (400), corps JSON sous plafond (413) ;");
   L.push("8. le **débit** par principal (429 avec `retry-after`) ;");
+  L.push("   - 8 bis. la **ressource du chemin** (portée « ressource ») : son application est lue en base et confrontée au périmètre ; absente OU hors périmètre, c'est le même 404 `ressource_inconnue` — un identifiant deviné ne dit pas s'il existe ailleurs ;");
   L.push("9. le **traitement**, sous l'échéance (503 au-delà) ;");
   L.push("10. l'enveloppe `{ meta: { request_id }, data }`, `cache-control: no-store`, signée `x-mip-console-api: 1`. Une panne rend 500 et un message générique ; sa cause reste au journal, avec le `request_id`.");
   L.push("");
@@ -50,9 +51,10 @@ export function rendreDoc(table: readonly Enregistrement[]): string {
   L.push("|---|---|---|---|---|---|---|");
   const tries = [...table].sort((a, b) => a.operation.chemin.localeCompare(b.operation.chemin) || a.operation.methode.localeCompare(b.operation.methode));
   for (const { operation: o, politique: p } of tries) {
+    const portee = p.ressource ? `ressource \`{${p.ressource.parametre}}\` de \`${p.ressource.table}\`, dans le périmètre` : PORTEE[p.portee];
     const audit = p.audit === undefined ? "—" : typeof p.audit === "string" ? `\`${p.audit}\`` : `exemptée : ${p.audit.exempt}`;
     L.push(
-      `| \`${o.id}\` | \`${o.methode} ${o.chemin}\` | ${AUTH[p.auth]} | ${PORTEE[p.portee]} | ${p.demo === "lecture" ? "lecture" : "**refusée**"} | ${p.secretClient === "aucun" ? "**non exigé**" : "exigé"} | ${audit} |`,
+      `| \`${o.id}\` | \`${o.methode} ${o.chemin}\` | ${AUTH[p.auth]} | ${portee} | ${p.demo === "lecture" ? "lecture" : "**refusée**"} | ${p.secretClient === "aucun" ? "**non exigé**" : "exigé"} | ${audit} |`,
     );
   }
   L.push("");

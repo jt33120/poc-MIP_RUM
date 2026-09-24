@@ -379,6 +379,12 @@ jobs:
       # Avant lui, `verify-db-roles.mjs` confronte les droits de `mip_api` à sa
       # liste blanche ET au bundle du service : une lecture v1 ajoutée à la
       # console sur une table non accordée échoue ICI, pas en production.
+      #
+      # C0c — LA MATRICE D'AUTORISATIONS de console-api
+      # (`tests/contract/console-api-authz.test.ts`) : une cinquième base, où le
+      # test crée comptes, sessions (v90) et une vue d'une autre app, puis appelle
+      # chaque opération avec chaque profil. Même règle : sans sa variable, il
+      # refuse de s'ignorer en CI.
       - name: Contrats de parité console ↔ collector et console ↔ api, relais P3 (bases migrées)
         env:
           PGPASSWORD: postgres
@@ -386,8 +392,9 @@ jobs:
           CONTRACT_COLLECTOR_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_parite_collector
           RELAY_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_relais
           CONTRACT_API_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_parite_api
+          CONSOLE_API_AUTHZ_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_console_api
         run: |
-          for base in mip_rum_parite_next mip_rum_parite_collector mip_rum_relais mip_rum_parite_api; do
+          for base in mip_rum_parite_next mip_rum_parite_collector mip_rum_relais mip_rum_parite_api mip_rum_console_api; do
             psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
               -c "create database $base"
             DATABASE_URL="postgres://postgres:postgres@localhost:5433/$base" \
