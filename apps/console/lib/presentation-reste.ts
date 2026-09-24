@@ -162,7 +162,7 @@ export const POINTS_RESTE: readonly PointReste[] = [
     id: "R10",
     titre: "Une base dimensionnée pour un vrai produit",
     manque:
-      "La base tourne sur l'offre gratuite de Neon : 100 heures de calcul par mois. Son épuisement a coupé la production du 24 septembre au 1er octobre 2026 : passé le quota, le calcul reste suspendu jusqu'au mois suivant. Pour tenir, les tâches planifiées et la livraison des alertes passent toutes les 15 minutes au lieu de 5 : une alerte part jusqu'à 15 minutes après sa cause. La collecte continue d'un vrai site suffirait à épuiser le quota, et l'offre plafonne aussi le stockage à 0,5 Go, déjà occupés à 63 % le 24/09/2026.",
+      "La base tourne sur l'offre gratuite de Neon : 100 heures de calcul par mois. Son épuisement a coupé la production du 24 septembre au 1er octobre 2026 : passé le quota, le calcul reste suspendu jusqu'au mois suivant. Pour tenir, les tâches planifiées et la livraison des alertes passent toutes les 15 minutes au lieu de 5 : une alerte part jusqu'à 15 minutes après sa cause. La collecte continue d'un vrai site suffirait à épuiser le quota, et l'offre plafonne aussi le stockage à 0,5 Go, déjà occupés à 60 % le 24/09/2026.",
     debloque:
       "Passer la base sur une offre payante (de l'ordre de 20 à 40 $ par mois avec tous les services), puis remettre les cadences à 5 minutes et la livraison à 15 secondes : deux variables, sans changement de code.",
     decide: "Le responsable du produit : c'est une ligne de budget.",
