@@ -6,6 +6,7 @@
 // propre, pool, sondes, boucles) dans `@mip/service-kit`.
 //
 //   tick        toutes les 5 min   alertes, SLO, sondes uptime (+ livraison, voir plus bas)
+//               (15 sur la base gratuite : SCHEDULER_TICK_MIN, voir `cadence.mjs`)
 //   horaire     à HH:05            rollups, histogrammes, nouvelles erreurs, anomalies
 //   quotidien   à 03:17 UTC        purge de rétention, comptage du volume
 //
@@ -43,12 +44,13 @@ import { createMetrics } from "@mip/service-kit/metrics.mjs";
 import { startService } from "@mip/service-kit/http.mjs";
 import { startLoop } from "@mip/service-kit/loop.mjs";
 import { dispatchOnce } from "@mip/backend/lib/dispatch-alerts.mjs";
-import { CADENCES, prochainDelai } from "@mip/backend/jobs/cadence.mjs";
+import { TICKS_ADMIS_MIN, TICK_VISE_MIN, decrireCadences, prochainDelai, tolerancesMs } from "@mip/backend/jobs/cadence.mjs";
 import { travaux } from "@mip/backend/jobs/planifie.mjs";
 import {
   CADENCES_PLANIFIEES,
   creerOrdonnanceur,
   creerSignalDeadman,
+  publierCadenceTick,
   titulaireBail,
 } from "@mip/backend/jobs/ordonnanceur.mjs";
 
@@ -70,6 +72,12 @@ const config = defineConfig(
     PGPOOL_MAX: { type: "int", default: 4, min: 2, max: 20, description: "Taille du pool. Neon plafonne à max_connections = 112 pour tous les services." },
     // L'URL d'un dead-man's switch EST son secret : qui la connaît simule un battement.
     DEADMAN_URL: { type: "url", secret: true, protocols: ["https:"], description: "Dead-man's switch externe, signalé après chaque tick abouti. Absent : aucun signal." },
+    SCHEDULER_TICK_MIN: {
+      type: "enum",
+      values: TICKS_ADMIS_MIN.map(String),
+      default: String(TICK_VISE_MIN),
+      description: "Cadence du tick, en minutes (diviseur de l'heure). 5 visé ; 15 sur l'offre gratuite de Neon, pour que la base s'endorme entre deux passages.",
+    },
     SCHEDULER_DELIVERY: {
       type: "enum",
       values: ["on", "off"],
@@ -90,6 +98,8 @@ const pool = createPool(pg, {
   lifecycle,
 });
 
+const tickMin = Number(config.SCHEDULER_TICK_MIN);
+
 const ordonnanceur = creerOrdonnanceur({
   pool,
   jobs: travaux(pool, { log, dispatch: dispatchOnce, livraison: config.SCHEDULER_DELIVERY === "on" }),
@@ -97,7 +107,13 @@ const ordonnanceur = creerOrdonnanceur({
   log,
   metrics,
   signalDeadman: creerSignalDeadman(config.DEADMAN_URL, { log }),
+  tolerances: tolerancesMs(tickMin),
 });
+
+// La cadence effective, publiée en base au premier tick qui y parvient (puis
+// plus jamais : une requête par démarrage, dans la fenêtre où le tick a déjà
+// réveillé la base).
+let cadencePubliee = false;
 
 // Une boucle par cadence, sur la grille de l'horloge (UTC). La boucle du kit ne
 // lance jamais deux passages de front et, au SIGTERM, attend la fin du passage
@@ -110,11 +126,15 @@ for (const job of CADENCES_PLANIFIEES) {
     lifecycle,
     immediate: job === "tick",
     nextDelay: () => {
-      const delai = prochainDelai(job, Date.now());
+      const delai = prochainDelai(job, Date.now(), { tickMin });
       log.info("prochain passage", { job, dans_s: Math.round(delai / 1000) });
       return delai;
     },
-    run: () => ordonnanceur.executer(job),
+    run: async () => {
+      const r = await ordonnanceur.executer(job);
+      if (job === "tick" && !cadencePubliee) cadencePubliee = await publierCadenceTick(pool, tickMin, { log });
+      return r;
+    },
   });
 }
 
@@ -134,7 +154,7 @@ startService({
 log.info("scheduler démarré", {
   db: describeTarget(config.DATABASE_URL),
   porteur: ordonnanceur.porteur,
-  cadences: CADENCES,
+  cadences: decrireCadences(tickMin),
   deadman: Boolean(config.DEADMAN_URL),
   livraison: config.SCHEDULER_DELIVERY,
 });

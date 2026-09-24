@@ -199,16 +199,46 @@ export function verdictCadence(job, bail, { maintenant, demarrage, tolerances = 
   };
 }
 
+/** Clé de `platform_flag` où le scheduler publie la cadence EFFECTIVE de son tick. */
+export const CLE_CADENCE_TICK = "scheduler_tick_min";
+
+/**
+ * Publie la cadence du tick en base, pour la vitrine et la console : elles
+ * disent « 15 minutes » quand c'est 15, au lieu d'une valeur d'usine. Une
+ * écriture seulement si la valeur change (`where … is distinct from`), et le
+ * rend : vrai si la base porte la valeur, faux si elle n'a pas pu l'écrire —
+ * base injoignable, ou `platform_flag` absente avant migration-v87. Le worker
+ * retente au passage suivant ; jamais d'exception.
+ */
+export async function publierCadenceTick(pool, tickMin, { log } = {}) {
+  try {
+    await pool.query(
+      `insert into platform_flag (key, value, updated_by) values ($1, $2, 'scheduler')
+       on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by
+        where platform_flag.value is distinct from excluded.value`,
+      [CLE_CADENCE_TICK, String(tickMin)],
+    );
+    return true;
+  } catch (err) {
+    log?.warn("cadence du tick non publiée — nouvel essai au passage suivant", { code: err?.code ?? null });
+    return false;
+  }
+}
+
 /**
  * L'ordonnanceur du worker : exécute une cadence (sans jamais lever), tient
  * l'état local, les métriques, et rend le verdict de /ready.
  *
+ * `tolerances` suit la cadence du tick (`tolerancesMs(tickMin)`) : trois passages
+ * manqués, qu'il en passe un toutes les 5 ou toutes les 15 minutes.
+ *
  * @param {{ pool: { query: Function }, jobs: Record<string, () => Promise<any>>, porteur: string,
  *           log: import("@mip/service-kit/log.mjs").Logger,
  *           metrics?: ReturnType<import("@mip/service-kit/metrics.mjs").createMetrics>,
- *           signalDeadman?: null | (() => Promise<boolean>), maintenant?: () => number }} options
+ *           signalDeadman?: null | (() => Promise<boolean>), maintenant?: () => number,
+ *           tolerances?: { tick: number, horaire: number, quotidien: number } }} options
  */
-export function creerOrdonnanceur({ pool, jobs, porteur, log, metrics, signalDeadman = null, maintenant = Date.now }) {
+export function creerOrdonnanceur({ pool, jobs, porteur, log, metrics, signalDeadman = null, maintenant = Date.now, tolerances = TOLERANCES_MS }) {
   const demarrage = maintenant();
   /** Dernier passage de chaque cadence DANS CE PROCESSUS. */
   const local = {};
@@ -293,11 +323,11 @@ export function creerOrdonnanceur({ pool, jobs, porteur, log, metrics, signalDea
     const cadences = {};
     for (const job of CADENCES_PLANIFIEES) {
       const bail = e.baux.find((b) => b.job === job) ?? null;
-      cadences[job] = { ...verdictCadence(job, bail, { maintenant: e.maintenant, demarrage }), local: local[job] ?? null };
+      cadences[job] = { ...verdictCadence(job, bail, { maintenant: e.maintenant, demarrage, tolerances }), local: local[job] ?? null };
     }
     // Une livraison en attente depuis plus longtemps que la tolérance du tick
     // ne partira pas toute seule : le tick tourne, mais ne livre plus.
-    const livraisonsBloquees = (e.backlog.plus_ancienne_s ?? 0) * 1000 > TOLERANCES_MS.tick;
+    const livraisonsBloquees = (e.backlog.plus_ancienne_s ?? 0) * 1000 > tolerances.tick;
     const ok = !Object.values(cadences).some((c) => c.retard) && !livraisonsBloquees;
     return {
       ok,
