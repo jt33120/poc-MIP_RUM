@@ -5,7 +5,7 @@
 // dans `@mip/backend/jobs/cadence.mjs` ; le processus (configuration, arrêt
 // propre, pool, sondes, boucles) dans `@mip/service-kit`.
 //
-//   tick        toutes les 5 min   alertes, SLO, sondes uptime, webhooks, tickets
+//   tick        toutes les 5 min   alertes, SLO, sondes uptime (+ livraison, voir plus bas)
 //   horaire     à HH:05            rollups, histogrammes, nouvelles erreurs, anomalies
 //   quotidien   à 03:17 UTC        purge de rétention, comptage du volume
 //
@@ -19,6 +19,13 @@
 // parallèle : un client recevrait l'alerte en double. D'où un BAIL par cadence
 // (une ligne à expiration, qui traverse le pooler Neon en mode transaction, là
 // où un verrou de session se perdait) — cf. `@mip/backend/jobs/bail.mjs`.
+//
+// LA LIVRAISON QUITTE LE SCHEDULER (P5). Webhooks, e-mails et tickets partent du
+// service `notifier`, toutes les 15 s, seul détenteur des secrets sortants. Tant
+// que `SCHEDULER_DELIVERY` vaut `on` (défaut), le tick livre aussi, comme avant ;
+// `off` le réduit à DÉCIDER — les livraisons restent `queued` pour le notifier.
+// Le scheduler n'a pas de clé Resend : une livraison e-mail qu'il prendrait
+// serait soldée `skipped`. D'où `off` posé au plus tard quand le notifier démarre.
 //
 // LES SONDES, ET POURQUOI CE PARTAGE :
 //   /health   processus vivant + base joignable. C'est LA sonde Railway. « Jamais
@@ -63,6 +70,12 @@ const config = defineConfig(
     PGPOOL_MAX: { type: "int", default: 4, min: 2, max: 20, description: "Taille du pool. Neon plafonne à max_connections = 112 pour tous les services." },
     // L'URL d'un dead-man's switch EST son secret : qui la connaît simule un battement.
     DEADMAN_URL: { type: "url", secret: true, protocols: ["https:"], description: "Dead-man's switch externe, signalé après chaque tick abouti. Absent : aucun signal." },
+    SCHEDULER_DELIVERY: {
+      type: "enum",
+      values: ["on", "off"],
+      default: "on",
+      description: "off : le tick ne livre plus (webhooks, e-mails, tickets) — le notifier s'en charge. Retour arrière : on.",
+    },
   },
   { service: "scheduler", log },
 );
@@ -79,7 +92,7 @@ const pool = createPool(pg, {
 
 const ordonnanceur = creerOrdonnanceur({
   pool,
-  jobs: travaux(pool, { log, dispatch: dispatchOnce }),
+  jobs: travaux(pool, { log, dispatch: dispatchOnce, livraison: config.SCHEDULER_DELIVERY === "on" }),
   porteur: titulaireBail(process.env),
   log,
   metrics,
@@ -123,4 +136,5 @@ log.info("scheduler démarré", {
   porteur: ordonnanceur.porteur,
   cadences: CADENCES,
   deadman: Boolean(config.DEADMAN_URL),
+  livraison: config.SCHEDULER_DELIVERY,
 });

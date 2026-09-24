@@ -606,20 +606,23 @@ suite("P8.6 — révocation de jeton : dégradation, jamais un blocage de la col
     expect((await ligne(jobId!)).state).toBe("pending");
   });
 
-  // P1 — la contrainte v84 accepte encore `env:` suivi de n'importe quelle
-  // variable : une ligne écrite avant le resserrement, ou directement en base,
-  // peut désigner une variable de la PLATEFORME. La résolution la refuse, même
-  // présente dans le runtime, et rien ne part chez le fournisseur.
-  it("une référence à une variable de la plateforme n'est jamais résolue, même présente", async () => {
+  // P1 — une ligne écrite AVANT le resserrement du schéma pouvait désigner une
+  // variable de la PLATEFORME. Depuis v88, la migration la neutralise (référence
+  // remplacée, intégration désactivée) : rien ne part chez le fournisseur, et la
+  // demande reste en file pour quand l'administrateur aura posé une variable
+  // `TICKET_…`. La résolution garde sa propre défense (tests unitaires P8.6).
+  it("une référence à une variable de la plateforme n'est jamais résolue : v88 neutralise la ligne héritée", async () => {
+    await pool.query("alter table ticket_integration drop constraint ticket_integration_credential_v88");
     const integ = await integration(APP, { credential: "env:DATABASE_URL" });
     const iss = await issue();
     const { jobId } = await demander(integ, iss.id);
+    await pool.query(readFileSync(join(SQL_DIR, "migration-v88.sql"), "utf8"));
     const f = espion([() => CREE_OK()]);
     await livrerTickets(pool, { fetchImpl: f.impl, env: { ...ENV, DATABASE_URL: "postgres://ne-doit-pas-sortir" } });
     // Pas un seul appel sortant, pas même une recherche.
     expect(f.appels).toHaveLength(0);
-    const { rows } = await pool.query("select state, last_error from ticket_integration where id = $1", [integ]);
-    expect(rows[0]).toEqual({ state: "degraded", last_error: "variable_hors_perimetre" });
+    const { rows } = await pool.query("select credential_ref, enabled, state, last_error from ticket_integration where id = $1", [integ]);
+    expect(rows[0]).toEqual({ credential_ref: "env:TICKET_REFERENCE_REFUSEE_V88", enabled: false, state: "degraded", last_error: "variable_hors_perimetre" });
     expect((await ligne(jobId!)).state).toBe("pending");
   });
 

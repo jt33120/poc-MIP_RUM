@@ -66,9 +66,12 @@ async function main() {
     max: 2,
     log,
   });
-  const jobs = travaux(pool, { log, dispatch: dispatchOnce });
+  // La même règle que le worker : `SCHEDULER_DELIVERY=off`, le tick ne livre pas
+  // (le notifier s'en charge, et lui seul a la clé Resend).
+  const livraison = process.env.SCHEDULER_DELIVERY?.trim() !== "off";
+  const jobs = travaux(pool, { log, dispatch: dispatchOnce, livraison });
   const porteur = titulaireManuel();
-  log.info("déclenchement manuel", { job: nom, db: describeTarget(process.env.DATABASE_URL), porteur });
+  log.info("déclenchement manuel", { job: nom, db: describeTarget(process.env.DATABASE_URL), porteur, livraison });
 
   let code = 0;
   try {
