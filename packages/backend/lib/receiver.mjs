@@ -34,12 +34,13 @@ import { corsHeaders as buildCors, originsFromRegistry, REPLAY_ALLOW_HEADERS } f
 import { createLogger } from "../shared/log.mjs";
 import {
   bodyTooLarge,
+  lireCorpsBorne,
   MAX_BODY_BYTES,
   MAX_REPLAY_INFLATED_BYTES,
   MAX_SPANS_PER_REQUEST,
 } from "../shared/limits.mjs";
 import { flattenOtlp, flattenOtlpLogs } from "../shared/otlp.mjs";
-import { isTransient, withRetry } from "../shared/retry.mjs";
+import { estIndisponibilite, isTransient, withRetry } from "../shared/retry.mjs";
 import { etatIdentite, secureOtlpIdentities } from "./identity-hash.mjs";
 
 /** Garde-fou replay : > au plafond du SDK (1 Mo gzip par session). */
@@ -96,37 +97,14 @@ export function plafondCorps(url) {
   return MAX_BODY_BYTES;
 }
 
-/**
- * Une panne de base qui vaut « rejoue plus tard » : erreur transitoire connue,
- * ou délai du pool (`pg-pool` lève une erreur sans code quand il n'obtient pas
- * de connexion à temps), ou délai de requête côté client.
- */
-function estIndisponibilite(err) {
-  if (isTransient(err)) return true;
-  const m = String(err?.message ?? "");
-  return /timeout exceeded when trying to connect|Query read timeout|Connection terminated/i.test(m);
-}
+// « Base indisponible » (`estIndisponibilite`) et lecture bornée du corps
+// (`lireCorpsBorne`) vivent dans `shared/` : la console les emploie aussi, pour
+// que les deux ports rendent le même statut (contrat de parité, P2).
 
 /** En-tête normalisé (Node donne string | string[] | undefined). */
 function entete(req, nom) {
   const v = req.headers[nom];
   return Array.isArray(v) ? v[0] : (v ?? null);
-}
-
-/**
- * Lit le corps en bornant la mémoire. Renvoie null si la limite est franchie —
- * on arrête de concaténer AU MOMENT du dépassement plutôt que d'accumuler
- * d'abord et de mesurer ensuite, ce qui laisserait passer l'attaque.
- */
-async function lireCorps(req, max) {
-  const morceaux = [];
-  let total = 0;
-  for await (const c of req) {
-    total += c.length;
-    if (total > max) return null;
-    morceaux.push(c);
-  }
-  return Buffer.concat(morceaux);
 }
 
 /**
@@ -346,7 +324,7 @@ export function creerReceveur(pool, opts = {}) {
       log.warn("payload too large", { content_length: entete(req, "content-length"), max: MAX_BODY_BYTES });
       return repondre(res, 413, { error: "payload too large" }, entetes);
     }
-    const brut = await lireCorps(req, MAX_BODY_BYTES);
+    const brut = await lireCorpsBorne(req, MAX_BODY_BYTES);
     if (brut === null) {
       log.warn("payload too large", { max: MAX_BODY_BYTES });
       return repondre(res, 413, { error: "payload too large" }, entetes);
@@ -438,7 +416,7 @@ export function creerReceveur(pool, opts = {}) {
     const refus = await gardes([{ app_id: appId, api_key: entete(req, "x-mip-key") }], entetes);
     if (refus) return repondre(res, refus.statut, refus.corps, refus.entetes);
 
-    const body = await lireCorps(req, MAX_REPLAY_BYTES);
+    const body = await lireCorpsBorne(req, MAX_REPLAY_BYTES);
     if (body === null || !body.length) {
       return repondre(res, 413, { error: "invalid payload size" }, entetes);
     }

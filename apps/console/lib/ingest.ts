@@ -11,6 +11,7 @@
 import { createPgAuth } from "@mip/backend/lib/pg-ingest.mjs";
 import { corsHeaders as buildCors, originsFromRegistry } from "@mip/backend/shared/cors.mjs";
 import { createLogger } from "@mip/backend/shared/log.mjs";
+import { estIndisponibilite } from "@mip/backend/shared/retry.mjs";
 import { pool } from "./db";
 
 export const REQUIRE_API_KEY = process.env.REQUIRE_API_KEY === "true";
@@ -75,6 +76,18 @@ export function refusIngestion(
   if (nom === "ErreurVerrouIngestion") {
     log.warn("busy: app ingest lock", { apps: (err as { apps?: string[] }).apps });
     return json({ error: "ingestion busy, retry", retry: true }, 503, cors, {
+      "retry-after": "2",
+    });
+  }
+  // Base injoignable au-delà des reprises (`withRetry`) : la transaction n'a pas
+  // commencé ou a été annulée, rien n'est écrit, et rejouer plus tard réussira.
+  // 503 + retry-after, comme le collector — c'était un 500 ici, et la même panne
+  // rendait donc deux statuts selon le port qui la recevait (contrat de parité,
+  // `tests/contract/ingest-parity.test.ts`). Le SDK rejoue les deux ; seul le
+  // 503 porte le `retry-after` qui étale les rejeux d'un parc entier.
+  if (estIndisponibilite(err)) {
+    log.warn("busy: database unavailable", { code: (err as { code?: string } | null)?.code ?? null });
+    return json({ error: "ingestion unavailable, retry", retry: true }, 503, cors, {
       "retry-after": "2",
     });
   }

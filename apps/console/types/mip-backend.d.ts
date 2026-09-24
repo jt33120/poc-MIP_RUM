@@ -450,6 +450,11 @@ declare module "@mip/backend/shared/limits.mjs" {
     contentLength: string | number | null | undefined,
     max?: number,
   ): boolean;
+  /** Corps lu en bornant la mémoire : null au premier octet au-delà de `max`. */
+  export function lireCorpsBorne(
+    flux: AsyncIterable<Uint8Array> | null | undefined,
+    max?: number,
+  ): Promise<Buffer | null>;
 }
 
 // P7.5 — vocabulaire FERMÉ des capacités mobiles. Le module serveur fait
@@ -493,6 +498,9 @@ declare module "@mip/backend/shared/log.mjs" {
 }
 
 declare module "@mip/backend/shared/retry.mjs" {
+  export function isTransient(err: unknown): boolean;
+  /** Panne de base qui vaut « rejoue plus tard » : 503 + retry-after sur les ports d'ingestion. */
+  export function estIndisponibilite(err: unknown): boolean;
   export function withRetry<T>(
     fn: () => Promise<T>,
     opts?: {

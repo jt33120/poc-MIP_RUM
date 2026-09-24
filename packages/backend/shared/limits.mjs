@@ -54,3 +54,37 @@ export function bodyTooLarge(contentLength, max = MAX_BODY_BYTES) {
   const n = Number(contentLength);
   return Number.isFinite(n) && n > max;
 }
+
+/**
+ * Lit un corps en BORNANT la mémoire : rend null dès que `max` est franchi, le
+ * Buffer complet sinon (vide si le corps est absent).
+ *
+ * POURQUOI ICI, ET PAS DANS CHAQUE PORT. `bodyTooLarge` ne regarde que la
+ * longueur ANNONCÉE ; un client en transfert par morceaux n'en annonce aucune.
+ * Le receveur du collector bornait sa lecture ; les routes Next, elles, lisaient
+ * par `req.json()`, sans borne — si bien qu'un même lot OTLP de 3 Mo sans
+ * `content-length` rendait 413 sur le collector et 200 sur la console (jusqu'au
+ * plafond de la plateforme, 4,5 Mo sur Vercel). Relevé par le contrat de parité
+ * (`tests/contract/ingest-parity.test.ts`) : la lecture vit désormais ici, une
+ * fois, pour les deux ports.
+ *
+ * On arrête de concaténer AU MOMENT du dépassement plutôt que d'accumuler puis
+ * de mesurer, ce qui laisserait passer l'attaque. Le flux est n'importe quel
+ * itérable asynchrone d'octets : `IncomingMessage` de node:http comme
+ * `ReadableStream` web (Next, runtime Node). Rend un `Buffer` : Node seulement,
+ * les deux ports l'étant.
+ * @param {AsyncIterable<Uint8Array> | null | undefined} flux
+ * @param {number} max
+ * @returns {Promise<Buffer | null>}
+ */
+export async function lireCorpsBorne(flux, max = MAX_BODY_BYTES) {
+  if (flux == null) return Buffer.alloc(0);
+  const morceaux = [];
+  let total = 0;
+  for await (const morceau of flux) {
+    total += morceau.length;
+    if (total > max) return null;
+    morceaux.push(morceau);
+  }
+  return Buffer.concat(morceaux);
+}
