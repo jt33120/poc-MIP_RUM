@@ -70,7 +70,7 @@ import { annotationsDeploiements } from "@/lib/annotations";
 // P*.7 — datation d'une rupture : fenêtre fixe de 14 jours, à part de la plage de l'écran.
 import { fusionnerAnnotations } from "@/lib/annotations";
 import { dailyLcpSeries, type DailyLcp } from "@/lib/queries-grid";
-import { bornesJourLocal } from "@/lib/fuseau";
+import { bornesJourLocal } from "@/lib/fuseau-local";
 import { instantDe, jourDans } from "@/lib/series";
 import { tendance } from "@/lib/forecast";
 import {

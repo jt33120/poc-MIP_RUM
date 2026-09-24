@@ -26,19 +26,19 @@ const SERVICES = readdirSync("services", { withFileTypes: true })
 
 /** Le point d'entrée que chaque image démarre. */
 const ENTREE: Record<string, string> = {
+  api: "dist/server.mjs",
   collector: "server.mjs",
   "console-api": "dist/server.mjs",
   scheduler: "worker.mjs",
   notifier: "worker.mjs",
   mcp: "http.mjs",
 };
-
 /**
- * Le fichier SOURCE du point d'entrée, quand l'image démarre un fichier construit :
- * `console-api` compile ses paquets TypeScript en un bundle (`dist/`, hors dépôt)
- * à partir de `server.mjs`.
+ * Le fichier SOURCE du point d'entrée, quand l'image démarre un fichier construit
+ * (`dist/`, hors dépôt) : `api` compile les routes v1 de la console, `console-api`
+ * ses paquets TypeScript — l'un et l'autre à partir de `server.mjs`.
  */
-const SOURCE: Record<string, string> = { "console-api": "server.mjs" };
+const SOURCE: Record<string, string> = { api: "server.mjs", "console-api": "server.mjs" };
 
 const dockerfile = (svc: string) => lire(join("services", svc, "Dockerfile"));
 /** Les instructions, sans les commentaires ni les lignes vides. */
@@ -160,7 +160,7 @@ describe("images — le compose et la fumée", () => {
     expect(migrate).toContain('command: ["node", "services/scheduler/migrate.mjs"]');
     expect(migrate).toContain('restart: "no"');
     expect(migrate).not.toContain("profiles:");
-    for (const svc of ["collector", "console-api", "scheduler", "notifier"]) expect(bloc(svc)).toContain("depends_on: *apres-migration");
+    for (const svc of ["api", "collector", "console-api", "scheduler", "notifier"]) expect(bloc(svc)).toContain("depends_on: *apres-migration");
     expect(compose).toMatch(/x-apres-migration: &apres-migration\n\s+migrate:\n\s+condition: service_completed_successfully/);
     // Le schéma n'est plus posé par un script d'initialisation de Postgres.
     expect(compose).not.toContain("docker-entrypoint-initdb.d");
