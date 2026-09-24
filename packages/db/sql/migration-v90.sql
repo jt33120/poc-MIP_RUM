@@ -122,6 +122,29 @@ end $$;
 create index if not exists idx_audit_log_app_ts on audit_log (app_id, ts desc) where app_id is not null;
 create index if not exists idx_audit_log_request on audit_log (request_id) where request_id is not null;
 
+-- ET SA PORTÉE POUR `console_ro`. Avec `app_id`, le journal devient une table
+-- « scopée », et la lecture que v16 accordait à `console_ro` (`cro_sel_audit`,
+-- `using (true)`) serait une fuite entre clients : l'administrateur d'une app
+-- lirait le journal de toutes. Remplacée par la règle commune de v47 : un
+-- lecteur à la portée d'un client ne lit QUE les lignes de ses applications —
+-- ni celles des autres, ni les lignes globales (connexions, comptes), qui sont
+-- l'affaire de la plateforme. Portée vide : rien (fail-closed). L'insertion
+-- reste ouverte à une ligne globale, mais refuse une ligne attribuée à une
+-- application hors de la portée.
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'console_ro') then
+    return; -- rôle absent (auto-hébergement minimal) : rien à restreindre
+  end if;
+  drop policy if exists cro_sel_audit on audit_log;
+  drop policy if exists tenant_scope on audit_log;
+  create policy tenant_scope on audit_log for select to console_ro
+    using (app_id = any(current_app_ids()));
+  drop policy if exists cro_ins_audit on audit_log;
+  create policy cro_ins_audit on audit_log for insert to console_ro
+    with check (app_id is null or app_id = any(current_app_ids()));
+end $$;
+
 -- EN AJOUT SEUL. Aucune ligne du journal ne se modifie ni ne s'efface — ni par
 -- la console, ni par un script, ni par une purge. Le code n'en a jamais eu
 -- besoin (v09 et v14 l'excluaient déjà de toute purge) ; désormais la base le

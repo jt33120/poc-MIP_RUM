@@ -112,6 +112,10 @@ async function main() {
       `insert into ticket_webhook_event (app_id,integration_id,delivery_id,event_type,status)
        values ($1,$2,'d-1','issues','ignored')`, [app, integ]);
   }
+  // v90 : une ligne d'audit par tenant, et une ligne GLOBALE (sans app).
+  for (const app of ["app-a", "app-b", null]) {
+    await c.query("insert into audit_log (action, detail, app_id) values ('isolation.test', 'fixture', $1)", [app]);
+  }
   // Un événement d'alerte + une livraison rattachés au tenant A uniquement.
   const ruleA = (await c.query("select id from alert_rule where app_id='app-a' limit 1")).rows[0].id;
   const evA = (await c.query(
@@ -179,6 +183,15 @@ async function main() {
   assert("console_ro + portée A : ne voit QUE les connecteurs de tickets de A", (await seen(c, "ticket_integration")) === 1);
   assert("console_ro + portée A : ne voit QUE la file de tickets de A", (await seen(c, "ticket_outbox")) === 1);
   assert("console_ro + portée A : ne voit QUE les livraisons entrantes de A", (await seen(c, "ticket_webhook_event")) === 1);
+  assert("v90 — console_ro + portée A : ne voit QUE l'audit de A (ni B, ni les lignes globales)",
+    Number((await c.query("select count(*)::int n from audit_log where action = 'isolation.test'")).rows[0].n) === 1);
+  assert("v90 — console_ro : AUCUNE session ni compteur d'échecs lisible, même avec le droit SELECT (RLS sans policy)",
+    (await seen(c, "console_session")) + (await seen(c, "auth_throttle")) === 0);
+  let auditAutreApp = false;
+  try {
+    await c.query("insert into audit_log (action, detail, app_id) values ('isolation.test', 'intrus', 'app-b')");
+  } catch { auditAutreApp = true; }
+  assert("v90 — console_ro + portée A : n'écrit PAS une ligne d'audit attribuée à B", auditAutreApp);
 
   const rows = (await c.query("select distinct app_id from rum_metric")).rows.map((r) => r.app_id);
   assert("console_ro + portée A : aucune ligne de B ne transparaît", rows.length === 1 && rows[0] === "app-a");
@@ -219,6 +232,8 @@ async function main() {
       + (await seen(c, "ticket_webhook_event")) === 0);
   assert("portée vide : AUCUNE issue ni alias visible (fail-closed)",
     (await seen(c, "error_issue")) === 0 && (await seen(c, "error_issue_alias")) === 0);
+  assert("v90 — portée vide : AUCUNE ligne d'audit visible (fail-closed)",
+    Number((await c.query("select count(*)::int n from audit_log where action = 'isolation.test'")).rows[0].n) === 0);
   assert("portée vide : AUCUNE activité, AUCUN lien, AUCUNE notification d'issue (fail-closed)",
     (await seen(c, "error_issue_activity")) + (await seen(c, "error_issue_ticket")) + (await seen(c, "error_issue_notification")) === 0);
 
