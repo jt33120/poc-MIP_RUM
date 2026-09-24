@@ -21,6 +21,7 @@ Un service, une ligne :
 | `collector` | point d'entrée unique des capteurs : OTLP traces et logs, replay, source maps de CI (jeton dédié) ; chemins historiques de la console acceptés ; bord de confiance du relais, identité hachée ici — détail : [`collector/README.md`](collector/README.md) | oui (`PORT`, défaut 4318) : `/health` (sonde Railway : processus + base, décrit service, protocole de bord et empreinte d'identité), `/ready` et `/metrics` (jeton) | `node services/collector/server.mjs` | pas encore (P2 : lancement à blanc) — en production, la collecte passe par la route de la console jusqu'au relais de P3 |
 | `scheduler` | déclenche les travaux planifiés sous bail, et **seul** applique les migrations (pré-déploiement) — détail : [`scheduler/README.md`](scheduler/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/scheduler/worker.mjs` · pré-déploiement `node services/scheduler/migrate.mjs` | Railway |
 | `notifier` | livre ce que la plateforme a décidé de dire — webhooks signés, e-mails Resend, tickets — et seul détient les secrets sortants — détail : [`notifier/README.md`](notifier/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/notifier/worker.mjs` | pas encore (P5) — en production, le scheduler livre à chaque tick |
+| `api` | l'API de lecture v1 pour les machines, **en lecture seule** : les routes de la console compilées en un bundle, sans Next ni session — détail : [`api/README.md`](api/README.md) | oui (`PORT`) : `/api/v1/*`, `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/api/dist/server.mjs` (construit par `build.mjs`) | pas encore (P4) — l'API v1 est servie par la console |
 | `mcp` | expose l'API v1 à un agent IA, sans accès à la base | oui (`PORT`) | `node services/mcp/http.mjs` | Railway |
 
 `services/collector/` porte aussi les deux serveurs de **développement** que
@@ -55,6 +56,7 @@ déployés en vert sur leur nouvelle image.
 | `collector/Dockerfile` | `@mip/backend`, `pg`, **la base GeoIP** (seule image à la porter, vérifiée contre `packages/backend/data/*.manifest.json`) | `node services/collector/server.mjs` |
 | `scheduler/Dockerfile` | `@mip/backend`, `@mip/db` et son `sql/`, `pg` | `node services/scheduler/worker.mjs` ; le migrateur (`migrate.mjs`) part au pré-déploiement, jamais par défaut |
 | `notifier/Dockerfile` | `@mip/backend`, `pg` — ni `@mip/db` (seul le scheduler migre), ni base GeoIP | `node services/notifier/worker.mjs` |
+| `api/Dockerfile` | `dist/server.mjs` (les routes v1 de la console, compilées à la construction) et `pg` — ni Next, ni la vérification des sessions | `node services/api/dist/server.mjs` |
 | `mcp/Dockerfile` | `@mip/mcp-tools`, le SDK MCP, zod — **ni `pg` ni `DATABASE_URL`** | `node services/mcp/http.mjs` |
 
 Chaque arbre déployé est posé sous `/app/services/<x>` : les commandes écrites
