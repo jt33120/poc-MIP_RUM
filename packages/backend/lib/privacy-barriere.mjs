@@ -65,8 +65,10 @@ const SQLSTATE_VERROU = "55P03";
 
 /** Attente bornée par le verrou d'application : l'appelant peut rejouer. */
 export class ErreurVerrouIngestion extends Error {
-  constructor(appIds) {
-    super(`verrou d'ingestion indisponible après ${STRATEGIE_VERROU.tentatives} tentatives (${appIds.join(", ")})`);
+  // `tentatives` : celles de l'appelant — le collector en fait 2 (budget de
+  // requête, P2), la console 3 ; le message doit dire la vérité sur les deux.
+  constructor(appIds, tentatives = STRATEGIE_VERROU.tentatives) {
+    super(`verrou d'ingestion indisponible après ${tentatives} tentatives (${appIds.join(", ")})`);
     this.name = "ErreurVerrouIngestion";
     this.code = SQLSTATE_VERROU;
     this.apps = appIds;
@@ -159,6 +161,12 @@ export async function withAppIngestTransaction(pool, appId, travail, opts = {}) 
   // NaN produirait `lock_timeout = 'NaNms'`, et une chaîne n'entre jamais ici.
   const delaiMs = Math.max(0, Math.round(Number(opts.delaiVerrouMs ?? STRATEGIE_VERROU.delaiMs)) || 0);
   const tentatives = opts.tentatives ?? STRATEGIE_VERROU.tentatives;
+  // Échéance fournie (le collector, P2) : chemin à part, borné de bout en bout.
+  // Sans elle (console, drain, backfills), rien ne change — pas même le texte
+  // des requêtes.
+  if (opts.echeance != null) {
+    return transactionSousEcheance(pool, apps, travail, { echeance: Number(opts.echeance), delaiMs, tentatives, client: opts.client });
+  }
   const client = opts.client ?? (await pool.connect());
   const rendre = opts.client ? () => {} : () => client.release();
   try {
@@ -173,7 +181,7 @@ export async function withAppIngestTransaction(pool, appId, travail, opts = {}) 
       } catch (err) {
         await client.query("rollback").catch(() => {});
         if (err?.code !== SQLSTATE_VERROU || essai >= tentatives) {
-          if (err?.code === SQLSTATE_VERROU) throw new ErreurVerrouIngestion(apps);
+          if (err?.code === SQLSTATE_VERROU) throw new ErreurVerrouIngestion(apps, tentatives);
           throw err;
         }
         await dormir(STRATEGIE_VERROU.reculMs[Math.min(essai - 1, STRATEGIE_VERROU.reculMs.length - 1)]);
@@ -190,6 +198,201 @@ export async function withAppIngestTransaction(pool, appId, travail, opts = {}) 
     }
   } finally {
     rendre();
+  }
+}
+
+// ─────────────────────────── Échéance dure (P2) ─────────────────────────────
+//
+// POURQUOI. Le relais de la console abandonne à 8 s et rend 503 ; le SDK
+// rejoue. Si le collector COMMITTE après ce 503, le lot est écrit deux fois —
+// et les logs n'ont pas de clé naturelle pour dédoublonner. L'ancien « budget »
+// ne bornait que l'attente du verrou et les reprises : une requête SQL lente
+// (réseau, base qui se réveille) n'était bornée que par le `query_timeout` du
+// pool (30 s). D'où une ÉCHÉANCE, calculée à l'entrée de la requête HTTP, et
+// tenue ici de trois façons qui se recouvrent :
+//
+//   1. CÔTÉ CLIENT, chaque étape AVANT le COMMIT (connexion, BEGIN, réglages,
+//      verrou, travail) court contre l'échéance. Perdue : la connexion est
+//      DÉTRUITE, pas rendue au pool et pas « rollbackée » — un ROLLBACK ferait
+//      la queue derrière la requête en vol et repousserait le 503 d'autant.
+//      Socket fermée, le serveur annule la transaction : rien n'est commis.
+//   2. CÔTÉ SERVEUR, `statement_timeout` et `idle_in_transaction_session_timeout`
+//      = budget restant, et sur Postgres ≥ 17 `transaction_timeout` (Neon est en
+//      17) : même si le client se tait, la transaction meurt d'elle-même. C'est
+//      ce qui ferme le cas « COMMIT retardé en route » : un COMMIT qui arrive
+//      après l'échéance trouve une session déjà tuée (25P04), jamais une
+//      transaction à valider.
+//   3. LE COMMIT n'est envoyé QUE si l'échéance n'est pas passée, puis attendu
+//      au plus `GRACE_COMMIT_MS` de plus : on ne répond jamais PENDANT une
+//      écriture qui peut encore réussir. Son échec ne vaut « rien d'écrit » que
+//      si le SERVEUR l'a dit (SQLSTATE, ou coupure 25P03/25P04 reçue) ; une
+//      réponse qui n'arrive pas (délai, socket coupée) laisse l'issue
+//      « inconnue » — le COMMIT a pu valider en route. La preuve sous toxiproxy
+//      l'a montré : un `Query read timeout` sur le COMMIT, pris pour une panne
+//      ordinaire, rendait « rien d'écrit » sur un lot bel et bien commis.
+
+/**
+ * Délai laissé au COMMIT, au-delà de l'échéance, pour rendre son verdict.
+ * Budget de 4 s + 0,75 s : la réponse part toujours avant 5 s, loin des 8 s du
+ * relais. Le serveur coupe lui aussi une transaction trop longue
+ * (`transaction_timeout`), mais PEU APRÈS l'échéance, pas exactement à elle : le
+ * délai part du SET, qui arrive au serveur une latence aller après l'échéance
+ * calculée ici (vérifié sur PG 17 le 24/09). D'où cette grâce côté client, et le
+ * cas « issue inconnue » quand la réponse d'un COMMIT déjà arrivé se perd.
+ */
+export const GRACE_COMMIT_MS = 750;
+
+/**
+ * SQLSTATE qui disent « l'échéance serveur a coupé » : `query_canceled`
+ * (statement_timeout), `idle_in_transaction_session_timeout`,
+ * `transaction_timeout`. Dans les trois cas la transaction est annulée.
+ */
+const SQLSTATE_ECHEANCE = new Set(["57014", "25P03", "25P04"]);
+
+/**
+ * Les réglages serveur de l'échéance, en UNE requête (un aller-retour de plus
+ * par lot, pas quatre). `set_config(…, true)` = `set local` : tout retombe au
+ * COMMIT comme au ROLLBACK. `transaction_timeout` n'existe qu'à partir de 17 :
+ * le `case` évite l'appel sur une version antérieure (un auto-hébergement en
+ * 16 lèverait « unrecognized configuration parameter » et refuserait tout).
+ */
+const SQL_ECHEANCE = `select set_config('lock_timeout', $1, true),
+       set_config('statement_timeout', $2, true),
+       set_config('idle_in_transaction_session_timeout', $2, true),
+       case when current_setting('server_version_num')::int >= 170000
+            then set_config('transaction_timeout', $2, true) end`;
+
+/**
+ * L'échéance de la requête est atteinte. `issue` :
+ *   - "annulee"  : rien n'est commis — rejouer est sûr (503 + retry-after) ;
+ *   - "inconnue" : le COMMIT est parti et n'a pas rendu de verdict à temps.
+ */
+export class ErreurEcheance extends Error {
+  constructor(message = "échéance de la requête atteinte", { issue = "annulee", cause } = {}) {
+    super(message, cause ? { cause } : undefined);
+    this.name = "ErreurEcheance";
+    this.issue = issue;
+    this.reessayable = true;
+  }
+}
+
+/**
+ * `promesse` contre l'échéance (epoch ms). Perdue : rejette `ErreurEcheance`
+ * tout de suite, et la promesse continue seule — son rejet est avalé, et
+ * `siTardif(valeur)` reçoit ce qu'elle rend trop tard (une connexion à rendre).
+ */
+export function sousEcheance(promesse, echeance, siTardif) {
+  const p = Promise.resolve(promesse);
+  return new Promise((ok, ko) => {
+    let perdu = false;
+    const minuterie = setTimeout(() => {
+      perdu = true;
+      ko(new ErreurEcheance());
+    }, Math.max(0, echeance - Date.now()));
+    p.then(
+      (v) => {
+        if (!perdu) {
+          clearTimeout(minuterie);
+          ok(v);
+          return;
+        }
+        try {
+          siTardif?.(v);
+        } catch {
+          /* un rattrapage qui lève ne doit rien casser */
+        }
+      },
+      (err) => {
+        if (perdu) return;
+        clearTimeout(minuterie);
+        ko(err);
+      },
+    );
+  });
+}
+
+/** Une coupure par l'échéance SERVEUR devient la même erreur que côté client. */
+function traduireEcheance(err) {
+  if (err instanceof ErreurEcheance) return err;
+  if (SQLSTATE_ECHEANCE.has(String(err?.code))) {
+    return new ErreurEcheance(`échéance serveur atteinte (${err.code})`, { cause: err });
+  }
+  return err;
+}
+
+async function transactionSousEcheance(pool, apps, travail, { echeance, delaiMs, tentatives, client: fourni }) {
+  const restant = () => echeance - Date.now();
+  if (!(restant() > 0)) throw new ErreurEcheance();
+  // Connexion obtenue APRÈS l'échéance : rendue au pool, intacte (rien n'y a couru).
+  const client = fourni ?? (await sousEcheance(pool.connect(), echeance, (c) => c.release()));
+  // La coupure serveur (25P04) peut tomber entre deux requêtes : `pg` émet alors
+  // 'error' sur un client EMPRUNTÉ, que pg-pool n'écoute plus — sans écouteur,
+  // exception non capturée et processus arrêté. L'écouteur RETIENT aussi la
+  // coupure : c'est elle qui dit qu'un COMMIT resté sans réponse n'a rien validé.
+  let coupureServeur = null;
+  const ecoute = (err) => {
+    if (SQLSTATE_ECHEANCE.has(String(err?.code))) coupureServeur = err;
+  };
+  client.on?.("error", ecoute);
+  const etape = (p) => sousEcheance(p, echeance);
+  let compromise = null;
+  try {
+    for (let essai = 1; ; essai++) {
+      if (!(restant() > 0)) throw new ErreurEcheance();
+      try {
+        await etape(client.query("begin"));
+        const reste = Math.max(1, Math.floor(restant()));
+        await etape(client.query(SQL_ECHEANCE, [`${Math.min(delaiMs, reste)}ms`, `${reste}ms`]));
+        await etape(verrouillerApps(client, apps));
+      } catch (err) {
+        if (err?.code !== SQLSTATE_VERROU) throw err;
+        await etape(client.query("rollback"));
+        const recul = STRATEGIE_VERROU.reculMs[Math.min(essai - 1, STRATEGIE_VERROU.reculMs.length - 1)];
+        // Pas de nouvel essai qui partirait pour finir après l'échéance.
+        if (essai >= tentatives || restant() <= recul) throw new ErreurVerrouIngestion(apps, tentatives);
+        await dormir(recul);
+        continue;
+      }
+      const sortie = await etape(travail(client));
+      if (!(restant() > 0)) throw new ErreurEcheance();
+      try {
+        await sousEcheance(client.query("commit"), echeance + GRACE_COMMIT_MS);
+      } catch (err) {
+        // Refus EXPLICITE du serveur (SQLSTATE sur la réponse au COMMIT, ou
+        // coupure 25P03/25P04 reçue) : la transaction est annulée.
+        if (err?.code && !(err instanceof ErreurEcheance)) throw err;
+        if (coupureServeur) throw coupureServeur;
+        // Pas de verdict : ni délai de grâce, ni `query_timeout`, ni socket
+        // coupée ne disent si le COMMIT a validé en route.
+        throw new ErreurEcheance("COMMIT envoyé sans verdict : issue inconnue", { issue: "inconnue", cause: err });
+      }
+      return sortie;
+    }
+  } catch (err) {
+    const erreur = traduireEcheance(err);
+    if (erreur instanceof ErreurEcheance || !(await rollbackSousEcheance(client, echeance))) {
+      compromise = erreur;
+    }
+    throw erreur;
+  } finally {
+    if (compromise) {
+      // L'écouteur RESTE : la connexion détruite peut encore émettre.
+      if (fourni) compromise.connexionCompromise = true;
+      else client.release(compromise);
+    } else {
+      client.off?.("error", ecoute);
+      if (!fourni) client.release();
+    }
+  }
+}
+
+/** ROLLBACK d'une faute ordinaire (portée, schéma) ; faux s'il n'a pas abouti à temps. */
+async function rollbackSousEcheance(client, echeance) {
+  try {
+    await sousEcheance(client.query("rollback"), Math.max(echeance, Date.now() + 250));
+    return true;
+  } catch {
+    return false;
   }
 }
 

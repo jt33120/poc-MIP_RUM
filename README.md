@@ -55,7 +55,7 @@ pnpm install --frozen-lockfile
 docker compose -f infra/docker/docker-compose.yml run --rm migrate  # Postgres 17 sur :5433, base mip_rum migrée par le migrateur de production
 pnpm build:sdk                                                  # SDK web, React Native, agent Node
 node scripts/seed-admin.mjs                                     # compte admin local : mot de passe affiché une fois, régénéré à chaque appel
-node services/collector/dev-server.mjs                          # ingestion locale :4318
+node services/collector/dev-server.mjs                          # ingestion locale :4318 (MIP_E2E_TAMPON=1 : tampon /__recent de l'E2E)
 node demo/serve.mjs                                             # mini-site de démo :8080
 pnpm --filter console dev                                       # console :3000
 node tools/sync-synthetic/src/sync.mjs seed                      # passages robot pour /correlation

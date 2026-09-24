@@ -1,6 +1,73 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 export const IDENTITY_HASH_ENV = "IDENTITY_HASH_SECRET";
+export const IDENTITY_FINGERPRINT_ENV = "IDENTITY_HASH_FINGERPRINT";
+
+// ═════════════════════ L'EMPREINTE DU SECRET D'IDENTITÉ (P2) ═════════════════
+//
+// POURQUOI. `user_id_hash` n'a de valeur que s'il est STABLE : la même personne
+// doit donner le même HMAC aujourd'hui et dans six mois, sinon les écrans qui
+// comptent des personnes et la recherche RGPD par identité se brisent en deux
+// populations. Changer `IDENTITY_HASH_SECRET` — par erreur, par un copier-coller
+// tronqué, par une variable partagée Railway écrasée — casse cette continuité
+// EN SILENCE : rien n'échoue, les HMAC sont simplement différents.
+//
+// L'empreinte est la valeur déclarée à côté du secret (`IDENTITY_HASH_FINGERPRINT`)
+// qui rend ce changement bruyant : le collector la recalcule au démarrage, et
+// un écart refuse la readiness avec une erreur claire. Tant que l'écart dure,
+// l'identité est RETIRÉE au lieu d'être hachée : une donnée manquante, jamais
+// une donnée incohérente (même règle que le repli local de la console).
+//
+// SÉPARATION DE DOMAINE. L'empreinte est `sha256("mip-identity-fp/v1\0" + secret)`,
+// pas le sha256 nu du secret : elle part sur `/health`, publique, et ne doit
+// servir à rien d'autre qu'à se comparer à elle-même. 12 caractères hex (48
+// bits) suffisent à distinguer deux secrets ; le secret, lui, fait au moins 32
+// caractères aléatoires, donc l'empreinte ne permet pas de le retrouver.
+// Outil : `scripts/ops/empreinte-identite.mjs` (lit le secret sur stdin).
+const DOMAINE_EMPREINTE = "mip-identity-fp/v1\0";
+export const IDENTITY_FINGERPRINT_PATTERN = /^[0-9a-f]{12}$/;
+
+/** Empreinte courte d'un secret d'identité, ou `null` sans secret. */
+export function empreinteIdentite(secret) {
+  if (typeof secret !== "string" || secret.length === 0) return null;
+  return createHash("sha256").update(DOMAINE_EMPREINTE).update(secret).digest("hex").slice(0, 12);
+}
+
+/**
+ * État de l'identité d'un receveur, tiré du secret et de l'empreinte déclarée.
+ *
+ *   `absente`      pas de secret : l'identité est retirée (comportement actuel).
+ *   `active`       secret ET empreinte concordante : l'identité est hachée.
+ *   `non_verifiee` secret SANS empreinte : réservé aux serveurs de développement
+ *                  et aux tests ; le service `collector` refuse de démarrer
+ *                  dans ce cas (`verifierConfigIdentite`).
+ *   `discordante`  l'empreinte ne correspond pas : identité RETIRÉE, readiness
+ *                  refusée.
+ *
+ * `secret` n'est rendu que s'il doit servir au hachage ; `id_fp` est
+ * l'empreinte du secret EN PLACE (jamais le secret), `attendue` celle déclarée.
+ * @param {string|null|undefined} secret
+ * @param {string|null|undefined} declaree
+ */
+export function etatIdentite(secret, declaree) {
+  const idFp = empreinteIdentite(secret);
+  if (!idFp) return { etat: "absente", id_fp: null, attendue: declaree ?? null, secret: null };
+  if (declaree == null || declaree === "") return { etat: "non_verifiee", id_fp: idFp, attendue: null, secret };
+  if (declaree !== idFp) return { etat: "discordante", id_fp: idFp, attendue: declaree, secret: null };
+  return { etat: "active", id_fp: idFp, attendue: declaree, secret };
+}
+
+/**
+ * Règle de configuration du service : un secret sans empreinte déclarée est un
+ * refus de démarrer. Rend le message, ou `null`.
+ */
+export function verifierConfigIdentite({ secret, empreinte }) {
+  if (secret && !empreinte) {
+    return `${IDENTITY_FINGERPRINT_ENV} est obligatoire dès que ${IDENTITY_HASH_ENV} est posé ` +
+      "(calcul : node scripts/ops/empreinte-identite.mjs, le secret sur l'entrée standard)";
+  }
+  return null;
+}
 const RAW_USER = "mip.identity.user_id";
 const RAW_ACCOUNT = "mip.identity.account_id";
 const HASH_USER = "mip.user_id_hash";

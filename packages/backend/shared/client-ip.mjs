@@ -45,6 +45,41 @@
 // choisir un pays. Ce n'est pas une aggravation — il choisit déjà son fuseau
 // horaire, d'où vient le pays estimé d'aujourd'hui. C'est une donnée déclarée,
 // jamais une preuve, et la colonne de provenance le dit.
+//
+// ═══════════════════ LE BORD DE CONFIANCE (P2, relais Vercel) ════════════════
+//
+// En P3, la route de la console RELAIE les beacons vers le collector. Vu du
+// collector, l'appel vient alors d'une fonction Vercel : son adresse est celle
+// d'un centre de données américain ou allemand, jamais celle du visiteur. Deux
+// défauts à éviter, symétriques :
+//
+//   1. résoudre cette adresse par GeoIP — tout le trafic relayé deviendrait
+//      « US » ou « DE » (le pic DE/NL que P3 surveille) ;
+//   2. croire un en-tête pays posé par n'importe qui — `x-vercel-ip-country`
+//      n'est qu'un en-tête : un client qui frappe le collector EN DIRECT peut
+//      l'écrire lui-même et se choisir un pays.
+//
+// D'où un protocole explicite, `mip-edge/1` : le relais signe sa requête avec
+// `x-mip-edge-auth` (un secret partagé, EDGE_PROXY_SECRET), et n'y met QUE le
+// pays (`x-mip-edge-country`), jamais l'adresse. Le collector :
+//
+//   - vérifie la signature en TEMPS CONSTANT, contre une ou deux valeurs (deux
+//     pendant une rotation : on pose la nouvelle à côté de l'ancienne, on
+//     bascule le relais, on retire l'ancienne — sans fenêtre de refus) ;
+//   - RETIRE tout `x-mip-edge-*` de la requête, authentifiée ou non : aucun
+//     code en aval ne peut relire un en-tête de bord qui n'a pas été vérifié
+//     ici, ni le secret lui-même ;
+//   - n'accepte un pays que s'il est exactement `^[A-Z]{2}$` ;
+//   - IGNORE `x-vercel-ip-country` et `cf-ipcountry` hors requête authentifiée ;
+//   - pour une requête relayée, SAUTE le GeoIP : le pays vient du relais, et
+//     aucune adresse n'a traversé. C'est ce qui garde vraie la phrase publique
+//     « aucune adresse IP n'est transmise ni stockée » (`lib/legal.ts`).
+//
+// Une signature PRÉSENTE mais FAUSSE (secret désaccordé pendant une rotation
+// ratée) n'est pas traitée comme du trafic direct : ce serait géolocaliser
+// l'adresse de Vercel. Elle ne donne aucun pays du tout — le fuseau reste.
+
+import { createHash, timingSafeEqual } from "node:crypto";
 
 /** Nombre maximal de relais déclarables. Au-delà, la déclaration est une faute de frappe. */
 export const MAX_HOPS = 8;
@@ -128,4 +163,142 @@ function entete(req, nom) {
 function dernierJeton(brut) {
   const morceaux = brut.split(",").map((s) => s.trim()).filter(Boolean);
   return morceaux.length ? morceaux[morceaux.length - 1] : null;
+}
+
+// ───────────────────────────── Bord de confiance ─────────────────────────────
+
+/** Nom STABLE du protocole de relais, exposé par `/health` et vérifié par le relais (P3). */
+export const EDGE_PROTOCOL = "mip-edge/1";
+/** Préfixe réservé : tout en-tête entrant qui le porte est retiré après lecture. */
+export const EDGE_HEADER_PREFIX = "x-mip-edge-";
+export const EDGE_AUTH_HEADER = "x-mip-edge-auth";
+export const EDGE_COUNTRY_HEADER = "x-mip-edge-country";
+/** Un secret de relais plus court se devine ; 32 caractères = 128 bits en hex. */
+export const EDGE_SECRET_MIN_LENGTH = 32;
+/** Deux valeurs au plus : l'ancienne et la nouvelle, le temps d'une rotation. */
+export const EDGE_SECRET_MAX_COUNT = 2;
+
+const CODE_PAYS_STRICT = /^[A-Z]{2}$/;
+
+/**
+ * Contrôle d'une liste de secrets de relais (valeur de `EDGE_PROXY_SECRET`
+ * découpée à la virgule). Rend un message d'erreur, ou `null`. Le message ne
+ * cite jamais une valeur.
+ * @param {readonly string[]} secrets
+ */
+export function verifierSecretsBord(secrets) {
+  if (!Array.isArray(secrets) || secrets.length === 0) return null;
+  if (secrets.length > EDGE_SECRET_MAX_COUNT) {
+    return `${EDGE_SECRET_MAX_COUNT} valeurs au plus (l'ancienne et la nouvelle, pendant une rotation)`;
+  }
+  if (secrets.some((s) => typeof s !== "string" || s.length < EDGE_SECRET_MIN_LENGTH)) {
+    return `chaque valeur doit compter au moins ${EDGE_SECRET_MIN_LENGTH} caractères`;
+  }
+  return null;
+}
+
+/**
+ * Le lecteur du bord de confiance.
+ *
+ * POURQUOI DES EMPREINTES ET NON LES SECRETS. `timingSafeEqual` exige deux
+ * tampons de même longueur ; comparer des sha256 rend la durée indépendante de
+ * la longueur ET du contenu de ce que le client envoie. Chaque valeur connue
+ * est comparée à chaque appel, sans court-circuit : la durée ne dit pas non
+ * plus LAQUELLE des deux valeurs de rotation a répondu.
+ *
+ * @param {readonly string[] | null | undefined} secrets valeurs d'EDGE_PROXY_SECRET
+ */
+export function creerBordDeConfiance(secrets) {
+  const attendues = (secrets ?? [])
+    .filter((s) => typeof s === "string" && s.length > 0)
+    .map((s) => createHash("sha256").update(s).digest());
+
+  /**
+   * Lit, vérifie et RETIRE les en-têtes de bord de `req`.
+   *
+   *   `relaye`   la signature est valide : le pays (éventuel) vient du relais,
+   *              et l'appelant doit sauter le GeoIP ;
+   *   `refuse`   une signature est présente mais fausse : ni GeoIP (l'adresse
+   *              serait celle d'un relais), ni pays ;
+   *   `direct`   aucune signature : trafic direct, GeoIP permis, en-têtes pays
+   *              de CDN ignorés.
+   *
+   * @param {{headers?: any, rawHeaders?: string[]}} req
+   * @returns {{ mode: "relaye"|"refuse"|"direct", pays: string|null, forges: number }}
+   */
+  function lire(req) {
+    // PRÉSENCE, pas valeur : un `x-mip-edge-auth` VIDE vient d'un relais dont
+    // le secret est vide (le cas réel d'IDENTITY_HASH_SECRET sur Vercel, relevé
+    // le 23/09). Le lire comme « direct » ferait géolocaliser l'adresse du
+    // relais — tout le trafic relayé deviendrait DE ou US. C'est un refus.
+    const signature = enteteBrut(req, EDGE_AUTH_HEADER);
+    let mode = "direct";
+    if (signature !== null) {
+      const recue = createHash("sha256").update(signature).digest();
+      let ok = false;
+      for (const attendue of attendues) ok = timingSafeEqual(recue, attendue) || ok;
+      mode = ok ? "relaye" : "refuse";
+    }
+    let pays = null;
+    if (mode === "relaye") {
+      // Le premier en-tête PRÉSENT décide ; invalide, il ne cède pas la place
+      // au suivant : un relais qui envoie « fr » ou « XXX » a un défaut à
+      // corriger, pas un repli à trouver.
+      for (const nom of [EDGE_COUNTRY_HEADER, "x-vercel-ip-country", "cf-ipcountry"]) {
+        const v = entete(req, nom);
+        if (v === null) continue;
+        pays = CODE_PAYS_STRICT.test(v) ? v : null;
+        break;
+      }
+    }
+    const retires = retirerEntetesBord(req);
+    return { mode, pays, forges: mode === "relaye" ? 0 : retires };
+  }
+
+  return { actif: attendues.length > 0, lire };
+}
+
+/** Valeur d'un en-tête MÊME VIDE (`""`), ou `null` s'il est absent. */
+function enteteBrut(req, nom) {
+  const h = req?.headers;
+  if (!h) return null;
+  if (typeof h.get === "function") return h.get(nom);
+  const v = h[nom];
+  if (v === undefined || v === null) return null;
+  return String(Array.isArray(v) ? v[0] ?? "" : v);
+}
+
+/**
+ * Retire tout `x-mip-edge-*` de la requête (objet d'en-têtes Node, `rawHeaders`,
+ * ou `Headers` du web). Rend le nombre d'en-têtes retirés.
+ */
+export function retirerEntetesBord(req) {
+  const h = req?.headers;
+  let n = 0;
+  if (h && typeof h.get === "function" && typeof h.delete === "function") {
+    for (const nom of [...h.keys()]) {
+      if (nom.toLowerCase().startsWith(EDGE_HEADER_PREFIX)) {
+        h.delete(nom);
+        n++;
+      }
+    }
+    return n;
+  }
+  if (h && typeof h === "object") {
+    for (const nom of Object.keys(h)) {
+      if (nom.toLowerCase().startsWith(EDGE_HEADER_PREFIX)) {
+        delete h[nom];
+        n++;
+      }
+    }
+  }
+  if (Array.isArray(req?.rawHeaders)) {
+    const garde = [];
+    for (let i = 0; i < req.rawHeaders.length; i += 2) {
+      if (String(req.rawHeaders[i]).toLowerCase().startsWith(EDGE_HEADER_PREFIX)) continue;
+      garde.push(req.rawHeaders[i], req.rawHeaders[i + 1]);
+    }
+    req.rawHeaders = garde;
+  }
+  return n;
 }

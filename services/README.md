@@ -18,7 +18,7 @@ Un service, une ligne :
 
 | Service | Rôle | Écoute | Commande | Déployé |
 |---|---|---|---|---|
-| `collector` | collecte OTLP : traces, logs, replay ; source maps de CI (`POST /v1/sourcemaps`, jeton dédié) | oui (`PORT`) | `node services/collector/server.mjs` | non — image d'auto-hébergement, démarrée par la CI ; en production la collecte passe par la route de la console |
+| `collector` | point d'entrée unique des capteurs : OTLP traces et logs, replay, source maps de CI (jeton dédié) ; chemins historiques de la console acceptés ; bord de confiance du relais, identité hachée ici — détail : [`collector/README.md`](collector/README.md) | oui (`PORT`, défaut 4318) : `/health` (sonde Railway : processus + base, décrit service, protocole de bord et empreinte d'identité), `/ready` et `/metrics` (jeton) | `node services/collector/server.mjs` | pas encore (P2 : lancement à blanc) — en production, la collecte passe par la route de la console jusqu'au relais de P3 |
 | `scheduler` | déclenche les travaux planifiés sous bail, et **seul** applique les migrations (pré-déploiement) — détail : [`scheduler/README.md`](scheduler/README.md) | oui (`PORT`) : `/health` (sonde Railway), `/ready` et `/metrics` (jeton) | `node services/scheduler/worker.mjs` · pré-déploiement `node services/scheduler/migrate.mjs` | Railway |
 | `mcp` | expose l'API v1 à un agent IA, sans accès à la base | oui (`PORT`) | `node services/mcp/http.mjs` | Railway |
 
@@ -89,12 +89,14 @@ continu n'a aucune de ces limites.
 |---|---|---|---|
 | `DATABASE_URL` | `collector`, `scheduler` | **oui** | Postgres. TLS vérifié dès que l'hôte n'est pas local — jamais de `rejectUnauthorized: false`. |
 | `MIGRATION_DATABASE_URL` | `scheduler` (pré-déploiement) | non | la **même** base par une connexion **directe**, hors pooler : les `predeploy-vNN-*.sql` (index `CONCURRENTLY`) y passent sous verrou de session, juste avant leur migration. Absente, ou pointée sur un pooler, ils sont sautés avec un avertissement et chaque migration garde son garde-fou de taille. Une autre base que `DATABASE_URL` est refusée. |
-| `PORT` | `collector` | fourni par l'hébergeur | port d'écoute (défaut local : 4318) |
+| `PORT` | `collector` | fourni par l'hébergeur (défaut 4318) | `/health` (sonde Railway), `/ready` et `/metrics` (jeton), routes OTLP |
 | `PORT` | `scheduler` | fourni par l'hébergeur (défaut 8080) | `/health` (sonde Railway : processus + base ; « jamais exécuté » et « bail tenu ailleurs » y sont sains), `/ready` et `/metrics` (fraîcheur, arriéré ; jeton) |
-| `METRICS_TOKEN` | `scheduler` | non (secret, ≥ 32 caractères) | jeton de `/ready` et `/metrics` ; absent, les deux répondent 404 |
+| `METRICS_TOKEN` | `collector`, `scheduler` | non (secret, ≥ 32 caractères) | jeton de `/ready` et `/metrics` ; absent, les deux répondent 404 |
 | `DEADMAN_URL` | `scheduler` | non (secret, `https:`) | dead-man's switch externe, signalé après chaque tick abouti ; absent, aucun signal |
-| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `scheduler` | **à poser** (15 à 30) | délai SIGTERM → SIGKILL ; défaut Railway 0, soit aucun arrêt propre |
-| `REQUIRE_API_KEY` | `collector` | non | `true` = rejeter toute app inconnue ou sans clé |
+| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `collector`, `scheduler` | **à poser** (15 à 30) | délai SIGTERM → SIGKILL ; défaut Railway 0, soit aucun arrêt propre |
+| `REQUIRE_API_KEY` | `collector` | non | `true` = rejeter toute app inconnue ou sans clé — provisionner d'abord : `scripts/ops/provisionner-cles.mjs` |
+| `IDENTITY_HASH_SECRET` + `IDENTITY_HASH_FINGERPRINT` | `collector` | non ; l'empreinte **oui** dès que le secret est posé | HMAC des identités ; empreinte par `scripts/ops/empreinte-identite.mjs` (écart : identité retirée, `/ready` refusé) |
+| `EDGE_PROXY_SECRET` | `collector` | non (secret, 1 ou 2 valeurs) | secret du relais de la console (bord de confiance `mip-edge/1`) |
 | `RATE_LIMIT_PER_MIN` | `collector` | non | défaut 600, par app |
 | `PGPOOL_MAX` | `collector`, `scheduler` | non | taille du pool (défauts : 8 et 4) |
 | `LOG_LEVEL` | `collector`, `scheduler` | non | défaut `info` |
@@ -125,7 +127,8 @@ docker compose -f infra/docker/docker-compose.yml up -d --build --wait collector
 docker compose -f infra/docker/docker-compose.yml --profile tout up -d --build --wait
 ```
 
-`GET /health` répond dès que le process vit ; `GET /ready` seulement quand la
-base répond. Les deux sont distincts à dessein : redémarrer un service dont
-seule la base est absente n'arrange rien. `mcp` n'expose que `/health` — n'ayant
+`GET /health` (collector, scheduler) dit processus vivant **et** base
+joignable : c'est la sonde Railway. `GET /ready`, sous jeton, dit fraîcheur ou
+disponibilité métier (registre d'apps chargé pour le collector, cadences pour
+le scheduler) : supervision seulement. `mcp` n'expose que `/health` — n'ayant
 aucune dépendance à chaud, vivant et prêt y sont la même chose.

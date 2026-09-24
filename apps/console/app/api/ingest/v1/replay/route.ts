@@ -8,7 +8,12 @@
 // rejetée, clé exigée selon REQUIRE_API_KEY, rate limit par app.
 import { gunzipSync } from "node:zlib";
 import { writeReplayChunk } from "@mip/backend/lib/pg-ingest.mjs";
-import { MAX_REPLAY_INFLATED_BYTES } from "@mip/backend/shared/limits.mjs";
+import {
+  lireCorpsBorne,
+  lireSequenceReplay,
+  MAX_REPLAY_BYTES,
+  MAX_REPLAY_INFLATED_BYTES,
+} from "@mip/backend/shared/limits.mjs";
 import { REPLAY_ALLOW_HEADERS } from "@mip/backend/shared/cors.mjs";
 import { withRetry } from "@mip/backend/shared/retry.mjs";
 import { pool } from "@/lib/db";
@@ -16,9 +21,6 @@ import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-// garde-fou > cap SDK (1 Mo gzip/session)
-const MAX_REPLAY_BYTES = 2 * 1024 * 1024;
 
 const replayCors = (origin: string) =>
   corsFor(origin, { allowHeaders: REPLAY_ALLOW_HEADERS });
@@ -35,8 +37,10 @@ export async function POST(req: Request) {
 
   const sessionId = req.headers.get("x-mip-session");
   const appId = req.headers.get("x-mip-app");
-  const seq = Number(req.headers.get("x-mip-seq"));
-  if (!sessionId || !appId || !Number.isInteger(seq) || seq < 0) {
+  // Séquence ABSENTE = 400 : `Number(null)` valait 0, et le chunk écrasait la
+  // place du vrai chunk 0 (même règle que le collector, `lireSequenceReplay`).
+  const seq = lireSequenceReplay(req.headers.get("x-mip-seq"));
+  if (!sessionId || !appId || seq === null) {
     return json({ error: "missing x-mip-session/x-mip-app/x-mip-seq" }, 400, cors);
   }
 
@@ -47,8 +51,11 @@ export async function POST(req: Request) {
   if (blocked) return blocked;
 
   try {
-    const body = Buffer.from(await req.arrayBuffer());
-    if (!body.length || body.length > MAX_REPLAY_BYTES) {
+    // Lecture BORNÉE : `req.arrayBuffer()` matérialisait le corps entier AVANT
+    // de mesurer (jusqu'au plafond de la plateforme, 4,5 Mo sur Vercel). On
+    // s'arrête au premier octet au-delà de 2 Mio, comme le collector.
+    const body = await lireCorpsBorne(req.body as unknown as AsyncIterable<Uint8Array> | null, MAX_REPLAY_BYTES);
+    if (body === null || !body.length) {
       return json({ error: "invalid payload size" }, 413, cors);
     }
 

@@ -27,6 +27,24 @@ export function isTransient(err) {
   return code != null && TRANSIENT.has(String(code));
 }
 
+/**
+ * Une panne de base qui vaut « rejoue plus tard » — ce que les ports
+ * d'ingestion rendent en 503 + `retry-after`, jamais en 500 : erreur
+ * transitoire connue, délai du pool (`pg-pool` lève une erreur SANS code quand
+ * il n'obtient pas de connexion à temps), délai de requête côté client.
+ *
+ * POURQUOI ICI. Elle vivait dans le receveur du collector seul : la même base
+ * injoignable rendait 503 sur le collector et 500 sur la console. Le SDK rejoue
+ * les deux, mais seul le 503 porte le `retry-after` qui étale les rejeux — et
+ * pendant la bascule de P3, une requête peut tomber sur l'un OU l'autre port.
+ * Relevé par le contrat de parité (`tests/contract/ingest-parity.test.ts`).
+ */
+export function estIndisponibilite(err) {
+  if (isTransient(err)) return true;
+  const m = String(err?.message ?? "");
+  return /timeout exceeded when trying to connect|Query read timeout|Connection terminated/i.test(m);
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**

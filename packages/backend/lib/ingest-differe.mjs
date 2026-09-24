@@ -78,7 +78,7 @@ export function scinderParApp(rows, appParDefaut) {
  *
  * @returns {Promise<{deposes: number, refuses: number}>}
  */
-export async function deposerLot(pool, appId, rows) {
+export async function deposerLot(pool, appId, rows, { verrou = {} } = {}) {
   let deposes = 0;
   let refuses = 0;
   for (const [app, sousLot] of scinderParApp(rows, appId)) {
@@ -95,7 +95,7 @@ export async function deposerLot(pool, appId, rows) {
         JSON.stringify(filtre.rows),
       ]);
       deposes++;
-    });
+    }, verrou);
   }
   return { deposes, refuses };
 }

@@ -13,7 +13,7 @@ import { writeRows } from "@mip/backend/lib/pg-ingest.mjs";
 import { secureOtlpIdentities } from "@mip/backend/lib/identity-hash.mjs";
 import { flattenOtlp } from "@mip/backend/shared/otlp.mjs";
 import { appliquerGeo } from "@mip/backend/shared/geoip.mjs";
-import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "@mip/backend/shared/limits.mjs";
+import { bodyTooLarge, lireCorpsBorne, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "@mip/backend/shared/limits.mjs";
 import { withRetry } from "@mip/backend/shared/retry.mjs";
 import { pool } from "@/lib/db";
 import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
@@ -48,9 +48,23 @@ export async function POST(req: Request) {
   }
 
   try {
+    // Lecture BORNÉE, puis JSON : `req.json()` lisait un corps sans longueur
+    // annoncée jusqu'au plafond de la plateforme (4,5 Mo), là où le collector
+    // refuse dès 2 Mo — même lot, 200 ici, 413 là-bas. Même lecture et même
+    // décodage que le collector désormais (`lireCorpsBorne`, UTF-8 brut).
+    const brut = await lireCorpsBorne(
+      req.body as unknown as AsyncIterable<Uint8Array> | null,
+      MAX_BODY_BYTES,
+    ).catch(() => {
+      throw new BadRequestError("invalid json body");
+    });
+    if (brut === null) {
+      log.warn("payload too large", { max: MAX_BODY_BYTES });
+      return json({ error: "payload too large" }, 413, cors);
+    }
     let payload: unknown;
     try {
-      payload = await req.json();
+      payload = JSON.parse(brut.toString("utf8"));
     } catch {
       throw new BadRequestError("invalid json body");
     }

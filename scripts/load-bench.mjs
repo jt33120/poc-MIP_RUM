@@ -1,29 +1,62 @@
 // Bench de charge / preuve de capacité (B2). Étend scripts/load-light.mjs (qui
 // n'est qu'un sanity ~1 000 events) en un VRAI bench paramétrable :
-//   1. charge : POST OTLP à concurrence cible jusqu'à TARGET_EVENTS, mesure le
-//      débit soutenu (events/s) et les percentiles de latence (p50/p95/p99) ;
+//   1. charge : POST OTLP vers une cible configurable, en boucle FERMÉE
+//      (CONCURRENCY POST en vol, jusqu'à TARGET_EVENTS ou pendant DURATION_S) ou
+//      OUVERTE (RATE lots/s à arrivées poissonniennes, pendant DURATION_S) ;
+//      mesure le débit soutenu (lots/s, events/s), les statuts et les
+//      percentiles de latence (p50/p95/p99) ;
 //   2. requêtes : à volume, chronométre les requêtes console lourdes
 //      (p75 vitals, top routes par sessions, heatmap horaire, série journalière).
 //
+// POURQUOI LA BOUCLE OUVERTE (P2). La porte go/no-go du collector se lit en
+// « utilisation du verrou d'application À UN DÉBIT DONNÉ » (3 × le pic). Une
+// boucle fermée ne fixe pas le débit : elle le subit — chaque POST attend le
+// précédent, et le débit mesuré est celui de la saturation. Pour tracer
+// utilisation = f(débit), il faut IMPOSER le débit, et l'imposer avec des
+// arrivées réalistes (poissonniennes : des rafales, pas un métronome ; c'est
+// la rafale qui fait attendre au verrou). Un « lot » = un POST = UNE session
+// d'UNE app : c'est l'unité que sérialise `withAppIngestTransaction`.
+//
 // IMPORTANT (B2) : à lancer contre une base TYPE-PROD (pas le free tier). Rien
 // n'est exécuté automatiquement en CI ; c'est un outil opérateur. Voir la doc
-// d'usage en tête de fichier et labs/clickhouse/NOTES.md.
+// d'usage en tête de fichier et labs/clickhouse/NOTES.md. Porte P2 :
+// docs/operations/banc-collecteur-2026-09-24.md et
+// scripts/bench/banc-collecteur-local.mjs.
 //
 // Usage :
 //   ENDPOINT=https://<ingest>/v1/traces \
-//   DATABASE_URL=postgres://user:pwd@host:5432/db \
+//   BENCH_DATABASE_URL=postgres://user:pwd@host:5432/db \
 //   TARGET_EVENTS=1000000 CONCURRENCY=32 \
 //   node scripts/load-bench.mjs
+//
+//   # porte P2 : 4 lots/s sur UNE app pendant 30 s, sans phase base
+//   ENDPOINT=https://<collector>/v1/traces APP=gip-banc API_KEY=mip_… \
+//   RATE=4 DURATION_S=30 DB_PHASE=0 node scripts/load-bench.mjs
 //
 //   # auto-test du générateur, sans réseau ni base, sans chiffres de capacité :
 //   node scripts/load-bench.mjs --dry-run
 //
 // Variables (toutes optionnelles, défauts entre crochets) :
 //   ENDPOINT        [http://localhost:4318/v1/traces]  cible OTLP/HTTP
-//   DATABASE_URL    [postgres://postgres:postgres@localhost:5433/mip_rum]  phase requêtes + comptage
-//   TARGET_EVENTS   [1000000]   nombre d'events à injecter
-//   CONCURRENCY     [32]        POST en vol simultanés
+//   BENCH_DATABASE_URL  phase requêtes + comptage ; à défaut DATABASE_URL, puis
+//                   [postgres://postgres:postgres@localhost:5433/mip_rum]. BENCH_ d'abord :
+//                   le `.env` du poste fait pointer DATABASE_URL sur la production.
+//   DB_PHASE        [1]         0 = ni requêtes console, ni comptage, ni nettoyage (charge seule)
+//   TARGET_EVENTS   [1000000]   nombre d'events à injecter (boucle fermée sans DURATION_S)
+//   CONCURRENCY     [32]        POST en vol simultanés (boucle fermée)
+//   RATE            [0]         > 0 : boucle OUVERTE, lots/s imposés (DURATION_S obligatoire)
+//   DURATION_S      [—]         durée de la charge ; en boucle fermée, remplace TARGET_EVENTS
+//   ARRIVALS        [poisson]   poisson | uniform — loi des arrivées en boucle ouverte
+//   MAX_IN_FLIGHT   [512]       boucle ouverte : au-delà, l'arrivée est comptée `skipped`
+//   SEED            [1]         graine des arrivées poissonniennes (rejouables)
 //   APP             [load-bench] app_id (isolation + nettoyage)
+//   API_KEY         [—]         clé d'ingestion de l'app (`mip.api_key` sur la resource),
+//                               pour une cible sous REQUIRE_API_KEY=true
+//   RUN_ID          [horloge]   0..9999, préfixe des identifiants de session/trace/span : deux
+//                               runs sur la même base n'écrivent pas les mêmes spans (sinon
+//                               `on conflict do nothing` rendrait le second run moins cher)
+//   VITAL_IDS       [1]         1 = `webvital.id` sur chaque vital, comme le SDK
+//                               (packages/rum-sdk/src/vitals.ts) ; 0 = profil d'avant
 //   ERROR_RATE      [0.02]      proba d'erreur JS par session
 //   QUERY_ITERS     [20]        répétitions de chaque requête console chronométrée
 //   KEEP            [0]         1 = ne pas nettoyer les données de charge en fin de run
@@ -39,10 +72,20 @@ const num = (k, d) => Number(process.env[k] ?? d);
 const str = (k, d) => process.env[k] ?? d;
 export const CONFIG = {
   endpoint: str("ENDPOINT", "http://localhost:4318/v1/traces"),
-  databaseUrl: str("DATABASE_URL", "postgres://postgres:postgres@localhost:5433/mip_rum"),
+  databaseUrl: process.env.BENCH_DATABASE_URL ?? str("DATABASE_URL", "postgres://postgres:postgres@localhost:5433/mip_rum"),
+  dbPhase: str("DB_PHASE", "1") !== "0",
   targetEvents: num("TARGET_EVENTS", 1_000_000),
   concurrency: num("CONCURRENCY", 32),
+  rate: num("RATE", 0),
+  durationSec: process.env.DURATION_S ? Number(process.env.DURATION_S) : null,
+  arrivals: str("ARRIVALS", "poisson"),
+  maxInFlight: num("MAX_IN_FLIGHT", 512),
+  seed: num("SEED", 1),
   app: str("APP", "load-bench"),
+  apiKey: process.env.API_KEY || null,
+  // Chiffres seulement : le préfixe entre dans des identifiants hexadécimaux.
+  run: String(Math.abs(Math.trunc(num("RUN_ID", Date.now() % 10_000))) % 10_000),
+  vitalIds: str("VITAL_IDS", "1") !== "0",
   errorRate: num("ERROR_RATE", 0.02),
   queryIters: num("QUERY_ITERS", 20),
   keep: str("KEEP", "0") === "1",
@@ -83,18 +126,26 @@ const dv = (n) => ({ doubleValue: n });
  * Construit le payload OTLP d'UNE session : 1 pageview + 5 vitals + (proba
  * ERROR_RATE) 1 erreur + 1 ressource lente + 1 longtask. Pur et déterministe
  * (rng injectable pour les tests). `i` = index de session.
+ *
+ * Identifiants préfixés par `run` (4 chiffres) : trace = run + i sur 32
+ * chiffres, span = run + i (9) + rang (3) sur 16 — des chiffres, donc de
+ * l'hexadécimal valide (`isNativeSpanId`), et jamais les mêmes d'un run à
+ * l'autre sur une même base.
  */
 export function buildPayload(i, opts = {}) {
   const errorRate = opts.errorRate ?? CONFIG.errorRate;
   const rng = opts.rng ?? ((j) => ((Math.sin(i * 99 + j) + 1) / 2)); // [0,1) déterministe
   const app = opts.app ?? CONFIG.app;
+  const run = String(opts.run ?? CONFIG.run).padStart(4, "0");
+  const apiKey = opts.apiKey === undefined ? CONFIG.apiKey : opts.apiKey;
+  const vitalIds = opts.vitalIds ?? CONFIG.vitalIds;
   const r = pickRoute(i);
-  const session = `bench-${i}`;
+  const session = `bench-${run}-${i}`;
   const baseNanos = String(Date.now()) + "000000";
   const spans = [];
   const mk = (name, attrs) => ({
-    traceId: String(i).padStart(32, "0"),
-    spanId: `${String(i).padStart(8, "0")}${String(spans.length).padStart(8, "0")}`,
+    traceId: `${run}${String(i).padStart(28, "0")}`,
+    spanId: `${run}${String(i).padStart(9, "0")}${String(spans.length).padStart(3, "0")}`,
     name,
     kind: 1,
     startTimeUnixNano: baseNanos,
@@ -112,10 +163,16 @@ export function buildPayload(i, opts = {}) {
     { key: "mip.url", value: sv(`https://app.bench.fr${r.route}`) },
     { key: "mip.nav_type", value: sv("navigate") },
   ]));
+  // `webvital.id` : le SDK l'émet (il identifie UNE métrique pour UN chargement
+  // de page) et l'ingestion en fait `metric_uid` — ce qui coûte, sous le verrou,
+  // l'upsert sur `uq_metric_report` et une relecture PAR vital pour la
+  // projection (`indexAvecVitalsConsolides`). Un banc sans lui sous-compterait
+  // les allers-retours du trafic réel.
   VITALS.forEach((name, j) =>
     spans.push(mk("webvital." + name, [
       { key: "webvital.name", value: sv(name) },
       { key: "webvital.value", value: dv(vitalValue(name, r.slow, rng(j))) },
+      ...(vitalIds ? [{ key: "webvital.id", value: sv(`v4-${run}-${i}-${name}`) }] : []),
     ])),
   );
   if (rng(7) < errorRate)
@@ -136,6 +193,7 @@ export function buildPayload(i, opts = {}) {
       resource: { attributes: [
         { key: "mip.app_id", value: sv(app) },
         { key: "mip.client_id", value: sv("bench") },
+        ...(apiKey ? [{ key: "mip.api_key", value: sv(apiKey) }] : []),
       ] },
       scopeSpans: [{ scope: { name: "load-bench" }, spans }],
     }],
@@ -207,47 +265,134 @@ export function heavyQueries(store) {
 
 // --- phases -----------------------------------------------------------------
 
-/** Phase charge : POST OTLP à concurrence fixe, retourne débit + latences. */
-async function loadPhase() {
-  const sessions = Math.max(1, Math.ceil(CONFIG.targetEvents / eventsInPayload(buildPayload(0))));
-  const latencies = [];
-  let sent = 0, events = 0, ok = 0, fail = 0, next = 0;
-  const t0 = performance.now();
+/** Horloge murale haute résolution : la même échelle que la sonde du collector. */
+const epochNow = () => performance.timeOrigin + performance.now();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  async function worker() {
-    while (next < sessions) {
-      const i = next++;
-      const payload = buildPayload(i);
-      const reqStart = performance.now();
-      try {
-        const res = await fetch(CONFIG.endpoint, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        res.ok ? ok++ : fail++;
-      } catch {
-        fail++;
-      }
-      latencies.push(performance.now() - reqStart);
-      sent++;
-      events += eventsInPayload(payload);
-      if (sent % 5000 === 0)
-        process.stderr.write(`  …${sent}/${sessions} sessions, ${events} events\n`);
-    }
+/**
+ * Générateur pseudo-aléatoire à graine (mulberry32) : deux runs de même SEED
+ * tirent les mêmes rafales, donc se comparent. `Math.random` ne le permet pas.
+ */
+export function prng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Instants d'arrivée (ms depuis le début) d'une boucle ouverte : `rate` lots/s
+ * pendant `durationMs`. Poisson = écarts exponentiels (des rafales, comme des
+ * navigateurs indépendants) ; uniform = métronome (le cas optimiste). PURE.
+ */
+export function arrivalTimes(rate, durationMs, { arrivals = "poisson", rng = prng(1) } = {}) {
+  if (!(rate > 0) || !(durationMs > 0)) return [];
+  const out = [];
+  let t = 0;
+  for (;;) {
+    t += arrivals === "uniform" ? 1000 / rate : (-Math.log(1 - rng()) / rate) * 1000;
+    if (t > durationMs) return out;
+    out.push(t);
   }
-  await Promise.all(Array.from({ length: CONFIG.concurrency }, worker));
+}
+
+/** Un POST, chronométré ; ne lève jamais (un échec réseau est un statut « 0 »). */
+async function postOne(i, stats) {
+  const payload = buildPayload(i);
+  const reqStart = performance.now();
+  let status = 0;
+  try {
+    const res = await fetch(CONFIG.endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    status = res.status;
+    // Vider le corps : sinon la connexion keep-alive reste occupée.
+    await res.arrayBuffer().catch(() => {});
+  } catch {
+    status = 0;
+  }
+  stats.latencies.push(performance.now() - reqStart);
+  stats.statusCounts[status] = (stats.statusCounts[status] ?? 0) + 1;
+  status >= 200 && status < 300 ? stats.ok++ : stats.fail++;
+  stats.sent++;
+  stats.events += eventsInPayload(payload);
+  if (stats.sent % 5000 === 0) process.stderr.write(`  …${stats.sent} lots, ${stats.events} events\n`);
+}
+
+/**
+ * Phase charge. Trois modes :
+ *   - boucle OUVERTE (RATE > 0) : arrivées imposées pendant DURATION_S ;
+ *   - boucle fermée bornée en TEMPS (DURATION_S) : CONCURRENCY POST en vol ;
+ *   - boucle fermée bornée en VOLUME (défaut historique) : jusqu'à TARGET_EVENTS.
+ * `window` (horloge murale) borne la phase, réponses comprises : c'est la
+ * fenêtre sur laquelle le pilote du banc P2 lit la sonde du collector.
+ */
+async function loadPhase() {
+  const stats = { latencies: [], statusCounts: {}, sent: 0, events: 0, ok: 0, fail: 0 };
+  let skipped = 0;
+  let mode;
+  const t0 = performance.now();
+  const startEpochMs = epochNow();
+
+  if (CONFIG.rate > 0) {
+    if (!(CONFIG.durationSec > 0)) throw new Error("RATE impose DURATION_S (> 0)");
+    mode = "open";
+    const times = arrivalTimes(CONFIG.rate, CONFIG.durationSec * 1000, {
+      arrivals: CONFIG.arrivals, rng: prng(CONFIG.seed),
+    });
+    const inFlight = new Set();
+    for (let i = 0; i < times.length; i++) {
+      const wait = t0 + times[i] - performance.now();
+      if (wait > 1) await sleep(wait);
+      // Plafond de POST en vol : au-delà, la cible est déjà saturée, et
+      // accumuler des sockets mesurerait le générateur, pas le collector.
+      if (inFlight.size >= CONFIG.maxInFlight) { skipped++; continue; }
+      const p = postOne(i, stats).finally(() => inFlight.delete(p));
+      inFlight.add(p);
+    }
+    await Promise.all(inFlight);
+  } else {
+    const bounded = CONFIG.durationSec > 0;
+    mode = bounded ? "closed-duration" : "closed-volume";
+    const sessions = Math.max(1, Math.ceil(CONFIG.targetEvents / eventsInPayload(buildPayload(0))));
+    const deadline = bounded ? t0 + CONFIG.durationSec * 1000 : Infinity;
+    let next = 0;
+    const worker = async () => {
+      while (bounded ? performance.now() < deadline : next < sessions) await postOne(next++, stats);
+    };
+    await Promise.all(Array.from({ length: CONFIG.concurrency }, worker));
+  }
 
   const sec = (performance.now() - t0) / 1000;
   return {
-    sessions, events, ok, fail,
+    mode,
+    app: CONFIG.app,
+    rate: mode === "open" ? CONFIG.rate : null,
+    arrivals: mode === "open" ? CONFIG.arrivals : null,
+    concurrency: mode === "open" ? null : CONFIG.concurrency,
+    // `sessions` = lots postés (un lot = une session) : nom gardé pour les
+    // lecteurs existants de ce JSON.
+    sessions: stats.sent,
+    events: stats.events,
+    ok: stats.ok,
+    fail: stats.fail,
+    skipped,
+    statusCounts: stats.statusCounts,
     durationSec: +sec.toFixed(1),
-    throughputEventsPerSec: Math.round(events / sec),
+    batchesPerSec: +(stats.ok / sec).toFixed(2),
+    throughputEventsPerSec: Math.round(stats.events / sec),
     postLatencyMs: {
-      p50: round1(percentile(latencies, 50)),
-      p95: round1(percentile(latencies, 95)),
-      p99: round1(percentile(latencies, 99)),
+      p50: round1(percentile(stats.latencies, 50)),
+      p95: round1(percentile(stats.latencies, 95)),
+      p99: round1(percentile(stats.latencies, 99)),
     },
+    window: { startEpochMs, endEpochMs: epochNow() },
   };
 }
 
@@ -279,7 +424,7 @@ async function main() {
     const perSession = eventsInPayload(sample);
     console.log(JSON.stringify({
       mode: "dry-run",
-      config: { ...CONFIG, databaseUrl: "(masqué)" },
+      config: { ...CONFIG, databaseUrl: "(masqué)", apiKey: CONFIG.apiKey ? "(masquée)" : null },
       eventsPerSession: perSession,
       plannedSessions: Math.ceil(CONFIG.targetEvents / perSession),
       sampleSpanNames: sample.resourceSpans[0].scopeSpans[0].spans.map((s) => s.name),
@@ -288,8 +433,20 @@ async function main() {
     return;
   }
 
-  console.error(`[load-bench] cible ${CONFIG.targetEvents} events -> ${CONFIG.endpoint} (concurrence ${CONFIG.concurrency}, store=${CONFIG.store})`);
+  const cible = CONFIG.rate > 0
+    ? `${CONFIG.rate} lots/s (${CONFIG.arrivals}) pendant ${CONFIG.durationSec} s`
+    : CONFIG.durationSec > 0
+      ? `concurrence ${CONFIG.concurrency} pendant ${CONFIG.durationSec} s`
+      : `${CONFIG.targetEvents} events, concurrence ${CONFIG.concurrency}`;
+  console.error(`[load-bench] ${cible} -> ${CONFIG.endpoint} (app=${CONFIG.app}, run=${CONFIG.run}, store=${CONFIG.store})`);
   const load = await loadPhase();
+
+  // Charge seule (porte P2) : la base mesurée est derrière le collector, et le
+  // pilote la lit lui-même ; ni requêtes console, ni nettoyage.
+  if (!CONFIG.dbPhase) {
+    console.log(JSON.stringify({ load }, null, 2));
+    return;
+  }
 
   const inserted = CONFIG.store === "clickhouse"
     ? await dbPhaseClickhouse()

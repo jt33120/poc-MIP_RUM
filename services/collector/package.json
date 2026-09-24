@@ -2,7 +2,7 @@
   "name": "@mip/service-collector",
   "version": "0.1.0",
   "private": true,
-  "description": "Collecteur OTLP autonome (traces, logs, replay, source maps de CI) — l'image auto-hébergeable ; en production, la collecte passe encore par la route de la console. Plus les deux serveurs de développement que lancent l'E2E et les scripts de validation.",
+  "description": "Collecteur OTLP (traces, logs, replay, source maps de CI) sur @mip/service-kit — le service Railway `collector` et l'image auto-hébergeable. Plus les deux serveurs de développement que lancent l'E2E et les scripts de validation.",
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@mip/backend": "workspace:*",
+    "@mip/service-kit": "workspace:*",
     "pg": "8.21.0"
   }
 }

@@ -1,92 +1,147 @@
-// Service « ingest » — le receveur OTLP de MIP RUM.
+// Service « collector » — le point d'entrée unique de ce que poussent les capteurs.
 //
-// POST /v1/traces   métriques, erreurs, sessions, spans (OTLP/HTTP JSON)
-// POST /v1/logs     signal LOGS d'OpenTelemetry
-// POST /v1/replay   chunk rrweb gzippé (métadonnées en en-têtes x-mip-*)
-// POST /v1/sourcemaps  source maps de CI, jeton d'upload dédié (P5.4)
-// GET  /health      le process répond
-// GET  /ready       la base répond
+// CÂBLAGE SEUL. Le receveur (routes, clés, débit, CORS, bord de confiance,
+// identité, budget de requête) vit dans `@mip/backend/lib/receiver.mjs`,
+// partagé avec les serveurs de développement ; le processus (configuration,
+// arrêt propre, pool, sondes, boucle) dans `@mip/service-kit`. Détail des
+// routes, des sondes et des modes de panne : `services/collector/README.md`.
 //
-// Ce fichier ne contient AUCUNE logique d'ingestion : elle vit dans
-// `@mip/backend/lib/receiver.mjs`, partagée avec le dev-server et alignée sur les
-// routes Next de la console. Le service n'est qu'un point d'entrée — c'est
-// exactement ce qui le rend déplaçable chez un autre hébergeur.
-//
-// Les trois signaux tiennent dans UN service : ils écrivent dans la même base,
+// Les quatre signaux tiennent dans UN service : ils écrivent dans la même base,
 // partagent le registre d'apps, la vérification de clé et le compteur de débit.
-// Les séparer dupliquerait ces caches sans rien isoler — le jour où le replay
-// (corps binaires lourds) mérite son propre profil de charge, la découpe se
-// fait ici, en changeant `signaux`.
+// Le jour où le replay mérite son propre profil de charge, la découpe se fait
+// ici, en changeant `signaux`.
 import pg from "pg";
-import { creerReceveur } from "@mip/backend/lib/receiver.mjs";
+import { COMMON_ENV, defineConfig } from "@mip/service-kit/config.mjs";
+import { createLogger } from "@mip/service-kit/log.mjs";
+import { installLifecycle } from "@mip/service-kit/lifecycle.mjs";
+import { createPool, describeTarget } from "@mip/service-kit/pg.mjs";
+import { createMetrics } from "@mip/service-kit/metrics.mjs";
+import { startService } from "@mip/service-kit/http.mjs";
+import { startLoop } from "@mip/service-kit/loop.mjs";
+import { BUDGET_REQUETE, creerReceveur, ENTETE_COLLECTOR, plafondCorps } from "@mip/backend/lib/receiver.mjs";
 import { drainerIngestRaw } from "@mip/backend/lib/ingest-differe.mjs";
-import { creerPool, demarrerServeur, cible } from "@mip/backend/lib/serveur.mjs";
-import { createLogger } from "@mip/backend/shared/log.mjs";
+import { IDENTITY_FINGERPRINT_PATTERN, verifierConfigIdentite } from "@mip/backend/lib/identity-hash.mjs";
+import { parseSourceIp, verifierSecretsBord } from "@mip/backend/shared/client-ip.mjs";
 
-const log = createLogger("ingest");
+const log = createLogger("collector");
 
-// Fail-fast. Sans DATABASE_URL, `creerPool` retombe sur le Postgres LOCAL de
-// développement : le service répondrait 200 aux beacons et perdrait tout en
-// silence — le pire des comportements pour de la télémétrie.
-if (!process.env.DATABASE_URL) {
-  log.error("DATABASE_URL absent — le service d'ingestion refuse de démarrer");
-  process.exit(2);
-}
+// AVANT TOUT `await` : un SIGTERM reçu pendant le démarrage doit trouver son
+// gestionnaire (même règle que le scheduler).
+const lifecycle = installLifecycle({ log });
 
-const pool = creerPool(pg, { max: 8 });
+const config = defineConfig(
+  {
+    ...COMMON_ENV,
+    // 4318 : le port OTLP/HTTP standard, et celui du compose et de l'image.
+    PORT: { ...COMMON_ENV.PORT, default: 4318 },
+    // Obligatoire, SANS repli : un DATABASE_URL oublié donnait un receveur qui
+    // répondait 200 aux beacons et perdait tout en silence.
+    DATABASE_URL: { type: "url", required: true, secret: true, protocols: ["postgres:", "postgresql:"], description: "Postgres (pooler Neon en production)." },
+    PGPOOL_MAX: { type: "int", default: 8, min: 2, max: 20, description: "Taille du pool, par réplique. Neon plafonne à max_connections = 112 pour tous les services." },
+    REQUIRE_API_KEY: { type: "bool", default: false, description: "true : toute app inconnue, inactive ou sans clé prend 403. Provisionner d'abord (scripts/ops/provisionner-cles.mjs)." },
+    RATE_LIMIT_PER_MIN: { type: "int", default: 600, min: 1, description: "Plafond de requêtes par app et par minute (compteur durable en base)." },
+    INGEST_DEFERRED: { type: "bool", default: false, description: "Acquitte avant d'écrire (table UNLOGGED, perdue à l'arrêt brutal de Postgres). Éteint par défaut." },
+    INGEST_DRAIN_MS: { type: "int", default: 250, min: 50, max: 60_000, description: "Intervalle du drain de la file différée." },
+    // Le secret SANS son empreinte est refusé dans la MÊME liste d'erreurs que
+    // le reste (un déploiement par variable manquante, c'est ce que le kit évite).
+    IDENTITY_HASH_SECRET: {
+      type: "string", secret: true, minLength: 32,
+      validate: (secret) => verifierConfigIdentite({ secret, empreinte: process.env.IDENTITY_HASH_FINGERPRINT?.trim() }),
+      description: "Clé HMAC des identités. Absente : l'identité est retirée, jamais stockée brute.",
+    },
+    IDENTITY_HASH_FINGERPRINT: { type: "string", pattern: IDENTITY_FINGERPRINT_PATTERN, description: "Empreinte du secret (scripts/ops/empreinte-identite.mjs). Obligatoire avec le secret ; écart : readiness refusée." },
+    EDGE_PROXY_SECRET: { type: "list", secret: true, validate: verifierSecretsBord, description: "Secret du relais de la console (x-mip-edge-auth) ; deux valeurs séparées par une virgule pendant une rotation." },
+    GEOIP_IP_SOURCE: { type: "string", default: "none", validate: (v) => (parseSourceIp(v).mode === "invalide" ? "attendu : none, socket, railway ou xff:<n>" : null), description: "D'où lire l'adresse du trafic DIRECT pour le GeoIP." },
+  },
+  { service: "collector", log },
+);
 
-const { handler } = creerReceveur(pool, {
+const metrics = createMetrics();
+const pool = createPool(pg, {
+  connectionString: config.DATABASE_URL,
+  applicationName: "mip-collector",
+  max: config.PGPOOL_MAX,
+  // Sous le budget de requête (≈ 4 s) : attendre 5 s une connexion ferait
+  // répondre le collector APRÈS le délai du relais de la console.
+  connectionTimeoutMillis: 2_000,
+  // `query_timeout` AU BUDGET (4 s, pas les 30 s du kit). L'ingestion est déjà
+  // bornée par son échéance ; ceci borne le RESTE (source maps, /ready, drain,
+  // la requête de garde abandonnée qui finit seule) : aucune requête ne tient
+  // une connexion du pool au-delà de ce que le relais attendra.
+  queryTimeoutMillis: BUDGET_REQUETE.totalMs,
   log,
-  // `tampon` reste éteint : /__recent retient des payloads en clair, c'est un
-  // outil d'assertion de test, pas une fonctionnalité.
-  nom: "ingest",
-  tampon: false,
-  // `sourcemaps` : port direct des maps volumineuses (≤ 15 Mio par map), que le
-  // plafond de corps de Vercel interdit à la console.
-  signaux: ["traces", "logs", "replay", "sourcemaps"],
+  metrics,
+  lifecycle,
 });
 
-// LE DRAIN VIT ICI, ET PAS DANS LE SCHEDULER. La table de débarquement est une
-// file de quelques centaines de millisecondes : la drainer toutes les cinq
-// minutes rendrait la console aveugle pendant cinq minutes et ferait grossir une
-// table UNLOGGED — c'est-à-dire une table qu'un redémarrage brutal vide. Le
-// travailleur tourne donc dans le processus qui reçoit, au plus près.
-//
-// Une seule boucle, ré-armée APRÈS coup : un drain lent ne s'empile pas sur
-// lui-même. `unref` pour que ce minuteur n'empêche jamais l'arrêt du process —
-// c'est le serveur HTTP qui le maintient en vie, pas le drain.
-const DIFFERE = process.env.INGEST_DEFERRED === "true";
-const DRAIN_MS = Number(process.env.INGEST_DRAIN_MS ?? 250);
+const receveur = creerReceveur(pool, {
+  log,
+  nom: "collector",
+  // /__recent retient des payloads en clair : jamais ici (et le receveur
+  // refuserait de démarrer avec, sous NODE_ENV=production ou sur Railway).
+  tampon: false,
+  signaux: ["traces", "logs", "replay", "sourcemaps"],
+  requireApiKey: config.REQUIRE_API_KEY,
+  rateLimitPerMin: config.RATE_LIMIT_PER_MIN,
+  differe: config.INGEST_DEFERRED,
+  identityHashSecret: config.IDENTITY_HASH_SECRET,
+  identityFingerprint: config.IDENTITY_HASH_FINGERPRINT,
+  edgeSecrets: config.EDGE_PROXY_SECRET,
+  sourceIp: parseSourceIp(config.GEOIP_IP_SOURCE),
+});
 
-if (DIFFERE) {
-  const boucle = async () => {
-    try {
+// LE DRAIN VIT ICI, ET PAS DANS LE SCHEDULER : la file différée est une affaire
+// de centaines de millisecondes, pas de cinq minutes. La boucle du kit ne
+// lance jamais deux passages de front, et au SIGTERM finit le sien avant que
+// le pool ne ferme. `keepAlive: false` : c'est le serveur qui tient le
+// processus en vie, pas le drain. Un échec (base coupée) n'arrête pas la boucle.
+if (config.INGEST_DEFERRED) {
+  startLoop({
+    name: "drain",
+    intervalMs: config.INGEST_DRAIN_MS,
+    keepAlive: false,
+    log,
+    metrics,
+    lifecycle,
+    run: async () => {
       const { drains, echecs } = await drainerIngestRaw(pool, { max: 200, log });
       if (echecs) log.warn("drain: lots en échec", { drains, echecs });
-    } catch (err) {
-      // Une base injoignable ne doit PAS tuer le receveur : les lots restent en
-      // attente et le passage suivant les reprendra. Un service qui meurt à la
-      // première coupure est pire que pas de drain du tout.
-      log.error("drain interrompu", { err: String(err?.message ?? err) });
-    }
-    setTimeout(boucle, DRAIN_MS).unref();
-  };
-  setTimeout(boucle, DRAIN_MS).unref();
-  log.info("ingestion différée active", { drain_ms: DRAIN_MS });
+    },
+  });
 }
 
-demarrerServeur(handler, {
-  // Railway impose le port par PORT ; INGEST_PORT garde la parité locale.
-  port: process.env.PORT ?? process.env.INGEST_PORT ?? 4318,
-  pool,
+startService({
+  name: "collector",
+  port: config.PORT,
   log,
-  nom: "ingest",
-  infos: {
-    db: cible(),
-    require_api_key: process.env.REQUIRE_API_KEY === "true",
-    rate_per_min: Number(process.env.RATE_LIMIT_PER_MIN ?? 600),
-    // Annoncé sur /health : un opérateur doit pouvoir lire, sans fouiller les
-    // variables, si ce déploiement acquitte avant d'avoir écrit.
-    ingest_deferred: DIFFERE,
-  },
+  pool,
+  metrics,
+  metricsToken: config.METRICS_TOKEN,
+  lifecycle,
+  handler: receveur.handler,
+  // Borne EXTÉRIEURE, au double de celle du receveur : c'est lui qui répond 413
+  // en premier, AVEC ses en-têtes CORS (un 413 sans CORS devient, côté
+  // navigateur, une erreur réseau illisible). Le kit n'est qu'un filet.
+  maxBodyBytes: (req) => 2 * plafondCorps(req.url),
+  // /health publique : statut du kit + ce que l'opérateur doit lire d'un coup
+  // d'œil (service, protocole de bord, état et empreinte de l'identité, GeoIP).
+  details: receveur.infosSante,
+  // /ready (jeton) : registre d'apps chargé au moins une fois, identité concordante.
+  ready: receveur.pret,
+  // Sur TOUTES les réponses (erreurs, 404 métier, sondes comprises) : le relais
+  // de la console distingue ainsi un 404 du collector (route inconnue, à ne
+  // pas rejouer ailleurs) d'un 404 du routeur Railway (service absent ou mal
+  // routé, qui appelle le repli). Aucune information : juste « c'est moi ».
+  responseHeaders: { [ENTETE_COLLECTOR]: "1" },
+});
+
+log.info("collector démarré", {
+  db: describeTarget(config.DATABASE_URL),
+  require_api_key: config.REQUIRE_API_KEY,
+  rate_per_min: config.RATE_LIMIT_PER_MIN,
+  // Un opérateur doit pouvoir lire si ce déploiement acquitte avant d'avoir écrit.
+  ingest_deferred: config.INGEST_DEFERRED,
+  identity: receveur.identite.etat,
+  id_fp: receveur.identite.id_fp,
+  edge_trust: Boolean(config.EDGE_PROXY_SECRET?.length),
 });

@@ -3,7 +3,7 @@
 // mêmes gardes (413/403/429, 400 vs 500), parser partagé flattenOtlpLogs.
 import { writeLogs } from "@mip/backend/lib/pg-ingest.mjs";
 import { flattenOtlpLogs } from "@mip/backend/shared/otlp.mjs";
-import { bodyTooLarge, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "@mip/backend/shared/limits.mjs";
+import { bodyTooLarge, lireCorpsBorne, MAX_BODY_BYTES, MAX_SPANS_PER_REQUEST } from "@mip/backend/shared/limits.mjs";
 import { withRetry } from "@mip/backend/shared/retry.mjs";
 import { secureOtlpIdentities } from "@mip/backend/lib/identity-hash.mjs";
 import { pool } from "@/lib/db";
@@ -35,9 +35,21 @@ export async function POST(req: Request) {
   }
 
   try {
+    // Lecture BORNÉE, comme la route traces et le collector : sans longueur
+    // annoncée, `req.json()` ne bornait rien (contrat de parité, P2).
+    const brut = await lireCorpsBorne(
+      req.body as unknown as AsyncIterable<Uint8Array> | null,
+      MAX_BODY_BYTES,
+    ).catch(() => {
+      throw new BadRequestError("invalid json body");
+    });
+    if (brut === null) {
+      log.warn("payload too large", { max: MAX_BODY_BYTES });
+      return json({ error: "payload too large" }, 413, cors);
+    }
     let payload: unknown;
     try {
-      payload = await req.json();
+      payload = JSON.parse(brut.toString("utf8"));
     } catch {
       throw new BadRequestError("invalid json body");
     }

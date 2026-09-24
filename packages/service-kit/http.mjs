@@ -1,12 +1,25 @@
 // Serveur HTTP d'un service : les sondes, les délais, le plafond de corps et le
 // journal d'accès, pour que le point d'entrée n'ait plus qu'à brancher ses routes.
 //
-// LES TROIS SONDES, ET CE QUE CHACUNE VEUT DIRE :
+// LES QUATRE SONDES, ET CE QUE CHACUNE VEUT DIRE :
 //
 //   /health   processus vivant ET base joignable (`select 1`, borné). C'est LA
 //             sonde Railway : un déploiement dont la base est injoignable ne
-//             doit pas remplacer celui qui marche. Publique, et muette : un
-//             statut, aucun détail (ni hôte, ni message d'erreur).
+//             doit pas remplacer celui qui marche. Publique, et muette sur la
+//             panne : un statut, jamais un hôte ni un message d'erreur. Un
+//             service peut y AJOUTER une description statique de lui-même
+//             (`details` : nom, protocole, empreinte d'un secret — jamais le
+//             secret), ce qu'un opérateur doit lire sans fouiller les variables.
+//             Le SUCCÈS du `select 1` est mis en cache `healthDbTtlMs` (30 s) :
+//             l'incident du 24/09 — une sonde externe et les scanners qui
+//             frappent /health empêchaient Neon de s'endormir, et le quota a
+//             fondu. Un échec, lui, n'est jamais gardé : la sonde suivante
+//             revérifie. Le cache BORNE le coût (un `select 1` par 30 s au
+//             plus), il ne rend pas le sommeil à la base : pour cela, la
+//             supervision externe interroge /live, jamais /health.
+//   /live     processus vivant, et RIEN d'autre : JAMAIS de base. Pour les
+//             sondes externes (disponibilité, statuspage) : elles peuvent
+//             frapper toutes les minutes sans réveiller ni facturer la base.
 //   /ready    503 dès le SIGTERM (drainage), sinon le verdict de `ready()` :
 //             fraîcheur, backlog. POUR LA SUPERVISION SEULEMENT, jamais pour
 //             Railway : une sonde de fraîcheur bloquerait le déploiement du
@@ -59,7 +72,7 @@ export const DEFAULT_TIMEOUTS = Object.freeze({
   connectionsCheckingInterval: 2_000,
 });
 
-const SONDES = new Set(["/health", "/ready", "/metrics"]);
+const SONDES = new Set(["/health", "/live", "/ready", "/metrics"]);
 const METHODES_CONNUES = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
 const ID_REQUETE = /^[A-Za-z0-9._:-]{8,128}$/;
 
@@ -147,6 +160,9 @@ function avecDelai(promesse, ms, message) {
  *   ni l'un ni l'autre : un service sans route (scheduler), sondes seules
  * @property {{ query: Function }} [pool]       /health vérifie la base par `ping`
  * @property {() => unknown} [health]           remplace le `ping` du pool
+ * @property {() => Record<string, unknown>} [details]  champs ajoutés au corps de
+ *   /health (200 comme 503) ; `status` reste celui du kit. Rien de secret, rien
+ *   qui dépende de la panne : la sonde est publique.
  * @property {() => ({ ok: boolean } & Record<string, unknown>) | Promise<any>} [ready]
  * @property {ReturnType<import("./metrics.mjs").createMetrics>} [metrics]
  * @property {string} [metricsToken]            sans lui, /ready et /metrics = 404
@@ -154,6 +170,13 @@ function avecDelai(promesse, ms, message) {
  *   donne une borne par route (les source maps en veulent plus)
  * @property {Partial<typeof DEFAULT_TIMEOUTS>} [timeouts]
  * @property {number} [healthTimeoutMs]         défaut 2 s
+ * @property {number} [healthDbTtlMs]           défaut 30 s : durée pendant laquelle
+ *   un `select 1` RÉUSSI dispense /health d'en refaire un ; 0 = à chaque sonde
+ * @property {Record<string, string>} [responseHeaders]  en-têtes posés sur
+ *   CHAQUE réponse — routes, sondes, 404, 413, 500, et jusqu'aux 400/408/431
+ *   que Node rend seul (requête illisible, délais). Pour qu'un appelant
+ *   reconnaisse une réponse du SERVICE d'une réponse de l'infrastructure
+ *   devant lui (le 404 du routeur Railway n'est pas celui du collector).
  * @property {ReturnType<import("./lifecycle.mjs").installLifecycle>} [lifecycle]
  *   si fourni : /ready suit le drainage, et la fermeture du serveur est
  *   enregistrée en phase de drainage
@@ -175,12 +198,15 @@ export function startService(options) {
     fetch: gestionnaireWeb,
     pool,
     health,
+    details,
     ready,
     metrics,
     metricsToken,
     maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
     healthTimeoutMs = 2_000,
+    healthDbTtlMs = 30_000,
     lifecycle,
+    responseHeaders = {},
   } = options ?? {};
   if (!name) throw new TypeError("startService : name obligatoire");
   if (!log) throw new TypeError("startService : log obligatoire");
@@ -189,6 +215,13 @@ export function startService(options) {
   const delais = { ...DEFAULT_TIMEOUTS, ...(options.timeouts ?? {}) };
   if (delais.headersTimeout > delais.requestTimeout) {
     throw new RangeError("startService : headersTimeout doit rester ≤ requestTimeout");
+  }
+
+  const entetesFixes = Object.entries(responseHeaders ?? {});
+  for (const [nom, valeur] of entetesFixes) {
+    // Validé au démarrage : un en-tête invalide ferait lever CHAQUE réponse.
+    http.validateHeaderName(nom);
+    http.validateHeaderValue(nom, valeur);
   }
 
   const limiteDe = (req) => (typeof maxBodyBytes === "function" ? maxBodyBytes(req) : maxBodyBytes);
@@ -209,8 +242,14 @@ export function startService(options) {
   const verifierSante = health ?? (pool ? () => ping(pool, { timeoutMs: healthTimeoutMs }) : () => {});
   let santeEnCours = null;
   let dernierEtatSain = true;
-  /** Une vérification à la fois : cent sondes simultanées font UN `select 1`. */
+  /** Instant (performance.now) du dernier verdict SAIN ; -Infinity : aucun. */
+  let dernierSucces = -Infinity;
+  /**
+   * Une vérification à la fois : cent sondes simultanées font UN `select 1`.
+   * Et un succès récent (< `healthDbTtlMs`) en dispense — voir /health en tête.
+   */
   function sante() {
+    if (healthDbTtlMs > 0 && performance.now() - dernierSucces < healthDbTtlMs) return Promise.resolve(true);
     santeEnCours ??= avecDelai(
       Promise.resolve().then(verifierSante),
       healthTimeoutMs + 500,
@@ -219,9 +258,11 @@ export function startService(options) {
       () => {
         if (!dernierEtatSain) log.info("santé rétablie");
         dernierEtatSain = true;
+        dernierSucces = performance.now();
         return true;
       },
       (err) => {
+        dernierSucces = -Infinity;
         // Journalisé au CHANGEMENT d'état seulement : une base coupée une heure
         // ne doit pas écrire une ligne par sonde.
         if (dernierEtatSain) log.warn("santé dégradée : base injoignable", { err });
@@ -252,9 +293,20 @@ export function startService(options) {
     if (req.method !== "GET" && req.method !== "HEAD") {
       return sendJson(res, 405, { error: "method_not_allowed" }, { allow: "GET, HEAD" });
     }
+    if (chemin === "/live") {
+      // Processus vivant — il vient de répondre. Aucune base, aucun détail.
+      return sendJson(res, 200, { status: "ok" });
+    }
     if (chemin === "/health") {
       const ok = await sante();
-      return sendJson(res, ok ? 200 : 503, { status: ok ? "ok" : "unavailable" });
+      let extra = {};
+      try {
+        extra = details?.() ?? {};
+      } catch (err) {
+        // Une description qui lève ne doit pas rendre malade une sonde saine.
+        log.warn("détails de /health en échec", { err });
+      }
+      return sendJson(res, ok ? 200 : 503, { ...extra, status: ok ? "ok" : "unavailable" });
     }
     if (!jetonValide(req)) return sendJson(res, 404, { error: "not_found" });
     if (chemin === "/ready") {
@@ -283,6 +335,7 @@ export function startService(options) {
     const chemin = cheminSeul(req.url);
     const sonde = SONDES.has(chemin);
     res.setHeader("x-request-id", requestId);
+    for (const [nom, valeur] of entetesFixes) res.setHeader(nom, valeur);
     if (lifecycle?.draining) res.setHeader("connection", "close");
     enVol.add(res);
 
@@ -337,6 +390,22 @@ export function startService(options) {
   // Propriété et non option : l'option du constructeur n'existe pas sur toutes
   // les versions de Node que nous faisons tourner (images en 22, CI en 26).
   serveur.keepAliveTimeout = delais.keepAliveTimeout;
+
+  // Les réponses que Node rend SANS passer par `traiter` (requête illisible,
+  // en-têtes trop gros, headersTimeout/requestTimeout) : même réponse que le
+  // défaut de Node (`socketOnError`), en-têtes fixes en plus. Sans en-têtes
+  // fixes, on laisse Node faire.
+  if (entetesFixes.length) {
+    const lignesFixes = entetesFixes.map(([n, v]) => `${n}: ${v}\r\n`).join("");
+    serveur.on("clientError", (err, socket) => {
+      if (socket.writable && socket.bytesWritten === 0) {
+        const statut = { HPE_HEADER_OVERFLOW: "431 Request Header Fields Too Large", ERR_HTTP_REQUEST_TIMEOUT: "408 Request Timeout" }[err?.code]
+          ?? "400 Bad Request";
+        socket.write(`HTTP/1.1 ${statut}\r\nConnection: close\r\n${lignesFixes}\r\n`);
+      }
+      socket.destroy(err);
+    });
+  }
 
   const listening = new Promise((resoudre, rejeter) => {
     serveur.once("error", rejeter);

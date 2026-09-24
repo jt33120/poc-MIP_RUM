@@ -13,7 +13,7 @@ Le kit met en œuvre les points 2 à 7 du **contrat de service** (plan backend, 
 | `config.mjs` | `defineConfig`, `parseConfig`, `envExample`, `redactConfig`, `COMMON_ENV` | Échec immédiat (code 2) qui liste **toutes** les erreurs en une ligne. Variable vide = absente. Journal de démarrage expurgé : un secret n'apparaît ni dans le journal, ni dans un message d'erreur. `--print-env-example` écrit le gabarit `.env` tiré du schéma. |
 | `log.mjs` | `createLogger`, `LOG_LEVELS`, `setLogContextProvider` | Une ligne JSON par événement, avec `service`, `version`, `replica`, `request_id` / `run_id` et la pile complète des erreurs. Jamais de secret, d'adresse IP ni d'e-mail. Sans import `node:` : la console Next l'importe. |
 | `context.mjs` | `withContext`, `currentContext` | AsyncLocalStorage branché sur le journal : une ligne émise au fond du noyau porte l'identifiant de la requête ou du tour en cours. |
-| `http.mjs` | `startService`, `readBody`, `DEFAULT_TIMEOUTS`, `DEFAULT_MAX_BODY_BYTES` | `/health`, `/ready`, `/metrics` ; délais serveur ; plafond de corps (413) ; journal d'accès sans IP ; `X-Request-Id`. |
+| `http.mjs` | `startService`, `readBody`, `DEFAULT_TIMEOUTS`, `DEFAULT_MAX_BODY_BYTES` | `/health` (ping en cache), `/live` (sans base), `/ready`, `/metrics` ; délais serveur ; plafond de corps (413) ; journal d'accès sans IP ; `X-Request-Id` ; en-têtes fixes (`responseHeaders`). |
 | `lifecycle.mjs` | `installLifecycle` | SIGTERM → `/ready` à 503 → drainage → fermeture (`pool.end()`) → sortie ; sortie forcée avant SIGKILL ; gardes `unhandledRejection` / `uncaughtException`. Synchrone : à installer avant tout `await`. |
 | `pg.mjs` | `createPool`, `ping`, `optionsSsl`, `describeTarget` | `pool.on('error')` et un écouteur `error` sur chaque client **emprunté** (pg-pool retire le sien au prêt), `connectionTimeoutMillis`, `idleTimeoutMillis`, `query_timeout`, `application_name`, keepalive TCP. **Aucun `SET` de session.** TLS vérifié hors réseau privé. |
 | `metrics.mjs` | `createMetrics`, `registerProcessMetrics` | Compteurs et jauges au format texte Prometheus, jauges calculées au rendu, plafond de séries par métrique. |
@@ -24,13 +24,18 @@ Le kit met en œuvre les points 2 à 7 du **contrat de service** (plan backend, 
 
 | Route | Exposition | Sens | Réponse |
 |---|---|---|---|
-| `GET /health` | publique | processus vivant **et** base joignable (`select 1`, borné à 2 s). **C'est la sonde Railway.** Sans pool : processus vivant. | `200 {"status":"ok"}` ou `503 {"status":"unavailable"}` ; jamais de détail (ni hôte, ni message) |
+| `GET /health` | publique | processus vivant **et** base joignable (`select 1`, borné à 2 s). **C'est la sonde Railway.** Sans pool : processus vivant. Un `select 1` **réussi** est gardé `healthDbTtlMs` (défaut **30 s**, 0 = à chaque sonde) ; un échec n'est jamais gardé. | `200 {"status":"ok"}` ou `503 {"status":"unavailable"}` ; jamais de détail sur la panne (ni hôte, ni message). Option `details` : champs **statiques** ajoutés au corps (le collector y met `service`, `edge_protocol`, `id_fp`) — jamais un secret. |
+| `GET /live` | publique | processus vivant, **jamais de base**. **C'est la sonde des superviseurs externes** (disponibilité, statuspage, scanners). | `200 {"status":"ok"}`, rien d'autre |
 | `GET /ready` | jeton | 503 dès SIGTERM (drainage) ; sinon le verdict de `ready()` : fraîcheur, backlog. **Supervision seulement**, jamais sonde Railway : une sonde de fraîcheur bloquerait le déploiement du scheduler, dont le bail est tenu par l'ancienne instance. | `200 {"status":"ready",…}` ou `503 {"status":"draining"\|"not_ready",…}` |
 | `GET /metrics` | jeton | texte Prometheus : requêtes, pool, boucles, mémoire. | `text/plain; version=0.0.4` |
+
+**Quelle sonde pour qui.** Railway → `/health` (au déploiement : la base doit répondre avant de basculer). Toute sonde **externe** → `/live`. Leçon de l'incident Neon du 24/09 : une sonde externe et les scanners qui frappaient `/health` faisaient un `select 1` à chaque passage, la base ne s'endormait plus et le quota a fondu. Le cache de 30 s borne ce coût à deux `select 1` par minute au plus, mais **ne rend pas le sommeil** à la base (Neon s'endort après 5 min sans requête) : seul `/live` le fait.
 
 **Jeton.** `/ready` et `/metrics` exigent `Authorization: Bearer <METRICS_TOKEN>`. Sans jeton configuré, sans en-tête ou avec un mauvais jeton, les deux répondent **404**, pas 401 : un 401 confirmerait que la route existe. Comparaison à temps constant. Le jeton en paramètre d'URL est refusé : il finirait dans les journaux des proxys.
 
 Toute autre route va au `handler` (style `node:http`) ou au `fetch` (style Web) du service. Sans l'un ni l'autre (le scheduler), elle reçoit un 404.
+
+**Signature.** Option `responseHeaders` (`{ nom: valeur }`, validée au démarrage) : posée sur **chaque** réponse du service — routes, sondes, 404, 413, 500, et jusqu'aux 400/408/431 que Node rend seul (requête illisible, en-têtes trop gros, délais). Le collector y met `x-mip-collector: 1`, pour que son relais distingue ses réponses de celles du routeur Railway. Les en-têtes de la route s'y ajoutent, ils ne la remplacent pas.
 
 ## Variables d'environnement lues par le kit
 
@@ -87,7 +92,7 @@ Le kit garantit l'exclusion **dans un processus** : `startLoop` n'arme la minute
 | Situation | Ce que fait le kit | Ce qu'on voit |
 |---|---|---|
 | configuration invalide | refus de démarrer, code 2 | une ligne `configuration invalide` qui liste tout |
-| base injoignable | `/health` à 503 au plus tard 2,5 s après la sonde ; le processus vit | `santé dégradée`, une fois, puis `santé rétablie` |
+| base injoignable | `/health` à 503 dès la première sonde qui suit l'expiration du dernier succès (≤ 30 s), au plus tard 2,5 s après elle ; `/live` reste à 200 ; le processus vit | `santé dégradée`, une fois, puis `santé rétablie` |
 | client inactif coupé (pooler, `pg_terminate_backend`) | le pool le remplace à la demande | `pg : connexion inactive perdue`, `pg_pool_errors_total` |
 | client **emprunté** coupé (transaction en cours, attente réseau) | la requête en cours échoue, le client est écarté à sa restitution ; le processus vit | `pg : connexion empruntée coupée`, `pg_pool_errors_total` |
 | en-têtes trop lents (slowloris) | 408 et fermeture à `headersTimeout` (10 s) | rien au journal d'accès : la requête n'a jamais existé |

@@ -60,6 +60,8 @@ declare module "@mip/backend/lib/pg-ingest.mjs" {
     opts?: {
       symbolicateur?: import("@mip/backend/lib/error-symbolication.mjs").Symbolicateur | null;
       client?: PoolClient | null;
+      /** Attente bornée du verrou d'application (défaut : STRATEGIE_VERROU). */
+      verrou?: { delaiVerrouMs?: number; tentatives?: number };
     },
   ): Promise<{ erreurs: EcritureErreurs; refuses?: RefusBarriere }>;
 
@@ -74,7 +76,7 @@ declare module "@mip/backend/lib/pg-ingest.mjs" {
     pool: Pool,
     logs: IngestRow[],
     errors?: IngestRow[],
-    opts?: { client?: PoolClient | null },
+    opts?: { client?: PoolClient | null; verrou?: { delaiVerrouMs?: number; tentatives?: number } },
   ): Promise<{ logs: number; erreurs: EcritureErreurs; refuses?: RefusBarriere }>;
 
   export function writeLogsWithClient(
@@ -104,7 +106,7 @@ declare module "@mip/backend/lib/pg-ingest.mjs" {
   export function writeReplayChunk(
     pool: Pool,
     chunk: ChunkReplay,
-    opts?: { client?: PoolClient | null },
+    opts?: { client?: PoolClient | null; verrou?: { delaiVerrouMs?: number; tentatives?: number } },
   ): Promise<ResultatReplay>;
 
   export function writeReplayChunkWithClient(
@@ -125,6 +127,8 @@ declare module "@mip/backend/lib/pg-ingest.mjs" {
     /** null si accepté, sinon la raison du 403. */
     checkApiKey(appId: string, apiKey: string | null): Promise<string | null>;
     rateLimitedDurable(appId: string): Promise<boolean>;
+    /** Le registre a-t-il été chargé au moins une fois ? (sinon checkApiKey est en fail-open) */
+    registryLoaded(): boolean;
   }
 
   export function createPgAuth(
@@ -172,8 +176,23 @@ declare module "@mip/backend/lib/privacy-barriere.mjs" {
     pool: Pool,
     appId: string | string[],
     travail: (client: PoolClient) => Promise<T>,
-    opts?: { delaiVerrouMs?: number; tentatives?: number; client?: PoolClient | null },
+    opts?: {
+      delaiVerrouMs?: number;
+      tentatives?: number;
+      client?: PoolClient | null;
+      /** Échéance DURE (epoch ms) — le collector seul ; la console n'en pose pas. */
+      echeance?: number;
+    },
   ): Promise<T>;
+
+  /** Échéance de la requête atteinte : « annulee » = rien n'est commis. */
+  export class ErreurEcheance extends Error {
+    issue: "annulee" | "inconnue";
+    reessayable: true;
+    connexionCompromise?: boolean;
+  }
+  export const GRACE_COMMIT_MS: number;
+  export function sousEcheance<T>(promesse: Promise<T> | T, echeance: number, siTardif?: (valeur: T) => void): Promise<T>;
 
   export function barrieresDisponibles(client: PoolClient): Promise<boolean>;
   export function _resetPresenceBarrieres(): void;
@@ -442,10 +461,18 @@ declare module "@mip/backend/shared/limits.mjs" {
   export const MAX_BODY_BYTES: number;
   export const MAX_SPANS_PER_REQUEST: number;
   export const MAX_REPLAY_INFLATED_BYTES: number;
+  export const MAX_REPLAY_BYTES: number;
+  /** `x-mip-seq` → entier ≥ 0 dans l'int4 de la colonne, sinon null (400). */
+  export function lireSequenceReplay(brut: string | null | undefined): number | null;
   export function bodyTooLarge(
     contentLength: string | number | null | undefined,
     max?: number,
   ): boolean;
+  /** Corps lu en bornant la mémoire : null au premier octet au-delà de `max`. */
+  export function lireCorpsBorne(
+    flux: AsyncIterable<Uint8Array> | null | undefined,
+    max?: number,
+  ): Promise<Buffer | null>;
 }
 
 // P7.5 — vocabulaire FERMÉ des capacités mobiles. Le module serveur fait
@@ -489,6 +516,9 @@ declare module "@mip/backend/shared/log.mjs" {
 }
 
 declare module "@mip/backend/shared/retry.mjs" {
+  export function isTransient(err: unknown): boolean;
+  /** Panne de base qui vaut « rejoue plus tard » : 503 + retry-after sur les ports d'ingestion. */
+  export function estIndisponibilite(err: unknown): boolean;
   export function withRetry<T>(
     fn: () => Promise<T>,
     opts?: {

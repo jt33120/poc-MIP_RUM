@@ -154,12 +154,12 @@ USER node
 # POUR L'AUTO-HÉBERGEMENT. Railway ignore cette instruction et sonde lui-même
 # `/health` (`.railway/railway.ts`) ; `docker run` et compose, eux, s'en
 # servent. Par `fetch` de Node : l'image « slim » n'a ni curl ni wget. Le port
-# suit la même résolution que le point d'entrée (PORT, puis INGEST_PORT).
+# suit la même résolution que le point d'entrée (PORT, défaut 4318).
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
-  CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.PORT ?? process.env.INGEST_PORT ?? 4318}/health`, { signal: AbortSignal.timeout(2500) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+  CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.PORT || 4318}/health`, { signal: AbortSignal.timeout(2500) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 
 # EXPLICITE, et le seul que cette image sache lancer.
 # Node en PID 1 ne reçoit SIGTERM que parce que le point d'entrée l'écoute
-# (`demarrerServeur`) : sans gestionnaire, le noyau ignore le signal pour le
+# (`installLifecycle` du kit) : sans gestionnaire, le noyau ignore le signal pour le
 # PID 1, et `docker stop` attendrait son SIGKILL.
 CMD ["node", "services/collector/server.mjs"]
