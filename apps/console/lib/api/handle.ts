@@ -19,6 +19,7 @@ import { type ApiFilters, parseApiFilters } from "./params";
 import { type RateResult, rateLimit } from "./ratelimit";
 import { ApiHttpError, apiError } from "./respond";
 import { corsHeaders } from "./cors";
+import { relayerLectureApi } from "../api-relay";
 
 export interface ApiContext {
   req: NextRequest;
@@ -44,6 +45,10 @@ function rlLimit(): number {
  */
 export function handle(fn: (ctx: ApiContext) => Promise<unknown>) {
   return async (req: NextRequest, route: RouteCtx) => {
+    // P4 : une lecture au jeton machine peut partir au service `api` (éteint par
+    // défaut ; voir lib/api-relay.ts). Sa réponse est rendue telle quelle.
+    const relayee = await relayerLectureApi(req);
+    if (relayee) return relayee;
     const principal = await authenticateApi(
       req.headers.get("authorization"),
       req.cookies.get(SESSION_COOKIE)?.value ?? null,
@@ -210,6 +215,9 @@ export function handleQuery(
   options: { maxBytes: number },
 ) {
   return async (req: NextRequest) => {
+    // P4 : la lecture de l'Explorer au jeton machine peut partir au service `api`.
+    const relayee = await relayerLectureApi(req);
+    if (relayee) return relayee;
     const principal = await authenticateApi(
       req.headers.get("authorization"),
       req.cookies.get(SESSION_COOKIE)?.value ?? null,
