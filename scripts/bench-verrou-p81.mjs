@@ -24,13 +24,41 @@
 // Usage — base JETABLE explicite, jamais DATABASE_URL :
 //   BENCH_DATABASE_URL=postgres://postgres:postgres@localhost:5433/p81_bench \
 //     node scripts/bench-verrou-p81.mjs
+//
+// Réglages (P2, porte go/no-go du collector — tous optionnels) :
+//   BENCH_LOTS             [200]      lots par passe
+//   BENCH_WRITERS          [1,10,50]  écrivains simultanés, un niveau par passe
+//   BENCH_APPS_REPARTIES   [5]        applications du scénario « réparti »
+//   BENCH_POOL_MAX         [60]       connexions du pool de banc
+//   BENCH_BUDGET           [console]  console = stratégie par défaut (5 s × 3) ;
+//                                     collector = budget de requête du collector
+//                                     (1,5 s × 2, `BUDGET_REQUETE`) — celui qu'il faut
+//                                     juger pour P2, puisque c'est lui qui écrira
+//   BENCH_SONDE_PAUSE_MS   [0]        pause entre deux passages de la sonde d'attente.
+//                                     À 0, la sonde reprend le verrou en boucle : sans
+//                                     latence c'est négligeable, mais derrière ~9 ms
+//                                     d'aller-retour elle le TIENT un A/R par passage
+//                                     (≈ 25 % du temps à vide) et fausse ce qu'elle mesure
+//   BENCH_MIGRER           [auto]     auto = migrer SEULEMENT une base vierge. Une base
+//                                     montée par le migrateur de production
+//                                     (`node services/scheduler/migrate.mjs`, registre
+//                                     `schema_migration`) n'est pas re-migrée à la main :
+//                                     rejouer `schema.sql` et les v* par-dessus n'est pas
+//                                     ce que fait la production. 1 = toujours, 0 = jamais.
+//
+// La SONDE CLIENT (`scripts/bench/sonde-pg.mjs`) complète la sonde d'attente :
+// sur les lots des écrivains eux-mêmes, elle chronomètre la tenue du verrou
+// (réponse du verrou → réponse du COMMIT), l'utilisation (tenue cumulée / durée
+// de la passe) et compte les allers-retours SQL par lot.
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { flattenOtlp } from "../packages/backend/shared/otlp.mjs";
 import { writeRows } from "../packages/backend/lib/pg-ingest.mjs";
+import { BUDGET_REQUETE } from "../packages/backend/lib/receiver.mjs";
 import { STRATEGIE_VERROU, withAppIngestTransaction } from "../packages/backend/lib/privacy-barriere.mjs";
+import { analyser, installerSonde, maintenant } from "./bench/sonde-pg.mjs";
 
 const ICI = dirname(fileURLToPath(import.meta.url));
 const SQL_DIR = join(ICI, "..", "packages", "db", "sql");
@@ -47,9 +75,16 @@ if (!URL_BASE) {
 /** Lots par niveau de contention. Assez pour un p95 lisible, assez court pour être rejoué. */
 const LOTS = Number(process.env.BENCH_LOTS ?? 200);
 const NIVEAUX = (process.env.BENCH_WRITERS ?? "1,10,50").split(",").map(Number);
-const APPS_REPARTIES = 5;
+const APPS_REPARTIES = Number(process.env.BENCH_APPS_REPARTIES ?? 5);
+const PAUSE_SONDE_MS = Number(process.env.BENCH_SONDE_PAUSE_MS ?? 0);
+const BUDGET = process.env.BENCH_BUDGET === "collector" ? "collector" : "console";
+/** Stratégie d'attente passée à `writeRows` et à la sonde : `{}` = défaut du module. */
+const VERROU = BUDGET === "collector" ? BUDGET_REQUETE.verrou : {};
+const DELAI_MS = VERROU.delaiVerrouMs ?? STRATEGIE_VERROU.delaiMs;
+const TENTATIVES = VERROU.tentatives ?? STRATEGIE_VERROU.tentatives;
 
-const pool = new pg.Pool({ connectionString: URL_BASE, max: 60 });
+const pool = new pg.Pool({ connectionString: URL_BASE, max: Number(process.env.BENCH_POOL_MAX ?? 60) });
+const sondeClient = installerSonde(pg);
 
 function migrations() {
   return ["schema.sql", ...readdirSync(SQL_DIR)
@@ -112,7 +147,7 @@ async function passe(writers, apps) {
     while (prochain()) {
       const t0 = performance.now();
       try {
-        await writeRows(pool, lot(app));
+        await writeRows(pool, lot(app), { verrou: VERROU });
         latences.push(performance.now() - t0);
       } catch (err) {
         if (err?.name === "ErreurVerrouIngestion") refus++;
@@ -128,20 +163,28 @@ async function passe(writers, apps) {
     while (sonder) {
       const t0 = performance.now();
       try {
-        await withAppIngestTransaction(pool, apps[0], async () => {});
+        await withAppIngestTransaction(pool, apps[0], async () => {}, VERROU);
         attentes.push(performance.now() - t0);
       } catch (err) {
         if (err?.name === "ErreurVerrouIngestion") refus++;
         else throw err;
       }
+      if (PAUSE_SONDE_MS > 0) await new Promise((r) => setTimeout(r, PAUSE_SONDE_MS));
     }
   })();
 
+  sondeClient.vider();
+  const debutMur = maintenant();
   const debut = performance.now();
   await Promise.all(Array.from({ length: writers }, (_, i) => ecrivain(i)));
   const duree = performance.now() - debut;
+  const finMur = maintenant();
   sonder = false;
   await sonde;
+  // Vue des ÉCRIVAINS (la sonde d'attente fait 4 requêtes par passage :
+  // `analyser` l'écarte). Réparti sur N apps, `utilisation` additionne N
+  // verrous distincts : c'est une occupation cumulée, qui peut dépasser 1.
+  const client = analyser(sondeClient.vider(), { depuis: debutMur, jusqua: finMur });
 
   return {
     writers,
@@ -151,6 +194,12 @@ async function passe(writers, apps) {
     latence: { p50: percentile(latences, 50), p95: percentile(latences, 95), max: percentile(latences, 100) },
     attente: { p50: percentile(attentes, 50), p95: percentile(attentes, 95), max: percentile(attentes, 100) },
     refus,
+    tenu: client.tenuMs,
+    transaction: client.transactionMs,
+    attenteEcrivains: client.attenteVerrouMs,
+    utilisation: client.utilisation,
+    allersRetours: client.allersRetoursParLot.dansTransaction,
+    sequenceType: client.sequenceType,
   };
 }
 
@@ -164,13 +213,32 @@ function ligne(r, etiquette) {
     ms(r.attente.p50).padStart(10),
     ms(r.attente.p95).padStart(10),
     ms(r.attente.max).padStart(10),
+    ms(r.tenu.p50).padStart(10),
+    `${(100 * r.utilisation).toFixed(0)} %`.padStart(6),
+    String(r.allersRetours.p50 ?? "n/d").padStart(4),
     `${r.debit.toFixed(0)}/s`.padStart(9),
     String(r.refus).padStart(6),
   ].join(" ");
 }
 
+/**
+ * Une base montée par le migrateur de production porte son registre : on ne
+ * la re-migre pas à la main (BENCH_MIGRER=auto, défaut). Une base vierge, si.
+ */
+async function fautIlMigrer() {
+  const choix = process.env.BENCH_MIGRER ?? "auto";
+  if (choix === "1") return true;
+  if (choix === "0") return false;
+  const { rows } = await pool.query("select to_regclass('public.schema_migration') is not null as ok");
+  return !rows[0].ok;
+}
+
 async function main() {
-  for (const f of migrations()) await pool.query(readFileSync(f, "utf8"));
+  if (await fautIlMigrer()) {
+    for (const f of migrations()) await pool.query(readFileSync(f, "utf8"));
+  } else {
+    console.log("[bench-verrou] base déjà migrée (registre schema_migration) : aucune migration rejouée");
+  }
   const apps = Array.from({ length: APPS_REPARTIES }, (_, i) => `bench-app-${i}`);
   for (const app of apps) {
     await pool.query(
@@ -185,14 +253,15 @@ async function main() {
   };
 
   console.log(`\nBanc P8.1 — verrou d'ingestion par application`);
-  console.log(`lots par passe : ${LOTS} · lock_timeout : ${STRATEGIE_VERROU.delaiMs} ms · tentatives : ${STRATEGIE_VERROU.tentatives}`);
+  console.log(`lots par passe : ${LOTS} · budget : ${BUDGET} · lock_timeout : ${DELAI_MS} ms · tentatives : ${TENTATIVES} · pause de la sonde : ${PAUSE_SONDE_MS} ms`);
   console.log(
     "\n" + "scénario".padEnd(26) + " " + "wr".padStart(3) + " " + "apps".padStart(5) + " " +
     "lat.p50".padStart(10) + " " + "lat.p95".padStart(10) + " " +
     "att.p50".padStart(10) + " " + "att.p95".padStart(10) + " " + "att.max".padStart(10) + " " +
+    "tenu.p50".padStart(10) + " " + "util.".padStart(6) + " " + "A/R".padStart(4) + " " +
     "débit".padStart(9) + " " + "refus".padStart(6),
   );
-  console.log("-".repeat(106));
+  console.log("-".repeat(130));
 
   const resultats = [];
   for (const writers of NIVEAUX) {
@@ -213,8 +282,10 @@ async function main() {
   for (const app of apps) await pool.query("delete from app_registry where app_id = $1", [app]);
   console.log(
     "\nLecture : `att.*` est le temps d'attente du verrou SEUL, mesuré pendant la charge.\n" +
-    "Un `refus` non nul signifie qu'une attente a dépassé " + STRATEGIE_VERROU.delaiMs + " ms " +
-    STRATEGIE_VERROU.tentatives + " fois de suite : le lot n'est pas écrit, il est rejouable.\n",
+    "`tenu` : réponse du verrou → réponse du COMMIT, sur les lots des écrivains (sonde client) ;\n" +
+    "`util.` : tenue cumulée / durée de la passe ; `A/R` : allers-retours SQL par lot, de BEGIN à COMMIT.\n" +
+    "Un `refus` non nul signifie qu'une attente a dépassé " + DELAI_MS + " ms " +
+    TENTATIVES + " fois de suite : le lot n'est pas écrit, il est rejouable.\n",
   );
   if (process.env.BENCH_JSON) console.log(JSON.stringify(resultats, null, 2));
   await pool.end();
