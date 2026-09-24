@@ -5,8 +5,11 @@
 //
 //   /health   processus vivant ET base joignable (`select 1`, borné). C'est LA
 //             sonde Railway : un déploiement dont la base est injoignable ne
-//             doit pas remplacer celui qui marche. Publique, et muette : un
-//             statut, aucun détail (ni hôte, ni message d'erreur).
+//             doit pas remplacer celui qui marche. Publique, et muette sur la
+//             panne : un statut, jamais un hôte ni un message d'erreur. Un
+//             service peut y AJOUTER une description statique de lui-même
+//             (`details` : nom, protocole, empreinte d'un secret — jamais le
+//             secret), ce qu'un opérateur doit lire sans fouiller les variables.
 //   /ready    503 dès le SIGTERM (drainage), sinon le verdict de `ready()` :
 //             fraîcheur, backlog. POUR LA SUPERVISION SEULEMENT, jamais pour
 //             Railway : une sonde de fraîcheur bloquerait le déploiement du
@@ -147,6 +150,9 @@ function avecDelai(promesse, ms, message) {
  *   ni l'un ni l'autre : un service sans route (scheduler), sondes seules
  * @property {{ query: Function }} [pool]       /health vérifie la base par `ping`
  * @property {() => unknown} [health]           remplace le `ping` du pool
+ * @property {() => Record<string, unknown>} [details]  champs ajoutés au corps de
+ *   /health (200 comme 503) ; `status` reste celui du kit. Rien de secret, rien
+ *   qui dépende de la panne : la sonde est publique.
  * @property {() => ({ ok: boolean } & Record<string, unknown>) | Promise<any>} [ready]
  * @property {ReturnType<import("./metrics.mjs").createMetrics>} [metrics]
  * @property {string} [metricsToken]            sans lui, /ready et /metrics = 404
@@ -175,6 +181,7 @@ export function startService(options) {
     fetch: gestionnaireWeb,
     pool,
     health,
+    details,
     ready,
     metrics,
     metricsToken,
@@ -254,7 +261,14 @@ export function startService(options) {
     }
     if (chemin === "/health") {
       const ok = await sante();
-      return sendJson(res, ok ? 200 : 503, { status: ok ? "ok" : "unavailable" });
+      let extra = {};
+      try {
+        extra = details?.() ?? {};
+      } catch (err) {
+        // Une description qui lève ne doit pas rendre malade une sonde saine.
+        log.warn("détails de /health en échec", { err });
+      }
+      return sendJson(res, ok ? 200 : 503, { ...extra, status: ok ? "ok" : "unavailable" });
     }
     if (!jetonValide(req)) return sendJson(res, 404, { error: "not_found" });
     if (chemin === "/ready") {

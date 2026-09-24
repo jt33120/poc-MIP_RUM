@@ -24,7 +24,7 @@ Le kit met en œuvre les points 2 à 7 du **contrat de service** (plan backend, 
 
 | Route | Exposition | Sens | Réponse |
 |---|---|---|---|
-| `GET /health` | publique | processus vivant **et** base joignable (`select 1`, borné à 2 s). **C'est la sonde Railway.** Sans pool : processus vivant. | `200 {"status":"ok"}` ou `503 {"status":"unavailable"}` ; jamais de détail (ni hôte, ni message) |
+| `GET /health` | publique | processus vivant **et** base joignable (`select 1`, borné à 2 s). **C'est la sonde Railway.** Sans pool : processus vivant. | `200 {"status":"ok"}` ou `503 {"status":"unavailable"}` ; jamais de détail sur la panne (ni hôte, ni message). Option `details` : champs **statiques** ajoutés au corps (le collector y met `service`, `edge_protocol`, `id_fp`) — jamais un secret. |
 | `GET /ready` | jeton | 503 dès SIGTERM (drainage) ; sinon le verdict de `ready()` : fraîcheur, backlog. **Supervision seulement**, jamais sonde Railway : une sonde de fraîcheur bloquerait le déploiement du scheduler, dont le bail est tenu par l'ancienne instance. | `200 {"status":"ready",…}` ou `503 {"status":"draining"\|"not_ready",…}` |
 | `GET /metrics` | jeton | texte Prometheus : requêtes, pool, boucles, mémoire. | `text/plain; version=0.0.4` |
 

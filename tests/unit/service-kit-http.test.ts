@@ -123,6 +123,28 @@ describe("service-kit/http — /health (la sonde Railway)", () => {
     const { base } = await demarrer();
     expect((await fetch(`${base}/health`)).status).toBe(200);
   });
+
+  it("`details` : une description statique ajoutée au corps, en 200 comme en 503 ; `status` reste celui du kit", async () => {
+    const pool = fauxPool();
+    const { base } = await demarrer({ pool, details: () => ({ service: "collector", edge_protocol: "mip-edge/1", status: "menteur" }) });
+    expect(await (await fetch(`${base}/health`)).json()).toEqual({ service: "collector", edge_protocol: "mip-edge/1", status: "ok" });
+    pool.etat = "ko";
+    const panne = await fetch(`${base}/health`);
+    expect(panne.status).toBe(503);
+    expect(await panne.json()).toEqual({ service: "collector", edge_protocol: "mip-edge/1", status: "unavailable" });
+  });
+
+  it("`details` qui lève : la sonde reste saine, l'échec part au journal", async () => {
+    const { base, lignes } = await demarrer({
+      details: () => {
+        throw new Error("description cassée");
+      },
+    });
+    const r = await fetch(`${base}/health`);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ status: "ok" });
+    expect(lignes.some((l) => l.msg === "détails de /health en échec")).toBe(true);
+  });
 });
 
 describe("service-kit/http — /ready et /metrics : jeton obligatoire, sinon 404", () => {
