@@ -176,8 +176,23 @@ declare module "@mip/backend/lib/privacy-barriere.mjs" {
     pool: Pool,
     appId: string | string[],
     travail: (client: PoolClient) => Promise<T>,
-    opts?: { delaiVerrouMs?: number; tentatives?: number; client?: PoolClient | null },
+    opts?: {
+      delaiVerrouMs?: number;
+      tentatives?: number;
+      client?: PoolClient | null;
+      /** Échéance DURE (epoch ms) — le collector seul ; la console n'en pose pas. */
+      echeance?: number;
+    },
   ): Promise<T>;
+
+  /** Échéance de la requête atteinte : « annulee » = rien n'est commis. */
+  export class ErreurEcheance extends Error {
+    issue: "annulee" | "inconnue";
+    reessayable: true;
+    connexionCompromise?: boolean;
+  }
+  export const GRACE_COMMIT_MS: number;
+  export function sousEcheance<T>(promesse: Promise<T> | T, echeance: number, siTardif?: (valeur: T) => void): Promise<T>;
 
   export function barrieresDisponibles(client: PoolClient): Promise<boolean>;
   export function _resetPresenceBarrieres(): void;

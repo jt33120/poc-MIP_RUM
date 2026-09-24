@@ -42,6 +42,7 @@ import {
 import { flattenOtlp, flattenOtlpLogs } from "../shared/otlp.mjs";
 import { estIndisponibilite, isTransient, withRetry } from "../shared/retry.mjs";
 import { etatIdentite, secureOtlpIdentities } from "./identity-hash.mjs";
+import { ErreurEcheance, sousEcheance } from "./privacy-barriere.mjs";
 
 /** Garde-fou replay : > au plafond du SDK (1 Mo gzip par session). */
 export const MAX_REPLAY_BYTES = 2 * 1024 * 1024;
@@ -52,14 +53,25 @@ export const MAX_REPLAY_BYTES = 2 * 1024 * 1024;
  * collector doit donc TOUJOURS répondre avant : ≈ 4 s au pire, puis un 503
  * explicite avec `retry-after`, qui dit au SDK « rien n'est écrit, rejoue ».
  *
+ * C'EST UNE ÉCHÉANCE DURE, calculée à l'entrée de la requête (`handler`), et
+ * non un simple plafond des attentes : un COMMIT arrivé à 9 s après un 503
+ * rendu à 8 s écrirait le lot deux fois (les logs n'ont pas de clé naturelle).
+ *
+ *   - gardes (registre, clé, compteur de débit) : sous l'échéance ;
+ *   - transaction : chaque étape sous l'échéance, `statement_timeout` /
+ *     `transaction_timeout` = budget restant côté serveur, COMMIT jamais envoyé
+ *     après l'échéance (`withAppIngestTransaction`, option `echeance`) ;
  *   - verrou d'application : 1,5 s × 2 essais (+ 120 ms de recul) ≈ 3,1 s, au
  *     lieu des 5 s × 3 (≈ 15,6 s) de la stratégie par défaut, que la console
  *     garde pour elle ;
  *   - reprises sur erreur transitoire (`withRetry`) : 2 au plus, recul plafonné
  *     à 400 ms, et AUCUNE reprise qui partirait après l'échéance ;
  *   - au-delà : 503 + `retry-after: 2`, jamais un 500 qui ferait croire à un
- *     incident, jamais une réponse PENDANT l'écriture (le client rejouerait un
- *     lot en cours de commit — les logs ne sont pas idempotents).
+ *     incident, jamais une réponse PENDANT l'écriture (le COMMIT parti a
+ *     `GRACE_COMMIT_MS` pour rendre son verdict : réponse avant 5 s).
+ *
+ * Le pool du collector a un `query_timeout` du même ordre (services/collector) :
+ * une requête hors budget (source maps, /ready) ne tient pas une connexion 30 s.
  */
 export const BUDGET_REQUETE = Object.freeze({
   totalMs: 4_000,
@@ -194,10 +206,12 @@ export function creerReceveur(pool, opts = {}) {
   const recents = [];
   const TAILLE_TAMPON = 50;
 
-  async function cors(origin, extra) {
+  async function cors(origin, extra, echeance) {
     let origines = [];
     try {
-      origines = originsFromRegistry((await auth.getAppRegistry()).values());
+      // Sous l'échéance : un registre qui ne se charge pas ne doit pas retenir
+      // la réponse au-delà du budget (le 503 qui suit part avec le socle).
+      origines = originsFromRegistry((await sousEcheance(auth.getAppRegistry(), echeance)).values());
     } catch {
       // Registre indisponible : socle statique plutôt que refus total — même
       // esprit fail-open que checkApiKey.
@@ -216,7 +230,7 @@ export function creerReceveur(pool, opts = {}) {
    * un 503 + retry-after.
    */
   function sousBudget(echeance, ecrire, etiquette) {
-    return withRetry(() => ecrire({ verrou: budget.verrou }), {
+    return withRetry(() => ecrire({ verrou: { ...budget.verrou, echeance } }), {
       retries: budget.reprises,
       baseMs: 100,
       maxMs: budget.repriseMaxMs,
@@ -297,8 +311,19 @@ export function creerReceveur(pool, opts = {}) {
     return { ok: registre && identiteOk, registry_loaded: registre, identity: identite.etat };
   }
 
-  /** Clé d'API (403) puis débit (429), une fois par app du lot. */
-  async function gardes(apiKeys, entetes) {
+  /**
+   * Clé d'API (403) puis débit (429), une fois par app du lot — SOUS
+   * L'ÉCHÉANCE : registre et compteur sont des requêtes SQL. Échéance perdue :
+   * 503 ; la requête abandonnée finit seule, bornée par le `query_timeout` du
+   * pool, et n'écrit rien d'autre qu'un coup de compteur de débit.
+   */
+  function gardes(apiKeys, entetes, echeance) {
+    // Échéance déjà passée (corps arrivé lentement) : on ne lance rien.
+    if (!(echeance > Date.now())) return Promise.reject(new ErreurEcheance());
+    return sousEcheance(gardesSansBorne(apiKeys, entetes), echeance);
+  }
+
+  async function gardesSansBorne(apiKeys, entetes) {
     for (const { app_id, api_key } of apiKeys) {
       const raison = await auth.checkApiKey(app_id, api_key);
       if (raison) {
@@ -349,7 +374,7 @@ export function creerReceveur(pool, opts = {}) {
 
     if (estLogs) {
       const parsed = flattenOtlpLogs(payload, { maxLogs: MAX_SPANS_PER_REQUEST });
-      const refus = await gardes(parsed.apiKeys, entetes);
+      const refus = await gardes(parsed.apiKeys, entetes, echeance);
       if (refus) return repondre(res, refus.statut, refus.corps, refus.entetes);
       const ecrit = await sousBudget(echeance, (o) => writeLogs(pool, parsed.logs, parsed.errors, o), "logs");
       log.info("ingested logs", {
@@ -362,7 +387,7 @@ export function creerReceveur(pool, opts = {}) {
     }
 
     const rows = flattenOtlp(payload, { maxSpans: MAX_SPANS_PER_REQUEST });
-    const refus = await gardes(rows.apiKeys, entetes);
+    const refus = await gardes(rows.apiKeys, entetes, echeance);
     if (refus) return repondre(res, refus.statut, refus.corps, refus.entetes);
 
     // Géo SANS JAMAIS STOCKER D'IP. L'adresse ne vit que le temps de cet appel :
@@ -413,7 +438,7 @@ export function creerReceveur(pool, opts = {}) {
 
     // Parité d'auth avec les traces : un endpoint durci et l'autre ouvert
     // serait exactement le trou que la garde commune ferme.
-    const refus = await gardes([{ app_id: appId, api_key: entete(req, "x-mip-key") }], entetes);
+    const refus = await gardes([{ app_id: appId, api_key: entete(req, "x-mip-key") }], entetes, echeance);
     if (refus) return repondre(res, refus.statut, refus.corps, refus.entetes);
 
     const body = await lireCorpsBorne(req, MAX_REPLAY_BYTES);
@@ -512,6 +537,8 @@ export function creerReceveur(pool, opts = {}) {
 
   /** Le gestionnaire à passer à http.createServer. */
   async function handler(req, res) {
+    // L'échéance part de l'ENTRÉE de la requête : tout ce qui suit (CORS,
+    // lecture du corps, gardes, écriture) la consomme.
     const echeance = Date.now() + budget.totalMs;
     const lu = lireBord(req);
     const origin = entete(req, "origin") ?? "";
@@ -519,7 +546,7 @@ export function creerReceveur(pool, opts = {}) {
     const estReplay = chemin.startsWith("/v1/replay");
     // Le préflight replay doit annoncer les en-têtes x-mip-* sinon le navigateur
     // bloque le POST cross-origin des clients à clé.
-    const entetes = await cors(origin, estReplay ? { allowHeaders: REPLAY_ALLOW_HEADERS } : undefined);
+    const entetes = await cors(origin, estReplay ? { allowHeaders: REPLAY_ALLOW_HEADERS } : undefined, echeance);
 
     try {
       if (req.method === "OPTIONS") {
@@ -589,6 +616,21 @@ export function creerReceveur(pool, opts = {}) {
       if (err?.name === "ErreurVerrouIngestion" && !res.headersSent) {
         log.warn("busy: app ingest lock", { apps: err.apps });
         return repondre(res, 503, { error: "ingestion busy, retry", retry: true },
+          { ...entetes, "retry-after": "2" });
+      }
+      // Échéance de la requête atteinte (gardes, connexion, transaction) : la
+      // transaction a été annulée — connexion détruite ou coupée par le serveur.
+      if (err instanceof ErreurEcheance && !res.headersSent) {
+        if (err.issue === "inconnue") {
+          // Le seul cas où « rien n'est écrit » n'est pas garanti : un COMMIT
+          // parti avant l'échéance, sans verdict après la grâce. Rare, et à VOIR
+          // — d'où l'erreur au journal et un corps qui le dit.
+          log.error("deadline: commit outcome unknown, replay may duplicate", { reason: String(err.message) });
+          return repondre(res, 503, { error: "ingestion outcome unknown, retry", retry: true },
+            { ...entetes, "retry-after": "2" });
+        }
+        log.warn("busy: request deadline reached", { budget_ms: budget.totalMs });
+        return repondre(res, 503, { error: "ingestion deadline exceeded, retry", retry: true },
           { ...entetes, "retry-after": "2" });
       }
       // Base indisponible au-delà du budget (reprises épuisées ou échéance

@@ -18,7 +18,7 @@ import { createPool, describeTarget } from "@mip/service-kit/pg.mjs";
 import { createMetrics } from "@mip/service-kit/metrics.mjs";
 import { startService } from "@mip/service-kit/http.mjs";
 import { startLoop } from "@mip/service-kit/loop.mjs";
-import { creerReceveur, plafondCorps } from "@mip/backend/lib/receiver.mjs";
+import { BUDGET_REQUETE, creerReceveur, plafondCorps } from "@mip/backend/lib/receiver.mjs";
 import { drainerIngestRaw } from "@mip/backend/lib/ingest-differe.mjs";
 import { IDENTITY_FINGERPRINT_PATTERN, verifierConfigIdentite } from "@mip/backend/lib/identity-hash.mjs";
 import { parseSourceIp, verifierSecretsBord } from "@mip/backend/shared/client-ip.mjs";
@@ -64,6 +64,11 @@ const pool = createPool(pg, {
   // Sous le budget de requête (≈ 4 s) : attendre 5 s une connexion ferait
   // répondre le collector APRÈS le délai du relais de la console.
   connectionTimeoutMillis: 2_000,
+  // `query_timeout` AU BUDGET (4 s, pas les 30 s du kit). L'ingestion est déjà
+  // bornée par son échéance ; ceci borne le RESTE (source maps, /ready, drain,
+  // la requête de garde abandonnée qui finit seule) : aucune requête ne tient
+  // une connexion du pool au-delà de ce que le relais attendra.
+  queryTimeoutMillis: BUDGET_REQUETE.totalMs,
   log,
   metrics,
   lifecycle,

@@ -92,15 +92,19 @@ Prouvé sur Postgres 17 migré (24/09) : dry-run → 3 apps listées, l'inactive
 
 ## Budget de requête
 
-En P3, la console attend le collector 8 s au plus ; au-delà, elle ne sait pas s'il a écrit. Le collector répond donc **toujours avant** :
+En P3, la console attend le collector 8 s au plus ; au-delà, elle rend 503 sans savoir s'il a écrit, et le SDK rejoue. Un COMMIT arrivé après ce 503 écrirait le lot **deux fois** (les logs n'ont pas de clé naturelle). Le budget est donc une **échéance dure** de 4 s, posée à l'entrée de la requête :
 
+- gardes (registre d'apps, clé, compteur `rate_check`) : sous l'échéance ;
+- transaction (`withAppIngestTransaction`, option `echeance`) : connexion, BEGIN, verrou et écritures courent contre l'échéance ; perdue, la connexion est **détruite** (pas de ROLLBACK attendu, pas de retour au pool) et le serveur annule ; côté serveur, `statement_timeout`, `idle_in_transaction_session_timeout` et, en Postgres ≥ 17, `transaction_timeout` = budget restant — un COMMIT qui arrive en retard trouve une session déjà tuée ;
+- le COMMIT n'est **jamais envoyé après l'échéance**, puis attendu 750 ms au plus : réponse toujours avant 5 s ;
 - verrou d'application : `lock_timeout` 1,5 s × **2 essais** (+ 120 ms de recul) ≈ 3,1 s, au lieu des 5 s × 3 que la console garde pour elle ;
-- erreurs transitoires (`withRetry`) : 2 reprises au plus, recul plafonné à 400 ms, **aucune reprise qui partirait après l'échéance** de 4 s ;
-- au-delà : **503 + `retry-after: 2`** — « rien n'est écrit, rejoue » (la transaction est annulée). Jamais un 500, jamais une réponse pendant l'écriture.
+- erreurs transitoires (`withRetry`) : 2 reprises au plus, recul plafonné à 400 ms, **aucune reprise qui partirait après l'échéance** ;
+- pool du collector : `query_timeout` = 4 s (le kit en met 30) — rien ne tient une connexion au-delà ;
+- au-delà : **503 + `retry-after: 2`** — « rien n'est écrit, rejoue ». Jamais un 500.
 
-Prouvé sur Docker : verrou de `gip-plateforme` tenu par une autre session → `503` en 3,16 s avec `retry-after: 2` ; verrou rendu → 200 en 48 ms.
+Prouvé sur Docker : verrou de `gip-plateforme` tenu par une autre session → `503` en 3,16 s avec `retry-after: 2` ; verrou rendu → 200 en 48 ms. Et sous toxiproxy (`node scripts/bench/preuve-echeance-collecteur.mjs`, Postgres 17.11, 24/09) : latence de 10 s posée avant la requête ou balayée pendant la transaction, 42 lots traces/logs → 25 × 503 en 4 003–4 130 ms, **0 ligne** derrière les 23 « annulés » relevée 15 s après ; les 17 × 200 ont leurs lignes.
 
-Limite connue : une instruction bloquée *au milieu* d'une écriture n'est bornée que par le `query_timeout` du kit (30 s), au-delà des 8 s du relais. Le cas relevé est l'attente du verrou, qui est bornée.
+**Limite irréductible**, dite et journalisée : si la latence frappe *la réponse* d'un COMMIT déjà parvenu au serveur, personne ne sait s'il a validé. Le collector répond alors `503 {"error":"ingestion outcome unknown, retry"}` et journalise en **erreur** `deadline: commit outcome unknown, replay may duplicate` (2 cas sur 42 dans la preuve, tous deux commis). Seule une clé d'idempotence côté logs fermerait ce cas.
 
 **Capacité par app (banc local du 24/09, [`docs/operations/banc-collecteur-2026-09-24.md`](../../docs/operations/banc-collecteur-2026-09-24.md)).** Un lot tient le verrou de son app pendant 15 allers-retours SQL : ≈ 150–170 ms à ~10 ms par aller-retour (Amsterdam ↔ Francfort). Une app atteint 30 % d'utilisation vers 1,75 lot/s et sature vers 6,5 lots/s, sans aucun 503 jusque-là. Le plafond est par app, pas global. Le repli chiffré est une fonction SQL en un aller-retour. Sur staging, l'utilisation se lit sans toucher au service, par `scripts/bench/echantillonner-verrou.mjs` (`pg_locks`).
 
@@ -121,6 +125,8 @@ Deux réplicas écrivent en même temps sans se coordonner, et c'est sûr :
 | base injoignable au démarrage | le service démarre ; `/health` 503 ; `/ready` refusé (registre jamais chargé : sans lui, les clés seraient en *fail-open*) | `santé dégradée`, `app_registry load failed` |
 | base coupée pendant une écriture | reprises plafonnées, puis 503 + `retry-after` | `db retry (…)`, `busy: database unavailable within budget` |
 | verrou d'app tenu (effacement RGPD long) | 503 + `retry-after` en ≈ 3,1 s | `busy: app ingest lock` |
+| base lente ou réseau qui avale (échéance de 4 s atteinte) | 503 + `retry-after` avant 5 s ; transaction annulée | `busy: request deadline reached` |
+| réponse du COMMIT perdue (issue inconnue) | 503 `ingestion outcome unknown` ; le rejeu peut doubler un log | `deadline: commit outcome unknown, replay may duplicate` (niveau erreur) |
 | secret d'identité changé sans l'empreinte | identité **retirée** (donnée manquante, jamais incohérente) ; `/ready` refusé | `empreinte du secret d'identité DISCORDANTE` (empreinte trouvée, attendue, remède) |
 | secret de relais désaccordé | trafic relayé sans pays ni GeoIP ; aucun rejet | `en-têtes de bord non authentifiés retirés` (`mode: "refuse"`) |
 | client qui forge `x-mip-edge-*` ou un pays de CDN | ignoré et retiré | même ligne, `mode: "direct"` |

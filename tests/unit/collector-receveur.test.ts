@@ -5,7 +5,9 @@
 //   1. la normalisation des chemins historiques AVANT le routage (et donc
 //      avant `estReplay`, qui décide des en-têtes de préflight) ;
 //   2. le budget de requête : verrou 1,5 s × 2, reprises plafonnées, puis 503
-//      + retry-after — jamais un 500, jamais une attente de 15 s ;
+//      + retry-after — jamais un 500, jamais une attente de 15 s ; et c'est
+//      une ÉCHÉANCE DURE : gardes et requêtes de la transaction bornées, COMMIT
+//      jamais envoyé après elle, connexion détruite (pas rendue) ;
 //   3. le refus de démarrer avec le tampon /__recent en production ;
 //   4. /ready (registre chargé au moins une fois, identité concordante) et ce
 //      que /health dit du receveur (service, protocole de bord, identité) ;
@@ -35,13 +37,18 @@ const OPTIONNELLES: Record<string, string[]> = {
 
 /**
  * Faux pool : toute requête réussit (lignes vides), sauf si `panne(text)` rend
- * une erreur, qui est alors levée. `connect` peut échouer aussi.
+ * une erreur, qui est alors levée, ou si `bloque(text)` est vrai : la requête ne
+ * répond JAMAIS (réseau qui avale, base qui ne se réveille pas). `connect` peut
+ * échouer aussi. `liberations` : l'argument de chaque `release` (une erreur =
+ * connexion détruite par pg-pool, pas rendue).
  */
-function fauxPool({ panne, panneConnexion }: { panne?: Panne; panneConnexion?: () => unknown } = {}) {
+function fauxPool({ panne, panneConnexion, bloque }: { panne?: Panne; panneConnexion?: () => unknown; bloque?: (text: string) => boolean } = {}) {
   const requetes: Requete[] = [];
+  const liberations: unknown[] = [];
   let connexions = 0;
   const query = async (text: string, params?: unknown[]) => {
     requetes.push({ text, params });
+    if (bloque?.(text)) return new Promise(() => {});
     const err = panne?.(text);
     if (err) throw err;
     if (text.includes("information_schema.columns")) {
@@ -56,10 +63,10 @@ function fauxPool({ panne, panneConnexion }: { panne?: Panne; panneConnexion?: (
       connexions++;
       const err = panneConnexion?.();
       if (err) throw err;
-      return { query, release() {} };
+      return { query, release(e?: unknown) { liberations.push(e); } };
     },
   };
-  return { pool, requetes, connexions: () => connexions };
+  return { pool, requetes, liberations, connexions: () => connexions };
 }
 
 function journal() {
@@ -182,10 +189,14 @@ describe("budget de requête ≈ 4 s, puis 503 + retry-after", () => {
     expect(r.status).toBe(503);
     expect(r.headers.get("retry-after")).toBe("2");
     expect(await r.json()).toMatchObject({ retry: true });
-    expect(requetes.filter((q) => q.text.includes("lock_timeout")).map((q) => q.text)).toEqual([
-      "set local lock_timeout = '1500ms'",
-      "set local lock_timeout = '1500ms'",
-    ]);
+    // Sous échéance, les réglages partent en UNE requête `set_config` : le
+    // verrou à 1500 ms, et le reste du budget pour statement_timeout.
+    const reglages = requetes.filter((q) => q.text.includes("lock_timeout"));
+    expect(reglages).toHaveLength(2);
+    for (const q of reglages) {
+      expect(q.params?.[0]).toBe("1500ms");
+      expect(parseInt(String(q.params?.[1]), 10)).toBeLessThanOrEqual(BUDGET_REQUETE.totalMs);
+    }
     expect(requetes.filter((q) => q.text.includes("pg_advisory_xact_lock"))).toHaveLength(2);
     expect(Date.now() - debut).toBeLessThan(2_000); // 120 ms de recul, pas 5 s × 3
   });
@@ -210,13 +221,14 @@ describe("budget de requête ≈ 4 s, puis 503 + retry-after", () => {
     expect(f.connexions()).toBe(1);
   });
 
-  it("aucune reprise ne part APRÈS l'échéance", async () => {
+  it("aucune reprise ne part APRÈS l'échéance (ni même la première, échéance nulle)", async () => {
     const coupe = Object.assign(new Error("reset"), { code: "ECONNRESET" });
     const f = fauxPool({ panneConnexion: () => coupe });
     const { base } = await servir(f.pool, { budget: { totalMs: 0 } });
     const r = await posterTraces(base);
     expect(r.status).toBe(503);
-    expect(f.connexions()).toBe(1);
+    // Échéance déjà passée : aucune connexion n'est même demandée.
+    expect(f.connexions()).toBe(0);
   });
 
   it("une faute déterministe reste un 500 (le budget ne maquille pas les bugs)", async () => {
@@ -225,6 +237,120 @@ describe("budget de requête ≈ 4 s, puis 503 + retry-after", () => {
     const { base } = await servir(pool);
     const r = await posterTraces(base);
     expect(r.status).toBe(500);
+  });
+});
+
+describe("échéance DURE : rien ne part, rien n'est commis après le budget", () => {
+  const BUDGET = { totalMs: 400 };
+  const commits = (requetes: Requete[]) => requetes.filter((q) => /^\s*commit\b/i.test(q.text));
+
+  it("réglages serveur : statement_timeout, idle_in_transaction et transaction_timeout ≤ budget restant", async () => {
+    const { pool, requetes } = fauxPool();
+    const { base } = await servir(pool);
+    expect((await posterTraces(base)).status).toBe(200);
+    const reglage = requetes.find((q) => q.text.includes("statement_timeout"));
+    expect(reglage?.text).toMatch(/set_config\('statement_timeout', \$2, true\)/);
+    expect(reglage?.text).toMatch(/set_config\('idle_in_transaction_session_timeout', \$2, true\)/);
+    expect(reglage?.text).toMatch(/server_version_num[\s\S]*set_config\('transaction_timeout', \$2, true\)/);
+    const reste = parseInt(String(reglage?.params?.[1]), 10);
+    expect(reste).toBeGreaterThan(0);
+    expect(reste).toBeLessThanOrEqual(BUDGET_REQUETE.totalMs);
+    expect(commits(requetes)).toHaveLength(1);
+  });
+
+  it("compteur de débit qui ne répond jamais (gardes) : 503 à l'échéance, aucune transaction ouverte", async () => {
+    const f = fauxPool({ bloque: (t) => t.includes("rate_check") });
+    const { base } = await servir(f.pool, { budget: BUDGET });
+    const debut = Date.now();
+    const r = await posterTraces(base);
+    const ms = Date.now() - debut;
+    expect(r.status).toBe(503);
+    expect(r.headers.get("retry-after")).toBe("2");
+    expect(await r.json()).toMatchObject({ retry: true });
+    expect(ms).toBeGreaterThanOrEqual(BUDGET.totalMs - 20);
+    expect(ms).toBeLessThan(BUDGET.totalMs + 500);
+    expect(f.connexions()).toBe(0);
+    expect(f.requetes.some((q) => q.text === "begin")).toBe(false);
+  });
+
+  it("requête de la transaction qui ne répond jamais : 503 à l'échéance, PAS de COMMIT, connexion détruite", async () => {
+    const f = fauxPool({ bloque: (t) => /insert into rum_session/i.test(t) });
+    const { base, lignes } = await servir(f.pool, { budget: BUDGET });
+    const debut = Date.now();
+    const r = await posterTraces(base);
+    const ms = Date.now() - debut;
+    expect(r.status).toBe(503);
+    expect(ms).toBeLessThan(BUDGET.totalMs + 500);
+    expect(commits(f.requetes)).toHaveLength(0);
+    // Ni ROLLBACK attendu (il ferait la queue derrière la requête en vol), ni
+    // connexion rendue saine : `release(err)` = pg-pool la détruit, et la
+    // fermeture de la socket annule la transaction côté serveur.
+    expect(f.requetes.some((q) => q.text === "rollback")).toBe(false);
+    expect(f.liberations).toHaveLength(1);
+    expect(f.liberations[0]).toBeInstanceOf(Error);
+    expect((f.liberations[0] as Error).name).toBe("ErreurEcheance");
+    expect(lignes.some((l) => l.msg === "busy: request deadline reached")).toBe(true);
+  });
+
+  it("logs : même borne (le signal sans clé naturelle, celui que le doublon abîme)", async () => {
+    const f = fauxPool({ bloque: (t) => /insert into rum_log/i.test(t) });
+    const { base } = await servir(f.pool, { budget: BUDGET });
+    const t = (BigInt(Date.now()) * 1_000_000n).toString();
+    const corps = JSON.stringify({ resourceLogs: [{ resource: { attributes: [{ key: "mip.app_id", value: { stringValue: "p2-app" } }] },
+      scopeLogs: [{ logRecords: [{ timeUnixNano: t, severityNumber: 9, severityText: "INFO", body: { stringValue: "échéance" } }] }] }] });
+    const r = await fetch(`${base}/v1/logs`, { method: "POST", headers: { "content-type": "application/json" }, body: corps });
+    expect(r.status).toBe(503);
+    expect(commits(f.requetes)).toHaveLength(0);
+  });
+
+  it("coupure par l'échéance SERVEUR (statement_timeout, 57014) : 503, pas 500", async () => {
+    const annule = Object.assign(new Error("canceling statement due to statement timeout"), { code: "57014" });
+    const f = fauxPool({ panne: (t) => (/insert into rum_session/i.test(t) ? annule : null) });
+    const { base } = await servir(f.pool);
+    const r = await posterTraces(base);
+    expect(r.status).toBe(503);
+    expect(r.headers.get("retry-after")).toBe("2");
+    expect(commits(f.requetes)).toHaveLength(0);
+  });
+
+  it("transaction tuée par transaction_timeout au COMMIT (25P04) : 503, rien de commis", async () => {
+    const tuee = Object.assign(new Error("terminating connection due to transaction timeout"), { code: "25P04" });
+    const f = fauxPool({ panne: (t) => (/^commit$/i.test(t) ? tuee : null) });
+    const { base } = await servir(f.pool);
+    const r = await posterTraces(base);
+    expect(r.status).toBe(503);
+    expect((f.liberations[0] as Error)?.name).toBe("ErreurEcheance");
+  });
+
+  it("COMMIT sans verdict : 503 avant échéance + grâce, issue « inconnue » journalisée en erreur", async () => {
+    const f = fauxPool({ bloque: (t) => /^commit$/i.test(t) });
+    const { base, lignes } = await servir(f.pool, { budget: BUDGET });
+    const debut = Date.now();
+    const r = await posterTraces(base);
+    expect(r.status).toBe(503);
+    expect(Date.now() - debut).toBeLessThan(BUDGET.totalMs + 750 + 500);
+    expect(lignes.some((l) => l.niveau === "error" && /commit outcome unknown/.test(l.msg))).toBe(true);
+  });
+
+  it("COMMIT perdu par le réseau (`Query read timeout`, sans SQLSTATE) : issue INCONNUE, pas « base indisponible »", async () => {
+    // Régression trouvée par la preuve sous toxiproxy : ce délai du pilote,
+    // pris pour une panne ordinaire, rendait « rien d'écrit » sur un lot commis.
+    const f = fauxPool({ panne: (t) => (/^commit$/i.test(t) ? new Error("Query read timeout") : null) });
+    const { base, lignes } = await servir(f.pool);
+    const r = await posterTraces(base);
+    expect(r.status).toBe(503);
+    expect(await r.json()).toMatchObject({ error: "ingestion outcome unknown, retry", retry: true });
+    expect(lignes.some((l) => l.niveau === "error" && /commit outcome unknown/.test(l.msg))).toBe(true);
+    expect(lignes.some((l) => l.msg === "busy: database unavailable within budget")).toBe(false);
+  });
+
+  it("une faute déterministe dans la transaction : ROLLBACK normal, connexion RENDUE (pas détruite)", async () => {
+    const faute = Object.assign(new Error('column "x" does not exist'), { code: "42703" });
+    const f = fauxPool({ panne: (t) => (/insert into rum_session/i.test(t) ? faute : null) });
+    const { base } = await servir(f.pool);
+    expect((await posterTraces(base)).status).toBe(500);
+    expect(f.requetes.some((q) => q.text === "rollback")).toBe(true);
+    expect(f.liberations).toEqual([undefined]);
   });
 });
 

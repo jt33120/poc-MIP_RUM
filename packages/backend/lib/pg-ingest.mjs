@@ -16,9 +16,11 @@ import { symbolicateurIngestion } from "./error-symbolication.mjs";
 import {
   appsDuLot,
   barriereActivee,
+  ErreurEcheance,
   ErreurPorteeApp,
   filtrerParBarrieres,
   sessionSousBarriere,
+  sousEcheance,
   withAppIngestTransaction,
 } from "./privacy-barriere.mjs";
 
@@ -810,19 +812,34 @@ export async function writeRowsWithClient(client, {
  * `opts.client` permet à un appelant qui tient DÉJÀ une transaction verrouillée
  * de réutiliser ce chemin sans en rouvrir une seconde.
  *
- * `opts.verrou` ({ delaiVerrouMs, tentatives }) borne l'attente du verrou
- * d'application ; absent, la stratégie par défaut (`STRATEGIE_VERROU`). Le
- * collector la resserre pour tenir son budget de requête (P2).
+ * `opts.verrou` ({ delaiVerrouMs, tentatives, echeance? }) borne l'attente du
+ * verrou d'application ; absent, la stratégie par défaut (`STRATEGIE_VERROU`).
+ * Le collector la resserre et y ajoute l'ÉCHÉANCE de sa requête (P2) : voir
+ * `withAppIngestTransaction`.
  * @returns {Promise<{erreurs: {recues: number, inserees: number, ignorees: number}, refuses?: object}>}
  */
 export async function writeRows(pool, rows, { symbolicateur = symbolicateurIngestion, client: fourni = null, verrou = {} } = {}) {
-  const client = fourni ?? (await pool.connect());
+  // `verrou.echeance` (collector, P2) : la connexion et la symbolication, qui
+  // précèdent la transaction, courent AUSSI contre l'échéance — sinon un
+  // `pool.connect()` lent consommerait le budget hors de toute borne.
+  const echeance = verrou?.echeance ?? null;
+  const borne = (p, siTardif) => (echeance == null || fourni ? p : sousEcheance(p, echeance, siTardif));
+  // Échéance déjà passée (corps lent, gardes longues) : pas même une connexion.
+  if (echeance != null && !fourni && !(echeance > Date.now())) throw new ErreurEcheance();
+  const client = fourni ?? (await borne(pool.connect(), (c) => c.release()));
+  let compromise;
   try {
     // Client fourni : il est déjà dans une transaction verrouillée par son
     // appelant, et symboliquer ici allonge la tenue de ce verrou. C'est le prix
     // à payer : rouvrir une connexion pour symboliquer romprait la
     // sérialisation, c'est-à-dire exactement le défaut qu'on répare.
-    const symbolisees = { ...rows, errors: await appliquerSymbolication(client, rows.errors ?? [], symbolicateur) };
+    const errors = await borne(appliquerSymbolication(client, rows.errors ?? [], symbolicateur)).catch((err) => {
+      // Échéance perdue PENDANT une requête de symbolication : la connexion a
+      // une requête en vol, elle ne retourne pas au pool.
+      if (err instanceof ErreurEcheance) err.connexionCompromise = true;
+      throw err;
+    });
+    const symbolisees = { ...rows, errors };
     const travail = async (c) => {
       const filtre = await filtrerParBarrieres(c, symbolisees);
       const bilan = await writeRowsWithClient(c, filtre.rows);
@@ -830,8 +847,13 @@ export async function writeRows(pool, rows, { symbolicateur = symbolicateurInges
     };
     if (fourni) return await travail(client);
     return await withAppIngestTransaction(pool, appsDuLot(symbolisees), travail, { ...verrou, client });
+  } catch (err) {
+    // Posé par la transaction sous échéance : connexion à DÉTRUIRE (requête en
+    // vol, transaction peut-être ouverte) — c'est sa fermeture qui annule.
+    if (err?.connexionCompromise) compromise = err;
+    throw err;
   } finally {
-    if (!fourni) client.release();
+    if (!fourni) client.release(compromise);
   }
 }
 
