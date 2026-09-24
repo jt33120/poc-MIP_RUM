@@ -25,10 +25,20 @@ import { bodyTooLarge } from "@mip/backend/shared/limits.mjs";
 import { guardAdmin } from "@/lib/api/admin";
 import { SESSION_COOKIE } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { choisirRelais } from "@/lib/ingest-relay";
 import { listSourcemapReleases, releaseManifest, schemaSourcemapAbsent } from "@/lib/queries-sourcemap";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// PLAFOND EXPLICITE de la fonction : 30 s. La chaîne des délais doit rester
+// croissante — collector 4 s (budget dur, 503) < relais 8 s (`DELAIS.relaisMs`)
+// < fonction 30 s. Au pire, une requête enchaîne drapeau (1,5 s), sonde /health
+// (2 s), relais (8 s) puis, sur un repli tardif, l'écriture locale (reprises,
+// verrou) : ~27 s. Sans ce plafond, le défaut du projet (10 s en Hobby, 15 s
+// en Pro hors Fluid) tuerait la fonction AVANT le 503 du relais — un 504
+// FUNCTION_INVOCATION_TIMEOUT muet, sans « relay timeout » au journal.
+// Voir docs/operations/relais-ingestion.md.
+export const maxDuration = 30;
 
 const PORT_DIRECT =
   "corps trop volumineux pour le port console (limite 4 Mio) : utiliser POST /v1/sourcemaps du backend d'ingestion";
@@ -43,11 +53,32 @@ const json = (body: unknown, status = 200, headers?: Record<string, string>) =>
 export async function POST(req: NextRequest) {
   let liberer: (() => void) | null = null;
   try {
-    // 1. Qui écrit — avant toute lecture du corps.
+    const authorization = req.headers.get("authorization");
+    // Corps déjà lu par le relais (P3) ; sur un repli, le chemin local le reprend.
+    let dejaLu: Buffer | null = null;
+
+    // 0. P3 — RELAIS vers le collector, branche JETON seulement (la session
+    // admin reste l'affaire de la console). Le jeton, le débit et le contrat
+    // sont vérifiés par le collector : le chemin relayé ne touche pas la base.
+    // Les bornes de taille restent celles de ce port (4 Mio, plafond Vercel).
+    if (authorization) {
+      const relais = await choisirRelais("sourcemaps");
+      if (relais) {
+        if (bodyTooLarge(req.headers.get("content-length"), LIMITES_UPLOAD.corpsConsole)) return json({ error: PORT_DIRECT }, 413);
+        if (!req.body) return json({ error: "corps JSON requis" }, 400);
+        dejaLu = await lireCorpsLimite(req.body as unknown as AsyncIterable<Uint8Array>, { max: LIMITES_UPLOAD.corpsConsole }).catch((err: unknown) => {
+          throw err instanceof ErreurUpload && err.statut === 413 ? new ErreurUpload(413, PORT_DIRECT) : err;
+        });
+        // Pas de CORS : ce port sert la CI, de serveur à serveur.
+        const relayee = await relais.envoyer(req, dejaLu, {});
+        if (relayee) return relayee;
+      }
+    }
+
+    // 1. Qui écrit — avant toute lecture du corps (hors repli du relais).
     let par: string;
     let jetonId: string | null = null;
     let appDuJeton: string | null = null;
-    const authorization = req.headers.get("authorization");
     if (authorization) {
       const jeton = await verifierJetonUpload(pool, authorization);
       if (!jeton) return json({ error: "jeton d'upload de source maps invalide, expiré ou révoqué" }, 401);
@@ -64,13 +95,18 @@ export async function POST(req: NextRequest) {
     const prise = limiteur.prendre(par);
     if ("refus" in prise) return json({ error: prise.refus.message }, 429, { "retry-after": String(prise.refus.retryAfter) });
     liberer = prise.liberer;
-    if (bodyTooLarge(req.headers.get("content-length"), LIMITES_UPLOAD.corpsConsole)) return json({ error: PORT_DIRECT }, 413);
-    if (!req.body) return json({ error: "corps JSON requis" }, 400);
-    // Le ReadableStream web de Node est itérable de façon asynchrone.
-    const flux = req.body as unknown as AsyncIterable<Uint8Array>;
-    const corps = await lireCorpsLimite(flux, { max: LIMITES_UPLOAD.corpsConsole }).catch((err: unknown) => {
-      throw err instanceof ErreurUpload && err.statut === 413 ? new ErreurUpload(413, PORT_DIRECT) : err;
-    });
+    let corps: Buffer;
+    if (dejaLu) {
+      corps = dejaLu;
+    } else {
+      if (bodyTooLarge(req.headers.get("content-length"), LIMITES_UPLOAD.corpsConsole)) return json({ error: PORT_DIRECT }, 413);
+      if (!req.body) return json({ error: "corps JSON requis" }, 400);
+      // Le ReadableStream web de Node est itérable de façon asynchrone.
+      const flux = req.body as unknown as AsyncIterable<Uint8Array>;
+      corps = await lireCorpsLimite(flux, { max: LIMITES_UPLOAD.corpsConsole }).catch((err: unknown) => {
+        throw err instanceof ErreurUpload && err.statut === 413 ? new ErreurUpload(413, PORT_DIRECT) : err;
+      });
+    }
 
     // 3. Contrat complet, puis droits propres à l'émetteur.
     const demande = lireRequeteUpload(corps);

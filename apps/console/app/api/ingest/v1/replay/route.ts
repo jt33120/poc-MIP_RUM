@@ -18,9 +18,19 @@ import { REPLAY_ALLOW_HEADERS } from "@mip/backend/shared/cors.mjs";
 import { withRetry } from "@mip/backend/shared/retry.mjs";
 import { pool } from "@/lib/db";
 import { corsFor, guardApps, json, log, refusIngestion } from "@/lib/ingest";
+import { choisirRelais } from "@/lib/ingest-relay";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// PLAFOND EXPLICITE de la fonction : 30 s. La chaîne des délais doit rester
+// croissante — collector 4 s (budget dur, 503) < relais 8 s (`DELAIS.relaisMs`)
+// < fonction 30 s. Au pire, une requête enchaîne drapeau (1,5 s), sonde /health
+// (2 s), relais (8 s) puis, sur un repli tardif, l'écriture locale (reprises,
+// verrou) : ~27 s. Sans ce plafond, le défaut du projet (10 s en Hobby, 15 s
+// en Pro hors Fluid) tuerait la fonction AVANT le 503 du relais — un 504
+// FUNCTION_INVOCATION_TIMEOUT muet, sans « relay timeout » au journal.
+// Voir docs/operations/relais-ingestion.md.
+export const maxDuration = 30;
 
 const replayCors = (origin: string) =>
   corsFor(origin, { allowHeaders: REPLAY_ALLOW_HEADERS });
@@ -34,6 +44,31 @@ export async function OPTIONS(req: Request) {
 
 export async function POST(req: Request) {
   const cors = await replayCors(req.headers.get("origin") ?? "");
+
+  // P3 — RELAIS vers le collector, pour la part tirée au sort, AVANT toute
+  // garde locale : la clé, le débit et les en-têtes x-mip-* sont vérifiés par
+  // le collector, et le chemin relayé ne touche pas la base de la console.
+  // Le corps n'est lu (borné) QUE si la requête est relayée ; relu nulle part
+  // ensuite : sur un repli, le chemin local reprend ces mêmes octets.
+  // `undefined` = pas encore lu ; `null` = au-delà du plafond.
+  let lu: Buffer | null | undefined;
+  const relais = await choisirRelais("replay");
+  if (relais) {
+    try {
+      lu = await lireCorpsBorne(req.body as unknown as AsyncIterable<Uint8Array> | null, MAX_REPLAY_BYTES);
+    } catch (err) {
+      // Flux interrompu : même issue qu'un `arrayBuffer()` qui échoue sur le
+      // chemin local (500), sans relais d'un corps tronqué.
+      log.error("internal error", { err: String(err) });
+      return json({ error: "internal error" }, 500, cors);
+    }
+    // Vide ou trop gros : refus LOCAL, dans l'ordre du chemin local (400, 403,
+    // 429 puis 413) — le relayer ne servirait qu'à faire répondre la même chose.
+    if (lu !== null && lu.length) {
+      const relayee = await relais.envoyer(req, lu, cors);
+      if (relayee) return relayee;
+    }
+  }
 
   const sessionId = req.headers.get("x-mip-session");
   const appId = req.headers.get("x-mip-app");
@@ -53,8 +88,12 @@ export async function POST(req: Request) {
   try {
     // Lecture BORNÉE : `req.arrayBuffer()` matérialisait le corps entier AVANT
     // de mesurer (jusqu'au plafond de la plateforme, 4,5 Mo sur Vercel). On
-    // s'arrête au premier octet au-delà de 2 Mio, comme le collector.
-    const body = await lireCorpsBorne(req.body as unknown as AsyncIterable<Uint8Array> | null, MAX_REPLAY_BYTES);
+    // s'arrête au premier octet au-delà de 2 Mio, comme le collector. Sur un
+    // repli du relais, le corps est DÉJÀ lu (`lu`) : on reprend ces octets.
+    const body =
+      lu === undefined
+        ? await lireCorpsBorne(req.body as unknown as AsyncIterable<Uint8Array> | null, MAX_REPLAY_BYTES)
+        : lu;
     if (body === null || !body.length) {
       return json({ error: "invalid payload size" }, 413, cors);
     }
