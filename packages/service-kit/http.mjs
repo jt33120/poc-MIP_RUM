@@ -1,7 +1,7 @@
 // Serveur HTTP d'un service : les sondes, les délais, le plafond de corps et le
 // journal d'accès, pour que le point d'entrée n'ait plus qu'à brancher ses routes.
 //
-// LES TROIS SONDES, ET CE QUE CHACUNE VEUT DIRE :
+// LES QUATRE SONDES, ET CE QUE CHACUNE VEUT DIRE :
 //
 //   /health   processus vivant ET base joignable (`select 1`, borné). C'est LA
 //             sonde Railway : un déploiement dont la base est injoignable ne
@@ -10,6 +10,16 @@
 //             service peut y AJOUTER une description statique de lui-même
 //             (`details` : nom, protocole, empreinte d'un secret — jamais le
 //             secret), ce qu'un opérateur doit lire sans fouiller les variables.
+//             Le SUCCÈS du `select 1` est mis en cache `healthDbTtlMs` (30 s) :
+//             l'incident du 24/09 — une sonde externe et les scanners qui
+//             frappent /health empêchaient Neon de s'endormir, et le quota a
+//             fondu. Un échec, lui, n'est jamais gardé : la sonde suivante
+//             revérifie. Le cache BORNE le coût (un `select 1` par 30 s au
+//             plus), il ne rend pas le sommeil à la base : pour cela, la
+//             supervision externe interroge /live, jamais /health.
+//   /live     processus vivant, et RIEN d'autre : JAMAIS de base. Pour les
+//             sondes externes (disponibilité, statuspage) : elles peuvent
+//             frapper toutes les minutes sans réveiller ni facturer la base.
 //   /ready    503 dès le SIGTERM (drainage), sinon le verdict de `ready()` :
 //             fraîcheur, backlog. POUR LA SUPERVISION SEULEMENT, jamais pour
 //             Railway : une sonde de fraîcheur bloquerait le déploiement du
@@ -62,7 +72,7 @@ export const DEFAULT_TIMEOUTS = Object.freeze({
   connectionsCheckingInterval: 2_000,
 });
 
-const SONDES = new Set(["/health", "/ready", "/metrics"]);
+const SONDES = new Set(["/health", "/live", "/ready", "/metrics"]);
 const METHODES_CONNUES = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
 const ID_REQUETE = /^[A-Za-z0-9._:-]{8,128}$/;
 
@@ -160,6 +170,8 @@ function avecDelai(promesse, ms, message) {
  *   donne une borne par route (les source maps en veulent plus)
  * @property {Partial<typeof DEFAULT_TIMEOUTS>} [timeouts]
  * @property {number} [healthTimeoutMs]         défaut 2 s
+ * @property {number} [healthDbTtlMs]           défaut 30 s : durée pendant laquelle
+ *   un `select 1` RÉUSSI dispense /health d'en refaire un ; 0 = à chaque sonde
  * @property {Record<string, string>} [responseHeaders]  en-têtes posés sur
  *   CHAQUE réponse — routes, sondes, 404, 413, 500, et jusqu'aux 400/408/431
  *   que Node rend seul (requête illisible, délais). Pour qu'un appelant
@@ -192,6 +204,7 @@ export function startService(options) {
     metricsToken,
     maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
     healthTimeoutMs = 2_000,
+    healthDbTtlMs = 30_000,
     lifecycle,
     responseHeaders = {},
   } = options ?? {};
@@ -229,8 +242,14 @@ export function startService(options) {
   const verifierSante = health ?? (pool ? () => ping(pool, { timeoutMs: healthTimeoutMs }) : () => {});
   let santeEnCours = null;
   let dernierEtatSain = true;
-  /** Une vérification à la fois : cent sondes simultanées font UN `select 1`. */
+  /** Instant (performance.now) du dernier verdict SAIN ; -Infinity : aucun. */
+  let dernierSucces = -Infinity;
+  /**
+   * Une vérification à la fois : cent sondes simultanées font UN `select 1`.
+   * Et un succès récent (< `healthDbTtlMs`) en dispense — voir /health en tête.
+   */
   function sante() {
+    if (healthDbTtlMs > 0 && performance.now() - dernierSucces < healthDbTtlMs) return Promise.resolve(true);
     santeEnCours ??= avecDelai(
       Promise.resolve().then(verifierSante),
       healthTimeoutMs + 500,
@@ -239,9 +258,11 @@ export function startService(options) {
       () => {
         if (!dernierEtatSain) log.info("santé rétablie");
         dernierEtatSain = true;
+        dernierSucces = performance.now();
         return true;
       },
       (err) => {
+        dernierSucces = -Infinity;
         // Journalisé au CHANGEMENT d'état seulement : une base coupée une heure
         // ne doit pas écrire une ligne par sonde.
         if (dernierEtatSain) log.warn("santé dégradée : base injoignable", { err });
@@ -271,6 +292,10 @@ export function startService(options) {
   async function servirSonde(chemin, req, res) {
     if (req.method !== "GET" && req.method !== "HEAD") {
       return sendJson(res, 405, { error: "method_not_allowed" }, { allow: "GET, HEAD" });
+    }
+    if (chemin === "/live") {
+      // Processus vivant — il vient de répondre. Aucune base, aucun détail.
+      return sendJson(res, 200, { status: "ok" });
     }
     if (chemin === "/health") {
       const ok = await sante();

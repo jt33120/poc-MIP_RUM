@@ -26,7 +26,7 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `POST /v1/sourcemaps` | source maps de CI, **jeton d'upload dédié seul** (20 Mio) ; la lecture admin reste dans la console | statut d'`enregistrerMaps`, 401, 403, 413, 429 (+ `retry-after`) |
 | `GET /v1/traces`, `GET /v1/logs` | diagnostic d'intégration (parité avec les routes Vercel) | 200 |
 | `OPTIONS *` | préflight CORS (origines du registre d'apps) | 204 |
-| `GET /health`, `/ready`, `/metrics` | sondes du kit, ci-dessous | |
+| `GET /health`, `/live`, `/ready`, `/metrics` | sondes du kit, ci-dessous | |
 
 **Toute réponse du collector porte `x-mip-collector: 1`** — routes, 404 métier, erreurs 4xx/5xx, sondes, et jusqu'aux 400/408/431 que Node rend seul (option `responseHeaders` du kit). Le relais de la console (P3) s'en sert pour distinguer un 404 **du collector** (route inconnue : ne pas rejouer ailleurs) d'un 404 **du routeur Railway** (service absent ou mal routé : repli). L'en-tête ne dit rien d'autre que « c'est moi ».
 
@@ -34,9 +34,12 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 
 | Route | Exposition | Sens |
 |---|---|---|
-| `GET /health` | publique | processus vivant **et** base joignable (`select 1`, 2 s). **C'est la sonde Railway.** Le corps décrit le déploiement, jamais la panne : `service: "collector"`, `edge_protocol: "mip-edge/1"` (lu par le relais en P3), `edge_trust` (secret de relais posé ?), `identity` (`absente` \| `active` \| `discordante`), `id_fp` (empreinte du secret d'identité, **jamais le secret**), `identity_hash.configured`, `ingest_deferred`, `geoip`. |
+| `GET /health` | publique | processus vivant **et** base joignable (`select 1`, 2 s ; un succès est gardé 30 s). **C'est la sonde Railway.** Le corps décrit le déploiement, jamais la panne : `service: "collector"`, `edge_protocol: "mip-edge/1"` (lu par le relais en P3), `edge_trust` (secret de relais posé ?), `identity` (`absente` \| `active` \| `discordante`), `id_fp` (empreinte du secret d'identité, **jamais le secret**), `identity_hash.configured`, `ingest_deferred`, `geoip`. |
+| `GET /live` | publique | processus vivant, **jamais de base**. **C'est la sonde de toute supervision externe.** `200 {"status":"ok"}`. |
 | `GET /ready` | jeton `METRICS_TOKEN` (sinon 404) | 503 dès SIGTERM ; sinon prêt si le **registre d'apps a été chargé au moins une fois** (`registryLoaded()` : avant cela, la vérification de clé est en *fail-open*) **et** si l'identité n'est pas `discordante`. Supervision seulement. |
 | `GET /metrics` | jeton `METRICS_TOKEN` (sinon 404) | Prometheus : `http_requests_total{method,code}`, durée, requêtes en vol, pool, mémoire ; la boucle `drain` si l'ingestion différée est allumée. |
+
+**Railway → `/health`, sonde externe → `/live`.** Incident Neon du 24/09 : une sonde externe et les scanners sur `/health` faisaient un `select 1` à chaque passage ; la base ne s'endormait plus, le quota a fondu. Le cache de 30 s borne le coût (≤ 2 `select 1`/min), il ne rend pas le sommeil à Neon : une supervision externe pointée sur `/health` le tiendrait éveillé. Elle vise `/live`.
 
 ## Configuration
 

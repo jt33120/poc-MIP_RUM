@@ -74,7 +74,8 @@ function socketBrute(port: number, envoyer: (s: net.Socket) => void, delaiMax = 
 describe("service-kit/http — /health (la sonde Railway)", () => {
   it("200 quand le processus vit et que la base répond ; 503 muet quand elle ne répond pas", async () => {
     const pool = fauxPool();
-    const { base, lignes } = await demarrer({ pool });
+    // Sans cache : chaque sonde revérifie (le cache a ses propres cas, plus bas).
+    const { base, lignes } = await demarrer({ pool, healthDbTtlMs: 0 });
     const ok = await fetch(`${base}/health`);
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ status: "ok" });
@@ -126,7 +127,7 @@ describe("service-kit/http — /health (la sonde Railway)", () => {
 
   it("`details` : une description statique ajoutée au corps, en 200 comme en 503 ; `status` reste celui du kit", async () => {
     const pool = fauxPool();
-    const { base } = await demarrer({ pool, details: () => ({ service: "collector", edge_protocol: "mip-edge/1", status: "menteur" }) });
+    const { base } = await demarrer({ pool, healthDbTtlMs: 0, details: () => ({ service: "collector", edge_protocol: "mip-edge/1", status: "menteur" }) });
     expect(await (await fetch(`${base}/health`)).json()).toEqual({ service: "collector", edge_protocol: "mip-edge/1", status: "ok" });
     pool.etat = "ko";
     const panne = await fetch(`${base}/health`);
@@ -144,6 +145,73 @@ describe("service-kit/http — /health (la sonde Railway)", () => {
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({ status: "ok" });
     expect(lignes.some((l) => l.msg === "détails de /health en échec")).toBe(true);
+  });
+});
+
+describe("service-kit/http — /health en cache, /live sans base (incident Neon du 24/09)", () => {
+  it("un succès dispense de `select 1` pendant healthDbTtlMs (défaut 30 s) : 50 sondes = 1 requête", async () => {
+    const pool = fauxPool();
+    const { base } = await demarrer({ pool });
+    for (let i = 0; i < 50; i++) expect((await fetch(`${base}/health`)).status).toBe(200);
+    expect(pool.requetes).toBe(1);
+  });
+
+  it("à l'expiration du cache, la sonde suivante revérifie — et voit la panne", async () => {
+    const pool = fauxPool();
+    const { base } = await demarrer({ pool, healthDbTtlMs: 80 });
+    expect((await fetch(`${base}/health`)).status).toBe(200);
+    pool.etat = "ko";
+    expect((await fetch(`${base}/health`)).status).toBe(200); // encore dans le TTL
+    expect(pool.requetes).toBe(1);
+    await attendre(120);
+    expect((await fetch(`${base}/health`)).status).toBe(503);
+    expect(pool.requetes).toBe(2);
+  });
+
+  it("un ÉCHEC n'est jamais gardé : chaque sonde revérifie tant que la base est à terre", async () => {
+    const pool = fauxPool();
+    pool.etat = "ko";
+    const { base } = await demarrer({ pool });
+    expect((await fetch(`${base}/health`)).status).toBe(503);
+    expect((await fetch(`${base}/health`)).status).toBe(503);
+    expect(pool.requetes).toBe(2);
+    pool.etat = "ok";
+    expect((await fetch(`${base}/health`)).status).toBe(200);
+    expect((await fetch(`${base}/health`)).status).toBe(200);
+    expect(pool.requetes).toBe(3);
+  });
+
+  it("healthDbTtlMs: 0 — une requête par sonde (comportement d'avant)", async () => {
+    const pool = fauxPool();
+    const { base } = await demarrer({ pool, healthDbTtlMs: 0 });
+    for (let i = 0; i < 3; i++) await fetch(`${base}/health`);
+    expect(pool.requetes).toBe(3);
+  });
+
+  it("/live : 200 sans JAMAIS toucher la base — ni saine, ni coupée, ni pendue", async () => {
+    const pool = fauxPool();
+    const { base } = await demarrer({ pool, metricsToken: JETON, details: () => ({ service: "collector" }) });
+    for (const etat of ["ok", "ko", "pend"] as const) {
+      pool.etat = etat;
+      const r = await fetch(`${base}/live`);
+      expect(r.status, etat).toBe(200);
+      expect(await r.json()).toEqual({ status: "ok" }); // ni détails, ni jeton exigé
+    }
+    expect((await fetch(`${base}/live`, { method: "HEAD" })).status).toBe(200);
+    expect((await fetch(`${base}/live`, { method: "POST" })).status).toBe(405);
+    expect(pool.requetes).toBe(0);
+  });
+
+  it("/live est une sonde : journal en debug, hors métriques HTTP, jamais transmise aux routes", async () => {
+    const metrics = createMetrics();
+    const handler = vi.fn((_req: any, res: any) => res.end("route"));
+    const { base, lignes } = await demarrer({ metrics, handler });
+    await fetch(`${base}/live`);
+    expect(handler).not.toHaveBeenCalled();
+    await attendre(20);
+    const acces = lignes.find((l) => l.msg === "requête" && l.path === "/live");
+    expect(acces?.level).toBe("debug");
+    expect(await metrics.render()).not.toMatch(/http_requests_total\{[^}]*\} [1-9]/);
   });
 });
 
@@ -281,6 +349,7 @@ describe("service-kit/http — responseHeaders : la signature du service sur TOU
     const { base } = await demarrer({
       pool,
       responseHeaders: SIGNE,
+      healthDbTtlMs: 0,
       maxBodyBytes: 10,
       handler: (req: any, res: any) => {
         if (req.url === "/leve") throw new Error("boum");
@@ -301,6 +370,7 @@ describe("service-kit/http — responseHeaders : la signature du service sur TOU
       ready: await fetch(`${base}/ready`),
       metrics: await fetch(`${base}/metrics`),
       methode: await fetch(`${base}/health`, { method: "POST" }),
+      live: await fetch(`${base}/live`),
     };
     pool.etat = "ko";
     const santeKo = await fetch(`${base}/health`);
