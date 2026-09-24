@@ -15,7 +15,10 @@
 //     client n'est pas transmis (le collector, qui en ferait sinon du GeoIP en
 //     `GEOIP_IP_SOURCE=xff:1`, ne voit que l'adresse de la console) ;
 //   · collector ARRÊTÉ : erreur de connexion → repli local, la ligne est écrite
-//     par la console, sans identité (secret vide), la réponse reste 200.
+//     par la console, sans identité (secret vide), la réponse reste 200 ;
+//   · le collector SIGNE ses réponses (`x-mip-collector: 1`), /health et 404
+//     compris : c'est ce que le relais exige pour s'allumer et pour ne pas
+//     prendre un 404 du collector pour un routage raté.
 //
 // LANCEMENT :
 //   docker run -d --rm --name mip-relais -e POSTGRES_PASSWORD=postgres -p 55455:5432 postgres:17
@@ -245,6 +248,17 @@ suite("relais d'ingestion : console → collector réel → Postgres (Docker)", 
     fetchEspion.mockRestore();
     await db.end();
     await poolConsole.end();
+  });
+
+  it("le collector RÉEL signe ses réponses (x-mip-collector: 1) : /health, et son 404 de route inconnue", async () => {
+    // Sans cette signature, la console ne relaie pas (vérification de /health),
+    // et ne saurait pas distinguer un 404 du collector d'un 404 du routeur Railway.
+    const sante = await fetch(`${base}/health`);
+    expect(sante.headers.get("x-mip-collector")).toBe("1");
+    const inconnue = await fetch(`${base}/v1/inconnue`, { method: "POST", body: "{}" });
+    expect(inconnue.status).toBe(404);
+    expect(inconnue.headers.get("x-mip-collector")).toBe("1");
+    fetchEspion.mockClear();
   });
 
   it("drapeau semé par v87 ('0') : AUCUN relais, même avec INGEST_RELAY_PCT=100 — la console écrit elle-même", async () => {

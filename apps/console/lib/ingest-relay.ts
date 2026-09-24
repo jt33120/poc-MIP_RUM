@@ -62,17 +62,31 @@
 // toujours avant, 503 compris). Au-delà : 503 + `retry-after` pour TOUS les
 // signaux, sans repli — le collector a peut-être écrit, et on ne sait pas quoi.
 //
-// Repli local SEULEMENT quand le collector n'a, de façon certaine ou sans
-// conséquence, rien écrit :
-//   · erreur de connexion (DNS, refus, TLS, délai de connexion) : la requête
-//     n'est jamais partie ;
-//   · 502 / 504 : réponse du routeur Railway (aucune réplique ne répond ; son
-//     délai à lui est de plusieurs minutes, notre 8 s passe avant) ;
-//   · 404 / 405 : collector mal routé ou signal non servi — rien n'est écrit ;
-//   · 500, pour les signaux IDEMPOTENTS seulement.
-// Tout autre statut (200, 400, 401, 403, 409, 410, 413, 425, 429, 503…) est la
-// réponse du collector : elle est rendue telle quelle. Un 403 notamment NE
-// déclenche PAS de repli (plan, P2 : provisionner les clés AVANT la bascule).
+// QUI A RÉPONDU. Le collector signe TOUTES ses réponses (`x-mip-collector: 1`,
+// posé par le kit jusque sur ses 404, 413, 500 et les 400 bruts de Node) ; le
+// routeur Railway, lui, ne signe rien. `/health` doit porter la signature pour
+// que le relais s'allume : sans elle, un 404 MÉTIER (source map d'une app
+// inconnue) serait pris pour un routage raté — repli, échec compté, et cinq
+// envois d'une CI en 30 s ouvriraient le disjoncteur pour TOUS les clients de
+// l'instance.
+//
+// Réponse SIGNÉE, quel que soit le statut (200, 404 métier, 500, 503…) : c'est
+// le collector qui parle. Rendue telle quelle, SANS repli et SANS échec
+// compté — il a répondu vite, et lui seul sait ce qu'il a écrit.
+//
+// Réponse NON SIGNÉE (le routeur Railway, ou tout ce qui n'est pas le
+// collector) :
+//   · 404 / 405 : service absent ou mal routé — la requête n'a atteint aucun
+//     collector, rien n'est écrit : repli local, pour tous les signaux ;
+//   · 502 / 504 : aucune réplique n'a répondu À TEMPS — mais une réplique a pu
+//     COMMITTER puis tomber avant de répondre (exception après le COMMIT,
+//     SIGKILL en fin de drainage). Repli pour les signaux IDEMPOTENTS (rejouer
+//     n'écrit rien de plus) ; pour les logs, issue INCERTAINE : 503 +
+//     `retry-after`, et c'est le SDK qui rejoue ;
+//   · tout autre statut : rendu tel quel (échec compté s'il est ≥ 500).
+// Et, sans réponse du tout, l'erreur de connexion (DNS, refus, TLS, délai de
+// connexion) : la requête n'est jamais partie, repli pour tous. Un 403 signé
+// NE déclenche PAS de repli (plan, P2 : provisionner les clés AVANT la bascule).
 //
 // IDEMPOTENCE, vérifiée dans le code d'écriture (`packages/backend/lib/`) :
 //   · traces   : oui. `writeRowsWithClient` écrit tout en `on conflict (…) do
@@ -85,20 +99,26 @@
 //   · logs     : NON. `writeLogsWithClient` insère dans `rum_log` (clé
 //     `bigserial`, aucune clé naturelle) avec une clause de conflit VIDE : le
 //     même lot écrit deux fois donne deux fois chaque log. D'où : pas de repli
-//     sur 500, et pas de repli sur une erreur réseau survenue APRÈS l'envoi
-//     (connexion coupée pendant la réponse) — dans ces deux cas le lot a pu
-//     être écrit ; on rend 500 / 503 et c'est le SDK qui décide de rejouer.
+//     sur un 502/504 non signé, ni sur une erreur réseau survenue APRÈS
+//     l'envoi (connexion coupée pendant la réponse) — dans ces deux cas le lot
+//     a pu être écrit ; on rend 503 + retry-after et c'est le SDK qui rejoue.
+//     (Un 500 SIGNÉ n'est jamais replié, quel que soit le signal.)
 // Seul effet de bord d'un repli sur un signal idempotent : le compteur de
 // débit durable (`rate_counter`) compte le beacon deux fois.
 //
-// La réponse relayée est RECONSTRUITE : statut, corps, `content-type`,
-// `retry-after` du collector ; en-têtes CORS de la CONSOLE (`corsFor` local),
-// jamais ceux du collector — l'origine autorisée se décide ici, sur l'hôte
-// historique que le navigateur voit.
+// La réponse relayée est RECONSTRUITE : statut, corps et `retry-after` du
+// collector ; `content-type: application/json` IMPOSÉ et `nosniff` — le
+// collector ne répond qu'en JSON sur ces routes, et un hôte qui répondrait
+// `text/html` (URL mal posée, collector compromis) ne doit pas faire rendre
+// du HTML sous l'origine de la console, là où vit le cookie de session admin ;
+// en-têtes CORS de la CONSOLE (`corsFor` local), jamais ceux du collector —
+// l'origine autorisée se décide ici, sur l'hôte historique que le navigateur
+// voit.
 //
 // ═════════════════════════════════ DISJONCTEUR ═══════════════════════════════
 //
-// 5 échecs en 30 s (délai, erreur réseau, 500, 502, 504, 404, 405) → le relais
+// 5 échecs en 30 s (délai, erreur réseau, réponse NON SIGNÉE 404, 405 ou ≥ 500 ;
+// jamais une réponse signée du collector) → le relais
 // est contourné pendant 60 s : chemin local pour tout le monde. État EN MÉMOIRE
 // D'INSTANCE : chaque instance serverless Vercel a le sien, il naît fermé et
 // disparaît avec l'instance. Ce n'est pas un disjoncteur global — c'est une
@@ -119,6 +139,20 @@ export type Signal = "traces" | "logs" | "replay" | "sourcemaps";
 
 /** Protocole de bord attendu dans `/health` du collector (`client-ip.mjs`, EDGE_PROTOCOL). */
 export const PROTOCOLE_BORD = "mip-edge/1";
+
+/**
+ * Signature des réponses du collector (`receiver.mjs`, ENTETE_COLLECTOR ; valeur
+ * « 1 »). Recopiée et non importée : le receveur tire le GeoIP, pg-ingest… que
+ * la console n'a pas à embarquer. Le test unitaire tient l'égalité des deux.
+ */
+export const ENTETE_COLLECTOR = "x-mip-collector";
+
+/**
+ * Hôtes où `http:` est permis : la machine elle-même (tests, collector local).
+ * Ailleurs, le secret de bord, les clés d'API et le jeton d'upload partiraient
+ * en clair sur le réseau : `https:` exigé.
+ */
+const HOTES_LOCAUX = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /** En-têtes du client transmis au collector — liste EXACTE (voir l'en-tête du fichier). */
 export const ENTETES_TRANSMIS = Object.freeze([
@@ -219,6 +253,13 @@ export function lireConfigRelais(
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     return { config: null, raison: "CONSOLE_INGEST_RELAY_URL doit être en http(s)" };
   }
+  // `http:` hors de la machine : le relais envoie `x-mip-edge-auth`, les
+  // `x-mip-key` et l'`authorization` des source maps — en clair, à quiconque
+  // écoute entre Vercel et Railway. Éteint plutôt que dégradé. (`URL` rend
+  // l'IPv6 entre crochets : « [::1] ».)
+  if (url.protocol === "http:" && !HOTES_LOCAUX.has(url.hostname)) {
+    return { config: null, raison: "CONSOLE_INGEST_RELAY_URL doit être en https (http: réservé à localhost)" };
+  }
   const secret = env.EDGE_PROXY_SECRET?.trim() ?? "";
   // UNE valeur côté console : c'est le collector qui en accepte deux pendant
   // une rotation ; la console, elle, envoie la nouvelle.
@@ -253,10 +294,17 @@ function estDelaiDepasse(err: unknown): boolean {
   return nom === "TimeoutError" || nom === "AbortError";
 }
 
-/** Le statut du collector appelle-t-il un repli local pour ce signal ? */
-export function statutDeRepli(signal: Signal, statut: number): boolean {
-  if (statut === 502 || statut === 504 || statut === 404 || statut === 405) return true;
-  return statut === 500 && IDEMPOTENTS[signal];
+/**
+ * Que faire d'une réponse reçue (voir « QUI A RÉPONDU » en tête) :
+ *   `collector` rendue telle quelle ; `repli` chemin local ; `incertain`
+ *   503 + retry-after (un collector a peut-être écrit un signal non idempotent).
+ * @param signee la réponse porte `x-mip-collector: 1`
+ */
+export function issueReponse(signal: Signal, statut: number, signee: boolean): "collector" | "repli" | "incertain" {
+  if (signee) return "collector";
+  if (statut === 404 || statut === 405) return "repli";
+  if (statut === 502 || statut === 504) return IDEMPOTENTS[signal] ? "repli" : "incertain";
+  return "collector";
 }
 
 /**
@@ -315,6 +363,9 @@ export function creerRelais(deps: {
         });
         const corps = (await res.json().catch(() => null)) as { edge_protocol?: unknown; edge_trust?: unknown } | null;
         if (!res.ok) raison = `statut ${res.status}`;
+        // Sans signature, un 404 métier ne se distinguerait plus d'un routage
+        // raté (voir « QUI A RÉPONDU ») : un collector antérieur n'est pas relayé.
+        else if (res.headers.get(ENTETE_COLLECTOR) !== "1") raison = `réponse sans ${ENTETE_COLLECTOR}`;
         else if (corps?.edge_protocol !== PROTOCOLE_BORD) raison = "edge_protocol inattendu";
         else if (corps?.edge_trust !== true) raison = "collector sans EDGE_PROXY_SECRET (edge_trust)";
         else ok = true;
@@ -346,7 +397,7 @@ export function creerRelais(deps: {
 
         let statut: number;
         let corpsReponse: ArrayBuffer;
-        let typeReponse: string | null;
+        let signee: boolean;
         let retryAfter: string | null;
         try {
           const res = await fetcher(`${config.url}${CHEMINS[signal]}`, {
@@ -358,7 +409,7 @@ export function creerRelais(deps: {
             cache: "no-store",
           });
           statut = res.status;
-          typeReponse = res.headers.get("content-type");
+          signee = res.headers.get(ENTETE_COLLECTOR) === "1";
           retryAfter = res.headers.get("retry-after");
           // Le corps est lu SOUS LE MÊME DÉLAI : un collector qui envoie son
           // statut puis se tait tombe dans la branche « délai ».
@@ -386,15 +437,29 @@ export function creerRelais(deps: {
           });
         }
 
-        if (statutDeRepli(signal, statut)) {
-          echec(signal, `statut ${statut}`);
+        const issue = issueReponse(signal, statut, signee);
+        if (issue === "repli") {
+          echec(signal, `statut ${statut} non signé`);
           log.warn("relay fallback", { signal, raison: "statut", statut });
           return null;
         }
-        if (statut >= 500 && statut !== 503) echec(signal, `statut ${statut}`);
+        if (issue === "incertain") {
+          // Logs, 502/504 du routeur : une réplique a pu committer le lot puis
+          // tomber avant de répondre. Réécrire ici doublerait chaque log.
+          echec(signal, `statut ${statut} non signé`);
+          log.warn("relay failed, outcome unknown", { signal, statut });
+          return new Response(JSON.stringify({ error: "ingestion relay failed, retry", retry: true }), {
+            status: 503,
+            headers: { "content-type": "application/json", ...cors, "retry-after": RETRY_AFTER_DELAI_S },
+          });
+        }
+        // Signée : jamais un échec (le collector a répondu, vite). Non signée
+        // et ≥ 500 : quelque chose d'autre que le collector a répondu en panne.
+        if (!signee && statut >= 500) echec(signal, `statut ${statut} non signé`);
 
         const entetesReponse: Record<string, string> = {
-          "content-type": typeReponse ?? "application/json",
+          "content-type": "application/json",
+          "x-content-type-options": "nosniff",
           ...cors,
         };
         if (retryAfter) entetesReponse["retry-after"] = retryAfter;

@@ -2,9 +2,12 @@
 // et drapeau de plateforme (`lib/platform-flag.ts`).
 //
 // Ce que ce fichier tient, sans réseau ni base :
-//   · la MATRICE DE REPLI, chaque statut × chaque signal : repli local, ou
-//     réponse du collector rendue telle quelle — et les logs, non idempotents,
-//     ne se replient ni sur 500 ni sur une connexion perdue après l'envoi ;
+//   · la MATRICE DE REPLI, chaque statut × chaque signal × signé ou non
+//     (`x-mip-collector: 1`) : une réponse SIGNÉE est rendue telle quelle, sans
+//     échec compté (404 métier des source maps compris) ; seuls 404/405/502/504
+//     NON signés (routeur Railway) replient — et les logs, non idempotents, ne
+//     se replient ni sur un 502/504 ni sur une connexion perdue après l'envoi ;
+//   · `http:` refusé hors de localhost : secret et clés ne partent pas en clair ;
 //   · le délai de 8 s : 503 + retry-after pour TOUS les signaux, sans repli ;
 //   · le disjoncteur : 5 échecs en 30 s → contournement 60 s, puis retour ;
 //   · la LISTE D'EN-TÊTES EXACTE : aucune adresse ne sort, jamais ;
@@ -39,13 +42,16 @@ import {
   CHEMINS,
   creerRelais,
   DELAIS,
+  ENTETE_COLLECTOR,
   ENTETES_SOURCEMAPS,
   ENTETES_TRANSMIS,
   IDEMPOTENTS,
+  issueReponse,
   lireConfigRelais,
-  statutDeRepli,
   type Signal,
 } from "../../apps/console/lib/ingest-relay";
+// @ts-expect-error module ESM partagé, sans déclarations
+import { ENTETE_COLLECTOR as ENTETE_DU_RECEVEUR } from "../../packages/backend/lib/receiver.mjs";
 import { OPTIONS as OPTIONS_TRACES, POST as POST_TRACES } from "../../apps/console/app/api/ingest/v1/traces/route";
 import { POST as POST_LOGS } from "../../apps/console/app/api/ingest/v1/logs/route";
 import { POST as POST_REPLAY } from "../../apps/console/app/api/ingest/v1/replay/route";
@@ -64,23 +70,40 @@ const journal = {
 
 type AppelFetch = { url: string; init: RequestInit };
 
-/** Faux collector : `/health` conforme, et une réponse programmable pour le POST. */
+/**
+ * Faux collector : `/health` conforme, et une réponse programmable pour le POST.
+ * Comme le vrai, il SIGNE ses réponses (`x-mip-collector: 1`) ; `postSigne:
+ * false` simule le routeur Railway (réponse que le collector n'a pas émise),
+ * `santeSignee: false` un collector antérieur à la signature.
+ */
 function fauxCollector(opts: {
   sante?: () => Response | Promise<Response>;
   post?: (url: string, init: RequestInit) => Response | Promise<Response>;
+  postSigne?: boolean;
+  santeSignee?: boolean;
 } = {}) {
   const appels: AppelFetch[] = [];
+  const signer = (r: Response, oui: boolean) => {
+    if (oui) r.headers.set(ENTETE_COLLECTOR, "1");
+    return r;
+  };
   const fetch = vi.fn(async (entree: RequestInfo | URL, init: RequestInit = {}) => {
     const url = String(entree);
     appels.push({ url, init });
     if (url.endsWith("/health")) {
-      return opts.sante
-        ? opts.sante()
-        : Response.json({ status: "ok", service: "collector", edge_protocol: "mip-edge/1", edge_trust: true });
+      return signer(
+        opts.sante
+          ? await opts.sante()
+          : Response.json({ status: "ok", service: "collector", edge_protocol: "mip-edge/1", edge_trust: true }),
+        opts.santeSignee !== false,
+      );
     }
-    return opts.post
-      ? opts.post(url, init)
-      : Response.json({ partialSuccess: {} }, { headers: { "access-control-allow-origin": "https://malveillant.test" } });
+    return signer(
+      opts.post
+        ? await opts.post(url, init)
+        : Response.json({ partialSuccess: {} }, { headers: { "access-control-allow-origin": "https://malveillant.test" } }),
+      opts.postSigne !== false,
+    );
   });
   return { fetch, appels, posts: () => appels.filter((a) => !a.url.endsWith("/health")) };
 }
@@ -188,6 +211,27 @@ describe("configuration — URL du collector et secret du relais", () => {
     expect(lireConfigRelais({ CONSOLE_INGEST_RELAY_URL: `${URL_COLLECTOR}/`, EDGE_PROXY_SECRET: SECRET }).config)
       .toEqual({ url: URL_COLLECTOR, secret: SECRET });
   });
+
+  it("http: hors de la machine : éteint — le secret de bord, les clés et le jeton ne partent pas en clair", async () => {
+    for (const url of ["http://collector.up.railway.app", "http://10.0.0.5:8080", "http://127.0.0.2", "http://localhost.evil.test"]) {
+      const lu = lireConfigRelais({ CONSOLE_INGEST_RELAY_URL: url, EDGE_PROXY_SECRET: SECRET });
+      expect(lu.config, url).toBeNull();
+      expect("raison" in lu && lu.raison, url).toMatch(/https/);
+    }
+    // Journalisé UNE fois, quel que soit le nombre de requêtes ; aucun appel réseau.
+    const { r, collector } = relais({ env: { CONSOLE_INGEST_RELAY_URL: "http://collector.up.railway.app", EDGE_PROXY_SECRET: SECRET } });
+    for (let i = 0; i < 20; i++) expect(await r.choisir("traces")).toBeNull();
+    expect(collector.fetch).not.toHaveBeenCalled();
+    expect(simul.journal.filter((l) => l.msg === "relay disabled")).toHaveLength(1);
+    expect(JSON.stringify(simul.journal)).not.toContain(SECRET);
+  });
+
+  it("http: permis sur la machine elle-même (localhost, 127.0.0.1, ::1) — tests et collector local", () => {
+    for (const url of ["http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080"]) {
+      expect(lireConfigRelais({ CONSOLE_INGEST_RELAY_URL: url, EDGE_PROXY_SECRET: SECRET }).config, url)
+        .toEqual({ url, secret: SECRET });
+    }
+  });
 });
 
 // ─────────────────────────────── Pourcentage ────────────────────────────────
@@ -248,6 +292,18 @@ describe("vérification du collector — GET /health, cache 60 s", () => {
     expect(collector.appels).toHaveLength(2);
   });
 
+  it("/health SANS signature x-mip-collector (collector antérieur) : contournement — ses 404 métier seraient pris pour un routage raté", async () => {
+    const collector = fauxCollector({ santeSignee: false });
+    const { r } = relais({ collector });
+    expect(await r.choisir("sourcemaps")).toBeNull();
+    const avis = simul.journal.find((l) => l.msg === "relay bypass: collector health");
+    expect(avis?.champs).toEqual({ raison: `réponse sans ${ENTETE_COLLECTOR}` });
+  });
+
+  it("la signature est celle que le receveur du collector pose (ENTETE_COLLECTOR)", () => {
+    expect(ENTETE_COLLECTOR).toBe(ENTETE_DU_RECEVEUR);
+  });
+
   it("id_fp n'est PAS comparé (Vercel ne hache plus, décision du 23/09)", async () => {
     const collector = fauxCollector({
       sante: () => Response.json({ status: "ok", edge_protocol: "mip-edge/1", edge_trust: true, identity: "active", id_fp: "0123456789ab" }),
@@ -258,45 +314,95 @@ describe("vérification du collector — GET /health, cache 60 s", () => {
 
 // ─────────────────────────────── Matrice de repli ───────────────────────────
 
-describe("matrice de repli — chaque statut × chaque signal", () => {
+describe("matrice de repli — chaque statut × chaque signal × signé ou non", () => {
   const STATUTS = [200, 400, 401, 403, 404, 405, 409, 410, 413, 425, 429, 500, 502, 503, 504];
 
   /** La règle du plan, écrite indépendamment du code. */
-  const attendu = (signal: Signal, statut: number) =>
-    [502, 504, 404, 405].includes(statut) || (statut === 500 && signal !== "logs") ? "repli" : "collector";
+  const attendu = (signal: Signal, statut: number, signee: boolean) => {
+    if (signee) return "collector";
+    if ([404, 405].includes(statut)) return "repli";
+    if ([502, 504].includes(statut)) return signal === "logs" ? "incertain" : "repli";
+    return "collector";
+  };
+  /** Échec compté au disjoncteur : jamais sur une réponse signée. */
+  const echecAttendu = (signal: Signal, statut: number, signee: boolean) =>
+    !signee && (attendu(signal, statut, signee) !== "collector" || statut >= 500);
 
   it("les logs sont les SEULS non idempotents", () => {
     expect(IDEMPOTENTS).toEqual({ traces: true, replay: true, sourcemaps: true, logs: false });
   });
 
-  for (const signal of SIGNAUX) {
-    for (const statut of STATUTS) {
-      it(`${signal} × ${statut} → ${attendu(signal, statut)}`, async () => {
-        const collector = fauxCollector({
-          post: () =>
-            new Response(JSON.stringify({ statut }), {
-              status: statut,
-              headers: { "content-type": "application/json", "retry-after": "7", "access-control-allow-origin": "*" },
-            }),
+  for (const signee of [true, false]) {
+    for (const signal of SIGNAUX) {
+      for (const statut of STATUTS) {
+        const issue = attendu(signal, statut, signee);
+        it(`${signal} × ${statut} ${signee ? "signé" : "NON signé"} → ${issue}`, async () => {
+          const collector = fauxCollector({
+            postSigne: signee,
+            post: () =>
+              new Response(JSON.stringify({ statut }), {
+                status: statut,
+                headers: { "content-type": "application/json", "retry-after": "7", "access-control-allow-origin": "*" },
+              }),
+          });
+          const { r } = relais({ collector });
+          const rep = await r.relayer(signal, entrante(), corps, CORS);
+          expect(issueReponse(signal, statut, signee)).toBe(issue);
+          if (issue === "repli") {
+            expect(rep).toBeNull();
+            expect(simul.journal.some((l) => l.msg === "relay fallback")).toBe(true);
+          } else if (issue === "incertain") {
+            expect(rep!.status).toBe(503);
+            expect(rep!.headers.get("retry-after")).toBe("5");
+            expect(rep!.headers.get("access-control-allow-origin")).toBe(ORIGINE);
+            expect(await rep!.json()).toMatchObject({ retry: true });
+          } else {
+            expect(rep).not.toBeNull();
+            expect(rep!.status).toBe(statut);
+            expect(await rep!.json()).toEqual({ statut });
+            expect(rep!.headers.get("retry-after")).toBe("7");
+            // CORS LOCAUX, jamais ceux du collector.
+            expect(rep!.headers.get("access-control-allow-origin")).toBe(ORIGINE);
+          }
+          expect(r.etat().echecs).toBe(echecAttendu(signal, statut, signee) ? 1 : 0);
+          expect(collector.posts()[0].url).toBe(`${URL_COLLECTOR}${CHEMINS[signal]}`);
         });
-        const { r } = relais({ collector });
-        const rep = await r.relayer(signal, entrante(), corps, CORS);
-        expect(statutDeRepli(signal, statut)).toBe(attendu(signal, statut) === "repli");
-        if (attendu(signal, statut) === "repli") {
-          expect(rep).toBeNull();
-          expect(simul.journal.some((l) => l.msg === "relay fallback")).toBe(true);
-        } else {
-          expect(rep).not.toBeNull();
-          expect(rep!.status).toBe(statut);
-          expect(await rep!.json()).toEqual({ statut });
-          expect(rep!.headers.get("retry-after")).toBe("7");
-          // CORS LOCAUX, jamais ceux du collector.
-          expect(rep!.headers.get("access-control-allow-origin")).toBe(ORIGINE);
-        }
-        expect(collector.posts()[0].url).toBe(`${URL_COLLECTOR}${CHEMINS[signal]}`);
-      });
+      }
     }
   }
+
+  it("sourcemaps : 404 MÉTIER signé (app inconnue), rejoué en boucle → rendu tel quel, disjoncteur intact", async () => {
+    const collector = fauxCollector({
+      post: () => Response.json({ error: "application inconnue : app-supprimee" }, { status: 404 }),
+    });
+    const { r } = relais({ collector });
+    for (let i = 0; i < 12; i++) {
+      const rep = await r.relayer("sourcemaps", entrante(), corps, CORS);
+      expect(rep!.status).toBe(404);
+      expect(await rep!.json()).toEqual({ error: "application inconnue : app-supprimee" });
+    }
+    expect(r.etat()).toEqual({ echecs: 0, contourne: false });
+    expect(simul.journal.some((l) => l.msg === "relay fallback" || l.msg === "relay circuit open")).toBe(false);
+    // Et les autres signaux passent toujours par le relais.
+    expect(await r.choisir("traces")).not.toBeNull();
+  });
+
+  it("404 SANS signature (routeur Railway : service absent) → repli local, échec compté", async () => {
+    const collector = fauxCollector({ postSigne: false, post: () => new Response("Not Found", { status: 404 }) });
+    const { r } = relais({ collector });
+    expect(await r.relayer("sourcemaps", entrante(), corps, CORS)).toBeNull();
+    expect(r.etat().echecs).toBe(1);
+    expect(simul.journal.some((l) => l.msg === "relay fallback")).toBe(true);
+  });
+
+  it("réponse rendue en application/json + nosniff, quel que soit le content-type reçu", async () => {
+    const collector = fauxCollector({
+      post: () => new Response("<script>alert(1)</script>", { status: 200, headers: { "content-type": "text/html" } }),
+    });
+    const rep = await relais({ collector }).r.relayer("traces", entrante(), corps, CORS);
+    expect(rep!.headers.get("content-type")).toBe("application/json");
+    expect(rep!.headers.get("x-content-type-options")).toBe("nosniff");
+  });
 
   it("erreur de CONNEXION (requête jamais partie) : repli pour tous les signaux, logs compris", async () => {
     for (const code of ["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]) {
@@ -358,7 +464,8 @@ describe("délai du relais", () => {
 // ─────────────────────────────── Disjoncteur ────────────────────────────────
 
 describe("disjoncteur — 5 échecs en 30 s → contournement 60 s", () => {
-  const en502 = () => fauxCollector({ post: () => new Response("Bad Gateway", { status: 502 }) });
+  // 502 du ROUTEUR Railway : non signé.
+  const en502 = () => fauxCollector({ postSigne: false, post: () => new Response("Bad Gateway", { status: 502 }) });
 
   it("s'ouvre au 5e échec, contourne 60 s SANS appel réseau, puis se referme", async () => {
     const collector = en502();
@@ -397,8 +504,8 @@ describe("disjoncteur — 5 échecs en 30 s → contournement 60 s", () => {
     expect(r.etat().contourne).toBe(true);
   });
 
-  it("une réponse du collector (400, 403, 429, 503) n'est PAS un échec", async () => {
-    for (const statut of [400, 403, 429, 503]) {
+  it("une réponse SIGNÉE du collector (400, 403, 404, 429, 500, 503) n'est PAS un échec", async () => {
+    for (const statut of [400, 403, 404, 429, 500, 503]) {
       const { r } = relais({ collector: fauxCollector({ post: () => new Response("{}", { status: statut }) }) });
       for (let i = 0; i < 10; i++) await r.relayer("traces", entrante(), corps, CORS);
       expect(r.etat()).toEqual({ echecs: 0, contourne: false });
