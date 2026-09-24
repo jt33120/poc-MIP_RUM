@@ -1,16 +1,16 @@
 # Inventaire de la console, pour la piste C
 
-> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-09-24, sur `d1f2444 + C0a + C0b`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
+> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-09-24, sur `93f2e10 + scissions`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
 
 ## En chiffres
 
 | | Nombre | Atteignent la base |
 |---|---|---|
-| Écrans (`page.tsx`) | 57 | **51** |
+| Écrans (`page.tsx`) | 57 | **50** |
 | Fichiers d'actions serveur (`"use server"`) | 17 (53 actions) | **16** |
 | Actions déclarées dans un écran | 0 | — |
 | Routes (`route.ts`) | 54 | **47** |
-| Composants serveur qui atteignent la base eux-mêmes | — | **26** |
+| Composants serveur qui atteignent la base eux-mêmes | — | **14** |
 | Layout racine | 1 | **oui** |
 | Modules `lib/queries*.ts` | 45 (207 fonctions exportées) | — |
 | Sections `lire()` (appels) | 261 | — |
@@ -28,7 +28,7 @@
 | `/acquisition` | C5 | **oui** | acquisition, deploys, explorer, sessions | 4 | — | oui |
 | `/actions` | C3 | **oui** | queries, actions, deploys, explorer, sessions | 4 | — | oui |
 | `/admin/audit` | C9 administration | **oui** | — | — | — | oui |
-| `/admin/composants` | C9 administration | **oui** | deploys | — | — | oui |
+| `/admin/composants` | C9 administration | non | — | — | — | oui |
 | `/admin/customers/[appId]` | C9 administration | **oui** | customers | — | — | oui |
 | `/admin/customers` | C9 administration | **oui** | customers | — | — | oui |
 | `/admin/extension-installs` | C9 administration | **oui** | extension-installs | — | — | oui |
@@ -174,32 +174,20 @@
 
 | Composant | Chemin vers la base |
 |---|---|
-| `components/VersionsTable.tsx` | `lib/queries-deploys.ts` → `lib/db.ts` |
 | `components/alerts/ChannelsSection.tsx` | `app/alerts/actions.ts` → `lib/error-issue-workflow.ts` → `lib/db.ts` |
-| `components/alerts/RuleFields.tsx` | `lib/queries-v2.ts` → `lib/db.ts` |
 | `components/alerts/RuleRow.tsx` | `lib/alertes-ecran.ts` → `lib/queries-v2.ts` → `lib/db.ts` |
 | `components/dashboards/ModeleCarte.tsx` | `app/dashboards/actions.ts` → `lib/queries-dashboards.ts` → `lib/db.ts` |
 | `components/dashboards/WidgetCard.tsx` | `app/dashboards/actions.ts` → `lib/queries-dashboards.ts` → `lib/db.ts` |
-| `components/errors/DetailErreur.tsx` | `components/errors/ErrorOccurrences.tsx` → `lib/queries-errors.ts` → `lib/db.ts` |
-| `components/errors/ErrorBadges.tsx` | `lib/queries-errors.ts` → `lib/db.ts` |
-| `components/errors/ErrorOccurrences.tsx` | `lib/queries-errors.ts` → `lib/db.ts` |
 | `components/errors/ErrorStackCard.tsx` | `lib/error-symbolication.ts` → `lib/db.ts` |
 | `components/errors/ErrorTriage.tsx` | `app/errors/[fingerprint]/actions.ts` → `lib/db.ts` |
-| `components/errors/IssueBadges.tsx` | `lib/error-issues.ts` → `lib/db.ts` |
-| `components/errors/IssueList.tsx` | `lib/error-issues.ts` → `lib/db.ts` |
-| `components/errors/IssueTickets.tsx` | `lib/queries-ticket-integrations.ts` → `lib/db.ts` |
-| `components/errors/IssueWorkflow.tsx` | `lib/error-issues.ts` → `lib/db.ts` |
 | `components/errors/PanneauErreur.tsx` | `lib/queries-deploys.ts` → `lib/db.ts` |
 | `components/explorer/ActionsVue.tsx` | `app/explorer/actions.ts` → `lib/queries-saved-views.ts` → `lib/db.ts` |
-| `components/health/HealthBanner.tsx` | `lib/health.ts` → `lib/db.ts` |
 | `components/perf/RoutePanel.tsx` | `lib/fuseau.ts` → `lib/db.ts` |
 | `components/presentation/Annexe.tsx` | `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Landing.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Specs.tsx` | `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/sessions/PanneauSession.tsx` | `lib/queries.ts` → `lib/db.ts` |
 | `components/slo/SloStatusRow.tsx` | `app/alerts/actions.ts` → `lib/error-issue-workflow.ts` → `lib/db.ts` |
-| `components/tracing/DeployPanel.tsx` | `lib/queries-deploys.ts` → `lib/db.ts` |
-| `components/vue-ensemble/SeriesVueEnsemble.tsx` | `lib/vue-ensemble.ts` → `lib/queries-deploys.ts` → `lib/db.ts` |
 
 ## Modules de lecture
 
@@ -213,7 +201,7 @@
 | `lib/queries-cohorts.ts` | 1 | 1 |
 | `lib/queries-customers.ts` | 3 | 3 |
 | `lib/queries-dashboards.ts` | 6 | 3 |
-| `lib/queries-deploys.ts` | 4 | 20 |
+| `lib/queries-deploys.ts` | 4 | 19 |
 | `lib/queries-dimensions.ts` | 1 | 0 |
 | `lib/queries-dsar.ts` | 9 | 1 |
 | `lib/queries-errors.ts` | 11 | 13 |

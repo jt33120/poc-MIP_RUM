@@ -44,28 +44,10 @@ import {
   type TotalsSqlRow,
   ERROR_SOURCES,
 } from "./queries-errors";
-
-// Copies des taxonomies de migration-v72 (la console ne type pas un module .mjs) ;
-// tests/unit/error-grouping-v2.test.ts les compare à l'ingestion.
-export const ISSUE_STATUSES = ["open", "for_review", "resolved", "ignored"] as const;
-export type IssueStatus = (typeof ISSUE_STATUSES)[number];
-export const GROUPING_BASES = ["override", "symbolicated_frame", "normalized_frame", "low_confidence"] as const;
-export type GroupingBasis = (typeof GROUPING_BASES)[number];
-export type IssueOrigin = "new" | "migration";
-
-export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
-  open: "Ouverte",
-  for_review: "À revoir",
-  resolved: "Résolue",
-  ignored: "Ignorée",
-};
-
-export const GROUPING_BASIS_LABELS: Record<GroupingBasis, string> = {
-  override: "Clé déclarée",
-  symbolicated_frame: "Frame source",
-  normalized_frame: "Frame normalisée",
-  low_confidence: "Faible confiance",
-};
+import { ISSUE_STATUSES, type IssueStatus, type GroupingBasis, type IssueOrigin } from "./issues-libelles";
+// Les taxonomies et leurs libellés vivent dans `issues-libelles.ts`, SANS la base ;
+// réexportées ici pour les lectures et l'API.
+export * from "./issues-libelles";
 
 export const ISSUE_LIST_DEFAULT_LIMIT = 50;
 export const ISSUE_LIST_MAX_LIMIT = 100;

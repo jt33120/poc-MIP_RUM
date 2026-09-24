@@ -12,13 +12,8 @@
 // d'un résultat. Le bloc décide donc lui-même de son affichage, plutôt que de
 // faire porter la condition à l'écran qui l'appelle.
 import { GlossaryTip } from "@/components/GlossaryTip";
-import {
-  comparable,
-  ecartPoints,
-  tauxErreur,
-  versionReference,
-  type ComparaisonVersions,
-} from "@/lib/queries-deploys";
+import { comparable, ecartPoints, tauxErreur, versionReference } from "@/lib/deploys-verdict";
+import type { ComparaisonVersions } from "@/lib/queries-deploys";
 import { fmtVital } from "@/lib/format";
 import { RATING_CLASS, rating2026 } from "@/lib/rating";
 import { ecartProportions, intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
