@@ -41,6 +41,13 @@ const config = defineConfig(
     CONSOLE_API_RATE_LIMIT: { type: "int", min: 0, max: 100_000, description: "Requêtes par minute et par principal, par réplique (défaut 120 ; 0 = sans limite)." },
     XSOM_AI_URL: { type: "url", protocols: ["https:", "http:"], description: "xSOM AI Guard, pour la moitié IA de /api/rum/summary. Absent : section IA indisponible." },
     XSOM_AI_TOKEN: { type: "string", secret: true, description: "Jeton de lecture xSOM AI Guard." },
+    // Variable de la CONSOLE (relais de l'API v1 vers ce service). Posée ici, elle
+    // ferait relayer le service vers lui-même, en boucle : refus de démarrer.
+    CONSOLE_API_RELAY_URL: {
+      type: "string",
+      validate: () => "variable de la console seulement : sur le service api, elle ferait relayer le service vers lui-même",
+      description: "À NE PAS poser : c'est la variable de la console qui désigne ce service.",
+    },
   },
   { service: "api", log },
 );
