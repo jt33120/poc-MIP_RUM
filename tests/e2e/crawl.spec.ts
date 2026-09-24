@@ -60,18 +60,20 @@ function ecrans(): string[] {
 }
 
 /**
- * Un exemple par segment dynamique, lu dans la base de l'E2E. Absent de la base :
- * un identifiant qui n'existe pas — l'écran doit alors dire « introuvable », pas
- * planter. C'est un cas légitime du relevé.
+ * Un exemple par segment dynamique, lu dans la base de l'E2E, AVEC son
+ * application : l'écran est visité sous `?app=<son app>`, sans quoi il répondrait
+ * « introuvable » à juste titre (la ressource est ailleurs). `demo-app` d'abord :
+ * c'est le périmètre du viewer et de la démo. Absent de la base : un identifiant
+ * qui n'existe pas — l'écran doit alors dire « introuvable », pas planter.
  */
 const EXEMPLES: Record<string, string> = {
-  "[appId]": `select app_id as v from app_registry where app_id = '${APP}' limit 1`,
-  "[id]@dashboards": "select id::text as v from dashboard order by id limit 1",
-  "[fingerprint]": "select fingerprint as v from rum_error where fingerprint is not null order by ts desc limit 1",
-  "[id]@issues": "select id::text as v from error_issue order by last_seen desc limit 1",
-  "[id]@sessions": "select session_id as v from rum_session order by started_at desc nulls last limit 1",
-  "[callId]": "select call_id as v from svi_call order by id desc limit 1",
-  "[traceId]": "select trace_id as v from rum_span where trace_id is not null limit 1",
+  "[appId]": `select app_id as v, app_id as app from app_registry where app_id = '${APP}' limit 1`,
+  "[id]@dashboards": `select id::text as v, coalesce(app_id, '${APP}') as app from dashboard order by app_id = '${APP}' desc nulls last, id limit 1`,
+  "[fingerprint]": `select fingerprint as v, app_id as app from rum_error where fingerprint is not null order by app_id = '${APP}' desc, ts desc limit 1`,
+  "[id]@issues": `select id::text as v, app_id as app from error_issue order by app_id = '${APP}' desc, last_seen desc limit 1`,
+  "[id]@sessions": `select session_id as v, app_id as app from rum_session order by app_id = '${APP}' desc, started_at desc nulls last limit 1`,
+  "[callId]": `select call_id as v, app_id as app from svi_call order by app_id = '${APP}' desc, id desc limit 1`,
+  "[traceId]": `select trace_id as v, app_id as app from rum_span where trace_id is not null order by app_id = '${APP}' desc limit 1`,
 };
 
 function cleExemple(ecran: string, segment: string): string {
@@ -79,7 +81,7 @@ function cleExemple(ecran: string, segment: string): string {
   return segment;
 }
 
-const valeurs = new Map<string, string>();
+const valeurs = new Map<string, { v: string; app: string }>();
 const ECRANS = ecrans();
 
 test.describe.configure({ mode: "parallel" });
@@ -88,8 +90,8 @@ test.beforeAll(async () => {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum", max: 2 });
   try {
     for (const [cle, sql] of Object.entries(EXEMPLES)) {
-      const v = await pool.query<{ v: string }>(sql).then((r) => r.rows[0]?.v, () => undefined);
-      valeurs.set(cle, v ?? "e2e-absent");
+      const l = await pool.query<{ v: string; app: string }>(sql).then((r) => r.rows[0], () => undefined);
+      valeurs.set(cle, l ?? { v: "e2e-absent", app: APP });
     }
   } finally {
     await pool.end();
@@ -106,9 +108,15 @@ test("chaque segment dynamique a son exemple", () => {
 });
 
 async function visiter(browser: Browser, profil: Profil, ecran: string) {
+  let app = APP;
   const url = ecran
     .split("/")
-    .map((s) => (s.startsWith("[") ? encodeURIComponent(valeurs.get(cleExemple(ecran, s)) ?? "e2e-absent") : s))
+    .map((s) => {
+      if (!s.startsWith("[")) return s;
+      const ex = valeurs.get(cleExemple(ecran, s)) ?? { v: "e2e-absent", app: APP };
+      app = ex.app;
+      return encodeURIComponent(ex.v);
+    })
     .join("/");
   const contexte = await browser.newContext();
   await contexte.addCookies([{ name: "mip_session", value: jeton(profil), url: consoleUrl }]);
@@ -116,11 +124,12 @@ async function visiter(browser: Browser, profil: Profil, ecran: string) {
   const exceptions: string[] = [];
   page.on("pageerror", (e) => exceptions.push(e.message.slice(0, 300)));
   try {
-    const res = await page.goto(`${consoleUrl}${url}?app=${APP}`, { waitUntil: "load", timeout: 60_000 });
+    const res = await page.goto(`${consoleUrl}${url}?app=${encodeURIComponent(app)}`, { waitUntil: "load", timeout: 60_000 });
     const releve = {
       ecran,
       profil,
       url,
+      app,
       statut: res?.status() ?? 0,
       finale: new URL(page.url()).pathname,
       titre: ((await page.locator("h1").first().textContent({ timeout: 2_000 }).catch(() => null)) ?? "").trim().slice(0, 120),
