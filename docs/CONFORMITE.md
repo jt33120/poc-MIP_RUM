@@ -20,7 +20,10 @@
   le SDK est servi par la console (auto-hébergeable).
 - Les **mesures** arrivent sur la route d'ingestion de la console (**Vercel**, `fra1`), qui les **relaie**,
   code pays seul et jamais l'adresse IP, au **collecteur** de **Railway** (région **`europe-west4`, Amsterdam**) :
-  il les pseudonymise et les écrit (repli sur la console, cf. §7), à côté des travaux planifiés et du MCP.
+  il les pseudonymise et les écrit (repli sur la console, cf. §7). Les **travaux planifiés**, l'**API de lecture
+  pour les machines** (service `api`, sur jeton, en lecture seule), le **backend de la console** (service
+  `console-api` : comptes, sessions, écrans, écritures et demandes RGPD, pour le seul serveur de la console)
+  et le **serveur MCP** tournent au même endroit.
 - **Donnée et traitement sont en UE. La souveraineté, non** : Neon, Vercel et Railway sont trois
   sociétés de droit américain. La résidence européenne des données n'est pas la souveraineté ;
   la cible reste un hébergeur de droit européen (cf. §8).
@@ -190,7 +193,7 @@ modification ni redistribution.
 |---|---|---|---|
 | Neon | base PostgreSQL managée | UE (Francfort, `aws-eu-central-1`) — société de droit américain | télémétrie, comptes |
 | Vercel Inc. | hébergement de la console ; réception des mesures et relais vers le collecteur | fonctions serveur en UE (Francfort, `fra1`) — société de droit américain | **télémétrie RUM en transit**, relayée telle quelle avec le **code pays seul** : la console ne conserve ni ne transmet l'adresse IP ; **en traitement** (scrub, identité retirée, écriture en base) pour la part non relayée et en repli si le collecteur est indisponible ; pas de stockage RUM |
-| Railway Corp. | collecteur (`collector`) : réception des mesures relayées, pseudonymisation, écriture en base ; travaux planifiés, serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | **télémétrie RUM en traitement**, sans adresse IP (code pays seul) : scrub, identité hachée (HMAC, secret posé sur Railway seul), écriture en base ; lecture des agrégats (travaux planifiés), réponses MCP ; pas de stockage RUM |
+| Railway Corp. | collecteur (`collector`) : réception des mesures relayées, pseudonymisation, écriture en base ; travaux planifiés, API de lecture v1 (machines, sur jeton), backend de la console (`console-api`), serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | **télémétrie RUM en traitement**, sans adresse IP (code pays seul) : scrub, identité hachée (HMAC, secret posé sur Railway seul), écriture en base ; lecture des agrégats (travaux planifiés), réponses de l'API v1 et du MCP aux porteurs de jeton, sans écriture (rôle `mip_api`) ; comptes et sessions de la console, écrans, écritures et demandes RGPD (`console-api`, rôles `mip_identity` et `mip_console`), l'adresse d'un utilisateur de la console réduite à une empreinte HMAC dans les compteurs de débit de connexion, effacée après 24 h d'inactivité ; pas de stockage RUM |
 | Resend, Inc. | envoi des alertes e-mail, appelé par le service `notifier` (Railway) | États-Unis — société de droit américain ; région d'envoi non choisie tant que l'expéditeur est le domaine de test `resend.dev`, `eu-west-1` (Irlande) à retenir en vérifiant le domaine | adresse du destinataire (un opérateur) et texte de l'alerte (application, mesure, valeur) ; aucune donnée d'utilisateur final |
 
 ## 8. Trajectoire de certification (gap analysis)

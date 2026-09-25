@@ -57,8 +57,11 @@ export const ORG = {
 export const HOSTS = {
   data: "Neon (base de données PostgreSQL sur infrastructure AWS, région aws-eu-central-1 — Francfort, Allemagne)",
   app: "Vercel Inc. (hébergement de l'application console ; réception des mesures envoyées par les navigateurs et relais vers le collecteur, sans que la console conserve ni transmette l'adresse IP — seul le code pays est transmis ; fonctions serveur exécutées en région fra1 — Francfort, Allemagne)",
+  // P4 : l'API de lecture v1 est aussi servie depuis Railway (service `api`),
+  // aux machines porteuses d'un jeton ; piste C : le backend de la console
+  // (service `console-api`) — voir SUBPROCESSORS.
   backend:
-    "Railway Corp. (hébergement du collecteur, qui reçoit les mesures relayées par la console, les pseudonymise et les écrit en base, ainsi que des travaux planifiés et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
+    "Railway Corp. (hébergement du collecteur, qui reçoit les mesures relayées par la console, les pseudonymise et les écrit en base, des travaux planifiés, de l'API de lecture servie aux machines sur jeton, du backend de la console — comptes, sessions, écrans et écritures — et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
 } as const;
 
 /**
@@ -98,9 +101,25 @@ export const SUBPROCESSORS: { name: string; role: string; location: string }[] =
   // `.railway/railway.ts` lui impose, à revérifier le jour de la bascule.
   // Le serveur MCP (09/09/2026) tourne sur le même hébergeur et sert les mêmes
   // agrégats, à un agent IA cette fois. Il ne fait PAS entrer de tiers
-  // supplémentaire dans la liste : il ne parle qu'à la console, et le modèle qui
-  // l'interroge est l'outil de son utilisateur, pas un sous-traitant de MIP.
-  { name: "Railway Corp.", role: "Hébergement du collecteur des mesures RUM (réception des mesures relayées par la console, pseudonymisation de l'identité, écriture en base), des travaux planifiés et du serveur MCP de lecture", location: "États-Unis (société) — services déployés en UE (europe-west4, Amsterdam, Pays-Bas), relevé le 09/09/2026 ; collecteur déployé dans la même région" },
+  // supplémentaire dans la liste : il ne parle qu'à l'API v1 de MIP, et le modèle
+  // qui l'interroge est l'outil de son utilisateur, pas un sous-traitant de MIP.
+  // API DE LECTURE (P4). Le service `api` sert depuis Railway les MÊMES agrégats
+  // que l'API v1 de la console, aux mêmes porteurs de jeton — partenaires, CI,
+  // le serveur MCP par le réseau privé —, et la console lui relaie ses lectures
+  // sur jeton (`lib/api-relay.ts` : jeton, en-têtes d'acceptation et de cache,
+  // origine ; aucune adresse). Même donnée, même destinataire : ce qui change est
+  // l'hébergeur qui la SERT, et c'est ce qu'il faut déclarer. Lecture seule, sous
+  // un rôle de base sans aucun droit d'écriture (migration-v89).
+  // BACKEND DE LA CONSOLE (piste C). Le service `console-api` sert depuis Railway
+  // ce que la console lisait et écrivait elle-même : la connexion (vérification du
+  // mot de passe, sessions), les écrans, les écritures (tableaux de bord, alertes,
+  // administration) et les demandes RGPD. Seul client : le serveur de la console
+  // sur Vercel, qui lui transmet le jeton de session et, pour le débit de
+  // connexion, l'adresse de l'utilisateur de la console (jamais stockée en clair :
+  // une empreinte HMAC dans les compteurs de débit, effacée après 24 h
+  // d'inactivité, migration-v90). Même donnée, même base : ce qui change est
+  // l'hébergeur qui la TRAITE — les comptes de la console compris.
+  { name: "Railway Corp.", role: "Hébergement du collecteur des mesures RUM (réception des mesures relayées par la console, pseudonymisation de l'identité, écriture en base), des travaux planifiés, de l'API de lecture v1 (agrégats RUM servis aux machines porteuses d'un jeton, en lecture seule), du backend de la console (comptes, sessions, écrans, écritures et demandes RGPD, pour le seul serveur de la console) et du serveur MCP de lecture", location: "États-Unis (société) — services déployés en UE (europe-west4, Amsterdam, Pays-Bas), relevé le 09/09/2026 ; collecteur déployé dans la même région" },
   // RESEND (P5), ajouté dans la MÊME modification que la clé posée sur le service
   // `notifier` : c'est lui, sur Railway, qui appelle Resend — ni la console, ni la
   // base. Ce qui part : l'adresse du destinataire (un opérateur, jamais un
