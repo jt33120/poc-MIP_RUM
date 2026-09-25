@@ -88,6 +88,16 @@ migration-v89 crée `mip_api` **sans mot de passe** (`NOLOGIN`) : lecture seule,
 4. Créer la variable partagée Railway `API_DATABASE_URL` = `postgresql://mip_api:<mot de passe>@<hôte>-pooler.<région>.aws.neon.tech/neondb?sslmode=require` ; l'IaC du service `api` la lit (`ctx.shared.API_DATABASE_URL`).
 5. Vérifier les droits réels, en lecture des catalogues seulement : `node services/api/build.mjs`, puis `read -rs DATABASE_URL && export DATABASE_URL` (la chaîne propriétaire, sans écho) et `node scripts/ci/verify-db-roles.mjs` → « conforme à sa liste blanche ».
 
+### Les rôles de console-api : `mip_console` et `mip_identity` (C13)
+
+migration-v93 crée les deux rôles **sans mot de passe** (`NOLOGIN`) : `mip_console` pour les écrans, les commandes et le RGPD, `mip_identity` pour la connexion et les sessions (listes : `packages/db/roles/console-api.mjs`). console-api continue de se connecter en propriétaire tant que ses deux variables ne sont pas posées. À faire **une fois**, après la mise en service de console-api, et d'abord sur `repetition-p0` :
+
+1. Deux mots de passe, générés dans le gestionnaire.
+2. `psql` connecté en `neondb_owner` : `\password mip_console`, `alter role mip_console login;`, puis de même pour `mip_identity`. **Pas par l'API ni la console Neon.**
+3. Connexion de chacun **par le pooler** (`select current_user`), comme pour `mip_api`.
+4. Variables partagées Railway `CONSOLE_DATABASE_URL` (rôle `mip_console`) et `IDENTITY_DATABASE_URL` (rôle `mip_identity`), chaînes du pooler ; puis la PR d'IaC qui les donne au service `console-api` **et retire son `DATABASE_URL`** — les deux ensemble, ou le service refuse de démarrer (une configuration partielle se voit au démarrage, pas à la première connexion).
+5. Vérifier les droits réels : `node services/console-api/build.mjs`, puis (chaîne propriétaire, sans écho) `node scripts/ci/verify-db-roles-console.mjs` → « conformes à leurs listes ». Le journal de démarrage du service dit `roles: "mip_console + mip_identity"`.
+
 ## 7. Rafraîchir la base GeoIP (DB-IP)
 
 La base DB-IP Lite (CC BY 4.0) est **dans l'image du collector**, décrite par un manifeste versionné. Au-delà de **180 jours** après son mois de livraison (`GEOIP_MAX_AGE_DAYS`), le collector la **refuse** : pays inconnu plutôt que pays périmé. La livraison `2026-09` sera refusée à partir de fin février 2027.

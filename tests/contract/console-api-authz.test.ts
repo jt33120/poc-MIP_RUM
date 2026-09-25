@@ -21,6 +21,7 @@ import { gzipSync } from "node:zlib";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { COMMANDES, ECRANS, ECRANS_ADMIN, ECRANS_SESSION, operation } from "@mip/console-contract";
+import { poolsSousRoles, sousRole } from "../fixtures/roles-c13";
 import {
   chargerTrousseau,
   creerConsoleApi,
@@ -312,8 +313,21 @@ function cibles(p: Politique): Cible[] {
   return [{ nom: "—" }];
 }
 
+/**
+ * C13 — SOUS LES RÔLES (`CONSOLE_API_AUTHZ_ROLES=1`, en CI) : le service se
+ * connecte comme en production après la mise en service, `mip_console` pour les
+ * écrans et les commandes, `mip_identity` pour les sessions et la connexion
+ * (migration-v93). Un droit oublié s'y voit comme un écran ou une commande en
+ * panne. L'amorce et les vérifications restent en propriétaire.
+ */
+const SOUS_ROLES = process.env.CONSOLE_API_AUTHZ_ROLES === "1";
+if (process.env.CI && url && !SOUS_ROLES) throw new Error("CI : la matrice tourne sous les rôles de C13 (CONSOLE_API_AUTHZ_ROLES=1)");
+
 (url ? describe : describe.skip)("C0c — matrice d'autorisations de console-api (PostgreSQL, sessions réelles)", () => {
   const pool = new pg.Pool({ connectionString: url ?? undefined, max: 4 });
+  // Les pools du SERVICE : sous les rôles de C13, ou le propriétaire.
+  let poolService: pg.Pool = pool;
+  let poolIdentite: pg.Pool = pool;
   let trousseau: Trousseau;
   let table: Enregistrement[];
   let servirRequete: (req: Request) => Promise<Response>;
@@ -432,16 +446,24 @@ function cibles(p: Politique): Cible[] {
     jetons.invalide = await emettre(etranger, sessions.viewer);
     for (const p of ["revoquee", "desactive", "demo", "viewer", "admin", "plateforme"] as const) jetons[p] = await emettre(trousseau, sessions[p], p === "demo");
 
-    const verificateur = await creerVerificateurSession({ trousseau, db: pool, horloge: () => maintenant });
+    if (SOUS_ROLES) {
+      const roles = await poolsSousRoles(url!, pool);
+      if (!roles) throw new Error("CONSOLE_API_AUTHZ_ROLES=1 : la base n'a pas les rôles de migration-v93");
+      poolService = roles.console;
+      poolIdentite = roles.identite;
+      const { rows } = await poolService.query<{ u: string }>("select current_user as u");
+      expect(rows[0].u).toBe("mip_console");
+    }
+    const verificateur = await creerVerificateurSession({ trousseau, db: poolIdentite, horloge: () => maintenant });
     // La couche de données de la console lit `DATABASE_URL` : la base de la matrice.
-    process.env.DATABASE_URL = url!;
+    process.env.DATABASE_URL = SOUS_ROLES ? sousRole(url!, "mip_console") : url!;
     // Les chargeurs d'écrans du SERVICE (`services/console-api/ecrans.mjs`) : ceux
     // de la console, à la signature du service — le même module que le bundle.
     const { ecrans } = await import("../../services/console-api/ecrans.mjs");
     const { commandes } = await import("../../services/console-api/commandes.mjs");
     const transacteur = {
       async transaction<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
-        const c = await pool.connect();
+        const c = await poolIdentite.connect();
         try {
           await c.query("begin");
           const r = await fn(c);
@@ -458,8 +480,9 @@ function cibles(p: Politique): Cible[] {
     const reel = await creerTable({
       trousseau,
       version: "authz",
-      db: pool,
+      db: poolService,
       identite: {
+        db: poolIdentite,
         transacteur,
         debit: await creerDebitAuth(SECRET),
         verifierMotDePasse: async () => false,
@@ -479,7 +502,7 @@ function cibles(p: Politique): Cible[] {
       secretsClient: [SECRET],
       journal,
       verifierSession: verificateur.verifier,
-      lecteur: pool,
+      lecteur: poolService,
       debitParMinute: 0,
       horloge: () => maintenant,
     });
@@ -487,6 +510,8 @@ function cibles(p: Politique): Cible[] {
 
   afterAll(async () => {
     await nettoyer();
+    if (poolService !== pool) await poolService.end();
+    if (poolIdentite !== pool) await poolIdentite.end();
     await pool.end();
   });
 

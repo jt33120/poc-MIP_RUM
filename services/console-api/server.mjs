@@ -39,10 +39,24 @@ const config = defineConfig(
     ...COMMON_ENV,
     DATABASE_URL: {
       type: "url",
-      required: true,
       secret: true,
       protocols: ["postgres:", "postgresql:"],
-      description: "Postgres. Rôle propriétaire jusqu'à C13 (puis mip_console et mip_identity).",
+      description: "Postgres en rôle PROPRIÉTAIRE — tant que les deux rôles de C13 ne sont pas posés. Absente : CONSOLE_DATABASE_URL et IDENTITY_DATABASE_URL, ensemble.",
+    },
+    // C13 — LES DEUX RÔLES (migration-v93), ensemble ou aucun : `mip_console` pour
+    // les écrans, les commandes et le RGPD ; `mip_identity` pour la connexion et
+    // les sessions. Posés, le service ne tient plus le rôle propriétaire.
+    CONSOLE_DATABASE_URL: {
+      type: "url",
+      secret: true,
+      protocols: ["postgres:", "postgresql:"],
+      description: "Postgres, rôle `mip_console` (C13) : écrans, commandes, RGPD. Avec IDENTITY_DATABASE_URL.",
+    },
+    IDENTITY_DATABASE_URL: {
+      type: "url",
+      secret: true,
+      protocols: ["postgres:", "postgresql:"],
+      description: "Postgres, rôle `mip_identity` (C13) : connexion, sessions, débit d'authentification. Avec CONSOLE_DATABASE_URL.",
     },
     PGPOOL_MAX: { type: "int", default: 8, min: 2, max: 30, description: "Taille du pool, par réplique." },
     CONSOLE_API_CLIENT_SECRETS: {
@@ -103,14 +117,35 @@ try {
 }
 
 const metrics = createMetrics();
+// C13 — les rôles : les deux ensemble, ou le propriétaire. Une configuration
+// partielle refuse le démarrage (un service à moitié sous ses rôles ne doit pas se
+// découvrir à la première connexion).
+const roles = [config.CONSOLE_DATABASE_URL, config.IDENTITY_DATABASE_URL].filter(Boolean).length;
+if (roles === 1 || (roles === 0 && !config.DATABASE_URL)) {
+  log.error("refus de démarrer", {
+    raison: roles === 1 ? "CONSOLE_DATABASE_URL et IDENTITY_DATABASE_URL vont ensemble" : "DATABASE_URL, ou les deux rôles de C13, requis",
+  });
+  process.exit(2);
+}
 const pool = createPool(pg, {
-  connectionString: config.DATABASE_URL,
+  connectionString: config.CONSOLE_DATABASE_URL ?? config.DATABASE_URL,
   applicationName: "mip-console-api",
   max: config.PGPOOL_MAX,
   log,
   metrics,
   lifecycle,
 });
+// L'identité a SON pool sous `mip_identity` ; sans les rôles, celui du service.
+const poolIdentite = config.IDENTITY_DATABASE_URL
+  ? createPool(pg, {
+      connectionString: config.IDENTITY_DATABASE_URL,
+      applicationName: "mip-console-api-identite",
+      max: Math.max(2, Math.ceil(config.PGPOOL_MAX / 4)),
+      log,
+      metrics,
+      lifecycle,
+    })
+  : pool;
 
 const version = (config.RAILWAY_GIT_COMMIT_SHA ?? "dev").slice(0, 12);
 
@@ -120,12 +155,12 @@ brancherPool(pool);
 
 // Les sessions : signature ES256 PUIS ligne `console_session` (migration-v90),
 // jointe au compte, en cache 30 s par réplique — le délai maximal d'une révocation.
-const sessions = await creerVerificateurSession({ trousseau, db: pool });
+const sessions = await creerVerificateurSession({ trousseau, db: poolIdentite });
 
-/** Une transaction sur un client du pool : l'écriture et sa ligne d'audit partent ensemble. */
+/** Une transaction de l'identité, sur son pool : l'écriture et sa ligne d'audit partent ensemble. */
 const transacteur = {
   async transaction(fn) {
-    const client = await pool.connect();
+    const client = await poolIdentite.connect();
     try {
       await client.query("begin");
       const resultat = await fn(client);
@@ -175,6 +210,7 @@ const { table, contrat } = await creerTable({
   version,
   db: pool,
   identite: {
+    db: poolIdentite,
     transacteur,
     // La clé HMAC des compteurs est dérivée du secret client (HKDF) : pas de
     // secret de plus ; une rotation remet les compteurs à zéro (ils vivent 1 h).
@@ -218,7 +254,8 @@ startService({
 });
 
 log.info("console-api démarré", {
-  db: describeTarget(config.DATABASE_URL),
+  db: describeTarget(config.CONSOLE_DATABASE_URL ?? config.DATABASE_URL),
+  roles: roles === 2 ? "mip_console + mip_identity" : "propriétaire",
   operations: table.length,
   contrat: contrat.slice(0, 12),
   kid: trousseau.courante.kid,

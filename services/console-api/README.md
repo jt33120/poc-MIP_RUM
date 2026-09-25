@@ -39,7 +39,9 @@ La table des opérations, leurs politiques et les codes d'erreur sont dans **[do
 
 | Variable | Obligatoire | Rôle |
 |---|---|---|
-| `DATABASE_URL` | **oui** (secret) | Postgres, rôle propriétaire jusqu'à C13 |
+| `DATABASE_URL` | oui, **sauf** avec les deux suivantes (secret) | Postgres en rôle propriétaire — tant que les rôles de C13 ne sont pas posés |
+| `CONSOLE_DATABASE_URL` | non, **avec** la suivante (secret) | C13 — rôle `mip_console` (migration-v93) : écrans, commandes, RGPD. Posée, le service ne tient plus le propriétaire. |
+| `IDENTITY_DATABASE_URL` | non, **avec** la précédente (secret) | C13 — rôle `mip_identity` : connexion, sessions, débit d'authentification ; son propre pool. Une seule des deux : refus de démarrer. |
 | `CONSOLE_API_CLIENT_SECRETS` | **oui** (secret) | le secret client : `nouvelle` ou `nouvelle,ancienne` pendant une rotation, 32 caractères au moins chacune |
 | `SESSION_SIGNING_KEYS` | **oui** (secret) | jeu JWKS **privé** ES256, 1 ou 2 clés (la première signe) : `node scripts/ops/generer-cles-session.mjs --nouvelle \| pbcopy`. Un `kid` qui dit « test » ou « dev » est refusé hors poste de travail |
 | `CONSOLE_API_RATE_LIMIT` | non | appels par minute et par principal, par réplique (défaut 600 ; la console rejoue ses écrans toutes les 5 s) |

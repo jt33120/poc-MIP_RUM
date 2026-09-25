@@ -393,6 +393,9 @@ jobs:
           RELAY_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_relais
           CONTRACT_API_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_parite_api
           CONSOLE_API_AUTHZ_DATABASE_URL: postgres://postgres:postgres@localhost:5433/mip_rum_console_api
+          # C13 — la matrice fait tourner console-api SOUS SES RÔLES (migration-v93) :
+          # un droit oublié s'y voit comme un écran ou une commande en panne.
+          CONSOLE_API_AUTHZ_ROLES: "1"
         run: |
           for base in mip_rum_parite_next mip_rum_parite_collector mip_rum_relais mip_rum_parite_api mip_rum_console_api; do
             psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 \
@@ -402,6 +405,9 @@ jobs:
           done
           node services/api/build.mjs
           DATABASE_URL="$CONTRACT_API_DATABASE_URL" node scripts/ci/verify-db-roles.mjs
+          # C13 — les rôles de console-api, dans les deux sens et contre son bundle.
+          node services/console-api/build.mjs
+          DATABASE_URL="$CONSOLE_API_AUTHZ_DATABASE_URL" node scripts/ci/verify-db-roles-console.mjs
           pnpm test:contract
 
       # `...` entraîne `@mip/rum-core`, dont le SDK web inline les primitives.
