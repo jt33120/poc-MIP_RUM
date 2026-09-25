@@ -20,8 +20,9 @@
   le SDK est servi par la console (auto-hébergeable).
 - La **réception des mesures** passe par la route d'ingestion de la console, sur **Vercel**
   (`fra1`). Les **travaux planifiés**, l'**API de lecture pour les machines** (service `api`,
-  sur jeton, en lecture seule) et le **serveur MCP** tournent sur **Railway**, région
-  **`europe-west4` (Amsterdam)**.
+  sur jeton, en lecture seule), le **backend de la console** (service `console-api` :
+  comptes, sessions, écrans, écritures et demandes RGPD, pour le seul serveur de la
+  console) et le **serveur MCP** tournent sur **Railway**, région **`europe-west4` (Amsterdam)**.
 - **Donnée et traitement sont en UE. La souveraineté, non** : Neon, Vercel et Railway sont trois
   sociétés de droit américain. La résidence européenne des données n'est pas la souveraineté ;
   la cible reste un hébergeur de droit européen (cf. §8).
@@ -191,7 +192,7 @@ modification ni redistribution.
 |---|---|---|---|
 | Neon | base PostgreSQL managée | UE (Francfort, `aws-eu-central-1`) — société de droit américain | télémétrie, comptes |
 | Vercel Inc. | hébergement de la console et collecte des mesures | fonctions serveur en UE (Francfort, `fra1`) — société de droit américain | **télémétrie RUM en transit et en traitement** ; pas de stockage RUM |
-| Railway Corp. | travaux planifiés, API de lecture v1 (machines, sur jeton), serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | lecture des agrégats (travaux planifiés), réponses de l'API v1 et du MCP aux porteurs de jeton ; aucune écriture (rôle `mip_api`) |
+| Railway Corp. | travaux planifiés, API de lecture v1 (machines, sur jeton), backend de la console (`console-api`), serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | lecture des agrégats (travaux planifiés), réponses de l'API v1 et du MCP aux porteurs de jeton, sans écriture (rôle `mip_api`) ; comptes et sessions de la console, écrans, écritures et demandes RGPD (`console-api`, rôles `mip_identity` et `mip_console`), l'adresse d'un utilisateur de la console réduite à une empreinte HMAC dans les compteurs de débit de connexion, effacée après 24 h d'inactivité |
 | *[Fournisseur e-mail — à brancher]* | envoi des alertes (si activé) | *[à préciser — UE recommandé]* | adresse de destination |
 
 ## 8. Trajectoire de certification (gap analysis)

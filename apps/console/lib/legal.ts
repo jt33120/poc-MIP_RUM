@@ -35,9 +35,10 @@ export const HOSTS = {
   data: "Neon (base de données PostgreSQL sur infrastructure AWS, région aws-eu-central-1 — Francfort, Allemagne)",
   app: "Vercel Inc. (hébergement de l'application console et de la collecte des mesures ; fonctions serveur exécutées en région fra1 — Francfort, Allemagne)",
   // P4 : l'API de lecture v1 est aussi servie depuis Railway (service `api`),
-  // aux machines porteuses d'un jeton — voir SUBPROCESSORS.
+  // aux machines porteuses d'un jeton ; piste C : le backend de la console
+  // (service `console-api`) — voir SUBPROCESSORS.
   backend:
-    "Railway Corp. (hébergement des travaux planifiés, de l'API de lecture servie aux machines sur jeton et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
+    "Railway Corp. (hébergement des travaux planifiés, de l'API de lecture servie aux machines sur jeton, du backend de la console — comptes, sessions, écrans et écritures — et du serveur MCP de lecture — déployés en région europe-west4, Amsterdam, Pays-Bas)",
 } as const;
 
 /**
@@ -71,7 +72,16 @@ export const SUBPROCESSORS: { name: string; role: string; location: string }[] =
   // origine ; aucune adresse). Même donnée, même destinataire : ce qui change est
   // l'hébergeur qui la SERT, et c'est ce qu'il faut déclarer. Lecture seule, sous
   // un rôle de base sans aucun droit d'écriture (migration-v89).
-  { name: "Railway Corp.", role: "Hébergement des travaux planifiés, de l'API de lecture v1 (agrégats RUM servis aux machines porteuses d'un jeton, en lecture seule) et du serveur MCP de lecture", location: "États-Unis (société) — services déployés en UE (europe-west4, Amsterdam, Pays-Bas), relevé le 09/09/2026" },
+  // BACKEND DE LA CONSOLE (piste C). Le service `console-api` sert depuis Railway
+  // ce que la console lisait et écrivait elle-même : la connexion (vérification du
+  // mot de passe, sessions), les écrans, les écritures (tableaux de bord, alertes,
+  // administration) et les demandes RGPD. Seul client : le serveur de la console
+  // sur Vercel, qui lui transmet le jeton de session et, pour le débit de
+  // connexion, l'adresse de l'utilisateur de la console (jamais stockée en clair :
+  // une empreinte HMAC dans les compteurs de débit, effacée après 24 h
+  // d'inactivité, migration-v90). Même donnée, même base : ce qui change est
+  // l'hébergeur qui la TRAITE — les comptes de la console compris.
+  { name: "Railway Corp.", role: "Hébergement des travaux planifiés, de l'API de lecture v1 (agrégats RUM servis aux machines porteuses d'un jeton, en lecture seule), du backend de la console (comptes, sessions, écrans, écritures et demandes RGPD, pour le seul serveur de la console) et du serveur MCP de lecture", location: "États-Unis (société) — services déployés en UE (europe-west4, Amsterdam, Pays-Bas), relevé le 09/09/2026" },
   { name: "[Fournisseur e-mail — à brancher]", role: "Envoi des alertes e-mail (si activé)", location: "[à préciser — UE recommandé]" },
 ];
 
