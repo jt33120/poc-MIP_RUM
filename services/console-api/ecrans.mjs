@@ -12,12 +12,23 @@
 // le type de `@mip/console-api` refuse un écran du contrat sans chargeur.
 import { chargerActions } from "@/lib/chargeurs/actions";
 import { chargerCoquille } from "@/lib/chargeurs/coquille";
+import { chargerCorrelation } from "@/lib/chargeurs/correlation";
+import { chargerErreur } from "@/lib/chargeurs/erreur";
+import { chargerErrors } from "@/lib/chargeurs/errors";
 import { chargerEvents } from "@/lib/chargeurs/events";
 import { chargerExplorer } from "@/lib/chargeurs/explorer";
+import { chargerForecast } from "@/lib/chargeurs/forecast";
+import { chargerIssue } from "@/lib/chargeurs/issue";
+import { chargerMap } from "@/lib/chargeurs/map";
 import { chargerMobile } from "@/lib/chargeurs/mobile";
+import { chargerOverview } from "@/lib/chargeurs/overview";
+import { chargerPages } from "@/lib/chargeurs/pages";
 import { chargerRejeu } from "@/lib/chargeurs/rejeu";
 import { chargerSession } from "@/lib/chargeurs/session";
 import { chargerSessions } from "@/lib/chargeurs/sessions";
+import { chargerTrace } from "@/lib/chargeurs/trace";
+import { chargerTracing } from "@/lib/chargeurs/tracing";
+import { chargerUx } from "@/lib/chargeurs/ux";
 import { UnsupportedFilterError } from "@/lib/query-compiler";
 import { avecRequete } from "./shims/log-forward.mjs";
 
@@ -42,6 +53,18 @@ export const ecrans = {
     session: page(chargerSession),
     explorer: page(chargerExplorer),
     rejeu: page(chargerRejeu),
+    // C4
+    overview: page(chargerOverview),
+    forecast: page(chargerForecast),
+    pages: page(chargerPages),
+    ux: page(chargerUx),
+    map: page(chargerMap),
+    errors: page(chargerErrors),
+    erreur: page(chargerErreur),
+    issue: page(chargerIssue),
+    tracing: page(chargerTracing),
+    trace: page(chargerTrace),
+    correlation: page(chargerCorrelation),
   },
   refusDeFiltre: (e) => (e instanceof UnsupportedFilterError ? { code: e.error.code, message: e.error.message } : null),
 };

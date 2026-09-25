@@ -29,7 +29,7 @@ export interface TopActionRow {
    * n'est le temps d'attente de personne.
    */
   lie_p75_ms: number | null;
-  last_seen: Date;
+  last_seen: Date | string;
 }
 
 export interface ActionSummary {

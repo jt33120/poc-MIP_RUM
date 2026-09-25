@@ -71,9 +71,15 @@ const SESSION_A = "authz-session-a-0000000000000001";
  * pipeline ne la résout pas (portée `app`) — le chargeur relit son app et la
  * confronte au périmètre.
  */
+const EMPREINTE_A = "authz-fp-a-0001";
+const ISSUE_A = "00000000-0000-4000-8000-0000000a1551";
+const TRACE_A = "0123456789abcdef0123456789abcdef";
 const CHEMINS: Record<string, Record<string, string>> = {
   "screens.session": { id: SESSION_A },
   "replay.session": { sessionId: SESSION_A },
+  "screens.errorGroup": { fingerprint: EMPREINTE_A },
+  "screens.issue": { id: ISSUE_A },
+  "screens.trace": { traceId: TRACE_A },
 };
 
 /**
@@ -87,6 +93,24 @@ const VARIANTES: Record<string, string[]> = {
   sessions: ["cmp=prev", `panel=session:${SESSION_A}`, "split=browser"],
   session: ["tab=vitals"],
   explorer: ["run=1", "run=1&viz=timeseries&cmp=prev", "run=1&viz=table"],
+  overview: ["cmp=prev", "cmp=release", "split=browser&tri=volume"],
+  pages: ["cmp=prev", "cmp=release", "vital=INP", "panel=route:%2Fpanier"],
+  ux: ["cmp=prev", "type=rage"],
+  map: ["panel=noeud:front:%2Fpanier"],
+  errors: ["cmp=prev", "split=browser", `panel=error:${EMPREINTE_A}`],
+  erreur: ["legacy=1"],
+  tracing: ["cmp=prev", "appel=GET%20%2Fapi"],
+  correlation: ["cmp=prev"],
+};
+
+/**
+ * Les états d'un chargeur qui disent qu'il a ABOUTI (défaut : `ok`). La liste des
+ * erreurs bifurque (issues ou groupes historiques, P5.5) ; une issue demandée sous
+ * `app=all` est ramenée à son app (la page redirige) — deux décisions, pas des échecs.
+ */
+const ABOUTIS: Record<string, readonly string[]> = {
+  errors: ["groupes", "issues"],
+  issue: ["ok", "autre_app"],
 };
 
 /**
@@ -163,6 +187,9 @@ function cibles(p: Politique): Cible[] {
     await pool.query("delete from console_session where demo_email = $1 or user_id in (select id from console_user where email = any($2))", [DEMO_EMAIL, Object.values(EMAILS)]);
     await pool.query("delete from analytics_saved_view where app_id = any($1)", [[A, B]]);
     await pool.query("delete from replay_chunk where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from rum_error where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from error_issue where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from rum_span where app_id = any($1)", [[A, B]]);
     // Base dédiée à la matrice : les compteurs de débit d'authentification d'un passage
     // précédent (clés HMAC, illisibles) ne doivent pas refuser celui-ci en 429.
     await pool.query("delete from auth_throttle");
@@ -209,6 +236,20 @@ function cibles(p: Politique): Cible[] {
     await pool.query("insert into rum_session (session_id, app_id, started_at, last_seen_at, page_count) values ($1, $2, now() - interval '5 minutes', now(), 1)", [SESSION_A, A]);
     // Un segment de rejeu (gzip d'une liste d'événements rrweb) : la lecture passe par la fenêtre SQL du plafond.
     await pool.query("insert into replay_chunk (session_id, app_id, seq, body) values ($1, $2, 0, $3)", [SESSION_A, A, gzipSync(JSON.stringify([{ type: 4 }, { type: 2 }]))]);
+    // Un groupe d'erreurs, une issue et une trace de l'app A : ce que les pages de détail de C4 ouvrent.
+    await pool.query(
+      "insert into rum_error (app_id, ts, fingerprint, error_type, message, session_id) values ($1, now() - interval '2 minutes', $2, 'TypeError', 'authz', $3)",
+      [A, EMPREINTE_A, SESSION_A],
+    );
+    await pool.query(
+      `insert into error_issue (id, app_id, grouping_version, grouping_key, grouping_basis, origin, status_source, first_seen, last_seen)
+       values ($1, $2, 2, $3, 'normalized_frame', 'migration', 'migration', now() - interval '1 hour', now())`,
+      [ISSUE_A, A, "a".repeat(32)],
+    );
+    await pool.query(
+      "insert into rum_span (span_id, trace_id, tier, app_id, duration_ms, ts, session_id) values ('0123456789abcdef', $1, 'front', $2, 120, now() - interval '2 minutes', $3)",
+      [TRACE_A, A, SESSION_A],
+    );
 
     trousseau = await chargerTrousseau(await jeu("session-authz-a"), { production: false });
     const etranger = await chargerTrousseau(await jeu("session-authz-z"), { production: false });
@@ -383,7 +424,7 @@ function cibles(p: Politique): Cible[] {
             continue;
           }
           const { data } = (await res.json()) as { data: { etat?: string } };
-          if (data.etat !== "ok") ecarts.push(`${nom} : état ${data.etat}`);
+          if (!(ABOUTIS[cle] ?? ["ok"]).includes(data.etat ?? "")) ecarts.push(`${nom} : état ${data.etat}`);
           for (const chemin of echecs(data)) ecarts.push(`${nom} : section ${chemin} en échec`);
         }
       }

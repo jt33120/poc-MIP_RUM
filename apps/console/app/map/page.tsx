@@ -37,7 +37,9 @@ import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { classerParGravite, SEUIL_ECHANTILLON_FAIBLE } from "@/lib/impact";
-import { lire, type Lecture } from "@/lib/lecture";
+import { type SectionLue } from "@/lib/lecture";
+import { chargerMap } from "@/lib/chargeurs/map";
+import { chargerEcran } from "@/lib/ecran-local";
 import {
   CAP_COLONNE,
   apiHealth,
@@ -53,11 +55,8 @@ import {
   type GNode,
   type Health,
 } from "@/lib/map";
-import { pageFilters } from "@/lib/page-filters";
 import { bucketStarts, hrefWithQuery, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
-import { mapEdges, mapNodeSerie, mapNodes, mapPages, type MapNodeRow } from "@/lib/queries-map";
-import { traceCoverage } from "@/lib/queries-tracing";
-import { samplingSessions } from "@/lib/queries-sessions";
+import { type MapNodeRow } from "@/lib/queries-map";
 import { RATING_CLASS, RATING_LABEL, rating2026 } from "@/lib/rating";
 import { grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, lireEtatDeVue, ligneIgnoree } from "@/lib/view-state";
@@ -92,9 +91,9 @@ export default async function ExperienceMapPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const ecran = await pageFilters(sp, "/map");
-  if (!ecran.ok) return <FilterProblemNotice title="Carte d'expérience" problem={ecran.problem} />;
-  const f = ecran.filters;
+  // Le chargeur (`lib/chargeurs/map.ts`) lit le graphe, et la série d'un nœud ouvert.
+  const ecran = await chargerEcran(chargerMap, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Carte d'expérience" problem={ecran.problem} />;
   const query = ecran.query;
   const lecteur = paramReader(sp);
   const { etat: vue, ignores } = lireEtatDeVue("/map", lecteur);
@@ -110,18 +109,7 @@ export default async function ExperienceMapPage({
   ];
 
   // Chaque section a son sort : une lecture en échec n'efface pas les autres (§ 3.8).
-  const [noeuds, aretes, pages, couverture, echantillonnage] = await Promise.all([
-    lire(() => mapNodes(f)),
-    lire(() => mapEdges(f)),
-    lire(() => mapPages(f)),
-    // La couverture du graphe est celle du tracing, lue par SA fonction : deux
-    // calculs du même chiffre finiraient par diverger (et `mapEdges` plafonne à
-    // 80 lignes, donc ne peut pas servir de dénominateur).
-    lire(() => traceCoverage(f)),
-    lire(() => samplingSessions(f, { avecSpans: true })),
-  ]);
-  // B37 : la série du panneau n'est lue que si un panneau est ouvert.
-  const serieNoeud = panneau ? await lire(() => mapNodeSerie(f, panneau.cote, panneau.route)) : null;
+  const { noeuds, aretes, pages, couverture, echantillonnage, serieNoeud } = ecran;
 
   const lignes = noeuds.ok ? noeuds.data : [];
   const parId = new Map(lignes.map((r) => [`${r.tier}:${r.route}`, r] as const));
@@ -596,7 +584,7 @@ function PanneauNoeud({
 }: {
   panneau: { cote: "front" | "back"; route: string };
   ligne: MapNodeRow | null;
-  serie: Lecture<{ t: string; p75: number | null; appels: number }[]> | null;
+  serie: SectionLue<{ t: string; p75: number | null; appels: number }[]> | null;
   classes: MapNodeRow[];
   query: AnalyticsQuery;
   plage: string;

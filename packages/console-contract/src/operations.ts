@@ -204,6 +204,19 @@ export const ECRANS = Object.freeze({
   explorer: ecran("screens.explorer", "/v1/screens/explorer"),
   /** Les événements rrweb d'une session, pour le lecteur (plafonnés par session). */
   rejeu: ecran<{ sessionId: string }>("replay.session", "/v1/replays/{sessionId}"),
+  // C4 — vue d'ensemble, performance, erreurs, traces, corrélation.
+  overview: ecran("screens.overview", "/v1/screens/overview"),
+  forecast: ecran("screens.forecast", "/v1/screens/forecast"),
+  pages: ecran("screens.pages", "/v1/screens/pages"),
+  ux: ecran("screens.ux", "/v1/screens/ux"),
+  map: ecran("screens.map", "/v1/screens/map"),
+  errors: ecran("screens.errors", "/v1/screens/errors"),
+  /** Un groupe d'erreurs par son empreinte (qui n'identifie pas un groupe : le chargeur résout). */
+  erreur: ecran<{ fingerprint: string }>("screens.errorGroup", "/v1/screens/errors/{fingerprint}"),
+  issue: ecran<{ id: string }>("screens.issue", "/v1/screens/errors/issues/{id}"),
+  tracing: ecran("screens.tracing", "/v1/screens/tracing"),
+  trace: ecran<{ traceId: string }>("screens.trace", "/v1/screens/tracing/{traceId}"),
+  correlation: ecran("screens.correlation", "/v1/screens/correlation"),
 });
 export type CleEcran = keyof typeof ECRANS;
 

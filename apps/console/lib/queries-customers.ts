@@ -12,9 +12,9 @@ export interface CustomerRow {
   allowed_origins: string[];
   created_by: string | null;
   notes: string | null;
-  created_at: Date;
+  created_at: Date | string;
   sessions_7d: number;
-  last_event_at: Date | null;
+  last_event_at: Date | string | null;
 }
 
 export async function listCustomers(): Promise<CustomerRow[]> {

@@ -49,7 +49,7 @@ export function vuePublique(view: SavedViewRow): Record<string, unknown> {
     revision: view.revision,
     mine: view.mine,
     owner_email: view.owner_email,
-    created_at: view.created_at.toISOString(),
-    updated_at: view.updated_at.toISOString(),
+    created_at: new Date(view.created_at).toISOString(),
+    updated_at: new Date(view.updated_at).toISOString(),
   };
 }

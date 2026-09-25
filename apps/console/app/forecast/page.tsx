@@ -35,7 +35,6 @@ import { KpiTile } from "@/components/charts/KpiTile";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EtatSurface, type Etat } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
-import { getUser } from "@/lib/auth";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import {
@@ -46,16 +45,13 @@ import {
   buildForecastNarrative,
   cleJour,
   echeanceLcp,
-  joursComplets,
   pointsTendance,
   projectAt,
   tendance,
   type Tendance,
 } from "@/lib/forecast";
 import { liensDesJours } from "@/lib/forecast-liens";
-import { SOURCES_TENDANCES, couvertureJour } from "@/lib/forecast-comparaison";
-import { bornesJourLocal, fuseauDe } from "@/lib/fuseau";
-import { listDeploys } from "@/lib/queries-deploys";
+import { bornesJourLocal } from "@/lib/fuseau-local";
 import { instantDe, jourDans } from "@/lib/series";
 import {
   JOURS_VALIDES_REQUIS_RUPTURE,
@@ -71,10 +67,10 @@ import {
 // Le seuil publié dans « Méthode » est FORMATÉ par la même fonction que les p des
 // phrases : deux écritures du même nombre finiraient par diverger.
 import { formaterP } from "@/lib/stats/surrepresentation";
-import { lire } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
+import { chargerForecast } from "@/lib/chargeurs/forecast";
+import { chargerEcran } from "@/lib/ecran-local";
 import { ratioPour100 } from "@/lib/perf-domain";
-import { dailyLcpSeries, dailyTraffic, GRID_DAYS } from "@/lib/queries-grid";
+import { GRID_DAYS } from "@/lib/queries-grid";
 import { hrefWithQuery } from "@/lib/query-contract";
 import { THRESHOLDS } from "@/lib/rating";
 
@@ -131,27 +127,12 @@ function Methode() {
 }
 
 export default async function Tendances({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const ecran = await pageFilters(await searchParams, "/forecast");
-  if (!ecran.ok) return <FilterProblemNotice title="Tendances" problem={ecran.problem} />;
-  const f = ecran.filters;
-  const query = ecran.query;
-  const [fuseau, user, traficLu, lcpLu, deploysLu] = await Promise.all([
-    fuseauDe(query.scope.requestedApp),
-    getUser(),
-    lire(() => dailyTraffic(f, { exclureAujourdhui: true })),
-    lire(() => dailyLcpSeries(f, { exclureAujourdhui: true })),
-    // P*.7 : les marqueurs servent UNIQUEMENT à dire qu'un déploiement tombe le
-    // même jour qu'une rupture ; leur absence n'empêche pas la datation.
-    lire(() => listDeploys(f, 20)),
-  ]);
+  // Le chargeur (`lib/chargeurs/forecast.ts`) lit les quatorze jours, les marqueurs
+  // et la couverture du jour de référence ; un jour y voyage en clé « AAAA-MM-JJ ».
+  const ecran = await chargerEcran(chargerForecast, await searchParams);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Tendances" problem={ecran.problem} />;
+  const { query, fuseau, jours, traficLu, lcpLu, deploysLu, couvLcp, couvRatio, couvVues, peutEcrire } = ecran;
 
-  // L'AXE : les 14 jours complets rendus par la lecture (même expression SQL pour
-  // les deux) ; sans aucune lecture, ceux du fuseau de l'app, calculés ici.
-  const jours = lcpLu.ok
-    ? lcpLu.data.map((r) => r.jour)
-    : traficLu.ok
-      ? traficLu.data.map((t) => cleJour(t.day))
-      : joursComplets(fuseau, Date.now(), GRID_DAYS);
   const dernier = jours.length - 1;
   const semainePrecedente = dernier - 7;
 
@@ -174,16 +155,6 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
   const courant = [...tLcp.retenues].reverse().find((v) => v !== null) ?? null;
   const eta = echeanceLcp(tLcp.fit, courant);
   const synthese = buildForecastNarrative([{ label: "LCP p75", thresholdLabel: LCP_BON_TEXTE, eta, tendance: tLcp }]);
-
-  // Jour de référence des tuiles (même jour, semaine précédente) : sa couverture est
-  // LUE (§ 3.2) — une collecte commencée ce jour-là ne donne pas « +1 900 % ».
-  const jourRef = jours[semainePrecedente];
-  const [couvLcp, couvRatio, couvVues] = await Promise.all([
-    jourRef && lcpLu.ok ? couvertureJour(query, SOURCES_TENDANCES.lcp, jourRef, fuseau, mesures[semainePrecedente] ?? 0) : null,
-    jourRef && traficLu.ok ? couvertureJour(query, SOURCES_TENDANCES.ratio, jourRef, fuseau, vues[semainePrecedente] ?? 0) : null,
-    // Un compte de pages vues n'est pas un échantillon : pas de garde d'effectif, seulement la couverture.
-    jourRef && traficLu.ok ? couvertureJour(query, SOURCES_TENDANCES.vues, jourRef, fuseau, null) : null,
-  ]);
 
   // ─────────────── Liens (bornes UTC du jour local, § 3.3) ───────────────
   const gabarit = (chemin: string) => hrefWithQuery(chemin, query, { period: null, from: "{from}", to: "{to}" });
@@ -218,7 +189,6 @@ export default async function Tendances({ searchParams }: { searchParams: Promis
           ),
         ]
       : [];
-  const peutEcrire = user?.role === "admin" && !user.demo;
   const lienAlerte = (() => {
     const p = new URLSearchParams();
     if (query.scope.requestedApp) p.set("app", query.scope.requestedApp);

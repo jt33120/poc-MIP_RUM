@@ -13,54 +13,22 @@ import {
   echelleCommune,
   noteEchelle,
 } from "@/components/errors/ListeErreurs";
-import { GROUPES_DU_HERO, HeroGroupesErreurs, TuilesErreurs, type PartLue } from "@/components/errors/ApercuErreurs";
+import { HeroGroupesErreurs, TuilesErreurs } from "@/components/errors/ApercuErreurs";
 import { PanneauErreur } from "@/components/errors/PanneauErreur";
 import { SectionErreur } from "@/components/states/SectionErreur";
-import { errorGroupHref, errorSearchParams, errorsHref, fmtCount } from "@/components/errors/error-view";
-import {
-  groupingState,
-  issueModeFor,
-  listIssues,
-  parseIssueCursor,
-  parseIssueListPage,
-  parseIssueRelease,
-  parseIssueSource,
-  parseIssueStatus,
-} from "@/lib/error-issues";
+import { errorGroupHref, errorSearchParams, errorsHref, fmtCount } from "@/lib/error-view";
 import type { SearchParams } from "@/lib/filters";
-import { pageFilters } from "@/lib/page-filters";
+import { chargerErrors } from "@/lib/chargeurs/errors";
+import { chargerEcran } from "@/lib/ecran-local";
 import { fmtDate } from "@/lib/format";
 import { BasculeTri, Breakdown } from "@/components/Breakdown";
 import { ERRORS_BREAKDOWN_COLUMNS, errorsBreakdownItems } from "@/components/breakdown-view";
-import {
-  BREAKDOWN_NOTICES,
-  BREAKDOWN_PARAM,
-  availableBreakdowns,
-  breakdownTabs,
-  datasetAvailability,
-  parseBreakdown,
-} from "@/lib/breakdowns";
-import { dimensionSchema } from "@/lib/query-schema";
-import { ERRORS_BREAKDOWN_DATASETS, errorsBreakdown } from "@/lib/queries-breakdowns";
-import {
-  ERROR_LIST_MAX_OFFSET,
-  listErrorGroups,
-  nouveauxGroupes,
-  parseErrorListPage,
-  partSessionsTouchees,
-  topGroupesSeries,
-  totauxErreurs,
-  type ErrorFilters,
-  type ErrorGroupRef,
-  type OrdreGroupes,
-} from "@/lib/queries-errors";
-import { listDeploys } from "@/lib/queries-deploys";
+import { BREAKDOWN_NOTICES, BREAKDOWN_PARAM, breakdownTabs, datasetAvailability } from "@/lib/breakdowns";
+import { ERRORS_BREAKDOWN_DATASETS } from "@/lib/queries-breakdowns";
+import { ERROR_LIST_MAX_OFFSET, parseErrorListPage, type ErrorGroupRef, type OrdreGroupes } from "@/lib/queries-errors";
 import { annotationsDeploiements } from "@/lib/annotations";
-import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
-import { lire, type Lecture } from "@/lib/lecture";
 import { referencePeriodePrecedente } from "@/lib/perf-domain";
-import { UnsupportedFilterError } from "@/lib/query-compiler";
-import { bucketStarts, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
+import { bucketStarts, paramReader } from "@/lib/query-contract";
 import { grilleIso } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
 
@@ -69,49 +37,14 @@ export const dynamic = "force-dynamic";
 /** Question de l'écran (P1, § 5.3). */
 const QUESTION = "Quelles erreurs touchent le plus de sessions, depuis quand, et après quelle release ?";
 
-// Sources comparées à la période précédente (§ 3.2). Occurrences, sessions touchées
-// et groupes apparus sont des comptes d'erreurs (additifs : la fin d'une fenêtre
-// d'une heure attend encore des lignes) ; la part des sessions touchées divise par
-// des sessions avec VUE : les pages vues doivent aussi être collectées sur toute la
-// période précédente.
-const SOURCES_ERREURS: SourceComparaison[] = [{ table: "rum_error", colonneTemps: "ts", additive: true }];
-const SOURCES_PART: SourceComparaison[] = [
-  { table: "rum_error", colonneTemps: "ts", additive: false },
-  { table: "rum_pageview", colonneTemps: "started_at", additive: false },
-];
-
-/** Lecture non lancée (hors `cmp=prev`) : aucune valeur, jamais affichée comme mesure. */
-const sansLecture = Promise.resolve(null);
-
-/** Première couverture incomplète d'une rangée de sources, sinon « complète ». */
-async function couvertureDe(query: AnalyticsQuery, sources: SourceComparaison[]): Promise<CouverturePrecedente> {
-  const couvertures = await Promise.all(
-    sources.flatMap((s) => sourcesSousFiltres(query, s)).map((s) => couverturePrecedente(query, s)),
-  );
-  return couvertures.find((c) => c.etat !== "complete") ?? { etat: "complete", raison: null };
-}
-
-/**
- * La part des sessions touchées divise par des sessions avec VUE : un filtre que les
- * pages vues ne portent pas (`service`, que seules les erreurs déclarent) la rend
- * incalculable. C'est un refus du contrat pour CETTE tuile — l'écran, lui, sait
- * filtrer ses erreurs : il reste affiché.
- */
-async function partLue(f: ErrorFilters, shift: boolean): Promise<PartLue> {
-  try {
-    return { lu: await partSessionsTouchees(f, undefined, shift) };
-  } catch (e) {
-    if (e instanceof UnsupportedFilterError) return { refus: e.message };
-    throw e;
-  }
-}
-
 export default async function Errors({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  // Le périmètre signé borne la lecture AVANT tout filtre d'URL (AD-16 : aucune app = aucun accès).
-  const ecran = await pageFilters(sp, "/errors");
-  if (!ecran.ok) return <FilterProblemNotice title="Erreurs JS" problem={ecran.problem} />;
-  const f = ecran.deviceFilters;
+  // Le chargeur (`lib/chargeurs/errors.ts`) lit tout : découpage, bifurcation P5.5,
+  // tuiles, liste (issues ou groupes) et panneau du groupe ouvert. Le périmètre signé
+  // y borne la lecture AVANT tout filtre d'URL (AD-16 : aucune app = aucun accès).
+  const ecran = await chargerEcran(chargerErrors, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Erreurs JS" problem={ecran.problem} />;
+  const f = ecran.f;
   const { label, bucketLabel, query } = ecran;
   const { range } = query;
   const url = errorSearchParams(sp);
@@ -134,10 +67,9 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   // dimensions que les occurrences d'erreurs portent réellement. Calculé avant la
   // bifurcation P5.5 : les deux listes — issues et groupes historiques — montrent
   // le même découpage, sur la même population.
-  const schema = await dimensionSchema();
+  const schema = new Set(ecran.schema);
   const dispoDecoupage = datasetAvailability(ERRORS_BREAKDOWN_DATASETS, schema);
-  const dimension = parseBreakdown(url.get(BREAKDOWN_PARAM), availableBreakdowns(dispoDecoupage));
-  const decoupe = dimension ? await errorsBreakdown(f, dimension) : null;
+  const { dimension, decoupe } = ecran;
   // Les filtres propres à l'écran suivent l'onglet, et réciproquement : changer de
   // découpage ne doit pas effacer un triage en cours, ni paginer remettre l'onglet
   // au défaut. La pagination, elle, repart du début — la population a changé.
@@ -164,8 +96,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
 
   // P5.5 : l'app choisie (ou une app du périmètre « toutes ») a activé le
   // regroupement v2 → la liste passe aux issues. Sinon, liste historique.
-  const apps = ecran.query.scope.authorizedApps;
-  const modeIssues = issueModeFor(await groupingState(apps), f.app);
+  const modeIssues = ecran.modeIssues;
   if (modeIssues && vue.tri !== null && vue.tri !== "statut") {
     avertissements.push(ligneIgnoree("tri", vue.tri, "la liste des issues garde son ordre de triage"));
   }
@@ -216,19 +147,9 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   // échec », les autres restent. La période précédente n'est lue qu'en `cmp=prev`
   // (défaut de l'écran) ; sa couverture décide si un delta a le droit d'exister.
   const prev = vue.cmp === "prev";
-  const [totaux, totauxPrec, part, partPrec, nouveaux, nouveauxPrec, top, deploys, couvErreurs, couvPart] =
-    await Promise.all([
-      lire(() => totauxErreurs(f)),
-      prev ? lire(() => totauxErreurs(f, true)) : sansLecture,
-      lire(() => partLue(f, false)),
-      prev ? lire(() => partLue(f, true)) : sansLecture,
-      lire(() => nouveauxGroupes(f)),
-      prev ? lire(() => nouveauxGroupes(f, true)) : sansLecture,
-      lire(() => topGroupesSeries(f, GROUPES_DU_HERO)),
-      lire(() => listDeploys(ecran.filters, 20)),
-      prev ? couvertureDe(query, SOURCES_ERREURS) : Promise.resolve(undefined),
-      prev ? couvertureDe(query, SOURCES_PART) : Promise.resolve(undefined),
-    ]);
+  const { totaux, totauxPrec, part, partPrec, nouveaux, nouveauxPrec, top, deploys } = ecran;
+  const couvErreurs = ecran.couvErreurs ?? undefined;
+  const couvPart = ecran.couvPart ?? undefined;
 
   // Liens de l'écran vers lui-même : l'app TOUJOURS explicite (`errorsHref`, « all »
   // sous toutes les apps), sans quoi la porte projet substituerait l'app du cookie.
@@ -304,25 +225,15 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
       </div>
     ) : null;
 
-  if (modeIssues) {
-    const status = parseIssueStatus(url.get("status"));
-    const source = parseIssueSource(url.get("source"));
-    const release = parseIssueRelease(url.get("release"));
-    const cursor = parseIssueCursor(url.get("cursor"));
-    if (status === undefined || source === undefined || release === undefined) {
-      return <IssueListInvalid f={f} raison="Filtre invalide : statut ou source inconnus, ou release de plus de 200 caractères." />;
-    }
-    if (cursor === undefined) {
-      return <IssueListInvalid f={f} raison="Curseur de pagination invalide : il ne provient pas de cette console." />;
-    }
-    const filtres = { status, source, release };
-    const result = await listIssues(f, filtres, { limit: parseIssueListPage(url).limit, cursor }, { apps, overview: true });
+  if (ecran.etat === "issues_invalides") return <IssueListInvalid f={f} raison={ecran.raison} />;
+  if (ecran.etat === "issues") {
+    const { filtres, result } = ecran;
     return (
       <IssueList
         f={f}
         filtres={filtres}
         result={result}
-        curseur={cursor !== null}
+        curseur={ecran.curseur}
         limit={url.get("limit")}
         label={label}
         bucketLabel={bucketLabel}
@@ -335,12 +246,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
     );
   }
 
-  const { groups, total, totalFiltre, trend, sampling, enrichment, unfingerprinted } = await listErrorGroups(f, page, {
-    series: true,
-    tri,
-    nouveaux: nouveauxSeuls,
-    statut: statut ?? undefined,
-  });
+  const { groups, total, totalFiltre, trend, sampling, enrichment, unfingerprinted } = ecran.liste;
   // Liste restreinte (groupes apparus, statut de triage) : elle se pagine sur LEUR
   // nombre, pas sur celui de tous les groupes (les totaux de l'écran, eux, ne
   // changent pas). Sous filtre de statut, la lecture rend le compte retenu ;
@@ -596,11 +502,10 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
       {decoupage && <div className="mt-6">{decoupage}</div>}
 
       {/* Panneau du groupe ouvert (F20, § 5.3.3) : blocs 1 à 5, sur la plage de l'écran. */}
-      {ouvert && (
+      {ouvert && ecran.panneau && (
         <PanneauErreur
           groupe={ouvert}
-          f={f}
-          filtres={ecran.filters}
+          lecture={ecran.panneau.lecture}
           range={range}
           label={label}
           bucketLabel={bucketLabel}

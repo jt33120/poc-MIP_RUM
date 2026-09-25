@@ -259,7 +259,7 @@ export interface SlowTrace {
   front_ms: number;
   back_ms: number | null;
   network_ms: number | null;
-  ts: Date;
+  ts: Date | string;
 }
 
 export interface TraceSpanRow {
@@ -273,7 +273,7 @@ export interface TraceSpanRow {
   method: string | null;
   status_code: number | null;
   duration_ms: number;
-  ts: Date;
+  ts: Date | string;
   app_id: string;
   session_id: string | null;
 }

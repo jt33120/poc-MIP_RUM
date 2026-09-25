@@ -19,7 +19,7 @@ import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EtatSurface, type Etat } from "@/components/states/EtatSurface";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { formater, formatDuVital, type VitalName } from "@/lib/fmt-ids";
-import type { Lecture } from "@/lib/lecture";
+import type { SectionLue } from "@/lib/lecture";
 import { bucketLabel } from "@/lib/query-contract";
 import { libelleSeauComplet, type Annotation, type PointSerie, type SerieDef } from "@/lib/series";
 import { pointsCharge, pointsRelease, pointsVital, serieVide, sommeLue, type SeauVital } from "@/lib/vue-ensemble";
@@ -53,12 +53,12 @@ const ligneSeau = (t: string, seau: number) => libelleSeauComplet(t, seau, "UTC"
 export interface LectureVital {
   vital: VitalName;
   /** `vitalSeriesN(f, vital)` : toute la population filtrée. */
-  courant: Lecture<SeauVital[]>;
+  courant: SectionLue<SeauVital[]>;
   /** `vitalSeriesN(f, vital, true)` en `cmp=prev`, si la période précédente est complète. */
-  precedent?: Lecture<SeauVital[]> | null;
+  precedent?: SectionLue<SeauVital[]> | null;
   /** `cmp=release` : la release B et la référence A, même fenêtre. */
-  releaseB?: Lecture<SeauVital[]> | null;
-  releaseA?: Lecture<SeauVital[]> | null;
+  releaseB?: SectionLue<SeauVital[]> | null;
+  releaseA?: SectionLue<SeauVital[]> | null;
   explorer: string;
 }
 
@@ -185,11 +185,11 @@ export function HeroCwv({
 // ─────────────────────────────── Zone 6 — « Charge, erreurs et LCP » ───────────────────────────────
 
 export interface LecturesCharge {
-  vues: Lecture<{ bucket: string; chargements: number; spa: number; inconnu: number }[]>;
-  erreurs: Lecture<{ restreint: boolean; points: { bucket: string; navigateur: number; sansSource: number }[] }>;
-  lcp: Lecture<SeauVital[]>;
+  vues: SectionLue<{ bucket: string; chargements: number; spa: number; inconnu: number }[]>;
+  erreurs: SectionLue<{ restreint: boolean; points: { bucket: string; navigateur: number; sansSource: number }[] }>;
+  lcp: SectionLue<SeauVital[]>;
   /** Période précédente du LCP (`cmp=prev`, complète) : série grise sur le panneau (3) seulement. */
-  lcpPrecedent?: Lecture<SeauVital[]> | null;
+  lcpPrecedent?: SectionLue<SeauVital[]> | null;
 }
 
 /** Un panneau de la figure : son titre (la population comptée), puis le graphique ou son état. */

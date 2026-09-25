@@ -7,7 +7,7 @@ import { isValidEventName } from "./queries-events";
 import { binder, bucketExpr, compileScope, sessionJoin } from "./query-compiler";
 import type { AnalyticsQuery } from "./query-contract";
 import { sqlContext, type SqlContext } from "./query-sql";
-import { ecrireSerie } from "./correlation-serie";
+import { EFFECTIF_MIN_HEURE, ecrireSerie } from "./correlation-serie";
 import { THRESHOLDS, type Rating } from "./rating";
 import { ALERT_METRICS, ISSUE_METRIC, metricLabel } from "./alertes-metriques";
 // Métriques d'alerte et de SLO, comparateurs et libellés : `alertes-metriques.ts`,
@@ -108,7 +108,7 @@ export interface AlertRuleRow {
   window_minutes: number;
   webhook_url: string | null;
   active: boolean;
-  created_at: Date;
+  created_at: Date | string;
   mode: string;
   severity: string;
   sensitivity: number;
@@ -120,7 +120,7 @@ export interface AlertRuleRow {
   last_state: RuleState | null;
   last_value: number | null;
   last_reason: string | null;
-  last_evaluated_at: Date | null;
+  last_evaluated_at: Date | string | null;
 }
 
 /**
@@ -156,7 +156,7 @@ export interface AlertEventRow {
   rule_id: number | null;
   /** SLO dont le burn rapide a déclenché l'événement (`check_slo_burn`) ; null sinon. */
   slo_id: number | null;
-  fired_at: Date;
+  fired_at: Date | string;
   value: number | null;
   message: string | null;
   acknowledged: boolean;
@@ -344,7 +344,7 @@ export interface AlertFiringRow {
   /** Identifiant de la règle, du SLO ou de l'issue ; « nouvelles-erreurs » pour la piste sans source. */
   source_id: string;
   libelle: string;
-  fired_at: Date;
+  fired_at: Date | string;
   severity: string;
   delivered: number;
   pending: number;
@@ -568,12 +568,9 @@ export interface CorrCardRow {
   syn_measures: string | null;
 }
 
-/**
- * Effectif minimal d'une heure × (app, route) pour que son LCP p75 réel entre dans
- * un verdict robot / réel (matrice de concordance, angles morts). En dessous, un
- * p75 horaire tient à quelques visites : il est compté à part, « réel insuffisant ».
- */
-export const EFFECTIF_MIN_HEURE = 30;
+// L'effectif minimal d'une heure (`EFFECTIF_MIN_HEURE`) vit dans le module PUR
+// `correlation-serie.ts` : un composant qui l'affiche n'a pas à tirer la base.
+export { EFFECTIF_MIN_HEURE } from "./correlation-serie";
 
 /**
  * CTE `rum` et `syn` filtrées ; `grain` ajoute le seau aligné UTC — une heure
@@ -646,7 +643,7 @@ export async function correlationRoutes(f: FiltersLike): Promise<{ app_id: strin
 }
 
 export interface CorrSeriesRow {
-  bucket: Date;
+  bucket: Date | string;
   rum_lcp_p75: number | null;
   /** Mesures LCP de l'heure (effectif du point) ; `null` : aucune mesure réelle. */
   rum_lcp_n: number | null;
@@ -682,7 +679,7 @@ export async function correlationSeries(app: string, route: string, f: FiltersLi
 export interface BlindSpotRow {
   app_id: string;
   route: string | null;
-  bucket: Date;
+  bucket: Date | string;
   rum_lcp_p75: number;
   /** Mesures LCP réelles de l'heure : au moins `EFFECTIF_MIN_HEURE`. */
   rum_lcp_n: number;
@@ -735,7 +732,7 @@ function effectifValide(effectifMin: number): number {
 export interface SyntheticFreshnessRow {
   app_id: string;
   /** Dernier passage du robot sur la plage ; `null` : aucun passage. */
-  dernier: Date | null;
+  dernier: Date | string | null;
   /** Intervalle médian entre deux passages d'un même scénario ; `null` : moins de deux. */
   intervalle_median_s: number | null;
   /** Exécutions de scénario sur la plage (lignes `syn_snapshot`). */
@@ -903,7 +900,7 @@ export interface CorrJourRow {
   app_id: string;
   route: string;
   /** Début du jour UTC (seau de 86 400 secondes aligné sur l'origine UTC). */
-  jour: Date;
+  jour: Date | string;
   /** Premier chargement moyen du robot ce jour-là ; `null` : aucun passage. */
   syn_latency_avg: number | null;
   /** LCP p75 réel du jour ; `null` : aucune mesure. */

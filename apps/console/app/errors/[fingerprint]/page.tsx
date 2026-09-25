@@ -14,37 +14,20 @@ import {
   TuilesDetailErreur,
   VersionsTouchees,
   porteeOccurrences,
-  type PartGroupe,
 } from "@/components/errors/DetailErreur";
 import { SectionErreur } from "@/components/states/SectionErreur";
 import { GroupingBasisBadge, IssueStatusBadge } from "@/components/errors/IssueBadges";
-import { errorGroupHref, errorSearchParams, errorsHref, issueHref } from "@/components/errors/error-view";
+import { errorGroupHref, errorSearchParams, errorsHref, issueHref } from "@/lib/error-view";
 import { annotationsDeploiements } from "@/lib/annotations";
-import { getUser } from "@/lib/auth";
-import { lire } from "@/lib/lecture";
-import { listDeploys } from "@/lib/queries-deploys";
-import { UnsupportedFilterError } from "@/lib/query-compiler";
 import { bucketStarts } from "@/lib/query-contract";
 import { grilleIso } from "@/lib/series";
 import { gabaritZoom } from "@/lib/view-state";
-import { legacyIssueTargets, type LegacyIssueTarget } from "@/lib/error-issues";
+import { type LegacyIssueTarget } from "@/lib/error-issues";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
-import { pageFilters } from "@/lib/page-filters";
-import { authorizedScope } from "@/lib/query-contract";
-import {
-  errorGroupDetail,
-  errorScopeFor,
-  isFingerprintParam,
-  parseErrorCursor,
-  parseOccurrencesPage,
-  partSessionsTouchees,
-  releasesDuGroupe,
-  resolveErrorGroup,
-  scopeApps,
-  type ErrorFilters,
-  type ErrorGroupRef,
-} from "@/lib/queries-errors";
+import { chargerErreur } from "@/lib/chargeurs/erreur";
+import { chargerEcran } from "@/lib/ecran-local";
+import { type ErrorFilters, type ErrorGroupRef } from "@/lib/queries-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -62,19 +45,13 @@ export default async function ErrorGroup({
   } catch {
     /* valeur brute conservée */
   }
-  if (!isFingerprintParam(fingerprint)) notFound();
-
-  const user = await getUser();
-  const ecran = await pageFilters(sp, `/errors/${encodeURIComponent(fingerprint)}`);
-  if (!ecran.ok) return <FilterProblemNotice title="Erreurs JS" problem={ecran.problem} />;
-  const f = ecran.deviceFilters;
-  const { label, bucketLabel, query } = ecran;
-  const { range } = query;
-  const url = errorSearchParams(sp);
-  // `legacy=1` : le détail historique lui-même, même quand des issues le reprennent.
-  const historique = url.get("legacy") === "1";
-  const cursor = parseErrorCursor(url.get("cursor"));
-  if (cursor === undefined) {
+  // Le chargeur (`lib/chargeurs/erreur.ts`) résout le groupe et rend une DÉCISION :
+  // la page l'exécute (404, redirection vers l'issue, choix à proposer, détail).
+  const d = await chargerEcran(chargerErreur, sp, { fingerprint });
+  if (d.etat === "introuvable") notFound();
+  if (d.etat === "refus") return <FilterProblemNotice title="Erreurs JS" problem={d.problem} />;
+  const f = d.f;
+  if (d.etat === "curseur_invalide") {
     return (
       <div className="animate-fade-up">
         <BackLink f={f} />
@@ -87,83 +64,14 @@ export default async function ErrorGroup({
       </div>
     );
   }
+  if (d.etat === "issue") redirect(issueHref(d.issue, f));
+  if (d.etat === "choix_issues") return <IssueChooser groupRef={d.groupe} f={f} issues={d.issues} />;
+  if (d.etat === "choix_app") return <GroupChooser fingerprint={d.fingerprint} f={f} absentFrom={d.absentFrom} choices={d.choices} />;
 
-  // ANCIENNES URL (P5.5). Quand le regroupement v2 est actif pour l'app, une issue
-  // qui reprend seule ce groupe prend le relais ; plusieurs issues se choisissent
-  // explicitement. Avec une app nommée, avant toute lecture de la fenêtre : une
-  // issue dont le bug se tait garde son URL. Le détail historique reste à `legacy=1`.
-  const relais = async (groupe: ErrorGroupRef) => {
-    if (historique) return null;
-    const issues = await legacyIssueTargets(groupe);
-    if (issues?.length === 1) redirect(issueHref({ id: issues[0].id, app_id: groupe.app_id }, f));
-    return issues && issues.length > 1 ? <IssueChooser groupRef={groupe} f={f} issues={issues} /> : null;
-  };
-  if (f.app) {
-    const choix = await relais({ app_id: f.app, fingerprint });
-    if (choix) return choix;
-  }
-
-  // RÉSOLUTION. Une empreinte n'identifie pas un groupe : deux apps peuvent la
-  // partager, et l'ancien détail en retenait une au hasard (`limit 1`). L'app
-  // demandée d'abord — une empreinte présente dans A et B s'ouvre sur A si l'URL le
-  // dit. Sinon (« all », ou absente de l'app demandée sur cette fenêtre), on
-  // cherche dans le périmètre signé ; plusieurs candidates → on fait choisir.
-  const explicite = f.app ? await resolveErrorGroup(fingerprint, f, null) : null;
-  let ref: ErrorGroupRef;
-  if (explicite?.kind === "found") {
-    ref = explicite.ref;
-  } else {
-    const recherche = await resolveErrorGroup(
-      fingerprint,
-      { ...f, app: null, query: authorizedScope(ecran.query) },
-      scopeApps(errorScopeFor(user)),
-    );
-    if (recherche.kind === "not_found") notFound();
-    if (recherche.kind === "ambiguous" || f.app) {
-      const choices =
-        recherche.kind === "ambiguous"
-          ? recherche.candidates.map((c) => ({
-              app_id: c.app_id,
-              detail: `${c.occurrences.toLocaleString("fr-FR")} occurrence(s) · dernière vue ${fmtDate(c.last_seen)}`,
-            }))
-          : [{ app_id: recherche.ref.app_id, detail: null }];
-      return <GroupChooser fingerprint={fingerprint} f={f} absentFrom={f.app} choices={choices} />;
-    }
-    ref = recherche.ref;
-  }
-
-  // Groupe trouvé dans une autre app que celle de l'URL : ses issues, s'il en a.
-  if (ref.app_id !== f.app) {
-    const choix = await relais(ref);
-    if (choix) return choix;
-  }
-
-  const detail = await errorGroupDetail(ref, { ...f, app: ref.app_id }, {
-    limit: parseOccurrencesPage(url).limit,
-    cursor,
-  });
-  // Résolue puis disparue entre les deux lectures (rétention, purge) : introuvable.
-  if (!detail) notFound();
-  const { group, last, occurrences, trend, page, sampling, enrichment } = detail;
-  const fGroupe: ErrorFilters = { ...f, app: ref.app_id };
-
-  // CHAQUE LECTURE EST INDÉPENDANTE (§ 3.8) : la part, les versions et les
-  // déploiements sont trois sections, et l'échec de l'une n'efface pas les autres.
-  // La part du groupe divise par des sessions avec VUE : un filtre que les pages
-  // vues ne portent pas (`service`) la refuse — c'est un refus de contrat pour
-  // CETTE phrase, pas une panne de l'écran (V10).
-  const [part, releases, deploys] = await Promise.all([
-    lire<PartGroupe>(async () => {
-      try {
-        return { lu: await partSessionsTouchees(fGroupe, ref) };
-      } catch (e) {
-        if (e instanceof UnsupportedFilterError) return { refus: e.message };
-        throw e;
-      }
-    }),
-    lire(() => releasesDuGroupe(ref, fGroupe)),
-    lire(() => listDeploys({ ...ecran.filters, app: ref.app_id }, 20)),
-  ]);
+  const { ref, label, bucketLabel, query, cursor, historique, part, releases, deploys, pile, lectureSeule } = d;
+  const { range } = query;
+  const url = errorSearchParams(sp);
+  const { group, last, occurrences, trend, page, sampling, enrichment } = d.detail;
 
   // La limite demandée suit la pagination ; le curseur ne suit jamais un changement de filtre.
   const pageExtra = {
@@ -181,8 +89,7 @@ export default async function ErrorGroup({
   const annotations = annotationsDeploiements(deploys.ok ? deploys.data : [], range, {
     lien: (relB, relA) => errorGroupHref(group, f, { cmp: "release", rel_b: relB, ...(relA ? { rel_a: relA } : {}) }),
   });
-  // Écriture : viewer et compte de démonstration sont en lecture seule (V9).
-  const lectureSeule = !(user?.role === "admin" && !user.demo);
+  // Écriture : viewer et compte de démonstration sont en lecture seule (V9) — lu par le chargeur.
   // Ce que couvrent les occurrences affichées (blocs 1 et 5) : en paginant, ni « la
   // fenêtre » ni « les plus récentes » — cette page seulement.
   const portee = porteeOccurrences({ curseur: cursor !== null, suite: page.next_cursor !== null });
@@ -265,7 +172,7 @@ export default async function ErrorGroup({
       </div>
 
       {/* ── Bloc 6 : pile du dernier exemplaire ── */}
-      <ErrorStackCard appId={group.app_id} last={last} admin={user?.role === "admin" && !user.demo} />
+      <ErrorStackCard last={last} pile={pile} />
 
       {/* ── Bloc 7 : occurrences ── */}
       <ErrorOccurrences

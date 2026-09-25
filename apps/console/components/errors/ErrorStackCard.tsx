@@ -1,32 +1,27 @@
 // Stack du dernier exemplaire d'un groupe historique ou d'une issue, avec sa
 // release, son environnement déclaré, sa vue et sa position source. Rendu serveur.
-import { adminCodeContext, exemplarSymbolication, type StackSymbolication } from "@/lib/error-symbolication";
+//
+// Ce qui est lu — la symbolication, et le contexte de code réservé à
+// l'administrateur — l'est par le chargeur de l'écran (`lib/chargeurs/pile-erreur.ts`,
+// C4) : ce composant rend ce qu'il reçoit, sur le fil.
+import type { Fil } from "@mip/console-contract";
+import type { PileErreur } from "@/lib/chargeurs/pile-erreur";
 import { fmtDate } from "@/lib/format";
-import { stackSymbolisable } from "@/lib/erreurs-sources";
 import type { ErrorExemplar } from "@/lib/queries-errors";
-import type { CodeContext } from "@/lib/sourcemap";
 
-export async function ErrorStackCard({
-  appId,
+type StackSymbolication = NonNullable<Fil<PileErreur>["symbolication"]>;
+type CodeContext = NonNullable<Fil<PileErreur>["contexte"]>;
+
+export function ErrorStackCard({
   last,
-  admin,
+  pile,
 }: {
-  appId: string;
   last: ErrorExemplar | null;
-  /** Admin hors démo : contexte de code autour de la première frame résolue. */
-  admin: boolean;
+  /** La pile lue par le chargeur : symbolication, et contexte de code pour l'admin hors démo. */
+  pile: Fil<PileErreur>;
 }) {
-  // Stack source (P0 #3, P5.4) : écrite par l'ingestion, sinon symbolisée à la
-  // lecture si une map est arrivée depuis. L'admin voit en plus le code autour de
-  // la première frame résolue ; jamais le viewer, jamais l'API. Jamais sur une
-  // stack backend (P5.3) : une map navigateur n'en décrit aucune frame.
-  const symbolication = stackSymbolisable(last?.error_source ?? null)
-    ? await exemplarSymbolication(appId, last, { positions: admin })
-    : null;
+  const { symbolication, contexte } = pile;
   const deminified = symbolication?.symbolication_status === "resolved" && !!symbolication.stack_symbolicated;
-  const premiere = symbolication?.positions[0];
-  const contexte =
-    admin && deminified && premiere && last?.release ? await adminCodeContext(appId, last.release, premiere) : null;
 
   return (
     <div className="card mb-6 overflow-hidden">

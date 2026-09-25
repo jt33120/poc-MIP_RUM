@@ -8,7 +8,7 @@ export interface SourcemapRelease {
   release: string;
   files: number;
   size_bytes: number;
-  last_uploaded_at: Date;
+  last_uploaded_at: Date | string;
 }
 
 /**
@@ -21,8 +21,8 @@ export interface SourcemapFile {
   filename: string;
   size_bytes: number;
   checksum: string;
-  created_at: Date;
-  uploaded_at: Date;
+  created_at: Date | string;
+  uploaded_at: Date | string;
   uploaded_by: string | null;
   status: SourcemapFileStatus;
 }
@@ -65,7 +65,7 @@ export async function releaseManifest(appId: string, release: string): Promise<R
     ...row,
     status: (row.uploaded_by === null
       ? "legacy"
-      : row.uploaded_at.getTime() > row.created_at.getTime()
+      : new Date(row.uploaded_at).getTime() > new Date(row.created_at).getTime()
         ? "replaced"
         : "ok") as SourcemapFileStatus,
   }));

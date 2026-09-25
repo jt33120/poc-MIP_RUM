@@ -67,7 +67,7 @@ export function ErrorTriage({
   status: ErrorStatus;
   regressed: boolean;
   /** Date de passage en « résolue » (`error_status.resolved_at`) ; `null` : jamais résolue. */
-  resolvedAt?: Date | null;
+  resolvedAt?: Date | string | null;
   lectureSeule?: boolean;
 }) {
   const meta = STATUS_META[status];

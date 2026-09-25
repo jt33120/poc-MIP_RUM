@@ -15,7 +15,7 @@ export * from "./deploys-verdict";
 
 export interface DeployRow {
   id: number;
-  ts: Date;
+  ts: Date | string;
   version: string | null;
   env: string;
   source: string;

@@ -37,7 +37,7 @@ export function retardRobot(
   toMs: number,
 ): RetardRobot {
   if (fraicheur.dernier === null) return { etat: "aucun_passage" };
-  const retardMs = Math.max(0, toMs - fraicheur.dernier.getTime());
+  const retardMs = Math.max(0, toMs - new Date(fraicheur.dernier).getTime());
   if (fraicheur.passages < 2 || fraicheur.intervalle_median_s === null || fraicheur.intervalle_median_s <= 0) {
     return { etat: "intervalle_inconnu", retardMs };
   }
@@ -257,7 +257,11 @@ export function lignesRetard(fraicheurs: readonly SyntheticFreshnessRow[], toMs:
 /** Le passage le plus récent du périmètre (CR6), ou `null` s'il n'y en a aucun. */
 export function dernierPassage(fraicheurs: readonly Pick<SyntheticFreshnessRow, "dernier">[]): Date | null {
   let plusRecent: Date | null = null;
-  for (const f of fraicheurs) if (f.dernier && (!plusRecent || f.dernier.getTime() > plusRecent.getTime())) plusRecent = f.dernier;
+  for (const f of fraicheurs) {
+    // Une `Date` lue en base (gardée telle quelle), ou une chaîne ISO reçue d'un chargeur (sur le fil).
+    const dernier = f.dernier === null ? null : f.dernier instanceof Date ? f.dernier : new Date(f.dernier);
+    if (dernier && (!plusRecent || dernier.getTime() > plusRecent.getTime())) plusRecent = dernier;
+  }
   return plusRecent;
 }
 

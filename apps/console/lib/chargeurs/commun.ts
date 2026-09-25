@@ -14,8 +14,9 @@
 //      l'échec journalisé côté serveur, le refus de filtre relancé —, mais la
 //      raison reste au journal : sur le fil ne passe que `lecture_en_echec`.
 import type { Fil, Section } from "@mip/console-contract";
+import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "../comparaison";
 import { catalogueDe, lireChoix } from "../dashboard-blocs";
-import type { SearchParamsRecord } from "../query-contract";
+import type { AnalyticsQuery, SearchParamsRecord } from "../query-contract";
 import { lire } from "../lecture";
 
 /** Le principal d'un chargeur : celui de la session (console) ou relu en base (console-api). `null` : aucune session. */
@@ -78,4 +79,20 @@ export function blocsDe(sp: ParametresEcran, href: string): Record<string, boole
   if (!cat) throw new Error(`écran sans catalogue de blocs : ${href}`);
   const brut = sp[PARAM_BLOCS];
   return lireChoix(cat, typeof brut === "string" ? brut : undefined);
+}
+
+/**
+ * La couverture de la période précédente d'une rangée de sources (§ 3.2) : la
+ * première incomplète, sinon « complète ». Un delta contre une période à moitié
+ * mesurée mesurerait la collecte, pas le site.
+ */
+export async function couvertureDesSources(
+  query: AnalyticsQuery,
+  sources: SourceComparaison | readonly SourceComparaison[],
+): Promise<CouverturePrecedente> {
+  const liste = Array.isArray(sources) ? sources : [sources as SourceComparaison];
+  const couvertures = await Promise.all(
+    liste.flatMap((s) => sourcesSousFiltres(query, s)).map((s) => couverturePrecedente(query, s)),
+  );
+  return couvertures.find((c) => c.etat !== "complete") ?? { etat: "complete", raison: null };
 }

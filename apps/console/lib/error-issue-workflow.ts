@@ -58,7 +58,7 @@ export interface IssueLink {
   url: string;
   label: string;
   created_by: IssueUserRef | null;
-  created_at: Date;
+  created_at: Date | string;
 }
 
 export interface IssueActivity {
@@ -78,7 +78,7 @@ export interface IssueActivity {
   /** Régression : release de référence dépassée. */
   reference_release: string | null;
   env: string | null;
-  created_at: Date;
+  created_at: Date | string;
 }
 
 /** État de workflow d'une issue après une mutation. */
@@ -88,12 +88,12 @@ export interface IssueWorkflowState {
   status: IssueStatus;
   status_source: "system" | "migration" | "user";
   assignee: IssueUserRef | null;
-  resolved_at: Date | null;
+  resolved_at: Date | string | null;
   resolved_by: IssueUserRef | null;
   resolved_release: string | null;
   resolved_env: string | null;
   revision: string;
-  updated_at: Date;
+  updated_at: Date | string;
 }
 
 export type WorkflowResult<T> =
@@ -253,7 +253,7 @@ interface ActivitySqlRow extends Omit<IssueActivity, "link"> {
   link_url: string | null;
   link_label: string | null;
   link_created_by: IssueUserRef | null;
-  link_created_at: Date | null;
+  link_created_at: Date | string | null;
   cursor_id: string;
   cursor_ts: string;
 }
