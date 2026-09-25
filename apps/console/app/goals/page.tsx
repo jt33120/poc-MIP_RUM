@@ -19,14 +19,8 @@ import { KpiTile } from "@/components/charts/KpiTile";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { CadreEtat } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
-import { getUser } from "@/lib/auth";
 import { breakdownDrillHref } from "@/lib/breakdowns";
-import {
-  couverturePrecedente,
-  sourcesSousFiltres,
-  type CouverturePrecedente,
-  type SourceComparaison,
-} from "@/lib/comparaison";
+import { type CouverturePrecedente } from "@/lib/comparaison";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import {
@@ -40,18 +34,10 @@ import {
   lignesAppareils,
   meilleurObjectif,
 } from "@/lib/goals";
-import { lire, type Lecture } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
-import { listApps } from "@/lib/queries";
-import {
-  goalConversions,
-  goalConversionsByDevice,
-  listGoals,
-  type GoalConversionLue,
-  type GoalConversionsParAppareil,
-} from "@/lib/queries-goals";
+import { chargerGoals } from "@/lib/chargeurs/goals";
+import { chargerEcran } from "@/lib/ecran-local";
+import { listGoals, type GoalConversionLue, type GoalConversionsParAppareil } from "@/lib/queries-goals";
 import { hrefWithQuery, paramReader, previousRange, rangeLabel } from "@/lib/query-contract";
-import { dimensionSchema } from "@/lib/query-schema";
 import { intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
 import { lireComparaison } from "@/lib/view-state";
 import { createGoalAction, deleteGoalAction, toggleGoalAction } from "./actions";
@@ -62,11 +48,6 @@ const pct = (v: number | null) => formater("pct", v);
 
 /** La population de l'écran, nommée dans chaque méta (S1, R-P). */
 const POPULATION = "sessions ayant au moins une vue sur la fenêtre";
-
-/** Le dénominateur se compare sur les pages vues : c'est d'elles qu'il est compté. */
-const SOURCE_DENOMINATEUR: SourceComparaison = { table: "rum_pageview", colonneTemps: "started_at", additive: true };
-
-const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
 
 /** « 1 session », « 20 sessions ». */
 const sessions = (n: number) => `${formater("count", n)} ${n > 1 ? "sessions" : "session"}`;
@@ -90,27 +71,17 @@ const FORMAT_DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
 
 export default async function Goals({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/goals");
-  if (!ecran.ok) return <FilterProblemNotice title="Conversions" problem={ecran.problem} />;
-  const f = ecran.deviceFilters;
+  // Le chargeur (`lib/chargeurs/goals.ts`) lit les conversions et, pour un
+  // administrateur (décidé par son principal), la gestion des objectifs (G6).
+  const ecran = await chargerEcran(chargerGoals, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Conversions" problem={ecran.problem} />;
   const query = ecran.query;
   // Comparaison (F06) : `cmp=prev` compare le dénominateur à la période précédente,
   // seulement si celle-ci est COMPLÈTE (§ 3.2) ; défaut de l'écran : aucune.
   const prev = lireComparaison("/goals", paramReader(sp)).valeur.mode === "prev";
-  const user = await getUser();
-  const isAdmin = user?.role === "admin";
-
-  const [lecture, lecturePrev, parAppareil, couvertures, schema, gestion] = await Promise.all([
-    lire(() => goalConversions(f)),
-    prev ? lire(() => goalConversions(f, true)) : sansLecture(null),
-    lire(() => goalConversionsByDevice(f)),
-    prev
-      ? Promise.all(sourcesSousFiltres(query, SOURCE_DENOMINATEUR).map((s) => couverturePrecedente(query, s)))
-      : Promise.resolve<CouverturePrecedente[]>([]),
-    dimensionSchema(),
-    // Gestion (G6) : le périmètre du principal, jamais l'app demandée seule.
-    isAdmin ? lire(() => Promise.all([listApps(), listGoals(query.scope.effectiveApps)])) : sansLecture(null),
-  ]);
+  const { isAdmin, lecture, lecturePrev, parAppareil, couvertures, gestion } = ecran;
+  const schema = new Set(ecran.schema);
+  const f = { app: ecran.app };
   const error = typeof sp.error === "string" ? sp.error : null;
 
   const rep = lecture.ok ? lecture.data : null;

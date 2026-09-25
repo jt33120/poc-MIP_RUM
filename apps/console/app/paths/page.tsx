@@ -28,35 +28,25 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
-import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import { lire, type Lecture } from "@/lib/lecture";
+import { chargerPaths, etapesDeLEntonnoir, TOP_BORDS, TOP_TRANSITIONS } from "@/lib/chargeurs/paths";
+import { chargerEcran } from "@/lib/ecran-local";
 import { couvertureDeTuile, gesteElargir, plafondAtteint, plageDansPhrase } from "@/lib/lecture-usages";
-import { pageFilters } from "@/lib/page-filters";
 import { hrefWithQuery, paramReader, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
-import { sessionsAvecVue } from "@/lib/queries";
-import { availableEvents, funnelReport } from "@/lib/queries-funnel";
-import { entryExitRoutes, lcpDesRoutes, routeTransitions, type LcpDeRoute, type RouteCountRow, type TransitionRow } from "@/lib/queries-paths";
-import { samplingSessions } from "@/lib/queries-sessions";
+import { type LcpDeRoute, type RouteCountRow, type TransitionRow } from "@/lib/queries-paths";
 import { buildSankey } from "@/lib/sankey";
 import { referencePrecedente } from "@/lib/sessions-kpi";
-import { gabaritZoom, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
+import { gabaritZoom, lireEtatDeVue } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
 
-/** Plafonds des lectures de l'écran (S4 : un plafond atteint est dit à côté du chiffre). */
-const TOP_TRANSITIONS = 50;
-const TOP_BORDS = 15;
 /** Routes proposées à l'ancrage : les départs du flux dessiné (8 nœuds par côté, `buildSankey`). */
 const ANCRES_PROPOSEES = 8;
 
 /** Les populations de l'écran, nommées dans chaque méta (S1, R-P). */
 const POPULATION_VUES = "sessions ayant au moins une vue sur la fenêtre";
 const POPULATION_TRANSITIONS = "passages d'une route à une autre (boucles A→A exclues)";
-
-/** Les transitions se comparent sur les pages vues : c'est d'elles qu'elles sont lues. */
-const SOURCE_VUES: SourceComparaison = { table: "rum_pageview", colonneTemps: "started_at", additive: true };
 
 const PART_LECTURE =
   "Part de toutes les sessions = sessions de la ligne / sessions ayant au moins une vue sur la même plage (une seule définition, R-P) : jamais la somme des routes affichées. « Sessions à une vue » : sessions dont cette route est la SEULE vue de la plage — elles y entrent et en sortent. « LCP p75 » : toutes les mesures LCP de la route sur la plage, pas seulement celles de ces sessions.";
@@ -79,38 +69,18 @@ function departs(transitions: TransitionRow[]): string[] {
 
 export default async function Paths({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/paths");
-  if (!ecran.ok) return <FilterProblemNotice title="Parcours" problem={ecran.problem} />;
-  const f = ecran.deviceFilters;
+  // Le chargeur (`lib/chargeurs/paths.ts`) lit transitions, bords, entonnoir et
+  // leur LCP ; la page relit les étapes par la même fonction que lui.
+  const ecran = await chargerEcran(chargerPaths, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Parcours" problem={ecran.problem} />;
   const query = ecran.query;
   const lecteur = paramReader(sp);
   const { etat, ignores } = lireEtatDeVue("/paths", lecteur);
   const depuis = etat.depuis;
-  // Comparaison (F06, F53) : `cmp=prev` sur la tuile chiffrée, période précédente COMPLÈTE seulement.
-  const prev = lireComparaison("/paths", lecteur).valeur.mode === "prev";
   // Lot 6c : étapes du funnel depuis s1..s4 (form GET), ordonnées, vides ignorées.
-  const steps = [1, 2, 3, 4]
-    .map((i) => (typeof sp[`s${i}`] === "string" ? (sp[`s${i}`] as string) : ""))
-    .filter(Boolean);
+  const steps = etapesDeLEntonnoir(sp);
   // Une lecture par section (§ 3.8) : l'échec de l'une n'efface pas les autres.
-  const [transitions, ancrees, bords, avecVue, events, funnel, echantillonnage, transitionsPrev, couvertures] = await Promise.all([
-    lire(() => routeTransitions(f, TOP_TRANSITIONS)),
-    depuis ? lire(() => routeTransitions(f, TOP_TRANSITIONS, { depuis })) : Promise.resolve(null),
-    lire(() => entryExitRoutes(f, TOP_BORDS)),
-    // Le dénominateur des parts : UNE définition (R-P), sur la même plage que les bords.
-    lire(() => sessionsAvecVue(f)),
-    lire(() => availableEvents(f)),
-    steps.length >= 2 ? lire(() => funnelReport(f, steps)) : Promise.resolve(null),
-    // S7 : sessions dont les vues sont lues par les transitions et les bords.
-    lire(() => samplingSessions(f, { population: { lecture: "vues" } })),
-    prev ? lire(() => routeTransitions(f, TOP_TRANSITIONS, { shift: true })) : Promise.resolve(null),
-    prev
-      ? Promise.all(sourcesSousFiltres(query, SOURCE_VUES).map((s) => couverturePrecedente(query, s)))
-      : Promise.resolve<CouverturePrecedente[]>([]),
-  ]);
-  // LCP p75 des routes de bord : les routes ne sont connues qu'après la lecture des bords.
-  const routesDeBord = bords.ok ? [...new Set([...bords.data.entries, ...bords.data.exits].map((r) => r.route))] : [];
-  const lcp: Lecture<LcpDeRoute[]> | null = bords.ok ? await lire(() => lcpDesRoutes(f, routesDeBord)) : null;
+  const { transitions, ancrees, bords, avecVue, events, funnel, echantillonnage, transitionsPrev, couvertures, lcp } = ecran;
   const lcpParRoute = lcp?.ok ? new Map(lcp.data.map((l) => [l.route, l])) : null;
 
   const plage = ecran.label;

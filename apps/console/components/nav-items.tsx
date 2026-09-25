@@ -1,6 +1,7 @@
 // Modèle de navigation partagé par la sidebar (catégories) et la barre de
 // sous-onglets (pages d'une même catégorie). Objectif : peu de titres de menu,
 // chaque catégorie regroupant ses pages sœurs. Couleur = domaine (cf. tailwind).
+import { estFermee } from "@/lib/capacites";
 import type { IconName } from "./icons";
 
 /**
@@ -125,7 +126,7 @@ export const CATEGORIES: NavCategory[] = [
   // console.*. Le SDK navigateur n'émet aucun log : la colonne `source` prévoit
   // 'sdk' et 'extension', rien ne produit ces valeurs. C'est de l'observabilité
   // back-end corrélée au RUM par trace_id, pas une mesure de l'expérience vécue.
-  { href: "/logs", label: "Logs", icon: "logs", domain: "neutral", verrouille: true },
+  { href: "/logs", label: "Logs", icon: "logs", domain: "neutral", verrouille: estFermee("/logs") },
   // Supervision SVI (serveur vocal). Produit distinct du RUM web : un appel n'est
   // pas une visite, cf. migration-v51. La vue d'ensemble porte le containment NET.
   // Fermée comme la supervision IA : capacité annoncée, accès non ouvert. Les
@@ -136,7 +137,7 @@ export const CATEGORIES: NavCategory[] = [
     label: "Supervision SVI",
     icon: "activity",
     domain: "neutral",
-    verrouille: true,
+    verrouille: estFermee("/svi"),
     children: [
       { href: "/svi", label: "Vue d'ensemble" },
       { href: "/svi/appels", label: "Appels" },
@@ -145,7 +146,7 @@ export const CATEGORIES: NavCategory[] = [
   // Espace PARTENAIRE (sponsorisé xSOM) — supervision IA lue depuis xSOM AI Guard,
   // distincte du RUM MIP (cf. ADR-0001). Fermée pour l'instant : l'entrée reste
   // visible pour annoncer la capacité, mais ne mène nulle part.
-  { href: "/ai", label: "Supervision IA", icon: "ai", domain: "neutral", verrouille: true },
+  { href: "/ai", label: "Supervision IA", icon: "ai", domain: "neutral", verrouille: estFermee("/ai") },
   // « API et MCP » : les deux manières de sortir la donnée du portail. L'API REST
   // pour un front ou un partenaire, le serveur MCP pour un agent IA. Même socle
   // — le MCP n'est qu'un client de l'API v1 — donc une seule page.

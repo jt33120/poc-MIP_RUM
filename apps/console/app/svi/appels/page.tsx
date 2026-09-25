@@ -16,9 +16,8 @@ import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import { fmtDate } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
-import { pageFilters } from "@/lib/page-filters";
-import { periodLabel, v2FiltersOf } from "@/lib/queries-v2";
-import { sviCalls, sviOutcomesByHour, sviSummary } from "@/lib/queries-svi";
+import { chargerSviAppels } from "@/lib/chargeurs/svi";
+import { chargerEcran } from "@/lib/ecran-local";
 import { fmtDuration, journeyCoverage, outcomeLabel, outcomeRates } from "@/lib/svi-outcome";
 
 export const dynamic = "force-dynamic";
@@ -48,16 +47,11 @@ export default async function AppelsSvi({ searchParams }: { searchParams?: Promi
     );
   }
 
-  const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/svi/appels");
-  if (!ecran.ok) return <FilterProblemNotice title="Appels SVI" problem={ecran.problem} />;
-  const f = v2FiltersOf(ecran.query);
-
-  const [rows, sum, parHeure] = await Promise.all([
-    sviCalls(f),
-    sviSummary(f),
-    sviOutcomesByHour(f),
-  ]);
+  // Le chargeur (`lib/chargeurs/svi.ts`) lit les appels, la synthèse et les issues par heure.
+  const ecran = await chargerEcran(chargerSviAppels, (await searchParams) ?? {});
+  if (ecran.etat === "fermee") return <CapaciteFermee titre="Supervision SVI" sujet="Supervision du serveur vocal interactif." />;
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Appels SVI" problem={ecran.problem} />;
+  const { rows, sum, parHeure, periode } = ecran;
 
   const taux = outcomeRates(sum);
   const couverture = journeyCoverage(sum.total, sum.with_journey);
@@ -75,11 +69,11 @@ export default async function AppelsSvi({ searchParams }: { searchParams?: Promi
     <>
       <PageHeader
         title="Appels"
-        sub={`Supervision du serveur vocal — ${periodLabel(f)}`}
+        sub={`Supervision du serveur vocal — ${periode}`}
       />
 
       <SupervisionHero
-        chartTitle={`Issues des appels par heure — ${periodLabel(f)}`}
+        chartTitle={`Issues des appels par heure — ${periode}`}
         chartMeta={
           <span className="text-xs text-ink-soft">
             {sum.total.toLocaleString("fr-FR")} appel(s)

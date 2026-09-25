@@ -30,12 +30,7 @@ import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { annotationsDeploiements } from "@/lib/annotations";
-import {
-  couverturePrecedente,
-  sourcesSousFiltres,
-  type CouverturePrecedente,
-  type SourceComparaison,
-} from "@/lib/comparaison";
+import { type CouverturePrecedente } from "@/lib/comparaison";
 import {
   AVIS_FAIBLE_SOUS,
   AVIS_MIN_NUAGE,
@@ -48,18 +43,11 @@ import {
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { classerParGravite } from "@/lib/impact";
-import { lire, type Lecture } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
+import { type SectionLue } from "@/lib/lecture";
+import { chargerExperience } from "@/lib/chargeurs/experience";
+import { chargerEcran } from "@/lib/ecran-local";
 import { categorie } from "@/lib/palette";
-import { vitalsBreakdown } from "@/lib/queries-breakdowns";
-import { listDeploys } from "@/lib/queries-deploys";
 import {
-  experienceContext,
-  feedbackByRoute,
-  feedbackStats,
-  feedbackTrendContrat,
-  frustrationSessionsCommencees,
-  recentFeedback,
   type FeedbackRow,
   type FrustrationSessionsCommencees,
   type FeedbackStats,
@@ -75,12 +63,6 @@ export const dynamic = "force-dynamic";
 
 const TITRE = "Satisfaction";
 const CHEMIN = "/experience";
-
-// Sources des écarts à la période précédente (§ 3.2) : les avis sont des
-// `rum_event`. Une PART n'est pas un compte : le retard d'ingestion touche son
-// numérateur et son dénominateur, elle n'est pas traitée comme additive.
-const SOURCE_PART: SourceComparaison = { table: "rum_event", colonneTemps: "ts", additive: false };
-const SOURCE_COMPTE: SourceComparaison = { table: "rum_event", colonneTemps: "ts", additive: true };
 
 const HEURE_UTC = new Intl.DateTimeFormat("fr-FR", {
   timeZone: "UTC",
@@ -129,9 +111,9 @@ function ecartPoints(valeur: number | null, reference: number | null): { valeur:
 
 export default async function Satisfaction({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const sp = (await searchParams) ?? {};
-  const ecran = await pageFilters(sp, CHEMIN);
-  if (!ecran.ok) return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
-  const f = ecran.filters;
+  // Le chargeur (`lib/chargeurs/experience.ts`) lit filtres et sections.
+  const ecran = await chargerEcran(chargerExperience, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const q = ecran.query;
   const label = ecran.label;
   const lecteur = paramReader(sp);
@@ -140,26 +122,11 @@ export default async function Satisfaction({ searchParams }: { searchParams?: Pr
   // de cet écran Performance) ; ses écarts ne s'affichent que si elle est COMPLÈTE.
   const comparaison = lireComparaison(CHEMIN, lecteur).valeur;
   const prev = comparaison.mode === "prev";
-  const couvertures = (source: SourceComparaison) =>
-    Promise.all(sourcesSousFiltres(q, source).map((s) => couverturePrecedente(q, s)));
   const triLu = lireTri(CHEMIN, lecteur);
 
   // CHAQUE LECTURE EST INDÉPENDANTE (§ 3.8 règle 1) : une lecture en échec ne dit que
   // son propre échec, les autres sections s'affichent.
-  const [stats, statsPrev, contexte, frustration, tendance, recents, parPage, lcpPages, deploys, couvPart, couvCompte] =
-    await Promise.all([
-      lire(() => feedbackStats(f)),
-      prev ? lire(() => feedbackStats(f, true)) : Promise.resolve(null),
-      lire(() => experienceContext(f)),
-      lire(() => frustrationSessionsCommencees(f)),
-      lire(() => feedbackTrendContrat(f)),
-      lire(() => recentFeedback(f)),
-      lire(() => feedbackByRoute(f)),
-      lire(() => vitalsBreakdown(f, "route", 200)),
-      lire(() => listDeploys(f, 20)),
-      prev ? couvertures(SOURCE_PART) : Promise.resolve<CouverturePrecedente[]>([]),
-      prev ? couvertures(SOURCE_COMPTE) : Promise.resolve<CouverturePrecedente[]>([]),
-    ]);
+  const { stats, statsPrev, contexte, frustration, tendance, recents, parPage, lcpPages, deploys, couvPart, couvCompte } = ecran;
 
   const s = stats.ok ? stats.data : null;
   const p = statsPrev?.ok ? statsPrev.data : null;
@@ -459,7 +426,7 @@ function HeroSatisfaction({
   annotations,
   zoom,
 }: {
-  tendance: Lecture<FeedbackTrendContratPoint[]>;
+  tendance: SectionLue<FeedbackTrendContratPoint[]>;
   label: string;
   bucketLabel: string;
   seauSecondes: number;
@@ -656,7 +623,7 @@ function Verbatims({
   q,
   label,
 }: {
-  recents: Lecture<FeedbackRow[]>;
+  recents: SectionLue<FeedbackRow[]>;
   q: AnalyticsQuery;
   label: string;
 }): ReactNode {

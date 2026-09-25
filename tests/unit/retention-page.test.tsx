@@ -18,7 +18,10 @@ const { retentionCohorts, samplingSessions, pageFilters } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/queries-cohorts", () => ({ retentionCohorts }));
 vi.mock("@/lib/queries-sessions", () => ({ samplingSessions }));
-vi.mock("@/lib/page-filters", () => ({ pageFilters }));
+// Le chargeur de l'écran lit ses filtres par `analyserFiltres` (C5, `lib/filtres-ecran.ts`).
+// `chargerEcran` lit la session (`lib/ecran-local.ts`).
+vi.mock("@/lib/auth", () => ({ getUser: async () => ({ email: "a@b", role: "admin", apps: null }) }));
+vi.mock("@/lib/filtres-ecran", () => ({ analyserFiltres: pageFilters }));
 vi.mock("@/lib/log-forward", () => ({ forwardLog: async () => {} }));
 // « Réessayer » exige le routeur de l'app, absent d'un rendu isolé.
 vi.mock("@/components/states/SectionErreur", () => ({
