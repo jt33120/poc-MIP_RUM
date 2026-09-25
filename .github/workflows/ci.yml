@@ -424,6 +424,14 @@ jobs:
       - name: Tests E2E
         run: pnpm exec playwright test
 
+      # C12 — LES GARDES DE M4, EN RELEVÉ : ce qui, dans la console construite pour
+      # l'E2E, atteint encore la base (imports, traçage du build, garde
+      # d'environnement). Non bloquant jusqu'à la bascule vers console-api, qui le
+      # passe en `--strict`.
+      - name: Relevé « console sans base » (C12)
+        if: always()
+        run: node scripts/ci/console-sans-base.mjs
+
       # C0 — LE RELEVÉ DU CRAWL (tests/e2e/crawl.spec.ts), vert ou rouge : chaque
       # écran × administrateur, viewer, démo — statut, adresse finale, sections en
       # échec de lecture. C'est la ligne de base que les PR de C3 → C5 comparent.

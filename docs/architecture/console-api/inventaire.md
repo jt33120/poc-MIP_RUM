@@ -9,7 +9,7 @@
 | Écrans (`page.tsx`) | 57 | **50** |
 | Fichiers d'actions serveur (`"use server"`) | 20 (57 actions) | **19** |
 | Actions déclarées dans un écran | 0 | — |
-| Routes (`route.ts`) | 46 | **39** |
+| Routes (`route.ts`) | 43 | **39** |
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
 | Modules `lib/queries*.ts` | 45 (208 fonctions exportées) | — |
@@ -121,9 +121,6 @@
 | `/admin/privacy/export` | GET | — | **oui** | console-api (C10 RGPD) |
 | `/api/auth/oidc/callback` | GET | émet la session | **oui** | console-api (C1 identité) |
 | `/api/auth/oidc/login` | GET | — | non | console-api (C1 identité) |
-| `/api/cron/daily` | GET | — | non | à supprimer (410 depuis P0) |
-| `/api/cron/hourly` | GET | — | non | à supprimer (410 depuis P0) |
-| `/api/cron/tick` | GET | — | non | à supprimer (410 depuis P0) |
 | `/api/dashboards/[id]/export` | GET | session | **oui** | console-api (C6) |
 | `/api/extension/heartbeat` | POST, OPTIONS | — | **oui** | collector (C11) |
 | `/api/extension/resolve` | GET, OPTIONS | — | **oui** | collector (C11) |
