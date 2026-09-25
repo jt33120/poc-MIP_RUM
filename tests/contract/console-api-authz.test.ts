@@ -80,6 +80,7 @@ const CHEMINS: Record<string, Record<string, string>> = {
   "screens.errorGroup": { fingerprint: EMPREINTE_A },
   "screens.issue": { id: ISSUE_A },
   "screens.trace": { traceId: TRACE_A },
+  "screens.sviCall": { callId: "authz-appel-inconnu" },
 };
 
 /**
@@ -101,6 +102,12 @@ const VARIANTES: Record<string, string[]> = {
   erreur: ["legacy=1"],
   tracing: ["cmp=prev", "appel=GET%20%2Fapi"],
   correlation: ["cmp=prev"],
+  acquisition: ["cmp=prev"],
+  forms: ["cmp=prev", "form=inscription"],
+  retention: ["weeks=4", "weeks=26", "device=mobile"],
+  paths: ["cmp=prev", "s1=%2Faccueil&s2=%2Fpanier", "depuis=%2Faccueil"],
+  experience: ["cmp=prev"],
+  goals: ["cmp=prev"],
 };
 
 /**
@@ -111,6 +118,12 @@ const VARIANTES: Record<string, string[]> = {
 const ABOUTIS: Record<string, readonly string[]> = {
   errors: ["groupes", "issues"],
   issue: ["ok", "autre_app"],
+  // Capacités FERMÉES (`lib/capacites.ts`) : le chargeur ne lit rien et le dit.
+  svi: ["fermee"],
+  sviAppels: ["fermee"],
+  sviAppel: ["fermee"],
+  logs: ["fermee"],
+  ai: ["fermee"],
 };
 
 /**

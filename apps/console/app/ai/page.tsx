@@ -6,9 +6,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
-import { pageFilters } from "@/lib/page-filters";
-import { periodLabel, v2FiltersOf } from "@/lib/queries-v2";
-import { fetchAiSummary } from "@/lib/xsom-ai";
+import { chargerAi } from "@/lib/chargeurs/ai";
+import { chargerEcran } from "@/lib/ecran-local";
 import { XsomSponsorBanner, XsomAiPanel } from "@/components/xsom/XsomAiPanel";
 
 export const dynamic = "force-dynamic";
@@ -29,14 +28,14 @@ export default async function AiPartner({ searchParams }: { searchParams?: Promi
     );
   }
 
-  const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/ai");
-  if (!ecran.ok) return <FilterProblemNotice title="Assistant IA" problem={ecran.problem} />;
-  const f = v2FiltersOf(ecran.query);
-  // xSOM expose 24h/7d/30d ; on mappe la période console (1h/24h/7d).
-  const windowKey = f.period === "7d" ? "7d" : "24h";
-  // Lecture façade — app-scopée par le token xSOM ; null (échec/non couvert) => état « indisponible ».
-  const ai = f.app ? await fetchAiSummary(f.app, windowKey) : null;
+  // Le chargeur (`lib/chargeurs/ai.ts`) lit la façade xSOM, app par app.
+  const ecran = await chargerEcran(chargerAi, (await searchParams) ?? {});
+  if (ecran.etat === "fermee") {
+    return <CapaciteFermee titre="Supervision IA" sujet="Supervision des agents et modèles en production." />;
+  }
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Assistant IA" problem={ecran.problem} />;
+  const { ai, periode } = ecran;
+  const f = { app: ecran.app };
 
   return (
     <div className="animate-fade-up">
@@ -53,7 +52,7 @@ export default async function AiPartner({ searchParams }: { searchParams?: Promi
       <XsomSponsorBanner href={XSOM_CONSOLE_URL} />
 
       {ai ? (
-        <XsomAiPanel ai={ai} periodLabel={periodLabel(f)} />
+        <XsomAiPanel ai={ai} periodLabel={periode} />
       ) : (
         <div className="card p-8 text-center">
           <h3 className="text-sm font-bold text-ink">Supervision IA indisponible ici</h3>
