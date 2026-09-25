@@ -26,14 +26,14 @@ import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { annotationsDeploiements } from "@/lib/annotations";
 import type { SearchParams } from "@/lib/filters";
-import { lire, type Lecture } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
+import { type SectionLue } from "@/lib/lecture";
+import { chargerUx } from "@/lib/chargeurs/ux";
+import { chargerEcran } from "@/lib/ecran-local";
 import { decouperUrlScript, fmtVital } from "@/lib/format";
 import { formater } from "@/lib/fmt-ids";
 import { libelleSeauComplet } from "@/lib/series";
-import { listDeploys } from "@/lib/queries-deploys";
 import { pointsVital } from "@/lib/vue-ensemble";
-import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
+import { type CouverturePrecedente } from "@/lib/comparaison";
 import { LIMITES_FRUSTRATION, reglesFrustration, sousTexteSignaux } from "@/lib/frustration-regles";
 import {
   classerRoutesFrustrantes,
@@ -42,12 +42,10 @@ import {
   referencePeriodePrecedente,
   tauxEnsembleRoutes,
 } from "@/lib/perf-domain";
-import { vitalSeriesN, vitalsP75, type VitalSeriesPoint } from "@/lib/queries";
+import { type VitalSeriesPoint } from "@/lib/queries";
 import {
   frustrationParRoute,
-  frustrationTotaux,
   inpOffenders,
-  scriptsBloquants,
   type FrustrationTotaux,
   type ScriptBloquant,
   type TypeSignal,
@@ -70,28 +68,14 @@ const LIBELLES_SIGNAL: Record<TypeSignal, string> = { rage: "Rage clicks", dead:
  */
 const ETIQUETTES_INP = 5;
 
-// Sources comparées à la période précédente (§ 3.2) : des signaux (comptes, additifs)
-// et des mesures INP (non additives).
-const SOURCES_SIGNAUX: SourceComparaison[] = [{ table: "rum_event", colonneTemps: "ts", additive: true }];
-const SOURCES_INP: SourceComparaison[] = [{ table: "rum_metric", colonneTemps: "ts", additive: false }];
-
-/** Première couverture incomplète d'une rangée de sources, sinon « complète ». */
-async function couvertureDe(query: AnalyticsQuery, sources: SourceComparaison[]): Promise<CouverturePrecedente> {
-  const couvertures = await Promise.all(
-    sources.flatMap((s) => sourcesSousFiltres(query, s)).map((s) => couverturePrecedente(query, s)),
-  );
-  return couvertures.find((c) => c.etat !== "complete") ?? { etat: "complete", raison: null };
-}
-
 const PRECEDENTE_EN_ECHEC: CouverturePrecedente = { etat: "inconnue", raison: "lecture de la période précédente en échec" };
-const sansLecture = Promise.resolve(null);
 
 /** Interactions, onglet Frustration (§ 5.4.1-5.4.2) : quels gestes échouent ou font attendre. */
 export default async function UxFrustration({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/ux");
-  if (!ecran.ok) return <FilterProblemNotice title="Interactions" problem={ecran.problem} />;
-  const f = ecran.filters;
+  // Le chargeur (`lib/chargeurs/ux.ts`) lit filtres et sections.
+  const ecran = await chargerEcran(chargerUx, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Interactions" problem={ecran.problem} />;
   const { query, label } = ecran;
   const lecteur = paramReader(sp);
 
@@ -108,22 +92,11 @@ export default async function UxFrustration({ searchParams }: { searchParams: Pr
   const tri = vue.tri === "volume" ? "volume" : "gravite";
   const prev = vue.cmp === "prev";
 
-  // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8) : `lire()` ne lève pas, une section
-  // en échec le dit sans emporter les autres — et jamais par un « 0 ».
-  const [totaux, totauxPrec, routes, vitaux, vitauxPrec, serieInp, inp, scripts, deploys, couvSignaux, couvInp] =
-    await Promise.all([
-      lire(() => frustrationTotaux(f)),
-      prev ? lire(() => frustrationTotaux(f, true)) : sansLecture,
-      lire(() => frustrationParRoute(f, type)),
-      lire(() => vitalsP75(f)),
-      prev ? lire(() => vitalsP75(f, true)) : sansLecture,
-      lire(() => vitalSeriesN(f, "INP")),
-      lire(() => inpOffenders(f)),
-      lire(() => scriptsBloquants(f)),
-      lire(() => listDeploys(f, 20)),
-      prev ? couvertureDe(query, SOURCES_SIGNAUX) : Promise.resolve(undefined),
-      prev ? couvertureDe(query, SOURCES_INP) : Promise.resolve(undefined),
-    ]);
+  // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8) : une section en échec le dit sans
+  // emporter les autres — et jamais par un « 0 ».
+  const { totaux, totauxPrec, routes, vitaux, vitauxPrec, serieInp, inp, scripts, deploys } = ecran;
+  const couvSignaux = ecran.couvSignaux ?? undefined;
+  const couvInp = ecran.couvInp ?? undefined;
   const reference = prev ? referencePeriodePrecedente(query.range) : undefined;
 
   // Liens de l'écran vers lui-même : ils ne changent qu'un réglage d'affichage.
@@ -311,7 +284,7 @@ function TuilesSignaux({
   hrefType,
 }: {
   totaux: FrustrationTotaux;
-  totauxPrec: Lecture<FrustrationTotaux> | null;
+  totauxPrec: SectionLue<FrustrationTotaux> | null;
   reference: string | undefined;
   couverture: CouverturePrecedente | undefined;
   hrefType: (k: TypeSignal) => string;
@@ -358,7 +331,7 @@ function HeroRoutes({
 }: {
   label: string;
   query: AnalyticsQuery;
-  routes: Lecture<Awaited<ReturnType<typeof frustrationParRoute>>>;
+  routes: SectionLue<Awaited<ReturnType<typeof frustrationParRoute>>>;
   capteurMasque: boolean;
   type: TypeSignal | null;
   tri: "gravite" | "volume";
@@ -495,7 +468,7 @@ function SerieInp({
   annotations,
   zoom,
 }: {
-  serie: Lecture<VitalSeriesPoint[]>;
+  serie: SectionLue<VitalSeriesPoint[]>;
   label: string;
   seau: string;
   seauSecondes: number;
@@ -552,7 +525,7 @@ function SerieInp({
 }
 
 /** Nuage fréquence × latence des éléments à l'INP, ses cinq étiquettes, et sa table jumelle. */
-function ElementsInp({ inp, label }: { inp: Lecture<Awaited<ReturnType<typeof inpOffenders>>>; label: string }) {
+function ElementsInp({ inp, label }: { inp: SectionLue<Awaited<ReturnType<typeof inpOffenders>>>; label: string }) {
   const titre = "Éléments responsables de l'INP";
   if (!inp.ok) return <Figure titre={titre} id="figure-elements-inp" etat={{ kind: "erreur", titre }} />;
   const pts = inp.data
@@ -640,7 +613,7 @@ function ElementsInp({ inp, label }: { inp: Lecture<Awaited<ReturnType<typeof in
  * AUCUNE COULEUR DE VERDICT (R-S) : il n'existe aucun seuil publié pour un temps de
  * blocage cumulé. Les barres portent la série principale, rien d'autre.
  */
-function ScriptsBloquants({ scripts, label }: { scripts: Lecture<ScriptBloquant[]>; label: string }) {
+function ScriptsBloquants({ scripts, label }: { scripts: SectionLue<ScriptBloquant[]>; label: string }) {
   const titre = "Scripts qui bloquent le fil principal (Long Animation Frames)";
   if (!scripts.ok) return <Figure titre={titre} id="scripts-bloquants" etat={{ kind: "erreur", titre }} />;
 

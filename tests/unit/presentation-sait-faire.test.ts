@@ -132,7 +132,7 @@ describe("sources — les passages cités disent encore ce qu'on leur fait dire"
   it("les lignes citées par K2 et K13 disent « Inconnu » et « rôle propriétaire »", () => {
     const lignes = (chemin: string, debut: number, fin: number) =>
       readFileSync(join(RACINE, chemin), "utf8").split("\n").slice(debut - 1, fin).join("\n");
-    expect(lignes("apps/console/components/errors/error-view.ts", 90, 93)).toContain('"Inconnu"');
+    expect(lignes("apps/console/lib/error-view.ts", 90, 93)).toContain('"Inconnu"');
     expect(lignes("DEPLOY.md", 272, 278)).toContain("`neondb_owner`, PAS `console_ro`");
     expect(lignes("apps/console/components/presentation/Specs.tsx", 166, 170)).toContain("rôle propriétaire");
   });
@@ -211,8 +211,9 @@ describe("revue de fin de vague 7 — les cartes suivent leurs lignes corrigées
     expect(e3.limite).toContain("**La session démo n'écrit rien**");
     expect(e3.limite).toContain("**Un viewer écrit ce qui est à lui, dans son périmètre**");
     expect(e3.limite).toContain("`apps/console/lib/dashboard-access.ts:117-135`");
-    expect(e3.limite).toContain("`apps/console/app/api/v1/explorer/views/route.ts:45-47`");
-    expect(e3.limite).toContain("**Le triage d'une issue** (`A8`) reste réservé aux administrateurs");
+    // C7 : les écritures quittent l'API v1 — la règle est celle de la commande.
+    expect(e3.limite).toContain("`apps/console/lib/commandes/vues.ts:33`");
+    expect(e3.limite).toContain("**Le triage d'une issue** (`A8`) reste réservé à l'administrateur de l'application de l'issue");
     // L'ancienne limite, que le code contredisait déjà sur le commit relevé.
     expect(e3.limite).not.toContain("ne gagnent **aucun** droit d'écriture");
 

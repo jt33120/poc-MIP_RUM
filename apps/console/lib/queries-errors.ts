@@ -28,6 +28,10 @@ import { authorizedAppsOf, intersectApp, resourceScope, type Device, type Resolv
 import { dimensionSchema } from "./query-schema";
 import { sqlContext } from "./query-sql";
 import { bucketStarts } from "./query-contract";
+import { type ErrorSource } from "./erreurs-sources";
+// Les sources d'erreurs, leurs libellés et `stackSymbolisable` vivent dans
+// `erreurs-sources.ts`, SANS la base ; réexportés ici pour les lectures.
+export * from "./erreurs-sources";
 
 export type ErrorDevice = Device;
 /** Filtres globaux de lib/filters, plus la tablette que le modèle historique ignore. */
@@ -38,47 +42,6 @@ export const ERROR_LIST_MAX_LIMIT = 200;
 export const ERROR_LIST_MAX_OFFSET = 10_000;
 export const ERROR_OCCURRENCES_DEFAULT_LIMIT = 100;
 export const ERROR_OCCURRENCES_MAX_LIMIT = 100;
-
-// Copie de l'énumération d'ingestion (`ERROR_SOURCES` d'otlp.mjs), même ordre :
-// la console ne peut pas typer proprement un module .mjs. Deux listes finissent
-// par diverger ; tests/unit/queries-errors.test.ts compare donc les deux.
-export const ERROR_SOURCES = [
-  "browser_js",
-  "browser_console",
-  "browser_resource",
-  "browser_csp",
-  "browser_network",
-  "node",
-  "python",
-  "react_native_js",
-  "native",
-  "otel",
-] as const;
-export type ErrorSource = (typeof ERROR_SOURCES)[number];
-
-export const ERROR_SOURCE_LABELS: Record<ErrorSource, string> = {
-  browser_js: "JavaScript navigateur",
-  browser_console: "Console navigateur",
-  browser_resource: "Ressource navigateur",
-  browser_csp: "CSP navigateur",
-  browser_network: "Réseau navigateur",
-  node: "Node.js",
-  python: "Python",
-  react_native_js: "JavaScript React Native",
-  native: "Natif mobile",
-  otel: "OpenTelemetry",
-};
-
-/**
- * Une source map de release ne décrit que le JavaScript livré au navigateur ou à
- * React Native. Appliquée à une stack Node, elle réécrirait une frame serveur qui
- * porte le même nom de fichier ; à une stack Python ou JVM, elle ne décrirait
- * rien. Source inconnue (émetteur non typé, ligne antérieure à v69) : le
- * comportement historique est conservé.
- */
-export function stackSymbolisable(source: ErrorSource | null): boolean {
-  return source === null || source.startsWith("browser_") || source === "react_native_js";
-}
 
 // ───────────────────────────── Paramètres d'URL ──────────────────────────────
 
@@ -176,10 +139,10 @@ export interface ErrorGroupRow extends ErrorImpact {
   sessions: number;
   /** Historique : `visitors_affected`, 0 si inconnu (visiteurs distincts, pas identités). */
   users_affected: number;
-  first_seen: Date;
-  last_seen: Date;
+  first_seen: Date | string;
+  last_seen: Date | string;
   status: ErrorStatus;
-  resolved_at: Date | null;
+  resolved_at: Date | string | null;
   /** Une erreur marquée « résolue » réapparaît (last_seen > resolved_at) ; jamais NULL. */
   regressed: boolean;
   /** Avec `opts.series` : occurrences par seau, mêmes seaux et même ordre que `trend`. */
@@ -187,7 +150,7 @@ export interface ErrorGroupRow extends ErrorImpact {
 }
 
 export interface ErrorTrendPoint {
-  bucket: Date;
+  bucket: Date | string;
   occurrences: number;
 }
 
@@ -228,7 +191,7 @@ export type ErrorGroupRef = { app_id: string; fingerprint: string };
 export interface ErrorGroupCandidate {
   app_id: string;
   occurrences: number;
-  last_seen: Date;
+  last_seen: Date | string;
 }
 
 export type ErrorGroupResolution =
@@ -238,7 +201,7 @@ export type ErrorGroupResolution =
 
 export interface ErrorExemplar {
   id: number;
-  ts: Date;
+  ts: Date | string;
   message: string | null;
   error_type: string | null;
   kind: string | null;
@@ -271,7 +234,7 @@ export interface ErrorOccurrenceLinks {
 
 export interface ErrorOccurrenceRow {
   id: number;
-  ts: Date;
+  ts: Date | string;
   route: string | null;
   /** Tel qu'émis, même quand aucune session de la même app ne lui correspond. */
   session_id: string | null;
@@ -870,7 +833,7 @@ export interface TotalsSqlRow extends ErrorImpact {
 }
 
 interface SeriesSqlRow extends ErrorGroupRef {
-  bucket: Date;
+  bucket: Date | string;
   occurrences: number;
 }
 
@@ -915,12 +878,12 @@ export function toOccurrenceRow({
 }
 
 function withSeries(groups: ErrorGroupRow[], trend: ErrorTrendPoint[], points: SeriesSqlRow[]): ErrorGroupRow[] {
-  const position = new Map(trend.map((point, i) => [point.bucket.getTime(), i]));
+  const position = new Map(trend.map((point, i) => [new Date(point.bucket).getTime(), i]));
   const key = (ref: ErrorGroupRef) => JSON.stringify([ref.app_id, ref.fingerprint]);
   const series = new Map(groups.map((group) => [key(group), new Array<number>(trend.length).fill(0)]));
   for (const point of points) {
     const values = series.get(key(point));
-    const i = position.get(point.bucket.getTime());
+    const i = position.get(new Date(point.bucket).getTime());
     // Une même empreinte peut exister dans une app absente de la page : ignorée.
     if (values && i !== undefined) values[i] += point.occurrences;
   }
@@ -1424,7 +1387,7 @@ export async function topGroupesSeries(f: ErrorFilters, n: 4): Promise<{ groupes
 
 export interface ReleaseVue {
   release: string;
-  ts: Date;
+  ts: Date | string;
 }
 
 export interface ReleasesDuGroupe {

@@ -9,8 +9,9 @@ import { PresetBar } from "@/components/PresetBar";
 import { ReleaseCompare, statsDeVersion, type ReleaseStats } from "@/components/ReleaseCompare";
 import { ChargeErreursLcp, HeroCwv, type AnnotationsFigure, type ModeSeries } from "@/components/vue-ensemble/SeriesVueEnsemble";
 import { LIBELLE_ANGLE_MORT, TuileAngleMort, type EtatAngleMort } from "@/components/vue-ensemble/AngleMort";
-import { cookies } from "next/headers";
-import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
+import { blocsDe } from "@/lib/chargeurs/commun";
+import { chargerOverview, DECOUPAGE_LUS, VITAUX_HERO } from "@/lib/chargeurs/overview";
+import { avecBlocs, chargerEcran } from "@/lib/ecran-local";
 import { TousEteints } from "@/components/TousEteints";
 import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
@@ -18,59 +19,34 @@ import { VersionsTable } from "@/components/VersionsTable";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
-import { filtersOfQuery, type SearchParams } from "@/lib/filters";
-import { pageFilters } from "@/lib/page-filters";
+import { type SearchParams } from "@/lib/filters";
 import {
   BREAKDOWN_NOTICES,
-  BREAKDOWN_PARAM,
-  availableBreakdowns,
   breakdownDrillHref,
   breakdownTabs,
   datasetAvailability,
   groupDescription,
   groupLabel,
-  parseBreakdown,
 } from "@/lib/breakdowns";
 import { etatLectureEchantillonnage } from "@/lib/echantillonnage";
-import { healthScore } from "@/lib/health";
-import { lire, type Lecture } from "@/lib/lecture";
-import { fuseauDe, joursLocaux, libelleDeuxFuseaux } from "@/lib/fuseau";
+import { type SectionLue } from "@/lib/lecture";
+import { joursLocaux, libelleDeuxFuseaux } from "@/lib/fuseau";
 import { formatDuVital, formater, VITAUX, type FormatId, type VitalName } from "@/lib/fmt-ids";
 import { bucketStarts, hrefWithQuery, paramReader } from "@/lib/query-contract";
 import { grilleIso, isoSansMs } from "@/lib/series";
-import { dimensionSchema } from "@/lib/query-schema";
 import { THRESHOLDS } from "@/lib/rating";
-import {
-  overviewStats,
-  pageviewSeries,
-  samplingVitals,
-  vitalSeriesN,
-  vitalsP75,
-  type VitalAgg,
-  type VitalSeriesPoint,
-} from "@/lib/queries";
-import { errorSeries, erreursNavigateur, listErrorGroups } from "@/lib/queries-errors";
-import { engagementStats, observedVisitorsTrend } from "@/lib/queries-sessions";
-import { alertFirings, correlationCards, correlationConcordance, unackedAlertCount } from "@/lib/queries-v2";
-import { UnsupportedFilterError } from "@/lib/query-compiler";
-import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown, type VitalsBreakdownRow } from "@/lib/queries-breakdowns";
-import { GRID_DAYS, healthGrid } from "@/lib/queries-grid";
-import { comparaisonVersions, latestDeployImpact, listDeploys, type ComparaisonVersions } from "@/lib/queries-deploys";
+import { type VitalAgg, type VitalSeriesPoint } from "@/lib/queries";
+import { VITALS_BREAKDOWN_DATASETS, type VitalsBreakdownRow } from "@/lib/queries-breakdowns";
+import { GRID_DAYS } from "@/lib/queries-grid";
+import { type ComparaisonVersions } from "@/lib/queries-deploys";
 import { ecartP75 } from "@/lib/stats/incertitude";
-import {
-  couverturePrecedente,
-  deltasDeLaRangee,
-  sourcesSousFiltres,
-  type CouverturePrecedente,
-  type SourceComparaison,
-} from "@/lib/comparaison";
-import { avecCondition, RAISON_AUCUNE_VUE, ratioPour100, serieRatioPour100, sparklineDeCompte } from "@/lib/perf-domain";
+import { deltasDeLaRangee, type CouverturePrecedente } from "@/lib/comparaison";
+import { RAISON_AUCUNE_VUE, ratioPour100, serieRatioPour100, sparklineDeCompte } from "@/lib/perf-domain";
 import { choisirReleases, vuesProduit, type Entree } from "@/lib/presets";
 import { annotationsDeploiements } from "@/lib/annotations";
 // P*.7 — datation d'une rupture : fenêtre fixe de 14 jours, à part de la plage de l'écran.
 import { fusionnerAnnotations } from "@/lib/annotations";
-import { dailyLcpSeries, type DailyLcp } from "@/lib/queries-grid";
-import { bornesJourLocal } from "@/lib/fuseau";
+import { bornesJourLocal } from "@/lib/fuseau-local";
 import { instantDe, jourDans } from "@/lib/series";
 import { tendance } from "@/lib/forecast";
 import {
@@ -84,7 +60,6 @@ import {
 import { explorerHref } from "@/lib/explorer-page-params";
 import { ecrirePanel, gabaritZoom, lireComparaison, lireEtatDeVue, lireTri, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
 import {
-  ALERTES_PAR_EVENEMENT,
   constatsVueEnsemble,
   estVitalDecoupe,
   FENETRE_CONSTATS,
@@ -94,8 +69,6 @@ import {
   referencePrecedente,
   referenceRelease,
   regleAngleMort,
-  releasesComparees,
-  sansConditionRelease,
   VITAUX_DECOUPES,
   type VitalDecoupe,
 } from "@/lib/vue-ensemble";
@@ -103,47 +76,10 @@ import {
 /** La question de l'écran (P1) : le sous-titre de l'en-tête. */
 const QUESTION = "Les vrais visiteurs vont-ils bien sur cette période, et sinon, où et depuis quand ?";
 
-// Sources des deux rangées de tuiles comparées à la période précédente (§ 3.2).
-// « Sessions commencées » se date par `started_at` (R-P). Le ratio d'erreurs
-// n'est pas un compte : le retard d'ingestion touche son numérateur ET son
-// dénominateur, il n'est pas traité comme additif.
-const SOURCE_VITAUX: SourceComparaison = { table: "rum_metric", colonneTemps: "ts", additive: false };
-const SOURCES_TRAFIC: SourceComparaison[] = [
-  { table: "rum_session", colonneTemps: "started_at", additive: true },
-  { table: "rum_pageview", colonneTemps: "started_at", additive: true },
-  { table: "rum_error", colonneTemps: "ts", additive: false },
-];
-
-/** Groupes d'erreurs lus pour y chercher les régressés (ordre CP9 : régressés d'abord). */
-const REGRESSES_LUS = 50;
 /** Sous ce nombre de mesures, un vital est « échantillon faible » (§ 3.12). */
 const VITAL_FAIBLE_SOUS = 100;
-/** Les trois petits multiples du hero (§ 5.1.2) : trois unités, trois échelles. */
-const VITAUX_HERO = ["LCP", "INP", "CLS"] as const satisfies readonly VitalName[];
 
 export const dynamic = "force-dynamic";
-
-/** Lecture non lancée (bloc éteint) : une valeur sûre, jamais affichée comme mesure. */
-const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
-
-/** Groupes lus pour le classement des segments (CP1 : coupe par volume, puis tri gravité). */
-const DECOUPAGE_LUS = 200;
-
-/**
- * Lecture d'un jeu de données que l'écran ne déclare pas dans sa surface (le robot,
- * `synthetic`) : un filtre de `/` qu'il ne porte pas (appareil, navigateur…) lève
- * `UnsupportedFilterError`, que `lire` relance pour que l'écran refuse. Ici, la
- * section seule le dit (`refus`) ; les autres restent.
- */
-const lireOuRefus = <T,>(fn: () => Promise<T>) =>
-  lire<{ refus: null; data: T } | { refus: string }>(async () => {
-    try {
-      return { refus: null, data: await fn() };
-    } catch (e) {
-      if (e instanceof UnsupportedFilterError) return { refus: e.message };
-      throw e;
-    }
-  });
 
 /** Une tuile, ou l'échec de sa lecture (jamais un « 0 » ou un « — » pour une fenêtre non lue). */
 type Tuile = { cle: string; titre: string } & (
@@ -158,10 +94,11 @@ type Tuile = { cle: string; titre: string } & (
 // (e2e `etat-de-vue`, `navigation-filtres`). Les frontières restent PAR SECTION
 // (`SectionErreur`), où elles ne gênent pas la navigation.
 export default async function Overview({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/");
-  if (!ecran.ok) return <FilterProblemNotice title="Vue d'ensemble" problem={ecran.problem} />;
-  const f = ecran.filters;
+  // Le chargeur (`lib/chargeurs/overview.ts`) lit tout ; la composition de l'écran
+  // (cookie des blocs) lui est passée en paramètre — un bloc éteint ne coûte rien.
+  const sp = await avecBlocs(await searchParams, "/");
+  const ecran = await chargerEcran(chargerOverview, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Vue d'ensemble" problem={ecran.problem} />;
   const query = ecran.query;
   const period = { label: ecran.label, bucketLabel: ecran.bucketLabel };
 
@@ -192,18 +129,15 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // données » en dépend, et il doit s'afficher même sur un tableau de bord
   // réduit au minimum — c'est justement là qu'on a besoin de savoir pourquoi
   // l'écran est vide.
-  const cat = catalogueDe("/")!;
-  const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
+  const blocs = blocsDe(sp, "/");
 
   // Découpage (P6.3) : l'onglet est jugé sur les mesures RÉELLEMENT groupées —
   // les Web Vitals — et non sur ce que l'écran sait filtrer. L'accueil compte
   // aussi des sessions, qui ne portent pas de route : c'est pourquoi le clic sur
   // un groupe de routes ouvre `/pages`, la surface qui sait appliquer ce filtre.
-  const schema = await dimensionSchema();
+  const schema = new Set(ecran.schema);
   const dispoDecoupage = datasetAvailability(VITALS_BREAKDOWN_DATASETS, schema);
-  const decoupage = blocs.decoupage
-    ? parseBreakdown(paramReader(sp).get(BREAKDOWN_PARAM), availableBreakdowns(dispoDecoupage))
-    : null;
+  const decoupage = ecran.decoupage;
   // Ordre du découpage (F05, P3) : gravité par défaut, `tri=volume` sur demande.
   // `tri=impact` attend le compte des mesures « Mauvais » (B2) : ignoré et SIGNALÉ
   // par `lireTri`, jamais trié au hasard. La bascule garde tous les autres paramètres.
@@ -217,7 +151,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     return qs ? `/?${qs}` : "/";
   };
   // Fuseau de l'app : celui des jours et des heures de la heatmap, et de ses liens (R-T).
-  const fuseau = await fuseauDe(query.scope.requestedApp);
+  const fuseau = ecran.fuseau;
 
   // Comparaison (F06) : la période précédente n'est lue qu'en `cmp=prev` (défaut de
   // cet écran), et ses écarts ne s'affichent que si elle est COMPLÈTE — une plage
@@ -227,26 +161,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // que la plage — comparaison, tri, découpage et heures ouvrées restent.
   const gabaritZoomEcran = gabaritZoom(hrefWithQuery("/", query, { period: null, from: "{from}", to: "{to}" }), sp);
   const prev = comparaison.mode === "prev";
-  // Sous un filtre porté par une colonne récente (`browser`, v75…), la couverture
-  // se juge aussi sur CETTE colonne : une source de plus par colonne exigée.
-  const couvertures = (sources: readonly SourceComparaison[]) =>
-    Promise.all(sources.flatMap((s) => sourcesSousFiltres(query, s)).map((s) => couverturePrecedente(query, s)));
-  // Les releases se choisissent sur TOUTES celles de la fenêtre : sous `release=B`,
-  // la lecture des versions n'en verrait qu'une (§ 3.2, `choisirReleases`).
-  const fToutesReleases = filtersOfQuery(sansConditionRelease(query));
-  const dispoNavigateur = dispoDecoupage("browser");
-  const dispoPays = dispoDecoupage("country");
-  /** La série p75 d'un vital sert-elle à un bloc allumé (tuiles, hero, charge) ? */
-  const serieUtile = (nom: VitalName) =>
-    blocs.vitals || (blocs.hero && (VITAUX_HERO as readonly string[]).includes(nom)) || (blocs.charge && nom === "LCP");
-
-  // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8 règle 1). `lire()` ne lève pas :
-  // une lecture en échec devient `{ ok: false }`, et seule SA section le dit. Le
-  // `Promise.all` d'avant rejetait au premier échec et emportait tout l'écran —
-  // quand il ne recevait pas, des lectures « fail-soft », des vides et des zéros
-  // qu'on lisait comme une période calme. `couverturePrecedente` ne lève pas : une
-  // lecture en échec y devient déjà une couverture « inconnue », avec sa raison.
-  const [
+  // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8 règle 1) : une section en échec ne
+  // se dit que dans SA section. Les releases comparées (§ 3.2) sont choisies et lues
+  // par le chargeur (URL d'abord, sinon la règle du dernier déploiement).
+  const {
     vitals,
     vitalsPrev,
     stats,
@@ -276,105 +194,15 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     couvVitaux,
     couvTrafic,
     lcpQuotidienP7,
-  ] = await Promise.all([
-    blocs.vitals || blocs.decoupage ? lire(() => vitalsP75(f)) : sansLecture<VitalAgg[]>([]),
-    blocs.vitals && prev ? lire(() => vitalsP75(f, true)) : sansLecture<VitalAgg[]>([]),
-    lire(() => overviewStats(f)),
-    blocs.trafic && prev ? lire(() => overviewStats(f, true)) : sansLecture(null),
-    blocs.trafic ? lire(() => engagementStats(f)) : sansLecture(null),
-    blocs.trafic && prev ? lire(() => engagementStats(f, true)) : sansLecture(null),
-    blocs.trafic ? lire(() => observedVisitorsTrend(f)) : sansLecture([]),
-    blocs.trafic || blocs.charge ? lire(() => pageviewSeries(f)) : sansLecture([]),
-    blocs.trafic ? lire(() => erreursNavigateur(f)) : sansLecture(null),
-    blocs.trafic && prev ? lire(() => erreursNavigateur(f, true)) : sansLecture(null),
-    blocs.trafic || blocs.charge ? lire(() => errorSeries(f)) : sansLecture(null),
-    // p75 par seau du contrat, sur les mesures brutes (V5) : sparkline de chaque tuile
-    // Web Vital, petits multiples du hero et panneau LCP de la charge — UNE lecture par
-    // vital, mutualisée entre les trois.
-    Promise.all(VITAUX.map((nom) => (serieUtile(nom) ? lire(() => vitalSeriesN(f, nom)) : sansLecture<VitalSeriesPoint[]>([])))),
-    blocs.vitals ? lire(() => samplingVitals(f)) : sansLecture(null),
-    // Période précédente des séries (cmp=prev), alignée par rang de seau (§ 3.2).
-    Promise.all(
-      VITAUX_HERO.map((nom) =>
-        prev && (blocs.hero || (blocs.charge && nom === "LCP")) ? lire(() => vitalSeriesN(f, nom, true)) : sansLecture(null),
-      ),
-    ),
-    // Santé ET constats (anomalies 24 h) : lue même bandeau éteint, les constats en dépendent.
-    lire(() => healthScore(f)),
-    blocs.historique ? lire(() => healthGrid(f)) : sansLecture([]),
-    // Angle mort (zone 6) : le COMPTE exact vient de la matrice de concordance (F57),
-    // jamais de la liste plafonnée à 50 couples (CP13) ; l'existence du robot, des cartes.
-    // Un filtre que le synthétique ne porte pas est un refus dit, pas une panne.
-    blocs.angles ? lireOuRefus(() => correlationConcordance(f)) : sansLecture(null),
-    blocs.angles ? lireOuRefus(() => correlationCards(f)) : sansLecture(null),
-    // Classement : 200 groupes lus, ordonnés ENSUITE par gravité (CP1 : la lecture
-    // coupe par volume ; la troncature restante est dite).
-    decoupage ? lire(() => vitalsBreakdown(f, decoupage, DECOUPAGE_LUS)) : sansLecture(null),
-    // Vues préréglées (§ 3.6) et releases comparées (§ 3.2) : marqueurs de
-    // déploiement et releases de la fenêtre, navigateurs et pays mesurés.
-    lire(() => listDeploys(f, 20)),
-    lire(() => comparaisonVersions(fToutesReleases, 12)),
-    dispoNavigateur.available ? lire(() => vitalsBreakdown(f, "browser", 200)) : sansLecture(null),
-    dispoPays.available ? lire(() => vitalsBreakdown(f, "country", 200)) : sansLecture(null),
-    // Constats (zone 4) : dernier déploiement, alertes non acquittées, erreurs régressées.
-    lire(() => latestDeployImpact(f)),
-    ALERTES_PAR_EVENEMENT
-      ? // Les lignes NOMMÉES viennent du jour UTC en cours (`alertFirings(f, 1)`,
-        // § 5.1.2) ; le « et N autres » se compte sur le total non acquitté, sans
-        // quoi une alerte d'avant-hier disparaîtrait des constats à minuit UTC.
-        lire(async () => {
-          const [declenchements, total] = await Promise.all([alertFirings(f, 1), unackedAlertCount(f)]);
-          return { mode: "evenements" as const, lignes: declenchements.lignes, total };
-        })
-      : lire(async () => ({ mode: "compte" as const, n: await unackedAlertCount(f) })),
-    lire(() => listErrorGroups(f, { limit: REGRESSES_LUS, offset: 0 })),
-    (blocs.vitals || blocs.hero || blocs.charge) && prev
-      ? couvertures([SOURCE_VITAUX])
-      : Promise.resolve<CouverturePrecedente[]>([]),
-    blocs.trafic && prev ? couvertures(SOURCES_TRAFIC) : Promise.resolve<CouverturePrecedente[]>([]),
-    // P*.7 — « depuis quand ? ». La datation d'une rupture demande au moins dix
-    // JOURS ; la plage de l'écran en compte souvent moins d'un. Elle se lit donc
-    // sur la fenêtre FIXE de 14 jours complets, découpés dans le fuseau de l'app,
-    // et la phrase le dit — comme le fait déjà l'historique de la zone 9.
-    blocs.hero ? lire(() => dailyLcpSeries(f, { exclureAujourdhui: true })) : sansLecture<DailyLcp[]>([]),
-  ]);
-
-  // ─── Releases comparées (§ 3.2) : URL d'abord, sinon la règle du dernier déploiement ───
-  const choix = deploys.ok && versionsFenetre.ok ? choisirReleases(deploys.data, versionsFenetre.data.rows) : null;
-  const releases = releasesComparees({ relA: comparaison.relA, relB: comparaison.relB }, choix);
-  // `cmp=release` : les tuiles Web Vitals lisent la release B et la comparent à A,
-  // même fenêtre (§ 5.1.2). Deux lectures de plus, lancées seulement dans ce mode.
-  const [vitalsB, vitalsA] =
-    comparaison.mode === "release" && blocs.vitals && releases.ok
-      ? await Promise.all([
-          lire(() => vitalsP75(avecCondition(f, "release", releases.relB))),
-          lire(() => vitalsP75(avecCondition(f, "release", releases.relA))),
-        ])
-      : [null, null];
-  // …et le hero trace deux séries par vital : orange = B, gris pointillé = A (§ 3.2).
-  const seriesRelease =
-    comparaison.mode === "release" && blocs.hero && releases.ok
-      ? await Promise.all(
-          VITAUX_HERO.map(async (nom) => {
-            const [b, a] = await Promise.all([
-              lire(() => vitalSeriesN(avecCondition(f, "release", releases.relB), nom)),
-              lire(() => vitalSeriesN(avecCondition(f, "release", releases.relA), nom)),
-            ]);
-            return { b, a };
-          }),
-        )
-      : null;
-  // Zone 8 : A et B LUES une à une (lecture intersectée `release=<v>`, même fenêtre, sans
-  // le filtre `release` de l'URL). La liste `versionsFenetre` s'arrête aux 12 releases
-  // les plus vues : une release venue de l'URL (lien d'annotation, constat de
-  // déploiement) hors de ces 12 y aurait « 0 session » alors que les tuiles montrent
-  // ses p75.
-  const releasesLues =
-    blocs.versions && releases.ok
-      ? await Promise.all(
-          [releases.relB, releases.relA].map((v) => lire(() => comparaisonVersions(avecCondition(fToutesReleases, "release", v), 12))),
-        )
-      : null;
+    choix,
+    releases,
+    vitalsB,
+    vitalsA,
+    seriesRelease,
+    releasesLues,
+  } = ecran;
+  const dispoNavigateur = dispoDecoupage("browser");
+  const dispoPays = dispoDecoupage("country");
 
   const deltasVitaux = deltasDeLaRangee(comparaison.mode, couvVitaux);
   const deltasTrafic = deltasDeLaRangee(comparaison.mode, couvTrafic);
@@ -395,7 +223,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // écart, et la note de rangée dit pourquoi (une fois, pas huit fois).
   const comparerTrafic = prev && deltasTrafic.deltas;
   const couvComplete: CouverturePrecedente = { etat: "complete", raison: null };
-  const precedentOu = <T,>(lu: Lecture<T | null>, valeur: (d: T) => number | null) =>
+  const precedentOu = <T,>(lu: SectionLue<T | null>, valeur: (d: T) => number | null) =>
     !comparerTrafic || !lu.ok || lu.data === null ? undefined : valeur(lu.data);
   const refTrafic = comparerTrafic ? { reference: referencePrev, couverturePrecedente: couvComplete } : {};
 
@@ -541,7 +369,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const etatEchantillon = blocs.vitals && echantillonnage.ok && echantillonnage.data
     ? etatLectureEchantillonnage({ ok: true, data: echantillonnage.data })
     : blocs.vitals && !echantillonnage.ok
-      ? etatLectureEchantillonnage({ ok: false, raison: echantillonnage.raison })
+      ? etatLectureEchantillonnage({ ok: false })
       : null;
 
   // ─── Vues préréglées (zone 1, § 3.6) ───
@@ -705,7 +533,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   };
   const serieDe = (nom: VitalName) => seriesVitaux[VITAUX.indexOf(nom)];
   /** Période précédente d'une série du hero : lue (ou en échec) en `cmp=prev`, sinon aucune. */
-  const precedenteDe = (i: number): Lecture<VitalSeriesPoint[]> | null => {
+  const precedenteDe = (i: number): SectionLue<VitalSeriesPoint[]> | null => {
     if (modeSeries.kind !== "prev") return null;
     const lu = seriesPrecedentes[i];
     return !lu.ok ? lu : lu.data ? { ok: true, data: lu.data } : null;
@@ -812,7 +640,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </p>
       )}
 
-      {f.app && stats.ok && stats.data.sessions === 0 && (
+      {query.scope.requestedApp && stats.ok && stats.data.sessions === 0 && (
         <div
           data-testid="onboarding-nudge"
           className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm"
@@ -821,7 +649,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <strong>Cette application n&apos;a pas encore reçu de données.</strong> Posez le capteur RUM
             sur votre site, puis simulez un parcours — les mesures apparaîtront ici.
           </span>
-          <Link href={`/select/new?app=${encodeURIComponent(f.app)}`} className="btn-accent ml-auto shrink-0 px-3 py-1.5">
+          <Link href={`/select/new?app=${encodeURIComponent(query.scope.requestedApp)}`} className="btn-accent ml-auto shrink-0 px-3 py-1.5">
             Guide d&apos;intégration →
           </Link>
         </div>
@@ -972,7 +800,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                   lectures={{
                     vues: vues,
                     erreurs:
-                      serieErreurs.ok && serieErreurs.data ? { ok: true, data: serieErreurs.data } : { ok: false, raison: "non lue" },
+                      serieErreurs.ok && serieErreurs.data ? { ok: true, data: serieErreurs.data } : { ok: false },
                     lcp: serieDe("LCP"),
                     lcpPrecedent: precedenteDe(0),
                   }}

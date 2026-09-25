@@ -1,26 +1,21 @@
 import { headers } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
 import { EchecLecture } from "@/components/states/SectionErreur";
-import { requireAdmin } from "@/lib/auth";
+import { chargerSante } from "@/lib/chargeurs/administration";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import { dogfoodingEndpoint, ingestEndpoint } from "@/lib/ingest-endpoint";
-import { lire } from "@/lib/lecture";
 import type { HealthSnapshot } from "@/lib/metrics-format";
-import { internalHealth } from "@/lib/queries-health";
-import { causalActionsHealth, identityPersistenceHealth } from "@/lib/health";
 
 export const dynamic = "force-dynamic";
 
 /** Santé interne de MIP RUM (auto-observabilité, P1) — admin. Mêmes chiffres que /api/metrics. */
 export default async function Health() {
-  await requireAdmin();
-  // Lecture en échec : les tuiles ne sont PAS rendues à zéro (F02) — un tableau
-  // de bord « 0 alerte, 0 lot en attente » pendant une panne serait le pire des
-  // mensonges sur une page de santé. Le bloc d'endpoint, lui, ne lit rien en base.
-  const sante = await lire(internalHealth);
-  const [identity, causal] = await Promise.all([
-    identityPersistenceHealth(),
-    causalActionsHealth(),
-  ]);
+  // Le chargeur (`lib/chargeurs/administration.ts`) : l'administrateur de la
+  // plateforme seul (C9). Lecture en échec : les tuiles ne sont PAS rendues à zéro
+  // (F02) — un tableau de bord « 0 alerte, 0 lot en attente » pendant une panne
+  // serait le pire des mensonges sur une page de santé. Le bloc d'endpoint, lui,
+  // ne lit rien en base.
+  const { sante, identite: identity, causales: causal } = accesAdmin(await chargerEcran(chargerSante, {}));
 
   // Où le capteur de la console POSTE réellement, résolu comme il l'est pour le
   // navigateur. Affiché parce que sa panne est SILENCIEUSE : NEXT_PUBLIC_RUM_ENDPOINT

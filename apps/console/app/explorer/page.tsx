@@ -45,34 +45,29 @@ import { ModelesDepart } from "@/components/explorer/ModelesDepart";
 import { QueryPills } from "@/components/explorer/QueryPills";
 import { ResultatAnalyse, type HrefsResultat, type PrecedentResultat } from "@/components/explorer/ResultatAnalyse";
 // F33 — contexte du résultat (W-E2, W-E7).
-import { RepartitionResultat, VolumeResultat, type LectureContexte, type OngletRepartition } from "@/components/explorer/ContexteResultat";
+import { RepartitionResultat, VolumeResultat, type OngletRepartition } from "@/components/explorer/ContexteResultat";
 import { SectionErreur } from "@/components/states/SectionErreur";
-import { BREAKDOWN_DIMENSIONS, BREAKDOWN_LABELS, BREAKDOWN_NOTICES, BREAKDOWN_PARAM, type BreakdownDimension } from "@/lib/breakdowns";
+import { BREAKDOWN_LABELS, BREAKDOWN_NOTICES, BREAKDOWN_PARAM, type BreakdownDimension } from "@/lib/breakdowns";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { CopyBlock } from "@/components/CopyBlock";
 import { TabLink } from "@/components/sessions/TabLink";
-import { getUser } from "@/lib/auth";
 import { type SearchParams } from "@/lib/filters";
-import { pageFilters } from "@/lib/page-filters";
+import { chargerExplorer, demandeExplorer } from "@/lib/chargeurs/explorer";
+import { chargerEcran } from "@/lib/ecran-local";
 import {
   conditionsOf,
   hrefWithQuery,
-  paramReader,
-  previousRange,
   queryToSearchParams,
   DIMENSION_LABELS,
   DIMENSIONS,
   type AnalyticsQuery,
 } from "@/lib/query-contract";
-import { DATASET_REGISTRY, dimensionSupport } from "@/lib/query-compiler";
-import { dimensionSchema } from "@/lib/query-schema";
+import { dimensionSupport } from "@/lib/query-compiler";
 import {
   EXPLORER_DATASET_IDS,
   VISUALIZATIONS,
   datasetDefinition,
-  estAdditive,
-  parseExplorerPlan,
   type ExplorerPlan,
   type Visualization,
 } from "@/lib/analytics-schema";
@@ -80,38 +75,27 @@ import {
   EXPLORER_PARAMS,
   LIBELLES_REPRESENTATION,
   LIMITES,
-  SERIES_MAX,
-  datasetChoisi,
   explorerDatasetHref,
-  explorerDemande,
   explorerHref,
   explorerOngletHref,
   explorerPlanParams,
   explorerResetHref,
   explorerResume,
-  explorerSource,
   groupeHref,
   limitePour,
   mesureDefaut,
   mesuresDe,
   pastillesRequete,
-  referencePrecedente,
   representationDemandee,
 } from "@/lib/explorer-page-params";
 // F33 — plans dérivés du contexte et filtre d'une valeur de la répartition.
-import { LIMITE_REPARTITION, filtresDuGroupe, mesureDeVolume, planDeRepartition, planDeVolume } from "@/lib/explorer-page-params";
+import { LIMITE_REPARTITION, filtresDuGroupe, mesureDeVolume } from "@/lib/explorer-page-params";
 import { modelesDeDepart } from "@/lib/explorer-modeles";
-import { exploreAnalytics, type ExplorerMeta, type ExplorerResult } from "@/lib/queries-explorer";
-import { ExplorerBudgetError, UnsupportedExplorerDimension } from "@/lib/analytics-schema";
+import { type ExplorerResult } from "@/lib/queries-explorer";
 import { widgetConfigJson, widgetFromPlan } from "@/lib/dashboards";
-import { canDashboardAction, dashboardPrincipal } from "@/lib/dashboard-access";
-import { listDashboards, type DashboardRow } from "@/lib/queries-dashboards";
-import { listDeploys } from "@/lib/queries-deploys";
-import { savedViewReader, savedViewsAvailable } from "@/lib/queries-saved-views";
-import { SAVED_VIEW_NAME_MAX, canCreateSavedView } from "@/lib/saved-views";
+import { type DashboardRow } from "@/lib/queries-dashboards";
+import { SAVED_VIEW_NAME_MAX } from "@/lib/saved-views";
 import { annotationsDeploiements } from "@/lib/annotations";
-import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente } from "@/lib/comparaison";
-import { lire } from "@/lib/lecture";
 import type { Annotation } from "@/lib/series";
 import { VIEW_CONTEXT_PARAMS, contextHref, gabaritZoom, lireComparaison, lireTri } from "@/lib/view-state";
 // F33 — un `split` que le jeu ne porte pas est ignoré ET dit (§ 3.1).
@@ -135,90 +119,6 @@ const ONGLETS: Record<Visualization, string> = LIBELLES_REPRESENTATION;
  */
 const RAISON_DISTRIBUTION =
   "représentation non disponible : la lecture en distribution n'est pas encore exposée par l'Explorer (B5)";
-
-/**
- * W-E7 — dimension de répartition par défaut (§ 5.21.4) : l'appareil. C'est la seule
- * dimension que TOUS les jeux portent par la session, et la plus lisible sans
- * connaître le site ; `split` en choisit une autre.
- */
-const REPARTITION_DEFAUT: BreakdownDimension = "device";
-
-/**
- * Budget des lectures de CONTEXTE (W-E2, W-E7), plus court que celui du résultat
- * (`EXPLORER_TIMEOUT_MS`, 5 s) — délibérément. Un contexte n'est pas la réponse : s'il
- * ne tient pas dans ce budget, il se tait et le dit, plutôt que de retarder ou de
- * faire échouer la figure qu'il accompagne.
- */
-const BUDGET_CONTEXTE_MS = 1_500;
-
-/**
- * Une lecture de contexte. Le budget dépassé n'est pas une panne mais une RÉPONSE
- * (« pas lu dans le temps imparti ») : il est converti avant `lire`, pour que la
- * section propose de réduire la requête au lieu de « Réessayer » ce qui échouera
- * pareil. Une vraie panne reste une panne — journalisée par `lire`, locale à sa
- * section.
- */
-async function lireContexte(lecture: () => Promise<ExplorerResult>): Promise<LectureContexte> {
-  const lu = await lire(async () => {
-    try {
-      return await lecture();
-    } catch (e) {
-      if (e instanceof ExplorerBudgetError) return null;
-      throw e;
-    }
-  });
-  if (!lu.ok) return { etat: "echec" };
-  return lu.data === null ? { etat: "budget" } : { etat: "ok", resultat: lu.data };
-}
-
-/** Tables dont `lib/comparaison.ts` sait lire le début de collecte (sa liste blanche). */
-function sourceDeCollecte(plan: ExplorerPlan) {
-  const definition = datasetDefinition(plan.dataset);
-  return {
-    table: DATASET_REGISTRY[definition.dataset].table,
-    colonneTemps: definition.time,
-    additive: estAdditive(plan.measure.aggregation),
-  };
-}
-
-/** Couverture de la méta d'une lecture, dans le vocabulaire de la comparaison (§ 3.2). */
-function couvertureDeMeta(meta: ExplorerMeta, n: number): CouverturePrecedente {
-  if (meta.coverage.status === "complete") return { etat: "complete", raison: null, n };
-  return {
-    etat: meta.coverage.status === "partial" ? "partielle" : "inconnue",
-    raison: meta.coverage.reason ?? "couverture non lue",
-    n,
-  };
-}
-
-/**
- * La période précédente est-elle COMPLÈTE (§ 3.2) ? D'abord la méta de sa propre
- * lecture (rétention) ; puis, pour les jeux dont la table figure dans la liste
- * blanche de `lib/comparaison.ts`, le début de collecte et le retard d'ingestion. La
- * première couverture incomplète gagne : un delta contre une période à moitié
- * mesurée mesurerait la collecte, pas le site.
- */
-async function couvertureDeLaPrecedente(
-  query: AnalyticsQuery,
-  plan: ExplorerPlan,
-  meta: ExplorerMeta,
-  n: number,
-): Promise<CouverturePrecedente> {
-  const deMeta = couvertureDeMeta(meta, n);
-  if (deMeta.etat !== "complete") return deMeta;
-  let collecte: CouverturePrecedente[] = [];
-  try {
-    collecte = await Promise.all(
-      sourcesSousFiltres(query, sourceDeCollecte(plan)).map((source) => couverturePrecedente(query, source)),
-    );
-  } catch {
-    // Table hors de la liste blanche (ressources, tâches longues, appels tracés) :
-    // seule la rétention est vérifiée, par la méta de la lecture ci-dessus.
-    collecte = [];
-  }
-  const incomplete = collecte.find((c) => c.etat !== "complete");
-  return incomplete ? { ...incomplete, n } : deMeta;
-}
 
 /** `tri` de l'écran (P3) : gravité par défaut, volume sur demande. */
 function lienTri(query: AnalyticsQuery, plan: ExplorerPlan, vue: Record<string, string | null>): HrefsResultat["tri"] {
@@ -264,34 +164,23 @@ function gabaritZoomExplorer(query: AnalyticsQuery, plan: ExplorerPlan, sp: Sear
 
 export default async function ExplorerPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/explorer");
-  if (!ecran.ok) return <FilterProblemNotice title="Explorer" problem={ecran.problem} />;
+  // Le chargeur (`lib/chargeurs/explorer.ts`) lit le schéma, les droits d'écriture,
+  // le résultat et ses contextes ; la page relit l'URL par la même fonction que lui
+  // (`demandeExplorer`), sur le même schéma.
+  const d = await chargerEcran(chargerExplorer, sp);
+  if (d.etat === "refus") return <FilterProblemNotice title="Explorer" problem={d.problem} />;
+  const ecran = d;
+  const schema = new Set(d.schema);
+  const { reader, dataset, definition, plan, demande, dimensionsRepartition, splitDemande, splitConnu, dimensionRepartition } =
+    demandeExplorer(ecran.query, sp, schema);
+  const { cibles, peutEnregistrerVue, resultat, echec, planVolume, planRepartition, contexteVolume, contexteRepartition } = d;
 
-  const reader = paramReader(sp);
-  const dataset = datasetChoisi(reader);
-  const definition = datasetDefinition(dataset);
-  const schema = await dimensionSchema();
-  const utilisateur = await getUser();
-  // Les droits d'écriture sont résolus AVANT l'action : un bouton qui échouerait
-  // n'est pas proposé, et son absence est expliquée.
-  const principal = await dashboardPrincipal(utilisateur);
-  const cibles = principal
-    ? (await listDashboards(ecran.filters)).filter((d) => canDashboardAction(principal, d, "add_widget"))
-    : [];
-  const app = ecran.query.scope.requestedApp;
-  const lecteurVues = utilisateur ? await savedViewReader(utilisateur) : null;
-  const peutEnregistrerVue =
-    app !== null && lecteurVues !== null && canCreateSavedView(lecteurVues, app) && (await savedViewsAvailable());
-
-  const source = { ...explorerSource(reader), dataset };
-  const plan = parseExplorerPlan(source, ecran.query);
   // Une mesure sans découpage temporel honnête (sessions actives) refuse la série :
   // l'onglet ne mène pas à un refus, il se dit indisponible avec sa raison.
   const [champId = ""] = (reader.get("measure")?.trim() || mesureDefaut(dataset)).split(":");
   const champMesure = Object.hasOwn(definition.fields, champId) ? definition.fields[champId] : undefined;
   const serieIndisponible =
     champMesure?.bucketable === false ? `« ${champMesure.label} » n'a pas de découpage temporel honnête` : null;
-  const demande = explorerDemande(reader);
 
   // Dimensions du jeu choisi : une dimension sans objet ou non collectée est
   // proposée désactivée AVEC sa raison, jamais silencieusement absente.
@@ -305,27 +194,6 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
     };
   });
 
-  // W-E7 — dimensions de la répartition : les six onglets de découpage, chacun avec
-  // sa disponibilité RÉELLE sur ce jeu (`dimensionSupport`). Une dimension que le jeu
-  // ne porte pas reste proposée, désactivée, avec sa raison écrite.
-  const dimensionsRepartition = BREAKDOWN_DIMENSIONS.map((dimension) => {
-    const support = dimensionSupport(definition.dataset, dimension, schema);
-    return {
-      dimension,
-      label: BREAKDOWN_LABELS[dimension],
-      disponible: support.supported,
-      raison: support.supported ? null : support.message,
-    };
-  });
-  const repartitionPortees = dimensionsRepartition.filter((d) => d.disponible).map((d) => d.dimension);
-  const splitDemande = reader.get(BREAKDOWN_PARAM)?.trim() || null;
-  const splitConnu = BREAKDOWN_DIMENSIONS.find((d) => d === splitDemande) ?? null;
-  const dimensionRepartition: BreakdownDimension | null =
-    splitConnu !== null && repartitionPortees.includes(splitConnu)
-      ? splitConnu
-      : repartitionPortees.includes(REPARTITION_DEFAUT)
-        ? REPARTITION_DEFAUT
-        : (repartitionPortees[0] ?? null);
   // Un `split` demandé mais non appliqué ne disparaît pas en silence (V10) : il est
   // ignoré ET dit, comme tout réglage d'affichage illisible.
   const splitIgnore =
@@ -335,63 +203,10 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
           splitDemande,
           splitConnu === null
             ? "dimension de découpage inconnue"
-            : (dimensionsRepartition.find((d) => d.dimension === splitConnu)?.raison ??
+            : (dimensionsRepartition.find((x) => x.dimension === splitConnu)?.raison ??
               "dimension non portée par ce jeu de données"),
         )
       : null;
-
-  let resultat: ExplorerResult | null = null;
-  let echec: { titre: string; message: string } | null = null;
-  // Zone 8 : plans DÉRIVÉS du contexte, et ce que chaque lecture a donné.
-  let planVolume: ExplorerPlan | null = null;
-  let planRepartition: ExplorerPlan | null = null;
-  let contexteVolume: LectureContexte | null = null;
-  let contexteRepartition: LectureContexte | null = null;
-  // CE6 (P14) : une série à plus de cinq groupes n'est pas lancée. Le contrôle du
-  // formulaire ne la propose pas ; une URL qui l'impose est refusée, avec sa raison.
-  const tropDeSeries = plan.ok && plan.value.visualization === "timeseries" && plan.value.limit > SERIES_MAX;
-  if (demande && tropDeSeries) {
-    echec = {
-      titre: "Trop de séries demandées",
-      message: `Une série temporelle superpose au plus ${SERIES_MAX} groupes : au-delà, les courbes cessent d'être lisibles. Choisir 1, 3 ou ${SERIES_MAX} dans « Nombre maximum », ou la représentation « Classement ».`,
-    };
-  } else if (demande && plan.ok) {
-    const p = plan.value;
-    // W-E2 : le volume n'est pas affiché sous une série — le résultat dit déjà le
-    // temps, et deux séries d'échelles différentes se liraient l'une pour l'autre.
-    const pourVolume = p.visualization === "timeseries" ? null : planDeVolume(p);
-    const pourRepartition = dimensionRepartition ? planDeRepartition(p, dimensionRepartition) : null;
-    planVolume = pourVolume;
-    planRepartition = pourRepartition;
-    // Les trois lectures PARTENT ensemble : le contexte n'ajoute pas son temps à
-    // celui du résultat, et son budget plus court le fait renoncer le premier.
-    const volumeLu = pourVolume
-      ? lireContexte(() => exploreAnalytics({ query: ecran.query, plan: pourVolume }, { timeoutMs: BUDGET_CONTEXTE_MS }))
-      : null;
-    const repartitionLue = pourRepartition
-      ? lireContexte(() =>
-          exploreAnalytics({ query: ecran.query, plan: pourRepartition }, { timeoutMs: BUDGET_CONTEXTE_MS }),
-        )
-      : null;
-    try {
-      resultat = await exploreAnalytics({ query: ecran.query, plan: p });
-    } catch (e) {
-      if (e instanceof ExplorerBudgetError) {
-        echec = {
-          titre: "Budget de lecture dépassé",
-          message: `${e.message}. Aucun chiffre n'est affiché : une série de zéros se lirait comme une absence de trafic.`,
-        };
-      } else if (e instanceof UnsupportedExplorerDimension) {
-        echec = { titre: "Dimension non applicable", message: e.message };
-      } else {
-        throw e;
-      }
-    }
-    // Toujours attendues, même quand le résultat a échoué : une promesse laissée
-    // derrière rejetterait hors de tout rendu (`lireContexte` ne lève jamais).
-    contexteVolume = volumeLu ? await volumeLu : null;
-    contexteRepartition = repartitionLue ? await repartitionLue : null;
-  }
 
   const mesures = mesuresDe(dataset);
   const mesureCourante = plan.ok ? `${plan.value.measure.field}:${plan.value.measure.aggregation}` : mesureDefaut(dataset);
@@ -422,47 +237,16 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
     ...(splitIgnore ? [splitIgnore] : []),
   ];
 
-  // cmp=prev (W-E3, W-E5) : la MÊME analyse relue sur la période précédente, pour une
-  // valeur ou une série sans groupe. Un classement ne se compare pas (deux ordres côte
-  // à côte trompent) ; une série à groupes doublerait ses courbes : `null`, et la
-  // figure dit pourquoi. Une lecture précédente en échec ne produit aucun delta.
-  let precedent: PrecedentResultat | null | undefined;
+  // cmp=prev (W-E3, W-E5) et déploiements d'une série (P9) : lus par le chargeur.
+  const precedent = d.precedent;
   let annotations: { annotations: Annotation[]; indisponible: string | null } | null = null;
-  if (resultat && plan.ok) {
+  if (resultat && plan.ok && d.deploys) {
     const p = plan.value;
-    const comparable = p.visualization === "value" || (p.visualization === "timeseries" && p.groupBy.length === 0);
-    if (comparaison.valeur.mode === "prev" && p.visualization !== "table") {
-      if (!comparable) {
-        precedent = null;
-      } else {
-        const queryPrecedente: AnalyticsQuery = { ...ecran.query, range: previousRange(ecran.query.range) };
-        const lu = await lire(() => exploreAnalytics({ query: queryPrecedente, plan: { ...p, cursor: null } }));
-        const plage = referencePrecedente(ecran.query.range);
-        precedent = lu.ok
-          ? {
-              total: lu.data.data.total,
-              series: lu.data.data.series,
-              plage,
-              couverture: await couvertureDeLaPrecedente(ecran.query, p, lu.data.meta, lu.data.data.samples),
-            }
-          : {
-              total: null,
-              plage,
-              couverture: { etat: "inconnue", raison: "la lecture de la période précédente a échoué" },
-            };
-      }
-    }
-    // P9 : une série porte les déploiements de sa fenêtre. `listDeploys` lit les 20
-    // derniers marqueurs sans borne de temps ; `annotationsDeploiements` les filtre sur
-    // [from, to) et, sous plage personnalisée, dit qu'il ne peut pas conclure (B1).
-    if (p.visualization === "timeseries") {
-      const deploys = await lire(() => listDeploys(ecran.filters, 20));
-      annotations = deploys.ok
-        ? annotationsDeploiements(deploys.data, ecran.query.range, {
-            lien: (relB, relA) => explorerHref(ecran.query, p, { ...vue, cmp: "release", rel_b: relB, rel_a: relA }),
-          })
-        : { annotations: [], indisponible: "déploiements non affichés : leur lecture a échoué" };
-    }
+    annotations = d.deploys.ok
+      ? annotationsDeploiements(d.deploys.data, ecran.query.range, {
+          lien: (relB, relA) => explorerHref(ecran.query, p, { ...vue, cmp: "release", rel_b: relB, rel_a: relA }),
+        })
+      : { annotations: [], indisponible: "déploiements non affichés : leur lecture a échoué" };
   }
   // Le formulaire se replie quand un résultat occupe l'écran ; sans résultat
   // (rien d'exécuté, requête refusée, lecture en échec), il est le seul geste utile.
@@ -808,7 +592,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
           cibles={cibles}
           peutEnregistrerVue={peutEnregistrerVue}
           contexte={queryToSearchParams(ecran.query).toString()}
-          appDemandee={app}
+          appDemandee={ecran.query.scope.requestedApp}
           query={ecran.query}
           contexteResultat={contexteResultat}
         />
@@ -840,7 +624,8 @@ function Resultat({
   tri: "gravite" | "volume";
   hrefs: HrefsResultat;
   /** Tableaux de bord sur lesquels la session peut réellement ajouter une carte. */
-  cibles: DashboardRow[];
+  /** Tableaux de bord où l'utilisateur peut ajouter un widget : ce que le formulaire en montre. */
+  cibles: Pick<DashboardRow, "id" | "name" | "app_id" | "revision">[];
   peutEnregistrerVue: boolean;
   contexte: string;
   appDemandee: string | null;

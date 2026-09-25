@@ -37,6 +37,9 @@ Une passe n'entame plus de livraison au-delà de 10 s (`BUDGET_PASSE_MS`) : ce q
 | `GET /live` | réseau privé | processus vivant, jamais la base — pour une supervision externe |
 | `GET /ready` | jeton `METRICS_TOKEN` (sinon 404) | 503 dès SIGTERM ; sinon **fraîcheur** (une passe aboutie depuis moins de 4 intervalles, 60 s au moins, comptés depuis le démarrage tant qu'aucune n'a abouti) et **arriéré** (`queued` de plus de 15 min = bloqué). Supervision seulement. |
 | `GET /metrics` | jeton `METRICS_TOKEN` (sinon 404) | `notifier_deliveries_total{canal,status}`, `notifier_step_failures_total{step}`, `notifier_backlog_deliveries`, `notifier_backlog_oldest_seconds`, `loop_*`, pool, mémoire |
+| `POST /v1/webhooks/tickets/{id}` | **public** (domaine généré), 1 Mio | C11 — la livraison signée d'un fournisseur de tickets (GitHub, `X-Hub-Signature-256` sur le corps brut). Refus muets : 400 cookie de la console ou corps illisible, 401 signature, 404 intégration inconnue ou éteinte (le même), 413, 503 secret du webhook injoignable. `{ ok: true, received }` sinon — jamais un détail RUM. Rejeu reconnu par `(integration_id, delivery_id)`. L'alias `/api/webhooks/tickets/{id}` mène au même traitement. |
+
+**Toute réponse porte `x-mip-notifier: 1`** : le relais de la console (`lib/ticket-hook-relay.ts`, `CONSOLE_TICKET_HOOK_URL`) distingue ainsi le notifier du routeur Railway — non signée, il traite la livraison lui-même (sûr : un rejeu n'applique rien deux fois). Le code du point d'entrée est partagé avec la console (`@mip/backend/lib/integrations/tickets/webhook-entrant.mjs`). Le secret du webhook se résout ICI : les variables `TICKET_*` qu'une intégration référence (`env:TICKET_…`) doivent exister sur le notifier, et être déclarées dans l'IaC (`preserve()`), sans quoi un apply les supprimerait.
 
 Toute autre route : 404.
 

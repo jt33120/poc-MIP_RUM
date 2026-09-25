@@ -99,6 +99,9 @@ const ENV = vi.hoisted(() => {
   process.env.REQUIRE_API_KEY = "true";
   process.env.RATE_LIMIT_PER_MIN = "600";
   process.env.IDENTITY_HASH_SECRET = "parite-secret-identite";
+  // C11 — un jeton d'API HISTORIQUE (CONSOLE_API_TOKENS), scopé sur l'app A : la
+  // console l'accepte encore pour un marqueur de déploiement, le collector non.
+  process.env.CONSOLE_API_TOKENS = "parite-jeton-historique@parite-a";
   return { next, collector, secret: "parite-secret-identite", limite: 600 };
 });
 
@@ -106,6 +109,9 @@ import { POST as POST_LOGS } from "../../apps/console/app/api/ingest/v1/logs/rou
 import { POST as POST_REPLAY } from "../../apps/console/app/api/ingest/v1/replay/route";
 import { POST as POST_TRACES } from "../../apps/console/app/api/ingest/v1/traces/route";
 import { POST as POST_SOURCEMAPS } from "../../apps/console/app/api/sourcemaps/route";
+import { POST as POST_BATTEMENT } from "../../apps/console/app/api/extension/heartbeat/route";
+import { GET as GET_RESOLVE } from "../../apps/console/app/api/extension/resolve/route";
+import { POST as POST_DEPLOIEMENT } from "../../apps/console/app/api/v1/deploys/route";
 import { pool as poolConsole } from "../../apps/console/lib/db";
 // @ts-expect-error module ESM partagé, sans déclarations
 import { VERROU_INGESTION_NS } from "../../packages/backend/lib/privacy-barriere.mjs";
@@ -151,6 +157,10 @@ const nanos = (ms: number) => (BigInt(ms) * 1_000_000n).toString();
 
 /** Jeton d'upload de source maps : MÊME id et même empreinte dans les deux bases. */
 const JETON = genererJetonUpload() as { id: string; jeton: string; empreinte: string };
+/** C11 — jeton de CI `deploys:write` de l'app A (migration-v92), de même. */
+const JETON_DEPLOIEMENT = genererJetonUpload() as { id: string; jeton: string; empreinte: string };
+/** C11 — le domaine de l'extension rattaché à l'app A. */
+const DOMAINE_A = "parite-a.exemple.fr";
 
 /**
  * Ce que les MIGRATIONS sèment elles-mêmes (apps `demo-app`, `gip-plateforme`… ;
@@ -198,6 +208,12 @@ async function amorcer(db: pg.Pool) {
      values ($1, $2, 'CI parité', $3, 'parite@test', $4, $4::timestamptz + interval '30 days')`,
     [JETON.id, APP.a.id, JETON.empreinte, AMORCE],
   );
+  await db.query(
+    `insert into sourcemap_upload_token (id, app_id, name, secret_hash, scope, created_by, created_at, expires_at)
+     values ($1, $2, 'CI parité — déploiements', $3, 'deploys:write', 'parite@test', $4, $4::timestamptz + interval '30 days')`,
+    [JETON_DEPLOIEMENT.id, APP.a.id, JETON_DEPLOIEMENT.empreinte, AMORCE],
+  );
+  await db.query("insert into extension_scope (domain, app_id, created_at) values ($1, $2, $3)", [DOMAINE_A, APP.a.id, AMORCE]);
   // Débit : l'app `debit` a DÉJÀ consommé sa minute, et les quatre suivantes —
   // les cas 429 tombent quelques secondes après l'amorce, mais peuvent chevaucher
   // un changement de minute entre les deux côtés, ou arriver sur un poste lent.
@@ -354,6 +370,8 @@ interface Envoi {
   corps: Buffer;
   /** Corps en flux, SANS `content-length` (transfert par morceaux). */
   sansLongueur?: boolean;
+  /** C11 — la résolution d'un domaine est un GET (sans corps). Défaut : POST. */
+  methode?: "GET" | "POST";
 }
 
 interface Reponse {
@@ -386,11 +404,18 @@ async function appelerConsole(e: Envoi): Promise<Reponse> {
   // Sur le réseau, le client annonce la longueur ; une `Request` construite en
   // mémoire ne la porte pas d'elle-même. Sans cette ligne, la garde 413 sur
   // longueur annoncée ne serait jamais exercée côté console.
-  if (!e.sansLongueur) entetes.set("content-length", String(e.corps.length));
+  const lecture = e.methode === "GET";
+  if (!e.sansLongueur && !lecture) entetes.set("content-length", String(e.corps.length));
   const corps = e.sansLongueur ? (Readable.toWeb(Readable.from(moities(e.corps))) as ReadableStream) : e.corps;
-  const brute = new Request(url, { method: "POST", headers: entetes, body: corps, duplex: "half" } as RequestInit);
+  const brute = lecture
+    ? new Request(url, { method: "GET", headers: entetes })
+    : new Request(url, { method: "POST", headers: entetes, body: corps, duplex: "half" } as RequestInit);
   let res: Response;
-  if (e.chemin === "/api/ingest/v1/traces") res = await POST_TRACES(brute);
+  const chemin = e.chemin.split("?")[0];
+  if (chemin === "/api/extension/resolve") res = await GET_RESOLVE(brute as never);
+  else if (chemin === "/api/extension/heartbeat") res = await POST_BATTEMENT(brute as never);
+  else if (chemin === "/api/v1/deploys") res = await POST_DEPLOIEMENT(brute);
+  else if (e.chemin === "/api/ingest/v1/traces") res = await POST_TRACES(brute);
   else if (e.chemin === "/api/ingest/v1/logs") res = await POST_LOGS(brute);
   else if (e.chemin === "/api/ingest/v1/replay") res = await POST_REPLAY(brute);
   else if (e.chemin === "/api/sourcemaps") {
@@ -405,9 +430,10 @@ async function appelerConsole(e: Envoi): Promise<Reponse> {
 function appelerCollector(port: number, e: Envoi): Promise<Reponse> {
   return new Promise((resoudre, rejeter) => {
     const entetes: Record<string, string> = { ...e.entetes };
-    if (!e.sansLongueur) entetes["content-length"] = String(e.corps.length);
+    const lecture = e.methode === "GET";
+    if (!e.sansLongueur && !lecture) entetes["content-length"] = String(e.corps.length);
     const req = requeteHttp(
-      { host: "127.0.0.1", port, method: "POST", path: e.cheminCollector ?? e.chemin, headers: entetes },
+      { host: "127.0.0.1", port, method: lecture ? "GET" : "POST", path: e.cheminCollector ?? e.chemin, headers: entetes },
       (res) => {
         const morceaux: Buffer[] = [];
         res.on("data", (c: Buffer) => morceaux.push(c));
@@ -428,7 +454,8 @@ function appelerCollector(port: number, e: Envoi): Promise<Reponse> {
     req.on("error", (err) => {
       if (!repondu) rejeter(err);
     });
-    if (e.sansLongueur) {
+    if (lecture) req.end();
+    else if (e.sansLongueur) {
       const [debut, fin] = moities(e.corps);
       req.write(debut);
       req.end(fin);
@@ -462,6 +489,12 @@ const COLONNES_EXCLUES: Record<string, readonly string[]> = {
   sourcemap: ["created_at", "uploaded_at"],
   // `now()` au moment où le jeton sert.
   sourcemap_upload_token: ["last_used_at"],
+  // C11 — `now()` de l'écriture : quand un poste s'est déclaré, quand un marqueur
+  // a été inscrit. Le poste, son navigateur, ses applications et l'instant du
+  // déploiement (`ts`, donné par le corps) restent comparés.
+  extension_install: ["first_seen_at", "last_seen_at"],
+  extension_install_app: ["first_seen_at", "last_seen_at"],
+  deploy_marker: ["created_at"],
 };
 
 type Instantane = Map<string, string[]>;
@@ -650,6 +683,16 @@ const rejeu = (session: string, app: App, seq: number) => ({
 });
 
 const bearer = (jeton = JETON.jeton) => ({ authorization: `Bearer ${jeton}` });
+
+/** C11 — un battement de poste de l'extension, User-Agent compris (la route l'inscrit). */
+const UA_POSTE = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+const battement = (installId: string, appIds: string[] = [APP.a.id]) => ({
+  ...json({ install_id: installId, version: "1.4.0", label: "Parc parité", app_ids: [...appIds, "app-inventee"] }),
+  entetes: { "content-type": "application/json", "user-agent": UA_POSTE },
+});
+const POSTE = "4f1c2b8e-6a3d-4c7e-9b10-2d5e8f7a9c01";
+/** C11 — un marqueur de déploiement, à l'instant fixé (T0) pour que les deux côtés écrivent le même. */
+const marqueur = (appId: string, version = "2026.09.25") => ({ app_id: appId, version, env: "prod", ts: new Date(T0).toISOString() });
 
 const CAS: Cas[] = [
   // ── 200 nominaux ──────────────────────────────────────────────────────────
@@ -928,6 +971,68 @@ const CAS: Cas[] = [
     envoi: { chemin: "/api/sourcemaps", entetes: { "content-type": "application/json", ...bearer() }, corps: Buffer.from("{") },
     statut: 400,
   },
+  // ── C11 — les routes machine : l'extension navigateur ────────────────────
+  {
+    nom: "extension : résolution d'un domaine enregistré → 200",
+    envoi: { chemin: `/api/extension/resolve?domain=${DOMAINE_A}`, methode: "GET", entetes: {}, corps: Buffer.alloc(0) },
+    statut: 200,
+  },
+  {
+    nom: "extension : domaine non enregistré → 404",
+    envoi: { chemin: "/api/extension/resolve?domain=inconnu.exemple.fr", methode: "GET", entetes: {}, corps: Buffer.alloc(0) },
+    statut: 404,
+  },
+  {
+    nom: "extension : domaine qui n'a pas la forme d'un nom d'hôte → 400",
+    envoi: { chemin: "/api/extension/resolve?domain=pas%20un%20domaine", methode: "GET", entetes: {}, corps: Buffer.alloc(0) },
+    statut: 400,
+  },
+  {
+    nom: "extension : battement d'un poste (applications filtrées par le registre) → 200",
+    envoi: { chemin: "/api/extension/heartbeat", ...battement(POSTE) },
+    statut: 200,
+  },
+  {
+    nom: "extension : second battement du même poste (upsert) → 200",
+    envoi: { chemin: "/api/extension/heartbeat", ...battement(POSTE) },
+    statut: 200,
+  },
+  {
+    nom: "extension : install_id qui n'est pas un UUID → 400",
+    envoi: { chemin: "/api/extension/heartbeat", ...json({ install_id: "poste-42" }) },
+    statut: 400,
+  },
+  {
+    nom: "extension : battement de plus de 4 Kio → 413",
+    envoi: { chemin: "/api/extension/heartbeat", ...json({ install_id: POSTE, label: "x".repeat(5000) }) },
+    statut: 413,
+  },
+  // ── C11 — les marqueurs de déploiement, au jeton de CI `deploys:write` ────
+  {
+    nom: "déploiement : marqueur au jeton de CI deploys:write → 201",
+    envoi: { chemin: "/api/v1/deploys", ...json(marqueur(APP.a.id), bearer(JETON_DEPLOIEMENT.jeton)) },
+    statut: 201,
+  },
+  {
+    nom: "déploiement : jeton de source maps (autre privilège) → 401",
+    envoi: { chemin: "/api/v1/deploys", ...json(marqueur(APP.a.id), bearer()) },
+    statut: 401,
+  },
+  {
+    nom: "déploiement : pour une autre app que celle du jeton → 403",
+    envoi: { chemin: "/api/v1/deploys", ...json(marqueur(APP.b.id), bearer(JETON_DEPLOIEMENT.jeton)) },
+    statut: 403,
+  },
+  {
+    nom: "déploiement : sans jeton → 401",
+    envoi: { chemin: "/api/v1/deploys", ...json(marqueur(APP.a.id)) },
+    statut: 401,
+  },
+  {
+    nom: "déploiement : sans app_id → 400",
+    envoi: { chemin: "/api/v1/deploys", ...json({ version: "x" }, bearer(JETON_DEPLOIEMENT.jeton)) },
+    statut: 400,
+  },
 ];
 
 // ─────────────────────────────── Exécution ─────────────────────────────────
@@ -1058,6 +1163,24 @@ suite("contrat de parité — console (routes Next) ↔ collector (creerReceveur
       expect({ console: r.console.statut, collector: r.collector.statut }).toEqual({ console: 401, collector: 401 });
       expect(r.console.corps).toEqual({ error: "session requise" });
       expect(r.collector.corps).toEqual({ error: "jeton d'upload de source maps invalide, expiré ou révoqué" });
+      expect(ecartsDuCas(avant, await releve())).toEqual([]);
+    }, DELAI);
+
+    it("déploiement au jeton d'API historique : la console l'accepte jusqu'à la fin annoncée (Sunset), le collector le refuse", async () => {
+      // POURQUOI C'EST VOULU (C11). Le collector ne lit que les jetons de CI en base
+      // (`deploys:write`) ; CONSOLE_API_TOKENS est une variable de Vercel, qu'il n'a
+      // pas. La console garde l'ancien chemin pendant une fenêtre DATÉE, et le dit à
+      // chaque réponse (`Deprecation`, `Sunset`, RFC 8594).
+      const envoi = { chemin: "/api/v1/deploys", ...json(marqueur(APP.a.id, "historique"), bearer("parite-jeton-historique")) };
+      const avant = await releve();
+      const r = await envoyerDesDeuxCotes(envoi);
+      expect({ console: r.console.statut, collector: r.collector.statut }).toEqual({ console: 201, collector: 401 });
+      expect(r.collector.corps).toEqual({ error: "jeton de CI « deploys:write » invalide, expiré ou révoqué" });
+      const ecart = ecartsDuCas(avant, await releve());
+      expect(ecart.filter((l) => !l.startsWith("  "))).toEqual(["deploy_marker : 1 ligne(s) console, 0 collector"]);
+      // Réalignement : le marqueur que seule la console a accepté ; plus rien ne diffère.
+      await baseConsole.query("delete from deploy_marker where app_id = $1 and version = 'historique'", [APP.a.id]);
+      await baseConsole.query("select setval('deploy_marker_id_seq', (select coalesce(max(id), 1) from deploy_marker))");
       expect(ecartsDuCas(avant, await releve())).toEqual([]);
     }, DELAI);
 

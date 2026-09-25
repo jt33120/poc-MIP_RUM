@@ -1,23 +1,17 @@
 "use server";
-// Server Actions /admin/extension-installs (Ext-D) — admin only, tracé.
-// Une seule action : retirer un poste de l'inventaire. Rien ici ne pilote
-// l'extension à distance (pas de désinstallation, pas de kill-switch par poste) :
-// le seul levier d'arrêt de la collecte reste le registre de domaines, côté
-// serveur, et il vaut pour tout le parc à la fois.
+// Server Actions /admin/extension-installs (Ext-D). Une seule : retirer un poste de
+// l'inventaire — C9, la COMMANDE `oublierPoste` (`lib/commandes/raccordements.ts`),
+// réservée à l'administrateur de la plateforme (un poste observe plusieurs
+// applications), auditée. Rien ici ne pilote l'extension à distance : le seul
+// levier d'arrêt de la collecte reste le registre de domaines.
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
-import { q } from "@/lib/db";
-import { forgetInstall } from "@/lib/queries-extension-installs";
+import { executerCommande } from "@/lib/commande-locale";
+import { apresRefus } from "@/lib/commande-suite";
 
 export async function forgetInstallAction(fd: FormData): Promise<void> {
-  const admin = await requireAdmin();
   const id = String(fd.get("install_id") ?? "").trim();
   if (!id) return;
-  await forgetInstall(id);
-  await q(`insert into audit_log (user_email, action, detail) values ($1, $2, $3)`, [
-    admin.email,
-    "extension_install_forget",
-    id,
-  ]);
+  const r = await executerCommande("oublierPoste", { chemin: { installId: id } });
+  if (!r.ok) apresRefus(r);
   revalidatePath("/admin/extension-installs");
 }

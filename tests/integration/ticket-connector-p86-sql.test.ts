@@ -31,6 +31,7 @@ import { secureOtlpIdentities } from "../../packages/backend/lib/identity-hash.m
 // @ts-expect-error module JS sans déclarations
 import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
 import { DSAR_CHILD_TABLES } from "../../apps/console/lib/dsar";
+import { effacerAudit } from "../fixtures/effacer-audit";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -135,7 +136,7 @@ async function nettoyer() {
     [[APP, AUTRE]],
   );
   for (const s of sessions) await pool.query("select erase_session($1)", [s.session_id]);
-  await pool.query("delete from audit_log where user_email = $1", [ADMIN]);
+  await effacerAudit(pool, "user_email = $1", [ADMIN]);
 }
 
 beforeAll(async () => {
@@ -718,6 +719,49 @@ suite("P8.6 — webhooks : rejeu, mapping explicite et autorité de MIP", () => 
     repository: { full_name: CIBLE },
   };
 
+  it("C11 — le point d'entrée du notifier (le code partagé avec la console) : signature, rejeu, refus muets", async () => {
+    const { creerGestionnaireHook } = await import(
+      // @ts-expect-error module JS sans déclarations
+      "../../packages/backend/lib/integrations/tickets/webhook-entrant.mjs"
+    );
+    const hook = creerGestionnaireHook({ pool, env: { TICKET_WH: SECRET }, log: { error() {} } });
+    const { integ, iss } = await issueAvecTicket({ closed: "resolved" });
+    const envoyer = (corps: string, entetes: Record<string, string>, id = integ, chemin = "/v1") =>
+      hook(new Request(`https://notifier.test${chemin}/webhooks/tickets/${id}`, { method: "POST", headers: entetes, body: corps }));
+    const brut = JSON.stringify(FERMETURE);
+    const signes = (livraison: string) => ({
+      "content-type": "application/json",
+      "x-github-event": "issues",
+      "x-github-delivery": livraison,
+      "x-hub-signature-256": signer(brut),
+    });
+
+    // Livrée : l'issue est résolue, la réponse ne dit RIEN de plus que « reçu ».
+    let r = await envoyer(brut, signes("c11-1"));
+    expect([r.status, await r.json()]).toEqual([200, { ok: true, received: "accepted" }]);
+    expect((await pool.query("select status from error_issue where id = $1", [iss.id])).rows[0].status).toBe("resolved");
+    // Rejouée (par le fournisseur, ou par le repli de la console) : reconnue, rien d'appliqué deux fois.
+    r = await envoyer(brut, signes("c11-1"));
+    expect(await r.json()).toEqual({ ok: true, received: "duplicate" });
+    // L'alias de la console mène au même traitement.
+    r = await envoyer(brut, signes("c11-2"), integ, "/api");
+    expect(r.status).toBe(200);
+    // Signature fausse : 401, sans rien écrire.
+    r = await envoyer(brut, { ...signes("c11-3"), "x-hub-signature-256": `sha256=${"0".repeat(64)}` });
+    expect(r.status).toBe(401);
+    expect((await pool.query("select count(*)::int as n from ticket_webhook_event where delivery_id = 'c11-3'")).rows[0].n).toBe(0);
+    // Un navigateur (cookie de la console) : refusé avant de lire.
+    expect((await envoyer(brut, { ...signes("c11-4"), cookie: "mip_session=abc" })).status).toBe(400);
+    // Une intégration inconnue, ou un identifiant mal formé : le même 404 muet.
+    for (const id of ["999999999", "abc"]) {
+      r = await envoyer(brut, signes("c11-5"), id);
+      expect([r.status, await r.json()]).toEqual([404, { error: "introuvable" }]);
+    }
+    // Rien d'autre n'est servi.
+    expect((await hook(new Request("https://notifier.test/v1/autre"))).status).toBe(404);
+    expect((await hook(new Request(`https://notifier.test/v1/webhooks/tickets/${integ}`))).status).toBe(405);
+  });
+
   it("un ticket fermé résout l'issue QUAND le mapping est configuré, et le journal le dit", async () => {
     const { integ, iss } = await issueAvecTicket({ closed: "resolved", reopened: "open" });
     const r = await livraison(integ, FERMETURE, "d-1");
@@ -910,6 +954,8 @@ suite("P8.6 — effacement, rétention et périmètre", () => {
       "ticket_outbox", "ticket_webhook_event",
       "slo", "goal", "notify_channel", "uptime_check", "read_tokens", "deploy_marker",
       "ai_briefing", "extension_scope", "extension_install_app",
+      // v90 : journal d'audit en ajout seul.
+      "audit_log",
     ];
     const { rows } = await pool.query<{ table_name: string }>(
       `select c.table_name from information_schema.columns c
@@ -945,7 +991,12 @@ suite("P8.6 — effacement, rétention et périmètre", () => {
       `select c.relname || '.' || p.polname as pol
          from pg_policy p join pg_class c on c.oid = p.polrelid
         where c.relname in ('ticket_integration','ticket_outbox','ticket_webhook_event')
-          and pg_get_expr(p.polqual, p.polrelid) = 'true'`,
+          and pg_get_expr(p.polqual, p.polrelid) = 'true'
+          -- les accès des rôles de service (mip_api v89, mip_console et mip_identity v93) ne
+          -- s'appliquent qu'à eux : le OU des policies joue par rôle ; vérifiés par
+          -- scripts/ci/verify-db-roles*.mjs
+          and not exists (select 1 from pg_roles r where r.oid = any(p.polroles)
+                           and r.rolname in ('mip_api', 'mip_console', 'mip_identity'))`,
     );
     expect(rows).toEqual([]);
   });

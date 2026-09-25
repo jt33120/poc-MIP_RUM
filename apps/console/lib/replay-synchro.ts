@@ -197,6 +197,12 @@ export function lireIgnores(v: unknown): number {
   return typeof v === "number" && Number.isInteger(v) && v > 0 ? v : 0;
 }
 
+/** Segments au-delà du plafond de lecture d'une session (`lib/chargeurs/rejeu.ts`) : le rejeu s'arrête avant la fin. */
+export function texteTronques(n: number): string {
+  const segments = n > 1 ? `${formater("count", n)} segments` : "1 segment";
+  return `${segments} au-delà du plafond de lecture d'une session, non chargé${n > 1 ? "s" : ""} : le rejeu s'arrête avant la fin de la session`;
+}
+
 /** « 1 segment illisible ignoré », « 3 segments illisibles ignorés ». */
 export function texteIgnores(n: number): string {
   return n > 1 ? `${formater("count", n)} segments illisibles ignorés` : "1 segment illisible ignoré";

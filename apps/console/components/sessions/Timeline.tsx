@@ -46,7 +46,7 @@ export function Decalage({
   className,
 }: {
   texte: string;
-  ts: Date;
+  ts: Date | string;
   instant?: string | null;
   /** Mise en page seulement (largeur, police) : aucune classe de couleur. */
   className: string;

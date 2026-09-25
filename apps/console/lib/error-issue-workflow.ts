@@ -58,7 +58,7 @@ export interface IssueLink {
   url: string;
   label: string;
   created_by: IssueUserRef | null;
-  created_at: Date;
+  created_at: Date | string;
 }
 
 export interface IssueActivity {
@@ -78,7 +78,7 @@ export interface IssueActivity {
   /** Régression : release de référence dépassée. */
   reference_release: string | null;
   env: string | null;
-  created_at: Date;
+  created_at: Date | string;
 }
 
 /** État de workflow d'une issue après une mutation. */
@@ -88,12 +88,12 @@ export interface IssueWorkflowState {
   status: IssueStatus;
   status_source: "system" | "migration" | "user";
   assignee: IssueUserRef | null;
-  resolved_at: Date | null;
+  resolved_at: Date | string | null;
   resolved_by: IssueUserRef | null;
   resolved_release: string | null;
   resolved_env: string | null;
   revision: string;
-  updated_at: Date;
+  updated_at: Date | string;
 }
 
 export type WorkflowResult<T> =
@@ -253,7 +253,7 @@ interface ActivitySqlRow extends Omit<IssueActivity, "link"> {
   link_url: string | null;
   link_label: string | null;
   link_created_by: IssueUserRef | null;
-  link_created_at: Date | null;
+  link_created_at: Date | string | null;
   cursor_id: string;
   cursor_ts: string;
 }
@@ -392,6 +392,12 @@ interface MutationContext {
   /** Périmètre du principal : null = toutes les apps. */
   apps: string[] | null;
   actorEmail: string;
+  /**
+   * La ligne d'audit de la COMMANDE qui mute (C7, `lib/commandes/issues.ts`) : son
+   * action, la requête et l'application, dans la transaction de la mutation. Absente
+   * (appel direct, tests SQL), la ligne s'écrit sous l'action historique du module.
+   */
+  auditer?: (client: PoolClient, detail: string) => Promise<void>;
 }
 
 type Mutation<T> = (client: PoolClient, issue: LockedIssue, actorId: string) => Promise<WorkflowResult<T>>;
@@ -437,9 +443,10 @@ async function muter<T>(ctx: MutationContext, app: string, expectedRevision: str
   });
 }
 
-async function audit(client: PoolClient, email: string, action: string, detail: Record<string, unknown>) {
+async function audit(client: PoolClient, ctx: MutationContext, action: string, detail: Record<string, unknown>) {
+  if (ctx.auditer) return ctx.auditer(client, JSON.stringify(detail));
   await client.query("insert into audit_log (user_email, action, detail) values ($1, $2, $3)", [
-    email,
+    ctx.actorEmail,
     action,
     JSON.stringify(detail),
   ]);
@@ -512,7 +519,7 @@ export async function triageIssue(ctx: MutationContext, request: TriageRequest):
         );
       }
       await nouvelleRevision(client, issue);
-      await audit(client, ctx.actorEmail, "error_issue_triage", {
+      await audit(client, ctx, "error_issue_triage", {
         app_id: issue.app_id,
         issue_id: issue.id,
         ...(statutChange ? { status: { from: issue.status, to: statut } } : {}),
@@ -536,7 +543,7 @@ export async function commentIssue(
       [issue.app_id, issue.id, actorId, request.body],
     );
     const revision = await nouvelleRevision(client, issue);
-    await audit(client, ctx.actorEmail, "error_issue_comment", { app_id: issue.app_id, issue_id: issue.id, activity_id: cree.id });
+    await audit(client, ctx, "error_issue_comment", { app_id: issue.app_id, issue_id: issue.id, activity_id: cree.id });
     const { rows: [activite] } = await client.query<ActivitySqlRow>(`${activitySql(true)} where a.id = $1`, [cree.id]);
     return { kind: "ok", value: { activity: toActivity(activite), revision } };
   });
@@ -562,7 +569,7 @@ export async function linkIssue(
       [issue.app_id, issue.id, actorId, ticket.id],
     );
     const revision = await nouvelleRevision(client, issue);
-    await audit(client, ctx.actorEmail, "error_issue_link", { app_id: issue.app_id, issue_id: issue.id, ticket_id: ticket.id });
+    await audit(client, ctx, "error_issue_link", { app_id: issue.app_id, issue_id: issue.id, ticket_id: ticket.id });
     const { rows: [activite] } = await client.query<ActivitySqlRow>(`${activitySql(true)} where a.id = $1`, [cree.id]);
     const value = toActivity(activite);
     return { kind: "ok", value: { link: value.link as IssueLink, activity: value, revision } };

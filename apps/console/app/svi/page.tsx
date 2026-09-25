@@ -18,9 +18,8 @@ import { Donut } from "@/components/charts/Donut";
 import { RankBar } from "@/components/charts/RankBar";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
-import { pageFilters } from "@/lib/page-filters";
-import { periodLabel, v2FiltersOf } from "@/lib/queries-v2";
-import { sviContainment, sviExitNodes, sviSummary } from "@/lib/queries-svi";
+import { chargerSvi } from "@/lib/chargeurs/svi";
+import { chargerEcran } from "@/lib/ecran-local";
 import { fmtDuration, journeyCoverage } from "@/lib/svi-outcome";
 import { containment, containmentReading } from "@/lib/svi-recall";
 
@@ -47,14 +46,11 @@ export default async function VueEnsembleSvi({
     );
   }
 
-  const ecran = await pageFilters(await searchParams, "/svi");
-  if (!ecran.ok) return <FilterProblemNotice title="Supervision SVI" problem={ecran.problem} />;
-  const f = v2FiltersOf(ecran.query);
-  const [sum, cont, sorties] = await Promise.all([
-    sviSummary(f),
-    sviContainment(f),
-    sviExitNodes(f),
-  ]);
+  // Le chargeur (`lib/chargeurs/svi.ts`) lit la synthèse, le containment et les sorties.
+  const ecran = await chargerEcran(chargerSvi, (await searchParams) ?? {});
+  if (ecran.etat === "fermee") return <CapaciteFermee titre="Supervision SVI" sujet="Supervision du serveur vocal interactif." />;
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Supervision SVI" problem={ecran.problem} />;
+  const { sum, cont, sorties, periode } = ecran;
 
   const c = containment(cont);
   const couverture = journeyCoverage(sum.total, sum.with_journey);
@@ -70,11 +66,11 @@ export default async function VueEnsembleSvi({
     <>
       <PageHeader
         title="Supervision SVI"
-        sub={`Vue d'ensemble du serveur vocal — ${periodLabel(f)}`}
+        sub={`Vue d'ensemble du serveur vocal — ${periode}`}
       />
 
       <SupervisionHero
-        chartTitle={`Issues des appels clos — ${periodLabel(f)}`}
+        chartTitle={`Issues des appels clos — ${periode}`}
         chartHelp="containment_net"
         chartMeta={
           <Link className="text-xs text-ink-soft hover:underline" href="/svi/appels">

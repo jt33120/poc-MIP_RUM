@@ -648,12 +648,15 @@ test.describe("P5.6 — workflow d'une issue", () => {
       await expect(page.getByTestId(formulaire), formulaire).toHaveCount(0);
     }
 
+    // C7 : l'écriture ne passe plus par l'API v1 (la route a quitté le contrat public) ;
+    // la commande de l'écran refuse un viewer (règle `admin`), ce que prouvent
+    // `tests/unit/console-api-commandes.test.ts` et la matrice d'autorisations.
     const { rows: [{ revision }] } = await pool.query("select revision::text as revision from error_issue where id = $1", [ISSUE_W]);
     const refus = await page.request.post(`${CONSOLE}/api/v1/issues/${ISSUE_W}/triage`, {
       headers: { origin: CONSOLE },
       data: { app: APP_W, status: "resolved", expectedRevision: revision },
     });
-    expect(refus.status()).toBe(403);
+    expect([404, 405]).toContain(refus.status());
     expect((await pool.query("select status from error_issue where id = $1", [ISSUE_W])).rows[0].status).toBe("open");
   });
 

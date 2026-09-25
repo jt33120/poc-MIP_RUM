@@ -42,10 +42,10 @@ export interface TicketIntegration {
   config: Record<string, unknown>;
   state: "active" | "degraded";
   last_error: string | null;
-  verified_at: Date | null;
+  verified_at: Date | string | null;
   created_by: string | null;
-  created_at: Date;
-  updated_at: Date;
+  created_at: Date | string;
+  updated_at: Date | string;
   /** Forme du secret, jamais sa valeur. */
   credential: { kind: "env"; name: string } | { kind: "encrypted" } | { kind: "invalid" };
   webhook: { kind: "env"; name: string } | { kind: "encrypted" } | { kind: "invalid" } | null;
@@ -281,6 +281,8 @@ export function parseIntegrationPatch(body: unknown): Parsed<IntegrationPatch> {
 export async function createTicketIntegration(
   request: IntegrationRequest,
   adminEmail: string,
+  /** La ligne d'audit de la commande (C9), dans la transaction ; absente, l'action historique. */
+  auditer?: (client: import("pg").PoolClient, detail: string) => Promise<void>,
 ): Promise<TicketIntegration | null> {
   return tx(async (client) => {
     const { rowCount } = await client.query("select 1 from app_registry where app_id = $1", [request.app]);
@@ -297,13 +299,12 @@ export async function createTicketIntegration(
     // L'audit porte la FORME du secret, jamais sa référence : un journal d'audit
     // se relit, s'exporte et s'archive — c'est exactement l'endroit où un nom de
     // variable finirait par voyager avec le reste.
-    await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_integration_create', $2)", [
-      adminEmail,
-      JSON.stringify({
-        id: cree.id, app_id: request.app, provider: request.provider, target: request.target,
-        credential: decrire(request.credentialRef).kind,
-      }),
-    ]);
+    const detail = JSON.stringify({
+      id: cree.id, app_id: request.app, provider: request.provider, target: request.target,
+      credential: decrire(request.credentialRef).kind,
+    });
+    if (auditer) await auditer(client, detail);
+    else await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_integration_create', $2)", [adminEmail, detail]);
     return versIntegration(cree);
   });
 }
@@ -314,6 +315,8 @@ export async function patchTicketIntegration(
   patch: IntegrationPatch,
   adminEmail: string,
   apps: string[] | null,
+  /** La ligne d'audit de la commande (C9), dans la transaction ; absente, l'action historique. */
+  auditer?: (client: import("pg").PoolClient, detail: string) => Promise<void>,
 ): Promise<TicketIntegration | null> {
   if (!/^[1-9]\d{0,17}$/.test(id)) return null;
   return tx(async (client) => {
@@ -335,14 +338,13 @@ export async function patchTicketIntegration(
               verified_at    = case when $5::boolean is null then verified_at
                                     when $5 then coalesce(verified_at, now()) end,
               updated_at     = now()
-        where id = $1
+        where id = $1 and app_id = $6
         returning ${COLONNES}`,
-      [id, patch.enabled ?? null, patch.configVersion ?? null, patch.state ?? null, patch.verified ?? null],
+      [id, patch.enabled ?? null, patch.configVersion ?? null, patch.state ?? null, patch.verified ?? null, avant.app_id],
     );
-    await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_integration_patch', $2)", [
-      adminEmail,
-      JSON.stringify({ id, app_id: apres.app_id, ...patch }),
-    ]);
+    const detail = JSON.stringify({ id, app_id: apres.app_id, ...patch });
+    if (auditer) await auditer(client, detail);
+    else await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_integration_patch', $2)", [adminEmail, detail]);
     return versIntegration(apres);
   });
 }
@@ -366,8 +368,8 @@ export interface TicketLivraison {
   external_id: string | null;
   external_url: string | null;
   last_error: string | null;
-  created_at: Date;
-  sent_at: Date | null;
+  created_at: Date | string;
+  sent_at: Date | string | null;
 }
 
 /** Origine de la console, pour le lien inscrit dans le ticket. */
@@ -389,8 +391,8 @@ interface EtatIssue {
   first_release: string | null;
   last_release: string | null;
   occurrences: string | null;
-  first_seen: Date;
-  last_seen: Date;
+  first_seen: Date | string;
+  last_seen: Date | string;
 }
 
 const ISSUE_SQL = `
@@ -492,7 +494,13 @@ export function parseDemandeTicket(body: unknown): Parsed<DemandeTicket> {
  * chez le client.
  */
 export async function demanderTicket(
-  ctx: { issueId: string; apps: string[] | null; actorEmail: string },
+  ctx: {
+    issueId: string;
+    apps: string[] | null;
+    actorEmail: string;
+    /** La ligne d'audit de la commande (C7), dans la transaction ; absente, l'action historique `ticket_request`. */
+    auditer?: (client: import("pg").PoolClient, detail: string) => Promise<void>;
+  },
   request: DemandeTicket,
   consoleBase: string,
 ): Promise<WorkflowResult<{ jobId: string; state: string; payload: TicketApercu; revision: string }>> {
@@ -554,10 +562,9 @@ export async function demanderTicket(
         value: { jobId: existante.id, state: existante.state, payload: charge, revision: issue.revision },
       };
     }
-    await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_request', $2)", [
-      ctx.actorEmail,
-      JSON.stringify({ app_id: issue.app_id, issue_id: issue.id, integration_id: integration.id, job_id: inscrite.id }),
-    ]);
+    const detail = JSON.stringify({ app_id: issue.app_id, issue_id: issue.id, integration_id: integration.id, job_id: inscrite.id });
+    if (ctx.auditer) await ctx.auditer(client, detail);
+    else await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_request', $2)", [ctx.actorEmail, detail]);
     return {
       kind: "ok",
       value: { jobId: inscrite.id, state: inscrite.state, payload: charge, revision: issue.revision },

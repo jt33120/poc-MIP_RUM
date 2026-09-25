@@ -541,8 +541,9 @@ export interface SessionRow {
   geo_source?: string | null;
   geo_db_version?: string | null;
   user_agent: string | null;
-  started_at: Date;
-  last_seen_at: Date;
+  /** Instants : `Date` lue en base ; chaîne ISO une fois passée par un chargeur d'écran (sur le fil). */
+  started_at: Date | string;
+  last_seen_at: Date | string;
   page_count: number;
   routes: string[] | null;
   err_count: number;
@@ -652,8 +653,9 @@ export interface SessionMeta {
   /** P8.7 (v85) : d'où vient `geo_country`, et avec quelle livraison DB-IP. */
   geo_source?: string | null;
   geo_db_version?: string | null;
-  started_at: Date;
-  last_seen_at: Date;
+  /** Instants : `Date` lue en base ; chaîne ISO une fois passée par un chargeur d'écran (sur le fil). */
+  started_at: Date | string;
+  last_seen_at: Date | string;
   page_count: number;
   collection_source: string | null; // 'sdk' (défaut) | 'extension'
   // F44 — colonnes déjà rendues par `select *`, typées pour l'en-tête du détail.
@@ -693,7 +695,8 @@ export type TimelineKind =
 
 export interface TimelineItem {
   kind: TimelineKind;
-  ts: Date;
+  /** `Date` lue en base ; chaîne ISO une fois passée par un chargeur d'écran (sur le fil). */
+  ts: Date | string;
   title: string | null; // route | nom du vital | type d'erreur | type de crumb | nom d'event
   detail: string | null; // nav_type | route | message | label | props
   value: number | null; // valeur vital | seq | duration_ms | occurrences (erreur, schéma ≥ v67)

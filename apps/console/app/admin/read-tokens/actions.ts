@@ -1,36 +1,32 @@
 "use server";
 // Server Actions /admin/read-tokens (livrable UTI) — génère / révoque les tokens
-// de lecture, admin only, tracé dans audit_log. Le token en clair n'est affiché
-// qu'UNE fois (stash mémoire), jamais stocké ni relu (seul le hash est en base).
+// de lecture. C9 — les COMMANDES `creerJetonLecture` et `revoquerJetonLecture`
+// (`lib/commandes/raccordements.ts`) : l'administrateur de l'application du jeton,
+// audité ; le jeton en clair rendu UNE fois par la commande (seul le hash est en
+// base), rendu au formulaire (`useActionState`, C9c) qui l'affiche une fois.
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireAdmin, stashSecret } from "@/lib/auth";
-import { q } from "@/lib/db";
-import { generateToken } from "@/lib/read-tokens";
-import { createReadToken, revokeReadToken } from "@/lib/queries-read-tokens";
+import { executerCommande } from "@/lib/commande-locale";
+import { apresRefus } from "@/lib/commande-suite";
+import type { SecretRemis } from "@/lib/secret-remis";
 
-async function audit(email: string, action: string, detail: string): Promise<void> {
-  await q(`insert into audit_log (user_email, action, detail) values ($1, $2, $3)`, [email, action, detail]);
-}
+const champ = (fd: FormData, nom: string) => String(fd.get(nom) ?? "").trim();
 
-export async function createReadTokenAction(fd: FormData): Promise<void> {
-  const admin = await requireAdmin();
-  const app = String(fd.get("app") ?? "").trim();
-  const label = String(fd.get("label") ?? "").trim();
+export async function createReadTokenAction(_precedent: SecretRemis, fd: FormData): Promise<SecretRemis> {
+  const app = champ(fd, "app");
   if (!app) redirect("/admin/read-tokens?error=app");
-  const token = generateToken();
-  await createReadToken(app, label, token);
-  await audit(admin.email, "read_token_create", `${app} "${label || "-"}"`);
+  const r = await executerCommande("creerJetonLecture", { app, corps: { label: champ(fd, "label") } });
+  if (!r.ok) {
+    apresRefus(r);
+    redirect("/admin/read-tokens?error=app");
+  }
   revalidatePath("/admin/read-tokens");
-  redirect(`/admin/read-tokens?tkt=${stashSecret(token)}&tka=${encodeURIComponent(app)}`);
+  return { nom: "jeton-lecture", valeur: r.data.jeton, pour: r.data.app };
 }
 
 export async function revokeReadTokenAction(fd: FormData): Promise<void> {
-  const admin = await requireAdmin();
-  const id = Number(fd.get("id"));
-  if (!Number.isFinite(id)) redirect("/admin/read-tokens");
-  await revokeReadToken(id);
-  await audit(admin.email, "read_token_revoke", `id=${id}`);
+  const r = await executerCommande("revoquerJetonLecture", { app: champ(fd, "app") || null, chemin: { id: champ(fd, "id") } });
+  if (!r.ok) apresRefus(r);
   revalidatePath("/admin/read-tokens");
   redirect("/admin/read-tokens");
 }

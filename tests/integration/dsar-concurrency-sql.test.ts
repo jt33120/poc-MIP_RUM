@@ -597,6 +597,9 @@ suite("P8.1 — l'inventaire des tables ne se recopie pas à la main", () => {
       // Configuration d'exploitation — écart assumé, consigné dans v81.
       "slo", "goal", "notify_channel", "uptime_check", "read_tokens", "deploy_marker",
       "ai_briefing", "extension_scope", "extension_install_app",
+      // v90 : le journal d'audit porte `app_id`, et il est en AJOUT SEUL — il garde
+      // la trace de l'effacement lui-même.
+      "audit_log",
     ];
     const { rows } = await pool.query<{ table_name: string }>(
       `select c.table_name from information_schema.columns c

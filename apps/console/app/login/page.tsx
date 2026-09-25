@@ -5,7 +5,7 @@ import { LoginSubmitButton } from "@/components/LoginSubmitButton";
 import { PasswordField } from "@/components/PasswordField";
 import { getUser } from "@/lib/auth";
 import type { SearchParams } from "@/lib/filters";
-import { isOidcEnabled } from "@/lib/oidc";
+import { methodesConnexion } from "@/lib/methodes-connexion";
 import { loginAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,9 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
   if (await getUser()) redirect("/");
   const sp = await searchParams;
   const error = sp.error != null;
-  const ssoEnabled = isOidcEnabled();
+  // C1 : console-api injoignable n'est pas un mot de passe faux — le dire.
+  const indisponible = sp.error === "indisponible";
+  const ssoEnabled = (await methodesConnexion()).sso;
 
   return (
     // écran clair, épuré : léger halo accent, la carte porte toute l'attention
@@ -68,7 +70,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<Se
                   data-testid="login-error"
                   className="rounded-lg border border-bad/30 bg-bad/10 px-3 py-2 text-sm text-bad-ink"
                 >
-                  Identifiants invalides.
+                  {indisponible ? "Service de connexion indisponible : réessayer dans un instant." : "Identifiants invalides."}
                 </p>
               )}
               <LoginSubmitButton />

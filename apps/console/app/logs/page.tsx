@@ -9,19 +9,10 @@ import { StackedBars, type StackSeries } from "@/components/charts/StackedBars";
 import { fmtDate } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
-import { pageFilters } from "@/lib/page-filters";
+import { chargerLogs } from "@/lib/chargeurs/logs";
+import { chargerEcran } from "@/lib/ecran-local";
 import { hrefWithQuery } from "@/lib/query-contract";
-import { periodLabel, v2FiltersOf } from "@/lib/queries-v2";
-import {
-  logAnomalies,
-  logEntries,
-  logSeverityCounts,
-  logsByRoute,
-  logVolumeByHour,
-  parseLevel,
-  severityBucket,
-  type LevelKey,
-} from "@/lib/queries-logs";
+import { severityBucket, type LevelKey } from "@/lib/queries-logs";
 
 export const dynamic = "force-dynamic";
 
@@ -50,19 +41,14 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
     );
   }
 
-  const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/logs");
-  if (!ecran.ok) return <FilterProblemNotice title="Logs" problem={ecran.problem} />;
-  const f = v2FiltersOf(ecran.query);
-  const level = parseLevel(sp?.level);
-
-  const [rows, counts, volume, anomalies, byRoute] = await Promise.all([
-    logEntries(f, level),
-    logSeverityCounts(f),
-    logVolumeByHour(f),
-    logAnomalies(f),
-    logsByRoute(f),
-  ]);
+  // Le chargeur (`lib/chargeurs/logs.ts`) lit les entrées, les comptes, le volume et les anomalies.
+  const ecran = await chargerEcran(chargerLogs, (await searchParams) ?? {});
+  if (ecran.etat === "fermee") {
+    return <CapaciteFermee titre="Logs" sujet="Signal LOGS d'OpenTelemetry, alimenté par le serveur et non par le navigateur." />;
+  }
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Logs" problem={ecran.problem} />;
+  const { level, rows, counts, volume, anomalies, byRoute, periode } = ecran;
+  const f = { app: ecran.app };
 
   const total = counts.error + counts.warn + counts.info + counts.debug;
   const now = Date.now();
@@ -100,7 +86,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
         }
       >
         <HeroStat
-          label={`Erreurs · ${periodLabel(f)}`}
+          label={`Erreurs · ${periode}`}
           value={counts.error.toLocaleString("fr-FR")}
           tone={counts.error > 0 ? "poor" : "good"}
         />
@@ -243,7 +229,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
       {byRoute.length > 0 && (
         <div className="mt-6">
           <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-            Routes les plus bruyantes · {periodLabel(f)}
+            Routes les plus bruyantes · {periode}
           </h2>
           <div className="card overflow-hidden">
             <table className="w-full text-sm">

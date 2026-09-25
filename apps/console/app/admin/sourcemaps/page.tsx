@@ -4,19 +4,13 @@ import { INPUT_CLASS } from "@/components/forms/Field";
 import { SourcemapUploadForm } from "@/components/sourcemaps/SourcemapUploadForm";
 import { TokenCreateForm } from "@/components/sourcemaps/TokenCreateForm";
 import { TokenRevokeButton } from "@/components/sourcemaps/TokenRevokeButton";
-import { requireAdmin } from "@/lib/auth";
+import type { Fil } from "@mip/console-contract";
+import { chargerSourcemaps } from "@/lib/chargeurs/administration";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
-import { registeredApps } from "@/lib/queries";
-import {
-  listSourcemapReleases,
-  type ReleaseManifest,
-  releaseManifest,
-  schemaSourcemapAbsent,
-  type SourcemapFileStatus,
-  type SourcemapRelease,
-} from "@/lib/queries-sourcemap";
-import { listSourcemapTokens, type SourcemapToken } from "@/lib/queries-sourcemap-tokens";
+import type { ReleaseManifest, SourcemapFileStatus, SourcemapRelease } from "@/lib/queries-sourcemap";
+import type { SourcemapToken } from "@/lib/queries-sourcemap-tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +23,9 @@ type Donnees =
       kind: "ok";
       apps: App[];
       app: string | null;
-      releases: SourcemapRelease[];
-      manifest: ReleaseManifest | null;
-      tokens: SourcemapToken[];
+      releases: Fil<SourcemapRelease>[];
+      manifest: Fil<ReleaseManifest> | null;
+      tokens: Fil<SourcemapToken>[];
     }
   | { kind: "schema"; apps: App[]; app: string }
   | { kind: "error"; app: string | null };
@@ -50,36 +44,20 @@ function octets(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1).replace(".", ",")} Mio`;
 }
 
-/** L'app demandée si elle est enregistrée, sinon la première du registre. */
-async function charger(demandee: string | null, release: string | null): Promise<Donnees> {
-  let apps: App[];
-  try {
-    apps = await registeredApps();
-  } catch {
-    return { kind: "error", app: demandee };
-  }
-  const app = apps.find((a) => a.app_id === demandee)?.app_id ?? apps[0]?.app_id ?? null;
-  if (!app) return { kind: "ok", apps, app, releases: [], manifest: null, tokens: [] };
-  try {
-    const [releases, manifest, tokens] = await Promise.all([
-      listSourcemapReleases(app),
-      release ? releaseManifest(app, release) : null,
-      listSourcemapTokens(app),
-    ]);
-    return { kind: "ok", apps, app, releases, manifest, tokens };
-  } catch (err) {
-    if (schemaSourcemapAbsent(err)) return { kind: "schema", apps, app };
-    console.error("[admin/sourcemaps]", err);
-    return { kind: "error", app };
-  }
-}
-
 /** Source maps et jetons de CI (P5.4) — admin seulement : ni contenu de map, ni secret hors création. */
 export default async function SourcemapsAdmin({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  await requireAdmin();
   const sp = await searchParams;
   const release = param(sp.release);
-  const donnees = await charger(param(sp.app), release);
+  // Le chargeur (`lib/chargeurs/administration.ts`) : l'application demandée si elle est
+  // dans le périmètre de l'administrateur (C9), sinon la première ; ses releases, le
+  // manifeste d'une release, ses jetons de CI.
+  const ecran = accesAdmin(await chargerEcran(chargerSourcemaps, sp));
+  const donnees: Donnees =
+    ecran.etat === "ok"
+      ? { kind: "ok", apps: ecran.apps, app: ecran.app, releases: ecran.releases, manifest: ecran.manifeste, tokens: ecran.jetons }
+      : ecran.etat === "schema"
+        ? { kind: "schema", apps: ecran.apps, app: ecran.app }
+        : { kind: "error", app: ecran.app };
   const { app } = donnees;
   const apps = donnees.kind === "error" ? [] : donnees.apps;
   const maintenant = Date.now();
@@ -278,8 +256,9 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
           Jetons de CI
         </h2>
         <p className="mb-3 text-xs text-ink-soft">
-          Privilège unique <code className="chip-mono">sourcemaps:write</code> sur {app}, expiration de 1 à 90 jours.
-          Rotation : créer un nouveau jeton, basculer la CI, révoquer l&apos;ancien. En CI :{" "}
+          Un privilège par jeton sur {app} : <code className="chip-mono">sourcemaps:write</code> (source maps) ou{" "}
+          <code className="chip-mono">deploys:write</code> (marqueur de déploiement, <code className="chip-mono">POST /api/v1/deploys</code>),
+          expiration de 1 à 90 jours. Rotation : créer un nouveau jeton, basculer la CI, révoquer l&apos;ancien. En CI :{" "}
           <code className="chip-mono break-all">
             node scripts/upload-sourcemaps.mjs --app {app} --release RELEASE --dir dist --url URL_UPLOAD
           </code>
@@ -293,6 +272,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
             <thead className="bg-panel2">
               <tr>
                 <th scope="col" className="th">Nom</th>
+                <th scope="col" className="th">Privilège</th>
                 <th scope="col" className="th">Expire</th>
                 <th scope="col" className="th">Dernier usage</th>
                 <th scope="col" className="th">Statut</th>
@@ -303,7 +283,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
             </thead>
             <tbody className="divide-y divide-line/60">
               {tokens.map((t) => {
-                const expire = t.expiresAt.getTime() <= maintenant;
+                const expire = new Date(t.expiresAt).getTime() <= maintenant;
                 const statut = t.revokedAt ? "révoqué" : expire ? "expiré" : "actif";
                 return (
                   <tr key={t.id}>
@@ -311,6 +291,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
                       <span className="block">{t.name}</span>
                       <span className="block font-mono text-[11px] text-ink-faint">créé le {fmtDate(t.createdAt)}</span>
                     </td>
+                    <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-ink-soft">{t.scope}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-xs text-ink-soft">{fmtDate(t.expiresAt)}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-xs text-ink-soft">
                       {t.lastUsedAt ? fmtDate(t.lastUsedAt) : "jamais"}
@@ -327,7 +308,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
                       </span>
                     </td>
                     <td className="px-4 py-2 text-right">
-                      {!t.revokedAt && <TokenRevokeButton id={t.id} name={t.name} />}
+                      {!t.revokedAt && <TokenRevokeButton id={t.id} name={t.name} appId={t.appId} />}
                     </td>
                   </tr>
                 );

@@ -20,13 +20,35 @@
 // messages d'erreur — sur une page sans mot de passe.
 import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { DEMO } from "@mip/console-contract";
 import { SESSION_COOKIE, SESSION_HOURS, signJwt, type SessionUser } from "@/lib/auth";
+import { backend } from "@/lib/backend";
 import { q } from "@/lib/db";
 import { demoConfig } from "@/lib/demo";
+import { ipVisiteur } from "@/lib/ip-visiteur";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request): Promise<NextResponse> {
+  // C1 — branchée sur console-api, la démo s'y ouvre : une LIGNE de session
+  // (révocable), viewer au périmètre du SERVICE (`DEMO_USER_APPS` de console-api),
+  // 5 par heure et par IP comptées en base, et jamais l'IP au journal. Fermée
+  // chez lui (404) : vers /login, comme aujourd'hui sans la variable.
+  if (backend().estBranche()) {
+    const h = await headers();
+    const r = await backend().appeler(DEMO, {}, { ipVisiteur: ipVisiteur(h), requestId: h.get("x-request-id") ?? undefined });
+    if (!r.ok) return NextResponse.redirect(new URL("/login", req.url), 302);
+    const res = NextResponse.redirect(new URL("/", req.url), 302);
+    (await cookies()).set(SESSION_COOKIE, r.data.jeton, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      expires: new Date(r.data.expire_le),
+    });
+    return res;
+  }
+
   const demo = demoConfig();
   if (!demo) return NextResponse.redirect(new URL("/login", req.url), 302);
 

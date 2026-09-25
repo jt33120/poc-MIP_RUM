@@ -3,7 +3,9 @@
 //
 // SERVEUR SEULEMENT. Ce module lit `EDGE_PROXY_SECRET` et le pool de la base ;
 // il n'est importé que par les route handlers d'ingestion
-// (`app/api/ingest/v1/{traces,logs,replay}`, `app/api/sourcemaps`). La garde
+// (`app/api/ingest/v1/{traces,logs,replay}`, `app/api/sourcemaps`) et, depuis
+// C11, par les routes MACHINE que le collector sert aussi
+// (`app/api/extension/{resolve,heartbeat}`, `app/api/v1/deploys`). La garde
 // ci-dessous fait échouer tout chargement côté navigateur (le paquet
 // `server-only` n'est pas une dépendance de la console : pas de dépendance
 // nouvelle pour une ligne).
@@ -128,6 +130,16 @@
 // `OPTIONS` n'est jamais relayé (préflight local, CORS local), et
 // `NEXT_PUBLIC_RUM_ENDPOINT` n'est pas touché : les navigateurs continuent de
 // viser la console.
+//
+// ═════════════════════════════ RELAIS PUR (C11) ══════════════════════════════
+//
+// `CONSOLE_INGEST_RELAY_STRICT=1` : il n'y a PLUS de chemin local. Tout part au
+// collector (le pourcentage est ignoré), et ce qui déclenchait un repli — erreur
+// de connexion, réponse non signée, disjoncteur ouvert, collector en mauvaise
+// santé — rend 503 + `retry-after` : le SDK rejoue, le collector écrira. C'est
+// l'état d'arrivée de la collecte (P6a « 6b »), qui permet ensuite de retirer le
+// chemin d'écriture de la console (C12). À n'allumer qu'après ≥ 7 jours à 100 %
+// sans repli. Retour arrière : retirer la variable et redéployer.
 import { log as logIngest } from "./ingest";
 import { pourcentageRelais } from "./platform-flag";
 
@@ -135,7 +147,7 @@ if (typeof window !== "undefined") {
   throw new Error("lib/ingest-relay est réservé au serveur (il lit EDGE_PROXY_SECRET)");
 }
 
-export type Signal = "traces" | "logs" | "replay" | "sourcemaps";
+export type Signal = "traces" | "logs" | "replay" | "sourcemaps" | "extensionResolve" | "extensionHeartbeat" | "deploys";
 
 /** Protocole de bord attendu dans `/health` du collector (`client-ip.mjs`, EDGE_PROTOCOL). */
 export const PROTOCOLE_BORD = "mip-edge/1";
@@ -167,20 +179,44 @@ export const ENTETES_TRANSMIS = Object.freeze([
 /** Branche jeton des source maps : la même liste, plus le jeton d'upload. */
 export const ENTETES_SOURCEMAPS = Object.freeze([...ENTETES_TRANSMIS, "authorization"] as const);
 
+/**
+ * C11 — les routes MACHINE, par liste exacte elles aussi : la résolution d'un
+ * domaine ne transmet rien (le domaine est dans la requête) ; le battement d'un
+ * poste, son User-Agent (la route l'inscrit à l'inventaire) ; le marqueur de
+ * déploiement, le jeton de sa CI.
+ */
+const ENTETES_PAR_SIGNAL: Partial<Record<Signal, readonly string[]>> = Object.freeze({
+  sourcemaps: ENTETES_SOURCEMAPS,
+  extensionResolve: [],
+  extensionHeartbeat: ["content-type", "user-agent"],
+  deploys: ["content-type", "authorization"],
+});
+
 /** Chemins canoniques du collector (il accepte aussi les alias historiques). */
 export const CHEMINS: Readonly<Record<Signal, string>> = Object.freeze({
   traces: "/v1/traces",
   logs: "/v1/logs",
   replay: "/v1/replay",
   sourcemaps: "/v1/sourcemaps",
+  extensionResolve: "/v1/extension/resolve",
+  extensionHeartbeat: "/v1/extension/heartbeat",
+  deploys: "/v1/deploys",
 });
 
-/** Rejouer le même lot n'écrit rien de plus (voir « IDEMPOTENCE » en tête). */
+/**
+ * Rejouer la même requête n'écrit rien de plus (voir « IDEMPOTENCE » en tête).
+ * C11 : une résolution est une lecture ; un battement, un `upsert` du poste ; un
+ * marqueur de déploiement, un `insert` sans clé naturelle — le rejouer en
+ * poserait deux.
+ */
 export const IDEMPOTENTS: Readonly<Record<Signal, boolean>> = Object.freeze({
   traces: true,
   logs: false,
   replay: true,
   sourcemaps: true,
+  extensionResolve: true,
+  extensionHeartbeat: true,
+  deploys: false,
 });
 
 export const DELAIS = Object.freeze({
@@ -383,11 +419,32 @@ export function creerRelais(deps: {
     return santeEnVol;
   }
 
-  function envoyeur(signal: Signal, config: ConfigRelais): Relais {
+  /** Relais pur, collector injoignable : 503 + `retry-after`, jamais le chemin local. */
+  function indisponible(signal: Signal, raison: string): Relais {
+    return {
+      async envoyer(_req, _corps, cors) {
+        log.warn("relay strict: collector unavailable", { signal, raison });
+        return new Response(JSON.stringify({ error: "ingestion unavailable, retry", retry: true }), {
+          status: 503,
+          headers: { "content-type": "application/json", ...cors, "retry-after": RETRY_AFTER_DELAI_S },
+        });
+      },
+    };
+  }
+
+  function envoyeur(signal: Signal, config: ConfigRelais, strict = false): Relais {
+    /** Un repli : le chemin local, ou — relais pur — un 503 que le client rejoue. */
+    const repli = (cors: Record<string, string>): Response | null =>
+      strict
+        ? new Response(JSON.stringify({ error: "ingestion unavailable, retry", retry: true }), {
+            status: 503,
+            headers: { "content-type": "application/json", ...cors, "retry-after": RETRY_AFTER_DELAI_S },
+          })
+        : null;
     return {
       async envoyer(req, corps, cors) {
         const entetes = new Headers();
-        for (const nom of signal === "sourcemaps" ? ENTETES_SOURCEMAPS : ENTETES_TRANSMIS) {
+        for (const nom of ENTETES_PAR_SIGNAL[signal] ?? ENTETES_TRANSMIS) {
           const v = req.headers.get(nom);
           if (v !== null) entetes.set(nom, v);
         }
@@ -399,11 +456,14 @@ export function creerRelais(deps: {
         let corpsReponse: ArrayBuffer;
         let signee: boolean;
         let retryAfter: string | null;
+        let cacheControl: string | null = null;
         try {
-          const res = await fetcher(`${config.url}${CHEMINS[signal]}`, {
-            method: "POST",
+          // La résolution d'un domaine est une LECTURE : sa requête passe, pas de corps.
+          const lecture = signal === "extensionResolve";
+          const res = await fetcher(`${config.url}${CHEMINS[signal]}${lecture ? new URL(req.url).search : ""}`, {
+            method: lecture ? "GET" : "POST",
             headers: entetes,
-            body: corps as unknown as BodyInit,
+            body: lecture ? undefined : (corps as unknown as BodyInit),
             signal: AbortSignal.timeout(d.relaisMs),
             redirect: "error",
             cache: "no-store",
@@ -411,6 +471,8 @@ export function creerRelais(deps: {
           statut = res.status;
           signee = res.headers.get(ENTETE_COLLECTOR) === "1";
           retryAfter = res.headers.get("retry-after");
+          // La résolution d'un domaine se met en cache (60 s) : l'extension la relit.
+          if (signal === "extensionResolve") cacheControl = res.headers.get("cache-control");
           // Le corps est lu SOUS LE MÊME DÉLAI : un collector qui envoie son
           // statut puis se tait tombe dans la branche « délai ».
           corpsReponse = await res.arrayBuffer();
@@ -427,7 +489,7 @@ export function creerRelais(deps: {
           echec(signal, `réseau ${code}`);
           if (echecAvantEnvoi(err) || IDEMPOTENTS[signal]) {
             log.warn("relay fallback", { signal, raison: "réseau", code });
-            return null;
+            return repli(cors);
           }
           // Logs, connexion perdue APRÈS l'envoi : le lot a peut-être été écrit.
           log.warn("relay failed, outcome unknown", { signal, code });
@@ -441,7 +503,7 @@ export function creerRelais(deps: {
         if (issue === "repli") {
           echec(signal, `statut ${statut} non signé`);
           log.warn("relay fallback", { signal, raison: "statut", statut });
-          return null;
+          return repli(cors);
         }
         if (issue === "incertain") {
           // Logs, 502/504 du routeur : une réplique a pu committer le lot puis
@@ -463,6 +525,7 @@ export function creerRelais(deps: {
           ...cors,
         };
         if (retryAfter) entetesReponse["retry-after"] = retryAfter;
+        if (cacheControl && signee) entetesReponse["cache-control"] = cacheControl;
         const sansCorps = statut === 204 || statut === 304;
         return new Response(sansCorps ? null : corpsReponse, { status: statut, headers: entetesReponse });
       },
@@ -481,6 +544,12 @@ export function creerRelais(deps: {
         return null;
       }
       derniereRaisonConfig = null;
+      if (env().CONSOLE_INGEST_RELAY_STRICT === "1") {
+        // Relais pur : ni tirage, ni chemin local — un collector injoignable rend 503.
+        if (maintenant() < contourneJusqua) return indisponible(signal, "disjoncteur ouvert");
+        if (!(await verifierSante(lu.config))) return indisponible(signal, "santé du collector");
+        return envoyeur(signal, lu.config, true);
+      }
       if (maintenant() < contourneJusqua) return null;
       const pct = await pourcentage();
       if (!(pct > 0)) return null;

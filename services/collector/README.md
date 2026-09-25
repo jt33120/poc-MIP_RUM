@@ -16,7 +16,7 @@
 
 ## Routes
 
-Les chemins historiques de la console sont **normalisés avant tout routage** (`normaliserChemin`) : `/api/ingest/v1/*` → `/v1/*`, `/api/sourcemaps` → `/v1/sourcemaps`. Le SDK, l'extension et la CI des clients visent aujourd'hui la console ; le jour où un domaine pointe ici, leurs requêtes arrivent telles quelles — préflight replay compris, qui doit annoncer les en-têtes `x-mip-*`.
+Les chemins historiques de la console sont **normalisés avant tout routage** (`normaliserChemin`) : `/api/ingest/v1/*` → `/v1/*`, `/api/sourcemaps` → `/v1/sourcemaps`, et depuis C11 `/api/extension/{resolve,heartbeat}` → `/v1/extension/*`, `/api/v1/deploys` → `/v1/deploys`. Le SDK, l'extension et la CI des clients visent aujourd'hui la console ; le jour où un domaine pointe ici, leurs requêtes arrivent telles quelles — préflight replay compris, qui doit annoncer les en-têtes `x-mip-*`.
 
 | Route | Rôle | Réponses |
 |---|---|---|
@@ -24,6 +24,9 @@ Les chemins historiques de la console sont **normalisés avant tout routage** (`
 | `POST /v1/logs` | signal logs d'OpenTelemetry | idem |
 | `POST /v1/replay` | chunk rrweb gzippé (2 Mio), métadonnées `x-mip-session/app/seq/key` | 200, 400, 403, 409, 410 session effacée, 413, 425 ancre pas encore reçue (`retry`), 429, 503 + `retry-after` |
 | `POST /v1/sourcemaps` | source maps de CI, **jeton d'upload dédié seul** (20 Mio) ; la lecture admin reste dans la console | statut d'`enregistrerMaps`, 401, 403, 413, 429 (+ `retry-after`) |
+| `GET /v1/extension/resolve?domain=` | C11 — l'application d'un domaine enregistré et actif, pour le service worker de l'extension ; publique, CORS `*`, 120 / min / domaine | 200 (`cache-control: public, max-age=60`), 400, 404, 429 |
+| `POST /v1/extension/heartbeat` | C11 — un poste de l'extension se déclare (inventaire) ; publique, 4 Kio, 12 / h / poste, `app_ids` filtrés par le registre | 200, 400, 413, 429 |
+| `POST /v1/deploys` | C11 — marqueur de déploiement d'une CI, **jeton de CI `deploys:write` seul** (migration-v92), une application ; 16 Kio, 60 / min / jeton | 201, 400, 401, 403, 413, 429 |
 | `GET /v1/traces`, `GET /v1/logs` | diagnostic d'intégration (parité avec les routes Vercel) | 200 |
 | `OPTIONS *` | préflight CORS (origines du registre d'apps) | 204 |
 | `GET /health`, `/live`, `/ready`, `/metrics` | sondes du kit, ci-dessous | |

@@ -454,7 +454,7 @@ export interface MesureVital {
   valeur: number;
   /** Route de la mesure : celle dont on lit la population. `null` : inconnue. */
   route: string | null;
-  ts: Date;
+  ts: Date | string;
 }
 
 /** La pire mesure d'un vital sur un périmètre (une vue, ou la session), et combien il y en a. */

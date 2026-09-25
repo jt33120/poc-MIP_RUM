@@ -29,8 +29,9 @@ vi.mock("@/lib/comparaison", () => ({
   couverturePrecedente: async () => ({ etat: "complete", raison: null }),
   sourcesSousFiltres: (_q: unknown, s: unknown) => [s],
 }));
-vi.mock("@/lib/page-filters", () => ({
-  pageFilters: async (sp: Record<string, string>) => {
+// Le chargeur de l'écran lit ses filtres par `analyserFiltres` (C5, `lib/filtres-ecran.ts`).
+vi.mock("@/lib/filtres-ecran", () => ({
+  analyserFiltres: async (_principal: unknown, sp: Record<string, string>) => {
     const parsed = parseAnalyticsQuery(new URLSearchParams(sp), { principal: { role: "admin", apps: null }, nowMs: Date.now() });
     if (!parsed.ok) throw new Error(parsed.error.message);
     const query = parsed.value;

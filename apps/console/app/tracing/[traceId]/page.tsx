@@ -24,12 +24,10 @@ import { Figure } from "@/components/charts/Figure";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { CopierTrace } from "@/components/tracing/CopierTrace";
-import { getUser } from "@/lib/auth";
 import { formater } from "@/lib/fmt-ids";
-import { lire } from "@/lib/lecture";
-import { sessionMeta } from "@/lib/queries";
-import { errorsOfTrace, traceSpans, type TraceSpanRow } from "@/lib/queries-tracing";
-import { authorizedAppsOf } from "@/lib/query-contract";
+import { appelDeLaTrace, chargerTrace, premier as first } from "@/lib/chargeurs/trace";
+import { chargerEcran } from "@/lib/ecran-local";
+import { type TraceSpanRow } from "@/lib/queries-tracing";
 
 export const dynamic = "force-dynamic";
 
@@ -65,25 +63,6 @@ function tonDe(statut: number | null): TonCascade {
   return "neutre";
 }
 
-const SPAN_ID = /^[0-9a-f]{16}$/i;
-
-function first(v: string | string[] | undefined): string | undefined {
-  return Array.isArray(v) ? v[0] : v;
-}
-
-/**
- * Apps dont la trace montre les spans. Un trace_id est émis par le client : deux
- * tenants peuvent le partager, et le lien depuis une erreur de l'app A (P5.1) ne
- * doit rien révéler de B. L'app demandée est donc bornée au périmètre signé ;
- * hors périmètre, aucune app. Sans app demandée (ou « all »), un utilisateur
- * restreint voit ses apps et un admin toute la trace, comme avant.
- */
-function traceApps(requested: string | undefined, scope: string[] | null): string[] | null {
-  const app = requested && requested !== "all" ? requested : null;
-  if (!app) return scope;
-  return scope && !scope.includes(app) ? [] : [app];
-}
-
 /** Une puce d'identité, au modèle de `DetailPanel.puces` : libellé, valeur (texte ou lien). */
 function Puce({ label, children, testId }: { label: string; children: ReactNode; testId?: string }) {
   return (
@@ -108,15 +87,11 @@ export default async function TraceDetail({
   } catch {
     notFound();
   }
-  const user = await getUser();
-  const perimetre = authorizedAppsOf(user);
-  const apps = traceApps(first(sp.app), perimetre);
-  // Les spans hors périmètre ne sont jamais lus : une trace dont il ne reste rien
-  // est introuvable, sans dire si elle existe ailleurs.
-  const spans = await traceSpans(traceId, { apps });
-  if (spans.length === 0) notFound();
-
-  const byId = new Map(spans.map((s) => [s.span_id, s]));
+  // Le chargeur (`lib/chargeurs/trace.ts`) ne lit que dans les apps autorisées ET
+  // demandées ; la page relit l'appel résumé par la même fonction que lui.
+  const d = await chargerEcran(chargerTrace, sp, { traceId });
+  if (d.etat === "introuvable") notFound();
+  const { spans, erreurs, session } = d;
 
   // fenêtre temporelle de la trace (offsets relatifs au 1er span)
   const starts = spans.map((s) => new Date(s.ts).getTime());
@@ -126,45 +101,15 @@ export default async function TraceDetail({
 
   // ?span : le span parent d'une erreur (P5.1), ou le segment cliqué dans la
   // cascade. Mis en évidence seulement s'il est parmi les spans affichés ; sinon on
-  // le dit, plutôt que de laisser croire que la trace ne contient pas le contexte
-  // attendu.
-  const spanParam = first(sp.span);
-  const wantedSpan = spanParam && SPAN_ID.test(spanParam) ? spanParam.toLowerCase() : null;
-  const highlighted = wantedSpan && byId.has(wantedSpan) ? wantedSpan : null;
-  const spanState = spanParam === undefined ? null : highlighted ? "found" : "missing";
-
-  // L'APPEL RÉSUMÉ. Depuis E0, une trace est celle d'une page vue : elle porte tous
-  // ses appels API. Latence, route, session et instant du rejeu sont ceux de
-  // l'appel désigné par `?span=` (« Traces les plus lentes » le transmet) — ou du
-  // span navigateur dont descend le segment désigné ; à défaut, le premier appel,
-  // et on le dit. Prendre toujours le premier ouvrait « 100 ms, /api/config » sur
-  // un clic sur `/api/search`.
-  const fronts = spans.filter((s) => s.tier === "front");
-  const appelDe = (id: string | null): TraceSpanRow | undefined => {
-    const vus = new Set<string>();
-    let s = id ? byId.get(id) : undefined;
-    while (s && s.tier !== "front" && s.parent_span_id && !vus.has(s.span_id)) {
-      vus.add(s.span_id);
-      s = byId.get(s.parent_span_id);
-    }
-    return s?.tier === "front" ? s : undefined;
-  };
-  const designe = appelDe(highlighted);
-  const front = designe ?? fronts[0];
-  const sessionSpan = front?.session_id ? front : spans.find((s) => s.session_id);
+  // le dit. L'APPEL RÉSUMÉ est celui de `?span=` — ou du span navigateur dont
+  // descend le segment désigné ; à défaut, le premier appel, et on le dit.
+  const { highlighted, spanState, fronts, designe, front, sessionSpan } = appelDeLaTrace(spans, sp);
   const hasBackend = spans.some((s) => s.tier === "back" || s.tier === "detail");
   const rootMs = front?.duration_ms ?? total;
   const appsDistinctes = [...new Set(spans.map((s) => s.app_id))].sort();
 
-  // Erreurs liées (TD4) et session (TD3), lues pour elles-mêmes : un échec ne fait
-  // tomber que leur bloc, jamais la cascade.
-  const [erreurs, session] = await Promise.all([
-    lire(() => errorsOfTrace(traceId, { apps })),
-    sessionSpan?.session_id ? lire(() => sessionMeta(sessionSpan.session_id!)) : Promise.resolve(null),
-  ]);
-  // Session LISIBLE : elle existe encore, dans l'app du span et dans le périmètre.
-  const sessionLisible =
-    session?.ok && session.data && session.data.app_id === sessionSpan?.app_id && (perimetre === null || perimetre.includes(session.data.app_id));
+  // Session LISIBLE : elle existe encore, dans l'app du span et dans le périmètre (verdict du chargeur).
+  const sessionLisible = session?.ok === true && session.data.lisible;
   const instantAppel = front ? new Date(front.ts).getTime() : null;
 
   // Un clic sur un segment le désigne par `?span=` ; l'app demandée suit (périmètre).

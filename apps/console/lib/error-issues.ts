@@ -44,28 +44,10 @@ import {
   type TotalsSqlRow,
   ERROR_SOURCES,
 } from "./queries-errors";
-
-// Copies des taxonomies de migration-v72 (la console ne type pas un module .mjs) ;
-// tests/unit/error-grouping-v2.test.ts les compare à l'ingestion.
-export const ISSUE_STATUSES = ["open", "for_review", "resolved", "ignored"] as const;
-export type IssueStatus = (typeof ISSUE_STATUSES)[number];
-export const GROUPING_BASES = ["override", "symbolicated_frame", "normalized_frame", "low_confidence"] as const;
-export type GroupingBasis = (typeof GROUPING_BASES)[number];
-export type IssueOrigin = "new" | "migration";
-
-export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
-  open: "Ouverte",
-  for_review: "À revoir",
-  resolved: "Résolue",
-  ignored: "Ignorée",
-};
-
-export const GROUPING_BASIS_LABELS: Record<GroupingBasis, string> = {
-  override: "Clé déclarée",
-  symbolicated_frame: "Frame source",
-  normalized_frame: "Frame normalisée",
-  low_confidence: "Faible confiance",
-};
+import { ISSUE_STATUSES, type IssueStatus, type GroupingBasis, type IssueOrigin } from "./issues-libelles";
+// Les taxonomies et leurs libellés vivent dans `issues-libelles.ts`, SANS la base ;
+// réexportées ici pour les lectures et l'API.
+export * from "./issues-libelles";
 
 export const ISSUE_LIST_DEFAULT_LIMIT = 50;
 export const ISSUE_LIST_MAX_LIMIT = 100;
@@ -190,10 +172,10 @@ interface IssueEntryCommon extends ErrorImpact {
   status: IssueStatus;
   /** Résolue puis revue depuis : réapparition à vérifier, jamais une régression confirmée. */
   reappeared: boolean;
-  resolved_at: Date | null;
+  resolved_at: Date | string | null;
   /** Issue : première vue persistée ; groupe historique : première apparition connue. */
-  first_seen: Date;
-  last_seen: Date;
+  first_seen: Date | string;
+  last_seen: Date | string;
   /** Avec `opts.overview` : occurrences par seau, mêmes seaux que `trend`. */
   series?: number[];
 }
@@ -253,10 +235,10 @@ interface EntrySqlRow extends ErrorImpact {
   first_release: string | null;
   last_release: string | null;
   revision: string | null;
-  first_seen: Date;
-  last_seen: Date;
+  first_seen: Date | string;
+  last_seen: Date | string;
   status: IssueStatus;
-  resolved_at: Date | null;
+  resolved_at: Date | string | null;
   reappeared: boolean;
   rank: number;
   ref: string;
@@ -372,7 +354,7 @@ interface SummarySqlRow {
 
 interface EntrySeriesSqlRow {
   ref: string;
-  bucket: Date;
+  bucket: Date | string;
   occurrences: number;
 }
 
@@ -505,11 +487,11 @@ function withEntrySeries(
   trend: ErrorTrendPoint[],
   points: EntrySeriesSqlRow[],
 ): IssueEntry[] {
-  const position = new Map(trend.map((point, i) => [point.bucket.getTime(), i]));
+  const position = new Map(trend.map((point, i) => [new Date(point.bucket).getTime(), i]));
   const series = new Map(rows.map((row) => [row.ref, new Array<number>(trend.length).fill(0)]));
   for (const point of points) {
     const values = series.get(point.ref);
-    const i = position.get(point.bucket.getTime());
+    const i = position.get(new Date(point.bucket).getTime());
     if (values && i !== undefined) values[i] += point.occurrences;
   }
   return entries.map((entry, i) => ({ ...entry, series: series.get(rows[i].ref) }));
@@ -525,18 +507,18 @@ export interface IssueRecord {
   origin: IssueOrigin;
   status: IssueStatus;
   status_source: "system" | "migration" | "user";
-  first_seen: Date;
-  last_seen: Date;
+  first_seen: Date | string;
+  last_seen: Date | string;
   first_release: string | null;
   last_release: string | null;
-  resolved_at: Date | null;
+  resolved_at: Date | string | null;
   resolved_release: string | null;
   resolved_env: string | null;
   reappeared: boolean;
   /** bigint PostgreSQL sérialisé en chaîne. */
   revision: string;
-  created_at: Date;
-  updated_at: Date;
+  created_at: Date | string;
+  updated_at: Date | string;
 }
 
 /** Groupe historique repris par l'issue : son statut au rattachement et aujourd'hui. */
@@ -544,13 +526,13 @@ export interface IssueLegacyGroup {
   fingerprint: string;
   /** Statut du groupe au rattachement ; null si l'empreinte n'avait aucune occurrence antérieure. */
   legacy_status: "open" | "resolved" | "ignored" | null;
-  legacy_resolved_at: Date | null;
+  legacy_resolved_at: Date | string | null;
   current_status: "open" | "resolved" | "ignored";
   /** Note de triage historique, relue telle quelle : jamais perdue au basculement. */
   note: string | null;
   /** Issues reprenant la même empreinte (plus d'une : empreinte répartie). */
   issues: number;
-  attached_at: Date;
+  attached_at: Date | string;
 }
 
 export interface IssueDetailResult {
@@ -677,7 +659,7 @@ export interface LegacyIssueTarget {
   id: string;
   status: IssueStatus;
   grouping_basis: GroupingBasis;
-  last_seen: Date;
+  last_seen: Date | string;
 }
 
 /**

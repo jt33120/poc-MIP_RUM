@@ -51,6 +51,10 @@ export default defineConfig({
     alias: [
       { find: /^@\//, replacement: `${process.cwd()}/apps/console/` },
       { find: /^@mip\/rum-core$/, replacement: `${process.cwd()}/packages/rum-core/src/index.ts` },
+      // La piste C : contrat et backend de la console, en TypeScript sans étape de
+      // build (le service les compile dans son bundle). Même règle : leur SOURCE.
+      { find: /^@mip\/console-contract$/, replacement: `${process.cwd()}/packages/console-contract/src/index.ts` },
+      { find: /^@mip\/console-api$/, replacement: `${process.cwd()}/packages/console-api/src/index.ts` },
       ...REACT.map((specifier) => ({
         find: new RegExp(`^${specifier.replace("/", "\\/")}$`),
         replacement: depuisConsole.resolve(specifier),

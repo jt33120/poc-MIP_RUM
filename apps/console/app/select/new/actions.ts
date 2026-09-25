@@ -1,81 +1,31 @@
 "use server";
-// Ajout self-service d'un site à monitorer depuis /select (le « + »). Réutilise
-// exactement la mécanique de /admin/customers (app_registry + clé hashée sha256 +
-// stash mémoire pour un affichage unique), mais avec un formulaire minimal
-// (nom + URL) : l'app_id est dérivé du nom, l'origine CORS de l'URL. Admin only,
-// audité.
-import { createHash, randomBytes } from "node:crypto";
+// Ajout self-service d'un site à monitorer depuis /select (le « + »). C9 — la
+// commande `creerSite` (`lib/commandes/applications.ts`) : la même création que
+// /admin/customers — application, clé hachée, et en mode extension le domaine —
+// avec un formulaire minimal (nom + URL ; l'identifiant dérivé du nom, l'origine
+// CORS de l'URL), en une transaction. Administrateur de la plateforme, audité. Ici :
+// le formulaire ; la clé est rendue au formulaire (`useActionState`, C9c), qui la
+// remet à l'étape 2 (bandeau, bookmarklet, commande de l'agent).
 import { redirect } from "next/navigation";
-import { requireAdmin, stashSecret } from "@/lib/auth";
-import { q } from "@/lib/db";
-import { formatApiKey, parseOrigins, validateAppId } from "@/lib/onboarding";
-import { createExtensionScope } from "@/lib/queries-extension-scope";
+import { executerCommande } from "@/lib/commande-locale";
+import { apresRefus } from "@/lib/commande-suite";
+import { cleDe, type SecretRemis } from "@/lib/secret-remis";
 
-/** Hostname d'une origine (ex. "https://ma-boutique.fr" -> "ma-boutique.fr"). */
-function hostnameOf(origin: string): string | null {
-  try {
-    return new URL(origin).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
-const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
-
-/** "Ma Boutique Démo" -> "ma-boutique-demo" (slug app_id stable). */
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-}
-
-export async function createSiteAction(fd: FormData): Promise<void> {
-  const admin = await requireAdmin();
-  const name = String(fd.get("name") ?? "").trim();
-  const url = String(fd.get("url") ?? "").trim();
+export async function createSiteAction(_precedent: SecretRemis, fd: FormData): Promise<SecretRemis> {
   const rawId = String(fd.get("app_id") ?? "").trim();
   // Mode de collecte choisi à l'étape 1 : 'sdk' (injection JS) | 'extension'.
   const mode = String(fd.get("mode") ?? "sdk") === "extension" ? "extension" : "sdk";
-
-  if (!name) redirect("/select/new?error=name");
-  const appId = validateAppId(rawId || slugify(name));
-  if (!appId) redirect("/select/new?error=app_id");
-  const { origins, invalid } = parseOrigins(url);
-  if (invalid.length || !origins.length) redirect("/select/new?error=url");
-
-  const apiKey = formatApiKey(randomBytes(16).toString("hex"));
-  let inserted = true;
-  try {
-    await q(
-      `insert into app_registry (app_id, name, api_key_hash, active, allowed_origins, created_by)
-       values ($1, $2, $3, true, $4, $5)`,
-      [appId, name, sha256(apiKey), origins, admin.email],
-    );
-  } catch {
-    inserted = false; // app_id déjà pris (PK)
+  const r = await executerCommande("creerSite", {
+    corps: { name: String(fd.get("name") ?? ""), url: String(fd.get("url") ?? ""), ...(rawId ? { app_id: rawId } : {}), mode },
+  });
+  if (!r.ok) {
+    apresRefus(r);
+    redirect("/select/new?error=name");
   }
-  if (!inserted) redirect("/select/new?error=exists");
-
-  // Mode extension : on enregistre d'emblée le domaine dans extension_scope pour
-  // que l'extension navigateur observe ce domaine (mapping domaine -> app_id).
-  if (mode === "extension") {
-    const host = hostnameOf(origins[0]);
-    if (host) {
-      await createExtensionScope(host, appId);
-      await q(`insert into audit_log (user_email, action, detail) values ($1, 'extension_scope_create', $2)`, [
-        admin.email,
-        `${host} -> ${appId} (via /select, mode extension)`,
-      ]);
-    }
-  }
-
-  await q(`insert into audit_log (user_email, action, detail) values ($1, 'app_create', $2)`, [
-    admin.email,
-    `${appId} (${name}) via /select · mode ${mode}`,
-  ]);
-  redirect(`/select/new?app=${encodeURIComponent(appId)}&kt=${stashSecret(apiKey)}&mode=${mode}`);
+  const d = r.data;
+  if (d.etat === "refus") redirect(`/select/new?error=${d.champ}`);
+  if (d.etat === "existe") redirect("/select/new?error=exists");
+  return d.etat === "cree"
+    ? { nom: cleDe(d.app), valeur: d.cle, pour: d.app, aller: `/select/new?app=${encodeURIComponent(d.app)}&mode=${d.mode}` }
+    : null;
 }

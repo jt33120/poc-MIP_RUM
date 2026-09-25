@@ -2,9 +2,10 @@
 // chacune avec SES propres horodatage, release, source et liens vérifiés dans la
 // même app, puis la pagination par curseur. Rendu serveur.
 import Link from "next/link";
-import { occurrenceHrefs, type OccurrenceHrefs } from "@/components/errors/error-view";
+import { occurrenceHrefs, type OccurrenceHrefs } from "@/lib/error-view";
 import { fmtDate } from "@/lib/format";
-import { ERROR_SOURCE_LABELS, type ErrorOccurrenceLinks, type ErrorOccurrenceRow } from "@/lib/queries-errors";
+import { ERROR_SOURCE_LABELS } from "@/lib/erreurs-sources";
+import type { ErrorOccurrenceLinks, ErrorOccurrenceRow } from "@/lib/queries-errors";
 
 export const ERROR_LINK =
   "rounded text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf";

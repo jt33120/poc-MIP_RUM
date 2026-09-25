@@ -34,24 +34,17 @@ import { RuleFields } from "@/components/alerts/RuleFields";
 import { RAISON_DETECTION_RELEASE, RAISON_REGRESSION_RELEASE, type ModeRelease } from "@/components/alerts/RuleFields";
 import { RuleRow } from "@/components/alerts/RuleRow";
 import { SeverityBadge } from "@/components/alerts/SeverityBadge";
-import { getUser } from "@/lib/auth";
+import type { Fil } from "@mip/console-contract";
+import { chargerAlertes } from "@/lib/chargeurs/alertes";
+import { chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { fmtDate } from "@/lib/format";
-import { lire, type Lecture } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
 import { hrefWithQuery, paramReader, queryToSearchParams } from "@/lib/query-contract";
-import { registeredApps, type AppItem } from "@/lib/queries";
-import { listChannels, type NotifyChannelRow } from "@/lib/queries-alerting";
+import type { NotifyChannelRow } from "@/lib/queries-alerting";
 import {
-  alertEvents,
-  alertEventsByDay,
-  alertFirings,
-  alertRules,
   isAlertMetric,
-  releaseRegressionDisponible,
   totalNonLivres,
-  unackedAlertCount,
   type AlertDayRow,
   type AlertEventRow,
   type AlertFiringRow,
@@ -82,46 +75,31 @@ export const dynamic = "force-dynamic";
 const TITRE = "Alertes";
 const JOUR_SECONDES = 86_400;
 
-/** Lecture non lancée : une valeur sûre, jamais affichée comme mesure. */
-const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
-
 export default async function Alerts({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const sp = (await searchParams) ?? {};
-  const ecran = await pageFilters(sp, "/alerts");
-  if (!ecran.ok) return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
-  const f = ecran.filters;
+  // Le chargeur (`lib/chargeurs/alertes.ts`) lit chaque section, et ce qui ne sert
+  // qu'à écrire pour un administrateur seulement (décidé par son principal).
+  const ecran = await chargerEcran(chargerAlertes, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
+  const f = { app: ecran.appFiltre };
   const lecteur = paramReader(sp);
   // État de vue (F06, § 3.1) : `evt` met un déclenchement en évidence, `regle_*`
   // pré-remplit le formulaire. Une valeur illisible est IGNORÉE et signalée — elle
   // ne touche aucun chiffre, donc elle ne justifie pas un refus.
   const { etat: vue, ignores } = lireEtatDeVue("/alerts", lecteur, { estMetriqueAlerte: isAlertMetric });
 
-  const utilisateur = await getUser();
-  const admin = utilisateur?.role === "admin" && !utilisateur.demo;
-
-  const [regles, evenements, nonAcquittees, apps, canaux, parJour, declenchements, releaseDetectee] = await Promise.all([
-    lire(() => alertRules(f)),
-    lire(() => alertEvents(f)),
-    lire(() => unackedAlertCount(f)),
-    admin ? lire(() => registeredApps()) : sansLecture<AppItem[]>([]),
-    lire(() => listChannels(f)),
-    lire(() => alertEventsByDay(f, JOURS_DECLENCHEMENTS)),
-    lire(() => alertFirings(f, JOURS_DECLENCHEMENTS, PLAFOND_DECLENCHEMENTS)),
-    // F68 : le formulaire n'existe que pour un administrateur ; lui seul a besoin de
-    // savoir si l'évaluateur connaît le mode release (B52, migration-v86).
-    admin ? lire(() => releaseRegressionDisponible()) : sansLecture(false),
-  ]);
+  const { admin, plateforme, regles, evenements, nonAcquittees, apps, canaux, parJour, declenchements, releaseDetectee } = ecran;
   const modeRelease: ModeRelease = !releaseDetectee.ok
     ? { disponible: false, raison: RAISON_DETECTION_RELEASE }
     : releaseDetectee.data
       ? { disponible: true }
       : { disponible: false, raison: RAISON_REGRESSION_RELEASE };
 
-  const listeRegles: AlertRuleRow[] = regles.ok ? regles.data : [];
-  const listeEvenements: AlertEventRow[] = evenements.ok ? evenements.data : [];
-  const listeCanaux: NotifyChannelRow[] = canaux.ok ? canaux.data : [];
-  const jours: AlertDayRow[] = parJour.ok ? parJour.data : [];
-  const lignes: AlertFiringRow[] = declenchements.ok ? declenchements.data.lignes : [];
+  const listeRegles: Fil<AlertRuleRow>[] = regles.ok ? regles.data : [];
+  const listeEvenements: Fil<AlertEventRow>[] = evenements.ok ? evenements.data : [];
+  const listeCanaux: Fil<NotifyChannelRow>[] = canaux.ok ? canaux.data : [];
+  const jours: Fil<AlertDayRow>[] = parJour.ok ? parJour.data : [];
+  const lignes: Fil<AlertFiringRow>[] = declenchements.ok ? declenchements.data.lignes : [];
   const comptes = regles.ok ? comptesRegles(listeRegles) : null;
   const canauxActifs = canaux.ok ? listeCanaux.filter((c) => c.active).length : null;
   const grille = grilleDesJours(jours);
@@ -172,7 +150,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
         domain="fiabilite"
         sub="Qu'est-ce qui s'est déclenché, qui en a été averti, et qu'est-ce qui reste à traiter ?"
       >
-        {admin && (
+        {plateforme && (
           <form action={evaluateNowAction}>
             <input type="hidden" name="qs" value={`?${queryToSearchParams(ecran.query)}`} />
             <button type="submit" data-testid="evaluate-now" className="btn-accent">
@@ -438,6 +416,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
                       ) : admin ? (
                         <form action={ackEventAction}>
                           <input type="hidden" name="id" value={e.id} />
+                          <input type="hidden" name="app" value={e.app_id} />
                           <button type="submit" data-testid={`ack-${e.id}`} className="btn-ghost">
                             Acquitter
                           </button>
@@ -510,7 +489,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
           <EchecLecture titre="Canaux de notification" />
         </div>
       ) : (
-        <ChannelsSection channels={listeCanaux} apps={apps.ok ? apps.data : []} defaultApp={f.app ?? undefined} admin={admin} />
+        <ChannelsSection channels={listeCanaux} apps={apps.ok ? apps.data : []} defaultApp={f.app ?? undefined} admin={admin} global={plateforme} />
       )}
     </div>
   );

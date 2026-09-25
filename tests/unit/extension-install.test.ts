@@ -187,3 +187,29 @@ describe("lecture de l'User-Agent (côté serveur)", () => {
     expect(platformFromUA("quelque chose d'inconnu")).toBeNull();
   });
 });
+
+// C11 — le collector écrit l'inventaire des postes avec SES fonctions
+// (`@mip/backend/lib/extension-parc.mjs`) ; l'écran lit avec celles de la console.
+// Les deux doivent dire la même chose d'un même User-Agent.
+describe("User-Agent d'un poste : mêmes règles console ↔ collector (C11)", () => {
+  it("navigateur, version majeure et système, sur un échantillon de postes", async () => {
+    const { browserFromUA } = await import("../../apps/console/lib/format");
+    // @ts-expect-error module ESM partagé, sans déclarations
+    const parc = await import("../../packages/backend/lib/extension-parc.mjs");
+    const ECHANTILLON = [
+      null,
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.2592.87",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+      "Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0",
+      "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+      "curl/8.7.1",
+    ];
+    for (const ua of ECHANTILLON) {
+      expect(parc.navigateurDe(ua), String(ua)).toBe(browserFromUA(ua));
+      expect(parc.versionMajeureDe(ua), String(ua)).toBe(browserMajorFromUA(ua));
+      expect(parc.systemeDe(ua), String(ua)).toBe(platformFromUA(ua));
+    }
+  });
+});

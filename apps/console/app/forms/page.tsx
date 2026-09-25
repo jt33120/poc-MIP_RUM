@@ -33,37 +33,19 @@ import { EtatSurface } from "@/components/states/EtatSurface";
 import { SectionErreur } from "@/components/states/SectionErreur";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import {
-  fieldReport,
-  formReport,
-  medianeSoumissionMs,
-  MAX_CHAMPS_SDK,
-  SEUIL_ECHANTILLON_FAIBLE,
-  type FieldReport,
-  type FormEvent,
-  type FormReportRow,
-} from "@/lib/form-analytics";
-import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
-import { lire } from "@/lib/lecture";
+import { MAX_CHAMPS_SDK, SEUIL_ECHANTILLON_FAIBLE, type FieldReport, type FormReportRow } from "@/lib/form-analytics";
+import { chargerForms, PLAFOND_EVENEMENTS } from "@/lib/chargeurs/forms";
+import { chargerEcran } from "@/lib/ecran-local";
 import { couvertureDeTuile, gesteElargir, plafondAtteint, plageDansPhrase } from "@/lib/lecture-usages";
-import { pageFilters } from "@/lib/page-filters";
-import { hrefWithQuery, paramReader, previousRange } from "@/lib/query-contract";
-import { formEvents } from "@/lib/queries-form-analytics";
-import { samplingSessions } from "@/lib/queries-sessions";
+import { hrefWithQuery, previousRange } from "@/lib/query-contract";
 import { referencePrecedente } from "@/lib/sessions-kpi";
 import { ecartProportions } from "@/lib/stats/incertitude";
-import { lireComparaison } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
 
-/** Plafond de la lecture (`formEvents(f, 5000)`) : dit dès qu'il est atteint (S4). */
-const PLAFOND_EVENEMENTS = 5000;
 
 /** La population de l'écran, nommée dans chaque méta (S1). */
 const POPULATION = "tentatives de formulaire (un événement form.submit ou form.abandon par tentative, pas une session)";
-
-/** Les tuiles se comparent sur les événements custom : c'est d'eux que les tentatives sont lues. */
-const SOURCE_FORMULAIRES: SourceComparaison = { table: "rum_event", colonneTemps: "ts", additive: true };
 
 // Jetons de F01 : l'abandon est le segment `bad`, le reste est neutre. Les deux
 // suivent le mode sombre (variables CSS), aucune couleur n'est figée ici.
@@ -89,23 +71,13 @@ const TEXTE_VIDE_LECTURE =
 
 export default async function Forms({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/forms");
-  if (!ecran.ok) return <FilterProblemNotice title="Formulaires" problem={ecran.problem} />;
-  const f = ecran.deviceFilters;
+  // Le chargeur (`lib/chargeurs/forms.ts`) lit les événements `form.*` et les RÉDUIT
+  // en rapports (par formulaire, champ par champ pour le formulaire affiché) ; sous
+  // `cmp=prev` (F06, F53), la période précédente et sa couverture.
+  const ecran = await chargerEcran(chargerForms, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Formulaires" problem={ecran.problem} />;
   const query = ecran.query;
-  // Comparaison (F06, F53) : `cmp=prev` compare les tuiles à la période précédente,
-  // seulement si celle-ci est COMPLÈTE (§ 3.2) ; défaut de l'écran : aucune.
-  const prev = lireComparaison("/forms", paramReader(sp)).valeur.mode === "prev";
-  // S7 : sessions des événements `form.*` lus (une session « biaisée-erreurs »
-  // n'émet que ses erreurs : ses formulaires ne sont jamais lus).
-  const [lecture, lecturePrev, echantillonnage, couvertures] = await Promise.all([
-    lire(() => formEvents(f, PLAFOND_EVENEMENTS)),
-    prev ? lire(() => formEvents(f, PLAFOND_EVENEMENTS, true)) : Promise.resolve(null),
-    lire(() => samplingSessions(f, { population: { lecture: "formulaires" } })),
-    prev
-      ? Promise.all(sourcesSousFiltres(query, SOURCE_FORMULAIRES).map((s) => couverturePrecedente(query, s)))
-      : Promise.resolve<CouverturePrecedente[]>([]),
-  ]);
+  const { lecture, lecturePrev, echantillonnage, couvertures } = ecran;
   const fenetre = ecran.label;
   const dansPhrase = plageDansPhrase(query.range, fenetre);
   const meta = (extra?: string) => (
@@ -116,13 +88,12 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
     </>
   );
 
-  const events: FormEvent[] = lecture.ok ? lecture.data : [];
-  const forms = lecture.ok ? formReport(events) : [];
-  const demande = typeof sp.form === "string" && sp.form ? sp.form : undefined;
-  // Le formulaire demandé peut avoir disparu de la fenêtre : on retombe sur le
-  // premier du classement plutôt que d'afficher une liste de champs vide.
-  const selectionne = forms.find((r) => r.form === demande)?.form ?? forms[0]?.form;
-  const champs: FieldReport | null = selectionne ? fieldReport(events, selectionne) : null;
+  const forms = lecture.ok ? lecture.data.forms : [];
+  // Le formulaire demandé peut avoir disparu de la fenêtre : le chargeur retombe sur
+  // le premier du classement plutôt que d'afficher une liste de champs vide.
+  const selectionne = lecture.ok ? (lecture.data.selectionne ?? undefined) : undefined;
+  const champs = lecture.ok ? lecture.data.champs : null;
+  const nombreLus = lecture.ok ? lecture.data.nombre : 0;
   const ligneSelectionnee = forms.find((r) => r.form === selectionne);
 
   const formHref = (nom: string) => hrefWithQuery("/forms", query, { form: nom });
@@ -131,7 +102,7 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
   const entames = forms.reduce((a, r) => a + r.starters, 0);
   const soumissions = forms.reduce((a, r) => a + r.submits, 0);
   const abandons = forms.reduce((a, r) => a + r.abandons, 0);
-  const aucunEvenement = lecture.ok && events.length === 0;
+  const aucunEvenement = lecture.ok && nombreLus === 0;
   const raisonVide = `aucun événement de formulaire lu sur ${dansPhrase}`;
   const raisonEchec = "lecture en échec : aucun événement n'a pu être lu";
   const raisonNull = lecture.ok ? raisonVide : raisonEchec;
@@ -139,12 +110,12 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
   // `cmp=prev` (F53) : la même lecture sur la période précédente. Un plafond de 5 000
   // événements atteint d'un côté ou de l'autre tait l'écart (il mesurerait le plafond).
   const precEvents = lecturePrev?.ok ? lecturePrev.data : null;
-  const precForms = precEvents ? formReport(precEvents) : null;
+  const precForms = precEvents ? precEvents.forms : null;
   const precEntames = precForms ? precForms.reduce((a, r) => a + r.starters, 0) : null;
   const precSoumissions = precForms ? precForms.reduce((a, r) => a + r.submits, 0) : null;
   const plafonds = [
-    { atteint: lecture.ok && plafondAtteint(events.length, PLAFOND_EVENEMENTS), raison: `plafond de ${formater("count", PLAFOND_EVENEMENTS)} événements atteint sur la période lue` },
-    { atteint: precEvents !== null && plafondAtteint(precEvents.length, PLAFOND_EVENEMENTS), raison: `plafond de ${formater("count", PLAFOND_EVENEMENTS)} événements atteint sur la période précédente` },
+    { atteint: lecture.ok && plafondAtteint(nombreLus, PLAFOND_EVENEMENTS), raison: `plafond de ${formater("count", PLAFOND_EVENEMENTS)} événements atteint sur la période lue` },
+    { atteint: precEvents !== null && plafondAtteint(precEvents.nombre, PLAFOND_EVENEMENTS), raison: `plafond de ${formater("count", PLAFOND_EVENEMENTS)} événements atteint sur la période précédente` },
   ];
   /** Props de comparaison d'une tuile ; rien hors `cmp=prev`. L'effectif précédent (entamés) porte l'échantillon faible. */
   const comparer = (precedent: number | null) =>
@@ -203,7 +174,7 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
           />
           <KpiTile
             label="Temps médian jusqu'à la soumission"
-            valeur={medianeSoumissionMs(events)}
+            valeur={lecture.ok ? lecture.data.mediane : null}
             format="s-auto"
             raisonNull={
               !lecture.ok
@@ -214,12 +185,12 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
             }
             couverture={{ n: soumissions, unite: "soumissions", faibleSous: SEUIL_ECHANTILLON_FAIBLE }}
             lecture="Médiane, jamais une moyenne : un abandon rapide raccourcirait le temps de remplissage sans que personne n'aille plus vite."
-            {...comparer(precEvents ? medianeSoumissionMs(precEvents) : null)}
+            {...comparer(precEvents ? precEvents.mediane : null)}
           />
         </div>
       </SectionErreur>
 
-      {lecture.ok && plafondAtteint(events.length, PLAFOND_EVENEMENTS) && (
+      {lecture.ok && plafondAtteint(nombreLus, PLAFOND_EVENEMENTS) && (
         <div className="mb-6" data-testid="forms-plafond">
           <EtatSurface etat={{ kind: "partiel", raison: TEXTE_PLAFOND }} />
         </div>

@@ -48,8 +48,15 @@ export const LIMITES_UPLOAD = Object.freeze({
 /** Durée de vie d'un jeton, en jours. */
 export const EXPIRATION_JETON = Object.freeze({ min: 1, max: 90, defaut: 30 });
 
-/** Seul privilège qu'un jeton d'upload puisse porter. */
+/** Le privilège d'un jeton d'upload de source maps. */
 export const PRIVILEGE_JETON = "sourcemaps:write";
+
+/**
+ * Les privilèges qu'un jeton de CI peut porter — un par jeton (migration-v92) :
+ * poser des source maps, ou un marqueur de déploiement (C11). La fuite de l'un
+ * n'ouvre pas l'autre.
+ */
+export const PRIVILEGES_JETON = Object.freeze(["sourcemaps:write", "deploys:write"]);
 
 const MESSAGE_SCHEMA_ABSENT =
   "schéma source maps non migré : migration-v71 requise avant tout upload";
@@ -119,11 +126,15 @@ export function lireJetonUpload(authorization) {
  * révoqué ou expiré — sans dire lequel. Un jeton de lecture CONSOLE_API_TOKENS
  * n'a pas ce format : il est refusé ici, jamais promu.
  *
+ * Le privilège est EXIGÉ tel quel : un jeton de source maps ne pose pas de
+ * marqueur de déploiement, ni l'inverse.
+ *
  * @param {{ query: Function }} db
  * @param {string|null} authorization
+ * @param {"sourcemaps:write"|"deploys:write"} [privilege]
  * @returns {Promise<{ id: string, app_id: string } | null>}
  */
-export async function verifierJetonUpload(db, authorization) {
+export async function verifierJetonUpload(db, authorization, privilege = PRIVILEGE_JETON) {
   const lu = lireJetonUpload(authorization);
   if (!lu) return null;
   let ligne;
@@ -131,7 +142,7 @@ export async function verifierJetonUpload(db, authorization) {
     ({ rows: [ligne] } = await db.query(
       `select id::text as id, app_id, secret_hash, revoked_at is null and expires_at > now() as actif
          from sourcemap_upload_token where id = $1 and scope = $2`,
-      [lu.id, PRIVILEGE_JETON],
+      [lu.id, privilege],
     ));
   } catch (err) {
     if (schemaAbsent(err)) throw new ErreurUpload(503, MESSAGE_SCHEMA_ABSENT);

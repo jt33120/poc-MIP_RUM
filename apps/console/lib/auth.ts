@@ -1,8 +1,15 @@
 // Authentification console v0.3 (chantier B3) — JWT HS256 (jose) en cookie
 // httpOnly + RBAC admin/viewer. Le cœur JWT est sans import next/* statique :
-// le fichier est partagé entre le middleware (edge) et les server components
-// (next/headers et next/navigation sont importés dynamiquement à l'usage).
+// le fichier est partagé entre le middleware (runtime Node) et les server
+// components (next/headers et next/navigation sont importés dynamiquement).
+//
+// C1 — DEUX FORMATS DE SESSION pendant la bascule : le HS256 d'ici (rôle et
+// périmètre dans le jeton), et l'ES256 de console-api (un identifiant de
+// session ; rôle et périmètre relus par `GET /v1/me`, voir `session-console.ts`).
+// `principalDeJeton` aiguille ; tout le reste de la console ne voit qu'un
+// `SessionUser`, quel que soit le format.
 import { SignJWT, jwtVerify } from "jose";
+import { algorithmeDuJeton, principalConsoleApi } from "./session-console";
 
 export const SESSION_COOKIE = "mip_session";
 export const SESSION_HOURS = 8;
@@ -79,11 +86,46 @@ export async function verifyJwt(token: string): Promise<SessionUser | null> {
   }
 }
 
-/** Utilisateur courant (server components / server actions), null si non connecté. */
+/**
+ * Mémo court des principaux ES256 : un rendu appelle `getUser` depuis le layout,
+ * la page et plusieurs composants, à quelques millisecondes d'écart — un seul
+ * appel à `/v1/me` pour eux tous. 2 s, loin sous le délai de révocation du
+ * service (30 s) ; une panne n'est jamais mémorisée.
+ */
+const memoPrincipaux = new Map<string, { principal: Promise<SessionUser | null>; jusqua: number }>();
+const MEMO_PRINCIPAL_MS = 2_000;
+
+/** Le principal d'un cookie de session, quel qu'en soit le format ; `null` s'il ne vaut rien. */
+export async function principalDeJeton(token: string, requestId?: string): Promise<SessionUser | null> {
+  if (algorithmeDuJeton(token) !== "ES256") return verifyJwt(token);
+  const maintenant = Date.now();
+  for (const [cle, v] of memoPrincipaux) if (v.jusqua <= maintenant) memoPrincipaux.delete(cle);
+  const connu = memoPrincipaux.get(token);
+  if (connu) return connu.principal;
+  if (memoPrincipaux.size >= 1_000) memoPrincipaux.delete(memoPrincipaux.keys().next().value!);
+  const principal = principalConsoleApi(token, { requestId });
+  memoPrincipaux.set(token, { principal, jusqua: maintenant + MEMO_PRINCIPAL_MS });
+  principal.catch(() => memoPrincipaux.delete(token));
+  return principal;
+}
+
+/** Oublie le principal mémorisé d'un jeton : sa session vient d'être révoquée par CE processus. */
+export function oublierPrincipal(token: string): void {
+  memoPrincipaux.delete(token);
+}
+
+/**
+ * Utilisateur courant (server components / server actions), null si non connecté.
+ * Lève si console-api ne peut pas répondre (session ES256) : l'écran d'erreur le
+ * dit, plutôt qu'un renvoi à /login qui ferait croire à une session perdue.
+ */
 export async function getUser(): Promise<SessionUser | null> {
-  const { cookies } = await import("next/headers");
-  const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  return token ? verifyJwt(token) : null;
+  const entetes = await import("next/headers");
+  const token = (await entetes.cookies()).get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  if (algorithmeDuJeton(token) !== "ES256") return verifyJwt(token);
+  // L'identifiant de la requête suit l'appel à console-api : la même « réf. » partout.
+  return principalDeJeton(token, (await entetes.headers()).get("x-request-id") ?? undefined);
 }
 
 /** Garde des pages /admin : redirige /login (anonyme) ou / (viewer). */
@@ -93,23 +135,4 @@ export async function requireAdmin(): Promise<SessionUser> {
   if (!user) redirect("/login");
   if (user!.role !== "admin") redirect("/");
   return user as SessionUser;
-}
-
-// Affichage unique des mots de passe générés (création / reset) : stash mémoire
-// court (5 min) consommé au premier rendu — jamais de secret dans l'URL ni en base
-// en clair. globalThis pour survivre au hot-reload de next dev (même motif que db.ts).
-const g = globalThis as unknown as { mipOnceStore?: Map<string, { value: string; exp: number }> };
-const onceStore = (g.mipOnceStore ??= new Map());
-
-export function stashSecret(value: string): string {
-  for (const [k, v] of onceStore) if (v.exp < Date.now()) onceStore.delete(k);
-  const token = crypto.randomUUID();
-  onceStore.set(token, { value, exp: Date.now() + 5 * 60_000 });
-  return token;
-}
-
-export function popSecret(token: string): string | null {
-  const e = onceStore.get(token);
-  onceStore.delete(token);
-  return e && e.exp > Date.now() ? e.value : null;
 }

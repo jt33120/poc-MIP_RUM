@@ -2,13 +2,18 @@
 import { ALERT_SEVERITIES } from "./alerting";
 import { RELEASE_METRICS } from "./alerting";
 import { q } from "./db";
+import { ecrire, type ClientEcriture } from "./requete";
 import { periodOf, queryOf, type FiltersLike } from "./filters";
 import { isValidEventName } from "./queries-events";
 import { binder, bucketExpr, compileScope, sessionJoin } from "./query-compiler";
 import type { AnalyticsQuery } from "./query-contract";
 import { sqlContext, type SqlContext } from "./query-sql";
-import { ecrireSerie } from "./correlation-serie";
+import { EFFECTIF_MIN_HEURE, ecrireSerie } from "./correlation-serie";
 import { THRESHOLDS, type Rating } from "./rating";
+import { ALERT_METRICS, ISSUE_METRIC, metricLabel } from "./alertes-metriques";
+// Métriques d'alerte et de SLO, comparateurs et libellés : `alertes-metriques.ts`,
+// SANS la base ; réexportés ici.
+export * from "./alertes-metriques";
 
 // ---------------------------------------------------------------------------
 // Filtres globaux — FAÇADE « v2 » du contrat commun (lib/query-contract.ts)
@@ -50,7 +55,6 @@ export function periodLabel(f: Filters): string {
   return PERIODS[f.period].label;
 }
 
-
 // ---------------------------------------------------------------------------
 // Triage des groupes d'erreurs (error_status). Les LECTURES de groupes —
 // compteurs, tendance, détail, occurrences — vivent dans ./queries-errors.ts
@@ -68,8 +72,11 @@ export async function setErrorStatus(
   fingerprint: string,
   status: ErrorStatus,
   operator: string,
+  /** Le client d'une transaction (C7) : le statut et sa ligne d'audit partent ensemble. */
+  client?: Pick<import("pg").PoolClient, "query">,
 ): Promise<void> {
-  await q(
+  const executer = client ? (t: string, v: unknown[]) => client.query(t, v) : (t: string, v: unknown[]) => q(t, v);
+  await executer(
     `insert into error_status (app_id, fingerprint, status, resolved_at, resolved_by, updated_at)
      values ($1, $2, $3, case when $3 = 'resolved' then now() else null end, $4, now())
      on conflict (app_id, fingerprint) do update
@@ -85,43 +92,9 @@ export async function setErrorStatus(
 // Alerting (alert_rule / alert_event / check_alerts)
 // ---------------------------------------------------------------------------
 
-// Métriques éligibles comme CIBLE DE SLO : uniquement celles qui ont un sens
-// « % de mesures conformes » (vitals + taux d'erreur). Un coût/compte absolu
-// n'entre pas dans ce modèle -> exclu des SLO.
-export const SLO_METRICS = ["LCP", "INP", "CLS", "FCP", "TTFB", "error_rate"] as const;
-
-// Métriques éligibles comme RÈGLE D'ALERTE : les métriques SLO + deux métriques
-// opérationnelles absolues (budget IA, pics d'erreurs applicatives) évaluées par
-// check_alerts (migration-v38), puis les familles paramétrées `event:<nom>` (P4)
-// et `issue:<uuid>` (P5.6, occurrences d'une issue d'erreurs).
-export const ALERT_METRICS = [...SLO_METRICS, "log_errors", "event", "issue"] as const;
-export const ALERT_COMPARATORS = [">", "<"] as const;
-
-const ISSUE_METRIC = /^issue:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
 /** Dernière évaluation d'une règle par check_alerts (migration-v73). */
 export const RULE_STATES = ["ok", "breached", "no_data"] as const;
 export type RuleState = (typeof RULE_STATES)[number];
-
-/** Libellé lisible + unité d'une métrique d'alerte/SLO (dropdowns, feed d'événements). */
-export const METRIC_LABELS: Record<string, string> = {
-  LCP: "LCP (ms)",
-  INP: "INP (ms)",
-  CLS: "CLS",
-  FCP: "FCP (ms)",
-  TTFB: "TTFB (ms)",
-  error_rate: "Taux d'erreur JS",
-  log_errors: "Logs ERROR (nombre)",
-  event: "Événement custom (nombre)",
-  issue: "Issue d'erreurs (occurrences)",
-};
-
-/** Libellé d'une métrique (repli : la clé brute si inconnue). */
-export function metricLabel(metric: string): string {
-  if (metric.startsWith("event:")) return `Événement « ${metric.slice(6)} » (nombre)`;
-  if (ISSUE_METRIC.test(metric)) return `Issue ${metric.slice(6, 14)} (occurrences)`;
-  return METRIC_LABELS[metric] ?? metric;
-}
 
 export function isAlertMetric(metric: string): boolean {
   if (metric !== "event" && metric !== "issue" && (ALERT_METRICS as readonly string[]).includes(metric)) return true;
@@ -139,7 +112,7 @@ export interface AlertRuleRow {
   window_minutes: number;
   webhook_url: string | null;
   active: boolean;
-  created_at: Date;
+  created_at: Date | string;
   mode: string;
   severity: string;
   sensitivity: number;
@@ -151,7 +124,7 @@ export interface AlertRuleRow {
   last_state: RuleState | null;
   last_value: number | null;
   last_reason: string | null;
-  last_evaluated_at: Date | null;
+  last_evaluated_at: Date | string | null;
 }
 
 /**
@@ -187,7 +160,7 @@ export interface AlertEventRow {
   rule_id: number | null;
   /** SLO dont le burn rapide a déclenché l'événement (`check_slo_burn`) ; null sinon. */
   slo_id: number | null;
-  fired_at: Date;
+  fired_at: Date | string;
   value: number | null;
   message: string | null;
   acknowledged: boolean;
@@ -375,7 +348,7 @@ export interface AlertFiringRow {
   /** Identifiant de la règle, du SLO ou de l'issue ; « nouvelles-erreurs » pour la piste sans source. */
   source_id: string;
   libelle: string;
-  fired_at: Date;
+  fired_at: Date | string;
   severity: string;
   delivered: number;
   pending: number;
@@ -451,7 +424,6 @@ export async function alertFirings(
   return { lignes, tronque: rows.length > plafond };
 }
 
-
 export interface RuleInput {
   app_id: string;
   metric: string;
@@ -519,39 +491,64 @@ export async function appDeRegle(id: number): Promise<string | null> {
   return r?.app_id ?? null;
 }
 
-export async function insertAlertRule(r: RuleInput): Promise<void> {
+/** Rend l'identifiant de la règle créée. `client` : la transaction de la commande (C8), avec son audit. */
+export async function insertAlertRule(r: RuleInput, client?: ClientEcriture): Promise<string> {
   await regleRelease(r);
   const v73 = await regleV73(r);
-  await q(
+  const { rows } = await ecrire<{ id: string }>(
+    client,
     `insert into alert_rule (app_id, metric, route, comparator, threshold, window_minutes,
                              webhook_url, mode, severity, sensitivity, baseline_weeks${v73 ? ", env" : ""})
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11${v73 ? ", $12" : ""})`,
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11${v73 ? ", $12" : ""})
+     returning id::text as id`,
     [r.app_id, r.metric, r.route, r.comparator, r.threshold, r.window_minutes,
      r.webhook_url, r.mode, r.severity, r.sensitivity, r.baseline_weeks, ...(v73 ? [r.env] : [])],
   );
+  return rows[0].id;
 }
 
-export async function updateAlertRule(id: number, r: RuleInput): Promise<void> {
+/**
+ * Réécrit la règle `id` de l'application `appActuelle` — une règle d'une autre
+ * application n'est pas touchée (`false`). `r.app_id` peut la DÉPLACER : la
+ * commande a vérifié que l'application visée est aussi dans le périmètre.
+ */
+export async function updateAlertRule(id: number, appActuelle: string, r: RuleInput, client?: ClientEcriture): Promise<boolean> {
   await regleRelease(r);
   const v73 = await regleV73(r);
-  await q(
+  const { rowCount } = await ecrire(
+    client,
     `update alert_rule
-     set app_id = $2, metric = $3, route = $4, comparator = $5,
-         threshold = $6, window_minutes = $7, webhook_url = $8,
-         mode = $9, severity = $10, sensitivity = $11, baseline_weeks = $12${v73 ? ", env = $13" : ""}
-     where id = $1`,
-    [id, r.app_id, r.metric, r.route, r.comparator, r.threshold, r.window_minutes,
+     set app_id = $3, metric = $4, route = $5, comparator = $6,
+         threshold = $7, window_minutes = $8, webhook_url = $9,
+         mode = $10, severity = $11, sensitivity = $12, baseline_weeks = $13${v73 ? ", env = $14" : ""}
+     where id = $1 and app_id = $2`,
+    [id, appActuelle, r.app_id, r.metric, r.route, r.comparator, r.threshold, r.window_minutes,
      r.webhook_url, r.mode, r.severity, r.sensitivity, r.baseline_weeks, ...(v73 ? [r.env] : [])],
   );
+  return rowCount > 0;
 }
 
-/** Bascule activation/désactivation (flip en SQL : pas d'état à transporter dans le form). */
-export async function toggleAlertRuleActive(id: number): Promise<void> {
-  await q(`update alert_rule set active = not active where id = $1`, [id]);
+/** Active ou suspend la règle `id` de l'application `appId` : l'état VOULU, pas un « inverser ». */
+export async function toggleAlertRuleActive(id: number, appId: string, active: boolean, client?: ClientEcriture): Promise<boolean> {
+  const { rowCount } = await ecrire(client, `update alert_rule set active = $3 where id = $1 and app_id = $2`, [id, appId, active]);
+  return rowCount > 0;
 }
 
-export async function acknowledgeAlertEvent(id: number): Promise<void> {
-  await q(`update alert_event set acknowledged = true where id = $1`, [id]);
+/**
+ * Acquitte un événement de l'application `appId`. Un événement n'a d'application
+ * que par ce qui l'a déclenché : sa règle, ou le SLO dont le burn l'a levé
+ * (`check_slo_burn`, `rule_id` nul).
+ */
+export async function acknowledgeAlertEvent(id: number, appId: string, client?: ClientEcriture): Promise<boolean> {
+  const { rowCount } = await ecrire(
+    client,
+    `update alert_event e set acknowledged = true
+      where e.id = $1
+        and (exists (select 1 from alert_rule r where r.id = e.rule_id and r.app_id = $2)
+             or exists (select 1 from slo s where s.id = e.slo_id and s.app_id = $2))`,
+    [id, appId],
+  );
+  return rowCount > 0;
 }
 
 /** Évaluation immédiate des règles (même fonction SQL que pg_cron en cloud). */
@@ -573,7 +570,6 @@ export async function runCheckSloBurn(): Promise<number> {
   const [r] = await q<{ fired: number }>(`select check_slo_burn() as fired`);
   return r?.fired ?? 0;
 }
-
 
 // ---------------------------------------------------------------------------
 // Corrélation v2 (cartes + série historisée + angles morts)
@@ -601,12 +597,9 @@ export interface CorrCardRow {
   syn_measures: string | null;
 }
 
-/**
- * Effectif minimal d'une heure × (app, route) pour que son LCP p75 réel entre dans
- * un verdict robot / réel (matrice de concordance, angles morts). En dessous, un
- * p75 horaire tient à quelques visites : il est compté à part, « réel insuffisant ».
- */
-export const EFFECTIF_MIN_HEURE = 30;
+// L'effectif minimal d'une heure (`EFFECTIF_MIN_HEURE`) vit dans le module PUR
+// `correlation-serie.ts` : un composant qui l'affiche n'a pas à tirer la base.
+export { EFFECTIF_MIN_HEURE } from "./correlation-serie";
 
 /**
  * CTE `rum` et `syn` filtrées ; `grain` ajoute le seau aligné UTC — une heure
@@ -679,7 +672,7 @@ export async function correlationRoutes(f: FiltersLike): Promise<{ app_id: strin
 }
 
 export interface CorrSeriesRow {
-  bucket: Date;
+  bucket: Date | string;
   rum_lcp_p75: number | null;
   /** Mesures LCP de l'heure (effectif du point) ; `null` : aucune mesure réelle. */
   rum_lcp_n: number | null;
@@ -715,7 +708,7 @@ export async function correlationSeries(app: string, route: string, f: FiltersLi
 export interface BlindSpotRow {
   app_id: string;
   route: string | null;
-  bucket: Date;
+  bucket: Date | string;
   rum_lcp_p75: number;
   /** Mesures LCP réelles de l'heure : au moins `EFFECTIF_MIN_HEURE`. */
   rum_lcp_n: number;
@@ -768,7 +761,7 @@ function effectifValide(effectifMin: number): number {
 export interface SyntheticFreshnessRow {
   app_id: string;
   /** Dernier passage du robot sur la plage ; `null` : aucun passage. */
-  dernier: Date | null;
+  dernier: Date | string | null;
   /** Intervalle médian entre deux passages d'un même scénario ; `null` : moins de deux. */
   intervalle_median_s: number | null;
   /** Exécutions de scénario sur la plage (lignes `syn_snapshot`). */
@@ -936,7 +929,7 @@ export interface CorrJourRow {
   app_id: string;
   route: string;
   /** Début du jour UTC (seau de 86 400 secondes aligné sur l'origine UTC). */
-  jour: Date;
+  jour: Date | string;
   /** Premier chargement moyen du robot ce jour-là ; `null` : aucun passage. */
   syn_latency_avg: number | null;
   /** LCP p75 réel du jour ; `null` : aucune mesure. */

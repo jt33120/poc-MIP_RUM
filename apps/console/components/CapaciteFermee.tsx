@@ -10,13 +10,10 @@
 // dans le cadre des états (`CadreEtat`, teinte neutre, rôle `note`).
 import { PageHeader } from "@/components/PageHeader";
 import { ICON_PATHS, Icon } from "@/components/icons";
-import { CATEGORIES } from "@/components/nav-items";
 import { CadreEtat } from "@/components/states/EtatSurface";
 
-/** La capacité couvrant ce chemin est-elle fermée ? Même drapeau que la sidebar. */
-export function estFermee(href: string): boolean {
-  return CATEGORIES.some((c) => c.verrouille && (href === c.href || href.startsWith(`${c.href}/`)));
-}
+/** La capacité couvrant ce chemin est-elle fermée ? Même liste que la sidebar et les chargeurs (`lib/capacites.ts`). */
+export { estFermee } from "@/lib/capacites";
 
 export function CapaciteFermee({ titre, sujet }: { titre: string; sujet: string }) {
   return (

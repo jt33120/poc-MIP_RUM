@@ -17,17 +17,13 @@ import {
   LegacyEntryBadge,
   ReappearedBadge,
 } from "@/components/errors/IssueBadges";
-import { errorGroupHref, errorsHref, fmtCount, issueHref, issueListHref } from "@/components/errors/error-view";
+import { errorGroupHref, errorsHref, fmtCount, issueHref, issueListHref } from "@/lib/error-view";
 import { INPUT_CLASS } from "@/components/forms/Field";
-import {
-  ISSUE_STATUSES,
-  ISSUE_STATUS_LABELS,
-  type IssueEntry,
-  type IssueListFilters,
-  type IssueListResult,
-} from "@/lib/error-issues";
+import type { IssueEntry, IssueListFilters, IssueListResult } from "@/lib/error-issues";
+import { ISSUE_STATUSES, ISSUE_STATUS_LABELS } from "@/lib/issues-libelles";
 import { fmtDate } from "@/lib/format";
-import { ERROR_SOURCES, ERROR_SOURCE_LABELS, type ErrorFilters, type ErrorTrendPoint } from "@/lib/queries-errors";
+import { ERROR_SOURCES, ERROR_SOURCE_LABELS } from "@/lib/erreurs-sources";
+import type { ErrorFilters, ErrorTrendPoint } from "@/lib/queries-errors";
 
 const TITRE = "Erreurs JS";
 const SOUS_TITRE =

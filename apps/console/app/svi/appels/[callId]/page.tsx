@@ -9,12 +9,10 @@ import Link from "next/link";
 import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
-import { fmtDate } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
-import { pageFilters } from "@/lib/page-filters";
-import { v2FiltersOf } from "@/lib/queries-v2";
-import { sviCallDetail } from "@/lib/queries-svi";
+import { chargerSviAppel } from "@/lib/chargeurs/svi";
+import { chargerEcran } from "@/lib/ecran-local";
 import { fmtDuration, outcomeLabel } from "@/lib/svi-outcome";
 
 export const dynamic = "force-dynamic";
@@ -57,15 +55,13 @@ export default async function FicheAppel({
   }
 
   const { callId } = await params;
-  const ecran = await pageFilters(await searchParams, `/svi/appels/${encodeURIComponent(callId)}`);
-  if (!ecran.ok) return <FilterProblemNotice title="Appel SVI" problem={ecran.problem} />;
-  const f = v2FiltersOf(ecran.query);
-
-  // `f.app` est la portée de l'utilisateur : un appel d'une autre app est
-  // introuvable, pas « interdit ». On ne révèle pas son existence.
-  const detail = await sviCallDetail(f.app, callId);
-  if (!detail) notFound();
-  const { call, steps } = detail;
+  // Le chargeur (`lib/chargeurs/svi.ts`) lit l'appel DANS l'app de l'écran : un appel
+  // d'une autre app est introuvable, pas « interdit ». On ne révèle pas son existence.
+  const ecran = await chargerEcran(chargerSviAppel, (await searchParams) ?? {}, { callId });
+  if (ecran.etat === "fermee") return <CapaciteFermee titre="Supervision SVI" sujet="Supervision du serveur vocal interactif." />;
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Appel SVI" problem={ecran.problem} />;
+  if (ecran.etat === "introuvable") notFound();
+  const { call, steps } = ecran.detail;
 
   // Échelle du déroulé : on borne au plus tard entre la fin déclarée de l'appel
   // et la dernière étape observée — sinon une étape dépassant la durée annoncée

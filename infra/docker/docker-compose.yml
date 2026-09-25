@@ -1,9 +1,10 @@
-# Backend MIP RUM auto-hébergé — les QUATRE services Railway, sur un poste ou un
+# Backend MIP RUM auto-hébergé — les CINQ services Railway, sur un poste ou un
 # serveur, avec leurs images de production (`services/<x>/Dockerfile`).
 #
 #   db (Postgres 17) ◀── migrate (one-shot) ◀── collector   (profil `collector`)
 #                                            ◀── scheduler   (profil `scheduler`)
 #                                            ◀── notifier    (profil `notifier`)
+#                                            ◀── api         (profil `api`)
 #   mcp (profil `mcp`) ──▶ API v1 de la console — jamais la base
 #
 # UN PROFIL PAR SERVICE. `db` et `migrate` n'en ont pas : ils suivent tout
@@ -11,7 +12,7 @@
 #
 #   docker compose run --rm migrate                     la base de dev, migrée
 #   docker compose up -d --build --wait collector       + le collecteur
-#   docker compose --profile tout up -d --build --wait  les quatre services
+#   docker compose --profile tout up -d --build --wait  les cinq services
 #
 # SCHEDULER ET NOTIFIER ENSEMBLE (`tout`) : poser SCHEDULER_DELIVERY=off. Sinon
 # le scheduler livre aussi, sans clé Resend, et solde les e-mails `skipped`.
@@ -180,6 +181,50 @@ services:
     restart: unless-stopped
     logging: *jsonlog
 
+  api:
+    profiles: ["api", "tout"]
+    build:
+      context: ../..
+      dockerfile: services/api/Dockerfile
+    image: mip-rum/api:local
+    environment:
+      DATABASE_URL: *db-url
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Jetons machine (`jeton` ou `jeton@app1;app2`), la MÊME valeur que la
+      # console. Vide : seuls les jetons en base (écran Jetons de lecture) valent.
+      CONSOLE_API_TOKENS: ${CONSOLE_API_TOKENS:-}
+      CONSOLE_API_ALLOWED_ORIGINS: ${CONSOLE_API_ALLOWED_ORIGINS:-}
+    depends_on: *apres-migration
+    ports:
+      # /api/v1/* (lecture seule), /health, /live ; /ready et /metrics sous jeton.
+      - "${API_PORT:-4323}:8080"
+    restart: unless-stopped
+    logging: *jsonlog
+
+  console-api:
+    profiles: ["console-api", "tout"]
+    build:
+      context: ../..
+      dockerfile: services/console-api/Dockerfile
+    image: mip-rum/console-api:local
+    environment:
+      DATABASE_URL: *db-url
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # OBLIGATOIRES, et sans valeur par défaut : un secret n'a pas de valeur « de
+      # développement » dans un fichier versionné. Vides, le service refuse de
+      # démarrer et dit laquelle manque (infra/docker/README.md, « console-api »).
+      CONSOLE_API_CLIENT_SECRETS: ${CONSOLE_API_CLIENT_SECRETS:-}
+      SESSION_SIGNING_KEYS: ${SESSION_SIGNING_KEYS:-}
+    depends_on: *apres-migration
+    ports:
+      # /v1/* sous secret client (x-mip-client) ; /health et /live publics ;
+      # /ready et /metrics sous jeton.
+      - "${CONSOLE_API_PORT:-4324}:8080"
+    restart: unless-stopped
+    logging: *jsonlog
+
   mcp:
     profiles: ["mcp", "tout"]
     build:
@@ -188,8 +233,12 @@ services:
     image: mip-rum/mcp:local
     # NI DATABASE_URL NI DÉPENDANCE À `migrate` : ce service n'atteint pas la
     # base, et le faire attendre une migration lui donnerait un lien avec elle
-    # qu'il ne doit pas avoir. Il ne parle qu'à l'API v1 de la console.
+    # qu'il ne doit pas avoir. Il ne parle qu'à l'API v1 : celle du service
+    # `api` si MIP_API_HOST est posé (réseau privé, comme sur Railway :
+    # `MIP_API_HOST=api MIP_API_PORT=8080` avec le profil `api`), sinon la console.
     environment:
+      MIP_API_HOST: ${MIP_API_HOST:-}
+      MIP_API_PORT: ${MIP_API_PORT:-8080}
       # La console du poste par défaut (`pnpm dev` sur :3000), vue depuis le
       # conteneur. Un appel d'outil sans console joignable échoue proprement ;
       # le service, lui, démarre et répond à `tools/list`.

@@ -58,6 +58,7 @@ import { _resetColonnesCache, writeRows } from "../../packages/backend/lib/pg-in
 import { errorGrouping } from "../../packages/backend/shared/error-normalize.mjs";
 // @ts-expect-error module JS partagé sans déclarations
 import { flattenOtlp } from "../../packages/backend/shared/otlp.mjs";
+import { effacerAudit } from "../fixtures/effacer-audit";
 
 const url = process.env.SQL_TEST_DATABASE_URL;
 const urlFenetre = process.env.SQL_TEST_V68_DATABASE_URL;
@@ -403,7 +404,8 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
       )).rows).toEqual([{ indisvalid: true, indisready: true }]);
       expect((await pool.query(
         `select tablename, policyname, cmd, roles::text from pg_policies
-          where tablename in ('error_issue', 'error_issue_alias', 'error_grouping_config') order by tablename, policyname`,
+          where tablename in ('error_issue', 'error_issue_alias', 'error_grouping_config')
+            and not (roles && array['mip_api', 'mip_console', 'mip_identity']::name[]) order by tablename, policyname`,
       )).rows).toEqual([
         { tablename: "error_grouping_config", policyname: "tenant_scope", cmd: "SELECT", roles: "{console_ro}" },
         { tablename: "error_issue", policyname: "tenant_scope", cmd: "SELECT", roles: "{console_ro}" },
@@ -903,7 +905,7 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
   const muet = { info() {}, warn() {}, error() {} };
 
   async function nettoyer(db: pg.Pool) {
-    await db.query("delete from audit_log where action like 'error_issue_%' and detail like '%p56-app-%'");
+    await effacerAudit(db, "action like 'error_issue_%' and detail like '%p56-app-%'");
     await db.query("delete from alert_event where message like '%p56-app-%'");
     for (const table of ["alert_rule", "notify_channel", "error_issue", "error_status", "rum_error", "rum_session", "deploy_marker", "error_grouping_config"]) {
       if ((await db.query("select to_regclass($1) is not null as present", [`public.${table}`])).rows[0].present) {

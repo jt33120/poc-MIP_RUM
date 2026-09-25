@@ -27,10 +27,11 @@ vi.mock("@/lib/fuseau", async (original) => ({
   ...(await original<typeof import("@/lib/fuseau")>()),
   fuseauDe: async () => "Europe/Paris",
 }));
-vi.mock("@/lib/page-filters", async () => {
+// Le chargeur de l'écran lit ses filtres par `analyserFiltres` (C4, `lib/filtres-ecran.ts`).
+vi.mock("@/lib/filtres-ecran", async () => {
   const { queryOf: q } = await import("@/lib/filters");
   const filters = { app: "demo", period: "24h" as const, device: null, segment: [], includeBots: false, includeInternal: false };
-  return { pageFilters: async () => ({ ok: true, filters: { ...filters, query: q(filters) }, query: q(filters) }) };
+  return { analyserFiltres: async () => ({ ok: true, filters: { ...filters, query: q(filters) }, query: q(filters) }) };
 });
 // La série (client, recharts) est remplacée par une trace de ses props.
 vi.mock("@/components/charts/ThresholdSeries", () => ({

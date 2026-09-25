@@ -21,10 +21,13 @@ vi.doMock(depuisConsole.resolve("next/navigation"), () => ({
 }));
 vi.doMock(depuisConsole.resolve("next/cache"), () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/next-cache", () => ({ revalidatePath: vi.fn() }));
+// C8 : les actions passent par leurs commandes — la session vient de `getUser`, l'écriture
+// et son audit d'une transaction (un client inerte ici).
 vi.mock("@/lib/auth", () => ({
+  getUser: vi.fn(async () => ({ email: "admin@exemple.test", role: "admin", apps: null })),
   requireAdmin: vi.fn(async () => ({ email: "admin@exemple.test", role: "admin", apps: null })),
 }));
-vi.mock("@/lib/db", () => ({ q: vi.fn(async () => []) }));
+vi.mock("@/lib/db", () => ({ q: vi.fn(async () => []), tx: vi.fn(async (fn: (c: unknown) => unknown) => fn({ query: vi.fn(async () => ({ rows: [] })) })) }));
 vi.mock("@/lib/queries-uptime", () => ({
   createUptimeCheck: vi.fn(),
   deleteUptimeCheck: vi.fn(),
@@ -104,7 +107,7 @@ describe("uptime — l'URL d'un check est jugée à l'écriture", () => {
 
   it("enregistre une URL publique", async () => {
     await expect(createUptimeCheckAction(check("https://exemple.fr/health"))).rejects.toThrow("REDIRECTION /admin/uptime");
-    expect(createUptimeCheck).toHaveBeenCalledWith("app-a", "Accueil", "https://exemple.fr/health", 200);
+    expect(createUptimeCheck).toHaveBeenCalledWith("app-a", "Accueil", "https://exemple.fr/health", 200, expect.anything());
   });
 });
 

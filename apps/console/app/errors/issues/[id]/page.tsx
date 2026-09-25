@@ -36,7 +36,6 @@ import {
   comptesTouches,
   porteeOccurrences,
   versionsDeLIssue,
-  type PartGroupe,
 } from "@/components/errors/DetailErreur";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
@@ -45,35 +44,19 @@ import { ErrorStackCard } from "@/components/errors/ErrorStackCard";
 import { GroupingBasisBadge, IssueOriginBadge, IssueStatusBadge, ReappearedBadge } from "@/components/errors/IssueBadges";
 import { IssueActivitySection, IssueTriageCard } from "@/components/errors/IssueWorkflow";
 import { IssueTicketCard } from "@/components/errors/IssueTickets";
-import { errorGroupHref, errorSearchParams, errorsHref, issueHref } from "@/components/errors/error-view";
+import { errorGroupHref, errorSearchParams, errorsHref, issueHref } from "@/lib/error-view";
 import { SectionErreur } from "@/components/states/SectionErreur";
 import { annotationsDeploiements } from "@/lib/annotations";
-import { getUser } from "@/lib/auth";
-import { issueWorkflowView, listIssueActivity } from "@/lib/error-issue-workflow";
-import { ISSUE_STATUS_LABELS, isIssueId, issueDetail, resolveIssue, type IssueDetailResult } from "@/lib/error-issues";
+import { ISSUE_STATUS_LABELS, type IssueDetailResult } from "@/lib/error-issues";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
-import { lire } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
-import { listDeploys } from "@/lib/queries-deploys";
-import { UnsupportedFilterError } from "@/lib/query-compiler";
+import { chargerIssue, PARAM_ORIGINE } from "@/lib/chargeurs/issue";
+import { chargerEcran } from "@/lib/ecran-local";
 import { bucketStarts } from "@/lib/query-contract";
 import { grilleIso } from "@/lib/series";
 import { gabaritZoom } from "@/lib/view-state";
-import {
-  apercuTicket,
-  integrationsUtilisables,
-  livraisonsTicket,
-  origineConsole,
-} from "@/lib/queries-ticket-integrations";
-import {
-  errorScopeFor,
-  parseErrorCursor,
-  parseOccurrencesPage,
-  partSessionsTouchees,
-  scopeApps,
-  type ErrorFilters,
-} from "@/lib/queries-errors";
+import { origineConsole } from "@/lib/queries-ticket-integrations";
+import { type ErrorFilters } from "@/lib/queries-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -91,24 +74,15 @@ export default async function IssuePage({
   searchParams: Promise<SearchParams>;
 }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
-  if (!isIssueId(id)) notFound();
-
-  const user = await getUser();
-  const ecran = await pageFilters(sp, `/errors/issues/${id}`);
-  if (!ecran.ok) return <FilterProblemNotice title="Erreurs JS" problem={ecran.problem} />;
-  const f = ecran.deviceFilters;
-  const { label, bucketLabel, query } = ecran;
-  const { range } = query;
-  const url = errorSearchParams(sp);
-  const cursor = parseErrorCursor(url.get("cursor"));
-
-  const issue = await resolveIssue(id, scopeApps(errorScopeFor(user)));
-  if (!issue) notFound();
-  // L'identifiant fait foi : une URL portant une autre app est ramenée à celle de
-  // l'issue, filtres conservés, curseur abandonné.
-  if (f.app !== issue.app_id) redirect(issueHref(issue, f));
-
-  if (cursor === undefined) {
+  // Le chargeur (`lib/chargeurs/issue.ts`) résout l'issue dans le périmètre et lit
+  // ses sections ; l'origine de la console (liens de l'aperçu d'un ticket) lui est
+  // passée en paramètre, calculée ici depuis la requête.
+  const d = await chargerEcran(chargerIssue, { ...sp, [PARAM_ORIGINE]: origineConsole(await headers()) }, { id });
+  if (d.etat === "introuvable") notFound();
+  if (d.etat === "refus") return <FilterProblemNotice title="Erreurs JS" problem={d.problem} />;
+  const { issue, f } = d;
+  if (d.etat === "autre_app") redirect(issueHref(issue, f));
+  if (d.etat === "curseur_invalide") {
     return (
       <div className="animate-fade-up">
         <BackLink f={f} />
@@ -122,46 +96,16 @@ export default async function IssuePage({
     );
   }
 
-  // CHAQUE LECTURE EST INDÉPENDANTE (§ 3.8), comme sur la page d'un groupe : la part
-  // et les déploiements sont deux sections, lues avec le détail, et l'échec de l'une
-  // n'efface pas les autres. La part divise par des sessions avec VUE : un filtre que
-  // les pages vues ne portent pas (`service`) la refuse — un refus de contrat pour
-  // CETTE phrase, pas une panne de l'écran (V10).
-  const [detail, part, deploys] = await Promise.all([
-    issueDetail(issue, f, { limit: parseOccurrencesPage(url).limit, cursor }),
-    lire<PartGroupe>(async () => {
-      try {
-        return { lu: await partSessionsTouchees(f, { app_id: issue.app_id, issue_id: issue.id }) };
-      } catch (e) {
-        if (e instanceof UnsupportedFilterError) return { refus: e.message };
-        throw e;
-      }
-    }),
-    lire(() => listDeploys({ ...ecran.filters, app: issue.app_id }, 20)),
-  ]);
+  const { label, bucketLabel, query, cursor, detail, part, deploys, admin, workflow, activite, activiteCurseur, pile, livraisons } = d;
+  const { range } = query;
+  const url = errorSearchParams(sp);
   const { impact, trend, last_sample: last, occurrences, sampling, enrichment } = detail;
   // Ce que couvrent les occurrences affichées (blocs 1 et 5) : en paginant, ni « la
   // fenêtre » ni « les plus récentes » — cette page seulement.
   const portee = porteeOccurrences({ curseur: cursor !== null, suite: detail.next_cursor !== null });
-  // Workflow P5.6 : null avant migration-v73. Un curseur d'historique illisible rend la page la plus récente.
-  // Les adresses des comptes (acteurs, assignés) ne sont lues que pour un admin.
-  const admin = user?.role === "admin" && !user.demo;
-  const workflow = await issueWorkflowView(issue.id, issue.app_id, { emails: admin });
-  const activiteCurseur = parseErrorCursor(url.get("activite")) ?? null;
-  const activite = workflow
-    ? await listIssueActivity(issue.id, scopeApps(errorScopeFor(user)), { limit: 20, cursor: activiteCurseur }, { emails: admin })
-    : null;
   const pageExtra = url.has("limit") ? { limit: url.get("limit") ?? "" } : undefined;
-
-  // Connecteur de tickets (P8.6). L'aperçu n'est composé que pour un admin qui a
-  // au moins un connecteur utilisable : c'est un calcul inutile sinon, et la
-  // carte ne serait de toute façon pas rendue.
-  const integrationsTickets = admin ? await integrationsUtilisables(issue.app_id) : [];
-  const livraisons = await livraisonsTicket(issue.id, scopeApps(errorScopeFor(user)));
-  const apercuTickets =
-    integrationsTickets.length > 0
-      ? await apercuTicket(issue.id, scopeApps(errorScopeFor(user)), origineConsole(await headers()))
-      : null;
+  const integrationsTickets = d.integrationsTickets;
+  const apercuTickets = d.apercu === null ? null : { apercu: d.apercu };
 
   // Zoom sur un seau : la plage change, et rien d'autre (§ 3.3) ; la pagination des
   // occurrences repart du début (`cursor` est laissé derrière par `gabaritZoom`).
@@ -274,7 +218,7 @@ export default async function IssuePage({
       </div>
 
       {/* ── Bloc 6 : pile du dernier exemplaire ── */}
-      <ErrorStackCard appId={issue.app_id} last={last} admin={admin} />
+      <ErrorStackCard last={last} pile={pile} />
 
       {/* ── Bloc 7 : occurrences ── */}
       <ErrorOccurrences

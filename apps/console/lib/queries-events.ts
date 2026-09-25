@@ -45,7 +45,7 @@ export interface EventIndexRow {
   id: string;
   app_id: string;
   session_id: string | null;
-  ts: Date;
+  ts: Date | string;
   route: string | null;
   kind: EventIndexKind;
   source_name: string | null;

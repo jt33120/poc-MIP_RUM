@@ -1,11 +1,9 @@
 import { motifDeRefus } from "@mip/backend/lib/net/safe-fetch.mjs";
 import { PageHeader } from "@/components/PageHeader";
-import { requireAdmin } from "@/lib/auth";
+import { chargerSondes } from "@/lib/chargeurs/sondes";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
-import { listApps } from "@/lib/queries";
-import { listUptimeStatus } from "@/lib/queries-uptime";
-import { cadenceTickPubliee } from "@/lib/queries-planifie";
 import { CADENCE_TICK_MIN } from "@/lib/etat-latence";
 import {
   createUptimeCheckAction,
@@ -17,9 +15,9 @@ export const dynamic = "force-dynamic";
 
 /** Monitoring synthétique (uptime) — checks HTTP actifs, admin only. */
 export default async function UptimePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  await requireAdmin();
   const sp = await searchParams;
-  const [apps, checks, cadence] = await Promise.all([listApps(), listUptimeStatus(), cadenceTickPubliee()]);
+  // Le chargeur (`lib/chargeurs/sondes.ts`) : un administrateur, et les sondes de son périmètre.
+  const { apps, checks, cadence } = accesAdmin(await chargerEcran(chargerSondes, sp));
   const error = typeof sp.error === "string";
   // Refus d'URL à l'écriture (P1) : un CODE dans l'URL, un texte relu côté
   // serveur — jamais le texte d'un paramètre affiché tel quel.
@@ -148,6 +146,7 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
                     <div className="flex items-center gap-1">
                       <form action={toggleUptimeCheckAction}>
                         <input type="hidden" name="id" value={c.id} />
+                        <input type="hidden" name="app" value={c.app_id} />
                         <input type="hidden" name="enabled" value={c.enabled ? "0" : "1"} />
                         <button
                           type="submit"
@@ -158,6 +157,7 @@ export default async function UptimePage({ searchParams }: { searchParams: Promi
                       </form>
                       <form action={deleteUptimeCheckAction}>
                         <input type="hidden" name="id" value={c.id} />
+                        <input type="hidden" name="app" value={c.app_id} />
                         <button type="submit" className="btn-ghost px-2 py-1 text-xs text-bad-ink">
                           Supprimer
                         </button>

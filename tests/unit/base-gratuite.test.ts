@@ -145,4 +145,16 @@ describe("services — les réglages sont refusés hors grille au démarrage", (
     expect(n.code).toBe(2);
     expect(n.sortie).toContain("NOTIFIER_INTERVAL_MS : à partir de 300000, un diviseur de l'heure");
   }, 15_000);
+
+  it("sans réglage, le scheduler tourne à 15 minutes : un déploiement sans l'IaC ne revient pas à 5", async () => {
+    // Le 1er octobre, le scheduler se redéploie avant que l'IaC (qui pose 15) ne
+    // soit appliquée : c'est ce défaut qui l'empêche de réépuiser le quota.
+    const exemple = await new Promise<string>((r) => {
+      const e = spawn(process.execPath, ["services/scheduler/worker.mjs", "--print-env-example"], { stdio: ["ignore", "pipe", "ignore"] });
+      let sortie = "";
+      e.stdout!.on("data", (d) => (sortie += d));
+      e.on("exit", () => r(sortie));
+    });
+    expect(exemple).toMatch(/^# SCHEDULER_TICK_MIN=15$/m);
+  }, 15_000);
 });

@@ -59,7 +59,7 @@ export async function engagementStats(f: FiltersLike, shift = false): Promise<En
 }
 
 export interface VisitorsBucket {
-  bucket: Date;
+  bucket: Date | string;
   /** Visiteurs DISTINCTS observés dans le seau : non additionnable d'un seau à l'autre. */
   visitors: number;
   /** Sessions commencées dans le seau, elles additionnables. */

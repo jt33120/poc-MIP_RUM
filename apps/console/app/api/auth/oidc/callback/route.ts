@@ -2,9 +2,11 @@
 // valide l'ID token, mappe les claims → rôle/apps, PROVISIONNE en JIT le
 // console_user, ouvre la session (cookie JWT). Erreur → /login?error=1.
 import { type NextRequest, NextResponse } from "next/server";
+import { FIN_SSO } from "@mip/console-contract";
 import { SESSION_COOKIE, SESSION_HOURS, signJwt } from "@/lib/auth";
+import { backend } from "@/lib/backend";
 import { q } from "@/lib/db";
-import { mapClaims, oidcConfig } from "@/lib/oidc";
+import { COOKIE_TRANSACTION_SSO, mapClaims, oidcConfig } from "@/lib/oidc";
 import { discover, exchangeCode, remoteJwks, verifyIdToken } from "@/lib/oidc-remote";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +18,39 @@ function fail(req: NextRequest, e: unknown): NextResponse {
   return res;
 }
 
+/**
+ * C1c — le retour de l'IdP, branché sur console-api : le service échange le code
+ * (avec le secret client OIDC qu'il est seul à détenir), vérifie l'ID token et
+ * lie le compte par (émetteur, sujet). Tout refus rend le même `?error=1` ; la
+ * raison est au journal d'audit du service.
+ */
+async function retourParConsoleApi(req: NextRequest): Promise<NextResponse> {
+  const url = new URL(req.url);
+  const echec = () => {
+    const res = NextResponse.redirect(new URL("/login?error=1", req.url), 302);
+    res.cookies.set(COOKIE_TRANSACTION_SSO, "", { path: "/api/auth/oidc", maxAge: 0 });
+    return res;
+  };
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const transaction = req.cookies.get(COOKIE_TRANSACTION_SSO)?.value;
+  if (url.searchParams.get("error") || !code || !state || !transaction) return echec();
+  const r = await backend().appeler(FIN_SSO, { corps: { code, state, transaction } }, { requestId: req.headers.get("x-request-id") ?? undefined });
+  if (!r.ok) return echec();
+  const res = NextResponse.redirect(new URL("/", req.url), 302);
+  res.cookies.set(SESSION_COOKIE, r.data.jeton, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    expires: new Date(r.data.expire_le),
+  });
+  res.cookies.set(COOKIE_TRANSACTION_SSO, "", { path: "/api/auth/oidc", maxAge: 0 });
+  return res;
+}
+
 export async function GET(req: NextRequest) {
+  if (backend().estBranche()) return retourParConsoleApi(req);
   const cfg = oidcConfig();
   if (!cfg) return NextResponse.json({ error: "SSO non configuré" }, { status: 404 });
 

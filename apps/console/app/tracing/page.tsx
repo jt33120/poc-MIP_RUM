@@ -32,28 +32,13 @@ import { TableAppels } from "@/components/tracing/TableAppels";
 import { parseExplorerPlan } from "@/lib/analytics-schema";
 import { annotationsDeploiements } from "@/lib/annotations";
 import { annotationsAlertes, fusionnerAnnotations, raisonsAnnotations } from "@/lib/annotations";
-import {
-  couverturePrecedente,
-  sourcesSousFiltres,
-  type CouverturePrecedente,
-  type SourceComparaison,
-} from "@/lib/comparaison";
+import { type CouverturePrecedente } from "@/lib/comparaison";
 import { explorerHref } from "@/lib/explorer-page-params";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import { lire, type Lecture } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
-import { latestDeployImpact, listDeploys } from "@/lib/queries-deploys";
-import {
-  apiCallsDecomposition,
-  backRoutes,
-  slowTraces,
-  spanLatencySeries,
-  traceCoverage,
-  type TraceCoverage,
-} from "@/lib/queries-tracing";
+import { chargerTracing } from "@/lib/chargeurs/tracing";
+import { chargerEcran } from "@/lib/ecran-local";
 import { bucketStarts, hrefWithQuery, paramReader, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
-import { alertEvents } from "@/lib/queries-v2";
 import { grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
 import { ancreAppel, lireAppel, type Appel } from "@/lib/tracing-ancres";
 import { APPELS_HERO, fragmentVers, libelleAppel, lignesHero, texteDecomposition } from "@/lib/tracing-hero";
@@ -66,8 +51,6 @@ const APPELS_MAX = 50;
 
 // Période précédente (`cmp=prev`) : un compte d'appels est sensible au retard
 // d'ingestion, une durée ou une part ne l'est pas (§ 3.2, règle 3).
-const SOURCE_APPELS: SourceComparaison = { table: "rum_span", colonneTemps: "ts", additive: true };
-const SOURCE_DUREES: SourceComparaison = { table: "rum_span", colonneTemps: "ts", additive: false };
 
 const JJMM_HHMM_UTC = new Intl.DateTimeFormat("fr-FR", {
   timeZone: "UTC",
@@ -148,9 +131,9 @@ function SectionTable({
 
 export default async function Tracing({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/tracing");
-  if (!ecran.ok) return <FilterProblemNotice title="Tracing" problem={ecran.problem} />;
-  const f = ecran.filters;
+  // Le chargeur (`lib/chargeurs/tracing.ts`) lit filtres et sections.
+  const ecran = await chargerEcran(chargerTracing, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Tracing" problem={ecran.problem} />;
   const query = ecran.query;
   const plage = ecran.label;
 
@@ -170,30 +153,8 @@ export default async function Tracing({ searchParams }: { searchParams: Promise<
     );
   }
   const prev = comparaison.valeur.mode === "prev";
-  const fPrec = { ...f, query: { ...query, range: previousRange(query.range) } };
   const reference = referencePrecedente(query);
-
-  const couvertures = (source: SourceComparaison) =>
-    Promise.all(sourcesSousFiltres(query, source).map((s) => couverturePrecedente(query, s)));
-  const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
-
-  const [cov, covPrec, couvAppels, couvDurees, appels, serie, seriePrec, routes, lentes, deploys, impact, alertes] =
-    await Promise.all([
-      lire(() => traceCoverage(f)),
-      prev ? lire(() => traceCoverage(fPrec)) : sansLecture<TraceCoverage | null>(null),
-      prev ? couvertures(SOURCE_APPELS) : Promise.resolve<CouverturePrecedente[]>([]),
-      prev ? couvertures(SOURCE_DUREES) : Promise.resolve<CouverturePrecedente[]>([]),
-      lire(() => apiCallsDecomposition(f)),
-      lire(() => spanLatencySeries(f)),
-      prev ? lire(() => spanLatencySeries(fPrec)) : sansLecture(null),
-      lire(() => backRoutes(f)),
-      lire(() => slowTraces(f, appel ? { appel } : undefined)),
-      lire(() => listDeploys(f, 20)),
-      lire(() => latestDeployImpact(f)),
-      // Annotations d'alerte (F67) : les 100 derniers déclenchements du périmètre ;
-      // la fenêtre est appliquée par `annotationsAlertes`, pas par la lecture.
-      lire(() => alertEvents(f)),
-    ]);
+  const { cov, covPrec, couvAppels, couvDurees, appels, serie, seriePrec, routes, lentes, deploys, impact, alertes } = ecran;
 
   // ─────────────── Liens ───────────────
   const hrefAppel = (a: Appel) => lienEcran(sp, {}, fragmentVers(ancreAppel(a.method, a.url)));

@@ -298,15 +298,18 @@ describe("le refus est STRUCTUREL, pas seulement affiché", () => {
   });
 
   it("la route d'export répond 409 et le motif, pas une pile d'erreur", () => {
+    // C10 — le refus est une DÉCISION de la commande d'export ; la route la rend en 409.
     const route = lire("apps/console/app/admin/privacy/export/route.ts");
-    expect(route).toContain("instanceof DsarRefus");
-    expect(route).toContain("status: 409");
+    expect(route).toContain('d.etat === "refus"');
+    expect(route).toContain("texte(d.message, 409)");
+    expect(lire("apps/console/lib/commandes/vie-privee.ts")).toContain("instanceof DsarRefus");
   });
 
   it("un refus d'effacement est TRACÉ — une demande sans suite laisse une trace", () => {
-    const actions = lire("apps/console/app/admin/privacy/actions.ts");
-    expect(actions).toContain("dsar_erase_refuse");
-    expect(actions).toContain("instanceof DsarRefus");
+    // C10 — par la commande (`lib/commandes/vie-privee.ts`), sous l'action de sa règle.
+    const commandes = lire("apps/console/lib/commandes/vie-privee.ts");
+    expect(commandes).toContain("instanceof DsarRefus");
+    expect(commandes).toContain("auditer(c, `refus=${e.verdict}");
   });
 
   it("la déclaration de conformité annonce le refus, et le bon identifiant", () => {
@@ -315,7 +318,8 @@ describe("le refus est STRUCTUREL, pas seulement affiché", () => {
     const c = lire("docs/CONFORMITE.md");
     expect(c).toContain("visitor_id");
     expect(c).toContain("id_kind = 'device_class'");
-    expect(c).toContain("dsar_erase_refuse");
+    expect(c).toContain("privacy.visitor_erase");
+    expect(c).toContain("refus=");
     // La ligne héritée reste décrite pour ce qu'elle est, pas effacée du tableau.
     expect(c).toContain("user_hash");
   });

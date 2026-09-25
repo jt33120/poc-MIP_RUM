@@ -62,11 +62,13 @@ const requete = (qs: string, principal: ScopePrincipal | null = ADMIN, nowMs = N
 // ══════════════════════════════ Périmètre ════════════════════════════════════
 
 describe("périmètre signé", () => {
-  it("anonyme ou liste vide : AUCUNE app ; admin ou liste absente : toutes", () => {
+  it("anonyme ou liste vide : AUCUNE app ; liste absente : toutes ; un admin d'une liste, sa liste (C9)", () => {
     expect(authorizedAppsOf(null)).toEqual([]);
     expect(authorizedAppsOf({ role: "viewer", apps: [] })).toEqual([]);
     expect(authorizedAppsOf({ role: "viewer", apps: null })).toBeNull();
-    expect(authorizedAppsOf({ role: "admin", apps: ["a"] })).toBeNull();
+    expect(authorizedAppsOf({ role: "admin", apps: null })).toBeNull();
+    // C9 : le rôle ne donne plus toutes les apps — un admin d'une liste lit ce qu'il administre.
+    expect(authorizedAppsOf({ role: "admin", apps: ["b", "a"] })).toEqual(["a", "b"]);
     expect(authorizedAppsOf({ role: "viewer", apps: ["b", "a", "b"] })).toEqual(["a", "b"]);
   });
 

@@ -44,20 +44,19 @@ import {
   type EntreeParCanal,
   type PointCanaux,
 } from "@/lib/acquisition";
-import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
+import { type CouverturePrecedente } from "@/lib/comparaison";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import { lire, type Lecture } from "@/lib/lecture";
+import { type SectionLue } from "@/lib/lecture";
+import { chargerAcquisition } from "@/lib/chargeurs/acquisition";
+import { chargerEcran } from "@/lib/ecran-local";
 import { couvertureDeTuile, gesteElargir, plafondAtteint, plageDansPhrase } from "@/lib/lecture-usages";
 import { categorie } from "@/lib/palette";
-import { pageFilters } from "@/lib/page-filters";
-import { hrefWithQuery, paramReader, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
-import { acquisition, acquisitionSerie } from "@/lib/queries-acquisition";
-import { samplingSessions } from "@/lib/queries-sessions";
+import { hrefWithQuery, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
 import { libelleSeauComplet } from "@/lib/series";
 import { referencePrecedente } from "@/lib/sessions-kpi";
 import { ecartProportions } from "@/lib/stats/incertitude";
-import { gabaritZoom, lireComparaison } from "@/lib/view-state";
+import { gabaritZoom } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
 
@@ -75,9 +74,6 @@ const COULEUR_CANAL: Record<Channel, string> = {
 
 /** La population de l'écran, nommée dans chaque méta (S1, R-P). */
 const POPULATION = "sessions ayant au moins une vue sur la fenêtre";
-
-/** Les écarts se comparent sur les pages vues : c'est d'elles que chaque session est lue. */
-const SOURCE_VUES: SourceComparaison = { table: "rum_pageview", colonneTemps: "started_at", additive: true };
 
 /** Pourquoi une barre de canal ne mène nulle part (title, alternative, lecture). */
 const NON_CLIQUABLE = "barres non cliquables : le canal d'entrée n'est pas un filtre de la console";
@@ -110,24 +106,14 @@ interface Comparaison {
 
 export default async function Acquisition({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/acquisition");
-  if (!ecran.ok) return <FilterProblemNotice title="Acquisition" problem={ecran.problem} />;
-  const f = ecran.deviceFilters;
+  // Le chargeur (`lib/chargeurs/acquisition.ts`) lit filtres et sections (F02 :
+  // une panne n'efface que ses sections ; S7 : même population que la lecture).
+  const ecran = await chargerEcran(chargerAcquisition, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Acquisition" problem={ecran.problem} />;
   const query = ecran.query;
   // Comparaison (F06, F53) : `cmp=prev` compare les tuiles à la période précédente,
   // seulement si celle-ci est COMPLÈTE (§ 3.2) ; défaut de l'écran : aucune.
-  const prev = lireComparaison("/acquisition", paramReader(sp)).valeur.mode === "prev";
-  // Chaque lecture est indépendante (F02) : une panne n'efface que ses sections.
-  // S7 : même population que la lecture (sessions ayant une vue sur la fenêtre).
-  const [lecture, lecturePrev, serie, echantillonnage, couvertures] = await Promise.all([
-    lire(() => acquisition(f)),
-    prev ? lire(() => acquisition(f, PLAFOND_ACQUISITION, true)) : Promise.resolve(null),
-    lire(() => acquisitionSerie(f)),
-    lire(() => samplingSessions(f, { population: { lecture: "vues" } })),
-    prev
-      ? Promise.all(sourcesSousFiltres(query, SOURCE_VUES).map((s) => couverturePrecedente(query, s)))
-      : Promise.resolve<CouverturePrecedente[]>([]),
-  ]);
+  const { prev, lecture, lecturePrev, serie, echantillonnage, couvertures } = ecran;
   const comparaison: Comparaison | null =
     prev && lecturePrev
       ? {
@@ -225,7 +211,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
           </ul>
           <HeroReading>
             Un « direct » élevé ne prouve pas un trafic fidèle : il peut venir de sites qui masquent leur adresse.{" "}
-            {f.includeBots ? "Les robots sont inclus : la barre de filtres le demande." : "Les robots sont exclus."}
+            {query.filters.includeBots ? "Les robots sont inclus : la barre de filtres le demande." : "Les robots sont exclus."}
           </HeroReading>
         </section>
       </div>
@@ -554,7 +540,7 @@ function SerieCanaux({
   plafond,
   zoomHref,
 }: {
-  serie: Lecture<PointCanaux[]>;
+  serie: SectionLue<PointCanaux[]>;
   query: AnalyticsQuery;
   meta: ReactNode;
   dansPhrase: string;

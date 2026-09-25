@@ -1,7 +1,27 @@
 import { defineConfig } from "@playwright/test";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
+
+// LE SECRET DE SESSION de la console de test : local et jetable. Les specs qui
+// signent une session sans passer par /login (le crawl) le lisent ici.
+process.env.E2E_AUTH_SECRET ??= "e2e-secret-local-jetable-non-production";
+
+// C0 — LES SECRETS DE console-api, FABRIQUÉS À L'EXÉCUTION. Jamais une valeur
+// versionnée : un jeu ES256 neuf et un secret client aléatoire à chaque passage.
+// Rangés dans l'environnement du processus : le lanceur et ses workers (qui
+// réévaluent ce fichier) voient ainsi LES MÊMES valeurs, et la console vérifie
+// la poignée de main avec la clé publique du jeu que console-api signe.
+if (!process.env.E2E_SESSION_SIGNING_KEYS) {
+  const jwk = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ format: "jwk" });
+  const cle = { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, kid: "session-e2e-local", alg: "ES256", use: "sig" };
+  process.env.E2E_SESSION_SIGNING_KEYS = JSON.stringify({ keys: [{ ...cle, d: jwk.d }] });
+  process.env.E2E_SESSION_PUBLIC_JWKS = JSON.stringify({ keys: [cle] });
+  process.env.E2E_CONSOLE_API_SECRET = randomBytes(32).toString("hex");
+  process.env.E2E_CONSOLE_API_METRICS_TOKEN = randomBytes(32).toString("hex");
+}
+const BASE_E2E = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/mip_rum";
 
 // Prérequis : Postgres up ET migré (docker compose -f infra/docker/docker-compose.yml run --rm migrate).
-// Les 3 serveurs (ingestion, démo, console) sont lancés/réutilisés automatiquement.
+// Les 5 serveurs (ingestion, démo, rejeu, console-api, console) sont lancés/réutilisés automatiquement.
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 90_000,
@@ -35,6 +55,26 @@ export default defineConfig({
       reuseExistingServer: true,
     },
     {
+      // C0 — console-api, LE BUNDLE DE PRODUCTION (`build.mjs`), sur la base de
+      // l'E2E. La console ci-dessous est BRANCHÉE dessus (C0b) : la vitrine lit
+      // l'état de la plateforme par console-api, après une poignée de main signée.
+      // `tests/e2e/console-api.spec.ts` prouve que le chemin est bien emprunté
+      // (compteur du service), et pas seulement que le repli local a répondu.
+      command: "node services/console-api/build.mjs && node services/console-api/dist/server.mjs",
+      url: "http://localhost:4324/live",
+      reuseExistingServer: true,
+      timeout: 120_000,
+      env: {
+        PORT: "4324",
+        DATABASE_URL: BASE_E2E,
+        CONSOLE_API_CLIENT_SECRETS: process.env.E2E_CONSOLE_API_SECRET!,
+        SESSION_SIGNING_KEYS: process.env.E2E_SESSION_SIGNING_KEYS!,
+        METRICS_TOKEN: process.env.E2E_CONSOLE_API_METRICS_TOKEN!,
+        CONSOLE_API_RATE_LIMIT: "0",
+        PGPOOL_MAX: "4",
+      },
+    },
+    {
       // BUILD DE PRODUCTION, pas `next dev` — délibérément.
       //
       // Avec `next dev`, les routes se compilent à la demande, à la première
@@ -56,7 +96,13 @@ export default defineConfig({
       url: "http://localhost:3000",
       reuseExistingServer: true,
       timeout: 300_000, // le build est inclus dans cette fenêtre
-      env: { AUTH_SECRET: "e2e-secret-local-jetable-non-production" },
+      env: {
+        AUTH_SECRET: process.env.E2E_AUTH_SECRET!,
+        // Branchée sur console-api (C0b) : les trois variables que Vercel portera.
+        CONSOLE_API_URL: "http://localhost:4324",
+        CONSOLE_API_CLIENT_SECRET: process.env.E2E_CONSOLE_API_SECRET!,
+        SESSION_PUBLIC_JWKS: process.env.E2E_SESSION_PUBLIC_JWKS!,
+      },
     },
   ],
 });

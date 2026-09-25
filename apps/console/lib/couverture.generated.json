@@ -172,7 +172,7 @@
       "famille": "Analyse et exploration",
       "capacite": "Enregistrer une vue d'Explorer",
       "verdict": "deploye_non_eprouve",
-      "preuve": "table `analytics_saved_view` (v79), `GET/POST /api/v1/explorer/views`",
+      "preuve": "table `analytics_saved_view` (v79), `GET /api/v1/explorer/views`, commandes `apps/console/lib/commandes/vues.ts`",
       "limite": "50 vues par compte **et** par app. Aucune vue publique ni partage app-wide : une vue appartient à un compte et à **une app nommée**.",
       "ligne": 161
     },
@@ -431,10 +431,10 @@
     {
       "id": "E3",
       "famille": "Surfaces d'accès",
-      "capacite": "Écrire par API (triage, tableaux de bord, vues enregistrées)",
+      "capacite": "Écrire depuis la console (triage, tableaux de bord, vues enregistrées)",
       "verdict": "deploye_non_eprouve",
-      "preuve": "contrôle de session + Origin (`guardSession` ; `guardAdmin` pour le triage), `expectedRevision` et `409` ; `dashboard-access.ts`, `tests/unit/dashboards.test.ts`, `tests/unit/dashboard-access.test.ts`, `tests/unit/api-v1-issue-workflow-routes.test.ts`",
-      "limite": "**La session démo n'écrit rien** : le middleware refuse ses requêtes d'écriture (`apps/console/middleware.ts:88-96`), `handleMutation` aussi sur `/api/v1`, et les gardes des tableaux de bord la refusent (`tests/unit/dashboard-access.test.ts:96-102`). **Un viewer écrit ce qui est à lui, dans son périmètre** : il crée un tableau de bord lié à une app de son périmètre, jamais un transverse, et ne modifie que les siens (`apps/console/lib/dashboard-access.ts:117-135`, `tests/unit/dashboard-access.test.ts:104-120`) ; il enregistre ses propres vues d'Explorer (`role: \"session\"`, `apps/console/app/api/v1/explorer/views/route.ts:45-47`) ; depuis F37 (vague 7, après ce relevé), « Ajouter une section » suit la même garde (`tests/unit/dashboard-actions-access.test.ts:295`, `:338-359`). **Le triage d'une issue** (`A8`) reste réservé aux administrateurs : `handleMutation` exige le rôle `admin` par défaut (`apps/console/lib/api/handle.ts:284-290`) et refuse viewer et démo (`tests/unit/api-v1-issue-workflow-routes.test.ts:89-95`). Un administrateur scopé n'est plus transverse : c'est un écart assumé de P6.5 par rapport au modèle « admin global ».",
+      "preuve": "une commande par écriture, avec sa règle (`apps/console/lib/commandes/`), appliquée par la console et par console-api (`refusDAcces`, `packages/console-contract/src/commande.ts:73`), `expectedRevision` et conflit ; `dashboard-access.ts`, `tests/unit/dashboard-access.test.ts`, `tests/unit/console-api-commandes.test.ts`, `tests/contract/console-api-authz.test.ts`",
+      "limite": "**La session démo n'écrit rien** : le middleware refuse ses requêtes d'écriture (`apps/console/middleware.ts:131-153`), et la règle de chaque commande aussi (toute commande est une écriture, refusée à la démo des deux côtés). **Un viewer écrit ce qui est à lui, dans son périmètre** : il crée un tableau de bord lié à une app de son périmètre, jamais un transverse, et ne modifie que les siens (`apps/console/lib/dashboard-access.ts:117-135`, `tests/unit/dashboard-access.test.ts:104-120`) ; il enregistre ses propres vues d'Explorer (règle `session`, `apps/console/lib/commandes/vues.ts:33`) ; « Ajouter une section » suit la même garde (`tests/unit/dashboard-actions-access.test.ts`). **Le triage d'une issue** (`A8`) reste réservé à l'administrateur de l'application de l'issue (règle `admin` + portée `app`, `apps/console/lib/commandes/issues.ts:37`). Depuis C7 (25/09/2026), ces écritures ont quitté l'API publique : l'écran les passe par ses server actions. Un administrateur scopé n'écrit que dans ses applications.",
       "ligne": 205
     },
     {

@@ -25,8 +25,8 @@ export interface SavedViewRow {
   name: string;
   query: Record<string, unknown>;
   revision: string;
-  created_at: Date;
-  updated_at: Date;
+  created_at: Date | string;
+  updated_at: Date | string;
   /** `true` pour le lecteur qui en est propriétaire. */
   mine: boolean;
   /**
@@ -76,8 +76,8 @@ interface RawRow {
   name: string;
   query_json: unknown;
   revision: string;
-  created_at: Date;
-  updated_at: Date;
+  created_at: Date | string;
+  updated_at: Date | string;
 }
 
 function hydrate(row: RawRow, reader: SavedViewReader): SavedViewRow {

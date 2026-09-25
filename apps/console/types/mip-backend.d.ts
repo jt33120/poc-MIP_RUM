@@ -395,6 +395,7 @@ declare module "@mip/backend/lib/sourcemap-upload.mjs" {
   }>;
   export const EXPIRATION_JETON: Readonly<{ min: number; max: number; defaut: number }>;
   export const PRIVILEGE_JETON: "sourcemaps:write";
+  export const PRIVILEGES_JETON: readonly ["sourcemaps:write", "deploys:write"];
 
   export class ErreurUpload extends Error {
     statut: number;
@@ -410,9 +411,12 @@ declare module "@mip/backend/lib/sourcemap-upload.mjs" {
 
   export function empreinteManifeste(entrees: Array<{ filename: string; checksum: string | null }>): string;
   export function genererJetonUpload(): { id: string; jeton: string; empreinte: string };
+  /** `Authorization: Bearer msu_…` → { id, secret }, ou null pour toute autre forme. */
+  export function lireJetonUpload(authorization: string | null): { id: string; secret: string } | null;
   export function verifierJetonUpload(
     db: { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> },
     authorization: string | null,
+    privilege?: "sourcemaps:write" | "deploys:write",
   ): Promise<{ id: string; app_id: string } | null>;
   export function creerLimiteurUpload(opts?: {
     parMinute?: number;
@@ -443,6 +447,67 @@ declare module "@mip/backend/lib/sourcemap-upload.mjs" {
       jetonId?: string | null;
     },
   ): Promise<{ statut: number; corps: Record<string, unknown> }>;
+}
+
+declare module "@mip/backend/lib/extension-parc.mjs" {
+  type Db = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> };
+  export const LIMITES_EXTENSION: Readonly<{ resolveParMinute: number; battementsParHeure: number; corpsBattement: number }>;
+  export interface Battement {
+    installId: string;
+    version: string | null;
+    label: string | null;
+    appIds: string[];
+  }
+  export function lireDomaine(brut: string | null): string | null;
+  export function resoudreDomaine(db: Db, domaine: string): Promise<{ app_id: string; endpoint: string | null; active: boolean } | null>;
+  export function lireBattement(brut: string): { battement: Battement; erreur?: undefined } | { erreur: string; statut: number; battement?: undefined };
+  export function enregistrerBattement(db: Db, b: Battement, ua: string | null): Promise<void>;
+  export function navigateurDe(ua: string | null): string;
+  export function versionMajeureDe(ua: string | null): number | null;
+  export function systemeDe(ua: string | null): string | null;
+  export function creerDebitFenetre(
+    limite: number,
+    fenetreMs: number,
+    maintenant?: () => number,
+  ): { prendre(cle: string): { ok: true } | { ok: false; retryAfter: number } };
+}
+
+declare module "@mip/backend/lib/integrations/tickets/webhook-entrant.mjs" {
+  import type { Pool } from "pg";
+  export const COOKIE_SESSION_CONSOLE: string;
+  export const CORPS_LIVRAISON_MAX: number;
+  export const ENTETE_NOTIFIER: "x-mip-notifier";
+  export const MOTIF_INTEGRATION: RegExp;
+  export function refusAvantLecture(entetes: { get(nom: string): string | null }): { statut: number; corps: object } | null;
+  export function recevoirLivraison(p: {
+    pool: Pool;
+    integrationId: string;
+    entetes: { get(nom: string): string | null };
+    brut: Uint8Array;
+    env?: Record<string, string | undefined>;
+    log?: { error: (...a: unknown[]) => void };
+  }): Promise<{ statut: number; corps: object }>;
+}
+
+declare module "@mip/backend/lib/deploiements.mjs" {
+  type Db = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> };
+  export const PRIVILEGE_DEPLOIEMENT: "deploys:write";
+  export const FIN_JETONS_HISTORIQUES: string;
+  export const CORPS_DEPLOIEMENT_MAX: number;
+  export const REFUS_DEPLOIEMENT: Readonly<{
+    sansJeton: string;
+    jetonInvalide: string;
+    tropGros: string;
+    horsPerimetre: (app: string) => string;
+  }>;
+  export interface Deploiement {
+    appId: string;
+    version: string | null;
+    env: string;
+    ts: Date | null;
+  }
+  export function lireDeploiement(corps: unknown): { deploiement: Deploiement; erreur?: undefined } | { erreur: string; deploiement?: undefined };
+  export function enregistrerDeploiement(db: Db, d: Deploiement, source: "ci" | "manual"): Promise<void>;
 }
 
 declare module "@mip/backend/shared/cors.mjs" {

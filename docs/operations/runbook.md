@@ -13,6 +13,7 @@
 | Journaux d'un service | `railway logs --service <scheduler\|mcp\|collector\|notifier> --lines 200` (build : `--build`) |
 | État d'un service | `curl https://<domaine>/live` (processus) · `/health` (processus + base — ne pas le sonder de l'extérieur, il réveille la base) · `/ready` et `/metrics` sous `Authorization: Bearer $METRICS_TOKEN` |
 | Déploiements Railway | `railway deployment list --service <nom>` |
+| Qui a fait quoi dans la console | table `audit_log` (écran `/admin/audit`) — **en ajout seul** depuis migration-v90 : un `update`, un `delete` ou un `truncate` y rend 42501. Rien ne l'efface, pas même l'effacement d'un client. |
 | Déploiements et journaux Vercel | tableau de bord Vercel, projet `mip-rum-console` (ou le MCP Vercel) |
 | Les applies d'infrastructure | GitHub → Actions → « Railway IaC » (environnement `railway-production`, relecteur requis) |
 
@@ -64,10 +65,38 @@ Où ils vivent : [architecture, « Qui détient quel secret »](../architecture/
 | `EDGE_PROXY_SECRET` | poser `nouveau,ancien` sur le collector → poser `nouveau` sur Vercel → retirer `ancien` du collector. Aucune coupure. |
 | `WEBHOOK_SIGNING_SECRET` | poser `nouveau,ancien` sur le notifier (il signe avec le premier) → prévenir les destinataires → retirer `ancien`. |
 | `METRICS_TOKEN` | changer la variable partagée → mettre à jour la supervision. |
+| `CONSOLE_API_CLIENT_SECRETS` | poser `nouvelle,ancienne` (variable partagée) → poser `nouvelle` sur Vercel (`CONSOLE_API_CLIENT_SECRET`) → retirer `ancienne`. Aucune coupure. |
+| `SESSION_SIGNING_KEYS` | `scripts/ops/generer-cles-session.mjs --rotation` → publier la nouvelle clé publique sur Vercel (`SESSION_PUBLIC_JWKS`) **avant** `--promouvoir` → `--retirer` une fois les sessions de l'ancienne expirées (README de `console-api`). |
 | `RESEND_API_KEY` | créer une clé « Sending access » chez Resend → la poser → révoquer l'ancienne. **La clé du 23/09 a circulé en clair : à révoquer au premier branchement.** |
 | `IDENTITY_HASH_SECRET` | **ne se tourne pas sans rupture** : les `user_id_hash` écrits avant ne correspondent plus. Si une fuite l'impose : nouveau secret + nouvelle empreinte (`scripts/ops/empreinte-identite.mjs`), dater la rupture par un marqueur de déploiement, et la dire dans la recherche RGPD. |
 | `DATABASE_URL` (`neondb_owner`) | rotation du mot de passe par l'API Neon (`reset_password`), puis mise à jour de la variable partagée et des variables de service `preserve()`. Coupe aussi tout ancien déploiement Vercel (prévu en C12). |
 | `TICKET_SECRET_KEY` | la même valeur, à l'octet près, là où les références `enc:v1:` sont déchiffrées ; la changer impose de rechiffrer les références. |
+| `API_DATABASE_URL` (`mip_api`) | `\password mip_api` (ci-dessous) → mettre à jour la variable partagée, ce qui redéploie `api`. Entre les deux, les connexions **nouvelles** du service échouent (les ouvertes tiennent) : une à deux minutes d'erreurs 500 sur l'API de lecture, la console n'est pas touchée (le relais retombe en local). |
+
+### Le rôle de l'API : `mip_api`
+
+migration-v89 crée `mip_api` **sans mot de passe** (`NOLOGIN`) : lecture seule, liste blanche ([ADR-0003](../architecture/adr/0003-roles-et-tenancy.md)). À faire **une fois**, après le pré-déploiement qui l'a appliquée — et d'abord sur la branche `repetition-p0`, v89 comprise, avant de fusionner v89 :
+
+1. Générer le mot de passe dans le gestionnaire (`openssl rand -base64 32` si besoin), jamais ailleurs.
+2. `psql` connecté en `neondb_owner`, puis :
+   ```
+   \password mip_api
+   alter role mip_api login;
+   ```
+   `\password` hache le mot de passe **côté client** (SCRAM) : il ne passe ni par le journal de la base ni par l'historique du shell. **Pas par l'API ni la console Neon** : un rôle qu'elles créent ou modifient est membre de `neon_superuser`.
+3. Se connecter en `mip_api` **par le pooler**, mot de passe demandé au clavier : `psql "host=<hôte>-pooler.<région>.aws.neon.tech dbname=neondb user=mip_api sslmode=require" -c "show default_transaction_read_only"` → `on`. Ce point n'a jamais été vérifié sur Neon (ADR-0003) : s'il échoue, s'arrêter là.
+4. Créer la variable partagée Railway `API_DATABASE_URL` = `postgresql://mip_api:<mot de passe>@<hôte>-pooler.<région>.aws.neon.tech/neondb?sslmode=require` ; l'IaC du service `api` la lit (`ctx.shared.API_DATABASE_URL`).
+5. Vérifier les droits réels, en lecture des catalogues seulement : `node services/api/build.mjs`, puis `read -rs DATABASE_URL && export DATABASE_URL` (la chaîne propriétaire, sans écho) et `node scripts/ci/verify-db-roles.mjs` → « conforme à sa liste blanche ».
+
+### Les rôles de console-api : `mip_console` et `mip_identity` (C13)
+
+migration-v93 crée les deux rôles **sans mot de passe** (`NOLOGIN`) : `mip_console` pour les écrans, les commandes et le RGPD, `mip_identity` pour la connexion et les sessions (listes : `packages/db/roles/console-api.mjs`). console-api continue de se connecter en propriétaire tant que ses deux variables ne sont pas posées. À faire **une fois**, après la mise en service de console-api, et d'abord sur `repetition-p0` :
+
+1. Deux mots de passe, générés dans le gestionnaire.
+2. `psql` connecté en `neondb_owner` : `\password mip_console`, `alter role mip_console login;`, puis de même pour `mip_identity`. **Pas par l'API ni la console Neon.**
+3. Connexion de chacun **par le pooler** (`select current_user`), comme pour `mip_api`.
+4. Variables partagées Railway `CONSOLE_DATABASE_URL` (rôle `mip_console`) et `IDENTITY_DATABASE_URL` (rôle `mip_identity`), chaînes du pooler ; puis la PR d'IaC qui les donne au service `console-api` **et retire son `DATABASE_URL`** — les deux ensemble, ou le service refuse de démarrer (une configuration partielle se voit au démarrage, pas à la première connexion).
+5. Vérifier les droits réels : `node services/console-api/build.mjs`, puis (chaîne propriétaire, sans écho) `node scripts/ci/verify-db-roles-console.mjs` → « conformes à leurs listes ». Le journal de démarrage du service dit `roles: "mip_console + mip_identity"`.
 
 ## 7. Rafraîchir la base GeoIP (DB-IP)
 
@@ -113,7 +142,7 @@ Commiter le manifeste (jamais le fichier : il est ignoré), PR, fusion : l'image
         or (b.subject_kind = 'user'    and s.user_id_hash = b.subject_key)
         or (b.subject_kind = 'account' and s.account_id_hash = b.subject_key));
    ```
-   **Ce qui reste manuel** : les lignes d'une identité qui ne sont rattachées à aucune session (logs OpenTelemetry portant l'identité, lots encore en file). Les compter par l'écran `/admin/privacy` pour chaque identité ; tant qu'il en reste, ne pas rouvrir. L'effacement par barrière en une commande arrive avec `console-api` (C10).
+   **Ce qui reste manuel** : les lignes d'une identité qui ne sont rattachées à aucune session (logs OpenTelemetry portant l'identité, lots encore en file). Les compter par l'écran `/admin/privacy` pour chaque identité ; tant qu'il en reste, ne pas rouvrir. L'effacement est une commande depuis C10 (`privacy.eraseIdentity`, `privacy.eraseVisitor`), exécutée par la console jusqu'à la mise en service de `console-api`.
 6. **Remettre la protection** là où elle était : `update app_registry set privacy_barrier_mode = 'enforce' where app_id = any(…)`, d'après l'export de l'état d'avant.
 7. **Rouvrir** : lever la suspension application par application (`ingestion_suspended_at = null`), remettre scheduler, notifier, collector, puis le relais à sa valeur.
 8. **Tracer** : une ligne dans `audit_log` et dans le journal d'incident — instant restauré, barrières reposées, sessions réeffacées, identités vérifiées.

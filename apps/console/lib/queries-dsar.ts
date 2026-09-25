@@ -119,14 +119,16 @@ async function ouvrirDemande(
 async function cloreDemande(
   client: PoolClient,
   id: string | null,
+  app: string,
   comptes: Record<string, number>,
 ): Promise<void> {
   if (!id) return;
+  // La demande est relue DANS son application (lint des écritures, C9), comme toute ligne d'une app.
   await client.query(
     `update privacy_erasure_request
         set status = 'completed', counts = $2::jsonb, ended_at = now()
-      where id = $1::uuid`,
-    [id, JSON.stringify(comptes)],
+      where id = $1::uuid and app_id = $3`,
+    [id, JSON.stringify(comptes), app],
   );
 }
 
@@ -272,6 +274,9 @@ async function identityChildPredicate(lire: Lecteur, table: string, kind: DsarId
 
 /** Couture I/O injectable : la production garde q/tx, les tests SQL exercent
  * les fonctions publiques contre leur vraie base jetable, sans faux client. */
+/** Ce que fait l'appelant DANS la transaction de l'effacement, avant son commit : l'audit de la commande (C10). */
+export type ApresEffacement = (client: PoolClient, supprime: { table: string; deleted: number }[]) => Promise<void>;
+
 export interface IdentityDsarIo {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
   transaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T>;
@@ -370,6 +375,7 @@ export async function dsarIdentityErase(
   hash: string,
   io: IdentityDsarIo = DEFAULT_IDENTITY_IO,
   acteur = "console",
+  apres?: ApresEffacement,
 ) {
   const column = identityColumn(kind);
   const hashes = kind === "user" ? { user: [hash], account: [] } : { user: [], account: [hash] };
@@ -469,11 +475,12 @@ export async function dsarIdentityErase(
     if (protege && issues.size) {
       await client.query("select privacy_reconcilier_issues($1, $2::uuid[])", [app, [...issues]]);
     }
-    await cloreDemande(client, demande, {
+    await cloreDemande(client, demande, app, {
       ...Object.fromEntries(deleted.map((d) => [d.table, d.deleted])),
       ...file,
       sessions_barrees: barriere ? sessionIds.length : 0,
     });
+    if (apres) await apres(client, deleted);
     return deleted;
   });
 }
@@ -562,6 +569,7 @@ export async function dsarErase(
   app: string,
   visitorId: string,
   acteur = "console",
+  apres?: ApresEffacement,
 ): Promise<{ table: string; deleted: number }[]> {
   await exigerRecevable(app, visitorId);
   // Les applications RÉELLEMENT concernées : `all` est une commodité d'écran,
@@ -574,11 +582,25 @@ export async function dsarErase(
     : [app];
   return tx(async (client) => {
     await client.query(`set local lock_timeout = '${Math.round(VERROU_DSAR_MS)}ms'`);
-    await client.query(
-      `select pg_advisory_xact_lock($1::int4, cle)
-         from (select distinct hashtext(a)::int4 as cle from unnest($2::text[]) a order by 1) v`,
-      [VERROU_INGESTION_NS, apps],
-    );
+    const verrouiller = (liste: string[]) =>
+      client.query(
+        `select pg_advisory_xact_lock($1::int4, cle)
+           from (select distinct hashtext(a)::int4 as cle from unnest($2::text[]) a order by 1) v`,
+        [VERROU_INGESTION_NS, liste],
+      );
+    await verrouiller(apps);
+    // « Toutes » a été résolu AVANT le verrou : une session du visiteur a pu naître
+    // depuis dans une autre application. L'ensemble est RELU sous verrou, et ce qui
+    // manque est verrouillé à son tour, jusqu'à ce qu'il ne bouge plus (C10).
+    while (app === "all") {
+      const { rows } = await client.query<{ app_id: string }>(
+        `select distinct app_id from rum_session where ${DSAR_ID_COLUMN} = $1`, [visitorId],
+      );
+      const nouvelles = rows.map((r) => r.app_id).filter((a) => !apps.includes(a));
+      if (!nouvelles.length) break;
+      await verrouiller(nouvelles);
+      apps.push(...nouvelles);
+    }
     const protege = await protocoleDisponible(client);
     const deleted: { table: string; deleted: number }[] = [];
     const sessions = await client.query<{ session_id: string; app_id: string }>(
@@ -615,7 +637,7 @@ export async function dsarErase(
         );
         await client.query("select privacy_marquer_heures($1, $2::text[])", [cible, sessionIds]);
       }
-      await cloreDemande(client, demande, { sessions: sessionIds.length });
+      await cloreDemande(client, demande, cible, { sessions: sessionIds.length });
     }
 
     if (!protege && sessionIds.length) {
@@ -660,6 +682,7 @@ export async function dsarErase(
         await client.query("select privacy_reconcilier_issues($1, $2::uuid[])", [cible, [...issues]]);
       }
     }
+    if (apres) await apres(client, deleted);
     return deleted;
   });
 }

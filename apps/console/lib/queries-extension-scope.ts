@@ -1,6 +1,8 @@
 // Registre domaine -> app_id (Ext-A migration v27) : résolution pour l'extension
 // navigateur, gestion admin. Zéro PII (juste un mapping hostname -> app_id).
-import { q } from "./db";
+import { resoudreDomaine } from "@mip/backend/lib/extension-parc.mjs";
+import { pool, q } from "./db";
+import { ecrire, type ClientEcriture } from "./requete";
 
 export interface ExtensionScopeRow {
   id: number;
@@ -15,11 +17,8 @@ export interface ExtensionScopeRow {
 export async function resolveExtensionScope(
   domain: string,
 ): Promise<{ app_id: string; endpoint: string | null; active: boolean } | null> {
-  const [row] = await q<{ app_id: string; endpoint: string | null; active: boolean }>(
-    `select app_id, endpoint, active from extension_scope where domain = $1 and active limit 1`,
-    [domain],
-  );
-  return row ?? null;
+  // La requête est celle du collector (C11), partagée : `@mip/backend/lib/extension-parc.mjs`.
+  return resoudreDomaine(pool, domain);
 }
 
 /** Liste complète (admin) — tous statuts, la plus récente en premier. */
@@ -31,12 +30,19 @@ export async function listExtensionScopes(): Promise<ExtensionScopeRow[]> {
 }
 
 /** Enregistre un domaine (upsert par hostname exact) — active par défaut. */
-export async function createExtensionScope(domain: string, appId: string): Promise<void> {
-  await q(
+export async function createExtensionScope(domain: string, appId: string, client?: ClientEcriture): Promise<void> {
+  await ecrire(
+    client,
     `insert into extension_scope (domain, app_id) values ($1, $2)
      on conflict (domain) do update set app_id = excluded.app_id, active = true`,
     [domain, appId],
   );
+}
+
+/** L'application à laquelle un domaine est déjà rattaché, s'il l'est (C9 : un domaine ne change pas d'app à l'insu de la sienne). */
+export async function appDuDomaine(domain: string, client?: ClientEcriture): Promise<string | null> {
+  const { rows } = await ecrire<{ app_id: string }>(client, "select app_id from extension_scope where domain = $1", [domain]);
+  return rows[0]?.app_id ?? null;
 }
 
 /**
@@ -48,9 +54,10 @@ export async function createExtensionScope(domain: string, appId: string): Promi
  * jamais (une origine peut aussi servir au SDK embarqué de l'app). No-op si
  * l'app n'existe pas dans `app_registry`.
  */
-export async function allowOriginForApp(domain: string, appId: string): Promise<void> {
+export async function allowOriginForApp(domain: string, appId: string, client?: ClientEcriture): Promise<void> {
   const origin = `https://${domain}`;
-  await q(
+  await ecrire(
+    client,
     `update app_registry
         set allowed_origins =
           case when $2 = any(coalesce(allowed_origins, '{}'::text[]))
@@ -61,7 +68,8 @@ export async function allowOriginForApp(domain: string, appId: string): Promise<
   );
 }
 
-/** Bascule active/inactive (kill-switch sans supprimer la ligne). */
-export async function toggleExtensionScope(id: number, active: boolean): Promise<void> {
-  await q(`update extension_scope set active = $2 where id = $1`, [id, active]);
+/** Active ou coupe un domaine de l'application `appId` (kill-switch sans supprimer la ligne) ; `false` s'il n'y est pas. */
+export async function toggleExtensionScope(id: number, appId: string, active: boolean, client?: ClientEcriture): Promise<boolean> {
+  const { rowCount } = await ecrire(client, `update extension_scope set active = $3 where id = $1 and app_id = $2`, [id, appId, active]);
+  return rowCount > 0;
 }

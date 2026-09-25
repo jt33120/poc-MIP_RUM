@@ -163,6 +163,8 @@ export class DsarRefus extends Error {
 /**
  * Document d'export DSAR — forme portable et stable (une clé par table).
  *
+ * VERSION 3 (C10) : les colonnes binaires sortent en base64 (`binaire`).
+ *
  * VERSION 2 (09/09/2026) : la clé d'ancrage passe de `user_hash` à `visitor_id`.
  * Ce n'est pas un renommage cosmétique — les deux champs ne désignent pas la
  * même chose (le premier, une classe d'appareil ; le second, un visiteur), donc
@@ -170,7 +172,9 @@ export class DsarRefus extends Error {
  */
 export interface DsarExport {
   kind: "mip-rum-dsar-export";
-  version: 2;
+  version: 3;
+  /** Les colonnes binaires (`bytea` : le corps d'un chunk de rejeu) : en base64. */
+  binaire: "base64";
   app: string;
   visitor_id: string;
   generated_at: string;
@@ -188,7 +192,9 @@ export function isDsarIdentityHash(value: unknown): value is string {
 
 export interface DsarIdentityExport {
   kind: "mip-rum-dsar-identity-export";
-  version: 1;
+  version: 2;
+  /** Les colonnes binaires (`bytea` : le corps d'un chunk de rejeu) : en base64. */
+  binaire: "base64";
   app: string;
   identity_kind: DsarIdentityKind;
   identity_hash: string;
@@ -206,13 +212,34 @@ export function buildDsarIdentityExport(input: {
   if (!isDsarIdentityHash(input.identityHash)) throw new Error("invalid identity hash");
   return {
     kind: "mip-rum-dsar-identity-export",
-    version: 1,
+    version: 2,
+    binaire: "base64",
     app: input.app,
     identity_kind: input.identityKind,
     identity_hash: input.identityHash,
     generated_at: input.generatedAt,
-    tables: input.tables,
+    tables: portable(input.tables),
   };
+}
+
+/**
+ * Les lignes telles qu'un document JSON les porte. Une colonne `bytea` arrive en
+ * `Buffer`, que JSON sérialisait en `{ type: "Buffer", data: [octet, …] }` — six
+ * à huit caractères par octet, et une forme propre à Node. Elle sort en base64
+ * (versions 3 et 2 des deux documents) : le document le dit (`binaire`).
+ */
+export function portable(tables: Record<string, unknown[]>): Record<string, unknown[]> {
+  const valeur = (v: unknown): unknown => (v instanceof Uint8Array ? Buffer.from(v).toString("base64") : v);
+  return Object.fromEntries(
+    Object.entries(tables).map(([t, lignes]) => [
+      t,
+      lignes.map((l) =>
+        l && typeof l === "object" && !Array.isArray(l)
+          ? Object.fromEntries(Object.entries(l as Record<string, unknown>).map(([k, v]) => [k, valeur(v)]))
+          : l,
+      ),
+    ]),
+  );
 }
 
 /** Compte de lignes par table (résumé lisible du volume exporté/à effacer). */
@@ -232,13 +259,14 @@ export function buildDsarExport(input: {
   const summary = summarizeCounts(input.tables);
   return {
     kind: "mip-rum-dsar-export",
-    version: 2,
+    version: 3,
+    binaire: "base64",
     app: input.app,
     visitor_id: input.visitorId,
     generated_at: input.generatedAt,
     session_count: input.tables[DSAR_ANCHOR]?.length ?? 0,
     summary,
-    tables: input.tables,
+    tables: portable(input.tables),
   };
 }
 

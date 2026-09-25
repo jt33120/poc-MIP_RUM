@@ -38,7 +38,7 @@ export const LIBELLES_ONGLETS: Record<OngletSession, string> = {
   attributs: "Attributs",
 };
 
-/** Anciennes valeurs, émises par des liens existants (`components/errors/error-view.ts`). */
+/** Anciennes valeurs, émises par des liens existants (`lib/error-view.ts`). */
 const ALIAS_DEROULE = new Set(["replay", "timeline"]);
 
 /**

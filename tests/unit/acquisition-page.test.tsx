@@ -31,8 +31,11 @@ const QUERY = (() => {
   if (!parsed.ok) throw new Error(parsed.error.code);
   return parsed.value;
 })();
-vi.mock("@/lib/page-filters", () => ({
-  pageFilters: async () => ({
+// Le chargeur de l'écran lit ses filtres par `analyserFiltres` (C5, `lib/filtres-ecran.ts`).
+// `chargerEcran` lit la session (`lib/ecran-local.ts`).
+vi.mock("@/lib/auth", () => ({ getUser: async () => ({ email: "a@b", role: "admin", apps: null }) }));
+vi.mock("@/lib/filtres-ecran", () => ({
+  analyserFiltres: async () => ({
     ok: true,
     filters: { app: "demo", period: "7d", device: null, segment: [], includeBots: false, query: QUERY },
     deviceFilters: { app: "demo", period: "7d", device: null, segment: [], includeBots: false, query: QUERY },

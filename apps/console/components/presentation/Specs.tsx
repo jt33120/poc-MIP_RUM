@@ -24,7 +24,7 @@
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { fmtBorne } from "@/lib/format";
 import { THRESHOLDS } from "@/lib/rating";
-import { dernierPassagePlanifie, dernierTickScheduler } from "@/lib/queries-planifie";
+import { lireEtatPlateforme } from "@/lib/etat-plateforme";
 import { CADENCE_TICK_MIN } from "@/lib/etat-latence";
 import { latenceDepuis, volatiles, type Gravite } from "@/lib/etat-planifie";
 import {
@@ -226,7 +226,8 @@ function Onglet({
 }
 
 export async function Specs() {
-  const [quotidien, tick] = await Promise.all([dernierPassagePlanifie(), dernierTickScheduler()]);
+  // console-api s'il est branché, la base sinon (C0b, lib/etat-plateforme.ts).
+  const { quotidien, tick } = await lireEtatPlateforme();
   const { retention, planif } = volatiles(quotidien);
 
   // La latence d'alerte est DÉDUITE du battement de cœur du scheduler, pas

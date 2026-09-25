@@ -48,11 +48,12 @@ import { StabiliteParRelease, type TriStabilite } from "@/components/mobile/Stab
 import { MobileDansLeTemps } from "@/components/mobile/MobileDansLeTemps";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
-import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
-import { filtersOfQuery, type SearchParams } from "@/lib/filters";
+import { chargerMobile } from "@/lib/chargeurs/mobile";
+import { validerCapaciteAction } from "./actions";
+import { chargerEcran } from "@/lib/ecran-local";
+import { type SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { classerParGravite, SEUIL_ECHANTILLON_FAIBLE } from "@/lib/impact";
-import { lire, type Lecture } from "@/lib/lecture";
 import {
   CAPABILITY_LABELS,
   CAPABILITY_NOTES,
@@ -70,36 +71,23 @@ import {
   type MobileCapability,
   type ZoneMobile,
 } from "@/lib/mobile-capabilities";
-import { pageFilters } from "@/lib/page-filters";
 import { vuesMobiles, type Entree } from "@/lib/presets";
-import {
-  RELEASES_AFFICHEES,
-  mobileDeclarations,
-  mobileParRelease,
-  mobileSchema,
-  mobileSummary,
-  type MobileSummary,
-} from "@/lib/queries-mobile";
-import {
-  hrefWithQuery,
-  intersectQuery,
-  paramReader,
-  previousRange,
-  rangeLabel,
-  type AnalyticsQuery,
-} from "@/lib/query-contract";
+import { type MobileSummary as MobileSummaryBrut } from "@/lib/queries-mobile";
+import type { Fil } from "@mip/console-contract";
+import { hrefWithQuery, intersectQuery, paramReader, previousRange, rangeLabel } from "@/lib/query-contract";
 import { ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
 import { lireComparaison, lireTri } from "@/lib/view-state";
 import { explorerPlanParams } from "@/lib/explorer-page-params";
-import { lienCohorte } from "@/lib/mobile-capabilities";
+import { lienCohorte, SANS_RELEASE } from "@/lib/mobile-capabilities";
 import { annotationsDeploiementsCohorte } from "@/lib/mobile-capabilities";
-import { mobileResumeEtSerie, valeurDe } from "@/lib/queries-mobile";
-import { mobileDeploiements } from "@/lib/queries-mobile";
 import { PLAN_SESSIONS_COMMENCEES } from "@/lib/queries-sessions";
 import { bucketStarts } from "@/lib/query-contract";
 import { gabaritZoom } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
+
+/** Le résumé tel que le chargeur le rend, sur le fil. */
+type MobileSummary = Fil<MobileSummaryBrut>;
 
 const BADGE: Record<CapabilityStatus["state"], string> = {
   active: "border-good/40 bg-good/10 text-good-ink",
@@ -121,41 +109,6 @@ const DATE_UTC = new Intl.DateTimeFormat("fr-FR", {
 const dateUtc = (iso: string) => `${DATE_UTC.format(new Date(iso))} UTC`;
 const nombre = (n: number) => n.toLocaleString("fr-FR");
 
-/** Sessions de la cohorte : leur début de collecte est celui de la colonne `runtime` (v82). */
-const SOURCE_SESSIONS: SourceComparaison = {
-  table: "rum_session",
-  colonneTemps: "started_at",
-  colonneRequise: "runtime",
-  additive: true,
-};
-/** Erreurs JS : distinguées par `error_source` (v69). */
-const SOURCE_ERREURS: SourceComparaison = {
-  table: "rum_error",
-  colonneTemps: "ts",
-  colonneRequise: "error_source",
-  additive: true,
-};
-
-const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
-
-/** Couverture de la période précédente d'une source, filtres de colonnes récentes compris : la pire. */
-async function couverture(query: AnalyticsQuery, source: SourceComparaison): Promise<CouverturePrecedente> {
-  const toutes = await Promise.all(sourcesSousFiltres(query, source).map((s) => couverturePrecedente(query, s)));
-  return toutes.find((c) => c.etat !== "complete") ?? toutes[0];
-}
-
-/** La requête sans aucune condition de release : pour lire TOUTES les déclarations (vue « Dernière release »). */
-function sansRelease(query: AnalyticsQuery): AnalyticsQuery {
-  return {
-    ...query,
-    filters: {
-      ...query.filters,
-      release: undefined,
-      segments: query.filters.segments.filter((c) => c.dimension !== "release"),
-    },
-  };
-}
-
 /** W-M1 : l'angle mort, écrit AVANT le premier chiffre. */
 function texteAnglesMorts(capacites: CapabilityStatus[] | null): string {
   const natives = NATIVES.map((c) => CAPABILITY_LABELS[c]).join(", ");
@@ -172,11 +125,13 @@ function texteAnglesMorts(capacites: CapabilityStatus[] | null): string {
 
 export default async function MobilePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/mobile");
-  if (!ecran.ok) return <FilterProblemNotice title="Mobile" problem={ecran.problem} />;
-  const query = ecran.query;
-  const f = filtersOfQuery(query);
+  // Le chargeur (`lib/chargeurs/mobile.ts`) lit filtres, schéma et sections.
+  const d = await chargerEcran(chargerMobile, sp);
+  if (d.etat === "refus") return <FilterProblemNotice title="Mobile" problem={d.problem} />;
+  const query = d.query;
   const lecteur = paramReader(sp);
+  // R5 (C9) : la recette d'une capacité, pour l'administrateur de la plateforme sur une app nommée.
+  const recette = d.recette;
 
   // Réglages d'affichage : comparaison (défaut `prev` sur un écran Performance) et
   // ordre du hero. Sans `tri`, le hero garde l'ordre de la SOURCE (chronologie des
@@ -196,37 +151,16 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   ];
 
   const precedente = prev ? previousRange(query.range) : null;
-  const fPrecedent = precedente ? filtersOfQuery({ ...query, range: precedente }) : null;
   const reference = precedente
     ? `vs période précédente (${rangeLabel({ ...precedente, preset: null }, "UTC")} UTC)`
     : undefined;
 
-  // Une sonde de schéma pour tout l'écran ; en échec, chaque lecture sonde elle-même.
-  const schemaLu = await lire(() => mobileSchema());
+  const schemaLu = d.schema;
   const schema = schemaLu.ok ? schemaLu.data : undefined;
   const filtreRelease = query.filters.release !== undefined || query.filters.segments.some((c) => c.dimension === "release");
-
-  // Les tuiles et la série « dans le temps » dans UNE photographie : la somme des
-  // seaux est la tuile, même si des sessions arrivent pendant la lecture (revue de
-  // fin de vague 8). Chaque partie garde son `lire()` : F02 tient toujours.
-  const photo = mobileResumeEtSerie(f, schema);
-  // CHAQUE LECTURE EST INDÉPENDANTE (F02) : une lecture en échec n'efface que sa section.
-  const [resume, parRelease, resumePrec, parReleasePrec, couvSessions, couvErreurs, declarationsToutes, serieLue, deploysLus] =
-    await Promise.all([
-      lire(async () => valeurDe((await photo).resume)),
-      lire(() => mobileParRelease(f, RELEASES_AFFICHEES, schema)),
-      fPrecedent ? lire(() => mobileSummary(fPrecedent, schema)) : sansLecture(null),
-      fPrecedent ? lire(() => mobileParRelease(fPrecedent, RELEASES_AFFICHEES, schema)) : sansLecture(null),
-      prev ? couverture(query, SOURCE_SESSIONS) : Promise.resolve(undefined),
-      prev ? couverture(query, SOURCE_ERREURS) : Promise.resolve(undefined),
-      filtreRelease && schema?.capabilities !== false
-        ? lire(() => mobileDeclarations(sansRelease(query)))
-        : sansLecture(null),
-      // F39 : la même cohorte, seau par seau ; les déploiements de la fenêtre en annotations.
-      lire(async () => valeurDe((await photo).serie)),
-      // Les 20 derniers marqueurs du périmètre, chacun rattaché ou non à la cohorte (revue v8).
-      lire(() => mobileDeploiements(f, schema, 20)),
-    ]);
+  const { resume, parRelease, resumePrec, parReleasePrec, declarationsToutes, serieLue, deploysLus } = d;
+  const couvSessions = d.couvSessions ?? undefined;
+  const couvErreurs = d.couvErreurs ?? undefined;
 
   const data: MobileSummary | null = resume.ok ? resume.data : null;
   const dataPrec = resumePrec.ok ? resumePrec.data : null;
@@ -496,7 +430,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             tri={triHero}
             triHref={{ fourni: hrefTri("fourni"), gravite: hrefTri("gravite"), volume: hrefTri("volume") }}
             hrefDeRelease={hrefDeRelease}
-            plage={ecran.label}
+            plage={d.label}
           />
         )}
       </SectionErreur>
@@ -511,7 +445,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             meta={
               data ? (
                 <>
-                  <span>{ecran.label}</span>
+                  <span>{d.label}</span>
                   {dataPrec && (
                     <span>
                       p75 période précédente : à froid {formater("ms", dataPrec.startup.cold?.p75_ms ?? null)}, à chaud{" "}
@@ -554,7 +488,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             titre="Écrans les plus consultés"
             id="mobile-ecrans"
             etat={data ? undefined : { kind: "erreur", titre: "Écrans les plus consultés" }}
-            meta={data ? <span>{ecran.label} · 10 écrans au plus, par consultations</span> : undefined}
+            meta={data ? <span>{d.label} · 10 écrans au plus, par consultations</span> : undefined}
             lecture={
               raisonLienEcrans === null
                 ? "Une consultation par écran déclaré. Chaque écran ouvre /pages filtré sur sa route et sur la cohorte React Native (runtime = react_native) : les pages web de même route n'y entrent pas."
@@ -635,7 +569,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
             lecture={serieLue}
             starts={bucketStarts(query.range)}
             seauSecondes={query.range.bucketSeconds}
-            plage={ecran.label}
+            plage={d.label}
             zoomHref={gabaritZoom(hrefWithQuery("/mobile", query, { period: null, from: "{from}", to: "{to}" }), sp)}
             annotations={deploiements.annotations}
             annotationsIndisponibles={deploiements.indisponible}
@@ -712,6 +646,34 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
                   <td className="block px-2 py-1 text-xs text-ink-soft sm:table-cell sm:px-4 sm:py-3">
                     <span className="sm:hidden">Vérifié (recette) : </span>
                     {c.verified_at ? `${dateUtc(c.verified_at)}${c.verified_by ? ` · ${c.verified_by}` : ""}` : "Jamais"}
+                    {/* R5 (C9) : l'administrateur de la plateforme pose la recette d'une capacité
+                        DÉCLARÉE active, release par release — un geste audité, plus un `update` direct. */}
+                    {recette && c.state === "active" && c.declared_by.length > 0 && (
+                      <details className="mt-1" data-testid={`recette-${c.capability}`}>
+                        <summary className="cursor-pointer select-none hover:text-ink">Poser la recette</summary>
+                        <form action={validerCapaciteAction} className="mt-1 flex flex-wrap items-end gap-2">
+                          <input type="hidden" name="app" value={recette.app} />
+                          <input type="hidden" name="capability" value={c.capability} />
+                          <label className="flex flex-col gap-1">
+                            Release
+                            <select name="release" className="field">
+                              {c.declared_by.map((r) => (
+                                <option key={r ?? SANS_RELEASE} value={r ?? SANS_RELEASE}>
+                                  {r ?? "release inconnue"}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex min-w-0 flex-col gap-1">
+                            Ce qui a été vu (appareil, build)
+                            <input name="note" maxLength={1000} className="field w-56 max-w-full" />
+                          </label>
+                          <button type="submit" className="btn-ghost">
+                            Recette jouée
+                          </button>
+                        </form>
+                      </details>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -757,7 +719,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
       <PageHeader
         title="Mobile"
         domain="perf"
-        sub={`Comment se comporte l'app React Native sur ${ecran.label}, et que ne mesurons-nous pas ?`}
+        sub={`Comment se comporte l'app React Native sur ${d.label}, et que ne mesurons-nous pas ?`}
       />
       <div className="mb-4 min-w-0">
         <PresetBar vues={vues} actif={null} />

@@ -253,9 +253,13 @@ describe("DSAR identité", () => {
     expect(page).toContain('data-testid="dsar-visitor-search-form"');
     expect(page).toContain('method="GET"');
     expect(page).toContain("action={eraseUserAction}");
-    expect(actions).toContain("prepareIdentitySearch");
-    expect(actions).toContain("request.auditDetail");
-    expect(actions).not.toContain("identity=${raw}");
-    expect(actions).not.toContain("raw=${raw}");
+    // C10 — l'identité brute part dans le CORPS de la commande, qui la hache ; l'URL
+    // ne reçoit que le HMAC rendu par la décision.
+    expect(actions).toContain('executerCommande("rechercherIdentite"');
+    expect(actions).toContain("identity_hash=${r.data.hash}");
+    expect(actions).not.toMatch(/redirect\([^)]*identity"\)/);
+    const commandes = readFileSync("apps/console/lib/commandes/vie-privee.ts", "utf8");
+    expect(commandes).toContain("hashIdentity(secret(), app!, corps.kind, brute)");
+    expect(commandes).toContain("hash_prefix=${hash.slice(0, 12)}");
   });
 });

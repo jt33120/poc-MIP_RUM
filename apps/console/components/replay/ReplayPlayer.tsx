@@ -20,6 +20,7 @@
 //   · une barre de progression porteuse de repères : un clic place la tête ;
 //   · « Réessayer » quand le chargement échoue ;
 //   · `ignores` (B36) : des segments illisibles sont DITS, jamais tus ;
+//   · `tronques` (C3) : les segments au-delà du plafond d'une session, dits aussi ;
 //   · `onTemps` et la commande `allerA`, pour l'îlot `ReplaySynchro`.
 // LE MASQUAGE N'EST PAS TOUCHÉ : le lecteur ne rejoue que ce qui a été enregistré
 // (masqué à la source, `packages/rum-sdk/src/replay.ts`), et aucun réglage passé au
@@ -37,6 +38,7 @@ import {
   positionSurBarre,
   reperesHorsBarre,
   texteIgnores,
+  texteTronques,
   textesReperesHorsBarre,
   type Marqueur,
   type SourcePosition,
@@ -104,6 +106,7 @@ export default function ReplayPlayer({
   const [tentative, setTentative] = useState(0);
   const [eventCount, setEventCount] = useState(0);
   const [ignores, setIgnores] = useState(0);
+  const [tronques, setTronques] = useState(0);
   const [offset, setOffset] = useState<{ etat: OffsetState; source: SourcePosition | null; message: string }>({
     etat: "none",
     source: null,
@@ -150,10 +153,11 @@ export default function ReplayPlayer({
       try {
         const res = await fetch(`/api/replay/${encodeURIComponent(sessionId)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as { events?: unknown[]; ignores?: unknown };
+        const data = (await res.json()) as { events?: unknown[]; ignores?: unknown; tronques?: unknown };
         const events = Array.isArray(data.events) ? data.events : [];
         if (cancelled) return;
         setIgnores(lireIgnores(data.ignores));
+        setTronques(lireIgnores(data.tronques));
         if (events.length < 2) {
           // rrweb exige ≥ 2 events (meta + full snapshot) pour rejouer
           setState("empty");
@@ -276,6 +280,7 @@ export default function ReplayPlayer({
       data-state={state}
       data-events={eventCount}
       data-ignores={ignores}
+      data-tronques={tronques}
     >
       <p className="mb-3 text-xs leading-relaxed text-ink-soft" data-testid="replay-couverture">
         {TEXTE_COUVERTURE}
@@ -283,6 +288,11 @@ export default function ReplayPlayer({
       {ignores > 0 && state === "ready" && (
         <div className="mb-3">
           <EtatSurface compact etat={{ kind: "partiel", raison: `${texteIgnores(ignores)} : le rejeu peut sauter des passages` }} />
+        </div>
+      )}
+      {tronques > 0 && state === "ready" && (
+        <div className="mb-3" data-testid="replay-tronque">
+          <EtatSurface compact etat={{ kind: "partiel", raison: texteTronques(tronques) }} />
         </div>
       )}
       {state === "loading" && (

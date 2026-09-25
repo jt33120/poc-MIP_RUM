@@ -11,8 +11,8 @@
 import Link from "next/link";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { formater } from "@/lib/fmt-ids";
-import type { DeployImpact, DeployRow } from "@/lib/queries-deploys";
-import { verdictDeploiement } from "@/lib/queries-deploys";
+import type { DeployRow } from "@/lib/queries-deploys";
+import { verdictDeploiement, type DeployImpact } from "@/lib/deploys-verdict";
 
 /** Règle du verdict, écrite telle quelle (§ 3.2, `assessRegression` ratio 1,2). */
 export const REGLE_DEPLOIEMENT = "+20 % ou plus, ±2 h, filtres de population non appliqués";
@@ -29,7 +29,7 @@ const HEURE_UTC = new Intl.DateTimeFormat("fr-FR", {
   minute: "2-digit",
 });
 
-function quand(ts: Date): string {
+function quand(ts: Date | string): string {
   return `${HEURE_UTC.format(new Date(ts))} UTC`;
 }
 

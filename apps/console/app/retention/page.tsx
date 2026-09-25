@@ -40,24 +40,11 @@ import {
 } from "@/lib/cohorts";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import { lire } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
-import { retentionCohorts } from "@/lib/queries-cohorts";
-import { samplingSessions } from "@/lib/queries-sessions";
+import { APPAREILS, chargerRetention, FENETRE_DEFAUT, FENETRES, fenetreDeRetention } from "@/lib/chargeurs/retention";
+import { chargerEcran } from "@/lib/ecran-local";
 import { hrefWithQuery } from "@/lib/query-contract";
 
 export const dynamic = "force-dynamic";
-
-/** Fenêtres proposées, en semaines (§ 5.17.3, R1). */
-const FENETRES = [4, 8, 12, 26] as const;
-const FENETRE_DEFAUT = 8;
-
-// B31 : la tablette est lue (lecture sur le contrat) ; trois séries, sous le plafond de cinq.
-const APPAREILS = [
-  { cle: "desktop", libelle: "Ordinateurs" },
-  { cle: "mobile", libelle: "Mobiles" },
-  { cle: "tablet", libelle: "Tablettes" },
-] as const;
 
 // Lundi de la cohorte, lu en UTC : les semaines sont des semaines UTC, et un
 // serveur à l'ouest de Greenwich afficherait sinon le dimanche.
@@ -94,20 +81,14 @@ function tuileRetour(point: PointRetention | undefined, offset: number, lu: bool
 
 export default async function Retention({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/retention");
-  if (!ecran.ok) return <FilterProblemNotice title="Rétention" problem={ecran.problem} />;
-  // Façade P4/P5 : la tablette y figure (l'appareil filtré se lit dans `device`).
-  const f = ecran.deviceFilters;
+  // Le chargeur (`lib/chargeurs/retention.ts`) lit les cohortes, l'échantillonnage
+  // et les séries par appareil ; la page relit la fenêtre par la même fonction.
+  const ecran = await chargerEcran(chargerRetention, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Rétention" problem={ecran.problem} />;
 
   // `weeks` est un réglage de l'écran (§ 3.1) : une valeur hors des fenêtres
   // proposées est ignorée ET signalée, jamais appliquée à moitié.
-  const brut = typeof sp.weeks === "string" ? sp.weeks : null;
-  const lu = brut === null ? null : Number(brut);
-  const weeks = lu !== null && (FENETRES as readonly number[]).includes(lu) ? lu : FENETRE_DEFAUT;
-  const ignore =
-    brut !== null && weeks !== lu
-      ? `Réglage d'affichage ignoré : weeks=${brut.slice(0, 40)} (fenêtres proposées : ${FENETRES.join(", ")} semaines).`
-      : null;
+  const { weeks, ignore } = fenetreDeRetention(sp);
   /** La fenêtre retenue, telle qu'un lien la reporte (le défaut ne s'écrit pas). */
   const weeksParam = weeks === FENETRE_DEFAUT ? null : String(weeks);
   const semaineCourante = indexSemaine(Date.now());
@@ -116,14 +97,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   const appareilFiltre = filtreAppareil(ecran.query.filters);
 
   // Chaque lecture est indépendante (F02) : une lecture en échec n'efface que ses sections.
-  const [cohortes, echantillonnage, parAppareil] = await Promise.all([
-    lire(() => retentionCohorts(f, weeks)),
-    // S7 : sessions identifiées lues par les cohortes sur les N semaines choisies.
-    lire(() => samplingSessions(f, { population: { lecture: "cohortes", semaines: weeks } })),
-    appareilFiltre
-      ? Promise.resolve(null)
-      : lire(() => Promise.all(APPAREILS.map((a) => retentionCohorts(f, weeks, { appareil: a.cle })))),
-  ]);
+  const { cohortes, echantillonnage, parAppareil } = ecran;
 
   const rows: CohortRow[] = cohortes.ok ? cohortes.data : [];
   // Colonnes UTILES : d'une cohorte à la semaine en cours, au plus `weeks`.

@@ -22,6 +22,9 @@ import type { ResolvedRange } from "./query-contract";
 
 export type MobileCapability = (typeof MOBILE_CAPABILITIES)[number];
 
+/** Dans un formulaire, la release « sans version » : l'application n'en déclare aucune (`null` en base). */
+export const SANS_RELEASE = "__sans_release";
+
 /** Le vocabulaire fermé, dans l'ordre d'affichage. Il vient du serveur, pas d'ici. */
 export const CAPABILITIES: readonly MobileCapability[] = MOBILE_CAPABILITIES;
 
@@ -505,7 +508,8 @@ export function pointsMobileTemps(
 
 /** Ce que la série lit d'un marqueur de `mobileDeploiements` (type structurel : ce module reste sans base). */
 export interface MarqueurCohorte {
-  ts: Date;
+  /** `Date` lue en base, ou chaîne ISO reçue d'un chargeur d'écran (sur le fil). */
+  ts: Date | string;
   version: string | null;
   app_id: string;
   de_la_cohorte: boolean;

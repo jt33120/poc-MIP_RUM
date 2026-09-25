@@ -21,20 +21,22 @@ import { StackedBars, type SerieEmpilee } from "@/components/charts/StackedBars"
 import { EchecLecture } from "@/components/states/SectionErreur";
 import type { CouverturePrecedente } from "@/lib/comparaison";
 import { formater } from "@/lib/fmt-ids";
-import type { Lecture } from "@/lib/lecture";
+import type { SectionLue } from "@/lib/lecture";
 import { autresGroupes, libelleGroupeErreur, partTouchees } from "@/lib/perf-domain";
 import type { GroupeFrequent, PartSessionsTouchees, TotauxErreurs } from "@/lib/queries-errors";
 import { libelleSeauComplet, type Annotation, type PointSerie } from "@/lib/series";
 import { FAIBLE_SOUS_PROPORTION, ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
 
-/** Nombre de groupes dessinés dans le hero (§ 5.3.2, P14 : 4 + « Autres » = 5 séries). */
-export const GROUPES_DU_HERO = 4;
+// Nombre de groupes dessinés dans le hero : dans `lib/error-view.ts`, que le
+// chargeur de l'écran lit aussi (il en demande autant à la base).
+import { GROUPES_DU_HERO } from "@/lib/error-view";
+export { GROUPES_DU_HERO };
 
 /** Part lue, ou le refus du contrat (un filtre que les pages vues ne portent pas). */
 export type PartLue = { lu: PartSessionsTouchees } | { refus: string };
 
 /** Une lecture de la période précédente : `null` hors `cmp=prev`. */
-type Precedente<T> = Lecture<T> | null;
+type Precedente<T> = SectionLue<T> | null;
 
 const LECTURE_OCCURRENCES = "somme des occurrences : une erreur répétée compte chaque fois";
 const RAISON_SESSIONS_INCONNUES =
@@ -77,11 +79,11 @@ export function TuilesErreurs({
 }: {
   /** Plage lue, dans le fuseau de l'app (« 24 h », « du 17/09 10:00 au … »). */
   plage: string;
-  totaux: Lecture<TotauxErreurs>;
+  totaux: SectionLue<TotauxErreurs>;
   totauxPrec: Precedente<TotauxErreurs>;
-  part: Lecture<PartLue>;
+  part: SectionLue<PartLue>;
   partPrec: Precedente<PartLue>;
-  nouveaux: Lecture<number>;
+  nouveaux: SectionLue<number>;
   nouveauxPrec: Precedente<number>;
   /** « vs 24 h précédentes (…) » en `cmp=prev` ; `null` sinon (aucun delta). */
   reference: string | null;
@@ -215,8 +217,8 @@ export function HeroGroupesErreurs({
   seauSecondes: number;
   /** Débuts de seau du contrat, ISO UTC (`bucketStarts`) : la grille de `trend`. */
   grille: string[];
-  totaux: Lecture<TotauxErreurs>;
-  top: Lecture<{ groupes: GroupeFrequent[] }>;
+  totaux: SectionLue<TotauxErreurs>;
+  top: SectionLue<{ groupes: GroupeFrequent[] }>;
   /** Destination d'un segment : le groupe (panneau `panel=error:` quand F20 l'ouvrira). */
   hrefGroupe: (g: GroupeFrequent) => string;
   /** L'écran lit plusieurs apps : la légende nomme l'app de chaque groupe. */

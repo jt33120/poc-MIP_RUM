@@ -3,9 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Triage d'un groupe d'erreurs par empreinte : l'action serveur refuse tout ce que
 // l'écran ne propose pas (V9). Sans cette garde, masquer les boutons ne protégeait
 // rien — une session de démonstration pouvait écrire par un POST direct.
+// C7 : l'action passe par sa commande (`trierGroupe`) — la règle `admin` + portée
+// `app`, puis le statut et sa ligne d'audit dans une transaction.
+const { client } = vi.hoisted(() => ({ client: { query: vi.fn(async () => ({ rows: [] })) } }));
 vi.mock("@/lib/next-cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getUser: vi.fn() }));
-vi.mock("@/lib/db", () => ({ q: vi.fn() }));
+vi.mock("@/lib/db", () => ({ q: vi.fn(async () => []), tx: vi.fn(async (fn: (c: unknown) => unknown) => fn(client)) }));
 vi.mock("@/lib/queries-v2", () => ({
   ERROR_STATUSES: ["open", "resolved", "ignored"],
   setErrorStatus: vi.fn(),
@@ -30,21 +33,30 @@ const connecter = (s: Session | null) => vi.mocked(getUser).mockResolvedValue(s 
 describe("setErrorStatusAction — qui peut trier un groupe d'erreurs", () => {
   beforeEach(() => {
     vi.mocked(setErrorStatus).mockReset();
-    vi.mocked(q).mockReset();
+    vi.mocked(q).mockClear();
+    client.query.mockClear();
   });
 
-  it("un admin de l'app trie, et l'écriture est tracée", async () => {
+  it("un admin de l'app trie, et l'écriture est tracée dans la même transaction", async () => {
     connecter({ email: "admin@x", role: "admin", apps: null });
     await setErrorStatusAction(formulaire());
-    expect(setErrorStatus).toHaveBeenCalledWith("app-a", "fp-1", "resolved", "admin@x");
-    expect(q).toHaveBeenCalledTimes(1);
+    expect(setErrorStatus).toHaveBeenCalledWith("app-a", "fp-1", "resolved", "admin@x", client);
+    expect(client.query).toHaveBeenCalledWith(expect.stringContaining("insert into audit_log"), ["admin@x", "error.set_status", "app-a/fp-1 -> resolved"]);
   });
 
   it("un viewer ne trie pas, même dans son périmètre", async () => {
     connecter({ email: "viewer@x", role: "viewer", apps: ["app-a"] });
     await setErrorStatusAction(formulaire());
     expect(setErrorStatus).not.toHaveBeenCalled();
-    expect(q).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalled();
+  });
+
+  it("un administrateur avec une liste ne trie que ses applications (C7)", async () => {
+    connecter({ email: "admin-a@x", role: "admin", apps: ["app-a"] });
+    await setErrorStatusAction(formulaire("app-b"));
+    expect(setErrorStatus).not.toHaveBeenCalled();
+    await setErrorStatusAction(formulaire("app-a"));
+    expect(setErrorStatus).toHaveBeenCalledTimes(1);
   });
 
   it("la démonstration n'écrit rien, quel que soit son rôle", async () => {

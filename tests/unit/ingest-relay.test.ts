@@ -328,8 +328,17 @@ describe("matrice de repli — chaque statut × chaque signal × signé ou non",
   const echecAttendu = (signal: Signal, statut: number, signee: boolean) =>
     !signee && (attendu(signal, statut, signee) !== "collector" || statut >= 500);
 
-  it("les logs sont les SEULS non idempotents", () => {
-    expect(IDEMPOTENTS).toEqual({ traces: true, replay: true, sourcemaps: true, logs: false });
+  it("les logs et les marqueurs de déploiement sont les SEULS non idempotents", () => {
+    expect(IDEMPOTENTS).toEqual({
+      traces: true,
+      replay: true,
+      sourcemaps: true,
+      logs: false,
+      // C11 — une lecture, un upsert ; un marqueur est un insert sans clé naturelle.
+      extensionResolve: true,
+      extensionHeartbeat: true,
+      deploys: false,
+    });
   });
 
   for (const signee of [true, false]) {
@@ -755,5 +764,79 @@ describe("par les route handlers — branchement réel", () => {
     }));
     expect(rep.status).toBe(204);
     expect(collector.fetch).not.toHaveBeenCalled();
+  });
+});
+
+
+// C11 — les routes machine passent par le même relais, chacune avec SA liste
+// d'en-têtes et sa méthode.
+describe("routes machine (C11)", () => {
+  it("résolution d'un domaine : un GET, la requête transmise, aucun en-tête du client, le cache rendu", async () => {
+    const collector = fauxCollector({
+      post: () => Response.json({ app_id: "a" }, { headers: { "cache-control": "public, max-age=60" } }),
+    });
+    const { r } = relais({ collector });
+    const req = new Request("https://mip-rum-console.vercel.app/api/extension/resolve?domain=a.exemple.fr", {
+      headers: { "user-agent": "UA", cookie: "mip_session=x", "x-forwarded-for": IP },
+    });
+    const res = await r.relayer("extensionResolve", req, new Uint8Array(), { "access-control-allow-origin": "*" });
+    expect(res?.status).toBe(200);
+    expect(res?.headers.get("cache-control")).toBe("public, max-age=60");
+    const [appel] = collector.posts();
+    expect(appel.url).toBe(`${URL_COLLECTOR}/v1/extension/resolve?domain=a.exemple.fr`);
+    expect(appel.init.method).toBe("GET");
+    expect(appel.init.body).toBeUndefined();
+    const transmis = [...new Headers(appel.init.headers).keys()].sort();
+    expect(transmis).toEqual(["x-mip-edge-auth"]);
+  });
+
+  it("battement d'un poste : content-type et User-Agent, rien d'autre", async () => {
+    const collector = fauxCollector({ post: () => Response.json({ ok: true }) });
+    const { r } = relais({ collector });
+    const req = new Request("https://mip-rum-console.vercel.app/api/extension/heartbeat", {
+      method: "POST",
+      headers: { "content-type": "application/json", "user-agent": "Chrome/126", cookie: "c=1", "x-forwarded-for": IP },
+      body: "{}",
+    });
+    expect((await r.relayer("extensionHeartbeat", req, new TextEncoder().encode("{}"), {}))?.status).toBe(200);
+    const entetes = new Headers(collector.posts()[0].init.headers);
+    expect([...entetes.keys()].sort()).toEqual(["content-type", "user-agent", "x-mip-edge-auth"]);
+    expect(entetes.get("user-agent")).toBe("Chrome/126");
+  });
+
+  it("marqueur de déploiement : le jeton de la CI transmis ; un 502 non signé n'est JAMAIS rejoué (503)", async () => {
+    const collector = fauxCollector({ post: () => new Response("bad gateway", { status: 502 }), postSigne: false });
+    const { r } = relais({ collector });
+    const req = new Request("https://mip-rum-console.vercel.app/api/v1/deploys", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer msu_x", "x-forwarded-for": IP },
+      body: "{}",
+    });
+    const res = await r.relayer("deploys", req, new TextEncoder().encode("{}"), {});
+    expect(res?.status).toBe(503);
+    expect(res?.headers.get("retry-after")).toBeTruthy();
+    expect([...new Headers(collector.posts()[0].init.headers).keys()].sort()).toEqual(["authorization", "content-type", "x-mip-edge-auth"]);
+  });
+});
+
+// C11 — relais PUR : plus de chemin local pour la collecte.
+describe("relais pur (CONSOLE_INGEST_RELAY_STRICT=1)", () => {
+  const STRICT = { CONSOLE_INGEST_RELAY_URL: URL_COLLECTOR, EDGE_PROXY_SECRET: SECRET, CONSOLE_INGEST_RELAY_STRICT: "1" };
+
+  it("le pourcentage est ignoré : à 0 %, le beacon part au collector", async () => {
+    const { r, collector } = relais({ env: STRICT, pct: 0 });
+    expect((await r.relayer("traces", entrante(), new Uint8Array([123, 125]), {}))?.status).toBe(200);
+    expect(collector.posts()).toHaveLength(1);
+  });
+
+  it("collector absent (404 du routeur) ou en mauvaise santé : 503 + retry-after, jamais le chemin local", async () => {
+    const absent = fauxCollector({ post: () => new Response("", { status: 404 }), postSigne: false });
+    let res = await relais({ env: STRICT, collector: absent }).r.relayer("traces", entrante(), new Uint8Array([123, 125]), {});
+    expect(res?.status).toBe(503);
+    expect(res?.headers.get("retry-after")).toBeTruthy();
+    const malade = fauxCollector({ sante: () => new Response("", { status: 503 }) });
+    res = await relais({ env: STRICT, collector: malade }).r.relayer("replay", entrante(), new Uint8Array([1]), {});
+    expect(res?.status).toBe(503);
+    expect(malade.posts()).toHaveLength(0);
   });
 });

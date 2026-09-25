@@ -77,7 +77,23 @@ sourcemaps-mip:
 - **Envoyer avant d'avoir figé la release** : la release du SDK et celle de l'envoi doivent venir de la même variable du même pipeline.
 - **Réutiliser un jeton de lecture** (`CONSOLE_API_TOKENS`, jetons de l'API v1) : il n'a aucun droit d'envoi, et c'est voulu.
 
-## 6. Vérifier
+## 6. Marquer un déploiement
+
+Un marqueur de déploiement permet aux écrans de dater une régression par rapport à une mise en production, et ordonne les releases d'une application pour confirmer la régression d'une issue. Il se pose avec **un second jeton de CI**, de privilège `deploys:write` (même écran, *Privilège : marqueurs de déploiement*) : le jeton des source maps ne pose pas de marqueur, et inversement — la fuite de l'un n'ouvre pas l'autre.
+
+```yaml
+- name: Marqueur de déploiement MIP RUM
+  env:
+    MIP_DEPLOY_TOKEN: ${{ secrets.MIP_DEPLOY_TOKEN }}
+  run: |
+    curl -fsS -X POST https://mip-rum-console.vercel.app/api/v1/deploys \
+      -H "Authorization: Bearer $MIP_DEPLOY_TOKEN" -H "content-type: application/json" \
+      -d "{\"app_id\":\"mon-app\",\"version\":\"${{ github.sha }}\",\"env\":\"prod\"}"
+```
+
+Réponse `201`. Un jeton d'API (`CONSOLE_API_TOKENS`) est encore accepté sur cette route **jusqu'au 31/12/2026**, et chacune de ses réponses l'annonce (`Deprecation`, `Sunset`) : remplacez-le par un jeton `deploys:write` avant cette date. Quand le collector sera en ligne, la même requête vaut sur `https://<domaine du collector>/v1/deploys`.
+
+## 7. Vérifier
 
 Dans la console, **Administration → Source maps** liste les releases reçues avec leur empreinte. Sur une erreur postérieure au déploiement, le détail affiche la stack « dé-minifiée · release ». Si la map arrive après l'erreur, la stack est symbolisée à l'affichage, et le dit.
 

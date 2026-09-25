@@ -1,11 +1,61 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifyJwt } from "@/lib/auth";
+import { principalDeJeton, SESSION_COOKIE, verifyJwt, type SessionUser } from "@/lib/auth";
 import { estCheminPublic } from "@/lib/chemins-publics";
 import { authorizedAppsOf } from "@/lib/query-contract";
+import { algorithmeDuJeton, verifierJetonConsoleApi } from "@/lib/session-console";
 
 // Auth v0.3 (B3) : JWT cookie httpOnly signé AUTH_SECRET — remplace le basic auth v0.2.
 // PUBLICS sans auth (matcher) : /login, /mip-rum.js, /mip-rum-replay.js, /_next/*, /favicon*.
 // Le SDK reste TOUJOURS public (snippet chargé par les sites clients).
+/**
+ * L'identifiant de la requête (piste C) : repris par chaque appel à console-api
+ * (`lib/backend.ts`), inscrit dans son journal et, en C0c, dans `audit_log` ; c'est
+ * la « réf. » qu'affichera un écran d'erreur. Un identifiant entrant bien formé
+ * est gardé (un proxy devant la console peut l'avoir posé), sinon on en tire un.
+ */
+function avecIdentifiantDeRequete(req: NextRequest): Headers {
+  const h = new Headers(req.headers);
+  const recu = h.get("x-request-id");
+  if (!recu || !/^[A-Za-z0-9._-]{8,64}$/.test(recu)) h.set("x-request-id", crypto.randomUUID());
+  return h;
+}
+
+/** Une page de console (GET), soumise à la porte « projet courant » plus bas. */
+function estPageDeConsole(req: NextRequest): boolean {
+  const p = req.nextUrl.pathname;
+  return (
+    req.method === "GET" &&
+    !p.startsWith("/api/") &&
+    !p.startsWith("/admin") &&
+    p !== "/select" &&
+    !p.startsWith("/select/") &&
+    !estCheminPublic(p)
+  );
+}
+
+/**
+ * C1 — le principal d'une session de console-api (jeton ES256), au plus juste :
+ *   · la signature, vérifiée ici avec la clé PUBLIQUE ; un jeton forgé ne coûte
+ *     aucun appel ;
+ *   · une page de console a besoin du PÉRIMÈTRE (la porte « projet courant ») :
+ *     `GET /v1/me`, qui relit le compte en base ;
+ *   · toute autre requête n'a besoin que de savoir s'il s'agit d'une DÉMO — et le
+ *     jeton le dit (`demo`, immuable, vérifié par le service contre la ligne) :
+ *     aucun appel. La page ou l'action qui suit relit le principal elle-même
+ *     (`getUser`), et une session révoquée y est refusée.
+ * `"indisponible"` : console-api ne répond pas ; ce n'est pas une déconnexion.
+ */
+async function principalEs256(req: NextRequest, jeton: string): Promise<SessionUser | null | "indisponible"> {
+  const local = await verifierJetonConsoleApi(jeton);
+  if (!local) return null;
+  if (!estPageDeConsole(req)) return { email: "", role: "viewer", apps: [], demo: local.demo };
+  try {
+    return await principalDeJeton(jeton, req.headers.get("x-request-id") ?? undefined);
+  } catch {
+    return "indisponible";
+  }
+}
+
 export async function middleware(req: NextRequest) {
   // Flux SSO/OIDC : login + callback doivent s'exécuter SANS session (sinon
   // redirection /login en boucle). L'auth se fait dans le handler de callback.
@@ -14,10 +64,6 @@ export async function middleware(req: NextRequest) {
   // /api/metrics : scrape Prometheus (sans cookie de session) — auth par token dans
   // le handler. Bypass de la redirection /login (sinon 302 au lieu des métriques).
   if (req.nextUrl.pathname === "/api/metrics") return NextResponse.next();
-  // /api/cron/* : routes retirées (410). Le bypass reste tant que les routes
-  // existent, pour que l'appelant resté branché lise le 410 qui l'explique au lieu
-  // d'une redirection vers /login. Il part avec elles.
-  if (req.nextUrl.pathname.startsWith("/api/cron")) return NextResponse.next();
   // API publique v1 (LOT C option B) : authentifiée par jeton (Authorization: Bearer)
   // OU cookie, DANS le handler — le middleware ne doit pas la rediriger vers /login
   // (le front Angular MIP appelle sans cookie de session).
@@ -37,17 +83,13 @@ export async function middleware(req: NextRequest) {
   if (req.nextUrl.pathname.startsWith("/api/ingest")) return NextResponse.next();
   // /demo : ouvre elle-même la session démo, donc s'exécute sans cookie.
   if (req.nextUrl.pathname === "/demo") return NextResponse.next();
-  // Source maps (P5.4) : la CI poste avec un jeton dédié, sans cookie, et ces
-  // routes répondent 401/403 en JSON plutôt qu'une redirection. Leur garde
+  // Source maps (P5.4) : la CI poste avec un jeton dédié, sans cookie, et la
+  // route répond 401/403 en JSON plutôt qu'une redirection. Sa garde
   // (lib/api/admin.ts) exige une session admin non démo et l'Origin de la
   // console pour toute mutation — la borne démo ci-dessous y est donc incluse.
-  if (req.nextUrl.pathname === "/api/sourcemaps" || req.nextUrl.pathname.startsWith("/api/admin/sourcemap-tokens")) {
-    return NextResponse.next();
-  }
-  // /api/admin/ticket-integrations (P8.6) : même raison que ci-dessus — la garde
-  // (lib/api/admin.ts) exige une session admin non démo et l'Origin de la
-  // console, et la route répond en JSON plutôt qu'en redirection.
-  if (req.nextUrl.pathname.startsWith("/api/admin/ticket-integrations")) return NextResponse.next();
+  // (Les jetons de CI et les connecteurs de tickets s'administrent depuis leurs
+  // écrans depuis C9 : leurs routes `/api/admin/*` ont été retirées.)
+  if (req.nextUrl.pathname === "/api/sourcemaps") return NextResponse.next();
   // /api/webhooks/* : livraisons entrantes d'un fournisseur de tickets (P8.6).
   // Aucun cookie, aucune session : l'autorité est la SIGNATURE vérifiée dans le
   // handler. Sans ce contournement, chaque livraison recevrait un 302 vers
@@ -57,7 +99,14 @@ export async function middleware(req: NextRequest) {
   if (req.nextUrl.pathname.startsWith("/api/webhooks/")) return NextResponse.next();
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const user = token ? await verifyJwt(token) : null;
+  const resolu = !token ? null : algorithmeDuJeton(token) === "ES256" ? await principalEs256(req, token) : await verifyJwt(token);
+  if (resolu === "indisponible") {
+    return new NextResponse("Service momentanément indisponible : réessayer dans un instant.", {
+      status: 503,
+      headers: { "retry-after": "5", "cache-control": "no-store" },
+    });
+  }
+  const user = resolu;
   if (!user) {
     // /presentation = vitrine PUBLIQUE (avant login) : un visiteur comprend l'outil
     // avant de se connecter. La racine "/" sert de porte d'entrée -> présentation ;
@@ -66,7 +115,7 @@ export async function middleware(req: NextRequest) {
     // /presentation = vitrine ; /extension-privacy = politique de confidentialité
     // PUBLIQUE de l'extension (URL exigée par le Chrome Web Store) ; /legal/* =
     // documents légaux publics (CGU, CGV, confidentialité).
-    if (estCheminPublic(p)) return NextResponse.next();
+    if (estCheminPublic(p)) return NextResponse.next({ request: { headers: avecIdentifiantDeRequete(req) } });
     if (p === "/") return NextResponse.redirect(new URL("/presentation", req.url), 302);
     return NextResponse.redirect(new URL("/login", req.url), 302);
   }
@@ -108,23 +157,17 @@ export async function middleware(req: NextRequest) {
   // Le layout serveur ne reçoit pas le pathname : on le lui passe par en-tête pour
   // qu'il rende /select en plein écran (sans la coquille sidebar).
   const pass = () => {
-    const h = new Headers(req.headers);
+    const h = avecIdentifiantDeRequete(req);
     h.set("x-pathname", pathname);
     return NextResponse.next({ request: { headers: h } });
   };
 
-  const gated =
-    req.method === "GET" &&
-    !pathname.startsWith("/api/") &&
-    !pathname.startsWith("/admin") &&
-    pathname !== "/select" &&
-    !pathname.startsWith("/select/") &&
-    // Les pages PUBLIQUES ne sont pas des écrans de console : elles n'ont pas de
-    // projet courant. Sans cette exclusion, un utilisateur connecté était
-    // redirigé vers /presentation?app=… — et, s'il n'avait aucun projet
-    // résoluble, vers /select : des mentions légales devenues illisibles pour
-    // qui n'a pas encore choisi de projet.
-    !estCheminPublic(pathname);
+  // Les pages PUBLIQUES ne sont pas des écrans de console : elles n'ont pas de
+  // projet courant. Sans cette exclusion, un utilisateur connecté était
+  // redirigé vers /presentation?app=… — et, s'il n'avait aucun projet
+  // résoluble, vers /select : des mentions légales devenues illisibles pour
+  // qui n'a pas encore choisi de projet.
+  const gated = estPageDeConsole(req);
   if (gated) {
     const requested = req.nextUrl.searchParams.get("app");
     const cookieApp = req.cookies.get("mip-project")?.value ?? null; // cf. lib/project.ts
@@ -165,6 +208,10 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
+  // RUNTIME NODE (Next 15.5, stable) et non Edge : une session de console-api se
+  // relit par `GET /v1/me`, derrière la poignée de main signée de `lib/backend.ts`,
+  // qui tient son état (hôte vérifié) dans le processus.
+  runtime: "nodejs",
   // `vendor` = assets tiers auto-hébergés (Swagger UI) ; `downloads` = artefacts
   // téléchargeables (le .zip de l'extension) ; `portail` = captures de la console
   // affichées par la vitrine publique — sans cette exclusion le visiteur anonyme
