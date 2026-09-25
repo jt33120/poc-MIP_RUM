@@ -220,6 +220,21 @@ La décommission elle-même — supprimer `lib/db.ts`, `lib/queries*`, retirer `
 
 **C12b** (image de la console, pile auto-hébergée) vient après la bascule : sa garde — l'image démarre sans aucune variable de base — ne peut passer qu'une fois la console sans base.
 
+## Le moindre privilège (C13)
+
+migration-v93 crée les deux rôles de console-api, créés en SQL (jamais par l'API Neon : ils seraient membres de `neon_superuser`), sans mot de passe tant qu'un opérateur ne les en dote pas :
+
+| Rôle | Ce qu'il fait | Ce qu'il ne peut pas |
+|---|---|---|
+| `mip_identity` | connexion (lit le haché du mot de passe), sessions, débit d'authentification, leur ligne d'audit (INSERT) | lire une mesure, un tableau de bord ; lire le journal d'audit |
+| `mip_console` | écrans (lecture de la télémétrie et des agrégats), plan de contrôle (tableaux de bord, alertes, jetons, connecteurs, comptes par colonnes), RGPD | lire un haché de mot de passe, une session, un compteur de débit ; écrire la télémétrie ; tronquer quoi que ce soit |
+
+- **Par colonnes** : `mip_console` lit `console_user` sans `password_hash`, et en écrit un (création, réinitialisation d'un compte) sans jamais le relire ; révoque les sessions d'un compte (`console_session.revoked_at`) sans lire ce qu'elles portent.
+- **Un écart au plan, assumé** : l'effacement RGPD (C10) est exécuté par console-api, donc `mip_console` SUPPRIME dans les tables de l'effacement (`DSAR_CHILD_TABLES`, `rum_session`) et verrouille les sessions qu'il efface (`for update` exige un UPDATE : accordé sur la seule colonne `last_seen_at`). Aucun INSERT ni UPDATE sur la télémétrie. Porter l'effacement par une fonction à droits de propriétaire retirerait ces DELETE.
+- **Policies** : chaque table accordée sous RLS reçoit `<rôle>_acces`, `using (true)` pour ce rôle seulement. Comme pour `mip_api`, ce n'est pas la frontière entre clients : elle reste dans le pipeline et dans chaque requête.
+- **Le service** prend `CONSOLE_DATABASE_URL` et `IDENTITY_DATABASE_URL` ensemble (sinon refus de démarrer) ; l'identité a son propre pool. Sans elles, le propriétaire, comme aujourd'hui.
+- **Vérifié** : `scripts/ci/verify-db-roles-console.mjs` (droits réels dans les deux sens, par table et par colonne, fonctions, policies, bundle — toute relation nommée couverte, toute fonction retirée à PUBLIC qu'il appelle accordée) ; la **matrice d'autorisations tourne en CI sous les deux rôles** (`CONSOLE_API_AUTHZ_ROLES=1`), et les tests SQL de l'identité et du SSO aussi. Le premier passage a trouvé un droit manquant : l'upsert de `privacy_marquer_heures` sur `analytics_rollup_invalidation`.
+
 ## Ordre proposé pour libérer le cliquet
 
 1. **Sans `console-api`** : scinder les modules mixtes (famille 1). **Fait** : 13 composants et un écran sortis du cliquet (27 → 14 composants, 51 → 50 écrans). C0 démarre sur une base plus petite.

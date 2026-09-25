@@ -29,6 +29,7 @@ import {
   type Transacteur,
 } from "@mip/console-api";
 import { ECRANS_FACTICES } from "../fixtures/ecrans-factices";
+import { poolsSousRoles } from "../fixtures/roles-c13";
 import { COMMANDES_FACTICES } from "../fixtures/commandes-factices";
 
 // jose, celui du paquet (sa dépendance) : il signe les ID tokens du faux IdP.
@@ -93,6 +94,8 @@ async function fauxIdp(opts: { emetteurAnnonce?: string } = {}) {
 
 (url ? describe : describe.skip)("C1c — SSO de console-api (faux IdP, PostgreSQL)", () => {
   const pool = new pg.Pool(url ? { connectionString: url, max: 4 } : {});
+  /** C13 — les pools du service sous `mip_console` et `mip_identity`, si la base a les rôles. */
+  let sousRoles: Awaited<ReturnType<typeof poolsSousRoles>> | undefined;
   const transacteur: Transacteur = {
     async transaction(fn) {
       const c = await pool.connect();
@@ -129,13 +132,18 @@ async function fauxIdp(opts: { emetteurAnnonce?: string } = {}) {
     const paire = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
     const j = await crypto.subtle.exportKey("jwk", paire.privateKey);
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [{ kty: "EC", crv: "P-256", x: j.x, y: j.y, d: j.d, kid: "session-c1c", alg: "ES256", use: "sig" }] }), { production: false });
-    const sessions = await creerVerificateurSession({ trousseau, db: pool });
+    // C13 — l'identité SOUS `mip_identity`, le reste sous `mip_console`, quand la base a les rôles (v93).
+    const roles = (sousRoles ??= await poolsSousRoles(url!, pool));
+    const dbIdentite = roles?.identite ?? pool;
+    const dbService = roles?.console ?? pool;
+    const sessions = await creerVerificateurSession({ trousseau, db: dbIdentite });
     const { table } = await creerTable({
       trousseau,
       version: "c1c",
-      db: pool,
+      db: dbService,
       identite: {
-        transacteur,
+        db: dbIdentite,
+        transacteur: roles?.transacteur ?? transacteur,
         debit: await creerDebitAuth(SECRET),
         verifierMotDePasse: async () => false,
         hachageFactice: "",
@@ -146,7 +154,7 @@ async function fauxIdp(opts: { emetteurAnnonce?: string } = {}) {
       ecrans: ECRANS_FACTICES,
       commandes: COMMANDES_FACTICES,
     });
-    return creerConsoleApi({ table, secretsClient: [SECRET], journal, verifierSession: sessions.verifier, lecteur: pool, debitParMinute: 0 });
+    return creerConsoleApi({ table, secretsClient: [SECRET], journal, verifierSession: sessions.verifier, lecteur: dbService, debitParMinute: 0 });
   }
 
   const appel = (a: typeof api, chemin: string, o: { methode?: string; corps?: unknown; jeton?: string } = {}) =>
@@ -187,6 +195,7 @@ async function fauxIdp(opts: { emetteurAnnonce?: string } = {}) {
 
   afterAll(async () => {
     await nettoyer();
+    await sousRoles?.fermer();
     await pool.end();
   });
 

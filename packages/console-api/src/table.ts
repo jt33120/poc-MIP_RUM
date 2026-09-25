@@ -19,8 +19,12 @@ export interface Dependances {
   /** Le commit déployé (court), ou `dev`. */
   readonly version: string;
   readonly db: Lecteur;
-  /** C1 — l'identité (connexion, démo, déconnexion, `/v1/me`). */
-  readonly identite: Omit<DependancesIdentite, "trousseau" | "db">;
+  /**
+   * C1 — l'identité (connexion, démo, déconnexion, `/v1/me`). C13 : sa propre
+   * base (`db`, rôle `mip_identity`) quand le service a deux rôles ; sinon celle
+   * du service.
+   */
+  readonly identite: Omit<DependancesIdentite, "trousseau" | "db"> & { readonly db?: Lecteur };
   /** C2 → C6 — les chargeurs des écrans, ceux de la console, injectés par le service. */
   readonly ecrans: ChargeursEcrans;
   /** C6 → C9 — les commandes des écritures, celles de la console, injectées par le service. */
@@ -33,7 +37,7 @@ export async function creerTable(d: Dependances): Promise<{ table: Enregistremen
   const table = [
     ...operationsExploitation({ trousseau: d.trousseau, version: d.version, contrat: () => contrat }),
     ...operationsPlateforme({ db: d.db }),
-    ...operationsIdentite({ ...d.identite, trousseau: d.trousseau, db: d.db }),
+    ...operationsIdentite({ ...d.identite, trousseau: d.trousseau, db: d.identite.db ?? d.db }),
     ...operationsEcrans(d.ecrans),
     ...operationsCommandes(d.commandes),
   ];

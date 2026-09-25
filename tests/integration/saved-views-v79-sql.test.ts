@@ -263,8 +263,10 @@ suite("migration-v79 — vues enregistrées et propriété des tableaux de bord"
 
   it("RLS et droits : console_ro écrit dans sa portée, jamais l'app voisine ni l'app_id", async () => {
     expect((await pool.query(
-      // Celles de console_ro : la lecture de mip_api (v89) est vérifiée par scripts/ci/verify-db-roles.mjs.
-      `select policyname, cmd, roles::text from pg_policies where tablename = 'analytics_saved_view' and not ('mip_api' = any(roles))`,
+      // Celles de console_ro : les accès des rôles de service (mip_api v89, mip_console et
+      // mip_identity v93) sont vérifiés par scripts/ci/verify-db-roles*.mjs.
+      `select policyname, cmd, roles::text from pg_policies where tablename = 'analytics_saved_view'
+          and not (roles && array['mip_api', 'mip_console', 'mip_identity']::name[])`,
     )).rows).toEqual([{ policyname: "tenant_scope", cmd: "ALL", roles: "{console_ro}" }]);
 
     if (!(await pool.query("select 1 from pg_roles where rolname = 'console_ro'")).rowCount) return;

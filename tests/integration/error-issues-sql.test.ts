@@ -405,7 +405,7 @@ const somme = (valeurs: number[]) => valeurs.reduce((s, v) => s + v, 0);
       expect((await pool.query(
         `select tablename, policyname, cmd, roles::text from pg_policies
           where tablename in ('error_issue', 'error_issue_alias', 'error_grouping_config')
-            and not ('mip_api' = any(roles)) order by tablename, policyname`,
+            and not (roles && array['mip_api', 'mip_console', 'mip_identity']::name[]) order by tablename, policyname`,
       )).rows).toEqual([
         { tablename: "error_grouping_config", policyname: "tenant_scope", cmd: "SELECT", roles: "{console_ro}" },
         { tablename: "error_issue", policyname: "tenant_scope", cmd: "SELECT", roles: "{console_ro}" },

@@ -28,6 +28,7 @@ import {
   type Transacteur,
 } from "@mip/console-api";
 import { ECRANS_FACTICES } from "../fixtures/ecrans-factices";
+import { poolsSousRoles } from "../fixtures/roles-c13";
 import { COMMANDES_FACTICES } from "../fixtures/commandes-factices";
 
 // bcrypt du SERVICE (sa dépendance), pas une copie.
@@ -55,6 +56,8 @@ function migrations(): string[] {
 
 (url ? describe : describe.skip)("C1 — identité de console-api, sur PostgreSQL", () => {
   const pool = new pg.Pool(url ? { connectionString: url, max: 4 } : {});
+  /** C13 — les pools du service sous `mip_console` et `mip_identity`, si la base a les rôles. */
+  let sousRoles: Awaited<ReturnType<typeof poolsSousRoles>> | undefined;
   const transacteur: Transacteur = {
     async transaction(fn) {
       const c = await pool.connect();
@@ -80,13 +83,18 @@ function migrations(): string[] {
     const paire = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
     const jwk = await crypto.subtle.exportKey("jwk", paire.privateKey);
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [{ kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, d: jwk.d, kid: "session-c1-a", alg: "ES256", use: "sig" }] }), { production: false });
-    const sessions = await creerVerificateurSession({ trousseau, db: pool });
+    // C13 — l'identité SOUS `mip_identity`, le reste sous `mip_console`, quand la base a les rôles (v93).
+    const roles = (sousRoles ??= await poolsSousRoles(url!, pool));
+    const dbIdentite = roles?.identite ?? pool;
+    const dbService = roles?.console ?? pool;
+    const sessions = await creerVerificateurSession({ trousseau, db: dbIdentite });
     const { table } = await creerTable({
       trousseau,
       version: "c1",
-      db: pool,
+      db: dbService,
       identite: {
-        transacteur,
+        db: dbIdentite,
+        transacteur: roles?.transacteur ?? transacteur,
         debit: await creerDebitAuth(SECRET),
         verifierMotDePasse: (a, b) => bcrypt.compare(a, b),
         hachageFactice: bcrypt.hashSync("factice", 4),
@@ -96,7 +104,7 @@ function migrations(): string[] {
       ecrans: ECRANS_FACTICES,
       commandes: COMMANDES_FACTICES,
     });
-    return creerConsoleApi({ table, secretsClient: [SECRET], journal, verifierSession: sessions.verifier, lecteur: pool, debitParMinute: 0 });
+    return creerConsoleApi({ table, secretsClient: [SECRET], journal, verifierSession: sessions.verifier, lecteur: dbService, debitParMinute: 0 });
   }
 
   function appel(chemin: string, o: { methode?: string; corps?: unknown; ip?: string | null; jeton?: string } = {}) {
@@ -128,6 +136,7 @@ function migrations(): string[] {
 
   afterAll(async () => {
     await nettoyer();
+    await sousRoles?.fermer();
     await pool.end();
   });
 
