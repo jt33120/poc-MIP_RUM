@@ -28,6 +28,7 @@ import {
   type Transacteur,
 } from "@mip/console-api";
 import { ECRANS_FACTICES } from "../fixtures/ecrans-factices";
+import { COMMANDES_FACTICES } from "../fixtures/commandes-factices";
 
 // bcrypt du SERVICE (sa dépendance), pas une copie.
 const bcrypt = createRequire(join(__dirname, "..", "..", "services", "console-api", "package.json"))("bcryptjs") as {
@@ -93,6 +94,7 @@ function migrations(): string[] {
         oublierSession: (sid) => sessions.oublier(sid),
       },
       ecrans: ECRANS_FACTICES,
+      commandes: COMMANDES_FACTICES,
     });
     return creerConsoleApi({ table, secretsClient: [SECRET], journal, verifierSession: sessions.verifier, lecteur: pool, debitParMinute: 0 });
   }

@@ -513,12 +513,15 @@ function Gestion({
                   <div className="flex gap-2">
                     <form action={toggleGoalAction}>
                       <input type="hidden" name="id" value={g.id} />
+                      <input type="hidden" name="app" value={g.app_id} />
+                      <input type="hidden" name="active" value={g.active ? "false" : "true"} />
                       <button type="submit" className="btn-ghost px-2 py-1">
                         {g.active ? "Désactiver" : "Activer"}
                       </button>
                     </form>
                     <form action={deleteGoalAction}>
                       <input type="hidden" name="id" value={g.id} />
+                      <input type="hidden" name="app" value={g.app_id} />
                       <button type="submit" className="btn-ghost px-2 py-1 text-bad-ink">
                         Supprimer
                       </button>

@@ -20,16 +20,10 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { ActionsVue } from "@/components/explorer/ActionsVue";
 import { ModelesDepart } from "@/components/explorer/ModelesDepart";
-import { getUser } from "@/lib/auth";
+import { chargerVues } from "@/lib/chargeurs/vues";
+import { chargerEcran } from "@/lib/ecran-local";
 import { fmtDate } from "@/lib/format";
-import { explorerHrefFromAst, resumeVue } from "@/lib/explorer-page-params";
-import { MODELES_EXPLORER, modelesDeDepart, type ModeleDepart } from "@/lib/explorer-modeles";
-import { pageFilters } from "@/lib/page-filters";
-import { listSavedViews, savedViewReader } from "@/lib/queries-saved-views";
-import { dimensionSchema } from "@/lib/query-schema";
 import { SAVED_VIEW_MAX_PER_APP } from "@/lib/saved-views";
-import { VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
-import { paramReader } from "@/lib/query-contract";
 import type { SearchParams } from "@/lib/filters";
 
 export const dynamic = "force-dynamic";
@@ -37,34 +31,13 @@ export const dynamic = "force-dynamic";
 /** La question de l'écran (P1). */
 const QUESTION = "Quelles analyses ai-je gardées, que mesurent-elles, et lesquelles ne se relisent plus ?";
 
-/**
- * Les analyses fournies, liées à l'Explorer EXÉCUTÉ sur les filtres de l'URL (ceux
- * de l'Explorer : les liens y mènent). Des filtres refusés ne cachent pas les
- * modèles : chacun est montré sans lien, avec la raison.
- */
-async function modelesFournis(sp: SearchParams): Promise<ModeleDepart[]> {
-  const ecran = await pageFilters(sp, "/explorer");
-  if (!ecran.ok) {
-    return MODELES_EXPLORER.map((m) => ({
-      cle: m.cle,
-      titre: m.titre,
-      question: m.question,
-      href: null,
-      raison: `filtres de l’adresse refusés : ${ecran.problem.message}`,
-    }));
-  }
-  const reader = paramReader(sp);
-  const vue = Object.fromEntries(VIEW_CONTEXT_PARAMS.map((nom) => [nom, reader.get(nom)]));
-  return modelesDeDepart(ecran.query, await dimensionSchema(), vue);
-}
-
 export default async function Vues({ searchParams }: { searchParams?: Promise<SearchParams> }) {
-  const user = await getUser();
-  if (!user) return null;
   const sp = (await searchParams) ?? {};
-  const reader = await savedViewReader(user);
-  const [result, modeles] = await Promise.all([listSavedViews(reader), modelesFournis(sp)]);
-  const demo = user.demo === true;
+  // Le chargeur (`lib/chargeurs/vues.ts`) lit les vues du compte et les modèles
+  // fournis ; d'une vue, seuls voyagent son lien de réouverture et son résumé.
+  const ecran = await chargerEcran(chargerVues, sp);
+  if (ecran.etat === "sans_session") return null;
+  const { vues: result, modeles, demo } = ecran;
 
   return (
     <div className="animate-fade-up">
@@ -146,8 +119,7 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
             </thead>
             <tbody>
               {result.value.map((vue) => {
-                const ouvrir = explorerHrefFromAst(vue.query);
-                const resume = resumeVue(vue.query);
+                const { ouvrir, resume } = vue;
                 return (
                   <tr key={vue.id} className="border-t border-line align-top hover:bg-panel2" data-testid={`vue-${vue.id}`}>
                     <td className="px-3 py-2 font-medium">

@@ -20,6 +20,7 @@ import { chargerErrors } from "@/lib/chargeurs/errors";
 import { chargerEvents } from "@/lib/chargeurs/events";
 import { chargerExperience } from "@/lib/chargeurs/experience";
 import { chargerExplorer } from "@/lib/chargeurs/explorer";
+import { chargerExportTableau } from "@/lib/chargeurs/export-tableau";
 import { chargerForecast } from "@/lib/chargeurs/forecast";
 import { chargerForms } from "@/lib/chargeurs/forms";
 import { chargerGoals } from "@/lib/chargeurs/goals";
@@ -35,9 +36,12 @@ import { chargerRetention } from "@/lib/chargeurs/retention";
 import { chargerSession } from "@/lib/chargeurs/session";
 import { chargerSessions } from "@/lib/chargeurs/sessions";
 import { chargerSvi, chargerSviAppel, chargerSviAppels } from "@/lib/chargeurs/svi";
+import { chargerTableau } from "@/lib/chargeurs/tableau";
+import { chargerTableaux } from "@/lib/chargeurs/tableaux";
 import { chargerTrace } from "@/lib/chargeurs/trace";
 import { chargerTracing } from "@/lib/chargeurs/tracing";
 import { chargerUx } from "@/lib/chargeurs/ux";
+import { chargerVues } from "@/lib/chargeurs/vues";
 import { UnsupportedFilterError } from "@/lib/query-compiler";
 import { avecRequete } from "./shims/log-forward.mjs";
 
@@ -86,6 +90,12 @@ export const ecrans = {
     sviAppel: page(chargerSviAppel),
     logs: page(chargerLogs),
     ai: page(chargerAi),
+    // C6
+    tableaux: page(chargerTableaux),
+    tableau: page(chargerTableau),
+    // L'export : la route de la console passe le signal de sa requête ; ici, l'échéance de l'appel borne l'export.
+    exportTableau: page((p, sp, chemin) => chargerExportTableau(p, sp, chemin)),
+    vues: page(chargerVues),
   },
   refusDeFiltre: (e) => (e instanceof UnsupportedFilterError ? { code: e.error.code, message: e.error.message } : null),
 };

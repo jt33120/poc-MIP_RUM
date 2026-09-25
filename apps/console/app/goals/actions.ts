@@ -1,57 +1,47 @@
 "use server";
-// Server Actions /goals (Lot 8b) — gestion des objectifs, admin only, tracée
-// dans audit_log. Le pattern et le nom sont des données libres (paramétrées) ;
-// kind/match_type sont validés contre une allowlist.
+// Server Actions /goals (Lot 8b) — gestion des objectifs, par l'administrateur de
+// l'application, tracée dans audit_log.
+//
+// C6 — l'écriture est la COMMANDE (`lib/commandes/objectifs.ts`), appelée par sa
+// clé : ici, seulement la lecture du formulaire et la suite de la décision. Les
+// gardes (session, rôle, application du périmètre) et l'audit sont ceux de la
+// commande, les mêmes que console-api servira.
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin } from "@/lib/auth";
-import { q } from "@/lib/db";
+import { executerCommande } from "@/lib/commande-locale";
+import { apresRefus } from "@/lib/commande-suite";
 
-async function audit(email: string, action: string, detail: string): Promise<void> {
-  await q(`insert into audit_log (user_email, action, detail) values ($1, $2, $3)`, [email, action, detail]);
-}
-
-const KINDS = new Set(["pageview", "event"]);
-const MATCHES = new Set(["exact", "contains"]);
+const champ = (fd: FormData, nom: string) => String(fd.get(nom) ?? "").trim();
 
 export async function createGoalAction(fd: FormData): Promise<void> {
-  const admin = await requireAdmin();
-  const app = String(fd.get("app") ?? "").trim();
-  const name = String(fd.get("name") ?? "").trim();
-  const kind = String(fd.get("kind") ?? "");
-  const pattern = String(fd.get("pattern") ?? "").trim();
-  const matchType = String(fd.get("match_type") ?? "exact");
-  if (!app || !name || !pattern || !KINDS.has(kind) || !MATCHES.has(matchType)) {
+  const app = champ(fd, "app");
+  const r = await executerCommande("creerObjectif", {
+    app,
+    corps: { name: champ(fd, "name"), kind: champ(fd, "kind"), pattern: champ(fd, "pattern"), match_type: champ(fd, "match_type") || "exact" },
+  });
+  if (!r.ok) {
+    apresRefus(r);
     redirect("/goals?error=champs");
   }
-  await q(
-    `insert into goal (app_id, name, kind, pattern, match_type) values ($1, $2, $3, $4, $5)`,
-    [app, name, kind, pattern, matchType],
-  );
-  await audit(admin.email, "goal_create", `${app} "${name}" ${kind}:${matchType} ${pattern}`);
   revalidatePath("/goals");
   redirect(`/goals?app=${encodeURIComponent(app)}`);
 }
 
+/** Active ou suspend : le formulaire porte l'état VOULU, pas un « inverser ». */
 export async function toggleGoalAction(fd: FormData): Promise<void> {
-  const admin = await requireAdmin();
-  const id = Number(fd.get("id"));
-  if (!Number.isFinite(id)) redirect("/goals");
-  const [g] = await q<{ active: boolean; name: string }>(
-    `update goal set active = not active where id = $1 returning active, name`,
-    [id],
-  );
-  if (g) await audit(admin.email, "goal_update", `${g.name} active=${g.active}`);
+  const r = await executerCommande("activerObjectif", {
+    app: champ(fd, "app"),
+    chemin: { id: champ(fd, "id") },
+    corps: { active: champ(fd, "active") === "true" },
+  });
+  if (!r.ok) apresRefus(r);
   revalidatePath("/goals");
   redirect("/goals");
 }
 
 export async function deleteGoalAction(fd: FormData): Promise<void> {
-  const admin = await requireAdmin();
-  const id = Number(fd.get("id"));
-  if (!Number.isFinite(id)) redirect("/goals");
-  const [g] = await q<{ name: string }>(`delete from goal where id = $1 returning name`, [id]);
-  if (g) await audit(admin.email, "goal_delete", g.name);
+  const r = await executerCommande("supprimerObjectif", { app: champ(fd, "app"), chemin: { id: champ(fd, "id") } });
+  if (!r.ok) apresRefus(r);
   revalidatePath("/goals");
   redirect("/goals");
 }

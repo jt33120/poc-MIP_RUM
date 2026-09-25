@@ -230,11 +230,77 @@ export const ECRANS = Object.freeze({
   sviAppel: ecran<{ callId: string }>("screens.sviCall", "/v1/screens/svi/calls/{callId}"),
   logs: ecran("screens.logs", "/v1/screens/logs"),
   ai: ecran("screens.ai", "/v1/screens/ai"),
+  // C6 — espace de travail : tableaux de bord, vues enregistrées.
+  tableaux: ecran("screens.dashboards", "/v1/screens/dashboards"),
+  /** Un tableau de bord et la donnée de ses cartes. Son identifiant ne donne aucun droit : le chargeur résout (propriétaire, périmètre). */
+  tableau: ecran<{ id: string }>("screens.dashboard", "/v1/screens/dashboards/{id}"),
+  /** L'export CSV d'un tableau : la même donnée que l'écran, projetée en lignes (10 000 au plus). */
+  exportTableau: ecran<{ id: string }>("dashboards.export", "/v1/dashboards/{id}/export"),
+  vues: ecran("screens.savedViews", "/v1/screens/explorer/views"),
 });
 export type CleEcran = keyof typeof ECRANS;
 
+// ─── Écritures (C6 → C9) ─────────────────────────────────────────────────────
+
+/**
+ * UNE ÉCRITURE DE CONSOLE : sa commande (`apps/console/lib/commandes/`), servie
+ * telle quelle. Comme pour un écran, le contrat fixe l'identité de l'opération,
+ * sa méthode et son chemin ; le corps et la décision rendue appartiennent à la
+ * commande, qui déclare aussi sa règle d'accès (`RegleCommande`) et son
+ * validateur d'entrée — la console et le service appliquent les mêmes.
+ *
+ * L'application visée, quand la règle en a une, passe par `?app=` (la PORTÉE,
+ * confrontée au périmètre par le pipeline avant la commande) ; un identifiant du
+ * chemin ne donne aucun droit : la commande relit la ligne DANS cette
+ * application (`where id = $1 and app_id = $2`), ou résout propriétaire et
+ * périmètre elle-même.
+ */
+function commande<P = Aucun>(id: string, methode: "POST" | "PUT" | "PATCH" | "DELETE", chemin: Chemin) {
+  return operation<P, Aucun, unknown, unknown>(id, methode, chemin);
+}
+
+export const COMMANDES = Object.freeze({
+  // C6 — tableaux de bord. Chaque écriture d'un tableau existant CITE la révision
+  // affichée (le `If-Match` de ce contrat, dans le corps) : une révision dépassée
+  // est refusée, jamais appliquée par-dessus le travail d'un autre onglet.
+  creerTableau: commande("dashboards.create", "POST", "/v1/dashboards"),
+  clonerModele: commande<{ modele: string }>("dashboards.cloneTemplate", "POST", "/v1/dashboards/templates/{modele}/clones"),
+  clonerTableau: commande<{ id: string }>("dashboards.clone", "POST", "/v1/dashboards/{id}/clones"),
+  modifierTableau: commande<{ id: string }>("dashboards.update", "PATCH", "/v1/dashboards/{id}"),
+  supprimerTableau: commande<{ id: string }>("dashboards.delete", "DELETE", "/v1/dashboards/{id}"),
+  ajouterCarte: commande<{ id: string }>("dashboards.addWidget", "POST", "/v1/dashboards/{id}/widgets"),
+  ajouterSection: commande<{ id: string }>("dashboards.addSection", "POST", "/v1/dashboards/{id}/sections"),
+  enregistrerAnalyse: commande<{ id: string }>("dashboards.saveAnalysis", "POST", "/v1/dashboards/{id}/analyses"),
+  configurerCarte: commande<{ id: string; index: string }>("dashboards.configureWidget", "PATCH", "/v1/dashboards/{id}/widgets/{index}"),
+  retirerCarte: commande<{ id: string; index: string }>("dashboards.removeWidget", "DELETE", "/v1/dashboards/{id}/widgets/{index}"),
+  deplacerCarte: commande<{ id: string; index: string }>("dashboards.moveWidget", "POST", "/v1/dashboards/{id}/widgets/{index}/moves"),
+  // C6 — vues enregistrées de l'Explorer : personnelles, leur propriétaire seul les écrit.
+  creerVue: commande("savedViews.create", "POST", "/v1/saved-views"),
+  modifierVue: commande<{ id: string }>("savedViews.update", "PATCH", "/v1/saved-views/{id}"),
+  supprimerVue: commande<{ id: string }>("savedViews.delete", "DELETE", "/v1/saved-views/{id}"),
+  // C6 — objectifs de conversion : l'administrateur de l'application.
+  creerObjectif: commande("goals.create", "POST", "/v1/goals"),
+  activerObjectif: commande<{ id: string }>("goals.update", "PATCH", "/v1/goals/{id}"),
+  supprimerObjectif: commande<{ id: string }>("goals.delete", "DELETE", "/v1/goals/{id}"),
+});
+export type CleCommande = keyof typeof COMMANDES;
+
 /** Toutes les opérations du contrat, dans l'ordre de la doc. */
-export const OPERATIONS = Object.freeze([VERSION, JWKS, ETAT_PLATEFORME, CONNEXION, DEMO, DECONNEXION, MOI, METHODES, DEBUT_SSO, FIN_SSO, COQUILLE, ...Object.values(ECRANS)]);
+export const OPERATIONS = Object.freeze([
+  VERSION,
+  JWKS,
+  ETAT_PLATEFORME,
+  CONNEXION,
+  DEMO,
+  DECONNEXION,
+  MOI,
+  METHODES,
+  DEBUT_SSO,
+  FIN_SSO,
+  COQUILLE,
+  ...Object.values(ECRANS),
+  ...Object.values(COMMANDES),
+]);
 
 /**
  * La forme canonique de la table (une ligne par opération, triée) : chaque côté

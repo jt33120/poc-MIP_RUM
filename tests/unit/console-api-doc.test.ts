@@ -5,6 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { chargerTrousseau, creerDebitAuth, creerTable, rendreDoc } from "@mip/console-api";
 import { ECRANS_FACTICES } from "../fixtures/ecrans-factices";
+import { COMMANDES_FACTICES } from "../fixtures/commandes-factices";
 
 const FICHIER = "docs/api/console-api.md";
 
@@ -28,6 +29,7 @@ describe("C0a — la doc de console-api est générée depuis sa table", () => {
         oublierSession: () => {},
       },
       ecrans: ECRANS_FACTICES,
+      commandes: COMMANDES_FACTICES,
     });
     const rendu = rendreDoc(table);
     if (process.env.MAJ_DOC_CONSOLE_API === "1") writeFileSync(FICHIER, rendu);

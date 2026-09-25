@@ -19,13 +19,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { ModeleCarte } from "@/components/dashboards/ModeleCarte";
 import { fmtDate } from "@/lib/format";
 import { type SearchParams } from "@/lib/filters";
-import { pageFilters } from "@/lib/page-filters";
-import { listDashboards } from "@/lib/queries-dashboards";
-import { registeredApps } from "@/lib/queries";
-import { getUser } from "@/lib/auth";
-import { canCreateDashboard, dashboardApps, dashboardPrincipal, ownerLabel } from "@/lib/dashboard-access";
-import { MODELES_TABLEAUX, apercuDuModele, optionsDeClonage, pucesDuTableau } from "@/lib/dashboard-templates";
-import { nombreDeCartes } from "@/lib/dashboards";
+import { chargerTableaux } from "@/lib/chargeurs/tableaux";
+import { chargerEcran } from "@/lib/ecran-local";
+import { MODELES_TABLEAUX, apercuDuModele } from "@/lib/dashboard-templates";
 import { CONTRACT_PARAMS, hrefWithQuery, queryToSearchParams } from "@/lib/query-contract";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { createDashboardAction } from "./actions";
@@ -47,21 +43,16 @@ export default async function Dashboards({
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
-  const user = await dashboardPrincipal(await getUser());
+  const sp = (await searchParams) ?? {};
+  // Le chargeur (`lib/chargeurs/tableaux.ts`) lit les tableaux du périmètre et
+  // décide, par le principal, où l'on peut créer et cloner.
+  const ecran = await chargerEcran(chargerTableaux, sp);
   // L'accès normal est garanti par le middleware. Ne pas afficher une liste
   // vide à un visiteur sans session évite néanmoins d'exposer ses métadonnées.
-  if (!user) return null;
-  const sp = (await searchParams) ?? {};
-  const ecran = await pageFilters(sp, "/dashboards");
-  if (!ecran.ok) return <FilterProblemNotice title="Tableaux de bord" problem={ecran.problem} />;
-  const [dashboards, allApps] = await Promise.all([listDashboards(ecran.filters), registeredApps()]);
-  const apps = dashboardApps(allApps, user);
-  const canCreateGlobal = canCreateDashboard(user, null);
-  const appsCreables = apps.filter((a) => canCreateDashboard(user, a.app_id));
+  if (ecran.etat === "sans_session") return null;
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Tableaux de bord" problem={ecran.problem} />;
+  const { canCreateGlobal, appsCreables, clonage, tableaux: dashboards } = ecran;
   const peutCreer = canCreateGlobal || appsCreables.length > 0;
-  const clonage = optionsDeClonage(user, apps);
-  // Le nom d'une app, pas son identifiant (W-D2) ; une app retirée du registre garde son identifiant.
-  const libelleApp = new Map(allApps.map((a) => [a.app_id, a.name || a.app_id]));
   // Les filtres de l'écran voyagent avec les formulaires : la redirection d'un refus
   // ramène sur la même population (seuls les paramètres du contrat sont repris).
   const ctx = new URLSearchParams(
@@ -138,16 +129,16 @@ export default async function Dashboards({
                   </Link>
                 </td>
                 <td className="px-3 py-2 text-ink-soft" data-testid="tableau-app">
-                  {d.app_id === null ? "toutes les apps" : (libelleApp.get(d.app_id) ?? d.app_id)}
+                  {d.app ?? "toutes les apps"}
                 </td>
-                <td className="px-3 py-2 text-ink-soft">{ownerLabel(d, user)}</td>
+                <td className="px-3 py-2 text-ink-soft">{d.proprietaire}</td>
                 <td className="px-3 py-2">
                   {/* F37 : un titre de section n'est pas une carte — ni compté, ni en puce. */}
-                  {nombreDeCartes(d.layout) === 0 ? (
+                  {d.cartes === 0 ? (
                     <span className="text-xs text-ink-soft">aucune carte</span>
                   ) : (
-                    <ul className="flex min-w-48 flex-wrap gap-1" aria-label={`${nombreDeCartes(d.layout)} cartes`}>
-                      {pucesDuTableau(d.layout).map((p) => (
+                    <ul className="flex min-w-48 flex-wrap gap-1" aria-label={`${d.cartes} cartes`}>
+                      {d.puces.map((p) => (
                         <li key={p.libelle} className="rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-soft">
                           {p.libelle}
                           {p.n > 1 ? ` × ${p.n}` : ""}
@@ -202,7 +193,7 @@ export default async function Dashboards({
               App
               <select
                 name="app_id"
-                defaultValue={ecran.filters.app ?? ""}
+                defaultValue={ecran.appFiltre ?? ""}
                 aria-invalid={refus?.champ === "app_id" ? true : undefined}
                 aria-describedby={refus?.champ === "app_id" ? "creation-erreur-app" : undefined}
                 className={`${INPUT_CLASS} max-w-full`}
@@ -227,7 +218,7 @@ export default async function Dashboards({
         </details>
       ) : (
         <p className="text-xs text-ink-soft" data-testid="creation-indisponible">
-          {user.demo ? "Session de démonstration : lecture seule." : "Création réservée aux comptes autorisés sur une app."}
+          {ecran.demo ? "Session de démonstration : lecture seule." : "Création réservée aux comptes autorisés sur une app."}
         </p>
       )}
     </div>

@@ -10,3 +10,11 @@
 # Owners » sur `master` (réglage GitHub, hors dépôt).
 /.railway/  @jt33120
 /.github/   @jt33120
+
+# QUI A LE DROIT DE QUOI DANS console-api (piste C). La politique de chaque
+# opération est déclarée avec son traitement : dans le service pour ses propres
+# opérations, et — pour les écritures de la console — dans la RÈGLE de chaque
+# commande (`apps/console/lib/commandes/`, C6 → C9), que le pipeline et la
+# console appliquent tous deux. Les changer, c'est changer une autorisation.
+/packages/console-api/src/        @jt33120
+/apps/console/lib/commandes/      @jt33120

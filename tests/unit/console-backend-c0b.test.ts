@@ -32,6 +32,7 @@ vi.mock("../../apps/console/lib/queries-planifie", () => ({
 
 import { lireEtatPlateforme } from "../../apps/console/lib/etat-plateforme";
 import { ECRANS_FACTICES } from "../fixtures/ecrans-factices";
+import { COMMANDES_FACTICES } from "../fixtures/commandes-factices";
 
 const SECRET = "c".repeat(48);
 const URL_SERVICE = "https://console-api-production.up.railway.app";
@@ -65,7 +66,7 @@ const base: Lecteur = {
 async function monter(opts: { cle?: Awaited<ReturnType<typeof jeu>>; env?: Record<string, string> } = {}) {
   const cle = opts.cle ?? (await jeu("session-20260924-aaaa"));
   const trousseau = await chargerTrousseau(JSON.stringify({ keys: [cle] }), { production: false });
-  const { table } = await creerTable({ trousseau, version: "abc123", db: base, identite: await identite(), ecrans: ECRANS_FACTICES });
+  const { table } = await creerTable({ trousseau, version: "abc123", db: base, identite: await identite(), ecrans: ECRANS_FACTICES, commandes: COMMANDES_FACTICES });
   const service = creerConsoleApi({ table, secretsClient: [SECRET], journal: { info() {}, warn() {}, error() {} } });
   const appels: { url: string; entetes: Headers; methode: string }[] = [];
   const fetchService = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -169,7 +170,7 @@ describe("C0b — la poignée de main, avant tout secret", () => {
   it("un contrat différent est signalé une fois, sans bloquer (N et N−1)", async () => {
     const cle = await jeu("session-20260924-cccc");
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [cle] }), { production: false });
-    const { table } = await creerTable({ trousseau, version: "abc", db: base, identite: await identite(), ecrans: ECRANS_FACTICES });
+    const { table } = await creerTable({ trousseau, version: "abc", db: base, identite: await identite(), ecrans: ECRANS_FACTICES, commandes: COMMANDES_FACTICES });
     // Le service annonce un contrat que la console ne connaît pas (une opération
     // ajoutée côté service, déployé d'abord) : la poignée de main est re-signée
     // avec cette empreinte, comme le ferait un vrai service plus récent.
@@ -197,7 +198,7 @@ describe("C0b — ce qui n'est pas une réponse du service", () => {
   async function avecReponses(reponses: (() => Response | Promise<Response>)[], methode: "GET" | "POST" = "GET") {
     const cle = await jeu("session-20260924-dddd");
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [cle] }), { production: false });
-    const { table } = await creerTable({ trousseau, version: "v", db: base, identite: await identite(), ecrans: ECRANS_FACTICES });
+    const { table } = await creerTable({ trousseau, version: "v", db: base, identite: await identite(), ecrans: ECRANS_FACTICES, commandes: COMMANDES_FACTICES });
     const vrai = creerConsoleApi({ table, secretsClient: [SECRET], journal: { info() {}, warn() {}, error() {} } });
     let i = 0;
     const journal = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };

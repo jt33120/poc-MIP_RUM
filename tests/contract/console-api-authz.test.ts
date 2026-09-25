@@ -20,7 +20,7 @@
 import { gzipSync } from "node:zlib";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { ECRANS, operation } from "@mip/console-contract";
+import { COMMANDES, ECRANS, operation } from "@mip/console-contract";
 import {
   chargerTrousseau,
   creerConsoleApi,
@@ -74,6 +74,11 @@ const SESSION_A = "authz-session-a-0000000000000001";
 const EMPREINTE_A = "authz-fp-a-0001";
 const ISSUE_A = "00000000-0000-4000-8000-0000000a1551";
 const TRACE_A = "0123456789abcdef0123456789abcdef";
+/** Un tableau de bord de l'app A, sans propriétaire : ce que l'écran d'un tableau et son export ouvrent (C6). */
+const TABLEAU_A = { id: "" };
+/** Des identifiants qu'aucune ligne ne porte : la commande répond `introuvable` ou `interdit`, sans rien écrire. */
+const ABSENT = "999999999";
+const VUE_ABSENTE = "00000000-0000-4000-8000-00000000dead";
 const CHEMINS: Record<string, Record<string, string>> = {
   "screens.session": { id: SESSION_A },
   "replay.session": { sessionId: SESSION_A },
@@ -81,6 +86,49 @@ const CHEMINS: Record<string, Record<string, string>> = {
   "screens.issue": { id: ISSUE_A },
   "screens.trace": { traceId: TRACE_A },
   "screens.sviCall": { callId: "authz-appel-inconnu" },
+  // C6 — un tableau réel pour ses écrans ; des identifiants absents pour ses écritures.
+  get "screens.dashboard"() {
+    return { id: TABLEAU_A.id };
+  },
+  get "dashboards.export"() {
+    return { id: TABLEAU_A.id };
+  },
+  "dashboards.cloneTemplate": { modele: "performance" },
+  "dashboards.clone": { id: ABSENT },
+  "dashboards.update": { id: ABSENT },
+  "dashboards.delete": { id: ABSENT },
+  "dashboards.addWidget": { id: ABSENT },
+  "dashboards.addSection": { id: ABSENT },
+  "dashboards.saveAnalysis": { id: ABSENT },
+  "dashboards.configureWidget": { id: ABSENT, index: "0" },
+  "dashboards.removeWidget": { id: ABSENT, index: "0" },
+  "dashboards.moveWidget": { id: ABSENT, index: "0" },
+  "savedViews.update": { id: VUE_ABSENTE },
+  "savedViews.delete": { id: VUE_ABSENTE },
+  "goals.update": { id: ABSENT },
+  "goals.delete": { id: ABSENT },
+};
+
+/** Une analyse de l'Explorer (AST v1) sur l'app A : ce qu'une vue enregistre. */
+const AST_A = {
+  version: 1,
+  app: A,
+  range: { preset: "24h" },
+  dataset: "errors",
+  measure: { aggregation: "sum", field: "occurrences" },
+  filters: [],
+  groupBy: ["release"],
+  visualization: "toplist",
+  limit: 10,
+};
+/** Une carte d'analyse (configuration v2) : ce que l'Explorer enregistre sur un tableau. */
+const CARTE_V2 = {
+  schemaVersion: 2,
+  type: "analytics",
+  title: "Erreurs par release",
+  query: { version: 1, dataset: "errors", measure: { aggregation: "sum", field: "occurrences" }, filters: [], groupBy: ["release"], limit: 10 },
+  visualization: "toplist",
+  filters: [],
 };
 
 /**
@@ -133,7 +181,23 @@ const ABOUTIS: Record<string, readonly string[]> = {
  * (404). La politique (publique) est la même pour tous ; le statut fixe le dit.
  */
 const STATUT_FIXE: Record<string, number> = { "auth.login": 401, "auth.demo": 404, "auth.oidcStart": 404, "auth.oidc": 400 };
-const CORPS: Record<string, unknown> = { "auth.login": { email: "authz-inconnu@test.local", mot_de_passe: "pas-le-bon" } };
+const CORPS: Record<string, unknown> = {
+  "auth.login": { email: "authz-inconnu@test.local", mot_de_passe: "pas-le-bon" },
+  // C6 — un corps VALIDE par écriture : la matrice éprouve l'accès, pas l'entrée.
+  "dashboards.create": { name: "authz", app_id: A },
+  "dashboards.cloneTemplate": { app_id: A },
+  "dashboards.update": { name: "authz", app_id: A, revision: "1" },
+  "dashboards.addWidget": { type: "traffic", revision: "1" },
+  "dashboards.addSection": { title: "Où ?", revision: "1" },
+  "dashboards.saveAnalysis": { widget: CARTE_V2, revision: "1" },
+  "dashboards.configureWidget": { filters: "", range_preset: "", revision: "1" },
+  "dashboards.removeWidget": { revision: "1" },
+  "dashboards.moveWidget": { dir: "down", revision: "1" },
+  "savedViews.create": { name: "authz", query: AST_A },
+  "savedViews.update": { name: "authz", expectedRevision: "1" },
+  "goals.create": { name: "authz", kind: "pageview", pattern: "/merci", match_type: "exact" },
+  "goals.update": { active: false },
+};
 /** Hors de la boucle : la déconnexion RÉVOQUE la session du profil — testée à part, en dernier. */
 const HORS_MATRICE = new Set(["auth.logout"]);
 
@@ -166,6 +230,11 @@ function attendu(p: Politique, profil: Profil, cible: Cible): number {
     if (cible.app === "all") return d.apps === null || d.apps.length > 0 ? 200 : 403;
     return d.apps === null || d.apps.includes(cible.app!) ? 200 : 403;
   }
+  // Une écriture (C6 → C9) vise UNE application nommée : `all` n'en est pas une.
+  if (p.portee === "une-app") {
+    if (cible.app === "all") return 400;
+    return d.apps === null || d.apps.includes(cible.app!) ? 200 : 403;
+  }
   if (p.portee === "ressource") {
     if (cible.vue === "absente") return 404;
     const app = cible.vue === "a" ? A : B;
@@ -175,7 +244,7 @@ function attendu(p: Politique, profil: Profil, cible: Cible): number {
 }
 
 function cibles(p: Politique): Cible[] {
-  if (p.portee === "app") return [{ nom: "app A", app: A }, { nom: "app B", app: B }, { nom: "app=all", app: "all" }];
+  if (p.portee === "app" || p.portee === "une-app") return [{ nom: "app A", app: A }, { nom: "app B", app: B }, { nom: "app=all", app: "all" }];
   if (p.portee === "ressource") return [{ nom: "vue de A", vue: "a" }, { nom: "vue de B (autre app)", vue: "b" }, { nom: "vue absente", vue: "absente" }];
   return [{ nom: "—" }];
 }
@@ -199,6 +268,8 @@ function cibles(p: Politique): Cible[] {
   async function nettoyer() {
     await pool.query("delete from console_session where demo_email = $1 or user_id in (select id from console_user where email = any($2))", [DEMO_EMAIL, Object.values(EMAILS)]);
     await pool.query("delete from analytics_saved_view where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from dashboard where app_id = any($1) or created_by = any($2)", [[A, B], Object.values(EMAILS)]);
+    await pool.query("delete from goal where app_id = any($1)", [[A, B]]);
     await pool.query("delete from replay_chunk where app_id = any($1)", [[A, B]]);
     await pool.query("delete from rum_error where app_id = any($1)", [[A, B]]);
     await pool.query("delete from error_issue where app_id = any($1)", [[A, B]]);
@@ -263,6 +334,11 @@ function cibles(p: Politique): Cible[] {
       "insert into rum_span (span_id, trace_id, tier, app_id, duration_ms, ts, session_id) values ('0123456789abcdef', $1, 'front', $2, 120, now() - interval '2 minutes', $3)",
       [TRACE_A, A, SESSION_A],
     );
+    // C6 — un tableau de bord de l'app A, avec une carte : son écran, et son export.
+    TABLEAU_A.id = await ouvrir(
+      `insert into dashboard (name, app_id, layout) values ('authz', $1, '[{"type":"traffic","title":"Trafic"}]'::jsonb) returning id::text as id`,
+      [A],
+    );
 
     trousseau = await chargerTrousseau(await jeu("session-authz-a"), { production: false });
     const etranger = await chargerTrousseau(await jeu("session-authz-z"), { production: false });
@@ -281,6 +357,7 @@ function cibles(p: Politique): Cible[] {
     // Les chargeurs d'écrans du SERVICE (`services/console-api/ecrans.mjs`) : ceux
     // de la console, à la signature du service — le même module que le bundle.
     const { ecrans } = await import("../../services/console-api/ecrans.mjs");
+    const { commandes } = await import("../../services/console-api/commandes.mjs");
     const transacteur = {
       async transaction<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
         const c = await pool.connect();
@@ -309,9 +386,11 @@ function cibles(p: Politique): Cible[] {
         demo: null,
         oublierSession: (sid) => verificateur.oublier(sid),
       },
-      // C2 → C5 — les VRAIS chargeurs (coquille, écrans), ceux de la console, sur la
+      // C2 → C6 — les VRAIS chargeurs (coquille, écrans), ceux de la console, sur la
       // base de la matrice : chaque écran s'exécute pour chaque profil et chaque cible.
       ecrans,
+      // C6 → C9 — les VRAIES commandes, de même : chaque écriture pour chaque profil.
+      commandes,
     });
     table = [...reel.table, ...BANC];
     servirRequete = creerConsoleApi({
@@ -443,6 +522,85 @@ function cibles(p: Politique): Cible[] {
       }
     }
     expect(ecarts).toEqual([]);
+  });
+
+  it("les écritures (C6), de bout en bout : chaque commande aboutit pour qui a le droit, et s'inscrit au journal", async () => {
+    /** Appelle une commande comme la console le fera : son opération, sa portée, son corps. */
+    const appeler = async (cle: keyof typeof COMMANDES, profil: Profil, o: { app?: string; chemin?: Record<string, string>; corps?: unknown } = {}) => {
+      const op = COMMANDES[cle];
+      let chemin: string = op.chemin;
+      for (const [nom, valeur] of Object.entries(o.chemin ?? {})) chemin = chemin.replace(`{${nom}}`, encodeURIComponent(valeur));
+      const entetes: Record<string, string> = { "x-mip-client": SECRET, authorization: `Bearer ${jetons[profil]}`, "x-request-id": `authz-c6-${cle}`.slice(0, 64) };
+      if (o.corps !== undefined) entetes["content-type"] = "application/json";
+      const r = await servirRequete(
+        new Request(`https://console-api.test${chemin}${o.app ? `?app=${o.app}` : ""}`, {
+          method: op.methode,
+          headers: entetes,
+          body: o.corps === undefined ? undefined : JSON.stringify(o.corps),
+        }),
+      );
+      expect(r.status, `${cle} : ${r.status}`).toBe(200);
+      return ((await r.json()) as { data: Record<string, unknown> }).data;
+    };
+    const revisionDe = async (id: string) => (await pool.query<{ r: string }>("select revision::text as r from dashboard where id = $1", [id])).rows[0]?.r;
+
+    // Un tableau : créé par un viewer dans son app, édité carte par carte en citant sa révision.
+    const cree = await appeler("creerTableau", "viewer", { corps: { name: "C6 bout en bout", app_id: A } });
+    expect(cree).toMatchObject({ etat: "cree" });
+    const id = String(cree.id);
+    expect(await appeler("ajouterCarte", "viewer", { chemin: { id }, corps: { type: "traffic", revision: await revisionDe(id) } })).toMatchObject({ etat: "ok" });
+    // Une révision dépassée : refusée, rien d'écrit.
+    expect(await appeler("ajouterCarte", "viewer", { chemin: { id }, corps: { type: "traffic", revision: "1" } })).toEqual({ etat: "conflit" });
+    expect(await appeler("ajouterSection", "viewer", { chemin: { id }, corps: { title: "Où ?", position: "0", revision: await revisionDe(id) } })).toMatchObject({ etat: "ok" });
+    expect(await appeler("enregistrerAnalyse", "viewer", { chemin: { id }, corps: { widget: CARTE_V2, revision: await revisionDe(id) } })).toMatchObject({ etat: "ok" });
+    expect(
+      await appeler("configurerCarte", "viewer", { chemin: { id, index: "2" }, corps: { filters: "v2:browser:eq:Firefox", range_preset: "7d", revision: await revisionDe(id) } }),
+    ).toMatchObject({ etat: "ok" });
+    expect(await appeler("deplacerCarte", "viewer", { chemin: { id, index: "0" }, corps: { dir: "down", revision: await revisionDe(id) } })).toMatchObject({ etat: "ok" });
+    expect(await appeler("retirerCarte", "viewer", { chemin: { id, index: "1" }, corps: { revision: await revisionDe(id) } })).toMatchObject({ etat: "ok" });
+    const { rows: [apres] } = await pool.query<{ layout: { type?: string; kind?: string }[] }>("select layout from dashboard where id = $1", [id]);
+    expect(apres.layout).toHaveLength(2);
+    // Le tableau d'un autre compte : un viewer ne l'édite pas ; un administrateur de l'app, si.
+    expect(await appeler("ajouterCarte", "viewer", { chemin: { id: TABLEAU_A.id }, corps: { type: "traffic", revision: await revisionDe(TABLEAU_A.id) } })).toEqual({ etat: "interdit" });
+    expect(await appeler("modifierTableau", "viewer", { chemin: { id }, corps: { name: "Renommé", app_id: A, revision: await revisionDe(id) } })).toMatchObject({ etat: "ok" });
+    const clone = await appeler("clonerTableau", "admin", { chemin: { id } });
+    expect(clone).toMatchObject({ etat: "cree" });
+    const modele = await appeler("clonerModele", "viewer", { chemin: { modele: "erreurs" }, corps: { app_id: A } });
+    expect(modele).toMatchObject({ etat: "cree", app: A });
+    // Cloner vers une app hors du périmètre : refusé par la commande (la règle est `session`).
+    expect(await appeler("clonerModele", "viewer", { chemin: { modele: "erreurs" }, corps: { app_id: B } })).toEqual({ etat: "refus" });
+    expect(await appeler("supprimerTableau", "viewer", { chemin: { id } })).toEqual({ etat: "ok" });
+    expect((await pool.query("select 1 from dashboard where id = $1", [id])).rowCount).toBe(0);
+
+    // Une vue enregistrée : créée, renommée, supprimée par son propriétaire.
+    const vue = await appeler("creerVue", "viewer", { corps: { name: "C6 vue", query: AST_A } });
+    expect(vue).toMatchObject({ kind: "ok" });
+    const idVue = String((vue.value as { id: string }).id);
+    expect(await appeler("modifierVue", "viewer", { chemin: { id: idVue }, corps: { name: "C6 vue renommée", expectedRevision: "1" } })).toMatchObject({ kind: "ok" });
+    // Un administrateur de l'app la LIT, mais ne la supprime pas : elle est personnelle.
+    expect(await appeler("supprimerVue", "admin", { chemin: { id: idVue } })).toMatchObject({ kind: "forbidden" });
+    expect(await appeler("supprimerVue", "viewer", { chemin: { id: idVue } })).toMatchObject({ kind: "ok" });
+
+    // Un objectif : créé, suspendu, supprimé par l'administrateur de l'app — et jamais par l'id seul.
+    const objectif = await appeler("creerObjectif", "admin", { app: A, corps: { name: "C6", kind: "event", pattern: "achat", match_type: "exact" } });
+    expect(objectif).toMatchObject({ etat: "cree" });
+    const idObjectif = String(objectif.id);
+    // Le même identifiant sous une AUTRE application (celle de la plateforme) : introuvable.
+    expect(await appeler("activerObjectif", "plateforme", { app: B, chemin: { id: idObjectif }, corps: { active: false } })).toEqual({ etat: "introuvable" });
+    expect(await appeler("activerObjectif", "admin", { app: A, chemin: { id: idObjectif }, corps: { active: false } })).toEqual({ etat: "ok", active: false });
+    expect(await appeler("supprimerObjectif", "admin", { app: A, chemin: { id: idObjectif } })).toEqual({ etat: "ok" });
+
+    // Le journal : une ligne par écriture auditée, avec la requête, l'acteur et l'application.
+    const { rows } = await pool.query<{ action: string; actor_kind: string; app_id: string | null; request_id: string }>(
+      "select action, actor_kind, app_id, request_id from audit_log where request_id like 'authz-c6-%' order by id",
+    );
+    const actions = rows.map((r) => r.action);
+    for (const a of ["dashboard.create", "dashboard.update", "dashboard.clone", "dashboard.clone_template", "dashboard.delete", "goal.create", "goal.update", "goal.delete"]) {
+      expect(actions, a).toContain(a);
+    }
+    // L'édition des cartes et les vues personnelles sont exemptées : aucune ligne.
+    expect(actions.some((a) => a.startsWith("dashboard.add") || a.startsWith("savedViews") || a.startsWith("saved_view"))).toBe(false);
+    expect(rows.every((r) => r.actor_kind === "user" && r.app_id === A)).toBe(true);
   });
 
   it("révoquer une session, désactiver un compte : refusé en 30 s au plus, sans nouveau jeton", async () => {

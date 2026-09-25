@@ -8,6 +8,10 @@ vi.mock("@/lib/dashboard-access", () => ({
   dashboardPrincipal: vi.fn(),
   getWritableDashboard: vi.fn(),
 }));
+// C6 — les actions passent par leurs commandes (`lib/commandes/tableaux.ts`) : une
+// création, un clone, un renommage ou une suppression s'écrivent avec leur ligne
+// d'audit, dans une transaction. Aucune base ici : la transaction est un client inerte.
+vi.mock("@/lib/db", () => ({ q: vi.fn(async () => []), tx: vi.fn(async (fn: (c: unknown) => unknown) => fn({ query: vi.fn(async () => ({ rows: [] })) })) }));
 vi.mock("@/lib/queries-dashboards", () => ({
   deleteDashboard: vi.fn(),
   insertDashboard: vi.fn(),
@@ -183,13 +187,17 @@ describe("actions dashboards — lecture transverse ≠ écriture", () => {
 
     await appeler(cloneDashboardAction, form({ id: "44" }));
 
-    expect(insertDashboard).toHaveBeenCalledWith({
-      name: "Ops (copie)",
-      app_id: "app-a",
-      created_by: "autre@example.test",
-      owner_id: "12",
-      layout: TABLEAU.layout,
-    });
+    expect(insertDashboard).toHaveBeenCalledWith(
+      {
+        name: "Ops (copie)",
+        app_id: "app-a",
+        created_by: "autre@example.test",
+        owner_id: "12",
+        layout: TABLEAU.layout,
+      },
+      // Le client de la transaction : le clone et sa ligne d'audit partent ensemble.
+      expect.anything(),
+    );
   });
 });
 

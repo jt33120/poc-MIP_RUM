@@ -116,23 +116,38 @@ export async function getDashboard(id: number): Promise<DashboardRow | null> {
 
 // ──────────────────────────────── Écritures ──────────────────────────────────
 
-export async function insertDashboard(d: {
-  name: string;
-  app_id: string | null;
-  created_by: string | null;
-  owner_id: string | null;
-  layout?: Widget[];
-}): Promise<number> {
+/** Un client de transaction (`tx`) : l'écriture et sa ligne d'audit partent ensemble (C6). */
+type Client = Pick<import("pg").PoolClient, "query">;
+
+/** Exécute sur le client d'une transaction s'il est donné, sur le pool sinon. */
+async function lignes<T>(client: Client | undefined, texte: string, valeurs: unknown[]): Promise<T[]> {
+  if (!client) return q<T>(texte, valeurs);
+  const { rows } = await client.query(texte, valeurs);
+  return rows as T[];
+}
+
+export async function insertDashboard(
+  d: {
+    name: string;
+    app_id: string | null;
+    created_by: string | null;
+    owner_id: string | null;
+    layout?: Widget[];
+  },
+  client?: Client,
+): Promise<number> {
   const layout = JSON.stringify(serializeLayout(d.layout ?? []));
   if (await dashboardOwnershipAvailable()) {
-    const [r] = await q<{ id: number }>(
+    const [r] = await lignes<{ id: number }>(
+      client,
       `insert into dashboard (name, app_id, created_by, owner_id, layout)
        values ($1, $2, $3, $4::bigint, $5::jsonb) returning id::int as id`,
       [d.name, d.app_id, d.created_by, d.owner_id, layout],
     );
     return r.id;
   }
-  const [r] = await q<{ id: number }>(
+  const [r] = await lignes<{ id: number }>(
+    client,
     `insert into dashboard (name, app_id, created_by, layout)
      values ($1, $2, $3, $4::jsonb) returning id::int as id`,
     [d.name, d.app_id, d.created_by, layout],
@@ -149,12 +164,14 @@ async function ecrire(
   id: number,
   expectedRevision: string,
   mutation: (client: import("pg").PoolClient) => Promise<void>,
+  apres?: (client: import("pg").PoolClient) => Promise<void>,
 ): Promise<DashboardWrite> {
   if (!(await dashboardOwnershipAvailable())) {
     return tx(async (client) => {
       const { rowCount } = await client.query("select 1 from dashboard where id = $1 for no key update", [id]);
       if (!rowCount) return { kind: "not_found" };
       await mutation(client);
+      await apres?.(client);
       return { kind: "ok", revision: "1" };
     });
   }
@@ -172,11 +189,12 @@ async function ecrire(
       };
     }
     await mutation(client);
-    const { rows: [apres] } = await client.query<{ revision: string }>(
+    const { rows: [ligneApres] } = await client.query<{ revision: string }>(
       "update dashboard set revision = revision + 1, updated_at = now() where id = $1 returning revision::text as revision",
       [id],
     );
-    return { kind: "ok", revision: apres.revision };
+    await apres?.(client);
+    return { kind: "ok", revision: ligneApres.revision };
   });
 }
 
@@ -186,14 +204,21 @@ export async function updateDashboardMeta(
   name: string,
   app_id: string | null,
   expectedRevision: string,
+  /** Dans la même transaction, après l'écriture réussie : sa ligne d'audit (C6). */
+  apres?: (client: import("pg").PoolClient) => Promise<void>,
 ): Promise<DashboardWrite> {
-  return ecrire(id, expectedRevision, async (client) => {
-    await client.query("update dashboard set name = $2, app_id = $3, updated_at = now() where id = $1", [
-      id,
-      name,
-      app_id,
-    ]);
-  });
+  return ecrire(
+    id,
+    expectedRevision,
+    async (client) => {
+      await client.query("update dashboard set name = $2, app_id = $3, updated_at = now() where id = $1", [
+        id,
+        name,
+        app_id,
+      ]);
+    },
+    apres,
+  );
 }
 
 /** Remplace la liste de widgets (sérialisée avant écriture, chaque widget dans sa version). */
@@ -204,6 +229,6 @@ export async function updateLayout(id: number, layout: Widget[], expectedRevisio
   });
 }
 
-export async function deleteDashboard(id: number): Promise<void> {
-  await q("delete from dashboard where id = $1", [id]);
+export async function deleteDashboard(id: number, client?: Client): Promise<void> {
+  await lignes(client, "delete from dashboard where id = $1", [id]);
 }

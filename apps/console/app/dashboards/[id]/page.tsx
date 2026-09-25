@@ -17,24 +17,13 @@ import {
   type GroupeDeCartes,
 } from "@/lib/dashboards";
 import { addSectionAction, moveWidgetAction, removeWidgetAction } from "../actions";
+import type { Fil } from "@mip/console-contract";
 import type { AnalyticsQuery } from "@/lib/query-contract";
 import { type SearchParams } from "@/lib/filters";
-import { registeredApps } from "@/lib/queries";
-import { getUser } from "@/lib/auth";
-import {
-  canCreateDashboard,
-  canDashboardAction,
-  dashboardApps,
-  dashboardFilters,
-  dashboardPrincipal,
-  getAccessibleDashboard,
-  ownerLabel,
-} from "@/lib/dashboard-access";
-import { pageFilters } from "@/lib/page-filters";
-import { queryOf } from "@/lib/filters";
-import { fuseauDe } from "@/lib/fuseau";
+import { chargerTableau } from "@/lib/chargeurs/tableau";
+import { chargerEcran } from "@/lib/ecran-local";
 import { hrefWithQuery, queryToSearchParams } from "@/lib/query-contract";
-import { resolveWidgets, type WidgetData } from "@/lib/widget-data";
+import type { WidgetData } from "@/lib/widget-data";
 import {
   addWidgetAction,
   cloneDashboardAction,
@@ -59,7 +48,7 @@ export const dynamic = "force-dynamic";
  * tiers de page cessent d'être lisibles. Une valeur ou un classement tiennent dans
  * une case. La règle se lit sur la DONNÉE rendue, pas sur un champ enregistré.
  */
-function pleineLargeur(data: WidgetData | undefined): boolean {
+function pleineLargeur(data: Fil<WidgetData> | undefined): boolean {
   return data?.kind === "timeseries" || data?.kind === "table";
 }
 
@@ -72,8 +61,8 @@ interface ContexteCartes {
   ctx: string;
   query: AnalyticsQuery;
   editable: boolean;
-  /** Donnée résolue, rangée dans l'ordre du layout (une entrée par élément). */
-  data: WidgetData[];
+  /** Donnée résolue, rangée dans l'ordre du layout (une entrée par élément), telle que le fil la porte. */
+  data: Fil<WidgetData>[];
 }
 
 /**
@@ -166,35 +155,19 @@ export default async function D({
   searchParams?: Promise<SearchParams>;
 }) {
   const { id } = await params;
-  const idNum = Number(id);
-  const user = await dashboardPrincipal(await getUser());
-  const dash = Number.isInteger(idNum) ? await getAccessibleDashboard(idNum, user) : null;
-  if (!dash) notFound();
-
   const sp = (await searchParams) ?? {};
-  const ecran = await pageFilters(sp, `/dashboards/${dash.id}`);
-  if (!ecran.ok) return <FilterProblemNotice title={dash.name} problem={ecran.problem} />;
-  const f = dashboardFilters(dash, ecran.query, user);
-  if (!f) notFound();
-
-  const timeZone = await fuseauDe(ecran.query.scope.requestedApp);
-  // `cmp` de l'écran (§ 3.1) : défaut « aucune » sur ce domaine. En `prev`, seules
-  // les cartes « Valeur » relisent la période précédente (W-B2) ; les autres le disent.
+  // Le chargeur (`lib/chargeurs/tableau.ts`) résout le tableau par la porte unique
+  // des tableaux, lit ses cartes et décide des droits d'édition.
+  const ecran = await chargerEcran(chargerTableau, sp, { id });
+  if (ecran.etat === "introuvable") notFound();
+  if (ecran.etat === "refus") return <FilterProblemNotice title={ecran.titre} problem={ecran.problem} />;
+  const { tableau: dash, timeZone, data, apps } = ecran;
   const reglages = lireComparaison(`/dashboards/${dash.id}`, paramReader(sp));
-  // Quatre lectures à la fois, dans l'ordre de la grille. Vingt-quatre cartes
-  // lancées ensemble épuiseraient le pool de connexions de la console.
-  const data = await resolveWidgets(dash.layout, {
-    filters: f,
-    timeZone,
-    nowMs: Date.now(),
-    comparaison: reglages.valeur.mode,
-  });
-  const apps = dashboardApps(await registeredApps(), user);
 
   // W-B1 — la population lue, écrite au-dessus de la grille, y compris à « toutes
-  // les apps » : chaque carte en hérite. La requête affichée est celle des cartes
-  // (`f`), pas celle de l'URL : le tableau peut restreindre l'app de l'écran.
-  const populationQuery = queryOf(f);
+  // les apps » : chaque carte en hérite. La requête affichée est celle des cartes,
+  // pas celle de l'URL : le tableau peut restreindre l'app de l'écran.
+  const populationQuery = ecran.population;
   const retraits = retraitsDePopulation(populationQuery, (sans) =>
     hrefWithQuery(`/dashboards/${dash.id}`, sans),
   );
@@ -206,11 +179,9 @@ export default async function D({
   const contexte = queryToSearchParams(ecran.query).toString();
   const exportHref = hrefWithQuery(`/api/dashboards/${dash.id}/export`, ecran.query);
   const scope = dash.app_id ?? "toutes les apps";
-  const editable = canDashboardAction(user, dash, "rename");
-  const clonable = canDashboardAction(user, dash, "clone");
-  const canUseGlobal = canCreateDashboard(user, null);
+  const { editable, clonable, global: canUseGlobal } = ecran.droits;
   // Intersection vide : le tableau de bord porte sur une autre app que celle de l'écran.
-  const horsPerimetre = queryOf(f).scope.effectiveApps?.length === 0;
+  const horsPerimetre = populationQuery.scope.effectiveApps?.length === 0;
   const conflit = sp.conflit === "1";
   const refus = sp.refus === "1";
   const invalides = dash.layout.filter((w) => w.kind === "invalid").length;
@@ -219,7 +190,7 @@ export default async function D({
   // dire `canMutateDashboard`) — jamais un viewer non propriétaire ni une démo (V9).
   const groupes = groupesDuLayout(dash.layout);
   const sections = groupes.flatMap((g) => (g.section ? [g.section] : []));
-  const peutAjouterSection = canDashboardAction(user, dash, "add_widget");
+  const peutAjouterSection = ecran.droits.sections;
   const plein = layoutPlein(dash.layout);
   const refusPlein = sp.plein === "1";
   const refusSection = sp["section-refusee"] === "1";
@@ -239,7 +210,7 @@ export default async function D({
         title={dash.name}
         sub={
           <>
-            Scope : {scope} · Propriétaire : {ownerLabel(dash, user)} · {ecran.label}
+            Scope : {scope} · Propriétaire : {ecran.proprietaire} · {ecran.label}
             {ecran.query.filters.device ? ` · ${ecran.query.filters.device}` : ""}
           </>
         }
@@ -544,8 +515,8 @@ export default async function D({
               <select name="app_id" defaultValue={dash.app_id ?? ""} className={INPUT_CLASS}>
                 {canUseGlobal && <option value="">(toutes apps)</option>}
                 {apps.map((a) => (
-                  <option key={a.app_id} value={a.app_id}>
-                    {a.app_id}
+                  <option key={a} value={a}>
+                    {a}
                   </option>
                 ))}
               </select>
