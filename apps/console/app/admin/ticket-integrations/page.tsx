@@ -10,10 +10,11 @@
 // mêmes termes que dans le corps des tickets créés et que sur l'écran d'une
 // issue — une seule définition, `MENTION_ETAPE`.
 import { notFound } from "next/navigation";
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { chargerConnecteurs } from "@/lib/chargeurs/administration";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { MENTION_ETAPE, type TicketIntegration } from "@/lib/queries-ticket-integrations";
@@ -34,7 +35,7 @@ function secret(ref: TicketIntegration["credential"] | TicketIntegration["webhoo
 export default async function TicketIntegrationsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   // Le chargeur : les connecteurs et les applications de son périmètre (C9) ; la
   // surface fermée tant qu'aucune recette réelle n'a été jouée (404, comme avant).
-  const ecran = accesAdmin(await chargerEcran(chargerConnecteurs, {}));
+  const ecran = accesAdmin(await chargerEcran(ECRANS_ADMIN.connecteurs, chargerConnecteurs, {}));
   if (ecran.etat === "fermee") notFound();
   const sp = await searchParams;
   const erreur = typeof sp.erreur === "string" ? sp.erreur : null;

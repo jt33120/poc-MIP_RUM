@@ -8,7 +8,7 @@
 //
 // Le secret d'un jeton créé revient UNE fois, dans la réponse de l'action, vers le
 // seul composant qui l'a demandé ; la base n'en garde que le hash.
-import { executerCommande } from "@/lib/commande-locale";
+import { executerCommande } from "@/lib/commande";
 
 export type RetourJeton = { ok: true; secret: string; nom: string; privilege: string } | { ok: false; erreur: string };
 

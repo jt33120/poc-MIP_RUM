@@ -1,8 +1,9 @@
 import { headers } from "next/headers";
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { chargerSante } from "@/lib/chargeurs/administration";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { dogfoodingEndpoint, ingestEndpoint } from "@/lib/ingest-endpoint";
 import type { HealthSnapshot } from "@/lib/metrics-format";
 
@@ -15,7 +16,7 @@ export default async function Health() {
   // (F02) — un tableau de bord « 0 alerte, 0 lot en attente » pendant une panne
   // serait le pire des mensonges sur une page de santé. Le bloc d'endpoint, lui,
   // ne lit rien en base.
-  const { sante, identite: identity, causales: causal } = accesAdmin(await chargerEcran(chargerSante, {}));
+  const { sante, identite: identity, causales: causal } = accesAdmin(await chargerEcran(ECRANS_ADMIN.sante, chargerSante, {}));
 
   // Où le capteur de la console POSTE réellement, résolu comme il l'est pour le
   // navigateur. Affiché parce que sa panne est SILENCIEUSE : NEXT_PUBLIC_RUM_ENDPOINT

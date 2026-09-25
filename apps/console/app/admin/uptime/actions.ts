@@ -7,7 +7,7 @@
 // identifiant seul).
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { executerCommande } from "@/lib/commande-locale";
+import { executerCommande } from "@/lib/commande";
 import { apresRefus } from "@/lib/commande-suite";
 
 const champ = (fd: FormData, nom: string) => String(fd.get(nom) ?? "").trim();

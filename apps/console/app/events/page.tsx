@@ -18,6 +18,7 @@
 // Les vues, vitals et erreurs ont leurs écrans ; le journal ne les recompte pas.
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ECRANS } from "@mip/console-contract";
 import { DetailPanel, type PuceDetail } from "@/components/DetailPanel";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
@@ -30,7 +31,7 @@ import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { annotationsDeploiements } from "@/lib/annotations";
 import { chargerEvents, demandeDuJournal } from "@/lib/chargeurs/events";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import type { Fil } from "@mip/console-contract";
 import { eventResetHref, lienJournal, lienPanneauJournal, totalJournal } from "@/lib/events-page-params";
 import { type SearchParams } from "@/lib/filters";
@@ -100,7 +101,7 @@ export default async function Journal({ searchParams }: { searchParams: Promise<
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/events.ts`) lit filtres et sections ; la page lit
   // l'URL du Journal par la même fonction que lui (`demandeDuJournal`).
-  const ecran = await chargerEcran(chargerEvents, sp);
+  const ecran = await chargerEcran(ECRANS.events, chargerEvents, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const sub = (
     <>

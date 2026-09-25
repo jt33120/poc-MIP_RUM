@@ -17,7 +17,7 @@ import { dogfoodingEndpoint } from "@/lib/ingest-endpoint";
 import { DashboardSettings } from "@/components/DashboardSettings";
 import { CATALOGUES, lireChoix } from "@/lib/dashboard-blocs";
 import { reglerBlocsAction } from "./actions-dashboard";
-import { chargerCoquille } from "@/lib/chargeurs/coquille";
+import { chargerCoquilleEcran } from "@/lib/coquille-ecran";
 import { FUSEAU_DEFAUT } from "@/lib/fuseau";
 import { describeProject, selectedProjectId } from "@/lib/project";
 import "./globals.css";
@@ -188,8 +188,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // LA COQUILLE NE TOMBE PAS AVEC LA BASE (F02). Ses lectures passent par `lire()`
   // (dans `chargerCoquille`) : en échec, elle s'affiche sans elles et LE DIT
   // (bandeau « Partiel » ci-dessous), et l'écran rend sa propre « Lecture en
-  // échec ». Le chargeur est celui que console-api sert (`GET /v1/shell`, piste C).
-  const coquille = await chargerCoquille(user);
+  // échec ». Le chargeur est celui que console-api sert (`GET /v1/shell`, piste C) :
+  // `chargerCoquilleEcran` aiguille entre le service et la console.
+  const coquille = await chargerCoquilleEcran(user);
   const apps = coquille.projets.ok ? coquille.projets.data : [];
 
   // Projet courant (cookie posé par /select ou le middleware). Absent -> le

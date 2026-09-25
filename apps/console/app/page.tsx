@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { Figure } from "@/components/charts/Figure";
 import { HealthHeatmap } from "@/components/charts/HealthHeatmap";
 import { KpiTile } from "@/components/charts/KpiTile";
@@ -11,7 +12,7 @@ import { ChargeErreursLcp, HeroCwv, type AnnotationsFigure, type ModeSeries } fr
 import { LIBELLE_ANGLE_MORT, TuileAngleMort, type EtatAngleMort } from "@/components/vue-ensemble/AngleMort";
 import { blocsDe } from "@/lib/chargeurs/commun";
 import { chargerOverview, DECOUPAGE_LUS, VITAUX_HERO } from "@/lib/chargeurs/overview";
-import { avecBlocs, chargerEcran } from "@/lib/ecran-local";
+import { avecBlocs, chargerEcran } from "@/lib/ecran";
 import { TousEteints } from "@/components/TousEteints";
 import { HealthBanner } from "@/components/health/HealthBanner";
 import { AnomalyTable } from "@/components/health/AnomalyTable";
@@ -97,7 +98,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // Le chargeur (`lib/chargeurs/overview.ts`) lit tout ; la composition de l'écran
   // (cookie des blocs) lui est passée en paramètre — un bloc éteint ne coûte rien.
   const sp = await avecBlocs(await searchParams, "/");
-  const ecran = await chargerEcran(chargerOverview, sp);
+  const ecran = await chargerEcran(ECRANS.overview, chargerOverview, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Vue d'ensemble" problem={ecran.problem} />;
   const query = ecran.query;
   const period = { label: ecran.label, bucketLabel: ecran.bucketLabel };

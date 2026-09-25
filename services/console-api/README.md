@@ -83,13 +83,13 @@ Chaque écriture laisse sa ligne `audit_log` (`auth.login`, `auth.login_failed`,
 
 ## Les écrans (C2 → C5)
 
-Les données de chaque écran sont chargées par un **chargeur** qui vit dans la console (`apps/console/lib/chargeurs/`). La console l'appelle aujourd'hui en local. Ce service l'**embarque tel quel** dans son bundle, sur son propre pool, et le sert (`GET /v1/shell` pour la coquille, C2). La parité n'est donc pas un test : c'est le même code.
+Les données de chaque écran sont chargées par un **chargeur** qui vit dans la console (`apps/console/lib/chargeurs/`). Ce service l'**embarque tel quel** dans son bundle, sur son propre pool, et le sert (`GET /v1/shell` pour la coquille, C2). La parité n'est donc pas un test : c'est le même code.
 
 Une lecture en échec devient une **section** `{ ok: false, code: "lecture_en_echec" }`. Sa raison part au journal avec le `request_id`, jamais dans la réponse.
 
 La garde du build n'accepte de la console que sa couche de données : ni écran (`app/`), ni composant, ni `lib/auth.ts`, `lib/session-console.ts` ou `lib/backend.ts`, ni Next ou React réels. L'image ne copie que `apps/console/lib`.
 
-**Mise en service décidée à la fin, après P6b.** D'ici là, la console lit en local. Une PR par écran la branchera ensuite sur ce service et retirera sa lecture directe.
+**La bascule** (après P6b) : la console appelle ce service pour ses écrans, sa coquille et ses écritures, **session par session**, pour une part réglée en base (`platform_flag.console_api_ecrans_pct`, puis `console_api_commandes_pct`), avec un repli sur sa propre lecture tant que le mode strict n'est pas posé. Les sessions HS256 restent servies par la console. Mode d'emploi : [docs/operations/bascule-console-api.md](../../docs/operations/bascule-console-api.md). La décommission (C12) retirera ensuite la lecture directe de la console.
 
 ## Sûreté multi-réplique
 

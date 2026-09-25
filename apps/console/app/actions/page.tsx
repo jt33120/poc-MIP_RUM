@@ -21,6 +21,7 @@
 // pour un nombre d'erreurs liées à un geste. Les tuiles sont neutres, seul l'écart à
 // la période précédente porte une flèche.
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
@@ -32,7 +33,7 @@ import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { breakdownDrillHref, refusDesSessions, sessionsDeLaRoute, type LienSessionsRoute } from "@/lib/breakdowns";
 import { chargerActions } from "@/lib/chargeurs/actions";
 import { type CouverturePrecedente } from "@/lib/comparaison";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { type SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { fmtDate } from "@/lib/format";
@@ -68,7 +69,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   // Le chargeur de l'écran (`lib/chargeurs/actions.ts`) lit tout : filtres, présence
   // de la table, sections. La page ne calcule plus que ce qui vient de l'URL.
-  const d = await chargerEcran(chargerActions, sp);
+  const d = await chargerEcran(ECRANS.actions, chargerActions, sp);
   if (d.etat === "refus") return <FilterProblemNotice title="Actions" problem={d.problem} />;
   const lecteur = paramReader(sp);
   const url = new URLSearchParams(

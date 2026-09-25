@@ -12,7 +12,7 @@
 // pas ramener l'utilisateur sur une autre fenêtre que celle qu'il regardait.
 import { redirect } from "next/navigation";
 import { revalidatePath } from "@/lib/next-cache";
-import { executerCommande, type SortieDe } from "@/lib/commande-locale";
+import { executerCommande, type SortieDe } from "@/lib/commande";
 import { apresRefus } from "@/lib/commande-suite";
 import { modeleTableau } from "@/lib/dashboard-templates";
 import { CONTRACT_PARAMS } from "@/lib/query-contract";

@@ -24,6 +24,7 @@
 // l'écran, et sa garde est celle de la page de session : hors périmètre, aucun
 // panneau, une ligne le dit.
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { Breakdown, type BreakdownItem, type OngletDecoupage } from "@/components/Breakdown";
 import { Donut } from "@/components/charts/Donut";
@@ -37,7 +38,7 @@ import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import type { SearchParams } from "@/lib/filters";
 import { type SectionLue } from "@/lib/lecture";
 import { chargerSessions, CURSOR_PARAM, demandeDesSessions } from "@/lib/chargeurs/sessions";
-import { avecBlocs, chargerEcran } from "@/lib/ecran-local";
+import { avecBlocs, chargerEcran } from "@/lib/ecran";
 import { BREAKDOWN_NOTICES, BREAKDOWN_PARAM, breakdownDrillHref } from "@/lib/breakdowns";
 import {
   ENGAGEMENT_MIN_SESSIONS,
@@ -151,7 +152,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
   // composition de l'écran (cookie) lui est passée en paramètre, et la page relit
   // l'URL par la même fonction que lui (`demandeDesSessions`).
   const sp = await avecBlocs(await searchParams, "/sessions");
-  const d = await chargerEcran(chargerSessions, sp);
+  const d = await chargerEcran(ECRANS.sessions, chargerSessions, sp);
   if (d.etat === "refus") return <FilterProblemNotice title="Sessions" problem={d.problem} />;
   const ecran = d;
   const query = d.query;

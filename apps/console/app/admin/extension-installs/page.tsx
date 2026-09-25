@@ -5,10 +5,11 @@
 // alimentent. Ce qu'il ne répond PAS : qui s'en sert. Un poste ne porte un nom
 // que si la DSI du client en pousse un par policy ; sinon il reste un
 // identifiant d'installation, et c'est le comportement voulu (cf. migration-v52).
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { chargerPostes } from "@/lib/chargeurs/administration";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { compareVersions, displayName, fleetVersion, freshness } from "@/lib/extension-installs";
 import { fmtDate } from "@/lib/format";
 import { forgetInstallAction } from "./actions";
@@ -29,7 +30,7 @@ const LIBELLE: Record<string, string> = {
 
 export default async function ExtensionInstalls() {
   // Le chargeur : l'administrateur de la plateforme seul — un poste observe plusieurs applications (C9).
-  const { postes: rows } = accesAdmin(await chargerEcran(chargerPostes, {}));
+  const { postes: rows } = accesAdmin(await chargerEcran(ECRANS_ADMIN.postes, chargerPostes, {}));
   const now = Date.now();
 
   const reference = fleetVersion(rows.map((r) => r.ext_version));

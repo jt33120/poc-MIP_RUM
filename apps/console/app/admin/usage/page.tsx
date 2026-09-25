@@ -1,6 +1,7 @@
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { chargerConsommation } from "@/lib/chargeurs/administration";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { quotaView } from "@/lib/usage";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 /** Consommation par client (mois courant) + quotas — admin only (P0 #5). */
 export default async function Usage() {
   // Le chargeur : la consommation des applications de son périmètre (C9).
-  const { lignes: rows } = accesAdmin(await chargerEcran(chargerConsommation, {}));
+  const { lignes: rows } = accesAdmin(await chargerEcran(ECRANS_ADMIN.consommation, chargerConsommation, {}));
   const month = new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
 
   return (

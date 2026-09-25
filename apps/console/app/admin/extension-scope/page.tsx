@@ -1,7 +1,8 @@
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { ExtensionActivationGuide } from "@/components/ExtensionActivationGuide";
 import { PageHeader } from "@/components/PageHeader";
 import { chargerDomaines } from "@/lib/chargeurs/administration";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { createExtensionScopeAction, toggleExtensionScopeAction } from "./actions";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function ExtensionScope({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   // Le chargeur : les domaines et les applications de son périmètre (C9).
-  const { apps, domaines: scopes } = accesAdmin(await chargerEcran(chargerDomaines, {}));
+  const { apps, domaines: scopes } = accesAdmin(await chargerEcran(ECRANS_ADMIN.domaines, chargerDomaines, {}));
   const error = typeof sp.error === "string" ? sp.error : null;
 
   return (

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import {
   WIDGET_META,
@@ -21,7 +22,7 @@ import type { Fil } from "@mip/console-contract";
 import type { AnalyticsQuery } from "@/lib/query-contract";
 import { type SearchParams } from "@/lib/filters";
 import { chargerTableau } from "@/lib/chargeurs/tableau";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { hrefWithQuery, queryToSearchParams } from "@/lib/query-contract";
 import type { WidgetData } from "@/lib/widget-data";
 import {
@@ -158,7 +159,7 @@ export default async function D({
   const sp = (await searchParams) ?? {};
   // Le chargeur (`lib/chargeurs/tableau.ts`) résout le tableau par la porte unique
   // des tableaux, lit ses cartes et décide des droits d'édition.
-  const ecran = await chargerEcran(chargerTableau, sp, { id });
+  const ecran = await chargerEcran(ECRANS.tableau, chargerTableau, sp, { id });
   if (ecran.etat === "introuvable") notFound();
   if (ecran.etat === "refus") return <FilterProblemNotice title={ecran.titre} problem={ecran.problem} />;
   const { tableau: dash, timeZone, data, apps } = ecran;

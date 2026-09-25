@@ -18,6 +18,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { Cascade, texteDuree, type ElementCascade, type PisteCascade, type TonCascade } from "@/components/charts/Cascade";
 import { Figure } from "@/components/charts/Figure";
@@ -26,7 +27,7 @@ import { EchecLecture } from "@/components/states/SectionErreur";
 import { CopierTrace } from "@/components/tracing/CopierTrace";
 import { formater } from "@/lib/fmt-ids";
 import { appelDeLaTrace, chargerTrace, premier as first } from "@/lib/chargeurs/trace";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { type TraceSpanRow } from "@/lib/queries-tracing";
 
 export const dynamic = "force-dynamic";
@@ -89,7 +90,7 @@ export default async function TraceDetail({
   }
   // Le chargeur (`lib/chargeurs/trace.ts`) ne lit que dans les apps autorisées ET
   // demandées ; la page relit l'appel résumé par la même fonction que lui.
-  const d = await chargerEcran(chargerTrace, sp, { traceId });
+  const d = await chargerEcran(ECRANS.trace, chargerTrace, sp, { traceId });
   if (d.etat === "introuvable") notFound();
   const { spans, erreurs, session } = d;
 

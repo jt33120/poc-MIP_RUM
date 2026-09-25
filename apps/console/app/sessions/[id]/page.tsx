@@ -35,6 +35,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Fil } from "@mip/console-contract";
 import type { ReactNode } from "react";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { ReplaySynchro } from "@/components/replay/ReplaySynchro";
 import { KpiTile } from "@/components/charts/KpiTile";
@@ -63,7 +64,7 @@ import { HISTO_BUCKETS } from "@/lib/distribution";
 import { formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
 import { fmtDate } from "@/lib/format";
 import { chargerSession, premier, type Situation as SituationBrute } from "@/lib/chargeurs/session";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { type TimelineItem } from "@/lib/queries";
 import { retentionDays } from "@/lib/queries-explorer";
 import { RATING_LABEL, rating2026 } from "@/lib/rating";
@@ -116,7 +117,7 @@ export default async function SessionDetail({
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   // Le chargeur (`lib/chargeurs/session.ts`) applique la garde (périmètre, app
   // annoncée) AVANT toute lecture, puis lit chronologie, rejeu et vitaux situés.
-  const d = await chargerEcran(chargerSession, sp, { id });
+  const d = await chargerEcran(ECRANS.session, chargerSession, sp, { id });
   if (d.etat === "introuvable") notFound();
   const { meta, timeline, nowMs, rejeuLu } = d;
 

@@ -17,11 +17,12 @@
 // démonstration ne voit AUCUN bouton d'écriture (V9) : ils ne sont pas rendus,
 // plutôt que rendus puis refusés par le middleware.
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { ActionsVue } from "@/components/explorer/ActionsVue";
 import { ModelesDepart } from "@/components/explorer/ModelesDepart";
 import { chargerVues } from "@/lib/chargeurs/vues";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { fmtDate } from "@/lib/format";
 import { SAVED_VIEW_MAX_PER_APP } from "@/lib/saved-views";
 import type { SearchParams } from "@/lib/filters";
@@ -35,7 +36,7 @@ export default async function Vues({ searchParams }: { searchParams?: Promise<Se
   const sp = (await searchParams) ?? {};
   // Le chargeur (`lib/chargeurs/vues.ts`) lit les vues du compte et les modèles
   // fournis ; d'une vue, seuls voyagent son lien de réouverture et son résumé.
-  const ecran = await chargerEcran(chargerVues, sp);
+  const ecran = await chargerEcran(ECRANS.vues, chargerVues, sp);
   if (ecran.etat === "sans_session") return null;
   const { vues: result, modeles, demo } = ecran;
 

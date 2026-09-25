@@ -25,6 +25,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { ECRANS } from "@mip/console-contract";
 import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
 import {
   BoutonRejeu,
@@ -51,7 +52,7 @@ import { ISSUE_STATUS_LABELS, type IssueDetailResult } from "@/lib/error-issues"
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { chargerIssue, PARAM_ORIGINE } from "@/lib/chargeurs/issue";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { bucketStarts } from "@/lib/query-contract";
 import { grilleIso } from "@/lib/series";
 import { gabaritZoom } from "@/lib/view-state";
@@ -77,7 +78,7 @@ export default async function IssuePage({
   // Le chargeur (`lib/chargeurs/issue.ts`) résout l'issue dans le périmètre et lit
   // ses sections ; l'origine de la console (liens de l'aperçu d'un ticket) lui est
   // passée en paramètre, calculée ici depuis la requête.
-  const d = await chargerEcran(chargerIssue, { ...sp, [PARAM_ORIGINE]: origineConsole(await headers()) }, { id });
+  const d = await chargerEcran(ECRANS.issue, chargerIssue, { ...sp, [PARAM_ORIGINE]: origineConsole(await headers()) }, { id });
   if (d.etat === "introuvable") notFound();
   if (d.etat === "refus") return <FilterProblemNotice title="Erreurs JS" problem={d.problem} />;
   const { issue, f } = d;

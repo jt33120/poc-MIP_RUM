@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { ECRANS } from "@mip/console-contract";
 import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
@@ -26,7 +27,7 @@ import { type LegacyIssueTarget } from "@/lib/error-issues";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { chargerErreur } from "@/lib/chargeurs/erreur";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { type ErrorFilters, type ErrorGroupRef } from "@/lib/queries-errors";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ export default async function ErrorGroup({
   }
   // Le chargeur (`lib/chargeurs/erreur.ts`) résout le groupe et rend une DÉCISION :
   // la page l'exécute (404, redirection vers l'issue, choix à proposer, détail).
-  const d = await chargerEcran(chargerErreur, sp, { fingerprint });
+  const d = await chargerEcran(ECRANS.erreur, chargerErreur, sp, { fingerprint });
   if (d.etat === "introuvable") notFound();
   if (d.etat === "refus") return <FilterProblemNotice title="Erreurs JS" problem={d.problem} />;
   const f = d.f;

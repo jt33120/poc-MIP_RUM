@@ -1,7 +1,8 @@
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { FormulaireSecret, SecretAffiche } from "@/components/secret/SecretUnique";
 import { chargerJetonsLecture } from "@/lib/chargeurs/administration";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { createReadTokenAction, revokeReadTokenAction } from "./actions";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function ReadTokens({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   // Le chargeur : les jetons et les applications de son périmètre (C9).
-  const { apps, jetons: tokens } = accesAdmin(await chargerEcran(chargerJetonsLecture, {}));
+  const { apps, jetons: tokens } = accesAdmin(await chargerEcran(ECRANS_ADMIN.jetonsLecture, chargerJetonsLecture, {}));
   const error = typeof sp.error === "string" ? sp.error : null;
 
   return (

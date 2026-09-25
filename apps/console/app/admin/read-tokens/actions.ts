@@ -6,7 +6,7 @@
 // base), rendu au formulaire (`useActionState`, C9c) qui l'affiche une fois.
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { executerCommande } from "@/lib/commande-locale";
+import { executerCommande } from "@/lib/commande";
 import { apresRefus } from "@/lib/commande-suite";
 import type { SecretRemis } from "@/lib/secret-remis";
 

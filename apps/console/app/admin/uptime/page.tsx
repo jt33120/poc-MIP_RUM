@@ -1,7 +1,8 @@
 import { motifDeRefus } from "@mip/backend/lib/net/safe-fetch.mjs";
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { chargerSondes } from "@/lib/chargeurs/sondes";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { CADENCE_TICK_MIN } from "@/lib/etat-latence";
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 export default async function UptimePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/sondes.ts`) : un administrateur, et les sondes de son périmètre.
-  const { apps, checks, cadence } = accesAdmin(await chargerEcran(chargerSondes, sp));
+  const { apps, checks, cadence } = accesAdmin(await chargerEcran(ECRANS_ADMIN.sondes, chargerSondes, sp));
   const error = typeof sp.error === "string";
   // Refus d'URL à l'écriture (P1) : un CODE dans l'URL, un texte relu côté
   // serveur — jamais le texte d'un paramètre affiché tel quel.

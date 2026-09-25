@@ -6,13 +6,14 @@
 // sujet — la porte du cadrage passerait à la lettre et échouerait en esprit.
 // Cf. l'en-tête de migration-v51.
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { chargerSviAppel } from "@/lib/chargeurs/svi";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { fmtDuration, outcomeLabel } from "@/lib/svi-outcome";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +58,7 @@ export default async function FicheAppel({
   const { callId } = await params;
   // Le chargeur (`lib/chargeurs/svi.ts`) lit l'appel DANS l'app de l'écran : un appel
   // d'une autre app est introuvable, pas « interdit ». On ne révèle pas son existence.
-  const ecran = await chargerEcran(chargerSviAppel, (await searchParams) ?? {}, { callId });
+  const ecran = await chargerEcran(ECRANS.sviAppel, chargerSviAppel, (await searchParams) ?? {}, { callId });
   if (ecran.etat === "fermee") return <CapaciteFermee titre="Supervision SVI" sujet="Supervision du serveur vocal interactif." />;
   if (ecran.etat === "refus") return <FilterProblemNotice title="Appel SVI" problem={ecran.problem} />;
   if (ecran.etat === "introuvable") notFound();

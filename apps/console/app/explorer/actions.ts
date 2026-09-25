@@ -11,7 +11,7 @@
 // le même refus que `POST /api/v1/explorer/views`.
 import { redirect } from "next/navigation";
 import { revalidatePath } from "@/lib/next-cache";
-import { executerCommande } from "@/lib/commande-locale";
+import { executerCommande } from "@/lib/commande";
 import { apresRefus } from "@/lib/commande-suite";
 import { CONTRACT_PARAMS } from "@/lib/query-contract";
 

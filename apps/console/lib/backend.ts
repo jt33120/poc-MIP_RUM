@@ -27,7 +27,6 @@
 // Pas de `server-only` (le paquet n'est pas une dépendance) : une garde
 // d'exécution refuse le navigateur, et les variables ci-dessus n'y sont de toute
 // façon pas exposées (aucune n'est `NEXT_PUBLIC_`).
-import { createLogger } from "@mip/backend/shared/log.mjs";
 import {
   ENTETE_CLIENT,
   ENTETE_ECHEANCE,
@@ -44,6 +43,7 @@ import {
   type Operation,
   type Version,
 } from "@mip/console-contract";
+import { createLogger } from "./journal";
 
 const HOTES_LOCAUX = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const ID_REQUETE = /^[A-Za-z0-9._-]{8,64}$/;
@@ -119,6 +119,8 @@ export type Resultat<T> =
       readonly statut: number;
       readonly message: string;
       readonly requestId: string | null;
+      /** Le détail d'un refus du service (`{ champ }` d'une entrée invalide, `{ code }` d'un filtre refusé). */
+      readonly details?: unknown;
     };
 
 export interface OptionsAppel {
@@ -131,6 +133,8 @@ export interface OptionsAppel {
   readonly revalider?: number;
   /** L'adresse du visiteur, pour le débit d'authentification de console-api (C1) — jamais stockée en clair. */
   readonly ipVisiteur?: string;
+  /** L'annulation de l'appelant (un export abandonné par le navigateur), en plus du délai. */
+  readonly signal?: AbortSignal;
 }
 
 function base64url(octets: Uint8Array): string {
@@ -268,7 +272,10 @@ export function creerBackend(deps: {
     const chemin = cheminDe(operation.chemin, (entree.params ?? {}) as Record<string, unknown>);
     const recherche = new URLSearchParams();
     for (const [k, v] of Object.entries((entree.requete ?? {}) as Record<string, unknown>)) {
-      if (v !== undefined && v !== null) recherche.set(k, String(v));
+      // Un paramètre répété voyage répété : le pipeline le refuse (`entree_invalide`),
+      // comme le contrat de requête de la console refuse un paramètre ambigu.
+      if (Array.isArray(v)) for (const x of v) recherche.append(k, String(x));
+      else if (v !== undefined && v !== null) recherche.set(k, String(v));
     }
     const url = `${c.url}${chemin}${recherche.size ? `?${recherche}` : ""}`;
 
@@ -290,10 +297,13 @@ export function creerBackend(deps: {
           headers: entetes,
           body: entree.corps === undefined ? undefined : JSON.stringify(entree.corps),
           redirect: "manual",
-          signal: AbortSignal.timeout(Math.max(1, reste)),
+          signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(Math.max(1, reste))]) : AbortSignal.timeout(Math.max(1, reste)),
           ...(options.revalider && !options.jeton ? { next: { revalidate: options.revalider } } : { cache: "no-store" as const }),
         } as RequestInit);
       } catch (e) {
+        if (options.signal?.aborted) {
+          return { ok: false, code: "reseau", statut: 0, message: "appel abandonné par l'appelant", requestId };
+        }
         if (!ecriture && essai === 1 && delai - (maintenant() - debut) >= DELAIS.budgetNouvelEssaiMs) {
           await new Promise((r) => setTimeout(r, 100 + aleatoire() * 200));
           continue;
@@ -317,7 +327,7 @@ export function creerBackend(deps: {
         return { ok: false, code: "indisponible", statut: res.status, message: "console-api indisponible", requestId };
       }
 
-      let corps: { data?: unknown; error?: { code: CodeErreur; message: string }; meta?: { request_id?: string } } | null = null;
+      let corps: { data?: unknown; error?: { code: CodeErreur; message: string; details?: unknown }; meta?: { request_id?: string } } | null = null;
       try {
         corps = await res.json();
       } catch {
@@ -326,7 +336,14 @@ export function creerBackend(deps: {
       if (res.ok && corps && "data" in corps) return { ok: true, data: corps.data as Fil<R>, requestId };
       const code = corps?.error?.code ?? "erreur_interne";
       if (res.status >= 500) journal.error("console-api en échec", { operation: operation.id, request_id: requestId, statut: res.status, code });
-      return { ok: false, code, statut: res.status, message: corps?.error?.message ?? `console-api a répondu ${res.status}`, requestId };
+      return {
+        ok: false,
+        code,
+        statut: res.status,
+        message: corps?.error?.message ?? `console-api a répondu ${res.status}`,
+        requestId,
+        ...(corps?.error?.details === undefined ? {} : { details: corps.error.details }),
+      };
     }
   }
 

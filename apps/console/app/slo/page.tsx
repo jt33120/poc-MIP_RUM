@@ -16,6 +16,7 @@
 //
 // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8) : `lire()` ne lève pas. PAS de
 // `<Suspense>` ni de `loading.tsx` au-dessus de l'écran.
+import { ECRANS } from "@mip/console-contract";
 import { BudgetBars, alternativeBudget } from "@/components/charts/BudgetBars";
 import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
@@ -27,7 +28,7 @@ import { CadreEtat } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { TousEteints } from "@/components/TousEteints";
 import { chargerSlo, JOURS_ALERTES_SLO as JOURS_ALERTES } from "@/lib/chargeurs/slo";
-import { avecBlocs, chargerEcran } from "@/lib/ecran-local";
+import { avecBlocs, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { SLO_METRICS } from "@/lib/queries-v2";
 import { alertesParSlo, comptesSlo, FACTEUR_BURN_RAPIDE, FORMULE_SLO, lignesBudget, metriqueEnClair } from "@/lib/slo-ecran";
@@ -43,7 +44,7 @@ export default async function Slo({ searchParams }: { searchParams?: Promise<Sea
   const sp = (await searchParams) ?? {};
   // Le chargeur (`lib/chargeurs/slo.ts`) reçoit la composition de l'écran (blocs
   // `budget`, `liste`, `creation`, du cookie) : un bloc éteint ne lance pas sa lecture.
-  const ecran = await chargerEcran(chargerSlo, await avecBlocs(sp, "/slo"));
+  const ecran = await chargerEcran(ECRANS.slo, chargerSlo, await avecBlocs(sp, "/slo"));
   if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const f = { app: ecran.appFiltre };
   const { blocs, admin, statuts, slos, apps, declenchements, luA } = ecran;

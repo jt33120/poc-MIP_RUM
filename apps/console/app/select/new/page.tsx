@@ -6,6 +6,7 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import Link from "next/link";
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { CopyBlock } from "@/components/CopyBlock";
 import { ICON_PATHS, Icon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -14,7 +15,7 @@ import { CodeAvecSecret, FormulaireSecret, SecretAffiche, SecretFourni } from "@
 import { WizardBadge } from "@/components/wizard/WizardStep";
 import { ingestEndpoint } from "@/lib/ingest-endpoint";
 import { chargerNouveauSite } from "@/lib/chargeurs/projets";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { fmtDate } from "@/lib/format";
 import { buildSnippet, deriveStatus } from "@/lib/onboarding";
 import { cleDe } from "@/lib/secret-remis";
@@ -61,7 +62,7 @@ export default async function AddSite({ searchParams }: { searchParams: Promise<
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/projets.ts`, C9) : le formulaire à la plateforme ;
   // l'intégration d'un site à ses administrateurs. Hors de là, retour aux projets.
-  const ecran = await chargerEcran(chargerNouveauSite, sp);
+  const ecran = await chargerEcran(ECRANS_ADMIN.nouveauSite, chargerNouveauSite, sp);
   if (ecran.etat === "sans_session") redirect("/login");
   if (ecran.etat === "interdit") redirect("/select");
   if (ecran.etat === "introuvable") redirect("/select/new");

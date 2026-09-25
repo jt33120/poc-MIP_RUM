@@ -22,6 +22,7 @@
 //   - Une série dessinée pour un patch absent : « Abandons dans le temps » attend
 //     B34 et le dit, sans axe ni zéro.
 import type { ReactNode } from "react";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { HeroReading } from "@/components/SupervisionHero";
 import { Figure } from "@/components/charts/Figure";
@@ -35,7 +36,7 @@ import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { MAX_CHAMPS_SDK, SEUIL_ECHANTILLON_FAIBLE, type FieldReport, type FormReportRow } from "@/lib/form-analytics";
 import { chargerForms, PLAFOND_EVENEMENTS } from "@/lib/chargeurs/forms";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { couvertureDeTuile, gesteElargir, plafondAtteint, plageDansPhrase } from "@/lib/lecture-usages";
 import { hrefWithQuery, previousRange } from "@/lib/query-contract";
 import { referencePrecedente } from "@/lib/sessions-kpi";
@@ -74,7 +75,7 @@ export default async function Forms({ searchParams }: { searchParams: Promise<Se
   // Le chargeur (`lib/chargeurs/forms.ts`) lit les événements `form.*` et les RÉDUIT
   // en rapports (par formulaire, champ par champ pour le formulaire affiché) ; sous
   // `cmp=prev` (F06, F53), la période précédente et sa couverture.
-  const ecran = await chargerEcran(chargerForms, sp);
+  const ecran = await chargerEcran(ECRANS.forms, chargerForms, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Formulaires" problem={ecran.problem} />;
   const query = ecran.query;
   const { lecture, lecturePrev, echantillonnage, couvertures } = ecran;

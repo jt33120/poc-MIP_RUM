@@ -13,6 +13,7 @@
 // seau, calculé sur les mesures brutes de son seau ; un seau sans mesure est un TROU,
 // jamais un zéro. Aucune couleur hors des verdicts web.dev de `lib/rating.ts` (P2, V8).
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { RankBar, type RankDatum } from "@/components/charts/RankBar";
 import { ScatterPlot } from "@/components/charts/ScatterPlot";
@@ -28,7 +29,7 @@ import { annotationsDeploiements } from "@/lib/annotations";
 import type { SearchParams } from "@/lib/filters";
 import { type SectionLue } from "@/lib/lecture";
 import { chargerUx } from "@/lib/chargeurs/ux";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { decouperUrlScript, fmtVital } from "@/lib/format";
 import { formater } from "@/lib/fmt-ids";
 import { libelleSeauComplet } from "@/lib/series";
@@ -74,7 +75,7 @@ const PRECEDENTE_EN_ECHEC: CouverturePrecedente = { etat: "inconnue", raison: "l
 export default async function UxFrustration({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/ux.ts`) lit filtres et sections.
-  const ecran = await chargerEcran(chargerUx, sp);
+  const ecran = await chargerEcran(ECRANS.ux, chargerUx, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Interactions" problem={ecran.problem} />;
   const { query, label } = ecran;
   const lecteur = paramReader(sp);

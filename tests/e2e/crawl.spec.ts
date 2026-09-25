@@ -18,14 +18,15 @@
 // crawlé sans toucher à ce fichier ; un segment dynamique sans exemple ici fait
 // échouer le test qui le liste — la couverture ne peut pas se perdre en silence.
 //
-// LES SESSIONS sont signées comme la console les signe (HS256, secret de la
-// console de test, `playwright.config.ts`) : ni /login ni /demo, qui écrivent en
-// base et n'ouvrent pas de démo sans `DEMO_USER_APPS`.
-import { createHmac } from "node:crypto";
+// LES SESSIONS sont celles de console-api (la bascule) : une ligne
+// `console_session` et un jeton ES256 signé par la clé de l'E2E
+// (`helpers/session-console-api.ts`) — ni /login ni /demo, qui passent par le
+// débit d'authentification et n'ouvrent pas de démo sans `DEMO_USER_APPS`.
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Browser } from "@playwright/test";
 import pg from "pg";
+import { sessionConsoleApi } from "./helpers/session-console-api";
 
 const consoleUrl = process.env.PLAYWRIGHT_CONSOLE_URL ?? "http://localhost:3000";
 const APP = "demo-app";
@@ -39,12 +40,18 @@ const SESSIONS: Record<Profil, { email: string; role: "admin" | "viewer"; apps: 
   demo: { email: "demo@mip-rum.local", role: "viewer", apps: [APP], demo: true },
 };
 
-function jeton(p: Profil): string {
-  const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
-  const maintenant = Math.floor(Date.now() / 1000);
-  const corps = `${b64({ alg: "HS256" })}.${b64({ ...SESSIONS[p], iat: maintenant, exp: maintenant + 3600 })}`;
-  return `${corps}.${createHmac("sha256", process.env.E2E_AUTH_SECRET ?? "").update(corps).digest("base64url")}`;
-}
+/**
+ * LA BASCULE : chaque profil visite avec une session de console-api (jeton ES256,
+ * ligne `console_session`), jamais un jeton HS256 que la console signerait — elle
+ * le servirait elle-même. Console en mode strict (playwright.config.ts) : chaque
+ * écran et la coquille sont donc lus PAR le service, sans repli sur la base.
+ */
+const jetons = new Map<Profil, string>();
+const jeton = (p: Profil): string => {
+  const j = jetons.get(p);
+  if (!j) throw new Error(`session ${p} non préparée`);
+  return j;
+};
 
 /** Les écrans : chaque `page.tsx` sous `apps/console/app`, en chemin d'URL. */
 function ecrans(): string[] {
@@ -93,6 +100,7 @@ test.beforeAll(async () => {
       const l = await pool.query<{ v: string; app: string }>(sql).then((r) => r.rows[0], () => undefined);
       valeurs.set(cle, l ?? { v: "e2e-absent", app: APP });
     }
+    for (const profil of Object.keys(SESSIONS) as Profil[]) jetons.set(profil, await sessionConsoleApi(pool, SESSIONS[profil]));
   } finally {
     await pool.end();
   }

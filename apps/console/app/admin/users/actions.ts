@@ -6,7 +6,7 @@
 // rendu au formulaire (`useActionState`, C9c), jamais dans l'URL ni en base.
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { executerCommande } from "@/lib/commande-locale";
+import { executerCommande } from "@/lib/commande";
 import { apresRefus } from "@/lib/commande-suite";
 import type { SecretRemis } from "@/lib/secret-remis";
 

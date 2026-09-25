@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { ErrorStatusBadges, ErrorTypeBadge } from "@/components/errors/ErrorBadges";
 import { ErrorNotices } from "@/components/errors/ErrorNotices";
@@ -19,7 +20,7 @@ import { SectionErreur } from "@/components/states/SectionErreur";
 import { errorGroupHref, errorSearchParams, errorsHref, fmtCount } from "@/lib/error-view";
 import type { SearchParams } from "@/lib/filters";
 import { chargerErrors } from "@/lib/chargeurs/errors";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { fmtDate } from "@/lib/format";
 import { BasculeTri, Breakdown } from "@/components/Breakdown";
 import { ERRORS_BREAKDOWN_COLUMNS, errorsBreakdownItems } from "@/components/breakdown-view";
@@ -42,7 +43,7 @@ export default async function Errors({ searchParams }: { searchParams: Promise<S
   // Le chargeur (`lib/chargeurs/errors.ts`) lit tout : découpage, bifurcation P5.5,
   // tuiles, liste (issues ou groupes) et panneau du groupe ouvert. Le périmètre signé
   // y borne la lecture AVANT tout filtre d'URL (AD-16 : aucune app = aucun accès).
-  const ecran = await chargerEcran(chargerErrors, sp);
+  const ecran = await chargerEcran(ECRANS.errors, chargerErrors, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Erreurs JS" problem={ecran.problem} />;
   const f = ecran.f;
   const { label, bucketLabel, query } = ecran;

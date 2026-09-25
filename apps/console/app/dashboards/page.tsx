@@ -14,13 +14,14 @@
 // rendus ; la raison est écrite à leur place. Un refus de création revient avec sa
 // raison (`?creation=…`), écrite sous le champ (`role="alert"`).
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice, FiltersNotAppliedNote } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { ModeleCarte } from "@/components/dashboards/ModeleCarte";
 import { fmtDate } from "@/lib/format";
 import { type SearchParams } from "@/lib/filters";
 import { chargerTableaux } from "@/lib/chargeurs/tableaux";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { MODELES_TABLEAUX, apercuDuModele } from "@/lib/dashboard-templates";
 import { CONTRACT_PARAMS, hrefWithQuery, queryToSearchParams } from "@/lib/query-contract";
 import { INPUT_CLASS } from "@/components/forms/Field";
@@ -46,7 +47,7 @@ export default async function Dashboards({
   const sp = (await searchParams) ?? {};
   // Le chargeur (`lib/chargeurs/tableaux.ts`) lit les tableaux du périmètre et
   // décide, par le principal, où l'on peut créer et cloner.
-  const ecran = await chargerEcran(chargerTableaux, sp);
+  const ecran = await chargerEcran(ECRANS.tableaux, chargerTableaux, sp);
   // L'accès normal est garanti par le middleware. Ne pas afficher une liste
   // vide à un visiteur sans session évite néanmoins d'exposer ses métadonnées.
   if (ecran.etat === "sans_session") return null;

@@ -19,7 +19,7 @@ const { retentionCohorts, samplingSessions, pageFilters } = vi.hoisted(() => ({
 vi.mock("@/lib/queries-cohorts", () => ({ retentionCohorts }));
 vi.mock("@/lib/queries-sessions", () => ({ samplingSessions }));
 // Le chargeur de l'écran lit ses filtres par `analyserFiltres` (C5, `lib/filtres-ecran.ts`).
-// `chargerEcran` lit la session (`lib/ecran-local.ts`).
+// `chargerEcran` lit la session (`lib/ecran.ts`) ; console-api n'est pas branché : la console sert.
 vi.mock("@/lib/auth", () => ({ getUser: async () => ({ email: "a@b", role: "admin", apps: null }) }));
 vi.mock("@/lib/filtres-ecran", () => ({ analyserFiltres: pageFilters }));
 vi.mock("@/lib/log-forward", () => ({ forwardLog: async () => {} }));

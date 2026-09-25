@@ -22,8 +22,8 @@
 // L'échec lui aussi est mis en cache 30 s : une base coupée ne doit pas être
 // relancée à chaque beacon (ni rallonger chaque beacon du délai de connexion).
 // Et la lecture est bornée (`DELAI_LECTURE_MS`) : au-delà, défaut.
-import { createLogger } from "@mip/backend/shared/log.mjs";
 import { pool } from "./db";
+import { createLogger } from "./journal";
 
 // Son propre journal, pas celui de `lib/ingest.ts` : depuis P4, l'API de lecture
 // lit aussi ce module (relais de l'API v1), et importer l'ingestion de la console
@@ -40,6 +40,14 @@ export const DELAI_LECTURE_MS = 1_500;
 export const CLE_RELAIS = "ingest_relay_pct";
 /** Clé du pourcentage de relais de l'API de lecture v1 vers le service `api` (P4). */
 export const CLE_RELAIS_API = "api_relay_pct";
+/**
+ * La bascule vers console-api (après P6b) : la part des SESSIONS dont les écrans
+ * (et la coquille), puis les écritures, passent par le service. Deux clés : les
+ * lectures montent d'abord, les écritures ensuite (`lib/aiguillage-console-api.ts`).
+ */
+export const CLE_CONSOLE_API = Object.freeze({ ecrans: "console_api_ecrans_pct", commandes: "console_api_commandes_pct" });
+/** Les défauts d'environnement des deux pourcentages, quand la base ne dit rien. */
+const DEFAUT_CONSOLE_API = Object.freeze({ ecrans: "CONSOLE_API_ECRANS_PCT", commandes: "CONSOLE_API_COMMANDES_PCT" });
 
 type Requeteur = (sql: string, params: unknown[]) => Promise<{ rows: Array<{ value: unknown }> }>;
 
@@ -173,6 +181,16 @@ export async function pourcentageRelais(): Promise<number> {
 export async function pourcentageRelaisApi(): Promise<number> {
   const pct = lirePourcentage(await lecteur.lire(CLE_RELAIS_API));
   return pct ?? lirePourcentage(process.env.API_RELAY_PCT) ?? 0;
+}
+
+/**
+ * La part des sessions servies par console-api, pour les écrans ou pour les
+ * écritures : la base si elle répond avec une valeur valide, sinon
+ * `CONSOLE_API_ECRANS_PCT` / `CONSOLE_API_COMMANDES_PCT`, sinon 0. Ne lève jamais.
+ */
+export async function pourcentageConsoleApi(famille: keyof typeof CLE_CONSOLE_API): Promise<number> {
+  const pct = lirePourcentage(await lecteur.lire(CLE_CONSOLE_API[famille]));
+  return pct ?? lirePourcentage(process.env[DEFAUT_CONSOLE_API[famille]]) ?? 0;
 }
 
 /** Tests seulement : oublie les valeurs en cache. */
