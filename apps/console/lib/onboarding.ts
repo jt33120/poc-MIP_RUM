@@ -52,11 +52,12 @@ export function formatApiKey(hex32: string): string {
 }
 
 export interface OnboardingProbe {
-  first_metric_at: Date | null;
-  last_metric_at: Date | null;
+  // Des instants : une `Date` lue en base, sa chaîne ISO une fois passée par le fil (C9).
+  first_metric_at: Date | string | null;
+  last_metric_at: Date | string | null;
   sessions_24h: number;
-  first_front_span_at: Date | null;
-  first_back_span_at: Date | null;
+  first_front_span_at: Date | string | null;
+  first_back_span_at: Date | string | null;
   errors_24h: number;
 }
 

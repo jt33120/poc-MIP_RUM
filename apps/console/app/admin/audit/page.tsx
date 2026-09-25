@@ -1,24 +1,15 @@
 import { PageHeader } from "@/components/PageHeader";
-import { requireAdmin } from "@/lib/auth";
-import { q } from "@/lib/db";
+import { chargerAudit } from "@/lib/chargeurs/administration";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import { fmtDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-interface AuditRow {
-  id: number;
-  user_email: string | null;
-  action: string;
-  detail: string | null;
-  ts: Date;
-}
-
 /** Journal d'audit (admin only) : 100 dernières actions sensibles. */
 export default async function AdminAudit() {
-  await requireAdmin();
-  const rows = await q<AuditRow>(
-    `select id, user_email, action, detail, ts from audit_log order by ts desc, id desc limit 100`,
-  );
+  // Le chargeur (`lib/chargeurs/administration.ts`) : les 100 dernières actions — celles
+  // de ses applications pour un administrateur d'une liste (C9).
+  const { lignes: rows } = accesAdmin(await chargerEcran(chargerAudit, {}));
 
   return (
     <div className="animate-fade-up">

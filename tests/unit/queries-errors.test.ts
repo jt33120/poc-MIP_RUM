@@ -174,11 +174,12 @@ describe("empreinte et appareil", () => {
 // ═══════════════════════════════ Périmètre ════════════════════════════════════
 
 describe("périmètre d'un principal", () => {
-  it("anonyme ou liste vide : aucun accès (AD-16) ; admin ou liste absente : tout", () => {
+  it("anonyme ou liste vide : aucun accès (AD-16) ; liste absente : tout ; un admin d'une liste, sa liste (C9)", () => {
     expect(errorScopeFor(null)).toEqual({ kind: "none" });
     expect(errorScopeFor({ role: "viewer", apps: [] })).toEqual({ kind: "none" });
     expect(errorScopeFor({ role: "viewer", apps: null })).toEqual({ kind: "all" });
-    expect(errorScopeFor({ role: "admin", apps: ["app-a"] })).toEqual({ kind: "all" });
+    expect(errorScopeFor({ role: "admin", apps: null })).toEqual({ kind: "all" });
+    expect(errorScopeFor({ role: "admin", apps: ["app-a"] })).toEqual({ kind: "apps", apps: ["app-a"] });
     expect(errorScopeFor({ role: "viewer", apps: ["app-a", "app-b"] })).toEqual({ kind: "apps", apps: ["app-a", "app-b"] });
   });
 

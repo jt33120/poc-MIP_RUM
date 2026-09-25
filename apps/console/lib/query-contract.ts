@@ -185,12 +185,18 @@ export interface ScopePrincipal {
 }
 
 /**
- * Apps autorisées d'un principal signé : `null` = toutes (admin, ou viewer sans
- * liste) ; `[]` = AUCUNE. Une liste vide n'est jamais « sans restriction ».
+ * Apps autorisées d'un principal signé : `null` = toutes (un principal SANS liste,
+ * administrateur de la plateforme ou viewer global) ; `[]` = AUCUNE. Une liste vide
+ * n'est jamais « sans restriction ».
+ *
+ * C9 — le rôle ne donne plus toutes les apps. Un administrateur À QUI L'ON A SIGNÉ
+ * une liste est l'administrateur DE ces apps : il n'en lit pas plus qu'il n'en
+ * écrit (les commandes le tenaient déjà, `refusDAcces` et le pipeline de
+ * console-api). Relevé P0 : aucun administrateur restreint en production.
  */
 export function authorizedAppsOf(principal: ScopePrincipal | null): string[] | null {
   if (!principal) return [];
-  if (principal.role === "admin" || principal.apps === null) return null;
+  if (principal.apps === null) return null;
   return [...new Set(principal.apps)].sort();
 }
 

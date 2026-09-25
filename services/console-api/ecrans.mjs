@@ -12,6 +12,19 @@
 // le type de `@mip/console-api` refuse un écran du contrat sans chargeur.
 import { chargerAcquisition } from "@/lib/chargeurs/acquisition";
 import { chargerActions } from "@/lib/chargeurs/actions";
+import {
+  chargerAudit,
+  chargerClient,
+  chargerClients,
+  chargerComptes,
+  chargerConnecteurs,
+  chargerConsommation,
+  chargerDomaines,
+  chargerJetonsLecture,
+  chargerPostes,
+  chargerSante,
+  chargerSourcemaps,
+} from "@/lib/chargeurs/administration";
 import { chargerAlertes } from "@/lib/chargeurs/alertes";
 import { chargerAi } from "@/lib/chargeurs/ai";
 import { chargerCoquille } from "@/lib/chargeurs/coquille";
@@ -32,6 +45,7 @@ import { chargerMobile } from "@/lib/chargeurs/mobile";
 import { chargerOverview } from "@/lib/chargeurs/overview";
 import { chargerPages } from "@/lib/chargeurs/pages";
 import { chargerPaths } from "@/lib/chargeurs/paths";
+import { chargerNouveauSite, chargerProjets } from "@/lib/chargeurs/projets";
 import { chargerRejeu } from "@/lib/chargeurs/rejeu";
 import { chargerRetention } from "@/lib/chargeurs/retention";
 import { chargerSession } from "@/lib/chargeurs/session";
@@ -106,6 +120,23 @@ export const ecrans = {
   // C8 → C9 — les écrans d'administration (un administrateur, sans portée d'application).
   administration: {
     sondes: page(chargerSondes),
+    // C9
+    comptes: page(chargerComptes),
+    sante: page(chargerSante),
+    postes: page(chargerPostes),
+    audit: page(chargerAudit),
+    consommation: page(chargerConsommation),
+    clients: page(chargerClients),
+    client: page(chargerClient),
+    jetonsLecture: page(chargerJetonsLecture),
+    domaines: page(chargerDomaines),
+    sourcemaps: page(chargerSourcemaps),
+    connecteurs: page(chargerConnecteurs),
+    nouveauSite: page(chargerNouveauSite),
+  },
+  // C9 — les écrans de session sans portée : le choix du projet.
+  session: {
+    projets: page(chargerProjets),
   },
   refusDeFiltre: (e) => (e instanceof UnsupportedFilterError ? { code: e.error.code, message: e.error.message } : null),
 };

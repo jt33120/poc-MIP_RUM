@@ -258,8 +258,34 @@ function ecranAdmin<P = Aucun>(id: string, chemin: Chemin) {
 export const ECRANS_ADMIN = Object.freeze({
   // C8 — les sondes de disponibilité.
   sondes: ecranAdmin("screens.uptime", "/v1/screens/admin/uptime"),
+  // C9 — l'administration. Réservés à l'administrateur de la plateforme : les
+  // comptes, la santé interne, les postes de l'extension. Restreints au périmètre de
+  // l'administrateur : le reste.
+  comptes: ecranAdmin("screens.adminUsers", "/v1/screens/admin/users"),
+  sante: ecranAdmin("screens.adminHealth", "/v1/screens/admin/health"),
+  postes: ecranAdmin("screens.adminExtensionInstalls", "/v1/screens/admin/extension-installs"),
+  audit: ecranAdmin("screens.adminAudit", "/v1/screens/admin/audit"),
+  consommation: ecranAdmin("screens.adminUsage", "/v1/screens/admin/usage"),
+  clients: ecranAdmin("screens.adminCustomers", "/v1/screens/admin/customers"),
+  client: ecranAdmin<{ appId: string }>("screens.adminCustomer", "/v1/screens/admin/customers/{appId}"),
+  jetonsLecture: ecranAdmin("screens.adminReadTokens", "/v1/screens/admin/read-tokens"),
+  domaines: ecranAdmin("screens.adminExtensionScopes", "/v1/screens/admin/extension-scopes"),
+  sourcemaps: ecranAdmin("screens.adminSourcemaps", "/v1/screens/admin/sourcemaps"),
+  connecteurs: ecranAdmin("screens.adminTicketIntegrations", "/v1/screens/admin/ticket-integrations"),
+  /** L'assistant d'ajout d'un site (`/select/new`), et l'intégration d'un site avec `?app=`. */
+  nouveauSite: ecranAdmin("screens.adminNewSite", "/v1/screens/admin/new-site"),
 });
 export type CleEcranAdmin = keyof typeof ECRANS_ADMIN;
+
+/**
+ * LES ÉCRANS DE SESSION SANS PORTÉE (C9) : ce qu'une session visite AVANT d'avoir
+ * choisi une application — le choix du projet. Toute session ; le chargeur ne lit
+ * que le périmètre du principal.
+ */
+export const ECRANS_SESSION = Object.freeze({
+  projets: operation<Aucun, ParametresEcran, never, unknown>("screens.projects", "GET", "/v1/screens/projects"),
+});
+export type CleEcranSession = keyof typeof ECRANS_SESSION;
 
 // ─── Écritures (C6 → C9) ─────────────────────────────────────────────────────
 
@@ -369,6 +395,7 @@ export const OPERATIONS = Object.freeze([
   COQUILLE,
   ...Object.values(ECRANS),
   ...Object.values(ECRANS_ADMIN),
+  ...Object.values(ECRANS_SESSION),
   ...Object.values(COMMANDES),
 ]);
 

@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth";
+import { chargerClients } from "@/lib/chargeurs/administration";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
-import { listCustomers } from "@/lib/queries-customers";
 import { createCustomerAction, toggleAppAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -18,9 +18,9 @@ const ERRORS: Record<string, string> = {
 
 /** Onboarding clients (admin) — liste des apps + création guidée (v0.5). */
 export default async function AdminCustomers({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  await requireAdmin();
   const sp = await searchParams;
-  const customers = await listCustomers();
+  // Le chargeur : les applications de son périmètre ; créer, l'administrateur de la plateforme (C9).
+  const { clients: customers, creation } = accesAdmin(await chargerEcran(chargerClients, {}));
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : null;
   const detail = typeof sp.detail === "string" ? sp.detail : null;
 
@@ -39,6 +39,9 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
         </div>
       )}
 
+      {/* Créer une application : l'administrateur de la plateforme seul (C9) — un
+          administrateur d'une liste la verrait tomber hors de son périmètre. */}
+      {creation && (
       <div className="mb-8 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold text-slate-700">Ajouter un client</h2>
         <form action={createCustomerAction} data-testid="create-customer-form" className="grid max-w-3xl gap-3">
@@ -104,6 +107,7 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
           </div>
         </form>
       </div>
+      )}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-sm">

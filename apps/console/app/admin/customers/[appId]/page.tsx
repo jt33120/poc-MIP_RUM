@@ -4,12 +4,13 @@ import { headers } from "next/headers";
 import { BackendStep } from "@/components/wizard/BackendStep";
 import { SnippetStep } from "@/components/wizard/SnippetStep";
 import { WizardBadge, WizardStep } from "@/components/wizard/WizardStep";
-import { popSecret, requireAdmin } from "@/lib/auth";
+import { popSecret } from "@/lib/auth";
+import { chargerClient } from "@/lib/chargeurs/administration";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import { ingestEndpoint } from "@/lib/ingest-endpoint";
 import type { SearchParams } from "@/lib/filters";
 import { buildInjectionArtifacts, buildSnippet, deriveStatus } from "@/lib/onboarding";
 import { buildBackendRecipes } from "@/lib/onboarding-recipes";
-import { getCustomer, probeOnboarding } from "@/lib/queries-customers";
 import { fmtDate } from "@/lib/format";
 import { rotateKeyAction, updateOriginsAction } from "../actions";
 
@@ -23,13 +24,13 @@ export default async function CustomerWizard({
   params: Promise<{ appId: string }>;
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAdmin();
   const { appId } = await params;
   const sp = await searchParams;
-  const customer = await getCustomer(appId);
-  if (!customer) notFound();
-
-  const probe = await probeOnboarding(appId);
+  // Le chargeur (`lib/chargeurs/administration.ts`) : l'application et sa sonde
+  // d'intégration — hors du périmètre de l'administrateur, introuvable (C9).
+  const ecran = accesAdmin(await chargerEcran(chargerClient, {}, { appId }));
+  if (ecran.etat === "introuvable") notFound();
+  const { client: customer, sonde: probe } = ecran;
   const status = deriveStatus(probe);
 
   // clé d'API : consommée du stash, affichée une seule fois (création ou rotation)

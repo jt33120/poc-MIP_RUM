@@ -13,12 +13,13 @@ import { Bookmarklet } from "@/components/onboarding/Bookmarklet";
 import { OnboardingPoll } from "@/components/OnboardingPoll";
 import { WizardBadge } from "@/components/wizard/WizardStep";
 import { ingestEndpoint } from "@/lib/ingest-endpoint";
-import { getUser, popSecret } from "@/lib/auth";
+import { popSecret } from "@/lib/auth";
+import { chargerNouveauSite } from "@/lib/chargeurs/projets";
+import { chargerEcran } from "@/lib/ecran-local";
 import { fmtDate } from "@/lib/format";
 import { buildSnippet, deriveStatus } from "@/lib/onboarding";
-import { getCustomer, probeOnboarding } from "@/lib/queries-customers";
-import { resolveExtensionScope } from "@/lib/queries-extension-scope";
 import type { SearchParams } from "@/lib/filters";
+import type { Fil } from "@mip/console-contract";
 import { selectProjectAction } from "../actions";
 import { createSiteAction } from "./actions";
 
@@ -54,12 +55,13 @@ const MODES = [
 ] as const;
 
 export default async function AddSite({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const user = await getUser();
-  if (!user) redirect("/login");
-  if (user.role !== "admin") redirect("/select"); // création réservée aux admins
-
   const sp = await searchParams;
-  const appId = typeof sp.app === "string" ? sp.app : null;
+  // Le chargeur (`lib/chargeurs/projets.ts`, C9) : le formulaire à la plateforme ;
+  // l'intégration d'un site à ses administrateurs. Hors de là, retour aux projets.
+  const ecran = await chargerEcran(chargerNouveauSite, sp);
+  if (ecran.etat === "sans_session") redirect("/login");
+  if (ecran.etat === "interdit") redirect("/select");
+  if (ecran.etat === "introuvable") redirect("/select/new");
 
   return (
     <main className="mip-sci min-h-screen px-6 py-14">
@@ -82,12 +84,8 @@ export default async function AddSite({ searchParams }: { searchParams: Promise<
           </div>
         </header>
 
-        {appId ? (
-          <Integration
-            appId={appId}
-            ktToken={typeof sp.kt === "string" ? sp.kt : null}
-            mode={sp.mode === "extension" ? "extension" : "sdk"}
-          />
+        {ecran.etat === "integration" ? (
+          <Integration ecran={ecran} ktToken={typeof sp.kt === "string" ? sp.kt : null} />
         ) : (
           <CreateForm error={typeof sp.error === "string" ? sp.error : null} />
         )}
@@ -198,33 +196,17 @@ function CreateForm({ error }: { error: string | null }) {
 
 /** Étape 2 — configuration selon le mode + simulation + checklist live. */
 async function Integration({
-  appId,
+  ecran,
   ktToken,
-  mode,
 }: {
-  appId: string;
+  ecran: Extract<Fil<Awaited<ReturnType<typeof chargerNouveauSite>>>, { etat: "integration" }>;
   ktToken: string | null;
-  mode: "sdk" | "extension";
 }) {
-  const customer = await getCustomer(appId);
-  if (!customer) redirect("/select/new");
-  const probe = await probeOnboarding(appId);
+  // Domaines observés par l'extension (dérivés des origines CORS de l'app), avec
+  // leur statut réel dans le registre extension_scope : lus par le chargeur.
+  const { app: appId, mode, client: customer, sonde: probe, domaines: extensionDomains } = ecran;
   const status = deriveStatus(probe);
   const oneTimeKey = ktToken ? popSecret(ktToken) : null;
-  // Domaines observés par l'extension (dérivés des origines CORS de l'app), avec
-  // leur statut réel dans le registre extension_scope (enregistré à cet app_id ?).
-  const hosts = Array.from(
-    new Set(customer.allowed_origins.map(originHost).filter((h): h is string => !!h)),
-  );
-  const extensionDomains =
-    mode === "extension"
-      ? await Promise.all(
-          hosts.map(async (host) => {
-            const s = await resolveExtensionScope(host);
-            return { host, registered: !!s && s.app_id === appId && s.active };
-          }),
-        )
-      : [];
 
   const host = (await headers()).get("host") ?? "localhost:3000";
   const proto = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
@@ -408,15 +390,6 @@ async function Integration({
       </form>
     </>
   );
-}
-
-/** Hostname d'une origine CORS ("https://ma-boutique.fr" -> "ma-boutique.fr"). */
-function originHost(origin: string): string | null {
-  try {
-    return new URL(origin).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
 }
 
 // ID stable de l'extension (dérivé de la clé publique du manifest — cf.

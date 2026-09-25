@@ -82,7 +82,19 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `savedViews.update` | `PATCH /v1/saved-views/{id}` | session | — | **refusée** | exigé | exemptée : vue personnelle : son propriétaire seul la lit et l'écrit, et elle ne donne aucun droit (son AST est rejoué dans le périmètre de qui l'ouvre) |
 | `screens.acquisition` | `GET /v1/screens/acquisition` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.actions` | `GET /v1/screens/actions` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.adminAudit` | `GET /v1/screens/admin/audit` | session administrateur | — | lecture | exigé | — |
+| `screens.adminCustomers` | `GET /v1/screens/admin/customers` | session administrateur | — | lecture | exigé | — |
+| `screens.adminCustomer` | `GET /v1/screens/admin/customers/{appId}` | session administrateur | — | lecture | exigé | — |
+| `screens.adminExtensionInstalls` | `GET /v1/screens/admin/extension-installs` | session administrateur | — | lecture | exigé | — |
+| `screens.adminExtensionScopes` | `GET /v1/screens/admin/extension-scopes` | session administrateur | — | lecture | exigé | — |
+| `screens.adminHealth` | `GET /v1/screens/admin/health` | session administrateur | — | lecture | exigé | — |
+| `screens.adminNewSite` | `GET /v1/screens/admin/new-site` | session administrateur | — | lecture | exigé | — |
+| `screens.adminReadTokens` | `GET /v1/screens/admin/read-tokens` | session administrateur | — | lecture | exigé | — |
+| `screens.adminSourcemaps` | `GET /v1/screens/admin/sourcemaps` | session administrateur | — | lecture | exigé | — |
+| `screens.adminTicketIntegrations` | `GET /v1/screens/admin/ticket-integrations` | session administrateur | — | lecture | exigé | — |
 | `screens.uptime` | `GET /v1/screens/admin/uptime` | session administrateur | — | lecture | exigé | — |
+| `screens.adminUsage` | `GET /v1/screens/admin/usage` | session administrateur | — | lecture | exigé | — |
+| `screens.adminUsers` | `GET /v1/screens/admin/users` | session administrateur | — | lecture | exigé | — |
 | `screens.ai` | `GET /v1/screens/ai` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.alerts` | `GET /v1/screens/alerts` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.correlation` | `GET /v1/screens/correlation` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
@@ -104,6 +116,7 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `screens.overview` | `GET /v1/screens/overview` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.pages` | `GET /v1/screens/pages` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.paths` | `GET /v1/screens/paths` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.projects` | `GET /v1/screens/projects` | session | — | lecture | exigé | — |
 | `screens.retention` | `GET /v1/screens/retention` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.sessions` | `GET /v1/screens/sessions` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.session` | `GET /v1/screens/sessions/{id}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |

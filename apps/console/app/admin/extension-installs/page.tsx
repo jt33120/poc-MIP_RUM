@@ -7,10 +7,10 @@
 // identifiant d'installation, et c'est le comportement voulu (cf. migration-v52).
 import { PageHeader } from "@/components/PageHeader";
 import { ICON_PATHS, Icon } from "@/components/icons";
-import { requireAdmin } from "@/lib/auth";
+import { chargerPostes } from "@/lib/chargeurs/administration";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import { compareVersions, displayName, fleetVersion, freshness } from "@/lib/extension-installs";
 import { fmtDate } from "@/lib/format";
-import { listInstalls } from "@/lib/queries-extension-installs";
 import { forgetInstallAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -28,8 +28,8 @@ const LIBELLE: Record<string, string> = {
 };
 
 export default async function ExtensionInstalls() {
-  await requireAdmin();
-  const rows = await listInstalls();
+  // Le chargeur : l'administrateur de la plateforme seul — un poste observe plusieurs applications (C9).
+  const { postes: rows } = accesAdmin(await chargerEcran(chargerPostes, {}));
   const now = Date.now();
 
   const reference = fleetVersion(rows.map((r) => r.ext_version));

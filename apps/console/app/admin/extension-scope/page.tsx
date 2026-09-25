@@ -1,19 +1,18 @@
 import { ExtensionActivationGuide } from "@/components/ExtensionActivationGuide";
 import { PageHeader } from "@/components/PageHeader";
-import { requireAdmin } from "@/lib/auth";
+import { chargerDomaines } from "@/lib/chargeurs/administration";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
-import { listApps } from "@/lib/queries";
-import { listExtensionScopes } from "@/lib/queries-extension-scope";
 import { createExtensionScopeAction, toggleExtensionScopeAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 /** Registre domaine -> app_id pour l'extension navigateur (Ext-C) — admin only. */
 export default async function ExtensionScope({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  await requireAdmin();
   const sp = await searchParams;
-  const [apps, scopes] = await Promise.all([listApps(), listExtensionScopes()]);
+  // Le chargeur : les domaines et les applications de son périmètre (C9).
+  const { apps, domaines: scopes } = accesAdmin(await chargerEcran(chargerDomaines, {}));
   const error = typeof sp.error === "string" ? sp.error : null;
 
   return (
