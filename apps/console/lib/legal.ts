@@ -101,7 +101,14 @@ export const SUBPROCESSORS: { name: string; role: string; location: string }[] =
   // supplémentaire dans la liste : il ne parle qu'à la console, et le modèle qui
   // l'interroge est l'outil de son utilisateur, pas un sous-traitant de MIP.
   { name: "Railway Corp.", role: "Hébergement du collecteur des mesures RUM (réception des mesures relayées par la console, pseudonymisation de l'identité, écriture en base), des travaux planifiés et du serveur MCP de lecture", location: "États-Unis (société) — services déployés en UE (europe-west4, Amsterdam, Pays-Bas), relevé le 09/09/2026 ; collecteur déployé dans la même région" },
-  { name: "[Fournisseur e-mail — à brancher]", role: "Envoi des alertes e-mail (si activé)", location: "[à préciser — UE recommandé]" },
+  // RESEND (P5), ajouté dans la MÊME modification que la clé posée sur le service
+  // `notifier` : c'est lui, sur Railway, qui appelle Resend — ni la console, ni la
+  // base. Ce qui part : l'adresse du destinataire (un opérateur, jamais un
+  // utilisateur final) et le texte de l'alerte (application, mesure, valeur). La
+  // région d'envoi se choisit PAR DOMAINE chez Resend ; tant que l'expéditeur est
+  // le domaine de test `resend.dev`, MIP ne la choisit pas — d'où la phrase, qui
+  // ne promet pas une résidence UE qui n'existe pas encore.
+  { name: "Resend, Inc.", role: "Envoi des alertes e-mail, appelé par le service notifier (Railway) : adresse du destinataire et texte de l'alerte, aucune donnée d'utilisateur final", location: "États-Unis (société) — région d'envoi non choisie tant que l'expéditeur est le domaine de test resend.dev ; eu-west-1 (Irlande) à retenir en vérifiant le domaine d'expédition" },
 ];
 
 /**

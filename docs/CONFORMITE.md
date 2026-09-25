@@ -191,7 +191,7 @@ modification ni redistribution.
 | Neon | base PostgreSQL managée | UE (Francfort, `aws-eu-central-1`) — société de droit américain | télémétrie, comptes |
 | Vercel Inc. | hébergement de la console ; réception des mesures et relais vers le collecteur | fonctions serveur en UE (Francfort, `fra1`) — société de droit américain | **télémétrie RUM en transit**, relayée telle quelle avec le **code pays seul** : la console ne conserve ni ne transmet l'adresse IP ; **en traitement** (scrub, identité retirée, écriture en base) pour la part non relayée et en repli si le collecteur est indisponible ; pas de stockage RUM |
 | Railway Corp. | collecteur (`collector`) : réception des mesures relayées, pseudonymisation, écriture en base ; travaux planifiés, serveur MCP | UE (Amsterdam, `europe-west4`) — société de droit américain | **télémétrie RUM en traitement**, sans adresse IP (code pays seul) : scrub, identité hachée (HMAC, secret posé sur Railway seul), écriture en base ; lecture des agrégats (travaux planifiés), réponses MCP ; pas de stockage RUM |
-| *[Fournisseur e-mail — à brancher]* | envoi des alertes (si activé) | *[à préciser — UE recommandé]* | adresse de destination |
+| Resend, Inc. | envoi des alertes e-mail, appelé par le service `notifier` (Railway) | États-Unis — société de droit américain ; région d'envoi non choisie tant que l'expéditeur est le domaine de test `resend.dev`, `eu-west-1` (Irlande) à retenir en vérifiant le domaine | adresse du destinataire (un opérateur) et texte de l'alerte (application, mesure, valeur) ; aucune donnée d'utilisateur final |
 
 ## 8. Trajectoire de certification (gap analysis)
 | Cible | En place | Reste à faire |
