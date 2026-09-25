@@ -80,6 +80,11 @@ beforeAll(async () => {
   await admin.query(`create database ${BASE}`);
   await admin.query(`create database ${AUTRE}`);
   pool = new pg.Pool({ connectionString: URL_BASE, max: 4 });
+  // La base est supprimée `with (force)` à la fin : une connexion encore en train de
+  // se fermer reçoit alors un FATAL 57P01. Sans écouteur, c'est une exception non
+  // rattrapée qui fait échouer TOUT le passage (vu en CI le 25/09) — absorbée ici.
+  pool.on("error", () => {});
+  pool.on("connect", (client) => client.on("error", () => {}));
   tmp = mkdtempSync(join(tmpdir(), "migrateur-durci-sql-"));
   cpSync(DOSSIER_SQL, tmp, { recursive: true });
 });
