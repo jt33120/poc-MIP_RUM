@@ -1,31 +1,24 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
+import { FormulaireSecret, SecretAffiche } from "@/components/secret/SecretUnique";
 import { BackendStep } from "@/components/wizard/BackendStep";
 import { SnippetStep } from "@/components/wizard/SnippetStep";
 import { WizardBadge, WizardStep } from "@/components/wizard/WizardStep";
-import { popSecret } from "@/lib/auth";
 import { chargerClient } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import { ingestEndpoint } from "@/lib/ingest-endpoint";
-import type { SearchParams } from "@/lib/filters";
 import { buildInjectionArtifacts, buildSnippet, deriveStatus } from "@/lib/onboarding";
 import { buildBackendRecipes } from "@/lib/onboarding-recipes";
 import { fmtDate } from "@/lib/format";
+import { cleDe } from "@/lib/secret-remis";
 import { rotateKeyAction, updateOriginsAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
 /** Guide d'intégration pas-à-pas d'un client (wizard live, v0.5). */
-export default async function CustomerWizard({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ appId: string }>;
-  searchParams: Promise<SearchParams>;
-}) {
+export default async function CustomerWizard({ params }: { params: Promise<{ appId: string }> }) {
   const { appId } = await params;
-  const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/administration.ts`) : l'application et sa sonde
   // d'intégration — hors du périmètre de l'administrateur, introuvable (C9).
   const ecran = accesAdmin(await chargerEcran(chargerClient, {}, { appId }));
@@ -33,9 +26,6 @@ export default async function CustomerWizard({
   const { client: customer, sonde: probe } = ecran;
   const status = deriveStatus(probe);
 
-  // clé d'API : consommée du stash, affichée une seule fois (création ou rotation)
-  const kt = typeof sp.kt === "string" ? sp.kt : null;
-  const oneTimeKey = kt ? popSecret(kt) : null;
 
   // URLs réelles : ingestion via env (prod), SDK servi par cette console
   const host = (await headers()).get("host") ?? "localhost:3000";
@@ -92,24 +82,17 @@ export default async function CustomerWizard({
         </Link>
       </p>
 
-      {kt && (
-        <div
-          data-testid="one-time-key"
-          className="mb-6 rounded-lg border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
-        >
-          {oneTimeKey ? (
-            <>
-              <strong>Clé d&apos;API</strong> (affichée une seule fois — colle-la tout de suite
-              dans le snippet et les variables d&apos;env du client) :{" "}
-              <code data-testid="generated-key" className="rounded bg-white px-2 py-0.5 font-mono">
-                {oneTimeKey}
-              </code>
-            </>
-          ) : (
-            <>Clé déjà affichée — utilise « Régénérer la clé » si elle est perdue.</>
-          )}
-        </div>
-      )}
+      {/* La clé d'API (création de l'application ou rotation) : rendue au formulaire
+          par l'action, remise ici, affichée une seule fois (C9c). */}
+      <SecretAffiche
+        nom={cleDe(appId)}
+        testid="one-time-key"
+        testidValeur="generated-key"
+        className="mb-6 rounded-lg border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
+        codeClassName="rounded bg-white px-2 py-0.5 font-mono"
+        prefixe="Clé d'API de"
+        suffixe="(affichée une seule fois — colle-la tout de suite dans le snippet et les variables d'env du client) :"
+      />
 
       <div className="grid gap-5">
         <WizardStep n={1} title="Vérifier la configuration">
@@ -132,7 +115,7 @@ export default async function CustomerWizard({
                 Mettre à jour
               </button>
             </form>
-            <form action={rotateKeyAction}>
+            <FormulaireSecret action={rotateKeyAction}>
               <input type="hidden" name="app_id" value={appId} />
               <button
                 type="submit"
@@ -140,7 +123,7 @@ export default async function CustomerWizard({
               >
                 Régénérer la clé d&apos;API (l&apos;ancienne cesse de fonctionner)
               </button>
-            </form>
+            </FormulaireSecret>
           </div>
         </WizardStep>
 

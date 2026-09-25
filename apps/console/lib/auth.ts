@@ -136,22 +136,3 @@ export async function requireAdmin(): Promise<SessionUser> {
   if (user!.role !== "admin") redirect("/");
   return user as SessionUser;
 }
-
-// Affichage unique des mots de passe générés (création / reset) : stash mémoire
-// court (5 min) consommé au premier rendu — jamais de secret dans l'URL ni en base
-// en clair. globalThis pour survivre au hot-reload de next dev (même motif que db.ts).
-const g = globalThis as unknown as { mipOnceStore?: Map<string, { value: string; exp: number }> };
-const onceStore = (g.mipOnceStore ??= new Map());
-
-export function stashSecret(value: string): string {
-  for (const [k, v] of onceStore) if (v.exp < Date.now()) onceStore.delete(k);
-  const token = crypto.randomUUID();
-  onceStore.set(token, { value, exp: Date.now() + 5 * 60_000 });
-  return token;
-}
-
-export function popSecret(token: string): string | null {
-  const e = onceStore.get(token);
-  onceStore.delete(token);
-  return e && e.exp > Date.now() ? e.value : null;
-}

@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
-import { popSecret } from "@/lib/auth";
+import { FormulaireSecret, SecretAffiche } from "@/components/secret/SecretUnique";
 import { chargerJetonsLecture } from "@/lib/chargeurs/administration";
 import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
@@ -13,9 +13,6 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   // Le chargeur : les jetons et les applications de son périmètre (C9).
   const { apps, jetons: tokens } = accesAdmin(await chargerEcran(chargerJetonsLecture, {}));
-  const tkt = typeof sp.tkt === "string" ? sp.tkt : null;
-  const tka = typeof sp.tka === "string" ? sp.tka : null;
-  const oneTime = tkt ? popSecret(tkt) : null;
   const error = typeof sp.error === "string" ? sp.error : null;
 
   return (
@@ -36,26 +33,20 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
         </div>
       )}
 
-      {tka && (
-        <div
-          data-testid="one-time-token"
-          className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
-        >
-          {oneTime ? (
-            <>
-              Token pour <strong>{decodeURIComponent(tka)}</strong> (affiché une seule fois, copie-le
-              maintenant) :{" "}
-              <code className="mt-1 block break-all rounded bg-panel px-2 py-1 font-mono text-ink">{oneTime}</code>
-            </>
-          ) : (
-            <>Token de {decodeURIComponent(tka)} déjà affiché — révoque puis recrée si besoin.</>
-          )}
-        </div>
-      )}
+      {/* Le jeton en clair : rendu au formulaire par l'action, affiché une seule fois (C9c). */}
+      <SecretAffiche
+        nom="jeton-lecture"
+        testid="one-time-token"
+        testidValeur="generated-token"
+        className="mb-6 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn-ink"
+        codeClassName="mt-1 block break-all rounded bg-panel px-2 py-1 font-mono text-ink"
+        prefixe="Token pour"
+        suffixe="(affiché une seule fois, copie-le maintenant) :"
+      />
 
       <div className="card mb-8 p-4">
         <h2 className="mb-3 text-sm font-semibold text-ink-soft">Générer un token</h2>
-        <form action={createReadTokenAction} className="flex flex-wrap items-end gap-3" data-testid="create-read-token">
+        <FormulaireSecret action={createReadTokenAction} className="flex flex-wrap items-end gap-3" testid="create-read-token">
           <label className="text-xs font-medium text-ink-soft">
             App
             <select name="app" required defaultValue="" className="field mt-1 block">
@@ -76,7 +67,7 @@ export default async function ReadTokens({ searchParams }: { searchParams: Promi
           <button type="submit" className="btn-accent">
             Générer
           </button>
-        </form>
+        </FormulaireSecret>
       </div>
 
       <div className="card overflow-hidden">
