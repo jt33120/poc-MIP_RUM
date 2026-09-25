@@ -222,8 +222,10 @@ test("viewer : ni administration ni écriture, stack symbolisée à l'affichage 
   await expect(page).not.toHaveURL(/\/admin\/sourcemaps/);
 
   const entetes = { origin: CONSOLE };
-  const jeton = await page.request.post(`${CONSOLE}/api/admin/sourcemap-tokens`, { data: { appId: APP, name: "pirate" }, headers: entetes });
-  expect(jeton.status()).toBe(403);
+  // C9 : la route `/api/admin/sourcemap-tokens` a été retirée (les jetons s'administrent
+  // depuis l'écran, par leur commande) — plus aucune écriture par elle, pour personne.
+  const jeton = await page.request.post(`${CONSOLE}/api/admin/sourcemap-tokens`, { data: { appId: APP, name: "pirate" }, headers: entetes, maxRedirects: 0 });
+  expect(jeton.ok()).toBe(false);
   const upload = await page.request.post(`${CONSOLE}/api/sourcemaps`, {
     data: { appId: APP, release: "9.9.9", maps: [{ filename: BUNDLE, content: MAP }] },
     headers: entetes,

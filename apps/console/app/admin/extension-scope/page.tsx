@@ -103,6 +103,7 @@ export default async function ExtensionScope({ searchParams }: { searchParams: P
                 <td className="px-4 py-2">
                   <form action={toggleExtensionScopeAction}>
                     <input type="hidden" name="id" value={s.id} />
+                    <input type="hidden" name="app" value={s.app_id} />
                     <input type="hidden" name="active" value={s.active ? "0" : "1"} />
                     <button
                       type="submit"

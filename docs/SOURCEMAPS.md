@@ -152,9 +152,13 @@ Routes de session admin (hors API publique v1, auth dans le handler, 401/403 en 
 | Route | Rôle |
 |---|---|
 | `GET /api/sourcemaps?appId=[&release=]` | releases de l'app, ou fichiers et empreinte d'une release — sans contenu |
-| `GET /api/admin/sourcemap-tokens[?appId=]` | `{ tokens: [{ id, name, appId, createdAt, expiresAt, lastUsedAt, revokedAt }] }` |
-| `POST /api/admin/sourcemap-tokens` | `{ appId, name, expiresInDays? }` (1..90, défaut 30) → `201 { token, secret }`, audité ; Origin requis |
-| `DELETE /api/admin/sourcemap-tokens/{id}` | révocation idempotente, auditée ; Origin requis |
+
+Les **jetons de CI** se créent et se révoquent depuis l'écran `/admin/sourcemaps` (C9, 25/09/2026) :
+ses server actions appellent les commandes `creerJetonSourcemap` et `revoquerJetonSourcemap`
+(`apps/console/lib/commandes/raccordements.ts`) — l'administrateur de l'application du jeton,
+1 à 90 jours (30 par défaut), secret rendu une seule fois, création et révocation auditées. Les
+routes `/api/admin/sourcemap-tokens` (liste, création, révocation) ont été retirées : leur seul
+client était cet écran.
 
 ## Symbolication à l'ingestion : bornes
 

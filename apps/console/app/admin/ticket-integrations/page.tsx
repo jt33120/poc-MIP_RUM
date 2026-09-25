@@ -202,6 +202,7 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
                     <div className="flex flex-wrap gap-2">
                       <form action={majIntegrationAction}>
                         <input type="hidden" name="id" value={i.id} />
+                        <input type="hidden" name="app" value={i.app_id} />
                         <input type="hidden" name="champ" value="enabled" />
                         <input type="hidden" name="valeur" value={i.enabled ? "0" : "1"} />
                         <button type="submit" className="btn-ghost border border-line px-2 py-1 text-xs">
@@ -210,6 +211,7 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
                       </form>
                       <form action={majIntegrationAction}>
                         <input type="hidden" name="id" value={i.id} />
+                        <input type="hidden" name="app" value={i.app_id} />
                         <input type="hidden" name="champ" value="verified" />
                         <input type="hidden" name="valeur" value={i.verified_at ? "0" : "1"} />
                         <button type="submit" className="btn-ghost border border-line px-2 py-1 text-xs">
@@ -219,6 +221,7 @@ export default async function TicketIntegrationsPage({ searchParams }: { searchP
                       {i.state === "degraded" && (
                         <form action={majIntegrationAction}>
                           <input type="hidden" name="id" value={i.id} />
+                        <input type="hidden" name="app" value={i.app_id} />
                           <input type="hidden" name="champ" value="state" />
                           <button type="submit" className="btn-ghost border border-line px-2 py-1 text-xs">
                             Réactiver

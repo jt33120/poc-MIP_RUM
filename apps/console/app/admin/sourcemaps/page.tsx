@@ -327,7 +327,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
                       </span>
                     </td>
                     <td className="px-4 py-2 text-right">
-                      {!t.revokedAt && <TokenRevokeButton id={t.id} name={t.name} />}
+                      {!t.revokedAt && <TokenRevokeButton id={t.id} name={t.name} appId={t.appId} />}
                     </td>
                   </tr>
                 );

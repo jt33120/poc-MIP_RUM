@@ -119,14 +119,16 @@ async function ouvrirDemande(
 async function cloreDemande(
   client: PoolClient,
   id: string | null,
+  app: string,
   comptes: Record<string, number>,
 ): Promise<void> {
   if (!id) return;
+  // La demande est relue DANS son application (lint des écritures, C9), comme toute ligne d'une app.
   await client.query(
     `update privacy_erasure_request
         set status = 'completed', counts = $2::jsonb, ended_at = now()
-      where id = $1::uuid`,
-    [id, JSON.stringify(comptes)],
+      where id = $1::uuid and app_id = $3`,
+    [id, JSON.stringify(comptes), app],
   );
 }
 
@@ -469,7 +471,7 @@ export async function dsarIdentityErase(
     if (protege && issues.size) {
       await client.query("select privacy_reconcilier_issues($1, $2::uuid[])", [app, [...issues]]);
     }
-    await cloreDemande(client, demande, {
+    await cloreDemande(client, demande, app, {
       ...Object.fromEntries(deleted.map((d) => [d.table, d.deleted])),
       ...file,
       sessions_barrees: barriere ? sessionIds.length : 0,
@@ -615,7 +617,7 @@ export async function dsarErase(
         );
         await client.query("select privacy_marquer_heures($1, $2::text[])", [cible, sessionIds]);
       }
-      await cloreDemande(client, demande, { sessions: sessionIds.length });
+      await cloreDemande(client, demande, cible, { sessions: sessionIds.length });
     }
 
     if (!protege && sessionIds.length) {

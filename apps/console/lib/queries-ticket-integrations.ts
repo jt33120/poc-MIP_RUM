@@ -281,6 +281,8 @@ export function parseIntegrationPatch(body: unknown): Parsed<IntegrationPatch> {
 export async function createTicketIntegration(
   request: IntegrationRequest,
   adminEmail: string,
+  /** La ligne d'audit de la commande (C9), dans la transaction ; absente, l'action historique. */
+  auditer?: (client: import("pg").PoolClient, detail: string) => Promise<void>,
 ): Promise<TicketIntegration | null> {
   return tx(async (client) => {
     const { rowCount } = await client.query("select 1 from app_registry where app_id = $1", [request.app]);
@@ -297,13 +299,12 @@ export async function createTicketIntegration(
     // L'audit porte la FORME du secret, jamais sa référence : un journal d'audit
     // se relit, s'exporte et s'archive — c'est exactement l'endroit où un nom de
     // variable finirait par voyager avec le reste.
-    await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_integration_create', $2)", [
-      adminEmail,
-      JSON.stringify({
-        id: cree.id, app_id: request.app, provider: request.provider, target: request.target,
-        credential: decrire(request.credentialRef).kind,
-      }),
-    ]);
+    const detail = JSON.stringify({
+      id: cree.id, app_id: request.app, provider: request.provider, target: request.target,
+      credential: decrire(request.credentialRef).kind,
+    });
+    if (auditer) await auditer(client, detail);
+    else await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_integration_create', $2)", [adminEmail, detail]);
     return versIntegration(cree);
   });
 }
@@ -314,6 +315,8 @@ export async function patchTicketIntegration(
   patch: IntegrationPatch,
   adminEmail: string,
   apps: string[] | null,
+  /** La ligne d'audit de la commande (C9), dans la transaction ; absente, l'action historique. */
+  auditer?: (client: import("pg").PoolClient, detail: string) => Promise<void>,
 ): Promise<TicketIntegration | null> {
   if (!/^[1-9]\d{0,17}$/.test(id)) return null;
   return tx(async (client) => {
@@ -335,14 +338,13 @@ export async function patchTicketIntegration(
               verified_at    = case when $5::boolean is null then verified_at
                                     when $5 then coalesce(verified_at, now()) end,
               updated_at     = now()
-        where id = $1
+        where id = $1 and app_id = $6
         returning ${COLONNES}`,
-      [id, patch.enabled ?? null, patch.configVersion ?? null, patch.state ?? null, patch.verified ?? null],
+      [id, patch.enabled ?? null, patch.configVersion ?? null, patch.state ?? null, patch.verified ?? null, avant.app_id],
     );
-    await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_integration_patch', $2)", [
-      adminEmail,
-      JSON.stringify({ id, app_id: apres.app_id, ...patch }),
-    ]);
+    const detail = JSON.stringify({ id, app_id: apres.app_id, ...patch });
+    if (auditer) await auditer(client, detail);
+    else await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_integration_patch', $2)", [adminEmail, detail]);
     return versIntegration(apres);
   });
 }

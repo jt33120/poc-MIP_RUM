@@ -49,6 +49,7 @@ import { MobileDansLeTemps } from "@/components/mobile/MobileDansLeTemps";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { chargerMobile } from "@/lib/chargeurs/mobile";
+import { validerCapaciteAction } from "./actions";
 import { chargerEcran } from "@/lib/ecran-local";
 import { type SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
@@ -77,7 +78,7 @@ import { hrefWithQuery, intersectQuery, paramReader, previousRange, rangeLabel }
 import { ecartProportions, intervalleWilson } from "@/lib/stats/incertitude";
 import { lireComparaison, lireTri } from "@/lib/view-state";
 import { explorerPlanParams } from "@/lib/explorer-page-params";
-import { lienCohorte } from "@/lib/mobile-capabilities";
+import { lienCohorte, SANS_RELEASE } from "@/lib/mobile-capabilities";
 import { annotationsDeploiementsCohorte } from "@/lib/mobile-capabilities";
 import { PLAN_SESSIONS_COMMENCEES } from "@/lib/queries-sessions";
 import { bucketStarts } from "@/lib/query-contract";
@@ -129,6 +130,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
   if (d.etat === "refus") return <FilterProblemNotice title="Mobile" problem={d.problem} />;
   const query = d.query;
   const lecteur = paramReader(sp);
+  // R5 (C9) : la recette d'une capacité, pour l'administrateur de la plateforme sur une app nommée.
+  const recette = d.recette;
 
   // Réglages d'affichage : comparaison (défaut `prev` sur un écran Performance) et
   // ordre du hero. Sans `tri`, le hero garde l'ordre de la SOURCE (chronologie des
@@ -643,6 +646,34 @@ export default async function MobilePage({ searchParams }: { searchParams: Promi
                   <td className="block px-2 py-1 text-xs text-ink-soft sm:table-cell sm:px-4 sm:py-3">
                     <span className="sm:hidden">Vérifié (recette) : </span>
                     {c.verified_at ? `${dateUtc(c.verified_at)}${c.verified_by ? ` · ${c.verified_by}` : ""}` : "Jamais"}
+                    {/* R5 (C9) : l'administrateur de la plateforme pose la recette d'une capacité
+                        DÉCLARÉE active, release par release — un geste audité, plus un `update` direct. */}
+                    {recette && c.state === "active" && c.declared_by.length > 0 && (
+                      <details className="mt-1" data-testid={`recette-${c.capability}`}>
+                        <summary className="cursor-pointer select-none hover:text-ink">Poser la recette</summary>
+                        <form action={validerCapaciteAction} className="mt-1 flex flex-wrap items-end gap-2">
+                          <input type="hidden" name="app" value={recette.app} />
+                          <input type="hidden" name="capability" value={c.capability} />
+                          <label className="flex flex-col gap-1">
+                            Release
+                            <select name="release" className="field">
+                              {c.declared_by.map((r) => (
+                                <option key={r ?? SANS_RELEASE} value={r ?? SANS_RELEASE}>
+                                  {r ?? "release inconnue"}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex min-w-0 flex-col gap-1">
+                            Ce qui a été vu (appareil, build)
+                            <input name="note" maxLength={1000} className="field w-56 max-w-full" />
+                          </label>
+                          <button type="submit" className="btn-ghost">
+                            Recette jouée
+                          </button>
+                        </form>
+                      </details>
+                    )}
                   </td>
                 </tr>
               ))}

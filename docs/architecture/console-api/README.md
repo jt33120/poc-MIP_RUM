@@ -144,6 +144,17 @@ Activer ou suspendre POSE l'état voulu (`PUT …/active`), au lieu d'inverser :
 
 **Les écrans d'administration** forment une famille à part du contrat (`ECRANS_ADMIN`) : un administrateur, sans portée d'application — `/admin/uptime` en C8, les autres écrans d'`/admin` en C9. Leur chargeur restreint ce qu'il liste au périmètre du principal, et dit `interdit` à qui n'est pas administrateur (la page redirige, comme `requireAdmin`).
 
+**C9 — l'administration** (18 commandes). Deux règles, et elles seules :
+
+- **l'administrateur de la PLATEFORME** (rôle admin, aucune liste) : les comptes de la console (créer, activer ou désactiver, réinitialiser un mot de passe — un administrateur d'une liste créerait sinon un compte aux applications de son choix), la création d'une application (un nouveau client, un site ajouté depuis `/select`), ce qui n'appartient à aucune application (oublier un poste de l'extension) et la **recette d'une capacité mobile** (R5 : `verified_at`, qui se posait par un `update` direct sans contrôle de droits ; un formulaire sur `/mobile` pour l'administrateur de la plateforme) ;
+- **l'administrateur de l'application** (portée `app`) : sa clé d'ingestion, son activation, ses origines CORS, ses jetons de lecture et de CI, ses connecteurs de tickets, les domaines de l'extension qui lui sont rattachés. Un domaine déjà rattaché à une application hors de son périmètre n'est plus repris (avant C9, l'enregistrement le déplaçait sans rien vérifier).
+
+Désactiver un compte ou réinitialiser son mot de passe **révoque ses sessions** (`console_session`, migration-v90, quand elle est appliquée). Un secret (mot de passe, clé, jeton) est généré et haché par la commande et **rendu une fois** par sa décision ; la console l'affiche comme avant (stash mémoire), jamais écrit en clair. Les routes `/api/admin/sourcemap-tokens` et `/api/admin/ticket-integrations` ont été retirées : leurs seuls clients étaient les écrans, qui appellent désormais leurs commandes (les jetons de CI par des server actions, depuis leurs composants client).
+
+**Le lint des écritures** (`tests/unit/ecritures-par-application.test.ts`) relit tout le SQL d'écriture de la console : un `update` ou un `delete` par identifiant sans `app_id` échoue, hors des tables listées avec leur raison (un compte, une session, un tableau de bord et sa porte, une vue personnelle, un poste de l'extension, le registre des applications). Il a trouvé deux écritures à corriger : la clôture d'une demande d'effacement et la mise à jour d'un connecteur de tickets, désormais filtrées par leur application.
+
+**Reste de C9** (PR suivante) : les écrans d'administration en chargeurs, et le périmètre de LECTURE d'un administrateur d'une liste aligné sur celui de ses écritures.
+
 ## Ordre proposé pour libérer le cliquet
 
 1. **Sans `console-api`** : scinder les modules mixtes (famille 1). **Fait** : 13 composants et un écran sortis du cliquet (27 → 14 composants, 51 → 50 écrans). C0 démarre sur une base plus petite.
