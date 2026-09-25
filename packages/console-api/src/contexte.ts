@@ -32,6 +32,15 @@ export interface Lecteur {
   query<T = Record<string, unknown>>(texte: string, valeurs?: readonly unknown[]): Promise<{ rows: T[] }>;
 }
 
+/**
+ * Une transaction : chaque requête de `fn` sur le même client, validée ensemble
+ * ou annulée ensemble. C'est ainsi qu'une écriture et sa ligne d'audit partent
+ * ensemble (C1 : la session et la connexion ; C6 → C9 : chaque écriture).
+ */
+export interface Transacteur {
+  transaction<T>(fn: (c: Lecteur) => Promise<T>): Promise<T>;
+}
+
 export interface Contexte<P = unknown, Q = unknown, B = unknown> {
   readonly requestId: string;
   readonly principal: Principal;
@@ -42,5 +51,11 @@ export interface Contexte<P = unknown, Q = unknown, B = unknown> {
   readonly echeance: number;
   /** Les applications EFFECTIVES d'une portée `app` (`app=all` résolu) ; `null` hors portée `app`. */
   readonly apps: readonly string[] | null;
+  /**
+   * L'adresse IP du visiteur, transmise par le serveur de la console
+   * (`x-mip-visitor-ip`) : crue parce que seul le détenteur du secret client peut
+   * la poser. Pour le débit d'authentification SEULEMENT, jamais écrite en clair.
+   */
+  readonly ipVisiteur: string | null;
   readonly journal: Journal;
 }

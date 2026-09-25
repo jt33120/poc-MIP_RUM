@@ -14,6 +14,8 @@
 //
 // LES SONDES : /health (processus + base, la sonde Railway), /live, /ready et
 // /metrics sous METRICS_TOKEN — servies par le kit, sans secret client.
+import { randomBytes } from "node:crypto";
+import bcrypt from "bcryptjs";
 import pg from "pg";
 import { COMMON_ENV, defineConfig } from "@mip/service-kit/config.mjs";
 import { createLogger } from "@mip/service-kit/log.mjs";
@@ -21,7 +23,7 @@ import { installLifecycle } from "@mip/service-kit/lifecycle.mjs";
 import { createPool, describeTarget } from "@mip/service-kit/pg.mjs";
 import { createMetrics } from "@mip/service-kit/metrics.mjs";
 import { startService } from "@mip/service-kit/http.mjs";
-import { chargerTrousseau, creerConsoleApi, creerTable, creerVerificateurSession } from "@mip/console-api";
+import { chargerTrousseau, creerConsoleApi, creerDebitAuth, creerTable, creerVerificateurSession } from "@mip/console-api";
 
 const log = createLogger("console-api");
 const lifecycle = installLifecycle({ log });
@@ -57,6 +59,14 @@ const config = defineConfig(
       max: 100_000,
       description: "Appels par minute et par principal, par réplique (0 = sans limite). La console rejoue ses écrans toutes les 5 s.",
     },
+    // C1 — LA DÉMO. Fermée par défaut : sans liste d'applications, `POST
+    // /v1/auth/demo-sessions` répond 404. Le rôle n'est PAS réglable : une démo
+    // est viewer, en lecture seule, par construction (migration-v90).
+    DEMO_USER_APPS: {
+      type: "list",
+      description: "Applications visibles en démo, séparées par des virgules. Vide : pas de démo.",
+    },
+    DEMO_USER_EMAIL: { type: "string", default: "demo@mip-rum.local", description: "Étiquette de la session de démo dans le journal d'audit." },
     RAILWAY_GIT_COMMIT_SHA: { type: "string", description: "Posée par Railway : la version qu'annonce la poignée de main." },
     RAILWAY_ENVIRONMENT: { type: "string", description: "Posée par Railway : en sa présence, une clé de test est refusée." },
   },
@@ -85,15 +95,50 @@ const pool = createPool(pg, {
 });
 
 const version = (config.RAILWAY_GIT_COMMIT_SHA ?? "dev").slice(0, 12);
-const { table, contrat } = await creerTable({ trousseau, version, db: pool });
-
-const requetes = metrics.counter("console_api_requests_total", "Appels de la console, par opération et par statut.", {
-  labels: ["operation", "status"],
-});
 
 // Les sessions : signature ES256 PUIS ligne `console_session` (migration-v90),
 // jointe au compte, en cache 30 s par réplique — le délai maximal d'une révocation.
 const sessions = await creerVerificateurSession({ trousseau, db: pool });
+
+/** Une transaction sur un client du pool : l'écriture et sa ligne d'audit partent ensemble. */
+const transacteur = {
+  async transaction(fn) {
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      const resultat = await fn(client);
+      await client.query("commit");
+      return resultat;
+    } catch (err) {
+      await client.query("rollback").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+};
+
+const demoApps = (config.DEMO_USER_APPS ?? []).filter(Boolean);
+const { table, contrat } = await creerTable({
+  trousseau,
+  version,
+  db: pool,
+  identite: {
+    transacteur,
+    // La clé HMAC des compteurs est dérivée du secret client (HKDF) : pas de
+    // secret de plus ; une rotation remet les compteurs à zéro (ils vivent 1 h).
+    debit: await creerDebitAuth(config.CONSOLE_API_CLIENT_SECRETS[0]),
+    verifierMotDePasse: (clair, hache) => bcrypt.compare(clair, hache),
+    // Comparé quand le compte n'existe pas : même coût (10) que les vrais hachages.
+    hachageFactice: bcrypt.hashSync(randomBytes(16).toString("hex"), 10),
+    demo: demoApps.length ? { email: config.DEMO_USER_EMAIL.trim().toLowerCase(), apps: demoApps } : null,
+    oublierSession: (sid) => sessions.oublier(sid),
+  },
+});
+
+const requetes = metrics.counter("console_api_requests_total", "Appels de la console, par opération et par statut.", {
+  labels: ["operation", "status"],
+});
 
 const servir = creerConsoleApi({
   table,
@@ -125,4 +170,5 @@ log.info("console-api démarré", {
   kid: trousseau.courante.kid,
   cles: trousseau.toutes.length,
   secrets_client: config.CONSOLE_API_CLIENT_SECRETS.length,
+  demo: demoApps.length ? demoApps.length : "fermée",
 });

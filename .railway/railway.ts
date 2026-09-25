@@ -303,6 +303,10 @@ export default defineRailway((ctx) => {
       // Requêtes par minute et par principal. Le régime réel est un sondage :
       // `AutoRefresh` rejoue 12 rendus par minute et par onglet (README de la piste C).
       CONSOLE_API_RATE_LIMIT: "600",
+      // C1 — LA DÉMO, servie ici quand la console sera basculée (/demo appelle
+      // `POST /v1/auth/demo-sessions`). Les applications que la vitrine montre
+      // (relevé du 23/09 sur Vercel) : pas un secret, un périmètre. Vide : fermée.
+      DEMO_USER_APPS: "mip-rum-console,insight-performance",
       PGPOOL_MAX: "6",
       NODE_ENV: "production",
       RAILWAY_DEPLOYMENT_DRAINING_SECONDS: "15",

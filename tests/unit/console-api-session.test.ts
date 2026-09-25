@@ -115,6 +115,8 @@ describe("C0c — le jeton de session : exactement ce que ce service émet, rien
       { ...REV, aud: [AUDIENCE_SESSION] },
       { ...REV, role: "admin" },
       { ...REV, apps: null },
+      { ...REV, demo: false },
+      { ...REV, demo: "oui" },
       { ...REV, sid: "admin" },
       { ...REV, iat: String(S0) },
     ]) {
@@ -190,11 +192,23 @@ describe("C0c — le vérificateur : le rôle et le périmètre viennent de la b
     });
   });
 
-  it("une démo : viewer par construction, son périmètre figé", async () => {
-    const { v, jeton } = await verificateur({ [SID]: DEMO });
-    expect(await v.verifier(await jeton())).toEqual({
+  it("une démo : viewer par construction, son périmètre figé — et le jeton le dit (`demo: true`)", async () => {
+    const t = await trousseau("session-20260924-a");
+    const v = await creerVerificateurSession({ trousseau: t, db: base({ [SID]: DEMO }).db, horloge: () => T0 });
+    const jeton = await emettreJetonSession(t, { sid: SID, iat: S0, exp: S0 + 3600, demo: true });
+    expect(await lireJetonSession(jeton, await clesPubliques(t), S0)).toEqual({ sid: SID, iat: S0, exp: S0 + 3600, demo: true });
+    expect(await v.verifier(jeton)).toEqual({
       kind: "session", sessionId: SID, userId: null, email: "demo@mip.test", role: "viewer", apps: ["app-demo"], demo: true,
     });
+  });
+
+  it("le jeton et la ligne doivent dire la même chose de la démo : sinon, refusé", async () => {
+    const t = await trousseau("session-20260924-a");
+    const v = await creerVerificateurSession({ trousseau: t, db: base({ [SID]: DEMO, [AUTRE_SID]: COMPTE }).db, horloge: () => T0 });
+    // Une démo dont le jeton tairait la démo : le middleware la laisserait écrire.
+    expect(await v.verifier(await emettreJetonSession(t, { sid: SID, iat: S0, exp: S0 + 3600 }))).toBeNull();
+    // Un compte dont le jeton se dirait démo.
+    expect(await v.verifier(await emettreJetonSession(t, { sid: AUTRE_SID, iat: S0, exp: S0 + 3600, demo: true }))).toBeNull();
   });
 
   it("refusée : ligne absente (révoquée, expirée, inconnue), compte désactivé, rôle inconnu, démo sans périmètre", async () => {

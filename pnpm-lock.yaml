@@ -251,6 +251,9 @@ importers:
       '@mip/service-kit':
         specifier: workspace:*
         version: link:../../packages/service-kit
+      bcryptjs:
+        specifier: 3.0.3
+        version: 3.0.3
       esbuild:
         specifier: 0.28.0
         version: 0.28.0
