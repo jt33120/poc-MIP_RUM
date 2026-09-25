@@ -165,6 +165,15 @@ Un seul contrat de filtres pour la console, l'API et l'export. Ce qui change pou
 - **Tablette** : `device=tablet` est désormais appliqué par tous les endpoints, y compris
   `overview`, `vitals`, `pages`, `tracing` et `health-grid`, qui l'ignoraient.
 
+### 25/09/2026 — les écritures de l'opérateur quittent l'API publique (C7)
+
+`POST /api/v1/issues/{id}/triage`, `/comments`, `/links` et `/tickets`, `POST /api/v1/explorer/views`,
+`PATCH` et `DELETE /api/v1/explorer/views/{id}` sont retirées. Elles n'acceptaient que le cookie d'une
+session de la console, de même origine : aucune machine ne pouvait s'en servir, et le seul client était
+l'écran de la console, qui écrit désormais par ses server actions (section « Écritures »). Les lectures
+correspondantes restent : `GET /api/v1/issues/{id}/activity`, `GET /api/v1/issues/{id}/tickets`,
+`GET /api/v1/explorer/views`.
+
 ### 17/09/2026 — workflow des issues, suivi de revue (P5.6)
 
 Deux contrats se précisent. `POST /api/v1/issues/{id}/links` répond `422` (et non plus `409`) quand l'URL est
@@ -542,29 +551,11 @@ liste vide se lirait « aucune vue n'existe » — le refus est donc explicite.
 `owner_email` — renseigné **uniquement** pour une session admin, `null` sinon. Avant
 migration-v79 : `503`.
 
-### `POST /api/v1/explorer/views` — enregistrer une analyse
-Corps `{ name, query }`. **Session uniquement** (cookie `mip_session`, jamais une session
-démo, en-tête `Origin` de la console) ; le rôle `viewer` est accepté — c'est le droit
-d'écriture personnelle qu'il possède déjà sur ses propres tableaux de bord, pas un droit
-nouveau. `query` est un `ExplorerQuery` validé par le registre puis **rendu canonique** :
-ce qui est stocké est exactement ce que `POST /explorer/query` sait rejouer.
-
-Une vue **nomme toujours son app** : `app: null` (« toutes les apps autorisées ») est refusé
-en `400`, parce que la même vue mesurerait alors une population différente selon son
-lecteur. `name` : 1 à 100 caractères sans caractère de contrôle. Plafond : **50 vues par
-compte et par app** — au-delà, `422` (recharger n'y changerait rien). `201`,
-`data = { view }`.
-
-### `PATCH /api/v1/explorer/views/{id}` — renommer / remplacer l'AST
-Corps `{ name?, query?, expectedRevision }`, au moins l'un des deux changements. Le
-**propriétaire seul** écrit : un admin lit les vues de ses apps mais ne renomme pas
-l'analyse personnelle d'un autre (`403`). Une vue ne change jamais d'app (`403`) — ce serait
-un partage déguisé. `409` avec `{ error, revision }` si la vue a bougé depuis sa lecture.
-
-### `DELETE /api/v1/explorer/views/{id}` — supprimer
-Aucun corps. Propriétaire seul, dans une app de son périmètre ; `404` pour un identifiant
-inconnu, hors périmètre ou mal formé — il ne révèle jamais qu'une vue existe ailleurs.
-`data = { deleted: true }`.
+Les **écritures** de vues (enregistrer, renommer, supprimer) ne sont plus dans cette API depuis
+le 25/09/2026 (C7) : une vue est personnelle, elle s'écrit depuis l'écran de la console
+(`/explorer`, `/explorer/views`). Les règles restent celles de P6.5 — une app nommée, 50 vues
+par compte et par app, propriétaire seul, révision citée — tenues par la commande de la
+console (`apps/console/lib/commandes/vues.ts`).
 
 ### `POST /api/v1/explorer/query` — requête analytique bornée
 **C'est une LECTURE.** Le verbe est `POST` parce qu'un AST ne tient pas dans une query
@@ -676,64 +667,26 @@ spec ci-dessus lisible dans un navigateur.
 
 ## Écritures
 
-Sept routes non-`GET`, annoncées séparément dans le descripteur `GET /api/v1` (champ `write`) plutôt
-que noyées dans l'énumération des lectures. Tout le reste de `/api/v1` est en lecture seule.
-Les trois écritures de vues enregistrées (`POST /explorer/views`, `PATCH` et `DELETE`
-`/explorer/views/{id}`) sont décrites avec l'Explorer, section ci-dessus : elles sont
-personnelles, et non administratives.
+Une seule route non-`GET` écrit, annoncée séparément dans le descripteur `GET /api/v1` (champ `write`)
+plutôt que noyée dans l'énumération des lectures : le marqueur de déploiement, qu'envoie une chaîne
+d'intégration continue. Tout le reste de `/api/v1` est en lecture seule.
+
+**Les écritures de l'opérateur ont quitté cette API le 25/09/2026 (C7)** : le triage, les commentaires et
+les liens d'une issue, la demande de création d'un ticket, et les vues enregistrées. Elles n'étaient
+atteignables qu'avec le cookie d'une session de la console, depuis son propre écran ; elles passent
+désormais par cet écran, dont les server actions appellent leurs **commandes**
+(`apps/console/lib/commandes/`) — celles que `console-api` servira à la console seule
+([docs/api/console-api.md](api/console-api.md)), jamais à un navigateur ni à une machine. Leurs règles
+n'ont pas changé : administrateur de l'application de l'issue, révision citée (`conflit` si l'issue a
+changé depuis sa lecture), commentaire scrubbé et borné à 2 000 caractères après masquage, lien HTTPS
+normalisé et jamais deux fois, demande de ticket idempotente (`ticket:<intégration>:<issue>`) dont la
+charge — message scrubbé, application, release, compteur, lien console — ne contient ni la pile d'appels
+ni une identité. Un jeton `CONSOLE_API_TOKENS` n'a jamais eu, et n'a toujours pas, de droit d'écriture.
 
 ### `POST /api/v1/deploys` — marqueur de déploiement
 Enregistre un marqueur de déploiement depuis une chaîne d'intégration continue, ce qui permet aux écrans de
 dater une régression par rapport à une mise en production. Les marqueurs ordonnent aussi les releases d'une
 app et d'un env pour confirmer la régression d'une issue (P5.6) : jamais d'ordre lexical ni SemVer.
-
-### Garde commune des écritures d'une issue
-Session admin de la console (cookie `mip_session`, rôle `admin`, jamais une session démo) et en-tête `Origin`
-de la console : `401` sans session ; `403` pour un jeton d'API, une session viewer ou démo, ou une autre
-origine ; `429` au-delà du débit ; `413` au-delà de 16 Kio ; `400` pour un JSON ou un contrat invalide ; `404`
-pour une issue inconnue, hors périmètre ou d'une autre `app` que celle du corps ; `409` si `expectedRevision`
-n'est plus la révision courante (corps `{ error, revision }` : recharger puis rejouer) ; `503` avant
-migration-v73. Réponse `{ meta: { app, generatedAt }, data }`, jamais mise en cache. Chaque écriture
-incrémente la révision, trace une activité et une entrée `audit_log` (sans le texte d'un commentaire).
-
-### `POST /api/v1/issues/{id}/triage` — statut et assigné
-Corps `{ app, status?, assigneeUserId?, expectedRevision }`, au moins `status` ou `assigneeUserId`
-(`null` : désassigner). `status` : `open`, `for_review`, `resolved` ou `ignored`. L'assigné doit être un compte
-actif autorisé sur l'app de l'issue (`console_user.apps` nul ou la contenant), sinon `400` ; l'assignation ne
-change jamais le statut. Résoudre fige la **référence** : release et env de la dernière occurrence rattachée.
-Une occurrence ultérieure ne rouvre l'issue que si sa release, dans cet env, a été déployée strictement après
-la référence d'après les marqueurs de déploiement ; sinon la réapparition reste « à vérifier ». Une issue
-ignorée le reste. Rien à changer : `200` sans nouvelle révision. `data = { issue: IssueWorkflowState }`.
-
-### `POST /api/v1/issues/{id}/comments` — commentaire
-Corps `{ app, body, expectedRevision }`. Le texte est scrubbé (e-mails, secrets, longues suites de chiffres)
-puis borné à 2 000 caractères **après** masquage (`400` au-delà). `201`, `data = { activity, revision }`.
-
-### `POST /api/v1/issues/{id}/links` — lien de ticket
-Corps `{ app, url, label, expectedRevision }`. `url` : HTTPS, sans identifiants, normalisée (hôte en punycode,
-caractères encodés), 2 048 caractères au plus ; `label` : une ligne scrubbée de 120 caractères. La même URL deux
-fois sur une issue : `422` — un rechargement n'y changerait rien, à la différence d'un `409`. `201`,
-`data = { link, activity, revision }`. **Ce lien fonctionne sans connecteur** : c'est la voie manuelle, et
-P8.6 ne l'a pas remplacée.
-
-### `POST /api/v1/issues/{id}/tickets` — demander la création d'un ticket (P8.6)
-Corps `{ app, integrationId, expectedRevision }`. Réponse **`202`** — la demande est acceptée, le ticket
-n'existe pas encore : il est créé par la file de sortie au tick suivant.
-`data = { jobId, state, payload, revision }`, où `payload` est le titre, la description et le lien
-**exactement** tels qu'ils partiront (l'écran d'administration affiche le résultat du même calcul).
-
-- Session **admin** de la console et même origine. Un jeton `CONSOLE_API_TOKENS` reste en lecture seule et
-  n'obtient jamais un droit d'écriture externe (`403`), comme une session viewer ou démo.
-- L'intégration doit appartenir à l'app de l'issue, être activée, non dégradée **et éprouvée** (`400` sinon) :
-  tant qu'aucun ticket réel n'a été créé et relu avec cette configuration, la console ne la propose pas.
-- `409` si l'issue a changé depuis sa lecture, avec la révision courante : ce qui partirait ne serait plus ce
-  qui a été montré.
-- **Idempotent** : la clé est `ticket:<intégration>:<issue>`. Deux clics, deux onglets ou un rejeu du `202`
-  retombent sur la même demande, donc sur le même ticket.
-- Charge minimale : message scrubbé, application, release, compteur observé, lien console. **La pile d'appels
-  complète et les identités ne sortent pas de MIP.**
-- GitHub Issues est l'implémentation actuelle du connecteur ; la cible reste l'outil ITSM de MIP — ServiceNow,
-  sous réserve de confirmation.
 
 ---
 

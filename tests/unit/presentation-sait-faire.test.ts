@@ -211,8 +211,9 @@ describe("revue de fin de vague 7 — les cartes suivent leurs lignes corrigées
     expect(e3.limite).toContain("**La session démo n'écrit rien**");
     expect(e3.limite).toContain("**Un viewer écrit ce qui est à lui, dans son périmètre**");
     expect(e3.limite).toContain("`apps/console/lib/dashboard-access.ts:117-135`");
-    expect(e3.limite).toContain("`apps/console/app/api/v1/explorer/views/route.ts:45-47`");
-    expect(e3.limite).toContain("**Le triage d'une issue** (`A8`) reste réservé aux administrateurs");
+    // C7 : les écritures quittent l'API v1 — la règle est celle de la commande.
+    expect(e3.limite).toContain("`apps/console/lib/commandes/vues.ts:33`");
+    expect(e3.limite).toContain("**Le triage d'une issue** (`A8`) reste réservé à l'administrateur de l'application de l'issue");
     // L'ancienne limite, que le code contredisait déjà sur le commit relevé.
     expect(e3.limite).not.toContain("ne gagnent **aucun** droit d'écriture");
 

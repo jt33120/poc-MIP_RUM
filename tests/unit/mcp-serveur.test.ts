@@ -73,9 +73,10 @@ describe("catalogue — le contrat exposé à l'IA", () => {
     expect(cites.filter((nom) => !noms.has(nom))).toEqual([]);
   });
 
-  // La garantie centrale du serveur : aucun outil n'écrit. `POST /api/v1/deploys` et
-  // les écritures du workflow des issues (P5.6) existent côté API et ne sont
-  // délibérément pas exposés — ce test échoue si quelqu'un les ajoute sans y repenser.
+  // La garantie centrale du serveur : aucun outil n'écrit. `POST /api/v1/deploys`
+  // existe côté API et n'est délibérément pas exposé ; les écritures du workflow des
+  // issues (P5.6) ont quitté l'API en C7 — ce test échoue si quelqu'un ajoute une
+  // écriture sans y repenser.
   //
   // CE TEST A CHANGÉ DE PRÉDICAT EN P6.4, ET C'EST LE POINT INTÉRESSANT. Il
   // vérifiait « aucun outil ne fait de POST », en tenant le verbe pour la

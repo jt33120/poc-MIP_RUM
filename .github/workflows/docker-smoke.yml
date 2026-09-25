@@ -271,7 +271,7 @@ jobs:
           curl -fsS -H "$jeton" "$b/api/v1/apps" > /tmp/apps.json
           jq -e '.meta.scope.effective_apps == ["docker-smoke"]' /tmp/apps.json >/dev/null
           curl -fsS -H "$jeton" "$b/api/v1/overview?app=docker-smoke&period=24h" | jq -e '.data != null' >/dev/null
-          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "$jeton" "$b/api/v1/issues/00000000-0000-0000-0000-000000000000/triage")
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "$jeton" "$b/api/v1/deploys")
           echo "écriture -> $code"; test "$code" = "405"
           # L'image ne porte ni Next ni la vérification des sessions de la console.
           if docker compose exec -T api sh -c 'ls /app/services/api/node_modules/.pnpm' | grep -qE '^(next|jose)@'; then

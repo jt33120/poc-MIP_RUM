@@ -127,6 +127,17 @@ function analyser(f) {
   return resultat;
 }
 
+/**
+ * Un import que le serveur n'EXÉCUTE pas : d'un composant CLIENT (`"use client"`)
+ * vers un fichier d'actions (`"use server"`). Next le remplace par une RÉFÉRENCE
+ * (l'identifiant de l'action), jamais par le module : le rendu du composant ne
+ * charge pas la base. Un composant serveur qui importe une action pour son
+ * formulaire, lui, charge le module — cet arc-là reste suivi.
+ */
+function reference(de, vers) {
+  return analyser(de).directive === "use client" && analyser(vers).directive === "use server";
+}
+
 /** La fermeture du graphe d'import d'un fichier : fichiers locaux et paquets. */
 function fermeture(entree) {
   const vus = new Set([entree]);
@@ -137,6 +148,7 @@ function fermeture(entree) {
     const a = analyser(f);
     for (const p of a.paquets) paquets.add(p);
     for (const l of a.locaux) {
+      if (reference(f, l)) continue;
       if (!vus.has(l)) {
         vus.add(l);
         pile.push(l);
@@ -164,6 +176,7 @@ function chaineVersLaBase(entree) {
       return chaine;
     }
     for (const l of a.locaux) {
+      if (reference(f, l)) continue;
       if (!parent.has(l)) {
         parent.set(l, f);
         file.push(l);

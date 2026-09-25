@@ -104,10 +104,8 @@ describe("aucune route réelle n'est passée sous silence", () => {
   });
 
   it("les écritures sont annoncées comme telles, et seulement elles", () => {
-    // Le document les regroupe sous « Écritures ». P5.6 (17/09/2026) en ajoute trois,
-    // délibérément : triage, commentaire et lien d'une issue — session admin de la
-    // console seulement, jamais un jeton CONSOLE_API_TOKENS, jamais un outil MCP. Une
-    // écriture de plus, non signalée ici, ferait mentir cette liste.
+    // Le document les regroupe sous « Écritures ». Une écriture de plus, non signalée
+    // ici, ferait mentir cette liste.
     //
     // UN POST N'EST PAS UNE ÉCRITURE. P6.4 ajoute `POST /api/v1/explorer/query`, qui
     // LIT : son verbe vient de la taille de l'AST, pas d'un changement d'état. Le
@@ -116,23 +114,12 @@ describe("aucune route réelle n'est passée sous silence", () => {
     // listes sont donc tenues séparément, et toutes deux exactes : une route non-GET
     // qui n'apparaît dans ni l'une ni l'autre est une route mal classée.
     const LECTURES_EN_POST = ["POST /api/v1/explorer/query"];
-    // P6.5 en ajoute trois, PERSONNELLES et non administratives : une vue
-    // enregistrée appartient à un compte, et son propriétaire — viewer compris —
-    // l'écrit dans son périmètre. Les ranger avec le triage d'issue dirait à un
-    // client qu'il lui faut le rôle admin, ce qui est faux.
-    const ECRITURES = [
-      "POST /api/v1/explorer/views",
-      "PATCH /api/v1/explorer/views/{id}",
-      "DELETE /api/v1/explorer/views/{id}",
-      "POST /api/v1/deploys",
-      "POST /api/v1/issues/{id}/triage",
-      "POST /api/v1/issues/{id}/comments",
-      "POST /api/v1/issues/{id}/links",
-      // P8.6 : la seule écriture du dépôt qui sorte VERS L'EXTÉRIEUR. Elle rend
-      // 202 — la demande est acceptée, le ticket distant n'existe pas encore —
-      // et reste une écriture d'administration, jamais accessible à un jeton.
-      "POST /api/v1/issues/{id}/tickets",
-    ];
+    // C7 (25/09/2026) : les écritures de l'OPÉRATEUR — triage, commentaire, lien et
+    // demande de ticket d'une issue, vues enregistrées — ont quitté l'API publique.
+    // Elles n'acceptaient que le cookie de la console ; l'écran écrit désormais par
+    // ses server actions et leurs commandes. Reste l'écriture d'une MACHINE : le
+    // marqueur de déploiement qu'envoie la CI.
+    const ECRITURES = ["POST /api/v1/deploys"];
     const nonGet = documentes()
       .filter((e) => e.methode !== "GET")
       .map((e) => `${e.methode} ${e.chemin}`);

@@ -71,8 +71,11 @@ export async function setErrorStatus(
   fingerprint: string,
   status: ErrorStatus,
   operator: string,
+  /** Le client d'une transaction (C7) : le statut et sa ligne d'audit partent ensemble. */
+  client?: Pick<import("pg").PoolClient, "query">,
 ): Promise<void> {
-  await q(
+  const executer = client ? (t: string, v: unknown[]) => client.query(t, v) : (t: string, v: unknown[]) => q(t, v);
+  await executer(
     `insert into error_status (app_id, fingerprint, status, resolved_at, resolved_by, updated_at)
      values ($1, $2, $3, case when $3 = 'resolved' then now() else null end, $4, now())
      on conflict (app_id, fingerprint) do update
