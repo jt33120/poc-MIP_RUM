@@ -7,7 +7,7 @@
 // le formulaire ; la clé est rendue au formulaire (`useActionState`, C9c), qui la
 // remet à l'étape 2 (bandeau, bookmarklet, commande de l'agent).
 import { redirect } from "next/navigation";
-import { executerCommande } from "@/lib/commande-locale";
+import { executerCommande } from "@/lib/commande";
 import { apresRefus } from "@/lib/commande-suite";
 import { cleDe, type SecretRemis } from "@/lib/secret-remis";
 

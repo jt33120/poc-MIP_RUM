@@ -19,6 +19,7 @@
 //     sessions PASSÉES par cette route (la recherche porte sur toute la session).
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { HeroReading } from "@/components/SupervisionHero";
 import { Figure } from "@/components/charts/Figure";
@@ -49,7 +50,7 @@ import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { type SectionLue } from "@/lib/lecture";
 import { chargerAcquisition } from "@/lib/chargeurs/acquisition";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { couvertureDeTuile, gesteElargir, plafondAtteint, plageDansPhrase } from "@/lib/lecture-usages";
 import { categorie } from "@/lib/palette";
 import { hrefWithQuery, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
@@ -108,7 +109,7 @@ export default async function Acquisition({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/acquisition.ts`) lit filtres et sections (F02 :
   // une panne n'efface que ses sections ; S7 : même population que la lecture).
-  const ecran = await chargerEcran(chargerAcquisition, sp);
+  const ecran = await chargerEcran(ECRANS.acquisition, chargerAcquisition, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Acquisition" problem={ecran.problem} />;
   const query = ecran.query;
   // Comparaison (F06, F53) : `cmp=prev` compare les tuiles à la période précédente,

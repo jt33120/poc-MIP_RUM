@@ -2,7 +2,7 @@
 //
 // Le type l'exige (`satisfies`) : une opération déclarée au contrat sans commande
 // ici, ou une commande sans opération, ne compile pas. Deux lecteurs : la console
-// (`lib/commande-locale.ts`, jusqu'à la bascule) et console-api
+// (`lib/commande.ts`, pour la part qu'elle sert elle-même) et console-api
 // (`services/console-api/commandes.mjs`).
 import type { CleCommande } from "@mip/console-contract";
 import type { CommandeQuelconque } from "./commun";

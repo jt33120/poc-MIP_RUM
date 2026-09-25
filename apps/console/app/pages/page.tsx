@@ -20,6 +20,7 @@
 // au-dessus de la page bloque les navigations qui ne changent que la query
 // (sélecteur de vital, période, comparaison). Les frontières restent par section.
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { PercentileTable } from "@/components/Distribution";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
 import { PageHeader } from "@/components/PageHeader";
@@ -46,7 +47,7 @@ import { estVital, formatDuVital, formater, type VitalName } from "@/lib/fmt-ids
 import { classerParGravite, estFaible } from "@/lib/impact";
 import { type SectionLue } from "@/lib/lecture";
 import { chargerPages } from "@/lib/chargeurs/pages";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { categorie } from "@/lib/palette";
 import {
   classementParRoute,
@@ -100,7 +101,7 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/pages.ts`) lit l'écran en trois temps (sections,
   // distributions, releases comparées) et le panneau d'une route ouverte.
-  const ecran = await chargerEcran(chargerPages, sp);
+  const ecran = await chargerEcran(ECRANS.pages, chargerPages, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Pages" problem={ecran.problem} />;
   const period = { label: ecran.label };
   const lecteur = paramReader(sp);

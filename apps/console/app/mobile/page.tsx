@@ -36,6 +36,7 @@
 // de bout en bout ; sinon la raison est écrite à la place du lien.
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
 import { PageHeader } from "@/components/PageHeader";
@@ -50,7 +51,7 @@ import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { chargerMobile } from "@/lib/chargeurs/mobile";
 import { validerCapaciteAction } from "./actions";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { type SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { classerParGravite, SEUIL_ECHANTILLON_FAIBLE } from "@/lib/impact";
@@ -126,7 +127,7 @@ function texteAnglesMorts(capacites: CapabilityStatus[] | null): string {
 export default async function MobilePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/mobile.ts`) lit filtres, schéma et sections.
-  const d = await chargerEcran(chargerMobile, sp);
+  const d = await chargerEcran(ECRANS.mobile, chargerMobile, sp);
   if (d.etat === "refus") return <FilterProblemNotice title="Mobile" problem={d.problem} />;
   const query = d.query;
   const lecteur = paramReader(sp);

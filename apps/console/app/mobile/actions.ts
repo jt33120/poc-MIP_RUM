@@ -5,7 +5,7 @@
 // la plateforme seul, auditée. Avant C9, `verified_at` se posait par un `update`
 // direct, documenté, sans contrôle de droits.
 import { revalidatePath } from "next/cache";
-import { executerCommande } from "@/lib/commande-locale";
+import { executerCommande } from "@/lib/commande";
 import { apresRefus } from "@/lib/commande-suite";
 import { SANS_RELEASE } from "@/lib/mobile-capabilities";
 import { MOBILE_RUNTIME } from "@/lib/queries-mobile";

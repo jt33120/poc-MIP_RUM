@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { FormulaireSecret, SecretAffiche } from "@/components/secret/SecretUnique";
 import { BackendStep } from "@/components/wizard/BackendStep";
 import { SnippetStep } from "@/components/wizard/SnippetStep";
 import { WizardBadge, WizardStep } from "@/components/wizard/WizardStep";
 import { chargerClient } from "@/lib/chargeurs/administration";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { ingestEndpoint } from "@/lib/ingest-endpoint";
 import { buildInjectionArtifacts, buildSnippet, deriveStatus } from "@/lib/onboarding";
 import { buildBackendRecipes } from "@/lib/onboarding-recipes";
@@ -21,7 +22,7 @@ export default async function CustomerWizard({ params }: { params: Promise<{ app
   const { appId } = await params;
   // Le chargeur (`lib/chargeurs/administration.ts`) : l'application et sa sonde
   // d'intégration — hors du périmètre de l'administrateur, introuvable (C9).
-  const ecran = accesAdmin(await chargerEcran(chargerClient, {}, { appId }));
+  const ecran = accesAdmin(await chargerEcran(ECRANS_ADMIN.client, chargerClient, {}, { appId }));
   if (ecran.etat === "introuvable") notFound();
   const { client: customer, sonde: probe } = ecran;
   const status = deriveStatus(probe);

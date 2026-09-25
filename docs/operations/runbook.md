@@ -37,6 +37,7 @@
 | Un service Railway | Railway → service → Deployments → Rollback, puis `git revert` de la cause | immédiat ; le revert empêche le prochain push de le redéployer |
 | Une modification d'infrastructure | `git revert` de la PR → nouveau plan → apply approuvé | quelques minutes |
 | Le relais d'ingestion | `update platform_flag set value = '0' where key = 'ingest_relay_pct';` | 30 s (cache des instances) ; toute la collecte revient à la console |
+| Les écrans ou les écritures par console-api (la bascule) | `update platform_flag set value = '0' where key in ('console_api_ecrans_pct', 'console_api_commandes_pct');` — en mode strict : retirer `CONSOLE_API_STRICT` de Vercel et redéployer | 30 s ; la console sert elle-même ([mode d'emploi](bascule-console-api.md)) |
 | La livraison par le notifier | `SCHEDULER_DELIVERY=on` sur le scheduler (IaC) et notifier à 0 réplique | au déploiement suivant du scheduler |
 | Une migration | pas de retour : **la migration suivante corrige** | — |
 

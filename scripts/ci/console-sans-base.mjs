@@ -4,9 +4,11 @@
 //   node scripts/ci/console-sans-base.mjs            relevé : imprime ce qui reste, sort en 0
 //   node scripts/ci/console-sans-base.mjs --strict   garde : sort en 1 au premier reste
 //
-// Aujourd'hui (console-api mis en service à la fin, après P6b), le relevé tourne en
-// CI et dit ce qu'il reste à couper ; la PR de bascule le passe en `--strict`, et à
-// partir de là une régression rougit la CI. Trois gardes, celles du plan (C12) :
+// Aujourd'hui, le relevé tourne en CI et dit ce qu'il reste à couper. La bascule
+// vers console-api garde son chemin local (le retour arrière, par drapeau) : la
+// console importe encore ses chargeurs. La décommission (C12, après le rodage en
+// mode strict) retire ce chemin et passe le relevé en `--strict` ; à partir de là,
+// une régression rougit la CI. Trois gardes, celles du plan (C12) :
 //
 //   1. IMPORTS. Aucun fichier de `apps/console` (hors tests et artefacts) n'importe
 //      — statiquement ou dynamiquement — `pg`, `bcryptjs`, ni un paquet backend

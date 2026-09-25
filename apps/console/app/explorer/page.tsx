@@ -39,6 +39,7 @@
 //     affiché, et aucune barre à zéro ne remplace ce qui n'a pas été lu.
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { ModelesDepart } from "@/components/explorer/ModelesDepart";
@@ -54,7 +55,7 @@ import { CopyBlock } from "@/components/CopyBlock";
 import { TabLink } from "@/components/sessions/TabLink";
 import { type SearchParams } from "@/lib/filters";
 import { chargerExplorer, demandeExplorer } from "@/lib/chargeurs/explorer";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import {
   conditionsOf,
   hrefWithQuery,
@@ -167,7 +168,7 @@ export default async function ExplorerPage({ searchParams }: { searchParams: Pro
   // Le chargeur (`lib/chargeurs/explorer.ts`) lit le schéma, les droits d'écriture,
   // le résultat et ses contextes ; la page relit l'URL par la même fonction que lui
   // (`demandeExplorer`), sur le même schéma.
-  const d = await chargerEcran(chargerExplorer, sp);
+  const d = await chargerEcran(ECRANS.explorer, chargerExplorer, sp);
   if (d.etat === "refus") return <FilterProblemNotice title="Explorer" problem={d.problem} />;
   const ecran = d;
   const schema = new Set(d.schema);

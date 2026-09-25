@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import { SourcemapUploadForm } from "@/components/sourcemaps/SourcemapUploadForm";
@@ -6,7 +7,7 @@ import { TokenCreateForm } from "@/components/sourcemaps/TokenCreateForm";
 import { TokenRevokeButton } from "@/components/sourcemaps/TokenRevokeButton";
 import type { Fil } from "@mip/console-contract";
 import { chargerSourcemaps } from "@/lib/chargeurs/administration";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import type { ReleaseManifest, SourcemapFileStatus, SourcemapRelease } from "@/lib/queries-sourcemap";
@@ -51,7 +52,7 @@ export default async function SourcemapsAdmin({ searchParams }: { searchParams: 
   // Le chargeur (`lib/chargeurs/administration.ts`) : l'application demandée si elle est
   // dans le périmètre de l'administrateur (C9), sinon la première ; ses releases, le
   // manifeste d'une release, ses jetons de CI.
-  const ecran = accesAdmin(await chargerEcran(chargerSourcemaps, sp));
+  const ecran = accesAdmin(await chargerEcran(ECRANS_ADMIN.sourcemaps, chargerSourcemaps, sp));
   const donnees: Donnees =
     ecran.etat === "ok"
       ? { kind: "ok", apps: ecran.apps, app: ecran.app, releases: ecran.releases, manifest: ecran.manifeste, tokens: ecran.jetons }

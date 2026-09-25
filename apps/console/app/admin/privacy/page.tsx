@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { chargerViePrivee } from "@/lib/chargeurs/vie-privee";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { DSAR_BARRIERE_MESSAGES, DSAR_LIMITES, DSAR_MESSAGES } from "@/lib/dsar";
 import { eraseIdentityAction, eraseUserAction, searchIdentityAction } from "./actions";
@@ -30,7 +31,7 @@ export default async function AdminPrivacy({
   // Le chargeur (`lib/chargeurs/vie-privee.ts`, C10) : les applications du périmètre,
   // ce que couvrirait la demande, l'état réel de la protection. On INSTRUIT avant de
   // compter : sur une ancienne empreinte de terminal, ni volume ni bouton (lib/dsar.ts).
-  const ecran = accesAdmin(await chargerEcran(chargerViePrivee, sp));
+  const ecran = accesAdmin(await chargerEcran(ECRANS_ADMIN.viePrivee, chargerViePrivee, sp));
   const { apps, app, kind, identityHash, visitorId, visitorApp, toutes } = ecran;
   const { sante: identityHealth, protection: etatProtection, identite: identityCounts, cible: visitorTarget, visiteur: visitorCounts } = ecran;
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : null;

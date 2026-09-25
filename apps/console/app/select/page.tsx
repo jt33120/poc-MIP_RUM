@@ -13,10 +13,11 @@
 // carte.
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ECRANS_SESSION } from "@mip/console-contract";
 import { ICON_PATHS, Icon, type IconName } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { chargerProjets } from "@/lib/chargeurs/projets";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { describeProject } from "@/lib/project";
 import type { ModeCollecte } from "@/lib/queries-projects";
 import { selectProjectAction } from "./actions";
@@ -53,7 +54,7 @@ export default async function SelectProject({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   // Le chargeur (`lib/chargeurs/projets.ts`) : les projets du périmètre et leurs signaux (C9).
-  const ecran = await chargerEcran(chargerProjets, {});
+  const ecran = await chargerEcran(ECRANS_SESSION.projets, chargerProjets, {});
   if (ecran.etat === "sans_session") redirect("/login");
   const { email, projets: projects, signaux, creation } = ecran;
   // Posé par le middleware quand l'URL nommait une app hors périmètre (P6.2) : le

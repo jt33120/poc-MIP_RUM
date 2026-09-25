@@ -2,6 +2,7 @@
 // empilé error/warn/autres + comptes par sévérité ; filtres de niveau ; table des
 // derniers logs avec corrélation trace/session. Alimentée par l'ingestion /v1/logs.
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
@@ -10,7 +11,7 @@ import { fmtDate } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { chargerLogs } from "@/lib/chargeurs/logs";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { hrefWithQuery } from "@/lib/query-contract";
 import { severityBucket, type LevelKey } from "@/lib/queries-logs";
 
@@ -42,7 +43,7 @@ export default async function Logs({ searchParams }: { searchParams?: Promise<Se
   }
 
   // Le chargeur (`lib/chargeurs/logs.ts`) lit les entrées, les comptes, le volume et les anomalies.
-  const ecran = await chargerEcran(chargerLogs, (await searchParams) ?? {});
+  const ecran = await chargerEcran(ECRANS.logs, chargerLogs, (await searchParams) ?? {});
   if (ecran.etat === "fermee") {
     return <CapaciteFermee titre="Logs" sujet="Signal LOGS d'OpenTelemetry, alimenté par le serveur et non par le navigateur." />;
   }

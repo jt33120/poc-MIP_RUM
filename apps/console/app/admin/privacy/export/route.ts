@@ -3,7 +3,7 @@
 // (`exporterIdentite`, `exporterVisiteur`) : l'administrateur de l'application
 // (« toutes » : la plateforme), la divulgation inscrite au journal, refus compris.
 // Pas de redirection ici (endpoint de téléchargement) : les statuts disent le refus.
-import { executerCommande } from "@/lib/commande-locale";
+import { executerCommande } from "@/lib/commande";
 
 export const dynamic = "force-dynamic";
 

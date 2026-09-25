@@ -432,8 +432,8 @@ jobs:
 
       # C12 — LES GARDES DE M4, EN RELEVÉ : ce qui, dans la console construite pour
       # l'E2E, atteint encore la base (imports, traçage du build, garde
-      # d'environnement). Non bloquant jusqu'à la bascule vers console-api, qui le
-      # passe en `--strict`.
+      # d'environnement). Non bloquant tant que la bascule vers console-api garde
+      # son chemin local (le retour arrière) ; la décommission le passe en `--strict`.
       - name: Relevé « console sans base » (C12)
         if: always()
         run: node scripts/ci/console-sans-base.mjs

@@ -21,7 +21,7 @@
 import { redirect } from "next/navigation";
 import type { ResultatCommande } from "@mip/console-contract";
 import { revalidatePath } from "@/lib/next-cache";
-import { executerCommande } from "@/lib/commande-locale";
+import { executerCommande } from "@/lib/commande";
 import { apresRefus } from "@/lib/commande-suite";
 
 /** Les champs d'un formulaire, en chaînes : ce que la commande lit (sans l'identifiant, qui est dans le chemin). */

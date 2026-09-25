@@ -1,6 +1,7 @@
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { chargerAudit } from "@/lib/chargeurs/administration";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import { fmtDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminAudit() {
   // Le chargeur (`lib/chargeurs/administration.ts`) : les 100 dernières actions — celles
   // de ses applications pour un administrateur d'une liste (C9).
-  const { lignes: rows } = accesAdmin(await chargerEcran(chargerAudit, {}));
+  const { lignes: rows } = accesAdmin(await chargerEcran(ECRANS_ADMIN.audit, chargerAudit, {}));
 
   return (
     <div className="animate-fade-up">

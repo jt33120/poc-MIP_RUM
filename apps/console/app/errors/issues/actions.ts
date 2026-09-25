@@ -9,7 +9,7 @@
 // Elle rend ce que le formulaire sait dire : écrit (la page se relit), CONFLIT (l'issue
 // a changé depuis sa lecture : recharger), ou un refus en toutes lettres.
 import { headers } from "next/headers";
-import { executerCommande } from "@/lib/commande-locale";
+import { executerCommande } from "@/lib/commande";
 import { origineConsole } from "@/lib/queries-ticket-integrations";
 
 export type ActionIssue = "triage" | "comments" | "links" | "tickets";

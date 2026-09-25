@@ -18,6 +18,7 @@
 // chaque section lit par `lire()` et dit son propre échec.
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ECRANS } from "@mip/console-contract";
 import { ExperienceUnavailable } from "@/components/ExperienceUnavailable";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { ImpactTable, type ImpactLigne } from "@/components/ImpactTable";
@@ -45,7 +46,7 @@ import { formater } from "@/lib/fmt-ids";
 import { classerParGravite } from "@/lib/impact";
 import { type SectionLue } from "@/lib/lecture";
 import { chargerExperience } from "@/lib/chargeurs/experience";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { categorie } from "@/lib/palette";
 import {
   type FeedbackRow,
@@ -112,7 +113,7 @@ function ecartPoints(valeur: number | null, reference: number | null): { valeur:
 export default async function Satisfaction({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const sp = (await searchParams) ?? {};
   // Le chargeur (`lib/chargeurs/experience.ts`) lit filtres et sections.
-  const ecran = await chargerEcran(chargerExperience, sp);
+  const ecran = await chargerEcran(ECRANS.experience, chargerExperience, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const q = ecran.query;
   const label = ecran.label;

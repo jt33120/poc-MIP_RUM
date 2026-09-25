@@ -283,3 +283,34 @@ describe("C0b — les chemins", () => {
     expect(() => cheminDe("/v1/dashboards/{id}", {})).toThrow(/manquant/);
   });
 });
+
+describe("bascule — ce que le client transmet des écrans", () => {
+  it("un paramètre répété voyage répété, et le refus du service garde son détail (le champ)", async () => {
+    const { client, appels } = await monter();
+    const r = await client.appeler(ETAT_PLATEFORME, { requete: { vue: ["a", "b"] } as never });
+    expect(r).toMatchObject({ ok: false, code: "entree_invalide", statut: 400, details: { champ: "vue" } });
+    expect(new URL(appels.at(-1)!.url).searchParams.getAll("vue")).toEqual(["a", "b"]);
+  });
+
+  it("l'appelant abandonne (export annulé par le navigateur) : `reseau`, sans nouvel essai", async () => {
+    const { cle, fetchService } = await monter();
+    // Un `fetch` qui honore l'annulation, comme le vrai.
+    const tentatives = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (init?.signal?.aborted) throw new DOMException("aborted", "AbortError");
+      return fetchService(url, init);
+    });
+    const client = creerBackend({
+      env: () => ({ CONSOLE_API_URL: URL_SERVICE, CONSOLE_API_CLIENT_SECRET: SECRET, SESSION_PUBLIC_JWKS: JSON.stringify({ keys: [publique(cle)] }) }),
+      fetch: tentatives as unknown as typeof fetch,
+      journal: { info() {}, warn() {}, error() {} },
+      aleatoire: () => 0,
+    });
+    await client.appeler(ETAT_PLATEFORME); // la poignée de main, faite
+    const annulation = new AbortController();
+    annulation.abort();
+    const avant = tentatives.mock.calls.length;
+    const r = await client.appeler(ETAT_PLATEFORME, {}, { signal: annulation.signal });
+    expect(r).toMatchObject({ ok: false, code: "reseau", message: expect.stringContaining("abandonné") });
+    expect(tentatives.mock.calls.length - avant).toBe(1);
+  });
+});

@@ -71,7 +71,8 @@ export default defineConfig({
         SESSION_SIGNING_KEYS: process.env.E2E_SESSION_SIGNING_KEYS!,
         METRICS_TOKEN: process.env.E2E_CONSOLE_API_METRICS_TOKEN!,
         CONSOLE_API_RATE_LIMIT: "0",
-        PGPOOL_MAX: "4",
+        // La bascule : il sert désormais chaque écran de l'E2E — le pool de la console (10).
+        PGPOOL_MAX: "10",
       },
     },
     {
@@ -102,6 +103,12 @@ export default defineConfig({
         CONSOLE_API_URL: "http://localhost:4324",
         CONSOLE_API_CLIENT_SECRET: process.env.E2E_CONSOLE_API_SECRET!,
         SESSION_PUBLIC_JWKS: process.env.E2E_SESSION_PUBLIC_JWKS!,
+        // LA BASCULE, EN MODE STRICT : toute session de console-api (connexion par
+        // le formulaire, sessions du crawl) lit ses écrans et sa coquille, et
+        // exécute ses écritures, PAR le service — sans tirage, sans repli sur la
+        // base. Un écart entre la console et le service fait échouer la suite au
+        // lieu d'être masqué. Les sessions HS256 forgées restent servies par la console.
+        CONSOLE_API_STRICT: "1",
       },
     },
   ],

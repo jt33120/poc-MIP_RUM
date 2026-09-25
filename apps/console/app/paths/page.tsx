@@ -18,6 +18,7 @@
 //     taux est écrit avec son dénominateur (« du départ », « de l'étape précédente »).
 //     Les étapes de type vue ou action attendent B33 et le disent (§ 0.5).
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { FunnelChart, StepPicker } from "@/components/Funnel";
 import { Sankey } from "@/components/Sankey";
@@ -31,7 +32,7 @@ import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { chargerPaths, etapesDeLEntonnoir, TOP_BORDS, TOP_TRANSITIONS } from "@/lib/chargeurs/paths";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { couvertureDeTuile, gesteElargir, plafondAtteint, plageDansPhrase } from "@/lib/lecture-usages";
 import { hrefWithQuery, paramReader, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
 import { type LcpDeRoute, type RouteCountRow, type TransitionRow } from "@/lib/queries-paths";
@@ -71,7 +72,7 @@ export default async function Paths({ searchParams }: { searchParams: Promise<Se
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/paths.ts`) lit transitions, bords, entonnoir et
   // leur LCP ; la page relit les étapes par la même fonction que lui.
-  const ecran = await chargerEcran(chargerPaths, sp);
+  const ecran = await chargerEcran(ECRANS.paths, chargerPaths, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Parcours" problem={ecran.problem} />;
   const query = ecran.query;
   const lecteur = paramReader(sp);

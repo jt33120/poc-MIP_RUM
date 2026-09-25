@@ -121,7 +121,7 @@
 | `/admin/privacy/export` | GET | — | **oui** | console-api (C10 RGPD) |
 | `/api/auth/oidc/callback` | GET | émet la session | **oui** | console-api (C1 identité) |
 | `/api/auth/oidc/login` | GET | — | non | console-api (C1 identité) |
-| `/api/dashboards/[id]/export` | GET | session | **oui** | console-api (C6) |
+| `/api/dashboards/[id]/export` | GET | — | **oui** | console-api (C6) |
 | `/api/extension/heartbeat` | POST, OPTIONS | — | **oui** | collector (C11) |
 | `/api/extension/resolve` | GET, OPTIONS | — | **oui** | collector (C11) |
 | `/api/ingest/v1/logs` | GET, POST, OPTIONS | — | **oui** | collector (relais P3 ; relais pur en C11) |
@@ -168,16 +168,16 @@
 
 | Composant | Chemin vers la base |
 |---|---|
-| `components/alerts/ChannelsSection.tsx` | `app/alerts/actions.ts` → `lib/commande-locale.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
+| `components/alerts/ChannelsSection.tsx` | `app/alerts/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/alerts/RuleRow.tsx` | `lib/alertes-ecran.ts` → `lib/queries-v2.ts` → `lib/db.ts` |
-| `components/dashboards/ModeleCarte.tsx` | `app/dashboards/actions.ts` → `lib/commande-locale.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
+| `components/dashboards/ModeleCarte.tsx` | `app/dashboards/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/dashboards/WidgetCard.tsx` | `lib/widget-data.ts` → `lib/queries-grid.ts` → `lib/db.ts` |
-| `components/errors/ErrorTriage.tsx` | `app/errors/[fingerprint]/actions.ts` → `lib/commande-locale.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
-| `components/explorer/ActionsVue.tsx` | `app/explorer/actions.ts` → `lib/commande-locale.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
+| `components/errors/ErrorTriage.tsx` | `app/errors/[fingerprint]/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
+| `components/explorer/ActionsVue.tsx` | `app/explorer/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/presentation/Annexe.tsx` | `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Landing.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Specs.tsx` | `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
-| `components/slo/SloStatusRow.tsx` | `app/alerts/actions.ts` → `lib/commande-locale.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
+| `components/slo/SloStatusRow.tsx` | `app/alerts/actions.ts` → `lib/commande.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 
 ## Modules de lecture
 

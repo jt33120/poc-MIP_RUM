@@ -22,6 +22,7 @@
 //   - Un libellé faux : « Pages d'entrée » ne disait pas l'entrée mais les routes
 //     les plus mesurées — « Pages les plus visitées ».
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { DetailPanel, type OngletDetail, type PuceDetail } from "@/components/DetailPanel";
 import { ExperienceMap } from "@/components/map/ExperienceMap";
@@ -39,7 +40,7 @@ import { formater } from "@/lib/fmt-ids";
 import { classerParGravite, SEUIL_ECHANTILLON_FAIBLE } from "@/lib/impact";
 import { type SectionLue } from "@/lib/lecture";
 import { chargerMap } from "@/lib/chargeurs/map";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import {
   CAP_COLONNE,
   apiHealth,
@@ -92,7 +93,7 @@ export default async function ExperienceMapPage({
 }) {
   const sp = (await searchParams) ?? {};
   // Le chargeur (`lib/chargeurs/map.ts`) lit le graphe, et la série d'un nœud ouvert.
-  const ecran = await chargerEcran(chargerMap, sp);
+  const ecran = await chargerEcran(ECRANS.map, chargerMap, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Carte d'expérience" problem={ecran.problem} />;
   const query = ecran.query;
   const lecteur = paramReader(sp);

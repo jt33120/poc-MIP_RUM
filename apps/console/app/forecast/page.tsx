@@ -28,6 +28,7 @@
 // Chaque section lit par `lire()` : une lecture en échec ne fait tomber qu'elle.
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { Figure } from "@/components/charts/Figure";
@@ -68,7 +69,7 @@ import {
 // phrases : deux écritures du même nombre finiraient par diverger.
 import { formaterP } from "@/lib/stats/surrepresentation";
 import { chargerForecast } from "@/lib/chargeurs/forecast";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { ratioPour100 } from "@/lib/perf-domain";
 import { GRID_DAYS } from "@/lib/queries-grid";
 import { hrefWithQuery } from "@/lib/query-contract";
@@ -129,7 +130,7 @@ function Methode() {
 export default async function Tendances({ searchParams }: { searchParams: Promise<SearchParams> }) {
   // Le chargeur (`lib/chargeurs/forecast.ts`) lit les quatorze jours, les marqueurs
   // et la couverture du jour de référence ; un jour y voyage en clé « AAAA-MM-JJ ».
-  const ecran = await chargerEcran(chargerForecast, await searchParams);
+  const ecran = await chargerEcran(ECRANS.forecast, chargerForecast, await searchParams);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Tendances" problem={ecran.problem} />;
   const { query, fuseau, jours, traficLu, lcpLu, deploysLu, couvLcp, couvRatio, couvVues, peutEcrire } = ecran;
 

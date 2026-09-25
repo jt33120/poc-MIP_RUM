@@ -2,12 +2,13 @@
 // Lecture seule via la façade xSOM (fetchAiSummary) — ZÉRO donnée IA stockée
 // côté MIP RUM, aucune table rum_ai. Clairement badgé « sponsorisé xSOM » : c'est
 // un placement partenaire, distinct du produit RUM natif de MIP.
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { chargerAi } from "@/lib/chargeurs/ai";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { XsomSponsorBanner, XsomAiPanel } from "@/components/xsom/XsomAiPanel";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export default async function AiPartner({ searchParams }: { searchParams?: Promi
   }
 
   // Le chargeur (`lib/chargeurs/ai.ts`) lit la façade xSOM, app par app.
-  const ecran = await chargerEcran(chargerAi, (await searchParams) ?? {});
+  const ecran = await chargerEcran(ECRANS.ai, chargerAi, (await searchParams) ?? {});
   if (ecran.etat === "fermee") {
     return <CapaciteFermee titre="Supervision IA" sujet="Supervision des agents et modèles en production." />;
   }

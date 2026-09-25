@@ -21,6 +21,7 @@
 //     « Inconnu ») ; le refus « une application à la fois » de F40 est levé (F53) et
 //     « Par appareil » compte aussi les tablettes.
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { Figure } from "@/components/charts/Figure";
@@ -41,7 +42,7 @@ import {
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { APPAREILS, chargerRetention, FENETRE_DEFAUT, FENETRES, fenetreDeRetention } from "@/lib/chargeurs/retention";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { hrefWithQuery } from "@/lib/query-contract";
 
 export const dynamic = "force-dynamic";
@@ -83,7 +84,7 @@ export default async function Retention({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/retention.ts`) lit les cohortes, l'échantillonnage
   // et les séries par appareil ; la page relit la fenêtre par la même fonction.
-  const ecran = await chargerEcran(chargerRetention, sp);
+  const ecran = await chargerEcran(ECRANS.retention, chargerRetention, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Rétention" problem={ecran.problem} />;
 
   // `weeks` est un réglage de l'écran (§ 3.1) : une valeur hors des fenêtres

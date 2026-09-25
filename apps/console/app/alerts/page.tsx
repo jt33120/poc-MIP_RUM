@@ -21,6 +21,7 @@
 // `loading.tsx` au-dessus de l'écran (écart F02 : elles cassent `router.replace`).
 import Link from "next/link";
 import { motifDeRefus } from "@mip/backend/lib/net/safe-fetch.mjs";
+import { ECRANS } from "@mip/console-contract";
 import { Figure } from "@/components/charts/Figure";
 import { FriseDeclenchements } from "@/components/charts/FriseDeclenchements";
 import { KpiTile } from "@/components/charts/KpiTile";
@@ -36,7 +37,7 @@ import { RuleRow } from "@/components/alerts/RuleRow";
 import { SeverityBadge } from "@/components/alerts/SeverityBadge";
 import type { Fil } from "@mip/console-contract";
 import { chargerAlertes } from "@/lib/chargeurs/alertes";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { fmtDate } from "@/lib/format";
@@ -79,7 +80,7 @@ export default async function Alerts({ searchParams }: { searchParams?: Promise<
   const sp = (await searchParams) ?? {};
   // Le chargeur (`lib/chargeurs/alertes.ts`) lit chaque section, et ce qui ne sert
   // qu'à écrire pour un administrateur seulement (décidé par son principal).
-  const ecran = await chargerEcran(chargerAlertes, sp);
+  const ecran = await chargerEcran(ECRANS.alertes, chargerAlertes, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const f = { app: ecran.appFiltre };
   const lecteur = paramReader(sp);

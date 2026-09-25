@@ -20,7 +20,7 @@ const { mapNodes, mapEdges, mapPages, mapNodeSerie, traceCoverage, samplingSessi
 vi.mock("@/lib/queries-map", () => ({ mapNodes, mapEdges, mapPages, mapNodeSerie }));
 vi.mock("@/lib/queries-tracing", () => ({ traceCoverage }));
 vi.mock("@/lib/queries-sessions", () => ({ samplingSessions }));
-// `chargerEcran` lit la session (`lib/ecran-local.ts`).
+// `chargerEcran` lit la session (`lib/ecran.ts`) ; console-api n'est pas branché : la console sert.
 vi.mock("@/lib/auth", () => ({ getUser: async () => ({ email: "a@b", role: "admin", apps: null }) }));
 vi.mock("@/lib/log-forward", () => ({ forwardLog: async () => {} }));
 

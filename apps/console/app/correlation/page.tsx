@@ -23,6 +23,7 @@
 // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8) : `lire()` ne lève pas, une lecture
 // en échec ne fait tomber que sa section. PAS de `<Suspense>` ni de `loading.tsx`
 // au-dessus de l'écran : ils bloquaient les navigations qui ne changent que la query.
+import { ECRANS } from "@mip/console-contract";
 import { Figure } from "@/components/charts/Figure";
 import { FriseEtats } from "@/components/charts/FriseEtats";
 import { KpiTile } from "@/components/charts/KpiTile";
@@ -65,7 +66,7 @@ import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { fmtLatency } from "@/lib/format";
 import { chargerCorrelation } from "@/lib/chargeurs/correlation";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { RATING_HEX } from "@/lib/palette";
 import { hrefWithQuery, paramReader, previousRange, queryToSearchParams, rangeLabel } from "@/lib/query-contract";
 import { sessionsDeLaRoute } from "@/lib/breakdowns";
@@ -87,7 +88,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
   const sp = (await searchParams) ?? {};
   // Le chargeur (`lib/chargeurs/correlation.ts`) lit l'écran, choisit le couple du
   // hero et lit sa série ; la page ne calcule que ce qui en découle.
-  const ecran = await chargerEcran(chargerCorrelation, sp);
+  const ecran = await chargerEcran(ECRANS.correlation, chargerCorrelation, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const query = ecran.query;
   const lecteur = paramReader(sp);

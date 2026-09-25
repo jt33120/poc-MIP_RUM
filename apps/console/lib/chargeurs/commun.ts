@@ -2,8 +2,9 @@
 //
 // Un chargeur reçoit ce que reçoit la page — le principal, les paramètres d'URL,
 // ceux du chemin — et rend ce que la page affiche, une SECTION par lecture. Il
-// tourne à deux endroits : dans la console aujourd'hui (`lib/ecran-local.ts`), et
-// dans console-api, qui l'embarque tel quel (`services/console-api/server.mjs`).
+// tourne à deux endroits : dans la console (`lib/ecran.ts`, hors de la part servie
+// par console-api), et dans console-api, qui l'embarque tel quel
+// (`services/console-api/ecrans.mjs`).
 // Deux règles en découlent, et ce module les porte :
 //
 //   1. Sa sortie traverse JSON. `versLeFil` fait EN LOCAL exactement ce que fait
@@ -69,7 +70,7 @@ export function urlDeLaPage(sp: ParametresEcran): URLSearchParams {
  * allumés. Elle vit dans un cookie de la console — qu'un chargeur ne lit pas :
  * la page la lui passe en PARAMÈTRE (`blocs`, même forme que le cookie), et un
  * bloc éteint ne lance pas sa lecture, ici comme avant. Une valeur de l'URL sous
- * ce nom est remplacée par celle du cookie (`lib/ecran-local.ts`).
+ * ce nom est remplacée par celle du cookie (`lib/ecran.ts`).
  */
 export const PARAM_BLOCS = "blocs";
 

@@ -18,6 +18,7 @@
 // au-dessus de l'écran (elles cassent la navigation par query).
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ECRANS } from "@mip/console-contract";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { Figure } from "@/components/charts/Figure";
@@ -37,7 +38,7 @@ import { explorerHref } from "@/lib/explorer-page-params";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { chargerTracing } from "@/lib/chargeurs/tracing";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { bucketStarts, hrefWithQuery, paramReader, previousRange, type AnalyticsQuery } from "@/lib/query-contract";
 import { grilleIso, libelleSeauComplet, type PointSerie } from "@/lib/series";
 import { ancreAppel, lireAppel, type Appel } from "@/lib/tracing-ancres";
@@ -132,7 +133,7 @@ function SectionTable({
 export default async function Tracing({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/tracing.ts`) lit filtres et sections.
-  const ecran = await chargerEcran(chargerTracing, sp);
+  const ecran = await chargerEcran(ECRANS.tracing, chargerTracing, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Tracing" problem={ecran.problem} />;
   const query = ecran.query;
   const plage = ecran.label;

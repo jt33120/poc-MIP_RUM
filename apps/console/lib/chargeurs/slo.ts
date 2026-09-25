@@ -1,7 +1,7 @@
 // LE CHARGEUR DE L'ÉCRAN « SLO et budget d'erreur » (C8) — `app/slo/page.tsx`.
 //
 // Écran COMPOSABLE : sa composition (blocs `budget`, `liste`, `creation`) arrive en
-// paramètre (`blocs`, `lib/ecran-local.ts`), et un bloc éteint ne lance pas sa
+// paramètre (`blocs`, `lib/ecran.ts`), et un bloc éteint ne lance pas sa
 // lecture. Chaque lecture est une section (F02). Les applications où créer un SLO
 // ne sont lues que pour un administrateur, et ce sont celles de son périmètre
 // d'écriture (C8).

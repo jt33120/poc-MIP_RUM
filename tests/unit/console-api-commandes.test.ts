@@ -1,7 +1,7 @@
 // C6 → C9 — une écriture a UNE règle, appliquée des deux côtés à l'identique.
 //
-// Tant que la console exécute ses commandes elle-même (`lib/commande-locale.ts`),
-// elle applique leur règle par `refusDAcces` (contrat) ; console-api l'applique
+// Quand la console exécute ses commandes elle-même (`lib/commande.ts`, hors de la
+// part servie par console-api), elle applique leur règle par `refusDAcces` (contrat) ; console-api l'applique
 // par son pipeline, avec la politique qu'il en TIRE (`politiqueDeCommande`). Deux
 // codes pour une même règle : ce test les confronte pour chaque commande du
 // registre, chaque profil et chaque application demandée — même refus, au code

@@ -8,9 +8,9 @@
 // la server action qui les tire de la décision.
 //
 // Elle tourne à deux endroits, à l'octet près :
-//   · dans la console, aujourd'hui : la server action l'appelle par sa clé,
-//     `executerCommande("creerObjectif", …)` (`lib/commande-locale.ts`), avec le
-//     principal de la session ;
+//   · dans la console : la server action l'appelle par sa clé,
+//     `executerCommande("creerObjectif", …)` (`lib/commande.ts`), avec le
+//     principal de la session — pour la part que console-api ne sert pas ;
 //   · dans console-api, qui l'embarque (`services/console-api/commandes.mjs`) et
 //     la sert sous son opération (`COMMANDES` du contrat), avec le principal relu
 //     en base.
@@ -102,7 +102,7 @@ export function commande<P = Aucun, B = undefined, R = unknown>(
 
 /**
  * Une commande quelconque, pour le registre et les exécuteurs : le registre
- * efface ses types d'entrée, que `lib/commande-locale.ts` retrouve par clé.
+ * efface ses types d'entrée, que `lib/commande.ts` retrouve par clé.
  */
 export type CommandeQuelconque = Commande<any, any, unknown>;
 

@@ -8,12 +8,13 @@
 //
 // C11 — la lecture est un CHARGEUR (`lib/chargeurs/releases.ts`), comme un écran :
 // la route reste sur Vercel (le navigateur l'appelle, console-api n'accepte aucune
-// origine de navigateur) et, à la bascule, devient un relais serveur — sans changer
-// d'une ligne, puisque c'est `chargerEcran` qui change. Protégée par le middleware
+// origine de navigateur) et, à la bascule, devient un relais serveur : `lireEcran`
+// appelle `screens.releases` au lieu du chargeur. Protégée par le middleware
 // (cookie de session) ; le chargeur revérifie le principal, jamais le client.
 import { NextResponse } from "next/server";
+import { CODES_ERREUR, ECRANS } from "@mip/console-contract";
 import { chargerReleases } from "@/lib/chargeurs/releases";
-import { chargerEcran } from "@/lib/ecran-local";
+import { lireEcran } from "@/lib/ecran";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,16 @@ function parametres(url: URL): Record<string, string | string[]> {
 
 export async function GET(req: Request) {
   try {
-    const ecran = await chargerEcran(chargerReleases, parametres(new URL(req.url)));
+    const lu = await lireEcran(ECRANS.releases, chargerReleases, parametres(new URL(req.url)));
+    if (!lu.ok) {
+      // Mode strict : le refus du service, avant le chargeur, en statut HTTP.
+      const session = lu.refus.code === "session_requise" || lu.refus.code === "session_invalide";
+      return NextResponse.json(
+        { releases: null, raison: session ? "authentification requise" : lu.refus.message },
+        { status: session ? 401 : (CODES_ERREUR as Record<string, number>)[lu.refus.code] ?? 503, headers: PRIVE },
+      );
+    }
+    const ecran = lu.data;
     if (ecran.etat === "sans_session") {
       return NextResponse.json({ releases: null, raison: "authentification requise" }, { status: 401, headers: PRIVE });
     }

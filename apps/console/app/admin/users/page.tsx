@@ -1,7 +1,8 @@
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { FormulaireSecret, SecretAffiche } from "@/components/secret/SecretUnique";
 import { chargerComptes } from "@/lib/chargeurs/administration";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { createUserAction, resetPasswordAction, toggleUserAction } from "./actions";
@@ -19,7 +20,7 @@ const ERRORS: Record<string, string> = {
 export default async function AdminUsers({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/administration.ts`) : l'administrateur de la plateforme seul (C9).
-  const { comptes: users } = accesAdmin(await chargerEcran(chargerComptes, {}));
+  const { comptes: users } = accesAdmin(await chargerEcran(ECRANS_ADMIN.comptes, chargerComptes, {}));
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : null;
   // arrivée depuis le wizard client : préremplit un viewer scopé sur l'app
   const prefillApp = typeof sp.app === "string" ? sp.app : null;

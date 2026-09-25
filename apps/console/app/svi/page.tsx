@@ -11,6 +11,7 @@
 // le mot « apparent ». Elle attrape la régression probable — une refonte qui
 // simplifie en ne gardant que le gros chiffre — mais elle ne prouve pas le rendu.
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
@@ -19,7 +20,7 @@ import { RankBar } from "@/components/charts/RankBar";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { chargerSvi } from "@/lib/chargeurs/svi";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { fmtDuration, journeyCoverage } from "@/lib/svi-outcome";
 import { containment, containmentReading } from "@/lib/svi-recall";
 
@@ -47,7 +48,7 @@ export default async function VueEnsembleSvi({
   }
 
   // Le chargeur (`lib/chargeurs/svi.ts`) lit la synthèse, le containment et les sorties.
-  const ecran = await chargerEcran(chargerSvi, (await searchParams) ?? {});
+  const ecran = await chargerEcran(ECRANS.svi, chargerSvi, (await searchParams) ?? {});
   if (ecran.etat === "fermee") return <CapaciteFermee titre="Supervision SVI" sujet="Supervision du serveur vocal interactif." />;
   if (ecran.etat === "refus") return <FilterProblemNotice title="Supervision SVI" problem={ecran.problem} />;
   const { sum, cont, sorties, periode } = ecran;

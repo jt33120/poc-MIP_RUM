@@ -9,7 +9,7 @@
 // toute écriture. LE DÉPÔT CIBLE EST SAISI, JAMAIS DÉDUIT.
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { executerCommande } from "@/lib/commande-locale";
+import { executerCommande } from "@/lib/commande";
 import { apresRefus } from "@/lib/commande-suite";
 
 const PAGE = "/admin/ticket-integrations";

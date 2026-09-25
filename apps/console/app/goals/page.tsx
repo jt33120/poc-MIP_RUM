@@ -12,6 +12,7 @@
 //     passe en fin, « échantillon faible ».
 //   - Un verdict : aucun seuil publié n'existe pour une conversion (R-S), les barres
 //     et les tuiles restent neutres.
+import { ECRANS } from "@mip/console-contract";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { Figure } from "@/components/charts/Figure";
@@ -35,7 +36,7 @@ import {
   meilleurObjectif,
 } from "@/lib/goals";
 import { chargerGoals } from "@/lib/chargeurs/goals";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { listGoals, type GoalConversionLue, type GoalConversionsParAppareil } from "@/lib/queries-goals";
 import { hrefWithQuery, paramReader, previousRange, rangeLabel } from "@/lib/query-contract";
 import { intervalleWilson, texteIntervalle } from "@/lib/stats/incertitude";
@@ -73,7 +74,7 @@ export default async function Goals({ searchParams }: { searchParams: Promise<Se
   const sp = await searchParams;
   // Le chargeur (`lib/chargeurs/goals.ts`) lit les conversions et, pour un
   // administrateur (décidé par son principal), la gestion des objectifs (G6).
-  const ecran = await chargerEcran(chargerGoals, sp);
+  const ecran = await chargerEcran(ECRANS.goals, chargerGoals, sp);
   if (ecran.etat === "refus") return <FilterProblemNotice title="Conversions" problem={ecran.problem} />;
   const query = ecran.query;
   // Comparaison (F06) : `cmp=prev` compare le dénominateur à la période précédente,

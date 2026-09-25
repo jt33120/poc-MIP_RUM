@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { ECRANS_ADMIN } from "@mip/console-contract";
 import { FormulaireSecret } from "@/components/secret/SecretUnique";
 import { chargerClients } from "@/lib/chargeurs/administration";
-import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
+import { accesAdmin, chargerEcran } from "@/lib/ecran";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { createCustomerAction, toggleAppAction } from "./actions";
@@ -21,7 +22,7 @@ const ERRORS: Record<string, string> = {
 export default async function AdminCustomers({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   // Le chargeur : les applications de son périmètre ; créer, l'administrateur de la plateforme (C9).
-  const { clients: customers, creation } = accesAdmin(await chargerEcran(chargerClients, {}));
+  const { clients: customers, creation } = accesAdmin(await chargerEcran(ECRANS_ADMIN.clients, chargerClients, {}));
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : null;
   const detail = typeof sp.detail === "string" ? sp.detail : null;
 

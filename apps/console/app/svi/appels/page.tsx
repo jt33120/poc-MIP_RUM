@@ -9,6 +9,7 @@
 //     Un entonnoir calculé sur 34 % des appels ne doit jamais se présenter comme
 //     s'il portait sur la totalité.
 import Link from "next/link";
+import { ECRANS } from "@mip/console-contract";
 import { CapaciteFermee, estFermee } from "@/components/CapaciteFermee";
 import { PageHeader } from "@/components/PageHeader";
 import { SupervisionHero, HeroStat, HeroReading } from "@/components/SupervisionHero";
@@ -17,7 +18,7 @@ import { fmtDate } from "@/lib/format";
 import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import type { SearchParams } from "@/lib/filters";
 import { chargerSviAppels } from "@/lib/chargeurs/svi";
-import { chargerEcran } from "@/lib/ecran-local";
+import { chargerEcran } from "@/lib/ecran";
 import { fmtDuration, journeyCoverage, outcomeLabel, outcomeRates } from "@/lib/svi-outcome";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export default async function AppelsSvi({ searchParams }: { searchParams?: Promi
   }
 
   // Le chargeur (`lib/chargeurs/svi.ts`) lit les appels, la synthèse et les issues par heure.
-  const ecran = await chargerEcran(chargerSviAppels, (await searchParams) ?? {});
+  const ecran = await chargerEcran(ECRANS.sviAppels, chargerSviAppels, (await searchParams) ?? {});
   if (ecran.etat === "fermee") return <CapaciteFermee titre="Supervision SVI" sujet="Supervision du serveur vocal interactif." />;
   if (ecran.etat === "refus") return <FilterProblemNotice title="Appels SVI" problem={ecran.problem} />;
   const { rows, sum, parHeure, periode } = ecran;
