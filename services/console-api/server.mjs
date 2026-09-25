@@ -24,6 +24,10 @@ import { createPool, describeTarget } from "@mip/service-kit/pg.mjs";
 import { createMetrics } from "@mip/service-kit/metrics.mjs";
 import { startService } from "@mip/service-kit/http.mjs";
 import { chargerTrousseau, creerConsoleApi, creerDebitAuth, creerOidc, creerTable, creerVerificateurSession } from "@mip/console-api";
+// C2 → C5 — les chargeurs des écrans : le code de la console, embarqué par le
+// build (alias `@/`), branché sur le pool de CE service (`shims/db.mjs`).
+import { chargerCoquille } from "@/lib/chargeurs/coquille";
+import { brancherPool } from "./shims/db.mjs";
 
 const log = createLogger("console-api");
 const lifecycle = installLifecycle({ log });
@@ -108,6 +112,10 @@ const pool = createPool(pg, {
 
 const version = (config.RAILWAY_GIT_COMMIT_SHA ?? "dev").slice(0, 12);
 
+// La couche de données de la console lit par CE pool (délais, `application_name`,
+// drainage au SIGTERM du kit).
+brancherPool(pool);
+
 // Les sessions : signature ES256 PUIS ligne `console_session` (migration-v90),
 // jointe au compte, en cache 30 s par réplique — le délai maximal d'une révocation.
 const sessions = await creerVerificateurSession({ trousseau, db: pool });
@@ -176,6 +184,7 @@ const { table, contrat } = await creerTable({
     oublierSession: (sid) => sessions.oublier(sid),
     oidc,
   },
+  ecrans: { coquille: (p) => chargerCoquille({ role: p.role, apps: p.apps === null ? null : [...p.apps] }) },
 });
 
 const requetes = metrics.counter("console_api_requests_total", "Appels de la console, par opération et par statut.", {

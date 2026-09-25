@@ -4,6 +4,7 @@
 // droit de quoi — n'est PAS ici : elle vit côté service (`@mip/console-api`),
 // sous CODEOWNERS, avec le traitement. Le contrat ne porte que des types.
 import type { LecturePlanifie } from "./planifie";
+import type { Section } from "./section";
 import { operation, type Aucun } from "./operation";
 
 // ─── Exploitation ────────────────────────────────────────────────────────────
@@ -140,8 +141,32 @@ export interface RetourSso {
 /** La fin d'une connexion SSO : le service échange le code, vérifie l'ID token, lie le compte par (émetteur, sujet). */
 export const FIN_SSO = operation<Aucun, Aucun, RetourSso, SessionOuverte>("auth.oidc", "POST", "/v1/auth/oidc-sessions");
 
+// ─── Écrans (C2 → C5) ─────────────────────────────────────────────────────────
+
+export interface Projet {
+  readonly app_id: string;
+  readonly name: string;
+}
+
+/**
+ * LA COQUILLE (C2) : ce que le layout racine lit pour chaque écran de console.
+ * Chaque lecture est une SECTION : en échec, la coquille s'affiche sans elle et
+ * le dit (bandeau « Partiel »), jamais un 5xx pour tout l'écran. Le projet
+ * COURANT n'y est pas : il se choisit côté console (cookie), parmi `projets`.
+ */
+export interface Coquille {
+  readonly projets: Section<readonly Projet[]>;
+  /** `table.colonne` des dimensions réellement présentes, triées. */
+  readonly schema: Section<readonly string[]>;
+  /** Le fuseau d'affichage de chaque projet du principal. */
+  readonly fuseaux: Readonly<Record<string, string>>;
+  /** L'entrée « Connecteurs de tickets » ; `null` pour qui n'est pas administrateur. */
+  readonly tickets: Section<boolean> | null;
+}
+export const COQUILLE = operation<Aucun, Aucun, never, Coquille>("console.shell", "GET", "/v1/shell");
+
 /** Toutes les opérations du contrat, dans l'ordre de la doc. */
-export const OPERATIONS = Object.freeze([VERSION, JWKS, ETAT_PLATEFORME, CONNEXION, DEMO, DECONNEXION, MOI, METHODES, DEBUT_SSO, FIN_SSO]);
+export const OPERATIONS = Object.freeze([VERSION, JWKS, ETAT_PLATEFORME, CONNEXION, DEMO, DECONNEXION, MOI, METHODES, DEBUT_SSO, FIN_SSO, COQUILLE]);
 
 /**
  * La forme canonique de la table (une ligne par opération, triée) : chaque côté

@@ -22,13 +22,17 @@ RUN npm install --global --no-audit --no-fund \
 #    bougent pas. Pas de cache monté : Railway en refuse la syntaxe générique.
 RUN pnpm fetch
 
-# 2) INSTALL hors ligne : les paquets partagés et ce service. Pas `apps/` :
-#    le service n'importe rien de la console.
+# 2) INSTALL hors ligne : les paquets partagés et ce service.
 COPY packages ./packages
 COPY services/console-api ./services/console-api
+# La COUCHE DE DONNÉES de la console (`lib/`), et elle seule : les chargeurs des
+# écrans (C2 → C5) y vivent et le bundle les embarque. Ni les écrans ni les
+# composants : la garde du build les refuse de toute façon.
+COPY apps/console/lib ./apps/console/lib
 RUN pnpm install --offline --frozen-lockfile --filter "@mip/service-console-api..."
 
-# 3) BUILD : le bundle `dist/server.mjs`, refusé s'il contient un fichier de `apps/`.
+# 3) BUILD : le bundle `dist/server.mjs`, refusé s'il contient un écran, un
+#    composant, ou ce qui tient une session de la console.
 RUN pnpm --filter "@mip/service-console-api..." run --if-present build
 
 # 4) DEPLOY, posé à `services/console-api` sous `/app` : dépendances de

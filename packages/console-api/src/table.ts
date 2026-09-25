@@ -7,6 +7,7 @@
 import { lignesDuContrat } from "@mip/console-contract";
 import { empreinte, type Trousseau } from "./cles";
 import type { Lecteur } from "./contexte";
+import { operationsEcrans, type ChargeursEcrans } from "./operations/ecrans";
 import { operationsExploitation } from "./operations/exploitation";
 import { operationsIdentite, type DependancesIdentite } from "./operations/identite";
 import { operationsPlateforme } from "./operations/plateforme";
@@ -19,6 +20,8 @@ export interface Dependances {
   readonly db: Lecteur;
   /** C1 — l'identité (connexion, démo, déconnexion, `/v1/me`). */
   readonly identite: Omit<DependancesIdentite, "trousseau" | "db">;
+  /** C2 → C5 — les chargeurs des écrans, ceux de la console, injectés par le service. */
+  readonly ecrans: ChargeursEcrans;
 }
 
 /** Construit la table, et l'empreinte du contrat qu'elle sert (annoncée par la poignée de main). */
@@ -28,6 +31,7 @@ export async function creerTable(d: Dependances): Promise<{ table: Enregistremen
     ...operationsExploitation({ trousseau: d.trousseau, version: d.version, contrat: () => contrat }),
     ...operationsPlateforme({ db: d.db }),
     ...operationsIdentite({ ...d.identite, trousseau: d.trousseau, db: d.db }),
+    ...operationsEcrans(d.ecrans),
   ];
   contrat = await empreinte(lignesDuContrat(table.map((e) => e.operation)));
   return { table, contrat };

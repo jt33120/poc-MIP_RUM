@@ -91,6 +91,7 @@ function migrations(): string[] {
         demo,
         oublierSession: (sid) => sessions.oublier(sid),
       },
+      ecrans: { coquille: async () => ({ projets: { ok: true as const, data: [] }, schema: { ok: true as const, data: [] }, fuseaux: {}, tickets: null }) },
     });
     return creerConsoleApi({ table, secretsClient: [SECRET], journal, verifierSession: sessions.verifier, lecteur: pool, debitParMinute: 0 });
   }

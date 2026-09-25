@@ -26,6 +26,7 @@ describe("C0a — la doc de console-api est générée depuis sa table", () => {
         demo: null,
         oublierSession: () => {},
       },
+      ecrans: { coquille: async () => ({ projets: { ok: true as const, data: [] }, schema: { ok: true as const, data: [] }, fuseaux: {}, tickets: null }) },
     });
     const rendu = rendreDoc(table);
     if (process.env.MAJ_DOC_CONSOLE_API === "1") writeFileSync(FICHIER, rendu);

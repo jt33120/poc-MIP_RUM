@@ -1,6 +1,6 @@
 # Inventaire de la console, pour la piste C
 
-> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-09-24, sur `93f2e10 + scissions`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
+> **Généré** par `node scripts/dev/inventaire-console.mjs` le 2026-09-24, sur `c2`. Ne pas éditer à la main : relancer le script. Méthode et limites en tête du script ; décisions de contrat dans [README.md](README.md).
 
 ## En chiffres
 
@@ -99,12 +99,12 @@
 | `app/admin/uptime/actions.ts` | createUptimeCheckAction, toggleUptimeCheckAction, deleteUptimeCheckAction | **oui** | oui |
 | `app/admin/users/actions.ts` | createUserAction, toggleUserAction, resetPasswordAction | **oui** | oui |
 | `app/alerts/actions.ts` | createRuleAction, updateRuleAction, toggleRuleAction, ackEventAction, evaluateNowAction, createSloAction, toggleSloAction, deleteSloAction, createChannelAction, toggleChannelAction, deleteChannelAction | **oui** | oui |
-| `app/dashboards/actions.ts` | createDashboardAction, cloneTemplateAction, cloneDashboardAction, renameDashboardAction, deleteDashboardAction, addWidgetAction, addSectionAction, saveAnalysisAction, configureWidgetAction, removeWidgetAction, moveWidgetAction | **oui** | non |
+| `app/dashboards/actions.ts` | createDashboardAction, cloneTemplateAction, cloneDashboardAction, renameDashboardAction, deleteDashboardAction, addWidgetAction, addSectionAction, saveAnalysisAction, configureWidgetAction, removeWidgetAction, moveWidgetAction | **oui** | oui |
 | `app/errors/[fingerprint]/actions.ts` | setErrorStatusAction | **oui** | oui |
-| `app/explorer/actions.ts` | saveViewAction, renameViewAction, deleteViewAction | **oui** | non |
+| `app/explorer/actions.ts` | saveViewAction, renameViewAction, deleteViewAction | **oui** | oui |
 | `app/goals/actions.ts` | createGoalAction, toggleGoalAction, deleteGoalAction | **oui** | oui |
 | `app/login/actions.ts` | loginAction | **oui** | oui |
-| `app/select/actions.ts` | selectProjectAction | **oui** | non |
+| `app/select/actions.ts` | selectProjectAction | **oui** | oui |
 | `app/select/new/actions.ts` | createSiteAction | **oui** | oui |
 
 ## Routes
