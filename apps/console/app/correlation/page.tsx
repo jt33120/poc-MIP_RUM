@@ -40,8 +40,6 @@ import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import Link from "next/link";
 import { annotationsDeploiements } from "@/lib/annotations";
 import { annotationsAlertes, fusionnerAnnotations, raisonsAnnotations } from "@/lib/annotations";
-import { getUser } from "@/lib/auth";
-import { couverturePrecedente } from "@/lib/comparaison";
 import {
   aucunPassageSurLaGrille,
   casesFriseRobot,
@@ -61,30 +59,17 @@ import {
 // P*.8 — concordance robot ↔ réel, mesurée sur les jours communs.
 import { concordanceAbsente, concordanceParCouple, type ResultatConcordance } from "@/lib/correlation";
 import { LIBELLE_ISSUE, MENTION_RHO, phraseConcordance, regleConcordance, texteConcordanceCourt } from "@/lib/stats/concordance";
-import { ecrireSerie, libelleSerie, lireSerie, serieParDefaut } from "@/lib/correlation-serie";
+import { ecrireSerie, libelleSerie } from "@/lib/correlation-serie";
 import { explorerHref } from "@/lib/explorer-page-params";
 import type { SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { fmtLatency } from "@/lib/format";
-import { lire, type Lecture } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
+import { chargerCorrelation } from "@/lib/chargeurs/correlation";
+import { chargerEcran } from "@/lib/ecran-local";
 import { RATING_HEX } from "@/lib/palette";
 import { hrefWithQuery, paramReader, previousRange, queryToSearchParams, rangeLabel } from "@/lib/query-contract";
-import { dimensionSchema } from "@/lib/query-schema";
 import { sessionsDeLaRoute } from "@/lib/breakdowns";
-import { listDeploys } from "@/lib/queries-deploys";
-import {
-  alertEvents,
-  blindSpots,
-  correlationCards,
-  correlationConcordance,
-  correlationQuotidienne,
-  correlationRoutes,
-  correlationSeries,
-  EFFECTIF_MIN_HEURE,
-  syntheticFreshness,
-  type CorrSeriesRow,
-} from "@/lib/queries-v2";
+import { EFFECTIF_MIN_HEURE } from "@/lib/queries-v2";
 import { RATING_LABEL, THRESHOLDS } from "@/lib/rating";
 import { alignerSeaux, libelleSeauComplet, type PointSerie, type SerieDef } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, lireComparaison, VIEW_CONTEXT_PARAMS } from "@/lib/view-state";
@@ -97,18 +82,18 @@ const H = 3_600_000;
 const TOP_SANS_ROBOT = 10;
 
 /** Lecture non lancée : une valeur sûre, jamais affichée comme mesure. */
-const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
 
 export default async function Correlation({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const sp = (await searchParams) ?? {};
-  const ecran = await pageFilters(sp, "/correlation");
-  if (!ecran.ok) return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
-  const f = ecran.filters;
+  // Le chargeur (`lib/chargeurs/correlation.ts`) lit l'écran, choisit le couple du
+  // hero et lit sa série ; la page ne calcule que ce qui en découle.
+  const ecran = await chargerEcran(chargerCorrelation, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const query = ecran.query;
   const lecteur = paramReader(sp);
   const toMs = Date.parse(query.range.to);
   // Colonnes présentes : ce que `/sessions` sait appliquer (lien « Sessions de cette heure »).
-  const schema = await dimensionSchema();
+  const schema = new Set(ecran.schema);
 
   // Comparaison (§ 3.2) : `none` par défaut sur cet écran. En `prev`, seules la tuile
   // « Heures en angle mort » et la série réelle ont une référence. `release` n'a pas
@@ -116,7 +101,6 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
   const comparaison = lireComparaison("/correlation", lecteur).valeur;
   const prev = comparaison.mode === "prev";
   const rangePrec = previousRange(query.range);
-  const fPrec = { ...f, query: { ...query, range: rangePrec } };
   const reference = `vs période précédente (${rangeLabel({ ...rangePrec, preset: null }, "UTC")} UTC)`;
 
   // Liens qui restent sur l'écran : contrat canonique + réglages de vue de l'URL
@@ -127,26 +111,8 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
   const lienPages = (app: string, route: string, extra: Record<string, string | null> = {}) =>
     hrefWithQuery("/pages", query, { app, route, panel: ecrirePanel({ type: "route", id: route }), ...extra });
 
-  const [utilisateur, cartes, couples, concordance, concordancePrec, couverturePrec, spots, fraicheurs, deploys, alertes, quotidien] =
-    await Promise.all([
-      getUser(),
-      lire(() => correlationCards(f)),
-      lire(() => correlationRoutes(f)),
-      lire(() => correlationConcordance(f)),
-      prev ? lire(() => correlationConcordance(fPrec)) : sansLecture(null),
-      prev
-        ? couverturePrecedente(query, { table: "rum_metric", colonneTemps: "ts", additive: false })
-        : Promise.resolve(undefined),
-      lire(() => blindSpots(f)),
-      lire(() => syntheticFreshness(f)),
-      lire(() => listDeploys(f, 20)),
-      // Annotations d'alerte (F67) : les 100 derniers déclenchements du périmètre ;
-      // la fenêtre et le couple app × route sont appliqués par `annotationsAlertes`.
-      lire(() => alertEvents(f)),
-      // P*.8 : une seule lecture quotidienne pour TOUS les couples (≤ 30 jours par
-      // couple, plage bornée par le contrat) ; le ρ de chaque route s'en déduit.
-      lire(() => correlationQuotidienne(null, null, f)),
-    ]);
+  const { cartes, couples, concordance, concordancePrec, spots, fraicheurs, deploys, alertes, quotidien } = ecran;
+  const couverturePrec = ecran.couverturePrec ?? undefined;
 
   // ── Concordance robot ↔ réel (P*.8) ───────────────────────────────────────────
   // Corrélation de RANG entre le premier chargement du robot et le LCP p75 réel,
@@ -171,15 +137,13 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
   const robotAbsent = fraicheurs.ok && plusRecent === null;
   const retards = fraicheurs.ok ? lignesRetard(fraicheurs.data, toMs) : [];
   const appsSansPassage = fraicheurs.ok && !robotAbsent ? fraicheurs.data.filter((r) => r.dernier === null).map((r) => r.app_id) : [];
-  const admin = utilisateur?.role === "admin";
+  const admin = ecran.admin;
 
   // ── Couple du hero (CR7-a) ────────────────────────────────────────────────────
   const options = couples.ok ? couples.data : [];
   const anglesMortsParRoute = concordance.ok ? concordance.data.anglesMortsParRoute : [];
-  const serieDemandee = lecteur.get("serie");
-  const choisi =
-    lireSerie(serieDemandee, options) ??
-    serieParDefaut(options, { route: query.filters.route ?? null, anglesMorts: anglesMortsParRoute });
+  // Choisi par le chargeur (`serie=` de l'URL, sinon le couple par défaut).
+  const choisi = ecran.choisi;
   const serieChoisie = choisi ? ecrireSerie(choisi.app_id, choisi.route) : null;
   const libelleChoisi = choisi ? libelleSerie(choisi, options) : null;
   // La phrase du hero (P*.8) : « Sur 12 jours communs, le robot et le réel évoluent
@@ -191,10 +155,7 @@ export default async function Correlation({ searchParams }: { searchParams?: Pro
 
   const { starts, grille, tronque } = grilleHoraire(query.range);
   const grillePrec = prev ? grilleHoraire(rangePrec) : null;
-  const [serie, seriePrec] = await Promise.all([
-    choisi && !robotAbsent ? lire(() => correlationSeries(choisi.app_id, choisi.route, f)) : sansLecture<CorrSeriesRow[]>([]),
-    choisi && !robotAbsent && prev ? lire(() => correlationSeries(choisi.app_id, choisi.route, fPrec)) : sansLecture<CorrSeriesRow[]>([]),
-  ]);
+  const { serie, seriePrec } = ecran;
 
   // Alignement OBLIGATOIRE avant tout tracé (§ 3.10) : une heure sans mesure est
   // absente de la lecture ; `null` à son indice = trou dans la série ET case

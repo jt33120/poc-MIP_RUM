@@ -6,7 +6,7 @@ import { periodInterval, type Filters } from "./queries-v2";
 export interface LogRow {
   id: number;
   app_id: string;
-  ts: Date;
+  ts: Date | string;
   severity_num: number | null;
   severity_text: string | null;
   body: string | null;
@@ -80,7 +80,7 @@ export async function logSeverityCounts(f: Filters): Promise<Record<string, numb
  *  vue est absente (local/CI) — même pattern fail-soft que health.ts/v_anomaly. */
 export interface LogAnomalyRow {
   app_id: string;
-  bucket: Date;
+  bucket: Date | string;
   errors: number;
   mean_7d: number;
   z_score: number;

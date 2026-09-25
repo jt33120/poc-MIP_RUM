@@ -303,7 +303,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
             </thead>
             <tbody className="divide-y divide-line/60">
               {tokens.map((t) => {
-                const expire = t.expiresAt.getTime() <= maintenant;
+                const expire = new Date(t.expiresAt).getTime() <= maintenant;
                 const statut = t.revokedAt ? "révoqué" : expire ? "expiré" : "actif";
                 return (
                   <tr key={t.id}>

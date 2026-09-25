@@ -58,10 +58,14 @@ const requete = (qs: string) => {
 };
 
 describe("chaque écran branché sur le contrat déclare ses capacités", () => {
-  it("toute page qui appelle pageFilters a une surface, avec le chemin qu'elle annonce", () => {
-    const appels = pages(APP_DIR).flatMap((file) => {
+  it("toute page — ou tout chargeur d'écran (C3 → C5) — qui lit ses filtres a une surface, avec le chemin qu'il annonce", () => {
+    // Une page lit ses filtres par `pageFilters(sp, "/x")` ; un chargeur d'écran
+    // (`lib/chargeurs/`), par `analyserFiltres(principal, sp, "/x")`.
+    const CHARGEURS = join(APP_DIR, "..", "lib", "chargeurs");
+    const fichiers = [...pages(APP_DIR), ...readdirSync(CHARGEURS).map((f) => join(CHARGEURS, f))];
+    const appels = fichiers.flatMap((file) => {
       const source = readFileSync(file, "utf8");
-      return [...source.matchAll(/pageFilters\([^;]*?,\s*[`"]([^`"]+)[`"]\)/g)].map((m) => ({
+      return [...source.matchAll(/(?:pageFilters|analyserFiltres)\([^;]*?,\s*[`"]([^`"]+)[`"]\)/g)].map((m) => ({
         page: relative(APP_DIR, file),
         path: m[1].replace(/\$\{[^}]+\}/g, "x"),
       }));

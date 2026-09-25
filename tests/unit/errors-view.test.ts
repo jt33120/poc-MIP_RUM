@@ -13,7 +13,7 @@ import {
   fmtCount,
   fmtCoverage,
   occurrenceHrefs,
-} from "../../apps/console/components/errors/error-view";
+} from "../../apps/console/lib/error-view";
 import type { ErrorFilters, ErrorOccurrenceRow } from "../../apps/console/lib/queries-errors";
 
 const filtres = (over: Partial<ErrorFilters> = {}): ErrorFilters => ({

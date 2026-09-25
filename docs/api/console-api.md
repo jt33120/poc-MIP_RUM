@@ -37,11 +37,22 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `public.platformStatus` | `GET /v1/public/platform-status` | aucune session | — | lecture | exigé | — |
 | `replay.session` | `GET /v1/replays/{sessionId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.actions` | `GET /v1/screens/actions` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.correlation` | `GET /v1/screens/correlation` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.errors` | `GET /v1/screens/errors` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.errorGroup` | `GET /v1/screens/errors/{fingerprint}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.issue` | `GET /v1/screens/errors/issues/{id}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.events` | `GET /v1/screens/events` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.explorer` | `GET /v1/screens/explorer` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.forecast` | `GET /v1/screens/forecast` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.map` | `GET /v1/screens/map` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.mobile` | `GET /v1/screens/mobile` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.overview` | `GET /v1/screens/overview` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.pages` | `GET /v1/screens/pages` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.sessions` | `GET /v1/screens/sessions` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.session` | `GET /v1/screens/sessions/{id}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.tracing` | `GET /v1/screens/tracing` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.trace` | `GET /v1/screens/tracing/{traceId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.ux` | `GET /v1/screens/ux` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `console.shell` | `GET /v1/shell` | session | — | lecture | exigé | — |
 | `ops.version` | `GET /v1/version` | aucune session | — | lecture | **non exigé** | — |
 

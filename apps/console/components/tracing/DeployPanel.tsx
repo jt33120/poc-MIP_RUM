@@ -29,7 +29,7 @@ const HEURE_UTC = new Intl.DateTimeFormat("fr-FR", {
   minute: "2-digit",
 });
 
-function quand(ts: Date): string {
+function quand(ts: Date | string): string {
   return `${HEURE_UTC.format(new Date(ts))} UTC`;
 }
 

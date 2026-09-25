@@ -139,10 +139,10 @@ export interface ErrorGroupRow extends ErrorImpact {
   sessions: number;
   /** Historique : `visitors_affected`, 0 si inconnu (visiteurs distincts, pas identités). */
   users_affected: number;
-  first_seen: Date;
-  last_seen: Date;
+  first_seen: Date | string;
+  last_seen: Date | string;
   status: ErrorStatus;
-  resolved_at: Date | null;
+  resolved_at: Date | string | null;
   /** Une erreur marquée « résolue » réapparaît (last_seen > resolved_at) ; jamais NULL. */
   regressed: boolean;
   /** Avec `opts.series` : occurrences par seau, mêmes seaux et même ordre que `trend`. */
@@ -150,7 +150,7 @@ export interface ErrorGroupRow extends ErrorImpact {
 }
 
 export interface ErrorTrendPoint {
-  bucket: Date;
+  bucket: Date | string;
   occurrences: number;
 }
 
@@ -191,7 +191,7 @@ export type ErrorGroupRef = { app_id: string; fingerprint: string };
 export interface ErrorGroupCandidate {
   app_id: string;
   occurrences: number;
-  last_seen: Date;
+  last_seen: Date | string;
 }
 
 export type ErrorGroupResolution =
@@ -201,7 +201,7 @@ export type ErrorGroupResolution =
 
 export interface ErrorExemplar {
   id: number;
-  ts: Date;
+  ts: Date | string;
   message: string | null;
   error_type: string | null;
   kind: string | null;
@@ -234,7 +234,7 @@ export interface ErrorOccurrenceLinks {
 
 export interface ErrorOccurrenceRow {
   id: number;
-  ts: Date;
+  ts: Date | string;
   route: string | null;
   /** Tel qu'émis, même quand aucune session de la même app ne lui correspond. */
   session_id: string | null;
@@ -833,7 +833,7 @@ export interface TotalsSqlRow extends ErrorImpact {
 }
 
 interface SeriesSqlRow extends ErrorGroupRef {
-  bucket: Date;
+  bucket: Date | string;
   occurrences: number;
 }
 
@@ -878,12 +878,12 @@ export function toOccurrenceRow({
 }
 
 function withSeries(groups: ErrorGroupRow[], trend: ErrorTrendPoint[], points: SeriesSqlRow[]): ErrorGroupRow[] {
-  const position = new Map(trend.map((point, i) => [point.bucket.getTime(), i]));
+  const position = new Map(trend.map((point, i) => [new Date(point.bucket).getTime(), i]));
   const key = (ref: ErrorGroupRef) => JSON.stringify([ref.app_id, ref.fingerprint]);
   const series = new Map(groups.map((group) => [key(group), new Array<number>(trend.length).fill(0)]));
   for (const point of points) {
     const values = series.get(key(point));
-    const i = position.get(point.bucket.getTime());
+    const i = position.get(new Date(point.bucket).getTime());
     // Une même empreinte peut exister dans une app absente de la page : ignorée.
     if (values && i !== undefined) values[i] += point.occurrences;
   }
@@ -1387,7 +1387,7 @@ export async function topGroupesSeries(f: ErrorFilters, n: 4): Promise<{ groupes
 
 export interface ReleaseVue {
   release: string;
-  ts: Date;
+  ts: Date | string;
 }
 
 export interface ReleasesDuGroupe {

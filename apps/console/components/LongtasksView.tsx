@@ -24,7 +24,7 @@ import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { formater } from "@/lib/fmt-ids";
 import { fmtDate, fmtVital } from "@/lib/format";
-import type { Lecture } from "@/lib/lecture";
+import type { SectionLue } from "@/lib/lecture";
 import type { LongtaskBucket, LongtaskWorst } from "@/lib/queries-longtasks";
 import { alignerSeaux, isoSansMs, libelleSeauComplet, type Annotation } from "@/lib/series";
 
@@ -80,9 +80,9 @@ export function LongtasksView({
   sessionHref,
 }: {
   /** `longtaskSeries(f)` ; en échec, la figure le dit (les pires cas restent). */
-  serie: Lecture<LongtaskBucket[]>;
+  serie: SectionLue<LongtaskBucket[]>;
   /** `worstLongtasks(f)` ; en échec, la table le dit (la figure reste). */
-  worst: Lecture<LongtaskWorst[]>;
+  worst: SectionLue<LongtaskWorst[]>;
   /** Débuts de seau attendus du contrat, en millisecondes (`bucketStarts`). */
   grille: number[];
   bucketSeconds: number;

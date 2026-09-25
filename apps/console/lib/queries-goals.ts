@@ -46,7 +46,7 @@ export interface GoalConversionLue extends GoalConversion {
   /** Dénominateur de l'objectif : sessions de la fenêtre dans SON app. */
   sessions: number;
   /** Dernière conversion lue sur la fenêtre (page vue ou événement) ; null sans conversion. */
-  derniere: Date | null;
+  derniere: Date | string | null;
 }
 
 export interface GoalConversionsParAppareil {

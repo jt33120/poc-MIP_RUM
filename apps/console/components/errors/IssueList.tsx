@@ -17,7 +17,7 @@ import {
   LegacyEntryBadge,
   ReappearedBadge,
 } from "@/components/errors/IssueBadges";
-import { errorGroupHref, errorsHref, fmtCount, issueHref, issueListHref } from "@/components/errors/error-view";
+import { errorGroupHref, errorsHref, fmtCount, issueHref, issueListHref } from "@/lib/error-view";
 import { INPUT_CLASS } from "@/components/forms/Field";
 import type { IssueEntry, IssueListFilters, IssueListResult } from "@/lib/error-issues";
 import { ISSUE_STATUSES, ISSUE_STATUS_LABELS } from "@/lib/issues-libelles";

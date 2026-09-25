@@ -36,73 +36,47 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { BREAKDOWN_NOTICES, breakdownDrillHref, datasetAvailability, groupLabel } from "@/lib/breakdowns";
-import {
-  couverturePrecedente,
-  sourcesSousFiltres,
-  type CouverturePrecedente,
-  type SourceComparaison,
-} from "@/lib/comparaison";
+import { type CouverturePrecedente } from "@/lib/comparaison";
 import { DEFAULT_ROWS, EXPLORER_VERSION } from "@/lib/analytics-schema";
 import { HISTO_BUCKETS } from "@/lib/distribution";
 import { etatLectureEchantillonnage } from "@/lib/echantillonnage";
 import { explorerHref } from "@/lib/explorer-page-params";
-import type { Filters, SearchParams } from "@/lib/filters";
+import type { SearchParams } from "@/lib/filters";
 import { estVital, formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
 import { classerParGravite, estFaible } from "@/lib/impact";
-import { lire, type Lecture } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
+import { type SectionLue } from "@/lib/lecture";
+import { chargerPages } from "@/lib/chargeurs/pages";
+import { chargerEcran } from "@/lib/ecran-local";
 import { categorie } from "@/lib/palette";
 import {
-  avecCondition,
   classementParRoute,
-  distributionsAffichees,
   ecartAEnsemblePages,
   ecartP75EntreReleases,
   ecartPhaseTtfb,
   joindreRoutesPages,
   p75DeLaRoute,
   phasesTtfb,
-  plafondAffichage,
   referencePrecedentePages,
   tuileRoutesAuDelaDeBon,
   type RoutePages,
   type VitalClasseParRoute,
 } from "@/lib/perf-domain";
 import { choisirReleases, vuesProduit, type Entree, type LigneNavigateur, type LignePays } from "@/lib/presets";
-import { dimensionSupport } from "@/lib/query-compiler";
 import { bucketStarts, hrefWithQuery, paramReader, type AnalyticsQuery } from "@/lib/query-contract";
-import { dimensionSchema } from "@/lib/query-schema";
 import {
   ROUTES_MAX,
-  pageviewSeries,
-  samplingVitals,
-  slowResourcesByRoute,
-  slowRoutes,
-  vitalHistogram,
-  vitalPercentiles,
-  vitalSeriesN,
-  vitalsP75,
-  vuesParNavType,
   type HistoRow,
   type PageviewSeriesPoint,
   type VitalAgg,
   type VitalPercentiles,
   type VuesParNavType,
 } from "@/lib/queries";
-import { VITALS_BREAKDOWN_DATASETS, vitalsBreakdown, type BreakdownResult, type VitalsBreakdownRow } from "@/lib/queries-breakdowns";
-import { comparaisonVersions, listDeploys } from "@/lib/queries-deploys";
-import { longtaskSeries, worstLongtasks } from "@/lib/queries-longtasks";
-import { resourcesVue } from "@/lib/queries-resources";
+import { VITALS_BREAKDOWN_DATASETS } from "@/lib/queries-breakdowns";
 import { ecartP75, mesuresMinimales } from "@/lib/stats/incertitude";
 import { ecrirePanel, ecrireVue, gabaritZoom, ligneIgnoree, lireComparaison, lireEtatDeVue, lireTri } from "@/lib/view-state";
 import { annotationsDeploiements, type AnnotationsDeploiements } from "@/lib/annotations";
 
 export const dynamic = "force-dynamic";
-
-// Sources des tuiles comparées à la période précédente (§ 3.2) : un p75 n'est pas
-// un compte (le retard d'ingestion ne le fausse pas), les pages vues si.
-const SOURCE_VITAUX: SourceComparaison = { table: "rum_metric", colonneTemps: "ts", additive: false };
-const SOURCE_VUES: SourceComparaison = { table: "rum_pageview", colonneTemps: "started_at", additive: true };
 
 /** Ancre du classement : la tuile « Routes au-delà de Bon » y mène. */
 const ANCRE_HERO = "hero-routes";
@@ -117,23 +91,6 @@ const SOMMAIRE = [
   { ancre: "ressources", libelle: "Ressources" },
 ] as const;
 
-/** Lecture non lancée (sans objet sous ce réglage) : jamais affichée comme une mesure. */
-const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
-
-/**
- * Les mêmes filtres SANS condition de release : les releases comparées (§ 3.2) se
- * choisissent parmi toutes celles de la fenêtre — sous `release=B`, la lecture des
- * versions ne verrait que B, et « précédente » n'existerait plus.
- */
-function sansRelease(f: Filters): Filters {
-  if (!f.query) return f;
-  const { release: _release, ...filtres } = f.query.filters;
-  return {
-    ...f,
-    query: { ...f.query, filters: { ...filtres, segments: filtres.segments.filter((c) => c.dimension !== "release") } },
-  };
-}
-
 /** La première couverture incomplète d'une rangée de sources, sinon « complète ». */
 function couvertureDe(couvertures: readonly CouverturePrecedente[]): CouverturePrecedente {
   return couvertures.find((c) => c.etat !== "complete") ?? { etat: "complete", raison: null };
@@ -141,9 +98,10 @@ function couvertureDe(couvertures: readonly CouverturePrecedente[]): CouvertureP
 
 export default async function Pages({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/pages");
-  if (!ecran.ok) return <FilterProblemNotice title="Pages" problem={ecran.problem} />;
-  const f = ecran.filters;
+  // Le chargeur (`lib/chargeurs/pages.ts`) lit l'écran en trois temps (sections,
+  // distributions, releases comparées) et le panneau d'une route ouverte.
+  const ecran = await chargerEcran(chargerPages, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title="Pages" problem={ecran.problem} />;
   const period = { label: ecran.label };
   const lecteur = paramReader(sp);
 
@@ -165,21 +123,16 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
   const mode = comparaison.valeur.mode;
   const prev = mode === "prev";
 
-  const schema = await dimensionSchema();
+  const schema = new Set(ecran.schema);
   const dispo = datasetAvailability(VITALS_BREAKDOWN_DATASETS, schema);
   const dispoNavigateur = dispo("browser");
   const dispoPays = dispo("country");
-  const fVersions = sansRelease(f);
 
-  const couvertures = (source: SourceComparaison) =>
-    Promise.all(sourcesSousFiltres(ecran.query, source).map((s) => couverturePrecedente(ecran.query, s)));
-
-  // Chaque lecture est indépendante (F02, § 3.8) : `lire()` ne lève pas, une lecture
-  // en échec ne rend « Lecture en échec » que dans SA section.
-  const [
+  // Chaque lecture est indépendante (F02, § 3.8) : une section en échec ne rend
+  // « Lecture en échec » que dans SA section.
+  const {
     decoupe,
     routes,
-    ressourcesRoutes,
     vitaux,
     vitauxPrev,
     serieVital,
@@ -189,7 +142,6 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
     couvVitaux,
     couvVues,
     deploys,
-    versions,
     navigateurs,
     pays,
     pcts,
@@ -197,44 +149,21 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
     ressources,
     blocages,
     pires,
-  ] = await Promise.all([
-    classement.disponible ? lire(() => vitalsBreakdown(f, "route", ROUTES_MAX)) : sansLecture<BreakdownResult<VitalsBreakdownRow> | null>(null),
-    classement.disponible ? lire(() => slowRoutes(f)) : sansLecture([]),
-    classement.disponible ? lire(() => slowResourcesByRoute(f)) : sansLecture(new Map()),
-    lire(() => vitalsP75(f)),
-    prev ? lire(() => vitalsP75(f, true)) : sansLecture<VitalAgg[]>([]),
-    lire(() => vitalSeriesN(f, vital)),
-    lire(() => pageviewSeries(f)),
-    prev ? lire(() => pageviewSeries(f, true)) : sansLecture([]),
-    lire(() => samplingVitals(f)),
-    prev ? couvertures(SOURCE_VITAUX) : Promise.resolve<CouverturePrecedente[]>([]),
-    prev ? couvertures(SOURCE_VUES) : Promise.resolve<CouverturePrecedente[]>([]),
-    lire(() => listDeploys(f, 20)),
-    lire(() => comparaisonVersions(fVersions)),
-    dispoNavigateur.available ? lire(() => vitalsBreakdown(f, "browser", ROUTES_MAX)) : sansLecture(null),
-    dispoPays.available ? lire(() => vitalsBreakdown(f, "country", ROUTES_MAX)) : sansLecture(null),
-    lire(() => vitalPercentiles(f)),
-    lire(() => vuesParNavType(f)),
-    lire(() => resourcesVue(f)),
-    lire(() => longtaskSeries(f)),
-    lire(() => worstLongtasks(f)),
-  ]);
+    distributions,
+    histos,
+    choix,
+    releaseTuile,
+    releaseIndisponible,
+    vitauxB,
+    vitauxA,
+    serieB,
+  } = ecran;
+  // Les ressources lentes par route, rendues en objet par le chargeur (une `Map` ne voyage pas).
+  const ressourcesRoutes = ecran.ressourcesRoutes.ok
+    ? { ok: true as const, data: new Map(Object.entries(ecran.ressourcesRoutes.data)) }
+    : ecran.ressourcesRoutes;
 
-  // ─── Distributions (§ 5.2.2) : le plafond d'affichage dépend des percentiles ───
-  // D'où une seconde lecture : 20 bacs linéaires jusqu'au plafond RETENU (VITAL_CAP,
-  // ou p99 arrondi quand la population est concentrée très en dessous). Percentiles
-  // illisibles : plafond par défaut, et « percentiles non calculables » sur la figure.
-  const pctsParNom = new Map((pcts.ok ? pcts.data : []).map((r) => [r.name, r] as const));
-  const distributions = distributionsAffichees(vital).map((nom) => {
-    const r = pctsParNom.get(nom);
-    return { nom, pcts: r, ...plafondAffichage(nom, r ? { p95: r.pcts[3] ?? null, p99: r.pcts[4] ?? null } : null) };
-  });
-  const histos = await Promise.all(
-    distributions.map((d) => lire(() => vitalHistogram(f, d.nom, d.plafond, HISTO_BUCKETS))),
-  );
-
-  // ─── Vues préréglées (F08, § 3.6) : données lues ici, règles dans lib/presets.ts ───
-  const choix = deploys.ok && versions.ok ? choisirReleases(deploys.data, versions.data.rows) : null;
+  // ─── Vues préréglées (F08, § 3.6) : releases choisies par le chargeur, règles dans lib/presets.ts ───
   const entreeReleases: Entree<ReturnType<typeof choisirReleases>> = choix
     ? { valeur: choix }
     : { indisponible: "lecture des releases en échec" };
@@ -250,37 +179,8 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
       : { valeur: pays.data.rows.map((r) => ({ valeur: r.valeur, volume: r.samples })) };
   const vuesPrereglees = vuesProduit({ releases: entreeReleases, navigateurs: entreeNavigateurs, pays: entreePays });
 
-  // ─── Comparaison de releases (§ 3.2) : B contre A, même fenêtre ───
-  // Les releases de l'URL, sinon la règle du § 3.2 (dernier déploiement déclaré…).
-  // La tuile p75 lit alors la release B et se compare à A ; si l'une manque, ou si la
-  // dimension n'est pas collectée pour les mesures, la tuile n'a pas d'écart ET le dit.
-  let releaseTuile: { relA: string; relB: string; regle: string } | null = null;
-  let releaseIndisponible: string | null = null;
-  if (mode === "release") {
-    const relB = comparaison.valeur.relB ?? choix?.relB ?? null;
-    const relA = comparaison.valeur.relA ?? choix?.relA ?? null;
-    const support = dimensionSupport("vitals", "release", schema);
-    if (!support.supported) releaseIndisponible = support.message;
-    else if (!choix && (relA === null || relB === null)) releaseIndisponible = "lecture des releases en échec";
-    else if (relA === null || relB === null || relA === relB) releaseIndisponible = choix?.indisponible ?? "moins de deux releases sur la fenêtre";
-    else {
-      const regle =
-        comparaison.valeur.relA && comparaison.valeur.relB
-          ? `${relB} contre ${relA}, choisies dans l'URL`
-          : (choix?.regle ?? `${relB} contre ${relA}`);
-      releaseTuile = { relA, relB, regle };
-    }
-  }
-  const releases = releaseTuile;
-  const [vitauxB, vitauxA, serieB] = releases
-    ? await Promise.all([
-        lire(() => vitalsP75(avecCondition(f, "release", releases.relB))),
-        lire(() => vitalsP75(avecCondition(f, "release", releases.relA))),
-        lire(() => vitalSeriesN(avecCondition(f, "release", releases.relB), vital)),
-      ])
-    : [null, null, null];
-
-  const parNom = (l: Lecture<VitalAgg[]> | null) =>
+  // ─── Comparaison de releases (§ 3.2) : B contre A, lue par le chargeur ───
+  const parNom = (l: SectionLue<VitalAgg[]> | null) =>
     new Map((l?.ok ? l.data : []).map((v) => [v.name, v] as const));
   const ensemble = parNom(vitaux);
   const ensemblePrev = parNom(vitauxPrev);
@@ -641,9 +541,9 @@ export default async function Pages({ searchParams }: { searchParams: Promise<Se
       {/* Panneau route (F17, § 5.2.3) : ouvert par l'URL, il lit ses propres blocs.
           Rendu APRÈS l'écran pour que l'ordre de tabulation aille de la liste au
           panneau ; il se place lui-même (`fixed`). */}
-      {panneau !== null && (
+      {panneau !== null && ecran.panneau && (
         <SectionErreur titre={`Route ${panneau}`}>
-          <RoutePanel route={panneau} f={f} query={ecran.query} vital={vital} reglages={reglagesVue} />
+          <RoutePanel route={panneau} query={ecran.query} vital={vital} lecture={ecran.panneau.lecture} reglages={reglagesVue} />
         </SectionErreur>
       )}
     </div>
@@ -685,7 +585,7 @@ function FigureDistribution({
   explorer,
 }: {
   vital: VitalName;
-  histo: Lecture<HistoRow[]>;
+  histo: SectionLue<HistoRow[]>;
   percentiles: VitalPercentiles | null;
   pctsLus: boolean;
   plafond: number;
@@ -767,8 +667,8 @@ function FigureNavigation({
   plage,
   drill,
 }: {
-  navigation: Lecture<VuesParNavType[]>;
-  ensemble: Lecture<PageviewSeriesPoint[]>;
+  navigation: SectionLue<VuesParNavType[]>;
+  ensemble: SectionLue<PageviewSeriesPoint[]>;
   plage: string;
   drill: (route: string | null) => string;
 }) {
@@ -858,7 +758,7 @@ function FigureTtfb({
   reference,
   plage,
 }: {
-  vitaux: Lecture<VitalAgg[]>;
+  vitaux: SectionLue<VitalAgg[]>;
   /** p75 de la période précédente COMPLÈTE ; `null` : pas d'écart (raison à part). */
   precedents: VitalAgg[] | null;
   raisonSansEcart: string | null;
@@ -954,7 +854,7 @@ function TuileVital({
   plage,
 }: {
   vital: VitalName;
-  vitaux: Lecture<VitalAgg[]>;
+  vitaux: SectionLue<VitalAgg[]>;
   ensemble: VitalAgg | undefined;
   ensemblePrev: VitalAgg | undefined;
   /** La période précédente a été lue (ou n'était pas demandée). */

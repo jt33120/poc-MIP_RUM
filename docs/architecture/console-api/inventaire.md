@@ -10,13 +10,13 @@
 | Fichiers d'actions serveur (`"use server"`) | 17 (53 actions) | **16** |
 | Actions déclarées dans un écran | 0 | — |
 | Routes (`route.ts`) | 54 | **47** |
-| Composants serveur qui atteignent la base eux-mêmes | — | **13** |
+| Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
 | Modules `lib/queries*.ts` | 45 (207 fonctions exportées) | — |
 | Sections `lire()` (appels) | 262 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 4 / 0 | — |
 | Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 53 | — |
-| Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C5) | 6 | **6** / 50 |
+| Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C5) | 17 | **17** / 50 |
 
 **Le cliquet** (`cliquet.json`) liste nominativement ce qui atteint la base. `tests/unit/inventaire-console.test.ts` refuse toute entrée nouvelle, et demande de le resserrer quand une entrée disparaît.
 
@@ -45,18 +45,18 @@
 | `/ai` | C5 | **oui** | — | events, v2 | — | — | oui |
 | `/alerts` | C8 alerting | **oui** | — | queries, alerting, errors, events, explorer, sessions, v2 | 8 | — | oui |
 | `/api-docs` | statique ou vitrine | non | — | — | — | — | oui |
-| `/correlation` | C4 | **oui** | — | deploys, events, explorer, v2 | 11 | — | oui |
+| `/correlation` | C4 | **oui** | correlation | deploys, events, explorer, v2 | 11 | — | oui |
 | `/dashboards/[id]` | C6 espace de travail | **oui** | — | queries, accounts, dashboards, errors, events, explorer, frustration, grid, mobile, sessions | — | — | non |
 | `/dashboards` | C6 espace de travail | **oui** | — | queries, accounts, dashboards, errors, events, explorer, frustration, grid, mobile, sessions | — | — | non |
-| `/errors/[fingerprint]` | C4 | **oui** | — | queries, deploys, errors, events, explorer, sessions, v2 | 3 | — | oui |
-| `/errors/issues/[id]` | C4 | **oui** | — | queries, deploys, errors, events, explorer, sessions, ticket-integrations | 2 | — | oui |
-| `/errors` | C4 | **oui** | — | queries, breakdowns, deploys, errors, events, explorer, sessions | 8 | error | oui |
-| `/events` | C3 | **oui** | events | deploys, events | 2 | event | oui |
+| `/errors/[fingerprint]` | C4 | **oui** | erreur | queries, deploys, errors, events, explorer, sessions, v2 | 3 | — | oui |
+| `/errors/issues/[id]` | C4 | **oui** | issue | queries, deploys, errors, events, explorer, sessions, ticket-integrations | 2 | — | oui |
+| `/errors` | C4 | **oui** | errors | queries, breakdowns, deploys, errors, events, explorer, sessions | 8 | error | oui |
+| `/events` | C3 | **oui** | events | deploys, events, explorer | 2 | event | oui |
 | `/experience` | C5 | **oui** | — | queries, breakdowns, deploys, experience, explorer, mobile, sessions | 9 | — | oui |
 | `/explorer` | C3 | **oui** | explorer | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions | 3 | — | non |
 | `/explorer/views` | C6 espace de travail | **oui** | — | accounts, saved-views | — | — | non |
 | `/extension-privacy` | statique ou vitrine | non | — | — | — | — | oui |
-| `/forecast` | C4 | **oui** | — | deploys, explorer, grid | 3 | — | oui |
+| `/forecast` | C4 | **oui** | forecast | deploys, explorer, grid | 3 | — | oui |
 | `/forms` | C5 | **oui** | — | deploys, explorer, form-analytics, sessions | 3 | — | oui |
 | `/goals` | C5 | **oui** | — | queries, deploys, explorer, goals, sessions | 4 | — | oui |
 | `/legal/cgu` | statique ou vitrine | non | — | — | — | — | oui |
@@ -65,24 +65,24 @@
 | `/legal` | statique ou vitrine | non | — | — | — | — | oui |
 | `/login` | C1–C2 identité, sélection | **oui** | — | — | — | — | oui |
 | `/logs` | C5 | **oui** | — | events, logs, v2 | — | — | oui |
-| `/map` | C4 | **oui** | — | explorer, map, sessions, tracing | 6 | noeud | oui |
+| `/map` | C4 | **oui** | map | deploys, explorer, map, sessions, tracing | 6 | noeud | oui |
 | `/mobile` | C3 | **oui** | mobile | deploys, explorer, mobile, sessions | 8 | — | oui |
-| `/` | C4 | **oui** | — | queries, breakdowns, deploys, errors, events, explorer, grid, sessions, v2 | 32 | — | oui |
-| `/pages` | C4 | **oui** | — | queries, breakdowns, deploys, errors, events, explorer, longtasks, resources, sessions, v2 | 22 | route | oui |
+| `/` | C4 | **oui** | overview | queries, breakdowns, deploys, errors, events, explorer, grid, sessions, v2 | 32 | — | oui |
+| `/pages` | C4 | **oui** | pages | queries, breakdowns, deploys, errors, events, explorer, longtasks, resources, sessions, v2 | 22 | route | oui |
 | `/paths` | C5 | **oui** | — | queries, deploys, explorer, funnel, paths, sessions | 9 | — | oui |
 | `/presentation` | statique ou vitrine | **oui** | — | planifie | — | — | oui |
 | `/retention` | C5 | **oui** | — | cohorts, explorer, sessions | 3 | — | oui |
 | `/select/new` | C1–C2 identité, sélection | **oui** | — | queries, customers, explorer, extension-scope, sessions | — | — | oui |
 | `/select` | C1–C2 identité, sélection | **oui** | — | queries, explorer, projects, sessions | — | — | oui |
-| `/sessions/[id]` | C3 | **oui** | session | queries, explorer, sessions | 2 | — | oui |
+| `/sessions/[id]` | C3 | **oui** | session | queries, deploys, explorer, sessions | 2 | — | oui |
 | `/sessions` | C3 | **oui** | sessions | queries, deploys, explorer, sessions | 13 | — | oui |
 | `/slo` | C8 alerting | **oui** | — | queries, alerting, errors, events, explorer, sessions, v2 | 4 | — | oui |
 | `/svi/appels/[callId]` | C5 | **oui** | — | events, svi, v2 | — | — | oui |
 | `/svi/appels` | C5 | **oui** | — | events, svi, v2 | — | — | oui |
 | `/svi` | C5 | **oui** | — | events, svi, v2 | — | — | oui |
-| `/tracing/[traceId]` | C4 | **oui** | — | queries, explorer, sessions, tracing | 2 | — | oui |
-| `/tracing` | C4 | **oui** | — | deploys, events, explorer, tracing, v2 | 10 | — | oui |
-| `/ux` | C4 | **oui** | — | queries, deploys, explorer, frustration, mobile, sessions | 9 | — | oui |
+| `/tracing/[traceId]` | C4 | **oui** | trace | queries, deploys, explorer, sessions, tracing | 2 | — | oui |
+| `/tracing` | C4 | **oui** | tracing | deploys, events, explorer, tracing, v2 | 10 | — | oui |
+| `/ux` | C4 | **oui** | ux | queries, deploys, explorer, frustration, mobile, sessions | 9 | — | oui |
 
 ## Actions serveur
 
@@ -179,11 +179,8 @@
 | `components/alerts/RuleRow.tsx` | `lib/alertes-ecran.ts` → `lib/queries-v2.ts` → `lib/db.ts` |
 | `components/dashboards/ModeleCarte.tsx` | `app/dashboards/actions.ts` → `lib/queries-dashboards.ts` → `lib/db.ts` |
 | `components/dashboards/WidgetCard.tsx` | `app/dashboards/actions.ts` → `lib/queries-dashboards.ts` → `lib/db.ts` |
-| `components/errors/ErrorStackCard.tsx` | `lib/error-symbolication.ts` → `lib/db.ts` |
 | `components/errors/ErrorTriage.tsx` | `app/errors/[fingerprint]/actions.ts` → `lib/db.ts` |
-| `components/errors/PanneauErreur.tsx` | `lib/queries-deploys.ts` → `lib/db.ts` |
 | `components/explorer/ActionsVue.tsx` | `app/explorer/actions.ts` → `lib/queries-saved-views.ts` → `lib/db.ts` |
-| `components/perf/RoutePanel.tsx` | `lib/fuseau.ts` → `lib/db.ts` |
 | `components/presentation/Annexe.tsx` | `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Landing.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Specs.tsx` | `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
@@ -201,13 +198,13 @@
 | `lib/queries-cohorts.ts` | 1 | 1 |
 | `lib/queries-customers.ts` | 3 | 3 |
 | `lib/queries-dashboards.ts` | 6 | 3 |
-| `lib/queries-deploys.ts` | 4 | 19 |
+| `lib/queries-deploys.ts` | 4 | 22 |
 | `lib/queries-dimensions.ts` | 1 | 0 |
 | `lib/queries-dsar.ts` | 9 | 1 |
 | `lib/queries-errors.ts` | 11 | 13 |
 | `lib/queries-events.ts` | 3 | 21 |
 | `lib/queries-experience.ts` | 7 | 1 |
-| `lib/queries-explorer.ts` | 2 | 35 |
+| `lib/queries-explorer.ts` | 2 | 36 |
 | `lib/queries-extension-installs.ts` | 3 | 1 |
 | `lib/queries-extension-scope.ts` | 5 | 2 |
 | `lib/queries-form-analytics.ts` | 1 | 1 |

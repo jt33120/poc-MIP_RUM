@@ -7,7 +7,7 @@
 // depuis `queries-deploys.ts`, leur graphe d'import atteignait `lib/db.ts`.
 
 export interface DeployImpact {
-  deploy_ts: Date | null;
+  deploy_ts: Date | string | null;
   version: string | null;
   env: string | null;
   lcp_before: number | null;

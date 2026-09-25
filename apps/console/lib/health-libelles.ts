@@ -46,7 +46,7 @@ export interface HealthFactor {
 export interface AnomalyRow {
   app_id: string;
   route: string | null;
-  bucket: Date;
+  bucket: Date | string;
   p75: number;
   mean_7d: number;
   z_score: number;

@@ -73,7 +73,7 @@ export const CARTES: readonly CarteCapacite[] = [
       { ligne: "A2" },
       { passage: 312 },
       { passage: 313 },
-      { fichier: "components/errors/error-view.ts:90-93" },
+      { fichier: "lib/error-view.ts:90-93" },
     ],
   },
   {

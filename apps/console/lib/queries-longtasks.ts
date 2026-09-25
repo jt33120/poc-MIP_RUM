@@ -19,7 +19,7 @@ import { bucketExpr, bucketSeriesSql, sessionJoin } from "./query-compiler";
 import { sqlContext } from "./query-sql";
 
 export interface LongtaskBucket {
-  bucket: Date;
+  bucket: Date | string;
   /** Long Animation Frames (Chromium). */
   loaf: number;
   /** Long Tasks (API historique, autres navigateurs). */
@@ -67,7 +67,7 @@ export interface LongtaskWorst {
   quoi: string;
   source: string | null;
   blocking_ms: number;
-  ts: Date;
+  ts: Date | string;
 }
 
 export const LONGTASK_WORST_LIMIT = 10;

@@ -26,34 +26,20 @@ import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { sessionsDeLaRoute } from "@/lib/breakdowns";
+import type { LecturePanneauRoute } from "@/lib/chargeurs/panneau-route";
 import { LIBELLE_ETAT_ROBOT, regleAngleMort } from "@/lib/correlation";
-import { ecrireSerie } from "@/lib/correlation-serie";
-import { HISTO_BUCKETS } from "@/lib/distribution";
-import type { Filters } from "@/lib/filters";
+import { EFFECTIF_MIN_HEURE, ecrireSerie } from "@/lib/correlation-serie";
 import { formater, formatDuVital, type VitalName } from "@/lib/fmt-ids";
-import { fuseauDe } from "@/lib/fuseau";
-import { lire, type Lecture } from "@/lib/lecture";
-import { avecCondition, plafondAffichage } from "@/lib/perf-domain";
-import { UnsupportedFilterError } from "@/lib/query-compiler";
-import { bucketLabel, bucketStarts, hrefWithQuery, rangeLabel, type AnalyticsQuery } from "@/lib/query-contract";
-import { dimensionSchema } from "@/lib/query-schema";
-import {
-  pageviewSeries,
-  slowResourcesByRoute,
-  vitalHistogram,
-  vitalPercentiles,
-  vitalSeriesN,
-  vitalsP75,
-  type SlowResource,
-  type VitalAgg,
-  type VitalPercentiles,
-  type VitalSeriesPoint,
-} from "@/lib/queries";
-import { listErrorGroups, type ErrorGroupRow } from "@/lib/queries-errors";
-import { EFFECTIF_MIN_HEURE, correlationCards, correlationConcordance, type Concordance, type CorrCardRow } from "@/lib/queries-v2";
+import { HISTO_BUCKETS } from "@/lib/distribution";
+import { type SectionLue } from "@/lib/lecture";
+import { bucketLabel, bucketStarts, hrefWithQuery, type AnalyticsQuery } from "@/lib/query-contract";
+import type { SlowResource, VitalAgg, VitalPercentiles, VitalSeriesPoint } from "@/lib/queries";
+import type { ErrorGroupRow } from "@/lib/queries-errors";
+import type { Concordance, CorrCardRow } from "@/lib/queries-v2";
 import { RATING_LABEL, rating2026 } from "@/lib/rating";
 import { grilleIso, libelleSeauComplet } from "@/lib/series";
 import { pointsRelease } from "@/lib/vue-ensemble";
+import type { Fil } from "@mip/console-contract";
 
 /** Ressources lentes montrées dans le panneau (§ 5.2.3). */
 const RESSOURCES_PANNEAU = 3;
@@ -62,22 +48,6 @@ const ERREURS_PANNEAU = 3;
 
 const LIEN_BLOC =
   "inline-block rounded text-xs font-medium text-brand underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf";
-
-/**
- * Lecture d'un jeu que `/pages` ne déclare pas dans sa surface (le robot,
- * `synthetic`) : un filtre de l'écran qu'il ne porte pas lève
- * `UnsupportedFilterError`, que `lire` relance. Ici le seul BLOC le dit ; les
- * autres restent (même règle qu'à la Vue d'ensemble).
- */
-const lireOuRefus = <T,>(fn: () => Promise<T>) =>
-  lire<{ refus: null; data: T } | { refus: string }>(async () => {
-    try {
-      return { refus: null, data: await fn() };
-    } catch (e) {
-      if (e instanceof UnsupportedFilterError) return { refus: e.message };
-      throw e;
-    }
-  });
 
 /**
  * Un bloc du panneau : son titre, et son contenu ou l'échec de sa lecture (chaque
@@ -109,21 +79,21 @@ function Bloc({
   );
 }
 
-export async function RoutePanel({
+export function RoutePanel({
   route,
-  f,
   query,
   vital,
+  lecture,
   reglages = {},
 }: {
   /** Valeur décodée de `panel=route:<r>`. */
   route: string;
-  /** Filtres de la page, SANS condition de route. */
-  f: Filters;
   /** Requête résolue de la page (§ 3.3) : plage, périmètre, filtres. */
   query: AnalyticsQuery;
   /** `vital=` de la page (défaut LCP). */
   vital: VitalName;
+  /** Ce que le chargeur de `/pages` a lu pour cette route (`lib/chargeurs/panneau-route.ts`), sur le fil. */
+  lecture: Fil<LecturePanneauRoute>;
   /**
    * ÉCART AU PLAN (§ 5.2.3, signature à quatre props) : les réglages de vue de
    * l'écran (`vital`, `cmp`, `tri`, `vue`…) ne sont pas portés par `query`.
@@ -132,10 +102,8 @@ export async function RoutePanel({
    */
   reglages?: Record<string, string | null>;
 }) {
-  const fRoute = avecCondition(f, "route", route);
-  // La plage est celle de l'ÉCRAN (§ 3.5) : même libellé que l'en-tête, même fuseau
-  // de lecture — le panneau n'a pas de fenêtre à lui, et il l'écrit.
-  const plage = rangeLabel(query.range, await fuseauDe(query.scope.requestedApp));
+  const { plage, serieRoute, serieEnsemble, pctsLus, pctsDuVital, ensemble, reel, cartes, concordance, ressources, erreurs, vues, plafond, plafondLibelle, histo } =
+    lecture;
   const seau = query.range.bucketSeconds;
   const grille = grilleIso(bucketStarts(query.range));
 
@@ -148,40 +116,14 @@ export async function RoutePanel({
   // `route=`, que l'écran refuse (une session ne porte pas de route) — même quand la
   // page le porte, après « Ouvrir en page ». Sous un filtre que `/sessions` refuse
   // aussi (release, env…), pas de lien : la raison est écrite à sa place (V10).
-  const sessions = sessionsDeLaRoute(query, route, await dimensionSchema());
+  const sessions = sessionsDeLaRoute(query, route, new Set(lecture.schema));
   const erreursHref = hrefWithQuery("/errors", query, { route });
-
-  // Toutes les lectures du panneau, en parallèle, chacune derrière `lire()`.
-  // « Déjà chargées par la page » (§ 5.2.3) : `vitalsP75(f)` est relu ici — non
-  // établi que `lib/queries.ts` mette en cache, un second appel est accepté.
-  const [serieRoute, serieEnsemble, pcts, ensemble, reel, cartes, concordance, ressources, erreurs, vues] = await Promise.all([
-    lire(() => vitalSeriesN(fRoute, vital)),
-    lire(() => vitalSeriesN(f, vital)),
-    lire(() => vitalPercentiles(fRoute)),
-    lire(() => vitalsP75(f)),
-    lire(() => vitalsP75(fRoute)),
-    lireOuRefus(() => correlationCards(f)),
-    lireOuRefus(() => correlationConcordance(f)),
-    lire(() => slowResourcesByRoute(f)),
-    lire(() => listErrorGroups(fRoute, { limit: ERREURS_PANNEAU, offset: 0 })),
-    lire(() => pageviewSeries(fRoute)),
-  ]);
-
-  // Le plafond d'affichage dépend des percentiles de LA ROUTE : d'où une seconde
-  // lecture (même règle qu'à l'écran, F15). Percentiles illisibles : plafond par
-  // défaut, et la figure le dit.
-  const pctsDuVital: VitalPercentiles | null = pcts.ok ? (pcts.data.find((r) => r.name === vital) ?? null) : null;
-  const { plafond, libelle: plafondLibelle } = plafondAffichage(
-    vital,
-    pctsDuVital ? { p95: pctsDuVital.pcts[3] ?? null, p99: pctsDuVital.pcts[4] ?? null } : null,
-  );
-  const histo = await lire(() => vitalHistogram(fRoute, vital, plafond, HISTO_BUCKETS));
 
   const totalVues = vues.ok ? vues.data.reduce((s, p) => s + p.chargements + p.spa + p.inconnu, 0) : null;
   const mesures = pctsDuVital?.n ?? (serieRoute.ok ? serieRoute.data.reduce((s, p) => s + p.n, 0) : null);
   const puces: PuceDetail[] = [
     { label: "Vues", valeur: vues.ok ? formater("count", totalVues) : "non lu" },
-    { label: `Mesures ${vital}`, valeur: pcts.ok || serieRoute.ok ? formater("count", mesures) : "non lu" },
+    { label: `Mesures ${vital}`, valeur: pctsLus || serieRoute.ok ? formater("count", mesures) : "non lu" },
   ];
 
   return (
@@ -215,7 +157,7 @@ export async function RoutePanel({
             vital={vital}
             histo={histo}
             percentiles={pctsDuVital}
-            pctsLus={pcts.ok}
+            pctsLus={pctsLus}
             plafond={plafond}
             plafondLibelle={plafondLibelle}
             plage={plage}
@@ -235,7 +177,7 @@ export async function RoutePanel({
         </Bloc>
 
         <Bloc titre="Ressources lentes de la route" id="panneau-route-ressources">
-          <RessourcesRoute route={route} lecture={ressources} plage={plage} />
+          <RessourcesRoute lecture={ressources} plage={plage} />
         </Bloc>
 
         <Bloc titre="Erreurs sur la route" id="panneau-route-erreurs">
@@ -281,8 +223,8 @@ function SerieRoute({
   grille: string[];
   seau: number;
   plage: string;
-  serieRoute: Lecture<VitalSeriesPoint[]>;
-  serieEnsemble: Lecture<VitalSeriesPoint[]>;
+  serieRoute: SectionLue<VitalSeriesPoint[]>;
+  serieEnsemble: SectionLue<VitalSeriesPoint[]>;
 }) {
   const titre = `${vital} sur cette route`;
   const fmt = formatDuVital(vital);
@@ -359,7 +301,7 @@ function DistributionRoute({
   ensembleLu,
 }: {
   vital: VitalName;
-  histo: Lecture<{ bucket: number; count: number }[]>;
+  histo: SectionLue<{ bucket: number; count: number }[]>;
   percentiles: VitalPercentiles | null;
   pctsLus: boolean;
   plafond: number;
@@ -443,9 +385,9 @@ function VuParLeRobot({
   hrefCorrelation,
 }: {
   route: string;
-  cartes: Lecture<{ refus: null; data: CorrCardRow[] } | { refus: string }>;
-  concordance: Lecture<{ refus: null; data: Concordance } | { refus: string }>;
-  reel: Lecture<VitalAgg[]>;
+  cartes: SectionLue<{ refus: null; data: CorrCardRow[] } | { refus: string }>;
+  concordance: SectionLue<{ refus: null; data: Concordance } | { refus: string }>;
+  reel: SectionLue<VitalAgg[]>;
   hrefCorrelation: (serie: string) => string;
 }) {
   const titre = "Vu par le robot";
@@ -520,17 +462,16 @@ function VuParLeRobot({
  * une moyenne, et c'est écrit (jamais lue comme un p75).
  */
 function RessourcesRoute({
-  route,
   lecture,
   plage,
 }: {
-  route: string;
-  lecture: Lecture<Map<string, SlowResource[]>>;
+  /** Les ressources lentes de la route (le chargeur les a extraites de la lecture par route). */
+  lecture: SectionLue<readonly Fil<SlowResource>[]>;
   plage: string;
 }) {
   const titre = "Ressources lentes de la route";
   if (!lecture.ok) return <EchecLecture titre={titre} compact />;
-  const lignes = (lecture.data.get(route) ?? []).slice(0, RESSOURCES_PANNEAU);
+  const lignes = lecture.data.slice(0, RESSOURCES_PANNEAU);
   if (lignes.length === 0) {
     return <EtatSurface etat={{ kind: "vide", population: "ressource mesurée sur cette route", plage }} />;
   }
@@ -552,7 +493,7 @@ function RessourcesRoute({
 }
 
 /** « Erreurs sur la route » (§ 5.2.3) : les trois premiers groupes, en OCCURRENCES (V1). */
-function ErreursRoute({ lecture, plage, href }: { lecture: Lecture<{ groups: ErrorGroupRow[]; total: number }>; plage: string; href: string }) {
+function ErreursRoute({ lecture, plage, href }: { lecture: SectionLue<{ groups: ErrorGroupRow[]; total: number }>; plage: string; href: string }) {
   const titre = "Erreurs sur la route";
   if (!lecture.ok) return <EchecLecture titre={titre} compact />;
   const groupes = lecture.data.groups.slice(0, ERREURS_PANNEAU);

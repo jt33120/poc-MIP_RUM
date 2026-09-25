@@ -6,7 +6,7 @@
 // Vitals, Attributs) · Y4 contenu de l'onglet.
 //
 // COMPATIBILITÉ. `?tab=replay` et `?tab=timeline` (liens existants, dont
-// components/errors/error-view.ts) ouvrent le Déroulé, qui porte le rejeu ET la
+// lib/error-view.ts) ouvrent le Déroulé, qui porte le rejeu ET la
 // chronologie ; `at` reste lu et positionne le lecteur.
 //
 // F46 — la Cascade place la même chronologie sur un axe (`cascadeDeSession`) ;

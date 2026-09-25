@@ -42,10 +42,10 @@ export interface TicketIntegration {
   config: Record<string, unknown>;
   state: "active" | "degraded";
   last_error: string | null;
-  verified_at: Date | null;
+  verified_at: Date | string | null;
   created_by: string | null;
-  created_at: Date;
-  updated_at: Date;
+  created_at: Date | string;
+  updated_at: Date | string;
   /** Forme du secret, jamais sa valeur. */
   credential: { kind: "env"; name: string } | { kind: "encrypted" } | { kind: "invalid" };
   webhook: { kind: "env"; name: string } | { kind: "encrypted" } | { kind: "invalid" } | null;
@@ -366,8 +366,8 @@ export interface TicketLivraison {
   external_id: string | null;
   external_url: string | null;
   last_error: string | null;
-  created_at: Date;
-  sent_at: Date | null;
+  created_at: Date | string;
+  sent_at: Date | string | null;
 }
 
 /** Origine de la console, pour le lien inscrit dans le ticket. */
@@ -389,8 +389,8 @@ interface EtatIssue {
   first_release: string | null;
   last_release: string | null;
   occurrences: string | null;
-  first_seen: Date;
-  last_seen: Date;
+  first_seen: Date | string;
+  last_seen: Date | string;
 }
 
 const ISSUE_SQL = `

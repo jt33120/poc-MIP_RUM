@@ -80,7 +80,7 @@ export function occurrenceHrefs(appId: string, o: ErrorOccurrenceRow): Occurrenc
   const session =
     o.links.session && o.session_id ? `/sessions/${encodeURIComponent(o.session_id)}?app=${app}` : null;
   // L'instant de l'erreur, en epoch ms : le lecteur s'y positionne s'il est enregistré.
-  const replay = o.links.replay && session ? `${session}&tab=replay&at=${o.ts.getTime()}` : null;
+  const replay = o.links.replay && session ? `${session}&tab=replay&at=${new Date(o.ts).getTime()}` : null;
   const span = o.links.parent_span && o.source_parent_span_id ? `&span=${o.source_parent_span_id}` : "";
   const trace =
     o.links.trace && o.trace_id ? `/tracing/${encodeURIComponent(o.trace_id)}?app=${app}${span}` : null;
@@ -103,3 +103,6 @@ export function bucketTick(bucket: Date, bucketSeconds: number): string {
     ? bucket.toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit" })
     : bucket.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
+
+/** Nombre de groupes dessinés dans le hero de `/errors` (§ 5.3.2, P14 : 4 + « Autres » = 5 séries). */
+export const GROUPES_DU_HERO = 4;

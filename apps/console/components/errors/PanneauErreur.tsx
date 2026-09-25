@@ -10,10 +10,10 @@
 // dans son contenu. Il ne se lit pas non plus une liste : `précédent` / `suivant`
 // lui sont donnés par l'écran, qui seul connaît son ordre.
 //
-// CE PANNEAU LIT, contrairement à `DetailPanel` qui ne fait que présenter : un
-// groupe n'est pas dans la ligne de liste (ni sa tendance, ni ses releases, ni ses
-// occurrences). Chaque lecture est indépendante (§ 3.8) : l'échec de l'une laisse
-// les autres blocs.
+// CE QU'IL AFFICHE EST LU PAR LE CHARGEUR DE L'ÉCRAN (`lib/chargeurs/panneau-erreur.ts`,
+// C4) : un groupe n'est pas dans la ligne de liste (ni sa tendance, ni ses releases,
+// ni ses occurrences). Chaque lecture est indépendante (§ 3.8) : l'échec de l'une
+// laisse les autres blocs.
 import Link from "next/link";
 import { DetailPanel, type PuceDetail } from "@/components/DetailPanel";
 import { ErrorSourceBadge, ErrorTypeBadge, HandledBadge } from "@/components/errors/ErrorBadges";
@@ -25,33 +25,20 @@ import {
   TuilesDetailErreur,
   VersionsTouchees,
   porteeOccurrences,
-  type PartGroupe,
 } from "@/components/errors/DetailErreur";
 import { ERROR_LINK } from "@/components/errors/ErrorOccurrences";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { annotationsDeploiements } from "@/lib/annotations";
-import type { Filters } from "@/lib/filters";
+import type { LecturePanneauErreur } from "@/lib/chargeurs/panneau-erreur";
 import { fmtDate } from "@/lib/format";
-import { lire } from "@/lib/lecture";
-import { listDeploys } from "@/lib/queries-deploys";
-import {
-  errorGroupDetail,
-  partSessionsTouchees,
-  releasesDuGroupe,
-  type ErrorFilters,
-  type ErrorGroupRef,
-} from "@/lib/queries-errors";
-import { UnsupportedFilterError } from "@/lib/query-compiler";
+import type { ErrorGroupRef } from "@/lib/queries-errors";
 import { bucketStarts, type ResolvedRange } from "@/lib/query-contract";
 import { grilleIso } from "@/lib/series";
+import type { Fil } from "@mip/console-contract";
 
-/** Occurrences lues pour le bloc 5 et le bouton de rejeu : le panneau n'en liste aucune. */
-const OCCURRENCES_DU_PANNEAU = 100;
-
-export async function PanneauErreur({
+export function PanneauErreur({
   groupe,
-  f,
-  filtres,
+  lecture,
   range,
   label,
   bucketLabel,
@@ -62,10 +49,8 @@ export async function PanneauErreur({
   hrefValeur,
 }: {
   groupe: ErrorGroupRef;
-  /** Filtres de l'écran, app du groupe comprise. */
-  f: ErrorFilters;
-  /** Filtres de l'écran au sens `Filters` (marqueurs de déploiement). */
-  filtres: Filters;
+  /** Ce que le chargeur de l'écran a lu pour ce groupe, sur le fil. */
+  lecture: Fil<LecturePanneauErreur>;
   range: ResolvedRange;
   label: string;
   bucketLabel: string;
@@ -75,20 +60,7 @@ export async function PanneauErreur({
   suivantHref?: string | null;
   hrefValeur: (cle: "route" | "release" | "device", valeur: string) => string | null;
 }) {
-  const fGroupe: ErrorFilters = { ...f, app: groupe.app_id };
-  const [detail, part, releases, deploys] = await Promise.all([
-    lire(() => errorGroupDetail(groupe, fGroupe, { limit: OCCURRENCES_DU_PANNEAU, cursor: null })),
-    lire<PartGroupe>(async () => {
-      try {
-        return { lu: await partSessionsTouchees(fGroupe, groupe) };
-      } catch (e) {
-        if (e instanceof UnsupportedFilterError) return { refus: e.message };
-        throw e;
-      }
-    }),
-    lire(() => releasesDuGroupe(groupe, fGroupe)),
-    lire(() => listDeploys({ ...filtres, app: groupe.app_id }, 20)),
-  ]);
+  const { detail, part, releases, deploys } = lecture;
 
   // Le groupe a disparu entre la liste et le panneau (rétention, purge) : on le dit,
   // on ne rend pas un panneau vide qu'on lirait comme « aucune occurrence ».

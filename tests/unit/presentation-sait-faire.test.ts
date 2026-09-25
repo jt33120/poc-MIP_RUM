@@ -132,7 +132,7 @@ describe("sources — les passages cités disent encore ce qu'on leur fait dire"
   it("les lignes citées par K2 et K13 disent « Inconnu » et « rôle propriétaire »", () => {
     const lignes = (chemin: string, debut: number, fin: number) =>
       readFileSync(join(RACINE, chemin), "utf8").split("\n").slice(debut - 1, fin).join("\n");
-    expect(lignes("apps/console/components/errors/error-view.ts", 90, 93)).toContain('"Inconnu"');
+    expect(lignes("apps/console/lib/error-view.ts", 90, 93)).toContain('"Inconnu"');
     expect(lignes("DEPLOY.md", 272, 278)).toContain("`neondb_owner`, PAS `console_ro`");
     expect(lignes("apps/console/components/presentation/Specs.tsx", 166, 170)).toContain("rôle propriétaire");
   });

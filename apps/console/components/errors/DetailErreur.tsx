@@ -32,7 +32,7 @@ import { EchecLecture } from "@/components/states/SectionErreur";
 import { ERROR_LINK } from "@/components/errors/ErrorOccurrences";
 import { formater } from "@/lib/fmt-ids";
 import { fmtDate } from "@/lib/format";
-import type { Lecture } from "@/lib/lecture";
+import type { SectionLue } from "@/lib/lecture";
 import { partTouchees } from "@/lib/perf-domain";
 import type { IssueRecord } from "@/lib/error-issues";
 import type {
@@ -139,7 +139,7 @@ export function BoutonRejeu({
     );
   }
   const session = encodeURIComponent(premiere.session_id!);
-  const href = `/sessions/${session}?app=${encodeURIComponent(appId)}&tab=replay&at=${premiere.ts.getTime()}`;
+  const href = `/sessions/${session}?app=${encodeURIComponent(appId)}&tab=replay&at=${new Date(premiere.ts).getTime()}`;
   return (
     <Link href={href} className="btn-accent px-3 py-1.5 text-xs" data-testid="voir-le-rejeu">
       Voir le rejeu
@@ -167,7 +167,7 @@ export function PhraseImpact({
 }: {
   impact: ErrorImpact;
   plage: string;
-  part: Lecture<PartGroupe>;
+  part: SectionLue<PartGroupe>;
   /** Sessions de la fenêtre portant cette erreur (`/sessions?...`) ; `null` : pas de destination. */
   hrefSessions: string | null;
 }) {
@@ -304,7 +304,7 @@ export function versionsDeLIssue(
  * garde pas — le bloc ne l'écrit donc pas —, ni les filtres de l'écran, qu'il dit
  * non appliqués (V10).
  */
-export function VersionsTouchees(props: { releases: Lecture<ReleasesDuGroupe> } | { issue: VersionsIssue }) {
+export function VersionsTouchees(props: { releases: SectionLue<ReleasesDuGroupe> } | { issue: VersionsIssue }) {
   let lu: VersionsIssue & { distinctes: number | null };
   if ("issue" in props) lu = { ...props.issue, distinctes: null };
   else if (props.releases.ok) lu = props.releases.data;

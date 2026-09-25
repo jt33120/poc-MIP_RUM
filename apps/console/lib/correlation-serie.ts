@@ -96,3 +96,10 @@ export function libelleSerie(couple: CoupleSerie, options: readonly CoupleSerie[
   const apps = new Set(options.map((o) => o.app_id));
   return apps.size > 1 ? `${couple.app_id} · ${couple.route}` : couple.route;
 }
+
+/**
+ * Effectif minimal d'une heure × (app, route) pour que son LCP p75 réel entre dans
+ * un verdict robot / réel (matrice de concordance, angles morts). En dessous, un
+ * p75 horaire tient à quelques visites : il est compté à part, « réel insuffisant ».
+ */
+export const EFFECTIF_MIN_HEURE = 30;

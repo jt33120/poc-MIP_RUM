@@ -15,10 +15,10 @@ export interface SourcemapToken {
   id: string;
   name: string;
   appId: string;
-  createdAt: Date;
-  expiresAt: Date;
-  revokedAt: Date | null;
-  lastUsedAt: Date | null;
+  createdAt: Date | string;
+  expiresAt: Date | string;
+  revokedAt: Date | string | null;
+  lastUsedAt: Date | string | null;
 }
 
 export type TokenRequest =
