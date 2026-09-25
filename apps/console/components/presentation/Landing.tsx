@@ -75,7 +75,7 @@ const VERROUILLE =
  * verrouillée — pas de lien mort, juste une promesse pas encore tenue, avec l'info
  * au survol.
  */
-export function Actions({ size = "md", user }: { size?: "sm" | "md"; user: SessionUser | null }) {
+export function Actions({ size = "md", user, demoOuverte }: { size?: "sm" | "md"; user: SessionUser | null; demoOuverte?: boolean }) {
   const suffixe = size === "sm" ? "-top" : "";
   if (user) {
     // <a>, PAS <Link>, pour la même raison que /demo plus bas : la vitrine est rendue
@@ -91,7 +91,9 @@ export function Actions({ size = "md", user }: { size?: "sm" | "md"; user: Sessi
       </a>
     );
   }
-  const demo = demoConfig();
+  // C1c : la page dit si la démo est ouverte (console-api, `lib/methodes-connexion.ts`) ;
+  // sans elle, la variable de Vercel.
+  const demo = demoOuverte ?? demoConfig() !== null;
   const pad = size === "sm" ? "px-4 py-2 text-sm" : "px-6 py-3 text-base";
   const base = `inline-flex shrink-0 items-center gap-2 rounded-xl font-semibold transition ${pad}`;
   return (
@@ -127,7 +129,7 @@ export function Actions({ size = "md", user }: { size?: "sm" | "md"; user: Sessi
   );
 }
 
-export function Landing({ user }: { user: SessionUser | null }) {
+export function Landing({ user, demoOuverte }: { user: SessionUser | null; demoOuverte?: boolean }) {
   return (
     <div className="mip-sci flex min-h-screen flex-col">
       {/* Barre ------------------------------------------------------------- */}
@@ -141,7 +143,7 @@ export function Landing({ user }: { user: SessionUser | null }) {
           <PocLabel className="hidden sm:inline-flex" />
           <div className="ml-auto flex items-center gap-2.5">
             <ThemeToggle />
-            <Actions size="sm" user={user} />
+            <Actions size="sm" user={user} demoOuverte={demoOuverte} />
           </div>
         </div>
       </header>
@@ -161,7 +163,7 @@ export function Landing({ user }: { user: SessionUser | null }) {
             </p>
             <Releve />
             <div className="mt-8">
-              <Actions user={user} />
+              <Actions user={user} demoOuverte={demoOuverte} />
             </div>
           </div>
 

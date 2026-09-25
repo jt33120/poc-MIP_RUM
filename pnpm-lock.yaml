@@ -133,6 +133,9 @@ importers:
       '@mip/console-contract':
         specifier: workspace:*
         version: link:../console-contract
+      jose:
+        specifier: 6.2.3
+        version: 6.2.3
     devDependencies:
       typescript:
         specifier: 5.9.3

@@ -45,6 +45,7 @@ La table des opérations, leurs politiques et les codes d'erreur sont dans **[do
 | `CONSOLE_API_RATE_LIMIT` | non | appels par minute et par principal, par réplique (défaut 600 ; la console rejoue ses écrans toutes les 5 s) |
 | `DEMO_USER_APPS` | non | applications visibles en démo, séparées par des virgules. Vide : **pas de démo** (`POST /v1/auth/demo-sessions` → 404). Le rôle n'est pas réglable : une démo est `viewer` |
 | `DEMO_USER_EMAIL` | non | étiquette de la session de démo dans le journal (défaut `demo@mip-rum.local`) |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (secret), `OIDC_REDIRECT_URI`, `OIDC_TX_KEY` (secret, 32 octets base64url) | non, **tous ou aucun** | le SSO (C1c) ; une configuration partielle refuse le démarrage. Options : `OIDC_SCOPES`, `OIDC_ROLE_CLAIM`, `OIDC_ADMIN_VALUES`, `OIDC_APPS_CLAIM`, `OIDC_ALLOWED_DOMAINS`. Modèle et règles de lien : [docs/SSO.md](../../docs/SSO.md) |
 | `PGPOOL_MAX`, `PORT`, `LOG_LEVEL`, `METRICS_TOKEN`, `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | non | voir le kit |
 
 Côté Vercel (C0b) : `CONSOLE_API_URL` (le domaine généré, en https), `CONSOLE_API_CLIENT_SECRET` (une valeur) et `SESSION_PUBLIC_JWKS`, qui n'est pas secrète (`--publique`). Les trois vont ensemble : une configuration partielle, ou une clé PRIVÉE posée sur Vercel, est refusée et journalisée, et la console reste sur la base. Avant d'envoyer son secret à un hôte, la console vérifie la poignée de main (valable 10 minutes par instance) ; un hôte qui ne la prouve pas ne reçoit jamais le secret.
@@ -64,6 +65,8 @@ Côté Vercel (C0b) : `CONSOLE_API_URL` (le domaine généré, en https), `CONSO
 | `POST /v1/auth/demo-sessions` | session de démonstration : `viewer`, périmètre `DEMO_USER_APPS`, **5 par heure et par IP** ; jamais l'IP au journal |
 | `DELETE /v1/auth/sessions/current` | déconnexion : la session est **révoquée** en base, le jeton ne vaut plus rien, tout de suite sur cette réplique, en 30 s sur l'autre |
 | `GET /v1/me` | le principal, relu en base : rôle et périmètre du compte, jamais du jeton |
+| `GET /v1/auth/methods` | les moyens de connexion offerts (SSO, démo) : la console montre ses boutons sans détenir la configuration |
+| `GET /v1/auth/oidc/authorization`, `POST /v1/auth/oidc-sessions` | le SSO : l'adresse de l'IdP et une transaction scellée (JWE) ; puis l'échange du code, la vérification de l'ID token et le lien par (émetteur, sujet) — [docs/SSO.md](../../docs/SSO.md) |
 
 **Le débit d'authentification** vit en base (`auth_throttle`, migration-v90), pour toutes les répliques, et se vérifie **avant bcrypt** :
 - IP + e-mail : 8 échecs par 10 min ;
