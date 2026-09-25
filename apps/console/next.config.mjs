@@ -1,3 +1,8 @@
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const correctifHydratation = require("./scripts/correctif-react-hydratation.cjs");
+
 // C12 — LA CONSOLE SANS BASE, GARDÉE PAR SON PROPRE BUILD. Avec
 // `MIP_CONSOLE_SANS_BASE=1` (posée à la bascule, sur Vercel et dans l'image), le
 // build REFUSE de se faire si l'environnement porte encore une base ou un secret
@@ -26,6 +31,17 @@ const nextConfig = {
   // légende reste sans date.
   outputFileTracingIncludes: {
     "/presentation": ["./public/portail/manifest.json"],
+  },
+  // Le correctif de React 19.3.0 sur le rejeu d'un élément pendant l'hydratation,
+  // posé sur le React que Next embarque : sans lui, une page au RSC volumineux
+  // (/admin/composants) lève par intermittence l'erreur #418 et se re-rend
+  // entière côté client. Le pourquoi : scripts/correctif-react-hydratation.cjs.
+  webpack(config) {
+    config.module.rules.push({
+      test: correctifHydratation.BUNDLES_CLIENT,
+      use: [{ loader: require.resolve("./scripts/correctif-react-hydratation.cjs") }],
+    });
+    return config;
   },
 };
 
