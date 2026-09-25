@@ -8,7 +8,9 @@
 //   next/server, next/headers   → NextRequest/NextResponse/after, sans Next ;
 //   lib/auth.ts                 → aucune session : l'API publique est au jeton ;
 //   lib/db.ts, lib/log-forward.ts → le pool du kit (`mip-api`), le journal du service ;
-//   lib/api-relay.ts            → aucun relais : ce service EST la cible du relais.
+//   lib/api-relay.ts            → aucun relais : ce service EST la cible du relais ;
+//   lib/ingest-relay.ts         → aucun relais vers le collector (C11 : le marqueur de
+//                                 déploiement, une écriture que ce service refuse).
 // Seul `pg` reste externe (installé dans l'image).
 //
 // LES GARDES, APRÈS CONSTRUCTION — un bundle qui les viole n'est pas écrit :
@@ -49,6 +51,7 @@ const SUBSTITUTIONS = new Map([
   [path.join(CONSOLE, "lib", "db"), path.join(ICI, "shims", "db.mjs")],
   [path.join(CONSOLE, "lib", "log-forward"), path.join(ICI, "shims", "log-forward.mjs")],
   [path.join(CONSOLE, "lib", "api-relay"), path.join(ICI, "shims", "api-relay.mjs")],
+  [path.join(CONSOLE, "lib", "ingest-relay"), path.join(ICI, "shims", "ingest-relay.mjs")],
 ]);
 
 const substitutions = {
@@ -56,7 +59,7 @@ const substitutions = {
   setup(b) {
     b.onResolve({ filter: /^next\/server$/ }, () => ({ path: path.join(ICI, "shims", "next-server.mjs") }));
     b.onResolve({ filter: /^next\/headers$/ }, () => ({ path: path.join(ICI, "shims", "next-headers.mjs") }));
-    b.onResolve({ filter: /(^|\/)(auth|db|log-forward|api-relay)(\.ts)?$/ }, (args) => {
+    b.onResolve({ filter: /(^|\/)(auth|db|log-forward|api-relay|ingest-relay)(\.ts)?$/ }, (args) => {
       if (!args.importer.startsWith(CONSOLE)) return undefined;
       const brut = args.path.replace(/\.ts$/, "");
       const absolu = brut.startsWith("@/") ? path.join(CONSOLE, brut.slice(2)) : path.resolve(args.resolveDir, brut);
@@ -86,7 +89,7 @@ export function fautesDuBundle(entrees, code) {
   if (normalisees.some((e) => /node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?jose\//.test(e))) fautes.push("jose est dans le bundle");
   if (normalisees.some((e) => /node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?next\//.test(e))) fautes.push("un module next/ réel est dans le bundle");
   if (code.includes("dev-secret-mip-rum")) fautes.push("le secret de session de développement est dans le bundle");
-  if (normalisees.some((e) => /apps\/console\/lib\/(api-relay|platform-flag)\.ts$/.test(e))) {
+  if (normalisees.some((e) => /apps\/console\/lib\/(api-relay|ingest-relay|platform-flag)\.ts$/.test(e))) {
     fautes.push("le relais de la console (ou sa lecture de platform_flag) est dans le bundle : le service est la cible du relais");
   }
   return fautes;

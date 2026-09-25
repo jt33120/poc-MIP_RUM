@@ -1,8 +1,8 @@
 // Inventaire des postes équipés de l'extension navigateur (Ext-D, migration-v52).
 // Écriture par le battement de cœur public, lecture par /admin/extension-installs.
-import { q } from "./db";
+import { enregistrerBattement } from "@mip/backend/lib/extension-parc.mjs";
+import { pool, q } from "./db";
 import { ecrire, type ClientEcriture } from "./requete";
-import { browserFromUA, browserMajorFromUA, platformFromUA } from "./format";
 
 export interface InstallRow {
   install_id: string;
@@ -37,42 +37,9 @@ export interface BeatInput {
  * injecté.
  */
 export async function recordInstallBeat(input: BeatInput): Promise<void> {
-  const { installId, label, version, ua } = input;
-
-  // `label` est écrasé sans coalesce : si la DSI retire le libellé de sa policy,
-  // l'inventaire doit redevenir anonyme au battement suivant. Les autres champs
-  // sont préservés quand le battement ne les porte pas (UA absent, version vide).
-  await q(
-    `insert into extension_install
-       (install_id, label, ext_version, browser, browser_major, platform)
-     values ($1, $2, $3, $4, $5, $6)
-     on conflict (install_id) do update set
-       label         = excluded.label,
-       ext_version   = coalesce(excluded.ext_version,   extension_install.ext_version),
-       browser       = coalesce(excluded.browser,       extension_install.browser),
-       browser_major = coalesce(excluded.browser_major, extension_install.browser_major),
-       platform      = coalesce(excluded.platform,      extension_install.platform),
-       last_seen_at  = now()`,
-    [
-      installId,
-      label,
-      version,
-      ua ? browserFromUA(ua) : null,
-      ua ? browserMajorFromUA(ua) : null,
-      ua ? platformFromUA(ua) : null,
-    ],
-  );
-
-  if (input.appIds.length === 0) return;
-
-  await q(
-    `insert into extension_install_app (install_id, app_id)
-     select $1, s.app_id
-       from (select distinct app_id from extension_scope where active) s
-      where s.app_id = any($2::text[])
-     on conflict (install_id, app_id) do update set last_seen_at = now()`,
-    [installId, input.appIds],
-  );
+  // L'écriture est celle du collector (C11), partagée : `@mip/backend/lib/extension-parc.mjs`.
+  const { installId, label, version, ua, appIds } = input;
+  await enregistrerBattement(pool, { installId, label, version, appIds }, ua);
 }
 
 /** Inventaire complet, poste le plus récemment vu en premier. */

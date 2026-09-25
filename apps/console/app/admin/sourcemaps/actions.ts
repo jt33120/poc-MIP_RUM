@@ -10,7 +10,7 @@
 // seul composant qui l'a demandé ; la base n'en garde que le hash.
 import { executerCommande } from "@/lib/commande-locale";
 
-export type RetourJeton = { ok: true; secret: string; nom: string } | { ok: false; erreur: string };
+export type RetourJeton = { ok: true; secret: string; nom: string; privilege: string } | { ok: false; erreur: string };
 
 const REFUS: Record<string, string> = {
   session_requise: "Session expirée : se reconnecter.",
@@ -19,14 +19,23 @@ const REFUS: Record<string, string> = {
   hors_perimetre: "Cette application n'est pas dans votre périmètre.",
 };
 
-export async function creerJetonSourcemapAction(appId: string, nom: string, jours: number): Promise<RetourJeton> {
+export async function creerJetonSourcemapAction(
+  appId: string,
+  nom: string,
+  jours: number,
+  privilege: "sourcemaps:write" | "deploys:write" = "sourcemaps:write",
+): Promise<RetourJeton> {
   const r = await executerCommande("creerJetonSourcemap", {
     app: appId,
-    corps: { name: nom, ...(Number.isInteger(jours) && jours >= 0 && jours <= 999 ? { expiresInDays: String(jours) } : {}) },
+    corps: {
+      name: nom,
+      ...(Number.isInteger(jours) && jours >= 0 && jours <= 999 ? { expiresInDays: String(jours) } : {}),
+      scope: privilege === "deploys:write" ? "deploys:write" : "sourcemaps:write",
+    },
   });
   if (!r.ok) return { ok: false, erreur: REFUS[r.code] ?? r.message };
   const d = r.data;
-  if (d.etat === "cree") return { ok: true, secret: d.secret, nom: d.token.name };
+  if (d.etat === "cree") return { ok: true, secret: d.secret, nom: d.token.name, privilege: d.token.scope };
   if (d.etat === "refus") return { ok: false, erreur: d.message };
   return { ok: false, erreur: `application inconnue : ${appId}` };
 }

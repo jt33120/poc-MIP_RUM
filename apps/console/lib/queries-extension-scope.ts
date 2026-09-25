@@ -1,6 +1,7 @@
 // Registre domaine -> app_id (Ext-A migration v27) : résolution pour l'extension
 // navigateur, gestion admin. Zéro PII (juste un mapping hostname -> app_id).
-import { q } from "./db";
+import { resoudreDomaine } from "@mip/backend/lib/extension-parc.mjs";
+import { pool, q } from "./db";
 import { ecrire, type ClientEcriture } from "./requete";
 
 export interface ExtensionScopeRow {
@@ -16,11 +17,8 @@ export interface ExtensionScopeRow {
 export async function resolveExtensionScope(
   domain: string,
 ): Promise<{ app_id: string; endpoint: string | null; active: boolean } | null> {
-  const [row] = await q<{ app_id: string; endpoint: string | null; active: boolean }>(
-    `select app_id, endpoint, active from extension_scope where domain = $1 and active limit 1`,
-    [domain],
-  );
-  return row ?? null;
+  // La requête est celle du collector (C11), partagée : `@mip/backend/lib/extension-parc.mjs`.
+  return resoudreDomaine(pool, domain);
 }
 
 /** Liste complète (admin) — tous statuts, la plus récente en premier. */

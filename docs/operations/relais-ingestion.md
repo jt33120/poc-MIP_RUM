@@ -142,10 +142,21 @@ update platform_flag set value = '0', updated_by = '<prénom>' where key = 'inge
   collector ; `content-type: application/json` **imposé** et `x-content-type-options:
   nosniff` (un hôte qui répondrait `text/html` ne fait pas rendre de HTML sous l'origine de
   la console, où vit le cookie admin) ; en-têtes CORS de la console.
+- **C11 — les routes machine** passent par le même relais, sous le même drapeau
+  (`ingest_relay_pct`) et le même disjoncteur :
+  - `GET /api/extension/resolve` → `/v1/extension/resolve` (le SEUL `GET` relayé : une
+    lecture, sa requête transmise, aucun en-tête ; `cache-control` du collector rendu) ;
+  - `POST /api/extension/heartbeat` → `/v1/extension/heartbeat` (`content-type` et
+    `user-agent`, que la route inscrit à l'inventaire) ;
+  - `POST /api/v1/deploys` → `/v1/deploys`, pour un **jeton de CI** `deploys:write`
+    seulement (`content-type`, `authorization`). NON idempotent : un 502/504 non signé
+    ou une connexion perdue après l'envoi rendent 503 + `retry-after`, jamais un repli
+    qui poserait deux marqueurs. Un jeton `CONSOLE_API_TOKENS` n'est jamais relayé (le
+    collector ne le lit pas) : la console le traite elle-même jusqu'au 31/12/2026.
 - **Ce qui n'est jamais relayé :**
   - `OPTIONS` (préflight local) ;
   - la branche admin des source maps (cookie de session) ;
-  - `GET`.
+  - tout autre `GET`.
 - `NEXT_PUBLIC_RUM_ENDPOINT` n'est pas touché : il alimente aussi `log-forward`.
 
 ### Chaîne des délais

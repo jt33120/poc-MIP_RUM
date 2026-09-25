@@ -256,8 +256,9 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
           Jetons de CI
         </h2>
         <p className="mb-3 text-xs text-ink-soft">
-          Privilège unique <code className="chip-mono">sourcemaps:write</code> sur {app}, expiration de 1 à 90 jours.
-          Rotation : créer un nouveau jeton, basculer la CI, révoquer l&apos;ancien. En CI :{" "}
+          Un privilège par jeton sur {app} : <code className="chip-mono">sourcemaps:write</code> (source maps) ou{" "}
+          <code className="chip-mono">deploys:write</code> (marqueur de déploiement, <code className="chip-mono">POST /api/v1/deploys</code>),
+          expiration de 1 à 90 jours. Rotation : créer un nouveau jeton, basculer la CI, révoquer l&apos;ancien. En CI :{" "}
           <code className="chip-mono break-all">
             node scripts/upload-sourcemaps.mjs --app {app} --release RELEASE --dir dist --url URL_UPLOAD
           </code>
@@ -271,6 +272,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
             <thead className="bg-panel2">
               <tr>
                 <th scope="col" className="th">Nom</th>
+                <th scope="col" className="th">Privilège</th>
                 <th scope="col" className="th">Expire</th>
                 <th scope="col" className="th">Dernier usage</th>
                 <th scope="col" className="th">Statut</th>
@@ -289,6 +291,7 @@ function Jetons({ app, tokens, maintenant }: { app: string; tokens: SourcemapTok
                       <span className="block">{t.name}</span>
                       <span className="block font-mono text-[11px] text-ink-faint">créé le {fmtDate(t.createdAt)}</span>
                     </td>
+                    <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-ink-soft">{t.scope}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-xs text-ink-soft">{fmtDate(t.expiresAt)}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-xs text-ink-soft">
                       {t.lastUsedAt ? fmtDate(t.lastUsedAt) : "jamais"}

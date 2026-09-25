@@ -371,8 +371,8 @@ export default async function ApiDocs() {
             <tr className="bg-panel2/40">
               <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-ink">POST /api/v1/deploys</td>
               <td className="px-4 py-2.5 text-xs text-ink-soft">
-                Marqueur de déploiement (intégration CI/CD). Seule route en écriture — et la seule que le serveur
-                MCP n'expose pas.
+                Marqueur de déploiement (intégration CI/CD), au jeton de CI « deploys:write » d&apos;une application.
+                Seule route en écriture — et la seule que le serveur MCP n&apos;expose pas.
               </td>
             </tr>
           </tbody>

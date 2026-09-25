@@ -28,6 +28,21 @@ import {
   verifierJetonUpload,
 } from "./sourcemap-upload.mjs";
 import { creerGeoip } from "./geoip-db.mjs";
+import {
+  creerDebitFenetre,
+  enregistrerBattement,
+  LIMITES_EXTENSION,
+  lireBattement,
+  lireDomaine,
+  resoudreDomaine,
+} from "./extension-parc.mjs";
+import {
+  CORPS_DEPLOIEMENT_MAX,
+  enregistrerDeploiement,
+  lireDeploiement,
+  PRIVILEGE_DEPLOIEMENT,
+  REFUS_DEPLOIEMENT,
+} from "./deploiements.mjs";
 import { creerBordDeConfiance, EDGE_PROTOCOL, ipClient, parseSourceIp } from "../shared/client-ip.mjs";
 import { appliquerGeo } from "../shared/geoip.mjs";
 import { corsHeaders as buildCors, originsFromRegistry, REPLAY_ALLOW_HEADERS } from "../shared/cors.mjs";
@@ -118,8 +133,22 @@ export function normaliserChemin(url) {
   const chemin = String(url ?? "/").split("?")[0];
   if (chemin === "/api/sourcemaps") return "/v1/sourcemaps";
   if (chemin.startsWith("/api/ingest/v1/")) return chemin.slice("/api/ingest".length);
+  // C11 — les routes machine : l'extension publiée et les CI visent la console.
+  if (chemin === "/api/extension/resolve" || chemin === "/api/extension/heartbeat") return chemin.replace("/api/", "/v1/");
+  if (chemin === "/api/v1/deploys") return "/v1/deploys";
   return chemin;
 }
+
+/**
+ * CORS des routes de l'extension : ouvert (`*`), sans credentials. Un mapping
+ * domaine → application et un battement de poste : zéro donnée personnelle, et
+ * un service worker d'extension n'a pas d'origine web à autoriser.
+ */
+export const CORS_EXTENSION = Object.freeze({
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "content-type",
+});
 
 /**
  * Plafond de corps du receveur pour un chemin (déjà normalisé ou non). Exporté
@@ -129,6 +158,8 @@ export function plafondCorps(url) {
   const chemin = normaliserChemin(url);
   if (chemin === "/v1/sourcemaps") return LIMITES_UPLOAD.corpsDirect;
   if (chemin.startsWith("/v1/replay")) return MAX_REPLAY_BYTES;
+  if (chemin === "/v1/extension/heartbeat") return LIMITES_EXTENSION.corpsBattement;
+  if (chemin === "/v1/deploys") return CORPS_DEPLOIEMENT_MAX;
   return MAX_BODY_BYTES;
 }
 
@@ -149,7 +180,7 @@ function entete(req, nom) {
  *   rateLimitPerMin?: number,
  *   log?: object,
  *   tampon?: boolean,        // expose GET /__recent (assertions E2E) — JAMAIS en production, et seulement avec MIP_E2E_TAMPON=1
- *   signaux?: ("traces"|"logs"|"replay"|"sourcemaps")[],
+ *   signaux?: ("traces"|"logs"|"replay"|"sourcemaps"|"extension"|"deploys")[],
  *   aliasSante?: string[],   // chemins supplémentaires répondant comme /health
  *   nom?: string,            // nom du service, renvoyé par /health
  *   identityHashSecret?: string, // injection explicite du secret HMAC (tests/self-host)
@@ -164,7 +195,7 @@ export function creerReceveur(pool, opts = {}) {
   const env = opts.env ?? process.env;
   const rateLimitPerMin = opts.rateLimitPerMin ?? Number(env.RATE_LIMIT_PER_MIN ?? 600);
   const requireApiKey = opts.requireApiKey ?? env.REQUIRE_API_KEY === "true";
-  const signaux = new Set(opts.signaux ?? ["traces", "logs", "replay", "sourcemaps"]);
+  const signaux = new Set(opts.signaux ?? ["traces", "logs", "replay", "sourcemaps", "extension", "deploys"]);
   const aliasSante = opts.aliasSante ?? [];
   const nom = opts.nom ?? "ingest";
 
@@ -216,6 +247,10 @@ export function creerReceveur(pool, opts = {}) {
 
   const auth = createPgAuth(pool, { requireApiKey, rateLimitPerMin, log });
   const limiteurSourcemaps = creerLimiteurUpload();
+  // C11 — les routes machine : même débit que la console, par réplique.
+  const debitResolve = creerDebitFenetre(Number(env.EXTENSION_RESOLVE_RATE_LIMIT ?? LIMITES_EXTENSION.resolveParMinute), 60_000);
+  const debitBattement = creerDebitFenetre(Number(env.EXTENSION_HEARTBEAT_RATE_LIMIT ?? LIMITES_EXTENSION.battementsParHeure), 3_600_000);
+  const debitDeploiements = creerDebitFenetre(60, 60_000);
 
   // GeoIP OPTIONNEL (P8.7). Deux déclarations, toutes deux inertes par défaut :
   // `GEOIP_IP_SOURCE` dit d'où lire l'adresse du client (rien, sans elle), et la
@@ -568,6 +603,76 @@ export function creerReceveur(pool, opts = {}) {
     }
   }
 
+  /** GET /v1/extension/resolve?domain= — l'application d'un domaine enregistré et actif (C11). */
+  async function traiterResolve(req, res) {
+    const domaine = lireDomaine(new URL(req.url ?? "/", "http://collector").searchParams.get("domain"));
+    if (!domaine) return repondre(res, 400, { error: "domain requis" }, CORS_EXTENSION);
+    const d = debitResolve.prendre(`ext-resolve:${domaine}`);
+    if (!d.ok) return repondre(res, 429, { error: "trop de requêtes" }, { ...CORS_EXTENSION, "retry-after": String(d.retryAfter) });
+    const scope = await resoudreDomaine(pool, domaine);
+    if (!scope) return repondre(res, 404, { error: "domaine non enregistré" }, CORS_EXTENSION);
+    return repondre(
+      res,
+      200,
+      { app_id: scope.app_id, endpoint: scope.endpoint, active: scope.active },
+      { ...CORS_EXTENSION, "cache-control": "public, max-age=60" },
+    );
+  }
+
+  /** POST /v1/extension/heartbeat — un poste de l'extension se déclare (C11). */
+  async function traiterBattement(req, res) {
+    if (bodyTooLarge(entete(req, "content-length"), LIMITES_EXTENSION.corpsBattement)) {
+      return repondre(res, 413, { error: "corps trop volumineux" }, CORS_EXTENSION);
+    }
+    const brut = await lireCorpsBorne(req, LIMITES_EXTENSION.corpsBattement);
+    if (!brut) return repondre(res, 413, { error: "corps trop volumineux" }, CORS_EXTENSION);
+    const lu = lireBattement(brut.toString("utf8"));
+    if (lu.erreur) return repondre(res, lu.statut, { error: lu.erreur }, CORS_EXTENSION);
+    const d = debitBattement.prendre(`ext-beat:${lu.battement.installId}`);
+    if (!d.ok) return repondre(res, 429, { error: "trop de requêtes" }, { ...CORS_EXTENSION, "retry-after": String(d.retryAfter) });
+    await enregistrerBattement(pool, lu.battement, entete(req, "user-agent"));
+    return repondre(res, 200, { ok: true }, CORS_EXTENSION);
+  }
+
+  /**
+   * POST /v1/deploys — le marqueur de déploiement d'une CI (C11). Un jeton de CI
+   * `deploys:write` SEUL (migration-v92) : ni session, ni jeton de lecture, ni
+   * jeton de source maps. Le jeton est vérifié AVANT de lire le corps.
+   */
+  async function traiterDeploiement(req, res) {
+    try {
+      const authorization = entete(req, "authorization");
+      if (!authorization) return repondre(res, 401, { error: REFUS_DEPLOIEMENT.sansJeton }, {});
+      const jeton = await verifierJetonUpload(pool, authorization, PRIVILEGE_DEPLOIEMENT);
+      if (!jeton) return repondre(res, 401, { error: REFUS_DEPLOIEMENT.jetonInvalide }, {});
+      const d = debitDeploiements.prendre(`jeton:${jeton.id}`);
+      if (!d.ok) return repondre(res, 429, { error: "trop de requêtes" }, { "retry-after": String(d.retryAfter) });
+      if (bodyTooLarge(entete(req, "content-length"), CORPS_DEPLOIEMENT_MAX)) {
+        return repondre(res, 413, { error: REFUS_DEPLOIEMENT.tropGros }, {});
+      }
+      const brut = await lireCorpsBorne(req, CORPS_DEPLOIEMENT_MAX);
+      if (!brut) return repondre(res, 413, { error: REFUS_DEPLOIEMENT.tropGros }, {});
+      let corps;
+      try {
+        corps = JSON.parse(brut.toString("utf8"));
+      } catch {
+        return repondre(res, 400, { error: "corps JSON invalide" }, {});
+      }
+      const lu = lireDeploiement(corps);
+      if (lu.erreur) return repondre(res, 400, { error: lu.erreur }, {});
+      if (lu.deploiement.appId !== jeton.app_id) {
+        return repondre(res, 403, { error: REFUS_DEPLOIEMENT.horsPerimetre(lu.deploiement.appId) }, {});
+      }
+      await enregistrerDeploiement(pool, lu.deploiement, "ci");
+      log.info("deploy marker", { app_id: jeton.app_id, token_id: jeton.id, version: lu.deploiement.version });
+      const { appId, version, env: environnement } = lu.deploiement;
+      return repondre(res, 201, { ok: true, app_id: appId, version, env: environnement }, {});
+    } catch (err) {
+      if (err instanceof ErreurUpload) return repondre(res, err.statut, { error: err.message }, {});
+      throw err;
+    }
+  }
+
   /** Le gestionnaire à passer à http.createServer. */
   async function handler(req, res) {
     // L'échéance part de l'ENTRÉE de la requête : tout ce qui suit (CORS,
@@ -577,9 +682,13 @@ export function creerReceveur(pool, opts = {}) {
     const origin = entete(req, "origin") ?? "";
     const chemin = normaliserChemin(req.url);
     const estReplay = chemin.startsWith("/v1/replay");
+    const estExtension = chemin.startsWith("/v1/extension/") && signaux.has("extension");
     // Le préflight replay doit annoncer les en-têtes x-mip-* sinon le navigateur
-    // bloque le POST cross-origin des clients à clé.
-    const entetes = await cors(origin, estReplay ? { allowHeaders: REPLAY_ALLOW_HEADERS } : undefined, echeance);
+    // bloque le POST cross-origin des clients à clé. L'extension : CORS ouvert,
+    // sans registre à lire.
+    const entetes = estExtension
+      ? CORS_EXTENSION
+      : await cors(origin, estReplay ? { allowHeaders: REPLAY_ALLOW_HEADERS } : undefined, echeance);
 
     try {
       if (req.method === "OPTIONS") {
@@ -629,6 +738,15 @@ export function creerReceveur(pool, opts = {}) {
       }
       if (req.method === "POST" && chemin === "/v1/sourcemaps" && signaux.has("sourcemaps")) {
         return await traiterSourcemaps(req, res, entetes);
+      }
+      if (req.method === "GET" && chemin === "/v1/extension/resolve" && estExtension) {
+        return await traiterResolve(req, res);
+      }
+      if (req.method === "POST" && chemin === "/v1/extension/heartbeat" && estExtension) {
+        return await traiterBattement(req, res);
+      }
+      if (req.method === "POST" && chemin === "/v1/deploys" && signaux.has("deploys")) {
+        return await traiterDeploiement(req, res);
       }
 
       res.writeHead(404, entetes);

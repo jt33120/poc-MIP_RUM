@@ -80,7 +80,7 @@ const receveur = creerReceveur(pool, {
   // /__recent retient des payloads en clair : jamais ici (et le receveur
   // refuserait de démarrer avec, sous NODE_ENV=production ou sur Railway).
   tampon: false,
-  signaux: ["traces", "logs", "replay", "sourcemaps"],
+  signaux: ["traces", "logs", "replay", "sourcemaps", "extension", "deploys"],
   requireApiKey: config.REQUIRE_API_KEY,
   rateLimitPerMin: config.RATE_LIMIT_PER_MIN,
   differe: config.INGEST_DEFERRED,

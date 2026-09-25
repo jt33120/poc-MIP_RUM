@@ -33,7 +33,7 @@ describe("C9 — créer un jeton de CI", () => {
     simul.createSourcemapToken.mockResolvedValue({ token: JETON, secret: "msu_secret" });
     expect(await creerJetonSourcemapAction("app-a", " CI ", 30)).toEqual({ ok: true, secret: "msu_secret", nom: "CI" });
     const [demande, email, auditer] = simul.createSourcemapToken.mock.calls[0];
-    expect(demande).toEqual({ ok: true, appId: "app-a", name: "CI", expiresInDays: 30 });
+    expect(demande).toEqual({ ok: true, appId: "app-a", name: "CI", expiresInDays: 30, scope: "sourcemaps:write" });
     expect(email).toBe("admin@mip");
     expect(typeof auditer).toBe("function");
   });

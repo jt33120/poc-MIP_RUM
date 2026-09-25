@@ -13,6 +13,7 @@
 // UNE FOIS par la décision de la commande : jamais dans l'audit, jamais relu.
 import { booleen, chaine, facultatif, nulle, objet, parmi } from "@mip/console-contract";
 import { MOBILE_CAPABILITIES } from "@mip/backend/shared/mobile-capabilities.mjs";
+import { PRIVILEGES_JETON } from "@mip/backend/lib/sourcemap-upload.mjs";
 import { tx } from "../db";
 import { generateToken } from "../read-tokens";
 import { allowOriginForApp, appDuDomaine, createExtensionScope, toggleExtensionScope } from "../queries-extension-scope";
@@ -57,18 +58,32 @@ export const revoquerJetonLecture = commande(
 export const creerJetonSourcemap = commande(
   {
     regle: { auth: "admin", portee: "app", audit: "sourcemap_token.create" },
-    corps: objet({ name: chaine({ min: 0, max: 200 }), expiresInDays: facultatif(chaine({ max: 3, motif: /^[0-9]{1,3}$/ })) }),
+    corps: objet({
+      name: chaine({ min: 0, max: 200 }),
+      expiresInDays: facultatif(chaine({ max: 3, motif: /^[0-9]{1,3}$/ })),
+      // C11 — un privilège par jeton : source maps (défaut) ou marqueurs de déploiement.
+      scope: facultatif(parmi(PRIVILEGES_JETON)),
+    }),
   },
   async ({ principal, app, corps, auditer }) => {
     const demande = parseTokenRequest({
       appId: app,
       name: corps.name,
       ...(corps.expiresInDays === undefined ? {} : { expiresInDays: Number(corps.expiresInDays) }),
+      ...(corps.scope === undefined ? {} : { scope: corps.scope }),
     });
     if (!demande.ok) return { etat: "refus", message: demande.error } as const;
-    const cree = await createSourcemapToken(demande, principal.email, auditer);
-    if (!cree) return { etat: "introuvable" } as const;
-    return { etat: "cree", token: cree.token, secret: cree.secret } as const;
+    try {
+      const cree = await createSourcemapToken(demande, principal.email, auditer);
+      if (!cree) return { etat: "introuvable" } as const;
+      return { etat: "cree", token: cree.token, secret: cree.secret } as const;
+    } catch (err) {
+      // Un privilège que la base ne connaît pas encore : migration-v92 non appliquée.
+      if (String((err as { code?: string })?.code) === "23514" && demande.scope !== "sourcemaps:write") {
+        return { etat: "refus", message: "privilège « deploys:write » indisponible : migration-v92 non appliquée" } as const;
+      }
+      throw err;
+    }
   },
 );
 
