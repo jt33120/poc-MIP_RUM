@@ -5,7 +5,8 @@
 // sous CODEOWNERS, avec le traitement. Le contrat ne porte que des types.
 import type { LecturePlanifie } from "./planifie";
 import type { Section } from "./section";
-import { operation, type Aucun } from "./operation";
+import { dictionnaire } from "./valider";
+import { operation, type Aucun, type Chemin } from "./operation";
 
 // ─── Exploitation ────────────────────────────────────────────────────────────
 
@@ -165,8 +166,49 @@ export interface Coquille {
 }
 export const COQUILLE = operation<Aucun, Aucun, never, Coquille>("console.shell", "GET", "/v1/shell");
 
+/**
+ * Les paramètres d'URL d'un écran — filtres, plage, pagination, réglages
+ * d'affichage —, tels que la page les reçoit : le chargeur les lit comme elle.
+ * `app` n'y est pas : c'est la PORTÉE de l'opération, confrontée au périmètre par
+ * le pipeline avant le chargeur, puis rendue au chargeur telle que demandée.
+ */
+export type ParametresEcran = Readonly<Record<string, string>>;
+
+/** La borne des paramètres d'un écran (le sens, c'est le contrat de requête de la console qui le vérifie). */
+export const PARAMETRES_ECRAN = dictionnaire({ max: 48, nom: /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/, valeurMax: 2048 });
+
+/**
+ * UN ÉCRAN DE CONSOLE (C3 → C5) : son chargeur, servi tel quel. La réponse est
+ * ce que rend le chargeur (`apps/console/lib/chargeurs/`), une SECTION par
+ * lecture : son type appartient à la console, qui l'exécute aujourd'hui en local
+ * et l'appellera demain ici — `Fil<…>` du même chargeur des deux côtés. Le
+ * contrat, lui, fixe l'identité de l'opération, son chemin et son entrée.
+ */
+function ecran<P = Aucun>(id: string, chemin: Chemin) {
+  return operation<P, ParametresEcran, never, unknown>(id, "GET", chemin);
+}
+
+/**
+ * Les écrans servis, par nom de chargeur. Ils grandissent lot par lot (C3, C4, C5).
+ * Une page de détail porte son identifiant dans le chemin ; il ne donne aucun
+ * droit : le chargeur relit l'app de la ressource et la confronte au périmètre
+ * (introuvable ailleurs, comme absente).
+ */
+export const ECRANS = Object.freeze({
+  // C3 — interactions, sessions, Explorer.
+  actions: ecran("screens.actions", "/v1/screens/actions"),
+  events: ecran("screens.events", "/v1/screens/events"),
+  mobile: ecran("screens.mobile", "/v1/screens/mobile"),
+  sessions: ecran("screens.sessions", "/v1/screens/sessions"),
+  session: ecran<{ id: string }>("screens.session", "/v1/screens/sessions/{id}"),
+  explorer: ecran("screens.explorer", "/v1/screens/explorer"),
+  /** Les événements rrweb d'une session, pour le lecteur (plafonnés par session). */
+  rejeu: ecran<{ sessionId: string }>("replay.session", "/v1/replays/{sessionId}"),
+});
+export type CleEcran = keyof typeof ECRANS;
+
 /** Toutes les opérations du contrat, dans l'ordre de la doc. */
-export const OPERATIONS = Object.freeze([VERSION, JWKS, ETAT_PLATEFORME, CONNEXION, DEMO, DECONNEXION, MOI, METHODES, DEBUT_SSO, FIN_SSO, COQUILLE]);
+export const OPERATIONS = Object.freeze([VERSION, JWKS, ETAT_PLATEFORME, CONNEXION, DEMO, DECONNEXION, MOI, METHODES, DEBUT_SSO, FIN_SSO, COQUILLE, ...Object.values(ECRANS)]);
 
 /**
  * La forme canonique de la table (une ligne par opération, triée) : chaque côté

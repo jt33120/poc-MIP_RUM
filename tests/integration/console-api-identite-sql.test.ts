@@ -27,6 +27,7 @@ import {
   creerVerificateurSession,
   type Transacteur,
 } from "@mip/console-api";
+import { ECRANS_FACTICES } from "../fixtures/ecrans-factices";
 
 // bcrypt du SERVICE (sa dépendance), pas une copie.
 const bcrypt = createRequire(join(__dirname, "..", "..", "services", "console-api", "package.json"))("bcryptjs") as {
@@ -91,7 +92,7 @@ function migrations(): string[] {
         demo,
         oublierSession: (sid) => sessions.oublier(sid),
       },
-      ecrans: { coquille: async () => ({ projets: { ok: true as const, data: [] }, schema: { ok: true as const, data: [] }, fuseaux: {}, tickets: null }) },
+      ecrans: ECRANS_FACTICES,
     });
     return creerConsoleApi({ table, secretsClient: [SECRET], journal, verifierSession: sessions.verifier, lecteur: pool, debitParMinute: 0 });
   }

@@ -227,6 +227,7 @@ export function creerConsoleApi(options: OptionsConsoleApi): (req: Request) => P
       }
       const brut = parametres(url);
       let apps: readonly string[] | null = null;
+      let appDemandee: string | null = null;
       if (politique.portee === "app") {
         const demandee = brut.app;
         delete brut.app;
@@ -237,6 +238,7 @@ export function creerConsoleApi(options: OptionsConsoleApi): (req: Request) => P
         if (demandee === "all") apps = perimetre;
         else if (perimetre === null || perimetre.includes(demandee)) apps = [demandee];
         else throw new ErreurContrat("hors_perimetre", "application hors de votre périmètre");
+        appDemandee = demandee;
       }
 
       // 7. L'entrée.
@@ -295,7 +297,7 @@ export function creerConsoleApi(options: OptionsConsoleApi): (req: Request) => P
       // 9. Le traitement, sous l'échéance.
       const ipBrute = req.headers.get(ENTETE_IP_VISITEUR)?.trim() ?? "";
       const ipVisiteur = IP.test(ipBrute) ? ipBrute.toLowerCase() : null;
-      const ctx: Contexte = { requestId, principal, params, requete, corps, echeance, apps, ipVisiteur, journal };
+      const ctx: Contexte = { requestId, principal, params, requete, corps, echeance, apps, appDemandee, ipVisiteur, journal };
       const reste = echeance - horloge();
       let minuterie: ReturnType<typeof setTimeout> | undefined;
       const delai = new Promise<never>((_, rejeter) => {

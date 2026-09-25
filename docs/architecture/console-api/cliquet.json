@@ -1,5 +1,5 @@
 {
-  "releve": "2026-09-24",
+  "releve": "2026-09-25",
   "ecrans": [
     "/",
     "/acquisition",
@@ -132,7 +132,6 @@
     "apps/console/components/presentation/Annexe.tsx",
     "apps/console/components/presentation/Landing.tsx",
     "apps/console/components/presentation/Specs.tsx",
-    "apps/console/components/sessions/PanneauSession.tsx",
     "apps/console/components/slo/SloStatusRow.tsx"
   ],
   "layout": true

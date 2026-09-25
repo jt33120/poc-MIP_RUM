@@ -24,6 +24,14 @@ import { traceFields } from "./server-trace-core";
 export type Lecture<T> = { ok: true; data: T } | { ok: false; raison: string };
 
 /**
+ * Une section telle qu'un ÉCRAN la lit : lue, ou en échec — sans la raison, qui
+ * reste au journal. Une `Lecture` locale comme une `Section` reçue d'un chargeur
+ * (`lib/chargeurs/`, sur le fil) s'y rangent : un composant qui n'affiche que le
+ * titre d'une section en échec prend ce type, et sert les deux.
+ */
+export type SectionLue<T> = { readonly ok: true; readonly data: T } | { readonly ok: false };
+
+/**
  * Exécute une lecture et rend son résultat ou sa raison d'échec, sans lever.
  *
  * La raison est le message de l'exception : elle sert aux journaux et aux tests,

@@ -17,9 +17,10 @@
 // fichier : la matrice ne peut pas oublier une ligne.
 //
 //   CONSOLE_API_AUTHZ_DATABASE_URL=<base migrée> pnpm test:contract
+import { gzipSync } from "node:zlib";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { operation } from "@mip/console-contract";
+import { ECRANS, operation } from "@mip/console-contract";
 import {
   chargerTrousseau,
   creerConsoleApi,
@@ -61,6 +62,31 @@ const BANC: Enregistrement[] = [
 /** Exemple d'appel des opérations RÉELLES qui prennent des paramètres. */
 const EXEMPLES: Record<string, string> = {
   "ops.version": "?nonce=authz-nonce-000000000000000000",
+};
+
+/** Une session de l'app A, avec un segment de rejeu : ce que les pages de détail (C3) ouvrent. */
+const SESSION_A = "authz-session-a-0000000000000001";
+/**
+ * Les paramètres de chemin des écrans de détail : la ressource de l'app A. Le
+ * pipeline ne la résout pas (portée `app`) — le chargeur relit son app et la
+ * confronte au périmètre.
+ */
+const CHEMINS: Record<string, Record<string, string>> = {
+  "screens.session": { id: SESSION_A },
+  "replay.session": { sessionId: SESSION_A },
+};
+
+/**
+ * Des variantes d'URL par écran, en plus de l'URL nue : ce qui ouvre d'autres
+ * branches du chargeur (comparaison, panneau, exécution de l'Explorer, onglet).
+ * Chacune doit aboutir, section par section.
+ */
+const VARIANTES: Record<string, string[]> = {
+  actions: ["cmp=prev", "offset=50"],
+  mobile: ["cmp=prev"],
+  sessions: ["cmp=prev", `panel=session:${SESSION_A}`, "split=browser"],
+  session: ["tab=vitals"],
+  explorer: ["run=1", "run=1&viz=timeseries&cmp=prev", "run=1&viz=table"],
 };
 
 /**
@@ -136,6 +162,11 @@ function cibles(p: Politique): Cible[] {
   async function nettoyer() {
     await pool.query("delete from console_session where demo_email = $1 or user_id in (select id from console_user where email = any($2))", [DEMO_EMAIL, Object.values(EMAILS)]);
     await pool.query("delete from analytics_saved_view where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from replay_chunk where app_id = any($1)", [[A, B]]);
+    // Base dédiée à la matrice : les compteurs de débit d'authentification d'un passage
+    // précédent (clés HMAC, illisibles) ne doivent pas refuser celui-ci en 429.
+    await pool.query("delete from auth_throttle");
+    await pool.query("delete from rum_session where app_id = any($1)", [[A, B]]);
     await pool.query("delete from console_user where email = any($1)", [Object.values(EMAILS)]);
     await pool.query("delete from app_registry where app_id = any($1)", [[A, B]]);
   }
@@ -175,6 +206,9 @@ function cibles(p: Politique): Cible[] {
       ouvrir("insert into analytics_saved_view (app_id, name, query_json) values ($1, 'authz', '{\"version\":1}') returning id", [app]);
     vues.a = await vue(A);
     vues.b = await vue(B);
+    await pool.query("insert into rum_session (session_id, app_id, started_at, last_seen_at, page_count) values ($1, $2, now() - interval '5 minutes', now(), 1)", [SESSION_A, A]);
+    // Un segment de rejeu (gzip d'une liste d'événements rrweb) : la lecture passe par la fenêtre SQL du plafond.
+    await pool.query("insert into replay_chunk (session_id, app_id, seq, body) values ($1, $2, 0, $3)", [SESSION_A, A, gzipSync(JSON.stringify([{ type: 4 }, { type: 2 }]))]);
 
     trousseau = await chargerTrousseau(await jeu("session-authz-a"), { production: false });
     const etranger = await chargerTrousseau(await jeu("session-authz-z"), { production: false });
@@ -190,7 +224,9 @@ function cibles(p: Politique): Cible[] {
     const verificateur = await creerVerificateurSession({ trousseau, db: pool, horloge: () => maintenant });
     // La couche de données de la console lit `DATABASE_URL` : la base de la matrice.
     process.env.DATABASE_URL = url!;
-    const { chargerCoquille } = await import("../../apps/console/lib/chargeurs/coquille");
+    // Les chargeurs d'écrans du SERVICE (`services/console-api/ecrans.mjs`) : ceux
+    // de la console, à la signature du service — le même module que le bundle.
+    const { ecrans } = await import("../../services/console-api/ecrans.mjs");
     const transacteur = {
       async transaction<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
         const c = await pool.connect();
@@ -219,8 +255,9 @@ function cibles(p: Politique): Cible[] {
         demo: null,
         oublierSession: (sid) => verificateur.oublier(sid),
       },
-      // C2 — le VRAI chargeur de la coquille, celui de la console, sur la base de la matrice.
-      ecrans: { coquille: (p) => chargerCoquille({ role: p.role, apps: p.apps === null ? null : [...p.apps] }) },
+      // C2 → C5 — les VRAIS chargeurs (coquille, écrans), ceux de la console, sur la
+      // base de la matrice : chaque écran s'exécute pour chaque profil et chaque cible.
+      ecrans,
     });
     table = [...reel.table, ...BANC];
     servirRequete = creerConsoleApi({
@@ -242,6 +279,7 @@ function cibles(p: Politique): Cible[] {
   function requete(e: Enregistrement, profil: Profil, cible: Cible): Request {
     let chemin = e.operation.chemin;
     if (cible.vue) chemin = chemin.replace("{id}", vues[cible.vue]);
+    for (const [nom, valeur] of Object.entries(CHEMINS[e.operation.id] ?? {})) chemin = chemin.replace(`{${nom}}`, encodeURIComponent(valeur));
     const q = cible.app ? `?app=${encodeURIComponent(cible.app)}` : EXEMPLES[e.operation.id] ?? "";
     // Une adresse de visiteur par profil : les échecs de connexion de la matrice ne
     // s'additionnent pas sur un seul compteur.
@@ -253,7 +291,9 @@ function cibles(p: Politique): Cible[] {
   }
 
   it("chaque opération réelle a un exemple d'appel, ou n'en demande pas", () => {
-    const sansExemple = table.filter((e) => e.operation.chemin.includes("{") && !e.politique.ressource).map((e) => e.operation.id);
+    const sansExemple = table
+      .filter((e) => e.operation.chemin.includes("{") && !e.politique.ressource && !(e.operation.id in CHEMINS))
+      .map((e) => e.operation.id);
     expect(sansExemple).toEqual([]);
   });
 
@@ -285,8 +325,9 @@ function cibles(p: Politique): Cible[] {
       }
     }
     expect(ecarts).toEqual([]);
-    // Par profil : 9 opérations réelles (logout à part), 3 du banc à portée globale, 6 à trois cibles.
-    expect(cases).toBeGreaterThanOrEqual(PROFILS.length * (9 + 3 + 6 * 3));
+    // Par profil : 9 opérations réelles (logout à part), 3 du banc à portée globale, 6 à trois cibles,
+    // et chaque écran (portée `app`) sur ses trois cibles.
+    expect(cases).toBeGreaterThanOrEqual(PROFILS.length * (9 + 3 + 6 * 3 + Object.keys(ECRANS).length * 3));
   });
 
   it("une vue d'une autre application est indiscernable d'une vue qui n'existe pas", async () => {
@@ -317,6 +358,37 @@ function cibles(p: Politique): Cible[] {
     // ces apps ») ; relevé P0 : aucun administrateur restreint en production.
     expect(await lire("admin")).toEqual({ apps: [A, B], tickets: "section" });
     expect(await lire("plateforme")).toEqual({ apps: [A, B], tickets: "section" });
+  });
+
+  it("chaque écran (C3 → C5) : pour un viewer, sur son app et sur `all`, le chargeur aboutit — aucune section en échec", async () => {
+    /** Les sections en échec d'une réponse, par leur chemin (`lignes`, `series.3`…). */
+    const echecs = (v: unknown, chemin = ""): string[] => {
+      if (Array.isArray(v)) return v.flatMap((x, i) => echecs(x, `${chemin}.${i}`));
+      if (v === null || typeof v !== "object") return [];
+      const o = v as Record<string, unknown>;
+      if (o.ok === false && o.code === "lecture_en_echec") return [chemin || "(racine)"];
+      return Object.entries(o).flatMap(([k, x]) => echecs(x, chemin ? `${chemin}.${k}` : k));
+    };
+    const ecarts: string[] = [];
+    for (const cle of Object.keys(ECRANS) as (keyof typeof ECRANS)[]) {
+      const e = table.find((x) => x.operation.id === ECRANS[cle].id)!;
+      for (const app of [A, "all"]) {
+        for (const variante of ["", ...(VARIANTES[cle] ?? [])]) {
+          const base = requete(e, "viewer", { nom: "", app });
+          const url = variante ? `${base.url}&${variante}` : base.url;
+          const res = await servirRequete(new Request(url, { headers: base.headers }));
+          const nom = `${cle} · ${app}${variante ? ` · ${variante}` : ""}`;
+          if (res.status !== 200) {
+            ecarts.push(`${nom} : ${res.status} ${await res.text()}`);
+            continue;
+          }
+          const { data } = (await res.json()) as { data: { etat?: string } };
+          if (data.etat !== "ok") ecarts.push(`${nom} : état ${data.etat}`);
+          for (const chemin of echecs(data)) ecarts.push(`${nom} : section ${chemin} en échec`);
+        }
+      }
+    }
+    expect(ecarts).toEqual([]);
   });
 
   it("révoquer une session, désactiver un compte : refusé en 30 s au plus, sans nouveau jeton", async () => {

@@ -33,6 +33,7 @@
 // `user_hash` n'apparaissent nulle part ; le visiteur est tronqué à 8 caractères.
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { Fil } from "@mip/console-contract";
 import type { ReactNode } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { ReplaySynchro } from "@/components/replay/ReplaySynchro";
@@ -48,7 +49,6 @@ import { Figure } from "@/components/charts/Figure";
 import {
   LIBELLES_NATURES,
   cascadeDeSession,
-  fenetreDeSession,
   filtrerParNature,
   jourMoisUtc,
   libelleFenetre,
@@ -60,26 +60,14 @@ import {
 import { lignesSynchro, marqueursDeSession } from "@/lib/replay-synchro";
 import { NATURES_CHRONOLOGIE, ligneIgnoree, lireVoir, type NatureChronologie } from "@/lib/view-state";
 import { HISTO_BUCKETS } from "@/lib/distribution";
-import { filtersOfQuery } from "@/lib/filters";
 import { formatDuVital, formater, type VitalName } from "@/lib/fmt-ids";
 import { fmtDate } from "@/lib/format";
-import { lire, type Lecture } from "@/lib/lecture";
-import { plafondAffichage } from "@/lib/perf-domain";
-import {
-  sessionMeta,
-  sessionTimeline,
-  vitalHistogram,
-  vitalPercentiles,
-  type HistoRow,
-  type TimelineItem,
-  type VitalPercentiles,
-} from "@/lib/queries";
+import { chargerSession, premier, type Situation as SituationBrute } from "@/lib/chargeurs/session";
+import { chargerEcran } from "@/lib/ecran-local";
+import { type TimelineItem } from "@/lib/queries";
 import { retentionDays } from "@/lib/queries-explorer";
-import { UnsupportedFilterError } from "@/lib/query-compiler";
-import { authorizedAppsOf, paramReader, parseAnalyticsQuery, type ScopePrincipal } from "@/lib/query-contract";
 import { RATING_LABEL, rating2026 } from "@/lib/rating";
 import { LIMITE_CHRONOLOGIE, ancreEvenement, composerRecit } from "@/lib/recit-session";
-import { sessionARejeu } from "@/lib/session-rejeu";
 import {
   LECTURE_FRUSTRATION,
   LIBELLES_ONGLETS,
@@ -105,13 +93,12 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/** Paramètre répété : la première valeur, comme la porte projet du middleware. */
-function premier(v: string | string[] | undefined): string | undefined {
-  return Array.isArray(v) ? v[0] : v;
-}
+/** Ce que la page sait de la population d'une pire mesure, sur le fil (`lib/chargeurs/session.ts`). */
+type Situation = Fil<SituationBrute>;
+
 
 /** Décalage d'un événement depuis le début de la session : « 12,3 s », « 6 min 12 s ». */
-function decalage(ts: Date, t0: number): string {
+function decalage(ts: Date | string, t0: number): string {
   return `+${formater("s-auto", Math.max(0, new Date(ts).getTime() - t0))}`;
 }
 
@@ -127,25 +114,11 @@ export default async function SessionDetail({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
-  const meta = await sessionMeta(id);
-  if (!meta) notFound();
-
-  // scoping viewer : une session d'une app hors périmètre est invisible (404) ;
-  // une liste d'apps vide n'ouvre aucune session.
-  const { getUser } = await import("@/lib/auth");
-  const utilisateur = await getUser();
-  const authorized = authorizedAppsOf(utilisateur);
-  if (authorized !== null && !authorized.includes(meta.app_id)) notFound();
-  // Un lien qui annonce son app (erreur, trace — P5.1) ne doit jamais ouvrir la
-  // session d'une autre : l'identifiant de session est émis par le client, et une
-  // erreur forgée peut citer celui d'un autre tenant.
-  const app = premier(sp.app);
-  if (app && app !== "all" && app !== meta.app_id) notFound();
-
-  // Chronologie lue APRÈS la garde de périmètre, et bornée à l'app de la
-  // session : une ligne d'une autre app au même session_id n'y entre pas.
-  const timeline = await sessionTimeline(meta.session_id, meta.app_id);
-  const nowMs = Date.now();
+  // Le chargeur (`lib/chargeurs/session.ts`) applique la garde (périmètre, app
+  // annoncée) AVANT toute lecture, puis lit chronologie, rejeu et vitaux situés.
+  const d = await chargerEcran(chargerSession, sp, { id });
+  if (d.etat === "introuvable") notFound();
+  const { meta, timeline, nowMs, rejeuLu } = d;
 
   // `tab=replay` / `tab=timeline` → Déroulé ; `at` (epoch ms, entier) positionne le
   // rejeu, jamais deviné.
@@ -197,7 +170,6 @@ export default async function SessionDetail({
   const resume = resumeDeSession(timeline, meta.runtime);
   // P*.9 — récit composé des lignes déjà lues ; seule la présence du rejeu est lue,
   // pour pouvoir dire son absence. Une lecture en échec n'efface pas le récit.
-  const rejeuLu = await lire(() => sessionARejeu(meta.session_id, meta.app_id));
   // Le lecteur n'est monté que s'il y a (peut-être) quelque chose à lire : une
   // existence lue « absente » laisse toute la largeur à la chronologie.
   const avecRejeu = !rejeuLu.ok || rejeuLu.data;
@@ -239,10 +211,7 @@ export default async function SessionDetail({
   // F46 — Web Vitals situés, lus SEULEMENT sur leur onglet. La population est
   // lue avec le principal de la page : elle ne sort jamais de son périmètre.
   const vitaux = onglet === "vitals" ? vitauxDeSession(timeline) : null;
-  const situations =
-    vitaux && vitaux.pires.length > 0
-      ? await situerPires(vitaux.pires, { app: meta.app_id, principal: utilisateur, debutMs: t0, nowMs })
-      : new Map<VitalName, Situation>();
+  const situations = new Map(d.situations);
 
   return (
     <div className="animate-fade-up">
@@ -729,108 +698,6 @@ function OngletCascade({
   );
 }
 
-/** Ce que la page sait de la population d'une pire mesure (§ 5.12.4). */
-type Situation =
-  | { kind: "sans_route" }
-  | { kind: "refus"; code: string }
-  | {
-      kind: "lue";
-      route: string;
-      fenetre: { from: string; to: string };
-      /** La même population sur `/pages` : même app, même route, même fenêtre. */
-      href: string;
-      percentiles: VitalPercentiles | null;
-      pctsLus: boolean;
-      plafond: number;
-      plafondLibelle: string | null;
-      histo: Lecture<HistoRow[]>;
-    };
-
-type Population<T> = { refuse: true; code: string } | { refuse: false; lecture: Lecture<T> };
-
-/**
- * Lecture d'une population : un filtre que la lecture ne porte pas est un REFUS du
- * contrat, rendu avec son code — jamais la page entière en erreur (`lire` le
- * relance, § 3.8). Toute autre panne reste une lecture en échec.
- */
-async function lirePopulation<T>(fn: () => Promise<T>): Promise<Population<T>> {
-  try {
-    return { refuse: false, lecture: await lire(fn) };
-  } catch (e) {
-    if (e instanceof UnsupportedFilterError) return { refuse: true, code: e.error.code };
-    throw e;
-  }
-}
-
-/**
- * Situe la pire mesure de chaque vital (§ 5.12.4, § 3.5). Le contrat est résolu par
- * `parseAnalyticsQuery` avec l'app de la session, la fenêtre ancrée et la route de
- * la MESURE — rien d'autre : c'est la population de cette route, pas celle des
- * filtres de la liste d'où l'on vient. Percentiles lus une fois par route, puis
- * l'histogramme de chaque vital sous son plafond d'affichage (règle de `/pages`).
- */
-async function situerPires(
-  pires: VitauxSession["pires"],
-  ctx: { app: string; principal: ScopePrincipal | null; debutMs: number; nowMs: number },
-): Promise<Map<VitalName, Situation>> {
-  const fenetre = fenetreDeSession(ctx.debutMs, ctx.nowMs);
-  const routes = [...new Set(pires.flatMap((p) => (p.pire.route ? [p.pire.route] : [])))];
-  const contrats = new Map(
-    routes.map(
-      (route) =>
-        [
-          route,
-          parseAnalyticsQuery(paramReader({ app: ctx.app, from: fenetre.from, to: fenetre.to, route }), {
-            principal: ctx.principal,
-            nowMs: ctx.nowMs,
-          }),
-        ] as const,
-    ),
-  );
-  const percentiles = new Map(
-    await Promise.all(
-      routes.map(async (route) => {
-        const contrat = contrats.get(route)!;
-        return [route, contrat.ok ? await lirePopulation(() => vitalPercentiles(filtersOfQuery(contrat.value))) : null] as const;
-      }),
-    ),
-  );
-  const situations = await Promise.all(
-    pires.map(async (p): Promise<[VitalName, Situation]> => {
-      const route = p.pire.route;
-      if (!route) return [p.vital, { kind: "sans_route" }];
-      const contrat = contrats.get(route)!;
-      if (!contrat.ok) return [p.vital, { kind: "refus", code: contrat.error.code }];
-      const pcts = percentiles.get(route) ?? null;
-      if (pcts && pcts.refuse) return [p.vital, { kind: "refus", code: pcts.code }];
-      const lecturePcts = pcts && !pcts.refuse ? pcts.lecture : null;
-      const ligne = lecturePcts && lecturePcts.ok ? (lecturePcts.data.find((r) => r.name === p.vital) ?? null) : null;
-      const { plafond, libelle } = plafondAffichage(
-        p.vital,
-        ligne ? { p95: ligne.pcts[3] ?? null, p99: ligne.pcts[4] ?? null } : null,
-      );
-      const f = filtersOfQuery(contrat.value);
-      const histo = await lirePopulation(() => vitalHistogram(f, p.vital, plafond, HISTO_BUCKETS));
-      if (histo.refuse) return [p.vital, { kind: "refus", code: histo.code }];
-      const lien = new URLSearchParams({ app: ctx.app, route, vital: p.vital, from: fenetre.from, to: fenetre.to });
-      return [
-        p.vital,
-        {
-          kind: "lue",
-          route,
-          fenetre,
-          href: `/pages?${lien.toString()}`,
-          percentiles: ligne,
-          pctsLus: lecturePcts?.ok === true,
-          plafond,
-          plafondLibelle: libelle,
-          histo: histo.lecture,
-        },
-      ];
-    }),
-  );
-  return new Map(situations);
-}
 
 /**
  * Web Vitals de la session (§ 5.12.4) : une tuile par vital — sa PIRE vue —, la

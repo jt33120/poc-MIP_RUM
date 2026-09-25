@@ -505,7 +505,8 @@ export function pointsMobileTemps(
 
 /** Ce que la série lit d'un marqueur de `mobileDeploiements` (type structurel : ce module reste sans base). */
 export interface MarqueurCohorte {
-  ts: Date;
+  /** `Date` lue en base, ou chaîne ISO reçue d'un chargeur d'écran (sur le fil). */
+  ts: Date | string;
   version: string | null;
   app_id: string;
   de_la_cohorte: boolean;

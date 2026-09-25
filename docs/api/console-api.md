@@ -35,6 +35,13 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `auth.logout` | `DELETE /v1/auth/sessions/current` | session | — | lecture | exigé | `auth.logout` |
 | `auth.me` | `GET /v1/me` | session | — | lecture | exigé | — |
 | `public.platformStatus` | `GET /v1/public/platform-status` | aucune session | — | lecture | exigé | — |
+| `replay.session` | `GET /v1/replays/{sessionId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.actions` | `GET /v1/screens/actions` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.events` | `GET /v1/screens/events` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.explorer` | `GET /v1/screens/explorer` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.mobile` | `GET /v1/screens/mobile` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.sessions` | `GET /v1/screens/sessions` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.session` | `GET /v1/screens/sessions/{id}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `console.shell` | `GET /v1/shell` | session | — | lecture | exigé | — |
 | `ops.version` | `GET /v1/version` | aucune session | — | lecture | **non exigé** | — |
 

@@ -541,7 +541,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const etatEchantillon = blocs.vitals && echantillonnage.ok && echantillonnage.data
     ? etatLectureEchantillonnage({ ok: true, data: echantillonnage.data })
     : blocs.vitals && !echantillonnage.ok
-      ? etatLectureEchantillonnage({ ok: false, raison: echantillonnage.raison })
+      ? etatLectureEchantillonnage({ ok: false })
       : null;
 
   // ─── Vues préréglées (zone 1, § 3.6) ───

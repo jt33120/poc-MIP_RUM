@@ -12,7 +12,7 @@
 //     par mesure : la probabilité d'inclusion de ces sessions est INCONNUE, et un
 //     minimum qui les compte à 1 serait un « 100 % » inventé.
 import type { Etat } from "@/components/states/EtatSurface";
-import type { Lecture } from "./lecture";
+import type { SectionLue } from "./lecture";
 
 /**
  * `rum_session.sample_rate` vaut 1 PAR DÉFAUT sur les lignes antérieures à v58
@@ -74,7 +74,7 @@ export const RAISON_ECHANTILLONNAGE_NON_LU = "échantillonnage non lu : les comp
  * `partiel` qui le dit si elle a échoué. Une lecture en échec qui ne rendrait
  * rien laisserait croire que la population est complète.
  */
-export function etatLectureEchantillonnage(lecture: Lecture<EchantillonnageSessions>): Etat | null {
+export function etatLectureEchantillonnage(lecture: SectionLue<EchantillonnageSessions>): Etat | null {
   if (!lecture.ok) return { kind: "partiel", raison: RAISON_ECHANTILLONNAGE_NON_LU };
   return etatEchantillonnage(lecture.data);
 }

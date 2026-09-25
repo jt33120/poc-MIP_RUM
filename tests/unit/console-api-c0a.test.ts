@@ -43,6 +43,7 @@ import {
 import { cadencePubliee as cadenceConsole } from "../../apps/console/lib/etat-latence";
 // @ts-expect-error module ESM, sans déclarations
 import { fautesDuBundle } from "../../services/console-api/build.mjs";
+import { ECRANS_FACTICES } from "../fixtures/ecrans-factices";
 
 const SECRET = "s".repeat(40);
 const SECRET_SUIVANT = "t".repeat(40);
@@ -55,7 +56,6 @@ async function jeuDeCles(kid = "session-20260924-abcd") {
 }
 
 /** Les chargeurs d'écrans (C2), inertes : la table réelle les exige. */
-const ECRANS_FACTICES = { coquille: async () => ({ projets: { ok: true as const, data: [] }, schema: { ok: true as const, data: [] }, fuseaux: {}, tickets: null }) };
 
 /** Les dépendances de l'identité (C1), inertes : la table réelle les exige. */
 async function identiteFactice() {
