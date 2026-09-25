@@ -52,6 +52,13 @@ export interface Contexte<P = unknown, Q = unknown, B = unknown> {
   /** Les applications EFFECTIVES d'une portée `app` (`app=all` résolu) ; `null` hors portée `app`. */
   readonly apps: readonly string[] | null;
   /**
+   * L'application DEMANDÉE d'une portée `app`, telle quelle (`all` compris), une
+   * fois confrontée au périmètre ; `null` hors portée `app`. Un chargeur d'écran la
+   * relit par le contrat de requête de la console, comme la page : `all` et une
+   * app seule n'y ont pas le même sens (libellés, projet courant).
+   */
+  readonly appDemandee: string | null;
+  /**
    * L'adresse IP du visiteur, transmise par le serveur de la console
    * (`x-mip-visitor-ip`) : crue parce que seul le détenteur du secret client peut
    * la poser. Pour le débit d'authentification SEULEMENT, jamais écrite en clair.

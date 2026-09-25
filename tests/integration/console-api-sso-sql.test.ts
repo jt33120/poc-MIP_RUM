@@ -28,6 +28,7 @@ import {
   type ConfigOidc,
   type Transacteur,
 } from "@mip/console-api";
+import { ECRANS_FACTICES } from "../fixtures/ecrans-factices";
 
 // jose, celui du paquet (sa dépendance) : il signe les ID tokens du faux IdP.
 const { exportJWK, generateKeyPair, SignJWT } = createRequire(join(__dirname, "..", "..", "packages", "console-api", "package.json"))("jose") as typeof import("jose");
@@ -141,7 +142,7 @@ async function fauxIdp(opts: { emetteurAnnonce?: string } = {}) {
         oublierSession: (sid) => sessions.oublier(sid),
         oidc: { client: creerOidc(config, { fetch: fetchIdp }), config },
       },
-      ecrans: { coquille: async () => ({ projets: { ok: true as const, data: [] }, schema: { ok: true as const, data: [] }, fuseaux: {}, tickets: null }) },
+      ecrans: ECRANS_FACTICES,
     });
     return creerConsoleApi({ table, secretsClient: [SECRET], journal, verifierSession: sessions.verifier, lecteur: pool, debitParMinute: 0 });
   }

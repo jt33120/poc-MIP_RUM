@@ -46,8 +46,12 @@ export function annotationsIndisponibles(range: Pick<ResolvedRange, "preset">): 
   return range.preset === null ? RAISON_B1 : null;
 }
 
-/** Ce qu'une annotation lit d'un marqueur ; `app_id` quand la lecture le porte. */
-type MarqueurDeploiement = Pick<DeployRow, "ts" | "version"> & { app_id?: string };
+/**
+ * Ce qu'une annotation lit d'un marqueur ; `app_id` quand la lecture le porte.
+ * L'instant est une `Date` (lu en base) ou une chaîne ISO (reçu d'un chargeur
+ * d'écran, sur le fil) : les deux se lisent pareil (`instant`).
+ */
+type MarqueurDeploiement = Pick<DeployRow, "version"> & { ts: Date | string; app_id?: string };
 
 export interface OptionsDeploiements {
   /**

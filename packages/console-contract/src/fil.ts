@@ -13,8 +13,9 @@ export type Fil<T> = T extends Date
       ? never
       : T extends (...args: never[]) => unknown
         ? never
-        : T extends readonly (infer U)[]
-          ? Fil<U>[]
+        : T extends readonly unknown[]
+          ? // Type mappé sur un tableau : un tuple reste un tuple (`[clé, valeur][]`).
+            { [K in keyof T]: Fil<T[K]> }
           : T extends object
             ? { [K in keyof T]: Fil<T[K]> }
             : T;

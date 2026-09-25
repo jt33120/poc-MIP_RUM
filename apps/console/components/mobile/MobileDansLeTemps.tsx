@@ -22,7 +22,7 @@ import { Figure } from "@/components/charts/Figure";
 import { ThresholdSeries } from "@/components/charts/ThresholdSeries";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { formater } from "@/lib/fmt-ids";
-import type { Lecture } from "@/lib/lecture";
+import type { SectionLue } from "@/lib/lecture";
 import { pointsMobileTemps, type CapabilityState } from "@/lib/mobile-capabilities";
 import type { MobileSerie } from "@/lib/queries-mobile";
 import { bucketLabel } from "@/lib/query-contract";
@@ -55,7 +55,7 @@ export function MobileDansLeTemps({
   capaciteJs,
   explorer,
 }: {
-  lecture: Lecture<MobileSerie>;
+  lecture: SectionLue<MobileSerie>;
   /** Débuts de seau attendus (`bucketStarts(query.range)`). */
   starts: number[];
   seauSecondes: number;

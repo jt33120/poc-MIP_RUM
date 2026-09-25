@@ -9,10 +9,11 @@
 // demandent de la largeur, et le panneau qualifie.
 //
 // DEUX TEMPS, POUR QUE RIEN NE SOIT LU AVANT LA GARDE.
-//   1. `lirePanneauSession` lit la session et applique la garde de sa page : une app
-//      que l'écran ne lit pas (périmètre du principal, app demandée) rend
-//      « introuvable », sans rien lire de plus — ni chronologie, ni rejeu. La page la
-//      lance EN MÊME TEMPS que ses propres lectures.
+//   1. `lirePanneauSession` (`lib/chargeurs/panneau-session.ts`, C3) lit la session
+//      et applique la garde de sa page : une app que l'écran ne lit pas (périmètre du
+//      principal, app demandée) rend « introuvable », sans rien lire de plus — ni
+//      chronologie, ni rejeu. Le chargeur de l'écran la lance EN MÊME TEMPS que ses
+//      propres lectures.
 //   2. `PanneauSession` rend ce qui a été lu. Il ne reçoit jamais une session hors
 //      périmètre : l'écran écrit alors « session introuvable ou hors périmètre », et
 //      aucun panneau ne s'ouvre.
@@ -34,10 +35,12 @@ import { KpiTile } from "@/components/charts/KpiTile";
 import { Deroule } from "@/components/sessions/Deroule";
 import { EchecLecture } from "@/components/states/SectionErreur";
 import { formater } from "@/lib/fmt-ids";
-import { lire, type Lecture } from "@/lib/lecture";
+import type { SectionLue } from "@/lib/lecture";
+import type { LecturePanneauSession as LecturePanneauSessionBrute } from "@/lib/chargeurs/panneau-session";
 import { cascadeDeSession } from "@/lib/deroule";
-import { premiersEvenements, sessionDansLePerimetre } from "@/lib/panneau-session";
-import { sessionMeta, sessionTimeline, type SessionMeta, type TimelineItem } from "@/lib/queries";
+import { premiersEvenements } from "@/lib/panneau-session";
+import type { SessionMeta as SessionMetaBrute } from "@/lib/queries";
+import type { Fil } from "@mip/console-contract";
 import { LIMITE_CHRONOLOGIE } from "@/lib/recit-session";
 import {
   LECTURE_FRUSTRATION,
@@ -50,40 +53,11 @@ import {
   pucesDeSession,
   resumeDeSession,
 } from "@/lib/session-detail";
-import { sessionARejeu } from "@/lib/session-rejeu";
 import { instantUtc } from "@/lib/sessions-priorite";
 
-/**
- * Ce que le panneau a pu lire. `introuvable` couvre l'absence ET le hors-périmètre :
- * les distinguer dirait qu'une session existe dans une app qu'on ne peut pas lire.
- */
-export type LecturePanneauSession =
-  | { etat: "introuvable" }
-  | { etat: "echec"; id: string }
-  | { etat: "lue"; meta: SessionMeta; timeline: Lecture<TimelineItem[]>; rejeu: Lecture<boolean> };
-
-/**
- * Lecture du panneau, garde comprise. `effectiveApps` = les apps que l'écran lit
- * (`query.scope.effectiveApps`) : le périmètre signé du principal ET l'app demandée,
- * la même garde que `app/sessions/[id]/page.tsx`. Ne lève pas : un échec de lecture
- * devient `echec` (jamais « introuvable », qui affirmerait une absence non lue).
- */
-export async function lirePanneauSession(
-  id: string,
-  effectiveApps: readonly string[] | null,
-): Promise<LecturePanneauSession> {
-  const lue = await lire(() => sessionMeta(id));
-  if (!lue.ok) return { etat: "echec", id };
-  const meta = lue.data;
-  if (meta === null || !sessionDansLePerimetre(meta.app_id, effectiveApps)) return { etat: "introuvable" };
-  // Lues APRÈS la garde, et bornées à l'app de la session (V7) : une ligne d'une
-  // autre app qui citerait le même identifiant (émis par le client) n'y entre pas.
-  const [timeline, rejeu] = await Promise.all([
-    lire(() => sessionTimeline(meta.session_id, meta.app_id)),
-    lire(() => sessionARejeu(meta.session_id, meta.app_id)),
-  ]);
-  return { etat: "lue", meta, timeline, rejeu };
-}
+/** Ce que le panneau a pu lire, tel que le chargeur de `/sessions` le rend (sur le fil). */
+export type LecturePanneauSession = Fil<LecturePanneauSessionBrute>;
+type SessionMeta = Fil<SessionMetaBrute>;
 
 /** Les puces du panneau (§ 5.11.4) : qui, sur quoi, où — le visiteur et l'échantillonnage restent à la page. */
 const PUCES_DU_PANNEAU = new Set(["Appareil", "Navigateur", "Système", "Pays estimé", "Capteur", "Release à l'ouverture"]);
@@ -124,7 +98,7 @@ const TITRE_BLOC = "mb-2 text-[11px] font-semibold uppercase tracking-wider text
 const LIEN = "rounded text-xs font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-perf";
 
 /** Le rejeu au premier niveau : présent → ▶ ; absent → dit ; non lu → le lien, et le doute écrit. */
-function GesteRejeu({ rejeu, href }: { rejeu: Lecture<boolean>; href: string }) {
+function GesteRejeu({ rejeu, href }: { rejeu: SectionLue<boolean>; href: string }) {
   if (rejeu.ok && !rejeu.data) {
     return (
       <p className="text-xs text-ink-soft" data-testid="panneau-session-sans-rejeu">

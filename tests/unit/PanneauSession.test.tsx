@@ -31,7 +31,9 @@ vi.mock("@/lib/queries", () => ({ sessionMeta, sessionTimeline }));
 vi.mock("@/lib/session-rejeu", () => ({ sessionARejeu }));
 vi.mock("@/lib/log-forward", () => ({ forwardLog: vi.fn(async () => {}) }));
 
-import { PanneauSession, lirePanneauSession, type LecturePanneauSession } from "@/components/sessions/PanneauSession";
+import { PanneauSession } from "@/components/sessions/PanneauSession";
+import { lirePanneauSession, type LecturePanneauSession } from "@/lib/chargeurs/panneau-session";
+import { versLeFil } from "@/lib/chargeurs/commun";
 import type { SessionMeta, TimelineItem } from "@/lib/queries";
 
 const T0 = Date.UTC(2026, 8, 21, 14, 0, 0);
@@ -105,13 +107,14 @@ function lue(o: { meta?: Partial<SessionMeta>; timeline?: TimelineItem[] | null;
   return {
     etat: "lue",
     meta: meta(o.meta),
-    timeline: o.timeline === null ? { ok: false, raison: "base" } : { ok: true, data: o.timeline ?? CHRONOLOGIE },
-    rejeu: o.rejeu === null ? { ok: false, raison: "base" } : { ok: true, data: o.rejeu ?? true },
+    timeline: o.timeline === null ? { ok: false, code: "lecture_en_echec" } : { ok: true, data: o.timeline ?? CHRONOLOGIE },
+    rejeu: o.rejeu === null ? { ok: false, code: "lecture_en_echec" } : { ok: true, data: o.rejeu ?? true },
   } as Exclude<LecturePanneauSession, { etat: "introuvable" }>;
 }
 
 const rendu = (lecture: Exclude<LecturePanneauSession, { etat: "introuvable" }>, extra: Partial<Parameters<typeof PanneauSession>[0]> = {}) =>
-  renderToStaticMarkup(<PanneauSession lecture={lecture} plage="24 dernières heures" avecApp={false} {...LIENS} {...extra} />);
+  // Le composant reçoit ce que le chargeur rend SUR LE FIL (dates en chaînes ISO).
+  renderToStaticMarkup(<PanneauSession lecture={versLeFil(lecture)} plage="24 dernières heures" avecApp={false} {...LIENS} {...extra} />);
 
 /** Le bloc d'une tuile, repéré par le début de son `aria-label` (« <libellé> <valeur>, … »). */
 function tuile(html: string, libelle: string): string {

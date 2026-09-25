@@ -61,7 +61,7 @@ Le plan prévoyait ce cliquet en C0. Il est posé dès C-R, parce que le script 
 
 Ces règles ne sont pas des choix nouveaux. Ce sont les invariants du frontend livré, que `console-api` doit garder.
 
-- **Un résultat par section, jamais un échec en bloc.** Un loader d'écran rend `Lecture<T>[]`, avec `{ ok: true, data } | { ok: false, raison }` (`lib/lecture.ts`). C'est le point de conception de F02 : un `Promise.all` emportait tout l'écran au premier échec.
+- **Un résultat par section, jamais un échec en bloc.** Un chargeur d'écran rend une section par lecture, `{ ok: true, data } | { ok: false, code: "lecture_en_echec" }` (`Section<T>` du contrat, formée par `section()`, la forme de `lire()` sans sa raison). C'est le point de conception de F02 : un `Promise.all` emportait tout l'écran au premier échec.
 - **La `raison` ne sort jamais vers le navigateur.** Elle peut nommer un hôte ou une table. Elle va au journal serveur, avec le `request_id` ; l'écran n'affiche que le titre de la section en échec.
 - **`UnsupportedFilterError` n'est pas une panne** : `lire()` la relève. Dans le contrat, c'est un **refus typé** (400 avec un `code` stable), rendu pour l'appel entier.
 - **Pas de `<Suspense>` par section** (F02 : une frontière bloquait `router.replace`). Le loader est **un** appel serveur par rendu d'écran ; les sections s'y exécutent en parallèle, côté `console-api`.
@@ -69,12 +69,34 @@ Ces règles ne sont pas des choix nouveaux. Ce sont les invariants du frontend l
   - La limite de débit se calibre sur ce régime, **par rendu** et non par requête SQL.
   - La somme des pools doit tenir sous `max_connections` (112) **avec plusieurs onglets ouverts**.
   - Le mémo par module et `cache()` de React ne couvrent qu'**un** rendu : ni l'un ni l'autre n'amortit ces rendus successifs.
-- **Un panneau est une opération à part**, pas une variante de l'appel d'écran. Un écran avec un panneau ouvert fait deux appels par rendu.
+- **Un panneau est lu par le chargeur de son écran**, en parallèle de ses sections, seulement quand `panel=` le demande (révisé en C3). Le plan prévoyait une opération à part ; mais la page lit déjà le panneau dans le même rendu que ses sections, et une opération séparée ajouterait un aller-retour par rendu, douze fois par minute. Le coût d'un panneau ouvert reste visible : ce sont ses sections dans la réponse de l'écran.
+
+## Les chargeurs d'écrans (C2 → C5), tels qu'ils sont faits
+
+Un écran = un **chargeur** dans `apps/console/lib/chargeurs/<écran>.ts`. Il reçoit ce que reçoit la page — le principal, les paramètres d'URL, ceux du chemin — et rend ce que la page affiche. Le même code tourne à deux endroits :
+
+- **dans la console**, aujourd'hui : la page appelle `chargerEcran(chargeur, sp)` (`lib/ecran-local.ts`), avec le principal de la session ;
+- **dans `console-api`**, qui l'embarque tel quel (`services/console-api/ecrans.mjs`) et le sert sous l'opération de l'écran (`ECRANS` du contrat), avec le principal relu en base.
+
+La parité n'est pas un test : c'est la construction. Quatre règles la tiennent.
+
+1. **La page lit déjà la forme du fil.** `chargerEcran` passe la sortie du chargeur par JSON (`versLeFil`), exactement ce que fait le service : la page est typée `Fil<…>` (une date y est une chaîne ISO, un `Set` n'y passe pas), et le compilateur refuse l'écran qui l'oublierait. La bascule (après P6b) ne change que `chargerEcran` : il appellera l'opération au lieu du chargeur, sans qu'aucune page change de type.
+2. **Une section ne porte pas sa raison.** Un chargeur lit par `section()` (`lib/chargeurs/commun.ts`) : c'est `lire()`, l'échec journalisé côté serveur (dans le service, avec le `request_id` de l'appel), mais sur le fil ne passe que `{ ok: false, code: "lecture_en_echec" }`. Les composants qui n'affichent que le titre d'une section en échec prennent `SectionLue<T>` (`lib/lecture.ts`), qui accepte les deux formes.
+3. **Un chargeur ne lit ni cookie ni en-tête.** Ce que la page tenait d'un cookie lui est passé en paramètre : la composition d'un écran (blocs allumés, `/`, `/sessions`, `/slo`) voyage sous `blocs`, même forme que le cookie (`avecBlocs`). Le projet courant, lui, est déjà dans `?app=` (porte projet du middleware).
+4. **Ce que l'URL demande se lit une fois, par la même fonction des deux côtés.** Quand un écran a sa propre requête (Journal, Explorer, recherche de sessions), une fonction pure l'analyse (`demandeDuJournal`, `demandeExplorer`, `demandeDesSessions`) : le chargeur s'en sert pour savoir quoi lire, la page pour savoir quoi afficher.
+
+**Politique commune des écrans** (`packages/console-api/src/operations/ecrans.ts`) : une session, la portée `app` (confrontée au périmètre relu en base AVANT le chargeur, `all` résolu), la démo en lecture, des paramètres bornés (48 au plus, noms à un motif, valeurs de 2 048 caractères au plus). Le chargeur reçoit `app` **tel que demandé** : `all` et une app seule n'ont pas le même sens pour lui (libellés, périmètre effectif). Un refus de filtre (`UnsupportedFilterError`) part en 400 `filtre_non_supporte` ; une panne en 500 générique, la cause au journal.
+
+**Pages de détail** (`/sessions/[id]`, puis erreurs, traces, appels) : l'identifiant est dans le chemin, la portée reste `app`. Le pipeline ne résout pas la ressource (ses identifiants ne sont pas des UUID : un identifiant de session est émis par le client) ; le **chargeur** relit l'app de la ressource et la confronte au périmètre — introuvable ailleurs, comme absente, exactement la garde de la page.
+
+**Rejeu** (`replay.session`, `GET /v1/replays/{sessionId}`) : la route `/api/replay/[sessionId]` du lecteur appelle le même chargeur. C3 y ajoute le **plafond par session** que le plan demandait : 16 Mio compressés lus au plus (fenêtre SQL : les segments suivants ne quittent pas la base), 64 Mio décompressés rendus au plus ; au-delà, le lecteur dit combien de segments ne sont pas chargés (`tronques`).
+
+**Vérifié par** : la matrice d'autorisations, qui exécute les VRAIS chargeurs (le module du service) sur une base migrée, pour 8 profils × 3 cibles, puis vérifie qu'un viewer obtient chaque écran — et ses variantes (comparaison, panneau, Explorer exécuté, onglet) — sans une seule section en échec ; le build du service, dont la garde refuse tout écran, composant, module de session ou `next/…` réel dans le bundle ; le crawl E2E des 57 écrans × 3 profils, qui rend chaque page à partir de la forme du fil.
 
 ## Ordre proposé pour libérer le cliquet
 
 1. **Sans `console-api`** : scinder les modules mixtes (famille 1). **Fait** : 13 composants et un écran sortis du cliquet (27 → 14 composants, 51 → 50 écrans). C0 démarre sur une base plus petite.
 2. **C0** : fondations (`console-api`, session, pipeline, v90). Le cliquet ne bouge pas.
 3. **C2** : `GET /v1/shell`. Le layout racine sort du cliquet, ce qui est le plus gros gain unitaire : il pèse sur les 57 écrans.
-4. **C3 → C5** : les écrans, par lots (colonne « Lot » de l'inventaire). Chaque PR resserre le cliquet.
+4. **C3 → C5** : les chargeurs des écrans, par lots (colonne « Lot » de l'inventaire ; colonne « Chargeur » pour l'avancement). Décision du 24/09 : `console-api` est mis en service **à la fin, après P6b** — d'ici là les écrans exécutent leur chargeur dans la console, et le cliquet ne descend que par ce qui sort des écrans (les panneaux déplacés dans un chargeur, par exemple). Il descend d'un coup à la bascule, quand `chargerEcran` appelle le service.
 5. **C6 → C11** : les écritures, puis les routes machine. **C12** : cliquet vide, gardes de build.

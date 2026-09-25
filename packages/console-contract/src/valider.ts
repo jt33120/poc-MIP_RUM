@@ -70,3 +70,26 @@ export function objet<S extends Record<string, Validateur<unknown>>>(schema: S):
     return ok(sortie as Forme<S>);
   };
 }
+
+/**
+ * Des paramètres d'URL LIBRES, pour un écran de console : chaque nom à un motif,
+ * chaque valeur une chaîne bornée, leur nombre borné. Ce n'est pas un contrôle de
+ * sens — le chargeur les relit ensuite par le contrat de requête de la console,
+ * comme la page, et refuse ce qu'elle refuserait (filtre illisible, plage…) —,
+ * c'est une borne : rien d'autre qu'un petit dictionnaire de chaînes n'entre.
+ */
+export function dictionnaire(opts: { max: number; nom: RegExp; valeurMax: number }): Validateur<Record<string, string>> {
+  return (brut, champ) => {
+    if (typeof brut !== "object" || brut === null || Array.isArray(brut)) return non(champ, "objet attendu");
+    const entrees = Object.entries(brut as Record<string, unknown>);
+    if (entrees.length > opts.max) return non(champ, `au plus ${opts.max} paramètres`);
+    const sortie: Record<string, string> = {};
+    for (const [cle, valeur] of entrees) {
+      if (!opts.nom.test(cle)) return non(cle, "nom de paramètre invalide");
+      if (typeof valeur !== "string") return non(cle, "chaîne attendue");
+      if (valeur.length > opts.valeurMax) return non(cle, `au plus ${opts.valeurMax} caractères`);
+      sortie[cle] = valeur;
+    }
+    return ok(sortie);
+  };
+}

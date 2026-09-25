@@ -6,7 +6,22 @@
 // n'importe rien de la console et se vérifie seul. Ici : la politique de chaque
 // opération, et la traduction d'une lecture en SECTION sur le fil — la raison
 // d'un échec part au journal, avec le `request_id`, jamais dans la réponse.
-import { COQUILLE, type Coquille, type Section } from "@mip/console-contract";
+//
+// LES ÉCRANS (C3 → C5) ont une seule politique, la même pour tous : une session,
+// la portée `app` (confrontée au périmètre relu en base AVANT le chargeur, `all`
+// résolu), la démo en lecture, les paramètres d'URL bornés. Le chargeur reçoit le
+// principal, l'app demandée et les paramètres, exactement ce que reçoit la page ;
+// ses sections sont déjà sur le fil (la console les forme par `section()`).
+import {
+  COQUILLE,
+  ECRANS,
+  PARAMETRES_ECRAN,
+  type CleEcran,
+  type Coquille,
+  type Operation,
+  type ParametresEcran,
+  type Section,
+} from "@mip/console-contract";
 import type { Journal } from "../contexte";
 import { ErreurContrat } from "../erreurs";
 import { servir, type Enregistrement } from "../politique";
@@ -19,6 +34,25 @@ export interface PrincipalChargeur {
   readonly email: string;
   readonly role: "admin" | "viewer";
   readonly apps: readonly string[] | null;
+  readonly demo: boolean;
+}
+
+/**
+ * Le chargeur d'un écran : le principal, les paramètres de la page (`app` compris,
+ * tel que demandé), les paramètres du chemin (l'identifiant d'une page de détail),
+ * et l'identifiant de requête pour le journal. Il rend ce que la page affiche.
+ */
+export type ChargeurEcran = (
+  principal: PrincipalChargeur,
+  parametres: ParametresEcran,
+  chemin: Readonly<Record<string, string>>,
+  requestId: string,
+) => Promise<unknown>;
+
+/** Une erreur de filtre du contrat de requête : ce que la console refuse d'appliquer. */
+export interface RefusDeFiltre {
+  readonly code: string;
+  readonly message: string;
 }
 
 export interface ChargeursEcrans {
@@ -28,7 +62,18 @@ export interface ChargeursEcrans {
     readonly fuseaux: Readonly<Record<string, string>>;
     readonly tickets: Lecture<boolean> | null;
   }>;
+  /** C3 → C5 — un chargeur par écran du contrat (`ECRANS`), sans exception : le type l'exige. */
+  readonly pages: { readonly [K in CleEcran]: ChargeurEcran };
+  /**
+   * Reconnaît un REFUS de filtre (`UnsupportedFilterError` de la console) : un
+   * écran qui ne sait pas appliquer un filtre le refuse, ce n'est pas une panne.
+   * Il part en 400 `filtre_non_supporte`, avec l'erreur du contrat de requête.
+   */
+  readonly refusDeFiltre: (e: unknown) => RefusDeFiltre | null;
 }
+
+/** La politique commune des écrans. */
+const POLITIQUE_ECRAN = { auth: "session", portee: "app", demo: "lecture", entree: { requete: PARAMETRES_ECRAN } } as const;
 
 /** Une lecture → une section du fil : la raison reste au journal. */
 export function versSection<T>(l: Lecture<T>, contexte: { journal: Journal; requestId: string; section: string }): Section<T> {
@@ -41,7 +86,7 @@ export function operationsEcrans(c: ChargeursEcrans): Enregistrement[] {
   return [
     servir(COQUILLE, { auth: "session", portee: "globale", demo: "lecture" }, async ({ principal, requestId, journal }) => {
       if (principal.kind !== "session") throw new ErreurContrat("session_requise", "session requise");
-      const l = await c.coquille({ email: principal.email, role: principal.role, apps: principal.apps });
+      const l = await c.coquille({ email: principal.email, role: principal.role, apps: principal.apps, demo: principal.demo });
       const ctx = { journal, requestId };
       const reponse: Coquille = {
         projets: versSection(l.projets, { ...ctx, section: "projets" }),
@@ -51,5 +96,22 @@ export function operationsEcrans(c: ChargeursEcrans): Enregistrement[] {
       };
       return reponse;
     }),
+    ...(Object.keys(ECRANS) as CleEcran[]).map((cle) =>
+      // Chaque écran a ses paramètres de chemin (aucun, `{id}`…) : le traitement les
+      // reçoit tous sous la même forme, un dictionnaire de chaînes.
+      servir(ECRANS[cle] as Operation<Readonly<Record<string, string>>, ParametresEcran, never, unknown>, POLITIQUE_ECRAN, async ({ principal, requete, params, appDemandee, requestId }) => {
+        if (principal.kind !== "session") throw new ErreurContrat("session_requise", "session requise");
+        const qui: PrincipalChargeur = { email: principal.email, role: principal.role, apps: principal.apps, demo: principal.demo };
+        // `app` retiré par le pipeline (c'est la portée) : rendu au chargeur tel que demandé.
+        const parametres: ParametresEcran = { ...(requete as ParametresEcran), app: appDemandee ?? "" };
+        try {
+          return await c.pages[cle](qui, parametres, (params ?? {}) as Readonly<Record<string, string>>, requestId);
+        } catch (e) {
+          const refus = c.refusDeFiltre(e);
+          if (refus) throw new ErreurContrat("filtre_non_supporte", refus.message, { details: { code: refus.code } });
+          throw e;
+        }
+      }),
+    ),
   ];
 }

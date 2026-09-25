@@ -26,7 +26,7 @@ import { startService } from "@mip/service-kit/http.mjs";
 import { chargerTrousseau, creerConsoleApi, creerDebitAuth, creerOidc, creerTable, creerVerificateurSession } from "@mip/console-api";
 // C2 → C5 — les chargeurs des écrans : le code de la console, embarqué par le
 // build (alias `@/`), branché sur le pool de CE service (`shims/db.mjs`).
-import { chargerCoquille } from "@/lib/chargeurs/coquille";
+import { ecrans } from "./ecrans.mjs";
 import { brancherPool } from "./shims/db.mjs";
 
 const log = createLogger("console-api");
@@ -184,7 +184,7 @@ const { table, contrat } = await creerTable({
     oublierSession: (sid) => sessions.oublier(sid),
     oidc,
   },
-  ecrans: { coquille: (p) => chargerCoquille({ role: p.role, apps: p.apps === null ? null : [...p.apps] }) },
+  ecrans,
 });
 
 const requetes = metrics.counter("console_api_requests_total", "Appels de la console, par opération et par statut.", {

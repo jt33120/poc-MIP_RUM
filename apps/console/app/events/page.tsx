@@ -29,32 +29,19 @@ import { INPUT_CLASS } from "@/components/forms/Field";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { annotationsDeploiements } from "@/lib/annotations";
-import {
-  cleSansValeur,
-  eventResetHref,
-  eventSearchParams,
-  lienJournal,
-  lienPanneauJournal,
-  paginationJournal,
-  totalJournal,
-} from "@/lib/events-page-params";
+import { chargerEvents, demandeDuJournal } from "@/lib/chargeurs/events";
+import { chargerEcran } from "@/lib/ecran-local";
+import type { Fil } from "@mip/console-contract";
+import { eventResetHref, lienJournal, lienPanneauJournal, totalJournal } from "@/lib/events-page-params";
 import { type SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
-import { lire } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
 import { colonnesPromues, valeurColonnePromue, type ColonnePromue } from "@/lib/perf-domain";
-import { listDeploys } from "@/lib/queries-deploys";
 import {
   EVENT_ATTRIBUTE_SOURCES,
   EVENT_ATTRIBUTE_TYPES,
-  exploreEvents,
-  parseEventAttribute,
-  parseEventCursor,
-  parseEventPage,
-  parseEventQuery,
   type EventAttributeSource,
-  type EventExplorerResult,
-  type EventIndexRow,
+  type EventExplorerResult as ResultatJournalBrut,
+  type EventIndexRow as LigneJournalBrute,
   type EventQuery,
 } from "@/lib/queries-events";
 import { bucketStarts, hrefWithQuery, paramReader, queryToSearchParams, type AnalyticsQuery } from "@/lib/query-contract";
@@ -62,6 +49,11 @@ import { alignerSeaux, grilleIso, libelleSeauComplet } from "@/lib/series";
 import { ecrirePanel, gabaritZoom, ligneIgnoree, lireEtatDeVue } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
+
+// L'écran lit la sortie de son chargeur telle qu'elle voyage (`Fil<…>`) : un
+// instant y est une chaîne ISO.
+type EventExplorerResult = Fil<ResultatJournalBrut>;
+type EventIndexRow = Fil<LigneJournalBrute>;
 
 const TITRE = "Journal";
 
@@ -106,8 +98,10 @@ const LIEN = "rounded text-brand hover:underline focus-visible:outline-none focu
 
 export default async function Journal({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/events");
-  if (!ecran.ok) return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
+  // Le chargeur (`lib/chargeurs/events.ts`) lit filtres et sections ; la page lit
+  // l'URL du Journal par la même fonction que lui (`demandeDuJournal`).
+  const ecran = await chargerEcran(chargerEvents, sp);
+  if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
   const sub = (
     <>
       Que s&apos;est-il passé exactement, dans quel ordre ? Événements custom et signaux émis par le SDK, observés sur{" "}
@@ -115,26 +109,8 @@ export default async function Journal({ searchParams }: { searchParams: Promise<
     </>
   );
 
-  // L'URL telle quelle : base de TOUS les liens de l'écran (facettes, panneau, page
-  // suivante), qui gardent donc population, plage et filtres d'événements.
-  const brut = eventSearchParams(sp);
-  // Clé choisie depuis une facette, sans valeur encore : elle pré-remplit le
-  // formulaire et demande ses valeurs ; elle ne filtre rien.
-  const choisie = brut ? cleSansValeur(brut) : null;
-  const cle =
-    choisie &&
-    parseEventAttribute(
-      new URLSearchParams({ attr_source: choisie.cle.source, attr_key: choisie.cle.key, attr_type: "null" }),
-    )
-      ? { source: choisie.cle.source as EventAttributeSource, key: choisie.cle.key }
-      : null;
-  const lu = brut ? new URLSearchParams(cle && choisie ? choisie.sansCle : brut) : null;
-  if (lu && !lu.has("kind")) lu.set("kind", "event");
-  const query = lu ? parseEventQuery(lu) : undefined;
-  const cursor = lu ? parseEventCursor(lu.get("cursor")) : undefined;
-  const page = lu && cursor !== undefined ? paginationJournal(lu, parseEventPage(lu), cursor) : undefined;
-
-  if (!brut || !query || cursor === undefined || !page) {
+  const demande = demandeDuJournal(sp);
+  if (ecran.etat === "filtre_invalide" || !demande) {
     return (
       <div className="animate-fade-up">
         <PageHeader title={TITRE} domain="explorer" sub={sub} />
@@ -145,11 +121,8 @@ export default async function Journal({ searchParams }: { searchParams: Promise<
       </div>
     );
   }
-
-  const [resultat, deploys] = await Promise.all([
-    lire(() => exploreEvents(ecran.deviceFilters, query, page, cursor, { valeursDe: cle })),
-    lire(() => listDeploys(ecran.filters, 20)),
-  ]);
+  const { brut, cle, query } = demande;
+  const { resultat, deploys } = ecran;
 
   // Réglages d'affichage : seul le panneau d'un événement s'ouvre ici.
   const vue = lireEtatDeVue("/events", paramReader(sp));

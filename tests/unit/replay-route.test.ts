@@ -6,7 +6,9 @@
 //     désormais compté dans `ignores`, pour que le lecteur le DISE ;
 //   - un rejeu sain répond `ignores: 0` (jamais un champ absent) ;
 //   - la garde de périmètre est inchangée : une session d'une app hors périmètre
-//     répond 404 et ses segments ne sont jamais lus.
+//     répond 404 et ses segments ne sont jamais lus ;
+//   - C3 : au-delà du plafond décompressé d'une session, les segments suivants ne
+//     sont pas rendus, et leur nombre est DIT (`tronques`).
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -20,7 +22,8 @@ import { GET } from "@/app/api/replay/[sessionId]/route";
 import { getUser } from "@/lib/auth";
 import { q } from "@/lib/db";
 
-const segment = (valeur: unknown) => ({ seq: 0, events_count: null, body: gzipSync(JSON.stringify(valeur)) });
+// `total` : le nombre de segments de la session (fenêtre SQL), porté par chaque ligne.
+const segment = (valeur: unknown, total = 1) => ({ seq: 0, total: String(total), body: gzipSync(JSON.stringify(valeur)) });
 const appel = (id = "s1") =>
   GET(new Request(`https://console.test/api/replay/${id}`), { params: Promise.resolve({ sessionId: id }) });
 
@@ -32,11 +35,11 @@ describe("GET /api/replay/:sessionId — B36, segments illisibles comptés", () 
     vi.mocked(q)
       .mockResolvedValueOnce([{ app_id: "shop" }] as never)
       .mockResolvedValueOnce([
-        segment([{ type: 4 }, { type: 2 }]),
-        { seq: 1, events_count: null, body: Buffer.from("pas du gzip") },
-        { seq: 2, events_count: null, body: gzipSync("{ tronqué") },
-        segment({ type: 3 }),
-        segment([{ type: 3 }]),
+        segment([{ type: 4 }, { type: 2 }], 5),
+        { seq: 1, total: "5", body: Buffer.from("pas du gzip") },
+        { seq: 2, total: "5", body: gzipSync("{ tronqué") },
+        segment({ type: 3 }, 5),
+        segment([{ type: 3 }], 5),
       ] as never);
 
     const res = await appel();
@@ -52,8 +55,23 @@ describe("GET /api/replay/:sessionId — B36, segments illisibles comptés", () 
     vi.mocked(q)
       .mockResolvedValueOnce([{ app_id: "shop" }] as never)
       .mockResolvedValueOnce([segment([{ type: 4 }, { type: 2 }])] as never);
-    const corps = (await (await appel()).json()) as { ignores: number };
+    const corps = (await (await appel()).json()) as { ignores: number; tronques: number };
     expect(corps.ignores).toBe(0);
+    expect(corps.tronques).toBe(0);
+  });
+
+  it("C3 — plafond par session : au-delà, les segments ne sont pas rendus, et leur nombre est dit", async () => {
+    vi.mocked(getUser).mockResolvedValue({ email: "a@example.test", role: "admin", apps: null } as never);
+    // Trois segments de ~30 Mio décompressés (compressés : quelques Kio) : le troisième dépasse 64 Mio.
+    const gros = (i: number) => ({ seq: i, total: "4", body: gzipSync(JSON.stringify([{ type: 3, pad: "x".repeat(30 * 1024 * 1024) }])) });
+    vi.mocked(q)
+      .mockResolvedValueOnce([{ app_id: "shop" }] as never)
+      // La base n'a rendu que trois des quatre segments (plafond compressé, fenêtre SQL).
+      .mockResolvedValueOnce([gros(0), gros(1), gros(2)] as never);
+    const corps = (await (await appel()).json()) as { chunks: number; events: unknown[]; tronques: number };
+    expect(corps.chunks).toBe(4);
+    expect(corps.events).toHaveLength(2);
+    expect(corps.tronques).toBe(2);
   });
 
   it("périmètre inchangé : hors de ses apps, 404 et aucun segment lu", async () => {

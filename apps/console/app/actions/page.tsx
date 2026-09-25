@@ -30,110 +30,73 @@ import { OngletsInteractions } from "@/components/perf/OngletsInteractions";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { breakdownDrillHref, refusDesSessions, sessionsDeLaRoute, type LienSessionsRoute } from "@/lib/breakdowns";
-import {
-  couverturePrecedente,
-  sourcesSousFiltres,
-  type CouverturePrecedente,
-  type SourceComparaison,
-} from "@/lib/comparaison";
+import { chargerActions } from "@/lib/chargeurs/actions";
+import { type CouverturePrecedente } from "@/lib/comparaison";
+import { chargerEcran } from "@/lib/ecran-local";
 import { type SearchParams } from "@/lib/filters";
 import { formater } from "@/lib/fmt-ids";
 import { fmtDate } from "@/lib/format";
-import { lire, type Lecture } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
+import { type SectionLue } from "@/lib/lecture";
 import { referencePeriodePrecedente } from "@/lib/perf-domain";
 import {
   ACTIONS_MAX_OFFSET,
-  actionsDisponible,
-  etatActions,
   hasNextActionsPage,
-  parseActionsPage,
-  topActions,
-  topActionsSummary,
   type ActionSummary,
   type TopActionRow,
 } from "@/lib/queries-actions";
-import { paramReader, type AnalyticsQuery } from "@/lib/query-contract";
-import { dimensionSchema } from "@/lib/query-schema";
+import { paramReader } from "@/lib/query-contract";
 import { lireComparaison, lireEtatDeVue } from "@/lib/view-state";
+import type { Fil } from "@mip/console-contract";
 
 export const dynamic = "force-dynamic";
 
 const SOUS_TITRE =
   "Interactions qui déclenchent le plus d’erreurs ou de temps réseau. La corrélation est heuristique, bornée à 5 secondes et figée au départ de chaque effet.";
 
-/** Lignes du hero ; la suite se lit dans la table (§ 5.4.3). */
-const LIGNES_HERO = 12;
-
 /** Le cumul, nommé pour ce qu'il est — le titre de colonne ET l'alternative le disent. */
 const TITRE_CUMUL = "Temps réseau lié, cumulé (toutes actions)";
 const PHRASE_CUMUL = "Un cumul de visiteurs différents n’est le temps d’attente de personne.";
-
-/** Les actions se comptent : leur période précédente est sensible au retard d'ingestion. */
-const SOURCE_ACTIONS: SourceComparaison = { table: "rum_action", colonneTemps: "ts", additive: true };
 
 const PRECEDENTE_EN_ECHEC: CouverturePrecedente = {
   etat: "inconnue",
   raison: "lecture de la période précédente en échec",
 };
 
-/** Première couverture incomplète des sources sous filtres, sinon « complète » (§ 3.2). */
-async function couvertureDe(query: AnalyticsQuery, source: SourceComparaison): Promise<CouverturePrecedente> {
-  const couvertures = await Promise.all(sourcesSousFiltres(query, source).map((s) => couverturePrecedente(query, s)));
-  return couvertures.find((c) => c.etat !== "complete") ?? { etat: "complete", raison: null };
-}
+type Ligne = Fil<TopActionRow>;
 
 export default async function ActionsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  // Le périmètre signé est appliqué avant même de construire le SQL : demander
-  // explicitement ?app=B hors de sa liste est refusé, jamais rabattu sur A.
-  const ecran = await pageFilters(sp, "/actions");
-  if (!ecran.ok) return <FilterProblemNotice title="Actions" problem={ecran.problem} />;
-  const f = ecran.filters;
-  const { query, label } = ecran;
+  // Le chargeur de l'écran (`lib/chargeurs/actions.ts`) lit tout : filtres, présence
+  // de la table, sections. La page ne calcule plus que ce qui vient de l'URL.
+  const d = await chargerEcran(chargerActions, sp);
+  if (d.etat === "refus") return <FilterProblemNotice title="Actions" problem={d.problem} />;
   const lecteur = paramReader(sp);
   const url = new URLSearchParams(
     Object.entries(sp).flatMap(([key, value]) => (typeof value === "string" ? [[key, value] as [string, string]] : [])),
   );
-  const page = parseActionsPage(url);
 
   // Réglages d'affichage (§ 3.1) : cet écran n'en lit aucun qui lui soit propre ; les
   // lignes ignorées sont celles d'un réglage posé par un autre écran et resté dans l'URL.
   const { etat: vue, ignores } = lireEtatDeVue("/actions", lecteur);
   const dejaDites = new Set(lireComparaison("/actions", lecteur).ignores);
   const avertissements = ignores.filter((l) => !dejaDites.has(l));
-  const prev = vue.cmp === "prev";
 
-  // Sans la table, les lectures rendraient des zéros : on ne les lance pas.
-  const nonCollecte = etatActions(await actionsDisponible());
-  if (nonCollecte) {
+  if (d.etat === "non_collecte") {
     return (
       <div className="animate-fade-up">
         <PageHeader title="Actions" sub={SOUS_TITRE} />
         <OngletsInteractions actif="/actions" sp={lecteur} />
         <div data-testid="actions-non-collecte">
-          <EtatSurface etat={nonCollecte} />
+          <EtatSurface etat={d.nonCollecte} />
         </div>
       </div>
     );
   }
 
-  // CHAQUE LECTURE EST INDÉPENDANTE (§ 3.8) : `lire()` ne lève pas, une section en
-  // échec le dit sans emporter les autres — et jamais par un « 0 ».
-  const pageLargeAuDebut = page.offset === 0 && page.limit >= LIGNES_HERO;
-  const [lignes, heroSeul, resume, resumePrec, couverture, schema] = await Promise.all([
-    lire(() => topActions(f, page)),
-    // La page 1 contient déjà les lignes du hero : on ne relit pas la même chose.
-    pageLargeAuDebut ? Promise.resolve(null) : lire(() => topActions(f, { limit: LIGNES_HERO, offset: 0 })),
-    lire(() => topActionsSummary(f)),
-    prev ? lire(() => topActionsSummary(f, true)) : Promise.resolve(null),
-    prev ? couvertureDe(query, SOURCE_ACTIONS) : Promise.resolve(undefined),
-    dimensionSchema(),
-  ]);
+  const { query, label, page, prev, lignes, hero, resume, resumePrec } = d;
+  const couverture = d.couverture ?? undefined;
+  const schema = new Set(d.schema);
   const reference = prev ? referencePeriodePrecedente(query.range) : undefined;
-
-  const hero: Lecture<TopActionRow[]> | null =
-    heroSeul ?? (lignes.ok ? { ok: true, data: lignes.data.slice(0, LIGNES_HERO) } : lignes);
 
   const href = (offset: number) => {
     const next = new URLSearchParams(url);
@@ -333,7 +296,7 @@ function TuilesActions({
   label,
 }: {
   resume: ActionSummary;
-  resumePrec: Lecture<ActionSummary> | null;
+  resumePrec: SectionLue<ActionSummary> | null;
   reference: string | undefined;
   couverture: CouverturePrecedente | undefined;
   label: string;
@@ -386,7 +349,7 @@ function HeroActions({
   versSessions,
   refusSessions,
 }: {
-  hero: Lecture<TopActionRow[]> | null;
+  hero: SectionLue<Ligne[]> | null;
   label: string;
   versErreurs: (route: string | null) => string | undefined;
   /** Sessions de la route d'une ligne ; `null` : route inconnue, ou refus commun (`refusSessions`). */

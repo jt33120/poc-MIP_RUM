@@ -24,7 +24,6 @@
 // l'écran, et sa garde est celle de la page de session : hors périmètre, aucun
 // panneau, une ligne le dit.
 import Link from "next/link";
-import { cookies } from "next/headers";
 import { PageHeader } from "@/components/PageHeader";
 import { Breakdown, type BreakdownItem, type OngletDecoupage } from "@/components/Breakdown";
 import { Donut } from "@/components/charts/Donut";
@@ -36,8 +35,9 @@ import { FilterProblemNotice } from "@/components/FilterProblemNotice";
 import { EtatSurface } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import type { SearchParams } from "@/lib/filters";
-import { lire, type Lecture } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
+import { type SectionLue } from "@/lib/lecture";
+import { chargerSessions, CURSOR_PARAM, demandeDesSessions } from "@/lib/chargeurs/sessions";
+import { avecBlocs, chargerEcran } from "@/lib/ecran-local";
 import { BREAKDOWN_NOTICES, BREAKDOWN_PARAM, breakdownDrillHref } from "@/lib/breakdowns";
 import {
   ENGAGEMENT_MIN_SESSIONS,
@@ -47,29 +47,14 @@ import {
   singleViewSessionRate,
   type EngagementStats,
 } from "@/lib/engagement";
-import {
-  bucketLabel,
-  bucketStarts,
-  hrefWithQuery,
-  paramReader,
-  previousRange,
-  queryToSearchParams,
-} from "@/lib/query-contract";
-import { dimensionSchema } from "@/lib/query-schema";
-import { listSessions, releaseRechercheParOccurrence, visitStats, type VisitStats } from "@/lib/queries";
+import { bucketLabel, bucketStarts, hrefWithQuery, previousRange, queryToSearchParams } from "@/lib/query-contract";
+import { type VisitStats } from "@/lib/queries";
 import {
   PLAN_SESSIONS_COMMENCEES,
   PLAN_VISITEURS_DISTINCTS,
   REPARTITION_LIMITE,
-  engagementStats,
-  erreursParSessionCommencee,
-  observedVisitorsTrend,
-  repartitionSessions,
-  samplingSessions,
-  visiteursDistincts,
   type RepartitionSessions,
 } from "@/lib/queries-sessions";
-import { listDeploys } from "@/lib/queries-deploys";
 import { retentionDays } from "@/lib/queries-explorer";
 import { BandeauEchantillonnage } from "@/components/states/BandeauEchantillonnage";
 import {
@@ -79,22 +64,17 @@ import {
   SESSION_SEARCH_LABELS,
   SESSION_SEARCH_PARAM,
   SESSION_SEARCH_PLACEHOLDERS,
-  SESSION_SEARCH_PROBLEMS,
   encodeSessionCursor,
-  parseSessionCursor,
-  parseSessionSearch,
-  parseSessionSearchField,
   sessionSearchSummary,
 } from "@/lib/sessions-search";
-import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
 import { TousEteints } from "@/components/TousEteints";
 import { explorerHref } from "@/lib/explorer-page-params";
 import { formater } from "@/lib/fmt-ids";
 import { CATEGORIELLE } from "@/lib/palette";
 import { alignerSeaux, grilleIso, libelleSeauComplet } from "@/lib/series";
 import { annotationsDeploiements } from "@/lib/annotations";
-import { couverturePrecedente, sourcesSousFiltres, type CouverturePrecedente, type SourceComparaison } from "@/lib/comparaison";
-import { AVEC_SESSIONS, VIEW_CONTEXT_PARAMS, contextHref, gabaritZoom, lireComparaison, lireEtatDeVue } from "@/lib/view-state";
+import { type CouverturePrecedente } from "@/lib/comparaison";
+import { AVEC_SESSIONS, VIEW_CONTEXT_PARAMS, contextHref, gabaritZoom, lireComparaison } from "@/lib/view-state";
 import {
   ANCRE_TOUTES_SESSIONS,
   PrioriteSessions,
@@ -106,7 +86,6 @@ import { RAISON_PRIORITE, SIGNAUX_A_CREER, type SessionPrioritaire } from "@/lib
 import {
   DIMENSIONS_REPARTITION,
   LIBELLES_REPARTITION,
-  SOURCE_VISITEURS,
   couvertureCombinee,
   disponibiliteRepartition,
   hrefGroupe,
@@ -123,21 +102,16 @@ import {
   type DimensionRepartition,
 } from "@/lib/sessions-kpi";
 // F43 — panneau de session.
-import { PanneauSession, lirePanneauSession } from "@/components/sessions/PanneauSession";
+import { PanneauSession } from "@/components/sessions/PanneauSession";
 import { SESSION_INTROUVABLE, voisinsDansLaListe } from "@/lib/panneau-session";
 import { ecrirePanel, ligneIgnoree } from "@/lib/view-state";
 
 export const dynamic = "force-dynamic";
 
-/** Paramètre de pagination : une clé opaque, jamais un numéro de page. */
-const CURSOR_PARAM = "cursor";
 
 // Sources des comparaisons à la période précédente (§ 3.2). Un compte de sessions
 // ou de visiteurs attend encore des lignes sur une heure qui se termine maintenant
 // (additif) ; un taux ou une durée les attend au numérateur ET au dénominateur.
-const SOURCE_SESSIONS: SourceComparaison = { table: "rum_session", colonneTemps: "started_at", additive: true };
-const SOURCE_SESSIONS_TAUX: SourceComparaison = { table: "rum_session", colonneTemps: "started_at", additive: false };
-const SOURCE_ERREURS: SourceComparaison = { table: "rum_error", colonneTemps: "ts", additive: false };
 // Visiteurs : `SOURCE_VISITEURS` (lib/sessions-kpi.ts), sur le premier `visitor_id` collecté.
 
 /** Sous ce nombre de sessions, un delta se tait : le seuil d'engagement du domaine (S6, `lib/engagement.ts`). */
@@ -171,42 +145,21 @@ const NOTICE_CAPTEUR =
 type ProprietesTuile = Parameters<typeof KpiTile>[0];
 type Comparaison = Pick<ProprietesTuile, "precedent" | "reference" | "couverturePrecedente">;
 
-/** Lecture non lancée (bloc éteint, comparaison non demandée) : une valeur sûre, jamais affichée comme mesure. */
-const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
 
 export default async function Sessions({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const sp = await searchParams;
-  const ecran = await pageFilters(sp, "/sessions");
-  if (!ecran.ok) return <FilterProblemNotice title="Sessions" problem={ecran.problem} />;
-  const f = ecran.filters;
-  const query = ecran.query;
-  const url = paramReader(sp);
-
-  // Recherche et curseur sont RELUS AVANT toute lecture : une saisie refusée ne
-  // doit pas produire une liste qui l'ignore, et un curseur qui ne vient pas de
-  // cette console ne doit pas être présenté à PostgreSQL.
-  const champ = parseSessionSearchField(url.get(SESSION_SEARCH_FIELD_PARAM));
-  const recherche = parseSessionSearch(champ, url.get(SESSION_SEARCH_PARAM));
-  const curseur = parseSessionCursor(url.get(CURSOR_PARAM));
-  const refus =
-    recherche === undefined
-      ? SESSION_SEARCH_PROBLEMS[champ]
-      : curseur === undefined
-        ? "Curseur de pagination invalide : il ne provient pas de cette console."
-        : null;
-
-  // Composition de l'écran, lue AVANT les requêtes : un bloc éteint ne lance pas
-  // la sienne. La rangée de KPI et le bandeau d'échantillonnage ne sont pas des
-  // blocs : ils qualifient tout l'écran.
-  const cat = catalogueDe("/sessions")!;
-  const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
-  const liste = blocs.liste && !refus;
+  // Le chargeur (`lib/chargeurs/sessions.ts`) lit filtres, blocs et sections ; la
+  // composition de l'écran (cookie) lui est passée en paramètre, et la page relit
+  // l'URL par la même fonction que lui (`demandeDesSessions`).
+  const sp = await avecBlocs(await searchParams, "/sessions");
+  const d = await chargerEcran(chargerSessions, sp);
+  if (d.etat === "refus") return <FilterProblemNotice title="Sessions" problem={d.problem} />;
+  const ecran = d;
+  const query = d.query;
+  const { url, champ, recherche, curseur, refus, blocs, etatVue, idPanneau } = demandeDesSessions(sp);
 
   // Réglages de vue (§ 3.1) : filtre rapide de la liste (F42) et panneau (F43).
   // Seul le panneau d'une SESSION s'ouvre ici ; un autre type, ou une valeur
   // illisible, n'est pas lu à moitié : il est ignoré, et la page le dit (V10).
-  const etatVue = lireEtatDeVue("/sessions", url).etat;
-  const idPanneau = etatVue.panel?.type === "session" ? etatVue.panel.id : null;
   const panelBrut = url.get("panel");
   const panneauIgnore =
     idPanneau !== null || panelBrut === null || panelBrut === ""
@@ -217,23 +170,14 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
           etatVue.panel ? "seul le panneau d'une session s'ouvre sur cet écran" : "forme attendue session:<identifiant>",
         );
 
-  // Comparaison (F06) : aucune par défaut sur un écran d'usage ; `cmp=prev` relit
-  // la période précédente, et ses écarts ne s'affichent que si elle est COMPLÈTE.
   const comparaison = lireComparaison("/sessions", url).valeur;
-  const prev = comparaison.mode === "prev";
-  const couvertures = (source: SourceComparaison) =>
-    Promise.all(sourcesSousFiltres(query, source).map((s) => couverturePrecedente(query, s)));
-  const aucuneCouverture = Promise.resolve<CouverturePrecedente[]>([]);
-
-  const schema = await dimensionSchema();
-  const disponibles = DIMENSIONS_REPARTITION.filter((d) => disponibiliteRepartition(d, schema).available);
+  const { prev } = d;
+  const schema = new Set(d.schema);
+  const disponibles = DIMENSIONS_REPARTITION.filter((x) => disponibiliteRepartition(x, schema).available);
   const dimension: DimensionRepartition | null = blocs.repartition
     ? lireRepartition(url.get(BREAKDOWN_PARAM), disponibles)
     : null;
-
-  // Chaque bloc a SA lecture (F02, § 3.8) : `lire()` ne lève pas, un bloc en échec
-  // dit « Lecture en échec » et les autres restent affichés.
-  const [
+  const {
     rows,
     vs,
     tendance,
@@ -253,42 +197,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
     couvErreurs,
     couvVisiteurs,
     panneauLu,
-  ] = await Promise.all([
-    // Une ligne de plus que la page : c'est ainsi qu'on sait s'il en reste, sans
-    // compter toute la population à chaque affichage.
-    liste
-      ? lire(() =>
-          listSessions(f, {
-            limit: SESSION_PAGE_SIZE + 1,
-            cursor: curseur ?? null,
-            search: recherche ?? null,
-          }),
-        )
-      : sansLecture([]),
-    blocs.resume ? lire(() => visitStats(f)) : sansLecture(null),
-    // Sparkline de la tuile, sessions sans identifiant et panneaux du volume : une lecture.
-    lire(() => observedVisitorsTrend(f)),
-    blocs.visiteurs && prev ? lire(() => observedVisitorsTrend(f, true)) : sansLecture(null),
-    lire(() => engagementStats(f)),
-    prev ? lire(() => engagementStats(f, true)) : sansLecture(null),
-    lire(() => visiteursDistincts(query)),
-    prev ? lire(() => visiteursDistincts(query, true)) : sansLecture(null),
-    lire(() => erreursParSessionCommencee(f)),
-    prev ? lire(() => erreursParSessionCommencee(f, true)) : sansLecture(null),
-    dimension ? lire(() => repartitionSessions(query, dimension)) : sansLecture(null),
-    blocs.visiteurs ? lire(() => listDeploys(f, 20)) : sansLecture([]),
-    releaseRechercheParOccurrence(),
-    // S7 : la population de l'écran (sessions commencées OU actives) est-elle un
-    // échantillon ? Lue quel que soit le choix de blocs : elle qualifie tous.
-    lire(() => samplingSessions(f)),
-    prev ? couvertures(SOURCE_SESSIONS) : aucuneCouverture,
-    prev ? couvertures(SOURCE_SESSIONS_TAUX) : aucuneCouverture,
-    prev ? couvertures(SOURCE_ERREURS) : aucuneCouverture,
-    prev ? couvertures(SOURCE_VISITEURS) : aucuneCouverture,
-    // Panneau (F43) : lu en même temps que l'écran, garde comprise — rien de la
-    // session n'est lu si son app n'est pas dans ce que l'écran lit.
-    idPanneau ? lirePanneauSession(idPanneau, query.scope.effectiveApps) : Promise.resolve(null),
-  ]);
+  } = d;
 
   const engagement = engagementLu.ok ? engagementLu.data : null;
   const commencees = engagement?.sessions_started ?? null;
@@ -301,7 +210,7 @@ export default async function Sessions({ searchParams }: { searchParams: Promise
    * ne donne pas de delta (et la note le dit), jamais « pas de mesure » — ce serait
    * affirmer un vide qu'on n'a pas lu.
    */
-  const comparer = (lu: Lecture<unknown>, precedent: number | null, couv: CouverturePrecedente[]): Comparaison =>
+  const comparer = (lu: SectionLue<unknown>, precedent: number | null, couv: CouverturePrecedente[]): Comparaison =>
     prev && lu.ok ? { precedent, reference, couverturePrecedente: couvertureCombinee(couv, nPrec) } : {};
   const precIllisible = prev && [engagementPrec, visiteursPrec, erreursPrec].some((l) => !l.ok);
 
@@ -930,7 +839,7 @@ function Engagement({
   precedent,
   comparer,
 }: {
-  lu: Lecture<EngagementStats>;
+  lu: SectionLue<EngagementStats>;
   precedent: EngagementStats | null;
   comparer: (precedent: number | null) => Comparaison;
 }) {
@@ -1009,7 +918,7 @@ function Engagement({
  * nouveaux, revenants, et non identifiées — la part inconnue nommée, jamais répartie.
  * `visitStats.sessions` (sessions ayant une vue) n'y figure pas : autre population.
  */
-function AnneauVisiteurs({ lu, plage }: { lu: Lecture<VisitStats | null>; plage: string }) {
+function AnneauVisiteurs({ lu, plage }: { lu: SectionLue<VisitStats | null>; plage: string }) {
   const titre = "Nouveaux, revenants, non identifiés — sessions actives";
   if (!lu.ok) return <Figure titre={titre} id="nouveaux-revenants" etat={{ kind: "erreur", titre }} />;
   const vs = lu.data;

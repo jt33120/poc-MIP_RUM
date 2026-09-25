@@ -184,11 +184,14 @@ function atteintLaBase(f) {
 
 // ─── 2. Ce que chaque fichier dit de lui ──────────────────────────────────────
 
-/** Appels à `lire(…)` dans le fichier : une section d'écran qui peut tomber seule. */
+/**
+ * Appels à `lire(…)` — ou à `section(…)`, sa forme dans un chargeur d'écran
+ * (`lib/chargeurs/`) — dans le fichier : une section d'écran qui peut tomber seule.
+ */
 function appelsLire(a) {
   let n = 0;
   const visiter = (x) => {
-    if (ts.isCallExpression(x) && ts.isIdentifier(x.expression) && x.expression.text === "lire") n++;
+    if (ts.isCallExpression(x) && ts.isIdentifier(x.expression) && (x.expression.text === "lire" || x.expression.text === "section")) n++;
     ts.forEachChild(x, visiter);
   };
   if (a.source) visiter(a.source);
@@ -322,11 +325,18 @@ export function relever() {
     const chemin = cheminApp(f, "page.tsx");
     const panneaux = [...new Set([...a.texte.matchAll(/panel\??\.type\s*[!=]==\s*"(\w+)"/g)].map((m) => m[1]))].sort();
     const gardes = nomsImportes(a, /^@\/lib\/(auth|page-guards?|guards?)$/).filter((n) => /^(getUser|require|guard)/.test(n));
+    // Le chargeur de l'écran (C3 → C5) : ce que console-api servira à sa place.
+    const chargeurs = [...new Set([...a.texte.matchAll(/from\s+"@\/lib\/chargeurs\/([\w-]+)"/g)].map((m) => m[1]))].filter((c) => c !== "commun").sort();
+    const sectionsChargeurs = chargeurs.reduce((n, c) => {
+      const fc = path.join(CONSOLE, "lib", "chargeurs", `${c}.ts`);
+      return n + (existsSync(fc) ? appelsLire(analyser(fc)) : 0);
+    }, 0);
     return {
       chemin,
       fichier: rel(f),
       ...atteintLaBase(f),
-      sections: appelsLire(a),
+      sections: appelsLire(a) + sectionsChargeurs,
+      chargeurs,
       panneaux,
       rafraichi: !sfc.fige(chemin),
       gardes,
@@ -439,17 +449,18 @@ export function rendre(r, { date, commit }) {
   L.push(`| Sections \`lire()\` (appels) | ${r.sectionsTotal} | — |`);
   L.push(`| \`error.tsx\` / \`not-found.tsx\` / \`loading.tsx\` | ${r.frontieres.error} / ${r.frontieres.notFound} / ${r.frontieres.loading} | — |`);
   L.push(`| Écrans rafraîchis toutes les 5 s (\`AutoRefresh\`) | ${r.ecrans.filter((e) => e.rafraichi).length} | — |`);
+  L.push(`| Écrans servis par un chargeur (\`lib/chargeurs/\`, C3 → C5) | ${r.ecrans.filter((e) => e.chargeurs.length).length} | **${r.ecrans.filter((e) => e.base && e.chargeurs.length).length}** / ${c.ecrans.length} |`);
   L.push("");
   L.push("**Le cliquet** (`cliquet.json`) liste nominativement ce qui atteint la base. `tests/unit/inventaire-console.test.ts` refuse toute entrée nouvelle, et demande de le resserrer quand une entrée disparaît.");
   L.push("");
   L.push("## Écrans");
   L.push("");
-  L.push("« Sections » : appels `lire()` du fichier de l'écran — chacune tombe seule, le loader de `console-api` rendra un résultat par section. « Panneaux » : types de `panel=` que l'écran ouvre — chacun est une opération à part. « 5 s » : rejoué par `AutoRefresh` toutes les 5 s.");
+  L.push("« Chargeur » : le module de `lib/chargeurs/` qui lit pour l'écran — la console l'exécute aujourd'hui, console-api le sert tel quel ; l'écran quitte le cliquet à la bascule. « Sections » : appels `lire()` / `section()` de l'écran et de son chargeur — chacune tombe seule. « Panneaux » : types de `panel=` que l'écran ouvre — chacun est une opération à part. « 5 s » : rejoué par `AutoRefresh` toutes les 5 s.");
   L.push("");
-  L.push("| Écran | Lot | Base | Modules de requêtes | Sections | Panneaux | 5 s |");
-  L.push("|---|---|---|---|---|---|---|");
+  L.push("| Écran | Lot | Base | Chargeur | Modules de requêtes | Sections | Panneaux | 5 s |");
+  L.push("|---|---|---|---|---|---|---|---|");
   for (const e of r.ecrans) {
-    L.push(`| \`${e.chemin}\` | ${e.lot} | ${oui(e.base)} | ${e.requetes.length ? e.requetes.map((q) => q.replace(/^queries-?/, "") || "queries").join(", ") : "—"} | ${e.sections || "—"} | ${liste(e.panneaux)} | ${e.rafraichi ? "oui" : "non"} |`);
+    L.push(`| \`${e.chemin}\` | ${e.lot} | ${oui(e.base)} | ${liste(e.chargeurs)} | ${e.requetes.length ? e.requetes.map((q) => q.replace(/^queries-?/, "") || "queries").join(", ") : "—"} | ${e.sections || "—"} | ${liste(e.panneaux)} | ${e.rafraichi ? "oui" : "non"} |`);
   }
   L.push("");
   L.push("## Actions serveur");

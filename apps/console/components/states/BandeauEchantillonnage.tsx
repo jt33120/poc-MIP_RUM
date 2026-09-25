@@ -7,10 +7,10 @@
 // est celui d'`EtatSurface` : un seul vocabulaire pour tous les écrans.
 import type { EchantillonnageSessions } from "@/lib/echantillonnage";
 import { etatLectureEchantillonnage } from "@/lib/echantillonnage";
-import type { Lecture } from "@/lib/lecture";
+import type { SectionLue } from "@/lib/lecture";
 import { EtatSurface } from "./EtatSurface";
 
-export function BandeauEchantillonnage({ lecture }: { lecture: Lecture<EchantillonnageSessions> }) {
+export function BandeauEchantillonnage({ lecture }: { lecture: SectionLue<EchantillonnageSessions> }) {
   const etat = etatLectureEchantillonnage(lecture);
   if (!etat) return null;
   return (
