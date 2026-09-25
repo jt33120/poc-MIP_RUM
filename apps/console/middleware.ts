@@ -64,10 +64,6 @@ export async function middleware(req: NextRequest) {
   // /api/metrics : scrape Prometheus (sans cookie de session) — auth par token dans
   // le handler. Bypass de la redirection /login (sinon 302 au lieu des métriques).
   if (req.nextUrl.pathname === "/api/metrics") return NextResponse.next();
-  // /api/cron/* : routes retirées (410). Le bypass reste tant que les routes
-  // existent, pour que l'appelant resté branché lise le 410 qui l'explique au lieu
-  // d'une redirection vers /login. Il part avec elles.
-  if (req.nextUrl.pathname.startsWith("/api/cron")) return NextResponse.next();
   // API publique v1 (LOT C option B) : authentifiée par jeton (Authorization: Bearer)
   // OU cookie, DANS le handler — le middleware ne doit pas la rediriger vers /login
   // (le front Angular MIP appelle sans cookie de session).

@@ -210,6 +210,16 @@ Ce que les machines — l'extension publiée, les CI des clients, un outil de ti
 - **Les relais purs** : `CONSOLE_INGEST_RELAY_STRICT=1` (collecte) et `CONSOLE_API_RELAY_STRICT=1` (lectures au jeton) suppriment le chemin local — le pourcentage est ignoré, et ce qui déclenchait un repli rend 503 + `retry-after`. Ils se posent après le soak ; ils permettent de retirer ensuite de Vercel le chemin d'écriture de la collecte (C12), `CONSOLE_API_TOKENS` et `XSOM_*`.
 - **`GET /api/releases`** (la barre de filtres) reste une route de la console — le navigateur l'appelle, console-api n'accepte aucune origine de navigateur — mais lit par un **chargeur** (`lib/chargeurs/releases.ts`, `screens.releases`) : à la bascule, `chargerEcran` l'envoie à console-api et la route devient un relais serveur sans changer d'une ligne.
 
+## M4 — la preuve (C12), préparée
+
+La décommission elle-même — supprimer `lib/db.ts`, `lib/queries*`, retirer `pg` et `bcryptjs` des dépendances de la console, tourner le mot de passe de `neondb_owner` — suit la bascule vers console-api (après P6b). Ce qui est prêt dès maintenant, pour qu'elle soit mécanique :
+
+- **Le relevé des gardes** (`scripts/ci/console-sans-base.mjs`), joué en CI après le build de l'E2E, non bloquant : (1) les imports de `pg`, `bcryptjs`, `@mip/backend|db|analytics|control` dans `apps/console` (statiques, dynamiques, `require`, réexports ; un `import type` passe, il est effacé au build) ; (2) ce que le traçage du build embarque (`.nft.json`, `pg-protocol` dans le code serveur) — nécessaire parce que `pg` est aussi une dépendance de la racine ; (3) la présence de la garde d'environnement. **Ligne de base au 25/09 : 72 imports dans 37 fichiers, 97 fonctions serveur qui tracent `pg`.** La PR de bascule le passe en `--strict`.
+- **La garde d'environnement** dans `apps/console/next.config.mjs` : avec `MIP_CONSOLE_SANS_BASE=1`, le build refuse de se faire si `DATABASE_URL`, `PG*`, `POSTGRES_*`, `NEON_*`, `IDENTITY_HASH_SECRET`, `TICKET_SECRET_KEY` ou `AUTH_SECRET` est présent. Inerte aujourd'hui.
+- **Les routes mortes retirées** : `/api/cron/{tick,hourly,daily}` (410 depuis le 23/09 ; le scheduler est le seul déclencheur) et `lib/cron.ts`, avec leur exception du middleware. `CRON_SECRET` peut quitter Vercel.
+
+**C12b** (image de la console, pile auto-hébergée) vient après la bascule : sa garde — l'image démarre sans aucune variable de base — ne peut passer qu'une fois la console sans base.
+
 ## Ordre proposé pour libérer le cliquet
 
 1. **Sans `console-api`** : scinder les modules mixtes (famille 1). **Fait** : 13 composants et un écran sortis du cliquet (27 → 14 composants, 51 → 50 écrans). C0 démarre sur une base plus petite.

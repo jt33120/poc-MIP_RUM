@@ -58,7 +58,7 @@ Une origine listée reçoit `Access-Control-Allow-Origin` + `Access-Control-Allo
 | `CONSOLE_API_ALLOWED_ORIGINS` | origines CORS autorisées (CSV, ou `*`). Vide = same-origin. |
 | `AUTH_SECRET` | secret JWT (déjà utilisé par la console) — pour le mode cookie. |
 | `DATABASE_URL` | base Postgres lue par les agrégats (déjà utilisé). |
-| `CRON_SECRET` | secret du cron Vercel (en-tête `Authorization: Bearer` sur `/api/cron/*`). |
+| `CRON_SECRET` | **retiré** : les routes `/api/cron/*` ont disparu (C12 ; 410 depuis le 23/09). Les travaux planifiés sont déclenchés par le service `scheduler`. À supprimer de Vercel. |
 | `OPENROUTER_API_KEY` | clé (lecture) du compte OpenRouter à surveiller — poll du solde. Absent = poll ignoré. |
 | `OPENROUTER_LOW_BALANCE` | seuil « bas » du solde (défaut `5`, unité native = USD). |
 | `OPENROUTER_CURRENCY` | libellé de devise affiché (défaut `USD`). |
