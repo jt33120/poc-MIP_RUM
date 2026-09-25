@@ -16,6 +16,7 @@ const AUTH: Record<string, string> = {
 const PORTEE: Record<string, string> = {
   globale: "—",
   app: "`app` de la requête, dans le périmètre (`all` = périmètre effectif)",
+  "une-app": "`app` de la requête : UNE application nommée du périmètre (`all` refusé)",
   ressource: "ressource du chemin, résolue dans le périmètre",
 };
 
@@ -43,7 +44,9 @@ export function rendreDoc(table: readonly Enregistrement[]): string {
   L.push("9. le **traitement**, sous l'échéance (503 au-delà) ;");
   L.push("10. l'enveloppe `{ meta: { request_id }, data }`, `cache-control: no-store`, signée `x-mip-console-api: 1`. Une panne rend 500 et un message générique ; sa cause reste au journal, avec le `request_id`.");
   L.push("");
-  L.push("**Règles vérifiées au démarrage** (`verifierTable`) : toute écriture est refusée à la démo (sauf fermer sa propre session) et déclare son action d'audit, ou une exemption motivée ; seule une lecture publique peut se passer du secret client ; une opération publique n'a pas de portée. Un service dont la table viole une règle ne démarre pas.");
+  L.push("**Règles vérifiées au démarrage** (`verifierTable`) : toute écriture est refusée à la démo (sauf fermer sa propre session) et déclare son action d'audit, ou une exemption motivée ; seule une lecture publique peut se passer du secret client ; une opération publique n'a pas de portée ; la portée « une application nommée » est celle d'une écriture. Un service dont la table viole une règle ne démarre pas.");
+  L.push("");
+  L.push("**Les écritures de la console (C6 → C9)** sont des COMMANDES (`apps/console/lib/commandes/`), servies telles quelles : chacune déclare sa règle (authentification, portée, audit), que la console applique aussi tant qu'elle les exécute elle-même (`refusDAcces` du contrat). Une commande rend sa DÉCISION en 200 (créé, introuvable, conflit de révision…) ; un refus d'accès ou d'entrée part avant elle, avec son code. L'action d'audit s'écrit dans la même transaction que l'écriture.");
   L.push("");
   L.push("## Les opérations");
   L.push("");

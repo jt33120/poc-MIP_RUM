@@ -1,6 +1,9 @@
 "use server";
-// Server Actions des tableaux de bord. Validation côté serveur puis CRUD via
-// lib/queries-dashboards ; le layout est sérialisé par updateLayout.
+// Server Actions des tableaux de bord. C6 — chaque écriture est une COMMANDE
+// (`lib/commandes/tableaux.ts`), appelée par sa clé : les droits (la porte unique
+// `lib/dashboard-access.ts`), la validation, la révision et l'audit sont les
+// siens, les mêmes que console-api servira. Ici : la lecture du formulaire, et la
+// suite de la DÉCISION rendue — revalidation, ou retour annoté.
 //
 // CHAQUE ÉCRITURE CITE SA RÉVISION (P6.5). Le formulaire porte la révision
 // AFFICHÉE ; si la ligne a bougé entre-temps, l'écriture est refusée et l'écran
@@ -9,45 +12,18 @@
 // pas ramener l'utilisateur sur une autre fenêtre que celle qu'il regardait.
 import { redirect } from "next/navigation";
 import { revalidatePath } from "@/lib/next-cache";
-import {
-  defaultTitle,
-  layoutPlein,
-  normalizeLayout,
-  parseRangeOverride,
-  sectionDuFormulaire,
-  WIDGET_META,
-  WIDGET_TYPES,
-  WIDGET_VITALS,
-  type AnalyticsWidget,
-  type Widget,
-  type WidgetType,
-} from "@/lib/dashboards";
-import {
-  deleteDashboard,
-  insertDashboard,
-  updateDashboardMeta,
-  updateLayout,
-  type DashboardRow,
-  type DashboardWrite,
-} from "@/lib/queries-dashboards";
-import { getUser } from "@/lib/auth";
-import {
-  canCreateDashboard,
-  dashboardPrincipal,
-  getWritableDashboard,
-  type DashboardAction,
-} from "@/lib/dashboard-access";
-import { forgetWidgetCache } from "@/lib/widget-data";
-import { cartesDuModele, modeleTableau } from "@/lib/dashboard-templates";
-import { CONTRACT_PARAMS, parseSegmentParam } from "@/lib/query-contract";
+import { executerCommande, type SortieDe } from "@/lib/commande-locale";
+import { apresRefus } from "@/lib/commande-suite";
+import { modeleTableau } from "@/lib/dashboard-templates";
+import { CONTRACT_PARAMS } from "@/lib/query-contract";
 
 function appIdFromForm(fd: FormData): string | null {
   return String(fd.get("app_id") ?? "").trim() || null;
 }
 
-/** Révision affichée par le formulaire. Absente, l'écriture partirait à l'aveugle. */
-function revisionFromForm(fd: FormData): string {
-  const brut = String(fd.get("revision") ?? "").trim();
+/** Révision affichée par le formulaire. Absente ou illisible : « 0 », qu'aucune ligne ne porte — un conflit, jamais une écriture à l'aveugle. */
+function revisionFromForm(fd: FormData, nom = "revision"): string {
+  const brut = String(fd.get(nom) ?? "").trim();
   return /^[1-9][0-9]{0,18}$/.test(brut) ? brut : "0";
 }
 
@@ -72,7 +48,7 @@ function contexteFromForm(fd: FormData): URLSearchParams {
  * disparue). Aucun ne s'écrit sans que rien n'ait été enregistré.
  */
 function retour(
-  id: number,
+  id: string,
   ctx: URLSearchParams,
   etat?: "conflit" | "refus" | "plein" | "section-refusee",
 ): string {
@@ -80,33 +56,6 @@ function retour(
   if (etat) p.set(etat, "1");
   const qs = p.toString();
   return qs ? `/dashboards/${id}?${qs}` : `/dashboards/${id}`;
-}
-
-/**
- * Le tableau de bord `id`, SI l'utilisateur courant a le droit d'y faire `action` —
- * null sinon, et l'action s'arrête sans rien écrire.
- *
- * Lecture et écriture ne sont pas équivalentes : un dashboard transverse peut
- * être lu avec un filtre tenant, mais seul son admin peut le modifier. Un viewer
- * ne touche qu'à ses propres dashboards liés à une app autorisée.
- */
-async function dashboardAutorise(id: number, action: DashboardAction): Promise<DashboardRow | null> {
-  const principal = await dashboardPrincipal(await getUser());
-  return getWritableDashboard(id, principal, action);
-}
-
-/** Un viewer ne crée que dans une app de son scope — jamais en transverse. */
-async function appAutorisee(appId: string | null): Promise<boolean> {
-  return canCreateDashboard(await dashboardPrincipal(await getUser()), appId);
-}
-
-/** Suite d'une écriture : conflit → retour annoté, succès → revalidation. */
-function apres(id: number, ctx: URLSearchParams, write: DashboardWrite): void {
-  if (write.kind === "conflict") redirect(retour(id, ctx, "conflit"));
-  if (write.kind === "not_found") redirect(retour(id, ctx, "refus"));
-  // La donnée d'une carte vient d'un cache court : après une écriture, elle a changé.
-  forgetWidgetCache();
-  revalidatePath(`/dashboards/${id}`);
 }
 
 /**
@@ -119,220 +68,182 @@ function retourListe(ctx: URLSearchParams, creation: "nom-vide" | "refus" | "mod
   return `/dashboards?${p.toString()}`;
 }
 
+/** L'identifiant du tableau que porte le formulaire, s'il est entier. */
+function idFromForm(fd: FormData): string | null {
+  const brut = String(fd.get("id") ?? "").trim();
+  return /^[1-9][0-9]{0,17}$/.test(brut) ? brut : null;
+}
+
+type Edition = SortieDe<"ajouterCarte">;
+
+/**
+ * Suite d'une écriture sur un tableau existant : conflit, refus, tableau plein →
+ * retour annoté ; succès → revalidation. `interdit` (pas le droit, ou tableau
+ * absent : indiscernables) et `invalide` (formulaire rejoué sur une carte qui a
+ * disparu) n'écrivent rien et ne disent rien — comme avant C6.
+ */
+function apres(id: string, ctx: URLSearchParams, r: Awaited<ReturnType<typeof executerCommande>>): void {
+  if (!r.ok) {
+    apresRefus(r);
+    return;
+  }
+  const decision = r.data as Edition;
+  switch (decision.etat) {
+    case "ok":
+      revalidatePath(`/dashboards/${id}`);
+      return;
+    case "conflit":
+      redirect(retour(id, ctx, "conflit"));
+    case "introuvable":
+    case "refus":
+      redirect(retour(id, ctx, "refus"));
+    case "plein":
+      redirect(retour(id, ctx, "plein"));
+    case "section_refusee":
+      redirect(retour(id, ctx, "section-refusee"));
+    default:
+      return;
+  }
+}
+
 export async function createDashboardAction(fd: FormData): Promise<void> {
   const name = String(fd.get("name") ?? "").trim();
   const ctx = contexteFromForm(fd);
   // Un nom fait d'espaces passe l'attribut `required` du navigateur : le refus est dit.
   if (!name) return redirect(retourListe(ctx, "nom-vide"));
-  const app_id = appIdFromForm(fd);
-  if (!(await appAutorisee(app_id))) return redirect(retourListe(ctx, "refus"));
-  const principal = await dashboardPrincipal(await getUser());
-  const id = await insertDashboard({
-    name,
-    app_id,
-    created_by: principal?.email ?? null,
-    owner_id: principal?.accountId ?? null,
-  });
-  redirect(`/dashboards/${id}`);
+  const r = await executerCommande("creerTableau", { corps: { name, app_id: appIdFromForm(fd) } });
+  if (!r.ok) apresRefus(r);
+  if (!r.ok || r.data.etat !== "cree") return redirect(retourListe(ctx, "refus"));
+  redirect(`/dashboards/${r.data.id}`);
 }
 
 /**
  * Clone d'un MODÈLE fourni (F35, W-D1) : un nouveau tableau « <Modèle> — copie »,
- * dont le cloneur est propriétaire, dans une app NOMMÉE où il a le droit de créer
- * (`canCreateDashboard`) — jamais « toutes les apps ». Le layout vient du modèle
- * (`cartesDuModele`), jamais du formulaire : on ne peut pas faire passer une carte
- * arbitraire pour un modèle.
+ * dans une app NOMMÉE où la session peut créer — jamais « toutes les apps ».
  */
 export async function cloneTemplateAction(fd: FormData): Promise<void> {
   const ctx = contexteFromForm(fd);
-  const modele = modeleTableau(String(fd.get("modele") ?? ""));
-  if (!modele) return redirect(retourListe(ctx, "modele-inconnu"));
+  const cle = String(fd.get("modele") ?? "");
+  // Un modèle inconnu se dit avant toute autre chose : le formulaire ne vaut rien.
+  if (!modeleTableau(cle)) return redirect(retourListe(ctx, "modele-inconnu"));
   const app_id = appIdFromForm(fd);
-  if (app_id === null || !(await appAutorisee(app_id))) return redirect(retourListe(ctx, "refus"));
-  const principal = await dashboardPrincipal(await getUser());
-  const id = await insertDashboard({
-    name: `${modele.titre} — copie`,
-    app_id,
-    created_by: principal?.email ?? null,
-    owner_id: principal?.accountId ?? null,
-    layout: cartesDuModele(modele),
-  });
+  if (app_id === null) return redirect(retourListe(ctx, "refus"));
+  const r = await executerCommande("clonerModele", { chemin: { modele: cle }, corps: { app_id } });
+  if (!r.ok) apresRefus(r);
+  if (!r.ok) return redirect(retourListe(ctx, "refus"));
+  if (r.data.etat === "modele_inconnu") return redirect(retourListe(ctx, "modele-inconnu"));
+  if (r.data.etat !== "cree") return redirect(retourListe(ctx, "refus"));
   // L'app du clone devient celle de l'écran d'arrivée : ses cartes s'y lisent.
-  ctx.set("app", app_id);
-  redirect(retour(id, ctx));
+  ctx.set("app", r.data.app);
+  redirect(retour(String(r.data.id), ctx));
 }
 
 /**
  * Clone : un NOUVEL identifiant, le cloneur pour propriétaire, la MÊME app —
- * celle sur laquelle ses droits ont déjà été vérifiés. Cloner vers une autre app
- * contournerait le périmètre ; le layout, lui, est recopié tel quel.
+ * celle sur laquelle ses droits ont déjà été vérifiés.
  */
 export async function cloneDashboardAction(fd: FormData): Promise<void> {
-  const id = Number(fd.get("id"));
-  if (!Number.isInteger(id)) return;
-  const dash = await dashboardAutorise(id, "clone");
-  if (!dash) return;
-  const principal = await dashboardPrincipal(await getUser());
-  const clone = await insertDashboard({
-    name: `${dash.name} (copie)`.slice(0, 120),
-    app_id: dash.app_id,
-    created_by: principal?.email ?? null,
-    owner_id: principal?.accountId ?? null,
-    layout: dash.layout,
-  });
-  redirect(`/dashboards/${clone}`);
+  const id = idFromForm(fd);
+  if (!id) return;
+  const r = await executerCommande("clonerTableau", { chemin: { id } });
+  if (!r.ok) return apresRefus(r);
+  if (r.data.etat === "cree") redirect(`/dashboards/${r.data.id}`);
 }
 
 export async function renameDashboardAction(fd: FormData): Promise<void> {
-  const id = Number(fd.get("id"));
-  if (!Number.isInteger(id)) return;
+  const id = idFromForm(fd);
+  if (!id) return;
   const name = String(fd.get("name") ?? "").trim();
   if (!name) return;
-  const ctx = contexteFromForm(fd);
-  const dash = await dashboardAutorise(id, "rename");
-  if (!dash) return;
-  const cible = appIdFromForm(fd);
-  // Déplacer un tableau vers une autre app est un geste distinct du renommage :
-  // il exige le droit de CRÉER dans l'app visée, pas seulement d'écrire ici.
-  if (cible !== dash.app_id && !(await appAutorisee(cible))) return;
-  apres(id, ctx, await updateDashboardMeta(id, name, cible, revisionFromForm(fd)));
+  const r = await executerCommande("modifierTableau", {
+    chemin: { id },
+    corps: { name, app_id: appIdFromForm(fd), revision: revisionFromForm(fd) },
+  });
+  apres(id, contexteFromForm(fd), r);
 }
 
 export async function deleteDashboardAction(fd: FormData): Promise<void> {
-  const id = Number(fd.get("id"));
-  if (!Number.isInteger(id)) return;
-  const dash = await dashboardAutorise(id, "delete");
-  if (!dash) return;
-  await deleteDashboard(id);
-  forgetWidgetCache();
-  redirect("/dashboards");
+  const id = idFromForm(fd);
+  if (!id) return;
+  const r = await executerCommande("supprimerTableau", { chemin: { id } });
+  if (!r.ok) return apresRefus(r);
+  if (r.data.etat === "ok") redirect("/dashboards");
 }
 
 export async function addWidgetAction(fd: FormData): Promise<void> {
-  const id = Number(fd.get("id"));
-  if (!Number.isInteger(id)) return;
-  const ctx = contexteFromForm(fd);
-  const type = String(fd.get("type") ?? "");
-  if (!(WIDGET_TYPES as readonly string[]).includes(type)) {
-    throw new Error(`type de widget invalide : ${type}`);
-  }
-  const wtype = type as WidgetType;
-  let metric: string | undefined;
-  if (WIDGET_META[wtype].needsMetric) {
-    const m = String(fd.get("metric") ?? "");
-    if (!(WIDGET_VITALS as readonly string[]).includes(m)) {
-      throw new Error(`métrique invalide : ${m}`);
-    }
-    metric = m;
-  }
-  let eventName: string | undefined;
-  if (WIDGET_META[wtype].needsEventName) {
-    const name = String(fd.get("event_name") ?? "").trim();
-    if (!name || name.length > 100 || /[ -]/.test(name)) {
-      throw new Error("nom d’événement invalide");
-    }
-    eventName = name;
-  }
-  const dash = await dashboardAutorise(id, "add_widget");
-  if (!dash) return;
-  // F37 — 24 éléments, sections comprises : la 25e carte est refusée, et le refus est
-  // dit. Sans cette garde, `serializeLayout` la coupait sans un mot.
-  if (layoutPlein(dash.layout)) return redirect(retour(id, ctx, "plein"));
-  const widget: Widget = {
-    kind: "v1",
-    type: wtype,
-    title: defaultTitle(wtype, metric, eventName),
-    ...(metric ? { metric } : {}),
-    ...(eventName ? { eventName } : {}),
-  };
-  apres(id, ctx, await updateLayout(id, [...dash.layout, widget], revisionFromForm(fd)));
-}
-
-/**
- * Position d'insertion d'une section : un entier de 0 (avant le premier élément) à
- * `longueur` (en fin de tableau). Champ absent : en fin de tableau. Toute autre
- * valeur est refusée — on ne devine pas où l'utilisateur voulait la poser.
- */
-function positionDuFormulaire(brut: FormDataEntryValue | null, longueur: number): number | null {
-  if (brut === null || String(brut).trim() === "") return longueur;
-  const texte = String(brut).trim();
-  if (!/^[0-9]{1,3}$/.test(texte)) return null;
-  const position = Number(texte);
-  return position <= longueur ? position : null;
+  const id = idFromForm(fd);
+  if (!id) return;
+  const metric = String(fd.get("metric") ?? "");
+  const eventName = String(fd.get("event_name") ?? "");
+  const r = await executerCommande("ajouterCarte", {
+    chemin: { id },
+    corps: {
+      type: String(fd.get("type") ?? ""),
+      ...(metric ? { metric } : {}),
+      ...(eventName ? { event_name: eventName } : {}),
+      revision: revisionFromForm(fd),
+    },
+  });
+  // Un type de carte inconnu est un formulaire forgé : rien n'est écrit, et le refus est dit.
+  if (!r.ok && r.code === "entree_invalide") return redirect(retour(id, contexteFromForm(fd), "refus"));
+  apres(id, contexteFromForm(fd), r);
 }
 
 /**
  * Ajoute un titre de section (F37, W-B12). Une section est un ÉLÉMENT du layout :
- * même geste que l'ajout d'une carte (`add_widget`), donc même garde —
- * `canMutateDashboard` : jamais un viewer non propriétaire, jamais une session
- * démo (V9). La page ne rend le formulaire qu'à qui passe cette même garde ; l'action
- * la refait, parce qu'un formulaire se rejoue. Elle compte dans `MAX_WIDGETS` : un
- * tableau plein la refuse comme il refuse une 25e carte, et le dit.
+ * même geste que l'ajout d'une carte, donc même garde — jamais un viewer non
+ * propriétaire, jamais une session démo (V9). Elle compte dans `MAX_WIDGETS`.
  */
 export async function addSectionAction(fd: FormData): Promise<void> {
-  const id = Number(fd.get("id"));
-  if (!Number.isInteger(id)) return;
-  const ctx = contexteFromForm(fd);
-  const dash = await dashboardAutorise(id, "add_widget");
-  if (!dash) return;
-  const section = sectionDuFormulaire(fd.get("title"), fd.get("question"));
-  const position = positionDuFormulaire(fd.get("position"), dash.layout.length);
-  if (!section.ok || position === null) return redirect(retour(id, ctx, "section-refusee"));
-  if (layoutPlein(dash.layout)) return redirect(retour(id, ctx, "plein"));
-  const layout: Widget[] = [...dash.layout.slice(0, position), section.value, ...dash.layout.slice(position)];
-  apres(id, ctx, await updateLayout(id, layout, revisionFromForm(fd)));
+  const id = idFromForm(fd);
+  if (!id) return;
+  const question = String(fd.get("question") ?? "");
+  const position = String(fd.get("position") ?? "");
+  const r = await executerCommande("ajouterSection", {
+    chemin: { id },
+    corps: {
+      title: String(fd.get("title") ?? ""),
+      ...(question ? { question } : {}),
+      ...(position ? { position } : {}),
+      revision: revisionFromForm(fd),
+    },
+  });
+  if (!r.ok && r.code === "entree_invalide") return redirect(retour(id, contexteFromForm(fd), "section-refusee"));
+  apres(id, contexteFromForm(fd), r);
 }
 
 /**
  * Enregistre une analyse de l'Explorer comme carte. Le JSON reçu est la
- * configuration v2 complète ; il retraverse l'adaptateur de lecture, donc la même
- * validation que le jsonb stocké — une configuration illisible devient une carte
- * de diagnostic plutôt qu'une écriture refusée sans explication.
+ * configuration v2 complète ; la commande la fait retraverser l'adaptateur de
+ * lecture, donc la même validation que le jsonb stocké.
  */
 export async function saveAnalysisAction(fd: FormData): Promise<void> {
-  const id = Number(fd.get("id"));
-  if (!Number.isInteger(id)) return;
-  const ctx = contexteFromForm(fd);
-  let config: unknown;
+  const id = idFromForm(fd);
+  if (!id) return;
+  let widget: unknown;
+  let rangeOverride: unknown;
   try {
-    config = JSON.parse(String(fd.get("widget") ?? ""));
+    widget = JSON.parse(String(fd.get("widget") ?? ""));
+    // « Figer » : la fenêtre COURANTE de l'écran devient celle de la carte.
+    if (String(fd.get("fenetre") ?? "") === "freeze") rangeOverride = JSON.parse(String(fd.get("range_override") ?? ""));
   } catch {
     return;
   }
-  const [widget] = normalizeLayout([config]);
-  if (!widget || widget.kind !== "v2") return;
-  const dash = await dashboardAutorise(id, "add_widget");
-  if (!dash) return;
-  // F37 — même garde que `addWidgetAction` : sur un tableau de 24 éléments, la carte
-  // venue de l'Explorer est refusée, et le tableau le DIT (`plein=1`, V10). Sans elle,
-  // `serializeLayout` coupait la 25e en silence après une écriture « réussie ».
-  if (layoutPlein(dash.layout)) return redirect(retour(id, ctx, "plein"));
-
-  // « Figer » transforme la fenêtre COURANTE de l'écran en fenêtre propre de la
-  // carte ; sans cela, la carte suit celle du tableau de bord. Une fenêtre figée
-  // invalide est refusée, jamais rabattue sur une autre.
-  let rangeOverride = widget.rangeOverride;
-  if (String(fd.get("fenetre") ?? "") === "freeze") {
-    let brut: unknown;
-    try {
-      brut = JSON.parse(String(fd.get("range_override") ?? ""));
-    } catch {
-      return;
-    }
-    const fenetre = parseRangeOverride(brut);
-    if (!fenetre.ok) return;
-    rangeOverride = fenetre.value;
-  }
   const titre = String(fd.get("title") ?? "").trim();
-  const carte: AnalyticsWidget = {
-    ...widget,
-    ...(titre ? { title: titre.slice(0, 60) } : {}),
-    rangeOverride,
-  };
-  // La révision est portée par cible : l'Explorer propose plusieurs tableaux de
-  // bord d'un coup, chacun avec la sienne.
-  const revision = String(fd.get(`revision_${id}`) ?? fd.get("revision") ?? "");
-  apres(id, ctx, await updateLayout(id, [...dash.layout, carte], /^[1-9][0-9]{0,18}$/.test(revision) ? revision : "0"));
+  const figer = String(fd.get("fenetre") ?? "") === "freeze";
+  const r = await executerCommande("enregistrerAnalyse", {
+    chemin: { id },
+    corps: {
+      widget,
+      ...(titre ? { title: titre } : {}),
+      ...(figer ? { fenetre: "freeze", range_override: rangeOverride } : {}),
+      // La révision est portée par cible : l'Explorer propose plusieurs tableaux de
+      // bord d'un coup, chacun avec la sienne.
+      revision: fd.get(`revision_${id}`) !== null ? revisionFromForm(fd, `revision_${id}`) : revisionFromForm(fd),
+    },
+  });
+  if (!r.ok && r.code === "entree_invalide") return;
+  apres(id, contexteFromForm(fd), r);
 }
 
 /**
@@ -340,56 +251,34 @@ export async function saveAnalysisAction(fd: FormData): Promise<void> {
  * de l'écran ; une fenêtre propre est explicite et sera affichée sur la carte.
  */
 export async function configureWidgetAction(fd: FormData): Promise<void> {
-  const id = Number(fd.get("id"));
-  const index = Number(fd.get("index"));
-  if (!Number.isInteger(id) || !Number.isInteger(index)) return;
-  const ctx = contexteFromForm(fd);
-  const dash = await dashboardAutorise(id, "configure_widget");
-  if (!dash) return;
-  const cible = dash.layout[index];
-  if (!cible || cible.kind !== "v2") return;
-
-  // Même syntaxe que le paramètre `seg` des URL : une seule écriture de segment
-  // dans le produit, donc un seul refus quand elle est illisible.
-  const segments = parseSegmentParam(String(fd.get("filters") ?? "").trim() || null);
-  if (!segments.ok) redirect(retour(id, ctx, "refus"));
-
-  // « keep » garde la fenêtre FIGÉE déjà enregistrée : une liste de presets ne
-  // sait pas la représenter, et la retaper à chaque édition la ferait dériver.
-  const preset = String(fd.get("range_preset") ?? "").trim();
-  const fenetre =
-    preset === "keep" ? { ok: true as const, value: cible.rangeOverride } : parseRangeOverride(preset ? { preset } : null);
-  if (!fenetre.ok) redirect(retour(id, ctx, "refus"));
-
-  const layout = [...dash.layout];
-  layout[index] = { ...cible, filters: segments.value, rangeOverride: fenetre.value };
-  apres(id, ctx, await updateLayout(id, layout, revisionFromForm(fd)));
+  const id = idFromForm(fd);
+  const index = String(fd.get("index") ?? "").trim();
+  if (!id || !/^(0|[1-9][0-9]{0,2})$/.test(index)) return;
+  const r = await executerCommande("configurerCarte", {
+    chemin: { id, index },
+    corps: {
+      filters: String(fd.get("filters") ?? ""),
+      range_preset: String(fd.get("range_preset") ?? ""),
+      revision: revisionFromForm(fd),
+    },
+  });
+  if (!r.ok && r.code === "entree_invalide") return redirect(retour(id, contexteFromForm(fd), "refus"));
+  apres(id, contexteFromForm(fd), r);
 }
 
 export async function removeWidgetAction(fd: FormData): Promise<void> {
-  const id = Number(fd.get("id"));
-  if (!Number.isInteger(id)) return;
-  const index = Number(fd.get("index"));
-  const ctx = contexteFromForm(fd);
-  const dash = await dashboardAutorise(id, "remove_widget");
-  if (!dash) return;
-  if (!Number.isInteger(index) || index < 0 || index >= dash.layout.length) return;
-  const layout = dash.layout.filter((_, i) => i !== index);
-  apres(id, ctx, await updateLayout(id, layout, revisionFromForm(fd)));
+  const id = idFromForm(fd);
+  const index = String(fd.get("index") ?? "").trim();
+  if (!id || !/^(0|[1-9][0-9]{0,2})$/.test(index)) return;
+  const r = await executerCommande("retirerCarte", { chemin: { id, index }, corps: { revision: revisionFromForm(fd) } });
+  apres(id, contexteFromForm(fd), r);
 }
 
 export async function moveWidgetAction(fd: FormData): Promise<void> {
-  const id = Number(fd.get("id"));
-  if (!Number.isInteger(id)) return;
-  const index = Number(fd.get("index"));
+  const id = idFromForm(fd);
+  const index = String(fd.get("index") ?? "").trim();
   const dir = String(fd.get("dir") ?? "");
-  const ctx = contexteFromForm(fd);
-  const dash = await dashboardAutorise(id, "reorder_widget");
-  if (!dash) return;
-  if (!Number.isInteger(index) || index < 0 || index >= dash.layout.length) return;
-  const target = dir === "up" ? index - 1 : dir === "down" ? index + 1 : index;
-  if (target < 0 || target >= dash.layout.length) return;
-  const layout = [...dash.layout];
-  [layout[index], layout[target]] = [layout[target], layout[index]];
-  apres(id, ctx, await updateLayout(id, layout, revisionFromForm(fd)));
+  if (!id || !/^(0|[1-9][0-9]{0,2})$/.test(index) || (dir !== "up" && dir !== "down")) return;
+  const r = await executerCommande("deplacerCarte", { chemin: { id, index }, corps: { dir, revision: revisionFromForm(fd) } });
+  apres(id, contexteFromForm(fd), r);
 }

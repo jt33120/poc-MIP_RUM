@@ -50,6 +50,32 @@ export function facultatif<T>(v: Validateur<T>): Validateur<T | undefined> {
   return (brut, champ) => (brut === undefined || brut === null || brut === "" ? ok(undefined) : v(brut, champ));
 }
 
+/** Un booléen JSON (`true` / `false`) — jamais « on », « 1 » : la console convertit son formulaire avant. */
+export function booleen(): Validateur<boolean> {
+  return (brut, champ) => (typeof brut === "boolean" ? ok(brut) : non(champ, "booléen attendu"));
+}
+
+/** `null` accepté tel quel (une valeur explicitement absente : « toutes les apps »), sinon validé. */
+export function nulle<T>(v: Validateur<T>): Validateur<T | null> {
+  return (brut, champ) => (brut === null ? ok(null) : v(brut, champ));
+}
+
+/**
+ * Une valeur JSON LIBRE, bornée par sa taille sérialisée : l'AST d'une analyse,
+ * la configuration d'une carte. Son sens est vérifié par la commande (le registre
+ * de l'Explorer, l'adaptateur des cartes) — ici, seulement qu'elle est bornée.
+ */
+export function libre(opts: { octetsMax: number }): Validateur<unknown> {
+  return (brut, champ) => {
+    if (brut === undefined) return non(champ, "valeur requise");
+    // Octets UTF-8 sans API du DOM ni de Node (ce paquet n'en a pas) : `JSON.stringify`
+    // échappe les surrogates isolés, `encodeURIComponent` ne peut donc pas lever.
+    const octets = encodeURIComponent(JSON.stringify(brut)).replace(/%[0-9A-F]{2}/g, "x").length;
+    if (octets > opts.octetsMax) return non(champ, `au plus ${opts.octetsMax} octets`);
+    return ok(brut);
+  };
+}
+
 type Forme<S> = { [K in keyof S]: S[K] extends Validateur<infer T> ? T : never };
 
 /**

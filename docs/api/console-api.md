@@ -20,7 +20,9 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 9. le **traitement**, sous l'échéance (503 au-delà) ;
 10. l'enveloppe `{ meta: { request_id }, data }`, `cache-control: no-store`, signée `x-mip-console-api: 1`. Une panne rend 500 et un message générique ; sa cause reste au journal, avec le `request_id`.
 
-**Règles vérifiées au démarrage** (`verifierTable`) : toute écriture est refusée à la démo (sauf fermer sa propre session) et déclare son action d'audit, ou une exemption motivée ; seule une lecture publique peut se passer du secret client ; une opération publique n'a pas de portée. Un service dont la table viole une règle ne démarre pas.
+**Règles vérifiées au démarrage** (`verifierTable`) : toute écriture est refusée à la démo (sauf fermer sa propre session) et déclare son action d'audit, ou une exemption motivée ; seule une lecture publique peut se passer du secret client ; une opération publique n'a pas de portée ; la portée « une application nommée » est celle d'une écriture. Un service dont la table viole une règle ne démarre pas.
+
+**Les écritures de la console (C6 → C9)** sont des COMMANDES (`apps/console/lib/commandes/`), servies telles quelles : chacune déclare sa règle (authentification, portée, audit), que la console applique aussi tant qu'elle les exécute elle-même (`refusDAcces` du contrat). Une commande rend sa DÉCISION en 200 (créé, introuvable, conflit de révision…) ; un refus d'accès ou d'entrée part avant elle, avec son code. L'action d'audit s'écrit dans la même transaction que l'écriture.
 
 ## Les opérations
 
@@ -33,19 +35,40 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `auth.oidcStart` | `GET /v1/auth/oidc/authorization` | aucune session | — | lecture | exigé | — |
 | `auth.login` | `POST /v1/auth/sessions` | aucune session | — | **refusée** | exigé | `auth.login` |
 | `auth.logout` | `DELETE /v1/auth/sessions/current` | session | — | lecture | exigé | `auth.logout` |
+| `dashboards.create` | `POST /v1/dashboards` | session | — | **refusée** | exigé | `dashboard.create` |
+| `dashboards.delete` | `DELETE /v1/dashboards/{id}` | session | — | **refusée** | exigé | `dashboard.delete` |
+| `dashboards.update` | `PATCH /v1/dashboards/{id}` | session | — | **refusée** | exigé | `dashboard.update` |
+| `dashboards.saveAnalysis` | `POST /v1/dashboards/{id}/analyses` | session | — | **refusée** | exigé | exemptée : édition des cartes d'un tableau (ajouter, retirer, ranger, régler) : gestes fréquents, sans effet sur qui lit quoi ; la révision du tableau refuse toute écriture fondée sur une lecture dépassée |
+| `dashboards.clone` | `POST /v1/dashboards/{id}/clones` | session | — | **refusée** | exigé | `dashboard.clone` |
+| `dashboards.export` | `GET /v1/dashboards/{id}/export` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `dashboards.addSection` | `POST /v1/dashboards/{id}/sections` | session | — | **refusée** | exigé | exemptée : édition des cartes d'un tableau (ajouter, retirer, ranger, régler) : gestes fréquents, sans effet sur qui lit quoi ; la révision du tableau refuse toute écriture fondée sur une lecture dépassée |
+| `dashboards.addWidget` | `POST /v1/dashboards/{id}/widgets` | session | — | **refusée** | exigé | exemptée : édition des cartes d'un tableau (ajouter, retirer, ranger, régler) : gestes fréquents, sans effet sur qui lit quoi ; la révision du tableau refuse toute écriture fondée sur une lecture dépassée |
+| `dashboards.removeWidget` | `DELETE /v1/dashboards/{id}/widgets/{index}` | session | — | **refusée** | exigé | exemptée : édition des cartes d'un tableau (ajouter, retirer, ranger, régler) : gestes fréquents, sans effet sur qui lit quoi ; la révision du tableau refuse toute écriture fondée sur une lecture dépassée |
+| `dashboards.configureWidget` | `PATCH /v1/dashboards/{id}/widgets/{index}` | session | — | **refusée** | exigé | exemptée : édition des cartes d'un tableau (ajouter, retirer, ranger, régler) : gestes fréquents, sans effet sur qui lit quoi ; la révision du tableau refuse toute écriture fondée sur une lecture dépassée |
+| `dashboards.moveWidget` | `POST /v1/dashboards/{id}/widgets/{index}/moves` | session | — | **refusée** | exigé | exemptée : édition des cartes d'un tableau (ajouter, retirer, ranger, régler) : gestes fréquents, sans effet sur qui lit quoi ; la révision du tableau refuse toute écriture fondée sur une lecture dépassée |
+| `dashboards.cloneTemplate` | `POST /v1/dashboards/templates/{modele}/clones` | session | — | **refusée** | exigé | `dashboard.clone_template` |
+| `goals.create` | `POST /v1/goals` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `goal.create` |
+| `goals.delete` | `DELETE /v1/goals/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `goal.delete` |
+| `goals.update` | `PATCH /v1/goals/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `goal.update` |
 | `auth.me` | `GET /v1/me` | session | — | lecture | exigé | — |
 | `public.platformStatus` | `GET /v1/public/platform-status` | aucune session | — | lecture | exigé | — |
 | `replay.session` | `GET /v1/replays/{sessionId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `savedViews.create` | `POST /v1/saved-views` | session | — | **refusée** | exigé | exemptée : vue personnelle : son propriétaire seul la lit et l'écrit, et elle ne donne aucun droit (son AST est rejoué dans le périmètre de qui l'ouvre) |
+| `savedViews.delete` | `DELETE /v1/saved-views/{id}` | session | — | **refusée** | exigé | exemptée : vue personnelle : son propriétaire seul la lit et l'écrit, et elle ne donne aucun droit (son AST est rejoué dans le périmètre de qui l'ouvre) |
+| `savedViews.update` | `PATCH /v1/saved-views/{id}` | session | — | **refusée** | exigé | exemptée : vue personnelle : son propriétaire seul la lit et l'écrit, et elle ne donne aucun droit (son AST est rejoué dans le périmètre de qui l'ouvre) |
 | `screens.acquisition` | `GET /v1/screens/acquisition` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.actions` | `GET /v1/screens/actions` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.ai` | `GET /v1/screens/ai` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.correlation` | `GET /v1/screens/correlation` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.dashboards` | `GET /v1/screens/dashboards` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.dashboard` | `GET /v1/screens/dashboards/{id}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.errors` | `GET /v1/screens/errors` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.errorGroup` | `GET /v1/screens/errors/{fingerprint}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.issue` | `GET /v1/screens/errors/issues/{id}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.events` | `GET /v1/screens/events` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.experience` | `GET /v1/screens/experience` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.explorer` | `GET /v1/screens/explorer` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.savedViews` | `GET /v1/screens/explorer/views` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.forecast` | `GET /v1/screens/forecast` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.forms` | `GET /v1/screens/forms` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.goals` | `GET /v1/screens/goals` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |

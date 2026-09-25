@@ -27,6 +27,8 @@ import { chargerTrousseau, creerConsoleApi, creerDebitAuth, creerOidc, creerTabl
 // C2 → C5 — les chargeurs des écrans : le code de la console, embarqué par le
 // build (alias `@/`), branché sur le pool de CE service (`shims/db.mjs`).
 import { ecrans } from "./ecrans.mjs";
+// C6 → C9 — les commandes des écritures, embarquées de la même façon.
+import { commandes } from "./commandes.mjs";
 import { brancherPool } from "./shims/db.mjs";
 
 const log = createLogger("console-api");
@@ -185,6 +187,7 @@ const { table, contrat } = await creerTable({
     oidc,
   },
   ecrans,
+  commandes,
 });
 
 const requetes = metrics.counter("console_api_requests_total", "Appels de la console, par opération et par statut.", {

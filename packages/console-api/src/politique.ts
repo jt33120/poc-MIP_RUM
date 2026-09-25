@@ -27,6 +27,12 @@ export type Portee =
   | "globale"
   /** Le paramètre `app` de la requête : vérifié contre le périmètre de la session AVANT le traitement ; `all` vaut le périmètre effectif. */
   | "app"
+  /**
+   * UNE application nommée, `?app=`, dans le périmètre de la session — jamais
+   * `all` (400) : la portée d'une écriture (C6 → C9). La commande filtre chaque
+   * ligne par elle ; la console applique la même règle (`refusDAcces` du contrat).
+   */
+  | "une-app"
   /** Une ressource identifiée dans le chemin, résolue DANS l'application du principal (404 si elle est ailleurs). */
   | "ressource";
 
@@ -130,6 +136,7 @@ export function verifierTable(table: readonly Enregistrement[]): string[] {
       fautes.push(`${nom} : seule une lecture publique peut se passer du secret client`);
     }
     if (p.auth === "public" && p.portee !== "globale") fautes.push(`${nom} : une opération publique n'a pas de portée`);
+    if (p.portee === "une-app" && !ecriture) fautes.push(`${nom} : la portée « une-app » est celle d'une écriture ; une lecture prend « app »`);
     if (p.portee === "ressource" && !/\{[^}]+\}/.test(o.chemin)) fautes.push(`${nom} : portée « ressource » sans identifiant dans le chemin`);
     if (p.portee === "ressource" && !p.ressource) fautes.push(`${nom} : portée « ressource » sans résolveur (table, paramètre, format)`);
     if (p.portee !== "ressource" && p.ressource) fautes.push(`${nom} : un résolveur de ressource sans portée « ressource »`);

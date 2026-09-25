@@ -353,7 +353,9 @@ export function relever() {
       const { base } = atteintLaBase(f);
       const { fichiers: vus } = fermeture(f);
       const audite = [...vus].some((v) => /audit_log|\baudit\(/.test(analyser(v).texte));
-      return { fichier: rel(f), actions: actionsExportees(a), base, audite };
+      // C6 → C9 : les commandes que le fichier appelle par leur clé (`executerCommande("…")`).
+      const commandes = [...new Set([...a.texte.matchAll(/executerCommande\(\s*"(\w+)"/g)].map((m) => m[1]))].sort();
+      return { fichier: rel(f), actions: actionsExportees(a), base, audite, commandes };
     });
 
   const routes = fichiers(app, (f) => f.endsWith(`${path.sep}route.ts`)).map((f) => {
@@ -449,7 +451,8 @@ export function rendre(r, { date, commit }) {
   L.push(`| Sections \`lire()\` (appels) | ${r.sectionsTotal} | — |`);
   L.push(`| \`error.tsx\` / \`not-found.tsx\` / \`loading.tsx\` | ${r.frontieres.error} / ${r.frontieres.notFound} / ${r.frontieres.loading} | — |`);
   L.push(`| Écrans rafraîchis toutes les 5 s (\`AutoRefresh\`) | ${r.ecrans.filter((e) => e.rafraichi).length} | — |`);
-  L.push(`| Écrans servis par un chargeur (\`lib/chargeurs/\`, C3 → C5) | ${r.ecrans.filter((e) => e.chargeurs.length).length} | **${r.ecrans.filter((e) => e.base && e.chargeurs.length).length}** / ${c.ecrans.length} |`);
+  L.push(`| Écrans servis par un chargeur (\`lib/chargeurs/\`, C3 → C6) | ${r.ecrans.filter((e) => e.chargeurs.length).length} | **${r.ecrans.filter((e) => e.base && e.chargeurs.length).length}** / ${c.ecrans.length} |`);
+  L.push(`| Fichiers d'actions passés par une commande (\`lib/commandes/\`, C6 → C9) | ${r.actions.filter((a) => a.commandes.length).length} (${r.actions.reduce((n, a) => n + a.commandes.length, 0)} commandes) | **${r.actions.filter((a) => a.base && a.commandes.length).length}** / ${c.actions.length} |`);
   L.push("");
   L.push("**Le cliquet** (`cliquet.json`) liste nominativement ce qui atteint la base. `tests/unit/inventaire-console.test.ts` refuse toute entrée nouvelle, et demande de le resserrer quand une entrée disparaît.");
   L.push("");
@@ -465,11 +468,11 @@ export function rendre(r, { date, commit }) {
   L.push("");
   L.push("## Actions serveur");
   L.push("");
-  L.push("« Auditée » : le graphe de l'action contient une écriture d'`audit_log`. C0 imposera une action d'audit (ou une exemption) à toute route non-GET de `console-api`.");
+  L.push("« Commandes » : les écritures que le fichier appelle par leur clé (`executerCommande`, C6 → C9) — la console les exécute aujourd'hui, console-api les sert telles quelles ; le fichier quitte le cliquet à la bascule. « Auditée » : le graphe de l'action contient une écriture d'`audit_log` ; pour une action passée par ses commandes, c'est la RÈGLE de chacune qui déclare son action d'audit ou son exemption motivée, vérifiée au démarrage de `console-api` (`verifierTable`).");
   L.push("");
-  L.push("| Fichier | Actions | Base | Auditée |");
-  L.push("|---|---|---|---|");
-  for (const a of r.actions) L.push(`| \`${a.fichier.replace("apps/console/", "")}\` | ${a.actions.join(", ")} | ${oui(a.base)} | ${a.audite ? "oui" : "non"} |`);
+  L.push("| Fichier | Actions | Base | Commandes | Auditée |");
+  L.push("|---|---|---|---|---|");
+  for (const a of r.actions) L.push(`| \`${a.fichier.replace("apps/console/", "")}\` | ${a.actions.join(", ")} | ${oui(a.base)} | ${liste(a.commandes)} | ${a.commandes.length ? "par règle" : a.audite ? "oui" : "non"} |`);
   if (r.actionsEnLigne.length) {
     L.push("");
     L.push(`Actions déclarées dans un écran : ${r.actionsEnLigne.map((x) => `\`${x}\``).join(", ")}.`);

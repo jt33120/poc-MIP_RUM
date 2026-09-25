@@ -80,7 +80,7 @@ Un écran = un **chargeur** dans `apps/console/lib/chargeurs/<écran>.ts`. Il re
 
 La parité n'est pas un test : c'est la construction. Cinq règles la tiennent.
 
-1. **La page lit déjà la forme du fil.** `chargerEcran` passe la sortie du chargeur par JSON (`versLeFil`), exactement ce que fait le service : la page est typée `Fil<…>` (une date y est une chaîne ISO, un `Set` n'y passe pas), et le compilateur refuse l'écran qui l'oublierait. La bascule (après P6b) ne change que `chargerEcran` : il appellera l'opération au lieu du chargeur, sans qu'aucune page change de type.
+1. **La page lit déjà la forme du fil.** `chargerEcran` passe la sortie du chargeur par JSON (`versLeFil`), exactement ce que fait le service : la page est typée `Fil<…>` (une date y est une chaîne ISO, un `Set` n'y passe pas), et le compilateur refuse l'écran qui l'oublierait. La bascule (après P6b) change `chargerEcran` : il appellera l'opération au lieu du chargeur, sans qu'aucune page change de type. Chaque page lui passera alors la CLÉ de son écran au lieu d'importer son chargeur (un `import type` garde le type) — ce que les server actions font déjà pour leurs commandes (C6) : sans cela, l'import du chargeur garderait la page dans le cliquet.
 2. **Une section ne porte pas sa raison.** Un chargeur lit par `section()` (`lib/chargeurs/commun.ts`) : c'est `lire()`, l'échec journalisé côté serveur (dans le service, avec le `request_id` de l'appel), mais sur le fil ne passe que `{ ok: false, code: "lecture_en_echec" }`. Les composants qui n'affichent que le titre d'une section en échec prennent `SectionLue<T>` (`lib/lecture.ts`), qui accepte les deux formes.
 3. **Un chargeur ne lit ni cookie ni en-tête.** Ce que la page tenait d'un cookie lui est passé en paramètre : la composition d'un écran (blocs allumés, `/`, `/sessions`, `/slo`) voyage sous `blocs`, même forme que le cookie (`avecBlocs`). Le projet courant, lui, est déjà dans `?app=` (porte projet du middleware).
 4. **Ce que l'URL demande se lit une fois, par la même fonction des deux côtés.** Quand un écran a sa propre requête (Journal, Explorer, recherche de sessions), une fonction pure l'analyse (`demandeDuJournal`, `demandeExplorer`, `demandeDesSessions`) : le chargeur s'en sert pour savoir quoi lire, la page pour savoir quoi afficher.
@@ -102,10 +102,36 @@ La parité n'est pas un test : c'est la construction. Cinq règles la tiennent.
 
 **Vérifié par** : la matrice d'autorisations, qui exécute les VRAIS chargeurs (le module du service) sur une base migrée, pour 8 profils × 3 cibles, puis vérifie qu'un viewer obtient chaque écran — et ses variantes (comparaison, panneau, Explorer exécuté, onglet) — sans une seule section en échec ; le build du service, dont la garde refuse tout écran, composant, module de session ou `next/…` réel dans le bundle ; le crawl E2E des 57 écrans × 3 profils, qui rend chaque page à partir de la forme du fil.
 
+## Les commandes (C6 → C9), telles qu'elles sont faites
+
+Une écriture = une **commande** dans `apps/console/lib/commandes/<domaine>.ts`, enregistrée dans `lib/commandes/index.ts` sous la clé de son opération (`COMMANDES` du contrat — le type refuse une opération sans commande, ou l'inverse). C'est l'exact pendant d'un chargeur : le même code tourne dans la console aujourd'hui (`executerCommande`, `lib/commande-locale.ts`) et dans `console-api`, qui l'embarque (`services/console-api/commandes.mjs`) et la sert sous son opération.
+
+1. **La server action appelle la commande PAR SA CLÉ** — `executerCommande("creerObjectif", { app, corps })` — et n'importe aucune commande. Elle lit son formulaire, puis tire de la DÉCISION rendue sa redirection ou sa revalidation. À la bascule, seul `executerCommande` change (il appellera l'opération) : les fichiers d'actions quittent alors le cliquet sans changer d'une ligne, et avec eux les composants qui les importent pour leurs formulaires.
+2. **La règle est déclarée avec la commande** (`RegleCommande` du contrat) : qui (`session`, `admin`, `admin-plateforme`), sur quoi (`app` : UNE application nommée du périmètre ; `globale` : la commande résout elle-même la ressource et ses droits), et l'audit (une action `domaine.action`, ou une exemption motivée). Deux côtés l'appliquent :
+   - `console-api` en TIRE la politique de l'opération (`politiqueDeCommande`) : `app` devient la portée `une-app` du pipeline (`all` refusé en 400), toute commande est refusée à la démo, et `verifierTable` refuse au démarrage une commande sans audit ni exemption ;
+   - la console l'applique avant la commande, par `refusDAcces` (contrat), dans l'ordre du pipeline : session, démo, rôle, application.
+   `tests/unit/console-api-commandes.test.ts` confronte les deux côtés pour chaque commande, huit profils et cinq applications demandées : même code de refus, ou le même passage.
+3. **L'entrée est validée par la commande**, des deux côtés : le corps (passé par JSON en local, comme sur le fil) par son validateur — le pipeline l'utilise à l'étape 7 —, les paramètres du chemin par le sien. Un refus d'entrée part avant la commande, en `entree_invalide`.
+4. **Une commande rend une DÉCISION, jamais une redirection** : `cree`, `ok`, `introuvable`, `interdit`, `conflit` (révision dépassée), `plein`… En 200 côté service : ce sont des réponses, pas des pannes. Une ligne demandée hors de l'application de la portée est `introuvable`, comme absente — chaque commande de portée `app` filtre `where id = $1 and app_id = $2`.
+5. **L'audit s'écrit dans la transaction de l'écriture** (`auditer`, lié à la règle), avec l'identifiant de la requête, l'acteur (`user` : une démo n'écrit jamais) et l'application. Tant que migration-v90 n'est pas appliquée en production, la présence de ces colonnes est sondée et la ligne s'écrit sous sa forme d'avant (`lib/commandes/audit.ts`). Les actions d'audit prennent la forme `domaine.action` de `console-api` (`goal.create` au lieu de `goal_create`) : le journal montrera les deux formes autour de la bascule.
+
+**C6 — l'espace de travail** (17 commandes, 3 écrans et l'export CSV) :
+
+| Domaine | Commandes | Règle | Audit |
+|---|---|---|---|
+| Tableaux de bord | créer, cloner un modèle, cloner, modifier (nom, app), supprimer | `session`, `globale` : la porte unique des tableaux (`lib/dashboard-access.ts`) décide — propriétaire, périmètre, tableau transverse réservé à l'administrateur de la plateforme | `dashboard.*` |
+| Cartes d'un tableau | ajouter une carte, une section, une analyse de l'Explorer ; régler, retirer, déplacer une carte | `session`, `globale`, même porte ; la révision affichée est citée (le `If-Match` du contrat, dans le corps) | exemptées : gestes fréquents, sans effet sur qui lit quoi |
+| Vues enregistrées | créer, modifier, supprimer | `session`, `globale` : propriétaire seul, application de son périmètre (`lib/saved-views.ts`) | exemptées : personnelles, elles ne donnent aucun droit |
+| Objectifs de conversion | créer, activer ou suspendre (l'état VOULU, plus un « inverser »), supprimer | `admin`, `app` | `goal.*` |
+
+Deux corrections de droits en passant : activer ou supprimer un objectif filtrait par identifiant seul (un administrateur touchait l'objectif d'une application hors de sa liste), et un administrateur avec une liste pouvait créer un objectif hors de celle-ci. Les écrans `/dashboards`, `/dashboards/[id]` et `/explorer/views` ont leur chargeur ; l'export CSV aussi (`dashboards.export`), qui partage la donnée de l'écran — la route de la console lui passe le signal de sa requête, pour qu'un export abandonné n'ouvre pas les lectures restantes.
+
+Les écritures de vues de l'API v1 (`POST /api/v1/explorer/views`, `PATCH`/`DELETE …/{id}`) ne sont pas encore des commandes : elles quittent le contrat public en C7, avec les mutations d'issues, conformément au plan.
+
 ## Ordre proposé pour libérer le cliquet
 
 1. **Sans `console-api`** : scinder les modules mixtes (famille 1). **Fait** : 13 composants et un écran sortis du cliquet (27 → 14 composants, 51 → 50 écrans). C0 démarre sur une base plus petite.
 2. **C0** : fondations (`console-api`, session, pipeline, v90). Le cliquet ne bouge pas.
 3. **C2** : `GET /v1/shell`. Le layout racine sort du cliquet, ce qui est le plus gros gain unitaire : il pèse sur les 57 écrans.
 4. **C3 → C5** : les chargeurs des écrans, par lots (colonne « Lot » de l'inventaire ; colonne « Chargeur » pour l'avancement). Décision du 24/09 : `console-api` est mis en service **à la fin, après P6b** — d'ici là les écrans exécutent leur chargeur dans la console, et le cliquet ne descend que par ce qui sort des écrans (les panneaux déplacés dans un chargeur, par exemple). Il descend d'un coup à la bascule, quand `chargerEcran` appelle le service.
-5. **C6 → C11** : les écritures, puis les routes machine. **C12** : cliquet vide, gardes de build.
+5. **C6 → C9** : les écritures, en commandes (section ci-dessus) ; les fichiers d'actions et les composants qui les importent quittent le cliquet à la bascule, quand `executerCommande` appelle le service. **C10** : le RGPD. **C11** : les routes machine. **C12** : cliquet vide, gardes de build.

@@ -44,6 +44,7 @@ import { cadencePubliee as cadenceConsole } from "../../apps/console/lib/etat-la
 // @ts-expect-error module ESM, sans déclarations
 import { fautesDuBundle } from "../../services/console-api/build.mjs";
 import { ECRANS_FACTICES } from "../fixtures/ecrans-factices";
+import { COMMANDES_FACTICES } from "../fixtures/commandes-factices";
 
 const SECRET = "s".repeat(40);
 const SECRET_SUIVANT = "t".repeat(40);
@@ -191,7 +192,7 @@ describe("C0a — les règles de la table, vérifiées au démarrage", () => {
   const t = async () => ({});
 
   it("la table réelle est conforme, et chaque opération du contrat est servie", async () => {
-    const { table } = await creerTable({ trousseau: await chargerTrousseau(JSON.stringify({ keys: [await jeuDeCles()] }), { production: true }), version: "abc", db: baseFactice({}), identite: await identiteFactice(), ecrans: ECRANS_FACTICES });
+    const { table } = await creerTable({ trousseau: await chargerTrousseau(JSON.stringify({ keys: [await jeuDeCles()] }), { production: true }), version: "abc", db: baseFactice({}), identite: await identiteFactice(), ecrans: ECRANS_FACTICES, commandes: COMMANDES_FACTICES });
     expect(verifierTable(table)).toEqual([]);
     expect(table.map((e) => e.operation.id).sort()).toEqual(OPERATIONS.map((o) => o.id).sort());
   });
@@ -426,7 +427,7 @@ describe("C0a — la matrice d'autorisations, sur la VRAIE table", () => {
 
   it("chaque opération répond ce que sa politique dit, pour chaque profil", async () => {
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [await jeuDeCles()] }), { production: true });
-    const { table } = await creerTable({ trousseau, version: "abc", db: baseFactice({}), identite: await identiteFactice(), ecrans: ECRANS_FACTICES });
+    const { table } = await creerTable({ trousseau, version: "abc", db: baseFactice({}), identite: await identiteFactice(), ecrans: ECRANS_FACTICES, commandes: COMMANDES_FACTICES });
     const service = creerConsoleApi({ table, secretsClient: [SECRET], journal });
     const nonce = "n".repeat(24);
     for (const { operation: o, politique } of table) {
@@ -476,7 +477,7 @@ describe("C0a — les clés et la poignée de main", () => {
 
   it("la poignée de main : sans secret, signée, avec l'empreinte du contrat servi", async () => {
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [await jeuDeCles()] }), { production: false });
-    const { table, contrat } = await creerTable({ trousseau, version: "deadbeef", db: baseFactice({}), identite: await identiteFactice(), ecrans: ECRANS_FACTICES });
+    const { table, contrat } = await creerTable({ trousseau, version: "deadbeef", db: baseFactice({}), identite: await identiteFactice(), ecrans: ECRANS_FACTICES, commandes: COMMANDES_FACTICES });
     expect(contrat).toBe(await empreinte(lignesDuContrat(OPERATIONS)));
     const service = creerConsoleApi({ table, secretsClient: [SECRET], journal });
     const nonce = "abcdefghijklmnopqrstuv";
@@ -522,7 +523,7 @@ describe("C0a — l'état de la plateforme, lecture par lecture", () => {
   it("l'opération est publique mais exige le secret client : c'est la console qui la lit", async () => {
     expect(ETAT_PLATEFORME.chemin).toBe("/v1/public/platform-status");
     const trousseau = await chargerTrousseau(JSON.stringify({ keys: [await jeuDeCles()] }), { production: false });
-    const { table } = await creerTable({ trousseau, version: "x", db: baseFactice({ platform_flag: [{ value: "5" }] }), identite: await identiteFactice(), ecrans: ECRANS_FACTICES });
+    const { table } = await creerTable({ trousseau, version: "x", db: baseFactice({ platform_flag: [{ value: "5" }] }), identite: await identiteFactice(), ecrans: ECRANS_FACTICES, commandes: COMMANDES_FACTICES });
     const service = creerConsoleApi({ table, secretsClient: [SECRET], journal });
     expect((await service(appel("/v1/public/platform-status", { secret: null }))).status).toBe(404);
     expect((await lire(await service(appel("/v1/public/platform-status")))).corps.data.tick.cadenceMin).toBe(5);

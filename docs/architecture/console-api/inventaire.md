@@ -16,7 +16,8 @@
 | Sections `lire()` (appels) | 262 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 4 / 0 | — |
 | Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 53 | — |
-| Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C5) | 28 | **28** / 50 |
+| Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 31 | **31** / 50 |
+| Fichiers d'actions passés par une commande (`lib/commandes/`, C6 → C9) | 3 (17 commandes) | **3** / 16 |
 
 **Le cliquet** (`cliquet.json`) liste nominativement ce qui atteint la base. `tests/unit/inventaire-console.test.ts` refuse toute entrée nouvelle, et demande de le resserrer quand une entrée disparaît.
 
@@ -46,19 +47,19 @@
 | `/alerts` | C8 alerting | **oui** | — | queries, alerting, errors, events, explorer, sessions, v2 | 8 | — | oui |
 | `/api-docs` | statique ou vitrine | non | — | — | — | — | oui |
 | `/correlation` | C4 | **oui** | correlation | deploys, events, explorer, v2 | 11 | — | oui |
-| `/dashboards/[id]` | C6 espace de travail | **oui** | — | queries, accounts, dashboards, errors, events, explorer, frustration, grid, mobile, sessions | — | — | non |
-| `/dashboards` | C6 espace de travail | **oui** | — | queries, accounts, dashboards, errors, events, explorer, frustration, grid, mobile, sessions | — | — | non |
+| `/dashboards/[id]` | C6 espace de travail | **oui** | tableau | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions | — | — | non |
+| `/dashboards` | C6 espace de travail | **oui** | tableaux | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions | — | — | non |
 | `/errors/[fingerprint]` | C4 | **oui** | erreur | queries, deploys, errors, events, explorer, sessions, v2 | 3 | — | oui |
 | `/errors/issues/[id]` | C4 | **oui** | issue | queries, deploys, errors, events, explorer, sessions, ticket-integrations | 2 | — | oui |
 | `/errors` | C4 | **oui** | errors | queries, breakdowns, deploys, errors, events, explorer, sessions | 8 | error | oui |
 | `/events` | C3 | **oui** | events | deploys, events, explorer | 2 | event | oui |
 | `/experience` | C5 | **oui** | experience | queries, breakdowns, deploys, experience, explorer, mobile, sessions | 9 | — | oui |
 | `/explorer` | C3 | **oui** | explorer | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions | 3 | — | non |
-| `/explorer/views` | C6 espace de travail | **oui** | — | accounts, saved-views | — | — | non |
+| `/explorer/views` | C6 espace de travail | **oui** | vues | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions | — | — | non |
 | `/extension-privacy` | statique ou vitrine | non | — | — | — | — | oui |
 | `/forecast` | C4 | **oui** | forecast | deploys, explorer, grid | 3 | — | oui |
 | `/forms` | C5 | **oui** | forms | deploys, explorer, form-analytics, sessions | 3 | — | oui |
-| `/goals` | C5 | **oui** | goals | queries, deploys, explorer, goals, sessions | 4 | — | oui |
+| `/goals` | C5 | **oui** | goals | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, goals, grid, mobile, saved-views, sessions | 4 | — | oui |
 | `/legal/cgu` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/cgv` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/confidentialite` | statique ou vitrine | non | — | — | — | — | oui |
@@ -86,27 +87,27 @@
 
 ## Actions serveur
 
-« Auditée » : le graphe de l'action contient une écriture d'`audit_log`. C0 imposera une action d'audit (ou une exemption) à toute route non-GET de `console-api`.
+« Commandes » : les écritures que le fichier appelle par leur clé (`executerCommande`, C6 → C9) — la console les exécute aujourd'hui, console-api les sert telles quelles ; le fichier quitte le cliquet à la bascule. « Auditée » : le graphe de l'action contient une écriture d'`audit_log` ; pour une action passée par ses commandes, c'est la RÈGLE de chacune qui déclare son action d'audit ou son exemption motivée, vérifiée au démarrage de `console-api` (`verifierTable`).
 
-| Fichier | Actions | Base | Auditée |
-|---|---|---|---|
-| `app/actions-dashboard.ts` | reglerBlocsAction | non | non |
-| `app/admin/customers/actions.ts` | createCustomerAction, rotateKeyAction, toggleAppAction, updateOriginsAction | **oui** | oui |
-| `app/admin/extension-installs/actions.ts` | forgetInstallAction | **oui** | oui |
-| `app/admin/extension-scope/actions.ts` | createExtensionScopeAction, toggleExtensionScopeAction | **oui** | oui |
-| `app/admin/privacy/actions.ts` | searchIdentityAction, eraseIdentityAction, eraseUserAction | **oui** | oui |
-| `app/admin/read-tokens/actions.ts` | createReadTokenAction, revokeReadTokenAction | **oui** | oui |
-| `app/admin/ticket-integrations/actions.ts` | creerIntegrationAction, majIntegrationAction | **oui** | oui |
-| `app/admin/uptime/actions.ts` | createUptimeCheckAction, toggleUptimeCheckAction, deleteUptimeCheckAction | **oui** | oui |
-| `app/admin/users/actions.ts` | createUserAction, toggleUserAction, resetPasswordAction | **oui** | oui |
-| `app/alerts/actions.ts` | createRuleAction, updateRuleAction, toggleRuleAction, ackEventAction, evaluateNowAction, createSloAction, toggleSloAction, deleteSloAction, createChannelAction, toggleChannelAction, deleteChannelAction | **oui** | oui |
-| `app/dashboards/actions.ts` | createDashboardAction, cloneTemplateAction, cloneDashboardAction, renameDashboardAction, deleteDashboardAction, addWidgetAction, addSectionAction, saveAnalysisAction, configureWidgetAction, removeWidgetAction, moveWidgetAction | **oui** | oui |
-| `app/errors/[fingerprint]/actions.ts` | setErrorStatusAction | **oui** | oui |
-| `app/explorer/actions.ts` | saveViewAction, renameViewAction, deleteViewAction | **oui** | oui |
-| `app/goals/actions.ts` | createGoalAction, toggleGoalAction, deleteGoalAction | **oui** | oui |
-| `app/login/actions.ts` | loginAction | **oui** | oui |
-| `app/select/actions.ts` | selectProjectAction | **oui** | oui |
-| `app/select/new/actions.ts` | createSiteAction | **oui** | oui |
+| Fichier | Actions | Base | Commandes | Auditée |
+|---|---|---|---|---|
+| `app/actions-dashboard.ts` | reglerBlocsAction | non | — | non |
+| `app/admin/customers/actions.ts` | createCustomerAction, rotateKeyAction, toggleAppAction, updateOriginsAction | **oui** | — | oui |
+| `app/admin/extension-installs/actions.ts` | forgetInstallAction | **oui** | — | oui |
+| `app/admin/extension-scope/actions.ts` | createExtensionScopeAction, toggleExtensionScopeAction | **oui** | — | oui |
+| `app/admin/privacy/actions.ts` | searchIdentityAction, eraseIdentityAction, eraseUserAction | **oui** | — | oui |
+| `app/admin/read-tokens/actions.ts` | createReadTokenAction, revokeReadTokenAction | **oui** | — | oui |
+| `app/admin/ticket-integrations/actions.ts` | creerIntegrationAction, majIntegrationAction | **oui** | — | oui |
+| `app/admin/uptime/actions.ts` | createUptimeCheckAction, toggleUptimeCheckAction, deleteUptimeCheckAction | **oui** | — | oui |
+| `app/admin/users/actions.ts` | createUserAction, toggleUserAction, resetPasswordAction | **oui** | — | oui |
+| `app/alerts/actions.ts` | createRuleAction, updateRuleAction, toggleRuleAction, ackEventAction, evaluateNowAction, createSloAction, toggleSloAction, deleteSloAction, createChannelAction, toggleChannelAction, deleteChannelAction | **oui** | — | oui |
+| `app/dashboards/actions.ts` | createDashboardAction, cloneTemplateAction, cloneDashboardAction, renameDashboardAction, deleteDashboardAction, addWidgetAction, addSectionAction, saveAnalysisAction, configureWidgetAction, removeWidgetAction, moveWidgetAction | **oui** | ajouterCarte, ajouterSection, clonerModele, clonerTableau, configurerCarte, creerTableau, deplacerCarte, enregistrerAnalyse, modifierTableau, retirerCarte, supprimerTableau | par règle |
+| `app/errors/[fingerprint]/actions.ts` | setErrorStatusAction | **oui** | — | oui |
+| `app/explorer/actions.ts` | saveViewAction, renameViewAction, deleteViewAction | **oui** | creerVue, modifierVue, supprimerVue | par règle |
+| `app/goals/actions.ts` | createGoalAction, toggleGoalAction, deleteGoalAction | **oui** | activerObjectif, creerObjectif, supprimerObjectif | par règle |
+| `app/login/actions.ts` | loginAction | **oui** | — | oui |
+| `app/select/actions.ts` | selectProjectAction | **oui** | — | oui |
+| `app/select/new/actions.ts` | createSiteAction | **oui** | — | oui |
 
 ## Routes
 
@@ -177,10 +178,10 @@
 |---|---|
 | `components/alerts/ChannelsSection.tsx` | `app/alerts/actions.ts` → `lib/error-issue-workflow.ts` → `lib/db.ts` |
 | `components/alerts/RuleRow.tsx` | `lib/alertes-ecran.ts` → `lib/queries-v2.ts` → `lib/db.ts` |
-| `components/dashboards/ModeleCarte.tsx` | `app/dashboards/actions.ts` → `lib/queries-dashboards.ts` → `lib/db.ts` |
-| `components/dashboards/WidgetCard.tsx` | `app/dashboards/actions.ts` → `lib/queries-dashboards.ts` → `lib/db.ts` |
+| `components/dashboards/ModeleCarte.tsx` | `app/dashboards/actions.ts` → `lib/commande-locale.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
+| `components/dashboards/WidgetCard.tsx` | `lib/widget-data.ts` → `lib/queries-grid.ts` → `lib/db.ts` |
 | `components/errors/ErrorTriage.tsx` | `app/errors/[fingerprint]/actions.ts` → `lib/db.ts` |
-| `components/explorer/ActionsVue.tsx` | `app/explorer/actions.ts` → `lib/queries-saved-views.ts` → `lib/db.ts` |
+| `components/explorer/ActionsVue.tsx` | `app/explorer/actions.ts` → `lib/commande-locale.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/presentation/Annexe.tsx` | `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Landing.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Specs.tsx` | `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
@@ -190,41 +191,41 @@
 
 | Module | Fonctions exportées | Écrans qui l'atteignent |
 |---|---|---|
-| `lib/queries-accounts.ts` | 1 | 4 |
+| `lib/queries-accounts.ts` | 1 | 5 |
 | `lib/queries-acquisition.ts` | 2 | 1 |
 | `lib/queries-actions.ts` | 3 | 1 |
 | `lib/queries-alerting.ts` | 9 | 2 |
 | `lib/queries-breakdowns.ts` | 2 | 4 |
 | `lib/queries-cohorts.ts` | 1 | 1 |
 | `lib/queries-customers.ts` | 3 | 3 |
-| `lib/queries-dashboards.ts` | 6 | 3 |
-| `lib/queries-deploys.ts` | 4 | 28 |
+| `lib/queries-dashboards.ts` | 6 | 5 |
+| `lib/queries-deploys.ts` | 4 | 31 |
 | `lib/queries-dimensions.ts` | 1 | 0 |
 | `lib/queries-dsar.ts` | 9 | 1 |
-| `lib/queries-errors.ts` | 11 | 13 |
-| `lib/queries-events.ts` | 3 | 21 |
+| `lib/queries-errors.ts` | 11 | 15 |
+| `lib/queries-events.ts` | 3 | 23 |
 | `lib/queries-experience.ts` | 7 | 1 |
-| `lib/queries-explorer.ts` | 2 | 41 |
+| `lib/queries-explorer.ts` | 2 | 42 |
 | `lib/queries-extension-installs.ts` | 3 | 1 |
 | `lib/queries-extension-scope.ts` | 5 | 2 |
 | `lib/queries-form-analytics.ts` | 1 | 1 |
-| `lib/queries-frustration.ts` | 5 | 4 |
+| `lib/queries-frustration.ts` | 5 | 6 |
 | `lib/queries-funnel.ts` | 2 | 1 |
 | `lib/queries-goals.ts` | 3 | 1 |
-| `lib/queries-grid.ts` | 3 | 5 |
+| `lib/queries-grid.ts` | 3 | 7 |
 | `lib/queries-health.ts` | 1 | 1 |
 | `lib/queries-histogramme.ts` | 1 | 0 |
 | `lib/queries-logs.ts` | 5 | 1 |
 | `lib/queries-longtasks.ts` | 2 | 1 |
 | `lib/queries-map.ts` | 4 | 1 |
-| `lib/queries-mobile.ts` | 7 | 6 |
+| `lib/queries-mobile.ts` | 7 | 8 |
 | `lib/queries-paths.ts` | 3 | 1 |
 | `lib/queries-planifie.ts` | 3 | 2 |
 | `lib/queries-projects.ts` | 1 | 1 |
 | `lib/queries-read-tokens.ts` | 4 | 1 |
 | `lib/queries-resources.ts` | 1 | 1 |
-| `lib/queries-saved-views.ts` | 7 | 2 |
-| `lib/queries-sessions.ts` | 6 | 32 |
+| `lib/queries-saved-views.ts` | 7 | 5 |
+| `lib/queries-sessions.ts` | 6 | 33 |
 | `lib/queries-sourcemap-tokens.ts` | 3 | 1 |
 | `lib/queries-sourcemap.ts` | 2 | 1 |
 | `lib/queries-summary.ts` | 1 | 0 |
@@ -234,4 +235,4 @@
 | `lib/queries-uptime.ts` | 4 | 1 |
 | `lib/queries-usage.ts` | 1 | 1 |
 | `lib/queries-v2.ts` | 22 | 12 |
-| `lib/queries.ts` | 20 | 27 |
+| `lib/queries.ts` | 20 | 28 |

@@ -11,7 +11,8 @@
 //   5. session (`Authorization: Bearer`), vérifiée par le service — rôle et
 //      périmètre viennent de la BASE (C0c), jamais du jeton seul ;
 //   6. démo, rôle, portée — AVANT le traitement : l'app demandée est confrontée
-//      au périmètre, `app=all` résolu en périmètre effectif ;
+//      au périmètre, `app=all` résolu en périmètre effectif (refusé à une
+//      écriture, portée `une-app`) ;
 //   7. entrée : requête et corps validés, champ inconnu ou répété refusé (400) ;
 //   8. débit par principal (429) ;
 //   8 bis. RESSOURCE du chemin (portée `ressource`) : son application lue en
@@ -228,10 +229,14 @@ export function creerConsoleApi(options: OptionsConsoleApi): (req: Request) => P
       const brut = parametres(url);
       let apps: readonly string[] | null = null;
       let appDemandee: string | null = null;
-      if (politique.portee === "app") {
+      if (politique.portee === "app" || politique.portee === "une-app") {
         const demandee = brut.app;
         delete brut.app;
         if (!demandee || !APP.test(demandee)) throw new ErreurContrat("entree_invalide", "paramètre « app » requis", { details: { champ: "app" } });
+        // Une ÉCRITURE vise une application nommée : `all` n'en est pas une.
+        if (politique.portee === "une-app" && demandee === "all") {
+          throw new ErreurContrat("entree_invalide", "une écriture vise une application nommée, pas « all »", { details: { champ: "app" } });
+        }
         // Principal session garanti ici : une opération publique n'a pas de portée (règle de table).
         const perimetre = principal.kind === "session" ? principal.apps : [];
         if (perimetre !== null && perimetre.length === 0) throw new ErreurContrat("hors_perimetre", "aucune application dans votre périmètre");
