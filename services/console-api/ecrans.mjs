@@ -47,6 +47,7 @@ import { chargerPages } from "@/lib/chargeurs/pages";
 import { chargerPaths } from "@/lib/chargeurs/paths";
 import { chargerNouveauSite, chargerProjets } from "@/lib/chargeurs/projets";
 import { chargerRejeu } from "@/lib/chargeurs/rejeu";
+import { chargerReleases } from "@/lib/chargeurs/releases";
 import { chargerRetention } from "@/lib/chargeurs/retention";
 import { chargerSession } from "@/lib/chargeurs/session";
 import { chargerSondes } from "@/lib/chargeurs/sondes";
@@ -117,6 +118,8 @@ export const ecrans = {
     // C8
     alertes: page(chargerAlertes),
     slo: page(chargerSlo),
+    // C11
+    releases: page(chargerReleases),
   },
   // C8 → C9 — les écrans d'administration (un administrateur, sans portée d'application).
   administration: {

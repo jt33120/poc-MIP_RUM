@@ -121,3 +121,36 @@ describe("le relais", () => {
     expect(await r0.text()).toBe('{"q":1}');
   });
 });
+
+// C11 — relais PUR : plus de lecture au jeton servie par la console, ce qui permet
+// de retirer CONSOLE_API_TOKENS de Vercel.
+describe("relais pur (CONSOLE_API_RELAY_STRICT=1)", () => {
+  const STRICT = { CONSOLE_API_RELAY_URL: URL_API, CONSOLE_API_RELAY_STRICT: "1" };
+
+  it("le pourcentage est ignoré : à 0 %, une lecture au jeton part quand même", async () => {
+    const { r, fetchImpl } = relais({ env: STRICT, pct: 0 });
+    expect((await r.relayer(req("/api/v1/apps", { headers: JETON })))?.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("service injoignable, non signé ou en 5xx : 503 + retry-after, jamais le chemin local", async () => {
+    for (const panne of [
+      async () => {
+        throw new TypeError("fetch failed");
+      },
+      async () => new Response("bad gateway", { status: 502 }),
+      async () => signee(500),
+    ]) {
+      const { r } = relais({ env: STRICT, fetch: panne as unknown as typeof fetch });
+      const res = await r.relayer(req("/api/v1/apps", { headers: JETON }));
+      expect(res?.status).toBe(503);
+      expect(res?.headers.get("retry-after")).toBe("5");
+    }
+  });
+
+  it("les écrans (session) restent locaux : le service n'accepte pas les sessions", async () => {
+    const { r, fetchImpl } = relais({ env: STRICT });
+    expect(await r.relayer(req("/api/v1/apps", { headers: { cookie: "mip_session=x" } }))).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});

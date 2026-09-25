@@ -19,6 +19,14 @@
 // `skipped`. Les livraisons attendent `queued` le temps du démarrage ; rien ne se
 // perd. Retour arrière : `SCHEDULER_DELIVERY=on`, notifier à 0.
 //
+// LE HOOK ENTRANT DES TICKETS (C11) : `POST /v1/webhooks/tickets/{id}`, la
+// livraison signée d'un fournisseur (GitHub) — la seule route publique du
+// service, sur son domaine généré. La console la relaie octet pour octet
+// (`CONSOLE_TICKET_HOOK_URL`) ; son code est partagé
+// (`@mip/backend/lib/integrations/tickets/webhook-entrant.mjs`). Le secret du
+// webhook (`env:TICKET_*` ou `enc:v1:`) se résout ici : ces variables vivent sur
+// le notifier.
+//
 // LES SONDES :
 //   /health   processus vivant + base joignable. LA sonde Railway.
 //   /ready    fraîcheur de la dernière passe aboutie et arriéré des livraisons,
@@ -33,6 +41,11 @@ import { startService } from "@mip/service-kit/http.mjs";
 import { startLoop } from "@mip/service-kit/loop.mjs";
 import { configEmail, erreursConfigEmail } from "@mip/backend/lib/net/resend.mjs";
 import { secretsDeSignature } from "@mip/backend/lib/net/signature-webhook.mjs";
+import {
+  CORPS_LIVRAISON_MAX,
+  ENTETE_NOTIFIER,
+  creerGestionnaireHook,
+} from "@mip/backend/lib/integrations/tickets/webhook-entrant.mjs";
 import {
   INTERVALLE_DEFAUT_MS,
   SEUIL_ALIGNEMENT_MS,
@@ -152,6 +165,12 @@ startService({
   log,
   pool,
   metrics,
+  // C11 — le hook entrant des tickets (`POST /v1/webhooks/tickets/{id}`), relayé
+  // octet pour octet par la console. Toute réponse est signée : le relais
+  // distingue ainsi le notifier du routeur Railway.
+  fetch: creerGestionnaireHook({ pool, log }),
+  maxBodyBytes: CORPS_LIVRAISON_MAX,
+  responseHeaders: { [ENTETE_NOTIFIER]: "1" },
   metricsToken: config.METRICS_TOKEN,
   lifecycle,
   ready: () => livreur.etat(),

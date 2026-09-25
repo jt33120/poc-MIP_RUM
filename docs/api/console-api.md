@@ -123,6 +123,7 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `screens.pages` | `GET /v1/screens/pages` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.paths` | `GET /v1/screens/paths` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.projects` | `GET /v1/screens/projects` | session | — | lecture | exigé | — |
+| `screens.releases` | `GET /v1/screens/releases` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.retention` | `GET /v1/screens/retention` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.sessions` | `GET /v1/screens/sessions` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.session` | `GET /v1/screens/sessions/{id}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |

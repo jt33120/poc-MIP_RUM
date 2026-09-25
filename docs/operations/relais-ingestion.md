@@ -304,5 +304,9 @@ recouvrement de `user_id_hash` d'un jour sur l'autre se vérifie une fois à 100
   sans `connect-src` CSP.
 - **P6b — exercices sur staging** : retour arrière par le drapeau, sous charge, chronométré.
   Il sert à prouver le « < 30 s ».
-- **Au-delà (C11/C12)** : retirer le chemin d'écriture local de la console, une fois que le
+- **Relais pur (C11)** : après ≥ 7 jours à 100 % sans repli, `CONSOLE_INGEST_RELAY_STRICT=1`
+  sur Vercel. Le pourcentage est ignoré ; ce qui déclenchait un repli (connexion, réponse non
+  signée, disjoncteur, santé du collector) rend **503 + `retry-after`** et le SDK rejoue. Retour
+  arrière : retirer la variable, redéployer.
+- **Au-delà (C12)** : retirer le chemin d'écriture local de la console, une fois que le
   relais pur a tenu. La console n'aura alors plus besoin de `DATABASE_URL` pour l'ingestion.

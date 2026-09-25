@@ -472,6 +472,23 @@ declare module "@mip/backend/lib/extension-parc.mjs" {
   ): { prendre(cle: string): { ok: true } | { ok: false; retryAfter: number } };
 }
 
+declare module "@mip/backend/lib/integrations/tickets/webhook-entrant.mjs" {
+  import type { Pool } from "pg";
+  export const COOKIE_SESSION_CONSOLE: string;
+  export const CORPS_LIVRAISON_MAX: number;
+  export const ENTETE_NOTIFIER: "x-mip-notifier";
+  export const MOTIF_INTEGRATION: RegExp;
+  export function refusAvantLecture(entetes: { get(nom: string): string | null }): { statut: number; corps: object } | null;
+  export function recevoirLivraison(p: {
+    pool: Pool;
+    integrationId: string;
+    entetes: { get(nom: string): string | null };
+    brut: Uint8Array;
+    env?: Record<string, string | undefined>;
+    log?: { error: (...a: unknown[]) => void };
+  }): Promise<{ statut: number; corps: object }>;
+}
+
 declare module "@mip/backend/lib/deploiements.mjs" {
   type Db = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> };
   export const PRIVILEGE_DEPLOIEMENT: "deploys:write";

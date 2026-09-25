@@ -818,3 +818,25 @@ describe("routes machine (C11)", () => {
     expect([...new Headers(collector.posts()[0].init.headers).keys()].sort()).toEqual(["authorization", "content-type", "x-mip-edge-auth"]);
   });
 });
+
+// C11 — relais PUR : plus de chemin local pour la collecte.
+describe("relais pur (CONSOLE_INGEST_RELAY_STRICT=1)", () => {
+  const STRICT = { CONSOLE_INGEST_RELAY_URL: URL_COLLECTOR, EDGE_PROXY_SECRET: SECRET, CONSOLE_INGEST_RELAY_STRICT: "1" };
+
+  it("le pourcentage est ignoré : à 0 %, le beacon part au collector", async () => {
+    const { r, collector } = relais({ env: STRICT, pct: 0 });
+    expect((await r.relayer("traces", entrante(), new Uint8Array([123, 125]), {}))?.status).toBe(200);
+    expect(collector.posts()).toHaveLength(1);
+  });
+
+  it("collector absent (404 du routeur) ou en mauvaise santé : 503 + retry-after, jamais le chemin local", async () => {
+    const absent = fauxCollector({ post: () => new Response("", { status: 404 }), postSigne: false });
+    let res = await relais({ env: STRICT, collector: absent }).r.relayer("traces", entrante(), new Uint8Array([123, 125]), {});
+    expect(res?.status).toBe(503);
+    expect(res?.headers.get("retry-after")).toBeTruthy();
+    const malade = fauxCollector({ sante: () => new Response("", { status: 503 }) });
+    res = await relais({ env: STRICT, collector: malade }).r.relayer("replay", entrante(), new Uint8Array([1]), {});
+    expect(res?.status).toBe(503);
+    expect(malade.posts()).toHaveLength(0);
+  });
+});
