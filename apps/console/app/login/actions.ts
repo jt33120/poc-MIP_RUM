@@ -6,7 +6,10 @@ import bcrypt from "bcryptjs";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
+import { CONNEXION } from "@mip/console-contract";
 import { SESSION_COOKIE, SESSION_HOURS, signJwt, type SessionUser } from "@/lib/auth";
+import { backend } from "@/lib/backend";
+import { ipVisiteur } from "@/lib/ip-visiteur";
 import { q } from "@/lib/db";
 import { forwardLog } from "@/lib/log-forward";
 
@@ -33,6 +36,36 @@ async function clientIp(): Promise<string> {
   return (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "unknown").trim();
 }
 
+const COOKIE = { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/" } as const;
+
+/**
+ * C1 — LA CONNEXION PAR console-api, quand la console y est branchée. Le service
+ * vérifie le mot de passe, compte les échecs EN BASE (toutes répliques), ouvre
+ * une LIGNE de session et rend un jeton ES256 qui ne porte que son identifiant.
+ * La console ne fait que poser le cookie. Sans branchement, le chemin
+ * d'aujourd'hui, plus bas, reste le seul.
+ */
+async function connexionParConsoleApi(email: string, password: string): Promise<never> {
+  const h = await headers();
+  const r = await backend().appeler(
+    CONNEXION,
+    { corps: { email, mot_de_passe: password } },
+    { ipVisiteur: ipVisiteur(h), requestId: h.get("x-request-id") ?? undefined },
+  );
+  if (!r.ok) {
+    // Identifiants refusés, trop de tentatives, entrée invalide : le même message
+    // générique qu'aujourd'hui — il ne dit ni si le compte existe, ni s'il est bloqué.
+    if (r.code === "identifiants_refuses" || r.code === "debit_depasse" || r.code === "entree_invalide") redirect("/login?error=1");
+    after(() => forwardLog("error", "connexion impossible : console-api indisponible", { code: r.code, request_id: r.requestId ?? undefined }));
+    redirect("/login?error=indisponible");
+  }
+  const jar = await cookies();
+  jar.set(SESSION_COOKIE, r.data.jeton, { ...COOKIE, expires: new Date(r.data.expire_le) });
+  if (r.data.connexion_precedente) jar.set("mip-prev-login", r.data.connexion_precedente, { ...COOKIE, maxAge: SESSION_HOURS * 3600 });
+  after(() => forwardLog("info", "connexion console (console-api)", { request_id: r.requestId }));
+  redirect("/");
+}
+
 async function auditFail(email: string, action: string, detail: string | null): Promise<void> {
   try {
     await q(`insert into audit_log (user_email, action, detail) values ($1, $2, $3)`, [
@@ -57,6 +90,7 @@ interface UserRow {
 export async function loginAction(fd: FormData): Promise<void> {
   const email = String(fd.get("email") ?? "").trim().toLowerCase();
   const password = String(fd.get("password") ?? "");
+  if (backend().estBranche()) await connexionParConsoleApi(email, password);
 
   // 1) trop d'ÉCHECS récents pour cette IP+email -> blocage AVANT le bcrypt (coûteux),
   // réponse générique (pas d'énumération). Les connexions réussies ne comptent pas.

@@ -3,12 +3,12 @@
 //   1. `Authorization: Bearer <token>` comparé (temps constant) à CONSOLE_API_TOKENS
 //      (liste séparée par des virgules). Pensé pour le front Angular MIP côté serveur :
 //      accès lecture seule, toutes apps (rôle `viewer`, scope null).
-//   2. Cookie de session JWT de la console (réutilise verifyJwt) : respecte le RBAC
+//   2. Cookie de session de la console (`principalDeJeton` : HS256, ou ES256 de console-api) : respecte le RBAC
 //      existant (admin/viewer scopé) pour un utilisateur déjà connecté.
 // Helper PUR : prend des primitives (header + valeur de cookie), aucun import next/* —
 // testable sans runtime Next.
 import { timingSafeEqual } from "node:crypto";
-import { verifyJwt } from "../auth";
+import { principalDeJeton } from "../auth";
 
 export interface ApiPrincipal {
   kind: "token" | "session";
@@ -101,7 +101,7 @@ export async function authenticateApi(
     return null;
   }
   if (cookieToken) {
-    const u = await verifyJwt(cookieToken);
+    const u = await principalDeJeton(cookieToken);
     if (u) return { kind: "session", role: u.role, apps: u.apps, subject: u.email };
   }
   return null;

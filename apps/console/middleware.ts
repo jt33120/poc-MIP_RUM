@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifyJwt } from "@/lib/auth";
+import { principalDeJeton, SESSION_COOKIE, verifyJwt, type SessionUser } from "@/lib/auth";
 import { estCheminPublic } from "@/lib/chemins-publics";
 import { authorizedAppsOf } from "@/lib/query-contract";
+import { algorithmeDuJeton, verifierJetonConsoleApi } from "@/lib/session-console";
 
 // Auth v0.3 (B3) : JWT cookie httpOnly signé AUTH_SECRET — remplace le basic auth v0.2.
 // PUBLICS sans auth (matcher) : /login, /mip-rum.js, /mip-rum-replay.js, /_next/*, /favicon*.
@@ -17,6 +18,42 @@ function avecIdentifiantDeRequete(req: NextRequest): Headers {
   const recu = h.get("x-request-id");
   if (!recu || !/^[A-Za-z0-9._-]{8,64}$/.test(recu)) h.set("x-request-id", crypto.randomUUID());
   return h;
+}
+
+/** Une page de console (GET), soumise à la porte « projet courant » plus bas. */
+function estPageDeConsole(req: NextRequest): boolean {
+  const p = req.nextUrl.pathname;
+  return (
+    req.method === "GET" &&
+    !p.startsWith("/api/") &&
+    !p.startsWith("/admin") &&
+    p !== "/select" &&
+    !p.startsWith("/select/") &&
+    !estCheminPublic(p)
+  );
+}
+
+/**
+ * C1 — le principal d'une session de console-api (jeton ES256), au plus juste :
+ *   · la signature, vérifiée ici avec la clé PUBLIQUE ; un jeton forgé ne coûte
+ *     aucun appel ;
+ *   · une page de console a besoin du PÉRIMÈTRE (la porte « projet courant ») :
+ *     `GET /v1/me`, qui relit le compte en base ;
+ *   · toute autre requête n'a besoin que de savoir s'il s'agit d'une DÉMO — et le
+ *     jeton le dit (`demo`, immuable, vérifié par le service contre la ligne) :
+ *     aucun appel. La page ou l'action qui suit relit le principal elle-même
+ *     (`getUser`), et une session révoquée y est refusée.
+ * `"indisponible"` : console-api ne répond pas ; ce n'est pas une déconnexion.
+ */
+async function principalEs256(req: NextRequest, jeton: string): Promise<SessionUser | null | "indisponible"> {
+  const local = await verifierJetonConsoleApi(jeton);
+  if (!local) return null;
+  if (!estPageDeConsole(req)) return { email: "", role: "viewer", apps: [], demo: local.demo };
+  try {
+    return await principalDeJeton(jeton, req.headers.get("x-request-id") ?? undefined);
+  } catch {
+    return "indisponible";
+  }
 }
 
 export async function middleware(req: NextRequest) {
@@ -70,7 +107,14 @@ export async function middleware(req: NextRequest) {
   if (req.nextUrl.pathname.startsWith("/api/webhooks/")) return NextResponse.next();
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const user = token ? await verifyJwt(token) : null;
+  const resolu = !token ? null : algorithmeDuJeton(token) === "ES256" ? await principalEs256(req, token) : await verifyJwt(token);
+  if (resolu === "indisponible") {
+    return new NextResponse("Service momentanément indisponible : réessayer dans un instant.", {
+      status: 503,
+      headers: { "retry-after": "5", "cache-control": "no-store" },
+    });
+  }
+  const user = resolu;
   if (!user) {
     // /presentation = vitrine PUBLIQUE (avant login) : un visiteur comprend l'outil
     // avant de se connecter. La racine "/" sert de porte d'entrée -> présentation ;
@@ -126,18 +170,12 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next({ request: { headers: h } });
   };
 
-  const gated =
-    req.method === "GET" &&
-    !pathname.startsWith("/api/") &&
-    !pathname.startsWith("/admin") &&
-    pathname !== "/select" &&
-    !pathname.startsWith("/select/") &&
-    // Les pages PUBLIQUES ne sont pas des écrans de console : elles n'ont pas de
-    // projet courant. Sans cette exclusion, un utilisateur connecté était
-    // redirigé vers /presentation?app=… — et, s'il n'avait aucun projet
-    // résoluble, vers /select : des mentions légales devenues illisibles pour
-    // qui n'a pas encore choisi de projet.
-    !estCheminPublic(pathname);
+  // Les pages PUBLIQUES ne sont pas des écrans de console : elles n'ont pas de
+  // projet courant. Sans cette exclusion, un utilisateur connecté était
+  // redirigé vers /presentation?app=… — et, s'il n'avait aucun projet
+  // résoluble, vers /select : des mentions légales devenues illisibles pour
+  // qui n'a pas encore choisi de projet.
+  const gated = estPageDeConsole(req);
   if (gated) {
     const requested = req.nextUrl.searchParams.get("app");
     const cookieApp = req.cookies.get("mip-project")?.value ?? null; // cf. lib/project.ts
@@ -178,6 +216,10 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
+  // RUNTIME NODE (Next 15.5, stable) et non Edge : une session de console-api se
+  // relit par `GET /v1/me`, derrière la poignée de main signée de `lib/backend.ts`,
+  // qui tient son état (hôte vérifié) dans le processus.
+  runtime: "nodejs",
   // `vendor` = assets tiers auto-hébergés (Swagger UI) ; `downloads` = artefacts
   // téléchargeables (le .zip de l'extension) ; `portail` = captures de la console
   // affichées par la vitrine publique — sans cette exclusion le visiteur anonyme

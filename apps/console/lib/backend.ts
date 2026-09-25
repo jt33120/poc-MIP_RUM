@@ -31,6 +31,7 @@ import { createLogger } from "@mip/backend/shared/log.mjs";
 import {
   ENTETE_CLIENT,
   ENTETE_ECHEANCE,
+  ENTETE_IP_VISITEUR,
   ENTETE_REQUETE,
   ENTETE_SERVICE,
   lignesDuContrat,
@@ -128,6 +129,8 @@ export interface OptionsAppel {
   readonly requestId?: string;
   /** Opération indépendante de l'utilisateur (sans jeton) : cache Next de N secondes. */
   readonly revalider?: number;
+  /** L'adresse du visiteur, pour le débit d'authentification de console-api (C1) — jamais stockée en clair. */
+  readonly ipVisiteur?: string;
 }
 
 function base64url(octets: Uint8Array): string {
@@ -278,6 +281,7 @@ export function creerBackend(deps: {
         [ENTETE_ECHEANCE]: String(Math.max(200, reste - DELAIS.margeServiceMs)),
       };
       if (options.jeton) entetes.authorization = `Bearer ${options.jeton}`;
+      if (options.ipVisiteur) entetes[ENTETE_IP_VISITEUR] = options.ipVisiteur;
       if (entree.corps !== undefined) entetes["content-type"] = "application/json";
       let res: Response;
       try {

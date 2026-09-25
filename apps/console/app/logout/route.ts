@@ -21,9 +21,13 @@
 // Une route rend l'exception du middleware VRAIE : le navigateur poste
 // réellement sur /logout, ce que le chemin comparé exprime. Aucune connaissance
 // des mécanismes internes de Next n'est requise pour que ça tienne.
+import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE, getUser } from "@/lib/auth";
+import { DECONNEXION } from "@mip/console-contract";
+import { SESSION_COOKIE, getUser, oublierPrincipal } from "@/lib/auth";
+import { backend } from "@/lib/backend";
 import { q } from "@/lib/db";
+import { algorithmeDuJeton } from "@/lib/session-console";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +49,22 @@ function versLogin(): NextResponse {
 }
 
 export async function POST(): Promise<NextResponse> {
+  // C1 — une session de console-api se RÉVOQUE chez lui : le jeton ne vaudra plus
+  // rien, même copié ailleurs. Best-effort, comme le journal : une panne du service
+  // n'empêche pas de sortir (le cookie part quand même ; la ligne expirera).
+  const jeton = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (jeton && algorithmeDuJeton(jeton) === "ES256") {
+    if (backend().estBranche()) {
+      const h = await headers();
+      await backend()
+        .appeler(DECONNEXION, {}, { jeton, requestId: h.get("x-request-id") ?? undefined })
+        .catch(() => undefined);
+    }
+    oublierPrincipal(jeton);
+    const res = versLogin();
+    res.cookies.delete(SESSION_COOKIE);
+    return res;
+  }
   const user = await getUser();
   if (user) {
     // Best-effort : une panne du journal ne doit pas empêcher de sortir. Avant,
