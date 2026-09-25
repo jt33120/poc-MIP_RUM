@@ -16,7 +16,7 @@
 | Sections `lire()` (appels) | 276 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 4 / 0 | — |
 | Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 53 | — |
-| Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 34 | **34** / 50 |
+| Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 47 | **47** / 50 |
 | Fichiers d'actions passés par une commande (`lib/commandes/`, C6 → C9) | 15 (50 commandes) | **15** / 19 |
 
 **Le cliquet** (`cliquet.json`) liste nominativement ce qui atteint la base. `tests/unit/inventaire-console.test.ts` refuse toute entrée nouvelle, et demande de le resserrer quand une entrée disparaît.
@@ -29,20 +29,20 @@
 |---|---|---|---|---|---|---|---|
 | `/acquisition` | C5 | **oui** | acquisition | acquisition, deploys, explorer, sessions | 4 | — | oui |
 | `/actions` | C3 | **oui** | actions | queries, actions, deploys, explorer, sessions | 4 | — | oui |
-| `/admin/audit` | C9 administration | **oui** | — | — | — | — | oui |
+| `/admin/audit` | C9 administration | **oui** | administration | queries, customers, deploys, errors, events, explorer, extension-installs, extension-scope, health, read-tokens, sessions, sourcemap, sourcemap-tokens, ticket-integrations, usage | 1 | — | oui |
 | `/admin/composants` | C9 administration | non | — | — | — | — | oui |
-| `/admin/customers/[appId]` | C9 administration | **oui** | — | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
-| `/admin/customers` | C9 administration | **oui** | — | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
-| `/admin/extension-installs` | C9 administration | **oui** | — | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
-| `/admin/extension-scope` | C9 administration | **oui** | — | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
-| `/admin/health` | C9 administration | **oui** | — | queries, errors, events, explorer, health, sessions | 1 | — | oui |
+| `/admin/customers/[appId]` | C9 administration | **oui** | administration | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, health, mobile, read-tokens, saved-views, sessions, sourcemap, sourcemap-tokens, ticket-integrations, uptime, usage, v2 | 1 | — | oui |
+| `/admin/customers` | C9 administration | **oui** | administration | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, health, mobile, read-tokens, saved-views, sessions, sourcemap, sourcemap-tokens, ticket-integrations, uptime, usage, v2 | 1 | — | oui |
+| `/admin/extension-installs` | C9 administration | **oui** | administration | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, health, mobile, read-tokens, saved-views, sessions, sourcemap, sourcemap-tokens, ticket-integrations, uptime, usage, v2 | 1 | — | oui |
+| `/admin/extension-scope` | C9 administration | **oui** | administration | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, health, mobile, read-tokens, saved-views, sessions, sourcemap, sourcemap-tokens, ticket-integrations, uptime, usage, v2 | 1 | — | oui |
+| `/admin/health` | C9 administration | **oui** | administration | queries, customers, deploys, errors, events, explorer, extension-installs, extension-scope, health, read-tokens, sessions, sourcemap, sourcemap-tokens, ticket-integrations, usage | 1 | — | oui |
 | `/admin/privacy` | C10 RGPD | **oui** | — | queries, dsar, errors, events, explorer, sessions | — | — | oui |
-| `/admin/read-tokens` | C9 administration | **oui** | — | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
-| `/admin/sourcemaps` | C9 administration | **oui** | — | queries, explorer, sessions, sourcemap, sourcemap-tokens | — | — | oui |
-| `/admin/ticket-integrations` | C9 administration | **oui** | — | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
+| `/admin/read-tokens` | C9 administration | **oui** | administration | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, health, mobile, read-tokens, saved-views, sessions, sourcemap, sourcemap-tokens, ticket-integrations, uptime, usage, v2 | 1 | — | oui |
+| `/admin/sourcemaps` | C9 administration | **oui** | administration | queries, customers, deploys, errors, events, explorer, extension-installs, extension-scope, health, read-tokens, sessions, sourcemap, sourcemap-tokens, ticket-integrations, usage | 1 | — | oui |
+| `/admin/ticket-integrations` | C9 administration | **oui** | administration | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, health, mobile, read-tokens, saved-views, sessions, sourcemap, sourcemap-tokens, ticket-integrations, uptime, usage, v2 | 1 | — | oui |
 | `/admin/uptime` | C9 administration | **oui** | sondes | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, planifie, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
-| `/admin/usage` | C9 administration | **oui** | — | usage | — | — | oui |
-| `/admin/users` | C9 administration | **oui** | — | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
+| `/admin/usage` | C9 administration | **oui** | administration | queries, customers, deploys, errors, events, explorer, extension-installs, extension-scope, health, read-tokens, sessions, sourcemap, sourcemap-tokens, ticket-integrations, usage | 1 | — | oui |
+| `/admin/users` | C9 administration | **oui** | administration | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, health, mobile, read-tokens, saved-views, sessions, sourcemap, sourcemap-tokens, ticket-integrations, uptime, usage, v2 | 1 | — | oui |
 | `/ai` | C5 | **oui** | ai | deploys, events, explorer, v2 | — | — | oui |
 | `/alerts` | C8 alerting | **oui** | alertes | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | 8 | — | oui |
 | `/api-docs` | statique ou vitrine | non | — | — | — | — | oui |
@@ -73,8 +73,8 @@
 | `/paths` | C5 | **oui** | paths | queries, deploys, explorer, funnel, paths, sessions | 9 | — | oui |
 | `/presentation` | statique ou vitrine | **oui** | — | planifie | — | — | oui |
 | `/retention` | C5 | **oui** | retention | cohorts, deploys, explorer, sessions | 3 | — | oui |
-| `/select/new` | C1–C2 identité, sélection | **oui** | — | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
-| `/select` | C1–C2 identité, sélection | **oui** | — | queries, explorer, projects, sessions | — | — | oui |
+| `/select/new` | C1–C2 identité, sélection | **oui** | projets | queries, accounts, alerting, customers, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, projects, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | — | — | oui |
+| `/select` | C1–C2 identité, sélection | **oui** | projets | queries, customers, deploys, explorer, extension-scope, projects, sessions | — | — | oui |
 | `/sessions/[id]` | C3 | **oui** | session | queries, deploys, explorer, sessions | 2 | — | oui |
 | `/sessions` | C3 | **oui** | sessions | queries, deploys, explorer, sessions | 13 | — | oui |
 | `/slo` | C8 alerting | **oui** | slo | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, extension-installs, extension-scope, frustration, grid, mobile, read-tokens, saved-views, sessions, sourcemap-tokens, ticket-integrations, uptime, v2 | 4 | — | oui |
@@ -192,23 +192,23 @@
 | `lib/queries-alerting.ts` | 9 | 18 |
 | `lib/queries-breakdowns.ts` | 2 | 4 |
 | `lib/queries-cohorts.ts` | 1 | 1 |
-| `lib/queries-customers.ts` | 3 | 3 |
+| `lib/queries-customers.ts` | 3 | 13 |
 | `lib/queries-dashboards.ts` | 6 | 18 |
-| `lib/queries-deploys.ts` | 4 | 42 |
+| `lib/queries-deploys.ts` | 4 | 47 |
 | `lib/queries-dimensions.ts` | 1 | 0 |
 | `lib/queries-dsar.ts` | 9 | 1 |
-| `lib/queries-errors.ts` | 11 | 24 |
-| `lib/queries-events.ts` | 3 | 32 |
+| `lib/queries-errors.ts` | 11 | 27 |
+| `lib/queries-events.ts` | 3 | 35 |
 | `lib/queries-experience.ts` | 7 | 1 |
-| `lib/queries-explorer.ts` | 2 | 46 |
-| `lib/queries-extension-installs.ts` | 3 | 18 |
-| `lib/queries-extension-scope.ts` | 6 | 18 |
+| `lib/queries-explorer.ts` | 2 | 48 |
+| `lib/queries-extension-installs.ts` | 3 | 22 |
+| `lib/queries-extension-scope.ts` | 6 | 23 |
 | `lib/queries-form-analytics.ts` | 1 | 1 |
 | `lib/queries-frustration.ts` | 5 | 19 |
 | `lib/queries-funnel.ts` | 2 | 1 |
 | `lib/queries-goals.ts` | 3 | 1 |
 | `lib/queries-grid.ts` | 3 | 20 |
-| `lib/queries-health.ts` | 1 | 1 |
+| `lib/queries-health.ts` | 1 | 11 |
 | `lib/queries-histogramme.ts` | 1 | 0 |
 | `lib/queries-logs.ts` | 5 | 1 |
 | `lib/queries-longtasks.ts` | 2 | 1 |
@@ -216,18 +216,18 @@
 | `lib/queries-mobile.ts` | 7 | 20 |
 | `lib/queries-paths.ts` | 3 | 1 |
 | `lib/queries-planifie.ts` | 3 | 2 |
-| `lib/queries-projects.ts` | 1 | 1 |
-| `lib/queries-read-tokens.ts` | 4 | 18 |
+| `lib/queries-projects.ts` | 1 | 2 |
+| `lib/queries-read-tokens.ts` | 4 | 22 |
 | `lib/queries-resources.ts` | 1 | 1 |
 | `lib/queries-saved-views.ts` | 7 | 18 |
-| `lib/queries-sessions.ts` | 6 | 37 |
-| `lib/queries-sourcemap-tokens.ts` | 3 | 19 |
-| `lib/queries-sourcemap.ts` | 2 | 1 |
+| `lib/queries-sessions.ts` | 6 | 39 |
+| `lib/queries-sourcemap-tokens.ts` | 3 | 22 |
+| `lib/queries-sourcemap.ts` | 2 | 11 |
 | `lib/queries-summary.ts` | 1 | 0 |
 | `lib/queries-svi.ts` | 6 | 3 |
-| `lib/queries-ticket-integrations.ts` | 9 | 19 |
+| `lib/queries-ticket-integrations.ts` | 9 | 23 |
 | `lib/queries-tracing.ts` | 8 | 3 |
 | `lib/queries-uptime.ts` | 4 | 18 |
-| `lib/queries-usage.ts` | 1 | 1 |
+| `lib/queries-usage.ts` | 1 | 11 |
 | `lib/queries-v2.ts` | 22 | 27 |
-| `lib/queries.ts` | 20 | 33 |
+| `lib/queries.ts` | 20 | 35 |

@@ -4,19 +4,13 @@ import { INPUT_CLASS } from "@/components/forms/Field";
 import { SourcemapUploadForm } from "@/components/sourcemaps/SourcemapUploadForm";
 import { TokenCreateForm } from "@/components/sourcemaps/TokenCreateForm";
 import { TokenRevokeButton } from "@/components/sourcemaps/TokenRevokeButton";
-import { requireAdmin } from "@/lib/auth";
+import type { Fil } from "@mip/console-contract";
+import { chargerSourcemaps } from "@/lib/chargeurs/administration";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
-import { registeredApps } from "@/lib/queries";
-import {
-  listSourcemapReleases,
-  type ReleaseManifest,
-  releaseManifest,
-  schemaSourcemapAbsent,
-  type SourcemapFileStatus,
-  type SourcemapRelease,
-} from "@/lib/queries-sourcemap";
-import { listSourcemapTokens, type SourcemapToken } from "@/lib/queries-sourcemap-tokens";
+import type { ReleaseManifest, SourcemapFileStatus, SourcemapRelease } from "@/lib/queries-sourcemap";
+import type { SourcemapToken } from "@/lib/queries-sourcemap-tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +23,9 @@ type Donnees =
       kind: "ok";
       apps: App[];
       app: string | null;
-      releases: SourcemapRelease[];
-      manifest: ReleaseManifest | null;
-      tokens: SourcemapToken[];
+      releases: Fil<SourcemapRelease>[];
+      manifest: Fil<ReleaseManifest> | null;
+      tokens: Fil<SourcemapToken>[];
     }
   | { kind: "schema"; apps: App[]; app: string }
   | { kind: "error"; app: string | null };
@@ -50,36 +44,20 @@ function octets(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1).replace(".", ",")} Mio`;
 }
 
-/** L'app demandée si elle est enregistrée, sinon la première du registre. */
-async function charger(demandee: string | null, release: string | null): Promise<Donnees> {
-  let apps: App[];
-  try {
-    apps = await registeredApps();
-  } catch {
-    return { kind: "error", app: demandee };
-  }
-  const app = apps.find((a) => a.app_id === demandee)?.app_id ?? apps[0]?.app_id ?? null;
-  if (!app) return { kind: "ok", apps, app, releases: [], manifest: null, tokens: [] };
-  try {
-    const [releases, manifest, tokens] = await Promise.all([
-      listSourcemapReleases(app),
-      release ? releaseManifest(app, release) : null,
-      listSourcemapTokens(app),
-    ]);
-    return { kind: "ok", apps, app, releases, manifest, tokens };
-  } catch (err) {
-    if (schemaSourcemapAbsent(err)) return { kind: "schema", apps, app };
-    console.error("[admin/sourcemaps]", err);
-    return { kind: "error", app };
-  }
-}
-
 /** Source maps et jetons de CI (P5.4) — admin seulement : ni contenu de map, ni secret hors création. */
 export default async function SourcemapsAdmin({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  await requireAdmin();
   const sp = await searchParams;
   const release = param(sp.release);
-  const donnees = await charger(param(sp.app), release);
+  // Le chargeur (`lib/chargeurs/administration.ts`) : l'application demandée si elle est
+  // dans le périmètre de l'administrateur (C9), sinon la première ; ses releases, le
+  // manifeste d'une release, ses jetons de CI.
+  const ecran = accesAdmin(await chargerEcran(chargerSourcemaps, sp));
+  const donnees: Donnees =
+    ecran.etat === "ok"
+      ? { kind: "ok", apps: ecran.apps, app: ecran.app, releases: ecran.releases, manifest: ecran.manifeste, tokens: ecran.jetons }
+      : ecran.etat === "schema"
+        ? { kind: "schema", apps: ecran.apps, app: ecran.app }
+        : { kind: "error", app: ecran.app };
   const { app } = donnees;
   const apps = donnees.kind === "error" ? [] : donnees.apps;
   const maintenant = Date.now();

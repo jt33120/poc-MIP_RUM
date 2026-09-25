@@ -1,20 +1,12 @@
 import { PageHeader } from "@/components/PageHeader";
-import { popSecret, requireAdmin } from "@/lib/auth";
-import { q } from "@/lib/db";
+import { popSecret } from "@/lib/auth";
+import { chargerComptes } from "@/lib/chargeurs/administration";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
 import { createUserAction, resetPasswordAction, toggleUserAction } from "./actions";
 
 export const dynamic = "force-dynamic";
-
-interface UserRow {
-  email: string;
-  role: "admin" | "viewer";
-  apps: string[] | null;
-  active: boolean;
-  created_at: Date;
-  last_login_at: Date | null;
-}
 
 const ERRORS: Record<string, string> = {
   email: "Email invalide.",
@@ -25,11 +17,9 @@ const ERRORS: Record<string, string> = {
 
 /** Gestion des utilisateurs console (admin only). */
 export default async function AdminUsers({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  await requireAdmin();
   const sp = await searchParams;
-  const users = await q<UserRow>(
-    `select email, role, apps, active, created_at, last_login_at from console_user order by email`,
-  );
+  // Le chargeur (`lib/chargeurs/administration.ts`) : l'administrateur de la plateforme seul (C9).
+  const { comptes: users } = accesAdmin(await chargerEcran(chargerComptes, {}));
   // mot de passe généré : consommé du stash, affiché une seule fois
   const pwt = typeof sp.pwt === "string" ? sp.pwt : null;
   const pwe = typeof sp.pwe === "string" ? sp.pwe : null;

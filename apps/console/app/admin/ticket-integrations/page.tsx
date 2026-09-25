@@ -12,17 +12,11 @@
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { INPUT_CLASS } from "@/components/forms/Field";
-import { requireAdmin } from "@/lib/auth";
+import { chargerConnecteurs } from "@/lib/chargeurs/administration";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
-import { listApps } from "@/lib/queries";
-import {
-  MENTION_ETAPE,
-  listTicketIntegrations,
-  surfaceTicketsOuverte,
-  ticketSchemaDisponible,
-  type TicketIntegration,
-} from "@/lib/queries-ticket-integrations";
+import { MENTION_ETAPE, type TicketIntegration } from "@/lib/queries-ticket-integrations";
 import { creerIntegrationAction, majIntegrationAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -38,15 +32,13 @@ function secret(ref: TicketIntegration["credential"] | TicketIntegration["webhoo
 }
 
 export default async function TicketIntegrationsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  await requireAdmin();
-  if (!(await surfaceTicketsOuverte())) notFound();
+  // Le chargeur : les connecteurs et les applications de son périmètre (C9) ; la
+  // surface fermée tant qu'aucune recette réelle n'a été jouée (404, comme avant).
+  const ecran = accesAdmin(await chargerEcran(chargerConnecteurs, {}));
+  if (ecran.etat === "fermee") notFound();
   const sp = await searchParams;
   const erreur = typeof sp.erreur === "string" ? sp.erreur : null;
-  const migre = await ticketSchemaDisponible();
-  const [apps, integrations] = await Promise.all([
-    listApps(),
-    migre ? listTicketIntegrations(null) : Promise.resolve([] as TicketIntegration[]),
-  ]);
+  const { migre, apps, connecteurs: integrations } = ecran;
 
   return (
     <div className="animate-fade-up">

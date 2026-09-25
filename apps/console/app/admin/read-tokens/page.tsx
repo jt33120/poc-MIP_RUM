@@ -1,18 +1,18 @@
 import { PageHeader } from "@/components/PageHeader";
-import { popSecret, requireAdmin } from "@/lib/auth";
+import { popSecret } from "@/lib/auth";
+import { chargerJetonsLecture } from "@/lib/chargeurs/administration";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
 import { fmtDate } from "@/lib/format";
-import { listApps } from "@/lib/queries";
-import { listReadTokens } from "@/lib/queries-read-tokens";
 import { createReadTokenAction, revokeReadTokenAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 /** Gestion des tokens de lecture (livrable UTI) — admin only. */
 export default async function ReadTokens({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  await requireAdmin();
   const sp = await searchParams;
-  const [apps, tokens] = await Promise.all([listApps(), listReadTokens()]);
+  // Le chargeur : les jetons et les applications de son périmètre (C9).
+  const { apps, jetons: tokens } = accesAdmin(await chargerEcran(chargerJetonsLecture, {}));
   const tkt = typeof sp.tkt === "string" ? sp.tkt : null;
   const tka = typeof sp.tka === "string" ? sp.tka : null;
   const oneTime = tkt ? popSecret(tkt) : null;

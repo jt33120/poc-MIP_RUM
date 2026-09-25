@@ -20,7 +20,7 @@
 import { gzipSync } from "node:zlib";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { COMMANDES, ECRANS, ECRANS_ADMIN, operation } from "@mip/console-contract";
+import { COMMANDES, ECRANS, ECRANS_ADMIN, ECRANS_SESSION, operation } from "@mip/console-contract";
 import {
   chargerTrousseau,
   creerConsoleApi,
@@ -130,6 +130,8 @@ const CHEMINS: Record<string, Record<string, string>> = {
   "ticketIntegrations.update": { id: ABSENT },
   "extensionScopes.setActive": { id: ABSENT },
   "extensionInstalls.forget": { installId: VUE_ABSENTE },
+  // C9 — la fiche d'une application du périmètre de l'administrateur.
+  "screens.adminCustomer": { appId: A },
 };
 
 /** Une analyse de l'Explorer (AST v1) sur l'app A : ce qu'une vue enregistre. */
@@ -553,12 +555,10 @@ function cibles(p: Politique): Cible[] {
     };
     expect(await lire("demo")).toEqual({ apps: [A], tickets: null });
     expect(await lire("viewer")).toEqual({ apps: [A], tickets: null });
-    // Un administrateur AVEC une liste voit aujourd'hui tous les projets : c'est la
-    // règle de la console (`authorizedAppsOf` : admin ⇒ toutes les apps), que le
-    // chargeur partage à l'identique. Le pipeline, lui, confronte déjà `app` à la
-    // liste. C9 alignera la console (« un admin avec une liste n'administre que
-    // ces apps ») ; relevé P0 : aucun administrateur restreint en production.
-    expect(await lire("admin")).toEqual({ apps: [A, B], tickets: "section" });
+    // C9 : un administrateur AVEC une liste ne voit que ses projets — il n'en lit pas
+    // plus qu'il n'en administre (`authorizedAppsOf`). Relevé P0 : aucun administrateur
+    // restreint en production.
+    expect(await lire("admin")).toEqual({ apps: [A], tickets: "section" });
     expect(await lire("plateforme")).toEqual({ apps: [A, B], tickets: "section" });
   });
 
@@ -594,21 +594,61 @@ function cibles(p: Politique): Cible[] {
   });
 
   it("chaque écran d'administration (C8 → C9) : pour un administrateur, le chargeur aboutit — et pour un viewer, 403 avant lui", async () => {
+    /**
+     * Ce que rend un écran à l'administrateur d'une liste (`admin`, [A]) et à celui de
+     * la plateforme, quand ce n'est pas `ok` : les écrans de la plateforme seule
+     * disent `interdit` à une liste ; le formulaire de création d'un site aussi.
+     */
+    const ATTENDU: Partial<Record<keyof typeof ECRANS_ADMIN, { admin: string; plateforme: string }>> = {
+      comptes: { admin: "interdit", plateforme: "ok" },
+      sante: { admin: "interdit", plateforme: "ok" },
+      postes: { admin: "interdit", plateforme: "ok" },
+      nouveauSite: { admin: "interdit", plateforme: "creation" },
+      // La surface des tickets est fermée tant qu'aucune recette réelle n'a été jouée.
+      connecteurs: { admin: "fermee", plateforme: "fermee" },
+    };
     const ecarts: string[] = [];
+    const verifier = async (nom: string, e: Enregistrement, profil: Profil, attendu: string, variante = "") => {
+      const base = requete(e, profil, { nom: "" });
+      const url = variante ? `${base.url}${base.url.includes("?") ? "&" : "?"}${variante}` : base.url;
+      const res = await servirRequete(new Request(url, { headers: base.headers }));
+      if (res.status !== 200) return void ecarts.push(`${nom} · ${profil} : ${res.status} ${await res.text()}`);
+      const { data } = (await res.json()) as { data: { etat?: string } };
+      if (data.etat !== attendu) ecarts.push(`${nom} · ${profil} : état ${data.etat}, attendu ${attendu}`);
+    };
     for (const cle of Object.keys(ECRANS_ADMIN) as (keyof typeof ECRANS_ADMIN)[]) {
       const e = table.find((x) => x.operation.id === ECRANS_ADMIN[cle].id)!;
-      for (const profil of ["admin", "plateforme"] as const) {
-        const res = await servirRequete(requete(e, profil, { nom: "" }));
-        if (res.status !== 200) {
-          ecarts.push(`${cle} · ${profil} : ${res.status} ${await res.text()}`);
-          continue;
-        }
-        const { data } = (await res.json()) as { data: { etat?: string } };
-        if (data.etat !== "ok") ecarts.push(`${cle} · ${profil} : état ${data.etat}`);
-      }
+      for (const profil of ["admin", "plateforme"] as const) await verifier(cle, e, profil, ATTENDU[cle]?.[profil] ?? "ok");
       expect((await servirRequete(requete(e, "viewer", { nom: "" }))).status, cle).toBe(403);
     }
+    // L'intégration d'un site : à l'administrateur de ce site ; hors de son périmètre, introuvable, comme absent.
+    const site = table.find((x) => x.operation.id === ECRANS_ADMIN.nouveauSite.id)!;
+    await verifier("nouveauSite?app=A", site, "admin", "integration", `app=${A}`);
+    await verifier("nouveauSite?app=B", site, "admin", "introuvable", `app=${B}`);
+    await verifier("nouveauSite?app=B", site, "plateforme", "integration", `app=${B}`);
+    const client = table.find((x) => x.operation.id === ECRANS_ADMIN.client.id)!;
+    const horsPerimetre = requete(client, "admin", { nom: "" });
+    const res = await servirRequete(new Request(horsPerimetre.url.replace(`/customers/${A}`, `/customers/${B}`), { headers: horsPerimetre.headers }));
+    expect(((await res.json()) as { data: { etat: string } }).data.etat).toBe("introuvable");
     expect(ecarts).toEqual([]);
+  });
+
+  it("les écrans de session sans portée (C9) : toute session, et chacune ne voit que son périmètre", async () => {
+    const e = table.find((x) => x.operation.id === ECRANS_SESSION.projets.id)!;
+    const projetsDe = async (profil: Profil) => {
+      const res = await servirRequete(requete(e, profil, { nom: "" }));
+      expect(res.status, profil).toBe(200);
+      const { data } = (await res.json()) as { data: { etat: string; projets: { app_id: string }[]; creation: boolean } };
+      expect(data.etat, profil).toBe("ok");
+      return { apps: data.projets.map((p) => p.app_id).filter((a) => a === A || a === B).sort(), creation: data.creation };
+    };
+    expect(await projetsDe("viewer")).toEqual({ apps: [A], creation: false });
+    expect(await projetsDe("admin")).toEqual({ apps: [A], creation: false });
+    expect(await projetsDe("plateforme")).toEqual({ apps: [A, B], creation: true });
+    const anonyme = requete(e, "viewer", { nom: "" });
+    const sansJeton = new Headers(anonyme.headers);
+    sansJeton.delete("authorization");
+    expect((await servirRequete(new Request(anonyme.url, { headers: sansJeton }))).status).toBe(401);
   });
 
   it("les écritures (C6 → C9), de bout en bout : chaque commande aboutit pour qui a le droit, et s'inscrit au journal", async () => {

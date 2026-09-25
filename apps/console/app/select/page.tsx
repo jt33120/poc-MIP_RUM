@@ -15,9 +15,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ICON_PATHS, Icon, type IconName } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { getUser } from "@/lib/auth";
-import { describeProject, projectsForUser } from "@/lib/project";
-import { signauxProjets, type ModeCollecte } from "@/lib/queries-projects";
+import { chargerProjets } from "@/lib/chargeurs/projets";
+import { chargerEcran } from "@/lib/ecran-local";
+import { describeProject } from "@/lib/project";
+import type { ModeCollecte } from "@/lib/queries-projects";
 import { selectProjectAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -51,10 +52,10 @@ export default async function SelectProject({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const user = await getUser();
-  if (!user) redirect("/login");
-  const projects = await projectsForUser(user!);
-  const signaux = await signauxProjets(projects.map((p) => p.app_id));
+  // Le chargeur (`lib/chargeurs/projets.ts`) : les projets du périmètre et leurs signaux (C9).
+  const ecran = await chargerEcran(chargerProjets, {});
+  if (ecran.etat === "sans_session") redirect("/login");
+  const { email, projets: projects, signaux, creation } = ecran;
   // Posé par le middleware quand l'URL nommait une app hors périmètre (P6.2) : le
   // refus est dit, au lieu d'ouvrir silencieusement un autre projet.
   const refus = (await searchParams).hors_perimetre;
@@ -79,7 +80,7 @@ export default async function SelectProject({
             <ThemeToggle />
             <form action="/logout" method="post">
               <button className="btn-ghost" type="submit">
-                {user!.email} · quitter
+                {email} · quitter
               </button>
             </form>
           </div>
@@ -187,7 +188,7 @@ export default async function SelectProject({
             );
           })}
 
-          {user!.role === "admin" && (
+          {creation && (
             <Link
               href="/select/new"
               data-testid="add-site"

@@ -7,6 +7,7 @@
 // n'aura à changer de type. Il lit la session : il ne part jamais dans le bundle
 // de console-api (la garde du build refuse `lib/auth.ts`).
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import type { Fil } from "@mip/console-contract";
 import { getUser } from "./auth";
 import { PARAM_BLOCS, versLeFil, type Chargeur, type CheminEcran, type ParametresEcran } from "./chargeurs/commun";
@@ -27,4 +28,15 @@ export async function avecBlocs(sp: ParametresEcran, href: string): Promise<Para
   const { [PARAM_BLOCS]: _ignore, ...reste } = sp;
   const brut = (await cookies()).get(cat.cookie)?.value;
   return brut === undefined ? reste : { ...reste, [PARAM_BLOCS]: brut };
+}
+
+/**
+ * Un écran d'ADMINISTRATION (C8 → C9) : son chargeur dit `sans_session` ou
+ * `interdit` au lieu de rediriger ; la page redirige ici, comme `requireAdmin` —
+ * vers la connexion, ou vers l'accueil.
+ */
+export function accesAdmin<T extends { etat: string }>(ecran: T): Exclude<T, { etat: "sans_session" | "interdit" }> {
+  if (ecran.etat === "sans_session") redirect("/login");
+  if (ecran.etat === "interdit") redirect("/");
+  return ecran as Exclude<T, { etat: "sans_session" | "interdit" }>;
 }

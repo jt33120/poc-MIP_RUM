@@ -153,7 +153,18 @@ Désactiver un compte ou réinitialiser son mot de passe **révoque ses sessions
 
 **Le lint des écritures** (`tests/unit/ecritures-par-application.test.ts`) relit tout le SQL d'écriture de la console : un `update` ou un `delete` par identifiant sans `app_id` échoue, hors des tables listées avec leur raison (un compte, une session, un tableau de bord et sa porte, une vue personnelle, un poste de l'extension, le registre des applications). Il a trouvé deux écritures à corriger : la clôture d'une demande d'effacement et la mise à jour d'un connecteur de tickets, désormais filtrées par leur application.
 
-**Reste de C9** (PR suivante) : les écrans d'administration en chargeurs, et le périmètre de LECTURE d'un administrateur d'une liste aligné sur celui de ses écritures.
+**C9b — les écrans de l'administration** (13 écrans, `lib/chargeurs/administration.ts` et `lib/chargeurs/projets.ts`). Tous les écrans d'`/admin` (hors `/admin/privacy`, C10) ont leur chargeur, et avec eux `/select` et `/select/new`. Une règle : **un administrateur d'une liste ne LIT pas plus qu'il n'administre**.
+
+- Les écrans de la plateforme seule — comptes, santé interne, postes de l'extension — disent `interdit` à un administrateur d'une liste (la page renvoie à l'accueil, comme `requireAdmin` le faisait pour un viewer).
+- Les autres restreignent leurs listes à son périmètre : applications clientes (et le formulaire de création, à la plateforme seule), jetons de lecture, domaines de l'extension, source maps, connecteurs, consommation, et le journal d'audit (par `audit_log.app_id`, migration-v90 ; sans elle, rien ne rattache une ligne à une application : une liste n'en lit aucune). La fiche d'une application hors de son périmètre est `introuvable`, comme absente.
+- `authorizedAppsOf` (`lib/query-contract.ts`) ne rend plus « toutes les applications » à un administrateur qui a une liste : le sélecteur de projet, la coquille et `/select` lui montrent sa liste. Seul `apps = null` vaut toutes.
+- `/select` est un écran **de session sans portée** : une famille à part du contrat (`ECRANS_SESSION`), toute session, le chargeur ne lisant que le périmètre du principal. La carte « Ajouter un site » n'est proposée qu'à la plateforme (la commande `creerSite` l'est). `/select/new` est un écran d'administration : le formulaire à la plateforme, l'intégration d'un site existant à ses administrateurs.
+
+Ce qu'une page tient de sa requête reste à la page : l'hôte (URL du SDK et de l'ingestion d'un snippet) et, jusqu'à C9c, le secret à usage unique relu du stash mémoire.
+
+`tests/contract/console-api-authz.test.ts` joue chaque écran d'administration pour l'administrateur d'une liste et pour celui de la plateforme (état attendu de chacun, 403 au viewer), l'intégration d'un site dans et hors du périmètre, et `/select` pour chaque profil.
+
+**Reste de C9 — C9c** : les secrets à usage unique (mot de passe créé ou réinitialisé, clé d'une application créée ou tournée, jeton de lecture, site ajouté) passent par `useActionState` : la décision de la commande les porte jusqu'au formulaire, `stashSecret`/`popSecret` disparaissent. Cela corrige aussi le « déjà affiché » du mot de passe généré sur `/admin/users` (Next rend la page cible dans la réponse de l'action, puis la relit : le stash est vidé deux fois).
 
 ## Ordre proposé pour libérer le cliquet
 
