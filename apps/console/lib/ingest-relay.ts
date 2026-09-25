@@ -130,6 +130,16 @@
 // `OPTIONS` n'est jamais relayé (préflight local, CORS local), et
 // `NEXT_PUBLIC_RUM_ENDPOINT` n'est pas touché : les navigateurs continuent de
 // viser la console.
+//
+// ═════════════════════════════ RELAIS PUR (C11) ══════════════════════════════
+//
+// `CONSOLE_INGEST_RELAY_STRICT=1` : il n'y a PLUS de chemin local. Tout part au
+// collector (le pourcentage est ignoré), et ce qui déclenchait un repli — erreur
+// de connexion, réponse non signée, disjoncteur ouvert, collector en mauvaise
+// santé — rend 503 + `retry-after` : le SDK rejoue, le collector écrira. C'est
+// l'état d'arrivée de la collecte (P6a « 6b »), qui permet ensuite de retirer le
+// chemin d'écriture de la console (C12). À n'allumer qu'après ≥ 7 jours à 100 %
+// sans repli. Retour arrière : retirer la variable et redéployer.
 import { log as logIngest } from "./ingest";
 import { pourcentageRelais } from "./platform-flag";
 
@@ -409,7 +419,28 @@ export function creerRelais(deps: {
     return santeEnVol;
   }
 
-  function envoyeur(signal: Signal, config: ConfigRelais): Relais {
+  /** Relais pur, collector injoignable : 503 + `retry-after`, jamais le chemin local. */
+  function indisponible(signal: Signal, raison: string): Relais {
+    return {
+      async envoyer(_req, _corps, cors) {
+        log.warn("relay strict: collector unavailable", { signal, raison });
+        return new Response(JSON.stringify({ error: "ingestion unavailable, retry", retry: true }), {
+          status: 503,
+          headers: { "content-type": "application/json", ...cors, "retry-after": RETRY_AFTER_DELAI_S },
+        });
+      },
+    };
+  }
+
+  function envoyeur(signal: Signal, config: ConfigRelais, strict = false): Relais {
+    /** Un repli : le chemin local, ou — relais pur — un 503 que le client rejoue. */
+    const repli = (cors: Record<string, string>): Response | null =>
+      strict
+        ? new Response(JSON.stringify({ error: "ingestion unavailable, retry", retry: true }), {
+            status: 503,
+            headers: { "content-type": "application/json", ...cors, "retry-after": RETRY_AFTER_DELAI_S },
+          })
+        : null;
     return {
       async envoyer(req, corps, cors) {
         const entetes = new Headers();
@@ -458,7 +489,7 @@ export function creerRelais(deps: {
           echec(signal, `réseau ${code}`);
           if (echecAvantEnvoi(err) || IDEMPOTENTS[signal]) {
             log.warn("relay fallback", { signal, raison: "réseau", code });
-            return null;
+            return repli(cors);
           }
           // Logs, connexion perdue APRÈS l'envoi : le lot a peut-être été écrit.
           log.warn("relay failed, outcome unknown", { signal, code });
@@ -472,7 +503,7 @@ export function creerRelais(deps: {
         if (issue === "repli") {
           echec(signal, `statut ${statut} non signé`);
           log.warn("relay fallback", { signal, raison: "statut", statut });
-          return null;
+          return repli(cors);
         }
         if (issue === "incertain") {
           // Logs, 502/504 du routeur : une réplique a pu committer le lot puis
@@ -513,6 +544,12 @@ export function creerRelais(deps: {
         return null;
       }
       derniereRaisonConfig = null;
+      if (env().CONSOLE_INGEST_RELAY_STRICT === "1") {
+        // Relais pur : ni tirage, ni chemin local — un collector injoignable rend 503.
+        if (maintenant() < contourneJusqua) return indisponible(signal, "disjoncteur ouvert");
+        if (!(await verifierSante(lu.config))) return indisponible(signal, "santé du collector");
+        return envoyeur(signal, lu.config, true);
+      }
       if (maintenant() < contourneJusqua) return null;
       const pct = await pourcentage();
       if (!(pct > 0)) return null;

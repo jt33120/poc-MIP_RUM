@@ -33,6 +33,13 @@
 //
 // Le geste d'urgence : `update platform_flag set value = '0' where key = 'api_relay_pct'`,
 // effectif en 30 s.
+//
+// RELAIS PUR (C11). `CONSOLE_API_RELAY_STRICT=1` : une lecture au jeton part
+// TOUJOURS au service (le pourcentage est ignoré), et ce qui déclenchait un repli
+// rend 503 + `retry-after`. C'est ce qui permet de retirer `CONSOLE_API_TOKENS`
+// (et `XSOM_*`) de Vercel : la console ne sert plus elle-même aucune lecture au
+// jeton. Les lectures à la session (les écrans) restent locales. Retour arrière :
+// retirer la variable (et reposer les jetons) puis redéployer.
 
 import { pourcentageRelaisApi } from "./platform-flag";
 
@@ -105,12 +112,22 @@ export function creerRelaisApi(deps: {
     }
   }
 
+  /** Relais pur, service injoignable : 503 que le client rejoue, jamais le chemin local. */
+  const indisponible = () =>
+    Response.json({ error: "service de lecture indisponible, réessayer" }, { status: 503, headers: { "retry-after": "5" } });
+
   /** La réponse du service, ou `null` : la console sert elle-même. Ne lève jamais. */
   async function relayer(req: Request): Promise<Response | null> {
-    const base = lireUrlRelaisApi(env());
-    if (!base || !eligible(req) || maintenant() < coupeJusqua) return null;
-    const pct = await pourcentage().catch(() => 0);
-    if (pct <= 0 || aleatoire() * 100 >= pct) return null;
+    const variables = env();
+    const base = lireUrlRelaisApi(variables);
+    if (!base || !eligible(req)) return null;
+    const strict = variables.CONSOLE_API_RELAY_STRICT === "1";
+    const repli = () => (strict ? indisponible() : null);
+    if (maintenant() < coupeJusqua) return repli();
+    if (!strict) {
+      const pct = await pourcentage().catch(() => 0);
+      if (pct <= 0 || aleatoire() * 100 >= pct) return null;
+    }
 
     const url = new URL(req.url);
     const entetes = new Headers();
@@ -121,10 +138,10 @@ export function creerRelaisApi(deps: {
     let corps: ArrayBuffer | undefined;
     if (req.method.toUpperCase() === "POST") {
       const annonce = Number(req.headers.get("content-length") ?? 0);
-      if (annonce > CORPS_MAX_OCTETS) return null;
+      if (annonce > CORPS_MAX_OCTETS) return strict ? Response.json({ error: "corps trop volumineux" }, { status: 413 }) : null;
       // Un CLONE : le corps original reste lisible pour le repli local.
       corps = await req.clone().arrayBuffer();
-      if (corps.byteLength > CORPS_MAX_OCTETS) return null;
+      if (corps.byteLength > CORPS_MAX_OCTETS) return strict ? Response.json({ error: "corps trop volumineux" }, { status: 413 }) : null;
     }
 
     let res: Response;
@@ -138,12 +155,12 @@ export function creerRelaisApi(deps: {
       });
     } catch {
       echec();
-      return null;
+      return repli();
     }
     if (res.headers.get(ENTETE_API) !== "1" || res.status >= 500) {
       await res.body?.cancel().catch(() => {});
       echec();
-      return null;
+      return repli();
     }
     const sortie = new Headers();
     for (const [nom, valeur] of res.headers) if (!NON_RECOPIES.has(nom)) sortie.append(nom, valeur);

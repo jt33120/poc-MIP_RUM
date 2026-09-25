@@ -42,6 +42,10 @@ Une lecture se rejoue sans risque : **tout échec retombe sur la console**, sans
 
 Une réponse signée sous 500 — 200, 304, et les refus 400, 401, 403, 404 identiques à ceux de la console — est rendue telle quelle. **Disjoncteur par instance** : 5 échecs en 30 s coupent le relais 60 s.
 
+## Relais pur (C11)
+
+Une fois le relais à 100 % et tenu, `CONSOLE_API_RELAY_STRICT=1` sur Vercel supprime le chemin local des lectures **au jeton** : le pourcentage est ignoré, et ce qui déclenchait un repli rend **503 + `retry-after: 5`**. Les lectures à la session (les écrans de la console) restent locales. C'est ce qui permet ensuite de retirer `CONSOLE_API_TOKENS` et `XSOM_*` de Vercel : la console ne sert plus elle-même aucune lecture au jeton. Retour arrière : retirer la variable (et reposer les jetons), redéployer.
+
 ## Surveiller
 
 - `api_requests_total{route,status}` sur `/metrics` du service ;

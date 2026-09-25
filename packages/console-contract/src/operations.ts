@@ -241,6 +241,9 @@ export const ECRANS = Object.freeze({
   alertes: ecran("screens.alerts", "/v1/screens/alerts"),
   /** Écran composable : sa composition voyage sous `blocs` (le cookie de la console). */
   slo: ecran("screens.slo", "/v1/screens/slo"),
+  // C11 — les releases comparables de la barre de filtres (`GET /api/releases`, une
+  // route de la console appelée par le navigateur, relais serveur à la bascule).
+  releases: ecran("screens.releases", "/v1/screens/releases"),
 });
 export type CleEcran = keyof typeof ECRANS;
 
