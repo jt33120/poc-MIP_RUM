@@ -12,6 +12,7 @@
 // le type de `@mip/console-api` refuse un écran du contrat sans chargeur.
 import { chargerAcquisition } from "@/lib/chargeurs/acquisition";
 import { chargerActions } from "@/lib/chargeurs/actions";
+import { chargerAlertes } from "@/lib/chargeurs/alertes";
 import { chargerAi } from "@/lib/chargeurs/ai";
 import { chargerCoquille } from "@/lib/chargeurs/coquille";
 import { chargerCorrelation } from "@/lib/chargeurs/correlation";
@@ -34,7 +35,9 @@ import { chargerPaths } from "@/lib/chargeurs/paths";
 import { chargerRejeu } from "@/lib/chargeurs/rejeu";
 import { chargerRetention } from "@/lib/chargeurs/retention";
 import { chargerSession } from "@/lib/chargeurs/session";
+import { chargerSondes } from "@/lib/chargeurs/sondes";
 import { chargerSessions } from "@/lib/chargeurs/sessions";
+import { chargerSlo } from "@/lib/chargeurs/slo";
 import { chargerSvi, chargerSviAppel, chargerSviAppels } from "@/lib/chargeurs/svi";
 import { chargerTableau } from "@/lib/chargeurs/tableau";
 import { chargerTableaux } from "@/lib/chargeurs/tableaux";
@@ -96,6 +99,13 @@ export const ecrans = {
     // L'export : la route de la console passe le signal de sa requête ; ici, l'échéance de l'appel borne l'export.
     exportTableau: page((p, sp, chemin) => chargerExportTableau(p, sp, chemin)),
     vues: page(chargerVues),
+    // C8
+    alertes: page(chargerAlertes),
+    slo: page(chargerSlo),
+  },
+  // C8 → C9 — les écrans d'administration (un administrateur, sans portée d'application).
+  administration: {
+    sondes: page(chargerSondes),
   },
   refusDeFiltre: (e) => (e instanceof UnsupportedFilterError ? { code: e.error.code, message: e.error.message } : null),
 };

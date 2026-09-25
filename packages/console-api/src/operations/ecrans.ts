@@ -15,8 +15,10 @@
 import {
   COQUILLE,
   ECRANS,
+  ECRANS_ADMIN,
   PARAMETRES_ECRAN,
   type CleEcran,
+  type CleEcranAdmin,
   type Coquille,
   type Operation,
   type ParametresEcran,
@@ -62,8 +64,10 @@ export interface ChargeursEcrans {
     readonly fuseaux: Readonly<Record<string, string>>;
     readonly tickets: Lecture<boolean> | null;
   }>;
-  /** C3 → C5 — un chargeur par écran du contrat (`ECRANS`), sans exception : le type l'exige. */
+  /** C3 → C6 — un chargeur par écran du contrat (`ECRANS`), sans exception : le type l'exige. */
   readonly pages: { readonly [K in CleEcran]: ChargeurEcran };
+  /** C8 → C9 — les écrans d'administration (`ECRANS_ADMIN`) : un administrateur, sans portée d'application. */
+  readonly administration: { readonly [K in CleEcranAdmin]: ChargeurEcran };
   /**
    * Reconnaît un REFUS de filtre (`UnsupportedFilterError` de la console) : un
    * écran qui ne sait pas appliquer un filtre le refuse, ce n'est pas une panne.
@@ -74,6 +78,12 @@ export interface ChargeursEcrans {
 
 /** La politique commune des écrans. */
 const POLITIQUE_ECRAN = { auth: "session", portee: "app", demo: "lecture", entree: { requete: PARAMETRES_ECRAN } } as const;
+/**
+ * La politique des écrans d'administration : un administrateur (une démo est un
+ * viewer, donc refusée), sans portée — le chargeur restreint ce qu'il liste au
+ * périmètre du principal relu en base.
+ */
+const POLITIQUE_ECRAN_ADMIN = { auth: "admin", portee: "globale", demo: "lecture", entree: { requete: PARAMETRES_ECRAN } } as const;
 
 /** Une lecture → une section du fil : la raison reste au journal. */
 export function versSection<T>(l: Lecture<T>, contexte: { journal: Journal; requestId: string; section: string }): Section<T> {
@@ -112,6 +122,17 @@ export function operationsEcrans(c: ChargeursEcrans): Enregistrement[] {
           throw e;
         }
       }),
+    ),
+    ...(Object.keys(ECRANS_ADMIN) as CleEcranAdmin[]).map((cle) =>
+      servir(
+        ECRANS_ADMIN[cle] as Operation<Readonly<Record<string, string>>, ParametresEcran, never, unknown>,
+        POLITIQUE_ECRAN_ADMIN,
+        async ({ principal, requete, params, requestId }) => {
+          if (principal.kind !== "session") throw new ErreurContrat("session_requise", "session requise");
+          const qui: PrincipalChargeur = { email: principal.email, role: principal.role, apps: principal.apps, demo: principal.demo };
+          return c.administration[cle](qui, { ...(requete as ParametresEcran) }, (params ?? {}) as Readonly<Record<string, string>>, requestId);
+        },
+      ),
     ),
   ];
 }

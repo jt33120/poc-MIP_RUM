@@ -14,12 +14,15 @@ export function ChannelsSection({
   apps,
   defaultApp,
   admin = false,
+  global = admin,
 }: {
   channels: { id: number; app_id: string | null; kind: string; target: string; severity_min: string; active: boolean }[];
   apps: { app_id: string; name: string }[];
   defaultApp?: string;
   /** V9 : sans droit d'écriture, ni formulaire ni bouton dans le DOM (F64). */
   admin?: boolean;
+  /** C8 : un canal GLOBAL (toutes les applications) est réservé à l'administrateur de la plateforme. */
+  global?: boolean;
 }) {
   return (
     <div className="mt-10" id="canaux">
@@ -42,8 +45,8 @@ export function ChannelsSection({
           className="flex flex-wrap items-end gap-3 border-t border-line p-4"
         >
           <Field label="App (optionnel)">
-            <select name="app_id" defaultValue={defaultApp ?? ""} className={INPUT_CLASS}>
-              <option value="">tous (global)</option>
+            <select name="app_id" defaultValue={defaultApp ?? (global ? "" : apps[0]?.app_id)} className={INPUT_CLASS}>
+              {global && <option value="">tous (global)</option>}
               {apps.map((a) => (
                 <option key={a.app_id} value={a.app_id}>
                   {a.app_id}
@@ -116,6 +119,7 @@ export function ChannelsSection({
             <div className="ml-auto flex gap-2">
               <form action={toggleChannelAction}>
                 <input type="hidden" name="id" value={c.id} />
+                <input type="hidden" name="active" value={c.active ? "false" : "true"} />
                 <button
                   type="submit"
                   data-testid={`toggle-channel-${c.id}`}

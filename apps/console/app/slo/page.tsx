@@ -16,7 +16,6 @@
 //
 // CHAQUE LECTURE EST INDÉPENDANTE (F02, § 3.8) : `lire()` ne lève pas. PAS de
 // `<Suspense>` ni de `loading.tsx` au-dessus de l'écran.
-import { cookies } from "next/headers";
 import { BudgetBars, alternativeBudget } from "@/components/charts/BudgetBars";
 import { Figure } from "@/components/charts/Figure";
 import { KpiTile } from "@/components/charts/KpiTile";
@@ -27,47 +26,27 @@ import { SloRow } from "@/components/slo/SloStatusRow";
 import { CadreEtat } from "@/components/states/EtatSurface";
 import { EchecLecture, SectionErreur } from "@/components/states/SectionErreur";
 import { TousEteints } from "@/components/TousEteints";
-import { getUser } from "@/lib/auth";
-import { catalogueDe, lireChoix } from "@/lib/dashboard-blocs";
+import { chargerSlo, JOURS_ALERTES_SLO as JOURS_ALERTES } from "@/lib/chargeurs/slo";
+import { avecBlocs, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
-import { lire, type Lecture } from "@/lib/lecture";
-import { pageFilters } from "@/lib/page-filters";
-import { registeredApps, type AppItem } from "@/lib/queries";
-import { listSlo, sloStatus, type SloRaw, type SloStatusRow } from "@/lib/queries-alerting";
-import { alertFirings, SLO_METRICS } from "@/lib/queries-v2";
+import { SLO_METRICS } from "@/lib/queries-v2";
 import { alertesParSlo, comptesSlo, FACTEUR_BURN_RAPIDE, FORMULE_SLO, lignesBudget, metriqueEnClair } from "@/lib/slo-ecran";
 import { createSloAction } from "../alerts/actions";
 
 export const dynamic = "force-dynamic";
 
 const TITRE = "SLO et budget d'erreur";
-/** Fenêtre de la colonne « Alertes sur 7 j » : jours calendaires UTC, jour en cours compris. */
-const JOURS_ALERTES = 7;
-
-/** Lecture non lancée (bloc éteint) : une valeur sûre, jamais affichée comme mesure. */
-const sansLecture = <T,>(data: T): Promise<Lecture<T>> => Promise.resolve({ ok: true, data });
 
 const TH = "whitespace-nowrap px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-soft";
 
 export default async function Slo({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const sp = (await searchParams) ?? {};
-  const ecran = await pageFilters(sp, "/slo");
-  if (!ecran.ok) return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
-  const f = ecran.filters;
-  // Composition de l'écran, lue AVANT les requêtes (blocs configurables conservés) :
-  // `budget` = KPI, hero et historique ; `liste` = définitions ; `creation` = formulaire.
-  const cat = catalogueDe("/slo")!;
-  const blocs = lireChoix(cat, (await cookies()).get(cat.cookie)?.value);
-  const utilisateur = await getUser();
-  const admin = utilisateur?.role === "admin" && !utilisateur.demo;
-
-  const [statuts, slos, apps, declenchements] = await Promise.all([
-    blocs.budget || blocs.liste ? lire(() => sloStatus(f)) : sansLecture<SloStatusRow[]>([]),
-    blocs.liste || blocs.creation ? lire(() => listSlo(f)) : sansLecture<SloRaw[]>([]),
-    blocs.creation && admin ? lire(() => registeredApps()) : sansLecture<AppItem[]>([]),
-    blocs.liste ? lire(() => alertFirings(f, JOURS_ALERTES)) : sansLecture(null),
-  ]);
-  const luA = new Date().toISOString().slice(11, 19);
+  // Le chargeur (`lib/chargeurs/slo.ts`) reçoit la composition de l'écran (blocs
+  // `budget`, `liste`, `creation`, du cookie) : un bloc éteint ne lance pas sa lecture.
+  const ecran = await chargerEcran(chargerSlo, await avecBlocs(sp, "/slo"));
+  if (ecran.etat === "refus") return <FilterProblemNotice title={TITRE} problem={ecran.problem} />;
+  const f = { app: ecran.appFiltre };
+  const { blocs, admin, statuts, slos, apps, declenchements, luA } = ecran;
 
   const lignes = statuts.ok ? lignesBudget(statuts.data) : [];
   const comptes = statuts.ok ? comptesSlo(statuts.data) : null;

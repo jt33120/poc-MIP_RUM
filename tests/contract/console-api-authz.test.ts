@@ -20,7 +20,7 @@
 import { gzipSync } from "node:zlib";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { COMMANDES, ECRANS, operation } from "@mip/console-contract";
+import { COMMANDES, ECRANS, ECRANS_ADMIN, operation } from "@mip/console-contract";
 import {
   chargerTrousseau,
   creerConsoleApi,
@@ -114,6 +114,16 @@ const CHEMINS: Record<string, Record<string, string>> = {
   "issues.link": { id: ISSUE_ABSENTE },
   "issues.requestTicket": { id: ISSUE_ABSENTE },
   "errors.setStatus": { fingerprint: EMPREINTE_A },
+  // C8 — des identifiants qu'aucune ligne ne porte : `introuvable`, sans rien écrire.
+  "alerts.updateRule": { id: ABSENT },
+  "alerts.setRuleActive": { id: ABSENT },
+  "alerts.acknowledgeEvent": { id: ABSENT },
+  "slo.setActive": { id: ABSENT },
+  "slo.delete": { id: ABSENT },
+  "channels.setActive": { id: ABSENT },
+  "channels.delete": { id: ABSENT },
+  "uptime.setEnabled": { id: ABSENT },
+  "uptime.delete": { id: ABSENT },
 };
 
 /** Une analyse de l'Explorer (AST v1) sur l'app A : ce qu'une vue enregistre. */
@@ -209,6 +219,16 @@ const CORPS: Record<string, unknown> = {
   "issues.link": { url: "https://tickets.exemple.fr/AUTHZ-1", label: "AUTHZ-1", expectedRevision: "1" },
   "issues.requestTicket": { integrationId: "1", expectedRevision: "1", origine: "" },
   "errors.setStatus": { status: "open" },
+  // C8 — les champs d'un formulaire (des chaînes), tels que la console les envoie.
+  "alerts.createRule": { app_id: A, metric: "LCP", comparator: ">", threshold: "2500", window_minutes: "15", mode: "threshold", severity: "warning" },
+  "alerts.updateRule": { app_id: A, metric: "LCP", comparator: ">", threshold: "3000", window_minutes: "15", mode: "threshold", severity: "warning" },
+  "alerts.setRuleActive": { active: false },
+  "slo.create": { app_id: A, name: "authz", metric: "error_rate", objective: "99", window_days: "28" },
+  "slo.setActive": { active: false },
+  "channels.create": { app_id: A, kind: "webhook", target: "https://hooks.exemple.fr/authz", severity_min: "warning" },
+  "channels.setActive": { active: false },
+  "uptime.create": { name: "authz", url: "https://exemple.fr/sante" },
+  "uptime.setEnabled": { enabled: false },
 };
 /** Hors de la boucle : la déconnexion RÉVOQUE la session du profil — testée à part, en dernier. */
 const HORS_MATRICE = new Set(["auth.logout"]);
@@ -285,6 +305,10 @@ function cibles(p: Politique): Cible[] {
     await pool.query("delete from error_status where app_id = any($1)", [[A, B]]);
     await pool.query("delete from error_issue_activity where app_id = any($1)", [[A, B]]);
     await pool.query("delete from error_issue_ticket where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from alert_rule where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from slo where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from notify_channel where app_id = any($1) or target like 'https://hooks.exemple.fr/authz%'", [[A, B]]);
+    await pool.query("delete from uptime_check where app_id = any($1)", [[A, B]]);
     await pool.query("delete from replay_chunk where app_id = any($1)", [[A, B]]);
     await pool.query("delete from rum_error where app_id = any($1)", [[A, B]]);
     await pool.query("delete from error_issue where app_id = any($1)", [[A, B]]);
@@ -539,7 +563,25 @@ function cibles(p: Politique): Cible[] {
     expect(ecarts).toEqual([]);
   });
 
-  it("les écritures (C6, C7), de bout en bout : chaque commande aboutit pour qui a le droit, et s'inscrit au journal", async () => {
+  it("chaque écran d'administration (C8 → C9) : pour un administrateur, le chargeur aboutit — et pour un viewer, 403 avant lui", async () => {
+    const ecarts: string[] = [];
+    for (const cle of Object.keys(ECRANS_ADMIN) as (keyof typeof ECRANS_ADMIN)[]) {
+      const e = table.find((x) => x.operation.id === ECRANS_ADMIN[cle].id)!;
+      for (const profil of ["admin", "plateforme"] as const) {
+        const res = await servirRequete(requete(e, profil, { nom: "" }));
+        if (res.status !== 200) {
+          ecarts.push(`${cle} · ${profil} : ${res.status} ${await res.text()}`);
+          continue;
+        }
+        const { data } = (await res.json()) as { data: { etat?: string } };
+        if (data.etat !== "ok") ecarts.push(`${cle} · ${profil} : état ${data.etat}`);
+      }
+      expect((await servirRequete(requete(e, "viewer", { nom: "" }))).status, cle).toBe(403);
+    }
+    expect(ecarts).toEqual([]);
+  });
+
+  it("les écritures (C6 → C8), de bout en bout : chaque commande aboutit pour qui a le droit, et s'inscrit au journal", async () => {
     /** Appelle une commande comme la console le fera : son opération, sa portée, son corps. */
     const appeler = async (cle: keyof typeof COMMANDES, profil: Profil, o: { app?: string; chemin?: Record<string, string>; corps?: unknown } = {}) => {
       const op = COMMANDES[cle];
@@ -620,6 +662,45 @@ function cibles(p: Politique): Cible[] {
     expect(await appeler("trierGroupe", "admin", { app: A, chemin: { fingerprint: EMPREINTE_A }, corps: { status: "ignored" } })).toEqual({ etat: "ok" });
     expect((await pool.query("select status from error_status where app_id = $1 and fingerprint = $2", [A, EMPREINTE_A])).rows[0]?.status).toBe("ignored");
 
+    // C8 — une règle, un SLO, un canal et une sonde de l'app A, par son administrateur ; chaque
+    // ligne relue DANS son application (un identifiant sous une autre : introuvable).
+    const regle = await appeler("creerRegle", "admin", { app: A, corps: { app_id: A, metric: "LCP", comparator: ">", threshold: "2500", window_minutes: "15", mode: "threshold", severity: "warning" } });
+    expect(regle).toMatchObject({ etat: "cree" });
+    const idRegle = String(regle.id);
+    expect(await appeler("activerRegle", "plateforme", { app: B, chemin: { id: idRegle }, corps: { active: false } })).toEqual({ etat: "introuvable" });
+    expect(await appeler("activerRegle", "admin", { app: A, chemin: { id: idRegle }, corps: { active: false } })).toEqual({ etat: "ok" });
+    const regleInp = (app_id: string) => ({ app_id, metric: "INP", comparator: ">", threshold: "300", window_minutes: "30", mode: "threshold", severity: "critical" });
+    expect(await appeler("modifierRegle", "admin", { app: A, chemin: { id: idRegle }, corps: regleInp(A) })).toEqual({ etat: "ok" });
+    // Déplacer la règle vers une application hors de sa liste : refusé par la commande.
+    expect(await appeler("modifierRegle", "admin", { app: A, chemin: { id: idRegle }, corps: regleInp(B) })).toEqual({ etat: "hors_perimetre" });
+    expect((await pool.query("select metric, active, app_id from alert_rule where id = $1", [idRegle])).rows[0]).toEqual({ metric: "INP", active: false, app_id: A });
+    // Un webhook vers le réseau privé : refusé à l'écriture, avec son code.
+    expect(
+      await appeler("creerRegle", "admin", {
+        app: A,
+        corps: { app_id: A, metric: "LCP", comparator: ">", threshold: "1", window_minutes: "15", mode: "threshold", severity: "warning", webhook_url: "http://10.0.0.1/x" },
+      }),
+    ).toEqual({ etat: "url_refusee", code: "ip_litterale" });
+    const slo = await appeler("creerSlo", "admin", { app: A, corps: { app_id: A, name: "C8", metric: "error_rate", objective: "99", window_days: "28" } });
+    expect(slo).toMatchObject({ etat: "cree" });
+    expect(await appeler("activerSlo", "admin", { app: A, chemin: { id: String(slo.id) }, corps: { active: false } })).toEqual({ etat: "ok" });
+    expect(await appeler("supprimerSlo", "admin", { app: A, chemin: { id: String(slo.id) } })).toEqual({ etat: "ok" });
+    // Un canal GLOBAL : l'administrateur de la plateforme seul.
+    const corpsCanal = (app_id: string) => ({ app_id, kind: "webhook", target: "https://hooks.exemple.fr/authz-c8", severity_min: "warning" });
+    expect(await appeler("creerCanal", "admin", { corps: corpsCanal("") })).toEqual({ etat: "hors_perimetre" });
+    const global = await appeler("creerCanal", "plateforme", { corps: corpsCanal("") });
+    expect(global).toMatchObject({ etat: "cree" });
+    // Un administrateur de l'app A ne touche pas au canal global.
+    expect(await appeler("supprimerCanal", "admin", { chemin: { id: String(global.id) } })).toEqual({ etat: "introuvable" });
+    expect(await appeler("activerCanal", "plateforme", { chemin: { id: String(global.id) }, corps: { active: false } })).toEqual({ etat: "ok" });
+    expect(await appeler("supprimerCanal", "plateforme", { chemin: { id: String(global.id) } })).toEqual({ etat: "ok" });
+    const sonde = await appeler("creerSonde", "admin", { app: A, corps: { name: "C8", url: "https://exemple.fr/sante" } });
+    expect(sonde).toMatchObject({ etat: "cree" });
+    expect(await appeler("activerSonde", "admin", { app: A, chemin: { id: String(sonde.id) }, corps: { enabled: false } })).toEqual({ etat: "ok" });
+    expect(await appeler("supprimerSonde", "admin", { app: A, chemin: { id: String(sonde.id) } })).toEqual({ etat: "ok" });
+    // « Évaluer maintenant » touche toutes les applications : la plateforme seule.
+    expect(await appeler("evaluerAlertes", "plateforme")).toMatchObject({ etat: "ok" });
+
     // Le journal : une ligne par écriture auditée, avec la requête, l'acteur et l'application.
     const { rows } = await pool.query<{ action: string; actor_kind: string; app_id: string | null; request_id: string }>(
       "select action, actor_kind, app_id, request_id from audit_log where request_id like 'authz-c6-%' order by id",
@@ -637,12 +718,24 @@ function cibles(p: Politique): Cible[] {
       "issue.comment",
       "issue.triage",
       "error.set_status",
+      "alert_rule.create",
+      "alert_rule.update",
+      "alert_rule.set_active",
+      "slo.create",
+      "slo.set_active",
+      "slo.delete",
+      "uptime_check.create",
+      "uptime_check.set_enabled",
+      "uptime_check.delete",
     ]) {
       expect(actions, a).toContain(a);
     }
     // L'édition des cartes et les vues personnelles sont exemptées : aucune ligne.
     expect(actions.some((a) => a.startsWith("dashboard.add") || a.startsWith("savedViews") || a.startsWith("saved_view"))).toBe(false);
-    expect(rows.every((r) => r.actor_kind === "user" && r.app_id === A)).toBe(true);
+    // Chaque ligne porte l'application de ce qu'elle touche ; un canal global et l'évaluation, aucune.
+    const sansApp = new Set(["notify_channel.create", "notify_channel.set_active", "notify_channel.delete", "alert.evaluate"]);
+    expect(rows.filter((r) => r.actor_kind !== "user" || r.app_id !== (sansApp.has(r.action) ? null : A))).toEqual([]);
+    expect(actions).toEqual(expect.arrayContaining([...sansApp]));
   });
 
   it("révoquer une session, désactiver un compte : refusé en 30 s au plus, sans nouveau jeton", async () => {

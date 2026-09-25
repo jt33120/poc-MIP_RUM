@@ -5,6 +5,7 @@
 // d'apps de la requête commune : chaque SLO se mesure sur sa propre fenêtre, sa
 // métrique et sa route, et l'écran n'annonce ni plage ni filtre de population.
 import { q } from "./db";
+import { ecrire, type ClientEcriture } from "./requete";
 import { queryOf, type FiltersLike } from "./filters";
 import { binder, compileScope } from "./query-compiler";
 
@@ -76,21 +77,26 @@ export interface SloInput {
   route: string | null;
 }
 
-export async function insertSlo(s: SloInput): Promise<void> {
-  await q(
+/** Rend l'identifiant du SLO créé. `client` : la transaction de la commande (C8), avec son audit. */
+export async function insertSlo(s: SloInput, client?: ClientEcriture): Promise<string> {
+  const { rows } = await ecrire<{ id: string }>(
+    client,
     `insert into slo (app_id, name, metric, objective, window_days, route)
-     values ($1, $2, $3, $4, $5, $6)`,
+     values ($1, $2, $3, $4, $5, $6) returning id::text as id`,
     [s.app_id, s.name, s.metric, s.objective, s.window_days, s.route],
   );
+  return rows[0].id;
 }
 
-/** Bascule activation/désactivation (flip en SQL : pas d'état à transporter). */
-export async function toggleSlo(id: number): Promise<void> {
-  await q(`update slo set active = not active where id = $1`, [id]);
+/** Active ou suspend le SLO `id` de l'application `appId` : l'état voulu ; `false` s'il n'y est pas. */
+export async function toggleSlo(id: number, appId: string, active: boolean, client?: ClientEcriture): Promise<boolean> {
+  const { rowCount } = await ecrire(client, `update slo set active = $3 where id = $1 and app_id = $2`, [id, appId, active]);
+  return rowCount > 0;
 }
 
-export async function deleteSlo(id: number): Promise<void> {
-  await q(`delete from slo where id = $1`, [id]);
+export async function deleteSlo(id: number, appId: string, client?: ClientEcriture): Promise<boolean> {
+  const { rowCount } = await ecrire(client, `delete from slo where id = $1 and app_id = $2`, [id, appId]);
+  return rowCount > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,18 +131,35 @@ export interface ChannelInput {
   severity_min: string;
 }
 
-export async function insertChannel(c: ChannelInput): Promise<void> {
-  await q(
+/** Rend l'identifiant du canal créé. `client` : la transaction de la commande (C8), avec son audit. */
+export async function insertChannel(c: ChannelInput, client?: ClientEcriture): Promise<string> {
+  const { rows } = await ecrire<{ id: string }>(
+    client,
     `insert into notify_channel (app_id, kind, target, severity_min)
-     values ($1, $2, $3, $4)`,
+     values ($1, $2, $3, $4) returning id::text as id`,
     [c.app_id, c.kind, c.target, c.severity_min],
   );
+  return rows[0].id;
 }
 
-export async function toggleChannel(id: number): Promise<void> {
-  await q(`update notify_channel set active = not active where id = $1`, [id]);
+/**
+ * Un canal DANS le périmètre `apps` : celui d'une application de la liste, ou —
+ * pour un périmètre non restreint (`null`) seulement — un canal global (`app_id`
+ * nul). Rend l'application du canal touché, `undefined` s'il est introuvable ou hors
+ * périmètre (indiscernables).
+ */
+const DANS_LE_PERIMETRE = "id = $1 and ($2::text[] is null or app_id = any($2::text[]))";
+
+export async function toggleChannel(id: number, apps: string[] | null, active: boolean, client?: ClientEcriture): Promise<{ app_id: string | null } | undefined> {
+  const { rows } = await ecrire<{ app_id: string | null }>(
+    client,
+    `update notify_channel set active = $3 where ${DANS_LE_PERIMETRE} returning app_id`,
+    [id, apps, active],
+  );
+  return rows[0];
 }
 
-export async function deleteChannel(id: number): Promise<void> {
-  await q(`delete from notify_channel where id = $1`, [id]);
+export async function deleteChannel(id: number, apps: string[] | null, client?: ClientEcriture): Promise<{ app_id: string | null } | undefined> {
+  const { rows } = await ecrire<{ app_id: string | null }>(client, `delete from notify_channel where ${DANS_LE_PERIMETRE} returning app_id`, [id, apps]);
+  return rows[0];
 }

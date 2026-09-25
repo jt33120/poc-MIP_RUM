@@ -29,6 +29,11 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | Opération | Méthode et chemin | Authentification | Portée | Démo | Secret client | Audit |
 |---|---|---|---|---|---|---|
 | `ops.jwks` | `GET /v1/.well-known/jwks.json` | aucune session | — | lecture | **non exigé** | — |
+| `alerts.evaluate` | `POST /v1/alert-evaluations` | administrateur de la plateforme | — | **refusée** | exigé | `alert.evaluate` |
+| `alerts.acknowledgeEvent` | `POST /v1/alert-events/{id}/acknowledgement` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `alert_event.acknowledge` |
+| `alerts.createRule` | `POST /v1/alert-rules` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `alert_rule.create` |
+| `alerts.updateRule` | `PUT /v1/alert-rules/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `alert_rule.update` |
+| `alerts.setRuleActive` | `PUT /v1/alert-rules/{id}/active` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `alert_rule.set_active` |
 | `auth.demo` | `POST /v1/auth/demo-sessions` | aucune session | — | **refusée** | exigé | `auth.demo` |
 | `auth.methods` | `GET /v1/auth/methods` | aucune session | — | lecture | exigé | — |
 | `auth.oidc` | `POST /v1/auth/oidc-sessions` | aucune session | — | **refusée** | exigé | `auth.oidc` |
@@ -56,6 +61,9 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `issues.requestTicket` | `POST /v1/issues/{id}/tickets` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.request_ticket` |
 | `issues.triage` | `POST /v1/issues/{id}/triage` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.triage` |
 | `auth.me` | `GET /v1/me` | session | — | lecture | exigé | — |
+| `channels.create` | `POST /v1/notify-channels` | session administrateur | — | **refusée** | exigé | `notify_channel.create` |
+| `channels.delete` | `DELETE /v1/notify-channels/{id}` | session administrateur | — | **refusée** | exigé | `notify_channel.delete` |
+| `channels.setActive` | `PUT /v1/notify-channels/{id}/active` | session administrateur | — | **refusée** | exigé | `notify_channel.set_active` |
 | `public.platformStatus` | `GET /v1/public/platform-status` | aucune session | — | lecture | exigé | — |
 | `replay.session` | `GET /v1/replays/{sessionId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `savedViews.create` | `POST /v1/saved-views` | session | — | **refusée** | exigé | exemptée : vue personnelle : son propriétaire seul la lit et l'écrit, et elle ne donne aucun droit (son AST est rejoué dans le périmètre de qui l'ouvre) |
@@ -63,7 +71,9 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `savedViews.update` | `PATCH /v1/saved-views/{id}` | session | — | **refusée** | exigé | exemptée : vue personnelle : son propriétaire seul la lit et l'écrit, et elle ne donne aucun droit (son AST est rejoué dans le périmètre de qui l'ouvre) |
 | `screens.acquisition` | `GET /v1/screens/acquisition` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.actions` | `GET /v1/screens/actions` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.uptime` | `GET /v1/screens/admin/uptime` | session administrateur | — | lecture | exigé | — |
 | `screens.ai` | `GET /v1/screens/ai` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.alerts` | `GET /v1/screens/alerts` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.correlation` | `GET /v1/screens/correlation` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.dashboards` | `GET /v1/screens/dashboards` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.dashboard` | `GET /v1/screens/dashboards/{id}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
@@ -86,6 +96,7 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `screens.retention` | `GET /v1/screens/retention` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.sessions` | `GET /v1/screens/sessions` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.session` | `GET /v1/screens/sessions/{id}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
+| `screens.slo` | `GET /v1/screens/slo` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.svi` | `GET /v1/screens/svi` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.sviCalls` | `GET /v1/screens/svi/calls` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.sviCall` | `GET /v1/screens/svi/calls/{callId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
@@ -93,6 +104,12 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `screens.trace` | `GET /v1/screens/tracing/{traceId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `screens.ux` | `GET /v1/screens/ux` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |
 | `console.shell` | `GET /v1/shell` | session | — | lecture | exigé | — |
+| `slo.create` | `POST /v1/slos` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `slo.create` |
+| `slo.delete` | `DELETE /v1/slos/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `slo.delete` |
+| `slo.setActive` | `PUT /v1/slos/{id}/active` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `slo.set_active` |
+| `uptime.create` | `POST /v1/uptime-checks` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `uptime_check.create` |
+| `uptime.delete` | `DELETE /v1/uptime-checks/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `uptime_check.delete` |
+| `uptime.setEnabled` | `PUT /v1/uptime-checks/{id}/enabled` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `uptime_check.set_enabled` |
 | `ops.version` | `GET /v1/version` | aucune session | — | lecture | **non exigé** | — |
 
 ## Les codes d'erreur

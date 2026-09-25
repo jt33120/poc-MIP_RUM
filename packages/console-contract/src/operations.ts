@@ -237,8 +237,29 @@ export const ECRANS = Object.freeze({
   /** L'export CSV d'un tableau : la même donnée que l'écran, projetée en lignes (10 000 au plus). */
   exportTableau: ecran<{ id: string }>("dashboards.export", "/v1/dashboards/{id}/export"),
   vues: ecran("screens.savedViews", "/v1/screens/explorer/views"),
+  // C8 — alerting.
+  alertes: ecran("screens.alerts", "/v1/screens/alerts"),
+  /** Écran composable : sa composition voyage sous `blocs` (le cookie de la console). */
+  slo: ecran("screens.slo", "/v1/screens/slo"),
 });
 export type CleEcran = keyof typeof ECRANS;
+
+/**
+ * LES ÉCRANS D'ADMINISTRATION (C8 → C9) : réservés à un administrateur, sans
+ * portée d'application — ils listent ce que l'administrateur gère, toutes
+ * applications de son périmètre confondues (le chargeur le restreint à sa liste,
+ * le cas échéant). Même forme qu'un écran : les paramètres d'URL de la page, et ce
+ * que rend son chargeur.
+ */
+function ecranAdmin<P = Aucun>(id: string, chemin: Chemin) {
+  return operation<P, ParametresEcran, never, unknown>(id, "GET", chemin);
+}
+
+export const ECRANS_ADMIN = Object.freeze({
+  // C8 — les sondes de disponibilité.
+  sondes: ecranAdmin("screens.uptime", "/v1/screens/admin/uptime"),
+});
+export type CleEcranAdmin = keyof typeof ECRANS_ADMIN;
 
 // ─── Écritures (C6 → C9) ─────────────────────────────────────────────────────
 
@@ -290,6 +311,23 @@ export const COMMANDES = Object.freeze({
   lierTicket: commande<{ id: string }>("issues.link", "POST", "/v1/issues/{id}/links"),
   demanderTicket: commande<{ id: string }>("issues.requestTicket", "POST", "/v1/issues/{id}/tickets"),
   trierGroupe: commande<{ fingerprint: string }>("errors.setStatus", "PUT", "/v1/errors/{fingerprint}/status"),
+  // C8 — l'alerting (règles, événements, SLO, canaux) et les sondes de disponibilité.
+  // Activer ou suspendre POSE l'état voulu (`PUT …/active`) : un formulaire rejoué
+  // ne défait pas ce qu'il voulait faire.
+  creerRegle: commande("alerts.createRule", "POST", "/v1/alert-rules"),
+  modifierRegle: commande<{ id: string }>("alerts.updateRule", "PUT", "/v1/alert-rules/{id}"),
+  activerRegle: commande<{ id: string }>("alerts.setRuleActive", "PUT", "/v1/alert-rules/{id}/active"),
+  acquitterEvenement: commande<{ id: string }>("alerts.acknowledgeEvent", "POST", "/v1/alert-events/{id}/acknowledgement"),
+  evaluerAlertes: commande("alerts.evaluate", "POST", "/v1/alert-evaluations"),
+  creerSlo: commande("slo.create", "POST", "/v1/slos"),
+  activerSlo: commande<{ id: string }>("slo.setActive", "PUT", "/v1/slos/{id}/active"),
+  supprimerSlo: commande<{ id: string }>("slo.delete", "DELETE", "/v1/slos/{id}"),
+  creerCanal: commande("channels.create", "POST", "/v1/notify-channels"),
+  activerCanal: commande<{ id: string }>("channels.setActive", "PUT", "/v1/notify-channels/{id}/active"),
+  supprimerCanal: commande<{ id: string }>("channels.delete", "DELETE", "/v1/notify-channels/{id}"),
+  creerSonde: commande("uptime.create", "POST", "/v1/uptime-checks"),
+  activerSonde: commande<{ id: string }>("uptime.setEnabled", "PUT", "/v1/uptime-checks/{id}/enabled"),
+  supprimerSonde: commande<{ id: string }>("uptime.delete", "DELETE", "/v1/uptime-checks/{id}"),
 });
 export type CleCommande = keyof typeof COMMANDES;
 
@@ -307,6 +345,7 @@ export const OPERATIONS = Object.freeze([
   FIN_SSO,
   COQUILLE,
   ...Object.values(ECRANS),
+  ...Object.values(ECRANS_ADMIN),
   ...Object.values(COMMANDES),
 ]);
 

@@ -102,6 +102,11 @@ export function RuleRow({
           </summary>
           <form action={updateRuleAction} className="mt-3 flex min-w-0 flex-wrap items-end gap-3 border-t border-line pt-3">
             <input type="hidden" name="id" value={rule.id} />
+            {/* L'application ACTUELLE de la règle : la commande la cherche là (C8) ; `app_id` peut la déplacer. */}
+            <input type="hidden" name="app" value={rule.app_id} />
+            {/* L'état VOULU par le bouton « Activer / Désactiver » (C8) : un champ du formulaire,
+                pas la valeur du bouton, que l'action d'un `formAction` ne reçoit pas. */}
+            <input type="hidden" name="active" value={rule.active ? "false" : "true"} />
             <RuleFields apps={apps} rule={rule} modeRelease={modeRelease} />
             <div className="ml-auto flex shrink-0 gap-2">
               <button type="submit" className="btn-ghost">

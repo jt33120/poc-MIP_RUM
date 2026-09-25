@@ -119,6 +119,8 @@ export function SloRow({
             </Link>
             <form action={toggleSloAction}>
               <input type="hidden" name="id" value={raw.id} />
+              <input type="hidden" name="app" value={raw.app_id} />
+              <input type="hidden" name="active" value={raw.active ? "false" : "true"} />
               <button
                 type="submit"
                 data-testid={`toggle-slo-${raw.id}`}
@@ -129,6 +131,7 @@ export function SloRow({
             </form>
             <form action={deleteSloAction}>
               <input type="hidden" name="id" value={raw.id} />
+              <input type="hidden" name="app" value={raw.app_id} />
               <button
                 type="submit"
                 data-testid={`delete-slo-${raw.id}`}
