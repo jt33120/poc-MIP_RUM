@@ -462,81 +462,8 @@ export function buildOpenApi(): Record<string, unknown> {
           o({ views: arr(ref("SavedView")) }, ["views"]),
           { params: [{ $ref: "#/components/parameters/app" }] },
         ),
-        // Écriture de SESSION : un jeton CONSOLE_API_TOKENS est refusé, y compris
-        // en lecture — une vue est personnelle, jamais exposée à une machine.
-        post: {
-          summary: "Enregistrer une analyse comme vue personnelle",
-          tags: ["explorer"],
-          security: [{ sessionCookie: [] }],
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: o({ name: { ...str, maxLength: 100 }, query: ref("ExplorerQuery") }, ["name", "query"]),
-              },
-            },
-          },
-          responses: {
-            "201": { description: "Créée", content: { "application/json": { schema: o({ view: ref("SavedView") }, ["view"]) } } },
-            "400": ref0("BadRequest"),
-            "401": ref0("Unauthorized"),
-            "403": ref0("Forbidden"),
-            "413": ref0("PayloadTooLarge"),
-            "422": ref0("LimitReached"),
-            "429": ref0("RateLimited"),
-            "500": ref0("ServerError"),
-            "503": ref0("Unavailable"),
-          },
-        },
-      },
-      "/explorer/views/{id}": {
-        patch: {
-          summary: "Renommer une vue et/ou remplacer son AST (propriétaire seul)",
-          tags: ["explorer"],
-          security: [{ sessionCookie: [] }],
-          parameters: [{ $ref: "#/components/parameters/savedViewId" }],
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: o(
-                  {
-                    name: { ...str, maxLength: 100 },
-                    query: ref("ExplorerQuery"),
-                    expectedRevision: { ...str, description: "révision LUE ; une valeur périmée reçoit 409" },
-                  },
-                  ["expectedRevision"],
-                ),
-              },
-            },
-          },
-          responses: {
-            "200": { description: "OK", content: { "application/json": { schema: o({ view: ref("SavedView") }, ["view"]) } } },
-            "400": ref0("BadRequest"),
-            "401": ref0("Unauthorized"),
-            "403": ref0("Forbidden"),
-            "404": ref0("NotFound"),
-            "409": ref0("RevisionConflict"),
-            "429": ref0("RateLimited"),
-            "500": ref0("ServerError"),
-            "503": ref0("Unavailable"),
-          },
-        },
-        delete: {
-          summary: "Supprimer une vue (propriétaire seul) ; aucune charge utile",
-          tags: ["explorer"],
-          security: [{ sessionCookie: [] }],
-          parameters: [{ $ref: "#/components/parameters/savedViewId" }],
-          responses: {
-            "200": { description: "Supprimée", content: { "application/json": { schema: o({ deleted: bool }, ["deleted"]) } } },
-            "401": ref0("Unauthorized"),
-            "403": ref0("Forbidden"),
-            "404": ref0("NotFound"),
-            "429": ref0("RateLimited"),
-            "500": ref0("ServerError"),
-            "503": ref0("Unavailable"),
-          },
-        },
+        // Les écritures de vues (créer, renommer, supprimer) ont quitté l'API publique
+        // (C7) : elles passent par l'écran de la console, une vue est personnelle.
       },
     },
     components: {
@@ -589,7 +516,6 @@ export function buildOpenApi(): Record<string, unknown> {
         issueLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "entrées par page (borné 1..100)" },
         issueCursor: { name: "cursor", in: "query", schema: { type: "string", maxLength: 512 }, description: "curseur opaque renvoyé dans data.next_cursor, avec les mêmes filtres ; un curseur modifié reçoit 400" },
         activityLimit: { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }, description: "activités par page (borné 1..100)" },
-        savedViewId: { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" }, description: "identifiant d'une vue enregistrée" },
         platform: { name: "platform", in: "query", schema: { type: "string", enum: ["ios", "android"] }, description: "plateforme mobile ; traduite en condition `os` du contrat et INTERSECTÉE avec un `os=` déjà présent (jamais un remplacement). Absente = les deux" },
       },
       responses: {
@@ -602,8 +528,6 @@ export function buildOpenApi(): Record<string, unknown> {
         PayloadTooLarge: { description: "Corps de requête au-delà de 32 Kio (code body_too_large)", content: { "application/json": { schema: ref("Error") } } },
         BudgetExceeded: { description: "Budget de lecture dépassé (code query_budget_exceeded) : la requête n'a pas abouti — ce n'est jamais un résultat à zéro", content: { "application/json": { schema: ref("Error") } } },
         Unavailable: { description: "Schéma requis non migré (ex. migration-v73 pour le workflow des issues, migration-v79 pour les vues enregistrées)", content: { "application/json": { schema: ref("Error") } } },
-        RevisionConflict: { description: "La ressource a changé depuis sa lecture : rien n'est écrit, le corps porte la révision courante", content: { "application/json": { schema: ref("Error") } } },
-        LimitReached: { description: "Plafond atteint (50 vues enregistrées par application et par compte) : recharger n'y change rien", content: { "application/json": { schema: ref("Error") } } },
       },
       schemas: {
         Error: o(

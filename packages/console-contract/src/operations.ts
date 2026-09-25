@@ -282,6 +282,14 @@ export const COMMANDES = Object.freeze({
   creerObjectif: commande("goals.create", "POST", "/v1/goals"),
   activerObjectif: commande<{ id: string }>("goals.update", "PATCH", "/v1/goals/{id}"),
   supprimerObjectif: commande<{ id: string }>("goals.delete", "DELETE", "/v1/goals/{id}"),
+  // C7 — le workflow des erreurs : une issue (statut, assigné, commentaire, lien,
+  // demande de ticket), et le statut d'un groupe historique par son empreinte.
+  // Chaque mutation d'une issue cite la révision lue ; l'application est la portée.
+  trierIssue: commande<{ id: string }>("issues.triage", "POST", "/v1/issues/{id}/triage"),
+  commenterIssue: commande<{ id: string }>("issues.comment", "POST", "/v1/issues/{id}/comments"),
+  lierTicket: commande<{ id: string }>("issues.link", "POST", "/v1/issues/{id}/links"),
+  demanderTicket: commande<{ id: string }>("issues.requestTicket", "POST", "/v1/issues/{id}/tickets"),
+  trierGroupe: commande<{ fingerprint: string }>("errors.setStatus", "PUT", "/v1/errors/{fingerprint}/status"),
 });
 export type CleCommande = keyof typeof COMMANDES;
 

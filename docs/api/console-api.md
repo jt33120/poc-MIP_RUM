@@ -47,9 +47,14 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `dashboards.configureWidget` | `PATCH /v1/dashboards/{id}/widgets/{index}` | session | — | **refusée** | exigé | exemptée : édition des cartes d'un tableau (ajouter, retirer, ranger, régler) : gestes fréquents, sans effet sur qui lit quoi ; la révision du tableau refuse toute écriture fondée sur une lecture dépassée |
 | `dashboards.moveWidget` | `POST /v1/dashboards/{id}/widgets/{index}/moves` | session | — | **refusée** | exigé | exemptée : édition des cartes d'un tableau (ajouter, retirer, ranger, régler) : gestes fréquents, sans effet sur qui lit quoi ; la révision du tableau refuse toute écriture fondée sur une lecture dépassée |
 | `dashboards.cloneTemplate` | `POST /v1/dashboards/templates/{modele}/clones` | session | — | **refusée** | exigé | `dashboard.clone_template` |
+| `errors.setStatus` | `PUT /v1/errors/{fingerprint}/status` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `error.set_status` |
 | `goals.create` | `POST /v1/goals` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `goal.create` |
 | `goals.delete` | `DELETE /v1/goals/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `goal.delete` |
 | `goals.update` | `PATCH /v1/goals/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `goal.update` |
+| `issues.comment` | `POST /v1/issues/{id}/comments` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.comment` |
+| `issues.link` | `POST /v1/issues/{id}/links` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.link` |
+| `issues.requestTicket` | `POST /v1/issues/{id}/tickets` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.request_ticket` |
+| `issues.triage` | `POST /v1/issues/{id}/triage` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `issue.triage` |
 | `auth.me` | `GET /v1/me` | session | — | lecture | exigé | — |
 | `public.platformStatus` | `GET /v1/public/platform-status` | aucune session | — | lecture | exigé | — |
 | `replay.session` | `GET /v1/replays/{sessionId}` | session | `app` de la requête, dans le périmètre (`all` = périmètre effectif) | lecture | exigé | — |

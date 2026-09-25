@@ -492,7 +492,13 @@ export function parseDemandeTicket(body: unknown): Parsed<DemandeTicket> {
  * chez le client.
  */
 export async function demanderTicket(
-  ctx: { issueId: string; apps: string[] | null; actorEmail: string },
+  ctx: {
+    issueId: string;
+    apps: string[] | null;
+    actorEmail: string;
+    /** La ligne d'audit de la commande (C7), dans la transaction ; absente, l'action historique `ticket_request`. */
+    auditer?: (client: import("pg").PoolClient, detail: string) => Promise<void>;
+  },
   request: DemandeTicket,
   consoleBase: string,
 ): Promise<WorkflowResult<{ jobId: string; state: string; payload: TicketApercu; revision: string }>> {
@@ -554,10 +560,9 @@ export async function demanderTicket(
         value: { jobId: existante.id, state: existante.state, payload: charge, revision: issue.revision },
       };
     }
-    await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_request', $2)", [
-      ctx.actorEmail,
-      JSON.stringify({ app_id: issue.app_id, issue_id: issue.id, integration_id: integration.id, job_id: inscrite.id }),
-    ]);
+    const detail = JSON.stringify({ app_id: issue.app_id, issue_id: issue.id, integration_id: integration.id, job_id: inscrite.id });
+    if (ctx.auditer) await ctx.auditer(client, detail);
+    else await client.query("insert into audit_log (user_email, action, detail) values ($1, 'ticket_request', $2)", [ctx.actorEmail, detail]);
     return {
       kind: "ok",
       value: { jobId: inscrite.id, state: inscrite.state, payload: charge, revision: issue.revision },

@@ -38,12 +38,12 @@ acceptait une app sans clé là où la production la rejetait.
 `mip_rum_query_explorer`, poste son AST sur `POST /api/v1/explorer/query` — parce
 qu'une requête analytique ne tient pas dans une query string, **pas** parce qu'elle
 écrit : cette route n'écrit rien et s'authentifie exactement comme les `GET`.
-`POST /api/v1/deploys` et les écritures du workflow des issues
-(`/issues/{id}/triage`, `/comments`, `/links`) existent côté API et ne sont **pas**
-exposés — donner à un agent conversationnel de
-quoi écrire en production est une décision qui se prend à froid, pas un oubli qu'on
-comble. Ces écritures refusent d'ailleurs tout jeton d'API : seule une session admin
-de la console les passe. Un test verrouille cette absence.
+`POST /api/v1/deploys`, seule écriture de l'API (celle de la CI), n'est **pas**
+exposé — donner à un agent conversationnel de quoi écrire en production est une
+décision qui se prend à froid, pas un oubli qu'on comble. Les écritures de
+l'opérateur (triage, commentaires et liens d'une issue, tickets, vues) ne sont même
+plus dans l'API depuis C7 : elles passent par l'écran de la console. Un test
+verrouille cette absence.
 
 ---
 

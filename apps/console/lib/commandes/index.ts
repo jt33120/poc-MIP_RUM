@@ -6,6 +6,7 @@
 // (`services/console-api/commandes.mjs`).
 import type { CleCommande } from "@mip/console-contract";
 import type { CommandeQuelconque } from "./commun";
+import { commenterIssue, demanderTicket, lierTicket, trierGroupe, trierIssue } from "./issues";
 import { activerObjectif, creerObjectif, supprimerObjectif } from "./objectifs";
 import {
   ajouterCarte,
@@ -41,4 +42,10 @@ export const COMMANDES_CONSOLE = {
   creerObjectif,
   activerObjectif,
   supprimerObjectif,
+  // C7 — workflow des erreurs.
+  trierIssue,
+  commenterIssue,
+  lierTicket,
+  demanderTicket,
+  trierGroupe,
 } satisfies { readonly [K in CleCommande]: CommandeQuelconque };

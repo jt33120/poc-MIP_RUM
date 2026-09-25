@@ -1,35 +1,23 @@
 "use server";
 // Server action — triage d'un groupe d'erreurs (résolu / ignoré / rouvert).
-// Réservée à une session d'ADMINISTRATION hors démo, dans le périmètre de l'app du
-// groupe ; tracée dans audit_log. Elle était ouverte à tout connecté (choix P1),
-// alors que depuis F20 l'écran ne rend plus ses boutons à un viewer ni à la démo
-// (V9) : la protection n'était plus que visuelle, et une session de démonstration
-// — publique — pouvait écrire par un POST direct. Même prédicat que la page.
+// C7 : l'écriture est la COMMANDE `trierGroupe` (`lib/commandes/issues.ts`) —
+// réservée à l'administrateur de l'application du groupe, hors démo, tracée dans
+// audit_log dans la même transaction. Même prédicat que la page, qui ne rend ses
+// boutons qu'à qui peut s'en servir (V9) : la commande le refait, parce qu'un
+// formulaire se rejoue.
 import { revalidatePath } from "@/lib/next-cache";
-import { getUser } from "@/lib/auth";
-import { q } from "@/lib/db";
-import { authorizedAppsOf } from "@/lib/query-contract";
-import { ERROR_STATUSES, setErrorStatus, type ErrorStatus } from "@/lib/queries-v2";
+import { executerCommande } from "@/lib/commande-locale";
 
 export async function setErrorStatusAction(fd: FormData): Promise<void> {
-  const user = await getUser();
-  if (!user || user.role !== "admin" || user.demo) return;
-
   const appId = String(fd.get("app_id") ?? "").trim();
   const fingerprint = String(fd.get("fingerprint") ?? "").trim();
-  const status = String(fd.get("status") ?? "") as ErrorStatus;
-  if (!appId || !fingerprint || !ERROR_STATUSES.includes(status)) return;
-
-  // scoping : un utilisateur restreint ne peut trier que ses apps (liste vide = aucune)
-  const authorized = authorizedAppsOf(user);
-  if (authorized !== null && !authorized.includes(appId)) return;
-
-  await setErrorStatus(appId, fingerprint, status, user.email);
-  await q(`insert into audit_log (user_email, action, detail) values ($1, $2, $3)`, [
-    user.email,
-    "error_status_set",
-    `${appId}/${fingerprint} -> ${status}`,
-  ]);
+  if (!appId || !fingerprint) return;
+  const r = await executerCommande("trierGroupe", {
+    app: appId,
+    chemin: { fingerprint },
+    corps: { status: String(fd.get("status") ?? "") },
+  });
+  if (!r.ok) return;
   revalidatePath(`/errors/${fingerprint}`);
   revalidatePath("/errors");
 }

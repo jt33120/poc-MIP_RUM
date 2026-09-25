@@ -79,6 +79,7 @@ const TABLEAU_A = { id: "" };
 /** Des identifiants qu'aucune ligne ne porte : la commande répond `introuvable` ou `interdit`, sans rien écrire. */
 const ABSENT = "999999999";
 const VUE_ABSENTE = "00000000-0000-4000-8000-00000000dead";
+const ISSUE_ABSENTE = "00000000-0000-4000-8000-00000000beef";
 const CHEMINS: Record<string, Record<string, string>> = {
   "screens.session": { id: SESSION_A },
   "replay.session": { sessionId: SESSION_A },
@@ -107,6 +108,12 @@ const CHEMINS: Record<string, Record<string, string>> = {
   "savedViews.delete": { id: VUE_ABSENTE },
   "goals.update": { id: ABSENT },
   "goals.delete": { id: ABSENT },
+  // C7 — une issue qu'aucune ligne ne porte (la commande répond `not_found`) ; le groupe de l'app A.
+  "issues.triage": { id: ISSUE_ABSENTE },
+  "issues.comment": { id: ISSUE_ABSENTE },
+  "issues.link": { id: ISSUE_ABSENTE },
+  "issues.requestTicket": { id: ISSUE_ABSENTE },
+  "errors.setStatus": { fingerprint: EMPREINTE_A },
 };
 
 /** Une analyse de l'Explorer (AST v1) sur l'app A : ce qu'une vue enregistre. */
@@ -197,6 +204,11 @@ const CORPS: Record<string, unknown> = {
   "savedViews.update": { name: "authz", expectedRevision: "1" },
   "goals.create": { name: "authz", kind: "pageview", pattern: "/merci", match_type: "exact" },
   "goals.update": { active: false },
+  "issues.triage": { status: "resolved", expectedRevision: "1" },
+  "issues.comment": { body: "authz", expectedRevision: "1" },
+  "issues.link": { url: "https://tickets.exemple.fr/AUTHZ-1", label: "AUTHZ-1", expectedRevision: "1" },
+  "issues.requestTicket": { integrationId: "1", expectedRevision: "1", origine: "" },
+  "errors.setStatus": { status: "open" },
 };
 /** Hors de la boucle : la déconnexion RÉVOQUE la session du profil — testée à part, en dernier. */
 const HORS_MATRICE = new Set(["auth.logout"]);
@@ -270,6 +282,9 @@ function cibles(p: Politique): Cible[] {
     await pool.query("delete from analytics_saved_view where app_id = any($1)", [[A, B]]);
     await pool.query("delete from dashboard where app_id = any($1) or created_by = any($2)", [[A, B], Object.values(EMAILS)]);
     await pool.query("delete from goal where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from error_status where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from error_issue_activity where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from error_issue_ticket where app_id = any($1)", [[A, B]]);
     await pool.query("delete from replay_chunk where app_id = any($1)", [[A, B]]);
     await pool.query("delete from rum_error where app_id = any($1)", [[A, B]]);
     await pool.query("delete from error_issue where app_id = any($1)", [[A, B]]);
@@ -524,7 +539,7 @@ function cibles(p: Politique): Cible[] {
     expect(ecarts).toEqual([]);
   });
 
-  it("les écritures (C6), de bout en bout : chaque commande aboutit pour qui a le droit, et s'inscrit au journal", async () => {
+  it("les écritures (C6, C7), de bout en bout : chaque commande aboutit pour qui a le droit, et s'inscrit au journal", async () => {
     /** Appelle une commande comme la console le fera : son opération, sa portée, son corps. */
     const appeler = async (cle: keyof typeof COMMANDES, profil: Profil, o: { app?: string; chemin?: Record<string, string>; corps?: unknown } = {}) => {
       const op = COMMANDES[cle];
@@ -590,12 +605,39 @@ function cibles(p: Politique): Cible[] {
     expect(await appeler("activerObjectif", "admin", { app: A, chemin: { id: idObjectif }, corps: { active: false } })).toEqual({ etat: "ok", active: false });
     expect(await appeler("supprimerObjectif", "admin", { app: A, chemin: { id: idObjectif } })).toEqual({ etat: "ok" });
 
+    // C7 — une issue : commentée puis résolue par l'administrateur de son app, en citant sa révision.
+    const revisionIssue = async () => (await pool.query<{ r: string }>("select revision::text as r from error_issue where id = $1", [ISSUE_A])).rows[0].r;
+    expect(await appeler("commenterIssue", "admin", { app: A, chemin: { id: ISSUE_A }, corps: { body: "je regarde", expectedRevision: await revisionIssue() } })).toMatchObject({ kind: "ok" });
+    expect(await appeler("trierIssue", "admin", { app: A, chemin: { id: ISSUE_A }, corps: { status: "resolved", expectedRevision: "1" } })).toMatchObject({ kind: "conflict" });
+    expect(await appeler("trierIssue", "admin", { app: A, chemin: { id: ISSUE_A }, corps: { status: "resolved", expectedRevision: await revisionIssue() } })).toMatchObject({
+      kind: "ok",
+      value: { status: "resolved" },
+    });
+    // La même issue, demandée sous une AUTRE application par la plateforme : introuvable.
+    expect(await appeler("lierTicket", "plateforme", { app: B, chemin: { id: ISSUE_A }, corps: { url: "https://t.exemple.fr/9", label: "T-9", expectedRevision: await revisionIssue() } })).toEqual({
+      kind: "not_found",
+    });
+    expect(await appeler("trierGroupe", "admin", { app: A, chemin: { fingerprint: EMPREINTE_A }, corps: { status: "ignored" } })).toEqual({ etat: "ok" });
+    expect((await pool.query("select status from error_status where app_id = $1 and fingerprint = $2", [A, EMPREINTE_A])).rows[0]?.status).toBe("ignored");
+
     // Le journal : une ligne par écriture auditée, avec la requête, l'acteur et l'application.
     const { rows } = await pool.query<{ action: string; actor_kind: string; app_id: string | null; request_id: string }>(
       "select action, actor_kind, app_id, request_id from audit_log where request_id like 'authz-c6-%' order by id",
     );
     const actions = rows.map((r) => r.action);
-    for (const a of ["dashboard.create", "dashboard.update", "dashboard.clone", "dashboard.clone_template", "dashboard.delete", "goal.create", "goal.update", "goal.delete"]) {
+    for (const a of [
+      "dashboard.create",
+      "dashboard.update",
+      "dashboard.clone",
+      "dashboard.clone_template",
+      "dashboard.delete",
+      "goal.create",
+      "goal.update",
+      "goal.delete",
+      "issue.comment",
+      "issue.triage",
+      "error.set_status",
+    ]) {
       expect(actions, a).toContain(a);
     }
     // L'édition des cartes et les vues personnelles sont exemptées : aucune ligne.

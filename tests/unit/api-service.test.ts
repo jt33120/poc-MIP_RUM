@@ -68,12 +68,12 @@ describe("lecture seule, par construction", () => {
     expect(POST_DE_LECTURE).toEqual(["/api/v1/explorer/query"]);
     for (const m of ["GET", "HEAD", "OPTIONS"]) expect(methodeServie("/api/v1/issues/[id]", m)).toBe(true);
     expect(methodeServie("/api/v1/explorer/query", "POST")).toBe(true);
+    // Les écritures de l'opérateur ont quitté l'API en C7 : restent la CI (deploys) et
+    // des méthodes d'écriture sur des chemins de lecture — refusées toutes les deux.
     for (const [chemin, m] of [
-      ["/api/v1/issues/[id]/triage", "POST"],
-      ["/api/v1/issues/[id]/comments", "POST"],
+      ["/api/v1/issues/[id]/tickets", "POST"],
       ["/api/v1/explorer/views", "POST"],
-      ["/api/v1/explorer/views/[id]", "PATCH"],
-      ["/api/v1/explorer/views/[id]", "DELETE"],
+      ["/api/v1/explorer/views", "DELETE"],
       ["/api/v1/deploys", "POST"],
     ]) {
       expect(methodeServie(chemin, m), `${m} ${chemin}`).toBe(false);

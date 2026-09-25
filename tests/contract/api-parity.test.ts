@@ -320,8 +320,8 @@ suite("P4 — parité de l'API de lecture : console ↔ service api", () => {
   it("CE QUE LE SERVICE FAIT EN MOINS : un cookie de session ne vaut rien, une écriture répond 405", async () => {
     const cookie = { headers: { cookie: "mip_session=nimporte-quoi" } };
     expect((await appelerService("/api/v1/apps", cookie)).statut).toBe(401);
-    const triage = await appelerService("/api/v1/issues/00000000-0000-0000-0000-000000000000/triage", { method: "POST", ...auth() });
-    expect(triage.statut).toBe(405);
+    const deploiement = await appelerService("/api/v1/deploys", { method: "POST", ...auth() });
+    expect(deploiement.statut).toBe(405);
     const vue = await appelerService("/api/v1/explorer/views", { method: "POST", ...auth() });
     expect(vue.statut).toBe(405);
     const refusee = await fetch(`${base}/api/v1/explorer/views`, { method: "POST", ...auth() });

@@ -1,6 +1,8 @@
 "use client";
 // Formulaires du workflow d'une issue (P5.6) : triage, commentaire, lien de ticket.
-// Chacun poste vers son endpoint v1 avec la révision lue par la page.
+// Chacun appelle la server action du workflow (`app/errors/issues/actions.ts`, C7)
+// avec la révision lue par la page — plus une route v1 : une écriture de la console
+// passe par sa commande, que console-api servira.
 //
 // APRÈS UNE ÉCRITURE, LA PAGE EST RECHARGÉE. Un `router.refresh()` relirait l'issue
 // (le blocage de navigation client de P5 est levé en P6.2) mais garderait l'état
@@ -18,6 +20,7 @@
 // seulement (la page décide) ; l'API refuse de toute façon viewer, démo et jeton.
 import { useEffect, useState } from "react";
 import { INPUT_CLASS } from "@/components/forms/Field";
+import { muterIssue, type ActionIssue } from "@/app/errors/issues/actions";
 
 type Etat =
   | { kind: "repos" }
@@ -63,22 +66,17 @@ function useBrouillon<T>(issueId: string, formulaire: string): [T | null, (broui
   return [repris, garderPuisRecharger];
 }
 
-function useMutation(issueId: string, action: "triage" | "comments" | "links" | "tickets") {
+function useMutation(issueId: string, action: ActionIssue) {
   const [etat, setEtat] = useState<Etat>({ kind: "repos" });
 
   async function envoyer(corps: Record<string, unknown>): Promise<void> {
     setEtat({ kind: "envoi" });
     try {
-      const res = await fetch(`/api/v1/issues/${encodeURIComponent(issueId)}/${action}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(corps),
-      });
-      const reponse = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (res.status === 409) {
-        setEtat({ kind: "conflit", message: reponse?.error ?? "L'issue a été modifiée entre-temps." });
-      } else if (!res.ok) {
-        setEtat({ kind: "erreur", message: reponse?.error ?? `Échec de l'enregistrement (HTTP ${res.status})` });
+      const retour = await muterIssue(issueId, action, corps);
+      if (retour.etat === "conflit") {
+        setEtat({ kind: "conflit", message: retour.message });
+      } else if (retour.etat === "erreur") {
+        setEtat({ kind: "erreur", message: retour.message });
       } else {
         setEtat({ kind: "rechargement" });
         window.location.reload();

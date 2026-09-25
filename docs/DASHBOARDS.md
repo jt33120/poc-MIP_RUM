@@ -120,8 +120,10 @@ updated_at)` — `query_json` est l'AST canonique, **versionné** (clé `version
 - **Bornes** : nom ≤ 100 caractères, **50 vues par compte et par app** (compté dans la
   transaction, derrière un verrou consultatif), AST ≤ 32 Kio.
 - **Écritures de session** uniquement (jamais un jeton `CONSOLE_API_TOKENS`, jamais une
-  session démo), propriétaire seul, révision citée. API : `GET|POST /api/v1/explorer/views`,
-  `PATCH|DELETE /api/v1/explorer/views/:id` — détail dans `docs/API_CONSOLE.md`.
+  session démo), propriétaire seul, révision citée — depuis l'écran de la console, dont les
+  server actions appellent leurs commandes (`apps/console/lib/commandes/vues.ts`, C6). API :
+  `GET /api/v1/explorer/views` en lecture ; les écritures ont quitté l'API publique en C7
+  (`docs/API_CONSOLE.md`).
 - Écran `/explorer/views` : ouvrir (la requête est **rejouée**, jamais un résultat figé),
   renommer, supprimer. Une vue dont l'AST n'est plus lisible reste **éditable**, avec sa
   raison affichée — elle n'est pas supprimée en silence.

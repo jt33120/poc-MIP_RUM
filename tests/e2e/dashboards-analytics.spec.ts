@@ -253,7 +253,7 @@ test("vue enregistrée : enregistrer, rouvrir, renommer, supprimer", async ({ pa
   await expect(page.getByRole("link", { name: `${VUE} bis` })).toHaveCount(0, { timeout: 15_000 });
 });
 
-test("l'API des vues refuse un jeton, et une session sans droit n'écrit rien", async ({ page }) => {
+test("l'API des vues refuse un jeton, et n'accepte aucune écriture", async ({ page }) => {
   await login(page);
   // Un jeton d'API est en lecture seule ET n'a aucune vue : refus explicite,
   // jamais une liste vide qu'on lirait comme « aucune vue n'existe ».
@@ -262,12 +262,13 @@ test("l'API des vues refuse un jeton, et une session sans droit n'écrit rien", 
   });
   expect(jeton.status()).toBe(401);
 
-  // Écriture sans en-tête Origin de la console : refusée (CSRF).
-  const sansOrigine = await page.request.post(`${consoleUrl}/api/v1/explorer/views`, {
+  // Une écriture par l'API : la route n'en accepte plus (C7) — une vue s'écrit
+  // depuis l'écran, par sa server action et sa commande.
+  const parLApi = await page.request.post(`${consoleUrl}/api/v1/explorer/views`, {
     headers: { origin: "https://ailleurs.test" },
     data: { name: "P65 interdite", query: { version: 1, app: "demo-app", range: { preset: "1h" }, dataset: "errors", measure: { aggregation: "sum", field: "occurrences" } } },
   });
-  expect(sansOrigine.status()).toBe(403);
+  expect(parLApi.status()).toBe(405);
 });
 
 test("ordre des cartes au clavier, et aucune largeur qui déborde (390 / 768 / 1440 px)", async ({ page }) => {

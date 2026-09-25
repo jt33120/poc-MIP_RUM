@@ -126,7 +126,13 @@ Une écriture = une **commande** dans `apps/console/lib/commandes/<domaine>.ts`,
 
 Deux corrections de droits en passant : activer ou supprimer un objectif filtrait par identifiant seul (un administrateur touchait l'objectif d'une application hors de sa liste), et un administrateur avec une liste pouvait créer un objectif hors de celle-ci. Les écrans `/dashboards`, `/dashboards/[id]` et `/explorer/views` ont leur chargeur ; l'export CSV aussi (`dashboards.export`), qui partage la donnée de l'écran — la route de la console lui passe le signal de sa requête, pour qu'un export abandonné n'ouvre pas les lectures restantes.
 
-Les écritures de vues de l'API v1 (`POST /api/v1/explorer/views`, `PATCH`/`DELETE …/{id}`) ne sont pas encore des commandes : elles quittent le contrat public en C7, avec les mutations d'issues, conformément au plan.
+**C7 — le workflow des erreurs** (5 commandes) : trier une issue (statut, assigné), la commenter, y lier un ticket, demander la création d'un ticket (P8.6), et trier un groupe historique par son empreinte. Règle `admin` + portée `app` : la mutation cherche l'issue DANS cette application (`apps: [app]`), l'audit (`issue.*`, `error.set_status`) entre dans la transaction du workflow. L'origine de la console, que la demande de ticket écrit dans ses liens, vient de la requête de la console (`origineConsole`), jamais du formulaire — comme `PARAM_ORIGINE` pour le chargeur de l'issue.
+
+**Les mutations « cookie » de l'API v1 quittent le contrat public** (plan, C7) : `POST /api/v1/issues/{id}/triage`, `/comments`, `/links`, `/tickets`, et les écritures de vues (`POST /api/v1/explorer/views`, `PATCH`/`DELETE …/{id}`). Elles n'acceptaient que le cookie d'une session de la console, de même origine : leur seul client était l'écran de la console. Les formulaires de l'issue, qui les appelaient par `fetch`, appellent désormais une server action (`app/errors/issues/actions.ts`) qui exécute la commande. Les lectures restent (`GET …/activity`, `GET …/tickets`, `GET …/explorer/views`). `API_CONSOLE.md`, l'OpenAPI, le descripteur `GET /api/v1` et la doc MCP le disent ; l'API ne garde qu'une écriture, celle de la CI (`POST /api/v1/deploys`, C11).
+
+L'inventaire ne suit plus l'import d'une server action par un composant CLIENT : Next le remplace par une référence, le rendu ne charge pas la base. (Un composant SERVEUR qui importe une action pour son formulaire, lui, charge le module : cet arc reste suivi.)
+
+Reste de C7, **conditionnel** (R7) : fermer le ticket quand l'issue est résolue (un événement sortant dans `ticket_outbox`). Il attend la confirmation de l'outil ITSM cible — si ce n'est pas GitHub, l'adaptateur change.
 
 ## Ordre proposé pour libérer le cliquet
 
