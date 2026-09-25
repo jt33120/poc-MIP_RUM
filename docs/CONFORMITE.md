@@ -53,7 +53,12 @@ dev-server/edge) → on ne dépend pas du seul client. Source maps **privées** 
   une clé par table) et droit à l'**effacement** (suppression transactionnelle, enfants avant l'ancre
   `rum_session`). Les deux **refusent** de s'exécuter sur une ligne `id_kind = 'device_class'`, avec un
   motif explicite : répondre partiellement à une demande art. 15 vaut mieux que d'y joindre les données
-  d'un tiers. Effacements **et refus** sont tracés dans `audit_log` (`dsar_erase`, `dsar_erase_refuse`).
+  d'un tiers. Exports, effacements **et refus** sont tracés dans `audit_log` : `privacy.visitor_export`,
+  `privacy.visitor_erase` (un refus porte `refus=<motif>` dans son détail), et par identité métier
+  `privacy.identity_search`, `privacy.identity_export`, `privacy.identity_erase` — l'audit d'un effacement
+  dans la transaction de l'effacement. Avant C10, ces lignes s'appelaient `dsar_erase`, `dsar_erase_refuse`,
+  `dsar_export`, `dsar_identity_*`. « Toutes les applications » est réservé à l'administrateur de la
+  plateforme ; l'administrateur d'une liste ne vise que ses applications.
 - **Minimisation** : aucune adresse IP stockée, géo au pays, scrub systématique. Le `visitor_id`
   n'est **pas** une donnée anonyme (cf. §2) — c'est un pseudonyme, tiré au hasard et effaçable.
 - **Sécurité du transport** : TLS de bout en bout jusqu'à Neon.

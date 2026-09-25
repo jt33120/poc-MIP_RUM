@@ -49,6 +49,7 @@ import {
   validerCapaciteMobile,
 } from "./raccordements";
 import { activerSonde, creerSonde, supprimerSonde } from "./uptime";
+import { effacerIdentite, effacerVisiteur, exporterIdentite, exporterVisiteur, rechercherIdentite } from "./vie-privee";
 import { creerVue, modifierVue, supprimerVue } from "./vues";
 
 export const COMMANDES_CONSOLE = {
@@ -110,4 +111,10 @@ export const COMMANDES_CONSOLE = {
   activerDomaineExtension,
   oublierPoste,
   validerCapaciteMobile,
+  // C10 — le RGPD.
+  rechercherIdentite,
+  exporterIdentite,
+  effacerIdentite,
+  exporterVisiteur,
+  effacerVisiteur,
 } satisfies { readonly [K in CleCommande]: CommandeQuelconque };

@@ -58,6 +58,7 @@ import { chargerTableaux } from "@/lib/chargeurs/tableaux";
 import { chargerTrace } from "@/lib/chargeurs/trace";
 import { chargerTracing } from "@/lib/chargeurs/tracing";
 import { chargerUx } from "@/lib/chargeurs/ux";
+import { chargerViePrivee } from "@/lib/chargeurs/vie-privee";
 import { chargerVues } from "@/lib/chargeurs/vues";
 import { UnsupportedFilterError } from "@/lib/query-compiler";
 import { avecRequete } from "./shims/log-forward.mjs";
@@ -133,6 +134,8 @@ export const ecrans = {
     sourcemaps: page(chargerSourcemaps),
     connecteurs: page(chargerConnecteurs),
     nouveauSite: page(chargerNouveauSite),
+    // C10
+    viePrivee: page(chargerViePrivee),
   },
   // C9 — les écrans de session sans portée : le choix du projet.
   session: {

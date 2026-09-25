@@ -170,10 +170,29 @@ Ce qu'une page tient de sa requête reste à la page : l'hôte (URL du SDK et de
 
 La remise est un registre du module client, dans l'onglet : une navigation côté client le garde, un rechargement l'efface. Le secret ne repasse jamais par le serveur, ni par l'URL, ni par un stockage du navigateur. `stashSecret`/`popSecret` (un stash en mémoire du processus, et un jeton dans l'URL) ont disparu : ils supposaient que la même instance serve l'action puis la page, ce que Vercel ne promet pas et que la bascule rend faux. Cela corrige aussi le « déjà affiché » du mot de passe généré sur `/admin/users` (Next rendait la page cible dans la réponse de l'action, puis la relisait : le stash était vidé deux fois).
 
+**C10 — le RGPD** (5 commandes, 1 écran : `lib/commandes/vie-privee.ts`, `lib/chargeurs/vie-privee.ts`). Accès et effacement, par identité métier ou par identifiant de visiteur :
+
+| Commande | Règle | Audit | Ce qu'elle rend |
+|---|---|---|---|
+| rechercher une identité | `admin`, `app` | `privacy.identity_search` | le HMAC de l'identité dans CETTE application (`vide`, `indisponible` sans clé de hachage) |
+| exporter une identité | `admin`, `app` | `privacy.identity_export` | le document (une clé par table, un même instantané) |
+| effacer une identité | `admin`, `app` | `privacy.identity_erase` | `efface` et le nombre de lignes ; `confirmation` si l'identité ressaisie ne hache pas au HMAC effacé |
+| exporter un visiteur | `admin`, `globale` | `privacy.visitor_export` | le document, ou `refus` (ancienne empreinte de terminal, visiteur inconnu) |
+| effacer un visiteur | `admin`, `globale` | `privacy.visitor_erase` | `efface`, `confirmation`, ou `refus` |
+
+- **L'identité brute n'entre que dans le CORPS** d'une recherche ou d'une confirmation, n'est hachée que dans la commande et n'en ressort jamais : ni dans une URL, ni dans l'audit, ni dans une décision. La clé de hachage est celle du processus qui exécute — la console jusqu'à la bascule, console-api ensuite ; `IDENTITY_HASH_SECRET` quitte alors Vercel (il y est vide aujourd'hui).
+- **« Toutes les applications »** (un visiteur) est à l'administrateur de la plateforme ; une application hors de la liste est `interdit`. Avant C10, un administrateur d'une liste exportait ou effaçait un visiteur sur TOUTES les applications, et l'écran lui proposait « toutes ».
+- **Chaque demande laisse sa ligne au journal, refus compris.** L'audit d'un effacement s'écrit DANS sa transaction (un crochet `apres` de `dsarErase` / `dsarIdentityErase`, avant le commit) : il n'existe que si l'effacement a eu lieu. Un refus s'écrit seul, `refus=<motif>` dans le détail.
+- **L'export est une commande** : divulguer un document de données personnelles s'inscrit au journal comme une écriture, refusé à la démonstration. La route de téléchargement (`/admin/privacy/export`, GET) l'exécute et rend le fichier ; un refus en 409 avec son motif.
+- **L'ensemble des applications d'un effacement « toutes » est relu SOUS verrou** : une session du visiteur née dans une autre application entre la résolution et le verrou est verrouillée à son tour, puis effacée.
+- **Les colonnes binaires sortent en base64** (le corps d'un chunk de rejeu) : versions 3 (visiteur) et 2 (identité) du document, qui le disent (`binaire: "base64"`). JSON sérialisait un `Buffer` en tableau d'octets.
+
+Écarts au plan, assumés : l'effacement reste **synchrone** — une décision en 200, pas un 202 suivi d'un statut interrogé. Il attend le verrou de l'application au plus 30 s ; un effacement plus long que l'échéance de l'appel (15 s au plus) rendrait un 503, sa transaction pouvant encore aboutir, avec son audit. Le passage en tâche de fond attend la mise en service (une file et un état de la demande, `privacy_erasure_request` en porte déjà le cycle). L'export n'est pas **diffusé en flux** : il traverse l'enveloppe du service en un seul document, et une réponse Vercel plafonne à 4,5 Mo — un export portant beaucoup de rejeu dépasserait. À reprendre avec le relais du rejeu, à la bascule.
+
 ## Ordre proposé pour libérer le cliquet
 
 1. **Sans `console-api`** : scinder les modules mixtes (famille 1). **Fait** : 13 composants et un écran sortis du cliquet (27 → 14 composants, 51 → 50 écrans). C0 démarre sur une base plus petite.
 2. **C0** : fondations (`console-api`, session, pipeline, v90). Le cliquet ne bouge pas.
 3. **C2** : `GET /v1/shell`. Le layout racine sort du cliquet, ce qui est le plus gros gain unitaire : il pèse sur les 57 écrans.
 4. **C3 → C5** : les chargeurs des écrans, par lots (colonne « Lot » de l'inventaire ; colonne « Chargeur » pour l'avancement). Décision du 24/09 : `console-api` est mis en service **à la fin, après P6b** — d'ici là les écrans exécutent leur chargeur dans la console, et le cliquet ne descend que par ce qui sort des écrans (les panneaux déplacés dans un chargeur, par exemple). Il descend d'un coup à la bascule, quand `chargerEcran` appelle le service.
-5. **C6 → C9** : les écritures, en commandes (section ci-dessus) ; les fichiers d'actions et les composants qui les importent quittent le cliquet à la bascule, quand `executerCommande` appelle le service. **C10** : le RGPD. **C11** : les routes machine. **C12** : cliquet vide, gardes de build.
+5. **C6 → C10** : les écritures et le RGPD, en commandes (section ci-dessus) ; les fichiers d'actions et les composants qui les importent quittent le cliquet à la bascule, quand `executerCommande` appelle le service. **C11** : les routes machine. **C12** : cliquet vide, gardes de build.

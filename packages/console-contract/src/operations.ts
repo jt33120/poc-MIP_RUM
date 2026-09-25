@@ -274,6 +274,8 @@ export const ECRANS_ADMIN = Object.freeze({
   connecteurs: ecranAdmin("screens.adminTicketIntegrations", "/v1/screens/admin/ticket-integrations"),
   /** L'assistant d'ajout d'un site (`/select/new`), et l'intégration d'un site avec `?app=`. */
   nouveauSite: ecranAdmin("screens.adminNewSite", "/v1/screens/admin/new-site"),
+  // C10 — les demandes RGPD d'une personne (`/admin/privacy`) : ce qu'elles couvriraient, avant d'agir.
+  viePrivee: ecranAdmin("screens.adminPrivacy", "/v1/screens/admin/privacy"),
 });
 export type CleEcranAdmin = keyof typeof ECRANS_ADMIN;
 
@@ -377,6 +379,16 @@ export const COMMANDES = Object.freeze({
   activerDomaineExtension: commande<{ id: string }>("extensionScopes.setActive", "PUT", "/v1/extension-scopes/{id}/active"),
   oublierPoste: commande<{ installId: string }>("extensionInstalls.forget", "DELETE", "/v1/extension-installs/{installId}"),
   validerCapaciteMobile: commande("mobileCapabilities.verify", "POST", "/v1/mobile-capabilities/verifications"),
+  // C10 — le RGPD : accès (export) et effacement, par identité métier ou par
+  // identifiant de visiteur. Une identité BRUTE n'entre que dans le CORPS d'une
+  // recherche ou d'une confirmation — jamais dans un chemin ni un paramètre —, et
+  // n'en ressort qu'en HMAC cloisonné par application. L'export est une commande :
+  // divulguer un document de données personnelles laisse sa ligne au journal.
+  rechercherIdentite: commande("privacy.searchIdentity", "POST", "/v1/privacy/identity-searches"),
+  exporterIdentite: commande("privacy.exportIdentity", "POST", "/v1/privacy/identity-exports"),
+  effacerIdentite: commande("privacy.eraseIdentity", "POST", "/v1/privacy/identity-erasures"),
+  exporterVisiteur: commande("privacy.exportVisitor", "POST", "/v1/privacy/visitor-exports"),
+  effacerVisiteur: commande("privacy.eraseVisitor", "POST", "/v1/privacy/visitor-erasures"),
 });
 export type CleCommande = keyof typeof COMMANDES;
 
