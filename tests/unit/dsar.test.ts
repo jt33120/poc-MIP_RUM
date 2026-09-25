@@ -62,12 +62,24 @@ describe("summarizeCounts / buildDsarExport", () => {
       tables,
     });
     expect(doc.kind).toBe("mip-rum-dsar-export");
-    expect(doc.version).toBe(2); // v2 : l'ancre est visitor_id, plus user_hash
+    expect(doc.version).toBe(3); // v2 : l'ancre est visitor_id, plus user_hash ; v3 : binaire en base64
+    expect(doc.binaire).toBe("base64");
     expect(doc.visitor_id).toBe("abc123def456");
     expect(doc.app).toBe("demo");
     expect(doc.session_count).toBe(2);
     expect(doc.summary.rum_metric).toBe(3);
-    expect(doc.tables).toBe(tables);
+    expect(doc.tables).toEqual(tables);
+  });
+  it("une colonne binaire (le corps d'un chunk de rejeu) sort en base64, le reste tel quel (v3, C10)", () => {
+    const doc = buildDsarExport({
+      app: "demo",
+      visitorId: "x",
+      generatedAt: "2026-07-08T10:00:00.000Z",
+      tables: { replay_chunk: [{ seq: 1, body: Buffer.from([0x1f, 0x8b, 0x08]) }], rum_session: [{ session_id: "s" }] },
+    });
+    expect(doc.tables.replay_chunk).toEqual([{ seq: 1, body: "H4sI" }]);
+    expect(doc.tables.rum_session).toEqual([{ session_id: "s" }]);
+    expect(JSON.stringify(doc)).not.toContain('"type":"Buffer"');
   });
   it("session_count = 0 si aucune session", () => {
     const doc = buildDsarExport({
@@ -103,7 +115,7 @@ describe("DSAR par identité métier", () => {
       generatedAt: "2026-09-15T00:00:00.000Z",
       tables: { rum_session: [] },
     });
-    expect(doc).toMatchObject({ version: 1, identity_kind: "user", identity_hash: hash });
+    expect(doc).toMatchObject({ version: 2, binaire: "base64", identity_kind: "user", identity_hash: hash });
     expect(JSON.stringify(doc)).not.toContain("alice@example.test");
   });
 });

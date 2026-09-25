@@ -46,7 +46,7 @@ export function rendreDoc(table: readonly Enregistrement[]): string {
   L.push("");
   L.push("**Règles vérifiées au démarrage** (`verifierTable`) : toute écriture est refusée à la démo (sauf fermer sa propre session) et déclare son action d'audit, ou une exemption motivée ; seule une lecture publique peut se passer du secret client ; une opération publique n'a pas de portée ; la portée « une application nommée » est celle d'une écriture. Un service dont la table viole une règle ne démarre pas.");
   L.push("");
-  L.push("**Les écritures de la console (C6 → C9)** sont des COMMANDES (`apps/console/lib/commandes/`), servies telles quelles : chacune déclare sa règle (authentification, portée, audit), que la console applique aussi tant qu'elle les exécute elle-même (`refusDAcces` du contrat). Une commande rend sa DÉCISION en 200 (créé, introuvable, conflit de révision…) ; un refus d'accès ou d'entrée part avant elle, avec son code. L'action d'audit s'écrit dans la même transaction que l'écriture.");
+  L.push("**Les écritures de la console (C6 → C10)** sont des COMMANDES (`apps/console/lib/commandes/`), servies telles quelles : chacune déclare sa règle (authentification, portée, audit), que la console applique aussi tant qu'elle les exécute elle-même (`refusDAcces` du contrat). Une commande rend sa DÉCISION en 200 (créé, introuvable, conflit de révision…) ; un refus d'accès ou d'entrée part avant elle, avec son code. L'action d'audit s'écrit dans la même transaction que l'écriture.");
   L.push("");
   L.push("## Les opérations");
   L.push("");

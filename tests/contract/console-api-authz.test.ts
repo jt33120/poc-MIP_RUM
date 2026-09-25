@@ -253,6 +253,13 @@ const CORPS: Record<string, unknown> = {
   "extensionScopes.create": { domain: "authz-a.exemple.fr" },
   "extensionScopes.setActive": { active: true },
   "mobileCapabilities.verify": { app_id: A, runtime: "react_native", release: null, capability: "js_errors", note: "" },
+  // C10 — des personnes qu'aucune ligne ne porte : un export vide ou un refus
+  // (`inconnu`), une confirmation qui ne correspond pas — jamais un effacement.
+  "privacy.searchIdentity": { kind: "user", identity: "authz-personne" },
+  "privacy.exportIdentity": { kind: "user", identity_hash: "0".repeat(64) },
+  "privacy.eraseIdentity": { kind: "user", identity_hash: "0".repeat(64), confirm_identity: "authz-personne" },
+  "privacy.exportVisitor": { app: A, visitor_id: "authz-visiteur-inconnu" },
+  "privacy.eraseVisitor": { app: A, visitor_id: "authz-visiteur-inconnu", confirm: "authz-visiteur-inconnu" },
 };
 /** Hors de la boucle : la déconnexion RÉVOQUE la session du profil — testée à part, en dernier. */
 const HORS_MATRICE = new Set(["auth.logout"]);
@@ -345,6 +352,9 @@ function cibles(p: Politique): Cible[] {
     await pool.query("delete from rum_error where app_id = any($1)", [[A, B]]);
     await pool.query("delete from error_issue where app_id = any($1)", [[A, B]]);
     await pool.query("delete from rum_span where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from rum_metric where app_id = any($1)", [[A, B]]);
+    await pool.query("delete from rum_session where app_id = any($1) and visitor_id like 'authz-c10-%'", [[A, B]]);
+    await pool.query("delete from privacy_erasure_request where app_id = any($1)", [[A, B]]).catch(() => {});
     // Base dédiée à la matrice : les compteurs de débit d'authentification d'un passage
     // précédent (clés HMAC, illisibles) ne doivent pas refuser celui-ci en 429.
     await pool.query("delete from auth_throttle");
@@ -862,6 +872,70 @@ function cibles(p: Politique): Cible[] {
     const appAttendue = (r: { action: string; detail?: string }) => (sansApp.has(r.action) ? null : A);
     expect(rows.filter((r) => r.actor_kind !== "user" || (r.app_id !== appAttendue(r) && !(r.action === "extension_scope.create" && r.app_id === B)))).toEqual([]);
     expect(actions).toEqual(expect.arrayContaining([...sansApp]));
+  });
+
+  it("le RGPD (C10), de bout en bout : un effacement réel dans le périmètre, « toutes » à la plateforme, chaque demande au journal", async () => {
+    const appeler = async (cle: keyof typeof COMMANDES, profil: Profil, o: { app?: string; corps: unknown }) => {
+      const op = COMMANDES[cle];
+      const r = await servirRequete(
+        new Request(`https://console-api.test${op.chemin}${o.app ? `?app=${o.app}` : ""}`, {
+          method: op.methode,
+          headers: { "x-mip-client": SECRET, authorization: `Bearer ${jetons[profil]}`, "x-request-id": `authz-c10-${cle}`.slice(0, 64), "content-type": "application/json" },
+          body: JSON.stringify(o.corps),
+        }),
+      );
+      return { status: r.status, data: ((await r.json()) as { data?: Record<string, unknown> }).data };
+    };
+    // Un visiteur de A, une mesure : ce qu'un effacement doit retirer — et rien d'autre.
+    const VISITEUR = "authz-c10-visiteur";
+    await pool.query("insert into rum_session (session_id, app_id, visitor_id, started_at, last_seen_at, page_count) values ('authz-c10-session', $1, $2, now(), now(), 1)", [A, VISITEUR]);
+    await pool.query("insert into rum_metric (app_id, session_id, ts, name, value, route) values ($1, 'authz-c10-session', now(), 'LCP', 1200, '/')", [A]);
+
+    // « Toutes » : l'administrateur d'une liste n'y a pas droit, ni en export ni en effacement.
+    expect((await appeler("exporterVisiteur", "admin", { corps: { app: "all", visitor_id: VISITEUR } })).data).toEqual({ etat: "interdit" });
+    expect((await appeler("effacerVisiteur", "admin", { corps: { app: B, visitor_id: VISITEUR, confirm: VISITEUR } })).data).toEqual({ etat: "interdit" });
+    // L'export de son application : le document, sa divulgation au journal.
+    const exporte = await appeler("exporterVisiteur", "admin", { corps: { app: A, visitor_id: VISITEUR } });
+    expect(exporte.data).toMatchObject({ etat: "ok", document: { version: 3, binaire: "base64", session_count: 1, summary: { rum_metric: 1 } } });
+    // Une confirmation qui ne correspond pas : rien d'effacé.
+    expect((await appeler("effacerVisiteur", "admin", { corps: { app: A, visitor_id: VISITEUR, confirm: "autre" } })).data).toEqual({ etat: "confirmation" });
+    expect((await pool.query("select count(*)::int as n from rum_metric where session_id = 'authz-c10-session'")).rows[0].n).toBe(1);
+    // L'effacement : les lignes du visiteur, dans son application.
+    expect((await appeler("effacerVisiteur", "admin", { corps: { app: A, visitor_id: VISITEUR, confirm: VISITEUR } })).data).toEqual({ etat: "efface", lignes: 2 });
+    expect((await pool.query("select count(*)::int as n from rum_session where visitor_id = $1", [VISITEUR])).rows[0].n).toBe(0);
+    // Un visiteur inconnu : un refus, inscrit lui aussi.
+    expect((await appeler("effacerVisiteur", "plateforme", { corps: { app: "all", visitor_id: "authz-c10-inconnu", confirm: "authz-c10-inconnu" } })).data).toEqual({
+      etat: "refus",
+      motif: "inconnu",
+    });
+
+    // L'identité métier : hachée DANS la commande, cloisonnée par application.
+    const avant = process.env.IDENTITY_HASH_SECRET;
+    process.env.IDENTITY_HASH_SECRET = "authz-c10-secret";
+    try {
+      const trouve = await appeler("rechercherIdentite", "admin", { app: A, corps: { kind: "user", identity: "alice@exemple.test" } });
+      expect(trouve.data).toMatchObject({ etat: "ok", hash: expect.stringMatching(/^[0-9a-f]{64}$/) });
+      expect(JSON.stringify(trouve.data)).not.toContain("alice");
+      expect((await appeler("rechercherIdentite", "admin", { app: B, corps: { kind: "user", identity: "alice@exemple.test" } })).status).toBe(403);
+      const hash = String(trouve.data!.hash);
+      expect((await appeler("effacerIdentite", "admin", { app: A, corps: { kind: "user", identity_hash: hash, confirm_identity: "bob@exemple.test" } })).data).toEqual({ etat: "confirmation" });
+      expect((await appeler("effacerIdentite", "admin", { app: A, corps: { kind: "user", identity_hash: hash, confirm_identity: "alice@exemple.test" } })).data).toEqual({ etat: "efface", lignes: 0 });
+    } finally {
+      process.env.IDENTITY_HASH_SECRET = avant;
+    }
+
+    const { rows } = await pool.query<{ action: string; app_id: string | null; detail: string }>(
+      "select action, app_id, detail from audit_log where request_id like 'authz-c10-%' order by id",
+    );
+    expect(rows.map((r) => [r.action, r.app_id])).toEqual([
+      ["privacy.visitor_export", A],
+      ["privacy.visitor_erase", A],
+      ["privacy.visitor_erase", null],
+      ["privacy.identity_search", A],
+      ["privacy.identity_erase", A],
+    ]);
+    expect(rows[2].detail).toMatch(/^refus=inconnu /);
+    expect(rows.some((r) => r.detail.includes("alice"))).toBe(false);
   });
 
   it("révoquer une session, désactiver un compte : refusé en 30 s au plus, sans nouveau jeton", async () => {

@@ -132,7 +132,7 @@ Commiter le manifeste (jamais le fichier : il est ignoré), PR, fusion : l'image
         or (b.subject_kind = 'user'    and s.user_id_hash = b.subject_key)
         or (b.subject_kind = 'account' and s.account_id_hash = b.subject_key));
    ```
-   **Ce qui reste manuel** : les lignes d'une identité qui ne sont rattachées à aucune session (logs OpenTelemetry portant l'identité, lots encore en file). Les compter par l'écran `/admin/privacy` pour chaque identité ; tant qu'il en reste, ne pas rouvrir. L'effacement par barrière en une commande arrive avec `console-api` (C10).
+   **Ce qui reste manuel** : les lignes d'une identité qui ne sont rattachées à aucune session (logs OpenTelemetry portant l'identité, lots encore en file). Les compter par l'écran `/admin/privacy` pour chaque identité ; tant qu'il en reste, ne pas rouvrir. L'effacement est une commande depuis C10 (`privacy.eraseIdentity`, `privacy.eraseVisitor`), exécutée par la console jusqu'à la mise en service de `console-api`.
 6. **Remettre la protection** là où elle était : `update app_registry set privacy_barrier_mode = 'enforce' where app_id = any(…)`, d'après l'export de l'état d'avant.
 7. **Rouvrir** : lever la suspension application par application (`ingestion_suspended_at = null`), remettre scheduler, notifier, collector, puis le relais à sa valeur.
 8. **Tracer** : une ligne dans `audit_log` et dans le journal d'incident — instant restauré, barrières reposées, sessions réeffacées, identités vérifiées.

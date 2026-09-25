@@ -22,7 +22,7 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 
 **Règles vérifiées au démarrage** (`verifierTable`) : toute écriture est refusée à la démo (sauf fermer sa propre session) et déclare son action d'audit, ou une exemption motivée ; seule une lecture publique peut se passer du secret client ; une opération publique n'a pas de portée ; la portée « une application nommée » est celle d'une écriture. Un service dont la table viole une règle ne démarre pas.
 
-**Les écritures de la console (C6 → C9)** sont des COMMANDES (`apps/console/lib/commandes/`), servies telles quelles : chacune déclare sa règle (authentification, portée, audit), que la console applique aussi tant qu'elle les exécute elle-même (`refusDAcces` du contrat). Une commande rend sa DÉCISION en 200 (créé, introuvable, conflit de révision…) ; un refus d'accès ou d'entrée part avant elle, avec son code. L'action d'audit s'écrit dans la même transaction que l'écriture.
+**Les écritures de la console (C6 → C10)** sont des COMMANDES (`apps/console/lib/commandes/`), servies telles quelles : chacune déclare sa règle (authentification, portée, audit), que la console applique aussi tant qu'elle les exécute elle-même (`refusDAcces` du contrat). Une commande rend sa DÉCISION en 200 (créé, introuvable, conflit de révision…) ; un refus d'accès ou d'entrée part avant elle, avec son code. L'action d'audit s'écrit dans la même transaction que l'écriture.
 
 ## Les opérations
 
@@ -73,6 +73,11 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `channels.delete` | `DELETE /v1/notify-channels/{id}` | session administrateur | — | **refusée** | exigé | `notify_channel.delete` |
 | `channels.setActive` | `PUT /v1/notify-channels/{id}/active` | session administrateur | — | **refusée** | exigé | `notify_channel.set_active` |
 | `users.resetPassword` | `POST /v1/password-resets` | administrateur de la plateforme | — | **refusée** | exigé | `user.reset_password` |
+| `privacy.eraseIdentity` | `POST /v1/privacy/identity-erasures` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `privacy.identity_erase` |
+| `privacy.exportIdentity` | `POST /v1/privacy/identity-exports` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `privacy.identity_export` |
+| `privacy.searchIdentity` | `POST /v1/privacy/identity-searches` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `privacy.identity_search` |
+| `privacy.eraseVisitor` | `POST /v1/privacy/visitor-erasures` | session administrateur | — | **refusée** | exigé | `privacy.visitor_erase` |
+| `privacy.exportVisitor` | `POST /v1/privacy/visitor-exports` | session administrateur | — | **refusée** | exigé | `privacy.visitor_export` |
 | `public.platformStatus` | `GET /v1/public/platform-status` | aucune session | — | lecture | exigé | — |
 | `readTokens.create` | `POST /v1/read-tokens` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `read_token.create` |
 | `readTokens.revoke` | `DELETE /v1/read-tokens/{id}` | session administrateur | `app` de la requête : UNE application nommée du périmètre (`all` refusé) | **refusée** | exigé | `read_token.revoke` |
@@ -89,6 +94,7 @@ Chaque requête les passe toutes, avant le traitement (`packages/console-api/src
 | `screens.adminExtensionScopes` | `GET /v1/screens/admin/extension-scopes` | session administrateur | — | lecture | exigé | — |
 | `screens.adminHealth` | `GET /v1/screens/admin/health` | session administrateur | — | lecture | exigé | — |
 | `screens.adminNewSite` | `GET /v1/screens/admin/new-site` | session administrateur | — | lecture | exigé | — |
+| `screens.adminPrivacy` | `GET /v1/screens/admin/privacy` | session administrateur | — | lecture | exigé | — |
 | `screens.adminReadTokens` | `GET /v1/screens/admin/read-tokens` | session administrateur | — | lecture | exigé | — |
 | `screens.adminSourcemaps` | `GET /v1/screens/admin/sourcemaps` | session administrateur | — | lecture | exigé | — |
 | `screens.adminTicketIntegrations` | `GET /v1/screens/admin/ticket-integrations` | session administrateur | — | lecture | exigé | — |

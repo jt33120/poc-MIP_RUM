@@ -1,11 +1,9 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
-import { requireAdmin } from "@/lib/auth";
+import { chargerViePrivee } from "@/lib/chargeurs/vie-privee";
+import { accesAdmin, chargerEcran } from "@/lib/ecran-local";
 import type { SearchParams } from "@/lib/filters";
-import { listApps } from "@/lib/queries";
 import { DSAR_BARRIERE_MESSAGES, DSAR_LIMITES, DSAR_MESSAGES } from "@/lib/dsar";
-import { dsarCible, dsarCounts, dsarIdentityCounts, dsarTotalRows, etatBarriere, type DsarIdentityKind } from "@/lib/queries-dsar";
-import { identityPersistenceHealth } from "@/lib/health";
 import { eraseIdentityAction, eraseUserAction, searchIdentityAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +14,7 @@ const ERRORS: Record<string, string> = {
   kind: "Choisis une identité utilisateur ou compte.",
   secret: "IDENTITY_HASH_SECRET est absent : la recherche d'identité est indisponible.",
   confirm: "La confirmation ne correspond pas à l'identifiant — effacement annulé.",
+  perimetre: "Cette application n'est pas dans votre périmètre (« toutes » : l'administrateur de la plateforme).",
   // Le motif de refus renvoyé par la Server Action, mot pour mot.
   refus_empreinte: DSAR_MESSAGES.refus_empreinte,
   inconnu: DSAR_MESSAGES.inconnu,
@@ -27,31 +26,19 @@ export default async function AdminPrivacy({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAdmin();
   const sp = await searchParams;
-  const apps = await listApps();
-  const app = typeof sp.app === "string" && sp.app ? sp.app : (apps[0]?.app_id ?? "");
-  const kind: DsarIdentityKind = sp.kind === "account" ? "account" : "user";
-  const identityHash = typeof sp.identity_hash === "string" && /^[0-9a-f]{64}$/.test(sp.identity_hash) ? sp.identity_hash : "";
-  const visitorId = typeof sp.user === "string" ? sp.user.trim() : "";
-  const visitorApp = typeof sp.visitor_app === "string" && sp.visitor_app
-    ? sp.visitor_app
-    : visitorId && typeof sp.app === "string" ? sp.app : "all";
+  // Le chargeur (`lib/chargeurs/vie-privee.ts`, C10) : les applications du périmètre,
+  // ce que couvrirait la demande, l'état réel de la protection. On INSTRUIT avant de
+  // compter : sur une ancienne empreinte de terminal, ni volume ni bouton (lib/dsar.ts).
+  const ecran = accesAdmin(await chargerEcran(chargerViePrivee, sp));
+  const { apps, app, kind, identityHash, visitorId, visitorApp, toutes } = ecran;
+  const { sante: identityHealth, protection: etatProtection, identite: identityCounts, cible: visitorTarget, visiteur: visitorCounts } = ecran;
   const error = typeof sp.error === "string" ? ERRORS[sp.error] : null;
   const erased = typeof sp.erased === "string" ? sp.erased : null;
-
-  // On INSTRUIT avant de compter : sur une ancienne empreinte de terminal, il
-  // n'y a rien à afficher — ni volume, ni bouton. Voir lib/dsar.ts.
-  const identityHealth = await identityPersistenceHealth();
-  // Lu avant d'afficher quoi que ce soit : l'écran annonce l'état RÉEL de la
-  // protection durable, pas celui qu'on souhaiterait.
-  const etatProtection = await etatBarriere(app);
-  const identityCounts = identityHash && identityHealth.schema ? await dsarIdentityCounts(app, kind, identityHash) : null;
-  const identityTotal = identityCounts ? dsarTotalRows(identityCounts) : 0;
+  const total = (counts: { rows: number }[]) => counts.reduce((n, c) => n + c.rows, 0);
+  const identityTotal = identityCounts ? total(identityCounts) : 0;
   const identityExportHref = `/admin/privacy/export?app=${encodeURIComponent(app)}&kind=${kind}&identity_hash=${identityHash}`;
-  const visitorTarget = visitorId ? await dsarCible(visitorApp, visitorId) : null;
-  const visitorCounts = visitorTarget?.verdict === "execute" ? await dsarCounts(visitorApp, visitorId) : null;
-  const visitorTotal = visitorCounts ? dsarTotalRows(visitorCounts) : 0;
+  const visitorTotal = visitorCounts ? total(visitorCounts) : 0;
   const visitorExportHref = `/admin/privacy/export?app=${encodeURIComponent(visitorApp)}&user=${encodeURIComponent(visitorId)}`;
 
   return (
@@ -238,7 +225,7 @@ export default async function AdminPrivacy({
           <label className="text-xs font-medium text-ink-soft">
             App
             <select name="visitor_app" defaultValue={visitorApp} className="field mt-1 block">
-              <option value="all">toutes</option>
+              {toutes && <option value="all">toutes</option>}
               {apps.map((candidate) => (
                 <option key={candidate.app_id} value={candidate.app_id}>{candidate.name}</option>
               ))}
