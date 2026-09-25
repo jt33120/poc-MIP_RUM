@@ -74,6 +74,8 @@ export const HORS_LECTURE = Object.freeze({
   audit_log: "écrit par le triage et les tickets des issues — routes d'écriture, 405 dans le service",
   deploy_marker: "écrit par POST /api/v1/deploys — route d'écriture, 405 dans le service",
   slo: "nommé comme chemin d'écran (« /slo »), jamais lu : l'API v1 n'a pas de route SLO",
+  sourcemap_upload_token:
+    "jeton de CI « deploys:write » vérifié par POST /api/v1/deploys (C11) — route d'écriture, 405 dans le service",
 });
 
 /**

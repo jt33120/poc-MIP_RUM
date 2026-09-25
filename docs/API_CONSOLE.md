@@ -688,6 +688,15 @@ Enregistre un marqueur de déploiement depuis une chaîne d'intégration continu
 dater une régression par rapport à une mise en production. Les marqueurs ordonnent aussi les releases d'une
 app et d'un env pour confirmer la régression d'une issue (P5.6) : jamais d'ordre lexical ni SemVer.
 
+Corps : `{ "app_id": "…", "version": "…", "env": "prod", "ts": "2026-09-25T10:00:00Z" }` (`version`,
+`env` et `ts` facultatifs). Réponse `201 { ok, app_id, version, env }`.
+
+**Authentification (C11) : un jeton de CI de privilège `deploys:write`**, créé pour UNE application dans
+`/admin/sourcemaps` (un privilège par jeton : celui des source maps ne pose pas de marqueur), passé en
+`Authorization: Bearer msu_…`. Le collector sert la même route (`/v1/deploys`) avec les mêmes réponses. Un
+jeton `CONSOLE_API_TOKENS` est encore accepté **jusqu'au 31/12/2026** ; chacune de ses réponses le dit
+(`Deprecation: true`, `Sunset`, RFC 8594). Une session de la console est refusée (403).
+
 ---
 
 ## Reproduire les graphes de supervision

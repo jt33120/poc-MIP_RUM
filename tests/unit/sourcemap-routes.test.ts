@@ -229,7 +229,10 @@ describe("GET /api/sourcemaps — releases et manifeste (admin)", () => {
 
 describe("jetons de CI : le contrat de création", () => {
   it("parseTokenRequest : nom requis, 1 à 90 jours entiers, 30 par défaut", () => {
-    expect(parseTokenRequest({ appId: " app-a ", name: " CI " })).toEqual({ ok: true, appId: "app-a", name: "CI", expiresInDays: 30 });
+    expect(parseTokenRequest({ appId: " app-a ", name: " CI " })).toEqual({ ok: true, appId: "app-a", name: "CI", expiresInDays: 30, scope: "sourcemaps:write" });
+    // C11 — un privilège par jeton : les marqueurs de déploiement, ou rien d'autre.
+    expect(parseTokenRequest({ appId: "app-a", name: "CI", scope: "deploys:write" })).toMatchObject({ ok: true, scope: "deploys:write" });
+    expect(parseTokenRequest({ appId: "app-a", name: "CI", scope: "errors:read" })).toMatchObject({ ok: false });
     expect(parseTokenRequest({ appId: "app-a", name: "CI", expiresInDays: 90 })).toMatchObject({ ok: true, expiresInDays: 90 });
     for (const expiresInDays of [0, 91, 1.5, "30"]) {
       expect(parseTokenRequest({ appId: "app-a", name: "CI", expiresInDays })).toMatchObject({ ok: false });

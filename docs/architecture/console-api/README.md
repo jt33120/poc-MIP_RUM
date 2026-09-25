@@ -189,6 +189,23 @@ La remise est un registre du module client, dans l'onglet : une navigation côt�
 
 Écarts au plan, assumés : l'effacement reste **synchrone** — une décision en 200, pas un 202 suivi d'un statut interrogé. Il attend le verrou de l'application au plus 30 s ; un effacement plus long que l'échéance de l'appel (15 s au plus) rendrait un 503, sa transaction pouvant encore aboutir, avec son audit. Le passage en tâche de fond attend la mise en service (une file et un état de la demande, `privacy_erasure_request` en porte déjà le cycle). L'export n'est pas **diffusé en flux** : il traverse l'enveloppe du service en un seul document, et une réponse Vercel plafonne à 4,5 Mo — un export portant beaucoup de rejeu dépasserait. À reprendre avec le relais du rejeu, à la bascule.
 
+## Les routes machine (C11), telles qu'elles sont faites
+
+Ce que les machines — l'extension publiée, les CI des clients, un outil de tickets — appellent n'a rien à faire dans console-api : ces routes vont au **collector** (et, pour le hook entrant des tickets, au notifier). Comme la collecte en P3, chacune est servie par les deux côtés à la fois, le collector et la console, par le MÊME code (`packages/backend/lib/`), et la console relaie vers le collector quand le relais d'ingestion est allumé (`lib/ingest-relay.ts`, même drapeau, même disjoncteur). Éteint — l'état d'aujourd'hui —, rien ne change.
+
+**C11a — l'extension et les marqueurs de déploiement :**
+
+| Route de la console | Collector | Code partagé | Relais |
+|---|---|---|---|
+| `GET /api/extension/resolve` | `GET /v1/extension/resolve` | `extension-parc.mjs` : `lireDomaine`, `resoudreDomaine` | le seul `GET` relayé ; `cache-control` rendu |
+| `POST /api/extension/heartbeat` | `POST /v1/extension/heartbeat` | `lireBattement`, `enregistrerBattement` (et les règles de l'User-Agent, tenues égales à `lib/format.ts` par un test) | `content-type`, `user-agent` |
+| `POST /api/v1/deploys` | `POST /v1/deploys` | `deploiements.mjs` : `lireDeploiement`, `enregistrerDeploiement`, les refus mot pour mot | jeton de CI seulement ; non idempotent (jamais rejoué sur une issue incertaine) |
+
+- **Un marqueur de déploiement se pose avec un jeton de CI `deploys:write`** (migration-v92 : `sourcemap_upload_token.scope` accepte ce second privilège), créé pour UNE application dans `/admin/sourcemaps` — un privilège par jeton, la fuite de l'un n'ouvre pas l'autre. Le collector ne lit que lui. La console accepte encore un jeton de `CONSOLE_API_TOKENS` jusqu'au **31/12/2026** (`FIN_JETONS_HISTORIQUES`) et le dit à chaque réponse (`Deprecation`, `Sunset`, RFC 8594). Le service `api` embarque la route mais n'en sert pas l'écriture (405) : le relais y est remplacé par un relais nul (`services/api/shims/ingest-relay.mjs`), et `sourcemap_upload_token` est déclaré « hors lecture » de `mip_api`.
+- **Le contrat de parité** (`tests/contract/ingest-parity.test.ts`) couvre les trois routes : 12 cas de plus (résolution 200/404/400, battement 200 ×2/400/413, marqueur 201/401 ×2/403/400), même statut, même corps, mêmes lignes écrites des deux côtés. Un écart voulu : le jeton historique, accepté par la console seule. Deux alignements en passant : le battement est lu en octets et borné des deux côtés (la console lisait tout le texte avant de compter ses caractères), et le domaine d'une résolution doit avoir la forme d'un nom d'hôte (une chaîne arbitraire devenait une clé du limiteur de débit).
+
+**C11b** (PR suivante) : le hook entrant des tickets sur le notifier, relayé octet pour octet par la console ; la fin du repli local du relais `/api/v1` (un mode strict, à allumer après la mise en service) ; `/api/releases` (barre de filtres) servi par un chargeur.
+
 ## Ordre proposé pour libérer le cliquet
 
 1. **Sans `console-api`** : scinder les modules mixtes (famille 1). **Fait** : 13 composants et un écran sortis du cliquet (27 → 14 composants, 51 → 50 écrans). C0 démarre sur une base plus petite.

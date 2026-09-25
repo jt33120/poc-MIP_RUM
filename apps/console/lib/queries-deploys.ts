@@ -3,7 +3,8 @@
 // on compare le p75 LCP et le volume d'erreurs sur la fenêtre AVANT vs APRÈS le
 // dernier déploiement. Marqueurs et fenêtres ±2 h sont bornés par le périmètre d'apps de la requête
 // commune (P6.2), jamais par ses filtres de population : le panneau le dit.
-import { q } from "./db";
+import { enregistrerDeploiement } from "@mip/backend/lib/deploiements.mjs";
+import { pool, q } from "./db";
 import { queryOf, type Filters } from "./filters";
 import { binder, compileScope, sessionJoin } from "./query-compiler";
 import { sqlContext, type SqlContext } from "./query-sql";
@@ -39,14 +40,11 @@ export async function recordDeploy(
   appId: string,
   version: string | null,
   env: string,
-  source: string,
+  source: "ci" | "manual",
   ts?: Date,
 ): Promise<void> {
-  await q(
-    `insert into deploy_marker (app_id, version, env, source, ts)
-     values ($1, $2, $3, $4, coalesce($5, now()))`,
-    [appId, version, env, source, ts ?? null],
-  );
+  // L'écriture est celle du collector (C11), partagée : `@mip/backend/lib/deploiements.mjs`.
+  await enregistrerDeploiement(pool, { appId, version, env, ts: ts ?? null }, source);
 }
 
 /**

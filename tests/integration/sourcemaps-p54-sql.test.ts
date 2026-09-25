@@ -321,6 +321,10 @@ const compter = async (db: pg.Pool, app: string, release: string) =>
     await refus(jeton, [A, `CI${String.fromCharCode(10)}`, empreinte, "1 day", "sourcemaps:write", null]);
     await refus(jeton, [A, "CI", "pas-un-hash", "1 day", "sourcemaps:write", null]);
     await refus(jeton, ["p54-app-inconnue", "CI", empreinte, "1 day", "sourcemaps:write", null]);
+    // migration-v92 (C11) : un second privilège, celui des marqueurs de déploiement — et aucun autre.
+    const { rows: [deploiement] } = await pool.query<{ scope: string }>(`${jeton} returning scope`, [A, "CI déploiements", empreinte, "1 day", "deploys:write", null]);
+    expect(deploiement.scope).toBe("deploys:write");
+    await pool.query("delete from sourcemap_upload_token where app_id = $1 and scope = 'deploys:write'", [A]);
     await pool.query("delete from sourcemap where app_id = $1", [A]);
   });
 
@@ -440,7 +444,7 @@ const compter = async (db: pg.Pool, app: string, release: string) =>
 
     const liste = await tokens.listSourcemapTokens(A);
     expect(liste.map((t) => t.id)).toEqual([cree!.token.id]);
-    expect(Object.keys(liste[0]).sort()).toEqual(["appId", "createdAt", "expiresAt", "id", "lastUsedAt", "name", "revokedAt"]);
+    expect(Object.keys(liste[0]).sort()).toEqual(["appId", "createdAt", "expiresAt", "id", "lastUsedAt", "name", "revokedAt", "scope"]);
 
     const revoque = await tokens.revokeSourcemapToken(cree!.token.id, "admin@p54");
     expect(revoque?.revokedAt).toBeInstanceOf(Date);
