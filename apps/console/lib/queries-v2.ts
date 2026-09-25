@@ -2,6 +2,7 @@
 import { ALERT_SEVERITIES } from "./alerting";
 import { RELEASE_METRICS } from "./alerting";
 import { q } from "./db";
+import { ecrire, type ClientEcriture } from "./requete";
 import { periodOf, queryOf, type FiltersLike } from "./filters";
 import { isValidEventName } from "./queries-events";
 import { binder, bucketExpr, compileScope, sessionJoin } from "./query-compiler";
@@ -490,39 +491,64 @@ export async function appDeRegle(id: number): Promise<string | null> {
   return r?.app_id ?? null;
 }
 
-export async function insertAlertRule(r: RuleInput): Promise<void> {
+/** Rend l'identifiant de la règle créée. `client` : la transaction de la commande (C8), avec son audit. */
+export async function insertAlertRule(r: RuleInput, client?: ClientEcriture): Promise<string> {
   await regleRelease(r);
   const v73 = await regleV73(r);
-  await q(
+  const { rows } = await ecrire<{ id: string }>(
+    client,
     `insert into alert_rule (app_id, metric, route, comparator, threshold, window_minutes,
                              webhook_url, mode, severity, sensitivity, baseline_weeks${v73 ? ", env" : ""})
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11${v73 ? ", $12" : ""})`,
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11${v73 ? ", $12" : ""})
+     returning id::text as id`,
     [r.app_id, r.metric, r.route, r.comparator, r.threshold, r.window_minutes,
      r.webhook_url, r.mode, r.severity, r.sensitivity, r.baseline_weeks, ...(v73 ? [r.env] : [])],
   );
+  return rows[0].id;
 }
 
-export async function updateAlertRule(id: number, r: RuleInput): Promise<void> {
+/**
+ * Réécrit la règle `id` de l'application `appActuelle` — une règle d'une autre
+ * application n'est pas touchée (`false`). `r.app_id` peut la DÉPLACER : la
+ * commande a vérifié que l'application visée est aussi dans le périmètre.
+ */
+export async function updateAlertRule(id: number, appActuelle: string, r: RuleInput, client?: ClientEcriture): Promise<boolean> {
   await regleRelease(r);
   const v73 = await regleV73(r);
-  await q(
+  const { rowCount } = await ecrire(
+    client,
     `update alert_rule
-     set app_id = $2, metric = $3, route = $4, comparator = $5,
-         threshold = $6, window_minutes = $7, webhook_url = $8,
-         mode = $9, severity = $10, sensitivity = $11, baseline_weeks = $12${v73 ? ", env = $13" : ""}
-     where id = $1`,
-    [id, r.app_id, r.metric, r.route, r.comparator, r.threshold, r.window_minutes,
+     set app_id = $3, metric = $4, route = $5, comparator = $6,
+         threshold = $7, window_minutes = $8, webhook_url = $9,
+         mode = $10, severity = $11, sensitivity = $12, baseline_weeks = $13${v73 ? ", env = $14" : ""}
+     where id = $1 and app_id = $2`,
+    [id, appActuelle, r.app_id, r.metric, r.route, r.comparator, r.threshold, r.window_minutes,
      r.webhook_url, r.mode, r.severity, r.sensitivity, r.baseline_weeks, ...(v73 ? [r.env] : [])],
   );
+  return rowCount > 0;
 }
 
-/** Bascule activation/désactivation (flip en SQL : pas d'état à transporter dans le form). */
-export async function toggleAlertRuleActive(id: number): Promise<void> {
-  await q(`update alert_rule set active = not active where id = $1`, [id]);
+/** Active ou suspend la règle `id` de l'application `appId` : l'état VOULU, pas un « inverser ». */
+export async function toggleAlertRuleActive(id: number, appId: string, active: boolean, client?: ClientEcriture): Promise<boolean> {
+  const { rowCount } = await ecrire(client, `update alert_rule set active = $3 where id = $1 and app_id = $2`, [id, appId, active]);
+  return rowCount > 0;
 }
 
-export async function acknowledgeAlertEvent(id: number): Promise<void> {
-  await q(`update alert_event set acknowledged = true where id = $1`, [id]);
+/**
+ * Acquitte un événement de l'application `appId`. Un événement n'a d'application
+ * que par ce qui l'a déclenché : sa règle, ou le SLO dont le burn l'a levé
+ * (`check_slo_burn`, `rule_id` nul).
+ */
+export async function acknowledgeAlertEvent(id: number, appId: string, client?: ClientEcriture): Promise<boolean> {
+  const { rowCount } = await ecrire(
+    client,
+    `update alert_event e set acknowledged = true
+      where e.id = $1
+        and (exists (select 1 from alert_rule r where r.id = e.rule_id and r.app_id = $2)
+             or exists (select 1 from slo s where s.id = e.slo_id and s.app_id = $2))`,
+    [id, appId],
+  );
+  return rowCount > 0;
 }
 
 /** Évaluation immédiate des règles (même fonction SQL que pg_cron en cloud). */

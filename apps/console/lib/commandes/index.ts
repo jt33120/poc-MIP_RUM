@@ -6,6 +6,19 @@
 // (`services/console-api/commandes.mjs`).
 import type { CleCommande } from "@mip/console-contract";
 import type { CommandeQuelconque } from "./commun";
+import {
+  acquitterEvenement,
+  activerCanal,
+  activerRegle,
+  activerSlo,
+  creerCanal,
+  creerRegle,
+  creerSlo,
+  evaluerAlertes,
+  modifierRegle,
+  supprimerCanal,
+  supprimerSlo,
+} from "./alertes";
 import { commenterIssue, demanderTicket, lierTicket, trierGroupe, trierIssue } from "./issues";
 import { activerObjectif, creerObjectif, supprimerObjectif } from "./objectifs";
 import {
@@ -21,6 +34,7 @@ import {
   retirerCarte,
   supprimerTableau,
 } from "./tableaux";
+import { activerSonde, creerSonde, supprimerSonde } from "./uptime";
 import { creerVue, modifierVue, supprimerVue } from "./vues";
 
 export const COMMANDES_CONSOLE = {
@@ -48,4 +62,19 @@ export const COMMANDES_CONSOLE = {
   lierTicket,
   demanderTicket,
   trierGroupe,
+  // C8 — alerting et disponibilité.
+  creerRegle,
+  modifierRegle,
+  activerRegle,
+  acquitterEvenement,
+  evaluerAlertes,
+  creerSlo,
+  activerSlo,
+  supprimerSlo,
+  creerCanal,
+  activerCanal,
+  supprimerCanal,
+  creerSonde,
+  activerSonde,
+  supprimerSonde,
 } satisfies { readonly [K in CleCommande]: CommandeQuelconque };

@@ -19,14 +19,10 @@ import type { PisteDeclenchements, Severite } from "../components/charts/FriseDe
 import type { PointSerie } from "./series";
 import { PHRASE_FENETRE } from "../components/ReleaseCompare";
 
-/** Fenêtre fixe du hero (barres par jour et frise), en jours calendaires UTC. */
-export const JOURS_DECLENCHEMENTS = 30;
-
-/** Plafond de lecture de `alertFirings` : au-delà, la frise le dit (état `partiel`). */
-export const PLAFOND_DECLENCHEMENTS = 2000;
-
-/** Nombre d'événements rendus par `alertEvents` : le flux le dit quand il est atteint. */
-export const PLAFOND_FLUX = 100;
+// Bornes des lectures de l'écran : dans `lib/alerting.ts` (sans rendu), que le
+// chargeur de l'écran (`lib/chargeurs/alertes.ts`) lit aussi.
+export { JOURS_DECLENCHEMENTS, PLAFOND_DECLENCHEMENTS, PLAFOND_FLUX } from "./alerting";
+import { JOURS_DECLENCHEMENTS } from "./alerting";
 
 /** Pourquoi le délai d'acquittement n'est pas affiché (B50). */
 export const MOTIF_MTTA =

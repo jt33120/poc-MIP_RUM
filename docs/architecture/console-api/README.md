@@ -134,6 +134,16 @@ L'inventaire ne suit plus l'import d'une server action par un composant CLIENT :
 
 Reste de C7, **conditionnel** (R7) : fermer le ticket quand l'issue est résolue (un événement sortant dans `ticket_outbox`). Il attend la confirmation de l'outil ITSM cible — si ce n'est pas GitHub, l'adaptateur change.
 
+**C8 — l'alerting et la disponibilité** (14 commandes, 3 écrans) : règles (créer, modifier, activer ou suspendre), acquittement d'un événement, « Évaluer maintenant », SLO (créer, activer, supprimer), canaux de notification (créer, activer, supprimer), sondes de disponibilité (créer, activer, supprimer). Trois règles de droits, qu'appliquent la console et `console-api` :
+
+- **une ligne se relit dans son application** : règles, événements, SLO et sondes ont la portée `app`, et chaque écriture filtre `where id = $1 and app_id = $2` (un événement, par sa règle ou par le SLO qui l'a levé). Avant C8, basculer, acquitter ou supprimer visait un identifiant seul ;
+- **un administrateur d'une liste n'administre que ces applications** (plan, C8 → C9) : il ne crée, ne modifie ni ne déplace une règle hors de sa liste, et le sélecteur d'application ne lui propose qu'elle ;
+- **ce qui touche toutes les applications est à l'administrateur de la plateforme** : « Évaluer maintenant » (`check_alerts()` et `check_slo_burn()` sur tout le parc) et le canal GLOBAL (`app_id` nul). Un canal a donc la portée `globale`, et la commande le confronte au périmètre du principal (`app_id = any(apps)`, ou tout pour la plateforme).
+
+Activer ou suspendre POSE l'état voulu (`PUT …/active`), au lieu d'inverser : le formulaire le porte dans un champ — pas dans la valeur de son bouton, qu'une action appelée par `formAction` ne reçoit pas (relevé par la fumée). Les formulaires de règle, de SLO et de canal voyagent en **champs** (un dictionnaire de chaînes bornées) : la commande les lit par les mêmes règles qu'avant, au mot près, et rend `invalide` avec le message, ou `url_refusee` avec le code du motif (`safe-fetch`) que la page traduit.
+
+**Les écrans d'administration** forment une famille à part du contrat (`ECRANS_ADMIN`) : un administrateur, sans portée d'application — `/admin/uptime` en C8, les autres écrans d'`/admin` en C9. Leur chargeur restreint ce qu'il liste au périmètre du principal, et dit `interdit` à qui n'est pas administrateur (la page redirige, comme `requireAdmin`).
+
 ## Ordre proposé pour libérer le cliquet
 
 1. **Sans `console-api`** : scinder les modules mixtes (famille 1). **Fait** : 13 composants et un écran sortis du cliquet (27 → 14 composants, 51 → 50 écrans). C0 démarre sur une base plus petite.

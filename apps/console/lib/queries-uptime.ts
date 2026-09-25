@@ -2,6 +2,7 @@
 // Les sondes elles-mêmes sont exécutées par l'edge function `uptime` (migration-v42) ;
 // ici on lit v_uptime_status et on gère la config uptime_check.
 import { q } from "./db";
+import { ecrire, type ClientEcriture } from "./requete";
 
 export interface UptimeStatusRow {
   id: number;
@@ -41,19 +42,24 @@ export async function createUptimeCheck(
   name: string,
   url: string,
   expectStatus: number,
-): Promise<void> {
-  await q(
-    `insert into uptime_check (app_id, name, url, expect_status) values ($1, $2, $3, $4)`,
+  client?: ClientEcriture,
+): Promise<string> {
+  const { rows } = await ecrire<{ id: string }>(
+    client,
+    `insert into uptime_check (app_id, name, url, expect_status) values ($1, $2, $3, $4) returning id::text as id`,
     [appId, name, url, expectStatus],
   );
+  return rows[0].id;
 }
 
-/** Active/désactive un check (kill-switch sans supprimer l'historique). */
-export async function toggleUptimeCheck(id: number, enabled: boolean): Promise<void> {
-  await q(`update uptime_check set enabled = $2 where id = $1`, [id, enabled]);
+/** Active ou suspend le check `id` de l'application `appId` ; `false` s'il n'y est pas. */
+export async function toggleUptimeCheck(id: number, appId: string, enabled: boolean, client?: ClientEcriture): Promise<boolean> {
+  const { rowCount } = await ecrire(client, `update uptime_check set enabled = $3 where id = $1 and app_id = $2`, [id, appId, enabled]);
+  return rowCount > 0;
 }
 
-/** Supprime un check et son historique (cascade sur uptime_result). */
-export async function deleteUptimeCheck(id: number): Promise<void> {
-  await q(`delete from uptime_check where id = $1`, [id]);
+/** Supprime un check de l'application `appId` et son historique (cascade sur uptime_result). */
+export async function deleteUptimeCheck(id: number, appId: string, client?: ClientEcriture): Promise<boolean> {
+  const { rowCount } = await ecrire(client, `delete from uptime_check where id = $1 and app_id = $2`, [id, appId]);
+  return rowCount > 0;
 }

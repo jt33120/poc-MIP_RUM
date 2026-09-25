@@ -26,6 +26,8 @@ vi.doMock(depuisConsole.resolve("next/navigation"), () => ({
   },
 }));
 vi.mock("@/lib/next-cache", () => ({ revalidatePath: vi.fn() }));
+// C8 : l'écriture et son audit partent d'une transaction (un client inerte ici).
+vi.mock("@/lib/db", () => ({ q: vi.fn(async () => []), tx: vi.fn(async (fn: (c: unknown) => unknown) => fn({ query: vi.fn(async () => ({ rows: [] })) })) }));
 vi.mock("@/lib/queries-v2", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/queries-v2")>();
   return { ...actual, insertAlertRule: vi.fn(), updateAlertRule: vi.fn(), appDeRegle: vi.fn(), toggleAlertRuleActive: vi.fn() };
@@ -68,12 +70,13 @@ describe("F68 — règle de release : ce que l'action écrit", () => {
     await createRuleAction(formulaireF68());
     expect(insertAlertRule).toHaveBeenCalledWith(
       expect.objectContaining({ app_id: "app-a", metric: "LCP", mode: "release", threshold: 25, comparator: ">", window_minutes: 1440 }),
+      expect.anything(),
     );
   });
 
   it("champ absent (formulaire d'avant F68) : +20 %, la valeur par défaut du plan", async () => {
     await createRuleAction(formulaireF68({ release_pct: null }));
-    expect(insertAlertRule).toHaveBeenCalledWith(expect.objectContaining({ mode: "release", threshold: 20 }));
+    expect(insertAlertRule).toHaveBeenCalledWith(expect.objectContaining({ mode: "release", threshold: 20 }), expect.anything());
   });
 
   it("hausse vide, nulle, négative ou démesurée : refusée, jamais remplacée", async () => {
@@ -92,9 +95,9 @@ describe("F68 — règle de release : ce que l'action écrit", () => {
 
   it("l'édition suit la même règle ; les modes seuil et baseline gardent leur seuil", async () => {
     await updateRuleAction(formulaireF68({ id: "9", release_pct: "12.5" }));
-    expect(updateAlertRule).toHaveBeenCalledWith(9, expect.objectContaining({ mode: "release", threshold: 12.5 }));
+    expect(updateAlertRule).toHaveBeenCalledWith(9, "app-a", expect.objectContaining({ mode: "release", threshold: 12.5 }), expect.anything());
     await createRuleAction(formulaireF68({ mode: "threshold", threshold: "2500", comparator: ">" }));
-    expect(insertAlertRule).toHaveBeenCalledWith(expect.objectContaining({ mode: "threshold", threshold: 2500 }));
+    expect(insertAlertRule).toHaveBeenCalledWith(expect.objectContaining({ mode: "threshold", threshold: 2500 }), expect.anything());
   });
 });
 
@@ -127,12 +130,17 @@ describe("F68 — qui peut écrire une règle (piège 20)", () => {
     expect(toggleAlertRuleActive).not.toHaveBeenCalled();
   });
 
-  it("administrateur : toutes les apps (`authorizedAppsOf`), sans relire l'app de la règle éditée", async () => {
+  it("C8 — un administrateur d'une LISTE n'écrit que dans ses applications ; la règle éditée est cherchée dans la sienne", async () => {
     await connecter({ email: "admin@x", role: "admin", apps: ["app-b"] });
-    await createRuleAction(formulaireF68({ app_id: "app-a" }));
-    await updateRuleAction(formulaireF68({ app_id: "app-a", id: "9" }));
+    await expect(createRuleAction(formulaireF68({ app_id: "app-a" }))).rejects.toThrow(/périmètre/);
+    await expect(updateRuleAction(formulaireF68({ app_id: "app-a", id: "9" }))).rejects.toThrow(/périmètre/);
+    expect(insertAlertRule).not.toHaveBeenCalled();
+    expect(updateAlertRule).not.toHaveBeenCalled();
+    // Dans son application : écrit, sans relecture préalable (le filtre est dans l'écriture).
+    await createRuleAction(formulaireF68({ app_id: "app-b" }));
+    await updateRuleAction(formulaireF68({ app_id: "app-b", id: "9" }));
     expect(insertAlertRule).toHaveBeenCalledTimes(1);
-    expect(updateAlertRule).toHaveBeenCalledTimes(1);
+    expect(updateAlertRule).toHaveBeenCalledWith(9, "app-b", expect.objectContaining({ app_id: "app-b" }), expect.anything());
     expect(appDeRegle).not.toHaveBeenCalled();
   });
 });

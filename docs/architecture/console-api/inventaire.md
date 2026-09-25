@@ -13,11 +13,11 @@
 | Composants serveur qui atteignent la base eux-mêmes | — | **10** |
 | Layout racine | 1 | **oui** |
 | Modules `lib/queries*.ts` | 45 (207 fonctions exportées) | — |
-| Sections `lire()` (appels) | 262 | — |
+| Sections `lire()` (appels) | 276 | — |
 | `error.tsx` / `not-found.tsx` / `loading.tsx` | 23 / 4 / 0 | — |
 | Écrans rafraîchis toutes les 5 s (`AutoRefresh`) | 53 | — |
-| Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 31 | **31** / 50 |
-| Fichiers d'actions passés par une commande (`lib/commandes/`, C6 → C9) | 4 (18 commandes) | **4** / 17 |
+| Écrans servis par un chargeur (`lib/chargeurs/`, C3 → C6) | 34 | **34** / 50 |
+| Fichiers d'actions passés par une commande (`lib/commandes/`, C6 → C9) | 6 (32 commandes) | **6** / 17 |
 
 **Le cliquet** (`cliquet.json`) liste nominativement ce qui atteint la base. `tests/unit/inventaire-console.test.ts` refuse toute entrée nouvelle, et demande de le resserrer quand une entrée disparaît.
 
@@ -40,26 +40,26 @@
 | `/admin/read-tokens` | C9 administration | **oui** | — | queries, explorer, read-tokens, sessions | — | — | oui |
 | `/admin/sourcemaps` | C9 administration | **oui** | — | queries, explorer, sessions, sourcemap, sourcemap-tokens | — | — | oui |
 | `/admin/ticket-integrations` | C9 administration | **oui** | — | queries, errors, events, explorer, sessions, ticket-integrations | — | — | oui |
-| `/admin/uptime` | C9 administration | **oui** | — | queries, explorer, planifie, sessions, uptime | — | — | oui |
+| `/admin/uptime` | C9 administration | **oui** | sondes | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, planifie, saved-views, sessions, ticket-integrations, uptime, v2 | — | — | oui |
 | `/admin/usage` | C9 administration | **oui** | — | usage | — | — | oui |
 | `/admin/users` | C9 administration | **oui** | — | — | — | — | oui |
 | `/ai` | C5 | **oui** | ai | deploys, events, explorer, v2 | — | — | oui |
-| `/alerts` | C8 alerting | **oui** | — | queries, alerting, errors, events, explorer, sessions, v2 | 8 | — | oui |
+| `/alerts` | C8 alerting | **oui** | alertes | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | 8 | — | oui |
 | `/api-docs` | statique ou vitrine | non | — | — | — | — | oui |
 | `/correlation` | C4 | **oui** | correlation | deploys, events, explorer, v2 | 11 | — | oui |
-| `/dashboards/[id]` | C6 espace de travail | **oui** | tableau | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, v2 | — | — | non |
-| `/dashboards` | C6 espace de travail | **oui** | tableaux | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, v2 | — | — | non |
-| `/errors/[fingerprint]` | C4 | **oui** | erreur | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, v2 | 3 | — | oui |
+| `/dashboards/[id]` | C6 espace de travail | **oui** | tableau | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | — | — | non |
+| `/dashboards` | C6 espace de travail | **oui** | tableaux | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | — | — | non |
+| `/errors/[fingerprint]` | C4 | **oui** | erreur | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | 3 | — | oui |
 | `/errors/issues/[id]` | C4 | **oui** | issue | queries, deploys, errors, events, explorer, sessions, ticket-integrations | 2 | — | oui |
 | `/errors` | C4 | **oui** | errors | queries, breakdowns, deploys, errors, events, explorer, sessions | 8 | error | oui |
 | `/events` | C3 | **oui** | events | deploys, events, explorer | 2 | event | oui |
 | `/experience` | C5 | **oui** | experience | queries, breakdowns, deploys, experience, explorer, mobile, sessions | 9 | — | oui |
-| `/explorer` | C3 | **oui** | explorer | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, v2 | 3 | — | non |
-| `/explorer/views` | C6 espace de travail | **oui** | vues | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, v2 | — | — | non |
+| `/explorer` | C3 | **oui** | explorer | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | 3 | — | non |
+| `/explorer/views` | C6 espace de travail | **oui** | vues | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | — | — | non |
 | `/extension-privacy` | statique ou vitrine | non | — | — | — | — | oui |
 | `/forecast` | C4 | **oui** | forecast | deploys, explorer, grid | 3 | — | oui |
 | `/forms` | C5 | **oui** | forms | deploys, explorer, form-analytics, sessions | 3 | — | oui |
-| `/goals` | C5 | **oui** | goals | queries, accounts, dashboards, deploys, errors, events, explorer, frustration, goals, grid, mobile, saved-views, sessions, ticket-integrations, v2 | 4 | — | oui |
+| `/goals` | C5 | **oui** | goals | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, goals, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | 4 | — | oui |
 | `/legal/cgu` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/cgv` | statique ou vitrine | non | — | — | — | — | oui |
 | `/legal/confidentialite` | statique ou vitrine | non | — | — | — | — | oui |
@@ -77,7 +77,7 @@
 | `/select` | C1–C2 identité, sélection | **oui** | — | queries, explorer, projects, sessions | — | — | oui |
 | `/sessions/[id]` | C3 | **oui** | session | queries, deploys, explorer, sessions | 2 | — | oui |
 | `/sessions` | C3 | **oui** | sessions | queries, deploys, explorer, sessions | 13 | — | oui |
-| `/slo` | C8 alerting | **oui** | — | queries, alerting, errors, events, explorer, sessions, v2 | 4 | — | oui |
+| `/slo` | C8 alerting | **oui** | slo | queries, accounts, alerting, dashboards, deploys, errors, events, explorer, frustration, grid, mobile, saved-views, sessions, ticket-integrations, uptime, v2 | 4 | — | oui |
 | `/svi/appels/[callId]` | C5 | **oui** | svi | deploys, events, explorer, svi, v2 | — | — | oui |
 | `/svi/appels` | C5 | **oui** | svi | deploys, events, explorer, svi, v2 | — | — | oui |
 | `/svi` | C5 | **oui** | svi | deploys, events, explorer, svi, v2 | — | — | oui |
@@ -98,9 +98,9 @@
 | `app/admin/privacy/actions.ts` | searchIdentityAction, eraseIdentityAction, eraseUserAction | **oui** | — | oui |
 | `app/admin/read-tokens/actions.ts` | createReadTokenAction, revokeReadTokenAction | **oui** | — | oui |
 | `app/admin/ticket-integrations/actions.ts` | creerIntegrationAction, majIntegrationAction | **oui** | — | oui |
-| `app/admin/uptime/actions.ts` | createUptimeCheckAction, toggleUptimeCheckAction, deleteUptimeCheckAction | **oui** | — | oui |
+| `app/admin/uptime/actions.ts` | createUptimeCheckAction, toggleUptimeCheckAction, deleteUptimeCheckAction | **oui** | activerSonde, creerSonde, supprimerSonde | par règle |
 | `app/admin/users/actions.ts` | createUserAction, toggleUserAction, resetPasswordAction | **oui** | — | oui |
-| `app/alerts/actions.ts` | createRuleAction, updateRuleAction, toggleRuleAction, ackEventAction, evaluateNowAction, createSloAction, toggleSloAction, deleteSloAction, createChannelAction, toggleChannelAction, deleteChannelAction | **oui** | — | oui |
+| `app/alerts/actions.ts` | createRuleAction, updateRuleAction, toggleRuleAction, ackEventAction, evaluateNowAction, createSloAction, toggleSloAction, deleteSloAction, createChannelAction, toggleChannelAction, deleteChannelAction | **oui** | acquitterEvenement, activerCanal, activerRegle, activerSlo, creerCanal, creerRegle, creerSlo, evaluerAlertes, modifierRegle, supprimerCanal, supprimerSlo | par règle |
 | `app/dashboards/actions.ts` | createDashboardAction, cloneTemplateAction, cloneDashboardAction, renameDashboardAction, deleteDashboardAction, addWidgetAction, addSectionAction, saveAnalysisAction, configureWidgetAction, removeWidgetAction, moveWidgetAction | **oui** | ajouterCarte, ajouterSection, clonerModele, clonerTableau, configurerCarte, creerTableau, deplacerCarte, enregistrerAnalyse, modifierTableau, retirerCarte, supprimerTableau | par règle |
 | `app/errors/[fingerprint]/actions.ts` | setErrorStatusAction | **oui** | trierGroupe | par règle |
 | `app/errors/issues/actions.ts` | muterIssue | **oui** | — | oui |
@@ -173,7 +173,7 @@
 
 | Composant | Chemin vers la base |
 |---|---|
-| `components/alerts/ChannelsSection.tsx` | `app/alerts/actions.ts` → `lib/error-issue-workflow.ts` → `lib/db.ts` |
+| `components/alerts/ChannelsSection.tsx` | `app/alerts/actions.ts` → `lib/commande-locale.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/alerts/RuleRow.tsx` | `lib/alertes-ecran.ts` → `lib/queries-v2.ts` → `lib/db.ts` |
 | `components/dashboards/ModeleCarte.tsx` | `app/dashboards/actions.ts` → `lib/commande-locale.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 | `components/dashboards/WidgetCard.tsx` | `lib/widget-data.ts` → `lib/queries-grid.ts` → `lib/db.ts` |
@@ -182,54 +182,54 @@
 | `components/presentation/Annexe.tsx` | `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Landing.tsx` | `components/presentation/Annexe.tsx` → `components/presentation/Specs.tsx` → `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
 | `components/presentation/Specs.tsx` | `lib/etat-plateforme.ts` → `lib/queries-planifie.ts` → `lib/db.ts` |
-| `components/slo/SloStatusRow.tsx` | `app/alerts/actions.ts` → `lib/error-issue-workflow.ts` → `lib/db.ts` |
+| `components/slo/SloStatusRow.tsx` | `app/alerts/actions.ts` → `lib/commande-locale.ts` → `lib/chargeurs/commun.ts` → `lib/comparaison.ts` → `lib/db.ts` |
 
 ## Modules de lecture
 
 | Module | Fonctions exportées | Écrans qui l'atteignent |
 |---|---|---|
-| `lib/queries-accounts.ts` | 1 | 6 |
+| `lib/queries-accounts.ts` | 1 | 9 |
 | `lib/queries-acquisition.ts` | 2 | 1 |
 | `lib/queries-actions.ts` | 3 | 1 |
-| `lib/queries-alerting.ts` | 9 | 2 |
+| `lib/queries-alerting.ts` | 9 | 9 |
 | `lib/queries-breakdowns.ts` | 2 | 4 |
 | `lib/queries-cohorts.ts` | 1 | 1 |
 | `lib/queries-customers.ts` | 3 | 3 |
-| `lib/queries-dashboards.ts` | 6 | 6 |
-| `lib/queries-deploys.ts` | 4 | 31 |
+| `lib/queries-dashboards.ts` | 6 | 9 |
+| `lib/queries-deploys.ts` | 4 | 34 |
 | `lib/queries-dimensions.ts` | 1 | 0 |
 | `lib/queries-dsar.ts` | 9 | 1 |
-| `lib/queries-errors.ts` | 11 | 15 |
-| `lib/queries-events.ts` | 3 | 23 |
+| `lib/queries-errors.ts` | 11 | 16 |
+| `lib/queries-events.ts` | 3 | 24 |
 | `lib/queries-experience.ts` | 7 | 1 |
 | `lib/queries-explorer.ts` | 2 | 42 |
 | `lib/queries-extension-installs.ts` | 3 | 1 |
 | `lib/queries-extension-scope.ts` | 5 | 2 |
 | `lib/queries-form-analytics.ts` | 1 | 1 |
-| `lib/queries-frustration.ts` | 5 | 7 |
+| `lib/queries-frustration.ts` | 5 | 10 |
 | `lib/queries-funnel.ts` | 2 | 1 |
 | `lib/queries-goals.ts` | 3 | 1 |
-| `lib/queries-grid.ts` | 3 | 8 |
+| `lib/queries-grid.ts` | 3 | 11 |
 | `lib/queries-health.ts` | 1 | 1 |
 | `lib/queries-histogramme.ts` | 1 | 0 |
 | `lib/queries-logs.ts` | 5 | 1 |
 | `lib/queries-longtasks.ts` | 2 | 1 |
 | `lib/queries-map.ts` | 4 | 1 |
-| `lib/queries-mobile.ts` | 7 | 9 |
+| `lib/queries-mobile.ts` | 7 | 12 |
 | `lib/queries-paths.ts` | 3 | 1 |
 | `lib/queries-planifie.ts` | 3 | 2 |
 | `lib/queries-projects.ts` | 1 | 1 |
 | `lib/queries-read-tokens.ts` | 4 | 1 |
 | `lib/queries-resources.ts` | 1 | 1 |
-| `lib/queries-saved-views.ts` | 7 | 6 |
+| `lib/queries-saved-views.ts` | 7 | 9 |
 | `lib/queries-sessions.ts` | 6 | 33 |
 | `lib/queries-sourcemap-tokens.ts` | 3 | 1 |
 | `lib/queries-sourcemap.ts` | 2 | 1 |
 | `lib/queries-summary.ts` | 1 | 0 |
 | `lib/queries-svi.ts` | 6 | 3 |
-| `lib/queries-ticket-integrations.ts` | 9 | 8 |
+| `lib/queries-ticket-integrations.ts` | 9 | 11 |
 | `lib/queries-tracing.ts` | 8 | 3 |
-| `lib/queries-uptime.ts` | 4 | 1 |
+| `lib/queries-uptime.ts` | 4 | 9 |
 | `lib/queries-usage.ts` | 1 | 1 |
-| `lib/queries-v2.ts` | 22 | 17 |
+| `lib/queries-v2.ts` | 22 | 18 |
 | `lib/queries.ts` | 20 | 28 |

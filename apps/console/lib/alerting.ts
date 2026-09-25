@@ -70,3 +70,14 @@ export function etatSlo(attainment: number | null, objective: number): SloView |
 export function ruleModeLabel(mode: string): string {
   return mode === "baseline" ? "anomalie (baseline)" : mode === "release" ? "régression de release" : "seuil";
 }
+
+// ─── Bornes des lectures de l'écran /alerts (F62) : lues par son chargeur. ───
+
+/** Fenêtre fixe du hero (barres par jour et frise), en jours calendaires UTC. */
+export const JOURS_DECLENCHEMENTS = 30;
+
+/** Plafond de lecture de `alertFirings` : au-delà, la frise le dit (état `partiel`). */
+export const PLAFOND_DECLENCHEMENTS = 2000;
+
+/** Nombre d'événements rendus par `alertEvents` : le flux le dit quand il est atteint. */
+export const PLAFOND_FLUX = 100;
